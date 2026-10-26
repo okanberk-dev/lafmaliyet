@@ -165,9 +165,10 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Akşam kasa raporunu nasıl girerim?",
         a: (
           <>
-            <StaffPath href="/panel/kasa" /> ekranında Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Turuncu alanları fişle
-            karşılaştırın; hiçbir şey kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve
-            kasayı kimin saydığını yazın. Kasa farkı yazarken hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki
+            <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Banka POS&apos;a
+            yazarkasanın Z raporundaki K.KARTI (kredi kartı) satırını yazın, Z&apos;nin toplamını değil. Turuncu alanları fişle karşılaştırın; hiçbir şey
+            kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
+            yazın. Kasa farkı yazarken hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki
             güne yazılır.
           </>
         ),

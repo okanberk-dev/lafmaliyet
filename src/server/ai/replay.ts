@@ -2,8 +2,8 @@
  * Anahtarsız geliştirmede okuma akışını denemek için kayıtlı yanıtlar (tests/fixtures/foto/*.json: canlıda alınmış
  * beş yanıt, docs/planlar/fotograf.md §10). Yalnız `next dev`te ve AI_REPLAY=1 iken açılır; canlıda (NODE_ENV
  * production) hiçbir koşulda devreye girmez. Hangi yanıtın döneceği türe ve deneme görsellerinin ölçüsüne göre seçilir
- * (docs/planlar/ekler/fotograf-eval/img: telefonda küçültülünce ölçüleri değişmez); başka bir fotoğrafa türün olağan
- * yanıtı döner. Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
+ * (docs/planlar/ekler/fotograf-eval/img: telefonda küçültülünce ölçüleri değişmez; yazarkasanın mali Z'si
+ * scripts/foto-eval/make-images.py'nin `yazarkasa-z.jpg`'sidir); başka bir fotoğrafa türün olağan yanıtı döner. Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
  * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez.
  */
 
@@ -19,16 +19,20 @@ export function replayEnabled(env: Record<string, string | undefined> = process.
 }
 
 /** Deneme görsellerinin ölçüsü → adı */
-const IMAGES: Record<string, "z" | "pos" | "market" | "talimat"> = {
+const IMAGES: Record<string, "z" | "pos" | "market" | "talimat" | "okc"> = {
   "864x1390": "z",
   "768x965": "pos",
   "864x1069": "market",
   "864x862": "talimat",
+  "731x1600": "okc",
 };
 
 const NONE = { text: null, value: null, confidence: "low" } as const;
 
-/** Kaydı olmayan çapraz durumlar (Z raporu POS bölümüne, POS fişi fiş olarak): modelin belge türünü doğru bildiği yanıt */
+/**
+ * Kaydı olmayan çapraz durumlar (Z raporu POS bölümüne, POS fişi fiş olarak; yazarkasanın Z'si iki kasa bölümüne):
+ * modelin belge türünü doğru bildiği yanıt. Yazarkasa Z'sinin yanıtları sentetiktir (canlıda alınmadı)
+ */
 const SYNTHETIC: Record<string, unknown> = {
   "kasa-z:market": synthZ("purchase_receipt"),
   "kasa-z:talimat": synthZ("purchase_receipt"),
@@ -37,6 +41,9 @@ const SYNTHETIC: Record<string, unknown> = {
   "kasa-pos:talimat": synthPos("purchase_receipt"),
   "fis:z": synthReceipt("z_report"),
   "fis:pos": synthReceipt("bank_pos_end_of_day"),
+  "kasa-z:okc": synthZ("fiscal_z_report"),
+  "kasa-pos:okc": synthPos("fiscal_z_report"),
+  "fis:okc": synthReceipt("z_report"),
 };
 
 function synthZ(documentType: string) {

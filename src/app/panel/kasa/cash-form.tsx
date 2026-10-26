@@ -268,9 +268,11 @@ export interface LateFormState {
  * Açılış önceki raporun devriyle karşılaştırılır (docs/KASA-RAPORU.md › Açılış ve devir): tutmuyorsa turuncu kutu ve
  * "Devri yaz"; nedeni nota yazılmadan gönderilmez (sunucu da aynı kuralı uygular). Kasayı sayan kişi seçilir.
  *
- * Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar dolar
- * ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar, okunamayan
- * alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla saklanır.
+ * ModPOS Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar
+ * dolar ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar,
+ * okunamayan alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla
+ * saklanır. Yazarkasanın (banka POS) Z'si iki bölümde de alan doldurmaz: ModPOS bölümünde "Banka POS bölümüne okut",
+ * Banka POS bölümünde K.KARTI satırını elle yazdıran turuncu yönerge (docs/planlar/okc-z.md PR-a).
  *
  * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
@@ -491,6 +493,7 @@ export function CashForm({
       byName: photoUi.me,
       reading: r,
       error: res.readError ?? (r && !r.ok ? r.error : null),
+      advice: !res.readError && r !== null && !r.ok && r.advice === true,
       switchTo: r && !r.ok ? r.switchTo : null,
       canRetry: res.canRetry,
       summary,
@@ -876,7 +879,7 @@ export function CashForm({
         <Card>
           <CardHeader
             icon={<ReceiptText />}
-            title="Z raporu (ModPOS)"
+            title="ModPOS Z raporu"
             description={
               isLate
                 ? "Z raporunun fotoğrafı zorunlu; rakamlar fotoğraftan dolar ya da elle yazın."
@@ -992,11 +995,11 @@ export function CashForm({
         <Card>
           <CardHeader
             icon={<CreditCard />}
-            title="Kart"
+            title="Banka POS Z raporu (yazarkasa)"
             description={
               photoUi.storage
-                ? "Banka POS cihazının gün sonu fişindeki toplam; fotoğrafını çekin ya da yazın. ModPOS'taki kartla karşılaştırılır."
-                : "Banka POS cihazının gün sonu fişindeki toplam; ModPOS'taki kartla karşılaştırılır."
+                ? "Banka POS'un kart toplamı; fişin fotoğrafını çekin ya da yazın. ModPOS'taki kartla karşılaştırılır."
+                : "Banka POS'un kart toplamı; ModPOS'taki kartla karşılaştırılır."
             }
           />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
@@ -1015,7 +1018,7 @@ export function CashForm({
                 </div>
               </div>
             ) : null}
-            {field("bankPos", "Banka POS gün sonu")}
+            {field("bankPos", "Banka POS", { hint: "Z'deki K.KARTI satırı ya da banka gün sonu fişinin neti; Z'nin toplamı değil" })}
             {cardOff && live?.cardDiff != null ? (
               <p className="self-end rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
                 Banka POS, ModPOS&apos;taki karttan {money(Math.abs(live.cardDiff))} {live.cardDiff > 0 ? "fazla" : "az"}.

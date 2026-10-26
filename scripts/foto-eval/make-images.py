@@ -3,7 +3,8 @@
 Termal fiş görünümü + telefonla çekilmiş etkisi (eğim, perspektif, ışık, bulanıklık, gürültü), sonra 1600 px / JPEG
 0.7 (telefondaki küçültmeyle aynı). İlk dördü canlıda denenen görsellerdir (docs/planlar/ekler/fotograf-eval/img);
 kalanlar lansmandan önce eklenen durumlar: ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi,
-e-Arşiv fatura, tek fotoğrafta uzun Z raporu. Veri sentetiktir; gerçek fiş ya da kişi yoktur.
+e-Arşiv fatura, tek fotoğrafta uzun Z raporu; sonra yazarkasanın (banka POS) mali Z'si (dalga 13). Veri sentetiktir;
+gerçek fiş ya da kişi yoktur.
 
     python3 -m pip install pillow numpy
     python3 scripts/foto-eval/make-images.py            # → .data/foto-eval/
@@ -164,3 +165,22 @@ Z_LONG = Z[:-1] + [
 ]
 photo(receipt(Z_LONG, fade=0.15), "z-uzun.jpg", angle=-1.5)
 
+# Yazarkasanın (banka POS, yeni nesil ÖKC) mali Z'si (dalga 13, docs/planlar/okc-z.md; düzen okc-z-notlar.md § 2): MF
+# logosu ve sicil no, EKÜ NO, Z SAYAÇ, VERGİ DÖKÜMÜ ve TOPKDV, KÜM. satırları; bir etiketin adedi kendi satırında,
+# tutarı alt satırda; K.KARTI'nın altında banka satırı. ModPOS'un Z'sinden ayrı sayaçtır: rakamları ondan farklıdır.
+# İki bölümde de hiçbir alanı doldurmaması beklenir (cases.json, "yazarkasa-z-…"). Kimlikler tutar: %10 ve %20
+# toplamı = NET SATIŞ, KDV'ler TOPKDV'yi, nakit + kart + yemek kartı NET SATIŞ'ı verir. En sonda: öncekilerin
+# rastgele sırası değişmesin. Ölçüsü (AI_REPLAY onu tanır, src/server/ai/replay.ts) satır sayısına bağlıdır
+OKC_Z = [
+    "^L'AFFOGATO KAHVE", "^Moda Cad. No:12 Kadıköy/İST", "^KADIKÖY VD  VKN: 1234567890", "",
+    "TARİH: 21.10.2026|SAAT: 23:56", "FİŞ NO: 0144", "**^Z RAPORU", "-" * 40,
+    "YİYECEK %10|96", "|*9.820,00", "İÇECEK %10|31", "|*1.240,00", "HEDİYELİK %20|7", "|*1.240,00", "-" * 40,
+    "**NET SATIŞ|*12.300,00", "NAKİT|41", "|*3.180,00", "KASA NAKİT|*3.180,00", "K.KARTI|87", "|*8.480,00",
+    "GARANTİ BBVA|*8.480,00", "YEMEK KARTI|6", "|*640,00", "FİŞ İPTAL|1", "|*85,00", "-" * 40,
+    "MÜŞTERİ FİŞ ADEDİ|134", "MALİ FİŞ ADEDİ|0", "SLIP FİŞ ADEDİ|87", "TOPLAM FİŞ ADEDİ|221", "-" * 40,
+    "**VERGİ DÖKÜMÜ", "%1 TOPLAM|*0,00", "%1 TOPKDV|*0,00", "%10 TOPLAM|*11.060,00", "%10 TOPKDV|*1.005,45",
+    "%20 TOPLAM|*1.240,00", "%20 TOPKDV|*206,67", "-" * 40,
+    "MALİ VERİ TOPLAM|*12.300,00", "MALİ VERİ TOPKDV|*1.212,12", "KÜM. TOPLAM|*1.259.350,00", "KÜM. TOPKDV|*118.943,94",
+    "-" * 40, "Z SAYAÇ|0188", "EKÜ NO|0001", "", "^MF  AB 0000012345",
+]
+photo(receipt(OKC_Z, fade=0.15), "yazarkasa-z.jpg", angle=2.0)

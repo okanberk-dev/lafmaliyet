@@ -11,6 +11,7 @@ import { test } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
+import { POS_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
 import { KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas";
 import { costUsd, priceOf } from "../src/server/ai/pricing";
 import {
@@ -273,6 +274,35 @@ test("fotoğraf isteği değişmedi: alanlar ve sırası canlıda denenen hâliy
   assert.deepEqual(Object.keys(params), ["model", "max_tokens", "betas", "fallbacks", "output_config", "system", "messages"]);
   assert.deepEqual(params.output_config, { effort: "low", format: params.output_config!.format });
   assert.equal(buildRequest({ ...req(Small), model: AI_MODEL }).params.model, "claude-opus-5-5");
+});
+
+test("kasa istekleri (yazarkasa Z kapısı, dalga 13 PR-a): biçim aynı; yalnız istem metni ve belge türü listesi değişti", () => {
+  const z = buildRequest({ image: IMAGE, system: SYSTEM, task: Z_TASK("2026-10-21"), schema: KasaZRaw });
+  const pos = buildRequest({ image: IMAGE, system: SYSTEM, task: POS_TASK("2026-10-21"), schema: KasaPosRaw });
+  for (const { params, options } of [z, pos]) {
+    assert.deepEqual(Object.keys(params), ["model", "max_tokens", "betas", "fallbacks", "output_config", "system", "messages"]);
+    assert.equal(params.model, "claude-opus-5-5");
+    assert.equal(params.max_tokens, 6000);
+    assert.deepEqual(params.output_config, { effort: "low", format: params.output_config!.format });
+    assert.equal(params.system, SYSTEM);
+    assert.deepEqual([options.timeout, options.maxRetries], [20_000, 1]);
+    const content = params.messages[0].content as { type: string }[];
+    assert.deepEqual(content.map((b) => b.type), ["image", "text"]);
+  }
+  const taskOf = (r: typeof z) => (r.params.messages[0].content as { type: string; text?: string }[])[1].text!;
+  // ModPOS bölümü: yazarkasanın Z'si fiscal_z_report; BİLGİ FİŞİ / MALİ DEĞERİ YOKTUR basan ModPOS raporu mali değildir
+  assert.match(taskOf(z), /^This should be the café's ModPOS end-of-day Z report/);
+  assert.match(taskOf(z), /- If the paper is the cash register's fiscal Z \(MF logo with a registry number, EKÜ NO, KÜM\. \/ KÜMÜLATİF lines, Z NO \/ Z SAYAÇ\), set documentType fiscal_z_report\./);
+  assert.match(taskOf(z), /BİLGİ FİŞİ or MALİ DEĞERİ YOKTUR; neither makes it fiscal\.$/);
+  // Kart bölümü: yazarkasanın Z'si fiscal_z_report, fişin alanları boş
+  assert.match(taskOf(pos), /^This should be the end-of-day slip/);
+  assert.match(taskOf(pos), /set documentType fiscal_z_report and leave the slip fields null\.$/);
+  const docTypes = (r: typeof z) => {
+    const schema = (r.params.output_config?.format as { schema: Record<string, unknown> }).schema;
+    return (schema.properties as Record<string, { enum: string[] }>).documentType.enum;
+  };
+  assert.ok(docTypes(z).includes("fiscal_z_report") && docTypes(z).includes("z_report"));
+  assert.ok(docTypes(pos).includes("fiscal_z_report") && docTypes(pos).includes("bank_pos_end_of_day"));
 });
 
 test("fatura hata metinleri: fotoğrafa özgü olanlar faturaya göre, ortak olanlar aynı", () => {

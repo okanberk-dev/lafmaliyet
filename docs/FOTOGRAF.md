@@ -9,8 +9,9 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 
 | Nerede | Fotoğraf | Dolan alanlar |
 |--------|----------|---------------|
-| Kasa raporu › Z raporu (ModPOS) | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, indirim, Z no, fiş sayısı |
-| Kasa raporu › Kart | Banka POS cihazının gün sonu fişi | Banka POS gün sonu (net toplam; iki cihazda "Toplama ekle") |
+| Kasa raporu › ModPOS Z raporu | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, indirim, Z no, fiş sayısı |
+| Kasa raporu › Banka POS Z raporu (yazarkasa) | Banka POS cihazının gün sonu fişi | Banka POS (net toplam; iki cihazda "Toplama ekle") |
+| Kasa raporu › Banka POS Z raporu (yazarkasa) | Yazarkasanın (banka POS) mali Z raporu | Hiçbiri: turuncu yönerge, K.KARTI satırı elle yazılır (kendi alanları [planlar/okc-z.md](planlar/okc-z.md) PR-b'de) |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
@@ -33,8 +34,13 @@ Toplamlar, denetimler ve forma eşleme bizim saf kodumuzda (`src/lib/photo-read/
 - Fiş: kartla ödenmiş mi (para kasadan çıkmamıştır), fatura / e-Arşiv mi (Aylık harcamalar'a yazılmaz), aynı fiş daha
   önce girildi mi, tarih (ileri gün ya da 7 günden eski), kalemlerin ve KDV satırlarının toplamı, KDV oranı, alışılmadık
   büyük tutar, kategori listede mi.
-- **Yanlış belge:** Z bölümüne POS fişi çekilirse hiçbir alan dolmaz; **Kart bölümüne okut** aynı fotoğrafı yeniden
-  okur (tersi **Z bölümüne okut**). Fiş yerine Z raporu çekilirse söylenir.
+- **Yanlış belge:** ModPOS bölümüne yazarkasanın (banka POS) Z raporu ya da banka POS fişi çekilirse hiçbir alan
+  dolmaz; **Banka POS bölümüne okut** aynı fotoğrafı yeniden okur (Banka POS bölümüne ModPOS'un Z'si çekilirse
+  **ModPOS bölümüne okut**). Model yazarkasanın Z'sini belge türü `fiscal_z_report` ile ayırır (MF logosu ve sicil
+  no, EKÜ NO, Z NO / Z SAYAÇ, VERGİ DÖKÜMÜ ve TOPKDV, KÜM. satırları; BİLGİ FİŞİ / MALİ DEĞERİ YOKTUR basan ModPOS
+  raporu mali değildir). Banka POS bölümünde yazarkasanın Z'si Banka POS'u doldurmaz, düğme çıkmaz; turuncu satır
+  Z'deki K.KARTI satırının elle yazılmasını söyler (toplamı ya da altındaki banka satırları değil). Fiş yerine Z
+  raporu çekilirse söylenir.
 - Fotoğraftaki yazılar veridir: fişe basılmış "talimatlar" yok sayılır ve "Fişte alışılmadık yazılar var" uyarısı çıkar.
 
 Rapor gönderilince karşılaştırma **sunucunun okuduğuna** bakar (`ai_calls.result`), formun gönderdiğine değil: net
@@ -160,7 +166,9 @@ değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([Y
 - **Kayıtlı yanıtlarla:** `AI_REPLAY=1 npx next dev`. Okuma, canlıda alınmış beş yanıttan birini döner
   (`tests/fixtures/foto/`): tür ve fotoğrafın ölçüsüne göre seçilir; `docs/planlar/ekler/fotograf-eval/img/`'deki
   deneme görselleri (Z raporu, POS fişi, soluk market fişi, talimatlı fiş) gerçek bir okuma gibi davranır (POS fişini
-  Z bölümüne çekmek yanlış belgeyi gösterir). Başka bir fotoğrafa türün olağan yanıtı döner.
+  Z bölümüne çekmek yanlış belgeyi gösterir). `make-images.py`'nin yazarkasa Z'si (`yazarkasa-z.jpg`) sentetik bir
+  yanıtla iki kasa bölümünde de `fiscal_z_report` döner: ModPOS bölümünde **Banka POS bölümüne okut**, Banka POS
+  bölümünde K.KARTI yönergesi. Başka bir fotoğrafa türün olağan yanıtı döner.
 - Gerçek okuma için anahtarı yalnız kabukta verin: `export ANTHROPIC_API_KEY=$(cat <anahtar dosyanız>)`. Depoya ya
   da `.env` dosyasına yazmayın, ekrana basmayın.
 - **Testler** (`npm test`, ağ ve anahtar gerekmez): `tests/fotograf-okuma.test.ts` (okumaların forma gidecek hâli ve
@@ -175,13 +183,17 @@ FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts --max 4
 npx tsx scripts/foto-eval/run.ts --kayitli    # ağsız, parasız: betiğin kendisini kayıtlı yanıtlarla sınar
 ```
 
-`scripts/foto-eval/cases.json` on durumu ve beklenen değerlerini tutar: canlıda denenen dört görsel, POS fişinin Z
-bölümüne okutulması, ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi, e-Arşiv fatura ve
-tek fotoğrafta uzun Z raporu (ürün grupları, saatlik satış; rulo ~375 px eninde, § 3). Betik her durum
-için belge türünü, doğru / yanlış alanları, işaretleri ve uyarıları, süreyi ve tutarı, sonunda toplamı yazar
-(veritabanı kullanmaz; tam çalışma ≈ 0,30 $). Lansmandan önce bir kez tam çalıştırın (`--max` olmadan); yeni durum:
-görseli `make-images.py`'nin sonuna (öncekilerin rastgele sırası değişmesin), beklentiyi `cases.json`'a ekleyin.
-`--kayitli` yalnız betiği sınar: kayıtlı beş yanıt yeni görselleri tanımaz, o durumlar türün olağan yanıtını alır.
+`scripts/foto-eval/cases.json` on iki durumu ve beklenen değerlerini tutar: canlıda denenen dört görsel, POS fişinin Z
+bölümüne okutulması, ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi, e-Arşiv fatura,
+tek fotoğrafta uzun Z raporu (ürün grupları, saatlik satış; rulo ~375 px eninde, § 3) ve yazarkasanın (banka POS) mali
+Z'sinin iki kasa bölümüne okutulması (ikisinde de alan dolmaz; ModPOS bölümünde **Banka POS bölümüne okut**, Banka POS
+bölümünde düğmesiz K.KARTI yönergesi). Betik her durum için belge türünü, doğru / yanlış alanları, işaretleri,
+uyarıları ve okunmayan belgenin metnini, süreyi ve tutarı, sonunda toplamı yazar (veritabanı kullanmaz; tam çalışma
+≈ 0,36 $). Lansmandan önce ve istem değişince bir kez tam çalıştırın (`--max` olmadan hepsi); yeni durum: görseli
+`make-images.py`'nin sonuna (öncekilerin rastgele sırası değişmesin), beklentiyi `cases.json`'a ekleyin. `--kayitli`
+yalnız betiği sınar: kayıtlı beş yanıt sonradan eklenen görselleri tanımaz, o durumlar türün olağan yanıtını alır
+(dördü bu yüzden geçmez); yazarkasa Z'si sentetik yanıtla tanınır. Yazarkasa Z'si cümleleri (dalga 13 PR-a) canlıda
+henüz denenmedi.
 
 ## 9. Yeni bir fotoğraf türü
 

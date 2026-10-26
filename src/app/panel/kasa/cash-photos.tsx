@@ -30,6 +30,8 @@ export interface FormPhoto {
   reading: CashReading | null;
   /** Okunamadı ya da yanlış belge (kırmızı) */
   error: string | null;
+  /** `error` yönergedir (Banka POS bölümünde yazarkasanın Z'si): turuncu, düğmesiz */
+  advice?: boolean;
   /** Yanlış bölüme okutulan fiş: öteki bölüme okut */
   switchTo: CashPhotoKind | null;
   canRetry: boolean;
@@ -52,11 +54,12 @@ export function ReadChecks({ checks, className }: { checks: ReadCheck[]; classNa
   );
 }
 
-const SWITCH_LABEL: Record<CashPhotoKind, string> = { "kasa-pos": "Kart bölümüne okut", "kasa-z": "Z bölümüne okut" };
+const SWITCH_LABEL: Record<CashPhotoKind, string> = { "kasa-pos": "Banka POS bölümüne okut", "kasa-z": "ModPOS bölümüne okut" };
 
 /**
- * Bir kartın (Z raporu ya da Kart) fotoğrafları: rapora bağlı olanlar salt okunur, formdakiler kaldırılabilir. Her
- * fotoğrafın altında okumanın sonucu: yeşil özet, kırmızı hata (yeniden dene / öteki bölüme okut).
+ * Bir kartın (ModPOS Z raporu ya da Banka POS Z raporu) fotoğrafları: rapora bağlı olanlar salt okunur, formdakiler
+ * kaldırılabilir. Her fotoğrafın altında okumanın sonucu: yeşil özet, kırmızı hata (yeniden dene / öteki bölüme okut)
+ * ya da turuncu yönerge (rakam fişten yazılır; düğme yok).
  */
 export function CardPhotos({
   saved,
@@ -90,7 +93,12 @@ export function CardPhotos({
         return (
           <PhotoThumb key={p.id} id={p.id} caption={caption} onOpen={() => setViewer({ id: p.id, caption })} onRemove={() => onRemove(p.id)}>
             {p.summary ? <p className="text-good-ink">{p.summary}</p> : null}
-            {p.error ? (
+            {p.error && p.advice ? (
+              <p role="status" className="flex items-start gap-1.5 text-warn">
+                <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">{p.error}</span>
+              </p>
+            ) : p.error ? (
               <div className="space-y-1.5">
                 <ReadError message={p.error} onRetry={p.canRetry ? () => onRetry(p) : undefined} busy={busy} />
                 {p.switchTo ? (

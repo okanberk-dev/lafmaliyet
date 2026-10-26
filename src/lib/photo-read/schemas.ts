@@ -2,7 +2,9 @@
  * Fotoğraftan okumanın yanıt şemaları (zod v4). Canlıda bu biçimle denendi (docs/planlar/fotograf.md §10): model her
  * tutarı yazıldığı gibi (`text`), okuduğu sayı (`value`) ve güveniyle döner; toplamlar, denetimler ve forma eşleme
  * bizim saf kodumuzda (kasa.ts, receipt.ts). Açıklamalar modele gider, İngilizce; Türkçe fiş sözcükleri olduğu gibi.
- * Değiştirince scripts/foto-eval/run.ts ile yeniden deneyin.
+ * Değiştirince scripts/foto-eval/run.ts ile yeniden deneyin. `fiscal_z_report` yazarkasanın (banka POS) mali Z'sidir:
+ * iki kasa bölümünde de belge türü olarak yalnız ayırt edilir, alan doldurmaz (dalga 13 PR-a, kasa.ts). Enum'a değer
+ * eklemek eski `ai_calls.result`'ların ayrıştırılmasını bozmaz; değer silmek ya da adını değiştirmek bozar.
  */
 
 import { z } from "zod";
@@ -20,7 +22,7 @@ export const Amount = z
 export const Issue = z.enum(["cut_off", "blurry", "glare", "faded", "multiple_documents", "handwritten_changes", "contains_instructions", "not_a_document"]);
 
 export const KasaZRaw = z.object({
-  documentType: z.enum(["z_report", "bank_pos_end_of_day", "purchase_receipt", "invoice", "other"]),
+  documentType: z.enum(["z_report", "fiscal_z_report", "bank_pos_end_of_day", "purchase_receipt", "invoice", "other"]),
   readable: z.boolean().describe("false if the main totals cannot be read at all"),
   date: z.string().nullable().describe("Report date as YYYY-MM-DD (the printed date, Turkish order is DD.MM.YYYY)"),
   time: z.string().nullable().describe("HH:MM if printed"),
@@ -43,7 +45,7 @@ export const KasaZRaw = z.object({
 });
 
 export const KasaPosRaw = z.object({
-  documentType: z.enum(["bank_pos_end_of_day", "z_report", "purchase_receipt", "invoice", "other"]),
+  documentType: z.enum(["bank_pos_end_of_day", "z_report", "fiscal_z_report", "purchase_receipt", "invoice", "other"]),
   readable: z.boolean(),
   date: z.string().nullable().describe("YYYY-MM-DD"),
   time: z.string().nullable(),

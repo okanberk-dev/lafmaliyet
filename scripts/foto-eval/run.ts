@@ -4,7 +4,7 @@
  * (src/lib/photo-read); veritabanına dokunmaz. Görseller: python3 scripts/foto-eval/make-images.py (→ .data/foto-eval/),
  * beklenenler cases.json'da. İstem, şema, küçültme ayarı ya da model değişince çalıştırın.
  *
- *   FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts [--max 10] [--only z-raporu]
+ *   FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts [--max 4] [--only z-raporu]   # --max yoksa hepsi
  *   npx tsx scripts/foto-eval/run.ts --kayitli     # ağsız ve parasız: betiğin kendisini kayıtlı yanıtlarla sınar
  *
  * Anahtarı yalnız kabukta verin; depoya ya da .env dosyasına yazmayın.
@@ -33,7 +33,10 @@ interface Case {
   expect: {
     documentType?: string;
     ok?: boolean;
-    switchTo?: string;
+    /** Öteki bölüme okut düğmesi; null: düğme yok */
+    switchTo?: string | null;
+    /** Okunmayan (`ok: false`) belgenin metninde geçmesi gereken (yönerge, ör. "K.KARTI") */
+    errorIncludes?: string;
     values?: Record<string, number | string>;
     /** Yalnız net (high) okunan alanlar karşılaştırılır; okunmayan ya da tahmin edilen hata sayılmaz */
     highOnly?: boolean;
@@ -104,7 +107,7 @@ async function main() {
     console.error("Bu betik gerçek okuma yapar ve para harcar. Çalıştırmak için: FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts");
     process.exit(2);
   }
-  const max = Math.max(1, Number(arg("max") ?? 10) || 10);
+  const max = Math.max(1, Number(arg("max") ?? Infinity) || Infinity);
   const only = arg("only");
   const cases = (JSON.parse(readFileSync(join(__dirname, "cases.json"), "utf8")) as Case[]).filter((c) => !only || c.name === only).slice(0, max);
   if (!cases.length) {
@@ -147,6 +150,8 @@ async function main() {
     if (!unreadable && e.ok !== undefined && reading.r.ok !== e.ok) problems.push(`ok ${reading.r.ok}, beklenen ${e.ok}`);
     if (e.ok !== false && !reading.r.ok && !unreadable) problems.push(`okunamadı: ${reading.r.error}`);
     if (e.switchTo && (reading.kind !== "cash" || reading.r.switchTo !== e.switchTo)) problems.push(`öteki bölüme okut önerilmedi (${e.switchTo})`);
+    if (e.switchTo === null && reading.kind === "cash" && reading.r.switchTo) problems.push(`öteki bölüme okut önerildi (${reading.r.switchTo})`);
+    if (e.errorIncludes && !(reading.r.error ?? "").includes(e.errorIncludes)) problems.push(`metin yok: "${e.errorIncludes}"`);
     if (reading.r.ok && e.values) {
       let exact = 0;
       for (const [field, want] of Object.entries(e.values)) {

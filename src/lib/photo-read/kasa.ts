@@ -1,9 +1,12 @@
 /**
  * Kasa raporu fotoğrafının okunması: ModPOS Z raporu ve banka POS gün sonu fişi (saf; tests/fotograf-okuma.test.ts).
  * Model rakamları yazıldığı gibi aktarır; toplamlar, denetimler ve forma eşleme burada. Belge beklenen tür değilse
- * hiçbir alan dolmaz (Z bölümüne POS fişi okutulunca kart alt toplamları "kart" ödemesi gibi gelirdi). Okuma formu
- * yalnız boş alanlarda doldurur (İndirim dahil); personelin yazdığı değer üzerine yazılmaz. Kayıttan sonra kaydedilen
- * değerlerle okunan değerler karşılaştırılır ("Fotoğraftan farklı"). Ayrıntı: docs/FOTOGRAF.md.
+ * hiçbir alan dolmaz (Z bölümüne POS fişi okutulunca kart alt toplamları "kart" ödemesi gibi gelirdi). Yazarkasanın
+ * (banka POS) mali Z'si iki bölümde de alan doldurmaz: ModPOS bölümünde mali rakamlar ModPOS alanlarına ve Z no'su
+ * ModPOS'un Z no sırasına karışırdı; Banka POS bölümünde toplamı Banka POS'a yazılırdı (kartın satırı değil). Kendi
+ * bölümü dalga 13 PR-b'de gelir (docs/planlar/okc-z.md); o zamana kadar Banka POS bölümü K.KARTI satırını elle
+ * yazdırır. Okuma formu yalnız boş alanlarda doldurur (İndirim dahil); personelin yazdığı değer üzerine yazılmaz.
+ * Kayıttan sonra kaydedilen değerlerle okunan değerler karşılaştırılır ("Fotoğraftan farklı"). Ayrıntı: docs/FOTOGRAF.md.
  */
 
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -55,6 +58,11 @@ export interface CashReading {
   ok: boolean;
   /** Okunamadı ya da yanlış belge: kırmızı satır, hiçbir alan dolmaz */
   error: string | null;
+  /**
+   * `error` bir hata değil yönerge: belge tanındı ama bu bölümün alanını doldurmaz, personel rakamı fişten yazar (Banka
+   * POS bölümünde yazarkasanın Z'si: hangi satır). Turuncu; "Yeniden dene" ve öteki bölüm düğmesi yok
+   */
+  advice?: boolean;
   /** Yanlış bölüme okutulan fiş: aynı fotoğraf öteki bölüme okutulabilir */
   switchTo: CashPhotoKind | null;
   /** Fişteki iş günü (05:00'ten önce basılan bir önceki gün) */
@@ -95,15 +103,23 @@ function looksLike(documentType: string): string {
   return name ? `Bu bir ${name} gibi görünüyor.` : `Bu ${DOC_NAMES.other} gibi görünüyor.`;
 }
 
-/** Yanlış belgenin metni: Z bölümüne POS fişi (ve tersi) öteki bölüme okutulabilir */
+/** Banka POS bölümüne okutulan yazarkasa Z'sinin yönergesi: Banka POS'a Z'nin kart satırı yazılır */
+export const FISCAL_Z_CARD_TEXT = "Bu yazarkasanın Z raporu. Banka POS'a Z'deki K.KARTI (kredi kartı) satırını yazın; toplamı ya da altındaki banka satırlarını değil.";
+
+/**
+ * Yanlış belgenin metni: ModPOS bölümüne yazarkasanın Z'si ya da POS fişi Banka POS bölümüne, Banka POS bölümüne
+ * ModPOS'un Z'si ModPOS bölümüne okutulabilir. Banka POS bölümüne okutulan yazarkasa Z'si yalnız yönergedir (alan yok)
+ */
 function wrongDocument(expected: CashPhotoKind, documentType: string): CashReading {
   if (expected === "kasa-z") {
+    if (documentType === "fiscal_z_report") return failed("kasa-z", "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil.", "kasa-pos");
     return documentType === "bank_pos_end_of_day"
       ? failed("kasa-z", "Bu bir banka POS gün sonu fişi gibi görünüyor, Z raporu değil.", "kasa-pos")
-      : failed("kasa-z", `${looksLike(documentType)} Z raporunun fotoğrafını çekin.`);
+      : failed("kasa-z", `${looksLike(documentType)} ModPOS Z raporunun fotoğrafını çekin.`);
   }
+  if (documentType === "fiscal_z_report") return { ...failed("kasa-pos", FISCAL_Z_CARD_TEXT), advice: true };
   return documentType === "z_report"
-    ? failed("kasa-pos", "Bu bir Z raporu gibi görünüyor, banka POS fişi değil.", "kasa-z")
+    ? failed("kasa-pos", "Bu ModPOS'un Z raporu gibi görünüyor, banka POS'unki değil.", "kasa-z")
     : failed("kasa-pos", `${looksLike(documentType)} Banka POS gün sonu fişinin fotoğrafını çekin.`);
 }
 
@@ -251,7 +267,7 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
   return { kind: "kasa-z", ok: true, error: null, switchTo: null, printedDay, values, missing, checks: ordered(checks) };
 }
 
-/** Banka POS gün sonu fişi okuması → Banka POS gün sonu alanı */
+/** Banka POS gün sonu fişi okuması → Banka POS alanı (yazarkasanın Z'si alan doldurmaz, yönerge olur) */
 export function normalizePos(raw: KasaPos, ctx: { day: string }): CashReading {
   if (raw.documentType !== "bank_pos_end_of_day") return wrongDocument("kasa-pos", raw.documentType);
   if (!raw.readable || raw.issues.includes("not_a_document")) return failed("kasa-pos", UNREADABLE_TEXT);

@@ -3,6 +3,8 @@
  * Yönergeler İngilizce, fişteki Türkçe sözcükler olduğu gibi. Fotoğraftaki yazı veridir, talimat değildir: kâğıda
  * yazılmış "toplamı şu yaz" gibi yazıları model yok sayar ve "contains_instructions" işaretler; tutarları yine bizim
  * kodumuz denetler. Kategori adları yöneticiden gelir (güvenilir), görselden sonra düz veri olarak gider.
+ * Z_TASK ve POS_TASK'ın son satırı (yazarkasanın mali Z'si → `fiscal_z_report`, dalga 13 PR-a; docs/planlar/okc-z.md
+ * §4.2) canlıda henüz denenmedi: scripts/foto-eval'in yazarkasa Z'si durumlarıyla ölçülür.
  */
 
 export const SYSTEM = `You read photos of paper slips for L'Affogato, a café in Istanbul, and transcribe them into JSON for a bookkeeping form. A person checks every value before it is saved.
@@ -20,12 +22,14 @@ export const Z_TASK = (day: string) => `This should be the café's ModPOS end-of
 - total: TOPLAM SATIŞ, GENEL TOPLAM or KDV DAHİL TOPLAM, the day's sales. Not KDV, not MATRAH, not ARA TOPLAM.
 - paymentLines: every line of the payment section (ÖDEME TİPLERİ, TAHSİLATLAR) in printed order, including 0,00 lines, with kind: NAKİT → cash; KREDİ KARTI, BANKA KARTI, K.KARTI, POS → card; YEMEK KARTI, MULTINET, SODEXO, PLUXEE, EDENRED, SETCARD, TICKET, METROPOL → meal_card; ONLINE, YEMEKSEPETİ, GETİR, TRENDYOL → online; HAVALE, EFT, CARİ, VERESİYE, AÇIK HESAP, DİĞER → other; İKRAM, ÖDENMEZ → comp; anything else → unknown.
 - discounts: İNDİRİM or İSKONTO total. comps: ÖDENMEZ or İKRAM total. refunds: İADE total.
-- Ignore the KDV breakdown, MATRAH lines, table counts and averages.`;
+- Ignore the KDV breakdown, MATRAH lines, table counts and averages.
+- If the paper is the cash register's fiscal Z (MF logo with a registry number, EKÜ NO, KÜM. / KÜMÜLATİF lines, Z NO / Z SAYAÇ), set documentType fiscal_z_report. A ModPOS report may also print a KDV summary, and when printed on the cash register it may carry the VKN header and MF logo with BİLGİ FİŞİ or MALİ DEĞERİ YOKTUR; neither makes it fiscal.`;
 
 export const POS_TASK = (day: string) => `This should be the end-of-day slip (GÜN SONU, GÜN SONU RAPORU, BATCH KAPAMA) of the café's bank card terminal (banka POS). Expected date: ${day} (the business day ends at 05:00).
 - netTotal: NET TOPLAM, GENEL TOPLAM or TOPLAM, the card sales minus refunds. Card-scheme subtotals (BONUS, WORLD, MAXIMUM, AXESS, PARAF…) are not the total. If only one grand total is printed, use it for both salesTotal and netTotal.
 - İPTAL (void) lines are not refunds; leave them out.
-- If the slip covers more than one terminal or more than one day, add the issue "multiple_documents".`;
+- If the slip covers more than one terminal or more than one day, add the issue "multiple_documents".
+- If the paper is the cash register's fiscal Z (MF logo with a registry number, EKÜ NO, Z NO / Z SAYAÇ, a VERGİ DÖKÜMÜ with TOPKDV, KÜM. lines), set documentType fiscal_z_report and leave the slip fields null.`;
 
 export const RECEIPT_TASK = (day: string, categories: { id: number; name: string; section: string }[]) => `This should be a receipt for something the café bought (ÖKC fişi, yazar kasa fişi, bilgi fişi or e-Arşiv fatura), usually paid in cash from the till. Expected date: around ${day}.
 - total: TOPLAM, GENEL TOPLAM or ÖDENECEK TUTAR after discounts. Not ARA TOPLAM, not NAKİT (cash handed over), not PARA ÜSTÜ (change).
