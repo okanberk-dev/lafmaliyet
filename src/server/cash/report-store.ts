@@ -235,7 +235,8 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     if (n + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
     for (const id of ids) {
       const p = await getPhoto(id, tx);
-      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
+      // kasa-okc: yazarkasa Z'si; geçişte eski sayfanın banka POS fotoğrafı da sunucuda kasa-okc olur (okc-z.md D2)
+      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
         throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
       }
       // Onay bekleyen bir isteğin (geç rapor) fotoğrafı başka bir kayda bağlanmaz

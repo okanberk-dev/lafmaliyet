@@ -4,7 +4,8 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
-import { KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
+import { normalizeOkc } from "@/lib/photo-read/okc";
+import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
 import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
 import { getDb, schema as s } from "@/server/db";
 
@@ -46,7 +47,7 @@ export async function cashReportPhotoInfo(reports: { id: number; date: string }[
     .orderBy(desc(s.aiCalls.at), desc(s.aiCalls.id));
   const dayOf = new Map(reports.map((r) => [r.id, r.date]));
   for (const l of links) {
-    if (l.kind !== "kasa-z" && l.kind !== "kasa-pos") continue;
+    if (l.kind !== "kasa-z" && l.kind !== "kasa-pos" && l.kind !== "kasa-okc") continue;
     const info = out.get(l.reportId) ?? { photos: [], readings: [] };
     info.photos.push({ id: l.id, kind: l.kind, createdAt: l.createdAt.toISOString(), byName: l.byName });
     // Fotoğrafın şimdiki türüyle yapılmış son başarılı okuma (öteki bölüme okutulduysa tür değişmiştir)
@@ -80,7 +81,7 @@ export async function heldPhotoInfo(photoIds: readonly number[], day: string): P
   const info: CashPhotoInfo = { photos: [], readings: [] };
   for (const id of photoIds) {
     const p = rows.find((r) => r.id === id);
-    if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || (p.expiresAt && p.expiresAt.getTime() <= now.getTime())) continue;
+    if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || (p.expiresAt && p.expiresAt.getTime() <= now.getTime())) continue;
     info.photos.push({ id: p.id, kind: p.kind, createdAt: p.createdAt.toISOString(), byName: p.byName });
     const call = calls.find((c) => c.photoId === p.id && c.feature === p.kind);
     const reading = call ? readingOf(p.kind, call.result, day) : null;
@@ -107,6 +108,12 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
   if (kind === "kasa-z") {
     const raw = KasaZRaw.safeParse(result);
     return raw.success ? normalizeZ(raw.data, { day, prevZNo: null }) : null;
+  }
+  // Yazarkasa Z'si: kayıtlı okuma önceki Z'siz yeniden kurulur (alan değerleri ve farklar için; zincir yalnız okumada).
+  // TODO(dalga 13 b4): okumaları birleştirerek (plan §7) ve yöneticinin satırlarıyla
+  if (kind === "kasa-okc") {
+    const raw = KasaOkcRaw.safeParse(result);
+    return raw.success ? normalizeOkc(raw.data, { day, prev: { z: null } }) : null;
   }
   const raw = KasaPosRaw.safeParse(result);
   return raw.success ? normalizePos(raw.data, { day }) : null;

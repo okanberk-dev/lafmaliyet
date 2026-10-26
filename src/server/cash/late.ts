@@ -99,9 +99,9 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     const photos: LatePayloadT["photos"] = [];
     for (const id of ids) {
       const p = await getPhoto(id, tx);
-      const ok = p && (p.kind === "kasa-z" || p.kind === "kasa-pos") && p.createdBy === me.id && (kept.has(id) ? p.linkedAt === null : linkable(p, now));
+      const ok = p && (p.kind === "kasa-z" || p.kind === "kasa-pos" || p.kind === "kasa-okc") && p.createdBy === me.id && (kept.has(id) ? p.linkedAt === null : linkable(p, now));
       if (!ok) throw new UserError(CASH_REQUEST_TEXT.latePhoto);
-      photos.push({ id, kind: p.kind as "kasa-z" | "kasa-pos" });
+      photos.push({ id, kind: p.kind as "kasa-z" | "kasa-pos" | "kasa-okc" });
     }
     if (!photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
     // Teslim alan: etkin bir kullanıcı (adı sunucudan) ya da banka

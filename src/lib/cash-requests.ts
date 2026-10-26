@@ -93,7 +93,7 @@ export const LatePayload = CashFieldsSchema.extend({
     .discriminatedUnion("kind", [z.object({ kind: z.literal("user"), id: z.number().int().positive(), name: z.string().min(1).max(200) }), z.object({ kind: z.literal("banka") })])
     .nullable(),
   photos: z
-    .array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos"]) }))
+    .array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]) }))
     .min(1)
     .max(MAX_REPORT_PHOTOS)
     .refine((ps) => ps.some((p) => p.kind === "kasa-z"), "Z raporunun fotoğrafı gerekli"),

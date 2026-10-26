@@ -321,7 +321,7 @@ export function staffLateDay(date: string, now: Date = new Date()): boolean {
 export type LateCashPayload = CashReportFields & {
   zNo: string;
   handedTo: { kind: "user"; id: number; name: string } | { kind: "banka" } | null;
-  photos: { id: number; kind: "kasa-z" | "kasa-pos" }[];
+  photos: { id: number; kind: "kasa-z" | "kasa-pos" | "kasa-okc" }[];
   cashDiff: number;
 };
 
