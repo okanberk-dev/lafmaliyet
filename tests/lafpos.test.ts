@@ -408,9 +408,11 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   assert.match(form, /field\("cashIn", "Gün içinde kasaya giren", \{ hint: "Satış dışı: bozuk para, tahsilat, nakit bahşiş"/);
   assert.match(form, /Kasaya giren ekle/);
   assert.match(form, /cashIn: report\.cashIn \? input\(report\.cashIn\) : ""/, "kayıtlı raporun gireni alanı açar");
-  // Sayfa: yalnız formun günü için, okunamazsa form yine açılır
+  // Sayfa: yalnız formun günü için ve yalnız geçiş gününden sonraki günlerde (loadKasaLafposDay); okunamazsa form yine
+  // açılır. Geçiş gününe bakmayan okuyucu sayfada çağrılmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /showForm \? loadLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.match(page, /showForm \? loadKasaLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.doesNotMatch(page, /\bloadLafposDay\(/);
   assert.match(page, /lafpos=\{lafposDay\}/);
 });
 
@@ -450,10 +452,17 @@ test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; mal
 
 test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; maliyet ucu yalnız imzayla", () => {
   const gun = read("src/app/api/pos/gun/route.ts");
-  const order = ["await connection()", "lafposSecret()", "content-length", "request.text()", "receivePosDay("];
+  const order = ["await connection()", "lafposSecret()", "content-length", "request.text()", "handlePosDay("];
   const at = order.map((s) => gun.indexOf(s));
   assert.ok(at.every((i, k) => i > 0 && (k === 0 || i > at[k - 1])), `sıra: ${order.join(" → ")}`);
   assert.match(gun, /"Cache-Control": "no-store"/);
+  // Uç gün sonunu durum kaydından geçirir (src/server/lafpos/status.ts): o da denetimi ve yazımı receivePosDay'e bırakır;
+  // anahtar yokken (503) durum satırına hiçbir şey yazılmaz
+  assert.ok(gun.indexOf("if (!secret) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
+  const status = read("src/server/lafpos/status.ts");
+  const handle = status.slice(status.indexOf("export async function handlePosDay"));
+  assert.match(handle, /r = await receivePosDay\(db, input, now\);/);
+  assert.match(handle, /if \(r\.status === 503\) return r;/);
   const ingest = read("src/server/lafpos/ingest.ts");
   const receive = ingest.slice(ingest.indexOf("export async function receivePosDay"));
   assert.ok(receive.indexOf("checkLafposRequest(") < receive.indexOf("parsePosDay(") && receive.indexOf("parsePosDay(") < receive.indexOf("storePosDay("));

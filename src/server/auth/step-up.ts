@@ -20,9 +20,9 @@ import { createLimiter } from "./rate-limit";
 
 /**
  * İşlem geçmişindeki "Hatalı parola onayı (…)" satırının yeri. "Yedek": yedekten geri yükleme de aynı onayı kullanır;
- * "Claude bağlantısı": onay ekranında (/baglan) izin verirken
+ * "Claude bağlantısı": onay ekranında (/baglan) izin verirken; "LafPOS": Ayarlar'da bir günün LafPOS kaydını silerken
  */
-export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek" | "Claude bağlantısı";
+export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek" | "Claude bağlantısı" | "LafPOS";
 
 /**
  * Kişi başına 15 dakikada 5 hata; bütün yerler aynı payı kullanır (açık kalmış bir oturumla her ekranda ayrı 5 tahmin
@@ -65,12 +65,13 @@ export async function requirePassword(me: CurrentUser, password: string, where: 
 const zConfirm: z.ZodType<StepUpConfirm | undefined> = z.object({ password: z.string().max(200, WRONG_PASSWORD) }).optional();
 
 /**
- * Kullanıcılar: kural onay istediğinde, bütün denetimlerden sonra ve ilk yazımdan önce çağrılır. Onay yoksa
- * STEP_UP_REQUIRED (istemci parola penceresini açıp aynı çağrıyı yineler), varsa parola Hesabım'la aynı payla denenir.
+ * Kullanıcılar (ve Ayarlar'da LafPOS günü silme): kural onay istediğinde, bütün denetimlerden sonra ve ilk yazımdan önce
+ * çağrılır. Onay yoksa STEP_UP_REQUIRED (istemci parola penceresini açıp aynı çağrıyı yineler), varsa parola Hesabım'la
+ * aynı payla denenir.
  */
-export async function requireStepUp(me: CurrentUser, confirm: unknown, what: string): Promise<void> {
+export async function requireStepUp(me: CurrentUser, confirm: unknown, what: string, where: StepUpWhere = "Kullanıcılar"): Promise<void> {
   const parsed = zConfirm.safeParse(confirm);
   if (!parsed.success) throw new UserError(parsed.error.issues[0]?.message === WRONG_PASSWORD ? WRONG_PASSWORD : STEP_UP_REQUIRED);
   if (!parsed.data?.password) throw new UserError(STEP_UP_REQUIRED);
-  await requirePassword(me, parsed.data.password, "Kullanıcılar", what);
+  await requirePassword(me, parsed.data.password, where, what);
 }
