@@ -1,6 +1,7 @@
 // Claude ile okuma, sahte istemciyle: isteğin biçimi (canlıda denenmiş hâli), yanıtın denetimi (ret, yarım, bozuk
 // JSON, şema), yedek modelin bloğu, SDK hatalarının Türkçe karşılığı ve maliyet (src/server/ai/run.ts, pricing.ts);
-// fatura okumasının Haiku 5.5 + PDF isteği (yedek model yok). Anahtar gerekmez; ağ yok.
+// fatura okumasının Haiku 5.5 + PDF isteği (yedek model yok); yazarkasa Z isteği (efor, 8000 token, tek 50 sn) ve
+// AI_REPLAY yanıtlarıyla sunucu yolu (personelin yanıtı, eski kasa-pos sayfası, doldurma kapısı). Anahtar gerekmez; ağ yok.
 // Çalıştırma: npx tsx --test tests/ai-istemci.test.ts
 
 import assert from "node:assert/strict";
@@ -13,7 +14,11 @@ import { z } from "zod";
 
 import { OKC_TASK, POS_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas";
+import { OKC_PREFILL_ENABLED, OKC_SUGGEST_TEXT } from "../src/lib/okc-z";
+import { FISCAL_Z_CARD_TEXT, prefillPlan, type ReadField } from "../src/lib/photo-read/kasa";
+import { normalizeOkc, okcToLegacyPos, toStaffReading } from "../src/lib/photo-read/okc";
 import { costUsd, priceOf } from "../src/server/ai/pricing";
+import { replayAnswer, replayClient, replayEnabled } from "../src/server/ai/replay";
 import {
   AI_FALLBACK_BETA,
   AI_INVOICE_MODEL,
@@ -367,4 +372,94 @@ test("yazarkasa Z isteği (dalga 13 PR-b): efor low, 8000 token, tek 50 sn'lik d
   assert.deepEqual([plain.options.timeout, plain.options.maxRetries], [20_000, 1]);
   const invoice = buildRequest({ model: AI_INVOICE_MODEL, image: IMAGE, system: "S", task: "T", schema: Small });
   assert.equal(invoice.params.output_config?.effort, "medium");
+});
+
+// ---------------------------------------------------------------- yazarkasa Z: kayıtlı yanıtlar ve sunucu yolu (b3)
+
+/** Ölçüsü verilen PNG başlığı (imageSize yalnız başlığa bakar): kayıtlı yanıt görselin ölçüsüne göre seçilir */
+function pngOf(width: number, height: number): Uint8Array {
+  const b = new Uint8Array(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(b.buffer).setUint32(16, width);
+  new DataView(b.buffer).setUint32(20, height);
+  return b;
+}
+
+test("kayıtlı yazarkasa yanıtları (sentetik) KasaOkcRaw'dan geçer", async () => {
+  for (const name of ["okc", "okc-batch", "okc-yanlis-toplam", "okc-tek-oran"]) {
+    const rec = fixture(name);
+    const res = await runExtraction(fake({ content: [text(JSON.stringify(rec.json))], usage: rec.usage }).client, req(KasaOkcRaw));
+    assert.equal(res.ok, true, name);
+  }
+});
+
+test("AI_REPLAY: kasa-okc görsele göre yanıt seçer; yalnız next dev'de açılır", async () => {
+  assert.equal(replayEnabled({ NODE_ENV: "development", AI_REPLAY: "1" }), true);
+  assert.equal(replayEnabled({ NODE_ENV: "production", AI_REPLAY: "1" }), false);
+  const doc = (size: { width: number; height: number } | null) => (replayAnswer("kasa-okc", size).json as { documentType: string }).documentType;
+  assert.equal(doc({ width: 731, height: 1600 }), "z_report"); // yazarkasa-z.jpg
+  assert.equal(doc({ width: 768, height: 965 }), "batch_slip"); // banka gün sonu fişi: yedek alan
+  assert.equal(doc({ width: 864, height: 1390 }), "software_z"); // ModPOS Z'si: ModPOS bölümüne okut
+  assert.equal(doc({ width: 864, height: 1069 }), "other");
+  assert.equal(doc(null), "z_report");
+  // İstemcinin kendisi: görselin ölçüsü istekteki base64'ten okunur, yanıt şemadan geçer
+  const res = await runExtraction(replayClient("kasa-okc"), { image: { bytes: pngOf(768, 965), mediaType: "image/png" }, system: SYSTEM, task: OKC_TASK("2026-10-21"), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS });
+  assert.equal(res.ok, true);
+  assert.equal(res.ok && res.data.documentType, "batch_slip");
+  assert.equal(res.requestId, "kayitli-yanit");
+});
+
+test("sunucu yolu (AI_REPLAY yanıtlarıyla): yazarkasa okuması, personelin yanıtı, eski kasa-pos sayfasının yanıtı", () => {
+  const DAY = "2026-10-21";
+  const ctx = { day: DAY, prev: { z: null, cum: null } };
+  const read = (name: string) => normalizeOkc(KasaOkcRaw.parse(fixture(name).json), ctx);
+  const empty = Object.fromEntries((["okcZNo", "okcReceipts", "okcTotal", "okcVatTotal", "okcCash", "okcCard", "okcMealCard", "okcOther", "okcT1", "okcV1", "okcT10", "okcV10", "okcT20", "okcV20", "bankPos"] as ReadField[]).map((f) => [f, ""]));
+
+  // Örnek Z: iki oran ve üç ödeme türü toplamı doğrular; kümülatif ve fiş iptali yalnız yöneticide
+  const full = read("okc");
+  assert.equal(full.kind, "kasa-okc");
+  assert.equal(full.values.okcTotal?.value, 12300);
+  assert.equal(full.values.okcTotal?.status, "confirmed");
+  assert.equal(full.values.okcCard?.value, 8480);
+  assert.equal(full.okcAdmin?.cumTotal, 1_259_350);
+  assert.ok(full.checks.some((c) => c.admin));
+  const staff = toStaffReading(full);
+  assert.equal("okcAdmin" in staff, false);
+  assert.equal(staff.checks.some((c) => c.admin), false);
+  assert.doesNotMatch(JSON.stringify(staff), /1259350|1\.259\.350|kümülatif/i);
+
+  // Doldurma kapalı (sahibin kararı bekleniyor): hiçbir alan dolmaz, hepsi öneri
+  assert.equal(OKC_PREFILL_ENABLED, false);
+  const off = prefillPlan(staff, empty);
+  assert.deepEqual(off.fill, []);
+  assert.ok(off.unsure.some((u) => u.field === "okcTotal" && u.reason === OKC_SUGGEST_TEXT));
+  assert.equal(off.unsure.length, Object.keys(staff.values).length);
+  // Açılınca doğrulanan alan mavi dolar
+  assert.ok(prefillPlan(staff, empty, { okcPrefill: true }).fill.some((f) => f.field === "okcTotal" && f.warn === null));
+
+  // Yanlış okunmuş toplam tutmaz; tek oranlı günde toplam "doğrulandı" olmaz (aynı rakamın kopyaları)
+  assert.equal(read("okc-yanlis-toplam").values.okcTotal?.status, "failed");
+  assert.notEqual(read("okc-tek-oran").values.okcTotal?.status, "confirmed");
+
+  // Eski sayfa (kasa-pos): yazarkasa Z'sinin toplamı ya da kartı asla; banka gün sonu yoksa PR-a'nın yönergesi
+  const legacyZ = okcToLegacyPos(staff);
+  assert.equal(legacyZ.kind, "kasa-pos");
+  assert.equal(legacyZ.advice, true);
+  assert.equal(legacyZ.error, FISCAL_Z_CARD_TEXT);
+  assert.deepEqual(legacyZ.values, {});
+  // Banka gün sonu fişi: yalnız bankPos, doldurma kapalıyken öneri (eski sayfanın prefillPlan'ı düşük güveni yazmaz)
+  const legacyBatch = okcToLegacyPos(toStaffReading(read("okc-batch")));
+  assert.equal(legacyBatch.kind, "kasa-pos");
+  assert.deepEqual(Object.keys(legacyBatch.values), ["bankPos"]);
+  assert.equal(legacyBatch.values.bankPos?.value, 8915);
+  assert.equal(legacyBatch.values.bankPos?.confidence, "low");
+  assert.deepEqual(prefillPlan(legacyBatch, { bankPos: "" }).fill, []);
+  assert.equal(prefillPlan(legacyBatch, { bankPos: "" }).unsure[0]?.reason, OKC_SUGGEST_TEXT);
+  assert.equal(legacyBatch.checks.every((c) => c.fields.length > 0 && c.fields.every((f) => f === "bankPos")), true);
+  const on = okcToLegacyPos(toStaffReading(read("okc-batch")), { okcPrefill: true });
+  assert.deepEqual(on.values.bankPos, { value: 8915, confidence: "high" });
+  assert.deepEqual(prefillPlan(on, { bankPos: "" }).fill, [{ field: "bankPos", text: "8915", warn: null }]);
+  // ModPOS Z'si yazarkasa bölümüne: eski sayfada da ModPOS bölümüne okutulur
+  const soft = okcToLegacyPos(normalizeOkc(KasaOkcRaw.parse(replayAnswer("kasa-okc", { width: 864, height: 1390 }).json), ctx));
+  assert.deepEqual([soft.kind, soft.ok, soft.switchTo], ["kasa-pos", false, "kasa-z"]);
 });
