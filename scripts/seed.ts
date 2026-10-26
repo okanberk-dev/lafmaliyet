@@ -210,7 +210,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
         // gideri kapatmasın. Bakiye zaten kısa ömürlü; devreden KDV kaydı da gider (docs/NAKIT-PLANI.md)
         await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'cashflow.plan'`));
         // Personel istekleri ürün, hammadde ve kayıt kimliklerine bağlı (docs/ONAYLAR.md): bekleyenler geri çekilir,
-        // onaylanmış ama gönderilmemiş mal siparişi taslağı süresi dolmuş sayılır; tuttukları fotoğraflar 7 gün sonra
+        // kaldırılan mal siparişi taslağının (26 Eki 2026) onaylanmış eski satırı süresi dolmuş sayılır; tuttukları fotoğraflar 7 gün sonra
         // silinmek üzere bırakılır. İstekler kaydıyla kalır (işlem geçmişi gibi), not personele görünür
         await tx.execute(
           sql.raw(

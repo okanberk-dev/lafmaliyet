@@ -77,16 +77,26 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | bekliyor |
 | B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | bekliyor |
 
+**B21 (sahibin isteği, 26 Ekim 19:30; raporda yok): Hızlı sayım ve mal siparişi kaldırıldı.** Sahip: "Hızlı sayım
+ile mal siparişi kısmını kaldır, gereksiz çünkü normal sayım olsun". Dal `claude/denetim-b21-hizli-siparis-kaldir`.
+Ekranlar (`/panel/hizli-sayim`, `/panel/mal-siparisi` ve alt sayfaları), eylemler, Paraşüt eşitlemesindeki teslim
+kontrolü, Bugün satırları, zil ve push satırları, Onaylar'daki taslak kartları, menü öğeleri ve iki rolün Yardım'ı
+kalktı; eski adresler Stok sayımı'na yönlenir. Veritabanı tabloları silinmedi (migration yok), eski `mal-taslak`
+istekleri kuyruklara girmez ve sabah işi canlı kalanlarını kapatır. Aylık Stok sayımı ve ay sonu sayım bildirimi
+(`src/server/notify/count-push.ts`) aynen. Ayrıntı `docs/MAL-SIPARISI.md`. Başka hiçbir parti bu iki özelliği
+genişletmez ya da onlara bağlanmaz: E-20 ve E-56'nın Hızlı sayım parçaları, E-28'in hızlı sayım sayısı, E-41'in mal
+siparişi parçası ve aşağıdaki NEW-03 düştü.
+
 **Raporun ardından eklenen üç bulgu (eleştirmen; raporda yok):**
 - **NEW-01** (küçük, B01): ay sonu stok sayımı için hiçbir bildirim yok; ayın son günü hızlı sayım bildirimi de bilerek
-  susuyor (`src/server/notify/reorder-push.ts`, `src/lib/reorder/levels.ts`). Ayın son iş gününde sayım bildirimi;
+  susuyordu (B21'den beri ay sonu bildirimi `src/server/notify/count-push.ts`'te, hızlı sayım bildirimi yok). Ayın son iş gününde sayım bildirimi;
   ayın 1-10'unda geçen ayın sayımı yoksa ya da yarımsa yöneticinin zilinde ve sabah e-postasında satır. Tamamlanma
   kuralı E-01 / E-17'nin ortak yardımcısından.
 - **NEW-02** (küçük, B02): yılın kâr/zararı iki kuralla: Gelir-gider'in yıl kartı cirosu girilmemiş ayların giderini
   sayar, Genel bakış'ın yıl grafiği ve Claude'un `ay_ozeti`'si (`yearTrend`) saymaz. Tek saf yıl toplamı yardımcısı;
   cirosuz ayın gideri kartta not satırı.
-- **NEW-03** (küçük, partisi atanmadı; alış tarafı, B03 ya da B17'ye eklenebilir): "Geldi" denmiş, faturası gelmeyen
-  mal siparişi 45 gün sonra sessizce kapanır (`src/server/reorder/match.ts`): zil, işlem geçmişi, borç ve gider yok.
+- **NEW-03** (düştü: mal siparişi B21'de kaldırıldı): "Geldi" denmiş, faturası gelmeyen
+  mal siparişi 45 gün sonra sessizce kapanıyordu (eski eşleştirici, B21'de silindi): zil, işlem geçmişi, borç ve gider yok.
   Eşleşme penceresi bitince yöneticiye "Geldi, faturası yok" satırı; kendiliğinden kapanış işlem geçmişine ve eşitleme
   özetine yazılır.
 
@@ -126,7 +136,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 
 | İş | Plan | Durum |
 |---|---|---|
-| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **Bitti: 10a (#30) ve 10b (#32) main'de.** 10a (migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. 10b (#32, migration yok): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Canlıda personel hesabıyla `/panel/yardim/personel` ve `/panel/hizli-sayim/siparis` bir kez açılıp bakılır. Kalan daraltma: karaoke sayacının silinmesi (denetim E-15, B18). |
+| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **Bitti: 10a (#30) ve 10b (#32) main'de.** 10a (migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. 10b (#32, migration yok): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Canlıda personel hesabıyla `/panel/yardim/personel` bir kez açılıp bakılır (2.4 mal siparişi taslağı B21'de kaldırıldı). Kalan daraltma: karaoke sayacının silinmesi (denetim E-15, B18). |
 | Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a (#33) ve PR-b (#35) main'de.** PR-a: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar. PR-b (migration `0042_okc_z`, `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b8 (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım, son doğrulama). **Açık:** yalnız b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor); bilinen nit, banka gün sonu fişinde iki tarih uyarısı, denetimde E-69 (B20). O zamana kadar `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`): yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
 | Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır, başlamadı; muhasebeciye sorulacak 8 madde planın sonunda. Gelir dayanağı mali Z: Dalga 13 PR-b birleşti, doldurma kapısı b2'de. Kenar çubuğunda Finans başlığına girer (Dalga 15). |
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır; Senkron 2 ve 3 başlamadı. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. P1'in hatası (panel fiyatı başkasının değişikliğini ezer) denetimde E-11, B12. |
@@ -165,7 +175,7 @@ yeniden üretilir (R2); her dalga main'e ayrı bir PR'dır.
 | kontrol | `kontrol.md` | Fotoğraflı açılış/kapanış kontrol listeleri, Bugün ekranında. **Bitti:** dalga 5 PR'ı #14 (`0029_kontrol_listeleri`, `docs/KONTROL-LISTELERI.md`; 2. aşama kesildi) |
 | komisyon | `komisyon.md` | Yemek kartı ve platform komisyon/hakediş kontrolü (%6 sınırı, 30 gün; hakediş elle işaretlenir). **Bitti:** dalga 8 PR'ı (`0034_komisyon_hakedis`, `docs/KOMISYON.md`) |
 | fotograf | `fotograf.md` | Z raporu, POS gün sonu ve market fişini fotoğraftan Claude ile okuma; ortak foto deposu ve Claude istemcisi bu grubun. **Bitti:** dalga 3 PR'ı (`0025_fotograf_okuma`, `docs/FOTOGRAF.md`; sahibin 22 Ekim isteğiyle öne alındı; W2.0'ın 1, 2, 3 ve 7. maddeleri de bunda) |
-| siparis | `siparis.md` | Sipariş önerisi, hızlı sayım, tedarikçiye WhatsApp siparişi, teslim kontrolü. **Bitti:** dalga 8 PR'ı ("Mal siparişi", `0035_mal_siparisi`, `docs/MAL-SIPARISI.md`) |
+| siparis | `siparis.md` | Sipariş önerisi, hızlı sayım, tedarikçiye WhatsApp siparişi, teslim kontrolü. **Bitti:** dalga 8 PR'ı ("Mal siparişi", `0035_mal_siparisi`, `docs/MAL-SIPARISI.md`). **B21'de (26 Ekim) kaldırıldı**, tablolar geçmiş için durur |
 | mcp | `mcp.md` | Claude uygulamasından panele soru sorma (salt okunur, yalnız yönetici, OAuth). **Bitti:** dalga 4 PR'ı (`0028_claude_baglantisi`, `docs/CLAUDE-BAGLANTISI.md`) |
 | tahmin | `tahmin.md` | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü. **Bitti:** dalga 9 PR'ı (`0036_satis_tahmini`, `docs/SATIS-TAHMINI.md`; öğrenme ve günlük veri yolları CRITIQUE2 §6 gereği çıkarıldı) |
 | doluluk | `doluluk.md` | Karaoke doluluk haritası ve göstergeler. **Bitti:** dalga 5 PR'ı #14 (`0030_karaoke_doluluk`, `docs/KARAOKE.md` › Doluluk; KVKK: 3 × 366 günden eski karaoke adları sabah işinde silinir) |
@@ -218,9 +228,7 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   özetlerinden yazıldı. Kanallar'da her platformun ödeme süresini girin (varsayılan 30 gün). "Kanalı bulunamayan
   komisyon faturaları"nda görünen adı Tedarikçiler'de "Diğer adlar"a ekleyin. Ekim 2026 yarım ay (kasa raporları ay
   ortasında başladı); Z'den satış ilk tam ay Kasım'da.
-- Mal siparişi: başlarken Kalemler › "Hepsini ekle"; "Tedarikçisi seçilmemiş" grubundaki kalemlere tedarikçi seçin.
-  WhatsApp'ta doğrudan sohbet için tedarikçi kartında cep telefonu gerekir. Teslim kontrolü Paraşüt'teki ürün ↔
-  hammadde bağlantılarına dayanır. Sayım günü varsayılan pazartesi (Kalemler › Ayarlar).
+- Mal siparişi: 26 Ekim'de kaldırıldı (B21); bu not geçersiz.
 
 **Sahibe notlar (dalga 9):**
 - Satış tahmini: kasa raporları biriktikçe kendi verinizle hesaplanır (her hafta günü için 3 rapor, yaklaşık 3 hafta);
@@ -242,10 +250,8 @@ Belgeler: `docs/ONAYLAR.md`, `KASA-RAPORU`, `ZAYI-IKRAM`, `KONTROL-LISTELERI`, `
 - **Daralan üç kural** (plan §0.5): sabah vardiyası dünün kasa alanlarını (açılış, nakit satış, gün içinde çıkan,
   sayılan, teslim) ya da Sayan'ı artık onayla değiştirir; açık günde sizin kategorinizdeki (maaş, avans) kasadan çıkan
   satırı personel onayla düzeltir ya da siler; düne zayi / ikram, bugünün kasa raporu girilince onaya düşer.
-- **Telefonda bildirim:** Hatırlatıcılarım › Bu cihazda uyarılar'daki "Onay bildirimleri"ni açık tutun (varsayılan
-  açık); personelin mal siparişi taslağı bununla gelir. Öteki istekler zilde, Bugün'de ve sabah e-postasında.
-- **Tedarikçiler:** "personelden gelen siparişte onay numarası yazar" diye haber verin. Personelin gönderebilmesi için
-  tedarikçi kartında cep numarası gerekir.
+- **Telefonda bildirim:** onay istekleri zilde, Bugün'de ve sabah e-postasında. ("Onay bildirimleri" anahtarı mal
+  siparişi taslağıyla birlikte B21'de kalktı; gönderen yok.)
 - **Kasa e-postası:** alıcılarına personel adresi yazılamaz (e-postada karaoke ön ödemesi var).
 - **Personelin Yardım'ı:** Yardım başlığındaki "Personelin Yardım'ı" düğmesi; hesabını açtığınız personele gösterin.
 - **Açık soru, bu dalgada değil:** personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor; yönetici
@@ -380,6 +386,8 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 
 ### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
 
+> Mal siparişi ve hızlı sayımla ilgili maddeler tarihçedir: iki özellik 26 Ekim'de kaldırıldı (B21).
+
 - **Ay sonu sayımının anı:** geç girilen ya da sonradan düzeltilen ay sonu sayımı ayın son gününün sayımıdır
   (`monthEndCountAt`, en geç ertesi ayın 1'i 05:00); arada gelen mal siparişte kalır, girildiği gün Bugün'de "sayıldı"
   demez, "Gecikti" ve "Sayım eski" ayın son gününden sayılır. Sayım girilmeden önce denen Geldi de sayımın gününe kadar
@@ -513,7 +521,7 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 5. Sahibin verdiği cevaplar: kurye yok; Paraşüt'te banka hesapları bağlı değil (hakediş/ödeme elle işaretlenir);
    ModPOS günlük döküm yolda.
 6. CRITIQUE.md §6'daki sorular (varsayılanlar uygulanır).
-7. Mal siparişi: Paraşüt faturası siparişle eşleşince Geldi'nin anı **faturanın günü 12:00** yazılır
+7. (Düştü: mal siparişi B21'de kaldırıldı.) Mal siparişi: Paraşüt faturası siparişle eşleşince Geldi'nin anı **faturanın günü 12:00** yazılır
    (`docs/MAL-SIPARISI.md` §2, §7). Fatura sevkte kesildiyse sipariş erken gelmiş sayılır (fazla öneri), sayımdan
    sonraki bir güne tarihliyse geç (eksik öneri); saklanan hiçbir değer ikisini birden düzeltmiyor. Kalıcı çözüm
    (faturası bağlanan siparişte de Geldi'yi açık tutmak ya da sevki ayrıca kaydetmek) eylemi, Hızlı sayım listesini ve

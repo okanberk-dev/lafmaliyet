@@ -106,10 +106,10 @@ export const ALERTS_REFRESH_EVENT = "laf:zil-yenile";
 
 /**
  * Bildirim gelince açık ekran (sunucu bileşenleri) yenilensin mi: karaoke, hatırlatıcılar ve Bugün her bildirimde; onay
- * bildiriminde (mal siparişi taslağı) ayrıca Onaylar ve personelin taslak sayfası. Panel sekmesi öndeyken sistem
- * bildirimi gösterilmez (public/sw.js): sayfa güncel olmalı
+ * bildiriminde ayrıca Onaylar (şu an gönderen yok: tek gönderen mal siparişi taslağıydı, 26 Eki 2026'da kaldırıldı).
+ * Panel sekmesi öndeyken sistem bildirimi gösterilmez (public/sw.js): sayfa güncel olmalı
  */
 export function refreshesScreen(path: string, kind: string | undefined): boolean {
   if (path.startsWith("/panel/karaoke") || path.startsWith("/panel/hatirlaticilarim") || path.startsWith("/panel/bugun")) return true;
-  return kind === "approvals" && (path.startsWith("/panel/onaylar") || path.startsWith("/panel/hizli-sayim/siparis"));
+  return kind === "approvals" && path.startsWith("/panel/onaylar");
 }

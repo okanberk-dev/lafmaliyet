@@ -21,9 +21,9 @@ const TONE: Record<StaffRequestStatus, Tone> = {
 };
 
 /**
- * Onaylar › Son kararlar (docs/ONAYLAR.md): personel isteklerinin son 30 günü (kasa, mal siparişi, zayi ve ikram):
- * tür, başlık, isteyen, karar veren, not ve durum. Satırlar sabit sütunlardan (recentDecisions; ham yük yok). Liste
- * boşsa bölüm çizilmez; reçete önerilerinin kararları reçete bölümünde.
+ * Onaylar › Son kararlar (docs/ONAYLAR.md): personel isteklerinin son 30 günü (kasa, zayi ve ikram): tür, başlık,
+ * isteyen, karar veren, not ve durum. Satırlar sabit sütunlardan (recentDecisions; ham yük yok; kaldırılan mal siparişi
+ * taslakları gelmez). Liste boşsa bölüm çizilmez; reçete önerilerinin kararları reçete bölümünde.
  */
 export async function RecentDecisions() {
   await requireAdmin();
@@ -31,7 +31,7 @@ export async function RecentDecisions() {
   if (!rows.length) return null;
   return (
     <Card>
-      <CardHeader icon={<History />} title="Son kararlar" description="Son 30 günde personel isteklerinin sonucu: kasa, mal siparişi, zayi ve ikram." />
+      <CardHeader icon={<History />} title="Son kararlar" description="Son 30 günde personel isteklerinin sonucu: kasa, zayi ve ikram." />
       <ul className="divide-y divide-line border-t border-line">
         {rows.map((r) => (
           <li key={r.id} className="px-5 py-3">

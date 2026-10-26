@@ -575,6 +575,9 @@ staffCashGate({ date, now, hasReport, laterReport, changes }): "direct" | "reque
 
 ### 2.4 Mal siparişi taslağı (`mal-siparisi-taslak`): Grup B, taslak onaylı, gönderme onaysız, efor L
 
+> **Kaldırıldı (26 Ekim 2026, B21):** hızlı sayım ve mal siparişiyle birlikte. `mal-taslak` türü eski satırlar için
+> enumda kalır, kuyruklar okumaz (`docs/MAL-SIPARISI.md`, `docs/ONAYLAR.md`). Aşağısı tarihçedir.
+
 **Karar.** Personel hızlı sayımdan sonra fiyatsız bir taslak hazırlar ve onaya gönderir. Yönetici tahmini tutarı görür, gerekirse düzeltir ve onaylar. Onaylanan taslağı personel tek dokunuşla gönderir. Önce kayıt yazılır, WhatsApp ondan sonra açılır.
 
 **Personel ekranı:** `/panel/hizli-sayim/siparis` (`/panel/hizli-sayim` altında; `STAFF_PATHS` değişmez)

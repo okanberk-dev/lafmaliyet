@@ -41,25 +41,24 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Onaylar (`onay`) | Yönetici | Onay bekleyen reçete önerisi ya da personel isteği varsa ([ONAYLAR.md](ONAYLAR.md)): rozet "4 bekliyor". Yalnız reçete önerisi varken "Personelin önerdiği 2 reçete değişikliği ve 1 yeni ürün önerisi onay bekliyor: Latte, Mocha…"; personel isteği de varsa türler tek satırda ve en eskisinin beklediği: "1 kasa düzeltmesi · 2 reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür". Tutar yok. Onaylar'a götürür |
 | Fiyat onayı (`fiyat-onay`) | Yönetici | Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatı varsa (Hammaddeler › Onay bekleyen fiyatlar) |
 | Hammadde zammı (`zam`) | Yönetici | Fiyatı önerilenin altında kalan ürün varsa; metin Genel bakış ve zil ile aynı (zammın ayda kaç lira kâr götürdüğü) |
-| Kasadaki fiyatlar (`modpos`) | İkisi | Yönetici: "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler; son 48 saatte personel işaretlediyse sonuna "Ayşe dün 3 fiyatı kasada işaretledi." Bekleyen yok ama personel işareti varsa satır tamam olur ve "Son işaretlenenler"e götürür (dalga 10 §2.2). Personel (§2.2): "ModPOS'ta değişecek 3 fiyat; değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.", eylem "Listeyi aç", `/panel/kasa/fiyatlar`; hızlı sayımdan sonra gelir |
-| Onaylanan sipariş (`mal-taslak`) | Personel | Yöneticinin onayladığı mal siparişi taslağı gönderilmeyi bekliyorsa (süresi dolmamış): "Onaylanan sipariş bekliyor: Kaldi" (birden çoksa adlar ve "2 tedarikçi"), eylem "Gönder" (Sipariş taslağı sayfasına). Olgusu hafif, modelsiz bir sorgudan (yalnız tedarikçi adı). Yöneticide yok: bekleyen taslaklar Onaylar satırında sayılır ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11) |
+| Kasadaki fiyatlar (`modpos`) | İkisi | Yönetici: "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler; son 48 saatte personel işaretlediyse sonuna "Ayşe dün 3 fiyatı kasada işaretledi." Bekleyen yok ama personel işareti varsa satır tamam olur ve "Son işaretlenenler"e götürür (dalga 10 §2.2). Personel (§2.2): "ModPOS'ta değişecek 3 fiyat; değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.", eylem "Listeyi aç", `/panel/kasa/fiyatlar`; kontrol listelerinden sonra, zayiden önce gelir |
 | Geçen ayın stok sayımı (`sayim-gecen`) | İkisi | Ayın ilk 10 gününde geçen ayın sayımı yoksa ("Girilmedi") ya da yarım kaldıysa ("12 / 40", "Sayıma devam"). Geçen aya götürür. Stok sayımı ekranı da adreste ay yokken aynı kuralla (iş günü, 05:00; tamam = listedeki her kalem sayıldı) yarım kalan geçen ayı açar ve ayı adrese yazar. Personel geçen ayın sayımını yalnız bu 10 günde değiştirir; sonrası yöneticide |
 | Kontrol listesi (`liste-{şablon}`) | İkisi | Bugün beklenen her liste ayrı satır, açılış saatine göre (personelde yalnız "Personel doldurabilir" listeler; pasif liste yok). Aralıktan önce sonra ("08:00–11:00"), aralıkta yapılacak (başladıysa "3 / 13 madde · Ayşe · son saat 11:00" ve kalan fotoğraf), son saatten sonra sorun var ("Gecikti"; personele "Gün 05:00'te kapanır."), bitince tamam (kim, saat, geç bittiyse "geç", fotoğraf sayısı). Yöneticide açık sorunu olan bitmiş liste "1 sorun" (sorun var). Okunamazsa tek gri "Kontrol listeleri · Okunamadı" satırı |
-| Haftalık hızlı sayım (`hizli-sayim`) | İkisi | Takipte kalem varken sayım günü (varsayılan Pazartesi) ya da son sayım sayım aralığı + 1 günden eskiyse ("Gecikti": "Son sayım 12 Ekim Pazartesi (9 gün önce). Sipariş önerisi eski stoka göre."; son sayım hızlı ya da ay sonu sayımıdır, Mal siparişi'nin "Son sayım … gün önce" uyarısı gibi). Başlamadıysa "Bugün" ve "Sayıma başla", yarıdaysa "5 / 14", bittiyse tamam (yöneticide "Sipariş listesi hazır.", Mal siparişi'ne götürür). Ayın son gününün ay sonu sayımında sayılan takip kalemi de o gün sayılmış sayılır; geçen ayın sayımını sonradan girmek ya da düzeltmek "bugün sayıldı" saymaz. Ayın son günü satır yok (ay sonu sayımı yerine geçer) ([MAL-SIPARISI.md](MAL-SIPARISI.md)) |
-| Mal siparişi (`mal-siparisi`) | Yönetici | İlk uyan: faturayla tutmayan sipariş (sorun var, "Teslim kontrolü", "Kaldi: 1 eksik; Sütaş: 1 fazla", Gönderilenler › Fark var); sipariş hazır (son sayım bugün ya da dün ve sayımdan sonra siparişi gönderilmemiş önerisi olan tedarikçi: "Kaldi ve Sütaş için 6 kalem sipariş öneriliyor.", Listeyi aç); beklenen günden 2 gün sonra hâlâ gelmeyen sipariş ("Gelmeyen mal siparişi", Bak). Hiçbiri yoksa satır yok |
 | Zayi & ikram (`zayi`) | Personel | Gün içinde "Gün içinde" (bilgi), akşam rapor gönderilmeden "Rapordan önce" (yapılacak), rapor gönderilince tamam. Günün kayıt sayısı ve özeti |
 | Kasa raporu (`kasa`) | İkisi | Gündüz "Akşam" (sonra), 20:00'den sonra yapılacak, gönderilince personelde "Gönderildi" (tamam), yöneticide farkı ve bütünlüğü (dünkü gibi) |
 | Ay sonu stok sayımı (`sayim-son`) | İkisi | Ayın son günü: başlamadıysa "Sayıma başla", yarıdaysa "12 / 40", bittiyse tamam (sayım formundaki "kalem sayıldı" ile aynı kural) |
 
-Personelin satır sırası: `kasa-dun`, `liste-dun`, `sayim-gecen`, `liste-*`, `hizli-sayim`, `modpos`, `mal-taslak`,
-`zayi`, `kasa`, `sayim-son`. Yöneticiye zayi satırı gösterilmez (zayi ve ikram kasa raporu e-postasında gelir).
+Personelin satır sırası: `kasa-dun`, `liste-dun`, `sayim-gecen`, `liste-*`, `modpos`, `zayi`, `kasa`, `sayim-son`.
+Hızlı sayım (`hizli-sayim`), mal siparişi (`mal-siparisi`) ve onaylanan sipariş taslağı (`mal-taslak`) satırları 26
+Ekim 2026'da özellikleriyle birlikte kalktı ([MAL-SIPARISI.md](MAL-SIPARISI.md)); Onaylar satırı eski taslakları
+saymaz. Yöneticiye zayi satırı gösterilmez (zayi ve ikram kasa raporu e-postasında gelir).
 Personel maliyet, alış fiyatı, ödeme, fatura ve karaoke tutarı görmez; kasa farkı personelin Kasa ekranında zaten
 gördüğü bilgidir, menünün satış fiyatı herkese açıktır. Yöneticinin olguları personel için hiç yüklenmez (`adminFacts` /
 `staffFacts`; `tests/bugun.test.ts` kaynaktan denetler), satır mantığı da rolü ayrıca denetler.
 
 Dalga 10 (personel yetkileri, [planlar/personel-yetki.md](planlar/personel-yetki.md)) satırları iki dosyaya böler:
 kasa ve ortak satırlar `logic.ts`'te, operasyonun satırları (kasadaki fiyatlar, dünkü kontrol listeleri, "Bugün kafede"nin Tükendi
-satırı, onaylanan mal siparişi taslağı) `rows-ops.ts`'te; olguları `src/server/data/today-ops.ts` iki rolde toplar (personelin dalı yalnız
+satırı) `rows-ops.ts`'te; olguları `src/server/data/today-ops.ts` iki rolde toplar (personelin dalı yalnız
 sabit sütunlu personel yükleyicilerini okur). Dünün kapalı gün durumu `closed` olgusundan
 (`src/server/closed-days.ts`). Bugünün ve dünün kontrol listeleri iki rolde tek okumada gelir.
 
@@ -91,7 +90,7 @@ günlüğüne yazılır (`[bugun]`).
    (`src/server/data/today.ts`). Operasyonun olguları `ops` alanında (`OpsDayFacts`, `rows-ops.ts`), yükleyicisi
    `src/server/data/today-ops.ts`. Her yükleyici `safe(…)` ile sarılır (`src/server/data/today-safe.ts`).
 2. **Fonksiyon:** satırı üreten küçük bir fonksiyon (olgu yoksa ya da sayı 0 ise `null`); `ADMIN_ROWS` /
-   `STAFF_ROWS`'ta yerine (mal siparişi: `hizli-sayim`, `mal-siparisi`; komisyon: `komisyon`).
+   `STAFF_ROWS`'ta yerine (ör. komisyon: `komisyon`).
 3. **Test:** `tests/bugun.test.ts`'e bir senaryo; yönetici yükleyicisiyse kaynak denetimindeki listeye adı.
 
 Satırın saati varsa (ör. açılış listesi 08:00'de açılır) `nextRefreshAt(now, [an])` ekranı o an yeniler.

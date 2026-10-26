@@ -12,7 +12,7 @@ import { logActivity } from "./log";
 import { attempt } from "./util";
 
 // Ortak onay kuyruğunun genel eylemi (docs/ONAYLAR.md). İstek açma ve karar eylemleri her alanın kendi dosyasında
-// (kasa, zayi, mal siparişi); bu dosyada yalnız geri çekme. "use server" dosyasındaki her dışa açık işlev bir uçtur:
+// (kasa, zayi, kapalı gün); bu dosyada yalnız geri çekme. "use server" dosyasındaki her dışa açık işlev bir uçtur:
 // yardımcı yok.
 
 /**

@@ -34,10 +34,8 @@ const STAFF_PAGES: { path: string; lira: boolean }[] = [
   { path: "/panel/kasa/fiyatlar", lira: true },
   { path: "/panel/kontrol/gecmis", lira: false },
   { path: `/panel/zayi?gun=${fiveAgo}`, lira: false },
-  { path: "/panel/hizli-sayim", lira: false },
   // Stok sayımı: FIFO katmanları ve fiyatlar yalnız yöneticiye (havuzun `unitCost`u, ₺; docs/STOK-DEGERLEME.md)
   { path: "/panel/sayim", lira: false },
-  { path: "/panel/hizli-sayim/siparis", lira: false },
   { path: "/panel/ozel-gunler", lira: false },
   { path: "/panel/yardim/personel", lira: false },
   { path: "/panel/receteler", lira: true },
@@ -45,7 +43,7 @@ const STAFF_PAGES: { path: string; lira: boolean }[] = [
 ];
 
 /** Personel çereziyle Bugün'e dönmesi gereken yönetici adresleri */
-const ADMIN_PAGES = ["/panel/onaylar", "/panel/urunler/fiyatlar", "/panel/mal-siparisi", "/panel/kontrol/duzenle", "/panel/tahmin", "/panel/yardim"];
+const ADMIN_PAGES = ["/panel/onaylar", "/panel/urunler/fiyatlar", "/panel/kontrol/duzenle", "/panel/tahmin", "/panel/yardim"];
 
 /** JSON anahtarı olarak (HTML'deki RSC parçalarında tırnaklar kaçışlı: \"cost\":) */
 const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])\\\\?"(${COST_KEYS.join("|")})\\\\?"\\s*:`, "g");

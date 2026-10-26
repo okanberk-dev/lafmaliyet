@@ -33,12 +33,11 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
   );
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
   // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü), Sayım (çekmece; ay sonunda
-  // Bugün'de satır), Kontrol listeleri (çekmece; açılış ve kapanış Bugün'de satır, zilde "bekliyor"), Hızlı sayım
-  // (çekmece; sayım günü Bugün'de satır ve telefon bildirimi), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım
-  // (çekmecenin en altı ve profil menüsü)
+  // Bugün'de satır ve telefon bildirimi), Kontrol listeleri (çekmece; açılış ve kapanış Bugün'de satır, zilde
+  // "bekliyor"), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım (çekmecenin en altı ve profil menüsü)
   assert.deepEqual(
     STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
-    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/hizli-sayim", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel"],
+    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel"],
   );
   // Beş öğe: 390 px'te hücre başına 78 px
   assert.equal(BOTTOM_NAV.staff.length, 5);

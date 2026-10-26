@@ -55,13 +55,16 @@ test("staffPathOf: personelin menüsündeki adlar; ?sorgu ve #çapa atılır; y�
   assert.deepEqual(staffPathOf("/panel/kasa?gun=2026-10-20#isteklerim"), ["Kasa raporu"]);
   // Menü grubunda personele tek alt sayfa kalır: grup doğrudan o sayfa
   assert.deepEqual(staffPathOf("/panel/receteler"), ["Reçete defteri"]);
-  assert.deepEqual(staffPathOf("/panel/hizli-sayim"), ["Stok", "Hızlı sayım"]);
-  assert.deepEqual(staffPathOf("/panel/hizli-sayim/siparis"), ["Stok", "Hızlı sayım", "Sipariş taslağı"]);
+  assert.deepEqual(staffPathOf("/panel/sayim"), ["Stok", "Stok sayımı"]);
+  assert.deepEqual(staffPathOf("/panel/zayi"), ["Stok", "Zayi & ikram"]);
+  // Kaldırılan ekranlar (Hızlı sayım, Mal siparişi; 26 Eki 2026) personelin menüsünde yok
+  assert.deepEqual(staffPathOf("/panel/hizli-sayim"), []);
+  assert.deepEqual(staffPathOf("/panel/hizli-sayim/siparis"), []);
   assert.deepEqual(staffPathOf("/panel/kontrol/gecmis"), ["Kontrol listeleri", "Geçmiş"]);
   assert.deepEqual(staffPathOf("/panel/kasa/fiyatlar"), ["Bugün", "Kasadaki fiyatlar"]);
   assert.deepEqual(staffPathOf("/panel/hesap"), ["Hesabım"]);
   assert.deepEqual(staffPathOf("/panel/yardim/personel"), ["Yardım"]);
-  for (const admin of ["/panel", "/panel/onaylar", "/panel/urunler", "/panel/mal-siparisi", "/panel/yardim", "/panel/tahmin", "/panel/kontrol/duzenle"]) {
+  for (const admin of ["/panel", "/panel/onaylar", "/panel/urunler", "/panel/yardim", "/panel/tahmin", "/panel/kontrol/duzenle"]) {
     assert.deepEqual(staffPathOf(admin), [], admin);
   }
 });
@@ -94,7 +97,8 @@ test("Yardım klasöründe sarmalayıcı dosya yok (layout, template, loading, e
 });
 
 test("bağlantılar: her yol personelin açabildiği, var olan ve menüde yolu çözülen bir ekran", () => {
-  assert.ok(HREFS.length > 15);
+  // Personelin bütün ekranları ve iki alt ekranı (Hızlı sayım ve sipariş taslağı 26 Eki 2026'da kaldırıldı)
+  assert.ok(HREFS.length >= 13, `${HREFS.length} bağlantı`);
   for (const h of HREFS) {
     const path = h.replace(/[?#].*$/, "");
     assert.ok(canOpen("staff", path), `${h} personele kapalı`);
@@ -105,7 +109,7 @@ test("bağlantılar: her yol personelin açabildiği, var olan ve menüde yolu �
 
 test("kapsam: her personel ekranı ve onaya giden her tür Yardım'da geçer", () => {
   for (const p of STAFF_PATHS) assert.ok(HREFS.some((h) => h.replace(/[?#].*$/, "") === p), `${p} anlatılmıyor`);
-  for (const sub of ["/panel/kasa/fiyatlar", "/panel/kontrol/gecmis", "/panel/hizli-sayim/siparis"]) assert.ok(HREFS.includes(sub), sub);
+  for (const sub of ["/panel/kasa/fiyatlar", "/panel/kontrol/gecmis"]) assert.ok(HREFS.includes(sub), sub);
   const approvals = FAQ_TEXTS.find((t) => t.id === "onaya-gidenler")?.text ?? "";
   for (const a of STAFF_APPROVAL_KINDS) assert.ok(approvals.includes(a.text), a.kind);
   // Liste koddan kurulur, elle yazılmaz
@@ -154,11 +158,11 @@ test("yöneticinin ekran adları ve adresleri personelin Yardım'ında yok", () 
     for (const c of n.children ?? []) labels.set(c.label, c.href);
   }
   for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) labels.set(t.label, t.href);
-  for (const href of ["/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/mal-siparisi/kalemler"]) {
+  for (const href of ["/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/karaoke/doluluk", "/panel/kontrol/duzenle"]) {
     labels.set(mobileTitleFor(href), href);
   }
   const adminOnly = [...labels].filter(([label, href]) => !canOpen("staff", href) && !GENERIC.has(label)).map(([label]) => label);
-  assert.ok(adminOnly.includes("Onaylar") && adminOnly.includes("Mal siparişi") && adminOnly.includes("Satış tahmini"));
+  assert.ok(adminOnly.includes("Onaylar") && adminOnly.includes("Tutarlılık") && adminOnly.includes("Satış tahmini"));
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const label of adminOnly) assert.doesNotMatch(ALL_TEXT, new RegExp(`(^|[^\\p{L}])${escape(label)}([^\\p{L}]|$)`, "u"), label);
   // Kaynakta yönetici adresi yok
@@ -172,6 +176,13 @@ test("soru kimlikleri benzersiz, her grupta soru var", () => {
   assert.equal(new Set(ids).size, ids.length);
   for (const g of STAFF_FAQ_GROUPS) assert.ok(g.items.length > 0, g.title);
   assert.equal(STAFF_ROUTINE.length, 6);
+});
+
+test("günün sırası: ay sonu sayımı kapanıştan sonra, son adım (Bugün'deki sırayla aynı: kasa raporu, sonra ay sonu sayımı)", () => {
+  const titles = STAFF_ROUTINE.map((r) => r.title);
+  assert.equal(titles.at(-1), "Ayın son günü");
+  assert.ok(titles.indexOf("Akşam kasa raporu") < titles.indexOf("Kapanış listesi"));
+  assert.ok(titles.indexOf("Kapanış listesi") < titles.indexOf("Ayın son günü"));
 });
 
 test("kasa düzeltmesi: ertesi gün onaya giden her alan (SENSITIVE) yanıtta; saatlerin eki okunuşa göre", () => {

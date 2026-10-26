@@ -137,7 +137,7 @@ test("panel güncellemesi 'bağlantı yok' değil 'Yenile' diye bildirilir; yar�
   assert.match(form, /\} catch \(e\) \{\s+unstable_rethrow\(e\);[\s\S]{0,200}if \(unstable_isUnrecognizedActionError\(e\)\) \{\s+\/\/[^\n]*\n\s+toast\.error\(STALE_TEXT,/);
   assert.match(form, /step\.counts \? "Sayım kaydedildi; ek kalemler kaydedilemedi" : "Kaydedilemedi: bağlantı yok gibi"/);
   assert.match(form, /if \(!res\.ok\) return void toast\.error\(res\.error, \{ duration: 12_000 \}\);\s+step\.counts = true;/);
-  for (const f of ["src/app/panel/hizli-sayim/quick-count-form.tsx", "src/app/panel/sayim/add-item.tsx", "src/app/panel/receteler/ingredient-picker.tsx"]) {
+  for (const f of ["src/app/panel/sayim/add-item.tsx", "src/app/panel/receteler/ingredient-picker.tsx"]) {
     assert.match(read(f), /unstable_isUnrecognizedActionError|toastUnreachable/, f);
   }
 });
@@ -148,12 +148,7 @@ test("listede de olan ek kalem: uyarılır, geçen aydan taşınmaz", () => {
   assert.match(form, /sayım listesinde de var: aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın, yoksa stok iki/);
 });
 
-test("Hızlı sayım: taslak ve çıkış uyarısı (Stok sayımı ile ortak kanca)", () => {
-  const qc = read("src/app/panel/hizli-sayim/quick-count-form.tsx");
-  assert.match(qc, /const draftKey = `laf:hizli-sayim:\$\{sheet\.day\}`;/);
-  assert.match(qc, /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty\);/);
-  assert.match(qc, /\} else if \(wroteDraft\.current\) \{\s+window\.localStorage\.removeItem\(draftKey\);/);
-  assert.match(qc, /if \(!res\.ok\) return void toast\.error\(res\.error\);\s+forgetDraft\(\);/);
+test("Stok sayımı: çıkış uyarısı ortak kancadan (Hızlı sayım 26 Eki 2026'da kaldırıldı)", () => {
   assert.match(read("src/app/panel/sayim/stock-form.tsx"), /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty, MONTH_LEAVE\);/);
   const guard = read("src/components/ui/leave-guard.ts");
   assert.match(guard, /window\.addEventListener\("beforeunload", warn\);/);
@@ -171,8 +166,8 @@ test("ay sonu sayımı hatırlatması: ayın son günü, liste doluysa ve tamaml
   assert.equal(monthEndCountPush("2026-11-30", { counted: 72, total: 72 }), null, "tamam");
   assert.equal(monthEndCountPush("2026-11-30", { counted: 0, total: 0 }), null, "liste boş");
   assert.match(monthEndCountPush("2026-10-31", { counted: 30, total: 72 })!.body, /^Kapanıştan sonra kalan 42 kalemi sayın \(30 \/ 72 sayıldı\)/);
-  const push = read("src/server/notify/reorder-push.ts");
-  assert.match(push, /if \(isLastDayOfMonth\(day\)\) \{\s+const push = monthEndCountPush\(day, await countProgress\(day\.slice\(0, 7\)\)\);/);
+  const push = read("src/server/notify/count-push.ts");
+  assert.match(push, /if \(!isLastDayOfMonth\(day\)\) return \{ status: "skip", sent: 0, failed: 0 \};\s+const push = monthEndCountPush\(day, await countProgress\(day\.slice\(0, 7\)\)\);/);
 });
 
 test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satırı ilk 10 günde", () => {
@@ -254,7 +249,7 @@ test("taslağın satırları: taslaktan sonra başkasının kaydettiği satır �
   assert.deepEqual(parseCountDraft('{"v":{},"b":{"1":"x","2":2,"a":1,"3":null}}').base, { "2": 2, "3": null });
 });
 
-test("formlar taslağın tabanını yazar ve geri yüklerken birleştirir (Stok sayımı ve Hızlı sayım)", () => {
+test("form taslağın tabanını yazar ve geri yüklerken birleştirir (Stok sayımı)", () => {
   const form = read("src/app/panel/sayim/stock-form.tsx");
   assert.match(form, /base: Object\.fromEntries\(changedLines\.map\(\(l\) => \[String\(l\.id\), l\.qty\]\)\),/);
   assert.match(form, /extrasBase: extrasDirty \? savedExtras\.map\(\(e\) => draftRow\(e, isAdmin\)\) : null,/);
@@ -262,9 +257,6 @@ test("formlar taslağın tabanını yazar ve geri yüklerken birleştirir (Stok 
   assert.match(form, /if \(stale\.length\) setConflicts\(\(x\) => new Set\(\[\.\.\.x, \.\.\.stale\]\)\);/);
   assert.match(form, /setExtraConflicts\(draftExtras\.conflicts\);/);
   assert.doesNotMatch(form, /setExtras\(draftExtras\.map/, "taslak listeyi topluca değiştirmez");
-  const qc = read("src/app/panel/hizli-sayim/quick-count-form.tsx");
-  assert.match(qc, /base: Object\.fromEntries\(draftItems\.map\(\(i\) => \[String\(i\.id\), savedQty\(i\)\]\)\),/);
-  assert.match(qc, /if \(stale\.length\) setConflicts\(\(c\) => new Set\(\[\.\.\.c, \.\.\.stale\]\)\);/);
 });
 
 test("ay değişince ?izinsiz= notu düşer (B01-K3)", () => {

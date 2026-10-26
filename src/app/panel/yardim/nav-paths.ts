@@ -59,17 +59,16 @@ export const tabsOf = (href: string) => TAB_LISTS.find((tabs) => tabs[0].href ==
 
 /**
  * Personelin menüsünde ayrı öğesi olmayan ekranları: hangi ekrandan açıldıkları ve oradaki adları. Kasadaki fiyatlar
- * Bugün'deki satırdan (ve zilden), Geçmiş Kontrol listeleri'nin sekmesinden, Sipariş taslağı Hızlı sayım'ın üst
- * bilgisinden açılır. Hesabım profil menüsündedir (kenar çubuğunun altında adınıza dokununca).
+ * Bugün'deki satırdan (ve zilden), Geçmiş Kontrol listeleri'nin sekmesinden açılır. Hesabım profil menüsündedir
+ * (kenar çubuğunun altında adınıza dokununca).
  */
 const STAFF_SUBPAGES: readonly { href: string; via: string; label: string }[] = [
   { href: "/panel/kasa/fiyatlar", via: "/panel/bugun", label: "Kasadaki fiyatlar" },
   { href: "/panel/kontrol/gecmis", via: "/panel/kontrol", label: "Geçmiş" },
-  { href: "/panel/hizli-sayim/siparis", via: "/panel/hizli-sayim", label: "Sipariş taslağı" },
 ];
 
 /**
- * Bir ekranın personelin kenar çubuğundaki yolu, ör. "/panel/hizli-sayim" → ["Stok", "Hızlı sayım"]. Personelin
+ * Bir ekranın personelin kenar çubuğundaki yolu, ör. "/panel/zayi" → ["Stok", "Zayi & ikram"]. Personelin
  * ağacından (navTreeFor("staff"); tek alt sayfası kalan grup doğrudan o sayfa: Reçete defteri üst düzeyde) kurulur;
  * yöneticinin adları ve ekranları hiç girmez. Adresin ?sorgu ve #çapa kısmı atılır. Personelin açamadığı ya da
  * menüde bulunmayan ekran için boş dizi (personel Yardım'ının testi her yolun dolu olduğunu denetler).

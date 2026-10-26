@@ -54,7 +54,7 @@ export function assertNoCostKeys(sourceOrJson: string, label = "kaynak"): void {
   assert.deepEqual(found, [], `${label}: personele maliyet / tutar anahtarı gidiyor (${found.join(", ")})`);
 }
 
-/** ₺ yasağı olan personel ekranları için (karaoke, zayi, kontrol geçmişi, hızlı sayım, özel günler, yardım) */
+/** ₺ yasağı olan personel ekranları için (karaoke, zayi, kontrol geçmişi, stok sayımı, özel günler, yardım) */
 export function assertNoLira(text: string, label = "metin"): void {
   assert.doesNotMatch(text, /₺/, `${label}: personel ekranında tutar (₺) var`);
 }

@@ -34,10 +34,12 @@ test("yetki tablosu: personelin her ekranı personele açık bir satırda; satı
   assert.doesNotMatch(staffText, /tutarsız/);
   assert.match(staffText, /rezervasyonlar, tükenen ürünü işaretleme \(personel tutarları görmez\)/);
   // Dalga 10: onaya giden işler ve yeni ekranlar (docs/ONAYLAR.md)
-  for (const word of ["yönetici onaylar", "Kasadaki fiyatlar", "sipariş taslağı", "son 7 gün", "Özel günler", "Yardım"]) {
+  for (const word of ["yönetici onaylar", "Kasadaki fiyatlar", "son 7 gün", "Özel günler", "Yardım"]) {
     assert.ok(`${staffText} | ${STAFF_ROLE_HINT}`.toLocaleLowerCase("tr-TR").includes(word.toLocaleLowerCase("tr-TR")), word);
   }
   assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /Onaylar/.test(p.label)));
+  // Hızlı sayım ve mal siparişi 26 Eki 2026'da kaldırıldı: tabloda ve rol açıklamasında yok
+  assert.doesNotMatch(`${ROLE_PERMISSIONS.map((p) => p.label).join(" | ")} | ${STAFF_ROLE_HINT}`, /hızlı sayım|mal siparişi|sipariş taslağı/i);
   // Personel maliyet, maaş ve kâr görmez: yalnız yöneticinin satırlarında
   assert.doesNotMatch(staffText, /maliyet|maaş|kâr|komisyon/i);
 });

@@ -23,7 +23,6 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
-import { reorderNotifications } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -324,7 +323,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     opsBell(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
-  const [model, upcoming, invoiceItems, system, unpriced, holds, commission, reorder] = await Promise.all([
+  const [model, upcoming, invoices, system, unpriced, holds, commission] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
@@ -332,11 +331,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     unpricedNotifications().catch(() => []),
     holdNotifications().catch(() => []),
     commissionNotifications().catch(() => []),
-    // Mal siparişinin teslim kontrolü: fark ve gelmeyen sipariş (Faturalar grubu, en çok 5; tek sorgu, model yok)
-    reorderNotifications().catch(() => []),
   ]);
-  // Faturalar grubu: faturaların ardından mal siparişinin teslim kontrolü
-  const invoices = [...invoiceItems, ...reorder];
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
     .filter((i) => i.status !== "later")

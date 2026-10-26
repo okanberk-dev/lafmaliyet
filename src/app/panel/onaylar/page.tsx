@@ -24,8 +24,8 @@ import { ReviewList, type NewProductEnv, type NewProductItem, type RecentItem, t
 export const metadata: Metadata = { title: "Onaylar" };
 
 /**
- * Onaylar (docs/ONAYLAR.md): personelin yöneticinin onayına giden istekleri ve önerileri, sırayla kasa, mal siparişi ve
- * zayi, reçete; en altta personel isteklerinin son kararları. Her bölüm kendi Suspense'inde ve kendi requireAdmin'iyle;
+ * Onaylar (docs/ONAYLAR.md): personelin yöneticinin onayına giden istekleri ve önerileri, sırayla kasa, zayi ve ikram,
+ * reçete; en altta personel isteklerinin son kararları. Her bölüm kendi Suspense'inde ve kendi requireAdmin'iyle;
  * maliyet modeli istek başına bir kez kurulur (loadModelOnce). Kartların çapası `#istek-<id>`, reçete kartlarınınki
  * `#oneri-<id>`.
  */
@@ -35,7 +35,7 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Onaylar"
         eyebrow="Günlük"
-        description="Personelin onay isteyen önerileri ve istekleri: kasa, mal siparişi, zayi ve ikram, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
+        description="Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">
             <BookOpen size={16} aria-hidden="true" /> Reçete defteri

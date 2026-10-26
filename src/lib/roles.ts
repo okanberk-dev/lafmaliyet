@@ -11,8 +11,7 @@ import type { Role } from "./constants";
  * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), karaoke
  * sayacını ve bar ekranını (tükenen ürün dahil), gün sonu kasa raporunu ve ModPOS'ta değişecek satış fiyatlarını
  * (Kasadaki fiyatlar), açılış / kapanış kontrol listelerini ve son 7 günün geçmişini, zayi / ikram kaydını, stok
- * sayımını, haftalık hızlı sayımı, gelen mal işaretini ("Geldi") ve sipariş taslağını (fiyatsız; mal siparişinin
- * listesi ve fiyatları yöneticide), özel günleri, kendi Yardım'ını ve kendi hatırlatıcılarını kullanır. Önemli
+ * sayımını, özel günleri, kendi Yardım'ını ve kendi hatırlatıcılarını kullanır. Önemli
  * düzeltmeler isteğe döner, yönetici Onaylar'da karar verir (docs/ONAYLAR.md). Personel yolunun altındaki yönetici
  * ekranları (Karaoke doluluğu, Kontrol listelerini düzenleme) ADMIN_ONLY_PATHS'te; sayfa ve eylemler ayrıca
  * requireAdmin ile denetlenir.
@@ -26,7 +25,6 @@ export const STAFF_PATHS = [
   "/panel/receteler",
   "/panel/hatirlaticilarim",
   "/panel/sayim",
-  "/panel/hizli-sayim",
   "/panel/ozel-gunler",
   "/panel/yardim/personel",
   "/panel/hesap",
@@ -54,6 +52,19 @@ function under(pathname: string, base: string): boolean {
   return pathname === base || pathname.startsWith(`${base}/`);
 }
 
+/**
+ * Kaldırılan ekranların eski adresleri (26 Eki 2026, sahibin isteği: "Hızlı sayım ile mal siparişi kısmını kaldır,
+ * normal sayım olsun"): yer iminden, eski bildirimden ya da e-postadan gelen istek 404 yerine aylık Stok sayımı'na gider.
+ * proxy.ts oturumdan önce yönlendirir (geçici, 307); sorgu ve çapa düşer (eski süzgeçler sayımda anlamsız).
+ */
+export const RETIRED_PATHS = ["/panel/hizli-sayim", "/panel/mal-siparisi"] as const;
+export const RETIRED_TARGET = "/panel/sayim";
+
+/** Kaldırılan bir ekranın (ya da alt sayfasının) adresiyse gidilecek ekran, değilse null */
+export function retiredRedirect(pathname: string): string | null {
+  return RETIRED_PATHS.some((p) => under(pathname, p)) ? RETIRED_TARGET : null;
+}
+
 /** Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz) */
 export function canOpen(role: Role, pathname: string): boolean {
   if (role === "admin" || !under(pathname, "/panel")) return true;
@@ -66,7 +77,7 @@ export function canOpen(role: Role, pathname: string): boolean {
  * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
  */
 export const STAFF_ROLE_HINT =
-  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, hızlı sayım ve sipariş taslağı, reçete defteri (öneri), karaoke, bar ekranı ve tükenen ürün, özel günler, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
+  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), karaoke, bar ekranı ve tükenen ürün, özel günler, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
 
 /**
  * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
@@ -86,7 +97,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Zayi ve ikram kaydı; 14 güne kadar geç kayıt ve başkasının kaydını silme isteği (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/zayi"] },
   { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/receteler"] },
   { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, staff: true, paths: ["/panel/sayim"] },
-  { label: "Haftalık hızlı sayım, gelen mal işareti ve sipariş taslağı (yönetici onaylar; fiyat yok)", admin: true, staff: true, paths: ["/panel/hizli-sayim"] },
   { label: "Özel günler: maç, AVM etkinliği, kampanya; dünü “kafe kapalıydı” diye bildirme (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/ozel-gunler"] },
   { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true, paths: ["/panel/hatirlaticilarim"] },
   { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true, paths: ["/panel/hesap"] },
@@ -94,7 +104,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Reçeteyi doğrudan düzenleme; personelin önerilerini ve isteklerini onaylama (Onaylar)", admin: true, staff: false },
   { label: "Ürün maliyeti, fiyat değiştirme ve kârlılık", admin: true, staff: false },
   { label: "Hammadde fiyatları", admin: true, staff: false },
-  { label: "Mal siparişi: fiyatlı liste, doğrudan gönderme, taslak onayı, teslim kontrolü", admin: true, staff: false },
   { label: "Satış, fatura, gelir-gider, kasa raporlarının geçmişi", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },

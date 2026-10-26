@@ -4,7 +4,7 @@
 
 /**
  * Ortak onay kuyruğunun çekirdeği (docs/ONAYLAR.md; plan docs/planlar/personel-yetki.md §3.4). İstek ve karar
- * eylemleri her alanın kendi dosyasında (kasa, zayi, mal siparişi); hepsi buradan geçer:
+ * eylemleri her alanın kendi dosyasında (kasa, zayi, kapalı gün); hepsi buradan geçer:
  *
  * - createOrUpdateRequest: kişinin istekleri tek sırada (danışma kilidi); aynı istemci anahtarı var olanı döner, aynı
  *   konudaki bekleyen istek güncellenir (sürüm artar), yoksa sınırlar denetlenip yeni satır açılır.
@@ -16,7 +16,7 @@
  *   ham yük (payload) olmadan.
  */
 
-import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lte, min, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lte, min, ne, notInArray, or, sql } from "drizzle-orm";
 
 import { RELEASED_DAYS } from "../../lib/photo-rules";
 import {
@@ -24,6 +24,7 @@ import {
   limitRefusal,
   nextBump,
   REQUEST_TEXT,
+  RETIRED_REQUEST_KINDS,
   requestDayStart,
   reviewRefusal,
   STAFF_REQUEST_KINDS,
@@ -33,6 +34,9 @@ import {
 import type { DB } from "../db";
 import * as s from "../db/schema";
 import { UserError } from "../user-error";
+
+/** Kaldırılan türlerin satırları kuyruklara girmez (src/lib/staff-requests.ts RETIRED_REQUEST_KINDS) */
+const live = () => notInArray(s.staffRequests.kind, [...RETIRED_REQUEST_KINDS]);
 
 /** Kapalı gün bildiriminin geri çekme sınırı (src/lib/closed-days.ts CLOSED_TEXT.withdrawOnce ile aynı) */
 const CLOSED_WITHDRAW_ONCE = "Kapalı gün bildirimi günde bir kez geri çekilebilir";
@@ -108,6 +112,7 @@ export async function assertNotHeld(tx: Tx, photoId: number, exceptRequestId?: n
  */
 export async function createOrUpdateRequest(tx: Tx, me: Actor, input: RequestInput, now = new Date()): Promise<{ row: StaffRequestRow; created: boolean }> {
   if (me.role === "admin") throw new UserError(REQUEST_TEXT.adminDirect);
+  if ((RETIRED_REQUEST_KINDS as readonly StaffRequestKind[]).includes(input.kind)) throw new Error(`Kaldırılan istek türü: ${input.kind}`);
   const title = input.title.trim();
   if (!title) throw new Error("İsteğin başlığı boş");
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`personel-istek:${me.id}`}))`);
@@ -276,8 +281,8 @@ export async function withdrawOwn(db: Tx, me: Actor, id: number, now = new Date(
 /**
  * Başka bir yol aynı işi yaptı (rapor başka bir istekle düzeltildi, yönetici günü kendisi girdi, kayıt silindi): eşleşen
  * istekler "superseded" olur, not personele görünür; tutulan fotoğrafları bırakılır (`releaseDays` gün sonra silinir;
- * geç kasa raporunun Z fotoğrafı kanıttır, 30 gün). Varsayılan yalnız bekleyenler (mal siparişi taslağında onaylanmış
- * canlı taslak da: `statuses`). Kapanan kimlikler döner.
+ * geç kasa raporunun Z fotoğrafı kanıttır, 30 gün). Varsayılan yalnız bekleyenler (`statuses` ile başkaları da).
+ * Kapanan kimlikler döner.
  */
 export async function supersede(
   tx: Tx,
@@ -310,9 +315,10 @@ export async function supersede(
 }
 
 /**
- * Sabah işinin adımı ("Personel istekleri"): süresi geçen bekleyen istekler ve onaylanmış ama gönderilmemiş mal siparişi
- * taslakları "expired" olur, tutulan fotoğrafları bırakılır. Öteki onaylanmış istekler kayda geçmiştir (kasadan çıkan,
- * geç rapor …): süreleri dolsa da onaylı kalır.
+ * Sabah işinin adımı ("Personel istekleri"): süresi geçen bekleyen istekler "expired" olur, tutulan fotoğrafları
+ * bırakılır. Onaylanmış istekler kayda geçmiştir (kasadan çıkan, geç rapor …): süreleri dolsa da onaylı kalır.
+ * Kaldırılan türün (mal siparişi taslağı, 26 Eki 2026) bekleyen ya da onaylanmış, gönderilmemiş satırları süresine
+ * bakılmadan "expired" olur: kimse onları göremez ve karara bağlayamaz.
  */
 export async function expireStaffRequests(db: Tx, now = new Date()): Promise<{ expired: number }> {
   return db.transaction(async (tx) => {
@@ -320,7 +326,12 @@ export async function expireStaffRequests(db: Tx, now = new Date()): Promise<{ e
     const rows = await tx
       .update(r)
       .set({ status: "expired", updatedAt: now })
-      .where(and(lte(r.expiresAt, now), or(eq(r.status, "pending"), and(eq(r.status, "approved"), eq(r.kind, "mal-taslak")))))
+      .where(
+        or(
+          and(lte(r.expiresAt, now), eq(r.status, "pending")),
+          and(inArray(r.kind, [...RETIRED_REQUEST_KINDS]), inArray(r.status, ["pending", "approved"])),
+        ),
+      )
       .returning({ id: r.id, photoIds: r.photoIds });
     await releaseHeld(
       tx,
@@ -334,17 +345,17 @@ export async function expireStaffRequests(db: Tx, now = new Date()): Promise<{ e
 
 // ---------------------------------------------------------------- Okuyucular (sabit sütunlar; ham yük yok)
 
-/** Türüne göre bekleyen istekler ve en eskisinin anı (Bugün, zil, sabah e-postası) */
+/** Türüne göre bekleyen istekler ve en eskisinin anı (Bugün, zil, sabah e-postası); kaldırılan türler sayılmaz */
 export async function countPendingByKind(db: Tx, now = new Date()): Promise<{ kind: StaffRequestKind; count: number; oldestAt: Date }[]> {
   const rows = await db
     .select({ kind: s.staffRequests.kind, n: count(), oldest: min(s.staffRequests.createdAt) })
     .from(s.staffRequests)
-    .where(and(eq(s.staffRequests.status, "pending"), or(isNull(s.staffRequests.expiresAt), gt(s.staffRequests.expiresAt, now))))
+    .where(and(eq(s.staffRequests.status, "pending"), or(isNull(s.staffRequests.expiresAt), gt(s.staffRequests.expiresAt, now)), live()))
     .groupBy(s.staffRequests.kind);
   return rows.flatMap((r) => (r.oldest ? [{ kind: r.kind, count: r.n, oldestAt: r.oldest }] : []));
 }
 
-/** Bekleyen istekler, eskiden yeniye: başlık, tür, isteyen, an ve sürüm (yük yok; sabah e-postası ve zil) */
+/** Bekleyen istekler, eskiden yeniye: başlık, tür, isteyen, an ve sürüm (yük yok; sabah e-postası ve zil; kaldırılan türler yok) */
 export async function pendingRequests(db: Tx, o: { kinds?: readonly StaffRequestKind[]; now?: Date } = {}) {
   const now = o.now ?? new Date();
   return db
@@ -364,12 +375,13 @@ export async function pendingRequests(db: Tx, o: { kinds?: readonly StaffRequest
         eq(s.staffRequests.status, "pending"),
         or(isNull(s.staffRequests.expiresAt), gt(s.staffRequests.expiresAt, now)),
         o.kinds ? inArray(s.staffRequests.kind, [...o.kinds]) : undefined,
+        live(),
       ),
     )
     .orderBy(asc(s.staffRequests.createdAt), asc(s.staffRequests.id));
 }
 
-/** Son `days` günde karara bağlananlar ve kapananlar, yeniden eskiye (yönetici, Onaylar › Son kararlar) */
+/** Son `days` günde karara bağlananlar ve kapananlar, yeniden eskiye (yönetici, Onaylar › Son kararlar; kaldırılan türler yok) */
 export async function recentDecisions(db: Tx, daysBack = 30, now = new Date()) {
   return db
     .select({
@@ -386,7 +398,7 @@ export async function recentDecisions(db: Tx, daysBack = 30, now = new Date()) {
       reviewedAt: s.staffRequests.reviewedAt,
     })
     .from(s.staffRequests)
-    .where(and(ne(s.staffRequests.status, "pending"), gt(s.staffRequests.updatedAt, new Date(now.getTime() - days(daysBack)))))
+    .where(and(ne(s.staffRequests.status, "pending"), gt(s.staffRequests.updatedAt, new Date(now.getTime() - days(daysBack))), live()))
     .orderBy(desc(s.staffRequests.updatedAt), desc(s.staffRequests.id))
     .limit(40);
 }

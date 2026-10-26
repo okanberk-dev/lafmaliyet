@@ -160,7 +160,7 @@ görünmez, onay da bunu yakalayamazdı).
   kişi ve not yazılmaz; yalnız etkin ürünler. Dokununca satır gizlenir, bildirim 10 sn "Latte Medium kasada 205 ₺
   olarak işaretlendi" ve **Geri al**. Son 30 dakikanın işaretleri listenin **üstünde** ("Son işaretledikleriniz",
   Geri al). "Metni kopyala" var, "Hepsini işaretle" yok (bir seferde bir ürün, `posMarkMax`). Boşken "Kasa güncel".
-- **Girişler:** Bugün'de personel satırı "Kasadaki fiyatlar" (hızlı sayımdan sonra, "Listeyi aç"), zil.
+- **Girişler:** Bugün'de personel satırı "Kasadaki fiyatlar" (zayiden önce, "Listeyi aç"), zil.
 - **Yükleyici** `src/server/data/pos-staff.ts`: sabit sütun beyaz listesi (ürünün kimliği, adı, boyu, satış fiyatı,
   kasadaki eski fiyat ve anı, sırası, etkinliği; kategorinin adı ve sırası; ModPOS adı; kişinin kendi işaretleri).
   Fiyat geçmişi, kaynak, not, site alanları, reçete ve maliyet okunmaz (`tests/fiyatlar.test.ts` sabitler).

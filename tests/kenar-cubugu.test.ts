@@ -110,7 +110,8 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Kasa raporu (/panel/kasa)",
     "Kafe › Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım",
     "Menü › Ürünler, Hammaddeler, Reçete defteri",
-    "Stok › Stok sayımı, Hızlı sayım, Mal siparişi, Zayi & ikram, Tutarlılık",
+    // Hızlı sayım ve Mal siparişi 26 Eki 2026'da kaldırıldı (sahibin isteği: "normal sayım olsun")
+    "Stok › Stok sayımı, Zayi & ikram, Tutarlılık",
     "Satış › Satışlar, Komisyon & hakediş, Analiz & senaryo",
     "Alış & gider › Faturalar, Tedarikçiler, Giderler & personel",
     "Finans › Gelir-gider, Ödemeler & hatırlatıcılar",
@@ -129,7 +130,7 @@ test("tek tıkla: Bugün, Kasa raporu ve Onaylar hiçbir grubun içinde değil",
   assert.deepEqual(navTreeFor("admin").slice(0, 4).map((n) => n.id), ["genel", "bugun", "onaylar", "kasa"]);
 });
 
-test("personelin ağacı değişmedi (içerik ve sıra); yöneticinin başlıkları personelde yok", () => {
+test("personelin ağacı değişmedi (içerik ve sıra; yalnız Hızlı sayım kalktı); yöneticinin başlıkları personelde yok", () => {
   assert.deepEqual(outline(navTreeFor("staff")), [
     "Bugün (/panel/bugun)",
     "Karaoke (/panel/karaoke)",
@@ -137,7 +138,7 @@ test("personelin ağacı değişmedi (içerik ve sıra); yöneticinin başlıkla
     "Kontrol listeleri (/panel/kontrol)",
     "Özel günler (/panel/ozel-gunler)",
     "Reçete defteri (/panel/receteler)",
-    "Stok › Stok sayımı, Hızlı sayım, Zayi & ikram",
+    "Stok › Stok sayımı, Zayi & ikram",
     "Hatırlatıcılarım (/panel/hatirlaticilarim)",
     "Yardım (/panel/yardim/personel)",
   ]);
@@ -160,12 +161,13 @@ test("tek alt sayfası kalan grup o sayfanın bağlantısına döner (personelde
 });
 
 test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve alt menü aynı adresleri tutar", () => {
-  // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti
+  // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti. Hızlı sayım ve Mal
+  // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts)
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/tahmin",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
-    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/hatirlaticilar", "/panel/sayim", "/panel/hizli-sayim",
-    "/panel/mal-siparisi", "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/parasut", "/panel/yardim",
+    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/hatirlaticilar", "/panel/sayim",
+    "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/parasut", "/panel/yardim",
   ];
   assert.deepEqual([...hrefsOf(navTreeFor("admin"))].sort(), [...ADMIN_PAGES].sort());
   // Ağaçtaki her ekran komut paletinde de (Tutarlılık Stok sayımı'nın sekmesi olarak bulunur)
@@ -186,10 +188,10 @@ test("komut paletinin her ekranı, rolünün kenar çubuğunda da bir satırdan 
   for (const item of NAV_GROUPS.flatMap((g) => g.items)) {
     for (const role of item.roles) assert.ok(reaches(navTreeFor(role), item.href), `${role}: ${item.href} (${item.label}) ağaçta yok`);
   }
-  // Paletin rol kümeleri değişmedi: personel aynı ekranları arar
+  // Paletin rol kümeleri değişmedi (yalnız Hızlı sayım kalktı): personel aynı ekranları arar
   const staffPalette = NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.roles.includes("staff")).map((i) => i.href);
   assert.deepEqual([...staffPalette].sort(), [
-    "/panel/bugun", "/panel/hatirlaticilarim", "/panel/hizli-sayim", "/panel/karaoke", "/panel/kasa", "/panel/kontrol", "/panel/ozel-gunler",
+    "/panel/bugun", "/panel/hatirlaticilarim", "/panel/karaoke", "/panel/kasa", "/panel/kontrol", "/panel/ozel-gunler",
     "/panel/receteler", "/panel/sayim", "/panel/zayi",
   ]);
   // Paletin başlıkları ağacın başlıklarıyla aynı sırada (Genel = üst düzeydeki dört ekran; Ayarlar alttaki NAV_FOOTER'da)
@@ -224,11 +226,11 @@ test("etkin sayfanın grubu kendiliğinden açık: alt ekran ve sekme de kendi b
   assert.equal(groupOf("/panel/personel"), "Alış & gider");
   assert.equal(groupOf("/panel/tedarikciler/12"), "Alış & gider");
   assert.equal(groupOf("/panel/urunler/site"), "Menü");
-  assert.equal(groupOf("/panel/mal-siparisi/gonderilen"), "Stok");
+  assert.equal(groupOf("/panel/tutarlilik"), "Stok");
   // Üst düzeydeki ekran ve alt ekranı hiçbir grubu açmaz
   for (const p of ["/panel", "/panel/bugun", "/panel/onaylar", "/panel/kasa", "/panel/kasa/fiyatlar"]) assert.equal(activeGroupOf(admin, p), undefined, p);
   // Personelde Stok grubu
-  assert.equal(activeGroupOf(navTreeFor("staff"), "/panel/hizli-sayim/siparis"), "stok");
+  assert.equal(activeGroupOf(navTreeFor("staff"), "/panel/zayi"), "stok");
   // Kenar çubuğu açıklığı bu işlevden alır
   assert.match(src("sidebar-nav.tsx"), /const activeParent = activeGroupOf\(items, pathname\);/);
   assert.match(src("sidebar-nav.tsx"), /toggled\[id\] \?\? id === activeParent/);

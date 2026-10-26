@@ -1,6 +1,7 @@
 // Bugün ekranının operasyon satırları (saf; logic.ts'in satır listeleri ADMIN_ROWS / STAFF_ROWS bunları çağırır,
 // docs/BUGUN.md). Operasyon grubunun dosyası (plan docs/planlar/personel-yetki.md §4.3): kasadaki fiyatlar (§2.2),
-// dünün kontrol listeleri (§2.5), onaylanmış mal siparişi taslağı (§2.4) ve "Bugün kafede"nin Tükendi satırı (§2.1).
+// dünün kontrol listeleri (§2.5) ve "Bugün kafede"nin Tükendi satırı (§2.1). Personelin onaylanmış mal siparişi
+// taslağı satırı (§2.4) 26 Eki 2026'da mal siparişiyle birlikte kaldırıldı.
 // Olguları src/server/data/today-ops.ts toplar (iki rolde); personelin olgusunda tutar ve maliyet yok.
 // Testler: tests/bugun.test.ts.
 
@@ -23,11 +24,6 @@ export interface OpsDayFacts {
    * son işareti, ISO). Geri alınanlar sayılmaz. Personelin olgusunda yok
    */
   posMarks?: { by: string; count: number; at: string }[] | null;
-  /**
-   * Personel (§2.4): yöneticinin onayladığı, gönderilmeyi bekleyen mal siparişi taslakları (yalnız tedarikçi adı; tutar
-   * yok). Yöneticinin olgusunda yok: bekleyen taslaklar genel Onaylar satırında sayılır
-   */
-  drafts?: { id: number; supplier: string }[] | null;
 }
 
 /**
@@ -104,25 +100,6 @@ export const checklistYesterday: DayRow = (f, c) => {
     ...(pending && admin
       ? { href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar", action: "Onaya bak" }
       : { href: `/panel/kontrol/gecmis?gun=${y.day}`, action: "Geçmişe bak" }),
-  };
-};
-
-/**
- * Personel: onaylanmış, gönderilmeyi bekleyen mal siparişi taslağı (`mal-taslak`; §2.4): "Onaylanan sipariş bekliyor:
- * Kaldi", eylem "Gönder" (taslak sayfasına). Yöneticide yok (Onaylar satırı sayar).
- */
-export const draftRow: DayRow = (f) => {
-  const list = f.ops?.drafts ?? [];
-  if (f.role === "admin" || !list.length) return null;
-  const names = list.map((d) => d.supplier);
-  return {
-    key: "mal-taslak",
-    title: `Onaylanan sipariş bekliyor: ${clip(names.join(", "), 60)}`,
-    status: "todo",
-    ...(list.length > 1 ? { badge: `${num(list.length)} tedarikçi` } : {}),
-    detail: "Yönetici onayladı; WhatsApp'tan tek dokunuşla gönderin (önce kayıt, sonra mesaj).",
-    href: "/panel/hizli-sayim/siparis",
-    action: "Gönder",
   };
 };
 

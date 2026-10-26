@@ -89,8 +89,8 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 ### Günlük satış ağzı
 
 `loadDailyProductSales(from, to)` (`src/server/data/daily-sales.ts`) aralıkta `pos_daily_sales` satırı varsa
-`DailyProductSale[]` (güne ve POS adına göre) döner, yoksa `null`. Okuyanlar (mal siparişinin kullanımı, satış
-tahmininin günlük toplamları ve tatlı payı) bugün olduğu gibi aylık veriye düşer; günlük veriye geçmek her okuyanın kendi
+`DailyProductSale[]` (güne ve POS adına göre) döner, yoksa `null`. Okuyanlar (satış tahmininin günlük toplamları ve
+tatlı payı; mal siparişinin kullanımı da okuyordu, mal siparişi 26 Ekim 2026'da kaldırıldı) bugün olduğu gibi aylık veriye düşer; günlük veriye geçmek her okuyanın kendi
 işidir (plan: son 28 günün en az 14'ünde satır varsa, [planlar/siparis.md](planlar/siparis.md)). Ağız dolu dönünce
 okuyanlar günlüğe bir uyarı yazar.
 
