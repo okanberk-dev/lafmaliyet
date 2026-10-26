@@ -30,6 +30,8 @@ import {
   DeletePayload,
   deleteBell,
   deleteTitle,
+  fieldValue,
+  LatePayload,
   mergeProposal,
   shortDayTR,
   proposalChanges,
@@ -132,6 +134,48 @@ test("öneri raporun şimdiki hâline yalnız önerinin değiştirdiği alanlarl
   assert.equal(mergeProposal(current, { data: base, countedBy: 2 }, proposedOf()).countedBy, 1);
   // Kuruş altı fark değişiklik sayılmaz; boş ↔ boş aynı
   assert.equal(mergeProposal(current, { data: base, countedBy: 2 }, proposedOf({ handedOver: 2_400.001 })).fields.handedOver, 2_400);
+});
+
+test("yazarkasa alanları (dalga 13): eski istek anahtarsız ayrışır, bozuk KDV dökümü reddedilir, döküm sameVat ile birleşir", () => {
+  const vat = [
+    { rate: 10, total: 8_110, vat: 737.27 },
+    { rate: 20, total: 1_240, vat: 206.67 },
+  ];
+  const payload = (proposed: unknown, b: CashRevisionData = base) => ({ date: fields.date, reportId: 7, baseRevision: 1, base: b, baseCountedBy: 2, proposed, gate: "gec" });
+  // Veritabanında bekleyen eski istek (yazarkasa anahtarı yok): ayrışır, anahtarlar eksik kalır (önerilmedi)
+  const old = CorrectionPayload.parse(payload(proposedOf()));
+  assert.equal("okcTotal" in old.proposed, false);
+  assert.equal("okcVat" in old.base, false);
+  // Yazarkasa alanlarıyla öneri ayrışır
+  const okc = CorrectionPayload.parse(payload(proposedOf({ okcZNo: "0188", okcTotal: 9_350, okcCash: 2_450, okcCard: 6_900, okcVat: vat })));
+  assert.deepEqual(okc.proposed.okcVat, vat);
+  // Bozuk döküm: oran 7, KDV toplamdan büyük, aynı oran iki kez, eksi tutar
+  for (const bad of [[{ rate: 7, total: 100, vat: 6.54 }], [{ rate: 10, total: 100, vat: 120 }], [vat[0], { ...vat[0] }], [{ rate: 10, total: -5, vat: 0 }]]) {
+    assert.equal(CorrectionPayload.safeParse(payload(proposedOf({ okcVat: bad }))).success, false, JSON.stringify(bad));
+    assert.equal(LatePayload.safeParse({ ...fields, zNo: "1204", handedTo: null, photos: [{ id: 1, kind: "kasa-z" }], cashDiff: 0, okcVat: bad }).success, false);
+  }
+  // Geç rapor kasa-okc fotoğrafını taşır ama Z fotoğrafını hâlâ ister
+  const late = { ...fields, zNo: "1204", handedTo: null, cashDiff: 0 };
+  assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 1, kind: "kasa-z" }, { id: 2, kind: "kasa-okc" }] }).success, true);
+  assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 2, kind: "kasa-okc" }] }).success, false);
+
+  // Birleştirme: aynı döküm farklı sırada "değişmedi" (şimdiki hâl kalır), farklı döküm önerilen
+  const withVat: CashRevisionData = { ...base, okcVat: vat, okcTotal: 9_350 };
+  const current = { data: { ...withVat, note: "yönetici düzeltti" }, countedBy: 2 };
+  const reordered = mergeProposal(current, { data: withVat, countedBy: 2 }, proposedOf({ okcVat: [vat[1], vat[0]], okcTotal: 9_350 }));
+  assert.equal(reordered.fields.okcVat, current.data.okcVat);
+  assert.equal(reordered.fields.note, "yönetici düzeltti");
+  const changed = [vat[0], { rate: 20, total: 1_240, vat: 206.76 }];
+  assert.deepEqual(mergeProposal(current, { data: withVat, countedBy: 2 }, proposedOf({ okcVat: changed, okcTotal: 9_350 })).fields.okcVat, changed);
+  // Yazarkasa anahtarı olmayan (eski) öneri, sonradan yazılan yazarkasa alanlarını silmez
+  const kept = mergeProposal(current, { data: base, countedBy: 2 }, proposedOf({ handedOver: 2_040 }));
+  assert.equal(kept.fields.okcTotal, 9_350);
+  assert.deepEqual(kept.fields.okcVat, vat);
+  assert.equal(kept.fields.handedOver, 2_040);
+  // Yöneticinin üç sütunu: döküm satır satır, boşsa "—"
+  assert.equal(n(fieldValue("okcVat", withVat)), "%10 8.110 ₺ · KDV 737,27 ₺; %20 1.240 ₺ · KDV 206,67 ₺");
+  assert.equal(fieldValue("okcVat", base), "—");
+  assert.equal(fieldValue("okcZNo", { ...base, okcZNo: "0188" }), "0188");
 });
 
 test("önerinin değişiklikleri: tabana göre; değişiklik yoksa boş (eylem reddeder)", () => {

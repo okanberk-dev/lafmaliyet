@@ -84,6 +84,63 @@ test("kasa: olması gereken = açılış + nakit satış − gün içinde çıka
   assert.equal(computeCash({ ...day, mealCard: 650 }).paymentsDiff, 50);
 });
 
+test("kart farkı (dalga 13 D5): yazarkasa kartı varsa o, yoksa banka gün sonu; eski satır birebir", () => {
+  // Eski satır (yazarkasa alanı yok): bugünkü sonuç ve kaynağı banka
+  const old = computeCash(day);
+  assert.equal(old.cardDiff, 0);
+  assert.equal(old.cardSource, "bank");
+  assert.deepEqual({ ...computeCash({ ...day, okcCard: null }) }, { ...old });
+  // Yazarkasa kartı banka gün sonunun önüne geçer
+  const okc = computeCash({ ...day, okcCard: 8_270 });
+  assert.equal(okc.cardDiff, 120);
+  assert.equal(okc.cardSource, "okc");
+  assert.equal(computeCash({ ...day, bankPos: null, okcCard: 8_100 }).cardDiff, -50);
+  // İkisi de yok: karşılaştırma yok
+  const none = computeCash({ ...day, bankPos: null, okcCard: null });
+  assert.equal(none.cardDiff, null);
+  assert.equal(none.cardSource, null);
+  // WhatsApp'taki banka gün sonu bloğu yazarkasa kartından etkilenmez (yazarkasanın bloğu b6'da)
+  assert.equal(whatsappText({ ...day, okcCard: 9_000 }, { by: "Ayşe" }), whatsappText(day, { by: "Ayşe" }));
+  assert.doesNotMatch(whatsappText({ ...day, bankPos: null, okcCard: 9_000 }, { by: "Ayşe" }), /Banka POS gün sonu/);
+});
+
+test("düzeltmeler: yazarkasa alanları ve KDV dökümü (sıralı, kuruşa yuvarlı; aynı uzunlukta farklı döküm değişti)", () => {
+  const vat = [
+    { rate: 10, total: 8_110, vat: 737.27 },
+    { rate: 20, total: 1_240, vat: 206.67 },
+  ];
+  const withOkc = rev({ okcZNo: "0188", okcReceipts: 143, okcTotal: 9_350, okcVatTotal: 943.94, okcVat: vat, okcCash: 2_450, okcCard: 6_900, okcMealCard: null, okcOther: null });
+  // Aynı döküm farklı sırada ve kuruş altı farkla: değişmedi
+  assert.deepEqual(revisionChanges(withOkc, { ...withOkc, okcVat: [{ rate: 20, total: 1_240.001, vat: 206.67 }, vat[0]] }), []);
+  // Aynı uzunlukta farklı döküm (bir oranın KDV'si): değişti, değer yazılmadan
+  const changed = revisionChanges(withOkc, { ...withOkc, okcVat: [vat[0], { rate: 20, total: 1_240, vat: 206.76 }] });
+  assert.deepEqual(
+    changed.map((c) => [c.key, c.label, c.from, c.to, c.sensitive]),
+    [["okcVat", "KDV dökümü", "", "", false]],
+  );
+  assert.equal(changeLine(changed[0]), "KDV dökümü değişti");
+  // Boş ve [] eşit; eski kopyada (yazarkasa anahtarı yok) boş sayılır
+  assert.deepEqual(revisionChanges(rev({ okcVat: null }), rev({ okcVat: [] })), []);
+  assert.deepEqual(revisionChanges(rev(), rev({ okcVat: null, okcZNo: null })), []);
+  // Yazarkasa alanları eklenince: Z no metin olarak, tutarlar tutar olarak; hiçbiri hassas değil (onaysız)
+  const added = revisionChanges(rev(), withOkc);
+  assert.deepEqual(
+    added.map((c) => [c.key, c.label, plain(c.from), plain(c.to), c.sensitive]),
+    [
+      ["okcTotal", "Yazarkasa toplam", "—", "9.350 ₺", false],
+      ["okcCash", "Yazarkasa nakit", "—", "2.450 ₺", false],
+      ["okcCard", "Yazarkasa kart", "—", "6.900 ₺", false],
+      ["okcVatTotal", "Yazarkasa KDV", "—", "943,94 ₺", false],
+      ["okcVat", "KDV dökümü", "", "", false],
+      ["okcZNo", "Yazarkasa Z no", "—", "0188", false],
+      ["okcReceipts", "Yazarkasa fiş sayısı", "—", "143", false],
+    ],
+  );
+  // Kopya (revisionDataOf) yazarkasa alanlarını taşır; eski satırda boş
+  assert.equal(revisionDataOf({ ...day, cashDiff: 0, countedByName: null }).okcVat, null);
+  assert.deepEqual(revisionDataOf({ ...day, okcVat: vat, cashDiff: 0, countedByName: null }).okcVat, vat);
+});
+
 test("fark: 1 ₺ altı tutuyor, eksik ve fazla metni", () => {
   assert.equal(diffKind(-0.5), "even");
   assert.equal(diffKind(-1), "short");
@@ -270,7 +327,8 @@ test("düzeltmeler: değişen alanlar, tutar biçimi, boş, metin alanı içerik
     [
       ["countedCash", "Sayılan nakit", "3.430 ₺", "3.530 ₺", true],
       ["discounts", "İndirim", "—", "250 ₺", false],
-      ["bankPos", "Banka POS", "8.150 ₺", "—", false],
+      // Dalga 13: alanın adı "Banka gün sonu" (yazarkasanın kart satırından ayrı; docs/planlar/okc-z.md §6.5)
+      ["bankPos", "Banka gün sonu", "8.150 ₺", "—", false],
       ["zNo", "Z no", "1234", "1235", false],
       ["note", "Not", "", "", false],
       // Sayan da kasa alanı sayılır (dalga 10): ertesi gün değişirse yönetici uyarılır, personel onayla değiştirir

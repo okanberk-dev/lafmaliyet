@@ -1,5 +1,6 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
+import { sameVat, type OkcVatLine } from "./okc-z";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 
@@ -27,7 +28,10 @@ export interface CashReportFields {
   cashOutNote: string | null;
   countedCash: number;
   handedOver: number;
-  /** Banka POS cihazının gün sonu toplamı; girilmediyse kart karşılaştırılmaz */
+  /**
+   * Banka gün sonu fişinin net toplamı (yazarkasa Z'sinin kart satırı değil); yazarkasa kartı da girilmediyse kart
+   * karşılaştırılmaz. Yazarkasa bölümünden önceki raporlarda tek kart kanıtı ("Banka POS")
+   */
   bankPos: number | null;
   /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez); girilmediyse null */
   offRevenue: number | null;
@@ -37,7 +41,27 @@ export interface CashReportFields {
    */
   discounts?: number | null;
   note: string | null;
+  /**
+   * Yazarkasanın (banka POS) mali Z raporu (dalga 13; docs/planlar/okc-z.md §6.5): bölüm isteğe bağlı. Alanlar sonradan
+   * geldi: eski kopyalarda, bekleyen eski isteklerde ve elle kurulan raporlarda olmayabilir (boş sayılır). Kümülatif ve
+   * yazarkasa dışı tahsilat burada değil: sunucu sütunlarıdır, yalnız yöneticinin DTO'sunda
+   */
+  okcZNo?: string | null;
+  okcReceipts?: number | null;
+  okcTotal?: number | null;
+  okcVatTotal?: number | null;
+  /** Oran oran KDV dökümü: sıfır gruplar yok, orana göre sıralı */
+  okcVat?: OkcVatLine[] | null;
+  okcCash?: number | null;
+  /** K.KARTI / KREDİ satırı (altındaki banka satırları hariç) */
+  okcCard?: number | null;
+  okcMealCard?: number | null;
+  okcOther?: number | null;
 }
+
+/** Yazarkasa alanları (formun; sunucu sütunları değil), formdaki sırayla */
+export const OKC_FORM_KEYS = ["okcZNo", "okcReceipts", "okcTotal", "okcVatTotal", "okcVat", "okcCash", "okcCard", "okcMealCard", "okcOther"] as const satisfies readonly (keyof CashReportFields)[];
+export type OkcFormKey = (typeof OKC_FORM_KEYS)[number];
 
 /** Günün zayi ve ikram özeti (src/lib/waste.ts summarize): "2× Latte M, Süt 1 LT" */
 export interface DayWaste {
@@ -74,14 +98,24 @@ export interface CashResult {
   kind: DiffKind;
   /** Sayılan − teslim edilen: ertesi günün açılışı */
   carryOver: number;
-  /** Banka POS − ModPOS kart (girilmediyse null) */
+  /**
+   * Kart farkı (docs/planlar/okc-z.md D5): yazarkasa kartı varsa o, yoksa banka gün sonu − ModPOS kart (ikisi de
+   * girilmediyse null). Yazarkasa alanı boş eski raporda bugünkü sonuç birebir
+   */
   cardDiff: number | null;
+  /** Kart farkının kaynağı: yazarkasanın kart satırı, banka gün sonu ya da yok */
+  cardSource: "okc" | "bank" | null;
 }
 
-export function computeCash(f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos">): CashResult {
+export function computeCash(
+  f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard">,
+): CashResult {
   const paymentsTotal = r2(f.cash + f.card + f.mealCard + f.online + f.other);
   const expectedCash = r2(f.openingCash + f.cash - f.cashOut);
   const cashDiff = r2(f.countedCash - expectedCash);
+  const okcCard = f.okcCard ?? null;
+  const bankPos = f.bankPos ?? null;
+  const cardRef = okcCard ?? bankPos;
   return {
     paymentsTotal,
     paymentsDiff: r2(paymentsTotal - f.zTotal),
@@ -89,7 +123,8 @@ export function computeCash(f: Pick<CashReportFields, "zTotal" | "cash" | "card"
     cashDiff,
     kind: diffKind(cashDiff),
     carryOver: r2(f.countedCash - f.handedOver),
-    cardDiff: f.bankPos === null ? null : r2(f.bankPos - f.card),
+    cardDiff: cardRef === null ? null : r2(cardRef - f.card),
+    cardSource: okcCard !== null ? "okc" : bankPos !== null ? "bank" : null,
   };
 }
 
@@ -207,7 +242,7 @@ export type CashRevisionData = CashReportFields & { cashDiff: number; countedByN
 
 type ChangeKey = Exclude<keyof CashRevisionData, "date" | "cashDiff">;
 
-/** Değişiklik listesindeki adlar ve sıra: önce kasa (nakit), sonra Z raporu, kart ve notlar */
+/** Değişiklik listesindeki adlar ve sıra: önce kasa (nakit), sonra ModPOS Z raporu, yazarkasa (banka POS) Z'si, kart ve notlar */
 export const CHANGE_LABELS: Record<ChangeKey, string> = {
   openingCash: "Açılış",
   cash: "Nakit satış",
@@ -221,9 +256,18 @@ export const CHANGE_LABELS: Record<ChangeKey, string> = {
   other: "Diğer",
   discounts: "İndirim",
   offRevenue: "Ödenmez / ikram",
-  bankPos: "Banka POS",
+  okcTotal: "Yazarkasa toplam",
+  okcCash: "Yazarkasa nakit",
+  okcCard: "Yazarkasa kart",
+  okcMealCard: "Yazarkasa yemek kartı",
+  okcOther: "Yazarkasa diğer",
+  okcVatTotal: "Yazarkasa KDV",
+  okcVat: "KDV dökümü",
+  bankPos: "Banka gün sonu",
   zNo: "Z no",
   receipts: "Fiş sayısı",
+  okcZNo: "Yazarkasa Z no",
+  okcReceipts: "Yazarkasa fiş sayısı",
   cashOutNote: "Neye çıktı",
   note: "Not",
   countedByName: "Sayan",
@@ -236,7 +280,12 @@ export const CHANGE_LABELS: Record<ChangeKey, string> = {
 export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver", "countedByName"];
 
 const TEXT_FIELDS: readonly ChangeKey[] = ["cashOutNote", "note"];
-const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "countedByName"];
+const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "okcZNo", "okcReceipts", "countedByName"];
+/**
+ * Değeri yazılmadan "… değişti" diye gösterilenler: metin alanları ve KDV dökümü (bir dizi: metin ya da sayı gibi
+ * karşılaştırılmaz, sameVat; docs/planlar/okc-z.md §6.5)
+ */
+const QUIET_FIELDS: readonly ChangeKey[] = [...TEXT_FIELDS, "okcVat"];
 
 export interface FieldChange {
   key: ChangeKey;
@@ -257,23 +306,28 @@ const valueOf = (d: Partial<CashRevisionData>, k: ChangeKey) => d[k] ?? null;
 export function revisionChanges(before: Partial<CashRevisionData>, after: Partial<CashRevisionData>): FieldChange[] {
   const out: FieldChange[] = [];
   for (const key of Object.keys(CHANGE_LABELS) as ChangeKey[]) {
-    const a = valueOf(before, key);
-    const b = valueOf(after, key);
+    const quiet = QUIET_FIELDS.includes(key);
+    if (key === "okcVat") {
+      // Döküm sıralı ve kuruşa yuvarlı karşılaştırılır: aynı döküm farklı sırada değişmemiştir, boş ve [] eşit
+      if (!sameVat(before.okcVat, after.okcVat)) out.push({ key, label: CHANGE_LABELS[key], from: "", to: "", sensitive: false });
+      continue;
+    }
+    const a = valueOf(before, key) as string | number | null;
+    const b = valueOf(after, key) as string | number | null;
     const text = TEXT_FIELDS.includes(key) || PLAIN_FIELDS.includes(key);
     const same = text
       ? String(a ?? "").trim() === String(b ?? "").trim()
       : (a === null && b === null) || (a !== null && b !== null && Math.abs(Number(a) - Number(b)) < 0.005);
     if (same) continue;
     const shown = (v: string | number | null) => (v === null || v === "" ? "—" : PLAIN_FIELDS.includes(key) ? String(v) : money(Number(v)));
-    const quiet = TEXT_FIELDS.includes(key);
     out.push({ key, label: CHANGE_LABELS[key], from: quiet ? "" : shown(a), to: quiet ? "" : shown(b), sensitive: SENSITIVE.includes(key) });
   }
   return out;
 }
 
-/** "Sayılan nakit: 2.880 ₺ → 2.980 ₺", metin alanında "Not değişti" (`colon: false`: iki noktasız, satır içi) */
+/** "Sayılan nakit: 2.880 ₺ → 2.980 ₺", metin alanında ve KDV dökümünde "Not değişti" (`colon: false`: iki noktasız, satır içi) */
 export function changeLine(c: FieldChange, colon = true): string {
-  if (TEXT_FIELDS.includes(c.key)) return `${c.label} değişti`;
+  if (QUIET_FIELDS.includes(c.key)) return `${c.label} değişti`;
   return `${c.label}${colon ? ":" : ""} ${c.from} → ${c.to}`;
 }
 
@@ -405,6 +459,15 @@ export function revisionDataOf(r: CashReportFields & { cashDiff: number; counted
     offRevenue: r.offRevenue,
     discounts: r.discounts,
     note: r.note,
+    okcZNo: r.okcZNo ?? null,
+    okcReceipts: r.okcReceipts ?? null,
+    okcTotal: r.okcTotal ?? null,
+    okcVatTotal: r.okcVatTotal ?? null,
+    okcVat: r.okcVat ?? null,
+    okcCash: r.okcCash ?? null,
+    okcCard: r.okcCard ?? null,
+    okcMealCard: r.okcMealCard ?? null,
+    okcOther: r.okcOther ?? null,
     cashDiff: r.cashDiff,
     countedByName: r.countedByName ?? r.submittedByName ?? null,
   };
@@ -656,12 +719,15 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
     ...(f.handedOver ? [`Teslim edilen: ${money(f.handedOver)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
     ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
   ];
+  // Banka gün sonu bloğu bugünkü gibi (yazarkasa kartının bloğu WhatsApp'a dalga 13 b6'da gelir; kart farkı o zaman
+  // computeCash'in kaynağıyla)
+  const bankDiff = f.bankPos === null ? null : r2(f.bankPos - f.card);
   const kart =
-    c.cardDiff === null
+    bankDiff === null
       ? []
       : [
           "*Kart*",
-          `Banka POS gün sonu: ${money(f.bankPos)} ${Math.abs(c.cardDiff) < CASH_TOLERANCE ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}`,
+          `Banka POS gün sonu: ${money(f.bankPos)} ${Math.abs(bankDiff) < CASH_TOLERANCE ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`}`,
         ];
   const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
   const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);

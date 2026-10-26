@@ -94,10 +94,11 @@ export function renderCashReport(
     Math.abs(c.paymentsDiff) >= CASH_TOLERANCE
       ? `Ödeme türlerinin toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}: bir tutar yanlış yazılmış olabilir.`
       : null;
+  // Banka gün sonu satırları bugünkü gibi (yazarkasanın kart satırı e-postaya dalga 13 b6'da gelir; kart farkı o zaman
+  // computeCash'in kaynağıyla)
+  const bankDiff = f.bankPos === null ? null : Math.round((f.bankPos - f.card) * 100) / 100;
   const cardWarning =
-    c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE
-      ? `Banka POS gün sonu ModPOS'taki karttan ${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}.`
-      : null;
+    bankDiff !== null && Math.abs(bankDiff) >= CASH_TOLERANCE ? `Banka POS gün sonu ModPOS'taki karttan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}.` : null;
 
   const zRows = [
     row("Toplam satış", money(f.zTotal), { strong: true }),
@@ -128,14 +129,14 @@ export function renderCashReport(
     row("Ertesi güne devir", money(c.carryOver)),
   ].join("\n");
   const cardRows =
-    c.cardDiff === null
+    bankDiff === null
       ? ""
       : [
           row("ModPOS kart", money(f.card)),
           row("Banka POS gün sonu", money(f.bankPos)),
-          row("Fark", Math.abs(c.cardDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`, {
+          row("Fark", Math.abs(bankDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`, {
             strong: true,
-            color: Math.abs(c.cardDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",
+            color: Math.abs(bankDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",
           }),
         ].join("\n");
   const photoWarning = meta.photoDiffs?.length ? `Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}` : null;

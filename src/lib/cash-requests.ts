@@ -15,6 +15,7 @@ import {
 } from "./cash-report";
 import { closedBellTitle } from "./closed-days";
 import { money } from "./format";
+import { OKC_KNOWN_RATES, sameVat, type OkcVatLine } from "./okc-z";
 import { MAX_REPORT_PHOTOS } from "./photo-rules";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR, monthShortTR, todayTR } from "./reminders";
 
@@ -28,7 +29,27 @@ import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR, monthShortTR, today
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const amount = z.number().finite();
 
-/** Raporun formu (gün hariç); bilinmeyen anahtarlar düşer */
+/**
+ * Yazarkasanın KDV dökümü (kayıtlı biçim; docs/planlar/okc-z.md §7): oran %0, %1, %8, %10, %18 ya da %20, toplam ve KDV
+ * eksi değil, KDV toplamdan büyük değil, oran tekrarsız
+ */
+export const OkcVatSchema = z
+  .array(
+    z
+      .object({
+        rate: z.number().refine((r) => OKC_KNOWN_RATES.includes(r), "KDV oranı %0, %1, %8, %10, %18 ya da %20 olmalı"),
+        total: amount.min(0, "Tutar eksi olamaz"),
+        vat: amount.min(0, "Tutar eksi olamaz"),
+      })
+      .refine((l) => l.vat <= l.total + 0.005, { message: "KDV toplamından büyük olamaz" }),
+  )
+  .max(OKC_KNOWN_RATES.length)
+  .refine((ls) => new Set(ls.map((l) => l.rate)).size === ls.length, "Aynı KDV oranı iki kez yazılmış") satisfies z.ZodType<OkcVatLine[], unknown>;
+
+/**
+ * Raporun formu (gün hariç); bilinmeyen anahtarlar düşer. Yazarkasa alanları isteğe bağlı (`optional`): veritabanında
+ * bekleyen eski istekler ve kopyalar bu anahtarları taşımaz; eksik anahtar "önerilmedi" demektir (mergeProposal)
+ */
 const CashFieldsSchema = z.object({
   zNo: z.string().max(30).nullable(),
   receipts: z.number().int().min(0).nullable(),
@@ -47,6 +68,15 @@ const CashFieldsSchema = z.object({
   offRevenue: amount.nullable(),
   discounts: amount.nullish().transform((v) => v ?? null),
   note: z.string().max(1000).nullable(),
+  okcZNo: z.string().max(30).nullable().optional(),
+  okcReceipts: z.number().int().min(0).nullable().optional(),
+  okcTotal: amount.nullable().optional(),
+  okcVatTotal: amount.nullable().optional(),
+  okcVat: OkcVatSchema.nullable().optional(),
+  okcCash: amount.nullable().optional(),
+  okcCard: amount.nullable().optional(),
+  okcMealCard: amount.nullable().optional(),
+  okcOther: amount.nullable().optional(),
 });
 
 /** Bir sürümün kopyası (cash_report_revisions.data ile aynı alanlar) */
@@ -158,12 +188,25 @@ const FIELD_KEYS = [
   "offRevenue",
   "discounts",
   "note",
+  "okcZNo",
+  "okcReceipts",
+  "okcTotal",
+  "okcVatTotal",
+  "okcVat",
+  "okcCash",
+  "okcCard",
+  "okcMealCard",
+  "okcOther",
 ] as const satisfies readonly (keyof CashReportFields)[];
 type FieldKey = (typeof FIELD_KEYS)[number];
-const TEXT_KEYS: readonly FieldKey[] = ["zNo", "cashOutNote", "note"];
+const TEXT_KEYS: readonly FieldKey[] = ["zNo", "okcZNo", "cashOutNote", "note"];
 
-/** İki değer aynı mı: metin kırpılarak, tutar 0,005 hassasiyetle, boş yalnız boşla */
+/**
+ * İki değer aynı mı: metin kırpılarak, tutar 0,005 hassasiyetle, boş yalnız boşla; KDV dökümü sıralı ve kuruşa yuvarlı
+ * (sameVat: dizi sayı gibi karşılaştırılırsa NaN verir ve öneri hep "değişti" görünürdü)
+ */
 function same(k: FieldKey, a: unknown, b: unknown): boolean {
+  if (k === "okcVat") return sameVat(a as OkcVatLine[] | null | undefined, b as OkcVatLine[] | null | undefined);
   if (TEXT_KEYS.includes(k)) return String(a ?? "").trim() === String(b ?? "").trim();
   if (a === null || a === undefined || b === null || b === undefined) return (a ?? null) === (b ?? null);
   return Math.abs(Number(a) - Number(b)) < 0.005;
@@ -179,14 +222,15 @@ export function proposedData(date: string, p: ProposedFields): CashRevisionData 
 /**
  * Önerinin rapora uygulanması: yalnız önerinin tabandan değiştirdiği alanlar raporun şimdiki hâline yazılır; arada
  * yöneticinin düzelttiği öteki alanlar korunur. Sayan da aynı kurala bağlıdır (`base.countedBy` ile): önerinin sayanı
- * tabanla aynıysa şimdiki sayan kalır.
+ * tabanla aynıysa şimdiki sayan kalır. Öneride hiç olmayan yazarkasa alanı (yazarkasa bölümünden önceki istek)
+ * önerilmemiş sayılır: şimdiki değer kalır.
  */
 export function mergeProposal(
   current: { data: CashRevisionData; countedBy: number | null },
   base: { data: CashRevisionData; countedBy: number | null },
   proposed: ProposedFields,
 ): { fields: CashReportFields; countedBy: number | null; countedByName: string | null } {
-  const picked = Object.fromEntries(FIELD_KEYS.map((k) => [k, same(k, base.data[k], proposed[k]) ? (current.data[k] ?? null) : (proposed[k] ?? null)]));
+  const picked = Object.fromEntries(FIELD_KEYS.map((k) => [k, proposed[k] === undefined || same(k, base.data[k], proposed[k]) ? (current.data[k] ?? null) : (proposed[k] ?? null)]));
   const fields = { ...(picked as Omit<CashReportFields, "date">), date: current.data.date };
   const counterChanged = base.countedBy !== proposed.countedBy;
   return {
@@ -228,9 +272,14 @@ export function resultLines(before: CashReportFields, after: CashReportFields): 
 
 /** Alanın ekrandaki değeri (yöneticinin üç sütunu): tutar, metin ya da "—" */
 export function fieldValue(key: FieldChange["key"], d: Partial<CashRevisionData>): string {
+  if (key === "okcVat") {
+    // "%10 8.110 ₺ · KDV 737,27 ₺; %20 1.240 ₺ · KDV 206,67 ₺"
+    const lines = d.okcVat ?? [];
+    return lines.length ? lines.map((l) => `%${l.rate} ${money(l.total)} · KDV ${money(l.vat)}`).join("; ") : "—";
+  }
   const v = d[key] ?? null;
   if (v === null || v === "") return "—";
-  if (key === "zNo" || key === "receipts" || key === "countedByName") return String(v);
+  if (key === "zNo" || key === "receipts" || key === "okcZNo" || key === "okcReceipts" || key === "countedByName") return String(v);
   if (key === "note" || key === "cashOutNote") return clip(String(v).trim(), 60);
   return money(Number(v));
 }

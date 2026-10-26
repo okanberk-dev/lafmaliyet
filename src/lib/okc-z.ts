@@ -40,7 +40,9 @@ export function vatTol(receipts: number | null | undefined): number {
 export const OKC_RATES = [1, 10, 20] as const;
 export type OkcRate = (typeof OKC_RATES)[number];
 const OLD_RATES = [8, 18];
-const KNOWN_RATES = new Set([0, 1, 10, 20, 8, 18]);
+/** KDV dökümünde kabul edilen oranlar: bugünküler, eskiler (%8, %18; tutar basılmamalı) ve %0 */
+export const OKC_KNOWN_RATES: readonly number[] = [0, 1, 8, 10, 18, 20];
+const KNOWN_RATES = new Set(OKC_KNOWN_RATES);
 
 /** Yazarkasa alanları (ModPOS anahtarlarından ayrı: çapraz karşılaştırma olmaz) */
 export type OkcField =
@@ -479,6 +481,47 @@ export function okcFormChecks(v: OkcFormValues, ctx: { prevZ: { date: string; zN
   return { fields, summary, admin: res.checks.filter((c) => c.level === "warn").map((c) => c.text) };
 }
 
+// ---------------------------------------------------------------- Zorunluluk (formda ve sunucuda aynı, §3.2)
+
+/** Formdan gelen döküm satırı: oranın toplamı ya da KDV'si yazılmamış olabilir (ikisi birlikte yazılır) */
+export interface OkcVatInput {
+  rate: number;
+  total: number | null;
+  vat: number | null;
+}
+
+/**
+ * Yazarkasa bölümünün zorunluluk kuralları (plan §3.2; form ve sunucu aynı metinle): bölüm bütünüyle boş kalabilir;
+ * herhangi bir tutar yazıldıysa günlük toplam, nakit ve kredi kartı gerekli; bir oranın toplamı ile KDV'si birlikte
+ * yazılır ve KDV toplamdan büyük olamaz. İlk hatanın metni, yoksa null
+ */
+export function okcFormError(v: {
+  okcTotal?: number | null;
+  okcVatTotal?: number | null;
+  okcCash?: number | null;
+  okcCard?: number | null;
+  okcMealCard?: number | null;
+  okcOther?: number | null;
+  okcVat?: readonly OkcVatInput[] | null;
+}): string | null {
+  const lines = v.okcVat ?? [];
+  for (const l of lines) {
+    if ((l.total === null) !== (l.vat === null)) return `%${l.rate} için toplam ve KDV birlikte yazılır`;
+    if (l.total !== null && l.vat !== null && l.vat > l.total + 0.005) return `%${l.rate} KDV'si toplamından büyük olamaz`;
+  }
+  const any = [v.okcTotal, v.okcVatTotal, v.okcCash, v.okcCard, v.okcMealCard, v.okcOther].some(isNum) || lines.some((l) => isNum(l.total) || isNum(l.vat));
+  if (!any) return null;
+  if (!isNum(v.okcTotal)) return "Yazarkasa günlük toplamı gerekli (bölümü boş da bırakabilirsiniz)";
+  if (!isNum(v.okcCash)) return "Nakit gerekli (yoksa 0 yazın)";
+  if (!isNum(v.okcCard)) return "Kredi kartı gerekli (yoksa 0 yazın)";
+  return null;
+}
+
+/** Raporda yazarkasa bölümü yazılmış mı (günlük toplam ya da kart) */
+export function okcHasFigures(f: { okcTotal?: number | null; okcCard?: number | null }): boolean {
+  return isNum(f.okcTotal) || isNum(f.okcCard);
+}
+
 // ---------------------------------------------------------------- KDV dökümü
 
 /** Saklanacak döküm: sıfır gruplar atılır, orana göre sıralanır, tutarlar kuruşa yuvarlanır */
@@ -553,6 +596,103 @@ export function okcCumulativeToStore(i: OkcCumulativeInput): OkcCumulativeResult
   }
   if (!basis) return { ...out, rejected: r2(i.cumTotal) };
   return { ...out, cumTotal: r2(i.cumTotal), cumVat: vatOk ? r2(i.cumVat!) : null, basis };
+}
+
+// ---------------------------------------------------------------- Geç rapor: iki yanlı zincir (§3.8, §5.3)
+
+/** Geç raporun kayıtlı komşu yazarkasa Z'si */
+export interface OkcNeighbour {
+  date: string;
+  zNo: string;
+  /** Günlük toplam (sonraki halkanın kümülatif artışı onunla karşılaştırılır) */
+  total?: number | null;
+  /** Saklanan kümülatif (yalnız inandırıcı bulunmuşsa saklıdır) */
+  cumTotal?: number | null;
+}
+
+export interface OkcLateChain {
+  /** false: bir halka tutmuyor; true: en az bir halka tutuyor, hiçbiri bozuk değil; null: denetlenecek bir şey yok */
+  ok: boolean | null;
+  /** "Banka POS Z no 0188: önceki 0187 (21 Ekim) ✓ · sonraki 0189 (23 Ekim) ✓ · kümülatif iki yanda da tutuyor" */
+  text: string;
+}
+
+/**
+ * Geç güne eklenen raporun yazarkasa Z'si iki komşusuyla (yöneticinin onay kartı; plan §3.8): Z no önceki + 1 ve
+ * sonraki − 1 mi, kümülatif zinciri (K6) iki yanda tutuyor mu. `cur.cumTotal`: geç raporun fotoğrafının okuduğu
+ * kümülatif (okunan Z no ve toplam kaydedilenle aynıysa); yoksa önceki ve sonraki saklanan kümülatifin farkı iki günün
+ * toplamıyla karşılaştırılır. `prev.z` Z no sırası, `prev.cum` son saklanan kümülatif (previousOkc). Yazarkasa Z no'su
+ * yazılmamış raporda null.
+ */
+export function okcLateChain(
+  cur: { zNo: string | null | undefined; total: number | null | undefined; cumTotal?: number | null },
+  prev: { z: { date: string; zNo: string } | null; cum?: { date: string; zNo: string; cumTotal: number } | null },
+  next: OkcNeighbour | null,
+): OkcLateChain | null {
+  const c = zNoNumber(cur.zNo);
+  if (c === null) return null;
+  const shown = (cur.zNo ?? "").trim();
+  const parts: string[] = [];
+  let good = 0;
+  let bad = 0;
+  const p = prev.z ? zNoNumber(prev.z.zNo) : null;
+  if (prev.z && p !== null) {
+    const label = `önceki ${prev.z.zNo.trim()} (${dayMonthTR(prev.z.date)})`;
+    if (p + 1 === c) {
+      good++;
+      parts.push(`${label} ✓`);
+    } else if (p >= c) {
+      bad++;
+      parts.push(`${label} bu Z no'dan büyük ya da eşit`);
+    } else parts.push(`${label}; arada ${c - p - 1} Z girilmemiş`);
+  }
+  const n = next ? zNoNumber(next.zNo) : null;
+  if (next && n !== null) {
+    const label = `sonraki ${next.zNo.trim()} (${dayMonthTR(next.date)})`;
+    if (n === c + 1) {
+      good++;
+      parts.push(`${label} ✓`);
+    } else if (n <= c) {
+      bad++;
+      parts.push(`${label} bu Z no'dan küçük ya da eşit`);
+    } else parts.push(`${label}; arada ${n - c - 1} Z girilmemiş`);
+  }
+  // Kümülatif: +1'de fark günlük toplamı tutmalı, aralıkta (girilmemiş Z'ler) en az o kadar büyümeli
+  const held: string[] = [];
+  const broken: string[] = [];
+  const total = isNum(cur.total) ? cur.total : null;
+  const curCum = isNum(cur.cumTotal) ? cur.cumTotal : null;
+  const pc = prev.cum ? zNoNumber(prev.cum.zNo) : null;
+  if (prev.cum && pc !== null && pc < c && curCum !== null && total !== null) {
+    const d = r2(curCum - prev.cum.cumTotal);
+    if (pc + 1 === c) {
+      if (Math.abs(r2(d - total)) <= SUM_TOL) held.push("önceki");
+      else broken.push(`önceki Z'den bu yana kümülatif artışı ${money(d)}, bu günün toplamı ${money(total)}`);
+    } else if (d < total - SUM_TOL) broken.push(`önceki Z'den bu yana kümülatif artışı ${money(d)}, bu günün toplamından (${money(total)}) az`);
+  }
+  const nextCum = next && isNum(next.cumTotal) ? next.cumTotal : null;
+  const nextTotal = next && isNum(next.total) ? next.total : null;
+  if (next && n !== null && n > c && nextCum !== null && nextTotal !== null) {
+    if (curCum !== null) {
+      const d = r2(nextCum - curCum);
+      if (n === c + 1) {
+        if (Math.abs(r2(d - nextTotal)) <= SUM_TOL) held.push("sonraki");
+        else broken.push(`sonraki günün kümülatif artışı ${money(d)}, o günün toplamı ${money(nextTotal)}`);
+      } else if (d < nextTotal - SUM_TOL) broken.push(`sonraki günün kümülatif artışı ${money(d)}, o günün toplamından (${money(nextTotal)}) az`);
+    } else if (prev.cum && pc !== null && total !== null && pc + 1 === c && n === c + 1) {
+      // Geç raporun kendi kümülatifi yok: önceki ve sonraki saklanan kümülatifin farkı iki günün toplamı olmalı
+      const d = r2(nextCum - prev.cum.cumTotal);
+      const both = r2(total + nextTotal);
+      if (Math.abs(r2(d - both)) <= SUM_TOL) held.push("iki yanda");
+      else broken.push(`önceki ve sonraki Z arasındaki kümülatif artış ${money(d)}, iki günün toplamı ${money(both)}`);
+    }
+  }
+  good += held.length;
+  bad += broken.length;
+  if (broken.length) parts.push(...broken);
+  else if (held.length === 2 || held.includes("iki yanda")) parts.push("kümülatif iki yanda da tutuyor");
+  else if (held.length === 1) parts.push(`kümülatif ${held[0]} Z'yle tutuyor`);
+  return { ok: bad ? false : good ? true : null, text: `Banka POS Z no ${shown}${parts.length ? `: ${parts.join(" · ")}` : ""}` };
 }
 
 /** Yöneticinin kayıtlı raporundaki satır: saklanmayan kümülatif */
