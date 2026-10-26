@@ -27,7 +27,7 @@ export default function KaraokePage() {
     <>
       <PageHeader
         title="Karaoke"
-        eyebrow="Günlük"
+        eyebrow="Kafe"
         description="Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
       />
       <Suspense fallback={<PageSkeleton rows={8} />}>

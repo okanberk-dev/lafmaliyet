@@ -49,7 +49,7 @@ export default function SuppliersPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Satış & gider" title="Tedarikçiler" description={DESCRIPTION} />
+          <PageHeader eyebrow="Alış & gider" title="Tedarikçiler" description={DESCRIPTION} />
           <PageSkeleton rows={8} />
         </>
       }
@@ -127,7 +127,7 @@ async function SuppliersContent() {
 
   return (
     <>
-      <PageHeader eyebrow="Satış & gider" title="Tedarikçiler" description={DESCRIPTION} />
+      <PageHeader eyebrow="Alış & gider" title="Tedarikçiler" description={DESCRIPTION} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown title="Kalan borç" description="Ödenmemiş faturaların kalan tutarı (KDV dahil), tedarikçi tedarikçi. Tedarikçiye dokununca sayfası açılır." groups={breakdown.open} total={open} totalLabel="Kalan borç" exact empty="Ödenmemiş fatura yok.">

@@ -20,7 +20,7 @@ export default function CashPlanPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Satış & gider" title={TITLE} description={DESCRIPTION} />
+          <PageHeader eyebrow="Finans" title={TITLE} description={DESCRIPTION} />
           <PageSkeleton rows={6} />
         </>
       }

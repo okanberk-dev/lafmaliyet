@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-/** Eski bölüm adları kenar çubuğundaki güncel adla gösterilir (NAV_TREE: "Para" → "Satış & gider") */
-const EYEBROW_ALIAS: Record<string, string> = { Para: "Satış & gider" };
+/** Eski bölüm adları kenar çubuğundaki güncel başlıkla gösterilir (NAV_TREE, 26 Eki 2026: "Satış & gider" bölündü) */
+const EYEBROW_ALIAS: Record<string, string> = { Para: "Finans", "Satış & gider": "Finans" };
 
 /**
  * Sayfa başlığı: üstte küçük bağlam satırı (bölüm · Excel karşılığı), Geist başlık, kısa açıklama,

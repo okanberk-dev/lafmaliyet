@@ -26,7 +26,7 @@ export default function AnalysisPage({ searchParams }: PageProps<"/panel/analiz"
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Genel" title={TITLE} description={DESCRIPTION} />
+          <PageHeader eyebrow="Satış" title={TITLE} description={DESCRIPTION} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -45,7 +45,7 @@ async function AnalysisContent({ searchParams }: { searchParams: PageProps<"/pan
 
   return (
     <>
-      <PageHeader eyebrow="Genel" title={TITLE} description={DESCRIPTION} actions={<MonthPicker months={model.salesMonths} value={month} />} />
+      <PageHeader eyebrow="Satış" title={TITLE} description={DESCRIPTION} actions={<MonthPicker months={model.salesMonths} value={month} />} />
       {hasSales ? (
         <AnalysisReady model={model} month={month} />
       ) : (

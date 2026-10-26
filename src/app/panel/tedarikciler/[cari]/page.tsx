@@ -38,7 +38,7 @@ export default function SupplierPage({ params }: PageProps<"/panel/tedarikciler/
       fallback={
         <>
           <PageHeader
-            eyebrow="Satış & gider"
+            eyebrow="Alış & gider"
             title="Tedarikçi"
             actions={
               <ButtonLink href="/panel/tedarikciler" variant="ghost" size="sm">

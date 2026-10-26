@@ -23,7 +23,7 @@ const DESCRIPTION =
 function Header({ actions }: { actions?: React.ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Para"
+      eyebrow="Alış & gider"
       title="Aylık harcamalar"
       description={DESCRIPTION}
       tabs={<SectionTabs section="giderler" current="/panel/harcamalar" />}

@@ -14,18 +14,25 @@ const PAGE = readFileSync(join(process.cwd(), "src/app/panel/yardim/page.tsx"), 
 
 test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel"), ["Genel bakış"]);
-  assert.deepEqual(pathOf("/panel/satislar"), ["Satış & gider", "Satışlar"]);
-  assert.deepEqual(pathOf("/panel/giderler"), ["Satış & gider", "Giderler & personel"]);
-  assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Satış & gider", "Ödemeler & hatırlatıcılar"]);
+  assert.deepEqual(pathOf("/panel/satislar"), ["Satış", "Satışlar"]);
+  assert.deepEqual(pathOf("/panel/giderler"), ["Alış & gider", "Giderler & personel"]);
+  assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Finans", "Ödemeler & hatırlatıcılar"]);
   assert.deepEqual(pathOf("/panel/tutarlilik"), ["Stok", "Tutarlılık"]);
   assert.deepEqual(pathOf("/panel/parasut"), ["Ayarlar", "Paraşüt entegrasyonu"]);
-  assert.deepEqual(pathOf("/panel/komisyonlar"), ["Satış & gider", "Komisyon & hakediş"]);
+  assert.deepEqual(pathOf("/panel/komisyonlar"), ["Satış", "Komisyon & hakediş"]);
+  // Personelde üst düzeyde de duran ekranlar yöneticinin başlığıyla
+  assert.deepEqual(pathOf("/panel/kasa"), ["Kafe", "Kasa raporları"]);
+  assert.deepEqual(pathOf("/panel/karaoke"), ["Kafe", "Karaoke"]);
+  assert.deepEqual(pathOf("/panel/kontrol"), ["Günlük", "Kontrol listeleri"]);
+  assert.deepEqual(pathOf("/panel/hatirlaticilarim"), ["Günlük", "Hatırlatıcılarım"]);
+  assert.deepEqual(pathOf("/panel/bugun"), ["Bugün"]);
+  assert.deepEqual(pathOf("/panel/gelir-gider"), ["Finans", "Gelir-gider"]);
   assert.deepEqual(pathOf("/panel/yok"), []);
 });
 
 test("menüde ayrı öğesi olmayan sekme, menü öğesinin altında (Aylık harcamalar boş çıkmaz)", () => {
-  assert.deepEqual(pathOf("/panel/harcamalar"), ["Satış & gider", "Giderler & personel", "Aylık harcamalar"]);
-  assert.deepEqual(pathOf("/panel/personel"), ["Satış & gider", "Giderler & personel", "Personel"]);
+  assert.deepEqual(pathOf("/panel/harcamalar"), ["Alış & gider", "Giderler & personel", "Aylık harcamalar"]);
+  assert.deepEqual(pathOf("/panel/personel"), ["Alış & gider", "Giderler & personel", "Personel"]);
   for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) assert.ok(pathOf(t.href).length >= 2, t.href);
 });
 

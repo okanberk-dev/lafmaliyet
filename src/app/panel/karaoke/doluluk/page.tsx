@@ -60,7 +60,7 @@ const DESCRIPTION =
 function Header({ tabs }: { tabs?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Günlük"
+      eyebrow="Kafe"
       title={TITLE}
       description={DESCRIPTION}
       actions={

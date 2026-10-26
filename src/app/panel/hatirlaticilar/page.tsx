@@ -25,7 +25,7 @@ export default function RemindersPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Satış & gider" title="Ödemeler & hatırlatıcılar" />
+          <PageHeader eyebrow="Finans" title="Ödemeler & hatırlatıcılar" />
           <PageSkeleton rows={6} />
         </>
       }

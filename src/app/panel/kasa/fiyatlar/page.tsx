@@ -22,7 +22,7 @@ const DESCRIPTION = "Bu fiyatlar panelde değişti, ModPOS'ta hâlâ eski. ModPO
 export default function StaffPosPage() {
   return (
     <>
-      <PageHeader eyebrow="Günlük" title={TITLE} description={DESCRIPTION} />
+      <PageHeader eyebrow="Kafe" title={TITLE} description={DESCRIPTION} />
       <Suspense fallback={<PageSkeleton rows={6} />}>
         <StaffPosContent />
       </Suspense>

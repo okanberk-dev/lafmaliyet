@@ -320,7 +320,7 @@ export function RemindersClient({
   return (
     <>
       <PageHeader
-        eyebrow="Satış & gider"
+        eyebrow="Finans"
         title="Ödemeler & hatırlatıcılar"
         description="Kira, vergi, SGK, maaş ve fatura ödemeleri tek yerde. Zamanı gelenler her sabah e-postayla hatırlatılır."
         actions={

@@ -9,10 +9,16 @@ const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER];
 const TAB_LISTS: readonly (readonly { href: string; label: string }[])[] = Object.values(SECTION_TABS);
 
 /**
- * Bir ekranın kenar çubuğundaki yolu, ör. "/panel/satislar" → ["Satış & gider", "Satışlar"]. Menüde ayrı öğesi
- * olmayan sekme menü öğesinin altında: "/panel/harcamalar" → ["Satış & gider", "Giderler & personel", "Aylık harcamalar"].
+ * Bir ekranın kenar çubuğundaki yolu, ör. "/panel/satislar" → ["Satış", "Satışlar"]. Menüde ayrı öğesi
+ * olmayan sekme menü öğesinin altında: "/panel/harcamalar" → ["Alış & gider", "Giderler & personel", "Aylık harcamalar"].
  */
 export function pathOf(href: string): string[] {
+  // Önce yöneticinin başlıkları: Kasa raporu ve Karaoke personelde üst düzeyde de durur, Yardım yöneticinin yolunu yazar
+  for (const n of navTreeFor("admin")) {
+    if (n.href === href) return [n.label];
+    const c = n.children?.find((ch) => ch.href === href);
+    if (c) return [n.label, c.label];
+  }
   for (const n of NAV_TREE) {
     if (n.href === href) return [n.label];
     const c = n.children?.find((ch) => ch.href === href);

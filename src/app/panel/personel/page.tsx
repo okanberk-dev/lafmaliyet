@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Personel" };
 function Header({ description }: { description?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Para"
+      eyebrow="Alış & gider"
       title="Personel"
       excel="Personel"
       description={description}
