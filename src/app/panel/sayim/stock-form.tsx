@@ -1633,20 +1633,23 @@ export function StockCountForm({
                   >
                     <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+                      {/* Satır sarar: dar ekranda rozet adın altına iner, ad kelimenin ortasından bölünmez */}
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                         <label htmlFor={inputId} className="flex min-w-0 items-center gap-1.5 text-sm leading-5 font-medium text-ink">
                           <span className="min-w-0 break-words">{l.name}</span>
-                          {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
-                              "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
-                          {l.passiveInUse && isAdmin ? <Badge tone="gray">Pasif · reçetede</Badge> : null}
                           {changed && !invalid ? (
                             <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
                               <span className="sr-only">(kaydedilmedi)</span>
                             </span>
                           ) : null}
                         </label>
+                        {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
+                            "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
                         {l.passiveInUse && isAdmin ? (
-                          <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
+                          <span className="inline-flex shrink-0 items-center gap-1">
+                            <Badge tone="gray">Pasif · reçetede</Badge>
+                            <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
+                          </span>
                         ) : null}
                       </div>
                       {l.passiveInUse && !isAdmin ? <p className="mt-0.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın</p> : null}

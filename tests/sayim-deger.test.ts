@@ -55,9 +55,13 @@ test("E-04: aktif ürünün reçetesindeki pasif malzeme sayım listesinde kalı
 test("Sayım formu (inceleme B02-U4): personel 'Pasif' görmez, 'sayın' der; yöneticiye rozet ve açıklaması görünür", () => {
   const form = readFileSync(join(root, "src/app/panel/sayim/stock-form.tsx"), "utf8");
   assert.match(form, /\{l\.passiveInUse && !isAdmin \? <p className="mt-0\.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın<\/p> : null\}/);
-  assert.match(form, /\{l\.passiveInUse && isAdmin \? <Badge tone="gray">Pasif · reçetede<\/Badge> : null\}/);
-  // Açıklama yalnız title'da değil (dokunmatikte görünmez): InfoTip, etiketin dışında
-  assert.match(form, /\{l\.passiveInUse && isAdmin \? \(\s+<InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde/);
+  // Rozet ve açıklaması yalnız yöneticiye, etiketin dışında; açıklama yalnız title'da değil (dokunmatikte görünmez):
+  // InfoTip. Satır sarar: 390 px'te ad kelimenin ortasından bölünmesin, rozet alta insin
+  assert.match(
+    form,
+    /<\/label>\s+\{\/\*[^]*?\*\/\}\s+\{l\.passiveInUse && isAdmin \? \(\s+<span className="inline-flex shrink-0 items-center gap-1">\s+<Badge tone="gray">Pasif · reçetede<\/Badge>\s+<InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde/,
+  );
+  assert.match(form, /<div className="flex flex-wrap items-center gap-x-1\.5 gap-y-1">\s+<label htmlFor=\{inputId\}/);
   assert.ok(!/title="Hammaddeler'de pasif/.test(form));
 });
 
