@@ -1,6 +1,8 @@
 import "server-only";
 
+import { pastCountReminder } from "@/app/panel/sayim/logic";
 import { businessDate } from "@/lib/cash-report";
+import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
 import { posBell } from "@/lib/prices/pos";
 import { isDraftExpired, undoneBellBody } from "@/lib/reorder/draft";
@@ -14,6 +16,7 @@ import { soldOutFacts } from "@/server/data/menu-status";
 import { draftBellRows } from "@/server/data/order-drafts";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
+import { countProgress } from "@/server/data/count-progress";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
 import type { DigestBox } from "@/server/notify/digest-template";
 
@@ -173,16 +176,29 @@ async function draftNotifications(user: CurrentUser, now: Date): Promise<PanelNo
     });
 }
 
+/**
+ * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 iş günü): "Ekim 2026 sayımı yarım:
+ * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar.
+ */
+async function pastCountNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  if (user.role !== "admin") return [];
+  const day = businessDate(now);
+  if (Number(day.slice(8, 10)) > 10) return [];
+  const prev = pastCountReminder(day, await countProgress(shiftMonth(day.slice(0, 7), -1)));
+  return prev ? [{ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }] : [];
+}
+
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste, soldOut, drafts] = await Promise.all([
+  const [pos, waste, soldOut, drafts, count] = await Promise.all([
     posNotifications(user, now).catch(() => []),
     wasteRequestNotifications(user, now).catch(() => []),
     soldOutNotifications(user, now).catch(() => []),
     draftNotifications(user, now).catch(() => []),
+    pastCountNotifications(user, now).catch(() => []),
   ]);
-  return [...drafts, ...waste, ...soldOut, ...pos];
+  return [...drafts, ...waste, ...soldOut, ...count, ...pos];
 }
 
 /**
@@ -191,7 +207,13 @@ export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
  * yoksa boş.
  */
 export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
-  const facts = await soldOutFacts().catch(() => null);
+  const day = businessDate(now);
+  const [facts, prev] = await Promise.all([
+    soldOutFacts().catch(() => null),
+    Number(day.slice(8, 10)) <= 10 ? countProgress(shiftMonth(day.slice(0, 7), -1)).catch(() => null) : null,
+  ]);
   const line = soldOutDigestLine(facts?.items ?? [], now);
-  return line ? [{ text: line, tone: "warn" }] : [];
+  // Geçen ayın sayımı yarım ya da yok (ilk 10 gün): zildeki satırla aynı metin
+  const count = prev ? pastCountReminder(day, prev) : null;
+  return [...(line ? [{ text: line, tone: "warn" as const }] : []), ...(count ? [{ text: `${count.title}. ${count.body}`, tone: "warn" as const }] : [])];
 }

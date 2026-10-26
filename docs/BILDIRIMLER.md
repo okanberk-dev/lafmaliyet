@@ -55,9 +55,12 @@ personelin bar ekranında tükendi yaptığı ve hâlâ satışta olmayan ürün
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", bar
 ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
 kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış yapar, ürün satışa açılınca satır kalkar;
-push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Zilin
+push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
+**Uyarılar**'da, ayın ilk 10 iş gününde geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
+"… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
+onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, zayi istekleri, Tükendi, mal siparişi taslağı) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri, Tükendi, mal siparişi taslağı, geçen ayın sayımı) `src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur

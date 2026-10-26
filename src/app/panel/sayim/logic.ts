@@ -8,7 +8,8 @@ import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 export { layerText } from "@/lib/calc/fifo";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
-import { dateTimeTR } from "@/lib/format";
+import { dateTimeTR, monthLabel, num } from "@/lib/format";
+import { isLastDayOfMonth } from "@/lib/reminders";
 
 // ---------------------------------------------------------------- Hangi ay açılsın?
 
@@ -611,4 +612,40 @@ export const STAFF_OLD_MONTH_MESSAGE = "Personel yalnız bu ayın sayımını (a
 export function staffCountIssue(role: "admin" | "staff", month: string, now: Date = new Date()): string | null {
   if (role === "admin" || staffCountMonths(now).includes(month)) return null;
   return month === shiftMonth(todayTR(now).slice(0, 7), -1) ? STAFF_LATE_FIX_MESSAGE : STAFF_OLD_MONTH_MESSAGE;
+}
+
+/**
+ * Ay sonu sayımı hatırlatması (günlük işin sabah bildirimi, src/server/notify/reorder-push.ts): ayın son iş günü,
+ * sayım listesi doluysa ve ayın sayımı tamamlanmadıysa (countStatus kuralı, sunucuda today.ts countProgress) tek
+ * bildirim. O gün hızlı sayım bildirimi gitmez (ay sonu sayımı yerine geçer); bu onun yerini tutar. Tutar yok.
+ */
+export function monthEndCountPush(day: string, progress: { counted: number; total: number }): { title: string; body: string; url: string; tag: string } | null {
+  if (!isLastDayOfMonth(day) || progress.total <= 0 || progress.counted >= progress.total) return null;
+  const month = day.slice(0, 7);
+  const left = progress.total - progress.counted;
+  return {
+    title: "Bugün ay sonu stok sayımı",
+    body: progress.counted
+      ? `Kapanıştan sonra kalan ${num(left)} kalemi sayın (${num(progress.counted)} / ${num(progress.total)} sayıldı); sayılmayanın stoğu 0 sayılır`
+      : `Kapanıştan sonra ${num(progress.total)} kalem; sayılmayanın stoğu 0 sayılır`,
+    url: `/panel/sayim?ay=${month}`,
+    tag: `sayim-son-${month}`,
+  };
+}
+
+/**
+ * Yöneticinin zil satırı ve sabah e-postası satırı (src/server/bell/ops.ts): ayın ilk 10 gününde (iş günü) geçen ayın
+ * sayımı tamamlanmadıysa. Sayılmayan kalem ay sonu stoğunda 0 sayılır, mal maliyeti şişer. Tamamsa ya da pencere
+ * geçtiyse null. Tutar yok.
+ */
+export function pastCountReminder(day: string, prev: { counted: number; total: number }): { id: string; title: string; body: string; href: string } | null {
+  if (Number(day.slice(8, 10)) > COUNT_GRACE_DAYS || prev.total <= 0 || prev.counted >= prev.total) return null;
+  const month = shiftMonth(day.slice(0, 7), -1);
+  const label = monthLabel(month);
+  return {
+    id: `sayim-gecen-${month}`,
+    title: prev.counted ? `${label} sayımı yarım: ${num(prev.counted)} / ${num(prev.total)}` : `${label} sayımı girilmedi`,
+    body: `Kalanların stoğu 0 sayılır; ${label} mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.`,
+    href: `/panel/sayim?ay=${month}`,
+  };
 }

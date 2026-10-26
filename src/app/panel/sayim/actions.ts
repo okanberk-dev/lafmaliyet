@@ -29,7 +29,14 @@ export async function addCountItem(input: z.input<typeof countItemSchema>) {
     const created = await createCountItem(me, data, "sayim");
     await logActivity(me, "Sayım listesine eklendi", countItemLogDetail({ ...created, countUnit: data.countUnit }));
     refresh();
-    return { id: created.id, name: created.name, group: created.group, existed: created.existed, priced: created.packagePrice !== null };
+    return {
+      id: created.id,
+      name: created.name,
+      group: created.group,
+      existed: created.existed,
+      priced: created.packagePrice !== null,
+      extraTwin: created.extraTwin ?? null,
+    };
   });
 }
 

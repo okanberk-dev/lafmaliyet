@@ -825,8 +825,14 @@ export function StockCountForm({
     el.focus({ preventScroll: true });
   }, [groups, group, q]);
 
-  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean; priced: boolean }) {
+  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean; priced: boolean; extraTwin?: { name: string; qty: number; unit: string } | null }) {
     setAdding(null);
+    // Aynı adlı ek kalem bu ay "Listede olmayanlar"da: ikisi de sayılırsa stok iki kez sayılır
+    if (item.extraTwin)
+      toast.warning(`${item.extraTwin.name} Listede olmayanlar'da da var (${countText(item.extraTwin.qty)} ${item.extraTwin.unit})`, {
+        duration: 20_000,
+        description: "Aynı kalemse miktarı listedeki yeni satıra yazın ve ek kalemi kaldırıp kaydedin; yoksa stok iki kez sayılır.",
+      });
     pendingFocus.current = item.id;
     // Yeni kalem süzgeçte gizli kalmasın: grup süzgeci başka gruptaysa onun grubuna geçilir, arama uymuyorsa silinir
     if (group && group !== item.group) setGroup(item.group);

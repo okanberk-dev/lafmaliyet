@@ -274,7 +274,7 @@ export function AddCountItemDialog({
   listNames: string[];
   onClose: () => void;
   /** `existed`: kalem zaten vardı, daha sonraki bir aydan itibaren listedeydi; artık bu aydan itibaren de. `priced`: paket fiyatı yazıldı */
-  onAdded: (item: { id: number; name: string; group: string; existed: boolean; priced: boolean }) => void;
+  onAdded: (item: { id: number; name: string; group: string; existed: boolean; priced: boolean; extraTwin?: { name: string; qty: number; unit: string } | null }) => void;
 }) {
   const form = useCountItemForm({ groups, defaultGroup, initialName });
   const [busy, setBusy] = useState(false);

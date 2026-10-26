@@ -12,7 +12,9 @@ import {
   countDraftJson,
   extrasBase,
   mergeExtras,
+  monthEndCountPush,
   parseCountDraft,
+  pastCountReminder,
   planAdminExtras,
   planStaffExtras,
   restoredPrefilled,
@@ -147,4 +149,38 @@ test("Hızlı sayım: taslak ve çıkış uyarısı (Stok sayımı ile ortak kan
   const guard = read("src/components/ui/leave-guard.ts");
   assert.match(guard, /window\.addEventListener\("beforeunload", warn\);/);
   assert.match(guard, /document\.addEventListener\("click", onClick, true\);/);
+});
+
+test("ay sonu sayımı hatırlatması: ayın son günü, liste doluysa ve tamamlanmadıysa; adres o ayın sayımı", () => {
+  assert.deepEqual(monthEndCountPush("2026-11-30", { counted: 0, total: 72 }), {
+    title: "Bugün ay sonu stok sayımı",
+    body: "Kapanıştan sonra 72 kalem; sayılmayanın stoğu 0 sayılır",
+    url: "/panel/sayim?ay=2026-11",
+    tag: "sayim-son-2026-11",
+  });
+  assert.equal(monthEndCountPush("2026-11-29", { counted: 0, total: 72 }), null, "son gün değil");
+  assert.equal(monthEndCountPush("2026-11-30", { counted: 72, total: 72 }), null, "tamam");
+  assert.equal(monthEndCountPush("2026-11-30", { counted: 0, total: 0 }), null, "liste boş");
+  assert.match(monthEndCountPush("2026-10-31", { counted: 30, total: 72 })!.body, /^Kapanıştan sonra kalan 42 kalemi sayın \(30 \/ 72 sayıldı\)/);
+  const push = read("src/server/notify/reorder-push.ts");
+  assert.match(push, /if \(isLastDayOfMonth\(day\)\) \{\s+const push = monthEndCountPush\(day, await countProgress\(day\.slice\(0, 7\)\)\);/);
+});
+
+test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satırı ilk 10 günde", () => {
+  assert.deepEqual(pastCountReminder("2026-11-03", { counted: 30, total: 72 }), {
+    id: "sayim-gecen-2026-10",
+    title: "Ekim 2026 sayımı yarım: 30 / 72",
+    body: "Kalanların stoğu 0 sayılır; Ekim 2026 mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.",
+    href: "/panel/sayim?ay=2026-10",
+  });
+  assert.equal(pastCountReminder("2026-11-03", { counted: 0, total: 72 })!.title, "Ekim 2026 sayımı girilmedi");
+  assert.equal(pastCountReminder("2026-11-03", { counted: 72, total: 72 }), null, "tamam");
+  assert.equal(pastCountReminder("2026-11-11", { counted: 30, total: 72 }), null, "pencere geçti");
+  assert.equal(pastCountReminder("2027-01-02", { counted: 1, total: 5 })!.href, "/panel/sayim?ay=2026-12");
+  const ops = read("src/server/bell/ops.ts");
+  assert.match(ops, /if \(user\.role !== "admin"\) return \[\];\s+const day = businessDate\(now\);/);
+  assert.match(ops, /pastCountNotifications\(user, now\)\.catch\(\(\) => \[\]\),/);
+  assert.match(ops, /const count = prev \? pastCountReminder\(day, prev\) : null;/);
+  // Bugün, zil ve bildirim aynı sayım ilerlemesini okur
+  assert.match(read("src/server/data/today.ts"), /import \{ countProgress \} from "@\/server\/data\/count-progress";/);
 });

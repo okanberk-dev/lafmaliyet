@@ -154,6 +154,16 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     assert.deepEqual((await rows()).map((r) => r.id), [after[0].id]);
   });
 
+  test("Listeye ekle: aynı adlı ek kalem varsa söylenir (stok iki kez sayılmasın)", async () => {
+    at("2026-10-31T19:00:00Z");
+    await db.insert(s.stockExtras).values({ month: "2026-10", name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 });
+    const res = await extras.addCountItem({ month: "2026-10", name: "klips  KAPAK", group: "SÜT", countUnit: "ADET", packageSize: 1 });
+    assert.ok(res.ok, res.ok ? "" : res.error);
+    assert.deepEqual(res.data.extraTwin, { name: "Klips kapak", qty: 2, unit: "KOLİ" });
+    const other = await extras.addCountItem({ month: "2026-10", name: "Pipet", group: "SÜT", countUnit: "ADET", packageSize: 1 });
+    assert.ok(other.ok && other.data.extraTwin === null);
+  });
+
   test("3 Kasım: personel Ekim sayımını düzeltebilir (ilk 10 gün)", async () => {
     at("2026-11-03T09:00:00Z");
     who.role = "staff";

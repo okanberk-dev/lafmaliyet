@@ -68,8 +68,10 @@ günden hesaplanır, ekranlar değişmez.
 - Kalemler › Ayarlar › **Sayım günleri** (bir ya da birkaç gün; varsayılan Pazartesi). İki gün seçilirse her sipariş
   daha kısa bir aralığa yeter, hedefler küçülür.
 - Gün 05:00'te döner (kasa raporu gibi): gece 01:00'de girilen sayım önceki günün sayımıdır.
-- **Ayın son günü hızlı sayım istenmez**: o gün ay sonu Stok sayımı yapılır ve eldeki olarak okunur. Bugün satırı ve
-  bildirim çıkmaz. Ay sonu sayımı geç girilse de o günün sayımıdır: girildiği gün Bugün'de "sayıldı" saymaz; "Gecikti"
+- **Ayın son günü hızlı sayım istenmez**: o gün ay sonu Stok sayımı yapılır ve eldeki olarak okunur. Hızlı sayımın
+  Bugün satırı ve bildirimi çıkmaz; onun yerine sabah bildirimi ay sonu sayımını hatırlatır ("Bugün ay sonu stok
+  sayımı: kapanıştan sonra 72 kalem", adres `/panel/sayim?ay=YYYY-MM`; sayım tamamsa gitmez; `pushCountDay`,
+  `sayim/logic.ts monthEndCountPush`). Ay sonu sayımı geç girilse de o günün sayımıdır: girildiği gün Bugün'de "sayıldı" saymaz; "Gecikti"
   ve "Sayım eski" ayın son gününden sayılır.
 - **Gecikti:** son sayım sayım aralığı + 1 günden eskiyse (haftada birde 8 gün) Bugün satırı her gün "Gecikti" der.
 - **Bildirim:** sayım günü sabah işinde (08:00–09:00), takipte kalem varsa ve hepsi sayılmadıysa "Sabah özeti" açık
