@@ -375,7 +375,7 @@ test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adre
   const amp = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: "/panel/kontrol/gecmis?gun=2026-10-21&liste=2" } });
   assert.ok(amp.html.includes(`href="${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&amp;liste=2"`));
   assert.ok(amp.text.endsWith(`Kontrol geçmişi: ${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&liste=2`));
-  for (const good of ["/panel", "/panel/", "/panel/komisyonlar?ay=2026-09#trendyol", "/panel/mal-siparisi/kalemler", "/panel/hatirlaticilar#e_posta"]) {
+  for (const good of ["/panel", "/panel/", "/panel/komisyonlar?ay=2026-09#trendyol", "/panel/sayim?ay=2026-10", "/panel/hatirlaticilar#e_posta"]) {
     assert.ok(renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: good } }).text.endsWith(`Kontrol geçmişi: ${APP_URL}${good}`), good);
   }
 });

@@ -9,9 +9,9 @@ import { runForecastJob, type ForecastJobResult } from "@/server/forecast/job";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
+import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
-import { pushCountDay } from "@/server/notify/reorder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
@@ -26,11 +26,11 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
 // ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
-// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), sayım günü hızlı
-// sayım bildirimi (docs/MAL-SIPARISI.md). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), ayın son günü ay sonu
+// stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Satış tahmini (hava durumu ve günün tahmin kaydı; docs/SATIS-TAHMINI.md) Paraşüt'ün
-// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir. Süresi dolan personel istekleri (mal
-// siparişi taslağı, kasadan çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md).
+// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir. Süresi dolan personel istekleri (kasadan
+// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -100,11 +100,11 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
-  // Hızlı sayım günü bildirimi (docs/MAL-SIPARISI.md): en çok 8 sn, kuyruğun 55 sn'sini aşmadan; adım yalnız sayım
-  // günü bildirim gönderilince yazılır
+  // Ay sonu stok sayımı bildirimi (ayın son günü, sayım tamamlanmadıysa): en çok 8 sn, kuyruğun 55 sn'sini aşmadan;
+  // adım yalnız bildirim gönderilince yazılır
   const countTask = () =>
     capped(
-      pushCountDay().catch((e: Error) => ({ error: e.message })),
+      pushMonthEndCount().catch((e: Error) => ({ error: e.message })),
       Math.min(8_000, tailStepDeadline(jobStart) - Date.now()),
       { error: "süre doldu" },
     );

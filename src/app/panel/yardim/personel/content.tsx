@@ -7,7 +7,6 @@ import {
   Camera,
   ClipboardCheck,
   ClipboardList,
-  ClipboardPen,
   Coffee,
   Gift,
   History,
@@ -20,7 +19,6 @@ import {
   Pencil,
   Receipt,
   ScrollText,
-  ShoppingBasket,
   Sun,
   Tags,
   Trash2,
@@ -39,7 +37,6 @@ import { ANSWER_GRACE_MIN, STAFF_HISTORY_DAYS } from "@/lib/checklists";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { POS_UNDO_WINDOW_MS } from "@/lib/prices/pos";
 import { clockSuffixTR } from "@/lib/reminders";
-import { DRAFT_NUDGE_MS, DRAFT_UNDO_MS } from "@/lib/reorder/draft";
 import { STAFF_SOLD_OUT_MAX } from "@/lib/site-menu/sold-out";
 import { STAFF_APPROVAL_KINDS } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS } from "@/lib/waste-requests";
@@ -63,7 +60,7 @@ const graceEnd = `${String(DAY_TURN_HOUR).padStart(2, "0")}:${String(ANSWER_GRAC
 const minutes = (ms: number) => `${Math.round(ms / 60_000)} dakika`;
 const seconds = (ms: number) => `${Math.round(ms / 1000)} saniye`;
 
-/** Personelin menüsündeki yol, ör. "Stok › Hızlı sayım" */
+/** Personelin menüsündeki yol, ör. "Stok › Stok sayımı" */
 export function StaffPath({ href }: { href: string }) {
   return <span className="font-medium text-ink">{staffPathOf(href).join(" › ")}</span>;
 }
@@ -113,15 +110,15 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     icon: Gift,
   },
   {
-    title: "Sayım gününde",
+    title: "Ayın son günü",
     body: (
       <>
-        <StaffPath href="/panel/hizli-sayim" /> ekranında kritik kalemleri sayın, ardından sipariş taslağını hazırlayıp onaya gönderin. Ayın son günü kapanıştan sonra{" "}
-        <StaffPath href="/panel/sayim" /> da yapılır.
+        Kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında listedeki her kalemi sayın; sayılmayan kalemin stoğu 0 sayılır. Bugün ekranı o gün
+        hatırlatır.
       </>
     ),
-    href: "/panel/hizli-sayim",
-    icon: ClipboardPen,
+    href: "/panel/sayim",
+    icon: ClipboardList,
   },
   {
     title: "Akşam kasa raporu",
@@ -423,7 +420,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
     ],
   },
   {
-    title: "Stok ve sipariş",
+    title: "Stok sayımı",
     items: [
       {
         id: "sayim",
@@ -437,30 +434,6 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           </>
         ),
         icon: ClipboardList,
-      },
-      {
-        id: "hizli-sayim",
-        q: "Hızlı sayım ve gelen mal",
-        a: (
-          <>
-            Sayım gününde <StaffPath href="/panel/hizli-sayim" /> ekranında yalnız kritik kalemleri sayarsınız. Sipariş edilen mal gelince aynı ekranda <B>Geldi</B>
-            &apos;ye dokunun. Kaydetmeden çıkarsanız ekran önce sorar; yazdıklarınız bu cihazda durur, sayfayı yeniden açınca <B>Geri yükle</B>&apos;ye basın.
-          </>
-        ),
-        icon: ClipboardPen,
-      },
-      {
-        id: "siparis-taslagi",
-        q: "Sipariş taslağı hazırlamak ve göndermek",
-        a: (
-          <>
-            Sayımdan sonra <StaffPath href="/panel/hizli-sayim/siparis" /> her tedarikçi için önerilen miktarlarla açılır; − / + ile değiştirin, isterseniz
-            tedarikçiye not yazın ve <B>Onaya gönder</B>. Yönetici miktarları değiştirebilir. Onaylanınca <B>WhatsApp&apos;ta aç</B>: sipariş önce kaydedilir, sonra
-            mesaj tedarikçiye hazır açılır. Yanlış gönderdiyseniz {minutes(DRAFT_UNDO_MS)} içinde <B>Geri al</B> ve tedarikçiye iptal yazın. Taslak{" "}
-            {minutes(DRAFT_NUDGE_MS)} içinde onaylanmazsa <B>Yöneticiye WhatsApp&apos;tan haber ver</B> çıkar.
-          </>
-        ),
-        icon: ShoppingBasket,
       },
     ],
   },
@@ -526,8 +499,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bugün ekranında ne var?",
         a: (
           <>
-            <StaffPath href="/panel/bugun" /> girişte açılır: dünün ve bugünün kasa raporu, açılış ve kapanış listeleri, zayi, sayım, hızlı sayım, kasadaki satış
-            fiyatları ve onaylanan siparişler. Sıradaki iş öne çıkar, bitenler Tamamlananlar&apos;a iner. Bugün kafede kartı yoğunluğu ve tükenen ürünleri söyler.
+            <StaffPath href="/panel/bugun" /> girişte açılır: dünün ve bugünün kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı ve kasadaki satış
+            fiyatları. Sıradaki iş öne çıkar, bitenler Tamamlananlar&apos;a iner. Bugün kafede kartı yoğunluğu ve tükenen ürünleri söyler.
           </>
         ),
         icon: ListTodo,

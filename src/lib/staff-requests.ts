@@ -14,9 +14,16 @@ export const STAFF_REQUEST_KINDS = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "
 export type StaffRequestKind = (typeof STAFF_REQUEST_KINDS)[number];
 
 /**
+ * Kaldırılan türler: `mal-taslak` (mal siparişi taslağı; hızlı sayım ve mal siparişiyle 26 Eki 2026'da kaldırıldı).
+ * Eski satırlar geçmiş için tabloda (ve tür şemanın enumunda) kalır; yeni istek açılmaz, kuyruklar (Onaylar, Bugün,
+ * zil, sabah e-postası, Son kararlar) okumaz ve canlı kalanları sabah işi kapatır (expireStaffRequests).
+ */
+export const RETIRED_REQUEST_KINDS = ["mal-taslak"] as const satisfies readonly StaffRequestKind[];
+
+/**
  * Durumlar: bekliyor, onaylandı, reddedildi, geri çekildi (personel), kapandı (başka bir yol aynı işi yaptı; ör. rapor
- * başka bir istekle düzeltildi), süresi doldu, tamamlandı (mal siparişi taslağı gönderildi), geri alındı (gönderim
- * geri alındı) ve kaldırıldı (onaylı kapalı gün işareti kanıtla kalktı)
+ * başka bir istekle düzeltildi), süresi doldu, tamamlandı ve geri alındı (kaldırılan mal siparişi taslağının eski
+ * kayıtlarında: gönderildi, gönderim geri alındı) ve kaldırıldı (onaylı kapalı gün işareti kanıtla kalktı)
  */
 export const STAFF_REQUEST_STATUSES = ["pending", "approved", "rejected", "withdrawn", "superseded", "expired", "done", "cancelled", "revoked"] as const;
 export type StaffRequestStatus = (typeof STAFF_REQUEST_STATUSES)[number];
@@ -34,7 +41,7 @@ export const KIND_LABEL: Record<StaffRequestKind, string> = {
   "mal-taslak": "Mal siparişi taslağı",
 };
 
-/** Sayıyla birlikte yazılan küçük harfli ad: "2 kasa düzeltmesi", "1 mal siparişi taslağı" (Bugün, sabah e-postası) */
+/** Sayıyla birlikte yazılan küçük harfli ad: "2 kasa düzeltmesi", "1 geç zayi / ikram" (Bugün, sabah e-postası) */
 export const KIND_COUNT_LABEL: Record<StaffRequestKind, string> = {
   "kasa-duzeltme": "kasa düzeltmesi",
   "kasa-silme": "kasa raporu silme isteği",
@@ -85,12 +92,11 @@ export const STAFF_APPROVAL_KINDS: readonly { kind: StaffRequestKind | "recete" 
   { kind: "kapali-gun", text: "Dün kafe kapalıydı" },
   { kind: "zayi-gec", text: "Geç zayi / ikram (14 gün)" },
   { kind: "zayi-sil", text: "Başkasının zayi kaydını sildirmek" },
-  { kind: "mal-taslak", text: "Hızlı sayımdan sonra sipariş taslağı" },
   { kind: "recete", text: "Reçete değişikliği" },
   { kind: "yeni-urun", text: "Yeni ürün önerisi" },
 ];
 
-/** Açık istek sınırının grubu: kasa istekleri birlikte sayılır; geç kasa raporu, zayi ve mal siparişi ayrı */
+/** Açık istek sınırının grubu: kasa istekleri birlikte sayılır; geç kasa raporu ve zayi ayrı (mal: kaldırılan tür) */
 export type RequestGroup = "kasa" | "kasa-gec" | "zayi" | "mal";
 export const KIND_GROUP: Record<StaffRequestKind, RequestGroup> = {
   "kasa-duzeltme": "kasa",
@@ -175,9 +181,11 @@ export function limitRefusal(kind: StaffRequestKind, c: { open: number; today: n
   return null;
 }
 
-/** "1 kasa düzeltmesi · 3 geç zayi / ikram · 1 mal siparişi taslağı" (türlerin sırasıyla; sıfırlar yazılmaz) */
+/** "1 kasa düzeltmesi · 3 geç zayi / ikram · 1 zayi silme isteği" (türlerin sırasıyla; sıfırlar ve kaldırılan türler yazılmaz) */
 export function requestCountsText(counts: readonly { kind: StaffRequestKind; count: number }[]): string {
+  const retired: readonly StaffRequestKind[] = RETIRED_REQUEST_KINDS;
   return STAFF_REQUEST_KINDS.flatMap((k) => {
+    if (retired.includes(k)) return [];
     const n = counts.filter((c) => c.kind === k).reduce((a, c) => a + c.count, 0);
     return n > 0 ? [`${num(n)} ${KIND_COUNT_LABEL[k]}`] : [];
   }).join(" · ");

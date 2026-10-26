@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * Kaydedilmemiş formdan çıkış koruması (Stok sayımı ve Hızlı sayım): kirliyken sayfa kapatılır ya da yenilenirse
+ * Kaydedilmemiş formdan çıkış koruması (Stok sayımı): kirliyken sayfa kapatılır ya da yenilenirse
  * tarayıcı sorar (beforeunload); panel içi bağlantılara (menü, alt çubuk) dokunulunca geçiş yakalama evresinde
  * durdurulur ve adresi `leaveHref` olur: form kendi onay penceresini açar, "Kaydetmeden geç" o adrese gider.
  * `event`: aynı korumayı isteyen özel olayın adı (ay seçicisi; detail = adres).

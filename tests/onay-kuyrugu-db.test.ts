@@ -2,7 +2,9 @@
 // bekleyen istek (yenisi onu günceller, sürüm artar), aynı istemci anahtarı ikinci istek açmaz, yönetici yalnız gördüğü
 // sürümü onaylar, kimse kendi isteğini onaylayamaz, koşullu geri çekme ile onay yarışında tek sonuç kalır, sınırlar
 // (11. açık istek, 31. günlük istek, konu başına 4. istek), supersede, tutulan fotoğraf başka isteğe giremez, süresi
-// dolanlar kapanır ve fotoğrafları bırakılır. Kendi kullanıcılarını, isteklerini ve fotoğraflarını açar, sonunda siler.
+// dolanlar kapanır ve fotoğrafları bırakılır; kaldırılan tür (eski mal siparişi taslağı, 26 Eki 2026) açılamaz,
+// kuyruklara girmez ve sabah işi canlı kalanlarını kapatır. Kendi kullanıcılarını, isteklerini ve fotoğraflarını açar,
+// sonunda siler.
 //
 // ONAY_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
 // Çalıştırma: ONAY_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/laffogato_yetki npx tsx --test tests/onay-kuyrugu-db.test.ts
@@ -24,6 +26,7 @@ import {
   expireStaffRequests,
   lockForReview,
   ownRequests,
+  pendingRequests,
   recentDecisions,
   supersede,
   withdrawOwn,
@@ -65,6 +68,23 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
   const create = (who: Who, o: Partial<RequestInput> = {}, now = new Date()) => db.transaction((tx) => createOrUpdateRequest(tx, who, input(o), now));
   const refused = async (p: Promise<unknown>, text: string | RegExp) => {
     await assert.rejects(p, (e: unknown) => e instanceof UserError && (typeof text === "string" ? e.message === text : text.test(e.message)));
+  };
+  /** Kaldırılan türün eski satırı (özellik 26 Eki 2026'da kalktı; satır geçmişten kalmış gibi doğrudan yazılır) */
+  const oldDraft = async (status: "pending" | "approved" | "done", expiresAt: Date | null = null) => {
+    const [row] = await db
+      .insert(s.staffRequests)
+      .values({
+        kind: "mal-taslak",
+        subject: subj(`tedarikci:eski-${status}`),
+        title: "Kaldi · 3 kalem",
+        payload: {},
+        status,
+        requestedBy: users.selin.id,
+        requestedByName: "Selin",
+        expiresAt,
+      })
+      .returning({ id: s.staffRequests.id });
+    return row.id;
   };
   const statusOf = async (id: number) => (await db.select({ status: s.staffRequests.status }).from(s.staffRequests).where(eq(s.staffRequests.id, id)))[0]?.status;
   async function photo(by: number): Promise<number> {
@@ -204,10 +224,10 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
     // Var olan bekleyen isteği güncellemek sınıra takılmaz
     assert.equal((await create(users.open, { subject: subj("cikan:3"), kind: "kasa-cikan", payload: { b: 1 } })).row.version, 2);
 
-    // Günde 30: 10 kasa + 20 zayi açık; 31. (mal) günlük sınıra takılır
+    // Günde 30: 10 kasa + 20 zayi açık; 31. (geç kasa raporu, kendi grubunda açığı yok) günlük sınıra takılır
     for (let i = 0; i < 10; i++) await create(users.daily, { subject: subj(`d-cikan:${i}`), kind: "kasa-cikan" });
     for (let i = 0; i < 20; i++) await create(users.daily, { subject: subj(`d-zayi:${i}`), kind: "zayi-gec" });
-    await refused(create(users.daily, { subject: subj("tedarikci:x"), kind: "mal-taslak" }), "Bugün en çok 30 istek açılabilir; yarın yeniden deneyin");
+    await refused(create(users.daily, { subject: subj("gun:gec-x"), kind: "kasa-gec" }), "Bugün en çok 30 istek açılabilir; yarın yeniden deneyin");
 
     // Konu başına günde 3 (geri çekilenler de sayılır)
     for (let i = 0; i < 3; i++) {
@@ -248,14 +268,12 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
     assert.ok(ph.expiresAt && ph.expiresAt.getTime() > Date.now() + 6 * 86_400_000, "7 gün sonra silinir");
   });
 
-  test("süresi dolan bekleyen istek ve onaylanmış taslak kapanır, fotoğrafı bırakılır; onaylanmış öteki istek, süresi gelmemiş ve süresiz dokunulmaz", async () => {
+  test("süresi dolan bekleyen istek kapanır, fotoğrafı bırakılır; onaylanmış istek, süresi gelmemiş ve süresiz dokunulmaz", async () => {
     const now = new Date();
     const p = await photo(users.mehmet.id);
     const past = new Date(now.getTime() - 60_000);
     const future = new Date(now.getTime() + 3_600_000);
     const expiring = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:sure"), expiresAt: past, photoIds: [p] });
-    const draft = await create(users.mehmet, { kind: "mal-taslak", subject: subj("tedarikci:sure"), expiresAt: past });
-    await db.update(s.staffRequests).set({ status: "approved" }).where(eq(s.staffRequests.id, draft.row.id));
     // Onaylanmış kasadan çıkan isteği kayda geçmiştir: 14 günlük süresi dolsa da onaylı kalır (zil "süresi doldu" demez)
     const approved = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:onayli"), expiresAt: future });
     const decided = await db.transaction(async (tx) => decide(tx, await lockForReview(tx, users.admin, { id: approved.row.id, seenVersion: 1 }, now), users.admin, "approved", {}, now));
@@ -264,9 +282,8 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
     const fresh = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:taze"), expiresAt: future });
     const forever = await create(users.mehmet, { kind: "kasa-silme", subject: subj("gun:suresiz") });
     const r = await expireStaffRequests(db, now);
-    assert.ok(r.expired >= 2);
+    assert.ok(r.expired >= 1);
     assert.equal(await statusOf(expiring.row.id), "expired");
-    assert.equal(await statusOf(draft.row.id), "expired");
     assert.equal(await statusOf(approved.row.id), "approved");
     assert.equal(await statusOf(fresh.row.id), "pending");
     assert.equal(await statusOf(forever.row.id), "pending");
@@ -278,6 +295,29 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
       db.transaction((tx) => lockForReview(tx, users.admin, { id: late.row.id, seenVersion: 1 }, new Date(future.getTime() + 1))),
       "Süresi doldu",
     );
+  });
+
+  test("kaldırılan tür (eski mal siparişi taslağı): açılamaz, kuyruklarda yok, sabah işi canlı kalanları kapatır", async () => {
+    // Yeni istek açılamaz (çağıran kalmadı; çekirdek de reddeder)
+    await assert.rejects(create(users.selin, { kind: "mal-taslak", subject: subj("tedarikci:yeni") }), /Kaldırılan istek türü: mal-taslak/);
+    const future = new Date(Date.now() + 86_400_000);
+    const pending = await oldDraft("pending", future);
+    const approved = await oldDraft("approved", future);
+    const done = await oldDraft("done");
+    // Onaylar, Bugün, zil ve sabah e-postası okumaz; Son kararlar da göstermez
+    assert.ok(!(await countPendingByKind(db)).some((c) => c.kind === "mal-taslak"), "Bugün / zil sayısı");
+    assert.ok(!(await pendingRequests(db)).some((r) => r.kind === "mal-taslak"), "sabah e-postası listesi");
+    assert.ok(!(await recentDecisions(db, 30)).some((r) => r.kind === "mal-taslak"), "Son kararlar");
+    // Sabah işi: bekleyen ve onaylanmış (gönderilmemiş) eski taslak süresine bakılmadan kapanır; tamamlanmışa dokunulmaz
+    const r = await expireStaffRequests(db, new Date());
+    assert.ok(r.expired >= 2);
+    assert.equal(await statusOf(pending), "expired");
+    assert.equal(await statusOf(approved), "expired");
+    assert.equal(await statusOf(done), "done");
+    assert.ok(!(await recentDecisions(db, 30)).some((x) => x.kind === "mal-taslak"), "kapanan eski taslak Son kararlar'a düşmez");
+    // İkinci çalıştırma kapatacak bir şey bulmaz (bu testin satırları için)
+    await expireStaffRequests(db, new Date());
+    assert.equal(await statusOf(done), "done");
   });
 
   test("sayılar ve listeler: türe göre bekleyenler, son kararlar (yük yok), kişinin kendi istekleri", async () => {

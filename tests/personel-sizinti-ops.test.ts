@@ -39,13 +39,8 @@ const STAFF_SOURCES = [
   "src/server/site-menu/sold-out-core.ts",
   "src/server/actions/menu-status.ts",
   "src/app/panel/karaoke/sold-out-card.tsx",
-  // Mal siparişi taslağı (§2.4; loadDraftSheet'in gövdesi tests/mal-siparisi-taslak.test.ts'te ayrıca)
-  "src/lib/reorder/draft.ts",
-  "src/server/order-drafts/core.ts",
-  "src/server/order-drafts/notify.ts",
-  "src/server/actions/order-drafts.ts",
-  "src/app/panel/hizli-sayim/siparis/page.tsx",
-  "src/app/panel/hizli-sayim/siparis/draft-sheet.tsx",
+  // Mal siparişi taslağı (§2.4) 26 Eki 2026'da kaldırıldı; ay sonu sayım bildirimi personele de gider
+  "src/server/notify/count-push.ts",
 ];
 
 test("operasyon: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {

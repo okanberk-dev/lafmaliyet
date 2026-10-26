@@ -23,6 +23,7 @@ import {
   REQUEST_TEXT,
   requestCountsText,
   requestDayStart,
+  RETIRED_REQUEST_KINDS,
   reviewRefusal,
   STAFF_APPROVAL_KINDS,
   STAFF_REQUEST_KINDS,
@@ -48,16 +49,21 @@ test("türler ve durumlar şemayla aynı; her türün etiketi, sayı ifadesi, gr
     assert.ok(KIND_COUNT_LABEL[k], k);
     assert.ok(KIND_GROUP[k], k);
     assert.match(WITHDRAW_LOG[k], / geri çekildi$/, k);
-    assert.ok(
+    // Kaldırılan tür (mal siparişi taslağı, 26 Eki 2026) Yardım'da yok; ötekiler var
+    const retired = (RETIRED_REQUEST_KINDS as readonly string[]).includes(k);
+    assert.equal(
       STAFF_APPROVAL_KINDS.some((a) => a.kind === k),
-      `${k}: personel Yardım'ında yok`,
+      !retired,
+      `${k}: personel Yardım'ı`,
     );
   }
   for (const s of STAFF_REQUEST_STATUSES) assert.ok(STATUS_LABEL[s], s);
   assert.equal(KIND_LABEL["kasa-duzeltme"], "Kasa düzeltmesi");
+  // Eski satırlar için etiket kalır; tür şemanın enumunda (eski satırlar okunabilsin)
+  assert.deepEqual([...RETIRED_REQUEST_KINDS], ["mal-taslak"]);
   assert.equal(KIND_LABEL["mal-taslak"], "Mal siparişi taslağı");
-  // Yardım'ın satırları: dokuz tür, reçete değişikliği ve yeni ürün önerisi
-  assert.equal(STAFF_APPROVAL_KINDS.length, STAFF_REQUEST_KINDS.length + 2);
+  // Yardım'ın satırları: sekiz canlı tür, reçete değişikliği ve yeni ürün önerisi
+  assert.equal(STAFF_APPROVAL_KINDS.length, STAFF_REQUEST_KINDS.length - RETIRED_REQUEST_KINDS.length + 2);
   assert.ok(STAFF_APPROVAL_KINDS.some((a) => a.kind === "recete"));
   assert.ok(STAFF_APPROVAL_KINDS.some((a) => a.kind === "yeni-urun"));
   assert.equal(STAFF_APPROVAL_KINDS.find((a) => a.kind === "kasa-gec")?.text, "Unutulan eski günün kasa raporu (14 gün)");
@@ -117,8 +123,8 @@ test("sınırlar: tür grubu başına açık istek (kasa 10, geç kasa 5, zayi 2
   assert.match(limitRefusal("zayi-gec", { ...ok, open: 20 }) ?? "", /^Onay bekleyen 20 isteğiniz var/);
   assert.match(limitRefusal("kasa-gec", { ...ok, open: 5 }) ?? "", /^Onay bekleyen 5 isteğiniz var/);
   assert.equal(limitRefusal("kasa-gec", { ...ok, open: 4 }), null);
-  assert.equal(limitRefusal("mal-taslak", { ...ok, today: 29 }), null);
-  assert.equal(limitRefusal("mal-taslak", { ...ok, today: 30 }), "Bugün en çok 30 istek açılabilir; yarın yeniden deneyin");
+  assert.equal(limitRefusal("zayi-gec", { ...ok, today: 29 }), null);
+  assert.equal(limitRefusal("zayi-gec", { ...ok, today: 30 }), "Bugün en çok 30 istek açılabilir; yarın yeniden deneyin");
   assert.equal(limitRefusal("zayi-sil", { ...ok, subjectToday: 2 }), null);
   assert.equal(limitRefusal("zayi-sil", { ...ok, subjectToday: 3 }), "Bu konuda bugün en çok 3 istek açılabilir; yöneticiye yazın");
 });
@@ -132,12 +138,14 @@ test("iş günü 05:00'te döner (oluşturma sınırı iş gününe göre sayıl
 test("bekleyen sayılar tek satırda: türün sırasıyla, sayı ve ad (tutar yok); bekleme süresi", () => {
   assert.equal(
     requestCountsText([
-      { kind: "mal-taslak", count: 1 },
+      { kind: "zayi-sil", count: 1 },
       { kind: "kasa-duzeltme", count: 1 },
       { kind: "zayi-gec", count: 3 },
     ]),
-    "1 kasa düzeltmesi · 3 geç zayi / ikram · 1 mal siparişi taslağı",
+    "1 kasa düzeltmesi · 3 geç zayi / ikram · 1 zayi silme isteği",
   );
+  // Kaldırılan tür (eski mal siparişi taslağı) yazılmaz
+  assert.equal(requestCountsText([{ kind: "mal-taslak", count: 2 }]), "");
   assert.equal(requestCountsText([]), "");
   assert.equal(requestCountsText([{ kind: "kasa-gec", count: 0 }]), "");
   assert.equal(waitedText(tr("2026-10-24T08:00"), NOW), "bugünden beri");
@@ -193,7 +201,6 @@ test("kilit sırası: her karar istek satırından önce konu nesnesini kilitler
     "src/server/cash-outs/requests.ts",
     "src/server/cash/requests.ts",
     "src/server/closed-day-requests.ts",
-    "src/server/order-drafts/core.ts",
     "src/server/waste/core.ts",
   ]);
   for (const f of callers) {
@@ -228,7 +235,7 @@ test("/panel/onaylar: adı Onaylar; bölümler sırasıyla kendi Suspense'inde, 
   assert.match(page, /title="Onaylar"/);
   assert.match(
     page,
-    /Personelin onay isteyen önerileri ve istekleri: kasa, mal siparişi, zayi ve ikram, reçete\. Reddederseniz notunuz personele görünür; tutar yazmayın\./,
+    /Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, reçete\. Reddederseniz notunuz personele görünür; tutar yazmayın\./,
   );
   const order = ["<KasaRequests />", "<OpsRequests />", "<ApprovalsContent />", "<RecentDecisions />"].map((tag) => page.indexOf(tag));
   for (const [i, at] of order.entries()) assert.ok(at > 0, `bölüm ${i + 1} yok`);

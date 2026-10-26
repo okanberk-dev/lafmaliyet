@@ -1,5 +1,5 @@
 // Kasadaki fiyatlar, Bugün ve zil (dalga 10 §2.2; src/app/panel/bugun/rows-ops.ts posRow, src/lib/prices/pos.ts
-// posBell ve posMarksText): personelin satırı Kasadaki fiyatlar listesine götürür ve hızlı sayımdan sonra gelir;
+// posBell ve posMarksText): personelin satırı Kasadaki fiyatlar listesine götürür ve zayi satırından önce gelir;
 // yöneticinin satırı son 48 saatin personel işaretlerini söyler, bekleyen fiyat yoksa Tamamlananlar'a düşer; zilin
 // kimliği iki rolde en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, yeni bir fiyat yapar.
 // Saatler sabit: tr("2026-10-22T14:00") Türkiye'de 22 Ekim Perşembe 14:00 (UTC+3).
@@ -25,9 +25,8 @@ function admin(now: Date, o: Partial<DayFacts> = {}): DayFacts {
 const row = (tasks: DayTask[]) => tasks.find((t) => t.key === "modpos");
 const POS = { count: 3, oldest: tr("2026-10-20T10:00").toISOString() };
 
-test("1. personel: Kasadaki fiyatlar satırı; Listeyi aç; hızlı sayımdan sonra", () => {
-  // 22 Ekim Perşembe hızlı sayım günü: hızlı sayım satırı da çıkar
-  const tasks = dayTasks(staff(NOON, { pos: POS, reorder: { total: 12, countedToday: 0, lastCountDay: "2026-10-15", countWeekdays: [4] } }));
+test("1. personel: Kasadaki fiyatlar satırı; Listeyi aç; zayi satırından önce", () => {
+  const tasks = dayTasks(staff(NOON, { pos: POS }));
   const r = row(tasks);
   assert.ok(r);
   assert.equal(r.title, "Kasadaki fiyatlar");
@@ -37,8 +36,8 @@ test("1. personel: Kasadaki fiyatlar satırı; Listeyi aç; hızlı sayımdan so
   assert.equal(r.href, "/panel/kasa/fiyatlar");
   assert.equal(r.action, "Listeyi aç");
   const keys = tasks.map((t) => t.key);
-  assert.ok(keys.includes("hizli-sayim"), keys.join());
-  assert.equal(keys.indexOf("modpos"), keys.indexOf("hizli-sayim") + 1, keys.join());
+  assert.ok(keys.includes("zayi"), keys.join());
+  assert.equal(keys.indexOf("zayi"), keys.indexOf("modpos") + 1, keys.join());
   // Bekleyen yoksa satır yok
   assert.equal(row(dayTasks(staff(NOON, { pos: { count: 0, oldest: null } }))), undefined);
   assert.equal(row(dayTasks(staff(NOON))), undefined);

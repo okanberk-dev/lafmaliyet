@@ -149,7 +149,7 @@ const STEP_NAMES: Record<string, string> = {
   sales: "Online satışlar",
   forecast: "Satış tahmini",
   photos: "Fotoğraf temizliği",
-  count: "Hızlı sayım bildirimi",
+  count: "Sayım bildirimi",
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
   watchdog: "Sistem uyarısı e-postası",
@@ -172,7 +172,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   sales: { ok: "Online satış tamam", off: "Online satış kurulmadı", error: "Online satış hata" },
   forecast: { ok: "Tahmin kaydedildi", noweather: "Tahmin kaydedildi, hava alınamadı", nodata: "Tahmin: veri yok", error: "Tahmin hata" },
   photos: { ok: "Eski fotoğraflar silindi", none: "Silinecek fotoğraf yok", off: "Fotoğraf deposu yok", error: "Fotoğraf temizliği hata" },
-  count: { sent: "Hızlı sayım bildirimi gitti", error: "Hızlı sayım bildirimi hata" },
+  count: { sent: "Sayım bildirimi gitti", error: "Sayım bildirimi hata" },
   weekly: {
     sent: "Haftalık özet gönderildi",
     off: "Haftalık özet kapalı",
@@ -197,8 +197,8 @@ const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` 
 /** Sabah işinin her gün yazılan adımları */
 export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
 /**
- * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, hızlı sayım,
- * haftalık özet, süresi dolan personel istekleri
+ * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, ay sonu sayım
+ * bildirimi, haftalık özet, süresi dolan personel istekleri
  */
 export type OptionalStep = "forecast" | "photos" | "count" | "weekly" | "requests";
 export type DailyStep = CoreStep | OptionalStep;
@@ -241,8 +241,9 @@ export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Recor
 }
 
 /**
- * Hızlı sayım bildiriminin adımı (src/server/notify/reorder-push.ts): yalnız sayım günü bildirim gönderilince yazılır
- * (sayım günü değil, hepsi sayılmış ya da bildirimi açık cihaz yoksa adım yok); hiçbir cihaza gidemediyse hata.
+ * Ay sonu sayım bildiriminin adımı (src/server/notify/count-push.ts): yalnız ayın son günü bildirim gönderilince yazılır
+ * (ayın son günü değil, hepsi sayılmış ya da bildirimi açık cihaz yoksa adım yok); hiçbir cihaza gidemediyse hata.
+ * Adın anahtarı (`count`) eski kayıtlar için aynı kaldı: 26 Eki 2026'ya kadar haftalık hızlı sayım bildirimi de buydu.
  */
 export function countStep(r: { status: "sent" | "skip"; sent: number; failed: number } | { error: string }): StepResult | undefined {
   if ("error" in r) return { code: "error", error: r.error };

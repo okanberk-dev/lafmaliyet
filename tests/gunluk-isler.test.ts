@@ -387,7 +387,7 @@ test("isteğe bağlı adımlar: verilmeyen hiç yazılmaz; sıra e-posta, eşitl
   assert.deepEqual(stepTexts({ photos: "none", forecast: "nodata", count: "sent", weekly: "late" }), [
     "Tahmin: veri yok",
     "Silinecek fotoğraf yok",
-    "Hızlı sayım bildirimi gitti",
+    "Sayım bildirimi gitti",
     "Haftalık özet: süre yetmedi, yarın denenecek",
   ]);
   assert.deepEqual(stepTexts({ photos: "off" }), ["Fotoğraf deposu yok"]);
@@ -428,12 +428,12 @@ test("sabah işi: fotoğraf temizliği kuyrukta, en çok 100 fotoğraf, kendi s�
   assert.match(gunluk, /photos: photosStep\(photos\)/);
 });
 
-test("isteğe bağlı adımların sözcükleri: satış tahmini, hızlı sayım, haftalık özet; hata mesajı adımın adıyla, yalnız hata kısmen yapar", () => {
+test("isteğe bağlı adımların sözcükleri: satış tahmini, ay sonu sayım bildirimi, haftalık özet; hata mesajı adımın adıyla, yalnız hata kısmen yapar", () => {
   const ok = { code: "ok" };
   const base = { sync: { code: "today" }, digest: { code: "sent" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
   const words: Record<string, Record<string, string>> = {
     forecast: { ok: "Tahmin kaydedildi", noweather: "Tahmin kaydedildi, hava alınamadı", nodata: "Tahmin: veri yok", error: "Tahmin hata" },
-    count: { sent: "Hızlı sayım bildirimi gitti", error: "Hızlı sayım bildirimi hata" },
+    count: { sent: "Sayım bildirimi gitti", error: "Sayım bildirimi hata" },
     weekly: {
       sent: "Haftalık özet gönderildi",
       off: "Haftalık özet kapalı",
@@ -459,14 +459,14 @@ test("isteğe bağlı adımların sözcükleri: satış tahmini, hızlı sayım,
     menu: { code: "error", error: "HTTP 500" },
   });
   assert.equal(bad.status, "partial");
-  assert.equal(bad.message, "Menü eşitlemesi: HTTP 500 · Satış tahmini: MET yanıt vermedi · Hızlı sayım bildirimi: 2 cihaza gönderilemedi · Haftalık özet: Resend yanıt vermiyor");
+  assert.equal(bad.message, "Menü eşitlemesi: HTTP 500 · Satış tahmini: MET yanıt vermedi · Sayım bildirimi: 2 cihaza gönderilemedi · Haftalık özet: Resend yanıt vermiyor");
   // Bilinmeyen kod adın yanında yazılır; sözcükler STEP_LABELS sırasıyla
   assert.deepEqual(stepTexts({ weekly: "skip" }), ["Haftalık özet: skip"]);
   assert.deepEqual(stepTexts({ weekly: "sent", count: "sent", forecast: "ok", photos: "none", digest: "sent" }), [
     "E-posta gönderildi",
     "Tahmin kaydedildi",
     "Silinecek fotoğraf yok",
-    "Hızlı sayım bildirimi gitti",
+    "Sayım bildirimi gitti",
     "Haftalık özet gönderildi",
   ]);
 });

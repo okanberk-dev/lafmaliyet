@@ -23,7 +23,6 @@ import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
 import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
 import type { OkcVatLine } from "../../lib/okc-z";
-import type { DeliveryCheck, ReorderLine } from "../../lib/reorder/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
@@ -1138,8 +1137,9 @@ export const pushSubscriptions = pgTable(
      */
     orders: boolean("orders"),
     /**
-     * Onay bildirimleri: yöneticiye personelin onay bekleyen isteği (bu dalgada mal siparişi taslağı), personele kendi
-     * isteğinin sonucu (docs/ONAYLAR.md)
+     * Onay bildirimleri: yöneticiye personelin onay bekleyen isteği, personele kendi isteğinin sonucu (docs/ONAYLAR.md).
+     * Tek gönderen mal siparişi taslağıydı (26 Eki 2026'da kaldırıldı); tesisat ve cihaz tercihi kalır, cihazdaki anahtar
+     * ancak yeniden bir gönderen olunca görünür
      */
     approvals: boolean("approvals").notNull().default(true),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
@@ -1350,11 +1350,15 @@ export const wasteEntries = pgTable(
   (t) => [index("waste_entries_date_idx").on(t.date)],
 );
 
-// ---------------------------------------------------------------- Mal siparişi (docs/MAL-SIPARISI.md)
+// ---------------------------------------------------------------- Mal siparişi ve hızlı sayım (kaldırıldı)
+// Hızlı sayım ve mal siparişi 26 Eki 2026'da panelden kaldırıldı (sahibin isteği: "normal sayım olsun"; aylık Stok
+// sayımı kalır). Üç tablo geçmiş için duruyor: migration yok, veri silinmez (Instant Rollback eski sürümü açabilsin).
+// Hiçbir ekran ve iş bunları okumaz ya da yazmaz; jsonb kolonlarının eski biçimleri git geçmişinde
+// (src/lib/reorder/types.ts, docs/MAL-SIPARISI.md).
 /**
- * Hızlı sayımda sayılan ve sipariş önerilen kalemler (10–15 kritik hammadde). Boş alanlar verilerden gelir: hedef
+ * (Kaldırıldı, geçmiş için) Hızlı sayımda sayılan ve sipariş önerilen kalemler (10–15 kritik hammadde). Boş alanlar verilerden gelir: hedef
  * kullanımdan, tedarikçi son alınan Paraşüt faturasından, sipariş birimi ve adı o tedarikçinin son fatura kaleminden
- * (src/server/data/reorder.ts). Miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim): sayım birimi sonradan
+ * (eskiden src/server/data/reorder.ts). Miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim): sayım birimi sonradan
  * değişse de anlamı değişmez.
  */
 export const reorderItems = pgTable("reorder_items", {
@@ -1378,7 +1382,7 @@ export const reorderItems = pgTable("reorder_items", {
 });
 
 /**
- * Haftalık hızlı sayım (ay sonu stok sayımından ayrı): kalem başına iş günü başına bir satır; aynı gün yeniden
+ * (Kaldırıldı, geçmiş için) Haftalık hızlı sayım (ay sonu stok sayımından ayrı): kalem başına iş günü başına bir satır; aynı gün yeniden
  * kaydedilince güncellenir. Eldeki stok = en yeni hızlı sayım ya da ay sonu sayımı (hangisi yeniyse). Personel de yazar.
  */
 export const quickCounts = pgTable(
@@ -1401,7 +1405,7 @@ export const quickCounts = pgTable(
 );
 
 /**
- * Tedarikçiye gönderilen mal siparişi (WhatsApp ya da kopyalanan metin). Kalemler gönderim anının kopyası (jsonb):
+ * (Kaldırıldı, geçmiş için) Tedarikçiye gönderilen mal siparişi (WhatsApp ya da kopyalanan metin). Kalemler gönderim anının kopyası (jsonb):
  * hammadde sonradan değişse de siparişte ne istendiği okunur. Paraşüt faturası gelince eşitleme faturayı bağlar ve
  * kalem kalem karşılaştırır (delivery_check); fark yoksa sipariş kendiliğinden kapanır. Fiyatlar yalnız yöneticiye
  * gösterilir.
@@ -1420,7 +1424,8 @@ export const supplierOrders = pgTable(
     /** Açılan (ya da kopyalanan) mesajın kendisi */
     message: text("message").notNull(),
     note: text("note"),
-    lines: jsonb("lines").$type<ReorderLine[]>().notNull(),
+    /** Gönderim anının kalemleri (eski biçim: ReorderLine, git geçmişinde) */
+    lines: jsonb("lines").$type<Record<string, unknown>[]>().notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
     sentBy: integer("sent_by").references(() => users.id, { onDelete: "set null" }),
     sentByName: text("sent_by_name").notNull(),
@@ -1438,8 +1443,8 @@ export const supplierOrders = pgTable(
     invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
     /** Fatura elle seçildi ya da eşleşme elle kaldırıldı: eşitleme dokunmaz */
     manualMatch: boolean("manual_match").notNull().default(false),
-    /** Faturayla karşılaştırmanın sonucu (src/lib/reorder/delivery.ts) */
-    deliveryCheck: jsonb("delivery_check").$type<DeliveryCheck>(),
+    /** Faturayla karşılaştırmanın sonucu (eski biçim: DeliveryCheck, git geçmişinde) */
+    deliveryCheck: jsonb("delivery_check").$type<Record<string, unknown>>(),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
     /** Kapanış (iptal) anı; yeniden açılan siparişte son kapanış kalır: eşitleme onu kendiliğinden kapatmaz */
     closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -1933,7 +1938,8 @@ export const posMarks = pgTable(
 // ---------------------------------------------------------------- Personel istekleri (ortak onay kuyruğu)
 /**
  * Personelin yöneticinin onayına giden istekleri (docs/ONAYLAR.md): kasa düzeltmesi ve silmesi, geç kasa raporu,
- * kasadan çıkan, fotoğraf kaldırma, kapalı gün, geç zayi / ikram ve zayi silme, mal siparişi taslağı. Kayıt onaya kadar
+ * kasadan çıkan, fotoğraf kaldırma, kapalı gün, geç zayi / ikram ve zayi silme (eski `mal-taslak`: mal siparişi
+ * taslağı, 26 Eki 2026'da kaldırıldı; tür eski satırlar için enumda kalır, kuyruklar onu okumaz). Kayıt onaya kadar
  * değişmez; istek burada bekler, türe özel alanlar `payload` ve `result` içinde (zod ile her okumada çözülür). Kişi
  * başına konu başına tek bekleyen istek (yenisi onu günceller, `version` artar); yönetici yalnız gördüğü sürümü onaylar,
  * kimse kendi isteğini onaylayamaz. Reçete önerileri ayrı tablodadır (recipe_change_requests). Türler ve durumlar
@@ -1976,7 +1982,7 @@ export const staffRequests = pgTable(
     /** Onayın ürettiği satır (rapor, gider, zayi, sipariş, özel gün); yabancı anahtar yok */
     resultId: integer("result_id"),
     result: jsonb("result").$type<Record<string, unknown>>(),
-    /** Bu andan sonra kendiliğinden "expired" olur (sabah işi; mal siparişi taslağı, kasadan çıkan) */
+    /** Bu andan sonra kendiliğinden "expired" olur (sabah işi; kasadan çıkan) */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     /** Zil kimliği: istek güncellenince en çok 10 dakikada bir yenilenir (yeniden okunmamış olur) */
     bumpedAt: timestamp("bumped_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1990,7 +1996,7 @@ export const staffRequests = pgTable(
     index("staff_requests_result_idx").on(t.kind, t.resultId),
     // Kişi başına konu başına tek bekleyen istek (yenisi onu günceller)
     uniqueIndex("staff_requests_pending_uq").on(t.kind, t.subject, t.requestedBy).where(sql`status = 'pending'`),
-    // Tedarikçi başına tek canlı mal siparişi taslağı (bekleyen ya da onaylanmış, gönderilmemiş)
+    // Tedarikçi başına tek canlı mal siparişi taslağı (özellik kaldırıldı; indeks veritabanında durur, migration yok)
     uniqueIndex("staff_requests_live_draft_uq").on(t.subject).where(sql`kind = 'mal-taslak' and status in ('pending', 'approved')`),
     uniqueIndex("staff_requests_client_key_uq").on(t.clientKey),
   ],

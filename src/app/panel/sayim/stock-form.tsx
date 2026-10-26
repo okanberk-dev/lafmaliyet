@@ -828,7 +828,7 @@ export function StockCountForm({
   }
 
   // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun; beforeunload istemci içi geçişi kapsamaz:
-  // başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar (Hızlı sayım ile ortak kanca)
+  // başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar (ortak kanca, src/components/ui/leave-guard.ts)
   const router = useRouter();
   const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE);
 

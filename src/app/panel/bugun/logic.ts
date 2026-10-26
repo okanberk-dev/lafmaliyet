@@ -13,21 +13,19 @@ import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { pendingSummary } from "@/lib/recipe-change";
-import { addDays, dayMonthTR, isLastDayOfMonth, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
-import { countOverdue, isCountDay } from "@/lib/reorder/levels";
-import type { ReorderDayFacts } from "@/lib/reorder/types";
-import { KIND_COUNT_LABEL, waitedText, type StaffRequestKind } from "@/lib/staff-requests";
+import { addDays, dayMonthTR, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
+import { KIND_COUNT_LABEL, RETIRED_REQUEST_KINDS, waitedText, type StaffRequestKind } from "@/lib/staff-requests";
 
 import type { TaskStatus } from "../dashboard-tasks";
 import { COUNT_GRACE_DAYS } from "../sayim/logic";
 
-import { checklistYesterday, draftRow, posRow } from "./rows-ops";
+import { checklistYesterday, posRow } from "./rows-ops";
 import type { OpsDayFacts } from "./rows-ops";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
- * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`; mal siparişi `hizli-sayim` ve
- * `mal-siparisi`. Dalga 10: personelin onaylanmış mal siparişi taslağı `mal-taslak` (rows-ops.ts).
+ * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
+ * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı.
  */
 export type DayTaskKey =
   | "isler"
@@ -45,9 +43,6 @@ export type DayTaskKey =
   | "zam"
   | "modpos"
   | "sayim-gecen"
-  | "hizli-sayim"
-  | "mal-siparisi"
-  | "mal-taslak"
   | "zayi"
   | "kasa"
   | "sayim-son";
@@ -129,14 +124,8 @@ export interface DayFacts {
   checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;
   /** Bugünün (iş günü) kontrol listeleri; personelde yalnız personelin doldurabildikleri. null: okunamadı */
   checklists?: { day: string; lists: ChecklistLite[] } | null;
-  // ---- İkisi (mal siparişi; docs/MAL-SIPARISI.md)
-  /**
-   * Hızlı sayımın olguları (takipteki kalem, bugün sayılan, son sayım günü, sayım günleri); yöneticide ayrıca sipariş
-   * hazır tedarikçiler ve teslim kontrolü. Personelinkinde fiyat, model ve sipariş yok
-   */
-  reorder?: ReorderDayFacts | null;
   // ---- İkisi (dalga 10; docs/planlar/personel-yetki.md)
-  /** Operasyonun olguları (Tükendi, kasaya işle, mal siparişi taslağı): tipi ve satırları rows-ops.ts'te */
+  /** Operasyonun olguları (Tükendi, kasaya işle): tipi ve satırları rows-ops.ts'te */
   ops?: OpsDayFacts | null;
   /**
    * Dün kafe kapalı mıydı: yöneticinin onayladığı ya da personelin bildirdiği, onay bekleyen kapalı gün (özel günün
@@ -411,98 +400,6 @@ const countMonthEnd: Row = (f, c) => {
   return { ...base, status: "done", detail: `${num(s.total)} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
 };
 
-// ---------------------------------------------------------------- Mal siparişi (docs/MAL-SIPARISI.md)
-
-/**
- * Haftalık hızlı sayım (ikisi): sayım günü ya da son sayım (hızlı ya da ay sonu) sayım aralığı + 1 günden eskiyse
- * (gecikti). Takipte kalem yoksa ve ayın son günü (ay sonu Stok sayımı yerine geçer) satır yok. Ay sonu sayımında
- * sayılan takip kalemi de sayılmış sayılır. Gün iş günüdür (05:00'te döner), kayıtlar gibi.
- */
-const quickCountRow: Row = (f, c) => {
-  const r = f.reorder;
-  if (!r || r.total <= 0 || isLastDayOfMonth(c.day)) return null;
-  const days = { countWeekdays: r.countWeekdays };
-  const countDay = isCountDay(c.day, days);
-  const late = countOverdue(r.lastCountDay, c.day, days);
-  if (!countDay && late === null) return null;
-  const admin = f.role === "admin";
-  const total = num(r.total);
-  const base = { key: "hizli-sayim" as const, title: "Haftalık hızlı sayım", href: "/panel/hizli-sayim" };
-  if (r.countedToday >= r.total) {
-    return admin
-      ? { ...base, status: "done", detail: `${total} kalemin hepsi sayıldı. Sipariş listesi hazır.`, href: "/panel/mal-siparisi", action: "Sipariş listesi" }
-      : { ...base, status: "done", detail: `${total} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
-  }
-  if (r.countedToday > 0) {
-    const progress = `${num(r.countedToday)} / ${total}`;
-    return { ...base, status: "todo", badge: progress, detail: `${progress} kalem sayıldı; kalanları da girin.`, action: "Sayıma devam" };
-  }
-  if (countDay) {
-    return { ...base, status: "todo", badge: "Bugün", detail: `Bugün hızlı sayım günü: ${total} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır.`, action: "Sayıma başla" };
-  }
-  return {
-    ...base,
-    status: "todo",
-    badge: "Gecikti",
-    detail: `Son sayım ${longDateTR(r.lastCountDay!)} (${num(late!)} gün önce). Sipariş önerisi eski stoka göre.`,
-    action: "Sayıma başla",
-  };
-};
-
-/**
- * Mal siparişi (yönetici), ilk uyan: teslim kontrolünde fark (sorun var), sipariş hazır (son sayım bugün ya da dün,
- * siparişi gönderilmemiş önerisi olan tedarikçi), beklenen günde gelmeyen sipariş. Hiçbiri yoksa satır yok.
- */
-const reorderRow: Row = (f) => {
-  const r = f.reorder;
-  if (f.role !== "admin" || !r) return null;
-  const issues = r.delivery?.issues ?? [];
-  if (issues.length) {
-    const parts = issues
-      .slice(0, 2)
-      .map((x) => `${x.supplier}: ${x.summary}`)
-      .join("; ");
-    return {
-      key: "mal-siparisi",
-      title: "Teslim kontrolü",
-      status: "warn",
-      badge: `${num(issues.length)} sipariş`,
-      detail: `${parts}${issues.length > 2 ? "…" : ""}`,
-      href: "/panel/mal-siparisi/gonderilen?durum=fark",
-      action: "Kontrol et",
-    };
-  }
-  const ready = r.ready;
-  if (ready?.suppliers.length) {
-    // "Kaldi, Sütaş ve Ispaş" ya da "Kaldi, Sütaş, Ispaş ve 2 tedarikçi daha" ("…." gibi çift noktalama olmasın)
-    const shown = ready.suppliers.slice(0, 3);
-    const more = ready.suppliers.length - shown.length;
-    const names = more > 0 ? `${shown.join(", ")} ve ${num(more)} tedarikçi daha` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} ve ${shown.at(-1)}` : shown[0];
-    return {
-      key: "mal-siparisi",
-      title: "Mal siparişi",
-      status: "todo",
-      badge: `${num(ready.suppliers.length)} tedarikçi`,
-      detail: `${names} için ${num(ready.lines)} kalem sipariş öneriliyor. WhatsApp'tan tek dokunuşla gönderin.`,
-      href: "/panel/mal-siparisi",
-      action: "Listeyi aç",
-    };
-  }
-  const late = r.delivery?.late ?? 0;
-  if (late > 0) {
-    return {
-      key: "mal-siparisi",
-      title: "Gelmeyen mal siparişi",
-      status: "todo",
-      badge: num(late),
-      detail: `${num(late)} mal siparişi beklenen günde gelmedi; geldiyse işaretleyin.`,
-      href: "/panel/mal-siparisi/gonderilen",
-      action: "Bak",
-    };
-  }
-  return null;
-};
-
 // ---------------------------------------------------------------- Kontrol listeleri (ikisi)
 
 /** Bugünün listesinin satırı (docs/BUGUN.md › Kontrol listeleri): aralıktan önce sonra, aralıkta yapılacak, son saatten sonra gecikti */
@@ -693,18 +590,20 @@ const unpricedRow: Row = (f) => {
   };
 };
 
-/** Onay satırında türlerin sırası: kasa istekleri, reçete önerileri, zayi istekleri, mal siparişi taslağı */
+/** Onay satırında türlerin sırası: kasa istekleri, reçete önerileri, zayi istekleri */
 const KASA_KINDS: StaffRequestKind[] = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun"];
-const OPS_KINDS: StaffRequestKind[] = ["zayi-gec", "zayi-sil", "mal-taslak"];
+const OPS_KINDS: StaffRequestKind[] = ["zayi-gec", "zayi-sil"];
 
 /**
  * Onaylar (yönetici): reçete önerileri ve personel istekleri. İstek yoksa reçete metni ("Personelin önerdiği 2 reçete
  * değişikliği … onay bekliyor: Latte, …"); varsa türler tek satırda ve en eskisinin beklediği ("1 kasa düzeltmesi ·
- * 2 reçete değişikliği · 1 mal siparişi taslağı · en eskisi 2 gündür"). Tutar yok.
+ * 2 reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür"). Kaldırılan türler (eski mal siparişi taslağı)
+ * sayılmaz: yükleyici de okumaz, satır yine de onlarla şişmez. Tutar yok.
  */
 const approvalsRow: Row = (f) => {
   const a = f.role === "admin" ? f.approvals : null;
-  const requests = (a?.requests ?? []).filter((r) => r.count > 0);
+  const retired: readonly StaffRequestKind[] = RETIRED_REQUEST_KINDS;
+  const requests = (a?.requests ?? []).filter((r) => r.count > 0 && !retired.includes(r.kind));
   const asked = requests.reduce((n, r) => n + r.count, 0);
   const n = (a?.changes ?? 0) + (a?.newProducts ?? 0) + asked;
   if (!a || n <= 0) return null;
@@ -761,24 +660,20 @@ const ADMIN_ROWS: Row[] = [
   posRow, // modpos
   countPrevious, // sayim-gecen
   checklistRows, // liste-{templateId} (açılış saatine göre)
-  quickCountRow, // hizli-sayim
-  reorderRow, // mal-siparisi
   cashToday, // kasa
   countMonthEnd, // sayim-son
 ];
 
 /**
  * Personelin satır sırası; yönetici satırları burada hiç yok. Operasyonun satırları (rows-ops.ts) personelin olgusu
- * gelince çıkar: dünün listeleri, kasadaki fiyatlar ve onaylanmış mal siparişi taslağı
+ * gelince çıkar: dünün listeleri ve kasadaki fiyatlar
  */
 const STAFF_ROWS: Row[] = [
   cashYesterday, // kasa-dun
   checklistYesterday, // liste-dun
   countPrevious, // sayim-gecen
   checklistRows, // liste-{templateId} (açılış saatine göre)
-  quickCountRow, // hizli-sayim
   posRow, // modpos
-  draftRow, // mal-taslak
   wasteRow, // zayi
   cashToday, // kasa
   countMonthEnd, // sayim-son

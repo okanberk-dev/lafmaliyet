@@ -153,8 +153,8 @@ export function AlertCenter({ role }: { role: Role }) {
         (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")) || (msg.kind === "orders" && prefs.orderAlerts));
       e.ports[0]?.postMessage({ willRing });
       if (msg.kind === "approvals") {
-        // Onay (mal siparişi taslağı): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz (sw.js): bildirim burada,
-        // zil ve açık ekran yenilenir
+        // Onay bildirimi (şu an gönderen yok; tesisat kalır): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz
+        // (sw.js): bildirim burada, zil ve açık ekran yenilenir
         refreshScreen(msg.kind);
         window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT));
         if (document.visibilityState === "visible" && msg.title) {

@@ -5,7 +5,6 @@ import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
 import { posBell } from "@/lib/prices/pos";
-import { isDraftExpired, undoneBellBody } from "@/lib/reorder/draft";
 import { soldOutBell, soldOutDigestLine } from "@/lib/site-menu/sold-out";
 import { addDays, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -13,7 +12,6 @@ import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText }
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { soldOutFacts } from "@/server/data/menu-status";
-import { draftBellRows } from "@/server/data/order-drafts";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import { countProgress } from "@/server/data/count-progress";
@@ -22,9 +20,9 @@ import type { DigestBox } from "@/server/notify/digest-template";
 
 /*
  * Zilin operasyon satırları (src/server/actions/notifications.ts toplar; docs/BILDIRIMLER.md). Operasyon grubunun
- * modülü: kasada (ModPOS) değişecek fiyatlar ve sonra Tükendi, mal siparişi taslağı ve zayi isteklerinin satırları
- * (plan docs/planlar/personel-yetki.md §2.1, §2.2, §2.4, §2.8). İki rol dalında da çağrılır; personelin satırları
- * yalnız personelin yükleyicilerinden (tutar ve maliyet yok).
+ * modülü: kasada (ModPOS) değişecek fiyatlar ve sonra Tükendi ve zayi isteklerinin satırları (plan
+ * docs/planlar/personel-yetki.md §2.1, §2.2, §2.8). İki rol dalında da çağrılır; personelin satırları yalnız personelin
+ * yükleyicilerinden (tutar ve maliyet yok). Mal siparişi taslağının satırları (§2.4) 26 Eki 2026'da kaldırıldı.
  */
 
 /**
@@ -107,75 +105,6 @@ async function soldOutNotifications(user: CurrentUser, now: Date): Promise<Panel
   return [{ ...bell, timeLabel: "", unread: true, group: "uyari" }];
 }
 
-/** "Kaldi · 5 kalem" → ["Kaldi", "5 kalem"] */
-const splitTitle = (t: string): [string, string] => {
-  const i = t.lastIndexOf(" · ");
-  return i < 0 ? [t, ""] : [t.slice(0, i), t.slice(i + 3)];
-};
-
-/**
- * Mal siparişi taslakları (§2.4; grup Onaylar, push ayrı: src/server/order-drafts/notify.ts). Yönetici: bekleyen taslak
- * başına "Mal siparişi onay bekliyor: Kaldi" (en çok 5; kimlik zil anından, taslak güncellenince yeniden okunmamış) ve
- * son 24 saatte personelin geri aldığı gönderim. Personel ("İsteklerim"): kendi taslağının sonucu: onaylandı (gönderilene
- * kadar), reddedildi (7 gün). Tutar yok.
- */
-async function draftNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
-  const today = todayTR(now);
-  const when = (d: Date) => (todayTR(d) === today ? "Bugün" : dateTR(todayTR(d)));
-  if (user.role === "admin") {
-    const rows = await draftBellRows({ since: new Date(now.getTime() - 86_400_000) });
-    const pending = rows
-      .filter((r) => r.status === "pending" && !isDraftExpired(r, now))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .slice(0, 5)
-      .map((r): PanelNotification => {
-        const [supplier, count] = splitTitle(r.title);
-        return {
-          id: `taslak-${r.id}-${r.bumpedAt.getTime()}`,
-          kind: "warning",
-          title: `Mal siparişi onay bekliyor: ${supplier}`,
-          body: `${count} · ${r.requestedByName} hazırladı`,
-          timeLabel: waitedText(r.createdAt, now),
-          unread: true,
-          href: `/panel/onaylar#istek-${r.id}`,
-          group: "onay",
-        };
-      });
-    const undone = rows
-      .filter((r) => r.status === "cancelled")
-      .slice(0, 3)
-      .map((r): PanelNotification => ({
-        id: `taslak-geri-${r.id}`,
-        kind: "info",
-        title: `${splitTitle(r.title)[0]} siparişi geri alındı`,
-        body: undoneBellBody(r),
-        timeLabel: when(r.updatedAt),
-        unread: true,
-        href: "/panel/mal-siparisi/gonderilen?durum=kapanan",
-        group: "onay",
-      }));
-    return [...pending, ...undone];
-  }
-  const rows = await draftBellRows({ userId: user.id, since: new Date(now.getTime() - 7 * 86_400_000) });
-  return rows
-    .filter((r) => (r.status === "approved" && !isDraftExpired(r, now)) || r.status === "rejected")
-    .slice(0, 5)
-    .map((r): PanelNotification => {
-      const supplier = splitTitle(r.title)[0];
-      const approved = r.status === "approved";
-      return {
-        id: `istek-${r.id}-${r.status}`,
-        kind: approved ? "info" : "warning",
-        title: approved ? `${supplier} siparişi onaylandı; WhatsApp'tan gönderin` : `${supplier} siparişi reddedildi`,
-        body: approved ? `${r.reviewedByName ?? "Yönetici"} onayladı${r.reviewNote ? ` · Yönetici: ${r.reviewNote}` : ""}` : `Yönetici: ${r.reviewNote ?? "not yok"}`,
-        timeLabel: when(r.updatedAt),
-        unread: true,
-        href: "/panel/hizli-sayim/siparis",
-        group: "onay",
-      };
-    });
-}
-
 /**
  * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 günü, gün 05:00'te döner): "Ekim 2026 sayımı yarım:
  * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar.
@@ -191,14 +120,13 @@ async function pastCountNotifications(user: CurrentUser, now: Date): Promise<Pan
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste, soldOut, drafts, count] = await Promise.all([
+  const [pos, waste, soldOut, count] = await Promise.all([
     posNotifications(user, now).catch(() => []),
     wasteRequestNotifications(user, now).catch(() => []),
     soldOutNotifications(user, now).catch(() => []),
-    draftNotifications(user, now).catch(() => []),
     pastCountNotifications(user, now).catch(() => []),
   ]);
-  return [...drafts, ...waste, ...soldOut, ...count, ...pos];
+  return [...waste, ...soldOut, ...count, ...pos];
 }
 
 /**

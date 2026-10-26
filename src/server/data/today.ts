@@ -17,7 +17,6 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
-import { loadReorderDay } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
 import { dayWaste } from "@/server/data/waste";
@@ -41,7 +40,7 @@ import { safe } from "./today-safe";
  * olgular (kasa, sayım, hatırlatıcılar, karaoke, uygulama siparişleri, bugünün ve dünün kontrol listeleri, kapalı gün)
  * ve rolün kendi olguları ayrı fonksiyonlarda: personel için yalnız staffFacts çalışır, yöneticinin olguları (ödemeler,
  * faturalar, maliyet modeli, fiyatlar, kasanın bütünlüğü, onaylar, günlük işler) ona hiç yüklenmez (tests/bugun.test.ts
- * kaynaktan denetler). Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak) src/server/data/today-ops.ts'te, iki
+ * kaynaktan denetler). Operasyonun olguları (kasadaki fiyatlar, Tükendi) src/server/data/today-ops.ts'te, iki
  * rolde; o dosyanın personel dalı yalnız personelin yükleyicilerini okur.
  */
 export interface TodayData {
@@ -108,13 +107,13 @@ interface RoleFacts {
 }
 
 /**
- * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) ve hızlı sayımın olguları
- * (maliyet modeli verilmez: fiyat, sipariş ve teslim kontrolü yüklenmez)
+ * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) ve satış tahmininin
+ * satırı (maliyet modeli verilmez)
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
   // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
-  const [waste, reorder, busy] = await Promise.all([safe(dayWaste(c.day)), safe(loadReorderDay("staff", new Date())), safe(loadStaffForecast())]);
-  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null, reorder }, cashFlags: null, forecast: { admin: null, staff: busy } };
+  const [waste, busy] = await Promise.all([safe(dayWaste(c.day)), safe(loadStaffForecast())]);
+  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null }, cashFlags: null, forecast: { admin: null, staff: busy } };
 }
 
 /**
@@ -123,9 +122,9 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
-  // Maliyet modeli bir kez kurulur: zam uyarısı ve mal siparişinin hazır listesi aynı modelle (personelde hiç kurulmaz)
+  // Maliyet modeli yalnız zam uyarısı için (personelde hiç kurulmaz)
   const modelP = loadModel();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, reorder, forecast] = await Promise.all([
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, forecast] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -189,13 +188,11 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
     safe(loadOverduePayouts()),
-    // Mal siparişi: hızlı sayım, sipariş hazır tedarikçiler, teslim kontrolü (docs/MAL-SIPARISI.md)
-    safe(modelP.then((model) => loadReorderDay("admin", now, model))),
     // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
     safe(loadForecastCard(now)),
   ]);
   return {
-    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, reorder },
+    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices },
     cashFlags: flags,
     forecast: { admin: forecast, staff: null },
   };

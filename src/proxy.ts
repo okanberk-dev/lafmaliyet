@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { canOpen, homeFor } from "@/lib/roles";
+import { canOpen, homeFor, retiredRedirect } from "@/lib/roles";
 import { COOKIE_BASE, LEGACY_COOKIES, readCookie, SESSION_COOKIE, verifySession } from "@/server/auth/session";
 
 // İyimser kontrol: imzası geçerli oturum çerezi yoksa panel sayfalarına girilmez.
@@ -9,6 +9,10 @@ import { COOKIE_BASE, LEGACY_COOKIES, readCookie, SESSION_COOKIE, verifySession 
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  // Kaldırılan ekranların eski adresleri (Hızlı sayım, Mal siparişi): 404 yerine Stok sayımı'na, sorgusuz (oturum
+  // yoksa oradan girişe)
+  const retired = retiredRedirect(pathname);
+  if (retired) return NextResponse.redirect(new URL(retired, request.url));
   const session = await verifySession(readCookie(request.cookies, SESSION_COOKIE, LEGACY_COOKIES.session.name));
 
   if (pathname.startsWith("/giris")) {

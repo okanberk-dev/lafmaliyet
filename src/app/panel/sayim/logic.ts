@@ -691,9 +691,9 @@ export function staffCountIssue(role: "admin" | "staff", month: string, now: Dat
 }
 
 /**
- * Ay sonu sayımı hatırlatması (günlük işin sabah bildirimi, src/server/notify/reorder-push.ts): ayın son iş günü,
+ * Ay sonu sayımı hatırlatması (günlük işin sabah bildirimi, src/server/notify/count-push.ts): ayın son iş günü,
  * sayım listesi doluysa ve ayın sayımı tamamlanmadıysa (countStatus kuralı, sunucuda today.ts countProgress) tek
- * bildirim. O gün hızlı sayım bildirimi gitmez (ay sonu sayımı yerine geçer); bu onun yerini tutar. Tutar yok.
+ * bildirim. Tutar yok.
  */
 export function monthEndCountPush(day: string, progress: { counted: number; total: number }): { title: string; body: string; url: string; tag: string } | null {
   if (!isLastDayOfMonth(day) || progress.total <= 0 || progress.counted >= progress.total) return null;

@@ -1092,7 +1092,7 @@ test("onay satırı: personel istekleri de sayılır; türler tek satırda, reç
           newProducts: 0,
           names: ["Latte"],
           requests: [
-            { kind: "mal-taslak", count: 1 },
+            { kind: "zayi-sil", count: 1 },
             { kind: "kasa-duzeltme", count: 1 },
           ],
           oldestAt: tr("2026-10-22T09:00").toISOString(),
@@ -1103,7 +1103,7 @@ test("onay satırı: personel istekleri de sayılır; türler tek satırda, reç
   assert.equal(t.onay.title, "Onaylar");
   assert.equal(t.onay.status, "todo");
   assert.equal(t.onay.badge, "4 bekliyor");
-  assert.equal(t.onay.detail, "1 kasa düzeltmesi · 2 reçete değişikliği · 1 mal siparişi taslağı · en eskisi 2 gündür");
+  assert.equal(t.onay.detail, "1 kasa düzeltmesi · 2 reçete değişikliği · 1 zayi silme isteği · en eskisi 2 gündür");
   assert.equal(t.onay.href, "/panel/onaylar");
   assert.doesNotMatch(t.onay.detail, /₺/);
   // Yalnız istek (reçete yok)
@@ -1114,6 +1114,13 @@ test("onay satırı: personel istekleri de sayılır; türler tek satırda, reç
   assert.ok(!keys(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [], oldestAt: null } }))).includes("onay"));
   // Personelde hiç yok
   assert.ok(!keys(dayTasks(staff(now, { approvals: { changes: 1, newProducts: 0, names: ["Latte"], requests: [{ kind: "kasa-gec", count: 1 }], oldestAt: null } }))).includes("onay"));
+  // Kaldırılan tür (eski mal siparişi taslağı, 26 Eki 2026) sayılmaz ve yazılmaz; yalnız oysa satır yok
+  const retired = byKey(
+    dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind: "mal-taslak", count: 2 }, { kind: "zayi-gec", count: 1 }], oldestAt: null } })),
+  );
+  assert.equal(retired.onay.badge, "1 bekliyor");
+  assert.equal(retired.onay.detail, "1 geç zayi / ikram");
+  assert.ok(!keys(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind: "mal-taslak", count: 1 }], oldestAt: null } }))).includes("onay"));
 });
 
 test("sıradaki iş: başka yapılacak ya da sorunlu satır varken dünün kontrol listeleri sıradaki olmaz (iki rolde)", () => {
@@ -1127,7 +1134,7 @@ test("sıradaki iş: başka yapılacak ya da sorunlu satır varken dünün kontr
   assert.equal(splitTasks([t("liste-dun", "warn"), t("komisyon", "warn")]).next?.key, "komisyon");
 });
 
-test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar, onaylı taslak yerleri; olgusu yokken satır yok", () => {
+test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar yerinde; olgusu yokken satır yok", () => {
   const now = tr("2026-11-03T21:00");
   const staffTasks = dayTasks(
     staff(now, {
@@ -1145,10 +1152,14 @@ test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar, onayl�
   const logic = read("src/app/panel/bugun/logic.ts");
   const staffRows = logic.slice(logic.indexOf("const STAFF_ROWS"), logic.indexOf("];", logic.indexOf("const STAFF_ROWS")));
   const order = [...staffRows.matchAll(/\/\/ ([A-Za-z0-9{}-]+)/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["kasa-dun", "liste-dun", "sayim-gecen", "liste-{templateId}", "hizli-sayim", "modpos", "mal-taslak", "zayi", "kasa", "sayim-son"]);
+  assert.deepEqual(order, ["kasa-dun", "liste-dun", "sayim-gecen", "liste-{templateId}", "modpos", "zayi", "kasa", "sayim-son"]);
+  // Yöneticinin sırasında da hızlı sayım ve mal siparişi yok (26 Eki 2026'da kaldırıldı)
+  const adminRows = logic.slice(logic.indexOf("const ADMIN_ROWS"), logic.indexOf("];", logic.indexOf("const ADMIN_ROWS")));
+  assert.doesNotMatch(adminRows, /hizli-sayim|mal-siparisi|quickCountRow|reorderRow/);
   // Taşınan satırlar operasyon modülünde
   const ops = read("src/app/panel/bugun/rows-ops.ts");
-  for (const fn of ["posRow", "checklistYesterday", "draftRow", "soldOutLine"]) assert.match(ops, new RegExp(`export (const|function) ${fn}\\b`), fn);
+  for (const fn of ["posRow", "checklistYesterday", "soldOutLine"]) assert.match(ops, new RegExp(`export (const|function) ${fn}\\b`), fn);
+  assert.doesNotMatch(ops, /draftRow|mal-taslak|hizli-sayim/);
   assert.match(logic, /import type \{ OpsDayFacts \} from "\.\/rows-ops";/);
 });
 
