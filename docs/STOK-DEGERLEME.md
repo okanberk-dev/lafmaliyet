@@ -97,7 +97,12 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
 - **Sayım listesi**: sayım birimi olan aktif malzemeler ve pasif olup aktif bir ürünün reçetesinde geçenler ("Pasif ·
   reçetede"; satıldıkça tüketilir, listeden düşse kalan stoğu 0 sayılırdı). Aktif ürünün reçetesindeki malzeme pasif
   yapılamaz (Hammaddeler önce reçetelerden çıkarılmasını ister, ürünleri listeler); kural `isCountable`
-  (src/lib/ingredient-usage.ts), motor ve sayım kaydı aynı kuralı kullanır (denetim E-04). Sayımı, alımı, Paraşüt
+  (src/lib/ingredient-usage.ts), motor, sayım kaydı ve sayım ilerlemesi (Bugün, zil, ay sonu bildirimi, sabah e-postası:
+  `countProgress`, aynı kuralın SQL'i `countableSql`) aynı kuralı kullanır (denetim E-04, inceleme B02-D1). Pasif
+  malzeme bir yazımla aktif bir reçeteye girerse (ürün reçete kartından ya da sitenin "Satışta"sıyla yeniden aktif
+  oldu, reçeteye yazıldı, öneri onaylandı, ürün kopyalandı) listeye bu aydan girer (`count_from` bu ay; Hammaddeler'de
+  yeniden aktif yapılan kalem gibi), sayımı bitmiş geçmiş aylar "yarım" olmaz; migration 0043 eski satırlara aynısını
+  yapar (B02-U2). Personel formunda bu kalemde "Pasif" yazmaz, "Satışta kullanılıyor, sayın" yazar. Sayımı, alımı, Paraşüt
   bağlantısı ya da zayi / ikram kaydı olan malzeme silinmez, pasif yapılır (E-28). Fiyatı girilmemiş ek kalem ("Listede
   olmayanlar") yöneticinin zilinde ve Bugün'de söylenir: kapanış stoğuna 0 ₺ girer (E-22).
 - **Excel dışa aktarımı**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.
