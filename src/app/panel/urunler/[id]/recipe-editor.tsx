@@ -57,7 +57,7 @@ import { Switch } from "@/components/ui/switch";
 import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
-import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
+import { PACKAGING_CATEGORY, RECIPE_COST_NOTE, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { monthLabel as monthTitle, num, pct, tl, tlUnit } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
 import { monthLocativeTR } from "@/lib/reminders";
@@ -722,7 +722,7 @@ export function RecipeEditor({
                     </span>
                     <span className="inline-flex items-center justify-end gap-1">
                       Tutar
-                      <InfoTip text="Miktar × birim maliyet (KDV hariç). Birim maliyet Hammaddeler sayfasından gelir; altında KDV dahil tutar." />
+                      <InfoTip text={`Miktar × birim maliyet (KDV hariç). Birim maliyet Hammaddeler sayfasından gelir; altında KDV dahil tutar. ${RECIPE_COST_NOTE}`} />
                     </span>
                   </div>
                   <ul aria-label="Reçete malzemeleri">

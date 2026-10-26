@@ -9,6 +9,7 @@ import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { listDaysText } from "@/lib/calc/insights";
 import { manualOf } from "@/lib/cash-month";
+import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
@@ -22,7 +23,7 @@ import { CountUp, ImportCard, MatchCoverage, MonthInfoForm, SalesTable, type Pro
 export const metadata: Metadata = { title: "Satışlar" };
 
 const DESCRIPTION =
-  "Patron (ModPOS) ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır.";
+  `Patron (ModPOS) ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır. ${RECIPE_COST_NOTE}`;
 
 export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">) {
   return (

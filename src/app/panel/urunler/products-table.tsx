@@ -44,7 +44,7 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import type { ProductStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Size } from "@/lib/calc/types";
-import { SIZE_LABELS, SIZES } from "@/lib/constants";
+import { RECIPE_COST_NOTE, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
 import type { SiteMarker } from "@/lib/site-menu/view";
@@ -907,7 +907,7 @@ export function ProductsTable({
                   {head("price", "Satış fiyatı", "KDV dahil menü fiyatı. Üzerine tıklayıp değiştirebilirsiniz; Enter ile kaydedilir.")}
                   {col("net") ? head("net", "Net satış", "Satış fiyatı ÷ (1 + KDV). Devlete ödenecek KDV çıktıktan sonra kasanıza kalan.") : null}
                   {col("commission") ? head("commission", "POS kom.", "Satış fiyatı × banka komisyonu × kartlı satış oranı. Nakitte komisyon yoktur.") : null}
-                  {head("cost", "Maliyet", "Reçete kartındaki malzeme + ambalaj + fire payı (KDV hariç).")}
+                  {head("cost", "Maliyet", `Reçete kartındaki malzeme + ambalaj + fire payı (KDV hariç). ${RECIPE_COST_NOTE}`)}
                   {col("totalCost") ? head("totalCost", "Toplam maliyet", "Malzeme + ambalaj + POS komisyonu.") : null}
                   {head("unitProfit", "Birim kâr", "Net satış − toplam maliyet. Bir adet satınca kira/personel öncesi elinize kalan.")}
                   {head(

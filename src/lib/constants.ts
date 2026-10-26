@@ -27,6 +27,13 @@ export const DEFAULT_SETTINGS: Settings = {
   stokFifoBaslangic: "2026-10",
 };
 
+/**
+ * Reçete / menü maliyetinin dayanağı (Satışlar, ürün listesi, reçete kartı): son alış fiyatı. Kâr-zararın mal
+ * maliyeti ise sayımdan, FIFO ile (docs/STOK-DEGERLEME.md)
+ */
+export const RECIPE_COST_NOTE =
+  "Reçete maliyeti son alış fiyatıyla (yenileme maliyeti): fiyat kararı için. Kâr-zararın mal maliyeti FIFO ile değerlenen sayımdan.";
+
 /** Stok değerleme ayarının veritabanındaki "kapalı" değeri (satır silinirse varsayılan ay geri gelir) */
 export const FIFO_OFF = "kapali";
 
