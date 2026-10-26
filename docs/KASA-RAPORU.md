@@ -10,13 +10,14 @@ görünür ([BUGUN.md](BUGUN.md)).
 | Bölüm | Alanlar |
 |-------|---------|
 | ModPOS Z raporu | Toplam satış, nakit, kredi / banka kartı; varsa yemek kartı, online, diğer; ödenmez / ikram (ciro dışı); indirim, Z no ve fiş sayısı (isteğe bağlı). Ya da ModPOS Z raporunun fotoğrafını çekin: rakamlar dolar |
-| Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, sayımdan sonra teslim edilen, **kasayı sayan** (gönderen değilse listeden seçilir) |
+| Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, **gün içinde kasaya giren** (nakit satış dışında çekmeceye konan: bozuk para, nakit tahsilat, nakit bahşiş), sayımdan sonra teslim edilen, **kasayı sayan** (gönderen değilse listeden seçilir) |
 | Banka POS Z raporu (yazarkasa) | Banka POS'tan (yazarkasa) alınan mali Z: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. Fotoğraf ve dört alan: **Günlük toplam** (NET SATIŞ ya da TOPLAM satırı), **Z no** (Z NO / Z SAYAÇ, fiş no değil), **Nakit**, **Kredi kartı** (K.KARTI satırı; altındaki banka satırları değil). **Ayrıntılar** kutusunda: yemek kartı, diğer, toplam KDV, KDV dökümü (%10 ve %20'nin KDV dahil toplamı ve KDV'si; %1 yalnız okunduysa ya da yazılıysa), fiş sayısı ve **Banka gün sonu** (bankanın ayrı gün sonu fişi varsa neti; yedek). Bölüm isteğe bağlı (aşağıda [Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa)) |
 | Not | Fark varsa nedeni (bozuk para, iade, yanlış fiş…) |
 
 Yazarken hesaplananlar:
 
-- **Olması gereken nakit** = açılış + nakit satış − gün içinde çıkan
+- **Olması gereken nakit** = açılış + nakit satış + gün içinde giren − gün içinde çıkan (`computeCash`; form, döküm,
+  e-posta, WhatsApp, düzeltme ve geç rapor istekleri, LafPOS'tan doldur ve Claude bağlantısı aynı hesabı kullanır)
 - **Kasa farkı** = sayılan − olması gereken. 1 ₺'nin altı "tutuyor", eksi **eksik** (kırmızı), artı **fazla** (turuncu).
 - **Ertesi güne devir** = sayılan − teslim edilen. Ertesi günün açılışı buradan dolar.
 - **Kart farkı** = yazarkasanın kredi kartı (yoksa banka gün sonu) − ModPOS kart. Yazarkasa bölümünden önceki
@@ -26,6 +27,13 @@ Yazarken hesaplananlar:
   tutuyor mu; Z no önceki yazarkasa Z'sinden büyük mü) ve kartı ModPOS'la aynı mı. Personel yalnız bu ikisini görür;
   ModPOS ile yazarkasanın toplam, nakit, yemek kartı ve banka gün sonu karşılaştırması yalnız yöneticide
   ([Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa)).
+
+**Gün içinde kasaya giren** çoğu gün yoktur: alan tutarı varken (kayıtlı raporda da), LafPOS'tan dolunca ya da
+**Kasaya giren ekle**'ye basınca görünür (ipucu: "Satış dışı: bozuk para, tahsilat, nakit bahşiş").
+Varsa dökümde, e-postada ve WhatsApp'ta nakit satışın altında "+ Gün içinde giren" satırıdır. Gün içinde çıkan gibi
+kasa alanıdır: ertesi gün değişirse onaya gider ([Sonradan düzeltme](#sonradan-düzeltme-ve-silme-isteği)). Alan 26 Ekim
+2026'da geldi (`cash_reports.cash_in`, varsayılan 0): önceki raporlar ve önceki sürüm kopyaları 0 sayılır, ilk
+düzeltmede "Gün içinde giren" değişmiş görünmez.
 
 Gece 05:00'e kadar kapanan gün bir önceki güne yazılır. Personel bugünün ve dünün raporunu girer ya da düzeltir;
 ertesi günün raporu girildikten sonra bir raporu (ve o günün kasadan çıkanlarını, fotoğraflarını) yalnız yönetici
@@ -103,6 +111,9 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 - Okuma kapalıysa ya da bu ortamda kurulu değilse fotoğraf yine kanıt olarak eklenir, rakamlar elle yazılır.
 
 Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md).
+
+**LafPOS'tan doldurma:** LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa
+rakamları fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
 
 ## Banka POS Z raporu (yazarkasa)
 
@@ -347,7 +358,7 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
   ne zaman ("22 Ekim 10:05 · Mehmet") ve hangi alan neyden neye ("Sayılan nakit: 2.880 ₺ → 2.980 ₺"). Not ve "neye
   çıktı" metni yazılmaz, yalnız "Not değişti". En altta ilk gönderim.
 - İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) kasadaki nakdi değiştiren bir alan (açılış, nakit satış, gün
-  içinde çıkan, sayılan nakit, teslim edilen) ya da kasayı sayan değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
+  içinde giren, gün içinde çıkan, sayılan nakit, teslim edilen) ya da kasayı sayan değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
   **Ertesi gün düzeltildi** rozeti, yöneticinin zilinde "Kasa raporu ertesi gün değişti" (son 7 gün; kim ve ne
   değişti). Yalnız Z, kart, banka POS Z ya da not düzeltmesi uyarı vermez; ardından yapılan bir not düzeltmesi uyarıyı da kapatmaz.
   Yöneticinin kendi düzeltmesi kendi zilinde görünmez.

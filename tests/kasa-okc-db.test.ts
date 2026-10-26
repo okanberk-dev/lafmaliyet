@@ -106,6 +106,7 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
       other: 0,
       // Devir 3.500 − 2.400 = 1.100 (öteki testlerin raporlarıyla aynı); not dolu
       openingCash: 1_100,
+      cashIn: 0,
       cashOut: 0,
       cashOutNote: null,
       countedCash: 3_500,

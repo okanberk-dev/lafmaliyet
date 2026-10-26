@@ -121,6 +121,7 @@ const MERGE_COLUMNS = {
   online: s.cashReports.online,
   other: s.cashReports.other,
   openingCash: s.cashReports.openingCash,
+  cashIn: s.cashReports.cashIn,
   cashOut: s.cashReports.cashOut,
   cashOutNote: s.cashReports.cashOutNote,
   countedCash: s.cashReports.countedCash,

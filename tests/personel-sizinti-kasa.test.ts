@@ -51,6 +51,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
   "src/app/panel/ozel-gunler/staff-special-days.tsx",
+  // LafPOS'tan doldur (docs/LAFPOS.md): okuyucu ve formun alanlarına eşleme
+  "src/server/data/lafpos-day.ts",
+  "src/lib/lafpos/prefill.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -216,6 +219,7 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
     online: 1435.5,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3245,
@@ -260,4 +264,16 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   // Yöneticinin metninde (e-posta) değerleriyle
   const a2 = cashReportText(after, { by: "Ayşe", revision: 2, changes, photoDiffs }, "admin").replace(/\u00a0/g, " ");
   assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
+});
+
+test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit sütun); ödeme kanalları ve ikram okunmaz", () => {
+  const loader = stripComments(read("src/server/data/lafpos-day.ts"));
+  assert.match(loader, /^import "server-only";/);
+  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, receivedAt: s\.posDayReports\.receivedAt \}\)/);
+  assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
+  // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
+  const prefill = read("src/lib/lafpos/prefill.ts");
+  const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
+  const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
 });

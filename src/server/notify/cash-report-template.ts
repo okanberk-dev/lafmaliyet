@@ -143,6 +143,7 @@ export function renderCashReport(
   const cashRows = [
     row("Açılış (dünden devir)", money(f.openingCash)),
     row("+ Nakit satış", money(f.cash)),
+    ...(f.cashIn ? [row("+ Gün içinde giren", money(f.cashIn))] : []),
     ...(f.cashOut || outs.length ? [row("− Gün içinde çıkan", money(f.cashOut), { sub: f.cashOutNote ?? undefined }), ...outRows] : []),
     row("= Olması gereken", money(c.expectedCash), { strong: true }),
     row("Sayılan", money(f.countedCash), { strong: true }),

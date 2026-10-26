@@ -62,6 +62,7 @@ import {
   previousOkc,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
+import { loadLafposDay } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
@@ -140,7 +141,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposDay] = await Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
     showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
@@ -154,6 +155,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     showForm ? cashCounters() : Promise.resolve([]),
     // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
     showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
+    // LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): okunamazsa form yine açılır, düğme görünmez
+    showForm ? loadLafposDay(date).catch(() => null) : Promise.resolve(null),
   ]);
   const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
@@ -264,6 +267,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       proposedBy={proposedBy}
       photoRemoval={removal}
       prevOkcZ={prevOkc.z}
+      lafpos={lafposDay}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />

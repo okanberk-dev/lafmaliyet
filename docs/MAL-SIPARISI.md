@@ -58,10 +58,10 @@ Bütün miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim); sayım birim
 - **Espresso çekirdeği**: ayda 16,3 kg → günde 0,543 kg. Kaldi, teslim 2 gün. Hedef = 0,543 × 9 × 1,2 = 5,87 →
   **6 KG**; en az **1,3 KG**. Eldeki 2,5 KG → gereken 3,5 kg; 1 kg'lık paketle 3,5 → **4 adet**.
 
-**Satışın kaynağı (ModPOS günlük dökümü).** Bugün tek kaynak aylık veridir. Günlük ürün dökümü için bir ağız var
-(`loadDailyProductSales`, `src/server/data/daily-sales.ts`); bugün `null` döner ve mal siparişi aylık veriye düşer.
-ModPOS'un günlük dökümü gelince yalnız o ağız doldurulur (tablo ve okuyucu) ve günlük kullanım son 28 günden
-hesaplanır; ekranlar değişmez.
+**Satışın kaynağı (günlük döküm).** Bugün tek kaynak aylık veridir. Günlük ürün satışı için bir ağız var
+(`loadDailyProductSales`, `src/server/data/daily-sales.ts`); ModPOS'un dökümü hiç gelmedi, ağzı LafPOS'un gün sonu
+doldurur ([LAFPOS.md](LAFPOS.md)). Mal siparişi onu henüz okumaz, aylık veriye düşer; günlük kullanım yazılınca son 28
+günden hesaplanır, ekranlar değişmez.
 
 ## 3. Sayım günleri
 

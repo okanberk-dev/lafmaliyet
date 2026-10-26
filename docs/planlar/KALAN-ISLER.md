@@ -36,7 +36,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 | İş | Plan | Durum |
 |---|---|---|
 | Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **10a main'de** (dal `claude/dalga-10a-personel`, migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. **10b bitti** (dal `claude/dalga-10b-personel`, migration yok; main'e PR bekliyor): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Birleştirmeden sonra canlıda personel hesabıyla `/panel/yardim/personel` ve `/panel/hizli-sayim/siparis` açılır. |
-| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a main'de** (#33: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar). **PR-b** dalı `claude/dalga-13b-okc-z` (migration `0040_okc_z`, birleştirmede R2 ile yeniden üretilir; 26 Ekim): b1 ve b3–b7 yapıldı (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım). **Açık:** b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor) ve b8 (son doğrulama, PR). O zamana kadar `OKC_PREFILL_ENABLED = false`: yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
+| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a main'de** (#33: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar). **PR-b** dalı `claude/dalga-13b-okc-z` (migration `0042_okc_z`: 26 Ekim'de main'le birleştirilip `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b7 yapıldı (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım). **Açık:** b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor) ve b8 (son doğrulama, PR). O zamana kadar `OKC_PREFILL_ENABLED = false`: yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
 | Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır; muhasebeciye sorulacak 8 madde planın sonunda. Dalga 13'ten sonra (gelir dayanağı mali Z). |
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. |
 | Genel denetim: sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | 19 açık madde (4 hatalı, 2 yapılmadı, 5 kısmen, 8 sahibe bağlı); düzeltmeler son dalgada, her biri testiyle. |
@@ -196,7 +196,7 @@ dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/pane
 ### Dalga 13: yazarkasa (banka POS) mali Z
 
 Plan `okc-z.md` (§17 adım tablosu, her adımın "Durum (26 Ekim)" notu), araştırma notları `okc-z-notlar.md`. PR-a
-main'de (#33). PR-b dalı `claude/dalga-13b-okc-z`, migration `0040_okc_z` (yalnız `ADD COLUMN`: `cash_reports`'a 12,
+main'de (#33). PR-b dalı `claude/dalga-13b-okc-z`, migration `0042_okc_z` (yalnız `ADD COLUMN`: `cash_reports`'a 12,
 `ai_calls`'a `effort`). Belgeler: `docs/KASA-RAPORU.md` › Banka POS Z raporu (yazarkasa) ve Gönderince,
 `docs/FOTOGRAF.md` (§ 1–§ 10), `docs/YAZARKASA-Z.md` (yeni: kâğıdın düzeni, etiketler, kimlikler, tuzaklar,
 doğrulanacak cihaz gerçekleri), README; Yardım'da personele "Banka POS Z raporu (yazarkasa)", yöneticiye "ModPOS Z ve
@@ -329,6 +329,7 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
+  **26 Ekim:** ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`); okuyanların günlük veriye geçişi ayrı iş.
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 

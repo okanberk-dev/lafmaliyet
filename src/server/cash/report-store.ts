@@ -69,6 +69,8 @@ export const reportSchema = z.object({
   online: zAmount,
   other: zAmount,
   openingCash: zAmount,
+  /** Gün içinde kasaya giren (cashOut'la aynı tutar kuralı; eski bir sekme göndermezse 0) */
+  cashIn: zAmount.default(0),
   cashOut: zAmount,
   cashOutNote: zOptText(200),
   countedCash: zAmount,

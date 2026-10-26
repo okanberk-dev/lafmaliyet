@@ -165,6 +165,7 @@ export async function sendCashTestEmail() {
       online: 0,
       other: 0,
       openingCash: 500,
+      cashIn: 0,
       cashOut: 100,
       cashOutNote: "süt",
       countedCash: 2_880,
