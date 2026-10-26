@@ -41,6 +41,7 @@ export async function loadDataset(): Promise<Dataset> {
     pnlEntries,
     stockCounts,
     ingredientPrices,
+    purchaseLots,
     stockExtras,
     purchaseQuantities,
     expenseCategories,
@@ -51,7 +52,6 @@ export async function loadDataset(): Promise<Dataset> {
     till,
     lateWaiting,
     closedRows,
-    purchaseLots,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -77,6 +77,8 @@ export async function loadDataset(): Promise<Dataset> {
       })
       .from(s.ingredientPrices)
       .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
+    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts)
+    loadPurchaseLots(),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
@@ -104,8 +106,6 @@ export async function loadDataset(): Promise<Dataset> {
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
-    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri
-    loadPurchaseLots(),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)

@@ -4,8 +4,10 @@
  */
 import { shiftMonth } from "@/lib/calc/engine";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
+
+export { layerText } from "@/lib/calc/fifo";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
-import { dateTimeTR, monthShort, num, tl } from "@/lib/format";
+import { dateTimeTR } from "@/lib/format";
 
 // ---------------------------------------------------------------- Hangi ay açılsın?
 
@@ -92,22 +94,6 @@ export function coverageText(share: number): string {
   const tens = ["", "u", "si", "u", "ı", "si", "ı", "i", "i", "ı"];
   const suffix = n === 100 ? "ü" : n % 10 ? ones[n % 10] : n === 0 ? "ı" : tens[n / 10];
   return `%${n}'${suffix}`;
-}
-
-/** "18 Eki" (fatura tarihi) */
-const dayShort = (date: string) => `${Number(date.slice(8, 10))} ${monthShort(date.slice(0, 7))}`;
-
-/**
- * Satır ipucu: "2 KG · 18 Eki faturası 412,00 ₺/KG + 0,5 KG · 29 Eyl faturası 380,00 ₺/KG · 0,3 KG faturası
- * bulunamadı: ay sonu fiyatıyla." Katmanlar hammaddenin biriminde; `factor` sayım biriminin çarpanı.
- */
-export function layerText(layers: StockLayer[], factor: number, unit: string): string {
-  const f = factor || 1;
-  const parts = layers.filter((l) => !l.fallback).map((l) => `${num(l.qty / f, 3)} ${unit} · ${dayShort(l.date!)} faturası ${tl(l.unitCost * f, 2)}/${unit}`);
-  const rest = layers.filter((l) => l.fallback).reduce((a, l) => a + l.qty, 0);
-  const tail = rest > 0 ? `${num(rest / f, 3)} ${unit} faturası bulunamadı: ay sonu fiyatıyla (${tl((layers.find((l) => l.fallback)?.unitCost ?? 0) * f, 2)}/${unit}).` : "";
-  if (!parts.length) return tail;
-  return `${parts.join(" + ")}${tail ? ` · ${tail}` : "."}`;
 }
 
 /**
