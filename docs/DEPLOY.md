@@ -217,6 +217,13 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     sırayla artmıyorsa düşer.
   - Uygulanmış bir migration elle değiştirilmez (tek istisna: 0018'deki gibi `IF NOT EXISTS` onarımı, inceleyen
     isterse).
+  - **Canlıya bir daldan uygulanmış migration birleştirmede yeniden üretilmez.** Dal canlıya kurulduysa (yalnız
+    önizleme değil, canlı dağıtım) migration'ı canlı veritabanında kayıtlıdır; birleştirmede onu yeniden üretmek
+    `when`'ini değiştirir, migrator onu yeni sanıp baştan uygular ve `relation … already exists` ile canlı derleme
+    durur. O migration dosyası ve `when`'i canlıya uygulanan hâliyle kalır; dalda sonradan eklenen şema değişikliği
+    ayrı, yeni bir migration olur. Örnek (26 Ekim 2026): LafPOS'un `0040_lafpos_baglantisi`'si canlıya daldan
+    uygulanmıştı, birleştirmede `cash_in` sütunuyla yeniden üretildi ve canlı derleme durdu; 0040 canlıdaki hâline
+    döndü, `cash_in` `0041_lafpos_cash_in` oldu.
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.

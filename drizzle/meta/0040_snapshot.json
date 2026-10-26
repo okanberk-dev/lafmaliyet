@@ -1,5 +1,5 @@
 {
-  "id": "e13e88d0-fb94-4e34-850b-58ea5432022b",
+  "id": "78523a0c-20da-4a6a-8db5-740dbc92faa5",
   "prevId": "98060b2a-8d3d-4381-b8fe-e4ff38b2a87f",
   "version": "7",
   "dialect": "postgresql",
@@ -732,13 +732,6 @@
         },
         "opening_cash": {
           "name": "opening_cash",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cash_in": {
-          "name": "cash_in",
           "type": "double precision",
           "primaryKey": false,
           "notNull": true,

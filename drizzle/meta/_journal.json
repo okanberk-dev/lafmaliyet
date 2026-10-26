@@ -285,8 +285,15 @@
     {
       "idx": 40,
       "version": "7",
-      "when": 1793009756195,
+      "when": 1792997178951,
       "tag": "0040_lafpos_baglantisi",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793012032929,
+      "tag": "0041_lafpos_cash_in",
       "breakpoints": true
     }
   ]
