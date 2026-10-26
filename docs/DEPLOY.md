@@ -39,6 +39,12 @@ canlıya uygulamıştı. Sonucu: yeni sütun isteyen bir PR'ın önizlemesi o s�
 canlı veri korunur. Önizlemelere ayrı veritabanı vermek için Vercel › Storage › Neon'da önizleme dalları açılır ve
 Preview ortamına `MIGRATE_ON_PREVIEW=1` eklenir; o zaman her önizleme kendi dalına migration uygular.
 
+**`claude/**` dallarında önizleme yok (26 Eki 2026).** Vercel Hobby planı ekip başına 24 saatte en çok 100 dağıtım
+açar (`api-deployments-free-per-day`); 26 Ekim akşamı bu sınır doldu ve canlı dağıtımlar da reddedildi. Bu yüzden
+`vercel.json` `git.deploymentEnabled` ile `claude/**` dallarına önizleme açılmaz; yalnız `main` (canlı) dağıtılır.
+Bu dallardaki değişiklik yerelde `npm run build` ile derlenir. Bir dalda önizleme gerekirse o dalın `vercel.json`'ından
+bu satır geçici olarak çıkarılır (ya da dal başka adla açılır).
+
 ## 4. Ortam değişkenleri
 
 Proje → **Settings → Environment Variables**. Önizlemeler canlının veritabanını kullandığı sürece (§ 3) gizli değerler
