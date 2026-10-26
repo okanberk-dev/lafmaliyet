@@ -110,17 +110,6 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     icon: Gift,
   },
   {
-    title: "Ayın son günü",
-    body: (
-      <>
-        Kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında listedeki her kalemi sayın; sayılmayan kalemin stoğu 0 sayılır. Bugün ekranı o gün
-        hatırlatır.
-      </>
-    ),
-    href: "/panel/sayim",
-    icon: ClipboardList,
-  },
-  {
     title: "Akşam kasa raporu",
     body: (
       <>
@@ -141,6 +130,17 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     ),
     href: "/panel/kontrol",
     icon: Moon,
+  },
+  {
+    title: "Ayın son günü",
+    body: (
+      <>
+        Kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında listedeki her kalemi sayın; sayılmayan kalemin stoğu 0 sayılır. Bugün ekranı o gün
+        hatırlatır.
+      </>
+    ),
+    href: "/panel/sayim",
+    icon: ClipboardList,
   },
 ];
 

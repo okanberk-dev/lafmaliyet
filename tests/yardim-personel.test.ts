@@ -178,6 +178,13 @@ test("soru kimlikleri benzersiz, her grupta soru var", () => {
   assert.equal(STAFF_ROUTINE.length, 6);
 });
 
+test("günün sırası: ay sonu sayımı kapanıştan sonra, son adım (Bugün'deki sırayla aynı: kasa raporu, sonra ay sonu sayımı)", () => {
+  const titles = STAFF_ROUTINE.map((r) => r.title);
+  assert.equal(titles.at(-1), "Ayın son günü");
+  assert.ok(titles.indexOf("Akşam kasa raporu") < titles.indexOf("Kapanış listesi"));
+  assert.ok(titles.indexOf("Kapanış listesi") < titles.indexOf("Ayın son günü"));
+});
+
 test("kasa düzeltmesi: ertesi gün onaya giden her alan (SENSITIVE) yanıtta; saatlerin eki okunuşa göre", () => {
   const text = fold(FAQ_TEXTS.find((t) => t.id === "kasa-duzelt")!.text);
   for (const key of SENSITIVE) assert.ok(text.includes(fold(CHANGE_LABELS[key])), `"${CHANGE_LABELS[key]}" kasa düzeltmesi yanıtında yok`);
