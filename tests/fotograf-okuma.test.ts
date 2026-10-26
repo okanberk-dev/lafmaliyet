@@ -399,6 +399,9 @@ test("fotoğraftan farklı: net okunmuş değerden ayrılan kayıt alarmdır; so
   assert.deepEqual(photoDiffs([z], { ...SAVED, card: 8915.4, zNo: "187" }), []);
   const empty = photoDiffs([pos], { ...SAVED, bankPos: null });
   assert.equal(plain(photoDiffText(empty[0])), "Banka POS (fotoğrafta 8.915 ₺, raporda boş)");
+  // Yazarkasa bölümü yazılmış raporda aynı alan bugünkü adıyla
+  const okcSaved = photoDiffs([pos], { ...SAVED, bankPos: null, okcTotal: 12975.5 });
+  assert.equal(plain(photoDiffText(okcSaved[0])), "Banka gün sonu (fotoğrafta 8.915 ₺, raporda boş)");
   // İki cihazın POS fişi toplandıysa fark yok
   const second = clone(pos);
   second.values.bankPos = { value: 1200, confidence: "high" };

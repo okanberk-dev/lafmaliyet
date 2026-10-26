@@ -73,7 +73,8 @@ export const FIELD_LABELS: Record<ReadField, string> = {
   offRevenue: "Ödenmez / ikram",
   zNo: "Z no",
   receipts: "Fiş sayısı",
-  bankPos: "Banka POS",
+  // Yazarkasa bölümü olmayan (eski) raporda "Banka POS" (photoDiffs; okcTextBlock'un eski bloğuyla aynı ad)
+  bankPos: "Banka gün sonu",
   ...OKC_FIELD_LABELS,
 };
 
@@ -500,23 +501,23 @@ export function savedFields(f: {
 }): SavedFields {
   const out: SavedFields = { zTotal: f.zTotal, cash: f.cash, card: f.card, mealCard: f.mealCard, online: f.online, other: f.other, offRevenue: f.offRevenue, zNo: f.zNo, receipts: f.receipts, bankPos: f.bankPos };
   if (f.discounts != null) out.discounts = f.discounts;
-  // Yazarkasa alanları yalnız bölüm yazıldıysa karşılaştırılır (eski raporlarda hiç yok; bölüm isteğe bağlı, D15)
+  // Yazarkasa alanları yalnız bölüm yazıldıysa karşılaştırılır (eski raporlarda hiç yok; bölüm isteğe bağlı, D15).
+  // Zorunlu üçü (toplam, nakit, kart; okcFormError) ve Z no hep; Ayrıntılar'daki isteğe bağlı alanlar (fiş sayısı, KDV,
+  // döküm, yemek kartı, diğer) indirim gibi yalnız yazıldıysa: doldurma kapısı kapalıyken boş bırakılan ayrıntı
+  // "fotoğraftan farklı" sayılmaz
   if (f.okcTotal != null) {
-    Object.assign(out, {
-      okcZNo: f.okcZNo ?? null,
-      okcReceipts: f.okcReceipts ?? null,
-      okcTotal: f.okcTotal,
-      okcVatTotal: f.okcVatTotal ?? null,
-      okcCash: f.okcCash ?? null,
-      okcCard: f.okcCard ?? null,
-      okcMealCard: f.okcMealCard ?? null,
-      okcOther: f.okcOther ?? null,
-    });
-    // KDV dökümü: oranın satırı yoksa o oran boş (yazılmamış) sayılır
+    Object.assign(out, { okcZNo: f.okcZNo ?? null, okcTotal: f.okcTotal, okcCash: f.okcCash ?? null, okcCard: f.okcCard ?? null });
+    if (f.okcReceipts != null) out.okcReceipts = f.okcReceipts;
+    if (f.okcVatTotal != null) out.okcVatTotal = f.okcVatTotal;
+    if (f.okcMealCard != null) out.okcMealCard = f.okcMealCard;
+    if (f.okcOther != null) out.okcOther = f.okcOther;
+    // KDV dökümü: yalnız yazılan oranlar
     for (const rate of [1, 10, 20] as const) {
       const line = (f.okcVat ?? []).find((l) => l.rate === rate);
-      out[`okcT${rate}`] = line?.total ?? null;
-      out[`okcV${rate}`] = line?.vat ?? null;
+      if (line) {
+        out[`okcT${rate}`] = line.total;
+        out[`okcV${rate}`] = line.vat;
+      }
     }
   }
   return out;
@@ -550,7 +551,9 @@ export function photoDiffs(readings: CashReading[], saved: SavedFields): PhotoDi
     if (differs) {
       // Tutmayan alan (yazarkasa kimliği) da özürlüdür: forma yazılmamıştı, personel fişten yazdı
       const excused = read.status === "failed" || source.checks.some((c) => c.level === "warn" && (c.whole === true || c.fields.includes(field)));
-      out.push({ field, label: FIELD_LABELS[field], photo: read.value, saved: s, confidence: read.confidence, excused });
+      // Yazarkasa bölümü yazılmamış (eski) raporda alan bugünkü adıyla değil, eski "Banka POS" adıyla (§3.7)
+      const label = field === "bankPos" && !("okcTotal" in saved) ? "Banka POS" : FIELD_LABELS[field];
+      out.push({ field, label, photo: read.value, saved: s, confidence: read.confidence, excused });
     }
   }
   return out;

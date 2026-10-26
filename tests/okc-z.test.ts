@@ -393,6 +393,22 @@ test("kaydedilen rapor: yazarkasa alanları kendi anahtarlarıyla karşılaştı
   assert.equal(d?.excused, true);
 });
 
+test("kaydedilen rapor: Ayrıntılar boş bırakıldıysa (doldurma kapısı kapalı) fiş sayısı, KDV ve döküm farklı sayılmaz", () => {
+  const r = normalizeOkc(z(), { day: DAY, prev: PREV });
+  const base = { zTotal: 10_785.5, cash: 2450, card: 6900, mealCard: 0, online: 1000, other: 435.5, offRevenue: null, zNo: "0412", receipts: 52, bankPos: null };
+  // Yalnız dört ana alan: alarm yok, fotoğraf kaldırılabilir kalır
+  const four = savedFields({ ...base, okcZNo: "0101", okcTotal: 9350, okcCash: 2450, okcCard: 6900 });
+  assert.deepEqual(Object.keys(four).filter((k) => k.startsWith("okc")), ["okcZNo", "okcTotal", "okcCash", "okcCard"]);
+  assert.deepEqual(photoDiffs([r], four), []);
+  // Yazılan ayrıntı hâlâ karşılaştırılır; yalnız yazılan oran
+  const typed = savedFields({ ...base, okcZNo: "0101", okcTotal: 9350, okcCash: 2450, okcCard: 6900, okcReceipts: 41, okcVat: [{ rate: 10, total: 8110, vat: 737.27 }] });
+  assert.deepEqual(photoDiffs([r], typed).map((x) => x.field), ["okcReceipts"]);
+  assert.ok(!("okcT20" in typed) && "okcT10" in typed);
+  // Zorunlu alan ve Z no boşsa yine farklı
+  const noZ = savedFields({ ...base, okcZNo: null, okcTotal: 9350, okcCash: 2450, okcCard: 6900 });
+  assert.deepEqual(photoDiffs([r], noZ).map((x) => [x.field, x.saved]), [["okcZNo", null]]);
+});
+
 // ---------------------------------------------------------------- Z no sürekliliği
 
 test("Z no: +1 doğrular, +2 bilgi (önceki gün ise uyarı), aynı okumayı durdurur, küçük tutmadı, önceki yok", () => {
