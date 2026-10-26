@@ -380,8 +380,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Ay sonu stoğu ve kâr-zararın mal maliyeti ilk giren ilk çıkar (FIFO) ile: rafta kalan mal en son alınandır, sayılan miktar en yeni Paraşüt faturasından geriye
-            doğru dağıtılır ve her parça kendi faturasının birim fiyatıyla (KDV hariç) değerlenir. Faturası bulunamayan kısım (elle girilen fatura, nakit alım, bağlanmamış
-            ürün) ayın sonunda geçerli fiyatla. Mal maliyeti = açılış + alınan − bu kapanış. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
+            doğru dağıtılır ve her parça kendi faturasının birim fiyatıyla (KDV hariç) değerlenir. Faturası olmayan alım (elle girilen fatura, nakit alım, bağlanmamış
+            ürün) havuzda görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu fiyatıyla. Tedarikçiye iade
+            yalnız elle girilmiş eksi fatura olarak geldiyse (kalemsiz) partiden düşülmez. Mal maliyeti = açılış + alınan − bu kapanış. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
             faturadan gelen payı ve satırın ⓘ işaretinde hangi faturalardan geldiği görünür. Yöntem <Path href="/panel/ayarlar" /> › Stok değerleme&apos;de: başlangıç ayı
             (Ekim 2026) ve önceki aylar ay sonu fiyatıyla kalır; başlangıcı geriye almak kapanmış ayların kârını değiştirir, önizleme farkı gösterir. Reçete ve menü maliyeti
             ise son alış fiyatıyla (yenileme maliyeti): fiyat kararı için. Resmi defterlerdeki yöntem muhasebecinizindir; vergi kanunu FIFO&apos;yu ve ağırlıklı ortalamayı

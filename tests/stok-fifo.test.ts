@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { coverageText, layerText, lineAmount, liveTotals, type CountLineValue } from "../src/app/panel/sayim/logic";
+import { coverageSplit, coverageText, layerText, lineAmount, liveTotals, type CountLineValue } from "../src/app/panel/sayim/logic";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { buildLots, closingLayers, layersValue, lotPool, valuationFor, type PurchaseLot } from "../src/lib/calc/fifo";
 import { stockVatSummary } from "../src/lib/calc/insights";
@@ -149,8 +149,8 @@ test("7: aynı faturadaki ücretli ve bedava satır birleşir, iade netleşir", 
     { ingredientId: 1, invoiceId: 10, date: "2026-10-05", quantity: 2, factor: 1000, netTotal: 0 },
     { ingredientId: 1, invoiceId: 11, date: "2026-10-06", quantity: 5, factor: 1000, netTotal: 2000 },
     { ingredientId: 1, invoiceId: 11, date: "2026-10-06", quantity: -1, factor: 1000, netTotal: -400 },
-    // Yalnız iade faturası: miktar eksi, parti olmaz
-    { ingredientId: 1, invoiceId: 12, date: "2026-10-07", quantity: -3, factor: 1000, netTotal: -1200 },
+    // Daha eski partisi olmayan iade faturası: düşecek parti yok, kendisi de parti olmaz
+    { ingredientId: 1, invoiceId: 12, date: "2026-10-01", quantity: -3, factor: 1000, netTotal: -1200 },
   ]);
   assert.equal(lots.length, 2);
   const a = lots.find((l) => l.invoiceId === 10)!;
@@ -161,12 +161,34 @@ test("7: aynı faturadaki ücretli ve bedava satır birleşir, iade netleşir", 
   close(b.cost, 1600, "iade tutarı netleşir");
 });
 
-test("8: onay bekleyen / reddedilen fiyat, fiyatı güncellenmeyen bağlantı ve kafe dışı fatura parti olmaz", () => {
+test("7b: ayrı iade faturası tarihinde ya da öncesinde alınmış en yeni partiden düşer, kendi birim maliyetiyle", () => {
+  const lots = buildLots([
+    { ingredientId: 1, invoiceId: 20, date: "2026-10-05", quantity: 10, factor: 1000, netTotal: 4000 },
+    { ingredientId: 1, invoiceId: 21, date: "2026-10-25", quantity: 5, factor: 1000, netTotal: 2500 },
+    // 27 Eki: 25 Eki faturasının tamamı ve 1 KG fazlası iade (fazlası 5 Eki partisinden, 400'den)
+    { ingredientId: 1, invoiceId: 22, date: "2026-10-27", quantity: -6, factor: 1000, netTotal: -2900 },
+    // 30 Eki'de alınan parti, 27 Eki iadesinden etkilenmez; başka malzemenin iadesi de
+    { ingredientId: 1, invoiceId: 23, date: "2026-10-30", quantity: 2, factor: 1000, netTotal: 900 },
+    { ingredientId: 2, invoiceId: 24, date: "2026-10-28", quantity: -9, factor: 1000, netTotal: -9 },
+  ]);
+  assert.deepEqual(
+    lots.map((l) => [l.invoiceId, l.qty / 1000, Math.round(l.cost)]).sort((x, y) => x[0] - y[0]),
+    [
+      [20, 9, 3600],
+      [23, 2, 900],
+    ],
+  );
+  // Ekim sayımı 8 KG: 2@450 (30 Eki) + 6@400; iade edilen 25 Eki partisi (500) havuzda yok
+  const m = model({ lots: lots.map((l) => ({ ...l, ingredientId: ID, qty: l.qty, cost: l.cost })), counts: [count("2026-10", 8)] });
+  close(lineOf(m, "2026-10").amount, 2 * 450 + 6 * 400, "iade edilen parti sayılmaz");
+});
+
+test("8: onay bekleyen / reddedilen fiyat ve kafe dışı fatura parti olmaz", () => {
+  // "Fiyatı güncelle" kapalı bağlantının faturası gerçek alıştır: süzgeç yükleyicide değil, parti olur
   const row = { ingredientId: 1, date: "2026-10-05", quantity: 1, factor: 1000, netTotal: 400 };
   const lots = buildLots([
     { ...row, invoiceId: 1 },
     { ...row, invoiceId: 2, held: true },
-    { ...row, invoiceId: 3, updatePrice: false },
     { ...row, invoiceId: 4, category: "Karaoke box" },
     { ...row, invoiceId: 5, category: "Hammadde & İçecek" },
   ]);
@@ -274,4 +296,38 @@ test("13: personele katman, havuz, tutar ve fiyat gitmez (sayım sayfası eşlem
   // Değerleme kartı yalnız yöneticiye; katmanlar (layers) forma hiç gönderilmez (form havuzdan kendisi hesaplar)
   assert.ok(page.includes('valuation={isAdmin ? {'), "valuation yalnız yöneticiye");
   assert.ok(!/layers:\s*l\.layers/.test(page), "layers forma gitmez");
+});
+
+test("14: boş bırakılan ay atlanır: havuz son sayımın katmanlarından devam eder, tükenmiş eski parti dirilmez", () => {
+  const lots = [lot("2026-07-10", 100, 100), lot("2026-09-12", 2, 300), lot("2026-10-15", 3, 400)];
+  // Ağustos 0 sayıldı, Eylül boş (satır yok), Ekim 9 KG: 3@400 + Eylül'ün 2@300 + 4 ay sonu fiyatı (450)
+  const m = model({ lots, counts: [count("2026-08", 0), count("2026-10", 9)], perKg: 450 });
+  const l = lineOf(m, "2026-10");
+  close(l.amount, 3 * 400 + 2 * 300 + 4 * 450, "Temmuz partisi (100) Ağustos'ta tükendi");
+  assert.ok(!l.layers.some((x) => x.date === "2026-07-10"));
+  // Eylül'e sonradan 0 yazılsa da aynı (Eylül'ün partisi Eylül'de tükenir)
+  const zero = model({ lots, counts: [count("2026-08", 0), count("2026-09", 0), count("2026-10", 9)], perKg: 450 });
+  close(lineOf(zero, "2026-10").amount, 3 * 400 + 6 * 450, "Eylül 0 sayıldıysa yalnız Ekim partisi");
+  // 12 ayda hiç sayım yoksa son 12 ayın partileri
+  const none = model({ lots, counts: [count("2026-10", 9)], perKg: 450 });
+  close(lineOf(none, "2026-10").amount, 3 * 400 + 2 * 300 + 4 * 100, "sayımsız: ham partiler");
+});
+
+test("15: sayılmamış ya da 0 sayılmış FIFO satırının birim fiyatı ay sonu fiyatıdır (ekran ve boş sayım formu aynı)", () => {
+  const m = model({ lots: [lot("2026-10-15", 3, 400)], counts: [count("2026-10", 0)], perKg: 450 });
+  const l = lineOf(m, "2026-10");
+  assert.equal(l.valuation, "fifo");
+  close(l.unitPrice, 450, "0 sayıldı");
+  close(l.amount, 0, "tutar 0");
+  const u = lineOf(model({ lots: [lot("2026-10-15", 3, 400)], counts: [count("2026-10", 1, ID + 100000)], perKg: 450 }), "2026-10");
+  assert.equal(u.qty, null);
+  close(u.unitPrice, 450, "sayılmadı");
+});
+
+test("16: kapsama satırı 100'e tamamlanır (%13 + %87)", () => {
+  assert.deepEqual(coverageSplit(0.125), { covered: "%13'ü", rest: "%87'si" });
+  assert.deepEqual(coverageSplit(0.86), { covered: "%86'sı", rest: "%14'ü" });
+  assert.deepEqual(coverageSplit(1), { covered: "%100'ü", rest: "%0'ı" });
+  const src = readFileSync(join(root, "src/app/panel/sayim/stock-form.tsx"), "utf8");
+  assert.ok(!src.includes("coverageText(1 - coveredShare)"), "kalan ayrı yuvarlanmaz");
 });

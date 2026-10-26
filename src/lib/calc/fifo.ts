@@ -34,21 +34,22 @@ export interface LotSourceRow {
   netTotal: number;
   /** Faturanın panel kategorisi: kafe dışı (Karaoke box, Alp Koç) faturalar stoğa girmez */
   category?: string | null;
-  /** Bağlantıda "Fiyatı güncelle" kapalı: fiyat bu üründen alınmıyor, stok da değerlenmez */
-  updatePrice?: boolean;
   /** Fiyatı onay bekleyen ya da reddedilen kalem (yanlış çarpan olabilir) */
   held?: boolean;
 }
 
 /**
  * Satırlardan partiler: fatura + hammadde başına birleşir (aynı faturadaki ücretli ve bedava satır birim maliyeti
- * düşürür, iade satırı netleşir). Fiyatı güncellenmeyen bağlantı, onay bekleyen / reddedilen fiyat ve kafe dışı fatura
- * dışarıda. Miktarı 0 ya da altı, tutarı eksi kalan parti düşer.
+ * düşürür, iade satırı netleşir). Onay bekleyen / reddedilen fiyat ve kafe dışı fatura dışarıda; "Fiyatı güncelle"
+ * kapalı bağlantının faturası gerçek alıştır, girer. Miktarı eksi kalan fatura (tedarikçiye iade faturası) partiden
+ * düşer: tarihinde ya da öncesinde alınmış en yeni partilerden, her birinin kendi birim maliyetiyle. Miktarı 0 kalan,
+ * tutarı eksi parti düşer. Tedarikçiye iade panele yalnız kalemsiz, elle girilmiş eksi fatura olarak geldiyse
+ * partiden düşülmez (docs/STOK-DEGERLEME.md §2).
  */
 export function buildLots(rows: LotSourceRow[]): PurchaseLot[] {
   const map = new Map<string, PurchaseLot>();
   for (const r of rows) {
-    if (r.updatePrice === false || r.held) continue;
+    if (r.held) continue;
     if (r.category && SEPARATE_CATEGORIES.includes(r.category)) continue;
     if (!Number.isFinite(r.quantity) || !Number.isFinite(r.factor) || !Number.isFinite(r.netTotal)) continue;
     const key = `${r.invoiceId}:${r.ingredientId}`;
@@ -57,7 +58,21 @@ export function buildLots(rows: LotSourceRow[]): PurchaseLot[] {
     lot.cost += r.netTotal;
     map.set(key, lot);
   }
-  return [...map.values()].filter((l) => l.qty > 1e-9 && l.cost >= 0);
+  const all = [...map.values()];
+  const lots = all.filter((l) => l.qty > 1e-9 && l.cost >= 0);
+  // İade faturaları: eskiden yeniye, her biri tarihinde ya da öncesinde alınmış en yeni partilerden düşer
+  const refunds = newestFirst(all.filter((l) => l.qty < -1e-9)).reverse();
+  for (const ref of refunds) {
+    let left = -ref.qty;
+    for (const l of newestFirst(lots.filter((x) => x.ingredientId === ref.ingredientId && x.date <= ref.date && x.qty > 1e-9))) {
+      if (left <= 1e-9) break;
+      const take = Math.min(left, l.qty);
+      l.cost -= (l.cost / l.qty) * take;
+      l.qty -= take;
+      left -= take;
+    }
+  }
+  return lots.filter((l) => l.qty > 1e-9 && l.cost >= -1e-9).map((l) => (l.cost < 0 ? { ...l, cost: 0 } : l));
 }
 
 /** Değerlenmiş bir parça: faturadan (invoiceId, tarih) ya da faturası bulunamayan kalan (fallback, ay sonu fiyatı) */

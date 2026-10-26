@@ -20,8 +20,9 @@ sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
 Önce giren önce çıktığı için rafta kalan mal **en son alınandır**. Her sayılan malzeme için:
 
 1. **Havuz**: bu ayın faturaları en yeniden eskiye (fatura tarihi, aynı günde sonra girilen önce), ardından
-   - geçen ay bu malzeme sayıldıysa geçen ayın katmanları (geçen ay tükenmiş eski parti yeniden sayılmaz);
-   - sayılmadıysa son 12 ayın faturaları (en yeniden eskiye).
+   - son 12 ay içinde bu malzemenin en son sayıldığı aydan sonraki (boş bırakılmış) ayların faturaları ve o sayımın
+     katmanları (o ay tükenmiş eski parti yeniden sayılmaz; arada bir ayın boş bırakılması bunu bozmaz);
+   - 12 ayda hiç sayılmadıysa son 12 ayın faturaları (en yeniden eskiye).
 2. Sayılan miktar (malzemenin kendi biriminde: gr, ml, adet) havuzun başından alınır; her parça kendi faturasının
    birim fiyatıyla (KDV hariç, iskonto düşülmüş) değerlenir.
 3. Havuz yetmezse kalan miktar **ay sonunda geçerli fiyatla** (eski yöntemin fiyatı; "fallback").
@@ -30,12 +31,22 @@ sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
 Fatura tarihi esastır, eşitleme zamanı değil: 31 Ekim tarihli fatura Ekim'e girer, Kasım'da eşitlense de; 1 Kasım tarihli
 fatura girmez.
 
-**Partiler** (`src/server/data/purchase-lots.ts`): Paraşüt faturalarının hammaddeye bağlı kalemleri, fatura + hammadde
-başına toplanır (miktar × bağlantı çarpanı, net tutar). Aynı faturadaki bedava satır birim maliyeti düşürür, iade
-satırı netleşir. Dışarıda kalanlar: "Fiyatı güncelle" kapalı bağlantı, onay bekleyen ya da reddedilen fiyat (yanlış
-çarpan olabilir; docs/PARASUT.md 5b), kafe dışı fatura (Karaoke box, Alp Koç). Su ve buz eski yöntemle (faturası
-yoktur). Elle / Excel girilen fatura, nakit / market alımı ve bağlanmamış Paraşüt ürününün partisi yoktur: o kısım
-ay sonu fiyatıyla değerlenir.
+**Partiler** (`src/server/data/purchase-lots-query.ts`): Paraşüt faturalarının hammaddeye bağlı kalemleri, fatura +
+hammadde başına toplanır (miktar × bağlantı çarpanı, net tutar). Aynı faturadaki bedava satır birim maliyeti düşürür,
+iade satırı netleşir. Miktarı eksi kalan ayrı bir iade faturası, tarihinde ya da öncesinde alınmış en yeni partilerden
+düşer (her biri kendi birim maliyetiyle). "Fiyatı güncelle" kapalı ("Fiyat elle") bağlantının faturası gerçek alıştır,
+partiye girer. Dışarıda kalanlar: kafe dışı fatura (Karaoke box, Alp Koç) ve çarpanı şüpheli kalem (docs/PARASUT.md
+5b). Çarpan şüphesi bağlantıyı ve bugünkü çarpanı izler: bağlantının bugünkü çarpanıyla onay bekleyen bir fiyat varsa
+o ürünün bütün faturaları dışarıda (eşitleme yalnız en yeni faturayı değerlendirir; yenisi gelince eskinin önerisi
+geçersiz kalır ama aynı yanlış çarpanı taşır), bugünkü çarpanla reddedilmiş fiyatın yalnız kendi faturası. Çarpan
+düzeltilince eski çarpanla açılmış öneriler bir şey dışlamaz, faturalar yeni çarpanla girer. Su ve buz eski yöntemle
+(faturası yoktur).
+
+Faturası olmayan alım (elle / Excel girilen fatura, nakit / market alımı, bağlanmamış Paraşüt ürünü) havuzda
+görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu
+fiyatıyla. Tedarikçiye iade panele yalnız Faturalar'da elle girilmiş, kalemsiz eksi fatura olarak geldiyse (Paraşüt'te
+giden iade e-faturası satış faturasıdır, eşitlemeye girmez; `src/server/parasut/returns.ts`) partiden düşülmez: iade
+edilen mal havuzda kalır.
 
 ## 3. Örnek
 
@@ -58,12 +69,16 @@ Ekim'in mal maliyeti = açılış (Eylül kapanışı) + Ekim alışları − 3.
 ## 4. Ekranlar
 
 - **Stok sayımı** (yönetici): toplam kartında "Değerleme: FIFO" rozeti, kapsam satırı ("Stok değerinin %86'sı
-  faturalardan (FIFO), %14'ü ay sonu fiyatıyla."), satırın ⓘ işaretinde katmanlar ("2 KG · 18 Eki faturası 412,00 ₺/KG
+  faturalardan (FIFO), %14'ü ay sonu fiyatıyla."; iki pay 100'e tamamlanır, listede olmayan ek kalem varsa kalan "ay
+  sonu fiyatıyla ya da ek kalemde elle girilen fiyatla"), satırın ⓘ işaretinde katmanlar ("2 KG · 18 Eki faturası 412,00 ₺/KG
   + 0,5 KG · 29 Eyl faturası 380,00 ₺/KG · 0,3 KG faturası bulunamadı: ay sonu fiyatıyla."). Birim fiyat tutar ÷ miktar.
   Formda değişen miktar sunucunun kuralıyla havuzdan değerlenir (`src/app/panel/sayim/logic.ts` `lineAmount`): kaydedince
-  toplam değişmez. Personele fiyat, tutar, katman ve havuz gitmez.
+  toplam değişmez. Sayılmamış ya da 0 sayılmış satırın birim fiyatı ay sonu fiyatıdır (ekran ve boş sayım formu aynı).
+  Personele fiyat, tutar, katman ve havuz gitmez.
 - **Ayarlar › Stok değerleme**: yöntem ve başlangıç ayı; sayımı olan her ay için şimdiki ve seçilen yöntemle kapanış,
-  kâr etkisi ve faturadan gelen pay (önce / sonra önizleme). Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
+  kâr etkisi ve faturadan gelen pay (önce / sonra önizleme). "Değişen ay" bütün sayımlı ayları kapsar (tablo son 12'yi
+  gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş
+  ay etkilenmez. Telefonda "Faturadan" sütunu gizlenir. Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
   Kapalı seçilirse her ay ay sonu fiyatıyla.
 - **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer.
 - **Excel dışa aktarımı**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.

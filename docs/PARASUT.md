@@ -280,9 +280,11 @@ zam onay anıyla sayılır.
 **Stok değerlemesi (FIFO, 26 Ekim 2026).** Fiyat geçmişi reçete maliyetini (son alış fiyatı) ve FIFO öncesi ayların
 sayımını değerler. Ayarlar › Stok değerleme'deki başlangıç ayından itibaren ay sonu stoğu doğrudan fatura kalemlerinden
 değerlenir: hammaddeye bağlı her kalem (miktar × çarpan, net tutar) fatura tarihiyle bir partidir, sayılan miktar en
-yeni partiden geriye dağıtılır (`src/server/data/purchase-lots.ts`). "Fiyatı güncelle" kapalı bağlantı ile onay bekleyen
-ya da reddedilen fiyatın (5b) kalemi partiye girmez; kalemler her eşitlemede yeniden yazıldığı için partiler her
-okumada türetilir. Bağlantının çarpanı sonradan düzeltilirse FIFO'lu ayların stok değeri de düzelir. Ayrıntı:
+yeni partiden geriye dağıtılır (`src/server/data/purchase-lots-query.ts`). "Fiyatı güncelle" kapalı bağlantının
+faturası da gerçek alıştır, partiye girer. Çarpanı şüpheli kalem (5b) girmez: bağlantının bugünkü çarpanıyla onay
+bekleyen fiyat varsa o ürünün bütün faturaları, bugünkü çarpanla reddedilmiş fiyatın yalnız kendi faturası. Kalemler
+her eşitlemede yeniden yazıldığı için partiler her okumada türetilir. Bağlantının çarpanı sonradan düzeltilirse eski
+çarpanla açılmış öneriler bir şey dışlamaz ve FIFO'lu ayların stok değeri de düzelir. Ayrıntı:
 [STOK-DEGERLEME.md](STOK-DEGERLEME.md).
 
 ### 5b. Fiyat onayı (büyük fiyat sıçraması)

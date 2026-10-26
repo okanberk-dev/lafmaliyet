@@ -1443,7 +1443,7 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
     for (const g of sheet.groups) {
       for (const l of g.lines) {
         if (l.qty === null) continue;
-        sk.addRow({ m: excelDate(`${m}-01`), t: "Sayım", n: l.ingredient.name, g: g.name, q: l.qty, u: l.countUnit, b: model.countInBaseUnit(m, l.ingredient.id), bu: l.ingredient.unit, p: l.unitPrice, a: l.amount, x: l.valuation === "fifo" ? `FIFO: ${layerText(l.layers, l.factor, l.countUnit)}` : "Ay sonu fiyatı" });
+        sk.addRow({ m: excelDate(`${m}-01`), t: "Sayım", n: l.ingredient.name, g: g.name, q: l.qty, u: l.countUnit, b: model.countInBaseUnit(m, l.ingredient.id), bu: l.ingredient.unit, p: l.unitPrice, a: l.amount, x: l.valuation === "fifo" && l.qty ? `FIFO: ${layerText(l.layers, l.factor, l.countUnit)}` : "Ay sonu fiyatı" });
       }
     }
     for (const e of sheet.extras) sk.addRow({ m: excelDate(`${m}-01`), t: "Listede olmayan", n: e.name, q: e.qty, u: e.unit, p: e.unitPrice, a: e.amount });

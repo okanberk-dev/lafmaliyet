@@ -1,6 +1,6 @@
 # Stok değerleme: FIFO planı (araştırma ajanının raporu, 26 Ekim 2026)
 
-> **Durum (26 Ekim 2026): uygulandı** (dalga 14, dal `claude/dalga-14-stok-fifo`). Yöntem ve ekranlar: [../STOK-DEGERLEME.md](../STOK-DEGERLEME.md). Uygulamada plandan ayrılanlar: kapalı ayar veritabanında "kapali" olarak saklanır (satır silinince varsayılan ay geri gelmesin); Ayarlar önizlemesi kâr etkisini de gösterir; katmanlar forma gönderilmez, form havuzdan sunucunun kuralıyla hesaplar.
+> **Durum (26 Ekim 2026): uygulandı** (dalga 14, dal `claude/dalga-14-stok-fifo`). Yöntem ve ekranlar: [../STOK-DEGERLEME.md](../STOK-DEGERLEME.md). Uygulamada plandan ayrılanlar: kapalı ayar veritabanında "kapali" olarak saklanır (satır silinince varsayılan ay geri gelmesin); Ayarlar önizlemesi kâr etkisini de gösterir; katmanlar forma gönderilmez, form havuzdan sunucunun kuralıyla hesaplar. İnceleme düzeltmeleri (26 Ekim 2026): çarpan şüphesi bağlantıyı ve bugünkü çarpanı izler (bekleyen öneri ürünün bütün faturalarını, reddedilen yalnız kendi faturasını dışlar; çarpan düzelince girer), "Fiyatı güncelle" kapalı bağlantının faturası partiye girer, ayrı iade faturası partiden düşer, boş bırakılan ay son sayımın katmanlarını bozmaz, Ayarlar önizlemesi bütün ayları ve sayımsız sonraki ayın açılışını gösterir; testler `tests/stok-fifo.test.ts` 14-16 ve `tests/stok-fifo-db.test.ts`.
 
 Sahibin isteği (26 Eki): "maliyeti stoktan düşerken önce giren önce çıkar gibi mantıkla yapıyorsun değil mi ... bu mantık yoksa yap veya doğru mantığı neyse onu yap".
 

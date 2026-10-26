@@ -1303,8 +1303,9 @@ export function createModel(ds: Dataset) {
   const fifoCache = new Map<string, FifoCalc | null>();
   /**
    * Malzemenin ay sonu katmanları (başlangıç ayından bağımsız: önceki ayların katmanları taşınmak için de hesaplanır).
-   * Havuz: bu ayın faturaları en yeniden eskiye + geçen ay sayıldıysa onun katmanları (tükenmiş parti yeniden
-   * sayılmaz), sayılmadıysa son 12 ayın faturaları. Havuz boşsa (faturası yok, su) null: ay sonu fiyatı.
+   * Havuz: bu ayın faturaları en yeniden eskiye + son 12 ayda en son sayıldığı aydan sonraki (boş bırakılmış) ayların
+   * faturaları + o sayımın katmanları (tükenmiş parti yeniden sayılmaz); hiç sayılmadıysa son 12 ayın faturaları.
+   * Havuz boşsa (faturası yok, su) null: ay sonu fiyatı.
    */
   function fifoLayers(month: string, ingredientId: number): FifoCalc | null {
     const key = `${month}|${ingredientId}`;
@@ -1312,14 +1313,19 @@ export function createModel(ds: Dataset) {
     let out: FifoCalc | null = null;
     const byMonth = lotsByIng.get(ingredientId);
     if (byMonth && ingById.get(ingredientId)?.priceSource !== "water") {
-      const prev = shiftMonth(month, -1);
-      let carried: StockLayer[];
-      if (countsByMonth.get(prev)?.has(ingredientId)) carried = fifoLayers(prev, ingredientId)?.layers ?? [];
-      else {
-        const raw: PurchaseLot[] = [];
-        for (let i = 1; i <= FIFO_LOOKBACK_MONTHS; i++) raw.push(...(byMonth.get(shiftMonth(month, -i)) ?? []));
-        carried = lotPool(raw);
+      // Son 12 ay içinde en son sayıldığı ay: aradaki sayılmamış (boş bırakılmış) ayların faturaları + o ayın
+      // katmanları. Hiç sayılmadıysa son 12 ayın faturaları.
+      const raw: PurchaseLot[] = [];
+      let counted: string | null = null;
+      for (let i = 1; i <= FIFO_LOOKBACK_MONTHS; i++) {
+        const m = shiftMonth(month, -i);
+        if (countsByMonth.get(m)?.has(ingredientId)) {
+          counted = m;
+          break;
+        }
+        raw.push(...(byMonth.get(m) ?? []));
       }
+      const carried = [...lotPool(raw), ...(counted ? (fifoLayers(counted, ingredientId)?.layers ?? []) : [])];
       const pool = monthPool(byMonth.get(month) ?? [], carried);
       if (pool.length) {
         const fallbackUnit = unitCostAtMonthEnd(ingredientId, month);
@@ -1356,8 +1362,9 @@ export function createModel(ds: Dataset) {
       const f = useFifo ? fifoLayers(month, ing.id) : null;
       const lastPrice = fallbackUnit * factor;
       const amount = f ? layersValue(f.layers) : (qty ?? 0) * lastPrice;
-      // FIFO'da birim fiyat tutar ÷ miktar; sayılmamış ya da 0 satırda havuzun ilk (en yeni) parçası
-      const unitPrice = f ? (qty ? amount / qty : (f.pool[0]?.unitCost ?? fallbackUnit) * factor) : lastPrice;
+      // FIFO'da birim fiyat tutar ÷ miktar; sayılmamış ya da 0 satırda ay sonu fiyatı (ekrandaki ve boş sayım
+      // formundaki fiyatla aynı)
+      const unitPrice = f && qty ? amount / qty : lastPrice;
       const archived = !countableIds.has(ing.id);
       const g = ing.countGroup ?? "DİĞER";
       const list = groupMap.get(g) ?? [];
