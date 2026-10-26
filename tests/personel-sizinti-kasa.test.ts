@@ -180,7 +180,9 @@ test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numa
   assert.match(page, /getCashReport\(date, user\.role\)/);
   // DTO: sunucu sütunları yalnız "admin" ile
   const dto = read("src/server/data/cash-reports.ts");
-  assert.match(dto, /return audience === "admin" \? \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \} : dto;/);
+  assert.match(dto, /if \(audience === "admin"\) return \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \};/);
+  // Personele toplam dışı tahsilatın yalnız var olduğu (tutarsız işaret; okc-z.ts K4 fazlayı tutmadı saymaz)
+  assert.match(dto, /return r\.okcOutside !== null && r\.okcOutside > 1 \? \{ \.\.\.dto, okcExtraTakings: true \} : dto;/);
 });
 
 test("yazarkasa Z'si: personelin okuma yanıtında kümülatif ve yöneticinin satırları yok; karşılaştırmada yalnız kart ve kendi içinde", () => {

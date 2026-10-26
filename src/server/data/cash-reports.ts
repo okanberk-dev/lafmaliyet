@@ -66,6 +66,8 @@ export interface CashReportDTO extends CashReportFields {
   okcCumTotal?: number | null;
   okcCumVat?: number | null;
   okcOutside?: number | null;
+  /** Personelin DTO'su: toplam dışı tahsilat var (tutarı yok; okc-z.ts K4 fazlayı tutmadı saymaz). Yoksa anahtar yok */
+  okcExtraTakings?: true;
   revision: number;
   cashDiff: number;
   submittedBy: number | null;
@@ -128,7 +130,8 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
-  return audience === "admin" ? { ...dto, okcCumTotal: r.okcCumTotal, okcCumVat: r.okcCumVat, okcOutside: r.okcOutside } : dto;
+  if (audience === "admin") return { ...dto, okcCumTotal: r.okcCumTotal, okcCumVat: r.okcCumVat, okcOutside: r.okcOutside };
+  return r.okcOutside !== null && r.okcOutside > 1 ? { ...dto, okcExtraTakings: true } : dto;
 }
 
 export async function getCashReport(date: string, audience: CashAudience = "staff"): Promise<CashReportDTO | null> {

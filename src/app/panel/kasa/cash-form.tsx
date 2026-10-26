@@ -883,6 +883,8 @@ export function CashForm({
   // Gönderim yüklemesi süren bir fotoğraf varken bekler (fotoğrafın kimliği yanıtla gelir); seçiciler bölüm başına
   const busy = zUp.busy || okcUp.busy;
   const latestOkc = [...photos].reverse().find((p) => p.kind === "kasa-okc" && p.reading?.ok)?.reading ?? null;
+  // Z'de toplam dışı tahsilat (tutarı personele gelmez): kayıtlı raporun sunucu sütunundan ya da bu formun okumasından
+  const extraTakings = report?.okcExtraTakings === true || (report?.okcOutside ?? 0) > 1 || photos.some((p) => p.kind === "kasa-okc" && p.reading?.extraTakings === true);
   const photoBlock = (k: "kasa-z" | "kasa-okc") => {
     const up = k === "kasa-z" ? zUp : okcUp;
     return photoUi.storage && !proposal && !review ? (
@@ -1079,6 +1081,7 @@ export function CashForm({
               : "Banka POS'tan (yazarkasa) aldığınız Z raporundaki rakamları yazın (üstünde Z RAPORU ve KDV dökümü yazar)."
           }
           prevZ={prevOkcZ}
+          extraTakings={extraTakings}
           day={date}
           audience={photoUi.admin ? "admin" : "staff"}
           forceDetails={photoUi.admin}

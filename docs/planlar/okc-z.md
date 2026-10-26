@@ -324,6 +324,10 @@ Bilgi satırları (`ReadChecks`, mavi). **Personele** yalnız işlemsel olanlar,
 **alan başına tek turuncu neden** (alanın altında) ve kartın altında **tek özet satırı**:
 `2 rakam birbirini tutmuyor; turuncu olanları fişle karşılaştırın.` Alan nedenleri sade dille:
 - Nakit / Kredi kartı: `Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (120 ₺ az).`
+  Fazla çıkarsa tutarsız: `Nakit, kart ve öteki ödemeler toplanınca günlük toplamdan fazla çıkıyor; fişle
+  karşılaştırın.` (fazlası yazarkasa dışı tahsilat olabilir, tutarı D17 gereği yalnız yöneticide). Okuma
+  (`extraTakings`) ya da personelin DTO'su (`okcExtraTakings`) Z'de toplam dışı tahsilat olduğunu tutarsız
+  söylerse fazlası hiç turuncu olmaz (b8).
 - %10 KDV: `Bu oranın KDV'si toplamına göre 773,27 ₺ değil, 737,27 ₺ civarında olmalı.`
 - %10 toplam: `Oranların toplamı günlük toplamı tutmuyor (60 ₺ fark).`
 - Toplam KDV: `Toplam KDV günlük toplama göre çok büyük; başka bir satır yazılmış olabilir.`

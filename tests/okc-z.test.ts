@@ -213,7 +213,9 @@ test("K4: yazarkasa dışı tahsilat ödemelerin fazlasını açıklar", () => {
   assert.equal(r.status.okcOther, "confirmed");
   const bad = okcChecks(fig({ other: 1250 }), NO_PREV);
   assert.equal(bad.status.okcOther, "failed");
-  assert.equal(bad.reasons.okcOther, "Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (1.250\u00a0₺ fazla).");
+  // Fazlanın tutarı personelin metninde yok (toplam dışı tahsilatın tutarı olabilir, D17); yöneticinin satırında var
+  assert.equal(bad.reasons.okcOther, "Nakit, kart ve öteki ödemeler toplanınca günlük toplamdan fazla çıkıyor; fişle karşılaştırın.");
+  assert.ok(bad.checks.some((c) => c.key === "k4" && c.text.includes("tutmuyor")));
 });
 
 // ---------------------------------------------------------------- kopya kimlikler (D7)
@@ -628,6 +630,29 @@ test("okcReconcile: yöneticide yazarkasa dışı tahsilat K4'te sayılır (okum
   // Tutar tutmuyorsa yine uyarır; sunucu sütunu olmayan (personel) görünüm bugünkü gibi
   assert.ok(okcReconcile({ ...f, okcOutside: 300 }, "admin").some((l) => l.key === "okc-self"));
   assert.ok(okcReconcile(f, "staff").some((l) => l.key === "okc-self"));
+});
+
+test("personel toplam dışı tahsilatın tutarını hiçbir yerde görmez; yalnız var olduğunu bilir ve fazlası turuncu olmaz", () => {
+  // Faturalı satış 1.250 ₺ kartla: ödemeler (2.450 + 8.150) toplamdan (9.350) 1.250 fazla
+  const v = form({ okcVat: null, okcVatTotal: null, okcCard: 8150 });
+  const plain = okcFormChecks(v, { prevZ: null });
+  assert.ok(plain.summary !== null, "var olduğu bilinmiyorsa yine uyarır (S6)");
+  for (const t of [plain.summary, ...Object.values(plain.fields)]) assert.ok(!/1\.250|1250/.test(t ?? ""), `tutar: ${t}`);
+  assert.equal(plain.fields.okcCash, "Nakit, kart ve öteki ödemeler toplanınca günlük toplamdan fazla çıkıyor; fişle karşılaştırın.");
+  // Sunucu var olduğunu söyledi (okuma ya da kayıtlı rapor): fazlası tutmadı sayılmaz, doğrulanmış da sayılmaz
+  assert.deepEqual(okcFormChecks(v, { prevZ: null, extraTakings: true }), { fields: {}, summary: null, admin: [] });
+  // Eksik (az) hâlâ tutarıyla uyarır: toplam dışı tahsilat ödemeleri azaltmaz
+  const short = okcFormChecks(form({ okcVat: null, okcVatTotal: null, okcCard: 6800 }), { prevZ: null, extraTakings: true });
+  assert.equal(short.fields.okcCash, "Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (100\u00a0₺ az).");
+  // Kayıtlı rapor: personelin DTO'sunda yalnız işaret
+  const saved = report({ okcVat: null, okcVatTotal: null, okcCard: 8150 });
+  assert.ok(okcReconcile(saved, "staff").some((l) => l.key === "okc-self"));
+  assert.ok(!okcReconcile({ ...saved, okcExtraTakings: true }, "staff").some((l) => l.key === "okc-self"));
+  // Okuma: personelin yanıtında işaret var, tutar yok
+  const staff = toStaffReading(normalizeOkc(z({ outside: [{ label: "FATURALI SATIŞ", amount: A(1250) }] }), { day: DAY, prev: { z: null } }));
+  assert.equal(staff.extraTakings, true);
+  assert.ok(!/1\.250|1250/.test(JSON.stringify(staff)));
+  assert.equal(toStaffReading(normalizeOkc(z(), { day: DAY, prev: { z: null } })).extraTakings, undefined);
 });
 
 test("okcReconcile: tolerans sınırı, online + diğer açıklaması, banka satırı, eski rapor, personelin satırları", () => {

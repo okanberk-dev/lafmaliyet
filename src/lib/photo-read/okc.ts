@@ -272,6 +272,7 @@ export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
     checks: ordered(checks),
     okcVat,
     okcAdmin: { documentZNo: zNo, cumTotal, cumVat, outside, voids },
+    ...(outside !== null && outside > 1 ? { extraTakings: true as const } : {}),
   };
 }
 

@@ -117,6 +117,11 @@ export interface OkcFigures {
   other: number | null;
   /** Yazarkasa toplamı dışındaki tahsilat (faturalı satış, bilgi fişi…); yalnız okumada */
   outside?: number | null;
+  /**
+   * Personelin formu ve kayıtlı raporu: sunucu Z'de toplam dışı tahsilat gördü, tutarı verilmez (D16, D17). K4'te
+   * ödemelerin günlük toplamdan fazlası tutmadı sayılmaz (fazlası o tahsilat olabilir)
+   */
+  extraTakings?: boolean;
   /** Kart satırı varken altındaki banka satırlarının toplamı (K7); yalnız okumada */
   bankSublines?: number | null;
   /** Fişteki kümülatif (yalnız okumada; formda yoktur, D17) */
@@ -256,10 +261,16 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
     const diff = r2(sum - fig.total);
     const outside = isNum(fig.outside) ? fig.outside : 0;
     const held = Math.abs(diff) <= SUM_TOL || (outside > 0 && Math.abs(r2(diff - outside)) <= SUM_TOL);
+    // Tutarı bilinmeyen toplam dışı tahsilat (personel): fazlası tutmadı sayılmaz, doğrulamaz da
+    const unknownOutside = !held && diff > 0 && outside === 0 && fig.extraTakings === true;
     if (held) {
       if (pays.filter(nz).length >= 2) for (const f of ["okcTotal" as const, ...payFields]) confirmed.add(f);
-    } else {
-      const staff = `Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (${money(Math.abs(diff))} ${diff < 0 ? "az" : "fazla"}).`;
+    } else if (!unknownOutside) {
+      // Personelin metninde fazlanın tutarı yok: toplam dışı tahsilatın tutarı olabilir (yalnız yöneticiye, D16, D17)
+      const staff =
+        diff < 0
+          ? `Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (${money(Math.abs(diff))} az).`
+          : "Nakit, kart ve öteki ödemeler toplanınca günlük toplamdan fazla çıkıyor; fişle karşılaştırın.";
       fail(payFields, staff);
       failSoft(["okcTotal"], staff);
       checks.push({ key: "k4", level: "warn", fields: [...payFields, "okcTotal"], text: `Ödemelerin toplamı (${money(sum)}) günlük toplamı (${money(fig.total)}) tutmuyor; fişe bakın.` });
@@ -474,10 +485,11 @@ export function okcFiguresOfForm(v: OkcFormValues): OkcFigures {
  */
 export function okcFormChecks(
   v: OkcFormValues,
-  ctx: { prevZ: { date: string; zNo: string } | null; day?: string; recentTotals?: number[]; outside?: number | null },
+  ctx: { prevZ: { date: string; zNo: string } | null; day?: string; recentTotals?: number[]; outside?: number | null; extraTakings?: boolean },
 ): OkcFormCheck {
-  // `outside`: sunucunun sakladığı yazarkasa dışı tahsilat (yalnız yöneticinin kayıtlı raporu; personelin formunda yok)
-  const res = okcChecks({ ...okcFiguresOfForm(v), outside: ctx.outside ?? null }, { prev: { z: ctx.prevZ }, day: ctx.day, recentTotals: ctx.recentTotals });
+  // `outside`: sunucunun sakladığı yazarkasa dışı tahsilat (yalnız yöneticinin kayıtlı raporu; personelin formunda yok).
+  // `extraTakings`: personelde yalnız var olduğu (tutarsız; okumadan ya da kayıtlı rapordan)
+  const res = okcChecks({ ...okcFiguresOfForm(v), outside: ctx.outside ?? null, extraTakings: ctx.extraTakings }, { prev: { z: ctx.prevZ }, day: ctx.day, recentTotals: ctx.recentTotals });
   // Nedeni olan alanlar: tutmayanlar ve uyarı alanlar (doğrulananın nedeni yok)
   const fields: Partial<Record<OkcField, string>> = { ...res.reasons };
   for (const [f, s] of Object.entries(res.status) as [OkcField, OkcStatus][]) if (s === "failed") fields[f] ??= "Fişle karşılaştırın.";
@@ -734,6 +746,8 @@ export interface OkcReportFields {
   okcOther?: number | null;
   /** Sunucu sütunu (yalnız yöneticinin DTO'su): yazarkasa dışı tahsilat; K4 onu da sayar (okumayla aynı) */
   okcOutside?: number | null;
+  /** Personelin DTO'su: toplam dışı tahsilat var (tutarsız); K4 fazlayı tutmadı saymaz */
+  okcExtraTakings?: boolean;
 }
 
 export interface OkcReconcileLine {
@@ -767,7 +781,7 @@ function selfCheck(f: OkcReportFields): OkcFormCheck | null {
       okcOther: f.okcOther ?? null,
       okcVat: f.okcVat ?? null,
     },
-    { prevZ: null, outside: f.okcOutside ?? null },
+    { prevZ: null, outside: f.okcOutside ?? null, extraTakings: f.okcExtraTakings },
   );
 }
 

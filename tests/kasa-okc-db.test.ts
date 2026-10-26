@@ -394,6 +394,9 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
     assert.ok(staff && admin);
     for (const k of ["okcCumTotal", "okcCumVat", "okcOutside"]) assert.equal(k in staff, false, `${k} personelde yok`);
     assert.doesNotMatch(JSON.stringify(staff), /okcCum|okcOutside|1259350/);
+    // Toplam dışı tahsilat personele yalnız tutarsız işaret olarak (formun K4'ü fazlayı turuncu yapmaz)
+    assert.equal(staff.okcExtraTakings, true);
+    assert.equal("okcExtraTakings" in admin, false, "yöneticide tutarın kendisi var");
     assert.equal(staff.okcTotal, 9_350, "formun yazarkasa alanları herkese");
     assert.equal(admin.okcCumTotal, 1_259_350);
     assert.equal(admin.okcOutside, 1_250);

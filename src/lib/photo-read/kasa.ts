@@ -133,6 +133,11 @@ export interface CashReading {
   okcVat?: OkcVatLine[];
   /** Yazarkasa okumasında yalnız yöneticiye ve sunucuya (kümülatif, toplam dışı tahsilat) */
   okcAdmin?: OkcAdminInfo;
+  /**
+   * Yazarkasa okumasında toplam dışı tahsilat görüldü (tutarı yalnız `okcAdmin`de). Personelin yanıtında da kalır:
+   * formun canlı denetimi ödemelerin günlük toplamdan fazlasını tutmadı saymaz (okc-z.ts K4)
+   */
+  extraTakings?: true;
 }
 
 /**

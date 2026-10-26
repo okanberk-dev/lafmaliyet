@@ -55,6 +55,7 @@ export function OkcCard({
   posPrompt,
   description,
   prevZ,
+  extraTakings,
   day,
   audience,
   forceDetails,
@@ -74,6 +75,8 @@ export function OkcCard({
   description: string;
   /** Önceki yazarkasa Z'si (yalnız gün ve numara; kümülatif personele gitmez, D17) */
   prevZ: { date: string; zNo: string } | null;
+  /** Z'de toplam dışı tahsilat var (tutarı yok, D17): ödemelerin günlük toplamdan fazlası turuncu olmaz */
+  extraTakings: boolean;
   day: string;
   /** Kim bakıyor: yönetici karşılaştırma satırlarının hepsini görür */
   audience: "staff" | "admin";
@@ -84,7 +87,7 @@ export function OkcCard({
   const uid = useId();
   const f = okcFigures(values);
   const any = [f.okcTotal, f.okcCash, f.okcCard, f.okcMealCard, f.okcOther, f.okcVatTotal].some((x) => x !== null) || f.lines.length > 0;
-  const live = any ? okcFormChecks(f, { prevZ, day }) : null;
+  const live = any ? okcFormChecks(f, { prevZ, day, extraTakings }) : null;
   const reasonOf = (k: CardKey): string | null => (k === "bankPos" ? null : (live?.fields[k as OkcField] ?? null));
   // Alan başına tek turuncu neden: fotoğrafın işareti varsa o (cash-form çizer), yoksa canlı denetimin nedeni
   const opts = (k: CardKey, hint?: ReactNode, placeholder?: string): OkcFieldOptions => {

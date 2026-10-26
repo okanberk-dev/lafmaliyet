@@ -83,7 +83,9 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 - **Banka POS Z bölümü** ([YAZARKASA-Z.md](YAZARKASA-Z.md)): Z no, günlük toplam, oran oran KDV, ödemeler ve fiş sayısı
   okunur; kümülatif (KÜM.) satırlar günün rakamı olarak hiçbir alana gitmez. Rakamlar birbirini tutmuyorsa tutmayan
   alanın altında tek bir sade neden yazar ("Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (120 ₺
-  az).") ve o rakam hiçbir zaman kendiliğinden yazılmaz. Z no önceki yazarkasa Z'siyle aynıysa okumanın bütünü durur:
+  az)."; ödemeler fazla çıkarsa tutar yazılmaz, fazlası yazarkasa dışı tahsilat olabilir ve tutarı yalnız yöneticiye
+  gider. Okuma ya da kayıtlı rapor Z'de yazarkasa dışı tahsilat gördüyse fazlası turuncu olmaz) ve o rakam hiçbir
+  zaman kendiliğinden yazılmaz. Z no önceki yazarkasa Z'siyle aynıysa okumanın bütünü durur:
   "Bu Z no (0187) 21 Ekim raporunda da var; dünkü Z raporu olabilir." Aynı şeritte banka gün sonu da basılıysa **Banka
   gün sonu** da okunur ("Aynı fişte banka gün sonu da var: …"); yalnız banka gün sonu fişi çekilirse yalnız o alan:
   "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." Doldurma kapısı kapalıyken
