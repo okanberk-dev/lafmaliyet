@@ -53,9 +53,14 @@ import { stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
   countText,
+  coverageSplit,
   extraKey,
   groupProgress,
   listTopScroll,
+  isFifoLine,
+  layerText,
+  lineAmount,
+  lineLayers,
   liveTotals,
   mergeCounts,
   nextEmptyIndex,
@@ -540,6 +545,7 @@ export function StockCountForm({
   closingOverride,
   counter,
   addItem = null,
+  valuation = null,
 }: {
   month: string;
   monthLabel: string;
@@ -560,6 +566,8 @@ export function StockCountForm({
   counter: string | null;
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
   addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
+  /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
+  valuation?: { fifo: boolean; covered: number; total: number; start: string | null } | null;
 }) {
   const reduce = useCalmMotion() ?? false;
   const all = groups.flatMap((g) => g.lines);
@@ -645,6 +653,14 @@ export function StockCountForm({
     extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
   );
   const groupLive = new Map(live.groups.map((g) => [g.name, g]));
+  // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla
+  const fifoCovered = valuation?.fifo
+    ? all.reduce((a, l) => {
+        const v = l.archived ? l.qty : qtyOf(l);
+        return a + lineLayers(l, v).reduce((b, x) => b + (x.fallback ? 0 : x.qty * x.unitCost), 0);
+      }, 0)
+    : 0;
+  const coveredShare = live.total > 0 ? Math.min(1, fifoCovered / live.total) : 0;
   // Toplam stok kartının dökümü: formdaki miktarlarla, kartla aynı kural (yalnızca yönetici fiyat görür)
   const stockGroups = isAdmin
     ? stockBreakdown(
@@ -1154,7 +1170,11 @@ export function StockCountForm({
         {isAdmin ? (
           <StatBreakdown
             title={`${monthLabel} stoğu`}
-            description={`Ay sonu stoğu (KDV hariç): sayılan miktar × birim fiyat, grup grup. Formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
+            description={`${
+              valuation?.fifo
+                ? "Ay sonu stoğu (KDV hariç), ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla değerlenir. Faturayla karşılanmayan miktar ayın sonunda geçerli fiyatla."
+                : "Ay sonu stoğu (KDV hariç): sayılan miktar × ay sonu fiyatı."
+            } Grup grup; formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
               closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
             }`}
             groups={stockGroups}
@@ -1168,9 +1188,39 @@ export function StockCountForm({
               icon={<Coins />}
               label="Toplam stok (KDV hariç)"
               value={<Money value={live.total} />}
-              info={'Sayılan miktar × birim fiyat (KDV hariç). Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.'}
+              info={`${
+                valuation?.fifo
+                  ? "İlk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla (KDV hariç); faturası bulunamayan kısım ay sonu fiyatıyla."
+                  : "Sayılan miktar × ay sonu fiyatı (KDV hariç)."
+              } Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.`}
             >
               <div className="divide-y divide-line rounded-xl bg-surface px-3">
+                {valuation ? (
+                  <KeyValue
+                    label={
+                      <span>
+                        Değerleme
+                        <InfoTip
+                          className="ml-1.5"
+                          text={
+                            valuation.fifo
+                              ? "Ayarlar › Stok değerleme: ilk giren ilk çıkar (FIFO). Rafta kalan mal en son alınandır; her parça kendi faturasının fiyatıyla."
+                              : valuation.start
+                                ? `Bu ay FIFO başlangıcından (${valuation.start}) önce: ay sonu fiyatıyla. Ayarlar › Stok değerleme.`
+                                : "Ayarlar › Stok değerleme kapalı: her ay ay sonu fiyatıyla."
+                          }
+                        />
+                      </span>
+                    }
+                    value={valuation.fifo ? <Badge tone="green">FIFO</Badge> : <Badge tone="gray">Ay sonu fiyatı</Badge>}
+                  />
+                ) : null}
+                {valuation?.fifo && live.total > 0 ? (
+                  <p className="py-2 text-xs leading-5 text-ink-mute">
+                    Stok değerinin {coverageSplit(coveredShare).covered} faturalardan (FIFO), {coverageSplit(coveredShare).rest}{" "}
+                    {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
+                  </p>
+                ) : null}
                 <KeyValue
                   label={
                     <span>
@@ -1371,11 +1421,17 @@ export function StockCountForm({
               {g.visible.map((l) => {
                 const v = qtyOf(l);
                 const unit = unitOf(l);
-                const price = l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
+                // Tutar sunucunun kuralıyla (FIFO satırında katmanlardan); birim fiyat tutar ÷ miktar
+                const lineTotal = lineAmount(l, v);
+                const price = v ? lineTotal / v : l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
+                const fifoTip = isAdmin && isFifoLine(l) && v ? layerText(lineLayers(l, v), (l.archived || (l.qty !== null && v === l.qty) ? l.factor : l.factorNow) ?? 1, unit) : null;
                 // Yalnız yönetici: fiyatı girilmemiş kalem (sayımda "Listeye ekle" ile eklenen) 0 ₺ değil "fiyat yok" yazar
                 const unitText =
                   price > 0 ? (
-                    `${tl(price, 2)}/${unit}`
+                    <>
+                      {`${tl(price, 2)}/${unit}`}
+                      {fifoTip ? <InfoTip className="ml-1" text={fifoTip} /> : null}
+                    </>
                   ) : (
                     <span className="font-medium text-warn" title="Paket fiyatı girilmedi: Hammaddeler'den girin; o zamana kadar stok toplamına 0 ₺ girer">
                       fiyat yok
@@ -1384,12 +1440,12 @@ export function StockCountForm({
                 const money = isAdmin ? (
                   <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
                     <span className="whitespace-nowrap">{unitText}</span>
-                    <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(v * price) : "–"}</span>
+                    <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(lineTotal) : "–"}</span>
                   </div>
                 ) : null;
                 const moneyMobile = isAdmin ? (
                   <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
-                    {unitText} · <span className="font-semibold text-ink">{v ? tl(v * price) : "–"}</span>
+                    {unitText} · <span className="font-semibold text-ink">{v ? tl(lineTotal) : "–"}</span>
                   </p>
                 ) : null;
                 if (l.archived) {

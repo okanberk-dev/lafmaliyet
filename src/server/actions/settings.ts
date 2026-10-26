@@ -5,7 +5,8 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
-import { DEFAULT_SETTINGS } from "@/lib/constants";
+import { DEFAULT_SETTINGS, FIFO_OFF, settingsFromRows } from "@/lib/constants";
+import { monthLabel } from "@/lib/format";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
 import { hashPassword, passwordProblem } from "@/server/auth/password";
@@ -116,6 +117,36 @@ export async function saveSettings(input: Partial<z.input<typeof settingsSchema>
       refresh();
     }
     return { changes };
+  });
+}
+
+// ---------------------------------------------------------------- Stok değerleme
+
+const fifoStartSchema = z.union([z.literal(null), z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Geçerli bir ay seçin")]);
+const fifoText = (v: string | null) => (v ? `FIFO, başlangıç ${monthLabel(v)}` : "ay sonu fiyatı (FIFO kapalı)");
+
+/**
+ * Stok değerleme başlangıcı (FIFO): bu aydan itibaren ay sonu stoğu faturaların sırasıyla değerlenir; null = eski
+ * yöntem. Kapalı da kaydedilir ("kapali"): satır silinirse varsayılan ay geri gelirdi. Kapanmış ayların stok değerini ve
+ * kârını değiştirir; işlem geçmişine eski → yeni düşer. docs/STOK-DEGERLEME.md
+ */
+export async function saveStockValuationStart(input: string | null) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const start = fifoStartSchema.parse(input);
+    const db = getDb();
+    const change = await db.transaction(async (tx) => {
+      const prev = settingsFromRows(await tx.select().from(s.settings)).stokFifoBaslangic;
+      if (prev === start) return null;
+      const value = start ?? FIFO_OFF;
+      await tx.insert(s.settings).values({ key: "stokFifoBaslangic", value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
+      return `Stok değerleme: ${fifoText(prev)} → ${fifoText(start)}`;
+    });
+    if (change) {
+      await logActivity(me, "Ayarlar", change);
+      refresh();
+    }
+    return { change };
   });
 }
 

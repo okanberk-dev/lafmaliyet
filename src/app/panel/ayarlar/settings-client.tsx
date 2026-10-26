@@ -62,7 +62,9 @@ const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ?
 
 // ---------------------------------------------------------------- Hesap ayarları
 
-type Out = Partial<Record<keyof Settings, number | boolean | null>>;
+/** Bu formun kaydettiği ayarlar (stok değerleme başlangıcı kendi kartında: stock-valuation.tsx) */
+type FormKey = Exclude<keyof Settings, "stokFifoBaslangic">;
+type Out = Partial<Record<FormKey, number | boolean | null>>;
 type SettingsInput = Parameters<typeof saveSettings>[0];
 
 /** Adres yazısı: "https://ladmin.laffogato.net/menu" → "ladmin.laffogato.net/menu" */
@@ -161,7 +163,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
     }
     // Geri al için kayıtlı (yuvarlanmamış) önceki değerler
     const previous: Out = {};
-    for (const k of Object.keys(out) as (keyof Settings)[]) previous[k] = settings[k];
+    for (const k of Object.keys(out) as FormKey[]) previous[k] = settings[k];
     setBusy(true);
     const res = await saveSettings(out as SettingsInput);
     setBusy(false);

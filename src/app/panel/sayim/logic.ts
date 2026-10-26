@@ -3,6 +3,9 @@
  * Burada veritabanı ya da tarayıcı yok.
  */
 import { shiftMonth } from "@/lib/calc/engine";
+import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
+
+export { layerText } from "@/lib/calc/fifo";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR } from "@/lib/format";
 
@@ -41,6 +44,65 @@ export interface CountLineValue {
   vatRate: number;
   /** Malzeme artık sayım listesinde değil (pasif / Sayılmaz): miktarı değiştirilemez, kayıtlı değer kalır */
   archived: boolean;
+  /** Kayıtlı sayımın tutarı (sunucunun hesabı; FIFO'da katmanların toplamı). Yoksa miktar × unitPrice */
+  amount?: number;
+  /**
+   * FIFO havuzu (yalnız yönetici; en yeniden eskiye, hammaddenin kendi biriminde). Boş ya da yoksa satır ay sonu
+   * fiyatıyla değerlenir. Değişen miktar bu havuzdan, sunucunun kuralıyla (engine.ts fifoLayers) değerlenir
+   */
+  pool?: StockLayer[];
+  /** Havuzun yetmediği kısmın fiyatı (ay sonu fiyatı, hammaddenin kendi biriminde) */
+  fallbackUnit?: number;
+  /** Kayıtlı sayımın birim çarpanı (KG → 1000) ve bugünkü sayım biriminin çarpanı */
+  factor?: number;
+  factorNow?: number;
+}
+
+/** Satırın miktarı değişmedi (ya da arşivde): kayıtlı değer ve birim geçerli */
+const unchanged = (line: CountLineValue, value: number | null) => line.archived || (line.qty !== null && value === line.qty);
+
+/** FIFO satırı mı (yönetici için havuzu gelmiş) */
+export const isFifoLine = (line: CountLineValue) => (line.pool?.length ?? 0) > 0;
+
+/**
+ * Satırın katmanları, sunucunun kuralıyla: miktar sayım biriminden hammaddenin birimine çevrilir (kayıtlı miktar
+ * sayıldığı birimle, yeni ya da değişen miktar bugünkü birimle) ve havuzdan en yeniden geriye alınır. FIFO satırı
+ * değilse boş.
+ */
+export function lineLayers(line: CountLineValue, value: number | null): StockLayer[] {
+  if (!isFifoLine(line) || value === null || !Number.isFinite(value) || value <= 0) return [];
+  const factor = (unchanged(line, value) ? line.factor : line.factorNow) ?? 1;
+  return closingLayers(value * factor, line.pool!, line.fallbackUnit ?? 0).layers;
+}
+
+/**
+ * Satırın tutarı (KDV hariç), sunucunun kaydetme kuralıyla aynı: miktar aynı kaldıkça (ya da arşivde) kayıtlı tutar;
+ * değişen miktar FIFO satırında havuzdan (eski katmanlara taşar, kalan ay sonu fiyatıyla), diğerlerinde × bugünkü
+ * birim fiyat. Kaydedilince sunucunun hesapladığı tutar budur.
+ */
+export function lineAmount(line: CountLineValue, value: number | null): number {
+  if (value === null || !Number.isFinite(value)) return 0;
+  if (unchanged(line, value)) return line.amount ?? value * line.unitPrice;
+  if (isFifoLine(line)) return layersValue(lineLayers(line, value));
+  return value * line.unitPriceNow;
+}
+
+/** Yüzdenin iyelik eki, okunuşuna göre: "%86'sı", "%14'ü", "%100'ü", "%0'ı" (kapsam satırı) */
+export function coverageText(share: number): string {
+  return percentText(Math.round(Math.max(0, Math.min(1, share)) * 100));
+}
+
+/** Payın ve kalanın metni: yüzde bir kez yuvarlanır, kalan 100'e tamamlar (%13 + %87; ayrı yuvarlamada %13 + %88) */
+export function coverageSplit(share: number): { covered: string; rest: string } {
+  const n = Math.round(Math.max(0, Math.min(1, share)) * 100);
+  return { covered: percentText(n), rest: percentText(100 - n) };
+}
+
+function percentText(n: number): string {
+  const ones = ["ı", "i", "si", "ü", "ü", "i", "sı", "si", "i", "u"];
+  const tens = ["", "u", "si", "u", "ı", "si", "ı", "i", "i", "ı"];
+  const suffix = n === 100 ? "ü" : n % 10 ? ones[n % 10] : n === 0 ? "ı" : tens[n / 10];
+  return `%${n}'${suffix}`;
 }
 
 /**
@@ -48,6 +110,7 @@ export interface CountLineValue {
  * sayıldığı andaki birimle, yeni ya da değişen miktar bugünkü sayım birimiyle.
  */
 export function linePrice(line: CountLineValue, value: number | null): number {
+  if (isFifoLine(line) && value) return lineAmount(line, value) / value;
   if (line.archived) return line.unitPrice;
   return line.qty !== null && value === line.qty ? line.unitPrice : line.unitPriceNow;
 }
@@ -86,7 +149,7 @@ export function liveTotals(
     for (const l of g.lines) {
       const v = l.archived ? l.qty : valueOf(l);
       if (v === null || !Number.isFinite(v)) continue;
-      const amount = v * linePrice(l, v);
+      const amount = lineAmount(l, v);
       total += amount;
       totalVat += amount * (1 + l.vatRate);
     }
