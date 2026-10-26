@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { whatsappText } from "../src/lib/cash-report";
+import { cashReportText, revisionChanges, whatsappText } from "../src/lib/cash-report";
 import { okcReconcile } from "../src/lib/okc-z";
 import { normalizeOkc, toStaffReading } from "../src/lib/photo-read/okc";
 import { KasaOkcRaw } from "../src/lib/photo-read/schemas";
@@ -243,4 +243,19 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   }
   assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, meta, "admin"\)/);
   assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
+
+  // Düzeltilen rapor (sürüm 2): "Değişen" satırında yazarkasanın toplamı, KDV'si, fiş sayısı, yemek kartı ve diğeri
+  // yalnız adıyla; Z no, nakit ve kart bloktaki gibi değeriyle. "Fotoğraftan farklı"da fiş sayısı da yalnız adıyla
+  const after = { ...f, okcTotal: 11_640.5, okcVatTotal: 1058.23, okcReceipts: 147, okcMealCard: 100, okcOther: 0.5, okcCard: 8915.5, okcVat: [{ rate: 10, total: 11_640.5, vat: 1058.23 }] };
+  const changes = revisionChanges({ ...f, cashDiff: 0, countedByName: null }, { ...after, cashDiff: 0, countedByName: null });
+  assert.ok(["okcTotal", "okcVatTotal", "okcReceipts", "okcMealCard", "okcOther", "okcVat", "okcCard"].every((k) => changes.some((c) => c.key === k)));
+  const photoDiffs = [{ field: "okcReceipts" as const, label: "Yazarkasa fiş sayısı", photo: 149, saved: 147, confidence: "high" as const, excused: false }];
+  const t2 = whatsappText(after, { by: "Ayşe", revision: 2, changes, photoDiffs }).replace(/\u00a0/g, " ");
+  for (const v of ["11.540", "11.640,50", "1.049,09", "1.058,23", "143", "147", "149", "100 ₺", "0,50 ₺"]) assert.ok(!t2.includes(v), `WhatsApp (sürüm 2): ${v}\n${t2}`);
+  for (const l of ["Yazarkasa toplam değişti", "Yazarkasa KDV değişti", "Yazarkasa fiş sayısı değişti", "Yazarkasa yemek kartı değişti", "Yazarkasa diğer değişti", "KDV dökümü değişti"]) assert.ok(t2.includes(l), l);
+  assert.ok(t2.includes("Yazarkasa kart 8.915 ₺ → 8.915,50 ₺"), t2);
+  assert.match(t2, /Fotoğraftan farklı yazılan: Yazarkasa fiş sayısı(;|\n|$)/);
+  // Yöneticinin metninde (e-posta) değerleriyle
+  const a2 = cashReportText(after, { by: "Ayşe", revision: 2, changes, photoDiffs }, "admin").replace(/\u00a0/g, " ");
+  assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
 });

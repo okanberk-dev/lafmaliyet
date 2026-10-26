@@ -1,6 +1,6 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
-import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcVatLine } from "./okc-z";
+import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 
@@ -706,8 +706,22 @@ export function byLine(by: string, countedBy?: string | null): string {
  */
 export type CashTextAudience = "staff" | "admin";
 
+/** Yöneticinin metninde rapor alanları ve sunucunun yazarkasa dışı tahsilatı (K4 onu da sayar; personelde hiç yok) */
+export type CashTextFields = CashReportFields & Pick<OkcReportFields, "okcOutside">;
+
 /** WhatsApp metninde değeriyle yazılan yazarkasa alanları (bloğun kendi rakamları); ötekiler yalnız adıyla (İlke 8) */
-const OKC_STAFF_DIFF_VALUES: readonly PhotoDiff["field"][] = ["okcZNo", "okcReceipts", "okcCash", "okcCard"];
+const OKC_STAFF_DIFF_VALUES: readonly PhotoDiff["field"][] = ["okcZNo", "okcCash", "okcCard"];
+
+/**
+ * WhatsApp'ın "Değişen" satırında değeri yazılmayan yazarkasa alanları: bloğa girmeyen rakamlar (günlük toplam, KDV,
+ * fiş sayısı, yemek kartı, diğer; döküm zaten adıyla). Z no, nakit, kart ve banka gün sonu bloktaki gibi değeriyle
+ */
+const OKC_STAFF_CHANGE_NAME_ONLY: readonly FieldChange["key"][] = ["okcTotal", "okcVatTotal", "okcVat", "okcReceipts", "okcMealCard", "okcOther"];
+
+/** "Değişen" satırı: personelin metninde bloğa girmeyen yazarkasa rakamı yalnız adıyla ("Yazarkasa toplam değişti") */
+function changesLine(changes: FieldChange[], audience: CashTextAudience): string {
+  return changes.map((c) => (audience === "staff" && OKC_STAFF_CHANGE_NAME_ONLY.includes(c.key) ? `${c.label} değişti` : changeLine(c, false))).join("; ");
+}
 
 /**
  * Fotoğraftan farklı yazılan alan: "Kart (fotoğrafta 8.915 ₺)". Personelin metninde bloğa girmeyen yazarkasa rakamı
@@ -776,7 +790,7 @@ export function cashReportText(
   const photos = photosLine(meta.photos);
   if (photos) head.push(photos);
   if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => diffLine(d, audience)).join("; ")}`);
-  if (meta.revision && meta.revision > 1 && meta.changes?.length) head.push(`*Değişen:* ${changesText(meta.changes)}`);
+  if (meta.revision && meta.revision > 1 && meta.changes?.length) head.push(`*Değişen:* ${changesLine(meta.changes, audience)}`);
   const outs = cashOutLines(meta.cashOuts);
   const z = ["*ModPOS Z raporu*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
