@@ -97,6 +97,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         unitNow: l.ingredient.countUnit,
         archived: l.archived,
         archivedReason: !l.archived ? null : l.ingredient.active ? "sayilmaz" : "pasif",
+        passiveInUse: l.passiveInUse,
         unitChanged: l.unitChanged,
         qty: l.qty,
         prevQty: p?.qty ?? null,

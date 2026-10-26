@@ -38,9 +38,12 @@ import {
   dashboard,
   forecastMonthOf,
   listDaysText,
+  missingRevenueText,
   unpaidSummary,
+  yearTotals,
   yearTrend,
   type DashboardData,
+  type YearTotals as YearTotalsData,
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
@@ -189,6 +192,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const year = Number(month.slice(0, 4));
   const yearMonths = yearTrend(model, year);
   const trend = yearMonths.filter((x) => x.active);
+  // Yıl toplamı Gelir-gider kartlarıyla ve Claude'la aynı kuraldan (bu aya kadar, cirosu girilmiş aylar)
+  const yearSum = yearTotals(model, year);
   const st = model.settings;
 
   // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
@@ -630,7 +635,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   }
                 />
                 <CardContent className="space-y-3">
-                  <YearTotals months={trend} />
+                  <YearTotals totals={yearSum} />
                   {/* Telefonda dar iç boşluk: grafiğin lejantı tek satıra sığar, eksen etiketinin üstüne binmez */}
                   <Well className="p-2 sm:p-4">
                     <TrendChart
@@ -806,7 +811,7 @@ function CostCard({
               tone: segTone(m),
               short: monthShort(m.month),
               // Renk tek başına anlam taşımasın: ipucu ve ekran okuyucu metni kâr/zarar ve seçili ayı da söyler
-              label: `${monthLabel(m.month)}: ${m.active ? `${m.profit < 0 ? "zarar" : "kâr"} ${tl(Math.abs(m.profit))}` : m.missingRevenue ? "ciro girilmedi" : "veri yok"}${
+              label: `${monthLabel(m.month)}: ${m.active ? `${m.profit < 0 ? "zarar" : "kâr"} ${tl(Math.abs(m.profit))}` : m.missingRevenue ? "ciro girilmedi" : m.future ? "henüz başlamadı" : "veri yok"}${
                 m.month === month ? " (seçili ay)" : ""
               }`,
             }))}
@@ -1177,10 +1182,8 @@ function ExpensesTab({ month, items, total }: { month: string; items: { name: st
 }
 
 /** Yıl grafiğinin üstünde: veri olan ayların toplam cirosu, gideri ve kâr/zararı */
-function YearTotals({ months }: { months: YearMonth[] }) {
-  const revenue = months.reduce((s, m) => s + m.revenueNet, 0);
-  const expenses = months.reduce((s, m) => s + m.expenses, 0);
-  const profit = months.reduce((s, m) => s + m.profit, 0);
+function YearTotals({ totals }: { totals: YearTotalsData }) {
+  const { revenueNet: revenue, expenses, profit } = totals;
   const cells = [
     { label: "Ciro (KDV hariç)", value: <span className="whitespace-nowrap">{tl(revenue)}</span> },
     { label: "Giderler", value: <span className="whitespace-nowrap">{tl(expenses)}</span> },
@@ -1195,7 +1198,10 @@ function YearTotals({ months }: { months: YearMonth[] }) {
   ];
   return (
     <div>
-      <p className="mb-1.5 text-xs text-ink-mute">{months.length} ayın toplamı</p>
+      <p className="mb-1.5 text-xs text-ink-mute">
+        {totals.counted.length} ayın toplamı
+        {totals.missingRevenue.length ? ` · ${totals.missingRevenue.map(missingRevenueText).join(" · ")}` : ""}
+      </p>
       {/* Telefonda üç tutar yan yana sığmaz: alt alta, etiket solda tutar sağda */}
       <dl className="grid grid-cols-1 gap-1.5 sm:grid-cols-3 sm:gap-2">
         {cells.map((c) => (

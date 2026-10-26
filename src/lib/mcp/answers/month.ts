@@ -5,7 +5,7 @@
  */
 
 import { daysInMonth, yearMonths, type Model } from "../../calc/engine";
-import { alerts, dashboard, yearTrend } from "../../calc/insights";
+import { alerts, dashboard, missingRevenueText, yearTotals, yearTrend } from "../../calc/insights";
 import { kasaMonthLine, missingSentence } from "../../cash-month";
 import { cleanName, monthLabel, num, panelUrl, pct, pctNum, r2, r2n, tl } from "./common";
 
@@ -86,8 +86,8 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   const kaynak: string[] = [];
   const uyarilar: string[] = [];
 
-  // Panelin kuralı: POS cirosu girilmemiş ayın kârı sayılmaz (Genel bakış'ta hasRevenue, Gelir-gider'de yearTrend'in
-  // active'i). Yalnız laffogato.net online satışı olan ay (her ayın 1'i, kasa raporları gecikince) %100 marjlı ya da
+  // Panelin kuralı: POS cirosu girilmemiş ayın kârı sayılmaz (Genel bakış'ta hasRevenue; yıl toplamında yearTotals:
+  // Gelir-gider kartları, Genel bakış ve yearSummary aynı). Yalnız laffogato.net online satışı olan ay (her ayın 1'i, kasa raporları gecikince) %100 marjlı ya da
   // faturalar gelince büyük zararda görünmesin: ciro ve kâr null, giderler ve online satış yerinde
   const hasPos = pm.revenue !== null;
   let gerceklesen: MonthSummary["gerceklesen"] = null;
@@ -226,8 +226,9 @@ export interface YearSummary {
 export function yearSummary(model: Model, year: number, ctx: { base: string }): YearSummary {
   const rows = yearTrend(model, year);
   const active = rows.filter((r) => r.active);
-  const sum = (k: "revenueNet" | "expenses" | "profit") => r2(active.reduce((a, r) => a + r[k], 0));
-  const toplam = { ciroKdvHaric: sum("revenueNet"), gider: sum("expenses"), kar: sum("profit") };
+  // Yıl toplamı Gelir-gider kartlarıyla ve Genel bakış'la aynı kuraldan (yearTotals: bu aya kadar, cirosu girilmiş aylar)
+  const yt = yearTotals(model, year);
+  const toplam = { ciroKdvHaric: r2(yt.revenueNet), gider: r2(yt.expenses), kar: r2(yt.profit) };
   const months = yearMonths(year);
   const hesap = [
     `Her ayın kârı = KDV hariç ciro (ModPOS + laffogato.net online) − giderler (Gelir-gider)`,
@@ -235,7 +236,7 @@ export function yearSummary(model: Model, year: number, ctx: { base: string }): 
       ? `Yıl toplamı cirosu girilmiş ${num(active.length)} ay: ${active.map((r) => monthLabel(r.month)).join(", ")} → ciro ${tl(toplam.ciroKdvHaric)} − gider ${tl(toplam.gider)} = ${tl(toplam.kar)}`
       : `${year} yılında cirosu girilmiş ay yok`,
   ];
-  const missing = rows.filter((r) => r.missingRevenue).map((r) => monthLabel(r.month));
+  const missing = yt.missingRevenue.map(missingRevenueText);
   return {
     yil: year,
     aylar: rows.map((r, i) => ({
@@ -250,7 +251,8 @@ export function yearSummary(model: Model, year: number, ctx: { base: string }): 
     hesap,
     kaynak: [
       "Gelir-gider tablosu: ciro Satışlar'daki ay bilgisinden ya da kasa raporlarından, giderler faturalardan ve sabit giderlerden",
-      ...(missing.length ? [`Gideri olup cirosu girilmemiş aylar kâra girmedi: ${missing.join(", ")}`] : []),
+      ...(missing.length ? [`Gideri olup cirosu girilmemiş aylar kâra girmedi: ${missing.join("; ")}`] : []),
+      ...(yt.uncounted.length ? [`Ay sonu sayımı olmayan aylarda mal maliyeti tahmini (kapanış stoğu 0): ${yt.uncounted.map((m) => monthLabel(m)).join(", ")}`] : []),
     ],
     panelAdresi: panelUrl(ctx.base, `/panel/gelir-gider?yil=${year}`),
   };

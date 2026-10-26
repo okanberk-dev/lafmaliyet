@@ -23,6 +23,9 @@ sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
    - son 12 ay içinde bu malzemenin en son sayıldığı aydan sonraki (boş bırakılmış) ayların faturaları ve o sayımın
      katmanları (o ay tükenmiş eski parti yeniden sayılmaz; arada bir ayın boş bırakılması bunu bozmaz);
    - 12 ayda hiç sayılmadıysa son 12 ayın faturaları (en yeniden eskiye).
+   - O sayım FIFO başlangıcından önceki bir aydaysa katmanları yerine sayılan miktarın tamamı **tek parça, o ayın ay
+     sonu fiyatıyla** taşınır (§5 "Başlangıç ayı"). Bu ayda ve aradaki boş aylarda fatura yoksa havuz kurulmaz:
+     malzeme faturasız malzeme gibi bu ayın ay sonu fiyatıyla değerlenir.
 2. Sayılan miktar (malzemenin kendi biriminde: gr, ml, adet) havuzun başından alınır; her parça kendi faturasının
    birim fiyatıyla (KDV hariç, iskonto düşülmüş) değerlenir.
 3. Havuz yetmezse kalan miktar **ay sonunda geçerli fiyatla** (eski yöntemin fiyatı; "fallback").
@@ -50,7 +53,7 @@ edilen mal havuzda kalır.
 
 ## 3. Örnek
 
-Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG.
+Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG; FIFO başlangıcı Eylül (ya da daha önce).
 
 | Fatura | Miktar | Birim fiyat |
 | --- | --- | --- |
@@ -66,6 +69,9 @@ Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG.
 
 Ekim'in mal maliyeti = açılış (Eylül kapanışı) + Ekim alışları − 3.150 ₺; Kasım'ın açılışı 3.150 ₺.
 
+Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapanır ve Ekim'in havuzuna "5 KG · Eyl sayımından
+450,00 ₺/KG" tek parça olarak girer: Ekim 9 KG = 3 × 400 + 5 × 450 + 1 × 450 = 3.900 ₺.
+
 ## 4. Ekranlar
 
 - **Stok sayımı** (yönetici): toplam kartında "Değerleme: FIFO" rozeti, kapsam satırı ("Stok değerinin %86'sı
@@ -80,13 +86,42 @@ Ekim'in mal maliyeti = açılış (Eylül kapanışı) + Ekim alışları − 3.
   gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş
   ay etkilenmez. Telefonda "Faturadan" sütunu gizlenir. Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
   Kapalı seçilirse her ay ay sonu fiyatıyla.
-- **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer.
+- **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer. Yıl
+  kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
+  (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca
+  sonraki ayın açılış stoğu, ay başlamadan onun gideri gibi yıla girmez (denetim E-16). Cirosu girilmemiş ayın gideri
+  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini, kapanış 0) kartların altında not olarak yazılır. Tablonun yıl
+  sütunu ve Excel'in yıl sütunu aynı ayları toplar (inceleme B02-D4): cirosu girilmemiş ay tabloda kendi sütununda
+  görünür ama yıla girmez; öyle bir ay varsa yıl sütununun başlığı "cirosu girilmiş N ay" der, Excel'de başlık notu
+  toplanmayan ayları sayar.
+- **Sayım listesi**: sayım birimi olan aktif malzemeler ve pasif olup aktif bir ürünün reçetesinde geçenler ("Pasif ·
+  reçetede"; satıldıkça tüketilir, listeden düşse kalan stoğu 0 sayılırdı). Aktif ürünün reçetesindeki malzeme pasif
+  yapılamaz (Hammaddeler önce reçetelerden çıkarılmasını ister, ürünleri listeler); kural `isCountable`
+  (src/lib/ingredient-usage.ts), motor, sayım kaydı ve sayım ilerlemesi (Bugün, zil, ay sonu bildirimi, sabah e-postası:
+  `countProgress`, aynı kuralın SQL'i `countableSql`) aynı kuralı kullanır (denetim E-04, inceleme B02-D1). Pasif
+  malzeme bir yazımla aktif bir reçeteye girerse (ürün reçete kartından ya da sitenin "Satışta"sıyla yeniden aktif
+  oldu, reçeteye yazıldı, öneri onaylandı, ürün kopyalandı) listeye bu aydan girer (`count_from` bu ay; Hammaddeler'de
+  yeniden aktif yapılan kalem gibi), sayımı bitmiş geçmiş aylar "yarım" olmaz; migration 0043 eski satırlara aynısını
+  yapar (B02-U2). Personel formunda bu kalemde "Pasif" yazmaz, "Satışta kullanılıyor, sayın" yazar. Sayımı, alımı, Paraşüt
+  bağlantısı ya da zayi / ikram kaydı olan malzeme silinmez, pasif yapılır (E-28). Fiyatı girilmemiş ek kalem ("Listede
+  olmayanlar") yöneticinin zilinde ve Bugün'de söylenir: kapanış stoğuna 0 ₺ girer (E-22).
 - **Excel dışa aktarımı**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.
 - **Satışlar, Ürünler, reçete kartı**: "Reçete maliyeti son alış fiyatıyla (yenileme maliyeti): fiyat kararı için.
   Kâr-zararın mal maliyeti FIFO ile değerlenen sayımdan."
 
 ## 5. Dikkat
 
+- **Başlangıç ayı** (denetim E-05): başlangıçtan önceki ayın kapanışı ay sonu fiyatıyla değerlenir ve başlangıç ayının
+  açılışı odur. O sayım başlangıç ayının havuzuna eski fatura fiyatlarıyla (katmanlarıyla) girseydi, hiç tüketilmemiş
+  malın son fiyat ile eski fatura fiyatı arasındaki farkı başlangıç ayının mal maliyetine bir kez yazılırdı (Ayarlar'da
+  başlangıç her değiştiğinde yeniden). Bu yüzden önceki ayın sayımı tek parça, kendi ay sonu fiyatıyla taşınır: alımı
+  ve kullanımı olmayan kalemde başlangıç ayının stok değişimi 0'dır. Bu parça "faturalardan" payına girmez (kapsam
+  satırında ay sonu fiyatıyla kalan payda), ipucunda "Eyl sayımından … (FIFO başlangıcından önce: ay sonu fiyatı)"
+  yazar. Ayarlar önizlemesi her başlangıç seçeneği için bu kuralla hesaplar (`valuationPreview(ay, başlangıç)`).
+  Taşınan parça tek başına havuz kurmaz: başlangıç ayında ve aradaki boş aylarda faturası olmayan malzeme ay sonu
+  fiyatıyla değerlenir. Karar yalnız pencerenin içindeki veriden verilir; malzemenin sonraki bir aydaki ilk faturası
+  ya da 12 aydan eski bir fatura (sonradan kurulan Paraşüt bağlantısıyla gelenler de) kapanmış ayın değerini
+  değiştirmez (inceleme B02-D2).
 - **Kapanmış aylar**: başlangıç ayını geriye almak o aylardan itibaren stok değerini ve kârı değiştirir (önizleme
   gösterir). Başlangıçtan sonra gelen geç bir fatura, sonradan düzeltilen bağlantı çarpanı ya da onaylanan fiyat da
   FIFO'lu bir ayın değerini değiştirebilir: partiler her açılışta faturalardan yeniden türetilir.
@@ -104,10 +139,12 @@ uygulanmalıdır; değiştirmeden önce muhasebeciye danışın.
 
 ## 7. Kod
 
-- Saf çekirdek: `src/lib/calc/fifo.ts` (`buildLots`, `takeNewestFirst`, `closingLayers`, `layersValue`, `valuationFor`)
+- Saf çekirdek: `src/lib/calc/fifo.ts` (`buildLots`, `takeNewestFirst`, `closingLayers`, `layersValue`, `valuationFor`,
+  `openingLayer` ve `invoiceLayer`: başlangıçtan önceki sayımdan taşınan parça)
 - Yükleyici: `src/server/data/purchase-lots.ts` → `loadDataset` (`Dataset.purchaseLots`, isteğe bağlı: Excel tohumu ve
   golden testler partisiz, eski yöntemle)
-- Motor: `src/lib/calc/engine.ts` `fifoLayers` (ay + malzeme başına bellekli), `stockSheet` (`StockLine.valuation`,
+- Motor: `src/lib/calc/engine.ts` `fifoLayersFrom` (başlangıç + ay + malzeme başına bellekli; `fifoLayers` Ayarlar'daki
+  başlangıçla), `stockSheet` (`StockLine.valuation`,
   `layers`, `uncoveredQty`, `pool`, `fallbackUnit`), `valuationPreview`; `closingStock`, `pnlMonth`, Genel bakış, MCP
   ve dışa aktarım kendiliğinden izler
 - Ayar: `Settings.stokFifoBaslangic` (`DEFAULT_SETTINGS` "2026-10"; veritabanında kapalı = "kapali"),

@@ -302,6 +302,13 @@
       "when": 1793013964674,
       "tag": "0042_okc_z",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793053615415,
+      "tag": "0043_pasif_recetede_sayim",
+      "breakpoints": true
     }
   ]
 }

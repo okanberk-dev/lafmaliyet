@@ -17,12 +17,15 @@ import { saveStockValuationStart } from "@/server/actions/settings";
 
 import { SectionCard } from "./section-card";
 
-/** Sayımı olan bir ayın iki yöntemle değeri (engine.ts valuationPreview); `overridden`: Gelir-giderde elle girildi */
+/**
+ * Sayımı olan bir ayın iki yöntemle değeri (engine.ts valuationPreview); `overridden`: Gelir-giderde elle girildi.
+ * FIFO tutarı başlangıç ayına bağlı (başlangıçtan önceki sayım ay sonu fiyatıyla taşınır): `fifo` o aya kadarki her
+ * başlangıç seçeneğinin tutarı ve faturalardan gelen kısmı.
+ */
 export interface ValuationRow {
   month: string;
   old: number;
-  fifo: number;
-  covered: number;
+  fifo: Record<string, { value: number; covered: number }>;
   overridden: boolean;
 }
 
@@ -51,14 +54,15 @@ export function StockValuationCard({
   const [busy, setBusy] = useState(false);
   const next = draft || null;
   const dirty = next !== start;
-  const valueWith = (r: ValuationRow, from: string | null) => (r.overridden ? null : valuationFor(r.month, from) === "fifo" ? r.fifo : r.old);
+  const fifoWith = (r: ValuationRow, from: string | null) => (from && valuationFor(r.month, from) === "fifo" ? (r.fifo[from] ?? null) : null);
+  const valueWith = (r: ValuationRow, from: string | null) => (r.overridden ? null : (fifoWith(r, from)?.value ?? r.old));
   const byMonth = new Map(rows.map((r) => [r.month, r]));
   const openOv = new Set(openingOverrides);
   const delta = (r: ValuationRow | undefined) => (r ? (valueWith(r, next) ?? 0) - (valueWith(r, start) ?? 0) : 0);
   // Ayın kâr etkisi: kendi kapanış farkı eksi açılışına geçen önceki ayın kapanış farkı (açılış elle girildiyse 0)
   const carried = (m: string) => (openOv.has(m) ? 0 : delta(byMonth.get(monthShift(m, -1))));
   const profitOf = (r: ValuationRow) => delta(r) - carried(r.month);
-  const shown = rows.filter((r) => r.old || r.fifo).slice(-12);
+  const shown = rows.filter((r) => r.old || Object.values(r.fifo).some((f) => f.value)).slice(-12);
   // Değişen aylar bütün sayımlı aylardan (tablo son 12'yi gösterir); sayımı olmayan sonraki ayın açılışı da değişir
   const changed = rows.filter((r) => Math.abs(delta(r)) >= 0.5 || Math.abs(profitOf(r)) >= 0.5);
   const openings = rows
@@ -135,6 +139,7 @@ export function StockValuationCard({
                   const after = valueWith(r, next);
                   const profit = profitOf(r);
                   const fifoNow = valuationFor(r.month, next) === "fifo";
+                  const fifoNext = fifoWith(r, next);
                   return (
                     <tr key={r.month} className={cn(Math.abs(profit) >= 0.5 && "bg-warn-soft/40")}>
                       <td className="px-2 py-2 sm:px-3 sm:whitespace-nowrap">
@@ -150,7 +155,7 @@ export function StockValuationCard({
                       <td className={cn("px-2 py-2 text-right sm:px-3", profit > 0.5 ? "text-good" : profit < -0.5 ? "text-bad" : "text-ink-mute")}>
                         {Math.abs(profit) < 0.5 ? "–" : signed(profit)}
                       </td>
-                      <td className="hidden px-3 py-2 text-right text-ink-mute sm:table-cell">{r.fifo > 0 && fifoNow ? pct(r.covered / r.fifo, 0) : "–"}</td>
+                      <td className="hidden px-3 py-2 text-right text-ink-mute sm:table-cell">{fifoNext && fifoNext.value > 0 ? pct(fifoNext.covered / fifoNext.value, 0) : "–"}</td>
                     </tr>
                   );
                 })}

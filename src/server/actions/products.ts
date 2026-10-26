@@ -12,6 +12,7 @@ import { panelIsActive } from "@/lib/site-menu/slot";
 import { keepSeen } from "@/lib/site-menu/sold-out";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, loadSettings } from "@/server/data/dataset";
+import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
 import { productHistoryCounts } from "@/server/data/product-history";
@@ -55,7 +56,9 @@ export async function updateProductPrice(id: number, price: number, ackAlert = f
       let final = desired;
       if (push.kind === "pushed") {
         final = await applyPushed(tx, push, before, desired, now);
-        await tx.update(s.products).set({ ...final, updatedAt: now }).where(eq(s.products.id, id));
+        // Site "Satışta" derse pasif ürün aktif olur: reçetesindeki pasif malzeme sayım listesine bu aydan girer
+        const written = final;
+        await withPassiveRelist(tx, [id], [], () => tx.update(s.products).set({ ...written, updatedAt: now }).where(eq(s.products.id, id)));
       } else {
         await tx.update(s.products).set({ price: p, updatedAt: now }).where(eq(s.products.id, id));
       }
@@ -220,33 +223,37 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
     const sale = await db.transaction(async (tx) => {
       await checkRecipe(tx, data);
       const written = push.kind === "pushed" ? await applyPushed(tx, push, before, desired, now) : desired;
-      await tx
-        .update(s.products)
-        .set({
-          name: data.name,
-          size: data.size,
-          categoryId: data.categoryId,
-          price: written.price,
-          fireOverride: data.fireOverride,
-          note: data.note,
-          active: written.active,
-          showOnMenu: written.showOnMenu,
-          updatedAt: now,
-        })
-        .where(eq(s.products.id, data.productId));
-      await tx.delete(s.recipeItems).where(eq(s.recipeItems.productId, data.productId));
-      if (data.items.length) {
-        await tx.insert(s.recipeItems).values(
-          data.items.map((it, i) => ({
-            productId: data.productId,
-            ingredientId: it.ingredientId,
-            qty: it.qty,
-            qtyExpr: it.qtyExpr,
-            note: it.note,
-            sortOrder: i + 1,
-          })),
-        );
-      }
+      // Ürün yeniden aktif olur ya da reçetesine pasif malzeme yazılırsa o malzeme sayım listesine bu aydan girer
+      const ingredientIds = data.items.map((it) => it.ingredientId);
+      await withPassiveRelist(tx, [data.productId], ingredientIds, async () => {
+        await tx
+          .update(s.products)
+          .set({
+            name: data.name,
+            size: data.size,
+            categoryId: data.categoryId,
+            price: written.price,
+            fireOverride: data.fireOverride,
+            note: data.note,
+            active: written.active,
+            showOnMenu: written.showOnMenu,
+            updatedAt: now,
+          })
+          .where(eq(s.products.id, data.productId));
+        await tx.delete(s.recipeItems).where(eq(s.recipeItems.productId, data.productId));
+        if (data.items.length) {
+          await tx.insert(s.recipeItems).values(
+            data.items.map((it, i) => ({
+              productId: data.productId,
+              ingredientId: it.ingredientId,
+              qty: it.qty,
+              qtyExpr: it.qtyExpr,
+              note: it.note,
+              sortOrder: i + 1,
+            })),
+          );
+        }
+      });
       // Fiyat değiştiyse geçmişe ve kasanın (ModPOS) listesine (kuruşu aynıysa yazılmaz)
       const pos = await recordPriceChange(
         tx,

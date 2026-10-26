@@ -8,8 +8,10 @@ import { planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
+import { isCountable } from "@/lib/ingredient-usage";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasCashReportIn } from "@/server/data/cash-reports";
+import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
 
@@ -105,11 +107,16 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
             .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, ids)))
         ).map((c) => [c.ingredientId, c]),
       );
+      // Pasif ama aktif bir ürünün reçetesinde geçen malzeme listede kalır (engine.ts countable ile aynı kural)
+      const inUse = await activeProductsUsing(
+        tx,
+        [...ings.values()].filter((i) => !i.active && i.countUnit).map((i) => i.id),
+      );
       for (const e of filled) {
         const ing = ings.get(e.ingredientId);
         if (!ing) throw new UserError("Malzeme bulunamadı (sayfayı yenileyin)");
         const prev = existing.get(e.ingredientId);
-        const countable = ing.active && !!ing.countUnit;
+        const countable = isCountable(ing, inUse.has(ing.id));
         if (!countable && !prev) throw new UserError(`${ing.name} sayım listesinde değil (pasif ya da “Sayılmaz”)`);
         // Pasif / sayılmaz malzemenin eski sayımı ve değişmeyen miktar eski birimiyle kalır; yeni girilen miktar bugünkü birimle
         const factor =
@@ -168,7 +175,7 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
-    await db.transaction(async (tx) => {
+    const changed = await db.transaction(async (tx) => {
       const existing = await lockExtras(tx, m, b);
       const res = planAdminExtras(existing, data);
       if (!res.ok) throw new UserError(res.error);
@@ -182,8 +189,10 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
       if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m })));
       if (!data.length) await dropEmptyStockMonth(tx, m);
+      return updates.length + deletes.length + inserts.length;
     });
-    await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${data.length} kalem`);
+    // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz
+    if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
     refresh();
     return null;
   });

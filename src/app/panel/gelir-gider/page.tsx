@@ -8,6 +8,7 @@ import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
+import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { salesMonthsToPull } from "@/lib/site-sales/calc";
@@ -70,6 +71,15 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const year = yilParam && /^\d{4}$/.test(yilParam) ? Number(yilParam) : latestYear;
   const months = yearMonths(year);
   const calcs = months.map((m) => model.pnlMonth(m));
+  const current = model.currentMonth;
+  // Yıl toplamları (kartlar ve tablonun yıl sütunu) tek kuraldan: bu aya kadar, POS cirosu girilmiş aylar (yearTotals;
+  // Genel bakış, Claude ve Excel'in yıl sütunu da aynı). Bu ay sayılınca sonraki ayın açılış stoğu ay başlamadan onun
+  // gideri görünürdü (denetim E-16); cirosu girilmemiş ayın gideri de kâra girmez (NEW-02, inceleme B02-D4). Tablo o
+  // ayların sütunlarını yine gösterir
+  const indexes = (keep: (m: string) => boolean) => months.flatMap((m, i) => (keep(m) ? [i] : []));
+  const throughIdx = indexes((m) => m <= current);
+  const yt = yearTotals(model, year);
+  const countedIdx = indexes((m) => yt.counted.includes(m));
   // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
   const expected = await loadExpectedDebtsInYear(year).catch((e) => {
     console.error("[gelir-gider] faturası beklenen alımlar", e);
@@ -78,16 +88,18 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 
-  const totalOf = (key: string): number | null => {
+  const totalOf = (key: string, idx: number[] = countedIdx): number | null => {
+    const picked = idx.map((i) => calcs[i]);
     if (key.startsWith("ratio:")) {
       // Oranlar bütün cironun (ModPOS + laffogato.net online) payı
-      const rn = calcs.reduce((a, c) => a + (c.revenueTotalNet ?? 0), 0);
+      const rn = picked.reduce((a, c) => a + (c.revenueTotalNet ?? 0), 0);
       if (!rn) return null;
-      const num = key === "ratio:expenses" ? totalOf("total:expenses") : key === "ratio:profit" ? totalOf("profit") : totalOf(`total:${key.slice(6)}`);
+      const num =
+        key === "ratio:expenses" ? totalOf("total:expenses", idx) : key === "ratio:profit" ? totalOf("profit", idx) : totalOf(`total:${key.slice(6)}`, idx);
       return num === null ? null : num / rn;
     }
     if (NO_TOTAL.has(key)) return null;
-    const vals = calcs.map((c) => model.pnlValue(c, key).value);
+    const vals = picked.map((c) => model.pnlValue(c, key).value);
     if (vals.every((v) => v === null)) return null;
     return vals.reduce<number>((a, v) => a + (v ?? 0), 0);
   };
@@ -130,15 +142,13 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // Ay sütunu başlığındaki not (Satışlar'daki ay notuyla aynı alan) ve ayın gün sayısı (açık gün sınırı)
   const monthNotes = calcs.map((c) => c.info?.note ?? null);
   const dims = months.map(daysInMonth);
-  const activeMonths = months.filter((_, i) => calcs[i].revenue !== null || calcs[i].expenses !== 0 || openDays[i] !== null || calcs[i].site !== null);
-  // Ciro: ModPOS (KDV hariç) + laffogato.net online satışı (KDV hariç; çekilmemiş ayda yok)
-  const revenueNet = calcs.reduce((a, c) => a + (c.revenueTotalNet ?? 0), 0);
-  const online = calcs.reduce((a, c) => a + (c.site?.total ?? 0), 0);
-  const expenses = calcs.reduce((a, c) => a + c.expenses, 0);
-  const profit = revenueNet - expenses;
+  const activeMonths = months.filter(
+    (m, i) => m <= current && (calcs[i].revenue !== null || calcs[i].expenses !== 0 || openDays[i] !== null || calcs[i].site !== null),
+  );
+  // Ciro: ModPOS (KDV hariç) + laffogato.net online satışı (KDV hariç; çekilmemiş ayda yok); yalnız cirosu girilmiş aylar
+  const { revenueNet, online, expenses, profit } = yt;
 
   // laffogato.net online satışları kartı: yılın çekilmiş ayları, elle çekilebilecek aylar
-  const current = model.currentMonth;
   const siteCard: SiteSalesCardData = {
     configured: Boolean(siteLinkSecret()),
     lastPullAt: salesState.lastPullAt,
@@ -175,21 +185,37 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     serviceKdvRate: model.settings.kdvHizmet,
   };
 
-  // Yılın 12 ayı: kâr yeşil, zarar kırmızı, cirosu girilmemiş aktif ay sarı, boş ay gri; verisi olan son ay çerçeveli
+  // Yılın 12 ayı: kâr yeşil, zarar kırmızı, cirosu girilmemiş aktif ay sarı, boş ay ve bu aydan sonrası gri; verisi olan
+  // son ay çerçeveli. Kapanış sayımı olmayan ayda mal maliyeti tahmini (kapanış stoğu 0)
   const latestMonth = activeMonths[activeMonths.length - 1];
   const strip: StripMonth[] = months.map((m, i) => {
     const c = calcs[i];
     const name = MONTH_NAMES[i];
     const short = name.slice(0, 3);
     const last = m === latestMonth ? " (son ay)" : "";
-    if (!activeMonths.includes(m)) return { key: m, short, tone: "empty", label: `${name}: veri yok` };
-    if (c.revenue === null) return { key: m, short, tone: "warn", label: `${name}${last}: ciro girilmedi · giderler ${tl(c.expenses)}` };
-    return { key: m, short, tone: c.profit < 0 ? "bad" : "good", label: `${name}${last}: ${c.profit < 0 ? "zarar" : "kâr"} ${tl(c.profit)}` };
+    if (!activeMonths.includes(m)) return { key: m, short, tone: "empty", label: m > current ? `${name}: henüz başlamadı` : `${name}: veri yok` };
+    if (c.revenue === null) return { key: m, short, tone: "warn", label: `${name}${last}: ciro girilmedi · giderler ${tl(c.expenses)} (yıl kârına girmez)` };
+    const guess = yt.uncounted.includes(m) ? " · ay sayılmadı: mal maliyeti tahmini" : "";
+    return { key: m, short, tone: c.profit < 0 ? "bad" : "good", label: `${name}${last}: ${c.profit < 0 ? "zarar" : "kâr"} ${tl(c.profit)}${guess}` };
   });
-  const cogs = calcs.reduce((a, c) => a + c.cogs, 0);
+  const cogs = yt.cogs;
   const cogsRatio = revenueNet ? cogs / revenueNet : null;
-  // Kartların dökümü (karta dokununca): tablonun yıl toplamlarından, sunucuda
-  const breakdown = { ...yearBreakdowns(sections, calcs), revenue: revenueBreakdown(calcs, activeMonths) };
+  // Kartların dökümü (karta dokununca): tablonun yıl sütunuyla aynı aylardan (cirosu girilmiş, bu ay ya da öncesi), sunucuda
+  const breakdown = {
+    ...yearBreakdowns(
+      sections,
+      countedIdx.map((i) => calcs[i]),
+    ),
+    revenue: revenueBreakdown(
+      throughIdx.map((i) => calcs[i]),
+      activeMonths,
+    ),
+  };
+  // Yıl kartlarının notu: toplama girmeyen aylar ve sayımı olmayan aylar (tablo bu ayları yine gösterir)
+  const yearNotes = [
+    ...yt.missingRevenue.map(missingRevenueText),
+    ...(yt.uncounted.length ? [`${yt.uncounted.map((m) => monthLabel(m)).join(", ")}: ay sonu sayımı yok, mal maliyeti tahmini (kapanış stoğu 0 sayıldı)`] : []),
+  ];
 
   return (
     <>
@@ -214,7 +240,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
-          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Aya dokununca Satışlar'da o ay açılır.`}
+          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Yıl kartlarına bu aya kadar, POS cirosu girilmiş aylar girer (Genel bakış ve Claude da aynı kuralla). Aya dokununca Satışlar'da o ay açılır.`}
           groups={breakdown.revenue}
           total={revenueNet}
           totalLabel="Ciro (KDV hariç)"
@@ -225,7 +251,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
             icon={<Banknote />}
             label={`${year} ciro (KDV hariç)`}
             value={<CountUp value={revenueNet} />}
-            sub={online ? `${activeMonths.length} aktif ay · online ${tl(online)}` : `${activeMonths.length} aktif ay`}
+            sub={online ? `${yt.counted.length} ay · online ${tl(online)}` : `${yt.counted.length} ayın toplamı`}
           />
         </StatBreakdown>
         <StatBreakdown
@@ -245,7 +271,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         </StatBreakdown>
         <StatBreakdown
           title={`${year} kâr / zarar`}
-          description="Ciro (KDV hariç) − giderler, bölüm bölüm. Ayrıntısı Giderler kartında."
+          description={`Ciro (KDV hariç) − giderler, bölüm bölüm; bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay. Ayrıntısı Giderler kartında.${yearNotes.length ? ` ${yearNotes.join(". ")}.` : ""}`}
           groups={breakdown.profit}
           total={profit}
           totalLabel="Kâr / zarar"
@@ -278,6 +304,12 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           />
         </StatBreakdown>
       </div>
+      {/* Yıl kartlarına girmeyen aylar (tablo onları yine gösterir): cirosu girilmemiş ayın gideri, sayımı olmayan ay */}
+      {yearNotes.length ? (
+        <p className="-mt-3 mb-6 text-xs text-pretty text-ink-mute" role="note">
+          Yıl kartları bu aya kadar, POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yearNotes.join(" · ")}.
+        </p>
+      ) : null}
       <div className="mb-6">
         <SiteSalesCard data={siteCard} />
       </div>
@@ -297,6 +329,11 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         strip={strip}
         latestMonth={latestMonth}
         expectedDebts={expected}
+        yearNote={
+          yt.counted.length < activeMonths.length
+            ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }
+            : null
+        }
       />
     </>
   );

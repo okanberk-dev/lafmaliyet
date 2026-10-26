@@ -6,6 +6,7 @@ import { money } from "@/lib/format";
 import type { PriceSource } from "@/lib/prices/history";
 import { toMinor } from "@/lib/site-menu/slot";
 import { UserError } from "@/server/actions/util";
+import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { getDb, schema as s } from "@/server/db";
 import { applyPushed, pushSaleChange } from "@/server/site-menu/push";
 
@@ -38,7 +39,9 @@ export async function writeSalePrice(
     let final = desired;
     if (push.kind === "pushed") {
       final = await applyPushed(tx, push, before, desired, now);
-      await tx.update(s.products).set({ ...final, updatedAt: now }).where(eq(s.products.id, before.id));
+      // Site "Satışta" derse pasif ürün aktif olur: reçetesindeki pasif malzeme sayım listesine bu aydan girer
+      const written = final;
+      await withPassiveRelist(tx, [before.id], [], () => tx.update(s.products).set({ ...written, updatedAt: now }).where(eq(s.products.id, before.id)));
     } else {
       await tx.update(s.products).set({ price, updatedAt: now }).where(eq(s.products.id, before.id));
     }

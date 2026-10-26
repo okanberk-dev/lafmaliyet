@@ -60,10 +60,12 @@ import {
   countText,
   coverageSplit,
   draftConflicts,
+  EXTRAS_ANCHOR,
   extraKey,
   extrasBase,
   groupProgress,
   listTopScroll,
+  invoiceLayer,
   isFifoLine,
   layerText,
   lineAmount,
@@ -90,6 +92,8 @@ export interface FormLine extends CountLineValue {
   unitNow: string | null;
   /** Arşiv satırının nedeni: malzeme pasif ya da "Sayılmaz" yapıldı */
   archivedReason: "pasif" | "sayilmaz" | null;
+  /** Malzeme pasif ama aktif bir ürünün reçetesinde: tüketildiği için listede, sayılır */
+  passiveInUse?: boolean;
   /** Kayıtlı sayım bugünkü sayım biriminden farklı bir birimle girildi */
   unitChanged: boolean;
   prevQty: number | null;
@@ -705,11 +709,12 @@ export function StockCountForm({
     extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
   );
   const groupLive = new Map(live.groups.map((g) => [g.name, g]));
-  // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla
+  // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla (başlangıçtan
+  // önceki sayımdan taşınan açılış da)
   const fifoCovered = valuation?.fifo
     ? all.reduce((a, l) => {
         const v = l.archived ? l.qty : qtyOf(l);
-        return a + lineLayers(l, v).reduce((b, x) => b + (x.fallback ? 0 : x.qty * x.unitCost), 0);
+        return a + lineLayers(l, v).reduce((b, x) => b + (invoiceLayer(x) ? x.qty * x.unitCost : 0), 0);
       }, 0)
     : 0;
   const coveredShare = live.total > 0 ? Math.min(1, fifoCovered / live.total) : 0;
@@ -1628,14 +1633,26 @@ export function StockCountForm({
                   >
                     <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
                     <div className="min-w-0 flex-1">
-                      <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm leading-5 font-medium text-ink">
-                        <span className="min-w-0 break-words">{l.name}</span>
-                        {changed && !invalid ? (
-                          <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
-                            <span className="sr-only">(kaydedilmedi)</span>
+                      {/* Satır sarar: dar ekranda rozet adın altına iner, ad kelimenin ortasından bölünmez */}
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                        <label htmlFor={inputId} className="flex min-w-0 items-center gap-1.5 text-sm leading-5 font-medium text-ink">
+                          <span className="min-w-0 break-words">{l.name}</span>
+                          {changed && !invalid ? (
+                            <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
+                              <span className="sr-only">(kaydedilmedi)</span>
+                            </span>
+                          ) : null}
+                        </label>
+                        {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
+                            "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
+                        {l.passiveInUse && isAdmin ? (
+                          <span className="inline-flex shrink-0 items-center gap-1">
+                            <Badge tone="gray">Pasif · reçetede</Badge>
+                            <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
                           </span>
                         ) : null}
-                      </label>
+                      </div>
+                      {l.passiveInUse && !isAdmin ? <p className="mt-0.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın</p> : null}
                       {l.packageDesc ? (
                         <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
                           {l.packageDesc}
@@ -1768,7 +1785,7 @@ export function StockCountForm({
         </Card>
       ) : null}
 
-      <Card className="break-inside-avoid">
+      <Card id={EXTRAS_ANCHOR} className="break-inside-avoid scroll-mt-24">
         <CardHeader
           icon={<PackagePlus />}
           title="Listede olmayanlar"

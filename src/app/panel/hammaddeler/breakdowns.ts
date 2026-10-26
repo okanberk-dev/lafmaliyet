@@ -2,13 +2,17 @@ import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
 import type { WaterCost } from "@/lib/calc/engine";
 import type { Ingredient } from "@/lib/calc/types";
 import { money, monthLabel, num } from "@/lib/format";
+import { activeUses } from "@/lib/ingredient-usage";
 
 import { sortCategories } from "./categories";
+
+export { activeUses };
 
 /**
  * Hammaddeler'deki özet kartlarının dökümü (karta dokununca açılan pencere). Saf fonksiyonlar: sayfa sunucuda
  * zaten yüklediği satırlardan ve modelden kurar. Sayılar kartla aynı kuraldan: aktif malzemeler; tahmini =
- * `isEstimate`, reçetede yok = hiçbir ürün kartında geçmiyor (`usedIn` boş).
+ * `isEstimate`, reçetede yok = hiçbir aktif ürünün reçetesinde geçmiyor (activeUses 0; yalnız pasif ürünlerin
+ * kullandığı malzeme de "reçetede yok", denetim E-58).
  */
 
 /** Liste kartının çapası: dökümdeki bağlantı süzülmüş listeye kayar (telefonda liste kartların çok altında) */
@@ -22,8 +26,8 @@ export function listHref(filters: { durum?: "tahmini" | "kullanilmayan" | "pasif
 
 /** Dökümün kullandığı malzeme alanları (sayfadaki `IngredientRow` bunu karşılar) */
 export type DokumIngredient = Pick<Ingredient, "id" | "name" | "category" | "active" | "isEstimate" | "note" | "packagePrice" | "packageSize" | "unit" | "priceSource"> & {
-  /** Reçetesinde geçtiği ürün kartları (yalnızca sayısı kullanılır) */
-  usedIn: readonly unknown[];
+  /** Reçetesinde geçtiği ürün kartları, pasif ürünler dahil (`active` false) */
+  usedIn: readonly { active: boolean }[];
 };
 
 export interface IngredientBreakdowns {
@@ -63,7 +67,7 @@ export function ingredientBreakdowns(items: DokumIngredient[]): IngredientBreakd
   const categoryRow = (c: string): BreakdownRow => {
     const xs = active.filter((i) => i.category === c);
     const estimates = xs.filter((i) => i.isEstimate).length;
-    const unused = xs.filter((i) => !i.usedIn.length).length;
+    const unused = xs.filter((i) => !activeUses(i)).length;
     return {
       key: c,
       label: c,
@@ -90,12 +94,12 @@ export function ingredientBreakdowns(items: DokumIngredient[]): IngredientBreakd
     estimates: perIngredient(
       active.filter((i) => i.isEstimate),
       "tahmini",
-      (i) => parts([packageText(i), i.usedIn.length ? `${num(i.usedIn.length)} üründe` : "Reçetede yok", clip(i.note)]),
+      (i) => parts([packageText(i), activeUses(i) ? `${num(activeUses(i))} üründe` : "Reçetede yok", clip(i.note)]),
     ),
     unused: perIngredient(
-      active.filter((i) => !i.usedIn.length),
+      active.filter((i) => !activeUses(i)),
       "kullanilmayan",
-      (i) => parts([packageText(i), i.isEstimate ? "Tahmini fiyat" : null, clip(i.note)]),
+      (i) => parts([packageText(i), i.usedIn.length ? `yalnız ${num(i.usedIn.length)} pasif üründe` : null, i.isEstimate ? "Tahmini fiyat" : null, clip(i.note)]),
     ),
   };
 }

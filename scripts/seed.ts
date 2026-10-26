@@ -10,7 +10,7 @@
 // yedeği ev klasörüne yazar (laffogato-yedek-once-<sunucu>-….json.gz; yüklenen belgeler dahil, docs/YEDEK.md).
 
 import { homedir } from "node:os";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
@@ -130,6 +130,14 @@ export function resetCheck(
 export function cariResetBlock(entries: number, wipe: boolean, backupFile: string): string | null {
   if (!entries || wipe) return null;
   return `Cari hareketleri var (${entries} kayıt). db:reset onları siler, Kasa satırları kalır ve faturalar ödenmemiş geri gelir. Yedek alındı: ${backupFile}. Yine de silmek için: npm run db:reset -- --cari-sil`;
+}
+
+/** drizzle/*_sayim_yeni_kalemler.sql: sayım listesine sonradan eklenen sekiz kalem (tek ifade, korumalı) */
+export function countItemsSql(): string {
+  const dir = join(process.cwd(), "drizzle");
+  const file = readdirSync(dir).find((f) => f.endsWith("_sayim_yeni_kalemler.sql"));
+  if (!file) throw new Error("drizzle/*_sayim_yeni_kalemler.sql bulunamadı");
+  return readFileSync(join(dir, file), "utf8");
 }
 
 export interface SeedOptions {
@@ -287,10 +295,16 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
           ),
         );
       }
+      // Sayıma sonradan eklenen sekiz kalem (çilek, cookie, lemon tea, hazelnut şurubu; vanilya sos; yaban mersini ve
+      // böğürtlen püre; klips kapak): migration'ları boş veritabanında bir şey eklemez, Excel yüklendikten sonra aynı
+      // dosya burada çalışır ki taze ortam ve sıfırlanan veritabanı canlıyla aynı listeyi görsün (denetim E-29). Sayaçlar
+      // ileri alındıktan sonra; aynı ad varsa atlar. Reçeteler değişmez (hangi ürünün kullandığı sahibin cevabını bekliyor)
+      await tx.execute(sql.raw(countItemsSql()));
     });
 
+    const [{ total }] = await db.select({ total: count() }).from(s.ingredients);
     console.log(
-      `✓ Excel verisi yüklendi: ${ds.ingredients.length} hammadde, ${ds.products.length} ürün, ` +
+      `✓ Excel verisi yüklendi: ${ds.ingredients.length} hammadde (+${total - ds.ingredients.length} sayım kalemi), ${ds.products.length} ürün, ` +
         `${ds.recipeItems.length} reçete satırı, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
     );
     await ensureAdmin(db);

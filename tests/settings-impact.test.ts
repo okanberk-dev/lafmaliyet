@@ -148,8 +148,10 @@ test("hammadde formu: yazım farkı yakalanır, kategori rafı ve KDV önerilir,
   // Dialogdaki KDV alanı: "%20" → 0,2 (eskiden 0,002 kaydediliyordu)
   assert.equal(parsePercentInput("%20"), 0.2);
 
-  assert.equal(historyText({ counts: 0, purchases: 0, links: 0 }), null);
-  assert.equal(historyText({ counts: 2, purchases: 1, links: 0 }), "2 sayım, 1 alım miktarı");
+  assert.equal(historyText({ counts: 0, purchases: 0, links: 0, waste: 0 }), null);
+  assert.equal(historyText({ counts: 2, purchases: 1, links: 0, waste: 0 }), "2 sayım, 1 alım miktarı");
+  // Zayi / ikram kaydı da silmeyi engeller (denetim E-28)
+  assert.equal(historyText({ counts: 0, purchases: 0, links: 0, waste: 3 }), "3 zayi / ikram");
   assert.equal(countUnitHint("KG", "gr"), "Sayımda 1 KG = 1.000 gr");
   assert.equal(countUnitHint("DİLİM", "dilim"), "Sayımda 1 DİLİM = 1 dilim");
   assert.equal(countUnitHint("", "gr"), "Sayım listesinde görünmez");

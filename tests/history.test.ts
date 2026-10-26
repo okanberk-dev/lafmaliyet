@@ -382,8 +382,12 @@ test("Sayım çarpanı saklanır: pasif / Sayılmaz yapılan ya da birimi deği�
   assert.ok(sepBefore > 0);
   close(before.countInBaseUnit("2026-09", esp.id), 12500, "gram cinsinden sayım");
 
+  // Pasif malzeme aktif bir ürünün reçetesindeyse listede kalır (denetim E-04): pasif durumunda onu kullanan ürünler de emekli
+  const users = new Set(base.recipeItems.filter((r) => r.ingredientId === esp.id).map((r) => r.productId));
+  const retired = base.products.map((p) => (users.has(p.id) ? { ...p, active: false } : p));
   for (const change of [{ active: false }, { countUnit: null }, { countUnit: "ADET" as const }]) {
-    const after = createModel({ ...base, stockCounts: counts, ingredients: base.ingredients.map((i) => (i.id === esp.id ? { ...i, ...change } : i)) });
+    const products = "active" in change ? retired : base.products;
+    const after = createModel({ ...base, products, stockCounts: counts, ingredients: base.ingredients.map((i) => (i.id === esp.id ? { ...i, ...change } : i)) });
     close(after.stockSheet("2026-09").total, sepBefore, `Eylül stok ${JSON.stringify(change)}`);
     close(after.pnlMonth("2026-09").cogs, cogsBefore, `Eylül SMM ${JSON.stringify(change)}`);
     const line = after.stockSheet("2026-09").groups.flatMap((g) => g.lines).find((l) => l.ingredient.id === esp.id)!;

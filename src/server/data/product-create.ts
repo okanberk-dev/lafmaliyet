@@ -4,6 +4,7 @@ import { and, eq, max } from "drizzle-orm";
 
 import { categoryFireDefault } from "@/app/panel/urunler/logic";
 import { UserError } from "@/server/actions/util";
+import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { getDb, schema as s } from "@/server/db";
 import { recordPriceChange } from "@/server/prices/record";
 
@@ -55,10 +56,6 @@ export async function insertProduct(
     initial = { fireOverride: categoryFireDefault(peers), note: opts.note ?? null };
   }
   const [{ m }] = await tx.select({ m: max(s.products.sortOrder) }).from(s.products);
-  const [created] = await tx
-    .insert(s.products)
-    .values({ ...data, ...initial, sortOrder: (m ?? 0) + 1 })
-    .returning({ id: s.products.id });
   // Kopyada kaynağın satırları kendi sırasıyla; öneriden gelen satırlar yazıldığı sırayla
   const lines = copyFromId
     ? (await tx.select().from(s.recipeItems).where(eq(s.recipeItems.productId, copyFromId))).map((it) => ({
@@ -69,7 +66,20 @@ export async function insertProduct(
         sortOrder: it.sortOrder,
       }))
     : (opts.items ?? []).map((it, i) => ({ ...it, sortOrder: i + 1 }));
-  if (lines.length) await tx.insert(s.recipeItems).values(lines.map((l) => ({ ...l, productId: created.id })));
+  // Aktif yeni ürünün reçetesindeki pasif malzeme (kopyalanan ya da önerilen) sayım listesine bu aydan girer
+  const created = await withPassiveRelist(
+    tx,
+    [],
+    lines.map((l) => l.ingredientId),
+    async () => {
+      const [row] = await tx
+        .insert(s.products)
+        .values({ ...data, ...initial, sortOrder: (m ?? 0) + 1 })
+        .returning({ id: s.products.id });
+      if (lines.length) await tx.insert(s.recipeItems).values(lines.map((l) => ({ ...l, productId: row.id })));
+      return row;
+    },
+  );
   if (data.price > 0) await recordPriceChange(tx, { productId: created.id, before: null, after: data.price, source: "create", changedBy: opts.changedBy }, new Date(), { pos: false });
   return { id: created.id, lines: lines.length, fireOverride: initial.fireOverride, noteCopied: !!(copyFromId && initial.note) };
 }
