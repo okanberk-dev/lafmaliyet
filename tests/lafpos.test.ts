@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { parseNumberTR } from "../src/lib/calc/expr";
+import { DEFAULT_SETTINGS, settingsFromRows } from "../src/lib/constants";
 import { createPosMappingIndex } from "../src/lib/calc/pos-paste";
 import type { Product } from "../src/lib/calc/types";
 import { computeCash } from "../src/lib/cash-report";
@@ -18,8 +19,39 @@ import { sign, signedHeaders } from "../src/lib/karaoke/signature";
 import { posCostItems } from "../src/lib/lafpos/costs";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayZ } from "../src/lib/lafpos/day";
 import { LAFPOS_NO_COUNT_TEXT, lafposPrefill, lafposSummary } from "../src/lib/lafpos/prefill";
-import { checkLafposRequest, lafposSecretFrom } from "../src/lib/lafpos/request";
+import { checkLafposRequest, lafposSecretFrom, lafposSecretProblem } from "../src/lib/lafpos/request";
+import {
+  clearedText,
+  dayRejectionStatus,
+  isDayRejection,
+  isFreshRejection,
+  isUnverifiedAfterOk,
+  LAFPOS_RESEND_HINT,
+  lafposCardSummary,
+  MAX_DAY_REJECTIONS,
+  missingLafposDays,
+  parseLafposState,
+  peekPosDay,
+  rejectionText,
+  unverifiedText,
+  withDayRejection,
+  type LafposCardInput,
+  type LafposRejection,
+} from "../src/lib/lafpos/status";
+import {
+  dayMonthYearTR,
+  daysUntilText,
+  isLafposDay,
+  kasaName,
+  LAFPOS_SWITCH_EFFECTS,
+  LAFPOS_SWITCH_MIN,
+  monthSource,
+  readSwitchDay,
+  switchAffectedMonths,
+  switchDayProblem,
+} from "../src/lib/lafpos/switch";
 import { prefillPlan, type CashPrefill } from "../src/lib/photo-read/kasa";
+import { addDays } from "../src/lib/reminders";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -408,9 +440,11 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   assert.match(form, /field\("cashIn", "Gün içinde kasaya giren", \{ hint: "Satış dışı: bozuk para, tahsilat, nakit bahşiş"/);
   assert.match(form, /Kasaya giren ekle/);
   assert.match(form, /cashIn: report\.cashIn \? input\(report\.cashIn\) : ""/, "kayıtlı raporun gireni alanı açar");
-  // Sayfa: yalnız formun günü için, okunamazsa form yine açılır
+  // Sayfa: yalnız formun günü için ve yalnız geçiş gününden sonraki günlerde (loadKasaLafposDay); okunamazsa form yine
+  // açılır. Geçiş gününe bakmayan okuyucu sayfada çağrılmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /showForm \? loadLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.match(page, /showForm \? loadKasaLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.doesNotMatch(page, /\bloadLafposDay\(/);
   assert.match(page, /lafpos=\{lafposDay\}/);
 });
 
@@ -450,10 +484,17 @@ test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; mal
 
 test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; maliyet ucu yalnız imzayla", () => {
   const gun = read("src/app/api/pos/gun/route.ts");
-  const order = ["await connection()", "lafposSecret()", "content-length", "request.text()", "receivePosDay("];
+  const order = ["await connection()", "lafposSecret()", "content-length", "request.text()", "handlePosDay("];
   const at = order.map((s) => gun.indexOf(s));
   assert.ok(at.every((i, k) => i > 0 && (k === 0 || i > at[k - 1])), `sıra: ${order.join(" → ")}`);
   assert.match(gun, /"Cache-Control": "no-store"/);
+  // Uç gün sonunu durum kaydından geçirir (src/server/lafpos/status.ts): o da denetimi ve yazımı receivePosDay'e bırakır;
+  // anahtar yokken (503) durum satırına hiçbir şey yazılmaz
+  assert.ok(gun.indexOf("if (!secret) return") < gun.indexOf("noteUnverified("), "anahtar yokken sayaç da yazılmaz");
+  const status = read("src/server/lafpos/status.ts");
+  const handle = status.slice(status.indexOf("export async function handlePosDay"));
+  assert.match(handle, /r = await receivePosDay\(db, input, now\);/);
+  assert.match(handle, /if \(r\.status === 503\) return r;/);
   const ingest = read("src/server/lafpos/ingest.ts");
   const receive = ingest.slice(ingest.indexOf("export async function receivePosDay"));
   assert.ok(receive.indexOf("checkLafposRequest(") < receive.indexOf("parsePosDay(") && receive.indexOf("parsePosDay(") < receive.indexOf("storePosDay("));
@@ -480,4 +521,341 @@ test("kurulum: .env.example'da LAFPOS_SYNC_SECRET, belgeler bağlantılı", () =
   for (const s of ["/api/pos/gun", "/api/panel/pos/urunler", "LAFPOS_SYNC_SECRET", "pos_daily_sales", "pos_day_reports", "loadDailyProductSales", "LafPOS'tan doldur"]) assert.ok(doc.includes(s), s);
   assert.match(read("docs/KASA-RAPORU.md"), /\[LAFPOS\.md\]\(LAFPOS\.md\)/);
   assert.match(read("docs/planlar/CRITIQUE2.md"), /docs\/LAFPOS\.md/);
+});
+
+// ---------------------------------------------------------------- Geçiş günü, durum ve onarım (denetim B07)
+
+test("geçiş günü: kayıtlı değerin okunması (settingsFromRows); boş, bozuk ya da 1 Ekim 2026'dan önce null = ModPOS", () => {
+  assert.equal(DEFAULT_SETTINGS.lafposGecisGunu, null, "varsayılan kapalı: kasa ModPOS");
+  assert.equal(settingsFromRows([]).lafposGecisGunu, null);
+  const read1 = (value: unknown) => settingsFromRows([{ key: "lafposGecisGunu", value }]).lafposGecisGunu;
+  assert.equal(read1("2026-11-10"), "2026-11-10");
+  assert.equal(read1(LAFPOS_SWITCH_MIN), LAFPOS_SWITCH_MIN);
+  for (const bad of ["2026-09-30", "2026-02-30", "2026-11", "10.11.2026", "", 20261110, null, true, { day: "2026-11-10" }]) assert.equal(read1(bad), null, String(bad));
+  // Öteki ayarlar etkilenmez
+  assert.equal(settingsFromRows([{ key: "lafposGecisGunu", value: "bozuk" }]).stokFifoBaslangic, DEFAULT_SETTINGS.stokFifoBaslangic);
+  assert.equal(readSwitchDay("2026-11-10"), "2026-11-10");
+});
+
+test("geçiş günü: kaydederken takvimde olan gün, 1 Ekim 2026'dan önce değil, en çok 90 gün ileride", () => {
+  const today = "2026-10-26";
+  assert.equal(switchDayProblem("2026-11-01", today), null);
+  assert.equal(switchDayProblem("2026-10-01", today), null, "geçmiş gün olabilir (ModPOS'la girilmiş günler yeniden okunur)");
+  assert.equal(switchDayProblem("2027-01-24", today), null, "tam 90 gün");
+  assert.match(switchDayProblem("2027-01-25", today) ?? "", /en çok 90 gün ileride/);
+  assert.match(switchDayProblem("2026-09-30", today) ?? "", /en erken 1\u00a0Ekim 2026/);
+  assert.match(switchDayProblem("2026-02-30", today) ?? "", /Geçerli bir gün/);
+  assert.match(switchDayProblem("kasım", today) ?? "", /Geçerli bir gün/);
+});
+
+test("geçiş günü: gün ve ayın kaynağı; boşken her gün ModPOS", () => {
+  const S = "2026-11-10";
+  assert.equal(isLafposDay("2026-11-10", S), true);
+  assert.equal(isLafposDay("2026-11-09", S), false);
+  assert.equal(isLafposDay("2026-12-01", S), true);
+  assert.equal(isLafposDay("2030-01-01", null), false, "geçiş günü yokken hiçbir gün LafPOS değil");
+  assert.equal(kasaName("2026-11-09", S), "ModPOS");
+  assert.equal(kasaName("2026-11-10", S), "LafPOS");
+  assert.equal(kasaName("2026-11-10", null), "ModPOS");
+  assert.equal(monthSource("2026-10", S), "modpos");
+  assert.equal(monthSource("2026-11", S), "gecis");
+  assert.equal(monthSource("2026-12", S), "lafpos");
+  assert.equal(monthSource("2026-11", "2026-11-01"), "lafpos", "ayın 1'i: ay bölünmez");
+  assert.equal(monthSource("2026-10", "2026-11-01"), "modpos");
+  assert.equal(monthSource("2027-05", null), "modpos");
+  // Ayın kaynağı günlerinkiyle tutarlı: "modpos" hiç LafPOS günü yok, "lafpos" hepsi, "gecis" ikisi de var
+  for (const S2 of ["2026-10-01", "2026-11-10", "2026-12-31", null]) {
+    for (const m of ["2026-10", "2026-11", "2026-12", "2027-01"]) {
+      const days: string[] = [];
+      for (let d = `${m}-01`; d.startsWith(m); d = addDays(d, 1)) days.push(d);
+      const laf = days.filter((d) => isLafposDay(d, S2)).length;
+      const expected = laf === 0 ? "modpos" : laf === days.length ? "lafpos" : "gecis";
+      assert.equal(monthSource(m, S2), expected, `${S2} ${m}`);
+    }
+  }
+});
+
+test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bugüne kadar", () => {
+  const today = "2026-12-05";
+  assert.deepEqual(switchAffectedMonths(null, "2026-11-10", today), ["2026-11", "2026-12"]);
+  assert.deepEqual(switchAffectedMonths("2026-11-10", null, today), ["2026-11", "2026-12"]);
+  assert.deepEqual(switchAffectedMonths("2026-11-10", "2026-11-20", today), ["2026-11"], "10-19 Kasım değişir");
+  assert.deepEqual(switchAffectedMonths("2026-12-01", "2026-10-15", today), ["2026-10", "2026-11"]);
+  assert.deepEqual(switchAffectedMonths(null, "2026-12-20", today), [], "gün ileride: geçmiş değişmez");
+  assert.deepEqual(switchAffectedMonths("2026-11-10", "2026-11-10", today), []);
+  assert.deepEqual(switchAffectedMonths(null, null, today), []);
+  assert.equal(daysUntilText("2026-12-06", today), "yarın");
+  assert.equal(daysUntilText("2026-12-09", today), "4 gün sonra");
+  assert.equal(daysUntilText(today, today), null);
+  assert.equal(dayMonthYearTR("2026-11-10"), "10 Kasım 2026");
+  // Onay penceresi kodun bugün yaptığından fazlasını söylemez: B07'de yalnız Kasa bandı ve deneme günleri
+  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 2);
+  assert.match(LAFPOS_SWITCH_EFFECTS[0], /Kasa raporunda/);
+});
+
+test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECRET bağlantıyı açmaz; nedeni söylenir", () => {
+  assert.equal(lafposSecretProblem({}), "missing");
+  assert.equal(lafposSecretProblem({ LAFPOS_SYNC_SECRET: "x".repeat(31) }), "short");
+  assert.equal(lafposSecretProblem({ LAFPOS_SYNC_SECRET: SECRET, KARAOKE_SYNC_SECRET: SECRET }), "same_as_site");
+  assert.equal(lafposSecretProblem({ LAFPOS_SYNC_SECRET: ` ${SECRET} `, KARAOKE_SYNC_SECRET: SECRET }), "same_as_site", "boşluk farkı ayrı anahtar sayılmaz");
+  assert.equal(lafposSecretFrom({ LAFPOS_SYNC_SECRET: SECRET, KARAOKE_SYNC_SECRET: SECRET }), null);
+  assert.equal(lafposSecretProblem({ LAFPOS_SYNC_SECRET: SECRET, KARAOKE_SYNC_SECRET: `${SECRET}-site` }), null);
+  assert.equal(lafposSecretFrom({ LAFPOS_SYNC_SECRET: SECRET, KARAOKE_SYNC_SECRET: `${SECRET}-site` }), SECRET);
+});
+
+test("altın gövde: LafPOS'un buildDayPayload biçimi (iki boy, ekler, hizmet, ikram, ödeme kanalları, cashIn) sözleşmeye uyar", () => {
+  // tests/fixtures/lafpos-gun.golden.json: LafPOS server/sync/lafmaliyet.ts › buildDayPayload'ın alan sırası ve
+  // biçimi (main 58856f9). LafPOS'un L1 partisi kendi tohumlanmış gününden aynı adlı dosyayı üretince bayt bayt
+  // buraya kopyalanır; şema kayması üretimde kalıcı 400 olurdu, burada test kırılır.
+  const raw = read("tests/fixtures/lafpos-gun.golden.json");
+  const r = parsePosDay(raw, NOW);
+  assert.ok(r.ok, r.ok ? "" : r.field);
+  assert.equal(r.data.date, "2026-10-25");
+  assert.equal(r.data.lines.length, 7);
+  assert.deepEqual(
+    r.data.lines.map((l) => [l.posName, l.siteMenuId, l.slot, l.isService]),
+    [
+      ["LATTE MEDIUM", "mnu-0003", "M", false],
+      ["KARAOKE ODASI", null, null, true],
+      ["LATTE LARGE", "mnu-0003", "L", false],
+      ["TÜRK KAHVESİ", null, null, false],
+      ["EXTRA SHOT", "mnu-0081", "M", false],
+      ["SYRUP", "mnu-0080", "M", false],
+      ["ALTERNATIF SÜT", "mnu-0082", "M", false],
+    ],
+  );
+  assert.equal(r.data.z.cashIn, 1000);
+  assert.equal(r.data.z.expectedCash, 8170);
+  assert.equal(r.data.ikram[1].reason, null, "boş neden null");
+  assert.deepEqual(r.data.payments.map((p) => p.channel), [null, null, "pluxee", null]);
+  // Z toplamı ödeme alanlarının toplamı, beklenen nakit LafPOS'un formülüyle (kasa eşlemesi aynısını hesaplar)
+  const z = r.data.z;
+  assert.equal(Math.round((z.cash + z.card + z.mealCard + z.online + z.other) * 100) / 100, z.zTotal);
+  const prefill = lafposPrefill(z);
+  assert.deepEqual(prefill.checks, [], "panelin olması gerekeni LafPOS'unkiyle aynı");
+});
+
+test("durum: kayıtlı değer parça parça okunur (bozuk parça yok sayılır); gövdeden gün ve Z", () => {
+  assert.deepEqual(parseLafposState(undefined), { lastOk: null, lastError: null, rejections: {}, unverified: null });
+  assert.deepEqual(parseLafposState("bozuk"), { lastOk: null, lastError: null, rejections: {}, unverified: null });
+  const conflict = { at: "2026-10-26T00:20:00.000Z", status: 409, error: "z_conflict", date: "2026-10-25", zNo: 14 };
+  const s = parseLafposState({
+    lastOk: { at: "2026-10-26T00:10:00.000Z", date: "2026-10-25", zNo: 14, lines: 42, counted: false },
+    lastError: conflict,
+    rejections: { "2026-10-25": conflict, "25.10.2026": conflict, "2026-10-24": { status: "?" } },
+    unverified: { count: "çok" },
+  });
+  assert.equal(s.lastOk?.zNo, 14);
+  assert.deepEqual(s.lastError, { at: "2026-10-26T00:20:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-10-25", zNo: 14, sentZNo: null, clearedAt: null });
+  assert.deepEqual(Object.keys(s.rejections), ["2026-10-25"], "bozuk anahtar ve bozuk kayıt düşer");
+  assert.deepEqual(s.rejections["2026-10-25"], s.lastError);
+  assert.equal(s.unverified, null);
+  assert.deepEqual(peekPosDay(JSON.stringify(sample())), { date: "2026-10-26", zNo: 128 });
+  assert.deepEqual(peekPosDay("{bozuk"), { date: null, zNo: null });
+  assert.deepEqual(peekPosDay(JSON.stringify({ date: "26.10.2026", z: { zNo: "128" } })), { date: null, zNo: null });
+});
+
+test("durum: son retin metni (409'da iki Z ve çözüm, 400'de alan, 500'de yeniden deneme); imzası tutmayanlar", () => {
+  const base = { at: "2026-10-26T00:20:00.000Z", field: null, date: "2026-10-25", zNo: null, sentZNo: null, clearedAt: null };
+  const conflict = rejectionText({ ...base, status: 409, error: "z_conflict", zNo: 127, sentZNo: 128 }, "2026-10-26");
+  assert.match(conflict, /25\u00a0Ekim için panelde Z 127 kayıtlı; LafPOS Z 128 gönderdi, hiçbir şey yazılmadı/);
+  // LafPOS 409 ve 400'ü kendisi yeniden denemez: metin elle gönderimin yolunu söyler, "yeniden gönderince yazılır" demez
+  assert.match(conflict, /bu günün kaydını silin, sonra LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın \(LafPOS reddedilen günü kendisi yeniden denemez\)/);
+  assert.doesNotMatch(conflict, /yeniden gönderince yazılır/);
+  const invalid = rejectionText({ ...base, status: 400, error: "invalid", field: "lines.3.qty" }, "2026-10-26");
+  assert.match(invalid, /ilk sorunlu alan lines\.3\.qty/);
+  assert.match(invalid, /Düzeltilince LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın/);
+  assert.match(rejectionText({ ...base, status: 500, error: "server_error" }, "2026-10-26"), /LafPOS kendisi yeniden dener/);
+  assert.match(rejectionText({ ...base, date: "2025-12-31", status: 409, error: "z_conflict", zNo: 1 }, "2026-10-26"), /31 Aralık 2025/, "başka yılın günü yılıyla");
+  assert.match(LAFPOS_RESEND_HINT, /kendisi yeniden göndermez: LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın\.$/);
+  const cleared = clearedText({ ...base, status: 409, error: "z_conflict", zNo: 127, clearedAt: "2026-10-26T09:00:00.000Z" }, "2026-10-26");
+  assert.match(cleared, /^25\u00a0Ekim kaydı 26\.10\.2026 12:00 silindi\. LafPOS reddedilen ya da silinen günü kendisi yeniden göndermez/);
+  assert.match(clearedText({ ...base, status: 409, error: "z_conflict", zNo: 127 }, "2026-10-26"), /^25\u00a0Ekim kaydı panelde yok\./);
+  // İmzası doğrulanamayan istek suçlamaz (yabancı bir istek de olabilir)
+  const unsigned = unverifiedText({ count: 3, lastAt: "2026-10-26T00:20:00.000Z", lastStatus: 401 });
+  assert.match(unsigned, /^İmzası doğrulanamayan istek geldi; LafPOS'tansa anahtarı ve kafedeki saati \(±5 dk\) denetleyin\. Son .*en az 3 kez\.$/);
+  assert.match(unverifiedText({ count: 1, lastAt: "2026-10-26T00:20:00.000Z", lastStatus: 413 }), /256 KB/);
+});
+
+test("durum: günlü retler güne göre (en çok MAX_DAY_REJECTIONS, en eskisi düşer); günün kaydına göre açık / silindi / çözüldü", () => {
+  const rej = (date: string, at: string, o: Partial<LafposRejection> = {}) =>
+    ({ at, status: 409, error: "z_conflict", field: null, date, zNo: 127, sentZNo: 128, clearedAt: null, ...o }) as LafposRejection & { date: string };
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z")), true);
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z", { status: 400, error: "invalid" })), true);
+  assert.equal(isDayRejection({ ...rej("2026-11-07", "2026-11-07T22:00:00.000Z"), date: null }), false, "gövdesi okunamayan 400");
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z", { status: 500, error: "server_error" })), false, "500 LafPOS'un kendi yeniden denemesi");
+
+  // Aynı günün yenisi eskisinin yerine; tavanı aşınca en eski anlı düşer
+  let map = withDayRejection({}, rej("2026-11-07", "2026-11-07T22:00:00.000Z"));
+  map = withDayRejection(map, rej("2026-11-07", "2026-11-07T23:00:00.000Z", { status: 400, error: "invalid", field: "lines.0.qty" }));
+  assert.deepEqual(Object.keys(map), ["2026-11-07"]);
+  assert.equal(map["2026-11-07"].field, "lines.0.qty");
+  for (let i = 1; i <= MAX_DAY_REJECTIONS; i++) map = withDayRejection(map, rej(`2026-10-${String(i).padStart(2, "0")}`, `2026-11-08T00:${String(i).padStart(2, "0")}:00.000Z`));
+  assert.equal(Object.keys(map).length, MAX_DAY_REJECTIONS);
+  assert.equal(map["2026-11-07"], undefined, "en eski anlı ret düştü");
+  assert.ok(map["2026-10-10"]);
+
+  // Günün paneldeki kaydına göre
+  const e = rej("2026-11-07", "2026-11-07T22:00:00.000Z");
+  const old = { zNo: 127, lines: 40, receivedAt: "2026-11-07T21:00:00.000Z" };
+  assert.equal(dayRejectionStatus(e, old), "open", "panelde eski Z duruyor");
+  assert.equal(dayRejectionStatus(e, { ...old, receivedAt: "2026-11-08T09:00:00.000Z" }), "resolved", "gün retten sonra yeniden yazıldı");
+  assert.equal(dayRejectionStatus({ ...e, clearedAt: "2026-11-08T10:00:00.000Z" }, null), "cleared", "silindi, Gönder bekleniyor");
+  assert.equal(dayRejectionStatus(e, null), "cleared", "409'un günü panelde yok: gönderilince yazılır");
+  assert.equal(dayRejectionStatus({ ...e, clearedAt: "2026-11-08T10:00:00.000Z" }, { ...old, receivedAt: "2026-11-08T11:00:00.000Z" }), "resolved", "silindikten sonra geldi");
+  const bad = rej("2026-11-09", "2026-11-09T22:00:00.000Z", { status: 400, error: "invalid", zNo: null, sentZNo: null });
+  assert.equal(dayRejectionStatus(bad, null), "open", "400'ün günü hiç gelmedi: açık");
+});
+
+test("Ayarlar kartı: sakin durumlar (kurulmadı / bağlı, deneme / geçiş bekliyor / kasa LafPOS); kırmızı yalnız iki durumda", () => {
+  const today = "2026-11-12";
+  const none = { lastOk: null, lastError: null, rejections: {}, unverified: null };
+  const base: LafposCardInput = { secretProblem: null, switchDay: null, today, state: none, lastDay: null, totalDays: 0, trialDays: 0, missing: [], rejectionDays: {} };
+  const lastDay = { date: "2026-11-11", zNo: 22, receivedAt: "2026-11-11T22:40:00.000Z" };
+
+  // Bugünkü canlı: anahtar yok, geçiş günü yok → hata değil
+  const off = lafposCardSummary({ ...base, secretProblem: "missing" });
+  assert.deepEqual([off.tone, off.badge, off.headline, off.alerts], ["gray", "Kurulmadı", "Henüz kurulmadı · kasada ModPOS kullanılıyor.", 0]);
+  assert.deepEqual(off.lines, []);
+  assert.equal(off.short, off.headline);
+  const same = lafposCardSummary({ ...base, secretProblem: "same_as_site", totalDays: 2 });
+  assert.equal(same.tone, "amber");
+  assert.match(same.lines.join(" "), /sitenin anahtarıyla \(KARAOKE_SYNC_SECRET\) aynı: bağlantı kapalı/);
+  assert.match(same.lines.join(" "), /Daha önce gelen 2 gün saklanıyor, hiçbir hesaba girmiyor/);
+  // Geçiş günü seçili ama anahtar yok: kırmızı
+  const broken = lafposCardSummary({ ...base, secretProblem: "missing", switchDay: "2026-11-10" });
+  assert.deepEqual([broken.tone, broken.badge], ["red", "Bağlantı kapalı"]);
+  assert.match(broken.headline, /Geçiş günü seçili \(10 Kasım 2026\) ama LAFPOS_SYNC_SECRET yok: LafPOS günleri gelemez/);
+
+  // Bağlı, geçiş günü yok
+  const fresh = lafposCardSummary(base);
+  assert.deepEqual([fresh.tone, fresh.badge], ["green", "Bağlı"]);
+  assert.match(fresh.headline, /henüz gün sonu gelmedi\. Kasa ModPOS/);
+  const trial = lafposCardSummary({ ...base, lastDay, totalDays: 3, trialDays: 3 });
+  assert.match(trial.headline, /LafPOS günleri saklanıyor, hesaplara girmiyor/);
+  assert.match(trial.lines[0], /^Son gün sonu 11 Kasım \(Z 22\), alındı 12\.11\.2026 01:40\.$/);
+  assert.equal(trial.lines[1], "3 deneme günü (sayılmıyor).");
+
+  // Geçiş günü ileride
+  const soon = lafposCardSummary({ ...base, switchDay: "2026-11-16", lastDay, totalDays: 3, trialDays: 3 });
+  assert.deepEqual([soon.tone, soon.badge], ["blue", "Geçiş bekliyor"]);
+  assert.equal(soon.headline, "Geçiş günü 16 Kasım 2026 (4 gün sonra). O güne kadar kasa ModPOS.");
+
+  // Kasa LafPOS
+  const live = lafposCardSummary({ ...base, switchDay: "2026-11-10", lastDay, totalDays: 4, trialDays: 2 });
+  assert.deepEqual([live.tone, live.badge, live.headline], ["green", "LafPOS", "Kasa LafPOS (10 Kasım'dan beri)."]);
+  assert.match(live.lines.join(" "), /Son gün sonu 11 Kasım \(Z 22\)/);
+  assert.match(live.lines.join(" "), /Geçiş gününden önceki 2 gün deneme/);
+  // Geçişten beri hiç gün gelmedi (son gün denemeydi): turuncu
+  const silent = lafposCardSummary({ ...base, switchDay: "2026-11-10", lastDay: { ...lastDay, date: "2026-11-05" }, totalDays: 1, trialDays: 1 });
+  assert.equal(silent.tone, "amber");
+  assert.match(silent.lines.join(" "), /Geçiş gününden beri henüz gün sonu gelmedi/);
+  assert.doesNotMatch(silent.lines.join(" "), /Son gün sonu/, "deneme günü son gün sonu diye gösterilmez");
+  // Gelmeyen günler: turuncu, en çok altısı yazılır
+  const gaps = lafposCardSummary({ ...base, switchDay: "2026-11-01", lastDay, missing: ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"] });
+  assert.equal(gaps.tone, "amber");
+  assert.match(
+    gaps.lines.join(" "),
+    /Gün sonu gelmeyen 7 gün: 3 Kasım, .* 8 Kasım ve 1 gün daha\. LafPOS'ta Yönetim › Entegrasyon'daki giden kutusuna bakın; reddedilen gün Kasa › Geçmiş günler › Z raporu › Gönder ile yeniden gider\./,
+  );
+
+  // Güne bağlanamayan ret (500): son başarılı gönderimden sonraysa kırmızı; rozet bağlantıyı söylemeye devam eder,
+  // telefonda kapalı özetin başına yazılır
+  const ok = { at: "2026-11-11T22:40:00.000Z", date: "2026-11-11", zNo: 22, lines: 40, counted: true };
+  const server = { at: "2026-11-11T23:00:00.000Z", status: 500, error: "server_error", field: null, date: "2026-11-11", zNo: null, sentZNo: 22, clearedAt: null };
+  const failed = lafposCardSummary({ ...base, switchDay: "2026-11-10", lastDay, state: { ...none, lastOk: ok, lastError: server } });
+  assert.deepEqual([failed.badge, failed.alerts, failed.undated?.fresh, failed.dayRejections], ["LafPOS", 1, true, []]);
+  assert.match(failed.short, /^Son gönderim reddedildi · Kasa LafPOS/);
+  assert.equal(isFreshRejection(server, { ...ok, at: "2026-11-11T23:30:00.000Z" }), false, "sonra başarılı gönderim geldi (LafPOS 500'ü kendisi yeniden dener)");
+  assert.equal(isFreshRejection(server, null), true);
+  const recovered = lafposCardSummary({ ...base, state: { ...none, lastOk: { ...ok, at: "2026-11-11T23:30:00.000Z" }, lastError: server } });
+  assert.deepEqual([recovered.alerts, recovered.undated?.fresh, recovered.short], [0, false, recovered.headline], "önceki ret gri, özet sakin");
+
+  // Günlü 409: sonraki günün başarılı gönderimi ve başka bir günün reddi onu örtmez; açık kalır, silme düğmesinin günü
+  // (paneldeki eski Z) kartta; en yeni gün önce
+  const c409 = { at: "2026-11-07T23:00:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-11-07", zNo: 127, sentZNo: 128, clearedAt: null };
+  const e400 = { at: "2026-11-09T23:00:00.000Z", status: 400, error: "invalid", field: "lines.0.qty", date: "2026-11-09", zNo: null, sentZNo: 129, clearedAt: null };
+  const panel7 = { zNo: 127, lines: 40, receivedAt: "2026-11-07T22:00:00.000Z" };
+  const later200 = { ...ok, at: "2026-11-08T23:00:00.000Z", date: "2026-11-08" };
+  const one = lafposCardSummary({ ...base, lastDay, state: { ...none, lastOk: later200, lastError: c409, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": panel7 } });
+  assert.deepEqual(
+    one.dayRejections.map((x) => [x.rejection.date, x.status, x.day?.zNo]),
+    [["2026-11-07", "open", 127]],
+  );
+  assert.equal(one.undated, null, "günlü ret güne bağlanamayan ret kutusunda tekrar edilmez");
+  assert.equal(one.alerts, 1);
+  assert.match(one.short, /^7\u00a0Kasım gönderimi reddedildi · Bağlı/);
+  const two = lafposCardSummary({
+    ...base,
+    state: { ...none, lastOk: later200, lastError: e400, rejections: { "2026-11-07": c409, "2026-11-09": e400 } },
+    rejectionDays: { "2026-11-07": panel7 },
+  });
+  assert.deepEqual(
+    two.dayRejections.map((x) => [x.rejection.date, x.status]),
+    [
+      ["2026-11-09", "open"],
+      ["2026-11-07", "open"],
+    ],
+  );
+  assert.match(two.short, /^2 gönderim reddedildi · /);
+  // LafPOS panelin Z'sini yeniden gönderdi (200, gün retten sonra yazıldı): çözüldü, kartta yok
+  const fixed = lafposCardSummary({ ...base, state: { ...none, lastOk: later200, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": { ...panel7, receivedAt: "2026-11-08T08:00:00.000Z" } } });
+  assert.deepEqual([fixed.dayRejections, fixed.alerts, fixed.short], [[], 0, fixed.headline]);
+  // Yönetici sildi: kırmızı değil, LafPOS'tan Gönder bekleniyor (turuncu, özette)
+  const waiting = lafposCardSummary({ ...base, state: { ...none, rejections: { "2026-11-07": { ...c409, clearedAt: "2026-11-08T09:00:00.000Z" } } } });
+  assert.deepEqual(
+    waiting.dayRejections.map((x) => [x.rejection.date, x.status]),
+    [["2026-11-07", "cleared"]],
+  );
+  assert.equal(waiting.alerts, 0);
+  assert.match(waiting.short, /^7\u00a0Kasım için LafPOS'tan Gönder bekleniyor · Bağlı/);
+  // Anahtar yokken retler kırmızı yapmaz, özete girmez
+  const closed = lafposCardSummary({ ...base, secretProblem: "missing", state: { ...none, lastError: server, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": panel7 } });
+  assert.deepEqual([closed.alerts, closed.short], [0, closed.headline]);
+});
+
+test("Ayarlar kartı: imzası doğrulanamayan istek, sonra başarılı gönderim geldiyse uyarı değil", () => {
+  const ok = { at: "2026-11-11T22:40:00.000Z", date: "2026-11-11", zNo: 22, lines: 40, counted: true };
+  const u = { count: 1, lastAt: "2026-11-11T22:30:00.000Z", lastStatus: 401 };
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: u }), false);
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: { ...u, lastAt: "2026-11-11T22:50:00.000Z" } }), true);
+  assert.equal(isUnverifiedAfterOk({ lastOk: null, lastError: null, rejections: {}, unverified: u }), true, "hiç başarılı gönderim yok");
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: null }), false);
+});
+
+test("Ayarlar kartı: gelmeyen günler geçiş gününden düne, onaylı kapalı günler hariç, en çok son 60 gün", () => {
+  assert.deepEqual(missingLafposDays(null, "2026-11-12", [], []), []);
+  assert.deepEqual(missingLafposDays("2026-11-12", "2026-11-12", [], []), [], "bugün sayılmaz (gün sonu henüz alınmamış olabilir)");
+  assert.deepEqual(missingLafposDays("2026-11-20", "2026-11-12", [], []), [], "geçiş günü ileride");
+  assert.deepEqual(missingLafposDays("2026-11-08", "2026-11-12", ["2026-11-08", "2026-11-10"], ["2026-11-09"]), ["2026-11-11"]);
+  const long = missingLafposDays("2026-01-01", "2026-11-12", [], []);
+  assert.equal(long.length, 60);
+  assert.equal(long[long.length - 1], "2026-11-11");
+});
+
+test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gün sonunun kilidi altında; ayar FIFO gibi", () => {
+  const actions = read("src/server/actions/lafpos.ts");
+  assert.match(actions, /^"use server";/);
+  const exported = [...actions.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
+  assert.deepEqual(exported, ["saveLafposSwitchDay", "deleteLafposDay"], "dosyada yardımcı dışa aktarım yok (her biri bir POST ucu)");
+  for (const name of exported) {
+    const body = actions.slice(actions.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
+    assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireAdmin\(\);/, `${name}: önce yönetici oturumu`);
+  }
+  const del = actions.slice(actions.indexOf("export async function deleteLafposDay"));
+  assert.ok(del.indexOf('requireStepUp(me, confirm, `LafPOS günü silme: ${data.date}`, "LafPOS")') > 0, "parola onayı, yeri LafPOS");
+  assert.ok(del.indexOf("requireStepUp(") < del.indexOf("removeLafposDay("), "parola yazımdan önce");
+  assert.ok(del.indexOf("if (!rep) throw") < del.indexOf("requireStepUp("), "olmayan gün için parola sorulmaz");
+  const admin = read("src/server/lafpos/admin.ts");
+  assert.match(admin, /^import "server-only";/m);
+  for (const fn of ["writeLafposSwitchDay", "removeLafposDay"]) {
+    const body = admin.slice(admin.indexOf(`export async function ${fn}`)).split(/\nexport /)[0];
+    assert.match(body, /if \(me\.role !== "admin"\) throw new UserError\(ADMIN_ONLY\);/, `${fn}: rol çekirdekte de`);
+  }
+  // Günü silme, gün sonunun yazımıyla aynı danışma kilidi altında (ingest.ts)
+  assert.match(admin, /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{date\}`\}\)\)/);
+  assert.match(read("src/server/lafpos/ingest.ts"), /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{day\.date\}`\}\)\)/);
+  // Ayar ekranı: yalnız yöneticinin Ayarlar sayfasında
+  const page = read("src/app/panel/ayarlar/page.tsx");
+  assert.ok(page.indexOf("await requireAdmin();") > 0 && page.includes("<LafposCard />"));
 });

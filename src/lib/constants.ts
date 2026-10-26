@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   publicMenu: false,
   // FIFO Ekim 2026'dan: önceki kapanmış ayların stok değeri ve kârı değişmez (docs/STOK-DEGERLEME.md)
   stokFifoBaslangic: "2026-10",
+  // LafPOS'a geçiş günü: boş = kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez (docs/LAFPOS.md › Geçiş günü)
+  lafposGecisGunu: null,
 };
 
 /**
@@ -37,6 +39,26 @@ export const RECIPE_COST_NOTE =
 /** Stok değerleme ayarının veritabanındaki "kapalı" değeri (satır silinirse varsayılan ay geri gelir) */
 export const FIFO_OFF = "kapali";
 
+/** LafPOS'a geçiş günü bundan önce olamaz (bağlantı 26 Ekim 2026'da yayına girdi; öncesinde LafPOS günü yok) */
+export const LAFPOS_SWITCH_MIN = "2026-10-01";
+
+/** Takvimde olan bir gün mü ("2026-02-30" değil) */
+export function isCalendarDay(v: unknown): v is string {
+  if (typeof v !== "string") return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+/**
+ * Kayıtlı LafPOS geçiş gününün okunması: takvimde olan ve LAFPOS_SWITCH_MIN'den önce olmayan gün; başka her şey
+ * (bozuk, boş, başka biçim) null, yani kasa ModPOS. Üst sınır yalnız kaydederken denetlenir (src/lib/lafpos/switch.ts).
+ */
+export function readLafposSwitchDay(v: unknown): string | null {
+  return isCalendarDay(v) && v >= LAFPOS_SWITCH_MIN ? v : null;
+}
+
 /**
  * Veritabanındaki ayar satırlarından hesap ayarları (loadSettings). Satırı olmayan anahtar varsayılanı okur: sonradan
  * eklenen bir ayar (ör. püre pompası) eski veritabanında kayıt gerektirmez. Bilinmeyen (eski) anahtarlar yok sayılır.
@@ -46,6 +68,8 @@ export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>
   for (const r of rows) if (Object.hasOwn(DEFAULT_SETTINGS, r.key)) out[r.key] = r.value;
   // FIFO başlangıcı: geçerli bir ay ya da "kapali" (eski yöntem); bozuk değer de eski yöntem sayılır
   if (out.stokFifoBaslangic !== null && !(typeof out.stokFifoBaslangic === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(out.stokFifoBaslangic))) out.stokFifoBaslangic = null;
+  // LafPOS'a geçiş günü: bozuk değer ModPOS sayılır (null)
+  out.lafposGecisGunu = readLafposSwitchDay(out.lafposGecisGunu);
   return out as unknown as Settings;
 }
 

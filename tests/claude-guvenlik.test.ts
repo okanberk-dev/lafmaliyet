@@ -222,7 +222,7 @@ test("anahtar, kod ve istek: veritabanına yalnız özet; mühür amacı ayrı; 
   assert.doesNotMatch(store, /console\.(log|info|warn|error)\([^)]*\b(raw|access|refresh|token|code)\b/);
   assert.match(read("src/server/secret-box.ts"), /export type SealPurpose = [^;]*"mcp-request"/);
   assert.match(read("src/server/mcp/base.ts"), /seal\(JSON\.stringify\(req\), "mcp-request"\)/);
-  assert.match(read("src/server/auth/step-up.ts"), /export type StepUpWhere = "Hesabım" \| "Kullanıcılar" \| "Yedek" \| "Claude bağlantısı";/);
+  assert.match(read("src/server/auth/step-up.ts"), /export type StepUpWhere = "Hesabım" \| "Kullanıcılar" \| "Yedek" \| "Claude bağlantısı" \| "LafPOS";/);
 });
 
 // ---------------------------------------------------------------- Yedek ve sabah işi

@@ -10,10 +10,22 @@ import { verifySignature } from "@/lib/karaoke/signature";
 /** Anahtar en az bu kadar karakter; kısaysa yok sayılır (uçlar 503) */
 export const LAFPOS_SECRET_MIN = 32;
 
-/** LafPOS'un anahtarı; yoksa ya da 32 karakterden kısaysa null (bağlantı kapalı) */
-export function lafposSecretFrom(env: Record<string, string | undefined>): string | null {
+/**
+ * Anahtarın neden kullanılmadığı (Ayarlar'daki LafPOS kartı söyler): yok, 32 karakterden kısa ya da sitenin anahtarıyla
+ * (KARAOKE_SYNC_SECRET) aynı. Aynıysa bağlantı kapalı kalır: kafedeki makinede sitenin anahtarı durmamalı, ikisi ayrı
+ * döndürülür (laffogato'nun signed-callers.ts'i aynı engeli koyar). Sorun yoksa null.
+ */
+export function lafposSecretProblem(env: Record<string, string | undefined>): "missing" | "short" | "same_as_site" | null {
   const v = env.LAFPOS_SYNC_SECRET?.trim();
-  return v && v.length >= LAFPOS_SECRET_MIN ? v : null;
+  if (!v) return "missing";
+  if (v.length < LAFPOS_SECRET_MIN) return "short";
+  if (v === env.KARAOKE_SYNC_SECRET?.trim()) return "same_as_site";
+  return null;
+}
+
+/** LafPOS'un anahtarı; yoksa, 32 karakterden kısaysa ya da sitenin anahtarıyla aynıysa null (bağlantı kapalı, uçlar 503) */
+export function lafposSecretFrom(env: Record<string, string | undefined>): string | null {
+  return lafposSecretProblem(env) === null ? env.LAFPOS_SYNC_SECRET!.trim() : null;
 }
 
 export type LafposCheck = { ok: true } | { ok: false; status: 401 | 413 | 503; error: "unauthorized" | "too_large" | "not_configured" };

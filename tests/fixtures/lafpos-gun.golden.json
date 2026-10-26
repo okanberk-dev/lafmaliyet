@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "source": "lafpos",
+  "date": "2026-10-25",
+  "z": {
+    "zNo": 14,
+    "receipts": 96,
+    "zTotal": 21480.5,
+    "cash": 6120,
+    "card": 12860.5,
+    "mealCard": 1650,
+    "online": 0,
+    "other": 850,
+    "offRevenue": 380,
+    "discounts": 120,
+    "openingCash": 1500,
+    "cashOut": 450,
+    "countedCash": 8120,
+    "handedOver": 0,
+    "cashDiff": -50,
+    "cashIn": 1000,
+    "expectedCash": 8170
+  },
+  "lines": [
+    { "posName": "LATTE MEDIUM", "siteMenuId": "mnu-0003", "slot": "M", "qty": 24, "revenue": 4680, "isService": false },
+    { "posName": "KARAOKE ODASI", "siteMenuId": null, "slot": null, "qty": 3, "revenue": 3000, "isService": true },
+    { "posName": "LATTE LARGE", "siteMenuId": "mnu-0003", "slot": "L", "qty": 11, "revenue": 2475, "isService": false },
+    { "posName": "TÜRK KAHVESİ", "siteMenuId": null, "slot": null, "qty": 9, "revenue": 990, "isService": false },
+    { "posName": "EXTRA SHOT", "siteMenuId": "mnu-0081", "slot": "M", "qty": 6, "revenue": 180, "isService": false },
+    { "posName": "SYRUP", "siteMenuId": "mnu-0080", "slot": "M", "qty": 4, "revenue": 100, "isService": false },
+    { "posName": "ALTERNATIF SÜT", "siteMenuId": "mnu-0082", "slot": "M", "qty": 2, "revenue": 70.33, "isService": false }
+  ],
+  "ikram": [
+    { "posName": "TIRAMISU", "siteMenuId": "mnu-0090", "slot": "M", "qty": 1, "menuValue": 260, "reason": "Doğum günü" },
+    { "posName": "LATTE MEDIUM", "siteMenuId": "mnu-0003", "slot": "M", "qty": 1, "menuValue": 120, "reason": "" }
+  ],
+  "payments": [
+    { "name": "Nakit", "zField": "cash", "channel": null, "count": 41, "amount": 6120 },
+    { "name": "Kredi kartı", "zField": "card", "channel": null, "count": 44, "amount": 12860.5 },
+    { "name": "Pluxee", "zField": "meal_card", "channel": "pluxee", "count": 6, "amount": 1650 },
+    { "name": "Cari", "zField": "other", "channel": null, "count": 5, "amount": 850 }
+  ]
+}

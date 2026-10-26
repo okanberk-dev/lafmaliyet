@@ -113,8 +113,9 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 
 Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md).
 
-**LafPOS'tan doldurma:** LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa
-rakamları fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
+**LafPOS'tan doldurma:** yalnız LafPOS'a geçiş gününden itibaren (Ayarlar › LafPOS (kasa); boşken kasa ModPOS ve bant
+hiç çıkmaz). LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa rakamları
+fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
 
 ## Banka POS Z raporu (yazarkasa)
 

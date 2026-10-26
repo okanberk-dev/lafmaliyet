@@ -54,6 +54,11 @@ export interface Settings {
    * sonu fiyatı). docs/STOK-DEGERLEME.md
    */
   stokFifoBaslangic: string | null;
+  /**
+   * LafPOS'a geçiş günü (iş günü, YYYY-MM-DD): bu günden itibaren kasanın kaynağı LafPOS. null = kasa ModPOS, LafPOS'un
+   * gönderdiği günler saklanır ama hiçbir hesaba girmez. Okuyanlar src/lib/lafpos/switch.ts'ten geçer; docs/LAFPOS.md
+   */
+  lafposGecisGunu: string | null;
 }
 
 export interface Ingredient {

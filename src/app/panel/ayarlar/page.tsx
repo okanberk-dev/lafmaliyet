@@ -28,6 +28,7 @@ import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 import { BackupDownload } from "./backup-client";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
+import { LafposCard } from "./lafpos-card";
 import { PhotoReadingCard } from "./photo-card";
 import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
@@ -415,6 +416,7 @@ async function SettingsContent() {
       </div>
       <JobsCard />
       <SiteLinksCard />
+      <LafposCard />
       <PhotoReadingCard />
       <BackupCard />
     </SettingsLayout>
