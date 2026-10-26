@@ -130,7 +130,7 @@ tutmazsa yine "tutmadı" yapar, tutarsa yalnız "çelişki yok" verir. K3'ün pa
 | K7 | Banka satırlarının toplamı ≈ kart satırı | hayır | yalnız yöneticiye bilgi |
 | K8 | Eski oran (%8, %18) satırında tutar olmaz; oran {0, 1, 8, 10, 18, 20} dışında olmaz | hayır | o oran |
 | K9 | Fiş sayısı tam sayı, 0–5.000 | hayır | fiş sayısı |
-| Z no | Önceki yazarkasa Z'si + 1 | evet | aynıysa okumanın bütünü durur ("dünkü Z raporu olabilir"); küçükse Z no tutmadı; aradaki boşluk bilgi (önceki gün ise uyarı) |
+| Z no | Önceki yazarkasa Z'si + 1 | evet | aynıysa okumanın bütünü durur ("dünkü Z raporu olabilir"); küçükse Z no tutmadı (okunan kümülatif de son saklanandan küçükse yalnız bilgi: yeni cihaz ya da sıfırlanmış sayaç); aradaki boşluk bilgi (önceki gün ise uyarı) |
 | Büyüklük | Günlük toplam son 28 günün (yoksa ModPOS'un) ortancasının 5 katından **ve** 50.000 ₺'den büyük değil | hayır | günlük toplam ("cihaz toplamı okunmuş olabilir") |
 | Kümülatif eşitliği | Günlük toplam kümülatife eşit değil (önceki kümülatif biliniyorsa) | hayır | günlük toplam |
 | GENEL TOPLAM | Günlük toplam GENEL TOPLAM satırından okunduysa ancak iki ayrı rakamla doğrulanırsa kabul | hayır | günlük toplam |
@@ -140,7 +140,9 @@ tutmazsa yine "tutmadı" yapar, tutarsa yalnız "çelişki yok" verir. K3'ün pa
 - KASA NAKİT toplamaya girmez; FİŞ İPTAL ve İNDİRİM toplamdan zaten düşülmüştür, yeniden düşülmez.
 - **Kümülatif yalnız sunucuda ve yalnız inandırıcıysa saklanır** (`okcCumulativeToStore`): okunan Z no ve günlük toplam
   kaydedilenle aynıysa ve (a) zincir tutuyorsa, (b) önceki saklanan kümülatif yoksa ve kümülatif en az günlük
-  toplam kadarsa ya da (c) arada girilmemiş Z'ler varsa ve kümülatif en az günlük toplam kadar büyümüşse. Zincir hep son
+  toplam kadarsa, (c) arada girilmemiş Z'ler varsa ve kümülatif en az günlük toplam kadar büyümüşse ya da (d) Z no ve
+  kümülatif son saklanandan küçükse (cihaz değişti, EKÜ / mali hafıza yenilendi: yeni zincirin ilki; o gün "günlük
+  toplam kümülatife eşit" denetimi de çalışmaz). Zincir hep son
   **saklanan** kümülatife bağlanır: yanlış okunmuş bir kümülatif saklanmaz, ertesi günün doğru toplamını "tutmadı"
   yapamaz. Yönetici yanlış saklananı **Kümülatifi temizle** ile siler.
 - Personele giden metinlerde "kümülatif", "zincir", "KÜM.", "MATRAH" sözcükleri yoktur; alan başına tek, sade bir neden

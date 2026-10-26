@@ -269,6 +269,10 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
   // Z no sürekliliği (§5.3): önceki + 1 doğrular; aynı Z no okumanın bütününü durdurur
   let stopped = false;
   const cur = zNoNumber(fig.zNo);
+  const cum = ctx.prev.cum ?? null;
+  const cumNo = cum ? zNoNumber(cum.zNo) : null;
+  // Okunan kümülatif son saklanandan küçük: cihaz değişmiş ya da Z sayacı sıfırlanmış (EKÜ / mali hafıza), yeni zincir
+  const cumBelow = cum !== null && isNum(fig.cumTotal) && fig.cumTotal < cum.cumTotal - SUM_TOL;
   const prevZ = ctx.prev.z;
   const prevNo = prevZ ? zNoNumber(prevZ.zNo) : null;
   if (cur !== null && prevZ && prevNo !== null) {
@@ -291,6 +295,9 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
       stopped = true;
       const text = `Bu Z no (${shownCur}) ${dayMonthTR(prevZ.date)} raporunda da var; dünkü Z raporu olabilir.`;
       checks.push({ key: "zno-same", level: "warn", fields: [], whole: true, text, staff: text });
+    } else if (cumBelow) {
+      // Kümülatif de küçük: yeni cihaz / sıfırlanan sayaç (yalnız bilgi; Z no tutmadı sayılmaz)
+      checks.push({ key: "zno-reset", level: "info", fields: [], text: `Z no (${shownCur}) önceki yazarkasa Z'sinden (${shownPrev}) küçük ve kümülatif de önceki saklanandan küçük; yeni cihaz ya da sıfırlanmış sayaç olabilir.` });
     } else {
       fail(["okcZNo"], `Z no (${shownCur}) önceki Z'den (${shownPrev}) büyük olmalı.`);
       checks.push({ key: "zno-low", level: "warn", fields: ["okcZNo"], text: `Z no (${shownCur}) önceki yazarkasa Z'sinden (${shownPrev}) küçük; eski bir Z raporu ya da FİŞ NO / EKÜ NO okunmuş olabilir.` });
@@ -298,8 +305,6 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
   }
 
   // K6: kümülatif zinciri (yalnız önceki saklanan kümülatif verildiyse; §5.3 farkı ona göre alır)
-  const cum = ctx.prev.cum ?? null;
-  const cumNo = cum ? zNoNumber(cum.zNo) : null;
   if (cum && cumNo !== null && cur !== null && cur > cumNo && isNum(fig.cumTotal) && isNum(fig.total)) {
     const delta = r2(fig.cumTotal - cum.cumTotal);
     const next = cur === cumNo + 1;
@@ -322,8 +327,10 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
       checks.push({ key: "k6", level: "warn", fields: ["okcTotal"], text: `Önceki Z'den (${cum.zNo.trim()}) bu yana kümülatif artış ${money(delta)}; günlük toplam ${money(fig.total)}. Biri yanlış okunmuş olabilir.` });
     }
   }
-  // Günlük toplam kümülatife eşit ve önceki kümülatif biliniyor: KÜM. satırı okunmuş olabilir (§5.1)
-  if (cum && isNum(fig.cumTotal) && isNum(fig.total) && Math.abs(fig.cumTotal - fig.total) <= 0.01) {
+  // Günlük toplam kümülatife eşit ve önceki kümülatif biliniyor: KÜM. satırı okunmuş olabilir (§5.1). Yeni zincirin
+  // ilk Z'sinde (Z no ve kümülatif öncekinden küçük) kümülatif günlük toplama eşit olabilir
+  const newChain = cumBelow && cur !== null && cumNo !== null && cur < cumNo;
+  if (cum && !newChain && isNum(fig.cumTotal) && isNum(fig.total) && Math.abs(fig.cumTotal - fig.total) <= 0.01) {
     fail(["okcTotal"], "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.", true);
     checks.push({ key: "cum-same", level: "warn", fields: ["okcTotal"], text: "Günlük toplam kümülatif satırla aynı; KÜM. satırı okunmuş olabilir." });
   }
@@ -587,6 +594,9 @@ export function okcCumulativeToStore(i: OkcCumulativeInput): OkcCumulativeResult
   let basis: OkcCumulativeResult["basis"] = null;
   let vatOk = isNum(i.cumVat) && (!isNum(i.readVatTotal) || i.cumVat >= i.readVatTotal - SUM_TOL);
   if (!prev || prevNo === null) basis = "first";
+  // Z no ve kümülatif son saklanandan küçük: yeni cihaz ya da sıfırlanan sayaç; yeni zincirin ilki (yoksa zincir hep
+  // eski cihazın kümülatifine bağlı kalır ve hiçbir kümülatif saklanmaz)
+  else if (cur < prevNo && i.cumTotal < prev.cumTotal - SUM_TOL) basis = "first";
   else if (cur === prevNo + 1) {
     if (Math.abs(r2(i.cumTotal - prev.cumTotal - total)) <= SUM_TOL) basis = "chain";
     if (vatOk && isNum(prev.cumVat) && isNum(i.readVatTotal)) vatOk = Math.abs(r2(i.cumVat! - prev.cumVat - i.readVatTotal)) <= SUM_TOL;

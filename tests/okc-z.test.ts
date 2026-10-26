@@ -462,6 +462,26 @@ test("kümülatif: zincir tutuyor → saklanır; önceki yok → saklanır; tutm
   assert.equal(okcCumulativeToStore({ ...input, outside: 0.5 }).outside, null);
 });
 
+test("kümülatif: cihaz değişti / sayaç sıfırlandı (Z no ve kümülatif küçük) → yeni zincir; ilk günün doğru toplamı tutmadı olmaz", () => {
+  const old = { date: "2026-10-23", zNo: "1500", cumTotal: 9_800_000, cumVat: 900_000 };
+  const day1 = { savedZNo: "0001", savedTotal: 9000, readZNo: "0001", readTotal: 9000, readVatTotal: 818.18, cumTotal: 9000, cumVat: 818.18, outside: null, prevCum: old };
+  assert.deepEqual(okcCumulativeToStore(day1), { cumTotal: 9000, cumVat: 818.18, outside: null, basis: "first", rejected: null });
+  // Ertesi gün yeni cihazın kümülatifine bağlanır
+  const stored = { date: DAY, zNo: "0001", cumTotal: 9000, cumVat: 818.18 };
+  assert.equal(okcCumulativeToStore({ ...day1, savedZNo: "0002", readZNo: "0002", cumTotal: 18_000, cumVat: 1636.36, prevCum: stored }).basis, "chain");
+  // Küçük Z no ama kümülatif büyük (FİŞ NO okunmuş): yine saklanmaz
+  assert.equal(okcCumulativeToStore({ ...day1, cumTotal: 9_809_000 }).basis, null);
+
+  const one = fig({ zNo: "0001", total: 9000, vatTotal: 818.18, groups: [{ rate: 10, total: 9000, vat: 818.18 }], cash: 2000, card: 7000, cumTotal: 9000, cumVat: 818.18 });
+  const res = okcChecks(one, { prev: { z: { date: "2026-10-23", zNo: "1500" }, cum: old }, day: DAY });
+  assert.notEqual(res.status.okcTotal, "failed");
+  assert.notEqual(res.status.okcZNo, "failed");
+  assert.ok(!res.checks.some((c) => c.key === "cum-same" || c.key === "zno-low"), JSON.stringify(res.checks));
+  assert.equal(res.checks.find((c) => c.key === "zno-reset")?.level, "info");
+  // Kümülatif yoksa (ya da büyükse) küçük Z no tutmadı kalır
+  assert.equal(okcChecks({ ...one, cumTotal: null }, { prev: { z: { date: "2026-10-23", zNo: "1500" }, cum: old }, day: DAY }).status.okcZNo, "failed");
+});
+
 // ---------------------------------------------------------------- tarih
 
 test("tarih: gece 00:30 Z'si önceki güne; ertesi sabah yalnız istisna açıkken; başka gün bütünü şüpheli yapar", () => {
