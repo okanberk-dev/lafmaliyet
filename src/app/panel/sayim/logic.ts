@@ -89,7 +89,16 @@ export function lineAmount(line: CountLineValue, value: number | null): number {
 
 /** Yüzdenin iyelik eki, okunuşuna göre: "%86'sı", "%14'ü", "%100'ü", "%0'ı" (kapsam satırı) */
 export function coverageText(share: number): string {
+  return percentText(Math.round(Math.max(0, Math.min(1, share)) * 100));
+}
+
+/** Payın ve kalanın metni: yüzde bir kez yuvarlanır, kalan 100'e tamamlar (%13 + %87; ayrı yuvarlamada %13 + %88) */
+export function coverageSplit(share: number): { covered: string; rest: string } {
   const n = Math.round(Math.max(0, Math.min(1, share)) * 100);
+  return { covered: percentText(n), rest: percentText(100 - n) };
+}
+
+function percentText(n: number): string {
   const ones = ["ı", "i", "si", "ü", "ü", "i", "sı", "si", "i", "u"];
   const tens = ["", "u", "si", "u", "ı", "si", "ı", "i", "i", "ı"];
   const suffix = n === 100 ? "ü" : n % 10 ? ones[n % 10] : n === 0 ? "ı" : tens[n / 10];

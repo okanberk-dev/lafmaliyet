@@ -378,6 +378,7 @@ async function SettingsContent() {
         start={model.fifoStart}
         rows={model.countedMonths.map((m) => ({ month: m, ...model.valuationPreview(m), overridden: model.closingStock(m).overridden }))}
         months={fifoMonthOptions(model.countedMonths, model.fifoStart, model.ds.currentMonth ?? currentMonthTR())}
+        openingOverrides={model.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
       />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />

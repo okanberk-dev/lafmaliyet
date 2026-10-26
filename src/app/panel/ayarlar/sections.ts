@@ -10,9 +10,9 @@ export const SETTINGS_SECTIONS = [
   { id: "oranlar", label: "Oranlar", icon: Percent },
   { id: "olculer", label: "Reçete ölçüleri", icon: Ruler },
   { id: "su", label: "Su + buz", icon: Droplets },
+  { id: "qr-menu", label: "QR menü", icon: QrCode },
   // Ay sonu stoğunun değerleme yöntemi: ilk giren ilk çıkar (FIFO) başlangıç ayı (docs/STOK-DEGERLEME.md)
   { id: "stok", label: "Stok değerleme", icon: Layers },
-  { id: "qr-menu", label: "QR menü", icon: QrCode },
   { id: "kategoriler", label: "Kategoriler", icon: Tags },
   { id: "gecmis", label: "İşlem geçmişi", icon: History },
   // Zamanlanmış işlerin (Paraşüt eşitlemesi, sabah işi) son çalışması; uyarılar buraya getirir

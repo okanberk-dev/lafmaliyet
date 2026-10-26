@@ -53,7 +53,7 @@ import { stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
   countText,
-  coverageText,
+  coverageSplit,
   extraKey,
   groupProgress,
   listTopScroll,
@@ -566,7 +566,7 @@ export function StockCountForm({
   counter: string | null;
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
   addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
-  /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayı */
+  /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
   valuation?: { fifo: boolean; covered: number; total: number; start: string | null } | null;
 }) {
   const reduce = useCalmMotion() ?? false;
@@ -1217,7 +1217,8 @@ export function StockCountForm({
                 ) : null}
                 {valuation?.fifo && live.total > 0 ? (
                   <p className="py-2 text-xs leading-5 text-ink-mute">
-                    Stok değerinin {coverageText(coveredShare)} faturalardan (FIFO), {coverageText(1 - coveredShare)} ay sonu fiyatıyla.
+                    Stok değerinin {coverageSplit(coveredShare).covered} faturalardan (FIFO), {coverageSplit(coveredShare).rest}{" "}
+                    {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
                   </p>
                 ) : null}
                 <KeyValue

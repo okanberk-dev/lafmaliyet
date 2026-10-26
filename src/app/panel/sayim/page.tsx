@@ -122,7 +122,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevMonthLabel={monthLabel(prevMonth)}
         isAdmin={isAdmin}
         groups={groups}
-        valuation={isAdmin ? { fifo: sheet.valuation === "fifo", covered: sheet.fifoCovered, total: sheet.total, start: model.fifoStart } : null}
+        valuation={isAdmin ? { fifo: sheet.valuation === "fifo", covered: sheet.fifoCovered, total: sheet.total, start: model.fifoStart ? monthLabel(model.fifoStart) : null } : null}
         extras={sheet.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         hasPrev={prev.hasData}
