@@ -130,7 +130,12 @@ async function countAlertNotifications(user: CurrentUser, now: Date): Promise<Pa
   const [extras, late] = await Promise.all([loadUnpricedExtras([month, prev]), loadStaffLateEdits(prev)]);
   const out: PanelNotification[] = [];
   const edit = staffLateEditNotice(prev, late);
-  if (edit) out.push({ id: edit.id, kind: "info", title: edit.title, body: edit.body, href: edit.href, timeLabel: dateTR(todayTR(new Date(edit.lastAt))), unread: true, group: "uyari" });
+  if (edit) {
+    const day = todayTR(new Date(edit.lastAt));
+    const today = todayTR(now);
+    const timeLabel = day === today ? "Bugün" : day === addDays(today, -1) ? "Dün" : dateTR(day);
+    out.push({ id: edit.id, kind: "info", title: edit.title, body: edit.body, href: edit.href, timeLabel, unread: true, group: "uyari" });
+  }
   for (const u of extras) {
     const n = unpricedExtrasNotice(u);
     if (n) out.push({ ...n, kind: "warning", timeLabel: "", unread: true, group: "uyari" });
