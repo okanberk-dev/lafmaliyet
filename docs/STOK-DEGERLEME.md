@@ -85,7 +85,18 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş
   ay etkilenmez. Telefonda "Faturadan" sütunu gizlenir. Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
   Kapalı seçilirse her ay ay sonu fiyatıyla.
-- **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer.
+- **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer. Yıl
+  kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
+  (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca
+  sonraki ayın açılış stoğu, ay başlamadan onun gideri gibi yıla girmez (denetim E-16). Cirosu girilmemiş ayın gideri
+  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini, kapanış 0) kartların altında not olarak yazılır; tablonun Toplam
+  sütunu ve Excel'in yıl sütunu bu aya kadarki ayları toplar.
+- **Sayım listesi**: sayım birimi olan aktif malzemeler ve pasif olup aktif bir ürünün reçetesinde geçenler ("Pasif ·
+  reçetede"; satıldıkça tüketilir, listeden düşse kalan stoğu 0 sayılırdı). Aktif ürünün reçetesindeki malzeme pasif
+  yapılamaz (Hammaddeler önce reçetelerden çıkarılmasını ister, ürünleri listeler); kural `isCountable`
+  (src/lib/ingredient-usage.ts), motor ve sayım kaydı aynı kuralı kullanır (denetim E-04). Sayımı, alımı, Paraşüt
+  bağlantısı ya da zayi / ikram kaydı olan malzeme silinmez, pasif yapılır (E-28). Fiyatı girilmemiş ek kalem ("Listede
+  olmayanlar") yöneticinin zilinde ve Bugün'de söylenir: kapanış stoğuna 0 ₺ girer (E-22).
 - **Excel dışa aktarımı**: Sayım sekmesinin Not sütununda FIFO katmanları, Sayım Kayıtları'nda "Değerleme" sütunu.
 - **Satışlar, Ürünler, reçete kartı**: "Reçete maliyeti son alış fiyatıyla (yenileme maliyeti): fiyat kararı için.
   Kâr-zararın mal maliyeti FIFO ile değerlenen sayımdan."
