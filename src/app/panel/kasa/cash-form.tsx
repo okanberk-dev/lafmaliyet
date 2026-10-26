@@ -548,6 +548,8 @@ export function CashForm({
   }
 
   async function reread(p: FormPhoto, kind: CashPhotoKind) {
+    // Öteki bölümden Banka POS Z bölümüne geçen fotoğraf da bölümün sınırına sayılır (gönderimde reddedilmesin)
+    if (kind === "kasa-okc" && p.kind !== "kasa-okc" && savedOf("kasa-okc").length + photosOf("kasa-okc").length >= MAX_OKC_PHOTOS) return void toast.error(OKC_PHOTOS_TEXT);
     // Yazarkasa ve eski banka POS (geçiş, D2) aynı bölümün yükleyicisinde
     const up = kind === "kasa-z" ? zUp : okcUp;
     const res = await up.reread(p.id, kind, date);
@@ -895,7 +897,8 @@ export function CashForm({
           busy={up.busy}
           onRemove={removePhoto}
           onRetry={(p) => void reread(p, p.kind)}
-          onSwitch={(p) => p.switchTo && void reread(p, p.switchTo)}
+          // ModPOS bölümünün düğmesi "kasa-pos" der (eski açık sayfa için, kasa.ts wrongDocument): bu formda Banka POS Z bölümü
+          onSwitch={(p) => p.switchTo && void reread(p, p.switchTo === "kasa-pos" ? "kasa-okc" : p.switchTo)}
         />
         <ReadChecks checks={latestChecks(k)} />
         {k === "kasa-okc" && latestOkc && okcNeedsHalves(latestOkc) ? <p className="text-[13px] leading-5 text-ink-mute">{OKC_HALVES_TEXT}</p> : null}

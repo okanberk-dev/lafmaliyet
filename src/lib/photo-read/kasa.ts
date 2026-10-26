@@ -174,10 +174,12 @@ export const FISCAL_Z_CARD_TEXT = "Bu yazarkasanın Z raporu. Banka POS'a Z'deki
  */
 function wrongDocument(expected: CashPhotoKind, documentType: string): CashReading {
   if (expected === "kasa-z") {
-    // Öteki bölüm yazarkasanın (banka POS) Z bölümüdür: banka gün sonu fişi de orada yedek alanı doldurur (okc-z.md §3.3)
-    if (documentType === "fiscal_z_report") return failed("kasa-z", "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil.", "kasa-okc");
+    // Öteki bölüm yazarkasanın (banka POS) Z bölümüdür: banka gün sonu fişi de orada yedek alanı doldurur (okc-z.md §3.3).
+    // Düğme "kasa-pos" der: dağıtımdan önce açılmış sayfa onu tanır ve D2'nin eski yolundan okutur; yeni form onu
+    // "kasa-okc"ye çevirir (cash-form.tsx onSwitch). `kasa-pos`un kaldırıldığı PR'da "kasa-okc" olur
+    if (documentType === "fiscal_z_report") return failed("kasa-z", "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil.", "kasa-pos");
     return documentType === "bank_pos_end_of_day"
-      ? failed("kasa-z", "Bu bir banka gün sonu fişi gibi görünüyor, Z raporu değil.", "kasa-okc")
+      ? failed("kasa-z", "Bu bir banka gün sonu fişi gibi görünüyor, Z raporu değil.", "kasa-pos")
       : failed("kasa-z", `${looksLike(documentType)} ModPOS Z raporunun fotoğrafını çekin.`);
   }
   if (documentType === "fiscal_z_report") return { ...failed("kasa-pos", FISCAL_Z_CARD_TEXT), advice: true };
