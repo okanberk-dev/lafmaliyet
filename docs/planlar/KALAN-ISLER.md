@@ -1,18 +1,34 @@
-# Kalan işler (25 Ekim 2026, 13:00 UTC itibarıyla)
+# Kalan işler (26 Ekim 2026, `main` @ `ea0df09` itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
 
+**Son denetim (26 Ekim):** [denetim-2026-10-26.md](denetim-2026-10-26.md): 70 madde (E-01..E-70), düzeltme partileri
+B01-B20 ve sahibe 11 soru. Partilerin durumu, sahibin yanıtları ve yanıt gelene kadar uygulanan varsayılanlar aşağıda,
+"Denetim (26 Ekim): düzeltme partileri". Sıradaki iş oradan başlar (önce stok sayımı, sahibin isteği).
+
 ## 1. Canlıda olanlar
 
-- `main` @ 663b166: dalga 1–6 birleşti (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
+- **`main` @ `ea0df09`** (26 Ekim, Dalga 15, #39; 43 migration, sonuncusu `0042_okc_z`). Dalga 6'dan (663b166) sonra
+  birleşenler: #16 (diğer oturum: KDV-2 hatırlatıcıları), #18 (Dalga 7, denetim düzeltmeleri), #19 (arayüz taraması),
+  #20 (diğer oturum: sitenin 409 `single_size` yanıtı kopuk bağlantı olarak), #21 ve #26 (KDV düzeltmeleri), #22
+  (sabit giderlerden ekle), #23 (belgeler), #24 (Dalga 8: mal siparişi, komisyon), #25 (Dalga 9: satış tahmini,
+  haftalık özet), #27 (Dalga 7–8 düzeltmeleri), #28 (Dalga 11: cari), #29 (planlar: vergi, yazarkasa Z, senkron,
+  denetim listesi), #30 (Dalga 10a), #31 (panel Google'da görünmez), #32 (Dalga 10b), #33 (Dalga 13 PR-a), #34 (LafPOS
+  bağlantısı), #36 (LafPOS migration düzeltmesi; aynı iş için açılan #37 birleşmeden kapandı), #35 (Dalga 13 PR-b),
+  #38 (Dalga 14: stok değerleme FIFO), #39 (Dalga 15: kenar çubuğu). Her birinin ayrıntısı §2'de kendi başlığında.
+- **LafPOS (#34, #36) canlıda ama bağlantı kapalı:** `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503
+  döner (denetim E-31). Sahibe adım §2 › "LafPOS bağlantısı"nda.
+- **Stok değerleme Dalga 14'ten (#38) beri FIFO** (başlangıç ayından itibaren, varsayılan Ekim 2026;
+  `docs/STOK-DEGERLEME.md`); reçete ve menü maliyeti son alış fiyatında kalır.
+- Dalga 1–6 (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
   #10 (ekle, pricing, pompa-mobil), #12 (insight + KDV, fotograf, menu), #13 (kasa, W2.0'ın kalanı, today, mcp),
   #14 (kontrol, doluluk), #17 (fatura okuma, oneri-fiyat). Ayrıca #11 (PR incelemesi için Claude iş akışı) ve diğer
-  oturumdan #15 (KDV-2: tevkifatlı faturanın KDV'si, nakit planında 25'inde ayrı ödeme). Canlı derleme günlüğü:
+  oturumdan #15 (KDV-2: tevkifatlı faturanın KDV'si, nakit planında 25'inde ayrı ödeme). O günkü canlı derleme günlüğü:
   `✓ Veritabanı şeması güncel (32 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir önizlemenin uyguladığı
   eski menü migration kaydı; zararsız, dalga 7'den sonra `KNOWN_ORPHANS`'ta). **#13'ten geriye Instant Rollback yok**
   (`docs/DEPLOY.md` §7).
-- **Dalga 7 (denetim düzeltmeleri, `claude/kalan-isler-7`):** 23 Ekim denetiminin panel bulguları; migration'lar
+- **Dalga 7 (denetim düzeltmeleri, #18):** 23 Ekim denetiminin panel bulguları; migration'lar
   `0032_giris_cihaz_islem_kisisi` ve `0033_sabit_gider_kdv`. Ayrıntı ve sahibe notlar aşağıda, "Denetim düzeltmeleri".
 - Fotoğraftan okuma canlıda açık: özel Vercel Blob deposu `laffogato-foto-panel` (fra1); `BLOB_READ_WRITE_TOKEN` ve
   `ANTHROPIC_API_KEY` yalnız Production'da. Eski boş `laffogato-foto` deposu kullanılmıyor.
@@ -25,29 +41,105 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 - **PR incelemesi:** #11 birleşti ama iş akışı çalışmıyor: hesabın GitHub Actions dakikaları bitti (iş, çalıştırıcı
   başlamadan düşüyor, `runner_id: 0`); Codex incelemesi de kullanım sınırında. Doğrulama her dalgada yerelde yapılır.
   Kalan dalgaların her biri main'e ayrı bir PR'dır.
-- **Sonradan (bu özetin 18:30 UTC anından sonra birleşenler):** #16 (diğer oturum: KDV-2 hatırlatıcıları, 17c3e68),
-  #18 (dalga 7, 514376d), #19 (arayüz taraması, 7b86866), #20 (diğer oturum: sitenin 409 `single_size` yanıtı kopuk
-  bağlantı olarak). Güncel durum için `git log origin/main`.
+- Güncel durum için `git log origin/main`.
 
 ## 2. Kalan işler (sırayla)
 
-### Süren işler (25 Ekim 2026)
+### Denetim (26 Ekim): düzeltme partileri
+
+Sahibin 26 Ekim isteği: "Stok sayımını da düzgünleştir ve site genelinde genel audit yap; hatalar, bağlantısız olan
+yerler, bağlanılması gereken yer var mı onlara da bak". Rapor [denetim-2026-10-26.md](denetim-2026-10-26.md)
+(`ea0df09` anının kaydı; her maddenin kanıtı, senaryosu, önerilen düzeltmesi ve testi orada). Her parti `main`'e ayrı
+bir PR'dır ve tek başına birleşebilir; önce stok sayımı. Aynı dosyaya dokunan partiler raporun "Çakışma" sütunundaki
+sırayla açılır. Parti PR'ı açılınca dalını, birleşince PR numarasını aşağıdaki "Durum" sütununa yazar. Sahibin kararını
+bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık soru olarak yazar.
+
+| Parti | Ne | Maddeler | Migration | Sahibe soru | Durum |
+|---|---|---|---|---|---|
+| B01 | Stok sayımı 1: doğru ay, tek "tamam" kuralı, kayıt kaybı yok (+ NEW-01) | E-01, E-02, E-03, E-17, E-18, E-19, E-20, E-23, E-24, E-25, E-26 | yok | 3 | bekliyor |
+| B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
+| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | bekliyor |
+| B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
+| B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
+| B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
+| B07 | LafPOS 1: bağlantı görünür ve onarılabilir | E-31, E-32 | yok | 1 | bekliyor |
+| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** | 2 | bekliyor |
+| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | bekliyor |
+| B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
+| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
+| B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | bekliyor |
+| B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | bekliyor |
+| B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | bekliyor |
+| B15 | Aynı rakam her yerde: senaryo, başabaş, ay sonu öngörüsü, nakit planı | E-12, E-13, E-41, E-46, E-59, E-60, E-62 | yok | 7, 8 | bekliyor |
+| B16 | Gelir-gider: komisyon, SGK satırı, kaynak bağlantıları, notlar | E-30, E-43, E-44, E-61, E-63 | yok | 9 | bekliyor |
+| B17 | Alış: kasadan e-Arşiv alımları ve fatura kategori koruması | E-42, E-45 | yok |  | bekliyor |
+| B18 | Karaoke: silme isteği ve bitirme izi | E-15, E-65 | **evet** |  | bekliyor |
+| B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | bekliyor |
+| B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | bekliyor |
+
+**Raporun ardından eklenen üç bulgu (eleştirmen; raporda yok):**
+- **NEW-01** (küçük, B01): ay sonu stok sayımı için hiçbir bildirim yok; ayın son günü hızlı sayım bildirimi de bilerek
+  susuyor (`src/server/notify/reorder-push.ts`, `src/lib/reorder/levels.ts`). Ayın son iş gününde sayım bildirimi;
+  ayın 1-10'unda geçen ayın sayımı yoksa ya da yarımsa yöneticinin zilinde ve sabah e-postasında satır. Tamamlanma
+  kuralı E-01 / E-17'nin ortak yardımcısından.
+- **NEW-02** (küçük, B02): yılın kâr/zararı iki kuralla: Gelir-gider'in yıl kartı cirosu girilmemiş ayların giderini
+  sayar, Genel bakış'ın yıl grafiği ve Claude'un `ay_ozeti`'si (`yearTrend`) saymaz. Tek saf yıl toplamı yardımcısı;
+  cirosuz ayın gideri kartta not satırı.
+- **NEW-03** (küçük, partisi atanmadı; alış tarafı, B03 ya da B17'ye eklenebilir): "Geldi" denmiş, faturası gelmeyen
+  mal siparişi 45 gün sonra sessizce kapanır (`src/server/reorder/match.ts`): zil, işlem geçmişi, borç ve gider yok.
+  Eşleşme penceresi bitince yöneticiye "Geldi, faturası yok" satırı; kendiliğinden kapanış işlem geçmişine ve eşitleme
+  özetine yazılır.
+
+Denetimin hiç okumadığı yerler (eleştirmen): Özel günler, karaoke doluluk mantığı, Hatırlatıcılarım, Nakit planı
+sayfasının kendisi (yalnız rakamları, E-13 / E-46) ve site ping alıcıları (`/api/menu/ping`, `/api/orders/ping`,
+`/api/karaoke/ping`).
+
+**Sahibe sorular (26 Ekim; yanıt yok).** Yanıt gelene kadar partisi aşağıdaki varsayılanı uygular; varsayılanı
+yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine yazar.
+1. **LafPOS anahtarı** (E-31, B07): kafede LafPOS kullanılıyor mu; `LAFPOS_SYNC_SECRET` Vercel'e eklenebilir mi?
+   Adımlar yukarıda, "LafPOS bağlantısı".
+2. **ModPOS'tan LafPOS'a geçiş günü** (E-08, E-39; B08, B11): hangi gün; ModPOS'un aylık ürün satış listesi gelmeye
+   devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
+3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
+   düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
+   yönetici tarafından düzeltilebilir; yöneticine haber ver." görür; yönetici düzeltebilir.
+4. **Yeni sayım kalemlerinin reçeteleri** (E-29, D-14; B02): Lemon Tea'de Lime şurubu yerine Lemon tea şurubu mu,
+   Blueberry ürünlerinde Karışık berry püre yerine yaban mersini püre mi; çilek, cookie, hazelnut şurubu, vanilya sosu
+   ve böğürtlen püreyi hangi ürünler kullanıyor? **Varsayılan:** sekiz kalem yalnız başlangıç verisine (seed) eklenir,
+   hiçbir reçete değişmez.
+5. **Kasadan çıkan para nereye girilecek** (E-35, B09): fişli harcamalar ve sahibe teslim edilen nakit panelin "Kasadan
+   çıkanlar"ına mı, LafPOS'a mı, ikisine birden mi?
+6. **LafPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, LafPOS'tan mı alınsın?
+7. **Aylık girişe çevrilen giderler** (E-13, B15): reklam, influencer gibi değişen giderler başabaşta ve nakit planında
+   geçen ayın gerçekleşeniyle mi, son 3 ayın ortalamasıyla mı sayılsın?
+8. **Fişlerin KDV'si** (E-60, B15): Aylık harcamalar'daki fişler gelir-giderde KDV dahil mi kalsın, KDV düşülüp mü
+   sayılsın? (Muhasebeciyle.)
+9. **Banka POS komisyonu** (E-43, B16): ayrıca fatura ya da dekont olarak geliyor mu, Paraşüt'te Komisyon
+   kategorisine mi düşüyor?
+10. **Vercel planı** (E-67, B05): panel Hobby planında (ticari kullanım yok, günlükler bir saat); Pro'ya geçilsin mi?
+11. **Önceki listeden açık kalanlar** (yeniden doğrulanmadı): D-05 Claude inceleme iş akışının ödemesi; D-06 sohbete
+    yapıştırılan API anahtarının iptali; D-15 sos pompası da 10 ml mi; D-16 sitenin `PARASUT_USERNAME`'i panelinkinden
+    farklı mı; D-18 zili kapalı cihaz bar ekranında sorsun mu; D-19 fişli harcamalar Aylık harcamalar'a onaysız mı
+    yazılsın.
+
+### Süren işler (26 Ekim 2026)
 
 | İş | Plan | Durum |
 |---|---|---|
-| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **10a main'de** (dal `claude/dalga-10a-personel`, migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. **10b bitti** (dal `claude/dalga-10b-personel`, migration yok; main'e PR bekliyor): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Birleştirmeden sonra canlıda personel hesabıyla `/panel/yardim/personel` ve `/panel/hizli-sayim/siparis` açılır. |
-| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a main'de** (#33: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar). **PR-b** dalı `claude/dalga-13b-okc-z` (migration `0042_okc_z`: 26 Ekim'de main'le birleştirilip `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b7 yapıldı (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım). **Açık:** b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor) ve b8 (son doğrulama, PR). O zamana kadar `OKC_PREFILL_ENABLED = false`: yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
-| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır; muhasebeciye sorulacak 8 madde planın sonunda. Dalga 13'ten sonra (gelir dayanağı mali Z). |
-| Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. |
-| Genel denetim: sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | 19 açık madde (4 hatalı, 2 yapılmadı, 5 kısmen, 8 sahibe bağlı); düzeltmeler son dalgada, her biri testiyle. |
+| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **Bitti: 10a (#30) ve 10b (#32) main'de.** 10a (migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. 10b (#32, migration yok): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Canlıda personel hesabıyla `/panel/yardim/personel` ve `/panel/hizli-sayim/siparis` bir kez açılıp bakılır. Kalan daraltma: karaoke sayacının silinmesi (denetim E-15, B18). |
+| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a (#33) ve PR-b (#35) main'de.** PR-a: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar. PR-b (migration `0042_okc_z`, `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b8 (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım, son doğrulama). **Açık:** yalnız b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor); bilinen nit, banka gün sonu fişinde iki tarih uyarısı, denetimde E-69 (B20). O zamana kadar `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`): yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
+| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır, başlamadı; muhasebeciye sorulacak 8 madde planın sonunda. Gelir dayanağı mali Z: Dalga 13 PR-b birleşti, doldurma kapısı b2'de. Kenar çubuğunda Finans başlığına girer (Dalga 15). |
+| Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır; Senkron 2 ve 3 başlamadı. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. P1'in hatası (panel fiyatı başkasının değişikliğini ezer) denetimde E-11, B12. |
+| Genel denetim (25 Ekim): sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | Yerine 26 Ekim denetimi geçti: D-01..D-19'un 26 Ekim durumu `denetim-2026-10-26.md` › "Önceki denetim"; açık kalanlar E-maddelerine ve partilere taşındı, doğrulanmayanlar sahibe sorulardır. |
+| Denetim (26 Ekim): panel geneli ve stok sayımı | `denetim-2026-10-26.md` | 70 madde, 20 parti (B01-B20), sahibe 11 soru; aşağıda "Denetim (26 Ekim): düzeltme partileri". |
 
 **Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
-- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02).
+- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02; 26 Ekim'de E-14, B03).
 - K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
-- **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür.
+- **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür. 26 Ekim denetiminde E-15 (bitirme izi E-65), B18 (migration).
 - **Site tarafı, ayrı laffogato PR'ı (ek alan):** `POST /api/panel/menu` yanıtına `changed: boolean` (`setMenuItemSaleFields` yazdıysa true, "değişmedi" yolunda false). Panel Tükendi kaydını şimdi istekten hemen önceki canlı listeye ve yanıtın damgasına bakarak yazıyor (10b incelemesi); sahip sitede ya da yönetici ürün kartından tam bu gidiş-dönüş içinde kapatırsa personelin kaydı yine yazılabilir. Alan gelince panel kaydı yalnız `changed === true`'da yazar (`docs/SITE-MENU.md` › Kayıt).
-- Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06).
-- Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1).
+- Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06; 26 Ekim'de yeniden doğrulanmadı, sahibe soru 11).
+- Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1; 26 Ekim'de sahibe soru 11).
 
 ### Birinci paket (planlar hazır; kurallar ve birleştirme sırası `CRITIQUE.md`)
 
@@ -104,15 +196,13 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 | Grup | Ne |
 |---|---|
 | baglanti | Veritabanı: okumada bir kez yeniden deneme, havuz süreleri, TLS `verify-full` (acil durumda `DATABASE_SSL=require`), derlemede havuz bağlantısı migration'dan önce denetlenir. Site pingleri kaydı yazamasa da çeker, düşen çekme bir kez daha; kaçan karaoke çekmesi açık sekmede yakalanır. Neon kotası: yoklama yalnız sekme görünürken ve seyrek, `/api/health` önbellekte. Hata ekranları yeniden dener. Giriş: bilinen cihazın kilidi veritabanında (`login_device_locks`), TOTP ve kurtarma kodu tek kullanımlık, işlem geçmişinde hesap (`activity_log.user_id`). Kasadan çıkanın geri alınması mühürlü ve tek kullanımlık. Karaoke uzatma tek SQL yazımı, planlı bar siparişinde "45 dk kaldı" ve 15 dk önce zil. `db:reset` uzak veritabanında onay ve önce yedek, zayi kayıtları kalır. Personel rolü metinleri, oda saatleri 12:00–24:00, pompa kuralı, belgeler |
-| para | Paraşüt: sitenin satış iadeleri gider sayılmaz (yalnız bilgi), e-faturaya bağlı kayıt silinmez, geç girilen faturalar kaçmaz, eşitlemenin veritabanı yolları sahte Paraşüt'le sınanır. Nakit planı sabit giderleri faturadaki KDV'siyle öder (`fixed_expenses.vat_rate`). Sayım ay sonundaki fiyatla değerlenir. Genel bakış online satışı da sayar. Kapalı günler sabit gideri azaltmaz. Ay ortasında yapıştırılan satış listesinin günü. `1,250.00` doğru okunur. Online satış üç ay geriye çekilir (geç iadeler). Sitenin isteğe bağlı `counter`, seçenek sayıları ve sipariş notları kabul edilir. Geçmişi olan ürün silinmez |
+| para | Paraşüt: sitenin satış iadeleri gider sayılmaz (yalnız bilgi), e-faturaya bağlı kayıt silinmez, geç girilen faturalar kaçmaz, eşitlemenin veritabanı yolları sahte Paraşüt'le sınanır. Nakit planı sabit giderleri faturadaki KDV'siyle öder (`fixed_expenses.vat_rate`). Sayım ay sonundaki fiyatla değerlenir (Dalga 14'ten beri yalnız FIFO başlangıç ayından önceki aylar; sonrası FIFO, `docs/STOK-DEGERLEME.md`). Genel bakış online satışı da sayar. Kapalı günler sabit gideri azaltmaz. Ay ortasında yapıştırılan satış listesinin günü. `1,250.00` doğru okunur. Online satış üç ay geriye çekilir (geç iadeler). Sitenin isteğe bağlı `counter`, seçenek sayıları ve sipariş notları kabul edilir. Geçmişi olan ürün silinmez |
 
 **Sahibe notlar (dalga 7):**
 - Neon Free planı (ayda 100 CU-saat): Vercel › Storage › kullanım tahmini 100'ü aşıyorsa ücretli plana geçin; bar
   tabletine bildirim izni verin (bildirim yokken öndeki ekran 20 saniyede bir sorar ve veritabanı uyumaz; arka
   plandaki sekmede zil 10 dakikaya kadar gecikir; Sipariş bildirimleri açık kalsın).
 - Dış izleyici `/api/health?isler=1`'i saatte bir değil 6 saatte bir çağırsın.
-- Vercel Preview ortamından gizli anahtarları (AUTH_SECRET, ADMIN_PASSWORD, CRON_SECRET, KARAOKE_SYNC_SECRET,
-  PARASUT_*, RESEND_API_KEY, ANTHROPIC_API_KEY, BLOB) kaldırın (`docs/DEPLOY.md` §4); önizlemeye giriş yapılamaz olur.
 - Giderler'de her sabit giderin "Faturadaki KDV"sini kontrol edin (varsayılanlar: kira, faturalar, genel %20; personel
   %0; stopajlı şahıs kirası %0 olmalı).
 - `npm run db:reset` uzak veritabanında `-- --onay=<sunucu>` ister ve önce tam yedek alır.
@@ -144,8 +234,8 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 
 ### Dalga 10: personel yetkileri
 
-Plan `personel-yetki.md`. 10a main'de (#30, migration `0039_personel_yetki`); 10b dalı `claude/dalga-10b-personel`
-(migration yok). Belgeler: `docs/ONAYLAR.md`, `KASA-RAPORU`, `ZAYI-IKRAM`, `KONTROL-LISTELERI`, `FIYATLAR`,
+Plan `personel-yetki.md`. 10a (#30, migration `0039_personel_yetki`) ve 10b (#32, migration yok) main'de.
+Belgeler: `docs/ONAYLAR.md`, `KASA-RAPORU`, `ZAYI-IKRAM`, `KONTROL-LISTELERI`, `FIYATLAR`,
 `SITE-MENU` (Tükendi), `MAL-SIPARISI` § 11, `BUGUN`, `BILDIRIMLER`; personelin kendi anlatımı `/panel/yardim/personel`.
 
 **Sahibe notlar (dalga 10):**
@@ -164,12 +254,12 @@ Plan `personel-yetki.md`. 10a main'de (#30, migration `0039_personel_yetki`); 10
 ### Dalga 11: cari (elle borç ve ödeme)
 
 Sahibin isteği: "cari hesaplarda biz de borç ödeme girebilelim; belki elden almışızdır, fatura yok da olabilir".
-Plan `cari.md` (ledger, minimal ve cashflow tasarımlarından çıktı). Dal `claude/dalga-11-cari`, migration
+Plan `cari.md` (ledger, minimal ve cashflow tasarımlarından çıktı). main'de (#28; dal `claude/dalga-11-cari`), migration
 `0038_cari_hareket` (birleştirmede yeniden üretildi). Belgeler: `docs/TEDARIKCILER.md` › *Hesap hareketleri*,
 `NAKIT-PLANI`, `KASA-RAPORU`, `BILDIRIMLER`, `PARASUT`, `CLAUDE-BAGLANTISI`, `YEDEK`, `MAL-SIPARISI` §7. Kasa'daki
 değişiklik küçük ve ayrı tutuldu (iki etiket, ipucu, ad ipucu, bağlı satırın kilidi; `src/server/cari/kasa.ts`):
-dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/panel/kasa/*` ve
-`src/server/actions/cash-outs.ts` elle birleştirilir.
+dalga 10 (personel yetkileri) de Kasa'ya dokunuyordu (`src/app/panel/kasa/*`, `src/server/actions/cash-outs.ts`); 10a
+(#30) Dalga 11'in (#28) üstüne birleşti.
 
 **Bu planın dışında kalanlar (v2):**
 - Personelin Kasa'da "Tedarikçiye ödeme" türü: ad listesinden seçici ve "Listede yok" serbest metni, yönetici onayına
@@ -196,8 +286,9 @@ dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/pane
 ### Dalga 13: yazarkasa (banka POS) mali Z
 
 Plan `okc-z.md` (§17 adım tablosu, her adımın "Durum (26 Ekim)" notu), araştırma notları `okc-z-notlar.md`. PR-a
-main'de (#33). PR-b dalı `claude/dalga-13b-okc-z`, migration `0042_okc_z` (yalnız `ADD COLUMN`: `cash_reports`'a 12,
-`ai_calls`'a `effort`). Belgeler: `docs/KASA-RAPORU.md` › Banka POS Z raporu (yazarkasa) ve Gönderince,
+(#33) ve PR-b (#35, 0a951dd) main'de; PR-b'nin migration'ı `0042_okc_z` (yalnız `ADD COLUMN`: `cash_reports`'a 12,
+`ai_calls`'a `effort`). PR-b LafPOS'la (#34, #36) birleştirildi: LafPOS bandı, kasaya giren ve fotoğraf işaretleri mali
+Z kartıyla çalışır. Belgeler: `docs/KASA-RAPORU.md` › Banka POS Z raporu (yazarkasa) ve Gönderince,
 `docs/FOTOGRAF.md` (§ 1–§ 10), `docs/YAZARKASA-Z.md` (yeni: kâğıdın düzeni, etiketler, kimlikler, tuzaklar,
 doğrulanacak cihaz gerçekleri), README; Yardım'da personele "Banka POS Z raporu (yazarkasa)", yöneticiye "ModPOS Z ve
 banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması".
@@ -208,11 +299,11 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   yanıtları sentetiktir. Ölçümle kesinleşecekler: efor (`low` / `medium`), "önce üst, sonra alt yarı"nın varsayılan
   çekim olması, telefonda kalite 0,8 (`OKC_COMPRESS`, yazılmadı), okuma süresi metni ("Okunuyor… genelde N saniye"),
   okuma başına tutar (S8), şemadan çıkacak alanlar. Yalnız banka gün sonu fişi okumasında tarih uyarısı iki kez çıkıyor
-  (`okc.ts`; istemle birlikte düzeltilecek).
+  (`okc.ts`; denetimde E-69, B20).
 - **Kapı:** gerçek fotoğraflarda `--tekrar 3` ile yanlış dolum 0, "doğrulandı ama yanlış" 0, alan doğruluğu ≥ %95, ilk
   okuma p90 ≤ 20 sn → `OKC_PREFILL_ENABLED = true` (ekran değişmez). Sonuç `ekler/okc-z/eval.md`'ye.
-- **b8:** typegen + tsc, `eslint .`, tam test, `npm run build`, boş veritabanında `db:migrate && db:seed`; PR (taslak),
-  R2 ile migration'ın yeniden üretilmesi, canlı derleme günlüğü.
+- **b8 yapıldı** (#35): veritabanı testleriyle 1978/1978 test, derleme, boş ve canlı benzeri veritabanında 43 migration,
+  personel ve yönetici olarak tarayıcı, personel sızıntı betiği temiz.
 - **Sonra:** eski `kasa-pos` yüklemesinin ve yeniden okumasının kaldırılması (PR-b'den en az iki hafta sonra, bekleyen
   geç raporlarda `kasa-pos` kalmadığı denetlenerek); 13b (KDV tahmini ve vergi bölümünün kasa geliri yazarkasa
   tabanına; dalga 12'den sonra, `okcMonth.complete` şartıyla); PR-c (yakın görünüm, ikinci okuma) yalnız b2 tek
@@ -228,8 +319,8 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
 - **Canlı değerlendirme** `ANTHROPIC_API_KEY` ile yerelde, kabukta verilen anahtarla çalışır (anahtar depoya ya da
   `.env`'e yazılmaz); birkaç dolar tutar (okuma başına tahmini 0,05–0,10 $; ayda ek ~2–4 $).
 - **O zamana kadar** yazarkasa Z'sinin fotoğrafı okunur ama hiçbir rakamı forma yazılmaz: her alanın altında öneri ve
-  **Fotoğraftakini yaz** çıkar, personel fişle karşılaştırıp yazar. Planın İlke 7'si PR-b'nin gerçek fotoğrafla
-  ölçülmeden birleşmemesini söyler; kapı kapalıyken (yalnız öneri) erken birleştirmek sizin kararınız.
+  **Fotoğraftakini yaz** çıkar, personel fişle karşılaştırıp yazar. PR-b kapı kapalıyken (yalnız öneri) birleşti (26
+  Ekim, #35); planın İlke 7'si gereği kapı ancak b2'nin gerçek fotoğraflı ölçümüyle açılır.
 - **Varsayılanlar uygulandı** (`okc-z.md` §16): bölüm isteğe bağlı (girilmeyen gün "Yazarkasa Z yok" rozeti); ModPOS ile
   yazarkasa arasındaki toplam, nakit, yemek kartı ve banka farkı yalnız sizin ekranınızda ve seçtiğiniz e-posta
   adreslerinde, personelde ve WhatsApp'ta yalnız kart satırı (S2); geç raporda yazarkasa fotoğrafı kabul edilir ama
@@ -243,6 +334,49 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   kez bakın; yeni "Banka POS Z raporu (yazarkasa)" bölümü ve yöneticinin satırları orada.
 - **Kümülatif:** fotoğraftan okunur, yalnız önceki Z'yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısındaki
   **Kümülatifi temizle**.
+
+### LafPOS bağlantısı (#34, #36)
+
+LafPOS (kafenin kasası, `RiosenBeq/lafpos`) ModPOS'un yerine geçer. Her iş gününü kapanışta imzalı `POST /api/pos/gun`
+ile iter (günlük ürün satışı, Z ve kasa alanları, ödemeler, ikram); ürünlerin reçete maliyetini
+`GET /api/panel/pos/urunler`'den okur (fiyat, kâr ve reçete gitmez). Kasa raporunda **LafPOS'tan doldur**; Kasa
+raporuna "Gün içinde kasaya giren" (`cash_in`) eklendi. Migration'lar `0040_lafpos_baglantisi` ve `0041_kasaya_giren`
+(#36: 0040 bir dal yayınıyla canlıya önceden uygulanmıştı, canlıdaki hâline döndü; dal yayınının canlıya çıkması
+denetimde E-10, B05). Belge `docs/LAFPOS.md`.
+
+**Durum (26 Ekim denetimi):** canlıda kapalı (E-31): `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503
+`not_configured`, `pos_day_reports` ve `pos_daily_sales` boş. Anahtar gelse de: panel bağlantının durumunu ve
+reddedilen gün sonunu göstermez (E-32, B07); günlük satış satırlarını hiçbir hesap okumaz, aylık model hâlâ ModPOS
+listesine bağlı (E-08, B08); kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler
+B07-B11; sahibe sorular 1, 2, 5, 6.
+
+**Sahibe adım (LafPOS anahtarı, E-31):**
+1. Bir anahtar üretin: `openssl rand -base64 48` (en az 32 karakter; sitenin `KARAOKE_SYNC_SECRET`'ından **ayrı**).
+2. Vercel › lafmaliyet › Settings › Environment Variables: `LAFPOS_SYNC_SECRET`, **yalnız Production**.
+3. LafPOS'un `.env`'ine aynı değerle `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`.
+4. Paneli yeniden yayınlayın. LafPOS'ta bir günü kapatınca Kasa raporunda o günün formunda bant görünür
+   (`docs/LAFPOS.md` › Kurulum; hata kodlarının anlamı aynı belgede).
+
+### Dalga 14: stok değerleme FIFO (#38)
+
+Sahibin isteği (26 Ekim): "maliyeti stoktan düşerken önce giren önce çıkar gibi mantıkla yap". Plan `stok-fifo.md`,
+belge `docs/STOK-DEGERLEME.md`; migration yok. Ay sonu stoğu ve kâr-zararın mal maliyeti başlangıç ayından (Ayarlar ›
+Stok değerleme, varsayılan Ekim 2026; önce / sonra önizlemesiyle) itibaren dönemsel FIFO: partiler Paraşüt fatura
+satırlarından (miktar × bağ çarpanı; bekletilen ya da reddedilen fiyat dışarıda, iadeler düşülür), katmanlar aydan aya
+taşınır, karşılanmayan miktar ay sonu fiyatıyla. Başlangıçtan önceki aylar eskisi gibi (sayılan × ay sonu fiyatı;
+Dalga 7'nin kuralı). Reçete, menü maliyeti, önerilen fiyat, zam uyarısı ve Tutarlılık son alış fiyatında kalır.
+Sayımda katman rozeti ve kapsama satırı yalnız yöneticide.
+
+Denetimde FIFO'ya dokunan maddeler: başlangıç ayına bir kerelik yeniden değerleme farkı mal maliyeti diye yazılıyor
+(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyor (E-06, B03); "Diğer" kategorili fatura
+stoğa girip gelir-gidere girmiyor (E-07, B03).
+
+### Dalga 15: kenar çubuğu (#39)
+
+Yöneticinin kenar çubuğu: Genel bakış, Bugün, Onaylar ve Kasa raporu tek tıkta; sonra ana başlıklar Kafe, Menü, Stok,
+Satış, Alış & gider, Finans (Vergi sonra buraya girer), Ayarlar ve Yardım, alt sekmeleriyle (`src/components/panel/nav.ts`
+`NAV_TREE`, `docs/TASARIM.md`). Personelin ağacı ve adresler değişmedi; açık sayfanın grubu kendiliğinden açılır, komut
+paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çubuğuyla tutarsızlığı denetimde E-56 (B04).
 
 ### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
 
@@ -314,9 +448,10 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
 - Açık kalanlar:
   1. Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler: eylem fırlatırsa (ağ
      yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
-     `setSaving` / `setDeleting` ile düzeltilmeli.
+     `setSaving` / `setDeleting` ile düzeltilmeli. 26 Ekim denetiminde daha geniş hâliyle E-51 (B20; reçete
+     düzenleyici B12'de yapılırsa B20 onu atlar).
   2. Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir (`src/lib/site-orders/stage.ts`
-     86, 118, 128).
+     86, 118, 128). 26 Ekim denetiminde E-64 (B19; Tükendi, `/api/canli`, `/api/siparisler` ve kasa e-postası dahil).
   3. İsteğe bağlı: Postgres dışında ucuz bir değişiklik işareti (Vercel Runtime Cache ya da Edge Config sürüm sayacı);
      yalnız bar ekranı bildirimsiz çalışmak zorundaysa.
   4. B3 sağlamlaştırması: yeniden denetimin `SHOW_INCLUDE`'una tedarikçi (desteklenmezse geri düşerek); sahte
@@ -324,12 +459,13 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   5. Sahibin kararı: sipariş zili kapalı cihazda (yöneticinin dizüstü, zili kapatılmış ikinci ekran) boş bar ekranına
      yeni sipariş kabuğun yedek kontrolüyle gelir (bildirim izni varsa 30 dakikaya kadar; son iki saatte sipariş
      olduysa 3 dakikada). O cihazlar da görünürken 20 saniyede bir sorsun mu? Sorarsa `/panel/karaoke` önde açık kaldıkça
-     veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık.
+     veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık. (D-18; 26 Ekim'de sahibe soru 11.)
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
-  **26 Ekim:** ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`); okuyanların günlük veriye geçişi ayrı iş.
+  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). Satırlar
+  yazılıyor ama hiçbir hesap okumuyor (denetim E-08, B08; geçiş günü sahibe soru 2).
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 
@@ -348,6 +484,10 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   zamanı hatalarını kontrol edin.
 
 ## 4. Altyapı
+
+- `LAFPOS_SYNC_SECRET`: canlıda **yok** (26 Ekim); LafPOS'un iki ucu 503 döner. Sahibe adım §2 › "LafPOS bağlantısı".
+  Vercel Preview'da yalnız `DATABASE_*` ile `ADMIN_EMAIL` / `ADMIN_NAME` var; gizli değerler yalnız Production'da
+  (`docs/DEPLOY.md` §4).
 
 - `ANTHROPIC_API_KEY`: Vercel'de yalnız Production, sensitive olarak var. Yerelde deneme için anahtarı sahibinden
   isteyin; **asla commit etmeyin, yazdırmayın.** fotograf `claude-opus-5-5`'i efor `low` ile kullanır
@@ -381,6 +521,7 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
 8. Cari: faturasız alımların kategorisinin adı **değişmez** ("Nakit malzeme alımı").
 9. Cari: personelin listeden tedarikçi seçip onaylı ödeme girmesi **yok** (v2); personel Teslim · ödeme girer,
    yönetici Hesaba işle ile bağlar.
+10. 26 Ekim denetiminin 11 sorusu ve yanıt gelene kadarki varsayılanlar: §2 › "Denetim (26 Ekim): düzeltme partileri".
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 
