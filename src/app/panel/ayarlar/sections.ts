@@ -1,4 +1,4 @@
-import { Droplets, Globe, HardDriveDownload, History, Percent, QrCode, Ruler, ScanText, Tags, Timer, Users, type LucideIcon } from "lucide-react";
+import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, Ruler, ScanText, Tags, Timer, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -10,6 +10,8 @@ export const SETTINGS_SECTIONS = [
   { id: "oranlar", label: "Oranlar", icon: Percent },
   { id: "olculer", label: "Reçete ölçüleri", icon: Ruler },
   { id: "su", label: "Su + buz", icon: Droplets },
+  // Ay sonu stoğunun değerleme yöntemi: ilk giren ilk çıkar (FIFO) başlangıç ayı (docs/STOK-DEGERLEME.md)
+  { id: "stok", label: "Stok değerleme", icon: Layers },
   { id: "qr-menu", label: "QR menü", icon: QrCode },
   { id: "kategoriler", label: "Kategoriler", icon: Tags },
   { id: "gecmis", label: "İşlem geçmişi", icon: History },

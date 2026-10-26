@@ -12,6 +12,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { logPerson } from "@/lib/activity-person";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
+import { currentMonthTR, shiftMonth } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
@@ -33,6 +34,7 @@ import { SettingsNav } from "./section-nav";
 import { SiteLinksTest } from "./site-links-test";
 import { SETTINGS_SECTIONS } from "./sections";
 import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
+import { StockValuationCard } from "./stock-valuation";
 
 export const metadata: Metadata = { title: "Ayarlar" };
 
@@ -342,6 +344,18 @@ function dayLabeler(now: Date) {
   };
 }
 
+/** FIFO başlangıç ayı seçenekleri: ilk sayımdan (yoksa bu aydan) bu aya, kayıtlı başlangıç dahil */
+function fifoMonthOptions(counted: string[], start: string | null, current: string): string[] {
+  const out: string[] = [];
+  let m = [counted[0], start, current].filter((x): x is string => !!x).sort()[0];
+  while (m <= current) {
+    out.push(m);
+    m = shiftMonth(m, 1);
+  }
+  if (start && !out.includes(start)) out.push(start);
+  return out.sort();
+}
+
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
@@ -360,6 +374,11 @@ async function SettingsContent() {
     <SettingsLayout nav={<SettingsNav />}>
       <UsersLinkCard />
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
+      <StockValuationCard
+        start={model.fifoStart}
+        rows={model.countedMonths.map((m) => ({ month: m, ...model.valuationPreview(m), overridden: model.closingStock(m).overridden }))}
+        months={fifoMonthOptions(model.countedMonths, model.fifoStart, model.ds.currentMonth ?? currentMonthTR())}
+      />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
         <ActivityLog

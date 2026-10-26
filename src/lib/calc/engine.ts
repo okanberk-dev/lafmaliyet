@@ -1410,6 +1410,31 @@ export function createModel(ds: Dataset) {
     return s;
   }
 
+  /**
+   * Ayarlar önizlemesi: ayın sayımı iki yöntemle (ay sonu fiyatı ve FIFO), ayardan bağımsız. Ek kalemler ikisinde
+   * aynı. `covered` FIFO tutarının faturalardan gelen kısmı.
+   */
+  function valuationPreview(month: string): { old: number; fifo: number; covered: number } {
+    let old = 0;
+    let fifo = 0;
+    let covered = 0;
+    for (const [id, c] of countsByMonth.get(month) ?? []) {
+      const ing = ingById.get(id);
+      if (!ing) continue;
+      const last = c.qty * (unitCostAtMonthEnd(id, month) * (c.factor ?? countFactor(ing.countUnit)));
+      old += last;
+      const f = fifoLayers(month, id);
+      if (!f) {
+        fifo += last;
+        continue;
+      }
+      fifo += layersValue(f.layers);
+      covered += layersValue(f.layers.filter((x) => !x.fallback));
+    }
+    const extras = sum((extrasByMonth.get(month) ?? []).map((e) => e.qty * e.unitPrice));
+    return { old: old + extras, fifo: fifo + extras, covered };
+  }
+
   // --- Faturalar -----------------------------------------------------------------
   const invoiceNet = (i: { amount: number; discount: number }) => i.amount - i.discount;
   const invoicesByMonth = new Map<string, typeof ds.invoices>();
@@ -1889,6 +1914,9 @@ export function createModel(ds: Dataset) {
     fifoLayers,
     /** Stok değerleme başlangıcı (Ayarlar; null = her ay ay sonu fiyatı) */
     fifoStart,
+    valuationPreview,
+    /** Sayım girilmiş aylar (sıralı) */
+    countedMonths: [...countsByMonth.keys()].sort(),
     /** Sayımın birim fiyatı: ayın sonunda geçerli fiyat (kapanmış ay sonraki zamla değişmez); FIFO'da fallback */
     unitCostAtMonthEnd,
     countInBaseUnit,
