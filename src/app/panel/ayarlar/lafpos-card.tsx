@@ -13,7 +13,7 @@ import { loadLafposCard } from "@/server/lafpos/status";
 import { LafposDayDelete, LafposSwitchDayForm } from "./lafpos-client";
 import { SectionCard } from "./section-card";
 
-/** İmzası tutmayan isteklerin satırı bu kadar gün görünür */
+/** İmzası doğrulanamayan isteklerin satırı bu kadar gün görünür */
 const UNVERIFIED_DAYS = 14;
 
 /**

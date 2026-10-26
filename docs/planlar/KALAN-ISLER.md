@@ -105,7 +105,7 @@ Denetimin hiç okumadığı yerler (eleştirmen): Özel günler, karaoke doluluk
 sayfasının kendisi (yalnız rakamları, E-13 / E-46) ve site ping alıcıları (`/api/menu/ping`, `/api/orders/ping`,
 `/api/karaoke/ping`).
 
-**Sahibe sorular (26 Ekim; yanıt yok).** Yanıt gelene kadar partisi aşağıdaki varsayılanı uygular; varsayılanı
+**Sahibe sorular (26 Ekim; 1, 2 ve 6 yanıtlandı, gerisi yanıt yok).** Yanıt gelene kadar partisi aşağıdaki varsayılanı uygular; varsayılanı
 yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine yazar.
 1. **LafPOS anahtarı** (E-31, B07): kafede LafPOS kullanılıyor mu; `LAFPOS_SYNC_SECRET` Vercel'e eklenebilir mi?
    **Yanıt (26 Ekim):** henüz değil, kafede ModPOS var; LafPOS bütün sistemlerde açılınca kullanılacak, o güne kadar
@@ -124,6 +124,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 5. **Kasadan çıkan para nereye girilecek** (E-35, B09): fişli harcamalar ve sahibe teslim edilen nakit panelin "Kasadan
    çıkanlar"ına mı, LafPOS'a mı, ikisine birden mi?
 6. **LafPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, LafPOS'tan mı alınsın?
+   **Yanıt (26 Ekim):** evet, LafPOS'a geçilince ikram kendiliğinden LafPOS'tan gelir (B10).
 7. **Aylık girişe çevrilen giderler** (E-13, B15): reklam, influencer gibi değişen giderler başabaşta ve nakit planında
    geçen ayın gerçekleşeniyle mi, son 3 ayın ortalamasıyla mı sayılsın?
 8. **Fişlerin KDV'si** (E-60, B15): Aylık harcamalar'daki fişler gelir-giderde KDV dahil mi kalsın, KDV düşülüp mü
@@ -361,7 +362,7 @@ ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › laf
 sil", parolayla), gelen ve gelmeyen günleri gösterir; "LafPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
 raporunun LafPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `LAFPOS_SYNC_SECRET` bağlantıyı açmaz.
 Kalan: günlük satış satırlarını hiçbir hesap okumaz, aylık model ModPOS listesine bağlı (E-08, B08); kart kart
-ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B08-B11; sahibe sorular 5, 6.
+ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B08-B11; sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.

@@ -205,13 +205,21 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
 
 | Sonuç | Yazılan |
 |-------|---------|
-| 200 | `lastOk`: an, gün, Z no, satır sayısı, `counted` |
-| 400, 409, 500 (imza doğrulanmış) | `lastError`: an, durum, hata, alan (400), gün, paneldeki Z (409), gönderilen Z (409) |
+| 200 | `lastOk`: an, gün, Z no, satır sayısı, `counted`; o günün `rejections` kaydı silinir (gün yeniden yazıldı) |
+| 400, 409, 500 (imza doğrulanmış) | `lastError`: an, durum, hata, alan (400), gün, paneldeki Z (409), gönderilen Z (409). Günü okunan 400 ve 409 ayrıca `rejections[gün]`'e (aynı günün eskisinin yerine, en çok 10 gün; satır kilitlenerek) |
 | 401, 413 (imza doğrulanamadı) | yalnız `unverified`: sayaç, son an, son durum. Gövde okunmaz; yazım örnek başına dakikada bir (imzasız istek yağmuru yazım yağmuru olmasın), aradakiler bellekte birikip sonraki yazıma eklenir: sayaç "en az" |
 | 503 (anahtar yok) | hiçbir şey |
 
 Retler gövdesiz günlüğe de düşer: `[lafpos] reddedildi 409 z_conflict 2026-10-26 127`. Durum yazımı yanıtı hiçbir
 zaman bozmaz. Durum satırı aynı anda gelen iki sonucun alanını ezmez (üst düzey birleştirme).
+
+**LafPOS 400 ve 409'u kendisi yeniden denemez** (giden kutusunda bir yıl bekletir; LafPOS
+`server/sync/lafmaliyet.ts`): reddedilen ya da panelde silinen gün ancak LafPOS'ta **Kasa › Geçmiş günler › o günün Z
+raporu › Gönder** ile yeniden gelir. Bu yüzden günlü ret güne göre tutulur: sonraki günün başarılı gönderimi ya da başka
+bir günün reddi onu örtmez. Kartta durumu o günün paneldeki kaydından okunur (`dayRejectionStatus`): gün retten sonra
+yeniden yazıldıysa çözüldü (gösterilmez), yönetici sildiyse ya da 409'un günü panelde yoksa "LafPOS'tan Gönder
+bekleniyor" (turuncu), değilse açık (kırmızı). 500'ü LafPOS kendisi yeniden dener: güne bağlanamayan ret (500 ve gövdesi
+okunamayan 400) son başarılı gönderimden yeniyse kırmızı, değilse gri "Önceki ret".
 
 **Ayarlar › LafPOS (kasa)** kartı (yalnız yönetici; saf özet `lafposCardSummary`, `src/lib/lafpos/status.ts`):
 
@@ -219,20 +227,32 @@ zaman bozmaz. Durum satırı aynı anda gelen iki sonucun alanını ezmez (üst 
   seçilmedi: LafPOS günleri saklanıyor, hesaplara girmiyor." · "Geçiş günü 10 Kasım 2026 (4 gün sonra). O güne kadar
   kasa ModPOS." · "Kasa LafPOS (10 Kasım'dan beri)." ve son gün sonu. Kırmızı yalnız geçiş günü seçili ama anahtar
   yokken ("LafPOS günleri gelemez"). Anahtar 32 karakterden kısa ya da sitenin anahtarıyla aynıysa nedeni yazılır.
-- Son ret (son başarılı gönderimden sonraysa kırmızı kutuda) ve metni; 409'da **Bu günün LafPOS kaydını sil**.
-- İmzası tutmayan istekler (son 14 gün): son an ve sayaç, ipucuyla (anahtar aynı mı, kafedeki saat ±5 dakika mı).
+- Güne göre açık retler (kırmızı, her biri kendi kutusunda, en yeni gün önce) ve metni; 409'da, gün hâlâ reddeden Z ile
+  kayıtlıysa **Bu günün LafPOS kaydını sil**. Silinen gün "LafPOS'tan Gönder bekleniyor" (turuncu) olur, LafPOS'tan
+  gelince kalkar. Güne bağlanamayan son ret ayrı kutuda. Telefonda kapalı özetin başına yazılır ("7 Kasım gönderimi
+  reddedildi", "2 gönderim reddedildi", "7 Kasım için LafPOS'tan Gönder bekleniyor"). Anahtar yokken retler kırmızı
+  değildir.
+- İmzası doğrulanamayan istekler (son 14 gün): son an ve sayaç. Yabancı bir istek de olabilir: metin suçlamaz
+  ("LafPOS'tansa anahtarı ve kafedeki saati (±5 dk) denetleyin"); o istekten sonra başarılı gönderim geldiyse turuncu
+  değil, soluk bilgi.
 - Geçiş günü alanı ve onay penceresi.
 - Gelen günler (en yeni 14): Z, fiş, ciro, satır, geliş anı, **Sayılıyor** ya da **Deneme**, satır sonunda sil.
-- Geçiş gününden düne gün sonu gelmeyen günler (onaylı kapalı günler hariç, en çok son 60 gün).
-- Ürüne bağlanamayan POS adları (hizmet satırları hariç): ad, adet, gün.
+- Geçiş gününden düne gün sonu gelmeyen günler (onaylı kapalı günler hariç, en çok son 60 gün), ipucuyla: LafPOS'ta
+  Yönetim › Entegrasyon'daki giden kutusu; reddedilen gün Kasa › Geçmiş günler › Z raporu › Gönder ile yeniden gider.
+- Ürüne bağlanamayan POS adları (hizmet satırları hariç): ad, adet, gün. Bağlama Ürünler › Site menüsü'nde ya da
+  Satışlar'daki POS eşleştirmesinde; eşleştirme yazım anında uygulanır, eski günler LafPOS'tan Gönder ile yeniden gelince
+  (ya da deneme günü silinip yeniden gönderilince) geçer. Yalnız LafPOS'ta geçen bir ad Satışlar'da henüz eşleştirilemez
+  (Satışlar'ın eşleştirmesi ModPOS listesinin satırına bağlı; E-33, B08).
 
 **Bu günün LafPOS kaydını sil** (`deleteLafposDay`; çekirdek `removeLafposDay`, `src/server/lafpos/admin.ts`): yalnız
 yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Gün sonunun
 yazımıyla aynı danışma kilidi (`lafpos-gun:<gün>`) altında, tek işlemde `pos_day_reports` ve `pos_daily_sales`
 satırlarını siler; yalnız yöneticinin gördüğü Z'ye koşullu (bu arada başka Z ile yeniden yazılan gün silinmez). Durum
-satırındaki o günün reddi "silindi" olur; LafPOS günü yeniden gönderince yazılır, kart "LafPOS yeniden gönderdi (Z …)"
-der. İşlem geçmişi: "LafPOS günü silindi · 26 Ekim 2026 · Z 127 · 42 satır". Deneme günlerini temizlemek için de
-kullanılır.
+satırındaki o günün reddi yalnız bu silmenin çözdüğü çakışmaysa (409, aynı Z) "silindi" olur; aynı günün 400'ü alanı ve
+nedeniyle açık kalır. **LafPOS silinen günü kendisi yeniden göndermez**: sonra LafPOS'ta Kasa › Geçmiş günler › o günün
+Z raporu › **Gönder**'e basılır; o güne kadar kart "LafPOS'tan Gönder bekleniyor" der, gün gelince kalkar. İşlem
+geçmişi: "LafPOS günü silindi · 26 Ekim 2026 · Z 127 · 42 satır". Deneme günlerini temizlemek için de kullanılır (aynı
+kural: yeniden gelmesi için Gönder).
 
 ## Açılış sırası
 
@@ -248,9 +268,10 @@ birleşip yayına çıkmak hiçbir şeyi açmaz: anahtar ve geçiş günü yokke
    canlıda.
 2. **Deneme gönderimi:** LafPOS kurulum modundan çıkmışken gerçek bir günü kapatın (ModPOS'la paralel olabilir).
    Ayarlar › LafPOS (kasa)'da gün **Deneme** olarak görünür, yanıt `counted: false`; başka hiçbir ekranda görünmez.
-   Retler aynı kartta. Kartın "Ürüne bağlanamayan POS adları" listesi boşalana kadar ürünler bağlanır (Ürünler › Site
-   eşleştirmesi ya da Satışlar'daki POS eşleştirmesi; gün yeniden gelince geçer). Eğitim / kurulum günleri geldiyse
-   kartta silin.
+   Retler aynı kartta. Kartın "Ürüne bağlanamayan POS adları" listesine bakılıp bağlanabilen ürünler bağlanır (Ürünler ›
+   Site menüsü ya da Satışlar'daki POS eşleştirmesi). Liste öneridir, ön koşul değil: yalnız LafPOS'ta geçen adlar
+   Satışlar'da B08'le eşleştirilebilir olur, eski günler de ancak LafPOS'tan Gönder ile yeniden gelince geçer. Eğitim /
+   kurulum günleri geldiyse kartta silin.
 3. **Geçiş günü:** Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü (tercihen ayın 1'i). O günden itibaren Kasa raporunda
    bant çıkar ve sonraki partilerin okuyucuları LafPOS'a geçer.
 
@@ -273,10 +294,10 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | Yanıt | Ne yapılır |
 |-------|------------|
 | `503 not_configured` | Panelde `LAFPOS_SYNC_SECRET` yok, 32 karakterden kısa ya da sitenin `KARAOKE_SYNC_SECRET`'ıyla aynı: ayrı bir değer ekleyip yeniden yayınlayın (kart nedenini yazar) |
-| `401 unauthorized` | İki taraftaki anahtar aynı mı (LafPOS'ta `LAFMALIYET_SYNC_SECRET`), kafedeki makinenin saati doğru mu (±5 dakika)? Kart son anı ve sayacı gösterir |
+| `401 unauthorized` | İki taraftaki anahtar aynı mı (LafPOS'ta `LAFMALIYET_SYNC_SECRET`), kafedeki makinenin saati doğru mu (±5 dakika)? Kart son anı ve sayacı gösterir; yabancı bir istek de olabilir, sonra başarılı gönderim geldiyse bağlantı çalışıyor |
 | `413 too_large` | Gövde 256 KB'ı aştı; LafPOS'un gönderdiğine bakın |
-| `400 invalid` + `field` | Gövde sözleşmeye uymuyor; `field` ilk sorunlu alanın yolu (`date`: ileri ya da bozuk gün, `lines.5.posName`: aynı ad iki kez). LafPOS düzeltip yeniden gönderir |
-| `409 z_conflict` + `date`, `zNo` | O güne panelde başka bir Z no ile (`zNo`) yazılmış gün sonu var; hiçbir şey yazılmadı, yeniden deneme de 409 alır. Bir tarihte bir Z olur: paneldeki doğruysa LafPOS'taki fazla günü düzeltin; LafPOS'taki doğruysa yönetici Ayarlar › LafPOS (kasa)'da **Bu günün LafPOS kaydını sil**'e basar (parolayla; o günün özeti ve satırları tek işlemde silinir), LafPOS yeniden gönderince yazılır. Kart son reddi iki Z'siyle gösterir |
+| `400 invalid` + `field` | Gövde sözleşmeye uymuyor; `field` ilk sorunlu alanın yolu (`date`: ileri ya da bozuk gün, `lines.5.posName`: aynı ad iki kez). LafPOS kendisi yeniden denemez: düzeltilince LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder. Kart o günün reddini alanıyla, gün yeniden gelene kadar gösterir |
+| `409 z_conflict` + `date`, `zNo` | O güne panelde başka bir Z no ile (`zNo`) yazılmış gün sonu var; hiçbir şey yazılmadı, yeniden deneme de 409 alır. Bir tarihte bir Z olur: paneldeki doğruysa LafPOS'taki fazla günü düzeltin; LafPOS'taki doğruysa yönetici Ayarlar › LafPOS (kasa)'da **Bu günün LafPOS kaydını sil**'e basar (parolayla; o günün özeti ve satırları tek işlemde silinir), **sonra LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basılır** (LafPOS reddedilen günü kendisi yeniden denemez). Kart reddi gününe göre iki Z'siyle, silindikten sonra "LafPOS'tan Gönder bekleniyor" diye gösterir |
 | `500 server_error` | Panel yazamadı (veritabanı); LafPOS yeniden dener. Sürüyorsa Vercel günlüğünde `[lafpos]` |
 | Kasa raporunda bant yok | Geçiş günü seçilmedi ya da gün ondan önce (bilerek: deneme günü Kasa'ya girmez); o günün gönderimi gelmedi (LafPOS'un giden kutusu; kart gelmeyen günleri listeler) ya da gün başka (05:00 kuralı) |
 
@@ -301,4 +322,4 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts` | Uçlar |
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx` | "LafPOS'tan doldur" bandı |
 | `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
-| `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), `counted`, günün silinmesi, geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |
+| `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), güne göre açık retler (sonraki 200 ve başka günün 400 / 500'ü örtmez, aynı günün 200'ü kapatır), `counted`, günün silinmesi (yalnız çözdüğü 409'u kapatır), geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |
