@@ -203,14 +203,6 @@ export function readPackagePrice(text: string): MoneyRead {
 
 // ---------------------------------------------------------------- Kalemin yazılacak değerleri
 
-/** Personelin "Listeye ekle"ye yazamayacağı ay (sayımını değiştiremediği ay) */
-export const STAFF_MONTH_MESSAGE = "Personel yalnız bu ayın ve geçen ayın sayımına kalem ekleyebilir; daha eski bir ay için yöneticiye yazın";
-
-/** Personel yalnız sayımını değiştirebildiği ayda (bu ay ve geçen ay: `staffMonths`) kalem ekler; yönetici her ayda */
-export function countItemMonthIssue(role: "admin" | "staff", month: string, staffMonths: string[]): string | null {
-  return role !== "admin" && !staffMonths.includes(month) ? STAFF_MONTH_MESSAGE : null;
-}
-
 /** Kalem nereden eklendi: Stok sayımı › Listeye ekle ya da reçete önerisindeki "Yeni malzeme" */
 export type CountItemSource = "sayim" | "recete";
 

@@ -18,6 +18,7 @@ import { test } from "node:test";
 
 import postgres from "postgres";
 
+import { STAFF_LATE_FIX_MESSAGE, STAFF_OLD_MONTH_MESSAGE, staffCountIssue } from "../src/app/panel/sayim/logic";
 import { countUnitsFor, createModel } from "../src/lib/calc/engine";
 import { alerts } from "../src/lib/calc/insights";
 import { ingredientChanges, productImpacts, type PriceHistoryRow } from "../src/lib/calc/price-impact";
@@ -32,7 +33,6 @@ import {
   countFromMonth,
   countGroupOptions,
   countItemLogDetail,
-  countItemMonthIssue,
   countItemNote,
   countItemPriceRow,
   correctedCountItemStart,
@@ -50,7 +50,6 @@ import {
   newCountItemValues,
   nextSortOrder,
   readPackagePrice,
-  STAFF_MONTH_MESSAGE,
   startsLikeFormula,
   unpricedNotice,
 } from "../src/lib/count-item";
@@ -321,17 +320,18 @@ test("paket fiyatı: boş bırakılabilir; Türkçe ya da noktalı yazılır, ku
   assert.match(core, /packagePrice: zPackagePrice\.nullish\(\)\.transform\(\(v\) => v \?\? null\),/);
 });
 
-test("ay kuralı: personel yalnız bu ayın ve geçen ayın sayımına (reçete önerisinden de) kalem ekler; yönetici her aya", () => {
-  const months = ["2026-10", "2026-09"];
-  assert.equal(countItemMonthIssue("staff", "2026-10", months), null);
-  assert.equal(countItemMonthIssue("staff", "2026-09", months), null);
-  assert.equal(countItemMonthIssue("staff", "2026-08", months), STAFF_MONTH_MESSAGE);
-  assert.equal(countItemMonthIssue("staff", "2026-11", months), STAFF_MONTH_MESSAGE);
-  assert.equal(countItemMonthIssue("admin", "2025-01", months), null);
-  assert.equal(STAFF_MONTH_MESSAGE, "Personel yalnız bu ayın ve geçen ayın sayımına kalem ekleyebilir; daha eski bir ay için yöneticiye yazın");
+test("ay kuralı: personel bu ayın (ilk 10 günde geçen ayın da) sayımına (reçete önerisinden de) kalem ekler; yönetici her aya", () => {
+  const early = new Date("2026-10-05T09:00:00Z");
+  const late = new Date("2026-10-25T09:00:00Z");
+  assert.equal(staffCountIssue("staff", "2026-10", early), null);
+  assert.equal(staffCountIssue("staff", "2026-09", early), null);
+  assert.equal(staffCountIssue("staff", "2026-09", late), STAFF_LATE_FIX_MESSAGE);
+  assert.equal(staffCountIssue("staff", "2026-08", early), STAFF_OLD_MONTH_MESSAGE);
+  assert.equal(staffCountIssue("staff", "2026-11", early), STAFF_OLD_MONTH_MESSAGE);
+  assert.equal(staffCountIssue("admin", "2025-01", late), null);
   // Reçete önerisi kalemi sayım sayfasının açtığı aya yazar (bu ay ya da ay başında geçen ay): kural her zaman geçer
   const page = read("src/app/panel/receteler/page.tsx");
-  assert.match(page, /const countMonth = defaultCountMonth\(new Date\(\), \(m\) => model\.stockSheet\(m\)\.hasData\);/);
+  assert.match(page, /const countMonth = defaultCountMonth\(new Date\(\), \(m\) => countComplete\(model\.stockSheet\(m\)\)\);/);
   assert.match(read("src/app/panel/receteler/ingredient-picker.tsx"), /addProposalIngredient\(\{ month: newIngredient\.month, \.\.\.values \}\)/);
 });
 
@@ -696,14 +696,14 @@ test("personel kalem ekler (bu ay ve geçen ay); paket fiyatını yalnız yazar,
   assert.match(add, /const me = await requireUser\(\);/);
   assert.doesNotMatch(add, /requireAdmin/);
   // "Listede olmayanlar" da aynı ay kuralıyla (Listeye ekle'ninki aşağıda, ortak çekirdekte)
-  assert.match(fnBody("src/app/panel/sayim/actions.ts", "saveStaffStockExtras"), /if \(me\.role !== "admin" && !staffCountMonths\(\)\.includes\(m\)\)/);
+  assert.match(fnBody("src/app/panel/sayim/actions.ts", "saveStaffStockExtras"), /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
   // Reçete önerisindeki "Yeni malzeme" de personelin; ay kuralı ve kilit ikisi için ortak çekirdekte
   const recipe = fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient");
   assert.match(recipe, /const me = await requireUser\(\);/);
   assert.doesNotMatch(recipe, /requireAdmin/);
   const core = fnBody(CORE, "createCountItem");
-  assert.match(core, /const monthIssue = countItemMonthIssue\(me\.role, m, staffCountMonths\(\)\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
-  assert.ok(core.indexOf("countItemMonthIssue(") < core.indexOf("getDb().transaction("), "ay kuralı yazmadan önce");
+  assert.match(core, /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
+  assert.ok(core.indexOf("staffCountIssue(") < core.indexOf("getDb().transaction("), "ay kuralı yazmadan önce");
   assert.match(core, /pg_advisory_xact_lock\(hashtext\('sayim-listeye-ekle'\)\)/);
   assert.doesNotMatch(read(CORE), /"use server"/, "çekirdek dışarıdan çağrılan bir uç değil");
   assert.match(read(CORE), /^import "server-only";/);

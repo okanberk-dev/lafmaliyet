@@ -4,7 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { staffCountMonths } from "@/app/panel/sayim/logic";
+import { staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
@@ -16,7 +16,8 @@ import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zText } from "./util";
 
 /**
- * Sayım sonuçlarını kaydeder. Personel de kullanabilir (yalnız bu ay ve geçen ay). qty = null olan satırlar silinir.
+ * Sayım sonuçlarını kaydeder. Personel de kullanabilir (bu ay; geçen ay yalnız ayın ilk 10 gününde: staffCountIssue).
+ * qty = null olan satırlar silinir.
  * Her sayımla o anki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1) saklanır: malzemenin sayım birimi sonradan
  * değişse ya da malzeme pasif yapılsa da geçmiş ayın stok değeri değişmez.
  *
@@ -27,9 +28,9 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
-    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
-      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir; daha eski bir ay için yöneticiye yazın");
-    }
+    // Personel bu ayı, geçen ayı yalnız ayın ilk 10 gününde değiştirir (sayim/logic.ts staffCountIssue)
+    const monthIssue = staffCountIssue(me.role, m);
+    if (monthIssue) throw new UserError(monthIssue);
     const data = z
       .array(
         z.object({

@@ -12,7 +12,7 @@ import { requireUser } from "@/server/auth/dal";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
 import { getDb, schema as s } from "@/server/db";
 
-import { planStaffExtras, staffCountMonths } from "./logic";
+import { planStaffExtras, staffCountIssue } from "./logic";
 
 /**
  * Stok sayımı › "Listeye ekle" (yönetici ve personel): kalemi hemen hammadde olarak açar, onay beklemez. Kurallar ortak
@@ -42,9 +42,9 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
-    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
-      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir; daha eski bir ay için yöneticiye yazın");
-    }
+    // Personel bu ayı, geçen ayı yalnız ayın ilk 10 gününde değiştirir (sayim/logic.ts staffCountIssue)
+    const monthIssue = staffCountIssue(me.role, m);
+    if (monthIssue) throw new UserError(monthIssue);
     const data = z
       .array(z.object({ name: zText("Kalem adı", 120), unit: zText("Birim", 20), qty: z.number().finite().min(0, "Miktar negatif olamaz") }))
       .max(100)

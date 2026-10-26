@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { countText, mergeCounts, parseCount, staffCountMonths, unusualCount } from "../src/app/panel/sayim/logic";
+import { countText, mergeCounts, parseCount, staffCountIssue, staffCountMonths, unusualCount } from "../src/app/panel/sayim/logic";
 import { parseNumberTR } from "../src/lib/calc/expr";
 
 const p = (raw: string, unit: string) => parseCount(raw, unit, parseNumberTR);
@@ -68,15 +68,28 @@ test("birleştirme: dokunulmayan satır başkasının kaydını alır, ikisi de 
   assert.deepEqual(gone, { values: { 1: "" }, conflicts: [] });
 });
 
-test("personel yalnız bu ayı ve geçen ayı sayar; sunucu çakışmada üzerine yazmaz", () => {
+test("personel bu ayı, geçen ayı yalnız ilk 10 günde sayar; sunucu çakışmada üzerine yazmaz", () => {
   assert.deepEqual(staffCountMonths(new Date("2026-11-01T06:00:00Z")), ["2026-11", "2026-10"]);
-  // Ayın ilk saatleri Türkiye'de yeni ay
+  // Ayın ilk saatleri Türkiye'de yeni ay (iş günü hâlâ 31 Ekim: Ekim de açık)
   assert.deepEqual(staffCountMonths(new Date("2026-10-31T22:30:00Z")), ["2026-11", "2026-10"]);
+  assert.deepEqual(staffCountMonths(new Date("2026-11-03T09:00:00Z")), ["2026-11", "2026-10"]);
+  assert.deepEqual(staffCountMonths(new Date("2026-11-10T20:00:00Z")), ["2026-11", "2026-10"], "10. gün dahil");
+  assert.deepEqual(staffCountMonths(new Date("2026-11-25T09:00:00Z")), ["2026-11"]);
+  // 11 Kasım 03:00 TR: iş günü 10 Kasım, geçen ay hâlâ açık
+  assert.deepEqual(staffCountMonths(new Date("2026-11-11T00:00:00Z")), ["2026-11", "2026-10"]);
+  assert.deepEqual(staffCountMonths(new Date("2026-11-11T06:00:00Z")), ["2026-11"]);
+  // Ret metni: geçen ay pencere dışında yöneticiye yönlendirir; yönetici her ayı yazar
+  const late = new Date("2026-11-25T09:00:00Z");
+  assert.equal(staffCountIssue("staff", "2026-10", late), "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticine haber ver.");
+  assert.equal(staffCountIssue("staff", "2026-11", late), null);
+  assert.match(staffCountIssue("staff", "2026-07", late) ?? "", /yöneticiye yazın/);
+  assert.equal(staffCountIssue("admin", "2026-10", late), null);
+  assert.equal(staffCountIssue("admin", "2025-01", late), null);
   const stock = readFileSync(join(process.cwd(), "src/server/actions/stock.ts"), "utf8");
-  assert.match(stock, /me\.role !== "admin" && !staffCountMonths\(\)\.includes\(m\)/);
+  assert.match(stock, /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
   assert.match(stock, /return now !== e\.base && now !== e\.qty;/);
   const extras = readFileSync(join(process.cwd(), "src/app/panel/sayim/actions.ts"), "utf8");
-  assert.match(extras, /me\.role !== "admin" && !staffCountMonths\(\)\.includes\(m\)/);
+  assert.match(extras, /const monthIssue = staffCountIssue\(me\.role, m\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
   // Form taban değeri gönderir; ağ hatasında düğmeler kilitli kalmaz
   const form = readFileSync(join(process.cwd(), "src/app/panel/sayim/stock-form.tsx"), "utf8");
   assert.match(form, /ingredientId: l\.id, qty: qtyOf\(l\), base: l\.qty/);

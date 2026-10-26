@@ -6,6 +6,7 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
 export { layerText } from "@/lib/calc/fifo";
+import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR } from "@/lib/format";
 
@@ -21,15 +22,49 @@ export function todayTR(now: Date = new Date()): string {
 
 /**
  * Sayım sayfası adreste ay yokken hangi ayı açsın: ay sonu sayımı ayın son günü kapanıştan sonra yapılır, çoğu
- * zaman ertesi sabah girilir. Ayın ilk 10 gününde geçen ayın sayımı girilmemişse geçen ay, yoksa bu ay açılır.
+ * zaman ertesi sabah girilir. Gün kasanın iş günüdür (gece 05:00'te döner: 31 Ekim 23:50'de başlayan sayım 00:10'da
+ * da Ekim'dir). Ayın ilk 10 gününde geçen ayın sayımı tamamlanmamışsa (`isComplete`: countComplete; yarım sayım da
+ * tamam değildir) geçen ay, yoksa bu ay açılır. Sayfa çözülen ayı adrese yazar: kayıttan sonraki yenileme ayı
+ * değiştiremez.
  */
-export function defaultCountMonth(now: Date, isCounted: (month: string) => boolean, graceDays = COUNT_GRACE_DAYS): string {
-  const today = todayTR(now);
+export function defaultCountMonth(now: Date, isComplete: (month: string) => boolean, graceDays = COUNT_GRACE_DAYS): string {
+  const today = businessDate(now);
   const month = today.slice(0, 7);
   const day = Number(today.slice(8, 10));
   const prev = shiftMonth(month, -1);
-  return day <= graceDays && !isCounted(prev) ? prev : month;
+  return day <= graceDays && !isComplete(prev) ? prev : month;
 }
+
+// ---------------------------------------------------------------- Sayım tamam mı (tek kural)
+
+export interface CountStatus {
+  /** Sayılan liste kalemi (arşiv satırları hariç) */
+  counted: number;
+  /** Ayın sayım listesindeki kalem (arşiv satırları hariç; engine.ts stockSheet listesi) */
+  total: number;
+  /** Listelenen, arşivsiz kalemlerin hepsi sayıldı */
+  complete: boolean;
+}
+
+/**
+ * Ayın sayımı nerede: sayım ekranı, grup kartları, Sayım düzeni şeridi, Genel bakış'ın "Bu ayın işleri" ve sayfanın
+ * varsayılan ayı aynı kuralı kullanır (Bugün'ün sunucu sayımı da: src/server/data/today.ts countProgress). Tek satır
+ * kaydedilmiş ay "tamam" değildir: sayılmayan kalemler ay sonu stoğunda 0 sayılır.
+ */
+export function countStatus(sheet: { groups: { lines: { archived: boolean; qty: number | null }[] }[] }): CountStatus {
+  let counted = 0;
+  let total = 0;
+  for (const g of sheet.groups)
+    for (const l of g.lines) {
+      if (l.archived) continue;
+      total++;
+      if (l.qty !== null) counted++;
+    }
+  return { counted, total, complete: total > 0 && counted >= total };
+}
+
+/** countStatus(sheet).complete */
+export const countComplete = (sheet: Parameters<typeof countStatus>[0]) => countStatus(sheet).complete;
 
 // ---------------------------------------------------------------- Canlı stok toplamı
 
@@ -375,8 +410,32 @@ export function mergeCounts(
   return { values: next, conflicts };
 }
 
-/** Personelin sayım girebildiği aylar: bu ay ve geçen ay (kapanmış eski ayın kâr-zararı sessizce değişmesin) */
+/**
+ * Personelin sayım girebildiği aylar: bu ay; geçen ay yalnız ayın ilk 10 gününde (COUNT_GRACE_DAYS, Bugün'ün geçen ay
+ * sayımı satırının penceresi). Sonrasında geçen ayın kapanışı (mal maliyeti, kâr, sonraki ayın açılışı ve FIFO) yalnız
+ * yöneticiyle değişir. Gün hem takvim günü hem kasanın iş günü (05:00) için bakılır: gece yarısını geçen sayım da
+ * sürer.
+ */
 export function staffCountMonths(now: Date = new Date()): string[] {
-  const month = todayTR(now).slice(0, 7);
-  return [month, shiftMonth(month, -1)];
+  const out = new Set<string>();
+  for (const day of [todayTR(now), businessDate(now)]) {
+    const month = day.slice(0, 7);
+    out.add(month);
+    if (Number(day.slice(8, 10)) <= COUNT_GRACE_DAYS) out.add(shiftMonth(month, -1));
+  }
+  return [...out];
+}
+
+/** Personel geçen ayın sayımını pencere dışında değiştirmek isteyince */
+export const STAFF_LATE_FIX_MESSAGE = "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticine haber ver.";
+/** Personel daha eski (ya da ileri) bir ayın sayımını değiştirmek isteyince */
+export const STAFF_OLD_MONTH_MESSAGE = "Personel yalnız bu ayın sayımını (ayın ilk 10 gününde geçen ayınkini de) değiştirebilir; başka bir ay için yöneticiye yazın.";
+
+/**
+ * Personelin bu ayın sayımına yazamamasının sebebi (yazabiliyorsa ya da yöneticiyse null). Sayım kaydı, ek kalemler
+ * ve "Listeye ekle" aynı kapıdan geçer.
+ */
+export function staffCountIssue(role: "admin" | "staff", month: string, now: Date = new Date()): string | null {
+  if (role === "admin" || staffCountMonths(now).includes(month)) return null;
+  return month === shiftMonth(todayTR(now).slice(0, 7), -1) ? STAFF_LATE_FIX_MESSAGE : STAFF_OLD_MONTH_MESSAGE;
 }

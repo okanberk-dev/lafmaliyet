@@ -112,9 +112,11 @@ test("Yardım'ın menü metni kenar çubuğunun ağacından: yönetici menüsün
   assert.equal(staff.filter((l) => /Kasa rapor/.test(l)).length, 1, staff.join(", "));
 });
 
-test("personel sayımda yalnız bu ayı ve geçen ayı açar", () => {
+test("personel sayımda yalnız açabildiği ayı açar; ay adrese yazılır", () => {
   const src = read("src/app/panel/sayim/page.tsx");
-  assert.match(src, /const month = requested && \(isAdmin \|\| staffMonths\.includes\(requested\)\) \? requested : defaultCountMonth/);
+  assert.match(src, /const allowed = \(m: string\) => isAdmin \|\| staffMonths\.includes\(m\);/);
+  assert.match(src, /if \(!requested \|\| !allowed\(requested\)\) \{/);
+  assert.match(src, /redirect\(`\/panel\/sayim\?\$\{q\}`\);/);
   assert.match(src, /isAdmin \? \[\.\.\.availableMonths\(model\), model\.currentMonth\] : staffMonths/);
 });
 

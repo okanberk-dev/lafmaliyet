@@ -52,6 +52,7 @@ import { AddCountItemDialog } from "./add-item";
 import { stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
+  countStatus,
   countText,
   coverageSplit,
   extraKey,
@@ -97,7 +98,11 @@ export interface FormGroup {
 
 type ExtraProp = { name: string; unit: string; qty: number; unitPrice: number; priced: boolean };
 type Filter = "all" | "empty";
-type HistoryMonth = { month: string; short: string; label: string; counted: boolean };
+/**
+ * Sayım düzenindeki ay: sayılan / sayılacak kalem (countStatus, arşiv hariç), ayda herhangi bir kayıt var mı (ek kalem
+ * dahil) ve kişi o ayı açabilir mi (personel: bu ay, ilk 10 günde geçen ay)
+ */
+type HistoryMonth = { month: string; short: string; label: string; counted: number; total: number; hasData: boolean; open: boolean };
 /** Formdaki ek kalem: metin kutularının değeri; `priced` = kayıtlı fiyatı var (personel fiyatı görmez) */
 type Extra = { name: string; unit: string; qty: string; unitPrice: string; priced: boolean };
 
@@ -290,48 +295,55 @@ const monthCell: Variants = {
 };
 
 /**
- * AkmanOS "Streak" düzeni: son 6 ayın sayım durumu. Sayım girilen ay siyah onay, açık ay halkalı.
- * Kaydedilmemiş değişiklik varken diğer aylara geçiş kapalı (girilen miktarlar kaybolmasın).
+ * AkmanOS "Streak" düzeni: son 6 ayın sayım durumu. Tamamlanan ay (countStatus: listedeki her kalem sayıldı) siyah
+ * onay; yarım ay sayılan payı kadar dolu halka ("30 / 72"), onay değil; açık ay halkalı. Kişinin açamadığı ay
+ * (personel: bu ay ve ilk 10 günde geçen ay dışında) bağlantı değildir. Kaydedilmemiş değişiklik varken diğer aylara
+ * geçiş kapalı (girilen miktarlar kaybolmasın).
  */
-function CountHistory({ history, current, currentCounted, locked }: { history: HistoryMonth[]; current: string; currentCounted: boolean; locked: boolean }) {
+function CountHistory({ history, current, currentStatus, locked }: { history: HistoryMonth[]; current: string; currentStatus: Pick<HistoryMonth, "counted" | "total" | "hasData">; locked: boolean }) {
   const reduce = useCalmMotion() ?? false;
-  const done = history.filter((h) => (h.month === current ? currentCounted : h.counted)).length;
+  const rows = history.map((h) => (h.month === current ? { ...h, ...currentStatus } : h));
+  const done = rows.filter((h) => h.total > 0 && h.counted >= h.total).length;
   return (
     <div className="no-print border-t border-line px-5 pt-4 pb-5">
       <div className="flex items-center justify-between gap-3 text-xs text-ink-mute">
         <span className="flex items-center gap-1.5">
           Sayım düzeni
-          <InfoTip text="Son altı ayın hangilerinde ay sonu sayımı girildi. Bir aya dokunarak o ayın sayımını açın." />
+          <InfoTip text="Son altı ayın sayımı: onay = listedeki her kalem sayıldı; yarım dolu halka = sayım yarım kaldı (sayılmayan kalemler ay sonu stoğunda 0 sayılır). Bir aya dokunarak o ayın sayımını açın." />
         </span>
         <span className="font-medium text-ink tabular">
-          {num(done)} / {num(history.length)} ay
+          {num(done)} / {num(rows.length)} ay
         </span>
       </div>
       <ol className="mt-3 grid grid-cols-6 gap-1">
-        {history.map((h, i) => {
+        {rows.map((h, i) => {
           const isCurrent = h.month === current;
-          const counted = isCurrent ? currentCounted : h.counted;
-          const text = `${h.label}: ${counted ? "sayım var" : "sayım yok"}${isCurrent ? " (açık)" : locked ? " · önce sayımı kaydedin" : ""}`;
+          const complete = h.total > 0 && h.counted >= h.total;
+          const partial = !complete && h.hasData;
+          const share = h.total ? Math.min(1, h.counted / h.total) : 0;
+          const state = complete ? "sayım tamam" : partial ? `sayım yarım (${num(h.counted)} / ${num(h.total)})` : "sayım yok";
+          const text = `${h.label}: ${state}${isCurrent ? " (açık)" : !h.open ? " · yalnız yönetici açabilir" : locked ? " · önce sayımı kaydedin" : ""}`;
+          const still = reduce || isCurrent || locked || !h.open;
           const cell = (
             <motion.span
               custom={i}
               variants={monthCell}
               initial={reduce ? false : "hidden"}
               animate="visible"
-              whileHover={reduce || isCurrent || locked ? undefined : { y: -3, scale: 1.06 }}
-              whileTap={reduce || isCurrent || locked ? undefined : { scale: 0.94 }}
+              whileHover={still ? undefined : { y: -3, scale: 1.06 }}
+              whileTap={still ? undefined : { scale: 0.94 }}
               className="flex flex-col items-center gap-2"
               aria-hidden="true"
             >
               <span className={cn("text-[11px] font-medium", isCurrent ? "text-ink" : "text-ink-mute")}>{h.short}</span>
               <span
                 className={cn(
-                  "flex size-8 items-center justify-center rounded-full transition-colors",
-                  counted ? "bg-ink text-white" : "bg-surface ring-1 ring-line-strong",
+                  "relative flex size-8 items-center justify-center rounded-full transition-colors",
+                  complete ? "bg-ink text-white" : "bg-surface ring-1 ring-line-strong",
                   isCurrent && "ring-2 ring-ink ring-offset-2 ring-offset-panel",
                 )}
               >
-                {counted ? (
+                {complete ? (
                   <motion.span
                     initial={reduce ? false : { scale: 0, rotate: -120 }}
                     animate={{ scale: 1, rotate: 0 }}
@@ -340,15 +352,25 @@ function CountHistory({ history, current, currentCounted, locked }: { history: H
                   >
                     <Check className="size-4" strokeWidth={2.5} />
                   </motion.span>
+                ) : partial ? (
+                  // Yarım sayım: sayılan payı kadar dolu halka (onay değil)
+                  <svg viewBox="0 0 32 32" className="absolute inset-0 size-8 -rotate-90" aria-hidden="true">
+                    <circle cx="16" cy="16" r="13" fill="none" strokeWidth="3" className="stroke-ink" pathLength={1} strokeDasharray={`${share} 1`} strokeLinecap="round" />
+                  </svg>
                 ) : null}
               </span>
+              {partial ? (
+                <span className="-mt-1 text-[10px] leading-none text-ink-mute tabular">
+                  {num(h.counted)}/{num(h.total)}
+                </span>
+              ) : null}
             </motion.span>
           );
           // Kilitliyken de aynı öğe (Link) kalır: öğe türü değişseydi hücreler yeniden kurulup giriş hareketi tekrar oynardı
           return (
             <li key={h.month} className="flex justify-center">
-              {isCurrent ? (
-                <span title={text} className="flex w-full justify-center py-1">
+              {isCurrent || !h.open ? (
+                <span title={text} className={cn("flex w-full justify-center py-1", !isCurrent && "opacity-50")}>
                   {cell}
                   <span className="sr-only">{text}</span>
                 </span>
@@ -544,6 +566,7 @@ export function StockCountForm({
   prevTotal,
   closingOverride,
   counter,
+  denied = null,
   addItem = null,
   valuation = null,
 }: {
@@ -564,6 +587,8 @@ export function StockCountForm({
   closingOverride: number | null;
   /** "Sayan: … · son kayıt …" */
   counter: string | null;
+  /** Personelin açamadığı, istenip yerine bu ayın açıldığı ay ("Temmuz 2026"); yoksa null */
+  denied?: string | null;
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
   addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
   /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
@@ -815,6 +840,7 @@ export function StockCountForm({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const chipRowRef = useRef<HTMLDivElement>(null);
   const progress = groupProgress(groups, (l) => qtyOf(l) !== null && !prefilled.has(l.id));
+  const progressByName = new Map(progress.map((p) => [p.name, p]));
   const visibleNames = new Set(visibleGroups.map((g) => g.name));
   // Grup süzgeci açıkken bütün gruplar (dokununca o gruba geçilir), değilse ekrandaki gruplar (dokununca kaydırılır)
   const chipItems = group ? progress : progress.filter((p) => visibleNames.has(p.name));
@@ -1065,6 +1091,11 @@ export function StockCountForm({
   return (
     // Altta yüzen sayım / kaydetme çubuğu var: son satırlar onun altında kalmasın (alt menünün payını kabuk verir)
     <div className="space-y-4 pb-32">
+      {denied ? (
+        <p role="status" className="no-print rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+          {denied} sayımını yalnız yönetici açabilir; {monthLabel} sayımı açıldı. Eski bir ayda düzeltme gerekiyorsa yöneticine haber ver.
+        </p>
+      ) : null}
       {draftEntries.length ? (
         <div role="status" className="no-print flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
           <span className="min-w-0 flex-1">
@@ -1164,7 +1195,12 @@ export function StockCountForm({
             </p>
           </div>
           {/* Kayıtlı duruma göre: yazılıp henüz kaydedilmemiş sayım bu ayı "sayıldı" göstermez */}
-          <CountHistory history={history} current={month} currentCounted={all.some((l) => l.qty !== null) || savedExtras.length > 0} locked={dirty} />
+          <CountHistory
+            history={history}
+            current={month}
+            currentStatus={{ ...countStatus({ groups }), hasData: all.some((l) => l.qty !== null) || savedExtras.length > 0 }}
+            locked={dirty}
+          />
         </Card>
 
         {isAdmin ? (
@@ -1378,9 +1414,12 @@ export function StockCountForm({
       ) : null}
 
       {visibleGroups.map((g) => {
-        const groupCountable = g.lines.filter((l) => !l.archived);
-        const groupCounted = groupCountable.filter((l) => qtyOf(l) !== null).length;
-        const groupDone = groupCountable.length > 0 && groupCounted === groupCountable.length;
+        // Kart başlığı grup çipleriyle ve üst sayaçla aynı sayıyı gösterir (progress: "Geçen aydan doldur"la gelen,
+        // dokunulmamış satır sayılmış sayılmaz)
+        const gp = progressByName.get(g.name);
+        const groupCounted = gp?.counted ?? 0;
+        const groupTotal = gp?.total ?? 0;
+        const groupDone = gp?.done ?? false;
         const gt = groupLive.get(g.name);
         return (
           <Card key={g.name} className="break-inside-avoid" data-count-group={g.name}>
@@ -1389,7 +1428,7 @@ export function StockCountForm({
               meta={
                 <>
                   <span className="tabular">
-                    {num(groupCounted)} / {num(groupCountable.length)} sayıldı
+                    {num(groupCounted)} / {num(groupTotal)} sayıldı
                   </span>
                   {groupDone ? (
                     <Badge tone="green" dot className="ml-1">

@@ -197,7 +197,7 @@ test("Özet: hepsi tamamsa kart kapanır, sıradaki iş yok", () => {
     info: { openDays: 30, posRevenue: 429698 },
     invoices: { count: 30, goods: 173983 },
     water: { bill: 3000, usedInRecipes: true, perLiter: 2.5, costMonth: "2026-09", reason: "ok" },
-    stock: { lines: 80, total: 52000 },
+    stock: { lines: 80, total: 52000, counted: 72, listed: 72 },
     payments: NO_PAYMENTS,
     parasut: null,
   };
@@ -206,9 +206,33 @@ test("Özet: hepsi tamamsa kart kapanır, sıradaki iş yok", () => {
   const s = taskSummary(tasks);
   assert.deepEqual({ done: s.done, open: s.open, allDone: s.allDone, next: s.next }, { done: 6, open: 0, allDone: true, next: null });
   // Bir eksik: sıradaki iş o olur
-  const s2 = taskSummary(monthTasks({ ...facts, stock: { lines: 0, total: 0 } }));
+  const s2 = taskSummary(monthTasks({ ...facts, stock: { lines: 0, total: 0, counted: 0, listed: 72 } }));
   assert.equal(s2.next?.key, "sayim");
   assert.equal(s2.allDone, false);
+});
+
+test("Ay sonu stok sayımı: tek satır kaydedilmiş ay 'Tamam' değil, yarım 'N / M' (countStatus kuralı)", () => {
+  const base: MonthTaskFacts = {
+    month: "2026-10",
+    state: "closed",
+    dim: 31,
+    sales: { lines: 120, unmatched: 0, summaryRows: 0, refMonth: "2026-10" },
+    info: { openDays: 31, posRevenue: 429698 },
+    invoices: { count: 30, goods: 173983 },
+    water: { bill: 3000, usedInRecipes: true, perLiter: 2.5, costMonth: "2026-10", reason: "ok" },
+    stock: { lines: 1, total: 900, counted: 1, listed: 72 },
+    payments: NO_PAYMENTS,
+    parasut: null,
+  };
+  const half = monthTasks(base).find((t) => t.key === "sayim")!;
+  assert.equal(half.status, "todo");
+  assert.match(half.detail, /^Yarım: 1 \/ 72 kalem sayıldı\. Kalanların stoğu 0 sayılır/);
+  assert.equal(half.action, "Sayımı tamamla");
+  const done = monthTasks({ ...base, stock: { lines: 74, total: 52000, counted: 72, listed: 72 } }).find((t) => t.key === "sayim")!;
+  assert.equal(done.status, "done");
+  assert.match(done.detail, /^74 kalem sayıldı/);
+  // Yalnız ek kalem yazılmış ay da yarım
+  assert.equal(monthTasks({ ...base, stock: { lines: 2, total: 50, counted: 0, listed: 72 } }).find((t) => t.key === "sayim")!.status, "todo");
 });
 
 // ---------------------------------------------------------------- "Bu ay düşülen sabit gider" kutusu (dashboard-fixed.tsx)
@@ -266,7 +290,7 @@ test("Su faturası: seçili ayın satış listesi varsa 'satış listesi olmadı
     info: { openDays: 30, posRevenue: 1000 },
     invoices: { count: 1, goods: 1 },
     water: { bill: 3000, usedInRecipes: true, perLiter: 2.5, costMonth: "2026-10", reason: "ok" },
-    stock: { lines: 1, total: 1 },
+    stock: { lines: 1, total: 1, counted: 1, listed: 1 },
     payments: null,
     parasut: null,
   } satisfies MonthTaskFacts;
@@ -297,7 +321,7 @@ test("Faturalar: kontrol bekleyenler (kafe dışı dahil) kafe faturası sayıs�
     // 1 kafe faturası; kontrol bekleyen 3'ü karaoke box (sayıya girmez)
     invoices: { count: 1, goods: 1, review: 3 },
     water: { bill: null, usedInRecipes: false, perLiter: 0, costMonth: null, reason: "no-bill" },
-    stock: { lines: 1, total: 1 },
+    stock: { lines: 1, total: 1, counted: 1, listed: 1 },
     payments: null,
     parasut: null,
   } satisfies MonthTaskFacts;
@@ -325,7 +349,7 @@ test("Açık gün ve POS cirosu kasa raporlarından: tamamsa kaynağı yazar; ka
     },
     invoices: { count: 1, goods: 1 },
     water: { bill: 3000, usedInRecipes: true, perLiter: 2.5, costMonth: "2026-11", reason: "ok" },
-    stock: { lines: 1, total: 1 },
+    stock: { lines: 1, total: 1, counted: 1, listed: 1 },
     payments: null,
     parasut: null,
   } satisfies MonthTaskFacts;

@@ -12,6 +12,8 @@ import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
 
+import { countStatus } from "./sayim/logic";
+
 /**
  * - done: yapıldı
  * - todo: yapılmalı (eksik veri, eşleşmeyen satır, yaklaşan ödeme)
@@ -76,7 +78,11 @@ export interface MonthTaskFacts {
    */
   invoices: { count: number; goods: number; review?: number };
   water: { bill: number | null; usedInRecipes: boolean; perLiter: number; costMonth: string | null; reason: WaterCost["reason"] };
-  stock: { lines: number; total: number };
+  /**
+   * lines: kayıtlı sayım satırı + ek kalem; total: ay sonu stoğu (KDV hariç); counted / listed: sayılan ve sayılacak
+   * liste kalemi (sayim/logic.ts countStatus: Stok sayımı ekranı ve Bugün ile aynı kural)
+   */
+  stock: { lines: number; total: number; counted: number; listed: number };
   /** null: ödeme listesi okunamadı */
   payments: PaymentFacts | null;
   /** null: Paraşüt bağlı değil */
@@ -159,10 +165,15 @@ export function monthTaskFacts(
     },
     invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: monthInvoices.filter((i) => i.needsReview).length },
     water: { bill, usedInRecipes, perLiter: model.water.perLiter, costMonth: model.water.month, reason: model.water.reason },
-    stock: {
-      lines: sheet.groups.reduce((n, g) => n + g.lines.filter((l) => l.qty !== null).length, 0) + sheet.extras.length,
-      total: sheet.total,
-    },
+    stock: (() => {
+      const st = countStatus(sheet);
+      return {
+        lines: sheet.groups.reduce((n, g) => n + g.lines.filter((l) => l.qty !== null).length, 0) + sheet.extras.length,
+        total: sheet.total,
+        counted: st.counted,
+        listed: st.total,
+      };
+    })(),
     expenses: (() => {
       const xs = model.expenseAmounts(month);
       return {
@@ -392,8 +403,19 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
   {
     const href = `/panel/sayim?ay=${m}`;
     const title = "Ay sonu stok sayımı";
-    if (f.stock.lines) {
+    // Tamam = listedeki her kalem sayıldı (countStatus); tek satır kaydedilmiş ay "Tamam" değil
+    const complete = f.stock.listed > 0 && f.stock.counted >= f.stock.listed;
+    if (complete) {
       out.push({ key: "sayim", title, status: "done", detail: `${num(f.stock.lines)} kalem sayıldı · devreden stok ${tl(f.stock.total)} (KDV hariç).`, href, action: "Sayımı aç" });
+    } else if (f.stock.lines) {
+      out.push({
+        key: "sayim",
+        title,
+        status: "todo",
+        detail: `Yarım: ${num(f.stock.counted)} / ${num(f.stock.listed)} kalem sayıldı. Kalanların stoğu 0 sayılır; mal maliyeti yüksek çıkar.`,
+        href,
+        action: "Sayımı tamamla",
+      });
     } else {
       out.push({
         key: "sayim",

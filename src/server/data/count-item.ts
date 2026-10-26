@@ -3,7 +3,7 @@ import "server-only";
 import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { staffCountMonths, todayTR } from "@/app/panel/sayim/logic";
+import { staffCountIssue, todayTR } from "@/app/panel/sayim/logic";
 import { countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
 import {
   BASE_UNIT,
@@ -12,7 +12,6 @@ import {
   COUNT_ITEM_NAME_MIN,
   COUNT_ITEM_PRICE_MAX,
   countFromMonth,
-  countItemMonthIssue,
   countItemNote,
   countItemPriceRow,
   duplicateMessage,
@@ -113,7 +112,7 @@ export interface CreatedCountItem extends CountItemRef {
  */
 export async function createCountItem(me: CurrentUser, data: CountItemInput, source: CountItemSource = "sayim"): Promise<CreatedCountItem> {
   const m = data.month;
-  const monthIssue = countItemMonthIssue(me.role, m, staffCountMonths());
+  const monthIssue = staffCountIssue(me.role, m);
   if (monthIssue) throw new UserError(monthIssue);
   const unit = BASE_UNIT[data.countUnit];
   if (!countUnitsFor(unit).includes(data.countUnit)) throw new UserError("Sayım birimini seçin");
