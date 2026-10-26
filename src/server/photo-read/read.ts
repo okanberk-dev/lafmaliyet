@@ -2,7 +2,6 @@ import "server-only";
 
 import { and, desc, gte, lt, lte } from "drizzle-orm";
 
-import type { OkcPrev } from "@/lib/okc-z";
 import { normalizeZ } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
@@ -14,6 +13,7 @@ import { extractImage, type AiErrorCode } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType } from "@/server/ai/run";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashOutCategories } from "@/server/data/cash-outs";
+import { previousOkc } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 
 export interface ReadOutcome {
@@ -32,28 +32,17 @@ async function previousZNo(day: string): Promise<string | null> {
 }
 
 /**
- * Bu günden önceki son yazarkasa Z'si (plan §5.3): `z` Z no sırası için (personelin formuna da gider), `cum` kümülatif
- * zinciri (K6) için yalnız sunucuda (D17). Zincir denetimi burada, okumada yapılır: normalizeOkc `prev.cum`'u yalnız
- * sunucudan alır, personelin yanıtına yalnız alan durumu kalır (toStaffReading).
- * TODO(dalga 13 b4): cash_reports.okc_z_no ve saklanan kümülatif sütunları (okc_cum_total, okc_cum_vat; plan §6.1)
- * migration'la gelince buradan okunur. O zamana kadar önceki yazarkasa Z'si bilinmez: Z no sırası ve zincir
- * "denetlenemedi" kalır.
- */
-async function previousOkc(day: string): Promise<OkcPrev> {
-  void day;
-  return { z: null, cum: null };
-}
-
-/**
- * Büyüklük denetimi için son 28 günün toplamları (plan §5.1). Yazarkasa toplamları sütunu b4'te gelir; o zamana kadar
- * (OkcContext'in izin verdiği gibi) ModPOS Z toplamları
+ * Büyüklük denetimi için son 28 günün toplamları (plan §5.1): yazarkasa toplamları, hiç yoksa ModPOS Z toplamları
+ * (yazarkasa bölümü kullanılmaya başlamadan önceki günler). Önceki yazarkasa Z'si (`previousOkc`, Z no sırası ve
+ * kümülatif zinciri) kayıtlı raporların okc_* sütunlarından okunur; zincir denetimi burada, okumada yapılır (D17)
  */
 async function okcTypical(day: string): Promise<number[]> {
   const rows = await getDb()
-    .select({ total: s.cashReports.zTotal })
+    .select({ okc: s.cashReports.okcTotal, z: s.cashReports.zTotal })
     .from(s.cashReports)
     .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day)));
-  return rows.map((r) => r.total).filter((v) => v > 0);
+  const okc = rows.map((r) => r.okc).filter((v): v is number => v !== null && v > 0);
+  return okc.length ? okc : rows.map((r) => r.z).filter((v) => v > 0);
 }
 
 /**

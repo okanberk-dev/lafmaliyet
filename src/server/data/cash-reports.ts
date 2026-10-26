@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne } from "drizzle-orm";
 
 import type { MonthEntry, TillRow } from "@/lib/cash-month";
 import {
@@ -11,6 +11,7 @@ import {
   type CashRevisionData,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { getDb, schema as s } from "@/server/db";
 
 /** Kasa raporunun gideceği adresler ve WhatsApp (integration_state, anahtar "cash.settings"; yönetici değiştirir) */
@@ -48,6 +49,23 @@ export async function saveCashSettings(value: CashSettings): Promise<void> {
 export interface CashReportDTO extends CashReportFields {
   id: number;
   discounts: number | null;
+  /** Yazarkasanın (banka POS) mali Z'si (dalga 13): formun alanları, herkese; eski raporlarda boş */
+  okcZNo: string | null;
+  okcReceipts: number | null;
+  okcTotal: number | null;
+  okcVatTotal: number | null;
+  okcVat: OkcVatLine[] | null;
+  okcCash: number | null;
+  okcCard: number | null;
+  okcMealCard: number | null;
+  okcOther: number | null;
+  /**
+   * Sunucu sütunları (kümülatif ve yazarkasa dışı tahsilat; docs/planlar/okc-z.md §6.1, D17): yalnız yöneticinin
+   * DTO'sunda. Personelin DTO'sunda anahtarları hiç yok (RSC yüküne girmez; tests/personel-sizinti-kasa.test.ts)
+   */
+  okcCumTotal?: number | null;
+  okcCumVat?: number | null;
+  okcOutside?: number | null;
   revision: number;
   cashDiff: number;
   submittedBy: number | null;
@@ -64,8 +82,12 @@ export interface CashReportDTO extends CashReportFields {
 
 type Row = typeof s.cashReports.$inferSelect;
 
-export function toCashDTO(r: Row): CashReportDTO {
-  return {
+/** Kim okuyor: yönetici sunucu sütunlarını da alır (kümülatif, yazarkasa dışı tahsilat), personel almaz */
+export type CashAudience = "admin" | "staff";
+
+/** Raporun DTO'su; sunucu sütunları yalnız `"admin"` ile (varsayılan personelinki: anahtar yok) */
+export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportDTO {
+  const dto: CashReportDTO = {
     id: r.id,
     date: r.date,
     zNo: r.zNo,
@@ -85,6 +107,15 @@ export function toCashDTO(r: Row): CashReportDTO {
     offRevenue: r.offRevenue,
     discounts: r.discounts,
     note: r.note,
+    okcZNo: r.okcZNo,
+    okcReceipts: r.okcReceipts,
+    okcTotal: r.okcTotal,
+    okcVatTotal: r.okcVatTotal,
+    okcVat: r.okcVat,
+    okcCash: r.okcCash,
+    okcCard: r.okcCard,
+    okcMealCard: r.okcMealCard,
+    okcOther: r.okcOther,
     revision: r.revision,
     cashDiff: r.cashDiff,
     submittedBy: r.submittedBy,
@@ -97,22 +128,23 @@ export function toCashDTO(r: Row): CashReportDTO {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
+  return audience === "admin" ? { ...dto, okcCumTotal: r.okcCumTotal, okcCumVat: r.okcCumVat, okcOutside: r.okcOutside } : dto;
 }
 
-export async function getCashReport(date: string): Promise<CashReportDTO | null> {
+export async function getCashReport(date: string, audience: CashAudience = "staff"): Promise<CashReportDTO | null> {
   const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1);
-  return row ? toCashDTO(row) : null;
+  return row ? toCashDTO(row, audience) : null;
 }
 
 /** [from, to] (ikisi de dahil) günlerinin raporları, en yeni önce */
-export async function cashReportsBetween(from: string, to: string): Promise<CashReportDTO[]> {
+export async function cashReportsBetween(from: string, to: string, audience: CashAudience = "staff"): Promise<CashReportDTO[]> {
   const rows = await getDb()
     .select()
     .from(s.cashReports)
     .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
     .orderBy(desc(s.cashReports.date))
     .limit(400);
-  return rows.map(toCashDTO);
+  return rows.map((r) => toCashDTO(r, audience));
 }
 
 /** Bu günden önceki son raporun ertesi güne devri: formun açılış kasası kendiliğinden dolar */
@@ -124,6 +156,64 @@ export async function previousCarryOver(date: string): Promise<{ date: string; a
     .orderBy(desc(s.cashReports.date))
     .limit(1);
   return row ? { date: row.date, amount: Math.round((row.counted - row.handed) * 100) / 100 } : null;
+}
+
+// ---------------------------------------------------------------- Yazarkasa Z'si (dalga 13; docs/planlar/okc-z.md §5.3, §9)
+
+const okcZSet = and(isNotNull(s.cashReports.okcZNo), ne(s.cashReports.okcZNo, ""));
+
+/**
+ * Bu günden önceki son yazarkasa Z'si (plan §5.3): `z` yazarkasa Z no'su dolu son rapor (Z no sırası; personelin
+ * formuna yalnız bu gider, D17), `cum` kümülatifi saklanmış (inandırıcı bulunmuş, §6.1) son rapor (zincir, K6; yalnız
+ * sunucuda). Zincir hep son saklanan kümülatife bağlanır. İşlem içinden de okunur (writeCashReport).
+ */
+export async function previousOkc(day: string, db: Db | Tx = getDb()): Promise<OkcPrev> {
+  const [[z], [cum]] = await Promise.all([
+    db.select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo }).from(s.cashReports).where(and(lt(s.cashReports.date, day), okcZSet)).orderBy(desc(s.cashReports.date)).limit(1),
+    db
+      .select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo, cumTotal: s.cashReports.okcCumTotal, cumVat: s.cashReports.okcCumVat })
+      .from(s.cashReports)
+      .where(and(lt(s.cashReports.date, day), okcZSet, isNotNull(s.cashReports.okcCumTotal)))
+      .orderBy(desc(s.cashReports.date))
+      .limit(1),
+  ]);
+  return {
+    z: z?.zNo ? { date: z.date, zNo: z.zNo } : null,
+    cum: cum?.zNo && cum.cumTotal !== null ? { date: cum.date, zNo: cum.zNo, cumTotal: cum.cumTotal, cumVat: cum.cumVat } : null,
+  };
+}
+
+/** Bu günden sonraki ilk yazarkasa Z'si (geç raporun sonraki halkası, plan §3.8): Z no, günlük toplam, saklanan kümülatif */
+export async function nextOkc(day: string, db: Db | Tx = getDb()): Promise<{ date: string; zNo: string; total: number | null; cumTotal: number | null; cumVat: number | null } | null> {
+  const [row] = await db
+    .select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo, total: s.cashReports.okcTotal, cumTotal: s.cashReports.okcCumTotal, cumVat: s.cashReports.okcCumVat })
+    .from(s.cashReports)
+    .where(and(gt(s.cashReports.date, day), okcZSet))
+    .orderBy(asc(s.cashReports.date))
+    .limit(1);
+  return row?.zNo ? { date: row.date, zNo: row.zNo, total: row.total, cumTotal: row.cumTotal, cumVat: row.cumVat } : null;
+}
+
+/**
+ * Ay okuyucusunun satırları ([from, to], ikisi de dahil; src/lib/okc-z.ts okcMonth): ayın zinciri için önceki ayın
+ * son saklanan kümülatifi de gerektiğinden çağıran `from`u ayın başından önce verir. Kümülatif sütunları içerir:
+ * yalnız yöneticinin ekranları ve sunucu hesapları için
+ */
+export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): Promise<OkcRow[]> {
+  return db
+    .select({
+      date: s.cashReports.date,
+      zTotal: s.cashReports.zTotal,
+      okcZNo: s.cashReports.okcZNo,
+      okcTotal: s.cashReports.okcTotal,
+      okcVatTotal: s.cashReports.okcVatTotal,
+      okcVat: s.cashReports.okcVat,
+      okcCumTotal: s.cashReports.okcCumTotal,
+      okcCumVat: s.cashReports.okcCumVat,
+    })
+    .from(s.cashReports)
+    .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
+    .orderBy(asc(s.cashReports.date));
 }
 
 /** Raporu girilmiş günler (yalnız tarih; personelin zili kapalı gün bildiriminin sonucunda bakar) */

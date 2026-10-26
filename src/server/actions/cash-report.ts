@@ -9,7 +9,7 @@ import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { emailReport } from "@/server/cash/report-email";
-import { cashEmailRecipients, removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
+import { cashEmailRecipients, clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, cashReportsBetween, getCashReport, loadCashSettings, nextReportAfter, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -100,6 +100,19 @@ export async function deleteCashReport(id: number) {
         .filter(Boolean)
         .join(" · "),
     );
+    refresh();
+    return null;
+  });
+}
+
+/**
+ * Yönetici: yanlış okunup saklanmış yazarkasa kümülatifini temizler (docs/planlar/okc-z.md §3.7, §6.1). Raporun sürümü
+ * değişmez, işlem geçmişine düşer (çekirdekte, aynı işlemde)
+ */
+export async function clearOkcCumulative(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    await clearOkcCumulativeCore(getDb(), me, z.number().int().positive().parse(id));
     refresh();
     return null;
   });

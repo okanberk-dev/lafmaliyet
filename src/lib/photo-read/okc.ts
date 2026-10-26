@@ -285,6 +285,43 @@ export function toStaffReading(r: CashReading): CashReading {
   return { ...rest, checks: r.checks.filter((c) => !c.admin) };
 }
 
+/** Rapora bağlı yazarkasa Z fotoğraflarının okumalarından sunucu sütunlarının girdisi (plan §6.1) */
+export interface OkcReadFigures {
+  zNo: string | null;
+  total: number | null;
+  vatTotal: number | null;
+  cumTotal: number | null;
+  cumVat: number | null;
+  outside: number | null;
+}
+
+/**
+ * Okumaların (eskiden yeniye) birleşik rakamları: her rakam onu okuyan son okumadan (uzun fiş üst ve alt parça olarak
+ * çekilebilir; KÜM. satırları çoğunlukla alt parçada, D11, D17). Kümülatif toplam ve KDV aynı okumadan, birlikte.
+ * Yazarkasa Z'si okunmadıysa (yanlış belge, yalnız banka fişi) null
+ */
+export function okcReadFigures(readings: readonly CashReading[]): OkcReadFigures | null {
+  const ok = readings.filter((r) => r.ok && r.kind === "kasa-okc" && r.okcAdmin).reverse();
+  if (!ok.length) return null;
+  const last = <T>(pick: (r: CashReading) => T | null | undefined): T | null => {
+    for (const r of ok) {
+      const v = pick(r);
+      if (v !== null && v !== undefined) return v;
+    }
+    return null;
+  };
+  const num = (r: CashReading, f: "okcTotal" | "okcVatTotal") => (r.values[f] ? Number(r.values[f]!.value) : null);
+  const cum = ok.find((r) => r.okcAdmin!.cumTotal !== null)?.okcAdmin ?? null;
+  return {
+    zNo: last((r) => r.okcAdmin!.documentZNo),
+    total: last((r) => num(r, "okcTotal")),
+    vatTotal: last((r) => num(r, "okcVatTotal")),
+    cumTotal: cum?.cumTotal ?? null,
+    cumVat: cum?.cumVat ?? null,
+    outside: last((r) => r.okcAdmin!.outside),
+  };
+}
+
 /** Temel alanlardan biri tutmadı ya da düşük güvende: üst / alt yarı önerisi gösterilir (plan §3.4) */
 export function okcNeedsHalves(r: CashReading): boolean {
   if (r.kind !== "kasa-okc" || !r.ok) return false;

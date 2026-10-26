@@ -136,7 +136,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
   const [report, carry, recent, waste, ai, outs, categories, next, counters] = await Promise.all([
-    showForm ? getCashReport(date) : Promise.resolve(null),
+    // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
+    showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
     showForm ? dayWaste(date) : Promise.resolve(null),
@@ -179,7 +180,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
   // kendisini (küçük resim, büyütme) yalnız görebilen görür: yönetici ya da personelin hâlâ düzenleyebildiği gün
   // (/api/foto'nun kuralı, staffDayOpen); kapanan günde personel küçük resim yerine fiş simgesini görür (403 olmasın)
-  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
+  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report], user.role)).get(report.id) : undefined;
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
   const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
@@ -356,7 +357,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
   const [monthReports, monthOuts, before, after, firstEver, entry] = await Promise.all([
-    cashReportsBetween(`${month}-01`, monthEnd),
+    cashReportsBetween(`${month}-01`, monthEnd, "admin"),
     cashOutsBetween(`${month}-01`, monthEnd),
     // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
     previousCarryOver(`${month}-01`),
@@ -381,9 +382,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
   const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths(monthReports, addDays(today, -1), firstEver)[0]));
-  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today));
+  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
-  const infos = await cashReportPhotoInfo(monthReports);
+  const infos = await cashReportPhotoInfo(monthReports, "admin");
   const outsByDate: Record<string, typeof monthOuts> = {};
   for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
   const historyPhotos: CashHistoryPhotos = Object.fromEntries(
