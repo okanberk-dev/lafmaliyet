@@ -6,6 +6,7 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
+import { isCountable } from "../ingredient-usage";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
@@ -624,6 +625,8 @@ export interface StockLine {
    * Satır geçmiş ayın değerini korumak için gösterilir; formda salt okunur olmalı.
    */
   archived: boolean;
+  /** Malzeme pasif ama aktif bir ürünün reçetesinde: tüketildiği için listede kalır, sayılır */
+  passiveInUse: boolean;
   /** Kayıtlı sayımın birimi bugünkü sayım biriminden farklı (değer eski birimle hesaplanır) */
   unitChanged: boolean;
   /**
@@ -1046,12 +1049,22 @@ export function createModel(ds: Dataset) {
     .map(computeProduct);
   const activeProducts = products.filter((p) => p.product.active);
 
-  /** Her hammaddenin kaç ürün kartında kullanıldığı */
+  /** Her hammaddenin kaç ürün kartında kullanıldığı (pasif ürünler dahil: silme engeli) */
   const usedIn = new Map<number, number[]>();
+  /**
+   * Yalnız aktif ürünlerin reçeteleri: satışla tüketilen malzeme. "Hiçbir reçetede yok" uyarısı ve çipi bunu kullanır
+   * (yalnız emekli ürünlerin kullandığı malzeme "reçetede yok" sayılır); pasif malzeme burada geçiyorsa sayım listesinde
+   * kalır (denetim E-04, E-58)
+   */
+  const usedInActive = new Map<number, number[]>();
   for (const it of ds.recipeItems) {
     const list = usedIn.get(it.ingredientId) ?? [];
     if (!list.includes(it.productId)) list.push(it.productId);
     usedIn.set(it.ingredientId, list);
+    if (!productById.get(it.productId)?.active) continue;
+    const act = usedInActive.get(it.ingredientId) ?? [];
+    if (!act.includes(it.productId)) act.push(it.productId);
+    usedInActive.set(it.ingredientId, act);
   }
 
   /**
@@ -1275,8 +1288,12 @@ export function createModel(ds: Dataset) {
     extrasByMonth.set(e.month, list);
   }
   const bySortOrder = (a: Ingredient, b: Ingredient) => a.sortOrder - b.sortOrder || a.id - b.id;
-  /** Bugünkü sayım listesi: aktif ve sayım birimi olan malzemeler */
-  const countable = ds.ingredients.filter((i) => i.countUnit && i.active).sort(bySortOrder);
+  /**
+   * Bugünkü sayım listesi: sayım birimi olan aktif malzemeler ve aktif bir ürünün reçetesinde geçen pasif malzemeler
+   * (satışla tüketilmeye devam eder: listeden düşerse kalan stoğu 0 sayılır, mal maliyeti şişer; denetim E-04).
+   * Kural tek yerde: src/lib/ingredient-usage.ts isCountable (sayım kaydı da onu kullanır)
+   */
+  const countable = ds.ingredients.filter((i) => isCountable(i, usedInActive.has(i.id))).sort(bySortOrder);
   const countableIds = new Set(countable.map((i) => i.id));
 
   /**
@@ -1387,6 +1404,7 @@ export function createModel(ds: Dataset) {
         amount,
         amountVatIncl: amount * (1 + ing.vatRate),
         archived,
+        passiveInUse: !archived && !ing.active,
         unitChanged: !!c && !archived && factor !== currentFactor,
         valuation: f ? "fifo" : "son-fiyat",
         layers: f?.layers ?? [],
@@ -1883,6 +1901,8 @@ export function createModel(ds: Dataset) {
     computeProduct,
     evalQty,
     usedIn,
+    /** Yalnız aktif ürünlerin reçeteleri: "hiçbir (aktif) reçetede yok" ve sayım listesi */
+    usedInActive,
     monthInfo,
     /** Ayın kartlı satış oranı ve kaynağı (elle, kasa raporlarından ya da Ayarlar) */
     cardShareOf,

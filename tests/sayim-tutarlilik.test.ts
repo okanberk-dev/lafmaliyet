@@ -85,8 +85,13 @@ test("Sayım formu: pasif yapılan malzemenin kayıtlı sayımı toplamda kalır
   const total = before.stockSheet("2026-09").total;
   assert.ok(total > 0);
 
-  // Pasif: satır arşivde, değer aynı; formda yazılan değer yok sayılır
-  const inactive = createModel({ ...ds, stockCounts: counts, ingredients: ds.ingredients.map((i) => (i.id === esp ? { ...i, active: false } : i)) });
+  // Pasif ve onu kullanan ürünler de emekli: satır arşivde, değer aynı; formda yazılan değer yok sayılır. (Aktif ürünlerin
+  // reçetesinde kalsaydı listede kalır, sayılırdı: denetim E-04, tests/sayim-deger.test.ts)
+  const users = new Set(ds.recipeItems.filter((r) => r.ingredientId === esp).map((r) => r.productId));
+  const passiveIngs = ds.ingredients.map((i) => (i.id === esp ? { ...i, active: false } : i));
+  const stillUsed = createModel({ ...ds, stockCounts: counts, ingredients: passiveIngs });
+  assert.equal(formGroups(stillUsed, "2026-09").flatMap((x) => x.lines).find((l) => l.id === esp)!.archived, false, "aktif reçetede: sayılır");
+  const inactive = createModel({ ...ds, stockCounts: counts, ingredients: passiveIngs, products: ds.products.map((p) => (users.has(p.id) ? { ...p, active: false } : p)) });
   const g = formGroups(inactive, "2026-09");
   const line = g.flatMap((x) => x.lines).find((l) => l.id === esp)!;
   assert.equal(line.archived, true);

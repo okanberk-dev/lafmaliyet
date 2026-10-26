@@ -7,10 +7,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ingredientBreakdowns, listHref, perLiterText, waterBreakdown, type DokumIngredient } from "../src/app/panel/hammaddeler/breakdowns";
+import { activeUses, ingredientBreakdowns, listHref, perLiterText, waterBreakdown, type DokumIngredient } from "../src/app/panel/hammaddeler/breakdowns";
 import { sortCategories } from "../src/app/panel/hammaddeler/categories";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { createModel, type WaterCost } from "../src/lib/calc/engine";
+import { alerts, latestSalesMonth } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -20,10 +21,10 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const groupsSum = (gs: BreakdownGroup[]) => sum(gs.filter((g) => !g.apart).flatMap((g) => g.rows.map((r) => r.amount)));
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 
-/** Sayfadaki satırlar gibi: malzeme + reçetesinde geçtiği ürünler */
+/** Sayfadaki satırlar gibi: malzeme + reçetesinde geçtiği ürünler (pasif ürünler `active: false`) */
 function itemsOf(ds: Dataset): DokumIngredient[] {
   const model = createModel(ds);
-  return ds.ingredients.map((i) => ({ ...i, usedIn: model.usedIn.get(i.id) ?? [] }));
+  return ds.ingredients.map((i) => ({ ...i, usedIn: (model.usedIn.get(i.id) ?? []).map((pid) => ({ active: model.productById.get(pid)?.active ?? false })) }));
 }
 
 test("Hammadde kartı: aktif malzemeler kategori kategori, toplam kartın sayısı; pasifler ayrı ve toplama girmez", () => {
@@ -73,7 +74,7 @@ test("Hiçbir reçetede yok kartı: aktif ve reçetesiz malzemeler; Genel bakı�
   const ds: Dataset = { ...base, ingredients: [...base.ingredients, extra] };
   const model = createModel(ds);
   const items = itemsOf(ds);
-  const unused = ds.ingredients.filter((i) => i.active && !model.usedIn.has(i.id));
+  const unused = ds.ingredients.filter((i) => i.active && !model.usedInActive.has(i.id));
   const b = ingredientBreakdowns(items);
   assert.equal(groupsSum(b.unused), unused.length);
   const row = b.unused.flatMap((g) => g.rows).find((r) => r.key === "99001")!;
@@ -136,4 +137,30 @@ test("Su + buz kartı: elle değer, satış listesi olmayan fatura, hiç fatura 
   const apart = skip.groups.find((g) => g.apart)!;
   assert.equal(apart.rows[0].display, "Kullanılmadı");
   assert.match(apart.rows[0].label, /Ekim 2026/);
+});
+
+test("E-58: yalnız pasif ürünlerin kullandığı malzeme \"reçetede yok\" sayılır (kart, döküm, Genel bakış uyarısı)", () => {
+  // Bir malzemeyi kullanan bütün ürünleri pasife al: malzeme aktif kalır ama hiçbir aktif ürün onu tüketmez
+  const pick = base.ingredients.find((i) => {
+    const users = new Set(base.recipeItems.filter((r) => r.ingredientId === i.id).map((r) => r.productId));
+    return i.active && users.size > 0 && users.size <= 3;
+  })!;
+  assert.ok(pick, "az üründe kullanılan malzeme var");
+  const users = new Set(base.recipeItems.filter((r) => r.ingredientId === pick.id).map((r) => r.productId));
+  const ds: Dataset = { ...base, products: base.products.map((p) => (users.has(p.id) ? { ...p, active: false } : p)) };
+  const model = createModel(ds);
+  assert.ok(model.usedIn.has(pick.id), "silme engeli: pasif ürünlerde hâlâ kullanılıyor");
+  assert.ok(!model.usedInActive.has(pick.id), "aktif ürünlerde yok");
+  const b = ingredientBreakdowns(itemsOf(ds));
+  const row = b.unused.flatMap((g) => g.rows).find((r) => r.key === String(pick.id));
+  assert.ok(row, "dökümde reçetede yok");
+  assert.match(row!.sub ?? "", /yalnız \d+ pasif üründe/);
+  assert.equal(activeUses({ usedIn: [{ active: false }, { active: true }] }), 1);
+  // Genel bakış uyarısı aynı kuralı kullanır
+  const alert = alerts(model, latestSalesMonth(model)!).find((a) => /hiçbir reçetede yok/.test(a.title));
+  assert.ok(alert, "uyarı var");
+  assert.ok(alert!.detail.includes(pick.name) || /hammadde/.test(alert!.detail), "malzeme uyarıda");
+  const before = alerts(createModel(base), latestSalesMonth(createModel(base))!).find((a) => /hiçbir reçetede yok/.test(a.title));
+  const n = (t?: string) => Number(t?.match(/^(\d+)/)?.[1] ?? 0);
+  assert.equal(n(alert!.title), n(before?.title) + 1, "uyarının sayısı bir arttı");
 });

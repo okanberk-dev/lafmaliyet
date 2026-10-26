@@ -7,8 +7,10 @@ import { z } from "zod";
 import { countFactor, countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
 import { listedFromMonth } from "@/lib/count-item";
 import { tl } from "@/lib/format";
+import { passiveRefusal, productListText } from "@/lib/ingredient-usage";
 import { requireAdmin } from "@/server/auth/dal";
 import { recordIngredientPrice } from "@/server/data/ingredient-prices";
+import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -66,6 +68,10 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       if (data.id) {
         const [before] = await tx.select().from(s.ingredients).where(eq(s.ingredients.id, data.id));
         if (!before) throw new UserError("Malzeme bulunamadı");
+        if (before.active && !data.active) {
+          const refusal = passiveRefusal(before.name, (await activeProductsUsing(tx, [data.id])).get(data.id) ?? []);
+          if (refusal) throw new UserError(refusal);
+        }
         const { id: _omit, base, ...rest } = data;
         void _omit;
         // Pencere açıkken fiyat başka yerden değiştiyse (satırdaki fiyat kutusu, Paraşüt eşitlemesi) dokunulmamış alan
@@ -172,29 +178,41 @@ export async function setIngredientEstimate(id: number, isEstimate: boolean) {
   });
 }
 
-/** Aktif/pasif: reçetede kullanılan malzeme silinemez, pasif yapılır (seçim listelerinden düşer, reçeteler bozulmaz) */
+/**
+ * Aktif/pasif: reçetede kullanılan malzeme silinemez, pasif yapılır (seçim listelerinden ve sayım listesinden düşer,
+ * pasif ürünlerin reçeteleri bozulmaz). Aktif bir ürünün reçetesinde geçen malzeme pasif yapılamaz: ürünler onu
+ * tüketmeye devam ederdi; önce reçetelerden çıkarılır (denetim E-04).
+ */
 export async function setIngredientActive(id: number, active: boolean) {
   return attempt(async () => {
     const me = await requireAdmin();
+    const iid = z.number().int().positive().parse(id);
+    const flag = z.boolean().parse(active);
     const db = getDb();
-    const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, id));
+    const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, iid));
     if (!before) throw new UserError("Malzeme bulunamadı");
-    if (before.active === active) return null;
+    if (before.active === flag) return null;
+    if (!flag) {
+      const refusal = passiveRefusal(before.name, (await activeProductsUsing(db, [iid])).get(iid) ?? []);
+      if (refusal) throw new UserError(refusal);
+    }
     // Yeniden aktif olan sayım kalemi bu aydan listede: geçmiş aylar "yarım" görünmesin (o ay sayıldıysa yine çıkar)
-    const countFrom = active && before.countUnit ? { countFrom: listedFromMonth(before.countFrom, currentMonthTR()) } : {};
+    const countFrom = flag && before.countUnit ? { countFrom: listedFromMonth(before.countFrom, currentMonthTR()) } : {};
     await db
       .update(s.ingredients)
-      .set({ active, ...countFrom, updatedAt: new Date() })
-      .where(eq(s.ingredients.id, id));
-    await logActivity(me, active ? "Hammadde aktif" : "Hammadde pasif", before.name);
+      .set({ active: flag, ...countFrom, updatedAt: new Date() })
+      .where(eq(s.ingredients.id, iid));
+    await logActivity(me, flag ? "Hammadde aktif" : "Hammadde pasif", before.name);
     refresh();
     return null;
   });
 }
 
 /**
- * Hammaddeyi siler. Reçetede kullanılan, sayımı, alım miktarı ya da Paraşüt eşleştirmesi olan malzeme silinmez
- * (silmek bu geçmişi de silerdi ve geçmiş ayların stok değeri değişirdi): pasif yapılmalı.
+ * Hammaddeyi siler. Reçetede kullanılan, sayımı, alım miktarı, Paraşüt eşleştirmesi ya da zayi / ikram kaydı olan
+ * malzeme silinmez (silmek bu geçmişi de silerdi: geçmiş ayların stok değeri, zayi maliyeti ve Tutarlılık'taki kayıtlı
+ * tüketim değişirdi; zayi kaydı malzemesiz kalırdı, denetim E-28): pasif yapılmalı. Aktif bir ürünün reçetesindeyse
+ * önce reçetelerden çıkarılır (pasif de yapılamaz).
  */
 export async function deleteIngredient(id: number) {
   return attempt(async () => {
@@ -202,19 +220,28 @@ export async function deleteIngredient(id: number) {
     const iid = z.number().int().positive().parse(id);
     const db = getDb();
     const used = await db.select({ id: s.recipeItems.id }).from(s.recipeItems).where(eq(s.recipeItems.ingredientId, iid)).limit(1);
-    if (used.length) throw new UserError("Bu malzeme reçetelerde kullanılıyor. Önce reçetelerden çıkarın ya da pasif yapın.");
-    const [[counts], [purchases], [links]] = await Promise.all([
+    if (used.length) {
+      const active = (await activeProductsUsing(db, [iid])).get(iid) ?? [];
+      throw new UserError(
+        active.length
+          ? `Bu malzeme ${active.length} aktif ürünün reçetesinde kullanılıyor (${productListText(active)}). Önce reçetelerden çıkarın.`
+          : "Bu malzeme yalnız pasif ürünlerin reçetelerinde kullanılıyor. Önce o reçetelerden çıkarın ya da pasif yapın.",
+      );
+    }
+    const [[counts], [purchases], [links], [waste]] = await Promise.all([
       db.select({ n: count() }).from(s.stockCounts).where(eq(s.stockCounts.ingredientId, iid)),
       db.select({ n: count() }).from(s.purchaseQuantities).where(eq(s.purchaseQuantities.ingredientId, iid)),
       db.select({ n: count() }).from(s.parasutProductLinks).where(eq(s.parasutProductLinks.ingredientId, iid)),
+      db.select({ n: count() }).from(s.wasteEntries).where(eq(s.wasteEntries.ingredientId, iid)),
     ]);
     const history = [
       counts.n ? `${counts.n} sayım` : "",
       purchases.n ? `${purchases.n} alım miktarı` : "",
       links.n ? `${links.n} Paraşüt eşleştirmesi` : "",
+      waste.n ? `${waste.n} zayi / ikram` : "",
     ].filter(Boolean);
     if (history.length) {
-      throw new UserError(`Bu malzemenin ${history.join(", ")} kaydı var; silinirse geçmiş ayların stok ve tutarlılık değerleri değişir. Pasif yapın.`);
+      throw new UserError(`Bu malzemenin ${history.join(", ")} kaydı var; silinirse geçmiş ayların stok, zayi ve tutarlılık değerleri değişir. Pasif yapın.`);
     }
     const [d] = await db.delete(s.ingredients).where(eq(s.ingredients.id, iid)).returning();
     if (d) await logActivity(me, "Hammadde silindi", d.name);

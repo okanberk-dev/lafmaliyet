@@ -30,7 +30,7 @@ import { holdReadingState, loadInvoiceReadings, readingKey } from "@/server/invo
 
 import { waterSource } from "../ayarlar/water-text";
 
-import { ingredientBreakdowns, waterBreakdown } from "./breakdowns";
+import { activeUses, ingredientBreakdowns, waterBreakdown } from "./breakdowns";
 import { sortCategories } from "./categories";
 import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } from "./ingredients-client";
 import { ListAnchor } from "./list-anchor";
@@ -77,7 +77,8 @@ async function IngredientsContent() {
     list.push({ at: h.changedAt.toISOString(), price: h.packagePrice, size: h.packageSize, by: h.changedBy, note: h.note });
     histBy.set(h.ingredientId, list);
   }
-  // Silmeyi engelleyen geçmiş: sayım, alım miktarı, Paraşüt eşleştirmesi (silinirse geçmiş ayların stok değeri değişir)
+  // Silmeyi engelleyen geçmiş: sayım, alım miktarı, Paraşüt eşleştirmesi, zayi / ikram (silinirse geçmiş ayların stok
+  // değeri ve zayi maliyeti değişir)
   const tally = (ids: number[]) => {
     const m = new Map<number, number>();
     for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
@@ -86,6 +87,7 @@ async function IngredientsContent() {
   const countsBy = tally(model.ds.stockCounts.map((c) => c.ingredientId));
   const purchasesBy = tally(model.ds.purchaseQuantities.map((p) => p.ingredientId));
   const linksBy = new Map(links.map((l) => [l.id, l.n]));
+  const wasteBy = tally((model.ds.wasteEntries ?? []).flatMap((w) => (w.ingredientId !== null ? [w.ingredientId] : [])));
   // Son 30 günün fiyat değişimleri (zam uyarısıyla aynı hesap: pencereden önceki son fiyata göre)
   const since = priceWindowStart();
   const recent = new Map(
@@ -170,13 +172,14 @@ async function IngredientsContent() {
   const rows: IngredientRow[] = model.ds.ingredients.map((i) => ({
     ...i,
     unitCost: model.unitCost.get(i.id) ?? 0,
+    // Pasif ürünler de listelenir (silme engeli), `active` ile ayrılır: "Reçetede yok" yalnız aktif ürünlere bakar
     usedIn: (model.usedIn.get(i.id) ?? []).map((pid) => {
       const p = model.productById.get(pid);
-      return { id: pid, label: p ? `${p.name} · ${p.size}` : `#${pid}` };
+      return { id: pid, label: p ? `${p.name} · ${p.size}` : `#${pid}`, active: p?.active ?? false };
     }),
     monthUsage: usage.get(i.id) ?? 0,
     history: histBy.get(i.id) ?? [],
-    deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0 },
+    deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0, waste: wasteBy.get(i.id) ?? 0 },
     recentChange: recent.get(i.id) ?? null,
     pendingHold: holdBy.get(i.id) ?? null,
   }));
@@ -185,7 +188,7 @@ async function IngredientsContent() {
   const active = rows.filter((r) => r.active);
   const categories = sortCategories(rows.map((r) => r.category));
   const estimates = active.filter((r) => r.isEstimate).length;
-  const unused = active.filter((r) => !r.usedIn.length).length;
+  const unused = active.filter((r) => !activeUses(r)).length;
   // Kartların dökümü (karta dokununca açılan pencere): yüklenen satırlardan ve modelin su hesabından
   const breakdown = ingredientBreakdowns(rows);
   const waterDokum = waterBreakdown(model.water, rows, model.water.month ? model.ingredientUsage(model.water.month) : new Map<number, number>());
@@ -240,12 +243,12 @@ async function IngredientsContent() {
         </StatBreakdown>
         <StatBreakdown
           title="Hiçbir reçetede olmayanlar"
-          description="Aktif olup hiçbir ürün kartının reçetesinde geçmeyen malzemeler (paket fiyatı KDV hariç). Maliyetleri hiçbir ürüne yansımaz: kullanılıyorsa reçeteye ekleyin, kullanılmıyorsa pasife alın. Malzemeye dokununca listede açılır."
+          description="Aktif olup hiçbir aktif ürünün reçetesinde geçmeyen malzemeler (paket fiyatı KDV hariç; yalnız pasif ürünlerin kullandıkları da burada). Maliyetleri satılan hiçbir ürüne yansımaz: kullanılıyorsa reçeteye ekleyin, kullanılmıyorsa pasife alın. Malzemeye dokununca listede açılır."
           groups={breakdown.unused}
           total={unused}
           unit="count"
           shares={false}
-          empty="Bütün aktif malzemeler en az bir reçetede."
+          empty="Bütün aktif malzemeler en az bir aktif ürünün reçetesinde."
         >
           <Stat icon={<Unlink />} label="Hiçbir reçetede yok" value={<CountUp value={unused} />} sub="Reçeteye eklenmesi gerekebilir" />
         </StatBreakdown>

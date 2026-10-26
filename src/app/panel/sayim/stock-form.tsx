@@ -91,6 +91,8 @@ export interface FormLine extends CountLineValue {
   unitNow: string | null;
   /** Arşiv satırının nedeni: malzeme pasif ya da "Sayılmaz" yapıldı */
   archivedReason: "pasif" | "sayilmaz" | null;
+  /** Malzeme pasif ama aktif bir ürünün reçetesinde: tüketildiği için listede, sayılır */
+  passiveInUse?: boolean;
   /** Kayıtlı sayım bugünkü sayım biriminden farklı bir birimle girildi */
   unitChanged: boolean;
   prevQty: number | null;
@@ -1632,6 +1634,11 @@ export function StockCountForm({
                     <div className="min-w-0 flex-1">
                       <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm leading-5 font-medium text-ink">
                         <span className="min-w-0 break-words">{l.name}</span>
+                        {l.passiveInUse ? (
+                          <Badge tone="gray" title="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayılır">
+                            Pasif · reçetede
+                          </Badge>
+                        ) : null}
                         {changed && !invalid ? (
                           <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
                             <span className="sr-only">(kaydedilmedi)</span>

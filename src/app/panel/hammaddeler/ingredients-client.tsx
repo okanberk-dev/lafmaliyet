@@ -45,6 +45,7 @@ import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc
 import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
+import { activeUses, productListText } from "@/lib/ingredient-usage";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
@@ -61,7 +62,8 @@ import { SupplierPrices } from "./supplier-prices";
 
 export interface IngredientRow extends Ingredient {
   unitCost: number;
-  usedIn: { id: number; label: string }[];
+  /** Reçetesinde geçtiği ürünler, pasif ürünler dahil (`active` false: silme engeli, ama "Reçetede yok" sayılır) */
+  usedIn: { id: number; label: string; active: boolean }[];
   monthUsage: number;
   /** Fiyat geçmişi, eskiden yeniye; note: kaynak ("Excel'den aktarıldı", Paraşüt fatura numarası) */
   history: { at: string; price: number; size: number; by: string | null; note: string | null }[];
@@ -121,7 +123,7 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
 /** Arama: ad, tedarikçi, paket, kategori ve Kaynak / not (ör. "varsayım" yazınca doğrulanacaklar çıkar) */
 const searchText = (r: IngredientRow) => `${r.name} ${r.supplier ?? ""} ${r.packageDesc ?? ""} ${r.category} ${r.note ?? ""}`;
 
-const sortValue = (r: IngredientRow, key: Exclude<SortKey, "name">) => (key === "usedIn" ? r.usedIn.length : r[key]);
+const sortValue = (r: IngredientRow, key: Exclude<SortKey, "name">) => (key === "usedIn" ? activeUses(r) : r[key]);
 
 /** Filtrenin aktif/pasif koşulu: "Pasif" dışındaki her görünüm aktif malzemeleri listeler */
 const inScope = (r: IngredientRow, filter: Filter) => (filter === "pasif" ? !r.active : r.active);
@@ -271,7 +273,7 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
  * ya da reçetede olmayan malzemede not görünür (ne doğrulanacağını söyler), ötekilerde üzerine gelince okunur.
  */
 function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () => void; compact?: boolean }) {
-  const showNote = Boolean(r.note) && (r.isEstimate || !r.usedIn.length);
+  const showNote = Boolean(r.note) && (r.isEstimate || !activeUses(r));
   return (
     // Telefon kartında düğme kartın tamamını kaplar (after:inset-0): karta dokunmak düzenleme penceresini açar;
     // fiyat alanı ve satır düğmeleri üstte (z-10) kalır
@@ -311,7 +313,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
               Fiyat onayda
             </Badge>
           ) : null}
-          {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}
+          {!activeUses(r) ? (
+            <Badge tone="gray" title={r.usedIn.length ? `Yalnız ${num(r.usedIn.length)} pasif ürünün reçetesinde` : undefined}>
+              Reçetede yok
+            </Badge>
+          ) : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
         </span>
         {/* Telefonda kesilmez, sarılır (uzun tedarikçi adı) */}
@@ -365,7 +371,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       all: base.filter((r) => r.active).length,
       tahmini: base.filter((r) => r.active && r.isEstimate).length,
       fiyatsiz: base.filter(isUnpriced).length,
-      kullanilmayan: base.filter((r) => r.active && !r.usedIn.length).length,
+      kullanilmayan: base.filter((r) => r.active && !activeUses(r)).length,
       pasif: base.filter((r) => !r.active).length,
     }),
     [base],
@@ -386,7 +392,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         inScope(r, filter) &&
         (filter !== "tahmini" || r.isEstimate) &&
         (filter !== "fiyatsiz" || isUnpriced(r)) &&
-        (filter !== "kullanilmayan" || !r.usedIn.length),
+        (filter !== "kullanilmayan" || !activeUses(r)),
     );
     const byName = (a: IngredientRow, b: IngredientRow) => a.name.localeCompare(b.name, "tr");
     if (!sort) return list.sort((a, b) => catOrder(a.category) - catOrder(b.category) || byName(a, b));
@@ -432,7 +438,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       "Birim maliyet",
       "Alış KDV (%)",
       "Fiyat kaynağı",
-      "Reçete sayısı",
+      "Reçete sayısı (aktif ürün)",
       "Son ay kullanım",
       "Tahmini",
       "Aktif",
@@ -449,7 +455,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       num(r.unitCost, 4),
       num(r.vatRate * 100, 2),
       r.priceSource === "water" ? "Su faturası" : "Fatura / elle",
-      num(r.usedIn.length),
+      num(activeUses(r)),
       num(r.monthUsage, 2),
       r.isEstimate ? "Evet" : "",
       r.active ? "Evet" : "Hayır",
@@ -726,7 +732,14 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                       <span className="text-xs text-ink-mute">/{r.unit}</span>
                       <span className="block text-xs text-ink-mute">KDV {pct(r.vatRate, 0)}</span>
                     </TD>
-                    <TD numeric>{r.usedIn.length ? num(r.usedIn.length) : <span className="text-ink-quiet">0</span>}</TD>
+                    <TD numeric>
+                      {activeUses(r) ? num(activeUses(r)) : <span className="text-ink-quiet">0</span>}
+                      {r.usedIn.length > activeUses(r) ? (
+                        <span className="block text-xs text-ink-mute" title="Pasif ürünlerin reçetelerinde (silmeyi engeller, tüketime girmez)">
+                          +{num(r.usedIn.length - activeUses(r))} pasif
+                        </span>
+                      ) : null}
+                    </TD>
                     <TD numeric className="text-ink-soft">
                       {r.monthUsage ? `${num(r.monthUsage)} ${r.unit}` : <span className="text-ink-quiet">–</span>}
                     </TD>
@@ -794,7 +807,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                   <p className="min-w-0 text-[13px] text-ink-mute tabular">
                     <span className="text-[15px] font-semibold text-ink">{tlUnit(r.unitCost)}</span>/{r.unit} · KDV {pct(r.vatRate, 0)}
                     <span className="block">
-                      {num(r.usedIn.length)} reçete{r.monthUsage ? ` · son ay ${num(r.monthUsage)} ${r.unit}` : ""}
+                      {num(activeUses(r))} reçete{r.monthUsage ? ` · son ay ${num(r.monthUsage)} ${r.unit}` : ""}
                     </span>
                   </p>
                   <div className="relative z-10 flex shrink-0 gap-1.5">
@@ -919,17 +932,43 @@ export function NewIngredientButton({ categories, rows }: { categories: string[]
 }
 
 const PASSIVE_EFFECT =
-  "Reçeteler ve ürün maliyetleri aynı kalır, geçmiş sayımlar ve alımlar korunur. Malzeme yeni reçete seçimlerinde ve yeni sayımlarda görünmez; Pasif listesinden yeniden açabilirsiniz.";
+  "Pasif ürünlerin reçeteleri, geçmiş sayımlar, alımlar ve zayi kayıtları korunur. Malzeme reçete seçimlerinde ve sayım listesinde görünmez (onu kullanan bir ürün yeniden aktif olursa sayım listesine döner); Pasif listesinden yeniden açabilirsiniz.";
+
+/** Ürün bağlantıları (pencere önce kapanır: açık kalsa ürün sayfasının üstünde dururdu) */
+function ProductLinks({ items, onNavigate, max = 8 }: { items: IngredientRow["usedIn"]; onNavigate: () => void; max?: number }) {
+  const shown = items.slice(0, max);
+  return (
+    <span className="mt-2 flex flex-wrap gap-1.5">
+      {shown.map((u) => (
+        <Link
+          key={u.id}
+          href={`/panel/urunler/${u.id}`}
+          onClick={onNavigate}
+          className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11"
+        >
+          {u.label}
+        </Link>
+      ))}
+      {items.length > shown.length ? <span className="inline-flex min-h-8 items-center px-1 text-xs text-ink-mute">ve {num(items.length - shown.length)} ürün daha</span> : null}
+    </span>
+  );
+}
 
 /**
- * Silme onayı. Reçetede kullanılan ya da sayımı, alım miktarı, Paraşüt eşleştirmesi olan malzeme silinemez (sunucu da
- * reddeder; silmek geçmiş ayların stok değerini değiştirirdi): onun yerine "Pasif yap" önerilir.
+ * Silme onayı. Reçetede kullanılan ya da sayımı, alım miktarı, Paraşüt eşleştirmesi, zayi / ikram kaydı olan malzeme
+ * silinemez (sunucu da reddeder; silmek geçmiş ayların stok değerini ve zayi maliyetini değiştirirdi). Aktif bir ürünün
+ * reçetesindeyse pasif de yapılamaz: önce reçetelerden çıkarılır, ürünler bağlantıyla listelenir (denetim E-04).
+ * Yalnız pasif ürünlerde ya da geçmiş kayıtlarda kalıyorsa "Pasif yap" önerilir.
  */
 function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
-  const used = row.usedIn.length > 0;
+  const activeProducts = row.usedIn.filter((u) => u.active);
+  const passiveProducts = row.usedIn.filter((u) => !u.active);
+  const inActive = activeProducts.length > 0;
   const history = historyText(row.deps);
-  const blocked = used || history !== null;
+  const blocked = row.usedIn.length > 0 || history !== null;
+  // Pasif yapmak yalnız aktif bir ürün onu kullanmıyorsa (yoksa ürünler tüketmeye devam ederdi)
+  const canPassivate = row.active && !inActive;
 
   async function makePassive() {
     const res = await setIngredientActive(row.id, false);
@@ -938,7 +977,7 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
   }
 
   async function confirm() {
-    if (blocked && !row.active) return onClose();
+    if (blocked && !canPassivate) return onClose();
     setBusy(true);
     if (blocked) {
       await makePassive();
@@ -948,7 +987,7 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
     const res = await deleteIngredient(row.id);
     setBusy(false);
     if (!res.ok) {
-      // Sayfa açıkken başka yerde sayım ya da alım girildiyse sunucu reddeder: pasif yapmak tek tıkta
+      // Sayfa açıkken başka yerde sayım, alım ya da zayi girildiyse sunucu reddeder: pasif yapmak tek tıkta
       toast.error(res.error, row.active ? { action: { label: "Pasif yap", onClick: () => void makePassive() } } : undefined);
       return onClose();
     }
@@ -964,16 +1003,29 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
         onConfirm={confirm}
         pending={busy}
         tone="primary"
-        confirmLabel={row.active ? "Pasif yap" : "Tamam"}
+        confirmLabel={canPassivate ? "Pasif yap" : "Tamam"}
         title={`${row.name} silinemiyor`}
         description={
           <>
             <span className="mb-3 block rounded-2xl bg-warn-soft px-3.5 py-2.5 text-warn">
-              {used ? `Bu malzeme ${num(row.usedIn.length)} üründe kullanılıyor; silmek için önce o reçetelerden çıkarın.` : null}
-              {used && history ? " " : null}
-              {history ? `${used ? "Ayrıca" : "Bu malzemenin"} ${history} kaydı var; silinirse geçmiş ayların stok ve tutarlılık değerleri değişir.` : null}
+              {inActive
+                ? `Bu malzeme ${num(activeProducts.length)} aktif ürünün reçetesinde kullanılıyor. Silmek ya da pasif yapmak için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın; yoksa ürünler onu tüketmeye devam eder.`
+                : passiveProducts.length
+                  ? `Bu malzeme yalnız ${num(passiveProducts.length)} pasif ürünün reçetesinde kullanılıyor; silmek için önce o reçetelerden çıkarın.`
+                  : null}
+              {row.usedIn.length && history ? " " : null}
+              {history ? `${row.usedIn.length ? "Ayrıca" : "Bu malzemenin"} ${history} kaydı var; silinirse geçmiş ayların stok, zayi ve tutarlılık değerleri değişir.` : null}
             </span>
-            {row.active ? `Bunun yerine pasif yapabilirsiniz. ${PASSIVE_EFFECT}` : "Malzeme zaten pasif; reçetelerde ve geçmiş kayıtlarda kalmaya devam eder."}
+            {inActive ? (
+              <span className="block">
+                Kullanan aktif ürünler:
+                <ProductLinks items={activeProducts} onNavigate={onClose} />
+              </span>
+            ) : canPassivate ? (
+              `Bunun yerine pasif yapabilirsiniz. ${PASSIVE_EFFECT}`
+            ) : (
+              "Malzeme zaten pasif; reçetelerde ve geçmiş kayıtlarda kalmaya devam eder."
+            )}
           </>
         }
       />
@@ -986,7 +1038,7 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
       pending={busy}
       confirmLabel="Kalıcı olarak sil"
       title={`${row.name} silinsin mi?`}
-      description="Hiçbir reçetede, sayımda ya da alım kaydında yok. Fiyat geçmişiyle birlikte silinir; bu işlem geri alınamaz."
+      description="Hiçbir reçetede, sayımda, alım ya da zayi kaydında yok. Fiyat geçmişiyle birlikte silinir; bu işlem geri alınamaz."
     />
   );
 }
@@ -1075,10 +1127,15 @@ function IngredientDialog({
     size: size === null || size <= 0 ? "Paket içeriği 0'dan büyük olmalı" : null,
     vat: vat === null || vat < 0 || vat > 1 ? "0 ile 100 arasında bir oran girin (ör. 20)" : null,
     countUnit: f.countUnit && !allowedCount.includes(f.countUnit) ? `“${f.unit}” birimli malzeme ${allowedCount.join(" ya da ")} olarak sayılır` : null,
+    // Aktif bir ürünün reçetesindeki malzeme pasif yapılamaz (sunucu da reddeder; denetim E-04)
+    active:
+      row?.active && !f.active && activeUses(row)
+        ? `${num(activeUses(row))} aktif ürünün reçetesinde kullanılıyor (${productListText(row.usedIn.filter((u) => u.active).map((u) => ({ id: u.id, name: u.label })))}). Pasif yapmadan önce bu reçetelerden çıkarın ya da yerine başka malzeme yazın.`
+        : null,
   };
   const invalid = Object.values(errors).some(Boolean);
   // Hatalar ilk "Ekle/Kaydet" denemesinden sonra görünür; aynı ad ve uyumsuz sayım birimi ise hemen çıkar
-  const show = (k: keyof typeof errors) => ((tried || (k === "name" && duplicate) || k === "countUnit") && errors[k]) || undefined;
+  const show = (k: keyof typeof errors) => ((tried || (k === "name" && duplicate) || k === "countUnit" || k === "active") && errors[k]) || undefined;
 
   // Birim ya da sayım birimi değişince eski sayımların ne olacağı (kaydetmeden önce söylenir)
   const unitChanged = row !== null && (f.unit !== row.unit || (f.countUnit || null) !== row.countUnit);
@@ -1120,8 +1177,9 @@ function IngredientDialog({
     if (busy) return;
     setTried(true);
     if (invalid) {
-      const first = (["name", "category", "price", "size", "vat", "countUnit"] as const).find((k) => errors[k]);
-      const id = { name: "i-name", category: "i-cat", price: "i-price", size: "i-size", vat: "i-vat", countUnit: "i-cu" }[first!];
+      const first = (["name", "category", "price", "size", "vat", "countUnit", "active"] as const).find((k) => errors[k]);
+      if (first === "active") setAdvanced(true);
+      const id = { name: "i-name", category: "i-cat", price: "i-price", size: "i-size", vat: "i-vat", countUnit: "i-cu", active: "i-active" }[first!];
       document.getElementById(id)?.focus();
       return;
     }
@@ -1407,7 +1465,22 @@ function IngredientDialog({
                     </Select>
                   </Field>
                 </div>
-                <Checkbox label="Aktif (reçetelerde ve sayımda seçilebilir)" className="min-h-10" checked={f.active} onChange={(e) => set({ active: e.target.checked })} />
+                <div>
+                  <Checkbox
+                    id="i-active"
+                    label="Aktif (reçetelerde ve sayımda seçilebilir)"
+                    className="min-h-10"
+                    checked={f.active}
+                    onChange={(e) => set({ active: e.target.checked })}
+                    aria-invalid={show("active") ? true : undefined}
+                    aria-describedby={show("active") ? "i-active-err" : undefined}
+                  />
+                  {show("active") ? (
+                    <p id="i-active-err" className="mt-1 text-xs font-medium text-pretty text-bad" role="alert">
+                      {show("active")}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>
@@ -1485,18 +1558,26 @@ function IngredientDialog({
             {/* Su ve buzun fiyatı su faturasından: tedarikçi karşılaştırması yok */}
             {row.priceSource !== "water" ? <SupplierPrices ingredientId={row.id} onNavigate={onClose} /> : null}
             <div>
-              <p className="mb-2 text-sm font-semibold text-ink">Kullanıldığı ürünler ({row.usedIn.length})</p>
+              <p className="mb-2 text-sm font-semibold text-ink">
+                Kullanıldığı ürünler ({activeUses(row)}
+                {row.usedIn.length > activeUses(row) ? ` · ${num(row.usedIn.length - activeUses(row))} pasif ürün` : ""})
+              </p>
               {row.usedIn.length ? (
                 <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto scroll-thin">
-                  {row.usedIn.map((u) => (
+                  {/* Aktif ürünler önce; pasif ürün soluk ve "pasif" etiketiyle (tüketime girmez, silmeyi engeller) */}
+                  {[...row.usedIn].sort((a, b) => Number(b.active) - Number(a.active)).map((u) => (
                     // Pencere önce kapanır: açık kalsa ürün sayfasının üstünde dururdu
                     <Link
                       key={u.id}
                       href={`/panel/urunler/${u.id}`}
                       onClick={onClose}
-                      className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11"
+                      className={cn(
+                        "inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11",
+                        u.active ? "text-ink-soft" : "text-ink-quiet",
+                      )}
                     >
                       {u.label}
+                      {u.active ? null : <span className="ml-1 font-normal">· pasif</span>}
                     </Link>
                   ))}
                 </div>

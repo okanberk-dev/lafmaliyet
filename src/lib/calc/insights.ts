@@ -908,7 +908,8 @@ export function alerts(model: Model, month: string): Alert[] {
       href: "/panel/hammaddeler?durum=tahmini",
     });
   }
-  const unused = model.ds.ingredients.filter((i) => i.active && !model.usedIn.has(i.id));
+  // Yalnız aktif ürünlerin reçeteleri: emekli (pasif) ürünlerin kullandığı malzeme de "reçetede yok" (denetim E-58)
+  const unused = model.ds.ingredients.filter((i) => i.active && !model.usedInActive.has(i.id));
   if (unused.length) {
     out.push({
       level: "info",
