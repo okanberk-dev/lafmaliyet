@@ -9,7 +9,7 @@ import {
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
-import { monthLabel, num } from "../format";
+import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
 import type { FixedSection, Ingredient } from "./types";
@@ -738,10 +738,15 @@ export function dailyChange(cur: DashboardData, prev: DashboardData) {
 /**
  * Yıl içindeki aylık ciro / gider / kâr (grafik). POS cirosu girilmemiş ay kâr/zarar sayılmaz: sayımdan sonraki
  * ayda devreden stok, ciro gelmeden mal maliyeti olur; süren ayın faturaları da öyle (Gelir-gider tablosu aynen kalır).
+ * Bu aydan (model.currentMonth) sonraki aylar hiç sayılmaz: bu ay sayılınca sonraki ayın açılış stoğu, ay başlamadan
+ * onun "gideri" görünürdü (denetim E-16). Yıl toplamları tek kuraldan: yearTotals.
  */
 export function yearTrend(model: Model, year: number) {
   return Array.from({ length: 12 }, (_, i) => {
     const month = `${year}-${String(i + 1).padStart(2, "0")}`;
+    if (month > model.currentMonth) {
+      return { month, revenueNet: 0, expenses: 0, profit: 0, active: false, missingRevenue: false, future: true, uncounted: false };
+    }
     const pm = model.pnlMonth(month);
     const noRevenue = pm.revenue === null;
     return {
@@ -754,8 +759,67 @@ export function yearTrend(model: Model, year: number) {
       active: !noRevenue,
       /** Gider var (fatura, önceki ayın sayım devri) ama ciro girilmedi */
       missingRevenue: noRevenue && pm.expenses > 0,
+      /** Bu aydan sonra (henüz başlamadı): hiçbir toplama girmez */
+      future: false,
+      /**
+       * Toplama giren ama kapanış sayımı olmayan ay (Gelir-giderde elle değer de yok): kapanış stoğu 0 sayılır, mal
+       * maliyeti ve kâr tahminidir (süren ayda sayım ay sonunda girilir)
+       */
+      uncounted: !noRevenue && !model.stockSheet(month).hasData && !model.closingStock(month).overridden,
     };
   });
+}
+
+export type YearTrendMonth = ReturnType<typeof yearTrend>[number];
+
+/** Yılın kâr / zarar toplamı: Gelir-gider kartları, Excel, Genel bakış ve Claude (ay_ozeti) aynı rakamı söyler */
+export interface YearTotals {
+  year: number;
+  /** Toplama giren aylar: POS cirosu girilmiş, bu ay ya da öncesi (yearTrend active) */
+  counted: string[];
+  /** KDV hariç ciro: ModPOS + laffogato.net online */
+  revenueNet: number;
+  /** Bunun online (laffogato.net) kısmı */
+  online: number;
+  expenses: number;
+  profit: number;
+  /** Satılan malın maliyeti (açılış + alınan − kapanış) */
+  cogs: number;
+  /** Gideri olup cirosu girilmemiş aylar (bu ay ya da öncesi): kâra girmedi; online satışı da toplama girmedi */
+  missingRevenue: { month: string; expenses: number; online: number }[];
+  /** Toplama giren ama kapanış sayımı olmayan aylar: mal maliyeti tahmini (kapanış 0) */
+  uncounted: string[];
+}
+
+/**
+ * Yılın toplamı tek kuraldan (denetim E-16, NEW-02): yalnız bu aya kadarki, POS cirosu girilmiş aylar. Cirosu
+ * girilmemiş ayın gideri kâra girmez, ayrı not olarak söylenir (Gelir-gider tablosundaki satırlar aynen kalır).
+ */
+export function yearTotals(model: Model, year: number): YearTotals {
+  const rows = yearTrend(model, year);
+  const active = rows.filter((r) => r.active);
+  const add = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const pms = active.map((r) => model.pnlMonth(r.month));
+  const revenueNet = add(active.map((r) => r.revenueNet));
+  const expenses = add(active.map((r) => r.expenses));
+  return {
+    year,
+    counted: active.map((r) => r.month),
+    revenueNet,
+    online: add(pms.map((pm) => pm.site?.total ?? 0)),
+    expenses,
+    profit: add(active.map((r) => r.profit)),
+    cogs: add(pms.map((pm) => pm.cogs)),
+    missingRevenue: rows
+      .filter((r) => r.missingRevenue)
+      .map((r) => ({ month: r.month, expenses: r.expenses, online: model.pnlMonth(r.month).site?.total ?? 0 })),
+    uncounted: rows.filter((r) => r.uncounted).map((r) => r.month),
+  };
+}
+
+/** "Kasım 2026: ciro girilmedi; 5.110 ₺ gider kâra girmedi" (Gelir-gider kartlarının notu, Claude'un kaynak satırı) */
+export function missingRevenueText(m: YearTotals["missingRevenue"][number]): string {
+  return `${monthLabel(m.month)}: ciro girilmedi; ${tl(m.expenses)} gider${m.online ? ` ve ${tl(m.online)} online satış` : ""} kâra girmedi`;
 }
 
 // ============================================================================

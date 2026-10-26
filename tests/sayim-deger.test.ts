@@ -1,5 +1,6 @@
 // Stok sayımının değeri ve listesi (denetim 26 Eki 2026, parti B02): aktif reçetedeki pasif malzeme sayım listesinde
-// kalır (E-04), pasif yapma engelinin metni, "reçetede yok" yalnız aktif ürünlere bakar (E-58). Saf: motor ve yardımcılar.
+// kalır (E-04), pasif yapma engelinin metni, "reçetede yok" yalnız aktif ürünlere bakar (E-58), yıl toplamı bu aya kadar
+// ve tek kuraldan (E-16, NEW-02). Saf: motor ve yardımcılar.
 // Veritabanındaki eylemler: tests/sayim-deger-db.test.ts. FIFO başlangıç ayı (E-05): tests/stok-fifo.test.ts.
 // Çalıştırma: npx tsx --test tests/sayim-deger.test.ts
 
@@ -8,14 +9,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { buildWorkbook } from "../src/app/api/export/workbook";
 import { createModel } from "../src/lib/calc/engine";
+import { missingRevenueText, yearTotals, yearTrend } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { activeUses, isCountable, passiveRefusal, productListText } from "../src/lib/ingredient-usage";
+import { yearSummary } from "../src/lib/mcp/answers/month";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
 const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
 const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+function close(actual: number, expected: number, label: string, tol = 1e-6) {
+  assert.ok(Math.abs(actual - expected) <= tol * Math.max(1, Math.abs(expected)), `${label}: beklenen ${expected}, bulunan ${actual}`);
+}
 const linesOf = (ds: Dataset, month: string) =>
   createModel(ds)
     .stockSheet(month)
@@ -77,4 +84,74 @@ test("E-04 ekran: Hammaddeler'in sil penceresi ve 'Aktif' kutusu aktif ürünü 
   // Sunucu iki yoldan da reddeder (eylem kaynağı)
   const actions = readFileSync(join(root, "src/server/actions/ingredients.ts"), "utf8");
   assert.equal(actions.match(/passiveRefusal\(/g)?.length, 2, "setIngredientActive ve saveIngredient");
+});
+
+// ---------------------------------------------------------------- Yıl toplamı (E-16, NEW-02)
+
+const esp = base.ingredients.find((i) => i.name === "Espresso çekirdeği")!;
+/** Excel verisi + Ekim'de (bu ay) sayılmış 100 KG espresso: Kasım'ın açılışı dolu, Kasım henüz başlamadı */
+const octCounted: Dataset = { ...base, stockCounts: [{ month: "2026-10", ingredientId: esp.id, qty: 100, factor: 1000 }] };
+
+test("E-16: bu ay sayılınca sonraki ay aktif olmaz, yıl toplamına girmez", () => {
+  const m = createModel(octCounted);
+  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'ın açılış stoğu gider gibi duruyor (tablo)");
+  const nov = yearTrend(m, 2026)[10];
+  assert.equal(nov.month, "2026-11");
+  assert.deepEqual([nov.future, nov.active, nov.missingRevenue, nov.expenses], [true, false, false, 0]);
+  const yt = yearTotals(m, 2026);
+  assert.ok(!yt.counted.includes("2026-11"));
+  assert.deepEqual(yt.missingRevenue, [], "Kasım 'ciro girilmedi' de sayılmaz");
+  const through = ["2026-07", "2026-08", "2026-09", "2026-10"].map((x) => m.pnlMonth(x));
+  close(yt.expenses, through.reduce((a, c) => a + c.expenses, 0), "yıl gideri Ekim'e kadar");
+  close(yt.profit, through.reduce((a, c) => a + c.profit, 0), "yıl kârı Ekim'e kadar");
+  close(yt.cogs, through.reduce((a, c) => a + c.cogs, 0), "yıl mal maliyeti");
+  assert.deepEqual(yt.counted, ["2026-07", "2026-08", "2026-09", "2026-10"]);
+  // Ekim sayıldı, öncekiler sayılmadı: mal maliyeti tahmini
+  assert.deepEqual(yt.uncounted, ["2026-07", "2026-08", "2026-09"]);
+  // Gelecek ay currentMonth değişince sayılır
+  const novNow = createModel({ ...octCounted, currentMonth: "2026-11" });
+  assert.equal(yearTrend(novNow, 2026)[10].missingRevenue, true, "Kasım başladı, ciro yok");
+  assert.match(missingRevenueText(yearTotals(novNow, 2026).missingRevenue[0]), /^Kasım 2026: ciro girilmedi; [\d.]+\s₺ gider kâra girmedi$/);
+});
+
+test("NEW-02: Gelir-gider kartı, Genel bakış ve Claude'un yıl toplamı aynı rakam; cirosuz geçmiş ay kâra girmez", () => {
+  // Haziran'a mal faturası: gider var, POS cirosu yok
+  const ds: Dataset = {
+    ...octCounted,
+    invoices: [...octCounted.invoices, { ...octCounted.invoices.find((i) => i.category === "Hammadde & İçecek")!, id: 990_001, date: "2026-06-15", amount: 12_000, discount: 0 }],
+  };
+  const m = createModel(ds);
+  const yt = yearTotals(m, 2026);
+  assert.equal(yt.missingRevenue.length, 1);
+  assert.equal(yt.missingRevenue[0].month, "2026-06");
+  close(yt.missingRevenue[0].expenses, m.pnlMonth("2026-06").expenses, "Haziran gideri");
+  assert.ok(!yt.counted.includes("2026-06"));
+  // Claude (ay_ozeti, yil) aynı toplamı söyler
+  const ys = yearSummary(m, 2026, { base: "https://ladmin.laffogato.net" });
+  close(ys.toplam.kar, Math.round(yt.profit * 100) / 100, "Claude kâr", 1e-9);
+  close(ys.toplam.gider, Math.round(yt.expenses * 100) / 100, "Claude gider", 1e-9);
+  assert.ok(ys.kaynak.some((k) => k.includes("Haziran 2026: ciro girilmedi")), "kaynakta not");
+  // Genel bakış: yearTrend'in aktif aylarının toplamı = yearTotals
+  const trend = yearTrend(m, 2026).filter((x) => x.active);
+  close(trend.reduce((a, x) => a + x.profit, 0), yt.profit, "Genel bakış grafiği");
+  // Sayfalar aynı yardımcıyı kullanır (kaynak)
+  const gg = readFileSync(join(root, "src/app/panel/gelir-gider/page.tsx"), "utf8");
+  assert.ok(gg.includes("const yt = yearTotals(model, year);") && gg.includes("const { revenueNet, online, expenses, profit } = yt;"));
+  assert.ok(/m <= current && \(calcs\[i\]\.revenue/.test(gg), "aktif aylar bu aya kadar");
+  assert.ok(readFileSync(join(root, "src/app/panel/page.tsx"), "utf8").includes("<YearTotals totals={yearSum} />"));
+});
+
+test("E-16: Excel'in yıl sütunu bu aya kadar; kâr hücresinin notu panelin yıl kartını söyler", () => {
+  const m = createModel({ ...octCounted, settings: { ...octCounted.settings, kdvHizmet: octCounted.settings.kdv } });
+  const wb = buildWorkbook(m, "2026-10", { investments: [], findings: [], now: new Date("2026-10-26T10:00:00Z") });
+  const ws = wb.getWorksheet("Gelir-Gider 2026")!;
+  let profitRow: import("exceljs").Row | undefined;
+  ws.eachRow((r) => {
+    if (r.getCell(2).value === "KÂR / ZARAR") profitRow = r;
+  });
+  assert.ok(profitRow);
+  const through = ["2026-07", "2026-08", "2026-09", "2026-10"].map((x) => m.pnlMonth(x).profit).reduce((a, b) => a + b, 0);
+  close(profitRow!.getCell(15).value as number, through, "YILI = Temmuz–Ekim (Kasım'ın açılış stoğu yok)");
+  assert.match(String(ws.getCell("O1").note ?? ""), /Ekim 2026 ve öncesi/);
+  assert.match(String(profitRow!.getCell(15).note ?? ""), /Panelin yıl kâr \/ zarar kartı \(yalnız POS cirosu girilmiş 4 ay\)/);
 });
