@@ -1,0 +1,150 @@
+// Stok sayımında girilen hiçbir sayı sessizce kaybolmasın (denetim 26 Eki 2026 B01): ek kalemlerin imzası, yöneticinin
+// kimliğe göre kaydı, formdaki ek kalemlerin tazelenmesi, taslağın "doldurulmuş" işareti, ek kalemleri ve yazarı,
+// panel güncellemesinin "Yenile" diye bildirilmesi ve listede de olan ek kalem.
+// Çalıştırma: npx tsx --test tests/sayim-kayit.test.ts
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import {
+  countDraftJson,
+  extrasBase,
+  mergeExtras,
+  parseCountDraft,
+  planAdminExtras,
+  planStaffExtras,
+  restoredPrefilled,
+  type SavedExtra,
+} from "../src/app/panel/sayim/logic";
+
+const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+const ex = (id: number, name: string, unit: string, qty: number, unitPrice = 0, month = "2026-10"): SavedExtra => ({ id, month, name, unit, qty, unitPrice });
+
+test("ek kalem imzası: ad + birim + miktar, sırasız; fiyat girmez (personel görmez)", () => {
+  const a = extrasBase([ex(1, "Peçete", "PAKET", 3, 12.5), ex(2, "Sünger", "ADET", 2)]);
+  assert.equal(a, extrasBase([ex(9, " sünger ", "adet", 2, 0), ex(8, "PEÇETE", "paket", 3, 99)]));
+  assert.notEqual(a, extrasBase([ex(1, "Peçete", "PAKET", 3, 12.5)]), "başkasının eklediği kalem imzayı değiştirir");
+  assert.notEqual(a, extrasBase([ex(1, "Peçete", "PAKET", 4, 12.5), ex(2, "Sünger", "ADET", 2)]));
+  assert.equal(extrasBase([]), "");
+});
+
+test("yönetici kaydı ayı silmez: kalemler ad + birimle eşlenir, yalnız kaldırılan silinir", () => {
+  const existing = [ex(1, "DENETIM yulaf sütü", "LT", 2), ex(2, "Peçete", "PAKET", 3, 12.5)];
+  const res = planAdminExtras(existing, [
+    { name: "peçete", unit: "paket", qty: 3, unitPrice: 14 },
+    { name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 },
+  ]);
+  assert.ok(res.ok);
+  assert.deepEqual(res.plan.updates, [{ id: 2, name: "peçete", unit: "PAKET", qty: 3, unitPrice: 14 }]);
+  assert.deepEqual(res.plan.inserts, [{ name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 }]);
+  assert.deepEqual(res.plan.deletes, [1]);
+  // Değişmeyen satıra dokunulmaz
+  const same = planAdminExtras(existing, [
+    { name: "DENETIM yulaf sütü", unit: "LT", qty: 2, unitPrice: 0 },
+    { name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 12.5 },
+  ]);
+  assert.deepEqual(same, { ok: true, plan: { updates: [], deletes: [], inserts: [] } });
+  assert.deepEqual(planAdminExtras([], [{ name: "A", unit: "ADET", qty: 1, unitPrice: 0 }, { name: "a ", unit: "adet", qty: 2, unitPrice: 0 }]), {
+    ok: false,
+    error: '"a" iki kez yazılmış; miktarları tek satırda toplayın.',
+  });
+});
+
+test("personelin eski listeyle planı başkasının kalemini siler: imza denetimi bu yüzden sunucuda", () => {
+  // Denetimdeki gözlem: personel eski listeyi (yalnız Peçete) gönderir, yönetici arada Kağıt havlu eklemiş
+  const plan = planStaffExtras([ex(1, "Peçete", "PAKET", 3), ex(2, "Kağıt havlu", "PAKET", 1)], [{ name: "Peçete", unit: "PAKET", qty: 3 }], []);
+  assert.ok(plan.ok && plan.plan.deletes.includes(2));
+  // Formun gördüğü liste (base) kayıtlıdan farklı: sunucu yazmaz (src/server/data/stock-extras.ts lockExtras)
+  assert.notEqual(extrasBase([ex(1, "Peçete", "PAKET", 3)]), extrasBase([ex(1, "Peçete", "PAKET", 3), ex(2, "Kağıt havlu", "PAKET", 1)]));
+  const core = read("src/server/data/stock-extras.ts");
+  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`sayim-ek-\$\{month\}`\}\)\)/);
+  assert.match(core, /if \(base !== undefined && extrasBase\(existing\) !== base\) \{\s+refresh\(\);\s+throw new UserError\(EXTRAS_CHANGED_MESSAGE\);/);
+  assert.match(read("src/server/actions/stock.ts"), /const existing = await lockExtras\(tx, m, b\);\s+const res = planAdminExtras\(existing, data\);/);
+  assert.doesNotMatch(read("src/server/actions/stock.ts"), /tx\.delete\(s\.stockExtras\)\.where\(eq\(s\.stockExtras\.month, m\)\)/, "ay toptan silinmez");
+  assert.match(read("src/app/panel/sayim/actions.ts"), /const existing = await lockExtras\(tx, m, b\);/);
+  assert.doesNotMatch(read("src/server/actions/stock.ts"), /export async function lockExtras|export const EXTRAS/, "use server dosyasında yardımcı yok");
+});
+
+type E = { name: string; unit: string; qty: string; unitPrice: string };
+const e = (name: string, unit: string, qty: string, unitPrice = ""): E => ({ name, unit, qty, unitPrice });
+const same = (a: E, b: E) => a.name.toLocaleUpperCase("tr-TR") === b.name.toLocaleUpperCase("tr-TR") && a.unit === b.unit && a.qty === b.qty && a.unitPrice === b.unitPrice;
+
+test("formdaki ek kalemler tazelenir: başkasının eklediği gelir, dokunulmayan güncellenir, çakışan söylenir", () => {
+  const before = [e("Peçete", "PAKET", "3"), e("Sünger", "ADET", "2")];
+  // Başkası: Peçete fiyatlandı, Sünger silindi, Yulaf eklendi
+  const after = [e("Peçete", "PAKET", "3", "12,5"), e("Yulaf sütü", "LT", "2")];
+  const untouched = mergeExtras(before, before, after, same);
+  assert.deepEqual(untouched, { extras: [e("Peçete", "PAKET", "3", "12,5"), e("Yulaf sütü", "LT", "2")], conflicts: [] });
+  // Ben Peçete'yi 4 yaptım, Sünger'i 5 yaptım, yeni bir satır ekledim
+  const mine = [e("Peçete", "PAKET", "4"), e("Sünger", "ADET", "5"), e("Klips", "KOLİ", "1"), e("", "ADET", "")];
+  const r = mergeExtras(mine, before, after, same);
+  assert.deepEqual(r.extras, [e("Peçete", "PAKET", "4"), e("Sünger", "ADET", "5"), e("Klips", "KOLİ", "1"), e("", "ADET", ""), e("Yulaf sütü", "LT", "2")]);
+  assert.deepEqual(r.conflicts, ["Peçete", "Sünger"]);
+  // Ben sildim, başkası değiştirdi: silinmiş kalır, söylenir
+  const del = mergeExtras([e("Sünger", "ADET", "2")], before, [e("Peçete", "PAKET", "9"), e("Sünger", "ADET", "2")], same);
+  assert.deepEqual(del, { extras: [e("Sünger", "ADET", "2")], conflicts: ["Peçete"] });
+  // Form tarafı: yeni props gelince birleştirir, kart çakışmayı söyler; kayıt gördüğü listenin imzasını gönderir
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /if \(syncedExtras !== initialExtras\) \{/);
+  assert.match(form, /const merged = mergeExtras\(extras, before, savedExtras, sameExtra\);/);
+  assert.match(form, /const base = extrasBase\(initialExtras\);/);
+  assert.match(form, /saveStaffStockExtras\(month, clean, base\)/);
+});
+
+test("taslak: doldurulmuş işaret, ek kalemler ve yazar; eski düz biçim okunur", () => {
+  const json = countDraftJson({ values: { "12": "3,5", "13": "2" }, prefilled: [13], extras: [{ name: "Peçete", unit: "PAKET", qty: "3", unitPrice: "" }], by: "Ayşe" });
+  const d = parseCountDraft(json);
+  assert.deepEqual(d, { values: { "12": "3,5", "13": "2" }, prefilled: [13], extras: [{ name: "Peçete", unit: "PAKET", qty: "3", unitPrice: "" }], by: "Ayşe" });
+  assert.deepEqual(parseCountDraft('{"12":"3,5","x":"1","14":5}'), { values: { "12": "3,5" }, prefilled: null, extras: null, by: null });
+  assert.deepEqual(parseCountDraft("bozuk"), { values: {}, prefilled: null, extras: null, by: null });
+  assert.deepEqual(parseCountDraft(null).values, {});
+  // Geri yüklemede doldurulmuş satırlar yeniden işaretlenir (kayıt öncesi denetim sorar)
+  const rows = [
+    { id: 12, qty: 3.5, prevQty: 3.5, sameUnit: true },
+    { id: 13, qty: 2, prevQty: 2, sameUnit: true },
+  ];
+  assert.deepEqual(restoredPrefilled(d, rows), [13]);
+  // Eski düz taslak: geçen ayın miktarına eşit değer doldurulmuş sayılır
+  assert.deepEqual(restoredPrefilled(parseCountDraft('{"12":"3,5","13":"2"}'), [...rows, { id: 14, qty: 1, prevQty: 1, sameUnit: false }, { id: 15, qty: 4, prevQty: 3, sameUnit: true }]), [12, 13]);
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /const filled = restoredPrefilled\(draft, restored\);\s+if \(filled\.length\) setPrefilled/);
+  assert.match(form, /prefilled: changedLines\.filter\(\(l\) => prefilled\.has\(l\.id\)\)\.map\(\(l\) => l\.id\),/);
+});
+
+test("taslak: temizlenen form bu açılışta yazılan taslağı siler; bant yalnız açılıştaki taslak için, yazanın adıyla", () => {
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /\} else if \(wroteDraft\.current\) \{\s+window\.localStorage\.removeItem\(draftKey\);/);
+  assert.match(form, /if \(openingDraft\.current\?\.key !== draftKey\) openingDraft\.current = \{ key: draftKey, json: readDraft\(draftKey\) \};/);
+  assert.match(form, /\{draft\.by && draft\.by !== me \? `\$\{draft\.by\} bu cihazda` : "Bu cihazda"\}/);
+  assert.match(read("src/app/panel/sayim/page.tsx"), /me=\{user\.name\}/);
+});
+
+test("panel güncellemesi 'bağlantı yok' değil 'Yenile' diye bildirilir; yarım kayıtta sayımın kaydedildiği söylenir", () => {
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /\} catch \(e\) \{\s+unstable_rethrow\(e\);[\s\S]{0,200}if \(unstable_isUnrecognizedActionError\(e\)\) \{\s+\/\/[^\n]*\n\s+toast\.error\(STALE_TEXT,/);
+  assert.match(form, /step\.counts \? "Sayım kaydedildi; ek kalemler kaydedilemedi" : "Kaydedilemedi: bağlantı yok gibi"/);
+  assert.match(form, /if \(!res\.ok\) return void toast\.error\(res\.error, \{ duration: 12_000 \}\);\s+step\.counts = true;/);
+  for (const f of ["src/app/panel/hizli-sayim/quick-count-form.tsx", "src/app/panel/sayim/add-item.tsx", "src/app/panel/receteler/ingredient-picker.tsx"]) {
+    assert.match(read(f), /unstable_isUnrecognizedActionError|toastUnreachable/, f);
+  }
+});
+
+test("listede de olan ek kalem: uyarılır, geçen aydan taşınmaz", () => {
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /const carriedExtras = \(\) => prevExtras\.filter\(\(e\) => !listNames\.has\(nameKey\(e\.name\)\)\)/);
+  assert.match(form, /sayım listesinde de var: aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın, yoksa stok iki/);
+});
+
+test("Hızlı sayım: taslak ve çıkış uyarısı (Stok sayımı ile ortak kanca)", () => {
+  const qc = read("src/app/panel/hizli-sayim/quick-count-form.tsx");
+  assert.match(qc, /const draftKey = `laf:hizli-sayim:\$\{sheet\.day\}`;/);
+  assert.match(qc, /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty\);/);
+  assert.match(qc, /\} else if \(wroteDraft\.current\) \{\s+window\.localStorage\.removeItem\(draftKey\);/);
+  assert.match(qc, /if \(!res\.ok\) return void toast\.error\(res\.error\);\s+forgetDraft\(\);/);
+  assert.match(read("src/app/panel/sayim/stock-form.tsx"), /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty, MONTH_LEAVE\);/);
+  const guard = read("src/components/ui/leave-guard.ts");
+  assert.match(guard, /window\.addEventListener\("beforeunload", warn\);/);
+  assert.match(guard, /document\.addEventListener\("click", onClick, true\);/);
+});

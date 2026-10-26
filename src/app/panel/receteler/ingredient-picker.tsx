@@ -1,9 +1,11 @@
 "use client";
 
 import { Check, ChevronDown, Plus, SearchX } from "lucide-react";
+import { unstable_isUnrecognizedActionError, unstable_rethrow } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
+import { STALE_TEXT } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { fieldControl, SearchInput } from "@/components/ui/form";
@@ -308,8 +310,10 @@ function NewIngredientForm({
       if (!res.ok) return form.setError(res.error);
       if (res.data.existing) return setFound(res.data.ingredient);
       onPick(res.data.ingredient, true);
-    } catch {
-      form.setError("Eklenemedi: bağlantı yok gibi. Bağlantı gelince yeniden deneyin.");
+    } catch (e) {
+      unstable_rethrow(e);
+      // Panel yeniden yayınlandıysa yeniden denemek hep düşer: sayfayı yenilemek gerekir
+      form.setError(unstable_isUnrecognizedActionError(e) ? STALE_TEXT : "Eklenemedi: bağlantı yok gibi. Bağlantı gelince yeniden deneyin.");
     } finally {
       setBusy(false);
     }

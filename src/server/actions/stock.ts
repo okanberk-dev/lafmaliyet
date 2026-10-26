@@ -4,12 +4,13 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { staffCountIssue } from "@/app/panel/sayim/logic";
+import { planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasCashReportIn } from "@/server/data/cash-reports";
+import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -153,7 +154,11 @@ async function dropEmptyStockMonth(tx: Tx, month: string) {
   await tx.delete(s.months).where(eq(s.months.month, month));
 }
 
-export async function saveStockExtras(month: string, extras: { name: string; unit: string; qty: number; unitPrice: number }[]) {
+/**
+ * "Listede olmayanlar", yönetici için (fiyatıyla). Ayı silip yeniden yazmaz: kalemler ad + birimle eşlenir, yalnız
+ * yöneticinin formdan kaldırdığı satır silinir (planAdminExtras); arada başkasının kaydettiği liste üzerine yazılmaz.
+ */
+export async function saveStockExtras(month: string, extras: { name: string; unit: string; qty: number; unitPrice: number }[], base?: string) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
@@ -161,11 +166,22 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .array(z.object({ name: zText("Ad", 120), unit: zText("Birim", 20), qty: z.number().finite().min(0), unitPrice: z.number().finite().min(0) }))
       .max(100)
       .parse(extras);
+    const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
     await db.transaction(async (tx) => {
-      await tx.delete(s.stockExtras).where(eq(s.stockExtras.month, m));
-      if (data.length) await tx.insert(s.stockExtras).values(data.map((d) => ({ ...d, month: m })));
-      else await dropEmptyStockMonth(tx, m);
+      const existing = await lockExtras(tx, m, b);
+      const res = planAdminExtras(existing, data);
+      if (!res.ok) throw new UserError(res.error);
+      const { updates, deletes, inserts } = res.plan;
+      if (inserts.length) await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
+      for (const u of updates)
+        await tx
+          .update(s.stockExtras)
+          .set({ name: u.name, unit: u.unit, qty: u.qty, unitPrice: u.unitPrice })
+          .where(and(eq(s.stockExtras.id, u.id), eq(s.stockExtras.month, m)));
+      if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
+      if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m })));
+      if (!data.length) await dropEmptyStockMonth(tx, m);
     });
     await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${data.length} kalem`);
     refresh();

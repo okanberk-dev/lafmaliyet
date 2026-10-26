@@ -14,7 +14,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { STAFF_LATE_FIX_MESSAGE } from "../src/app/panel/sayim/logic";
+import { extrasBase, STAFF_LATE_FIX_MESSAGE } from "../src/app/panel/sayim/logic";
 import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
@@ -25,6 +25,7 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
   let db: import("../src/server/db").DB;
   let stock: typeof import("../src/server/actions/stock");
   let extras: typeof import("../src/app/panel/sayim/actions");
+  let EXTRAS_CHANGED_MESSAGE = "";
   const who: { role: "admin" | "staff" } = { role: "admin" };
   let users: { admin: typeof s.users.$inferSelect; staff: typeof s.users.$inferSelect };
   let milk = 0;
@@ -60,6 +61,7 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     });
     stock = await import("../src/server/actions/stock");
     extras = await import("../src/app/panel/sayim/actions");
+    EXTRAS_CHANGED_MESSAGE = (await import("../src/server/data/stock-extras")).EXTRAS_CHANGED_MESSAGE;
   });
 
   after(async () => {
@@ -110,6 +112,46 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     who.role = "admin";
     assert.deepEqual(await stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 38, base: 40 }]), { ok: true, data: { saved: 1, removed: 0 } });
     assert.equal(await milkQty(), 38);
+  });
+
+  test("ek kalemler: eski listeyle kaydeden başkasınınkini silmez; yönetici kaydı kimlikleri korur", async () => {
+    at("2026-10-31T19:00:00Z");
+    const rows = async () => (await db.select().from(s.stockExtras).where(eq(s.stockExtras.month, "2026-10"))).sort((a, b) => a.id - b.id);
+    // Yönetici formu açar (Peçete), personel arada yulaf sütü ekler
+    const adminSaw = extrasBase(await rows());
+    who.role = "staff";
+    const staffSaw = extrasBase(await rows());
+    assert.equal((await extras.saveStaffStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 3 }, { name: "DENETIM yulaf sütü", unit: "LT", qty: 2 }], staffSaw)).ok, true);
+    // Yönetici eski listeyle Peçete'ye fiyat yazar: yazılmaz, personelin kalemi durur
+    who.role = "admin";
+    const stale = await stock.saveStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 14 }], adminSaw);
+    assert.deepEqual(stale, { ok: false, error: EXTRAS_CHANGED_MESSAGE });
+    assert.deepEqual((await rows()).map((r) => [r.name, r.qty, r.unitPrice]), [
+      ["Peçete", 3, 12.5],
+      ["DENETIM yulaf sütü", 2, 0],
+    ]);
+    // Yenilenen listeyle: Peçete güncellenir (kimliği kalır), yulaf sütü fiyatlanır, hiçbir satır silinip yeniden yazılmaz
+    const before = await rows();
+    const fresh = await stock.saveStockExtras(
+      "2026-10",
+      [
+        { name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 14 },
+        { name: "DENETIM yulaf sütü", unit: "LT", qty: 2, unitPrice: 55 },
+      ],
+      extrasBase(before),
+    );
+    assert.equal(fresh.ok, true);
+    const after = await rows();
+    assert.deepEqual(after.map((r) => r.id), before.map((r) => r.id));
+    assert.deepEqual(after.map((r) => r.unitPrice), [14, 55]);
+    // Personel de eski listeyle kaydedemez (yönetici arada değiştirdi)
+    who.role = "staff";
+    const old = await extras.saveStaffStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 1 }], staffSaw);
+    assert.deepEqual(old, { ok: false, error: EXTRAS_CHANGED_MESSAGE });
+    // Yalnız yöneticinin kaldırdığı satır silinir
+    who.role = "admin";
+    assert.equal((await stock.saveStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 14 }], extrasBase(after))).ok, true);
+    assert.deepEqual((await rows()).map((r) => r.id), [after[0].id]);
   });
 
   test("3 Kasım: personel Ekim sayımını düzeltebilir (ilk 10 gün)", async () => {

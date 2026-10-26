@@ -144,6 +144,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevTotal={isAdmin && (prev.hasData || opening.overridden) ? { value: opening.value, overridden: opening.overridden } : null}
         closingOverride={isAdmin && closing.overridden ? closing.value : null}
         counter={counterLine(counters)}
+        me={user.name}
         denied={denied ? monthLabel(denied) : null}
         // "Listeye ekle": personel yalnız sayımını değiştirebildiği ayda (bu ay, ilk 10 günde geçen ay; sunucu da denetler)
         addItem={

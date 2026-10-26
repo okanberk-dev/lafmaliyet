@@ -59,7 +59,7 @@ async function QuickCountContent() {
         }
         tabs={admin ? <SectionTabs section="malSiparisi" current="/panel/hizli-sayim" /> : undefined}
       />
-      <QuickCountForm sheet={sheet} admin={admin} />
+      <QuickCountForm sheet={sheet} admin={admin} me={user.name} />
     </>
   );
 }

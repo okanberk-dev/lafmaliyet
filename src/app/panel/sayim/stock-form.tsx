@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { unstable_isUnrecognizedActionError, unstable_rethrow, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
@@ -37,14 +37,17 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Input, NumberInput, Select } from "@/components/ui/form";
+import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { CountUnit } from "@/lib/calc/types";
 import { COUNT_UNITS } from "@/lib/constants";
+import { nameKey } from "@/lib/count-item";
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { STALE_TEXT } from "@/components/ui/action-error";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
@@ -52,10 +55,12 @@ import { AddCountItemDialog } from "./add-item";
 import { stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
+  countDraftJson,
   countStatus,
   countText,
   coverageSplit,
   extraKey,
+  extrasBase,
   groupProgress,
   listTopScroll,
   isFifoLine,
@@ -64,8 +69,11 @@ import {
   lineLayers,
   liveTotals,
   mergeCounts,
+  mergeExtras,
   nextEmptyIndex,
   parseCount,
+  parseCountDraft,
+  restoredPrefilled,
   unusualCount,
   type CountLineValue,
   type GroupProgress,
@@ -114,6 +122,11 @@ const isBlankExtra = (e: Extra) => !e.name.trim() && !e.qty.trim() && !e.unitPri
 const badNumber = (v: string) => v.trim() !== "" && (parseNumberTR(v) === null || (parseNumberTR(v) ?? 0) < 0);
 /** Kayıtlı hâliyle karşılaştırma imzası (fiyat bilgisi `priced` hariç) */
 const extraSig = (list: Extra[]) => JSON.stringify(list.map((e) => [e.name, e.unit, e.qty, e.unitPrice]));
+/** İki ek satır aynı mı (ad + birim, miktar ve fiyat sayı olarak) */
+const sameExtra = (a: Extra, b: Extra) =>
+  extraKey(a.name, a.unit) === extraKey(b.name, b.unit) &&
+  parseNumberTR(a.qty) === parseNumberTR(b.qty) &&
+  (parseNumberTR(a.unitPrice) ?? 0) === (parseNumberTR(b.unitPrice) ?? 0);
 const toExtra = (e: ExtraProp, isAdmin: boolean): Extra => ({
   name: e.name,
   unit: e.unit,
@@ -226,16 +239,6 @@ function readDraft(key: string): string | null {
     return window.localStorage.getItem(key);
   } catch {
     return null;
-  }
-}
-
-function parseDraft(json: string): Record<string, string> {
-  try {
-    const v = JSON.parse(json) as unknown;
-    if (!v || typeof v !== "object") return {};
-    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && /^\d+$/.test(e[0])));
-  } catch {
-    return {};
   }
 }
 
@@ -566,6 +569,7 @@ export function StockCountForm({
   prevTotal,
   closingOverride,
   counter,
+  me = null,
   denied = null,
   addItem = null,
   valuation = null,
@@ -587,6 +591,8 @@ export function StockCountForm({
   closingOverride: number | null;
   /** "Sayan: … · son kayıt …" */
   counter: string | null;
+  /** Formu açan kişinin adı: taslağa yazılır, ortak cihazda sonraki kişi kimin sayımı olduğunu görür */
+  me?: string | null;
   /** Personelin açamadığı, istenip yerine bu ayın açıldığı ay ("Temmuz 2026"); yoksa null */
   denied?: string | null;
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
@@ -621,6 +627,20 @@ export function StockCountForm({
     setConflicts(new Set(merged.conflicts));
   }
   const [extras, setExtras] = useState(savedExtras);
+  // Ek kalemler de satırlar gibi tazelenir: başkasının kaydettiği liste gelince dokunulmayan kalemler yeni değeri alır,
+  // iki tarafın değiştirdiği kalem "çakışma" diye söylenir (kaydederse onunkinin yerine geçer)
+  const [syncedExtras, setSyncedExtras] = useState(initialExtras);
+  /** Ek kalemlerde iki tarafın da değiştirdiği kalemlerin adı (kartta söylenir) */
+  const [extraConflicts, setExtraConflicts] = useState<string[]>([]);
+  if (syncedExtras !== initialExtras) {
+    const before = syncedExtras.map((e) => toExtra(e, isAdmin));
+    const merged = mergeExtras(extras, before, savedExtras, sameExtra);
+    setSyncedExtras(initialExtras);
+    if (extraSig(before) !== extraSig(savedExtras)) {
+      setExtras(merged.extras.map((e) => ({ ...e, priced: savedExtras.find((x) => extraKey(x.name, x.unit) === extraKey(e.name, e.unit))?.priced ?? e.priced })));
+      setExtraConflicts(merged.conflicts);
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [filterParam, setFilterParam] = useQueryState<Filter>("durum", "all");
@@ -698,73 +718,86 @@ export function StockCountForm({
   const showExcelVat = isAdmin && Math.abs(live.totalVatExcel - live.totalVat) >= 1;
   /** Personel kayıtlı fiyatlı satırı silemez, adını / birimini değiştiremez (fiyat o ada bağlı) */
   const lockedExtra = (e: Extra) => !isAdmin && e.priced && savedKeys.has(extraKey(e.name, e.unit));
-  const canCarryExtras = prevExtras.length > 0 && filledExtras.length === 0;
+  /** Sayım listesindeki kalemlerin adları: aynı adlı ek kalem iki kez sayılır (uyarılır, geçen aydan taşınmaz) */
+  const listNames = new Set(countable.map((l) => nameKey(l.name)));
+  const listDuplicates = [...new Set(filledExtras.filter((e) => listNames.has(nameKey(e.name))).map((e) => e.name.trim()))];
+  const canCarryExtras = prevExtras.some((e) => !listNames.has(nameKey(e.name))) && filledExtras.length === 0;
 
   // Kaydedilmemiş sayım bu cihazda taslak olarak durur: sekme kapanır, ağ gider ya da telefon arka plandaki sekmeyi
-  // atarsa yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklenmesi önerilir. Kayıt ya da "Vazgeç" taslağı siler.
+  // atarsa yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklenmesi önerilir. Taslak "Geçen aydan doldur"un
+  // işaretini (geri yüklenince kayıt öncesi denetim yine sorar), değişen ek kalemleri ve yazanın adını da tutar. Kayıt,
+  // "Vazgeç" ya da formun temizlenmesi (yazılanı silmek) bu açılışta yazılan taslağı siler.
   const draftKey = `laf:sayim-taslak:${month}`;
-  const draftJson = dirty ? JSON.stringify(Object.fromEntries(changedLines.map((l) => [l.id, values[l.id] ?? ""]))) : "";
+  const draftJson = dirty
+    ? countDraftJson({
+        values: Object.fromEntries(changedLines.map((l) => [String(l.id), values[l.id] ?? ""])),
+        prefilled: changedLines.filter((l) => prefilled.has(l.id)).map((l) => l.id),
+        extras: extrasDirty ? filledExtras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : "" })) : null,
+        by: me,
+      })
+    : "";
+  const wroteDraft = useRef(false);
   useEffect(() => {
-    if (!draftJson) return;
     try {
-      window.localStorage.setItem(draftKey, draftJson);
+      if (draftJson) {
+        window.localStorage.setItem(draftKey, draftJson);
+        wroteDraft.current = true;
+      } else if (wroteDraft.current) {
+        window.localStorage.removeItem(draftKey);
+        wroteDraft.current = false;
+      }
     } catch {
       // Gizli pencere ya da dolu depolama: taslaksız devam
     }
   }, [draftJson, draftKey]);
   const [draftGone, setDraftGone] = useState(false);
-  const storedDraft = useSyncExternalStore(noopSubscribe, () => readDraft(draftKey), () => null);
-  const draftEntries =
-    storedDraft && !dirty && !draftGone
-      ? Object.entries(parseDraft(storedDraft)).filter(([id, raw]) => {
-          const l = byId.get(Number(id));
-          return l && !l.archived && (values[l.id] ?? "") !== raw;
-        })
-      : [];
+  // Bant yalnız açılışta var olan taslak için: bu açılışta yazılan taslak, form temizlenince bant olarak geri gelmesin
+  const openingDraft = useRef<{ key: string; json: string | null } | null>(null);
+  const storedDraft = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      if (openingDraft.current?.key !== draftKey) openingDraft.current = { key: draftKey, json: readDraft(draftKey) };
+      return openingDraft.current.json;
+    },
+    () => null,
+  );
+  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null);
+  const draftEntries = Object.entries(draft.values).filter(([id, raw]) => {
+    const l = byId.get(Number(id));
+    return l && !l.archived && (values[l.id] ?? "") !== raw;
+  });
+  const draftExtras = draft.extras && extraSig(draft.extras.map((e) => ({ ...e, priced: false }))) !== extraSig(filledExtras.map((e) => ({ ...e, priced: false }))) ? draft.extras : null;
+  const draftSize = draftEntries.length + (draftExtras?.length ?? 0);
   const forgetDraft = () => {
     try {
       window.localStorage.removeItem(draftKey);
     } catch {
       // yok sayılır
     }
+    wroteDraft.current = false;
     setDraftGone(true);
   };
+  function restoreDraft() {
+    setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
+    // "Geçen aydan doldur"la gelen satırlar yine işaretli: kayıt öncesi denetim sorar
+    const restored = draftEntries.flatMap(([id, raw]) => {
+      const l = byId.get(Number(id));
+      if (!l) return [];
+      const unit = l.unitNow ?? l.countUnit;
+      return [{ id: l.id, qty: parseCount(raw, unit, parseNumberTR), prevQty: l.prevQty, sameUnit: (l.prevUnit ?? l.countUnit) === unit }];
+    });
+    const filled = restoredPrefilled(draft, restored);
+    if (filled.length) setPrefilled((x) => new Set([...x, ...filled]));
+    if (draftExtras) setExtras(draftExtras.map((e) => ({ ...e, priced: savedExtras.find((x) => extraKey(x.name, x.unit) === extraKey(e.name, e.unit))?.priced ?? false })));
+    toast.success("Taslak geri yüklendi", {
+      description: filled.length ? `${num(filled.length)} satır geçen aydan doldurulmuştu: kontrol edip kaydedin.` : "Kontrol edip kaydedin.",
+    });
+  }
 
-  // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
-  // beforeunload istemci içi geçişi kapsamaz: başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar
+  // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun; beforeunload istemci içi geçişi kapsamaz:
+  // başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar (Hızlı sayım ile ortak kanca)
   const router = useRouter();
-  const [leaveHref, setLeaveHref] = useState<string | null>(null);
-  useEffect(() => {
-    if (!dirty) return;
-    const onMonth = (e: Event) => {
-      e.preventDefault();
-      setLeaveHref((e as CustomEvent<string>).detail);
-    };
-    const onClick = (e: globalThis.MouseEvent) => {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      const a = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
-      // Kilitli geçmiş ayları (aria-disabled) kendi onClick'i durdurur
-      if (!a || a.target === "_blank" || a.hasAttribute("download") || a.getAttribute("aria-disabled") === "true") return;
-      const url = new URL(a.href, window.location.href);
-      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setLeaveHref(url.pathname + url.search + url.hash);
-    };
-    window.addEventListener(MONTH_LEAVE, onMonth);
-    document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener(MONTH_LEAVE, onMonth);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [dirty]);
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE);
 
   // Yeni ek satır çizilince ad kutusuna odaklan
   useEffect(() => {
@@ -925,12 +958,13 @@ export function StockCountForm({
   }
 
   /** Geçen ayın ek kalemleri (ad, birim, fiyat; miktar kontrol için geçen ayınki) */
-  const carriedExtras = () => prevExtras.map((e) => toExtra(e, isAdmin));
+  // Geçen ayın ek kalemi o arada sayım listesine eklendiyse (Listeye ekle) taşınmaz: stok iki kez sayılmasın
+  const carriedExtras = () => prevExtras.filter((e) => !listNames.has(nameKey(e.name))).map((e) => toExtra(e, isAdmin));
 
   function carryExtras() {
     if (!canCarryExtras) return;
     setExtras(carriedExtras());
-    toast.success(`${num(prevExtras.length)} ek kalem ${prevMonthLabel} sayımından getirildi`, {
+    toast.success(`${num(carriedExtras().length)} ek kalem ${prevMonthLabel} sayımından getirildi`, {
       description: "Miktarlar geçen ayınki; rafta kalanı yazıp kaydedin.",
     });
   }
@@ -956,7 +990,7 @@ export function StockCountForm({
       setPrefilled((x) => new Set([...x, ...fill.map((l) => l.id)]));
     }
     if (extrasToo) setExtras(carriedExtras());
-    const parts = [fill.length ? `${num(fill.length)} boş satır` : null, extrasToo ? `${num(prevExtras.length)} ek kalem` : null].filter(Boolean).join(" ve ");
+    const parts = [fill.length ? `${num(fill.length)} boş satır` : null, extrasToo ? `${num(carriedExtras().length)} ek kalem` : null].filter(Boolean).join(" ve ");
     toast.success(`${parts} geçen ayın sayımıyla dolduruldu`, {
       description: `Doldurulan satırlar sayılmış sayılmaz: rafa bakıp düzeltin ya da “Doğru”ya basın. “Sıradaki” onlarda da durur.${skipped ? ` Sayım birimi değişen ${num(skipped)} kalem atlandı.` : ""}`,
     });
@@ -983,6 +1017,7 @@ export function StockCountForm({
     setPrefilled(new Set());
     setConflicts(new Set());
     setExtras(savedExtras);
+    setExtraConflicts([]);
     setDiscardOpen(false);
     toast.message("Değişiklikler geri alındı");
   }
@@ -1001,21 +1036,34 @@ export function StockCountForm({
     if (!confirmed && (unchecked || unusual.length)) return setSaveCheck({ prefilled: unchecked, unusual });
     setSaveCheck(null);
     setBusy(true);
+    /** Hangi adım kaydoldu: sayımlar kaydedilip ek kalemler düşerse "Kaydedilemedi" denmez */
+    const step = { counts: false };
     try {
-      await persist();
-    } catch {
-      // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar ekranda (ve taslakta) duruyor
-      toast.error("Kaydedilemedi: bağlantı yok gibi", {
-        description: "Yazdıklarınız bu cihazda duruyor. Bağlantı gelince yeniden deneyin.",
-        duration: 15_000,
-        action: { label: "Tekrar dene", onClick: () => void saveRef.current(true) },
-      });
+      await persist(step);
+    } catch (e) {
+      unstable_rethrow(e);
+      const partial = step.counts ? "Kalemlerin sayımı kaydedildi; ek kalemler kaydedilemedi. " : "";
+      if (unstable_isUnrecognizedActionError(e)) {
+        // Panel yeniden yayınlandı, sayfa eski: yeniden denemek hep düşer, yenilemek gerekir (taslak bu cihazda durur)
+        toast.error(STALE_TEXT, {
+          description: `${partial}Yazdıklarınız bu cihazda duruyor; yenileyince “Geri yükle”ye basın.`,
+          duration: 30_000,
+          action: { label: "Yenile", onClick: () => window.location.reload() },
+        });
+      } else {
+        // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar ekranda (ve taslakta) duruyor
+        toast.error(step.counts ? "Sayım kaydedildi; ek kalemler kaydedilemedi" : "Kaydedilemedi: bağlantı yok gibi", {
+          description: "Yazdıklarınız bu cihazda duruyor. Bağlantı gelince yeniden deneyin.",
+          duration: 15_000,
+          action: { label: "Tekrar dene", onClick: () => void saveRef.current(true) },
+        });
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  async function persist() {
+  async function persist(step: { counts: boolean }) {
     const lineCount = changedLines.length;
     if (lineCount) {
       const res = await saveStockCounts(
@@ -1023,7 +1071,10 @@ export function StockCountForm({
         changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l), base: l.qty })),
       );
       if (!res.ok) return void toast.error(res.error, { duration: 12_000 });
+      step.counts = true;
     }
+    // Formun gördüğü ek kalem listesi: arada başkası kaydettiyse sunucu yazmaz (sayımlardaki base gibi)
+    const base = extrasBase(initialExtras);
     if (extrasDirty) {
       const clean = filledExtras.map((e) => ({ name: e.name.trim(), unit: e.unit.trim().toLocaleUpperCase("tr-TR") || "ADET", qty: parseNumberTR(e.qty) ?? 0 }));
       const partial = lineCount ? "Kalemlerin sayımı kaydedildi; ek kalemler kaydedilemedi." : undefined;
@@ -1032,18 +1083,20 @@ export function StockCountForm({
         const ex = await saveStockExtras(
           month,
           clean.map((e, i) => ({ ...e, unitPrice: prices[i] })),
+          base,
         );
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
         setExtras(clean.map((e, i) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(prices[i], 2), priced: prices[i] > 0 })));
       } else {
-        const ex = await saveStaffStockExtras(month, clean);
+        const ex = await saveStaffStockExtras(month, clean, base);
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         setExtras(ex.data.map((e) => toExtra({ ...e, unitPrice: 0 }, false)));
       }
     }
     setPrefilled(new Set());
     setConflicts(new Set());
+    setExtraConflicts([]);
     forgetDraft();
     setSyncingFor(groups);
     toast.success(`${monthLabel} sayımı kaydedildi`, {
@@ -1096,18 +1149,13 @@ export function StockCountForm({
           {denied} sayımını yalnız yönetici açabilir; {monthLabel} sayımı açıldı. Eski bir ayda düzeltme gerekiyorsa yöneticine haber ver.
         </p>
       ) : null}
-      {draftEntries.length ? (
+      {draftSize ? (
         <div role="status" className="no-print flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
           <span className="min-w-0 flex-1">
-            Bu cihazda kaydedilmemiş {num(draftEntries.length)} kalemlik {monthLabel} sayımı var (sayfa kapanmış ya da bağlantı gitmiş olabilir).
+            {draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş {num(draftSize)} kalemlik {monthLabel} sayımı var (sayfa
+            kapanmış ya da bağlantı gitmiş olabilir).
           </span>
-          <Button
-            size="sm"
-            onClick={() => {
-              setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
-              toast.success("Taslak geri yüklendi", { description: "Kontrol edip kaydedin." });
-            }}
-          >
+          <Button size="sm" onClick={restoreDraft}>
             Geri yükle
           </Button>
           <Button size="sm" variant="ghost" onClick={forgetDraft}>
@@ -1720,6 +1768,18 @@ export function StockCountForm({
           }
         />
         <CardContent>
+          {extraConflicts.length ? (
+            <p role="status" className="no-print mb-3 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
+              Bu liste siz yazarken başkası tarafından da kaydedildi: {extraConflicts.join(", ")} için sizin yazdığınız duruyor; kaydederseniz
+              onunkinin yerine geçer.
+            </p>
+          ) : null}
+          {listDuplicates.length ? (
+            <p role="status" className="no-print mb-3 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
+              {listDuplicates.join(", ")} sayım listesinde de var: aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın, yoksa stok iki
+              kez sayılır.
+            </p>
+          ) : null}
           {extras.length ? (
             <>
               {/* Sütun başlıkları (geniş ekranda); telefonda her kutunun kendi yer tutucusu var */}

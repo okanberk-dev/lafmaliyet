@@ -284,6 +284,179 @@ export function planStaffExtras(
   return { ok: true, plan };
 }
 
+/**
+ * Ek kalem listesinin imzası: ad + birim + miktar (fiyat yok: personel görmez). Form kaydederken gördüğü listenin
+ * imzasını gönderir; sunucu kayıtlı listeninkiyle karşılaştırır, arada başkası kaydettiyse yazmaz (sayım satırlarındaki
+ * `base` denetiminin ek kalem karşılığı).
+ */
+export function extrasBase(rows: { name: string; unit: string; qty: number }[]): string {
+  return rows
+    .map((r) => `${extraKey(r.name, r.unit)}=${Math.round(r.qty * 1000) / 1000}`)
+    .sort()
+    .join(";");
+}
+
+export interface AdminExtraInput {
+  name: string;
+  unit: string;
+  qty: number;
+  unitPrice: number;
+}
+
+/**
+ * Yöneticinin "Listede olmayanlar" kaydı: ayı silip yeniden yazmaz, kalemleri ad + birimle eşler. Kayıtlı satır
+ * değiştiyse güncellenir (kimliği kalır), yeni satır eklenir, yalnız yöneticinin formdan kaldırdığı satır silinir.
+ */
+export function planAdminExtras(
+  existing: SavedExtra[],
+  incoming: AdminExtraInput[],
+): { ok: true; plan: { updates: (AdminExtraInput & { id: number })[]; deletes: number[]; inserts: AdminExtraInput[] } } | { ok: false; error: string } {
+  const seen = new Set<string>();
+  for (const e of incoming) {
+    const k = extraKey(e.name, e.unit);
+    if (seen.has(k)) return { ok: false, error: `"${e.name.trim()}" iki kez yazılmış; miktarları tek satırda toplayın.` };
+    seen.add(k);
+  }
+  const pool = [...existing].sort((a, b) => a.id - b.id);
+  const used = new Set<number>();
+  const plan = { updates: [] as (AdminExtraInput & { id: number })[], deletes: [] as number[], inserts: [] as AdminExtraInput[] };
+  for (const e of incoming) {
+    const row = { name: e.name.trim().replace(/\s+/g, " "), unit: (e.unit.trim() || "ADET").toLocaleUpperCase("tr-TR"), qty: e.qty, unitPrice: e.unitPrice };
+    const match = pool.find((x) => !used.has(x.id) && extraKey(x.name, x.unit) === extraKey(e.name, e.unit));
+    if (!match) {
+      plan.inserts.push(row);
+      continue;
+    }
+    used.add(match.id);
+    if (match.name !== row.name || match.unit !== row.unit || match.qty !== row.qty || match.unitPrice !== row.unitPrice) plan.updates.push({ id: match.id, ...row });
+  }
+  for (const x of pool) if (!used.has(x.id)) plan.deletes.push(x.id);
+  return { ok: true, plan };
+}
+
+/**
+ * Sunucudan yeni ek kalem listesi gelince (başkası kaydetti, sayfa yenilendi) formdakini birleştirir, sayım
+ * satırlarındaki mergeCounts gibi: kişinin dokunmadığı kalem yeni değeri alır, başkasının eklediği kalem gelir,
+ * başkasının sildiği ve kişinin dokunmadığı kalem gider. İki tarafın da değiştirdiği kalemde kişininki kalır ve adı
+ * "çakışma" olarak döner (kaydederse başkasınınkinin yerine geçeceğini bilsin). Adı boş satır olduğu gibi kalır.
+ */
+export function mergeExtras<T extends { name: string; unit: string }>(
+  mine: T[],
+  before: T[],
+  after: T[],
+  same: (a: T, b: T) => boolean,
+): { extras: T[]; conflicts: string[] } {
+  const key = (e: T) => extraKey(e.name, e.unit);
+  const was = new Map(before.map((e) => [key(e), e]));
+  const now = new Map(after.map((e) => [key(e), e]));
+  const out: T[] = [];
+  const conflicts: string[] = [];
+  const seen = new Set<string>();
+  for (const m of mine) {
+    if (!m.name.trim()) {
+      out.push(m);
+      continue;
+    }
+    const k = key(m);
+    seen.add(k);
+    const b = was.get(k);
+    const a = now.get(k);
+    if (!b && !a) out.push(m);
+    else if (b && !a) {
+      // Başkası sildi: dokunulmadıysa gider
+      if (!same(m, b)) {
+        conflicts.push(m.name.trim());
+        out.push(m);
+      }
+    } else if (!b && a) {
+      // İkisi de ekledi
+      if (!same(m, a)) conflicts.push(m.name.trim());
+      out.push(m);
+    } else if (same(b!, a!)) out.push(m);
+    else if (same(m, b!)) out.push(a!);
+    else {
+      if (!same(m, a!)) conflicts.push(m.name.trim());
+      out.push(m);
+    }
+  }
+  for (const [k, a] of now) {
+    if (seen.has(k)) continue;
+    const b = was.get(k);
+    if (!b) out.push(a);
+    // Kişi sildi, başkası değiştirdi: silinmiş kalır, söylenir
+    else if (!same(b, a)) conflicts.push(a.name.trim());
+  }
+  return { extras: out, conflicts };
+}
+
+// ---------------------------------------------------------------- Bu cihazdaki taslak
+
+/** Taslaktaki ek kalem (formun metin kutuları; fiyat yalnız yöneticide dolu) */
+export interface DraftExtra {
+  name: string;
+  unit: string;
+  qty: string;
+  unitPrice: string;
+}
+
+/**
+ * Kaydedilmemiş sayımın taslağı (localStorage): yazılan kutular, "Geçen aydan doldur"la gelip dokunulmamış satırlar
+ * (geri yüklenince kayıt öncesi denetim yine sorsun), değişen ek kalemler ve yazanın adı (ortak tablette sonraki kişi
+ * kimin sayımı olduğunu görsün).
+ */
+export interface CountDraft {
+  values: Record<string, string>;
+  /** Doldurulmuş, dokunulmamış satırlar; eski düz biçimde null (bilinmiyor) */
+  prefilled: number[] | null;
+  extras: DraftExtra[] | null;
+  by: string | null;
+}
+
+export function countDraftJson(d: CountDraft): string {
+  return JSON.stringify({ v: d.values, p: d.prefilled ?? [], e: d.extras, by: d.by });
+}
+
+/** Taslağı okur; eski düz biçimi ({ "12": "3,5" }) de. Okunamazsa boş */
+export function parseCountDraft(json: string | null): CountDraft {
+  const empty: CountDraft = { values: {}, prefilled: null, extras: null, by: null };
+  if (!json) return empty;
+  try {
+    const raw = JSON.parse(json) as unknown;
+    if (!raw || typeof raw !== "object") return empty;
+    const o = raw as Record<string, unknown>;
+    const pickValues = (v: unknown) =>
+      Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && /^\d+$/.test(e[0])));
+    if (!("v" in o)) return { ...empty, values: pickValues(o) };
+    const str = (v: unknown) => (typeof v === "string" ? v : "");
+    return {
+      values: o.v && typeof o.v === "object" ? pickValues(o.v) : {},
+      prefilled: Array.isArray(o.p) ? o.p.filter((x): x is number => Number.isInteger(x)) : [],
+      extras: Array.isArray(o.e)
+        ? o.e
+            .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+            .map((x) => ({ name: str(x.name), unit: str(x.unit), qty: str(x.qty), unitPrice: str(x.unitPrice) }))
+        : null,
+      by: typeof o.by === "string" && o.by.trim() ? o.by.trim() : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Geri yüklenen taslakta hangi satırlar "Geçen aydan doldur"la gelmiş sayılır: taslak bunu yazmışsa o liste (geri
+ * yüklenen satırlarla kesişimi); eski düz taslakta yedek kural: geri yüklenen değer aynı birimde geçen ayın
+ * miktarına eşitse (kayıt öncesi denetim bir kez fazla sorsun, hiç sormamaktan iyidir).
+ */
+export function restoredPrefilled(
+  draft: CountDraft,
+  restored: { id: number; qty: number | null; prevQty: number | null; sameUnit: boolean }[],
+): number[] {
+  const ids = new Set(restored.map((r) => r.id));
+  if (draft.prefilled) return draft.prefilled.filter((id) => ids.has(id));
+  return restored.filter((r) => r.sameUnit && r.prevQty !== null && r.qty !== null && r.qty === r.prevQty).map((r) => r.id);
+}
+
 // ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş satır
 
 export interface GroupProgress {

@@ -2,15 +2,18 @@
 
 import { ClipboardPen, PackageCheck, Save } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { unstable_isUnrecognizedActionError, unstable_rethrow, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
+import { STALE_TEXT } from "@/components/ui/action-error";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { NumberInput } from "@/components/ui/form";
+import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState } from "@/components/ui/misc";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, num } from "@/lib/format";
@@ -21,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { markOrderReceived, saveQuickCounts } from "@/server/actions/reorder";
 import type { QuickCountItem, QuickCountSheet } from "@/server/data/reorder";
 
-import { countText, mergeCounts, parseCount, unusualCount } from "../sayim/logic";
+import { countDraftJson, countText, mergeCounts, parseCount, parseCountDraft, unusualCount } from "../sayim/logic";
 
 /** "09:42" (Türkiye) */
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
@@ -39,6 +42,15 @@ function focusNext(e: KeyboardEvent<HTMLInputElement>) {
   next.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
 }
 
+const noopSubscribe = () => () => {};
+function readDraft(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 const savedValues = (items: QuickCountItem[]) => Object.fromEntries(items.map((i) => [i.id, i.today ? countText(i.today.qty) : ""])) as Record<number, string>;
 
 /** Kutudaki miktar, kaydedileceği gibi 3 basamağa yuvarlı (kayıttan sonra kutu kayıtla tutsun) */
@@ -49,7 +61,7 @@ const readBox = (raw: string, unit: string) => countQty(parseCount(raw, unit, pa
  * biriminde. Önce gelen siparişler "Geldi" işaretlenir (işaretlenmezse sipariş listesinde ikinci kez sayılır). Kayıt
  * yalnız değişen kalemleri gönderir; boşaltılan kutu bugünkü sayımı siler. Fiyat ya da tutar yok (personel de açar).
  */
-export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin: boolean }) {
+export function QuickCountForm({ sheet, admin, me = null }: { sheet: QuickCountSheet; admin: boolean; me?: string | null }) {
   const router = useRouter();
   const all = sheet.groups.flatMap((g) => g.items);
   const [values, setValues] = useState(() => savedValues(all));
@@ -78,6 +90,50 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
   const counted = all.filter((i) => qtyOf(i) !== null).length;
   const due = sheet.due.filter((o) => !arrived.has(o.id));
 
+  // Kaydedilmemiş sayım bu cihazda taslak olarak durur (Stok sayımı gibi): başka sayfaya geçilir, sekme düşer ya da
+  // telefon görüşmesi araya girerse yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklemesi önerilir. Kayıt ya da
+  // formun temizlenmesi bu açılışta yazılan taslağı siler. Kirliyken çıkış önce sorulur.
+  const draftKey = `laf:hizli-sayim:${sheet.day}`;
+  const draftJson = dirty
+    ? countDraftJson({ values: Object.fromEntries(changed.concat(invalid).map((i) => [String(i.id), values[i.id] ?? ""])), prefilled: [], extras: null, by: me })
+    : "";
+  const wroteDraft = useRef(false);
+  useEffect(() => {
+    try {
+      if (draftJson) {
+        window.localStorage.setItem(draftKey, draftJson);
+        wroteDraft.current = true;
+      } else if (wroteDraft.current) {
+        window.localStorage.removeItem(draftKey);
+        wroteDraft.current = false;
+      }
+    } catch {
+      // Gizli pencere ya da dolu depolama: taslaksız devam
+    }
+  }, [draftJson, draftKey]);
+  const [draftGone, setDraftGone] = useState(false);
+  const openingDraft = useRef<{ key: string; json: string | null } | null>(null);
+  const storedDraft = useSyncExternalStore(
+    noopSubscribe,
+    () => {
+      if (openingDraft.current?.key !== draftKey) openingDraft.current = { key: draftKey, json: readDraft(draftKey) };
+      return openingDraft.current.json;
+    },
+    () => null,
+  );
+  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null);
+  const draftEntries = Object.entries(draft.values).filter(([id, raw]) => all.some((i) => i.id === Number(id)) && (values[Number(id)] ?? "") !== raw);
+  const forgetDraft = () => {
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // yok sayılır
+    }
+    wroteDraft.current = false;
+    setDraftGone(true);
+  };
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty);
+
   async function save() {
     if (busy) return;
     if (invalid.length) return void toast.error(`${invalid[0].name}: miktarı sayıyla yazın (ör. 2,5)`);
@@ -86,12 +142,21 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
     try {
       const res = await saveQuickCounts(changed.map((i) => ({ ingredientId: i.id, qty: qtyOf(i), base: savedQty(i) })));
       if (!res.ok) return void toast.error(res.error);
+      forgetDraft();
       setSyncingFor(sheet);
       const { saved, removed } = res.data;
       const title = saved ? `${num(saved)} kalem kaydedildi` : `Bugünkü ${num(removed)} sayım silindi`;
       if (admin) toast.success(title, { action: { label: "Sipariş listesi", onClick: () => router.push("/panel/mal-siparisi") } });
       else toast.success(title, { action: { label: "Sipariş taslağı", onClick: () => router.push("/panel/hizli-sayim/siparis") } });
-    } catch {
+    } catch (e) {
+      unstable_rethrow(e);
+      // Panel yeniden yayınlandı, sayfa eski: yeniden denemek hep düşer, yenilemek gerekir (taslak bu cihazda durur)
+      if (unstable_isUnrecognizedActionError(e))
+        return void toast.error(STALE_TEXT, {
+          description: "Yazdıklarınız bu cihazda duruyor; yenileyince “Geri yükle”ye basın.",
+          duration: 30_000,
+          action: { label: "Yenile", onClick: () => window.location.reload() },
+        });
       // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar kutularda duruyor (Stok sayımı ile aynı)
       toast.error("Kaydedilemedi: bağlantı yok gibi", {
         description: "Yazdıklarınız ekranda duruyor. Bağlantı gelince yeniden deneyin.",
@@ -153,6 +218,26 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
 
   return (
     <div className="space-y-4">
+      {draftEntries.length ? (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+          <span className="min-w-0 flex-1">
+            {draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş {num(draftEntries.length)} kalemlik hızlı sayım var (sayfadan
+            çıkılmış ya da bağlantı gitmiş olabilir).
+          </span>
+          <Button
+            size="sm"
+            onClick={() => {
+              setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
+              toast.success("Taslak geri yüklendi", { description: "Kontrol edip kaydedin." });
+            }}
+          >
+            Geri yükle
+          </Button>
+          <Button size="sm" variant="ghost" onClick={forgetDraft}>
+            Sil
+          </Button>
+        </div>
+      ) : null}
       {/* Durum şeridi: sayım günü, son sayım, ayın son günü (telefonda alt alta: ayraç satır sonunda kalmasın) */}
       <div className="flex flex-col items-start gap-y-1.5 text-sm text-ink-mute sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3" role="status">
         {sheet.countDay ? <Badge tone="amber">Bugün sayım günü</Badge> : <span>Sıradaki sayım: {longDateTR(sheet.nextCountDay)}</span>}
@@ -163,7 +248,7 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
         {sheet.monthEnd ? (
           <span className="basis-full">
             Bugün ay sonu: Stok sayımı bu sayımın yerine geçer.{" "}
-            <Link href="/panel/sayim" className="font-medium text-ink underline-offset-2 hover:underline">
+            <Link href={`/panel/sayim?ay=${sheet.day.slice(0, 7)}`} className="font-medium text-ink underline-offset-2 hover:underline">
               Stok sayımı →
             </Link>
           </span>
@@ -265,6 +350,18 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
           <Save size={16} aria-hidden="true" /> {busy ? "Kaydediliyor…" : "Kaydet"}
         </Button>
       </FloatingBar>
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        title="Kaydedilmemiş sayım var"
+        confirmLabel="Kaydetmeden geç"
+        description="Hızlı sayımda yazdığınız miktarlar henüz kaydedilmedi. Kalmak için Vazgeç'e basıp Kaydet'i kullanın; geçerseniz yazdıklarınız bu cihazda taslak olarak durur."
+      />
     </div>
   );
 }
