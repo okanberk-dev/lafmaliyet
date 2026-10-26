@@ -143,8 +143,9 @@ test("metinler: tutar, maliyet ve para sözcüğü yok (tr-TR katlamalı); fiyat
 
 test("yöneticinin ekran adları ve adresleri personelin Yardım'ında yok", () => {
   // Yönetici etiketleri: personelin açamadığı ekranların menü, sekme ve kısa başlık adları (büyük-küçük harfe duyarlı, tam
-  // ifade); genel tek kelimeler hariç (Personel bu sayfanın bağlam satırı, Yardım iki rolde de var)
-  const GENERIC = new Set(["Personel", "Yardım"]);
+  // ifade); genel tek kelimeler hariç (Personel bu sayfanın bağlam satırı, Yardım iki rolde de var; Kafe ve Satış
+  // yöneticinin başlıkları ama ekran değil, personelin "Kafe kapalıydı" düğmesinde ve "Satış dışında" cümlesinde de geçer)
+  const GENERIC = new Set(["Personel", "Yardım", "Kafe", "Satış"]);
   const labels = new Map<string, string>();
   for (const i of [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER]) labels.set(i.label, i.href);
   for (const n of NAV_TREE) {

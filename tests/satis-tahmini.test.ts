@@ -710,7 +710,7 @@ function bodyOf(src: string, name: string): string {
   return end < 0 ? rest : rest.slice(0, end);
 }
 
-test("kaynak: sayfa ve her eylem yalnız yönetici; menüde Satış & gider altında, personele kapalı", () => {
+test("kaynak: sayfa ve her eylem yalnız yönetici; menüde Kafe altında, personele kapalı", () => {
   const page = read("src/app/panel/tahmin/page.tsx");
   assert.match(page, /await requireAdmin\(\);\s+const data = await loadForecastPage\(\);/);
   const actions = read("src/server/actions/forecast.ts");
@@ -723,9 +723,9 @@ test("kaynak: sayfa ve her eylem yalnız yönetici; menüde Satış & gider alt�
   assert.equal(canOpen("staff", "/panel/tahmin"), false);
   assert.equal(canOpen("admin", "/panel/tahmin"), true);
   assert.equal(mobileTitleFor("/panel/tahmin"), "Satış tahmini");
-  const para = NAV_TREE.find((n) => n.id === "para")!.children!.map((c) => c.id);
-  assert.equal(para[para.indexOf("kasa-raporlari") + 1], "tahmin");
-  const item = NAV_GROUPS.find((g) => g.title === "Günlük")!.items.find((i) => i.href === "/panel/tahmin")!;
+  const kafe = NAV_TREE.find((n) => n.id === "kafe")!.children!.map((c) => c.id);
+  assert.equal(kafe[kafe.indexOf("kontrol-listeleri") + 1], "tahmin");
+  const item = NAV_GROUPS.find((g) => g.title === "Kafe")!.items.find((i) => i.href === "/panel/tahmin")!;
   assert.deepEqual(item.roles, ["admin"]);
 });
 

@@ -1,6 +1,6 @@
 # Tedarikçiler (bilgiler ve ödeme takibi)
 
-Ekran: **Satış & gider › Tedarikçiler** (`/panel/tedarikciler`, yalnız yönetici). Her tedarikçinin bilgileri
+Ekran: **Alış & gider › Tedarikçiler** (`/panel/tedarikciler`, yalnız yönetici). Her tedarikçinin bilgileri
 (unvan, vergi no, IBAN, iletişim, vade), faturaları ve kalan borcu tek yerde durur. Bilgiler veritabanında
 tedarikçinin **kartında** (`suppliers`, muhasebedeki "cari kart") saklanır; ekranda "kart" sözü geçmez. Faturalar Paraşüt'ten her sabah
 kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz işaretlersiniz.**

@@ -607,14 +607,14 @@ test("özet kartları: dökümün toplamı kartın rakamı; listede tedarikçi t
   assert.match(sb.overdue[0].rows[0].sub!, /vade 10\.10\.2026 · 11 gün gecikti/);
 });
 
-test("sayfalar: her özet kartı dökümüyle; menüde Satış & gider altında, yalnız yönetici", () => {
+test("sayfalar: her özet kartı dökümüyle; menüde Alış & gider altında, yalnız yönetici", () => {
   for (const file of ["src/app/panel/tedarikciler/page.tsx", "src/app/panel/tedarikciler/[cari]/page.tsx"]) {
     const src = readFileSync(join(root, file), "utf8");
     const stats = src.match(/<Stat\s/g)?.length ?? 0;
     assert.equal(stats, 4, file);
     assert.equal(src.match(/<StatBreakdown\s/g)?.length ?? 0, stats, file);
   }
-  assert.deepEqual(pathOf("/panel/tedarikciler"), ["Satış & gider", "Tedarikçiler"]);
+  assert.deepEqual(pathOf("/panel/tedarikciler"), ["Alış & gider", "Tedarikçiler"]);
   assert.equal(canOpen("staff", "/panel/tedarikciler"), false);
   assert.equal(canOpen("staff", "/panel/tedarikciler/sutas"), false);
   assert.ok(!navTreeFor("staff").some((n) => n.href === "/panel/tedarikciler" || n.children?.some((c) => c.href === "/panel/tedarikciler")));

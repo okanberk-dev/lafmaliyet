@@ -27,7 +27,7 @@ const DESCRIPTION =
   "Yemek kartı şirketlerinin ve sipariş platformlarının her ay gerçekte ne kadar kestiği, faturadaki ücretler ve hakedişin gelip gelmediği. Faturalar Paraşüt'ten, satış kasa raporlarından ya da kanalın ekstresinden gelir; hakediş gelince siz işaretlersiniz.";
 
 function Header({ description = DESCRIPTION, actions }: { description?: string; actions?: ReactNode }) {
-  return <PageHeader eyebrow="Satış & gider" title={TITLE} description={description} actions={actions} />;
+  return <PageHeader eyebrow="Satış" title={TITLE} description={description} actions={actions} />;
 }
 
 export default function CommissionPage({ searchParams }: PageProps<"/panel/komisyonlar">) {
@@ -47,7 +47,7 @@ export default function CommissionPage({ searchParams }: PageProps<"/panel/komis
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-/** Satış & gider › Komisyon & hakediş (docs/KOMISYON.md); yalnız yönetici, proxy personeli buraya sokmaz */
+/** Satış › Komisyon & hakediş (docs/KOMISYON.md); yalnız yönetici, proxy personeli buraya sokmaz */
 async function CommissionContent({ searchParams }: { searchParams: PageProps<"/panel/komisyonlar">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;

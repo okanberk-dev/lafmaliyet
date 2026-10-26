@@ -18,6 +18,7 @@ import {
   Globe,
   Grid3x3,
   HelpCircle,
+  Landmark,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -28,6 +29,7 @@ import {
   Receipt,
   Settings,
   ShoppingBasket,
+  Store,
   Tags,
   TrendingUp,
   Truck,
@@ -51,15 +53,63 @@ export interface NavItem {
 }
 
 /**
- * Sadeleştirilmiş menü: 15 ekran 10 öğeye indi. Birbirine yakın ekranlar aynı öğenin altında sekme oldu:
- * Giderler = Sabit giderler + Personel, Stok = Sayım + Tutarlılık. Adresler değişmedi.
+ * Komut paletinin ve Yardım'ın ekran listesi. Başlıklar kenar çubuğu ağacının (NAV_TREE) başlıklarıyla aynı sırada;
+ * birbirine yakın ekranlar aynı öğenin altında sekme: Giderler = Sabit giderler + Personel, Stok = Sayım + Tutarlılık.
+ * Adresler değişmedi.
  */
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Genel",
     items: [
       { href: "/panel", label: "Genel bakış", icon: LayoutDashboard, excel: "Panel", roles: ["admin"], keywords: "panel özet dashboard kâr zarar başabaş" },
-      { href: "/panel/analiz", label: "Analiz & senaryo", icon: BarChart3, roles: ["admin"], keywords: "menü mühendisliği senaryo simülatör" },
+      {
+        href: "/panel/bugun",
+        label: "Bugün",
+        icon: ListTodo,
+        roles: ["admin", "staff"],
+        keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
+      },
+      // Personelin onaya giden istekleri ve reçete önerileri (docs/ONAYLAR.md); kenar çubuğunda Bugün'ün hemen altında, tek tıkla
+      {
+        href: "/panel/onaylar",
+        label: "Onaylar",
+        icon: ClipboardCheck,
+        roles: ["admin"],
+        keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi mal siparişi kapalı gün",
+      },
+      { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
+    ],
+  },
+  {
+    title: "Kafe",
+    items: [
+      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
+      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
+      {
+        href: "/panel/karaoke/doluluk",
+        label: "Karaoke doluluğu",
+        icon: Grid3x3,
+        roles: ["admin"],
+        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
+      },
+      {
+        href: "/panel/kontrol",
+        label: "Kontrol listeleri",
+        icon: ListChecks,
+        roles: ["admin", "staff"],
+        keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
+      },
+      // Personelin özel günleri (maç, AVM etkinliği, kampanya; docs/SATIS-TAHMINI.md); yönetici Satış tahmini'nde görür
+      { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
+      // Önümüzdeki 7 günün satışı, kaç kişi, kaç tatlı (docs/SATIS-TAHMINI.md); kenar çubuğunda Kafe altında
+      {
+        href: "/panel/tahmin",
+        label: "Satış tahmini",
+        icon: TrendingUp,
+        roles: ["admin"],
+        keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
+      },
+      { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
   {
@@ -84,94 +134,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
       { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
-    ],
-  },
-  {
-    title: "Günlük",
-    items: [
-      {
-        href: "/panel/bugun",
-        label: "Bugün",
-        icon: ListTodo,
-        roles: ["admin", "staff"],
-        keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
-      },
-      // Personelin onaya giden istekleri ve reçete önerileri (docs/ONAYLAR.md); kenar çubuğunda Bugün'ün altında
-      {
-        href: "/panel/onaylar",
-        label: "Onaylar",
-        icon: ClipboardCheck,
-        roles: ["admin"],
-        keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi mal siparişi kapalı gün",
-      },
-      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
-      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
-      {
-        href: "/panel/karaoke/doluluk",
-        label: "Karaoke doluluğu",
-        icon: Grid3x3,
-        roles: ["admin"],
-        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
-      },
-      { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
-      {
-        href: "/panel/kontrol",
-        label: "Kontrol listeleri",
-        icon: ListChecks,
-        roles: ["admin", "staff"],
-        keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
-      },
-      // Önümüzdeki 7 günün satışı, kaç kişi, kaç tatlı (docs/SATIS-TAHMINI.md); kenar çubuğunda Satış & gider altında
-      {
-        href: "/panel/tahmin",
-        label: "Satış tahmini",
-        icon: TrendingUp,
-        roles: ["admin"],
-        keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
-      },
-      // Personelin özel günleri (maç, AVM etkinliği, kampanya; docs/SATIS-TAHMINI.md); yönetici Satış tahmini'nde görür
-      { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
-      { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
-    ],
-  },
-  {
-    title: "Para",
-    items: [
-      { href: "/panel/satislar", label: "Satışlar", icon: Receipt, excel: "Satış Raporu", roles: ["admin"], keywords: "pos rapor içe aktar" },
-      { href: "/panel/faturalar", label: "Faturalar", icon: FileText, excel: "Faturalar", roles: ["admin"], keywords: "alış tedarikçi gider" },
-      {
-        href: "/panel/tedarikciler",
-        label: "Tedarikçiler",
-        icon: Truck,
-        roles: ["admin"],
-        keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
-      },
-      // Yemek kartı ve platform komisyonunun gerçek oranı, faturadaki ücretler ve hakediş takibi (docs/KOMISYON.md)
-      {
-        href: "/panel/komisyonlar",
-        label: "Komisyon & hakediş",
-        icon: Percent,
-        roles: ["admin"],
-        keywords: "komisyon hakediş yemek kartı pluxee sodexo multinet edenred setcard metropol yemeksepeti trendyol getir migros oran yüzde 6 erken ödeme kesinti platform",
-      },
-      { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
-      // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
-      {
-        href: "/panel/hatirlaticilar/nakit",
-        label: "Nakit planı",
-        icon: ChartNoAxesColumn,
-        roles: ["admin"],
-        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden",
-      },
-      {
-        href: "/panel/giderler",
-        label: "Giderler & personel",
-        icon: Wallet,
-        excel: "Sabit Giderler + Personel",
-        roles: ["admin"],
-        match: ["/panel/personel", "/panel/harcamalar"],
-        keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider",
-      },
     ],
   },
   {
@@ -204,11 +166,62 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
     ],
   },
+  {
+    title: "Satış",
+    items: [
+      { href: "/panel/satislar", label: "Satışlar", icon: Receipt, excel: "Satış Raporu", roles: ["admin"], keywords: "pos rapor içe aktar" },
+      // Yemek kartı ve platform komisyonunun gerçek oranı, faturadaki ücretler ve hakediş takibi (docs/KOMISYON.md)
+      {
+        href: "/panel/komisyonlar",
+        label: "Komisyon & hakediş",
+        icon: Percent,
+        roles: ["admin"],
+        keywords: "komisyon hakediş yemek kartı pluxee sodexo multinet edenred setcard metropol yemeksepeti trendyol getir migros oran yüzde 6 erken ödeme kesinti platform",
+      },
+      { href: "/panel/analiz", label: "Analiz & senaryo", icon: BarChart3, roles: ["admin"], keywords: "menü mühendisliği senaryo simülatör" },
+    ],
+  },
+  {
+    title: "Alış & gider",
+    items: [
+      { href: "/panel/faturalar", label: "Faturalar", icon: FileText, excel: "Faturalar", roles: ["admin"], keywords: "alış tedarikçi gider" },
+      {
+        href: "/panel/tedarikciler",
+        label: "Tedarikçiler",
+        icon: Truck,
+        roles: ["admin"],
+        keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
+      },
+      {
+        href: "/panel/giderler",
+        label: "Giderler & personel",
+        icon: Wallet,
+        excel: "Sabit Giderler + Personel",
+        roles: ["admin"],
+        match: ["/panel/personel", "/panel/harcamalar"],
+        keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider",
+      },
+    ],
+  },
+  {
+    title: "Finans",
+    items: [
+      { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
+      { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet" },
+      // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
+      {
+        href: "/panel/hatirlaticilar/nakit",
+        label: "Nakit planı",
+        icon: ChartNoAxesColumn,
+        roles: ["admin"],
+        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden",
+      },
+    ],
+  },
 ];
 
-/** Kenar çubuğunun altındaki sistem bağlantıları */
+/** Kenar çubuğunun altındaki sistem bağlantıları (kenar çubuğunda Ayarlar başlığı ve profil menüsü) */
 export const NAV_FOOTER: NavItem[] = [
-  { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet" },
   { href: "/panel/parasut", label: "Paraşüt entegrasyonu", icon: Plug, roles: ["admin"], keywords: "parasut fatura eşitleme muhasebe e-fatura" },
   { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
@@ -251,19 +264,41 @@ export interface NavNode {
   children?: { id: string; label: string; href: string; roles: ("admin" | "staff")[]; match?: string[] }[];
 }
 
+/**
+ * Ağaç (26 Eki 2026, docs/TASARIM.md "Menü ağacı"): yöneticide en sık açılan dört ekran (Genel bakış, Bugün, Onaylar,
+ * Kasa raporu) tek tıkla üst düzeyde, gerisi konu başlıkları altında: işletme (Kafe, Menü, Stok), para (Satış, Alış &
+ * gider, Finans), Ayarlar. Başlık satırı yalnız grubu açıp kapatır; etkin sayfanın grubu kendiliğinden açık
+ * (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey öğeleri (Karaoke, Kontrol listeleri, Hatırlatıcılarım)
+ * yalnız personelde, yönetici aynı ekranları Kafe altında görür. Personelin görebildiği düğümlerin sırası değişmez
+ * (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi sabitler). Adresler değişmedi, yalnız gruplama.
+ */
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
   // Günün işleri (docs/BUGUN.md); personelde ağacın ilk öğesi ve girişte açılan ekran
   { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun", roles: ["admin", "staff"] },
   // Personelin istekleri ve reçete önerileri (docs/ONAYLAR.md); yalnız yönetici, Bugün'ün hemen altında
   { id: "onaylar", label: "Onaylar", icon: ClipboardCheck, href: "/panel/onaylar", roles: ["admin"] },
-  { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
-  // Personelde üst düzeyde; yönetici Satış & gider altında görür (aynı ekran)
-  { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
-  // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); iki rolde de üst düzeyde
-  { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["admin", "staff"] },
+  // Personelin üst düzey öğesi; yönetici Kafe altında görür
+  { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["staff"] },
+  // Gün sonu kasa raporu: iki rolde de üst düzeyde, tek tıkla
+  { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["admin", "staff"] },
+  // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); personelde üst düzeyde, yönetici Kafe altında görür
+  { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["staff"] },
   // Personelin özel günleri; yönetici aynı listeyi Satış tahmini'nde düzenler
   { id: "ozel-gunler", label: "Özel günler", icon: CalendarHeart, href: "/panel/ozel-gunler", roles: ["staff"] },
+  {
+    // Kafenin günlük işleyişi: karaoke odası, açılış / kapanış, önümüzdeki günlerin tahmini, kişisel hatırlatıcılar
+    id: "kafe",
+    label: "Kafe",
+    icon: Store,
+    roles: ["admin"],
+    children: [
+      { id: "karaoke-yonetici", label: "Karaoke", href: "/panel/karaoke", roles: ["admin", "staff"] },
+      { id: "kontrol-listeleri", label: "Kontrol listeleri", href: "/panel/kontrol", roles: ["admin", "staff"] },
+      { id: "tahmin", label: "Satış tahmini", href: "/panel/tahmin", roles: ["admin"] },
+      { id: "hatirlaticilarim-yonetici", label: "Hatırlatıcılarım", href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
+    ],
+  },
   {
     id: "menu",
     label: "Menü",
@@ -273,24 +308,6 @@ export const NAV_TREE: NavNode[] = [
       { id: "urunler", label: "Ürünler", href: "/panel/urunler", roles: ["admin"] },
       { id: "hammaddeler", label: "Hammaddeler", href: "/panel/hammaddeler", roles: ["admin"] },
       { id: "receteler", label: "Reçete defteri", href: "/panel/receteler", roles: ["admin", "staff"] },
-    ],
-  },
-  {
-    id: "para",
-    label: "Satış & gider",
-    icon: Wallet,
-    roles: ["admin"],
-    children: [
-      // Ekran personele de açık; personel bu grubu görmez, kendi üst düzey "Kasa raporu" öğesinden girer
-      { id: "kasa-raporlari", label: "Kasa raporları", href: "/panel/kasa", roles: ["admin", "staff"] },
-      { id: "tahmin", label: "Satış tahmini", href: "/panel/tahmin", roles: ["admin"] },
-      { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
-      { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
-      { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
-      { id: "komisyonlar", label: "Komisyon & hakediş", href: "/panel/komisyonlar", roles: ["admin"] },
-      { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
-      { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
-      { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
     ],
   },
   {
@@ -306,8 +323,43 @@ export const NAV_TREE: NavNode[] = [
       { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
     ],
   },
-  { id: "hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
-  { id: "analiz", label: "Analiz & senaryo", icon: BarChart3, href: "/panel/analiz", roles: ["admin"] },
+  {
+    // Gelen para: satış listesi, yemek kartı / platform kesintisi, menü mühendisliği
+    id: "satis",
+    label: "Satış",
+    icon: Receipt,
+    roles: ["admin"],
+    children: [
+      { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
+      { id: "komisyonlar", label: "Komisyon & hakediş", href: "/panel/komisyonlar", roles: ["admin"] },
+      { id: "analiz", label: "Analiz & senaryo", href: "/panel/analiz", roles: ["admin"] },
+    ],
+  },
+  {
+    // Giden para: alış faturaları, cari hesaplar, sabit giderler ve maaşlar
+    id: "alis",
+    label: "Alış & gider",
+    icon: Truck,
+    roles: ["admin"],
+    children: [
+      { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
+      { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
+      { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
+    ],
+  },
+  {
+    // Aylık tablo, ödemeler ve nakit planı (Ödemeler'in sekmesi); Vergi de buraya gelecek (docs/planlar/vergi.md)
+    id: "finans",
+    label: "Finans",
+    icon: Landmark,
+    roles: ["admin"],
+    children: [
+      { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
+      { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
+    ],
+  },
+  // Personelde üst düzeyde; yönetici Kafe altında görür
+  { id: "hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, href: "/panel/hatirlaticilarim", roles: ["staff"] },
   {
     id: "ayarlar",
     label: "Ayarlar",
@@ -335,6 +387,11 @@ export function navTreeFor(role: "admin" | "staff"): NavNode[] {
 export function pathMatches(pathname: string, href: string, match: string[] = []) {
   if (href === "/panel") return pathname === "/panel";
   return [href, ...match].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Etkin sayfanın grubu: kenar çubuğunda kendiliğinden açık durur. Sayfa üst düzeyde ya da menüde değilse undefined */
+export function activeGroupOf(items: NavNode[], pathname: string): string | undefined {
+  return items.find((i) => i.children?.some((c) => pathMatches(pathname, c.href, c.match)))?.id;
 }
 
 /**

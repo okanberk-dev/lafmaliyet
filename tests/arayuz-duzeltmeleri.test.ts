@@ -96,11 +96,15 @@ test("kasa: rapor yokken 'Rapor yok', eksik/fazla alt satırda, fişsiz çıkı�
   assert.match(read("src/app/panel/kasa/cash-out-dialog.tsx"), /document\.getElementById\("co-amount"\)\?\.focus\(\)/);
 });
 
-test("Yardım'ın menü metni kenar çubuğunun ağacından: yönetici menüsünde personelin 'Kasa raporu'su yok, personel listesi tekrarsız", () => {
+test("Yardım'ın menü metni kenar çubuğunun ağacından: yönetici menüsünde Kasa raporu bir kez, personel listesi tekrarsız", () => {
   const src = read("src/app/panel/yardim/page.tsx");
   assert.match(src, /const MENU_LAYOUT = navTreeFor\("admin"\)/);
   assert.match(src, /const STAFF_SCREENS = \[\.\.\.navTreeFor\("staff"\)/);
-  assert.ok(!navTreeFor("admin").some((n) => n.label === "Kasa raporu" && !n.children));
+  // Kasa raporu 26 Eki 2026'dan beri yöneticide de üst düzeyde (tek tıkla): ağaçta bir kez, grubun içinde ikinci kopyası yok
+  const admin = navTreeFor("admin")
+    .flatMap((n): { label: string }[] => n.children ?? [n])
+    .map((n) => n.label);
+  assert.equal(admin.filter((l) => /Kasa rapor/.test(l)).length, 1, admin.join(", "));
   const staff = navTreeFor("staff")
     .flatMap((n): { label: string }[] => n.children ?? [n])
     .map((n) => n.label);

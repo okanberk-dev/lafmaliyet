@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: "Özel günler" };
 export default function StaffSpecialDaysPage() {
   return (
     <>
-      <PageHeader eyebrow="Günlük" title="Özel günler" description="Maç, AVM etkinliği ve kampanya günleri: tahmin ve tatlı sayısı bunlara göre ayarlanır." />
+      <PageHeader eyebrow="Kafe" title="Özel günler" description="Maç, AVM etkinliği ve kampanya günleri: tahmin ve tatlı sayısı bunlara göre ayarlanır." />
       <Suspense fallback={<PageSkeleton rows={3} />}>
         <SpecialDaysContent />
       </Suspense>

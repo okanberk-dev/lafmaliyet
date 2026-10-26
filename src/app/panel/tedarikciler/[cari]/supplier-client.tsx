@@ -729,7 +729,7 @@ export function SupplierClient({
   return (
     <>
       <PageHeader
-        eyebrow="Satış & gider"
+        eyebrow="Alış & gider"
         title={supplier.name}
         description={headerDescription}
         actions={

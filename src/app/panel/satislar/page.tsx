@@ -30,7 +30,7 @@ export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">
     <Suspense
       fallback={
         <>
-          <PageHeader title="Satışlar" eyebrow="Para" excel="Satış Raporu" description={DESCRIPTION} />
+          <PageHeader title="Satışlar" eyebrow="Satış" excel="Satış Raporu" description={DESCRIPTION} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -105,7 +105,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     <>
       <PageHeader
         title="Satışlar"
-        eyebrow="Para"
+        eyebrow="Satış"
         excel="Satış Raporu"
         description={DESCRIPTION}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}

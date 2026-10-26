@@ -77,7 +77,7 @@ export function CashPlanClient({
   return (
     <>
       <PageHeader
-        eyebrow="Satış & gider"
+        eyebrow="Finans"
         title={title}
         description={description}
         actions={

@@ -1,6 +1,7 @@
 # Gün sonu kasa raporu
 
-Ekran: **Kasa raporu** (`/panel/kasa`). Personel her akşam kapanışta ModPOS'tan Z raporunu alır, banka POS'tan
+Ekran: **Kasa raporu** (`/panel/kasa`; iki rolün menüsünde de üst düzeyde, tek tıkla).
+Personel her akşam kapanışta ModPOS'tan Z raporunu alır, banka POS'tan
 (yazarkasa) mali Z raporunu alır, kasadaki nakdi sayar ve buraya girer. İki Z ayrı bölümdür: **ModPOS Z raporu** ve
 **Banka POS Z raporu (yazarkasa)**. Telefonda iki rolün de alt menüsünde **Kasa**; günün kasa işi **Bugün** ekranında da satır olarak
 görünür ([BUGUN.md](BUGUN.md)).

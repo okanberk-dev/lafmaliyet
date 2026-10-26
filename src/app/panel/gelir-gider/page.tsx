@@ -47,7 +47,7 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Para" title="Gelir-gider" excel="Genel Maliyet" description={DESCRIPTION} />
+          <PageHeader eyebrow="Finans" title="Gelir-gider" excel="Genel Maliyet" description={DESCRIPTION} />
           <PageSkeleton rows={14} />
         </>
       }
@@ -194,7 +194,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   return (
     <>
       <PageHeader
-        eyebrow="Para"
+        eyebrow="Finans"
         title="Gelir-gider"
         excel="Genel Maliyet"
         description={DESCRIPTION}

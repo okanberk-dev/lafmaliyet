@@ -9,7 +9,7 @@ import { Icon } from "@/components/akmanos/icons/icon";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
-import { keepGroupOpen, navLit, pathMatches, type NavNode } from "./nav";
+import { activeGroupOf, keepGroupOpen, navLit, pathMatches, type NavNode } from "./nav";
 
 /**
  * AkmanOS "Sidebar" bloğundaki SidebarNav (src/components/akmanos/sidebar/sidebar-nav.tsx), Next.js bağlantıları
@@ -82,7 +82,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
   const reduce = useReducedMotion();
   // Masaüstü kenar çubuğu ile mobil çekmece aynı anda takılı olabilir: vurgular birbirine uçmasın diye ayrı grup
   const groupId = useId();
-  const activeParent = items.find((i) => i.children?.some((c) => pathMatches(pathname, c.href, c.match)))?.id;
+  const activeParent = activeGroupOf(items, pathname);
   // Kullanıcının açıp kapattıkları; etkin sayfanın grubu her zaman açık
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   // Başka bölüme gidilince önceki grup kendiliğinden kapanmaz: alttaki satırlar tıklanan öğeyle birlikte yukarı kaymaz
