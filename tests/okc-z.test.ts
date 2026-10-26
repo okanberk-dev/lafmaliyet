@@ -11,6 +11,9 @@ import {
   okcChecks,
   okcCumulativeToStore,
   okcFormChecks,
+  okcFormError,
+  okcHasFigures,
+  okcLateChain,
   okcMonth,
   okcReconcile,
   sameVat,
@@ -23,7 +26,7 @@ import {
 } from "../src/lib/okc-z";
 import { claudeSchema } from "../src/lib/photo-read/claude-schema";
 import { photoDiffs, prefillPlan, prefillSummary, savedFields, UNSURE_TEXT, type CashReading, type ReadField } from "../src/lib/photo-read/kasa";
-import { normalizeOkc, OKC_CUT_OFF_TEXT, okcNeedsHalves, toStaffReading } from "../src/lib/photo-read/okc";
+import { normalizeOkc, OKC_CUT_OFF_TEXT, okcNeedsHalves, okcReadFigures, toStaffReading } from "../src/lib/photo-read/okc";
 import { OKC_TASK } from "../src/lib/photo-read/prompts";
 import { KasaOkcRaw, type AmountRaw, type KasaOkc } from "../src/lib/photo-read/schemas";
 
@@ -689,4 +692,64 @@ test("prefillPlan: durumu olmayan eski okumalar bugünkü kuralla dolar", () => 
   const plan = prefillPlan(legacy, { zTotal: "", cash: "" });
   assert.deepEqual(plan.fill, [{ field: "zTotal", text: "100", warn: UNSURE_TEXT }]);
   assert.deepEqual(plan.unsure, [{ field: "cash", photo: 40, text: "40" }]);
+});
+
+// ---------------------------------------------------------------- b4: zorunluluk, okumanın birleşik rakamları, geç raporun iki yanı
+
+test("okcFormError (§3.2, form ve sunucu aynı metin): boş bölüm serbest; tutar yazılınca toplam, nakit, kart; oran satırı birlikte", () => {
+  assert.equal(okcFormError({}), null);
+  assert.equal(okcFormError({ okcTotal: null, okcCash: null, okcVat: [] }), null);
+  assert.equal(okcFormError({ okcCard: 6900 }), "Yazarkasa günlük toplamı gerekli (bölümü boş da bırakabilirsiniz)");
+  assert.equal(okcFormError({ okcTotal: 9350, okcCard: 6900 }), "Nakit gerekli (yoksa 0 yazın)");
+  assert.equal(okcFormError({ okcTotal: 9350, okcCash: 0 }), "Kredi kartı gerekli (yoksa 0 yazın)");
+  assert.equal(okcFormError({ okcTotal: 9350, okcCash: 2450, okcCard: 6900 }), null);
+  // Yalnız döküm yazılmış: tutar sayılır, temel alanlar istenir
+  assert.equal(okcFormError({ okcVat: [{ rate: 10, total: 8110, vat: 737.27 }] }), "Yazarkasa günlük toplamı gerekli (bölümü boş da bırakabilirsiniz)");
+  assert.equal(okcFormError({ okcTotal: 9350, okcCash: 2450, okcCard: 6900, okcVat: [{ rate: 10, total: 8110, vat: null }] }), "%10 için toplam ve KDV birlikte yazılır");
+  assert.equal(okcFormError({ okcTotal: 9350, okcCash: 2450, okcCard: 6900, okcVat: [{ rate: 10, total: 700, vat: 737.27 }] }), "%10 KDV'si toplamından büyük olamaz");
+  assert.equal(okcHasFigures({}), false);
+  assert.equal(okcHasFigures({ okcTotal: null, okcCard: 0 }), true);
+});
+
+test("okcReadFigures: parçalı okumada her rakam onu okuyan son okumadan; kümülatif çifti aynı okumadan; Z değilse null", () => {
+  const top = normalizeOkc(z({ cumulativeTotal: NONE, cumulativeVat: NONE, payments: [] }), { day: DAY, prev: { z: null } });
+  const bottom = normalizeOkc(z({ zNo: { text: null, value: null, confidence: "low" }, dailyTotal: NONE, kdvGroups: [], totalVat: NONE }), { day: DAY, prev: { z: null } });
+  const f = okcReadFigures([top, bottom]);
+  assert.deepEqual(f, { zNo: "0101", total: 9350, vatTotal: 943.94, cumTotal: 1_259_350, cumVat: 118_943.94, outside: null });
+  // Yazarkasa dışı tahsilat okunduysa
+  const withOutside = normalizeOkc(z({ outside: [{ label: "FATURALI SATIŞ", amount: A(1250) }] }), { day: DAY, prev: { z: null } });
+  assert.equal(okcReadFigures([withOutside])?.outside, 1250);
+  // Yanlış belge, yalnız banka fişi ya da personelin okuması (kümülatifsiz): rakam yok
+  assert.equal(okcReadFigures([normalizeOkc(z({ documentType: "x_report" }), { day: DAY, prev: { z: null } })]), null);
+  assert.equal(okcReadFigures([toStaffReading(top)]), null);
+  assert.equal(okcReadFigures([]), null);
+});
+
+test("okcLateChain: Z no iki yanda, kümülatif iki yanda tutuyor ya da tutmayan halka; kendi kümülatifi yoksa iki komşu arası", () => {
+  /** Tarih ve tutar biçimindeki bölünmez boşluklar düz boşluğa */
+  const sp = (t: string) => t.replace(/\u00a0/g, " ");
+  const prev = { z: { date: "2026-10-21", zNo: "0187" }, cum: { date: "2026-10-21", zNo: "0187", cumTotal: 1_000_000 } };
+  const next = { date: "2026-10-23", zNo: "0189", total: 9_180, cumTotal: 1_021_480 };
+  // Geç gün 22 Ekim: Z 0188, toplam 12.300, kümülatif 1.012.300
+  const held = okcLateChain({ zNo: "0188", total: 12_300, cumTotal: 1_012_300 }, prev, next)!;
+  assert.equal(held.ok, true);
+  assert.equal(sp(held.text), "Banka POS Z no 0188: önceki 0187 (21 Ekim) ✓ · sonraki 0189 (23 Ekim) ✓ · kümülatif iki yanda da tutuyor");
+  // Sonraki halka tutmuyor: o günün kümülatif artışı ile toplamı yazılır
+  const broken = okcLateChain({ zNo: "0188", total: 12_300, cumTotal: 1_012_360 }, prev, next)!;
+  assert.equal(broken.ok, false);
+  assert.match(sp(broken.text), /önceki Z'den bu yana kümülatif artışı 12\.360 ₺, bu günün toplamı 12\.300 ₺/);
+  assert.match(sp(broken.text), /sonraki günün kümülatif artışı 9\.120 ₺, o günün toplamı 9\.180 ₺/);
+  // Kendi kümülatifi okunmamış: önceki ve sonraki saklanan kümülatifin farkı iki günün toplamı
+  assert.equal(sp(okcLateChain({ zNo: "0188", total: 12_300 }, prev, next)!.text).endsWith("kümülatif iki yanda da tutuyor"), true);
+  assert.equal(okcLateChain({ zNo: "0188", total: 12_000 }, prev, next)!.ok, false);
+  // Z no sırası bozuk: önceki büyük ya da eşit, sonraki küçük ya da eşit
+  const bad = okcLateChain({ zNo: "0187", total: 12_300 }, { z: prev.z, cum: null }, { date: "2026-10-23", zNo: "0186" })!;
+  assert.equal(bad.ok, false);
+  assert.match(sp(bad.text), /önceki 0187 \(21 Ekim\) bu Z no'dan büyük ya da eşit · sonraki 0186 \(23 Ekim\) bu Z no'dan küçük ya da eşit/);
+  // Aralık (girilmemiş Z'ler): bilgi, yargı yok; komşu yoksa yalnız Z no; yazarkasa Z no'su yoksa satır yok
+  const gap = okcLateChain({ zNo: "0190", total: 12_300 }, { z: prev.z, cum: null }, null)!;
+  assert.equal(gap.ok, null);
+  assert.equal(sp(gap.text), "Banka POS Z no 0190: önceki 0187 (21 Ekim); arada 2 Z girilmemiş");
+  assert.deepEqual(okcLateChain({ zNo: "0188", total: 1 }, { z: null }, null), { ok: null, text: "Banka POS Z no 0188" });
+  assert.equal(okcLateChain({ zNo: null, total: null }, prev, next), null);
 });
