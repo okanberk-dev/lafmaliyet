@@ -113,6 +113,8 @@ const NO_PREV = { prev: { z: null } } as const;
 
 const ALL_FIELDS: ReadField[] = ["okcZNo", "okcReceipts", "okcTotal", "okcVatTotal", "okcCash", "okcCard", "okcMealCard", "okcOther", "okcT1", "okcV1", "okcT10", "okcV10", "okcT20", "okcV20", "bankPos"];
 const emptyForm = () => Object.fromEntries(ALL_FIELDS.map((f) => [f, ""])) as Partial<Record<ReadField, string>>;
+/** Doldurmanın açık hâli (OKC_PREFILL_ENABLED canlı değerlendirmeye kadar kapalı; kapalı hâli ayrı testte) */
+const ON = { okcPrefill: true } as const;
 const JARGON = /kümülatif|zincir|KÜM\.|MATRAH/i;
 
 // ---------------------------------------------------------------- şema ve istem
@@ -217,13 +219,13 @@ test("kopya kimlikler: tek oranlı ve tek ödemeli günde aynı yanlış üç ye
   // 9.350 soluk basılmış, üç yerde 9.530 okunmuş: K1, K2, K4 tutar (aynı rakamın kopyaları)
   const r = normalizeOkc(single(9530, "medium"), { day: DAY, prev: { z: null } });
   for (const f of ["okcTotal", "okcT10", "okcV10", "okcVatTotal", "okcCard"] as const) assert.equal(r.values[f]?.status, undefined, f);
-  const plan = prefillPlan(r, emptyForm());
+  const plan = prefillPlan(r, emptyForm(), ON);
   const total = plan.fill.find((f) => f.field === "okcTotal");
   assert.equal(total?.warn, UNSURE_TEXT, "orta güvende turuncu dolar");
   // İki oranlı, nakit + kartlı gün: orta güvende de mavi dolar
   const two = normalizeOkc(z({ dailyTotal: A(9350, "medium") }), { day: DAY, prev: { z: null } });
   assert.equal(two.values.okcTotal?.status, "confirmed");
-  assert.equal(prefillPlan(two, emptyForm()).fill.find((f) => f.field === "okcTotal")?.warn, null);
+  assert.equal(prefillPlan(two, emptyForm(), ON).fill.find((f) => f.field === "okcTotal")?.warn, null);
 });
 
 test("tek ödemeli gün (hepsi kart) K4 ile doğrulanmaz; iki ödeme türüyle doğrular", () => {
@@ -280,7 +282,7 @@ test("tuzak: kümülatif günlük diye okunmuş (eşitlik, K1, büyüklük, K6)"
   assert.ok(admin.some((t) => t.startsWith("Önceki Z'den (0100) bu yana kümülatif artış")));
   assert.equal(r.values.okcTotal?.reason, "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.");
   // Forma yazılmaz, öneri olur
-  const plan = prefillPlan(r, emptyForm());
+  const plan = prefillPlan(r, emptyForm(), ON);
   assert.ok(!plan.fill.some((f) => f.field === "okcTotal"));
   assert.ok(plan.unsure.some((u) => u.field === "okcTotal" && u.reason === r.values.okcTotal?.reason));
 });
@@ -362,7 +364,7 @@ test("alan durumu: tutmadı > doğrulandı > denetlenemedi; tutmayan dolmaz, ned
   const r = normalizeOkc(z({ kdvGroups: [{ rate: 10, total: A(8150), vat: A(737.27), base: null }, { rate: 20, total: A(1240), vat: A(206.67), base: null }] }), { day: DAY, prev: PREV });
   assert.equal(r.values.okcT10?.status, "failed");
   assert.equal(r.values.okcTotal?.status, "confirmed");
-  const plan = prefillPlan(r, emptyForm());
+  const plan = prefillPlan(r, emptyForm(), ON);
   assert.ok(!plan.fill.some((f) => f.field === "okcT10"));
   const u = plan.unsure.find((x) => x.field === "okcT10");
   assert.equal(u?.text, "8150");
@@ -407,7 +409,7 @@ test("Z no: +1 doğrular, +2 bilgi (önceki gün ise uyarı), aynı okumayı dur
   const stop = "Bu Z no (0100) 23 Ekim raporunda da var; dünkü Z raporu olabilir.";
   assert.ok(same.checks.some((c) => c.whole && c.text === stop && !c.admin));
   assert.ok(Object.values(same.values).every((v) => v?.status === "failed"));
-  assert.equal(prefillPlan(same, emptyForm()).fill.length, 0);
+  assert.equal(prefillPlan(same, emptyForm(), ON).fill.length, 0);
 
   assert.equal(okcChecks(fig({ zNo: "0099" }), { prev: PREV }).status.okcZNo, "failed");
   assert.equal(okcChecks(fig(), NO_PREV).status.okcZNo, undefined);
@@ -483,7 +485,7 @@ test("banka gün sonu: yalnız fişse yalnız Banka gün sonu; Z ile aynı şeri
   assert.deepEqual(Object.keys(only.values), ["bankPos"]);
   assert.equal(only.values.bankPos?.value, 6900);
   assert.ok(only.checks.some((c) => c.text === "Bu banka gün sonu fişi; yalnız Banka gün sonu doldu. Yazarkasanın Z raporunu da çekin."));
-  assert.equal(prefillSummary("kasa-okc", prefillPlan(only, emptyForm())), "Banka gün sonu fişinden dolduruldu: Banka gün sonu.");
+  assert.equal(prefillSummary("kasa-okc", prefillPlan(only, emptyForm(), ON)), "Banka gün sonu fişinden dolduruldu: Banka gün sonu.");
 
   const both = normalizeOkc(z({ batches: [slip(4000, "GARANTİ"), slip(2900, "YAPI KREDİ")] }), { day: DAY, prev: PREV });
   assert.equal(both.values.bankPos?.value, 6900);

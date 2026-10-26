@@ -11,7 +11,7 @@
 
 import { parseNumberTR } from "@/lib/calc/expr";
 import { money } from "@/lib/format";
-import { OKC_FIELD_LABELS, type OkcField, type OkcVatLine } from "@/lib/okc-z";
+import { OKC_FIELD_LABELS, OKC_PREFILL_ENABLED, OKC_SUGGEST_TEXT, type OkcField, type OkcVatLine } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 
 import { businessDayOf, clean, DOC_NAMES, IMAGE_ISSUES, ISSUE_TEXT, lowest, printedAmount, round2, UNREADABLE_TEXT, type Confidence } from "./common";
@@ -24,13 +24,13 @@ export type { Confidence } from "./common";
  * src/lib/okc-z.ts). Yazarkasa anahtarları ModPOS'unkilerden ayrıdır: iki sayaç birbiriyle karşılaştırılmaz.
  */
 export type ReadField = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "discounts" | "offRevenue" | "zNo" | "receipts" | "bankPos" | OkcField;
-export type CashPhotoKind = "kasa-z" | "kasa-pos";
 /**
- * Okumanın türü: `kasa-okc` yazarkasanın mali Z'si (src/lib/photo-read/okc.ts). Fotoğraf türü olarak (photo-rules
- * `PhotoKind`, yollar, saklama) adım b3–b4'te gelir; o zaman `CashPhotoKind`'a katılır ve `kasa-pos` yalnız eski
- * okumalar için kalır (plan D2, §6.3, §6.6)
+ * Kasa fotoğrafının türü: `kasa-okc` yazarkasanın mali Z'si (src/lib/photo-read/okc.ts); `kasa-pos` yalnız eski
+ * fotoğraflar, eski okumalar ve geçişteki eski sayfalar için kalır (plan D2, §6.3, §6.6)
  */
-export type CashReadKind = CashPhotoKind | "kasa-okc";
+export type CashPhotoKind = "kasa-z" | "kasa-pos" | "kasa-okc";
+/** Okumanın türü (fotoğrafın türüyle aynı) */
+export type CashReadKind = CashPhotoKind;
 
 /** Tutar alanları (ötekiler Z no'lar ve fiş sayıları) */
 export const MONEY_FIELDS: readonly ReadField[] = [
@@ -404,9 +404,11 @@ export interface PrefillPlan {
  * (fotoğrafta tahmin) alana yazılmaz: personel fişe bakıp yazar ya da "Fotoğraftakini yaz"a basar. `current` formdaki
  * alanlar: formda olmayan alan atlanır.
  */
-export function prefillPlan(reading: CashReading, current: Partial<Record<ReadField, string>>): PrefillPlan {
+export function prefillPlan(reading: CashReading, current: Partial<Record<ReadField, string>>, o: { okcPrefill?: boolean } = {}): PrefillPlan {
   const plan: PrefillPlan = { fill: [], differs: [], unsure: [], missing: [] };
   if (!reading.ok) return plan;
+  // Yazarkasa Z'si canlı değerlendirmeden geçene kadar yalnız öneri (src/lib/okc-z.ts OKC_PREFILL_ENABLED)
+  const suggestOnly = reading.kind === "kasa-okc" && !(o.okcPrefill ?? OKC_PREFILL_ENABLED);
   const warns = fieldWarnings(reading);
   for (const [field, v] of Object.entries(reading.values) as [ReadField, ReadValue][]) {
     if (!(field in current)) continue;
@@ -418,6 +420,7 @@ export function prefillPlan(reading: CashReading, current: Partial<Record<ReadFi
     }
     // Yazarkasa (D7): tutmayan alan yazılmaz; doğrulanan alan orta güvende de mavi dolar; güveni düşük hiç dolmaz
     if (v.status === "failed") plan.unsure.push({ field, photo: v.value, text, reason: v.reason ?? warns[field] ?? UNSURE_TEXT });
+    else if (suggestOnly) plan.unsure.push({ field, photo: v.value, text, reason: warns[field] ?? (v.confidence === "high" ? OKC_SUGGEST_TEXT : UNSURE_TEXT) });
     else if (v.confidence === "low") plan.unsure.push({ field, photo: v.value, text });
     else if (v.status === "confirmed") plan.fill.push({ field, text, warn: null });
     else plan.fill.push({ field, text, warn: warns[field] ?? (v.confidence === "medium" ? UNSURE_TEXT : null) });

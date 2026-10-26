@@ -17,6 +17,17 @@
 import { money } from "./format";
 import { dayMonthTR } from "./reminders";
 
+/**
+ * Yazarkasa Z okuması forma kendiliğinden yazılsın mı (sahibin kararı bekleniyor): gerçek fotoğraflarla canlı
+ * değerlendirme (plan §10, §17 b2 / b8: yanlış dolum 0, "doğrulandı ama yanlış" 0) geçene kadar kapalı. Kapalıyken
+ * okunan her rakam öneri olarak gösterilir (`prefillPlan` → `unsure`, "Fotoğraftakini yaz"); hiçbir alan dolmaz.
+ * Açmak bu sabiti `true` yapmaktır (tests/okc-z.test.ts ikisini de sınar)
+ */
+export const OKC_PREFILL_ENABLED: boolean = false;
+
+/** Doldurma kapalıyken önerinin nedeni (personele) */
+export const OKC_SUGGEST_TEXT = "Fotoğraftan okundu; fişle karşılaştırıp yazın.";
+
 /** Toplamlar kuruşa kadar toplanır: 0,05 ₺ pay */
 export const SUM_TOL = 0.05;
 

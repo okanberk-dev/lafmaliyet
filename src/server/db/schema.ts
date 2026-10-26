@@ -1244,7 +1244,7 @@ export const cashReportPhotos = pgTable(
     photoId: integer("photo_id")
       .notNull()
       .references(() => photos.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["kasa-z", "kasa-pos"] }).notNull(),
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "kasa-okc"] }).notNull(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("cash_report_photos_photo_uq").on(t.photoId), index("cash_report_photos_report_idx").on(t.reportId)],
@@ -1431,8 +1431,8 @@ export const photos = pgTable(
   "photos",
   {
     id: serial("id").primaryKey(),
-    /** "kasa-z" | "kasa-pos" | "fis" | "kontrol" (src/lib/photo-rules.ts; yeni tür migration istemez) */
-    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "fis", "kontrol"] }).notNull(),
+    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "kontrol" (src/lib/photo-rules.ts; yeni tür migration istemez) */
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "kasa-okc", "fis", "kontrol"] }).notNull(),
     /** Depodaki yol, ör. "fis/2026/10/<uuid>.jpg" (rastgele, üzerine yazılmaz) */
     storageKey: text("storage_key").notNull(),
     contentType: text("content_type").notNull(),
@@ -1465,7 +1465,7 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "fis" | "fatura" */
+    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),

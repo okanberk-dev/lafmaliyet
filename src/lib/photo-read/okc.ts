@@ -8,11 +8,11 @@
  */
 
 import { money } from "@/lib/format";
-import { normalizeVat, okcChecks, SUM_TOL, zNoNumber, type OkcContext, type OkcField, type OkcFigures, type OkcVatGroup } from "@/lib/okc-z";
+import { normalizeVat, OKC_PREFILL_ENABLED, OKC_SUGGEST_TEXT, okcChecks, SUM_TOL, zNoNumber, type OkcContext, type OkcField, type OkcFigures, type OkcVatGroup } from "@/lib/okc-z";
 import { addDays, dayMonthTR } from "@/lib/reminders";
 
 import { businessDayOf, clean, IMAGE_ISSUES, ISSUE_TEXT, lowest, printedAmount, round2, UNREADABLE_TEXT, type Confidence } from "./common";
-import { dayCheck, failed, issueChecks, looksLike, mismatchCheck, ordered, type CashReading, type ReadCheck, type ReadField, type ReadValue } from "./kasa";
+import { dayCheck, failed, FISCAL_Z_CARD_TEXT, issueChecks, looksLike, mismatchCheck, ordered, type CashReading, type ReadCheck, type ReadField, type ReadValue } from "./kasa";
 import type { AmountRaw, KasaOkc } from "./schemas";
 
 export interface OkcReadContext extends OkcContext {
@@ -289,4 +289,29 @@ export function toStaffReading(r: CashReading): CashReading {
 export function okcNeedsHalves(r: CashReading): boolean {
   if (r.kind !== "kasa-okc" || !r.ok) return false;
   return (["okcTotal", "okcCash", "okcCard", "okcZNo"] as const).some((f) => r.values[f]?.status === "failed" || r.values[f]?.confidence === "low");
+}
+
+/**
+ * Geçiş (plan D2, §7): eski sayfa `kasa-pos` gönderdi, fotoğraf `kasa-okc` olarak okundu; eski sayfaya eski biçimde
+ * yanıt. Tür "kasa-pos", değerlerde yalnız banka gün sonu fişinden okunan `bankPos` (yazarkasa Z'sinin toplamı ya da
+ * kartı asla) ve yalnız onun uyarıları. Fişte banka gün sonu yoksa PR-a'nın yönergesi (Z'nin kart satırını elle
+ * yazın). Yazarkasa okuması forma kendiliğinden yazılmadıkça (`OKC_PREFILL_ENABLED`) `bankPos` öneri olarak döner:
+ * güveni "low" (eski sayfanın `prefillPlan`'ı yalnız düşük güvenli değeri yazmaz) ve nedeni.
+ */
+export function okcToLegacyPos(r: CashReading, o: { okcPrefill?: boolean } = {}): CashReading {
+  if (!r.ok) return { ...failed("kasa-pos", r.error ?? UNREADABLE_TEXT, r.switchTo === "kasa-z" ? "kasa-z" : null), ...(r.advice ? { advice: true } : {}) };
+  const bank = r.values.bankPos;
+  if (!bank) return { ...failed("kasa-pos", FISCAL_Z_CARD_TEXT), advice: true, printedDay: r.printedDay };
+  const prefill = o.okcPrefill ?? OKC_PREFILL_ENABLED;
+  const value: ReadValue = prefill ? { value: bank.value, confidence: bank.confidence } : { value: bank.value, confidence: "low", status: "failed", reason: OKC_SUGGEST_TEXT };
+  return {
+    kind: "kasa-pos",
+    ok: true,
+    error: null,
+    switchTo: null,
+    printedDay: r.printedDay,
+    values: { bankPos: value },
+    missing: [],
+    checks: r.checks.filter((c) => !c.admin && c.fields.length > 0 && c.fields.every((f) => f === "bankPos")),
+  };
 }
