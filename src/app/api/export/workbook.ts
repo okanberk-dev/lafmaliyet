@@ -915,7 +915,9 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
         ? "Sayım + alım tamam"
         : row.stock === "needsPurchase"
           ? "Alım girilmeli (alınmadıysa 0 yazın)"
-          : "Sayım eksik (iki ay sayılmalı)";
+          : row.stock === "held"
+            ? `Fiyat onayı bekliyor (${row.held?.invoices ?? 0} fatura alınana girmedi)`
+            : "Sayım eksik (iki ay sayılmalı)";
     const unreciped = !row.inRecipe && (row.stockDrop ?? 0) > 0 ? " · Reçetesiz tüketim" : "";
     const r = ws.addRow({
       a: row.ingredient.name,
@@ -942,6 +944,7 @@ function addConsistency(wb: ExcelJS.Workbook, model: Model, month: string, findi
   setFmt(tot, ["f", "k"], MONEY0);
   if (c.rows.length) ws.autoFilter = { from: { row: firstRow - 1, column: 1 }, to: { row: firstRow - 1, column: 13 } };
   if (c.needsPurchaseCount) ws.addRow({ a: `${c.needsPurchaseCount} malzemenin iki ayı sayıldı ama alım miktarı girilmedi; sapma hesaplanmadı.` });
+  if (c.heldCount) ws.addRow({ a: `${c.heldCount} malzemenin bu ayki faturasının çarpanı onay bekliyor; o faturalar alınana girmedi, sapma onaydan sonra.` });
   if (c.unreciped.count) ws.addRow({ a: `Reçetesiz tüketim: ${c.unreciped.count} malzeme hiçbir reçetede yok ama stoktan düştü (en az ${tl(c.unreciped.amount)}).` });
 
   // 3) Bulgular (Excel 3–5. bölümler: reçetede olmayan alımlar, fiyat ve fatura kontrolü)

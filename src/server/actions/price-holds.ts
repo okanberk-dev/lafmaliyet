@@ -11,6 +11,7 @@ import { bulkPrice } from "@/lib/supplier-prices";
 import { requireAdmin } from "@/server/auth/dal";
 import { newerPriceInvoice, supersedeHolds } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
+import { recomputePurchaseQuantities } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zOptText } from "./util";
@@ -22,6 +23,19 @@ const h = s.ingredientPriceHolds;
 const UNDO_DAYS = 30;
 const NOT_PENDING = "Bu fiyat önerisi artık geçerli değil; sayfayı yenileyin.";
 const NEW_PENDING = "Bu hammadde için yeni bir fiyat önerisi var; önce onu karara bağlayın.";
+
+/**
+ * Karardan sonra alınan miktar yeniden hesaplanır: bekleyen fiyatın bağlantısının faturaları alınan miktara ve stok
+ * partilerine girmez (onaylanınca girer, reddedilince yalnız o fatura dışarıda kalır, geri alınınca yine dışarıda;
+ * src/server/data/purchase-lots-query.ts suspectFactorLine). Hatası kararı bozmaz: sonraki eşitleme yeniden hesaplar
+ */
+async function recountPurchases() {
+  try {
+    await recomputePurchaseQuantities();
+  } catch (err) {
+    console.error("[fiyat onayı] alınan miktar yeniden hesaplanamadı", err);
+  }
+}
 
 /** "Sütaş KLA12 21.10.2026" (işlem geçmişi) */
 const sourceText = (x: { supplier: string; invoiceNo: string | null; invoiceDate: string }) => `${x.supplier}${x.invoiceNo ? ` ${x.invoiceNo}` : ""} ${dateTR(x.invoiceDate)}`;
@@ -101,6 +115,7 @@ export async function approvePriceHold(id: number) {
         .where(eq(h.id, cur.id));
       return { hold: cur, name: ing.name, unit: ing.unit, before: unitOf(ing.packagePrice, ing.packageSize), after: unitOf(cur.packagePrice, cur.packageSize), wasEstimate: ing.isEstimate };
     });
+    await recountPurchases();
     await logActivity(
       me,
       "Fiyat onaylandı",
@@ -145,6 +160,7 @@ export async function rejectPriceHold(input: z.input<typeof rejectSchema>) {
         .where(eq(h.id, cur.id));
       return { hold: cur, name: ing?.name ?? cur.productName, unit: ing?.unit ?? "adet", stopped: stopped.length > 0 };
     });
+    await recountPurchases();
     await logActivity(
       me,
       "Fiyat reddedildi",
@@ -215,6 +231,7 @@ export async function undoPriceHold(id: number) {
         throw isUniqueViolation(e) ? new UserError(NEW_PENDING) : e;
       });
     const { hold, name, unit, reopened } = done;
+    await recountPurchases();
     await logActivity(
       me,
       "Fiyat kararı geri alındı",

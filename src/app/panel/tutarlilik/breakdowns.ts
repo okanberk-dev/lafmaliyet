@@ -97,6 +97,7 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
     href: href(r),
   });
   const needs = c.rows.filter((r) => r.stock === "needsPurchase").sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name, "tr"));
+  const held = c.rows.filter((r) => r.stock === "held").sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name, "tr"));
   // insights.consistency'deki "reçetesiz tüketim" ile aynı süzgeç ve tutar (kartın alt satırı)
   const unreciped = c.rows.filter((r) => !r.inRecipe && r.stockDrop !== null && r.stockDrop + (r.purchased ?? 0) > 0);
   const variance: BreakdownGroup[] = [
@@ -110,7 +111,7 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
     {
       key: "eksik",
       label: "Alım girilmeli",
-      note: "İki ayı sayılmış ama bu ayın alım miktarı girilmemiş; sapması hesaplanamaz. Alınmadıysa 0 yazın.",
+      note: "İki ayı sayılmış ama bu ayın alım miktarı girilmemiş; sapması hesaplanamaz. Bu ay alınmadıysa tabloda “Alım yok (0)”.",
       apart: true,
       display: `${num(needs.length)} malzeme`,
       rows: needs.map((r) => ({
@@ -119,6 +120,22 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
         sub: `Sayım ${amountOf(r.opening ?? 0, unitOf(r))} → ${amountOf(r.closing ?? 0, unitOf(r))}`,
         amount: 0,
         display: "Alım yok",
+        tone: "warn" as const,
+        href: href(r),
+      })),
+    },
+    {
+      key: "onay",
+      label: "Fiyat onayı bekliyor",
+      note: "Bu ayın bir faturasının çarpanı onay bekliyor: o fatura alınan miktara girmedi, sapması fiyat onayı karara bağlanınca hesaplanır (Hammaddeler › Onay bekleyen fiyatlar).",
+      apart: true,
+      display: `${num(held.length)} malzeme`,
+      rows: held.map((r) => ({
+        key: `onay:${r.ingredient.id}`,
+        label: r.ingredient.name,
+        sub: `${num(r.held?.invoices ?? 0)} fatura alınana girmedi · sayım ${amountOf(r.opening ?? 0, unitOf(r))} → ${amountOf(r.closing ?? 0, unitOf(r))}`,
+        amount: 0,
+        display: "Onayda",
         tone: "warn" as const,
         href: href(r),
       })),

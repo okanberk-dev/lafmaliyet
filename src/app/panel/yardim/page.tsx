@@ -93,7 +93,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
         Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
         personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler (paket fiyatını biliyorsa yazar, yoksa yönetici girer). &quot;Geçen aydan doldur&quot; ek
         kalemleri de taşır. Ayın ilk 10 gününde ekran, geçen ayın sayımı tamamlanmamışsa (yarım sayım da) geçen ayı açar; açılan ay adreste
-        durur. Personel geçen ayın sayımını ayın 10&apos;una kadar düzeltebilir, sonrasında yalnız siz. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
+        durur. Personel geçen ayın sayımını ayın 10&apos;una kadar düzeltebilir, sonrasında yalnız siz. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: Paraşüt faturaları kendiliğinden yazar, hiç alınmadıysa &quot;Alım yok (0)&quot;a dokunun (faturası olmayan bağlı malzemelere tek seferde de yazılır). Çarpanı onay bekleyen fatura alınana girmez, malzeme &quot;Fiyat onayı bekliyor&quot; olur.
       </>
     ),
     href: "/panel/sayim",

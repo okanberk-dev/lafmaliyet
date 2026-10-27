@@ -12,8 +12,9 @@ export const RATIO_BAD = 1.5;
 
 export type Severity = "big" | "diff" | "ok" | "none";
 
-export function severityOf(r: { usage: number; purchased: number | null; ratio: number | null }): Severity {
-  if (r.purchased === null) return "none";
+export function severityOf(r: { usage: number; purchased: number | null; ratio: number | null; held?: unknown }): Severity {
+  // Çarpanı onay bekleyen faturası olan malzemede alınan eksik: derece verilmez (onaydan sonra)
+  if (r.purchased === null || r.held) return "none";
   if (r.ratio === null) return r.purchased > 0 && !r.usage ? "big" : "ok";
   if (r.ratio > RATIO_BAD) return "big";
   if (r.ratio >= RATIO_WARN) return "diff";
@@ -38,23 +39,25 @@ export const RATIO_GUIDE = {
 };
 
 /** Tablo satırının stok karşılaştırması (insights.consistency ile aynı adlar) */
-export type StockCheck = "complete" | "needsPurchase" | "noCount";
+export type StockCheck = "complete" | "needsPurchase" | "held" | "noCount";
 
 export interface ScopeRow {
   purchased: number | null;
   stock: StockCheck;
   varianceAmount: number | null;
   diffAmount: number | null;
+  /** Bu ayın çarpanı onay bekleyen faturaları (alınana girmedi) */
+  held?: { invoices: number } | null;
 }
 
 /**
- * Tablonun varsayılan kapsamı: alımı girilen ya da iki ayı sayılan malzemeler (karşılaştırılacak bir şeyi olanlar).
- * Hiçbiri yoksa bütün satırlar. `hidden` = yalnızca reçete kullanımı olan, "Alımı girilmeyenler" ile açılan satırlar.
- * Sapma toplamı yalnızca stok karşılaştırması tamam olan satırlardan gelir; bu yüzden varsayılan alt toplam
- * sayfadaki "Sayım sapması" ile aynıdır.
+ * Tablonun varsayılan kapsamı: alımı girilen, iki ayı sayılan ya da çarpanı onay bekleyen faturası olan malzemeler
+ * (karşılaştırılacak ya da bakılacak bir şeyi olanlar). Hiçbiri yoksa bütün satırlar. `hidden` = yalnızca reçete
+ * kullanımı olan, "Alımı girilmeyenler" ile açılan satırlar. Sapma toplamı yalnızca stok karşılaştırması tamam olan
+ * satırlardan gelir; bu yüzden varsayılan alt toplam sayfadaki "Sayım sapması" ile aynıdır.
  */
 export function tableScope<T extends ScopeRow>(rows: T[], showAll: boolean): { scope: T[]; focus: T[]; hidden: number } {
-  const focus = rows.filter((r) => r.purchased !== null || r.stock !== "noCount");
+  const focus = rows.filter((r) => r.purchased !== null || r.stock !== "noCount" || Boolean(r.held));
   const scope = showAll || !focus.length ? rows : focus;
   return { scope, focus, hidden: rows.length - focus.length };
 }

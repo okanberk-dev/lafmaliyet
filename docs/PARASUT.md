@@ -222,9 +222,11 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
 
 - Paraşüt ürününü (ya da açıklamasını) bir hammaddeye bağlayın ve **çarpanı** yazın: Paraşüt'teki 1 birim kaç
   hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`).
-- O kalemden gelen miktar × çarpan, ayın **alınan miktarı** olur (Tutarlılık ekranı); iade faturaları düşülür. Elle
-  girilmiş alınan miktar satırlarına dokunulmaz; yalnızca notu tam olarak "Paraşüt faturalarından" olanlar yönetilir.
-  Tutarlılık'ta böyle bir satır elle düzeltilirse notu silinir ve artık eşitlemeye ait olmaz.
+- O kalemden gelen miktar × çarpan, ayın **alınan miktarı** olur (Tutarlılık ekranı); iade faturaları düşülür (ayın
+  toplamı 0 ise 0 yazılır). Çarpanı onay bekleyen kalem sayılmaz (5b). Elle girilmiş alınan miktar satırlarına
+  dokunulmaz; yalnızca notu tam olarak "Paraşüt faturalarından" olanlar yönetilir. Tutarlılık'ta böyle bir satır elle
+  düzeltilirse notu silinir ve artık eşitlemeye ait olmaz. Tutarlılık'ın **Alım yok (0)** düğmesinin satırı ("Bu ay alım
+  yok") elle girilmiş sayılmaz: o ayın faturası sonradan gelirse yerini faturadaki miktar alır.
 - "Fiyatı güncelle" açıksa, en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç) hammaddenin paket fiyatı
   olur, paket boyu çarpan olur ve fiyat geçmişine "Paraşüt" olarak yazılır (değişim %0,5'ten küçükse yazılmaz).
   Şimdiki birim fiyattan %40'tan fazla farklı fiyat uygulanmaz, onaya düşer (5b). Bedava gelen kalem (%100 iskonto)
@@ -355,7 +357,10 @@ keser; ilk kez bağlanan ürünün eski faturaları da sayılır). Onaylanan fiy
 edilen elle girilmiş kaydın kalemleri silinince bekleyen öneri geçersiz olur; değişiklik geri dönünce ("Fiyatı güncelle"
 yeniden açılır, aynı çarpanla yeniden bağlanır, fatura kafeye döner) aynı fatura yeniden değerlendirilir, daha eskileri
 değerlendirilmez. Fatura silinince öneri de silinir; fiyat yeniden önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
-Alınan miktar (Tutarlılık) bekletilmez: çarpanla hesaplanmaya devam eder (çarpan yanlışsa o da yanlıştır).
+Alınan miktar (Tutarlılık) da bekler (denetim 26 Eki, E-27): çarpanı onay bekleyen bağlantının faturaları stok
+partilerine girmediği gibi alınan miktara da girmez (ortak yüklem `suspectFactorLine`); reddedilen fiyatın yalnız kendi
+faturası dışarıda kalır. Tutarlılık o malzemeyi "Fiyat onayı bekliyor" diye işaretler, sapmasını onaydan sonra hesaplar.
+Onay, red ve geri alma alınan miktarı hemen yeniden hesaplar (`recomputePurchaseQuantities`).
 
 **Veri:** `ingredient_price_holds`: hammadde başına en çok bir bekleyen öneri (kısmi tekil dizin), fatura anındaki
 kalemin kopyası (kalemler her eşitlemede yeniden yazılır), karar, red notu ve geri alma için değiştirilen fiyat.

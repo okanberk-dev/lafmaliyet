@@ -1033,10 +1033,12 @@ export function alerts(model: Model, month: string): Alert[] {
 /**
  * Stok karşılaştırmasının durumu:
  * - "complete": iki sayım ve bu ayın alım miktarı var; gerçek tüketim ve sapma hesaplandı
- * - "needsPurchase": iki sayım var ama alım miktarı girilmemiş (alınmadıysa 0 girilmeli); sapma hesaplanmaz
+ * - "needsPurchase": iki sayım var ama alım miktarı girilmemiş (alınmadıysa 0: "Alım yok (0)"); sapma hesaplanmaz
+ * - "held": iki sayım var ama bu ayın bir faturasının çarpanı onay bekliyor; o fatura alınan miktara girmedi, sapma
+ *   fiyat onayı karara bağlanınca hesaplanır (denetim 26 Eki, E-27)
  * - "noCount": önceki ya da bu ayın sayımı eksik
  */
-export type StockCheck = "complete" | "needsPurchase" | "noCount";
+export type StockCheck = "complete" | "needsPurchase" | "held" | "noCount";
 
 export interface ConsistencyRow {
   ingredient: Ingredient;
@@ -1048,6 +1050,11 @@ export interface ConsistencyRow {
   /** laffogato.net online kafe siparişlerinden gelen kısmı (menü bağlantısıyla eşlenen satırlar) */
   onlineUsage: number;
   purchased: number | null;
+  /**
+   * Bu ayın çarpanı onay bekleyen faturaları (alınan miktara girmedi); yoksa null. Varken alınan eksiktir: oran, fark
+   * ve sapma hesaplanmaz
+   */
+  held: { invoices: number } | null;
   ratio: number | null;
   diffAmount: number | null;
   opening: number | null;
@@ -1090,13 +1097,15 @@ export function consistency(model: Model, month: string) {
   const purchases = new Map(
     model.ds.purchaseQuantities.filter((p) => p.month === month).map((p) => [p.ingredientId, p]),
   );
+  // Çarpanı onay bekleyen alışlar alınan miktara girmedi (eşitleme stok partileriyle aynı yüklemle dışlar)
+  const heldBy = new Map((model.ds.heldPurchases ?? []).filter((h) => h.month === month && h.invoices > 0).map((h) => [h.ingredientId, { invoices: h.invoices }]));
   const prevMonth = shiftMonth(month, -1);
   const countedIn = (m: string) => new Set(model.ds.stockCounts.filter((c) => c.month === m).map((c) => c.ingredientId));
   const prevCounted = countedIn(prevMonth);
   // İki ay da sayılan hammaddeler de listelenir: reçetesi olmayan ama stoktan düşen mal görünür olsun
   const countedBoth = [...countedIn(month)].filter((id) => prevCounted.has(id));
 
-  const ids = new Set<number>([...usage.keys(), ...online.keys(), ...purchases.keys(), ...countedBoth, ...recorded.keys()]);
+  const ids = new Set<number>([...usage.keys(), ...online.keys(), ...purchases.keys(), ...countedBoth, ...recorded.keys(), ...heldBy.keys()]);
   const rows: ConsistencyRow[] = [];
   for (const id of ids) {
     const ingredient = model.ingById.get(id);
@@ -1108,11 +1117,14 @@ export function consistency(model: Model, month: string) {
     const u = posU + onlineU;
     const p = purchases.get(id);
     const purchased = p ? p.qty : null;
+    const held = heldBy.get(id) ?? null;
     // Sayım biriminden malzemenin kendi birimine (sayıldığı andaki çarpanla: KG/LT = 1000)
     const opening = model.countInBaseUnit(prevMonth, id);
     const closing = model.countInBaseUnit(month, id);
     const counted = opening !== null && closing !== null;
-    const stock: StockCheck = !counted ? "noCount" : purchased === null ? "needsPurchase" : "complete";
+    const stock: StockCheck = !counted ? "noCount" : held ? "held" : purchased === null ? "needsPurchase" : "complete";
+    // Çarpanı onay bekleyen fatura alınana girmedi: alınan eksik, oran ve fark yanıltır
+    const known = held ? null : purchased;
     // Alım girilmeden "gerçek tüketim" hesaplanmaz: eksik alım 0 sayılırsa sapma yanlış (hatta eksi) çıkar
     const actualUsage = stock === "complete" ? opening! + purchased! - closing! : null;
     const variance = actualUsage !== null ? actualUsage - u : null;
@@ -1125,8 +1137,9 @@ export function consistency(model: Model, month: string) {
       posUsage: posU,
       onlineUsage: onlineU,
       purchased,
-      ratio: purchased !== null && u ? purchased / u : null,
-      diffAmount: purchased !== null ? (purchased - u) * unitCost : null,
+      held,
+      ratio: known !== null && u ? known / u : null,
+      diffAmount: known !== null ? (known - u) * unitCost : null,
       opening,
       closing,
       actualUsage,
@@ -1182,6 +1195,8 @@ export function consistency(model: Model, month: string) {
     hasCounts: rows.some((r) => r.stock !== "noCount"),
     /** İki ayı sayılmış ama alım miktarı girilmemiş satır sayısı ("alım girilmeli") */
     needsPurchaseCount: rows.filter((r) => r.stock === "needsPurchase").length,
+    /** Bu ay çarpanı onay bekleyen faturası olan malzeme sayısı (alınan eksik; sapma onaydan sonra) */
+    heldCount: rows.filter((r) => r.held).length,
     /** Hiçbir reçetede olmayıp stoktan düşen hammaddeler: en az (devir − devreden + alınan) × birim maliyet */
     unreciped: {
       count: unreciped.length,

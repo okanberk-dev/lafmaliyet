@@ -299,6 +299,51 @@ test("Tutarlılık tablosu: varsayılan kapsam alımı girilen + iki ayı sayıl
   close(scopeTotals(tableScope(withZero.rows, false).scope).variance, withZero.totalVariance, "0 alımdan sonra da aynı");
 });
 
+test("Tutarlılık (E-27): faturası olmayan bağlı malzemeye 0 yazılınca sapma tam; çarpanı onay bekleyen fatura sapmayı bekletir", () => {
+  const cup = ingId("Plastik bardak 12oz");
+  const coffee = ingId("Espresso çekirdeği");
+  const counts = [
+    { month: "2026-08", ingredientId: cup, qty: 1500, factor: 1 },
+    { month: "2026-09", ingredientId: cup, qty: 500, factor: 1 },
+    { month: "2026-08", ingredientId: coffee, qty: 10, factor: 1000 },
+    { month: "2026-09", ingredientId: coffee, qty: 12.5, factor: 1000 },
+  ];
+  const base = { ...ds, stockCounts: counts, purchaseQuantities: ds.purchaseQuantities.filter((p) => p.ingredientId !== cup || p.month !== "2026-09") };
+  // Faturası yok: "Alım girilmeli"; "Alım yok (0)" satırıyla tamam ve sapma tam (devir − devreden − reçeteye göre)
+  const before = consistency(createModel(base), "2026-09").rows.find((r) => r.ingredient.id === cup)!;
+  assert.equal(before.stock, "needsPurchase");
+  assert.equal(before.held, null);
+  const zero = consistency(createModel({ ...base, purchaseQuantities: [...base.purchaseQuantities, { month: "2026-09", ingredientId: cup, qty: 0, note: "Bu ay alım yok" }] }), "2026-09");
+  const z = zero.rows.find((r) => r.ingredient.id === cup)!;
+  assert.deepEqual([z.stock, z.purchased], ["complete", 0]);
+  close(z.actualUsage, 1500 - 500, "0 alımla gerçek tüketim");
+  close(z.variance, 1000 - z.usage, "sapma tam");
+  assert.ok(zero.rows.filter((r) => r.stock === "complete").some((r) => r.ingredient.id === cup));
+  assert.equal(zero.heldCount, 0);
+
+  // Kahvenin Eylül faturasının çarpanı onay bekliyor: o fatura alınana girmedi (eşitleme dışladı), alınan eksik.
+  // Satır "held": oran, fark ve sapma yok, toplamlara girmez; derece verilmez; varsayılan kapsamda görünür
+  const heldDs = { ...base, heldPurchases: [{ month: "2026-09", ingredientId: coffee, invoices: 1 }, { month: "2026-08", ingredientId: cup, invoices: 2 }] };
+  const h = consistency(createModel(heldDs), "2026-09");
+  const k = h.rows.find((r) => r.ingredient.id === coffee)!;
+  assert.deepEqual([k.stock, k.held, k.ratio, k.diffAmount, k.actualUsage, k.variance, k.varianceAmount], ["held", { invoices: 1 }, null, null, null, null, null]);
+  assert.equal(severityOf(k), "none");
+  assert.equal(h.heldCount, 1, "yalnız bu ayın onay bekleyeni");
+  assert.ok(tableScope(h.rows, false).scope.includes(k));
+  const plain = consistency(createModel(base), "2026-09");
+  const kPlain = plain.rows.find((r) => r.ingredient.id === coffee)!;
+  close(h.totalVariance, plain.totalVariance - (kPlain.varianceAmount ?? 0), "sapma toplamı onay bekleyeni saymaz");
+  close(h.totalDiff, plain.totalDiff - (kPlain.diffAmount ?? 0), "fark toplamı onay bekleyeni saymaz");
+  // Alımı hiç olmayan ama faturası onay bekleyen malzeme de listelenir (alım girilmeli değil, onay bekliyor)
+  const other = ds.ingredients.find(
+    (i) => i.active && i.priceSource === "manual" && !counts.some((c) => c.ingredientId === i.id) && !base.purchaseQuantities.some((p) => p.ingredientId === i.id && p.month === "2026-09"),
+  )!;
+  assert.ok(other, "alımı olmayan malzeme");
+  const onlyHeld = consistency(createModel({ ...heldDs, heldPurchases: [{ month: "2026-09", ingredientId: other.id, invoices: 1 }] }), "2026-09").rows.find((r) => r.ingredient.id === other.id)!;
+  assert.deepEqual([onlyHeld.stock, onlyHeld.purchased, onlyHeld.held], ["noCount", null, { invoices: 1 }]);
+  assert.ok(tableScope([onlyHeld], false).focus.length === 1, "varsayılan kapsamda");
+});
+
 test("Tutarlılık rehberi: Excel E14 notundaki iki cümle", () => {
   assert.match(RATIO_GUIDE.below1, /1×'in altı/);
   assert.match(RATIO_GUIDE.fastMovers, /espresso, süt, dondurma, tatlılar, şişe su/);
