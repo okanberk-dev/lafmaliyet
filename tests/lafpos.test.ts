@@ -446,7 +446,7 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   assert.match(page, /showForm \? loadKasaLafpos\(date\)\.catch\(\(\) => NO_LAFPOS\) : Promise\.resolve\(NO_LAFPOS\)/);
   assert.match(page, /const NO_LAFPOS = \{ lafpos: false, day: null \} as const;/);
   assert.doesNotMatch(page, /\bloadLafposDay\(/);
-  assert.match(page, /lafpos=\{lafposState\.day\}/);
+  assert.match(page, /lafpos=\{admin \? lafposState\.day : lafposForStaff\(lafposState\.day\)\}/);
   assert.match(page, /lafposMode=\{lafposState\.lafpos\}/);
 });
 
