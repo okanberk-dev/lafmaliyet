@@ -11,6 +11,9 @@ import {
   type CashRevisionData,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import { readLafposSwitchDay } from "@/lib/constants";
+import { posZSchema } from "@/lib/lafpos/day";
+import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { getDb, schema as s } from "@/server/db";
 
@@ -252,20 +255,50 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Bütün raporların ay bilgisine giden altı sütunu (src/lib/cash-month.ts tillMonths): günde bir rapor, yılda ~365 satır.
- * İşlem içinden de okunur (sabit gider sürümünün dokunmayacağı aylar).
+ * Geçiş gününden sonra kasa raporu girilmemiş LafPOS günü LafPOS'un Z'sinden yedek satırla gelir (`source: "lafpos"`,
+ * G6; docs/LAFPOS.md › Kasa raporu): rakamı aya girer, gün yine "rapor yok" sayılır; raporu olan günde rapor kazanır.
+ * Geçiş günü boşken yalnız kasa raporları (bugünkü gibi). Ay bilgisini okuyan her yer (veri kümesi, sabit gider sürümü,
+ * Kasa'nın ay satırı) bu yükleyiciden geçer: rakam her ekranda aynı. İşlem içinden de okunur.
  */
 export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
-  return db
-    .select({
-      date: s.cashReports.date,
-      zTotal: s.cashReports.zTotal,
-      card: s.cashReports.card,
-      mealCard: s.cashReports.mealCard,
-      discounts: s.cashReports.discounts,
-      offRevenue: s.cashReports.offRevenue,
-    })
-    .from(s.cashReports)
-    .orderBy(asc(s.cashReports.date));
+  const [reports, lafpos] = await Promise.all([
+    db
+      .select({
+        date: s.cashReports.date,
+        zTotal: s.cashReports.zTotal,
+        card: s.cashReports.card,
+        mealCard: s.cashReports.mealCard,
+        discounts: s.cashReports.discounts,
+        offRevenue: s.cashReports.offRevenue,
+      })
+      .from(s.cashReports)
+      .orderBy(asc(s.cashReports.date)),
+    lafposTillRows(db),
+  ]);
+  if (!lafpos.length) return reports;
+  const have = new Set(reports.map((r) => r.date));
+  return [...reports, ...lafpos.filter((r) => !have.has(r.date))].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * LafPOS'un yedek ay satırları (G6): geçiş gününden itibaren gelen gün sonlarının Z'si, [from, to] içinde. Geçiş günü
+ * boşken boş (deneme günleri hiçbir hesaba girmez). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır
+ */
+export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
+  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  const switchDay = readLafposSwitchDay(setting?.value);
+  if (switchDay === null || (to !== undefined && to < switchDay)) return [];
+  const start = from !== undefined && from > switchDay ? from : switchDay;
+  const rows = await db
+    .select({ date: s.posDayReports.date, z: s.posDayReports.z })
+    .from(s.posDayReports)
+    .where(and(gte(s.posDayReports.date, start), to !== undefined ? lte(s.posDayReports.date, to) : undefined))
+    .orderBy(asc(s.posDayReports.date));
+  return rows.flatMap((r) => {
+    const z = posZSchema.safeParse(r.z);
+    if (!z.success) return [];
+    return [{ date: r.date, zTotal: z.data.zTotal, card: z.data.card, mealCard: z.data.mealCard, discounts: z.data.discounts, offRevenue: z.data.offRevenue, source: "lafpos" as const }];
+  });
 }
 
 /** Raporun kayıtlı önceki sürümü (ekranda ve zilde düzeltme geçmişi) */

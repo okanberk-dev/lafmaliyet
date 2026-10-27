@@ -8,6 +8,7 @@ import { DELETED_REPORT_DAYS, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
+import { kasaEvidence } from "@/server/data/lafpos-day";
 import { createOrUpdateRequest, decide, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
@@ -43,7 +44,7 @@ export interface LateInput {
  * pencere (staffLateDay), teslim ≤ sayılan ve teslim alan, günün kilidi altında: o gün rapor yok, ilk rapordan sonra,
  * kapalı işaretli değil, aynı gün için iki kapanmış istek yok, ekranda görülen sürüm, zincirin önceki halkasına göre
  * açılış notu; fotoğraflar kişinin kendisinin, Z ya da POS, bağlanmamış, başka bir istekte değil (önceki isteğinin
- * tuttukları serbest), en az bir Z, en çok 6. Tutulanlar beklerken silinmez; düşürülenler 7 gün sonra silinir.
+ * tuttukları serbest), en çok 6; kanıt günün kasasına göre (kasaEvidence: ModPOS Z, LafPOS gün sonu ya da yazarkasa Z). Tutulanlar beklerken silinmez; düşürülenler 7 gün sonra silinir.
  */
 export async function proposeLateReport(db: DB, me: CashActor, input: LateInput, now = new Date()): Promise<{ row: StaffRequestRow; created: boolean; cashDiff: number }> {
   if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
@@ -54,7 +55,6 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
   if (fields.handedOver > fields.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   if (fields.handedOver > 0 && !input.handedTo) throw new UserError(CASH_REQUEST_TEXT.lateHandedTo);
   const ids = [...new Set(input.photoIds)];
-  if (!ids.length) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
   if (ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
   return db.transaction(async (tx) => {
     await lockLateDay(tx, date);
@@ -103,7 +103,11 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
       if (!ok) throw new UserError(CASH_REQUEST_TEXT.latePhoto);
       photos.push({ id, kind: p.kind as "kasa-z" | "kasa-pos" | "kasa-okc" });
     }
-    if (!photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
+    // Kanıt (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu
+    // (geldiyse fotoğraf gerekmez), gelmediyse yazarkasa (Banka POS) Z'sinin fotoğrafı
+    const evidence = await kasaEvidence(tx, date);
+    if (evidence === "modpos-z" && !photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
+    if (evidence === "okc-z" && !photos.some((p) => p.kind === "kasa-okc")) throw new UserError(CASH_REQUEST_TEXT.lateOkcPhoto);
     if (photos.filter((p) => p.kind === "kasa-okc").length > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
     // Teslim alan: etkin bir kullanıcı (adı sunucudan) ya da banka
     let handedTo: LatePayloadT["handedTo"] = null;

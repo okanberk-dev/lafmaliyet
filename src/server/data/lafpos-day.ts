@@ -2,9 +2,11 @@ import "server-only";
 
 import { and, eq, gte, lte } from "drizzle-orm";
 
+import type { KasaEvidence } from "@/lib/cash-out-requests";
+import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
@@ -25,6 +27,21 @@ export async function loadKasaLafposDay(date: string, db: DB = getDb()): Promise
 export async function loadKasaLafpos(date: string, db: DB = getDb()): Promise<{ lafpos: boolean; day: LafposDay | null }> {
   if (!isLafposDay(date, await loadLafposSwitchDay(db))) return { lafpos: false, day: null };
   return { lafpos: true, day: await loadLafposDay(date, db) };
+}
+
+/** Okuyucu: veritabanı ya da işlem (yalnız select) */
+type Reader = Pick<DB, "select">;
+
+/**
+ * Günün kasa kanıtı (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde (geçiş günü boş ya da gün ondan önce) ModPOS Z
+ * fotoğrafı ("modpos-z"); LafPOS gününde o günün LafPOS gün sonu geldiyse o ("lafpos": fotoğraf gerekmez), gelmediyse
+ * yazarkasa (Banka POS) Z fotoğrafı ("okc-z"). Geç rapor ve fotoğraf kaldırma aynı kurala bakar; işlem içinden de
+ */
+export async function kasaEvidence(db: Reader, date: string): Promise<KasaEvidence> {
+  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return "modpos-z";
+  const [day] = await db.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.date, date)).limit(1);
+  return day ? "lafpos" : "okc-z";
 }
 
 /**

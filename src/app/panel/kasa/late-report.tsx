@@ -10,6 +10,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { diffKind, diffText, stampTR } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import type { LafposDay } from "@/lib/lafpos/prefill";
 import type { ReadingState } from "@/lib/photo-rules";
 import { shortDayTR } from "@/lib/cash-requests";
 import { dayLocativeTR, longDateTR, todayTR } from "@/lib/reminders";
@@ -39,6 +40,8 @@ export function LateReport({
   counters,
   photoUi,
   prevOkcZ = null,
+  lafpos = null,
+  lafposMode = false,
 }: {
   date: string;
   own: OwnLate | null;
@@ -50,6 +53,10 @@ export function LateReport({
   photoUi: { storage: boolean; reading: ReadingState; admin: boolean; me: string };
   /** Önceki yazarkasa Z'si (yalnız gün ve numara; formun Z no denetimi) */
   prevOkcZ?: { date: string; zNo: string } | null;
+  /** LafPOS'un bu günün sonu (yalnız geçiş gününden sonra): form ondan dolar, fotoğraf gerekmez */
+  lafpos?: LafposDay | null;
+  /** Günün kasası LafPOS (gün sonu gelmediyse yazarkasa Z fotoğrafı istenir) */
+  lafposMode?: boolean;
 }) {
   const pendingOwn = own?.status === "pending" ? own : null;
   const [editing, setEditing] = useState(!pendingOwn);
@@ -72,7 +79,8 @@ export function LateReport({
     </p>
   ) : null;
 
-  if (!photoUi.storage) {
+  // Fotoğraf deposu yoksa geç rapor kanıtsız kalır; LafPOS'un gün sonu geldiyse kanıt odur (G8)
+  if (!photoUi.storage && !lafpos) {
     return (
       <Card>
         <CardHeader icon={<CalendarClock />} title={`${day} kasa raporu`} description="Geç rapor" />
@@ -177,6 +185,8 @@ export function LateReport({
         onCancel={pendingOwn ? () => setEditing(false) : undefined}
         onSent={() => setEditing(false)}
         prevOkcZ={prevOkcZ}
+        lafpos={lafpos}
+        lafposMode={lafposMode}
       />
     </div>
   );

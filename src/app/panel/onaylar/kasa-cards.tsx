@@ -14,6 +14,7 @@ import { Checkbox, Field, Textarea } from "@/components/ui/form";
 import { carryDiffText, changeLine, computeCash, diffText, stampTR, zNoOrder, type CashReportFields } from "@/lib/cash-report";
 import { olderFirstText } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
+import type { LafposDay } from "@/lib/lafpos/prefill";
 import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
-import { CashBreakdown } from "../kasa/cash-summary";
+import { CashBreakdown, LafposDiffList } from "../kasa/cash-summary";
 import { ClosedDayItem } from "./kasa-closed-cards";
 import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
 
@@ -190,6 +191,9 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
             </li>
           ) : null}
           {card.receipts?.unreceipted ? <li className="font-medium text-bad">Fişsiz çıkış: {money(card.receipts.unreceipted)}</li> : null}
+          {card.receipts?.lafposHanded ? (
+            <li className="text-ink-soft">Fişlerden fazlası LafPOS&apos;taki teslim ({money(card.receipts.lafposHanded)}): fişsiz değil, teslim Kasadan çıkanlar&apos;a girilmemiş.</li>
+          ) : null}
           {card.monthPassed ? (
             <li className="flex items-start gap-1.5 text-warn">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -272,6 +276,20 @@ function DeleteItem({ card }: { card: DeleteCard }) {
   );
 }
 
+/** "LafPOS gün sonu · Z 14 · 63 fiş · 12.400 ₺ · nakit 3.100 ₺ · sayılan 3.050 ₺" (yönetici kartı) */
+function lafposZLine(day: LafposDay): string {
+  const v = day.prefill.values;
+  const n = (k: keyof typeof v) => (v[k] ? Number(v[k]!.value) : null);
+  const parts = [
+    v.zNo ? `Z ${v.zNo.value}` : null,
+    n("receipts") !== null ? `${n("receipts")} fiş` : null,
+    n("zTotal") !== null ? money(n("zTotal")!) : null,
+    n("cash") !== null ? `nakit ${money(n("cash")!)}` : null,
+    n("countedCash") !== null ? `sayılan ${money(n("countedCash")!)}` : "sayım yok",
+  ].filter(Boolean);
+  return `LafPOS gün sonu · ${parts.join(" · ")}`;
+}
+
 /** Zincirin bir halkasının adı: "13 Ekim" ya da "13 Ekim (onay bekliyor)" */
 const linkName = (l: { date: string; kind: "rapor" | "bekleyen" }) => `${dayMonthTR(l.date)}${l.kind === "bekleyen" ? " (onay bekliyor)" : ""}`;
 
@@ -315,6 +333,13 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
         {card.message ? <p className="text-sm break-words text-ink-soft">Neden geç: {card.message}</p> : null}
       </div>
       {card.photos.length ? <SavedPhotos photos={card.photos} diffs={card.diffs} admin={false} /> : null}
+      {/* LafPOS gününde kanıt LafPOS'un gün sonu (G8); personelin ondan farklı yazdıkları (E-09) */}
+      {card.lafpos.day ? (
+        <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info tabular">{lafposZLine(card.lafpos.day)}</p>
+      ) : card.lafpos.lafpos ? (
+        <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">LafPOS&apos;un bu günün sonu gelmedi: rakamları yazarkasa Z fotoğrafından kontrol edin.</p>
+      ) : null}
+      <LafposDiffList diffs={card.lafpos.diffs} />
       {card.unread ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin.</p> : null}
       <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{z.text}</p>
       {/* Yazarkasa Z'si iki komşusuyla: Z no sırası ve kümülatif zinciri (docs/planlar/okc-z.md §3.8) */}
@@ -339,7 +364,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           {next ? `${linkName(next)} açılışı ${money(next.openingCash)} · bu raporun devri ${money(carry)}: ${nextCheck ? carryDiffText(nextCheck) : "tutuyor"}` : "Sonraki rapor yok"}
         </li>
         <li className="text-ink-soft">{card.monthLine}</li>
-        {card.outs.warning ? <li className="font-medium text-bad">{card.outs.warning}</li> : null}
+        {card.outs.warning ? <li className={card.outs.lafposHanded !== null ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
         <li className="flex items-start gap-1.5 text-ink-mute">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir.</span>
@@ -369,6 +394,8 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           mode="review"
           initial={f}
           prevOkcZ={card.okcPrevZ}
+          lafpos={card.lafpos.day}
+          lafposMode={card.lafpos.lafpos}
           reviewPending={pending}
           onCancel={() => {
             setCorrecting(false);

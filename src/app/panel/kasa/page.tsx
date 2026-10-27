@@ -54,6 +54,7 @@ import {
   firstCashReportDate,
   firstOkcReportDate,
   getCashReport,
+  lafposTillRows,
   loadCashSettings,
   loadMonthEntry,
   nextReportAfter,
@@ -374,7 +375,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore, lafposOf] = await Promise.all([
+  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore, lafposOf, monthLafpos] = await Promise.all([
     cashReportsBetween(`${month}-01`, monthEnd, "admin"),
     cashOutsBetween(`${month}-01`, monthEnd),
     // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
@@ -389,6 +390,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     previousOkc(`${month}-01`),
     // Ayın LafPOS günleri (yalnız geçiş gününden sonra): "LafPOS'tan farklı" rozeti ve ayrıntısı (E-09)
     loadKasaLafposDays(`${month}-01`, monthEnd).catch(() => () => NO_LAFPOS),
+    // Raporsuz LafPOS günlerinin yedek ay satırları (G6; yalnız geçiş gününden sonra): Gelir-gider'deki ay rakamıyla aynı
+    lafposTillRows(getDb(), `${month}-01`, monthEnd),
   ]);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
@@ -406,7 +409,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const revisionsById: Record<number, CashRevisionRow[]> = {};
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
-  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths(monthReports, addDays(today, -1), firstEver)[0]));
+  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos], addDays(today, -1), firstEver)[0]));
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const infos = await cashReportPhotoInfo(monthReports, "admin");
@@ -507,17 +510,20 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
 /**
  * Personelin geç kasa raporu (`/panel/kasa?gun=D`, dünden eski, raporu girilmemiş son 14 gün; docs/KASA-RAPORU.md ›
  * Geç rapor): kendi isteği ya da formu, açılış önerisi zincirin önceki halkasından (rapor ya da bekleyen geç rapor).
+ * LafPOS gününde form LafPOS'un gün sonuyla açılır (yalnız geçiş gününden sonra; G8).
  * Kasadan çıkanlar, e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
  */
 async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
   const today = businessDate();
-  const [request, chain, counters, ai, myRequests, prevOkc] = await Promise.all([
+  const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
     chainNeighbours(getDb(), date, { prefer: user.id }),
     cashCounters(),
     aiStatus(),
     myCashRequests(user.id),
     previousOkc(date),
+    // LafPOS gününde Z LafPOS'un gün sonundan dolar, fotoğraf gerekmez; gelmediyse yazarkasa Z'si (G8)
+    loadKasaLafpos(date).catch(() => NO_LAFPOS),
   ]);
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
@@ -542,6 +548,8 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
         counters={counters}
         photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
         prevOkcZ={prevOkc.z}
+        lafpos={lafposState.day}
+        lafposMode={lafposState.lafpos}
       />
       <Card>
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />

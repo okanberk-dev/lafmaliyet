@@ -128,13 +128,22 @@ export type PhotoRemovalPayloadT = z.output<typeof PhotoRemovalPayload>;
 export type RemovablePhotoKind = PhotoRemovalPayloadT["photoKind"];
 
 /**
+ * Günün kasa kanıtı (G8; src/server/data/lafpos-day.ts kasaEvidence): ModPOS gününde ModPOS Z fotoğrafı, LafPOS gününde
+ * LafPOS'un gün sonu ya da (gelmediyse) yazarkasa Z fotoğrafı
+ */
+export type KasaEvidence = "modpos-z" | "lafpos" | "okc-z";
+
+/**
  * Fotoğrafın türü yüzünden kaldırılamaması (null: tür engel değil; okuma farkı ayrıca denetlenir): raporun tek ModPOS Z
  * fotoğrafı ve, yazarkasa bölümü yazılmışken, tek Banka POS Z (yazarkasa) fotoğrafı kanıttır (docs/planlar/okc-z.md
- * §16 S4: ModPOS Z'siyle aynı kural). Yazarkasa bölümü boşken o fotoğraf hiçbir rakamın kanıtı değildir, kaldırılabilir
+ * §16 S4: ModPOS Z'siyle aynı kural). Yazarkasa bölümü boşken o fotoğraf hiçbir rakamın kanıtı değildir, kaldırılabilir.
+ * LafPOS gününde (`evidence`, G8) ModPOS Z fotoğrafı kanıt değildir; LafPOS'un gün sonu gelmediyse tek yazarkasa Z
+ * fotoğrafı, bölüm yazılmamış olsa da, günün kanıtıdır.
  */
-export function photoKindRefusal(kind: RemovablePhotoKind, o: { zCount: number; okcCount: number; okcFigures: boolean }): string | null {
-  if (kind === "kasa-z" && o.zCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyZ;
-  if (kind === "kasa-okc" && o.okcFigures && o.okcCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyOkc;
+export function photoKindRefusal(kind: RemovablePhotoKind, o: { zCount: number; okcCount: number; okcFigures: boolean; evidence?: KasaEvidence }): string | null {
+  const evidence = o.evidence ?? "modpos-z";
+  if (kind === "kasa-z" && evidence === "modpos-z" && o.zCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyZ;
+  if (kind === "kasa-okc" && (o.okcFigures || evidence === "okc-z") && o.okcCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyOkc;
   return null;
 }
 

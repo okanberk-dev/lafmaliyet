@@ -166,6 +166,7 @@ export const CASH_REQUEST_TEXT = {
   lateTwice: "Bu gün için iki isteğiniz kapandı; bu günü yöneticiye yazın",
   lateStale: "İsteğiniz bu arada değişti ya da karara bağlandı; sayfayı yenileyin",
   lateZPhoto: "Z raporunun fotoğrafını ekleyin",
+  lateOkcPhoto: "LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafını ekleyin",
   latePhoto: "Fotoğraf bulunamadı ya da başka bir kayıtta; yeniden çekin",
   lateHandedTo: "Teslim edileni kimin aldığını seçin",
   lateExists: "Bu günün raporu artık var; isteği reddedin",

@@ -157,8 +157,13 @@ export interface TillMonth {
   closed?: string[];
   /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
   partialFrom: string | null;
-  /** Son raporun günü */
+  /** Son raporun günü (LafPOS'un yedek satırı da sayılır) */
   lastDate: string;
+  /**
+   * Kasa raporu olmayan ama rakamları LafPOS'un gün sonundan sayılan günler (G6; yalnız geçiş gününden sonra): eksik
+   * günlerin içindedir, yanına "LafPOS'tan" yazılır. Yoksa alan yok
+   */
+  lafpos?: string[];
 }
 
 /**
