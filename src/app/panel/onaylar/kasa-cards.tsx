@@ -306,7 +306,11 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
   const day = longDateTR(card.date);
   const f = card.fields;
   const { prev, next, prevCheck, nextCheck } = card.chain;
-  const z = zNoOrder(prev ? { date: prev.date, zNo: prev.zNo, pending: prev.kind === "bekleyen" } : null, f.zNo, next ? { date: next.date, zNo: next.zNo, pending: next.kind === "bekleyen" } : null);
+  // Z no sırası yalnız aynı kasanın komşusuyla (LafPOS'a geçişte Z numarası 1'den başlar)
+  const zPrev = prev && card.lafpos.sameTill.prev ? { date: prev.date, zNo: prev.zNo, pending: prev.kind === "bekleyen" } : null;
+  const zNext = next && card.lafpos.sameTill.next ? { date: next.date, zNo: next.zNo, pending: next.kind === "bekleyen" } : null;
+  const z = zNoOrder(zPrev, f.zNo, zNext);
+  const zOtherTill = (prev && !card.lafpos.sameTill.prev) || (next && !card.lafpos.sameTill.next);
   const carry = computeCash(f).carryOver;
   const blocked = card.reported ? "Bu günün raporu artık var; isteği reddedin" : card.olderPending ? olderFirstText(card.olderPending) : null;
   // Açılış önceki raporun devriyle tutmuyor ve not yok: kayıt kuralı not ister, olduğu gibi onaylanamaz
@@ -341,7 +345,10 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       ) : null}
       <LafposDiffList diffs={card.lafpos.diffs} />
       {card.unread ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin.</p> : null}
-      <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{z.text}</p>
+      <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>
+        {z.text}
+        {zOtherTill ? " · komşu rapor öteki kasanın (ModPOS / LafPOS), Z no karşılaştırılmaz" : ""}
+      </p>
       {/* Yazarkasa Z'si iki komşusuyla: Z no sırası ve kümülatif zinciri (docs/planlar/okc-z.md §3.8) */}
       {card.okcChain ? <p className={cn("text-sm break-words tabular", card.okcChain.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{card.okcChain.text}</p> : null}
       <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" kasa={card.lafpos.lafpos ? "LafPOS" : "ModPOS"} cardExtra={card.lafpos.day?.cardExtra ?? null} />
@@ -364,7 +371,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           {next ? `${linkName(next)} açılışı ${money(next.openingCash)} · bu raporun devri ${money(carry)}: ${nextCheck ? carryDiffText(nextCheck) : "tutuyor"}` : "Sonraki rapor yok"}
         </li>
         <li className="text-ink-soft">{card.monthLine}</li>
-        {card.outs.warning ? <li className={card.outs.lafposHanded !== null ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
+        {card.outs.warning ? <li className={card.outs.lafposHanded !== null && card.outs.unreceipted < 1 ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
         <li className="flex items-start gap-1.5 text-ink-mute">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir.</span>

@@ -8,6 +8,7 @@ import { handedToText, lateBell, lateByText, LatePayload, lateFields, type LateP
 import { money } from "@/lib/format";
 import { lafposDiffs, type LafposDiff } from "@/lib/lafpos/diffs";
 import { lafposHandedGap, type LafposDay } from "@/lib/lafpos/prefill";
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { okcLateChain, zNoNumber, type OkcLateChain } from "@/lib/okc-z";
 import { photoDiffs, savedFields, type CashReading, type PhotoDiff } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
@@ -19,6 +20,7 @@ import { cashOutsOn } from "@/server/data/cash-outs";
 import { heldPhotoInfo, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { loadMonthEntry, nextOkc, previousOkc } from "@/server/data/cash-reports";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -210,10 +212,10 @@ export interface LateCard {
   /** Ay satırı ("Ekim'in açık gün ve POS cirosuna girer" …) */
   monthLine: string;
   /**
-   * O güne kayıtlı kasadan çıkanlar ve rapordaki tutarla farkı; `lafposHanded` fark LafPOS'taki teslim kadar (fişsiz
-   * değil, uyarı bilgi tonunda; E-35)
+   * O güne kayıtlı kasadan çıkanlar ve rapordaki tutarla farkı; `lafposHanded` farkın LafPOS'taki teslim kadarı (fişsiz
+   * değil; E-35), `unreceipted` kalan fişsiz tutar (0: yok; uyarı ancak o zaman kırmızı)
    */
-  outs: { count: number; total: number; warning: string | null; lafposHanded: number | null };
+  outs: { count: number; total: number; warning: string | null; lafposHanded: number | null; unreceipted: number };
   /** Gün artık raporlu: onay kapalı, isteği reddedin */
   reported: boolean;
   /** Aynı aralıkta daha eski bekleyen gün (onay kapalı) */
@@ -222,7 +224,7 @@ export interface LateCard {
    * Günün kasası LafPOS mu (geçiş gününden sonra) ve LafPOS'un o günün sonu (G8, E-09): kart LafPOS'un Z'sini ve
    * personelin ondan farklı yazdıklarını gösterir, "Düzeltip onayla" formu ondan dolar. ModPOS gününde `lafpos` false
    */
-  lafpos: { lafpos: boolean; day: LafposDay | null; diffs: LafposDiff[] };
+  lafpos: { lafpos: boolean; day: LafposDay | null; diffs: LafposDiff[]; sameTill: { prev: boolean; next: boolean } };
 }
 
 /** Ay satırı: geç rapor ayın açık gün ve POS cirosuna girer mi */
@@ -251,6 +253,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
   ]);
   const reportedDays = new Set(reported.map((x) => x.date));
+  const switchDay = await loadLafposSwitchDay(db);
   const cards: LateCard[] = [];
   for (const x of rows) {
     const parsed = LatePayload.safeParse(x.payload);
@@ -285,8 +288,8 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     const older = rows.find((o) => o.id !== x.id && o.day && o.day < date && (!prevReportDate || o.day > prevReportDate) && !reportedDays.has(o.day));
     const outsTotal = cashOutsTotal(outs);
     const outsGap = Math.round((fields.cashOut - outsTotal) * 100) / 100;
-    // LafPOS gününde fark LafPOS'taki teslim kadarsa fişsiz değil: teslim Kasadan çıkanlar'a girilmemiş (E-35)
-    const lafposHanded = outsGap > 0 ? lafposHandedGap(fields.cashOut, outsTotal, lafpos.day?.till ?? null) : null;
+    // LafPOS gününde farkın LafPOS'taki teslim kadarı fişsiz değil: teslim Kasadan çıkanlar'a girilmemiş (E-35)
+    const split = outsGap >= 1 ? lafposHandedGap(fields.cashOut, outsTotal, lafpos.day?.till ?? null) : null;
     cards.push({
       kind: "kasa-gec",
       id: x.id,
@@ -315,14 +318,25 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
         warning:
           Math.abs(outsGap) < 1
             ? null
-            : lafposHanded !== null
-              ? `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}. Fark LafPOS'taki teslim (${money(lafposHanded)}), fişsiz değil: teslimi Kasadan çıkanlar'a "Teslim" olarak ekleyin.`
+            : split !== null
+              ? `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}. ${
+                  split.rest ? `${money(split.handed)} LafPOS'taki teslim, ${money(split.rest)} fişsiz` : `Fark LafPOS'taki teslim (${money(split.handed)}), fişsiz değil`
+                }: teslimi Kasadan çıkanlar'a "Teslim" olarak ekleyin.`
               : `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}${outsGap > 0 ? ` (${money(outsGap)} fişsiz)` : ""}`,
-        lafposHanded: Math.abs(outsGap) < 1 ? null : lafposHanded,
+        lafposHanded: split?.handed ?? null,
+        unreceipted: split ? split.rest : Math.max(0, outsGap),
       },
       reported: reportedDays.has(date),
       olderPending: older?.day ?? null,
-      lafpos: { ...lafpos, diffs: lafpos.day ? lafposDiffs(fields, lafpos.day) : [] },
+      // Z no sırası yalnız aynı kasanın günleriyle karşılaştırılır: LafPOS'a geçişte Z numarası 1'den başlar
+      lafpos: {
+        ...lafpos,
+        diffs: lafpos.day ? lafposDiffs(fields, lafpos.day) : [],
+        sameTill: {
+          prev: !chain.prev || isLafposDay(chain.prev.date, switchDay) === lafpos.lafpos,
+          next: !chain.next || isLafposDay(chain.next.date, switchDay) === lafpos.lafpos,
+        },
+      },
     });
   }
   return cards;

@@ -298,11 +298,11 @@ function planMarks(m: Marks, plan: PrefillPlan, from: MarkSource): Marks {
  * fotoğrafınkiyle aynı kuralla (yalnız boş alanlar dolar, yazılmış ve farklı olanın altında "LafPOS'ta …"); hiçbir şey
  * kaydedilmez, personel bakıp gönderir. LafPOS'un özeti yoksa olduğu gibi.
  */
-function withLafpos(v: Values, lafpos: LafposDay | null): { values: Values; marks: Marks; note: string | null } {
-  if (!lafpos) return { values: v, marks: {}, note: null };
+function withLafpos(v: Values, lafpos: LafposDay | null): { values: Values; marks: Marks; filled: number | null } {
+  if (!lafpos) return { values: v, marks: {}, filled: null };
   const plan = prefillPlan(lafpos.prefill, Object.fromEntries(MARK_FIELDS.map((f) => [f, v[f]])));
   const values = plan.fill.length ? { ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) } : v;
-  return { values, marks: planMarks({}, plan, "lafpos"), note: lafposSummary(plan) };
+  return { values, marks: planMarks({}, plan, "lafpos"), filled: plan.fill.length };
 }
 
 /**
@@ -478,8 +478,9 @@ export function CashForm({
   const [photos, setPhotos] = useState<FormPhoto[]>(() => late?.kept ?? []);
   const [marks, setMarks] = useState<Marks>(opening.marks);
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
-  // "LafPOS'tan doldur"dan sonraki satır (kaç alan doldu, kaçı farklı)
-  const [lafposNote, setLafposNote] = useState<string | null>(opening.note);
+  // LafPOS'un uygulanışı: kaç alan doldu (uygulanmadıysa null); bandın satırı bundan ve alanların şimdiki
+  // işaretlerinden (kaçı hâlâ farklı) kurulur, Kasadan çıkanlar'a teslim eklenince "farklı" kendiliğinden düşer
+  const [lafposFilled, setLafposFilled] = useState<number | null>(opening.filled);
   // "Gün içinde kasaya giren" çoğu gün yok: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür
   const [cashInOpen, setCashInOpen] = useState(false);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
@@ -541,7 +542,7 @@ export function CashForm({
     setPhotos([]);
     setMarks(s.marks);
     setPosPrompt(null);
-    setLafposNote(s.note);
+    setLafposFilled(s.filled);
     setCashInOpen(false);
     setProposal(null);
     setReason("");
@@ -557,7 +558,7 @@ export function CashForm({
       const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos);
       setValues(s.values);
       setMarks(s.marks);
-      setLafposNote(s.note);
+      setLafposFilled(s.filled);
       setCounter(from.proposed.countedBy);
       setReason(from.message ?? "");
     }
@@ -600,7 +601,7 @@ export function CashForm({
       setErrors((x) => ({ ...x, ...Object.fromEntries(plan.fill.map((f) => [f.field, undefined])) }));
     }
     setMarks((m) => planMarks(m, plan, "lafpos"));
-    setLafposNote(lafposSummary(plan));
+    setLafposFilled(plan.fill.length);
   }
 
   /** Yükleme ya da yeniden okumanın sonucu: fotoğraf listeye (ya da yerine), okuma forma */
@@ -982,8 +983,23 @@ export function CashForm({
     ? new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(lafpos.receivedAt))
     : null;
   const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
+  // Bandın satırı: dolan alan sayısı, hâlâ LafPOS'tan farklı (turuncu) ve sayımı olmayan alanlar
+  const lafposNote =
+    lafposFilled === null
+      ? null
+      : lafposSummary({
+          fill: new Array<null>(lafposFilled).fill(null),
+          differs: MARK_FIELDS.filter((k) => markOf(k)?.suggest?.from === "lafpos"),
+          missing: MARK_FIELDS.filter((k) => markOf(k)?.warn === LAFPOS_NO_COUNT_TEXT && !values[k].trim()),
+        });
   // "Gün içinde çıkan"ın kaynağı panelin Kasadan çıkanlar'ı (E-35): LafPOS'un harcama + teslimi tutmuyorsa bilgi satırı
   const lafposOuts = lafpos ? lafposOutsCheck(lafpos.till, outsTotal) : null;
+  // Fark yalnız LafPOS'taki teslimin Kasadan çıkanlar'a girilmemesinden mi (alan fişlerin toplamında): Sonuç'ta
+  // girilince farkın ne olacağı söylenir (sahte "5.000 ₺ eksik" tek başına durmasın)
+  const teslimMissing =
+    lafpos && lafposOuts && lafpos.till.handed > 0 && Math.abs(outsTotal - lafpos.till.spent) < 0.01 && cashOutValue !== null && Math.abs(cashOutValue - outsTotal) < 0.01
+      ? lafpos.till.handed
+      : null;
 
   const field = (k: MoneyKey | OkcMoneyKey, label: string, opts: OkcFieldOptions & { autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
@@ -1294,6 +1310,11 @@ export function CashForm({
             {live ? (
               <>
                 <DiffHeadline diff={live.cashDiff} />
+                {teslimMissing !== null ? (
+                  <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
+                    LafPOS&apos;taki teslim ({money(teslimMissing)}) Kasadan çıkanlar&apos;da yok; eklenince fark: {diffText(Math.round((live.cashDiff + teslimMissing) * 100) / 100)}.
+                  </p>
+                ) : null}
                 <div className="divide-y divide-line text-sm">
                   <p className="flex justify-between py-1.5">
                     <span className="text-ink-mute">Olması gereken</span>

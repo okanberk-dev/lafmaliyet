@@ -252,8 +252,8 @@ export interface CorrectionCard extends CardBase {
   /** Sonraki raporun açılışı bu devirle tutacak mı */
   next: { date: string; opening: number; holds: boolean } | null;
   /**
-   * "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan; LafPOS gününde fark LafPOS'taki teslim
-   * kadarsa fişsiz sayılmaz (`lafposHanded`, E-35)
+   * "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan; LafPOS gününde farkın LafPOS'taki teslim
+   * kadarı fişsiz sayılmaz (`lafposHanded`, E-35)
    */
   receipts: { count: number; total: number; unreceipted: number | null; lafposHanded?: number | null } | null;
   /** Raporun ayı geçti */
@@ -355,8 +355,9 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
       const [outs, lafpos] = await Promise.all([cashOutsOn(r.day), loadKasaLafpos(r.day)]);
       const total = cashOutsTotal(outs);
       const over = Math.round((after.cashOut - total) * 100) / 100;
-      const lafposHanded = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null) : null;
-      receipts = { count: outs.length, total, unreceipted: over > 1 && lafposHanded === null ? over : null, lafposHanded };
+      const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null) : null;
+      const unreceipted = split ? split.rest : over;
+      receipts = { count: outs.length, total, unreceipted: unreceipted > 1 ? unreceipted : null, lafposHanded: split?.handed ?? null };
     }
     const carryAfter = Math.round((after.countedCash - after.handedOver) * 100) / 100;
     cards.push({

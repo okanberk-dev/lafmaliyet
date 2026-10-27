@@ -142,9 +142,11 @@ test("E-35: LafPOS'un teslimi panelde yoksa formun alanı 450 kalır, öneri 5.4
   assert.equal(computeCash(report()).cashDiff, 0);
   assert.equal(computeCash(report({ cashOut: 450 })).cashDiff, -5_000, "öneri alınmadan gönderilirse (teslim girilmedi) 5.000 eksik görünür");
   // Geç rapor ve düzeltme kartı: fark LafPOS'taki teslim kadarsa fişsiz değil
-  assert.equal(lafposHandedGap(5_450, 450, DAY.till), 5_000);
+  assert.deepEqual(lafposHandedGap(5_450, 450, DAY.till), { handed: 5_000, rest: 0 });
   assert.equal(lafposHandedGap(5_450, 450, null), null, "ModPOS gününde (LafPOS yok) fişsiz kalır");
-  assert.equal(lafposHandedGap(5_450, 0, DAY.till), null, "fark teslimden büyükse fişsiz kalır");
+  // Panelde hiç satır yok: 5.000 LafPOS'taki teslim, 450 fişsiz
+  assert.deepEqual(lafposHandedGap(5_450, 0, DAY.till), { handed: 5_000, rest: 450 });
+  assert.equal(lafposHandedGap(3_450, 450, DAY.till), null, "fark teslimden azsa ayrıştırılmaz");
   assert.equal(lafposHandedGap(450, 450, { spent: 450, handed: 0 }), null);
 });
 

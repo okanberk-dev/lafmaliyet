@@ -349,16 +349,23 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
       [["countedCash", 9_350, 9_000]],
     );
     assert.equal(card.outs.lafposHanded, 5_000);
+    assert.equal(card.outs.unreceipted, 0);
     assert.match(plain(card.outs.warning ?? ""), /Fark LafPOS'taki teslim \(5\.000 ₺\), fişsiz değil/);
     assert.doesNotMatch(card.outs.warning ?? "", /fişsiz\)/);
+    // Z no sırası yalnız aynı kasanın komşusuyla: 8 Kasım'ın öncesi 7 Kasım'ın bekleyen geç raporu (LafPOS), 7 Kasım'ın
+    // öncesi 30 Ekim raporu (ModPOS: LafPOS'ta Z 1'den başlar, karşılaştırılmaz)
+    assert.deepEqual(card.lafpos.sameTill, { prev: true, next: true });
     const none = cards.find((c) => c.date === "2026-11-07")!;
     assert.deepEqual([none.lafpos.lafpos, none.lafpos.day, none.lafpos.diffs], [true, null, []]);
+    assert.deepEqual(none.lafpos.sameTill, { prev: false, next: true });
     // Geçiş günü boşken aynı kart ModPOS'a göre: LafPOS yok, fark fişsiz
     await setSwitch(null);
     const modpos = (await lateData.lateCards(NOW)).find((c) => c.date === D)!;
     assert.deepEqual([modpos.lafpos.lafpos, modpos.lafpos.day], [false, null]);
     assert.equal(modpos.outs.lafposHanded, null);
+    assert.equal(modpos.outs.unreceipted, 5_000);
     assert.match(plain(modpos.outs.warning ?? ""), /5\.000 ₺ fişsiz/);
+    assert.deepEqual(modpos.lafpos.sameTill, { prev: true, next: true });
   });
 
   test("G6: raporsuz LafPOS günü ay satırına yedek satırla girer; raporu olan gün rapordan; geçiş günü boşken yok", async () => {
