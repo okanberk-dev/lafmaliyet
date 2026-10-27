@@ -497,6 +497,25 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.equal(await rematch.rematchPosSalesBySite(db, [{ productId: ids.mocha, siteMenuId: "mnu-0099", slot: "M" }]), 0, "bağlı satır değişmez");
   });
 
+  test("Ayarlar › LafPOS › Bağla ile öğrenilen yalnız-LafPOS ad kasadaki (ModPOS) fiyat listesinde \"Kasada\" diye görünmez", async () => {
+    // Geçiş günü boş (deneme): LafPOS adı bir ürüne bağlanır, ad hafızası ModPOS'la ortak
+    await day("2026-11-05", 300, [{ posName: "PUMPKIN CHAI LATTE", qty: 1, revenue: 300 }]);
+    assert.ok((await sales.matchLafposName({ month: null, posName: "PUMPKIN CHAI LATTE", productId: ids.mocha, isService: false })).ok);
+    // Mocha'nın ModPOS adı da var (Ekim listesi), kasada fiyatı eski
+    await modpos("2026-09", [{ posName: "MOCHA", productId: ids.mocha, qty: 1, revenue: 100 }]);
+    await db.insert(s.posMappings).values({ posName: "MOCHA", productId: ids.mocha });
+    // Hiçbir listede geçmeyen ad (ayı temizlenmiş liste) bugünkü gibi kalır
+    await db.insert(s.posMappings).values({ posName: "MOCHA ESKI", productId: ids.mocha });
+    await db.update(s.products).set({ posStalePrice: 180, posStaleSince: new Date(NOW) }).where(eq(s.products.id, ids.mocha));
+    const staff = await import("../src/server/data/pos-staff");
+    const prices = await import("../src/server/data/prices");
+    assert.deepEqual((await staff.loadStaffPosList()).find((i) => i.productId === ids.mocha)?.posNames, ["MOCHA", "MOCHA ESKI"]);
+    assert.deepEqual((await prices.loadPosChecklist()).find((i) => i.productId === ids.mocha)?.posNames, ["MOCHA", "MOCHA ESKI"]);
+    // Ad bir ModPOS listesinde de geçerse kasada vardır
+    await modpos("2026-08", [{ posName: "Pumpkin Chai  Latte", productId: ids.mocha, qty: 1, revenue: 100 }]);
+    assert.deepEqual((await staff.loadStaffPosList()).find((i) => i.productId === ids.mocha)?.posNames, ["MOCHA", "MOCHA ESKI", "PUMPKIN CHAI LATTE"]);
+  });
+
   test("silme engeli: yalnız LafPOS günlük satırı olan ürün silinmez (bağ sessizce kopmaz)", async () => {
     await db.insert(s.posDailySales).values({ date: "2026-11-05", posName: "YALNIZ", productId: ids.only, qty: 1, revenue: 10 });
     const counts = await history.productHistoryCounts({ id: ids.only, siteMenuId: null, siteMenuSlot: null });

@@ -316,8 +316,10 @@ okunamayan 400) son başarılı gönderimden yeniyse kırmızı, değilse gri "�
 - Ürüne bağlanamayan POS adları (hizmet satırları hariç, en çok satılan 10 ad): ad, adet, gün ve **Bağla** (ürün ya da
   HİZMET seçilir; `matchLafposName`, ay olmadan). Ad Satışlar'ın POS adı hafızasına yazılır, bu adla gelmiş bütün
   ürünsüz satırlar (deneme günleri dahil) hemen bağlanır, sonraki gün sonları da tanır; hiçbir hesap değişmez (geçiş
-  günü boşken satırlar sayılmaz). Ürün sitenin kalemine Ürünler › Site menüsü'nde de bağlanabilir; geçiş gününden
-  sonraki aylarda Satışlar'da da eşleştirilir.
+  günü boşken satırlar sayılmaz). Hafıza ModPOS listeleriyle ortaktır: aynı ad sonraki ModPOS yüklemelerinde de tanınır.
+  Yalnız LafPOS'ta geçen ad (hiçbir ModPOS listesinde yok) Kasadaki fiyatlar'da (personel ve yönetici listesi) "Kasada:
+  …" diye gösterilmez (`modposNameFilter`). Ürün sitenin kalemine Ürünler › Site menüsü'nde de bağlanabilir; geçiş
+  gününden sonraki aylarda Satışlar'da da eşleştirilir.
 
 **Bu günün LafPOS kaydını sil** (`deleteLafposDay`; çekirdek `removeLafposDay`, `src/server/lafpos/admin.ts`): yalnız
 yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Gün sonunun

@@ -178,7 +178,9 @@ export function LafposDayDelete({ date, zNo, lines, label }: { date: string; zNo
  * Ürüne bağlanamayan POS adları (Ayarlar › LafPOS kartı; denetim E-33): her ad menüdeki bir ürüne ya da HİZMET'e
  * bağlanır. Ad Satışlar'ın POS adı hafızasına yazılır ve bu adla gelmiş bütün ürünsüz LafPOS satırları (deneme günleri
  * dahil) yeniden gönderim olmadan bağlanır; sonraki gün sonları da tanır. Geçiş günü boşken LafPOS adları yalnız bu
- * kartta görünür (sahibin kararı), bağlama yalnız eşleştirmeyi yazar, hiçbir hesabı değiştirmez.
+ * kartta görünür (sahibin kararı); bağlama hiçbir hesabı değiştirmez ama ad hafızası ModPOS listeleriyle ortaktır: aynı
+ * ad sonraki ModPOS yüklemelerinde de tanınır. Yalnız LafPOS'ta geçen ad kasadaki (ModPOS) fiyat listesinde "Kasada"
+ * diye gösterilmez (src/server/data/pos-staff.ts modposNameFilter).
  */
 export function LafposUnmatchedList({ items, more, products }: { items: { posName: string; qty: number; days: number }[]; more: number; products: ProductOption[] }) {
   const router = useRouter();
