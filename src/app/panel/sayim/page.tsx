@@ -1,8 +1,9 @@
 import { eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 
+import { MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -19,14 +20,43 @@ import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
 
+/** Başlığın açıklaması; ayın adı önüne gelir */
+const COUNT_RULE = "ay sonu sayımı: ayın son günü kapanıştan sonra sayın. Miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM); yarım = 0,5.";
+
+/**
+ * Sayım başlığı. Yükleme ekranı (`month` null) yüklenen sayfayla aynı boyda çizilir: açıklama aynı metin, ay adının
+ * yerinde bir iskelet; ay seçicinin yerinde onun boyunda bir kutu. Böylece içerik gelince sekme satırı aşağı kaymaz,
+ * telefonda sekmeye dokunan açıklamaya basmış olmaz (denetim B04 incelemesi, K1).
+ */
+function StockHeader({ month, role, picker }: { month: string | null; role: "admin" | "staff"; picker?: ReactNode }) {
+  return (
+    <PageHeader
+      eyebrow="Stok"
+      title="Stok sayımı"
+      excel="Sayım"
+      description={
+        month ? (
+          `${monthLabel(month)} ${COUNT_RULE}`
+        ) : (
+          <>
+            <span aria-hidden className="inline-block h-3.5 w-[4.5rem] animate-pulse rounded bg-panel align-middle" /> {COUNT_RULE}
+          </>
+        )
+      }
+      actions={picker ?? <MonthPickerSkeleton />}
+      tabs={<SectionTabs section="stok" current="/panel/sayim" role={role} />}
+    />
+  );
+}
+
 export default function StockPage({ searchParams }: PageProps<"/panel/sayim">) {
   return (
     <Suspense
       fallback={
         <>
-          {/* Rol henüz bilinmiyor: iki rolün de gördüğü sekmeler (Sayım, Zayi & ikram); yöneticinin Tutarlılık'ı içerik
-              yüklenince eklenir, sekme satırı yer değiştirmez */}
-          <PageHeader title="Stok sayımı" eyebrow="Stok" excel="Sayım" tabs={<SectionTabs section="stok" current="/panel/sayim" role="staff" />} />
+          {/* Rol ve ay henüz bilinmiyor: iki rolün de gördüğü sekmeler (Sayım, Zayi & ikram), yöneticinin Tutarlılık'ı
+              içerik yüklenince eklenir; başlık yüklenen sayfanınkiyle aynı boyda, sekme satırı yer değiştirmez */}
+          <StockHeader month={null} role="staff" />
           <PageSkeleton rows={12} />
         </>
       }
@@ -120,16 +150,13 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
 
   return (
     <>
-      <PageHeader
-        eyebrow="Stok"
-        title="Stok sayımı"
-        excel="Sayım"
-        description={`${ml} ay sonu sayımı: ayın son günü kapanıştan sonra sayın. Miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM); yarım = 0,5.`}
+      <StockHeader
+        month={month}
+        role={user.role}
         // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur)
-        actions={
+        picker={
           <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
         }
-        tabs={<SectionTabs section="stok" current="/panel/sayim" role={user.role} />}
       />
       <StockCountForm
         key={month}

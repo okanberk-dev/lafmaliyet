@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { MonthPicker } from "@/components/panel/month-picker";
+import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
@@ -32,13 +32,23 @@ export const metadata: Metadata = { title: "Tutarlılık kontrolü" };
 
 const TITLE = "Tutarlılık kontrolü";
 const EXCEL = "Tutarlılık Kontrolü";
+const DESCRIPTION =
+  "POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?";
 
 export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tutarlilik">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Stok" title={TITLE} excel={EXCEL} tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />} />
+          {/* Yüklenen başlıkla aynı boy (açıklama, ay seçicinin yeri): Stok sekmeleri içerik gelince kaymaz */}
+          <PageHeader
+            eyebrow="Stok"
+            title={TITLE}
+            excel={EXCEL}
+            description={DESCRIPTION}
+            actions={<MonthPickerSkeleton />}
+            tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
+          />
           <PageSkeleton rows={12} />
         </>
       }
@@ -121,7 +131,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         eyebrow="Stok"
         title={TITLE}
         excel={EXCEL}
-        description="POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?"
+        description={DESCRIPTION}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
       />

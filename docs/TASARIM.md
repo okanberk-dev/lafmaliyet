@@ -85,7 +85,8 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
   (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
   (aynı sıra, aynı roller; denetim E-56), üç sayfada da çizilir, personel Sayım ve Zayi & ikram'ı görür (`sectionTabsFor`,
-  tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri). Kaldırılan ekranların eski adresleri
+  tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri, yükleme başlığı yüklenen başlıkla aynı
+  boyda: açıklama ve ay seçicinin yeri iskeletle tutulur, sekme satırı içerik gelince kaymaz). Kaldırılan ekranların eski adresleri
   (`/panel/hizli-sayim/**`, `/panel/mal-siparisi/**`) Stok sayımı'na yönlenir (`src/lib/roles.ts` › `retiredRedirect`,
   proxy). Kontrol listeleri bölüm
   sekmesi yerine kendi sekmelerini taşır (`SegmentedLinks`: Bugün · Geçmiş · Listeler, yalnız yönetici). Personel
