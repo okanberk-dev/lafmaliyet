@@ -71,5 +71,6 @@ test("sunucu: yazım kalemin zamanını saklar; çekme eski kalemleri ayırır, 
   assert.match(apply, /planMenuSync\(list\.items, \(await loadLinkedRows\(tx\)\)\.filter\(\(r\) => !stale\.has\(r\.siteMenuId\)\)\)/);
   assert.match(apply, /stale\.has\(i\.id\) \? \(kept\.get\(i\.id\) \?\? i\) : i/);
   assert.match(apply, /pushed,\n/);
-  assert.match(sync, /pushed: \{\},\n\};/);
+  // Boş durum: damga yok, site expect duyurmamış sayılır (denetim E-11)
+  assert.match(sync, /pushed: \{\},\n  writesExpect: false,\n\};/);
 });

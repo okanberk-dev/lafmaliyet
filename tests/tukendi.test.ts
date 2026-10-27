@@ -282,6 +282,16 @@ test("site hatası: bağlantıyla ilgili nedenlerde metnin sonuna 'Yöneticiye h
   assert.equal(siteFailureText("Siteye ulaşılamadı; ürün tükendi yapılmadı. Tekrar dene.", { kind: "network" }), "Siteye ulaşılamadı; ürün tükendi yapılmadı. Tekrar dene.");
   assert.equal(siteFailureText("x", { kind: "http", status: 503 }), "x");
   assert.equal(siteFailureText("x", undefined), "x");
+  // 409 stale: site bu arada değişti, panel yeniden okuyor; bağlantı hatası değil, yeniden denenir
+  assert.equal(siteFailureText("Bu ürün sitede bu arada değişti; ürün tükendi yapılmadı. Panel siteyi yeniden okuyor: birazdan bakıp yeniden dene.", { kind: "http", status: 409, error: "stale" }, "staff"), "Bu ürün sitede bu arada değişti; ürün tükendi yapılmadı. Panel siteyi yeniden okuyor: birazdan bakıp yeniden dene.");
+  assert.equal(siteFailureText("x", { kind: "http", status: 409, error: "single_size" }, "staff"), "x Yöneticiye haber verin.");
+  // Yazımın zaman aşımı: personel Site menüsüne gönderilmez (o ekran ona kapalı), ne yapacağını görür; yönetici aynı metni
+  const slow = "Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde ürün tükendi yapılmadı. Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor.";
+  assert.equal(siteFailureText(slow, { kind: "timeout" }, "staff"), SOLD_OUT_TEXT.siteSlow);
+  assert.doesNotMatch(SOLD_OUT_TEXT.siteSlow, /Site menüsü/);
+  assert.match(SOLD_OUT_TEXT.siteSlow, /yeniden deneyin\.$/);
+  assert.equal(siteFailureText(slow, { kind: "timeout" }, "admin"), slow);
+  assert.equal(siteFailureText(slow, { kind: "timeout" }), slow);
 });
 
 test("keepSeen: açık kalmış kartın değişmeyen anahtarı veritabanındaki güncel değeri yazar", () => {
@@ -402,6 +412,8 @@ test("applyPushed kaydı taşır; saveRecipe gördüğü değerleri kullanır", 
   assert.match(products, /keepSeen\(data\.showOnMenu, data\.seenShowOnMenu, before\.showOnMenu\)/);
   assert.match(products, /keepSeen\(data\.active, data\.seenActive, before\.active\)/);
   const editor = read("src/app/panel/urunler/[id]/recipe-editor.tsx");
-  assert.match(editor, /seenShowOnMenu: product\.showOnMenu/);
-  assert.match(editor, /seenActive: product\.active/);
+  // Kartın gördükleri (kayıttan, site bağlantısından ve sayfa yenilenince güncellenir; denetim E-11)
+  assert.match(editor, /seenShowOnMenu: seen\.showOnMenu/);
+  assert.match(editor, /seenActive: seen\.active/);
+  assert.match(editor, /seenPrice: seen\.price/);
 });

@@ -434,12 +434,17 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** S1 birleşmiş.
 
 **P1 · Panel menü yazımı: `expect`, 409, `seenPrice`, harita**
+- **Durum (27 Ekim 2026):** 26 Ekim denetiminin B12 partisiyle yapıldı (dal `claude/denetim-b12-senkron-fiyat`, E-11).
+  S1'i beklemedi: `expect` yalnız site `writes.expect` duyurunca gider, o zamana kadar yazım bugünkü gibi. Uçtan uca
+  (1)-(3) sitenin sahte ucuyla `tests/tukendi-db.test.ts`'te; gerçek siteyle S1 yayına çıkınca yinelenir. Harita
+  `docs/SENKRON.md`. `seenPrice` fiyat hücresine ve zam önerisine de (writeSalePrice'ın `expectFrom`'u), yerel yazım
+  koşullu; reçete kartı yalnız dokunulan satış alanını yazar ve çakışmada fiyat alanının altında seçim sunar.
 - **Repo / dal:** lafmaliyet · `claude/senkron-p1-menu-expect` (dalga 10 birleştikten sonra `main`'den).
 - **Ne:**
   1. `pushSaleChange` (panel:src/server/site-menu/push.ts:54): `expect`'i planın yazacağı alanlar için panelin site
      kopyasındaki kalemden (`siteItem`) kurar; yalnız son çekmede `writes.expect` görüldüyse gönderir
-     (src/lib/site-menu/schema.ts'e isteğe bağlı `writes`, durum kopyasına yazılır); 400 `field:"expect"` → `expect`'siz
-     bir kez yeniden dener. Dört çağıran (products.ts:50, :206; prices/write.ts:34; dalga 10 `setSoldOut`) buradan
+     (src/lib/site-menu/schema.ts'e isteğe bağlı `writes`, durum kopyasına yazılır); 400 `field:"expect"` (bugünkü
+     sitenin katı şemasında `field:"body"`) → `expect`'siz bir kez yeniden dener. Dört çağıran (products.ts:50, :206; prices/write.ts:34; dalga 10 `setSoldOut`) buradan
      geçer, ayrı yama yok.
   2. src/lib/site-menu/push.ts: 409'da `error`'a göre dal (`stale` → hemen `syncSiteMenu("manual")` + "Bu kalem bu
      arada sitede değişti; güncel değer yüklendi."; `single_size` bugünkü metin); JSON `not_found` 404 ≠ uç yok.

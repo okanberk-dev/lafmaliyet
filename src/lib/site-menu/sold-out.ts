@@ -43,6 +43,12 @@ export const SOLD_OUT_TEXT = {
   cap: `Tükenenler listesi dolu (${STAFF_SOLD_OUT_MAX} ürün). Gelenleri satışa açın ya da yöneticiye haber verin.`,
   tooMany: "Kısa sürede çok işlem yapıldı (10 dakikada en çok 20). Biraz sonra yeniden deneyin.",
   tooSoon: "Az önce değişti; birkaç saniye sonra yeniden deneyin.",
+  /**
+   * Yazım zaman aşımına uğradı (site yazmış olabilir, panel yanıttan sonra okur); personel Site menüsünü açamaz. Site
+   * yazdıysa panelde kayıt yoktur: ürün kartta değil, pencerede durumuyla görünür ("Kapalı · yönetici açar" ya da "Satışta")
+   */
+  siteSlow:
+    "Site geç yanıt verdi; değişiklik sitede yapılmış olabilir. Birkaç saniye sonra Tükendi işaretle penceresinde ürünün durumuna bakın; değişmediyse yeniden deneyin.",
   /** Site yazdı ama panelin işlemi düştü */
   closedNotSaved: "Sitede tükendi oldu ama panele yazılamadı; yöneticiye haber verin.",
   openedNotSaved: "Sitede satışa açıldı ama panele yazılamadı; yöneticiye haber verin.",
@@ -220,10 +226,14 @@ export function reopenRefusal(input: {
 
 /**
  * Sitenin hata metni: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409) sonuna "Yöneticiye haber
- * verin." eklenir; ağ ve zaman aşımı yeniden denenebilir, metin olduğu gibi kalır.
+ * verin." eklenir; ağ hatası ve 409 `stale` (site bu arada değişti, panel yeniden okuyor) yeniden denenebilir, metin
+ * olduğu gibi kalır. Yazımın zaman aşımında personel kendi metnini görür (yöneticininki Site menüsüne gönderir, o ekran
+ * personele kapalı); `role` yalnız yazım hatasında verilir (okumanın zaman aşımında site hiçbir şey yazmamıştır).
  */
-export function siteFailureText(message: string, cause: PushFailure | null | undefined): string {
-  const link = cause?.kind === "off" || (cause?.kind === "http" && [400, 401, 404, 409].includes(cause.status));
+export function siteFailureText(message: string, cause: PushFailure | null | undefined, role: "admin" | "staff" = "admin"): string {
+  if (cause?.kind === "timeout" && role === "staff") return SOLD_OUT_TEXT.siteSlow;
+  const stale = cause?.kind === "http" && cause.status === 409 && cause.error === "stale";
+  const link = cause?.kind === "off" || (cause?.kind === "http" && [400, 401, 404, 409].includes(cause.status) && !stale);
   return link ? `${message.trim()} Yöneticiye haber verin.` : message;
 }
 

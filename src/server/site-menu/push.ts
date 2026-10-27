@@ -1,11 +1,12 @@
 import "server-only";
 
 import { and, eq, ne } from "drizzle-orm";
+import { after as afterResponse } from "next/server";
 
 import { freshStamps, planMenuSync, targetValues, type SaleValues } from "@/lib/site-menu/plan";
-import { planPush, pushFailureMessage, type PushBody } from "@/lib/site-menu/push";
-import { errorField, parseSiteMenuAnswer, type SiteMenuItem } from "@/lib/site-menu/schema";
-import { fromMinor, visibilityFromSite, type SiteMenuSlot } from "@/lib/site-menu/slot";
+import { planPush, pushFailureMessage, staleMessage, withoutExpect, type PushBody, type PushFailure } from "@/lib/site-menu/push";
+import { errorCode, errorField, parseSiteMenuAnswer, type SiteMenuItem } from "@/lib/site-menu/schema";
+import { fromMinor, slotPriceMinor, visibilityFromSite, type SiteMenuSlot } from "@/lib/site-menu/slot";
 import { UserError } from "@/server/actions/util";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
@@ -21,6 +22,7 @@ import {
   readSiteSnapshot,
   replaceSnapshotItem,
   SiteRequestError,
+  syncSiteMenu,
 } from "./sync";
 import { carrySoldOutMarker } from "./sold-out-store";
 
@@ -47,10 +49,84 @@ export type PushOutcome =
   /** Site kabul etti; `item` sitenin döndürdüğü kalem (okunamadıysa null: gönderilen değerler yazılır) */
   | { kind: "pushed"; item: SiteMenuItem | null; body: PushBody; price: boolean; visibility: boolean; siteMenuId: string; slot: SiteMenuSlot };
 
+/** Yanıttan sonraki çekmeler bu kadar sürede bire iner (toplu değişiklikte art arda zaman aşımı) */
+const PULL_SOON_DEDUPE_MS = 30_000;
+let pullQueuedAt = 0;
+
+/**
+ * Sitenin menüsünü yanıttan sonra yeniden okur (zaman aşımı: site yazmış olabilir; işlem içindeki 409 `stale`). İstek
+ * dışında (test, betik: `after` yok) hemen ve beklenerek. Çekmenin hatası yalnız günlüğe: kullanıcının hatası zaten
+ * gösteriliyor.
+ */
+async function pullSoon(): Promise<void> {
+  const run = async () => {
+    try {
+      await syncSiteMenu("manual");
+    } catch (e) {
+      console.error("[menu] yazımdan sonra çekme", e);
+    }
+  };
+  try {
+    if (Date.now() - pullQueuedAt < PULL_SOON_DEDUPE_MS) return;
+    afterResponse(run);
+    pullQueuedAt = Date.now();
+  } catch {
+    await run();
+  }
+}
+
+/** 409 `stale`'den sonra sitenin güncel menüsü: işlem dışındaysa hemen (true: yüklendi), işlem içindeyse yanıttan sonra */
+/**
+ * Sitenin 400'ü `expect`'i tanımadığı için mi: bugünkü site katı şemasıyla bilinmeyen alanı yolsuz bir hatayla bildirir
+ * ve alan adı "body" olur (`issues[0].path[0]` yok); `expect`'i adıyla anan bir site de olabilir. Panelin gövdesi her
+ * zaman geçerli bir JSON nesnesidir, gerçek bir "body" hatası başka bir nedenden gelmez: yeniden deneme zararsızdır.
+ */
+function rejectsExpect(field: string | null): boolean {
+  return field === "expect" || field === "body";
+}
+
+/** Site `expect`'i tanımadı: bayrak sonraki çekmeye kadar kapanır (işlemin içinde ikinci bağlantı açılmaz) */
+async function forgetExpect(inTx: boolean): Promise<void> {
+  const run = async () => {
+    try {
+      await patchMenuState({ writesExpect: false });
+    } catch (e) {
+      console.error("[menu] expect bayrağını kapatma", e);
+    }
+  };
+  if (!inTx) return run();
+  try {
+    afterResponse(run);
+  } catch {
+    // İstek dışında (betik, test): bayrak sonraki çekmede düzelir
+  }
+}
+
+async function reloadAfterStale(inTx: boolean): Promise<boolean> {
+  if (inTx) {
+    // Çağıran bir işlemin (ve kalemin kilidinin) içinde: havuzdan ikinci bir bağlantı beklenmez (sold-out-core.ts)
+    await pullSoon();
+    return false;
+  }
+  try {
+    const r = await syncSiteMenu("manual");
+    return r.status === "ok" || r.status === "fresh";
+  } catch (e) {
+    console.error("[menu] 409 stale sonrası çekme", e);
+    return false;
+  }
+}
+
 /**
  * Değişiklik siteyi ilgilendiriyorsa siteye yazar. `consequence`: hata metninde panelde ne olmadığı ("fiyat
  * değişmedi", "değişiklikler kaydedilmedi"). Kopuk bağlantı, 0 fiyat, kapalı bağlantı ve sitenin her hatası
- * UserError'dur. `db`: kopyanın okunduğu bağlantı (çağıran bir işlemin içindeyse onun bağlantısı).
+ * UserError'dur. `db`: kopyanın okunduğu bağlantı (çağıran bir işlemin içindeyse onun bağlantısı). `live`: çağıranın
+ * az önce sitenin canlı listesinden okuduğu kalem (Tükendi / Satışa aç); verilirse kopyanın yerine o kullanılır.
+ *
+ * Çakışma (docs/planlar/senkron.md P1): site son çekmede `writes.expect` duyurduysa gövde yazılan alanların kopyadaki
+ * değerini `expect` olarak taşır. Site 409 `stale` derse (alan sitede bu arada değişmiş) hiçbir şey yazılmaz, panel
+ * sitenin güncel menüsünü okur ve kullanıcı "bu arada değişti" görür. Site `expect`'i tanımazsa (400 `field:"body"`
+ * ya da `"expect"`; geri alınmış site) bir kez `expect`'siz denenir ve bayrak sonraki çekmeye kadar kapanır. Zaman aşımında site yazmış olabilir: panel yanıttan sonra okur.
  */
 export async function pushSaleChange(
   user: { name: string },
@@ -58,16 +134,19 @@ export async function pushSaleChange(
   after: SaleValues,
   consequence: string,
   db?: Pick<ReturnType<typeof getDb>, "select">,
+  opts: { live?: SiteMenuItem | null } = {},
 ): Promise<PushOutcome> {
   const link = row.siteMenuId && row.siteMenuSlot ? { siteMenuId: row.siteMenuId, slot: row.siteMenuSlot } : null;
   if (!link) return { kind: "local" };
   const snapshot = await readSiteSnapshot(db);
+  const state = await readMenuSyncState(db);
   const plan = planPush({
     link,
     before: row,
     after,
     actor: user.name,
-    siteItem: snapshot.items.find((i) => i.id === link.siteMenuId) ?? null,
+    siteItem: opts.live ?? snapshot.items.find((i) => i.id === link.siteMenuId) ?? null,
+    expect: state.writesExpect === true,
   });
   if (plan.kind === "none") return { kind: "local" };
   if (plan.kind === "refuse") throw new UserError(plan.error);
@@ -75,15 +154,36 @@ export async function pushSaleChange(
   // Sitenin hatalarında nedeni (`cause`, PushFailure) de taşınır: toplu fiyat değişikliği site kapalıyken sıradaki
   // ürünleri göndermez (src/server/prices/batch.ts); metin ve öteki çağıranlar için hata aynı UserError
   if (!secret) throw new UserError(pushFailureMessage({ kind: "off" }, consequence), { cause: { kind: "off" } });
-  let res: Awaited<ReturnType<typeof callSite>>;
-  try {
-    res = await callSite(secret, "/api/panel/menu", { method: "POST", body: JSON.stringify(plan.body) });
-  } catch (e) {
-    if (e instanceof SiteRequestError) throw new UserError(pushFailureMessage(e.failure, consequence), { cause: e.failure });
-    throw e;
+  const post = async (body: PushBody) => {
+    try {
+      return await callSite(secret, "/api/panel/menu", { method: "POST", body: JSON.stringify(body) });
+    } catch (e) {
+      if (!(e instanceof SiteRequestError)) throw e;
+      // Zaman aşımı: istek siteye varmış, site yazmış olabilir; panel yanıttan sonra siteyi yeniden okur
+      if (e.failure.kind === "timeout") await pullSoon();
+      throw new UserError(pushFailureMessage(e.failure, consequence), { cause: e.failure });
+    }
+  };
+  let body = plan.body;
+  let res = await post(body);
+  if (res.status === 400 && body.expect && rejectsExpect(errorField(res.json))) {
+    // Site `expect`'i tanımıyor (bayrağı duyuran sürüm geri alınmış): reddedilen istek hiçbir şey yazmadı. Sonraki
+    // yazımlar da onu göndermez; bir sonraki çekme bayrağı yeniden okur
+    body = withoutExpect(body);
+    await forgetExpect(db !== undefined);
+    res = await post(body);
   }
-  if (!res.ok) throw new UserError(pushFailureMessage({ kind: "http", status: res.status, field: errorField(res.json) }, consequence), { cause: { kind: "http", status: res.status } });
-  return { kind: "pushed", item: parseSiteMenuAnswer(res.json), body: plan.body, price: plan.price, visibility: plan.visibility, ...link };
+  if (!res.ok) {
+    const failure: PushFailure = { kind: "http", status: res.status, field: errorField(res.json), error: errorCode(res.json) };
+    if (res.status === 409 && failure.error === "stale") {
+      // Alan sitede bu arada değişti: yazılmadı. Kalem yanıtta güncel hâliyle gelir; panel bütün menüyü yeniden okur
+      const current = parseSiteMenuAnswer(res.json);
+      const reloaded = await reloadAfterStale(db !== undefined);
+      throw new UserError(staleMessage(consequence, { reloaded, sitePrice: plan.price && current ? slotPriceMinor(current, link.slot) : null }), { cause: failure });
+    }
+    throw new UserError(pushFailureMessage(failure, consequence), { cause: failure });
+  }
+  return { kind: "pushed", item: parseSiteMenuAnswer(res.json), body, price: plan.price, visibility: plan.visibility, ...link };
 }
 
 /**

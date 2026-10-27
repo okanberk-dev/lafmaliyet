@@ -68,6 +68,11 @@ export interface MenuSyncState {
   itemCount: number | null;
   /** Panelin son bir saatte siteye yazdığı kalemlerin sitedeki zamanı: bundan eski liste o kalemi geri almaz */
   pushed: PushedStamps;
+  /**
+   * Son başarılı çekmede site yazma ucunda `expect`'i duyurdu (`writes.expect`): panel → site yazımı beklenen değeri
+   * gönderir (src/server/site-menu/push.ts). Eski sitede false: yazım bugünkü gibi `expect`'siz
+   */
+  writesExpect: boolean;
 }
 
 const EMPTY: MenuSyncState = {
@@ -83,6 +88,7 @@ const EMPTY: MenuSyncState = {
   unlinked: [],
   itemCount: null,
   pushed: {},
+  writesExpect: false,
 };
 
 export interface SiteItemsSnapshot {
@@ -270,6 +276,7 @@ export async function applySiteList(tx: Tx, list: SiteMenuList, at: Date, tryAt:
       unlinked: [...plan.unlinked.map((u) => ({ ...u, at: iso })), ...cur.unlinked].slice(0, UNLINKED_KEEP),
       itemCount: list.items.length,
       pushed,
+      writesExpect: list.writesExpect,
       ...(changed
         ? {
             lastChangedAt: iso,
@@ -344,8 +351,8 @@ export async function syncSiteMenu(trigger: "ping" | "page" | "manual" | "cron")
   const at = new Date();
   const applied = await getDb().transaction((tx) => applySiteList(tx, list, at, tryAt));
   if (!applied) {
-    // Arada daha yeni bir liste ya da panel yazımı uygulandı: panel zaten güncel
-    await patchMenuState({ lastPullAt: tryAt, lastOkAt: at.toISOString(), lastError: null });
+    // Arada daha yeni bir liste ya da panel yazımı uygulandı: panel zaten güncel (sitenin yetenek bayrağı yine yazılır)
+    await patchMenuState({ lastPullAt: tryAt, lastOkAt: at.toISOString(), lastError: null, writesExpect: list.writesExpect });
     return { status: "fresh" };
   }
   await logApplied(applied);

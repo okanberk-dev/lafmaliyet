@@ -9,7 +9,8 @@ senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), yöneticilere pazartesi haftalık özet ([docs/HAFTALIK-OZET.md](docs/HAFTALIK-OZET.md)), 6 haftalık nakit planı ve KDV tahmini ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)),
 hammadde zamlarının ayda kaç lira kâr götürdüğü, laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), laffogato.net menüsüne bağlı ürünlerde iki yönlü fiyat ve Satışta / Tükendi
-eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md)), menü fiyatlarının toplu değişikliği, kasada (ModPOS) elle
+eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md); siteyle bütün bağlantıların kısa haritası ve çakışma kuralları
+[docs/SENKRON.md](docs/SENKRON.md)), menü fiyatlarının toplu değişikliği, kasada (ModPOS) elle
 değişecek fiyatların listesi ve satış fiyatı geçmişi ([docs/FIYATLAR.md](docs/FIYATLAR.md)), barın ekranına düşen
 uygulama siparişleri, sipariş zili ve
 tek dokunuşla aşama: Hazır, Masaya götürüldü, Teslim edildi ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), sitenin

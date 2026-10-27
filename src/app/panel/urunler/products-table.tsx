@@ -29,6 +29,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -271,10 +272,16 @@ export function StatusShare({ parts }: { parts: { status: ProductStatus; count: 
   );
 }
 
-/** Satır içinde fiyat düzenleme: Enter ya da alandan çıkmak kaydeder, Esc vazgeçer. Birim (₺) hep görünür. */
+/**
+ * Satır içinde fiyat düzenleme: Enter ya da alandan çıkmak kaydeder, Esc vazgeçer. Birim (₺) hep görünür. Kayıt hücrenin
+ * gördüğü fiyatı da gönderir (`last`): fiyat bu arada başka yerde değiştiyse yazılmaz, liste yenilenir (denetim E-11).
+ */
 function PriceCell({ row, className }: { row: ProductRow; className?: string }) {
   const [value, setValue] = useState(priceText(row.price));
   const [saving, setSaving] = useState(false);
+  // Hücre gördüğü fiyatı (`last`) kayıtta gönderir. Liste bu ürünün yeni fiyatıyla çizilince (eşitleme, toplu
+  // değişiklik, başka sekme, reddedilen kayıt) hücre baştan kurulur (anahtarında fiyat var): yeni fiyatı görür,
+  // o sırada yazılıp henüz kaydedilmemiş değer bırakılır
   const [last, setLast] = useState(row.price);
   // Esc'teki blur, eski değeri görür (setValue henüz çizilmedi); bu bayrak o blur'da kaydı atlatır
   const cancelled = useRef(false);
@@ -296,8 +303,16 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
       return;
     }
     setSaving(true);
-    const res = await updateProductPrice(row.id, v);
-    setSaving(false);
+    let res: Awaited<ReturnType<typeof updateProductPrice>>;
+    try {
+      res = await updateProductPrice(row.id, v, false, "manual", last);
+    } catch (e) {
+      toastUnreachable(e, `fiyat-${row.id}`);
+      setValue(priceText(last));
+      return;
+    } finally {
+      setSaving(false);
+    }
     if (res.ok) {
       // Siteye bağlı üründe yazılan fiyat sitenin kuruşudur; kasada (ModPOS) değişecekse Kasaya işle listesine girdi
       const written = res.data.price;

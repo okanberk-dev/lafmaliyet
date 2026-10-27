@@ -213,7 +213,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
             “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde görünür / gizli” anahtarını değiştirince önce siteye yazılır, site ulaşılamazsa
             kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
-            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır.
+            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır. Ürün kartı açıkken fiyat sitede ya da
+            başka bir yerde değişirse kartın kaydı onu geri almaz: fiyata dokunmadıysanız yeni fiyat kalır; dokunduysanız kart fiyatın altında hangisinin
+            kalacağını sorar.
           </>
         ),
         icon: Globe,

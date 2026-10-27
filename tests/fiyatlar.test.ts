@@ -712,15 +712,17 @@ test("süzgeçler: kategori listesi, boy, arama (boyun adı da), pasifler yalnı
 test("satış fiyatını yazan her yol geçmişe ve kasanın durumuna yazar", () => {
   const products = read("src/server/actions/products.ts");
   const price = products.slice(products.indexOf("export async function updateProductPrice"), products.indexOf("async function updatePriceAck"));
-  assert.match(price, /recordPriceChange\(\s*tx,/);
+  // Tek fiyat yazımı toplu değişikliğin tek ürün yoluyla aynı (writeSalePrice: geçmiş ve kasa aynı işlemde)
+  assert.match(price, /writeSalePrice\(me, before, p, \{ source: from, consequence: "fiyat değişmedi", expectFrom: seen \}\)/);
   // Kaynak: zam önerisinin "Fiyatı X yap"ı iki dayanakta da (zammın payı ve hedef oran) "Zam önerisi", Geri al'ı elle
   assert.match(price, /const from = ack \? "suggestion" : z\.enum\(\["manual", "suggestion"\]\)\.parse\(source\);/);
-  assert.match(price, /source: from, onSite:/);
   const impact = read("src/app/panel/urunler/price-impact-panel.tsx");
-  assert.match(impact, /updateProductPrice\(i\.productId, i\.suggestedPrice, i\.basis === "keep", "suggestion"\)/);
-  assert.match(impact, /updateProductPrice\(i\.productId, i\.price\)\.then/, "önerinin Geri al'ı elle");
-  assert.match(read("src/app/panel/urunler/products-table.tsx"), /updateProductPrice\(row\.id, v\)/, "fiyat hücresi elle");
-  assert.ok(price.indexOf("db.transaction(") < price.indexOf(".update(s.products)"), "yerel yazım da işlemde");
+  assert.match(impact, /updateProductPrice\(i\.productId, i\.suggestedPrice, i\.basis === "keep", "suggestion", i\.price\)/);
+  assert.match(impact, /updateProductPrice\(i\.productId, i\.price, false, "manual", r\.data\.price\)\s*\.then/, "önerinin Geri al'ı elle");
+  assert.match(read("src/app/panel/urunler/products-table.tsx"), /updateProductPrice\(row\.id, v, false, "manual", last\)/, "fiyat hücresi elle");
+  const write = read("src/server/prices/write.ts");
+  assert.match(write, /recordPriceChange\(\s*tx,/);
+  assert.ok(write.indexOf("getDb().transaction(") < write.indexOf(".update(s.products)"), "yerel yazım da işlemde");
   const save = products.slice(products.indexOf("export async function saveRecipe"), products.indexOf("export async function deleteProduct"));
   assert.match(save, /recordPriceChange\(\s*tx,/);
   const create = read("src/server/data/product-create.ts");
@@ -754,7 +756,13 @@ test("panel → site yazımı: önce site, sonra tek işlemde yazım ve geçmiş
   const push = read("src/server/site-menu/push.ts");
   assert.match(push, /\{ cause: \{ kind: "off" \} \}/);
   assert.match(push, /\{ cause: e\.failure \}/);
-  assert.match(push, /\{ cause: \{ kind: "http", status: res\.status \} \}/);
+  assert.match(push, /const failure: PushFailure = \{ kind: "http", status: res\.status, field: errorField\(res\.json\), error: errorCode\(res\.json\) \};/);
+  assert.match(push, /throw new UserError\(pushFailureMessage\(failure, consequence\), \{ cause: failure \}\);/);
+  // Panelde yazım da koşullu: okumadan sonra fiyat değiştiyse ya da ürün siteye bağlandıysa yazılmaz (denetim E-11)
+  const local = write.slice(write.indexOf("} else {"), write.indexOf("recordPriceChange("));
+  assert.match(local, /abs\(\$\{s\.products\.price\} - \$\{before\.price\}\) < 0\.005/);
+  assert.match(local, /before\.siteMenuId \? eq\(s\.products\.siteMenuId, before\.siteMenuId\) : isNull\(s\.products\.siteMenuId\)/);
+  assert.match(local, /throw new PriceChangedError\(priceChangedText\(cur\.price\), cur\.price\);/);
 });
 
 test("toplu değişiklik: menü kilidi önce, iyimser denetim, kaleme göre sırayla, dörder, 40 sn, devre kesici", () => {

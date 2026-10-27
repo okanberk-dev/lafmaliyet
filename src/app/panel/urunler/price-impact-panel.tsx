@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -76,7 +76,8 @@ export function PriceImpactPanel({
       // Zammın payı fiyattan hesaplanır: uygulanınca bu maliyette uyarı kapanır (yoksa öneri yeni fiyattan yeniden
       // artardı). Geri al eski fiyatı yazar; fiyat önerinin altına inince uyarı kendiliğinden geri gelir. Fiyat
       // geçmişinde iki dayanakta da "Zam önerisi"; Geri al elle
-      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep", "suggestion");
+      // Kartın gördüğü fiyat da gider: bu arada başka yerde değiştiyse öneri yazılmaz (denetim E-11)
+      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep", "suggestion", i.price);
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
       // Siteye bağlı üründe fiyat laffogato.net'te de değişti (fiyat listesinin tarihi sitede elle); kasada (ModPOS)
@@ -86,10 +87,13 @@ export function PriceImpactPanel({
         ...(reminder ? { description: reminder, duration: r.data.site ? 12_000 : 8_000 } : {}),
         action: {
           label: "Geri al",
+          // Geri al yalnız fiyat hâlâ önerinin yazdığıysa (bu arada başka yerde değiştiyse dokunmaz)
           onClick: () =>
-            void updateProductPrice(i.productId, i.price).then((u) => {
-              if (!u.ok) toast.error(u.error);
-            }),
+            void updateProductPrice(i.productId, i.price, false, "manual", r.data.price)
+              .then((u) => {
+                if (!u.ok) toast.error(u.error);
+              })
+              .catch((e: unknown) => toastUnreachable(e)),
         },
       });
     });

@@ -68,7 +68,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
 | B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
-| B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | bekliyor |
+| B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | bekliyor |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | bekliyor |
 | B15 | Aynı rakam her yerde: senaryo, başabaş, ay sonu öngörüsü, nakit planı | E-12, E-13, E-41, E-46, E-59, E-60, E-62 | yok | 7, 8 | bekliyor |
