@@ -82,7 +82,8 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   adıyla işlem geçmişine düşer):
   - tutarı değişen ve ödeme sayılmış faturalar yeniden dengelenir: tutar düştüyse fazla sayılan para hesaba geçer,
     arttıysa ödemelerin kapattığı fatura yeniden ödenmedi olur;
-  - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez; yalnız
+    takip günü ve sonrasının faturasına, `takesCreditOnArrival`: takip öncesi fatura kapıda ödenmişti, E-14);
   - Paraşüt'te iptal edilen (ve e-fatura yolunda silinen) fatura silinmeden önce aynı işlemde bağları çözülür: bağlı
     faturasız alım eski hâline döner (gider kaydı yeniden yazılır), ödemeler borca ya da hesaba geçer.
   Özet satırında "Cari: 1 faturada ödeme hesaba geçti, 1 peşin faturaya hesaptaki ödeme sayıldı". `findExisting` elle

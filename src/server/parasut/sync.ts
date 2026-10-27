@@ -3,6 +3,7 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, or, sql } from "drizzle-orm";
 
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
+import { takesCreditOnArrival } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
@@ -212,7 +213,10 @@ interface Ctx {
   trackedCard: (supplier: string, taxNumber?: string | null) => TrackedCard | null;
   /** Tutarı değişen faturalar: çalışmanın sonunda dağıtımları yeniden dengelenir (resettleAfterSync) */
   payableChanged: { id: number; from: number; to: number }[];
-  /** Peşin ve takipli kartın yeni faturaları: çalışmanın sonunda hesaptaki para sayılır (applyCreditOnArrival) */
+  /**
+   * Peşin ve takipli kartın takip günü ve sonrasının yeni faturaları: çalışmanın sonunda hesaptaki para sayılır
+   * (applyCreditOnArrival; takesCreditOnArrival)
+   */
   pesinTracked: { id: number; cardId: number }[];
 }
 
@@ -492,8 +496,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
         ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: d.outstanding }),
       })
       .returning({ id: s.invoices.id });
-    // Peşin çalışılan takipli kart: hesaptaki para çalışmanın sonunda faturaya sayılır (K21)
-    if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, taxRaw)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+    // Peşin çalışılan takipli kart: hesaptaki para çalışmanın sonunda faturaya sayılır (K21); takipten önceki tarihli
+    // fatura (Geçmiş faturaları al) kapıda ödenmişti, avans almaz (E-14)
+    if (trackedCard !== null && takesCreditOnArrival({ date: d.date, unpaid: pay.unpaid }, trackedCard.since) && ctx.paidOnDelivery(supplier, taxRaw)) {
+      ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+    }
     if (twin) console.warn("Paraşüt: aynı e-fatura iki gider faturasında", { eInvoiceId, bills: [twin.externalId, d.externalId] });
     invoiceId = row.id;
     if (supplierTaxNumber) ctx.taxFilled++;
@@ -1434,7 +1441,9 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: null }),
     })
     .returning({ id: s.invoices.id });
-  if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+  if (trackedCard !== null && takesCreditOnArrival({ date: d.date, unpaid: pay.unpaid }, trackedCard.since) && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) {
+    ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+  }
   if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,

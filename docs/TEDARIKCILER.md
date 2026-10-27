@@ -157,7 +157,9 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
   günü, kartın ödeme şekliyle). Peşin tedarikçide IBAN eksik sayılmaz.
 - Bu özellikten önce gelmiş faturaların durumu olduğu gibi kalır.
 - **Cari takipteki kart (üç istisna):** kart ilk elle ödeme kaydını alınca (Hesap hareketleri, aşağıda) eşitleme
-  yalnız şunları yazar: peşin çalışılan kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  yalnız şunları yazar: peşin çalışılan kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez;
+  yalnız takip günü ve sonrasının faturasına: "Geçmiş faturaları al" ile gelen takip öncesi fatura kapıda ödenmişti,
+  hesaptaki parayı almaz, denetim E-14);
   tutarı değişen faturanın sayılan ödemeleri yeniden dengelenir (tutar düştüyse fazlası hesaba geçer, arttıysa
   ödemelerin kapattığı fatura yeniden ödenmedi olur; takip öncesi kısma inen fatura kapanır); Paraşüt'te iptal edilen
   fatura silinmeden önce bağları çözülür (bağlı faturasız alım eski hâline döner, ödeme borca ya da hesaba geçer; bağlar

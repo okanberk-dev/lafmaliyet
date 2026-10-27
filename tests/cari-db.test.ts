@@ -376,6 +376,24 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual(await settle.applyCreditOnArrival([{ id: b.id, cardId: c.id }]), { invoices: 0, amount: 0 }, "para kalmadı");
   });
 
+  test("peşin kartın takipten önceki tarihli faturası avans almaz, takipten sonrakini K21 yine karşılar (E-14)", async () => {
+    // Sütaş peşin; takip 1 Ekim'de 5.000 ₺ avansla başladı (dağıtımı yok: hesapta)
+    const c = await card("Sütaş", { paidOnDelivery: true, paymentMethod: "nakit" });
+    await db.insert(s.supplierEntries).values({ supplierId: c.id, kind: "odeme", date: "2026-10-01", amount: 5000, method: "havale", createdByName: "Test" });
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 5000]]);
+    // "Geçmiş faturaları al": 12 Ağu'nun kapıda ödenmiş 1.200 ₺'lik faturası
+    const old = await invoice({ payable: 1200, unpaid: false, paidAt: "2026-08-12", paidVia: "nakit", ledgerBase: 0, date: "2026-08-12" });
+    assert.deepEqual(await settle.applyCreditOnArrival([{ id: old.id, cardId: c.id }]), { invoices: 0, amount: 0 });
+    const o = await inv(old.id);
+    assert.deepEqual([o.allocated, o.paidByLedger, o.paidAt, o.unpaid], [0, false, "2026-08-12", false]);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 5000]], "avans aynı");
+    // Takip sonrası fatura: hesaptaki para sayılır
+    const fresh = await invoice({ payable: 1200, unpaid: false, paidAt: "2026-10-12", paidVia: "nakit", ledgerBase: 0, date: "2026-10-12" });
+    assert.deepEqual(await settle.applyCreditOnArrival([{ id: fresh.id, cardId: c.id }]), { invoices: 1, amount: 1200 });
+    assert.deepEqual([(await inv(fresh.id)).allocated, (await inv(fresh.id)).paidByLedger], [1200, true]);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 3800]]);
+  });
+
   test("tutar sapması: recomputeAllocated toplamı dağıtımlardan yeniden yazar", async () => {
     const c = await card();
     const f = await invoice({ payable: 1000 });
