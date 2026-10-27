@@ -29,8 +29,8 @@ import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminde
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
-/** dayMonthTR'nin bölünmez boşluğu düz boşluğa (metin karşılaştırması okunur kalsın) */
-const plain = (s: string) => s.replace(/ /g, " ");
+/** dayMonthTR'nin bölünmez boşluğu düz boşluğa, aralığın sözcük birleştiricisi atılır (metin karşılaştırması okunur kalsın) */
+const plain = (s: string) => s.replace(/\u00a0/g, " ").replace(/\u2060/g, "");
 
 const line = (o: Partial<SalesLine> & Pick<SalesLine, "id" | "month" | "posName">): SalesLine => ({ qty: 1, revenue: 100, productId: null, isService: false, note: null, ...o });
 const laf = (o: Partial<LafposMonthLine> & Pick<LafposMonthLine, "month" | "posName">): LafposMonthLine => ({ productId: null, isService: false, qty: 1, revenue: 100, days: 1, ...o });
@@ -243,6 +243,7 @@ test("Satışlar bandı: geçiş ayı, eksik günler, sayılmayan LafPOS günler
     "Ocak LafPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir. ModPOS listesi yüklenmez.",
   );
   assert.equal(plain(dayRangeTR("2026-11-09", "2026-11-09")), "9 Kasım");
+  assert.equal(dayRangeTR("2026-11-01", "2026-11-19"), "1–\u206019\u00a0Kasım", "telefonda çizgiden sonra kırılmaz");
   assert.deepEqual(["2026-08-03", "2026-11-10", "2026-04-01"].map((d) => plain(dayAblativeTR(d))), ["3 Ağustos'tan", "10 Kasım'dan", "1 Nisan'dan"]);
 });
 

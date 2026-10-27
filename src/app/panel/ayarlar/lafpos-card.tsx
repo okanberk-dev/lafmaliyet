@@ -10,7 +10,8 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { loadLafposCard } from "@/server/lafpos/status";
 
-import { LafposDayDelete, LafposSwitchDayForm } from "./lafpos-client";
+import type { ProductOption } from "../satislar/product-picker";
+import { LafposDayDelete, LafposSwitchDayForm, LafposUnmatchedList } from "./lafpos-client";
 import { SectionCard } from "./section-card";
 
 /** İmzası doğrulanamayan isteklerin satırı bu kadar gün görünür */
@@ -24,7 +25,7 @@ const UNVERIFIED_DAYS = 14;
  * yalnız burada görünür (deneme), başka hiçbir ekrana ya da hesaba girmez (sahibin 26 Ekim kararı). Yalnız yönetici
  * (Ayarlar sayfası requireAdmin).
  */
-export async function LafposCard() {
+export async function LafposCard({ products }: { products: ProductOption[] }) {
   const now = new Date();
   const data = await loadLafposCard(undefined, now).catch((e) => {
     console.error("LafPOS durumu okunamadı", e);
@@ -148,12 +149,9 @@ export async function LafposCard() {
           <div className="space-y-1.5">
             <p className="text-[13px] font-medium text-ink-soft">
               Ürüne bağlanamayan POS adları: {num(data.unmatchedCount)}{" "}
-              <InfoTip text="Bu satırlar maliyete ve stoğa girmez. Ürünler › Site menüsü'nde ürünü sitenin kalemine bağlayın ya da Satışlar'daki POS eşleştirmesiyle adı ürüne bağlayın (yalnız LafPOS'ta geçen bir ad Satışlar'da henüz eşleştirilemez). Eski günler LafPOS'tan Gönder ile yeniden gelince (ya da deneme günü silinip yeniden gönderilince) geçer." />
+              <InfoTip text="Bu satırlar maliyete ve stoğa girmez. Adı buradan bir ürüne bağlayın (Satışlar'ın POS adı hafızasına yazılır), ürünü Ürünler › Site menüsü'nde sitenin kalemine bağlayın ya da geçiş gününden sonraki aylarda Satışlar'da eşleştirin. Bağlanınca kayıtlı günler de yeniden gönderim olmadan güncellenir." />
             </p>
-            <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-              {data.unmatched.map((u) => `${u.posName} (${num(u.qty)} adet, ${num(u.days)} gün)`).join(" · ")}
-              {data.unmatchedCount > data.unmatched.length ? ` ve ${num(data.unmatchedCount - data.unmatched.length)} ad daha` : ""}
-            </p>
+            <LafposUnmatchedList items={data.unmatched} more={data.unmatchedCount - data.unmatched.length} products={products} />
           </div>
         ) : null}
       </CardContent>

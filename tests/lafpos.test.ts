@@ -861,5 +861,5 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   assert.match(read("src/server/lafpos/ingest.ts"), /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{day\.date\}`\}\)\)/);
   // Ayar ekranı: yalnız yöneticinin Ayarlar sayfasında
   const page = read("src/app/panel/ayarlar/page.tsx");
-  assert.ok(page.indexOf("await requireAdmin();") > 0 && page.includes("<LafposCard />"));
+  assert.ok(page.indexOf("await requireAdmin();") > 0 && page.includes("<LafposCard"));
 });

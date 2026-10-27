@@ -149,10 +149,13 @@ export function lafposMonthStatus(i: {
   };
 }
 
-/** Gün aralığı: "5–9 Kasım", tek gün "9 Kasım" */
+/**
+ * Gün aralığı: "5–9 Kasım", tek gün "9 Kasım". Çizgiden sonra sözcük birleştirici (U+2060), gün ile ay arasında bölünmez
+ * boşluk: telefonda satır "1–" ile "19 Kasım" arasında kırılmaz
+ */
 export function dayRangeTR(from: string, to: string): string {
   if (from === to) return dayMonthTR(from);
-  return `${Number(from.slice(8, 10))}–${dayMonthTR(to)}`;
+  return `${Number(from.slice(8, 10))}–\u2060${dayMonthTR(to)}`;
 }
 
 /** ModPOS listesi geçiş ayında o günlerin Z toplamını bu oranda aşarsa uyarı (liste geçiş gününden sonrasını da içeriyor olabilir) */

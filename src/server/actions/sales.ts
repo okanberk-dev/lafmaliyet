@@ -369,6 +369,49 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
   });
 }
 
+/**
+ * LafPOS satırları için önerilen eşleşmeler tek seferde (Satışlar › "Önerileri uygula"; ModPOS satırları
+ * applyLineMatches'le): her biri matchLafposName gibi, ama yalnız o ayın hâlâ ürünsüz satırlarına (bu arada eşleştirilen ad
+ * atlanır). Ad hafızaya yazılır, başka aylardaki ürünsüz satırlar da bağlanır.
+ */
+export async function applyLafposMatches(month: string, items: { posName: string; productId: number }[]) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const m = zMonth.parse(month);
+    const list = z
+      .array(z.object({ posName: zText("Ürün adı", 160), productId: z.number().int().positive() }))
+      .min(1, "Uygulanacak öneri yok")
+      .max(500)
+      .parse(items);
+    const db = getDb();
+    const productIds = [...new Set(list.map((i) => i.productId))];
+    const known = new Set((await db.select({ id: s.products.id }).from(s.products).where(inArray(s.products.id, productIds))).map((p) => p.id));
+    const index = createPosMappingIndex(await db.select().from(s.posMappings));
+    const t = s.posDailySales;
+    let applied = 0;
+    let others = 0;
+    await db.transaction(async (tx) => {
+      for (const it of list) {
+        if (!known.has(it.productId)) continue;
+        const posName = it.posName.replace(/\s+/g, " ");
+        const done = await tx
+          .update(t)
+          .set({ productId: it.productId, isService: false })
+          .where(and(eq(t.posName, posName), gte(t.date, `${m}-01`), lte(t.date, `${m}-31`), isNull(t.productId), eq(t.isService, false)))
+          .returning({ id: t.id });
+        if (!done.length) continue;
+        await writeMapping(tx, posName, it.productId, false, index.storedNames(posName));
+        others += await rematchPosSalesByName(tx, posName, { productId: it.productId, isService: false });
+        applied++;
+      }
+    });
+    if (!applied) throw new UserError("Öneriler uygulanamadı; satırlar değişmiş olabilir. Sayfayı yenileyin.");
+    await logActivity(me, "POS eşleştirmesi", `${monthLabel(m)}: LafPOS'ta ${applied} öneri uygulandı${others ? ` (ürünsüz ${others} satır daha)` : ""}`);
+    refresh();
+    return { applied, skipped: list.length - applied };
+  });
+}
+
 export async function saveLine(input: { id: number | null; month: string; posName: string; qty: number; revenue: number; note?: string | null }) {
   return attempt(async () => {
     const me = await requireAdmin();
