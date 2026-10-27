@@ -297,7 +297,7 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
   return rows.flatMap((r) => {
     const z = posZSchema.safeParse(r.z);
     if (!z.success) return [];
-    return [{ date: r.date, zTotal: z.data.zTotal, card: z.data.card, mealCard: z.data.mealCard, discounts: z.data.discounts, offRevenue: z.data.offRevenue, source: "lafpos" as const }];
+    return [{ date: r.date, zTotal: z.data.zTotal, card: z.data.card, mealCard: z.data.mealCard, discounts: z.data.discounts, offRevenue: z.data.offRevenue, receipts: z.data.receipts, source: "lafpos" as const }];
   });
 }
 

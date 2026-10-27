@@ -27,6 +27,8 @@ export interface TillRow {
    * sayılır. Kasa raporu olan günde yedek satır olmaz (rapor kazanır)
    */
   source?: "lafpos";
+  /** Yedek satırda LafPOS'un fiş sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
+  receipts?: number;
 }
 
 /** months tablosunun satırı: elle yazılanlar, boş = yazılmamış */
@@ -77,9 +79,12 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
     // Gün yalnız kasa raporuyla "girildi" sayılır; LafPOS'un yedek satırı olan gün eksik kalır (yanına "LafPOS'tan")
     const have = new Set(reports.map((r) => r.date));
     const fromLafpos = list.filter((r) => r.source === "lafpos").map((r) => r.date);
+    // Kapalı işaretli günü yalnız satışlı LafPOS gün sonu açar (src/lib/closed-days.ts lafposSold ile aynı kural):
+    // satışsız Z kafenin açık olduğunu göstermez, gün kapalı sayılmaya devam eder
+    const soldLafpos = new Set(list.filter((r) => r.source === "lafpos" && (r.zTotal > 0 || (r.receipts ?? 0) > 0)).map((r) => r.date));
     const missing: string[] = [];
     const closed: string[] = [];
-    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) && !fromLafpos.includes(d) ? closed : missing).push(d);
+    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) && !soldLafpos.has(d) ? closed : missing).push(d);
     const sum = (xs: TillRow[], f: (r: TillRow) => number) => r2(xs.reduce((a, r) => a + f(r), 0));
     const posRevenue = sum(list, (r) => r.zTotal);
     const disc = list.filter((r) => r.discounts != null);
@@ -206,13 +211,15 @@ export function missingText(days: string[], max = 5, pending: readonly string[] 
 export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed" | "lafpos">): string {
   const parts: string[] = [];
   const lafpos = t.lafpos ?? [];
-  const uncovered = t.missing.filter((d) => !lafpos.includes(d));
+  // Yalnız eksik günlerin LafPOS'tan sayılanları (kapalı işaretli satışsız LafPOS günü burada sayılmaz)
+  const covered = t.missing.filter((d) => lafpos.includes(d)).length;
   if (t.missing.length) {
-    const tail = !uncovered.length
-      ? "Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı."
-      : lafpos.length
-        ? `${lafpos.length} günün cirosu LafPOS'un gün sonundan sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.`
-        : "O günler açıksanız ciro ve açık gün eksik kalır.";
+    const tail =
+      covered === t.missing.length
+        ? "Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı."
+        : covered
+          ? `${covered} günün cirosu LafPOS'un gün sonundan sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.`
+          : "O günler açıksanız ciro ve açık gün eksik kalır.";
     parts.push(`${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. ${tail}`);
   }
   if (t.closed?.length) parts.push(closedSentence(t.closed));

@@ -197,6 +197,26 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 
+test("G6: kapalı işaretli gün yalnız satışlı LafPOS gün sonuyla 'rapor yok' olur; satışsız Z kapalı kalır", () => {
+  const r = (date: string, o: Partial<TillRow> = {}): TillRow => ({ date, zTotal: 10_000, card: 7_000, mealCard: 0, discounts: null, offRevenue: null, ...o });
+  // 2 Kasım: kapalı işaretli, LafPOS yanlışlıkla açılmış (Z 15, satış yok)
+  const idle = tillMonths([r("2026-11-01"), r("2026-11-02", { zTotal: 0, card: 0, receipts: 0, source: "lafpos" }), r("2026-11-03")], "2026-11-03", "2026-11-01", [], ["2026-11-02"]);
+  assert.deepEqual(idle[0].missing, []);
+  assert.deepEqual(idle[0].closed, ["2026-11-02"]);
+  assert.equal(plain(missingSentence(idle[0])), "1 gün kapalı işaretli: 2 Kasım.");
+  // Satışlı LafPOS günü kapalı işareti geçersiz kılar (fiş ya da Z toplamı): gün eksik, ciro LafPOS'tan
+  for (const sold of [{ zTotal: 4_000, receipts: 12 }, { zTotal: 0, receipts: 3 }]) {
+    const [m] = tillMonths([r("2026-11-01"), r("2026-11-02", { ...sold, card: 0, source: "lafpos" }), r("2026-11-03")], "2026-11-03", "2026-11-01", [], ["2026-11-02"]);
+    assert.deepEqual(m.missing, ["2026-11-02"]);
+    assert.deepEqual(m.closed, []);
+  }
+  // Eksik günlerin sayısı yalnız eksik günlerden: kapalı satışsız LafPOS günü "N günün cirosu LafPOS'tan" sayısına girmez
+  const mixed = tillMonths([r("2026-11-01"), r("2026-11-02", { zTotal: 0, card: 0, receipts: 0, source: "lafpos" })], "2026-11-03", "2026-11-01", [], ["2026-11-02"]);
+  assert.equal(plain(missingSentence(mixed[0])), "1 gün rapor yok: 3 Kasım. O günler açıksanız ciro ve açık gün eksik kalır. 1 gün kapalı işaretli: 2 Kasım.");
+  // Yükleyici fiş sayısını yedek satıra taşır
+  assert.match(read("src/server/data/cash-reports.ts"), /offRevenue: z\.data\.offRevenue, receipts: z\.data\.receipts, source: "lafpos" as const/);
+});
+
 test("G8: fotoğraf kaldırma günün kanıtına göre: LafPOS gününde ModPOS Z fotoğrafı kanıt değil; gün sonu gelmediyse tek yazarkasa Z'si kanıt", () => {
   assert.match(photoKindRefusal("kasa-z", { zCount: 1, okcCount: 0, okcFigures: false })!, /tek Z/);
   assert.equal(photoKindRefusal("kasa-z", { zCount: 1, okcCount: 0, okcFigures: false, evidence: "lafpos" }), null);
