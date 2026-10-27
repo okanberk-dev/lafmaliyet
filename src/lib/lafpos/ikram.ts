@@ -1,3 +1,4 @@
+import { posMatchKey } from "@/lib/calc/pos-paste";
 import { money } from "@/lib/format";
 import { dayAblativeTR } from "@/lib/reminders";
 
@@ -125,4 +126,24 @@ export function lafposIkramCheck(offRevenue: number, listValue: number): string 
   return diff > 0
     ? `${head} fazla: LafPOS'ta ödenmez işaretlenen ama listeye girmeyen satır olabilir.`
     : `${head} az: iptal edilen adisyonun ikramı listede kalmış olabilir.`;
+}
+
+/** İkramın ürüne bağlanamayan adları, satış listesinde gösterilenler hariç (en çok adet önce, sonra ad) */
+export function unmatchedIkramNames(
+  lines: readonly { date: string; posName: string; productId: number | null; qty: number }[],
+  shown: readonly string[],
+  limit = 10,
+): { items: { posName: string; qty: number; days: number }[]; count: number } {
+  const skip = new Set(shown.map(posMatchKey));
+  const byKey = new Map<string, { posName: string; qty: number; days: Set<string> }>();
+  for (const l of lines) {
+    const key = posMatchKey(l.posName);
+    if (l.productId !== null || skip.has(key)) continue;
+    const cur = byKey.get(key) ?? { posName: l.posName.replace(/\s+/g, " ").trim(), qty: 0, days: new Set<string>() };
+    cur.qty += l.qty;
+    cur.days.add(l.date);
+    byKey.set(key, cur);
+  }
+  const all = [...byKey.values()].map((x) => ({ posName: x.posName, qty: x.qty, days: x.days.size })).sort((a, b) => b.qty - a.qty || a.posName.localeCompare(b.posName, "tr"));
+  return { items: all.slice(0, limit), count: all.length };
 }

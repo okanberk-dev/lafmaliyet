@@ -76,7 +76,11 @@ liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aral�
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
 ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye komisyon ve hakediş uyarıları da
 durur: geciken hakediş, yemek kartında kesin %6 aşımı, komisyon dışı ücret olabilecek kalem (en çok 5; Komisyon &
-hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8). Mal siparişinin teslim kontrolü satırları ve
+hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8). Gecikenler en eski son gün önce gelir; beşe
+sığmazsa son satır özettir ("6 hakediş daha gecikti: Getir (Ağustos), …") ve ay seçmeden Komisyon & hakediş'e götürür.
+Özetin kimliği içindeki en yeni gecikmeden türer: daha yeni bir gecikme onu yeniden okunmamış yapar, eskiler "geldi"
+işaretlenip liste kısalınca değişmez. Özet okununca içindeki satırlar da okunmuş sayılır; biri sonra tek satıra çıkınca
+yeniden okunmamış olmaz. Mal siparişinin teslim kontrolü satırları ve
 taslak onayı 26 Ekim 2026'da mal siparişiyle birlikte kalktı ([MAL-SIPARISI.md](MAL-SIPARISI.md)).
 Yöneticinin zilinde (ödemeler başlığında) kasadan tedarikçiye çıkan ama hesaba işlenmemiş satırlar da durur:
 "Kasadan tedarikçiye 2 ödeme hesaba işlenmedi (3.800,00 ₺)" (son 60 gün; Tedarikçiler'de işlenmemiş kasa ödemeleri

@@ -753,14 +753,45 @@ test("zil en eski gecikmiş hakedişi gösterir; sığmayanlar tek satırda öze
     { ...summary, body: plain(summary.body) },
     {
       kind: "gecikti",
-      key: "gecikti-diger:getir:2026-08,pluxee:2026-09,multinet:2026-09,edenred:2026-09,trendyol:2026-09,getir:2026-09",
+      key: "gecikti-diger:getir:2026-09",
       level: "danger",
       title: "6 hakediş daha gecikti",
       body: "Getir (Ağustos), Pluxee (Eylül), Multinet (Eylül) ve 3 hakediş daha. Hepsi Komisyon & hakediş'te ve Bugün'de.",
       href: "/panel/komisyonlar",
       date: "2026-09-28",
+      covers: ["gecikti:getir:2026-08", "gecikti:pluxee:2026-09", "gecikti:multinet:2026-09", "gecikti:edenred:2026-09", "gecikti:trendyol:2026-09", "gecikti:getir:2026-09"],
     },
   );
+  // En eskisi "geldi" işaretlenince liste kısalır: özetin anahtarı aynı kalır (zil yeniden okunmamış olmaz); içindeki
+  // Getir (Ağustos) tek satıra çıkar, özet okunduysa o da okunmuş sayılır (covers)
+  const paidOne = buildCommissionReport({
+    today: "2026-11-20",
+    through: "2026-11-19",
+    since: "2026-08-01",
+    fromMonth: "2026-01",
+    firstReport: null,
+    till: [],
+    invoices,
+    marks: [mark("pluxee", "2026-08", { receivedOn: "2026-11-20", received: 100 })],
+    settings: {},
+  });
+  const bell2 = commissionAlerts(paidOne, "2026-11-20");
+  assert.equal(bell2[4].key, summary.key);
+  assert.equal(bell2[3].key, "gecikti:getir:2026-08");
+  assert.ok(summary.covers?.includes(bell2[3].key));
+  // Yeni (daha yeni son günlü) bir gecikme özeti yeniden okunmamış yapar
+  const newer = buildCommissionReport({
+    today: "2026-11-20",
+    through: "2026-11-19",
+    since: "2026-08-01",
+    fromMonth: "2026-01",
+    firstReport: null,
+    till: [],
+    invoices: [...invoices, inv("Pluxee", "2026-10-15", 300)],
+    marks: [],
+    settings: {},
+  });
+  assert.equal(commissionAlerts(newer, "2026-11-20")[4].key, "gecikti-diger:pluxee:2026-10");
   // Tam beş gecikme özetsiz sığar
   const five = buildCommissionReport({ today: "2026-11-20", through: "2026-11-19", since: "2026-08-01", fromMonth: "2026-01", firstReport: null, till: [], invoices: invoices.filter((i) => i.date.startsWith("2026-08")), marks: [], settings: {} });
   assert.deepEqual(

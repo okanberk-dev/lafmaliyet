@@ -87,7 +87,9 @@ export function NotificationMenu({
   ].filter((g) => g.items.length);
 
   const markRead = (ids: string[]) => {
-    const fresh = ids.filter((id) => !read.has(id));
+    // Özet satırı (ör. "4 hakediş daha gecikti") okununca içindekiler de okunur: sonra tek satıra çıkınca okunmuş kalır
+    const covers = new Map((items ?? []).map((n) => [n.id, n.covers ?? []]));
+    const fresh = [...new Set(ids.flatMap((id) => [id, ...(covers.get(id) ?? [])]))].filter((id) => !read.has(id));
     // Listede artık olmayan eski kimlikler zamanla düşer (en yeniler başta tutulur)
     if (fresh.length) setReadIds([...fresh, ...readIds]);
   };

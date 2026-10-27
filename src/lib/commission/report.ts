@@ -163,7 +163,7 @@ export interface ChannelSales {
   zShare?: number;
 }
 export type PayoutStatus = "geldi" | "eksik" | "bekliyor" | "gecikti" | "takip-oncesi" | "faturasiz" | "yok";
-export type FlagKey = "oran-sinir" | "yasak-ucret" | "erken-odeme" | "asli-ucret" | "reklam" | "fatura-yok" | "kasa-eksik" | "lafpos-kanal";
+export type FlagKey = "oran-sinir" | "yasak-ucret" | "erken-odeme" | "asli-ucret" | "reklam" | "fatura-yok" | "fatura-kayan" | "kasa-eksik" | "lafpos-kanal";
 export type FlagLevel = "bad" | "warn" | "info";
 
 export interface Flag {
@@ -230,7 +230,7 @@ export interface ChannelMonth {
    * Yazılan satış silinirse kullanılacak satış (pencerenin ipucu): LafPOS'un ödemeleri ya da (grupta tek kanal varsa)
    * Z toplamı; yoksa null
    */
-  autoSales: { amount: number; source: "lafpos" | "tek" } | null;
+  autoSales: { amount: number; source: "lafpos" | "tek"; zShare?: number } | null;
   rate: number | null;
   /**
    * Platform: seçilen ay ve önceki iki ayda satışı bilinen (en az iki) ayın toplam oranı; haftalık fatura ay sınırında
@@ -776,8 +776,11 @@ export interface SalesGap {
   doubt: string;
 }
 
-/** Kanal-ayın uyarıları (sözcüklere bakanlar "olabilir" der; kesin hüküm değildir) */
-function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, gap: SalesGap | null, today: string): Flag[] {
+/**
+ * Kanal-ayın uyarıları (sözcüklere bakanlar "olabilir" der; kesin hüküm değildir). `nextEarly`: kanalın sonraki ayın
+ * ilk yarısında (en geç 15'i) kesilmiş en erken faturası: bu ayın satışlarını da kapsıyor olabilir ("fatura gelmedi" yerine)
+ */
+function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, gap: SalesGap | null, today: string, nextEarly: string | null = null): Flag[] {
   const flags: Flag[] = [];
   const sales = cm.sales;
   if (cm.kind === "meal") {
@@ -814,9 +817,14 @@ function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, gap: SalesGap |
       flags.push({ key: "reklam", level: "info", text: `Reklam / kampanya ücreti olabilir: ${money(cm.fees.reklam)}. Bunlar isteğe bağlıdır; onay vermediyseniz itiraz edin.` });
     }
   }
-  // Yazılan ekstre ya da LafPOS'un ödemeleri: kanaldan satış geçti ama ayın faturası gelmedi
+  // Yazılan ekstre ya da LafPOS'un ödemeleri: kanaldan satış geçti ama ayın faturası gelmedi. Sonraki ayın ilk yarısında
+  // kesilen fatura bu ayın satışları için olabilir (kayan fatura; yemek kartında 1–5'i zaten bu aya sayılır): uyarı değil bilgi
   if ((sales?.source === "elle" || sales?.source === "lafpos") && sales.amount > 0 && !cm.invoices.length && today >= `${shiftMonth(cm.month, 1)}-${String(INVOICE_GRACE_DAY).padStart(2, "0")}`) {
-    flags.push({ key: "fatura-yok", level: "warn", text: `${monthName(cm.month)} ayında ${money(sales.amount)} satış var ama komisyon faturası gelmedi.` });
+    flags.push(
+      nextEarly
+        ? { key: "fatura-kayan", level: "info", text: `${dayMonthTR(nextEarly)} tarihli fatura ${monthName(cm.month)} satışlarını kapsıyor olabilir; ${monthName(shiftMonth(cm.month, 1))} ayında sayılıyor.` }
+        : { key: "fatura-yok", level: "warn", text: `${monthName(cm.month)} ayında ${money(sales.amount)} satış var ama komisyon faturası gelmedi.` },
+    );
   }
   // Oranı olan (faturası gelmiş) ayda: faturasız LafPOS kanalının satırında "oran yüksek görünür" anlamsız
   if (gap && cm.invoices.length) {
@@ -928,15 +936,19 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         payable,
         sales,
         salesReason: sales ? null : reason,
-        autoSales: auto ? { amount: auto.amount, source: auto.source === "lafpos" ? ("lafpos" as const) : ("tek" as const) } : null,
+        // LafPOS'ta Z'deki payı da taşır (tek kanalda geçişten önceki günlerin ve kanalsız ödemenin toplamı): pencere söyler
+        autoSales: auto ? (auto.source === "lafpos" ? { amount: auto.amount, source: "lafpos" as const, zShare: auto.zShare ?? 0 } : { amount: auto.amount, source: "tek" as const }) : null,
         // İade (eksi) faturası ayın toplamını eksiye düşürürse oran yazılmaz
         rate: sales && sales.amount > 0 && invoices.length && feesTotal >= 0 ? feesTotal / sales.amount : null,
         payout: payoutOf({ sales, payable, invoices }, mark, settings[def.key].payDays, today, since),
         mark,
         latestInvoice: invoices.length ? invoices[invoices.length - 1].date : null,
       };
-      // Eksik gün uyarısı yalnız satış Z toplamından ya da LafPOS'tan geldiyse (yazılan ekstre kesindir)
-      rows.push({ ...base, rate3: null, flags: channelFlags(base, sales && sales.source !== "elle" ? gap : null, today) });
+      // Eksik gün uyarısı yalnız satış Z toplamından ya da LafPOS'tan geldiyse (yazılan ekstre kesindir). Sonraki ayın
+      // ilk yarısındaki fatura (activeOf'un kayan faturasıyla aynı sınır) "fatura gelmedi"yi bilgiye çevirir
+      const next = shiftMonth(month, 1);
+      const nextEarly = (data.get(def.key)!.get(next)?.invoices ?? []).map((i) => i.date).filter((x) => x <= `${next}-${graceDay}`).sort()[0] ?? null;
+      rows.push({ ...base, rate3: null, flags: channelFlags(base, sales && sales.source !== "elle" ? gap : null, today, nextEarly) });
     }
   }
 
@@ -1131,6 +1143,11 @@ export interface CommissionAlert {
   href: string;
   /** Son gün (hakediş) ya da ayın son faturası (oran, ücret) */
   date: string;
+  /**
+   * Yalnız özet satırında: içine aldığı gecikmelerin anahtarları. Zil özeti okununca bunları da okundu sayar: biri
+   * sonra tek satıra çıkınca (öncekiler geldi işaretlendi) yeniden okunmamış olmaz
+   */
+  covers?: string[];
 }
 
 /** "~8.605,20 ₺" yemek kartında; platformda "yaklaşık …" (haftalık fatura ay sınırında kayar) */
@@ -1221,8 +1238,10 @@ function lateSummary(hidden: readonly CommissionAlert[], names: ReadonlyMap<stri
   const more = labels.length - 3;
   return {
     kind: "gecikti",
-    // Anahtar gizlenenleri taşır: yeni bir gecikme özeti yeniden okunmamış yapar
-    key: `gecikti-diger:${hidden.map((a) => a.key.slice("gecikti:".length)).join(",")}`,
+    // Anahtar gizlenenlerin en yenisinden (en eski son gün önce sıralı; sonuncusu): yeni bir gecikme özeti yeniden
+    // okunmamış yapar, eskiler "geldi" işaretlenip liste kısalınca anahtar değişmez
+    key: `gecikti-diger:${hidden[hidden.length - 1].key.slice("gecikti:".length)}`,
+    covers: hidden.map((a) => a.key),
     level: "danger",
     title: `${hidden.length} hakediş daha gecikti`,
     body: `${labels.slice(0, 3).join(", ")}${more > 0 ? ` ve ${more} hakediş daha` : ""}. Hepsi Komisyon & hakediş'te ve Bugün'de.`,

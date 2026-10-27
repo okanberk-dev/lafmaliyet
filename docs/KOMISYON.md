@@ -133,12 +133,20 @@ ekran ve uyarılar bugünkü gibi; geçiş gününden önceki LafPOS günleri (d
   edin."). Eksiksiz LafPOS ayında aşım kesindir (LafPOS kartın ödemesini kendisi yollar).
 - **Etkin kanal:** LafPOS'ta o ay ödemesi olan kanal da etkindir; faturası gelmemişse de kartı çıkar ("Fatura bekleniyor",
   hakediş "fatura gelince son gün belli olur") ve sonraki ayın 15'inden sonra `fatura-yok` uyarır ("Kasım ayında 900 ₺
-  satış var ama komisyon faturası gelmedi."). Faturası olup LafPOS'ta ödemesi olmayan kanal: "Satış bilinmiyor: LafPOS'ta
-  bu ay Edenred ödemesi yok."
+  satış var ama komisyon faturası gelmedi."). Kanalın sonraki ayın ilk yarısında (en geç 15'i) kesilmiş faturası varsa
+  uyarı yerine bilgi çıkar (`fatura-kayan`): "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında
+  sayılıyor." (yemek kartında 1–5'inde kesilen zaten önceki aya sayılır). Faturası olup LafPOS'ta ödemesi olmayan kanal:
+  "Satış bilinmiyor: LafPOS'ta bu ay Edenred ödemesi yok." Ayın tamamı LafPOS'tansa Yemek kartları kartının altındaki
+  not Z'nin tek toplam olduğunu söylemez, satışı bilinmeyen kartları adlandırır: "Edenred için LafPOS'ta ödeme yok:
+  ödeme türünün kanalını LafPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin."
+  (geçiş ayında "LafPOS 10 Kasım'da başladı; öncesinde Z raporunda yemek kartları tek toplam. …"). Sayfanın açıklaması
+  geçiş günü seçiliyken satışın LafPOS'un ödemelerinden de geldiğini söyler.
 - **Grubun toplamı** (Yemek kartları kartı, Platformlar satırı): geçiş gününden önceki kasa raporları + LafPOS'un
   Z'sindeki yemek kartı / online (gün sonu gelmeyen raporlu günde rapordan). Alt satır "30 / 30 gün kayıtlı ·
   LafPOS'tan", geçiş ayında "… · 10 Kasım'dan LafPOS", eksikte "2 gün kayıt yok · LafPOS'tan".
-- Hakediş penceresinde satış boşsa kullanılacak tutar: "Boş bırakırsanız LafPOS'taki ödemeler kullanılır: 1.550 ₺."
+- Hakediş penceresinde satış boşsa kullanılacak tutar: "Boş bırakırsanız LafPOS'taki ödemeler kullanılır: 1.550 ₺.";
+  tek kanalda Z'nin payı da varsa (geçişten önceki günler, kanalsız ödeme) "Boş bırakırsanız LafPOS ödemeleri ve Z'deki
+  toplam kullanılır: 29.000 ₺ (Z'den 9.000 ₺)." (`autoSales.zShare`).
   "Kurallar ve hesap"ın Gerçek oran maddesi geçiş günü seçiliyken LafPOS'u da anar.
 
 ## 4. Kalemler
@@ -184,7 +192,8 @@ Sınır %6, yuvarlamayı yutan payla **%6,05**'in üstü.
 | `erken-odeme` | yemek kartı | Erken ödeme > 0 | Turuncu | "Erken ödeme ücreti 300 ₺ (oranı %3,2 artırıyor). Erken ödemeyi siz mi seçtiniz? Seçmediyseniz kapattırın." |
 | `asli-ucret` | platform | 1 Nisan 2026 ve sonraki faturada sipariş / ödeme altyapısı ücreti | Turuncu | "“Online Ödeme Hizmet Bedeli” 40 ₺: sipariş ya da ödeme altyapısı ücreti olabilir. 1 Nisan 2026'dan beri bunlar için ayrı ücret alınamıyor." |
 | `reklam` | platform | Reklam / kampanya > 0 | Mavi | "Reklam / kampanya ücreti olabilir: 60 ₺. Bunlar isteğe bağlıdır; onay vermediyseniz itiraz edin." |
-| `fatura-yok` | ikisi | Elle yazılan satış > 0, o ay faturası yok, sonraki ayın 15'i geldi | Turuncu | "Ekim ayında 2.000 ₺ satış var ama komisyon faturası gelmedi." |
+| `fatura-yok` | ikisi | Elle yazılan (ya da LafPOS'tan gelen) satış > 0, o ay faturası yok, sonraki ayın 15'i geldi | Turuncu | "Ekim ayında 2.000 ₺ satış var ama komisyon faturası gelmedi." |
+| `fatura-kayan` | ikisi | `fatura-yok`'un koşulu, ama kanalın sonraki ayın 15'ine kadar kesilmiş faturası var | Mavi | "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor." |
 | `kasa-eksik` | ikisi | Satış Z toplamından (tek kanal) ve ayın eksik günü var | Mavi | "3 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür." |
 
 Yemek kartlarının toplamında: `oran-sinir` ("Ortalama kesinti %6,3: en az bir yemek kartı %6'yı aşıyor."; eksik günde
@@ -232,7 +241,9 @@ raporunun kartlı satış payı (banka POS komisyonu için) değişmedi: (kart +
   eskisi beşin dışında kalıyordu), sonra öteki uyarılar, en yeni önce; en çok beş. Geciken hakedişler beşe sığmazsa
   son satır özet olur: "6 hakediş daha gecikti" · "Getir (Ağustos), Pluxee (Eylül), Multinet (Eylül) ve 3 hakediş
   daha. Hepsi Komisyon & hakediş'te ve Bugün'de." (bağlantı Komisyon & hakediş). Kimlik uyarının anahtarından: yeni
-  oran, yeni fatura ya da özete giren yeni gecikme yeniden okunmamış olur. Bağlantı `?ay=…#kanal`.
+  oran, yeni fatura ya da özete giren daha yeni bir gecikme yeniden okunmamış olur; özetin kimliği içindeki en yeni
+  gecikmeden türer, eskiler "geldi" işaretlenip liste kısalınca değişmez. Özet okununca içindeki satırlar da okunmuş
+  sayılır (`covers`): biri sonra tek satıra çıkınca yeniden okunmamış olmaz. Bağlantı `?ay=…#kanal`.
 - **Bugün** (yönetici): geciken hakediş varsa Ödemeler'in ardından **Hakedişler** satırı, "sorun var": "Pluxee hakedişi
   (Eylül satışları): son gün 20 Ekim. 1 hakediş daha gecikti. Geldiyse işaretleyin.", **Hakedişlere bak**
   ([BUGUN.md](BUGUN.md)). Ay hakedişin satış ayıdır; bu yıldan değilse yılıyla ("Ekim 2025 satışları").

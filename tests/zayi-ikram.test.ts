@@ -66,7 +66,7 @@ test("hesap: ikram edilen ürünün malzemesi reçeteden, zayi hammadde doğruda
   assert.equal(sum.ikram.menuValue, product.price * 2);
   // Kayıtsız aylar ve eski veri kümesi (wasteEntries yok) bozulmaz
   assert.equal(model0.recordedUsage("2026-09").size, 0);
-  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: 0 });
+  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0, lafpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: 0 });
 });
 
 test("tutarlılık: sapmadan kayıtlı zayi ve ikram düşülür; eski alanlar değişmez", () => {

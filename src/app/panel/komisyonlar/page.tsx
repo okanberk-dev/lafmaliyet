@@ -87,7 +87,10 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 
   return (
     <>
-      <Header actions={<MonthPicker months={report.dataMonths} value={month} />} />
+      <Header
+        description={report.switchDay ? DESCRIPTION.replace("satış kasa raporlarından", "satış kasa raporlarından, LafPOS'un ödemelerinden") : DESCRIPTION}
+        actions={<MonthPicker months={report.dataMonths} value={month} />}
+      />
       <HashScroll key={month} />
       <div className="space-y-6">
         {report.pending.length ? <PendingCard rows={report.pending} /> : null}

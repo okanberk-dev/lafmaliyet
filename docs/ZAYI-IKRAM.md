@@ -23,17 +23,37 @@ kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). 
   kasa raporunun özetine bir kez girer. O güne panelde girilmiş **ürün ikramı silinmez ama sayılmaz**: listede
   "Sayılmıyor: LafPOS'taki ikram sayılıyor", ay özetinin altında "Panele girilen N ürün ikramı sayılmıyor". Ürüne
   bağlanamayan LafPOS satırı tüketime girmez, ay özetinde sayılır (yöneticide "ürüne bağlı değil").
-- **Yeni ürün ikramı panele girilmez** (iki rol): "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele
-  girilmez. Burada hammadde ikramı ve zayi girilir." Form İkram'da yalnız hammadde arar ve bunu mavi notla söyler. Geç
-  kayıt isteği de reddedilir; geçiş günü istekten sonra seçildiyse Onaylar'daki kart onay düğmesini göstermez, "Bu
-  isteği reddedin" der (sunucu da onaylamaz).
+- **Yeni ürün ikramı panele girilmez** (iki rol), LafPOS'un o günün sonu geldiyse ya da gün bugünse (gün sonu
+  bekleniyor): "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez. Burada hammadde ikramı ve zayi
+  girilir." Form İkram'da yalnız hammadde arar ("Hammadde" alanı) ve bunu mavi notla söyler. Geç kayıt isteği de
+  reddedilir; geçiş günü ya da gün sonu istekten sonra geldiyse Onaylar'daki kart onay düğmesini göstermez:
+  "… panele girilmez. Hammadde ikramı ve zayi Zayi & ikram'da girilir. Bu isteği reddedin." (sunucu da onaylamaz).
+- **Gün sonu gelmeyen geçmiş LafPOS günü** (kasa bilgisayarı bozuldu, gün hiç gönderilmedi): ürün ikramı panele girilir,
+  geç kayıt isteği onaylanır; o günün ikramı paneldekidir. Gün sonu sonradan gelirse LafPOS'unki sayılır, panelinki
+  "sayılmıyor" olur. Yazma kuralı okuma kuralıyla aynı (`productIkramClosed`, `panelWasteCounts`).
 - **Hammadde ikramı** (ör. personele süt) ve **zayi** panelde kalır, her zaman sayılır.
-- **Gün listesi** LafPOS'un o günkü ikramını salt okunur gösterir ("LafPOS'ta işaretlenen ikram"): personele ad ve
-  adet; yöneticiye ayrıca nedeni ve menü değeri. Gün sonu henüz gelmediyse "LafPOS'un bu günün sonu gelmedi; ikramlar
-  gün sonuyla gelir." (o güne kadar paneldeki ürün ikramı, varsa, sayılır).
-- **Kasa e-postası** LafPOS gününde "Panelde kayıtlı ikram" yerine "LafPOS'taki ikram" yazar ve ModPOS'un uyarısı
-  ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine LafPOS'un iki rakamını karşılaştırır: Z'deki ödenmez tutarı
-  ile ikram listesinin menü değeri ayrıysa bilgi satırı; panele girilip sayılmayan ürün ikramı varsa o da yazılır.
+- **LafPOS'ta zayi yazılan kalem** (kasada "Zayi yaz" / "Zayi kapat") aynı listede gelir, nedeni "Zayi: " ile başlar
+  (LafPOS `compReasonText`): **zayi** olarak sayılır, ikram değil (Tutarlılık'ın zayi sütunu, ay özetinin Zayi'si, kasa
+  özetinin zayi satırı). "Ödenmez: …" (personel yemeği, patron hesabı) ikramdır. Panelde de aynı gün aynı ürün zayi
+  girildiyse ikisi de sayılır, panel satırı "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kaydı silin" der; Zayi formu
+  LafPOS gününde "LafPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin" hatırlatır
+  (sahibin sorusu: ürün zayisi de gün sonu gelen günde yalnız LafPOS'tan mı sayılsın).
+- **Gün listesi** LafPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("LafPOS'ta işaretlenen ikram ve
+  zayi"): personele ad ve adet; yöneticiye ayrıca nedeni ve menü değeri. Ürüne bağlanamayan satır yöneticide "ürüne
+  bağlı değil: tüketime girmez · Ayarlar › LafPOS'ta bağlayın" der; Ayarlar › LafPOS'un "İkramda ürüne bağlanamayan POS
+  adları" listesinden bağlanır (yalnız ikram edilen kalem satış listesine düşmez). Bugünün gün sonu henüz gelmediyse
+  "LafPOS'un bu günün sonu gelmedi; ikram ve zayi gün sonuyla gelir."; geçmiş günse ürün ikramının panele
+  girilebileceğini söyler.
+- **Kasa e-postası** LafPOS gününde "Panelde kayıtlı ikram" yerine "LafPOS'taki ikram" (ve varsa "LafPOS'ta zayi
+  yazılan") yazar ve ModPOS'un uyarısı ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine LafPOS'un iki rakamını
+  karşılaştırır: Z'deki ödenmez tutarı (LafPOS'ta zayi yazılanı da kapsar) ile listenin tamamının menü değeri ayrıysa
+  bilgi satırı (Z fazlaysa listeye girmeyen ödenmez satır, azsa listede kalmış iptal edilen adisyonun ikramı); panele
+  girilip sayılmayan ürün ikramı varsa o da yazılır.
+- **Onaylar**'daki geç ikram kartı LafPOS'un gün sonu gelen gününde Z'nin ödenmez tutarını LafPOS'un ikram ve zayi
+  listesiyle karşılaştırır (paneldeki kayıtla değil).
+- **Personelin metinleri** LafPOS gününde ürün ikramını anmaz: Bugün'ün Zayi & ikram satırı, Zayi'nin başlığı ve boş
+  listesi, Kasa'nın özeti "Atılan bir şey ya da hammadde ikramı olduysa … girin; ürün ikramı LafPOS'ta işaretlenir" der;
+  personelin Yardım'ı aynı cümleyi koşullu yazar.
 - Ay özetindeki ödenmez tutarının etiketi ayın kasasına göre: "ModPOS ödenmez / ikram", geçiş ayında "Kasa ödenmez /
   ikram", sonra "LafPOS ödenmez / ikram".
 

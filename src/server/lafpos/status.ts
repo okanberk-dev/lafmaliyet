@@ -4,6 +4,7 @@ import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, lt, sql
 
 import { businessDate } from "@/lib/cash-report";
 import { readLafposSwitchDay } from "@/lib/constants";
+import { unmatchedIkramNames } from "@/lib/lafpos/ikram";
 import { lafposSecretProblem } from "@/lib/lafpos/request";
 import {
   isDayRejection,
@@ -20,6 +21,7 @@ import {
 import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
+import { loadLafposIkram } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 import { receivePosDay, type EndpointResult } from "./ingest";
@@ -200,6 +202,14 @@ export interface LafposCardData extends LafposCardInput {
   /** Ürüne bağlanamayan POS adları (hizmet satırları hariç): en çok satılan 10 ad ve toplam sayı */
   unmatched: { posName: string; qty: number; days: number }[];
   unmatchedCount: number;
+  /**
+   * İkramda (ve LafPOS'ta zayi yazılan satırlarda) ürüne bağlanamayan POS adları, geçiş gününden itibaren: yalnız ikram
+   * edilen kalem (personel kahvesi, tadım bardağı) satış listesine hiç düşmez, tüketime girmesi için burada bağlanır.
+   * Yukarıdaki satış listesinde görünen adlar tekrar edilmez; en çok ikram edilen 10 ad ve toplam sayı. Geçiş günü boşken
+   * boş (ikram hiçbir hesaba girmez)
+   */
+  unmatchedIkram: { posName: string; qty: number; days: number }[];
+  unmatchedIkramCount: number;
 }
 
 const DAYS_SHOWN = 14;
@@ -212,7 +222,7 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
   const d = s.posDailySales;
   const unmatchedWhere = and(isNull(d.productId), eq(d.isService, false));
   const missingFrom = switchDay && switchDay < today ? (switchDay > addDays(today, -60) ? switchDay : addDays(today, -60)) : null;
-  const [state, recent, [totals], unmatched, [{ unmatchedCount }], receivedRange, closed] = await Promise.all([
+  const [state, recent, [totals], unmatched, [{ unmatchedCount }], receivedRange, closed, ikram] = await Promise.all([
     readLafposState(db),
     db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).orderBy(desc(r.date)).limit(DAYS_SHOWN),
     db
@@ -228,7 +238,10 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     db.select({ unmatchedCount: countDistinct(d.posName) }).from(d).where(unmatchedWhere),
     missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today))) : Promise.resolve([]),
     missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db) : Promise.resolve([]),
+    // İkramın adları geçiş gününden itibaren (okuma anındaki bağla çözülür; bağlanınca listeden düşer)
+    switchDay ? loadLafposIkram(db, switchDay) : Promise.resolve(null),
   ]);
+  const ikramNames = ikram ? unmatchedIkramNames(ikram.lines, unmatched.map((u) => u.posName)) : { items: [], count: 0 };
   // Günlü retlerin günlerinin paneldeki kaydı (409'da silinecek olan; retten sonra yeniden yazıldıysa ret çözüldü)
   const errDates = Object.keys(state.rejections);
   const [lineCounts, errRows] = await Promise.all([
@@ -269,5 +282,7 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     rejectionDays: Object.fromEntries(errRows.map((x) => [x.date, { zNo: x.z.zNo, lines: linesOf.get(x.date) ?? 0, receivedAt: x.receivedAt.toISOString() }])),
     unmatched,
     unmatchedCount,
+    unmatchedIkram: ikramNames.items,
+    unmatchedIkramCount: ikramNames.count,
   };
 }

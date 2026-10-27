@@ -48,6 +48,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
   let email: typeof import("../src/server/cash/report-email");
   let reports: typeof import("../src/server/data/cash-reports");
   let wasteRequests: typeof import("../src/server/data/waste-requests");
+  let status: typeof import("../src/server/lafpos/status");
   const users = {
     ali: { id: 0, name: "Ali", role: "admin" as const, email: "lafpos-ki-ali@ornek.com" },
     ayse: { id: 0, name: "Ayşe", role: "staff" as const, email: "lafpos-ki-ayse@ornek.com" },
@@ -149,6 +150,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     email = await import("../src/server/cash/report-email");
     reports = await import("../src/server/data/cash-reports");
     wasteRequests = await import("../src/server/data/waste-requests");
+    status = await import("../src/server/lafpos/status");
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (!String(input).startsWith("https://api.resend.com/")) return realFetch(input, init);
       const body = JSON.parse(String(init?.body)) as { html: string; text: string };
@@ -399,6 +401,21 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal(card.ikramFromLafpos, true);
     // LafPOS'un listesi 720 (ödenmez tutarıyla aynı); panelde ürün ikramı yok ama 0 yazmaz
     assert.equal(card.ikramRecorded, 720);
+  });
+
+  test("E-38: ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'ta listelenir (geçiş gününden itibaren); bağlanınca düşer", async () => {
+    await push("2026-11-11", 13);
+    // Geçiş günü boşken ikram hiçbir hesaba girmez: liste de boş
+    const none = await status.loadLafposCard(db, NOW);
+    assert.deepEqual([none.unmatchedIkram, none.unmatchedIkramCount], [[], 0]);
+    await setSwitch(S);
+    const card = await status.loadLafposCard(db, NOW);
+    assert.deepEqual(card.unmatched, [], "satış satırının hepsi bağlı");
+    assert.deepEqual(card.unmatchedIkram, [{ posName: "PUMPKIN CHAI", qty: 1, days: 1 }]);
+    // Bağlanınca (POS adı hafızası) okuma anında çözülür: listeden düşer, ikram tüketime girer
+    await db.insert(s.posMappings).values({ posName: "PUMPKIN CHAI", productId: ids.mocha, isService: false });
+    assert.equal((await status.loadLafposCard(db, NOW)).unmatchedIkramCount, 0);
+    assert.equal((await dataset.loadDataset()).lafposIkram?.lines.find((l) => l.posName === "PUMPKIN CHAI")?.productId, ids.mocha);
   });
 
   test("E-38: kasa e-postası LafPOS gününde LafPOS'un ikramını yazar ve iki rakamını karşılaştırır", async () => {

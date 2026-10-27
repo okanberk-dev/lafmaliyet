@@ -20,6 +20,7 @@ import {
   productIkramClosed,
   productIkramNote,
   productIkramRefusal,
+  unmatchedIkramNames,
   type LafposIkramData,
 } from "../src/lib/lafpos/ikram";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -216,4 +217,23 @@ test("kasa e-postası: LafPOS gününde ikram LafPOS'un iki rakamıyla karşıla
   );
   assert.match(withZayi, /LafPOS'ta zayi yazılan/);
   assert.doesNotMatch(withZayi, /ikram ve zayi listesinden/);
+});
+
+test("Ayarlar › LafPOS: ikramda bağlanamayan adlar gün ve adetle; satış listesinde görünen ad tekrar edilmez", () => {
+  const lines = [
+    { date: "2026-11-11", posName: "PERSONEL KAHVESİ", productId: null, qty: 2 },
+    { date: "2026-11-12", posName: "Personel  Kahvesi", productId: null, qty: 1 },
+    { date: "2026-11-12", posName: "TADIM BARDAĞI", productId: null, qty: 5 },
+    { date: "2026-11-12", posName: "PUMPKIN CHAI", productId: null, qty: 9 },
+    { date: "2026-11-12", posName: "LATTE MEDIUM", productId: 3, qty: 4 },
+  ];
+  assert.deepEqual(unmatchedIkramNames(lines, ["Pumpkin Chai"]), {
+    items: [
+      { posName: "TADIM BARDAĞI", qty: 5, days: 1 },
+      { posName: "PERSONEL KAHVESİ", qty: 3, days: 2 },
+    ],
+    count: 2,
+  });
+  assert.equal(unmatchedIkramNames(lines, [], 1).items.length, 1);
+  assert.equal(unmatchedIkramNames(lines, [], 1).count, 3);
 });

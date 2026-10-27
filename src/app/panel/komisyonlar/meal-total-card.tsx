@@ -3,6 +3,7 @@ import { Wallet } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import type { ChannelMonth, GroupMonth } from "@/lib/commission/report";
 import { money, monthLabel, num, pct } from "@/lib/format";
+import { dayLocativeTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
 import { ANCHOR, FlagList } from "./channel-card";
@@ -24,8 +25,13 @@ function rateSub(g: GroupMonth): string {
 export function MealTotalCard({ group, rows, className }: { group: GroupMonth; rows: ChannelMonth[]; className?: string }) {
   const companies = new Set(rows.filter((r) => r.invoices.length).map((r) => r.channel)).size;
   // Birden çok kart varken satışı bilinmeyen kart varsa: kart kart oran ancak ekstredeki satışla (LafPOS'un ödemeleri
-  // kartın satışını kendisi verir)
-  const untyped = group.activeChannels.length >= 2 && rows.some((r) => r.invoices.length && !r.sales);
+  // kartın satışını kendisi verir). Ayın tamamı LafPOS'tansa Z tek toplam değil: satışı bilinmeyen kartın LafPOS'ta
+  // ödemesi yok (ödeme türünün kanalı seçilmemiş olabilir); geçiş ayında öncesinin Z'si tek toplam
+  const unknown = rows.filter((r) => r.invoices.length && !r.sales);
+  const fullLafpos = group.lafposFrom !== null && group.lafposFrom <= `${group.month}-01`;
+  const untyped = unknown.length > 0 && (fullLafpos || group.activeChannels.length >= 2);
+  const names = unknown.map((r) => r.label);
+  const nameList = names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names[names.length - 1]}` : (names[0] ?? "");
   const cells = [
     { label: "Z'de yemek kartı", value: group.zTotal !== null ? money(group.zTotal) : "–", sub: tillSub(group) },
     { label: "Kesilen", value: `${money(group.feesTotal)} + KDV`, sub: `${num(group.invoiceCount)} fatura · ${num(companies)} şirket` },
@@ -48,7 +54,11 @@ export function MealTotalCard({ group, rows, className }: { group: GroupMonth; r
         <FlagList flags={group.flags} />
         {untyped ? (
           <p className="text-[13px] leading-5 text-ink-mute">
-            Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.
+            {fullLafpos
+              ? `${nameList} için LafPOS'ta ödeme yok: ödeme türünün kanalını LafPOS'ta seçin ya da kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
+              : group.lafposFrom
+                ? `LafPOS ${dayLocativeTR(group.lafposFrom)} başladı; öncesinde Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin.`
+                : "Z raporunda yemek kartları tek toplam. Kart kart oran için her kartın aylık ekstresindeki satışı kartın altındaki Satışı yaz ile girin."}
           </p>
         ) : null}
       </div>

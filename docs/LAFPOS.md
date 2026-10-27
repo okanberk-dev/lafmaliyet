@@ -321,15 +321,22 @@ geçildikten sonra). LafPOS satış satırları (`lines[]`) ikramı içermez (La
 çıkarır, `server/sync/lafmaliyet.ts`): çift sayım yok.
 
 - Satır panel ürününe gün sonu satırlarıyla aynı sırayla bağlanır (sitenin kalemi ve boyu, sonra POS adı
-  eşleştirmesi), okuma anında: ürün sonradan bağlanınca geçmiş ikram da bulunur. Bağlanamayan satır tüketime girmez.
-- **Her gün tek kaynak:** LafPOS'un gün sonu gelen günde ikram satırları veri kümesine (`Dataset.lafposIkram`), oradan
-  Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine ve haftalık özete girer (`Model.countedWaste`); panele o güne
-  girilmiş ürün ikramı sayılmaz. Hammadde ikramı ve zayi panelde kalır.
-- Panelde yeni ürün ikramı reddedilir (doğrudan, geç kayıt isteği, isteğin onayı). Zayi'nin gün listesi LafPOS'un
-  ikramını salt okunur gösterir (personelde ad ve adet; yöneticide nedeni ve menü değeri).
-- Kasa raporunun özeti (form, e-posta, WhatsApp, Bugün) o günün ikramını LafPOS'tan yazar; e-posta LafPOS'un Z'sindeki
-  ödenmez tutarı ile ikram listesinin menü değerini karşılaştırır (fark bilgi satırı; eski LafPOS iptal edilen adisyonun
-  ikramını da yolluyordu, LafPOS L1 ikisini aynı adisyonlardan hesaplar).
+  eşleştirmesi), okuma anında: ürün sonradan bağlanınca geçmiş ikram da bulunur. Bağlanamayan satır tüketime girmez;
+  adı Ayarlar › LafPOS'ta "İkramda ürüne bağlanamayan POS adları" altında listelenir ve oradan bağlanır (yalnız ikram
+  edilen kalem satış satırlarına hiç düşmez).
+- **Tür nedenin ön ekinden** (sözleşmede tür alanı yok; LafPOS `shared/comp.ts` `compReasonText`): "Zayi: Döküldü"
+  zayidir (ön ek atılır), "Ödenmez: Personel yemeği" ve öteki her satır ikramdır (`lafposLineKind`).
+- **Her gün tek kaynak:** LafPOS'un gün sonu gelen günde satırlar kendi türüyle veri kümesine (`Dataset.lafposIkram`),
+  oradan Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine ve haftalık özete girer (`Model.countedWaste`); panele o
+  güne girilmiş ürün ikramı sayılmaz. Hammadde ikramı ve zayi panelde kalır; panelin ürün zayisi LafPOS'ta da aynı gün
+  zayi yazıldıysa ikisi de sayılır ve gün listesinde işaretlenir (sahibin sorusu).
+- Panelde yeni ürün ikramı, gün sonu gelen günde ve bugün reddedilir (doğrudan, geç kayıt isteği, isteğin onayı); gün
+  sonu gelmeyen geçmiş günde girilir. Zayi'nin gün listesi LafPOS'un ikram ve zayi satırlarını salt okunur gösterir
+  (personelde ad ve adet; yöneticide nedeni ve menü değeri).
+- Kasa raporunun özeti (form, e-posta, WhatsApp, Bugün) o günün ikram ve zayisini LafPOS'tan yazar; e-posta LafPOS'un
+  Z'sindeki ödenmez tutarı (zayi yazılanı da kapsar) ile listenin tamamının menü değerini karşılaştırır (fark bilgi
+  satırı, işarete göre açıklama; eski LafPOS iptal edilen adisyonun ikramını da yolluyordu, LafPOS L1 ikisini aynı
+  adisyonlardan hesaplar).
 - Geçiş günü boşken ikram hiçbir yerde okunmaz.
 
 ### Ürün maliyetleri: `GET /api/panel/pos/urunler`
