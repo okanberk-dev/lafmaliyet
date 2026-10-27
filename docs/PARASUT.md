@@ -234,7 +234,9 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   benzeri yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
   tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9,
   tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md));
-  faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar.
+  faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar. İki sayılı adda
+  ("50'Lİ X 20", "20 PK X 50 AD") Koli / Kutu / Kasa'da ikisinin çarpımı (1.000); Adet ya da Paket'te hangisi olduğu
+  belli değil, çarpan boş kalır ve form iki olasılığı gösterir (E-06).
   Yazılan çarpan addaki kanıttan farklıysa form uyarır ("150 yap"); **Faturadan oku** çarpanı faturanın kendisinden
   okur (Claude Haiku). Bağlı ürünlerden çarpanı kanıtla tutmayanlar sayfanın **Kontrol edilecek bağlantılar** kutusunda.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
@@ -294,8 +296,11 @@ Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** bi
 çarpan (koli ↔ adet, kg ↔ gr) ya da tek seferlik bir fatura bütün reçete maliyetlerini sessizce değiştirmesin, sahte
 "Hammadde zammı" uyarısı ve fiyat önerisi çıkmasın. %40 ve altı eskisi gibi sessizce uygulanır (tam %40 uygulanır).
 
-- Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan eklediği kalem) hammaddenin ilk fiyatı doğrudan yazılır. Excel'den
-  gelen tahmini ("Tahmini") fiyat da şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
+- Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan fiyatsız eklediği kalem) hammaddenin **ilk fiyatı** yalnız çarpan
+  faturanın ölçü biriminden geliyorsa (KG, LT, düzine: `firstPriceCertain`) doğrudan yazılır. Çarpan addan, açıklamadan
+  ya da elle geldiyse ilk fiyat da onaya düşer (denetim 26 Eki, E-06: "KARTON BARDAK 8 OZ 50'Lİ X 20" 1 Koli = 50 adet
+  bağlanmıştı, adet 8 ₺ onaysız yazılıyordu). Kart "İlk fiyat" der. Excel'den gelen tahmini ("Tahmini") fiyat da
+  şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
 - Su ve buz (fiyatı su faturasından) hiç onaya düşmez.
 
 **Nerede görünür** (yalnız yönetici): Hammaddeler › **Onay bekleyen fiyatlar** (`#fiyat-onayi`), listede "Fiyat
@@ -307,7 +312,8 @@ onaya düştü").
 **Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
 aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin
 maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). En çok bir **Çarpanı X yap**, kanıta göre (ilk
-tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2):
+tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2). Addaki paket boyu ile faturanın emin okuması çelişirse düğme
+yoktur, iki değer birlikte yazılır (E-06):
 
 1. kalemin adındaki ya da birimindeki paket boyu çarpandan farklıysa: `Adında “150 AD.” yazıyor: 1 Adet = 150 adet
    olmalı. Öyle olursa adet başı 20,00 ₺ (şimdikinden %52 ucuz).`;

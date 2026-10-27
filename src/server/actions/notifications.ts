@@ -9,7 +9,7 @@ import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, monthShort, num, tl } from "@/lib/format";
-import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
+import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
@@ -199,8 +199,9 @@ async function unpricedNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Yönetici: Paraşüt faturasında şimdikinden %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatları (Hammaddeler ›
- * Onay bekleyen fiyatlar). Kimlik sayıdan ve en yeni öneriden: yeni öneri gelince yeniden okunmamış olur.
+ * Yönetici: Paraşüt faturasında şimdikinden %40'tan fazla farklı gelen ya da fiyatı olmayan hammaddenin çarpanı kesin
+ * olmayan ilk fiyatı, onay bekleyen (Hammaddeler › Onay bekleyen fiyatlar). Kimlik sayıdan ve en yeni öneriden: yeni
+ * öneri gelince yeniden okunmamış olur.
  */
 async function holdNotifications(): Promise<PanelNotification[]> {
   const h = await pendingHoldSummary();
@@ -210,7 +211,7 @@ async function holdNotifications(): Promise<PanelNotification[]> {
       id: `fiyat-onay-${h.count}-${h.latestId}`,
       kind: "warning",
       title: `${h.count} hammadde fiyatı onay bekliyor`,
-      body: `${holdsSummary(h.items)}: faturadaki fiyat %40'tan fazla farklı`,
+      body: `${holdsSummary(h.items)}: ${holdReason(h.items)}`,
       timeLabel: "",
       unread: true,
       href: HOLDS_HREF,

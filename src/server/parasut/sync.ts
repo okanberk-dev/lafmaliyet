@@ -5,7 +5,8 @@ import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, 
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
-import { appliedKeyOf, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
+import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
+import { packEvidence } from "@/lib/product-match";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
@@ -1484,6 +1485,7 @@ export async function applyProductLinks(months?: string[]) {
       invoiceId: s.invoices.id,
       productKey: s.parasutBillLines.productKey,
       productName: s.parasutBillLines.productName,
+      description: s.parasutBillLines.description,
       unit: s.parasutBillLines.unit,
       quantity: s.parasutBillLines.quantity,
       netTotal: s.parasutBillLines.netTotal,
@@ -1581,8 +1583,10 @@ export async function applyProductLinks(months?: string[]) {
     const before = ing.packagePrice / (ing.packageSize || 1);
     const after = packagePrice / (packageSize || 1);
     applied[appliedKey] = r.date;
-    // Her zaman hammaddenin şimdiki fiyatına göre: onaylanan fiyat sonrakilerin tabanı olur, reddedilende eski fiyat kalır
-    const step = priceStep({ before, after, exempt: ing.priceSource === "water" });
+    // Her zaman hammaddenin şimdiki fiyatına göre: onaylanan fiyat sonrakilerin tabanı olur, reddedilende eski fiyat kalır.
+    // İlk fiyat (şimdiki fiyat yok) yalnız çarpanı faturanın ölçü biriminden geliyorsa yazılır, yoksa onaya düşer (E-06)
+    const firstCertain = firstPriceCertain(packEvidence({ name: r.productName, description: r.description, unit: r.unit, quantity: r.quantity }, ing.unit), link.factor);
+    const step = priceStep({ before, after, exempt: ing.priceSource === "water", firstCertain });
     const pending = pendingBy.get(ingredientId) ?? null;
     if (step === "same") {
       if (pending) await supersedeHolds([pending.id], "Daha yeni faturada fiyat aynı");

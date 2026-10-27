@@ -520,7 +520,8 @@ test("9. ürün bağlantısı, fiyatı girilmemiş hammadde, reçete onayı, fiy
   assert.equal(t["fiyat-onay"].status, "todo");
   assert.equal(t["fiyat-onay"].href, HOLDS_HREF);
   assert.equal(HOLDS_HREF, "/panel/hammaddeler#fiyat-onayi");
-  assert.match(t["fiyat-onay"].detail, /^Faturadaki fiyat şimdikinden %40'tan fazla farklı: Süt \+\u2060?%52, Un\. Onaylanana kadar/u);
+  // Un'un şimdiki fiyatı yok: ilk fiyat (E-06)
+  assert.match(t["fiyat-onay"].detail, /^Faturadaki fiyat şimdikinden %40'tan fazla farklı ya da ilk fiyat: Süt \+\u2060?%52, Un \(ilk fiyat\)\. Onaylanana kadar/u);
   // Zam: priceAlert'in metni olduğu gibi (ayda TL etkisi dahil)
   assert.equal(t.zam.badge, "3 ürün");
   assert.match(t.zam.detail, /ayda ≈ 1\.200 ₺ kâr götürüyor\.$/);

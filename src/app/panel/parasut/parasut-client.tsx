@@ -49,7 +49,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
 import type { ReadingState } from "@/lib/photo-rules";
 import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
-import { guessLinkFactor, packEvidence, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
+import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
 import type { IgnoredProduct } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -973,11 +973,14 @@ function ProductLinks({
                   const ing = byId.get(Number(d.ingredientId));
                   const suggestion = d.ingredientId ? null : suggestIngredient(u.productName, ingredients, linked);
                   const suggested = suggestion ? byId.get(suggestion.ingredientId) : undefined;
-                  // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz
+                  // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz.
+                  // Adında iki sayı varsa ve birimden hangisi olduğu belli değilse ("50'Lİ X 20", 1 Adet) kutu boşalır: "1" kalıp
+                  // yanlışlıkla bağlanmasın, sahibi iki olasılıktan birini seçer ya da faturadan okur
                   const choose = (id: string, known?: number | null) => {
                     const next = byId.get(Number(id));
                     const guess = known ? factorInput(known) : next && !d.factorTouched ? guessLinkFactor(lineOf(u), next.unit) : null;
-                    set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : {}) });
+                    const unsure = !known && !guess && next && !d.factorTouched && packPairChoices(lineOf(u), next.unit);
+                    set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : unsure ? { factor: "" } : {}) });
                   };
                   return (
                     <li key={u.productKey} className="rounded-2xl bg-surface p-3">
@@ -1457,11 +1460,13 @@ function FactorHelp({
   const typed = parseNumberTR(factor);
   const ev = packEvidence(line, ingredient.unit);
   const mismatch = ev && !(typed && sameFactor(typed, ev.factor)) ? ev : null;
+  // Adında iki sayı var ama birimden hangisi olduğu belli değil ("50'Lİ X 20", 1 Adet): iki olasılık, karar sahibinin
+  const pair = ev ? null : packPairChoices(line, ingredient.unit);
   const unitLabel = UNIT_LABEL[ingredient.unit] ?? ingredient.unit;
   // Okuma seçilen hammaddenin birimine göre: hammadde değişince eski okuma gösterilmez
   const shown = read && read.ingredientId === ingredient.id ? read : null;
   const canRead = readState !== "nokey";
-  if (!mismatch && !shown && !canRead) return null;
+  if (!mismatch && !pair && !shown && !canRead) return null;
   const readNow = () =>
     start(async () => {
       const r = await readProductInvoice({ productKey, ingredientId: ingredient.id, mode: shown ? "force" : "manual" });
@@ -1484,6 +1489,20 @@ function FactorHelp({
           <Button size="xs" variant="secondary" onClick={() => onFactor(factorInput(mismatch.factor))}>
             {num(mismatch.factor, 3)} yap
           </Button>
+        </p>
+      ) : null}
+      {pair ? (
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-warn">
+          <TriangleAlert size={13} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 text-pretty">
+            Adında “{pair.text}” yazıyor: 1 {line.unit?.trim() || "birim"} = {pair.choices.map((c) => `${num(c, 3)} ${unitLabel}`).join(" mi, ")} mi? Faturadan okuyun ya da
+            doğrusunu seçin.
+          </span>
+          {pair.choices.map((c) => (
+            <Button key={c} size="xs" variant={typed && sameFactor(typed, c) ? "primary" : "secondary"} onClick={() => onFactor(factorInput(c))}>
+              {num(c, 3)} yap
+            </Button>
+          ))}
         </p>
       ) : null}
       {shown ? (

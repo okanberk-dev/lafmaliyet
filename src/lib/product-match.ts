@@ -146,7 +146,10 @@ export function parsePack(name: string): PackInfo {
   const start = String.raw`(?<![\d,])(?<!\d\.)`;
   m = new RegExp(String.raw`${start}${NUM}\s*${UNIT}${after}`).exec(t);
   const size = m ? sizeOf(m[1], m[2]) : null;
-  const c = new RegExp(String.raw`${start}(\d+)\s*'?\s*(?:adet|ad|li|lu|dilim|pcs|pc|tv)(?![a-z])`).exec(t);
+  // İki sayılı paket ("50'Lİ X 20"): paketteki sayı ikisinin çarpımı; "50'Lİ X 10" başka pakettir (packKey)
+  const pair = findPair(t);
+  if (pair) return { size, count: pair.total };
+  const c = new RegExp(String.raw`${start}(\d+)\s*['’]?\s*(?:adet|ad|li|lu|dilim|pcs|pc|tv)(?![a-z])`).exec(t);
   return { size, count: c ? Number(c[1]) : null };
 }
 
@@ -164,6 +167,55 @@ const fmt = (n: number) => String(Math.round(n * 1000) / 1000).replace(".", ",")
 /** Paket sayısı sayılabilecek aralık: "1 AD" paket değildir; dev sayı ürün kodudur */
 const MIN_COUNT = 2;
 const MAX_COUNT = 100_000;
+
+// ------------------------------------------------------------------ iki sayılı paket ("50'Lİ X 20")
+/** Paketteki tane sözcükleri ("50'Lİ", "100 AD.", "50 ADET", "150 PCS", "12 DİLİM") */
+const PIECE = String.raw`(?:adet|ad|li|lu|pcs|pc|tane|dilim)`;
+/** İç paket sözcükleri ("20 PK", "20 PAKET", "2 KOLİ") */
+const PACK = String.raw`(?:pk|pkt|paket|koli|kutu|kasa|torba)`;
+/** Tam sayı, binlik ayraçlı da ("1.000") */
+const INT = String.raw`([1-9]\d{0,2}(?:\.\d{3})+|\d+)`;
+/** Sayının başı: önünde harf (ürün kodu), rakam, yüzde ya da ondalık yok */
+const PAIR_START = String.raw`(?<![a-z\d,%])(?<!\d\.)`;
+/** "X 20"nin sonu: ardından ölçü (boy, çap, uzunluk, hacim) gelmiyor ("100 AD X 23 CM" pipetin boyudur) */
+const NO_MEASURE = String.raw`(?![\d.,])(?!\s*(?:kg|kilo|gram|gr|g|litre|lt|l|ml|cl|oz|cc|cm|mm|mt|m)(?![a-z]))`;
+const APOS = String.raw`['’]?`;
+/** Kalıplar ve hangi sayının bir paketteki tane olduğu (öteki paket sayısı) */
+const PAIR_PATTERNS: { re: RegExp; per: 1 | 2 }[] = [
+  // "50'Lİ X 20", "100 AD X 10 PK", "50 Lİ X 20 PAKET"
+  { re: new RegExp(String.raw`${PAIR_START}${INT}\s*${APOS}\s*${PIECE}\.?\s*[x×*]\s*${INT}${NO_MEASURE}(?:\s*${APOS}\s*${PACK}(?![a-z]))?`), per: 1 },
+  // "50 Lİ 20 PAKET", "100 AD 10 PK"
+  { re: new RegExp(String.raw`${PAIR_START}${INT}\s*${APOS}\s*${PIECE}\.?\s+${INT}\s*${APOS}\s*${PACK}(?![a-z])`), per: 1 },
+  // "20 PK X 50 AD", "20 PAKET 50 ADET", "20PK*50AD"
+  { re: new RegExp(String.raw`${PAIR_START}${INT}\s*${APOS}\s*${PACK}\.?\s*[x×*]?\s*${INT}\s*${APOS}\s*${PIECE}(?![a-z])`), per: 2 },
+  // "20X50 AD", "20 X 50'Lİ"
+  { re: new RegExp(String.raw`${PAIR_START}${INT}\s*[x×*]\s*${INT}\s*${APOS}\s*${PIECE}(?![a-z])`), per: 2 },
+];
+
+const intOf = (s: string) => Number(s.replace(/\./g, ""));
+
+/**
+ * Adda iki sayı: bir paketteki tane ve paket sayısı ("KARTON BARDAK 8 OZ 50'Lİ X 20" → 50 × 20 = 1000). Tek sayı
+ * okumak (50) koliyi 20 kat ucuz gösterirdi. Sadeleşmiş (küçük harf, işaretsiz) metinde; yoksa null
+ */
+function findPair(t: string): (Hit & { per: number; packs: number; total: number }) | null {
+  for (const p of PAIR_PATTERNS) {
+    const m = p.re.exec(t);
+    if (!m) continue;
+    const a = intOf(m[1]);
+    const b = intOf(m[2]);
+    const total = a * b;
+    if (!(a >= 1 && b >= 1) || total < MIN_COUNT || total > MAX_COUNT) continue;
+    return { start: m.index, end: m.index + m[0].length, per: p.per === 1 ? a : b, packs: p.per === 1 ? b : a, total };
+  }
+  return null;
+}
+
+/**
+ * Faturadaki birim iç paketin adı olabilir: "50'Lİ X 20" 1 Paket ise 50 de olabilir 1000 de (tedarikçi koliyi de
+ * paket yazar). Dış paket birimlerinde (koli, kutu, kasa) çarpım alınır
+ */
+const INNER_PACKAGE_UNITS = new Set(["paket", "pk", "pkt", "pa", "torba", "duzine", "dzn"]);
 
 /**
  * Faturadaki paket boyunun kanıtı: faturadaki 1 birim kaç hammadde birimi ve bunu nereden bildiğimiz. `text` ekranda
@@ -191,6 +243,8 @@ interface Scan {
   size: (Hit & { size: NonNullable<PackInfo["size"]> }) | null;
   /** Tek başına paket sayısı ("150 AD.", "150'Lİ", "100 LÜ", "X150", "150 PCS") */
   count: (Hit & { count: number }) | null;
+  /** İki sayı: paketteki tane × paket sayısı ("50'Lİ X 20", "20 PK X 50 AD"); varsa tek sayının yerine geçer */
+  pair: (Hit & { per: number; packs: number; total: number }) | null;
 }
 
 /**
@@ -220,7 +274,7 @@ const MULT_PATTERNS: { re: RegExp; size: [number, number]; count: (m: RegExpExec
 ];
 const SIZE_RE = new RegExp(String.raw`${START}${NUM}\s*${UNIT}${AFTER}`);
 /** Sayıda binlik ayraç olabilir ("1.000 AD." = 1000) */
-const COUNT_RE = new RegExp(String.raw`${START}([1-9]\d{0,2}(?:\.\d{3})+|\d+)\s*'?\s*(adet|ad|li|lu|dilim|pcs|pc|tv|tane)${AFTER}`);
+const COUNT_RE = new RegExp(String.raw`${START}([1-9]\d{0,2}(?:\.\d{3})+|\d+)\s*['’]?\s*(adet|ad|li|lu|dilim|pcs|pc|tv|tane)${AFTER}`);
 /** "X150": önünde sayı ya da harf yok, ardından ölçü birimi gelmiyor ("30X150" ölçü, "X 1 LT" boyut) */
 const X_COUNT_RE = /(?<![a-z\d])[x×]\s*(\d+)(?![\d.,])(?!\s*(?:kg|kilo|gram|gr|g|litre|lt|l|ml|cl|oz|cc|cm|mm|mt|m)(?![a-z]))/;
 
@@ -246,7 +300,7 @@ function scanPack(t: string): Scan {
     count = { start: c.index, end: c.index + c[0].length + dot, count: n };
     break;
   }
-  return { mult, size, count };
+  return { mult, size, count, pair: findPair(t) };
 }
 
 /** Eşleşen parçalar özgün metinden; aradaki kısa ara da ("40CL PET 12TV"), uzunsa "…" ile */
@@ -273,9 +327,20 @@ function unitKind(unit: string | null): UnitKind {
 /** Adın ya da açıklamanın kanıtı (ölçü birimi değilse); yoksa null */
 function evidenceIn(text: string, source: "name" | "description", line: PackLine, kind: UnitKind, ingredientUnit: IngredientUnit): PackEvidence | null {
   const { t, at } = folded(text);
-  const { mult, size, count } = scanPack(t);
+  const { mult, size, count, pair } = scanPack(t);
   const dim = ingredientUnit === "gr" ? "mass" : ingredientUnit === "ml" ? "volume" : null;
   const pieces = ingredientUnit === "adet" || ingredientUnit === "dilim";
+  if (kind === "package" && pair) {
+    // İki sayılı paket ("50'Lİ X 20", 1 Koli): dış pakette ikisinin çarpımı (1000), tek sayısı (50) değil. Faturadaki
+    // birim iç paketin adıysa (Paket, Düzine) 50 de olabilir 1000 de: kanıt yok, okuma ya da sahibi karar verir
+    if (INNER_PACKAGE_UNITS.has(unitWord(line.unit))) return null;
+    if (pieces) return { factor: pair.total, source, text: fragment(text, at, [pair]) };
+    const sz = mult?.size ?? size?.size ?? null;
+    if (!dim || !sz || sz.dim !== dim) return null;
+    return { factor: pair.total * sz.amount, source, text: fragment(text, at, [mult ?? size!, pair]) };
+  }
+  // Tek parçada (Adet) iki sayı: 1 adet tek tane de olabilir, paket de, koli de; kanıt yok
+  if (pair) return null;
   if (kind === "package") {
     // Paket: içindeki sayı (adet / dilim) ya da sayı × boyut (gr / ml); düzinede sayı yazmasa da 12
     const dozen = ["duzine", "dzn"].includes(unitWord(line.unit));
@@ -308,6 +373,9 @@ function evidenceIn(text: string, source: "name" | "description", line: PackLine
  * - tek parçaysa (Adet, C62, AD, Tane) adında ya da açıklamasında tek başına yazan paket sayısı ("150 AD.",
  *   "150'Lİ", "100 LÜ", "X150", "150 PCS"): adet / dilim hammaddede sayı, gr / ml'de boyutla birlikte sayı × boyut.
  *   Sayısız boyut kanıt değildir ("SÜT 1 L": tek şişe de olabilir koli de; formun tahmini 1000 ml, guessLinkFactor).
+ * - iki sayılı paket ("50'Lİ X 20", "20X50 AD", "20 PK X 50 AD", "50 Lİ 20 PAKET", "100 AD X 10 PK"): dış paket
+ *   biriminde (Koli, Kutu, Kasa) ikisinin çarpımı (1000); birim tek parça ya da iç paketin adıysa (Adet, Paket) yapı
+ *   belli değil, kanıt yok (packPairChoices iki olasılığı verir).
  * Sayılmayanlar: bardak boyu (8OZ), çap ve uzunluk (90 MM, 23 CM), yüzde (%35), "2 KAT". Ad açıklamadan önce gelir.
  */
 export function packEvidence(line: PackLine, ingredientUnit: IngredientUnit): PackEvidence | null {
@@ -332,12 +400,14 @@ export function sameFactor(a: number, b: number): boolean {
  * addaki boyut ("SÜT 1 L" → 1000 ml; "1000 GR * 8 AD" → 1000 gr: koli sayısı sayılmaz); ölçü birimi başka boyuttaysa ya
  * da pakette sayı yoksa tahmin edilmez. Adında paket sayısı yazıyor ama faturada o kadar ya da daha çok alınmışsa
  * ("PEÇETE 100 LÜ" 120 paket mi, 120 peçete mi) de tahmin edilmez: "1" canlıdaki yanlış bağlantıyı (Yenilebilir bardak
- * 150 AD.) yeniden doğururdu; sahibi yazar ya da faturadan okur.
+ * 150 AD.) yeniden doğururdu; sahibi yazar ya da faturadan okur. İki sayılı adda kanıt yoksa ("50'Lİ X 20" 1 Adet) da.
  */
 export function guessLinkFactor(product: PackLine, ingredientUnit: IngredientUnit): string | null {
   const ev = packEvidence(product, ingredientUnit);
   if (ev) return fmt(ev.factor);
   if (product.quantity != null && packEvidence({ ...product, quantity: null }, ingredientUnit)) return null;
+  // Adında iki sayı var ama yapı belirsiz ("50'Lİ X 20", 1 Adet): "1" ya da tek sayı yanlış olabilir, tahmin edilmez
+  if (packPair(product)) return null;
   const kind = unitKind(product.unit);
   if (kind !== "single" && kind !== "other") return null;
   if (ingredientUnit === "adet" || ingredientUnit === "dilim") return "1";
@@ -345,4 +415,34 @@ export function guessLinkFactor(product: PackLine, ingredientUnit: IngredientUni
   const pack = parsePack(product.name);
   if (!dim || !pack.size || pack.size.dim !== dim) return null;
   return fmt(pack.size.amount);
+}
+
+/**
+ * Adındaki (yoksa açıklamasındaki) iki sayılı paket: faturada yazıldığı gibi parça ("50'Lİ X 20"), bir paketteki tane
+ * (50), paket sayısı (20) ve çarpımı (1000); yoksa null
+ */
+export function packPair(line: Pick<PackLine, "name" | "description">): { text: string; per: number; packs: number; total: number } | null {
+  for (const text of [line.name, line.description?.trim() ?? ""]) {
+    if (!text) continue;
+    const { t, at } = folded(text);
+    const p = findPair(t);
+    if (p) return { text: fragment(text, at, [p]), per: p.per, packs: p.packs, total: p.total };
+  }
+  return null;
+}
+
+/**
+ * Bağlama formunun ipucu: adında iki sayı var ama faturadaki birimden hangisi olduğu belli değil (packEvidence kanıt
+ * vermedi). İki olasılık hammaddenin biriminde: bir paket (50) ya da hepsi (1000); gr / ml'de adda boyut da yazmalı.
+ * Kanıt varsa ya da iki sayı yoksa null
+ */
+export function packPairChoices(line: PackLine, ingredientUnit: IngredientUnit): { text: string; choices: number[] } | null {
+  if (packEvidence(line, ingredientUnit)) return null;
+  const p = packPair(line);
+  if (!p) return null;
+  if (ingredientUnit === "adet" || ingredientUnit === "dilim") return { text: p.text, choices: [p.per, p.total] };
+  const dim = ingredientUnit === "gr" ? "mass" : ingredientUnit === "ml" ? "volume" : null;
+  const size = parsePack(line.name).size;
+  if (!dim || !size || size.dim !== dim) return null;
+  return { text: p.text, choices: [p.per * size.amount, p.total * size.amount] };
 }

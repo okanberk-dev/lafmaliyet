@@ -31,15 +31,28 @@ export type PriceStep = "same" | "apply" | "hold";
 
 /**
  * Yeni birim fiyatın akıbeti. before: hammaddenin şimdiki birim fiyatı; exempt: su/buz (fiyatı su faturasından,
- * model paket fiyatına bakmaz). Şimdiki fiyat yoksa (0: personelin sayımdan eklediği kalem) korunacak bir şey yoktur,
- * ilk fiyat doğrudan yazılır. Tam ±%40 uygulanır; yalnız daha büyük fark onaya düşer.
+ * model paket fiyatına bakmaz). Tam ±%40 uygulanır; yalnız daha büyük fark onaya düşer.
+ *
+ * İlk fiyat (şimdiki fiyat yok, 0: personelin sayımdan fiyatsız eklediği kalem): karşılaştırılacak fiyat olmadığı için
+ * %40 kuralı işlemez ama çarpan yanlışsa ilk fiyat da yanlış yazılırdı, onay kartı da çıkmazdı ("KARTON BARDAK 8 OZ
+ * 50'Lİ X 20" 1 Koli = 50 adet: adet 8 ₺, doğrusu 0,40 ₺). Çarpan faturanın ölçü biriminden geliyorsa (`firstCertain`:
+ * 1 kg = 1000 gr, düzine; firstPriceCertain) yazılır, addan, açıklamadan ya da elle gelen çarpanla onaya düşer.
  */
-export function priceStep(i: { before: number; after: number; exempt?: boolean; threshold?: number }): PriceStep {
-  if (!(i.before > 0)) return "apply";
+export function priceStep(i: { before: number; after: number; exempt?: boolean; threshold?: number; firstCertain?: boolean }): PriceStep {
+  if (!(i.before > 0)) return i.exempt || i.firstCertain ? "apply" : "hold";
   const change = Math.abs(i.after / i.before - 1);
   if (change < SAME_PCT) return "same";
   if (!i.exempt && change > (i.threshold ?? PRICE_HOLD_PCT) + EPS) return "hold";
   return "apply";
+}
+
+/**
+ * İlk fiyatın çarpanı kesin mi (priceStep `firstCertain`): faturadaki birim ölçü birimiyse (kg, lt, gr, ml) ya da düzineyse
+ * çarpan birim çevirisidir ve bağlantınınkiyle aynı. Adın ya da açıklamanın paket boyu kesin değildir (iki sayılı ad,
+ * koliyi "Adet" yazan tedarikçi)
+ */
+export function firstPriceCertain(evidence: PackEvidence | null, factor: number): boolean {
+  return evidence?.source === "unit" && sameFactor(evidence.factor, factor);
 }
 
 /**
@@ -236,8 +249,11 @@ export interface ReadingFactor {
 }
 
 export interface HoldSuggestion {
-  /** evidence: addaki ya da birimdeki paket boyu; reading: faturanın okunması (Claude); ratio: aynı ürünün geçmişiyle oran */
-  kind: "evidence" | "reading" | "ratio";
+  /**
+   * evidence: addaki ya da birimdeki paket boyu; reading: faturanın okunması (Claude); ratio: aynı ürünün geçmişiyle oran;
+   * conflict: addaki paket boyu ile faturanın okuması çelişiyor (düğme yok, iki değer yazılır)
+   */
+  kind: "evidence" | "reading" | "ratio" | "conflict";
   /** Önerilen çarpan ("Çarpanı X yap"); null: yalnız uyarı (oran tam sayı çarpan vermiyor) */
   factor: number | null;
   /** Önerilen çarpanla birim fiyat ve şimdikine göre farkı: gerçek bir fiyat değişimi mi, görünsün */
@@ -245,10 +261,15 @@ export interface HoldSuggestion {
   pct: number | null;
   evidence?: PackEvidence;
   hint?: FactorHint;
+  /** conflict: okumanın çarpanı ve onunla birim fiyat (kanıtınki `factor` yerine `evidence`'ta) */
+  reading?: { factor: number; unitPrice: number | null; pct: number | null };
 }
 
 /**
  * Onay bekleyen fiyat kartının tek önerisi; kanıt sırası, ilk tutan kazanır (en çok bir "Çarpanı X yap"):
+ * 0. adındaki ya da açıklamasındaki paket boyu ile emin ya da büyük olasılıkla okunan fatura farklı çarpan diyorsa
+ *    çelişki: iki değer yazılır, düğme konmaz (adın okuması yanlış olabilir: "50'Lİ X 20"de 50; faturayı açıp bakın).
+ *    Faturadaki ölçü biriminin çevirisi (1 kg = 1000 gr) okumayla çelişse de kanıttır, okuma önerilmez;
  * 1. adındaki ya da birimindeki paket boyu (packEvidence), bağlantınınkinden farklıysa;
  * 2. faturanın okunması, emin (high) ya da büyük olasılıkla (medium) ve bağlantınınkinden farklıysa;
  * 3. çarpan oranı (factorHint), yalnız aynı ürünün geçmişi varsa (sameProductHistory);
@@ -268,9 +289,15 @@ export function holdSuggestion(i: {
     const unitPrice = unitPriceFor(i, f);
     return { unitPrice, pct: unitPrice === null ? null : livePct(unitPrice, i.current) };
   };
-  if (i.evidence && i.evidence.factor > 0 && !sameFactor(i.evidence.factor, i.factor)) return { kind: "evidence", factor: i.evidence.factor, evidence: i.evidence, ...at(i.evidence.factor) };
   const r = i.reading;
-  if (r && r.factor !== null && r.factor > 0 && r.confidence !== "low" && !sameFactor(r.factor, i.factor)) return { kind: "reading", factor: r.factor, ...at(r.factor) };
+  const confident = r && r.factor !== null && r.factor > 0 && r.confidence !== "low" ? r.factor : null;
+  const ev = i.evidence && i.evidence.factor > 0 ? i.evidence : null;
+  if (ev && ev.source !== "unit" && confident !== null && !sameFactor(confident, ev.factor)) {
+    return { kind: "conflict", factor: null, evidence: ev, ...at(ev.factor), reading: { factor: confident, ...at(confident) } };
+  }
+  if (ev && !sameFactor(ev.factor, i.factor)) return { kind: "evidence", factor: ev.factor, evidence: ev, ...at(ev.factor) };
+  // Faturadaki ölçü biriminin çevirisi bağlantınınkiyle aynıysa (1 kg = 1000 gr) okuma onu değiştirmeye önerilmez
+  if (confident !== null && ev?.source !== "unit" && !sameFactor(confident, i.factor)) return { kind: "reading", factor: confident, ...at(confident) };
   const proposed = unitPriceFor(i, i.factor);
   const hint = i.history && proposed !== null ? factorHint(i.current, proposed) : null;
   if (!hint) return null;
@@ -319,6 +346,19 @@ export function evidenceSuggestionText(ev: PackEvidence, s: { lineUnit: string |
 }
 
 /**
+ * Kartta çelişki (holdSuggestion "conflict"): "Adında “50'Lİ” yazıyor: 1 Koli = 50 adet, adet başı 8,00 ₺ (…). Faturanın
+ * okuması: 1 Koli = 1.000 adet, adet başı 0,40 ₺ (…). İkisi çelişiyor; faturayı açıp bakın, doğru çarpanı “Bağlantıyı
+ * düzelt”ten yazın." Okumanın ayrı bilgi satırı çizilmez
+ */
+export function conflictSuggestionText(s: HoldSuggestion, c: { lineUnit: string | null; unit: string; currentUnit: number }): string {
+  const priced = (factor: number, unitPrice: number | null) =>
+    `${factorText(c.lineUnit, factor, c.unit)}${unitPrice !== null ? `, ${priceWithPct(unitPrice, c.unit, c.currentUnit)}` : ""}`;
+  const ev = s.evidence!;
+  const rd = s.reading!;
+  return `${evidenceLead(ev)}: ${priced(ev.factor, s.unitPrice)}. Faturanın okuması: ${priced(rd.factor, rd.unitPrice)}. İkisi çelişiyor; faturayı açıp bakın, doğru çarpanı “Bağlantıyı düzelt”ten yazın.`;
+}
+
+/**
  * Kartta oran önerisi (yalnız aynı ürünün geçmişi varken): "Fiyat şimdikinin yaklaşık 12 katı: çarpan yanlış olabilir
  * (1 Koli = 12.000 ml mi?). Çarpan yanlışsa alınan miktar da yanlış sayılır. Öyle olursa L başı 31,00 ₺ (şimdikiyle aynı)."
  */
@@ -332,6 +372,8 @@ export function ratioSuggestionText(hint: FactorHint, s: { lineUnit: string | nu
 /** Hammaddenin şimdiki fiyatı tahminiyse (varsayım) kartın satırı ve yüzde rozetinin eki */
 export const ESTIMATE_TEXT = "Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir.";
 export const ESTIMATE_BADGE = "tahmini fiyata göre";
+/** Hammaddenin fiyatı yokken onaya düşen ilk fiyatın kart satırı (priceStep) */
+export const FIRST_PRICE_TEXT = "Hammaddenin fiyatı yoktu. Çarpan faturanın biriminden (kg, lt) gelmediği için ilk fiyat onay bekliyor: faturadaki ürün ve çarpan doğruysa onaylayın.";
 
 /**
  * Önerinin faturasından sonra gelen, hammaddenin fiyatını belirleyen en yeni fatura: eşitlemenin "en yeni fatura"sı
@@ -395,10 +437,31 @@ export function signedPct(p: number): string {
   return `${p >= 0 ? "+" : "−"}\u2060%${num(Math.abs(p) * 100)}`;
 }
 
-/** "Süt +%52, Kahve −%45 ve 2 hammadde daha" (en çok 3) */
+/** "Süt +%52, Karton bardak (ilk fiyat) ve 2 hammadde daha" (en çok 3); şimdiki fiyatı olmayanınki ilk fiyattır */
 export function holdsSummary(items: { name: string; pct: number | null }[], max = 3): string {
-  const head = items.slice(0, max).map((i) => (i.pct === null ? i.name : `${i.name} ${signedPct(i.pct)}`));
+  const head = items.slice(0, max).map((i) => (i.pct === null ? `${i.name} (${FIRST_PRICE_LABEL})` : `${i.name} ${signedPct(i.pct)}`));
   return items.length > max ? `${head.join(", ")} ve ${items.length - max} hammadde daha` : head.join(", ");
+}
+
+/** Hammaddenin şimdiki fiyatı yokken faturadan gelen fiyat (priceStep: çarpanı kesin değilse onaya düşer) */
+export const FIRST_PRICE_LABEL = "ilk fiyat";
+
+/**
+ * Onay bekleme nedeni (zil, e-posta, Genel bakış): "faturadaki fiyat şimdikinden %40'tan fazla farklı", yalnız ilk
+ * fiyatlar varsa "faturadan gelen ilk fiyat, çarpanı kesin değil", ikisi birden varsa ikisi
+ */
+export function holdReason(items: { pct: number | null }[]): string {
+  const first = items.some((i) => i.pct === null);
+  const jump = items.some((i) => i.pct !== null);
+  if (first && !jump) return "faturadan gelen ilk fiyat, çarpanı kesin değil";
+  if (first) return "faturadaki fiyat şimdikinden %40'tan fazla farklı ya da ilk fiyat";
+  return "faturadaki fiyat şimdikinden %40'tan fazla farklı";
+}
+
+/** holdReason cümle başında (Genel bakış, Bugün, e-posta): "Faturadaki fiyat şimdikinden %40'tan fazla farklı" */
+export function holdReasonSentence(items: { pct: number | null }[]): string {
+  const r = holdReason(items);
+  return `${r.charAt(0).toLocaleUpperCase("tr-TR")}${r.slice(1)}`;
 }
 
 /** İşlem geçmişi için: "Süt +%52 (Sütaş 21.10.2026)" */
@@ -412,7 +475,7 @@ export function holdAlert(holds: { name: string; pct: number | null }[]): { leve
   return {
     level: "warning",
     title: `Fiyat onayı: ${holds.length} hammadde`,
-    detail: `Faturadaki fiyat şimdikinden %40'tan fazla farklı: ${holdsSummary(holds)}. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.`,
+    detail: `${holdReasonSentence(holds)}: ${holdsSummary(holds)}. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.`,
     href: HOLDS_HREF,
   };
 }
