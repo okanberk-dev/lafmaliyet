@@ -15,6 +15,7 @@ import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
+import { mergeWithLafpos } from "./lafpos-sales";
 import { loadPurchaseLots } from "./purchase-lots";
 
 /** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
@@ -111,10 +112,36 @@ export async function loadDataset(): Promise<Dataset> {
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
-  const through = addDays(businessDate(), -1);
+  const today = businessDate();
+  const through = addDays(today, -1);
+  // Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
+  // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
+  // satırlar ve kapsam bugünkü gibi
+  const sales = await mergeWithLafpos(db, {
+    switchDay: settings.lafposGecisGunu,
+    salesLines: salesLines.map((l) => ({
+      id: l.id,
+      month: l.month,
+      posName: l.posName,
+      qty: l.qty,
+      revenue: l.revenue,
+      productId: l.productId,
+      isService: l.isService,
+      note: l.note,
+    })),
+    coverage: parseCoverage(coverageRow[0]?.value),
+    today,
+    // Kasa raporlarının son günü (till tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
+    lastTillDay: till.at(-1)?.date ?? null,
+    reportDays: till.map((r) => r.date),
+    zOf: (from, upto) => {
+      const rows = till.filter((r) => r.date >= from && r.date <= upto);
+      return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
+    },
+  });
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır)
   const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
-  const salesCoverage = Object.entries(parseCoverage(coverageRow[0]?.value)).map(([month, upto]) => ({
+  const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
     till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver)[0] ?? null,
@@ -179,16 +206,8 @@ export async function loadDataset(): Promise<Dataset> {
         closedDaysIn(closedRows, "2000-01-01", through, till.map((r) => r.date)),
       ),
     ),
-    salesLines: salesLines.map((l) => ({
-      id: l.id,
-      month: l.month,
-      posName: l.posName,
-      qty: l.qty,
-      revenue: l.revenue,
-      productId: l.productId,
-      isService: l.isService,
-      note: l.note,
-    })),
+    salesLines: sales.salesLines,
+    ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     invoices: invoices.map((i) => ({
       id: i.id,
       date: i.date,

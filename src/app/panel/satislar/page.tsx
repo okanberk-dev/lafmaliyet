@@ -1,4 +1,4 @@
-import { Banknote, ShoppingBag, TrendingUp, Unlink } from "lucide-react";
+import { Banknote, ShoppingBag, Store, TrendingUp, TriangleAlert, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -11,7 +11,8 @@ import { listDaysText } from "@/lib/calc/insights";
 import { manualOf } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
-import { todayTR } from "@/lib/reminders";
+import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
+import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -24,6 +25,10 @@ export const metadata: Metadata = { title: "Satışlar" };
 
 const DESCRIPTION =
   `Patron (ModPOS) ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır. ${RECIPE_COST_NOTE}`;
+
+/** LafPOS'a geçildiyse ayın kaynağına göre (docs/LAFPOS.md › Günlük satış) */
+const DESCRIPTION_LAFPOS = `LafPOS'un gün sonlarından gelen ürün satışları, ay toplamı. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`;
+const DESCRIPTION_GECIS = `Geçiş ayı: geçiş gününden önceki günler Patron (ModPOS) ürün satış raporundan, sonrası LafPOS'un gün sonlarından. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`;
 
 export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">) {
   return (
@@ -49,8 +54,23 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const info = model.monthInfo.get(month);
   // Süren ayda yüklenen listenin son günü (varsayılan dün) ve liste kasa raporlarından kısaysa dönemi (sales-coverage.ts)
   const today = todayTR();
+  // LafPOS'a geçiş günü seçiliyse ayın kaynağı (src/lib/lafpos/sales.ts); seçilmediyse ya da ay ondan önceyse null ve
+  // sayfa bugünkü gibi: LafPOS'un deneme günleri burada hiç görünmez
+  const switchDay = model.settings.lafposGecisGunu;
+  const lafpos = switchDay
+    ? (model.ds.lafposSales?.months.find((m) => m.month === month) ?? lafposMonthStatus({ month, switchDay, today, modpos: null, lafpos: null }))
+    : null;
+  const notes = lafpos && switchDay ? lafposMonthNotes(lafpos, switchDay) : null;
   const defaultThrough = coverageFor(month, today);
-  const runningImport = defaultThrough ? { today, defaultThrough } : null;
+  // Geçiş ayında liste en çok geçiş gününden önceki güne kadar (biten ayda da gün seçilir; sunucu aynı kuralla kırpar)
+  const lastModpos = switchDay ? addDays(switchDay, -1) : null;
+  const gecisMax = lafpos?.source === "gecis" && lastModpos ? (defaultThrough && today < lastModpos ? today : lastModpos) : null;
+  const runningImport =
+    gecisMax && lastModpos
+      ? { today: gecisMax, defaultThrough: defaultThrough && defaultThrough < gecisMax ? defaultThrough : gecisMax }
+      : defaultThrough
+        ? { today, defaultThrough }
+        : null;
   const listPeriod = sales.lines.length ? model.listPeriod(month) : null;
 
   const products: ProductOption[] = model.products.map((p) => ({
@@ -64,6 +84,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const rows: SalesRow[] = sales.lines.map((l) => ({
     id: l.line.id,
+    lafposDays: l.line.lafpos?.days ?? null,
     posName: l.line.posName,
     qty: l.line.qty,
     revenue: l.line.revenue,
@@ -100,6 +121,10 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
   const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate);
   const label = monthLabel(month);
+  // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
+  const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
+  // Tablodaki LafPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
+  const lafposLines = rows.filter((r) => r.lafposDays !== null).length;
 
   return (
     <>
@@ -107,9 +132,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         title="Satışlar"
         eyebrow="Satış"
         excel="Satış Raporu"
-        description={DESCRIPTION}
+        description={lafpos?.source === "lafpos" ? DESCRIPTION_LAFPOS : lafpos?.source === "gecis" ? DESCRIPTION_GECIS : DESCRIPTION}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
       />
+
+      {notes ? <LafposBand notes={notes} source={lafpos!.source} /> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -216,13 +243,24 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           className="xl:col-span-7"
           month={month}
           label={monthLabel(month)}
-          lineCount={rows.length}
+          lineCount={modposLines}
+          lafposLines={lafposLines}
           mappings={mappingList}
           products={products}
           hasInfo={hasInfo}
           running={runningImport}
-          coveredThrough={model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null}
+          coveredThrough={lafpos ? (lafpos.modpos?.through ?? null) : (model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null)}
           listDays={listPeriod ? listDaysText(listPeriod) : null}
+          lafpos={
+            lafpos?.source === "lafpos"
+              ? { source: "lafpos", days: lafpos.lafpos?.days ?? 0, last: lafpos.lafpos?.last ?? null }
+              : lafpos?.source === "gecis" && switchDay && lastModpos
+                ? {
+                    source: "gecis",
+                    throughHint: `Geçiş ayı: ModPOS listesi en çok ${dayRangeTR(`${month}-01`, lastModpos)} günlerini kapsar, LafPOS ${dayAblativeTR(switchDay)} itibaren sayılır. Liste daha kısaysa son gününü seçin; aradaki günler hiçbir kaynakta olmaz.`,
+                  }
+                : null
+          }
         />
         <MonthInfoForm
           // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
@@ -247,6 +285,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           products={products}
           mappings={mappingList}
           month={month}
+          lafposMonth={lafpos?.source === "lafpos"}
           totals={{
             qty: sales.qty,
             revenue: sales.revenue,
@@ -259,5 +298,30 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         />
       </div>
     </>
+  );
+}
+
+/**
+ * LafPOS'a geçildiyse ayın kaynağı ve sorunları (src/lib/lafpos/sales.ts › lafposMonthNotes): geçiş ayında bilgi satırı
+ * ve uyarılar (eksik günler, sayılmayan LafPOS günleri, liste ↔ Z farkı); LafPOS ayında bilgi İçe aktar kartında, burada
+ * yalnız uyarı (sayılmayan ModPOS listesi). Yalnız yönetici (sayfa requireAdmin)
+ */
+function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis" | "lafpos" }) {
+  if (source === "lafpos" && !notes.warnings.length) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      {source === "gecis" ? (
+        <p role="note" className="flex items-start gap-2.5 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-6 text-pretty text-info">
+          <Store size={16} className="mt-1 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">{notes.info}</span>
+        </p>
+      ) : null}
+      {notes.warnings.map((w) => (
+        <p key={w} role="note" className="flex items-start gap-2.5 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-6 text-pretty text-warn">
+          <TriangleAlert size={16} className="mt-1 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">{w}</span>
+        </p>
+      ))}
+    </div>
   );
 }

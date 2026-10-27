@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Link2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -10,11 +10,14 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
-import { monthLabel } from "@/lib/format";
+import { monthLabel, num } from "@/lib/format";
 import { LAFPOS_RESEND_HINT } from "@/lib/lafpos/status";
 import { dayMonthYearTR, LAFPOS_SWITCH_EFFECTS, switchAffectedMonths, switchDayProblem } from "@/lib/lafpos/switch";
 import { isStepUpError } from "@/lib/step-up";
 import { deleteLafposDay, saveLafposSwitchDay } from "@/server/actions/lafpos";
+import { matchLafposName } from "@/server/actions/sales";
+
+import { ProductPicker, type ProductOption } from "../satislar/product-picker";
 
 /**
  * Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü. Kaydetmeden önce onay penceresi: bu günden itibaren ne değişir
@@ -165,6 +168,61 @@ export function LafposDayDelete({ date, zNo, lines, label }: { date: string; zNo
             router.refresh();
             return null;
           }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Ürüne bağlanamayan POS adları (Ayarlar › LafPOS kartı; denetim E-33): her ad menüdeki bir ürüne ya da HİZMET'e
+ * bağlanır. Ad Satışlar'ın POS adı hafızasına yazılır ve bu adla gelmiş bütün ürünsüz LafPOS satırları (deneme günleri
+ * dahil) yeniden gönderim olmadan bağlanır; sonraki gün sonları da tanır. Geçiş günü boşken LafPOS adları yalnız bu
+ * kartta görünür (sahibin kararı); bağlama hiçbir hesabı değiştirmez ama ad hafızası ModPOS listeleriyle ortaktır: aynı
+ * ad sonraki ModPOS yüklemelerinde de tanınır. Yalnız LafPOS'ta geçen ad kasadaki (ModPOS) fiyat listesinde "Kasada"
+ * diye gösterilmez (src/server/data/pos-staff.ts modposNameFilter).
+ */
+export function LafposUnmatchedList({ items, more, products }: { items: { posName: string; qty: number; days: number }[]; more: number; products: ProductOption[] }) {
+  const router = useRouter();
+  const [picking, setPicking] = useState<{ posName: string; qty: number } | null>(null);
+  const [pending, start] = useActionTransition();
+  const pick = (posName: string, v: { productId: number | null; isService: boolean }) =>
+    start(async () => {
+      setPicking(null);
+      const res = await matchLafposName({ month: null, posName, productId: v.productId, isService: v.isService });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(v.isService ? "HİZMET olarak işaretlendi" : "Bağlandı", {
+        description: `“${posName}”: ${num(res.data.others)} LafPOS satırı bağlandı; sonraki gün sonlarında otomatik tanınacak.`,
+      });
+      router.refresh();
+    });
+  return (
+    <>
+      <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+        {items.map((u) => (
+          <li key={u.posName} className="flex items-center gap-3 px-4 py-2 text-sm">
+            <p className="min-w-0 flex-1">
+              <span className="font-medium break-words text-ink">{u.posName}</span>
+              <span className="block text-[13px] text-ink-mute tabular">
+                {num(u.qty)} adet · {num(u.days)} gün
+              </span>
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => setPicking(u)} disabled={pending} className="shrink-0 pointer-coarse:h-11">
+              <Link2 size={14} aria-hidden="true" /> Bağla
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {more > 0 ? <p className="text-[13px] text-ink-mute">ve {num(more)} ad daha (en çok satılan 10 ad gösteriliyor)</p> : null}
+      {picking ? (
+        <ProductPicker
+          key={picking.posName}
+          onClose={() => setPicking(null)}
+          products={products}
+          title={`${picking.posName} (${num(picking.qty)} adet, LafPOS)`}
+          currentId={null}
+          isService={false}
+          onPick={(v) => pick(picking.posName, v)}
         />
       ) : null}
     </>

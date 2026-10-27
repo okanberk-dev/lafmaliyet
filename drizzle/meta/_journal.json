@@ -309,6 +309,13 @@
       "when": 1793053615415,
       "tag": "0043_pasif_recetede_sayim",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793082896717,
+      "tag": "0044_lafpos_satir_site_kalemi",
+      "breakpoints": true
     }
   ]
 }

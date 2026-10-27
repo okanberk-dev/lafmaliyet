@@ -75,7 +75,10 @@ test("kapsam kaydı: süren ayda verilen gün (ayın içinde, bugünden ileri de
 
 test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'Ayı temizle' siler; tek ifadeyle (iki ay birbirini ezmez)", () => {
   const sales = read("src/server/actions/sales.ts");
-  assert.match(sales, /const through = coverageFor\(month, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\)/);
+  // Kural src/lib/lafpos/sales.ts › modposImportRule'da: geçiş günü yokken ya da ondan önceki ayda coverageFor'un kendisi
+  // (geçiş ayında en çok geçiş gününden önceki güne kadar, LafPOS ayında red; tests/lafpos-satis.test.ts)
+  assert.match(sales, /const rule = modposImportRule\(month, switchDay, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\);/);
+  assert.match(read("src/lib/lafpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
   assert.match(sales, /await setCoverage\(tx, month, through\);/, "satırlarla aynı işlemde");
   assert.match(sales, /await setCoverage\(db, m, null\);/, "Ayı temizle kaydı siler");
   assert.match(sales, /\$\{current\} \|\| jsonb_build_object\(\$\{month\}::text, \$\{through\}::text\)/);

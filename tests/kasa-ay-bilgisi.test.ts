@@ -348,7 +348,8 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   // Kasa raporları ve onay bekleyen geç raporların günleri okumaların sonunda (dalga 10: eksik gün "onay bekliyor")
   assert.match(src, /tillRows\(\),[\s\S]{0,400}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\),\s*\/\/ Kapalı işaretli günler[\s\S]{0,300}?eq\(s\.specialDays\.kind, "kapali"\)\),\s*\]\);/);
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
-  assert.ok(src.indexOf("const through = addDays(businessDate(), -1)") > src.indexOf("tillRows(),"));
+  assert.ok(src.indexOf("const today = businessDate()") > src.indexOf("tillRows(),"));
+  assert.match(src, /const through = addDays\(today, -1\)/);
   assert.match(src, /months: resolveMonths\(/);
   assert.match(src, /tillMonths\(\s*till,\s*through,\s*undefined,\s*lateWaiting\./);
 });

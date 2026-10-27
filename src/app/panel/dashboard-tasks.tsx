@@ -9,6 +9,7 @@ import type { FieldSource } from "@/lib/calc/types";
 import { missingText } from "@/lib/cash-month";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
+import { lafposMonthNotes } from "@/lib/lafpos/sales";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
 
@@ -61,7 +62,17 @@ export interface MonthTaskFacts {
   month: string;
   state: MonthState;
   dim: number;
-  sales: { lines: number; unmatched: number; summaryRows: number; refMonth: string | null };
+  /**
+   * `lafpos`: geçiş gününden itibaren ayın kaynağı (src/lib/lafpos/sales.ts lafposMonthStatus): ay LafPOS'tan mı geliyor,
+   * gelen gün sayısı ve Satışlar bandının ilk uyarısı (eksik gün, sayılmayan gün, liste ↔ Z); geçiş günü yoksa yok
+   */
+  sales: {
+    lines: number;
+    unmatched: number;
+    summaryRows: number;
+    refMonth: string | null;
+    lafpos?: { source: "gecis" | "lafpos"; days: number; warning: string | null };
+  };
   /**
    * Ayın etkin açık günü ve cirosu. `source`: elle mi kasa raporlarından mı (yoksa elle sayılır); `till`: ayın kasa
    * raporlarında eksik günler ve ay ortasında başlayıp başlamadığı (raporu olmayan ayda null)
@@ -147,6 +158,9 @@ export function monthTaskFacts(
   const invoices = monthInvoices.filter((i) => !SEPARATE_CATEGORIES.includes(i.category));
   const bill = pm.cells.get("manual:su")?.value ?? null;
   const usedInRecipes = model.ds.ingredients.some((i) => i.priceSource === "water" && model.usedIn.has(i.id));
+  // LafPOS'a geçildiyse ayın kaynağı: Satışlar'ın bandındaki uyarı burada da (yalnız Satışlar'da kalırsa liste yeşil görünürdü)
+  const lp = model.ds.lafposSales;
+  const st = lp?.months.find((x) => x.month === month) ?? null;
   return {
     month,
     state,
@@ -156,6 +170,7 @@ export function monthTaskFacts(
       unmatched: sales.unmatched.filter((l) => !isSummaryRow(l.line.posName)).length,
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
+      ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
     },
     info: {
       openDays: info?.openDays ?? null,
@@ -210,17 +225,40 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         href: `${href}#satirlar`,
         action: "Satırı sil",
       });
+    } else if (s.lafpos?.warning && !notStarted) {
+      // LafPOS'a geçilen ayda eksik ya da sayılmayan gün, liste ↔ Z farkı: satırlar olsa da ay tamam değil
+      out.push({ key: "satis", title: "Satış raporu", status: "warn", detail: s.lafpos.warning, href, action: "Satışlara bak" });
     } else if (s.lines && s.unmatched) {
       out.push({
         key: "satis",
         title: "Satış raporu",
         status: "todo",
-        detail: `${num(s.lines)} satır yüklendi; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.`,
+        detail: `${s.lafpos ? `${num(s.lines)} satır` : `${num(s.lines)} satır yüklendi`}; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.`,
         href: `${href}&durum=eslesmeyen#satirlar`,
         action: "Eşleştir",
       });
     } else if (s.lines) {
-      out.push({ key: "satis", title: "Satış raporu", status: "done", detail: `${num(s.lines)} satır yüklendi, hepsi reçeteyle eşleşti.`, href, action: "Satışları aç" });
+      const detail =
+        s.lafpos?.source === "lafpos"
+          ? `LafPOS'tan ${num(s.lafpos.days)} gün geldi (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
+          : s.lafpos
+            ? `ModPOS listesi ve LafPOS'tan ${num(s.lafpos.days)} gün (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
+            : `${num(s.lines)} satır yüklendi, hepsi reçeteyle eşleşti.`;
+      out.push({ key: "satis", title: "Satış raporu", status: "done", detail, href, action: "Satışları aç" });
+    } else if (s.lafpos?.source === "lafpos") {
+      // Ayın tamamı LafPOS'tan: liste yüklenmez, satırlar gün sonunda gelir
+      out.push({
+        key: "satis",
+        title: "Satış raporu",
+        status: notStarted || f.state === "running" ? "later" : "todo",
+        detail: notStarted
+          ? "Ay başlamadı."
+          : f.state === "running"
+            ? "Satışlar her gün sonunda LafPOS'tan gelir; bu ay henüz sayılan gün sonu yok."
+            : "Bu aya LafPOS gün sonu gelmedi: reçeteye göre kâr hesaplanamıyor. Ayarlar › LafPOS kartına bakın.",
+        href: notStarted || f.state === "running" ? href : "/panel/ayarlar#lafpos",
+        action: notStarted || f.state === "running" ? "Satışları aç" : "LafPOS'a bak",
+      });
     } else {
       const ratio = ref ? ` Kâr oranı şimdilik ${ref} satışlarından alınıyor.` : "";
       out.push({
@@ -230,7 +268,9 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         detail: notStarted
           ? "Ay başlamadı."
           : f.state === "running"
-            ? `Ay bitince Patron'dan ürün satış raporunu yükleyin.${ratio}`
+            ? s.lafpos
+              ? `Geçiş ayı: Patron'dan geçiş gününden önceki günlerin ürün satış raporunu yükleyin; sonrası LafPOS'tan gelir.${ratio}`
+              : `Ay bitince Patron'dan ürün satış raporunu yükleyin.${ratio}`
             : `Yüklenmedi: reçeteye göre kâr hesaplanamıyor.${ratio}`,
         href,
         action: "Satış raporu yükle",

@@ -1,7 +1,9 @@
 /**
  * Tatlı hazırlığı önerisi (saf; tests/satis-tahmini.test.ts). Tatlılar bütün pasta olarak alınıp dilimlenir; hazırlık
- * birimi reçetedeki malzemedir ("San Sebastian dilim", paketi 12 dilim). Günlük ürün satışı yok (ModPOS dökümü yolda,
- * docs/planlar/CRITIQUE2.md R18): oran son satış aylarındaki payından gelir, her 10.000 ₺ satışta kaç tatlı.
+ * birimi reçetedeki malzemedir ("San Sebastian dilim", paketi 12 dilim). Oran son satış aylarındaki payından gelir, her
+ * 10.000 ₺ satışta kaç tatlı (satış ayları aylık modelinki: ModPOS listesi, geçiş gününden itibaren LafPOS'un ay
+ * toplamları; src/server/forecast/mix.ts). Hafta gününe göre oran günlük satırlarla sonra kurulabilir
+ * (docs/planlar/CRITIQUE2.md R18).
  */
 
 import { PACKAGING_CATEGORY } from "@/lib/constants";

@@ -67,6 +67,8 @@ Sitenin tohum menüsüyle Excel'in 129 ürününden 115'i öneri alır (`tests/s
 
 **Bağlama** sitenin listesini imzalı yeniden çeker, bağlantıyı yazar ve listeyi bütün bağlı satırlara uygular: yeni
 bağlanan ürün sitenin fiyatını ve menü durumunu alır (pencere bunu önceden gösterir: "Bağlanınca: fiyat 300 ₺ → 280 ₺").
+Aynı işlemde bu kalem ve yuvayla gelmiş ürünsüz LafPOS satırları (`pos_daily_sales`) ürüne bağlanır, LafPOS günleri
+yeniden göndermeden ([LAFPOS.md](LAFPOS.md) › Gün sonu, "Sonradan bağlama"); bağlı satırların ürünü değişmez.
 Kartta kaydedilmemiş değişiklik varken bağlantı değiştirilmez. **Bağlantıyı kaldırmak** fiyatı ve durumu olduğu gibi
 bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açmaz, adı ya da kategoriyi değiştirmez.
 

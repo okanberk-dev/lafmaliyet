@@ -233,8 +233,9 @@ Sonuç: panelin kendi zinciri beyannameyi tutturamaz; **muhasebecinin son beyann
 1.800 ₺ (ve damga vergisi) ödenir; Ekim'in tahmini 121.204,69'dan devam eder. Her ay yeni beyanname gelince devreden
 güncellenir.
 
-ModPOS günlük ürün satış raporu süren aya girince karaoke payı (`monthSales(ay).serviceRevenue`) kendiliğinden kesinleşir;
-ek iş yok.
+Karaoke payı (`monthSales(ay).serviceRevenue`) ayın satış satırlarındaki hizmet satırlarıdır: ModPOS listesi yüklenince,
+LafPOS'a geçiş günü seçildikten sonra her gün sonunda (LafPOS'un karaoke satırları; [LAFPOS.md](LAFPOS.md) › Günlük
+satış) kendiliğinden kesinleşir; ek iş yok.
 
 ## Saklama
 
