@@ -185,8 +185,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
 /** Ayın kasası, ödenmez tutarının etiketi için: geçiş ayında iki kasa birden */
 const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / ikram", lafpos: "LafPOS ödenmez / ikram" } as const;
 
-/**
- * Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
+/** Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
  * kalemler. Geçiş gününden itibaren LafPOS'un ikramı da sayılır ("LafPOS" rozetiyle); LafPOS'un gün sonu gelen günde
  * panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
  */
