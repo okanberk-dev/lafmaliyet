@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
+import { productIkramRefusal } from "@/lib/lafpos/ikram";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import {
   LateWastePayload,
@@ -20,6 +21,7 @@ import {
   type WasteLock,
 } from "@/lib/waste-requests";
 import { closedDayRefusal } from "@/server/closed-days";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -29,7 +31,9 @@ import { UserError } from "@/server/user-error";
  * Zayi / ikram yazımının çekirdeği (docs/ZAYI-IKRAM.md; plan docs/planlar/personel-yetki.md §2.8): doğrudan kayıt ve
  * silme (iki rol), personelin geç kayıt ve silme isteği, yöneticinin kararı. Personelin doğrudan yolu bugün ve dün (dün
  * kilitlenene kadar; staffWasteMode / staffDeleteMode); kapalı işaretli güne personel yazamaz (closedDayRefusal). Her
- * silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. Sunucu eylemi değil:
+ * silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. LafPOS gününde (geçiş günü
+ * seçili ve gün ondan önce değil) ürün ikramı panele girilmez, LafPOS'ta işaretlenir (iki rol; geç kayıt isteği ve
+ * onayı da; src/lib/lafpos/ikram.ts): hammadde ikramı ve zayi girilir. Sunucu eylemi değil:
  * src/server/actions/waste.ts ve waste-requests.ts oturumu ve rolü denetleyip çağırır (tests/zayi-istek-db.test.ts).
  */
 
@@ -59,10 +63,18 @@ export async function wasteLock(db: Tx, date: string): Promise<WasteLock> {
   return { hasReport: rows[0]?.date === date, laterReport: rows.some((r) => r.date > date) };
 }
 
+/** Ürün ikramı LafPOS gününde reddedilir (LafPOS'ta işaretlenir) */
+async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">): Promise<void> {
+  if (data.kind !== "ikram" || data.productId === null) return;
+  const refusal = productIkramRefusal(data, await lafposSwitchDayOf(tx));
+  if (refusal) throw new UserError(refusal);
+}
+
 /** Doğrudan kayıt: yönetici her geçmiş güne; personel yalnız doğrudan yolun günlerine ve kapalı işaretli olmayan güne */
 export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = new Date()): Promise<{ id: number; name: string; unit: string }> {
   if (data.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
   return db.transaction(async (tx) => {
+    await refuseLafposIkram(tx, data);
     if (me.role !== "admin") {
       const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
@@ -115,6 +127,7 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
     const closed = await closedDayRefusal(input.date, me.role, tx);
     if (closed) throw new UserError(closed);
+    await refuseLafposIkram(tx, input);
     const target = await resolveWasteTarget(tx, input);
     const payload: LateWastePayloadT = LateWastePayload.parse({
       date: input.date,
@@ -223,6 +236,9 @@ export async function reviewWasteRequestCore(
     }
     if (kind === "zayi-gec") {
       const p = LateWastePayload.parse(row.payload);
+      // İstek geçiş günü seçilmeden önce açılmış olabilir: LafPOS gününün ürün ikramı onaylanmaz, reddedilir
+      const refusal = p.kind === "ikram" && p.productId !== null ? productIkramRefusal(p, await lafposSwitchDayOf(tx)) : null;
+      if (refusal) throw new UserError(`${refusal} İsteği reddedin.`);
       const target = await resolveWasteTarget(tx, p, { requireActive: false }).catch(() => null);
       if (!target || target.name !== p.name || target.unit !== p.unit) throw new UserError("Kalem silinmiş ya da adı değişmiş; isteği reddedin");
       const [entry] = await tx

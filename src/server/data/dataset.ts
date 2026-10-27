@@ -15,6 +15,7 @@ import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
+import { loadLafposIkram } from "./lafpos-ikram";
 import { mergeWithLafpos } from "./lafpos-sales";
 import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
@@ -124,29 +125,33 @@ export async function loadDataset(): Promise<Dataset> {
   // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
   // satırlar ve kapsam bugünkü gibi
   const reportRows = till.filter((r) => r.source !== "lafpos");
-  const sales = await mergeWithLafpos(db, {
-    switchDay: settings.lafposGecisGunu,
-    salesLines: salesLines.map((l) => ({
-      id: l.id,
-      month: l.month,
-      posName: l.posName,
-      qty: l.qty,
-      revenue: l.revenue,
-      productId: l.productId,
-      isService: l.isService,
-      note: l.note,
-    })),
-    coverage: parseCoverage(coverageRow[0]?.value),
-    today,
-    // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
-    // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
-    lastTillDay: reportRows.at(-1)?.date ?? null,
-    reportDays: reportRows.map((r) => r.date),
-    zOf: (from, upto) => {
-      const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
-      return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
-    },
-  });
+  // LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
+  const [sales, lafposIkram] = await Promise.all([
+    mergeWithLafpos(db, {
+      switchDay: settings.lafposGecisGunu,
+      salesLines: salesLines.map((l) => ({
+        id: l.id,
+        month: l.month,
+        posName: l.posName,
+        qty: l.qty,
+        revenue: l.revenue,
+        productId: l.productId,
+        isService: l.isService,
+        note: l.note,
+      })),
+      coverage: parseCoverage(coverageRow[0]?.value),
+      today,
+      // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
+      // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
+      lastTillDay: reportRows.at(-1)?.date ?? null,
+      reportDays: reportRows.map((r) => r.date),
+      zOf: (from, upto) => {
+        const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
+        return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
+      },
+    }),
+    settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
+  ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır)
   const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
   const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
@@ -216,6 +221,7 @@ export async function loadDataset(): Promise<Dataset> {
     ),
     salesLines: sales.salesLines,
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
+    ...(lafposIkram ? { lafposIkram } : {}),
     invoices: invoices.map((i) => ({
       id: i.id,
       date: i.date,

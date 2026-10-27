@@ -7,6 +7,7 @@ import {
   SEPARATE_CATEGORIES,
 } from "../constants";
 import { isCountable } from "../ingredient-usage";
+import { panelWasteCounts } from "../lafpos/ikram";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
@@ -815,12 +816,25 @@ export function createModel(ds: Dataset) {
     return u;
   }
 
-  // --- Zayi ve ikram (personelin kaydı) -----------------------------------------
+  // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren LafPOS'un ikramı) ----------
+  // LafPOS'un gün sonu gelen günde ürün ikramı LafPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
+  // kaynak; src/lib/lafpos/ikram.ts). Geçiş günü yoksa lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
+  const lafposIkramDays = new Set(ds.lafposIkram?.days ?? []);
+  const countedWaste: WasteEntry[] = [
+    ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
+    ...(ds.lafposIkram?.lines ?? []).map(
+      (l): WasteEntry => ({ date: l.date, kind: "ikram", productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
+    ),
+  ];
   const wasteByMonth = new Map<string, WasteEntry[]>();
-  for (const w of ds.wasteEntries ?? []) {
+  for (const w of countedWaste) {
     const m = w.date.slice(0, 7);
-    wasteByMonth.set(m, [...(wasteByMonth.get(m) ?? []), w]);
+    const list = wasteByMonth.get(m);
+    if (list) list.push(w);
+    else wasteByMonth.set(m, [w]);
   }
+  /** Ayın sayılmayan panel kayıtları: LafPOS'un gün sonu gelen günde girilmiş ürün ikramı */
+  const notCountedOf = (month: string) => (ds.wasteEntries ?? []).filter((w) => w.date.slice(0, 7) === month && !panelWasteCounts(w, lafposIkramDays)).length;
   /**
    * Kayıtlı zayi ve ikramın malzeme tüketimi (malzemenin kendi biriminde): ürün reçetesinden (fire payı olmadan),
    * hammadde doğrudan. Satış raporu yalnız ödenen satışları taşır; bunlar ona eklenmez, ayrı gösterilir.
@@ -1080,14 +1094,21 @@ export function createModel(ds: Dataset) {
     return w.ingredientId !== null ? (unitCost.get(w.ingredientId) ?? 0) * w.qty * w.factor : 0;
   }
 
+  /**
+   * `ikram.lafpos`: LafPOS'tan gelen ikram satırı sayısı (count'un içinde; menü değeri LafPOS'unki); `notCounted`:
+   * LafPOS'un gün sonu gelen günde panele girilmiş, sayılmayan ürün ikramı kaydı. Geçiş günü yoksa ikisi de 0
+   */
   function wasteSummary(month: string) {
-    const out = { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0 } };
+    const out = { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: notCountedOf(month) };
     for (const w of wasteByMonth.get(month) ?? []) {
       const product = w.productId !== null ? productById.get(w.productId) : undefined;
       const cost = wasteCost(w);
       out[w.kind].count += 1;
       out[w.kind].cost += cost;
-      if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
+      if (w.kind === "ikram" && w.source === "lafpos") {
+        out.ikram.lafpos += 1;
+        out.ikram.menuValue += w.menuValue ?? 0;
+      } else if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
     }
     return out;
   }
@@ -1924,6 +1945,8 @@ export function createModel(ds: Dataset) {
     soldByProduct,
     ingredientUsage,
     recordedUsage,
+    /** Sayılan zayi ve ikram kayıtları: panelinkiler (LafPOS gününde ürün ikramı hariç) ve LafPOS'un ikramı */
+    countedWaste,
     wasteCost,
     wasteSummary,
     /** laffogato.net online satışları: ayın kaydı, ürünlere eşlenen satırlar, tüketim ve KDV hariç gelir */

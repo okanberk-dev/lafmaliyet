@@ -4,9 +4,12 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
+import { panelWasteCounts } from "@/lib/lafpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
+
+import { loadDayLafposIkram } from "./lafpos-ikram";
 
 /**
  * Zayi / ikram için seçilebilen kalemler: aktif menü ürünleri (adet) ve aktif hammaddeler (sayım biriminde, yoksa
@@ -81,19 +84,46 @@ export async function wasteEntriesBetween(from: string, to: string): Promise<Was
   }));
 }
 
+/** Günün LafPOS ikramı (kasa raporunun özeti; LafPOS günü değilse null) */
+export interface DayWasteLafpos {
+  /** O günün gün sonu geldi: ürün ikramı LafPOS'tan, paneldeki ürün ikramı sayılmaz */
+  received: boolean;
+  /** LafPOS'un Z'sindeki ödenmez tutarı (yalnız yöneticinin e-postası) */
+  offRevenue: number | null;
+  /** LafPOS'un ikram listesinin menü değeri */
+  ikramValue: number;
+  /** Panele bu güne girilmiş, sayılmayan ürün ikramı kaydı */
+  notCounted: number;
+}
+
 /**
- * Kasa raporu için günün zayi ve ikram özeti ve ikramın menü fiyatıyla değeri (ModPOS'un ödenmez tutarıyla
- * karşılaştırılır; yalnız yöneticiye giden e-postada).
+ * Kasa raporu için günün zayi ve ikram özeti ve ikramın menü fiyatıyla değeri (kasanın ödenmez tutarıyla
+ * karşılaştırılır; yalnız yöneticiye giden e-postada). LafPOS gününde gün sonu geldiyse ürün ikramı LafPOS'un ikram
+ * listesinden, değeri LafPOS'un menü değerinden; paneldeki ürün ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü
+ * boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
  */
-export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: number; count: number }> {
+export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
   const db = getDb();
-  const [entries, prices] = await Promise.all([
+  const [entries, prices, laf] = await Promise.all([
     wasteEntriesBetween(date, date),
     db.select({ id: s.products.id, price: s.products.price }).from(s.products),
+    loadDayLafposIkram(date),
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
-  const ikramValue = entries.filter((e) => e.kind === "ikram" && e.productId !== null).reduce((a, e) => a + (price.get(e.productId!) ?? 0) * e.qty, 0);
-  return { zayi: summarize(entries, "zayi"), ikram: summarize(entries, "ikram"), ikramValue: Math.round(ikramValue * 100) / 100, count: entries.length };
+  const received = Boolean(laf?.received);
+  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>()));
+  const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: "ikram", name: l.name, qty: l.qty, unit: "adet" })) : [];
+  const lines = [...counted, ...lafLines];
+  const lafValue = Math.round((laf?.lines.reduce((a, l) => a + l.menuValue, 0) ?? 0) * 100) / 100;
+  const panelValue = counted.filter((e) => e.kind === "ikram" && e.productId !== null).reduce((a, e) => a + (price.get(e.productId!) ?? 0) * e.qty, 0);
+  const ikramValue = Math.round((panelValue + (received ? lafValue : 0)) * 100) / 100;
+  return {
+    zayi: summarize(lines, "zayi"),
+    ikram: summarize(lines, "ikram"),
+    ikramValue,
+    count: lines.length,
+    lafpos: laf ? { received, offRevenue: laf.offRevenue, ikramValue: lafValue, notCounted: entries.length - counted.length } : null,
+  };
 }
 
 type Db = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];

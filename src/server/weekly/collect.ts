@@ -201,19 +201,22 @@ const kasaFiyat: Collector = {
   },
 };
 
-/** Zayi ve ikram (kayıtlar): son beş haftanın malzeme maliyeti */
+/**
+ * Zayi ve ikram (kayıtlar): son beş haftanın malzeme maliyeti. Motorun saydığı kayıtlar: geçiş gününden itibaren
+ * LafPOS'un ikramı da (o günlerde panele girilmiş ürün ikramı yerine; geçiş günü boşken yalnız panel)
+ */
 const zayi: Collector = {
   source: "zayi",
   timeoutMs: 4_000,
   async run(ctx) {
     const model = await ctx.model();
     const from = addDays(ctx.week.lastFrom, -28);
-    const nameOf = (e: { productId: number | null; ingredientId: number | null }) => {
+    const nameOf = (e: { productId: number | null; ingredientId: number | null; name?: string }) => {
       const p = e.productId !== null ? model.productById.get(e.productId) : undefined;
       if (p) return productLabel(p);
-      return (e.ingredientId !== null ? model.ingById.get(e.ingredientId)?.name : undefined) ?? "Kayıt";
+      return (e.ingredientId !== null ? model.ingById.get(e.ingredientId)?.name : undefined) ?? e.name ?? "Kayıt";
     };
-    const entries = (model.ds.wasteEntries ?? []).filter((e) => e.date >= from && e.date <= ctx.week.lastTo).map((e) => ({ date: e.date, name: nameOf(e), cost: wasteCost(model, e) }));
+    const entries = model.countedWaste.filter((e) => e.date >= from && e.date <= ctx.week.lastTo).map((e) => ({ date: e.date, name: nameOf(e), cost: wasteCost(model, e) }));
     return one(wasteItem({ week: ctx.week, entries }));
   },
 };

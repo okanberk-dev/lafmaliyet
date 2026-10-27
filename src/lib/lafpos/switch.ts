@@ -123,5 +123,7 @@ export const LAFPOS_SWITCH_EFFECTS: readonly string[] = [
   "\"Kafe kapalıydı\" için bu günden itibaren LafPOS'un satışlı gün sonu kanıttır: o gün kapalı onaylanamaz, işaretliyse kalkar.",
   "Ürün satışları bu günden itibaren LafPOS'un gün sonlarından gelir: Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış ve KDV tahmini onları ay toplamı olarak sayar. Bu günden sonraki aylara yüklenen ModPOS listesi sayılmaz (silinmez); geçiş ayında ModPOS listesi geçiş gününden önceki günler içindir.",
   "Satış tahmini bu günden itibaren kasa raporu girilmemiş günde LafPOS'un Z toplamını, tatlı payı LafPOS satışlarını da okur.",
+  "Komisyon & hakediş bu günden itibaren her yemek kartının ve platformun satışını LafPOS'un ödeme türlerinden kart kart alır (ödeme türünün kanalı LafPOS'ta seçili olmalı); yazdığınız ekstre yine önce gelir.",
+  "Ürün ikramı bu günden itibaren LafPOS'ta işaretlenir: LafPOS'un ikramları Tutarlılık'ın kayıtlı tüketimine, Zayi & ikram'a ve kasa e-postasına girer; gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz, yenisi girilmez. Hammadde ikramı ve zayi panelde kalır.",
   "LafPOS'tan gelen bu günden önceki günler deneme sayılır: Ayarlar'da görünür, hiçbir hesaba girmez.",
 ];
