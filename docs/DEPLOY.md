@@ -22,7 +22,8 @@ olarak `laffogato` seçeceksiniz.
 2. Framework: **Next.js** (otomatik). Root Directory: `laffogato` (gerekiyorsa).
 3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular ve hepsinin gerçekten uygulandığını
    doğrular (§ 7), veritabanı boşsa Excel verisini yükler, sonra derler. Önizleme derlemesi migration ve seed
-   çalıştırmaz (§ 3).
+   çalıştırmaz (§ 3); `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur (§ 7, "Production yalnız
+   main'den").
 
 ## 3. Veritabanı (Neon)
 
@@ -30,6 +31,14 @@ olarak `laffogato` seçeceksiniz.
 2. Bölge: **Frankfurt (aws-eu-central-1)**. Fonksiyonlar `vercel.json` ile Frankfurt'ta (`fra1`) çalışıyor;
    Türkiye'ye en yakın seçenek bu.
 3. Veritabanını projeye bağlayın. `DATABASE_URL` ve `DATABASE_URL_UNPOOLED` değişkenleri otomatik eklenir.
+
+**Uyuyan bağlantı ve Neon'un uyanışı.** Neon boşta kalan veritabanını uyutur; Vercel işlevi de istekler arasında
+askıya alınır. Uyanıştaki ilk sorgu ölü sokete yazılabilir (`CONNECTION_CLOSED`, `ECONNRESET`), bağlantı hiç
+kurulamayabilir (`CONNECT_TIMEOUT`) ya da Neon kimlik doğrulamada zaman aşımı verir (`08P01` "Authentication timed out";
+canlıda 24 Eki 2026). Panel bu hatalarda sorguyu bir kez daha gönderir (`src/server/db/retry.ts`): okumayı her bağlantı
+hatasında; yazımı ve işlemi (transaction) yalnız hiçbir şey gönderilmeden düştüyse (bağlantı kurulamadı, Neon'un zaman
+aşımı, gövdesi çalışmamış işlemin BEGIN'i). Günlükte `[db] bağlantı yenilendi (AUTH_TIMEOUT), sorgu yeniden gönderildi: …`
+satırı olağandır; aynı istekte ikinci deneme de düşerse hata sayfaya ya da işe gider.
 
 **Önizlemeler ve migration.** `DATABASE_URL` hem Production hem Preview ortamında aynı veritabanını gösteriyor:
 önizleme (PR) dağıtımları canlının verisini kullanır. Bu yüzden derleme öncesi hazırlık (`scripts/predeploy.ts`)
@@ -74,6 +83,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `LAFPOS_SYNC_SECRET` | (isteğe bağlı) LafPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini okur. `openssl rand -base64 48`; **LafPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından (`KARAOKE_SYNC_SECRET`) ve sitenin kendi `LAFPOS_SYNC_SECRET`'ından ayrı; `KARAOKE_SYNC_SECRET`'la aynıysa bağlantı açılmaz. Yoksa iki uç 503 döner (bugün bilerek yok: kafede ModPOS var). Açma sırası ve geçiş günü [LAFPOS.md](LAFPOS.md) › Açılış sırası |
 | `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
+| `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
 | `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
@@ -102,7 +112,9 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 ✓ Yönetici hesabı oluşturuldu: …
 ```
 
-Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Sonra
+Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. `main` dışındaki bir dal
+Production'a derlenirse derleme `✗ Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: …` diye durur
+(§ 7). Sonra
 `https://<proje>.vercel.app/giris` adresinden giriş yapın. Sağlık kontrolü: `/api/health` (günlük işlerle birlikte:
 `/api/health?isler=1`).
 
@@ -213,6 +225,22 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 
 - Kodda değişiklik yapıp Git'e gönderdiğinizde Vercel yeniden deploy eder. Şema değiştiyse `npm run db:generate`
   ile migration üretip onu da gönderin; canlı derlemede otomatik uygulanır (önizlemede uygulanmaz, § 3).
+- **Production yalnız main'den.** Bir dalın önizlemesi **asla** Production'a terfi ettirilmez ("Promote to
+  Production") ve Production'a yeniden derlenmez ("Redeploy" → Production): Vercel ikisinde de dalı canlının ortam
+  değişkenleriyle (`VERCEL_ENV=production`) yeniden derler; dalın incelenmemiş migration'ı canlı veritabanına uygulanır,
+  dalın kodu bütün canlı sırlarıyla (`AUTH_SECRET`, `PARASUT_*`, `RESEND_API_KEY`, `CRON_SECRET`) ladmin'de çalışır.
+  21 ve 26 Eki 2026'da iki kez oldu; ikincisinde PR'ın migration'ı sonra yeniden üretildi, sonraki main derlemesi
+  `relation "pos_daily_sales" already exists` ile düştü (aşağıda, 0040). Bu yüzden derleme öncesi hazırlık
+  (`scripts/predeploy-guard.ts` › `productionBranchRefusal`) Production derlemesinin dalına (`VERCEL_GIT_COMMIT_REF`)
+  bakar: `main` değilse derleme veritabanına hiç bağlanmadan `✗ Production derlemesi yalnız main dalından yapılır; bu
+  derlemenin dalı: …` diye durur, yayındaki sürüm ve şema değişmez. Değişiklik canlıya PR'la main'e birleşerek gider.
+  - Dalı bilinmeyen derleme (yerel `npm run build`, Git'siz CLI dağıtımı) denetlenmez; Instant Rollback yeniden
+    derlemediği için etkilenmez.
+  - Bilerek yapılan acil dağıtım (main bozuk, düzeltme dalda) yalnız o derlemeye anahtar verilerek yapılır:
+    dal çalışma kopyasında `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1`. Derleme günlüğüne
+    `! Production derlemesi <dal> dalından (ALLOW_BRANCH_PRODUCTION=1 ile bilerek)` yazılır. Değişkeni proje ayarlarına
+    eklemeyin (ekleyen olursa işi bitince silin): ayarda kalırsa bekçi her dal için kapanır. Dalın migration'ı canlıya
+    uygulanmış olur; dal sonra main'e birleşirken migration **yeniden üretilmez** (aşağıdaki kural).
 - **Migration kuralları.** Drizzle bir migration'ı yalnız günlükteki zamanı (`drizzle/meta/_journal.json` › `when`,
   üretildiği an) veritabanındaki en yeni kayıttan sonraysa uygular; daha yeni tarihli bir migration önce uygulandıysa
   eskisi **hata vermeden atlanır**. Bu yüzden:
@@ -283,3 +311,28 @@ DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
   fotoğraflar, kasadan çıkanlar ve okuma kayıtları, zayi ve ikram kayıtları (Excel'de aynı kimlik ve adla geri gelen ürüne
   ya da hammaddeye bağlı kalır, gerisi yalnız adıyla). Sonraki eşitleme
   Paraşüt faturalarını baştan alır: son 30 günün faturaları "ödenmedi", daha eskileri Paraşüt'teki durumuyla gelir.
+
+## 8. Plan ve günlükler (Vercel Hobby)
+
+Panel Vercel'in ücretsiz **Hobby** planında çalışıyor (26 Eki 2026 denetimi, E-67). Planın panele dokunan sınırları:
+
+- **Kullanım şartı.** Hobby, Vercel'in adil kullanım kurallarında kişisel ve ticari olmayan kullanım içindir; bu panel
+  bir kafenin ticari arka ofisi. Vercel şartı uygularsa proje durdurulabilir: panel ve günlük işler (Paraşüt
+  eşitlemesi, sabah e-postası) çalışmaz, veri Neon'da kalır. **Öneri: Pro plan.** Karar sahibindir (açık soru,
+  `docs/planlar/KALAN-ISLER.md` › sahibe sorular, 10); karar verilene kadar plan Hobby kalır, risk bu notla bilinir.
+- **Çalışma günlüğü bir saat.** Vercel › Logs (sunucunun `console.error` / `console.warn` satırları dahil) Hobby'de
+  yalnız son bir saati tutar; daha eskisi istenince Vercel "Hobby retains 1 hour" der. "Dün akşam kasa raporu
+  kaydedilmedi" gibi bir sorunun satırı ertesi gün yoktur: sorun bildirilince günlüğe hemen bakın. Uzun ömürlü olanlar:
+  - Vercel › Observability'deki hata kümeleri (son 7 gün; aynı hatanın sayısı, ilk ve son görülüşü, yolu);
+  - panelin kendi kayıtları: Ayarlar › Günlük işler (her cron çalışması ve adımları), işlem geçmişi, Paraşüt eşitleme
+    geçmişi, LafPOS ve site bağlantılarının durumu.
+- **Log drain yok.** Günlükleri dışarıya (bir günlük servisine) akıtmak Hobby'de yok; Pro'da açılır.
+- **Hata kancası yok.** `src/instrumentation.ts` (Next'in `onRequestError` kancası) yazılmadı; hatalar yalnız günlüğe
+  gider. Sonraki iş: kişisel veri taşımayan (yol, hata adı ve kodu; istek gövdesi, çerez ve e-posta yok) bir hata
+  satırını panelin veritabanına yazan kanca. Pro'ya geçilmezse günlüklerin tek kalıcı kaydı o olur.
+- **Cron günde bir ve saat esnek.** Hobby'de her cron günde en çok bir kez ve planlanan saatin içinde herhangi bir
+  dakikada çalışır: `/api/cron/parasut` 07:00–08:00, `/api/cron/gunluk` 08:00–09:00 (Türkiye; § 4). Panel buna göre
+  yazıldı: "çalışmadı" uyarısı pencerenin sonundan 30 dakika sonra (`src/lib/job-health.ts` › `GRACE_MIN`), sabah işi
+  kendi zaman bütçesiyle (`src/server/jobs/capped.ts`).
+- **Günde en çok 100 dağıtım** (§ 3) ve **geri alma yalnız bir önceki canlı sürüme** (Instant Rollback Hobby'de
+  hemen önceki Production dağıtımına döner; daha eskisi için düzeltme ileri yayınlanır, § 7).

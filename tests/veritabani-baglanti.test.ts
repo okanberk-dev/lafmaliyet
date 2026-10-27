@@ -5,7 +5,7 @@
 // Çalıştırma: npx tsx --test tests/veritabani-baglanti.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -338,4 +338,52 @@ test("DEPLOY.md: gizli değerler yalnız Production (önizleme canlının verita
   assert.match(env, /`MIGRATE_ON_PREVIEW=1` ile birlikte/);
   assert.match(env, /\| `DATABASE_SSL` \|/);
   assert.match(doc, /npm run db:reset -- --onay=<sunucu adı>/);
+});
+
+test("DEPLOY.md: Neon'un uyanışında yeniden deneme; günlükteki satır createDb'nin yazdığıyla aynı", () => {
+  const doc = read("docs/DEPLOY.md").replace(/\s*\n\s*/g, " ");
+  const s3 = doc.slice(doc.indexOf("## 3. Veritabanı (Neon)"), doc.indexOf("## 4."));
+  assert.match(s3, /\*\*Uyuyan bağlantı ve Neon'un uyanışı\.\*\*/);
+  assert.match(s3, /`08P01` "Authentication timed out"/);
+  assert.match(s3, /`src\/server\/db\/retry\.ts`/);
+  // createDb'nin onRetry satırı: belgede AUTH_TIMEOUT'la yazılan biçim
+  assert.match(read("src/server/db/index.ts"), /console\.warn\(`\[db\] bağlantı yenilendi \(\$\{code\}\), sorgu yeniden gönderildi: \$\{query\.slice\(0, 80\)\}`\)/);
+  assert.ok(s3.includes(`\`[db] bağlantı yenilendi (${AUTH_TIMEOUT}), sorgu yeniden gönderildi: …\``));
+});
+
+test("DEPLOY.md § 8: Vercel Hobby planı, bir saatlik günlük, 7 günlük hata kümesi, cron penceresi, kullanım şartı", async () => {
+  const doc = read("docs/DEPLOY.md").replace(/\s*\n\s*/g, " ");
+  const s8 = doc.slice(doc.indexOf("## 8. Plan ve günlükler (Vercel Hobby)"));
+  assert.ok(s8.startsWith("## 8."), "bölüm yok");
+  for (const s of [
+    "ücretsiz **Hobby** planında",
+    "kişisel ve ticari olmayan kullanım",
+    "**Öneri: Pro plan.**",
+    "yalnız son bir saati tutar",
+    "son 7 gün",
+    "**Log drain yok.**",
+    "Ayarlar › Günlük işler",
+    "`/api/cron/parasut` 07:00–08:00, `/api/cron/gunluk` 08:00–09:00",
+    "Günde en çok 100 dağıtım",
+  ]) {
+    assert.ok(s8.includes(s), `§ 8'de yok: ${s}`);
+  }
+  // Andığı kurallar kodla aynı: cron saatleri vercel.json'da, "çalışmadı" beklemesi job-health'te
+  const crons = (JSON.parse(read("vercel.json")) as { crons: { path: string; schedule: string }[] }).crons;
+  assert.deepEqual(
+    crons.map((c) => [c.path, c.schedule]),
+    [
+      ["/api/cron/parasut", "30 4 * * *"],
+      ["/api/cron/gunluk", "0 5 * * *"],
+    ],
+  );
+  const { GRACE_MIN } = await import("../src/lib/job-health");
+  assert.match(s8, new RegExp(`pencerenin sonundan ${GRACE_MIN} dakika sonra \\(\`src/lib/job-health\\.ts\` › \`GRACE_MIN\`\\)`));
+  for (const f of ["src/lib/job-health.ts", "src/server/jobs/capped.ts", "docs/planlar/KALAN-ISLER.md"]) assert.ok(s8.includes(`\`${f}\``) && read(f).length > 0, f);
+  // Hata kancası yazılınca belge de güncellenir (kanca istek gövdesi ve çerez taşımamalı; o zaman kendi testi)
+  const hook = ["src/instrumentation.ts", "src/instrumentation-node.ts", "instrumentation.ts"].some((f) => existsSync(join(process.cwd(), f)));
+  assert.equal(hook, false, "instrumentation kancası eklendi: DEPLOY.md § 8'deki 'Hata kancası yok' maddesini güncelleyin");
+  assert.match(s8, /\*\*Hata kancası yok\.\*\* `src\/instrumentation\.ts`/);
+  // Sahibe soru 10'un varsayılanı yazılı
+  assert.match(read("docs/planlar/KALAN-ISLER.md"), /10\. \*\*Vercel planı\*\* \(E-67, B05\)[^\n]*\n\s+\*\*Varsayılan:\*\* plan Hobby kalır/);
 });

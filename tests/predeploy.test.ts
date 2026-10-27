@@ -97,3 +97,23 @@ test("betiğin kendisi: daldan Production derlemesi veritabanına bağlanmadan 1
   assert.match(r.stderr, /✗ Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: claude\/lafpos-baglantisi\./);
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /Veritabanı hazırlığı başarısız|Havuzlu|migration/i);
 });
+
+test("DEPLOY.md: dal önizlemesi Production'a alınmaz; ret ve uyarı satırları koddakiyle aynı; anahtar tek derlemelik", () => {
+  // Satır sonları boşluk sayılır (belgede ters tırnaklı satır da bölünür)
+  const doc = readFileSync(join(process.cwd(), "docs/DEPLOY.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  const s7 = doc.slice(doc.indexOf("## 7. Güncelleme ve yedek"), doc.indexOf("## 8."));
+  assert.match(s7, /\*\*Production yalnız main'den\.\*\* Bir dalın önizlemesi \*\*asla\*\* Production'a terfi ettirilmez/);
+  assert.match(s7, /`scripts\/predeploy-guard\.ts` › `productionBranchRefusal`/);
+  assert.ok(s7.includes("`vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1`"));
+  // Belgedeki satırlar betiğin yazdığıyla başlar
+  const refused = productionBranchRefusal({ VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "dal" }) ?? "";
+  const quoted = refused.slice(0, refused.indexOf("dal."));
+  assert.ok(s7.includes(`\`✗ ${quoted}…\``), quoted);
+  const warned = productionBranchOverride({ VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "<dal>", ALLOW_BRANCH_PRODUCTION: "1" }) ?? "";
+  assert.ok(s7.includes(`\`! ${warned.slice(0, warned.indexOf(":"))}\``), warned);
+  // Ortam değişkenleri tablosunda, proje ayarına eklenmemesi yazılı; § 2 ve § 5 de anıyor
+  const env = doc.slice(doc.indexOf("## 4. Ortam değişkenleri"), doc.indexOf("## 5."));
+  assert.match(env, /\| `ALLOW_BRANCH_PRODUCTION` \| \(yalnız acil durumda, tek derleme için\)[^\n]*Proje ayarlarına \*\*eklemeyin\*\*/);
+  assert.match(doc.slice(doc.indexOf("## 2."), doc.indexOf("## 3.")), /`main` dışındaki bir dalın Production derlemesi hiç başlamadan durur/);
+  assert.ok(doc.slice(doc.indexOf("## 5."), doc.indexOf("## 6.")).includes(`\`✗ ${quoted}…\``));
+});

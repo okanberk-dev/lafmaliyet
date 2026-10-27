@@ -61,7 +61,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
 | B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | bekliyor |
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
-| B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
+| B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | PR (dal `claude/denetim-b05-canli-guvence`) |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** | 2 | bekliyor |
@@ -132,6 +132,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 9. **Banka POS komisyonu** (E-43, B16): ayrıca fatura ya da dekont olarak geliyor mu, Paraşüt'te Komisyon
    kategorisine mi düşüyor?
 10. **Vercel planı** (E-67, B05): panel Hobby planında (ticari kullanım yok, günlükler bir saat); Pro'ya geçilsin mi?
+    **Varsayılan:** plan Hobby kalır, risk ve sınırlar `docs/DEPLOY.md` § 8'de yazılı (öneri Pro); karar sahibin.
 11. **Önceki listeden açık kalanlar** (yeniden doğrulanmadı): D-05 Claude inceleme iş akışının ödemesi; D-06 sohbete
     yapıştırılan API anahtarının iptali; D-15 sos pompası da 10 ml mi; D-16 sitenin `PARASUT_USERNAME`'i panelinkinden
     farklı mı; D-18 zili kapalı cihaz bar ekranında sorsun mu; D-19 fişli harcamalar Aylık harcamalar'a onaysız mı
