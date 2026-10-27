@@ -140,8 +140,14 @@ kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir (`tests/laf
 - **Liste ↔ Z:** geçiş ayında listenin toplamı listenin günlerinin kasa raporu Z toplamını %5'ten fazla aşıyorsa uyarı
   (yüklerken bildirim, sonra Satışlar'da): liste geçiş gününden sonraki satışı da içeriyor olabilir, o günler
   LafPOS'tan da sayılır. Liste ürün cirosudur (indirimden önce), küçük fark olağandır.
-- **Kapsam:** LafPOS satırı olan ayın satırları son gelen LafPOS gününe kadardır (`salesCoverage`): süren ayda ya da
-  günleri eksik ayda günlük ortalama ve "ayda …" adetleri yarım ayı tam ay saymaz (engine `listPeriod`).
+- **Kapsam:** LafPOS satırı olan ayın satırları son sayılan LafPOS gününe kadardır (`salesCoverage`): süren ayda ya da
+  günleri eksik ayda günlük ortalama ve "ayda …" adetleri yarım ayı tam ay saymaz (engine `listPeriod`). **Süren ayda**
+  LafPOS günü kasa raporlarının son gününden sonraysa o gün kasa raporu girilince sayılır (`mergeWithLafpos`
+  `lastTillDay`; Satışlar'ın bandı "10 Aralık kasa raporu girilince sayılır" der): LafPOS gün sonunu kapanışta yollar,
+  rapor sonra (çoğu kez ertesi sabah) girilir; o arada satırlar kasa döneminden bir gün ileride olur, liste ↔ POS cirosu
+  karşılaştırması yanlış uyarı verir, günlük ortalama bir günün satışı kadar şişerdi. Süren ayda hiç kasa raporu yoksa
+  beklenmez (ayın kasa dönemi yok). Ay rakamlarının raporsuz günde LafPOS Z'sinden gelmesi (B09) bu bekleyişi kendiliğinden
+  kaldırır: kasa dönemi LafPOS günlerini de kapsar.
 
 **Satışlar** (`/panel/satislar`, yalnız yönetici): geçiş ayında bilgi bandı ("Kasım geçiş ayı: ModPOS listesi 1–9
 Kasım, LafPOS 10 Kasım'dan itibaren (12 gün geldi, son gün 21 Kasım).") ve yukarıdaki uyarılar. LafPOS satırları aynı

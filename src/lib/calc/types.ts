@@ -448,8 +448,13 @@ export interface LafposSalesMonth {
   source: "gecis" | "lafpos";
   /** LafPOS satışlarının sayıldığı ilk gün; bu ay LafPOS sayılmıyorsa null (geçiş ayının listesi ayın sonuna kadar) */
   from: string | null;
-  /** Sayılan LafPOS gün sonları: kaç gün geldi, son gün; hiç gelmediyse null */
+  /** Gelen LafPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
   lafpos: { days: number; last: string } | null;
+  /**
+   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan LafPOS günleri (kasa raporlarının son gününden
+   * sonra; docs/LAFPOS.md › Kapsam); yoksa null ya da yok
+   */
+  held?: { from: string; to: string } | null;
   /**
    * Ayın Satışlar'a yüklenmiş ModPOS listesi: satır sayısı, ciro toplamı, son günü (kapsam kaydı yoksa ayın sonu) ve
    * hesaba girip girmediği (geçiş ayında evet, sonraki aylarda hayır); liste yoksa null

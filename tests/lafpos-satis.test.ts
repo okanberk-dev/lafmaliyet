@@ -238,6 +238,14 @@ test("Satışlar bandı: geçiş ayı, eksik günler, sayılmayan LafPOS günler
   const decNotes = lafposMonthNotes(dec, S);
   assert.equal(plain(decNotes.info), "Aralık LafPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir (3 gün geldi, son gün 3 Aralık). ModPOS listesi yüklenmez.");
   assert.deepEqual(decNotes.warnings, ['Bu aya yüklenmiş ModPOS listesi (84 satır) sayılmıyor: Aralık LafPOS\'tan geliyor. Silmek için "Ayı temizle".']);
+  // Kasa raporunu bekleyen günler bilgi satırında (uyarı değil)
+  const held = lafposMonthStatus({ month: "2026-12", switchDay: S, today: "2026-12-04", modpos: null, lafpos: { days: 4, last: "2026-12-04" }, held: { from: "2026-12-04", to: "2026-12-04" } })!;
+  assert.deepEqual(held.held, { from: "2026-12-04", to: "2026-12-04" });
+  assert.equal(
+    plain(lafposMonthNotes(held, S).info),
+    "Aralık LafPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir (4 gün geldi, son gün 4 Aralık; 4 Aralık kasa raporu girilince sayılır). ModPOS listesi yüklenmez.",
+  );
+  assert.equal("held" in dec, false, "bekleyen gün yoksa alan yok");
   assert.equal(
     plain(lafposMonthNotes(lafposMonthStatus({ month: "2027-01", switchDay: S, today: "2026-12-04", modpos: null, lafpos: null })!, S).info),
     "Ocak LafPOS'tan geliyor: satışlar her gün sonunda kendiliğinden gelir. ModPOS listesi yüklenmez.",
@@ -281,7 +289,11 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   const actions = read("src/server/actions/sales.ts");
   assert.match(actions, /const rule = modposImportRule\(month, switchDay, todayTR\(\)/);
   assert.match(actions, /if \(!rule\.ok\) throw new UserError\(rule\.error\);/);
-  assert.match(actions, /monthSource\(month, await loadLafposSwitchDay\(\)\) === "lafpos"/, "LafPOS ayına elle satır eklenmez");
+  assert.match(actions, /const switchDay = await loadLafposSwitchDay\(\);\n\s+if \(monthSource\(month, switchDay\) === "lafpos"\)/, "LafPOS ayına elle satır eklenmez");
+  // Geçiş ayının ilk elle satırı listeyi içe aktarmanın kuralıyla başlatır (denetim B08 incelemesi)
+  assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await setCoverage\(tx, month, rule\.through\);/);
+  // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü)
+  assert.match(dataset, /lastTillDay: till\.at\(-1\)\?\.date \?\? null/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
   for (const f of ["src/server/forecast/load.ts", "src/server/forecast/mix.ts"]) {
     const src = read(f);

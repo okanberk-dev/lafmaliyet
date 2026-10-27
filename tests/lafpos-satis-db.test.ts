@@ -255,6 +255,38 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.ok(model.salesMonths.includes("2026-12"));
   });
 
+  test("süren ayda kasa raporu girilmemiş LafPOS günü rapor girilince sayılır: liste ↔ POS cirosu aynı günlerle karşılaştırılır", async () => {
+    at("2026-12-10T23:30:00+03:00");
+    await setSwitch("2026-12-01");
+    await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports, cash_reports RESTART IDENTITY CASCADE`);
+    for (let d = 1; d <= 9; d++) await report(`2026-12-${String(d).padStart(2, "0")}`, 2_000);
+    for (let d = 1; d <= 10; d++) await day(`2026-12-${String(d).padStart(2, "0")}`, 2_000, [{ posName: "LATTE MEDIUM", productId: ids.latteM, qty: 10, revenue: 2_000 }]);
+    const insights = await import("../src/lib/calc/insights");
+    const lafposNotes = (await import("../src/lib/lafpos/sales")).lafposMonthNotes;
+    const titles = (m: ReturnType<typeof createModel>) => insights.alerts(m, "2026-12").map((a) => a.title);
+    // LafPOS'un 10 Aralık'ı geldi, kasa raporu henüz yok: 1-9 Aralık sayılır, kasa dönemiyle aynı
+    const ds = await dataset.loadDataset();
+    const dec = () => ds.salesLines.filter((l) => l.month === "2026-12").map((l) => [l.posName, l.qty, l.revenue, l.lafpos?.days ?? null]);
+    assert.deepEqual(dec(), [["LATTE MEDIUM", 90, 18_000, 9]]);
+    assert.equal(ds.salesCoverage?.find((c) => c.month === "2026-12")?.through, "2026-12-09");
+    const st = ds.lafposSales?.months.find((m) => m.month === "2026-12");
+    assert.deepEqual([st?.lafpos, st?.held], [{ days: 10, last: "2026-12-10" }, { from: "2026-12-10", to: "2026-12-10" }]);
+    assert.match(lafposNotes(st!, "2026-12-01").info.replace(/ /g, " "), /\(10 gün geldi, son gün 10 Aralık; 10 Aralık kasa raporu girilince sayılır\)/);
+    const model = createModel(ds);
+    assert.ok(!titles(model).includes("Satış listesi ile POS cirosu tutmuyor"), JSON.stringify(titles(model)));
+    // Ertesi sabah rapor hâlâ girilmemiş: kasa dönemi düne kadar uzar, liste 1-9 Aralık dönemiyle karşılaştırılır
+    at("2026-12-11T09:00:00+03:00");
+    const morning = createModel(await dataset.loadDataset());
+    assert.equal(morning.listPeriod("2026-12")?.through, "2026-12-09");
+    assert.ok(!titles(morning).includes("Satış listesi ile POS cirosu tutmuyor"));
+    // Rapor girilince 10 Aralık sayılır, bekleyen gün kalmaz
+    await report("2026-12-10", 2_000);
+    const done = await dataset.loadDataset();
+    assert.deepEqual(done.salesLines.filter((l) => l.month === "2026-12").map((l) => [l.qty, l.lafpos?.days ?? null]), [[100, 10]]);
+    assert.equal(done.lafposSales?.months.find((m) => m.month === "2026-12")?.held, undefined);
+    assert.ok(!titles(createModel(done)).includes("Satış listesi ile POS cirosu tutmuyor"));
+  });
+
   test("geçiş ayına sonradan ayın tamamının listesi yüklendiyse LafPOS'un o ayki günleri sayılmaz (çift sayım yok)", async () => {
     await setSwitch(S);
     await setCoverage({});

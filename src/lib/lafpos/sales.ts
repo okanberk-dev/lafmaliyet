@@ -121,6 +121,8 @@ export function lafposMonthStatus(i: {
   modpos: { lines: number; revenue: number; through: string } | null;
   lafpos: { days: number; last: string } | null;
   modposZ?: number | null;
+  /** Kasa raporunu bekleyen günler (süren ay) */
+  held?: { from: string; to: string } | null;
 }): LafposSalesMonth | null {
   const source = monthSource(i.month, i.switchDay);
   if (source === "modpos") return null;
@@ -146,6 +148,7 @@ export function lafposMonthStatus(i: {
     modposZ: source === "gecis" ? (i.modposZ ?? null) : null,
     gap,
     overlap,
+    ...(i.held ? { held: i.held } : {}),
   };
 }
 
@@ -182,7 +185,8 @@ export interface LafposMonthNotes {
 export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): LafposMonthNotes {
   const name = monthLabel(st.month).split(" ")[0];
   const warnings: string[] = [];
-  const days = st.lafpos ? ` (${st.lafpos.days} gün geldi, son gün ${dayMonthTR(st.lafpos.last)})` : "";
+  const held = st.held ? `; ${dayRangeTR(st.held.from, st.held.to)} kasa raporu girilince sayılır` : "";
+  const days = st.lafpos ? ` (${st.lafpos.days} gün geldi, son gün ${dayMonthTR(st.lafpos.last)}${held})` : "";
   if (st.source === "lafpos") {
     if (st.modpos) {
       warnings.push(
