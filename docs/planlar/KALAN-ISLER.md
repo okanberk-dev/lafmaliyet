@@ -60,7 +60,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B01 | Stok sayımı 1: doğru ay, tek "tamam" kuralı, kayıt kaybı yok (+ NEW-01) | E-01, E-02, E-03, E-17, E-18, E-19, E-20, E-23, E-24, E-25, E-26 | yok | 3 | bekliyor |
 | B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
 | B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | PR (dal `claude/denetim-b03-fatura-stok`) |
-| B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
+| B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | PR (dal `claude/denetim-b04-sayim-hiz`) |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |

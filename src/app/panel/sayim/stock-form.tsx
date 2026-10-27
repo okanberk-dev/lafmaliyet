@@ -23,7 +23,20 @@ import {
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
 import { unstable_isUnrecognizedActionError, unstable_rethrow, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -36,11 +49,13 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
+import { useIsPhone, useMediaQuery } from "@/components/ui/use-media";
 import { Input, NumberInput, Select } from "@/components/ui/form";
 import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { CountUnit } from "@/lib/calc/types";
 import { COUNT_UNITS } from "@/lib/constants";
@@ -52,7 +67,7 @@ import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
 import { AddCountItemDialog } from "./add-item";
-import { stockBreakdown } from "./breakdowns";
+import { lineUnit, stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
   countDraftJson,
@@ -62,8 +77,11 @@ import {
   draftConflicts,
   EXTRAS_ANCHOR,
   extraKey,
+  countedLineIds,
   extrasBase,
-  groupProgress,
+  formProgress,
+  formQty,
+  invalidCount,
   listTopScroll,
   invoiceLayer,
   isFifoLine,
@@ -79,8 +97,11 @@ import {
   restoreDraftExtras,
   restoredPrefilled,
   unusualCount,
+  withoutId,
   type CountLineValue,
+  type FormProgress,
   type GroupProgress,
+  type LiveTotals,
 } from "./logic";
 
 export interface FormLine extends CountLineValue {
@@ -120,6 +141,8 @@ type HistoryMonth = { month: string; short: string; label: string; counted: numb
 /** Formdaki ek kalem: metin kutularının değeri; `priced` = kayıtlı fiyatı var (personel fiyatı görmez) */
 type Extra = { name: string; unit: string; qty: string; unitPrice: string; priced: boolean };
 
+/** Personelin formunda stok toplamı yok (fiyat gelmez) */
+const NO_TOTALS: LiveTotals = { groups: [], extrasTotal: 0, total: 0, totalVat: 0, totalVatExcel: 0 };
 /** Adresteki süzgeç anahtarları (?ara=sut&durum=empty&grup=…); "Temizle" hepsini birden sıfırlar */
 const QUERY_KEYS = ["ara", "durum", "grup"];
 const BLANK_EXTRA: Extra = { name: "", unit: "ADET", qty: "", unitPrice: "", priced: false };
@@ -168,9 +191,26 @@ const focusNextCount = (e: KeyboardEvent<HTMLInputElement>) => focusNext(e, "dat
 
 // ---------------------------------------------------------------- AkmanOS hareketli parçalar
 
-/** AkmanOS todo-list sayacı: rakam değişince eskisi yukarı, yenisi aşağıdan kayar */
-function CountRoll({ value }: { value: number }) {
-  const reduce = useCalmMotion() ?? false;
+/**
+ * Öğe ekranda mı (IntersectionObserver). Ekranda olmayan sayaç ve tutar kaymaz, değeri anında yazılır: telefonda
+ * satırlara inilip yazılırken yukarıdaki kartlar her tuşta kare kare yeniden boyanmasın (denetim E-21).
+ */
+function useOnScreen<T extends Element>(): [RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [onScreen, setOnScreen] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([entry]) => setOnScreen(entry.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return [ref, onScreen];
+}
+
+/** AkmanOS todo-list sayacı: rakam değişince eskisi yukarı, yenisi aşağıdan kayar (`still`: kaymadan) */
+const CountRoll = memo(function CountRoll({ value, still = false }: { value: number; still?: boolean }) {
+  const reduce = (useCalmMotion() ?? false) || still;
   const text = num(value);
   return (
     <span className="relative inline-flex h-[1.15em] overflow-hidden align-bottom">
@@ -188,11 +228,11 @@ function CountRoll({ value }: { value: number }) {
       </AnimatePresence>
     </span>
   );
-}
+});
 
 /** AkmanOS todo-list başlık ikonu: liste ikonu, tüm kalemler sayılınca yeşil onaya döner */
-function ProgressIcon({ complete }: { complete: boolean }) {
-  const reduce = useCalmMotion() ?? false;
+const ProgressIcon = memo(function ProgressIcon({ complete, still = false }: { complete: boolean; still?: boolean }) {
+  const reduce = (useCalmMotion() ?? false) || still;
   return (
     <span aria-hidden="true" className="relative grid size-9 shrink-0 place-items-center rounded-lg border border-line-strong bg-surface">
       <AnimatePresence initial={false} mode="popLayout">
@@ -234,7 +274,7 @@ function ProgressIcon({ complete }: { complete: boolean }) {
       </AnimatePresence>
     </span>
   );
-}
+});
 
 /**
  * Satırın durumu (AkmanOS todo-list ikonu): boş = kesik halka, sayıldı = yeşil onay, geçersiz = kırmızı çarpı.
@@ -311,7 +351,7 @@ const monthCell: Variants = {
  * (personel: bu ay ve ilk 10 günde geçen ay dışında) bağlantı değildir. Kaydedilmemiş değişiklik varken diğer aylara
  * geçiş kapalı (girilen miktarlar kaybolmasın).
  */
-function CountHistory({ history, current, currentStatus, locked }: { history: HistoryMonth[]; current: string; currentStatus: Pick<HistoryMonth, "counted" | "total" | "hasData">; locked: boolean }) {
+const CountHistory = memo(function CountHistory({ history, current, currentStatus, locked }: { history: HistoryMonth[]; current: string; currentStatus: Pick<HistoryMonth, "counted" | "total" | "hasData">; locked: boolean }) {
   const reduce = useCalmMotion() ?? false;
   const rows = history.map((h) => (h.month === current ? { ...h, ...currentStatus } : h));
   const done = rows.filter((h) => h.total > 0 && h.counted >= h.total).length;
@@ -407,7 +447,7 @@ function CountHistory({ history, current, currentStatus, locked }: { history: Hi
       </ol>
     </div>
   );
-}
+});
 
 /** Hareket azaltılmışsa kaydırma anında */
 function scrollBehavior(): ScrollBehavior {
@@ -511,10 +551,12 @@ function GroupChips({
 }
 
 function Money({ value }: { value: number }) {
+  // Ekranda değilken (telefonda satırlara inilmişken) tutar kaymaz: her tuşta kare kare boyanmasın
+  const [ref, onScreen] = useOnScreen<HTMLSpanElement>();
   return (
     <>
-      <span aria-hidden="true">
-        <AnimatedNumber value={value} format={(v) => tl(v)} />
+      <span ref={ref} aria-hidden="true">
+        <AnimatedNumber value={value} duration={onScreen ? undefined : 0} format={(v) => tl(v)} />
       </span>
       <span className="sr-only">{tl(value)}</span>
     </>
@@ -565,6 +607,611 @@ export function CountMonthPicker({ months, value }: { months: string[]; value: s
   );
 }
 
+// ---------------------------------------------------------------- Sayım satırı (denetim E-21: yazım hızı)
+
+/**
+ * Her çizimde güncellenen işleve sabit bir başvuru: memo'lu parçaya verilen olay işleyicisi her tuşta değişip onu
+ * yeniden çizdirmesin. İşlev yalnız olaylarda çağrılır (çizim sırasında değil), her zaman son hâliyle.
+ */
+function useStableHandler<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const ref = useRef(fn);
+  useLayoutEffect(() => {
+    ref.current = fn;
+  });
+  return useCallback((...args: A) => ref.current(...args), []);
+}
+
+/** Geçen ayın miktarı aynı birimdeyse (karşılaştırma için) */
+const prevComparable = (l: FormLine) => (l.prevQty !== null && (l.prevUnit ?? l.countUnit) === (l.unitNow ?? l.countUnit) ? l.prevQty : null);
+
+/**
+ * Sayım satırı: yalnız kendi kutusunun yazısı ya da işaretleri değişince yeniden çizilir (memo). Telefonda 72 kalemlik
+ * listede her tuş eskiden bütün satırları, toplamları, dökümü ve FIFO katmanlarını yeniden kuruyordu (4× yavaş
+ * işlemcide tuş başına 0,2-0,5 sn, denetim E-21); şimdi tuşta yalnız yazılan satır çizilir, sayaçlar ve toplamlar
+ * ertelenmiş değerle (useDeferredValue) boşta güncellenir. `onChange` ve `onConfirm` sabit işlevlerdir.
+ */
+const CountRow = memo(function CountRow({
+  line: l,
+  raw,
+  isPrefilled,
+  conflict,
+  isAdmin,
+  monthLabel,
+  last,
+  onChange,
+  onConfirm,
+}: {
+  line: FormLine;
+  /** Kutudaki yazı */
+  raw: string;
+  /** "Geçen aydan doldur"la geldi, dokunulmadı */
+  isPrefilled: boolean;
+  /** Bu kişi yazarken başkası da kaydetti */
+  conflict: boolean;
+  isAdmin: boolean;
+  monthLabel: string;
+  /** Listedeki son yazılabilir kutu (klavyede "Bitti") */
+  last: boolean;
+  onChange: (id: number, value: string) => void;
+  onConfirm: (id: number) => void;
+}) {
+  const v = formQty(l, raw);
+  const unit = lineUnit(l, v);
+  // Tutar sunucunun kuralıyla (FIFO satırında katmanlardan); birim fiyat tutar ÷ miktar
+  const lineTotal = lineAmount(l, v);
+  const price = v ? lineTotal / v : l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
+  const fifoTip = isAdmin && isFifoLine(l) && v ? layerText(lineLayers(l, v), (l.archived || (l.qty !== null && v === l.qty) ? l.factor : l.factorNow) ?? 1, unit) : null;
+  // Yalnız yönetici: fiyatı girilmemiş kalem (sayımda "Listeye ekle" ile eklenen) 0 ₺ değil "fiyat yok" yazar
+  const unitText =
+    price > 0 ? (
+      <>
+        {`${tl(price, 2)}/${unit}`}
+        {fifoTip ? <InfoTip className="ml-1" text={fifoTip} /> : null}
+      </>
+    ) : (
+      <span className="font-medium text-warn" title="Paket fiyatı girilmedi: Hammaddeler'den girin; o zamana kadar stok toplamına 0 ₺ girer">
+        fiyat yok
+      </span>
+    );
+  const money = isAdmin ? (
+    <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
+      <span className="whitespace-nowrap">{unitText}</span>
+      <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(lineTotal) : "–"}</span>
+    </div>
+  ) : null;
+  const moneyMobile = isAdmin ? (
+    <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
+      {unitText} · <span className="font-semibold text-ink">{v ? tl(lineTotal) : "–"}</span>
+    </p>
+  ) : null;
+  if (l.archived) {
+    const why = l.archivedReason === "pasif" ? "pasif" : "“Sayılmaz”";
+    return (
+      <li className="flex items-center gap-2.5 px-2 py-2.5 sm:gap-3 sm:px-3">
+        <Lock size={16} className="mt-0.5 shrink-0 text-ink-quiet" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-1.5 text-sm leading-5 font-medium text-ink-soft">
+            <span className="min-w-0 break-words">{l.name}</span>
+            <Badge tone="gray">{l.archivedReason === "pasif" ? "Pasif" : "Sayılmaz"}</Badge>
+            <InfoTip
+              text={`Hammaddeler'de ${why} yapıldı. ${monthLabel} için kayıtlı ${num(l.qty, 3)} ${l.countUnit} sayımı korunur ve stok toplamına girer; burada değiştirilemez. Düzeltmek için malzemeyi Hammaddeler'de yeniden sayılır yapın.`}
+            />
+          </p>
+          {l.packageDesc ? (
+            <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
+              {l.packageDesc}
+            </p>
+          ) : null}
+          {moneyMobile}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="w-[5.5rem] pr-3 text-right text-sm font-medium text-ink-soft tabular sm:w-24">
+            {num(l.qty, 3)}
+            <span className="sr-only"> {l.countUnit} (salt okunur)</span>
+          </span>
+          <span className="w-11 text-xs font-medium text-ink-mute" aria-hidden="true">
+            {l.countUnit}
+          </span>
+        </div>
+        {money}
+      </li>
+    );
+  }
+  const invalid = invalidCount(l, raw);
+  const changed = v !== l.qty;
+  const inputId = `count-${l.id}`;
+  const nowUnit = l.unitNow ?? l.countUnit;
+  const unusual = invalid || v === l.qty ? null : unusualCount(v, prevComparable(l));
+  const prev = prevComparable(l);
+  // "1.500" gibi noktalı yazımın nasıl okunduğu
+  const echo = !invalid && v !== null && raw.includes(".") ? `= ${countText(v)} ${nowUnit}` : null;
+  return (
+    <li
+      // Telefonda satırın herhangi bir yerine dokunmak kutuya odaklanır (ad etiketinin yanı sıra)
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest("input, button, a, label")) document.getElementById(inputId)?.focus();
+      }}
+      className="flex items-center gap-2.5 px-2 py-2.5 max-sm:min-h-16 sm:gap-3 sm:px-3"
+    >
+      <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
+      <div className="min-w-0 flex-1">
+        {/* Satır sarar: dar ekranda rozet adın altına iner, ad kelimenin ortasından bölünmez */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <label htmlFor={inputId} className="flex min-w-0 items-center gap-1.5 text-sm leading-5 font-medium text-ink">
+            <span className="min-w-0 break-words">{l.name}</span>
+            {changed && !invalid ? (
+              <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
+                <span className="sr-only">(kaydedilmedi)</span>
+              </span>
+            ) : null}
+          </label>
+          {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
+              "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
+          {l.passiveInUse && isAdmin ? (
+            <span className="inline-flex shrink-0 items-center gap-1">
+              <Badge tone="gray">Pasif · reçetede</Badge>
+              <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
+            </span>
+          ) : null}
+        </div>
+        {l.passiveInUse && !isAdmin ? <p className="mt-0.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın</p> : null}
+        {l.packageDesc ? (
+          <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
+            {l.packageDesc}
+          </p>
+        ) : null}
+        {l.prevQty !== null ? (
+          <p className="mt-0.5 text-xs text-ink-mute tabular">
+            Geçen ay {num(l.prevQty, 3)} {l.prevUnit ?? l.countUnit}
+          </p>
+        ) : null}
+        {l.unitChanged ? (
+          <p className="mt-0.5 text-xs font-medium text-warn">
+            {changed
+              ? `Yeni miktar ${nowUnit} ile kaydedilir.`
+              : `Bu ay ${l.countUnit} ile sayıldı; sayım birimi artık ${nowUnit}. Değiştirirseniz ${nowUnit} ile kaydedilir.`}
+          </p>
+        ) : null}
+        {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar: yalnızca sayı (ör. 2,5)</p> : null}
+        {echo ? <p className="mt-0.5 text-xs font-medium text-ink-soft tabular">{echo}</p> : null}
+        {unusual && prev !== null ? (
+          <p className="mt-0.5 text-xs font-medium text-warn">
+            Geçen ay {num(prev, 3)} {nowUnit}: {unusual === "high" ? "beş katından fazla" : "beşte birinden az"}, doğru mu?
+          </p>
+        ) : null}
+        {conflict ? (
+          <p className="mt-0.5 text-xs font-medium text-warn">
+            Başkası bu arada {l.qty === null ? "sayımı sildi" : `${countText(l.qty)} ${l.countUnit} kaydetti`}; sizinki kaydedilirse onun yerine geçer.
+          </p>
+        ) : null}
+        {isPrefilled ? (
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-warn">
+            Geçen aydan dolduruldu: rafa bakıp düzeltin
+            <button
+              type="button"
+              className="cursor-pointer rounded-md px-1.5 py-0.5 text-ink-soft underline underline-offset-2 hover:text-ink pointer-coarse:py-2"
+              onClick={() => onConfirm(l.id)}
+            >
+              Doğru
+            </button>
+          </p>
+        ) : null}
+        {moneyMobile}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {/* Telefonda büyük kutu, birim kutunun içinde sağda (ad için yer kalsın); genişte birim yanında */}
+        <div className="relative">
+          <NumberInput
+            id={inputId}
+            data-count-input=""
+            enterKeyHint={last ? "done" : "next"}
+            data-prefilled={isPrefilled ? "1" : undefined}
+            value={raw}
+            onChange={(e) => onChange(l.id, e.target.value)}
+            onKeyDown={focusNextCount}
+            onFocus={(e) => e.currentTarget.select()}
+            placeholder="—"
+            aria-label={`${l.name} miktarı (${unit})`}
+            aria-invalid={invalid || undefined}
+            className="cell-input h-12 w-[7.75rem] pr-14 text-lg font-semibold pointer-coarse:h-12 sm:h-10 sm:w-24 sm:pr-3 sm:text-sm sm:font-normal sm:pointer-coarse:h-11"
+          />
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-ink-mute sm:hidden" aria-hidden="true">
+            {unit}
+          </span>
+        </div>
+        <span className="w-11 text-xs font-medium text-ink-mute max-sm:hidden">{unit}</span>
+      </div>
+      {money}
+    </li>
+  );
+});
+
+// ---------------------------------------------------------------- İlerleme ve stok kartları (memo'lu, ertelenmiş değerlerle)
+
+/**
+ * İlerleme kartı (AkmanOS todo-list başlığı + ince çubuk + sayım düzeni). Sayılar ertelenmiş değerlerden gelir: yazarken
+ * her tuşta değil, tuşlar arasında boşta güncellenir (memo).
+ */
+const ProgressCard = memo(function ProgressCard({
+  progress,
+  archivedCount,
+  hasPrev,
+  prevMonthLabel,
+  prevExtrasCount,
+  canAddItem,
+  onFill,
+  onAdd,
+  counter,
+  month,
+  history,
+  currentStatus,
+  locked,
+}: {
+  progress: FormProgress;
+  archivedCount: number;
+  hasPrev: boolean;
+  prevMonthLabel: string;
+  prevExtrasCount: number;
+  canAddItem: boolean;
+  onFill: () => void;
+  onAdd: () => void;
+  counter: string | null;
+  month: string;
+  history: HistoryMonth[];
+  currentStatus: Pick<HistoryMonth, "counted" | "total" | "hasData">;
+  locked: boolean;
+}) {
+  // Kart ekranda değilken (satırlara inilmiş) sayaç, ikon ve çubuk kaymadan güncellenir
+  const [cardRef, onScreen] = useOnScreen<HTMLElement>();
+  const reduce = (useCalmMotion() ?? false) || !onScreen;
+  const { counted, total, remaining, share, complete } = progress;
+  return (
+    <Card ref={cardRef}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <ProgressIcon complete={complete} still={reduce} />
+          <div className="min-w-0">
+            <p className="text-sm leading-5 text-ink-mute">Sayılan kalem</p>
+            <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-2xl leading-8 font-semibold tracking-tight text-ink" aria-hidden="true">
+              <span className={cn("inline-flex", complete && "text-good")}>
+                <CountRoll value={counted} still={reduce} />
+              </span>
+              <span className="text-lg font-medium text-ink-mute tabular">/ {num(total)}</span>
+              <span className="text-sm font-medium text-ink-mute">sayıldı</span>
+            </p>
+            <p className="sr-only" aria-live="polite">
+              {num(counted)} / {num(total)} kalem sayıldı
+            </p>
+            {archivedCount ? (
+              // "Tümü" süzgeci arşiv satırlarını da sayar; fark burada açıklanır
+              <p className="mt-0.5 text-xs text-ink-mute">+ {num(archivedCount)} arşiv kalemi (pasif ya da Sayılmaz; bu ay sayılmış, salt okunur)</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="no-print flex flex-wrap gap-2">
+          {hasPrev ? (
+            <Button
+              variant="secondary"
+              onClick={onFill}
+              title={`Bu ay boş bırakılan satırlara ${prevMonthLabel} miktarını yazar${prevExtrasCount ? "; ek kalemler boşsa onları da getirir" : ""}. Kaydetmeden hiçbir şey değişmez.`}
+            >
+              <ClipboardCopy size={16} /> Geçen aydan doldur
+            </Button>
+          ) : null}
+          {canAddItem ? (
+            <Button variant="secondary" onClick={onAdd} title="Listede olmayan, her ay sayılacak bir kalem ekleyin">
+              <Plus size={16} /> Listeye ekle
+            </Button>
+          ) : null}
+          <Button variant="secondary" onClick={() => window.print()}>
+            <Printer size={16} /> Yazdır
+          </Button>
+        </div>
+      </div>
+      <div className="px-5 pt-4 pb-5">
+        <div className="h-1.5 overflow-hidden rounded-full bg-panel-deep" role="progressbar" aria-label="Sayım ilerlemesi" aria-valuemin={0} aria-valuemax={total} aria-valuenow={counted}>
+          <motion.div
+            className={cn("h-full rounded-full", complete ? "bg-good" : "bg-ink")}
+            initial={reduce ? false : { width: 0, opacity: 0.6 }}
+            animate={{ width: `${share * 100}%`, opacity: 1 }}
+            transition={reduce ? { duration: 0 } : { ...SPRING_SWAP, delay: 0.1 }}
+          />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-mute">
+          <span className={cn(complete && "font-medium text-good")}>{remaining ? `${num(remaining)} kalem kaldı` : total ? "Tüm kalemler sayıldı" : "Sayılacak kalem yok"}</span>
+          {total ? <span className="font-medium text-ink tabular">%{num(share * 100)}</span> : null}
+        </div>
+        {/* Excel Sayım başlığı: SAYIM YAPANIN AD SOYAD + TARİH (ay sonu). Ekranda son kayıt, çıktıda doldurulacak satır. */}
+        {counter ? (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-mute">
+            <UserRound size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
+            <span className="min-w-0">{counter}</span>
+          </p>
+        ) : null}
+        <p className="mt-2 hidden text-xs text-ink print:block">
+          Sayım tarihi: {monthEnd(month)} (ay sonu){counter ? "" : " · Sayım yapan: ________________________"}
+        </p>
+      </div>
+      {/* Kayıtlı duruma göre: yazılıp henüz kaydedilmemiş sayım bu ayı "sayıldı" göstermez */}
+      <CountHistory history={history} current={month} currentStatus={currentStatus} locked={locked} />
+    </Card>
+  );
+});
+
+/**
+ * Yöneticinin "<ay> stoğu" kartı (toplam, değerleme, KDV, açılış) ve dökümü. Tutarlar ertelenmiş değerlerle; döküm
+ * (`breakdown`) yalnız pencere açılınca kurulur.
+ */
+const StockTotalCard = memo(function StockTotalCard({
+  month,
+  monthLabel,
+  prevMonthLabel,
+  valuation,
+  live,
+  coveredShare,
+  hasExtras,
+  prevTotal,
+  closingOverride,
+  breakdown,
+}: {
+  month: string;
+  monthLabel: string;
+  prevMonthLabel: string;
+  valuation: { fifo: boolean; start: string | null } | null;
+  live: LiveTotals;
+  coveredShare: number;
+  hasExtras: boolean;
+  prevTotal: { value: number; overridden: boolean } | null;
+  closingOverride: number | null;
+  breakdown: () => BreakdownGroup[];
+}) {
+  return (
+    <StatBreakdown
+      title={`${monthLabel} stoğu`}
+      description={`${
+        valuation?.fifo
+          ? "Ay sonu stoğu (KDV hariç), ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla değerlenir. Faturayla karşılanmayan miktar ayın sonunda geçerli fiyatla."
+          : "Ay sonu stoğu (KDV hariç): sayılan miktar × ay sonu fiyatı."
+      } Grup grup; formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
+        closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
+      }`}
+      groups={breakdown}
+      total={live.total}
+      totalLabel="Toplam stok (KDV hariç)"
+      empty="Bu ay sayılan kalem yok."
+      // Yazdırılan sayım kağıdında "Döküm ›" ipucu çıkmasın
+      className="print:[&>span]:hidden"
+    >
+      <Stat
+        icon={<Coins />}
+        label="Toplam stok (KDV hariç)"
+        value={<Money value={live.total} />}
+        info={`${
+          valuation?.fifo
+            ? "İlk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla (KDV hariç); faturası bulunamayan kısım ay sonu fiyatıyla."
+            : "Sayılan miktar × ay sonu fiyatı (KDV hariç)."
+        } Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.`}
+      >
+        <div className="divide-y divide-line rounded-xl bg-surface px-3">
+          {valuation ? (
+            <KeyValue
+              label={
+                <span>
+                  Değerleme
+                  <InfoTip
+                    className="ml-1.5"
+                    text={
+                      valuation.fifo
+                        ? "Ayarlar › Stok değerleme: ilk giren ilk çıkar (FIFO). Rafta kalan mal en son alınandır; her parça kendi faturasının fiyatıyla."
+                        : valuation.start
+                          ? `Bu ay FIFO başlangıcından (${valuation.start}) önce: ay sonu fiyatıyla. Ayarlar › Stok değerleme.`
+                          : "Ayarlar › Stok değerleme kapalı: her ay ay sonu fiyatıyla."
+                    }
+                  />
+                </span>
+              }
+              value={valuation.fifo ? <Badge tone="green">FIFO</Badge> : <Badge tone="gray">Ay sonu fiyatı</Badge>}
+            />
+          ) : null}
+          {valuation?.fifo && live.total > 0 ? (
+            <p className="py-2 text-xs leading-5 text-ink-mute">
+              Stok değerinin {coverageSplit(coveredShare).covered} faturalardan (FIFO), {coverageSplit(coveredShare).rest}{" "}
+              {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
+            </p>
+          ) : null}
+          <KeyValue
+            label={
+              <span>
+                KDV dahil
+                <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
+              </span>
+            }
+            value={tl(live.totalVat)}
+          />
+          {Math.abs(live.totalVatExcel - live.totalVat) >= 1 ? (
+            <KeyValue
+              label={
+                <span>
+                  KDV dahil (Excel usulü)
+                  <InfoTip
+                    className="ml-1.5"
+                    text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
+                  />
+                </span>
+              }
+              value={tl(live.totalVatExcel)}
+            />
+          ) : null}
+          {hasExtras ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
+          {prevTotal !== null ? (
+            <KeyValue
+              label={
+                <span>
+                  Açılış ({prevMonthLabel} devri)
+                  {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
+                </span>
+              }
+              value={tl(prevTotal.value)}
+            />
+          ) : null}
+        </div>
+        {closingOverride !== null ? (
+          <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
+            <p className="flex items-start gap-1.5 font-medium">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
+              </span>
+            </p>
+            <Link
+              href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}
+              className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+            >
+              Gelir-giderde aç
+            </Link>
+          </div>
+        ) : null}
+      </Stat>
+    </StatBreakdown>
+  );
+});
+
+/**
+ * Yapışık araç çubuğu: arama, "Tümü / Sayılmayanlar", grup süzgeci ve grup çipleri. Yazarken her tuşta yeniden
+ * çizilmez (memo): sayılar ertelenmiş değerlerden, işleyiciler sabit.
+ */
+const CountToolbar = memo(function CountToolbar({
+  toolbarRef,
+  chipRowRef,
+  filtered,
+  shownCount,
+  total,
+  q,
+  onQuery,
+  filter,
+  onFilter,
+  remaining,
+  groupNames,
+  group,
+  onGroup,
+  chipItems,
+  activeGroup,
+  onPickGroup,
+  onClear,
+}: {
+  toolbarRef: RefObject<HTMLDivElement | null>;
+  chipRowRef: RefObject<HTMLDivElement | null>;
+  filtered: boolean;
+  shownCount: number;
+  /** Listedeki bütün satırlar (arşiv dahil) */
+  total: number;
+  q: string;
+  onQuery: (value: string) => void;
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  remaining: number;
+  groupNames: string[];
+  group: string;
+  onGroup: (name: string) => void;
+  chipItems: GroupProgress[];
+  activeGroup: string | null;
+  onPickGroup: (name: string) => void;
+  onClear: () => void;
+}) {
+  // Telefonda "Tümü / Sayılmayanlar" yerine şeritteki "Kalan" çipi: gizli seçici hiç kurulmaz (her sayımda kayan
+  // vurgusunun yerleşimi ölçülmesin)
+  const phone = useIsPhone();
+  return (
+    <div
+      ref={toolbarRef}
+      className="no-print sticky top-(--mobile-top-h) z-20 -mx-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10"
+    >
+      {/* Telefonda süzgeç açıkken "12 / 72 kalem" kendi satırına iner: arama kutusu daralıp yazısı kesilmesin */}
+      <FilterBar
+        active={filtered}
+        onClear={onClear}
+        shown={filtered ? shownCount : undefined}
+        total={filtered ? total : undefined}
+        unit="kalem"
+        className="max-sm:[&>p]:w-full"
+      >
+        <SearchField className="flex-1 basis-28 sm:basis-56" value={q} onChange={onQuery} placeholder="Kalem ara" label="Sayım kalemlerinde ara" />
+        {/* Telefonda bu seçim aşağıdaki şeridin başında "Kalan" çipi olur: arama kutusuna yer kalsın */}
+        {phone ? null : (
+          <Segmented<Filter>
+            label="Gösterilen kalemler"
+            className="shrink-0 max-sm:hidden"
+            value={filter}
+            onChange={onFilter}
+            options={[
+              { value: "all", label: "Tümü", count: total },
+              {
+                value: "empty",
+                label: (
+                  <>
+                    <span className="sm:hidden">Kalan</span>
+                    <span className="hidden sm:inline">Sayılmayanlar</span>
+                  </>
+                ),
+                count: remaining,
+              },
+            ]}
+          />
+        )}
+        {groupNames.length > 1 ? (
+          <>
+            {/* Telefonda grup süzgeci tek ikon: yerel seçim listesi ikonun üstünde, görünmez; süzgeç açıkken koyu */}
+            <div
+              className={cn(
+                "relative flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset sm:hidden",
+                group ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong",
+              )}
+            >
+              <ListFilter size={18} aria-hidden="true" />
+              <select
+                value={group}
+                onChange={(e) => onGroup(e.target.value)}
+                aria-label={group ? `Grup süzgeci: ${group}` : "Grup süzgeci"}
+                className="absolute inset-0 cursor-pointer appearance-none rounded-xl text-base opacity-0"
+              >
+                <option value="">Tüm gruplar</option>
+                {groupNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="relative shrink-0 max-sm:hidden">
+              <ListFilter size={15} className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
+              <Select value={group} onChange={(e) => onGroup(e.target.value)} aria-label="Grup" className={cn("pl-8 sm:w-48", group && "font-medium ring-ink/40")}>
+                <option value="">Tüm gruplar</option>
+                {groupNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </>
+        ) : null}
+      </FilterBar>
+      <GroupChips
+        items={chipItems.length > 1 ? chipItems : []}
+        active={activeGroup}
+        onPick={onPickGroup}
+        rowRef={chipRowRef}
+        className={chipItems.length > 1 ? undefined : "sm:hidden"}
+        lead={
+          <FilterChip active={filter === "empty"} onToggle={() => onFilter(filter === "empty" ? "all" : "empty")} count={remaining} className="sm:hidden">
+            Kalan
+          </FilterChip>
+        }
+      />
+    </div>
+  );
+});
+
 // ---------------------------------------------------------------- Sayım formu
 
 export function StockCountForm({
@@ -611,12 +1258,11 @@ export function StockCountForm({
   /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
   valuation?: { fifo: boolean; covered: number; total: number; start: string | null } | null;
 }) {
-  const reduce = useCalmMotion() ?? false;
-  const all = groups.flatMap((g) => g.lines);
+  const all = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   /** Bugünkü sayım listesindeki kalemler (ilerleme bunlarla); arşiv satırları salt okunur */
-  const countable = all.filter((l) => !l.archived);
+  const countable = useMemo(() => all.filter((l) => !l.archived), [all]);
   const archivedCount = all.length - countable.length;
-  const savedExtras: Extra[] = initialExtras.map((e) => toExtra(e, isAdmin));
+  const savedExtras: Extra[] = useMemo(() => initialExtras.map((e) => toExtra(e, isAdmin)), [initialExtras, isAdmin]);
   const savedKeys = new Set(savedExtras.map((e) => extraKey(e.name, e.unit)));
   // Binlik ayırıcısız ("1500", "1,5"): KG/LT kutusunda nokta ondalık okunur, kayıtlı değer yanlış okunmasın
   const savedValues = () => Object.fromEntries(all.map((l) => [l.id, countText(l.qty)])) as Record<number, string>;
@@ -654,6 +1300,8 @@ export function StockCountForm({
   }
   const [busy, setBusy] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
+  /** Masaüstü (lg ve üstü): kaydetme kapsülü yalnız orada */
+  const wide = useMediaQuery("(width >= 64rem)");
   const [filterParam, setFilterParam] = useQueryState<Filter>("durum", "all");
   const [groupParam, setGroup] = useQueryState<string>("grup", "");
   const [q, setQ] = useQueryText("ara");
@@ -664,26 +1312,19 @@ export function StockCountForm({
   /** Yeni eklenen ek satırın ad kutusuna odaklanmak için */
   const focusExtra = useRef<number | null>(null);
 
-  const qtyOf = (l: FormLine) => {
-    if (l.archived) return l.qty;
-    const v = values[l.id];
-    return v === undefined || v.trim() === "" ? null : parseCount(v, l.unitNow ?? l.countUnit, parseNumberTR);
-  };
-  /** Geçen ayın miktarı aynı birimdeyse (karşılaştırma için) */
-  const prevComparable = (l: FormLine) => (l.prevQty !== null && (l.prevUnit ?? l.countUnit) === (l.unitNow ?? l.countUnit) ? l.prevQty : null);
+  // Kaydetmenin, taslağın ve "kaydedilmedi" çubuğunun kullandığı değerler her tuşta güncel (ucuz); satırlar memo'lu
+  // (CountRow), sayaçlar ve toplamlar aşağıda ertelenmiş değerlerle
+  const qtyOf = (l: FormLine) => formQty(l, values[l.id]);
   const unusualOf = (l: FormLine) => (l.archived || qtyOf(l) === l.qty ? null : unusualCount(qtyOf(l), prevComparable(l)));
-  const setLine = (id: number, value: string) => {
-    setValues((x) => ({ ...x, [id]: value }));
-    if (prefilled.has(id)) setPrefilled((x) => new Set([...x].filter((y) => y !== id)));
-    if (conflicts.has(id)) setConflicts((x) => new Set([...x].filter((y) => y !== id)));
-  };
-  const isInvalid = (l: FormLine) => {
-    if (l.archived || !values[l.id]?.trim()) return false;
-    const v = qtyOf(l);
-    return v === null || v < 0;
-  };
-  /** Kayıtlı miktar değişmedikçe sayıldığı birim, yeni ya da değişen miktar bugünkü sayım birimi (sunucu kuralı) */
-  const unitOf = (l: FormLine) => (l.archived || (l.qty !== null && qtyOf(l) === l.qty) ? l.countUnit : (l.unitNow ?? l.countUnit));
+  /** Satırın kutusu değişti: sabit işlev (memo'lu satırlar her tuşta yeniden çizilmesin), işaret yoksa durum aynı kalır */
+  const setLine = useCallback((id: number, value: string) => {
+    setValues((x) => (x[id] === value ? x : { ...x, [id]: value }));
+    setPrefilled((x) => withoutId(x, id));
+    setConflicts((x) => withoutId(x, id));
+  }, []);
+  /** "Geçen aydan dolduruldu" satırında "Doğru" */
+  const confirmPrefill = useCallback((id: number) => setPrefilled((x) => withoutId(x, id)), []);
+  const isInvalid = (l: FormLine) => invalidCount(l, values[l.id]);
 
   const changedLines = countable.filter((l) => qtyOf(l) !== l.qty);
   const invalidLines = countable.filter((l) => isInvalid(l));
@@ -697,41 +1338,54 @@ export function StockCountForm({
   const dirty = !syncing && (changedLines.length > 0 || extrasDirty || invalidLines.length > 0);
   /** Kayıtlı miktarı silinen satırlar: kaydedince o ayın sayımından çıkar (çubukta ayrıca söylenir) */
   const clearedLines = changedLines.filter((l) => qtyOf(l) === null);
-  const counted = countable.filter((l) => qtyOf(l) !== null && !prefilled.has(l.id)).length;
-  const remaining = countable.length - counted;
-  const share = countable.length ? counted / countable.length : 0;
-  const complete = countable.length > 0 && remaining === 0;
   const extraTotal = (e: Extra) => (parseNumberTR(e.qty) ?? 0) * (parseNumberTR(e.unitPrice) ?? 0);
-  const byId = new Map(all.map((l) => [l.id, l]));
-  const live = liveTotals(
-    groups,
-    (l) => qtyOf(byId.get(l.id)!),
-    extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
+  const byId = useMemo(() => new Map(all.map((l) => [l.id, l])), [all]);
+
+  // Sayaçlar, toplamlar ve döküm ertelenmiş değerlerle (denetim E-21): tuşa basınca önce yalnız yazılan satır çizilir,
+  // sayılan kalem, grup çipleri, stok toplamı ve FIFO payı tuşlar arasında boşta güncellenir (yeni tuş gelirse yarım
+  // kalan hesap bırakılır). Kaydetme ve taslak yukarıdaki güncel değerleri kullanır, ertelenmişleri değil.
+  const typed = useMemo(() => ({ values, prefilled, extras }), [values, prefilled, extras]);
+  const deferred = useDeferredValue(typed);
+  // İlerleme yalnız sayılmış satırlar değişince yeniden kurulur (kimlik listesi metin olarak karşılaştırılır): sayılmış
+  // satırı düzeltmek sayaçları, çipleri ve araç çubuğunu yeniden çizdirmez
+  const countedKey = useMemo(() => countedLineIds(countable, deferred.values, deferred.prefilled).join(","), [countable, deferred]);
+  const progress = useMemo(() => formProgress(groups, new Set(countedKey ? countedKey.split(",").map(Number) : [])), [groups, countedKey]);
+  const { counted, remaining, share, complete } = progress;
+  const progressByName = useMemo(() => new Map(progress.groups.map((p) => [p.name, p])), [progress]);
+  const deferredExtras = useMemo(
+    () => deferred.extras.map((e) => ({ name: e.name, unit: e.unit, qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
+    [deferred],
   );
-  const groupLive = new Map(live.groups.map((g) => [g.name, g]));
+  // Personele fiyat gelmez (hepsi 0): toplam hiç hesaplanmaz
+  const live = useMemo(
+    () => (isAdmin ? liveTotals(groups, (l) => formQty(byId.get(l.id)!, deferred.values[l.id]), deferredExtras) : NO_TOTALS),
+    [isAdmin, groups, byId, deferred, deferredExtras],
+  );
+  const groupLive = useMemo(() => new Map(live.groups.map((g) => [g.name, g])), [live]);
   // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla (başlangıçtan
   // önceki sayımdan taşınan açılış da)
-  const fifoCovered = valuation?.fifo
-    ? all.reduce((a, l) => {
-        const v = l.archived ? l.qty : qtyOf(l);
-        return a + lineLayers(l, v).reduce((b, x) => b + (invoiceLayer(x) ? x.qty * x.unitCost : 0), 0);
-      }, 0)
-    : 0;
+  const fifo = valuation?.fifo ?? false;
+  const fifoCovered = useMemo(
+    () =>
+      fifo
+        ? all.reduce((a, l) => a + lineLayers(l, formQty(l, deferred.values[l.id])).reduce((b, x) => b + (invoiceLayer(x) ? x.qty * x.unitCost : 0), 0), 0)
+        : 0,
+    [fifo, all, deferred],
+  );
   const coveredShare = live.total > 0 ? Math.min(1, fifoCovered / live.total) : 0;
-  // Toplam stok kartının dökümü: formdaki miktarlarla, kartla aynı kural (yalnızca yönetici fiyat görür)
-  const stockGroups = isAdmin
-    ? stockBreakdown(
-        groups,
-        (l) => qtyOf(byId.get(l.id)!),
-        extras.map((e) => ({ name: e.name, unit: e.unit, qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
-      )
-    : [];
+  // Toplam stok kartının dökümü: formdaki miktarlarla, kartla aynı kural (yalnızca yönetici fiyat görür); yalnız döküm
+  // penceresi açılınca kurulur
+  const breakdown = useCallback(() => stockBreakdown(groups, (l) => formQty(l, deferred.values[l.id]), deferredExtras), [groups, deferred, deferredExtras]);
+  // Sayım düzenindeki bu ay: kayıtlı duruma göre (yazılıp kaydedilmemiş sayım ayı "sayıldı" göstermez)
+  const currentStatus = useMemo(
+    () => ({ ...countStatus({ groups }), hasData: all.some((l) => l.qty !== null) || initialExtras.length > 0 }),
+    [groups, all, initialExtras],
+  );
   const unpricedExtras = isAdmin ? filledExtras.filter((e) => (parseNumberTR(e.qty) ?? 0) > 0 && !((parseNumberTR(e.unitPrice) ?? 0) > 0)) : [];
-  const showExcelVat = isAdmin && Math.abs(live.totalVatExcel - live.totalVat) >= 1;
   /** Personel kayıtlı fiyatlı satırı silemez, adını / birimini değiştiremez (fiyat o ada bağlı) */
   const lockedExtra = (e: Extra) => !isAdmin && e.priced && savedKeys.has(extraKey(e.name, e.unit));
   /** Sayım listesindeki kalemlerin adları: aynı adlı ek kalem iki kez sayılır (uyarılır, geçen aydan taşınmaz) */
-  const listNames = new Set(countable.map((l) => nameKey(l.name)));
+  const listNames = useMemo(() => new Set(countable.map((l) => nameKey(l.name))), [countable]);
   const listDuplicates = [...new Set(filledExtras.filter((e) => listNames.has(nameKey(e.name))).map((e) => e.name.trim()))];
   const canCarryExtras = prevExtras.some((e) => !listNames.has(nameKey(e.name))) && filledExtras.length === 0;
 
@@ -893,35 +1547,42 @@ export function StockCountForm({
     });
   }
 
-  const changeFilter = (f: Filter) => {
-    if (f === "empty") setEmptyIds(new Set(countable.filter((l) => qtyOf(l) === null).map((l) => l.id)));
+  // "Sayılmayanlar" sayacıyla aynı satırlar: boş ya da "Geçen aydan doldur"la gelip kontrol edilmemiş ("Sıradaki" de
+  // onlarda durur)
+  const changeFilter = useStableHandler((f: Filter) => {
+    if (f === "empty") setEmptyIds(new Set(countable.filter((l) => qtyOf(l) === null || prefilled.has(l.id)).map((l) => l.id)));
     setFilterParam(f);
-  };
+  });
   const filtered = filter !== "all" || group !== "" || q.trim() !== "";
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setQ("");
     clearQuery(QUERY_KEYS);
-  };
-  const visibleGroups = groups
-    .filter((g) => !group || g.name === group)
-    .map((g) => ({
-      ...g,
-      visible: g.lines.filter((l) => (filter === "all" || emptyIds.has(l.id)) && matches(`${l.name} ${l.packageDesc ?? ""} ${g.name}`, q)),
-    }))
-    .filter((g) => g.visible.length);
+  }, [setQ]);
+  const visibleGroups = useMemo(
+    () =>
+      groups
+        .filter((g) => !group || g.name === group)
+        .map((g) => ({
+          ...g,
+          visible: g.lines.filter((l) => (filter === "all" || emptyIds.has(l.id)) && matches(`${l.name} ${l.packageDesc ?? ""} ${g.name}`, q)),
+        }))
+        .filter((g) => g.visible.length),
+    [groups, group, filter, emptyIds, q],
+  );
   const shownCount = visibleGroups.reduce((a, g) => a + g.visible.length, 0);
   /** Klavyede "Bitti" tuşu çıksın diye listedeki son yazılabilir kutu */
   const lastInputId = visibleGroups.flatMap((g) => g.visible.filter((l) => !l.archived)).at(-1)?.id ?? null;
+  const groupNames = useMemo(() => groups.map((g) => g.name), [groups]);
 
   // ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş kalem
   const toolbarRef = useRef<HTMLDivElement>(null);
   const chipRowRef = useRef<HTMLDivElement>(null);
-  const progress = groupProgress(groups, (l) => qtyOf(l) !== null && !prefilled.has(l.id));
-  const progressByName = new Map(progress.map((p) => [p.name, p]));
-  const visibleNames = new Set(visibleGroups.map((g) => g.name));
-  // Grup süzgeci açıkken bütün gruplar (dokununca o gruba geçilir), değilse ekrandaki gruplar (dokununca kaydırılır)
-  const chipItems = group ? progress : progress.filter((p) => visibleNames.has(p.name));
   const visibleKey = visibleGroups.map((g) => g.name).join("|");
+  // Grup süzgeci açıkken bütün gruplar (dokununca o gruba geçilir), değilse ekrandaki gruplar (dokununca kaydırılır)
+  const chipItems = useMemo(() => {
+    const visibleNames = new Set(visibleKey.split("|"));
+    return group ? progress.groups : progress.groups.filter((p) => visibleNames.has(p.name));
+  }, [group, progress, visibleKey]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   /** Süzgeç başka gruba geçirilince yeni liste çizildikten sonra başına kaydırılacak grup */
   const pendingJump = useRef<string | null>(null);
@@ -972,13 +1633,16 @@ export function StockCountForm({
     scrollToGroupCard(group, toolbarRef.current);
   }, [group]);
 
-  const pickGroup = (name: string) => {
-    if (group && group !== name) {
-      pendingJump.current = name;
-      return setGroup(name);
-    }
-    scrollToGroupCard(name, toolbarRef.current);
-  };
+  const pickGroup = useCallback(
+    (name: string) => {
+      if (group && group !== name) {
+        pendingJump.current = name;
+        return setGroup(name);
+      }
+      scrollToGroupCard(name, toolbarRef.current);
+    },
+    [group, setGroup],
+  );
 
   /**
    * Sıradaki sayılmamış kalem: odaktaki kutudan sonra, odak yoksa ekranda görünen ilk satırdan başlayarak ilk boş
@@ -1039,6 +1703,9 @@ export function StockCountForm({
       description: `Doldurulan satırlar sayılmış sayılmaz: rafa bakıp düzeltin ya da “Doğru”ya basın. “Sıradaki” onlarda da durur.${skipped ? ` Sayım birimi değişen ${num(skipped)} kalem atlandı.` : ""}`,
     });
   }
+
+  const onFill = useStableHandler(fillFromPrev);
+  const onAdd = useCallback(() => setAdding({ name: "" }), [setAdding]);
 
   const updateExtra = (i: number, patch: Partial<Extra>) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
   const addExtra = () => {
@@ -1143,9 +1810,11 @@ export function StockCountForm({
     setExtraConflicts([]);
     forgetDraft();
     setSyncingFor(groups);
+    // Kaydedilen değerlerle (ertelenmiş sayaç bir tuş geride olabilir)
+    const savedCount = countable.filter((l) => qtyOf(l) !== null && !prefilled.has(l.id)).length;
     toast.success(`${monthLabel} sayımı kaydedildi`, {
       description: [
-        `${num(counted)} / ${num(countable.length)} kalem sayıldı`,
+        `${num(savedCount)} / ${num(countable.length)} kalem sayıldı`,
         clearedLines.length ? `${num(clearedLines.length)} sayım silindi` : null,
         extrasDirty ? `${num(filledExtras.length)} ek kalem` : null,
       ]
@@ -1208,301 +1877,60 @@ export function StockCountForm({
         </div>
       ) : null}
       <div className={cn("grid gap-3", isAdmin && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
-        {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni */}
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5">
-            <div className="flex min-w-0 items-start gap-3">
-              <ProgressIcon complete={complete} />
-              <div className="min-w-0">
-                <p className="text-sm leading-5 text-ink-mute">Sayılan kalem</p>
-                <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-2xl leading-8 font-semibold tracking-tight text-ink" aria-hidden="true">
-                  <span className={cn("inline-flex", complete && "text-good")}>
-                    <CountRoll value={counted} />
-                  </span>
-                  <span className="text-lg font-medium text-ink-mute tabular">/ {num(countable.length)}</span>
-                  <span className="text-sm font-medium text-ink-mute">sayıldı</span>
-                </p>
-                <p className="sr-only" aria-live="polite">
-                  {num(counted)} / {num(countable.length)} kalem sayıldı
-                </p>
-                {archivedCount ? (
-                  // "Tümü" süzgeci arşiv satırlarını da sayar; fark burada açıklanır
-                  <p className="mt-0.5 text-xs text-ink-mute">
-                    + {num(archivedCount)} arşiv kalemi (pasif ya da Sayılmaz; bu ay sayılmış, salt okunur)
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            <div className="no-print flex flex-wrap gap-2">
-              {hasPrev ? (
-                <Button
-                  variant="secondary"
-                  onClick={fillFromPrev}
-                  title={`Bu ay boş bırakılan satırlara ${prevMonthLabel} miktarını yazar${prevExtras.length ? "; ek kalemler boşsa onları da getirir" : ""}. Kaydetmeden hiçbir şey değişmez.`}
-                >
-                  <ClipboardCopy size={16} /> Geçen aydan doldur
-                </Button>
-              ) : null}
-              {canAddItem ? (
-                <Button variant="secondary" onClick={() => setAdding({ name: "" })} title="Listede olmayan, her ay sayılacak bir kalem ekleyin">
-                  <Plus size={16} /> Listeye ekle
-                </Button>
-              ) : null}
-              <Button variant="secondary" onClick={() => window.print()}>
-                <Printer size={16} /> Yazdır
-              </Button>
-            </div>
-          </div>
-          <div className="px-5 pt-4 pb-5">
-            <div
-              className="h-1.5 overflow-hidden rounded-full bg-panel-deep"
-              role="progressbar"
-              aria-label="Sayım ilerlemesi"
-              aria-valuemin={0}
-              aria-valuemax={countable.length}
-              aria-valuenow={counted}
-            >
-              <motion.div
-                className={cn("h-full rounded-full", complete ? "bg-good" : "bg-ink")}
-                initial={reduce ? false : { width: 0, opacity: 0.6 }}
-                animate={{ width: `${share * 100}%`, opacity: 1 }}
-                transition={reduce ? { duration: 0 } : { ...SPRING_SWAP, delay: 0.1 }}
-              />
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-mute">
-              <span className={cn(complete && "font-medium text-good")}>
-                {remaining ? `${num(remaining)} kalem kaldı` : countable.length ? "Tüm kalemler sayıldı" : "Sayılacak kalem yok"}
-              </span>
-              {countable.length ? <span className="font-medium text-ink tabular">%{num(share * 100)}</span> : null}
-            </div>
-            {/* Excel Sayım başlığı: SAYIM YAPANIN AD SOYAD + TARİH (ay sonu). Ekranda son kayıt, çıktıda doldurulacak satır. */}
-            {counter ? (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-mute">
-                <UserRound size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
-                <span className="min-w-0">{counter}</span>
-              </p>
-            ) : null}
-            <p className="mt-2 hidden text-xs text-ink print:block">
-              Sayım tarihi: {monthEnd(month)} (ay sonu){counter ? "" : " · Sayım yapan: ________________________"}
-            </p>
-          </div>
-          {/* Kayıtlı duruma göre: yazılıp henüz kaydedilmemiş sayım bu ayı "sayıldı" göstermez */}
-          <CountHistory
-            history={history}
-            current={month}
-            currentStatus={{ ...countStatus({ groups }), hasData: all.some((l) => l.qty !== null) || savedExtras.length > 0 }}
-            locked={dirty}
-          />
-        </Card>
+        {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni (memo'lu, ertelenmiş sayılarla) */}
+        <ProgressCard
+          progress={progress}
+          archivedCount={archivedCount}
+          hasPrev={hasPrev}
+          prevMonthLabel={prevMonthLabel}
+          prevExtrasCount={prevExtras.length}
+          canAddItem={canAddItem}
+          onFill={onFill}
+          onAdd={onAdd}
+          counter={counter}
+          month={month}
+          history={history}
+          currentStatus={currentStatus}
+          locked={dirty}
+        />
 
         {isAdmin ? (
-          <StatBreakdown
-            title={`${monthLabel} stoğu`}
-            description={`${
-              valuation?.fifo
-                ? "Ay sonu stoğu (KDV hariç), ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla değerlenir. Faturayla karşılanmayan miktar ayın sonunda geçerli fiyatla."
-                : "Ay sonu stoğu (KDV hariç): sayılan miktar × ay sonu fiyatı."
-            } Grup grup; formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
-              closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
-            }`}
-            groups={stockGroups}
-            total={live.total}
-            totalLabel="Toplam stok (KDV hariç)"
-            empty="Bu ay sayılan kalem yok."
-            // Yazdırılan sayım kağıdında "Döküm ›" ipucu çıkmasın
-            className="print:[&>span]:hidden"
-          >
-            <Stat
-              icon={<Coins />}
-              label="Toplam stok (KDV hariç)"
-              value={<Money value={live.total} />}
-              info={`${
-                valuation?.fifo
-                  ? "İlk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla (KDV hariç); faturası bulunamayan kısım ay sonu fiyatıyla."
-                  : "Sayılan miktar × ay sonu fiyatı (KDV hariç)."
-              } Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.`}
-            >
-              <div className="divide-y divide-line rounded-xl bg-surface px-3">
-                {valuation ? (
-                  <KeyValue
-                    label={
-                      <span>
-                        Değerleme
-                        <InfoTip
-                          className="ml-1.5"
-                          text={
-                            valuation.fifo
-                              ? "Ayarlar › Stok değerleme: ilk giren ilk çıkar (FIFO). Rafta kalan mal en son alınandır; her parça kendi faturasının fiyatıyla."
-                              : valuation.start
-                                ? `Bu ay FIFO başlangıcından (${valuation.start}) önce: ay sonu fiyatıyla. Ayarlar › Stok değerleme.`
-                                : "Ayarlar › Stok değerleme kapalı: her ay ay sonu fiyatıyla."
-                          }
-                        />
-                      </span>
-                    }
-                    value={valuation.fifo ? <Badge tone="green">FIFO</Badge> : <Badge tone="gray">Ay sonu fiyatı</Badge>}
-                  />
-                ) : null}
-                {valuation?.fifo && live.total > 0 ? (
-                  <p className="py-2 text-xs leading-5 text-ink-mute">
-                    Stok değerinin {coverageSplit(coveredShare).covered} faturalardan (FIFO), {coverageSplit(coveredShare).rest}{" "}
-                    {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
-                  </p>
-                ) : null}
-                <KeyValue
-                  label={
-                    <span>
-                      KDV dahil
-                      <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
-                    </span>
-                  }
-                  value={tl(live.totalVat)}
-                />
-                {showExcelVat ? (
-                  <KeyValue
-                    label={
-                      <span>
-                        KDV dahil (Excel usulü)
-                        <InfoTip
-                          className="ml-1.5"
-                          text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
-                        />
-                      </span>
-                    }
-                    value={tl(live.totalVatExcel)}
-                  />
-                ) : null}
-                {extras.length ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
-                {prevTotal !== null ? (
-                  <KeyValue
-                    label={
-                      <span>
-                        Açılış ({prevMonthLabel} devri)
-                        {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
-                      </span>
-                    }
-                    value={tl(prevTotal.value)}
-                  />
-                ) : null}
-              </div>
-              {closingOverride !== null ? (
-                <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
-                  <p className="flex items-start gap-1.5 font-medium">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                    <span>
-                      Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
-                    </span>
-                  </p>
-                  <Link
-                    href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}
-                    className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
-                  >
-                    Gelir-giderde aç
-                  </Link>
-                </div>
-              ) : null}
-            </Stat>
-          </StatBreakdown>
+          <StockTotalCard
+            month={month}
+            monthLabel={monthLabel}
+            prevMonthLabel={prevMonthLabel}
+            valuation={valuation}
+            live={live}
+            coveredShare={coveredShare}
+            hasExtras={extras.length > 0}
+            prevTotal={prevTotal}
+            closingOverride={closingOverride}
+            breakdown={breakdown}
+          />
         ) : null}
       </div>
 
       {/* Uzun listede arama, süzgeç ve grup çipleri her genişlikte üstte kalır (telefonda başlığın altına yapışır) */}
       {all.length ? (
-        <div
-          ref={toolbarRef}
-          className="no-print sticky top-(--mobile-top-h) z-20 -mx-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10"
-        >
-          {/* Telefonda süzgeç açıkken "12 / 72 kalem" kendi satırına iner: arama kutusu daralıp yazısı kesilmesin */}
-          <FilterBar
-            active={filtered}
-            onClear={clearFilters}
-            shown={filtered ? shownCount : undefined}
-            total={filtered ? all.length : undefined}
-            unit="kalem"
-            className="max-sm:[&>p]:w-full"
-          >
-            <SearchField className="flex-1 basis-28 sm:basis-56" value={q} onChange={setQ} placeholder="Kalem ara" label="Sayım kalemlerinde ara" />
-            {/* Telefonda bu seçim aşağıdaki şeridin başında "Kalan" çipi olur: arama kutusuna yer kalsın */}
-            <Segmented<Filter>
-              label="Gösterilen kalemler"
-              className="shrink-0 max-sm:hidden"
-              value={filter}
-              onChange={changeFilter}
-              options={[
-                { value: "all", label: "Tümü", count: all.length },
-                {
-                  value: "empty",
-                  label: (
-                    <>
-                      <span className="sm:hidden">Kalan</span>
-                      <span className="hidden sm:inline">Sayılmayanlar</span>
-                    </>
-                  ),
-                  count: remaining,
-                },
-              ]}
-            />
-            {groups.length > 1 ? (
-              <>
-                {/* Telefonda grup süzgeci tek ikon: yerel seçim listesi ikonun üstünde, görünmez; süzgeç açıkken koyu */}
-                <div
-                  className={cn(
-                    "relative flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset sm:hidden",
-                    group ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong",
-                  )}
-                >
-                  <ListFilter size={18} aria-hidden="true" />
-                  <select
-                    value={group}
-                    onChange={(e) => setGroup(e.target.value)}
-                    aria-label={group ? `Grup süzgeci: ${group}` : "Grup süzgeci"}
-                    className="absolute inset-0 cursor-pointer appearance-none rounded-xl text-base opacity-0"
-                  >
-                    <option value="">Tüm gruplar</option>
-                    {groups.map((g) => (
-                      <option key={g.name} value={g.name}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="relative shrink-0 max-sm:hidden">
-                  <ListFilter size={15} className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
-                  <Select
-                    value={group}
-                    onChange={(e) => setGroup(e.target.value)}
-                    aria-label="Grup"
-                    className={cn("pl-8 sm:w-48", group && "font-medium ring-ink/40")}
-                  >
-                    <option value="">Tüm gruplar</option>
-                    {groups.map((g) => (
-                      <option key={g.name} value={g.name}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </>
-            ) : null}
-          </FilterBar>
-          <GroupChips
-            items={chipItems.length > 1 ? chipItems : []}
-            active={activeGroup}
-            onPick={pickGroup}
-            rowRef={chipRowRef}
-            className={chipItems.length > 1 ? undefined : "sm:hidden"}
-            lead={
-              <FilterChip
-                active={filter === "empty"}
-                onToggle={() => changeFilter(filter === "empty" ? "all" : "empty")}
-                count={remaining}
-                className="sm:hidden"
-              >
-                Kalan
-              </FilterChip>
-            }
-          />
-        </div>
+        <CountToolbar
+          toolbarRef={toolbarRef}
+          chipRowRef={chipRowRef}
+          filtered={filtered}
+          shownCount={shownCount}
+          total={all.length}
+          q={q}
+          onQuery={setQ}
+          filter={filter}
+          onFilter={changeFilter}
+          remaining={remaining}
+          groupNames={groupNames}
+          group={group}
+          onGroup={setGroup}
+          chipItems={chipItems}
+          activeGroup={activeGroup}
+          onPickGroup={pickGroup}
+          onClear={clearFilters}
+        />
       ) : null}
 
       {visibleGroups.map((g) => {
@@ -1549,180 +1977,20 @@ export function StockCountForm({
               className="pb-2"
             />
             <ul className="divide-y divide-line px-2 pb-2">
-              {g.visible.map((l) => {
-                const v = qtyOf(l);
-                const unit = unitOf(l);
-                // Tutar sunucunun kuralıyla (FIFO satırında katmanlardan); birim fiyat tutar ÷ miktar
-                const lineTotal = lineAmount(l, v);
-                const price = v ? lineTotal / v : l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
-                const fifoTip = isAdmin && isFifoLine(l) && v ? layerText(lineLayers(l, v), (l.archived || (l.qty !== null && v === l.qty) ? l.factor : l.factorNow) ?? 1, unit) : null;
-                // Yalnız yönetici: fiyatı girilmemiş kalem (sayımda "Listeye ekle" ile eklenen) 0 ₺ değil "fiyat yok" yazar
-                const unitText =
-                  price > 0 ? (
-                    <>
-                      {`${tl(price, 2)}/${unit}`}
-                      {fifoTip ? <InfoTip className="ml-1" text={fifoTip} /> : null}
-                    </>
-                  ) : (
-                    <span className="font-medium text-warn" title="Paket fiyatı girilmedi: Hammaddeler'den girin; o zamana kadar stok toplamına 0 ₺ girer">
-                      fiyat yok
-                    </span>
-                  );
-                const money = isAdmin ? (
-                  <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
-                    <span className="whitespace-nowrap">{unitText}</span>
-                    <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(lineTotal) : "–"}</span>
-                  </div>
-                ) : null;
-                const moneyMobile = isAdmin ? (
-                  <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
-                    {unitText} · <span className="font-semibold text-ink">{v ? tl(lineTotal) : "–"}</span>
-                  </p>
-                ) : null;
-                if (l.archived) {
-                  const why = l.archivedReason === "pasif" ? "pasif" : "“Sayılmaz”";
-                  return (
-                    <li key={l.id} className="flex items-center gap-2.5 px-2 py-2.5 sm:gap-3 sm:px-3">
-                      <Lock size={16} className="mt-0.5 shrink-0 text-ink-quiet" aria-hidden="true" />
-                      <div className="min-w-0 flex-1">
-                        <p className="flex flex-wrap items-center gap-1.5 text-sm leading-5 font-medium text-ink-soft">
-                          <span className="min-w-0 break-words">{l.name}</span>
-                          <Badge tone="gray">{l.archivedReason === "pasif" ? "Pasif" : "Sayılmaz"}</Badge>
-                          <InfoTip
-                            text={`Hammaddeler'de ${why} yapıldı. ${monthLabel} için kayıtlı ${num(l.qty, 3)} ${l.countUnit} sayımı korunur ve stok toplamına girer; burada değiştirilemez. Düzeltmek için malzemeyi Hammaddeler'de yeniden sayılır yapın.`}
-                          />
-                        </p>
-                        {l.packageDesc ? (
-                          <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
-                            {l.packageDesc}
-                          </p>
-                        ) : null}
-                        {moneyMobile}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="w-[5.5rem] pr-3 text-right text-sm font-medium text-ink-soft tabular sm:w-24">
-                          {num(l.qty, 3)}
-                          <span className="sr-only"> {l.countUnit} (salt okunur)</span>
-                        </span>
-                        <span className="w-11 text-xs font-medium text-ink-mute" aria-hidden="true">
-                          {l.countUnit}
-                        </span>
-                      </div>
-                      {money}
-                    </li>
-                  );
-                }
-                const invalid = isInvalid(l);
-                const changed = v !== l.qty;
-                const inputId = `count-${l.id}`;
-                const nowUnit = l.unitNow ?? l.countUnit;
-                const raw = values[l.id] ?? "";
-                const isPrefilled = prefilled.has(l.id);
-                const unusual = invalid ? null : unusualOf(l);
-                const prev = prevComparable(l);
-                // "1.500" gibi noktalı yazımın nasıl okunduğu
-                const echo = !invalid && v !== null && raw.includes(".") ? `= ${countText(v)} ${nowUnit}` : null;
-                return (
-                  <li
-                    key={l.id}
-                    // Telefonda satırın herhangi bir yerine dokunmak kutuya odaklanır (ad etiketinin yanı sıra)
-                    onClick={(e) => {
-                      if (!(e.target as HTMLElement).closest("input, button, a, label")) document.getElementById(inputId)?.focus();
-                    }}
-                    className="flex items-center gap-2.5 px-2 py-2.5 max-sm:min-h-16 sm:gap-3 sm:px-3"
-                  >
-                    <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
-                    <div className="min-w-0 flex-1">
-                      {/* Satır sarar: dar ekranda rozet adın altına iner, ad kelimenin ortasından bölünmez */}
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                        <label htmlFor={inputId} className="flex min-w-0 items-center gap-1.5 text-sm leading-5 font-medium text-ink">
-                          <span className="min-w-0 break-words">{l.name}</span>
-                          {changed && !invalid ? (
-                            <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
-                              <span className="sr-only">(kaydedilmedi)</span>
-                            </span>
-                          ) : null}
-                        </label>
-                        {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
-                            "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
-                        {l.passiveInUse && isAdmin ? (
-                          <span className="inline-flex shrink-0 items-center gap-1">
-                            <Badge tone="gray">Pasif · reçetede</Badge>
-                            <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
-                          </span>
-                        ) : null}
-                      </div>
-                      {l.passiveInUse && !isAdmin ? <p className="mt-0.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın</p> : null}
-                      {l.packageDesc ? (
-                        <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
-                          {l.packageDesc}
-                        </p>
-                      ) : null}
-                      {l.prevQty !== null ? (
-                        <p className="mt-0.5 text-xs text-ink-mute tabular">
-                          Geçen ay {num(l.prevQty, 3)} {l.prevUnit ?? l.countUnit}
-                        </p>
-                      ) : null}
-                      {l.unitChanged ? (
-                        <p className="mt-0.5 text-xs font-medium text-warn">
-                          {changed
-                            ? `Yeni miktar ${nowUnit} ile kaydedilir.`
-                            : `Bu ay ${l.countUnit} ile sayıldı; sayım birimi artık ${nowUnit}. Değiştirirseniz ${nowUnit} ile kaydedilir.`}
-                        </p>
-                      ) : null}
-                      {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar: yalnızca sayı (ör. 2,5)</p> : null}
-                      {echo ? <p className="mt-0.5 text-xs font-medium text-ink-soft tabular">{echo}</p> : null}
-                      {unusual && prev !== null ? (
-                        <p className="mt-0.5 text-xs font-medium text-warn">
-                          Geçen ay {num(prev, 3)} {nowUnit}: {unusual === "high" ? "beş katından fazla" : "beşte birinden az"}, doğru mu?
-                        </p>
-                      ) : null}
-                      {conflicts.has(l.id) ? (
-                        <p className="mt-0.5 text-xs font-medium text-warn">
-                          Başkası bu arada {l.qty === null ? "sayımı sildi" : `${countText(l.qty)} ${l.countUnit} kaydetti`}; sizinki kaydedilirse onun yerine geçer.
-                        </p>
-                      ) : null}
-                      {isPrefilled ? (
-                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-warn">
-                          Geçen aydan dolduruldu: rafa bakıp düzeltin
-                          <button
-                            type="button"
-                            className="cursor-pointer rounded-md px-1.5 py-0.5 text-ink-soft underline underline-offset-2 hover:text-ink pointer-coarse:py-2"
-                            onClick={() => setPrefilled((x) => new Set([...x].filter((y) => y !== l.id)))}
-                          >
-                            Doğru
-                          </button>
-                        </p>
-                      ) : null}
-                      {moneyMobile}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {/* Telefonda büyük kutu, birim kutunun içinde sağda (ad için yer kalsın); genişte birim yanında */}
-                      <div className="relative">
-                        <NumberInput
-                          id={inputId}
-                          data-count-input=""
-                          enterKeyHint={l.id === lastInputId ? "done" : "next"}
-                          data-prefilled={isPrefilled ? "1" : undefined}
-                          value={raw}
-                          onChange={(e) => setLine(l.id, e.target.value)}
-                          onKeyDown={focusNextCount}
-                          onFocus={(e) => e.currentTarget.select()}
-                          placeholder="—"
-                          aria-label={`${l.name} miktarı (${unit})`}
-                          aria-invalid={invalid || undefined}
-                          className="cell-input h-12 w-[7.75rem] pr-14 text-lg font-semibold pointer-coarse:h-12 sm:h-10 sm:w-24 sm:pr-3 sm:text-sm sm:font-normal sm:pointer-coarse:h-11"
-                        />
-                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-ink-mute sm:hidden" aria-hidden="true">
-                          {unit}
-                        </span>
-                      </div>
-                      <span className="w-11 text-xs font-medium text-ink-mute max-sm:hidden">{unit}</span>
-                    </div>
-                    {money}
-                  </li>
-                );
-              })}
+              {g.visible.map((l) => (
+                <CountRow
+                  key={l.id}
+                  line={l}
+                  raw={values[l.id] ?? ""}
+                  isPrefilled={prefilled.has(l.id)}
+                  conflict={conflicts.has(l.id)}
+                  isAdmin={isAdmin}
+                  monthLabel={monthLabel}
+                  last={l.id === lastInputId}
+                  onChange={setLine}
+                  onConfirm={confirmPrefill}
+                />
+              ))}
             </ul>
           </Card>
         );
@@ -1998,9 +2266,9 @@ export function StockCountForm({
         </CardContent>
       </Card>
 
-      {/* Kaydetme kapsülü: değişiklik varken alttan yaylı hareketle gelir */}
-      {/* Masaüstü: kaydetme kapsülü değişiklik varken alttan gelir. Telefonda yerine aşağıdaki sayım çubuğu. */}
-      <FloatingBar open={dirty} className="max-lg:hidden">
+      {/* Masaüstü: kaydetme kapsülü değişiklik varken alttan yaylı hareketle gelir. Telefon ve tablette hiç kurulmaz
+          (yerine aşağıdaki sayım çubuğu): ilk tuşta gizli bir çubuk açılıp sayfanın alt boşluğunu değiştirmesin (E-21) */}
+      <FloatingBar open={dirty && wide} className="max-lg:hidden">
         <div className="min-w-0 flex-1" aria-live="polite">
           <p className="truncate text-sm font-semibold text-ink">{changeLabel}</p>
           {/* Telefonda kısa: ay adı zaten sayfa başlığında */}
@@ -2046,10 +2314,11 @@ export function StockCountForm({
                 <span className="font-medium text-ink-mute">/ {num(countable.length)}</span>
                 <span className="truncate text-xs font-medium text-ink-mute">{complete ? "tamam" : "sayıldı"}</span>
               </p>
+              {/* Dolum genişlikle değil ölçekle kayar: her karede sayfa yeniden yerleştirilmez (yazarken hep görünür) */}
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-panel-deep" aria-hidden="true">
                 <div
-                  className={cn("h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none", complete ? "bg-good" : "bg-ink")}
-                  style={{ width: `${share * 100}%` }}
+                  className={cn("h-full w-full origin-left rounded-full transition-transform duration-300 motion-reduce:transition-none", complete ? "bg-good" : "bg-ink")}
+                  style={{ transform: `scaleX(${share})` }}
                 />
               </div>
               <p className={cn("mt-1 truncate text-xs", invalidLines.length ? "font-medium text-bad" : dirty ? "font-medium text-info" : "text-ink-mute")}>
