@@ -297,6 +297,80 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual([oct.data.through, oct.data.warning], [null, null]);
   });
 
+  test("geçiş ayının ilk elle satırı ModPOS listesini geçiş gününden önceki güne kadar başlatır: LafPOS günleri hesaptan düşmez", async () => {
+    await setSwitch(S);
+    // Kasım'ın listesi yok (yüklenmedi ya da "Ayı temizle"): LafPOS 10 Kasım'dan sayılıyor
+    await db.delete(s.salesLines).where(eq(s.salesLines.month, "2026-11"));
+    await setCoverage({});
+    const before = await dataset.loadDataset();
+    assert.equal(before.lafposSales?.countFrom, S);
+    const add = await sales.saveLine({ id: null, month: "2026-11", posName: "ESPRESSO", qty: 5, revenue: 500 });
+    assert.ok(add.ok, JSON.stringify(add));
+    const [cov] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "sales.coverage"));
+    assert.deepEqual(cov.value, { "2026-11": "2026-11-09" }, "içe aktarmadaki kural: en çok geçiş gününden önceki gün");
+    const ds = await dataset.loadDataset();
+    assert.equal(ds.lafposSales?.countFrom, S, "LafPOS'un Kasım günleri sayılmaya devam eder");
+    assert.deepEqual(
+      ds.salesLines.filter((l) => l.month === "2026-11").map((l) => [l.posName, l.lafpos ? "lafpos" : "modpos"]),
+      [
+        ["ESPRESSO", "modpos"],
+        ["LATTE MEDIUM", "lafpos"],
+        ["KARAOKE KİŞİ BAŞI", "lafpos"],
+        ["PUMPKIN LATTE", "lafpos"],
+      ],
+    );
+    assert.equal(createModel(ds).ingredientUsage("2026-11").get(ids.milk), 30 * 200);
+    // Listesi olan aya eklenen satır kapsamı değiştirmez (kullanıcının seçtiği son gün kalır)
+    await setCoverage({ "2026-11": "2026-11-05" });
+    assert.ok((await sales.saveLine({ id: null, month: "2026-11", posName: "MOCHA", qty: 1, revenue: 100 })).ok);
+    const [cov2] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "sales.coverage"));
+    assert.deepEqual(cov2.value, { "2026-11": "2026-11-05" });
+  });
+
+  test("Satışlar'da LafPOS'un hizmet işaretli ya da sitenin bağlı kalemiyle gelen satırı başka ürüne bağlanmaz (sonraki gün sonu geri alırdı)", async () => {
+    await setSwitch(S);
+    const push = async (date: string, zNo: number, lines: { posName: string; siteMenuId?: string | null; slot?: "M" | "L" | null; qty: number; revenue: number; isService?: boolean }[]) => {
+      const parsed = parsePosDay(
+        JSON.stringify({
+          version: 1,
+          source: "lafpos",
+          date,
+          z: z(lines.reduce((a, l) => a + l.revenue, 0), zNo),
+          lines: lines.map((l) => ({ siteMenuId: null, slot: null, isService: false, ...l })),
+          ikram: [],
+          payments: [],
+        }),
+        new Date(NOW),
+      );
+      assert.ok(parsed.ok);
+      assert.equal((await ingest.storePosDay(db, parsed.data, new Date(NOW))).ok, true);
+    };
+    await push("2026-12-05", 205, [
+      { posName: "LATTE ORTA", siteMenuId: "mnu-0003", slot: "M", qty: 10, revenue: 2_000 },
+      { posName: "KARAOKE SAAT", qty: 1, revenue: 500, isService: true },
+    ]);
+    assert.deepEqual((await rowsOf("LATTE ORTA")).map((x) => x.productId), [ids.latteM]);
+    const moved = await sales.matchLafposName({ month: "2026-12", posName: "LATTE ORTA", productId: ids.mocha, isService: false, current: { productId: ids.latteM, isService: false } });
+    assert.equal(moved.ok, false);
+    assert.match(!moved.ok ? moved.error : "", /sitenin kalemiyle geliyor ve Latte · M ürününe bağlı; .*Ürünler › Site menüsü/);
+    const cleared = await sales.matchLafposName({ month: "2026-12", posName: "LATTE ORTA", productId: null, isService: false, current: { productId: ids.latteM, isService: false } });
+    assert.equal(cleared.ok, false, "eşleşmeyi kaldırmak da kalıcı olmaz");
+    const service = await sales.matchLafposName({ month: "2026-12", posName: "KARAOKE SAAT", productId: ids.mocha, isService: false, current: { productId: null, isService: true } });
+    assert.equal(service.ok, false);
+    assert.match(!service.ok ? service.error : "", /hizmet \(karaoke\) olarak geliyor/);
+    // Hiçbir şey değişmedi: satırlar, ad hafızası
+    assert.deepEqual((await rowsOf("LATTE ORTA")).map((x) => x.productId), [ids.latteM]);
+    assert.deepEqual((await rowsOf("KARAOKE SAAT")).map((x) => [x.productId, x.isService]), [[null, true]]);
+    assert.equal((await db.select().from(s.posMappings)).length, 0);
+    // Bağlı kalemin kendi ürünü seçilirse ret yok; adla bağlanan satır kalıcı: sonraki gün sonu ve düzeltme gönderimi aynı ürüne yazar
+    assert.ok((await sales.matchLafposName({ month: "2026-12", posName: "LATTE ORTA", productId: ids.latteM, isService: false, current: { productId: ids.latteM, isService: false } })).ok);
+    await push("2026-12-06", 206, [{ posName: "SAHLEP", qty: 1, revenue: 150 }]);
+    assert.ok((await sales.matchLafposName({ month: "2026-12", posName: "SAHLEP", productId: ids.mocha, isService: false, current: { productId: null, isService: false } })).ok);
+    await push("2026-12-07", 207, [{ posName: "SAHLEP", qty: 2, revenue: 300 }]);
+    await push("2026-12-06", 206, [{ posName: "SAHLEP", qty: 1, revenue: 150 }]);
+    assert.deepEqual((await rowsOf("SAHLEP")).map((x) => x.productId), [ids.mocha, ids.mocha]);
+  });
+
   test("sonradan eşleştirme: POS adı (Satışlar'ın ModPOS satırı ya da LafPOS adı) ve site kalemi ürünsüz satırları yeniden gönderimsiz bağlar", async () => {
     await setSwitch(S);
     // ModPOS satırının eşleştirmesi: aynı adlı ürünsüz LafPOS satırları her ayda (deneme günü dahil) bağlanır

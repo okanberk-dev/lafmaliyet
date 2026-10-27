@@ -1,5 +1,5 @@
 {
-  "id": "700abfb9-6a9f-4816-bb9c-2024faa9f076",
+  "id": "4cc01724-9e4f-4518-b03c-32705446584c",
   "prevId": "9522a2bb-febf-426b-adb4-ba6b1420a84d",
   "version": "7",
   "dialect": "postgresql",
@@ -5282,6 +5282,13 @@
         },
         "is_service": {
           "name": "is_service",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "lafpos_service": {
+          "name": "lafpos_service",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

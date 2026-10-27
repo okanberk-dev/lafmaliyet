@@ -2028,6 +2028,11 @@ export const posDailySales = pgTable(
     revenue: doublePrecision("revenue").notNull(),
     /** Hizmet satırı (karaoke): ürün değil, reçetesi yok */
     isService: boolean("is_service").notNull().default(false),
+    /**
+     * LafPOS'un gönderdiği hizmet işareti: satır her gün sonunda (düzeltme gönderimi dahil) HİZMET yazılır, eşleştirme
+     * onu değiştiremez (resolvePosLine). isService bunu ve HİZMET eşleştirmesini birlikte taşır
+     */
+    lafposService: boolean("lafpos_service").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("pos_daily_sales_date_pos_name_uq").on(t.date, t.posName)],

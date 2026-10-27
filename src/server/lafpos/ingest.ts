@@ -67,6 +67,8 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         qty: l.qty,
         revenue: l.revenue,
         isService: m.isService,
+        // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
+        lafposService: l.isService,
         createdAt: now,
       };
     });

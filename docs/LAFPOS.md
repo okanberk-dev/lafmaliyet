@@ -93,14 +93,17 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   ve boyu satırla saklanır. **Sonradan bağlama** (denetim E-33, `src/server/lafpos/rematch.ts`): ürün Ürünler › Site
   menüsü'nde o kaleme bağlanınca ya da POS adı bir ürüne eşleştirilince (Satışlar'ın ModPOS ya da LafPOS satırı,
   Ayarlar › LafPOS › **Bağla**) o kalemle ya da adla (posMatchKey) gelmiş ürünsüz satırlar, LafPOS günü yeniden
-  göndermeden bağlanır. Bağlı satırın ürünü bu yolla değişmez (Satışlar'da bir ayın LafPOS satırının ürünü elle
-  değiştirilir, aşağıda).
+  göndermeden bağlanır. Bağlı satırın ürünü bu yolla değişmez (Satışlar'da bir ayın adla bağlanmış LafPOS satırının
+  ürünü elle değiştirilir, aşağıda). LafPOS'un hizmet işaretiyle ya da sitenin bağlı kalemiyle gelen satır her gün
+  sonunda (düzeltme gönderimi dahil) yine öyle yazılır; bu yüzden Satışlar'da başka ürüne bağlanmaz, eylem düzeltmenin
+  yerini söyler (Ürünler › Site menüsü ya da LafPOS'taki hizmet işareti).
 - **Saklanan:** `pos_daily_sales` (gün, POS adı, ürün, sitenin kalemi ve boyu, adet, ciro, hizmet; `(date, pos_name)`
   benzersiz) ve `pos_day_reports` (gün başına bir satır: `z`, `payments`, `ikram`, `source`, `received_at`).
   Migration'lar `drizzle/0040_lafpos_baglantisi.sql` (iki yeni tablo), `drizzle/0041_kasaya_giren.sql` (Kasa raporunun
   "Gün içinde kasaya giren"i: `cash_reports.cash_in double precision NOT NULL DEFAULT 0`; var olan raporlar 0) ve
   `drizzle/0044_lafpos_satir_site_kalemi.sql` (satırın sitedeki kalemi ve boyu: `pos_daily_sales.site_menu_id`, `slot`,
-  boş olabilen iki sütun, yalnız ekleme; eski satırlarda boş, sonradan bağlama onlarda yalnız POS adıyla çalışır). 0040 26 Eki 2026'da
+  boş olabilen iki sütun, ve LafPOS'un hizmet işareti `lafpos_service boolean NOT NULL DEFAULT false`; yalnız ekleme;
+  eski satırlarda boş / false, sonradan bağlama onlarda yalnız POS adıyla çalışır, gün yeniden gönderilince dolar). 0040 26 Eki 2026'da
   canlıya uygulandı; yeniden üretilmez (`tests/migrations.test.ts` günlükteki zamanını kilitler). Yalnız ekleme: Instant Rollback'te
   eski kod sütunu okumaz, yazdığı raporda 0 kalır; yalnız girenli bir raporun olması gerekenini eski kod girensiz
   hesaplar (giren kadar fazla görünür), düzeltme ileri yayınlanır.
@@ -125,7 +128,9 @@ kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir (`tests/laf
 
 - **Geçiş ayının listesi** en çok geçiş gününden önceki güne kadardır: Satışlar'da yüklerken "Liste hangi güne kadar?"
   en çok o gün, ay bittikten sonra yüklenen liste de ayın tamamı sayılmaz, o güne kırpılır (`modposImportRule`). Yoksa ay
-  sonrası yüklenen liste kapsam kaydını silip LafPOS günlerini saymaz yapardı.
+  sonrası yüklenen liste kapsam kaydını silip LafPOS günlerini saymaz yapardı. Listesi olmayan geçiş ayına "Satır ekle"
+  ile yazılan ilk satır da listeyi aynı kuralla başlatır (`saveLine`, kapsam en çok geçiş gününden önceki gün): tek elle
+  satır ayın tamamı sayılıp LafPOS'un o ayki günlerini düşürmez.
 - **Liste geçiş gününü aşıyorsa** (geçiş günü sonradan, liste zaten yüklüyken seçildi) LafPOS'un o günleri sayılmaz,
   Satışlar söyler: "Kasım listesi 20 Kasım gününe kadar: LafPOS'un 10–20 Kasım günleri … sayılmıyor. LafPOS'u saymak için
   yalnız 1–9 Kasım listesini yükleyin."
@@ -144,7 +149,8 @@ tabloda "LafPOS · N gün" diye, **salt okunur**: düzenlenmez, silinmez (gün L
 Eşleşmeyen LafPOS adı ModPOS satırı gibi eşleştirilir (değnekli öneri ve toplu öneriler dahil; `matchLafposName`,
 `applyLafposMatches`): tıklanan ay toplamının günleri (bağlıysa da) ve o ayın aynı adlı ürünsüz günleri seçilen ürüne
 geçer, aynı adın ayın başka günlerinde başka ürüne bağlı satırı değişmez; ad Satışlar'ın POS adı hafızasına yazılır,
-başka aylardaki ürünsüz satırlar da bağlanır. Tabloda LafPOS satırı ad, ürün ve hizmet başına bir ay toplamıdır. Ayın tamamı LafPOS'tansa İçe aktar kartı yerine "LafPOS'tan geliyor"
+başka aylardaki ürünsüz satırlar da bağlanır. LafPOS'un hizmet işaretli ya da sitenin bağlı kalemiyle gelen satırı
+başka ürüne (ya da ürünsüze) geçmez: sonraki gün sonu geri alırdı; eylem reddeder ve düzeltmenin yerini söyler. Tabloda LafPOS satırı ad, ürün ve hizmet başına bir ay toplamıdır. Ayın tamamı LafPOS'tansa İçe aktar kartı yerine "LafPOS'tan geliyor"
 kartı (gelen gün sayısı, Ayarlar kartına bağlantı) çıkar, "Satır ekle" yoktur (eylem de reddeder), o aya eskiden
 yüklenmiş liste "Ayı temizle" ile silinir; ModPOS listesi yüklenmez ("Aralık 2026 LafPOS'tan geliyor; ModPOS listesi
 yüklenmez."). Geçiş gününden önceki aylarda ve geçiş günü boşken sayfa bugünkü gibidir.
