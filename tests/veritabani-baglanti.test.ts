@@ -1,10 +1,11 @@
 // Veritabanı bağlantısı (src/server/db/index.ts, src/server/db/retry.ts): uyuyan bağlantının ilk sorgusu bir kez
-// yeniden denenir (okuma her bağlantı hatasında, yazım yalnız bağlantı hiç kurulmadıysa; işlem içi sarılmaz), drizzle
-// sorguları gerçekten bu yoldan gönderir, TLS sertifikası doğrulanır, canlı derleme havuzlu adresi de açar.
+// yeniden denenir (okuma her bağlantı hatasında, yazım yalnız bağlantı hiç kurulmadıysa: CONNECT_TIMEOUT ya da Neon'un
+// "Authentication timed out"u; işlem içi sarılmaz), drizzle sorguları gerçekten bu yoldan gönderir, TLS sertifikası
+// doğrulanır, canlı derleme havuzlu adresi de açar. Gerçek postgres.js ile Neon'un hatası: veritabani-baglanti-db.test.ts.
 // Çalıştırma: npx tsx --test tests/veritabani-baglanti.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -14,12 +15,19 @@ import { drizzle } from "drizzle-orm/postgres-js";
 
 import { KNOWN_ORPHANS, migrationReport, type JournalEntry } from "../scripts/migration-check";
 import { sslOption } from "../src/server/db";
-import { connectionErrorCode, isReadOnlyStatement, shouldRetry, withConnectionRetry, type RetryClient } from "../src/server/db/retry";
+import { AUTH_TIMEOUT, connectionErrorCode, isReadOnlyStatement, shouldRetry, withConnectionRetry, type RetryClient } from "../src/server/db/retry";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
 /** postgres.js'in bağlantı hatası biçimi (src/errors.js › connection) */
 const connErr = (code: string) => Object.assign(new Error(`write ${code} ep-ornek-pooler.c-7.eu-central-1.aws.neon.tech:5432`), { code, errno: code });
+
+/**
+ * Neon'un uyanırken verdiği hata (postgres.js PostgresError biçimi: sunucunun alanları nesneye kopyalanır). Canlıda 24
+ * Ekim 2026: `[bugun] Failed query: select count(*) from "ingredients"` → cause "Authentication timed out", code 08P01.
+ */
+const authTimeout = (message = "Authentication timed out") =>
+  Object.assign(new Error(message), { name: "PostgresError", severity_local: "FATAL", severity: "FATAL", code: "08P01" });
 
 /**
  * Sahte istemci: unsafe() postgres.js gibi tembel bir yanıt döner (beklenince gönderilir, values() satır biçimini
@@ -56,6 +64,23 @@ test("bağlantı hatası: postgres.js'in kodları ve soket hataları; drizzle'ı
   assert.equal(connectionErrorCode(new Error("fetch failed")), null);
   assert.equal(connectionErrorCode(null), null);
   assert.equal(connectionErrorCode("CONNECTION_CLOSED"), null);
+});
+
+test("Neon'un kimlik doğrulama zaman aşımı (08P01 + mesaj) bağlantı hatasıdır; çıplak 08P01 değildir", () => {
+  assert.equal(AUTH_TIMEOUT, "AUTH_TIMEOUT");
+  assert.equal(connectionErrorCode(authTimeout()), AUTH_TIMEOUT);
+  assert.equal(connectionErrorCode(authTimeout("authentication timed out")), AUTH_TIMEOUT, "büyük küçük harf");
+  // Drizzle'ın sardığı hâli (canlıdaki biçim) ve düz nesne
+  const wrapped = Object.assign(new Error('Failed query: select count(*) from "ingredients"'), { cause: authTimeout() });
+  assert.equal(connectionErrorCode(wrapped), AUTH_TIMEOUT);
+  assert.equal(connectionErrorCode({ cause: { code: "08P01", message: "Authentication timed out" } }), AUTH_TIMEOUT);
+  // 08P01 genel protokol hatası kodudur: başka mesajla bağlantı hatası sayılmaz
+  assert.equal(connectionErrorCode(authTimeout("invalid frontend message type 0")), null);
+  assert.equal(connectionErrorCode({ cause: { code: "08P01", message: "expected password response, got message type 88" } }), null);
+  assert.equal(connectionErrorCode({ code: "08P01" }), null, "mesajsız");
+  // Aynı mesaj başka kodla da sayılmaz; 57P01 (yönetici kapattı) görülmedikçe dışarıda
+  assert.equal(connectionErrorCode({ code: "28P01", message: "Authentication timed out" }), null);
+  assert.equal(connectionErrorCode(Object.assign(new Error("terminating connection due to administrator command"), { code: "57P01" })), null);
 });
 
 test("yalnız okuyan sorgu: SELECT / WITH; yazan, kilitleyen ya da sayaç ilerleten her şey yazım sayılır", () => {
@@ -101,6 +126,14 @@ test("yeniden deneme kuralı: okuma her bağlantı hatasında; yazım yalnız ba
   assert.equal(shouldRetry("insert into t values (1)", connErr("ECONNRESET")), false);
   assert.equal(shouldRetry("insert into t values (1)", connErr("CONNECT_TIMEOUT")), true, "bağlantı kurulmadı: gönderilmedi");
   assert.equal(shouldRetry("select 1", Object.assign(new Error("relation does not exist"), { code: "42P01" })), false);
+  // Neon'un kimlik doğrulama zaman aşımı: sorgu gönderilmedi, okuma da yazım da yeniden
+  const neon = { cause: { code: "08P01", message: "Authentication timed out" } };
+  assert.equal(shouldRetry('insert into "job_runs" ("job") values ($1)', neon), true, "bağlantı kurulmadı: yazım da");
+  assert.equal(shouldRetry('select count(*) from "ingredients"', neon), true);
+  assert.equal(shouldRetry('update "settings" set "value" = $1', authTimeout()), true);
+  const other = { cause: { code: "08P01", message: "invalid frontend message type 0" } };
+  assert.equal(shouldRetry("select 1", other), false, "başka mesajlı 08P01");
+  assert.equal(shouldRetry("insert into t values (1)", other), false);
 });
 
 test("sarılı istemci: uyuyan bağlantının okuması bir kez daha gönderilir, values() korunur, başarısı döner", async () => {
@@ -146,12 +179,101 @@ test("sarılı istemci: yazım yolda kopan bağlantıda yeniden gönderilmez; ik
   assert.equal(lazy.sent.length, 1);
 });
 
-test("sarılı istemci: öteki her şey (işlem, seçenekler, kapatma) istemcinin kendisi", async () => {
+test("sarılı istemci: Neon kimlik doğrulamada zaman aşımına düşünce okuma ve yazım bir kez daha gönderilir", async () => {
+  const retried: string[] = [];
+  const w = fakeClient((_q, n) => (n === 1 ? authTimeout() : [{ id: 1 }]));
+  const db = withConnectionRetry(w.client, { delayMs: 0, onRetry: (code) => retried.push(code) });
+  assert.deepEqual(await db.unsafe('insert into "job_runs" ("job") values ($1) returning "id"', ["parasut"]), [{ id: 1 }]);
+  assert.equal(w.sent.length, 2, "yazım ikinci kez gönderildi");
+  assert.deepEqual(w.sent[1].params, ["parasut"]);
+  assert.deepEqual(retried, [AUTH_TIMEOUT], "günlükteki kod");
+
+  const r = fakeClient((_q, n) => (n === 1 ? Object.assign(new Error("Failed query"), { cause: authTimeout() }) : [[3]]));
+  assert.deepEqual(await withConnectionRetry(r.client, { delayMs: 0 }).unsafe('select count(*) from "ingredients"').values(), [[3]]);
+  assert.equal(r.sent.length, 2);
+
+  // İki kez düşerse hata çağırana gider; başka mesajlı 08P01 hiç yeniden denenmez
+  const twice = fakeClient(() => authTimeout());
+  await assert.rejects(async () => await withConnectionRetry(twice.client, { delayMs: 0 }).unsafe("select 1"), /Authentication timed out/);
+  assert.equal(twice.sent.length, 2);
+  const proto = fakeClient(() => authTimeout("invalid frontend message type 0"));
+  await assert.rejects(async () => await withConnectionRetry(proto.client, { delayMs: 0 }).unsafe("select 1"), /invalid frontend message/);
+  assert.equal(proto.sent.length, 1);
+});
+
+test("sarılı istemci: öteki her şey (seçenekler, kapatma) istemcinin kendisi; işlem istemcinin begin'ine gider", async () => {
   const { client } = fakeClient(() => []);
   const db = withConnectionRetry(client, { delayMs: 0 });
   assert.equal(db.options, client.options);
-  assert.equal(db.begin(() => "işlem"), "işlem");
+  assert.equal(await db.begin(() => "işlem"), "işlem");
   assert.equal(await db.end(), "kapandı");
+});
+
+/**
+ * Sahte işlem: postgres.js'in begin([seçenekler], gövde) biçimi. `answer` her açılışta çağrılır; Error dönerse BEGIN o
+ * hatayla düşer (gövde çağrılmaz), "gövdede" dönerse gövde çağrılır ve ardından o hatayla düşülür (COMMIT kopmuş gibi).
+ */
+function fakeBegin(answer: (n: number) => Error | "gövdede" | null) {
+  const calls: unknown[][] = [];
+  let bodies = 0;
+  const client = {
+    unsafe: fakeClient(() => []).client.unsafe,
+    async begin(...args: unknown[]) {
+      calls.push(args.slice(0, -1));
+      const fn = args[args.length - 1] as (sql: string) => unknown;
+      const a = answer(calls.length);
+      if (a instanceof Error) throw a;
+      bodies++;
+      const result = await fn("işlem-sql");
+      if (a === "gövdede") throw connErr("CONNECTION_CLOSED");
+      return result;
+    },
+  } satisfies RetryClient & Record<string, unknown>;
+  return { client, calls, bodies: () => bodies };
+}
+
+test("işlem: BEGIN bağlantı hatasıyla düşer ve gövde çalışmadıysa bir kez daha açılır; gövde bir kez çalışır", async () => {
+  for (const err of [authTimeout(), connErr("CONNECT_TIMEOUT"), connErr("CONNECTION_CLOSED"), connErr("ECONNRESET")]) {
+    const retried: string[] = [];
+    const f = fakeBegin((n) => (n === 1 ? err : null));
+    const db = withConnectionRetry(f.client, { delayMs: 0, onRetry: (code, q) => retried.push(`${code} ${q}`) });
+    assert.equal(await db.begin("isolation level serializable", (sql: unknown) => `gövde ${String(sql)}`), "gövde işlem-sql");
+    assert.equal(f.bodies(), 1, err.message);
+    assert.deepEqual(f.calls, [["isolation level serializable"], ["isolation level serializable"]], "seçenekler ikinci açılışta da");
+    assert.equal(retried.length, 1);
+    assert.match(retried[0], /^(AUTH_TIMEOUT|CONNECT_TIMEOUT|CONNECTION_CLOSED|ECONNRESET) begin$/);
+  }
+  // Seçeneksiz biçim
+  const plain = fakeBegin((n) => (n === 1 ? authTimeout() : null));
+  assert.equal(await withConnectionRetry(plain.client, { delayMs: 0 }).begin(() => 7), 7);
+  assert.deepEqual(plain.calls, [[], []]);
+});
+
+test("işlem: gövde çalıştıysa, hata bağlantı hatası değilse ya da ikinci açılış da düşerse yeniden denenmez", async () => {
+  // Gövde çalıştı, sonra bağlantı koptu (COMMIT gitmiş olabilir): ikinci kez çalıştırılmaz
+  const ran = fakeBegin(() => "gövdede");
+  await assert.rejects(async () => await withConnectionRetry(ran.client, { delayMs: 0 }).begin(() => "x"), /CONNECTION_CLOSED/);
+  assert.deepEqual([ran.calls.length, ran.bodies()], [1, 1]);
+  // Gövdenin kendi hatası (bağlantı hatası da olsa) gövde çalıştığı için gider
+  const inner = fakeBegin(() => null);
+  await assert.rejects(
+    async () =>
+      await withConnectionRetry(inner.client, { delayMs: 0 }).begin(() => {
+        throw authTimeout();
+      }),
+    /Authentication timed out/,
+  );
+  assert.equal(inner.calls.length, 1);
+  // Veritabanının kendi hatası ve başka mesajlı 08P01
+  for (const err of [Object.assign(new Error("deadlock detected"), { code: "40P01" }), authTimeout("invalid frontend message type 0")]) {
+    const f = fakeBegin(() => err);
+    await assert.rejects(async () => await withConnectionRetry(f.client, { delayMs: 0 }).begin(() => "x"), (e: unknown) => e === err);
+    assert.deepEqual([f.calls.length, f.bodies()], [1, 0]);
+  }
+  // En çok bir yeniden açılış
+  const twice = fakeBegin(() => authTimeout());
+  await assert.rejects(async () => await withConnectionRetry(twice.client, { delayMs: 0 }).begin(() => "x"), /Authentication timed out/);
+  assert.deepEqual([twice.calls.length, twice.bodies()], [2, 0]);
 });
 
 test("drizzle bütün sorguları sarılı unsafe()'ten gönderir: execute ve select bir kez yeniden denenir", async () => {
@@ -216,4 +338,52 @@ test("DEPLOY.md: gizli değerler yalnız Production (önizleme canlının verita
   assert.match(env, /`MIGRATE_ON_PREVIEW=1` ile birlikte/);
   assert.match(env, /\| `DATABASE_SSL` \|/);
   assert.match(doc, /npm run db:reset -- --onay=<sunucu adı>/);
+});
+
+test("DEPLOY.md: Neon'un uyanışında yeniden deneme; günlükteki satır createDb'nin yazdığıyla aynı", () => {
+  const doc = read("docs/DEPLOY.md").replace(/\s*\n\s*/g, " ");
+  const s3 = doc.slice(doc.indexOf("## 3. Veritabanı (Neon)"), doc.indexOf("## 4."));
+  assert.match(s3, /\*\*Uyuyan bağlantı ve Neon'un uyanışı\.\*\*/);
+  assert.match(s3, /`08P01` "Authentication timed out"/);
+  assert.match(s3, /`src\/server\/db\/retry\.ts`/);
+  // createDb'nin onRetry satırı: belgede AUTH_TIMEOUT'la yazılan biçim
+  assert.match(read("src/server/db/index.ts"), /console\.warn\(`\[db\] bağlantı yenilendi \(\$\{code\}\), sorgu yeniden gönderildi: \$\{query\.slice\(0, 80\)\}`\)/);
+  assert.ok(s3.includes(`\`[db] bağlantı yenilendi (${AUTH_TIMEOUT}), sorgu yeniden gönderildi: …\``));
+});
+
+test("DEPLOY.md § 8: Vercel Hobby planı, bir saatlik günlük, 7 günlük hata kümesi, cron penceresi, kullanım şartı", async () => {
+  const doc = read("docs/DEPLOY.md").replace(/\s*\n\s*/g, " ");
+  const s8 = doc.slice(doc.indexOf("## 8. Plan ve günlükler (Vercel Hobby)"));
+  assert.ok(s8.startsWith("## 8."), "bölüm yok");
+  for (const s of [
+    "ücretsiz **Hobby** planında",
+    "kişisel ve ticari olmayan kullanım",
+    "**Öneri: Pro plan.**",
+    "yalnız son bir saati tutar",
+    "son 7 gün",
+    "**Log drain yok.**",
+    "Ayarlar › Günlük işler",
+    "`/api/cron/parasut` 07:00–08:00, `/api/cron/gunluk` 08:00–09:00",
+    "Günde en çok 100 dağıtım",
+  ]) {
+    assert.ok(s8.includes(s), `§ 8'de yok: ${s}`);
+  }
+  // Andığı kurallar kodla aynı: cron saatleri vercel.json'da, "çalışmadı" beklemesi job-health'te
+  const crons = (JSON.parse(read("vercel.json")) as { crons: { path: string; schedule: string }[] }).crons;
+  assert.deepEqual(
+    crons.map((c) => [c.path, c.schedule]),
+    [
+      ["/api/cron/parasut", "30 4 * * *"],
+      ["/api/cron/gunluk", "0 5 * * *"],
+    ],
+  );
+  const { GRACE_MIN } = await import("../src/lib/job-health");
+  assert.match(s8, new RegExp(`pencerenin sonundan ${GRACE_MIN} dakika sonra \\(\`src/lib/job-health\\.ts\` › \`GRACE_MIN\`\\)`));
+  for (const f of ["src/lib/job-health.ts", "src/server/jobs/capped.ts", "docs/planlar/KALAN-ISLER.md"]) assert.ok(s8.includes(`\`${f}\``) && read(f).length > 0, f);
+  // Hata kancası yazılınca belge de güncellenir (kanca istek gövdesi ve çerez taşımamalı; o zaman kendi testi)
+  const hook = ["src/instrumentation.ts", "src/instrumentation-node.ts", "instrumentation.ts"].some((f) => existsSync(join(process.cwd(), f)));
+  assert.equal(hook, false, "instrumentation kancası eklendi: DEPLOY.md § 8'deki 'Hata kancası yok' maddesini güncelleyin");
+  assert.match(s8, /\*\*Hata kancası yok\.\*\* `src\/instrumentation\.ts`/);
+  // Sahibe soru 10'un varsayılanı yazılı
+  assert.match(read("docs/planlar/KALAN-ISLER.md"), /10\. \*\*Vercel planı\*\* \(E-67, B05\)[^\n]*\n\s+\*\*Varsayılan:\*\* plan Hobby kalır/);
 });

@@ -9,6 +9,10 @@
 //
 // Migration'dan sonra her migration'ın gerçekten uygulandığı doğrulanır (scripts/migrate.ts › verifyMigrations):
 // sıra bozulup atlanan varsa derleme durur, canlıda eski sürüm yayında kalır.
+//
+// Production derlemesi yalnız main dalından (predeploy-guard.ts › productionBranchRefusal): bir dal önizlemesi
+// Production'a terfi ya da redeploy edilirse derleme her şeyden önce durur; dalın migration'ı canlıya gitmez, dalın kodu
+// canlı sırlarıyla yayına çıkmaz (26 Eki 2026, denetim E-10). Bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister.
 
 import { loadEnvConfig } from "@next/env";
 import { sql } from "drizzle-orm";
@@ -17,7 +21,7 @@ import { createDb } from "../src/server/db";
 import { restartWatchOnDeploy } from "../src/server/jobs/watch";
 
 import { runMigrations } from "./migrate";
-import { predeploySkipReason } from "./predeploy-guard";
+import { predeploySkipReason, productionBranchOverride, productionBranchRefusal } from "./predeploy-guard";
 import { runSeed } from "./seed";
 
 /**
@@ -61,6 +65,14 @@ async function checkRuntimeConnection() {
 
 async function main() {
   loadEnvConfig(process.cwd());
+  // Önce dal: reddedilen derleme veritabanına hiç bağlanmaz (ne migration ne seed ne izleme kaydı)
+  const refusal = productionBranchRefusal(process.env);
+  if (refusal) {
+    console.error(`✗ ${refusal}`);
+    process.exit(1);
+  }
+  const override = productionBranchOverride(process.env);
+  if (override) console.warn(`! ${override}`);
   const skip = predeploySkipReason(process.env);
   if (skip) {
     console.log(`! ${skip}: migration ve seed atlandı`);
