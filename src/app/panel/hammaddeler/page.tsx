@@ -12,6 +12,7 @@ import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
 import { readingFits, readingText } from "@/lib/invoice-reading";
 import {
+  conflictSuggestionText,
   evidenceSuggestionText,
   holdImpact,
   holdSuggestion,
@@ -125,7 +126,9 @@ async function IngredientsContent() {
         ? evidenceSuggestionText(x.evidence!, { lineUnit: h.unit, unit, unitPrice: x.unitPrice, currentUnit: current })
         : x.kind === "reading"
           ? readingLine!
-          : ratioSuggestionText(x.hint!, { lineUnit: h.unit, unit, factor: x.factor, unitPrice: x.unitPrice, currentUnit: current });
+          : x.kind === "conflict"
+            ? conflictSuggestionText(x, { lineUnit: h.unit, unit, currentUnit: current })
+            : ratioSuggestionText(x.hint!, { lineUnit: h.unit, unit, factor: x.factor, unitPrice: x.unitPrice, currentUnit: current });
     return {
       id: h.id,
       ingredientId: h.ingredientId,
@@ -145,10 +148,12 @@ async function IngredientsContent() {
       factor: h.factor,
       last: h.lastUnitPrice !== null && h.lastDate && h.lastSupplier ? { unitPrice: h.lastUnitPrice, date: h.lastDate, supplier: h.lastSupplier } : null,
       impact: holdImpact(model, h.ingredientId, proposed),
+      // Hammaddenin fiyatı yok: faturadan gelen ilk fiyat (çarpanı kesin değil; priceStep)
+      first: !(current > 0),
       estimate: h.ingredient.isEstimate,
       suggestion: suggestion ? { kind: suggestion.kind, factor: suggestion.factor, text: suggestionText(suggestion) } : null,
-      // Okuma öneri değilse bilgi satırı (aynı çarpanı doğruluyor ya da az emin)
-      reading: readingLine && suggestion?.kind !== "reading" ? { text: readingLine, low: reading!.confidence === "low" } : null,
+      // Okuma öneri değilse bilgi satırı (aynı çarpanı doğruluyor ya da az emin); çelişkide okuma önerinin metninde
+      reading: readingLine && suggestion?.kind !== "reading" && suggestion?.kind !== "conflict" ? { text: readingLine, low: reading!.confidence === "low" } : null,
       readError: stored?.status === "error" ? stored.error : null,
       // Kendiliğinden okuma: kanıtı ve okuması olmayan kartta bir kez; başka sekme okuyorsa bekler; okuma kapalıysa düğme yok
       // Günlük sınırın fotoğraf payına inildiyse kendiliğinden okuma yok, düğme kalır

@@ -24,8 +24,9 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { deleteFinding, saveFinding, setFindingResolved, setPurchaseQty } from "@/server/actions/consistency";
-import { MANAGED_QTY_NOTE } from "@/server/parasut/constants";
+import { HOLDS_HREF } from "@/lib/price-hold";
+import { deleteFinding, saveFinding, setFindingResolved, setNoPurchase, setPurchaseQty } from "@/server/actions/consistency";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "@/lib/purchase-notes";
 
 
 import { RATIO_BAD, RATIO_GUIDE, RATIO_WARN, scopeTotals, SEVERITY, severityOf, tableScope, type StockCheck } from "./severity";
@@ -40,6 +41,12 @@ interface Row {
   /** Bunun online kafe siparişlerinden gelen kısmı (menü bağlantısıyla eşlenen satırlar); yoksa 0 */
   onlineUsage: number;
   purchased: number | null;
+  /** Bu ayın çarpanı onay bekleyen faturaları: alınana girmedi, oran / fark / sapma onaydan sonra */
+  held: { invoices: number } | null;
+  /** Bu ayın fiyatı reddedilen faturaları: alınana girmedi, bekleyen öneri yok; oran / fark / sapma alım yazılınca */
+  rejected: { invoices: number } | null;
+  /** Hammadde Paraşüt'teki bir ürüne bağlı (alımı faturadan gelir): faturası yoksa "Alım yok (0)" toplu düğmesi */
+  linked: boolean;
   ratio: number | null;
   diffAmount: number | null;
   opening: number | null;
@@ -49,7 +56,10 @@ interface Row {
   varianceAmount: number | null;
   /** Devir − devreden (iki sayım varsa), alım bilinmeden stoktaki düşüş */
   stockDrop: number | null;
-  /** complete: sapma hesaplandı · needsPurchase: iki sayım var, alım eksik · noCount: sayım eksik */
+  /**
+   * complete: sapma hesaplandı · needsPurchase: iki sayım var, alım eksik · held / rejected: alınana girmeyen fatura var
+   * · noCount: sayım eksik
+   */
   stock: StockCheck;
   /** Hammadde bir reçetede var mı */
   inRecipe: boolean;
@@ -158,6 +168,20 @@ function CountRoll({ value }: { value: number }) {
 // ---------------------------------------------------------------- Reçete ↔ fatura tablosu
 
 function RatioBadge({ row }: { row: Row }) {
+  if (row.held || row.rejected) {
+    return (
+      <span
+        className="text-ink-mute"
+        title={
+          row.held
+            ? "Bu ayın bir faturasının çarpanı onay bekliyor: alınan eksik, oran onaydan sonra"
+            : "Bu ayın fiyatı reddedilen faturası alınana girmedi: alınan eksik, oran ayın alımı elle yazılınca"
+        }
+      >
+        –
+      </span>
+    );
+  }
   if (row.ratio === null) {
     // Ay içinde hiç kullanılmadığı hâlde alım varsa oran hesaplanamaz ama fark büyüktür
     return severityOf(row) === "big" ? (
@@ -178,18 +202,113 @@ function RatioBadge({ row }: { row: Row }) {
   );
 }
 
-/** Gerçek tüketim hücresi: hesaplandıysa değer, iki sayım var ama alım eksikse ne yapılacağı */
-function ActualUsage({ row, compact }: { row: Row; compact?: boolean }) {
+/** Çarpanı onay bekleyen faturası olan malzemenin işareti: alınan eksik, Hammaddeler'deki fiyat onayına götürür */
+function HeldNote({ row, compact }: { row: Row; compact?: boolean }) {
+  if (!row.held) return null;
+  return (
+    <span className={cn("inline-flex flex-col gap-0.5", compact ? "items-start" : "items-end")}>
+      <Badge tone="amber" dot title="Bu ayın faturasının çarpanı onay bekliyor: o fatura alınan miktara girmedi, sapma onaydan sonra hesaplanır">
+        Fiyat onayı bekliyor
+      </Badge>
+      <Link href={HOLDS_HREF} className="-my-2 py-2 text-xs font-medium text-ink-soft underline underline-offset-2 hover:text-ink pointer-coarse:-my-3 pointer-coarse:py-3">
+        {row.held.invoices} fatura alınana girmedi · onaya git
+      </Link>
+    </span>
+  );
+}
+
+/**
+ * Fiyatı reddedilen faturası alınana girmeyen malzemenin işareti (bekleyen öneri yok, onaya götürmez): o faturanın
+ * çarpanı şüpheli kaldı; sahip ayın alımını faturaya bakıp Alınan'a yazar, sapma o zaman hesaplanır
+ */
+function RejectedNote({ row, compact }: { row: Row; compact?: boolean }) {
+  if (!row.rejected) return null;
+  return (
+    <span className={cn("inline-flex flex-col gap-0.5", compact ? "items-start" : "items-end")}>
+      <Badge tone="amber" dot title="Bu ayın fiyatı reddedilen faturası alınan miktara ve stok değerine girmedi; ayın alımını elle yazınca sapma hesaplanır">
+        Reddedilen fatura alınana girmedi
+      </Badge>
+      <span className="text-xs text-ink-soft">
+        {row.rejected.invoices} fatura · miktarı Alınan&apos;a yazın
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Gerçek tüketim hücresi: hesaplandıysa değer; iki sayım var ama alım eksikse "Alım yok (0)" (tek dokunuş; bu ay hiç
+ * alınmadıysa), faturasının çarpanı onay bekliyorsa onaya giden işaret, fiyatı reddedilen faturası varsa alımı yazma
+ * işareti
+ */
+function ActualUsage({ row, month, compact }: { row: Row; month: string; compact?: boolean }) {
+  if (row.stock === "held") return <HeldNote row={row} compact={compact} />;
+  if (row.stock === "rejected") return <RejectedNote row={row} compact={compact} />;
   if (row.stock === "needsPurchase")
     return (
-      <span className={cn("inline-flex flex-col gap-0.5", compact ? "items-start" : "items-end")}>
+      <span className={cn("inline-flex flex-col gap-1", compact ? "items-start" : "items-end")}>
         <Badge tone="amber" dot title="İki ayın sayımı var; gerçek tüketim için bu ayın alım miktarı gerekli">
           Alım girilmeli
         </Badge>
-        <span className="text-xs text-ink-mute">alınmadıysa 0 yazın</span>
+        <NoPurchaseButton month={month} rows={[row]} />
       </span>
     );
   return <>{row.actualUsage === null ? "–" : `${num(row.actualUsage)} ${row.unit}`}</>;
+}
+
+/**
+ * "Alım yok (0)": bu ay alınan miktarı girilmemiş malzemelere 0 yazar (setNoPurchase); sayım sapması hesaplanır. Tek
+ * satırda doğrudan, toplu (faturası olmayan bağlı malzemeler) onayla. "Geri al" aynı satırları siler. Faturası sonradan
+ * gelen ayın 0'ının yerine eşitleme faturadaki miktarı yazar.
+ */
+function NoPurchaseButton({ month, rows, bulk }: { month: string; rows: Row[]; bulk?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const ids = rows.map((r) => r.ingredientId);
+  async function write() {
+    setBusy(true);
+    const res = await setNoPurchase(month, ids);
+    setBusy(false);
+    setConfirm(false);
+    if (!res.ok) return void toast.error(res.error);
+    const done = res.data.changed;
+    if (!done.length) return void toast.message("Alım zaten girilmiş; değişiklik yok.");
+    const label = done.length === 1 ? (rows.find((r) => r.ingredientId === done[0])?.name ?? "Malzeme") : `${num(done.length)} malzeme`;
+    toast.success(`${label}: bu ay alım yok (0)`, {
+      description: "Sayım sapması hesaplandı.",
+      action: {
+        label: "Geri al",
+        onClick: () => void setNoPurchase(month, done, true).then((r) => (r.ok ? toast.success(`${label}: alım yok geri alındı`) : toast.error(r.error))),
+      },
+    });
+  }
+  return (
+    <>
+      <Button
+        size={bulk ? "sm" : "xs"}
+        variant="secondary"
+        disabled={busy}
+        onClick={() => (bulk ? setConfirm(true) : void write())}
+        title="Bu ay hiç alınmadıysa: alınan 0 yazılır, sayım sapması hesaplanır"
+        aria-label={bulk ? undefined : `${rows[0]?.name}: bu ay alım yok, 0 yaz`}
+        className={cn(bulk ? "max-sm:w-full" : "pointer-coarse:min-h-11")}
+      >
+        {busy ? "Yazılıyor…" : bulk ? `${num(rows.length)} malzemeye alım yok (0) yaz` : "Alım yok (0)"}
+      </Button>
+      {confirm
+        ? createPortal(
+            <ConfirmDialog
+              open
+              onClose={() => setConfirm(false)}
+              onConfirm={() => void write()}
+              title={`${num(rows.length)} malzemeye bu ay alım yok yazılsın mı?`}
+              description={`Bu malzemeler Paraşüt'teki ürünlere bağlı ve bu ay faturaları yok: alınan miktarları 0 yazılır, sayım sapmaları hesaplanır. Nakit ya da elle girilen faturayla alınan varsa önce onun miktarını yazın. Bu ayın faturası sonradan gelirse eşitleme 0'ın yerine faturadaki miktarı yazar.`}
+              confirmLabel="Alım yok yaz"
+            />,
+            document.body,
+          )
+        : null}
+    </>
+  );
 }
 
 function UnrecipedBadge({ row }: { row: Row }) {
@@ -369,6 +488,8 @@ export function ConsistencyTable({
   const sort = parseSort(sortParam);
   const withPurchase = rows.filter((r) => r.purchased !== null);
   const needsPurchase = rows.filter((r) => r.stock === "needsPurchase");
+  // Paraşüt'e bağlı ama bu ay faturası olmayanlar (alım satırı da, onay bekleyen faturası da yok): toplu "Alım yok (0)"
+  const noInvoice = needsPurchase.filter((r) => r.linked && !r.held);
   const onlyNeeds = needParam === "1" && needsPurchase.length > 0;
   // Varsayılan: alımı girilen ya da iki ayı sayılan malzemeler; "Alımı girilmeyenler" yalnızca reçete kullanımı olanları da açar
   const { scope: baseScope, hidden: missing } = tableScope(rows, showAll);
@@ -486,6 +607,19 @@ export function ConsistencyTable({
               />
             </li>
           </ul>
+          {noInvoice.length ? (
+            // Faturası olmayan bağlı malzemeler: alımı faturadan gelir, bu ay faturası yok; tek tek 0 yazmak yerine toplu
+            <div role="status" className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+              <p className="min-w-0 flex-1 basis-64 text-pretty">
+                <span className="font-semibold">
+                  {num(needsPurchase.length)} malzemede alım girilmeli;
+                </span>{" "}
+                {noInvoice.length === needsPurchase.length ? "hepsi" : `${num(noInvoice.length)} tanesi`} Paraşüt&apos;teki ürünlere bağlı ve bu ay faturası yok.
+                <span className="text-warn/85"> Bu ay alınmadıysa tek dokunuşla 0 yazın; sayım sapması hesaplanır.</span>
+              </p>
+              <NoPurchaseButton month={month} rows={noInvoice} bulk />
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -533,7 +667,7 @@ export function ConsistencyTable({
                         <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                           <dt className="text-xs text-ink-mute">Gerçek tüketim</dt>
                           <dd className="text-ink tabular">
-                            <ActualUsage row={r} compact />
+                            <ActualUsage row={r} month={month} compact />
                           </dd>
                         </div>
                         <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right">
@@ -569,6 +703,15 @@ export function ConsistencyTable({
                       <Pencil size={16} />
                     </IconButton>
                   </div>
+                  {r.held && (r.stock !== "held" || !hasStock) ? (
+                    <div className="mt-1.5">
+                      <HeldNote row={r} compact />
+                    </div>
+                  ) : r.rejected && (r.stock !== "rejected" || !hasStock) ? (
+                    <div className="mt-1.5">
+                      <RejectedNote row={r} compact />
+                    </div>
+                  ) : null}
                   {r.note ? <p className="mt-1.5 line-clamp-2 text-xs leading-5 break-words text-ink-mute">{r.note}</p> : null}
                 </li>
               ))}
@@ -653,6 +796,15 @@ export function ConsistencyTable({
                           <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} />
                           <span className="w-8 text-left text-xs text-ink-mute">{r.unit}</span>
                         </div>
+                        {r.held && (r.stock !== "held" || !hasStock) ? (
+                          <div className="mt-1 flex justify-end">
+                            <HeldNote row={r} />
+                          </div>
+                        ) : r.rejected && (r.stock !== "rejected" || !hasStock) ? (
+                          <div className="mt-1 flex justify-end">
+                            <RejectedNote row={r} />
+                          </div>
+                        ) : null}
                       </TD>
                       <TD numeric>
                         <RatioBadge row={r} />
@@ -666,7 +818,7 @@ export function ConsistencyTable({
                       {hasStock ? (
                         <>
                           <TD numeric>
-                            <ActualUsage row={r} />
+                            <ActualUsage row={r} month={month} />
                             {r.opening !== null && r.closing !== null ? (
                               <span className="block text-xs text-ink-mute">
                                 sayım {num(r.opening)} → {num(r.closing)}
@@ -780,8 +932,8 @@ export function ConsistencyTable({
         <CardFooter className="justify-start gap-2 text-xs">
           <Info size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
           <span className="min-w-0 flex-1">
-            İki ayın sayımı var ama alım miktarı girilmemiş: sapma, &quot;Faturayla alınan&quot; girilen satırlarda hesaplanır. Bu ay hiç alınmayan malzemeye 0
-            yazın.
+            İki ayın sayımı var ama alım miktarı girilmemiş: sapma, &quot;Faturayla alınan&quot; girilen satırlarda hesaplanır. Bu ay hiç alınmayan malzemede
+            &quot;Alım yok (0)&quot;a dokunun.
             {needsPurchase.length && !onlyNeeds ? (
               <button
                 type="button"
@@ -817,7 +969,7 @@ export function ConsistencyTable({
  * Paraşüt eşitlemesinin işaret notu kutuya gelmez: dialogdan kaydedilen satır elle düzeltilmiş sayılır, eşitleme üzerine
  * yazmaz (docs/PARASUT.md §5). Silinen satırı geri alma ise notu olduğu gibi geri yazar (satır yine eşitlemeye ait olur).
  */
-const editableNote = (n: string | null | undefined) => (n && n !== MANAGED_QTY_NOTE ? n : "");
+const editableNote = (n: string | null | undefined) => (n && n !== MANAGED_QTY_NOTE && n !== NO_PURCHASE_NOTE ? n : "");
 
 function PurchaseDialog({
   month,
@@ -855,6 +1007,8 @@ function PurchaseDialog({
   /** Bu ayki miktar Paraşüt eşitlemesinden: kaydedince elle girilmiş sayılır */
   const current = row ?? existing;
   const managed = current?.purchased != null && current.note === MANAGED_QTY_NOTE;
+  /** "Alım yok (0)" ile yazılmış: kaydedince elle girilmiş sayılır, sonradan gelen fatura üzerine yazmaz */
+  const noPurchase = current?.purchased != null && current.note === NO_PURCHASE_NOTE;
 
   const pick = (next: number) => {
     setId(next);
@@ -981,7 +1135,9 @@ function PurchaseDialog({
           hint={
             managed
               ? "Bu ayki miktar Paraşüt faturalarından geliyor; burada kaydederseniz elle girilmiş sayılır ve sonraki faturalar üzerine yazmaz."
-              : "İsteğe bağlı: hangi faturalardan geldiği, kontrol notu."
+              : noPurchase
+                ? "Bu ay “Alım yok (0)” denmişti; burada kaydederseniz elle girilmiş sayılır ve sonradan gelen fatura üzerine yazmaz."
+                : "İsteğe bağlı: hangi faturalardan geldiği, kontrol notu."
           }
         >
           {/* Uzun fatura notu tek satırda kesiliyordu: çok satırlı kutu, yazdıkça uzar. Not tek satırlık metin: Enter kaydeder */}

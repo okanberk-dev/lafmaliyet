@@ -16,7 +16,7 @@ import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
 import { mergeWithLafpos } from "./lafpos-sales";
-import { loadPurchaseLots } from "./purchase-lots";
+import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
 /** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
 export async function loadSettings(): Promise<Settings> {
@@ -43,6 +43,8 @@ export async function loadDataset(): Promise<Dataset> {
     stockCounts,
     ingredientPrices,
     purchaseLots,
+    heldPurchases,
+    pendingPriceHolds,
     stockExtras,
     purchaseQuantities,
     expenseCategories,
@@ -80,6 +82,10 @@ export async function loadDataset(): Promise<Dataset> {
       .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts)
     loadPurchaseLots(),
+    // Çarpanı onay bekleyen alışlar: alınan miktara girmedi, Tutarlılık işaretler (aynı yüklem)
+    loadHeldPurchases(),
+    // Fiyatı onay bekleyen hammaddeler: fiyatsızsa "paket fiyatını girin" değil, onaya götürülür (Genel bakış, zil)
+    db.selectDistinct({ id: s.ingredientPriceHolds.ingredientId }).from(s.ingredientPriceHolds).where(eq(s.ingredientPriceHolds.status, "pending")),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
@@ -269,6 +275,8 @@ export async function loadDataset(): Promise<Dataset> {
     stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
     ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     purchaseLots,
+    heldPurchases,
+    pendingPriceHolds: pendingPriceHolds.map((r) => r.id),
     stockExtras: stockExtras.map((e) => ({
       id: e.id,
       month: e.month,

@@ -84,6 +84,16 @@ export function arrivalBase(i: Pick<BalanceInvoice, "payable" | "unpaid" | "outs
   return i.date < since ? trackingBase(i) : 0;
 }
 
+/**
+ * Peşin çalışılan takipli kartın eşitlemeyle gelen yeni faturası hesaptaki parayı (avansı) alır mı (K21): yalnız ödenmiş
+ * gelen ve takip günü ya da sonrasının faturası. Takip başlamadan önceki tarihli fatura ("Geçmiş faturaları al", geç
+ * girilmiş eski fatura) kendi gününde kapıda ödenmiştir: avans ona sayılırsa hesaptaki para eksilir, tedarikçi o kadar az
+ * borçlu görünürdü (denetim 26 Eki, E-14)
+ */
+export function takesCreditOnArrival(i: { date: string; unpaid: boolean }, since: string): boolean {
+  return !i.unpaid && i.date >= since;
+}
+
 // ---------------------------------------------------------------- Ödeme şekli
 
 /** Cari ödemenin şekli (supplier_entries.method) */
