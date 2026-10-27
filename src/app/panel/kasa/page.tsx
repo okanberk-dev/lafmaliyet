@@ -236,8 +236,21 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             ) : null}
           </>
         ) : (
-          <p className="text-ink-mute">Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin.</p>
+          <p className="text-ink-mute">
+            {waste.lafpos
+              ? "Bu gün zayi ya da ikram yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
+              : "Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin."}
+          </p>
         )}
+        {waste.lafpos ? (
+          // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; panele girilen ürün ikramı sayılmaz
+          <p className="text-[13px] text-ink-mute">
+            {waste.lafpos.received
+              ? "Ürün ikramı ve LafPOS'ta zayi yazılanlar LafPOS'un gün sonundan."
+              : "Ürün ikramı LafPOS'ta işaretlenir, gün sonuyla gelir."}
+            {waste.lafpos.received && waste.lafpos.notCounted ? ` Panele girilen ${waste.lafpos.notCounted} ürün ikramı sayılmıyor: LafPOS'taki sayılıyor.` : ""}
+          </p>
+        ) : null}
         <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
           <Gift size={14} /> Zayi / ikram ekle
         </ButtonLink>

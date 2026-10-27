@@ -218,3 +218,11 @@ test("banka POS Z (yazarkasa): ayırt edici cümle, doldurma kapısı; yönetici
   assert.match(aksam, /banka POS Z raporunun \(yazarkasa\)/);
   assert.doesNotMatch(aksam, /gün sonu fişinin fotoğrafını|Banka POS'a yazarkasanın/);
 });
+
+test("LafPOS: ürün ikramı LafPOS'ta işaretlenir cümlesi zayi sorusunda ve günün sırasında (koşullu; denetim B10)", () => {
+  const zayi = FAQ_TEXTS.find((t) => t.id === "zayi-gir")?.text ?? "";
+  assert.match(zayi, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir\./);
+  assert.match(zayi, /“Zayi yaz” ile işaretlenen ürünü burada ayrıca girmeyin/);
+  const gun = ROUTINE_TEXTS.find((t) => t.startsWith("Gün içinde")) ?? "";
+  assert.match(gun, /Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS'ta işaretlenir; panele yalnız zayi ve hammadde ikramı girilir\./);
+});

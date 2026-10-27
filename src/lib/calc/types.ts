@@ -4,6 +4,8 @@
 
 import type { SiteSalesMonth } from "../site-sales/schema";
 
+import type { LafposIkramData } from "../lafpos/ikram";
+
 import type { PurchaseLot } from "./fifo";
 
 export type Unit = "gr" | "ml" | "adet" | "dilim";
@@ -392,7 +394,8 @@ export interface ExpenseEntry {
 
 /**
  * Personelin girdiği zayi ya da ikram (src/server/db/schema.ts wasteEntries): menü ürünü (malzemesi reçeteden) ya da
- * hammadde (qty × factor = malzemenin kendi birimi).
+ * hammadde (qty × factor = malzemenin kendi birimi). Motorun saydığı kayıtlarda (Model.countedWaste) geçiş gününden
+ * itibaren LafPOS'un ikramı da bulunur: `source: "lafpos"`, LafPOS'taki ad ve menü değeriyle.
  */
 export interface WasteEntry {
   date: string;
@@ -401,6 +404,12 @@ export interface WasteEntry {
   ingredientId: number | null;
   qty: number;
   factor: number;
+  /** LafPOS'un ikram satırı (yalnız motorun saydığı kayıtlarda; paneldekilerde yok) */
+  source?: "lafpos";
+  /** LafPOS'taki ad (ürünü bulunamasa da gösterilir) */
+  name?: string;
+  /** LafPOS'un menü değeri, KDV dahil */
+  menuValue?: number;
 }
 
 export interface Dataset {
@@ -458,6 +467,12 @@ export interface Dataset {
    * ModPOS listesi ve LafPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
    */
   lafposSales?: { switchDay: string; countFrom: string; months: LafposSalesMonth[] };
+  /**
+   * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un ikramları ve gün sonu gelen günler
+   * (src/lib/lafpos/ikram.ts): ikram satırları kayıtlı tüketime girer, o günlerde paneldeki ürün ikramı sayılmaz. Yoksa
+   * (varsayılan) ikram yalnız Zayi & ikram'dan
+   */
+  lafposIkram?: LafposIkramData;
 }
 
 /**

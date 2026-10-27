@@ -75,6 +75,19 @@ export function channelOf(names: readonly (string | null | undefined)[]): Channe
   return null;
 }
 
+/**
+ * LafPOS'taki ödeme türünün kanal yazısı (pos_day_reports.payments[].channel; docs/LAFPOS.md) → komisyon kanalı:
+ * anahtarın kendisi ("pluxee", büyük / küçük harf farkı yok) ya da bir kanalın adı ("Sodexo", "Ticket Restaurant",
+ * "Trendyol Go"); boşsa ya da tanınmıyorsa null. LafPOS ödeme türünde kanalı listeden seçtirir (aynı anahtarlar), eski
+ * LafPOS serbest metin yazabilir.
+ */
+export function lafposChannel(raw: string | null | undefined): ChannelKey | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  const key = v.toLocaleLowerCase("tr-TR").replace(/ı/g, "i");
+  return isChannelKey(key) ? key : channelOf([v]);
+}
+
 // ---------------------------------------------------------------- Fatura kalemleri
 
 /**

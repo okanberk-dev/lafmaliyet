@@ -57,6 +57,8 @@ export async function emailReport(
       submittedAt: row.updatedAt,
       waste,
       ikramValue: waste.ikramValue || null,
+      // LafPOS gününde gün sonu geldiyse ikram denetimi LafPOS'un rakamlarıyla (geçiş günü boşken null)
+      lafposIkram: waste.lafpos?.received ? waste.lafpos : null,
       online,
       approval: o.approval ?? null,
       ...extras,

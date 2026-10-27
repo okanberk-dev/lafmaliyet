@@ -89,7 +89,7 @@ export function ChannelCard({ channel, month, report }: { channel: ChannelKey; m
                   row.sales ? (
                     <span className="flex flex-col items-end">
                       <span>{money(row.sales.amount)}</span>
-                      <span className="text-xs text-ink-mute">{sourceLabel(row.sales.source, def.kind)}</span>
+                      <span className="text-xs text-ink-mute">{sourceLabel(row.sales, def.kind)}</span>
                     </span>
                   ) : (
                     <span className="text-ink-mute">bilinmiyor</span>

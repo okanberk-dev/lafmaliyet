@@ -182,7 +182,18 @@ export function LafposDayDelete({ date, zNo, lines, label }: { date: string; zNo
  * ad sonraki ModPOS yüklemelerinde de tanınır. Yalnız LafPOS'ta geçen ad kasadaki (ModPOS) fiyat listesinde "Kasada"
  * diye gösterilmez (src/server/data/pos-staff.ts modposNameFilter).
  */
-export function LafposUnmatchedList({ items, more, products }: { items: { posName: string; qty: number; days: number }[]; more: number; products: ProductOption[] }) {
+export function LafposUnmatchedList({
+  items,
+  more,
+  products,
+  ikram = false,
+}: {
+  items: { posName: string; qty: number; days: number }[];
+  more: number;
+  products: ProductOption[];
+  /** İkramın adları: bağ okuma anında çözülür, geçmiş günlerin ikramı da o ürünle sayılır */
+  ikram?: boolean;
+}) {
   const router = useRouter();
   const [picking, setPicking] = useState<{ posName: string; qty: number } | null>(null);
   const [pending, start] = useActionTransition();
@@ -192,7 +203,9 @@ export function LafposUnmatchedList({ items, more, products }: { items: { posNam
       const res = await matchLafposName({ month: null, posName, productId: v.productId, isService: v.isService });
       if (!res.ok) return void toast.error(res.error);
       toast.success(v.isService ? "HİZMET olarak işaretlendi" : "Bağlandı", {
-        description: `“${posName}”: ${num(res.data.others)} LafPOS satırı bağlandı; sonraki gün sonlarında otomatik tanınacak.`,
+        description: ikram
+          ? `“${posName}”: LafPOS'un ikramı bu ürünle sayılıyor (geçmiş günler de); sonraki gün sonlarında otomatik tanınacak.`
+          : `“${posName}”: ${num(res.data.others)} LafPOS satırı bağlandı; sonraki gün sonlarında otomatik tanınacak.`,
       });
       router.refresh();
     });
@@ -213,7 +226,7 @@ export function LafposUnmatchedList({ items, more, products }: { items: { posNam
           </li>
         ))}
       </ul>
-      {more > 0 ? <p className="text-[13px] text-ink-mute">ve {num(more)} ad daha (en çok satılan 10 ad gösteriliyor)</p> : null}
+      {more > 0 ? <p className="text-[13px] text-ink-mute">ve {num(more)} ad daha (en çok {ikram ? "ikram edilen" : "satılan"} 10 ad gösteriliyor)</p> : null}
       {picking ? (
         <ProductPicker
           key={picking.posName}

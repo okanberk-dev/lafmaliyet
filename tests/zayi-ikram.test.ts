@@ -66,7 +66,7 @@ test("hesap: ikram edilen ürünün malzemesi reçeteden, zayi hammadde doğruda
   assert.equal(sum.ikram.menuValue, product.price * 2);
   // Kayıtsız aylar ve eski veri kümesi (wasteEntries yok) bozulmaz
   assert.equal(model0.recordedUsage("2026-09").size, 0);
-  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0 } });
+  assert.deepEqual(model0.wasteSummary("2026-09"), { zayi: { count: 0, cost: 0, lafpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: 0 });
 });
 
 test("tutarlılık: sapmadan kayıtlı zayi ve ikram düşülür; eski alanlar değişmez", () => {
@@ -149,5 +149,6 @@ test("yetki: personel bugüne ve düne (dün kilitlenene kadar) girer, kendi kay
 
 test("ikram formu: uygulamanın ödül içeceği ikram değildir (online satışta sayılır; iki kez düşülmesin)", () => {
   const board = readFileSync(join(root, "src/app/panel/zayi/waste-board.tsx"), "utf8");
-  assert.match(board, /\{kind === "ikram" \? \(\s*<p[^>]*>\s*Uygulamadaki ödülle \(damga kartı, davet kuponu\) verilen içecek ikram değildir/);
+  // LafPOS gününde (ürün ikramı LafPOS'ta) not LafPOS'unkiyle yer değiştirir; öteki günlerde bu not
+  assert.match(board, /kind === "ikram" \? \(\s*<p[^>]*>\s*Uygulamadaki ödülle \(damga kartı, davet kuponu\) verilen içecek ikram değildir/);
 });

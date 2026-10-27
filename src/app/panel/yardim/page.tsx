@@ -553,8 +553,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             bölünür: gerçek oran. Yemek kartında %6&apos;yı aşan oran, kira / cihaz / destek gibi komisyon dışı ücret ve erken ödeme ücreti işaretlenir;
             platformda sipariş ve ödeme altyapısı ücreti. Uyarılar faturadaki kalem adlarına bakar, kesin hüküm değildir. Satış, o ay tek yemek kartı (ya da tek
             platform) faturası varsa kasa raporlarındaki Z toplamından gelir; birden çoksa Z&apos;de tek toplam olduğu için kanalın aylık ekstresindeki satışı
-            Satışı yaz ile girin. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunup günü ve tutarı yazın; son gün (ayın son faturası + Kanallar&apos;daki
-            süre, yemek kartında en çok 30 gün) geçerse zil çalar ve sabah e-postasında yazar.
+            Satışı yaz ile girin. LafPOS&apos;a geçildiyse (Ayarlar › LafPOS › geçiş günü) o günden itibaren satış LafPOS&apos;un ödeme türlerinden kart kart gelir
+            (ödeme türünün kanalı LafPOS&apos;ta seçili olmalı); yazdığınız ekstre yine önce gelir. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunup günü ve
+            tutarı yazın; son gün (ayın son faturası + Kanallar&apos;daki süre, yemek kartında en çok 30 gün) geçerse zil çalar ve sabah e-postasında yazar.
           </>
         ),
         icon: Percent,

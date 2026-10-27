@@ -242,7 +242,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                   <Link href={`/panel/zayi?ay=${month}`} className="-my-3 block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
                     {c.hasStockComparison
                       ? `Kayıtlı zayi + ikram ${tl(c.totalRecorded)} · açıklanamayan ${tl(c.totalUnexplained)}`
-                      : `Kayıtlı zayi ${num(c.waste.zayi.count)} · ikram ${num(c.waste.ikram.count)}`}
+                      : `Kayıtlı zayi ${num(c.waste.zayi.count)}${c.waste.zayi.lafpos ? ` (${num(c.waste.zayi.lafpos)} LafPOS'tan)` : ""} · ikram ${num(c.waste.ikram.count)}${c.waste.ikram.lafpos ? ` (${num(c.waste.ikram.lafpos)} LafPOS'tan)` : ""}`}
                   </Link>
                 ) : null}
               </>
