@@ -63,6 +63,7 @@ import {
   previousOkc,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
+import { lafposForStaff } from "@/lib/lafpos/prefill";
 import { loadKasaLafpos, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
@@ -271,7 +272,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       proposedBy={proposedBy}
       photoRemoval={removal}
       prevOkcZ={prevOkc.z}
-      lafpos={lafposState.day}
+      // Kartla bahşiş ve cari tahsilatının tutarı yalnız yöneticiye (G11)
+      lafpos={admin ? lafposState.day : lafposForStaff(lafposState.day)}
       lafposMode={lafposState.lafpos}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
@@ -548,7 +550,7 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
         counters={counters}
         photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
         prevOkcZ={prevOkc.z}
-        lafpos={lafposState.day}
+        lafpos={lafposForStaff(lafposState.day)}
         lafposMode={lafposState.lafpos}
       />
       <Card>

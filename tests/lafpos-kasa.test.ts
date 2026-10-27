@@ -16,7 +16,7 @@ import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra,
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
-import { lafposCardExtra, lafposDayOf, lafposHandedGap, lafposOutsCheck, lafposPrefill } from "../src/lib/lafpos/prefill";
+import { lafposCardExtra, lafposDayOf, lafposForStaff, lafposHandedGap, lafposOutsCheck, lafposPrefill } from "../src/lib/lafpos/prefill";
 import { okcReconcile } from "../src/lib/okc-z";
 import { prefillPlan } from "../src/lib/photo-read/kasa";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
@@ -215,10 +215,16 @@ test("G8: fotoğraf kaldırma günün kanıtına göre: LafPOS gününde ModPOS 
 
 test("G7: LafPOS gününde form açılışta LafPOS'tan dolar (kaydetmez), Z bölümü LafPOS'un, ModPOS Z fotoğrafı yok", () => {
   const form = read("src/app/panel/kasa/cash-form.tsx");
-  assert.match(form, /const \[opening\] = useState\(\(\) => withLafpos\(initialValues\(report \?\? initial, carry, cashOuts\), report === null \? lafpos : null\)\);/);
+  assert.match(
+    form,
+    /const \[opening\] = useState\(\(\) => withLafpos\(initialValues\(report \?\? initial, carry, cashOuts\), report === null \? lafpos : null, initial === null \? "fill" : "compare"\)\);/,
+  );
   const fn = form.slice(form.indexOf("function withLafpos("), form.indexOf("interface PosPrompt"));
   assert.match(fn, /prefillPlan\(lafpos\.prefill, /);
   assert.doesNotMatch(fn, /submitCashReport|start\(/, "kaydetmez");
+  // Yazılmış değerlerle açılan form (Düzenle, öneri, Düzeltip onayla) yalnız karşılaştırır: hiçbir alan kendiliğinden değişmez
+  assert.match(fn, /if \(mode === "compare"\) \{[\s\S]*?return \{ values: v, marks: /);
+  assert.match(form, /withLafpos\(initialValues\(report, carry, cashOuts\), lafpos, "compare"\)/);
   assert.match(form, /title=\{lafposMode \? "LafPOS gün sonu \(Z\)" : "ModPOS Z raporu"\}/);
   assert.match(form, /\{lafposMode \? null : photoBlock\("kasa-z"\)\}/);
   // Fişler varken "Gün içinde çıkan"a LafPOS'takini yazdırmaz (panelin Kasadan çıkanlar'ı kaynak, E-35)
@@ -260,6 +266,12 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından düşer
   assert.equal(staff.tone, "good");
   assert.doesNotMatch(staff.text, /520/, "personelde tutar yok");
   assert.match(plain(okcReconcile(withCardExtra(okc, 520), "admin")[0].text), /kartla bahşiş ve cari tahsilatı \(520 ₺\) düşüldü/);
+  // Personelin formuna tutar gitmez (yazarkasa dışı tahsilat gibi): özet tutarsız gider
+  assert.equal(lafposForStaff(lafposDayOf(z, DAY.receivedAt))!.cardExtra, 0);
+  assert.equal(lafposForStaff(null), null);
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /lafpos=\{admin \? lafposState\.day : lafposForStaff\(lafposState\.day\)\}/);
+  assert.match(page, /lafpos=\{lafposForStaff\(lafposState\.day\)\}/, "geç rapor (personel)");
   // WhatsApp metni de (personel): kart aynı, tutar yok
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
   assert.match(wa, /✅ Kart ModPOS ile aynı/);

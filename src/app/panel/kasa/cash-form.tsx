@@ -294,13 +294,23 @@ function planMarks(m: Marks, plan: PrefillPlan, from: MarkSource): Marks {
 }
 
 /**
- * LafPOS gününde formun ilk hâli (docs/LAFPOS.md › Kasa raporu, G7): LafPOS'un gün sonu açılışta kendiliğinden uygulanır,
- * fotoğrafınkiyle aynı kuralla (yalnız boş alanlar dolar, yazılmış ve farklı olanın altında "LafPOS'ta …"); hiçbir şey
- * kaydedilmez, personel bakıp gönderir. LafPOS'un özeti yoksa olduğu gibi.
+ * LafPOS gününde formun ilk hâli (docs/LAFPOS.md › Kasa raporu, G7). Yeni rapor (`fill`): LafPOS'un gün sonu açılışta
+ * kendiliğinden uygulanır, fotoğrafınkiyle aynı kuralla (yalnız boş alanlar dolar, yazılmış ve farklı olanın altında
+ * "LafPOS'ta …"). Yazılmış değerlerle açılan form (`compare`: Düzenle, düzeltme önerisi, geç raporun önceki değerleri,
+ * Düzeltip onayla): hiçbir alan kendiliğinden değişmez; boş bırakılmış alanın LafPOS'taki değeri de yalnız öneridir
+ * ("LafPOS'ta …", "LafPOS'takini yaz"; isteğe bağlı tutarın boşu 0'dır, LafPOS'ta 0 ise öneri yok). Hiçbir şey kaydedilmez.
+ * LafPOS'un özeti yoksa olduğu gibi.
  */
-function withLafpos(v: Values, lafpos: LafposDay | null): { values: Values; marks: Marks; filled: number | null } {
+function withLafpos(v: Values, lafpos: LafposDay | null, mode: "fill" | "compare"): { values: Values; marks: Marks; filled: number | null } {
   if (!lafpos) return { values: v, marks: {}, filled: null };
   const plan = prefillPlan(lafpos.prefill, Object.fromEntries(MARK_FIELDS.map((f) => [f, v[f]])));
+  if (mode === "compare") {
+    const suggested = plan.fill.flatMap((f) => {
+      const value = lafpos.prefill.values[f.field]?.value;
+      return value === undefined || value === 0 ? [] : [{ field: f.field, photo: value, text: f.text }];
+    });
+    return { values: v, marks: planMarks({}, { ...plan, fill: [], differs: [...plan.differs, ...suggested], missing: [] }, "lafpos"), filled: 0 };
+  }
   const values = plan.fill.length ? { ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) } : v;
   return { values, marks: planMarks({}, plan, "lafpos"), filled: plan.fill.length };
 }
@@ -467,8 +477,9 @@ export function CashForm({
   const uid = useId();
   const fid = (name: string) => `${uid}k-${name}`;
   const [editing, setEditing] = useState(report === null);
-  // LafPOS gününde yeni formun ilk hâli LafPOS'un gün sonuyla (kayıtlı rapor Düzenle'de; withLafpos)
-  const [opening] = useState(() => withLafpos(initialValues(report ?? initial, carry, cashOuts), report === null ? lafpos : null));
+  // LafPOS gününde yeni formun ilk hâli LafPOS'un gün sonuyla; yazılmış değerlerle açılan form yalnız karşılaştırır
+  // (withLafpos). Kayıtlı rapor görünümde açılır, Düzenle'de karşılaştırılır
+  const [opening] = useState(() => withLafpos(initialValues(report ?? initial, carry, cashOuts), report === null ? lafpos : null, initial === null ? "fill" : "compare"));
   const [values, setValues] = useState<Values>(opening.values);
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
@@ -535,7 +546,7 @@ export function CashForm({
   };
 
   function edit() {
-    const s = withLafpos(initialValues(report, carry, cashOuts), lafpos);
+    const s = withLafpos(initialValues(report, carry, cashOuts), lafpos, "compare");
     setValues(s.values);
     setCounter(initialCounter);
     setErrors({});
@@ -555,7 +566,7 @@ export function CashForm({
     if (!report) return;
     edit();
     if (from) {
-      const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos);
+      const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos, "compare");
       setValues(s.values);
       setMarks(s.marks);
       setLafposFilled(s.filled);

@@ -100,6 +100,14 @@ export function lafposCardExtra(z: PosDayZ): number {
   return round2((z.cardTips ?? 0) + (z.cardCollections ?? 0));
 }
 
+/**
+ * Personelin formuna giden özet: kartla bahşiş ve cari tahsilatının tutarı yok (yazarkasa dışı tahsilat gibi yalnız
+ * yöneticinin; G11). Personelin formunda kart karşılaştırması bu yüzden düşmeden yapılır
+ */
+export function lafposForStaff(day: LafposDay | null): LafposDay | null {
+  return day && day.cardExtra ? { ...day, cardExtra: 0 } : day;
+}
+
 /** Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts) */
 export function lafposDayOf(z: PosDayZ, receivedAt: Date | string): LafposDay {
   return {
