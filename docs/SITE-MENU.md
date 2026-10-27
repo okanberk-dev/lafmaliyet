@@ -126,7 +126,9 @@ yazımı toplu değişikliğin `writeSalePrice`'ından geçer) ve `saveRecipe` (
      panel sitenin bütün menüsünü hemen okur (Tükendi / Satışa aç'ta kalemin kilidi tutulurken değil, yanıttan sonra)
      ve "Bu ürün sitede bu arada değişti (sitede şimdi 190 ₺); … Sitenin güncel değeri panele yüklendi: bakıp yeniden
      dene." der; kart güncel değerleri görür. 409 `single_size` eski metniyle (bağlantı kopuk).
-   - **400 `field: "expect"`** (bayrağı duyuran site geri alındı): istek bir kez `expect`'siz yinelenir.
+   - **400 `field: "body"`** ya da **`"expect"`** (bayrağı duyuran site geri alındı; bugünkü sitenin katı şeması
+     bilinmeyen alanı yolsuz bir hatayla bildirir, alan adı `body` olur): istek bir kez `expect`'siz yinelenir ve
+     `writesExpect` sonraki çekmeye kadar kapanır (sonraki yazımlar `expect` göndermez).
    - **Zaman aşımı:** istek siteye varmış, site yazmış olabilir: "Siteye ulaşılamadı; değişiklik sitede yapılmış
      olabilir, panelde … Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor." Panel yanıttan sonra
      (`after()`) siteyi okur; site yazdıysa fiyat panele de gelir. Ağ hatası (istek gitmedi) eskisi gibi "Tekrar dene".
@@ -255,7 +257,8 @@ ve kasaya işlenecekler listesine eklenir; yalnız menü durumu değişen satır
 | Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde … | Site 8 saniyede yanıt vermedi: yazmış olabilir. Panel siteyi hemen yeniden okur; birkaç saniye sonra ürün kartına ya da Site menüsü ekranına bakın, değişiklik görünmüyorsa yeniden yapın |
 | Bu ürün sitede bu arada değişti (sitede şimdi …) | Site `expect`'i tutmadı (409 `stale`): biri sitede az önce değiştirdi, ping henüz gelmemişti. Panel sitenin değerini aldı; kartta güncel değere bakıp gerekiyorsa yeniden yazın |
 | Fiyat bu arada başka bir yerde değişti: şimdi … (kart açıldığında …) | Kart açıkken fiyat sitede, toplu Fiyatlar'da ya da başka bir sekmede değişti ve kartta da değiştirildi: hiçbir şey yazılmadı. Fiyat alanının altındaki "… kalsın" / "… yazılsın" ile seçip yeniden kaydedin |
-| Fiyat bu sırada değişti (şimdi …); listeyi yenileyip tekrar dene | Fiyat hücresi ya da zam önerisi: liste açıldıktan sonra fiyat başka yerde değişti; hücre güncel fiyatı alır |
+| Fiyat bu arada başka bir yerde … oldu; yazılmadı. Liste güncellendi, istersen yeniden değiştir. | Ürünler listesindeki fiyat hücresi ya da zam önerisi: liste açıldıktan sonra fiyat başka yerde değişti. Panel listeyi zaten yeniledi, hücre güncel fiyatı gösterir; gerekiyorsa yeniden yazın |
+| Fiyat bu sırada değişti (şimdi …); listeyi yenileyip tekrar dene | Toplu Fiyatlar: önizlemeden sonra fiyat başka yerde değişti; listeyi yenileyip önizlemeyi yeniden alın |
 | Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla. | Kalem sitede silinmiş (sonraki eşitleme bağlantıyı kendiliğinden kaldırır) ya da kimlik yanlış |
 | Site isteği reddetti (imza …) | İki projedeki `KARAOKE_SYNC_SECRET` aynı mı, ikisi de yeniden yayımlandı mı, sunucu saatleri doğru mu? |
 | Sitede KARAOKE_SYNC_SECRET tanımlı değil ya da sitenin veritabanı okunamadı | Siteye değişkeni ekleyip yeniden yayımlayın; sürüyorsa sitenin günlüğüne bakın |
@@ -294,4 +297,4 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |
 | `src/app/panel/urunler/site-link-dialog.tsx`, `[id]/site-menu-card.tsx` | Bağlama penceresi, ürün kartındaki Site menüsü |
 | `tests/site-menusu.test.ts` | Şemalar, yuvalar, plan, öneriler (sitenin tohumu × Excel), yazma gövdesi ve `expect`, `writes` bayrağı, hata metinleri, imza vektörleri, ping |
-| `tests/fiyat-cakisma.test.ts`, `tests/tukendi-db.test.ts` | Görülen fiyat kuralı; sahte siteyle ve gerçek Postgres'le kart, hücre, `expect`, 409 `stale`, 400 `expect`, zaman aşımı, 404 |
+| `tests/fiyat-cakisma.test.ts`, `tests/tukendi-db.test.ts` | Görülen fiyat kuralı; sahte siteyle ve gerçek Postgres'le kart, hücre, `expect`, 409 `stale`, 400 `body` (katı şemalı eski site), zaman aşımı, 404 |

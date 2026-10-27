@@ -46,8 +46,9 @@ Tükendi / Satışa aç / Kapalı tut'u (`sold-out-core.ts`).
    `writes: {expect: true}` duyurursa panel yazdığı her alanın kopyadaki değerini `expect` olarak gönderir; site
    tutmazsa yazmaz ve `409 {error:"stale", item}` döner. Panel o an sitenin menüsünü yeniden okur ve "Bu ürün sitede bu
    arada değişti …" der. Bayrağı duyurmayan site `expect` almaz (yeni alan eski sitede 400 olurdu); duyurup geri alınan
-   site `400 field:"expect"` verirse panel bir kez `expect`'siz dener. Bayrak `menu_sync.writesExpect`'te, her çekmede
-   yenilenir.
+   site `400 field:"body"` (bugünkü sitenin katı şeması bilinmeyen alanı böyle bildirir) ya da `field:"expect"` verirse
+   panel bir kez `expect`'siz dener ve bayrağı sonraki çekmeye kadar kapatır. Bayrak `menu_sync.writesExpect`'te, her
+   çekmede yenilenir.
 3. **Belirsiz sonuç.** Zaman aşımında site yazmış olabilir: panel yazmaz, bunu söyler ve yanıttan sonra siteyi okur.
    Sitenin JSON `not_found`'u (kalem yok) ile gövdesi JSON olmayan 404 (uç yok, site güncel değil) ayrı söylenir.
 4. **Eski liste yeni yazımı geri almaz.** Çekme, uygulanan son listenin ya da panel yazımının site saatinden eski bir
@@ -56,7 +57,7 @@ Tükendi / Satışa aç / Kapalı tut'u (`sold-out-core.ts`).
 
 ## Durum (27 Ekim 2026)
 
-- **Panel (P1, denetim B12):** görülen değerler, `expect` ve bayrak, 409 `stale`, 400 `expect` yeniden denemesi,
+- **Panel (P1, denetim B12):** görülen değerler, `expect` ve bayrak, 409 `stale`, 400 `body` / `expect` yeniden denemesi,
   zaman aşımı ve 404 ayrımı yapıldı; testleri `tests/fiyat-cakisma.test.ts`, `tests/site-menusu.test.ts`,
   `tests/tukendi-db.test.ts`.
 - **Site (S1, laffogato'da ayrı PR):** `POST /api/panel/menu`'ye isteğe bağlı `expect` ve 409 `stale`, GET'e

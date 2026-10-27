@@ -12,7 +12,8 @@ import { fromMinor, panelIsActive, slotField, slotPriceMinor, toMinor, type Site
  * `expect` (docs/planlar/senkron.md §3.1 › Çakışma, P1): yazılan her alanın sitede yazımdan önce taşıması beklenen
  * değeri, panelin site kopyasından. Site değeri tutmazsa yazmaz, 409 `stale` ve güncel kalemle döner: panel başkasının
  * sitede az önce yaptığı değişikliği ezmez. Yalnız site GET yanıtında `writes.expect` duyurduysa gönderilir (eski site
- * bilinmeyen alanı 400 ile reddederdi); site yine de 400 `field: "expect"` derse bir kez `expect`'siz denenir.
+ * bilinmeyen alanı 400 ile reddederdi); site yine de 400 `field: "body"` (katı şemanın yolsuz hatası) ya da
+ * `field: "expect"` derse bir kez `expect`'siz denenir.
  */
 
 export interface SaleState extends Visibility {

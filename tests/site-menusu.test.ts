@@ -309,7 +309,7 @@ test("yazma planı: expect yalnız site duyurduysa, yalnız yazılan alanlar iç
   assert.deepEqual(none.kind === "push" ? none.body : null, { id: "mnu-0007", priceMinor: 20000, actor: "Selin" });
   // Gönderilecek değişiklik yoksa bayrak bir şey değiştirmez
   assert.deepEqual(planPush({ link: linkM, before: sale(), after: sale(), actor: "Selin", siteItem: item, expect: true }), { kind: "none" });
-  // 400 field:"expect" sonrası yeniden deneme expect'siz aynı gövde
+  // 400 field:"body" / "expect" (geri alınmış site) sonrası yeniden deneme expect'siz aynı gövde
   assert.deepEqual(withoutExpect(price.kind === "push" ? price.body : buildPushBody({ id: "x", slot: "M", actor: "a" })), { id: "mnu-0007", priceMinor: 20000, actor: "Selin" });
   // Boş expect gövdeye girmez
   assert.equal(JSON.stringify(buildPushBody({ id: "mnu-0011", slot: "M", priceMinor: 14500, actor: "Selin", expect: {} })), '{"id":"mnu-0011","priceMinor":14500,"actor":"Selin"}');

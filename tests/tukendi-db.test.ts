@@ -8,8 +8,8 @@
 //
 // Reçete kartı ve fiyat hücresi (denetim E-11, docs/planlar/senkron.md › P1): dokunulmayan fiyat sitede ya da
 // eşitlemede bu arada yazılanı ezmez, siteye gidilmez; dokunulan fiyat veritabanı da değiştiyse yazılmaz; site
-// `writes.expect` duyurunca yazım `expect` taşır, 409 `stale`'de panel siteyi yeniden okur, 400 `field:"expect"`te
-// bir kez `expect`'siz dener; zaman aşımında site yazmışsa panel okur; JSON olmayan 404 "uç yok" demektir.
+// `writes.expect` duyurunca yazım `expect` taşır, 409 `stale`'de panel siteyi yeniden okur, geri alınmış sitenin katı
+// şemasının 400 `field:"body"`sinde bir kez `expect`'siz dener; zaman aşımında site yazmışsa panel okur; JSON olmayan 404 "uç yok" demektir.
 //
 // Kendi kullanıcılarını, kategorisini ve ürünlerini açar; integration_state'teki menü satırlarını (kopya, durum,
 // Tükenenler kaydı) başta saklar ve sonda geri yazar.
@@ -24,6 +24,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import postgres from "postgres";
+import { z } from "zod";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
 import { priceChangedText, priceMovedText, priceRefusedText } from "../src/lib/prices/seen";
@@ -67,6 +68,10 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
    * site, katı şema). `post`: sıradaki POST'un sonu: yazıp yanıtı kaybeder (zaman aşımı) ya da uç yokmuş gibi HTML 404.
    */
   const mode = { announce: false, honor: false, rejectExpect: false, post: "ok" as "ok" | "timeout" | "html404" };
+  /** Sitenin bugünkü yazma şeması (`panelMenuChangeSchema`, `.strict()`): `expect`'i tanımaz */
+  const OLD_SITE_CHANGE = z
+    .object({ id: z.string(), priceMinor: z.number().int().optional(), priceMinorL: z.number().int().optional(), isActive: z.boolean().optional(), actor: z.string().min(1) })
+    .strict();
   /** Sıradaki GET'i yanıtlamadan bekletir (yarış testleri): `arrived` istek gelince, `release` ile yanıt döner */
   let getGate: { arrived: () => void; wait: Promise<void> } | null = null;
   function pauseNextGet() {
@@ -103,8 +108,14 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
       mode.post = "ok";
       return new Response("<!doctype html><title>404</title>", { status: 404, headers: { "content-type": "text/html" } });
     }
-    // Eski site: şema katı, bilinmeyen alan 400
-    if (req.expect && mode.rejectExpect) return json(400, { error: "invalid", field: "expect" });
+    // Eski site (laffogato main, menu-link-core.ts): şema katı; bilinmeyen alanın hatası yolsuzdur, alan "body" olur
+    if (mode.rejectExpect) {
+      const parsed = OLD_SITE_CHANGE.safeParse(req);
+      if (!parsed.success) {
+        const path = parsed.error.issues[0]?.path[0];
+        return json(400, { error: "invalid", field: typeof path === "string" ? path : "body" });
+      }
+    }
     const cur = site.get(req.id);
     if (!cur) return json(404, { error: "not_found" });
     const next = { ...cur, ...(req.isActive !== undefined ? { isActive: req.isActive } : {}), ...(req.priceMinor !== undefined ? { priceMinor: req.priceMinor } : {}), ...(req.priceMinorL !== undefined ? { priceMinorL: req.priceMinorL } : {}) };
@@ -707,7 +718,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.deepEqual(posts[0].expect, { isActive: false }, "canlı listedeki değer");
   });
 
-  test("expect: bayrağı duyuran site geri alındıysa (400 field expect) bir kez expect'siz denenir", async () => {
+  test("expect: bayrağı duyuran site geri alındıysa (katı şema, 400 field body) bir kez expect'siz denenir, bayrak kapanır", async () => {
     await siteWithExpect();
     Object.assign(mode, { honor: false, rejectExpect: true });
     const r = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
@@ -717,6 +728,14 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.equal(posts[1].expect, undefined);
     assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
     assert.equal((await productRow(prod.tira)).price, 200);
+    assert.equal((await sync.readMenuSyncState()).writesExpect, false);
+    // Sonraki yazım expect'siz tek istek (bir sonraki çekme bayrağı yeniden okuyana kadar)
+    posts = [];
+    const again = await actions.updateProductPrice(prod.tira, 210, false, "manual", 200);
+    assert.ok(again.ok, JSON.stringify(again));
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].expect, undefined);
+    assert.equal(site.get(ids.tira)!.priceMinor, 21_000);
   });
 
   test("zaman aşımı: site yazmış olabilir; hata bunu söyler, panel siteyi hemen okur", async () => {

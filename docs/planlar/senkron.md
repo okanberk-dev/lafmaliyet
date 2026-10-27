@@ -443,8 +443,8 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Ne:**
   1. `pushSaleChange` (panel:src/server/site-menu/push.ts:54): `expect`'i planın yazacağı alanlar için panelin site
      kopyasındaki kalemden (`siteItem`) kurar; yalnız son çekmede `writes.expect` görüldüyse gönderir
-     (src/lib/site-menu/schema.ts'e isteğe bağlı `writes`, durum kopyasına yazılır); 400 `field:"expect"` → `expect`'siz
-     bir kez yeniden dener. Dört çağıran (products.ts:50, :206; prices/write.ts:34; dalga 10 `setSoldOut`) buradan
+     (src/lib/site-menu/schema.ts'e isteğe bağlı `writes`, durum kopyasına yazılır); 400 `field:"expect"` (bugünkü
+     sitenin katı şemasında `field:"body"`) → `expect`'siz bir kez yeniden dener. Dört çağıran (products.ts:50, :206; prices/write.ts:34; dalga 10 `setSoldOut`) buradan
      geçer, ayrı yama yok.
   2. src/lib/site-menu/push.ts: 409'da `error`'a göre dal (`stale` → hemen `syncSiteMenu("manual")` + "Bu kalem bu
      arada sitede değişti; güncel değer yüklendi."; `single_size` bugünkü metin); JSON `not_found` 404 ≠ uç yok.

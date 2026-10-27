@@ -76,6 +76,32 @@ async function pullSoon(): Promise<void> {
 }
 
 /** 409 `stale`'den sonra sitenin güncel menüsü: işlem dışındaysa hemen (true: yüklendi), işlem içindeyse yanıttan sonra */
+/**
+ * Sitenin 400'ü `expect`'i tanımadığı için mi: bugünkü site katı şemasıyla bilinmeyen alanı yolsuz bir hatayla bildirir
+ * ve alan adı "body" olur (`issues[0].path[0]` yok); `expect`'i adıyla anan bir site de olabilir. Panelin gövdesi her
+ * zaman geçerli bir JSON nesnesidir, gerçek bir "body" hatası başka bir nedenden gelmez: yeniden deneme zararsızdır.
+ */
+function rejectsExpect(field: string | null): boolean {
+  return field === "expect" || field === "body";
+}
+
+/** Site `expect`'i tanımadı: bayrak sonraki çekmeye kadar kapanır (işlemin içinde ikinci bağlantı açılmaz) */
+async function forgetExpect(inTx: boolean): Promise<void> {
+  const run = async () => {
+    try {
+      await patchMenuState({ writesExpect: false });
+    } catch (e) {
+      console.error("[menu] expect bayrağını kapatma", e);
+    }
+  };
+  if (!inTx) return run();
+  try {
+    afterResponse(run);
+  } catch {
+    // İstek dışında (betik, test): bayrak sonraki çekmede düzelir
+  }
+}
+
 async function reloadAfterStale(inTx: boolean): Promise<boolean> {
   if (inTx) {
     // Çağıran bir işlemin (ve kalemin kilidinin) içinde: havuzdan ikinci bir bağlantı beklenmez (sold-out-core.ts)
@@ -99,8 +125,8 @@ async function reloadAfterStale(inTx: boolean): Promise<boolean> {
  *
  * Çakışma (docs/planlar/senkron.md P1): site son çekmede `writes.expect` duyurduysa gövde yazılan alanların kopyadaki
  * değerini `expect` olarak taşır. Site 409 `stale` derse (alan sitede bu arada değişmiş) hiçbir şey yazılmaz, panel
- * sitenin güncel menüsünü okur ve kullanıcı "bu arada değişti" görür. Site `expect`'i tanımazsa (400 `field:"expect"`;
- * geri alınmış site) bir kez `expect`'siz denenir. Zaman aşımında site yazmış olabilir: panel yanıttan sonra okur.
+ * sitenin güncel menüsünü okur ve kullanıcı "bu arada değişti" görür. Site `expect`'i tanımazsa (400 `field:"body"`
+ * ya da `"expect"`; geri alınmış site) bir kez `expect`'siz denenir ve bayrak sonraki çekmeye kadar kapanır. Zaman aşımında site yazmış olabilir: panel yanıttan sonra okur.
  */
 export async function pushSaleChange(
   user: { name: string },
@@ -140,9 +166,11 @@ export async function pushSaleChange(
   };
   let body = plan.body;
   let res = await post(body);
-  if (res.status === 400 && body.expect && errorField(res.json) === "expect") {
-    // Site `expect`'i tanımıyor (bayrağı duyuran sürüm geri alınmış): reddedilen istek hiçbir şey yazmadı
+  if (res.status === 400 && body.expect && rejectsExpect(errorField(res.json))) {
+    // Site `expect`'i tanımıyor (bayrağı duyuran sürüm geri alınmış): reddedilen istek hiçbir şey yazmadı. Sonraki
+    // yazımlar da onu göndermez; bir sonraki çekme bayrağı yeniden okur
     body = withoutExpect(body);
+    await forgetExpect(db !== undefined);
     res = await post(body);
   }
   if (!res.ok) {
