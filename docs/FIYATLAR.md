@@ -192,12 +192,19 @@ güncelleyen bütün dosyaları tarar: fiyat yazan ama geçmişe yazmayan yeni b
 
 | Kaynak | Ad | Nereden |
 |--------|----|---------|
-| `manual` | Elle | Ürün listesindeki fiyat hücresi, ürün kartının kaydı, zam önerisinin geri alması |
+| `manual` | Elle | Ürün listesindeki fiyat hücresi, ürün kartının kaydı (yalnız fiyata dokunulduysa), zam önerisinin geri alması |
 | `suggestion` | Zam önerisi | Hammadde zamları kartındaki "Fiyatı X yap" |
 | `bulk` | Toplu | Toplu değiştir (ve Tekrar dene) |
 | `undo` | Geri alındı | Toplu değişikliğin geri alması |
 | `site` | laffogato.net | Sitenin çekmesi, bağlanan ürünün aldığı fiyat, bağlı yazımda aynı kalemin öteki boyu (`applyPlan`; yalnız fiyat değiştiyse ve satır gerçekten yazıldıysa: yalnız Satışta / Tükendi değişen satır geçmişe girmez) |
 | `create` | Yeni ürün | Yeni ürün ve personelin yeni ürün önerisinin onayı (`insertProduct`; fiyat 0'dan büyükse, önceki fiyat boş) |
+
+Açık kalmış ürün kartı, fiyat hücresi ve zam önerisi gördükleri fiyatı da gönderir (denetim E-11,
+[SENKRON.md](SENKRON.md) › Çakışma): kartta dokunulmayan fiyat bu arada sitede, eşitlemede ya da burada toplu
+değiştiyse kartın kaydı onu geri almaz, geçmişe ve Kasaya işle'ye kayıt düşürmez; dokunulan fiyat ya da hücrenin
+yazdığı fiyat bu arada başka yerde de değiştiyse hiçbir şey yazılmaz ("Fiyat bu sırada değişti (şimdi 210 ₺) …").
+Kartın kaydı yalnız Satışta / Tükendi'yi siteye yazdığında sitenin yanıtı başka bir fiyat taşıyorsa (ping kaçmıştı) o
+fiyat `site` kaynağıyla girer.
 
 - **Geçmiş sekmesi:** son 500 değişiklik (sınıra denk gelen toplu değişikliğin bütün satırlarıyla), güne göre
   (Türkiye saati), sayfada 50 kayıt, ürün araması. Toplu değişiklik tek satırda katlanır ("Toplu: +%10 · 5 ₺'ye yukarı

@@ -2,7 +2,8 @@
 
 Ekranlar: **Ürünler** (`/panel/urunler`; adın yanındaki küre), ürün kartındaki **Site menüsü** kartı
 (`/panel/urunler/[id]`) ve eşleştirme ekranı **Ürünler › Site menüsü** (`/panel/urunler/site`). Yalnız yönetici.
-Sözleşmenin sitedeki kopyası: laffogato deposunda `docs/PANEL-MENU.md` (uçlar, gövdeler, hata kodları).
+Sözleşmenin sitedeki kopyası: laffogato deposunda `docs/PANEL-MENU.md` (uçlar, gövdeler, hata kodları). Panelin
+siteyle bütün bağlantılarının kısa haritası ve çakışma kuralları: [SENKRON.md](SENKRON.md).
 
 ## Geliştirilmiş istek (prompt)
 
@@ -94,9 +95,18 @@ bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açm
 
 ### Panel → site yazımı
 
-`updateProductPrice` (listede fiyat hücresi, zam uyarısının "önerilen fiyatı uygula"sı ve geri alması) ve
-`saveRecipe` (ürün kartı) ürünün tabloya fiyat / `active` / `showOnMenu` yazan iki eylemidir. Bağlı üründe:
+`updateProductPrice` (listede fiyat hücresi, zam uyarısının "önerilen fiyatı uygula"sı ve geri alması; tek fiyat
+yazımı toplu değişikliğin `writeSalePrice`'ından geçer) ve `saveRecipe` (ürün kartı) ürünün tabloya fiyat / `active` /
+`showOnMenu` yazan iki eylemidir. Bağlı üründe:
 
+0. **Açık kalmış kart ve hücre** (denetim E-11, [SENKRON.md](SENKRON.md) › Çakışma): kart açılırken gördüğü fiyatı ve iki
+   anahtarı da gönderir (`seenPrice`, `seenActive`, `seenShowOnMenu`; fiyat hücresi ve zam önerisi gördüğü fiyatı).
+   Dokunulmayan alan veritabanındaki güncel değerde kalır: bu arada sitede, eşitlemede ya da toplu Fiyatlar'da yazılan
+   fiyat geri alınmaz, siteye eski fiyat gitmez, fiyat geçmişine ve Kasaya işle'ye sahte kayıt düşmez (bildirim "Fiyat
+   bu arada 190 ₺ olmuştu (kart açıldığında 180 ₺); o korundu." der). Dokunulan fiyat bu arada başka yerde de başka bir
+   fiyata değiştiyse hiçbir şey yazılmaz, siteye gidilmez: kart yenilenir, fiyat alanının altında "190 ₺ kalsın" /
+   "200 ₺ yazılsın" sorulur; hücre güncel fiyatı söyler ve yeni fiyatı alır. Panelde yazım da koşulludur: okumadan sonra
+   fiyat değiştiyse ya da ürün bu arada siteye bağlandıysa yazılmaz.
 1. Değişiklik siteyi ilgilendiriyor mu: fiyatın kuruşu ya da `active && showOnMenu` değişiyor mu. Değişmiyorsa
    (yalnız reçete, ad, not) her zamanki gibi yazılır.
 2. Panelin kendi denetimleri önce (aynı ad + boy, malzemeler): site kabul ettikten sonra kayıt düşmesin.
@@ -104,10 +114,24 @@ bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açm
    (1.000.000 ₺) üstü, kopuk L bağlantısı, bağlantı kapalı (anahtar yok; bağlı ürün değiştirilemez, iki yer
    ayrışmasın: anahtarı ekleyin ya da bağlantıyı kaldırın).
 4. `POST /api/panel/menu` imzalı, en çok 8 saniye; gövde yalnız değişen alanlar ve `actor` (oturumdaki kullanıcının
-   adı, en çok 80 karakter; sitenin olay kaydında "Panel · Selin").
+   adı, en çok 80 karakter; sitenin olay kaydında "Panel · Selin"). Site son çekmede `writes: {expect: true}`
+   duyurduysa gövde **`expect`** de taşır: yazılan her alanın panelin site kopyasındaki değeri (Tükendi / Satışa aç'ta
+   az önce okunan canlı kalemden): `{"id","priceMinor","actor","expect":{"priceMinor":18000}}`. Bayrağı duyurmayan
+   site (bugünkü laffogato.net) `expect` almaz; davranış eskisi gibi. Bayrak `menu_sync.writesExpect`'te, her başarılı
+   çekmede yenilenir.
 5. 2xx: sitenin döndürdüğü kalem yazılır (fiyat yuvadan; durum kurala göre), aynı kaleme bağlı öteki satırlar da
    güncellenir, son listenin kopyası ve site saati ilerler. Yanıt okunamazsa gönderilen değerler yazılır (sitenin
    pingi sonraki çekmeyi getirir).
+   - **409 `stale`** (site `expect`'i tutmadı: sahip sitede az önce değiştirdi, ping kaçtı): hiçbir şey yazılmaz;
+     panel sitenin bütün menüsünü hemen okur (Tükendi / Satışa aç'ta kalemin kilidi tutulurken değil, yanıttan sonra)
+     ve "Bu ürün sitede bu arada değişti (sitede şimdi 190 ₺); … Sitenin güncel değeri panele yüklendi: bakıp yeniden
+     dene." der; kart güncel değerleri görür. 409 `single_size` eski metniyle (bağlantı kopuk).
+   - **400 `field: "expect"`** (bayrağı duyuran site geri alındı): istek bir kez `expect`'siz yinelenir.
+   - **Zaman aşımı:** istek siteye varmış, site yazmış olabilir: "Siteye ulaşılamadı; değişiklik sitede yapılmış
+     olabilir, panelde … Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor." Panel yanıttan sonra
+     (`after()`) siteyi okur; site yazdıysa fiyat panele de gelir. Ağ hatası (istek gitmedi) eskisi gibi "Tekrar dene".
+   - **404:** sitenin JSON `not_found`'u kalem yok demek; gövdesi JSON olmayan 404 uç yok demek ("Sitede panel menü
+     ucu yok (laffogato.net güncel değil)").
 6. Başarılı fiyat yazımından sonra bildirim hatırlatır: _"Fiyat sitede de değişti. Fiyat listesinin tarihini sitede
    (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyat Fiyatlar › Kasaya işle listesinde."_ Fiyat listesi
    tarihini bağlantı değiştirmez (sitenin kararı); kasanın fiyatı üçüncü bir kopyadır, iki depo da ona ulaşamaz: panel
@@ -162,8 +186,9 @@ taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
   e-postası: "Personelin tükendi yaptığı ürünler: Tiramisu (Selin, 2 gündür)". Bugün › "Bugün kafede" (iki rolde):
   "Tükendi: Tiramisu, Cheesecake"; personelin kaydı 16 saatten eskiyse uyarı rengi.
 - **Açık kalmış ürün kartı:** reçete kartı açılırken gördüğü "Menüde aktif" ve "QR menüde göster" değerlerini de
-  gönderir (`seenActive`, `seenShowOnMenu`); dokunulmayan anahtar veritabanındaki güncel değeri yazar
-  (`keepSeen`), bu arada tükendi yapılan ürün sessizce yeniden açılmaz.
+  gönderir (`seenActive`, `seenShowOnMenu`); dokunulmayan anahtar yazılmaz, veritabanındaki güncel değerde kalır
+  (`keepSeen`), bu arada tükendi yapılan ürün sessizce yeniden açılmaz. Fiyat için aynı kural: `seenPrice` (yukarıda
+  Panel → site yazımı › 0).
 - **Hatalar** sunucuda kurulur: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409) metnin sonunda
   "Yöneticiye haber verin."; site yazdı ama panel yazamadıysa "Sitede tükendi oldu ama panele yazılamadı; yöneticiye
   haber verin." Aynı anda iki barista: tek kayıt kalır, ikincisi "… zaten tükendi" görür.
@@ -187,7 +212,7 @@ hâli getirir (`src/lib/site-menu/plan.ts` › `staleItemIds`). Sitenin `now`'ı
 
 | Anahtar | İçerik |
 |---------|--------|
-| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı) |
+| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı), `writesExpect` (site son çekmede `writes.expect` duyurdu: yazım `expect` taşır) |
 | `menu_site_items` | Son listenin kopyası (`now`, `at`, `items`): ekranlar siteye gitmeden kalemin adını, fiyatını ve durumunu gösterir |
 | `menu_sold_out` | Tükenenler kartının kaydı: `items` (kalem → kim, ne zaman, sitenin damgası) ve `toggles` (kalemin son işlem anı); yukarıda "Personel: Tükendi / Satışa aç" |
 
@@ -226,11 +251,15 @@ ve kasaya işlenecekler listesine eklenir; yalnız menü durumu değişen satır
 
 | Mesaj | Ne yapılır |
 |-------|------------|
-| Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene. | Site 8 saniyede yanıt vermedi ya da 5xx verdi; panelde hiçbir şey yazılmadı. Biraz sonra tekrar deneyin |
+| Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene. | İstek siteye gitmedi (ağ) ya da site 5xx verdi; panelde hiçbir şey yazılmadı. Biraz sonra tekrar deneyin |
+| Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde … | Site 8 saniyede yanıt vermedi: yazmış olabilir. Panel siteyi hemen yeniden okur; birkaç saniye sonra ürün kartına ya da Site menüsü ekranına bakın, değişiklik görünmüyorsa yeniden yapın |
+| Bu ürün sitede bu arada değişti (sitede şimdi …) | Site `expect`'i tutmadı (409 `stale`): biri sitede az önce değiştirdi, ping henüz gelmemişti. Panel sitenin değerini aldı; kartta güncel değere bakıp gerekiyorsa yeniden yazın |
+| Fiyat bu arada başka bir yerde değişti: şimdi … (kart açıldığında …) | Kart açıkken fiyat sitede, toplu Fiyatlar'da ya da başka bir sekmede değişti ve kartta da değiştirildi: hiçbir şey yazılmadı. Fiyat alanının altındaki "… kalsın" / "… yazılsın" ile seçip yeniden kaydedin |
+| Fiyat bu sırada değişti (şimdi …); listeyi yenileyip tekrar dene | Fiyat hücresi ya da zam önerisi: liste açıldıktan sonra fiyat başka yerde değişti; hücre güncel fiyatı alır |
 | Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla. | Kalem sitede silinmiş (sonraki eşitleme bağlantıyı kendiliğinden kaldırır) ya da kimlik yanlış |
 | Site isteği reddetti (imza …) | İki projedeki `KARAOKE_SYNC_SECRET` aynı mı, ikisi de yeniden yayımlandı mı, sunucu saatleri doğru mu? |
 | Sitede KARAOKE_SYNC_SECRET tanımlı değil ya da sitenin veritabanı okunamadı | Siteye değişkeni ekleyip yeniden yayımlayın; sürüyorsa sitenin günlüğüne bakın |
-| Sitede panel menü ucu yok | laffogato.net güncel değil (menü bağlantısı yayımlanmamış) |
+| Sitede panel menü ucu yok | laffogato.net güncel değil (menü bağlantısı yayımlanmamış); yazımda gövdesi JSON olmayan 404 |
 | Bu ürünün site bağlantısı kopuk … | Sitede kalemin L fiyatı silinmiş: bağlantıyı kaldırın ya da ürünü kalemin tek fiyatına (M) bağlayın. Panelin kopyası eskiyse site isteği `409 single_size` ile reddeder, mesaj aynıdır (tekrar denemek işe yaramaz) |
 | Site bağlantısı kurulmamış … değiştirilemez | Anahtar yok ama ürün bağlı: anahtarı ekleyin ya da bağlantıyı kaldırın |
 | Sitenin menüsü boş geldi; bağlantılar korunuyor | Sitenin menüsü boş döndü (veritabanı?); hiçbir şey uygulanmadı |
@@ -253,7 +282,8 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/server/site-menu/push.ts` | Panel → site yazımı ve sitenin yanıtının uygulanması |
 | `src/server/site-menu/link.ts`, `view.ts` | Bağlama / kaldırma; ekranlar için bağlantılar |
 | `src/server/actions/site-menu.ts` | Siteyle eşitle, bağlama penceresinin listesi, bağla, önerileri bağla, kaldır |
-| `src/server/actions/products.ts` | `updateProductPrice`, `saveRecipe`: bağlı üründe önce site |
+| `src/server/actions/products.ts` | `updateProductPrice`, `saveRecipe`: bağlı üründe önce site; görülen değerler |
+| `src/lib/prices/seen.ts` | Açık kalmış kartın fiyatı: dokunulmadı / yazılır / çakışma (`seenPriceDecision`) ve metinleri (saf) |
 | `src/lib/site-menu/sold-out.ts` | Tükenenler: tahta, kaydın geçerliliği, açma kuralı, tavan, hız sınırı, Bugün / zil / e-posta metinleri (saf) |
 | `src/server/site-menu/sold-out-store.ts`, `sold-out-core.ts` | Tükenenler kaydı (satır kilidi, fiyat yazımında taşıma); Tükendi / Satışa aç / Kapalı tut |
 | `src/server/data/menu-status.ts` | Tükenenler kartının fiyatsız okuyucusu, Bugün / zil olgusu, ürün kartının notu |
@@ -263,4 +293,5 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/app/api/menu/ping/route.ts` | Sitenin pingi |
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |
 | `src/app/panel/urunler/site-link-dialog.tsx`, `[id]/site-menu-card.tsx` | Bağlama penceresi, ürün kartındaki Site menüsü |
-| `tests/site-menusu.test.ts` | Şemalar, yuvalar, plan, öneriler (sitenin tohumu × Excel), yazma gövdesi, imza vektörleri, ping |
+| `tests/site-menusu.test.ts` | Şemalar, yuvalar, plan, öneriler (sitenin tohumu × Excel), yazma gövdesi ve `expect`, `writes` bayrağı, hata metinleri, imza vektörleri, ping |
+| `tests/fiyat-cakisma.test.ts`, `tests/tukendi-db.test.ts` | Görülen fiyat kuralı; sahte siteyle ve gerçek Postgres'le kart, hücre, `expect`, 409 `stale`, 400 `expect`, zaman aşımı, 404 |
