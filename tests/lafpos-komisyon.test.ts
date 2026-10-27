@@ -311,6 +311,9 @@ test("LafPOS'ta satışı olan kartın faturası sonraki ayın 6–15'inde kesil
     nov.flags.filter((f) => f.key === "fatura-kayan").map((f) => [f.level, plain(f.text)]),
     [["info", "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor."]],
   );
+  // Yazılan ekstrede (ModPOS'ta da olabilen) uyarı bugünkü gibi kalır
+  const typed = must(rowOf(buildCommissionReport({ ...input("2026-12-08"), marks: [mark("pluxee", "2026-11", { sales: 1500 })] }), "pluxee", "2026-11"));
+  assert.ok(typed.flags.some((f) => f.key === "fatura-yok"));
   // 16 Aralık ve sonrası kesilen fatura bu ayın satışları için sayılmaz: uyarı kalır
   const late = must(rowOf(buildCommissionReport({ ...input("2026-12-16"), today: "2026-12-20", through: "2026-12-19" }), "pluxee", "2026-11"));
   assert.equal(plain(late.flags.find((f) => f.key === "fatura-yok")?.text), "Kasım ayında 1.500 ₺ satış var ama komisyon faturası gelmedi.");

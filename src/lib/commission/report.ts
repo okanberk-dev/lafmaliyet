@@ -817,11 +817,12 @@ function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, gap: SalesGap |
       flags.push({ key: "reklam", level: "info", text: `Reklam / kampanya ücreti olabilir: ${money(cm.fees.reklam)}. Bunlar isteğe bağlıdır; onay vermediyseniz itiraz edin.` });
     }
   }
-  // Yazılan ekstre ya da LafPOS'un ödemeleri: kanaldan satış geçti ama ayın faturası gelmedi. Sonraki ayın ilk yarısında
-  // kesilen fatura bu ayın satışları için olabilir (kayan fatura; yemek kartında 1–5'i zaten bu aya sayılır): uyarı değil bilgi
+  // Yazılan ekstre ya da LafPOS'un ödemeleri: kanaldan satış geçti ama ayın faturası gelmedi. LafPOS'un satışında sonraki
+  // ayın ilk yarısında kesilen fatura bu ayın satışları için olabilir (kayan fatura; yemek kartında 1–5'i zaten bu aya
+  // sayılır): uyarı değil bilgi. Yazılan ekstrenin uyarısı bugünkü gibi (geçiş günü boşken hiçbir şey değişmez)
   if ((sales?.source === "elle" || sales?.source === "lafpos") && sales.amount > 0 && !cm.invoices.length && today >= `${shiftMonth(cm.month, 1)}-${String(INVOICE_GRACE_DAY).padStart(2, "0")}`) {
     flags.push(
-      nextEarly
+      nextEarly && sales.source === "lafpos"
         ? { key: "fatura-kayan", level: "info", text: `${dayMonthTR(nextEarly)} tarihli fatura ${monthName(cm.month)} satışlarını kapsıyor olabilir; ${monthName(shiftMonth(cm.month, 1))} ayında sayılıyor.` }
         : { key: "fatura-yok", level: "warn", text: `${monthName(cm.month)} ayında ${money(sales.amount)} satış var ama komisyon faturası gelmedi.` },
     );

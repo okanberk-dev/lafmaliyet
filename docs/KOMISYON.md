@@ -193,7 +193,7 @@ Sınır %6, yuvarlamayı yutan payla **%6,05**'in üstü.
 | `asli-ucret` | platform | 1 Nisan 2026 ve sonraki faturada sipariş / ödeme altyapısı ücreti | Turuncu | "“Online Ödeme Hizmet Bedeli” 40 ₺: sipariş ya da ödeme altyapısı ücreti olabilir. 1 Nisan 2026'dan beri bunlar için ayrı ücret alınamıyor." |
 | `reklam` | platform | Reklam / kampanya > 0 | Mavi | "Reklam / kampanya ücreti olabilir: 60 ₺. Bunlar isteğe bağlıdır; onay vermediyseniz itiraz edin." |
 | `fatura-yok` | ikisi | Elle yazılan (ya da LafPOS'tan gelen) satış > 0, o ay faturası yok, sonraki ayın 15'i geldi | Turuncu | "Ekim ayında 2.000 ₺ satış var ama komisyon faturası gelmedi." |
-| `fatura-kayan` | ikisi | `fatura-yok`'un koşulu, ama kanalın sonraki ayın 15'ine kadar kesilmiş faturası var | Mavi | "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor." |
+| `fatura-kayan` | ikisi | `fatura-yok`'un koşulu, satış LafPOS'tan ve kanalın sonraki ayın 15'ine kadar kesilmiş faturası var | Mavi | "8 Aralık tarihli fatura Kasım satışlarını kapsıyor olabilir; Aralık ayında sayılıyor." |
 | `kasa-eksik` | ikisi | Satış Z toplamından (tek kanal) ve ayın eksik günü var | Mavi | "3 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür." |
 
 Yemek kartlarının toplamında: `oran-sinir` ("Ortalama kesinti %6,3: en az bir yemek kartı %6'yı aşıyor."; eksik günde
