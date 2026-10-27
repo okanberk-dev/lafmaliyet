@@ -103,7 +103,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     body: (
       <>
         Atılan ya da ikram edilen her şeyi <StaffPath href="/panel/zayi" /> ekranına, kasadan çıkan her parayı fişiyle <StaffPath href="/panel/kasa" /> ekranına
-        girin. Akşama bırakmayın; akşam hatırlamak zordur.
+        girin. Akşama bırakmayın; akşam hatırlamak zordur. Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS&apos;ta işaretlenir; panele yalnız zayi
+        ve hammadde ikramı girilir.
       </>
     ),
     href: "/panel/zayi",
@@ -391,7 +392,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <StaffPath href="/panel/zayi" /> ekranında türü seçin: zayi (atılan, bozulan, dökülen, yanlış hazırlanan) ya da ikram (müşteriye, ekibe, tadım). Menü
             ürününü adetle (2× Latte M), malzemeyi sayım biriminde (Süt 1,5 LT) yazın, nedeni seçin. Uygulamadaki ödülle verilen içecek ikram değildir; buraya
-            girmeyin.
+            girmeyin. Kasada LafPOS kullanılmaya başlandıysa ürün ikramı LafPOS&apos;ta işaretlenir; burada yalnız zayi ve hammadde ikramı girilir. LafPOS&apos;ta
+            “Zayi yaz” ile işaretlenen ürünü burada ayrıca girmeyin.
           </>
         ),
         icon: Gift,

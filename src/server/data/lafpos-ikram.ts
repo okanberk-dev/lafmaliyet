@@ -5,7 +5,7 @@ import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, resolvePosLine, siteSlotKey } from "@/lib/lafpos/day";
-import type { LafposIkramData, LafposIkramLine } from "@/lib/lafpos/ikram";
+import { lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
 import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -29,8 +29,9 @@ export async function lafposSwitchDayOf(db: Reader): Promise<string | null> {
 }
 
 /**
- * Geçiş gününden itibaren (verilirse `from`..`to` aralığında) gelen gün sonlarının ikramları ve günleri (veri kümesi,
- * Zayi'nin günü, kasa e-postası). İkramı okunamayan günün satırları atlanır, gün yine "gün sonu geldi" sayılır.
+ * Geçiş gününden itibaren (verilirse `from`..`to` aralığında) gelen gün sonlarının ikram ve zayi satırları ve günleri
+ * (veri kümesi, Zayi'nin günü, kasa e-postası). İkramı okunamayan günün satırları atlanır, gün yine "gün sonu geldi"
+ * sayılır.
  */
 export async function loadLafposIkram(db: Reader, switchDay: string, range: { from?: string; to?: string } = {}): Promise<LafposIkramData> {
   const from = range.from && range.from > switchDay ? range.from : switchDay;
@@ -52,7 +53,9 @@ export async function loadLafposIkram(db: Reader, switchDay: string, range: { fr
     if (!parsed.success) continue;
     for (const l of parsed.data) {
       const m = resolvePosLine({ ...l, isService: false }, bySite, (n) => index.get(n));
-      lines.push({ date: r.date, posName: l.posName, productId: m.productId, qty: l.qty, menuValue: l.menuValue, reason: l.reason });
+      // "Zayi: Döküldü" zayidir, öteki her satır (ödenmez dahil) ikram (src/lib/lafpos/ikram.ts lafposLineKind)
+      const { kind, reason } = lafposLineKind(l.reason);
+      lines.push({ date: r.date, kind, posName: l.posName, productId: m.productId, qty: l.qty, menuValue: l.menuValue, reason });
     }
   }
   return { switchDay, days: rows.map((r) => r.date), lines };

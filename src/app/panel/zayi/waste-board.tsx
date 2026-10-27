@@ -1,6 +1,7 @@
 "use client";
 
 import { Gift, Plus, Search, Send, Trash2, Undo2, X } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -34,17 +35,23 @@ export interface PendingLate {
 }
 
 /**
- * LafPOS gününün ikramı (geçiş gününden itibaren; src/lib/lafpos/ikram.ts), salt okunur. Personele ad ve adet;
- * yöneticiye nedeni, menü değeri ve ürüne bağlı olmayan satır da (sunucu personelinkini boş gönderir)
+ * LafPOS gününün ikram ve zayi satırları (geçiş gününden itibaren; src/lib/lafpos/ikram.ts), salt okunur. Personele ad
+ * ve adet; yöneticiye nedeni, menü değeri ve ürüne bağlı olmayan satır da (sunucu personelinkini boş gönderir)
  */
 export interface LafposDayView {
   /** "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir. Burada hammadde ikramı ve zayi girilir." */
   note: string;
   /** O günün gün sonu geldi */
   received: boolean;
-  lines: { name: string; qty: number; reason: string | null; menuValue: number | null; unmatched: boolean }[];
+  /** Ürün ikramı bu güne panelden kapalı (gün sonu geldi ya da gün bugün; productIkramClosed) */
+  closed: boolean;
+  /** Gün bugünden önce (gün sonu gelmediyse ürün ikramı panelden girilebilir) */
+  past: boolean;
+  lines: { kind: WasteKind; name: string; qty: number; reason: string | null; menuValue: number | null; unmatched: boolean }[];
   /** Panele girilmiş, sayılmayan ürün ikramı kayıtları (gün sonu geldiyse) */
   notCounted: number[];
+  /** Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
+  maybeTwice: number[];
 }
 
 /**
@@ -52,8 +59,9 @@ export interface LafposDayView {
  * neden tek dokunuşla; kayıt anında listeye düşer. İstek kipinde (personel, kilitli dün ve önceki 14 gün; dalga 10
  * §2.8) kart "Geç kayıt isteği" olur: yöneticiye açıklama zorunlu, kayıt onaya kadar listeye girmez. Satırın silme
  * kipi sunucuda hesaplanır (deleteModes): doğrudan (çöp kutusu), istek ("Silinmesini iste") ya da yok. Tutar yok.
- * LafPOS gününde (`lafpos`) ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde aranır, LafPOS'un ikramları
- * salt okunur listelenir, panele girilmiş ürün ikramı "sayılmıyor" der.
+ * LafPOS gününde (`lafpos`) ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde aranır (gün sonu gelmeyen
+ * geçmiş günde ürün de), LafPOS'un ikram ve zayi satırları salt okunur listelenir, panele girilmiş ürün ikramı
+ * "sayılmıyor", LafPOS'ta da zayi yazılan ürünün panel zayisi "LafPOS'ta da zayi" der.
  */
 export function WasteBoard({
   date,
@@ -94,10 +102,13 @@ export function WasteBoard({
   // Çift dokunuşa karşı istemci anahtarı: başarılı gönderimden sonra yenilenir
   const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
   const late = mode === "request";
-  // LafPOS gününde ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde seçilir (sunucu da reddeder)
-  const noProducts = lafpos !== null && kind === "ikram";
+  // LafPOS gününde ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde seçilir (sunucu da reddeder); gün sonu
+  // gelmeyen geçmiş günde ürün de seçilir
+  const noProducts = lafpos !== null && lafpos.closed && kind === "ikram";
   const pickable = noProducts ? choices.filter((c) => c.type !== "product") : choices;
   const notCounted = new Set(lafpos?.notCounted ?? []);
+  const maybeTwice = new Set(lafpos?.maybeTwice ?? []);
+  const itemLabel = noProducts ? "Hammadde" : "Ürün ya da hammadde";
 
   const results = query.trim() ? pickable.filter((c) => matchesChoice(c, query)).slice(0, MAX_RESULTS) : [];
   // Son girilen kalemler: aynı şey çoğu gün tekrar eder (bir dokunuşla seçilsin)
@@ -114,7 +125,7 @@ export function WasteBoard({
   }
 
   function submit() {
-    if (!picked) return void toast.error("Önce ürün ya da hammadde seçin");
+    if (!picked) return void toast.error(`Önce ${itemLabel.toLocaleLowerCase("tr")} seçin`);
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
     if (late && message.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-aciklama")?.focus());
@@ -195,7 +206,7 @@ export function WasteBoard({
             onChange={(k) => {
               setKind(k);
               setReason(null);
-              if (lafpos && k === "ikram" && picked?.type === "product") setPicked(null);
+              if (lafpos?.closed && k === "ikram" && picked?.type === "product") setPicked(null);
             }}
             options={[
               { value: "zayi", label: "Zayi (atıldı, bozuldu)" },
@@ -204,6 +215,8 @@ export function WasteBoard({
           />
           {noProducts ? (
             <p className="rounded-xl bg-info-soft px-3 py-2 text-xs leading-5 text-info">{lafpos.note}</p>
+          ) : lafpos && kind === "zayi" ? (
+            <p className="rounded-xl bg-info-soft px-3 py-2 text-xs leading-5 text-info">{LAFPOS_IKRAM_TEXT.zayiNote}</p>
           ) : kind === "ikram" ? (
             <p className="text-xs leading-5 text-ink-mute">
               Uygulamadaki ödülle (damga kartı, davet kuponu) verilen içecek ikram değildir: bar ekranına uygulama siparişi olarak düşer ve online satışta sayılır. Buraya
@@ -224,7 +237,7 @@ export function WasteBoard({
             </div>
           ) : (
             <div className="space-y-2">
-              <Field label="Ürün ya da hammadde" htmlFor="zi-ara">
+              <Field label={itemLabel} htmlFor="zi-ara">
                 <div className="relative">
                   <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-mute" aria-hidden="true" />
                   <Input
@@ -256,7 +269,7 @@ export function WasteBoard({
                   ))}
                 </ul>
               ) : query.trim() ? (
-                <p className="text-sm text-ink-mute">Eşleşen ürün ya da hammadde yok.</p>
+                <p className="text-sm text-ink-mute">Eşleşen {itemLabel.toLocaleLowerCase("tr")} yok.</p>
               ) : recent.length ? (
                 <div className="flex flex-wrap gap-2" aria-label="Son girilenler">
                   {recent.map((c) => (
@@ -361,9 +374,10 @@ export function WasteBoard({
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
-                    {lateBadges[e.id] || asks.length || notCounted.has(e.id) ? (
+                    {lateBadges[e.id] || asks.length || notCounted.has(e.id) || maybeTwice.has(e.id) ? (
                       <p className="mt-1 flex flex-wrap gap-1.5">
                         {notCounted.has(e.id) ? <Badge tone="gray">{LAFPOS_IKRAM_TEXT.notCounted}</Badge> : null}
+                        {maybeTwice.has(e.id) ? <Badge tone="amber">{LAFPOS_IKRAM_TEXT.maybeTwice}</Badge> : null}
                         {lateBadges[e.id] ? <Badge tone="gray">{lateBadges[e.id]}</Badge> : null}
                         {asks.map((a) => (
                           <Badge key={a.requestId} tone="amber">
@@ -391,25 +405,39 @@ export function WasteBoard({
             })}
           </ul>
         ) : (
-          <p className="border-t border-line px-5 py-6 text-sm text-ink-mute">Atılan ya da ikram edilen her şeyi buraya girin; ay sonu stok farkı böyle açıklanır.</p>
+          <p className="border-t border-line px-5 py-6 text-sm text-ink-mute">
+            {lafpos?.closed
+              ? "Atılan bir şey ya da hammadde ikramı olduysa buraya girin; ürün ikramı LafPOS'ta işaretlenir. Ay sonu stok farkı böyle açıklanır."
+              : "Atılan ya da ikram edilen her şeyi buraya girin; ay sonu stok farkı böyle açıklanır."}
+          </p>
         )}
         {lafpos ? (
-          // LafPOS'un ikramı salt okunur: kasada işaretlendi, tüketime oradan girer
+          // LafPOS'un ikram ve zayi satırları salt okunur: kasada işaretlendi, tüketime oradan girer
           <section aria-label={LAFPOS_IKRAM_TEXT.listTitle} className="border-t border-line px-5 py-4">
             <h3 className="text-sm font-semibold text-ink">{LAFPOS_IKRAM_TEXT.listTitle}</h3>
             {!lafpos.received ? (
-              <p className="mt-1 text-sm text-ink-mute">{LAFPOS_IKRAM_TEXT.waiting}</p>
+              <p className="mt-1 text-sm text-ink-mute">{lafpos.past ? LAFPOS_IKRAM_TEXT.waitingPast : LAFPOS_IKRAM_TEXT.waiting}</p>
             ) : lafpos.lines.length ? (
               <ul className="mt-2 space-y-2">
                 {lafpos.lines.map((l, i) => (
                   <li key={i} className="flex flex-wrap items-start gap-x-3 gap-y-0.5 text-sm">
-                    <Badge tone="blue">İkram</Badge>
+                    <Badge tone={l.kind === "zayi" ? "red" : "blue"}>{WASTE_KIND_LABEL[l.kind]}</Badge>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium break-words text-ink">
                         {l.name} <span className="font-normal text-ink-mute tabular">· {qtyText(l.qty, "adet")}</span>
                       </p>
                       {l.reason || l.unmatched ? (
-                        <p className="text-xs break-words text-ink-mute">{[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null].filter(Boolean).join(" · ")}</p>
+                        <p className="text-xs break-words text-ink-mute">
+                          {[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null].filter(Boolean).join(" · ")}
+                          {l.unmatched ? (
+                            <>
+                              {" · "}
+                              <Link href="/panel/ayarlar#lafpos" className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                                Ayarlar › LafPOS&apos;ta bağlayın
+                              </Link>
+                            </>
+                          ) : null}
+                        </p>
                       ) : null}
                     </div>
                     {l.menuValue !== null ? <span className="text-xs text-ink-mute tabular">{tl(l.menuValue)}</span> : null}

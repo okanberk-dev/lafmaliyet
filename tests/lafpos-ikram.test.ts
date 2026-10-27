@@ -13,7 +13,15 @@ import { countFactor, createModel } from "../src/lib/calc/engine";
 import { consistency } from "../src/lib/calc/insights";
 import type { Dataset, WasteEntry } from "../src/lib/calc/types";
 import type { CashReportFields } from "../src/lib/cash-report";
-import { lafposIkramCheck, panelWasteCounts, productIkramNote, productIkramRefusal, type LafposIkramData } from "../src/lib/lafpos/ikram";
+import {
+  lafposIkramCheck,
+  lafposLineKind,
+  panelWasteCounts,
+  productIkramClosed,
+  productIkramNote,
+  productIkramRefusal,
+  type LafposIkramData,
+} from "../src/lib/lafpos/ikram";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
@@ -37,18 +45,41 @@ test("kural: LafPOS'un gün sonu gelen günde paneldeki ürün ikramı sayılmaz
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, new Set()), true, "geçiş günü boş");
 });
 
-test("yeni kayıt: LafPOS gününde ürün ikramı reddedilir (geçiş günü boşken ve öncesinde değil)", () => {
+test("yeni kayıt: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir; gün sonu gelmeyen geçmiş günde girilir", () => {
   const ikram = { date: "2026-11-12", kind: "ikram" as const, productId: 5 };
-  assert.equal(productIkramRefusal(ikram, null), null);
-  assert.equal(productIkramRefusal({ ...ikram, date: "2026-11-09" }, S), null);
-  assert.equal(productIkramRefusal({ ...ikram, productId: null }, S), null);
-  assert.equal(productIkramRefusal({ ...ikram, kind: "zayi" }, S), null);
+  const got = { received: true, today: "2026-11-14" };
+  const waiting = { received: false, today: "2026-11-14" };
+  assert.equal(productIkramRefusal(ikram, null, got), null, "geçiş günü boş");
+  assert.equal(productIkramRefusal({ ...ikram, date: "2026-11-09" }, S, got), null, "geçişten önce");
+  assert.equal(productIkramRefusal({ ...ikram, productId: null }, S, got), null, "hammadde ikramı");
+  assert.equal(productIkramRefusal({ ...ikram, kind: "zayi" }, S, got), null, "ürün zayisi");
   assert.equal(
-    plain(productIkramRefusal(ikram, S)),
+    plain(productIkramRefusal(ikram, S, got)),
     "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez. Burada hammadde ikramı ve zayi girilir.",
   );
-  assert.equal(plain(productIkramRefusal({ ...ikram, date: S }, S)), plain(productIkramRefusal(ikram, S)));
+  assert.equal(plain(productIkramRefusal({ ...ikram, date: S }, S, got)), plain(productIkramRefusal(ikram, S, got)));
+  // Gün sonu gelmeyen geçmiş gün (kasa bilgisayarı bozuldu, gün gönderilmedi): panelden girilir, o gün panelinki sayılır
+  assert.equal(productIkramRefusal(ikram, S, waiting), null);
+  assert.equal(productIkramClosed("2026-11-12", S, waiting), false);
+  // Bugün: gün sonu bekleniyor, kapalı
+  assert.equal(productIkramClosed("2026-11-14", S, waiting), true);
+  assert.ok(productIkramRefusal({ ...ikram, date: "2026-11-14" }, S, waiting));
+  // Onaylar'da kaydın nereye girildiği söylenir ("Burada" değil)
+  assert.equal(
+    plain(productIkramRefusal(ikram, S, got, "onay")),
+    "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez. Hammadde ikramı ve zayi Zayi & ikram'da girilir.",
+  );
   assert.equal(plain(productIkramNote(S)), "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir. Burada hammadde ikramı ve zayi girilir.");
+});
+
+test("LafPOS satırının türü nedenin ön ekinden: \"Zayi: …\" zayi, \"Ödenmez: …\" ve öteki her şey ikram", () => {
+  assert.deepEqual(lafposLineKind("Zayi: Döküldü"), { kind: "zayi", reason: "Döküldü" });
+  assert.deepEqual(lafposLineKind("Zayi:"), { kind: "zayi", reason: null }, "nedensiz zayi (LafPOS'un 'Zayi: ' öneki kırpılmış)");
+  assert.deepEqual(lafposLineKind("zayi : bozuk"), { kind: "zayi", reason: "bozuk" });
+  assert.deepEqual(lafposLineKind("Ödenmez: Personel yemeği"), { kind: "ikram", reason: "Ödenmez: Personel yemeği" });
+  assert.deepEqual(lafposLineKind("Müşteri"), { kind: "ikram", reason: "Müşteri" });
+  assert.deepEqual(lafposLineKind(null), { kind: "ikram", reason: null });
+  assert.deepEqual(lafposLineKind("Zayiat değil"), { kind: "ikram", reason: "Zayiat değil" }, "ön ek iki noktayla");
 });
 
 test("motor: LafPOS ikramı kayıtlı tüketime bir kez girer; paneldeki o günkü ürün ikramı çıkar; özet ve Tutarlılık", () => {
@@ -66,9 +97,9 @@ test("motor: LafPOS ikramı kayıtlı tüketime bir kez girer; paneldeki o günk
     switchDay: S,
     days: ["2026-11-10", "2026-11-11", "2026-11-12"],
     lines: [
-      { date: "2026-11-12", posName: "LATTE MEDIUM", productId: product.id, qty: 2, menuValue: 340, reason: "Müşteri" },
+      { date: "2026-11-12", kind: "ikram", posName: "LATTE MEDIUM", productId: product.id, qty: 2, menuValue: 340, reason: "Müşteri" },
       // Ürüne bağlanamayan satır: tüketime girmez, özette sayılır
-      { date: "2026-11-11", posName: "PUMPKIN CHAI", productId: null, qty: 1, menuValue: 180, reason: null },
+      { date: "2026-11-11", kind: "ikram", posName: "PUMPKIN CHAI", productId: null, qty: 1, menuValue: 180, reason: null },
     ],
   };
   const without = createModel({ ...ds, wasteEntries: panel });
@@ -111,12 +142,35 @@ test("motor: LafPOS ikramı kayıtlı tüketime bir kez girer; paneldeki o günk
   assert.ok(row && row.ikram > 0);
 });
 
+test("motor: LafPOS'ta zayi yazılan satır zayi olarak bir kez girer, ikram olarak değil; panel zayisi de sayılır", () => {
+  const product = ds.products.find((p) => p.active && ds.recipeItems.some((r) => r.productId === p.id))!;
+  const panel: WasteEntry[] = [{ date: "2026-11-12", kind: "zayi", productId: product.id, ingredientId: null, qty: 1, factor: 1 }];
+  const zayiLine = { date: "2026-11-12", kind: "zayi" as const, posName: "LATTE MEDIUM", productId: product.id, qty: 1, menuValue: 170, reason: "Döküldü" };
+  const onlyLafpos = createModel({ ...ds, wasteEntries: [], lafposIkram: { switchDay: S, days: ["2026-11-12"], lines: [zayiLine] } });
+  const perUnit = new Map((onlyLafpos.itemsByProduct.get(product.id) ?? []).map((it) => [it.ingredientId, onlyLafpos.evalQty(it).qty]));
+  for (const [id, q] of perUnit) {
+    assert.ok(Math.abs((onlyLafpos.recordedUsage("2026-11").get(id)?.zayi ?? 0) - q) < 1e-9, `${id}: zayi bir kez`);
+    assert.equal(onlyLafpos.recordedUsage("2026-11").get(id)?.ikram ?? 0, 0, `${id}: ikram değil`);
+  }
+  const sum = onlyLafpos.wasteSummary("2026-11");
+  assert.deepEqual([sum.zayi.count, sum.zayi.lafpos, sum.ikram.count, sum.ikram.menuValue], [1, 1, 0, 0]);
+  // Panelde de girildiyse (sahibin sorusu açık) ikisi de sayılır: Zayi'nin gün listesi "LafPOS'ta da zayi" der
+  const both = createModel({ ...ds, wasteEntries: panel, lafposIkram: { switchDay: S, days: ["2026-11-12"], lines: [zayiLine] } });
+  for (const [id, q] of perUnit) assert.ok(Math.abs((both.recordedUsage("2026-11").get(id)?.zayi ?? 0) - 2 * q) < 1e-9);
+  assert.equal(both.wasteSummary("2026-11").ikram.count, 0);
+});
+
 test("kasa e-postası: LafPOS gününde ikram LafPOS'un iki rakamıyla karşılaştırılır; panelin uyarısı çıkmaz", () => {
   assert.equal(lafposIkramCheck(340, 340), null);
   assert.equal(lafposIkramCheck(340, 339.5), null, "1 TL'den az fark yok sayılır");
+  // Z büyük: listeye girmeyen ödenmez satır; Z küçük: listede kalan iptal edilmiş adisyonun ikramı
   assert.equal(
     plain(lafposIkramCheck(520, 340)),
-    "LafPOS'un ödenmez tutarı (Z) ikram listesinden 180 ₺ fazla: LafPOS'ta ödenmez işaretlenen ama ikram listesine girmeyen (ya da iptal edilen adisyonda kalan) satır olabilir.",
+    "LafPOS'un ödenmez tutarı (Z) ikram ve zayi listesinden 180 ₺ fazla: LafPOS'ta ödenmez işaretlenen ama listeye girmeyen satır olabilir.",
+  );
+  assert.equal(
+    plain(lafposIkramCheck(640, 760)),
+    "LafPOS'un ödenmez tutarı (Z) ikram ve zayi listesinden 120 ₺ az: iptal edilen adisyonun ikramı listede kalmış olabilir.",
   );
   const f: CashReportFields & { discounts: number | null } = {
     date: "2026-11-12",
@@ -154,6 +208,12 @@ test("kasa e-postası: LafPOS gününde ikram LafPOS'un iki rakamıyla karşıla
   assert.match(html, /Panele bu güne girilen 1 ürün ikramı sayılmadı: ikram LafPOS'tan geliyor\./);
   // LafPOS'un iki rakamı farklı: bilgi satırı
   const diff = plain(renderCashReport(f, { ...meta, ikramValue: 340, lafposIkram: { offRevenue: 520, ikramValue: 340, notCounted: 0 } }).html);
-  assert.match(diff, /LafPOS'un ödenmez tutarı \(Z\) ikram listesinden 180 ₺ fazla/);
+  assert.match(diff, /LafPOS'un ödenmez tutarı \(Z\) ikram ve zayi listesinden 180 ₺ fazla/);
   assert.doesNotMatch(diff, /sayılmadı/);
+  // LafPOS'ta zayi yazılan kalem de ödenmez tutarındadır: Z, listenin tamamıyla karşılaştırılır; zayi ayrı satır
+  const withZayi = plain(
+    renderCashReport(f, { ...meta, ikramValue: 340, lafposIkram: { offRevenue: 520, ikramValue: 340, zayiValue: 180, listValue: 520, notCounted: 0 } }).html,
+  );
+  assert.match(withZayi, /LafPOS'ta zayi yazılan/);
+  assert.doesNotMatch(withZayi, /ikram ve zayi listesinden/);
 });

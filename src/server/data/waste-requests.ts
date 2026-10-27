@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, gt, gte, inArray, lte, max, min, ne, or, sql
 import { z } from "zod";
 
 import type { Model } from "@/lib/calc/engine";
-import { stampTR } from "@/lib/cash-report";
+import { businessDate, stampTR } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -209,13 +209,18 @@ export interface LateWasteCard extends CardBase {
   /** Aynı gün ve kalem için başka bekleyen istekler (isteyenin adı) */
   otherPending: string[];
   report: { exists: boolean; emailed: boolean; offRevenue: number | null };
-  /** İkramda: o günün kayıtlı ikramının menü değeri (Z ödenmez ile karşılaştırma) */
+  /**
+   * İkramda: o günün sayılan ikramının menü değeri (Z ödenmez ile karşılaştırma; motorun saydığı kayıtlar). LafPOS'un
+   * gün sonu gelen günde LafPOS'un listesinin tamamı (ikram ve zayi satırları: LafPOS'un ödenmez tutarı ikisini kapsar)
+   */
   ikramRecorded: number | null;
+  /** O günün ikramı LafPOS'un gün sonundan (karşılaştırma LafPOS'un kendi iki rakamı) */
+  ikramFromLafpos: boolean;
   /** "Ekim sayımı girilmiş: onaylanırsa tutarlılık değişir" */
   countDone: string | null;
   /**
-   * LafPOS gününün ürün ikramı (geçiş günü istekten sonra seçildi): onaylanmaz, reddedilir (src/lib/lafpos/ikram.ts);
-   * metni, değilse null
+   * Ürün ikramı o güne panelden kapalı (LafPOS gününde gün sonu geldi ya da gün bugün; geçiş günü ya da gün sonu
+   * istekten sonra geldi): onaylanmaz, reddedilir (src/lib/lafpos/ikram.ts productIkramClosed); metni, değilse null
    */
   lafposRefusal: string | null;
 }
@@ -261,6 +266,15 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
   const countedMonths = new Set(counted.filter((c) => c.n > 0).map((c) => c.month));
   const time = (d: Date) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
   const productPrice = (id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
+  // LafPOS'un gün sonu gelen günleri (geçiş günü seçiliyse, ondan itibaren; yoksa boş) ve iş günü
+  const switchDay = model.ds.settings.lafposGecisGunu ?? null;
+  const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
+  const today = businessDate(now);
+  /** Günün sayılan ikramının menü değeri: LafPOS satırı kendi değeriyle (zayi dahil), panelin ürün ikramı menü fiyatıyla */
+  const ikramValueOf = (date: string) =>
+    model.countedWaste
+      .filter((w) => w.date === date)
+      .reduce((a, w) => a + (w.source === "lafpos" ? (w.menuValue ?? 0) : w.kind === "ikram" && w.productId !== null ? (productPrice(w.productId) ?? 0) * w.qty : 0), 0);
 
   return rows.flatMap((r): WasteRequestCard[] => {
     const base = {
@@ -285,10 +299,7 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
         return op.success && same(op.data) ? [o.requestedByName] : [];
       });
       const menu = p.kind === "ikram" ? productPrice(p.productId) : null;
-      const ikramRecorded =
-        p.kind === "ikram"
-          ? dayEntries.filter((e) => e.kind === "ikram" && e.productId !== null).reduce((a, e) => a + (productPrice(e.productId) ?? 0) * e.qty, 0)
-          : null;
+      const ikramRecorded = p.kind === "ikram" ? ikramValueOf(p.date) : null;
       return [
         {
           ...base,
@@ -303,8 +314,9 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
           otherPending: [...new Set(others)],
           report: { exists: !!report, emailed: !!report?.emailedAt, offRevenue: report?.offRevenue ?? null },
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
+          ikramFromLafpos: lafposDays.has(p.date),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          lafposRefusal: productIkramRefusal(p, model.ds.settings.lafposGecisGunu ?? null),
+          lafposRefusal: productIkramRefusal(p, switchDay, { received: lafposDays.has(p.date), today }, "onay"),
         },
       ];
     }

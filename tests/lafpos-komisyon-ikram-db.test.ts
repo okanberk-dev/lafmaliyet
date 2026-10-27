@@ -275,11 +275,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     const ds = await dataset.loadDataset();
     assert.deepEqual(ds.lafposIkram?.days, ["2026-11-11"]);
     assert.deepEqual(
-      ds.lafposIkram?.lines.map((l) => [l.posName, l.productId, l.qty, l.menuValue, l.reason]),
+      ds.lafposIkram?.lines.map((l) => [l.kind, l.posName, l.productId, l.qty, l.menuValue, l.reason]),
       [
-        ["LATTE MEDIUM", ids.latteM, 2, 340, "Müşteri"],
-        ["MOCHA", ids.mocha, 1, 180, "Personel"],
-        ["PUMPKIN CHAI", null, 1, 200, null],
+        ["ikram", "LATTE MEDIUM", ids.latteM, 2, 340, "Müşteri"],
+        ["ikram", "MOCHA", ids.mocha, 1, 180, "Personel"],
+        ["ikram", "PUMPKIN CHAI", null, 1, 200, null],
       ],
     );
     const model = createModel(ds);
@@ -292,11 +292,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal(sum.ikram.menuValue, 170 + 720 + 180);
     // Kasa özeti: 11 Kasım'ın ikramı LafPOS'tan
     const day = await waste.dayWaste("2026-11-11");
-    assert.deepEqual(day.lafpos, { received: true, offRevenue: 720, ikramValue: 720, notCounted: 1 });
+    assert.deepEqual(day.lafpos, { received: true, offRevenue: 720, ikramValue: 720, zayiValue: 0, listValue: 720, notCounted: 1 });
     assert.equal(day.ikram, "Süt 0,5 LT, 2× Latte M, 1× Mocha, 1× PUMPKIN CHAI");
     assert.equal(day.ikramValue, 720);
     const pending = await waste.dayWaste("2026-11-12");
-    assert.deepEqual(pending.lafpos, { received: false, offRevenue: null, ikramValue: 0, notCounted: 0 });
+    assert.deepEqual(pending.lafpos, { received: false, offRevenue: null, ikramValue: 0, zayiValue: 0, listValue: 0, notCounted: 0 });
     assert.equal(pending.ikram, "1× Mocha");
     // Zayi'nin günü: adlar paneldeki ürünle, bağlanamayan LafPOS'taki adıyla
     const view = await lafposIkram.loadDayLafposIkram("2026-11-11");
@@ -311,37 +311,94 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.ok(notCounted.id > 0);
   });
 
-  test("E-38: LafPOS gününde yeni ürün ikramı reddedilir (iki rol, geç kayıt isteği ve onayı); hammadde ikramı ve zayi girilir", async () => {
-    // Geçiş gününden önce açılmış geç kayıt isteği (5 Kasım, ürün ikramı)
-    const asked = await core.proposeLateWaste(
-      db,
-      users.ayse,
-      { date: "2026-11-08", kind: "ikram", productId: ids.latteM, ingredientId: null, qty: 1, reason: null, note: null, message: "Unuttum", clientKey: "k-ikram-1" },
-      NOW,
-    );
+  test("E-38: LafPOS'ta zayi yazılan satır zayi olarak girer (ikram değil); panelin aynı ürün zayisi sayılır ve işaretlenir", async () => {
     await setSwitch(S);
+    await panelEntry("2026-11-11", "zayi", ids.latteM, null, 1);
+    await push("2026-11-11", 13, { ikram: [...IKRAM, { posName: "LATTE MEDIUM", siteMenuId: "mnu-0003", slot: "M", qty: 1, menuValue: 170, reason: "Zayi: Döküldü" }] });
+    const ds = await dataset.loadDataset();
+    assert.deepEqual(
+      ds.lafposIkram?.lines.filter((l) => l.kind === "zayi").map((l) => [l.posName, l.productId, l.qty, l.reason]),
+      [["LATTE MEDIUM", ids.latteM, 1, "Döküldü"]],
+    );
+    const model = createModel(ds);
+    // Süt: zayi = panelin 1 Latte'si + LafPOS'un 1 Latte'si (ikisi de sayılır); ikram = LafPOS'un ikramı (2 × 200 + 150)
+    assert.deepEqual(model.recordedUsage("2026-11").get(ids.milk), { zayi: 400, ikram: 550 });
+    const sum = model.wasteSummary("2026-11");
+    assert.deepEqual([sum.zayi.count, sum.zayi.lafpos, sum.ikram.count, sum.ikram.lafpos, sum.ikram.menuValue], [2, 1, 3, 3, 720]);
+    // Kasa özeti: LafPOS'un zayisi zayi satırında; Z'nin ödenmez tutarı (890) listenin tamamıyla tutar
+    const day = await waste.dayWaste("2026-11-11");
+    assert.equal(day.zayi, "2× Latte M");
+    assert.equal(day.ikram, "2× Latte M, 1× Mocha, 1× PUMPKIN CHAI");
+    assert.deepEqual(day.lafpos, { received: true, offRevenue: 890, ikramValue: 720, zayiValue: 170, listValue: 890, notCounted: 0 });
+  });
+
+  test("E-38: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir (iki rol, geç kayıt isteği ve onayı); gün sonu gelmeyen geçmiş günde girilir", async () => {
+    // Geçiş gününden önce açılmış iki geç kayıt isteği (ürün ikramı): 8 Kasım'ın gün sonu sonra gelir, 7 Kasım'ınki hiç
+    const ask = (date: string, key: string) =>
+      core.proposeLateWaste(db, users.ayse, { date, kind: "ikram", productId: ids.latteM, ingredientId: null, qty: 1, reason: null, note: null, message: "Unuttum", clientKey: key }, NOW);
+    const asked = await ask("2026-11-08", "k-ikram-1");
+    const open = await ask("2026-11-07", "k-ikram-3");
+    await setSwitch(S);
+    await push("2026-11-10", 12);
+    await push("2026-11-11", 13);
     const item = { kind: "ikram" as const, productId: ids.latteM, ingredientId: null, qty: 1, reason: null, note: null };
+    // Bugün (12 Kasım, gün sonu bekleniyor) ve gün sonu gelen günler
     await refused(core.addWaste(db, users.ayse, { ...item, date: "2026-11-12" }, NOW), PRODUCT_IKRAM);
+    await refused(core.addWaste(db, users.ali, { ...item, date: "2026-11-12" }, NOW), PRODUCT_IKRAM);
     await refused(core.addWaste(db, users.ali, { ...item, date: "2026-11-11" }, NOW), PRODUCT_IKRAM);
     await refused(core.proposeLateWaste(db, users.ayse, { ...item, date: "2026-11-10", message: "Unuttum", clientKey: "k-ikram-2" }, NOW), PRODUCT_IKRAM);
     // Hammadde ikramı, ürün zayisi ve geçişten önceki günün ürün ikramı girilir
     assert.ok((await core.addWaste(db, users.ayse, { ...item, productId: null, ingredientId: ids.milk, date: "2026-11-12" }, NOW)).id > 0);
     assert.ok((await core.addWaste(db, users.ayse, { ...item, kind: "zayi", date: "2026-11-12" }, NOW)).id > 0);
     assert.ok((await core.addWaste(db, users.ali, { ...item, date: "2026-11-09" }, NOW)).id > 0);
-    // Geçiş günü 1 Kasım'a alınınca 8 Kasım'ın isteği onaylanmaz, reddedilir: Onaylar'ın kartı da söyler
-    const cardOf = async () => (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === asked.row.id);
-    const before = await cardOf();
+    // Geçiş günü 1 Kasım'a alınınca: 8 Kasım'ın gün sonu geldiyse isteği onaylanmaz, reddedilir (Onaylar'ın kartı da
+    // söyler); 7 Kasım'ın gün sonu hiç gelmedi: onaylanır, yönetici o güne doğrudan da girer
+    await push("2026-11-08", 9);
+    const cardOf = async (id: number) => (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === id);
+    const before = await cardOf(asked.row.id);
     assert.equal(before?.kind === "zayi-gec" ? before.lafposRefusal : "?", null);
     await setSwitch("2026-11-01");
-    const after = await cardOf();
-    assert.match(plain(after?.kind === "zayi-gec" ? (after.lafposRefusal ?? "") : ""), /^Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\./);
+    const after = await cardOf(asked.row.id);
+    assert.equal(
+      plain(after?.kind === "zayi-gec" ? (after.lafposRefusal ?? "") : ""),
+      "Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez. Hammadde ikramı ve zayi Zayi & ikram'da girilir.",
+    );
+    // Kartın Z karşılaştırması o günün LafPOS listesiyle (gün sonu geldi)
+    assert.equal(after?.kind === "zayi-gec" ? after.ikramFromLafpos : "?", true);
     await refused(
       core.reviewWasteRequestCore(db, users.ali, { id: asked.row.id, seenVersion: asked.row.version, decision: "approve", note: null }, NOW),
-      /^Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\. .* İsteği reddedin\.$/,
+      /^Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\. Hammadde ikramı ve zayi Zayi & ikram'da girilir\. İsteği reddedin\.$/,
     );
     const rejected = await core.reviewWasteRequestCore(db, users.ali, { id: asked.row.id, seenVersion: asked.row.version, decision: "reject", note: null }, NOW);
     assert.equal(rejected.status, "rejected");
     assert.equal((await db.select().from(s.wasteEntries).where(eq(s.wasteEntries.date, "2026-11-08"))).length, 0);
+    const openCard = await cardOf(open.row.id);
+    assert.equal(openCard?.kind === "zayi-gec" ? openCard.lafposRefusal : "?", null, "gün sonu gelmeyen gün");
+    const approved = await core.reviewWasteRequestCore(db, users.ali, { id: open.row.id, seenVersion: open.row.version, decision: "approve", note: null }, NOW);
+    assert.equal(approved.status, "approved");
+    assert.ok((await core.addWaste(db, users.ali, { ...item, date: "2026-11-06" }, NOW)).id > 0);
+    // Bu kayıtlar sayılır (o günlerin ikramı panelden)
+    const model = createModel(await dataset.loadDataset());
+    assert.equal(model.countedWaste.filter((w) => w.kind === "ikram" && w.productId === ids.latteM && (w.date === "2026-11-07" || w.date === "2026-11-06")).length, 2);
+  });
+
+  test("E-38: Onaylar'daki geç hammadde ikramı kartı LafPOS gününde Z'yi LafPOS'un listesiyle karşılaştırır", async () => {
+    await setSwitch(S);
+    await push("2026-11-10", 12);
+    // 10 Kasım'a geç hammadde ikramı isteği (personelin 10 Kasım'ı istek kipinde: bugün 12 Kasım)
+    const asked = await core.proposeLateWaste(
+      db,
+      users.ayse,
+      { date: "2026-11-10", kind: "ikram", productId: null, ingredientId: ids.milk, qty: 0.2, reason: "Personel", note: null, message: "Unuttum", clientKey: "k-ham-1" },
+      NOW,
+    );
+    const card = (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === asked.row.id);
+    assert.equal(card?.kind, "zayi-gec");
+    if (card?.kind !== "zayi-gec") return;
+    assert.equal(card.lafposRefusal, null);
+    assert.equal(card.ikramFromLafpos, true);
+    // LafPOS'un listesi 720 (ödenmez tutarıyla aynı); panelde ürün ikramı yok ama 0 yazmaz
+    assert.equal(card.ikramRecorded, 720);
   });
 
   test("E-38: kasa e-postası LafPOS gününde LafPOS'un ikramını yazar ve iki rakamını karşılaştırır", async () => {
@@ -378,7 +435,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.match(html, /LafPOS'taki ikram/);
     assert.doesNotMatch(html, /Panelde kayıtlı ikram/);
     assert.doesNotMatch(html, /panelde kayıtlı ikramdan/);
-    assert.match(html, /LafPOS'un ödenmez tutarı \(Z\) ikram listesinden 180 ₺ fazla/);
+    assert.match(html, /LafPOS'un ödenmez tutarı \(Z\) ikram ve zayi listesinden 180 ₺ fazla: LafPOS'ta ödenmez işaretlenen ama listeye girmeyen satır olabilir\./);
     assert.match(html, /Panele bu güne girilen 1 ürün ikramı sayılmadı: ikram LafPOS'tan geliyor\./);
     assert.match(plain(sent[0].text), /İkram: 2× Latte M, 1× Mocha, 1× PUMPKIN CHAI/);
   });

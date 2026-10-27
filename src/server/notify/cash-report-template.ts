@@ -99,10 +99,11 @@ export function renderCashReport(
     ikramValue?: number | null;
     /**
      * LafPOS gününde günün sonu geldiyse LafPOS'un ikramı (denetim E-38; src/lib/lafpos/ikram.ts): Z'deki ödenmez
-     * tutarı, ikram listesinin menü değeri ve panele girilip sayılmayan ürün ikramı. Varsa ikram denetimi LafPOS'un iki
-     * rakamını karşılaştırır; yoksa (geçiş günü boş ya da gün sonu gelmedi) bugünkü gibi panelin ikramıyla
+     * tutarı, ikram ve zayi satırlarının menü değeri (listValue ikisinin toplamı; yoksa yalnız ikram) ve panele girilip
+     * sayılmayan ürün ikramı. Varsa ikram denetimi Z'yi listenin tamamıyla karşılaştırır (LafPOS'un ödenmez tutarı zayi
+     * yazılan kalemi de kapsar); yoksa (geçiş günü boş ya da gün sonu gelmedi) bugünkü gibi panelin ikramıyla
      */
-    lafposIkram?: { offRevenue: number | null; ikramValue: number; notCounted: number } | null;
+    lafposIkram?: { offRevenue: number | null; ikramValue: number; zayiValue?: number; listValue?: number; notCounted: number } | null;
     /**
      * laffogato.net'in o günkü online satışı ve karaoke ön ödemesi (bilgi; kasadan geçmez, kasa farkına girmez). Site
      * ulaşılamadıysa null: satır yazılmaz.
@@ -142,9 +143,10 @@ export function renderCashReport(
     ...(f.discounts ? [row("İndirim", money(f.discounts))] : []),
     ...(f.offRevenue ? [row("Ödenmez / ikram (ciro dışı)", money(f.offRevenue))] : []),
     ...(laf
-      ? laf.ikramValue
-        ? [row("LafPOS'taki ikram", money(laf.ikramValue), { sub: "menü fiyatıyla" })]
-        : []
+      ? [
+          ...(laf.ikramValue ? [row("LafPOS'taki ikram", money(laf.ikramValue), { sub: "menü fiyatıyla" })] : []),
+          ...(laf.zayiValue ? [row("LafPOS'ta zayi yazılan", money(laf.zayiValue), { sub: "menü fiyatıyla" })] : []),
+        ]
       : meta.ikramValue
         ? [row("Panelde kayıtlı ikram", money(meta.ikramValue), { sub: "menü fiyatıyla" })]
         : []),
@@ -153,7 +155,7 @@ export function renderCashReport(
   // karşılaştırır (ikisi de LafPOS'un; fark varsa bilgi), panele girilen ürün ikramı sayılmadığı söylenir
   const ikramWarning = laf
     ? [
-        laf.offRevenue !== null ? lafposIkramCheck(laf.offRevenue, laf.ikramValue) : null,
+        laf.offRevenue !== null ? lafposIkramCheck(laf.offRevenue, laf.listValue ?? laf.ikramValue + (laf.zayiValue ?? 0)) : null,
         laf.notCounted ? `Panele bu güne girilen ${laf.notCounted} ürün ikramı sayılmadı: ikram LafPOS'tan geliyor.` : null,
       ].filter((x): x is string => x !== null)
     : f.offRevenue !== null && meta.ikramValue != null && Math.abs(f.offRevenue - meta.ikramValue) >= CASH_TOLERANCE

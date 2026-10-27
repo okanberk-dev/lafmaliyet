@@ -816,14 +816,15 @@ export function createModel(ds: Dataset) {
     return u;
   }
 
-  // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren LafPOS'un ikramı) ----------
+  // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren LafPOS'un ikramı ve zayisi) ----------
   // LafPOS'un gün sonu gelen günde ürün ikramı LafPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
-  // kaynak; src/lib/lafpos/ikram.ts). Geçiş günü yoksa lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
+  // kaynak; src/lib/lafpos/ikram.ts). LafPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
+  // lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
   const lafposIkramDays = new Set(ds.lafposIkram?.days ?? []);
   const countedWaste: WasteEntry[] = [
     ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
     ...(ds.lafposIkram?.lines ?? []).map(
-      (l): WasteEntry => ({ date: l.date, kind: "ikram", productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
+      (l): WasteEntry => ({ date: l.date, kind: l.kind, productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
     ),
   ];
   const wasteByMonth = new Map<string, WasteEntry[]>();
@@ -1095,20 +1096,21 @@ export function createModel(ds: Dataset) {
   }
 
   /**
-   * `ikram.lafpos`: LafPOS'tan gelen ikram satırı sayısı (count'un içinde; menü değeri LafPOS'unki); `notCounted`:
-   * LafPOS'un gün sonu gelen günde panele girilmiş, sayılmayan ürün ikramı kaydı. Geçiş günü yoksa ikisi de 0
+   * `ikram.lafpos` / `zayi.lafpos`: LafPOS'tan gelen ikram ve zayi satırı sayısı (count'un içinde; ikramın menü değeri
+   * LafPOS'unki); `notCounted`: LafPOS'un gün sonu gelen günde panele girilmiş, sayılmayan ürün ikramı kaydı. Geçiş günü
+   * yoksa hepsi 0
    */
   function wasteSummary(month: string) {
-    const out = { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: notCountedOf(month) };
+    const out = { zayi: { count: 0, cost: 0, lafpos: 0 }, ikram: { count: 0, cost: 0, menuValue: 0, lafpos: 0 }, notCounted: notCountedOf(month) };
     for (const w of wasteByMonth.get(month) ?? []) {
       const product = w.productId !== null ? productById.get(w.productId) : undefined;
       const cost = wasteCost(w);
       out[w.kind].count += 1;
       out[w.kind].cost += cost;
-      if (w.kind === "ikram" && w.source === "lafpos") {
-        out.ikram.lafpos += 1;
-        out.ikram.menuValue += w.menuValue ?? 0;
-      } else if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
+      if (w.source === "lafpos") out[w.kind].lafpos += 1;
+      // İkramın menü değeri: LafPOS'unki kendi hesabıyla, panelinki menü fiyatıyla (zayinin menü değeri yok)
+      if (w.kind === "ikram" && w.source === "lafpos") out.ikram.menuValue += w.menuValue ?? 0;
+      else if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
     }
     return out;
   }

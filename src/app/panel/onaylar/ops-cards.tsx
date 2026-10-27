@@ -116,9 +116,16 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         {card.otherPending.length ? <p className="font-medium text-warn">Aynı gün ve kalem için başka bekleyen istek var ({card.otherPending.join(", ")})</p> : null}
         {card.lafposRefusal ? <p className="font-medium text-warn">{card.lafposRefusal} Bu isteği reddedin.</p> : null}
         {ikram && !card.lafposRefusal && z !== null && card.ikramRecorded !== null ? (
-          <p className="text-ink tabular">
-            Z ödenmez {money(z)} · kayıtlı ikram menü değeri {money(card.ikramRecorded)} → bu kayıtla {money(card.ikramRecorded + (card.menuValue ?? 0))}
-          </p>
+          card.ikramFromLafpos ? (
+            // LafPOS'un gün sonu gelen gün: ödenmez tutarı ve liste LafPOS'un; bu kayıt (hammadde ikramı) ikisini değiştirmez
+            <p className="text-ink tabular">
+              Z ödenmez {money(z)} · LafPOS&apos;un ikram ve zayi listesi {money(card.ikramRecorded)}
+            </p>
+          ) : (
+            <p className="text-ink tabular">
+              Z ödenmez {money(z)} · kayıtlı ikram menü değeri {money(card.ikramRecorded)} → bu kayıtla {money(card.ikramRecorded + (card.menuValue ?? 0))}
+            </p>
+          )
         ) : null}
         <p className="text-ink-soft">{card.report.exists ? "O günün kasa raporu gönderilmiş; özetinde bu kayıt yok." : "O günün kasa raporu yok."}</p>
         {card.countDone ? <p className="font-medium text-warn">{card.countDone}</p> : null}

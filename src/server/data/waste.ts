@@ -90,8 +90,12 @@ export interface DayWasteLafpos {
   received: boolean;
   /** LafPOS'un Z'sindeki ödenmez tutarı (yalnız yöneticinin e-postası) */
   offRevenue: number | null;
-  /** LafPOS'un ikram listesinin menü değeri */
+  /** LafPOS'un ikram satırlarının (ödenmez dahil) menü değeri */
   ikramValue: number;
+  /** LafPOS'ta zayi yazılan satırların menü değeri */
+  zayiValue: number;
+  /** LafPOS'un listesinin tamamı (ikram + zayi): Z'deki ödenmez tutarı bunu kapsar (lafposIkramCheck) */
+  listValue: number;
   /** Panele bu güne girilmiş, sayılmayan ürün ikramı kaydı */
   notCounted: number;
 }
@@ -99,8 +103,8 @@ export interface DayWasteLafpos {
 /**
  * Kasa raporu için günün zayi ve ikram özeti ve ikramın menü fiyatıyla değeri (kasanın ödenmez tutarıyla
  * karşılaştırılır; yalnız yöneticiye giden e-postada). LafPOS gününde gün sonu geldiyse ürün ikramı LafPOS'un ikram
- * listesinden, değeri LafPOS'un menü değerinden; paneldeki ürün ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü
- * boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
+ * listesinden, değeri LafPOS'un menü değerinden; listedeki "Zayi: …" satırları zayi özetine girer; paneldeki ürün
+ * ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
  */
 export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
   const db = getDb();
@@ -112,17 +116,29 @@ export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: n
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);
   const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>()));
-  const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: "ikram", name: l.name, qty: l.qty, unit: "adet" })) : [];
+  // LafPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
+  const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];
-  const lafValue = Math.round((laf?.lines.reduce((a, l) => a + l.menuValue, 0) ?? 0) * 100) / 100;
+  const valueOf = (kind: WasteKind) => Math.round((laf?.lines.filter((l) => l.kind === kind).reduce((a, l) => a + l.menuValue, 0) ?? 0) * 100) / 100;
+  const lafIkram = valueOf("ikram");
+  const lafZayi = valueOf("zayi");
   const panelValue = counted.filter((e) => e.kind === "ikram" && e.productId !== null).reduce((a, e) => a + (price.get(e.productId!) ?? 0) * e.qty, 0);
-  const ikramValue = Math.round((panelValue + (received ? lafValue : 0)) * 100) / 100;
+  const ikramValue = Math.round((panelValue + (received ? lafIkram : 0)) * 100) / 100;
   return {
     zayi: summarize(lines, "zayi"),
     ikram: summarize(lines, "ikram"),
     ikramValue,
     count: lines.length,
-    lafpos: laf ? { received, offRevenue: laf.offRevenue, ikramValue: lafValue, notCounted: entries.length - counted.length } : null,
+    lafpos: laf
+      ? {
+          received,
+          offRevenue: laf.offRevenue,
+          ikramValue: lafIkram,
+          zayiValue: lafZayi,
+          listValue: Math.round((lafIkram + lafZayi) * 100) / 100,
+          notCounted: entries.length - counted.length,
+        }
+      : null,
   };
 }
 
