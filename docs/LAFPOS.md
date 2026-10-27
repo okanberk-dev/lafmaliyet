@@ -260,7 +260,9 @@ düşüldü)" ekler. Kaydedilmez; eski gövdede yoksa 0.
 - **Kafe kapalıydı:** LafPOS'un satışlı gün sonu kanıttır (kırmızı "LafPOS'ta Z 14 · 63 fiş", tutar yok; satışsızsa
   uyarı): personelin isteği açılmaz, yönetici onaylayamaz. Satışlı gün sonu geldiğinde o günün bekleyen bildirimi kapanır
   ve tek günlük kapalı işaret kalkar (`onLafposDaySaved`, gün sonunun yazımıyla aynı işlemde). Geçiş günü boşken alım hiçbir
-  kaydı değiştirmez.
+  kaydı değiştirmez. Aynı günün satışlı gün sonu daha önce geldiyse (LafPOS düzeltip yeniden gönderdi) o andan sonra
+  konan işaret yöneticinin kanıtı görerek verdiği karardır: yeniden gönderim onu kaldırmaz; yalnız ondan önce konan
+  işaret kalkar. İlk gönderim satışsızsa (fiş ve Z toplamı 0) sonraki satışlı gönderim ilk satışlı gönderim sayılır.
 - **Ay rakamı:** kasa raporu girilmemiş LafPOS gününün Z'si ayın açık gün, ciro, indirim, ödenmez ve kart payına girer
   (`tillRows`, `source: "lafpos"`); gün yine "rapor yok" sayılır, rapor girilince rapor kazanır.
 

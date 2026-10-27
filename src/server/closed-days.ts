@@ -218,9 +218,11 @@ export async function onReportSaved(tx: Tx, date: string, now = new Date()): Pro
  * günlük kapalı satırı silinir (onaylayan istek `revoked`, yöneticinin zilinde "kanıt geldi"); çok günlük aralıkta
  * yalnız zil. Geçiş günü boşken, gün ondan önceyse ya da gün sonunda satış yoksa (fiş ve Z toplamı 0) hiçbir şey
  * yapılmaz: deneme günü hiçbir kaydı değiştirmez (sahibin 26 Ekim kararı). Bildirimin onayıyla yarışmasın diye günün
- * kapalı gün kilidi alınır (onay kanıtı bu kilidin altında sayar).
+ * kapalı gün kilidi alınır (onay kanıtı bu kilidin altında sayar). `soldSince`: aynı günün satışlı gün sonu daha önce
+ * bu anda geldi (yeniden gönderim, düzeltme); o andan sonra konan kapalı satırı yöneticinin kanıtı görerek verdiği
+ * karardır, dokunulmaz (yalnız ondan önce konan, yani kanıt gelince kalkması gereken satır kalkar).
  */
-export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "zNo" | "receipts" | "zTotal">, now = new Date()): Promise<void> {
+export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "zNo" | "receipts" | "zTotal">, now = new Date(), soldSince: Date | null = null): Promise<void> {
   if (z.receipts <= 0 && z.zTotal <= 0) return;
   const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
   if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return;
@@ -231,6 +233,7 @@ export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "z
     .set({ status: "superseded", reviewNote: why, reviewedAt: now, updatedAt: now })
     .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), eq(s.staffRequests.day, date)));
   for (const row of await coveringRows(tx, date)) {
+    if (soldSince && row.createdAt >= soldSince) continue;
     if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, why, now);
     else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Satış tahmini › Özel günler'den aralığı düzeltin`);
   }

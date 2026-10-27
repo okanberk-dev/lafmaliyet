@@ -171,7 +171,9 @@ test("E-36: LafPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı sat
   const server = read("src/server/closed-days.ts");
   assert.match(server, /if \(!isLafposDay\(date, readLafposSwitchDay\(setting\?\.value\)\)\) return null;/);
   assert.match(server, /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[setting\][\s\S]*?if \(!isLafposDay\(date, readLafposSwitchDay\(setting\?\.value\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/);
-  assert.match(read("src/server/lafpos/ingest.ts"), /await onLafposDaySaved\(tx, day\.date, day\.z, now\);/);
+  const ingest = read("src/server/lafpos/ingest.ts");
+  assert.match(ingest, /const soldSince = stored && \(stored\.z\.receipts > 0 \|\| stored\.z\.zTotal > 0\) \? stored\.receivedAt : null;/);
+  assert.match(ingest, /await onLafposDaySaved\(tx, day\.date, day\.z, now, soldSince\);/);
 });
 
 test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; rapor varsa rapor kazanır", () => {

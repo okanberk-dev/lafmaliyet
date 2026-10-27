@@ -120,10 +120,10 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal(r.kind, "saved");
     return r.kind === "saved" ? r.row : assert.fail("kaydedilmedi");
   }
-  async function closedMark(date: string) {
+  async function closedMark(date: string, createdAt?: Date) {
     const [row] = await db
       .insert(s.specialDays)
-      .values({ dateFrom: date, dateTo: date, kind: "kapali", title: "Kafe kapalı", effect: -1, note: null, createdBy: users.ali.id, createdByName: users.ali.name })
+      .values({ dateFrom: date, dateTo: date, kind: "kapali", title: "Kafe kapalı", effect: -1, note: null, createdBy: users.ali.id, createdByName: users.ali.name, ...(createdAt ? { createdAt } : {}) })
       .returning({ id: s.specialDays.id });
     return row.id;
   }
@@ -262,6 +262,34 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     await closedMark(D4);
     await push(D4, 9);
     assert.equal(await marked(D4), true);
+  });
+
+  test("E-36 (inceleme): satışlı gün sonundan sonra yöneticinin bilerek koyduğu kapalı işareti yeniden gönderim kaldırmaz", async () => {
+    await setSwitch(S);
+    const D = "2026-11-10";
+    // İlk gönderim NOW'da (satışlı); yönetici kanıtı görüp bir saat sonra "Kafe kapalıydı" der
+    await push(D, 13);
+    await closedMark(D, new Date(NOW.getTime() + 3_600_000));
+    // LafPOS aynı günü aynı Z no ile düzeltip yeniden gönderir: işaret kalır, zile yazılmaz
+    await push(D, 13, { countedCash: 9_300, cashDiff: -50 });
+    assert.equal(await marked(D), true);
+    assert.equal((await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Kapalı gün işareti kaldırıldı (kanıt geldi)"))).length, 0);
+    // İlk gönderim satışsızdı (kanıt değildi): sonra satışlı gelince işaret kalkar
+    const D2 = "2026-11-09";
+    const idle = { receipts: 0, zTotal: 0, cash: 0, card: 0, countedCash: 1_500, cashOut: 0, handedOver: 0, cashIn: 0, expectedCash: 1_500 };
+    await push(D2, 12, idle);
+    await closedMark(D2, new Date(NOW.getTime() + 3_600_000));
+    await push(D2, 12);
+    assert.equal(await marked(D2), false);
+    // İşaret ilk satışlı gönderimden önce konmuş ve o gönderim onu kaldırmamışsa (geçiş günü o an boştu) yeniden gönderim kaldırır
+    const D3 = "2026-11-08";
+    await setSwitch(null);
+    await closedMark(D3, new Date(NOW.getTime() - 3_600_000));
+    await push(D3, 11);
+    assert.equal(await marked(D3), true, "geçiş günü boşken dokunulmaz");
+    await setSwitch(S);
+    await push(D3, 11);
+    assert.equal(await marked(D3), false);
   });
 
   test("E-09 + E-40: e-posta LafPOS'tan farklı yazılanı söyler; silinip yeniden girilen raporun e-postası yeni anahtarla gider", async () => {

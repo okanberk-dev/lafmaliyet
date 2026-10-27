@@ -45,7 +45,7 @@ export type StorePosDayResult = { ok: true; lines: number; matched: number; unma
 export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date()): Promise<StorePosDayResult> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${day.date}`}))`);
-    const [stored] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, day.date)).limit(1);
+    const [stored] = await tx.select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt }).from(s.posDayReports).where(eq(s.posDayReports.date, day.date)).limit(1);
     if (stored && stored.z.zNo !== day.z.zNo) return { ok: false, zNo: stored.z.zNo };
     const linked = await tx
       .select({ id: s.products.id, siteMenuId: s.products.siteMenuId, slot: s.products.siteMenuSlot })
@@ -81,8 +81,11 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
     await tx.delete(s.posDailySales).where(eq(s.posDailySales.date, day.date));
     if (rows.length) await tx.insert(s.posDailySales).values(rows);
     // Satışlı LafPOS günü kafenin açık olduğunun kanıtı (E-36): yalnız geçiş gününden sonraki günde, kasa raporunun
-    // gelişi gibi o günün kapalı işaretini ve bekleyen "Kafe kapalıydı" bildirimini kaldırır; deneme günü dokunmaz
-    await onLafposDaySaved(tx, day.date, day.z, now);
+    // gelişi gibi o günün kapalı işaretini ve bekleyen "Kafe kapalıydı" bildirimini kaldırır; deneme günü dokunmaz.
+    // Aynı günün satışlı gün sonu daha önce geldiyse (düzeltme) o andan sonra konan işaret yöneticinin kanıtı görerek
+    // verdiği karardır: yeniden gönderim onu kaldırmaz
+    const soldSince = stored && (stored.z.receipts > 0 || stored.z.zTotal > 0) ? stored.receivedAt : null;
+    await onLafposDaySaved(tx, day.date, day.z, now, soldSince);
     const unmatched = rows
       .filter((r) => r.productId === null && !r.isService)
       .sort((a, b) => b.qty - a.qty || a.posName.localeCompare(b.posName, "tr"))
