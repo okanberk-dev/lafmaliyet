@@ -104,7 +104,9 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Patron › Raporlar › Satış ekranından ürün listesini (ad, adet, ciro) kopyalayıp <Path href="/panel/satislar" /> ekranındaki İçe aktar kartında Yapıştır&apos;ı seçip
-        yapıştırın ya da Dosya ile dosyayı seçin. Daha önce eşleştirilen ürünler otomatik tanınır; eşleşmeyen satırları bir kez eşleştirin.
+        yapıştırın ya da Dosya ile dosyayı seçin. Daha önce eşleştirilen ürünler otomatik tanınır; eşleşmeyen satırları bir kez eşleştirin. LafPOS&apos;a
+        geçiş günü seçildiyse (<Path href="/panel/ayarlar" /> › LafPOS) o günden itibaren satışlar her gün sonunda LafPOS&apos;tan gelir: geçiş ayında
+        liste yalnız geçiş gününden önceki günleri kapsar, sonraki aylara liste yüklenmez.
       </>
     ),
     href: "/panel/satislar",
@@ -737,11 +739,17 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Ay sürerken Patron&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
             (varsayılan dün). Kasa raporları her akşam ilerler; Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı, indirimi ve reçeteye göre kârın sabit
             giderini listenin günleriyle hesaplar, &quot;POS cirosu tutmuyor&quot; uyarısı yanlış yere çıkmaz. Ay bitince ayın tamamının listesini Yenisiyle değiştir ile
-            yükleyin; biten aya yüklenen liste ayın tamamı sayılır.
+            yükleyin; biten aya yüklenen liste ayın tamamı sayılır. LafPOS&apos;a geçildiyse (Ayarlar › LafPOS › geçiş günü) o günden itibaren satışlar her gün
+            sonunda LafPOS&apos;tan gelir: geçiş ayında liste ay bittikten sonra da yalnız geçiş gününden önceki günleri sayar (Patron&apos;dan yalnız o günlerin
+            raporunu alın; fazlası LafPOS günleriyle iki kez sayılırdı), sonraki aylara liste yüklenmez ve İçe aktar kartı yerine &quot;LafPOS&apos;tan geliyor&quot;
+            kartı çıkar.
           </>
         ),
         icon: CalendarCheck,
-        links: [{ href: "/panel/satislar", label: "Satışlar" }],
+        links: [
+          { href: "/panel/satislar", label: "Satışlar" },
+          { href: "/panel/ayarlar#lafpos", label: "Ayarlar › LafPOS" },
+        ],
       },
       {
         id: "gunluk-isler",

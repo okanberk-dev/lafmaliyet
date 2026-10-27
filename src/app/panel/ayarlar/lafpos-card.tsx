@@ -149,7 +149,13 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
           <div className="space-y-1.5">
             <p className="text-[13px] font-medium text-ink-soft">
               Ürüne bağlanamayan POS adları: {num(data.unmatchedCount)}{" "}
-              <InfoTip text="Bu satırlar maliyete ve stoğa girmez. Adı buradan bir ürüne bağlayın (Satışlar'ın POS adı hafızasına yazılır), ürünü Ürünler › Site menüsü'nde sitenin kalemine bağlayın ya da geçiş gününden sonraki aylarda Satışlar'da eşleştirin. Bağlanınca kayıtlı günler de yeniden gönderim olmadan güncellenir." />
+              <InfoTip
+                text={`${
+                  data.switchDay
+                    ? "Geçiş gününden önceki günlerde hiçbir hesaba girmez. Geçiş gününden sonra ciroya girer, maliyeti ortalama maliyet oranından tahmin edilir; reçeteye göre tüketime (Tutarlılık, stok) girmez."
+                    : "Geçiş günü seçilene kadar hiçbir hesaba girmez. Seçildikten sonra ciroya girer, maliyeti ortalama maliyet oranından tahmin edilir; reçeteye göre tüketime (Tutarlılık, stok) girmez."
+                } Adı buradan bir ürüne bağlayın (Satışlar'ın POS adı hafızasına yazılır), ürünü Ürünler › Site menüsü'nde sitenin kalemine bağlayın ya da geçiş gününden sonraki aylarda Satışlar'da eşleştirin. Bağlanınca kayıtlı günler de yeniden gönderim olmadan güncellenir.`}
+              />
             </p>
             <LafposUnmatchedList items={data.unmatched} more={data.unmatchedCount - data.unmatched.length} products={products} />
           </div>
