@@ -124,11 +124,9 @@ export const LatePayload = CashFieldsSchema.extend({
   handedTo: z
     .discriminatedUnion("kind", [z.object({ kind: z.literal("user"), id: z.number().int().positive(), name: z.string().min(1).max(200) }), z.object({ kind: z.literal("banka") })])
     .nullable(),
-  photos: z
-    .array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]) }))
-    .min(1)
-    .max(MAX_REPORT_PHOTOS)
-    .refine((ps) => ps.some((p) => p.kind === "kasa-z"), "Z raporunun fotoğrafı gerekli"),
+  // Kanıt günün kasasına göre yazımda denetlenir (src/server/cash/late.ts, kasaEvidence): ModPOS gününde Z fotoğrafı,
+  // LafPOS gününde LafPOS'un gün sonu (fotoğrafsız) ya da yazarkasa Z fotoğrafı
+  photos: z.array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]) })).max(MAX_REPORT_PHOTOS),
   cashDiff: amount,
 }) satisfies z.ZodType<LateCashPayload, unknown>;
 export type LatePayloadT = z.output<typeof LatePayload>;
