@@ -3,20 +3,24 @@ import "server-only";
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, or, sql } from "drizzle-orm";
 
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
+import { takesCreditOnArrival } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
-import { appliedKeyOf, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
+import { appliedKeyOf, firstPriceCertain, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
+import { packEvidence } from "@/lib/product-match";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
 import { supersedeHolds } from "@/server/data/price-holds";
+import { suspectFactorLine } from "@/server/data/purchase-lots-query";
+import { flagStockOnlyInvoices } from "@/server/data/stock-only-invoices";
 import { applyCreditOnArrival, arrivalLedgerBase, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver, type TrackedCard } from "@/server/cari/settle";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
 import { PAGE_SIZE, ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
-import { MANAGED_QTY_NOTE } from "./constants";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "./constants";
 import { readParasutConfig } from "./config";
 import { str, type ListResponse, type ShowResponse } from "./jsonapi";
 import { categoryNeedsReview, eInvoiceToDraft, isSupplierReturn, shouldImportEInvoice, withholdingVatFill, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
@@ -211,7 +215,10 @@ interface Ctx {
   trackedCard: (supplier: string, taxNumber?: string | null) => TrackedCard | null;
   /** Tutarı değişen faturalar: çalışmanın sonunda dağıtımları yeniden dengelenir (resettleAfterSync) */
   payableChanged: { id: number; from: number; to: number }[];
-  /** Peşin ve takipli kartın yeni faturaları: çalışmanın sonunda hesaptaki para sayılır (applyCreditOnArrival) */
+  /**
+   * Peşin ve takipli kartın takip günü ve sonrasının yeni faturaları: çalışmanın sonunda hesaptaki para sayılır
+   * (applyCreditOnArrival; takesCreditOnArrival)
+   */
   pesinTracked: { id: number; cardId: number }[];
 }
 
@@ -491,8 +498,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
         ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: d.outstanding }),
       })
       .returning({ id: s.invoices.id });
-    // Peşin çalışılan takipli kart: hesaptaki para çalışmanın sonunda faturaya sayılır (K21)
-    if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, taxRaw)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+    // Peşin çalışılan takipli kart: hesaptaki para çalışmanın sonunda faturaya sayılır (K21); takipten önceki tarihli
+    // fatura (Geçmiş faturaları al) kapıda ödenmişti, avans almaz (E-14)
+    if (trackedCard !== null && takesCreditOnArrival({ date: d.date, unpaid: pay.unpaid }, trackedCard.since) && ctx.paidOnDelivery(supplier, taxRaw)) {
+      ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+    }
     if (twin) console.warn("Paraşüt: aynı e-fatura iki gider faturasında", { eInvoiceId, bills: [twin.externalId, d.externalId] });
     invoiceId = row.id;
     if (supplierTaxNumber) ctx.taxFilled++;
@@ -872,7 +882,7 @@ export async function syncParasut(
 
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     const returns = await saveReturns(ctx, today);
-    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
+    const linked = ctx.touchedMonths.size ? await applyProductLinks() : null;
     // Cari: tutarı değişen faturaların dağıtımı ve peşin kartın yeni faturası (docs/TEDARIKCILER.md)
     const cari = await cariFinalSteps(ctx);
     if (partial && !reachedEnd) {
@@ -904,7 +914,8 @@ export async function syncParasut(
       late?.created ? `${late.created} geç girilmiş eski fatura alındı` : "",
       returns.sales ? `${returns.sales} satış iadesi gider sayılmadı` : "",
       returns.supplier ? `${returns.supplier} tedarikçiye iade panele girmedi (Paraşüt sayfasında)` : "",
-      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark ya da ilk fiyat)` : "",
+      linked?.flagged ? `${linked.flagged} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı), kontrolde` : "",
       cari,
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
@@ -1115,7 +1126,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     if (contacts.every((c) => progress[c.id] === HISTORY_DONE)) for (const c of contacts) delete progress[c.id];
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     await saveReturns(ctx, todayTR());
-    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
+    const linked = ctx.touchedMonths.size ? await applyProductLinks() : null;
     await setState(HISTORY_KEY, progress);
     const cari = await cariFinalSteps(ctx);
 
@@ -1130,7 +1141,8 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       `${created} yeni`,
       `${updated} güncellendi`,
       removed ? `${removed} kaldırıldı (Paraşüt'te iptal)` : "",
-      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark ya da ilk fiyat)` : "",
+      linked?.flagged ? `${linked.flagged} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı), kontrolde` : "",
       cari,
       deferred ? `${deferred} fatura yazılamadı (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı)` : "",
       partial ? "süre doldu, kalanı için yeniden basın" : held ? "yeniden basınca denenir" : deferred ? "sonraki tam okumada denenir" : "",
@@ -1433,7 +1445,9 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: null }),
     })
     .returning({ id: s.invoices.id });
-  if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+  if (trackedCard !== null && takesCreditOnArrival({ date: d.date, unpaid: pay.unpaid }, trackedCard.since) && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) {
+    ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
+  }
   if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,
@@ -1462,12 +1476,14 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
 }
 
 /**
- * Hammaddeye bağlı Paraşüt kalemlerinden verilen ayların alınan miktarlarını yeniden hesaplar ve
- * (bağlantıda istenmişse) hammaddenin paket fiyatını en son faturadaki birim fiyatla günceller.
- * Elle girilmiş alınan miktar satırlarına dokunulmaz; yalnızca notu "Paraşüt" olanlar yönetilir.
- * Şimdikinden %40'tan fazla farklı fiyat yazılmaz, onaya düşer (`held`; docs/PARASUT.md 5b).
+ * Hammaddeye bağlı Paraşüt kalemlerinden (bağlantıda istenmişse) hammaddenin paket fiyatını en son faturadaki birim
+ * fiyatla günceller, sonra bütün ayların alınan miktarlarını yeniden hesaplar (recomputePurchaseQuantities).
+ * Şimdikinden %40'tan fazla farklı fiyat ve çarpanı faturanın biriminden gelmeyen ilk fiyat yazılmaz, onaya düşer
+ * (`held`; docs/PARASUT.md 5b). Alınan miktar fiyattan sonra: bu çalışmada onaya düşen fiyatın çarpanı da şüpheli sayılır.
+ * Yalnız eşitlemenin dokunduğu aylar yazılmaz: açılan ya da geçersiz kalan öneri bağlantının bütün aylarının faturalarını
+ * içeri alır ya da dışarıda bırakır (suspectFactorLine), pencere dışındaki aylar eski hâlinde kalırdı (denetim B03).
  */
-export async function applyProductLinks(months?: string[]) {
+export async function applyProductLinks() {
   const db = getDb();
   const links = await db.select().from(s.parasutProductLinks);
   if (!links.length) {
@@ -1475,7 +1491,7 @@ export async function applyProductLinks(months?: string[]) {
     // geçersiz olur
     await db.delete(s.purchaseQuantities).where(eq(s.purchaseQuantities.note, MANAGED_QTY_NOTE));
     await supersedeHolds(null, "Bağlantı kaldırıldı");
-    return { quantities: 0, prices: 0, held: 0 };
+    return { quantities: 0, prices: 0, held: 0, flagged: 0 };
   }
   const byKey = new Map(links.map((l) => [l.productKey, l]));
 
@@ -1484,6 +1500,7 @@ export async function applyProductLinks(months?: string[]) {
       invoiceId: s.invoices.id,
       productKey: s.parasutBillLines.productKey,
       productName: s.parasutBillLines.productName,
+      description: s.parasutBillLines.description,
       unit: s.parasutBillLines.unit,
       quantity: s.parasutBillLines.quantity,
       netTotal: s.parasutBillLines.netTotal,
@@ -1495,40 +1512,6 @@ export async function applyProductLinks(months?: string[]) {
     .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
     // Kafe dışı faturalar (karaoke box, Alp Koç) kafenin alınan miktarına ve fiyatına girmez (aynı ürün kafeye de gelse)
     .where(and(inArray(s.parasutBillLines.productKey, links.map((l) => l.productKey)), notInArray(s.invoices.category, SEPARATE_CATEGORIES)));
-
-  const wanted = months ? new Set(months) : null;
-  const qty = new Map<string, number>(); // month|ingredientId → miktar
-  for (const r of rows) {
-    const link = byKey.get(r.productKey)!;
-    const m = r.date.slice(0, 7);
-    if (wanted && !wanted.has(m)) continue;
-    const k = `${m}|${link.ingredientId}`;
-    qty.set(k, (qty.get(k) ?? 0) + r.quantity * link.factor);
-  }
-
-  // Yönetilen satırlar: önce bu ayların (ay verilmediyse bütün ayların) Paraşüt satırları silinir, sonra
-  // hesaplananlar yazılır. Kullanıcının elle düzelttiği satırın notu değişir ve artık eşitlemeye ait olmaz.
-  const managedMonths = months
-    ? []
-    : (await db.select({ month: s.purchaseQuantities.month }).from(s.purchaseQuantities).where(eq(s.purchaseQuantities.note, MANAGED_QTY_NOTE))).map((r) => r.month);
-  const monthList = months ?? [...new Set([...rows.map((r) => r.date.slice(0, 7)), ...managedMonths])];
-  let quantities = 0;
-  if (monthList.length) {
-    await db.delete(s.purchaseQuantities).where(and(inArray(s.purchaseQuantities.month, monthList), eq(s.purchaseQuantities.note, MANAGED_QTY_NOTE)));
-    const manual = await db
-      .select({ month: s.purchaseQuantities.month, ingredientId: s.purchaseQuantities.ingredientId })
-      .from(s.purchaseQuantities)
-      .where(inArray(s.purchaseQuantities.month, monthList));
-    const manualKeys = new Set(manual.map((r) => `${r.month}|${r.ingredientId}`));
-    const values = [...qty]
-      .filter(([k, v]) => v > 0 && !manualKeys.has(k))
-      .map(([k, v]) => {
-        const [month, ing] = k.split("|");
-        return { month, ingredientId: Number(ing), qty: Math.round(v * 1000) / 1000, note: MANAGED_QTY_NOTE };
-      });
-    if (values.length) await db.insert(s.purchaseQuantities).values(values);
-    quantities = values.length;
-  }
 
   // Fiyat: her bağlantı için en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç)
   const applied = (await getState<Record<string, string>>(PRICE_KEY)) ?? {};
@@ -1581,8 +1564,10 @@ export async function applyProductLinks(months?: string[]) {
     const before = ing.packagePrice / (ing.packageSize || 1);
     const after = packagePrice / (packageSize || 1);
     applied[appliedKey] = r.date;
-    // Her zaman hammaddenin şimdiki fiyatına göre: onaylanan fiyat sonrakilerin tabanı olur, reddedilende eski fiyat kalır
-    const step = priceStep({ before, after, exempt: ing.priceSource === "water" });
+    // Her zaman hammaddenin şimdiki fiyatına göre: onaylanan fiyat sonrakilerin tabanı olur, reddedilende eski fiyat kalır.
+    // İlk fiyat (şimdiki fiyat yok) yalnız çarpanı faturanın ölçü biriminden geliyorsa yazılır, yoksa onaya düşer (E-06)
+    const firstCertain = firstPriceCertain(packEvidence({ name: r.productName, description: r.description, unit: r.unit, quantity: r.quantity }, ing.unit), link.factor);
+    const step = priceStep({ before, after, exempt: ing.priceSource === "water", firstCertain });
     const pending = pendingBy.get(ingredientId) ?? null;
     if (step === "same") {
       if (pending) await supersedeHolds([pending.id], "Daha yeni faturada fiyat aynı");
@@ -1646,7 +1631,84 @@ export async function applyProductLinks(months?: string[]) {
   }
   await setState(PRICE_KEY, applied);
   if (held.length) await logActivity(null, "Fiyat onaya düştü", held.join(", "));
-  return { quantities, prices, held: held.length };
+  const quantities = await recomputePurchaseQuantities();
+  return { quantities, prices, held: held.length, flagged: await flagStockOnly() };
+}
+
+/**
+ * Kalemi hammaddeye bağlı ama mal alışı sayılmayan faturalar kontrole düşer (denetim 26 Eki, E-07; "kalsın" denenler
+ * hariç): stoğa giriyor, gelir-gidere girmiyor. Yeni işaretlenenler işlem geçmişine; hatası eşitlemeyi bozmaz
+ */
+async function flagStockOnly(): Promise<number> {
+  try {
+    const rows = await flagStockOnlyInvoices(getDb());
+    if (rows.length) {
+      const names = rows.map((r) => `${r.supplier}${r.invoiceNo ? ` ${r.invoiceNo}` : ""} (${r.date})`);
+      await logActivity(null, "Sistem · Fatura mal alışı sayılmıyor", `${names.slice(0, 5).join(", ")}${names.length > 5 ? ` ve ${names.length - 5} fatura daha` : ""}: kalemi hammaddeye bağlı, kategorisi mal alışı değil; kontrolde`);
+    }
+    return rows.length;
+  } catch (err) {
+    console.error("[fatura] stoğa girip gelir-gidere girmeyen faturalar işaretlenemedi", err);
+    return 0;
+  }
+}
+
+/** Alınan miktarın yeniden hesabı tek seferde (eşitleme, bağlama, fiyat kararı aynı anda çalışınca satırlar çakışmasın) */
+const PURCHASE_LOCK = 7_340_213;
+
+/**
+ * Alınan miktar (Tutarlılık'ın "alınan"ı): hammaddeye bağlı kafe kalemlerinden ay ve hammadde başına miktar × çarpan.
+ * Çarpanı şüpheli kalem sayılmaz (suspectFactorLine: fiyatı bugünkü çarpanla onay bekleyen bağlantının bütün kalemleri,
+ * reddedilen fiyatın kendi faturası); stok partileriyle aynı yüklem, Tutarlılık onları "Fiyat onayı bekliyor" diye
+ * işaretler (denetim 26 Eki, E-27). Fiyat kararı (onay, red, geri alma) da bunu çağırır.
+ *
+ * Yönetilen satırlar (notu MANAGED_QTY_NOTE): önce bu ayların (ay verilmediyse bütün ayların) satırları silinir, sonra
+ * hesaplananlar yazılır. Kullanıcının elle düzelttiği satırın notu değişir ve artık eşitlemeye ait olmaz. Tutarlılık'ın
+ * "Alım yok (0)" satırı (NO_PURCHASE_NOTE) elle girilmiş sayılmaz: o ay için faturası sonradan gelirse yerini faturadaki
+ * miktar alır. Ayın toplamı 0 ise (alış ve iadesi) 0 yazılır; eksi toplam (iadesi fazla) yazılmaz.
+ */
+export async function recomputePurchaseQuantities(months?: string[]): Promise<number> {
+  const db = getDb();
+  const bl = s.parasutBillLines;
+  const ln = s.parasutProductLinks;
+  const pq = s.purchaseQuantities;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${PURCHASE_LOCK})`);
+    const rows = await tx
+      .select({ date: s.invoices.date, ingredientId: ln.ingredientId, quantity: bl.quantity, factor: ln.factor, held: suspectFactorLine(bl) })
+      .from(bl)
+      .innerJoin(s.invoices, eq(s.invoices.id, bl.invoiceId))
+      .innerJoin(ln, eq(ln.productKey, bl.productKey))
+      .where(notInArray(s.invoices.category, SEPARATE_CATEGORIES));
+    const wanted = months ? new Set(months) : null;
+    const qty = new Map<string, number>(); // month|ingredientId → miktar
+    for (const r of rows) {
+      if (r.held) continue;
+      const m = r.date.slice(0, 7);
+      if (wanted && !wanted.has(m)) continue;
+      const k = `${m}|${r.ingredientId}`;
+      qty.set(k, (qty.get(k) ?? 0) + r.quantity * r.factor);
+    }
+    const managedMonths = months ? [] : (await tx.select({ month: pq.month }).from(pq).where(eq(pq.note, MANAGED_QTY_NOTE))).map((r) => r.month);
+    const monthList = months ?? [...new Set([...rows.map((r) => r.date.slice(0, 7)), ...managedMonths])];
+    if (!monthList.length) return 0;
+    await tx.delete(pq).where(and(inArray(pq.month, monthList), eq(pq.note, MANAGED_QTY_NOTE)));
+    const kept = await tx.select({ id: pq.id, month: pq.month, ingredientId: pq.ingredientId, note: pq.note }).from(pq).where(inArray(pq.month, monthList));
+    const keyOf = (r: { month: string; ingredientId: number }) => `${r.month}|${r.ingredientId}`;
+    const manualKeys = new Set(kept.filter((r) => r.note !== NO_PURCHASE_NOTE).map(keyOf));
+    const values = [...qty]
+      .map(([k, v]) => [k, Math.round(v * 1000) / 1000] as const)
+      .filter(([k, v]) => v >= 0 && !manualKeys.has(k))
+      .map(([k, v]) => {
+        const [month, ing] = k.split("|");
+        return { month, ingredientId: Number(ing), qty: v, note: MANAGED_QTY_NOTE };
+      });
+    // Faturası sonradan gelen ayın "Alım yok (0)" satırının yerine faturadaki miktar
+    const replaced = kept.filter((r) => r.note === NO_PURCHASE_NOTE && values.some((v) => keyOf(v) === keyOf(r))).map((r) => r.id);
+    if (replaced.length) await tx.delete(pq).where(inArray(pq.id, replaced));
+    if (values.length) await tx.insert(pq).values(values);
+    return values.length;
+  });
 }
 
 // Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri (mal alışları ve "Diğer") tek yerde tanımlı:

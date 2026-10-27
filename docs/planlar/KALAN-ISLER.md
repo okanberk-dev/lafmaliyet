@@ -59,7 +59,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 |---|---|---|---|---|---|
 | B01 | Stok sayımı 1: doğru ay, tek "tamam" kuralı, kayıt kaybı yok (+ NEW-01) | E-01, E-02, E-03, E-17, E-18, E-19, E-20, E-23, E-24, E-25, E-26 | yok | 3 | bekliyor |
 | B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
-| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | bekliyor |
+| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | PR (dal `claude/denetim-b03-fatura-stok`) |
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
@@ -149,7 +149,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 | Denetim (26 Ekim): panel geneli ve stok sayımı | `denetim-2026-10-26.md` | 70 madde, 20 parti (B01-B20), sahibe 11 soru; aşağıda "Denetim (26 Ekim): düzeltme partileri". |
 
 **Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
-- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02; 26 Ekim'de E-14, B03).
+- ~~K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor~~ **Düzeltildi (B03, E-14):** eşitleme takip öncesi faturayı `applyCreditOnArrival`'a göndermez, o da ikinci kapı olarak tarihe bakar (`takesCreditOnArrival`; `tests/parasut-esitleme-db.test.ts`, `tests/cari-db.test.ts`).
 - K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
 - **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür. 26 Ekim denetiminde E-15 (bitirme izi E-65), B18 (migration).
 - **Site tarafı, ayrı laffogato PR'ı (ek alan):** `POST /api/panel/menu` yanıtına `changed: boolean` (`setMenuItemSaleFields` yazdıysa true, "değişmedi" yolunda false). Panel Tükendi kaydını şimdi istekten hemen önceki canlı listeye ve yanıtın damgasına bakarak yazıyor (10b incelemesi); sahip sitede ya da yönetici ürün kartından tam bu gidiş-dönüş içinde kapatırsa personelin kaydı yine yazılabilir. Alan gelince panel kaydı yalnız `changed === true`'da yazar (`docs/SITE-MENU.md` › Kayıt).
@@ -396,8 +396,8 @@ Dalga 7'nin kuralı). Reçete, menü maliyeti, önerilen fiyat, zam uyarısı ve
 Sayımda katman rozeti ve kapsama satırı yalnız yöneticide.
 
 Denetimde FIFO'ya dokunan maddeler: başlangıç ayına bir kerelik yeniden değerleme farkı mal maliyeti diye yazılıyor
-(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyor (E-06, B03); "Diğer" kategorili fatura
-stoğa girip gelir-gidere girmiyor (E-07, B03).
+(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyordu (E-06, B03'te düzeltildi); "Diğer"
+kategorili fatura stoğa girip gelir-gidere girmiyordu (E-07, B03: artık "Mal alışı sayılmıyor" diye kontrol bekler).
 
 ### Dalga 15: kenar çubuğu (#39)
 

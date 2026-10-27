@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { openBalance as insightsOpenBalance } from "../src/lib/calc/insights";
-import { arrivalBase, coveredByAllocations, EPS, isPartiallyPaid, methodFromCard, openBalance, paidViaOf, trackingBase, CARI_METHODS } from "../src/lib/cari/balance";
+import { arrivalBase, coveredByAllocations, EPS, isPartiallyPaid, methodFromCard, openBalance, paidViaOf, takesCreditOnArrival, trackingBase, CARI_METHODS } from "../src/lib/cari/balance";
 
 /** Planın tabanındaki (main @ 48a984c) kural, harfi harfine: karşılaştırma için */
 type Old = { payable: number; unpaid: boolean; outstanding?: number | null };
@@ -126,6 +126,16 @@ test("takipli karta sonradan gelen faturanın tabanı: takip gününden önceki 
   // Takip öncesi faturanın kalanı Paraşüt'ünkiyle aynı (takip başlarken panelde olsaydı olacağı gibi)
   const old = { ...f, date: "2026-05-18" };
   assert.equal(openBalance({ ...old, ledgerBase: arrivalBase(old, "2026-10-22"), allocated: 0 }), openBalance(f));
+});
+
+test("peşin takipli karta gelen fatura avansı yalnız takip günü ve sonrasında alır (E-14)", () => {
+  // Sütaş peşin, takip 1 Ekim'de başladı: 12 Ağu'nun kapıda ödenmiş faturası "Geçmiş faturaları al"la gelir, avans almaz
+  assert.equal(takesCreditOnArrival({ date: "2026-08-12", unpaid: false }, "2026-10-01"), false);
+  assert.equal(takesCreditOnArrival({ date: "2026-09-30", unpaid: false }, "2026-10-01"), false);
+  assert.equal(takesCreditOnArrival({ date: "2026-10-01", unpaid: false }, "2026-10-01"), true, "takip günü");
+  assert.equal(takesCreditOnArrival({ date: "2026-10-12", unpaid: false }, "2026-10-01"), true);
+  // Ödenmemiş gelen fatura (peşin kart değil) avansı burada almaz
+  assert.equal(takesCreditOnArrival({ date: "2026-10-12", unpaid: true }, "2026-10-01"), false);
 });
 
 test("ödeme şekli: kasa ve elden nakittir; kartın şeklinden varsayılan", () => {

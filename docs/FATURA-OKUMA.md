@@ -25,6 +25,7 @@ der (1 değil):
 | Paket (Koli, Kutu, Paket, Düzine…) | addaki sayı, gr / ml'de sayı × boyut | "330ML 1X24" → 24 adet ya da 7.920 ml; Düzine → 12 |
 | Tek parça (Adet, C62, AD, Tane; boş birim) | addaki ya da açıklamadaki **tek başına** paket sayısı | "150 AD.", "150 ADET", "150'Lİ", "100 LÜ", "X150", "150 PCS" → 150 adet |
 | Tek parça, gr / ml hammadde | addaki tek başına paket sayısı × boyut | "SÜT 1 LT 12 Lİ" → 12.000 ml |
+| Dış paket (Koli, Kutu, Kasa) ve adda **iki sayı** | ikisinin çarpımı (gr / ml'de × boyut) | "KARTON BARDAK 8 OZ 50'Lİ X 20", "20X50 AD", "20 PK X 50 AD", "50 Lİ 20 PAKET", "100 AD X 10 PK" → 1.000 adet |
 
 Sayılmayanlar: bardak boyu ("8OZ"), çap ve uzunluk ("90 MM", "23 CM"), yüzde ("%35 YAĞLI"), "2 KAT", ölçü gibi
 yazılmış "24X24". Tek parçalı kalemde **sayısız boyut** ("SÜT 1 L") kanıt değildir: tedarikçi 12 × 1 L koliyi de "1
@@ -32,7 +33,18 @@ Adet" yazar; form eskisi gibi tek ürünün boyutunu önerir (1.000 ml), ama 12.
 edilecek" sayılmaz, kart "1.000 ml olmalı" demez. "1000 GR * 8 AD" gibi **boyut × sayı** da kolinin içeriğidir;
 faturadaki birim tek kavanoz da olabilir koli de, kanıt sayılmaz (form tek ürünün boyutunu önerir). Faturada paket sayısı
 kadar ya da daha çok alınmışsa ("PİPET 500 AD" 2.000 adet, "PEÇETE 100 LÜ" 120 adet) birim tek parça da olabilir paket
-de: sayı kanıt sayılmaz, form da çarpanı **boş** bırakır ("1" değil; sahibi yazar ya da **Faturadan oku**). Sayılarda
+de: sayı kanıt sayılmaz, form da çarpanı **boş** bırakır ("1" değil; sahibi yazar ya da **Faturadan oku**).
+
+**İki sayılı paket adı** (denetim 26 Ekim, E-06): eskiden yalnız ilk sayı okunuyordu ("50'Lİ X 20" → 50); 1 Koli 400 ₺
+adet 8 ₺ görünüyordu (doğrusu 0,40 ₺), alınan miktar 20 kat az sayılıyordu. Şimdi bir paketteki tane ile paket sayısı
+birlikte okunur. Faturadaki birim dış paketse (Koli, Kutu, Kasa) çarpım kanıttır (1.000). Birim tek parça (Adet) ya da
+iç paketin adıysa (Paket, PK, Düzine) 1 birim 50 de olabilir 1.000 de: kanıt yok, form çarpanı boş bırakır ve
+olasılıkları gösterir (`Adında “50'Lİ X 20” yazıyor: 1 Adet = 50 adet mi, 1.000 adet mi? Faturadan okuyun ya da doğrusunu
+seçin.` · **50 yap** · **1.000 yap**; `packPairChoices`). Birim tek parçaysa (Adet) ve faturada en az bir paket kadar
+alınmışsa tedarikçi taneyle de yazmış olabilir, tek tane de seçenektir ("BARDAK KAPAĞI 90 MM 100 AD X 10 PK", 1.000
+Adet × 1,10 ₺ → **1 yap** · **100 yap** · **1.000 yap**; tek sayılı addaki kuralın aynısı). Ölçü olan ikinci sayı ("100 AD X 23 CM" pipetin boyu) ve
+ürün koduna yapışık sayı iki sayılı paket sayılmaz. Paket anahtarı da çarpımı taşır: "50'Lİ X 10" başka pakettir, "50'Lİ X
+20"nin bağlantısının çarpanı ona önerilmez. Sayılarda
 nokta gr / ml'de ve paket sayısında binlik ayraçtır ("1.000 GR" = 1.000 gr, "1.000 AD." = 1.000 adet), kg / lt'de
 ondalıktır ("1.500 KG" = 1,5 kg; "VANILYA.5.5LT" = 5,5 lt).
 
@@ -40,6 +52,11 @@ ondalıktır ("1.500 KG" = 1,5 kg; "VANILYA.5.5LT" = 5,5 lt).
 
 Kart en çok **bir** "Çarpanı X yap" önerir; ilk tutan kanıt kazanır:
 
+0. **Çelişki:** addaki (ya da açıklamadaki) paket boyu ile emin ya da büyük olasılıkla okunan fatura (3) farklı çarpan
+   diyorsa düğme yoktur, iki değer birlikte yazılır: `Adında “50'Lİ” yazıyor: 1 Koli = 50 adet, adet başı 8,00 ₺ (…).
+   Faturanın okuması: 1 Koli = 1.000 adet, adet başı 0,40 ₺ (…). İkisi çelişiyor; faturayı açıp bakın, doğru çarpanı
+   “Bağlantıyı düzelt”ten yazın.` (Eskiden ad kanıtı önce geldiği için bağlantı 1.000, okuma 1.000 iken "Çarpanı 50
+   yap" (+%1.900) çıkıyordu.) Faturadaki ölçü biriminin çevirisi (1 kg = 1.000 gr) okumayla çelişse de kanıttır.
 1. **Addaki ya da birimdeki paket boyu**, bağlantının çarpanından farklıysa:
    `Adında “150 AD.” yazıyor: 1 Adet = 150 adet olmalı. Öyle olursa adet başı 20,00 ₺ (şimdikinden %52 ucuz).`
 2. **Faturanın okunması** (3), emin ya da büyük olasılıkla okunduysa ve çarpandan farklıysa:
@@ -55,6 +72,18 @@ Kart en çok **bir** "Çarpanı X yap" önerir; ilk tutan kanıt kazanır:
 aynı") her zaman yazar: gerçek bir fiyat değişimi mi, görülsün. Öneriye basmak bağlantının çarpanını değiştirir
 (Paraşüt sayfasındaki düzenlemeyle aynı): eski öneri geçersiz olur, fatura yeni çarpanla yeniden değerlendirilir; fark
 hâlâ %40'tan büyükse yeni öneri onay bekler (bardakta "↓ %52"), sonra **Onayla**.
+
+**İlk fiyat** (E-06): hammaddenin fiyatı yoksa (0 ₺; sayımdan fiyatsız eklenen kalem) faturanın fiyatı ancak çarpan
+faturanın ölçü biriminden geliyorsa (KG, LT; düzine) doğrudan yazılır. Çarpan addan, açıklamadan ya da elle geldiyse ilk
+fiyat da onaya düşer: kart **İlk fiyat** rozetiyle "Fiyatı yoktu → faturada …" ve `Hammaddenin fiyatı yoktu. Çarpan
+faturanın biriminden (kg, lt) gelmediği için ilk fiyat onay bekliyor: faturadaki ürün ve çarpan doğruysa onaylayın.`
+der; kanıtı ve okuması yoksa fatura kendiliğinden okunur. Reddedilirse hammadde fiyatsız kalır, sonraki faturanın
+fiyatı yeniden sorulur. Zil ve e-posta "ilk fiyat" der (`holdReason`). Onay beklerken hammadde zilde ve Bugün'de
+"Fiyatı girilmemiş" sayılmaz (`loadUnpricedIngredients`): tek iş "Fiyat onayı"dır, "paket fiyatını girin" ikinci bir
+yol göstermesin; reddedilince yeniden sayılır. Genel bakış'ın "N ürünün maliyeti eksik" uyarısı da aynı: yalnız onay
+bekleyen hammaddeden eksik kalan ürünler "N ürünün maliyeti fiyat onayında" olarak onaya götürür
+(`Dataset.pendingPriceHolds`). Onay beklerken ilk fiyatın maliyeti 0 ₺ sayılır; zil, Bugün ve Genel bakış bunu söyler
+(`holdEffectSentence`), "şimdiki fiyatla hesaplanır" demez.
 
 **Tahmini fiyat:** hammaddenin şimdiki fiyatı tahminiyse (Hammaddeler'de "Tahmini"; sayım listesine eklenen kalem,
 Excel'deki varsayım) kart `Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat
@@ -109,8 +138,10 @@ yanlış olabilir, bir dokunuş bekler.
 
 - **Bağlama formu** (bekleyen ürün ve bağlı ürünün düzenlemesi): yazılan çarpan addaki kanıttan farklıysa altında
   `Adında “150 AD.” yazıyor: 1 Adet = 150 adet olabilir.` ve **150 yap**. Hammadde seçilince çarpan kanıttan gelir
-  ("150 AD." tek parçada 1 değil 150); faturada paket sayısı kadar ya da daha çok alınmışsa boş kalır (1). **Hazır
-  olanları bağla** penceresi de farkı söyler, çarpanı boş kalanı listelemez. **Faturadan oku** (3).
+  ("150 AD." tek parçada 1 değil 150); faturada paket sayısı kadar ya da daha çok alınmışsa boş kalır (1). Adında iki
+  sayı varsa ve birimden hangisi olduğu belli değilse ("50'Lİ X 20", 1 Adet) kutu boşalır, iki olasılık düğmeyle
+  gösterilir (1). **Hazır olanları bağla** penceresi de farkı söyler, çarpanı boş kalanı listelemez. **Faturadan oku**
+  (3).
 - **Kontrol edilecek bağlantılar** (yalnız yönetici): bağlı ürünün en yeni kalemindeki kanıt bağlantının çarpanından
   farklıysa listelenir, ör. "LİVİ YENİLEBİLİR BARDAK 150 AD. → Yenilebilir bardak: 1 Adet = 1 adet; adında 150 AD.".
   **Düzelt** bağlantıyı listede açar. Kendiliğinden hiçbir şey değişmez; çarpan doğruysa olduğu gibi bırakın (ör.

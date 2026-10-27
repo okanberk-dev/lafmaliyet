@@ -113,9 +113,11 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - zamanı gelen ödemeler (aşağıdaki aşamalarla);
 - **Paraşüt'ten gelen yeni faturalar** (son sabah e-postasından bu yana eşitlemenin açtıkları: tedarikçi, tarih,
   kategori, tutar; en çok 10 tanesi listelenir);
-- **kontrol bekleyen** fatura sayısı (kategorisi tahminle yazılmış), bağlantısıyla;
+- **kontrol bekleyen** fatura sayısı, bağlantısıyla; iki neden ayrı söylenir: kategorisi tahminle yazılanlar ve mal
+  alışı sayılmayanlar (kalemi hammaddeye bağlı, kategorisi mal alışı değil; `docs/PARASUT.md` 6b);
 - **onay bekleyen hammadde fiyatları** (Paraşüt bölümünde, kontrol kutusunun altında): faturada şimdikinden %40'tan
-  fazla farklı gelen, onay bekleyen fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.
+  fazla farklı gelen ya da fiyatı olmayan hammaddenin çarpanı kesin olmayan ilk fiyatı ("ilk fiyat"), onay bekleyen
+  fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.
   Bekledikçe bölümde görünür; e-postayı yalnız son Paraşüt bölümlü e-postadan beri onaya düşen fiyat gönderir;
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
 - **komisyon ve hakediş** (fiyat onayından sonra): geciken hakediş, yemek kartında %6 aşımı ve komisyon dışı ücret

@@ -345,6 +345,20 @@ export interface PurchaseQty {
   note: string | null;
 }
 
+/**
+ * Çarpanı şüpheli (fiyatı onay bekleyen ya da reddedilen) Paraşüt kalemi olan alış: alınan miktara ve stok partilerine
+ * girmedi (src/server/data/purchase-lots-query.ts queryHeldPurchases). Tutarlılık o ayın sapmasını, ayın alımı elle
+ * yazılmadıkça hesaplamaz.
+ */
+export interface HeldPurchase {
+  month: string;
+  ingredientId: number;
+  /** Bu ay o hammaddeye düşen, fiyatı onay bekleyen bağlantının fatura sayısı */
+  invoices: number;
+  /** Yalnız fiyatı reddedildiği için dışarıda kalan fatura sayısı (bekleyen öneri yok; miktar elle yazılır) */
+  rejected: number;
+}
+
 /** Aylık harcamanın Gelir-gider bölümü: mal (mal maliyeti) ya da sabit gider bölümlerinden biri */
 export type ExpenseSection = FixedSection | "mal";
 /** Genel bakış "Para nereye gitti" grubu (constants.ts PanelFixedGroup ile aynı) */
@@ -418,6 +432,10 @@ export interface Dataset {
   purchaseLots?: PurchaseLot[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
+  /** Çarpanı şüpheli alışlar (alınan miktara girmedi; yoksa boş): Tutarlılık işaretler, sapmayı hesaplamaz */
+  heldPurchases?: HeldPurchase[];
+  /** Fiyatı onay bekleyen hammaddeler (yoksa boş): fiyatsızsa uyarı onaya götürür, "paket fiyatını girin" demez */
+  pendingPriceHolds?: number[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
   expenseCategories?: ExpenseCategory[];
   expenseEntries?: ExpenseEntry[];

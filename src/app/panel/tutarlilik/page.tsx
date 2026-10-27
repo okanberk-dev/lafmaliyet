@@ -15,6 +15,7 @@ import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
+import { HOLDS_HREF } from "@/lib/price-hold";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
@@ -57,7 +58,13 @@ const ALERT_STYLE: Record<Alert["level"], { icon: typeof Info; tone: PastelTone;
 async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/panel/tutarlilik">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, findings] = await Promise.all([loadModel(), getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id))]);
+  const [model, findings, linkedRows] = await Promise.all([
+    loadModel(),
+    getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
+    // Paraşüt'teki bir ürüne bağlı hammaddeler: alımı faturadan gelir; bu ay faturası yoksa toplu "Alım yok (0)"
+    getDb().selectDistinct({ id: s.parasutProductLinks.ingredientId }).from(s.parasutProductLinks),
+  ]);
+  const linked = new Set(linkedRows.map((r) => r.id));
   const month = resolveMonth(sp.ay, model);
   // Bu aya düşen, onay bekleyen geç zayi / ikram ve silme istekleri (dalga 10 §2.8): onaylanırsa tutarlılık değişir
   const waiting = await pendingWasteSummary({ month }).catch(() => null);
@@ -101,7 +108,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
     .map((i) => ({ id: i.id, name: i.name, unit: i.unit }))
     .sort((a, b) => a.name.localeCompare(b.name, "tr"));
 
-  const severities = c.rows.map((r) => severityOf({ usage: r.usage, purchased: r.purchased, ratio: r.ratio }));
+  const severities = c.rows.map((r) => severityOf({ usage: r.usage, purchased: r.purchased, ratio: r.ratio, held: r.held, rejected: r.rejected }));
   const bigCount = severities.filter((x) => x === "big").length;
   const diffCount = severities.filter((x) => x === "big" || x === "diff").length;
   const purchasedCount = c.rows.filter((r) => r.purchased !== null).length;
@@ -204,6 +211,18 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                     {num(c.needsPurchaseCount)} malzemede alım girilmeli
                   </Link>
                 ) : null}
+                {c.heldCount ? (
+                  // Çarpanı onay bekleyen fatura alınana girmedi (stok partileriyle aynı); sapma onaydan sonra
+                  <Link href={HOLDS_HREF} className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink">
+                    {num(c.heldCount)} malzemede fiyat onayı bekliyor
+                  </Link>
+                ) : null}
+                {c.rejectedCount ? (
+                  // Fiyatı reddedilen fatura alınana girmedi; bekleyen öneri yok, ayın alımı tabloda elle yazılır
+                  <Link href="#malzeme-tablosu" className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink">
+                    {num(c.rejectedCount)} malzemede reddedilen fatura alınana girmedi: alımı yazın
+                  </Link>
+                ) : null}
                 {c.unreciped.count ? (
                   <span className="block">
                     Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
@@ -253,6 +272,9 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           usage: r.usage,
           onlineUsage: r.onlineUsage,
           purchased: r.purchased,
+          held: r.held,
+          rejected: r.rejected,
+          linked: linked.has(r.ingredient.id),
           ratio: r.ratio,
           diffAmount: r.diffAmount,
           opening: r.opening,

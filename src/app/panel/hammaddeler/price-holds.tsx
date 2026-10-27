@@ -14,7 +14,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input } from "@/components/ui/form";
 import type { Unit } from "@/lib/calc/types";
 import { dateTimeTR, dateTR, num, pct, tl2 } from "@/lib/format";
-import { ESTIMATE_BADGE, ESTIMATE_TEXT, HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
+import { ESTIMATE_BADGE, ESTIMATE_TEXT, FIRST_PRICE_TEXT, HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
 import { readHoldInvoice } from "@/server/actions/invoice-readings";
@@ -46,13 +46,16 @@ export interface HoldView {
   /** Aynı hammaddenin bir önceki faturası (başka tedarikçi olabilir) */
   last: { unitPrice: number; date: string; supplier: string } | null;
   impact: HoldImpact;
+  /** Hammaddenin fiyatı yok (0): faturadan gelen ilk fiyat, çarpanı faturanın biriminden gelmediği için onayda */
+  first: boolean;
   /** Hammaddenin şimdiki fiyatı tahmini (varsayım): yüzde ona göre, kart söyler */
   estimate: boolean;
   /**
    * Kanıta dayalı tek öneri (sunucuda kurulur, src/lib/price-hold.ts holdSuggestion): adındaki paket boyu, faturanın
-   * okunması ya da (yalnız aynı ürünün geçmişi varsa) çarpan oranı; `factor` varsa "Çarpanı X yap"
+   * okunması ya da (yalnız aynı ürünün geçmişi varsa) çarpan oranı; `factor` varsa "Çarpanı X yap". "conflict": ad ile
+   * okuma çelişiyor, iki değer yazar, düğme yok
    */
-  suggestion: { kind: "evidence" | "reading" | "ratio"; factor: number | null; text: string } | null;
+  suggestion: { kind: "evidence" | "reading" | "ratio" | "conflict"; factor: number | null; text: string } | null;
   /** Faturanın okunması öneri değilse bilgi satırı (aynı çarpanı doğruluyor ya da az emin) */
   reading: { text: string; low: boolean } | null;
   /** Fatura okunamadıysa nedeni */
@@ -186,7 +189,8 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
       const f = num(factor, 3);
-      if (r.data.held) toast.warning(`Çarpan ${f} oldu · fiyat hâlâ %40'tan fazla farklı, onay bekliyor`);
+      // İlk fiyat (hammaddenin fiyatı yoktu) çarpan faturanın biriminden gelmedikçe yine onaya düşer (E-06)
+      if (r.data.held) toast.warning(`Çarpan ${f} oldu · ${x.first ? "ilk fiyat yine onay bekliyor" : "fiyat hâlâ %40'tan fazla farklı, onay bekliyor"}`);
       else toast.success(`Çarpan ${f} oldu · ${r.data.prices ? "fiyat uygulandı" : "fiyat şimdikiyle aynı"}`);
     });
   };
@@ -196,7 +200,7 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
       <CardHeader
         icon={<TriangleAlert />}
         title="Onay bekleyen fiyatlar"
-        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı. Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır."
+        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı ya da hammaddenin ilk fiyatı (çarpanı faturanın biriminden gelmiyor). Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır; ilk fiyatı bekleyen hammadde 0 ₺ sayılır."
         meta={items.length ? <span className="font-medium text-warn tabular">{num(items.length)} hammadde</span> : null}
       />
       <CardContent className="space-y-3">
@@ -342,13 +346,22 @@ function HoldItem({
               {x.estimate ? ` ${ESTIMATE_BADGE}` : ""}
             </Badge>
           ) : null}
+          {x.first ? (
+            <Badge tone="amber" title="Hammaddenin fiyatı yoktu: faturadan gelen ilk fiyat">
+              İlk fiyat
+            </Badge>
+          ) : null}
           {x.repeats >= 2 ? <Badge tone="gray">Son {num(x.repeats)} faturada da bu fiyat</Badge> : null}
         </p>
         <p className="text-[13px] text-ink-soft tabular">
-          Şimdi <span className="font-semibold text-ink">{bulkPrice(x.current, x.unit)}</span> → faturada{" "}
+          {x.first ? "Fiyatı yoktu" : <>Şimdi <span className="font-semibold text-ink">{bulkPrice(x.current, x.unit)}</span></>} → faturada{" "}
           <span className="font-semibold text-ink">{bulkPrice(x.proposed, x.unit)}</span>
         </p>
-        {x.estimate ? <p className="text-pretty text-warn">{ESTIMATE_TEXT}</p> : null}
+        {x.first ? (
+          <p className="text-pretty text-warn">{FIRST_PRICE_TEXT}</p>
+        ) : x.estimate ? (
+          <p className="text-pretty text-warn">{ESTIMATE_TEXT}</p>
+        ) : null}
         <p>
           {x.supplier} · <span className="tabular">{dateTR(x.date)}</span>
           {x.invoiceNo ? ` · ${x.invoiceNo}` : ""} ·{" "}
@@ -401,6 +414,7 @@ function HoldItem({
           <div className={cn("mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2", x.suggestion.kind === "reading" ? "bg-info-soft text-info" : "bg-warn-soft text-warn")}>
             <p className="min-w-0 flex-1 basis-60 text-pretty">
               {x.suggestion.kind === "reading" ? <ScanText size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" /> : null}
+              {x.suggestion.kind === "conflict" ? <TriangleAlert size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" /> : null}
               {x.suggestion.text}
             </p>
             {x.suggestion.factor ? (
@@ -453,6 +467,12 @@ function HoldItem({
   );
 }
 
+/**
+ * Reddedilen fiyatın faturası alınana ve stok partilerine girmez (çarpanı şüpheli kaldı; suspectFactorLine): karar
+ * anında söylenir, Tutarlılık o ayın alımını elle yazdırır
+ */
+const REJECTED_QTY_TEXT = "Bu faturanın miktarı alınana ve stok değerine girmez; Tutarlılık'ta elle yazabilirsiniz.";
+
 /** "Reddet": şimdiki fiyat kalır; istenirse bu üründen fiyat güncellemesi kapanır */
 function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => void; onReject: (stopUpdates: boolean, note: string) => void }) {
   const [stop, setStop] = useState(false);
@@ -464,7 +484,11 @@ function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => vo
       onClose={onClose}
       size="sm"
       title="Bu fiyat uygulanmasın mı?"
-      description={`${x.name} şimdiki fiyatında (${bulkPrice(x.current, x.unit)}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden sorulur.`}
+      description={
+        x.first
+          ? `${x.name} fiyatsız kalır. Sonraki faturanın fiyatı yeniden sorulur. ${REJECTED_QTY_TEXT}`
+          : `${x.name} şimdiki fiyatında (${bulkPrice(x.current, x.unit)}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden sorulur. ${REJECTED_QTY_TEXT}`
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -477,7 +501,7 @@ function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => vo
       }
     >
       <div className="space-y-3 pb-3">
-        <Checkbox label="Bu üründen fiyat güncellemesini kapat (alınan miktar yine sayılır)" checked={stop} onChange={(e) => setStop(e.target.checked)} />
+        <Checkbox label="Bu üründen fiyat güncellemesini kapat (sonraki faturaların miktarı yine sayılır)" checked={stop} onChange={(e) => setStop(e.target.checked)} />
         <Field label="Not (isteğe bağlı)" htmlFor={noteId}>
           <Input id={noteId} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="ör. Faturada koli yazılmış" />
         </Field>

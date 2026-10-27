@@ -80,8 +80,9 @@ Staff never see holds. All of the places above are admin-only already.
 - **Reddet** opens a small `Dialog` (size `sm`, not `ConfirmDialog`, because it needs fields):
   - Title `Bu fiyat uygulanmasın mı?`.
   - Text `{name} şimdiki fiyatında ({32,00 ₺/L}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden
-    sorulur.`
-  - `Checkbox` `Bu üründen fiyat güncellemesini kapat (alınan miktar yine sayılır)`, unchecked by default.
+    sorulur. Bu faturanın miktarı alınana ve stok değerine girmez; Tutarlılık'ta elle yazabilirsiniz.` (denetim B03:
+    the rejected invoice stays out of Alınan and the stock lots.)
+  - `Checkbox` `Bu üründen fiyat güncellemesini kapat (sonraki faturaların miktarı yine sayılır)`, unchecked by default.
   - `Input` `Not (isteğe bağlı)`, max 300.
   - Buttons `Vazgeç` / `Reddet` (tone danger).
 - Toasts. Each has a **Geri al** action that calls `undoPriceHold`:

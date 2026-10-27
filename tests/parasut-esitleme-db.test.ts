@@ -632,6 +632,41 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     }
   });
 
+  test("cari (E-14): peşin takipli kartın takipten önceki faturası Geçmiş faturaları al ile gelir, avans almaz; takipten sonrakini K21 karşılar", async () => {
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber, paidOnDelivery: true, paymentMethod: "nakit" }).returning();
+    try {
+      // Kart henüz takipsizken gelen fatura (Paraşüt kişisini tanımak için)
+      fake.bills.set("301", bill("301", { date: daysAgo(3), unpaid: false }));
+      await run();
+      // Takip iki gün önce 5.000 ₺ avansla başladı (dağıtımı yok: hesapta)
+      await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 5000, method: "havale", createdByName: "Test" });
+      const settle = await import("../src/server/cari/settle");
+      const credit = async () => [...(await settle.cardsWithCredit())];
+      assert.deepEqual(await credit(), [[card.id, 5000]]);
+      const byExt = async (id: string) => (await rows()).find((x) => x.externalId === id)!;
+
+      // Geçmiş faturaları al: 160 gün önceki, kapıda ödenmiş 1.100 ₺'lik fatura avanstan para almaz
+      fake.bills.set("201", bill("201", { date: daysAgo(160), unpaid: false }));
+      const h = await sync.syncSupplierHistory({ label: "Sütaş", billIds: ["301"], taxNumber: SUTAS.taxNumber, names: ["Sütaş"], match: () => "same" });
+      assert.ok(h.ok, JSON.stringify(h));
+      const old = await byExt("201");
+      assert.deepEqual([old.unpaid, old.paidAt, old.allocated, old.paidByLedger], [false, daysAgo(160), 0, false]);
+      assert.deepEqual(await credit(), [[card.id, 5000]], "avans aynı");
+      assert.equal((await db.select().from(s.supplierAllocations)).length, 0);
+
+      // Takipten sonraki yeni fatura: hesaptaki para sayılır (K21), defterle kapanır
+      fake.bills.set("302", bill("302", { date: daysAgo(1), unpaid: false }));
+      const r = await run();
+      assert.match(r.summary, /1 peşin faturaya hesaptaki ödeme sayıldı/);
+      const fresh = await byExt("302");
+      assert.deepEqual([fresh.allocated, fresh.paidByLedger], [1100, true]);
+      assert.deepEqual(await credit(), [[card.id, 3900]]);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
   test("tedarikçi geçmişi: eski faturası sorulamayan fatura sonraki basışta kendi sayfasından yeniden denenir, kalınan yer takılı kalmaz", async () => {
     const id = await linkedAndPaid();
     fake.bills.delete("101");

@@ -45,6 +45,17 @@ geçersiz kalır ama aynı yanlış çarpanı taşır), bugünkü çarpanla redd
 düzeltilince eski çarpanla açılmış öneriler bir şey dışlamaz, faturalar yeni çarpanla girer. Su ve buz eski yöntemle
 (faturası yoktur).
 
+Aynı yüklem (`suspectFactorLine`, ortak SQL parçası) Paraşüt eşitlemesinin yazdığı **alınan miktarı** da (Tutarlılık;
+`recomputePurchaseQuantities`) belirler (denetim 26 Eki, E-27): stok partileri ile "alınan" aynı kalemleri sayar.
+Çarpanı onay bekleyen faturası olan malzeme Tutarlılık'ta "Fiyat onayı bekliyor" olur; o ayın oranı, farkı ve sapması
+fiyat onayı karara bağlanınca hesaplanır (onay, red ve geri alma alınan miktarı hemen yeniden hesaplar). Eskiden bekleyen
+koli / adet çarpanı (×150) "alınan"ı şişirip sapmayı dev bir zayi gibi gösteriyordu.
+
+Mal alışı sayılmayan kategorideki ("Diğer", "Hizmet"…) faturanın hammaddeye bağlı kalemi de partiye ve "alınan"a girer
+(denetim 26 Eki, E-07): sayılan stok o malı zaten içerir; partiden çıkarmak kâr-zararı düzeltmez, yalnız sayılan
+miktarı ay sonu fiyatına iter. Eksik olan gelir-giderin mal alışıdır: böyle fatura Faturalar'da kontrol bekler ("Mal
+alışı sayılmıyor"), kategorisi mal alışı yapılınca gelir-gider de onu sayar (docs/PARASUT.md 6b).
+
 Faturası olmayan alım (elle / Excel girilen fatura, nakit / market alımı, bağlanmamış Paraşüt ürünü) havuzda
 görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu
 fiyatıyla. Tedarikçiye iade panele yalnız Faturalar'da elle girilmiş, kalemsiz eksi fatura olarak geldiyse (Paraşüt'te

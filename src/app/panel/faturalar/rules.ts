@@ -10,7 +10,15 @@ import type { Invoice } from "../../../lib/calc/types";
  * vergi nosu yalnız Faturalar sayfasında eklenir (pencerede görünür, Tedarikçiler bağlantısını bulur); hesaplar
  * kullanmaz
  */
-export type InvoiceRow = Invoice & { outstanding?: number | null; supplierTaxNumber?: string | null };
+export type InvoiceRow = Invoice & {
+  outstanding?: number | null;
+  supplierTaxNumber?: string | null;
+  /**
+   * Kalemi hammaddeye bağlı ama kategorisi mal alışı değil (E-07): stoğa ve fiyata giriyor, gelir-gidere girmiyor. Kontrol
+   * bekliyorsa onaylanamaz (kategori değişmeli ya da "kalsın" denmeli); "kalsın" denmişse yalnız bilgi
+   */
+  stockOnly?: boolean;
+};
 
 // ---------------------------------------------------------------- Paraşüt kilidi
 
@@ -76,7 +84,8 @@ export function isEInvoiceOnly(i: { eInvoiceId?: string | null; externalId?: str
 
 /**
  * Adresteki ?durum= değerleri. "kontrol": eşitlemenin kategorisini tahminle yazdığı, sahibinin onayını bekleyen
- * faturalar (needsReview). Bildirimlerdeki bağlantılar ?durum=odenmedi kullanır.
+ * faturalar ve kalemi hammaddeye bağlı ama mal alışı sayılmayanlar (needsReview). Bildirimlerdeki bağlantılar
+ * ?durum=odenmedi ve ?durum=kontrol kullanır.
  */
 export type InvoiceStatus = "tumu" | "kontrol" | "odenmedi" | "odendi";
 const STATUSES: readonly InvoiceStatus[] = ["tumu", "kontrol", "odenmedi", "odendi"];

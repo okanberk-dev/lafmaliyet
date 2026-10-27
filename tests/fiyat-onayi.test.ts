@@ -15,11 +15,14 @@ import {
   appliedKeyOf,
   ESTIMATE_BADGE,
   ESTIMATE_TEXT,
+  conflictSuggestionText,
   evidenceSuggestionText,
   factorHint,
+  firstPriceCertain,
   holdAlert,
   holdImpact,
   holdLogText,
+  holdReason,
   holdsSummary,
   HOLDS_HREF,
   holdSuggestion,
@@ -40,9 +43,14 @@ import {
 } from "../src/lib/price-hold";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
-test("priceStep: şimdiki fiyat yoksa yazılır, %0,5'ten küçük fark yazılmaz, %40'tan büyük fark onaya düşer", () => {
-  assert.equal(priceStep({ before: 0, after: 10 }), "apply");
-  assert.equal(priceStep({ before: -1, after: 10 }), "apply");
+test("priceStep: ilk fiyat çarpanı kesinse yazılır, %0,5'ten küçük fark yazılmaz, %40'tan büyük fark onaya düşer", () => {
+  // İlk fiyat (şimdiki fiyat yok): çarpan faturanın ölçü biriminden geliyorsa yazılır, addan ya da elle geldiyse onaya
+  assert.equal(priceStep({ before: 0, after: 10 }), "hold");
+  assert.equal(priceStep({ before: -1, after: 10 }), "hold");
+  assert.equal(priceStep({ before: 0, after: 10, firstCertain: true }), "apply");
+  assert.equal(priceStep({ before: 0, after: 10, exempt: true }), "apply");
+  // Şimdiki fiyat varken firstCertain bir şey değiştirmez
+  assert.equal(priceStep({ before: 10, after: 20, firstCertain: true }), "hold");
   assert.equal(priceStep({ before: 10, after: 10.04 }), "same");
   assert.equal(priceStep({ before: 10, after: 9.96 }), "same");
   assert.equal(priceStep({ before: 10, after: 10.06 }), "apply");
@@ -292,8 +300,14 @@ test("holdAlert ve özet: boşta yok, tek, beş öneride 've 2 hammadde daha'", 
   ]);
   assert.equal(five?.title, "Fiyat onayı: 5 hammadde");
   assert.ok(five?.detail.includes(`: Süt +${WJ}%52, Kahve −${WJ}%45, Kakao +${WJ}%1.100 ve 2 hammadde daha. `), five?.detail);
-  // Şimdiki fiyatı sonradan 0 yapılmış hammadde: yüzde yazılmaz
-  assert.equal(holdsSummary([{ name: "Kapak", pct: null }]), "Kapak");
+  // Şimdiki fiyatı olmayan (ya da sonradan 0 yapılmış) hammadde: yüzde yerine ilk fiyat
+  assert.equal(holdsSummary([{ name: "Kapak", pct: null }]), "Kapak (ilk fiyat)");
+  assert.equal(holdReason([{ pct: 0.52 }]), "faturadaki fiyat şimdikinden %40'tan fazla farklı");
+  assert.equal(holdReason([{ pct: null }]), "faturadan gelen ilk fiyat, çarpanı kesin değil");
+  assert.equal(holdReason([{ pct: 0.52 }, { pct: null }]), "faturadaki fiyat şimdikinden %40'tan fazla farklı ya da ilk fiyat");
+  // İlk fiyatı bekleyenin şimdiki fiyatı yok: maliyette 0 ₺ (denetim B03 incelemesi)
+  assert.deepEqual(holdAlert([{ name: "Karton bardak", pct: null }])?.detail, "Faturadan gelen ilk fiyat, çarpanı kesin değil: Karton bardak (ilk fiyat). Onaylanana kadar maliyetlerde 0 ₺ sayılır.");
+  assert.ok(five?.detail.endsWith("Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır; ilk fiyatı bekleyenler 0 ₺ sayılır."), five?.detail);
   assert.equal(livePct(0.05, 0), null);
   assert.ok(Math.abs(livePct(0.0486, 0.032)! - 0.51875) < 1e-12);
   assert.equal(holdLogText({ name: "Süt", pct: 0.52, supplier: "Sütaş", date: "2026-10-21" }), `Süt +${WJ}%52 (Sütaş 21.10.2026)`);
@@ -398,4 +412,57 @@ test("öneri metinleri: birim fiyat ve şimdikine göre fark", () => {
     evidenceSuggestionText({ factor: 150, source: "description", text: "150 ADET" }, { lineUnit: null, unit: "adet", unitPrice: null, currentUnit: 41.65 }),
     "Açıklamasında “150 ADET” yazıyor: 1 birim = 150 adet olmalı.",
   );
+});
+
+// ── Denetim E-06 (26 Eki): iki sayılı paket adı, okumayla çelişen ad kanıtı, ilk fiyat ──
+
+test("öneri: ad kanıtı emin okumayla çelişirse iki değer yazılır, “Çarpanı X yap” yok (E-06)", () => {
+  // Bağlantı 1000 (doğru), adın eski okuması 50, fatura emin okunmuş 1000: eskiden "Çarpanı 50 yap" (+%1900) derdi
+  const wrongName = { factor: 50, source: "name" as const, text: "50'Lİ" };
+  const hold = { factor: 1000, quantity: 1, netTotal: 400, current: 0.4, evidence: wrongName, reading: { factor: 1000, confidence: "high" as const }, history: false };
+  const s = holdSuggestion(hold);
+  assert.equal(s?.kind, "conflict");
+  assert.equal(s?.factor, null, "düğme yok");
+  assert.equal(s?.reading?.factor, 1000);
+  assert.equal(s?.unitPrice, 8);
+  assert.equal(s?.reading?.unitPrice, 0.4);
+  assert.equal(
+    conflictSuggestionText(s!, { lineUnit: "Koli", unit: "adet", currentUnit: 0.4 }),
+    "Adında “50'Lİ” yazıyor: 1 Koli = 50 adet, adet başı 8,00\u00a0₺ (şimdikinden %1.900 pahalı). Faturanın okuması: 1 Koli = 1.000 adet, adet başı 0,40\u00a0₺ (şimdikiyle aynı). İkisi çelişiyor; faturayı açıp bakın, doğru çarpanı “Bağlantıyı düzelt”ten yazın.",
+  );
+  // Büyük olasılıkla okuma da çelişki sayılır; az emin okuma sayılmaz (kanıt önerilir), okuma aynı derse kanıt önerilir
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 1000, confidence: "medium" } })?.kind, "conflict");
+  assert.deepEqual(holdSuggestion({ ...hold, reading: { factor: 1000, confidence: "low" } })?.factor, 50);
+  assert.equal(holdSuggestion({ ...hold, factor: 1, reading: { factor: 50, confidence: "high" } })?.kind, "evidence");
+  // Bağlantı adın okumasıyla aynı (50) ama fatura 1000 diyor: yine çelişki, iki değer
+  const same = holdSuggestion({ ...hold, factor: 50 });
+  assert.deepEqual([same?.kind, same?.factor], ["conflict", null]);
+  // Düzeltilmiş ad okuması (Koli → 1000) okumayla aynı: tek düğme, 1000
+  const fixed = packEvidence({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli", quantity: 1 }, "adet");
+  assert.deepEqual(fixed, { factor: 1000, source: "name", text: "50'Lİ X 20" });
+  const ok = holdSuggestion({ ...hold, factor: 50, evidence: fixed, reading: { factor: 1000, confidence: "high" } });
+  assert.deepEqual([ok?.kind, ok?.factor], ["evidence", 1000]);
+});
+
+test("öneri: faturadaki ölçü biriminin çevirisi (1 kg = 1000 gr) okumayla çelişse de kanıttır", () => {
+  const kg = packEvidence({ name: "KAKAO", unit: "KG", quantity: 2 }, "gr");
+  assert.deepEqual(kg, { factor: 1000, source: "unit", text: "KG" });
+  const hold = { factor: 1000, quantity: 2, netTotal: 1800, current: 0.5, evidence: kg, reading: { factor: 1, confidence: "high" as const }, history: false };
+  // Bağlantı birimle aynı: okuma onu değiştirmeye önerilmez (bilgi satırında kalır)
+  assert.equal(holdSuggestion(hold), null);
+  // Bağlantı birimden farklı: birimin çevirisi önerilir, okuma çelişse de
+  assert.deepEqual([holdSuggestion({ ...hold, factor: 1 })?.kind, holdSuggestion({ ...hold, factor: 1 })?.factor], ["evidence", 1000]);
+});
+
+test("ilk fiyat: çarpan faturanın ölçü biriminden geliyorsa kesin, addan ya da elle geldiyse değil (E-06)", () => {
+  assert.equal(firstPriceCertain(packEvidence({ name: "MATCHA", unit: "KG" }, "gr"), 1000), true);
+  assert.equal(firstPriceCertain(packEvidence({ name: "KAŞIK", unit: "Düzine" }, "adet"), 12), true);
+  // Birim kg ama bağlantı başka çarpanla yazılmış
+  assert.equal(firstPriceCertain(packEvidence({ name: "MATCHA", unit: "KG" }, "gr"), 1), false);
+  // Ad kanıtı ("150 AD.", "50'Lİ X 20") kesin değil: ilk fiyat onaya düşer
+  assert.equal(firstPriceCertain(packEvidence({ name: "LİVİ YENİLEBİLİR BARDAK 150 AD.", unit: "Adet", quantity: 1 }, "adet"), 150), false);
+  assert.equal(firstPriceCertain(packEvidence({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli", quantity: 1 }, "adet"), 1000), false);
+  assert.equal(firstPriceCertain(null, 1), false);
+  // Sıra: kanıt yoksa ilk fiyat onaya, varsa yazılır
+  assert.equal(priceStep({ before: 0, after: 0.4, firstCertain: firstPriceCertain(null, 50) }), "hold");
 });

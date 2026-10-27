@@ -15,7 +15,7 @@ import {
   type LastAllocation,
   type LinkPrev,
 } from "@/lib/cari/account";
-import { arrivalBase, coveredByAllocations, EPS, paidViaOf, round2, trackingBase, type CariMethod } from "@/lib/cari/balance";
+import { arrivalBase, coveredByAllocations, EPS, paidViaOf, round2, takesCreditOnArrival, trackingBase, type CariMethod } from "@/lib/cari/balance";
 import { linkableInvoice } from "@/lib/cari/match";
 import { dateTR, tl } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
@@ -755,6 +755,12 @@ export async function applyCreditOnArrival(arrivals: readonly { id: number; card
       if (!credits.length) return null;
       const [inv] = await lockInvoices(tx, [a.id]);
       if (!inv || inv.payable <= 0 || inv.paidByLedger) return null;
+      // Takipten önceki tarihli fatura kapıda ödenmişti: avans almaz (E-14; eşitleme zaten göndermez, ikinci kapı)
+      const [first] = await tx
+        .select({ since: sql<string | null>`min(${s.supplierEntries.date})` })
+        .from(s.supplierEntries)
+        .where(and(eq(s.supplierEntries.supplierId, a.cardId), eq(s.supplierEntries.kind, "odeme")));
+      if (!first?.since || !takesCreditOnArrival({ date: inv.date, unpaid: false }, first.since)) return null;
       if (inv.ledgerBase === null) await startTracking(tx, [inv.id]);
       let room = invoiceRoom({ ...inv, ledgerBase: inv.ledgerBase ?? 0 });
       let used = 0;
