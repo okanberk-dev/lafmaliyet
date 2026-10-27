@@ -12,7 +12,7 @@ import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod,
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
-import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../../server/parasut/constants";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../purchase-notes";
 import { HOLDS_HREF } from "../price-hold";
 import type { FixedSection, Ingredient } from "./types";
 

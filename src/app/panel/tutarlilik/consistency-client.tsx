@@ -26,7 +26,7 @@ import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { deleteFinding, saveFinding, setFindingResolved, setNoPurchase, setPurchaseQty } from "@/server/actions/consistency";
-import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "@/server/parasut/constants";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "@/lib/purchase-notes";
 
 
 import { RATIO_BAD, RATIO_GUIDE, RATIO_WARN, scopeTotals, SEVERITY, severityOf, tableScope, type StockCheck } from "./severity";

@@ -13,7 +13,7 @@ import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { consistency, stockVatSummary } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
-import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../src/server/parasut/constants";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../src/lib/purchase-notes";
 
 const root = join(__dirname, "..");
 const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
