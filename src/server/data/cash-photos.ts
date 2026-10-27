@@ -6,7 +6,10 @@ import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
+import { lafposDiffs } from "@/lib/lafpos/diffs";
+import type { LafposDay } from "@/lib/lafpos/prefill";
 import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
+import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
 
 /** Rapora bağlı fotoğraf (ekranda küçük resim ve "Z raporu · 23:52 · Ayşe") */
@@ -158,9 +161,14 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
   return raw.success ? normalizePos(raw.data, { day }) : null;
 }
 
-/** Yüklenmiş bilgiden WhatsApp ve e-posta ekleri: fotoğraflar, net okunmuş ama farklı yazılan alanlar, kasadan çıkanlar */
-export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields): CashReportExtras {
+/**
+ * Yüklenmiş bilgiden WhatsApp ve e-posta ekleri: fotoğraflar, net okunmuş ama farklı yazılan alanlar, kasadan çıkanlar;
+ * LafPOS gününde (`lafpos`: gün LafPOS günü mü ve gelen özeti; src/server/data/lafpos-day.ts loadKasaLafpos) Z
+ * bölümünün adı ve LafPOS'tan farklı yazılanlar (E-09). Verilmezse ModPOS: metin bugünkü gibi
+ */
+export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields, lafpos?: { lafpos: boolean; day: LafposDay | null } | null): CashReportExtras {
   return {
+    ...(lafpos?.lafpos ? { kasa: "LafPOS" as const, lafposDiffs: lafpos.day ? lafposDiffs(report, lafpos.day) : null } : {}),
     // ModPOS Z'si, banka POS Z'si (yazarkasa; geçişte eski sayfanın yüklemesi de kasa-okc olur) ve eski banka fişi ayrı
     // adlarla (photosLine; docs/planlar/okc-z.md §8)
     photos: info?.photos.length
@@ -171,8 +179,8 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
   };
 }
 
-/** Kayıtlı raporun WhatsApp ve e-posta ekleri */
+/** Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da) */
 export async function cashReportExtras(report: { id: number } & CashReportFields): Promise<CashReportExtras> {
-  const [info, outs] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date)]);
-  return extrasFrom(info.get(report.id), outs, report);
+  const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date), loadKasaLafpos(report.date)]);
+  return extrasFrom(info.get(report.id), outs, report, lafpos);
 }

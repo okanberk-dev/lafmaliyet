@@ -440,12 +440,14 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   assert.match(form, /field\("cashIn", "Gün içinde kasaya giren", \{ hint: "Satış dışı: bozuk para, tahsilat, nakit bahşiş"/);
   assert.match(form, /Kasaya giren ekle/);
   assert.match(form, /cashIn: report\.cashIn \? input\(report\.cashIn\) : ""/, "kayıtlı raporun gireni alanı açar");
-  // Sayfa: yalnız formun günü için ve yalnız geçiş gününden sonraki günlerde (loadKasaLafposDay); okunamazsa form yine
-  // açılır. Geçiş gününe bakmayan okuyucu sayfada çağrılmaz
+  // Sayfa: yalnız formun günü için ve yalnız geçiş gününden sonraki günlerde (loadKasaLafpos); okunamazsa form ModPOS'a
+  // göre açılır. Geçiş gününe bakmayan okuyucu sayfada çağrılmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /showForm \? loadKasaLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.match(page, /showForm \? loadKasaLafpos\(date\)\.catch\(\(\) => NO_LAFPOS\) : Promise\.resolve\(NO_LAFPOS\)/);
+  assert.match(page, /const NO_LAFPOS = \{ lafpos: false, day: null \} as const;/);
   assert.doesNotMatch(page, /\bloadLafposDay\(/);
-  assert.match(page, /lafpos=\{lafposDay\}/);
+  assert.match(page, /lafpos=\{lafposState\.day\}/);
+  assert.match(page, /lafposMode=\{lafposState\.lafpos\}/);
 });
 
 test("maliyet listesi: yalnız siteye bağlı ürünler, yalnız altı alan; maliyet kuruş, KDV hariç, sıralı", () => {

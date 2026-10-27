@@ -37,8 +37,9 @@ const siteMenuId = z.string().regex(SITE_MENU_ID).nullable();
 const slot = z.enum(["M", "L"]).nullable();
 
 /**
- * Z özeti: Kasa raporunun ModPOS Z ve kasa alanları (docs/03-ENTEGRASYON.md §3.2). `cashIn` ve `expectedCash` sonradan
- * geldi: eski LafPOS'un gövdesinde (ve saklanmış eski özetlerde) yoktur, yazılmayabilir; `cashIn` yoksa 0 sayılır.
+ * Z özeti: Kasa raporunun ModPOS Z ve kasa alanları (docs/03-ENTEGRASYON.md §3.2). `cashIn`, `expectedCash`, `cardTips`
+ * ve `cardCollections` sonradan geldi: eski LafPOS'un gövdesinde (ve saklanmış eski özetlerde) yoktur, yazılmayabilir;
+ * `cashIn` yoksa 0 sayılır.
  */
 export const posZSchema = z.object({
   zNo: z.number().int().min(0).max(999_999_999),
@@ -64,6 +65,12 @@ export const posZSchema = z.object({
   cashIn: tl.nullable().optional(),
   /** LafPOS'un olması gereken nakdi: açılış + nakit satış + cashIn − harcama − teslim (isteğe bağlı) */
   expectedCash: signedTl.nullable().optional(),
+  /**
+   * Kartla bahşiş ve kartla cari tahsilatı (isteğe bağlı; LafPOS L1): banka POS'unun gördüğü ama Z'nin kartına girmeyen
+   * tutarlar. Kasa raporunun kart farkı LafPOS günlerinde bunları düşer (src/lib/lafpos/prefill.ts lafposCardExtra)
+   */
+  cardTips: tl.nullable().optional(),
+  cardCollections: tl.nullable().optional(),
 });
 
 const lineSchema = z.object({

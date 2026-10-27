@@ -5,6 +5,7 @@ import { eq, isNotNull, sql } from "drizzle-orm";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
 import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
+import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
 /**
@@ -39,7 +40,7 @@ export type StorePosDayResult = { ok: true; lines: number; matched: number; unma
  * silinip yenisi yazılır; hepsi tek işlem. Aynı gün aynı Z no ile yeniden gelirse (düzeltme) öncekinin yerine geçer, aynı
  * anda iki gönderim sırayla yazılır. O güne başka bir Z no ile yazılmış özet varsa hiçbir şey yazılmaz (`ok: false`):
  * önceki Z'yi ve günün satırlarını sessizce silmek yerine uç 409 döner. Ürün: önce sitenin kalemi ve boyu, yoksa POS
- * eşleştirmesi (resolvePosLine).
+ * eşleştirmesi (resolvePosLine). Gün LafPOS günüyse ve satış varsa o günün kapalı işareti kalkar (onLafposDaySaved).
  */
 export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date()): Promise<StorePosDayResult> {
   return db.transaction(async (tx) => {
@@ -79,6 +80,9 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       .onConflictDoUpdate({ target: s.posDayReports.date, set: report });
     await tx.delete(s.posDailySales).where(eq(s.posDailySales.date, day.date));
     if (rows.length) await tx.insert(s.posDailySales).values(rows);
+    // Satışlı LafPOS günü kafenin açık olduğunun kanıtı (E-36): yalnız geçiş gününden sonraki günde, kasa raporunun
+    // gelişi gibi o günün kapalı işaretini ve bekleyen "Kafe kapalıydı" bildirimini kaldırır; deneme günü dokunmaz
+    await onLafposDaySaved(tx, day.date, day.z, now);
     const unmatched = rows
       .filter((r) => r.productId === null && !r.isService)
       .sort((a, b) => b.qty - a.qty || a.posName.localeCompare(b.posName, "tr"))

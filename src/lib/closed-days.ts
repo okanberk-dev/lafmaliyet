@@ -92,6 +92,11 @@ export interface ClosedEvidence {
   opening: { ok: boolean; text: string } | null;
   /** Sitenin sayıları (null: okunamadı ya da bağlantı kapalı; yönetici kartı ayrı sorar) */
   site?: { cafe: number; manual: number; counter: number; shop: number } | null;
+  /**
+   * LafPOS'un o günkü gün sonu (denetim E-36; yalnız LafPOS günlerinde, geçiş günü seçili ve gün ondan önce değilse):
+   * Z no, fiş sayısı ve Z toplamı. Geçiş günü boşken ya da gün ondan önceyse hep null (deneme günleri kanıt değil)
+   */
+  lafpos?: { zNo: number; receipts: number; zTotal: number } | null;
 }
 
 export const EMPTY_EVIDENCE: ClosedEvidence = { report: false, cashOuts: 0, waste: 0, checklists: 0, karaoke: 0, staffWrites: 0, zGap: null, opening: null };
@@ -104,15 +109,17 @@ export interface EvidenceLines {
 }
 
 /**
- * Kanıtın yönetici kartındaki satırları. Kırmızı (onay kapalı): kasa raporu, kasadan çıkan, zayi / ikram, açılan kontrol
- * listesi, karaoke, personelin işlem geçmişi yazımı, Z no boşluğu, sitede kafe, elle girilen ya da kasada ödenen
- * sipariş. Uyarı: açılış devri, arada başka raporsuz gün varken Z boşluğu. Bilgi: mağaza kolisi.
+ * Kanıtın yönetici kartındaki satırları. Kırmızı (onay kapalı): kasa raporu, LafPOS'ta satışlı gün sonu, kasadan
+ * çıkan, zayi / ikram, açılan kontrol listesi, karaoke, personelin işlem geçmişi yazımı, Z no boşluğu, sitede kafe, elle
+ * girilen ya da kasada ödenen sipariş. Uyarı: açılış devri, arada başka raporsuz gün varken Z boşluğu, LafPOS'ta satışsız
+ * gün sonu. Bilgi: mağaza kolisi. Tutar yazılmaz (LafPOS'ta yalnız Z no ve fiş sayısı).
  */
 export function closedEvidenceText(e: ClosedEvidence): EvidenceLines {
   const red: string[] = [];
   const warn: string[] = [];
   const info: string[] = [];
   if (e.report) red.push("Kasa raporu girilmiş");
+  if (e.lafpos) (lafposSold(e.lafpos) ? red : warn).push(lafposEvidenceText(e.lafpos));
   if (e.cashOuts) red.push(`${e.cashOuts} kasadan çıkan satırı`);
   if (e.waste) red.push(`${e.waste} zayi / ikram kaydı`);
   if (e.checklists) red.push(`${e.checklists} kontrol listesi açılmış`);
@@ -130,9 +137,22 @@ export function closedEvidenceText(e: ClosedEvidence): EvidenceLines {
   return { red, warn, info };
 }
 
-/** Panelde iz var mı (personelin isteği yalnız iz yokken açılır; site sayılmaz, yönetici kartında ayrı) */
+/** LafPOS'un gün sonunda satış var mı (fiş ya da Z toplamı): kafe açıktı */
+export function lafposSold(z: NonNullable<ClosedEvidence["lafpos"]>): boolean {
+  return z.receipts > 0 || z.zTotal > 0;
+}
+
+/** "LafPOS'ta Z 14 · 63 fiş" (tutar yok); satışsız gün sonu "LafPOS'ta Z 14 alınmış, satış yok" */
+export function lafposEvidenceText(z: NonNullable<ClosedEvidence["lafpos"]>): string {
+  return lafposSold(z) ? `LafPOS'ta Z ${z.zNo}${z.receipts > 0 ? ` · ${z.receipts} fiş` : ""}` : `LafPOS'ta Z ${z.zNo} alınmış, satış yok`;
+}
+
+/**
+ * Panelde iz var mı (personelin isteği yalnız iz yokken açılır; site sayılmaz, yönetici kartında ayrı). LafPOS'un
+ * satışlı gün sonu da iz sayılır (yalnız LafPOS günlerinde gelir; E-36)
+ */
 export function hasPanelEvidence(e: ClosedEvidence): boolean {
-  return e.report || e.cashOuts > 0 || e.waste > 0 || e.checklists > 0 || e.karaoke > 0 || e.staffWrites > 0 || e.zGap?.level === "red";
+  return e.report || (e.lafpos ? lafposSold(e.lafpos) : false) || e.cashOuts > 0 || e.waste > 0 || e.checklists > 0 || e.karaoke > 0 || e.staffWrites > 0 || e.zGap?.level === "red";
 }
 
 const zNumber = (z: string | null | undefined): number | null => {

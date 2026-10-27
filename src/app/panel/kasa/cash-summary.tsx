@@ -10,10 +10,31 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import { CASH_TOLERANCE, carryDiffText, computeCash, diffKind, diffText, paymentLines, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { clearOkcCumulative } from "@/server/actions/cash-report";
+
+/**
+ * Kayıtlı raporun LafPOS'un gün sonundan farklı yazılan alanları (denetim E-09; yalnız LafPOS günlerinde): kayıtlı
+ * görünüm, günden güne ayrıntısı ve geç rapor kartı aynı kutuyu gösterir
+ */
+export function LafposDiffList({ diffs }: { diffs: readonly LafposDiff[] | null | undefined }) {
+  if (!diffs?.length) return null;
+  return (
+    <div role="note" className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
+      <p className="font-medium">LafPOS&apos;tan farklı yazılan</p>
+      <ul className="mt-0.5 list-disc pl-4">
+        {diffs.map((d) => (
+          <li key={d.field} className="break-words">
+            {lafposDiffText(d)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /**
  * Yöneticinin kayıtlı rapordaki yazarkasa satırları (sunucu sütunları, docs/planlar/okc-z.md §3.7, §6.1, D17): cihazın

@@ -566,7 +566,11 @@ silinen rapor ayın rakamını hemen değiştirir.
   "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
   güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa bölümünde uyarı ([Açılış ve
   devir](#açılış-ve-devir)). Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
-  E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar.
+  E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar. Resend'e rapor satırına ve sürümüne özgü
+  anahtarla gider (`cash-{rapor}-r{sürüm}`, `cashEmailKey`; denetim E-40): aynı sürüm iki kez gitmez, "Yeniden dene" aynı
+  anahtarı kullanır. Silinip aynı gün (24 saat içinde) yeniden girilen raporun e-postası da gider: yeni rapor yeni
+  satırdır, sürümü 1'den başlasa da anahtarı silinenden farklıdır (güne göre anahtar Resend'in 24 saatlik hafızasına
+  takılırdı: e-posta gitmez, "Yeniden dene" düşerdi).
 - **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
   sonu).
 

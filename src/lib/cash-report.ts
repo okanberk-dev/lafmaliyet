@@ -1,6 +1,7 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
 import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
+import { lafposDiffsLine, type LafposDiff } from "./lafpos/diffs";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 
@@ -660,6 +661,18 @@ export interface CashReportExtras {
   photoDiffs?: PhotoDiff[] | null;
   /** Günün kasadan çıkan satırları */
   cashOuts?: (CashOutLine & { photo: boolean })[] | null;
+  /**
+   * Günün kasası (docs/LAFPOS.md › Kasa raporu): "LafPOS" geçiş gününden sonraki günlerde (Z bölümünün adı "LafPOS gün
+   * sonu (Z)"); verilmezse ModPOS. Geçiş günü boşken hep ModPOS: metin bugünkü gibi
+   */
+  kasa?: "ModPOS" | "LafPOS";
+  /** LafPOS'un gün sonundan farklı yazılan alanlar (denetim E-09; src/lib/lafpos/diffs.ts), yalnız LafPOS günlerinde */
+  lafposDiffs?: LafposDiff[] | null;
+}
+
+/** Z bölümünün adı: "ModPOS Z raporu", LafPOS günlerinde "LafPOS gün sonu (Z)" */
+export function zSectionTitle(kasa: CashReportExtras["kasa"]): string {
+  return kasa === "LafPOS" ? "LafPOS gün sonu (Z)" : "ModPOS Z raporu";
 }
 
 /** Fotoğrafların adları, formdaki sırayla: "ModPOS Z", "banka POS Z", eski "banka fişi" (e-postanın satırı da bunlar) */
@@ -804,9 +817,12 @@ export function cashReportText(
   const photos = photosLine(meta.photos);
   if (photos) head.push(photos);
   if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => diffLine(d, audience)).join("; ")}`);
+  // LafPOS'un gün sonundan farklı yazılan (E-09): yalnız formun rakamları (personel de yazdı), her iki metinde
+  const lafposLine = lafposDiffsLine(meta.lafposDiffs ?? []);
+  if (lafposLine) head.push(`⚠️ ${lafposLine}`);
   if (meta.revision && meta.revision > 1 && meta.changes?.length) head.push(`*Değişen:* ${changesLine(meta.changes, audience)}`);
   const outs = cashOutLines(meta.cashOuts);
-  const z = ["*ModPOS Z raporu*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
+  const z = [`*${zSectionTitle(meta.kasa)}*`, `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
@@ -828,6 +844,17 @@ export function cashReportText(
   const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
   const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
   return blocks.map((b) => b.join("\n")).join("\n\n");
+}
+
+/**
+ * Kasa e-postasının Resend anahtarı (Idempotency-Key; denetim E-40): rapor satırına ve sürümüne özgü, `cash-{id}-r{sürüm}`.
+ * Aynı sürüm iki kez gitmez ("Yeniden dene" aynı anahtarla); silinip aynı gün yeniden girilen rapor yeni satırdır, sürümü
+ * yine 1'den başlar ama anahtarı silinenden farklıdır. Resend anahtarı 24 saat tutar: güne göre anahtar
+ * (`cash-{gün}-r{sürüm}`) silinip yeniden girilen günün e-postasını göndermezdi (aynı gövde: eski sonuç; farklı gövde:
+ * 409). İşlem geçmişinin anahtarı (`notification_log`, `cash:{gün}:r{sürüm}`) güne göre kalır: son gönderimin kaydı.
+ */
+export function cashEmailKey(row: { id: number; revision: number }): string {
+  return `cash-${row.id}-r${row.revision}`;
 }
 
 /** E-posta konusu: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik" */

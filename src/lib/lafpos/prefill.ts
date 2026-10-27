@@ -19,6 +19,13 @@ export interface LafposDay {
   /** LafPOS'un son gönderiminin geldiği an (ISO); düzeltme yeniden gönderilince değişir */
   receivedAt: string;
   prefill: CashPrefill;
+  /**
+   * LafPOS'un kasa hareketleri ayrı ayrı (denetim E-35): harcama ve gün içindeki teslim. Formda "Gün içinde çıkan"
+   * birleşiktir (harcama + teslim); bilgi satırı panelin Kasadan çıkanlar'ıyla bunları karşılaştırır
+   */
+  till: { spent: number; handed: number };
+  /** Kartla bahşiş + kartla cari tahsilatı (Z'nin kartında yok, banka POS'unda var); eski gövdede 0 */
+  cardExtra: number;
 }
 
 /**
@@ -86,6 +93,54 @@ export function lafposPrefill(z: PosDayZ): CashPrefill {
   // LafPOS'un teslimi sayımdan önce çıktı (gün içinde çıkanda); sayımdan sonra teslim LafPOS'ta yok
   put("handedOver", 0);
   return { source: "lafpos", values, checks: till.checks, missing: z.countedCash === null ? ["countedCash"] : [] };
+}
+
+/** Kartla bahşiş + kartla cari tahsilatı: banka POS'unun gördüğü, Z'nin kartına girmeyen (eski gövdede 0) */
+export function lafposCardExtra(z: PosDayZ): number {
+  return round2((z.cardTips ?? 0) + (z.cardCollections ?? 0));
+}
+
+/** Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts) */
+export function lafposDayOf(z: PosDayZ, receivedAt: Date | string): LafposDay {
+  return {
+    receivedAt: typeof receivedAt === "string" ? receivedAt : receivedAt.toISOString(),
+    prefill: lafposPrefill(z),
+    till: { spent: z.cashOut, handed: z.handedOver },
+    cardExtra: lafposCardExtra(z),
+  };
+}
+
+/**
+ * "Gün içinde çıkan"ın iki kaynağı (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): panelin Kasadan
+ * çıkanlar'ı kaynaktır (Aylık harcamalar ve tedarikçi ödemeleri oradan okunur), LafPOS'un harcama + teslimi bilgidir.
+ * İkisi tutmuyorsa formun bilgi satırı: "LafPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺." Fark
+ * LafPOS'taki teslim kadarsa ne yapılacağı söylenir: teslim Kasadan çıkanlar'a "Teslim" olarak eklenince Gün içinde
+ * çıkan kendiliğinden toplamı alır (fişsiz çıkış ya da sahte eksik olmaz). Tutuyorsa null.
+ */
+export function lafposOutsCheck(till: LafposDay["till"], outsTotal: number): ReadCheck | null {
+  const lafpos = round2(till.spent + till.handed);
+  const panel = round2(outsTotal);
+  if (Math.abs(kurus(lafpos) - kurus(panel)) <= 1) return null;
+  const parts = [`harcama ${money(till.spent)}`, ...(till.handed > 0 ? [`teslim ${money(till.handed)}`] : [])].join(" + ");
+  const head = `LafPOS'ta ${parts}; ${panel > 0 ? `Kasadan çıkanlar'da ${money(panel)}` : "Kasadan çıkanlar'a bir şey girilmedi"}.`;
+  const gap = round2(lafpos - panel);
+  const tail =
+    till.handed > 0 && Math.abs(kurus(gap) - kurus(till.handed)) <= 1
+      ? ` Teslimi Kasadan çıkanlar'a "Teslim" olarak ekleyin; Gün içinde çıkan kendiliğinden ${money(lafpos)} olur.`
+      : gap > 0
+        ? ` ${money(gap)} LafPOS'ta var, panelde yok: fişi ya da teslimi Kasadan çıkanlar'a ekleyin.`
+        : ` Panelde ${money(-gap)} fazla: LafPOS'a girilmemiş bir çıkış olabilir.`;
+  return { fields: [], level: "info", text: head + tail };
+}
+
+/**
+ * Raporun "Gün içinde çıkan"ı kayıtlı kasadan çıkanlardan fazlaysa fark LafPOS'taki teslim mi (E-35): öyleyse fişsiz
+ * çıkış sayılmaz (geç rapor ve düzeltme kartı). Fark teslime eşitse teslim, değilse null.
+ */
+export function lafposHandedGap(cashOut: number, outsTotal: number, till: LafposDay["till"] | null): number | null {
+  if (!till || till.handed <= 0) return null;
+  const gap = round2(cashOut - outsTotal);
+  return Math.abs(kurus(gap) - kurus(till.handed)) <= 100 ? till.handed : null;
 }
 
 /** "LafPOS'tan doldur"dan sonraki satır */
