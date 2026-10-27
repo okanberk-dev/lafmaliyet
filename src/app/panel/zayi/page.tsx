@@ -186,7 +186,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
 const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / ikram", lafpos: "LafPOS ödenmez / ikram" } as const;
 
 /** Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
- * kalemler. Geçiş gününden itibaren LafPOS'un ikramı da sayılır ("LafPOS" rozetiyle); LafPOS'un gün sonu gelen günde
+ * kalemler. Geçiş gününden itibaren LafPOS'un ikramı da sayılır (adın yanında "LafPOS"); LafPOS'un gün sonu gelen günde
  * panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
  */
 async function WasteMonth({ month, today }: { month: string; today: string }) {
@@ -258,14 +258,19 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
       {top.length ? (
         <ul className="divide-y divide-line border-t border-line">
           {top.map((r) => (
-            <li key={`${r.lafpos ? "lafpos" : r.kind}|${r.name}|${r.unit}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
+            // Telefonda miktar adın altına iner: ad sütunu daralıp harf harf kırılmasın
+            <li key={`${r.lafpos ? "lafpos" : r.kind}|${r.name}|${r.unit}`} className="flex items-center gap-x-3 px-5 py-2.5 text-sm">
               <Badge tone={r.kind === "zayi" ? "red" : "blue"}>{WASTE_KIND_LABEL[r.kind]}</Badge>
-              {r.lafpos ? <Badge tone="gray">LafPOS</Badge> : null}
-              <span className="min-w-0 flex-1 font-medium break-words text-ink">{r.name}</span>
-              <span className="text-ink-mute tabular">
-                {qtyText(r.qty, r.unit)} · {num(r.count)} kayıt
+              <span className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
+                <span className="block font-medium break-words text-ink sm:flex-1">
+                  {r.name}
+                  {r.lafpos ? <span className="ml-1.5 text-xs font-normal text-ink-mute">LafPOS</span> : null}
+                </span>
+                <span className="block text-xs text-ink-mute tabular sm:text-sm">
+                  {qtyText(r.qty, r.unit)} · {num(r.count)} kayıt
+                </span>
               </span>
-              <span className="w-24 text-right font-semibold text-ink tabular">{tl(r.cost)}</span>
+              <span className="w-20 shrink-0 text-right font-semibold text-ink tabular sm:w-24">{tl(r.cost)}</span>
             </li>
           ))}
         </ul>
@@ -274,7 +279,7 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
       )}
       {sum.notCounted ? (
         <p className="border-t border-line px-5 py-3 text-[13px] text-ink-mute">
-          Panele girilen {num(sum.notCounted)} ürün ikramı sayılmıyor: o günlerin ikramı LafPOS&apos;tan geldi (gün listesinde &quot;{LAFPOS_IKRAM_TEXT.notCounted}&quot;).
+          Panele girilen {num(sum.notCounted)} ürün ikramı sayılmıyor: o günlerin ikramı LafPOS&apos;tan geldi (gün listesinde “{LAFPOS_IKRAM_TEXT.notCounted}”).
         </p>
       ) : null}
       <p className="border-t border-line px-5 py-3 text-[13px] text-ink-mute">

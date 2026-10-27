@@ -268,7 +268,7 @@ test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; birde
   );
   const p = must(rowOf(r, "pluxee", "2026-11"));
   assert.deepEqual(p.sales, { amount: 1500, source: "lafpos", zShare: 0 });
-  assert.equal(plain(p.flags.find((f) => f.key === "kasa-eksik")?.text), "kanalı seçilmemiş 450 ₺ ödeme var; satış eksik kaldıysa oran yüksek görünür.");
+  assert.equal(plain(p.flags.find((f) => f.key === "kasa-eksik")?.text), "Kanalı seçilmemiş 450 ₺ ödeme var; satış eksik kaldıysa oran yüksek görünür.");
   // Tek kart: kanalsız ödeme ona yazılır
   const single = () => [pay("Pluxee", "meal_card", "pluxee", 50), pay("Yemek kartı", "meal_card", null, 10)];
   const one = buildCommissionReport(fx({ invoices: [inv("Pluxee", "2026-11-30", 60)], lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", single) } }));
@@ -290,6 +290,8 @@ test("LafPOS'ta ödemesi olan kanalın faturası gelmediyse kartı çıkar; ayı
   assert.deepEqual(statusBadge(m), { text: "Fatura bekleniyor", tone: "gray" });
   assert.ok(shownChannels(r, "meal", "2026-11").includes("multinet"));
   assert.ok(!m.flags.some((f) => f.key === "fatura-yok"));
+  // Oranı olmayan (faturasız) satırda eksik gün uyarısı yok
+  assert.ok(!m.flags.some((f) => f.key === "kasa-eksik"));
   const late = must(rowOf(buildCommissionReport(input("2026-12-16")), "multinet", "2026-11"));
   assert.equal(plain(late.flags.find((f) => f.key === "fatura-yok")?.text), "Kasım ayında 900 ₺ satış var ama komisyon faturası gelmedi.");
   // Pluxee artık tek kart değil (Multinet LafPOS'ta etkin): kanalsız ödeme Pluxee'ye yazılmaz

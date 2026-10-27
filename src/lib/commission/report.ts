@@ -818,8 +818,9 @@ function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, gap: SalesGap |
   if ((sales?.source === "elle" || sales?.source === "lafpos") && sales.amount > 0 && !cm.invoices.length && today >= `${shiftMonth(cm.month, 1)}-${String(INVOICE_GRACE_DAY).padStart(2, "0")}`) {
     flags.push({ key: "fatura-yok", level: "warn", text: `${monthName(cm.month)} ayında ${money(sales.amount)} satış var ama komisyon faturası gelmedi.` });
   }
-  if (gap) {
-    flags.push({ key: "kasa-eksik", level: "info", text: `${gap.text}; satış eksik kaldıysa oran yüksek görünür.` });
+  // Oranı olan (faturası gelmiş) ayda: faturasız LafPOS kanalının satırında "oran yüksek görünür" anlamsız
+  if (gap && cm.invoices.length) {
+    flags.push({ key: "kasa-eksik", level: "info", text: `${gap.text.charAt(0).toLocaleUpperCase("tr-TR")}${gap.text.slice(1)}; satış eksik kaldıysa oran yüksek görünür.` });
   }
   return byLevel(flags);
 }

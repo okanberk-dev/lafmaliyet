@@ -19,7 +19,7 @@ kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). 
 (`src/lib/lafpos/ikram.ts`):
 
 - **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
-  aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine ("LafPOS" rozetiyle), haftalık özete ve
+  aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine (adın yanında "LafPOS"), haftalık özete ve
   kasa raporunun özetine bir kez girer. O güne panelde girilmiş **ürün ikramı silinmez ama sayılmaz**: listede
   "Sayılmıyor: LafPOS'taki ikram sayılıyor", ay özetinin altında "Panele girilen N ürün ikramı sayılmıyor". Ürüne
   bağlanamayan LafPOS satırı tüketime girmez, ay özetinde sayılır (yöneticide "ürüne bağlı değil").
