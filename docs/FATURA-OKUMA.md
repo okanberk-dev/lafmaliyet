@@ -80,7 +80,10 @@ faturanın biriminden (kg, lt) gelmediği için ilk fiyat onay bekliyor: faturad
 der; kanıtı ve okuması yoksa fatura kendiliğinden okunur. Reddedilirse hammadde fiyatsız kalır, sonraki faturanın
 fiyatı yeniden sorulur. Zil ve e-posta "ilk fiyat" der (`holdReason`). Onay beklerken hammadde zilde ve Bugün'de
 "Fiyatı girilmemiş" sayılmaz (`loadUnpricedIngredients`): tek iş "Fiyat onayı"dır, "paket fiyatını girin" ikinci bir
-yol göstermesin; reddedilince yeniden sayılır.
+yol göstermesin; reddedilince yeniden sayılır. Genel bakış'ın "N ürünün maliyeti eksik" uyarısı da aynı: yalnız onay
+bekleyen hammaddeden eksik kalan ürünler "N ürünün maliyeti fiyat onayında" olarak onaya götürür
+(`Dataset.pendingPriceHolds`). Onay beklerken ilk fiyatın maliyeti 0 ₺ sayılır; zil, Bugün ve Genel bakış bunu söyler
+(`holdEffectSentence`), "şimdiki fiyatla hesaplanır" demez.
 
 **Tahmini fiyat:** hammaddenin şimdiki fiyatı tahminiyse (Hammaddeler'de "Tahmini"; sayım listesine eklenen kalem,
 Excel'deki varsayım) kart `Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat

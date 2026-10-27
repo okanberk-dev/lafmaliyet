@@ -28,8 +28,13 @@ export const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,He
 export interface DigestInvoices {
   /** unpaid + dueDate: e-faturadaki vadesi gelmemiş (Ödemeler'e düşen) fatura */
   items: { supplier: string; date: string; payable: number; category: string; needsReview: boolean; unpaid?: boolean; dueDate?: string | null }[];
-  /** Kontrol bekleyen (kategorisi tahminle yazılmış) bütün faturalar */
+  /** Kontrol bekleyen bütün faturalar (kategorisi tahminle yazılmış ya da mal alışı sayılmayan) */
   reviewCount: number;
+  /**
+   * Bunların kalemi hammaddeye bağlı ama kategorisi mal alışı olmayanları (E-07): kategorisi tahmin değil, mal alışı
+   * sayılmıyor; yoksa 0
+   */
+  stockOnlyCount?: number;
   /** Son eşitleme başarısızsa mesajı */
   syncError?: string | null;
   /**
@@ -47,6 +52,21 @@ export function invoiceNewsOf(i: DigestInvoices): boolean {
 
 /** Fiyat onayı kartı (Hammaddeler) */
 const HOLDS_LINK = `${APP_URL}${HOLDS_HREF}`;
+
+/**
+ * Kontrol bekleyen faturaların cümlesi: kategorisi tahminle yazılanlar ve mal alışı sayılmayanlar (kalemi hammaddeye
+ * bağlı, kategorisi mal alışı değil; E-07) ayrı söylenir
+ */
+function reviewSentence(inv: Pick<DigestInvoices, "reviewCount" | "stockOnlyCount">): string {
+  const stockOnly = Math.min(inv.stockOnlyCount ?? 0, inv.reviewCount);
+  const guessed = inv.reviewCount - stockOnly;
+  return [
+    guessed ? `${guessed} faturanın kategorisi tahminle yazıldı.` : "",
+    stockOnly ? `${stockOnly} fatura mal alışı sayılmıyor: kalemi hammaddeye bağlı, kategorisi mal alışı değil.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 /** E-postada listelenen en fazla yeni fatura (kalanı "ve N fatura daha") */
 const MAX_INVOICE_ROWS = 10;
@@ -436,7 +456,7 @@ export function renderDigest(
           : ""
       }${
         inv.reviewCount
-          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${inv.reviewCount} faturanın kategorisi tahminle yazıldı. <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
+          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${reviewSentence(inv)} <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
           : ""
       }${
         holds

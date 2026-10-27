@@ -200,7 +200,7 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
       <CardHeader
         icon={<TriangleAlert />}
         title="Onay bekleyen fiyatlar"
-        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı ya da hammaddenin ilk fiyatı (çarpanı faturanın biriminden gelmiyor). Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır."
+        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı ya da hammaddenin ilk fiyatı (çarpanı faturanın biriminden gelmiyor). Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır; ilk fiyatı bekleyen hammadde 0 ₺ sayılır."
         meta={items.length ? <span className="font-medium text-warn tabular">{num(items.length)} hammadde</span> : null}
       />
       <CardContent className="space-y-3">

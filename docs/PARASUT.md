@@ -473,10 +473,15 @@ Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (5, E-07) d
 kalemler okununca ya da eşitlemede (`flagStockOnlyInvoices`, `src/server/data/stock-only-invoices.ts`; işlem geçmişine
 "Sistem · Fatura mal alışı sayılmıyor"). Satırda **Mal alışı sayılmıyor** rozeti, listenin üstünde ayrı bir satır,
 zilde ayrı bir bildirim ve Bugün'de kendi cümlesi. **Onayla** da faturayı kaydetmek de böyle faturayı onaylamaz
-(`confirmInvoices` → `kept`); kategoriyi mal alışı yapmak onaylar. Kategori bilerek öyle kalacaksa (temizlik malzemesi faturasında bir kalem süt)
-uyarıdaki **Kalsın** faturayı onaylar ve kararı `integration_state`'e (`invoices.stockOnlyAccepted`) yazar: fatura
-yeniden kontrole düşmez, rozeti gri **Stoğa giriyor** olur; kategorisi değişince karar düşer, **Geri al** kararı da
-geri alır.
+(`confirmInvoices` → `kept`); kategoriyi mal alışı yapmak onaylar. Kategori bilerek öyle kalacaksa (temizlik
+malzemesi faturasında bir kalem süt) **Kalsın** faturayı onaylar ve kararı `integration_state`'e
+(`invoices.stockOnlyAccepted`) yazar: fatura yeniden kontrole düşmez, rozeti gri **Stoğa giriyor** olur; kategorisi
+değişince karar düşer, **Geri al** kararı da geri alır. Kalsın dört yerde: "kontrolde kaldı" uyarısında (birden çok
+faturada **Hepsi kalsın**), fatura penceresinin altında, satırın kategori sayfasında ("Diğer kalsın") ve "Kontrol
+bekleyen" süzgecinin alt çubuğunda (yalnız mal alışı sayılmayanlar kaldıysa **Hepsi kalsın**, onaylı pencereyle). Alt
+çubuğun **Hepsini onayla**'sı yalnız kategorisi tahminle yazılanları sayar ve onaylar. Kategorisi Aylık harcamalar'da
+bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını, yalnız mal maliyetine girmediğini söyler
+(deterjanlı market faturasının tamamı mal alışına taşınmasın). Sabah e-postası iki nedeni ayrı yazar.
 
 ## 7. Elle çalıştırma ve sıfırlama
 

@@ -22,11 +22,11 @@ import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { isPartiallyPaid, METHOD_LABEL, openBalance } from "@/lib/cari/balance";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
-import { STOCK_ONLY_TEXT, stockOnlyCategory } from "@/lib/invoice-linking";
+import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { saveInvoice } from "@/server/actions/invoices";
+import { confirmInvoices, saveInvoice } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
 import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uploadPlan } from "./document-rules";
@@ -185,7 +185,28 @@ export function InvoiceDialog({
     });
   }
 
-  async function save(again: boolean) {
+  /** Kategorisi bilerek mal alışı olmayan, kalemi hammaddeye bağlı fatura (E-07): "Kalsın" ancak böyleyse */
+  const canKeep = Boolean(invoice?.stockOnly && invoice.needsReview && stockOnlyCategory(f.category));
+
+  /**
+   * "Kalsın" (E-07): kategori bilerek mal alışı değil; fatura onaylanır ve yeniden kontrole düşmez, hammaddeye bağlı
+   * kalemleri stoğa girmeye devam eder. Geri al yeniden kontrol bekleyene döndürür (karar da düşer)
+   */
+  async function keepCategory(id: number, category: string) {
+    const r = await confirmInvoices([id], false, { acceptStockOnly: true });
+    if (!r.ok) return void toast.error(r.error);
+    toast.success(`Fatura kaydedildi · ${category} kaldı`, {
+      description: "Hammaddeye bağlı kalemleri stoğa girmeye devam eder; gelir-gidere mal alışı olarak girmez.",
+      action: {
+        label: "Geri al",
+        onClick: () => void confirmInvoices([id], true).then((b) => (b.ok ? toast.success("Yeniden kontrol bekliyor") : toast.error(b.error))),
+      },
+      duration: 8000,
+    });
+  }
+
+  /** `keep`: "Kalsın" düğmesi; kaydeder, fatura hâlâ mal alışı sayılmıyorsa bilerek böyle bırakıldığını kaydeder */
+  async function save(again: boolean, keep = false) {
     setTried(true);
     if (!f.supplier.trim()) {
       supplierRef.current?.focus();
@@ -233,9 +254,17 @@ export function InvoiceDialog({
     // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir
     const used = res.data.credit?.used ?? 0;
     const withCredit = used > 0.005 ? ` · hesaptaki ${tl(used, 2)} sayıldı` : "";
+    const savedId = invoice?.id ?? null;
     if (res.data.message) toast.warning("Fatura kaydedildi", { description: res.data.message, duration: 8000 });
-    else if (res.data.stockOnly) toast.warning("Fatura kaydedildi, kontrolde kaldı", { description: STOCK_ONLY_TEXT, duration: 10_000 });
-    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
+    else if (res.data.stockOnly && keep && savedId !== null) await keepCategory(savedId, f.category);
+    else if (res.data.stockOnly) {
+      const category = f.category;
+      toast.warning("Fatura kaydedildi, kontrolde kaldı", {
+        description: `${stockOnlyText(category, expenseLinks)} Bilerek “${category}” kalacaksa Kalsın'a dokunun.`,
+        duration: 12_000,
+        ...(savedId !== null ? { action: { label: "Kalsın", onClick: () => void keepCategory(savedId, category) } } : {}),
+      });
+    } else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
       keepScroll();
@@ -297,6 +326,17 @@ export function InvoiceDialog({
           <Button variant="ghost" onClick={onClose} className={cn(SHEET_BTN, !invoice && "max-sm:flex-none! max-sm:px-3")}>
             {added ? "Kapat" : "Vazgeç"}
           </Button>
+          {canKeep ? (
+            <Button
+              variant="secondary"
+              disabled={busy || up.busy}
+              onClick={() => save(false, true)}
+              title={`Kategori bilerek “${f.category}”: kaydeder ve onaylar; hammaddeye bağlı kalemleri stoğa girmeye devam eder, gelir-gidere mal alışı olarak girmez`}
+              className={SHEET_BTN}
+            >
+              Kalsın
+            </Button>
+          ) : null}
           {invoice ? null : (
             <Button
               variant="secondary"
@@ -393,8 +433,15 @@ export function InvoiceDialog({
           className="sm:col-span-2"
           hint={
             invoice?.stockOnly && stockOnlyCategory(f.category) ? (
-              // Kalemi hammaddeye bağlı, kategorisi mal alışı değil (E-07): kaydetmek onaylamaz
-              <span className="text-warn">{STOCK_ONLY_TEXT}</span>
+              // Kalemi hammaddeye bağlı, kategorisi mal alışı değil (E-07): kaydetmek onaylamaz, "Kalsın" onaylar. Kategori
+              // bir Aylık harcamalar giderine bağlıysa gelir-giderdeki yeri de söylenir
+              <>
+                <span className="text-warn">
+                  {stockOnlyText(f.category, expenseLinks)}
+                  {invoice.needsReview ? " Bilerek böyleyse Kalsın'a dokunun." : ""}
+                </span>
+                {expenseLinks?.[f.category] ? ` ${categoryEffect(f.category, expenseLinks)}` : null}
+              </>
             ) : (
               `${invoice?.needsReview ? "Eşitlemede tahminle yazıldı; kaydedince onaylanır. " : ""}${categoryEffect(f.category, expenseLinks)}`
             )

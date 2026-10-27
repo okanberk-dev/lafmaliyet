@@ -267,8 +267,9 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
  *
  * Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (E-07: stoğa giriyor, gelir-gidere girmiyor) böyle
  * onaylanmaz, kontrolde kalır (`kept`): kategorisi mal alışı yapılmalı ya da bilerek "kalsın" denmeli
- * (`acceptStockOnly`: tek fatura penceresinden; karar listeye yazılır, fatura yeniden kontrole düşmez). Geri al kararı
- * da geri alır.
+ * (`acceptStockOnly`: fatura penceresinin ve kategori sayfasının "Kalsın"ı, kontrolde kaldı uyarısının "Kalsın" /
+ * "Hepsi kalsın"ı, Kontrol kuyruğunun "Hepsi kalsın"ı; karar listeye yazılır, fatura yeniden kontrole düşmez). Geri al
+ * kararı da geri alır.
  */
 export async function confirmInvoices(ids: number[], undo = false, opts: { acceptStockOnly?: boolean } = {}) {
   return attempt(async () => {

@@ -305,7 +305,9 @@ test("holdAlert ve özet: boşta yok, tek, beş öneride 've 2 hammadde daha'", 
   assert.equal(holdReason([{ pct: 0.52 }]), "faturadaki fiyat şimdikinden %40'tan fazla farklı");
   assert.equal(holdReason([{ pct: null }]), "faturadan gelen ilk fiyat, çarpanı kesin değil");
   assert.equal(holdReason([{ pct: 0.52 }, { pct: null }]), "faturadaki fiyat şimdikinden %40'tan fazla farklı ya da ilk fiyat");
-  assert.deepEqual(holdAlert([{ name: "Karton bardak", pct: null }])?.detail, "Faturadan gelen ilk fiyat, çarpanı kesin değil: Karton bardak (ilk fiyat). Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.");
+  // İlk fiyatı bekleyenin şimdiki fiyatı yok: maliyette 0 ₺ (denetim B03 incelemesi)
+  assert.deepEqual(holdAlert([{ name: "Karton bardak", pct: null }])?.detail, "Faturadan gelen ilk fiyat, çarpanı kesin değil: Karton bardak (ilk fiyat). Onaylanana kadar maliyetlerde 0 ₺ sayılır.");
+  assert.ok(five?.detail.endsWith("Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır; ilk fiyatı bekleyenler 0 ₺ sayılır."), five?.detail);
   assert.equal(livePct(0.05, 0), null);
   assert.ok(Math.abs(livePct(0.0486, 0.032)! - 0.51875) < 1e-12);
   assert.equal(holdLogText({ name: "Süt", pct: 0.52, supplier: "Sütaş", date: "2026-10-21" }), `Süt +${WJ}%52 (Sütaş 21.10.2026)`);

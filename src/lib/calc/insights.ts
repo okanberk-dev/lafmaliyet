@@ -13,6 +13,7 @@ import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../../server/parasut/constants";
+import { HOLDS_HREF } from "../price-hold";
 import type { FixedSection, Ingredient } from "./types";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -945,12 +946,26 @@ export function alerts(model: Model, month: string): Alert[] {
     });
   }
   const unpricedUse = unpricedIds.size ? model.activeProducts.filter(usesUnpriced) : [];
-  if (unpricedUse.length) {
+  // Fiyatsız hammaddesinin faturadan gelen ilk fiyatı onay bekleyen ürün: "paket fiyatını girin" ikinci bir yol olurdu;
+  // onaya götürülür (zil ve Bugün'deki "Fiyatı girilmemiş" sayımı da bunları saymaz: loadUnpricedIngredients)
+  const heldIds = new Set(model.ds.pendingPriceHolds ?? []);
+  const waitsHold = (p: ProductCalc) => p.lines.every((l) => l.ingredient === undefined || !unpricedIds.has(l.ingredient.id) || heldIds.has(l.ingredient.id));
+  const typeUse = unpricedUse.filter((p) => !waitsHold(p));
+  const holdUse = unpricedUse.filter(waitsHold);
+  if (typeUse.length) {
     out.push({
       level: "warning",
-      title: `${unpricedUse.length} ürünün maliyeti eksik`,
-      detail: `${nameList(unpricedUse.map((p) => p.key), 5, "ürün")}. Reçetesinde fiyatı girilmemiş hammadde var; Hammaddeler'den paket fiyatını girin.`,
+      title: `${typeUse.length} ürünün maliyeti eksik`,
+      detail: `${nameList(typeUse.map((p) => p.key), 5, "ürün")}. Reçetesinde fiyatı girilmemiş hammadde var; Hammaddeler'den paket fiyatını girin.`,
       href: "/panel/hammaddeler?durum=fiyatsiz",
+    });
+  }
+  if (holdUse.length) {
+    out.push({
+      level: "warning",
+      title: `${holdUse.length} ürünün maliyeti fiyat onayında`,
+      detail: `${nameList(holdUse.map((p) => p.key), 5, "ürün")}. Reçetesindeki hammaddenin faturadan gelen ilk fiyatı onay bekliyor; onaylanana kadar maliyette 0 ₺ sayılır.`,
+      href: HOLDS_HREF,
     });
   }
   const zeroQty = model.activeProducts.flatMap((p) =>

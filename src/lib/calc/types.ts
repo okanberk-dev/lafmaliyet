@@ -423,6 +423,8 @@ export interface Dataset {
   purchaseQuantities: PurchaseQty[];
   /** Çarpanı şüpheli alışlar (alınan miktara girmedi; yoksa boş): Tutarlılık işaretler, sapmayı hesaplamaz */
   heldPurchases?: HeldPurchase[];
+  /** Fiyatı onay bekleyen hammaddeler (yoksa boş): fiyatsızsa uyarı onaya götürür, "paket fiyatını girin" demez */
+  pendingPriceHolds?: number[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
   expenseCategories?: ExpenseCategory[];
   expenseEntries?: ExpenseEntry[];

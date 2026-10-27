@@ -292,7 +292,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
             eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın (“Mal alışı sayılmıyor” diyorsa kategorisini Hammadde &amp; İçecek, Tatlı &amp; Hazır Ürün ya da Ambalaj yapın: kalemi stoğa giriyor, gelir-gidere girmiyor). Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
             bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Faturadaki fiyat şimdikinden %40&apos;tan fazla farklıysa
+            ya da fiyatı olmayan hammaddenin ilk fiyatıysa ve çarpanı faturanın kg / lt biriminden gelmiyorsa (addan, açıklamadan ya da elle yazıldıysa)
             uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
+            Reddedilen faturanın miktarı alınana girmez; Tutarlılık o ayın alımını elle yazdırır.
             Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
             <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır). Satışın iadesi (site ya da müşteri iadesi) Paraşüt&apos;te gider
@@ -364,8 +366,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             listeye girer ve bu aydan itibaren her ay sayılır. Paket fiyatı yazıldıysa o fiyatla Tahmini açılır (yönetici KDV hariç yazar; personel fişteki gibi KDV dahil
             yazar, KDV düşülüp kaydedilir; Hammaddeler&apos;in Tahmini süzgecinde doğrulayın);
             yazılmadıysa 0 ve Tahmini açılır, zil &quot;Fiyatı girilmemiş&quot; der:{" "}
-            <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden paket fiyatını girin (ilk fiyat zam sayılmaz). Yalnız bu ay rafta duran tek seferlik bir
-            şey için sayımdaki Listede olmayanlar yeter.
+            <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden paket fiyatını girin (ilk fiyat zam sayılmaz). Kalem Paraşüt&apos;teki bir ürüne bağlıysa
+            ve ilk faturası fiyatı girilmeden gelirse bu hatırlatma kalkar: faturanın fiyatı kg ya da lt biriminden geldiyse kendiliğinden yazılır, değilse
+            Hammaddeler › Onay bekleyen fiyatlar&apos;da &quot;İlk fiyat&quot; olarak onay bekler (onaylanana kadar maliyette 0 ₺ sayılır). Yalnız bu ay rafta duran
+            tek seferlik bir şey için sayımdaki Listede olmayanlar yeter.
           </>
         ),
         icon: ClipboardList,
@@ -867,7 +871,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
-            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları), <strong className="font-semibold text-ink">Kontrol listeleri</strong>{" "}
+            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları ve çarpanı kesin olmayan ilk fiyatlar), <strong className="font-semibold text-ink">Kontrol listeleri</strong>{" "}
             (geciken ve dünden eksik listeler, aralık dışı değerler), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son

@@ -295,6 +295,15 @@ test("fiyatı girilmemiş malzeme kullanan ürün: 'maliyeti eksik' uyarısı; y
   assert.notEqual(priced.products.find((p) => p.product.id === sodaId)!.status, "Reçete yok");
   // Fiyatsız malzeme yoksa uyarı da yok
   assert.ok(!alerts(createModel(base), month).some((x) => x.title.endsWith("ürünün maliyeti eksik")));
+  // İlk fiyatı faturadan gelip onay bekliyorsa "paket fiyatını girin" demez, onaya götürür (denetim B03 incelemesi)
+  const held = alerts(createModel({ ...ds, pendingPriceHolds: [newId] }), month);
+  assert.ok(!held.some((x) => x.title.endsWith("ürünün maliyeti eksik")), held.map((x) => x.title).join(" | "));
+  const waiting = held.find((x) => x.title.endsWith("ürünün maliyeti fiyat onayında"));
+  assert.ok(waiting);
+  assert.deepEqual([waiting.title, waiting.href], ["2 ürünün maliyeti fiyat onayında", "/panel/hammaddeler#fiyat-onayi"]);
+  assert.equal(waiting.detail, "Latte|M, Fındıklı Soda|Tek. Reçetesindeki hammaddenin faturadan gelen ilk fiyatı onay bekliyor; onaylanana kadar maliyette 0 ₺ sayılır.");
+  // Başka bir hammaddenin onayı bu ürünleri onaya götürmez
+  assert.ok(alerts(createModel({ ...ds, pendingPriceHolds: [newId + 1] }), month).some((x) => x.title === "2 ürünün maliyeti eksik"));
 });
 
 // ---------------------------------------------------------------- Paket fiyatı (isteğe bağlı) ve ortak çekirdeğin değerleri

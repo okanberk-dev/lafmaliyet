@@ -469,13 +469,25 @@ export function holdLogText(h: { name: string; pct: number | null; supplier: str
   return `${h.name}${h.pct === null ? "" : ` ${signedPct(h.pct)}`} (${h.supplier} ${dateTR(h.date)})`;
 }
 
+/**
+ * Onay beklerken maliyete etkisi: şimdiki fiyatı olan hammadde onu kullanır; ilk fiyatı bekleyenin (şimdiki fiyatı yok)
+ * maliyeti 0 ₺ sayılır ("şimdiki fiyatla" demek maliyetin doğru olduğunu sandırırdı)
+ */
+export function holdEffectSentence(items: { pct: number | null }[]): string {
+  const first = items.some((i) => i.pct === null);
+  const jump = items.some((i) => i.pct !== null);
+  if (first && !jump) return "Onaylanana kadar maliyetlerde 0 ₺ sayılır.";
+  if (first) return "Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır; ilk fiyatı bekleyenler 0 ₺ sayılır.";
+  return "Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.";
+}
+
 /** Genel bakış ve zil metni (insights.Alert biçimi); bekleyen yoksa null */
 export function holdAlert(holds: { name: string; pct: number | null }[]): { level: "warning"; title: string; detail: string; href: string } | null {
   if (!holds.length) return null;
   return {
     level: "warning",
     title: `Fiyat onayı: ${holds.length} hammadde`,
-    detail: `${holdReasonSentence(holds)}: ${holdsSummary(holds)}. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.`,
+    detail: `${holdReasonSentence(holds)}: ${holdsSummary(holds)}. ${holdEffectSentence(holds)}`,
     href: HOLDS_HREF,
   };
 }
