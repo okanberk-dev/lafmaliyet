@@ -28,6 +28,7 @@ import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
 import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
+import { kasaEvidence } from "@/server/data/lafpos-day";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -216,7 +217,7 @@ async function removalCheck(tx: CashOutTx, photoId: number, kind: RemovablePhoto
       .select({ n: count() })
       .from(s.cashReportPhotos)
       .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.kind, kind)));
-    const refusal = photoKindRefusal(kind, { zCount: n, okcCount: n, okcFigures: okcHasFigures(report) });
+    const refusal = photoKindRefusal(kind, { zCount: n, okcCount: n, okcFigures: okcHasFigures(report), evidence: await kasaEvidence(tx, report.date) });
     if (refusal) return { refusal, diffs: [], report };
   }
   const reading = await photoReadingOf(tx, photoId, kind, report.date);

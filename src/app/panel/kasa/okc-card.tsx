@@ -36,6 +36,8 @@ export interface ModposFigures {
   mealCard: number;
   online: number;
   other: number;
+  /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
+  cardExtra?: number | null;
 }
 
 export interface OkcFieldOptions {

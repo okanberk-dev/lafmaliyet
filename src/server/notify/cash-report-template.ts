@@ -8,6 +8,7 @@
 
 import {
   byLine,
+  CARD_EXTRA_LABEL,
   carryWarning,
   CASH_TOLERANCE,
   cashOutLines,
@@ -18,12 +19,15 @@ import {
   paymentLines,
   photoNames,
   reportSubject,
+  withCardExtra,
+  zSectionTitle,
   type CashReportExtras,
   type CashReportIntegrity,
   type CashTextFields,
   type DayWaste,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { lafposDiffsLine } from "@/lib/lafpos/diffs";
 import { okcHasFigures, okcReconcile, type OkcReconcileLine } from "@/lib/okc-z";
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
@@ -105,6 +109,8 @@ export function renderCashReport(
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
+  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
+  f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
   const tone = TONE[c.kind];
   const subject = reportSubject(f, meta.revision);
@@ -157,6 +163,8 @@ export function renderCashReport(
       : [
           row("ModPOS kart", money(f.card)),
           row("Banka POS", money(f.bankPos)),
+          // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
+          ...(meta.cardExtra && meta.cardExtra > 0 ? [row(CARD_EXTRA_LABEL, money(meta.cardExtra))] : []),
           row("Fark", Math.abs(bankDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`, {
             strong: true,
             color: Math.abs(bankDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",
@@ -168,6 +176,9 @@ export function renderCashReport(
   const diffWarning = (list: NonNullable<typeof meta.photoDiffs>) => (list.length ? `Fotoğraftan farklı yazılan: ${list.map((d) => photoDiffText(d, false)).join("; ")}` : null);
   const photoWarning = diffWarning((meta.photoDiffs ?? []).filter((d) => !okcDiff(d.field)));
   const okcPhotoWarning = diffWarning((meta.photoDiffs ?? []).filter((d) => okcDiff(d.field)));
+  // LafPOS'un gün sonundan farklı yazılan (E-09; yalnız LafPOS günlerinde): bölümlerin üstünde turuncu kutu
+  const lafposLine = lafposDiffsLine(meta.lafposDiffs ?? []);
+  const lafposBox = lafposLine ? warnBox([lafposLine], 14) : "";
   // Düzeltilen raporda neyin değiştiği: bölümlerin üstünde turuncu kutu
   const changesBox = meta.revision > 1 && meta.changes?.length ? warnBox([`Değişen: ${changesText(meta.changes)}`], 14) : "";
   // Banka POS Z (yazarkasa) bölümü: kayıtlı raporun görünümüyle aynı satırlar (cash-summary.tsx), altında yöneticinin
@@ -224,7 +235,8 @@ export function renderCashReport(
       <div style="font-size:13px;line-height:18px;color:#3f3f46;margin-top:2px">Olması gereken ${esc(money(c.expectedCash))} · sayılan ${esc(money(f.countedCash))}</div>
     </td></tr></table>
     ${changesBox}
-    ${section("ModPOS Z raporu", zRows, paymentsWarning ?? ikramWarning)}
+    ${lafposBox}
+    ${section(zSectionTitle(meta.kasa), zRows, paymentsWarning ?? ikramWarning)}
     ${section("Kasa (nakit)", cashRows, [meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
     ${okc ? `${section(`Banka POS Z raporu (yazarkasa)${okcHead ? ` · ${okcHead}` : ""}`, okcRows)}${okcLines}` : ""}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}

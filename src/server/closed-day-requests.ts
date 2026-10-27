@@ -1,12 +1,12 @@
 import "server-only";
 
-import { and, count, eq, gte, ne, sql } from "drizzle-orm";
+import { and, count, eq, gte, ne } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { CLOSED_REQUESTS_PER_30, CLOSED_TEXT, ClosedDayPayload, closedEvidenceText, closedTitle, hasPanelEvidence, type ClosedEvidence, type ClosedDayPayloadT } from "@/lib/closed-days";
 import { addDays } from "@/lib/reminders";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
-import { closedDayEvidence, isClosedDay, writeClosedDay } from "@/server/closed-days";
+import { closedDayEvidence, isClosedDay, lockClosedDay, writeClosedDay } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, type Actor, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
@@ -21,10 +21,8 @@ import { UserError } from "@/server/user-error";
 
 const DAY_MS = 86_400_000;
 
-/** Bir günün bildirimleri aynı anda açılmasın (iki personel aynı dün için) */
-async function lockDay(tx: Parameters<Parameters<DB["transaction"]>[0]>[0], date: string) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kapali-gun:${date}`}))`);
-}
+/** Bir günün bildirimleri aynı anda açılmasın (iki personel aynı dün için; LafPOS'un gün sonu da aynı kilidi alır) */
+const lockDay = lockClosedDay;
 
 /**
  * Personelin "Kafe kapalıydı" bildirimi: yalnız dün; gün kapalı işaretli değil, o gün için geri çekilmemiş bir bildirim

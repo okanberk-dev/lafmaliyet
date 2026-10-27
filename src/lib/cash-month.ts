@@ -21,6 +21,14 @@ export interface TillRow {
   mealCard: number;
   discounts: number | null;
   offRevenue: number | null;
+  /**
+   * "lafpos": kasa raporu girilmemiş LafPOS gününün yedek satırı, LafPOS'un Z'sinden (docs/LAFPOS.md › Kasa raporu, G6;
+   * yalnız geçiş gününden sonra, src/server/data/cash-reports.ts tillRows). Rakamları aya girer, gün yine "rapor yok"
+   * sayılır. Kasa raporu olan günde yedek satır olmaz (rapor kazanır)
+   */
+  source?: "lafpos";
+  /** Yedek satırda LafPOS'un fiş sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
+  receipts?: number | null;
 }
 
 /** months tablosunun satırı: elle yazılanlar, boş = yazılmamış */
@@ -48,6 +56,9 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
   const shut = closedDays ? new Set(closedDays) : null;
   if (!rows.length) return [];
+  // LafPOS'un yedek satırı (G6): raporu olan günde sayılmaz (rapor kazanır; yükleyici zaten vermez)
+  const reportDays = new Set(rows.filter((r) => r.source !== "lafpos").map((r) => r.date));
+  rows = rows.filter((r) => r.source !== "lafpos" || !reportDays.has(r.date));
   const first = firstEver ?? rows.reduce((a, r) => (r.date < a ? r.date : a), rows[0].date);
   const byMonth = new Map<string, TillRow[]>();
   for (const r of rows) {
@@ -60,14 +71,20 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
     const list = byMonth.get(month)!.sort((a, b) => a.date.localeCompare(b.date));
     const start = `${month}-01`;
     const end = monthEnd(start);
+    const reports = list.filter((r) => r.source !== "lafpos");
     const lastDate = list[list.length - 1].date;
     const from = first > start ? first : start;
     const upto = through > lastDate ? through : lastDate;
     const to = upto < end ? upto : end;
-    const have = new Set(list.map((r) => r.date));
+    // Gün yalnız kasa raporuyla "girildi" sayılır; LafPOS'un yedek satırı olan gün eksik kalır (yanına "LafPOS'tan")
+    const have = new Set(reports.map((r) => r.date));
+    const fromLafpos = list.filter((r) => r.source === "lafpos").map((r) => r.date);
+    // Kapalı işaretli günü yalnız satışlı LafPOS gün sonu açar (src/lib/closed-days.ts lafposSold ile aynı kural):
+    // satışsız Z kafenin açık olduğunu göstermez, gün kapalı sayılmaya devam eder
+    const soldLafpos = new Set(list.filter((r) => r.source === "lafpos" && (r.zTotal > 0 || (r.receipts ?? 0) > 0)).map((r) => r.date));
     const missing: string[] = [];
     const closed: string[] = [];
-    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) ? closed : missing).push(d);
+    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) && !soldLafpos.has(d) ? closed : missing).push(d);
     const sum = (xs: TillRow[], f: (r: TillRow) => number) => r2(xs.reduce((a, r) => a + f(r), 0));
     const posRevenue = sum(list, (r) => r.zTotal);
     const disc = list.filter((r) => r.discounts != null);
@@ -79,7 +96,7 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
       month,
       from,
       to,
-      reported: list.length,
+      reported: reports.length,
       openDays: list.filter((r) => r.zTotal > 0).length,
       posRevenue,
       discounts: disc.length ? sum(disc, (r) => r.discounts!) : null,
@@ -92,6 +109,7 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
       ...(shut ? { closed } : {}),
       partialFrom: first > start && first.slice(0, 7) === month ? first : null,
       lastDate,
+      ...(fromLafpos.length ? { lafpos: fromLafpos } : {}),
     };
   });
 }
@@ -190,9 +208,20 @@ export function missingText(days: string[], max = 5, pending: readonly string[] 
  * "3 gün rapor yok: 5, 12, 20 Kasım. O günler açıksanız ciro ve açık gün eksik kalır." Kapalı işaretli günler ayrı
  * cümle: "2 gün kapalı işaretli: 3, 4 Kasım." (eksik gün yoksa yalnız o)
  */
-export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed">): string {
+export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed" | "lafpos">): string {
   const parts: string[] = [];
-  if (t.missing.length) parts.push(`${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. O günler açıksanız ciro ve açık gün eksik kalır.`);
+  const lafpos = t.lafpos ?? [];
+  // Yalnız eksik günlerin LafPOS'tan sayılanları (kapalı işaretli satışsız LafPOS günü burada sayılmaz)
+  const covered = t.missing.filter((d) => lafpos.includes(d)).length;
+  if (t.missing.length) {
+    const tail =
+      covered === t.missing.length
+        ? "Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı."
+        : covered
+          ? `${covered} günün cirosu LafPOS'un gün sonundan sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.`
+          : "O günler açıksanız ciro ve açık gün eksik kalır.";
+    parts.push(`${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. ${tail}`);
+  }
   if (t.closed?.length) parts.push(closedSentence(t.closed));
   return parts.join(" ");
 }

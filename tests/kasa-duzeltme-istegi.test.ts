@@ -155,10 +155,13 @@ test("yazarkasa alanları (dalga 13): eski istek anahtarsız ayrışır, bozuk K
     assert.equal(CorrectionPayload.safeParse(payload(proposedOf({ okcVat: bad }))).success, false, JSON.stringify(bad));
     assert.equal(LatePayload.safeParse({ ...fields, zNo: "1204", handedTo: null, photos: [{ id: 1, kind: "kasa-z" }], cashDiff: 0, okcVat: bad }).success, false);
   }
-  // Geç rapor kasa-okc fotoğrafını taşır ama Z fotoğrafını hâlâ ister
+  // Geç rapor kasa-okc fotoğrafını taşır; hangi fotoğrafın kanıt olduğu yükün değil yazımın kuralı (günün kasasına göre:
+  // ModPOS gününde Z, LafPOS gününde LafPOS'un gün sonu ya da yazarkasa Z'si; src/server/cash/late.ts kasaEvidence, B09 G8)
   const late = { ...fields, zNo: "1204", handedTo: null, cashDiff: 0 };
   assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 1, kind: "kasa-z" }, { id: 2, kind: "kasa-okc" }] }).success, true);
-  assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 2, kind: "kasa-okc" }] }).success, false);
+  assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 2, kind: "kasa-okc" }] }).success, true);
+  assert.equal(LatePayload.safeParse({ ...late, photos: [] }).success, true);
+  assert.equal(LatePayload.safeParse({ ...late, photos: [{ id: 3, kind: "fis" }] }).success, false);
 
   // Birleştirme: aynı döküm farklı sırada "değişmedi" (şimdiki hâl kalır), farklı döküm önerilen
   const withVat: CashRevisionData = { ...base, okcVat: vat, okcTotal: 9_350 };

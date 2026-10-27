@@ -8,12 +8,45 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
-import { CASH_TOLERANCE, carryDiffText, computeCash, diffKind, diffText, paymentLines, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
+import {
+  CARD_EXTRA_LABEL,
+  CASH_TOLERANCE,
+  carryDiffText,
+  computeCash,
+  diffKind,
+  diffText,
+  paymentLines,
+  withCardExtra,
+  zSectionTitle,
+  type CarryCheck,
+  type CashReportFields,
+} from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { clearOkcCumulative } from "@/server/actions/cash-report";
+
+/**
+ * Kayıtlı raporun LafPOS'un gün sonundan farklı yazılan alanları (denetim E-09; yalnız LafPOS günlerinde): kayıtlı
+ * görünüm, günden güne ayrıntısı ve geç rapor kartı aynı kutuyu gösterir
+ */
+export function LafposDiffList({ diffs }: { diffs: readonly LafposDiff[] | null | undefined }) {
+  if (!diffs?.length) return null;
+  return (
+    <div role="note" className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
+      <p className="font-medium">LafPOS&apos;tan farklı yazılan</p>
+      <ul className="mt-0.5 list-disc pl-4">
+        {diffs.map((d) => (
+          <li key={d.field} className="break-words">
+            {lafposDiffText(d)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /**
  * Yöneticinin kayıtlı rapordaki yazarkasa satırları (sunucu sütunları, docs/planlar/okc-z.md §3.7, §6.1, D17): cihazın
@@ -77,6 +110,8 @@ export function CashBreakdown({
   next = null,
   audience = "staff",
   okcAdmin = null,
+  kasa = "ModPOS",
+  cardExtra = null,
 }: {
   report: CashReportFields;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
@@ -86,15 +121,22 @@ export function CashBreakdown({
   audience?: "staff" | "admin";
   /** Yalnız yönetici: kümülatif ve "Kümülatifi temizle" */
   okcAdmin?: OkcAdminView | null;
+  /** Günün kasası: LafPOS gününde Z bölümü "LafPOS gün sonu (Z)" */
+  kasa?: "ModPOS" | "LafPOS";
+  /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
+  cardExtra?: number | null;
 }) {
+  // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını düşer (G11; kaydedilmez)
+  report = withCardExtra(report, cardExtra);
   const c = computeCash(report);
   const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
   const okc = okcHasFigures(report);
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      <section aria-label="ModPOS Z raporu">
+      <section aria-label={zSectionTitle(kasa)}>
         <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">
-          ModPOS Z raporu{report.zNo ? ` · Z no ${report.zNo}` : ""}
+          {zSectionTitle(kasa)}
+          {report.zNo ? ` · Z no ${report.zNo}` : ""}
           {report.receipts ? ` · ${report.receipts} fiş` : ""}
         </h3>
         <Line label="Toplam satış" value={money(report.zTotal)} strong />
@@ -154,6 +196,8 @@ export function CashBreakdown({
           <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
           <Line label="ModPOS kart" value={money(report.card)} />
           <Line label="Banka POS" value={money(report.bankPos)} />
+          {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
+          {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}
           <Line
             label="Fark"
             value={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}

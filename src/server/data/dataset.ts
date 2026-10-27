@@ -123,6 +123,7 @@ export async function loadDataset(): Promise<Dataset> {
   // Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
   // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
   // satırlar ve kapsam bugünkü gibi
+  const reportRows = till.filter((r) => r.source !== "lafpos");
   const sales = await mergeWithLafpos(db, {
     switchDay: settings.lafposGecisGunu,
     salesLines: salesLines.map((l) => ({
@@ -137,11 +138,12 @@ export async function loadDataset(): Promise<Dataset> {
     })),
     coverage: parseCoverage(coverageRow[0]?.value),
     today,
-    // Kasa raporlarının son günü (till tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
-    lastTillDay: till.at(-1)?.date ?? null,
-    reportDays: till.map((r) => r.date),
+    // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
+    // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
+    lastTillDay: reportRows.at(-1)?.date ?? null,
+    reportDays: reportRows.map((r) => r.date),
     zOf: (from, upto) => {
-      const rows = till.filter((r) => r.date >= from && r.date <= upto);
+      const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
       return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
     },
   });
@@ -209,7 +211,7 @@ export async function loadDataset(): Promise<Dataset> {
         through,
         undefined,
         lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
-        closedDaysIn(closedRows, "2000-01-01", through, till.map((r) => r.date)),
+        closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date)),
       ),
     ),
     salesLines: sales.salesLines,

@@ -54,6 +54,7 @@ import {
   firstCashReportDate,
   firstOkcReportDate,
   getCashReport,
+  lafposTillRows,
   loadCashSettings,
   loadMonthEntry,
   nextReportAfter,
@@ -62,7 +63,7 @@ import {
   previousOkc,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
-import { loadKasaLafposDay } from "@/server/data/lafpos-day";
+import { loadKasaLafpos, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
@@ -97,6 +98,8 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 }
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+/** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
+const NO_LAFPOS = { lafpos: false, day: null } as const;
 const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
 
 /** Ayın günleri (en yeni önce): bugünün raporu yoksa bugün listede yok (akşam girilecek) */
@@ -141,7 +144,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposDay] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState] = await Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
     showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
@@ -155,9 +158,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     showForm ? cashCounters() : Promise.resolve([]),
     // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
     showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
-    // LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki günlerde; okunamazsa
-    // form yine açılır, düğme görünmez
-    showForm ? loadKasaLafposDay(date).catch(() => null) : Promise.resolve(null),
+    // Günün kasası ve LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki
+    // günlerde; okunamazsa form ModPOS'a göre açılır, bant görünmez
+    showForm ? loadKasaLafpos(date).catch(() => NO_LAFPOS) : Promise.resolve(NO_LAFPOS),
   ]);
   const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
@@ -201,7 +204,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           by: report.submittedByName,
           revision: report.revision,
           waste,
-          ...extrasFrom(photoInfo, outs, report),
+          ...extrasFrom(photoInfo, outs, report, lafposState),
           ...integrityOf(report, carry, next, revisions),
         });
         return { text, link: whatsappLink(text, settings.whatsapp) };
@@ -268,7 +271,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       proposedBy={proposedBy}
       photoRemoval={removal}
       prevOkcZ={prevOkc.z}
-      lafpos={lafposDay}
+      // Kartla bahşiş ve cari tahsilatı personelde de düşer: form, kayıtlı görünüm ve WhatsApp aynı kuralla (G11)
+      lafpos={lafposState.day}
+      lafposMode={lafposState.lafpos}
       // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
       {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
@@ -371,7 +376,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore] = await Promise.all([
+  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore, lafposOf, monthLafpos] = await Promise.all([
     cashReportsBetween(`${month}-01`, monthEnd, "admin"),
     cashOutsBetween(`${month}-01`, monthEnd),
     // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
@@ -384,6 +389,10 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     okcRows(`${month}-01`, monthEnd),
     firstOkcReportDate(),
     previousOkc(`${month}-01`),
+    // Ayın LafPOS günleri (yalnız geçiş gününden sonra): "LafPOS'tan farklı" rozeti ve ayrıntısı (E-09)
+    loadKasaLafposDays(`${month}-01`, monthEnd).catch(() => () => NO_LAFPOS),
+    // Raporsuz LafPOS günlerinin yedek ay satırları (G6; yalnız geçiş gününden sonra): Gelir-gider'deki ay rakamıyla aynı
+    lafposTillRows(getDb(), `${month}-01`, monthEnd),
   ]);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
@@ -401,7 +410,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const revisionsById: Record<number, CashRevisionRow[]> = {};
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
-  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths(monthReports, addDays(today, -1), firstEver)[0]));
+  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos], addDays(today, -1), firstEver)[0]));
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const infos = await cashReportPhotoInfo(monthReports, "admin");
@@ -425,7 +434,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           photos: info?.photos ?? [],
           diffs: info ? photoDiffs(info.readings, saved) : [],
           suspicious: info ? suspiciousDiffs(info.readings, saved) : [],
-          extras: extrasFrom(info, outsByDate[r.date] ?? [], r),
+          extras: extrasFrom(info, outsByDate[r.date] ?? [], r, lafposOf(r.date)),
         },
       ];
     }),
@@ -502,17 +511,20 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
 /**
  * Personelin geç kasa raporu (`/panel/kasa?gun=D`, dünden eski, raporu girilmemiş son 14 gün; docs/KASA-RAPORU.md ›
  * Geç rapor): kendi isteği ya da formu, açılış önerisi zincirin önceki halkasından (rapor ya da bekleyen geç rapor).
+ * LafPOS gününde form LafPOS'un gün sonuyla açılır (yalnız geçiş gününden sonra; G8).
  * Kasadan çıkanlar, e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
  */
 async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
   const today = businessDate();
-  const [request, chain, counters, ai, myRequests, prevOkc] = await Promise.all([
+  const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
     chainNeighbours(getDb(), date, { prefer: user.id }),
     cashCounters(),
     aiStatus(),
     myCashRequests(user.id),
     previousOkc(date),
+    // LafPOS gününde Z LafPOS'un gün sonundan dolar, fotoğraf gerekmez; gelmediyse yazarkasa Z'si (G8)
+    loadKasaLafpos(date).catch(() => NO_LAFPOS),
   ]);
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
@@ -537,6 +549,8 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
         counters={counters}
         photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
         prevOkcZ={prevOkc.z}
+        lafpos={lafposState.day}
+        lafposMode={lafposState.lafpos}
       />
       <Card>
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />

@@ -65,7 +65,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
-| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | bekliyor |
+| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
 | B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | bekliyor |
@@ -365,7 +365,15 @@ B08 (E-08, E-33, E-34, E-66): geçiş gününden itibaren günlük satış satı
 gün tek kaynak: geçiş ayında ModPOS listesi kendi son gününe kadar, sonraki aylarda yalnız LafPOS), Satışlar'da salt
 okunur görünür ve eşleştirilir, ürünsüz satırlar ürün siteye bağlanınca ya da ad eşleştirilince yeniden gönderimsiz
 bağlanır (Ayarlar kartında "Bağla"), LafPOS satırı olan ürün silinmez; geçiş günü boşken hiçbir okuma değişmez.
-Kalan: kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B09-B11; sahibe soru 5.
+B09 (E-09, E-35, E-36, E-40; plan G6-G8, G11): geçiş gününden itibaren Kasa raporu LafPOS'un gün sonuyla açılır (Z
+bölümü "LafPOS gün sonu (Z)", ModPOS Z fotoğrafı yok), kayıtlı rapor, günden güne, e-posta, WhatsApp ve zil
+"LafPOS'tan farklı yazılan"ı söyler; Gün içinde çıkan'ın kaynağı panelin Kasadan çıkanlar'ı, LafPOS'un teslimi farkı
+bilgi satırıdır ve geç / düzeltme kartında fişsiz sayılmaz; satışlı LafPOS günü kapalı gün kanıtıdır ve kapalı işareti
+kaldırır; geç rapor LafPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkasa Z fotoğrafıyla); raporsuz LafPOS günü ay
+rakamına girer; kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer. Geçiş günü boşken bunların hiçbiri
+çalışmaz. ModPOS'ta da: kasa e-postasının Resend anahtarı rapor satırına özgü (silinip yeniden girilen günün e-postası
+gider, E-40).
+Kalan: kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B10-B11; sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.

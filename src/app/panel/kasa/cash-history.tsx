@@ -21,6 +21,7 @@ import {
   nextCheckOf,
   whatsappLink,
   whatsappText,
+  withCardExtra,
   type CarryCheck,
   type CashReportExtras,
   type CashRevisionRow,
@@ -37,7 +38,7 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 
 import { SavedPhotos } from "./cash-photos";
 import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, DiffHeadline, LafposDiffList, type OkcAdminView } from "./cash-summary";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
@@ -235,7 +236,8 @@ export function CashHistory({
                 </li>
               );
             }
-            const c = computeCash(report);
+            // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını düşer (G11)
+            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra));
             const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
             // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
             const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
@@ -264,6 +266,7 @@ export function CashHistory({
                     {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
+                    {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
@@ -319,7 +322,17 @@ export function CashHistory({
             <DiffHeadline diff={open.cashDiff} />
             {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
-            <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} carry={openCarry} next={openNext} audience="admin" okcAdmin={okcAdmin[open.id] ?? null} />
+            <LafposDiffList diffs={openPhotos?.extras.lafposDiffs} />
+            <CashBreakdown
+              report={open}
+              cashOuts={cashOuts[open.date] ?? []}
+              carry={openCarry}
+              next={openNext}
+              audience="admin"
+              okcAdmin={okcAdmin[open.id] ?? null}
+              kasa={openPhotos?.extras.kasa}
+              cardExtra={openPhotos?.extras.cardExtra}
+            />
             <CashRevisions report={open} revisions={revisions[open.id] ?? []} proposedBy={proposedBy[open.id]} />
           </div>
         ) : null}

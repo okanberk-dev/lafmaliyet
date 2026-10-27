@@ -15,6 +15,9 @@ import {
   zGapOf,
   type ClosedEvidence,
 } from "@/lib/closed-days";
+import { readLafposSwitchDay } from "@/lib/constants";
+import { posZSchema, type PosDayZ } from "@/lib/lafpos/day";
+import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -55,6 +58,26 @@ export async function closedDayRefusal(date: string, role: "admin" | "staff", db
   return (await isClosedDay(date, db)) ? CLOSED_TEXT.refusal : null;
 }
 
+/**
+ * Bir günün kapalı gün bildirimleri ve kararları aynı anda açılmasın (iki personel aynı dün için; onay ile LafPOS'un
+ * gün sonu): `kapali-gun:<gün>` danışma kilidi, işlemin sonuna kadar
+ */
+export async function lockClosedDay(tx: Tx, date: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kapali-gun:${date}`}))`);
+}
+
+/**
+ * Günün LafPOS gün sonu, yalnız LafPOS gününde (geçiş günü seçili ve gün ondan önce değil; src/lib/lafpos/switch.ts):
+ * Z no, fiş sayısı ve Z toplamı. Geçiş günü boşken ya da önceki günde null (deneme günü kanıt değil). İşlem içinden de
+ */
+async function lafposEvidence(db: Db | Tx, date: string): Promise<ClosedEvidence["lafpos"]> {
+  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return null;
+  const [row] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, date)).limit(1);
+  const z = row ? posZSchema.safeParse(row.z) : null;
+  return z?.success ? { zNo: z.data.zNo, receipts: z.data.receipts, zTotal: z.data.zTotal } : null;
+}
+
 /** İş gününün penceresi: [D 05:00, D+1 05:00), Türkiye */
 export function dayWindow(date: string): { from: Date; to: Date } {
   const hh = String(DAY_TURN_HOUR).padStart(2, "0");
@@ -71,13 +94,14 @@ async function coveringRows(db: Db | Tx, date: string) {
 }
 
 /**
- * Bir günün paneldeki izleri (tutar yok): kasa raporu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke
- * (iş günü penceresinde başlayan, iptal edilmemiş), personelin işlem geçmişi yazımları (aynı pencerede; hesap ve
- * hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve açılış sürekliliği. Site ayrı (siteDayCounts).
+ * Bir günün paneldeki izleri (tutar yok): kasa raporu, LafPOS'un gün sonu (yalnız LafPOS günlerinde; E-36), kasadan
+ * çıkan, zayi / ikram, açılan kontrol listesi, karaoke (iş günü penceresinde başlayan, iptal edilmemiş), personelin
+ * işlem geçmişi yazımları (aynı pencerede; hesap ve hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve
+ * açılış sürekliliği. Site ayrı (siteDayCounts).
  */
 export async function closedDayEvidence(db: Db | Tx, date: string): Promise<ClosedEvidence> {
   const w = dayWindow(date);
-  const [[report], [outs], [waste], [lists], [karaoke], logs, [prev], [next]] = await Promise.all([
+  const [[report], [outs], [waste], [lists], [karaoke], logs, [prev], [next], lafpos] = await Promise.all([
     db.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1),
     db.select({ n: count() }).from(s.cashOuts).where(eq(s.cashOuts.date, date)),
     db.select({ n: count() }).from(s.wasteEntries).where(eq(s.wasteEntries.date, date)),
@@ -103,6 +127,7 @@ export async function closedDayEvidence(db: Db | Tx, date: string): Promise<Clos
       .where(gt(s.cashReports.date, date))
       .orderBy(asc(s.cashReports.date))
       .limit(1),
+    lafposEvidence(db, date),
   ]);
   // Z boşluğu: arada (önceki ile sonraki rapor arasında) bu günden başka raporsuz ve kapalı işaretsiz kaç gün var
   let others = 0;
@@ -119,6 +144,7 @@ export async function closedDayEvidence(db: Db | Tx, date: string): Promise<Clos
     staffWrites: logs.filter((l) => isEvidenceAction(l.action)).length,
     zGap: zGapOf(date, prev ?? null, next ?? null, others),
     opening: openingText(prev ? { date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 } : null, next ? { date: next.date, opening: next.opening } : null),
+    lafpos,
   };
 }
 
@@ -183,6 +209,33 @@ export async function onReportSaved(tx: Tx, date: string, now = new Date()): Pro
   for (const row of await coveringRows(tx, date)) {
     if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, "kasa raporu girildi", now);
     else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Satış tahmini › Özel günler'den aralığı düzeltin`);
+  }
+}
+
+/**
+ * LafPOS'un satışlı gün sonu geldi (storePosDay, aynı işlemde; denetim E-36): gün LafPOS günüyse (geçiş günü seçili ve
+ * gün ondan önce değil) kasa raporunun gelişi gibi: aynı günün bekleyen kapalı gün bildirimi kapanır, günü kapsayan tek
+ * günlük kapalı satırı silinir (onaylayan istek `revoked`, yöneticinin zilinde "kanıt geldi"); çok günlük aralıkta
+ * yalnız zil. Geçiş günü boşken, gün ondan önceyse ya da gün sonunda satış yoksa (fiş ve Z toplamı 0) hiçbir şey
+ * yapılmaz: deneme günü hiçbir kaydı değiştirmez (sahibin 26 Ekim kararı). Bildirimin onayıyla yarışmasın diye günün
+ * kapalı gün kilidi alınır (onay kanıtı bu kilidin altında sayar). `soldSince`: aynı günün satışlı gün sonu daha önce
+ * bu anda geldi (yeniden gönderim, düzeltme); o andan sonra konan kapalı satırı yöneticinin kanıtı görerek verdiği
+ * karardır, dokunulmaz (yalnız ondan önce konan, yani kanıt gelince kalkması gereken satır kalkar).
+ */
+export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "zNo" | "receipts" | "zTotal">, now = new Date(), soldSince: Date | null = null): Promise<void> {
+  if (z.receipts <= 0 && z.zTotal <= 0) return;
+  const [setting] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return;
+  await lockClosedDay(tx, date);
+  const why = `LafPOS gün sonu geldi (Z ${z.zNo}${z.receipts > 0 ? ` · ${z.receipts} fiş` : ""})`;
+  await tx
+    .update(s.staffRequests)
+    .set({ status: "superseded", reviewNote: why, reviewedAt: now, updatedAt: now })
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), eq(s.staffRequests.day, date)));
+  for (const row of await coveringRows(tx, date)) {
+    if (soldSince && row.createdAt >= soldSince) continue;
+    if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, why, now);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Satış tahmini › Özel günler'den aralığı düzeltin`);
   }
 }
 

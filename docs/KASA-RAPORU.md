@@ -113,9 +113,12 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 
 Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md).
 
-**LafPOS'tan doldurma:** yalnız LafPOS'a geçiş gününden itibaren (Ayarlar › LafPOS (kasa); boşken kasa ModPOS ve bant
-hiç çıkmaz). LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa rakamları
-fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
+**LafPOS günü** (yalnız LafPOS'a geçiş gününden itibaren, Ayarlar › LafPOS (kasa); boşken kasa ModPOS, form ve metinler
+bugünkü gibi; denetim B09): Z bölümünün adı **LafPOS gün sonu (Z)**, ModPOS Z fotoğrafı çekilmez (Banka POS Z bölümü
+kalır). LafPOS günün sonunu gönderdiyse yeni form açılırken Z ve kasa rakamları fotoğrafınkiyle aynı kuralla yalnız
+boş alanlara kendiliğinden yazılır; Düzenle'de (ve düzeltme önerisinde) form yalnız karşılaştırır, LafPOS'tan farklı
+olanlar turuncu ve öneri olarak durur; bant **LafPOS'tan doldur** ile boş alanları doldurur; hiçbir şey kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "LafPOS'tan farklı yazılan"ı gösterir
+([LAFPOS.md](LAFPOS.md) › Kasa raporu).
 
 ## Banka POS Z raporu (yazarkasa)
 
@@ -214,6 +217,12 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   "Aylık harcamalar'a da yaz"ı seçer. Personel yalnız alım ve genel gider kategorilerini seçebilir.
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
+- **LafPOS gününde de kaynak bu satırlardır** (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): Aylık
+  harcamalar ve tedarikçi ödemeleri buradan okunur. LafPOS'un harcama + teslimi tutmuyorsa formda bilgi satırı:
+  "LafPOS'ta harcama 450 ₺ + teslim 5.000 ₺; Kasadan çıkanlar'da 450 ₺. Teslimi Kasadan çıkanlar'a "Teslim" olarak
+  ekleyin; Gün içinde çıkan kendiliğinden 5.450 ₺ olur." Fişler varken alanın altında "LafPOS'ta 5.450 ₺" görünür ama
+  **LafPOS'takini yaz** yoktur (fişsiz çıkış olurdu). Geç rapor ve düzeltme kartında fişlerden fazlası LafPOS'taki teslim
+  kadarsa "fişsiz" sayılmaz: "Fark LafPOS'taki teslim (5.000 ₺), fişsiz değil".
 - Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi ve eski
   numarasıyla geri gelir). Geri al'ın taşıdığı kopya sunucunun mühürüdür (`src/lib/cash-outs.ts` › `cashOutUndoJson`):
   yalnız silen kişi, 15 dakika içinde ve bir kez kullanır; istemcinin yazdığı bir kopya kabul edilmez. Gün personele
@@ -306,8 +315,8 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Pencere: "Yönetici onaylayınca … için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine
   raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o gün için
   bekleyen ya da reddedilen bildirim yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. O gün panelde iz
-  varsa (kasa raporu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke, personelin işlem geçmişi kaydı, Z no
-  boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
+  varsa (kasa raporu, LafPOS'un satışlı gün sonu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke,
+  personelin işlem geçmişi kaydı, Z no boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
   Bekleyen durumda "Kapalıydı dediniz · onay bekliyor" ve **Geri çek** (kişi başına günde bir); form yerinde kalır.
 - **Kanıt** (`src/server/closed-days.ts` › `closedDayEvidence`, canlı): iş günü penceresi [D 05:00, D+1 05:00).
   Karaoke `starts_at` ile, personelin işlem geçmişinde hesap, parola, iki adımlı, kurtarma, diğer cihazlar, oturum,
@@ -315,7 +324,9 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   yaramaz). Z no sürekliliği: önceki ve sonraki raporun Z no'ları arasındaki boşluk arada başka raporsuz gün yokken
   kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). Sitenin o günkü
   kafe, elle girilen ve kasada ödenen sipariş sayıları yöneticinin kartında ayrı bir Suspense'te sorulur (tutar yok;
-  mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz).
+  mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz). **LafPOS'un gün sonu** (denetim E-36; yalnız LafPOS
+  günlerinde, geçiş günü boşken ya da önceki günde hiç okunmaz): satışlıysa kırmızı "LafPOS'ta Z 14 · 63 fiş" (tutar
+  yok), satışsızsa uyarı "LafPOS'ta Z 15 alınmış, satış yok".
 - **Onaylar › Kasa › Kapalı gün** kartı: kanıt listesi (kırmızı varsa **Onayla** kapalı), üst üste günler "3 gün üst
   üste kapalı bildirimi", ipucu "Onaylamadan önce o günün ModPOS / banka POS'una bakın; satış varsa reddedin.", not
   "Not (bütün personele görünür; tutar yazmayın)". Onayda kanıt yeniden sayılır; satır onaylayan yöneticinin adıyla
@@ -325,7 +336,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
 - **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
   kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince Z no boşluğu varsa işaret
-  kalkar; açılış farkı varsa yalnız zil.
+  kalkar; açılış farkı varsa yalnız zil. **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
+  sonunun yazımıyla aynı işlemde, günün kapalı gün kilidi altında): bekleyen bildirim "LafPOS gün sonu geldi (Z 14 · 63
+  fiş)" notuyla kapanır, tek günlük işaret kalkar. Yalnız LafPOS gününde; geçiş günü boşken (deneme günü) hiçbir kayıt
+  değişmez. LafPOS'a geçişte Z numarası 1'den başlar: Z no boşluğu kuralı eksi boşlukta zaten susar.
 - **Bugün:** personelin `kasa-dun` satırı bekleyende "Onayda", onaylandıysa yok, reddedildiyse "Yönetici bildirimi
   reddetti{: not}. Raporu bugün girin."; yöneticinin `kasa-dun` ve `liste-dun` satırları "Onaya bak". Zil: yöneticide
   "Kapalı gün onayı bekliyor" ve "Dünkü kasa raporu girilmedi · Personel: kapalıydık dedi (onay bekliyor)"; personelde
@@ -460,15 +474,27 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 
 - **Girilmemiş günler** kartı: "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." Gün
   çipleri ("14 Eki Sal", "· onay bekliyor", "· reddedildi"); telefonda 4'ten fazla gün tek çipte ("5 gün") toplanır.
-  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın".
+  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın". LafPOS'un gün sonu gelen LafPOS
+  gününde (G8) fotoğraf gerekmez: açıklama bunu söyler ("… LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde
+  Z raporunun fotoğrafıyla …") ve o günlerin çipi fotoğraf deposu yokken de görünür ("Fotoğraf eklenemiyor; öteki
+  günleri yöneticiye yazın.").
 - **`/panel/kasa?gun=D`** geç rapor kipinde açılır: ModPOS Z no'su ve en az bir ModPOS Z fotoğrafı zorunlu (Banka POS Z
-  raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı), zorunlu **Neden geç
+  raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı). **LafPOS gününde** (geçiş gününden sonra; B09, G8)
+  kanıt LafPOS'un gün sonudur: geldiyse form ondan dolar ve fotoğraf gerekmez; gelmediyse yazarkasa (Banka POS) Z
+  raporunun fotoğrafı zorunlu ("LafPOS'un bu günün sonu gelmedi: …"). Kural istemcide ve sunucuda aynı
+  (`kasaEvidence`, `src/server/data/lafpos-day.ts`); fotoğraf kaldırma isteği de ona bakar (LafPOS gününde ModPOS Z
+  fotoğrafı kanıt değildir, gün sonu gelmediyse tek yazarkasa Z fotoğrafı kaldırılamaz). Yöneticinin kartı LafPOS'un
+  Z'sini ("LafPOS gün sonu · Z 13 · 63 fiş · …") ve personelin ondan farklı yazdıklarını gösterir, **Düzeltip onayla**
+  formu personelin yazdıklarıyla açılır ve LafPOS'la yalnız karşılaştırır (farklı olanlar turuncu, öneri olarak). Gün
+  sonu gelmeyen LafPOS gününde not: "… yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki
+  Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın." (zorunlu Z no LafPOS'unkidir); zorunlu **Neden geç
   giriliyor?** (3–300), kasayı sayan isteyendir (seçici yok; başka biri saydıysa nedene yazılır), teslim varsa
   **Teslim alan** (etkin kullanıcı ya da Banka). Kasadan çıkanlar kartı çizilmez ve "Gün içinde kasadan çıkan" elle
   yazılır (satırlar personele gitmez); e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
   Açılış önerisi zincirin önceki **halkasından** gelir: önceki rapor ya da önceki bekleyen geç rapor
   (`src/server/cash/late-chain.ts`). Düğme **Onaya gönder**; "Onaya gönderildi · 120 ₺ eksik".
-- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi", **Düzenle** ("Güncelle ve
+- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi" (LafPOS gün sonuyla gönderilen
+  fotoğrafsız raporda "LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"), **Düzenle** ("Güncelle ve
   gönder"; tutulan fotoğraflar yalnız önceki isteğin fotoğraflarından) ve **Geri çek**. Başkasının isteği beklerken
   "Mehmet bu günü 21 Ekim'de gönderdi; yöneticinin onayını bekliyor."; istek kişi başınadır. Reddedilen istekte
   "Reddedildi · Ali: …" ve önceki değerlerle dolu form (fotoğraflar yine kişinin kendi küçük resimleri). Aynı gün için
@@ -539,6 +565,11 @@ silinen rapor ayın rakamını hemen değiştirir.
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
+- **LafPOS günü raporsuz kaldıysa** (yalnız geçiş gününden sonra; denetim B09, G6): o günün rakamları LafPOS'un gün
+  sonundan (Z toplamı, kart, yemek kartı, indirim, ödenmez) aya girer, gün yine "rapor yok" sayılır: "1 gün rapor yok:
+  3 Kasım. Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı." Rapor girilince rapor kazanır. Tek yükleyici
+  (`tillRows`, `src/server/data/cash-reports.ts`): Gelir-gider, Satışlar, sabit gider sürümü ve Kasa'nın ay satırı aynı
+  rakamı görür. Geçiş günü boşken LafPOS günleri ay bilgisine girmez.
 - laffogato.net'in online satırı (kasadan geçmez) hiçbir rakama girmez.
 - **Sabit giderin günü:** açık gün kasadan geldiğinde kira, maaş ve öteki aylık kalemler Gelir-gider'de açık gün
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
@@ -566,7 +597,20 @@ silinen rapor ayın rakamını hemen değiştirir.
   "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
   güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa bölümünde uyarı ([Açılış ve
   devir](#açılış-ve-devir)). Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
-  E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar.
+  E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar. Resend'e rapor satırına ve sürümüne özgü
+  anahtarla gider (`cash-{rapor}-r{sürüm}`, `cashEmailKey`; denetim E-40): aynı sürüm iki kez gitmez, "Yeniden dene" aynı
+  anahtarı kullanır. Silinip aynı gün (24 saat içinde) yeniden girilen raporun e-postası da gider: yeni rapor yeni
+  satırdır, sürümü 1'den başlasa da anahtarı silinenden farklıdır (güne göre anahtar Resend'in 24 saatlik hafızasına
+  takılırdı: e-posta gitmez, "Yeniden dene" düşerdi).
+- **LafPOS günü** (geçiş gününden sonra; denetim E-09): e-postanın ve WhatsApp metninin başında rapor LafPOS'un gün
+  sonundan farklıysa "⚠️ LafPOS'tan farklı yazılan: Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; Z bölümünün adı "LafPOS
+  gün sonu (Z)". Teslim sayımdan sonra yazıldıysa (Teslim edilen) aynı para iki biçimde yazılmıştır: çıkan + teslim ve
+  devir (sayılan − teslim) LafPOS'unkiyle karşılaştırılır, ayrı ayrı fark sayılmaz. Kayıtlı rapor ve günden güne
+  görünüm aynı listeyi gösterir ("LafPOS'tan farklı" rozeti); yöneticinin zilinde "Kasa raporu LafPOS'tan farklı", LafPOS
+  günü rapordan sonra farklı rakamla yeniden gönderdiyse "LafPOS rapordan sonra farklı rakamla geldi". Kart
+  karşılaştırması LafPOS'un kartla bahşişini ve kartla cari tahsilatını düşer (Z'nin kartında yok, banka POS'unda var;
+  personelin formunda ve WhatsApp'ında da, aynı sonuçla; tutar yalnız yöneticinin metninde, Kart bölümünde ve
+  e-postada ayrı satır "− LafPOS kartla bahşiş + cari tahsilatı"). Geçiş günü boşken metin bugünkü gibi.
 - **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
   sonu).
 

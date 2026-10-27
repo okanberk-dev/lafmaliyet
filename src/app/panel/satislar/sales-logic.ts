@@ -137,7 +137,10 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
   if (!kasa || v === null) return null;
   const t = kasa.till;
   if (mode === "kasa") {
-    const days = f === "discounts" ? `${t.discountDays} / ${t.reported} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${t.reported} günde girildi` : `${t.reported} gün`;
+    // LafPOS'un yedek günleri (G6) de rakam verir: payda raporlu gün + LafPOS günü
+    const lafpos = t.lafpos?.length ?? 0;
+    const all = t.reported + lafpos;
+    const days = f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : `${t.reported} gün${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}`;
     return `Kasa raporlarından (${days}). Değiştirmek için dokunun.`;
   }
   return typed.trim() ? `Elle girildi · kasada ${fieldShown(f, v)}` : `Boş bırakırsanız kasadaki kullanılır (${fieldShown(f, v)})`;

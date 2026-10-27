@@ -51,6 +51,11 @@ export function cashOutsTotal(lines: { amount: number }[]): number {
   return Math.round(lines.reduce((a, l) => a + l.amount, 0) * 100) / 100;
 }
 
+/** Satırların "Teslim" olanlarının toplamı (LafPOS'un tesliminin panele girilmiş kısmı; lafposHandedGap) */
+export function teslimTotalOf(lines: { kind: CashOutKind; amount: number }[]): number {
+  return cashOutsTotal(lines.filter((l) => l.kind === "teslim"));
+}
+
 /**
  * Raporun "Gün içinde kasadan çıkan" tutarı satırların toplamından 1 ₺'den fazla azsa uyarı (engellemez: fişin parası
  * kasadan çıkmamış olabilir). Fazlası uyarılmaz: fişsiz çıkan para da olur.

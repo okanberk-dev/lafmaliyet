@@ -118,7 +118,9 @@ export function daysUntilText(day: string, today: string): string | null {
  * buraya ekler: liste kodun yaptığından fazlasını söylemez.
  */
 export const LAFPOS_SWITCH_EFFECTS: readonly string[] = [
-  "Kasa raporunda bu günden itibaren LafPOS'un gün sonu görünür: formun başındaki \"LafPOS'tan doldur\" bandı (o günün gönderimi geldiyse).",
+  "Kasa raporu bu günden itibaren LafPOS'un gün sonuyla açılır: o günün gönderimi geldiyse form kendiliğinden dolar (kaydetmez), Z bölümü \"LafPOS gün sonu (Z)\" olur ve ModPOS Z fotoğrafı istenmez; kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp LafPOS'tan farklı yazılanları gösterir.",
+  "Geç kasa raporu bu günden itibaren LafPOS'un gün sonuyla girilir (gelmediyse yazarkasa Z fotoğrafıyla); kasa raporu girilmemiş günün ciro ve açık günü LafPOS'un Z'sinden sayılır, gün yine \"rapor yok\" görünür.",
+  "\"Kafe kapalıydı\" için bu günden itibaren LafPOS'un satışlı gün sonu kanıttır: o gün kapalı onaylanamaz, işaretliyse kalkar.",
   "Ürün satışları bu günden itibaren LafPOS'un gün sonlarından gelir: Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış ve KDV tahmini onları ay toplamı olarak sayar. Bu günden sonraki aylara yüklenen ModPOS listesi sayılmaz (silinmez); geçiş ayında ModPOS listesi geçiş gününden önceki günler içindir.",
   "Satış tahmini bu günden itibaren kasa raporu girilmemiş günde LafPOS'un Z toplamını, tatlı payı LafPOS satışlarını da okur.",
   "LafPOS'tan gelen bu günden önceki günler deneme sayılır: Ayarlar'da görünür, hiçbir hesaba girmez.",
