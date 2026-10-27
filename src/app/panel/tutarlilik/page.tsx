@@ -38,7 +38,7 @@ export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tuta
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Stok" title={TITLE} excel={EXCEL} tabs={<SectionTabs section="stok" current="/panel/tutarlilik" />} />
+          <PageHeader eyebrow="Stok" title={TITLE} excel={EXCEL} tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />} />
           <PageSkeleton rows={12} />
         </>
       }
@@ -123,7 +123,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         excel={EXCEL}
         description="POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?"
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
-        tabs={<SectionTabs section="stok" current="/panel/tutarlilik" />}
+        tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
       />
 
       {waiting?.count ? (

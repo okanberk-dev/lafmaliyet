@@ -24,8 +24,9 @@ export default function StockPage({ searchParams }: PageProps<"/panel/sayim">) {
     <Suspense
       fallback={
         <>
-          {/* Rol henüz bilinmediği için sekmeler yalnızca içerik yüklenince (yöneticiye) çizilir */}
-          <PageHeader title="Stok sayımı" eyebrow="Stok" excel="Sayım" />
+          {/* Rol henüz bilinmiyor: iki rolün de gördüğü sekmeler (Sayım, Zayi & ikram); yöneticinin Tutarlılık'ı içerik
+              yüklenince eklenir, sekme satırı yer değiştirmez */}
+          <PageHeader title="Stok sayımı" eyebrow="Stok" excel="Sayım" tabs={<SectionTabs section="stok" current="/panel/sayim" role="staff" />} />
           <PageSkeleton rows={12} />
         </>
       }
@@ -128,7 +129,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         actions={
           <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
         }
-        tabs={isAdmin ? <SectionTabs section="stok" current="/panel/sayim" /> : undefined}
+        tabs={<SectionTabs section="stok" current="/panel/sayim" role={user.role} />}
       />
       <StockCountForm
         key={month}

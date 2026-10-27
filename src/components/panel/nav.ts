@@ -212,19 +212,6 @@ export const NAV_FOOTER: NavItem[] = [
   { href: "/panel/hesap", label: "Hesabım", icon: UserRound, roles: ["admin", "staff"], keywords: "parola şifre e-posta iki adımlı doğrulama 2fa authenticator" },
 ];
 
-/** Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar */
-export const SECTION_TABS = {
-  giderler: [
-    { href: "/panel/giderler", label: "Sabit giderler" },
-    { href: "/panel/harcamalar", label: "Aylık harcamalar" },
-    { href: "/panel/personel", label: "Personel" },
-  ],
-  stok: [
-    { href: "/panel/sayim", label: "Sayım" },
-    { href: "/panel/tutarlilik", label: "Tutarlılık" },
-  ],
-} as const;
-
 export function isNavActive(item: Pick<NavItem, "href" | "match">, pathname: string) {
   if (item.href === "/panel") return pathname === "/panel";
   return [item.href, ...(item.match ?? [])].some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -350,6 +337,42 @@ export const NAV_TREE: NavNode[] = [
   { id: "yardim-personel", label: "Yardım", icon: HelpCircle, href: "/panel/yardim/personel", roles: ["staff"] },
 ];
 
+/** Bölüm sekmesi; `roles`: sekmeyi kimin gördüğü (sayfanın kendi yetkisiyle aynı) */
+export interface SectionTab {
+  href: string;
+  label: string;
+  roles: readonly ("admin" | "staff")[];
+}
+
+/** Sekmede kısa ad: başlık zaten "Stok", sekme "Sayım" der (Excel karşılığı da bu adla bulunur, yardim/nav-paths.ts) */
+const TAB_LABELS: Record<string, string> = { "/panel/sayim": "Sayım" };
+
+/** Kenar çubuğundaki bir grubun alt sayfaları, aynı sırada ve aynı rollerle */
+function treeTabs(id: string): SectionTab[] {
+  return (NAV_TREE.find((n) => n.id === id)?.children ?? []).map((c) => ({ href: c.href, label: TAB_LABELS[c.href] ?? c.label, roles: c.roles }));
+}
+
+/**
+ * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok sekmeleri kenar çubuğunun Stok grubundan türer
+ * (denetim E-56, 27 Eki 2026): menüye eklenen ya da çıkan Stok sayfası sekmelerde de aynı sırayla görünür; telefonda
+ * (kenar çubuğu gizli) Sayım, Zayi & ikram ve Tutarlılık arasında hamburger menü açmadan geçilir. Giderler'in
+ * sekmeleri kenar çubuğunda tek öğedir (Giderler & personel), o yüzden elle.
+ */
+export const SECTION_TABS: Record<"giderler" | "stok", readonly SectionTab[]> = {
+  giderler: [
+    { href: "/panel/giderler", label: "Sabit giderler", roles: ["admin"] },
+    { href: "/panel/harcamalar", label: "Aylık harcamalar", roles: ["admin"] },
+    { href: "/panel/personel", label: "Personel", roles: ["admin"] },
+  ],
+  stok: treeTabs("stok"),
+};
+
+/** Kişinin açabildiği sekmeler (personel Tutarlılık'ı görmez); tek sekme kalırsa sekme çubuğu çizilmez (boş dizi) */
+export function sectionTabsFor(section: keyof typeof SECTION_TABS, role: "admin" | "staff"): SectionTab[] {
+  const tabs = SECTION_TABS[section].filter((t) => t.roles.includes(role));
+  return tabs.length > 1 ? tabs : [];
+}
+
 /** Ağacı role göre süzer; tek alt sayfası kalan grup doğrudan o sayfaya bağlanır */
 export function navTreeFor(role: "admin" | "staff"): NavNode[] {
   return NAV_TREE.filter((n) => n.roles.includes(role))
@@ -396,7 +419,7 @@ export function isSamePage(href: string | null | undefined, pathname: string): b
 /**
  * Telefon ve tabletteki alt menü (lg altında), beş öğe. Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey
  * orada; ayda bir açılan Satışlar ve Faturalar da). Personel: günün beş ekranı; Sayım ve Hatırlatıcılarım çekmecede
- * (üst çubuktaki menü düğmesi), ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
+ * (üst çubuktaki menü düğmesi), Sayım Zayi'nin Stok sekmelerinde de; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
  * gecikmiş ödeme sayısı görünür.
  */
 export interface BottomNavItem {
@@ -417,7 +440,7 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
     { id: "menu", label: "Menü", icon: LayoutGrid },
   ],
-  // Günün işleri; Sayım ve Hatırlatıcılarım çekmece menüde (Hatırlatıcılarım zilde de), Hesabım profil menüsünde
+  // Günün işleri; Sayım ve Hatırlatıcılarım çekmece menüde (Sayım Zayi'nin sekmesinde, Hatırlatıcılarım zilde de), Hesabım profil menüsünde
   staff: [
     { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun" },
     { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },

@@ -8,7 +8,21 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { activeGroupOf, BOTTOM_NAV, isSamePage, keepGroupOpen, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navLit, navTreeFor, pathMatches, type NavNode } from "../src/components/panel/nav";
+import {
+  activeGroupOf,
+  BOTTOM_NAV,
+  isSamePage,
+  keepGroupOpen,
+  NAV_FOOTER,
+  NAV_GROUPS,
+  NAV_TREE,
+  navLit,
+  navTreeFor,
+  pathMatches,
+  SECTION_TABS,
+  sectionTabsFor,
+  type NavNode,
+} from "../src/components/panel/nav";
 import { canOpen } from "../src/lib/roles";
 
 const src = (path: string) => readFileSync(join(process.cwd(), "src/components/panel", path), "utf8");
@@ -234,4 +248,53 @@ test("etkin sayfanın grubu kendiliğinden açık: alt ekran ve sekme de kendi b
   // Kenar çubuğu açıklığı bu işlevden alır
   assert.match(src("sidebar-nav.tsx"), /const activeParent = activeGroupOf\(items, pathname\);/);
   assert.match(src("sidebar-nav.tsx"), /toggled\[id\] \?\? id === activeParent/);
+});
+
+// Denetim E-56 (27 Eki 2026): Stok sekmeleri kenar çubuğunun Stok grubuyla aynı; telefonda (kenar çubuğu gizli) sayfalar
+// arasında hamburger menü açmadan geçilir
+test("Stok sekmeleri: role göre süzülmüş kenar çubuğu Stok grubunun sayfaları, aynı sırada", () => {
+  for (const role of ["admin", "staff"] as const) {
+    const group = navTreeFor(role).find((n) => n.id === "stok");
+    assert.ok(group?.children, role);
+    assert.deepEqual(
+      sectionTabsFor("stok", role).map((t) => t.href),
+      group.children.map((c) => c.href),
+      role,
+    );
+    // Her sekme o rolün açabildiği bir ekran
+    for (const t of sectionTabsFor("stok", role)) assert.ok(canOpen(role, t.href), `${role} ${t.href}`);
+  }
+  assert.deepEqual(
+    sectionTabsFor("stok", "admin").map((t) => t.label),
+    ["Sayım", "Zayi & ikram", "Tutarlılık"],
+  );
+  // Personel Tutarlılık'ı görmez
+  assert.deepEqual(
+    sectionTabsFor("stok", "staff").map((t) => t.label),
+    ["Sayım", "Zayi & ikram"],
+  );
+  // Ağaçtaki her Stok sayfası sekmede (menüye eklenen sayfa sekmeye de girer)
+  const tree = NAV_TREE.find((n) => n.id === "stok")!.children!;
+  assert.deepEqual(
+    SECTION_TABS.stok.map((t) => [t.href, [...t.roles]]),
+    tree.map((c) => [c.href, c.roles]),
+  );
+  // Giderler'in sekmeleri yalnız yöneticide; tek sekme kalan bölüm çizilmez
+  assert.equal(sectionTabsFor("giderler", "admin").length, 3);
+  assert.deepEqual(sectionTabsFor("giderler", "staff"), []);
+});
+
+test("Stok sekmeleri Sayım, Zayi & ikram ve Tutarlılık sayfalarında; rol sayfanın kullanıcısından", () => {
+  const page = (p: string) => readFileSync(join(process.cwd(), "src/app/panel", p, "page.tsx"), "utf8");
+  // Sayım ve Zayi iki rolde açılır: sekmeler kullanıcının rolüyle, yüklenirken iki rolün ortak sekmeleri
+  assert.match(page("sayim"), /<SectionTabs section="stok" current="\/panel\/sayim" role=\{user\.role\} \/>/);
+  assert.match(page("sayim"), /<SectionTabs section="stok" current="\/panel\/sayim" role="staff" \/>/);
+  assert.match(page("zayi"), /<SectionTabs section="stok" current="\/panel\/zayi" role=\{role\} \/>/);
+  assert.match(page("zayi"), /<WasteHeader role=\{user\.role\} \/>/);
+  assert.match(page("zayi"), /<WasteHeader role="staff" \/>/);
+  // Tutarlılık yalnız yönetici
+  assert.match(page("tutarlilik"), /requireAdmin\(\)/);
+  assert.match(page("tutarlilik"), /<SectionTabs section="stok" current="\/panel\/tutarlilik" role="admin" \/>/);
+  // Ortak sekmeler (yükleniyor) yöneticiye özel ekran içermez
+  assert.ok(sectionTabsFor("stok", "staff").every((t) => t.roles.includes("admin") && t.roles.includes("staff")));
 });

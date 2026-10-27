@@ -20,7 +20,7 @@ function Header({ description }: { description?: ReactNode }) {
       title="Personel"
       excel="Personel"
       description={description}
-      tabs={<SectionTabs section="giderler" current="/panel/personel" />}
+      tabs={<SectionTabs section="giderler" current="/panel/personel" role="admin" />}
     />
   );
 }
