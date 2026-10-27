@@ -76,7 +76,7 @@ export const LAFPOS_IKRAM_TEXT = {
   /** Ürünü bulunamayan satır (yönetici; Ayarlar › LafPOS'ta bağlanır) */
   unmatched: "ürüne bağlı değil: tüketime girmez",
   /** Paneldeki ürün zayisinin rozeti: aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
-  maybeTwice: "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kaydı silin",
+  maybeTwice: "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli",
   /** LafPOS gününde Zayi formunun notu (ürün zayisi iki yerden girilmesin) */
   zayiNote: "Kasada LafPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin.",
   /** Gün sonu gelmeyen geçmiş LafPOS günü: ürün ikramı panelden girilebilir */

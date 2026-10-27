@@ -377,7 +377,12 @@ export function WasteBoard({
                     {lateBadges[e.id] || asks.length || notCounted.has(e.id) || maybeTwice.has(e.id) ? (
                       <p className="mt-1 flex flex-wrap gap-1.5">
                         {notCounted.has(e.id) ? <Badge tone="gray">{LAFPOS_IKRAM_TEXT.notCounted}</Badge> : null}
-                        {maybeTwice.has(e.id) ? <Badge tone="amber">{LAFPOS_IKRAM_TEXT.maybeTwice}</Badge> : null}
+                        {maybeTwice.has(e.id) ? (
+                          // Uzun uyarı: telefonda satıra sığsın diye kırılır
+                          <Badge tone="amber" className="rounded-lg whitespace-normal">
+                            {LAFPOS_IKRAM_TEXT.maybeTwice}
+                          </Badge>
+                        ) : null}
                         {lateBadges[e.id] ? <Badge tone="gray">{lateBadges[e.id]}</Badge> : null}
                         {asks.map((a) => (
                           <Badge key={a.requestId} tone="amber">

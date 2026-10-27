@@ -35,7 +35,7 @@ kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). 
 - **LafPOS'ta zayi yazılan kalem** (kasada "Zayi yaz" / "Zayi kapat") aynı listede gelir, nedeni "Zayi: " ile başlar
   (LafPOS `compReasonText`): **zayi** olarak sayılır, ikram değil (Tutarlılık'ın zayi sütunu, ay özetinin Zayi'si, kasa
   özetinin zayi satırı). "Ödenmez: …" (personel yemeği, patron hesabı) ikramdır. Panelde de aynı gün aynı ürün zayi
-  girildiyse ikisi de sayılır, panel satırı "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kaydı silin" der; Zayi formu
+  girildiyse ikisi de sayılır, panel satırı "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli" der; Zayi formu
   LafPOS gününde "LafPOS'ta “Zayi yaz” ile işaretlenen ürün gün sonuyla buraya gelir; panele ayrıca girmeyin" hatırlatır
   (sahibin sorusu: ürün zayisi de gün sonu gelen günde yalnız LafPOS'tan mı sayılsın).
 - **Gün listesi** LafPOS'un o günkü ikram ve zayi satırlarını salt okunur gösterir ("LafPOS'ta işaretlenen ikram ve
