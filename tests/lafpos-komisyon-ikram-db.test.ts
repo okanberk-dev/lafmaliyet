@@ -47,6 +47,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
   let store: typeof import("../src/server/cash/report-store");
   let email: typeof import("../src/server/cash/report-email");
   let reports: typeof import("../src/server/data/cash-reports");
+  let wasteRequests: typeof import("../src/server/data/waste-requests");
   const users = {
     ali: { id: 0, name: "Ali", role: "admin" as const, email: "lafpos-ki-ali@ornek.com" },
     ayse: { id: 0, name: "Ayşe", role: "staff" as const, email: "lafpos-ki-ayse@ornek.com" },
@@ -147,6 +148,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     store = await import("../src/server/cash/report-store");
     email = await import("../src/server/cash/report-email");
     reports = await import("../src/server/data/cash-reports");
+    wasteRequests = await import("../src/server/data/waste-requests");
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (!String(input).startsWith("https://api.resend.com/")) return realFetch(input, init);
       const body = JSON.parse(String(init?.body)) as { html: string; text: string };
@@ -326,8 +328,13 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.ok((await core.addWaste(db, users.ayse, { ...item, productId: null, ingredientId: ids.milk, date: "2026-11-12" }, NOW)).id > 0);
     assert.ok((await core.addWaste(db, users.ayse, { ...item, kind: "zayi", date: "2026-11-12" }, NOW)).id > 0);
     assert.ok((await core.addWaste(db, users.ali, { ...item, date: "2026-11-09" }, NOW)).id > 0);
-    // Geçiş günü 1 Kasım'a alınınca 8 Kasım'ın isteği onaylanmaz, reddedilir
+    // Geçiş günü 1 Kasım'a alınınca 8 Kasım'ın isteği onaylanmaz, reddedilir: Onaylar'ın kartı da söyler
+    const cardOf = async () => (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === asked.row.id);
+    const before = await cardOf();
+    assert.equal(before?.kind === "zayi-gec" ? before.lafposRefusal : "?", null);
     await setSwitch("2026-11-01");
+    const after = await cardOf();
+    assert.match(plain(after?.kind === "zayi-gec" ? (after.lafposRefusal ?? "") : ""), /^Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\./);
     await refused(
       core.reviewWasteRequestCore(db, users.ali, { id: asked.row.id, seenVersion: asked.row.version, decision: "approve", note: null }, NOW),
       /^Ürün ikramı 1 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\. .* İsteği reddedin\.$/,
