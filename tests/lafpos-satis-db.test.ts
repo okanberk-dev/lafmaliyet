@@ -502,6 +502,15 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     // Geçmişi olmayan ürün silinir
     const [fresh] = await db.insert(s.products).values({ categoryId: ids.cat, name: "Yeni", size: "Tek", price: 1 }).returning({ id: s.products.id });
     assert.equal((await products.deleteProduct(fresh.id)).ok, true);
+    // Tek geçmişi LafPOS ayına yüklenmiş (sayılmayan) ModPOS listesi: aylık model onu içermez, kart ve eylem aynı sayıyı
+    // veritabanından alır (denetim B08 incelemesi)
+    await setSwitch("2026-12-01");
+    const [mocha] = await db.insert(s.products).values({ categoryId: ids.cat, name: "Mocha yalnız liste", size: "Tek", price: 1 }).returning({ id: s.products.id });
+    await db.insert(s.salesLines).values({ month: "2026-12", posName: "MOCHA LİSTE", productId: mocha.id, qty: 3, revenue: 600, isService: false, sortOrder: 9 });
+    assert.equal((await dataset.loadDataset()).salesLines.filter((l) => l.productId === mocha.id).length, 0, "model sayılmayan listeyi okumaz");
+    assert.equal(await history.salesLinesCount(mocha.id), 1);
+    const blocked = await products.deleteProduct(mocha.id);
+    assert.match(!blocked.ok ? blocked.error : "", /^Bu ürünün 1 satış satırı kaydı var/);
   });
 
   test("tahmin: geçiş gününden itibaren raporsuz günde LafPOS'un Z'si (rapor kazanır, deneme günü yok); tatlı payı LafPOS ayını okur", async () => {

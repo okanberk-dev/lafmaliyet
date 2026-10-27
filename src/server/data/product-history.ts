@@ -13,8 +13,8 @@ import { loadSiteSales } from "@/server/site-sales/sync";
  */
 export async function productHistoryCounts(p: { id: number; siteMenuId: string | null; siteMenuSlot: "M" | "L" | null }): Promise<ProductHistoryCounts> {
   const db = getDb();
-  const [[sales], posDailySales, [waste], [prices], siteMonths] = await Promise.all([
-    db.select({ n: count() }).from(s.salesLines).where(eq(s.salesLines.productId, p.id)),
+  const [salesLines, posDailySales, [waste], [prices], siteMonths] = await Promise.all([
+    salesLinesCount(p.id),
     posDailySalesCount(p.id),
     db.select({ n: count() }).from(s.wasteEntries).where(eq(s.wasteEntries.productId, p.id)),
     db.select({ n: count() }).from(s.productPrices).where(and(eq(s.productPrices.productId, p.id), ne(s.productPrices.source, "create"))),
@@ -22,7 +22,16 @@ export async function productHistoryCounts(p: { id: number; siteMenuId: string |
   ]);
   const index = buildSiteLinkIndex([p]);
   const onlineMonths = siteMonths.filter((m) => m.cafe.lines.some((l) => productForLine(l, index) === p.id)).length;
-  return { salesLines: sales.n, posDailySales, waste: waste.n, priceChanges: prices.n, onlineMonths };
+  return { salesLines, posDailySales, waste: waste.n, priceChanges: prices.n, onlineMonths };
+}
+
+/**
+ * Ürüne bağlı ModPOS satış satırı (sales_lines; sayılmayan aydaki liste dahil). Ürün kartı da bunu okur: aylık modelin
+ * satırları LafPOS'a geçilen ayların listesini içermez, kart ile eylem ayrı sayardı (denetim B08 incelemesi)
+ */
+export async function salesLinesCount(productId: number, db: DB = getDb()): Promise<number> {
+  const [r] = await db.select({ n: count() }).from(s.salesLines).where(eq(s.salesLines.productId, productId));
+  return r?.n ?? 0;
 }
 
 /** Ürüne bağlı LafPOS günlük satış satırı (pos_daily_sales; silinirse bağı sessizce kopardı: FK "set null") */

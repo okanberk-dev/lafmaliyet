@@ -316,10 +316,13 @@ test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmiş
   assert.match(history, /^import "server-only";/);
   assert.match(history, /ne\(s\.productPrices\.source, "create"\)/);
   assert.match(history, /from\(s\.posDailySales\)\.where\(eq\(s\.posDailySales\.productId, productId\)\)/);
-  // Reçete kartı da aynı sayacı okur; ModPOS satırlarını sayarken LafPOS'un ay toplamlarını ikinci kez saymaz
+  // Reçete kartı da aynı sayaçları veritabanından okur: aylık modelin satırları LafPOS ayına yüklenmiş (sayılmayan) listeyi
+  // içermez, LafPOS'un ay toplamlarını da içerir (denetim B08 incelemesi)
   const card = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/page.tsx"), "utf8");
   assert.match(card, /posDailySalesCount\(product\.id\)/);
-  assert.match(card, /l\.productId === product\.id && !l\.lafpos/);
+  assert.match(card, /salesLinesCount\(product\.id\)/);
+  assert.doesNotMatch(card, /model\.ds\.salesLines\.filter\(\(l\) => l\.productId === product\.id/);
+  assert.match(history, /from\(s\.salesLines\)\.where\(eq\(s\.salesLines\.productId, productId\)\)/);
   // "Menüde pasif yap" siteye bağlı, sitede satışta üründe laffogato.net'teki kalemi de "Tükendi" yapar: pencere önceden söyler
   const editor = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/recipe-editor.tsx"), "utf8");
   assert.match(editor, /active && showOnMenu && site\?\.link \? ` laffogato\.net'te de .+ “Tükendi” görünür\.` : null/);
