@@ -1,4 +1,5 @@
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
+import { missingText } from "@/lib/cash-month";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { coverageFor } from "@/lib/sales-coverage";
 import { addDays, dayAblativeTR, dayMonthTR, monthEnd } from "@/lib/reminders";
@@ -123,6 +124,9 @@ export function lafposMonthStatus(i: {
   modposZ?: number | null;
   /** Kasa raporunu bekleyen günler (süren ay) */
   held?: { from: string; to: string } | null;
+  /** Ayın kasa raporu olan günleri ve gelen LafPOS gün sonları: raporlu ama gün sonu gelmemiş gün (`missing`) */
+  kasaDays?: readonly string[];
+  lafposDates?: readonly string[];
 }): LafposSalesMonth | null {
   const source = monthSource(i.month, i.switchDay);
   if (source === "modpos") return null;
@@ -139,6 +143,9 @@ export function lafposMonthStatus(i: {
       if (start <= lastModpos) gap = { from: start, to: lastModpos };
     }
   }
+  // Raporlu ama LafPOS gün sonu gelmemiş günler (bugün hariç: gün sonu kapanışta gelir)
+  const got = new Set(i.lafposDates ?? []);
+  const missing = from === null ? [] : (i.kasaDays ?? []).filter((d) => d >= from && d < i.today && !got.has(d)).sort();
   return {
     month: i.month,
     source,
@@ -149,6 +156,7 @@ export function lafposMonthStatus(i: {
     gap,
     overlap,
     ...(i.held ? { held: i.held } : {}),
+    ...(missing.length ? { missing } : {}),
   };
 }
 
@@ -187,7 +195,11 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
   const warnings: string[] = [];
   const held = st.held ? `; ${dayRangeTR(st.held.from, st.held.to)} kasa raporu girilince sayılır` : "";
   const days = st.lafpos ? ` (${st.lafpos.days} gün geldi, son gün ${dayMonthTR(st.lafpos.last)}${held})` : "";
+  const missing = st.missing?.length
+    ? `${st.missing.length} günün LafPOS gün sonu gelmedi, kasa raporu var: ${missingText(st.missing)}. Bu günlerin satışı hesapta yok; LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın.`
+    : null;
   if (st.source === "lafpos") {
+    if (missing) warnings.push(missing);
     if (st.modpos) {
       warnings.push(
         `Bu aya yüklenmiş ModPOS listesi (${st.modpos.lines} satır) sayılmıyor: ${name} LafPOS'tan geliyor. Silmek için "Ayı temizle".`,
@@ -214,6 +226,7 @@ export function lafposMonthNotes(st: LafposSalesMonth, switchDay: string): Lafpo
         : `${dayRangeTR(st.gap.from, st.gap.to)} ModPOS satışı yüklenmedi: LafPOS ${dayAblativeTR(switchDay)} itibaren sayılıyor. ${dayRangeTR(first, lastModpos)} listesini yükleyin.`,
     );
   }
+  if (missing) warnings.push(missing);
   if (st.modpos?.counted) {
     // modposZ listenin kendi günlerinin (ayın 1'i → listenin son günü) Z toplamı
     const over = modposOverZText(st.modpos.revenue, st.modposZ, first, st.modpos.through);

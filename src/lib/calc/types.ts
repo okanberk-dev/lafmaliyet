@@ -456,6 +456,11 @@ export interface LafposSalesMonth {
    */
   held?: { from: string; to: string } | null;
   /**
+   * LafPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
+   * satışı hiçbir kaynakta yok; yoksa alan yok
+   */
+  missing?: string[];
+  /**
    * Ayın Satışlar'a yüklenmiş ModPOS listesi: satır sayısı, ciro toplamı, son günü (kapsam kaydı yoksa ayın sonu) ve
    * hesaba girip girmediği (geçiş ayında evet, sonraki aylarda hayır); liste yoksa null
    */

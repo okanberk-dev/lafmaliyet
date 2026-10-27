@@ -137,6 +137,12 @@ kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir (`tests/laf
 - **Liste kısaysa ya da yoksa** (1–4 Kasım listesi, geçiş günü 10 Kasım) aradaki günler hiçbir kaynakta yoktur (çift
   değil eksik sayım); geçiş günü geldikten sonra Satışlar "5–9 Kasım satışı hiçbir kaynakta yok … 1–9 Kasım listesini
   yükleyin" der.
+- **Gün sonu gelmeyen gün:** LafPOS'un sayıldığı günlerden kasa raporu olup gün sonu gelmeyen (dünden önceki) gün
+  Satışlar'da uyarılır: "2 günün LafPOS gün sonu gelmedi, kasa raporu var: 1, 2 Ekim. Bu günlerin satışı hesapta yok;
+  LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın." (`missing`).
+- **Genel bakış:** Satışlar bandının ilk uyarısı (eksik ya da sayılmayan gün, gün sonu gelmeyen gün, liste ↔ Z) "Bu ayın
+  işleri"nde "Satış raporu" satırına da çıkar (`monthTaskFacts`); ay o uyarıyla "Tamam" görünmez. Ayın tamamı LafPOS'tansa
+  satır "LafPOS'tan N gün geldi" der, Patron listesi istemez.
 - **Liste ↔ Z:** geçiş ayında listenin toplamı listenin günlerinin kasa raporu Z toplamını %5'ten fazla aşıyorsa uyarı
   (yüklerken bildirim, sonra Satışlar'da): liste geçiş gününden sonraki satışı da içeriyor olabilir, o günler
   LafPOS'tan da sayılır. Liste ürün cirosudur (indirimden önce), küçük fark olağandır.

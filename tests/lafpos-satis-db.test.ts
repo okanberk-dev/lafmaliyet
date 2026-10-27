@@ -285,6 +285,13 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual(done.salesLines.filter((l) => l.month === "2026-12").map((l) => [l.qty, l.lafpos?.days ?? null]), [[100, 10]]);
     assert.equal(done.lafposSales?.months.find((m) => m.month === "2026-12")?.held, undefined);
     assert.ok(!titles(createModel(done)).includes("Satış listesi ile POS cirosu tutmuyor"));
+    assert.equal(done.lafposSales?.months.find((m) => m.month === "2026-12")?.missing, undefined);
+    // Kasa raporu olan ama LafPOS gün sonu gelmemiş gün Satışlar'ın ve Genel bakış'ın uyarısı olur
+    await db.delete(s.posDayReports).where(eq(s.posDayReports.date, "2026-12-05"));
+    await db.delete(s.posDailySales).where(eq(s.posDailySales.date, "2026-12-05"));
+    const gap = (await dataset.loadDataset()).lafposSales?.months.find((m) => m.month === "2026-12");
+    assert.deepEqual(gap?.missing, ["2026-12-05"]);
+    assert.match(lafposNotes(gap!, "2026-12-01").warnings[0], /^1 günün LafPOS gün sonu gelmedi, kasa raporu var: 5 Aralık\./);
   });
 
   test("geçiş ayına sonradan ayın tamamının listesi yüklendiyse LafPOS'un o ayki günleri sayılmaz (çift sayım yok)", async () => {

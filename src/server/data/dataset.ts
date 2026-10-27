@@ -133,6 +133,7 @@ export async function loadDataset(): Promise<Dataset> {
     today,
     // Kasa raporlarının son günü (till tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
     lastTillDay: till.at(-1)?.date ?? null,
+    reportDays: till.map((r) => r.date),
     zOf: (from, upto) => {
       const rows = till.filter((r) => r.date >= from && r.date <= upto);
       return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, countDistinct, gte, lte, max, sql, sum, type SQL } from "drizzle-orm";
+import { and, asc, countDistinct, gte, lte, sql, sum, type SQL } from "drizzle-orm";
 
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
 import { lafposMonthStatus, lafposSalesCountFrom, mergeSalesSources, modposThroughOf, type LafposDaysOfMonth, type LafposMonthLine, type SalesSources } from "@/lib/lafpos/sales";
@@ -20,22 +20,22 @@ export interface LafposHold {
  * LafPOS satışlarının aylık modele okunması (docs/LAFPOS.md › Günlük satış; kural src/lib/lafpos/sales.ts). Yalnız
  * geçiş günü seçiliyken çağrılır: `from` (lafposSalesCountFrom) gününden itibaren pos_daily_sales (ay, POS adı, ürün,
  * hizmet) başına toplanır, pos_day_reports ay ay sayılır. Geçiş günü yoksa hiçbir okuma yapılmaz. `hold` verilirse süren
- * ayın kasa raporundan sonraki günleri satırlara ve `days`'e girmez, yalnız `received`'da (gelen bütün günler) görünür.
+ * ayın kasa raporundan sonraki günleri satırlara ve `days`'e girmez, yalnız `received`'da (gelen bütün günler) ve
+ * `dates`'te görünür.
  */
 export async function loadLafposMonthSales(
   db: DB,
   from: string,
   to?: string,
   hold?: LafposHold | null,
-): Promise<{ lines: LafposMonthLine[]; days: LafposDaysOfMonth[]; received: LafposDaysOfMonth[] }> {
+): Promise<{ lines: LafposMonthLine[]; days: LafposDaysOfMonth[]; received: LafposDaysOfMonth[]; dates: string[] }> {
   const d = s.posDailySales;
   const r = s.posDayReports;
   const lineMonth = sql<string>`substr(${d.date}, 1, 7)`;
-  const dayMonth = sql<string>`substr(${r.date}, 1, 7)`;
   const range = (col: typeof d.date | typeof r.date): SQL | undefined => (to ? and(gte(col, from), lte(col, to)) : gte(col, from));
   // Bekleyen gün: süren ayda kasa raporlarının son gününden sonra
-  const held = (col: typeof d.date | typeof r.date): SQL => (hold ? sql`(${col} > ${hold.after} and substr(${col}, 1, 7) = ${hold.month})` : sql`false`);
-  const [lines, days] = await Promise.all([
+  const isHeld = (day: string) => !!hold && day > hold.after && day.slice(0, 7) === hold.month;
+  const [lines, reports] = await Promise.all([
     db
       .select({
         month: lineMonth,
@@ -47,25 +47,32 @@ export async function loadLafposMonthSales(
         days: countDistinct(d.date),
       })
       .from(d)
-      .where(and(range(d.date), sql`not ${held(d.date)}`))
+      .where(and(range(d.date), hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined))
       .groupBy(lineMonth, d.posName, d.productId, d.isService),
-    db
-      .select({
-        month: dayMonth,
-        days: count(),
-        last: max(r.date),
-        counted: sql<number>`count(*) filter (where not ${held(r.date)})`.mapWith(Number),
-        lastCounted: sql<string | null>`max(${r.date}) filter (where not ${held(r.date)})`,
-      })
-      .from(r)
-      .where(range(r.date))
-      .groupBy(dayMonth),
+    // Gün başına bir özet (tarih benzersiz)
+    db.select({ date: r.date }).from(r).where(range(r.date)).orderBy(asc(r.date)),
   ]);
+  const dates = reports.map((x) => x.date);
   return {
     lines: lines.map((l) => ({ ...l, qty: l.qty ?? 0, revenue: l.revenue ?? 0 })),
-    days: days.flatMap((x) => (x.lastCounted ? [{ month: x.month, days: x.counted, last: x.lastCounted }] : [])),
-    received: days.flatMap((x) => (x.last ? [{ month: x.month, days: x.days, last: x.last }] : [])),
+    days: daysByMonth(dates.filter((x) => !isHeld(x))),
+    received: daysByMonth(dates),
+    dates,
   };
+}
+
+/** Sıralı günlerden ay ay gün sayısı ve son gün */
+function daysByMonth(dates: readonly string[]): LafposDaysOfMonth[] {
+  const out = new Map<string, LafposDaysOfMonth>();
+  for (const date of dates) {
+    const month = date.slice(0, 7);
+    const m = out.get(month);
+    if (m) {
+      m.days++;
+      if (date > m.last) m.last = date;
+    } else out.set(month, { month, days: 1, last: date });
+  }
+  return [...out.values()];
 }
 
 export interface MergedSales extends SalesSources {
@@ -95,6 +102,8 @@ export async function mergeWithLafpos(
      * (denetim B08 incelemesi). Süren ayda kasa raporu yoksa bekletilmez: ayın kasa dönemi yok, karşılaştırma da yok
      */
     lastTillDay?: string | null;
+    /** Kasa raporu olan günler (veri kümesi): LafPOS gün sonu gelmemiş raporlu gün Satışlar'da ve Genel bakış'ta uyarılır */
+    reportDays?: readonly string[];
   },
 ): Promise<MergedSales> {
   const S = input.switchDay;
@@ -121,6 +130,8 @@ export async function mergeWithLafpos(
       modpos: list.length ? { lines: list.length, revenue: list.reduce((a, l) => a + l.revenue, 0), through } : null,
       lafpos: days ? { days: days.days, last: days.last } : null,
       modposZ: list.length && input.zOf ? input.zOf(`${m}-01`, through) : null,
+      kasaDays: input.reportDays?.filter((x) => x.slice(0, 7) === m),
+      lafposDates: lafpos.dates.filter((x) => x.slice(0, 7) === m),
       // Kasa raporunu bekleyen günler: gelen son gün sayılan son günden sonraysa
       held: hold && m === hold.month && days && (!counted || days.last > counted.last) ? { from: addDays(hold.after, 1), to: days.last } : null,
     });
