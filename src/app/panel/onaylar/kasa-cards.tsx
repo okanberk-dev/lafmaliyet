@@ -192,7 +192,9 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
           ) : null}
           {card.receipts?.unreceipted ? <li className="font-medium text-bad">Fişsiz çıkış: {money(card.receipts.unreceipted)}</li> : null}
           {card.receipts?.lafposHanded ? (
-            <li className="text-ink-soft">Fişlerden fazlası LafPOS&apos;taki teslim ({money(card.receipts.lafposHanded)}): fişsiz değil, teslim Kasadan çıkanlar&apos;a girilmemiş.</li>
+            <li className="text-ink-soft">
+              Fişlerden fazlası LafPOS&apos;ta olup Kasadan çıkanlar&apos;a girilmemiş teslim ({money(card.receipts.lafposHanded)}): fişsiz değil.
+            </li>
           ) : null}
           {card.monthPassed ? (
             <li className="flex items-start gap-1.5 text-warn">

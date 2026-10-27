@@ -136,7 +136,7 @@ export function LateReport({
               </Badge>
             </p>
             {pendingOwn.message ? <p className="break-words text-ink-soft">Neden: {pendingOwn.message}</p> : null}
-            <p className="text-ink-mute">{pendingOwn.photos.length} fotoğraf eklendi</p>
+            <p className="text-ink-mute">{pendingOwn.photos.length || !lafpos ? `${pendingOwn.photos.length} fotoğraf eklendi` : "LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"}</p>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setEditing(true)} disabled={busy}>
                 <Pencil size={15} /> Düzenle
@@ -194,35 +194,44 @@ export function LateReport({
 
 /**
  * "Girilmemiş günler" (personelin kasa sayfası): dünden eski son 14 günün raporu girilmemiş günleri, çip başına gün.
- * Telefonda 4'ten fazla gün tek çipte toplanır, dokununca açılır. Fotoğraf deposu yoksa çip yok.
+ * Telefonda 4'ten fazla gün tek çipte toplanır, dokununca açılır. Kanıt günün kasasına göre (G8): LafPOS'un gün sonu
+ * gelen günde (`lafpos`) fotoğraf gerekmez, çip fotoğraf deposu yokken de görünür; öteki günlerin çipi depo yoksa yok.
  */
-export function LateDaysCard({ days, storage }: { days: { date: string; state: "missing" | "pending" | "rejected" }[]; storage: boolean }) {
+export function LateDaysCard({ days, storage }: { days: { date: string; state: "missing" | "pending" | "rejected"; lafpos?: boolean }[]; storage: boolean }) {
   const [open, setOpen] = useState(false);
   if (!days.length) return null;
-  const collapse = days.length > 4 && !open;
+  // Girilebilen günler: depo varsa hepsi, yoksa yalnız LafPOS gün sonu gelenler
+  const shown = storage ? days : days.filter((d) => d.lafpos);
+  const hidden = days.length - shown.length;
+  const collapse = shown.length > 4 && !open;
   const label = (d: (typeof days)[number]) => `${shortDayTR(d.date)}${d.state === "pending" ? " · onay bekliyor" : d.state === "rejected" ? " · reddedildi" : ""}`;
+  const lafposCount = days.filter((d) => d.lafpos).length;
+  const description = !lafposCount
+    ? "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer."
+    : lafposCount === days.length
+      ? "Kafe açıktıysa girin; LafPOS'un gün sonu geldiği için fotoğraf gerekmez. Yöneticinin onayıyla kayda geçer."
+      : "Kafe açıktıysa girin; LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde Z raporunun fotoğrafıyla. Yöneticinin onayıyla kayda geçer.";
   return (
     <Card>
-      <CardHeader icon={<CalendarClock />} title="Girilmemiş günler" description="Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." />
-      <div className="px-5 pb-5">
-        {storage ? (
+      <CardHeader icon={<CalendarClock />} title="Girilmemiş günler" description={description} />
+      <div className="space-y-2 px-5 pb-5">
+        {shown.length ? (
           <>
             {collapse ? (
               <Button size="sm" variant="secondary" className="sm:hidden" onClick={() => setOpen(true)}>
-                {days.length} gün
+                {shown.length} gün
               </Button>
             ) : null}
             <div className={collapse ? "hidden flex-wrap gap-2 sm:flex" : "flex flex-wrap gap-2"}>
-              {days.map((d) => (
+              {shown.map((d) => (
                 <ButtonLink key={d.date} href={`/panel/kasa?gun=${d.date}`} size="sm" variant={d.state === "missing" ? "secondary" : "ghost"} className="pointer-coarse:min-h-11">
                   {label(d)}
                 </ButtonLink>
               ))}
             </div>
           </>
-        ) : (
-          <p className="text-sm text-ink-mute">Fotoğraf eklenemiyor; bu günleri yöneticiye yazın.</p>
-        )}
+        ) : null}
+        {hidden ? <p className="text-sm text-ink-mute">Fotoğraf eklenemiyor; {shown.length ? "öteki günleri" : "bu günleri"} yöneticiye yazın.</p> : null}
       </div>
     </Card>
   );

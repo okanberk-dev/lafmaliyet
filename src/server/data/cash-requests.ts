@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 
 import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
-import { cashOutsTotal } from "@/lib/cash-outs";
+import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import {
   correctionBell,
   CorrectionPayload,
@@ -355,7 +355,7 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
       const [outs, lafpos] = await Promise.all([cashOutsOn(r.day), loadKasaLafpos(r.day)]);
       const total = cashOutsTotal(outs);
       const over = Math.round((after.cashOut - total) * 100) / 100;
-      const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null) : null;
+      const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;
       const unreceipted = split ? split.rest : over;
       receipts = { count: outs.length, total, unreceipted: unreceipted > 1 ? unreceipted : null, lafposHanded: split?.handed ?? null };
     }

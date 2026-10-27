@@ -115,9 +115,9 @@ Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md
 
 **LafPOS günü** (yalnız LafPOS'a geçiş gününden itibaren, Ayarlar › LafPOS (kasa); boşken kasa ModPOS, form ve metinler
 bugünkü gibi; denetim B09): Z bölümünün adı **LafPOS gün sonu (Z)**, ModPOS Z fotoğrafı çekilmez (Banka POS Z bölümü
-kalır). LafPOS günün sonunu gönderdiyse form açılırken (ve Düzenle'de) Z ve kasa rakamları fotoğrafınkiyle aynı
-kuralla yalnız boş alanlara kendiliğinden yazılır; bant **LafPOS'tan doldur** ile yeniden uygular; hiçbir şey
-kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "LafPOS'tan farklı yazılan"ı gösterir
+kalır). LafPOS günün sonunu gönderdiyse yeni form açılırken Z ve kasa rakamları fotoğrafınkiyle aynı kuralla yalnız
+boş alanlara kendiliğinden yazılır; Düzenle'de (ve düzeltme önerisinde) form yalnız karşılaştırır, LafPOS'tan farklı
+olanlar turuncu ve öneri olarak durur; bant **LafPOS'tan doldur** ile boş alanları doldurur; hiçbir şey kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "LafPOS'tan farklı yazılan"ı gösterir
 ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
 
 ## Banka POS Z raporu (yazarkasa)
@@ -474,7 +474,10 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 
 - **Girilmemiş günler** kartı: "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." Gün
   çipleri ("14 Eki Sal", "· onay bekliyor", "· reddedildi"); telefonda 4'ten fazla gün tek çipte ("5 gün") toplanır.
-  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın".
+  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın". LafPOS'un gün sonu gelen LafPOS
+  gününde (G8) fotoğraf gerekmez: açıklama bunu söyler ("… LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde
+  Z raporunun fotoğrafıyla …") ve o günlerin çipi fotoğraf deposu yokken de görünür ("Fotoğraf eklenemiyor; öteki
+  günleri yöneticiye yazın.").
 - **`/panel/kasa?gun=D`** geç rapor kipinde açılır: ModPOS Z no'su ve en az bir ModPOS Z fotoğrafı zorunlu (Banka POS Z
   raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı). **LafPOS gününde** (geçiş gününden sonra; B09, G8)
   kanıt LafPOS'un gün sonudur: geldiyse form ondan dolar ve fotoğraf gerekmez; gelmediyse yazarkasa (Banka POS) Z
@@ -482,13 +485,16 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
   (`kasaEvidence`, `src/server/data/lafpos-day.ts`); fotoğraf kaldırma isteği de ona bakar (LafPOS gününde ModPOS Z
   fotoğrafı kanıt değildir, gün sonu gelmediyse tek yazarkasa Z fotoğrafı kaldırılamaz). Yöneticinin kartı LafPOS'un
   Z'sini ("LafPOS gün sonu · Z 13 · 63 fiş · …") ve personelin ondan farklı yazdıklarını gösterir, **Düzeltip onayla**
-  formu LafPOS'tan dolar; zorunlu **Neden geç
+  formu personelin yazdıklarıyla açılır ve LafPOS'la yalnız karşılaştırır (farklı olanlar turuncu, öneri olarak). Gün
+  sonu gelmeyen LafPOS gününde not: "… yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki
+  Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın." (zorunlu Z no LafPOS'unkidir); zorunlu **Neden geç
   giriliyor?** (3–300), kasayı sayan isteyendir (seçici yok; başka biri saydıysa nedene yazılır), teslim varsa
   **Teslim alan** (etkin kullanıcı ya da Banka). Kasadan çıkanlar kartı çizilmez ve "Gün içinde kasadan çıkan" elle
   yazılır (satırlar personele gitmez); e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
   Açılış önerisi zincirin önceki **halkasından** gelir: önceki rapor ya da önceki bekleyen geç rapor
   (`src/server/cash/late-chain.ts`). Düğme **Onaya gönder**; "Onaya gönderildi · 120 ₺ eksik".
-- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi", **Düzenle** ("Güncelle ve
+- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi" (LafPOS gün sonuyla gönderilen
+  fotoğrafsız raporda "LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"), **Düzenle** ("Güncelle ve
   gönder"; tutulan fotoğraflar yalnız önceki isteğin fotoğraflarından) ve **Geri çek**. Başkasının isteği beklerken
   "Mehmet bu günü 21 Ekim'de gönderdi; yöneticinin onayını bekliyor."; istek kişi başınadır. Reddedilen istekte
   "Reddedildi · Ali: …" ve önceki değerlerle dolu form (fotoğraflar yine kişinin kendi küçük resimleri). Aynı gün için

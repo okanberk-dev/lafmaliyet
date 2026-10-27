@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { businessDate, carryCheck, LATE_REPORT_DAYS, lateMissingDays, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
-import { cashOutsTotal } from "@/lib/cash-outs";
+import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import { handedToText, lateBell, lateByText, LatePayload, lateFields, type LatePayloadT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { lafposDiffs, type LafposDiff } from "@/lib/lafpos/diffs";
@@ -33,13 +33,16 @@ import { getDb, schema as s } from "@/server/db";
 const r = s.staffRequests;
 const pendingLate = and(eq(r.kind, "kasa-gec"), eq(r.status, "pending"));
 
-/** Personelin "Girilmemiş günler"i: geç rapor penceresinin raporsuz, kapalı olmayan günleri ve istek durumu */
-export async function staffLateDays(me: { id: number }, now = new Date()): Promise<{ date: string; state: "missing" | "pending" | "rejected" }[]> {
+/**
+ * Personelin "Girilmemiş günler"i: geç rapor penceresinin raporsuz, kapalı olmayan günleri ve istek durumu. `lafpos`:
+ * LafPOS günü ve gün sonu geldi (kanıt o, fotoğraf gerekmez; G8, kasaEvidence ile aynı kural). Geçiş günü boşken hiç yok
+ */
+export async function staffLateDays(me: { id: number }, now = new Date()): Promise<{ date: string; state: "missing" | "pending" | "rejected"; lafpos?: true }[]> {
   const day = businessDate(now);
   const from = addDays(day, -LATE_REPORT_DAYS);
   const to = addDays(day, -2);
   const db = getDb();
-  const [reports, [first], closed, requests] = await Promise.all([
+  const [reports, [first], closed, requests, lafposDays] = await Promise.all([
     db
       .select({ date: s.cashReports.date })
       .from(s.cashReports)
@@ -51,6 +54,7 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
       .from(r)
       .where(and(eq(r.kind, "kasa-gec"), gte(r.day, from), lte(r.day, to)))
       .orderBy(asc(r.createdAt)),
+    lafposEvidenceDays(from, to),
   ]);
   const state = new Map<string, "pending" | "rejected">();
   for (const q of requests) {
@@ -68,7 +72,19 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
     closed,
     state,
     now,
-  );
+  ).map((d) => (lafposDays.has(d.date) ? { ...d, lafpos: true as const } : d));
+}
+
+/** [from, to] içinde LafPOS gün sonu gelmiş LafPOS günleri (yalnız geçiş gününden itibaren; boşken boş küme) */
+async function lafposEvidenceDays(from: string, to: string): Promise<Set<string>> {
+  const db = getDb();
+  const switchDay = await loadLafposSwitchDay(db);
+  if (switchDay === null || to < switchDay) return new Set();
+  const rows = await db
+    .select({ date: s.posDayReports.date })
+    .from(s.posDayReports)
+    .where(and(gte(s.posDayReports.date, from > switchDay ? from : switchDay), lte(s.posDayReports.date, to)));
+  return new Set(rows.map((x) => x.date).filter((d) => isLafposDay(d, switchDay)));
 }
 
 /** Personelin kendi geç rapor isteği (kendi yazdığı sayılar ve kendi fotoğrafları) */
@@ -289,7 +305,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     const outsTotal = cashOutsTotal(outs);
     const outsGap = Math.round((fields.cashOut - outsTotal) * 100) / 100;
     // LafPOS gününde farkın LafPOS'taki teslim kadarı fişsiz değil: teslim Kasadan çıkanlar'a girilmemiş (E-35)
-    const split = outsGap >= 1 ? lafposHandedGap(fields.cashOut, outsTotal, lafpos.day?.till ?? null) : null;
+    const split = outsGap >= 1 ? lafposHandedGap(fields.cashOut, outsTotal, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;
     cards.push({
       kind: "kasa-gec",
       id: x.id,
@@ -320,7 +336,9 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
             ? null
             : split !== null
               ? `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}. ${
-                  split.rest ? `${money(split.handed)} LafPOS'taki teslim, ${money(split.rest)} fişsiz` : `Fark LafPOS'taki teslim (${money(split.handed)}), fişsiz değil`
+                  split.rest
+                    ? `${money(split.handed)} LafPOS'ta olup girilmemiş teslim, ${money(split.rest)} fişsiz`
+                    : `Fark LafPOS'ta olup girilmemiş teslim (${money(split.handed)}), fişsiz değil`
                 }: teslimi Kasadan çıkanlar'a "Teslim" olarak ekleyin.`
               : `Gün içinde çıkan ${money(fields.cashOut)}; o güne kayıtlı kasadan çıkan ${money(outsTotal)}${outsGap > 0 ? ` (${money(outsGap)} fişsiz)` : ""}`,
         lafposHanded: split?.handed ?? null,

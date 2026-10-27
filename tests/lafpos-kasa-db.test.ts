@@ -350,7 +350,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     );
     assert.equal(card.outs.lafposHanded, 5_000);
     assert.equal(card.outs.unreceipted, 0);
-    assert.match(plain(card.outs.warning ?? ""), /Fark LafPOS'taki teslim \(5\.000 ₺\), fişsiz değil/);
+    assert.match(plain(card.outs.warning ?? ""), /Fark LafPOS'ta olup girilmemiş teslim \(5\.000 ₺\), fişsiz değil/);
     assert.doesNotMatch(card.outs.warning ?? "", /fişsiz\)/);
     // Z no sırası yalnız aynı kasanın komşusuyla: 8 Kasım'ın öncesi 7 Kasım'ın bekleyen geç raporu (LafPOS), 7 Kasım'ın
     // öncesi 30 Ekim raporu (ModPOS: LafPOS'ta Z 1'den başlar, karşılaştırılmaz)
@@ -366,6 +366,25 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal(modpos.outs.unreceipted, 5_000);
     assert.match(plain(modpos.outs.warning ?? ""), /5\.000 ₺ fişsiz/);
     assert.deepEqual(modpos.lafpos.sameTill, { prev: true, next: true });
+    // Teslimin bir kısmı panelde "Teslim" (inceleme D3): 3.000 girildi, kalan 2.000 girilmemiş teslim, fişsiz yok
+    await setSwitch(S);
+    await db.insert(s.cashOuts).values({ date: D, kind: "teslim", amount: 3_000, store: null, description: null, createdBy: users.ayse.id, createdByName: users.ayse.name });
+    const partial = (await lateData.lateCards(NOW)).find((c) => c.date === D)!;
+    assert.equal(partial.outs.lafposHanded, 2_000);
+    assert.equal(partial.outs.unreceipted, 0);
+    assert.match(plain(partial.outs.warning ?? ""), /o güne kayıtlı kasadan çıkan 3\.450 ₺\. Fark LafPOS'ta olup girilmemiş teslim \(2\.000 ₺\), fişsiz değil/);
+  });
+
+  test("inceleme U6: Girilmemiş günler LafPOS gün sonu gelen günü işaretler (fotoğraf gerekmez); geçiş günü boşken hiç", async () => {
+    await report("2026-10-30", { openingCash: 0 });
+    await push("2026-11-08", 13);
+    const before = await lateData.staffLateDays(users.ayse, NOW);
+    assert.ok(before.some((d) => d.date === "2026-11-08"));
+    assert.equal(before.some((d) => "lafpos" in d), false, "geçiş günü boşken bugünkü gibi");
+    await setSwitch(S);
+    const days = await lateData.staffLateDays(users.ayse, NOW);
+    assert.deepEqual(days.filter((d) => d.lafpos).map((d) => d.date), ["2026-11-08"]);
+    assert.ok(days.some((d) => d.date === "2026-11-07" && !d.lafpos), "gün sonu gelmeyen LafPOS günü fotoğrafla");
   });
 
   test("G6: raporsuz LafPOS günü ay satırına yedek satırla girer; raporu olan gün rapordan; geçiş günü boşken yok", async () => {

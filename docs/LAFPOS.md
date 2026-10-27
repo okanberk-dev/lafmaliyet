@@ -187,9 +187,13 @@ göredir. LafPOS gününde (denetim B09):
 - Z bölümünün adı **LafPOS gün sonu (Z)** (form, kayıtlı rapor, e-posta, WhatsApp); ModPOS Z fotoğrafı çekilmez, Banka POS
   Z (yazarkasa) bölümü kalır. O günün gönderimi gelmediyse açıklama "LafPOS'un bu günün sonu gelmedi; LafPOS'ta Kasa ›
   Geçmiş günler'deki Z raporundan yazın."
-- Gönderim geldiyse form **açılırken** (ve kayıtlı raporda Düzenle'de, onay kartının Düzeltip onayla'sında) aşağıdaki
-  kuralla kendiliğinden dolar; hiçbir şey kaydedilmez. Bant: "LafPOS gün sonu · Z 128 · 26 Ekim 03:12" ve **LafPOS'tan
-  doldur** (boşalttığınız alanı yeniden doldurur).
+- Gönderim geldiyse **yeni form** (o günün ilk raporu, yeni geç rapor) açılırken aşağıdaki kuralla kendiliğinden dolar;
+  hiçbir şey kaydedilmez. Yazılmış değerlerle açılan form (kayıtlı raporda Düzenle, düzeltme önerisi, reddedilen geç
+  raporun önceki değerleri, onay kartının Düzeltip onayla'sı) **yalnız karşılaştırır**: hiçbir alan kendiliğinden
+  değişmez, farklı olanlar turuncu ve altında "LafPOS'ta …" / "LafPOS'takini yaz"; metinler de "doldu" değil
+  "karşılaştırıldı" der (Z bölümü: "Yazılan rakamlar LafPOS'un gün sonuyla karşılaştırıldı: …"; Düzeltip onayla'da
+  bant "Personelin yazdıkları LafPOS'takiyle aynı." ya da "LafPOS'ta 2 alan personelin yazdığından farklı; …"). Bant:
+  "LafPOS gün sonu · Z 128 · 26 Ekim 03:12" ve **LafPOS'tan doldur** (boş alanları doldurur).
 
 Doldurma:
 

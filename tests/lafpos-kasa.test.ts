@@ -16,7 +16,7 @@ import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra,
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
-import { lafposCardExtra, lafposDayOf, lafposHandedGap, lafposOutsCheck, lafposPrefill } from "../src/lib/lafpos/prefill";
+import { lafposCardExtra, lafposDayOf, lafposHandedGap, lafposOutsCheck, lafposPrefill, lafposSummary } from "../src/lib/lafpos/prefill";
 import { okcReconcile } from "../src/lib/okc-z";
 import { prefillPlan } from "../src/lib/photo-read/kasa";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
@@ -148,6 +148,12 @@ test("E-35: LafPOS'un teslimi panelde yoksa formun alanı 450 kalır, öneri 5.4
   assert.deepEqual(lafposHandedGap(5_450, 0, DAY.till), { handed: 5_000, rest: 450 });
   assert.equal(lafposHandedGap(3_450, 450, DAY.till), null, "fark teslimden azsa ayrıştırılmaz");
   assert.equal(lafposHandedGap(450, 450, { spent: 450, handed: 0 }), null);
+  // Teslimin bir kısmı panelde "Teslim" (inceleme D3): 15:00'te 3.000 girildi, 20:00'deki 2.000 girilmedi. Panelde 450
+  // fiş + 3.000 Teslim = 3.450; rapor LafPOS'tan 5.450: fark 2.000 girilmemiş teslim, fişsiz yok
+  assert.deepEqual(lafposHandedGap(5_450, 3_450, DAY.till, 3_000), { handed: 2_000, rest: 0 });
+  assert.deepEqual(lafposHandedGap(5_950, 3_450, DAY.till, 3_000), { handed: 2_000, rest: 500 }, "kalan yine fişsiz");
+  assert.equal(lafposHandedGap(5_450, 5_450, DAY.till, 5_000), null, "teslimin tamamı girildi: fark yok");
+  assert.equal(lafposHandedGap(5_950, 5_450, DAY.till, 5_000), null, "teslimin tamamı girildi: fazlası fişsiz");
 });
 
 test("E-36: LafPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı satır, tutar yok); satışsız gün sonu yalnız uyarı", () => {
@@ -321,4 +327,33 @@ test("G11: personelin formdaki kart sonucu WhatsApp'taki sonuçla aynı (yalnız
   assert.match(summary, /<Line label=\{CARD_EXTRA_LABEL\} value=\{audience === "admin" \? money\(cardExtra\) : "düşüldü"\} \/>/);
   // LafPOS'ta yoksa metin bugünkü gibi
   assert.equal(plain(whatsappText(report({ bankPos: 8_000 }), { by: "Ayşe" })).includes("düşüldü"), false);
+});
+
+test("inceleme U1/U4/U5/U6: geç rapor ve onay formu karşılaştırmayı doğru söyler; Girilmemiş günler LafPOS kanıtına bakar", () => {
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  // U1: günün satırları gelmeyen formda (geç rapor, Düzeltip onayla) "Kasadan çıkanlar'a bir şey girilmedi" denmez
+  assert.match(form, /const lafposOuts = lafpos && mode === "report" \? lafposOutsCheck\(lafpos\.till, outsTotal\) : null;/);
+  // U4: yazılmış değerlerle açılan form "doldu" demez; Düzeltip onayla'da yazan personel
+  assert.match(form, /const \[lafposCompared, setLafposCompared\] = useState\(lafpos !== null && report === null && initial !== null\);/);
+  assert.match(form, /setLafposCompared\(lafpos !== null\);/, "Düzenle (ve öneri) karşılaştırır");
+  assert.match(form, /"Yazılan rakamlar LafPOS'un gün sonuyla karşılaştırıldı: farklı olanlar turuncu, altında LafPOS'taki\."/);
+  assert.match(form, /Önceki yazdıklarınız LafPOS'un gün sonuyla karşılaştırıldı, farklı olanlar turuncu/);
+  assert.match(form, /review \? "staff" : "self",/);
+  assert.doesNotMatch(form, /Personelin yazdığı değişmedi; farklı olanlar turuncu/);
+  const plan = (fill: number, differs: number) => ({ fill: new Array(fill).fill(null), differs: new Array(differs).fill(null), missing: [] });
+  assert.equal(lafposSummary(plan(0, 0), "staff"), "Personelin yazdıkları LafPOS'takiyle aynı.");
+  assert.equal(lafposSummary(plan(0, 2), "staff"), "LafPOS'ta 2 alan personelin yazdığından farklı; turuncu olanlara bakın.");
+  assert.equal(lafposSummary(plan(0, 2)), "LafPOS'ta 2 alan yazdığınızdan farklı; turuncu olanlara bakın.");
+  // U5: gün sonu gelmeyen LafPOS gününde zorunlu Z no LafPOS'unki
+  assert.match(form, /LafPOS gün sonu bölümündeki Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın\./);
+  assert.match(form, /"LafPOS'un Z no'su gerekli \(LafPOS › Kasa › Geçmiş günler\)"/);
+  assert.doesNotMatch(form, /Z raporunun fotoğrafı ve Z no zorunlu\."\}/, "LafPOS notu yazarkasa Z no'suna yönlendirmez");
+  // U6: LafPOS gün sonu gelen gün depo yokken de girilir; bekleyen raporda "0 fotoğraf" denmez
+  const late = read("src/app/panel/kasa/late-report.tsx");
+  assert.match(late, /const shown = storage \? days : days\.filter\(\(d\) => d\.lafpos\);/);
+  assert.match(late, /LafPOS'un gün sonu gelen günlerde fotoğraf gerekmez, ötekilerde Z raporunun fotoğrafıyla/);
+  assert.match(late, /"LafPOS gün sonuyla gönderildi; fotoğraf gerekmez"/);
+  const loader = read("src/server/data/cash-late.ts");
+  assert.match(loader, /\.map\(\(d\) => \(lafposDays\.has\(d\.date\) \? \{ \.\.\.d, lafpos: true as const \} : d\)\);/);
+  assert.match(loader, /if \(switchDay === null \|\| to < switchDay\) return new Set\(\);/, "geçiş günü boşken hiç yok");
 });

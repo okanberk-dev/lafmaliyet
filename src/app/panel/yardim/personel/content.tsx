@@ -254,7 +254,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <B>Girilmemiş günler</B> kartında çip olarak durur: güne dokunun, Z raporunun fotoğrafını ekleyin, Z no&apos;yu ve neden geç girildiğini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basın. Rapor yönetici onaylayınca kayda geçer. Fotoğrafsız gönderilemez. Daha eski bir günü yönetici girer; Z raporunu ona
             iletin. Kasada LafPOS kullanılmaya başlandıysa o günün rakamları LafPOS&apos;un gün sonundan dolar ve fotoğraf gerekmez; LafPOS o günü göndermediyse
-            banka POS Z raporunun fotoğrafını ekleyin.
+            banka POS Z raporunun fotoğrafını ekleyin ve Z no&apos;yu LafPOS&apos;un Kasa › Geçmiş günler ekranından yazın.
           </>
         ),
         icon: History,

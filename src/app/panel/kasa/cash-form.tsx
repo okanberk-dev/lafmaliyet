@@ -386,6 +386,9 @@ export interface LateFormState {
  * nedeniyle onaya gönderir; sayan isteyendir (seçici yok), teslim varsa teslim alan seçilir, gün içinde çıkan elle
  * yazılır. Dünün formu gönderilirken gün döndüyse (05:00) sunucu geç rapora çevirir, form yazılanlarla geçer.
  * "Düzeltip onayla" (`mode="review"`): yönetici geç raporu kendi değerleriyle onaylar (fotoğraf, sayan ve neden yok).
+ *
+ * LafPOS gününde (G7) yalnız yeni form LafPOS'un gün sonuyla dolar; yazılmış değerlerle açılan form (Düzenle, öneri,
+ * geç raporun önceki değerleri, Düzeltip onayla) yalnız karşılaştırır ve metinleri de öyle der (`lafposCompared`).
  */
 export function CashForm({
   date,
@@ -492,6 +495,9 @@ export function CashForm({
   // LafPOS'un uygulanışı: kaç alan doldu (uygulanmadıysa null); bandın satırı bundan ve alanların şimdiki
   // işaretlerinden (kaçı hâlâ farklı) kurulur, Kasadan çıkanlar'a teslim eklenince "farklı" kendiliğinden düşer
   const [lafposFilled, setLafposFilled] = useState<number | null>(opening.filled);
+  // Form yazılmış değerlerle mi açıldı (karşılaştırma: Düzenle, düzeltme önerisi, geç raporun önceki değerleri, Düzeltip
+  // onayla): metinler "doldu" değil "karşılaştırıldı" der
+  const [lafposCompared, setLafposCompared] = useState(lafpos !== null && report === null && initial !== null);
   // "Gün içinde kasaya giren" çoğu gün yok: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür
   const [cashInOpen, setCashInOpen] = useState(false);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
@@ -554,6 +560,7 @@ export function CashForm({
     setMarks(s.marks);
     setPosPrompt(null);
     setLafposFilled(s.filled);
+    setLafposCompared(lafpos !== null);
     setCashInOpen(false);
     setProposal(null);
     setReason("");
@@ -724,8 +731,9 @@ export function CashForm({
         el?.focus({ preventScroll: true });
       };
       if (!fields.zNo) {
-        setErrors((x) => ({ ...x, zNo: "Z no gerekli (Z raporunun üstünde)" }));
-        toast.error("Z no gerekli");
+        // LafPOS gününde Z no LafPOS'unkidir (yazarkasa Z'sinin numarası değil; Z LafPOS'ta 1'den başlar)
+        setErrors((x) => ({ ...x, zNo: lafposMode ? "LafPOS'un Z no'su gerekli (LafPOS › Kasa › Geçmiş günler)" : "Z no gerekli (Z raporunun üstünde)" }));
+        toast.error(lafposMode ? "LafPOS'un Z no'su gerekli" : "Z no gerekli");
         return focus(fid("zNo"));
       }
       // Kanıt: ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu, gelmediyse yazarkasa Z'sinin
@@ -998,13 +1006,18 @@ export function CashForm({
   const lafposNote =
     lafposFilled === null
       ? null
-      : lafposSummary({
-          fill: new Array<null>(lafposFilled).fill(null),
-          differs: MARK_FIELDS.filter((k) => markOf(k)?.suggest?.from === "lafpos"),
-          missing: MARK_FIELDS.filter((k) => markOf(k)?.warn === LAFPOS_NO_COUNT_TEXT && !values[k].trim()),
-        });
-  // "Gün içinde çıkan"ın kaynağı panelin Kasadan çıkanlar'ı (E-35): LafPOS'un harcama + teslimi tutmuyorsa bilgi satırı
-  const lafposOuts = lafpos ? lafposOutsCheck(lafpos.till, outsTotal) : null;
+      : lafposSummary(
+          {
+            fill: new Array<null>(lafposFilled).fill(null),
+            differs: MARK_FIELDS.filter((k) => markOf(k)?.suggest?.from === "lafpos"),
+            missing: MARK_FIELDS.filter((k) => markOf(k)?.warn === LAFPOS_NO_COUNT_TEXT && !values[k].trim()),
+          },
+          review ? "staff" : "self",
+        );
+  // "Gün içinde çıkan"ın kaynağı panelin Kasadan çıkanlar'ı (E-35): LafPOS'un harcama + teslimi tutmuyorsa bilgi satırı.
+  // Geç rapor ve "Düzeltip onayla" formuna günün satırları gelmez (`cashOuts` boş): orada karşılaştırılmaz, yöneticinin
+  // kartı kayıtlı kasadan çıkanlarla söyler (lafposHandedGap)
+  const lafposOuts = lafpos && mode === "report" ? lafposOutsCheck(lafpos.till, outsTotal) : null;
   // Fark yalnız LafPOS'taki teslimin Kasadan çıkanlar'a girilmemesinden mi (alan fişlerin toplamında): Sonuç'ta
   // girilince farkın ne olacağı söylenir (sahte "5.000 ₺ eksik" tek başına durmasın)
   const teslimMissing =
@@ -1084,8 +1097,10 @@ export function CashForm({
               {!lafposMode
                 ? "Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın."
                 : lafpos
-                  ? "Yöneticinin onayıyla kayda geçer. Rakamlar LafPOS'un gün sonundan doldu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
-                  : "Yöneticinin onayıyla kayda geçer. LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafı ve Z no zorunlu."}
+                  ? lafposCompared
+                    ? "Yöneticinin onayıyla kayda geçer. Önceki yazdıklarınız LafPOS'un gün sonuyla karşılaştırıldı, farklı olanlar turuncu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                    : "Yöneticinin onayıyla kayda geçer. Rakamlar LafPOS'un gün sonundan doldu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                  : "Yöneticinin onayıyla kayda geçer. LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın."}
             </p>
           </div>
         ) : null}
@@ -1112,7 +1127,6 @@ export function CashForm({
                 {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
                 <span className="block text-[13px] text-info/80">
                   {lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}
-                  {review ? " Personelin yazdığı değişmedi; farklı olanlar turuncu." : ""}
                 </span>
               </p>
               <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
@@ -1130,7 +1144,9 @@ export function CashForm({
             description={
               lafposMode
                 ? lafpos
-                  ? "LafPOS'un gün sonundan doldu; LafPOS'taki Z raporuyla karşılaştırın."
+                  ? lafposCompared
+                    ? "Yazılan rakamlar LafPOS'un gün sonuyla karşılaştırıldı: farklı olanlar turuncu, altında LafPOS'taki."
+                    : "LafPOS'un gün sonundan doldu; LafPOS'taki Z raporuyla karşılaştırın."
                   : "LafPOS'un bu günün sonu gelmedi; LafPOS'ta Kasa › Geçmiş günler'deki Z raporundan yazın."
                 : isLate
                 ? "Z raporunun fotoğrafı zorunlu; rakamlar fotoğraftan dolar ya da elle yazın."
