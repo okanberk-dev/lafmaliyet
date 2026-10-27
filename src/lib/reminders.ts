@@ -806,6 +806,11 @@ export function dayLocativeTR(date: string): string {
   return `${Number(date.slice(8, 10))}${NBSP}${monthLocativeTR(date)}`;
 }
 
+/** Günün ayrılma hâli: "2026-11-10" → "10 Kasım'dan", "2026-08-03" → "3 Ağustos'tan" */
+export function dayAblativeTR(date: string): string {
+  return `${dayLocativeTR(date)}n`;
+}
+
 /** "2026-10" + 1 → "2026-11" */
 export function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
