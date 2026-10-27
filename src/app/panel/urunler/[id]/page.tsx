@@ -17,6 +17,7 @@ import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset"
 import { soldOutNoteFor } from "@/server/data/menu-status";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadProductPriceHistory } from "@/server/data/prices";
+import { posDailySalesCount } from "@/server/data/product-history";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -109,10 +110,12 @@ async function RecipeContent({
   const month = resolveMonth(sp.ay, model);
   // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
   // Bar ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
-  const [prices, priceHistory, soldOut] = await Promise.all([
+  const [prices, priceHistory, soldOut, posDailySales] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     loadProductPriceHistory(product.id).catch(() => null),
     soldOutNoteFor(link?.siteMenuId ?? null).catch(() => null),
+    // LafPOS'un günlük satış satırı (silme engeli; okunamazsa 0, eylem yine veritabanından sayar)
+    posDailySalesCount(product.id).catch(() => 0),
   ]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
@@ -121,7 +124,9 @@ async function RecipeContent({
   // Silme engeli (src/lib/product-delete.ts; eylem aynı kuralı veritabanından yeniden sayar): kart silmek yerine pasif
   // yapmayı önerir. Fiyat geçmişinin ilk 20 satırı yeter: bir değişiklik bile engeldir
   const deleteBlocker = productDeleteBlocker({
-    salesLines: model.ds.salesLines.filter((l) => l.productId === product.id).length,
+    // Yalnız Satışlar'a yüklenen ModPOS satırları (LafPOS'un ay toplamları ayrıca, günlük satırlarıyla sayılır)
+    salesLines: model.ds.salesLines.filter((l) => l.productId === product.id && !l.lafpos).length,
+    posDailySales,
     waste: (model.ds.wasteEntries ?? []).filter((w) => w.productId === product.id).length,
     priceChanges: priceHistory?.rows.filter((r) => r.source !== "create").length ?? 0,
     onlineMonths: model.siteMonths.filter((m) => model.siteLines(m).mapped.some((x) => x.product.id === product.id)).length,

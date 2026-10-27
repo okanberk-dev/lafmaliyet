@@ -1,44 +1,84 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 
 import { buildMix, dessertGap, effectiveDessertCategories, isDessertCategory, type DessertGap, type MixInput, type ProductMix } from "@/lib/forecast/desserts";
 import type { ForecastSettings } from "@/lib/forecast/staffing";
-import { addDays } from "@/lib/reminders";
-import { loadDailyProductSales } from "@/server/data/daily-sales";
-import { getDb, schema as s } from "@/server/db";
+import { shiftMonth } from "@/lib/reminders";
+import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { mergeWithLafpos } from "@/server/data/lafpos-sales";
+import { getDb, schema as s, type DB } from "@/server/db";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 /** Tatlı payı en çok bu kadar son satış ayından */
 export const MIX_MONTHS = 3;
 
+/** LafPOS'a geçildiyse satış ayları en çok bu kadar ay geriye aranır (birleştirme bütün satırları okumasın) */
+const MIX_LOOKBACK_MONTHS = 12;
+
+type MixLine = { month: string; productId: number | null; qty: number; revenue: number };
+
+/** Son (en çok MIX_MONTHS) satış ayı ve o ayların satırları: Satışlar'a yüklenen ModPOS listeleri (geçiş günü yokken) */
+async function modposMixLines(db: DB, month: string): Promise<{ months: string[]; lines: MixLine[] }> {
+  const monthRows = await db
+    .selectDistinct({ month: s.salesLines.month })
+    .from(s.salesLines)
+    .where(and(lte(s.salesLines.month, month), isNotNull(s.salesLines.productId)))
+    .orderBy(desc(s.salesLines.month))
+    .limit(MIX_MONTHS);
+  const months = monthRows.map((m) => m.month);
+  if (!months.length) return { months, lines: [] };
+  const lines = await db
+    .select({ month: s.salesLines.month, productId: s.salesLines.productId, qty: s.salesLines.qty, revenue: s.salesLines.revenue })
+    .from(s.salesLines)
+    .where(inArray(s.salesLines.month, months));
+  return { months, lines };
+}
+
+/**
+ * Geçiş günü seçiliyken aynı ayların satırları, aylık modelin kuralıyla (src/lib/lafpos/sales.ts): geçiş gününden
+ * itibaren LafPOS'un ay toplamları, sayılmayan ModPOS listesi dışarıda
+ */
+async function mergedMixLines(db: DB, switchDay: string, today: string): Promise<{ months: string[]; lines: MixLine[] }> {
+  const month = today.slice(0, 7);
+  const t = s.salesLines;
+  const [rows, [coverageRow]] = await Promise.all([
+    db
+      .select()
+      .from(t)
+      .where(and(lte(t.month, month), gte(t.month, shiftMonth(month, -MIX_LOOKBACK_MONTHS))))
+      .orderBy(asc(t.sortOrder), asc(t.id)),
+    db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
+  ]);
+  const merged = await mergeWithLafpos(db, {
+    switchDay,
+    salesLines: rows.map((l) => ({ id: l.id, month: l.month, posName: l.posName, qty: l.qty, revenue: l.revenue, productId: l.productId, isService: l.isService, note: l.note })),
+    coverage: parseCoverage(coverageRow?.value),
+    today,
+    toMonth: month,
+  });
+  const inRange = merged.salesLines.filter((l) => l.month <= month);
+  const months = [...new Set(inRange.filter((l) => l.productId !== null).map((l) => l.month))].sort().reverse().slice(0, MIX_MONTHS);
+  const keep = new Set(months);
+  return { months, lines: inRange.filter((l) => keep.has(l.month)).map((l) => ({ month: l.month, productId: l.productId, qty: l.qty, revenue: l.revenue })) };
+}
+
 /**
  * Tatlı hazırlığının dayanağı: son (en çok 3) satış ayındaki tatlı satışı ve o ayların POS cirosu (yoksa satış
- * satırlarının toplamı), tatlı ürünlerin reçeteleri. ModPOS'un günlük ürün satışı (R18) bugün hep null; döküm gelince
- * hafta gününe göre oranlar burada kurulacak, o zamana kadar aylık pay. Pay çıkmazsa mix null, gap nedeni.
+ * satırlarının toplamı), tatlı ürünlerin reçeteleri. Satış ayları aylık modelinkiyle aynı: Satışlar'a yüklenen ModPOS
+ * listeleri, LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un ay toplamları (docs/LAFPOS.md › Günlük satış).
+ * Pay aylık; hafta gününe göre oran günlük satışla sonra kurulabilir. Pay çıkmazsa mix null, gap nedeni.
  */
 export async function loadDessertMix(
   settings: Pick<ForecastSettings, "dessertCategories">,
   today: string,
 ): Promise<{ mix: ProductMix | null; gap: DessertGap | null }> {
   const db = getDb();
-  const [monthRows, daily] = await Promise.all([
-    db
-      .selectDistinct({ month: s.salesLines.month })
-      .from(s.salesLines)
-      .where(and(lte(s.salesLines.month, today.slice(0, 7)), isNotNull(s.salesLines.productId)))
-      .orderBy(desc(s.salesLines.month))
-      .limit(MIX_MONTHS),
-    loadDailyProductSales(addDays(today, -56), addDays(today, -1)),
-  ]);
-  if (daily?.length) console.warn("[tahmin] ModPOS günlük ürün satışı var ama tatlı payı henüz aylık (docs/SATIS-TAHMINI.md)");
-  const months = monthRows.map((m) => m.month);
+  const switchDay = await loadLafposSwitchDay(db);
+  const { months, lines } = switchDay === null ? await modposMixLines(db, today.slice(0, 7)) : await mergedMixLines(db, switchDay, today);
   if (!months.length) return { mix: null, gap: "satis" };
-  const [monthInfo, lines, products] = await Promise.all([
+  const [monthInfo, products] = await Promise.all([
     db.select({ month: s.months.month, posRevenue: s.months.posRevenue }).from(s.months).where(inArray(s.months.month, months)),
-    db
-      .select({ month: s.salesLines.month, productId: s.salesLines.productId, qty: s.salesLines.qty, revenue: s.salesLines.revenue })
-      .from(s.salesLines)
-      .where(inArray(s.salesLines.month, months)),
     db
       .select({ id: s.products.id, name: s.products.name, categoryName: s.categories.name })
       .from(s.products)
