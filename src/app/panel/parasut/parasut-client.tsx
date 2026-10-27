@@ -165,14 +165,28 @@ const factorInput = (f: number) => num(f, 3).replace(/\./g, "");
 const evidenceWhere = (ev: PackEvidence) => (ev.source === "unit" ? `faturadaki birim ${ev.text}` : `${ev.source === "name" ? "adında" : "açıklamasında"} ${ev.text}`);
 
 /**
- * Bağlama ya da kalem okuma şimdikinden %40'tan fazla farklı fiyat getirdiyse (onaya düştü, uygulanmadı) bildirime
- * eklenen metin ve Hammaddeler'deki "Onay bekleyen fiyatlar"a götüren düğme
+ * Bağlama ya da kalem okuma onaya düşen fiyat getirdiyse (%40'tan fazla fark ya da çarpanı kesin olmayan ilk fiyat) ya
+ * da bağlanan ürün mal alışı sayılmayan bir faturada çıktıysa (E-07: stoğa giriyor, gelir-gidere girmiyor; fatura
+ * kontrole düştü) bildirime eklenen metin ve düğmeler: Hammaddeler'deki "Onay bekleyen fiyatlar", Faturalar'ın kontrol
+ * süzgeci
  */
-function heldToast(held: number, router: { push: (href: string) => void }) {
-  return held
-    ? { text: ` · ${num(held)} fiyat onay bekliyor`, options: { duration: 10_000, action: { label: "Bak", onClick: () => router.push(HOLDS_HREF) } } }
-    : { text: "", options: undefined };
+function heldToast(r: { held: number; flagged?: number }, router: { push: (href: string) => void }) {
+  const flagged = r.flagged ?? 0;
+  const text = `${r.held ? ` · ${num(r.held)} fiyat onay bekliyor` : ""}${flagged ? ` · ${num(flagged)} fatura mal alışı sayılmıyor, kategorisine bakın` : ""}`;
+  const toInvoices = { label: "Faturalar", onClick: () => router.push(STOCK_ONLY_HREF) };
+  if (!r.held && !flagged) return { text, options: undefined };
+  return {
+    text,
+    options: {
+      duration: 10_000,
+      action: r.held ? { label: "Bak", onClick: () => router.push(HOLDS_HREF) } : toInvoices,
+      ...(r.held && flagged ? { cancel: toInvoices } : {}),
+    },
+  };
 }
+
+/** Faturalar'ın kontrol bekleyenler süzgeci (stoğa girip gelir-gidere girmeyen faturalar orada) */
+const STOCK_ONLY_HREF = "/panel/faturalar?durum=kontrol#fatura-listesi";
 
 /** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 function oneOf<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
@@ -259,6 +273,7 @@ export function ParasutClient({
       let lineCount = 0;
       let corrected = 0;
       let held = 0;
+      let flagged = 0;
       for (let round = 0; round < 12; round++) {
         const r = await readParasutLines();
         if (!r.ok) {
@@ -270,6 +285,7 @@ export function ParasutClient({
         lineCount += r.data.lines;
         corrected += r.data.corrected;
         held += r.data.held;
+        flagged += r.data.flagged;
         setReadProgress({ done, left: r.data.remaining });
         if (!r.data.remaining || !step) {
           if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
@@ -278,7 +294,7 @@ export function ParasutClient({
         toast.loading(`E-fatura kalemleri okunuyor… ${num(done)} fatura okundu, ${num(r.data.remaining)} kaldı`, { id: t });
       }
       setReadProgress(null);
-      const h = heldToast(held, router);
+      const h = heldToast({ held, flagged }, router);
       toast.success(
         `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}${h.text}`,
         { id: t, ...h.options },
@@ -753,7 +769,7 @@ function ProductLinks({
       hideUnlinked(u.productKey);
       const r = await saveProductLink({ productKey: u.productKey, productName: u.productName, ingredientId: Number(d.ingredientId), factor, updatePrice: d.updatePrice });
       if (!r.ok) return void toast.error(r.error);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${u.productName} → ${ing?.name ?? "hammadde"} bağlandı · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat güncellendi${h.text}`, h.options);
     });
   };
@@ -806,7 +822,7 @@ function ProductLinks({
       );
       if (!r.ok) return void toast.error(r.error);
       setBulkOpen(false);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${num(r.data.linked)} ürün bağlandı · ${num(r.data.quantities)} aylık miktar, ${num(r.data.prices)} fiyat güncellendi${h.text}`, h.options);
     });
 
@@ -817,7 +833,7 @@ function ProductLinks({
       done?.();
       const r = await saveProductLink({ productKey: l.productKey, productName: l.productName, ...patch });
       if (!r.ok) return void toast.error(r.error);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${l.productName} güncellendi · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat yeniden hesaplandı${h.text}`, h.options);
     });
   };

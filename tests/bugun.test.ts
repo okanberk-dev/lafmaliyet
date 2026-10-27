@@ -376,6 +376,15 @@ test("8. faturalar: kontrol bekleyen yapılacak, yoksa tamam; okunamazsa satır 
   assert.equal(review.badge, "3 kontrol");
   assert.equal(review.href, "/panel/faturalar?durum=kontrol");
   assert.match(review.detail, /^3 fatura kontrol bekliyor: kategorisi tahminle yazıldı/);
+  // Kalemi hammaddeye bağlı, kategorisi mal alışı olmayan (E-07) tek dokunuşla onaylanmaz: ayrı söylenir
+  const mixed = byKey(dayTasks(admin(NOON, { invoices: { review: 3, stockOnly: 1 } }))).fatura;
+  assert.equal(mixed.badge, "3 kontrol");
+  assert.equal(
+    mixed.detail,
+    "3 fatura kontrol bekliyor: 2 faturanın kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın; 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın.",
+  );
+  const onlyStock = byKey(dayTasks(admin(NOON, { invoices: { review: 1, stockOnly: 1 } }))).fatura;
+  assert.equal(onlyStock.detail, "1 fatura kontrol bekliyor: 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın.");
   const none = byKey(dayTasks(admin(NOON))).fatura;
   assert.equal(none.status, "done");
   assert.equal(none.detail, "Kontrol bekleyen fatura yok.");

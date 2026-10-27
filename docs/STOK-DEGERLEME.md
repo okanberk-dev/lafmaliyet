@@ -51,6 +51,11 @@ Aynı yüklem (`suspectFactorLine`, ortak SQL parçası) Paraşüt eşitlemesini
 fiyat onayı karara bağlanınca hesaplanır (onay, red ve geri alma alınan miktarı hemen yeniden hesaplar). Eskiden bekleyen
 koli / adet çarpanı (×150) "alınan"ı şişirip sapmayı dev bir zayi gibi gösteriyordu.
 
+Mal alışı sayılmayan kategorideki ("Diğer", "Hizmet"…) faturanın hammaddeye bağlı kalemi de partiye ve "alınan"a girer
+(denetim 26 Eki, E-07): sayılan stok o malı zaten içerir; partiden çıkarmak kâr-zararı düzeltmez, yalnız sayılan
+miktarı ay sonu fiyatına iter. Eksik olan gelir-giderin mal alışıdır: böyle fatura Faturalar'da kontrol bekler ("Mal
+alışı sayılmıyor"), kategorisi mal alışı yapılınca gelir-gider de onu sayar (docs/PARASUT.md 6b).
+
 Faturası olmayan alım (elle / Excel girilen fatura, nakit / market alımı, bağlanmamış Paraşüt ürünü) havuzda
 görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu
 fiyatıyla. Tedarikçiye iade panele yalnız Faturalar'da elle girilmiş, kalemsiz eksi fatura olarak geldiyse (Paraşüt'te

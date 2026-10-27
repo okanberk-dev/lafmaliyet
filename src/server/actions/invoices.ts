@@ -25,6 +25,7 @@ import {
   type CreditUse,
 } from "@/server/cari/settle";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
+import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
 import { getDb, schema as s } from "@/server/db";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
 
@@ -99,7 +100,8 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       }
       await logActivity(me, "Fatura eklendi", `${dateTR(data.date)} ${data.supplier}: ${tl(data.amount - data.discount, 2)} (KDV hariç)${creditText(credit, [row.id])}`);
       refresh();
-      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit) };
+      // Elle eklenen faturanın kalemi yoktur: stoğa girmez (E-07 yalnız Paraşüt kalemli faturada)
+      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit), stockOnly: false };
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
@@ -161,6 +163,10 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     else if (!cur.unpaid && data.unpaid) await forgetPaid("invoice", [id]);
     // Kalem yalnız Paraşüt'e bağlı faturada olur (bağı çözülünce silinir); tarihi kilitli, kalemler kayıtlı ayda
     if (isParasutLinked(cur)) await recomputeSeparateMoves([{ id, date: cur.date, from: cur.category, to: data.category }]);
+    // Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura kaydedince de kontrolde kalır (E-07); kategori
+    // değişince önceki "kalsın" kararı düşer
+    if (data.category !== cur.category) await updateAcceptedStockOnly(db, { remove: [id] });
+    const stockOnly = (await flagStockOnlyInvoices(db, [id])).length > 0;
     const net = isParasutLinked(cur) ? cur.amount - cur.discount : data.amount - data.discount;
     const usedText = creditText(credit, [id]);
     await logActivity(me, "Fatura düzenlendi", `${dateTR(isParasutLinked(cur) ? cur.date : data.date)} ${data.supplier}: ${tl(net, 2)} (KDV hariç)${usedText}`);
@@ -170,7 +176,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       ? // Kilitli alanlar formda salt okunur: fark ancak pencere açıkken eşitleme değeri değiştirdiyse çıkar
         `${names.charAt(0).toLocaleUpperCase("tr-TR")}${names.slice(1)} bu pencere açıkken Paraşüt eşitlemesiyle güncellendi; Paraşüt'teki yeni değer geçerli kaldı. Diğer değişiklikleriniz kaydedildi.`
       : null;
-    return { id, kept, message, credit: creditSummary(credit) };
+    return { id, kept, message, credit: creditSummary(credit), stockOnly };
   });
 }
 
@@ -240,10 +246,16 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
       await db.update(s.invoices).set({ needsReview: false }).where(and(inArray(s.invoices.id, same), eq(s.invoices.needsReview, true)));
       if (!changed.length) refresh();
     }
+    // Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura kontrolde kalır (E-07): stoğa giriyor, gelir-gidere
+    // girmiyor. Kategori değişince önceki "kalsın" kararı düşer (o kategori içindi)
+    if (changed.length) await updateAcceptedStockOnly(db, { remove: changed.map((r) => r.id) });
+    const stockOnly = (await flagStockOnlyInvoices(db, rows.map((r) => r.id))).map((r) => r.id);
     return {
       previous: changed.map((r) => ({ id: r.id, category: r.category })),
       changed: changed.length,
       missing: wanted.size - rows.length,
+      /** Kontrolde kalanlar: kalemi hammaddeye bağlı, kategorisi mal alışı değil */
+      stockOnly,
     };
   });
 }
@@ -251,19 +263,39 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
 /**
  * Eşitlemenin kategorisini tahmin ettiği faturaları "kontrol edildi" yapar (Onayla / Hepsini onayla). `undo`
  * verilirse aynı faturalar yeniden kontrol bekleyene döner (bildirimdeki "Geri al").
+ *
+ * Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (E-07: stoğa giriyor, gelir-gidere girmiyor) böyle
+ * onaylanmaz, kontrolde kalır (`kept`): kategorisi mal alışı yapılmalı ya da bilerek "kalsın" denmeli
+ * (`acceptStockOnly`: tek fatura penceresinden; karar listeye yazılır, fatura yeniden kontrole düşmez). Geri al kararı
+ * da geri alır.
  */
-export async function confirmInvoices(ids: number[], undo = false) {
+export async function confirmInvoices(ids: number[], undo = false, opts: { acceptStockOnly?: boolean } = {}) {
   return attempt(async () => {
     const me = await requireAdmin();
     const list = z.array(zId).min(1, "Fatura seçin").max(1000).parse(ids);
-    const rows = await getDb()
-      .update(s.invoices)
-      .set({ needsReview: z.boolean().parse(undo) })
-      .where(and(inArray(s.invoices.id, list), eq(s.invoices.needsReview, !undo)))
-      .returning({ id: s.invoices.id, supplier: s.invoices.supplier });
-    if (rows.length && !undo) await logActivity(me, "Faturalar onaylandı", rows.length === 1 ? splitSupplier(rows[0].supplier).base : `${rows.length} fatura`);
+    const back = z.boolean().parse(undo);
+    const accept = z.boolean().optional().parse(opts?.acceptStockOnly) ?? false;
+    const db = getDb();
+    const stockOnly = back ? [] : await stockOnlyIds(db, list);
+    const accepted = stockOnly.length ? await acceptedStockOnly(db) : new Set<number>();
+    const kept = accept ? [] : stockOnly.filter((id) => !accepted.has(id));
+    const target = list.filter((id) => !kept.includes(id));
+    const rows = target.length
+      ? await db
+          .update(s.invoices)
+          .set({ needsReview: back })
+          .where(and(inArray(s.invoices.id, target), eq(s.invoices.needsReview, !back)))
+          .returning({ id: s.invoices.id, supplier: s.invoices.supplier })
+      : [];
+    if (accept && stockOnly.length) {
+      await updateAcceptedStockOnly(db, { add: stockOnly });
+      const named = await db.select({ supplier: s.invoices.supplier }).from(s.invoices).where(inArray(s.invoices.id, stockOnly));
+      await logActivity(me, "Fatura mal alışı sayılmadan onaylandı", `${named.map((r) => splitSupplier(r.supplier).base).join(", ")}: kalemi hammaddeye bağlı, stoğa giriyor, gelir-gidere girmiyor`);
+    }
+    if (back && rows.length) await updateAcceptedStockOnly(db, { remove: rows.map((r) => r.id) });
+    if (rows.length && !back && !accept) await logActivity(me, "Faturalar onaylandı", rows.length === 1 ? splitSupplier(rows[0].supplier).base : `${rows.length} fatura`);
     refresh();
-    return { changed: rows.length, ids: rows.map((r) => r.id) };
+    return { changed: rows.length, ids: rows.map((r) => r.id), kept };
   });
 }
 

@@ -127,7 +127,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Paraşüt&apos;e gelen e-faturalar ve gider faturaları her sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden gelir; elle girmeyin. Kategorisi tahminle
-        yazılanları Kontrol bekleyen süzgecinde onaylayın. Yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın (çarpan, &quot;Fiyatı
+        yazılanları Kontrol bekleyen süzgecinde onaylayın; “Mal alışı sayılmıyor” yazanın kalemi hammaddeye bağlı, kategorisini mal alışı yapın (bilerek öyleyse
+        Kalsın). Yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın (çarpan, &quot;Fiyatı
         güncelle&quot;): alınan miktar ve paket fiyatı sonraki faturalardan güncellenir, ürün maliyetleri kendiliğinden değişir. Yalnızca Paraşüt&apos;te olmayan
         faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin.
       </>
@@ -289,7 +290,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
-            eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
+            eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın (“Mal alışı sayılmıyor” diyorsa kategorisini Hammadde &amp; İçecek, Tatlı &amp; Hazır Ürün ya da Ambalaj yapın: kalemi stoğa giriyor, gelir-gidere girmiyor). Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
             bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Faturadaki fiyat şimdikinden %40&apos;tan fazla farklıysa
             uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
             Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›

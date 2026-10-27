@@ -247,6 +247,11 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   denince bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki "Hammadde değil" bölümünden **Geri al** ile
   bekleyenlere döner. Faturadaki tutarı değişmez. Liste `integration_state`'te (`parasut.productIgnore`) durur.
 - Bağlanmayı bekleyen ürün sayısı zilde görünür.
+- **Mal alışı sayılmayan fatura** (denetim 26 Eki, E-07): kalemi hammaddeye bağlı ama kategorisi mal alışı (Hammadde &
+  İçecek, Tatlı & Hazır Ürün, Ambalaj) ya da kafe dışı olmayan fatura ("Diğer", "Hizmet"…) stoğa girer (alınan miktar,
+  FIFO partisi, hammadde fiyatı) ama gelir-gider onu mal alışı saymaz: satılan malın maliyeti eksik, kâr fazla görünür.
+  Böyle fatura kontrol bekleyene düşer ve onaylanamaz (6b). Kalemler stoktan çıkarılmaz: sayılan stok o malı zaten
+  içerir, çıkarmak kâr-zararı düzeltmez, yalnız stok değerini bozar.
 
 Böylece Tutarlılık'ta **alınan** (faturalardan) ile **satışa göre kullanılan** (satılan adet × reçete) karşılaştırılır;
 iki ayın stok sayımı girilince gerçek tüketim (devir + alınan − devreden) ve sapma hesaplanır.
@@ -455,6 +460,15 @@ Eşitlemenin açtığı yeni faturanın kategorisi kurala, tedarikçinin geçmi�
 dayanmıyorsa (ipucu ya da "Diğer") fatura **kontrol bekleyen** olur (`invoices.needs_review`). Faturalar'da
 "Kontrol bekleyen" süzgeci, satırda tek dokunuşla **Onayla**, toplu onay; kategori değiştirmek ya da faturayı
 kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › Bu ayın işleri'nde görünür.
+
+Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (5, E-07) da kontrol bekleyene düşer: ürün bağlanınca,
+kalemler okununca ya da eşitlemede (`flagStockOnlyInvoices`, `src/server/data/stock-only-invoices.ts`; işlem geçmişine
+"Sistem · Fatura mal alışı sayılmıyor"). Satırda **Mal alışı sayılmıyor** rozeti, listenin üstünde ayrı bir satır,
+zilde ayrı bir bildirim ve Bugün'de kendi cümlesi. **Onayla** da faturayı kaydetmek de böyle faturayı onaylamaz
+(`confirmInvoices` → `kept`); kategoriyi mal alışı yapmak onaylar. Kategori bilerek öyle kalacaksa (temizlik malzemesi faturasında bir kalem süt)
+uyarıdaki **Kalsın** faturayı onaylar ve kararı `integration_state`'e (`invoices.stockOnlyAccepted`) yazar: fatura
+yeniden kontrole düşmez, rozeti gri **Stoğa giriyor** olur; kategorisi değişince karar düşer, **Geri al** kararı da
+geri alır.
 
 ## 7. Elle çalıştırma ve sıfırlama
 

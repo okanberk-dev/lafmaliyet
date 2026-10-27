@@ -59,7 +59,10 @@ export async function readParasutLines() {
     // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
     client.setDeadline(started + 58_000);
     const r = await readEInvoiceLines(client, { until: started + 45_000 });
-    const held = r.months.length ? (await applyProductLinks(r.months)).held : 0;
+    const applied = r.months.length ? await applyProductLinks(r.months) : null;
+    const held = applied?.held ?? 0;
+    // Okunan kalemler bağlı ürünü mal alışı sayılmayan faturaya getirdiyse fatura kontrole düşer (E-07)
+    const flagged = applied?.flagged ?? 0;
     if (!r.read && !r.failed && r.stoppedBy) throw new UserError(r.stoppedBy);
     if (r.read || r.failed) {
       await logActivity(
@@ -69,7 +72,7 @@ export async function readParasutLines() {
       );
     }
     refresh();
-    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy, held };
+    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy, held, flagged };
   });
 }
 

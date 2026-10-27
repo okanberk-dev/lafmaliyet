@@ -22,6 +22,7 @@ import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { isPartiallyPaid, METHOD_LABEL, openBalance } from "@/lib/cari/balance";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { STOCK_ONLY_TEXT, stockOnlyCategory } from "@/lib/invoice-linking";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -233,6 +234,7 @@ export function InvoiceDialog({
     const used = res.data.credit?.used ?? 0;
     const withCredit = used > 0.005 ? ` · hesaptaki ${tl(used, 2)} sayıldı` : "";
     if (res.data.message) toast.warning("Fatura kaydedildi", { description: res.data.message, duration: 8000 });
+    else if (res.data.stockOnly) toast.warning("Fatura kaydedildi, kontrolde kaldı", { description: STOCK_ONLY_TEXT, duration: 10_000 });
     else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
@@ -389,7 +391,14 @@ export function InvoiceDialog({
           }
           htmlFor="f-cat"
           className="sm:col-span-2"
-          hint={`${invoice?.needsReview ? "Eşitlemede tahminle yazıldı; kaydedince onaylanır. " : ""}${categoryEffect(f.category, expenseLinks)}`}
+          hint={
+            invoice?.stockOnly && stockOnlyCategory(f.category) ? (
+              // Kalemi hammaddeye bağlı, kategorisi mal alışı değil (E-07): kaydetmek onaylamaz
+              <span className="text-warn">{STOCK_ONLY_TEXT}</span>
+            ) : (
+              `${invoice?.needsReview ? "Eşitlemede tahminle yazıldı; kaydedince onaylanır. " : ""}${categoryEffect(f.category, expenseLinks)}`
+            )
+          }
         >
           <Select
             id="f-cat"

@@ -14,6 +14,7 @@ import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
 import { supersedeHolds } from "@/server/data/price-holds";
 import { suspectFactorLine } from "@/server/data/purchase-lots-query";
+import { flagStockOnlyInvoices } from "@/server/data/stock-only-invoices";
 import { applyCreditOnArrival, arrivalLedgerBase, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver, type TrackedCard } from "@/server/cari/settle";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -913,7 +914,8 @@ export async function syncParasut(
       late?.created ? `${late.created} geç girilmiş eski fatura alındı` : "",
       returns.sales ? `${returns.sales} satış iadesi gider sayılmadı` : "",
       returns.supplier ? `${returns.supplier} tedarikçiye iade panele girmedi (Paraşüt sayfasında)` : "",
-      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark ya da ilk fiyat)` : "",
+      linked?.flagged ? `${linked.flagged} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı), kontrolde` : "",
       cari,
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
@@ -1139,7 +1141,8 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       `${created} yeni`,
       `${updated} güncellendi`,
       removed ? `${removed} kaldırıldı (Paraşüt'te iptal)` : "",
-      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark ya da ilk fiyat)` : "",
+      linked?.flagged ? `${linked.flagged} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı), kontrolde` : "",
       cari,
       deferred ? `${deferred} fatura yazılamadı (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı)` : "",
       partial ? "süre doldu, kalanı için yeniden basın" : held ? "yeniden basınca denenir" : deferred ? "sonraki tam okumada denenir" : "",
@@ -1486,7 +1489,7 @@ export async function applyProductLinks(months?: string[]) {
     // geçersiz olur
     await db.delete(s.purchaseQuantities).where(eq(s.purchaseQuantities.note, MANAGED_QTY_NOTE));
     await supersedeHolds(null, "Bağlantı kaldırıldı");
-    return { quantities: 0, prices: 0, held: 0 };
+    return { quantities: 0, prices: 0, held: 0, flagged: 0 };
   }
   const byKey = new Map(links.map((l) => [l.productKey, l]));
 
@@ -1627,7 +1630,25 @@ export async function applyProductLinks(months?: string[]) {
   await setState(PRICE_KEY, applied);
   if (held.length) await logActivity(null, "Fiyat onaya düştü", held.join(", "));
   const quantities = await recomputePurchaseQuantities(months);
-  return { quantities, prices, held: held.length };
+  return { quantities, prices, held: held.length, flagged: await flagStockOnly() };
+}
+
+/**
+ * Kalemi hammaddeye bağlı ama mal alışı sayılmayan faturalar kontrole düşer (denetim 26 Eki, E-07; "kalsın" denenler
+ * hariç): stoğa giriyor, gelir-gidere girmiyor. Yeni işaretlenenler işlem geçmişine; hatası eşitlemeyi bozmaz
+ */
+async function flagStockOnly(): Promise<number> {
+  try {
+    const rows = await flagStockOnlyInvoices(getDb());
+    if (rows.length) {
+      const names = rows.map((r) => `${r.supplier}${r.invoiceNo ? ` ${r.invoiceNo}` : ""} (${r.date})`);
+      await logActivity(null, "Sistem · Fatura mal alışı sayılmıyor", `${names.slice(0, 5).join(", ")}${names.length > 5 ? ` ve ${names.length - 5} fatura daha` : ""}: kalemi hammaddeye bağlı, kategorisi mal alışı değil; kontrolde`);
+    }
+    return rows.length;
+  } catch (err) {
+    console.error("[fatura] stoğa girip gelir-gidere girmeyen faturalar işaretlenemedi", err);
+    return 0;
+  }
 }
 
 /** Alınan miktarın yeniden hesabı tek seferde (eşitleme, bağlama, fiyat kararı aynı anda çalışınca satırlar çakışmasın) */

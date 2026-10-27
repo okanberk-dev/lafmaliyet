@@ -22,6 +22,7 @@ import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
+import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -224,12 +225,14 @@ async function holdNotifications(): Promise<PanelNotification[]> {
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [[review], [fresh], [lastRun], unlinked] = await Promise.all([
+  const [[review], [fresh], [lastRun], unlinked, stockOnly] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
     db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
     countUnlinkedProducts().catch(() => 0),
+    // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
+    countStockOnlyReview(db).catch(() => 0),
   ]);
   const out: PanelNotification[] = [];
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 48 * 60 * 60 * 1000) {
@@ -256,11 +259,24 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       group: "fatura",
     });
   }
-  if (review.n) {
+  if (stockOnly) {
     out.push({
-      id: `fatura-kontrol-${review.n}`,
+      id: `fatura-stok-${stockOnly}`,
       kind: "warning",
-      title: `${review.n} fatura kontrol bekliyor`,
+      title: `${stockOnly} fatura mal alışı sayılmıyor`,
+      body: "Kalemi hammaddeye bağlı: stoğa giriyor, gelir-gidere girmiyor. Kategorisini mal alışı yapın",
+      timeLabel: "",
+      unread: true,
+      href: "/panel/faturalar?durum=kontrol",
+      group: "fatura",
+    });
+  }
+  const guessed = review.n - stockOnly;
+  if (guessed > 0) {
+    out.push({
+      id: `fatura-kontrol-${guessed}`,
+      kind: "warning",
+      title: `${guessed} fatura kontrol bekliyor`,
       body: "Kategorisi tahminle yazıldı; doğruysa tek dokunuşla onaylayın",
       timeLabel: "",
       unread: true,

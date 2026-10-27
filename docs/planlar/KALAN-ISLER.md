@@ -59,7 +59,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 |---|---|---|---|---|---|
 | B01 | Stok sayımı 1: doğru ay, tek "tamam" kuralı, kayıt kaybı yok (+ NEW-01) | E-01, E-02, E-03, E-17, E-18, E-19, E-20, E-23, E-24, E-25, E-26 | yok | 3 | bekliyor |
 | B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
-| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | bekliyor |
+| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | PR (dal `claude/denetim-b03-fatura-stok`) |
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
@@ -385,8 +385,8 @@ Dalga 7'nin kuralı). Reçete, menü maliyeti, önerilen fiyat, zam uyarısı ve
 Sayımda katman rozeti ve kapsama satırı yalnız yöneticide.
 
 Denetimde FIFO'ya dokunan maddeler: başlangıç ayına bir kerelik yeniden değerleme farkı mal maliyeti diye yazılıyor
-(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyor (E-06, B03); "Diğer" kategorili fatura
-stoğa girip gelir-gidere girmiyor (E-07, B03).
+(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyordu (E-06, B03'te düzeltildi); "Diğer"
+kategorili fatura stoğa girip gelir-gidere girmiyordu (E-07, B03: artık "Mal alışı sayılmıyor" diye kontrol bekler).
 
 ### Dalga 15: kenar çubuğu (#39)
 

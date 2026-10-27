@@ -5,6 +5,9 @@
 // - E-27: eşitlemenin yazdığı alınan miktar stok partileriyle aynı yüklemle çarpanı onay bekleyen kalemleri dışlar; fiyat
 //   kararı (onay, red, geri alma) alınan miktarı yeniden hesaplar; Tutarlılık'ın "Alım yok (0)" satırı yazılır, geri
 //   alınır ve faturası sonradan gelirse yerini faturadaki miktar alır (elle girilen satıra dokunulmaz).
+// - E-07: kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan ("Diğer") fatura kontrole düşer (eşitleme, ürün
+//   bağlama), tek dokunuşla onaylanmaz; kategorisi mal alışı olunca gelir-gidere girer; bilerek "kalsın" denirse yeniden
+//   kontrole düşmez, kategorisi değişince karar düşer.
 //
 // PARASUT_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
 // test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler; verilen veritabanına dokunmaz.
@@ -30,6 +33,9 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
   let holdActions: typeof import("../src/server/actions/price-holds");
   let consistencyActions: typeof import("../src/server/actions/consistency");
   let lotsQuery: typeof import("../src/server/data/purchase-lots-query");
+  let invoiceActions: typeof import("../src/server/actions/invoices");
+  let stockOnlyData: typeof import("../src/server/data/stock-only-invoices");
+  let dataset: typeof import("../src/server/data/dataset");
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -55,6 +61,9 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     holdActions = await import("../src/server/actions/price-holds");
     consistencyActions = await import("../src/server/actions/consistency");
     lotsQuery = await import("../src/server/data/purchase-lots-query");
+    invoiceActions = await import("../src/server/actions/invoices");
+    stockOnlyData = await import("../src/server/data/stock-only-invoices");
+    dataset = await import("../src/server/data/dataset");
   });
 
   after(async () => {
@@ -237,5 +246,101 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     await bill({ date: "2026-11-03", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: -5, netTotal: -150 });
     await sync.applyProductLinks(["2026-11"]);
     assert.deepEqual(await purchases(milk.id), [["2026-11", 0, "Paraşüt faturalarından"]]);
+  });
+
+  // ---------------------------------------------------------------- E-07: stoğa girip gelir-gidere girmeyen fatura
+
+  test("E-07: malzemeye bağlı “Diğer” faturası kontrole düşer, tek dokunuşla onaylanmaz; kategorisi mal alışı olunca gelir-gidere girer", async () => {
+    const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
+    // Yeni market tedarikçisi "Diğer · eşleşme yok" geldi, sahibi onaylamıştı (kontrol beklemiyor)
+    const other = await bill({ date: "2026-10-12", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 100, netTotal: 3000, category: "Diğer" });
+    const goods = await bill({ date: "2026-10-13", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 300 });
+    const karaoke = await bill({ date: "2026-10-14", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 5, netTotal: 150, category: "Karaoke box" });
+    const goodsOf = async () => (await dataset.loadModel()).goodsPurchases("2026-10");
+    assert.equal(await goodsOf(), 300, "gelir-gider yalnız mal alışını sayar");
+
+    // Ürün bağlanınca (eşitleme / bağlama) "Diğer" faturası kontrole düşer; mal alışı ve kafe dışı düşmez
+    await link("p:sut", "SÜT 1 L", milk.id, 1000);
+    const r = await sync.applyProductLinks();
+    assert.equal(r.flagged, 1);
+    const review = async () => (await db.select({ id: s.invoices.id }).from(s.invoices).where(eq(s.invoices.needsReview, true))).map((x) => x.id);
+    assert.deepEqual(await review(), [other.id]);
+    assert.deepEqual(await stockOnlyData.stockOnlyIds(db), [other.id]);
+    assert.equal(await stockOnlyData.countStockOnlyReview(db), 1);
+    assert.ok(karaoke.id && goods.id);
+    const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Sistem · Fatura mal alışı sayılmıyor"));
+    assert.match(log.detail ?? "", /^Test tedarikçi \(2026-10-12\): kalemi hammaddeye bağlı, kategorisi mal alışı değil; kontrolde$/);
+    // Stoğa giriyor (alınan miktar 110 L), gelir-gidere girmiyor
+    assert.deepEqual(await purchases(milk.id), [["2026-10", 110000, "Paraşüt faturalarından"]]);
+    // Yeniden çalışma yeniden işaretlemez, sayı artmaz
+    assert.equal((await sync.applyProductLinks()).flagged, 0);
+
+    // Onayla: kontrolde kalır (neden: kept)
+    const c = await invoiceActions.confirmInvoices([other.id, goods.id]);
+    assert.ok(c.ok, JSON.stringify(c));
+    assert.deepEqual(c.data.kept, [other.id]);
+    assert.deepEqual(await review(), [other.id]);
+    // Aynı kategoriyle "kategori doğru" da onaylamaz
+    const same = await invoiceActions.setInvoiceCategory([{ id: other.id, category: "Diğer" }]);
+    assert.ok(same.ok);
+    assert.deepEqual(same.data.stockOnly, [other.id]);
+    assert.deepEqual(await review(), [other.id]);
+
+    // Kategori Hammadde & İçecek: kontrolden çıkar, gelir-gider 3.000 ₺ daha mal alışı sayar (stok ile K/Z tutarlı)
+    const fix = await invoiceActions.setInvoiceCategory([{ id: other.id, category: "Hammadde & İçecek" }]);
+    assert.ok(fix.ok);
+    assert.deepEqual(fix.data.stockOnly, []);
+    assert.deepEqual(await review(), []);
+    assert.equal(await goodsOf(), 3300);
+    assert.deepEqual(await stockOnlyData.stockOnlyIds(db), []);
+    // Geri "Diğer" yapılırsa yine kontrole düşer
+    const back = await invoiceActions.setInvoiceCategory([{ id: other.id, category: "Diğer" }]);
+    assert.ok(back.ok);
+    assert.deepEqual(back.data.stockOnly, [other.id]);
+    assert.deepEqual(await review(), [other.id]);
+  });
+
+  test("E-07: bilerek “kalsın” denen fatura yeniden kontrole düşmez; kategorisi değişince karar düşer; pencereden kaydetmek uyarır", async () => {
+    const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
+    // Temizlik malzemesi ağırlıklı market faturası, bir kalemi süt
+    const market = await bill({ date: "2026-10-12", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 2, netTotal: 60, category: "Diğer" });
+    await link("p:sut", "SÜT 1 L", milk.id, 1000);
+    await sync.applyProductLinks();
+    const reviewOf = async (id: number) => (await db.select({ r: s.invoices.needsReview }).from(s.invoices).where(eq(s.invoices.id, id)))[0].r;
+    assert.equal(await reviewOf(market.id), true);
+    const ok = await invoiceActions.confirmInvoices([market.id], false, { acceptStockOnly: true });
+    assert.ok(ok.ok, JSON.stringify(ok));
+    assert.deepEqual([ok.data.ids, ok.data.kept], [[market.id], []]);
+    assert.equal(await reviewOf(market.id), false);
+    assert.deepEqual([...(await stockOnlyData.acceptedStockOnly(db))], [market.id]);
+    const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Fatura mal alışı sayılmadan onaylandı"));
+    assert.ok(log);
+    // Eşitleme ve onay yeniden işaretlemez
+    assert.equal((await sync.applyProductLinks()).flagged, 0);
+    assert.equal(await reviewOf(market.id), false);
+    // Geri al: karar da geri alınır
+    const undo = await invoiceActions.confirmInvoices([market.id], true);
+    assert.ok(undo.ok);
+    assert.equal(await reviewOf(market.id), true);
+    assert.deepEqual([...(await stockOnlyData.acceptedStockOnly(db))], []);
+    // Yeniden kalsın; sonra kategori "Hizmet": karar o kategori içindi, yeniden kontrole düşer
+    assert.ok((await invoiceActions.confirmInvoices([market.id], false, { acceptStockOnly: true })).ok);
+    const hz = await invoiceActions.setInvoiceCategory([{ id: market.id, category: "Hizmet" }]);
+    assert.ok(hz.ok);
+    assert.deepEqual(hz.data.stockOnly, [market.id]);
+    assert.equal(await reviewOf(market.id), true);
+    assert.deepEqual([...(await stockOnlyData.acceptedStockOnly(db))], []);
+
+    // Fatura penceresinden kaydetmek de onaylamaz: yanıt uyarır; mal alışı kategorisiyle kaydedince onaylanır
+    const [inv] = await db.select().from(s.invoices).where(eq(s.invoices.id, market.id));
+    const form = { id: inv.id, date: inv.date, supplier: inv.supplier, description: null, invoiceNo: null, category: "Diğer", amount: inv.amount, discount: 0, payable: inv.payable, unpaid: false, note: null };
+    const saved = await invoiceActions.saveInvoice(form);
+    assert.ok(saved.ok, JSON.stringify(saved));
+    assert.equal(saved.data.stockOnly, true);
+    assert.equal(await reviewOf(market.id), true);
+    const fixed = await invoiceActions.saveInvoice({ ...form, category: "Hammadde & İçecek" });
+    assert.ok(fixed.ok);
+    assert.equal(fixed.data.stockOnly, false);
+    assert.equal(await reviewOf(market.id), false);
   });
 });

@@ -19,6 +19,7 @@ import { loadOverduePayouts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
+import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
@@ -138,11 +139,10 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       : Promise.resolve([]),
     safe(loadUpcoming()),
     safe(
-      db
-        .select({ n: count() })
-        .from(s.invoices)
-        .where(eq(s.invoices.needsReview, true))
-        .then(([r]) => ({ review: r?.n ?? 0 })),
+      Promise.all([db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)), countStockOnlyReview(db)]).then(([[r], stockOnly]) => ({
+        review: r?.n ?? 0,
+        stockOnly,
+      })),
     ),
     safe(countUnlinkedProducts()),
     safe(loadUnpricedIngredients()),
