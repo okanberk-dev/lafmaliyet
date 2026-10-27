@@ -114,6 +114,32 @@ test("DEPLOY.md: dal önizlemesi Production'a alınmaz; ret ve uyarı satırlar�
   // Ortam değişkenleri tablosunda, proje ayarına eklenmemesi yazılı; § 2 ve § 5 de anıyor
   const env = doc.slice(doc.indexOf("## 4. Ortam değişkenleri"), doc.indexOf("## 5."));
   assert.match(env, /\| `ALLOW_BRANCH_PRODUCTION` \| \(yalnız acil durumda, tek derleme için\)[^\n]*Proje ayarlarına \*\*eklemeyin\*\*/);
-  assert.match(doc.slice(doc.indexOf("## 2."), doc.indexOf("## 3.")), /`main` dışındaki bir dalın Production derlemesi hiç başlamadan durur/);
-  assert.ok(doc.slice(doc.indexOf("## 5."), doc.indexOf("## 6.")).includes(`\`✗ ${quoted}…\``));
+  assert.match(
+    doc.slice(doc.indexOf("## 2."), doc.indexOf("## 3.")),
+    /bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur[^.]*eski dallar durmaz/,
+  );
+  const s5 = doc.slice(doc.indexOf("## 5."), doc.indexOf("## 6."));
+  assert.ok(s5.includes(`\`✗ ${quoted}…\``));
+  assert.match(s5, /Bekçiyi içeren bir commit'te `main` dışındaki bir dal[^)]*eski dalların dağıtımları durmaz/);
+});
+
+test("DEPLOY.md ve README: bekçi yalnız onu içeren commit'te çalışır; eski dal dağıtımları yeniden derlenmez", () => {
+  // 26 Ekim'in dağıtımı (593c536) ve bekçiden önce açılmış dallar bekçiyi içermez: Redeploy → Production onları
+  // durdurmaz. Belge bunu mutlak "durur" yazmasın, eski dalın önce main'le birleştirilmesini söylesin.
+  const doc = readFileSync(join(process.cwd(), "docs/DEPLOY.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  const s7 = doc.slice(doc.indexOf("## 7. Güncelleme ve yedek"), doc.indexOf("## 8."));
+  assert.match(s7, /\*\*Bekçi yalnız onu içeren commit'te çalışır\.\*\*/);
+  assert.ok(s7.includes("`tsx scripts/predeploy.ts && next build`"));
+  assert.match(s7, /`593c536`[^*]*\*\*durmaz\*\*/);
+  assert.match(s7, /`verifyMigrations`/);
+  assert.match(s7, /eski dal dağıtımları \*\*hiçbir zaman\*\* yeniden derlenmez/);
+  assert.match(s7, /dal main'le birleştirilir; böylece hem bekçiyi hem `vercel\.json` › `git\.deploymentEnabled`'ı/);
+  // Derleme komutu belgedekiyle aynı (bekçi commit'in kendi betiğinden çalışır)
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { scripts: Record<string, string> };
+  assert.equal(pkg.scripts.build, "tsx scripts/predeploy.ts && next build");
+  // Hiçbir yerde koşulsuz "durur" kalmasın: README satırı da nitelikli
+  const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+  assert.match(readme, /bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi veritabanına dokunmadan durur; ondan önce açılmış eski dallar durmaz/);
+  const kalan = readFileSync(join(process.cwd(), "docs/planlar/KALAN-ISLER.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  assert.match(kalan, /\*\*Ayrıca \(E-10\):\*\* dal bekçisi yalnız onu içeren commit'lerde çalışır/);
 });

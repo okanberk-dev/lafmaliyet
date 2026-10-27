@@ -133,6 +133,10 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    kategorisine mi düşüyor?
 10. **Vercel planı** (E-67, B05): panel Hobby planında (ticari kullanım yok, günlükler bir saat); Pro'ya geçilsin mi?
     **Varsayılan:** plan Hobby kalır, risk ve sınırlar `docs/DEPLOY.md` § 8'de yazılı (öneri Pro); karar sahibin.
+    **Ayrıca (E-10):** dal bekçisi yalnız onu içeren commit'lerde çalışır; bekçiden önce açılmış eski dalların
+    dağıtımları için Vercel › Project Settings › Build Command'a tek satırlık bir dal denetimi yazılsın mı, eski
+    `claude/*` dalları ve önizlemeleri silinsin mi? **Varsayılan:** ayar yok; eski dal dağıtımları yeniden derlenmez,
+    eski bir dal önce main'le birleştirilir (`docs/DEPLOY.md` § 7).
 11. **Önceki listeden açık kalanlar** (yeniden doğrulanmadı): D-05 Claude inceleme iş akışının ödemesi; D-06 sohbete
     yapıştırılan API anahtarının iptali; D-15 sos pompası da 10 ml mi; D-16 sitenin `PARASUT_USERNAME`'i panelinkinden
     farklı mı; D-18 zili kapalı cihaz bar ekranında sorsun mu; D-19 fişli harcamalar Aylık harcamalar'a onaysız mı

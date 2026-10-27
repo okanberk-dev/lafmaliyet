@@ -22,8 +22,9 @@ olarak `laffogato` seçeceksiniz.
 2. Framework: **Next.js** (otomatik). Root Directory: `laffogato` (gerekiyorsa).
 3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular ve hepsinin gerçekten uygulandığını
    doğrular (§ 7), veritabanı boşsa Excel verisini yükler, sonra derler. Önizleme derlemesi migration ve seed
-   çalıştırmaz (§ 3); `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur (§ 7, "Production yalnız
-   main'den").
+   çalıştırmaz (§ 3); bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi hiç başlamadan durur
+   (§ 7, "Production yalnız main'den"; bekçiden önce açılmış eski dallar durmaz, onların dağıtımları yeniden
+   derlenmez).
 
 ## 3. Veritabanı (Neon)
 
@@ -112,9 +113,10 @@ uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/hea
 ✓ Yönetici hesabı oluşturuldu: …
 ```
 
-Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. `main` dışındaki bir dal
-Production'a derlenirse derleme `✗ Production derlemesi yalnız main dalından yapılır; bu derlemenin dalı: …` diye durur
-(§ 7). Sonra
+Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Bekçiyi içeren bir
+commit'te `main` dışındaki bir dal Production'a derlenirse derleme `✗ Production derlemesi yalnız main dalından yapılır;
+bu derlemenin dalı: …` diye durur (§ 7; bekçiden önce açılmış eski dalların dağıtımları durmaz, onlar yeniden
+derlenmez). Sonra
 `https://<proje>.vercel.app/giris` adresinden giriş yapın. Sağlık kontrolü: `/api/health` (günlük işlerle birlikte:
 `/api/health?isler=1`).
 
@@ -236,6 +238,22 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   derlemenin dalı: …` diye durur, yayındaki sürüm ve şema değişmez. Değişiklik canlıya PR'la main'e birleşerek gider.
   - Dalı bilinmeyen derleme (yerel `npm run build`, Git'siz CLI dağıtımı) denetlenmez; Instant Rollback yeniden
     derlemediği için etkilenmez.
+  - **Bekçi yalnız onu içeren commit'te çalışır.** Derleme komutu (`tsx scripts/predeploy.ts && next build`) derlenen
+    commit'in kendi dosyalarını çalıştırır; bekçi main'e 27 Eki 2026'da (Denetim B05) geldi. Ondan önce açılmış ve
+    main'le birleştirilmemiş dallar (eski `claude/*` dalları; 26 Ekim'in `claude/lafpos-baglantisi` dağıtımı
+    `dpl_4pdszt…`, commit `593c536` dahil) Production'a yeniden derlenir ya da terfi ettirilirse **durmaz**:
+    - dalın birleşmemiş migration'ı canlının en yeni migration'ından eskiyse drizzle onu atlar ve `verifyMigrations`
+      derlemeyi `Migration uygulanmadı: …` diye durdurur (bu denetim de 22 Eki 2026'dan, #7'den önce açılmış dallarda
+      yoktur); daha yeniyse canlı veritabanına uygulanır;
+    - migration'ı olmasa da dalın eski kodu bütün canlı sırlarıyla ladmin'de yayına çıkar.
+
+    Bu yüzden eski dal dağıtımları **hiçbir zaman** yeniden derlenmez ("Redeploy") ve terfi ettirilmez. Eski bir dalda
+    yeniden çalışmadan önce dal main'le birleştirilir; böylece hem bekçiyi hem `vercel.json` › `git.deploymentEnabled`'ı
+    (§ 3) alır. Birleştirmeden önce eski dala gönderilen bir commit yeni bir önizleme açar ve o önizlemede de bekçi
+    yoktur. Bekçiyi eski commit'lere de yaymanın yolu Vercel › Project Settings › Build & Development › **Build
+    Command**'dır (hiçbir commit'in `vercel.json`'ı `buildCommand` koymaz, ayar her derlemede geçerli olur); bu ayar
+    sahibin kararıdır ve yapılana kadar yukarıdaki kural geçerlidir ([KALAN-ISLER.md](planlar/KALAN-ISLER.md),
+    soru 10).
   - Bilerek yapılan acil dağıtım (main bozuk, düzeltme dalda) yalnız o derlemeye anahtar verilerek yapılır:
     dal çalışma kopyasında `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1`. Derleme günlüğüne
     `! Production derlemesi <dal> dalından (ALLOW_BRANCH_PRODUCTION=1 ile bilerek)` yazılır. Değişkeni proje ayarlarına
