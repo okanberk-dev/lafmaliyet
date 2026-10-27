@@ -78,8 +78,20 @@ test("reçete kartı: gördüğü satış alanlarını gönderir, sayfa yenileni
   assert.match(editor, /active !== seen\.active \|\|/);
   // Kayıttan sonra görülen sitenin / sunucunun yazdığı
   assert.match(editor, /setSeen\(\{ price: saved\.price, active: saved\.active, showOnMenu: saved\.showOnMenu \}\);/);
-  // Çakışma: fiyat alanının altında iki seçenek
-  assert.match(editor, /const priceMoved = toMinor\(product\.price\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(product\.price\);/);
+  // Çakışma: fiyat alanının altında iki seçenek. Sunucunun kuralı gibi görülen fiyatı yazan kart dokunmamıştır: kayıttan
+  // hemen sonraki çizimde (görülen fiyat yeni, sayfa henüz eski fiyatla) yanlış uyarı ve kaydırma olmaz
+  assert.match(
+    editor,
+    /const priceMoved =\s+toMinor\(product\.price\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(product\.price\);/,
+  );
+  // Seçim fiyat alanının hemen altında; genişte fire ilk satırda fiyatın yanında, okunuşu onun altında kalır
+  const priceField = editor.indexOf('label="Satış fiyatı (KDV dahil)"');
+  const box = editor.indexOf('id="r-price-moved"');
+  const fireField = editor.indexOf('label="Zayi / fire"');
+  const fireHint = editor.indexOf('id="r-fire-hint"');
+  assert.ok(priceField > 0 && priceField < box && box < fireField && fireField < fireHint, "fiyat → çakışma kutusu → fire → fire okunuşu");
+  assert.match(editor, /className="sm:col-start-2 sm:row-start-1"\s+label="Zayi \/ fire"/);
+  assert.match(editor, /"-mt-1 text-xs sm:col-span-2 sm:row-start-2"/);
   assert.match(editor, /\{money\(product\.price\)\} kalsın/);
   assert.match(editor, /\{money\(priceNum\)\} yazılsın/);
   // Telefonda Kaydet alttaki çubukta: çakışma çıkınca seçim görünür alana kayar
@@ -92,7 +104,9 @@ test("reçete kartı: gördüğü satış alanlarını gönderir, sayfa yenileni
 test("fiyat hücresi ve zam önerisi gördükleri fiyatı gönderir; hücre yeni fiyatı alır, eylem atarsa kilitli kalmaz", () => {
   const table = read("src/app/panel/urunler/products-table.tsx");
   assert.match(table, /res = await updateProductPrice\(row\.id, v, false, "manual", last\);/);
-  assert.match(table, /if \(!saving && typed !== null && toMinor\(typed\) === toMinor\(last\)\) \{\s+setLast\(row\.price\);/);
+  // Liste yeni fiyatla çizilince hücre anahtarından baştan kurulur ve yeni fiyatı görür (çizim içi eşitleme yok)
+  assert.equal(table.match(/<PriceCell key=\{`\$\{r\.id\}:\$\{r\.price\}`\}/g)?.length, 2);
+  assert.doesNotMatch(table, /setLastRow/);
   assert.match(table, /toastUnreachable\(e, `fiyat-\$\{row\.id\}`\);/);
   const impact = read("src/app/panel/urunler/price-impact-panel.tsx");
   assert.match(impact, /"suggestion", i\.price\)/);

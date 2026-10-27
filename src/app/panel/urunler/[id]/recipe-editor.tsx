@@ -336,8 +336,14 @@ export function RecipeEditor({
   const [textKeys, setTextKeys] = useState<ReadonlySet<number>>(() => new Set());
 
   const priceNum = parseNumberTR(price) ?? 0;
-  /** Fiyata dokunuldu ve sunucudaki fiyat kartın gördüğünden başka bir fiyata değişti: kayıt çakışır, seçim istenir */
-  const priceMoved = toMinor(product.price) !== toMinor(seen.price) && toMinor(priceNum) !== toMinor(product.price);
+  /**
+   * Fiyata dokunuldu ve sunucudaki fiyat kartın gördüğünden başka bir fiyata değişti: kayıt çakışır, seçim istenir.
+   * Sunucunun kuralının aynısı (src/lib/prices/seen.ts › seenPriceDecision): görülen fiyat yazılıyorsa dokunulmamıştır,
+   * çakışma değildir. Kayıttan hemen sonraki tek çizimde (görülen fiyat yeni değerde, sayfanın yenilenmiş hâli henüz
+   * gelmemiş, `product.price` eski) yanlış uyarı çıkmasın diye şart
+   */
+  const priceMoved =
+    toMinor(product.price) !== toMinor(seen.price) && toMinor(priceNum) !== toMinor(seen.price) && toMinor(priceNum) !== toMinor(product.price);
   // Çakışma çıkınca seçim görünür olsun: telefonda Kaydet alttaki çubukta, fiyat alanı sayfanın başında kalabilir
   useEffect(() => {
     if (priceMoved) document.getElementById("r-price-moved")?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
@@ -1247,27 +1253,9 @@ export function RecipeEditor({
                     <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
                   </div>
                 </Field>
-                <Field
-                  label="Zayi / fire"
-                  tip={`Bu ürüne özel fire oranı, yüzde olarak: 8 ya da %8 yazın (%8 olur). Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`}
-                  htmlFor="r-fire"
-                >
-                  <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-mute">%</span>
-                    <NumberInput
-                      id="r-fire"
-                      value={fire}
-                      onChange={(e) => setFire(e.target.value)}
-                      placeholder={num(settings.fire * 100, 1)}
-                      aria-invalid={fireInput.error ? true : undefined}
-                      data-warn={fireInput.warning ? "true" : undefined}
-                      aria-describedby={fire.trim() ? "r-fire-hint" : undefined}
-                      className="cell-input h-11 pl-7 pointer-coarse:h-11 sm:h-9 sm:pointer-coarse:h-11"
-                    />
-                  </div>
-                </Field>
                 {/* Fiyat kart açıldıktan sonra başka yerde (sitede, toplu Fiyatlar'da, başka sekmede) değişti ve burada da
-                    değiştirildi: kayıt çakışır, hangisinin kalacağı burada seçilir (denetim E-11) */}
+                    değiştirildi: kayıt çakışır, hangisinin kalacağı fiyat alanının hemen altında seçilir (denetim E-11). Genişte
+                    fiyat ile fire ilk satırda kalır, fire'nin okunuşu onun altında; kutu ikisinin altına iner */}
                 {priceMoved ? (
                   <div id="r-price-moved" role="alert" className="scroll-mt-24 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2">
                     <p>
@@ -1292,11 +1280,31 @@ export function RecipeEditor({
                     </div>
                   </div>
                 ) : null}
+                <Field
+                  className="sm:col-start-2 sm:row-start-1"
+                  label="Zayi / fire"
+                  tip={`Bu ürüne özel fire oranı, yüzde olarak: 8 ya da %8 yazın (%8 olur). Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`}
+                  htmlFor="r-fire"
+                >
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-mute">%</span>
+                    <NumberInput
+                      id="r-fire"
+                      value={fire}
+                      onChange={(e) => setFire(e.target.value)}
+                      placeholder={num(settings.fire * 100, 1)}
+                      aria-invalid={fireInput.error ? true : undefined}
+                      data-warn={fireInput.warning ? "true" : undefined}
+                      aria-describedby={fire.trim() ? "r-fire-hint" : undefined}
+                      className="cell-input h-11 pl-7 pointer-coarse:h-11 sm:h-9 sm:pointer-coarse:h-11"
+                    />
+                  </div>
+                </Field>
                 {/* Fire alanının okunuşu: dar sütuna sığmadığı için iki sütunun altında */}
                 {fire.trim() ? (
                   <p
                     id="r-fire-hint"
-                    className={cn("-mt-1 text-xs sm:col-span-2", fireInput.error ? "text-bad" : fireInput.warning ? "text-warn" : "text-ink-mute")}
+                    className={cn("-mt-1 text-xs sm:col-span-2 sm:row-start-2", fireInput.error ? "text-bad" : fireInput.warning ? "text-warn" : "text-ink-mute")}
                     role={fireInput.error || fireInput.warning ? "alert" : undefined}
                   >
                     {fireInput.error ? (

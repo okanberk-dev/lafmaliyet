@@ -85,7 +85,7 @@ async function sitePush(
   try {
     return await pushSaleChange(me, before, desired, consequence, tx, { live });
   } catch (e) {
-    if (e instanceof UserError) throw new UserError(siteFailureText(e.message, e.cause as PushFailure | undefined));
+    if (e instanceof UserError) throw new UserError(siteFailureText(e.message, e.cause as PushFailure | undefined, me.role));
     throw e;
   }
 }

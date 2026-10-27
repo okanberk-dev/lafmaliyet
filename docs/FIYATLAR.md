@@ -202,7 +202,10 @@ güncelleyen bütün dosyaları tarar: fiyat yazan ama geçmişe yazmayan yeni b
 Açık kalmış ürün kartı, fiyat hücresi ve zam önerisi gördükleri fiyatı da gönderir (denetim E-11,
 [SENKRON.md](SENKRON.md) › Çakışma): kartta dokunulmayan fiyat bu arada sitede, eşitlemede ya da burada toplu
 değiştiyse kartın kaydı onu geri almaz, geçmişe ve Kasaya işle'ye kayıt düşürmez; dokunulan fiyat ya da hücrenin
-yazdığı fiyat bu arada başka yerde de değiştiyse hiçbir şey yazılmaz ("Fiyat bu sırada değişti (şimdi 210 ₺) …").
+yazdığı fiyat bu arada başka yerde de değiştiyse hiçbir şey yazılmaz. Kart "Fiyat bu arada başka bir yerde değişti:
+şimdi 210 ₺ (kart açıldığında 200 ₺); değişiklikler kaydedilmedi. …" der ve fiyat alanının altında "… kalsın" / "…
+yazılsın" seçimini gösterir; fiyat hücresi ve zam önerisi "Fiyat bu arada başka bir yerde 210 ₺ oldu; yazılmadı. Liste
+güncellendi, istersen yeniden değiştir." der (hücre güncel fiyatı alır).
 Kartın kaydı yalnız Satışta / Tükendi'yi siteye yazdığında sitenin yanıtı başka bir fiyat taşıyorsa (ping kaçmıştı) o
 fiyat `site` kaynağıyla girer.
 

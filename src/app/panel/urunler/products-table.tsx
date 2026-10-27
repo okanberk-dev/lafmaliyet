@@ -48,7 +48,6 @@ import type { Size } from "@/lib/calc/types";
 import { RECIPE_COST_NOTE, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
-import { toMinor } from "@/lib/site-menu/slot";
 import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
@@ -280,17 +279,10 @@ export function StatusShare({ parts }: { parts: { status: ProductStatus; count: 
 function PriceCell({ row, className }: { row: ProductRow; className?: string }) {
   const [value, setValue] = useState(priceText(row.price));
   const [saving, setSaving] = useState(false);
+  // Hücre gördüğü fiyatı (`last`) kayıtta gönderir. Liste bu ürünün yeni fiyatıyla çizilince (eşitleme, toplu
+  // değişiklik, başka sekme, reddedilen kayıt) hücre baştan kurulur (anahtarında fiyat var): yeni fiyatı görür,
+  // o sırada yazılıp henüz kaydedilmemiş değer bırakılır
   const [last, setLast] = useState(row.price);
-  // Liste yeni fiyatla çizildi (eşitleme, toplu değişiklik, başka sekme, reddedilen kayıt): yazılmamış hücre yenisini alır
-  const [lastRow, setLastRow] = useState(row.price);
-  if (toMinor(row.price) !== toMinor(lastRow)) {
-    setLastRow(row.price);
-    const typed = parseNumberTR(value);
-    if (!saving && typed !== null && toMinor(typed) === toMinor(last)) {
-      setLast(row.price);
-      setValue(priceText(row.price));
-    }
-  }
   // Esc'teki blur, eski değeri görür (setValue henüz çizilmedi); bu bayrak o blur'da kaydı atlatır
   const cancelled = useRef(false);
 
