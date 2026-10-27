@@ -23,8 +23,9 @@ function rateSub(g: GroupMonth): string {
  */
 export function MealTotalCard({ group, rows, className }: { group: GroupMonth; rows: ChannelMonth[]; className?: string }) {
   const companies = new Set(rows.filter((r) => r.invoices.length).map((r) => r.channel)).size;
-  // Birden çok kart varken satışı yazılmamış kart varsa: kart kart oran ancak ekstredeki satışla
-  const untyped = group.activeChannels.length >= 2 && rows.some((r) => r.invoices.length && r.sales?.source !== "elle");
+  // Birden çok kart varken satışı bilinmeyen kart varsa: kart kart oran ancak ekstredeki satışla (LafPOS'un ödemeleri
+  // kartın satışını kendisi verir)
+  const untyped = group.activeChannels.length >= 2 && rows.some((r) => r.invoices.length && !r.sales);
   const cells = [
     { label: "Z'de yemek kartı", value: group.zTotal !== null ? money(group.zTotal) : "–", sub: tillSub(group) },
     { label: "Kesilen", value: `${money(group.feesTotal)} + KDV`, sub: `${num(group.invoiceCount)} fatura · ${num(companies)} şirket` },

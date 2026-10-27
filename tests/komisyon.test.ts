@@ -240,8 +240,8 @@ test("satışın kaynağı: elle yazılan ekstre; yoksa grupta tek kanal varsa Z
   assert.deepEqual(must(rowOf(r, "trendyol", "2026-10")).sales, { amount: 12400, source: "tek" });
   assert.deepEqual(must(rowOf(r, "pluxee", "2026-09")).sales, { amount: 9000, source: "elle" });
   // Elle yazılmış olsa da grupta iki kart varken Z toplamı ipucu olmaz
-  assert.equal(must(rowOf(r, "pluxee", "2026-10")).tekSales, null);
-  assert.equal(must(rowOf(r, "trendyol", "2026-10")).tekSales, 12400);
+  assert.equal(must(rowOf(r, "pluxee", "2026-10")).autoSales, null);
+  assert.deepEqual(must(rowOf(r, "trendyol", "2026-10")).autoSales, { amount: 12400, source: "tek" });
 
   // Tek yemek kartı faturası, satış yazılmamış: Z'deki yemek kartı toplamı
   const one = buildCommissionReport(f1({ marks: [], invoices: [inv("Pluxee", "2026-10-31", 300)] }));
@@ -282,7 +282,7 @@ test("öteki kanalın bu aya ait faturası sonraki ayın 1–15'inde kesildiyse 
   const r = buildCommissionReport(input("2026-11-14"));
   const t = must(rowOf(r, "trendyol", "2026-10"));
   assert.equal(t.sales, null);
-  assert.equal(t.tekSales, null);
+  assert.equal(t.autoSales, null);
   assert.equal(
     plain(t.salesReason),
     "Satış bilinmiyor: Z'deki online (platformlar) tek toplam ve 14 Kasım tarihli Yemeksepeti faturası Ekim satışlarını da kapsıyor olabilir. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
@@ -901,9 +901,12 @@ test("ekran metinleri: hakediş satırı, durum rozeti (en kötüsü), satışı
   assert.equal(refund.rate, null);
   assert.deepEqual(statusBadge(refund), { text: "Oran yok", tone: "gray" });
 
-  assert.equal(sourceLabel("elle", "meal"), "Kanalın ekstresinden (elle)");
-  assert.equal(sourceLabel("tek", "meal"), "Z'deki yemek kartı toplamı (tek kart)");
-  assert.equal(sourceLabel("tek", "platform"), "Z'deki online (platformlar) toplamı (tek platform)");
+  assert.equal(sourceLabel({ source: "elle" }, "meal"), "Kanalın ekstresinden (elle)");
+  assert.equal(sourceLabel({ source: "tek" }, "meal"), "Z'deki yemek kartı toplamı (tek kart)");
+  assert.equal(sourceLabel({ source: "tek" }, "platform"), "Z'deki online (platformlar) toplamı (tek platform)");
+  assert.equal(sourceLabel({ source: "lafpos", zShare: 0 }, "meal"), "LafPOS ödemelerinden");
+  assert.equal(sourceLabel({ source: "lafpos", zShare: 300 }, "meal"), "LafPOS ödemeleri ve Z'deki yemek kartı toplamı (tek kart)");
+  assert.equal(sourceLabel({ source: "lafpos", zShare: 300 }, "platform"), "LafPOS ödemeleri ve Z'deki online toplamı (tek platform)");
   assert.equal(ratePartsText(p), "Komisyon %3,0 · erken ödeme %3,2");
   assert.equal(ratePartsText(m), "Komisyon %4,0 · komisyon dışı ücret %2,4");
   assert.equal(plain(ratePartsText(unknown)), "Komisyon 279 ₺ · erken ödeme 300 ₺");
@@ -936,7 +939,7 @@ test("ekran metinleri: hakediş satırı, durum rozeti (en kötüsü), satışı
     note: null,
     payable: 694.8,
     invoiced: true,
-    tekSales: null,
+    autoSales: null,
   });
   assert.equal(dialogData(channelDef("getir"), "2026-10", null).invoiced, false);
 });

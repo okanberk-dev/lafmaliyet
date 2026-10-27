@@ -10,10 +10,11 @@ import { EmptyState, PageSkeleton, SectionTitle, Stat } from "@/components/ui/mi
 import { groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
+import { dayAblativeTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadCommissionReport } from "@/server/data/commission";
 
-import { ChannelCard } from "./channel-card";
+import { ChannelCard, FlagList } from "./channel-card";
 import { ChannelSettingsCard } from "./channel-settings";
 import { HashScroll } from "./hash-scroll";
 import { MealTotalCard } from "./meal-total-card";
@@ -126,6 +127,11 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
         <section aria-label="Platformlar">
           <SectionTitle>Platformlar</SectionTitle>
           <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformTillLine(platform)}</p>
+          {platform?.flags.length ? (
+            <div className="mb-3">
+              <FlagList flags={platform.flags} />
+            </div>
+          ) : null}
           {platformChannels.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {platformChannels.map((ch) => (
@@ -168,14 +174,17 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 
         <ChannelSettingsCard settings={report.settings} />
 
-        <RulesCard />
+        <RulesCard switchDay={report.switchDay} />
       </div>
     </>
   );
 }
 
-/** Kurallar ve hesap (kapalı başlar): yasal dayanak, oranın ve hakedişin nasıl hesaplandığı */
-function RulesCard() {
+/**
+ * Kurallar ve hesap (kapalı başlar): yasal dayanak, oranın ve hakedişin nasıl hesaplandığı. LafPOS'a geçiş günü
+ * seçiliyse satışın o günden itibaren LafPOS'tan geldiği de yazar (geçiş günü yokken metin bugünküyle aynı)
+ */
+function RulesCard({ switchDay }: { switchDay: string | null }) {
   const items: { title: string; body: string }[] = [
     {
       title: "Yemek kartı",
@@ -187,7 +196,11 @@ function RulesCard() {
     },
     {
       title: "Gerçek oran",
-      body: "Kanalın o ay kestiği her şey (komisyon, erken ödeme ve diğer ücretler, KDV hariç) ÷ o kanaldan yapılan satış (KDV dahil). Satış, Hakediş penceresine yazdığınız aylık ekstreden gelir; yazmadıysanız ve o ay tek yemek kartının (ya da tek platformun) faturası varsa (sonraki ayın 15'ine kadar başkasınınki de gelmediyse) kasa raporlarındaki Z toplamından. Z'de kartlar tek toplam olduğu için birden çok kart kullanılan ayda kart kart oran ancak ekstreyle çıkar; yemek kartlarının toplam oranı her zaman hesaplanır.",
+      body: `Kanalın o ay kestiği her şey (komisyon, erken ödeme ve diğer ücretler, KDV hariç) ÷ o kanaldan yapılan satış (KDV dahil). Satış, Hakediş penceresine yazdığınız aylık ekstreden gelir; yazmadıysanız ve o ay tek yemek kartının (ya da tek platformun) faturası varsa (sonraki ayın 15'ine kadar başkasınınki de gelmediyse) kasa raporlarındaki Z toplamından. Z'de kartlar tek toplam olduğu için birden çok kart kullanılan ayda kart kart oran ancak ekstreyle çıkar; yemek kartlarının toplam oranı her zaman hesaplanır.${
+        switchDay
+          ? ` LafPOS'a geçtiğiniz ${dayAblativeTR(switchDay)} itibaren satış, yazmadıysanız, LafPOS'un gün sonundaki ödeme türlerinden kart kart gelir (ödeme türünün kanalı LafPOS'ta seçili olmalı); yazdığınız ekstre yine önce gelir.`
+          : ""
+      }`,
     },
     {
       title: "Hangi ay",

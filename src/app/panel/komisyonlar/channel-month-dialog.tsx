@@ -32,7 +32,8 @@ export interface ChannelMonthData {
   /** Faturası var mı (yoksa beklenen hesaplanmaz) */
   invoiced: boolean;
   /** Satış yazılmazsa kullanılan Z toplamı (yalnız grupta tek kanal varsa) */
-  tekSales: number | null;
+  /** Satış boş bırakılırsa kullanılacak: LafPOS'un ödemeleri ya da (grupta tek kanalken) Z toplamı */
+  autoSales: { amount: number; source: "lafpos" | "tek" } | null;
 }
 
 /** "Geldi": hakedişi işaretle; "duzenle": kayıtlı işareti değiştir; "satis": yalnız satışı yaz (alan odaklanır) */
@@ -127,8 +128,8 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
 
   const salesValue = salesText.trim() ? parseNumberTR(salesText) : null;
   const salesError = salesText.trim() && salesValue === null ? "Satışı sayı olarak yazın, ör. 9.300" : salesValue !== null && salesValue < 0 ? "Satış eksi olamaz" : null;
-  // Beklenen, penceredeki satışla canlı: yazılan satış, yoksa Z'deki toplam (grupta tek kanalsa)
-  const effectiveSales = salesValue !== null && salesValue >= 0 ? salesValue : salesText.trim() ? null : data.tekSales;
+  // Beklenen, penceredeki satışla canlı: yazılan satış, yoksa LafPOS'un ödemeleri ya da Z'deki toplam (grupta tek kanalsa)
+  const effectiveSales = salesValue !== null && salesValue >= 0 ? salesValue : salesText.trim() ? null : (data.autoSales?.amount ?? null);
   const expected = data.invoiced && effectiveSales !== null ? Math.round((effectiveSales - data.payable) * 100) / 100 : null;
   const [amountTextValue, setAmount] = useState(() => (received ? amountText(data.received) : expected !== null && expected > 0 ? amountText(expected) : ""));
   const amount = amountTextValue.trim() ? parseNumberTR(amountTextValue) : null;
@@ -147,7 +148,11 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
     .filter(Boolean)
     .join(" ");
   const salesHint = `Kanalın kendi ekranındaki (ekstre, hakediş raporu) satış, KDV dahil. ${
-    data.tekSales !== null ? `Boş bırakırsanız Z'deki toplam kullanılır: ${money(data.tekSales)}.` : "Boş bırakırsanız satış bilinmez."
+    data.autoSales === null
+      ? "Boş bırakırsanız satış bilinmez."
+      : data.autoSales.source === "lafpos"
+        ? `Boş bırakırsanız LafPOS'taki ödemeler kullanılır: ${money(data.autoSales.amount)}.`
+        : `Boş bırakırsanız Z'deki toplam kullanılır: ${money(data.autoSales.amount)}.`
   }`;
 
   function submit() {
@@ -238,7 +243,7 @@ function ChannelMonthDialog({ data, mode, onClose, onSave }: { data: ChannelMont
             value={salesText}
             onChange={(e) => setSalesText(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
-            placeholder={data.tekSales !== null ? num(data.tekSales, 2) : "Ekstredeki satış"}
+            placeholder={data.autoSales !== null ? num(data.autoSales.amount, 2) : "Ekstredeki satış"}
             enterKeyHint="done"
             aria-invalid={salesError ? true : undefined}
             data-autofocus={mode === "satis" ? "always" : undefined}
