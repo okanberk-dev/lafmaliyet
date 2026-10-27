@@ -43,8 +43,12 @@ export const SOLD_OUT_TEXT = {
   cap: `Tükenenler listesi dolu (${STAFF_SOLD_OUT_MAX} ürün). Gelenleri satışa açın ya da yöneticiye haber verin.`,
   tooMany: "Kısa sürede çok işlem yapıldı (10 dakikada en çok 20). Biraz sonra yeniden deneyin.",
   tooSoon: "Az önce değişti; birkaç saniye sonra yeniden deneyin.",
-  /** Yazım zaman aşımına uğradı (site yazmış olabilir, panel yanıttan sonra okur); personel Site menüsünü açamaz */
-  siteSlow: "Site geç yanıt verdi; ürün sitede değişmiş olabilir. Birkaç saniye sonra Tükenenler kartına bakın, değişmediyse yeniden deneyin.",
+  /**
+   * Yazım zaman aşımına uğradı (site yazmış olabilir, panel yanıttan sonra okur); personel Site menüsünü açamaz. Site
+   * yazdıysa panelde kayıt yoktur: ürün kartta değil, pencerede durumuyla görünür ("Kapalı · yönetici açar" ya da "Satışta")
+   */
+  siteSlow:
+    "Site geç yanıt verdi; değişiklik sitede yapılmış olabilir. Birkaç saniye sonra Tükendi işaretle penceresinde ürünün durumuna bakın; değişmediyse yeniden deneyin.",
   /** Site yazdı ama panelin işlemi düştü */
   closedNotSaved: "Sitede tükendi oldu ama panele yazılamadı; yöneticiye haber verin.",
   openedNotSaved: "Sitede satışa açıldı ama panele yazılamadı; yöneticiye haber verin.",

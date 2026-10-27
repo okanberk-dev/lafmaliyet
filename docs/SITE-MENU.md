@@ -193,8 +193,9 @@ taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
   Panel → site yazımı › 0).
 - **Hatalar** sunucuda kurulur: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409; 409 `stale`
   hariç, o "bu arada değişti, yeniden dene" der) metnin sonunda "Yöneticiye haber verin."; yazım zaman aşımına uğradıysa
-  personel "Site geç yanıt verdi; ürün sitede değişmiş olabilir. Birkaç saniye sonra Tükenenler kartına bakın,
-  değişmediyse yeniden deneyin." görür (Site menüsü ekranı ona kapalı; yönetici Site menüsü metnini görür); site yazdı ama panel yazamadıysa "Sitede tükendi oldu ama panele yazılamadı; yöneticiye
+  personel "Site geç yanıt verdi; değişiklik sitede yapılmış olabilir. Birkaç saniye sonra Tükendi işaretle
+  penceresinde ürünün durumuna bakın; değişmediyse yeniden deneyin." görür (Site menüsü ekranı ona kapalı; yönetici
+  Site menüsü metnini görür). Site yazdıysa panelde kayıt yoktur: ürün pencerede "Kapalı · yönetici açar" görünür; site yazdı ama panel yazamadıysa "Sitede tükendi oldu ama panele yazılamadı; yöneticiye
   haber verin." Aynı anda iki barista: tek kayıt kalır, ikincisi "… zaten tükendi" görür.
 - **Kişisel veri ve tutar:** okuyucu (`src/server/data/menu-status.ts`) ürünlerden yalnız kimlik, ad, boy, bağlantı
   ve "Menüde aktif" okur, sitenin kalemini fiyatsız kopyaya indirir; eylem yalnız ad ve metin döner; zil yalnız
