@@ -3,6 +3,7 @@ import "server-only";
 import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
+import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
@@ -10,6 +11,7 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver, reportedDays } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
+import { loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
 
 /*
@@ -82,13 +84,20 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
  * Yönetici: kasanın bütünlüğü (docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). Bugünün ve dünün raporunda açılış
  * önceki devirle tutmuyorsa (kimlik raporun sürümünden: yeniden gönderilince yeniden okunmamış olur); son 7 günün bir
  * raporu iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildiyse (src/lib/cash-report.ts lateCorrections:
- * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). İki küçük sorgu.
+ * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). LafPOS gününde (geçiş
+ * gününden sonra) rapor LafPOS'un gün sonundan farklıysa da satır (E-09): rapordan sonra gelen LafPOS yeniden gönderimi
+ * de görünür (kimlik raporun sürümü ve LafPOS'un geliş anından). Üç küçük sorgu.
  */
 async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
   if (!reports.length) return [];
   const oldest = reports[reports.length - 1];
   const revised = reports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [before, revisions, proposed] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(revised), proposedByForReports(revised)]);
+  const [before, revisions, proposed, lafposOf] = await Promise.all([
+    previousCarryOver(oldest.date),
+    cashRevisionsFor(revised),
+    proposedByForReports(revised),
+    loadKasaLafposDays(oldest.date, day).catch(() => null),
+  ]);
   const checks = carryChecks(reports, before);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
@@ -116,6 +125,24 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
       kind: "warning",
       title: "Kasa raporu ertesi gün değişti",
       body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
+      timeLabel: timeLabel(r.date),
+      unread: true,
+      href: `/panel/kasa?gun=${r.date}`,
+      group: "kasa",
+    });
+  }
+  // LafPOS'tan farklı yazılan (yalnız LafPOS günlerinde; geçiş günü boşken loadKasaLafposDays hiçbir günü vermez)
+  for (const r of reports) {
+    const lafpos = lafposOf?.(r.date).day;
+    const diffs = lafpos ? lafposDiffs(r, lafpos) : [];
+    if (!lafpos || !diffs.length) continue;
+    const after = lafpos.receivedAt > r.updatedAt;
+    const body = `${longDateTR(r.date)} · ${diffs.map(lafposDiffText).join("; ")}`;
+    out.push({
+      id: `kasa-lafpos-${r.date}-r${r.revision}-${Date.parse(lafpos.receivedAt)}`,
+      kind: "warning",
+      title: after ? "LafPOS rapordan sonra farklı rakamla geldi" : "Kasa raporu LafPOS'tan farklı",
+      body: body.length > 220 ? `${body.slice(0, 219)}…` : body,
       timeLabel: timeLabel(r.date),
       unread: true,
       href: `/panel/kasa?gun=${r.date}`,
