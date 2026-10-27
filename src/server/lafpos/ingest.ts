@@ -24,8 +24,15 @@ export interface EndpointResult {
   body: Record<string, unknown>;
 }
 
-/** Yazımın sonucu: yazıldı ya da o güne başka bir Z ile yazılmış özet var (`zNo` kayıtlı olanınki; hiçbir şey yazılmadı) */
-export type StorePosDayResult = { ok: true; lines: number; matched: number } | { ok: false; zNo: number };
+/** 200 yanıtında en çok bu kadar eşleşmeyen POS adı (LafPOS bağlantı ekranında gösterir) */
+export const UNMATCHED_MAX = 50;
+
+/**
+ * Yazımın sonucu: yazıldı (satır sayısı, ürüne ya da hizmete bağlanan satır sayısı, ürüne bağlanamayan POS adları:
+ * çok satılan önce, en çok UNMATCHED_MAX) ya da o güne başka bir Z ile yazılmış özet var (`zNo` kayıtlı olanınki; hiçbir
+ * şey yazılmadı)
+ */
+export type StorePosDayResult = { ok: true; lines: number; matched: number; unmatched: string[] } | { ok: false; zNo: number };
 
 /**
  * Bir iş gününü yazar, idempotent: günün danışma kilidi altında özet (pos_day_reports) yenilenir, günün satırları
@@ -47,9 +54,21 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
     const bySite = new Map<string, number>();
     for (const p of linked) if (p.siteMenuId && p.slot) bySite.set(siteSlotKey(p.siteMenuId, p.slot), p.id);
     const index = createPosMappingIndex(mappings);
+    // Sitenin kalemi ve boyu satırla saklanır: ürün sonradan siteye bağlanınca satır yeniden gönderim olmadan bulunur
+    // (src/server/lafpos/rematch.ts)
     const rows = day.lines.map((l) => {
       const m = resolvePosLine(l, bySite, (n) => index.get(n));
-      return { date: day.date, posName: l.posName, productId: m.productId, qty: l.qty, revenue: l.revenue, isService: m.isService, createdAt: now };
+      return {
+        date: day.date,
+        posName: l.posName,
+        productId: m.productId,
+        siteMenuId: l.siteMenuId,
+        slot: l.slot,
+        qty: l.qty,
+        revenue: l.revenue,
+        isService: m.isService,
+        createdAt: now,
+      };
     });
     const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now };
     await tx
@@ -58,12 +77,18 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
       .onConflictDoUpdate({ target: s.posDayReports.date, set: report });
     await tx.delete(s.posDailySales).where(eq(s.posDailySales.date, day.date));
     if (rows.length) await tx.insert(s.posDailySales).values(rows);
-    return { ok: true, lines: rows.length, matched: rows.filter((r) => r.productId !== null || r.isService).length };
+    const unmatched = rows
+      .filter((r) => r.productId === null && !r.isService)
+      .sort((a, b) => b.qty - a.qty || a.posName.localeCompare(b.posName, "tr"))
+      .slice(0, UNMATCHED_MAX)
+      .map((r) => r.posName);
+    return { ok: true, lines: rows.length, matched: rows.filter((r) => r.productId !== null || r.isService).length, unmatched };
   });
 }
 
 /**
- * `POST /api/pos/gun`: imzalı gövdeyi denetler ve yazar. Yanıtlar: 200 `{ ok, date, lines }`, 400
+ * `POST /api/pos/gun`: imzalı gövdeyi denetler ve yazar. Yanıtlar: 200 `{ ok, date, lines, matched, unmatched }`
+ * (`matched`: ürüne ya da hizmete bağlanan satır; `unmatched`: ürüne bağlanamayan POS adları, en çok 50), 400
  * `{ error: "invalid", field }` (ilk sorunlu alanın yolu), 401 `{ error: "unauthorized" }`, 409
  * `{ error: "z_conflict", date, zNo }` (o güne başka bir Z ile yazılmış özet var; `zNo` kayıtlı olanınki, hiçbir şey
  * yazılmadı), 413 `{ error: "too_large" }`, 503 `{ error: "not_configured" }`. Veritabanı hatası fırlar (uç 500 döner,
@@ -80,5 +105,5 @@ export async function receivePosDay(
   if (!parsed.ok) return { status: 400, body: { error: "invalid", field: parsed.field } };
   const r = await storePosDay(db, parsed.data, now);
   if (!r.ok) return { status: 409, body: { error: "z_conflict", date: parsed.data.date, zNo: r.zNo } };
-  return { status: 200, body: { ok: true, date: parsed.data.date, lines: r.lines } };
+  return { status: 200, body: { ok: true, date: parsed.data.date, lines: r.lines, matched: r.matched, unmatched: r.unmatched } };
 }

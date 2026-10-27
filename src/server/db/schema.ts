@@ -2004,10 +2004,12 @@ export const staffRequests = pgTable(
 
 // ---------------------------------------------------------------- LafPOS (kafenin kasası)
 /**
- * LafPOS'un günlük ürün satışı (docs/LAFPOS.md): gün sonunda gelen satış listesi, sales_lines'ın günlük karşılığı;
- * loadDailyProductSales okur (src/server/data/daily-sales.ts). Aynı gün yeniden gelirse (düzeltme) günün satırları tek
- * işlemde silinip yenisi yazılır. Ürün önce sitenin kalemi ve boyuyla (products.site_menu_id + site_menu_slot), yoksa
- * POS eşleştirmesiyle (pos_mappings, posMatchKey) bulunur; bulunmazsa boş.
+ * LafPOS'un günlük ürün satışı (docs/LAFPOS.md): gün sonunda gelen satış listesi, sales_lines'ın günlük karşılığı.
+ * Geçiş gününden itibaren aylık maliyet modeline ay toplamı olarak girer (src/server/data/lafpos-sales.ts); aynı gün
+ * yeniden gelirse (düzeltme) günün satırları tek işlemde silinip yenisi yazılır. Ürün önce sitenin kalemi ve boyuyla
+ * (products.site_menu_id + site_menu_slot), yoksa POS eşleştirmesiyle (pos_mappings, posMatchKey) bulunur; bulunmazsa
+ * boş kalır ve sonradan bağlanınca (site bağı ya da Satışlar'daki eşleştirme) yeniden gönderim olmadan dolar
+ * (src/server/lafpos/rematch.ts).
  */
 export const posDailySales = pgTable(
   "pos_daily_sales",
@@ -2018,6 +2020,9 @@ export const posDailySales = pgTable(
     /** LafPOS'taki POS adı (posName ya da "AD BOY") */
     posName: text("pos_name").notNull(),
     productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    /** LafPOS'un gönderdiği sitenin kalemi ve boyu (yoksa null): ürün sonradan siteye bağlanınca satır bununla bulunur */
+    siteMenuId: text("site_menu_id"),
+    slot: text("slot", { enum: ["M", "L"] }),
     qty: doublePrecision("qty").notNull(),
     /** TL, KDV dahil */
     revenue: doublePrecision("revenue").notNull(),

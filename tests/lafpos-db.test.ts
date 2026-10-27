@@ -151,8 +151,14 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
         line(`LAFPOS ODA ${tag}`, { isService: true }),
       ]),
     );
-    assert.deepEqual(r, { status: 200, body: { ok: true, date: D1, lines: 7 } });
+    // Yanıt: kaç satırın ürüne ya da hizmete bağlandığı ve ürüne bağlanamayan adlar (LafPOS bağlantı ekranı; E-33)
+    assert.deepEqual(r, { status: 200, body: { ok: true, date: D1, lines: 7, matched: 6, unmatched: [`YENİ ÜRÜN ${tag}`] } });
     const rows = new Map((await rowsOf(D1)).map((x) => [x.posName, x]));
+    // Sitenin kalemi ve boyu satırla saklanır (ürün sonradan siteye bağlanınca satır bununla bulunur)
+    const raw = new Map((await db.select().from(s.posDailySales).where(eq(s.posDailySales.date, D1))).map((x) => [x.posName, x]));
+    assert.deepEqual([raw.get("LATTE MEDIUM")?.siteMenuId, raw.get("LATTE MEDIUM")?.slot], [site("latte"), "M"]);
+    assert.deepEqual([raw.get(posNames.mocha.toLowerCase())?.siteMenuId, raw.get(posNames.mocha.toLowerCase())?.slot], [site("yok"), "M"], "bağlanmamış kalem de saklanır");
+    assert.deepEqual([raw.get(`YENİ ÜRÜN ${tag}`)?.siteMenuId, raw.get(`YENİ ÜRÜN ${tag}`)?.slot], [null, null]);
     assert.equal(rows.get("LATTE MEDIUM")?.productId, ids.latteM);
     assert.equal(rows.get("LATTE MEDIUM")?.qty, 42);
     assert.equal(rows.get("LATTE MEDIUM")?.revenue, 8190);
@@ -181,7 +187,7 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     // Düzeltme: satırlar ve Z bütünüyle yenisiyle değişir, geliş anı ilerler
     const later = new Date(NOW.getTime() + 60_000);
     const fixed = push(D2, [line("LATTE MEDIUM", { siteMenuId: site("latte"), slot: "M", qty: 5, revenue: 975 })], { zTotal: 975, cash: 975, card: 0 });
-    assert.deepEqual(await send(fixed, { now: later }), { status: 200, body: { ok: true, date: D2, lines: 1 } });
+    assert.deepEqual(await send(fixed, { now: later }), { status: 200, body: { ok: true, date: D2, lines: 1, matched: 1, unmatched: [] } });
     assert.deepEqual(await rowsOf(D2), [{ posName: "LATTE MEDIUM", productId: ids.latteM, qty: 5, revenue: 975, isService: false }]);
     const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D2));
     assert.equal(rep.z.zTotal, 975);
@@ -216,7 +222,7 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
   test("başka Z no ile gelen gün 409 z_conflict alır, hiçbir şey yazmaz; aynı Z no düzeltmedir; kasa eşlemesi saklanan özetten", async () => {
     // LafPOS'un yeni alanlarıyla: gün ortasında 5.000 teslim, 700 giren; LafPOS 1.500 + 12.000 + 700 − 450 − 5.000 = 8.750 bekler
     const first = push(D4, [line(`Z300 ${tag}`)], { zNo: 300, handedOver: 5000, cashIn: 700, expectedCash: 8750, countedCash: 8750, cashDiff: 0 });
-    assert.deepEqual(await send(first), { status: 200, body: { ok: true, date: D4, lines: 1 } });
+    assert.deepEqual(await send(first), { status: 200, body: { ok: true, date: D4, lines: 1, matched: 0, unmatched: [`Z300 ${tag}`] } });
     const later = new Date(NOW.getTime() + 60_000);
     const other = push(D4, [line(`Z301 ${tag}`)], { zNo: 301, zTotal: 1 });
     assert.deepEqual(await send(other, { now: later }), { status: 409, body: { error: "z_conflict", date: D4, zNo: 300 } });
@@ -235,7 +241,7 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     assert.deepEqual(day.prefill.checks, []);
     // Aynı Z no düzeltmedir: yerine geçer (yeni alanları olmayan eski biçimli gövde de)
     const fixed = push(D4, [line(`Z300 DÜZELTME ${tag}`)], { zNo: 300 });
-    assert.deepEqual(await send(fixed, { now: later }), { status: 200, body: { ok: true, date: D4, lines: 1 } });
+    assert.deepEqual(await send(fixed, { now: later }), { status: 200, body: { ok: true, date: D4, lines: 1, matched: 0, unmatched: [`Z300 DÜZELTME ${tag}`] } });
     assert.deepEqual((await rowsOf(D4)).map((x) => x.posName), [`Z300 DÜZELTME ${tag}`]);
     const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
     assert.equal(rep.receivedAt.getTime(), later.getTime());
