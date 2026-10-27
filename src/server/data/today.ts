@@ -117,7 +117,12 @@ interface RoleFacts {
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
   // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
   const [waste, busy] = await Promise.all([safe(dayWaste(c.day)), safe(loadStaffForecast())]);
-  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null }, cashFlags: null, forecast: { admin: null, staff: busy } };
+  return {
+    // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
+    facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, lafpos: waste.lafpos !== null } : null },
+    cashFlags: null,
+    forecast: { admin: null, staff: busy },
+  };
 }
 
 /**

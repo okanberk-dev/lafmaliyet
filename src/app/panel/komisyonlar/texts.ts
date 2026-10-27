@@ -4,15 +4,22 @@
 
 import type { Tone } from "@/components/ui/badge";
 import { LINE_CLASSES, LINE_LABEL, type ChannelDef, type ChannelKind } from "@/lib/commission/channels";
-import { approxMoney, MEAL_LIMIT, LIMIT_TOLERANCE, type ChannelMonth, type GroupMonth, type SalesSource } from "@/lib/commission/report";
+import { approxMoney, MEAL_LIMIT, LIMIT_TOLERANCE, type ChannelMonth, type ChannelSales, type GroupMonth } from "@/lib/commission/report";
 import { money, pct } from "@/lib/format";
-import { dayLocativeTR, dayMonthTR } from "@/lib/reminders";
+import { dayAblativeTR, dayLocativeTR, dayMonthTR } from "@/lib/reminders";
 
 import type { ChannelMonthData } from "./channel-month-dialog";
 
-/** Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre ya da (grupta tek kanal varken) Z toplamı */
-export function sourceLabel(source: SalesSource, kind: ChannelKind): string {
-  if (source === "elle") return "Kanalın ekstresinden (elle)";
+/**
+ * Satışın kaynağı (Satış satırının altında, sönük): yazılan ekstre, LafPOS'un ödemeleri (grupta tek kanal varken kanal
+ * kanal bilinmeyen kısım da) ya da (grupta tek kanal varken) Z toplamı
+ */
+export function sourceLabel(sales: Pick<ChannelSales, "source" | "zShare">, kind: ChannelKind): string {
+  if (sales.source === "elle") return "Kanalın ekstresinden (elle)";
+  if (sales.source === "lafpos") {
+    if (!sales.zShare) return "LafPOS ödemelerinden";
+    return kind === "meal" ? "LafPOS ödemeleri ve Z'deki yemek kartı toplamı (tek kart)" : "LafPOS ödemeleri ve Z'deki online toplamı (tek platform)";
+  }
   return kind === "meal" ? "Z'deki yemek kartı toplamı (tek kart)" : "Z'deki online (platformlar) toplamı (tek platform)";
 }
 
@@ -126,9 +133,20 @@ export function openPayoutsSub(o: ReturnType<typeof openPayouts>): { text: strin
   return { text: "Gecikme yok", bad: false };
 }
 
-/** Z toplamının alt satırı: "31 / 31 gün raporlu", "3 gün rapor yok", "kasa raporları 16 Ekim'de başladı", "kasa raporu yok" */
-export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[] }) | null): string {
+/**
+ * Z toplamının alt satırı: "31 / 31 gün raporlu", "3 gün rapor yok", "kasa raporları 16 Ekim'de başladı", "kasa raporu
+ * yok". LafPOS'un girdiği ayda (geçiş gününden itibaren) günler kasa raporu ya da LafPOS gün sonuyla kayıtlıdır:
+ * "30 / 30 gün kayıtlı · LafPOS'tan", "2 gün kayıt yok · 10 Kasım'dan LafPOS"
+ */
+export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; lafposFrom?: string | null }) | null): string {
   if (!g || g.zTotal === null) return "kasa raporu yok";
+  if (g.lafposFrom) {
+    const from = g.lafposFrom.endsWith("-01") ? "LafPOS'tan" : `${dayAblativeTR(g.lafposFrom)} LafPOS`;
+    const closedText = g.closed?.length ? `${g.closed.length} gün kapalı` : null;
+    if (g.partialFrom) return `${from} · öncesinin kasa raporu yok`;
+    const days = g.missing.length ? `${g.missing.length} gün kayıt yok` : `${g.reportDays} / ${g.reportDays + (g.closed?.length ?? 0)} gün kayıtlı`;
+    return [days, closedText, from].filter(Boolean).join(" · ");
+  }
   if (g.partialFrom) return `kasa raporları ${dayLocativeTR(g.partialFrom)} başladı`;
   // Kapalı işaretli günler eksik sayılmaz ama sessizce düşmez: "2 gün kapalı"
   const closed = g.closed?.length ? `${g.closed.length} gün kapalı` : null;
@@ -137,7 +155,7 @@ export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing"
 }
 
 /** Platformlar bölümünün satırı: "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu"; o ay kasa raporu yoksa "Kasa raporu yok" */
-export function platformTillLine(g: Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> | null): string {
+export function platformTillLine(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[]; lafposFrom?: string | null }) | null): string {
   return g?.zTotal != null ? `Z'deki online (platformlar): ${money(g.zTotal)} · ${tillSub(g)}` : "Kasa raporu yok";
 }
 
@@ -161,6 +179,6 @@ export function dialogData(def: Pick<ChannelDef, "key" | "label" | "kind">, mont
     note: row?.mark?.note ?? null,
     payable: row?.payable ?? 0,
     invoiced: Boolean(row?.invoices.length),
-    tekSales: row?.tekSales ?? null,
+    autoSales: row?.autoSales ?? null,
   };
 }

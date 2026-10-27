@@ -160,6 +160,17 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
             <LafposUnmatchedList items={data.unmatched} more={data.unmatchedCount - data.unmatched.length} products={products} />
           </div>
         ) : null}
+
+        {data.unmatchedIkramCount ? (
+          // Yalnız ikram edilen kalem satış listesine düşmez: tüketime girmesi için burada bağlanır (denetim B10)
+          <div className="space-y-1.5">
+            <p className="text-[13px] font-medium text-ink-soft">
+              İkramda ürüne bağlanamayan POS adları: {num(data.unmatchedIkramCount)}{" "}
+              <InfoTip text="LafPOS'ta ikram edilen ya da zayi yazılan ama ürüne bağlanamayan kalem kayıtlı tüketime (Tutarlılık) girmez; Zayi & ikram'da “ürüne bağlı değil” der. Adı buradan bir ürüne bağlayın (Satışlar'ın POS adı hafızasına yazılır) ya da ürünü Ürünler › Site menüsü'nde sitenin kalemine bağlayın. Bağlanınca geçmiş günlerin ikramı da o ürünle sayılır." />
+            </p>
+            <LafposUnmatchedList items={data.unmatchedIkram} more={data.unmatchedIkramCount - data.unmatchedIkram.length} products={products} ikram />
+          </div>
+        ) : null}
       </CardContent>
     </SectionCard>
   );

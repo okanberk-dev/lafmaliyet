@@ -66,7 +66,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
-| B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
+| B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
 | B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | bekliyor |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | bekliyor |
@@ -124,7 +124,8 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 5. **Kasadan çıkan para nereye girilecek** (E-35, B09): fişli harcamalar ve sahibe teslim edilen nakit panelin "Kasadan
    çıkanlar"ına mı, LafPOS'a mı, ikisine birden mi?
 6. **LafPOS ikramları** (E-38, B10): Zayi & ikram'a yeniden girilmesin, LafPOS'tan mı alınsın?
-   **Yanıt (26 Ekim):** evet, LafPOS'a geçilince ikram kendiliğinden LafPOS'tan gelir (B10).
+   **Yanıt (26 Ekim):** evet, LafPOS'a geçilince ikram kendiliğinden LafPOS'tan gelir (B10). **Yapıldı (B10):** geçiş
+   gününden itibaren ürün ikramı yalnız LafPOS'tan; panelde hammadde ikramı ve zayi kalır.
 7. **Aylık girişe çevrilen giderler** (E-13, B15): reklam, influencer gibi değişen giderler başabaşta ve nakit planında
    geçen ayın gerçekleşeniyle mi, son 3 ayın ortalamasıyla mı sayılsın?
 8. **Fişlerin KDV'si** (E-60, B15): Aylık harcamalar'daki fişler gelir-giderde KDV dahil mi kalsın, KDV düşülüp mü
@@ -378,7 +379,19 @@ kaldırır; geç rapor LafPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkas
 rakamına girer; kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer. Geçiş günü boşken bunların hiçbiri
 çalışmaz. ModPOS'ta da: kasa e-postasının Resend anahtarı rapor satırına özgü (silinip yeniden girilen günün e-postası
 gider, E-40).
-Kalan: kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B10-B11; sahibe soru 5.
+B10 (E-37, E-38, E-68): geçiş gününden itibaren Komisyon & hakediş kart kart satışı LafPOS'un ödeme türlerinden alır
+(elle > lafpos > tek; geçiş ayının önceki günleri kasa raporu kuralıyla; kanalı seçilmemiş ödeme ve gün sonu gelmeyen
+gün uyarılır; LafPOS'ta satışı olan kanalın faturası gelmediyse kartı çıkar); ürün ikramı LafPOS'ta işaretlenir:
+LafPOS'un ikramı Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine, haftalık özete ve kasa özetine bir kez girer,
+gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz, yenisi (doğrudan, geç kayıt ve onayı) reddedilir; Zayi'nin
+günü LafPOS'un ikramını salt okunur gösterir; kasa e-postası LafPOS'un ödenmez tutarını ikram listesiyle karşılaştırır.
+İnceleme turunda: LafPOS'ta "Zayi: …" nedenli satır zayi sayılır (ikram değil); ürün ikramı yalnız gün sonu gelen günde
+ve bugün reddedilir (gün sonu gelmeyen geçmiş günde girilir); ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'tan
+bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bilgi olur. Açık soru (sahibe): LafPOS'ta da
+zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
+Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
+sığmayanları tek satırda özetler (E-68).
+Kalan: ModPOS metinleri ve işleri geçiş gününe göre (E-39, B11); sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.
@@ -440,9 +453,8 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
   (`reportWindow`); 4 aylık pencere satış ayı pencereden çıkınca uyarıyı düşürüyordu, 90 günlük platformda çoğu ay hiç
   göstermiyordu. Haftalık özetin komisyon maddesi de aynı pencereyi okur. Sonraya: (1) 13 aydan eski satış ayı ekranda
   da yok; takip 24–25 Ekim 2026'da başladığı için bu en erken **Ekim 2027**'de olur (o zamana kadar işaretlenmemiş eski
-  ayları `komisyon.since`'e kadar okuyan ikinci bir sorgu ya da sınırsız pencere); (2) zil en çok 5 uyarı gösterir ve
-  en yeniyi önce alır: geciken hakedişler birikirse en eskisi zilden düşer (Bugün sayısını ve en eskisini yine
-  gösterir); gecikenler en eski son gün önce sıralanmalı (teslim farklarının zildeki sırasını da değiştirir).
+  ayları `komisyon.since`'e kadar okuyan ikinci bir sorgu ya da sınırsız pencere). (2) **Bitti (denetim B10, E-68):**
+  zil gecikenleri en eski son gün önce alır; beşe sığmayanlar son satırda "N hakediş daha gecikti" diye özetlenir.
 - **Mal siparişi telefonda:** tedarikçi kartının iki düğmesi alt alta ve tam genişlikte, WhatsApp ile gönder üstte;
   320–414 px'te ikon kayboluyor, 375 px'in altında yazı taşıyordu (tarayıcıda 320, 360, 375, 390, 414 ve 1440 px).
 

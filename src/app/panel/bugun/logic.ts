@@ -87,8 +87,11 @@ export interface DayFacts {
   now: Date;
   /** Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı */
   cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
-  /** Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti) */
-  waste?: { count: number; zayi: string | null; ikram: string | null } | null;
+  /**
+   * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `lafpos`: iş günü LafPOS
+   * günü (ürün ikramı LafPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
+   */
+  waste?: { count: number; zayi: string | null; ikram: string | null; lafpos?: boolean } | null;
   /**
    * Bu ayın (takvim) sayılan / sayılacak kalemi; geçen ayın sayımı var mı (sayım ya da ek kalem) ve orada sayılan /
    * sayılacak kalem
@@ -352,11 +355,18 @@ const wasteRow: Row = (f, c) => {
       detail: dated(
         c,
         c.day,
-        entries ? `${sentence(entries)} Eksik varsa kasa raporundan önce ekleyin.` : "Bugün kayıt yok. Atılan ya da ikram edilen olduysa kasa raporundan önce girin.",
+        entries
+          ? `${sentence(entries)} Eksik varsa kasa raporundan önce ekleyin.`
+          : w.lafpos
+            ? "Bugün kayıt yok. Atılan bir şey ya da hammadde ikramı olduysa kasa raporundan önce girin; ürün ikramı LafPOS'ta işaretlenir."
+            : "Bugün kayıt yok. Atılan ya da ikram edilen olduysa kasa raporundan önce girin.",
       ),
     };
   }
-  return { ...base, status: "later", badge: "Gün içinde", detail: entries ?? "Atılan, dökülen ya da ödenmeden verilen olursa o an girin; kasa raporuna geçer." };
+  const during = w.lafpos
+    ? "Atılan, dökülen bir şey ya da hammadde ikramı olursa o an girin; ürün ikramı LafPOS'ta işaretlenir."
+    : "Atılan, dökülen ya da ödenmeden verilen olursa o an girin; kasa raporuna geçer.";
+  return { ...base, status: "later", badge: "Gün içinde", detail: entries ?? during };
 };
 
 // ---------------------------------------------------------------- Sayım (ikisi)

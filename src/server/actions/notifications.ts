@@ -41,6 +41,8 @@ export interface PanelNotification {
   href: string;
   /** Zilde hangi başlığın altında durur */
   group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "kontrol" | "odeme" | "fatura" | "uyari";
+  /** Özet satırı: okununca bu kimlikler de okundu sayılır (içine aldığı satırlar sonra tek tek çıkınca okunmuş kalır) */
+  covers?: string[];
 }
 
 /**
@@ -307,8 +309,9 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
  * okunmamış olur.
  */
 async function commissionNotifications(): Promise<PanelNotification[]> {
+  const idOf = (key: string) => `komisyon-${key.replace(/:/g, "-")}`;
   return (await loadCommissionAlerts()).map((a) => ({
-    id: `komisyon-${a.key.replace(/:/g, "-")}`,
+    id: idOf(a.key),
     kind: a.level,
     title: a.title,
     body: a.body,
@@ -316,6 +319,8 @@ async function commissionNotifications(): Promise<PanelNotification[]> {
     unread: true,
     href: a.href,
     group: "fatura" as const,
+    // "N hakediş daha gecikti" özeti: içindekiler okunmuş sayılır
+    ...(a.covers ? { covers: a.covers.map(idOf) } : {}),
   }));
 }
 

@@ -232,7 +232,8 @@ export function MonthInfoForm({
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
   /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
-  recordedIkram?: { count: number; menuValue: number };
+  /** Ayın kayıtlı ikramı (`lafpos`: geçiş gününden itibaren LafPOS'tan gelen satır sayısı, count'un içinde) */
+  recordedIkram?: { count: number; menuValue: number; lafpos?: number };
   className?: string;
 }) {
   const kasaValues = kasa?.values ?? null;
@@ -478,7 +479,7 @@ export function MonthInfoForm({
                 undefined,
                 recordedIkram?.count ? (
                   <span>
-                    Panelde kayıtlı ikram: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
+                    {recordedIkram.lafpos ? "Kayıtlı ikram (LafPOS dahil)" : "Panelde kayıtlı ikram"}: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
                     {Math.abs(offValue - recordedIkram.menuValue) >= 1 ? (
                       <button
                         type="button"

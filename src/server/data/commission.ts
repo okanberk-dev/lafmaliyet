@@ -5,7 +5,7 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { supplierResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
-import { channelOf, isChannelKey } from "@/lib/commission/channels";
+import { channelOf, isChannelKey, lafposChannel } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
@@ -20,8 +20,11 @@ import {
   type CommissionAlert,
   type CommissionInput,
   type CommissionReport,
+  type LafposDayIn,
 } from "@/lib/commission/report";
-import { COMMISSION_CATEGORY } from "@/lib/constants";
+import { COMMISSION_CATEGORY, readLafposSwitchDay } from "@/lib/constants";
+import { posDaySchema, posZSchema } from "@/lib/lafpos/day";
+import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -36,6 +39,8 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  *   bağlanmayan fatura varsa (ör. "Diğer adlar"a eklenen unvan) bir küçük sorgu daha: tedarikçi kartlarının adları ve
  *   kartta yazılı vergi no; öteki faturalar üzerinden vergi no eşleşmesi yalnız ekranda.
  * Okuyan yollar hiçbir şey yazmaz; takibin başladığı gün (`komisyon.since`) yalnız yazma yollarında kaydedilir.
+ * LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un gün sonları (Z'deki yemek kartı ve online, ödeme türleri)
+ * da okunur (denetim E-37); geçiş günü boşken LafPOS tablosuna hiç bakılmaz, rapor bugünküyle aynıdır.
  */
 
 /** Kanal ayarları (ödeme süresi): { channels: { pluxee: { payDays: 30 }, … } } */
@@ -55,7 +60,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
   const db = getDb();
   const today = opts.today ?? todayTR();
   const { fromMonth, fromDay } = reportWindow(today);
-  const [invoiceRows, marks, state, till, pageNames, closedRows] = await Promise.all([
+  const [invoiceRows, marks, state, till, pageNames, closedRows, switchRow] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
       .select({
@@ -104,7 +109,11 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     opts.resolveNames ? supplierNames(true) : Promise.resolve(null),
     // Kapalı işaretli günler (eksik rapor sayılmaz; dalga 10 §2.9)
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
+    // LafPOS'a geçiş günü (yoksa LafPOS okunmaz)
+    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
   ]);
+  const switchDay = readLafposSwitchDay(switchRow[0]?.value);
+  const lafposDays = switchDay ? await loadLafposPaymentDays(switchDay > fromDay ? switchDay : fromDay) : [];
   // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
   // faturalar kartının "Diğer adlar" önerisi zilde, Bugün'de ve e-postada da geçerli olsun)
   const names = pageNames ?? (invoiceRows.some((r) => !channelOf([r.supplier])) ? await supplierNames(false) : null);
@@ -123,7 +132,36 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     closed: closedDaysIn(closedRows, fromDay, addDays(businessDate(), -1), till.map((r) => r.date)),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
     settings: parseCommissionSettings(stored.get(COMMISSION_SETTINGS_KEY)),
+    lafpos: switchDay ? { switchDay, days: lafposDays } : null,
   };
+}
+
+const paymentsSchema = posDaySchema.shape.payments;
+
+/**
+ * LafPOS'un `from` gününden itibaren gelen gün sonları: Z'deki yemek kartı ve online, ödeme türleri (kanalı
+ * lafposChannel ile tanınır, tanınmayan null). Özeti okunamayan gün atlanır (gelmemiş sayılır); ödemeleri okunamayan
+ * günün Z'si sayılır, ödemeleri boş. Yalnız yönetici okur (zil ve ekran); ikram ve satır okunmaz.
+ */
+async function loadLafposPaymentDays(from: string): Promise<LafposDayIn[]> {
+  const rows = await getDb()
+    .select({ date: s.posDayReports.date, z: s.posDayReports.z, payments: s.posDayReports.payments })
+    .from(s.posDayReports)
+    .where(gte(s.posDayReports.date, from))
+    .orderBy(asc(s.posDayReports.date));
+  const out: LafposDayIn[] = [];
+  for (const r of rows) {
+    const z = posZSchema.safeParse(r.z);
+    if (!z.success) continue;
+    const payments = paymentsSchema.safeParse(r.payments);
+    out.push({
+      date: r.date,
+      mealCard: z.data.mealCard,
+      online: z.data.online,
+      payments: payments.success ? payments.data.map((p) => ({ name: p.name, zField: p.zField, channel: lafposChannel(p.channel), rawChannel: p.channel, amount: p.amount })) : [],
+    });
+  }
+  return out;
 }
 
 /**
