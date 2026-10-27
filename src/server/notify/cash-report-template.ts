@@ -18,6 +18,7 @@ import {
   paymentLines,
   photoNames,
   reportSubject,
+  withCardExtra,
   zSectionTitle,
   type CashReportExtras,
   type CashReportIntegrity,
@@ -107,6 +108,8 @@ export function renderCashReport(
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
+  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
+  f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
   const tone = TONE[c.kind];
   const subject = reportSubject(f, meta.revision);

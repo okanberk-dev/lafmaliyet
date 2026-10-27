@@ -21,6 +21,7 @@ import {
   nextCheckOf,
   whatsappLink,
   whatsappText,
+  withCardExtra,
   type CarryCheck,
   type CashReportExtras,
   type CashRevisionRow,
@@ -235,7 +236,8 @@ export function CashHistory({
                 </li>
               );
             }
-            const c = computeCash(report);
+            // LafPOS gününde kart farkı kartla bahşiş ve cari tahsilatını düşer (G11)
+            const c = computeCash(withCardExtra(report, photos[report.id]?.extras.cardExtra));
             const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
             // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
             const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
@@ -321,7 +323,16 @@ export function CashHistory({
             {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
             <LafposDiffList diffs={openPhotos?.extras.lafposDiffs} />
-            <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} carry={openCarry} next={openNext} audience="admin" okcAdmin={okcAdmin[open.id] ?? null} />
+            <CashBreakdown
+              report={open}
+              cashOuts={cashOuts[open.date] ?? []}
+              carry={openCarry}
+              next={openNext}
+              audience="admin"
+              okcAdmin={okcAdmin[open.id] ?? null}
+              kasa={openPhotos?.extras.kasa}
+              cardExtra={openPhotos?.extras.cardExtra}
+            />
             <CashRevisions report={open} revisions={revisions[open.id] ?? []} proposedBy={proposedBy[open.id]} />
           </div>
         ) : null}

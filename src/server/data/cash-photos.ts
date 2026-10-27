@@ -168,7 +168,7 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
  */
 export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields, lafpos?: { lafpos: boolean; day: LafposDay | null } | null): CashReportExtras {
   return {
-    ...(lafpos?.lafpos ? { kasa: "LafPOS" as const, lafposDiffs: lafpos.day ? lafposDiffs(report, lafpos.day) : null } : {}),
+    ...(lafpos?.lafpos ? { kasa: "LafPOS" as const, lafposDiffs: lafpos.day ? lafposDiffs(report, lafpos.day) : null, cardExtra: lafpos.day?.cardExtra || null } : {}),
     // ModPOS Z'si, banka POS Z'si (yazarkasa; geçişte eski sayfanın yüklemesi de kasa-okc olur) ve eski banka fişi ayrı
     // adlarla (photosLine; docs/planlar/okc-z.md §8)
     photos: info?.photos.length

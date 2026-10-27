@@ -344,7 +344,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{z.text}</p>
       {/* Yazarkasa Z'si iki komşusuyla: Z no sırası ve kümülatif zinciri (docs/planlar/okc-z.md §3.8) */}
       {card.okcChain ? <p className={cn("text-sm break-words tabular", card.okcChain.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{card.okcChain.text}</p> : null}
-      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" />
+      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" kasa={card.lafpos.lafpos ? "LafPOS" : "ModPOS"} cardExtra={card.lafpos.day?.cardExtra ?? null} />
       {handover ? (
         <p className="text-sm text-ink">
           Teslim edilen {money(f.handedOver)}

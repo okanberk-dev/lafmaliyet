@@ -908,7 +908,16 @@ export function CashForm({
             </div>
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
-          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} audience={photoUi.admin ? "admin" : "staff"} okcAdmin={okcAdmin} />
+          <CashBreakdown
+            report={report}
+            cashOuts={cashOuts}
+            carry={savedCarry}
+            next={savedNext}
+            audience={photoUi.admin ? "admin" : "staff"}
+            okcAdmin={okcAdmin}
+            kasa={lafposMode ? "LafPOS" : "ModPOS"}
+            cardExtra={lafpos?.cardExtra ?? null}
+          />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
@@ -1259,7 +1268,11 @@ export function CashForm({
           day={date}
           audience={photoUi.admin ? "admin" : "staff"}
           forceDetails={photoUi.admin}
-          modpos={values.card.trim() ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other") } : null}
+          modpos={
+            values.card.trim()
+              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null }
+              : null
+          }
         />
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">

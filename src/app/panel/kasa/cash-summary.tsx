@@ -8,7 +8,18 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
-import { CASH_TOLERANCE, carryDiffText, computeCash, diffKind, diffText, paymentLines, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
+import {
+  CASH_TOLERANCE,
+  carryDiffText,
+  computeCash,
+  diffKind,
+  diffText,
+  paymentLines,
+  withCardExtra,
+  zSectionTitle,
+  type CarryCheck,
+  type CashReportFields,
+} from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
@@ -98,6 +109,8 @@ export function CashBreakdown({
   next = null,
   audience = "staff",
   okcAdmin = null,
+  kasa = "ModPOS",
+  cardExtra = null,
 }: {
   report: CashReportFields;
   cashOuts?: (CashOutLine & { id: number; photoId: number | null })[];
@@ -107,15 +120,22 @@ export function CashBreakdown({
   audience?: "staff" | "admin";
   /** Yalnız yönetici: kümülatif ve "Kümülatifi temizle" */
   okcAdmin?: OkcAdminView | null;
+  /** Günün kasası: LafPOS gününde Z bölümü "LafPOS gün sonu (Z)" */
+  kasa?: "ModPOS" | "LafPOS";
+  /** LafPOS gününde kartla bahşiş + cari tahsilatı (G11): kart karşılaştırması düşer */
+  cardExtra?: number | null;
 }) {
+  // Kart karşılaştırması LafPOS'un kartla bahşiş ve cari tahsilatını düşer (G11; kaydedilmez)
+  report = withCardExtra(report, cardExtra);
   const c = computeCash(report);
   const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
   const okc = okcHasFigures(report);
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      <section aria-label="ModPOS Z raporu">
+      <section aria-label={zSectionTitle(kasa)}>
         <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">
-          ModPOS Z raporu{report.zNo ? ` · Z no ${report.zNo}` : ""}
+          {zSectionTitle(kasa)}
+          {report.zNo ? ` · Z no ${report.zNo}` : ""}
           {report.receipts ? ` · ${report.receipts} fiş` : ""}
         </h3>
         <Line label="Toplam satış" value={money(report.zTotal)} strong />

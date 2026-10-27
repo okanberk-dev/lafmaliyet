@@ -118,7 +118,10 @@ export interface CashResult {
  * Gün içinde giren eski jsonb kopyasında yoksa 0 (CashReportFields.cashIn).
  */
 export function computeCash(
-  f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard">,
+  f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard"> & {
+    /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): banka POS'unda var, Z'nin kartında yok; kart farkı düşer */
+    cardExtra?: number | null;
+  },
 ): CashResult {
   const paymentsTotal = r2(f.cash + f.card + f.mealCard + f.online + f.other);
   const expectedCash = r2(f.openingCash + f.cash + (f.cashIn ?? 0) - f.cashOut);
@@ -133,7 +136,7 @@ export function computeCash(
     cashDiff,
     kind: diffKind(cashDiff),
     carryOver: r2(f.countedCash - f.handedOver),
-    cardDiff: cardRef === null ? null : r2(cardRef - f.card),
+    cardDiff: cardRef === null ? null : r2(cardRef - f.card - (f.cardExtra ?? 0)),
     cardSource: okcCard !== null ? "okc" : bankPos !== null ? "bank" : null,
   };
 }
@@ -668,6 +671,13 @@ export interface CashReportExtras {
   kasa?: "ModPOS" | "LafPOS";
   /** LafPOS'un gün sonundan farklı yazılan alanlar (denetim E-09; src/lib/lafpos/diffs.ts), yalnız LafPOS günlerinde */
   lafposDiffs?: LafposDiff[] | null;
+  /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): kart karşılaştırmaları bunu düşer (withCardExtra) */
+  cardExtra?: number | null;
+}
+
+/** Kart karşılaştırmasının girdisi: LafPOS'un kartla bahşiş ve cari tahsilatı varsa rapor alanlarına eklenir (kaydedilmez) */
+export function withCardExtra<T extends object>(f: T, cardExtra: number | null | undefined): T & { cardExtra?: number } {
+  return cardExtra && cardExtra > 0 ? { ...f, cardExtra } : f;
 }
 
 /** Z bölümünün adı: "ModPOS Z raporu", LafPOS günlerinde "LafPOS gün sonu (Z)" */
@@ -810,6 +820,8 @@ export function cashReportText(
   meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity,
   audience: CashTextAudience,
 ): string {
+  // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
+  f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
   const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
