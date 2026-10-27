@@ -29,6 +29,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -47,6 +48,7 @@ import type { Size } from "@/lib/calc/types";
 import { RECIPE_COST_NOTE, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
+import { toMinor } from "@/lib/site-menu/slot";
 import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
@@ -271,11 +273,24 @@ export function StatusShare({ parts }: { parts: { status: ProductStatus; count: 
   );
 }
 
-/** Satır içinde fiyat düzenleme: Enter ya da alandan çıkmak kaydeder, Esc vazgeçer. Birim (₺) hep görünür. */
+/**
+ * Satır içinde fiyat düzenleme: Enter ya da alandan çıkmak kaydeder, Esc vazgeçer. Birim (₺) hep görünür. Kayıt hücrenin
+ * gördüğü fiyatı da gönderir (`last`): fiyat bu arada başka yerde değiştiyse yazılmaz, liste yenilenir (denetim E-11).
+ */
 function PriceCell({ row, className }: { row: ProductRow; className?: string }) {
   const [value, setValue] = useState(priceText(row.price));
   const [saving, setSaving] = useState(false);
   const [last, setLast] = useState(row.price);
+  // Liste yeni fiyatla çizildi (eşitleme, toplu değişiklik, başka sekme, reddedilen kayıt): yazılmamış hücre yenisini alır
+  const [lastRow, setLastRow] = useState(row.price);
+  if (toMinor(row.price) !== toMinor(lastRow)) {
+    setLastRow(row.price);
+    const typed = parseNumberTR(value);
+    if (!saving && typed !== null && toMinor(typed) === toMinor(last)) {
+      setLast(row.price);
+      setValue(priceText(row.price));
+    }
+  }
   // Esc'teki blur, eski değeri görür (setValue henüz çizilmedi); bu bayrak o blur'da kaydı atlatır
   const cancelled = useRef(false);
 
@@ -296,8 +311,16 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
       return;
     }
     setSaving(true);
-    const res = await updateProductPrice(row.id, v);
-    setSaving(false);
+    let res: Awaited<ReturnType<typeof updateProductPrice>>;
+    try {
+      res = await updateProductPrice(row.id, v, false, "manual", last);
+    } catch (e) {
+      toastUnreachable(e, `fiyat-${row.id}`);
+      setValue(priceText(last));
+      return;
+    } finally {
+      setSaving(false);
+    }
     if (res.ok) {
       // Siteye bağlı üründe yazılan fiyat sitenin kuruşudur; kasada (ModPOS) değişecekse Kasaya işle listesine girdi
       const written = res.data.price;

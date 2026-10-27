@@ -4,8 +4,10 @@ import { z } from "zod";
  * laffogato.net menüsünün panele görünen biçimi (sitedeki karşılığı src/lib/panel/menu-link-core.ts, sözleşme
  * sitenin docs/PANEL-MENU.md'si; panel tarafı docs/SITE-MENU.md). Saf modül: sunucu ve testler paylaşır.
  *
- * Okuma (GET /api/panel/menu): { version: 1, now, items: [...] }, bütün kalemler, satışta olmayanlar da.
- * Yazma (POST /api/panel/menu) yanıtı: { item } aynı biçimde.
+ * Okuma (GET /api/panel/menu): { version: 1, now, items: [...], writes? }, bütün kalemler, satışta olmayanlar da.
+ * `writes` sitenin yazma ucunun yeni isteğe bağlı alanları kabul ettiğinin duyurusudur (`{ expect: true }`;
+ * docs/planlar/senkron.md §3.1 › Yetenek bayrağı): panel `expect`'i yalnız son çekmede bunu gördüyse gönderir.
+ * Yazma (POST /api/panel/menu) yanıtı: { item } aynı biçimde; 409 `stale` yanıtı da güncel kalemi taşır.
  *
  * Fiyat ve durum alanları (id, priceMinor, priceMinorL, isActive) katıdır: biri bozuksa liste bütünüyle reddedilir
  * (bozuk satırı atlamak onu "sitede silinmiş" gösterip bağlantıyı kaldırırdı). Ad, kategori, sıra ve zaman gösterim
@@ -64,10 +66,18 @@ export const siteMenuItemSchema = z.object({
     .transform((v) => (Number.isFinite(Date.parse(v)) ? v.slice(0, 40) : "")),
 });
 
+/** Yetenek bayrağı: yoksa ya da bozuksa hiçbir yeni alan duyurulmamış sayılır (eski site) */
+const writesSchema = z
+  .object({ expect: z.boolean().catch(false) })
+  .partial()
+  .optional()
+  .catch(undefined);
+
 const listSchema = z.object({
   version: z.literal(SITE_MENU_VERSION),
   now: isoTime,
   items: z.array(siteMenuItemSchema).max(SITE_MENU_MAX_ITEMS),
+  writes: writesSchema,
 });
 
 /** Sitenin yanıtı beklenen biçimde değil: yöneticiye gösterilecek açıklamayla */
@@ -83,6 +93,8 @@ export interface SiteMenuList {
   /** Sitenin yanıt anındaki saati (eski yanıt yenisinin üstüne yazılmasın diye) */
   now: string;
   items: SiteMenuItem[];
+  /** Site yazma ucunda `expect`'i kabul ediyor (GET'in `writes.expect` bayrağı); yoksa false */
+  writesExpect: boolean;
 }
 
 /** Okuma ucunun yanıtı. Tanınmayan sürüm, bozuk fiyat / durum alanı ya da iki kez geçen kimlik: hata */
@@ -100,7 +112,7 @@ export function parseSiteMenuList(json: unknown): SiteMenuList {
     if (seen.has(item.id)) throw new SiteMenuFormatError(`Sitenin menü listesinde ${item.id} iki kez geçiyor`);
     seen.add(item.id);
   }
-  return { now: parsed.data.now, items: parsed.data.items };
+  return { now: parsed.data.now, items: parsed.data.items, writesExpect: parsed.data.writes?.expect === true };
 }
 
 /** Yazma ucunun yanıtındaki kalem ({ item }); okunamazsa null (site yine de kabul etmiştir) */
@@ -113,4 +125,13 @@ export function parseSiteMenuAnswer(json: unknown): SiteMenuItem | null {
 export function errorField(json: unknown): string | null {
   const parsed = z.object({ field: z.string().max(40) }).safeParse(json);
   return parsed.success ? parsed.data.field : null;
+}
+
+/**
+ * Hata yanıtının kodu ({"error":"stale"}, "single_size", "not_found"…); JSON değilse ya da kod yoksa null. Sitenin
+ * kendi 404'ü (`not_found`: kalem yok) uç yokken dönen 404'ten (gövde JSON değil: site güncel değil) böyle ayrılır.
+ */
+export function errorCode(json: unknown): string | null {
+  const parsed = z.object({ error: z.string().max(40) }).safeParse(json);
+  return parsed.success ? parsed.data.error : null;
 }

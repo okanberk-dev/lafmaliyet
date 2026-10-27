@@ -35,6 +35,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -58,8 +59,9 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_COST_NOTE, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
-import { monthLabel as monthTitle, num, pct, tl, tlUnit } from "@/lib/format";
+import { money, monthLabel as monthTitle, num, pct, tl, tlUnit } from "@/lib/format";
 import { priceReminder } from "@/lib/prices/pos";
+import { toMinor } from "@/lib/site-menu/slot";
 import { monthLocativeTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
@@ -102,6 +104,15 @@ interface Row {
 }
 
 let keySeq = 1;
+
+/** Satış alanları: kartın sunucudan gördüğü değerler (kayıt "görülen" diye gönderir; denetim E-11) */
+interface SaleSeen {
+  price: number;
+  active: boolean;
+  showOnMenu: boolean;
+}
+
+const sameSale = (a: SaleSeen, b: SaleSeen) => toMinor(a.price) === toMinor(b.price) && a.active === b.active && a.showOnMenu === b.showOnMenu;
 
 /** Listeye dönüş: listenin son süzgeçleri (oturumda saklanır) + kartta seçili ay */
 function readListQuery(): string | null {
@@ -281,6 +292,32 @@ export function RecipeEditor({
   const [note, setNote] = useState(product.note ?? "");
   const [active, setActive] = useState(product.active);
   const [showOnMenu, setShowOnMenu] = useState(product.showOnMenu);
+  /**
+   * Kartın gördüğü satış alanları: kayıt bunları `seenPrice` / `seenActive` / `seenShowOnMenu` diye gönderir, dokunulmayan
+   * alan sunucuda güncel değerinde kalır (bu arada sitede, eşitlemede ya da toplu Fiyatlar'da yazılanı ezmez).
+   */
+  const server: SaleSeen = { price: product.price, active: product.active, showOnMenu: product.showOnMenu };
+  const [seen, setSeen] = useState<SaleSeen>(server);
+  const [lastServer, setLastServer] = useState<SaleSeen>(server);
+  if (!sameSale(server, lastServer)) {
+    // Sayfa yeni değerlerle çizildi (kayıt, ay değişimi, site bağlantısı, çakışan kayıttan sonra): dokunulmamış alan
+    // yenisini alır; dokunulmuş alan kalır, gördüğü değer de (fiyat alanının altında hangisinin kalacağı sorulur)
+    setLastServer(server);
+    const typed = parseNumberTR(price);
+    const keep = {
+      price: typed !== null && toMinor(typed) === toMinor(seen.price),
+      active: active === seen.active,
+      showOnMenu: showOnMenu === seen.showOnMenu,
+    };
+    if (keep.price) setPrice(priceText(server.price));
+    if (keep.active) setActive(server.active);
+    if (keep.showOnMenu) setShowOnMenu(server.showOnMenu);
+    setSeen({
+      price: keep.price ? server.price : seen.price,
+      active: keep.active ? server.active : seen.active,
+      showOnMenu: keep.showOnMenu ? server.showOnMenu : seen.showOnMenu,
+    });
+  }
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [saving, setSaving] = useState(false);
   const [trial, setTrial] = useState<string>("");
@@ -299,6 +336,8 @@ export function RecipeEditor({
   const [textKeys, setTextKeys] = useState<ReadonlySet<number>>(() => new Set());
 
   const priceNum = parseNumberTR(price) ?? 0;
+  /** Fiyata dokunuldu ve sunucudaki fiyat kartın gördüğünden başka bir fiyata değişti: kayıt çakışır, seçim istenir */
+  const priceMoved = toMinor(product.price) !== toMinor(seen.price) && toMinor(priceNum) !== toMinor(product.price);
   const fireInput = parseFireInput(fire);
   // Okunamayan fire metni önizlemede genel oranla hesaplanır; kayıt hata gösterip durur (sessizce %0 olmaz)
   const fireNum = fireInput.error ? null : fireInput.rate;
@@ -328,12 +367,12 @@ export function RecipeEditor({
     name.trim() !== product.name ||
     size !== product.size ||
     categoryId !== product.categoryId ||
-    Math.abs(priceNum - product.price) > 0.001 ||
+    Math.abs(priceNum - seen.price) > 0.001 ||
     !!fireInput.error ||
     !sameRate(fireInput.rate, product.fireOverride) ||
     note.trim() !== (product.note ?? "") ||
-    active !== product.active ||
-    showOnMenu !== product.showOnMenu ||
+    active !== seen.active ||
+    showOnMenu !== seen.showOnMenu ||
     recipeSignature(lines.map((l) => ({ ingredientId: l.row.ingredientId, qty: l.qty, expr: l.expr, note: l.row.note }))) !== savedSig;
 
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -376,6 +415,7 @@ export function RecipeEditor({
     setNote(product.note ?? "");
     setActive(product.active);
     setShowOnMenu(product.showOnMenu);
+    setSeen(server);
     setRows(initialRows);
     setNoteOpen(new Set());
     setTextKeys(new Set());
@@ -429,25 +469,36 @@ export function RecipeEditor({
       rows: new Map(lines.map((l) => [l.row.key, { input: l.row.input, note: l.row.note, to: qtyText(l.qty, l.expr) }])),
     };
     setSaving(true);
-    const res = await saveRecipe({
-      productId: product.id,
-      name: name.trim(),
-      size,
-      categoryId,
-      price: priceNum,
-      fireOverride: fireInput.rate,
-      note,
-      active: activeValue,
-      showOnMenu,
-      // Kart açılırken görülenler: dokunulmayan anahtar sunucudaki güncel değeri korur (personel bu arada Tükendi yapmış olabilir)
-      seenActive: product.active,
-      seenShowOnMenu: product.showOnMenu,
-      items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
-    });
-    setSaving(false);
-    if (!res.ok) return toast.error(res.error);
+    let res: Awaited<ReturnType<typeof saveRecipe>>;
+    try {
+      res = await saveRecipe({
+        productId: product.id,
+        name: name.trim(),
+        size,
+        categoryId,
+        price: priceNum,
+        fireOverride: fireInput.rate,
+        note,
+        active: activeValue,
+        showOnMenu,
+        // Kartın gördükleri: dokunulmayan fiyat ve anahtar sunucudaki güncel değeri korur (bu arada sitede fiyat değişmiş,
+        // personel Tükendi yapmış olabilir); dokunulan fiyat bu arada başka yerde de değiştiyse kayıt yapılmaz
+        seenPrice: seen.price,
+        seenActive: seen.active,
+        seenShowOnMenu: seen.showOnMenu,
+        items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
+      });
+    } catch (e) {
+      // Ağ koptu ya da panel güncellendi: yazılanlar yerinde kalır, düğme kilitli kalmaz
+      toastUnreachable(e, "recete-kaydet");
+      return;
+    } finally {
+      setSaving(false);
+    }
+    if (!res.ok) return toast.error(res.error, { duration: 12_000 });
     // Siteye bağlı üründe yazılan değerler sitenin yanıtından: fiyat kuruşa yuvarlı, "Tükendi" QR menüden kaldırır
     const saved = res.data;
+    setSeen({ price: saved.price, active: saved.active, showOnMenu: saved.showOnMenu });
     setName((v) => (v === sent.name ? v.trim() : v));
     setNote((v) => (v === sent.note ? v.trim() : v));
     setPrice((v) => (v === sent.price ? priceText(saved.price) : v));
@@ -469,6 +520,8 @@ export function RecipeEditor({
     const reminder = priceReminder({ site: !!saved.site?.price, posPending: saved.posPending });
     const siteNote =
       [
+        // Dokunulmayan fiyat kart açıldıktan sonra başka yerde (sitede, toplu Fiyatlar'da) değişmişti: o korundu
+        saved.priceKept ? `Fiyat bu arada ${money(saved.priceKept.now)} olmuştu (kart açıldığında ${money(saved.priceKept.seen)}); o korundu.` : null,
         reminder,
         saved.site?.visibility ? `Sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"} oldu.` : null,
         saved.site && forced.length ? `${forced.join(", ")} (sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"}; iki yer aynı kalsın diye).` : null,
@@ -488,6 +541,7 @@ export function RecipeEditor({
     setPrice(priceText(values.price));
     setActive(values.active);
     setShowOnMenu(values.showOnMenu);
+    setSeen(values);
   }
 
   // ⌘S / Ctrl+S kaydeder; kaydedilmemiş değişiklik varken sayfadan çıkmadan önce tarayıcı sorar
@@ -526,8 +580,15 @@ export function RecipeEditor({
 
   async function remove() {
     setDeleting(true);
-    const res = await deleteProduct(product.id);
-    setDeleting(false);
+    let res: Awaited<ReturnType<typeof deleteProduct>>;
+    try {
+      res = await deleteProduct(product.id);
+    } catch (e) {
+      toastUnreachable(e, "recete-sil");
+      return;
+    } finally {
+      setDeleting(false);
+    }
     if (!res.ok) return toast.error(res.error);
     toast.success(`${product.name} · ${product.size} silindi`);
     router.push(listHref(readListQuery(), month));
@@ -1201,6 +1262,32 @@ export function RecipeEditor({
                     />
                   </div>
                 </Field>
+                {/* Fiyat kart açıldıktan sonra başka yerde (sitede, toplu Fiyatlar'da, başka sekmede) değişti ve burada da
+                    değiştirildi: kayıt çakışır, hangisinin kalacağı burada seçilir (denetim E-11) */}
+                {priceMoved ? (
+                  <div role="alert" className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2">
+                    <p>
+                      Fiyat bu arada başka bir yerde <span className="font-semibold tabular">{money(product.price)}</span> oldu (kart açıldığında{" "}
+                      <span className="tabular">{money(seen.price)}</span>). Hangisi kalsın?
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="pointer-coarse:h-11"
+                        onClick={() => {
+                          setPrice(priceText(product.price));
+                          setSeen((v) => ({ ...v, price: product.price }));
+                        }}
+                      >
+                        {money(product.price)} kalsın
+                      </Button>
+                      <Button size="sm" variant="secondary" className="pointer-coarse:h-11" onClick={() => setSeen((v) => ({ ...v, price: product.price }))}>
+                        {money(priceNum)} yazılsın
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {/* Fire alanının okunuşu: dar sütuna sığmadığı için iki sütunun altında */}
                 {fire.trim() ? (
                   <p

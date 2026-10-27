@@ -15,13 +15,16 @@ import { changeText, planMenuSync, planSummary, type LinkedRow } from "../src/li
 import {
   BROKEN_LINK_ERROR,
   buildPushBody,
+  isStaleFailure,
   planPush,
   PRICE_PUSH_REMINDER,
   pullFailureMessage,
   pushActor,
   pushFailureMessage,
+  staleMessage,
+  withoutExpect,
 } from "../src/lib/site-menu/push";
-import { errorField, parseSiteMenuAnswer, parseSiteMenuList, SiteMenuFormatError, type SiteMenuItem } from "../src/lib/site-menu/schema";
+import { errorCode, errorField, parseSiteMenuAnswer, parseSiteMenuList, SiteMenuFormatError, type SiteMenuItem } from "../src/lib/site-menu/schema";
 import {
   defaultSlot,
   fromMinor,
@@ -100,12 +103,28 @@ test("liste: tanınmayan sürüm, bozuk fiyat / durum ve iki kez geçen kimlik b
   assert.throws(() => parseSiteMenuList(list([site()], { now: "dün" })), SiteMenuFormatError);
 });
 
+test("liste: sitenin yetenek bayrağı writes.expect; yoksa, bozuksa ya da false ise expect gönderilmez", () => {
+  assert.equal(parseSiteMenuList(list([site()])).writesExpect, false, "bugünkü site bayrak göndermez");
+  assert.equal(parseSiteMenuList(list([site()], { writes: { expect: true } })).writesExpect, true);
+  assert.equal(parseSiteMenuList(list([site()], { writes: { expect: false } })).writesExpect, false);
+  assert.equal(parseSiteMenuList(list([site()], { writes: { expect: "evet" } })).writesExpect, false, "bozuk bayrak listeyi reddetmez");
+  assert.equal(parseSiteMenuList(list([site()], { writes: "hepsi" })).writesExpect, false);
+  assert.equal(parseSiteMenuList(list([site()], { writes: { expect: true, other: 1 } })).writesExpect, true, "bilinmeyen yeni bayrak atılır");
+});
+
 test("yazma yanıtı: { item } okunur, okunamazsa null; hata gövdesinin alanı", () => {
   assert.equal(parseSiteMenuAnswer({ item: site({ priceMinor: 14500 }) })?.priceMinor, 14500);
   assert.equal(parseSiteMenuAnswer({ ok: true }), null);
   assert.equal(parseSiteMenuAnswer(null), null);
   assert.equal(errorField({ error: "invalid", field: "priceMinor" }), "priceMinor");
   assert.equal(errorField({ error: "not_found" }), null);
+  // Hata kodu: 409 stale / single_size, 404 not_found; JSON değilse (uç yok, HTML 404) null
+  assert.equal(errorCode({ error: "stale", item: site() }), "stale");
+  assert.equal(errorCode({ error: "not_found" }), "not_found");
+  assert.equal(errorCode(null), null);
+  assert.equal(errorCode({ field: "x" }), null);
+  // 409 stale yanıtı güncel kalemi taşır
+  assert.equal(parseSiteMenuAnswer({ error: "stale", item: site({ priceMinor: 19_000 }) })?.priceMinor, 19_000);
 });
 
 // ---------------------------------------------------------------- Yuva ve değerler
@@ -268,6 +287,34 @@ test("yazma planı: fiyat yuvasına (Math.round(TL * 100)), durum active && show
   assert.deepEqual(on.kind === "push" ? on.body : null, { id: "mnu-0007", isActive: true, actor: "Selin" });
 });
 
+test("yazma planı: expect yalnız site duyurduysa, yalnız yazılan alanlar için, panelin site kopyasındaki değerle", () => {
+  const item = site({ priceMinor: 19_500, priceMinorL: 21_000, isActive: true });
+  // Bayrak yok (bugünkü site): gövde bugünkü gibi
+  const off = planPush({ link: linkM, before: sale(), after: sale({ price: 200 }), actor: "Selin", siteItem: item });
+  assert.deepEqual(off.kind === "push" ? off.body : null, { id: "mnu-0007", priceMinor: 20000, actor: "Selin" });
+  // Bayrak var: fiyat yazımı yuvanın kopyadaki fiyatını bekler; durum yazılmıyorsa isActive beklenmez
+  const price = planPush({ link: linkM, before: sale(), after: sale({ price: 200 }), actor: "Selin", siteItem: item, expect: true });
+  assert.equal(JSON.stringify(price.kind === "push" ? price.body : null), '{"id":"mnu-0007","priceMinor":20000,"actor":"Selin","expect":{"priceMinor":19500}}');
+  // L yuvası priceMinorL'yi bekler
+  const l = planPush({ link: { siteMenuId: "mnu-0007", slot: "L" }, before: sale({ price: 210 }), after: sale({ price: 215 }), actor: "Selin", siteItem: item, expect: true });
+  assert.deepEqual(l.kind === "push" ? l.body : null, { id: "mnu-0007", priceMinorL: 21500, actor: "Selin", expect: { priceMinorL: 21000 } });
+  // Yalnız durum: isActive beklenir, fiyat beklenmez
+  const off2 = planPush({ link: linkM, before: sale(), after: sale({ showOnMenu: false }), actor: "Selin", siteItem: item, expect: true });
+  assert.deepEqual(off2.kind === "push" ? off2.body : null, { id: "mnu-0007", isActive: false, actor: "Selin", expect: { isActive: true } });
+  // İkisi birden
+  const both = planPush({ link: linkM, before: sale({ showOnMenu: false }), after: sale({ price: 210 }), actor: "Selin", siteItem: site({ isActive: false }), expect: true });
+  assert.deepEqual(both.kind === "push" ? both.body : null, { id: "mnu-0007", priceMinor: 21000, isActive: true, actor: "Selin", expect: { priceMinor: 19500, isActive: false } });
+  // Kalem kopyada yoksa expect yok (site yazmadan önce bakacak değeri bilmiyoruz)
+  const none = planPush({ link: linkM, before: sale(), after: sale({ price: 200 }), actor: "Selin", siteItem: null, expect: true });
+  assert.deepEqual(none.kind === "push" ? none.body : null, { id: "mnu-0007", priceMinor: 20000, actor: "Selin" });
+  // Gönderilecek değişiklik yoksa bayrak bir şey değiştirmez
+  assert.deepEqual(planPush({ link: linkM, before: sale(), after: sale(), actor: "Selin", siteItem: item, expect: true }), { kind: "none" });
+  // 400 field:"expect" sonrası yeniden deneme expect'siz aynı gövde
+  assert.deepEqual(withoutExpect(price.kind === "push" ? price.body : buildPushBody({ id: "x", slot: "M", actor: "a" })), { id: "mnu-0007", priceMinor: 20000, actor: "Selin" });
+  // Boş expect gövdeye girmez
+  assert.equal(JSON.stringify(buildPushBody({ id: "mnu-0011", slot: "M", priceMinor: 14500, actor: "Selin", expect: {} })), '{"id":"mnu-0011","priceMinor":14500,"actor":"Selin"}');
+});
+
 test("yazma planı: 0 fiyat, tavanın üstü ve kopuk L bağlantısı gönderilmeden reddedilir", () => {
   const zero = planPush({ link: linkM, before: sale(), after: sale({ price: 0 }), actor: "Selin" });
   assert.equal(zero.kind, "refuse");
@@ -282,7 +329,11 @@ test("yazma planı: 0 fiyat, tavanın üstü ve kopuk L bağlantısı gönderilm
 
 test("hata metinleri: ağ / zaman aşımı, 404, 400 alanı, imza, kapalı bağlantı; çekme hataları", () => {
   assert.equal(pushFailureMessage({ kind: "network" }), "Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene.");
-  assert.equal(pushFailureMessage({ kind: "timeout" }), "Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene.");
+  // Zaman aşımında istek siteye varmış olabilir: "Tekrar dene" değil, kontrol et (panel yanıttan sonra siteyi okur)
+  assert.equal(
+    pushFailureMessage({ kind: "timeout" }),
+    "Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde fiyat değişmedi. Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor.",
+  );
   assert.equal(pushFailureMessage({ kind: "http", status: 502 }), "Siteye ulaşılamadı (HTTP 502); fiyat değişmedi. Tekrar dene.");
   // Kopya eskiyken L'ye bağlı ürün tek boy kaleme gitti: site 409 single_size verir; "ulaşılamadı" ve "Tekrar dene" değil
   const single = pushFailureMessage({ kind: "http", status: 409, field: errorField({ error: "single_size" }) });
@@ -291,6 +342,21 @@ test("hata metinleri: ağ / zaman aşımı, 404, 400 alanı, imza, kapalı bağl
   assert.match(pushFailureMessage({ kind: "http", status: 409 }, "değişiklikler kaydedilmedi"), /L fiyatı yok; değişiklikler kaydedilmedi\./);
   assert.equal(pushFailureMessage({ kind: "network" }, "değişiklikler kaydedilmedi"), "Siteye ulaşılamadı; değişiklikler kaydedilmedi. Tekrar dene.");
   assert.equal(pushFailureMessage({ kind: "http", status: 404 }), "Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla.");
+  // Sitenin kendi 404'ü JSON `not_found`; gövdesi JSON olmayan 404 uç yok demek (site güncel değil)
+  assert.equal(pushFailureMessage({ kind: "http", status: 404, error: errorCode({ error: "not_found" }) }), "Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla.");
+  assert.equal(pushFailureMessage({ kind: "http", status: 404, error: errorCode(null) }), "Sitede panel menü ucu yok (laffogato.net güncel değil); fiyat değişmedi.");
+  // 409 stale: sitede bu arada değişti (single_size'ın metninden ayrı)
+  assert.equal(
+    pushFailureMessage({ kind: "http", status: 409, error: "stale" }, "değişiklikler kaydedilmedi"),
+    "Bu ürün sitede bu arada değişti; değişiklikler kaydedilmedi. Panel siteyi yeniden okuyor: birazdan bakıp yeniden dene.",
+  );
+  assert.equal(
+    staleMessage("fiyat değişmedi", { reloaded: true, sitePrice: 19_050 }),
+    "Bu ürün sitede bu arada değişti (sitede şimdi 190,50\u00a0₺); fiyat değişmedi. Sitenin güncel değeri panele yüklendi: bakıp yeniden dene.",
+  );
+  assert.ok(isStaleFailure(new Error("x", { cause: { kind: "http", status: 409, error: "stale" } })));
+  assert.equal(isStaleFailure(new Error("x", { cause: { kind: "http", status: 409, error: "single_size" } })), false);
+  assert.equal(isStaleFailure(new Error("x")), false);
   assert.match(pushFailureMessage({ kind: "http", status: 400, field: "priceMinor" }), /M fiyatı 0'dan büyük/);
   assert.match(pushFailureMessage({ kind: "http", status: 401 }), /KARAOKE_SYNC_SECRET aynı mı/);
   assert.match(pushFailureMessage({ kind: "http", status: 503 }), /fiyat değişmedi\. Tekrar dene\.$/);
@@ -567,18 +633,20 @@ test("liste işareti: bağlı değil, sitede, kopuk, sitede yok, liste henüz al
 test("panel → site: bağlı ürünün fiyatı ve durumu önce siteye, yerel yazım sitenin yanıtından sonra", () => {
   const src = read("src/server/actions/products.ts");
   const price = src.slice(src.indexOf("export async function updateProductPrice"), src.indexOf("async function updatePriceAck"));
-  assert.ok(price.indexOf("pushSaleChange(") > 0 && price.indexOf("pushSaleChange(") < price.indexOf(".update(s.products)"), "updateProductPrice: önce site");
-  assert.match(price, /"fiyat değişmedi"/);
+  // Tek fiyat yazımı writeSalePrice'tan (önce site; tests/fiyatlar.test.ts sırayı da sınar)
+  assert.match(price, /await writeSalePrice\(me, before, p, \{[^}]*consequence: "fiyat değişmedi"/);
   const save = src.slice(src.indexOf("export async function saveRecipe"), src.indexOf("export async function deleteProduct"));
   assert.ok(save.indexOf("checkRecipe(db, data)") < save.indexOf("pushSaleChange("), "panelin denetimleri siteden önce");
   assert.ok(save.indexOf("pushSaleChange(") < save.indexOf("db.transaction("), "saveRecipe: önce site");
   assert.match(save, /applyPushed\(tx, push, before, desired, now\)/);
-  // Ürün tablosuna fiyat / active / showOnMenu yazan başka eylem yok (yazanlar yukarıdaki iki eylem ve createProduct)
+  // Ürün tablosuna fiyat / active / showOnMenu yazan başka eylem yok (saveRecipe; tek fiyat writeSalePrice'ta, yeni ürün
+  // insertProduct'ta)
   const writers = [...src.matchAll(/\.update\(s\.products\)/g)].length;
-  assert.equal(writers, 3, "updateProductPrice (iki yol) + saveRecipe");
+  assert.equal(writers, 1, "saveRecipe");
   const push = read("src/server/site-menu/push.ts");
-  assert.match(push, /if \(!res\.ok\) throw new UserError\(pushFailureMessage/);
-  assert.match(push, /callSite\(secret, "\/api\/panel\/menu", \{ method: "POST", body: JSON\.stringify\(plan\.body\) \}\)/);
+  assert.match(push, /if \(!res\.ok\) \{/);
+  assert.match(push, /callSite\(secret, "\/api\/panel\/menu", \{ method: "POST", body: JSON\.stringify\(body\) \}\)/);
+  assert.match(push, /let body = plan\.body;\s+let res = await post\(body\);/);
 });
 
 test("çekme: tek işlemde ve danışma kilidiyle; eski yanıt yenisinin üstüne yazılmaz; durum menu_sync'te", () => {

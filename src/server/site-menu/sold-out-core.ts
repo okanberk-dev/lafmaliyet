@@ -70,10 +70,20 @@ function sizesText(rows: readonly Row[]): string {
   return sizes.length ? ` (${sizes.join(", ")})` : "";
 }
 
-/** Siteye yazım; bağlantıyla ilgili hatalarda metnin sonuna "Yöneticiye haber verin." */
-async function sitePush(tx: Tx, me: Actor, before: SaleRow, desired: { price: number; active: boolean; showOnMenu: boolean }, consequence: string): Promise<PushOutcome> {
+/**
+ * Siteye yazım; bağlantıyla ilgili hatalarda metnin sonuna "Yöneticiye haber verin." `live`: kalemin az önce okunan
+ * canlı hâli (sitenin `expect`'i kopyadan değil ondan kurulur: kopya eski olabilir)
+ */
+async function sitePush(
+  tx: Tx,
+  me: Actor,
+  before: SaleRow,
+  desired: { price: number; active: boolean; showOnMenu: boolean },
+  consequence: string,
+  live?: SiteMenuItem,
+): Promise<PushOutcome> {
   try {
-    return await pushSaleChange(me, before, desired, consequence, tx);
+    return await pushSaleChange(me, before, desired, consequence, tx, { live });
   } catch (e) {
     if (e instanceof UserError) throw new UserError(siteFailureText(e.message, e.cause as PushFailure | undefined));
     throw e;
@@ -181,7 +191,7 @@ async function closeOnSite(
   // Kopya "Satışta" diyor: panel satırı geride kalmış olsa da yazım gitsin (önceki durum sitedeki gibi)
   const before: SaleRow = { ...row, showOnMenu: true };
   const desired = { price: row.price, active: row.active, showOnMenu: false };
-  const push = await sitePush(tx, me, before, desired, "ürün tükendi yapılmadı");
+  const push = await sitePush(tx, me, before, desired, "ürün tükendi yapılmadı", opts.marker ? opts.liveBefore : undefined);
   // Site bu yazımla kapattı: az önce canlı listede satıştaydı, yanıtın damgası o andakinden farklı ve isteğin
   // başından yeni ("değişmedi" yanıtı eski damgayla, başkasının az önceki kapatmasınınkiyle döner)
   const ours = opts.marker && !!opts.liveBefore?.isActive && push.kind === "pushed" && push.item?.updatedAt !== opts.liveBefore.updatedAt;
@@ -266,7 +276,7 @@ async function openLocked(tx: Tx, me: Actor, id: string, secret: string, now: Da
   if (!row) throw new UserError(SOLD_OUT_TEXT.noRow);
   const before: SaleRow = { ...row, showOnMenu: false };
   const desired = { price: row.price, active: true, showOnMenu: true };
-  const push = await sitePush(tx, me, before, desired, "ürün satışa açılmadı");
+  const push = await sitePush(tx, me, before, desired, "ürün satışa açılmadı", live);
   try {
     const sale = push.kind === "pushed" ? await applyPushed(tx, push, before, desired, now) : desired;
     await tx.update(s.products).set({ showOnMenu: sale.showOnMenu, updatedAt: now }).where(eq(s.products.id, row.id));

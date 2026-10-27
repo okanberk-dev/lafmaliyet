@@ -402,6 +402,8 @@ test("applyPushed kaydı taşır; saveRecipe gördüğü değerleri kullanır", 
   assert.match(products, /keepSeen\(data\.showOnMenu, data\.seenShowOnMenu, before\.showOnMenu\)/);
   assert.match(products, /keepSeen\(data\.active, data\.seenActive, before\.active\)/);
   const editor = read("src/app/panel/urunler/[id]/recipe-editor.tsx");
-  assert.match(editor, /seenShowOnMenu: product\.showOnMenu/);
-  assert.match(editor, /seenActive: product\.active/);
+  // Kartın gördükleri (kayıttan, site bağlantısından ve sayfa yenilenince güncellenir; denetim E-11)
+  assert.match(editor, /seenShowOnMenu: seen\.showOnMenu/);
+  assert.match(editor, /seenActive: seen\.active/);
+  assert.match(editor, /seenPrice: seen\.price/);
 });
