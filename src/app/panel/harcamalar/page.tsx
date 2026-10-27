@@ -26,7 +26,7 @@ function Header({ actions }: { actions?: React.ReactNode }) {
       eyebrow="Alış & gider"
       title="Aylık harcamalar"
       description={DESCRIPTION}
-      tabs={<SectionTabs section="giderler" current="/panel/harcamalar" />}
+      tabs={<SectionTabs section="giderler" current="/panel/harcamalar" role="admin" />}
       actions={actions}
     />
   );
