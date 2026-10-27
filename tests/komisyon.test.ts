@@ -624,9 +624,9 @@ test("geciken hakediş işaretlenene kadar zilde, Bugün'de ve e-postada: ay dö
   assert.deepEqual(late(pluxee, "2027-03-15"), { bell: ["gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:197"] });
   // Trendyol Aralık, 90 gün: son gün 31 Mart 2027; ertesi gün Aralık 4 aylık pencerenin dışındaydı, hiç uyarmıyordu
   assert.deepEqual(late(both, "2027-03-31").bell, ["gecikti:pluxee:2026-07"]);
-  assert.deepEqual(late(both, "2027-04-01"), { bell: ["gecikti:trendyol:2026-12", "gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:214", "trendyol:2026-12:1"] });
+  assert.deepEqual(late(both, "2027-04-01"), { bell: ["gecikti:pluxee:2026-07", "gecikti:trendyol:2026-12"], today: ["pluxee:2026-07:214", "trendyol:2026-12:1"] });
   // Ekranla aynı pencere (13 ay): Temmuz 2026 Ağustos 2027'de ekrandan da zilden de birlikte çıkar
-  assert.deepEqual(late(both, "2027-07-31").bell, ["gecikti:trendyol:2026-12", "gecikti:pluxee:2026-07"]);
+  assert.deepEqual(late(both, "2027-07-31").bell, ["gecikti:pluxee:2026-07", "gecikti:trendyol:2026-12"]);
   assert.deepEqual(late(both, "2027-08-01").bell, ["gecikti:trendyol:2026-12"]);
 });
 
@@ -663,16 +663,16 @@ test("kanalı bulunamayan Komisyon faturası (bankanın POS komisyonu) kanallara
 
 // ---------------------------------------------------------------- Zil ve sabah e-postası
 
-test("uyarılar: önce gecikenler, sonra en yeni; anahtar oranı ve faturaları taşır; 45 günden eski fatura uyarmaz; en çok beş", () => {
+test("uyarılar: önce gecikenler (en eski son gün önce), sonra en yeni; anahtar oranı ve faturaları taşır; 45 günden eski fatura uyarmaz; en çok beş", () => {
   const r = buildCommissionReport(f1());
   const multinetId = must(rowOf(r, "multinet", "2026-10")).invoices[0].id;
   const alerts = commissionAlerts(r, "2026-12-02");
   assert.deepEqual(
     alerts.map((a) => a.key),
-    ["gecikti:pluxee:2026-10", "gecikti:trendyol:2026-10", "oran:multinet:2026-10:64", `yasak:multinet:2026-10:${multinetId}`, "oran:pluxee:2026-10:62"],
+    ["gecikti:trendyol:2026-10", "gecikti:pluxee:2026-10", "oran:multinet:2026-10:64", `yasak:multinet:2026-10:${multinetId}`, "oran:pluxee:2026-10:62"],
   );
   assert.equal(alerts.length, MAX_ALERTS);
-  const [late, , rate, banned] = alerts;
+  const [, late, rate, banned] = alerts;
   assert.deepEqual(
     { ...late, body: plain(late.body) },
     {
@@ -685,13 +685,13 @@ test("uyarılar: önce gecikenler, sonra en yeni; anahtar oranı ve faturaları 
       date: "2026-11-30",
     },
   );
-  assert.equal(plain(alerts[1].body), "Son gün 26 Kasım · beklenen yaklaşık 10.912 ₺. Geldiyse işaretleyin.");
+  assert.equal(plain(alerts[0].body), "Son gün 26 Kasım · beklenen yaklaşık 10.912 ₺. Geldiyse işaretleyin.");
   assert.deepEqual([rate.title, rate.body, rate.level], ["Multinet Ekim: kesinti %6,4", "Yemek kartında yasal üst sınır %6.", "warning"]);
   assert.deepEqual([banned.title, plain(banned.body)], ["Multinet Ekim: komisyon dışı ücret olabilir", "“POS Cihaz Kira Bedeli” 150 ₺"]);
   // 45 günden eski fatura: yalnız gecikmeler (20 Aralık'ta Multinet'in son günü de geçti)
   assert.deepEqual(
     commissionAlerts(buildCommissionReport(f1({ today: "2026-12-20", through: "2026-12-19" })), "2026-12-20").map((a) => a.key),
-    ["gecikti:multinet:2026-10", "gecikti:pluxee:2026-10", "gecikti:trendyol:2026-10"],
+    ["gecikti:trendyol:2026-10", "gecikti:pluxee:2026-10", "gecikti:multinet:2026-10"],
   );
   // Satışı bilinmeyen gecikme "beklenen" yazmaz
   const unknown = commissionAlerts(buildCommissionReport(f1({ marks: [] })), "2026-12-02").find((a) => a.key === "gecikti:pluxee:2026-10");
@@ -710,6 +710,68 @@ test("uyarılar: önce gecikenler, sonra en yeni; anahtar oranı ve faturaları 
   assert.equal(commissionAlerts(r, "2026-12-02", Infinity).length, 5);
 });
 
+test("zil en eski gecikmiş hakedişi gösterir; sığmayanlar tek satırda özetlenir (denetim E-68)", () => {
+  nextId = 1;
+  // 3 yemek kartı + 2 platform, Ağustos ve Eylül işaretlenmedi: 10 geciken hakediş (son günler faturanın günü + 30)
+  const channels: [string, number][] = [
+    ["Pluxee", 25],
+    ["Multinet", 26],
+    ["Edenred", 27],
+    ["Trendyol Go", 28],
+    ["Getir", 29],
+  ];
+  const invoices = channels.flatMap(([name, day]) => [inv(name, `2026-08-${day}`, 300), inv(name, `2026-09-${day}`, 300)]);
+  const r = buildCommissionReport({ today: "2026-11-20", through: "2026-11-19", since: "2026-08-01", fromMonth: "2026-01", firstReport: null, till: [], invoices, marks: [], settings: {} });
+  const all = commissionAlerts(r, "2026-11-20", Infinity);
+  assert.equal(all.length, 10);
+  // En eski son gün önce (Pluxee Ağustos, 24 Eylül); önceden en yeni beş (Eylül'ünkiler) zildeydi, Ağustos'lar hiç düşmüyordu
+  assert.deepEqual(
+    all.map((a) => `${a.key}@${a.date}`),
+    [
+      "gecikti:pluxee:2026-08@2026-09-24",
+      "gecikti:multinet:2026-08@2026-09-25",
+      "gecikti:edenred:2026-08@2026-09-26",
+      "gecikti:trendyol:2026-08@2026-09-27",
+      "gecikti:getir:2026-08@2026-09-28",
+      "gecikti:pluxee:2026-09@2026-10-25",
+      "gecikti:multinet:2026-09@2026-10-26",
+      "gecikti:edenred:2026-09@2026-10-27",
+      "gecikti:trendyol:2026-09@2026-10-28",
+      "gecikti:getir:2026-09@2026-10-29",
+    ],
+  );
+  // Zil (en çok beş): dört en eski tek tek, kalan altısı tek satırda
+  const bell = commissionAlerts(r, "2026-11-20");
+  assert.equal(bell.length, MAX_ALERTS);
+  assert.ok(bell.some((a) => a.key === "gecikti:pluxee:2026-08"));
+  assert.deepEqual(
+    bell.slice(0, 4).map((a) => a.key),
+    ["gecikti:pluxee:2026-08", "gecikti:multinet:2026-08", "gecikti:edenred:2026-08", "gecikti:trendyol:2026-08"],
+  );
+  const summary = bell[4];
+  assert.deepEqual(
+    { ...summary, body: plain(summary.body) },
+    {
+      kind: "gecikti",
+      key: "gecikti-diger:getir:2026-08,pluxee:2026-09,multinet:2026-09,edenred:2026-09,trendyol:2026-09,getir:2026-09",
+      level: "danger",
+      title: "6 hakediş daha gecikti",
+      body: "Getir (Ağustos), Pluxee (Eylül), Multinet (Eylül) ve 3 hakediş daha. Hepsi Komisyon & hakediş'te ve Bugün'de.",
+      href: "/panel/komisyonlar",
+      date: "2026-09-28",
+    },
+  );
+  // Tam beş gecikme özetsiz sığar
+  const five = buildCommissionReport({ today: "2026-11-20", through: "2026-11-19", since: "2026-08-01", fromMonth: "2026-01", firstReport: null, till: [], invoices: invoices.filter((i) => i.date.startsWith("2026-08")), marks: [], settings: {} });
+  assert.deepEqual(
+    commissionAlerts(five, "2026-11-20").map((a) => a.key),
+    ["gecikti:pluxee:2026-08", "gecikti:multinet:2026-08", "gecikti:edenred:2026-08", "gecikti:trendyol:2026-08", "gecikti:getir:2026-08"],
+  );
+  // Bugün'ün listesi de en eski önce, hepsi
+  assert.equal(overduePayouts(r).length, 10);
+  assert.equal(overduePayouts(r)[0].channel, "pluxee");
+});
+
 test("sabah e-postasının kutusu: başlık, satırlar, konu parçası (tek gecikme, birden çok gecikme, yalnız uyarı)", () => {
   const r = buildCommissionReport(f1());
   const alerts = commissionAlerts(r, "2026-12-02");
@@ -723,8 +785,8 @@ test("sabah e-postasının kutusu: başlık, satırlar, konu parçası (tek geci
   assert.deepEqual(
     box.lines.map((l) => [l.strong, l.tone]),
     [
-      ["Hakediş gecikti: Pluxee (Ekim)", "bad"],
       ["Hakediş gecikti: Trendyol Go (Ekim)", "bad"],
+      ["Hakediş gecikti: Pluxee (Ekim)", "bad"],
       ["Multinet Ekim: kesinti %6,4", "warn"],
       ["Multinet Ekim: komisyon dışı ücret olabilir", "warn"],
       ["Pluxee Ekim: kesinti %6,2", "warn"],

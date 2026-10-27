@@ -852,16 +852,22 @@ export function approxMoney(kind: ChannelKind, v: number): string {
 /**
  * Zilin (Faturalar başlığı) ve sabah e-postasının uyarıları: geciken hakedişler; ayın son faturası 45 günden yeniyse
  * yemek kartında kesin %6 aşımı ve komisyon dışı ücret; kart kart oran yokken yemek kartlarının toplamının aşımı.
- * Önce gecikenler, sonra en yenisi; en çok beş (`limit`: e-posta önce daha önce gönderilenleri eler, sonra keser).
+ * Önce gecikenler, en eski son gün önce (en acili; denetim E-68: en yeniler önce gelince en eski gecikme beşin dışında
+ * kalıp zile hiç düşmüyordu); sonra öteki uyarılar, en yenisi önce. En çok beş (`limit`: e-posta önce daha önce
+ * gönderilenleri eler, sonra keser). Geciken hakedişler sınıra sığmazsa son yer özet olur ("3 hakediş daha gecikti"):
+ * en eskiler tek tek, kalanların sayısı ve adları tek satırda; zilde hiçbir gecikme sessizce düşmez.
  */
 export function commissionAlerts(report: Pick<CommissionReport, "rows" | "groups">, today: string, limit: number = MAX_ALERTS): CommissionAlert[] {
   const out: CommissionAlert[] = [];
+  /** Geciken hakedişin kısa adı (özet satırı): "Pluxee (Eylül)" */
+  const lateName = new Map<string, string>();
   const recent = addDays(today, -ALERT_INVOICE_DAYS);
   for (const r of report.rows) {
     const mon = monthName(r.month);
     const href = `/panel/komisyonlar?ay=${r.month}#${r.channel}`;
     const p = r.payout;
     if (p.status === "gecikti" && p.due) {
+      lateName.set(`gecikti:${r.channel}:${r.month}`, `${r.label} (${mon})`);
       out.push({
         kind: "gecikti",
         key: `gecikti:${r.channel}:${r.month}`,
@@ -912,9 +918,28 @@ export function commissionAlerts(report: Pick<CommissionReport, "rows" | "groups
       date: g.latestInvoice,
     });
   }
-  return out
-    .sort((a, b) => (a.level === b.level ? b.date.localeCompare(a.date) : a.level === "danger" ? -1 : 1))
-    .slice(0, limit);
+  const late = out.filter((a) => a.kind === "gecikti").sort((a, b) => a.date.localeCompare(b.date));
+  const rest = out.filter((a) => a.kind !== "gecikti").sort((a, b) => b.date.localeCompare(a.date));
+  if (late.length <= limit) return [...late, ...rest].slice(0, limit);
+  const shown = late.slice(0, Math.max(0, limit - 1));
+  const hidden = late.slice(shown.length);
+  return limit >= 1 ? [...shown, lateSummary(hidden, lateName)] : [];
+}
+
+/** Zile sığmayan geciken hakedişlerin tek satırı: sayı, ilk üçünün adı, en eskisinin son günü */
+function lateSummary(hidden: readonly CommissionAlert[], names: ReadonlyMap<string, string>): CommissionAlert {
+  const labels = hidden.map((a) => names.get(a.key) ?? a.title);
+  const more = labels.length - 3;
+  return {
+    kind: "gecikti",
+    // Anahtar gizlenenleri taşır: yeni bir gecikme özeti yeniden okunmamış yapar
+    key: `gecikti-diger:${hidden.map((a) => a.key.slice("gecikti:".length)).join(",")}`,
+    level: "danger",
+    title: `${hidden.length} hakediş daha gecikti`,
+    body: `${labels.slice(0, 3).join(", ")}${more > 0 ? ` ve ${more} hakediş daha` : ""}. Hepsi Komisyon & hakediş'te ve Bugün'de.`,
+    href: "/panel/komisyonlar",
+    date: hidden[0].date,
+  };
 }
 
 /** Uyarının sabah e-postası günlüğündeki anahtarı (notification_log): "komisyon:gecikti:pluxee:2026-10" */

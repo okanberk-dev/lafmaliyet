@@ -192,8 +192,11 @@ raporunun kartlı satış payı (banka POS komisyonu için) değişmedi: (kart +
   · beklenen ~8.605,20 ₺. Geldiyse işaretleyin."), kesin (kırmızı) %6 aşımı ("Pluxee Ekim: kesinti %6,2"), komisyon dışı
   ücret ("Multinet Ekim: komisyon dışı ücret olabilir" · kalemleri) ve kart kart oran yokken yemek kartlarının toplamının
   aşımı ("Yemek kartları Ekim: ortalama kesinti %6,3"). Oran ve ücret yalnız ayın son faturası 45 günden yeniyse. Önce
-  gecikenler, sonra en yeni; en çok beş. Kimlik uyarının anahtarından: yeni oran ya da yeni fatura yeniden okunmamış
-  olur. Bağlantı `?ay=…#kanal`.
+  gecikenler, **en eski son gün önce** (en acil olanı; denetim E-68: en yeni önce gelince birikmiş gecikmelerin en
+  eskisi beşin dışında kalıyordu), sonra öteki uyarılar, en yeni önce; en çok beş. Geciken hakedişler beşe sığmazsa
+  son satır özet olur: "6 hakediş daha gecikti" · "Getir (Ağustos), Pluxee (Eylül), Multinet (Eylül) ve 3 hakediş
+  daha. Hepsi Komisyon & hakediş'te ve Bugün'de." (bağlantı Komisyon & hakediş). Kimlik uyarının anahtarından: yeni
+  oran, yeni fatura ya da özete giren yeni gecikme yeniden okunmamış olur. Bağlantı `?ay=…#kanal`.
 - **Bugün** (yönetici): geciken hakediş varsa Ödemeler'in ardından **Hakedişler** satırı, "sorun var": "Pluxee hakedişi
   (Eylül satışları): son gün 20 Ekim. 1 hakediş daha gecikti. Geldiyse işaretleyin.", **Hakedişlere bak**
   ([BUGUN.md](BUGUN.md)). Ay hakedişin satış ayıdır; bu yıldan değilse yılıyla ("Ekim 2025 satışları").
