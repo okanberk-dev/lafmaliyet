@@ -239,7 +239,8 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md));
   faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar. İki sayılı adda
   ("50'Lİ X 20", "20 PK X 50 AD") Koli / Kutu / Kasa'da ikisinin çarpımı (1.000); Adet ya da Paket'te hangisi olduğu
-  belli değil, çarpan boş kalır ve form iki olasılığı gösterir (E-06).
+  belli değil, çarpan boş kalır ve form olasılıkları gösterir: bir paket ya da hepsi; Adet'te faturada en az bir paket
+  kadar alındıysa tek tane de ("100 AD X 10 PK", 1.000 Adet × 1,10 ₺ → 1, 100 ya da 1.000; E-06).
   Yazılan çarpan addaki kanıttan farklıysa form uyarır ("150 yap"); **Faturadan oku** çarpanı faturanın kendisinden
   okur (Claude Haiku). Bağlı ürünlerden çarpanı kanıtla tutmayanlar sayfanın **Kontrol edilecek bağlantılar** kutusunda.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.

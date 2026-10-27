@@ -38,9 +38,11 @@ de: sayı kanıt sayılmaz, form da çarpanı **boş** bırakır ("1" değil; sa
 **İki sayılı paket adı** (denetim 26 Ekim, E-06): eskiden yalnız ilk sayı okunuyordu ("50'Lİ X 20" → 50); 1 Koli 400 ₺
 adet 8 ₺ görünüyordu (doğrusu 0,40 ₺), alınan miktar 20 kat az sayılıyordu. Şimdi bir paketteki tane ile paket sayısı
 birlikte okunur. Faturadaki birim dış paketse (Koli, Kutu, Kasa) çarpım kanıttır (1.000). Birim tek parça (Adet) ya da
-iç paketin adıysa (Paket, PK, Düzine) 1 birim 50 de olabilir 1.000 de: kanıt yok, form çarpanı boş bırakır ve iki
-olasılığı gösterir (`Adında “50'Lİ X 20” yazıyor: 1 Adet = 50 adet mi, 1.000 adet mi? Faturadan okuyun ya da doğrusunu
-seçin.` · **50 yap** · **1.000 yap**; `packPairChoices`). Ölçü olan ikinci sayı ("100 AD X 23 CM" pipetin boyu) ve
+iç paketin adıysa (Paket, PK, Düzine) 1 birim 50 de olabilir 1.000 de: kanıt yok, form çarpanı boş bırakır ve
+olasılıkları gösterir (`Adında “50'Lİ X 20” yazıyor: 1 Adet = 50 adet mi, 1.000 adet mi? Faturadan okuyun ya da doğrusunu
+seçin.` · **50 yap** · **1.000 yap**; `packPairChoices`). Birim tek parçaysa (Adet) ve faturada en az bir paket kadar
+alınmışsa tedarikçi taneyle de yazmış olabilir, tek tane de seçenektir ("BARDAK KAPAĞI 90 MM 100 AD X 10 PK", 1.000
+Adet × 1,10 ₺ → **1 yap** · **100 yap** · **1.000 yap**; tek sayılı addaki kuralın aynısı). Ölçü olan ikinci sayı ("100 AD X 23 CM" pipetin boyu) ve
 ürün koduna yapışık sayı iki sayılı paket sayılmaz. Paket anahtarı da çarpımı taşır: "50'Lİ X 10" başka pakettir, "50'Lİ X
 20"nin bağlantısının çarpanı ona önerilmez. Sayılarda
 nokta gr / ml'de ve paket sayısında binlik ayraçtır ("1.000 GR" = 1.000 gr, "1.000 AD." = 1.000 adet), kg / lt'de
@@ -76,7 +78,9 @@ faturanın ölçü biriminden geliyorsa (KG, LT; düzine) doğrudan yazılır. �
 fiyat da onaya düşer: kart **İlk fiyat** rozetiyle "Fiyatı yoktu → faturada …" ve `Hammaddenin fiyatı yoktu. Çarpan
 faturanın biriminden (kg, lt) gelmediği için ilk fiyat onay bekliyor: faturadaki ürün ve çarpan doğruysa onaylayın.`
 der; kanıtı ve okuması yoksa fatura kendiliğinden okunur. Reddedilirse hammadde fiyatsız kalır, sonraki faturanın
-fiyatı yeniden sorulur. Zil ve e-posta "ilk fiyat" der (`holdReason`).
+fiyatı yeniden sorulur. Zil ve e-posta "ilk fiyat" der (`holdReason`). Onay beklerken hammadde zilde ve Bugün'de
+"Fiyatı girilmemiş" sayılmaz (`loadUnpricedIngredients`): tek iş "Fiyat onayı"dır, "paket fiyatını girin" ikinci bir
+yol göstermesin; reddedilince yeniden sayılır.
 
 **Tahmini fiyat:** hammaddenin şimdiki fiyatı tahminiyse (Hammaddeler'de "Tahmini"; sayım listesine eklenen kalem,
 Excel'deki varsayım) kart `Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat

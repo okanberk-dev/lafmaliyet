@@ -189,7 +189,8 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
       const f = num(factor, 3);
-      if (r.data.held) toast.warning(`Çarpan ${f} oldu · fiyat hâlâ %40'tan fazla farklı, onay bekliyor`);
+      // İlk fiyat (hammaddenin fiyatı yoktu) çarpan faturanın biriminden gelmedikçe yine onaya düşer (E-06)
+      if (r.data.held) toast.warning(`Çarpan ${f} oldu · ${x.first ? "ilk fiyat yine onay bekliyor" : "fiyat hâlâ %40'tan fazla farklı, onay bekliyor"}`);
       else toast.success(`Çarpan ${f} oldu · ${r.data.prices ? "fiyat uygulandı" : "fiyat şimdikiyle aynı"}`);
     });
   };
@@ -199,7 +200,7 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
       <CardHeader
         icon={<TriangleAlert />}
         title="Onay bekleyen fiyatlar"
-        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı. Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır."
+        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı ya da hammaddenin ilk fiyatı (çarpanı faturanın biriminden gelmiyor). Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır."
         meta={items.length ? <span className="font-medium text-warn tabular">{num(items.length)} hammadde</span> : null}
       />
       <CardContent className="space-y-3">

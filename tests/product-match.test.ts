@@ -280,6 +280,14 @@ test("iki sayılı paket adı: formun iki olasılığı (bir paket mi, hepsi mi)
   assert.deepEqual(packPair({ name: "20 PK X 50 AD" }), { text: "20 PK X 50 AD", per: 50, packs: 20, total: 1000 });
   assert.deepEqual(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Adet", quantity: 1 }, "adet"), { text: "50'Lİ X 20", choices: [50, 1000] });
   assert.deepEqual(packPairChoices({ name: "SU 330 ML 24'LÜ X 2", unit: "Adet", quantity: 1 }, "ml"), { text: "24'LÜ X 2", choices: [7920, 15840] });
+  // Tek parça biriminde en az bir paket kadar alındıysa birim tek tane de olabilir (1.000 Adet × 1,10 ₺)
+  assert.deepEqual(packPairChoices({ name: "BARDAK KAPAĞI 90 MM 100 AD X 10 PK", unit: "Adet", quantity: 1000 }, "adet"), {
+    text: "100 AD X 10 PK",
+    choices: [1, 100, 1000],
+  });
+  assert.deepEqual(packPairChoices({ name: "SU 330 ML 24'LÜ X 2", unit: "Adet", quantity: 48 }, "ml"), { text: "24'LÜ X 2", choices: [330, 7920, 15840] });
+  // İç paket biriminde (Paket) tek tane olasılığı yok
+  assert.deepEqual(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Paket", quantity: 100 }, "adet"), { text: "50'Lİ X 20", choices: [50, 1000] });
   // Kanıt varsa (Koli) ya da boyut yoksa (ml hammadde) seçenek yok
   assert.equal(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli", quantity: 1 }, "adet"), null);
   assert.equal(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Adet", quantity: 1 }, "ml"), null);

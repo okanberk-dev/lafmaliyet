@@ -433,16 +433,19 @@ export function packPair(line: Pick<PackLine, "name" | "description">): { text: 
 
 /**
  * Bağlama formunun ipucu: adında iki sayı var ama faturadaki birimden hangisi olduğu belli değil (packEvidence kanıt
- * vermedi). İki olasılık hammaddenin biriminde: bir paket (50) ya da hepsi (1000); gr / ml'de adda boyut da yazmalı.
- * Kanıt varsa ya da iki sayı yoksa null
+ * vermedi). Olasılıklar hammaddenin biriminde: bir paket (50) ya da hepsi (1000); faturadaki birim tek parçaysa (Adet)
+ * ve en az bir paket kadar alınmışsa tek tane de (1; "100 AD X 10 PK" 1.000 Adet × 1,10 ₺: tedarikçi taneyle yazmış,
+ * packEvidence'in tek sayı kuralı gibi). gr / ml'de adda boyut da yazmalı. Kanıt varsa ya da iki sayı yoksa null
  */
 export function packPairChoices(line: PackLine, ingredientUnit: IngredientUnit): { text: string; choices: number[] } | null {
   if (packEvidence(line, ingredientUnit)) return null;
   const p = packPair(line);
   if (!p) return null;
-  if (ingredientUnit === "adet" || ingredientUnit === "dilim") return { text: p.text, choices: [p.per, p.total] };
+  const q = line.quantity;
+  const piece = unitKind(line.unit) === "single" && (q === null || q === undefined || Math.abs(q) >= p.per);
+  if (ingredientUnit === "adet" || ingredientUnit === "dilim") return { text: p.text, choices: [...(piece ? [1] : []), p.per, p.total] };
   const dim = ingredientUnit === "gr" ? "mass" : ingredientUnit === "ml" ? "volume" : null;
   const size = parsePack(line.name).size;
   if (!dim || !size || size.dim !== dim) return null;
-  return { text: p.text, choices: [p.per * size.amount, p.total * size.amount] };
+  return { text: p.text, choices: [...(piece ? [size.amount] : []), p.per * size.amount, p.total * size.amount] };
 }

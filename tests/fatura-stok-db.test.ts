@@ -36,6 +36,7 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
   let invoiceActions: typeof import("../src/server/actions/invoices");
   let stockOnlyData: typeof import("../src/server/data/stock-only-invoices");
   let dataset: typeof import("../src/server/data/dataset");
+  let unpriced: typeof import("../src/server/data/unpriced");
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -64,6 +65,7 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     invoiceActions = await import("../src/server/actions/invoices");
     stockOnlyData = await import("../src/server/data/stock-only-invoices");
     dataset = await import("../src/server/data/dataset");
+    unpriced = await import("../src/server/data/unpriced");
   });
 
   after(async () => {
@@ -138,6 +140,23 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     const again = await sync.applyProductLinks();
     assert.deepEqual([again.held, again.prices], [0, 0]);
     assert.equal((await holds()).length, 1);
+  });
+
+  test("E-06: ilk fiyatı onay bekleyen hammadde zilde \"fiyatı girilmemiş\" sayılmaz; reddedilince yeniden sayılır", async () => {
+    const cup = await ingredient("Karton bardak 8oz", "adet", { packagePrice: 0, isEstimate: true });
+    await ingredient("Klips kapak", "adet", { packagePrice: 0 });
+    await bill({ date: "2026-10-12", productKey: "p:bardak", productName: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli", quantity: 1, netTotal: 400 });
+    await link("p:bardak", "KARTON BARDAK 8 OZ 50'Lİ X 20", cup.id, 1000);
+    assert.deepEqual((await unpriced.loadUnpricedIngredients()).names, ["Karton bardak 8oz", "Klips kapak"]);
+    await sync.applyProductLinks();
+    const [h] = await holds();
+    assert.deepEqual([h.ingredientId, h.status], [cup.id, "pending"]);
+    // Zil ve Bugün bardağı "Fiyat onayı"nda gösterir; "paket fiyatını girin" demez
+    const u = await unpriced.loadUnpricedIngredients();
+    assert.deepEqual([u.count, u.names], [1, ["Klips kapak"]]);
+    const rej = await holdActions.rejectPriceHold({ id: h.id, stopUpdates: false, note: null });
+    assert.ok(rej.ok, JSON.stringify(rej));
+    assert.deepEqual((await unpriced.loadUnpricedIngredients()).names, ["Karton bardak 8oz", "Klips kapak"]);
   });
 
   test("E-06: şimdiki fiyatı olan hammaddede kural değişmez (%40 içi yazılır)", async () => {

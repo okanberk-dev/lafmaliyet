@@ -957,7 +957,7 @@ export function InvoicesClient({
               const isSel = selectedIds.includes(i.id);
               const vat = i.payable - net;
               const doc = docButton(i, "relative size-9 before:absolute before:-inset-1 before:content-[''] pointer-coarse:size-9");
-              const badges = note || i.source === "parasut" || isEstimate(i) || i.needsReview;
+              const badges = note || i.source === "parasut" || isEstimate(i) || i.needsReview || (i.stockOnly && stockOnlyCategory(i.category));
               return (
                 <li key={i.id} className={cn("relative px-4 pt-3 pb-3.5 transition-colors", isSel && "bg-surface/70")}>
                   <div className="flex items-start gap-2">
@@ -1153,6 +1153,12 @@ export function InvoicesClient({
                               {reviewBadge(i)}
                               <ConfirmPill size="sm" onClick={() => confirmRows([i])} label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} />
                             </span>
+                          </div>
+                        ) : i.stockOnly && stockOnlyCategory(i.category) ? (
+                          // "Kalsın" denmiş (ya da henüz işaretlenmemiş) stoğa giren fatura: yalnız bilgi rozeti (E-07)
+                          <div className="flex flex-col items-start gap-1">
+                            {categoryPicker(i)}
+                            {reviewBadge(i)}
                           </div>
                         ) : (
                           categoryPicker(i)
