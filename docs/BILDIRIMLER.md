@@ -44,7 +44,11 @@ ikram ve zayi silme istekleri yöneticide tek satırdır ("3 zayi / ikram isteğ
 kayıt onaylandı: 2× Latte M (15 Eki)", "Silme reddedildi: …", kaydı başkasının isteğiyle silinen kişiye "Kaydınız
 silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
-bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
+kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
+11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
+"LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
+[LAFPOS.md](LAFPOS.md) › Kasa raporu). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
 ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
