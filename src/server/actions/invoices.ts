@@ -54,9 +54,10 @@ const invoiceSchema = z.object({
 });
 
 /**
- * Kafe içi ↔ kafe dışı (karaoke box, Alp Koç) geçen faturalardan kalemi okunmuş olanların aylarında alınan miktar
- * (ve bağlı fiyat) yeniden hesaplanır: applyProductLinks kafe dışı kalemleri saymaz, eşitleme de yalnız kategorisi
- * değişen faturanın ayına dönmez. Silme ve geri almadaki gibi.
+ * Kafe içi ↔ kafe dışı (karaoke box, Alp Koç) geçen faturalardan kalemi okunmuş olan varsa alınan miktar (ve bağlı
+ * fiyat) yeniden hesaplanır: applyProductLinks kafe dışı kalemleri saymaz, eşitleme de kategorisi değişen faturaya
+ * dönmez. Silme ve geri almadaki gibi; applyProductLinks bütün ayları yazar (taşınan faturanın bekleyen önerisi
+ * geçersiz kalınca eski ayların faturaları da yeniden sayılır).
  */
 async function recomputeSeparateMoves(moves: { id: number; date: string; from: string; to: string }[]) {
   const crossed = moves.filter((m) => crossesSeparate(m.from, m.to));
@@ -66,7 +67,7 @@ async function recomputeSeparateMoves(moves: { id: number; date: string; from: s
     .from(s.parasutBillLines)
     .where(inArray(s.parasutBillLines.invoiceId, crossed.map((m) => m.id)));
   const months = separateMoveMonths(crossed, new Set(withLines.map((r) => r.id)));
-  if (months.length) await applyProductLinks(months);
+  if (months.length) await applyProductLinks();
 }
 
 /**
@@ -736,8 +737,9 @@ export async function deleteInvoice(id: number) {
     });
     if (!result) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
     const { d } = result;
-    // Kalemleri hammaddeye bağlıysa o ayın alınan miktarı silinen fatura olmadan yeniden hesaplanır
-    if (result.lines) await applyProductLinks([d.date.slice(0, 7)]);
+    // Kalemleri hammaddeye bağlıysa alınan miktar silinen fatura olmadan yeniden hesaplanır (bütün aylar: faturanın
+    // bekleyen önerisi de silindi, bağlantının eski aylarının faturaları yeniden sayılır)
+    if (result.lines) await applyProductLinks();
     // Silinen fatura Ödemeler › Son ödenenler'de kalmasın ("Geri al" bulamayacağı bir satır olurdu)
     await forgetPaid("invoice", [invoiceId]);
     const cari = result.links
@@ -837,7 +839,7 @@ export async function unignoreParasutBill(externalId: string) {
       return { status: "restored" as const, entry, lines, relinked };
     });
     if (out.status === "missing") throw new UserError("Bu Paraşüt faturası yok sayılanlar listesinde değil; sayfayı yenileyin.");
-    if (out.lines && out.entry) await applyProductLinks([out.entry.row.date.slice(0, 7)]);
+    if (out.lines && out.entry) await applyProductLinks();
     const label = out.entry ? `${dateTR(out.entry.row.date)} ${splitSupplier(out.entry.row.supplier).base}` : `Paraşüt #${ext}`;
     await logActivity(me, "Silinen Paraşüt faturası geri alındı", label);
     refresh();

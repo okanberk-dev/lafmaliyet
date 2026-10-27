@@ -108,7 +108,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
     .map((i) => ({ id: i.id, name: i.name, unit: i.unit }))
     .sort((a, b) => a.name.localeCompare(b.name, "tr"));
 
-  const severities = c.rows.map((r) => severityOf({ usage: r.usage, purchased: r.purchased, ratio: r.ratio, held: r.held }));
+  const severities = c.rows.map((r) => severityOf({ usage: r.usage, purchased: r.purchased, ratio: r.ratio, held: r.held, rejected: r.rejected }));
   const bigCount = severities.filter((x) => x === "big").length;
   const diffCount = severities.filter((x) => x === "big" || x === "diff").length;
   const purchasedCount = c.rows.filter((r) => r.purchased !== null).length;
@@ -217,6 +217,12 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                     {num(c.heldCount)} malzemede fiyat onayı bekliyor
                   </Link>
                 ) : null}
+                {c.rejectedCount ? (
+                  // Fiyatı reddedilen fatura alınana girmedi; bekleyen öneri yok, ayın alımı tabloda elle yazılır
+                  <Link href="#malzeme-tablosu" className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink">
+                    {num(c.rejectedCount)} malzemede reddedilen fatura alınana girmedi: alımı yazın
+                  </Link>
+                ) : null}
                 {c.unreciped.count ? (
                   <span className="block">
                     Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
@@ -267,6 +273,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           onlineUsage: r.onlineUsage,
           purchased: r.purchased,
           held: r.held,
+          rejected: r.rejected,
           linked: linked.has(r.ingredient.id),
           ratio: r.ratio,
           diffAmount: r.diffAmount,

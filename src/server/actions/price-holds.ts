@@ -80,6 +80,8 @@ export async function approvePriceHold(id: number) {
           : null;
     if (stale) {
       await supersedeHolds([hold.id], stale.note);
+      // Geçersiz kalan öneri bağlantının faturalarını artık dışarıda bırakmaz: alınan miktar bütün aylarda yeniden yazılır
+      await recountPurchases();
       refresh();
       throw new UserError(stale.message);
     }
@@ -128,14 +130,15 @@ export async function approvePriceHold(id: number) {
 
 const rejectSchema = z.object({
   id: zId,
-  /** Bu Paraşüt ürününden fiyat güncellemesi kapansın (alınan miktar yine sayılır) */
+  /** Bu Paraşüt ürününden fiyat güncellemesi kapansın (sonraki faturaların miktarı yine sayılır) */
   stopUpdates: z.boolean(),
   note: zOptText(300),
 });
 
 /**
  * Önerilen fiyatı uygulamaz: hammadde şimdiki fiyatında kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa
- * yeniden sorulur (reddedilen fatura sorulmaz); `stopUpdates` o üründen fiyat güncellemesini kapatır.
+ * yeniden sorulur (reddedilen fatura sorulmaz); `stopUpdates` o üründen fiyat güncellemesini kapatır. Reddedilen
+ * faturanın miktarı alınana ve stok partilerine girmez (çarpanı şüpheli kaldı); Tutarlılık o ayın alımını elle yazdırır.
  */
 export async function rejectPriceHold(input: z.input<typeof rejectSchema>) {
   return attempt(async () => {

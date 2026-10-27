@@ -5,6 +5,8 @@
 // - E-27: eşitlemenin yazdığı alınan miktar stok partileriyle aynı yüklemle çarpanı onay bekleyen kalemleri dışlar; fiyat
 //   kararı (onay, red, geri alma) alınan miktarı yeniden hesaplar; Tutarlılık'ın "Alım yok (0)" satırı yazılır, geri
 //   alınır ve faturası sonradan gelirse yerini faturadaki miktar alır (elle girilen satıra dokunulmaz).
+// - İnceleme (B03): reddedilen fiyat Tutarlılık'ı "Fiyat onayı bekliyor"da bırakmaz, elle yazılan alım sapmayı açar;
+//   öneri geçersiz kalınca (eşitlemede ya da onay anında) alınan miktar bütün aylarda geri yazılır.
 // - E-07: kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan ("Diğer") fatura kontrole düşer (eşitleme, ürün
 //   bağlama), tek dokunuşla onaylanmaz; kategorisi mal alışı olunca gelir-gidere girer; bilerek "kalsın" denirse yeniden
 //   kontrole düşmez, kategorisi değişince karar düşer.
@@ -76,7 +78,7 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
 
   beforeEach(async () => {
     await db.execute(
-      sql`TRUNCATE ingredient_price_holds, ingredient_prices, parasut_product_links, purchase_quantities, parasut_bill_lines, invoices, ingredients, integration_state, activity_log RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE ingredient_price_holds, ingredient_prices, parasut_product_links, purchase_quantities, stock_counts, parasut_bill_lines, invoices, ingredients, integration_state, activity_log RESTART IDENTITY CASCADE`,
     );
   });
 
@@ -200,8 +202,8 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     assert.deepEqual(
       (await lotsQuery.queryHeldPurchases(db)).filter((x) => x.ingredientId === milk.id).sort((a, b) => a.month.localeCompare(b.month)),
       [
-        { month: "2026-09", ingredientId: milk.id, invoices: 1 },
-        { month: "2026-10", ingredientId: milk.id, invoices: 1 },
+        { month: "2026-09", ingredientId: milk.id, invoices: 1, rejected: 0 },
+        { month: "2026-10", ingredientId: milk.id, invoices: 1, rejected: 0 },
       ],
     );
 
@@ -210,7 +212,8 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     assert.ok(rej.ok, JSON.stringify(rej));
     assert.deepEqual(await purchases(milk.id), [["2026-09", 10000, "Paraşüt faturalarından"]]);
     assert.deepEqual(await lotMonths(milk.id), [["2026-09", 10000]]);
-    assert.deepEqual((await lotsQuery.queryHeldPurchases(db)).filter((x) => x.ingredientId === milk.id), [{ month: "2026-10", ingredientId: milk.id, invoices: 1 }]);
+    // Bekleyen öneri yok: reddedilen fatura ayrı sayılır (Tutarlılık onaya götürmez, alımı elle yazdırır)
+    assert.deepEqual((await lotsQuery.queryHeldPurchases(db)).filter((x) => x.ingredientId === milk.id), [{ month: "2026-10", ingredientId: milk.id, invoices: 0, rejected: 1 }]);
     // Geri al: yeniden bekliyor, ikisi de dışarıda
     const undo = await holdActions.undoPriceHold(h.id);
     assert.ok(undo.ok, JSON.stringify(undo));
@@ -244,7 +247,7 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     assert.equal(log.detail, "Kasım 2026 · Kakao");
     // Kasım'ın faturası sonradan geldi: 0'ın yerine faturadaki miktar (yönetilen satır)
     await bill({ date: "2026-11-20", productKey: "p:kakao", productName: "KAKAO TOZU", unit: "KG", quantity: 2, netTotal: 1800 });
-    await sync.applyProductLinks(["2026-11"]);
+    await sync.applyProductLinks();
     assert.deepEqual(await purchases(cocoa.id), [["2026-11", 2000, "Paraşüt faturalarından"]]);
     // Geri al yalnız hâlâ 0 olan "Alım yok" satırını siler
     assert.deepEqual((await consistencyActions.setNoPurchase("2026-11", [cocoa.id], true)).ok && (await purchases(cocoa.id)).length, 1);
@@ -256,15 +259,102 @@ describe("faturadan stoğa: veritabanında", { skip: !SERVER_URL && "PARASUT_TES
     assert.deepEqual(await purchases(cocoa.id), [["2026-11", 2000, "Paraşüt faturalarından"]]);
     // Elle düzeltilmiş satıra eşitleme dokunmaz (eski kural)
     await db.update(s.purchaseQuantities).set({ qty: 2100, note: "kontrol edildi" }).where(eq(s.purchaseQuantities.ingredientId, cocoa.id));
-    await sync.applyProductLinks(["2026-11"]);
+    await sync.applyProductLinks();
     assert.deepEqual(await purchases(cocoa.id), [["2026-11", 2100, "kontrol edildi"]]);
     // Alış ve iadesi aynı ayda: toplam 0 yazılır ("Alım girilmeli" kalmaz)
     const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
     await link("p:sut", "SÜT 1 L", milk.id, 1000);
     await bill({ date: "2026-11-02", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 5, netTotal: 150 });
     await bill({ date: "2026-11-03", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: -5, netTotal: -150 });
-    await sync.applyProductLinks(["2026-11"]);
+    await sync.applyProductLinks();
     assert.deepEqual(await purchases(milk.id), [["2026-11", 0, "Paraşüt faturalarından"]]);
+  });
+
+  test("denetim B03: reddedilen fiyat Tutarlılık'ı onayda bırakmaz; elle yazılan alımla sapma hesaplanır", async () => {
+    const insights = await import("../src/lib/calc/insights");
+    const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
+    await bill({ date: "2026-10-03", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 40, netTotal: 1200 });
+    // Tek seferlik pahalı market alışı (+%100, çarpan doğru): öneri açılır, sahip reddeder
+    await bill({ date: "2026-10-20", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 600 });
+    await link("p:sut", "SÜT 1 L", milk.id, 1000);
+    await db.insert(s.stockCounts).values([
+      { month: "2026-09", ingredientId: milk.id, qty: 20000, factor: 1 },
+      { month: "2026-10", ingredientId: milk.id, qty: 15000, factor: 1 },
+    ]);
+    assert.equal((await sync.applyProductLinks()).held, 1);
+    const row = async () => {
+      const c = insights.consistency(await dataset.loadModel(), "2026-10");
+      const r = c.rows.find((x) => x.ingredient.id === milk.id)!;
+      return { stock: r.stock, held: r.held, rejected: r.rejected, purchased: r.purchased, variance: r.variance, heldCount: c.heldCount, rejectedCount: c.rejectedCount };
+    };
+    assert.deepEqual(await row(), { stock: "held", held: { invoices: 2 }, rejected: null, purchased: null, variance: null, heldCount: 1, rejectedCount: 0 });
+    const [h] = await holds();
+    assert.ok((await holdActions.rejectPriceHold({ id: h.id, stopUpdates: false, note: "tek seferlik market alışı" })).ok);
+    // Bekleyen kart yok: "Fiyat onayı bekliyor" değil; reddedilen fatura alınana girmedi, alımı elle yazdırır
+    assert.deepEqual(await row(), { stock: "rejected", held: null, rejected: { invoices: 1 }, purchased: 40000, variance: null, heldCount: 0, rejectedCount: 1 });
+    // Sahip faturaya bakıp ayın alımını yazar (40 L + 10 L): sapma hesaplanır, toplama girer
+    const w = await consistencyActions.setPurchaseQty("2026-10", milk.id, 50000, "kontrol edildi");
+    assert.ok(w.ok, JSON.stringify(w));
+    const after = await row();
+    assert.deepEqual([after.stock, after.held, after.rejected, after.purchased, after.rejectedCount], ["complete", null, null, 50000, 0]);
+    assert.equal(typeof after.variance, "number");
+    // Eşitleme elle yazılanı ezmez
+    await sync.applyProductLinks();
+    assert.deepEqual(await purchases(milk.id), [["2026-10", 50000, "kontrol edildi"]]);
+  });
+
+  test("denetim B03: bekleyen öneri geçersiz kalınca alınan miktar bütün aylarda geri yazılır (stok partileriyle aynı)", async () => {
+    const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
+    for (const d of ["2026-03-10", "2026-06-10", "2026-09-10"]) await bill({ date: d, productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 300 });
+    await link("p:sut", "SÜT 1 L", milk.id, 1000);
+    const cocoa = await ingredient("Kakao", "gr", { packagePrice: 900, packageSize: 1000 });
+    await link("p:kakao", "KAKAO TOZU", cocoa.id, 1000);
+    await sync.applyProductLinks();
+    // 20 Eki: süt +%50, kakao +%60: iki öneri; süt önerisi bağlantının bütün aylarını dışlar
+    await bill({ date: "2026-10-20", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 450 });
+    await bill({ date: "2026-10-20", productKey: "p:kakao", productName: "KAKAO TOZU", unit: "KG", quantity: 1, netTotal: 1440 });
+    assert.equal((await sync.applyProductLinks()).held, 2);
+    assert.deepEqual(await purchases(milk.id), []);
+    // Kakao onaylanır (alınan miktar baştan hesaplanır; süt hâlâ bekliyor)
+    const kh = (await holds()).find((x) => x.ingredientId === cocoa.id)!;
+    assert.ok((await holdActions.approvePriceHold(kh.id)).ok);
+    assert.deepEqual(await purchases(milk.id), []);
+    // 27 Eki: süt eski fiyatla geldi, süt önerisi geçersiz ("Daha yeni faturada fiyat aynı"): Mart ve Haziran da geri gelir
+    await bill({ date: "2026-10-27", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 300 });
+    await sync.applyProductLinks();
+    const sh = (await holds()).find((x) => x.ingredientId === milk.id)!;
+    assert.deepEqual([sh.status, sh.note], ["superseded", "Daha yeni faturada fiyat aynı"]);
+    const managed = (await purchases(milk.id)).map(([m, q]) => [m, q]);
+    assert.deepEqual(managed, [
+      ["2026-03", 10000],
+      ["2026-06", 10000],
+      ["2026-09", 10000],
+      ["2026-10", 20000],
+    ]);
+    assert.deepEqual(managed, await lotMonths(milk.id), "alınan = stok partileri");
+    assert.deepEqual((await lotsQuery.queryHeldPurchases(db)).filter((x) => x.ingredientId === milk.id), []);
+  });
+
+  test("denetim B03: onay anında geçersiz kalan öneri de alınan miktarı geri yazar", async () => {
+    const milk = await ingredient("Süt", "ml", { packagePrice: 30, packageSize: 1000 });
+    await bill({ date: "2026-06-10", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 300 });
+    await bill({ date: "2026-10-20", productKey: "p:sut", productName: "SÜT 1 L", unit: "Adet", quantity: 10, netTotal: 450 });
+    await link("p:sut", "SÜT 1 L", milk.id, 1000);
+    assert.equal((await sync.applyProductLinks()).held, 1);
+    assert.deepEqual(await purchases(milk.id), []);
+    const [h] = await holds();
+    // Bağlantının çarpanı arada değişti (eşitleme çalışmadan): onay öneriyi geçersiz sayar, alınan yeni çarpanla yazılır
+    await db.update(s.parasutProductLinks).set({ factor: 500 }).where(eq(s.parasutProductLinks.productKey, "p:sut"));
+    const r = await holdActions.approvePriceHold(h.id);
+    assert.equal(r.ok, false);
+    assert.equal((await holds())[0].status, "superseded");
+    assert.deepEqual(
+      (await purchases(milk.id)).map(([m, q]) => [m, q]),
+      [
+        ["2026-06", 5000],
+        ["2026-10", 5000],
+      ],
+    );
   });
 
   // ---------------------------------------------------------------- E-07: stoğa girip gelir-gidere girmeyen fatura

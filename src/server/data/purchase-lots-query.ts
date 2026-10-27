@@ -13,18 +13,33 @@ const LINK_ALIAS = "suspect_link";
 const hh = alias(s.ingredientPriceHolds, HOLD_ALIAS);
 const hl = alias(s.parasutProductLinks, LINK_ALIAS);
 
+/** Kalemin ürününün bağlantısında bugünkü çarpanla verilmiş öneri (`extra`: önerinin durumu ve faturası) */
+function holdOnLine(line: { productKey: AnyPgColumn }, extra: SQL): SQL<boolean> {
+  const from = sql`${s.ingredientPriceHolds} ${sql.identifier(HOLD_ALIAS)} join ${s.parasutProductLinks} ${sql.identifier(LINK_ALIAS)}`;
+  return sql<boolean>`exists (select 1 from ${from} on ${hl.productKey} = ${hh.productKey} where ${hh.productKey} = ${line.productKey} and ${hh.ingredientId} = ${hl.ingredientId} and ${hh.factor} = ${hl.factor} and ${extra})`;
+}
+
+/** Ürünün bağlantısı bugünkü çarpanıyla onay bekleyen bir fiyat taşıyor: ürünün bütün kalemleri şüpheli */
+export function pendingFactorLine(line: { productKey: AnyPgColumn }): SQL<boolean> {
+  return holdOnLine(line, sql`${hh.status} = 'pending'`);
+}
+
+/** Bugünkü çarpanla reddedilmiş fiyatın kendi faturasının kalemi */
+export function rejectedFactorLine(line: { productKey: AnyPgColumn; invoiceId: AnyPgColumn }): SQL<boolean> {
+  return holdOnLine(line, sql`${hh.status} = 'rejected' and ${hh.invoiceId} = ${line.invoiceId}`);
+}
+
 /**
  * Çarpanı şüpheli fatura kalemi (ortak yüklem): kalemin ürününün bağlantısı bugünkü çarpanıyla onay bekleyen bir fiyat
- * taşıyorsa ürünün bütün kalemleri, bugünkü çarpanla reddedilmiş fiyatın yalnız kendi faturasının kalemi. Çarpan şüphesi
- * bağlantıyı izler, tek faturayı değil (eşitleme yalnız en yeni faturayı değerlendirir, yenisi gelince eskinin önerisi
- * geçersiz kalır). Çarpan düzeltilince eski çarpanla açılmış öneriler bir şey dışlamaz. Stok değerlemenin partileri
- * (queryPurchaseLots), eşitlemenin yazdığı alınan miktar (applyProductLinks) ve Tutarlılık'ın "onay bekliyor" işareti
- * (queryHeldPurchases) aynı yüklemi kullanır: biri sayıp öteki saymazsa stok değeri ile Tutarlılık'ın "alınan"ı ayrışır
- * (denetim 26 Eki, E-27).
+ * taşıyorsa ürünün bütün kalemleri (pendingFactorLine), bugünkü çarpanla reddedilmiş fiyatın yalnız kendi faturasının
+ * kalemi (rejectedFactorLine). Çarpan şüphesi bağlantıyı izler, tek faturayı değil (eşitleme yalnız en yeni faturayı
+ * değerlendirir, yenisi gelince eskinin önerisi geçersiz kalır). Çarpan düzeltilince eski çarpanla açılmış öneriler bir
+ * şey dışlamaz. Stok değerlemenin partileri (queryPurchaseLots), eşitlemenin yazdığı alınan miktar
+ * (recomputePurchaseQuantities) ve Tutarlılık'ın işaretleri (queryHeldPurchases) aynı yüklemi kullanır: biri sayıp öteki
+ * saymazsa stok değeri ile Tutarlılık'ın "alınan"ı ayrışır (denetim 26 Eki, E-27).
  */
 export function suspectFactorLine(line: { productKey: AnyPgColumn; invoiceId: AnyPgColumn }): SQL<boolean> {
-  const from = sql`${s.ingredientPriceHolds} ${sql.identifier(HOLD_ALIAS)} join ${s.parasutProductLinks} ${sql.identifier(LINK_ALIAS)}`;
-  return sql<boolean>`exists (select 1 from ${from} on ${hl.productKey} = ${hh.productKey} where ${hh.productKey} = ${line.productKey} and ${hh.ingredientId} = ${hl.ingredientId} and ${hh.factor} = ${hl.factor} and (${hh.status} = 'pending' or (${hh.status} = 'rejected' and ${hh.invoiceId} = ${line.invoiceId})))`;
+  return sql<boolean>`(${pendingFactorLine(line)} or ${rejectedFactorLine(line)})`;
 }
 
 /**
@@ -56,20 +71,28 @@ export async function queryPurchaseLots(db: DB): Promise<PurchaseLot[]> {
 }
 
 /**
- * Çarpanı şüpheli olduğu için alınan miktara ve partilere girmeyen alışlar, ay ve hammadde başına fatura sayısı
- * (Tutarlılık: "Fiyat onayı bekliyor"; sapma onaylanana kadar hesaplanmaz). Kafe dışı faturalar sayılmaz.
+ * Çarpanı şüpheli olduğu için alınan miktara ve partilere girmeyen alışlar, ay ve hammadde başına fatura sayısı.
+ * `invoices`: fiyatı onay bekleyen bağlantının faturaları (Tutarlılık: "Fiyat onayı bekliyor", onaya götürür);
+ * `rejected`: yalnız fiyatı reddedildiği için dışarıda kalan faturalar (bekleyen öneri yok; Tutarlılık: miktarı elle
+ * yazın). Kafe dışı faturalar sayılmaz.
  */
 export async function queryHeldPurchases(db: DB): Promise<HeldPurchase[]> {
   const bl = s.parasutBillLines;
   const inv = s.invoices;
   const ln = s.parasutProductLinks;
   const month = sql<string>`substr(${inv.date}, 1, 7)`;
+  const pending = pendingFactorLine(bl);
   const rows = await db
-    .select({ month, ingredientId: ln.ingredientId, invoices: sql<number>`count(distinct ${inv.id})`.mapWith(Number) })
+    .select({
+      month,
+      ingredientId: ln.ingredientId,
+      invoices: sql<number>`count(distinct ${inv.id}) filter (where ${pending})`.mapWith(Number),
+      rejected: sql<number>`count(distinct ${inv.id}) filter (where not ${pending})`.mapWith(Number),
+    })
     .from(bl)
     .innerJoin(inv, eq(inv.id, bl.invoiceId))
     .innerJoin(ln, eq(ln.productKey, bl.productKey))
     .where(and(notInArray(inv.category, SEPARATE_CATEGORIES), suspectFactorLine(bl)))
     .groupBy(month, ln.ingredientId);
-  return rows.map((r) => ({ month: r.month, ingredientId: r.ingredientId, invoices: r.invoices }));
+  return rows.map((r) => ({ month: r.month, ingredientId: r.ingredientId, invoices: r.invoices, rejected: r.rejected }));
 }

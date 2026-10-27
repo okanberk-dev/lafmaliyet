@@ -12,6 +12,7 @@ import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod,
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
+import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "../../server/parasut/constants";
 import type { FixedSection, Ingredient } from "./types";
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -1036,9 +1037,12 @@ export function alerts(model: Model, month: string): Alert[] {
  * - "needsPurchase": iki sayım var ama alım miktarı girilmemiş (alınmadıysa 0: "Alım yok (0)"); sapma hesaplanmaz
  * - "held": iki sayım var ama bu ayın bir faturasının çarpanı onay bekliyor; o fatura alınan miktara girmedi, sapma
  *   fiyat onayı karara bağlanınca hesaplanır (denetim 26 Eki, E-27)
+ * - "rejected": iki sayım var ama bu ayın fiyatı reddedilen faturası alınan miktara girmedi (bekleyen öneri yok); sapma
+ *   ayın alımı elle yazılınca hesaplanır
  * - "noCount": önceki ya da bu ayın sayımı eksik
+ * Elle yazılan alım (notu eşitlemenin ya da "Alım yok (0)"un değil) "held" ve "rejected"ı kaldırır: ayın alımı odur.
  */
-export type StockCheck = "complete" | "needsPurchase" | "held" | "noCount";
+export type StockCheck = "complete" | "needsPurchase" | "held" | "rejected" | "noCount";
 
 export interface ConsistencyRow {
   ingredient: Ingredient;
@@ -1055,6 +1059,11 @@ export interface ConsistencyRow {
    * ve sapma hesaplanmaz
    */
   held: { invoices: number } | null;
+  /**
+   * Bu ayın yalnız fiyatı reddedildiği için alınana girmeyen faturaları (bekleyen öneri yok); yoksa ya da ayın alımı
+   * elle yazıldıysa null. Varken alınan eksiktir: oran, fark ve sapma hesaplanmaz, alım elle yazılır
+   */
+  rejected: { invoices: number } | null;
   ratio: number | null;
   diffAmount: number | null;
   opening: number | null;
@@ -1097,8 +1106,11 @@ export function consistency(model: Model, month: string) {
   const purchases = new Map(
     model.ds.purchaseQuantities.filter((p) => p.month === month).map((p) => [p.ingredientId, p]),
   );
-  // Çarpanı onay bekleyen alışlar alınan miktara girmedi (eşitleme stok partileriyle aynı yüklemle dışlar)
-  const heldBy = new Map((model.ds.heldPurchases ?? []).filter((h) => h.month === month && h.invoices > 0).map((h) => [h.ingredientId, { invoices: h.invoices }]));
+  // Çarpanı şüpheli alışlar alınan miktara girmedi (eşitleme stok partileriyle aynı yüklemle dışlar): fiyatı onay
+  // bekleyen bağlantının faturaları ve yalnız fiyatı reddedilen faturalar
+  const heldBy = new Map(
+    (model.ds.heldPurchases ?? []).filter((h) => h.month === month && (h.invoices > 0 || (h.rejected ?? 0) > 0)).map((h) => [h.ingredientId, h]),
+  );
   const prevMonth = shiftMonth(month, -1);
   const countedIn = (m: string) => new Set(model.ds.stockCounts.filter((c) => c.month === m).map((c) => c.ingredientId));
   const prevCounted = countedIn(prevMonth);
@@ -1117,14 +1129,19 @@ export function consistency(model: Model, month: string) {
     const u = posU + onlineU;
     const p = purchases.get(id);
     const purchased = p ? p.qty : null;
-    const held = heldBy.get(id) ?? null;
+    // Elle yazılan alım (notu eşitlemenin ya da "Alım yok (0)"un değil) ayın alımıdır: dışarıda kalan fatura onu eksik
+    // bırakmaz (sahip faturaya bakıp yazdı)
+    const manual = p !== undefined && p.note !== MANAGED_QTY_NOTE && p.note !== NO_PURCHASE_NOTE;
+    const h = manual ? undefined : heldBy.get(id);
+    const held = h && h.invoices > 0 ? { invoices: h.invoices } : null;
+    const rejected = h && (h.rejected ?? 0) > 0 ? { invoices: h.rejected } : null;
     // Sayım biriminden malzemenin kendi birimine (sayıldığı andaki çarpanla: KG/LT = 1000)
     const opening = model.countInBaseUnit(prevMonth, id);
     const closing = model.countInBaseUnit(month, id);
     const counted = opening !== null && closing !== null;
-    const stock: StockCheck = !counted ? "noCount" : held ? "held" : purchased === null ? "needsPurchase" : "complete";
-    // Çarpanı onay bekleyen fatura alınana girmedi: alınan eksik, oran ve fark yanıltır
-    const known = held ? null : purchased;
+    const stock: StockCheck = !counted ? "noCount" : held ? "held" : rejected ? "rejected" : purchased === null ? "needsPurchase" : "complete";
+    // Çarpanı şüpheli fatura alınana girmedi: alınan eksik, oran ve fark yanıltır
+    const known = held || rejected ? null : purchased;
     // Alım girilmeden "gerçek tüketim" hesaplanmaz: eksik alım 0 sayılırsa sapma yanlış (hatta eksi) çıkar
     const actualUsage = stock === "complete" ? opening! + purchased! - closing! : null;
     const variance = actualUsage !== null ? actualUsage - u : null;
@@ -1138,6 +1155,7 @@ export function consistency(model: Model, month: string) {
       onlineUsage: onlineU,
       purchased,
       held,
+      rejected,
       ratio: known !== null && u ? known / u : null,
       diffAmount: known !== null ? (known - u) * unitCost : null,
       opening,
@@ -1197,6 +1215,8 @@ export function consistency(model: Model, month: string) {
     needsPurchaseCount: rows.filter((r) => r.stock === "needsPurchase").length,
     /** Bu ay çarpanı onay bekleyen faturası olan malzeme sayısı (alınan eksik; sapma onaydan sonra) */
     heldCount: rows.filter((r) => r.held).length,
+    /** Bu ay fiyatı reddedilen faturası alınana girmeyen malzeme sayısı (bekleyen öneri yok; alım elle yazılmalı) */
+    rejectedCount: rows.filter((r) => !r.held && r.rejected).length,
     /** Hiçbir reçetede olmayıp stoktan düşen hammaddeler: en az (devir − devreden + alınan) × birim maliyet */
     unreciped: {
       count: unreciped.length,

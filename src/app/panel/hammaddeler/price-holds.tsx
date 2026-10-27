@@ -467,6 +467,12 @@ function HoldItem({
   );
 }
 
+/**
+ * Reddedilen fiyatın faturası alınana ve stok partilerine girmez (çarpanı şüpheli kaldı; suspectFactorLine): karar
+ * anında söylenir, Tutarlılık o ayın alımını elle yazdırır
+ */
+const REJECTED_QTY_TEXT = "Bu faturanın miktarı alınana ve stok değerine girmez; Tutarlılık'ta elle yazabilirsiniz.";
+
 /** "Reddet": şimdiki fiyat kalır; istenirse bu üründen fiyat güncellemesi kapanır */
 function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => void; onReject: (stopUpdates: boolean, note: string) => void }) {
   const [stop, setStop] = useState(false);
@@ -480,8 +486,8 @@ function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => vo
       title="Bu fiyat uygulanmasın mı?"
       description={
         x.first
-          ? `${x.name} fiyatsız kalır. Sonraki faturanın fiyatı yeniden sorulur.`
-          : `${x.name} şimdiki fiyatında (${bulkPrice(x.current, x.unit)}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden sorulur.`
+          ? `${x.name} fiyatsız kalır. Sonraki faturanın fiyatı yeniden sorulur. ${REJECTED_QTY_TEXT}`
+          : `${x.name} şimdiki fiyatında (${bulkPrice(x.current, x.unit)}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden sorulur. ${REJECTED_QTY_TEXT}`
       }
       footer={
         <>
@@ -495,7 +501,7 @@ function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => vo
       }
     >
       <div className="space-y-3 pb-3">
-        <Checkbox label="Bu üründen fiyat güncellemesini kapat (alınan miktar yine sayılır)" checked={stop} onChange={(e) => setStop(e.target.checked)} />
+        <Checkbox label="Bu üründen fiyat güncellemesini kapat (sonraki faturaların miktarı yine sayılır)" checked={stop} onChange={(e) => setStop(e.target.checked)} />
         <Field label="Not (isteğe bağlı)" htmlFor={noteId}>
           <Input id={noteId} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="ör. Faturada koli yazılmış" />
         </Field>

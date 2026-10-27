@@ -205,7 +205,8 @@ function findPair(t: string): (Hit & { per: number; packs: number; total: number
     const a = intOf(m[1]);
     const b = intOf(m[2]);
     const total = a * b;
-    if (!(a >= 1 && b >= 1) || total < MIN_COUNT || total > MAX_COUNT) continue;
+    // Biri 1 ise iki sayılı paket değil ("100'LÜ X 1", "1X24 ADET"): tek sayı ve boyut × sayı kuralları okur
+    if (!(a >= 2 && b >= 2) || total < MIN_COUNT || total > MAX_COUNT) continue;
     return { start: m.index, end: m.index + m[0].length, per: p.per === 1 ? a : b, packs: p.per === 1 ? b : a, total };
   }
   return null;
@@ -443,9 +444,11 @@ export function packPairChoices(line: PackLine, ingredientUnit: IngredientUnit):
   if (!p) return null;
   const q = line.quantity;
   const piece = unitKind(line.unit) === "single" && (q === null || q === undefined || Math.abs(q) >= p.per);
-  if (ingredientUnit === "adet" || ingredientUnit === "dilim") return { text: p.text, choices: [...(piece ? [1] : []), p.per, p.total] };
+  // Aynı değer iki kez önerilmez (düğmenin anahtarı değerdir)
+  const unique = (xs: number[]) => [...new Set(xs)];
+  if (ingredientUnit === "adet" || ingredientUnit === "dilim") return { text: p.text, choices: unique([...(piece ? [1] : []), p.per, p.total]) };
   const dim = ingredientUnit === "gr" ? "mass" : ingredientUnit === "ml" ? "volume" : null;
   const size = parsePack(line.name).size;
   if (!dim || !size || size.dim !== dim) return null;
-  return { text: p.text, choices: [...(piece ? [size.amount] : []), p.per * size.amount, p.total * size.amount] };
+  return { text: p.text, choices: unique([...(piece ? [size.amount] : []), p.per * size.amount, p.total * size.amount]) };
 }

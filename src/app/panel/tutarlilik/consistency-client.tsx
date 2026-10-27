@@ -43,6 +43,8 @@ interface Row {
   purchased: number | null;
   /** Bu ayın çarpanı onay bekleyen faturaları: alınana girmedi, oran / fark / sapma onaydan sonra */
   held: { invoices: number } | null;
+  /** Bu ayın fiyatı reddedilen faturaları: alınana girmedi, bekleyen öneri yok; oran / fark / sapma alım yazılınca */
+  rejected: { invoices: number } | null;
   /** Hammadde Paraşüt'teki bir ürüne bağlı (alımı faturadan gelir): faturası yoksa "Alım yok (0)" toplu düğmesi */
   linked: boolean;
   ratio: number | null;
@@ -54,7 +56,10 @@ interface Row {
   varianceAmount: number | null;
   /** Devir − devreden (iki sayım varsa), alım bilinmeden stoktaki düşüş */
   stockDrop: number | null;
-  /** complete: sapma hesaplandı · needsPurchase: iki sayım var, alım eksik · noCount: sayım eksik */
+  /**
+   * complete: sapma hesaplandı · needsPurchase: iki sayım var, alım eksik · held / rejected: alınana girmeyen fatura var
+   * · noCount: sayım eksik
+   */
   stock: StockCheck;
   /** Hammadde bir reçetede var mı */
   inRecipe: boolean;
@@ -163,9 +168,16 @@ function CountRoll({ value }: { value: number }) {
 // ---------------------------------------------------------------- Reçete ↔ fatura tablosu
 
 function RatioBadge({ row }: { row: Row }) {
-  if (row.held) {
+  if (row.held || row.rejected) {
     return (
-      <span className="text-ink-mute" title="Bu ayın bir faturasının çarpanı onay bekliyor: alınan eksik, oran onaydan sonra">
+      <span
+        className="text-ink-mute"
+        title={
+          row.held
+            ? "Bu ayın bir faturasının çarpanı onay bekliyor: alınan eksik, oran onaydan sonra"
+            : "Bu ayın fiyatı reddedilen faturası alınana girmedi: alınan eksik, oran ayın alımı elle yazılınca"
+        }
+      >
         –
       </span>
     );
@@ -206,11 +218,31 @@ function HeldNote({ row, compact }: { row: Row; compact?: boolean }) {
 }
 
 /**
+ * Fiyatı reddedilen faturası alınana girmeyen malzemenin işareti (bekleyen öneri yok, onaya götürmez): o faturanın
+ * çarpanı şüpheli kaldı; sahip ayın alımını faturaya bakıp Alınan'a yazar, sapma o zaman hesaplanır
+ */
+function RejectedNote({ row, compact }: { row: Row; compact?: boolean }) {
+  if (!row.rejected) return null;
+  return (
+    <span className={cn("inline-flex flex-col gap-0.5", compact ? "items-start" : "items-end")}>
+      <Badge tone="amber" dot title="Bu ayın fiyatı reddedilen faturası alınan miktara ve stok değerine girmedi; ayın alımını elle yazınca sapma hesaplanır">
+        Reddedilen fatura alınana girmedi
+      </Badge>
+      <span className="text-xs text-ink-soft">
+        {row.rejected.invoices} fatura · miktarı Alınan&apos;a yazın
+      </span>
+    </span>
+  );
+}
+
+/**
  * Gerçek tüketim hücresi: hesaplandıysa değer; iki sayım var ama alım eksikse "Alım yok (0)" (tek dokunuş; bu ay hiç
- * alınmadıysa) ya da faturasının çarpanı onay bekliyorsa onaya giden işaret
+ * alınmadıysa), faturasının çarpanı onay bekliyorsa onaya giden işaret, fiyatı reddedilen faturası varsa alımı yazma
+ * işareti
  */
 function ActualUsage({ row, month, compact }: { row: Row; month: string; compact?: boolean }) {
   if (row.stock === "held") return <HeldNote row={row} compact={compact} />;
+  if (row.stock === "rejected") return <RejectedNote row={row} compact={compact} />;
   if (row.stock === "needsPurchase")
     return (
       <span className={cn("inline-flex flex-col gap-1", compact ? "items-start" : "items-end")}>
@@ -675,6 +707,10 @@ export function ConsistencyTable({
                     <div className="mt-1.5">
                       <HeldNote row={r} compact />
                     </div>
+                  ) : r.rejected && (r.stock !== "rejected" || !hasStock) ? (
+                    <div className="mt-1.5">
+                      <RejectedNote row={r} compact />
+                    </div>
                   ) : null}
                   {r.note ? <p className="mt-1.5 line-clamp-2 text-xs leading-5 break-words text-ink-mute">{r.note}</p> : null}
                 </li>
@@ -763,6 +799,10 @@ export function ConsistencyTable({
                         {r.held && (r.stock !== "held" || !hasStock) ? (
                           <div className="mt-1 flex justify-end">
                             <HeldNote row={r} />
+                          </div>
+                        ) : r.rejected && (r.stock !== "rejected" || !hasStock) ? (
+                          <div className="mt-1 flex justify-end">
+                            <RejectedNote row={r} />
                           </div>
                         ) : null}
                       </TD>

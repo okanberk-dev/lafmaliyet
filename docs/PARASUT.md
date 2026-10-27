@@ -343,8 +343,10 @@ faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir." der, rozet "tah
   "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi
   değişti, fiyat güncellemesi kapandı), faturanın kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha yeni bir
   faturası geldiyse (eşitleme henüz değerlendirmeden) öneri geçersiz sayılır, fiyat yazılmaz.
-- **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (alınan miktar yine
-  sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
+- **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (sonraki faturaların
+  miktarı yine sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
+  Reddedilen faturanın miktarı alınana ve stok değerine girmez (çarpanı şüpheli kaldı); pencere bunu söyler,
+  Tutarlılık o ayın alımını elle yazdırır.
 - **Çarpanı X yap:** bağlantının çarpanı değişir (Paraşüt sayfasındaki düzenlemeyle aynı): öneri geçersiz olur, en yeni
   fatura yeni çarpanla yeniden değerlendirilir, alınan miktarlar da düzelir.
 - **Geri al** (bildirimde ve kartın **Son kararlar** bölümünde; 30 gün): onay geri alınınca eski paket fiyatı, boyu ve
@@ -365,8 +367,13 @@ yeniden açılır, aynı çarpanla yeniden bağlanır, fatura kafeye döner) ayn
 değerlendirilmez. Fatura silinince öneri de silinir; fiyat yeniden önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
 Alınan miktar (Tutarlılık) da bekler (denetim 26 Eki, E-27): çarpanı onay bekleyen bağlantının faturaları stok
 partilerine girmediği gibi alınan miktara da girmez (ortak yüklem `suspectFactorLine`); reddedilen fiyatın yalnız kendi
-faturası dışarıda kalır. Tutarlılık o malzemeyi "Fiyat onayı bekliyor" diye işaretler, sapmasını onaydan sonra hesaplar.
-Onay, red ve geri alma alınan miktarı hemen yeniden hesaplar (`recomputePurchaseQuantities`).
+faturası dışarıda kalır. Tutarlılık bekleyen öneri için malzemeyi "Fiyat onayı bekliyor" diye işaretler (onaya
+götürür), sapmasını onaydan sonra hesaplar; yalnız reddedilen fatura dışarıda kaldıysa "Reddedilen fatura alınana
+girmedi · miktarı Alınan'a yazın" der (onaya götürmez: bekleyen kart yok). Ayın alımı elle yazılınca (notu eşitlemenin
+ya da "Alım yok (0)"un değil) iki işaret de kalkar, sapma o miktarla hesaplanır. Onay, red, geri alma ve kararın
+geçersiz kalması (bağlantı değişti, daha yeni fatura) alınan miktarı bütün aylar için hemen yeniden hesaplar
+(`recomputePurchaseQuantities`); eşitleme de her çalışmada bütün ayları yeniden yazar: öneri pencere dışındaki eski
+ayların faturalarını da dışladığı için yalnız pencereyi yazmak o ayları alımsız bırakırdı.
 
 **Veri:** `ingredient_price_holds`: hammadde başına en çok bir bekleyen öneri (kısmi tekil dizin), fatura anındaki
 kalemin kopyası (kalemler her eşitlemede yeniden yazılır), karar, red notu ve geri alma için değiştirilen fiyat.

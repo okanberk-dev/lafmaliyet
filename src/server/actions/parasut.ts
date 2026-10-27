@@ -59,7 +59,7 @@ export async function readParasutLines() {
     // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
     client.setDeadline(started + 58_000);
     const r = await readEInvoiceLines(client, { until: started + 45_000 });
-    const applied = r.months.length ? await applyProductLinks(r.months) : null;
+    const applied = r.months.length ? await applyProductLinks() : null;
     const held = applied?.held ?? 0;
     // Okunan kalemler bağlı ürünü mal alışı sayılmayan faturaya getirdiyse fatura kontrole düşer (E-07)
     const flagged = applied?.flagged ?? 0;

@@ -882,7 +882,7 @@ export async function syncParasut(
 
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     const returns = await saveReturns(ctx, today);
-    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
+    const linked = ctx.touchedMonths.size ? await applyProductLinks() : null;
     // Cari: tutarı değişen faturaların dağıtımı ve peşin kartın yeni faturası (docs/TEDARIKCILER.md)
     const cari = await cariFinalSteps(ctx);
     if (partial && !reachedEnd) {
@@ -1126,7 +1126,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     if (contacts.every((c) => progress[c.id] === HISTORY_DONE)) for (const c of contacts) delete progress[c.id];
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     await saveReturns(ctx, todayTR());
-    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
+    const linked = ctx.touchedMonths.size ? await applyProductLinks() : null;
     await setState(HISTORY_KEY, progress);
     const cari = await cariFinalSteps(ctx);
 
@@ -1477,11 +1477,13 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
 
 /**
  * Hammaddeye bağlı Paraşüt kalemlerinden (bağlantıda istenmişse) hammaddenin paket fiyatını en son faturadaki birim
- * fiyatla günceller, sonra verilen ayların alınan miktarlarını yeniden hesaplar (recomputePurchaseQuantities).
+ * fiyatla günceller, sonra bütün ayların alınan miktarlarını yeniden hesaplar (recomputePurchaseQuantities).
  * Şimdikinden %40'tan fazla farklı fiyat ve çarpanı faturanın biriminden gelmeyen ilk fiyat yazılmaz, onaya düşer
  * (`held`; docs/PARASUT.md 5b). Alınan miktar fiyattan sonra: bu çalışmada onaya düşen fiyatın çarpanı da şüpheli sayılır.
+ * Yalnız eşitlemenin dokunduğu aylar yazılmaz: açılan ya da geçersiz kalan öneri bağlantının bütün aylarının faturalarını
+ * içeri alır ya da dışarıda bırakır (suspectFactorLine), pencere dışındaki aylar eski hâlinde kalırdı (denetim B03).
  */
-export async function applyProductLinks(months?: string[]) {
+export async function applyProductLinks() {
   const db = getDb();
   const links = await db.select().from(s.parasutProductLinks);
   if (!links.length) {
@@ -1629,7 +1631,7 @@ export async function applyProductLinks(months?: string[]) {
   }
   await setState(PRICE_KEY, applied);
   if (held.length) await logActivity(null, "Fiyat onaya düştü", held.join(", "));
-  const quantities = await recomputePurchaseQuantities(months);
+  const quantities = await recomputePurchaseQuantities();
   return { quantities, prices, held: held.length, flagged: await flagStockOnly() };
 }
 

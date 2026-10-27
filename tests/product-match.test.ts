@@ -293,3 +293,25 @@ test("iki sayılı paket adı: formun iki olasılığı (bir paket mi, hepsi mi)
   assert.equal(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Adet", quantity: 1 }, "ml"), null);
   assert.equal(packPairChoices({ name: "SÜT 1 L", unit: "Adet" }, "ml"), null);
 });
+
+test("iki sayılı paket adı: biri 1 olan ad iki sayılı paket değil, eski kurallar okur (denetim B03 inceleme)", () => {
+  // "100'LÜ X 1" ve "1X24 ADET" tek pakettir: main'deki tahmin (100, 200 ml) kalır, form aynı seçeneği iki kez göstermez
+  assert.equal(packPair({ name: "FİLTRE KAĞIDI 100'LÜ X 1" }), null);
+  assert.equal(packPair({ name: "AYRAN 200ML 1X24 ADET" }), null);
+  assert.equal(guessLinkFactor({ name: "FİLTRE KAĞIDI 100'LÜ X 1", unit: "Adet", quantity: 2 }, "adet"), "100");
+  assert.equal(guessLinkFactor({ name: "AYRAN 200ML 1X24 ADET", unit: "Adet", quantity: 2 }, "ml"), "200");
+  assert.equal(packPairChoices({ name: "FİLTRE KAĞIDI 100'LÜ X 1", unit: "Adet", quantity: 2 }, "adet"), null);
+  assert.equal(packPairChoices({ name: "AYRAN 200ML 1X24 ADET", unit: "Adet", quantity: 2 }, "ml"), null);
+  // Kolide 1 × 24 = 24 şişe × 200 ml (boyut × sayı kuralı)
+  assert.equal(packEvidence({ name: "AYRAN 200ML 1X24 ADET", unit: "Koli" }, "ml")?.factor, 4800);
+  // Seçenekler hiç yinelenmez
+  for (const [name, unit, quantity, iu] of [
+    ["KARTON BARDAK 8 OZ 50'Lİ X 20", "Adet", 1000, "adet"],
+    ["BARDAK KAPAĞI 90 MM 100 AD X 10 PK", "Adet", 1000, "adet"],
+    ["SU 330 ML 24'LÜ X 2", "Adet", 48, "ml"],
+    ["PEÇETE 2'Lİ X 2", "Adet", 4, "adet"],
+  ] as const) {
+    const c = packPairChoices({ name, unit, quantity }, iu)?.choices ?? [];
+    assert.equal(new Set(c).size, c.length, `${name}: ${c.join(", ")}`);
+  }
+});
