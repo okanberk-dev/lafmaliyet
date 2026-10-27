@@ -2,8 +2,9 @@
 
 Uçlar: `POST /api/pos/gun` (gün sonu) ve `GET /api/panel/pos/urunler` (ürün maliyetleri). Ekranlar: **Ayarlar ›
 LafPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **LafPOS'a geçiş günü**, ürüne bağlanamayan adlar) ve geçiş
-gününden itibaren **Kasa raporu** (`/panel/kasa`) › **LafPOS'tan doldur** ile **Satışlar** (`/panel/satislar`:
-LafPOS'un ürün satışları, ay toplamı). Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
+gününden itibaren **Kasa raporu** (`/panel/kasa`) › **LafPOS'tan doldur**, **Satışlar** (`/panel/satislar`:
+LafPOS'un ürün satışları, ay toplamı), **Komisyon & hakediş** (kanal kanal satış) ve **Zayi & ikram** (LafPOS'un
+ikramı). Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
 `docs/03-ENTEGRASYON.md` §3, §4 ve §4.1; bu belge panelin tarafıdır.
 
 **Varsayılan kapalı (sahibin 26 Ekim kararı).** Kafede bugün ModPOS var. "LafPOS'a geçiş günü" boşken LafPOS'un
@@ -32,6 +33,9 @@ yerine geçer).
 - Geçiş gününden itibaren günün Z özeti Kasa raporunda form açılırken kendiliğinden yazılır; personel yine bakıp
   gönderir, ModPOS'un Z'sini elle yazmaz. Gönderilmiş rapor LafPOS'tan farklıysa kayıtlı rapor, e-posta, WhatsApp ve zil
   söyler; satışlı LafPOS günü "Kafe kapalıydı"nın kanıtıdır.
+- Geçiş gününden itibaren ödeme türleri kanal kanal Komisyon & hakediş'in satışı olur (yemek kartı ve platform başına
+  gerçek oran ve beklenen hakediş; aşağıda, "Komisyon"); ikram LafPOS'ta işaretlenir, kayıtlı tüketime ve kasa
+  e-postasına oradan girer (aşağıda, "İkram").
 - Panel LafPOS'a ürünlerin reçete maliyetini verir (patronun kârlılık ekranı için; personel görmez).
 
 ## Nasıl çalışır
@@ -211,8 +215,9 @@ Doldurma:
   turuncu olanlara bakın." Kasa eşlemesinin bilgi satırları (aşağıda) bandın altında mavi çıkar.
 - **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gönder**'e basar. Kasa farkını form kendisi
   hesaplar (LafPOS'un `cashDiff`'i kullanılmaz); Banka POS LafPOS'tan gelmez.
-- Personele yalnız Z ve geliş anı gider (`src/server/data/lafpos-day.ts`, sabit sütunlar); ödeme kanalları ve
-  ikramlar okunmaz. Özet okunamazsa bant görünmez, form her zamanki gibi elle doldurulur.
+- Kasa bandına personele yalnız Z ve geliş anı gider (`src/server/data/lafpos-day.ts`, sabit sütunlar); ödeme
+  kanalları okunmaz. Günün zayi & ikram kartı LafPOS'un ikramını yalnız adı ve adediyle yazar (aşağıda, "İkram"). Özet
+  okunamazsa bant görünmez, form her zamanki gibi elle doldurulur.
 
 #### Gönderilmiş rapor ile LafPOS (denetim E-09)
 
@@ -296,6 +301,37 @@ ayrılıyorsa bandın altındaki bilgi satırı LafPOS'un rakamını gösterir (
 aynı rakamlarla 14.700 ₺ hesaplıyor (700 ₺ fazla)."); aradaki fark gizli kalmaz. Eski LafPOS `cashIn` göndermez: giren
 0 yazılır, gün içinde çıkan yine harcama + teslimdir.
 
+### Komisyon: ödeme kanalları (denetim E-37)
+
+`payments[]` (ad, Z alanı, kanal, tutar) geçiş gününden itibaren Komisyon & hakediş'in kanal kanal satışıdır
+(`loadCommissionInput`, `src/server/data/commission.ts`; kural `src/lib/commission/report.ts` › `lafposMonth`,
+`lafposSales`; ayrıntı [KOMISYON.md](KOMISYON.md) §3 "LafPOS'tan kart kart"). Öncelik **elle > lafpos > tek**: yöneticinin
+yazdığı ekstre her zaman kazanır. Geçiş ayında geçiş gününden önceki günler kasa raporu kuralıyla. Kanal yazısı anahtar
+(`pluxee`, `multinet`, `edenred`, `setcard`, `metropol`, `yemeksepeti`, `trendyol`, `getir`, `migros`) ya da kanalın
+adı olarak tanınır (`lafposChannel`, `src/lib/commission/channels.ts`); kanalı seçilmemiş ya da tanınmayan ödeme türü
+grup kartında bilgi satırıdır ve kart kart dağıtılmaz. Gün sonu gelmeyen gün eksik sayılır (raporu varsa grubun
+toplamına rapordan girer). Geçiş günü boşken ödeme kanalları hiçbir yerde okunmaz; geçiş gününden önceki günler
+(deneme) hiçbir aya girmez.
+
+### İkram (denetim E-38)
+
+`ikram[]` (ad, sitenin kalemi ve boyu, adet, menü değeri, neden) geçiş gününden itibaren ürün ikramının kaynağıdır
+(`src/lib/lafpos/ikram.ts`, okuyucu `src/server/data/lafpos-ikram.ts`; ayrıntı [ZAYI-IKRAM.md](ZAYI-IKRAM.md) › LafPOS'a
+geçildikten sonra). LafPOS satış satırları (`lines[]`) ikramı içermez (LafPOS ikram kalemlerini satış satırından
+çıkarır, `server/sync/lafmaliyet.ts`): çift sayım yok.
+
+- Satır panel ürününe gün sonu satırlarıyla aynı sırayla bağlanır (sitenin kalemi ve boyu, sonra POS adı
+  eşleştirmesi), okuma anında: ürün sonradan bağlanınca geçmiş ikram da bulunur. Bağlanamayan satır tüketime girmez.
+- **Her gün tek kaynak:** LafPOS'un gün sonu gelen günde ikram satırları veri kümesine (`Dataset.lafposIkram`), oradan
+  Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine ve haftalık özete girer (`Model.countedWaste`); panele o güne
+  girilmiş ürün ikramı sayılmaz. Hammadde ikramı ve zayi panelde kalır.
+- Panelde yeni ürün ikramı reddedilir (doğrudan, geç kayıt isteği, isteğin onayı). Zayi'nin gün listesi LafPOS'un
+  ikramını salt okunur gösterir (personelde ad ve adet; yöneticide nedeni ve menü değeri).
+- Kasa raporunun özeti (form, e-posta, WhatsApp, Bugün) o günün ikramını LafPOS'tan yazar; e-posta LafPOS'un Z'sindeki
+  ödenmez tutarı ile ikram listesinin menü değerini karşılaştırır (fark bilgi satırı; eski LafPOS iptal edilen adisyonun
+  ikramını da yolluyordu, LafPOS L1 ikisini aynı adisyonlardan hesaplar).
+- Geçiş günü boşken ikram hiçbir yerde okunmaz.
+
 ### Ürün maliyetleri: `GET /api/panel/pos/urunler`
 
 Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
@@ -323,9 +359,10 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
   itibaren LafPOS'un gün sonuyla açılır, kayıtlı rapor, e-posta ve WhatsApp LafPOS'tan farklı yazılanı söyler, geç rapor
   LafPOS'un gün sonuyla (gelmediyse yazarkasa Z fotoğrafıyla) girilir, satışlı LafPOS günü kapalı gün kanıtıdır,
   raporsuz LafPOS günü ay rakamına girer (B09, yukarıda "Kasa raporu"); ürün satışları aylık modele girer, satış
-  tahmini raporsuz günde LafPOS Z'sini okur (B08, yukarıda "Günlük satış"). Sonraki partiler (B10-B11: komisyon ve
-  ikram, ModPOS metinleri) okuyucularını aynı kurala bağlar; onay penceresinin listesi (`LAFPOS_SWITCH_EFFECTS`) kodun
-  yaptığından fazlasını söylemez.
+  tahmini raporsuz günde LafPOS Z'sini okur (B08, yukarıda "Günlük satış"); Komisyon & hakediş kart kart satışı LafPOS'un
+  ödeme türlerinden alır, ürün ikramı LafPOS'tan gelir ve panelde girilmez (B10, yukarıda "Komisyon" ve "İkram").
+  Sonraki parti (B11: ModPOS metinleri) okuyucularını aynı kurala bağlar; onay penceresinin listesi
+  (`LAFPOS_SWITCH_EFFECTS`) kodun yaptığından fazlasını söylemez.
 - **Kural tek yerde:** `src/lib/lafpos/switch.ts` (`isLafposDay`, `kasaName`, `monthSource`, `switchAffectedMonths`,
   `modposListCounts`, `lafposSalesFrom`, `lafposCountFrom`);
   okuma kuralı `src/lib/constants.ts` › `readLafposSwitchDay` (takvimde olan gün, 1 Ekim 2026'dan önce değil; bozuk değer
@@ -429,7 +466,8 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
   ±5 dakika, sabit süreli karşılaştırma. Yol imzanın içindedir: bir ucun imzası öteki uçta geçmez. İki ucun vektörleri
   `tests/lafpos.test.ts`'te sabit; LafPOS'un `server/lib/signature.ts`'i aynılarını verir.
 - Gövdede kişisel veri yoktur (müşteri, personel adı, telefon). İkram nedeni serbest metindir ve yalnız yöneticinin
-  verisinde kalır; personele giden Kasa bandı yalnız Z'yi taşır.
+  verisinde kalır; personele giden Kasa bandı yalnız Z'yi, Zayi'nin günü LafPOS ikramının yalnız adını ve adedini
+  taşır; ödeme kanalları yalnız yöneticinin Komisyon & hakediş'inde.
 - Maliyet ucu yalnız imzayla açılır; personel maliyet ve kâr görmez.
 - Yedeğe iki tablo kendiliğinden girer (gizli sütun yok). `db:reset` ürünleri baştan yüklediği için günlük satırlar da
   silinir (ürün kimliklerine bağlı); gün sonu özetleri kalır.
@@ -462,6 +500,8 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/lib/lafpos/sales.ts` | LafPOS ay toplamlarıyla ModPOS listesinin birleşmesi (her gün tek kaynak), ayın kaynağı ve Satışlar'ın bandı, ModPOS listesi yükleme kuralı (saf) |
 | `src/server/data/lafpos-sales.ts` | Sayılan günlerin ay toplamları ve gün sonları; veri kümesi ve tatlı payı için birleştirme |
 | `src/server/lafpos/rematch.ts` | Ürünsüz satırların sonradan bağlanması (site kalemi, POS adı) |
+| `src/lib/lafpos/ikram.ts`, `src/server/data/lafpos-ikram.ts` | İkramın kuralı (her gün tek kaynak, ürün ikramının reddi, e-postanın karşılaştırması; saf) ve okuyucusu (veri kümesi, Zayi'nin günü, kasa özeti) |
+| `src/lib/commission/report.ts` (`lafposMonth`, `lafposSales`), `src/lib/commission/channels.ts` (`lafposChannel`), `src/server/data/commission.ts` | Ödeme kanallarının Komisyon & hakediş'e girmesi |
 | `src/lib/lafpos/status.ts` | Durum satırının biçimi, retlerin metni, Ayarlar kartının özeti, gelmeyen günler (saf) |
 | `src/server/lafpos/status.ts` | Ucun sonucu durum satırına (`handlePosDay`, imzasız sayaç), geçiş günü okuyucusu, kartın verisi |
 | `src/server/lafpos/admin.ts` | Geçiş gününün yazımı ve günün silinmesi (çekirdekler, rol denetimi) |
@@ -479,4 +519,5 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
 | `tests/lafpos-satis.test.ts`, `tests/lafpos-satis-db.test.ts` | Her gün tek kaynak (özellik testi), birleştirme, model (tüketim, karaoke KDV'si), Satışlar'ın bandı, yükleme kuralı; veritabanında geçiş günü boşken bayt bayt aynılık, geçiş ve LafPOS ayları, kapsam, yükleme reddi ve kırpma, sonradan bağlama, silme engeli, satış tahmini |
 | `tests/lafpos-kasa.test.ts`, `tests/lafpos-kasa-db.test.ts` | Kasa raporunun LafPOS'la uzlaşması (B09): farklı yazılanlar ve metinler, gün içinde çıkan, kapalı gün kanıtı, e-posta anahtarı, ay satırı, geç rapor ve fotoğraf kanıtı, kart; veritabanında geçiş günü boşken bugünkü gibi, kapalı işaretin kalkması, e-posta, geç rapor ve kartı |
+| `tests/lafpos-komisyon.test.ts`, `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts` | Ödeme kanalları komisyona (B10, E-37) ve ikram tüketime (E-38): geçiş günü boşken bugünkü gibi, LafPOS ayı, geçiş ayı, kanalsız ödeme, eksik gün; ikramın kayıtlı tüketime bir kez girmesi, panel ürün ikramının sayılmaması ve reddi, kasa özeti ve e-postası |
 | `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), güne göre açık retler (sonraki 200 ve başka günün 400 / 500'ü örtmez, aynı günün 200'ü kapatır), `counted`, günün silinmesi (yalnız çözdüğü 409'u kapatır), geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |

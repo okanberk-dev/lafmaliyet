@@ -114,7 +114,8 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
           <p className="text-ink-soft">O gün aynı kalemden kayıt yok.</p>
         )}
         {card.otherPending.length ? <p className="font-medium text-warn">Aynı gün ve kalem için başka bekleyen istek var ({card.otherPending.join(", ")})</p> : null}
-        {ikram && z !== null && card.ikramRecorded !== null ? (
+        {card.lafposRefusal ? <p className="font-medium text-warn">{card.lafposRefusal} Bu isteği reddedin.</p> : null}
+        {ikram && !card.lafposRefusal && z !== null && card.ikramRecorded !== null ? (
           <p className="text-ink tabular">
             Z ödenmez {money(z)} · kayıtlı ikram menü değeri {money(card.ikramRecorded)} → bu kayıtla {money(card.ikramRecorded + (card.menuValue ?? 0))}
           </p>
@@ -130,9 +131,11 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         <Button variant="ghost" onClick={() => decide("reject", () => `${who} isteği reddedildi`)} disabled={pending}>
           <X size={15} /> Reddet
         </Button>
-        <Button onClick={() => decide("approve", () => `${card.item} ${card.dayLong} gününe eklendi`)} disabled={pending}>
-          <Check size={15} /> Onayla ve ekle
-        </Button>
+        {card.lafposRefusal ? null : (
+          <Button onClick={() => decide("approve", () => `${card.item} ${card.dayLong} gününe eklendi`)} disabled={pending}>
+            <Check size={15} /> Onayla ve ekle
+          </Button>
+        )}
       </div>
     </article>
   );

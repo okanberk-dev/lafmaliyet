@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { Model } from "@/lib/calc/engine";
 import { stampTR } from "@/lib/cash-report";
+import { productIkramRefusal } from "@/lib/lafpos/ikram";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText, type LateWastePayloadT, type WasteDeletePayloadT } from "@/lib/waste-requests";
@@ -212,6 +213,11 @@ export interface LateWasteCard extends CardBase {
   ikramRecorded: number | null;
   /** "Ekim sayımı girilmiş: onaylanırsa tutarlılık değişir" */
   countDone: string | null;
+  /**
+   * LafPOS gününün ürün ikramı (geçiş günü istekten sonra seçildi): onaylanmaz, reddedilir (src/lib/lafpos/ikram.ts);
+   * metni, değilse null
+   */
+  lafposRefusal: string | null;
 }
 
 export interface WasteDeleteCard extends CardBase {
@@ -298,6 +304,7 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
           report: { exists: !!report, emailed: !!report?.emailedAt, offRevenue: report?.offRevenue ?? null },
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
+          lafposRefusal: productIkramRefusal(p, model.ds.settings.lafposGecisGunu ?? null),
         },
       ];
     }

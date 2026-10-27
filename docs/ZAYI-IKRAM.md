@@ -12,6 +12,33 @@ malzemesi tutarlılıkta iki kez düşülür. Form ikram seçilince bunu hatırl
 
 ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda görünmezler. Panele girilmeleri gerekir.
 
+## LafPOS'a geçildikten sonra: ürün ikramı LafPOS'tan (denetim E-38)
+
+Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince ([LAFPOS.md](LAFPOS.md) › İkram) o günden itibaren ürün ikramı
+kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
+(`src/lib/lafpos/ikram.ts`):
+
+- **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
+  aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine ("LafPOS" rozetiyle), haftalık özete ve
+  kasa raporunun özetine bir kez girer. O güne panelde girilmiş **ürün ikramı silinmez ama sayılmaz**: listede
+  "Sayılmıyor: LafPOS'taki ikram sayılıyor", ay özetinin altında "Panele girilen N ürün ikramı sayılmıyor". Ürüne
+  bağlanamayan LafPOS satırı tüketime girmez, ay özetinde sayılır (yöneticide "ürüne bağlı değil").
+- **Yeni ürün ikramı panele girilmez** (iki rol): "Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele
+  girilmez. Burada hammadde ikramı ve zayi girilir." Form İkram'da yalnız hammadde arar ve bunu mavi notla söyler. Geç
+  kayıt isteği de reddedilir; geçiş günü istekten sonra seçildiyse Onaylar'daki kart onay düğmesini göstermez, "Bu
+  isteği reddedin" der (sunucu da onaylamaz).
+- **Hammadde ikramı** (ör. personele süt) ve **zayi** panelde kalır, her zaman sayılır.
+- **Gün listesi** LafPOS'un o günkü ikramını salt okunur gösterir ("LafPOS'ta işaretlenen ikram"): personele ad ve
+  adet; yöneticiye ayrıca nedeni ve menü değeri. Gün sonu henüz gelmediyse "LafPOS'un bu günün sonu gelmedi; ikramlar
+  gün sonuyla gelir." (o güne kadar paneldeki ürün ikramı, varsa, sayılır).
+- **Kasa e-postası** LafPOS gününde "Panelde kayıtlı ikram" yerine "LafPOS'taki ikram" yazar ve ModPOS'un uyarısı
+  ("ödenmez tutarı panelde kayıtlı ikramdan fazla") yerine LafPOS'un iki rakamını karşılaştırır: Z'deki ödenmez tutarı
+  ile ikram listesinin menü değeri ayrıysa bilgi satırı; panele girilip sayılmayan ürün ikramı varsa o da yazılır.
+- Ay özetindeki ödenmez tutarının etiketi ayın kasasına göre: "ModPOS ödenmez / ikram", geçiş ayında "Kasa ödenmez /
+  ikram", sonra "LafPOS ödenmez / ikram".
+
+Geçiş günü boşken bunların hiçbiri yoktur: ekran, kayıt, Tutarlılık ve e-posta bugünkü gibi yalnız panelden çalışır.
+
 ## Kayıt
 
 - **Menü ürünü** adetle girilir (ör. 2× Latte M). Malzemesi reçeteden hesaplanır, fire payı eklenmez.
@@ -86,10 +113,10 @@ Personel hiçbir yerde tutar görmez.
 | Yer | Ne olur |
 |-----|---------|
 | Tutarlılık (`/panel/tutarlilik`) | Her malzemenin sayım sapmasından kayıtlı zayi ve ikram düşülür. Satırda "zayi + ikram … · kalan …", özette "kayıtlı zayi + ikram … · açıklanamayan …" görünür. Sapma, kullanım ve fatura farkının kendisi değişmez |
-| Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır |
+| Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır (LafPOS gününde LafPOS'un ikramı ve kendi ödenmez tutarı, yukarıda) |
 | Bugün (`/panel/bugun`, personel) | Günün kayıt sayısı ve özeti. Akşam (20:00'den sonra) kasa raporu gönderilmeden "Rapordan önce" der: özet rapora geçtiği için eksik kayıt rapordan önce girilir; rapor gönderilince tamam ([BUGUN.md](BUGUN.md)) |
 | Satışlar (`/panel/satislar`) | Ayın "Ödenmez / ikram" alanının altında panelde kayıtlı ikram ve menü değeri görünür; "Bunu yaz" ile alana yazılır. ModPOS'un rakamı esastır, kendiliğinden değişmez |
-| Yönetici ay özeti (`/panel/zayi`) | Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, ModPOS'un ödenmez tutarı ve en çok giden kalemler |
+| Yönetici ay özeti (`/panel/zayi`) | Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, kasanın ödenmez tutarı ve en çok giden kalemler (geçiş gününden itibaren LafPOS'un ikramı da) |
 
 **Çift sayım yok.** Gelir-giderdeki mal maliyeti stok farkından gelir (geçen ay sayımı + alınan − bu ay sayımı). Zayi
 ve ikramın malzemesi bu tutarın zaten içindedir. Bu yüzden ayrıca gider yazılmaz; kayıtlar yalnız farkın nereye
@@ -98,11 +125,13 @@ gittiğini açıklar.
 Dosyalar:
 
 - `src/lib/waste.ts`, `src/lib/waste-requests.ts` (kipler, metinler, isteklerin yükü)
-- `src/lib/calc/engine.ts` (`recordedUsage`, `wasteCost`, `wasteSummary`)
+- `src/lib/calc/engine.ts` (`recordedUsage`, `countedWaste`, `wasteCost`, `wasteSummary`)
+- `src/lib/lafpos/ikram.ts` (LafPOS'un ikramının kuralı ve metinleri), `src/server/data/lafpos-ikram.ts` (okuyucusu)
 - `src/lib/calc/insights.ts` (`consistency`)
 - `src/server/waste/core.ts` (doğrudan kayıt ve silme, istek, karar)
 - `src/server/actions/waste.ts`, `src/server/actions/waste-requests.ts`
 - `src/server/data/waste.ts`, `src/server/data/waste-requests.ts` (personelin okuyucuları beyaz listeyle, yöneticinin kartları)
 - `src/app/panel/zayi/`, `src/app/panel/onaylar/ops-section.tsx` ve `ops-cards.tsx`
 - Testler: `tests/zayi-ikram.test.ts`, `tests/zayi-istek.test.ts`, `tests/zayi-istek-db.test.ts`
-  (`ZAYI_ISTEK_TEST_DATABASE_URL`)
+  (`ZAYI_ISTEK_TEST_DATABASE_URL`), `tests/lafpos-ikram.test.ts`, `tests/lafpos-komisyon-ikram-db.test.ts`
+  (`LAFPOS_TEST_DATABASE_URL`)
