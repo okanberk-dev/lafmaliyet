@@ -381,10 +381,10 @@ test("8. faturalar: kontrol bekleyen yapılacak, yoksa tamam; okunamazsa satır 
   assert.equal(mixed.badge, "3 kontrol");
   assert.equal(
     mixed.detail,
-    "3 fatura kontrol bekliyor: 2 faturanın kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın; 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın.",
+    "3 fatura kontrol bekliyor: 2 faturanın kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın; 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın ya da bilerek böyleyse Kalsın deyin.",
   );
   const onlyStock = byKey(dayTasks(admin(NOON, { invoices: { review: 1, stockOnly: 1 } }))).fatura;
-  assert.equal(onlyStock.detail, "1 fatura kontrol bekliyor: 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın.");
+  assert.equal(onlyStock.detail, "1 fatura kontrol bekliyor: 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın ya da bilerek böyleyse Kalsın deyin.");
   const none = byKey(dayTasks(admin(NOON))).fatura;
   assert.equal(none.status, "done");
   assert.equal(none.detail, "Kontrol bekleyen fatura yok.");

@@ -1508,7 +1508,11 @@ export function InvoicesClient({
         title={`${num(reviewStockOnly.length)} fatura kategorisinde kalsın mı?`}
         confirmLabel="Hepsi kalsın"
         tone="primary"
-        description="Bu faturaların kalemleri hammaddeye bağlı ama kategorileri mal alışı değil: stoğa ve fiyata girmeye devam eder, mal maliyetine girmez. Mal alışı olanların kategorisini önce değiştirin. Geri alınabilir."
+        description={
+          reviewStockOnly.length === 1
+            ? "Bu faturanın kalemleri hammaddeye bağlı ama kategorisi mal alışı değil: stoğa ve fiyata girmeye devam eder, mal maliyetine girmez. Mal alışıysa önce kategorisini değiştirin. Geri alınabilir."
+            : "Bu faturaların kalemleri hammaddeye bağlı ama kategorileri mal alışı değil: stoğa ve fiyata girmeye devam eder, mal maliyetine girmez. Mal alışı olanların kategorisini önce değiştirin. Geri alınabilir."
+        }
       />
     </Card>
   );

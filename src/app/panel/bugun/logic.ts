@@ -591,7 +591,7 @@ const invoicesRow: Row = (f) => {
     // Stoğa girip gelir-gidere girmeyen (kalemi hammaddeye bağlı, kategorisi mal alışı değil) tek dokunuşla onaylanmaz
     const why = [
       guessed ? `${stockOnly ? `${num(guessed)} faturanın ` : ""}kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın` : "",
-      stockOnly ? `${num(stockOnly)} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın` : "",
+      stockOnly ? `${num(stockOnly)} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın ya da bilerek böyleyse Kalsın deyin` : "",
     ].filter(Boolean);
     return {
       key: "fatura",
