@@ -338,6 +338,10 @@ export function RecipeEditor({
   const priceNum = parseNumberTR(price) ?? 0;
   /** Fiyata dokunuldu ve sunucudaki fiyat kartın gördüğünden başka bir fiyata değişti: kayıt çakışır, seçim istenir */
   const priceMoved = toMinor(product.price) !== toMinor(seen.price) && toMinor(priceNum) !== toMinor(product.price);
+  // Çakışma çıkınca seçim görünür olsun: telefonda Kaydet alttaki çubukta, fiyat alanı sayfanın başında kalabilir
+  useEffect(() => {
+    if (priceMoved) document.getElementById("r-price-moved")?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+  }, [priceMoved, reduce]);
   const fireInput = parseFireInput(fire);
   // Okunamayan fire metni önizlemede genel oranla hesaplanır; kayıt hata gösterip durur (sessizce %0 olmaz)
   const fireNum = fireInput.error ? null : fireInput.rate;
@@ -495,7 +499,7 @@ export function RecipeEditor({
     } finally {
       setSaving(false);
     }
-    if (!res.ok) return toast.error(res.error, { duration: 12_000 });
+    if (!res.ok) return toast.error(res.error);
     // Siteye bağlı üründe yazılan değerler sitenin yanıtından: fiyat kuruşa yuvarlı, "Tükendi" QR menüden kaldırır
     const saved = res.data;
     setSeen({ price: saved.price, active: saved.active, showOnMenu: saved.showOnMenu });
@@ -1265,7 +1269,7 @@ export function RecipeEditor({
                 {/* Fiyat kart açıldıktan sonra başka yerde (sitede, toplu Fiyatlar'da, başka sekmede) değişti ve burada da
                     değiştirildi: kayıt çakışır, hangisinin kalacağı burada seçilir (denetim E-11) */}
                 {priceMoved ? (
-                  <div role="alert" className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2">
+                  <div id="r-price-moved" role="alert" className="scroll-mt-24 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2">
                     <p>
                       Fiyat bu arada başka bir yerde <span className="font-semibold tabular">{money(product.price)}</span> oldu (kart açıldığında{" "}
                       <span className="tabular">{money(seen.price)}</span>). Hangisi kalsın?

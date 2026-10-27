@@ -8,7 +8,7 @@ import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
 import type { PriceAck } from "@/lib/calc/price-impact";
-import { priceMovedText, seenPriceDecision } from "@/lib/prices/seen";
+import { priceMovedText, priceRefusedText, seenPriceDecision } from "@/lib/prices/seen";
 import { isStaleFailure } from "@/lib/site-menu/push";
 import { panelIsActive } from "@/lib/site-menu/slot";
 import { keepSeen } from "@/lib/site-menu/sold-out";
@@ -58,8 +58,12 @@ export async function updateProductPrice(id: number, price: number, ackAlert = f
     const [before] = await getDb().select().from(s.products).where(eq(s.products.id, z.number().int().positive().parse(id)));
     if (!before) throw new UserError("Ürün bulunamadı");
     const written = await writeSalePrice(me, before, p, { source: from, consequence: "fiyat değişmedi", expectFrom: seen }).catch((e: unknown) => {
-      // Fiyat bu arada değişti (panelde ya da sitede): liste güncel fiyatı görsün
-      if (e instanceof PriceChangedError || isStaleFailure(e)) refresh();
+      // Fiyat bu arada değişti (panelde ya da sitede): liste yenilenir, hücre güncel fiyatı alır
+      if (e instanceof PriceChangedError) {
+        refresh();
+        throw new UserError(priceRefusedText(e.current));
+      }
+      if (isStaleFailure(e)) refresh();
       throw e;
     });
     const posPending = written.posPending;
@@ -273,7 +277,7 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
           if (!cur) throw new UserError("Ürün bulunamadı; sayfayı yenileyin");
           // Okumadan bu yana başka bir yazım fiyatı değiştirdi: çakışma (kart güncel fiyatı ve iki seçeneği gösterir)
           refresh();
-          throw new PriceChangedError(priceMovedText(cur.price, data.seenPrice ?? before.price));
+          throw new PriceChangedError(priceMovedText(cur.price, data.seenPrice ?? before.price), cur.price);
         }
         await tx.delete(s.recipeItems).where(eq(s.recipeItems.productId, data.productId));
         if (data.items.length) {

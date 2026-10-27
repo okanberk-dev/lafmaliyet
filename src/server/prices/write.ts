@@ -18,7 +18,15 @@ type ProductRow = typeof s.products.$inferSelect;
  * Fiyat okunduktan (ya da ekranda görüldükten) sonra başka yerde değişti; hiçbir şey yazılmadı. Eylem sayfayı yeniler
  * (refresh): liste ve kart güncel fiyatı görür.
  */
-export class PriceChangedError extends UserError {}
+export class PriceChangedError extends UserError {
+  constructor(
+    message: string,
+    /** Veritabanındaki güncel fiyat */
+    readonly current: number,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Tek ürünün satış fiyatını yazar: listedeki fiyat hücresi ve zam önerisi (updateProductPrice), toplu değişiklik ve geri
@@ -35,7 +43,7 @@ export async function writeSalePrice(
   price: number,
   opts: { source: PriceSource; batchId?: string | null; note?: string | null; consequence: string; expectFrom?: number },
 ): Promise<{ price: number; site: boolean; posPending: boolean }> {
-  if (opts.expectFrom !== undefined && toMinor(opts.expectFrom) !== toMinor(before.price)) throw new PriceChangedError(priceChangedText(before.price));
+  if (opts.expectFrom !== undefined && toMinor(opts.expectFrom) !== toMinor(before.price)) throw new PriceChangedError(priceChangedText(before.price), before.price);
   const desired = { price, active: before.active, showOnMenu: before.showOnMenu };
   const push = await pushSaleChange(user, before, desired, opts.consequence);
   const now = new Date();
@@ -63,7 +71,7 @@ export async function writeSalePrice(
       if (!hit) {
         const [cur] = await tx.select({ price: s.products.price }).from(s.products).where(eq(s.products.id, before.id));
         if (!cur) throw new UserError("Ürün bulunamadı");
-        throw new PriceChangedError(priceChangedText(cur.price));
+        throw new PriceChangedError(priceChangedText(cur.price), cur.price);
       }
     }
     const pos = await recordPriceChange(

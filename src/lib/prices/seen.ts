@@ -35,7 +35,12 @@ export function priceMovedText(current: number, seen: number): string {
   return `Fiyat bu arada başka bir yerde değişti: şimdi ${money(current)} (kart açıldığında ${money(seen)}); değişiklikler kaydedilmedi. Fiyat alanının altından hangisinin kalacağını seçip yeniden kaydet.`;
 }
 
-/** Listedeki fiyat hücresinin ve zam önerisinin çakışma metni (toplu Fiyatlar'ın metniyle aynı kalıp) */
+/** Toplu Fiyatlar'ın (ve önizlemeden yazan her yolun) çakışma metni: liste yenilenmedi */
 export function priceChangedText(current: number): string {
   return `Fiyat bu sırada değişti (şimdi ${money(current)}); listeyi yenileyip tekrar dene`;
+}
+
+/** Listedeki fiyat hücresinin ve zam önerisinin çakışma metni: eylem sayfayı yeniledi, hücre güncel fiyatı aldı */
+export function priceRefusedText(current: number): string {
+  return `Fiyat bu arada başka bir yerde ${money(current)} oldu; yazılmadı. Liste güncellendi, istersen yeniden değiştir.`;
 }

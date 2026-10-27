@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { priceChangedText, priceMovedText, seenPriceDecision } from "../src/lib/prices/seen";
+import { priceChangedText, priceMovedText, priceRefusedText, seenPriceDecision } from "../src/lib/prices/seen";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 
@@ -39,6 +39,8 @@ test("çakışma metinleri: güncel ve görülen fiyat, ne yapılacağı", () =>
   // Liste ve toplu Fiyatlar aynı kalıbı kullanır
   assert.equal(priceChangedText(210), "Fiyat bu sırada değişti (şimdi 210 ₺); listeyi yenileyip tekrar dene");
   assert.equal(priceChangedText(185.5), "Fiyat bu sırada değişti (şimdi 185,50 ₺); listeyi yenileyip tekrar dene");
+  // Fiyat hücresi ve zam önerisi: eylem listeyi yeniledi, "yenileyip" demez
+  assert.equal(priceRefusedText(225), "Fiyat bu arada başka bir yerde 225 ₺ oldu; yazılmadı. Liste güncellendi, istersen yeniden değiştir.");
 });
 
 test("eylemler: saveRecipe görüleni kullanır, dokunulmayan satış alanını yazmaz; tek fiyat writeSalePrice'ta koşullu", () => {
@@ -60,7 +62,8 @@ test("eylemler: saveRecipe görüleni kullanır, dokunulmayan satış alanını 
   const price = products.slice(products.indexOf("export async function updateProductPrice"), products.indexOf("async function updatePriceAck"));
   assert.match(price, /seenPrice\?: number \| null\) \{/);
   assert.match(price, /expectFrom: seen \}/);
-  assert.match(price, /if \(e instanceof PriceChangedError \|\| isStaleFailure\(e\)\) refresh\(\);/);
+  assert.match(price, /if \(e instanceof PriceChangedError\) \{\s+refresh\(\);\s+throw new UserError\(priceRefusedText\(e\.current\)\);/);
+  assert.match(price, /if \(isStaleFailure\(e\)\) refresh\(\);/);
 });
 
 test("reçete kartı: gördüğü satış alanlarını gönderir, sayfa yenilenince dokunulmayanlar güncellenir, çakışmada seçim", () => {
@@ -79,6 +82,8 @@ test("reçete kartı: gördüğü satış alanlarını gönderir, sayfa yenileni
   assert.match(editor, /const priceMoved = toMinor\(product\.price\) !== toMinor\(seen\.price\) && toMinor\(priceNum\) !== toMinor\(product\.price\);/);
   assert.match(editor, /\{money\(product\.price\)\} kalsın/);
   assert.match(editor, /\{money\(priceNum\)\} yazılsın/);
+  // Telefonda Kaydet alttaki çubukta: çakışma çıkınca seçim görünür alana kayar
+  assert.match(editor, /if \(priceMoved\) document\.getElementById\("r-price-moved"\)\?\.scrollIntoView\(/);
   // Eylem atarsa düğme kilitli kalmaz (denetim E-51'in bu dosyadaki kısmı)
   assert.match(editor, /\} catch \(e\) \{\s+\/\/ [^\n]*\n\s+toastUnreachable\(e, "recete-kaydet"\);\s+return;\s+\} finally \{\s+setSaving\(false\);/);
   assert.match(editor, /\} catch \(e\) \{\s+toastUnreachable\(e, "recete-sil"\);\s+return;\s+\} finally \{\s+setDeleting\(false\);/);

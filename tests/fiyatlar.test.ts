@@ -762,7 +762,7 @@ test("panel → site yazımı: önce site, sonra tek işlemde yazım ve geçmiş
   const local = write.slice(write.indexOf("} else {"), write.indexOf("recordPriceChange("));
   assert.match(local, /abs\(\$\{s\.products\.price\} - \$\{before\.price\}\) < 0\.005/);
   assert.match(local, /before\.siteMenuId \? eq\(s\.products\.siteMenuId, before\.siteMenuId\) : isNull\(s\.products\.siteMenuId\)/);
-  assert.match(local, /throw new PriceChangedError\(priceChangedText\(cur\.price\)\);/);
+  assert.match(local, /throw new PriceChangedError\(priceChangedText\(cur\.price\), cur\.price\);/);
 });
 
 test("toplu değişiklik: menü kilidi önce, iyimser denetim, kaleme göre sırayla, dörder, 40 sn, devre kesici", () => {

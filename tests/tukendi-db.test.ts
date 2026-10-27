@@ -26,7 +26,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import postgres from "postgres";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
-import { priceChangedText, priceMovedText } from "../src/lib/prices/seen";
+import { priceChangedText, priceMovedText, priceRefusedText } from "../src/lib/prices/seen";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
 import { keepSeen, SOLD_OUT_KEY, SOLD_OUT_TEXT, STAFF_SOLD_OUT_MAX } from "../src/lib/site-menu/sold-out";
 import type { DB } from "../src/server/db";
@@ -630,7 +630,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     await ownerPriceSynced(ids.tira, 19_000);
     posts = [];
     const stale = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
-    assert.equal(!stale.ok && stale.error, priceChangedText(190));
+    assert.equal(!stale.ok && stale.error, priceRefusedText(190));
     assert.equal(posts.length, 0);
     const ok = await actions.updateProductPrice(prod.tira, 200, false, "manual", 190);
     assert.ok(ok.ok, JSON.stringify(ok));
