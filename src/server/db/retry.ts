@@ -14,7 +14,8 @@
 //   hatasıdır ve bağlantı hiç kurulmadığı için gönderilmemiş sayılır: yazım da yeniden denenir. Canlıda 24 Ekim 2026'da
 //   Bugün'ün ilk sorgusunda görüldü (denetim E-50). Çıplak 08P01 eklenmez: genel protokol hatası kodudur, kurulmuş bir
 //   bağlantıda da gelir; yalnız bu mesajla birlikte sayılır.
-// "server-only" yok: komut satırı betikleri (migrate, yedek) ve testler de kullanır. Testler: tests/veritabani-baglanti.test.ts.
+// "server-only" yok: komut satırı betikleri (migrate, yedek) ve testler de kullanır. Testler: tests/veritabani-baglanti.test.ts,
+// gerçek postgres.js ve sahte Neon'la tests/veritabani-baglanti-db.test.ts.
 
 /** postgres.js'in bağlantı hataları ve soket hataları (hata nesnesinin `code` alanı) */
 const CONNECTION_CODES = new Set(["CONNECTION_CLOSED", "CONNECTION_ENDED", "CONNECTION_DESTROYED", "CONNECT_TIMEOUT", "ECONNRESET", "ETIMEDOUT", "EPIPE"]);
