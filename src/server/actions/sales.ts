@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gte, inArray, isNull, lte, max, sql, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, max, or, sql, sum } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -317,19 +317,22 @@ export async function applyLineMatches(month: string, items: { lineId: number; p
 }
 
 const lafposMatchSchema = z.object({
-  /** Satışlar'ın ayı: o ayın bu adlı LafPOS satırlarının hepsi seçilene geçer; null (Ayarlar › LafPOS) yalnız ürünsüzler */
+  /** Satışlar'ın ayı: o ayın satırı (current) ve aynı adlı ürünsüz satırları seçilene geçer; null (Ayarlar › LafPOS) yalnız ürünsüzler */
   month: zMonth.nullable(),
   posName: zText("Ürün adı", 160),
   productId: z.number().int().positive().nullable(),
   isService: z.boolean(),
+  /** Satışlar'daki ay toplamı satırının şimdiki eşleşmesi (satır ad + ürün + hizmet başınadır); verilmezse yalnız ürünsüzler */
+  current: z.object({ productId: z.number().int().positive().nullable(), isService: z.boolean() }).nullish(),
 });
 
 /**
  * LafPOS satırını (ay toplamı ya da kartın eşleşmeyen adı) bir ürüne ya da HİZMET'e bağlar (docs/LAFPOS.md › Günlük
  * satış; denetim E-33). POS adı hafızaya yazılır (ModPOS satırının eşleştirmesiyle aynı hafıza, anahtar posMatchKey) ve
  * adı aynı anahtara düşen ürünsüz LafPOS satırları her ayda, yeniden gönderim olmadan bağlanır. `month` verilirse
- * (Satışlar) o ayın bu adlı LafPOS satırlarının hepsi seçilene geçer, bağlı olanlar da (ModPOS satırında olduğu gibi o
- * ayın satırı değişir); ürün seçilmez ve hizmet değilse o ayın satırları ürünsüz kalır, ad hafızadan silinir.
+ * (Satışlar) ModPOS satırındaki gibi: tıklanan ay toplamının satırları (bu ad, `current` eşleşmesi; bağlıysa da) ve o ayın
+ * aynı adlı ürünsüz satırları seçilene geçer; aynı adın başka ürüne bağlı satırı (ör. sitenin öteki boyu) değişmez. Ürün
+ * seçilmez ve hizmet değilse tıklanan satırlar ürünsüz kalır, ad hafızadan silinir.
  */
 export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) {
   return attempt(async () => {
@@ -337,7 +340,9 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
     const data = lafposMatchSchema.parse(input);
     const posName = data.posName.replace(/\s+/g, " ");
     const pid = data.isService ? null : data.productId;
-    if (data.month === null && pid === null && !data.isService) throw new UserError("Bir ürün ya da HİZMET seçin");
+    const clearing = pid === null && !data.isService;
+    // Eşleşmeyi kaldırmak yalnız Satışlar'daki bir ay toplamı satırında olur (ay ve şimdiki eşleşmesiyle)
+    if (clearing && !(data.month && data.current)) throw new UserError("Bir ürün ya da HİZMET seçin");
     const db = getDb();
     if (pid) {
       const [p] = await db.select({ id: s.products.id }).from(s.products).where(eq(s.products.id, pid));
@@ -346,14 +351,24 @@ export async function matchLafposName(input: z.input<typeof lafposMatchSchema>) 
     const index = createPosMappingIndex(await db.select().from(s.posMappings));
     const t = s.posDailySales;
     const r = await db.transaction(async (tx) => {
-      const month = data.month
-        ? await tx
-            .update(t)
-            .set({ productId: pid, isService: data.isService })
-            .where(and(eq(t.posName, posName), gte(t.date, `${data.month}-01`), lte(t.date, `${data.month}-31`)))
-            .returning({ date: t.date })
-        : [];
-      if (data.month && !month.length) throw new UserError("Bu ayda bu adla LafPOS satırı yok; sayfayı yenileyin.");
+      let month: { date: string }[] = [];
+      if (data.month) {
+        const cur = data.current ?? null;
+        const unmatched = and(isNull(t.productId), eq(t.isService, false));
+        const same = cur ? and(cur.productId === null ? isNull(t.productId) : eq(t.productId, cur.productId), eq(t.isService, cur.isService)) : undefined;
+        const rows = await tx
+          .select({ id: t.id, posName: t.posName, productId: t.productId, isService: t.isService })
+          .from(t)
+          .where(and(gte(t.date, `${data.month}-01`), lte(t.date, `${data.month}-31`), same ? or(same, unmatched) : unmatched));
+        const key = posMatchKey(posName);
+        // Tıklanan satır: bu ad ve şimdiki eşleşme; ürünsüzler adın anahtarıyla (eşleşme kaldırılırken yalnız tıklanan)
+        const clicked = (x: (typeof rows)[number]) =>
+          cur !== null && x.posName.replace(/\s+/g, " ").trim() === posName && x.productId === cur.productId && x.isService === cur.isService;
+        const open = (x: (typeof rows)[number]) => !clearing && x.productId === null && !x.isService && posMatchKey(x.posName) === key;
+        const ids = rows.filter((x) => clicked(x) || open(x)).map((x) => x.id);
+        if (!rows.some((x) => (cur ? clicked(x) : open(x)))) throw new UserError("Bu LafPOS satırı bu arada değişmiş; sayfayı yenileyin.");
+        month = await tx.update(t).set({ productId: pid, isService: data.isService }).where(inArray(t.id, ids)).returning({ date: t.date });
+      }
       await writeMapping(tx, posName, pid, data.isService, index.storedNames(posName));
       const others = await rematchPosSalesByName(tx, posName, { productId: pid, isService: data.isService });
       return { days: new Set(month.map((x) => x.date)).size, others };

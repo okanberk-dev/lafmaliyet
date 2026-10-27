@@ -21,6 +21,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { createModel } from "../src/lib/calc/engine";
+import { posMatchKey } from "../src/lib/calc/pos-paste";
 import { parsePosDay } from "../src/lib/lafpos/day";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -314,13 +315,13 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     // Satışlar'da LafPOS satırı: o ayın bu adlı satırları seçilene geçer, hafıza yazılır, başka aydaki ürünsüzler bağlanır
     await day("2026-12-04", 100, [{ posName: "CHAI", qty: 1, revenue: 100 }]);
     await day("2026-11-20", 100, [{ posName: "CHAI", qty: 1, revenue: 100 }]);
-    const m = await sales.matchLafposName({ month: "2026-12", posName: "CHAI", productId: ids.latteL, isService: false });
+    const m = await sales.matchLafposName({ month: "2026-12", posName: "CHAI", productId: ids.latteL, isService: false, current: { productId: null, isService: false } });
     assert.deepEqual(m, { ok: true, data: { days: 1, others: 1 } });
     assert.deepEqual((await rowsOf("CHAI")).map((x) => x.productId), [ids.latteL, ids.latteL]);
     const [mapping] = await db.select().from(s.posMappings).where(eq(s.posMappings.posName, "CHAI"));
     assert.deepEqual([mapping.productId, mapping.isService], [ids.latteL, false]);
     // Eşleşmeyi kaldırmak: o ayın satırları ürünsüz, hafızadan silinir; öteki ayın satırı kalır
-    const off = await sales.matchLafposName({ month: "2026-12", posName: "CHAI", productId: null, isService: false });
+    const off = await sales.matchLafposName({ month: "2026-12", posName: "CHAI", productId: null, isService: false, current: { productId: ids.latteL, isService: false } });
     assert.ok(off.ok);
     assert.deepEqual((await rowsOf("CHAI")).map((x) => x.productId), [ids.latteL, null]);
     assert.equal((await db.select().from(s.posMappings).where(eq(s.posMappings.posName, "CHAI"))).length, 0);
@@ -332,7 +333,33 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
       [null, true],
     ]);
     assert.equal((await sales.matchLafposName({ month: null, posName: "X", productId: null, isService: false })).ok, false, "ay yokken boş seçim");
-    assert.equal((await sales.matchLafposName({ month: "2026-12", posName: "YOK", productId: ids.mocha, isService: false })).ok, false, "o ayda satırı yok");
+    assert.equal((await sales.matchLafposName({ month: "2026-12", posName: "CHAI", productId: null, isService: false })).ok, false, "satırın eşleşmesi olmadan kaldırma");
+    assert.equal(
+      (await sales.matchLafposName({ month: "2026-12", posName: "YOK", productId: ids.mocha, isService: false, current: { productId: null, isService: false } })).ok,
+      false,
+      "o ayda satırı yok",
+    );
+    // Aynı ad ayın günlerinde iki ürüne bağlı (ör. eşleştirme ay içinde değişti): tıklanan ay toplamının satırları ve aynı
+    // adlı ürünsüzler değişir, öteki ürüne bağlı günler değişmez (ModPOS satırının eşleştirmesi gibi)
+    await day("2026-12-07", 100, [{ posName: "COLD BREW", productId: ids.latteM, qty: 1, revenue: 100 }]);
+    await day("2026-12-08", 100, [{ posName: "COLD BREW", productId: ids.latteL, qty: 1, revenue: 100 }]);
+    await day("2026-12-09", 100, [{ posName: "COLD BREW", qty: 1, revenue: 100 }]);
+    await db.insert(s.posDailySales).values({ date: "2026-11-12", posName: "Cold  Brew", qty: 1, revenue: 100 });
+    const cold = await sales.matchLafposName({ month: "2026-12", posName: "COLD BREW", productId: ids.mocha, isService: false, current: { productId: ids.latteM, isService: false } });
+    assert.deepEqual(cold, { ok: true, data: { days: 2, others: 1 } });
+    const coldOf = async () =>
+      new Map(
+        (await db.select({ date: s.posDailySales.date, posName: s.posDailySales.posName, productId: s.posDailySales.productId }).from(s.posDailySales))
+          .filter((x) => posMatchKey(x.posName) === "COLD BREW")
+          .map((x) => [x.date, x.productId]),
+      );
+    assert.deepEqual(Object.fromEntries(await coldOf()), { "2026-11-12": ids.mocha, "2026-12-07": ids.mocha, "2026-12-08": ids.latteL, "2026-12-09": ids.mocha });
+    // Kaldırmak yalnız tıklanan ay toplamını ürünsüz bırakır; öteki ay ve öteki ürün kalır
+    const coldOff = await sales.matchLafposName({ month: "2026-12", posName: "COLD BREW", productId: null, isService: false, current: { productId: ids.mocha, isService: false } });
+    assert.deepEqual(coldOff, { ok: true, data: { days: 2, others: 0 } });
+    assert.deepEqual(Object.fromEntries(await coldOf()), { "2026-11-12": ids.mocha, "2026-12-07": null, "2026-12-08": ids.latteL, "2026-12-09": null });
+    const stale = await sales.matchLafposName({ month: "2026-12", posName: "COLD BREW", productId: ids.mocha, isService: false, current: { productId: ids.latteM, isService: false } });
+    assert.deepEqual(stale, { ok: false, error: "Bu LafPOS satırı bu arada değişmiş; sayfayı yenileyin." });
     // Önerileri toplu uygulamak: yalnız hâlâ ürünsüz olan ad
     await day("2026-12-05", 100, [{ posName: "FLAT WHITE", qty: 2, revenue: 300 }]);
     const bulk = await sales.applyLafposMatches("2026-12", [

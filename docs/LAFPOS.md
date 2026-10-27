@@ -142,8 +142,9 @@ kümesi, satış tahmini ve tatlı payı bayt bayt bugünkü gibidir (`tests/laf
 Kasım, LafPOS 10 Kasım'dan itibaren (12 gün geldi, son gün 21 Kasım).") ve yukarıdaki uyarılar. LafPOS satırları aynı
 tabloda "LafPOS · N gün" diye, **salt okunur**: düzenlenmez, silinmez (gün LafPOS'ta düzeltilip yeniden gönderilir).
 Eşleşmeyen LafPOS adı ModPOS satırı gibi eşleştirilir (değnekli öneri ve toplu öneriler dahil; `matchLafposName`,
-`applyLafposMatches`): o ayın bu adlı LafPOS satırları seçilen ürüne geçer, ad Satışlar'ın POS adı hafızasına yazılır,
-başka aylardaki ürünsüz satırlar da bağlanır. Ayın tamamı LafPOS'tansa İçe aktar kartı yerine "LafPOS'tan geliyor"
+`applyLafposMatches`): tıklanan ay toplamının günleri (bağlıysa da) ve o ayın aynı adlı ürünsüz günleri seçilen ürüne
+geçer, aynı adın ayın başka günlerinde başka ürüne bağlı satırı değişmez; ad Satışlar'ın POS adı hafızasına yazılır,
+başka aylardaki ürünsüz satırlar da bağlanır. Tabloda LafPOS satırı ad, ürün ve hizmet başına bir ay toplamıdır. Ayın tamamı LafPOS'tansa İçe aktar kartı yerine "LafPOS'tan geliyor"
 kartı (gelen gün sayısı, Ayarlar kartına bağlantı) çıkar, "Satır ekle" yoktur (eylem de reddeder), o aya eskiden
 yüklenmiş liste "Ayı temizle" ile silinir; ModPOS listesi yüklenmez ("Aralık 2026 LafPOS'tan geliyor; ModPOS listesi
 yüklenmez."). Geçiş gününden önceki aylarda ve geçiş günü boşken sayfa bugünkü gibidir.

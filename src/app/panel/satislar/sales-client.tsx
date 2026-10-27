@@ -103,7 +103,6 @@ import { ProductPicker, type ProductOption } from "./product-picker";
 
 export type { ProductOption } from "./product-picker";
 
-
 export interface SalesRow {
   id: number;
   /**
@@ -768,8 +767,15 @@ export function SalesTable({
     startTransition(async () => {
       applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null });
       if (row.lafposDays !== null) {
-        // LafPOS satırı: o ayın bu adlı LafPOS satırları ve ad hafızası (başka aylardaki ürünsüz satırlar da bağlanır)
-        const res = await matchLafposName({ month, posName: row.posName, productId: v.productId, isService: v.isService });
+        // LafPOS satırı: bu ay toplamının satırları, o ayın aynı adlı ürünsüz satırları ve ad hafızası (başka aylardaki
+        // ürünsüz satırlar da bağlanır; aynı adın başka ürüne bağlı satırı değişmez)
+        const res = await matchLafposName({
+          month,
+          posName: row.posName,
+          productId: v.productId,
+          isService: v.isService,
+          current: { productId: row.productId, isService: row.isService },
+        });
         if (!res.ok) {
           toast.error(res.error);
           return;
