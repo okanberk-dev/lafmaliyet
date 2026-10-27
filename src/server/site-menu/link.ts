@@ -7,6 +7,7 @@ import { isSingleSize, slotLabel, type SiteMenuSlot } from "@/lib/site-menu/slot
 import { logActivity } from "@/server/actions/log";
 import { UserError } from "@/server/actions/util";
 import { getDb, schema as s } from "@/server/db";
+import { rematchPosSalesBySite } from "@/server/lafpos/rematch";
 import { siteLinkSecret } from "@/server/site-link";
 
 import { applySiteList, fetchSiteMenu, linkColumns, loadLinkedRows, lockMenu, logApplied, readSiteSnapshot, SiteRequestError } from "./sync";
@@ -118,6 +119,11 @@ export async function linkProducts(user: { name: string }, requests: readonly Li
     // Sitenin değeri geçerli: liste bütün bağlı satırlara (yeni bağlananlar dahil) uygulanır
     const applied = await applySiteList(tx, list, at);
     if (!applied) throw new UserError("Sitenin menüsü bu sırada değişti; bağlantı kurulmadı. Tekrar dene.");
+    // Bu kalemle gelmiş ürünsüz LafPOS satırları yeniden gönderim olmadan ürüne bağlanır (denetim E-33)
+    await rematchPosSalesBySite(
+      tx,
+      linked.map((l) => ({ productId: l.productId, siteMenuId: l.siteMenuId, slot: l.slot })),
+    );
     return { linked: linked.map((l) => ({ ...l, after: valuesAfter(applied.plan, l.productId, l.before) })), skipped, applied };
   });
   if (result.applied) {

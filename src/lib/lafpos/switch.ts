@@ -50,6 +50,42 @@ export function monthSource(month: string, switchDay: string | null): "modpos" |
 }
 
 /**
+ * Ayın ModPOS ürün listesi (Satışlar'a yüklenen) hesaba girer mi: ayın tamamı geçiş gününden sonraysa hayır (liste
+ * silinmez, Satışlar "sayılmıyor" der); geçiş ayında ve öncesinde evet
+ */
+export function modposListCounts(month: string, switchDay: string | null): boolean {
+  return monthSource(month, switchDay) !== "lafpos";
+}
+
+/**
+ * Ayın LafPOS satışlarının sayıldığı ilk gün (docs/LAFPOS.md › Günlük satış; her gün için tek kaynak): ay geçiş
+ * gününden önceyse (ya da geçiş günü yoksa) null; ayın tamamı geçiş gününden sonraysa ayın 1'i (ModPOS listesi
+ * sayılmaz). Geçiş ayında ModPOS listesi yoksa (`modposThrough` null) geçiş günü; varsa listenin son gününden sonraki
+ * gün, geçiş gününden önce değil: ModPOS'un aylık listesi gün gün bölünemez, kapsadığı günler LafPOS'tan yeniden
+ * sayılmaz. Liste ayın sonuna kadarsa o ay LafPOS sayılmaz (null).
+ */
+export function lafposSalesFrom(month: string, switchDay: string | null, modposThrough: string | null): string | null {
+  const src = monthSource(month, switchDay);
+  if (src === "modpos" || switchDay === null) return null;
+  if (src === "lafpos") return `${month}-01`;
+  if (modposThrough === null) return switchDay;
+  const next = addDays(modposThrough, 1);
+  const from = next > switchDay ? next : switchDay;
+  return from.slice(0, 7) === month ? from : null;
+}
+
+/**
+ * Geçiş gününden itibaren LafPOS günlük satışlarının sayıldığı ilk gün (bütün aylar için tek sınır): geçiş ayında
+ * lafposSalesFrom, o ay hiç sayılmıyorsa sonraki ayın 1'i (sonraki aylarda ModPOS listesi sayılmaz, LafPOS'un her
+ * günü sayılır). Geçiş günü yoksa null: LafPOS hiçbir hesaba girmez.
+ */
+export function lafposCountFrom(switchDay: string | null, modposThroughOfSwitchMonth: string | null): string | null {
+  if (switchDay === null) return null;
+  const month = switchDay.slice(0, 7);
+  return lafposSalesFrom(month, switchDay, modposThroughOfSwitchMonth) ?? `${shiftMonth(month, 1)}-01`;
+}
+
+/**
  * Geçiş günü `prev`'den `next`'e değişince kaynağı değişen günlerin ayları, bugüne (iş günü) kadar: ikisi arasındaki
  * günler (biri boşsa öteki günden bugüne). İleri günler henüz hiçbir hesapta yok; ay listesi onay penceresinde
  * gösterilir (FIFO başlangıcı gibi: kapanmış ayların rakamı değişebilir).
@@ -83,5 +119,7 @@ export function daysUntilText(day: string, today: string): string | null {
  */
 export const LAFPOS_SWITCH_EFFECTS: readonly string[] = [
   "Kasa raporunda bu günden itibaren LafPOS'un gün sonu görünür: formun başındaki \"LafPOS'tan doldur\" bandı (o günün gönderimi geldiyse).",
+  "Ürün satışları bu günden itibaren LafPOS'un gün sonlarından gelir: Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış ve KDV tahmini onları ay toplamı olarak sayar. Bu günden sonraki aylara yüklenen ModPOS listesi sayılmaz (silinmez); geçiş ayında ModPOS listesi geçiş gününden önceki günler içindir.",
+  "Satış tahmini bu günden itibaren kasa raporu girilmemiş günde LafPOS'un Z toplamını, tatlı payı LafPOS satışlarını da okur.",
   "LafPOS'tan gelen bu günden önceki günler deneme sayılır: Ayarlar'da görünür, hiçbir hesaba girmez.",
 ];

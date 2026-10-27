@@ -551,6 +551,9 @@ silinen rapor ayın rakamını hemen değiştirir.
   o günlerin Z toplamı ve indirimiyle, Genel bakış'ın günlük ortalaması listenin açık günüyle, reçeteye göre kârın
   sabit gideri ve online satışı o günlere düşen payla, "ayda …" adetleri listenin açık günüyle. Ay bitince ayın
   tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler.
+  **LafPOS'a geçildiyse** (Ayarlar › LafPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
+  liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
+  her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
   bakış'ta POS cirosu "· kasa raporlarından"; Excel kopyasının Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.

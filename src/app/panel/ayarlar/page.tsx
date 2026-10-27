@@ -416,7 +416,17 @@ async function SettingsContent() {
       </div>
       <JobsCard />
       <SiteLinksCard />
-      <LafposCard />
+      <LafposCard
+        products={model.products.map((p) => ({
+          id: p.product.id,
+          name: p.product.name,
+          size: p.product.size,
+          category: p.category?.name ?? "",
+          cost: p.cost,
+          price: p.price,
+          active: p.product.active,
+        }))}
+      />
       <PhotoReadingCard />
       <BackupCard />
     </SettingsLayout>

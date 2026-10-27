@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { accuracy, isSameMorning, pastRatios, type Accuracy, type SnapshotLite } from "@/lib/forecast/accuracy";
@@ -11,8 +11,8 @@ import { parseForecastSettings, staffFor, type ForecastSettings } from "@/lib/fo
 import { cardFooter, digestForecastBox, staffView, type StaffForecastView } from "@/lib/forecast/text";
 import { parseWeatherState, type WeatherDay, type WeatherState } from "@/lib/forecast/weather";
 import { addDays } from "@/lib/reminders";
-import { loadDailyProductSales } from "@/server/data/daily-sales";
 import { getDb, schema as s } from "@/server/db";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import type { DigestExtraLoad } from "@/server/notify/digest-template";
 
 import { loadDessertMix, loadProductMix } from "./mix";
@@ -44,20 +44,31 @@ export async function loadWeatherState(): Promise<WeatherState | null> {
 }
 
 /**
- * Günlük Z toplamları (iki uç dahil): kasa raporları. ModPOS'un günlük satışı (docs/planlar/CRITIQUE2.md R18) bugün hep
- * null; döküm gelince raporu olmayan günler onun toplamıyla dolacak (kasa kazanır), o birleştirme içe aktarma göreviyle
- * yazılır.
+ * Günlük Z toplamları (iki uç dahil): kasa raporları. LafPOS'a geçiş günü seçiliyse o günden itibaren kasa raporu
+ * girilmemiş günde LafPOS'un gün sonundaki Z toplamı (rapor kazanır; docs/SATIS-TAHMINI.md, docs/LAFPOS.md). Geçiş günü
+ * yoksa LafPOS okunmaz: deneme günleri tahmine girmez.
  */
 export async function loadDailyTotals(from: string, to: string): Promise<DayTotal[]> {
-  const [rows, pos] = await Promise.all([
-    getDb()
+  const db = getDb();
+  const [rows, switchDay] = await Promise.all([
+    db
       .select({ date: s.cashReports.date, total: s.cashReports.zTotal })
       .from(s.cashReports)
       .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
-    loadDailyProductSales(from, to),
+    loadLafposSwitchDay(db),
   ]);
-  if (pos?.length) console.warn("[tahmin] ModPOS günlük satışı var ama tahmin henüz yalnız kasa raporlarını okuyor (docs/SATIS-TAHMINI.md)");
-  return rows.map((r) => ({ date: r.date, total: r.total }));
+  const out = rows.map((r) => ({ date: r.date, total: r.total }));
+  const lafposFrom = switchDay && switchDay > from ? switchDay : from;
+  if (switchDay !== null && lafposFrom <= to) {
+    const r = s.posDayReports;
+    const pos = await db
+      .select({ date: r.date, total: sql<number>`(${r.z}->>'zTotal')::double precision`.mapWith(Number) })
+      .from(r)
+      .where(and(gte(r.date, lafposFrom), lte(r.date, to)));
+    const reported = new Set(out.map((x) => x.date));
+    for (const p of pos) if (!reported.has(p.date) && Number.isFinite(p.total)) out.push({ date: p.date, total: p.total });
+  }
+  return out;
 }
 
 export interface SpecialDayRow extends SpecialDay {

@@ -64,7 +64,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
-| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** | 2 | bekliyor |
+| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | bekliyor |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
 | B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
@@ -361,8 +361,11 @@ ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › laf
 `switchDay` taşır; Ayarlar › LafPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün LafPOS kaydını
 sil", parolayla), gelen ve gelmeyen günleri gösterir; "LafPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
 raporunun LafPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `LAFPOS_SYNC_SECRET` bağlantıyı açmaz.
-Kalan: günlük satış satırlarını hiçbir hesap okumaz, aylık model ModPOS listesine bağlı (E-08, B08); kart kart
-ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B08-B11; sahibe soru 5.
+B08 (E-08, E-33, E-34, E-66): geçiş gününden itibaren günlük satış satırları aylık modele ay toplamı olarak girer (her
+gün tek kaynak: geçiş ayında ModPOS listesi kendi son gününe kadar, sonraki aylarda yalnız LafPOS), Satışlar'da salt
+okunur görünür ve eşleştirilir, ürünsüz satırlar ürün siteye bağlanınca ya da ad eşleştirilince yeniden gönderimsiz
+bağlanır (Ayarlar kartında "Bağla"), LafPOS satırı olan ürün silinmez; geçiş günü boşken hiçbir okuma değişmez.
+Kalan: kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B09-B11; sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.
@@ -483,8 +486,9 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
-  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). Satırlar
-  yazılıyor ama hiçbir hesap okumuyor (denetim E-08, B08; geçiş günü sahibe soru 2).
+  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). B08'den
+  beri satırlar geçiş gününden itibaren aylık modele ay toplamı olarak girer (`docs/LAFPOS.md` › Günlük satış); gün gün
+  okuyan (hafta gününe göre tatlı oranı gibi) henüz yok.
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 
