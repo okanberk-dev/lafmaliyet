@@ -123,6 +123,8 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const label = monthLabel(month);
   // ModPOS listesinin satırları (LafPOS'un ay toplamları ayrı); LafPOS ayında sayılmayan listenin satırları
   const modposLines = lafpos?.source === "lafpos" ? (lafpos.modpos?.lines ?? 0) : rows.filter((r) => r.lafposDays === null).length;
+  // Tablodaki LafPOS satırları (geçiş ayında kartın metinleri iki kaynağı ayrı söyler)
+  const lafposLines = rows.filter((r) => r.lafposDays !== null).length;
 
   return (
     <>
@@ -242,6 +244,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           month={month}
           label={monthLabel(month)}
           lineCount={modposLines}
+          lafposLines={lafposLines}
           mappings={mappingList}
           products={products}
           hasInfo={hasInfo}

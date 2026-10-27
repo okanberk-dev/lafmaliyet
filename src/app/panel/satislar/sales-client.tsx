@@ -1591,6 +1591,7 @@ export function ImportCard({
   month,
   label,
   lineCount,
+  lafposLines = 0,
   mappings,
   products,
   hasInfo,
@@ -1603,7 +1604,10 @@ export function ImportCard({
   month: string;
   /** Hedef ayın adı, ör. "Eylül 2026" (önizleme açıkken ay değiştirilirse hedef görünür kalsın) */
   label: string;
+  /** Ayın ModPOS (Satışlar'a yüklenen) satırları; yükleme ve "Ayı temizle" yalnız bunlara dokunur */
   lineCount: number;
+  /** Tablodaki LafPOS satırları (geçiş ayı): metinler iki kaynağı ayrı söyler, yükleme ve temizleme onlara dokunmaz */
+  lafposLines?: number;
   mappings: MappingLite[];
   products: ProductOption[];
   /** Ayda ciro / açık gün / not gibi bilgi var mı ("Ayı temizle" penceresinde seçenek olarak) */
@@ -1849,8 +1853,10 @@ export function ImportCard({
             <CardFooter className="mt-auto">
               <span>
                 {hasLines
-                  ? `Bu ayda ${num(lineCount)} satır var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
-                  : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
+                  ? `Bu ayda ${num(lineCount)} ${lafposLines ? "ModPOS satırı" : "satır"} var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}${lafposLines ? `, ayrıca LafPOS'tan ${num(lafposLines)} satır` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
+                  : lafposLines
+                    ? `Bu ayda ModPOS listesi yok; LafPOS'tan ${num(lafposLines)} satır var (yükleme ve "Ayı temizle" onlara dokunmaz).`
+                    : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
                 {hasLines && listDays
                   ? ` Kasa raporları daha ileride: Genel bakış ve Tutarlılık listeye dayanan hesapları (günlük ortalama, POS cirosuyla karşılaştırma, sabit gider) ${listDays} günleriyle yapar.`
                   : null}
@@ -1994,7 +2000,9 @@ export function ImportCard({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               {hasLines ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] text-ink-mute">Bu aydaki {num(lineCount)} satır:</span>
+                  <span className="text-[13px] text-ink-mute">
+                    Bu aydaki {num(lineCount)} {lafposLines ? "ModPOS satırı (LafPOS'unkiler kalır)" : "satır"}:
+                  </span>
                   <Segmented
                     label="Mevcut satırlar"
                     value={mode}
@@ -2006,7 +2014,11 @@ export function ImportCard({
                   />
                 </div>
               ) : (
-                <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
+                <span className="text-[13px] text-ink-mute">
+                  {lafposLines
+                    ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (LafPOS'un ${num(lafposLines)} satırına dokunulmaz).`
+                    : "Bu ay boş; satırlar doğrudan yüklenir."}
+                </span>
               )}
               {running ? (
                 // Süren ay: liste o güne kadardır; kasa raporları ilerledikçe hesaplar listenin günleriyle yapılır
@@ -2082,9 +2094,13 @@ export function ImportCard({
           <p>
             {hasLines ? (
               <>
-                <span className="font-medium text-ink">{num(lineCount)} satış satırı silinecek.</span> Eşleştirme hafızası ve Gelir-gider girişleri
-                silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
+                <span className="font-medium text-ink">
+                  {num(lineCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
+                </span>{" "}
+                Eşleştirme hafızası ve Gelir-gider girişleri silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
               </>
+            ) : lafposLines ? (
+              `Bu ayda ModPOS satırı yok; LafPOS'tan gelen ${num(lafposLines)} satır silinmez.`
             ) : (
               "Bu ayda satış satırı yok."
             )}
