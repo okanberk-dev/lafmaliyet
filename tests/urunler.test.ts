@@ -292,17 +292,22 @@ test("Yeni ürünün zayi oranı: kategorideki en sık oran; eşitlikte en yeni 
   assert.equal(newProductFireHint(null), "Zayi oranı Ayarlar'daki genel oran olur; ürün kartından değiştirebilirsiniz.");
 });
 
-test("ürün silme: satışı, zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez, pasif yapılır", () => {
-  const none = { salesLines: 0, waste: 0, priceChanges: 0, onlineMonths: 0 };
+test("ürün silme: satışı (ModPOS ya da LafPOS), zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez, pasif yapılır", () => {
+  const none = { salesLines: 0, posDailySales: 0, waste: 0, priceChanges: 0, onlineMonths: 0 };
   // Geçmişi yok (yalnız ilk fiyat kaydı): silinebilir
   assert.equal(productDeleteBlocker(none), null);
-  const msg = productDeleteBlocker({ salesLines: 12, waste: 2, priceChanges: 3, onlineMonths: 1 });
+  const msg = productDeleteBlocker({ salesLines: 12, posDailySales: 0, waste: 2, priceChanges: 3, onlineMonths: 1 });
   assert.equal(
     msg,
     "Bu ürünün 12 satış satırı, 1 ayda online satış, 2 zayi / ikram, 3 fiyat değişikliği kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
   );
+  // Yalnız LafPOS'un günlük satırı olan ürün de silinmez (denetim E-34: FK "set null" bağı sessizce koparırdı)
+  assert.equal(
+    productDeleteBlocker({ ...none, posDailySales: 21 }),
+    "Bu ürünün 21 LafPOS günlük satış satırı kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
+  );
   // Tek bir kayıt bile yeter
-  for (const k of ["salesLines", "waste", "priceChanges", "onlineMonths"] as const) assert.ok(productDeleteBlocker({ ...none, [k]: 1 }), k);
+  for (const k of ["salesLines", "posDailySales", "waste", "priceChanges", "onlineMonths"] as const) assert.ok(productDeleteBlocker({ ...none, [k]: 1 }), k);
   // Eylem de aynı kuralla reddeder (kart yalnız öneride bulunur); sayaçlar sunucu modülünde, "use server" dosyasında değil
   const actions = readFileSync(join(process.cwd(), "src/server/actions/products.ts"), "utf8");
   assert.match(actions, /const blocker = productDeleteBlocker\(await productHistoryCounts\(p\)\);\s*if \(blocker\) throw new UserError\(blocker\);/);
@@ -310,6 +315,14 @@ test("ürün silme: satışı, zayi kaydı, fiyat geçmişi ya da online satış
   const history = readFileSync(join(process.cwd(), "src/server/data/product-history.ts"), "utf8");
   assert.match(history, /^import "server-only";/);
   assert.match(history, /ne\(s\.productPrices\.source, "create"\)/);
+  assert.match(history, /from\(s\.posDailySales\)\.where\(eq\(s\.posDailySales\.productId, productId\)\)/);
+  // Reçete kartı da aynı sayaçları veritabanından okur: aylık modelin satırları LafPOS ayına yüklenmiş (sayılmayan) listeyi
+  // içermez, LafPOS'un ay toplamlarını da içerir (denetim B08 incelemesi)
+  const card = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/page.tsx"), "utf8");
+  assert.match(card, /posDailySalesCount\(product\.id\)/);
+  assert.match(card, /salesLinesCount\(product\.id\)/);
+  assert.doesNotMatch(card, /model\.ds\.salesLines\.filter\(\(l\) => l\.productId === product\.id/);
+  assert.match(history, /from\(s\.salesLines\)\.where\(eq\(s\.salesLines\.productId, productId\)\)/);
   // "Menüde pasif yap" siteye bağlı, sitede satışta üründe laffogato.net'teki kalemi de "Tükendi" yapar: pencere önceden söyler
   const editor = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/recipe-editor.tsx"), "utf8");
   assert.match(editor, /active && showOnMenu && site\?\.link \? ` laffogato\.net'te de .+ “Tükendi” görünür\.` : null/);

@@ -82,7 +82,8 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   adıyla işlem geçmişine düşer):
   - tutarı değişen ve ödeme sayılmış faturalar yeniden dengelenir: tutar düştüyse fazla sayılan para hesaba geçer,
     arttıysa ödemelerin kapattığı fatura yeniden ödenmedi olur;
-  - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez; yalnız
+    takip günü ve sonrasının faturasına, `takesCreditOnArrival`: takip öncesi fatura kapıda ödenmişti, E-14);
   - Paraşüt'te iptal edilen (ve e-fatura yolunda silinen) fatura silinmeden önce aynı işlemde bağları çözülür: bağlı
     faturasız alım eski hâline döner (gider kaydı yeniden yazılır), ödemeler borca ya da hesaba geçer.
   Özet satırında "Cari: 1 faturada ödeme hesaba geçti, 1 peşin faturaya hesaptaki ödeme sayıldı". `findExisting` elle
@@ -221,9 +222,11 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
 
 - Paraşüt ürününü (ya da açıklamasını) bir hammaddeye bağlayın ve **çarpanı** yazın: Paraşüt'teki 1 birim kaç
   hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`).
-- O kalemden gelen miktar × çarpan, ayın **alınan miktarı** olur (Tutarlılık ekranı); iade faturaları düşülür. Elle
-  girilmiş alınan miktar satırlarına dokunulmaz; yalnızca notu tam olarak "Paraşüt faturalarından" olanlar yönetilir.
-  Tutarlılık'ta böyle bir satır elle düzeltilirse notu silinir ve artık eşitlemeye ait olmaz.
+- O kalemden gelen miktar × çarpan, ayın **alınan miktarı** olur (Tutarlılık ekranı); iade faturaları düşülür (ayın
+  toplamı 0 ise 0 yazılır). Çarpanı onay bekleyen kalem sayılmaz (5b). Elle girilmiş alınan miktar satırlarına
+  dokunulmaz; yalnızca notu tam olarak "Paraşüt faturalarından" olanlar yönetilir. Tutarlılık'ta böyle bir satır elle
+  düzeltilirse notu silinir ve artık eşitlemeye ait olmaz. Tutarlılık'ın **Alım yok (0)** düğmesinin satırı ("Bu ay alım
+  yok") elle girilmiş sayılmaz: o ayın faturası sonradan gelirse yerini faturadaki miktar alır.
 - "Fiyatı güncelle" açıksa, en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç) hammaddenin paket fiyatı
   olur, paket boyu çarpan olur ve fiyat geçmişine "Paraşüt" olarak yazılır (değişim %0,5'ten küçükse yazılmaz).
   Şimdiki birim fiyattan %40'tan fazla farklı fiyat uygulanmaz, onaya düşer (5b). Bedava gelen kalem (%100 iskonto)
@@ -234,7 +237,10 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   benzeri yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
   tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9,
   tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md));
-  faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar.
+  faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar. İki sayılı adda
+  ("50'Lİ X 20", "20 PK X 50 AD") Koli / Kutu / Kasa'da ikisinin çarpımı (1.000); Adet ya da Paket'te hangisi olduğu
+  belli değil, çarpan boş kalır ve form olasılıkları gösterir: bir paket ya da hepsi; Adet'te faturada en az bir paket
+  kadar alındıysa tek tane de ("100 AD X 10 PK", 1.000 Adet × 1,10 ₺ → 1, 100 ya da 1.000; E-06).
   Yazılan çarpan addaki kanıttan farklıysa form uyarır ("150 yap"); **Faturadan oku** çarpanı faturanın kendisinden
   okur (Claude Haiku). Bağlı ürünlerden çarpanı kanıtla tutmayanlar sayfanın **Kontrol edilecek bağlantılar** kutusunda.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
@@ -242,6 +248,11 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   denince bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki "Hammadde değil" bölümünden **Geri al** ile
   bekleyenlere döner. Faturadaki tutarı değişmez. Liste `integration_state`'te (`parasut.productIgnore`) durur.
 - Bağlanmayı bekleyen ürün sayısı zilde görünür.
+- **Mal alışı sayılmayan fatura** (denetim 26 Eki, E-07): kalemi hammaddeye bağlı ama kategorisi mal alışı (Hammadde &
+  İçecek, Tatlı & Hazır Ürün, Ambalaj) ya da kafe dışı olmayan fatura ("Diğer", "Hizmet"…) stoğa girer (alınan miktar,
+  FIFO partisi, hammadde fiyatı) ama gelir-gider onu mal alışı saymaz: satılan malın maliyeti eksik, kâr fazla görünür.
+  Böyle fatura kontrol bekleyene düşer ve onaylanamaz (6b). Kalemler stoktan çıkarılmaz: sayılan stok o malı zaten
+  içerir, çıkarmak kâr-zararı düzeltmez, yalnız stok değerini bozar.
 
 Böylece Tutarlılık'ta **alınan** (faturalardan) ile **satışa göre kullanılan** (satılan adet × reçete) karşılaştırılır;
 iki ayın stok sayımı girilince gerçek tüketim (devir + alınan − devreden) ve sapma hesaplanır.
@@ -294,8 +305,11 @@ Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** bi
 çarpan (koli ↔ adet, kg ↔ gr) ya da tek seferlik bir fatura bütün reçete maliyetlerini sessizce değiştirmesin, sahte
 "Hammadde zammı" uyarısı ve fiyat önerisi çıkmasın. %40 ve altı eskisi gibi sessizce uygulanır (tam %40 uygulanır).
 
-- Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan eklediği kalem) hammaddenin ilk fiyatı doğrudan yazılır. Excel'den
-  gelen tahmini ("Tahmini") fiyat da şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
+- Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan fiyatsız eklediği kalem) hammaddenin **ilk fiyatı** yalnız çarpan
+  faturanın ölçü biriminden geliyorsa (KG, LT, düzine: `firstPriceCertain`) doğrudan yazılır. Çarpan addan, açıklamadan
+  ya da elle geldiyse ilk fiyat da onaya düşer (denetim 26 Eki, E-06: "KARTON BARDAK 8 OZ 50'Lİ X 20" 1 Koli = 50 adet
+  bağlanmıştı, adet 8 ₺ onaysız yazılıyordu). Kart "İlk fiyat" der. Excel'den gelen tahmini ("Tahmini") fiyat da
+  şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
 - Su ve buz (fiyatı su faturasından) hiç onaya düşmez.
 
 **Nerede görünür** (yalnız yönetici): Hammaddeler › **Onay bekleyen fiyatlar** (`#fiyat-onayi`), listede "Fiyat
@@ -307,7 +321,8 @@ onaya düştü").
 **Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
 aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin
 maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). En çok bir **Çarpanı X yap**, kanıta göre (ilk
-tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2):
+tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2). Addaki paket boyu ile faturanın emin okuması çelişirse düğme
+yoktur, iki değer birlikte yazılır (E-06):
 
 1. kalemin adındaki ya da birimindeki paket boyu çarpandan farklıysa: `Adında “150 AD.” yazıyor: 1 Adet = 150 adet
    olmalı. Öyle olursa adet başı 20,00 ₺ (şimdikinden %52 ucuz).`;
@@ -328,8 +343,10 @@ faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir." der, rozet "tah
   "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi
   değişti, fiyat güncellemesi kapandı), faturanın kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha yeni bir
   faturası geldiyse (eşitleme henüz değerlendirmeden) öneri geçersiz sayılır, fiyat yazılmaz.
-- **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (alınan miktar yine
-  sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
+- **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (sonraki faturaların
+  miktarı yine sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
+  Reddedilen faturanın miktarı alınana ve stok değerine girmez (çarpanı şüpheli kaldı); pencere bunu söyler,
+  Tutarlılık o ayın alımını elle yazdırır.
 - **Çarpanı X yap:** bağlantının çarpanı değişir (Paraşüt sayfasındaki düzenlemeyle aynı): öneri geçersiz olur, en yeni
   fatura yeni çarpanla yeniden değerlendirilir, alınan miktarlar da düzelir.
 - **Geri al** (bildirimde ve kartın **Son kararlar** bölümünde; 30 gün): onay geri alınınca eski paket fiyatı, boyu ve
@@ -348,7 +365,15 @@ keser; ilk kez bağlanan ürünün eski faturaları da sayılır). Onaylanan fiy
 edilen elle girilmiş kaydın kalemleri silinince bekleyen öneri geçersiz olur; değişiklik geri dönünce ("Fiyatı güncelle"
 yeniden açılır, aynı çarpanla yeniden bağlanır, fatura kafeye döner) aynı fatura yeniden değerlendirilir, daha eskileri
 değerlendirilmez. Fatura silinince öneri de silinir; fiyat yeniden önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
-Alınan miktar (Tutarlılık) bekletilmez: çarpanla hesaplanmaya devam eder (çarpan yanlışsa o da yanlıştır).
+Alınan miktar (Tutarlılık) da bekler (denetim 26 Eki, E-27): çarpanı onay bekleyen bağlantının faturaları stok
+partilerine girmediği gibi alınan miktara da girmez (ortak yüklem `suspectFactorLine`); reddedilen fiyatın yalnız kendi
+faturası dışarıda kalır. Tutarlılık bekleyen öneri için malzemeyi "Fiyat onayı bekliyor" diye işaretler (onaya
+götürür), sapmasını onaydan sonra hesaplar; yalnız reddedilen fatura dışarıda kaldıysa "Reddedilen fatura alınana
+girmedi · miktarı Alınan'a yazın" der (onaya götürmez: bekleyen kart yok). Ayın alımı elle yazılınca (notu eşitlemenin
+ya da "Alım yok (0)"un değil) iki işaret de kalkar, sapma o miktarla hesaplanır. Onay, red, geri alma ve kararın
+geçersiz kalması (bağlantı değişti, daha yeni fatura) alınan miktarı bütün aylar için hemen yeniden hesaplar
+(`recomputePurchaseQuantities`); eşitleme de her çalışmada bütün ayları yeniden yazar: öneri pencere dışındaki eski
+ayların faturalarını da dışladığı için yalnız pencereyi yazmak o ayları alımsız bırakırdı.
 
 **Veri:** `ingredient_price_holds`: hammadde başına en çok bir bekleyen öneri (kısmi tekil dizin), fatura anındaki
 kalemin kopyası (kalemler her eşitlemede yeniden yazılır), karar, red notu ve geri alma için değiştirilen fiyat.
@@ -443,6 +468,20 @@ Eşitlemenin açtığı yeni faturanın kategorisi kurala, tedarikçinin geçmi�
 dayanmıyorsa (ipucu ya da "Diğer") fatura **kontrol bekleyen** olur (`invoices.needs_review`). Faturalar'da
 "Kontrol bekleyen" süzgeci, satırda tek dokunuşla **Onayla**, toplu onay; kategori değiştirmek ya da faturayı
 kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › Bu ayın işleri'nde görünür.
+
+Kalemi hammaddeye bağlı ama kategorisi mal alışı olmayan fatura (5, E-07) da kontrol bekleyene düşer: ürün bağlanınca,
+kalemler okununca ya da eşitlemede (`flagStockOnlyInvoices`, `src/server/data/stock-only-invoices.ts`; işlem geçmişine
+"Sistem · Fatura mal alışı sayılmıyor"). Satırda **Mal alışı sayılmıyor** rozeti, listenin üstünde ayrı bir satır,
+zilde ayrı bir bildirim ve Bugün'de kendi cümlesi. **Onayla** da faturayı kaydetmek de böyle faturayı onaylamaz
+(`confirmInvoices` → `kept`); kategoriyi mal alışı yapmak onaylar. Kategori bilerek öyle kalacaksa (temizlik
+malzemesi faturasında bir kalem süt) **Kalsın** faturayı onaylar ve kararı `integration_state`'e
+(`invoices.stockOnlyAccepted`) yazar: fatura yeniden kontrole düşmez, rozeti gri **Stoğa giriyor** olur; kategorisi
+değişince karar düşer, **Geri al** kararı da geri alır. Kalsın dört yerde: "kontrolde kaldı" uyarısında (birden çok
+faturada **Hepsi kalsın**), fatura penceresinin altında, satırın kategori sayfasında ("Diğer kalsın") ve "Kontrol
+bekleyen" süzgecinin alt çubuğunda (yalnız mal alışı sayılmayanlar kaldıysa **Hepsi kalsın**, onaylı pencereyle). Alt
+çubuğun **Hepsini onayla**'sı yalnız kategorisi tahminle yazılanları sayar ve onaylar. Kategorisi Aylık harcamalar'da
+bir gidere bağlıysa uyarı faturanın gelir-giderde o giderde sayıldığını, yalnız mal maliyetine girmediğini söyler
+(deterjanlı market faturasının tamamı mal alışına taşınmasın). Sabah e-postası iki nedeni ayrı yazar.
 
 ## 7. Elle çalıştırma ve sıfırlama
 

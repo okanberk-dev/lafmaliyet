@@ -15,7 +15,8 @@ import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
-import { loadPurchaseLots } from "./purchase-lots";
+import { mergeWithLafpos } from "./lafpos-sales";
+import { loadHeldPurchases, loadPurchaseLots } from "./purchase-lots";
 
 /** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
 export async function loadSettings(): Promise<Settings> {
@@ -42,6 +43,8 @@ export async function loadDataset(): Promise<Dataset> {
     stockCounts,
     ingredientPrices,
     purchaseLots,
+    heldPurchases,
+    pendingPriceHolds,
     stockExtras,
     purchaseQuantities,
     expenseCategories,
@@ -79,6 +82,10 @@ export async function loadDataset(): Promise<Dataset> {
       .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri (purchase-lots.ts)
     loadPurchaseLots(),
+    // Çarpanı onay bekleyen alışlar: alınan miktara girmedi, Tutarlılık işaretler (aynı yüklem)
+    loadHeldPurchases(),
+    // Fiyatı onay bekleyen hammaddeler: fiyatsızsa "paket fiyatını girin" değil, onaya götürülür (Genel bakış, zil)
+    db.selectDistinct({ id: s.ingredientPriceHolds.ingredientId }).from(s.ingredientPriceHolds).where(eq(s.ingredientPriceHolds.status, "pending")),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
@@ -111,10 +118,38 @@ export async function loadDataset(): Promise<Dataset> {
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
-  const through = addDays(businessDate(), -1);
+  const today = businessDate();
+  const through = addDays(today, -1);
+  // Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
+  // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
+  // satırlar ve kapsam bugünkü gibi
+  const reportRows = till.filter((r) => r.source !== "lafpos");
+  const sales = await mergeWithLafpos(db, {
+    switchDay: settings.lafposGecisGunu,
+    salesLines: salesLines.map((l) => ({
+      id: l.id,
+      month: l.month,
+      posName: l.posName,
+      qty: l.qty,
+      revenue: l.revenue,
+      productId: l.productId,
+      isService: l.isService,
+      note: l.note,
+    })),
+    coverage: parseCoverage(coverageRow[0]?.value),
+    today,
+    // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
+    // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
+    lastTillDay: reportRows.at(-1)?.date ?? null,
+    reportDays: reportRows.map((r) => r.date),
+    zOf: (from, upto) => {
+      const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
+      return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
+    },
+  });
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır)
   const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
-  const salesCoverage = Object.entries(parseCoverage(coverageRow[0]?.value)).map(([month, upto]) => ({
+  const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
     till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver)[0] ?? null,
@@ -176,19 +211,11 @@ export async function loadDataset(): Promise<Dataset> {
         through,
         undefined,
         lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
-        closedDaysIn(closedRows, "2000-01-01", through, till.map((r) => r.date)),
+        closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date)),
       ),
     ),
-    salesLines: salesLines.map((l) => ({
-      id: l.id,
-      month: l.month,
-      posName: l.posName,
-      qty: l.qty,
-      revenue: l.revenue,
-      productId: l.productId,
-      isService: l.isService,
-      note: l.note,
-    })),
+    salesLines: sales.salesLines,
+    ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     invoices: invoices.map((i) => ({
       id: i.id,
       date: i.date,
@@ -250,6 +277,8 @@ export async function loadDataset(): Promise<Dataset> {
     stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
     ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     purchaseLots,
+    heldPurchases,
+    pendingPriceHolds: pendingPriceHolds.map((r) => r.id),
     stockExtras: stockExtras.map((e) => ({
       id: e.id,
       month: e.month,

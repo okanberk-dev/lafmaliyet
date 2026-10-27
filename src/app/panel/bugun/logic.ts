@@ -105,7 +105,8 @@ export interface DayFacts {
    */
   commission?: { overdue: { label: string; month: string; due: string }[] } | null;
   /** Kontrol bekleyen faturalar */
-  invoices?: { review: number } | null;
+  /** Kontrol bekleyen faturalar; `stockOnly`: bunların kalemi hammaddeye bağlı ama mal alışı sayılmayanları (E-07) */
+  invoices?: { review: number; stockOnly?: number } | null;
   /** Hammaddeye bağlanmayı bekleyen fatura ürünleri */
   unlinked?: number | null;
   /** Fiyatı girilmemiş hammaddeler (ilk birkaç ad) */
@@ -585,12 +586,19 @@ const invoicesRow: Row = (f) => {
   const inv = f.invoices;
   if (!inv) return null;
   if (inv.review > 0) {
+    const stockOnly = Math.min(inv.stockOnly ?? 0, inv.review);
+    const guessed = inv.review - stockOnly;
+    // Stoğa girip gelir-gidere girmeyen (kalemi hammaddeye bağlı, kategorisi mal alışı değil) tek dokunuşla onaylanmaz
+    const why = [
+      guessed ? `${stockOnly ? `${num(guessed)} faturanın ` : ""}kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın` : "",
+      stockOnly ? `${num(stockOnly)} fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın ya da bilerek böyleyse Kalsın deyin` : "",
+    ].filter(Boolean);
     return {
       key: "fatura",
       title: "Faturalar",
       status: "todo",
       badge: `${num(inv.review)} kontrol`,
-      detail: `${num(inv.review)} fatura kontrol bekliyor: kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın.`,
+      detail: `${num(inv.review)} fatura kontrol bekliyor: ${why.join("; ")}.`,
       href: "/panel/faturalar?durum=kontrol",
       action: "Kontrol et",
     };

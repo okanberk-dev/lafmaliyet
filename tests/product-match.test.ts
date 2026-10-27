@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cupSize, guessLinkFactor, nameCore, packEvidence, packKey, parsePack, sameFactor, suggestIngredient } from "../src/lib/product-match";
+import { cupSize, guessLinkFactor, nameCore, packEvidence, packKey, packPair, packPairChoices, parsePack, sameFactor, suggestIngredient } from "../src/lib/product-match";
 
 test("paket bilgisi: gerçek e-fatura kalem adlarından", () => {
   const cases: [string, PackLike][] = [
@@ -227,4 +227,91 @@ test("paket kanıtı: binlik ayraç (1.000 GR, 1.000 AD.) ve ondalık nokta (1.5
   assert.deepEqual(packEvidence({ name: "PİPET 1.000 AD.", unit: "Adet", quantity: 2 }, "adet"), { factor: 1000, source: "name", text: "1.000 AD." });
   assert.equal(packEvidence({ name: "PİPET 1.000 AD.", unit: "Adet", quantity: 1000 }, "adet"), null);
   assert.equal(packEvidence({ name: "BARDAK 12.5 AD", unit: "Adet" }, "adet"), null);
+});
+
+test("iki sayılı paket adı: dış pakette çarpım, tek parça ya da iç pakette kanıt yok (E-06)", () => {
+  // Denetim 26 Eki: hepsi 50 (ya da 100) okunuyordu; 1 Koli 400 ₺ adet 8 ₺ görünüyordu (doğrusu 0,40 ₺)
+  const names: [string, string][] = [
+    ["KARTON BARDAK 8 OZ 50'Lİ X 20", "50'Lİ X 20"],
+    ["20X50 AD", "20X50 AD"],
+    ["20 PK X 50 AD", "20 PK X 50 AD"],
+    ["50 Lİ 20 PAKET", "50 Lİ 20 PAKET"],
+    ["BARDAK KAPAĞI 90 MM 100 AD X 10 PK", "100 AD X 10 PK"],
+  ];
+  for (const [name, text] of names) {
+    assert.deepEqual(packEvidence({ name, unit: "Koli", quantity: 1 }, "adet"), { factor: 1000, source: "name", text }, name);
+    assert.equal(guessLinkFactor({ name, unit: "Koli", quantity: 1 }, "adet"), "1000", name);
+    // Tek parça (Adet) ya da iç paketin adı (Paket): 1 birim 50 de olabilir 1000 de; kanıt da tahmin de yok ("1" değil)
+    for (const unit of ["Adet", "Paket", "PK", null]) {
+      assert.equal(packEvidence({ name, unit, quantity: 1 }, "adet"), null, `${name} · ${unit}`);
+      assert.equal(guessLinkFactor({ name, unit, quantity: 1 }, "adet"), null, `${name} · ${unit}`);
+    }
+    // Paket anahtarı çarpımı taşır: "50'Lİ X 10" başka paket (eski bağlantının çarpanı alınmaz)
+    assert.equal(parsePack(name).count, 1000, name);
+  }
+  assert.notEqual(packKey("KARTON BARDAK 8 OZ 50'Lİ X 20"), packKey("KARTON BARDAK 8 OZ 50'Lİ X 10"));
+  // Kutu ve kasa da dış pakettir; açıklamada yazıyorsa açıklamadan
+  assert.equal(packEvidence({ name: "PEÇETE 100'LÜ X 24", unit: "Kutu" }, "adet")?.factor, 2400);
+  assert.deepEqual(packEvidence({ name: "KARTON BARDAK", description: "50 Lİ X 20 PAKET", unit: "Koli" }, "adet"), { factor: 1000, source: "description", text: "50 Lİ X 20 PAKET" });
+  // gr / ml'de boyutla: 24 × 2 × 330 ml
+  assert.deepEqual(packEvidence({ name: "SU 330 ML 24'LÜ X 2", unit: "Koli" }, "ml"), { factor: 15840, source: "name", text: "330 ML 24'LÜ X 2" });
+  assert.equal(packEvidence({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli" }, "ml"), null, "boyutsuz sayı ml'ye çevrilmez");
+});
+
+test("iki sayılı paket adı: ölçü ve iki sayı olmayan adlar değişmez", () => {
+  // "X 23 CM" pipetin boyu, "24X24" peçetenin ölçüsü, "33X33 100'LÜ" ölçü ve tek sayı: iki sayılı paket değil
+  assert.deepEqual(packEvidence({ name: "PİPET 100 AD X 23 CM", unit: "Koli" }, "adet"), { factor: 100, source: "name", text: "100 AD" });
+  assert.equal(packEvidence({ name: "PEÇETE 33X33 100'LÜ", unit: "Koli" }, "adet")?.factor, 100);
+  assert.equal(packPair({ name: "PEÇETE 24X24" }), null);
+  assert.equal(packPair({ name: "COCA-COLA KUTU 330ML 1X24 DYS" }), null);
+  assert.equal(packPair({ name: "CALLEİ WAFFLE SOS SÜTLÜ 1000 GR * 8 AD" }), null);
+  assert.equal(packPair({ name: "Danone Laktozsuz Süt 1 Lt x 12 ad" }), null);
+  // Ürün koduna yapışık sayı paket sayısı değil
+  assert.equal(packPair({ name: "BARDAK K20X50 AD" }), null);
+  // Tek parçada iki sayı yoksa eski kurallar: "150 AD." kanıt, "1" tahmini
+  assert.equal(packEvidence({ name: "LİVİ YENİLEBİLİR BARDAK 150 AD.", unit: "Adet", quantity: 1 }, "adet")?.factor, 150);
+  assert.equal(guessLinkFactor({ name: "PLASTİK KAPAK KLIPS", unit: "Adet", quantity: 1000 }, "adet"), "1");
+  // Tipografik kesme işareti de
+  assert.equal(packEvidence({ name: "KARTON BARDAK 50’Lİ X 20", unit: "Koli" }, "adet")?.factor, 1000);
+});
+
+test("iki sayılı paket adı: formun iki olasılığı (bir paket mi, hepsi mi)", () => {
+  assert.deepEqual(packPair({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20" }), { text: "50'Lİ X 20", per: 50, packs: 20, total: 1000 });
+  assert.deepEqual(packPair({ name: "20 PK X 50 AD" }), { text: "20 PK X 50 AD", per: 50, packs: 20, total: 1000 });
+  assert.deepEqual(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Adet", quantity: 1 }, "adet"), { text: "50'Lİ X 20", choices: [50, 1000] });
+  assert.deepEqual(packPairChoices({ name: "SU 330 ML 24'LÜ X 2", unit: "Adet", quantity: 1 }, "ml"), { text: "24'LÜ X 2", choices: [7920, 15840] });
+  // Tek parça biriminde en az bir paket kadar alındıysa birim tek tane de olabilir (1.000 Adet × 1,10 ₺)
+  assert.deepEqual(packPairChoices({ name: "BARDAK KAPAĞI 90 MM 100 AD X 10 PK", unit: "Adet", quantity: 1000 }, "adet"), {
+    text: "100 AD X 10 PK",
+    choices: [1, 100, 1000],
+  });
+  assert.deepEqual(packPairChoices({ name: "SU 330 ML 24'LÜ X 2", unit: "Adet", quantity: 48 }, "ml"), { text: "24'LÜ X 2", choices: [330, 7920, 15840] });
+  // İç paket biriminde (Paket) tek tane olasılığı yok
+  assert.deepEqual(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Paket", quantity: 100 }, "adet"), { text: "50'Lİ X 20", choices: [50, 1000] });
+  // Kanıt varsa (Koli) ya da boyut yoksa (ml hammadde) seçenek yok
+  assert.equal(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Koli", quantity: 1 }, "adet"), null);
+  assert.equal(packPairChoices({ name: "KARTON BARDAK 8 OZ 50'Lİ X 20", unit: "Adet", quantity: 1 }, "ml"), null);
+  assert.equal(packPairChoices({ name: "SÜT 1 L", unit: "Adet" }, "ml"), null);
+});
+
+test("iki sayılı paket adı: biri 1 olan ad iki sayılı paket değil, eski kurallar okur (denetim B03 inceleme)", () => {
+  // "100'LÜ X 1" ve "1X24 ADET" tek pakettir: main'deki tahmin (100, 200 ml) kalır, form aynı seçeneği iki kez göstermez
+  assert.equal(packPair({ name: "FİLTRE KAĞIDI 100'LÜ X 1" }), null);
+  assert.equal(packPair({ name: "AYRAN 200ML 1X24 ADET" }), null);
+  assert.equal(guessLinkFactor({ name: "FİLTRE KAĞIDI 100'LÜ X 1", unit: "Adet", quantity: 2 }, "adet"), "100");
+  assert.equal(guessLinkFactor({ name: "AYRAN 200ML 1X24 ADET", unit: "Adet", quantity: 2 }, "ml"), "200");
+  assert.equal(packPairChoices({ name: "FİLTRE KAĞIDI 100'LÜ X 1", unit: "Adet", quantity: 2 }, "adet"), null);
+  assert.equal(packPairChoices({ name: "AYRAN 200ML 1X24 ADET", unit: "Adet", quantity: 2 }, "ml"), null);
+  // Kolide 1 × 24 = 24 şişe × 200 ml (boyut × sayı kuralı)
+  assert.equal(packEvidence({ name: "AYRAN 200ML 1X24 ADET", unit: "Koli" }, "ml")?.factor, 4800);
+  // Seçenekler hiç yinelenmez
+  for (const [name, unit, quantity, iu] of [
+    ["KARTON BARDAK 8 OZ 50'Lİ X 20", "Adet", 1000, "adet"],
+    ["BARDAK KAPAĞI 90 MM 100 AD X 10 PK", "Adet", 1000, "adet"],
+    ["SU 330 ML 24'LÜ X 2", "Adet", 48, "ml"],
+    ["PEÇETE 2'Lİ X 2", "Adet", 4, "adet"],
+  ] as const) {
+    const c = packPairChoices({ name, unit, quantity }, iu)?.choices ?? [];
+    assert.equal(new Set(c).size, c.length, `${name}: ${c.join(", ")}`);
+  }
 });

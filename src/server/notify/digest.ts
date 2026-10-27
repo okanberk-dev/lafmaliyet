@@ -12,6 +12,7 @@ import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
+import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
@@ -123,7 +124,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
-  const [rows, [{ n }], [lastRun], holds] = await Promise.all([
+  const [rows, [{ n }], [lastRun], holds, stockOnly] = await Promise.all([
     db
       .select({
         supplier: s.invoices.supplier,
@@ -144,6 +145,11 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       console.error("Sabah e-postası fiyat onayları", e);
       return null;
     }),
+    // Kontrol bekleyenlerin kategorisi tahmin olmayanı: kalemi hammaddeye bağlı, mal alışı sayılmıyor (E-07)
+    countStockOnlyReview(db).catch((e) => {
+      console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
+      return 0;
+    }),
   ]);
   const sinceIso = since.toISOString();
   const priceHolds = holds?.count
@@ -161,7 +167,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
-  return { invoices: { items: rows, reviewCount: n, syncError, priceHolds }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
+  return { invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), syncError, priceHolds }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
 }
 
 /** Zam bölümünün anahtarı: her gönderimde yeni satır; yalnız son zam e-postasından sonraki zamlar yeni sayılır */

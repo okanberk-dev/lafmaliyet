@@ -85,7 +85,7 @@ export function ForecastDesserts({ data }: { data: ForecastPageData }) {
       </CardContent>
       <CardFooter className="text-xs">
         <span className="min-w-0">
-          Her 10.000 ₺ satışta {num(plan.per10k, 1)} tatlı ({basis}). ModPOS&apos;un günlük ürün satışı gelince her gün kendi oranıyla hesaplanacak. Hesapta yalnız{" "}
+          Her 10.000 ₺ satışta {num(plan.per10k, 1)} tatlı ({basis}); oran ayların ortalaması, hafta gününe göre değişmez. Hesapta yalnız{" "}
           {joinTR(cats)} {cats.length > 1 ? "kategorileri" : "kategorisi"} var; Tahmin ayarları&apos;ndan değişir. Satışı olmayan yeni tatlılar hesapta yok.
         </span>
       </CardFooter>

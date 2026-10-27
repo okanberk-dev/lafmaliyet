@@ -17,6 +17,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Store,
   Trash2,
   TriangleAlert,
   Upload,
@@ -32,7 +33,7 @@ import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -60,10 +61,12 @@ import { num, pct, tl } from "@/lib/format";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
+  applyLafposMatches,
   applyLineMatches,
   clearMonthSales,
   deleteLine,
   importSales,
+  matchLafposName,
   parseSalesFile,
   saveLine,
   saveMonthInfo,
@@ -96,20 +99,17 @@ import {
   type MappingLite,
   type MarginScale,
 } from "./sales-logic";
+import { ProductPicker, type ProductOption } from "./product-picker";
 
-
-export interface ProductOption {
-  id: number;
-  name: string;
-  size: string;
-  category: string;
-  cost: number;
-  price: number;
-  active: boolean;
-}
+export type { ProductOption } from "./product-picker";
 
 export interface SalesRow {
   id: number;
+  /**
+   * LafPOS'un ay toplamı satırıysa satırın geçtiği gün sayısı (docs/LAFPOS.md › Günlük satış): salt okunur, düzenlenmez ve
+   * silinmez, eşleştirmesi POS adıyla (matchLafposName). ModPOS listesinin satırında null
+   */
+  lafposDays: number | null;
   posName: string;
   qty: number;
   revenue: number;
@@ -544,123 +544,6 @@ export function MonthInfoForm({
   );
 }
 
-// ---------------------------------------------------------------- Ürün seçici
-
-const PICKER_LIMIT = 80;
-
-function ProductPicker({
-  onClose,
-  products,
-  title,
-  currentId,
-  isService,
-  onPick,
-}: {
-  onClose: () => void;
-  products: ProductOption[];
-  title: string;
-  currentId: number | null;
-  isService: boolean;
-  onPick: (v: { productId: number | null; isService: boolean }) => void;
-}) {
-  const [q, setQ] = useState("");
-  const found = products.filter((p) => matches(`${p.name} ${p.size} ${p.category}`, q));
-  // Arama yokken şu anki eşleşme en üstte (uzun listede aranmasın)
-  const current = !isService && currentId ? found.find((p) => p.id === currentId) : undefined;
-  const list = (current && !q.trim() ? [current, ...found.filter((p) => p !== current)] : found).slice(0, PICKER_LIMIT);
-  return (
-    <Dialog open onClose={onClose} title="Ürünle eşleştir" description={title} size="md">
-      <div className="space-y-3 pb-2">
-        {/* Enter ilk sonucu seçer: ada göre arayıp tek tuşla eşleştirme */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (q.trim() && list[0]) onPick({ productId: list[0].id, isService: false });
-          }}
-        >
-          <SearchField value={q} onChange={setQ} placeholder="Ürün, boy ya da kategori" label="Menüde ara" shortcut={false} />
-        </form>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onPick({ productId: null, isService: true })}
-            aria-pressed={isService}
-            className={cn("pointer-coarse:h-11", isService && "text-info ring-info/30")}
-          >
-            <Mic size={15} /> HİZMET (maliyetsiz, ör. karaoke)
-            {isService ? <Check size={14} aria-hidden="true" /> : null}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onPick({ productId: null, isService: false })}
-            disabled={!currentId && !isService}
-            className="pointer-coarse:h-11"
-            title={!currentId && !isService ? "Bu satır henüz eşleşmedi" : undefined}
-          >
-            <X size={15} /> Eşleşmeyi kaldır
-          </Button>
-        </div>
-        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong">
-          {list.map((p) => {
-            const current = !isService && p.id === currentId;
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  aria-current={current ? "true" : undefined}
-                  className={cn(
-                    "flex min-h-12 w-full cursor-pointer items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-panel",
-                    current && "bg-panel",
-                  )}
-                  onClick={() => onPick({ productId: p.id, isService: false })}
-                >
-                  <IconTile size="sm" tone={toneFor(p.category)}>
-                    <Coffee />
-                  </IconTile>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-medium text-ink">{p.name}</span>
-                      <Badge tone="gray">{p.size}</Badge>
-                      {!p.active ? <Badge tone="amber">Pasif</Badge> : null}
-                    </span>
-                    <span className="block text-xs text-ink-mute">{p.category}</span>
-                  </span>
-                  <span className="shrink-0 text-right text-xs text-ink-mute tabular">
-                    <span className="text-ink-soft">{tl(p.price)}</span>
-                    <span className="block">maliyet {tl(p.cost, 2)}</span>
-                  </span>
-                  {current ? (
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-                      <Check size={13} aria-label="Şu anki eşleşme" />
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            );
-          })}
-          {!list.length ? (
-            <li className="px-3 py-4 text-sm text-ink-mute">
-              Sonuç yok. Ürün yoksa önce{" "}
-              <Link href="/panel/urunler" className="font-medium text-ink underline underline-offset-2">
-                Ürünler
-              </Link>{" "}
-              sayfasından ekleyin.
-            </li>
-          ) : null}
-        </ul>
-        {found.length > PICKER_LIMIT || (q.trim() && list.length) ? (
-          <p className="text-xs text-ink-mute">
-            {found.length > PICKER_LIMIT ? `İlk ${PICKER_LIMIT} sonuç gösteriliyor (${num(found.length)} ürün). Aramayı daraltın. ` : null}
-            {q.trim() && list.length ? "Enter ilk sonucu seçer." : null}
-          </p>
-        ) : null}
-      </div>
-    </Dialog>
-  );
-}
-
 // ---------------------------------------------------------------- Satış tablosu
 
 type RowStatus = "service" | "matched" | "unmatched";
@@ -775,6 +658,7 @@ export function SalesTable({
   products,
   mappings,
   month,
+  lafposMonth = false,
   totals,
 }: {
   rows: SalesRow[];
@@ -782,6 +666,8 @@ export function SalesTable({
   /** POS adı hafızası (Satır ekle penceresinde "otomatik bağlanacak" ipucu için) */
   mappings: MappingLite[];
   month: string;
+  /** Ayın tamamı LafPOS'tan (geçiş gününden sonra): elle ModPOS satırı eklenmez */
+  lafposMonth?: boolean;
   totals: Totals;
 }) {
   const reduce = useCalmMotion();
@@ -808,8 +694,9 @@ export function SalesTable({
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const scale = useMemo(() => marginScale(serverRows.filter(inMarginScale).map((r) => r.margin)), [serverRows]);
   const suggestions = useMemo(() => collectSuggestions(rows, products), [rows, products]);
-  /** Rapora yanlışlıkla girmiş toplam satırları ("TOPLAM 2.543 441.955"): ciroyu iki kez sayar */
-  const summaryRows = rows.filter((r) => isSummaryRow(r.posName));
+  /** Rapora yanlışlıkla girmiş toplam satırları ("TOPLAM 2.543 441.955"): ciroyu iki kez sayar (yalnız ModPOS listesi) */
+  const summaryRows = rows.filter((r) => r.lafposDays === null && isSummaryRow(r.posName));
+  const hasLafpos = rows.some((r) => r.lafposDays !== null);
 
   // Durum çiplerinin sayaçları aramaya göre (arama yazılıyken "kaç eşleşmeyen var" görünsün)
   const searched = rows.filter((r) => matches(`${r.posName} ${r.productLabel ?? ""} ${r.note ?? ""}`, q));
@@ -879,6 +766,28 @@ export function SalesTable({
     keepScroll();
     startTransition(async () => {
       applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null });
+      if (row.lafposDays !== null) {
+        // LafPOS satırı: bu ay toplamının satırları, o ayın aynı adlı ürünsüz satırları ve ad hafızası (başka aylardaki
+        // ürünsüz satırlar da bağlanır; aynı adın başka ürüne bağlı satırı değişmez)
+        const res = await matchLafposName({
+          month,
+          posName: row.posName,
+          productId: v.productId,
+          isService: v.isService,
+          current: { productId: row.productId, isService: row.isService },
+        });
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success(v.isService ? "HİZMET olarak işaretlendi" : v.productId ? "Eşleştirildi" : "Eşleşme kaldırıldı", {
+          description:
+            v.productId || v.isService
+              ? `“${row.posName}” bu ayın LafPOS satırlarına uygulandı; sonraki gün sonlarında otomatik tanınacak.`
+              : `“${row.posName}” bu ayın LafPOS satırlarında ürünsüz kaldı ve hafızadan silindi.`,
+        });
+        return;
+      }
       const res = await setLineMatch(row.id, v.productId, v.isService);
       if (!res.ok) {
         toast.error(res.error);
@@ -910,18 +819,24 @@ export function SalesTable({
   async function applySuggestions() {
     setBulkBusy(true);
     keepScroll();
-    const res = await applyLineMatches(
-      month,
-      suggestions.map((x) => ({ lineId: x.row.id, productId: x.product.id })),
-    );
+    // ModPOS satırları satır kimliğiyle, LafPOS'un ay toplamları POS adıyla (iki ayrı eylem)
+    const modpos = suggestions.filter((x) => x.row.lafposDays === null);
+    const laf = suggestions.filter((x) => x.row.lafposDays !== null);
+    const results = [
+      modpos.length ? await applyLineMatches(month, modpos.map((x) => ({ lineId: x.row.id, productId: x.product.id }))) : null,
+      laf.length ? await applyLafposMatches(month, laf.map((x) => ({ posName: x.row.posName, productId: x.product.id }))) : null,
+    ].filter((r) => r !== null);
     setBulkBusy(false);
     setBulkOpen(false);
-    if (!res.ok) return toast.error(res.error);
-    toast.success(`${num(res.data.applied)} öneri uygulandı`, {
-      description: res.data.skipped
-        ? `${num(res.data.skipped)} satır bu arada değişmiş, atlandı.`
-        : "Bu adlar sonraki aylarda otomatik tanınacak.",
+    const done = results.flatMap((r) => (r.ok ? [r.data] : []));
+    const failed = results.find((r) => !r.ok);
+    if (!done.length) return toast.error(failed && !failed.ok ? failed.error : "Öneriler uygulanamadı");
+    const applied = done.reduce((a, d) => a + d.applied, 0);
+    const skipped = done.reduce((a, d) => a + d.skipped, 0);
+    toast.success(`${num(applied)} öneri uygulandı`, {
+      description: skipped ? `${num(skipped)} satır bu arada değişmiş, atlandı.` : "Bu adlar sonraki aylarda otomatik tanınacak.",
     });
+    if (failed && !failed.ok) toast.error(failed.error);
   }
 
   /** Eşleşme düğmesi + (varsa) tek tıkla uygulanan değnekli öneri */
@@ -962,16 +877,26 @@ export function SalesTable({
     );
   };
 
-  const rowActions = (r: SalesRow, coarse?: boolean) => (
-    <>
-      <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
-        <Pencil size={15} />
-      </IconButton>
-      <IconButton label="Sil" tone="danger" onClick={() => setDeleting(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
-        <Trash2 size={15} />
-      </IconButton>
-    </>
-  );
+  // LafPOS'un ay toplamı salt okunur: düzenleme ve silme yok (gün sonu LafPOS'ta düzeltilip yeniden gönderilir)
+  const rowActions = (r: SalesRow, coarse?: boolean) =>
+    r.lafposDays !== null ? null : (
+      <>
+        <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
+          <Pencil size={15} />
+        </IconButton>
+        <IconButton label="Sil" tone="danger" onClick={() => setDeleting(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
+          <Trash2 size={15} />
+        </IconButton>
+      </>
+    );
+  /** LafPOS satırının kaynağı (adın altında) */
+  const lafposNote = (r: SalesRow) =>
+    r.lafposDays !== null ? (
+      <p className="flex items-center gap-1 text-xs text-info" title="LafPOS'un gün sonlarından, ay toplamı; salt okunur">
+        <Store size={12} className="shrink-0" aria-hidden="true" />
+        LafPOS · {num(r.lafposDays)} gün
+      </p>
+    ) : null;
 
   return (
     // Telefonda üstteki sabit çubuğun (--mobile-top-h) altında kalmasın
@@ -979,7 +904,11 @@ export function SalesTable({
       <CardHeader
         icon={<ListChecks />}
         title="Satış satırları"
-        description="Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve sonraki aylarda otomatik uygulanır."
+        description={
+          hasLafpos
+            ? "Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve otomatik uygulanır. LafPOS satırları salt okunur."
+            : "Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve sonraki aylarda otomatik uygulanır."
+        }
         meta={
           rows.length ? (
             totalUnmatched ? (
@@ -1009,10 +938,12 @@ export function SalesTable({
                 <Wand2 size={15} /> {num(suggestions.length)} öneriyi uygula
               </Button>
             ) : null}
-            {/* Asıl yol içe aktarma; elle satır ikincil eylem */}
-            <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-11">
-              <Plus size={16} /> Satır ekle
-            </Button>
+            {/* Asıl yol içe aktarma; elle satır ikincil eylem (LafPOS ayında yok: satırlar gün sonlarından) */}
+            {lafposMonth ? null : (
+              <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-11">
+                <Plus size={16} /> Satır ekle
+              </Button>
+            )}
           </>
         }
       />
@@ -1129,6 +1060,7 @@ export function SalesTable({
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium break-words text-ink">{r.posName}</p>
+                      {lafposNote(r)}
                       <p className="mt-0.5 text-[13px] text-ink-mute tabular">
                         {num(r.qty)} adet · {tl(r.revenue)}
                       </p>
@@ -1262,6 +1194,7 @@ export function SalesTable({
                           </IconTile>
                           <div className="min-w-0">
                             <p className="font-medium break-words">{r.posName}</p>
+                            {lafposNote(r)}
                             {r.note ? (
                               <p className="truncate text-xs text-ink-mute" title={r.note}>
                                 {r.note}
@@ -1355,6 +1288,17 @@ export function SalesTable({
             }
           />
         </div>
+      ) : lafposMonth ? (
+        <EmptyState
+          icon={<Store />}
+          title="Bu ay LafPOS'tan satış gelmedi"
+          description="Ürün satışları her gün sonunda LafPOS'tan kendiliğinden gelir. Gün sonu gelmediyse bağlantının durumuna Ayarlar › LafPOS (kasa) kartından bakın."
+          action={
+            <ButtonLink href="/panel/ayarlar#lafpos" variant="secondary">
+              <Store size={16} /> LafPOS kartını aç
+            </ButtonLink>
+          }
+        />
       ) : (
         <EmptyState
           icon={<Upload />}
@@ -1647,18 +1591,23 @@ export function ImportCard({
   month,
   label,
   lineCount,
+  lafposLines = 0,
   mappings,
   products,
   hasInfo,
   running,
   coveredThrough,
   listDays,
+  lafpos = null,
   className,
 }: {
   month: string;
   /** Hedef ayın adı, ör. "Eylül 2026" (önizleme açıkken ay değiştirilirse hedef görünür kalsın) */
   label: string;
+  /** Ayın ModPOS (Satışlar'a yüklenen) satırları; yükleme ve "Ayı temizle" yalnız bunlara dokunur */
   lineCount: number;
+  /** Tablodaki LafPOS satırları (geçiş ayı): metinler iki kaynağı ayrı söyler, yükleme ve temizleme onlara dokunmaz */
+  lafposLines?: number;
   mappings: MappingLite[];
   products: ProductOption[];
   /** Ayda ciro / açık gün / not gibi bilgi var mı ("Ayı temizle" penceresinde seçenek olarak) */
@@ -1672,10 +1621,17 @@ export function ImportCard({
   coveredThrough?: string | null;
   /** Liste kasa raporlarından kısa bir dönemi kapsıyorsa dönemi ("1–15 Kasım"); yoksa null */
   listDays?: string | null;
+  /**
+   * LafPOS'a geçildiyse ayın kaynağı (docs/LAFPOS.md › Günlük satış): geçiş ayında liste en çok geçiş gününden önceki
+   * güne kadardır (`running` o sınırla gelir, `throughHint` gün alanının açıklaması); LafPOS ayında liste yüklenmez,
+   * kart gelen günleri söyler (`lineCount` sayılmayan eski listenin satırları). Geçiş günü yoksa null
+   */
+  lafpos?: { source: "gecis"; throughHint: string } | { source: "lafpos"; days: number; last: string | null } | null;
   className?: string;
 }) {
   const reduce = useCalmMotion();
   const hasLines = lineCount > 0;
+  const lafposOnly = lafpos?.source === "lafpos" ? lafpos : null;
   const [source, setSource] = useState<"file" | "paste">("file");
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState<Parsed | null>(null);
@@ -1768,6 +1724,8 @@ export function ImportCard({
     setConfirmingReplace(false);
     if (!res.ok) return toast.error(res.error);
     const d = res.data;
+    // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyor (sonraki günleri de içeriyor olabilir)
+    if (d.warning) toast.warning("Liste kasa raporlarından büyük", { description: d.warning, duration: 15_000 });
     const left = d.count - d.matched;
     toast.success(`${num(d.count)} satır ${label} ayına yüklendi`, {
       description: [
@@ -1802,7 +1760,38 @@ export function ImportCard({
 
   return (
     <Card className={className}>
-      {!parsed ? (
+      {lafposOnly ? (
+        // Ayın tamamı LafPOS'tan: liste yüklenmez; sayılmayan eski liste "Ayı temizle" ile silinir
+        <motion.div key="lafpos" {...fade} className="flex flex-1 flex-col">
+          <CardHeader icon={<Store />} title="LafPOS'tan geliyor" description={`${label.split(" ")[0]} satışları her gün sonunda LafPOS'tan kendiliğinden gelir; ModPOS listesi yüklenmez.`} />
+          <CardContent className="flex flex-1 flex-col gap-3 text-sm text-ink-soft">
+            <p className="rounded-2xl bg-info-soft px-4 py-3 text-info">
+              {lafposOnly.days && lafposOnly.last
+                ? `${num(lafposOnly.days)} gün sonu geldi, son gün ${dayMonthTR(lafposOnly.last)}. Satırlar aşağıda; eşleşmeyen adları ürüne bağlayın.`
+                : "Bu ay için henüz gün sonu gelmedi; geldikçe satırlar aşağıda görünür."}
+            </p>
+            <p className="text-[13px] text-ink-mute">
+              Gelen ve gelmeyen günler, retler:{" "}
+              <Link href="/panel/ayarlar#lafpos" className="font-medium text-ink underline-offset-2 hover:underline">
+                Ayarlar › LafPOS (kasa)
+              </Link>
+              .
+            </p>
+          </CardContent>
+          {hasLines || hasInfo ? (
+            <CardFooter className="mt-auto">
+              <span>
+                {hasLines
+                  ? `Bu aya daha önce yüklenmiş ${num(lineCount)} satırlık ModPOS listesi sayılmıyor (ay LafPOS'tan); silebilirsiniz.`
+                  : "Bu ayda elle yazılmış ay bilgileri var."}
+              </span>
+              <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" onClick={() => setConfirmClear(true)}>
+                <Eraser size={15} /> Ayı temizle
+              </Button>
+            </CardFooter>
+          ) : null}
+        </motion.div>
+      ) : !parsed ? (
         <motion.div key="pick" {...fade} className="flex flex-1 flex-col">
           <CardHeader
             icon={<Upload />}
@@ -1864,8 +1853,10 @@ export function ImportCard({
             <CardFooter className="mt-auto">
               <span>
                 {hasLines
-                  ? `Bu ayda ${num(lineCount)} satır var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
-                  : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
+                  ? `Bu ayda ${num(lineCount)} ${lafposLines ? "ModPOS satırı" : "satır"} var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}${lafposLines ? `, ayrıca LafPOS'tan ${num(lafposLines)} satır` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
+                  : lafposLines
+                    ? `Bu ayda ModPOS listesi yok; LafPOS'tan ${num(lafposLines)} satır var (yükleme ve "Ayı temizle" onlara dokunmaz).`
+                    : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
                 {hasLines && listDays
                   ? ` Kasa raporları daha ileride: Genel bakış ve Tutarlılık listeye dayanan hesapları (günlük ortalama, POS cirosuyla karşılaştırma, sabit gider) ${listDays} günleriyle yapar.`
                   : null}
@@ -2009,7 +2000,9 @@ export function ImportCard({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               {hasLines ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] text-ink-mute">Bu aydaki {num(lineCount)} satır:</span>
+                  <span className="text-[13px] text-ink-mute">
+                    Bu aydaki {num(lineCount)} {lafposLines ? "ModPOS satırı (LafPOS'unkiler kalır)" : "satır"}:
+                  </span>
                   <Segmented
                     label="Mevcut satırlar"
                     value={mode}
@@ -2021,7 +2014,11 @@ export function ImportCard({
                   />
                 </div>
               ) : (
-                <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
+                <span className="text-[13px] text-ink-mute">
+                  {lafposLines
+                    ? `Bu ayda ModPOS listesi yok; satırlar doğrudan yüklenir (LafPOS'un ${num(lafposLines)} satırına dokunulmaz).`
+                    : "Bu ay boş; satırlar doğrudan yüklenir."}
+                </span>
               )}
               {running ? (
                 // Süren ay: liste o güne kadardır; kasa raporları ilerledikçe hesaplar listenin günleriyle yapılır
@@ -2031,7 +2028,13 @@ export function ImportCard({
                     <label htmlFor="sales-through" className="text-[13px] text-ink-mute">
                       Liste hangi güne kadar?
                     </label>
-                    <InfoTip text="Ay sürerken yüklenen satış listesi o güne kadardır; kasa raporları her akşam ilerler. Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı ve reçeteye göre kârın sabit giderini listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini yükleyin." />
+                    <InfoTip
+                      text={
+                        lafpos?.source === "gecis"
+                          ? lafpos.throughHint
+                          : "Ay sürerken yüklenen satış listesi o güne kadardır; kasa raporları her akşam ilerler. Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı ve reçeteye göre kârın sabit giderini listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini yükleyin."
+                      }
+                    />
                   </span>
                   <Input
                     id="sales-through"
@@ -2091,9 +2094,13 @@ export function ImportCard({
           <p>
             {hasLines ? (
               <>
-                <span className="font-medium text-ink">{num(lineCount)} satış satırı silinecek.</span> Eşleştirme hafızası ve Gelir-gider girişleri
-                silinmez.
+                <span className="font-medium text-ink">
+                  {num(lineCount)} {lafpos ? "ModPOS" : "satış"} satırı silinecek.
+                </span>{" "}
+                Eşleştirme hafızası ve Gelir-gider girişleri silinmez{lafpos ? "; LafPOS'tan gelen satırlar kalır" : ""}.
               </>
+            ) : lafposLines ? (
+              `Bu ayda ModPOS satırı yok; LafPOS'tan gelen ${num(lafposLines)} satır silinmez.`
             ) : (
               "Bu ayda satış satırı yok."
             )}

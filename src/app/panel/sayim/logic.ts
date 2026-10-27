@@ -554,6 +554,80 @@ export function groupProgress<L extends { archived: boolean }>(groups: { name: s
   });
 }
 
+// ---------------------------------------------------------------- Formdaki miktarlar (denetim E-21: yazım hızı)
+
+/** Formun bir satırı için gereken alanlar (FormLine'ın alt kümesi) */
+export interface FormQtyLine {
+  id: number;
+  archived: boolean;
+  /** Kayıtlı miktar */
+  qty: number | null;
+  /** Bugünkü sayım birimi; null = Sayılmaz */
+  unitNow: string | null;
+  /** Kayıtlı sayımın birimi */
+  countUnit: string;
+}
+
+/**
+ * Formdaki satırın miktarı (sayım biriminde): arşiv satırı kayıtlı miktarıyla; boş kutu null (sayılmadı); yazılan
+ * değer bugünkü sayım birimiyle okunur (KG / LT'de "1.500" = 1,5). Okunamayan yazı null.
+ */
+export function formQty(line: FormQtyLine, raw: string | undefined): number | null {
+  if (line.archived) return line.qty;
+  return raw === undefined || raw.trim() === "" ? null : parseCount(raw, line.unitNow ?? line.countUnit, parseNumberTR);
+}
+
+/** Kutuda yazı var ama sayı değil ya da eksi (arşiv satırı hiçbir zaman geçersiz değil) */
+export function invalidCount(line: FormQtyLine, raw: string | undefined): boolean {
+  if (line.archived || !raw?.trim()) return false;
+  const v = formQty(line, raw);
+  return v === null || v < 0;
+}
+
+/**
+ * Kümeden bir satırı çıkarır; satır kümede yoksa aynı küme döner: durum değişmez, React satırları yeniden çizmez
+ * (her tuşta "Geçen aydan doldur" ve çakışma işaretleri yeni bir kümeyle kurulmasın).
+ */
+export function withoutId<T>(set: Set<T>, id: T): Set<T> {
+  if (!set.has(id)) return set;
+  const next = new Set(set);
+  next.delete(id);
+  return next;
+}
+
+export interface FormProgress {
+  /** Grup grup sayılan / toplam (çipler ve kart başlıkları) */
+  groups: GroupProgress[];
+  /** Sayılan kalem: miktarı yazılmış, "Geçen aydan doldur"la gelip dokunulmamışlar hariç; arşiv satırları sayılmaz */
+  counted: number;
+  /** Bugünkü sayım listesindeki kalem */
+  total: number;
+  remaining: number;
+  /** Sayılan payı (0-1) */
+  share: number;
+  complete: boolean;
+}
+
+/**
+ * Sayılmış satırların kimlikleri, listenin sırasıyla: miktarı yazılmış; "Geçen aydan doldur"la gelip dokunulmamış ve
+ * arşiv satırları hariç. Form ilerlemeyi yalnız bu liste değişince yeniden kurar: sayılmış bir satırın miktarını
+ * düzeltmek (12 → 12,5) sayaçları, çipleri ve araç çubuğunu yeniden çizdirmez.
+ */
+export function countedLineIds(lines: FormQtyLine[], values: Record<number, string>, prefilled: ReadonlySet<number>): number[] {
+  return lines.filter((l) => !l.archived && formQty(l, values[l.id]) !== null && !prefilled.has(l.id)).map((l) => l.id);
+}
+
+/**
+ * Formun ilerlemesi: üstteki sayaç, ince çubuk, grup çipleri, kart başlıkları ve alttaki çubuk aynı sayıyı gösterir.
+ * `countedIds`: sayılmış satırlar (countedLineIds). Form bunu ertelenmiş değerlerle (useDeferredValue) kurar.
+ */
+export function formProgress<L extends FormQtyLine>(groups: { name: string; lines: L[] }[], countedIds: ReadonlySet<number>): FormProgress {
+  const byGroup = groupProgress(groups, (l) => countedIds.has(l.id));
+  const counted = byGroup.reduce((a, g) => a + g.counted, 0);
+  const total = byGroup.reduce((a, g) => a + g.total, 0);
+  return { groups: byGroup, counted, total, remaining: total - counted, share: total ? counted / total : 0, complete: total > 0 && counted === total };
+}
+
 /**
  * Kaydırma izleyici: ekrandaki grup kartlarının üst kenarları (`tops`, sayfa sırasıyla) ve yapışık çubuğun alt
  * çizgisi (`line`) verilir; çizgiyi geçmiş son grup etkindir, hiçbiri geçmediyse ilki. Sayfanın sonuna gelindiyse

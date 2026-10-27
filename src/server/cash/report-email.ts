@@ -2,6 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
+import { cashEmailKey } from "@/lib/cash-report";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
@@ -26,7 +27,8 @@ export type CashEmailOutcome = { status: "sent" | "failed" | "off"; error: strin
  * Raporu alıcılara e-postalar. `site`: laffogato.net'in o günkü online satış satırı (önceden başlatılmış istek; yoksa
  * burada sorulur). Site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır yazılmaz; e-posta yine gider. `approval`:
  * başlığın altına yazılan onay satırı ("Yönetici onayıyla düzeltildi: Mehmet önerdi, Ayşe onayladı."). `idempotencyKey`:
- * verilmezse `cash-{gün}-r{sürüm}` (aynı sürüm iki kez gitmez).
+ * verilmezse `cash-{rapor}-r{sürüm}` (cashEmailKey: aynı sürüm iki kez gitmez; silinip yeniden girilen gün yeni
+ * satırdır, anahtarı da yenidir).
  */
 export async function emailReport(
   reportId: number,
@@ -46,7 +48,7 @@ export async function emailReport(
     const dto = toCashDTO(row);
     const waste = await dayWaste(row.date);
     const online = await (o.site ?? fetchTillOnlineRow(row.date));
-    // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{gün}-r{sürüm} değişmez)
+    // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez)
     const [extras, integrity] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto)]);
     // Yazarkasa dışı tahsilat (sunucu sütunu) yalnız bu yönetici metnine: K4 onu da sayar, "tutmuyor" yanlış alarmı olmaz
     const msg = renderCashReport({ ...dto, okcOutside: row.okcOutside }, {
@@ -61,7 +63,7 @@ export async function emailReport(
       ...integrity,
     });
     const notify = await loadNotifySettings();
-    const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, idempotencyKey: o.idempotencyKey ?? `cash-${row.date}-r${row.revision}` });
+    const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, idempotencyKey: o.idempotencyKey ?? cashEmailKey(row) });
     outcome = res.ok ? { status: "sent", error: null, to: recipients.length } : { status: "failed", error: res.error, to: 0 };
     await getDb()
       .insert(s.notificationLog)

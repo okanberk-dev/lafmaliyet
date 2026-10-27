@@ -128,3 +128,13 @@ test("kasaya giren: tek ifade, kasa raporuna varsayılanlı NOT NULL sütun (esk
   const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
   assert.equal(sql, 'ALTER TABLE "cash_reports" ADD COLUMN "cash_in" double precision DEFAULT 0 NOT NULL;');
 });
+
+test("LafPOS satırının site kalemi ve hizmet işareti (denetim B08, E-33): iki boş olabilen, bir varsayılanlı sütun, yalnız ekleme (Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_satir_site_kalemi"));
+  assert.ok(entry, "lafpos_satir_site_kalemi migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
+  assert.equal(
+    sql,
+    'ALTER TABLE "pos_daily_sales" ADD COLUMN "site_menu_id" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "slot" text;--> statement-breakpoint\nALTER TABLE "pos_daily_sales" ADD COLUMN "lafpos_service" boolean DEFAULT false NOT NULL;',
+  );
+});

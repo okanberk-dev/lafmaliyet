@@ -193,6 +193,17 @@ test("e-posta: onay bekleyen fiyatlar kontrol kutusundan sonra turuncu kutuda; t
   assert.ok(both.indexOf("faturanın kategorisi tahminle yazıldı") < both.indexOf("hammadde fiyatı onay bekliyor ("));
 });
 
+test("e-posta: mal alışı sayılmayan fatura “kategorisi tahminle yazıldı” sayılmaz (denetim B03)", () => {
+  const html = (reviewCount: number, stockOnlyCount?: number) => renderDigest([], "2026-10-22", { items: [], reviewCount, stockOnlyCount, syncError: null }).html;
+  assert.ok(html(3).includes("3 faturanın kategorisi tahminle yazıldı. <a"));
+  assert.ok(html(3, 0).includes("3 faturanın kategorisi tahminle yazıldı. <a"));
+  const mixed = html(3, 2);
+  assert.ok(mixed.includes("1 faturanın kategorisi tahminle yazıldı. 2 fatura mal alışı sayılmıyor: kalemi hammaddeye bağlı, kategorisi mal alışı değil. <a"));
+  const only = html(2, 2);
+  assert.ok(!only.includes("tahminle yazıldı"));
+  assert.ok(only.includes("2 fatura mal alışı sayılmıyor"));
+});
+
 test("e-posta konusu: yeni onaya düşen fiyat ötekilerin arkasına eklenir; eskisi yalnız bölümde görünür", () => {
   const withInvoices: DigestInvoices = { ...invoices, priceHolds: holds(1).priceHolds };
   assert.equal(renderDigest([], "2026-10-22", withInvoices, prices).subject, "Sabah özeti: 2 yeni fatura · 2 fiyat onay bekliyor · 1 hammaddeye zam");

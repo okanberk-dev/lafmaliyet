@@ -253,7 +253,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Dünün raporunu bugün doğrudan girersiniz. Daha eski bir gün, son {LATE_REPORT_DAYS} günün içindeyse, <StaffPath href="/panel/kasa" /> ekranındaki{" "}
             <B>Girilmemiş günler</B> kartında çip olarak durur: güne dokunun, Z raporunun fotoğrafını ekleyin, Z no&apos;yu ve neden geç girildiğini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basın. Rapor yönetici onaylayınca kayda geçer. Fotoğrafsız gönderilemez. Daha eski bir günü yönetici girer; Z raporunu ona
-            iletin.
+            iletin. Kasada LafPOS kullanılmaya başlandıysa o günün rakamları LafPOS&apos;un gün sonundan dolar ve fotoğraf gerekmez; LafPOS o günü göndermediyse
+            banka POS Z raporunun fotoğrafını ekleyin ve Z no&apos;yu LafPOS&apos;un Kasa › Geçmiş günler ekranından yazın.
           </>
         ),
         icon: History,
@@ -264,8 +265,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             <StaffPath href="/panel/kasa" /> ekranında dünün raporu yokken formun üstünde &quot;Dün kafe kapalı mıydı?&quot; ve <B>Kafe kapalıydı</B> çıkar. Yönetici
-            onaylayınca dünün eksik rapor ve liste uyarıları kalkar. O gün panelde bir kayıt varsa (rapor, kasadan çıkan, zayi, açılan liste, karaoke) bildirim
-            açılmaz: kafe açıktıysa raporu girin.
+            onaylayınca dünün eksik rapor ve liste uyarıları kalkar. O gün panelde bir kayıt varsa (rapor, kasadan çıkan, zayi, açılan liste, karaoke; LafPOS
+            kullanılıyorsa LafPOS&apos;taki satış) bildirim açılmaz: kafe açıktıysa raporu girin.
           </>
         ),
         icon: CalendarX2,
@@ -427,7 +428,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Ay sonu stok sayımı",
         a: (
           <>
-            Ayın son günü kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Listede olmayan ama her
+            Ayın son günü kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin (telefonda Zayi
+            ekranının başındaki <B>Sayım</B> sekmesinden de açılır). Listede olmayan ama her
             ay sayılacak bir kalem için <B>Listeye ekle</B>; paket fiyatını biliyorsanız fişteki gibi yazın, bilmiyorsanız boş bırakın. Geçen ayın sayımını
             ayın 10&apos;una kadar düzeltebilirsiniz; sonrası için yöneticiye haber verin. Kaydetmeden çıkarsanız yazdıklarınız bu cihazda durur, sayfayı
             yeniden açınca <B>Geri yükle</B>&apos;ye basın.

@@ -28,6 +28,7 @@ import { waitedText } from "@/lib/staff-requests";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
+import { kasaEvidence } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
 
@@ -96,7 +97,12 @@ export async function photoRemovalStates(report: { id: number; date: string } & 
     .from(r)
     .where(and(eq(r.kind, "foto-kaldir"), eq(r.status, "pending"), inArray(r.subject, photos.map((p) => `foto:${p.id}`))));
   const waiting = new Set(pending.map((p) => Number(p.subject.slice(5))));
-  const counts = { zCount: photos.filter((p) => p.kind === "kasa-z").length, okcCount: photos.filter((p) => p.kind === "kasa-okc").length, okcFigures: okcHasFigures(report) };
+  const counts = {
+    zCount: photos.filter((p) => p.kind === "kasa-z").length,
+    okcCount: photos.filter((p) => p.kind === "kasa-okc").length,
+    okcFigures: okcHasFigures(report),
+    evidence: await kasaEvidence(db, report.date),
+  };
   const saved = savedFields(report);
   const out: Record<number, "ok" | "pending" | "blocked"> = {};
   for (const p of photos) {
@@ -243,7 +249,7 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   const diffs = reading && saved ? photoDiffs([reading], saved) : [];
   const suspicious = reading && saved ? suspiciousDiffs([reading], saved) : [];
   // Tek ModPOS Z ve (yazarkasa bölümü yazılmışken) tek Banka POS Z fotoğrafı kanıttır (removalCheck ile aynı kural)
-  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report) }) : null;
+  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report), evidence: await kasaEvidence(db, report.date) }) : null;
   const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : kindRefusal ? kindRefusal : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
   return {
     ...base,

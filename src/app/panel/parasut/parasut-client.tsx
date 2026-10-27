@@ -49,7 +49,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
 import type { ReadingState } from "@/lib/photo-rules";
 import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
-import { guessLinkFactor, packEvidence, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
+import { guessLinkFactor, packEvidence, packPairChoices, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
 import type { IgnoredProduct } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -165,14 +165,28 @@ const factorInput = (f: number) => num(f, 3).replace(/\./g, "");
 const evidenceWhere = (ev: PackEvidence) => (ev.source === "unit" ? `faturadaki birim ${ev.text}` : `${ev.source === "name" ? "adında" : "açıklamasında"} ${ev.text}`);
 
 /**
- * Bağlama ya da kalem okuma şimdikinden %40'tan fazla farklı fiyat getirdiyse (onaya düştü, uygulanmadı) bildirime
- * eklenen metin ve Hammaddeler'deki "Onay bekleyen fiyatlar"a götüren düğme
+ * Bağlama ya da kalem okuma onaya düşen fiyat getirdiyse (%40'tan fazla fark ya da çarpanı kesin olmayan ilk fiyat) ya
+ * da bağlanan ürün mal alışı sayılmayan bir faturada çıktıysa (E-07: stoğa giriyor, gelir-gidere girmiyor; fatura
+ * kontrole düştü) bildirime eklenen metin ve düğmeler: Hammaddeler'deki "Onay bekleyen fiyatlar", Faturalar'ın kontrol
+ * süzgeci
  */
-function heldToast(held: number, router: { push: (href: string) => void }) {
-  return held
-    ? { text: ` · ${num(held)} fiyat onay bekliyor`, options: { duration: 10_000, action: { label: "Bak", onClick: () => router.push(HOLDS_HREF) } } }
-    : { text: "", options: undefined };
+function heldToast(r: { held: number; flagged?: number }, router: { push: (href: string) => void }) {
+  const flagged = r.flagged ?? 0;
+  const text = `${r.held ? ` · ${num(r.held)} fiyat onay bekliyor` : ""}${flagged ? ` · ${num(flagged)} fatura mal alışı sayılmıyor, kategorisine bakın` : ""}`;
+  const toInvoices = { label: "Faturalar", onClick: () => router.push(STOCK_ONLY_HREF) };
+  if (!r.held && !flagged) return { text, options: undefined };
+  return {
+    text,
+    options: {
+      duration: 10_000,
+      action: r.held ? { label: "Bak", onClick: () => router.push(HOLDS_HREF) } : toInvoices,
+      ...(r.held && flagged ? { cancel: toInvoices } : {}),
+    },
+  };
 }
+
+/** Faturalar'ın kontrol bekleyenler süzgeci (stoğa girip gelir-gidere girmeyen faturalar orada) */
+const STOCK_ONLY_HREF = "/panel/faturalar?durum=kontrol#fatura-listesi";
 
 /** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 function oneOf<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
@@ -259,6 +273,7 @@ export function ParasutClient({
       let lineCount = 0;
       let corrected = 0;
       let held = 0;
+      let flagged = 0;
       for (let round = 0; round < 12; round++) {
         const r = await readParasutLines();
         if (!r.ok) {
@@ -270,6 +285,7 @@ export function ParasutClient({
         lineCount += r.data.lines;
         corrected += r.data.corrected;
         held += r.data.held;
+        flagged += r.data.flagged;
         setReadProgress({ done, left: r.data.remaining });
         if (!r.data.remaining || !step) {
           if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
@@ -278,7 +294,7 @@ export function ParasutClient({
         toast.loading(`E-fatura kalemleri okunuyor… ${num(done)} fatura okundu, ${num(r.data.remaining)} kaldı`, { id: t });
       }
       setReadProgress(null);
-      const h = heldToast(held, router);
+      const h = heldToast({ held, flagged }, router);
       toast.success(
         `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}${h.text}`,
         { id: t, ...h.options },
@@ -753,7 +769,7 @@ function ProductLinks({
       hideUnlinked(u.productKey);
       const r = await saveProductLink({ productKey: u.productKey, productName: u.productName, ingredientId: Number(d.ingredientId), factor, updatePrice: d.updatePrice });
       if (!r.ok) return void toast.error(r.error);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${u.productName} → ${ing?.name ?? "hammadde"} bağlandı · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat güncellendi${h.text}`, h.options);
     });
   };
@@ -806,7 +822,7 @@ function ProductLinks({
       );
       if (!r.ok) return void toast.error(r.error);
       setBulkOpen(false);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${num(r.data.linked)} ürün bağlandı · ${num(r.data.quantities)} aylık miktar, ${num(r.data.prices)} fiyat güncellendi${h.text}`, h.options);
     });
 
@@ -817,7 +833,7 @@ function ProductLinks({
       done?.();
       const r = await saveProductLink({ productKey: l.productKey, productName: l.productName, ...patch });
       if (!r.ok) return void toast.error(r.error);
-      const h = heldToast(r.data.held, router);
+      const h = heldToast(r.data, router);
       toast.success(`${l.productName} güncellendi · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat yeniden hesaplandı${h.text}`, h.options);
     });
   };
@@ -973,11 +989,14 @@ function ProductLinks({
                   const ing = byId.get(Number(d.ingredientId));
                   const suggestion = d.ingredientId ? null : suggestIngredient(u.productName, ingredients, linked);
                   const suggested = suggestion ? byId.get(suggestion.ingredientId) : undefined;
-                  // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz
+                  // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz.
+                  // Adında iki sayı varsa ve birimden hangisi olduğu belli değilse ("50'Lİ X 20", 1 Adet) kutu boşalır: "1" kalıp
+                  // yanlışlıkla bağlanmasın, sahibi iki olasılıktan birini seçer ya da faturadan okur
                   const choose = (id: string, known?: number | null) => {
                     const next = byId.get(Number(id));
                     const guess = known ? factorInput(known) : next && !d.factorTouched ? guessLinkFactor(lineOf(u), next.unit) : null;
-                    set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : {}) });
+                    const unsure = !known && !guess && next && !d.factorTouched && packPairChoices(lineOf(u), next.unit);
+                    set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : unsure ? { factor: "" } : {}) });
                   };
                   return (
                     <li key={u.productKey} className="rounded-2xl bg-surface p-3">
@@ -1457,11 +1476,13 @@ function FactorHelp({
   const typed = parseNumberTR(factor);
   const ev = packEvidence(line, ingredient.unit);
   const mismatch = ev && !(typed && sameFactor(typed, ev.factor)) ? ev : null;
+  // Adında iki sayı var ama birimden hangisi olduğu belli değil ("50'Lİ X 20", 1 Adet): iki olasılık, karar sahibinin
+  const pair = ev ? null : packPairChoices(line, ingredient.unit);
   const unitLabel = UNIT_LABEL[ingredient.unit] ?? ingredient.unit;
   // Okuma seçilen hammaddenin birimine göre: hammadde değişince eski okuma gösterilmez
   const shown = read && read.ingredientId === ingredient.id ? read : null;
   const canRead = readState !== "nokey";
-  if (!mismatch && !shown && !canRead) return null;
+  if (!mismatch && !pair && !shown && !canRead) return null;
   const readNow = () =>
     start(async () => {
       const r = await readProductInvoice({ productKey, ingredientId: ingredient.id, mode: shown ? "force" : "manual" });
@@ -1484,6 +1505,20 @@ function FactorHelp({
           <Button size="xs" variant="secondary" onClick={() => onFactor(factorInput(mismatch.factor))}>
             {num(mismatch.factor, 3)} yap
           </Button>
+        </p>
+      ) : null}
+      {pair ? (
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-warn">
+          <TriangleAlert size={13} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 text-pretty">
+            Adında “{pair.text}” yazıyor: 1 {line.unit?.trim() || "birim"} = {pair.choices.map((c) => `${num(c, 3)} ${unitLabel}`).join(" mi, ")} mi? Faturadan okuyun ya da
+            doğrusunu seçin.
+          </span>
+          {pair.choices.map((c) => (
+            <Button key={c} size="xs" variant={typed && sameFactor(typed, c) ? "primary" : "secondary"} onClick={() => onFactor(factorInput(c))}>
+              {num(c, 3)} yap
+            </Button>
+          ))}
         </p>
       ) : null}
       {shown ? (

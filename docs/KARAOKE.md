@@ -228,8 +228,9 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 - **Henüz yapılamayanlar:** gelmeyenler ("Gelmedi" düğmesi yok; personel **Erken bitir**'e basarsa oda o andan boş
   sayılır, basılmazsa rezervasyonun süresi dolu sayılır), odadaki siparişler (uygulama siparişi bar ekranına "Masa"
   olarak gelir, odaya ait olduğu ayrılmıyor ve panel sipariş geçmişi tutmuyor), kasadaki karaoke parası (oturuma
-  bağlı değil; ModPOS günlük dökümü gelince değerlendirilir). Oda tek kabul edilir (site oda bilgisi göndermez); hesap
-  oda sayısını parametre alır.
+  bağlı değil; LafPOS'a geçildikten sonra kasanın karaoke satırları günlük gelir, `pos_daily_sales`, ama doluluk
+  onları okumaz: oturumla eşleştirmek ayrı bir iş, docs/LAFPOS.md). Oda tek kabul edilir (site oda bilgisi göndermez);
+  hesap oda sayısını parametre alır.
 
 ## Sorun giderme
 

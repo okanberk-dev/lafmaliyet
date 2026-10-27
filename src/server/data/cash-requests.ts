@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 
 import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
-import { cashOutsTotal } from "@/lib/cash-outs";
+import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import {
   correctionBell,
   CorrectionPayload,
@@ -18,6 +18,7 @@ import {
   type ProposedFields,
 } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
+import { lafposHandedGap } from "@/lib/lafpos/prefill";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
 import { mergedOf, type MergeBase } from "@/server/cash/requests";
@@ -26,6 +27,7 @@ import { lateBellRows, lateCards, type LateCard } from "@/server/data/cash-late"
 import { cashOutCards, type CashOutCard, type PhotoRemovalCard } from "@/server/data/cash-out-requests";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { nextReportAfter } from "@/server/data/cash-reports";
+import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
 import { ownRequests } from "@/server/staff-requests/core";
 
@@ -249,8 +251,11 @@ export interface CorrectionCard extends CardBase {
   carry: string | null;
   /** Sonraki raporun açılışı bu devirle tutacak mı */
   next: { date: string; opening: number; holds: boolean } | null;
-  /** "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan */
-  receipts: { count: number; total: number; unreceipted: number | null } | null;
+  /**
+   * "Gün içinde çıkan" değişiyorsa: fişlerin sayısı ve toplamı, fişsiz kalan; LafPOS gününde farkın LafPOS'taki teslim
+   * kadarı fişsiz sayılmaz (`lafposHanded`, E-35)
+   */
+  receipts: { count: number; total: number; unreceipted: number | null; lafposHanded?: number | null } | null;
   /** Raporun ayı geçti */
   monthPassed: string | null;
 }
@@ -347,10 +352,12 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
         : null;
     let receipts: CorrectionCard["receipts"] = null;
     if (changes.some((c) => c.key === "cashOut")) {
-      const outs = await cashOutsOn(r.day);
+      const [outs, lafpos] = await Promise.all([cashOutsOn(r.day), loadKasaLafpos(r.day)]);
       const total = cashOutsTotal(outs);
       const over = Math.round((after.cashOut - total) * 100) / 100;
-      receipts = { count: outs.length, total, unreceipted: over > 1 ? over : null };
+      const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;
+      const unreceipted = split ? split.rest : over;
+      receipts = { count: outs.length, total, unreceipted: unreceipted > 1 ? unreceipted : null, lafposHanded: split?.handed ?? null };
     }
     const carryAfter = Math.round((after.countedCash - after.handedOver) * 100) / 100;
     cards.push({

@@ -8,6 +8,8 @@ import { POS_MARKS_RECENT_MS, posUndoRefusal, type PosItem, type RecentPosMark }
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
+import { modposNameFilter } from "./pos-staff";
+
 /**
  * Fiyatlar ekranının, ürün kartının, zilin ve (sonra) Bugün ekranının okumaları: kasada (ModPOS) değişecek fiyatlar,
  * satış fiyatı geçmişi (docs/FIYATLAR.md). Hepsi yalnız okur.
@@ -58,7 +60,7 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
     .where(isNotNull(s.products.posStalePrice));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
-  const [names, latest] = await Promise.all([
+  const [names, latest, inModpos] = await Promise.all([
     db
       .select({ posName: s.posMappings.posName, productId: s.posMappings.productId })
       .from(s.posMappings)
@@ -74,9 +76,11 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
       .from(s.productPrices)
       .where(inArray(s.productPrices.productId, ids))
       .orderBy(s.productPrices.productId, desc(s.productPrices.changedAt), desc(s.productPrices.id)),
+    // Yalnız LafPOS'tan öğrenilmiş ad ModPOS'ta yok (pos-staff.ts modposNameFilter)
+    modposNameFilter(db),
   ]);
   const namesOf = new Map<number, string[]>();
-  for (const n of names) if (n.productId) namesOf.set(n.productId, [...(namesOf.get(n.productId) ?? []), n.posName]);
+  for (const n of names) if (n.productId && inModpos(n.posName)) namesOf.set(n.productId, [...(namesOf.get(n.productId) ?? []), n.posName]);
   const lastOf = new Map(latest.map((l) => [l.productId, l]));
   return rows.map((r) => {
     const last = lastOf.get(r.id);

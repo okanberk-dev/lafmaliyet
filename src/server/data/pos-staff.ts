@@ -2,8 +2,9 @@ import "server-only";
 
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, max, min } from "drizzle-orm";
 
+import { posMatchKey } from "@/lib/calc/pos-paste";
 import { POS_UNDO_WINDOW_MS, type MyPosMark, type PosSummaryLite, type StaffPosItem } from "@/lib/prices/pos";
-import { getDb, schema as s } from "@/server/db";
+import { getDb, schema as s, type DB } from "@/server/db";
 
 /*
  * Personelin Kasadaki fiyatlar okumaları (/panel/kasa/fiyatlar, Bugün, zil; plan docs/planlar/personel-yetki.md §2.2).
@@ -12,6 +13,23 @@ import { getDb, schema as s } from "@/server/db";
  * personelin kendi işaretlerinin kimliği, fiyatı ve anı. Yalnız etkin ürünler. Fiyat geçmişi, değişikliğin kaynağı ve
  * kimin yaptığı, not, site alanları ve maliyet okunmaz.
  */
+
+/**
+ * Kasadaki (ModPOS) adların süzgeci: POS adı hafızası ModPOS listeleriyle LafPOS'un ortak hafızasıdır (Satışlar ve
+ * Ayarlar › LafPOS › Bağla aynı tabloya yazar). Yalnız LafPOS'tan gelmiş, hiçbir ModPOS listesinde geçmeyen ad
+ * ModPOS'ta yoktur; kasadaki fiyat listesinde "Kasada: …" diye gösterilmez (denetim B08 incelemesi). Hiçbir tabloda
+ * geçmeyen ad (ör. ayı temizlenmiş listeden) bugünkü gibi kalır. Anahtar posMatchKey (büyük / küçük harf, boşluk farkı yok).
+ */
+export async function modposNameFilter(db: DB): Promise<(posName: string) => boolean> {
+  const [modpos, lafpos] = await Promise.all([
+    db.select({ posName: s.salesLines.posName }).from(s.salesLines).groupBy(s.salesLines.posName),
+    db.select({ posName: s.posDailySales.posName }).from(s.posDailySales).groupBy(s.posDailySales.posName),
+  ]);
+  if (!lafpos.length) return () => true;
+  const inModpos = new Set(modpos.map((r) => posMatchKey(r.posName)));
+  const onlyLafpos = new Set(lafpos.map((r) => posMatchKey(r.posName)).filter((k) => !inModpos.has(k)));
+  return (posName) => !onlyLafpos.has(posMatchKey(posName));
+}
 
 /** Kasada (ModPOS) değişecek satış fiyatları, kategori ve ürün sırasıyla gruplanmak üzere (yalnız etkin ürünler) */
 export async function loadStaffPosList(): Promise<StaffPosItem[]> {
@@ -32,13 +50,16 @@ export async function loadStaffPosList(): Promise<StaffPosItem[]> {
     .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
     .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true)));
   if (!rows.length) return [];
-  const names = await db
-    .select({ posName: s.posMappings.posName, productId: s.posMappings.productId })
-    .from(s.posMappings)
-    .where(inArray(s.posMappings.productId, rows.map((r) => r.id)))
-    .orderBy(asc(s.posMappings.posName));
+  const [names, inModpos] = await Promise.all([
+    db
+      .select({ posName: s.posMappings.posName, productId: s.posMappings.productId })
+      .from(s.posMappings)
+      .where(inArray(s.posMappings.productId, rows.map((r) => r.id)))
+      .orderBy(asc(s.posMappings.posName)),
+    modposNameFilter(db),
+  ]);
   const namesOf = new Map<number, string[]>();
-  for (const n of names) if (n.productId) namesOf.set(n.productId, [...(namesOf.get(n.productId) ?? []), n.posName]);
+  for (const n of names) if (n.productId && inModpos(n.posName)) namesOf.set(n.productId, [...(namesOf.get(n.productId) ?? []), n.posName]);
   return rows.map((r) => ({
     productId: r.id,
     name: r.name,

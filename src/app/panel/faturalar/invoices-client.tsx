@@ -28,6 +28,7 @@ import { isPartiallyPaid, openBalance } from "@/lib/calc/insights";
 import type { InvoiceCariLinks } from "@/lib/cari/account";
 import { parasutDifference } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -394,11 +395,18 @@ export function InvoicesClient({
       }
       const { previous, missing } = res.data;
       if (missing) toast.warning(`${missing} fatura bulunamadı (silinmiş olabilir)`);
+      // Mal alışı olmayan kategoriye geçen (ya da onda onaylanan) kalemi hammaddeye bağlı fatura kontrolde kalır (E-07)
+      const kept = res.data.stockOnly.map((id) => list.find((i) => i.id === id)).filter((i): i is InvoiceRow => Boolean(i));
+      if (kept.length) {
+        const target = new Map(changes.map((c) => [c.id, c.category]));
+        stockOnlyWarning(kept.map((i) => ({ ...i, category: target.get(i.id) ?? i.category })));
+      }
       if (opts.undo) return void toast.success("Kategori geri alındı");
       if (!previous.length) {
-        // Kategori zaten buydu: değişiklik yok ama tahmin onaylandı
-        if (!wasReview.length) return;
-        const confirmed = list.filter((i) => wasReview.includes(i.id));
+        // Kategori zaten buydu: değişiklik yok ama tahmin onaylandı. Mal alışı sayılmayan (kontrolde kalan) fatura
+        // onaylanmadı: "onaylandı" denmez (E-07; uyarısı yukarıda)
+        const confirmed = list.filter((i) => wasReview.includes(i.id) && !res.data.stockOnly.includes(i.id));
+        if (!confirmed.length) return;
         const t = confirmToast(confirmed);
         return void toast.success(t.title, {
           description: t.description,
@@ -430,8 +438,44 @@ export function InvoicesClient({
   }
 
   /**
+   * Kontrolde kalan faturalar (E-07): kalemi hammaddeye bağlı, kategorisi mal alışı değil; stoğa giriyor, mal maliyetine
+   * girmiyor. Kategorisi değişmeli ya da bilerek "Kalsın" denmeli (kalemler stoğa girmeye devam eder); birden çoksa
+   * "Hepsi kalsın"
+   */
+  function stockOnlyWarning(kept: InvoiceRow[]) {
+    if (!kept.length) return;
+    const one = kept.length === 1 ? kept[0] : null;
+    toast.warning(one ? `${splitSupplier(one.supplier).base}: kontrolde kaldı` : `${kept.length} fatura kontrolde kaldı`, {
+      description: one
+        ? `${stockOnlyText(one.category, expenseLinks)} Bilerek “${one.category}” kalacaksa Kalsın'a dokunun.`
+        : `${kept.length} faturanın kalemleri hammaddeye bağlı ama kategorisi mal alışı değil: stoğa ve fiyata giriyor, mal maliyetine girmiyor. Mal alışıysa kategorisini değiştirin; bilerek böyle kalacaklarsa Hepsi kalsın'a dokunun.`,
+      duration: 12_000,
+      action: { label: one ? "Kalsın" : "Hepsi kalsın", onClick: () => acceptStockOnly(kept) },
+    });
+  }
+
+  /** "Kalsın": kategorisi bilerek mal alışı değil; faturalar onaylanır ve yeniden kontrole düşmez (geri alınabilir) */
+  function acceptStockOnly(rows: InvoiceRow[]) {
+    if (!rows.length) return;
+    keepScroll();
+    const ids = rows.map((i) => i.id);
+    startTransition(async () => {
+      applyOptimistic({ kind: "review", ids, needsReview: false });
+      const res = await confirmInvoices(ids, false, { acceptStockOnly: true });
+      if (!res.ok) return void toast.error(res.error);
+      const one = rows.length === 1 ? rows[0] : null;
+      toast.success(one ? `${splitSupplier(one.supplier).base}: ${one.category} kaldı` : `${rows.length} fatura kategorisinde kaldı`, {
+        description: "Hammaddeye bağlı kalemleri stoğa girmeye devam eder; gelir-gidere mal alışı olarak girmez.",
+        action: { label: "Geri al", onClick: () => confirmRows(rows.map((i) => ({ ...i, needsReview: false })), { undo: true }) },
+        duration: UNDO_MS,
+      });
+    });
+  }
+
+  /**
    * Eşitlemenin tahmin ettiği kategoriyi onaylar (✓ Onayla, seçilenler, Hepsini onayla). Satır hemen "Kontrol"
-   * işaretini kaybeder; bildirimdeki "Geri al" aynı faturaları yeniden kontrol bekleyene döndürür.
+   * işaretini kaybeder; bildirimdeki "Geri al" aynı faturaları yeniden kontrol bekleyene döndürür. Kalemi hammaddeye
+   * bağlı, kategorisi mal alışı olmayan fatura onaylanmaz (E-07; stockOnlyWarning).
    */
   function confirmRows(targets: InvoiceRow[], opts: { undo?: boolean } = {}) {
     const undo = Boolean(opts.undo);
@@ -448,8 +492,9 @@ export function InvoicesClient({
         if (done.length) toast.success(done.length === 1 ? "Yeniden kontrol bekliyor" : `${done.length} fatura yeniden kontrol bekliyor`);
         return;
       }
-      // Başka bir oturumda onaylanmışsa değişen yok
-      if (!done.length) return void toast.info("Bu faturalar zaten onaylanmış");
+      // Kalemi hammaddeye bağlı, kategorisi mal alışı olmayan fatura onaylanmadı (E-07): neden ve tek faturada "Kalsın"
+      stockOnlyWarning(rows.filter((i) => res.data.kept.includes(i.id)));
+      if (!done.length) return void (res.data.kept.length ? undefined : toast.info("Bu faturalar zaten onaylanmış"));
       const t = confirmToast(done);
       toast.success(t.title, {
         description: t.description,
@@ -587,7 +632,18 @@ export function InvoicesClient({
   };
 
   const reviewBadge = (i: InvoiceRow) =>
-    i.needsReview ? (
+    i.stockOnly && stockOnlyCategory(i.category) ? (
+      // Kalemi hammaddeye bağlı, kategorisi mal alışı değil (E-07); "kalsın" denmişse yalnız bilgi
+      i.needsReview ? (
+        <Badge tone="amber" dot title={stockOnlyText(i.category, expenseLinks)}>
+          Mal alışı sayılmıyor
+        </Badge>
+      ) : (
+        <Badge tone="gray" title="Kalemleri hammaddeye bağlı, kategorisi mal alışı değil: stoğa giriyor, gelir-gidere girmiyor">
+          Stoğa giriyor
+        </Badge>
+      )
+    ) : i.needsReview ? (
       <Badge tone="amber" dot title="Kategori eşitlemede tahminle yazıldı: doğruysa onaylayın, değilse kategoriyi değiştirin (değiştirmek de onaylar)">
         Kontrol
       </Badge>
@@ -632,6 +688,11 @@ export function InvoicesClient({
 
   const selectedUnpaid = selected.filter((i) => i.unpaid);
   const selectedReview = selected.filter((i) => i.needsReview);
+  // Kontrol kuyruğunun iki nedeni (E-07): kategorisi tahminle yazılanlar onaylanır; mal alışı sayılmayanlar onaylanmaz,
+  // kategorisi değişir ya da bilerek "kalsın" denir
+  const reviewStockOnly = visible.filter((i) => i.needsReview && i.stockOnly && stockOnlyCategory(i.category));
+  const reviewGuessed = visible.filter((i) => i.needsReview && !reviewStockOnly.includes(i));
+  const [keepAll, setKeepAll] = useState(false);
   /** "Kontrol bekleyen" süzgecinde seçim yokken alttaki çubuk "Hepsini onayla"yı gösterir */
   const reviewBar = status === "kontrol" && visible.length > 0 && selected.length === 0;
   const barOpen = selected.length > 0 || reviewBar;
@@ -908,7 +969,7 @@ export function InvoicesClient({
               const isSel = selectedIds.includes(i.id);
               const vat = i.payable - net;
               const doc = docButton(i, "relative size-9 before:absolute before:-inset-1 before:content-[''] pointer-coarse:size-9");
-              const badges = note || i.source === "parasut" || isEstimate(i) || i.needsReview;
+              const badges = note || i.source === "parasut" || isEstimate(i) || i.needsReview || (i.stockOnly && stockOnlyCategory(i.category));
               return (
                 <li key={i.id} className={cn("relative px-4 pt-3 pb-3.5 transition-colors", isSel && "bg-surface/70")}>
                   <div className="flex items-start gap-2">
@@ -1104,6 +1165,12 @@ export function InvoicesClient({
                               {reviewBadge(i)}
                               <ConfirmPill size="sm" onClick={() => confirmRows([i])} label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} />
                             </span>
+                          </div>
+                        ) : i.stockOnly && stockOnlyCategory(i.category) ? (
+                          // "Kalsın" denmiş (ya da henüz işaretlenmemiş) stoğa giren fatura: yalnız bilgi rozeti (E-07)
+                          <div className="flex flex-col items-start gap-1">
+                            {categoryPicker(i)}
+                            {reviewBadge(i)}
                           </div>
                         ) : (
                           categoryPicker(i)
@@ -1304,11 +1371,24 @@ export function InvoicesClient({
           <>
             <p className="min-w-0 flex-1 text-sm text-ink" aria-live="polite">
               <span className="font-semibold tabular">{num(visible.length)}</span> fatura kontrol bekliyor
-              <span className="text-ink-mute max-sm:hidden"> · kategoriler tahminle yazıldı</span>
+              <span className="text-ink-mute max-sm:hidden">
+                {reviewStockOnly.length
+                  ? reviewGuessed.length
+                    ? ` · ${num(reviewGuessed.length)} kategori tahmini, ${num(reviewStockOnly.length)} mal alışı sayılmıyor`
+                    : " · mal alışı sayılmıyor: kategorisini değiştirin ya da bilerek böyleyse kalsın deyin"
+                  : " · kategoriler tahminle yazıldı"}
+              </span>
             </p>
-            <Button onClick={() => confirmRows(visible)} className="max-sm:w-full max-sm:min-h-11">
-              <CheckCheck size={16} aria-hidden="true" /> Hepsini onayla ({num(visible.length)})
-            </Button>
+            {reviewGuessed.length ? (
+              // Yalnız tahmini onaylar: mal alışı sayılmayan zaten onaylanmaz, kuyrukta kalır
+              <Button onClick={() => confirmRows(reviewGuessed)} className="max-sm:w-full max-sm:min-h-11">
+                <CheckCheck size={16} aria-hidden="true" /> Hepsini onayla ({num(reviewGuessed.length)})
+              </Button>
+            ) : reviewStockOnly.length ? (
+              <Button variant="secondary" onClick={() => setKeepAll(true)} className="max-sm:w-full max-sm:min-h-11">
+                <Check size={16} aria-hidden="true" /> Hepsi kalsın ({num(reviewStockOnly.length)})
+              </Button>
+            ) : null}
           </>
         )}
       </FloatingBar>
@@ -1329,15 +1409,29 @@ export function InvoicesClient({
         description={catRow ? `${splitSupplier(catRow.supplier).base} · ${dateTR(catRow.date)} · ${tl(netOf(catRow), 2)}` : undefined}
         footer={
           catRow?.needsReview ? (
-            <Button
-              className={SHEET_BTN}
-              onClick={() => {
-                setCatFor(null);
-                confirmRows([catRow]);
-              }}
-            >
-              <Check size={16} aria-hidden="true" /> {catRow.category} doğru, onayla
-            </Button>
+            catRow.stockOnly && stockOnlyCategory(catRow.category) ? (
+              // Mal alışı sayılmayan fatura "doğru" denince onaylanmaz (E-07): bilerek böyleyse doğrudan "Kalsın"
+              <Button
+                variant="secondary"
+                className={SHEET_BTN}
+                onClick={() => {
+                  setCatFor(null);
+                  acceptStockOnly([catRow]);
+                }}
+              >
+                <Check size={16} aria-hidden="true" /> {catRow.category} kalsın
+              </Button>
+            ) : (
+              <Button
+                className={SHEET_BTN}
+                onClick={() => {
+                  setCatFor(null);
+                  confirmRows([catRow]);
+                }}
+              >
+                <Check size={16} aria-hidden="true" /> {catRow.category} doğru, onayla
+              </Button>
+            )
           ) : undefined
         }
       >
@@ -1346,7 +1440,9 @@ export function InvoicesClient({
             {catRow.needsReview ? (
               <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brass-500" aria-hidden="true" />
-                Kategori eşitlemede tahminle yazıldı. Doğruysa onaylayın; değilse doğrusunu seçin (seçmek de onaylar).
+                {catRow.stockOnly && stockOnlyCategory(catRow.category)
+                  ? `${stockOnlyText(catRow.category, expenseLinks)} Bilerek böyleyse “${catRow.category} kalsın”a dokunun.`
+                  : "Kategori eşitlemede tahminle yazıldı. Doğruysa onaylayın; değilse doğrusunu seçin (seçmek de onaylar)."}
               </p>
             ) : null}
             <ChoiceList
@@ -1401,6 +1497,22 @@ export function InvoicesClient({
         title="Fatura silinsin mi?"
         confirmLabel="Faturayı sil"
         description={deleting ? <DeleteSummary invoice={deleting} ignoredCount={ignoredCount} cari={cariLinks[deleting.id]} /> : null}
+      />
+      <ConfirmDialog
+        open={keepAll && reviewStockOnly.length > 0}
+        onClose={() => setKeepAll(false)}
+        onConfirm={() => {
+          setKeepAll(false);
+          acceptStockOnly(reviewStockOnly);
+        }}
+        title={`${num(reviewStockOnly.length)} fatura kategorisinde kalsın mı?`}
+        confirmLabel="Hepsi kalsın"
+        tone="primary"
+        description={
+          reviewStockOnly.length === 1
+            ? "Bu faturanın kalemleri hammaddeye bağlı ama kategorisi mal alışı değil: stoğa ve fiyata girmeye devam eder, mal maliyetine girmez. Mal alışıysa önce kategorisini değiştirin. Geri alınabilir."
+            : "Bu faturaların kalemleri hammaddeye bağlı ama kategorileri mal alışı değil: stoğa ve fiyata girmeye devam eder, mal maliyetine girmez. Mal alışı olanların kategorisini önce değiştirin. Geri alınabilir."
+        }
       />
     </Card>
   );

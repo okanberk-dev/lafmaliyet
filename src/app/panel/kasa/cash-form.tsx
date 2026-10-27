@@ -24,7 +24,8 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
-import { LAFPOS_NO_COUNT_TEXT, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
+import { lafposDiffs } from "@/lib/lafpos/diffs";
+import { LAFPOS_NO_COUNT_TEXT, lafposOutsCheck, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
 import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
@@ -35,6 +36,7 @@ import {
   posPromptMarks,
   prefillPlan,
   prefillSummary,
+  sameValue,
   savedFields,
   type CashPhotoKind,
   type CashReading,
@@ -57,7 +59,7 @@ import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
 import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, DiffHeadline, LafposDiffList, type OkcAdminView } from "./cash-summary";
 import { OkcCard, type OkcFieldOptions } from "./okc-card";
 import { OKC_KEYS, okcFieldsOf, okcValuesOf, type OkcKey, type OkcMoneyKey } from "./okc-form";
 
@@ -292,6 +294,28 @@ function planMarks(m: Marks, plan: PrefillPlan, from: MarkSource): Marks {
 }
 
 /**
+ * LafPOS gününde formun ilk hâli (docs/LAFPOS.md › Kasa raporu, G7). Yeni rapor (`fill`): LafPOS'un gün sonu açılışta
+ * kendiliğinden uygulanır, fotoğrafınkiyle aynı kuralla (yalnız boş alanlar dolar, yazılmış ve farklı olanın altında
+ * "LafPOS'ta …"). Yazılmış değerlerle açılan form (`compare`: Düzenle, düzeltme önerisi, geç raporun önceki değerleri,
+ * Düzeltip onayla): hiçbir alan kendiliğinden değişmez; boş bırakılmış alanın LafPOS'taki değeri de yalnız öneridir
+ * ("LafPOS'ta …", "LafPOS'takini yaz"; isteğe bağlı tutarın boşu 0'dır, LafPOS'ta 0 ise öneri yok). Hiçbir şey kaydedilmez.
+ * LafPOS'un özeti yoksa olduğu gibi.
+ */
+function withLafpos(v: Values, lafpos: LafposDay | null, mode: "fill" | "compare"): { values: Values; marks: Marks; filled: number | null } {
+  if (!lafpos) return { values: v, marks: {}, filled: null };
+  const plan = prefillPlan(lafpos.prefill, Object.fromEntries(MARK_FIELDS.map((f) => [f, v[f]])));
+  if (mode === "compare") {
+    const suggested = plan.fill.flatMap((f) => {
+      const value = lafpos.prefill.values[f.field]?.value;
+      return value === undefined || value === 0 ? [] : [{ field: f.field, photo: value, text: f.text }];
+    });
+    return { values: v, marks: planMarks({}, { ...plan, fill: [], differs: [...plan.differs, ...suggested], missing: [] }, "lafpos"), filled: 0 };
+  }
+  const values = plan.fill.length ? { ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) } : v;
+  return { values, marks: planMarks({}, plan, "lafpos"), filled: plan.fill.length };
+}
+
+/**
  * İki banka POS fişi (iki cihaz): ikinci okumada toplama ekle ya da yerine yaz. İkinci fişin rakamı net değilse ya da
  * bir denetime takıldıysa (`warn`) seçilen değer turuncu kalır; net olmayan rakam (`unsure`) soruda da söylenir
  * (posPromptMarks).
@@ -342,9 +366,13 @@ export interface LateFormState {
  * öneridir. Yanlış bölüme okutulan fiş öteki bölüme okutulur ("Banka POS Z bölümüne okut" / "ModPOS bölümüne okut");
  * yükleme bölüm başınadır, yazarkasa Z'si okunurken ModPOS Z'si çekilebilir.
  *
- * LafPOS günün sonunu gönderdiyse (`lafpos`; docs/LAFPOS.md › Kasa raporu) formun başında "LafPOS'tan doldur": Z ve
- * kasa rakamları fotoğrafınkiyle aynı kuralla boş alanlara yazılır ("LafPOS'tan" rozeti), yazılmış ve farklı olanın
- * altında "LafPOS'ta …" ve "LafPOS'takini yaz". Kaydetmez; personel bakıp gönderir.
+ * LafPOS günü (`lafposMode`: geçiş günü seçili ve gün ondan önce değil; docs/LAFPOS.md › Kasa raporu): Z bölümü "LafPOS
+ * gün sonu (Z)", ModPOS Z fotoğrafı yok (yazarkasa Z bölümü kalır). LafPOS günün sonunu gönderdiyse (`lafpos`) form
+ * açılırken (ve Düzenle'de) Z ve kasa rakamları fotoğrafınkiyle aynı kuralla boş alanlara kendiliğinden yazılır
+ * ("LafPOS'tan" rozeti), yazılmış ve farklı olanın altında "LafPOS'ta …" ve "LafPOS'takini yaz"; bant "LafPOS'tan
+ * doldur" ile yeniden uygular. Kaydetmez; personel bakıp gönderir. "Gün içinde çıkan"ın kaynağı panelin Kasadan
+ * çıkanlar'ıdır (E-35): LafPOS'un harcama + teslimi tutmazsa bilgi satırı, fişler varken "LafPOS'takini yaz" yok.
+ * Kayıtlı görünüm LafPOS'tan farklı yazılanları gösterir (E-09).
  *
  * "Gün içinde kasaya giren" (nakit satış dışında konan: bozuk para, tahsilat, nakit bahşiş) olması gereken nakde eklenir
  * (computeCash). Çoğu gün yoktur: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür.
@@ -353,10 +381,14 @@ export interface LateFormState {
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
  * önerisine geçer (fotoğraf yok, "Neden düzeltiyorsunuz?" zorunlu, "Onaya gönder"). Rapor onaya kadar değişmez.
  *
- * Geç rapor (`mode="late"`; docs/KASA-RAPORU.md › Geç rapor): dünden eski bir günü personel Z fotoğrafı, Z no ve
+ * Geç rapor (`mode="late"`; docs/KASA-RAPORU.md › Geç rapor): dünden eski bir günü personel Z fotoğrafı (LafPOS
+ * gününde LafPOS'un gün sonu geldiyse fotoğraf gerekmez, gelmediyse yazarkasa Z'sinin fotoğrafı), Z no ve
  * nedeniyle onaya gönderir; sayan isteyendir (seçici yok), teslim varsa teslim alan seçilir, gün içinde çıkan elle
  * yazılır. Dünün formu gönderilirken gün döndüyse (05:00) sunucu geç rapora çevirir, form yazılanlarla geçer.
  * "Düzeltip onayla" (`mode="review"`): yönetici geç raporu kendi değerleriyle onaylar (fotoğraf, sayan ve neden yok).
+ *
+ * LafPOS gününde (G7) yalnız yeni form LafPOS'un gün sonuyla dolar; yazılmış değerlerle açılan form (Düzenle, öneri,
+ * geç raporun önceki değerleri, Düzeltip onayla) yalnız karşılaştırır ve metinleri de öyle der (`lafposCompared`).
  */
 export function CashForm({
   date,
@@ -386,6 +418,7 @@ export function CashForm({
   prevOkcZ = null,
   okcAdmin = null,
   lafpos = null,
+  lafposMode = lafpos !== null,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -439,23 +472,32 @@ export function CashForm({
   okcAdmin?: OkcAdminView | null;
   /** LafPOS'un bu günün sonu (Z ve kasa rakamları); yoksa "LafPOS'tan doldur" görünmez */
   lafpos?: LafposDay | null;
+  /** Günün kasası LafPOS (geçiş gününden sonra; gönderimi gelmemiş olsa da): Z bölümü LafPOS'un, ModPOS fotoğrafı yok */
+  lafposMode?: boolean;
 }) {
   // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
   // öteki karta gitmesin
   const uid = useId();
   const fid = (name: string) => `${uid}k-${name}`;
   const [editing, setEditing] = useState(report === null);
-  const [values, setValues] = useState<Values>(() => initialValues(report ?? initial, carry, cashOuts));
+  // LafPOS gününde yeni formun ilk hâli LafPOS'un gün sonuyla; yazılmış değerlerle açılan form yalnız karşılaştırır
+  // (withLafpos). Kayıtlı rapor görünümde açılır, Düzenle'de karşılaştırılır
+  const [opening] = useState(() => withLafpos(initialValues(report ?? initial, carry, cashOuts), report === null ? lafpos : null, initial === null ? "fill" : "compare"));
+  const [values, setValues] = useState<Values>(opening.values);
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
   const [photos, setPhotos] = useState<FormPhoto[]>(() => late?.kept ?? []);
-  const [marks, setMarks] = useState<Marks>({});
+  const [marks, setMarks] = useState<Marks>(opening.marks);
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
-  // "LafPOS'tan doldur"dan sonraki satır (kaç alan doldu, kaçı farklı)
-  const [lafposNote, setLafposNote] = useState<string | null>(null);
+  // LafPOS'un uygulanışı: kaç alan doldu (uygulanmadıysa null); bandın satırı bundan ve alanların şimdiki
+  // işaretlerinden (kaçı hâlâ farklı) kurulur, Kasadan çıkanlar'a teslim eklenince "farklı" kendiliğinden düşer
+  const [lafposFilled, setLafposFilled] = useState<number | null>(opening.filled);
+  // Form yazılmış değerlerle mi açıldı (karşılaştırma: Düzenle, düzeltme önerisi, geç raporun önceki değerleri, Düzeltip
+  // onayla): metinler "doldu" değil "karşılaştırıldı" der
+  const [lafposCompared, setLafposCompared] = useState(lafpos !== null && report === null && initial !== null);
   // "Gün içinde kasaya giren" çoğu gün yok: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür
   const [cashInOpen, setCashInOpen] = useState(false);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
@@ -510,13 +552,15 @@ export function CashForm({
   };
 
   function edit() {
-    setValues(initialValues(report, carry, cashOuts));
+    const s = withLafpos(initialValues(report, carry, cashOuts), lafpos, "compare");
+    setValues(s.values);
     setCounter(initialCounter);
     setErrors({});
     setPhotos([]);
-    setMarks({});
+    setMarks(s.marks);
     setPosPrompt(null);
-    setLafposNote(null);
+    setLafposFilled(s.filled);
+    setLafposCompared(lafpos !== null);
     setCashInOpen(false);
     setProposal(null);
     setReason("");
@@ -529,7 +573,10 @@ export function CashForm({
     if (!report) return;
     edit();
     if (from) {
-      setValues(initialValues({ ...report, ...from.proposed }, carry, cashOuts));
+      const s = withLafpos(initialValues({ ...report, ...from.proposed }, carry, cashOuts), lafpos, "compare");
+      setValues(s.values);
+      setMarks(s.marks);
+      setLafposFilled(s.filled);
       setCounter(from.proposed.countedBy);
       setReason(from.message ?? "");
     }
@@ -572,7 +619,7 @@ export function CashForm({
       setErrors((x) => ({ ...x, ...Object.fromEntries(plan.fill.map((f) => [f.field, undefined])) }));
     }
     setMarks((m) => planMarks(m, plan, "lafpos"));
-    setLafposNote(lafposSummary(plan));
+    setLafposFilled(plan.fill.length);
   }
 
   /** Yükleme ya da yeniden okumanın sonucu: fotoğraf listeye (ya da yerine), okuma forma */
@@ -684,13 +731,20 @@ export function CashForm({
         el?.focus({ preventScroll: true });
       };
       if (!fields.zNo) {
-        setErrors((x) => ({ ...x, zNo: "Z no gerekli (Z raporunun üstünde)" }));
-        toast.error("Z no gerekli");
+        // LafPOS gününde Z no LafPOS'unkidir (yazarkasa Z'sinin numarası değil; Z LafPOS'ta 1'den başlar)
+        setErrors((x) => ({ ...x, zNo: lafposMode ? "LafPOS'un Z no'su gerekli (LafPOS › Kasa › Geçmiş günler)" : "Z no gerekli (Z raporunun üstünde)" }));
+        toast.error(lafposMode ? "LafPOS'un Z no'su gerekli" : "Z no gerekli");
         return focus(fid("zNo"));
       }
-      if (!photos.some((p) => p.kind === "kasa-z")) {
+      // Kanıt: ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu, gelmediyse yazarkasa Z'sinin
+      // fotoğrafı (sunucu da aynı kuralla: src/server/cash/late.ts)
+      if (!lafposMode && !photos.some((p) => p.kind === "kasa-z")) {
         toast.error("Z raporunun fotoğrafını ekleyin", { description: "Geç rapor Z raporunun fotoğrafıyla onaya gider." });
         return document.getElementById(fid("z-photos"))?.scrollIntoView({ block: "center" });
+      }
+      if (lafposMode && !lafpos && !photos.some((p) => p.kind === "kasa-okc")) {
+        toast.error("Yazarkasa (Banka POS) Z raporunun fotoğrafını ekleyin", { description: "LafPOS'un bu günün sonu gelmedi; geç rapor yazarkasa Z'sinin fotoğrafıyla onaya gider." });
+        return document.getElementById(fid("okc-photos"))?.scrollIntoView({ block: "center" });
       }
       const why = lateReason.trim();
       if (why.length < 3) {
@@ -810,6 +864,9 @@ export function CashForm({
     const savedCarry = carryCheck(date, report.openingCash, carry);
     const savedNext = next ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
     const diffs = saved ? photoDiffs(saved.readings, savedFields(report)) : [];
+    // LafPOS'un gün sonundan farklı yazılanlar (E-09; yalnız LafPOS gününde, gönderimi geldiyse)
+    const fromLafpos = lafpos ? lafposDiffs(report, lafpos) : [];
+    const lafposOuts = lafpos ? lafposOutsCheck(lafpos.till, outsTotal) : null;
     // Rapordan sonra eklenen kasadan çıkanlar: rapordaki tutar kendiliğinden değişmez (sayılan kasaya bağlı)
     const later = cashOuts.filter((o) => o.createdAt > report.updatedAt);
     const laterNote = later.length && Math.abs(outsTotal - report.cashOut) >= CASH_TOLERANCE ? `Rapordan sonra ${later.length} kasadan çıkan eklendi; fişlerin toplamı ${money(outsTotal)}, raporda ${money(report.cashOut)}.` : null;
@@ -838,6 +895,8 @@ export function CashForm({
             </div>
           ) : null}
           {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} /> : null}
+          <LafposDiffList diffs={fromLafpos} />
+          {lafposOuts ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{lafposOuts.text}</p> : null}
           {laterNote ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{laterNote}</p> : null}
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
@@ -869,7 +928,16 @@ export function CashForm({
             </div>
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
-          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} audience={photoUi.admin ? "admin" : "staff"} okcAdmin={okcAdmin} />
+          <CashBreakdown
+            report={report}
+            cashOuts={cashOuts}
+            carry={savedCarry}
+            next={savedNext}
+            audience={photoUi.admin ? "admin" : "staff"}
+            okcAdmin={okcAdmin}
+            kasa={lafposMode ? "LafPOS" : "ModPOS"}
+            cardExtra={lafpos?.cardExtra ?? null}
+          />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
@@ -889,8 +957,15 @@ export function CashForm({
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
   const latestChecks = (k: CashPhotoKind) => [...photos].reverse().find((p) => p.kind === k && p.reading?.ok)?.reading?.checks ?? [];
 
-  /** Fotoğraftan (LafPOS'tan) gelen alanın etiketi, turuncusu ve altındaki satır */
-  const markOf = (k: Key) => ((MARK_FIELDS as readonly string[]).includes(k) ? marks[k as MarkField] : undefined);
+  /**
+   * Fotoğraftan (LafPOS'tan) gelen alanın etiketi, turuncusu ve altındaki satır. Önerinin değeri alana yazıldıysa (elle ya
+   * da Kasadan çıkanlar'dan kendiliğinden) öneri çözülmüştür, görünmez
+   */
+  const markOf = (k: Key): Mark | undefined => {
+    const m = (MARK_FIELDS as readonly string[]).includes(k) ? marks[k as MarkField] : undefined;
+    if (!m?.suggest || m.suggest.kind !== "differs" || !sameValue(k as MarkField, values[k], m.suggest.photo)) return m;
+    return m.warn ? { ...m, suggest: null } : undefined;
+  };
   const labelOf = (k: Key, label: string) => {
     const m = markOf(k);
     return m?.filled !== null && m?.filled !== undefined && values[k] === m.filled ? (
@@ -913,7 +988,7 @@ export function CashForm({
             {sourceText(m.suggest.from).at} {shownValue(k as MarkField, m.suggest.photo)}
           </span>
         ) : null}
-        {m.suggest ? (
+        {m.suggest && !(k === "cashOut" && m.suggest.from === "lafpos" && cashOuts.length) ? (
           <button type="button" onClick={() => takeSuggestion(k as MarkField)} className="cursor-pointer font-medium text-ink underline underline-offset-2 pointer-coarse:min-h-11">
             {sourceText(m.suggest.from).take}
           </button>
@@ -927,6 +1002,28 @@ export function CashForm({
     ? new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(lafpos.receivedAt))
     : null;
   const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
+  // Bandın satırı: dolan alan sayısı, hâlâ LafPOS'tan farklı (turuncu) ve sayımı olmayan alanlar
+  const lafposNote =
+    lafposFilled === null
+      ? null
+      : lafposSummary(
+          {
+            fill: new Array<null>(lafposFilled).fill(null),
+            differs: MARK_FIELDS.filter((k) => markOf(k)?.suggest?.from === "lafpos"),
+            missing: MARK_FIELDS.filter((k) => markOf(k)?.warn === LAFPOS_NO_COUNT_TEXT && !values[k].trim()),
+          },
+          review ? "staff" : "self",
+        );
+  // "Gün içinde çıkan"ın kaynağı panelin Kasadan çıkanlar'ı (E-35): LafPOS'un harcama + teslimi tutmuyorsa bilgi satırı.
+  // Geç rapor ve "Düzeltip onayla" formuna günün satırları gelmez (`cashOuts` boş): orada karşılaştırılmaz, yöneticinin
+  // kartı kayıtlı kasadan çıkanlarla söyler (lafposHandedGap)
+  const lafposOuts = lafpos && mode === "report" ? lafposOutsCheck(lafpos.till, outsTotal) : null;
+  // Fark yalnız LafPOS'taki teslimin Kasadan çıkanlar'a girilmemesinden mi (alan fişlerin toplamında): Sonuç'ta
+  // girilince farkın ne olacağı söylenir (sahte "5.000 ₺ eksik" tek başına durmasın)
+  const teslimMissing =
+    lafpos && lafposOuts && lafpos.till.handed > 0 && Math.abs(outsTotal - lafpos.till.spent) < 0.01 && cashOutValue !== null && Math.abs(cashOutValue - outsTotal) < 0.01
+      ? lafpos.till.handed
+      : null;
 
   const field = (k: MoneyKey | OkcMoneyKey, label: string, opts: OkcFieldOptions & { autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
@@ -996,7 +1093,15 @@ export function CashForm({
         {isLate && !review ? (
           <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
             <p className="font-semibold">{longDateTR(date)} · Geç rapor</p>
-            <p className="mt-0.5">Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın.</p>
+            <p className="mt-0.5">
+              {!lafposMode
+                ? "Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın."
+                : lafpos
+                  ? lafposCompared
+                    ? "Yöneticinin onayıyla kayda geçer. Önceki yazdıklarınız LafPOS'un gün sonuyla karşılaştırıldı, farklı olanlar turuncu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                    : "Yöneticinin onayıyla kayda geçer. Rakamlar LafPOS'un gün sonundan doldu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                  : "Yöneticinin onayıyla kayda geçer. LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın."}
+            </p>
           </div>
         ) : null}
         {proposal ? (
@@ -1013,14 +1118,16 @@ export function CashForm({
             {proposal.dropped ? <p className="mt-0.5 font-medium">{droppedPhotoText(proposal.gate)}</p> : null}
           </div>
         ) : null}
-        {lafpos && !review ? (
+        {lafpos ? (
           <div className="space-y-1.5">
             <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
               <MonitorCheck size={16} className="shrink-0" aria-hidden="true" />
               <p className="min-w-0 flex-1 basis-56">
                 <span className="font-semibold">LafPOS gün sonu</span>
                 {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
-                <span className="block text-[13px] text-info/80">{lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}</span>
+                <span className="block text-[13px] text-info/80">
+                  {lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}
+                </span>
               </p>
               <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
                 LafPOS&apos;tan doldur
@@ -1033,9 +1140,15 @@ export function CashForm({
         <Card>
           <CardHeader
             icon={<ReceiptText />}
-            title="ModPOS Z raporu"
+            title={lafposMode ? "LafPOS gün sonu (Z)" : "ModPOS Z raporu"}
             description={
-              isLate
+              lafposMode
+                ? lafpos
+                  ? lafposCompared
+                    ? "Yazılan rakamlar LafPOS'un gün sonuyla karşılaştırıldı: farklı olanlar turuncu, altında LafPOS'taki."
+                    : "LafPOS'un gün sonundan doldu; LafPOS'taki Z raporuyla karşılaştırın."
+                  : "LafPOS'un bu günün sonu gelmedi; LafPOS'ta Kasa › Geçmiş günler'deki Z raporundan yazın."
+                : isLate
                 ? "Z raporunun fotoğrafı zorunlu; rakamlar fotoğraftan dolar ya da elle yazın."
                 : photoUi.storage && reading
                   ? "ModPOS'ta gün sonu Z raporunu alın; fotoğrafını çekin, rakamlar dolar. Ya da elle yazın."
@@ -1043,8 +1156,9 @@ export function CashForm({
             }
           />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-            {photoBlock("kasa-z")}
-            {field("zTotal", "Toplam satış (Z)", { autoFocus: !report && !photoUi.storage })}
+            {/* LafPOS gününde ModPOS Z fotoğrafı yok: Z LafPOS'tan gelir (yazarkasa Z bölümü kalır) */}
+            {lafposMode ? null : photoBlock("kasa-z")}
+            {field("zTotal", "Toplam satış (Z)", { autoFocus: !report && !photoUi.storage && !lafpos })}
             <Field label={labelOf("zNo", "Z no")} htmlFor={fid("zNo")} hint={hintOf("zNo", isLate ? "zorunlu" : "isteğe bağlı")} error={errors.zNo}>
               <Input id={fid("zNo")} inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" aria-invalid={Boolean(errors.zNo)} data-warn={warnOf("zNo") || undefined} />
             </Field>
@@ -1158,6 +1272,7 @@ export function CashForm({
               </Field>
             ) : null}
             {outsWarning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">{outsWarning}</p> : null}
+            {lafposOuts ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">{lafposOuts.text}</p> : null}
           </div>
         </Card>
         <OkcCard
@@ -1196,7 +1311,11 @@ export function CashForm({
           day={date}
           audience={photoUi.admin ? "admin" : "staff"}
           forceDetails={photoUi.admin}
-          modpos={values.card.trim() ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other") } : null}
+          modpos={
+            values.card.trim()
+              ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null }
+              : null
+          }
         />
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
@@ -1218,6 +1337,11 @@ export function CashForm({
             {live ? (
               <>
                 <DiffHeadline diff={live.cashDiff} />
+                {teslimMissing !== null ? (
+                  <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
+                    LafPOS&apos;taki teslim ({money(teslimMissing)}) Kasadan çıkanlar&apos;da yok; eklenince fark: {diffText(Math.round((live.cashDiff + teslimMissing) * 100) / 100)}.
+                  </p>
+                ) : null}
                 <div className="divide-y divide-line text-sm">
                   <p className="flex justify-between py-1.5">
                     <span className="text-ink-mute">Olması gereken</span>

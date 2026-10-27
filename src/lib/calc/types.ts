@@ -157,8 +157,13 @@ export interface TillMonth {
   closed?: string[];
   /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
   partialFrom: string | null;
-  /** Son raporun günü */
+  /** Son raporun günü (LafPOS'un yedek satırı da sayılır) */
   lastDate: string;
+  /**
+   * Kasa raporu olmayan ama rakamları LafPOS'un gün sonundan sayılan günler (G6; yalnız geçiş gününden sonra): eksik
+   * günlerin içindedir, yanına "LafPOS'tan" yazılır. Yoksa alan yok
+   */
+  lafpos?: string[];
 }
 
 /**
@@ -194,6 +199,12 @@ export interface SalesLine {
   productId: number | null;
   isService: boolean;
   note: string | null;
+  /**
+   * LafPOS'un günlük satışlarından kurulan ay toplamı (src/lib/lafpos/sales.ts; geçiş gününden itibaren): `days` satırın
+   * geçtiği gün sayısı. Yalnız okunur: kimliği eksi, sales_lines'ta satırı yok, eşleştirmesi POS adıyla yapılır.
+   * Yoksa Satışlar'a yüklenen ModPOS listesinin satırı.
+   */
+  lafpos?: { days: number };
 }
 
 export interface Invoice {
@@ -334,6 +345,20 @@ export interface PurchaseQty {
   note: string | null;
 }
 
+/**
+ * Çarpanı şüpheli (fiyatı onay bekleyen ya da reddedilen) Paraşüt kalemi olan alış: alınan miktara ve stok partilerine
+ * girmedi (src/server/data/purchase-lots-query.ts queryHeldPurchases). Tutarlılık o ayın sapmasını, ayın alımı elle
+ * yazılmadıkça hesaplamaz.
+ */
+export interface HeldPurchase {
+  month: string;
+  ingredientId: number;
+  /** Bu ay o hammaddeye düşen, fiyatı onay bekleyen bağlantının fatura sayısı */
+  invoices: number;
+  /** Yalnız fiyatı reddedildiği için dışarıda kalan fatura sayısı (bekleyen öneri yok; miktar elle yazılır) */
+  rejected: number;
+}
+
 /** Aylık harcamanın Gelir-gider bölümü: mal (mal maliyeti) ya da sabit gider bölümlerinden biri */
 export type ExpenseSection = FixedSection | "mal";
 /** Genel bakış "Para nereye gitti" grubu (constants.ts PanelFixedGroup ile aynı) */
@@ -407,6 +432,10 @@ export interface Dataset {
   purchaseLots?: PurchaseLot[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
+  /** Çarpanı şüpheli alışlar (alınan miktara girmedi; yoksa boş): Tutarlılık işaretler, sapmayı hesaplamaz */
+  heldPurchases?: HeldPurchase[];
+  /** Fiyatı onay bekleyen hammaddeler (yoksa boş): fiyatsızsa uyarı onaya götürür, "paket fiyatını girin" demez */
+  pendingPriceHolds?: number[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
   expenseCategories?: ExpenseCategory[];
   expenseEntries?: ExpenseEntry[];
@@ -424,4 +453,45 @@ export interface Dataset {
    * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)
    */
   salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
+  /**
+   * LafPOS'a geçiş günü seçiliyse satış kaynaklarının özeti (src/lib/lafpos/sales.ts): geçiş ayından itibaren her ayın
+   * ModPOS listesi ve LafPOS günleri. Yoksa (varsayılan) kasa ModPOS'tur, satışlar yalnız sales_lines'tan
+   */
+  lafposSales?: { switchDay: string; countFrom: string; months: LafposSalesMonth[] };
+}
+
+/**
+ * Geçiş gününden itibaren bir ayın satış kaynakları (src/lib/lafpos/sales.ts › lafposMonthStatus; Satışlar okur). Her
+ * gün tek kaynaktan sayılır: geçiş ayında ModPOS listesi kendi son gününe kadar, LafPOS `from`'dan; sonraki aylarda
+ * yalnız LafPOS (yüklü ModPOS listesi sayılmaz, silinmez).
+ */
+export interface LafposSalesMonth {
+  month: string;
+  /** gecis: geçiş günü ayın ortasında; lafpos: ayın tamamı geçiş gününden sonra */
+  source: "gecis" | "lafpos";
+  /** LafPOS satışlarının sayıldığı ilk gün; bu ay LafPOS sayılmıyorsa null (geçiş ayının listesi ayın sonuna kadar) */
+  from: string | null;
+  /** Gelen LafPOS gün sonları (sayılan ve kasa raporunu bekleyen): kaç gün geldi, son gün; hiç gelmediyse null */
+  lafpos: { days: number; last: string } | null;
+  /**
+   * Süren ayda gelmiş ama kasa raporu girilmediği için henüz sayılmayan LafPOS günleri (kasa raporlarının son gününden
+   * sonra; docs/LAFPOS.md › Kapsam); yoksa null ya da yok
+   */
+  held?: { from: string; to: string } | null;
+  /**
+   * LafPOS'un sayılması gereken (`from`'dan dünden önceye) ama gün sonu gelmemiş, kasa raporu olan günler: o günlerin
+   * satışı hiçbir kaynakta yok; yoksa alan yok
+   */
+  missing?: string[];
+  /**
+   * Ayın Satışlar'a yüklenmiş ModPOS listesi: satır sayısı, ciro toplamı, son günü (kapsam kaydı yoksa ayın sonu) ve
+   * hesaba girip girmediği (geçiş ayında evet, sonraki aylarda hayır); liste yoksa null
+   */
+  modpos: { lines: number; revenue: number; through: string; counted: boolean } | null;
+  /** Geçiş ayında listenin günlerinin (ayın 1'i → son günü) kasa raporlarındaki Z toplamı; rapor yoksa null */
+  modposZ: number | null;
+  /** Hiçbir kaynakta olmayan geçmiş günler: geçiş ayında liste geçiş gününden önce bitiyor ya da hiç yok */
+  gap: { from: string; to: string } | null;
+  /** Liste geçiş gününü aştığı için sayılmayan LafPOS günleri (aynı gün iki kez sayılmasın diye) */
+  overlap: { from: string; to: string } | null;
 }

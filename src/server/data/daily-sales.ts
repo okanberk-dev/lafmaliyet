@@ -7,9 +7,12 @@ import { getDb, schema as s, type DB } from "@/server/db";
 /**
  * Kasanın günlük ürün satışı (docs/planlar/CRITIQUE2.md R18): gün gün ürün dökümü. ModPOS'un dökümü hiç gelmedi; ağzı
  * LafPOS doldurur: her iş gününün satış listesi gün sonunda `POST /api/pos/gun` ile gelir ve `pos_daily_sales`'e yazılır
- * (docs/LAFPOS.md). Aralıkta satır yoksa null döner ve her okuyan aylık veriye (sales_lines, ay ay) düşer: mal
- * siparişinin tüketimi, satış tahmininin günlük toplamları ve tatlı payı, karaoke doluluğunun kasadan ödenen karaokesi.
- * Okuyanlar günlük veriye ne zaman geçeceğine kendisi karar verir (plan: son 28 günün en az 14'ü); bu ağız yalnız okur.
+ * (docs/LAFPOS.md). Aylık maliyet modeli bu satırları geçiş gününden itibaren ay toplamı olarak okur
+ * (src/server/data/lafpos-sales.ts; Satışlar, Tutarlılık, Ürünler, Analiz, Genel bakış, KDV tahmini, tatlı payı).
+ * Satırları gün gün okuyan bugün yok: satış tahmininin günlük toplamı kasa raporundan, raporsuz LafPOS gününde LafPOS'un
+ * Z'sinden gelir (src/server/forecast/load.ts). Günlük pencereye geçecek okuyucu (ör. hafta gününe göre tatlı oranı) bu
+ * ağızdan okur ve geçiş gününden önceki deneme günlerini kendisi ayırır (isLafposDay, src/lib/lafpos/switch.ts): ağız
+ * bütün günleri döner. Aralıkta satır yoksa null.
  */
 
 /** Bir iş gününde (İstanbul, gün 05:00'te döner) bir kasa satırı: sales_lines'ın günlük karşılığı */

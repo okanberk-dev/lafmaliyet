@@ -5,6 +5,31 @@
 import { GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "./constants";
 
 /**
+ * Kalemi hammaddeye bağlıysa stoğa girip gelir-gidere girmeyen kategori (denetim 26 Eki, E-07): mal alışı ya da kafe
+ * dışı değil ("Diğer", "Hizmet"…). Böyle faturanın bağlı kalemi alınan miktara, FIFO partisine ve hammadde fiyatına
+ * girer ama gelir-gider mal alışını saymaz; satılan malın maliyeti eksik, kâr fazla görünür. Sunucudaki sorgu
+ * src/server/data/stock-only-invoices.ts
+ */
+export function stockOnlyCategory(category: string): boolean {
+  return !GOODS_CATEGORIES.includes(category) && !SEPARATE_CATEGORIES.includes(category);
+}
+
+const GOODS_LIST = `${GOODS_CATEGORIES.slice(0, -1).join(", ")} ya da ${GOODS_CATEGORIES.at(-1)}`;
+
+/**
+ * Fatura penceresinin, listenin ve kategori sayfasının uyarısı (kalemi hammaddeye bağlı, kategorisi mal alışı değil).
+ * Kategori Aylık harcamalar'da bir gidere bağlıysa (`expenseLinks`: fatura kategorisi → giderin adı) fatura gelir-gidere
+ * o giderde girer, yalnız mal maliyetine girmez: uyarı bunu söyler, faturanın tamamını mal alışı yaptırmaya zorlamaz
+ * (deterjanlı market faturası mal maliyetine taşınmasın)
+ */
+export function stockOnlyText(category: string, expenseLinks?: Record<string, string>): string {
+  const linked = expenseLinks?.[category];
+  return linked
+    ? `Bu fatura mal alışı (mal maliyeti) sayılmıyor: kalemleri hammaddeye bağlı, stoğa ve fiyata giriyor; gelir-giderde Aylık harcamalar'daki “${linked}” giderinde sayılıyor. Faturanın tamamı mal alışıysa kategorisini ${GOODS_LIST} yapın.`
+    : `Bu fatura mal alışı sayılmıyor: kalemleri hammaddeye bağlı, stoğa ve fiyata giriyor ama gelir-gidere girmiyor. Kategorisini ${GOODS_LIST} yapın.`;
+}
+
+/**
  * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları ve "Diğer". Komisyon, kira,
  * demirbaş, yazılım, reklam ve hizmet faturalarının kalemleri listeyi doldurmasın. Paraşüt sayfasının "Bekleyen"
  * listesi (sync.ts) de bu listeyi kullanır.

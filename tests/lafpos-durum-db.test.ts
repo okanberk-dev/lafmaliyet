@@ -123,11 +123,11 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
   });
 
   test("200: gün yazılır, son gün durum satırına; yanıtta counted ve switchDay geçiş gününe göre", async () => {
-    assert.deepEqual(await send(push("2026-11-05", 31)), { status: 200, body: { ok: true, date: "2026-11-05", lines: 1, counted: false, switchDay: null } });
+    assert.deepEqual(await send(push("2026-11-05", 31)), { status: 200, body: { ok: true, date: "2026-11-05", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-05"], counted: false, switchDay: null } });
     assert.deepEqual((await stateRow())?.lastOk, { at: NOW.toISOString(), date: "2026-11-05", zNo: 31, lines: 1, counted: false });
     assert.equal(await core.writeLafposSwitchDay(db, users.admin, "2026-11-06", "2026-11-12"), "LafPOS'a geçiş günü: yok (kasa ModPOS) → 6 Kasım 2026");
-    assert.deepEqual((await send(push("2026-11-05", 31), { now: later(1) })).body, { ok: true, date: "2026-11-05", lines: 1, counted: false, switchDay: "2026-11-06" });
-    assert.deepEqual((await send(push("2026-11-06", 32), { now: later(2) })).body, { ok: true, date: "2026-11-06", lines: 1, counted: true, switchDay: "2026-11-06" });
+    assert.deepEqual((await send(push("2026-11-05", 31), { now: later(1) })).body, { ok: true, date: "2026-11-05", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-05"], counted: false, switchDay: "2026-11-06" });
+    assert.deepEqual((await send(push("2026-11-06", 32), { now: later(2) })).body, { ok: true, date: "2026-11-06", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-06"], counted: true, switchDay: "2026-11-06" });
     const st = (await stateRow()) as { lastOk: { date: string; counted: boolean }; lastError?: unknown };
     assert.deepEqual([st.lastOk.date, st.lastOk.counted], ["2026-11-06", true]);
     assert.equal(st.lastError, undefined, "başarılı gönderim ret yazmaz");
@@ -203,7 +203,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.equal((await linesOf("2026-11-08")).length, 1);
     assert.equal((await status.readLafposState(db)).rejections["2026-11-07"]?.clearedAt, later(2).toISOString());
     // LafPOS'ta Gönder'e basılır: yeni Z ile yazılır, o günün reddi kapanır
-    assert.deepEqual((await send(push("2026-11-07", 3), { now: later(3) })).body, { ok: true, date: "2026-11-07", lines: 1, counted: false, switchDay: null });
+    assert.deepEqual((await send(push("2026-11-07", 3), { now: later(3) })).body, { ok: true, date: "2026-11-07", lines: 1, matched: 0, unmatched: ["LATTE 2026-11-07"], counted: false, switchDay: null });
     assert.equal((await reportOf("2026-11-07")).z.zNo, 3);
     assert.deepEqual((await status.readLafposState(db)).rejections, {});
     // Aynı anda gelen gün sonu ile silme aynı kilitte sırayla: sonuç ya silinmiş ya da yeni gün (yarım değil)

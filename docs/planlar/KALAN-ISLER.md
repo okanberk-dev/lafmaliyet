@@ -59,13 +59,13 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 |---|---|---|---|---|---|
 | B01 | Stok sayımı 1: doğru ay, tek "tamam" kuralı, kayıt kaybı yok (+ NEW-01) | E-01, E-02, E-03, E-17, E-18, E-19, E-20, E-23, E-24, E-25, E-26 | yok | 3 | bekliyor |
 | B02 | Stok sayımı 2: değerleme, sayım listesi ve sayım uyarıları (+ NEW-02) | E-04, E-05, E-16, E-22, E-28, E-29, E-58 | yok | 4 | bekliyor |
-| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | bekliyor |
-| B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
+| B03 | Stok sayımı 3: faturadan stoğa doğru miktar ve fiyat | E-06, E-07, E-14, E-27 | yok |  | PR (dal `claude/denetim-b03-fatura-stok`) |
+| B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | PR (dal `claude/denetim-b04-sayim-hiz`) |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | PR (dal `claude/denetim-b05-canli-guvence`) |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
 | B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
-| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** | 2 | bekliyor |
-| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | bekliyor |
+| B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
+| B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
 | B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | bekliyor |
@@ -150,7 +150,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 | Denetim (26 Ekim): panel geneli ve stok sayımı | `denetim-2026-10-26.md` | 70 madde, 20 parti (B01-B20), sahibe 11 soru; aşağıda "Denetim (26 Ekim): düzeltme partileri". |
 
 **Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
-- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02; 26 Ekim'de E-14, B03).
+- ~~K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor~~ **Düzeltildi (B03, E-14):** eşitleme takip öncesi faturayı `applyCreditOnArrival`'a göndermez, o da ikinci kapı olarak tarihe bakar (`takesCreditOnArrival`; `tests/parasut-esitleme-db.test.ts`, `tests/cari-db.test.ts`).
 - K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
 - **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür. 26 Ekim denetiminde E-15 (bitirme izi E-65), B18 (migration).
 - **Site tarafı, ayrı laffogato PR'ı (ek alan):** `POST /api/panel/menu` yanıtına `changed: boolean` (`setMenuItemSaleFields` yazdıysa true, "değişmedi" yolunda false). Panel Tükendi kaydını şimdi istekten hemen önceki canlı listeye ve yanıtın damgasına bakarak yazıyor (10b incelemesi); sahip sitede ya da yönetici ürün kartından tam bu gidiş-dönüş içinde kapatırsa personelin kaydı yine yazılabilir. Alan gelince panel kaydı yalnız `changed === true`'da yazar (`docs/SITE-MENU.md` › Kayıt).
@@ -362,8 +362,19 @@ ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › laf
 `switchDay` taşır; Ayarlar › LafPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün LafPOS kaydını
 sil", parolayla), gelen ve gelmeyen günleri gösterir; "LafPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
 raporunun LafPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `LAFPOS_SYNC_SECRET` bağlantıyı açmaz.
-Kalan: günlük satış satırlarını hiçbir hesap okumaz, aylık model ModPOS listesine bağlı (E-08, B08); kart kart
-ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B08-B11; sahibe soru 5.
+B08 (E-08, E-33, E-34, E-66): geçiş gününden itibaren günlük satış satırları aylık modele ay toplamı olarak girer (her
+gün tek kaynak: geçiş ayında ModPOS listesi kendi son gününe kadar, sonraki aylarda yalnız LafPOS), Satışlar'da salt
+okunur görünür ve eşleştirilir, ürünsüz satırlar ürün siteye bağlanınca ya da ad eşleştirilince yeniden gönderimsiz
+bağlanır (Ayarlar kartında "Bağla"), LafPOS satırı olan ürün silinmez; geçiş günü boşken hiçbir okuma değişmez.
+B09 (E-09, E-35, E-36, E-40; plan G6-G8, G11): geçiş gününden itibaren Kasa raporu LafPOS'un gün sonuyla açılır (Z
+bölümü "LafPOS gün sonu (Z)", ModPOS Z fotoğrafı yok), kayıtlı rapor, günden güne, e-posta, WhatsApp ve zil
+"LafPOS'tan farklı yazılan"ı söyler; Gün içinde çıkan'ın kaynağı panelin Kasadan çıkanlar'ı, LafPOS'un teslimi farkı
+bilgi satırıdır ve geç / düzeltme kartında fişsiz sayılmaz; satışlı LafPOS günü kapalı gün kanıtıdır ve kapalı işareti
+kaldırır; geç rapor LafPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkasa Z fotoğrafıyla); raporsuz LafPOS günü ay
+rakamına girer; kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer. Geçiş günü boşken bunların hiçbiri
+çalışmaz. ModPOS'ta da: kasa e-postasının Resend anahtarı rapor satırına özgü (silinip yeniden girilen günün e-postası
+gider, E-40).
+Kalan: kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B10-B11; sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.
@@ -386,8 +397,8 @@ Dalga 7'nin kuralı). Reçete, menü maliyeti, önerilen fiyat, zam uyarısı ve
 Sayımda katman rozeti ve kapsama satırı yalnız yöneticide.
 
 Denetimde FIFO'ya dokunan maddeler: başlangıç ayına bir kerelik yeniden değerleme farkı mal maliyeti diye yazılıyor
-(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyor (E-06, B03); "Diğer" kategorili fatura
-stoğa girip gelir-gidere girmiyor (E-07, B03).
+(E-05, B02); iki sayılı paket adının yanlış çarpanı FIFO partisine de gidiyordu (E-06, B03'te düzeltildi); "Diğer"
+kategorili fatura stoğa girip gelir-gidere girmiyordu (E-07, B03: artık "Mal alışı sayılmıyor" diye kontrol bekler).
 
 ### Dalga 15: kenar çubuğu (#39)
 
@@ -484,8 +495,9 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
-  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). Satırlar
-  yazılıyor ama hiçbir hesap okumuyor (denetim E-08, B08; geçiş günü sahibe soru 2).
+  **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). B08'den
+  beri satırlar geçiş gününden itibaren aylık modele ay toplamı olarak girer (`docs/LAFPOS.md` › Günlük satış); gün gün
+  okuyan (hafta gününe göre tatlı oranı gibi) henüz yok.
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 
