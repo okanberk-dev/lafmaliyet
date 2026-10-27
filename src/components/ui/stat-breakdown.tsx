@@ -21,7 +21,9 @@ const FOLD_SHOW = 8;
  * aynı kalır: üstüne görünmez bir düğme serilir, sağ üstte "Döküm ›" ipucu çıkar. Karttaki InfoTip ve bağlantılar
  * düğmenin üstünde kalır (kendi işlerini görür). İpucu ikon satırında durur; kartın ikonu olmalı.
  *
- * Veri sunucuda kurulur (`groups`); pencere yalnızca sıralar ve payları bulur (`lib/breakdown.ts`).
+ * Veri sunucuda kurulur (`groups`); pencere yalnızca sıralar ve payları bulur (`lib/breakdown.ts`). İstemcide her
+ * değişiklikte yeniden kurulan döküm (Stok sayımı: formdaki miktarlarla) işlev olarak verilir; yalnız pencere açıkken
+ * çağrılır.
  */
 export function StatBreakdown({
   children,
@@ -44,7 +46,7 @@ export function StatBreakdown({
   /** Pencerenin başlığı; düğmenin erişilebilir adı da buradan ("… dökümünü aç") */
   title: string;
   description?: ReactNode;
-  groups: BreakdownGroup[];
+  groups: BreakdownGroup[] | (() => BreakdownGroup[]);
   /** Toplam satırı (kartın rakamı); verilmezse toplama giren bölümlerin toplamı */
   total?: number;
   totalLabel?: string;
@@ -68,7 +70,7 @@ export function StatBreakdown({
   const amount = (v: number) => (unit === "count" ? num(v) : unit === "pct" ? pct(v, 1) : exact ? money(v) : tl(v));
   const toneClass = (tone: PreparedRow["tone"], v: number) =>
     tone === "bad" ? "text-bad" : tone === "warn" ? "text-warn" : tone === "good" ? "text-good" : v < 0 && unit !== "pct" ? "text-bad" : undefined;
-  const prepared = open ? prepareBreakdown(groups, { total, order }) : null;
+  const prepared = open ? prepareBreakdown(typeof groups === "function" ? groups() : groups, { total, order }) : null;
 
   const row = (r: PreparedRow) => {
     const body = (

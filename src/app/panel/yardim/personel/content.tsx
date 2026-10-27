@@ -428,7 +428,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Ay sonu stok sayımı",
         a: (
           <>
-            Ayın son günü kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Listede olmayan ama her
+            Ayın son günü kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin (telefonda Zayi
+            ekranının başındaki <B>Sayım</B> sekmesinden de açılır). Listede olmayan ama her
             ay sayılacak bir kalem için <B>Listeye ekle</B>; paket fiyatını biliyorsanız fişteki gibi yazın, bilmiyorsanız boş bırakın. Geçen ayın sayımını
             ayın 10&apos;una kadar düzeltebilirsiniz; sonrası için yöneticiye haber verin. Kaydetmeden çıkarsanız yazdıklarınız bu cihazda durur, sayfayı
             yeniden açınca <B>Geri yükle</B>&apos;ye basın.

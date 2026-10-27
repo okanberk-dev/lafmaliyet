@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -25,18 +26,33 @@ import { WasteBoard } from "./waste-board";
 
 export const metadata: Metadata = { title: "Zayi & ikram" };
 
+/**
+ * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
+ * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
+ */
+function WasteHeader({ role }: { role: "admin" | "staff" }) {
+  return (
+    <PageHeader
+      title="Zayi & ikram"
+      eyebrow="Stok"
+      description="Atılan, bozulan, dökülen (zayi) ve ödenmeden verilen (ikram: müşteriye, personele, tadım) ürün ve malzemeyi gün içinde girin. Tutarlılık ekranı bunları satıştan ayrı gösterir; günün özeti kasa raporuna geçer."
+      tabs={<SectionTabs section="stok" current="/panel/zayi" role={role} />}
+    />
+  );
+}
+
 export default function WastePage({ searchParams }: PageProps<"/panel/zayi">) {
   return (
-    <>
-      <PageHeader
-        title="Zayi & ikram"
-        eyebrow="Stok"
-        description="Atılan, bozulan, dökülen (zayi) ve ödenmeden verilen (ikram: müşteriye, personele, tadım) ürün ve malzemeyi gün içinde girin. Tutarlılık ekranı bunları satıştan ayrı gösterir; günün özeti kasa raporuna geçer."
-      />
-      <Suspense fallback={<PageSkeleton rows={8} />}>
-        <WasteContent searchParams={searchParams} />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <>
+          <WasteHeader role="staff" />
+          <PageSkeleton rows={8} />
+        </>
+      }
+    >
+      <WasteContent searchParams={searchParams} />
+    </Suspense>
   );
 }
 
@@ -46,6 +62,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const user = await requireUser();
   const admin = user.role === "admin";
   const sp = await searchParams;
+  const header = <WasteHeader role={user.role} />;
   const now = new Date();
   const today = businessDate(now);
   const gun = pick(sp.gun);
@@ -72,6 +89,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   if (mode === "closed") {
     return (
       <div className="space-y-4">
+        {header}
         {strip}
         <EmptyState
           icon={<CalendarX />}
@@ -116,6 +134,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   if (!admin) {
     return (
       <div className="space-y-4">
+        {header}
         {strip}
         {board}
       </div>
@@ -126,6 +145,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   return (
     <div className="space-y-6">
+      {header}
       {strip}
       {waiting?.count ? (
         <p className="rounded-xl bg-warn-soft px-4 py-2.5 text-sm text-warn">

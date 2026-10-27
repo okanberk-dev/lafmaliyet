@@ -83,7 +83,10 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
   açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
-  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Kaldırılan ekranların eski adresleri
+  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
+  (aynı sıra, aynı roller; denetim E-56), üç sayfada da çizilir, personel Sayım ve Zayi & ikram'ı görür (`sectionTabsFor`,
+  tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri, yükleme başlığı yüklenen başlıkla aynı
+  boyda: açıklama ve ay seçicinin yeri iskeletle tutulur, sekme satırı içerik gelince kaymaz). Kaldırılan ekranların eski adresleri
   (`/panel/hizli-sayim/**`, `/panel/mal-siparisi/**`) Stok sayımı'na yönlenir (`src/lib/roles.ts` › `retiredRedirect`,
   proxy). Kontrol listeleri bölüm
   sekmesi yerine kendi sekmelerini taşır (`SegmentedLinks`: Bugün · Geçmiş · Listeler, yalnız yönetici). Personel
@@ -163,6 +166,14 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 - Üzerine gelme yalnız `(hover: hover)` ile: Tailwind'in `hover:` öneki zaten öyle; elle yazılan `:hover` (ör.
   `has-[…:hover]`) `[@media(hover:hover)]:` ile sarılır.
 - Sayı alanlarında `inputMode` (yukarıdaki kural); dokunmatikte yazı alanı en az 16px.
+- **Uzun formda her tuş yalnız yazılan satırı çizer** (Stok sayımı, ~72 kalem; denetim E-21): satır `memo`'lu ve
+  yalnız kendi değerini alır (`CountRow`), işleyiciler sabittir (`useCallback`, işlevsel `setState`); sayaçlar,
+  toplamlar ve FIFO payı `useDeferredValue` ile tuşlar arasında boşta güncellenir, döküm yalnız penceresi açılınca
+  kurulur (`StatBreakdown`'a işlev olarak). Ekranda olmayan sayaç ve tutar kaymaz; telefonda gizli kalacak parça
+  (masaüstü kaydetme kapsülü, "Tümü / Sayılmayanlar" seçicisi) hiç kurulmaz. Kaydetme ve taslak ertelenmiş değeri
+  değil, güncel değeri kullanır. Ölçü (27 Eki 2026, üretim derlemesi, 390 px, 4× yavaş işlemci, Playwright Event
+  Timing, aynı makinede önce / sonra): tuş olayının ortancası yönetici 144-264 → 72-136 ms, personel 128-184 → 64-80
+  ms; odaklandıktan sonraki ilk tuş 352-680 → 120-224 ms. Kalan süre çoğunlukla tarayıcının boyamasıdır.
 - Açık tema: `themeColor` beyaz, `colorScheme: light`.
 - **Son kontrol gerçek telefonda** (iPhone Safari, Android Chrome): yazı büyütme, uzun basma, kopyalama ve klavye
   tarayıcının telefon görünümünde denenemez.
