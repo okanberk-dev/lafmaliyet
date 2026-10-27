@@ -6,6 +6,11 @@
 // anda iki barista tek kayıt bırakır; "Kapalı tut" ile personelin "Satışa aç"ı aynı anda koşunca (kalemin kilidi)
 // yöneticinin kararı kalır. Fiyat ve "Menüde aktif" hiç yazılmaz.
 //
+// Reçete kartı ve fiyat hücresi (denetim E-11, docs/planlar/senkron.md › P1): dokunulmayan fiyat sitede ya da
+// eşitlemede bu arada yazılanı ezmez, siteye gidilmez; dokunulan fiyat veritabanı da değiştiyse yazılmaz; site
+// `writes.expect` duyurunca yazım `expect` taşır, 409 `stale`'de panel siteyi yeniden okur, 400 `field:"expect"`te
+// bir kez `expect`'siz dener; zaman aşımında site yazmışsa panel okur; JSON olmayan 404 "uç yok" demektir.
+//
 // Kendi kullanıcılarını, kategorisini ve ürünlerini açar; integration_state'teki menü satırlarını (kopya, durum,
 // Tükenenler kaydı) başta saklar ve sonda geri yazar.
 //
@@ -21,6 +26,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import postgres from "postgres";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
+import { priceChangedText, priceMovedText } from "../src/lib/prices/seen";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
 import { keepSeen, SOLD_OUT_KEY, SOLD_OUT_TEXT, STAFF_SOLD_OUT_MAX } from "../src/lib/site-menu/sold-out";
 import type { DB } from "../src/server/db";
@@ -36,6 +42,8 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
   let db: DB;
   let core: typeof import("../src/server/site-menu/sold-out-core");
   let push: typeof import("../src/server/site-menu/push");
+  let sync: typeof import("../src/server/site-menu/sync");
+  let actions: typeof import("../src/server/actions/products");
   let closeDb: () => Promise<void>;
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
@@ -52,7 +60,13 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
 
   // ------------------------------------------------ Sahte site
   const site = new Map<string, SiteMenuItem>();
-  let posts: { id: string; isActive?: boolean; priceMinor?: number; actor: string }[] = [];
+  type Expect = { priceMinor?: number; priceMinorL?: number; isActive?: boolean };
+  let posts: { id: string; isActive?: boolean; priceMinor?: number; priceMinorL?: number; actor: string; expect?: Expect }[] = [];
+  /**
+   * Sitenin sürümü: `expect` duyurur ve uygular (S1), duyurmadan uygular (önizleme), ya da bilmez ve 400 verir (eski
+   * site, katı şema). `post`: sıradaki POST'un sonu: yazıp yanıtı kaybeder (zaman aşımı) ya da uç yokmuş gibi HTML 404.
+   */
+  const mode = { announce: false, honor: false, rejectExpect: false, post: "ok" as "ok" | "timeout" | "html404" };
   /** Sıradaki GET'i yanıtlamadan bekletir (yarış testleri): `arrived` istek gelince, `release` ile yanıt döner */
   let getGate: { arrived: () => void; wait: Promise<void> } | null = null;
   function pauseNextGet() {
@@ -80,16 +94,32 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
       g.arrived();
       await g.wait;
     }
-    if ((init?.method ?? "GET") === "GET") return json(200, { version: 1, now: new Date().toISOString(), items: [...site.values()] });
-    const req = JSON.parse(body) as { id: string; isActive?: boolean; priceMinor?: number; priceMinorL?: number; actor: string };
+    if ((init?.method ?? "GET") === "GET") {
+      return json(200, { version: 1, now: new Date().toISOString(), items: [...site.values()], ...(mode.announce ? { writes: { expect: true } } : {}) });
+    }
+    const req = JSON.parse(body) as (typeof posts)[number];
     posts.push(req);
+    if (mode.post === "html404") {
+      mode.post = "ok";
+      return new Response("<!doctype html><title>404</title>", { status: 404, headers: { "content-type": "text/html" } });
+    }
+    // Eski site: şema katı, bilinmeyen alan 400
+    if (req.expect && mode.rejectExpect) return json(400, { error: "invalid", field: "expect" });
     const cur = site.get(req.id);
     if (!cur) return json(404, { error: "not_found" });
     const next = { ...cur, ...(req.isActive !== undefined ? { isActive: req.isActive } : {}), ...(req.priceMinor !== undefined ? { priceMinor: req.priceMinor } : {}), ...(req.priceMinorL !== undefined ? { priceMinorL: req.priceMinorL } : {}) };
-    // "Değişmedi": eski damgayla döner
-    const changed = next.isActive !== cur.isActive || next.priceMinor !== cur.priceMinor || next.priceMinorL !== cur.priceMinorL;
-    const item = changed ? { ...next, updatedAt: stamp() } : cur;
+    const fields = (["priceMinor", "priceMinorL", "isActive"] as const).filter((f) => next[f] !== cur[f]);
+    // "Değişmedi": eski damgayla döner (expect'e bakılmaz)
+    if (!fields.length) return json(200, { item: cur });
+    // expect yalnız yazılacak alanlar için: tutmazsa yazmaz, güncel kalemle 409 stale
+    if (mode.honor && req.expect && fields.some((f) => req.expect![f] !== undefined && req.expect![f] !== cur[f])) return json(409, { error: "stale", item: cur });
+    const item = { ...next, updatedAt: stamp() };
     site.set(req.id, item);
+    if (mode.post === "timeout") {
+      // Site yazdı, yanıt yolda kaldı
+      mode.post = "ok";
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }
     return json(200, { item });
   }
   /** Sahibin sitenin panelinden yaptığı değişiklik (panelin kopyası bilmez); `agoMs` önce */
@@ -156,13 +186,21 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     globalThis.fetch = fakeSite as typeof fetch;
     // "server-only" Next'in sunucu derlemesi dışında hata fırlatır: test aynı modülleri doğrudan çalıştırır
     const require = createRequire(import.meta.url);
-    const marker = require.resolve("server-only");
-    require.cache[marker] = { id: marker, filename: marker, loaded: true, exports: {} } as unknown as NodeJS.Module;
+    const stub = (id: string, exports: unknown) => {
+      const p = require.resolve(id);
+      require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
+    };
+    stub("server-only", {});
+    // Eylemlerin sayfa yenilemesi ve oturumu (yönetici Ali) taklit edilir
+    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {} });
+    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => users.ali, requireUser: async () => users.ali });
     const dbModule = await import("../src/server/db");
     db = dbModule.createDb(URL_!, 4);
     closeDb = () => dbModule.getDb().$client.end();
     core = await import("../src/server/site-menu/sold-out-core");
     push = await import("../src/server/site-menu/push");
+    sync = await import("../src/server/site-menu/sync");
+    actions = await import("../src/server/actions/products");
     for (const row of await db.select().from(s.integrationState).where(inArray(s.integrationState.key, MENU_KEYS))) saved.push({ key: row.key, value: row.value });
     await db.delete(s.integrationState).where(inArray(s.integrationState.key, MENU_KEYS));
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
@@ -181,6 +219,10 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     await add("latteL", "Ice Latte", "L", ids.latte, "L", 210);
     await add("cake", "Cheesecake", "Tek", ids.cake, "M", 180);
     await add("brownie", "Brownie", "Tek", ids.brownie, "M", 180);
+    // Siteye bağlı olmayan ürün: fiyatı yalnız panelde
+    const [lemonade] = await db.insert(s.products).values({ categoryId, name: `Limonata ${tag}`, size: "Tek", price: 120 }).returning({ id: s.products.id });
+    productIds.push(lemonade.id);
+    prod.lemonade = lemonade.id;
   });
 
   beforeEach(async () => {
@@ -191,7 +233,10 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     site.set(ids.cake, siteItem(ids.cake, "Cheesecake"));
     site.set(ids.brownie, siteItem(ids.brownie, "Brownie"));
     posts = [];
+    Object.assign(mode, { announce: false, honor: false, rejectExpect: false, post: "ok" });
     await db.delete(s.integrationState).where(inArray(s.integrationState.key, MENU_KEYS));
+    await db.update(s.products).set({ price: 120 }).where(eq(s.products.id, prod.lemonade));
+    await db.delete(s.productPrices).where(inArray(s.productPrices.productId, productIds));
     await db.update(s.products).set({ showOnMenu: true, active: true }).where(inArray(s.products.id, productIds));
     await db.update(s.products).set({ price: 210 }).where(eq(s.products.id, prod.latteL));
     await db.update(s.products).set({ price: 180 }).where(inArray(s.products.id, [prod.tira, prod.latteM, prod.cake, prod.brownie]));
@@ -451,6 +496,226 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.ok(m && (m.by === "Ayşe" || m.by === "Mehmet"));
     const log = await db.select().from(s.activityLog).where(and(inArray(s.activityLog.userId, [users.ayse.id, users.mehmet.id]), eq(s.activityLog.action, "Tükendi")));
     assert.equal(log.length, 1);
+  });
+
+  // ------------------------------------------------ Reçete kartı ve fiyat hücresi (denetim E-11)
+
+  const card = (key: "tira" | "lemonade", o: Partial<Parameters<typeof actions.saveRecipe>[0]> = {}): Parameters<typeof actions.saveRecipe>[0] => ({
+    productId: prod[key],
+    name: key === "tira" ? `Tiramisu ${tag}` : `Limonata ${tag}`,
+    size: "Tek",
+    categoryId,
+    price: key === "tira" ? 180 : 120,
+    fireOverride: null,
+    note: null,
+    active: true,
+    showOnMenu: true,
+    items: [],
+    ...o,
+  });
+  /** Kartın açılırken gördükleri */
+  const seen = (price: number) => ({ seenPrice: price, seenActive: true, seenShowOnMenu: true });
+  const priceRows = async (id: number) =>
+    (await db.select().from(s.productPrices).where(eq(s.productPrices.productId, id)).orderBy(s.productPrices.id)).map((p) => [p.source, p.priceBefore, p.price]);
+  /** Sahip sitede fiyatı değiştirdi ve ping panele çekti (panel satırı ve kopya güncel) */
+  async function ownerPriceSynced(id: string, minor: number) {
+    ownerEdit(id, { priceMinor: minor });
+    assert.equal((await sync.syncSiteMenu("manual")).status, "ok");
+  }
+  /** Site `writes.expect` duyurur ve uygular; panel bir çekmeyle öğrenir */
+  async function siteWithExpect() {
+    Object.assign(mode, { announce: true, honor: true });
+    assert.equal((await sync.syncSiteMenu("manual")).status, "ok");
+    assert.equal((await sync.readMenuSyncState()).writesExpect, true);
+    posts = [];
+  }
+
+  test("reçete kartı: dokunulmayan fiyat sitede bu arada yazılanı geri almaz; siteye gidilmez, geçmişe elle kayıt düşmez", async () => {
+    // 10:00 kart 180 ₺'de açıldı; 10:05 sahip sitede 190 yaptı, ping panele çekti
+    await ownerPriceSynced(ids.tira, 19_000);
+    assert.equal((await productRow(prod.tira)).price, 190);
+    posts = [];
+    // 10:10 yönetici fiyata dokunmadan reçeteyi (notu) kaydeder
+    const r = await actions.saveRecipe(card("tira", { note: "Tarçın eklendi", ...seen(180) }));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.data.price, 190);
+    assert.deepEqual(r.data.priceKept, { seen: 180, now: 190 });
+    assert.equal(r.data.site, null);
+    assert.equal(posts.length, 0, "siteye eski fiyat gitmedi");
+    assert.equal(site.get(ids.tira)!.priceMinor, 19_000);
+    const row = await productRow(prod.tira);
+    assert.equal(row.price, 190);
+    assert.equal(row.note, "Tarçın eklendi", "reçete kaydedildi");
+    assert.deepEqual(await priceRows(prod.tira), [["site", 180, 190]], "yalnız sitenin değişikliği; Kasaya işle'ye sahte kayıt yok");
+  });
+
+  test("reçete kartı: ping kaçmışken (panel 180, site 190) dokunulmayan fiyat siteye gitmez", async () => {
+    ownerEdit(ids.tira, { priceMinor: 19_000 });
+    const r = await actions.saveRecipe(card("tira", { note: "x", ...seen(180) }));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(posts.length, 0);
+    assert.equal(site.get(ids.tira)!.priceMinor, 19_000, "sitenin fiyatı kalır; sonraki çekme paneli düzeltir");
+    assert.equal(r.data.priceKept, null);
+  });
+
+  test("reçete kartı: dokunulan fiyat, veritabanı aynıysa siteye gider ve geçmişe elle yazılır", async () => {
+    const r = await actions.saveRecipe(card("tira", { price: 200, ...seen(180) }));
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.data.price, 200);
+    assert.deepEqual(r.data.site, { price: true, visibility: false });
+    assert.equal(posts.length, 1);
+    assert.deepEqual(posts[0], { id: ids.tira, priceMinor: 20_000, actor: "Ali" }, "site expect duyurmadı: gövde bugünkü gibi");
+    assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
+    assert.equal((await productRow(prod.tira)).price, 200);
+    assert.deepEqual(await priceRows(prod.tira), [["manual", 180, 200]]);
+  });
+
+  test("reçete kartı: dokunulan fiyat ve veritabanı da değişti: hiçbir şey yazılmaz, siteye gidilmez, güncel fiyat söylenir", async () => {
+    await ownerPriceSynced(ids.tira, 19_000);
+    posts = [];
+    const r = await actions.saveRecipe(card("tira", { price: 200, note: "yazılmamalı", ...seen(180) }));
+    assert.equal(r.ok, false);
+    assert.equal(!r.ok && r.error, priceMovedText(190, 180));
+    assert.equal(posts.length, 0);
+    const row = await productRow(prod.tira);
+    assert.equal(row.price, 190);
+    assert.equal(row.note, null, "kart kaydedilmedi");
+    // Aynı yeni fiyatı yazmak çakışma değil
+    const same = await actions.saveRecipe(card("tira", { price: 190, ...seen(180) }));
+    assert.ok(same.ok, JSON.stringify(same));
+    assert.equal(posts.length, 0);
+  });
+
+  test("bağsız ürün: dokunulmayan fiyat toplu değişikliği geri almaz; dokunulan çakışırsa reddedilir; eski istemci bugünkü gibi", async () => {
+    // Başka sekmede toplu Fiyatlar 120 → 130 yaptı
+    await db.update(s.products).set({ price: 130 }).where(eq(s.products.id, prod.lemonade));
+    const keep = await actions.saveRecipe(card("lemonade", { note: "buzlu", ...seen(120) }));
+    assert.ok(keep.ok, JSON.stringify(keep));
+    assert.equal((await productRow(prod.lemonade)).price, 130);
+    assert.deepEqual(await priceRows(prod.lemonade), [], "yerelde fiyat yazılmadı");
+    const clash = await actions.saveRecipe(card("lemonade", { price: 125, ...seen(120) }));
+    assert.equal(!clash.ok && clash.error, priceMovedText(130, 120));
+    assert.equal((await productRow(prod.lemonade)).price, 130);
+    // Güncel fiyatı görerek dokunulan fiyat yazılır
+    const write = await actions.saveRecipe(card("lemonade", { price: 135, ...seen(130) }));
+    assert.ok(write.ok, JSON.stringify(write));
+    assert.equal((await productRow(prod.lemonade)).price, 135);
+    assert.deepEqual(await priceRows(prod.lemonade), [["manual", 130, 135]]);
+    // Görüleni göndermeyen eski sekme: gönderdiği yazılır
+    const old = await actions.saveRecipe(card("lemonade", { price: 140 }));
+    assert.ok(old.ok, JSON.stringify(old));
+    assert.equal((await productRow(prod.lemonade)).price, 140);
+    assert.equal(posts.length, 0);
+  });
+
+  test("yerel fiyat yazımı koşullu: okumadan sonra fiyat değiştiyse ya da ürün siteye bağlandıysa yazılmaz", async () => {
+    const write = await import("../src/server/prices/write");
+    const stale = await productRow(prod.lemonade);
+    await db.update(s.products).set({ price: 130 }).where(eq(s.products.id, prod.lemonade));
+    await refused(write.writeSalePrice(users.ali, stale, 150, { source: "manual", consequence: "fiyat değişmedi" }), priceChangedText(130));
+    assert.equal((await productRow(prod.lemonade)).price, 130);
+    // Ürün bu arada siteye bağlandı: yerel yazım siteyi atlamaz
+    const unlinked = await productRow(prod.lemonade);
+    await db.update(s.products).set({ siteMenuId: `tk-baska-${tag}`, siteMenuSlot: "M" }).where(eq(s.products.id, prod.lemonade));
+    try {
+      await assert.rejects(write.writeSalePrice(users.ali, unlinked, 150, { source: "manual", consequence: "fiyat değişmedi" }), write.PriceChangedError);
+      assert.equal((await productRow(prod.lemonade)).price, 130);
+    } finally {
+      await db.update(s.products).set({ siteMenuId: null, siteMenuSlot: null }).where(eq(s.products.id, prod.lemonade));
+    }
+    assert.deepEqual(await priceRows(prod.lemonade), []);
+  });
+
+  test("fiyat hücresi: gördüğü fiyat bu arada değiştiyse yazılmaz (güncel fiyat söylenir); güncel fiyatla yazılır", async () => {
+    await ownerPriceSynced(ids.tira, 19_000);
+    posts = [];
+    const stale = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
+    assert.equal(!stale.ok && stale.error, priceChangedText(190));
+    assert.equal(posts.length, 0);
+    const ok = await actions.updateProductPrice(prod.tira, 200, false, "manual", 190);
+    assert.ok(ok.ok, JSON.stringify(ok));
+    assert.deepEqual(ok.data, { price: 200, site: true, posPending: true });
+    assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
+    assert.deepEqual(await priceRows(prod.tira), [["site", 180, 190], ["manual", 190, 200]]);
+    // Eski sekme görüleni göndermez: bugünkü gibi yazılır
+    const old = await actions.updateProductPrice(prod.lemonade, 125);
+    assert.ok(old.ok, JSON.stringify(old));
+    assert.equal((await productRow(prod.lemonade)).price, 125);
+  });
+
+  test("expect: site duyurunca yazım kopyadaki değeri bekler; site bu arada değiştiyse 409 stale, panel siteyi okur, hiçbir şey yazılmaz", async () => {
+    await siteWithExpect();
+    // Sahip sitede 190 yaptı, ping kaçtı: panel ve kopya hâlâ 180
+    ownerEdit(ids.tira, { priceMinor: 19_000 });
+    const r = await actions.saveRecipe(card("tira", { price: 200, note: "yazılmamalı", ...seen(180) }));
+    assert.equal(r.ok, false);
+    assert.equal(
+      !r.ok && r.error,
+      "Bu ürün sitede bu arada değişti (sitede şimdi 190\u00a0₺); değişiklikler kaydedilmedi. Sitenin güncel değeri panele yüklendi: bakıp yeniden dene.",
+    );
+    assert.deepEqual(posts, [{ id: ids.tira, priceMinor: 20_000, actor: "Ali", expect: { priceMinor: 18_000 } }]);
+    assert.equal(site.get(ids.tira)!.priceMinor, 19_000, "sahibin fiyatı ezilmedi");
+    const row = await productRow(prod.tira);
+    assert.equal(row.price, 190, "panel sitenin güncel fiyatını aldı");
+    assert.equal(row.note, null);
+    assert.deepEqual(await priceRows(prod.tira), [["site", 180, 190]]);
+    // Kart güncel fiyatı görüp yeniden kaydeder: beklenen 190, yazılır
+    posts = [];
+    const again = await actions.saveRecipe(card("tira", { price: 200, ...seen(190) }));
+    assert.ok(again.ok, JSON.stringify(again));
+    assert.deepEqual(posts, [{ id: ids.tira, priceMinor: 20_000, actor: "Ali", expect: { priceMinor: 19_000 } }]);
+    assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
+  });
+
+  test("expect: Tükendi canlı kalemden bekler; 'zaten tükendi' yolu (değişmedi yanıtı) bozulmaz", async () => {
+    await siteWithExpect();
+    const r = await set(users.ayse, ids.latte, true);
+    assert.equal(r.changed, true);
+    assert.deepEqual(posts[0].expect, { isActive: true });
+    assert.equal(site.get(ids.latte)!.isActive, false);
+    // Sahip on dakika önce sitede kapattı, kopya "Satışta": değişmedi yanıtı, expect'e bakılmaz
+    posts = [];
+    ownerEdit(ids.tira, { isActive: false }, 10 * 60_000);
+    const already = await set(users.mehmet, ids.tira, true);
+    assert.equal(already.changed, false);
+    assert.equal(already.message, `Tiramisu ${tag} zaten tükendi (sitede kapatılmış; yönetici açar)`);
+    assert.deepEqual(posts[0].expect, { isActive: false }, "canlı listedeki değer");
+  });
+
+  test("expect: bayrağı duyuran site geri alındıysa (400 field expect) bir kez expect'siz denenir", async () => {
+    await siteWithExpect();
+    Object.assign(mode, { honor: false, rejectExpect: true });
+    const r = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(posts.length, 2);
+    assert.deepEqual(posts[0].expect, { priceMinor: 18_000 });
+    assert.equal(posts[1].expect, undefined);
+    assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
+    assert.equal((await productRow(prod.tira)).price, 200);
+  });
+
+  test("zaman aşımı: site yazmış olabilir; hata bunu söyler, panel siteyi hemen okur", async () => {
+    mode.post = "timeout";
+    const r = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
+    assert.equal(r.ok, false);
+    assert.equal(
+      !r.ok && r.error,
+      "Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde fiyat değişmedi. Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor.",
+    );
+    assert.equal(site.get(ids.tira)!.priceMinor, 20_000, "site yazmıştı");
+    // İstek dışında (test) çekme hemen ve beklenerek: panel sitenin yazdığını aldı
+    assert.equal((await productRow(prod.tira)).price, 200);
+    assert.deepEqual(await priceRows(prod.tira), [["site", 180, 200]]);
+  });
+
+  test("JSON olmayan 404 uç yok demek (site güncel değil); JSON not_found kalem yok demek", async () => {
+    mode.post = "html404";
+    const r = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
+    assert.equal(!r.ok && r.error, "Sitede panel menü ucu yok (laffogato.net güncel değil); fiyat değişmedi.");
+    site.delete(ids.tira);
+    const gone = await actions.updateProductPrice(prod.tira, 200, false, "manual", 180);
+    assert.equal(!gone.ok && gone.error, "Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla.");
+    assert.equal((await productRow(prod.tira)).price, 180);
   });
 
   test("site bağlantısı reddederse metnin sonunda 'Yöneticiye haber verin.'; kayıt ve panel değişmez", async () => {
