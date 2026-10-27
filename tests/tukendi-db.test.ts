@@ -22,12 +22,12 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import postgres from "postgres";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
 import { priceChangedText, priceMovedText, priceRefusedText } from "../src/lib/prices/seen";
-import type { SiteMenuItem } from "../src/lib/site-menu/schema";
+import { SITE_MENU_ID, type SiteMenuItem } from "../src/lib/site-menu/schema";
 import { keepSeen, SOLD_OUT_KEY, SOLD_OUT_TEXT, STAFF_SOLD_OUT_MAX } from "../src/lib/site-menu/sold-out";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -95,7 +95,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
       await g.wait;
     }
     if ((init?.method ?? "GET") === "GET") {
-      return json(200, { version: 1, now: new Date().toISOString(), items: [...site.values()], ...(mode.announce ? { writes: { expect: true } } : {}) });
+      return json(200, { version: 1, now: new Date().toISOString(), items: [...site.values(), ...(await othersOnSite())], ...(mode.announce ? { writes: { expect: true } } : {}) });
     }
     const req = JSON.parse(body) as (typeof posts)[number];
     posts.push(req);
@@ -121,6 +121,31 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
     }
     return json(200, { item });
+  }
+  /**
+   * Veritabanı başka testlerle paylaşılır (ör. lafpos-db kendi ürünlerini bağlar): bu testin tam çekmeleri (409 stale,
+   * zaman aşımı, eşitleme) onların bağlantısını "sitede silinmiş" sayıp kaldırmasın diye sahte site, bu testin
+   * kalemleri dışında bağlı her ürünün kalemini panelin değerleriyle aynen listeler (çekme onlara dokunmaz)
+   */
+  async function othersOnSite(): Promise<SiteMenuItem[]> {
+    const rows = await db
+      .select({ id: s.products.siteMenuId, slot: s.products.siteMenuSlot, price: s.products.price, active: s.products.active, showOnMenu: s.products.showOnMenu })
+      .from(s.products)
+      .where(isNotNull(s.products.siteMenuId));
+    const items = new Map<string, SiteMenuItem>();
+    const hasM = new Set<string>();
+    for (const r of rows) {
+      if (!r.id || site.has(r.id) || !SITE_MENU_ID.test(r.id)) continue;
+      const it = items.get(r.id) ?? siteItem(r.id, r.id, { priceMinor: 0, isActive: r.active && r.showOnMenu, updatedAt: "2026-01-01T00:00:00.000Z" });
+      if (r.slot === "L") it.priceMinorL = Math.round(r.price * 100);
+      else {
+        it.priceMinor = Math.round(r.price * 100);
+        hasM.add(r.id);
+      }
+      items.set(r.id, it);
+    }
+    // Yalnız L'si bağlı kalemin M fiyatı boş kalmasın
+    return [...items.values()].map((i) => (hasM.has(i.id) ? i : { ...i, priceMinor: i.priceMinorL || 100 }));
   }
   /** Sahibin sitenin panelinden yaptığı değişiklik (panelin kopyası bilmez); `agoMs` önce */
   const ownerEdit = (id: string, patch: Partial<SiteMenuItem>, agoMs = 0) =>
