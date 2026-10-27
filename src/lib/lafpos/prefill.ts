@@ -24,7 +24,11 @@ export interface LafposDay {
    * birleşiktir (harcama + teslim); bilgi satırı panelin Kasadan çıkanlar'ıyla bunları karşılaştırır
    */
   till: { spent: number; handed: number };
-  /** Kartla bahşiş + kartla cari tahsilatı (Z'nin kartında yok, banka POS'unda var); eski gövdede 0 */
+  /**
+   * Kartla bahşiş + kartla cari tahsilatı (Z'nin kartında yok, banka POS'unda var); eski gövdede 0. Personelin formuna
+   * da gider: kart karşılaştırması her okurda aynı kuralla düşer (form, kayıtlı görünüm, WhatsApp; G11). Rakam
+   * personelin yazdığı Banka POS ile kartın farkından zaten çıkar; metinlerde tutarı yalnız yöneticinin metni yazar
+   */
   cardExtra: number;
 }
 
@@ -98,14 +102,6 @@ export function lafposPrefill(z: PosDayZ): CashPrefill {
 /** Kartla bahşiş + kartla cari tahsilatı: banka POS'unun gördüğü, Z'nin kartına girmeyen (eski gövdede 0) */
 export function lafposCardExtra(z: PosDayZ): number {
   return round2((z.cardTips ?? 0) + (z.cardCollections ?? 0));
-}
-
-/**
- * Personelin formuna giden özet: kartla bahşiş ve cari tahsilatının tutarı yok (yazarkasa dışı tahsilat gibi yalnız
- * yöneticinin; G11). Personelin formunda kart karşılaştırması bu yüzden düşmeden yapılır
- */
-export function lafposForStaff(day: LafposDay | null): LafposDay | null {
-  return day && day.cardExtra ? { ...day, cardExtra: 0 } : day;
 }
 
 /** Saklanan Z özetinden günün LafPOS özeti (Kasa raporunun okuyucusu: src/server/data/lafpos-day.ts) */

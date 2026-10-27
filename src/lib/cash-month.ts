@@ -28,7 +28,7 @@ export interface TillRow {
    */
   source?: "lafpos";
   /** Yedek satırda LafPOS'un fiş sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
-  receipts?: number;
+  receipts?: number | null;
 }
 
 /** months tablosunun satırı: elle yazılanlar, boş = yazılmamış */

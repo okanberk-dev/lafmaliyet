@@ -603,7 +603,8 @@ silinen rapor ayın rakamını hemen değiştirir.
   görünüm aynı listeyi gösterir ("LafPOS'tan farklı" rozeti); yöneticinin zilinde "Kasa raporu LafPOS'tan farklı", LafPOS
   günü rapordan sonra farklı rakamla yeniden gönderdiyse "LafPOS rapordan sonra farklı rakamla geldi". Kart
   karşılaştırması LafPOS'un kartla bahşişini ve kartla cari tahsilatını düşer (Z'nin kartında yok, banka POS'unda var;
-  tutar yalnız yöneticinin metninde). Geçiş günü boşken metin bugünkü gibi.
+  personelin formunda ve WhatsApp'ında da, aynı sonuçla; tutar yalnız yöneticinin metninde, Kart bölümünde ve
+  e-postada ayrı satır "− LafPOS kartla bahşiş + cari tahsilatı"). Geçiş günü boşken metin bugünkü gibi.
 - **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
   sonu).
 

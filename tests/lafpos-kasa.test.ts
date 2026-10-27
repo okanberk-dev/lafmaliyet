@@ -16,7 +16,7 @@ import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra,
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
-import { lafposCardExtra, lafposDayOf, lafposForStaff, lafposHandedGap, lafposOutsCheck, lafposPrefill } from "../src/lib/lafpos/prefill";
+import { lafposCardExtra, lafposDayOf, lafposHandedGap, lafposOutsCheck, lafposPrefill } from "../src/lib/lafpos/prefill";
 import { okcReconcile } from "../src/lib/okc-z";
 import { prefillPlan } from "../src/lib/photo-read/kasa";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
@@ -271,7 +271,7 @@ test("Metinler: LafPOS gününde Z bölümü ve 'LafPOS'tan farklı yazılan'; g
   assert.doesNotMatch(modpos.html, /LafPOS/);
 });
 
-test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından düşer; tutar yalnız yöneticinin metninde", () => {
+test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her okurda düşer; tutar yalnız yöneticinin metninde", () => {
   const z = posZSchema.parse({ ...Z, cardTips: 120, cardCollections: 400 });
   assert.equal(lafposCardExtra(z), 520);
   assert.equal(lafposCardExtra(Z), 0, "eski gövde");
@@ -286,14 +286,39 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından düşer
   assert.equal(staff.tone, "good");
   assert.doesNotMatch(staff.text, /520/, "personelde tutar yok");
   assert.match(plain(okcReconcile(withCardExtra(okc, 520), "admin")[0].text), /kartla bahşiş ve cari tahsilatı \(520 ₺\) düşüldü/);
-  // Personelin formuna tutar gitmez (yazarkasa dışı tahsilat gibi): özet tutarsız gider
-  assert.equal(lafposForStaff(lafposDayOf(z, DAY.receivedAt))!.cardExtra, 0);
-  assert.equal(lafposForStaff(null), null);
+  // Personelin formu, kayıtlı görünümü ve WhatsApp'ı aynı günün özetini alır (denetim incelemesi D2/U2): personel
+  // ekranında sahte kart farkı, WhatsApp'ta "aynı" olmaz
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /lafpos=\{admin \? lafposState\.day : lafposForStaff\(lafposState\.day\)\}/);
-  assert.match(page, /lafpos=\{lafposForStaff\(lafposState\.day\)\}/, "geç rapor (personel)");
-  // WhatsApp metni de (personel): kart aynı, tutar yok
+  assert.doesNotMatch(page, /lafposForStaff/);
+  assert.equal(page.match(/lafpos=\{lafposState\.day\}/g)?.length, 2, "kasa formu ve geç rapor");
+  assert.match(page, /\.\.\.extrasFrom\(photoInfo, outs, report, lafposState\)/, "WhatsApp aynı özetle");
+  // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
-  assert.match(wa, /✅ Kart ModPOS ile aynı/);
+  assert.match(wa, /✅ Kart ModPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
   assert.doesNotMatch(plain(wa), /(?<![\d.])520 ₺/, "kartla bahşiş ve cari tahsilatının tutarı yok (8.520 yazarkasa kartı)");
+});
+
+test("G11: personelin formdaki kart sonucu WhatsApp'taki sonuçla aynı (yalnız Banka POS; inceleme D2/U2/U3)", () => {
+  const day = lafposDayOf(posZSchema.parse({ ...Z, cardTips: 150 }), DAY.receivedAt);
+  // Personelin gönderdiği: kart LafPOS'tan 8.000, banka POS 8.150 (bahşiş 150)
+  const f = report({ bankPos: 8_150 });
+  // Form (okc-card.tsx): modpos.cardExtra = lafpos.cardExtra; kayıtlı görünüm (CashBreakdown) withCardExtra
+  const form = okcReconcile({ ...f, cardExtra: day.cardExtra }, "staff");
+  assert.equal(form[0].tone, "good");
+  assert.match(form[0].text, /Kart: banka pos ile ModPOS aynı\. LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü\./);
+  assert.equal(computeCash(withCardExtra(f, day.cardExtra)).cardDiff, 0, "kayıtlı görünümün farkı");
+  const wa = plain(whatsappText(f, { by: "Ayşe", kasa: "LafPOS", cardExtra: day.cardExtra }));
+  assert.match(wa, /\*Kart\*\nBanka POS: 8\.150 ₺ ✅ ModPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
+  assert.doesNotMatch(wa, /(?<![\d.])150 ₺/, "personelin metninde tutar yok");
+  // Yöneticinin e-postası: satır tutarıyla, fark yok; metin sürümü de söyler
+  const mail = renderCashReport(f, { by: "Ayşe", revision: 1, submittedAt: new Date("2026-11-11T20:00:00Z"), kasa: "LafPOS", cardExtra: day.cardExtra });
+  const html = plain(mail.html);
+  assert.match(html, /− LafPOS kartla bahşiş \+ cari tahsilatı[\s\S]{0,400}150 ₺/);
+  assert.match(html, /Fark[\s\S]{0,400}Yok/);
+  assert.match(plain(mail.text), /Banka POS: 8\.150 ₺ ✅ ModPOS ile aynı \(LafPOS kartla bahşiş \+ cari tahsilatı 150 ₺ düşüldü\)/);
+  // Kayıtlı görünümün satırı: yöneticiye tutar, personele "düşüldü"
+  const summary = read("src/app/panel/kasa/cash-summary.tsx");
+  assert.match(summary, /<Line label=\{CARD_EXTRA_LABEL\} value=\{audience === "admin" \? money\(cardExtra\) : "düşüldü"\} \/>/);
+  // LafPOS'ta yoksa metin bugünkü gibi
+  assert.equal(plain(whatsappText(report({ bankPos: 8_000 }), { by: "Ayşe" })).includes("düşüldü"), false);
 });

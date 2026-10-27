@@ -240,8 +240,13 @@ birleşik tutarı farklıysa alanın altında "LafPOS'ta 5.450 ₺" görünür a
 
 LafPOS isteğe bağlı `z.cardTips` (kartla bahşiş) ve `z.cardCollections` (kartla cari tahsilatı) yollar: banka POS'u
 görür, Z'nin kartı görmez. LafPOS gününde kart karşılaştırması (form, kayıtlı rapor, günden güne rozeti, e-posta,
-WhatsApp) bunların toplamını düşer (`lafposCardExtra`, `withCardExtra`); tutar yalnız yöneticinin metninde ("LafPOS'taki
-kartla bahşiş ve cari tahsilatı (520 ₺) düşüldü."). Kaydedilmez; eski gövdede yoksa 0.
+WhatsApp) bunların toplamını düşer (`lafposCardExtra`, `withCardExtra`), personelde de: aynı gün her okurda aynı
+sonucu verir (personelin ekranı "fark var", gönderdiği WhatsApp "aynı" demez). Tutar personelin ekranına da gider,
+çünkü personelin yazdığı Banka POS ile kartın farkından zaten çıkar; metinde tutarı yalnız yöneticininki yazar
+("LafPOS'taki kartla bahşiş ve cari tahsilatı (520 ₺) düşüldü."; personelde "… düşüldü."). Yalnız Banka POS yazılan
+raporun Kart bölümünde ve e-postasında ayrı satır: "− LafPOS kartla bahşiş + cari tahsilatı 150 ₺" (personelde
+"düşüldü"), böylece 10.150 ile 10.000 arasında "Fark yok" okunur; WhatsApp'ın kart satırı "(bahşiş / cari tahsilatı
+düşüldü)" ekler. Kaydedilmez; eski gövdede yoksa 0.
 
 #### Geç rapor, fotoğraf kaldırma, kapalı gün, ay rakamı (G8, E-36, G6)
 

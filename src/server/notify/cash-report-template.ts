@@ -8,6 +8,7 @@
 
 import {
   byLine,
+  CARD_EXTRA_LABEL,
   carryWarning,
   CASH_TOLERANCE,
   cashOutLines,
@@ -162,6 +163,8 @@ export function renderCashReport(
       : [
           row("ModPOS kart", money(f.card)),
           row("Banka POS", money(f.bankPos)),
+          // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
+          ...(meta.cardExtra && meta.cardExtra > 0 ? [row(CARD_EXTRA_LABEL, money(meta.cardExtra))] : []),
           row("Fark", Math.abs(bankDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`, {
             strong: true,
             color: Math.abs(bankDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",

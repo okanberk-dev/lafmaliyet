@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import {
+  CARD_EXTRA_LABEL,
   CASH_TOLERANCE,
   carryDiffText,
   computeCash,
@@ -195,6 +196,8 @@ export function CashBreakdown({
           <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
           <Line label="ModPOS kart" value={money(report.card)} />
           <Line label="Banka POS" value={money(report.bankPos)} />
+          {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
+          {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}
           <Line
             label="Fark"
             value={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}
