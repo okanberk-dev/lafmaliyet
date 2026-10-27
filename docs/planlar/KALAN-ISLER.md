@@ -385,6 +385,10 @@ gün uyarılır; LafPOS'ta satışı olan kanalın faturası gelmediyse kartı �
 LafPOS'un ikramı Tutarlılık'ın kayıtlı tüketimine, Zayi'nin ay özetine, haftalık özete ve kasa özetine bir kez girer,
 gün sonu gelen günde panele girilmiş ürün ikramı sayılmaz, yenisi (doğrudan, geç kayıt ve onayı) reddedilir; Zayi'nin
 günü LafPOS'un ikramını salt okunur gösterir; kasa e-postası LafPOS'un ödenmez tutarını ikram listesiyle karşılaştırır.
+İnceleme turunda: LafPOS'ta "Zayi: …" nedenli satır zayi sayılır (ikram değil); ürün ikramı yalnız gün sonu gelen günde
+ve bugün reddedilir (gün sonu gelmeyen geçmiş günde girilir); ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'tan
+bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bilgi olur. Açık soru (sahibe): LafPOS'ta da
+zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
 Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
 sığmayanları tek satırda özetler (E-68).
 Kalan: ModPOS metinleri ve işleri geçiş gününe göre (E-39, B11); sahibe soru 5.
