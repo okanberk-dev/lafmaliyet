@@ -400,7 +400,8 @@ export function InvoicesClient({
     startTransition(async () => {
       applyOptimistic({ kind: "category", changes, review: reReview });
       const res = await setInvoiceCategory(changes);
-      if (!res.ok) return void toast.error(res.error);
+      // Bağlı faturasız alımın reddi (E-45) ne yapılacağını da söyler: okunacak kadar kalır
+      if (!res.ok) return void toast.error(res.error, { duration: res.error.length > 120 ? 12_000 : undefined });
       if (reReview.length) {
         const back = await confirmInvoices(reReview, true);
         if (!back.ok) toast.error(back.error);

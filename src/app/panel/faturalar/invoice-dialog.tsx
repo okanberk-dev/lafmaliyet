@@ -290,7 +290,7 @@ export function InvoiceDialog({
       setBusy(false);
       setBusyText(null);
     }
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(res.error, { duration: res.error.length > 120 ? 12_000 : undefined });
     const shown = locked && invoice ? invoice.payable : payableToSave;
     const withDoc = uploaded?.ok ? " · belge eklendi" : "";
     // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir

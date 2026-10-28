@@ -120,7 +120,13 @@ export function CashOutInvoicesCard({
       <CardHeader
         icon={<Receipt />}
         title="Kasadan faturalı alımlar"
-        description="Personel Kasa'ya e-Arşiv ya da faturalı alışveriş girdi. Aylık harcamalar'a yazılmadı, faturası da Faturalar'da yok: gelir-gidere, mal maliyetine ve KDV tahminine girmedi. Faturayı ekleyin ya da Aylık harcamalar'a yazın. Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar."
+        description={
+          <>
+            Personel Kasa&apos;ya e-Arşiv ya da faturalı alışveriş girdi; Aylık harcamalar&apos;a yazılmadı, faturası da Faturalar&apos;da yok: gelir-gidere,
+            mal maliyetine ve KDV tahminine girmedi.
+            <span className="max-sm:hidden"> Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.</span>
+          </>
+        }
         meta={
           <>
             <span>
@@ -215,7 +221,8 @@ export function CashOutInvoicesCard({
       </ul>
       <p className="flex items-start gap-2 border-t border-line px-4 py-3 text-xs leading-5 text-ink-mute sm:px-5">
         <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-        Faturası Paraşüt&apos;e e-fatura olarak düşecekse beklemeniz yeter. e-Arşiv ve kâğıt fatura Paraşüt&apos;e kendiliğinden gelmez.
+        Faturası Paraşüt&apos;e e-fatura olarak düşecekse beklemeniz yeter: aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.
+        e-Arşiv ve kâğıt fatura Paraşüt&apos;e kendiliğinden gelmez.
       </p>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Card>
