@@ -297,7 +297,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             durur; Bugün&apos;de satır olarak da çıkar. ModPOS&apos;ta değiştirdikçe ürüne tek tek dokunun: satır listeden düşer, bildirimde <B>Geri al</B> vardır.
             Son işaretledikleriniz listenin üstünde {minutes(POS_UNDO_WINDOW_MS)} kalır, oradan da geri alırsınız; sonrasını yönetici geri alır. Her işaret adınızla
             kaydedilir. Kasada LafPOS kullanılmaya başlandıysa bu iş size düşmez: menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır, öbürlerini
-            LafPOS&apos;ta yönetici değiştirir. Kasada yanlış bir fiyat görürseniz yöneticinize haber verin.
+            LafPOS&apos;ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin.
           </>
         ),
         icon: Tags,

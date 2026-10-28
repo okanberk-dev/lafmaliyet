@@ -202,8 +202,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir. LafPOS&apos;a geçiş gününden itibaren (Ayarlar › LafPOS)
             siteye bağlı ürünlerin fiyatını LafPOS siteden kendisi alır (gün açıkken 15 dakikada bir): onlar listede görünmez. ModPOS için kayıt sürer, geçiş
             günü kaldırılır ya da ileri alınırsa ModPOS&apos;ta değişecek fiyatlar eksiksiz geri gelir. Listede yalnız siteye bağlı olmayan ve fiyatı LafPOS
-            başladıktan sonra değişen ürünler çıkar: LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez){" "}
-            <Path href="/panel/urunler/site" />&apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin.
+            başladıktan sonra değişen ürünler çıkar: LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez) Ürünler › Site
+            menüsü&apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin.
             LafPOS&apos;ta ürün fiyatını kasiyer değiştiremez: bu iş yöneticide, personelin Bugün&apos;ünde ve zilinde çıkmaz.
           </>
         ),
