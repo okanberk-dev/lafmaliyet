@@ -7,8 +7,9 @@ import { z } from "zod";
 import { amountsChanged, DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
-import { payableFloorProblem } from "@/lib/cari/account";
+import { debtLabel, invoiceLabel, payableFloorProblem } from "@/lib/cari/account";
 import { round2 } from "@/lib/cari/balance";
+import { linkedInvoiceProblem, linkedInvoiceRefusal } from "@/lib/cari/match";
 import { dateTR, tl } from "@/lib/format";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -121,12 +122,23 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       ? { supplier: data.supplier, description: data.description, category: data.category, note: data.note, dueDate: data.dueDate, needsReview: false }
       : { ...data, ...(amountsChanged(cur, data) ? { vat: 0 } : {}), needsReview: false };
     const payableChanged = !isParasutLinked(cur) && data.payable !== cur.payable && (cur.allocated > 0 || cur.ledgerBase !== null);
+    // Faturasız alımı bağlı fatura kafe dışına, komisyona ya da iadeye geçemez (E-45): kural kilitli satırda okunur,
+    // alanlar aynı işlemde yazılır (aynı anda bağlanan fatura bekler)
+    const nextLink = { category: data.category, payable: isParasutLinked(cur) ? cur.payable : data.payable };
+    const writeFields = async (set: Partial<typeof s.invoices.$inferInsert>) => {
+      if (!linkedInvoiceProblem(cur, nextLink)) return void (await db.update(s.invoices).set(set).where(eq(s.invoices.id, id)));
+      await db.transaction(async (tx) => {
+        const locked = await tx.select().from(s.invoices).where(eq(s.invoices.id, id)).for("update");
+        await assertLinkedStayLinkable(tx, locked, () => nextLink, "Fatura kaydedilmedi.");
+        await tx.update(s.invoices).set(set).where(eq(s.invoices.id, id));
+      });
+    };
     let credit = none;
     if (cur.unpaid && !data.unpaid) {
       // Ödendiye geçiş: önce alanlar (yeni Ödenecek dahil, fatura henüz ödenmemiş), sonra hesaptaki para yeni tutara
       // göre sayılır (tamamen karşılarsa fatura defterle kapanır, ödeme alanları defterin), en son karşılanmayan
       // kalan kullanıcının günüyle ödendi işaretlenir; yazım hâlâ ödenmemiş olana koşullu
-      await db.update(s.invoices).set({ ...fields, unpaid: true }).where(eq(s.invoices.id, id));
+      await writeFields({ ...fields, unpaid: true });
       if (payableChanged) await resettleInvoices([id]);
       credit = await creditFirstForInvoices([id], me.name);
       if (!credit.closed.includes(id)) {
@@ -141,10 +153,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       // gönderir, aynı gün işareti bozmaz
       const written = data.unpaid ? (cur.unpaid ? {} : { paidAt: null, paidVia: null }) : paidAt !== undefined ? { paidAt } : {};
       const userPaid = cur.unpaid !== data.unpaid || ("paidAt" in written && written.paidAt !== cur.paidAt);
-      await db
-        .update(s.invoices)
-        .set({ ...fields, unpaid: data.unpaid, ...written, ...(userPaid ? { paidByLedger: false } : {}) })
-        .where(eq(s.invoices.id, id));
+      await writeFields({ ...fields, unpaid: data.unpaid, ...written, ...(userPaid ? { paidByLedger: false } : {}) });
       // Ödenecek değişince dağıtım ve ödendi işareti yeniden dengelenir (arttıysa defterin kapattığı açılır)
       if (payableChanged) await resettleInvoices([id]);
     }
@@ -195,6 +204,36 @@ async function assertInvoiceStays(cur: Pick<typeof s.invoices.$inferSelect, "id"
   throw new UserError("Bu faturaya tedarikçinin cari ödemesi sayılmış ya da faturasız alımı bağlı; tedarikçi adını değiştirmek onu başka tedarikçiye taşır. Önce Hesap hareketleri'nde ödemeden çıkarın ya da bağı kaldırın.");
 }
 
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+type LinkGuardRow = Pick<typeof s.invoices.$inferSelect, "id" | "supplier" | "invoiceNo" | "date" | "category" | "payable">;
+
+/**
+ * Faturasız alımı bağlı fatura bağlanamaz bir hâle geçemez (denetim E-45): kafe dışı (karaoke box, Alp Koç), komisyon
+ * ya da iade. Bağlama alımın gider kaydını sildi; geçseydi alım gelir-giderden, mal maliyetinden ve KDV tahmininden
+ * sessizce düşerdi. Satırlar çağıranda kilitli olmalı (linkDebts de faturayı kilitleyip kuralı okur: biri ötekini bekler).
+ */
+async function assertLinkedStayLinkable(tx: Tx, rows: readonly LinkGuardRow[], next: (r: LinkGuardRow) => { category: string; payable: number }, kept: string) {
+  const risky = rows.map((r) => ({ r, reason: linkedInvoiceProblem(r, next(r)) })).filter((x): x is { r: LinkGuardRow; reason: string } => x.reason !== null);
+  if (!risky.length) return;
+  const debts = await tx
+    .select({ invoiceId: s.supplierEntries.invoiceId, description: s.supplierEntries.description, date: s.supplierEntries.date })
+    .from(s.supplierEntries)
+    .where(and(inArray(s.supplierEntries.invoiceId, risky.map((x) => x.r.id)), eq(s.supplierEntries.kind, "borc")))
+    .orderBy(s.supplierEntries.date, s.supplierEntries.id);
+  const blocked = risky.filter((x) => debts.some((d) => d.invoiceId === x.r.id));
+  if (!blocked.length) return;
+  const first = blocked[0];
+  throw new UserError(
+    linkedInvoiceRefusal({
+      invoice: `${splitSupplier(first.r.supplier).base} ${invoiceLabel(first.r)}`,
+      purchases: debts.filter((d) => d.invoiceId === first.r.id).map((d) => debtLabel(d)),
+      reason: first.reason,
+      count: blocked.length,
+      kept,
+    }),
+  );
+}
+
 /** İşlem geçmişinin eki: " · hesaptaki 99,50 ₺ sayıldı" (hesaptaki para kullanılmadıysa boş) */
 function creditText(credit: CreditUse, ids: readonly number[]): string {
   const used = ids.reduce((a, id) => a + (credit.used.get(id) ?? 0), 0);
@@ -216,21 +255,30 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
     const list = categoryChangesSchema.parse(changes);
     const wanted = new Map(list.map((c) => [c.id, c.category]));
     const db = getDb();
-    const rows = await db
-      .select({ id: s.invoices.id, category: s.invoices.category, supplier: s.invoices.supplier, date: s.invoices.date })
-      .from(s.invoices)
-      .where(inArray(s.invoices.id, [...wanted.keys()]));
-    if (!rows.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
-    const changed = rows.filter((r) => wanted.get(r.id) !== r.category);
-    if (changed.length) {
+    // Satırlar kilitlenip okunur: faturasız alımı bağlı fatura kafe dışına, komisyona alınamaz (E-45); aynı anda
+    // "Faturası geldi" ile bağlanan fatura da bekler, sonra yeni kategoriyi görüp bağlamayı reddeder. Bir tanesi bile
+    // reddedilirse toplu değişiklikten hiçbiri yazılmaz ("Geri al" yarım bir listeyi geri yazmasın)
+    const { rows, changed, byCategory } = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ id: s.invoices.id, category: s.invoices.category, supplier: s.invoices.supplier, date: s.invoices.date, invoiceNo: s.invoices.invoiceNo, payable: s.invoices.payable })
+        .from(s.invoices)
+        .where(inArray(s.invoices.id, [...wanted.keys()]))
+        .orderBy(s.invoices.id)
+        .for("update");
+      if (!rows.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+      const changed = rows.filter((r) => wanted.get(r.id) !== r.category);
+      await assertLinkedStayLinkable(tx, changed, (r) => ({ category: wanted.get(r.id)!, payable: r.payable }),
+        changed.length > 1 ? "Seçilen faturaların hiçbiri değişmedi; bağlı olanı seçimden çıkarıp yeniden deneyin." : "Kategori değişmedi.",
+      );
       const byCategory = new Map<string, number[]>();
       for (const r of changed) {
         const c = wanted.get(r.id)!;
         byCategory.set(c, [...(byCategory.get(c) ?? []), r.id]);
       }
-      await db.transaction(async (tx) => {
-        for (const [category, ids] of byCategory) await tx.update(s.invoices).set({ category, needsReview: false }).where(inArray(s.invoices.id, ids));
-      });
+      for (const [category, ids] of byCategory) await tx.update(s.invoices).set({ category, needsReview: false }).where(inArray(s.invoices.id, ids));
+      return { rows, changed, byCategory };
+    });
+    if (changed.length) {
       const targets = [...byCategory.keys()];
       const detail =
         changed.length === 1
@@ -686,7 +734,6 @@ function lineCopy(l: BillLineRow): DeletedEntry["lines"][number] {
   };
 }
 
-type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
 /** integration_state değerini satırı kilitleyerek okur (aynı anda iki silme listeyi ezmesin) */
 async function readStateForUpdate<T>(tx: Tx, key: string): Promise<T | null> {

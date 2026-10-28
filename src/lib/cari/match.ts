@@ -41,6 +41,26 @@ export const linkTolerance = (payable: number) => Math.max(1, 0.02 * payable);
  */
 export const linkableInvoice = (i: { payable: number; category: string }) => i.payable > 0 && i.category !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(i.category);
 
+/**
+ * Faturasız alımı bağlı faturanın yeni hâli (kategori, Ödenecek) onu bağlanamaz yapıyorsa neden (denetim E-45), yoksa
+ * null. Bağlama borcun gider kaydını sildi: fatura kafe dışına (karaoke box, Alp Koç), komisyona ya da iadeye dönerse
+ * bağlı alım gelir-giderden, mal maliyetinden ve KDV tahmininden sessizce düşerdi. Yalnız değişen alan sorulur: eski
+ * bir bağın faturası bugünkü kuralı tutmasa da notu ya da vadesi düzeltilebilsin.
+ */
+export function linkedInvoiceProblem(cur: { payable: number; category: string }, next: { payable: number; category: string }): string | null {
+  if (linkableInvoice(next)) return null;
+  if (next.category !== cur.category && !linkableInvoice({ payable: 1, category: next.category })) return `${next.category} faturası kafenin mal alışına girmez`;
+  if (next.payable !== cur.payable && !(next.payable > 0)) return "Ödenecek 0 ya da eksi olursa fatura iade sayılır";
+  return null;
+}
+
+/** Bağlı alımı olan faturanın değişikliği reddedilirken söylenen: ne bağlı, neden olmaz, ne yapılmalı */
+export function linkedInvoiceRefusal(o: { invoice: string; purchases: readonly string[]; reason: string; count?: number; kept: string }): string {
+  const what = o.purchases.length === 1 ? `faturasız alım bağlı (${o.purchases[0]})` : `${o.purchases.length} faturasız alım bağlı`;
+  const more = o.count && o.count > 1 ? ` ve ${o.count - 1} fatura daha` : "";
+  return `${o.invoice}${more}: ${what}. ${o.reason}; bağlı alım gelir-giderden düşerdi. Önce Tedarikçiler'de, Hesap hareketleri'nde alımın Bağı kaldır'ına dokunun. ${o.kept}`;
+}
+
 /** Faturanın aday alanları (kalanı varsa açık) */
 export const candidateOf = (i: BalanceInvoice & { id: number; date: string; category: string }): CandidateInvoice => ({
   id: i.id,
