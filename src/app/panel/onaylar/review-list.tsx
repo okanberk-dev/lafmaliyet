@@ -18,13 +18,15 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
+import { nameKey } from "@/lib/count-item";
 import { dateTimeTR, money, pct, tl } from "@/lib/format";
 import {
   genitive,
   inactiveIngredientsIssue,
   NEW_PRODUCT_NAME_MAX,
+  productSizeLabel,
   REQUEST_STATUS_LABEL,
-  takenIssue,
+  sizePhrase,
   type ProductSize,
   type RecipeSnapshot,
   type RequestKind,
@@ -59,6 +61,11 @@ export interface ReviewItem {
   unpriced: string[];
   /** Eklenen ya da miktarı değişen satırlarda paket fiyatı tahmini olan malzemeler (estimateNames): maliyet farkı kesin değil */
   estimates: string[];
+  /**
+   * Önerilen satırların formülü bugünkü ayarlarla eksiye düşüyor ya da hesaplanamıyor (negativeQtyIssue): onay olmaz,
+   * sunucu da reddeder. Farktaki miktar öneri anınınkidir; kart sorunu bugünkü değerle söyler
+   */
+  qtyIssues: string[];
 }
 
 /** Personelin yeni ürün önerisi (boy başına bir öneri): satır maliyetleri bugünkü hammadde fiyatlarıyla */
@@ -109,7 +116,8 @@ export interface NewProductEnv {
   categories: { id: number; name: string }[];
   fireByCategory: Record<number, number | null>;
   settings: Settings;
-  taken: { name: string; size: ProductSize }[];
+  /** Var olan ürünler (pasif de): aynı ad + boy varsa onay olmaz, kart o ürünün kartına bağlantı verir */
+  taken: { id: number; name: string; size: ProductSize }[];
 }
 
 export interface RecentItem {
@@ -236,8 +244,9 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                   <UnpricedNote names={item.unpriced} />
                   {item.cost ? <CostImpact cost={item.cost} /> : null}
                   <EstimateNote names={item.estimates} />
+                  <QtyIssues texts={item.qtyIssues} />
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <Button onClick={() => approve(item)} disabled={busy} className="max-sm:flex-1">
+                    <Button onClick={() => approve(item)} disabled={busy || item.qtyIssues.length > 0} className="max-sm:flex-1">
                       <Check size={16} /> Onayla ve uygula
                     </Button>
                     <Button
@@ -404,11 +413,16 @@ function NewProductCard({
     item.lines.map((l) => ({ qty: l.qty, unitCost: l.unitCost, vatRate: l.vatRate, isPackaging: l.isPackaging })),
     env.settings,
   );
-  const taken = takenIssue(name, item.size, env.taken, []);
+  // Aynı ad + boyda ürün (pasif de): onay olmaz (sunucu da reddeder). Ad öteki boydan geliyorsa (salt okunur) yalnız
+  // reddetmek kalır; reçete o ürünün kartına girilir
+  const clash = nameKey(name) ? env.taken.find((p) => p.size === item.size && nameKey(p.name) === nameKey(name)) : undefined;
+  const taken = clash
+    ? `“${productSizeLabel(clash.name, item.size)}” zaten var; ${item.pair ? "öneriyi reddedin, reçeteyi o ürünün kartına girin" : "adı değiştirin ya da öneriyi reddedip reçeteyi o ürünün kartına girin"}`
+    : null;
   const missing = item.lines.filter((l) => l.missing);
   const inactive = inactiveIngredientsIssue(item.lines.filter((l) => l.inactive).map((l) => l.name));
   const qtyIssues = item.lines.flatMap((l) => (l.qtyIssue ? [l.qtyIssue] : []));
-  const blocked = missing.length > 0 || inactive !== null || qtyIssues.length > 0;
+  const blocked = missing.length > 0 || inactive !== null || qtyIssues.length > 0 || !!clash;
   const unpriced = item.lines.filter((l) => l.unpriced);
   const nameId = `yeni-ad-${item.id}`;
   const priceId = `yeni-fiyat-${item.id}`;
@@ -427,7 +441,7 @@ function NewProductCard({
       const productId = res.data.productId;
       toast.success(`${res.data.name} · ${SIZE_LABELS[item.size]} eklendi`, {
         description: `${genitive(item.requestedByName)} önerisi onaylandı; ürün reçetesiyle Ürünler'de.${
-          siblings.length ? ` ${siblings.map((x) => SIZE_LABELS[x]).join(", ")} boyu da aynı adla bekliyor.` : ""
+          siblings.length ? ` ${capFirst(sizePhrase(siblings))} da aynı adla bekliyor.` : ""
         }`,
         action: { label: "Ürün kartı", onClick: () => router.push(`/panel/urunler/${productId}`) },
       });
@@ -472,22 +486,16 @@ function NewProductCard({
             </span>
           </p>
         ) : null}
-        {qtyIssues.map((text) => (
-          <p key={text} role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {text}.
-          </p>
-        ))}
+        <QtyIssues texts={qtyIssues} />
         {item.pair ? (
           <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info">
             <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Bu önerinin {SIZE_LABELS[item.pair.size]} boyu “{item.pair.name}” adıyla eklendi; {SIZE_LABELS[item.size]} boyu da aynı adla eklenir (iki boy tek ürün
-            olarak eşleşsin).
+            Bu önerinin {sizePhrase(item.pair.size)} “{item.pair.name}” adıyla eklendi; {sizePhrase(item.size)} da aynı adla eklenir (iki boy tek ürün olarak eşleşsin).
           </p>
         ) : siblings.length ? (
           <p className="flex items-start gap-2 rounded-2xl bg-surface px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft ring-1 ring-line">
             <Info size={16} className="mt-0.5 shrink-0 text-ink-mute" aria-hidden="true" />
-            Aynı önerinin {siblings.map((x) => SIZE_LABELS[x]).join(", ")} boyu da bekliyor: ad ve kategori boylarda birlikte değişir.
+            Aynı önerinin {sizePhrase(siblings)} da bekliyor: ad ve kategori boylarda birlikte değişir.
           </p>
         ) : null}
         <UnpricedNote names={[...new Set(unpriced.map((l) => l.name))]} />
@@ -551,7 +559,21 @@ function NewProductCard({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Ürün adı" htmlFor={nameId} error={taken} hint={item.pair ? `${SIZE_LABELS[item.pair.size]} boyunun adı` : undefined}>
+          <Field
+            label="Ürün adı"
+            htmlFor={nameId}
+            error={
+              clash ? (
+                <>
+                  {taken}.{" "}
+                  <Link href={`/panel/urunler/${clash.id}`} className="font-medium underline underline-offset-2">
+                    Ürün kartı
+                  </Link>
+                </>
+              ) : null
+            }
+            hint={item.pair ? `${capFirst(sizePhrase(item.pair.size, "nun"))} adı` : undefined}
+          >
             <Input
               id={nameId}
               value={name}
@@ -650,6 +672,18 @@ function NewProductCard({
       </div>
     </Card>
   );
+}
+
+const capFirst = (t: string) => t.charAt(0).toLocaleUpperCase("tr-TR") + t.slice(1);
+
+/** Formülü bugünkü ayarlarla eksiye düşen ya da hesaplanamayan satırlar: onay düğmesi kapalı, sunucu da reddeder */
+function QtyIssues({ texts }: { texts: string[] }) {
+  return texts.map((text) => (
+    <p key={text} role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      {text}.
+    </p>
+  ));
 }
 
 /** Paket fiyatı girilmemiş malzeme (sayımda "Listeye ekle" ile eklenen kalem) maliyete 0 ₺ girer: karar vermeden önce söylenir */

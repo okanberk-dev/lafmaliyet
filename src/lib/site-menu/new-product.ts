@@ -100,6 +100,12 @@ export function newFromSiteDraft(
 }
 
 /**
+ * Aynı ad + boyda bekleyen yeni ürün önerisi varken (pendingProposalIssue) metnin sonu: öneri onaylanınca ürün
+ * personelin reçetesiyle açılır, sitedeki kaleme Öneriler sekmesinden (aynı ad) bağlanır.
+ */
+export const NEW_FROM_SITE_PENDING_THEN = "önce Onaylar'da onaylayın (ürün reçetesiyle açılır), sonra Öneriler sekmesinden bağlayın";
+
+/**
  * Aynı ad + boyda panel ürünü (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden): açmak yerine o ürün bağlanmalı.
  * Pencere gönderilmeden, sunucu kilit altında aynı kuralla söyler.
  */

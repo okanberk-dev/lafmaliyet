@@ -155,10 +155,22 @@ test("ekranlar: Yalnız sitede satırında Panelde aç ve bağla; ?yeni=1 Yeni �
   assert.match(dialog, /router\.push\(productHref\(created\[0\]\.productId\)\);/);
   // Fiyat pencerede yazılmaz (sitenindir): fiyat alanı yok
   assert.doesNotMatch(dialog, /NumberInput|price:/);
+  // İstek sürerken pencere kapanmaz (inceleme B14-D2): Vazgeç, Esc ve arka plan aynı korumadan geçer
+  assert.match(dialog, /const close = \(\) => \{\s+if \(!busy\) onClose\(\);\s+\};/);
+  assert.match(dialog, /<Dialog\s+open\s+onClose=\{close\}/);
+  assert.match(dialog, /<Button variant="ghost" onClick=\{close\} disabled=\{busy\}>/);
+  assert.equal(dialog.split("onClose()").length - 1, 2, "onClose yalnız korumada ve başarıdan sonra");
+  // Dolu ad telefonda klavyeyi açmaz (inceleme B14-U3): yalnız masaüstünde odak
+  assert.doesNotMatch(dialog, /data-autofocus="always"/);
+  assert.match(dialog, /id="snp-name"[\s\S]*?data-autofocus\n/);
   const button = read("src/app/panel/urunler/new-product.tsx");
   assert.match(button, /const \[yeni, setYeni\] = useQueryState<string>\("yeni", ""\);/);
   assert.match(button, /const shown = open \|\| yeni === "1";/);
   assert.match(button, /if \(yeni\) setYeni\(""\);/);
-  assert.match(read("src/app/panel/receteler/page.tsx"), /<ButtonLink href="\/panel\/urunler\?yeni=1" variant="secondary">/);
+  // Reçete defterinin "Yeni ürün"ü seçili kategori çipini taşır (inceleme B14-U4)
+  assert.match(read("src/app/panel/receteler/page.tsx"), /const action = isAdmin \? \(\s+<NewProductLink \/>/);
+  const bookLink = read("src/app/panel/receteler/new-product-link.tsx");
+  assert.match(bookLink, /const \[cat\] = useQueryState<string>\("kategori", ""\);/);
+  assert.match(bookLink, /const href = `\/panel\/urunler\?yeni=1\$\{\/\^\\d\+\$\/\.test\(cat\) \? `&kategori=\$\{cat\}` : ""\}`;/);
   assert.match(read("src/app/panel/satislar/product-picker.tsx"), /href="\/panel\/urunler\?yeni=1"/);
 });

@@ -270,8 +270,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. Aynı önerinin boyları (M ve L) adı ve kategoriyi birlikte değiştirir; bir boyu onayladıysanız
             öteki boy o adla eklenir (iki boy tek ürün olarak eşleşsin). &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
             kategoriden). Öneriden sonra pasife alınan malzeme ya da bugünkü ölçülerle eksiye düşen formül varsa kart söyler ve onay olmaz: malzemeyi yeniden açın,
-            ölçüyü düzeltin ya da reddedin. Reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden
-            bağlanmaz: Site menüsü&apos;nde aynı adlı kalem öneri olarak çıkar.
+            ölçüyü düzeltin ya da reddedin (reçete değişikliği önerisinde de eksiye düşen formül böyle). Öneri beklerken aynı ad ve boyda ürün Ürünler&apos;de ya da Site
+            menüsü&apos;nde açılmaz: önce öneriyi onaylayın ya da reddedin. Aynı ad ve boyda ürün zaten varsa kart onaylatmaz; öneriyi reddedip reçeteyi o ürünün kartına
+            girin. Reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz: Site menüsü&apos;nde aynı
+            adlı kalem öneri olarak çıkar.
           </>
         ),
         icon: Lightbulb,

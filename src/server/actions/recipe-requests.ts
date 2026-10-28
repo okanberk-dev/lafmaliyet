@@ -29,7 +29,7 @@ import { CountItemExists, countItemSchema, createCountItem } from "@/server/data
 import { loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { insertProduct } from "@/server/data/product-create";
-import { approvedNewPairs } from "@/server/data/recipe-requests";
+import { approvedNewPairs, lockNewProducts } from "@/server/data/recipe-requests";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { getDb, schema as s } from "@/server/db";
 
@@ -266,10 +266,6 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
 // ---------------------------------------------------------------- Yeni ürün önerisi
 
 const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
-
-/** İki kişi aynı ad + boyu aynı anda öneremesin / onaylanırken araya öneri girmesin (boş productId benzersiz dizine girmez) */
-const lockNewProducts = (tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0]) =>
-  tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
 
 /**
  * Personelin önerdiği satış fiyatı (KDV dahil, boy başına, isteğe bağlı): kuruşa yuvarlanır, 0'dan büyük ve en çok

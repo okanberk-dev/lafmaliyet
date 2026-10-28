@@ -16,11 +16,13 @@ import {
   negativeQtyIssue,
   newProductIssue,
   pairedName,
+  pendingProposalIssue,
   pendingSummary,
   productSizeLabel,
   proposalGroupKey,
   PROPOSED_PRICE_MAX,
   readProposedPrice,
+  sizePhrase,
   takenIssue,
 } from "../src/lib/recipe-change";
 
@@ -150,6 +152,66 @@ test("onaylanan boyun adı: öteki boy eklendiyse onun adı (yazım farkı ona d
     error: "Bu önerinin Medium boyu “Çilekli Latte” adıyla eklendi; Large boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)",
   });
   assert.equal(pairedName("Çilekli Latte", "Tek", { name: "Çilekli Latte", size: "L" }).error, null);
+  // Tek boy "Tek boy boyu" diye yazılmaz (inceleme B14-U5)
+  assert.equal(
+    pairedName("Mango", "M", { name: "Mango Frozen", size: "Tek" }).error,
+    "Bu önerinin tek boyu “Mango Frozen” adıyla eklendi; Medium boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)",
+  );
+  assert.equal(
+    pairedName("Mango", "Tek", { name: "Mango Frozen", size: "L" }).error,
+    "Bu önerinin Large boyu “Mango Frozen” adıyla eklendi; tek boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)",
+  );
+});
+
+test("cümle içinde boy (inceleme B14-U5): Medium boyu, Large boyunu, tek boyunun; birden çoğu çoğul", () => {
+  assert.equal(sizePhrase("M"), "Medium boyu");
+  assert.equal(sizePhrase("L", "nu"), "Large boyunu");
+  assert.equal(sizePhrase("Tek"), "tek boyu");
+  assert.equal(sizePhrase("Tek", "nun"), "tek boyunun");
+  assert.equal(sizePhrase(["L"]), "Large boyu");
+  assert.equal(sizePhrase(["M", "Tek"]), "Medium ve tek boyları");
+  assert.equal(sizePhrase(["M", "L", "Tek"], "nu"), "Medium, Large ve tek boylarını");
+  // Ekranlarda "Tek boy boyu" kalmadı
+  for (const f of ["src/app/panel/onaylar/review-list.tsx", "src/lib/recipe-change.ts"]) assert.doesNotMatch(read(f), /SIZE_LABELS\[[^\]]+\]\}? boyu/, f);
+});
+
+test("bekleyen öneri aynı ad + boyu tutar (inceleme B14-D1): metin önerenle; yalnız seçilen boylarda; harf ve boşluk farkı sayılmaz", () => {
+  const pending = [
+    { name: "Fıstıklı kurabiye", size: "Tek" as const, by: "Ayşe" },
+    { name: "Matcha Latte", size: "L" as const, by: "Can" },
+  ];
+  const then = "önce Onaylar'da onaylayın ya da reddedin";
+  assert.equal(pendingProposalIssue("FISTIKLI  KURABİYE", ["Tek"], pending, then), "“Fıstıklı kurabiye · Tek boy” için Ayşe'nin bekleyen yeni ürün önerisi var: önce Onaylar'da onaylayın ya da reddedin");
+  assert.equal(pendingProposalIssue("Matcha Latte", ["M", "L"], pending, then), "“Matcha Latte · Large” için Can'ın bekleyen yeni ürün önerisi var: önce Onaylar'da onaylayın ya da reddedin");
+  assert.equal(pendingProposalIssue("Matcha Latte", ["M"], pending, then), null);
+  assert.equal(pendingProposalIssue(" ", ["Tek"], pending, then), null);
+});
+
+test("bekleyen öneri: Ürünler › Yeni ürün ve Panelde aç ve bağla yeni ürün kilidi altında okur; öneri kilidi menü kilidinden sonra", () => {
+  const data = read("src/server/data/recipe-requests.ts");
+  assert.match(data, /export const lockNewProducts = \(tx: \{ execute: \(query: SQL\) => Promise<unknown> \}\) => tx\.execute\(sql`select pg_advisory_xact_lock\(hashtext\('yeni-urun-onerisi'\)\)`\);/);
+  // Tek kilit tanımı: eylem dosyası yerel kopya tutmaz ("use server" dosyası yardımcı dışa açamaz)
+  const requestActions = read("src/server/actions/recipe-requests.ts");
+  assert.doesNotMatch(requestActions, /pg_advisory_xact_lock/);
+  const products = read("src/server/actions/products.ts");
+  const create = products.slice(products.indexOf("export async function createProduct"), products.indexOf("const recipeSchema"));
+  const order = ["await lockNewProducts(tx);", "pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx),", "return insertProduct(tx, data,"];
+  for (let i = 1; i < order.length; i++) assert.ok(create.indexOf(order[i - 1]) >= 0 && create.indexOf(order[i - 1]) < create.indexOf(order[i]), `${order[i - 1]} → ${order[i]}`);
+  const link = read("src/server/site-menu/link.ts");
+  const fromSite = link.slice(link.indexOf("export async function createLinkedProducts"));
+  const siteOrder = ["await lockMenu(tx);", "await lockNewProducts(tx);", "pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx), NEW_FROM_SITE_PENDING_THEN)", "insertProduct(tx,"];
+  for (let i = 1; i < siteOrder.length; i++)
+    assert.ok(fromSite.indexOf(siteOrder[i - 1]) >= 0 && fromSite.indexOf(siteOrder[i - 1]) < fromSite.indexOf(siteOrder[i]), `${siteOrder[i - 1]} → ${siteOrder[i]}`);
+  // Öneri ve onay menü kilidini almaz (kilit sırası tek yönlü: menü → öneri)
+  assert.doesNotMatch(requestActions, /lockMenu/);
+  // Pencere de göndermeden söyler; Onaylar kartı aynı ad + boyda ürün varken onayı kapatır, o ürünün kartına bağlantı verir
+  const dialog = read("src/app/panel/urunler/site/site-new-product.tsx");
+  assert.match(dialog, /const proposal = taken \? null : pendingProposalIssue\(clean, sizes, pendingNew, NEW_FROM_SITE_PENDING_THEN\);/);
+  assert.match(dialog, /&& !taken && !proposal;/);
+  assert.match(read("src/app/panel/urunler/site/page.tsx"), /pendingNewProposalRows\(\),/);
+  const list = read("src/app/panel/onaylar/review-list.tsx");
+  assert.match(list, /href=\{`\/panel\/urunler\/\$\{clash\.id\}`\}/);
+  assert.match(list, /item\.pair \? "öneriyi reddedin, reçeteyi o ürünün kartına girin"/);
 });
 
 test("eksi miktar: formül bugünkü ayarlarla eksiye düşerse ya da sayı çıkmazsa onay yok; 0 ve artı serbest", () => {
@@ -206,7 +268,7 @@ test("ürün açma kuralı tek yerde: Yeni ürün ve öneri onayı aynı yardım
   assert.match(helper, /categoryFireDefault\(peers\)/);
   assert.match(helper, /sortOrder: \(m \?\? 0\) \+ 1/);
   const products = read("src/server/actions/products.ts");
-  assert.match(products, /getDb\(\)\.transaction\(\(tx\) => insertProduct\(tx, data, \{ copyFromId, changedBy: me\.name \}\)\)/);
+  assert.match(products, /return insertProduct\(tx, data, \{ copyFromId, changedBy: me\.name \}\);/);
   // Ürün tablosuna yazan başka ekleme yok (kopya kod kalmadı)
   assert.doesNotMatch(products, /\.insert\(s\.products\)/);
   assert.doesNotMatch(actions, /\.insert\(s\.products\)/);
@@ -255,9 +317,15 @@ test("onay (denetim E-55): kardeş boy kilit altında aranır, adı ondan; pasif
   const page = read("src/app/panel/onaylar/page.tsx");
   assert.match(page, /const pairs = await approvedNewPairs\(/);
   assert.match(page, /inactive: !!ing && !ing\.active,/);
-  assert.match(page, /qtyIssue: negativeQtyIssue\(l, qty\),/);
+  assert.match(page, /const \{ qty, issue \} = lineCheck\(model, l\);/);
+  assert.match(page, /qtyIssue: issue,/);
+  assert.match(page, /return \{ qty, issue: negativeQtyIssue\(l, qty\) \};/);
+  // Değişiklik kartı da (inceleme B14-U2): bugünkü ayarlarla eksiye düşen satır kartta yazar, Onayla ve uygula kapalı
+  assert.match(page, /qtyIssues: \[\.\.\.new Set\(r\.after\.items\.flatMap\(\(l\) => lineCheck\(model, l\)\.issue \?\? \[\]\)\)\],/);
   const list = read("src/app/panel/onaylar/review-list.tsx");
-  assert.match(list, /const blocked = missing\.length > 0 \|\| inactive !== null \|\| qtyIssues\.length > 0;/);
+  assert.match(list, /const blocked = missing\.length > 0 \|\| inactive !== null \|\| qtyIssues\.length > 0 \|\| !!clash;/);
+  assert.match(list, /<QtyIssues texts=\{item\.qtyIssues\} \/>/);
+  assert.match(list, /disabled=\{busy \|\| item\.qtyIssues\.length > 0\}/);
   assert.match(list, /disabled=\{busy \|\| blocked\}/);
   assert.match(list, /readOnly=\{!!item\.pair\}/);
   // Bekleyen boyların adı ve kategorisi tek taslakta (önerinin grubuna göre)

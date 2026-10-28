@@ -83,8 +83,10 @@ değiştirilebilir). Fiyat pencerede yazılmaz, sitenindir. "Aç, bağla ve reç
 işlemde her boyu Yeni ürün'ün kuralıyla (zayi oranı kategoriden, fiyat geçmişinin ilk satırı) sitenin fiyatıyla açar,
 bağlama çekirdeğiyle (`linkUnderLock`: liste uygulanır, sitede Tükendi kalem QR menüde gizli açılır, bu kalemle gelmiş
 ürünsüz LafPOS satırları ürüne bağlanır) yuvasına bağlar; sonra ilk boyun reçete kartı açılır. Aynı ad + boyda panel
-ürünü varsa (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), yuva bu arada dolduysa, kalem sitede yoksa ya da
-siteye ulaşılamıyorsa hiçbir ürün açılmaz. İşlem geçmişinde "Yeni ürün (siteden)". Ön dolum `src/lib/site-menu/new-product.ts`;
+ürünü varsa (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), aynı ad + boyda bekleyen yeni ürün önerisi varsa
+(menü kilidinden sonra yeni ürün kilidi altında okunur; önce Onaylar'da onaylanır, ürün personelin reçetesiyle açılır,
+sonra Öneriler'den bağlanır; Ürünler › Yeni ürün de aynı kuralla), yuva bu arada dolduysa, kalem sitede yoksa ya da
+siteye ulaşılamıyorsa hiçbir ürün açılmaz. İstek sürerken pencere kapanmaz. İşlem geçmişinde "Yeni ürün (siteden)". Ön dolum `src/lib/site-menu/new-product.ts`;
 testler `tests/site-urun-acma.test.ts` ve `tests/site-urun-acma-db.test.ts` (sahte siteyle).
 
 ### Değerlerin karşılığı

@@ -78,6 +78,7 @@ export function SiteMenuMatching({
   gaps,
   drafts = [],
   categories = [],
+  pendingNew = [],
   kasa = "ModPOS",
 }: {
   configured: boolean;
@@ -90,6 +91,8 @@ export function SiteMenuMatching({
   /** "Panelde aç ve bağla" penceresinin ön dolumu, kalem başına (src/lib/site-menu/new-product.ts; denetim E-48) */
   drafts?: NewFromSiteDraft[];
   categories?: { id: number; name: string }[];
+  /** Bekleyen yeni ürün önerileri (aynı ad + boyda öneri varken pencere ürün açmaz) */
+  pendingNew?: { name: string; size: "M" | "L" | "Tek"; by: string }[];
   /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS fiyatı siteden kendisi alır */
   kasa?: KasaName;
 }) {
@@ -475,6 +478,7 @@ export function SiteMenuMatching({
           draft={draftOf.get(openFor)!}
           categories={categories}
           products={products}
+          pendingNew={pendingNew}
           covering={coveringOf(gaps.find((g) => g.item.id === openFor) ?? { item: itemById.get(openFor)!, slots: [] })}
           onClose={() => setOpenFor(null)}
         />

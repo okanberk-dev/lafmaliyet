@@ -2,7 +2,8 @@
 // ucuyla: laffogato.net'e hiç gidilmez, imzalı GET /api/panel/menu bellekteki bir siteye yönlenir. Kalemin iki fiyatı
 // iki boy olarak sitenin fiyatıyla açılır ve (siteMenuId, M/L)'ye bağlanır; tek boylu Tükendi kalem QR menüde gizli
 // açılır; bu kalemle gelmiş ürünsüz LafPOS satırı ürüne bağlanır. Aynı ad + boy, dolu yuva, sitede olmayan kalem, tek
-// boylu kalemin L'si ve siteye ulaşılamaması ürün açmaz.
+// boylu kalemin L'si ve siteye ulaşılamaması ürün açmaz. Aynı ad + boyda bekleyen yeni ürün önerisi de ürün açtırmaz
+// (inceleme B14-D1): öneri onaylanır, ürün reçetesiyle açılır ve kaleme bağlanır.
 //
 // SITE_URUN_TEST_DATABASE_URL (yoksa FIFO_TEST_DATABASE_URL) verilmezse atlanır. Bir Postgres sunucusunun adresi
 // (veritabanı oluşturabilen kullanıcı): test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -29,6 +30,8 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
   let admin: postgres.Sql;
   let db: import("../src/server/db").DB;
   let actions: typeof import("../src/server/actions/site-menu");
+  let requests: typeof import("../src/server/actions/recipe-requests");
+  let productActions: typeof import("../src/server/actions/products");
   let category = 0;
   const realFetch = globalThis.fetch;
   const me = { id: 0, name: "Ali", role: "admin" as const };
@@ -51,6 +54,7 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
       item("mnu-0200", "San Sebastian", { categoryKey: "tatli", categoryLabel: "Tatlılar", priceMinor: 22_050, priceMinorL: 0, isActive: false }),
       item("mnu-0300", "Buzlu Americano", { priceMinor: 15_000, priceMinorL: 0 }),
       item("mnu-0400", "Çilekli Soda", { priceMinor: 12_000, priceMinorL: 14_000 }),
+      item("mnu-0500", "Fıstıklı Kurabiye", { categoryKey: "tatli", categoryLabel: "Tatlılar", priceMinor: 9_000, priceMinorL: 0 }),
     ].map((i) => [i.id, i]),
   );
   let down = false;
@@ -96,6 +100,8 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
     me.id = a.id;
     stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => me, requireAdmin: async () => me });
     actions = await import("../src/server/actions/site-menu");
+    requests = await import("../src/server/actions/recipe-requests");
+    productActions = await import("../src/server/actions/products");
     const [c] = await db.insert(s.categories).values({ name: "Soğuk kahveler", sortOrder: 1 }).returning({ id: s.categories.id });
     category = c.id;
     // Kategorinin ürünlerinde en sık zayi oranı %5: yeni ürün onu alır (Yeni ürün'ün kuralı)
@@ -230,5 +236,56 @@ describe("Yalnız sitede kalemden ürün açma: sahte siteyle", { skip: !SERVER_
     assert.equal(ok.ok, true, JSON.stringify(ok));
     const soda = await db.select({ size: s.products.size, slot: s.products.siteMenuSlot, price: s.products.price }).from(s.products).where(and(eq(s.products.name, "Çilekli Soda")));
     assert.deepEqual(soda, [{ size: "L", slot: "L", price: 140 }]);
+  });
+
+  test("B14-D1: aynı ad + boyda bekleyen yeni ürün önerisi varken ürün açılmaz; öneri onaylanır, ürün reçetesiyle açılıp bağlanır", async () => {
+    // Ayşe "Fıstıklı Kurabiye"yi (tek boy) reçetesiyle önerdi; site aynı hafta kalemi açtı
+    const [ayse] = await db.insert(s.users).values({ email: "ayse@laffogato.net", name: "Ayşe", passwordHash: "x", role: "staff" }).returning({ id: s.users.id });
+    const [pistachio] = await db
+      .insert(s.ingredients)
+      .values({ name: "Antep fıstığı", category: "Kuruyemiş", unit: "gr", packagePrice: 900, packageSize: 1000, priceSource: "manual" })
+      .returning({ id: s.ingredients.id });
+    const [req] = await db
+      .insert(s.recipeChangeRequests)
+      .values({
+        kind: "new",
+        productId: null,
+        proposed: { name: "fıstıklı kurabiye", size: "Tek", categoryId: category, price: 90 },
+        requestedBy: ayse.id,
+        requestedByName: "Ayşe",
+        before: { note: null, items: [] },
+        after: { note: null, items: [{ ingredientId: pistachio.id, name: "Antep fıstığı", unit: "gr", qty: 25, qtyExpr: null, note: null }] },
+        message: null,
+      })
+      .returning({ id: s.recipeChangeRequests.id });
+    const before = await productCount();
+    const text = "“fıstıklı kurabiye · Tek boy” için Ayşe'nin bekleyen yeni ürün önerisi var: ";
+    // Panelde aç ve bağla: büyük/küçük harf farkıyla aynı ad + boy
+    const site = await actions.createProductsFromSite({ siteMenuId: "mnu-0500", name: "Fıstıklı Kurabiye", categoryId: category, rows: [{ slot: "M", size: "Tek" }] });
+    assert.equal(site.ok, false, JSON.stringify(site));
+    assert.equal(!site.ok && site.error, `${text}önce Onaylar'da onaylayın (ürün reçetesiyle açılır), sonra Öneriler sekmesinden bağlayın`);
+    // Ürünler › Yeni ürün de aynı kuralla
+    const plain = await productActions.createProduct({ name: "FISTIKLI KURABİYE", size: "Tek", categoryId: category, price: 90 });
+    assert.equal(plain.ok, false, JSON.stringify(plain));
+    assert.equal(!plain.ok && plain.error, `${text}önce Onaylar'da onaylayın ya da reddedin`);
+    assert.equal(await productCount(), before, "hiçbir ürün açılmadı");
+    // Başka boy engellenmez (öneri yalnız kendi boyunu tutar)
+    const otherSize = await productActions.createProduct({ name: "Fıstıklı Kurabiye", size: "M", categoryId: category, price: 95 });
+    assert.equal(otherSize.ok, true, JSON.stringify(otherSize));
+    if (otherSize.ok) await db.delete(s.products).where(eq(s.products.id, otherSize.data.id));
+
+    // Öneri hâlâ onaylanabilir: ürün reçetesiyle açılır
+    const approved = await requests.approveNewProduct({ id: req.id, name: "Fıstıklı Kurabiye", categoryId: category, price: 90 });
+    assert.equal(approved.ok, true, JSON.stringify(approved));
+    const productId = approved.ok ? approved.data.productId : 0;
+    const recipe = await db.select({ ingredientId: s.recipeItems.ingredientId, qty: s.recipeItems.qty }).from(s.recipeItems).where(eq(s.recipeItems.productId, productId));
+    assert.deepEqual(recipe, [{ ingredientId: pistachio.id, qty: 25 }]);
+    // Sonra kaleme bağlanır (Öneriler sekmesi): sitenin fiyatını alır; yeniden açmak artık "zaten var" der
+    const again = await actions.createProductsFromSite({ siteMenuId: "mnu-0500", name: "Fıstıklı Kurabiye", categoryId: category, rows: [{ slot: "M", size: "Tek" }] });
+    assert.equal(!again.ok && again.error, "“Fıstıklı Kurabiye · Tek” panelde zaten var: yenisini açmak yerine onu bağlayın (Öneriler ya da Panelde bağlı değil sekmesi)");
+    const linked = await actions.linkProductToSite({ productId, siteMenuId: "mnu-0500", slot: "M" });
+    assert.equal(linked.ok, true, JSON.stringify(linked));
+    const [p] = await rows("Fıstıklı Kurabiye");
+    assert.deepEqual([p.id, p.size, p.price, p.siteMenuId, p.slot], [productId, "Tek", 90, "mnu-0500", "M"]);
   });
 });

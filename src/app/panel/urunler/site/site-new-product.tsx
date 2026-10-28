@@ -1,6 +1,7 @@
 "use client";
 
 import { Globe, Info } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { toast } from "sonner";
@@ -12,7 +13,8 @@ import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { cleanName } from "@/lib/count-item";
 import { tl } from "@/lib/format";
-import { CATEGORY_SOURCE_TEXT, newFromSiteTaken, type NewFromSiteDraft, type PanelSize } from "@/lib/site-menu/new-product";
+import { pendingProposalIssue } from "@/lib/recipe-change";
+import { CATEGORY_SOURCE_TEXT, NEW_FROM_SITE_PENDING_THEN, newFromSiteTaken, type NewFromSiteDraft, type PanelSize } from "@/lib/site-menu/new-product";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
 import { fromMinor, isSingleSize, slotLabel } from "@/lib/site-menu/slot";
 import { createProductsFromSite } from "@/server/actions/site-menu";
@@ -33,6 +35,7 @@ export function SiteNewProductDialog({
   draft,
   categories,
   products,
+  pendingNew = [],
   covering,
   onClose,
 }: {
@@ -41,6 +44,8 @@ export function SiteNewProductDialog({
   categories: { id: number; name: string }[];
   /** Panelin ürünleri (aynı ad + boy denetimi) */
   products: { name: string; size: string }[];
+  /** Bekleyen yeni ürün önerileri: aynı ad + boyda öneri varken açılmaz (önce Onaylar'da onaylanır; sunucu da reddeder) */
+  pendingNew?: { name: string; size: PanelSize; by: string }[];
   /** Bu kalemin boş fiyatlarına önerilen panel ürünleri ("Ice Latte · M") */
   covering: string[];
   onClose: () => void;
@@ -54,13 +59,28 @@ export function SiteNewProductDialog({
   const single = isSingleSize(item);
   const chosen = rows.filter((r) => r.on);
   const clean = cleanName(name);
-  const taken = newFromSiteTaken(
-    clean,
-    chosen.map((r) => r.size),
-    products,
-  );
-  const nameError = clean && clean.length < 2 ? "Ürün adı en az 2 harf olmalı" : taken;
-  const ready = !busy && chosen.length > 0 && categoryId !== null && clean.length >= 2 && !taken;
+  const sizes = chosen.map((r) => r.size);
+  const taken = newFromSiteTaken(clean, sizes, products);
+  // Aynı ad + boyda bekleyen öneri: ürün açılırsa öneri onayda "zaten var"a takılır, reçetesi ürüne ulaşmaz
+  const proposal = taken ? null : pendingProposalIssue(clean, sizes, pendingNew, NEW_FROM_SITE_PENDING_THEN);
+  const nameError =
+    clean && clean.length < 2 ? (
+      "Ürün adı en az 2 harf olmalı"
+    ) : proposal ? (
+      <>
+        {proposal}.{" "}
+        <Link href="/panel/onaylar" className="font-medium underline underline-offset-2">
+          Onaylar
+        </Link>
+      </>
+    ) : (
+      taken
+    );
+  const ready = !busy && chosen.length > 0 && categoryId !== null && clean.length >= 2 && !taken && !proposal;
+  // İstek sürerken (site çekmesi en çok 8 sn) pencere kapanmaz: kapanırsa ürün yine açılır ve sayfa karta geçerdi
+  const close = () => {
+    if (!busy) onClose();
+  };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,12 +105,12 @@ export function SiteNewProductDialog({
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={close}
       title="Panelde aç ve bağla"
       description="Ürün sitenin adı, fiyatı ve menü durumuyla açılır ve bu kaleme bağlanır; reçetesini sonra ürün kartında girersiniz."
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={close} disabled={busy}>
             Vazgeç
           </Button>
           <Button type="submit" form={formId} disabled={!ready}>
@@ -126,7 +146,7 @@ export function SiteNewProductDialog({
             required
             maxLength={120}
             aria-invalid={nameError ? true : undefined}
-            data-autofocus="always"
+            data-autofocus
           />
         </Field>
 

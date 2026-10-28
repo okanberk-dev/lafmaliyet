@@ -4,12 +4,14 @@ import { eq, inArray } from "drizzle-orm";
 
 import { cleanName } from "@/lib/count-item";
 import { money } from "@/lib/format";
-import { newFromSiteTaken } from "@/lib/site-menu/new-product";
+import { pendingProposalIssue } from "@/lib/recipe-change";
+import { NEW_FROM_SITE_PENDING_THEN, newFromSiteTaken } from "@/lib/site-menu/new-product";
 import { changeText, rowLabel, type MenuSyncPlan, type SaleValues } from "@/lib/site-menu/plan";
 import { fromMinor, isSingleSize, slotLabel, slotPriceMinor, type SiteMenuSlot } from "@/lib/site-menu/slot";
 import { logActivity } from "@/server/actions/log";
 import { UserError } from "@/server/actions/util";
 import { insertProduct } from "@/server/data/product-create";
+import { lockNewProducts, pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { getDb, schema as s } from "@/server/db";
 import { rematchPosSalesBySite } from "@/server/lafpos/rematch";
 import { siteLinkSecret } from "@/server/site-link";
@@ -187,7 +189,8 @@ export interface NewFromSiteResult {
  * tek işlemde her boy Ürünler › Yeni ürün'ün kuralıyla (insertProduct: zayi oranı kategoriden, sıra en sonda, fiyat
  * geçmişinin ilk satırı) sitenin fiyatıyla açılır ve bağlama çekirdeğiyle kalemin yuvasına bağlanır. Yuva bu arada
  * dolduysa, kalem sitede yoksa ya da liste bu sırada değiştiyse hiçbir ürün açılmaz. Aynı ad + boyda panel ürünü varsa
- * açılmaz (o ürün bağlanmalı).
+ * açılmaz (o ürün bağlanmalı); aynı ad + boyda bekleyen yeni ürün önerisi varsa da (önce öneri onaylanır, ürün
+ * reçetesiyle açılır, sonra Öneriler'den bağlanır).
  */
 export async function createLinkedProducts(user: { name: string }, input: NewFromSiteInput): Promise<NewFromSiteResult> {
   const name = cleanName(input.name);
@@ -202,13 +205,15 @@ export async function createLinkedProducts(user: { name: string }, input: NewFro
   const at = new Date();
   const result = await getDb().transaction(async (tx) => {
     await lockMenu(tx);
+    // Yeni ürün önerisinin kilidi menü kilidinden sonra (öneri ve onay menü kilidini almaz): aynı ad + boyda bekleyen
+    // öneri varsa ürün açılmaz, yoksa öneri onayda "zaten var"a takılır ve reçetesi bu ürüne ulaşmaz (denetim B14)
+    await lockNewProducts(tx);
     const [category] = await tx.select({ id: s.categories.id }).from(s.categories).where(eq(s.categories.id, input.categoryId)).limit(1);
     if (!category) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
-    const taken = newFromSiteTaken(
-      name,
-      rows.map((r) => r.size),
-      await tx.select({ name: s.products.name, size: s.products.size }).from(s.products),
-    );
+    const sizes = rows.map((r) => r.size);
+    const taken =
+      newFromSiteTaken(name, sizes, await tx.select({ name: s.products.name, size: s.products.size }).from(s.products)) ??
+      pendingProposalIssue(name, sizes, await pendingNewProposalRows(tx), NEW_FROM_SITE_PENDING_THEN);
     if (taken) throw new UserError(taken);
     const created: { productId: number; size: "M" | "L" | "Tek"; slot: SiteMenuSlot }[] = [];
     for (const r of rows) {

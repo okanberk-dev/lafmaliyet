@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import { proposalGroupKey, type ProductSize, type ProposedProduct, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -130,12 +130,25 @@ export async function pendingByProduct(): Promise<Map<number, number>> {
 
 /** Bekleyen yeni ürün önerilerinin ad ve boyu (öneri penceresi aynı ad + boyu göndermeden uyarır) */
 export async function pendingNewProposals(): Promise<{ name: string; size: ProductSize }[]> {
-  const rows = await getDb()
-    .select({ proposed: s.recipeChangeRequests.proposed })
+  return (await pendingNewProposalRows()).map(({ name, size }) => ({ name, size }));
+}
+
+/** Bekleyen yeni ürün önerilerinin ad, boy ve önereni; işlem içinde (kilit altında) da okunur */
+export async function pendingNewProposalRows(db: Pick<DB, "select"> = getDb()): Promise<{ name: string; size: ProductSize; by: string }[]> {
+  const rows = await db
+    .select({ proposed: s.recipeChangeRequests.proposed, by: s.recipeChangeRequests.requestedByName })
     .from(s.recipeChangeRequests)
     .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "new")));
-  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size }] : []));
+  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size, by: r.by }] : []));
 }
+
+/**
+ * Yeni ürün önerisinin kilidi: iki kişi aynı ad + boyu aynı anda öneremesin, onaylanırken araya öneri ya da aynı adlı
+ * ürün girmesin (boş productId benzersiz dizine girmez). Öneri, onay, Ürünler › Yeni ürün ve Site menüsü › "Panelde aç
+ * ve bağla" alır; menü kilidi (lockMenu) gerekiyorsa önce o alınır, öneri ve onay menü kilidini hiç almaz.
+ */
+export const lockNewProducts = (tx: { execute: (query: SQL) => Promise<unknown> }) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
+
 
 /** Yeni ürün önerisinin daha önce eklenmiş öteki boyu: ürünün bugünkü adı, boyu ve kategorisi */
 export interface NewProposalPair {

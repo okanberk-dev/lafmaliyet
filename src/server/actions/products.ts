@@ -7,6 +7,7 @@ import { z } from "zod";
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
+import { pendingProposalIssue } from "@/lib/recipe-change";
 import type { PriceAck } from "@/lib/calc/price-impact";
 import { LINK_CHANGED_TEXT, priceMovedText, priceRefusedText, seenPriceDecision } from "@/lib/prices/seen";
 import { isStaleFailure } from "@/lib/site-menu/push";
@@ -18,6 +19,7 @@ import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
 import { productHistoryCounts } from "@/server/data/product-history";
+import { lockNewProducts, pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { recordPriceChange } from "@/server/prices/record";
@@ -137,8 +139,14 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
     const data = productSchema.parse(input);
     const copyFromId = z.number().int().positive().nullish().parse(input.copyFromId) ?? null;
     // Aynı ad + boy denetimi, kopyalama, kategoriden zayi oranı, sıra ve fiyat geçmişinin ilk satırı: personelin yeni
-    // ürün önerisinin onayıyla ortak yardımcıda (src/server/data/product-create.ts)
-    const result = await getDb().transaction((tx) => insertProduct(tx, data, { copyFromId, changedBy: me.name }));
+    // ürün önerisinin onayıyla ortak yardımcıda (src/server/data/product-create.ts). Aynı ad + boyda bekleyen öneri
+    // varsa ürün açılmaz: öneri onayda "zaten var"a takılır, reçetesi ürüne ulaşmazdı (denetim B14)
+    const result = await getDb().transaction(async (tx) => {
+      await lockNewProducts(tx);
+      const pending = pendingProposalIssue(data.name, [data.size], await pendingNewProposalRows(tx), "önce Onaylar'da onaylayın ya da reddedin");
+      if (pending) throw new UserError(pending);
+      return insertProduct(tx, data, { copyFromId, changedBy: me.name });
+    });
     await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
     /** Kopyalamada neyin geldiği, kopyasızda kategoriden gelen zayi oranı: bildirimde söylenir (sessizce taşınmasın) */

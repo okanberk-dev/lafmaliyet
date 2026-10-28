@@ -10,6 +10,7 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { siteGaps, suggestLinks } from "@/lib/site-menu/names";
 import { newFromSiteDraft } from "@/lib/site-menu/new-product";
 import { requireAdmin } from "@/server/auth/dal";
+import { pendingNewProposalRows } from "@/server/data/recipe-requests";
 import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { siteUrl } from "@/server/site-link";
@@ -70,7 +71,7 @@ async function SiteMenuContent() {
       console.error("[menu] sayfa eşitlemesi", e);
     }
   });
-  const [site, till, rows, categories] = await Promise.all([
+  const [site, till, rows, categories, pendingNew] = await Promise.all([
     loadSiteLinks(),
     // Bugünün kasası (bilgi metni: LafPOS fiyatı siteden alır; denetim E-39)
     loadTillScope().catch(() => null),
@@ -91,6 +92,8 @@ async function SiteMenuContent() {
       .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
       .orderBy(asc(s.categories.sortOrder), asc(s.products.sortOrder), asc(s.products.id)),
     getDb().select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder), asc(s.categories.id)),
+    // Bekleyen yeni ürün önerileri: aynı ad + boyda öneri varken "Panelde aç ve bağla" açmaz (önce öneri onaylanır)
+    pendingNewProposalRows(),
   ]);
   const items = site.snapshot.at ? site.snapshot.items : [];
   const products: MatchProduct[] = rows.map((r) => ({
@@ -126,6 +129,7 @@ async function SiteMenuContent() {
         gaps={gaps}
         drafts={drafts}
         categories={categories}
+        pendingNew={pendingNew}
         kasa={till?.kasa ?? "ModPOS"}
       />
     </>

@@ -154,6 +154,19 @@ export const NEW_PRODUCT_NAME_MAX = 120;
 /** "Çilekli Latte · Medium" (ekranda boyun uzun adı, Reçete defteri ve onaylarla aynı) */
 export const productSizeLabel = (name: string, size: ProductSize) => `${name} · ${SIZE_LABELS[size]}`;
 
+/**
+ * Cümle içinde boy: "Medium boyu", "Large boyunu", "tek boyunun" (`suffix` u, nu, nun: boyu, boyunu, boyunun).
+ * SIZE_LABELS.Tek zaten "Tek boy" olduğu için "Tek boy boyu" yazılmasın (öneri penceresinin "Tek boydan kopyala"sı
+ * gibi). Birden çok boy çoğul: "Medium ve tek boyları", "boylarını", "boylarının".
+ */
+export function sizePhrase(sizes: ProductSize | readonly ProductSize[], suffix: "u" | "nu" | "nun" = "u"): string {
+  const list = typeof sizes === "string" ? [sizes] : [...sizes];
+  const names = list.map((x) => (x === "Tek" ? "tek" : SIZE_LABELS[x]));
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names.at(-1)}` : (names[0] ?? "");
+  const word = names.length > 1 ? { u: "boyları", nu: "boylarını", nun: "boylarının" }[suffix] : { u: "boyu", nu: "boyunu", nun: "boyunun" }[suffix];
+  return `${joined} ${word}`;
+}
+
 export interface NewProductDraft {
   name: string;
   categoryId: number | null;
@@ -206,6 +219,25 @@ export function takenIssue(name: string, size: ProductSize, existing: { name: st
   if (existing.some((p) => p.size === size && nameKey(p.name) === key)) return `“${label}” zaten var`;
   if (pending.some((p) => p.size === size && nameKey(p.name) === key)) return `“${label}” için bekleyen bir öneri var`;
   return null;
+}
+
+/**
+ * Aynı ad + boyda bekleyen yeni ürün önerisi varsa metni (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), yoksa
+ * null. Öneri bekliyorken aynı ürün başka yoldan (Ürünler › Yeni ürün, Site menüsü › "Panelde aç ve bağla") açılırsa
+ * öneri "zaten var"a takılır, personelin reçetesi ürüne ulaşmaz (denetim B14): önce öneri karara bağlanır. Sunucu yeni
+ * ürün kilidi altında, pencere göndermeden söyler. `then`: metnin sonu ("önce Onaylar'da onaylayın …").
+ */
+export function pendingProposalIssue(
+  name: string,
+  sizes: readonly ProductSize[],
+  pending: readonly { name: string; size: ProductSize; by: string }[],
+  then: string,
+): string | null {
+  const key = nameKey(name);
+  if (!key) return null;
+  const hit = pending.find((p) => sizes.includes(p.size) && nameKey(p.name) === key);
+  if (!hit) return null;
+  return `“${productSizeLabel(hit.name, hit.size)}” için ${genitive(hit.by)} bekleyen yeni ürün önerisi var: ${then}`;
 }
 
 const SIZE_ORDER: ProductSize[] = ["M", "L", "Tek"];
@@ -275,10 +307,10 @@ export function proposalGroupKey(r: { requestedBy: number | null; requestedByNam
 export function pairedName(typed: string, size: ProductSize, pair: { name: string; size: string } | null): { name: string; error: null } | { name: null; error: string } {
   const name = cleanName(typed);
   if (!pair || nameKey(pair.name) === nameKey(name)) return { name: pair ? pair.name : name, error: null };
-  const pairSize = SIZE_LABELS[pair.size as ProductSize] ?? pair.size;
+  const pairSize = pair.size in SIZE_LABELS ? sizePhrase(pair.size as ProductSize) : `${pair.size} boyu`;
   return {
     name: null,
-    error: `Bu önerinin ${pairSize} boyu “${pair.name}” adıyla eklendi; ${SIZE_LABELS[size]} boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)`,
+    error: `Bu önerinin ${pairSize} “${pair.name}” adıyla eklendi; ${sizePhrase(size, "nu")} da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)`,
   };
 }
 
