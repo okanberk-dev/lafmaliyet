@@ -46,6 +46,7 @@ import type { DocumentMeta } from "@/server/documents";
 import { supplierPairKey } from "../tedarikciler/logic";
 import { canHaveDocument, isParasutDocument } from "./document-rules";
 import { DocumentSheet } from "./document-sheet";
+import { CashOutInvoicesCard, type PendingCashOut } from "./cash-out-invoices";
 import { InvoiceDialog } from "./invoice-dialog";
 import {
   confirmToast,
@@ -105,6 +106,7 @@ const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
 /** Belgesi olmayan fatura için sabit boş liste (her çizimde yeni dizi olmasın) */
 const NO_CARI: Record<number, InvoiceCariLinks> = {};
 const NO_DOCS: DocumentMeta[] = [];
+const NO_CASH_OUTS: PendingCashOut[] = [];
 
 type SortKey = "tarih" | "tedarikci" | "net" | "odenecek";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
@@ -177,6 +179,8 @@ export function InvoicesClient({
   expenseLinks,
   supplierSlugs,
   cariLinks = NO_CARI,
+  cashOuts = NO_CASH_OUTS,
+  cashOutCategories = [],
 }: {
   invoices: InvoiceRow[];
   /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
@@ -193,14 +197,20 @@ export function InvoicesClient({
   supplierSlugs?: Record<string, string>;
   /** Fatura kimliği → sayılan cari ödemeler ve bağlı faturasız alımlar (pencere ve silme onayı) */
   cariLinks?: Record<number, InvoiceCariLinks>;
+  /** Kasadan faturalı alımlar, faturası yok (E-42): "Kontrol bekleyen" süzgecinde listenin üstünde */
+  cashOuts?: PendingCashOut[];
+  /** "Aylık harcamalar'a yaz"ın kategorileri (etkin olanlar) */
+  cashOutCategories?: { id: number; name: string }[];
 }) {
   const reduce = useCalmMotion();
   useSettleScroll(invoices);
   // Doğrudan açılan /panel/faturalar?…#fatura-listesi: liste sonradan aktığı için tarayıcının çapa kaydırması
   // listeye ulaşamaz; liste çizilince bir kez kaydırılır
   useEffect(() => {
-    if (window.location.hash !== "#fatura-listesi") return;
-    const id = requestAnimationFrame(() => document.getElementById("fatura-listesi")?.scrollIntoView({ block: "start" }));
+    // Zilin kasadan faturalı alım bağlantısı da (#kasa-faturali; kart yalnız Kontrol süzgecinde)
+    const hash = window.location.hash.slice(1);
+    if (hash !== "fatura-listesi" && hash !== "kasa-faturali") return;
+    const id = requestAnimationFrame(() => (document.getElementById(hash) ?? document.getElementById("fatura-listesi"))?.scrollIntoView({ block: "start" }));
     return () => cancelAnimationFrame(id);
   }, []);
   // Ödendi işareti, kategori ve silme sunucu yanıtını beklemeden görünür; hata olursa liste eski haline döner
@@ -218,6 +228,8 @@ export function InvoicesClient({
   const source = rawSource === "parasut" ? "parasut" : "";
   const sort = parseSort(rawSort);
   const [editing, setEditing] = useState<InvoiceRow | "new" | null>(null);
+  /** Yeni fatura kasadan faturalı bir alımdan açılıyor ("Faturalar'a ekle"; pencere kasadan dolu) */
+  const [fromCashOut, setFromCashOut] = useState<PendingCashOut | null>(null);
   const [deleting, setDeleting] = useState<InvoiceRow | null>(null);
   /** Az önce ödendi işaretlenen fatura: yeni "Ödendi" rozeti yaylı belirir */
   const [popId, setPopId] = useState<number | null>(null);
@@ -708,7 +720,20 @@ export function InvoicesClient({
     clearSelection();
   };
 
-  return (
+  // Kasadan faturalı alımlar (E-42): "Kontrol bekleyen" süzgecinde listenin üstünde ayrı kart
+  const cashOutCard =
+    status === "kontrol" && cashOuts.length ? (
+      <CashOutInvoicesCard
+        rows={cashOuts}
+        categories={cashOutCategories}
+        onAddInvoice={(r) => {
+          setFromCashOut(r);
+          setEditing("new");
+        }}
+      />
+    ) : null;
+
+  const listCard = (
     // Özet kartlarındaki ve aylık tablodaki bağlantılar buraya iner; telefonda sabit üst çubuğun altında kalmasın
     <Card id="fatura-listesi" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
       <CardHeader
@@ -1471,11 +1496,15 @@ export function InvoicesClient({
 
       {editing ? (
         <InvoiceDialog
-          key={editing === "new" ? "new" : editing.id}
+          key={editing === "new" ? (fromCashOut ? `kasa-${fromCashOut.id}` : "new") : editing.id}
           invoice={editing === "new" ? null : editing}
+          fromCashOut={editing === "new" ? fromCashOut : null}
           suppliers={suppliers}
           defaults={defaults}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            setFromCashOut(null);
+          }}
           onDelete={(i) => setDeleting(i)}
           parasutCompanyId={parasutCompanyId ?? null}
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
@@ -1515,6 +1544,13 @@ export function InvoicesClient({
         }
       />
     </Card>
+  );
+
+  return (
+    <>
+      {cashOutCard}
+      {listCard}
+    </>
   );
 }
 

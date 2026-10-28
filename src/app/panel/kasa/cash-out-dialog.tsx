@@ -400,7 +400,7 @@ export function CashOutDialog({
         {harcama && !admin && !writes && docInvoice ? (
           <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
             <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Fatura olduğu için Aylık harcamalar&apos;a yazılmadı; yönetici bakar.
+            Fatura olduğu için Aylık harcamalar&apos;a yazılmadı; yönetici Faturalar&apos;da görür.
           </p>
         ) : null}
         {locked && !request ? (

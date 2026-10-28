@@ -16,6 +16,8 @@ import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadInvoiceCariLinks } from "@/server/data/cari";
+import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { cashOutCategories } from "@/server/data/cash-outs";
 import { loadModel } from "@/server/data/dataset";
 import { stockOnlyIds } from "@/server/data/stock-only-invoices";
 import { loadSupplierCards } from "@/server/data/suppliers";
@@ -77,7 +79,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows, cariLinks, stockOnly] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks, stockOnly, cashOuts, cashOutCats] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -92,6 +94,12 @@ async function InvoicesContent() {
     loadInvoiceCariLinks(),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan faturalar (E-07): rozet, uyarı ve pencere ipucu
     stockOnlyIds(db).then((ids) => new Set(ids)),
+    // Kasadan faturalı alımlar, faturası yok (E-42): Kontrol süzgecinin kartı; okunamazsa kart çıkmaz, liste açılır
+    loadPendingCashOutInvoices(db).catch((e) => {
+      console.error("Kasadan faturalı alımlar okunamadı", e);
+      return [];
+    }),
+    cashOutCategories("admin"),
   ]);
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
@@ -193,7 +201,7 @@ async function InvoicesContent() {
         </StatBreakdown>
       </div>
 
-      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} />
+      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} cashOuts={cashOuts.length} />
 
       {/* Süzgeçler (?ara, ?durum=odenmedi|kontrol, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
       <InvoicesClient
@@ -206,6 +214,8 @@ async function InvoicesContent() {
         expenseLinks={expenseLinks}
         supplierSlugs={supplierSlugs}
         cariLinks={cariLinks}
+        cashOuts={cashOuts}
+        cashOutCategories={cashOutCats.map(({ id, name }) => ({ id, name }))}
       />
 
       <Card className="mt-6">

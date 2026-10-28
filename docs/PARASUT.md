@@ -439,7 +439,9 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   Paraşüt'te içeri alınsa da gider faturası olarak yeniden açılmaz (panelde aynı fatura başka bir kayıtta duruyorsa o
   kayıt bağlanır). Faturalar › Silinen Paraşüt faturaları'ndan geri alınır.
 - e-Arşiv ve kâğıt faturalar API'de yoktur: Paraşüt'e elle girilirse gider faturası olarak gelir ya da panelde elle
-  eklenip fotoğrafı/PDF'i yüklenir.
+  eklenip fotoğrafı/PDF'i yüklenir. Kasadan ödenmiş olanlar faturası gelene kadar Faturalar › Kontrol bekleyen'in
+  **Kasadan faturalı alımlar** kartında durur; **Faturalar'a ekle** pencereyi kasadan doldurur ve fişin fotoğrafını
+  belge yapar ([KASA-RAPORU.md](KASA-RAPORU.md) "Faturalı alımlar", denetim E-42).
 
 ## 6a. Belgeler (PDF önizleme ve indirme)
 

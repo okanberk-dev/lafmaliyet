@@ -89,7 +89,8 @@ export function staffCategory(c: { section: string; panelGroup: string; active: 
 
 /**
  * Personelin girdiği satır Aylık harcamalar'a yazılır mı: alışveriş fişi (ya da fişsiz alışveriş) evet; fatura ve
- * e-Arşiv hayır (Paraşüt'ten de gelir, iki kez sayılmasın; yönetici bakar); teslim hiçbir zaman.
+ * e-Arşiv hayır (Paraşüt'ten de gelir, iki kez sayılmasın; faturası gelmezse yöneticinin bekleyen listesinde durur,
+ * matchCashOutInvoices); teslim hiçbir zaman.
  */
 export function staffToExpenses(kind: CashOutKind, docType: CashOutDocType): boolean {
   return kind === "harcama" && (docType === "fis" || docType === "yok");

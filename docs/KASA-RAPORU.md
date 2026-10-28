@@ -217,8 +217,21 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz."
 - Personelin alışveriş satırı (fiş ya da fişsiz) **Aylık harcamalar**'a da yazılır: not "Kasadan · 21 Ekim Çarşamba",
   ödeme şekli nakit, harcama tarihi fişin tarihi (kasa gününden en çok 3 gün önceyse). Fatura ya da e-Arşiv fatura
-  yazılmaz (Paraşüt'ten de gelir, iki kez sayılmasın; yönetici bakar); teslim hiçbir zaman. Yönetici her satırda
+  yazılmaz (Paraşüt'ten de gelir, iki kez sayılmasın); teslim hiçbir zaman. Yönetici her satırda
   "Aylık harcamalar'a da yaz"ı seçer. Personel yalnız alım ve genel gider kategorilerini seçebilir.
+- **Faturalı alımlar** (denetim E-42): e-Arşiv ve kâğıt fatura Paraşüt'e kendiliğinden düşmez ([PARASUT.md](PARASUT.md)),
+  bu yüzden fatura ya da e-Arşiv belgeli alışveriş satırı faturası gelene kadar yöneticinin **bekleyen listesinde**
+  durur (`src/server/data/cash-out-invoices.ts`): Aylık harcamalar'da kaydı yok, bir tedarikçi ödemesine bağlı değil,
+  listeden çıkarılmamış ve aynı mağazadan (aynı ad, adın baştan kelimeleri ya da aynı tedarikçi kartı: diğer adlar,
+  vergi no) fişin gününden ±7 gün, ±1 ₺ içinde faturası olmayan satır. Bir fatura tek satırı kapatır. Zil (Faturalar
+  başlığı), Bugün'ün Faturalar satırı ve Faturalar'ın uyarısı sayar; liste **Faturalar › Kontrol bekleyen**'in
+  üstündeki **Kasadan faturalı alımlar** kartında. Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih
+  fişin günü, tedarikçi yer, Ödenecek kasadan çıkan, net fişteki KDV'yle, Ödendi · nakit; kaydedince fişin fotoğrafı
+  faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir), **Aylık harcamalar'a yaz** (kategori seçilir;
+  aynı yerin son kasa harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar**
+  (faturası başka adla var ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
+  Personel listeyi görmez; pencerede "Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür"
+  yazar.
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
 - **LafPOS gününde de kaynak bu satırlardır** (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): Aylık
