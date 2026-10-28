@@ -3,7 +3,8 @@
 // sayfa hata ekranına düşer (React 19 geçişin içindeki hatayı en yakın hata sınırına atar).
 //
 // Tarama sözdizimi ağacı üstünde (TypeScript derleyicisinin ayrıştırıcısı ve ad çözümü; tür denetimi yok): "use client"
-// dosyalarında `@/server/actions/*`ten alınan her adın her kullanımı izlenir. Sözün reddi şu yollardan biriyle
+// dosyalarında `@/server/actions/*`ten ya da başka bir "use server" dosyasından (ör. ./actions) alınan her adın her
+// kullanımı izlenir. Sözün reddi şu yollardan biriyle
 // yakalanmış sayılır:
 //
 // - `try { … } catch` içinde beklenir (`await`), ya da zincirinde `.catch(…)` / iki bağımsız değişkenli `.then` vardır;
@@ -371,11 +372,19 @@ export function scanActionErrors(root: string): { files: string[]; unhandled: Un
   }
   function importedFile(decl: ts.ImportSpecifier, from: ts.SourceFile): ts.SourceFile | undefined {
     const mod = (decl.parent.parent.parent as ts.ImportDeclaration).moduleSpecifier;
-    if (!ts.isStringLiteral(mod)) return undefined;
-    const base = mod.text.startsWith("@/") ? join(root, "src", mod.text.slice(2)) : mod.text.startsWith(".") ? resolve(dirname(from.fileName), mod.text) : null;
+    return ts.isStringLiteral(mod) ? moduleFile(mod.text, from) : undefined;
+  }
+  /** Göreli ya da @/ yolunun dosyası (paketler çözülmez) */
+  function moduleFile(spec: string, from: ts.SourceFile): ts.SourceFile | undefined {
+    const base = spec.startsWith("@/") ? join(root, "src", spec.slice(2)) : spec.startsWith(".") ? resolve(dirname(from.fileName), spec) : null;
     if (!base) return undefined;
     return [".tsx", ".ts", "/index.tsx", "/index.ts"].map((x) => sourceOf(base + x)).find(Boolean);
   }
+  /** "use server" dosyası: dışa aktardığı her ad bir sunucu eylemi (ör. src/app/panel/sayim/actions.ts) */
+  const isServerModule = (sf: ts.SourceFile | undefined) => {
+    const first = sf?.statements[0];
+    return Boolean(first && ts.isExpressionStatement(first) && ts.isStringLiteral(first.expression) && first.expression.text === "use server");
+  };
   const unwrapInit = (n: ts.Expression): ts.Expression => {
     let e = n;
     // useCallback(fn, deps)
@@ -448,7 +457,8 @@ export function scanActionErrors(root: string): { files: string[]; unhandled: Un
     if (!sf || !isClient(sf)) continue;
     const imports: ts.Identifier[] = [];
     for (const st of sf.statements) {
-      if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.moduleSpecifier.text.startsWith(ACTIONS_PREFIX) || st.importClause?.isTypeOnly) continue;
+      if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || st.importClause?.isTypeOnly) continue;
+      if (!st.moduleSpecifier.text.startsWith(ACTIONS_PREFIX) && !isServerModule(moduleFile(st.moduleSpecifier.text, sf))) continue;
       const nb = st.importClause?.namedBindings;
       if (nb && ts.isNamedImports(nb)) for (const e of nb.elements) if (!e.isTypeOnly) imports.push(e.name);
     }

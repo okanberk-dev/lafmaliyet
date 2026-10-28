@@ -101,24 +101,25 @@ export function Plain({ onConfirm }: { onConfirm: () => Promise<void> }) {
 }
 `,
     );
-    put(
-      "src/app/demo.tsx",
-      `"use client";
+    put("src/app/actions.ts", `"use server";\nexport async function go() {}\n`);
+    // "kötü" işaretli satırlar yakalanmayan eylemler
+    const demo = `"use client";
 import { startTransition, useActionState } from "react";
 import { Confirm, Plain } from "@/components/confirm";
 import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { load, remove, save, submit } from "@/server/actions/demo";
+import { go } from "./actions";
 
 export function Demo() {
   const [, start] = useActionTransition();
-  const [, act] = useActionState(submit, {});
+  const [, act] = useActionState(submit, {}); // kötü
   async function good() {
     try {
       await save();
     } catch {}
   }
   async function bad() {
-    await save();
+    await save(); // kötü
   }
   const run = (fn: () => Promise<unknown>) => start(async () => { await fn(); });
   return (
@@ -126,23 +127,25 @@ export function Demo() {
       <button onClick={() => void good()} />
       <button onClick={() => void bad()} />
       <button onClick={() => start(async () => { await remove(); })} />
-      <button onClick={() => startTransition(async () => { await remove(); })} />
+      <button onClick={() => startTransition(async () => { await remove(); })} /> {/* kötü */}
       <button onClick={() => run(() => remove())} />
       <button onClick={() => void tryAction(() => load())} />
-      <button onClick={() => void load().then(() => {})} />
+      <button onClick={() => void load().then(() => {})} /> {/* kötü */}
       <button onClick={() => void load().catch(() => {})} />
+      <button onClick={() => void go()} /> {/* kötü */}
       <Confirm onConfirm={async () => { await save(); }} />
-      <Plain onConfirm={async () => { await save(); }} />
+      <Plain onConfirm={async () => { await save(); }} /> {/* kötü */}
     </form>
   );
 }
-`,
-    );
+`;
+    put("src/app/demo.tsx", demo);
+    const bad = demo.split("\n").flatMap((l, i) => (l.includes("kötü") ? [i + 1] : []));
     const { files, unhandled } = scanActionErrors(root);
     assert.deepEqual(files, ["src/app/demo.tsx"]);
     assert.deepEqual(
-      unhandled.map((u) => `${u.line} ${u.action}`).sort(),
-      ["16 save", "24 remove", "27 load", "30 save", "9 submit"].sort(),
+      unhandled.map((u) => u.line).sort((x, y) => x - y),
+      bad,
       JSON.stringify(unhandled, null, 1),
     );
   } finally {
