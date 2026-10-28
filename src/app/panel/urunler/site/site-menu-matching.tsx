@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -162,8 +162,9 @@ export function SiteMenuMatching({
 
   async function unlink(p: MatchProduct) {
     setBusy(true);
-    const res = await unlinkProductFromSite(p.id);
+    const res = await tryAction(() => unlinkProductFromSite(p.id));
     setBusy(false);
+    if (!res) return;
     setUnlinkFor(null);
     if (!res.ok) return void toast.error(res.error);
     toast.success(`${p.name} ${p.size}: site bağlantısı kaldırıldı`);

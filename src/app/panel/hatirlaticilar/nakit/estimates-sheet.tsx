@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import type { EstimateRow } from "@/lib/cash-plan";
@@ -28,8 +29,10 @@ export function EstimatesSheet({ rows, excluded, onClose }: { rows: EstimateRow[
     setBusy(true);
     const shown = new Set(toggleable.map((r) => r.key));
     const keys = [...excluded.filter((k) => !shown.has(k)), ...off];
-    const r = await saveCashPlanExcluded(keys);
+    const r = await tryAction(() => saveCashPlanExcluded(keys));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere açık kalır
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     toast.success(off.size ? `${off.size} kalem tahmine katılmıyor` : "Bütün kalemler tahmine katılıyor");
     onClose();

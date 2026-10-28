@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -75,8 +75,10 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await updateChecklistTemplate(t.id, draftOf(draft));
+    const res = await tryAction(() => updateChecklistTemplate(t.id, draftOf(draft)));
     setSaving(false);
+    // Atılan eylem (E-51): bildirim çıktı, yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return setError(res.error);
     toast.success(`${listTitle(draft.name.trim())} kaydedildi`);
   };
@@ -293,12 +295,17 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
       return setError({ text: "Sınırı sayı olarak yazın (ör. -18 ya da 4)", field: min.trim() && lo === null ? "min" : "max" });
     }
     setSaving(true);
-    const res = await saveChecklistItem(
-      templateId,
-      { label, type, section: section || null, hint: hint || null, required, unit: type === "number" ? unit || null : null, min: type === "number" ? lo : null, max: type === "number" ? hi : null },
-      item?.id ?? null,
+    const res = await tryAction(() =>
+      saveChecklistItem(
+        templateId,
+        { label, type, section: section || null, hint: hint || null, required, unit: type === "number" ? unit || null : null, min: type === "number" ? lo : null, max: type === "number" ? hi : null },
+        item?.id ?? null,
+      ),
+      // Yeni maddede yanıt yolda kaybolursa madde yazılmış olabilir: ikinci "Kaydet" aynı maddeyi iki kez ekler
+      { maybeSaved: !item },
     );
     setSaving(false);
+    if (!res) return;
     if (!res.ok) return setError({ text: res.error, field: itemFieldOf(res.error, lo) });
     toast.success(item ? "Madde kaydedildi" : "Madde eklendi");
     onClose();

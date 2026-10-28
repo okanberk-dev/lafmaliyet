@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { Badge } from "@/components/ui/badge";
-import { toastUnreachable } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -546,7 +546,8 @@ export function SuppliersClient({
                 size="sm"
                 className="shrink-0 text-ink pointer-coarse:h-11"
                 onClick={async () => {
-                  const r = await unhideSupplier({ cardId: h.cardId });
+                  const r = await tryAction(() => unhideSupplier({ cardId: h.cardId }));
+                  if (!r) return;
                   if (!r.ok) return void toast.error(r.error);
                   toast.success("Tedarikçi listeye geri alındı", { description: h.name });
                 }}

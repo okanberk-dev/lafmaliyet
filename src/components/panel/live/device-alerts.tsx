@@ -4,6 +4,7 @@ import { BellOff, BellRing, MonitorSmartphone, Send, Volume2 } from "lucide-reac
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
+import { SEND_OFFLINE_TEXT, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -76,16 +77,24 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   async function changeTopic(key: "karaoke" | "reminders" | "orders", value: boolean) {
     if (!endpoint) return;
     const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", approvals: topics?.approvals ?? true, [key]: value };
+    const prev = topics;
     setTopics(next);
-    const res = await setPushTopics(endpoint, next);
-    if (res.ok) noteDeviceTopics(next);
-    else toast.error(res.error);
+    const res = await tryAction(() => setPushTopics(endpoint, next));
+    // Kaydedilemeyen seçim anahtarda kalmaz (E-51: atılan eylemin bildirimi tryAction'dan)
+    if (!res?.ok) {
+      setTopics(prev);
+      if (res) toast.error(res.error);
+      return;
+    }
+    noteDeviceTopics(next);
   }
 
   async function test() {
     setBusy(true);
-    const res = await sendTestPush();
+    // Bağlantı yoksa "Gönderilemedi" (kaydedilen bir şey yok; "Kaydedilemedi" kasa raporu kayboldu sandırır)
+    const res = await tryAction(() => sendTestPush(), { offline: SEND_OFFLINE_TEXT });
     setBusy(false);
+    if (!res) return;
     if (res.ok) toast.success("Deneme bildirimi gönderildi", { description: `${res.data.sent} cihaz` });
     else toast.error(res.error);
   }

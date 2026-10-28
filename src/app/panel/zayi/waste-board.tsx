@@ -155,7 +155,9 @@ export function WasteBoard({
       setQty("1");
       setNote("");
       setReason(null);
-    });
+      // Doğrudan kayıtta yanıt yolda kaybolursa zayi yazılmış olabilir: ikinci "Kaydet" tüketimi iki kez düşer. Geç
+      // kaydın isteği clientKey'li, tekrarı ikinci istek açmaz
+    }, { maybeSaved: !late });
   }
 
   function askDelete() {

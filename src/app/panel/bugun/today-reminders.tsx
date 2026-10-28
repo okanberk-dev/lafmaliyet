@@ -1,10 +1,11 @@
 "use client";
 
 import { AlarmClock, Check, Plus } from "lucide-react";
-import { startTransition, useEffect, useOptimistic, useState } from "react";
+import { useEffect, useOptimistic, useState } from "react";
 import { toast } from "sonner";
 
 import { liveNow, refreshLive } from "@/components/panel/live/store";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -25,6 +26,8 @@ const SHOWN = 6;
 export function TodayReminders({ items, renderedAt }: { items: UserReminderDTO[] | null; renderedAt: string }) {
   const [now, setNow] = useState(() => new Date(renderedAt));
   const [visible, hide] = useOptimistic(items ?? [], (state, id: number) => state.filter((r) => r.id !== id));
+  // Eylem atarsa (ağ kesildi, panel güncellendi; E-51) satır geri gelir ve bildirim çıkar
+  const [, startTransition] = useActionTransition();
 
   useEffect(() => {
     const tick = () => setNow(new Date(liveNow()));
@@ -47,8 +50,8 @@ export function TodayReminders({ items, renderedAt }: { items: UserReminderDTO[]
         action: {
           label: "Geri al",
           onClick: () =>
-            void restoreUserReminder(r.id, prev).then((x) => {
-              if (!x.ok) toast.error(x.error);
+            void tryAction(() => restoreUserReminder(r.id, prev)).then((x) => {
+              if (x && !x.ok) toast.error(x.error);
               void refreshLive();
             }),
         },

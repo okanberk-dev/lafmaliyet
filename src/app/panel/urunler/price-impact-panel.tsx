@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { IngredientChange, ProductImpact } from "@/lib/calc/price-impact";
 import { basisText, type PriceLoss } from "@/lib/calc/price-loss";
-import { dateTR, num, pct, tl, tl2 } from "@/lib/format";
+import { dateTR, dayTR, num, pct, tl, tl2 } from "@/lib/format";
 import { monthLocativeTR } from "@/lib/reminders";
 import { priceReminder } from "@/lib/prices/pos";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ function perUnit(v: number, unit: string): string {
 }
 
 const changeTitle = (c: IngredientChange) =>
-  `${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} · ${dateTR(c.changedAt.slice(0, 10))}${c.changedBy ? ` · ${c.changedBy}` : ""}${c.note ? ` (${c.note})` : ""}`;
+  `${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} · ${dateTR(dayTR(c.changedAt))}${c.changedBy ? ` · ${c.changedBy}` : ""}${c.note ? ` (${c.note})` : ""}`;
 
 /**
  * Ürünler sayfasındaki "Hammadde zamları": son 30 günde fiyatı değişen hammaddeler ve maliyeti artan ürünler.
@@ -77,8 +77,10 @@ export function PriceImpactPanel({
       // artardı). Geri al eski fiyatı yazar; fiyat önerinin altına inince uyarı kendiliğinden geri gelir. Fiyat
       // geçmişinde iki dayanakta da "Zam önerisi"; Geri al elle
       // Kartın gördüğü fiyat da gider: bu arada başka yerde değiştiyse öneri yazılmaz (denetim E-11)
-      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep", "suggestion", i.price);
+      // Atarsa (ağ kesildi, panel güncellendi; E-51) düğme de bırakılır
+      const r = await tryAction(() => updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep", "suggestion", i.price));
       setBusyId(null);
+      if (!r) return;
       if (!r.ok) return void toast.error(r.error);
       // Siteye bağlı üründe fiyat laffogato.net'te de değişti (fiyat listesinin tarihi sitede elle); kasada (ModPOS)
       // değişecek fiyat Fiyatlar › Kasaya işle listesinde
@@ -101,11 +103,12 @@ export function PriceImpactPanel({
   const keep = (i: ImpactRow, undo = false) => {
     setBusyId(i.productId);
     start(async () => {
-      const r = await acknowledgePriceAlert(i.productId, undo);
+      const r = await tryAction(() => acknowledgePriceAlert(i.productId, undo));
       setBusyId(null);
+      if (!r) return;
       if (!r.ok) return void toast.error(r.error);
       if (undo) toast.success(`${i.name} ${i.size} yeniden uyarıda`);
-      else toast.success(`${i.name} ${i.size} fiyatı ${tl(i.price)} kalıyor; maliyet daha da artarsa yeniden uyarılır`, { action: { label: "Geri al", onClick: () => void acknowledgePriceAlert(i.productId, true) } });
+      else toast.success(`${i.name} ${i.size} fiyatı ${tl(i.price)} kalıyor; maliyet daha da artarsa yeniden uyarılır`, { action: { label: "Geri al", onClick: () => void tryAction(() => acknowledgePriceAlert(i.productId, true)).then((u) => u && !u.ok && toast.error(u.error)) } });
     });
   };
 

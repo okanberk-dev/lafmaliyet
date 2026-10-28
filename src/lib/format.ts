@@ -79,6 +79,17 @@ export function dateTR(date: string | null | undefined): string {
   return `${d}.${m}.${y}`;
 }
 
+/**
+ * Zaman damgasının İstanbul günü ("YYYY-MM-DD"). ISO metnin ilk on harfi UTC günüdür: 00:00-03:00 arasındaki değişiklik
+ * bir gün önceye yazılırdı (denetim E-70). Yalnız gün olan metin ("2026-11-01") aynen döner; çözülemeyen metin ilk on
+ * harfiyle.
+ */
+export function dayTR(at: Date | string): string {
+  const d = typeof at === "string" ? new Date(at) : at;
+  if (Number.isNaN(d.getTime())) return typeof at === "string" ? at.slice(0, 10) : "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
 export function dateTimeTR(d: Date | string | null | undefined): string {
   if (!d) return "–";
   const date = typeof d === "string" ? new Date(d) : d;

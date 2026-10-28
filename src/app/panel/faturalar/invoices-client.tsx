@@ -2,9 +2,10 @@
 
 import { Check, CheckCheck, ChevronDown, CircleCheck, FileText, Paperclip, Pencil, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
-import { startTransition, useEffect, useMemo, useOptimistic, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useOptimistic, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -218,7 +219,9 @@ export function InvoicesClient({
     const id = requestAnimationFrame(() => (document.getElementById(hash) ?? document.getElementById("fatura-listesi"))?.scrollIntoView({ block: "start" }));
     return () => cancelAnimationFrame(id);
   }, []);
-  // Ödendi işareti, kategori ve silme sunucu yanıtını beklemeden görünür; hata olursa liste eski haline döner
+  // Ödendi işareti, kategori ve silme sunucu yanıtını beklemeden görünür; hata olursa liste eski haline döner. Eylem
+  // atarsa da (ağ kesildi, panel güncellendi; E-51) liste döner ve bildirim çıkar
+  const [, startTransition] = useActionTransition();
   const [list, applyOptimistic] = useOptimistic(invoices, applyChange);
   const [q, setQ] = useQueryText("ara");
   const [rawMonth, setMonth] = useQueryState<string>("ay", "");
@@ -355,10 +358,11 @@ export function InvoicesClient({
     keepScroll();
     startTransition(async () => {
       applyOptimistic({ kind: "paid", ids, paid });
-      const res = await setInvoicePaid(ids.length === 1 ? ids[0] : ids, paid);
-      if (!res.ok) {
+      const res = await tryAction(() => setInvoicePaid(ids.length === 1 ? ids[0] : ids, paid));
+      // Atılan eylem (E-51) bildirimini tryAction gösterir; ikisinde de satır eski hâline döner
+      if (!res?.ok) {
         setPopId(null);
-        toast.error(res.error);
+        if (res) toast.error(res.error);
         return;
       }
       const changed = targets.filter((i) => ids.includes(i.id));
@@ -549,7 +553,7 @@ export function InvoicesClient({
       const { externalId, snapshot, quantitiesRecomputed } = res.data;
       const restore = async () => {
         keepScroll();
-        const r = externalId ? await unignoreParasutBill(externalId) : snapshot ? await restoreInvoice(snapshot) : null;
+        const r = await tryAction(async () => (externalId ? await unignoreParasutBill(externalId) : snapshot ? await restoreInvoice(snapshot) : null));
         if (!r) return;
         if (!r.ok) return void toast.error(r.error);
         toast.success("Fatura geri alındı", { description: "message" in r.data ? r.data.message : `${splitSupplier(target.supplier).base} · ${dateTR(target.date)}` });

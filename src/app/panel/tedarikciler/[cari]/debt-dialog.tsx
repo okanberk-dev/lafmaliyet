@@ -297,7 +297,8 @@ export function DebtDialog({
       });
       onClose();
       onSaved?.({ slug: d.slug });
-    });
+      // Yeni alımda yanıt yolda kaybolursa borç yazılmış olabilir: ikinci "Kaydet" ikinci borcu yazar
+    }, { maybeSaved: !edit });
   }
 
   return (

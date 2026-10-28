@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -61,8 +62,10 @@ export function SiteMenuCard({
 
   async function unlink() {
     setBusy(true);
-    const res = await unlinkProductFromSite(product.id);
+    const res = await tryAction(() => unlinkProductFromSite(product.id));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, onay penceresi açık kalır
+    if (!res) return;
     setConfirmUnlink(false);
     if (!res.ok) return void toast.error(res.error);
     toast.success(`${product.name} ${product.size}: site bağlantısı kaldırıldı`, { description: "Fiyatı ve menü durumu bundan sonra yalnız panelde değişir." });
@@ -70,8 +73,9 @@ export function SiteMenuCard({
 
   async function linkSuggestion(s: LinkSuggestion) {
     setBusy(true);
-    const res = await linkProductToSite({ productId: product.id, siteMenuId: s.siteMenuId, slot: s.slot });
+    const res = await tryAction(() => linkProductToSite({ productId: product.id, siteMenuId: s.siteMenuId, slot: s.slot }));
     setBusy(false);
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     toast.success(`${product.name} ${product.size} → ${s.siteName}`, {
       description:

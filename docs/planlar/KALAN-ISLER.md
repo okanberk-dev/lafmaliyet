@@ -76,7 +76,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B17 | Alış: kasadan e-Arşiv alımları ve fatura kategori koruması | E-42, E-45 | yok |  | bekliyor |
 | B18 | Karaoke: silme isteği ve bitirme izi | E-15, E-65 | **evet** |  | bekliyor |
 | B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | PR (dal `claude/denetim-b19-bildirim`) |
-| B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | bekliyor |
+| B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | PR (dal `claude/denetim-b20-saglamlik`) |
 
 **B21 (sahibin isteği, 26 Ekim 19:30; raporda yok): Hızlı sayım ve mal siparişi kaldırıldı.** Sahip: "Hızlı sayım
 ile mal siparişi kısmını kaldır, gereksiz çünkü normal sayım olsun". Dal `claude/denetim-b21-hizli-siparis-kaldir`.
@@ -163,7 +163,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 | İş | Plan | Durum |
 |---|---|---|
 | Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **Bitti: 10a (#30) ve 10b (#32) main'de.** 10a (migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. 10b (#32, migration yok): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Canlıda personel hesabıyla `/panel/yardim/personel` bir kez açılıp bakılır (2.4 mal siparişi taslağı B21'de kaldırıldı). Kalan daraltma: karaoke sayacının silinmesi (denetim E-15, B18). |
-| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a (#33) ve PR-b (#35) main'de.** PR-a: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar. PR-b (migration `0042_okc_z`, `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b8 (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım, son doğrulama). **Açık:** yalnız b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor); bilinen nit, banka gün sonu fişinde iki tarih uyarısı, denetimde E-69 (B20). O zamana kadar `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`): yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
+| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a (#33) ve PR-b (#35) main'de.** PR-a: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar. PR-b (migration `0042_okc_z`, `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b8 (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım, son doğrulama). **Açık:** yalnız b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor); banka gün sonu fişindeki iki tarih uyarısı (denetim E-69) B20'de kapandı: fiş tek tarih uyarısı verir, ertesi sabah basılmış fiş uyarmaz. O zamana kadar `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`): yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
 | Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır, başlamadı; muhasebeciye sorulacak 8 madde planın sonunda. Gelir dayanağı mali Z: Dalga 13 PR-b birleşti, doldurma kapısı b2'de. Kenar çubuğunda Finans başlığına girer (Dalga 15). |
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | **Faz 1'in çoğu bitti (28 Ekim):** S1 (laffogato #269: menü `expect`, 409 `stale`, koşullu form, uygulama önbelleği 300 sn), S2 (laffogato #270: ödeme bekleyen sayısı, imza vektörleri), M1 (lafmobil #35: sözleşme kopyası), P1 (B12, #52 ve #53), P2 (lafmaliyet #60: bar ekranında ödeme takibi, sakin saatin kontrolü pingi saymaz, kaçan ping Ayarlar › laffogato.net'te; `docs/SITE-SIPARIS.md` › Ödeme takibi; açık: bildirimi açık, boş bar ekranını takip başlayınca uyandırmak, aşağıda "Senkron P2'nin açığı"), P0 (lafmaliyet #61: karaoke Web Push'ta misafirin adı ve notu yok, sekme arkadayken sayacın kendi sistem bildirimlerinde (başladı, az kaldı, süre doldu) de ad yok; ekrandaki zil satırında, ekran içi uyarıda ve listede ad kalır; `docs/KARAOKE.md` › Güvenlik; birleşince canlıda bir rezervasyonla kilit ekranındaki bildirime bakılır). Kalan Faz 1 yalnız M2: uygulamanın menü ve mağaza tazeliği (lafmobil `claude/senkron-m2-tazelik`, staleTime ve satır reddinde geçersiz kılma); uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini (1.1.0) yürüten oturumun işi. Sonra Faz 2 (ayar ucu, 304, ping sınaması, kapanışlar). Bütçe (§4.0): P2'den önce ve sonra 48'er saat iki projenin CU-saat/gün ölçümü sahipte. Sahibe soru A (sitenin Neon planı), 7, 10. |
 | Genel denetim (25 Ekim): sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | Yerine 26 Ekim denetimi geçti: D-01..D-19'un 26 Ekim durumu `denetim-2026-10-26.md` › "Önceki denetim"; açık kalanlar E-maddelerine ve partilere taşındı, doğrulanmayanlar sahibe sorulardır. |
@@ -337,8 +337,8 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   `OKC_TASK` taslaktır (gün cümlesi, `software_z`, etiketler gerçek fişlerle yeniden denetlenir); `okc*.json` kayıtlı
   yanıtları sentetiktir. Ölçümle kesinleşecekler: efor (`low` / `medium`), "önce üst, sonra alt yarı"nın varsayılan
   çekim olması, telefonda kalite 0,8 (`OKC_COMPRESS`, yazılmadı), okuma süresi metni ("Okunuyor… genelde N saniye"),
-  okuma başına tutar (S8), şemadan çıkacak alanlar. Yalnız banka gün sonu fişi okumasında tarih uyarısı iki kez çıkıyor
-  (`okc.ts`; denetimde E-69, B20).
+  okuma başına tutar (S8), şemadan çıkacak alanlar. Banka gün sonu fişi okumasındaki çift tarih uyarısı B20'de kapandı
+  (`okc.ts`, denetim E-69): fiş tek tarih uyarısı verir, ertesi sabah basılmış fiş uyarmaz.
 - **Kapı:** gerçek fotoğraflarda `--tekrar 3` ile yanlış dolum 0, "doğrulandı ama yanlış" 0, alan doğruluğu ≥ %95, ilk
   okuma p90 ≤ 20 sn → `OKC_PREFILL_ENABLED = true` (ekran değişmez). Sonuç `ekler/okc-z/eval.md`'ye.
 - **b8 yapıldı** (#35): veritabanı testleriyle 1978/1978 test, derleme, boş ve canlı benzeri veritabanında 43 migration,
@@ -524,10 +524,20 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
   değişiklik sayılır. Kaydetmeye inen iki kenar durum (kayıtlı fiyatı 0 iken silinen fiyat, kayıtlı miktarı 0 satırda
   "=") alana özel uyarı gösterir.
 - Açık kalanlar:
-  1. Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler: eylem fırlatırsa (ağ
-     yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
-     `setSaving` / `setDeleting` ile düzeltilmeli. 26 Ekim denetiminde daha geniş hâliyle E-51 (B20; reçete
-     düzenleyici B12'de yapılırsa B20 onu atlar).
+  1. ~~Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler~~ B12'de (reçete
+     düzenleyici) ve B20'de (E-51, D-07; panelin bütün istemci dosyaları) kapandı. Atılan eylem (ağ kesildi, panel
+     güncellendi) düğmeyi kilitli bırakmaz, iyimser değişikliği sessizce geri almaz, sayfayı hata ekranına düşürmez:
+     `useActionTransition`, `tryAction`, `catchingFormAction` ve `actionErrorText` (`src/components/ui/action-error.ts`);
+     parola penceresi pencereyi ve parolayı tutar, nedeni alanın altında ayrı durum satırında yazar (parola alanı
+     geçersiz işaretlenmez), giriş formu yazılan e-postayı tutar. Yeni kayıt açan ya da ekleyen eylemlerde (yeni satış
+     satırı, ekleme kipinde içe aktarma, yeni personel, sabit gider, yatırım, bulgu, kontrol listesi ve maddesi,
+     hatırlatıcı, tedarikçiye ödeme ve faturasız alım, zayi, Ödemeler'de Ödendi / Ertele; tekrarı ikinci bir kayıt yazar) kopan bağlantı "Kaydedilemedi" demez: "kayıt yapılmış olabilir; sayfayı yenileyip kontrol edin" ve
+     **Yenile** (`tryAction(fn, { maybeSaved: true })`); gönderen eylemler "Gönderilemedi" der. Daha sağlamı, ekleme
+     kipindeki içe aktarmaya istemci anahtarı (kasa isteklerindeki `clientKey` gibi): satış satırlarında anahtar
+     sütunu yok, göç ister; açık. Bekçi sözdizimi ağacını tarar
+     (`tests/helpers/action-guard.ts`, `tests/arayuz-duzeltmeleri.test.ts`): `@/server/actions`'tan alınan her adın
+     reddi bir yerde yakalanmalı, useActionTransition'da eylemden sonraki meşgul durumu try/finally dışında
+     bırakılmamalı; tek kaçış yorumu (`eylem-hatası:`) Kullanıcılar'daki parola isteğinde.
   2. ~~Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir~~ B19'da kapandı (E-64, D-08):
      aşama, Tükendi, `/api/canli`, `/api/siparisler` ve kasa e-postası personele sabit metin döner
      (`src/lib/staff-errors.ts`); ayrıntı yöneticide.

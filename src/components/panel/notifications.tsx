@@ -47,14 +47,23 @@ const FOOTER_LINKS: Record<Role, { href: string; label: string }[]> = {
 
 export function NotificationMenu({
   items,
+  failure = null,
+  loading = false,
   onOpen,
   align = "left",
   variant = "sidebar",
   role = "admin",
 }: {
-  /** null: yükleniyor */
+  /** null: yükleniyor (failure yoksa) ya da hiç okunamadı */
   items: PanelNotification[] | null;
-  /** Menü açılınca (listeyi tazelemek için) */
+  /**
+   * Son okuma düştü (E-49): "stale" panel güncellendi, sayfa yenilenmeli; "failed" istek düştü, yeniden denenir. Liste
+   * boş sayılmaz ("Dikkat isteyen bir şey yok" denmez); önceki liste varsa altında kalır
+   */
+  failure?: "stale" | "failed" | null;
+  /** Okuma sürüyor (Yeniden dene düğmesi beklerken kilitli) */
+  loading?: boolean;
+  /** Menü açılınca (listeyi tazelemek için) ve "Yeniden dene"de */
   onOpen?: () => void;
   align?: "left" | "right";
   /** sidebar: kenar çubuğundaki beyaz karo; bar: mobil üst çubuktaki çerçeveli düğme */
@@ -128,7 +137,7 @@ export function NotificationMenu({
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={items === null ? "Bildirimler yükleniyor" : unread > 0 ? `Bildirimler, ${unread} okunmamış` : "Bildirimler"}
+        aria-label={items === null ? (failure ? "Bildirimler okunamadı" : "Bildirimler yükleniyor") : unread > 0 ? `Bildirimler, ${unread} okunmamış` : "Bildirimler"}
         className={cn(
           "relative inline-flex size-11 cursor-pointer items-center justify-center text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/30",
           variant === "sidebar" ? "rounded-2xl bg-chart-metric-bg hover:bg-chart-bg" : "rounded-lg border border-border bg-background hover:bg-chart-bg",
@@ -175,7 +184,7 @@ export function NotificationMenu({
               <div className="min-w-0">
                 <p className="text-[0.95rem] font-semibold tracking-tight text-foreground">Bildirimler</p>
                 <p className="mt-0.5 text-[12px] text-chart-muted" aria-live="polite">
-                  {items === null ? "Yükleniyor…" : unread > 0 ? `${unread} okunmamış` : list.length ? "Hepsi okundu" : "Dikkat isteyen bir şey yok"}
+                  {items === null ? (failure ? "Okunamadı" : "Yükleniyor…") : unread > 0 ? `${unread} okunmamış` : list.length ? "Hepsi okundu" : failure ? "Okunamadı" : "Dikkat isteyen bir şey yok"}
                 </p>
               </div>
               <button
@@ -205,26 +214,51 @@ export function NotificationMenu({
             ) : null}
 
             <div className="notification-dropdown-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-1.5">
-              {items === null ? (
-                <div className="space-y-2 px-2.5 py-2" aria-hidden="true">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="flex gap-3">
-                      <div className="size-9 shrink-0 animate-pulse rounded-xl bg-chart-bg" />
-                      <div className="flex-1 space-y-1.5 pt-1">
-                        <div className="h-3 w-2/3 animate-pulse rounded bg-chart-bg" />
-                        <div className="h-3 w-full animate-pulse rounded bg-chart-bg" />
-                      </div>
-                    </div>
-                  ))}
+              {failure ? (
+                <div role="alert" className="mx-1.5 mb-1.5 flex items-center gap-2.5 rounded-xl bg-red-500/10 py-2 pr-1.5 pl-2.5 text-[12px] leading-snug text-red-700">
+                  <AlertTriangle className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    {failure === "stale"
+                      ? "Panel güncellendi; bildirimler için sayfayı yenileyin."
+                      : // Son okuma boş döndüyse altında gösterilen bir liste yok: "son okunan liste" denmez
+                        items === null || items.length === 0
+                        ? "Bildirimler okunamadı; bağlantıyı kontrol edip yeniden deneyin."
+                        : "Bildirimler yenilenemedi; son okunan liste gösteriliyor."}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={failure === "failed" && loading}
+                    onClick={() => (failure === "stale" ? window.location.reload() : onOpen?.())}
+                    className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-lg bg-background px-2.5 text-[12px] font-semibold text-foreground outline-none ring-1 ring-black/10 transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:cursor-default disabled:opacity-60 pointer-coarse:h-11"
+                  >
+                    {failure === "stale" ? "Yenile" : loading ? "Deneniyor…" : "Yeniden dene"}
+                  </button>
                 </div>
+              ) : null}
+              {items === null ? (
+                failure ? null : (
+                  <div className="space-y-2 px-2.5 py-2" aria-hidden="true">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="flex gap-3">
+                        <div className="size-9 shrink-0 animate-pulse rounded-xl bg-chart-bg" />
+                        <div className="flex-1 space-y-1.5 pt-1">
+                          <div className="h-3 w-2/3 animate-pulse rounded bg-chart-bg" />
+                          <div className="h-3 w-full animate-pulse rounded bg-chart-bg" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
               ) : groups.length === 0 ? (
-                <p className="px-3 py-10 text-center text-[13px] text-chart-muted">
-                  {filter === "unread" && list.length
-                    ? "Okunmamış bildirim yok."
-                    : role === "admin"
-                      ? "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."
-                      : "Dikkat isteyen bir şey yok. Hatırlatıcılarınız, önerilerinizin ve isteklerinizin sonucu burada görünür."}
-                </p>
+                failure && !(filter === "unread" && list.length) ? null : (
+                  <p className="px-3 py-10 text-center text-[13px] text-chart-muted">
+                    {filter === "unread" && list.length
+                      ? "Okunmamış bildirim yok."
+                      : role === "admin"
+                        ? "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."
+                        : "Dikkat isteyen bir şey yok. Hatırlatıcılarınız, önerilerinizin ve isteklerinizin sonucu burada görünür."}
+                  </p>
+                )
               ) : (
                 groups.map((g) => (
                   <div key={g.id} role="group" aria-label={g.label}>

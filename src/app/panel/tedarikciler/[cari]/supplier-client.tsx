@@ -24,11 +24,11 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Fragment, startTransition, useEffect, useOptimistic, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useOptimistic, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton, IconLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -216,6 +216,8 @@ export function SupplierClient({
 }) {
   const router = useRouter();
   const [list, apply] = useOptimistic(invoices, applyPatch);
+  // Ödeme durumu iyimser yazılır; eylem atarsa (ağ kesildi, panel güncellendi; E-51) satır döner ve bildirim çıkar
+  const [, startTransition] = useActionTransition();
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -721,7 +723,8 @@ export function SupplierClient({
   async function restoreToList() {
     if (!card) return;
     keepScroll();
-    const r = await unhideSupplier({ cardId: card.id });
+    const r = await tryAction(() => unhideSupplier({ cardId: card.id }));
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     toast.success("Tedarikçi listeye geri alındı", { description: supplier.name });
   }
