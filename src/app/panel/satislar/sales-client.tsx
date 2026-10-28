@@ -503,7 +503,7 @@ export function MonthInfoForm({
             <Field
               label="Kartlı satış oranı (%)"
               aside={chipOf("cardShare")}
-              tip="Kredi kartı + yemek kartı ÷ Z toplamı. POS komisyonu = ciro × komisyon × bu oran."
+              tip="Kredi kartı + yemek kartı ÷ Z toplamı. Satış raporundaki POS komisyonu = ciro × komisyon × bu oran. Gelir-gider'deki banka POS komisyonu yemek kartını saymaz (yemek kartının komisyonu kendi faturasıyla): kasa raporu olan ayda bu orandan kasanın yemek kartı payı düşülür."
               htmlFor="m-card"
               error={cardError ?? undefined}
               hint={hintOf("cardShare", kasaOf("cardShare") === null && !texts.cardShare.trim() ? "Boşsa Ayarlar'daki oran kullanılır" : undefined)}

@@ -312,6 +312,20 @@ export function supplierResolver<C extends CardNames & { taxNumber?: string | nu
   return { resolve };
 }
 
+/**
+ * Faturadaki ad (ve vergi no) → komisyon kanalının aranacağı adlar (channelOf): faturadaki ad, sonra tedarikçi
+ * kartının adı ve diğer adları (supplierResolver: ad önce, sonra vergi no). Komisyon & hakediş
+ * (src/server/data/commission.ts) ve Gelir-gider'in POS komisyonu uyarısı (src/server/data/dataset.ts) aynı kuralla:
+ * "Diğer adlar"a eklenen ad faturayı iki ekranda birden kanala bağlar (denetim B16).
+ */
+export function channelNameResolver<C extends CardNames & { taxNumber?: string | null }>(cards: readonly C[], refs: readonly SupplierRef[]) {
+  const { resolve } = supplierResolver(cards, refs);
+  return (supplier: string, taxNumber?: string | null): string[] => {
+    const card = resolve(supplier, taxNumber).card;
+    return card ? [supplier, card.name, ...card.aliases] : [supplier];
+  };
+}
+
 // ---------------------------------------------------------------- Vade ve ödeme durumu
 
 // Vade ve hesap özeti cari hesabın saf modülünde (src/lib/cari/account.ts): faturalar ve elle kayıtlar aynı kuralla

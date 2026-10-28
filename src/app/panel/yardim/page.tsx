@@ -1073,7 +1073,9 @@ async function HelpContent() {
                 <ul className="space-y-3 text-sm leading-6 text-ink-soft">
                   <li>
                     <span className="cell-input font-semibold">Mavi yazı</span> — sizin girdiğiniz / değiştirebileceğiniz değerler. Gelir-gider tablosunda mavi noktalı hücre,
-                    hesaplananın üzerine yazılmış demektir.
+                    hesaplananın üzerine yazılmış demektir; noktalı çizgili tutar ve ok simgesi tutarın geldiği sayfayı (o ayın faturaları, komisyon
+                    faturaları dahil; harcamaları, stok sayımı, satışları: ciro ve kartlı satış oranı; personel, sabit giderler) açar. Telefonda satıra
+                    ya da düzenleme penceresindeki bağlantıya dokunun.
                   </li>
                   <li>
                     <Badge tone="amber">Tahmini</Badge> — faturada bulunamayan, tahmin edilen değer. Gerçek değeri yazınca hesaplar düzelir.

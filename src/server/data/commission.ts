@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 
-import { supplierResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
+import { channelNameResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf, isChannelKey, lafposChannel } from "@/lib/commission/channels";
@@ -175,14 +175,10 @@ async function supplierNames(withRefs: boolean): Promise<(supplier: string, taxN
     getDb().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
     withRefs ? loadSupplierRefs() : Promise.resolve<SupplierRef[]>([]),
   ]);
-  const { resolve } = supplierResolver(
+  return channelNameResolver(
     cards.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases.filter((a): a is string => typeof a === "string") : [] })),
     refs,
   );
-  return (supplier, taxNumber) => {
-    const card = resolve(supplier, taxNumber).card;
-    return card ? [supplier, card.name, ...card.aliases] : [supplier];
-  };
 }
 
 /** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır */

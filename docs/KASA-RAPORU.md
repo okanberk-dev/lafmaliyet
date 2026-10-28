@@ -595,7 +595,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 | Açık gün | Z toplamı 0'dan büyük rapor sayısı |
 | POS cirosu | Z toplamlarının toplamı |
 | İndirim, ödenmez / ikram | Girildiği günlerin toplamı (hiç girilmediyse 0) |
-| Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. O ayın POS komisyonu (Gelir-gider) bu oranla; boşsa Ayarlar'daki kart oranıyla |
+| Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. Satış raporunun ürün başına tahmini komisyonu bu oranla; boşsa Ayarlar'daki kart oranıyla. Gelir-gider'in **banka POS komisyonu** yalnız banka kartı payıyla: kart ÷ Z (yemek kartı hariç, onun komisyonu kendi faturasıyla; elle yazılan orandan kasanın yemek kartı payı düşülür; denetim E-43) |
 
 - **Elle yazılan her zaman geçerlidir;** alan boşaltılınca kasaya döner. Satışlar'da her alanın yanında "Kasadan" ya
   da "Elle" yazar; kasadan gelen alana dokununca elle yazılır, elle yazılan alanın altında kasadaki değer ve

@@ -72,7 +72,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | PR (dal `claude/denetim-b13-menu-maliyet`) |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | PR (dal `claude/denetim-b14-urun-onay`) |
 | B15 | Aynı rakam her yerde: senaryo, başabaş, ay sonu öngörüsü, nakit planı | E-12, E-13, E-41, E-46, E-59, E-60, E-62 | yok | 7, 8 (varsayılanla) | PR (dal `claude/denetim-b15-ayni-rakam`) |
-| B16 | Gelir-gider: komisyon, SGK satırı, kaynak bağlantıları, notlar | E-30, E-43, E-44, E-61, E-63 | yok | 9 | bekliyor |
+| B16 | Gelir-gider: komisyon, SGK satırı, kaynak bağlantıları, notlar | E-30, E-43, E-44, E-61, E-63 | yok | 9 (varsayılanla) | PR (dal `claude/denetim-b16-gelir-gider`) |
 | B17 | Alış: kasadan e-Arşiv alımları ve fatura kategori koruması | E-42, E-45 | yok |  | bekliyor |
 | B18 | Karaoke: silme isteği ve bitirme izi | E-15, E-65 | **evet** |  | bekliyor |
 | B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | PR (dal `claude/denetim-b19-bildirim`) |
@@ -143,6 +143,10 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    aylık girişe çevirirken yazılan tahmini kayıt KDV hariç tutardır ve bunu söyler (nakit planı ödenen tutarı yayar).
 9. **Banka POS komisyonu** (E-43, B16): ayrıca fatura ya da dekont olarak geliyor mu, Paraşüt'te Komisyon
    kategorisine mi düşüyor?
+   **Varsayılan (B16):** Gelir-gider'deki "Banka POS komisyonu" tahmin olarak kalır, yalnız banka kartı payıyla (kart ÷
+   Z; yemek kartı kendi faturasıyla). Ayda kanalı bulunamayan bir Komisyon faturası varsa hücre uyarır: bankanın
+   faturasıysa tahmin onu ikinci kez sayar, hücreye 0 yazılır. Banka faturası hep geliyorsa tahmin kendiliğinden
+   kapatılabilir (yalnız `engine.ts` `commission:pos`).
 10. **Vercel planı** (E-67, B05): panel Hobby planında (ticari kullanım yok, günlükler bir saat); Pro'ya geçilsin mi?
     **Varsayılan:** plan Hobby kalır, risk ve sınırlar `docs/DEPLOY.md` § 8'de yazılı (öneri Pro); karar sahibin.
     **Ayrıca (E-10):** dal bekçisi yalnız onu içeren commit'lerde çalışır; bekçiden önce açılmış eski dalların
