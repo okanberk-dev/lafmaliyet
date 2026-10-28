@@ -33,6 +33,7 @@ import { checklistBoundaries, type ChecklistLite, type IssueLite, type RunLite }
 import { jobHealth, type JobKey, type JobRunLite, type RunStatus } from "../src/lib/job-health";
 import type { KaraokeSessionDTO } from "../src/lib/karaoke/session";
 import { HOLDS_HREF } from "../src/lib/price-hold";
+import { KIND_COUNT_LABEL, RETIRED_REQUEST_KINDS, STAFF_REQUEST_KINDS } from "../src/lib/staff-requests";
 import type { UpcomingItem, UpcomingStatus } from "../src/lib/reminders";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
@@ -1150,6 +1151,17 @@ test("onay satırı: personel istekleri de sayılır; türler tek satırda, reç
   assert.equal(retired.onay.badge, "1 bekliyor");
   assert.equal(retired.onay.detail, "1 geç zayi / ikram");
   assert.ok(!keys(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind: "mal-taslak", count: 1 }], oldestAt: null } }))).includes("onay"));
+  // Karaoke sayacı silme isteği (denetim E-15) zayinin ardından
+  const karaoke = byKey(
+    dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind: "karaoke-sil", count: 1 }, { kind: "zayi-sil", count: 1 }], oldestAt: null } })),
+  );
+  assert.equal(karaoke.onay.badge, "2 bekliyor");
+  assert.equal(karaoke.onay.detail, "1 zayi silme isteği · 1 karaoke sayacı silme isteği");
+  // Her canlı tür satırda yazılır (rozetteki sayı ayrıntıyla tutar)
+  for (const kind of STAFF_REQUEST_KINDS.filter((k) => !(RETIRED_REQUEST_KINDS as readonly string[]).includes(k))) {
+    const one = byKey(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind, count: 1 }], oldestAt: null } })));
+    assert.equal(one.onay.detail, `1 ${KIND_COUNT_LABEL[kind]}`, kind);
+  }
 });
 
 test("sıradaki iş: başka yapılacak ya da sorunlu satır varken dünün kontrol listeleri sıradaki olmaz (iki rolde)", () => {

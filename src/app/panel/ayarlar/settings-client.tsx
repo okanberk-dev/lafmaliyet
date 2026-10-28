@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileText,
   History,
+  MicVocal,
   Package,
   Percent,
   Plus,
@@ -745,9 +746,13 @@ export type LogEntry = {
 
 type LogKind = { kind: string; label: string; keys: string[]; Icon: LucideIcon; tone: PastelTone };
 
-/** İşlem adına göre tür (ikon, renk, süzgeç); ilk eşleşen kazanır, bu yüzden "silindi" en başta */
+/**
+ * İşlem adına göre tür (ikon, renk, süzgeç); ilk eşleşen kazanır, bu yüzden "silindi" en başta. Karaoke kullanıcıdan
+ * önce: "Karaoke oturumu bitirildi" hesabın oturumu değildir (denetim E-65)
+ */
 const LOG_KINDS: LogKind[] = [
   { kind: "silme", label: "Silinenler", keys: ["silindi"], Icon: Trash2, tone: 3 },
+  { kind: "karaoke", label: "Karaoke", keys: ["karaoke"], Icon: MicVocal, tone: 2 },
   { kind: "kullanici", label: "Kullanıcı ve parola", keys: ["kullanıcı", "parola", "oturum", "iki adımlı"], Icon: UserRound, tone: 4 },
   { kind: "ayar", label: "Ayarlar", keys: ["ayarlar", "sgk"], Icon: SettingsIcon, tone: 5 },
   { kind: "parasut", label: "Paraşüt", keys: ["paraşüt"], Icon: PlugZap, tone: 2 },

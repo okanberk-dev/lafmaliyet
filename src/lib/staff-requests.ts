@@ -10,7 +10,7 @@ import { num } from "./format";
 import { daysAgo } from "./prices/pos";
 
 /** İstek türleri (şemadaki sırayla; tests/onay-kuyrugu.test.ts şemayla karşılaştırır) */
-export const STAFF_REQUEST_KINDS = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun", "zayi-gec", "zayi-sil", "mal-taslak"] as const;
+export const STAFF_REQUEST_KINDS = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun", "zayi-gec", "zayi-sil", "mal-taslak", "karaoke-sil"] as const;
 export type StaffRequestKind = (typeof STAFF_REQUEST_KINDS)[number];
 
 /**
@@ -39,6 +39,7 @@ export const KIND_LABEL: Record<StaffRequestKind, string> = {
   "zayi-gec": "Geç zayi / ikram",
   "zayi-sil": "Zayi silme",
   "mal-taslak": "Mal siparişi taslağı",
+  "karaoke-sil": "Karaoke sayacı silme",
 };
 
 /** Sayıyla birlikte yazılan küçük harfli ad: "2 kasa düzeltmesi", "1 geç zayi / ikram" (Bugün, sabah e-postası) */
@@ -52,6 +53,7 @@ export const KIND_COUNT_LABEL: Record<StaffRequestKind, string> = {
   "zayi-gec": "geç zayi / ikram",
   "zayi-sil": "zayi silme isteği",
   "mal-taslak": "mal siparişi taslağı",
+  "karaoke-sil": "karaoke sayacı silme isteği",
 };
 
 /** İşlem geçmişinde geri çekmenin adı (genel geri çekme eylemi; withdrawStaffRequest) */
@@ -65,6 +67,7 @@ export const WITHDRAW_LOG: Record<StaffRequestKind, string> = {
   "zayi-gec": "Geç zayi / ikram isteği geri çekildi",
   "zayi-sil": "Zayi silme isteği geri çekildi",
   "mal-taslak": "Mal siparişi taslağı geri çekildi",
+  "karaoke-sil": "Karaoke sayacı silme isteği geri çekildi",
 };
 
 export const STATUS_LABEL: Record<StaffRequestStatus, string> = {
@@ -92,12 +95,13 @@ export const STAFF_APPROVAL_KINDS: readonly { kind: StaffRequestKind | "recete" 
   { kind: "kapali-gun", text: "Dün kafe kapalıydı" },
   { kind: "zayi-gec", text: "Geç zayi / ikram (14 gün)" },
   { kind: "zayi-sil", text: "Başkasının zayi kaydını sildirmek" },
+  { kind: "karaoke-sil", text: "Açılışından 10 dakika sonra karaoke sayacını sildirmek" },
   { kind: "recete", text: "Reçete değişikliği" },
   { kind: "yeni-urun", text: "Yeni ürün önerisi" },
 ];
 
-/** Açık istek sınırının grubu: kasa istekleri birlikte sayılır; geç kasa raporu ve zayi ayrı (mal: kaldırılan tür) */
-export type RequestGroup = "kasa" | "kasa-gec" | "zayi" | "mal";
+/** Açık istek sınırının grubu: kasa istekleri birlikte sayılır; geç kasa raporu, zayi ve karaoke ayrı (mal: kaldırılan tür) */
+export type RequestGroup = "kasa" | "kasa-gec" | "zayi" | "mal" | "karaoke";
 export const KIND_GROUP: Record<StaffRequestKind, RequestGroup> = {
   "kasa-duzeltme": "kasa",
   "kasa-silme": "kasa",
@@ -108,6 +112,7 @@ export const KIND_GROUP: Record<StaffRequestKind, RequestGroup> = {
   "zayi-gec": "zayi",
   "zayi-sil": "zayi",
   "mal-taslak": "mal",
+  "karaoke-sil": "karaoke",
 };
 
 /**
@@ -115,7 +120,7 @@ export const KIND_GROUP: Record<StaffRequestKind, RequestGroup> = {
  * başına iş günü başına oluşturma (geri çekilen ve reddedilen dahil); zil kimliğinin en sık yenilenmesi
  */
 export const LIMITS = {
-  open: { kasa: 10, "kasa-gec": 5, zayi: 20, mal: 10 } satisfies Record<RequestGroup, number>,
+  open: { kasa: 10, "kasa-gec": 5, zayi: 20, mal: 10, karaoke: 5 } satisfies Record<RequestGroup, number>,
   perDay: 30,
   perSubjectDay: 3,
   bumpMs: 10 * 60_000,

@@ -4,6 +4,7 @@ import { pastCountReminder, staffLateEditNotice, unpricedExtrasNotice } from "@/
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
+import { staffKaraokeResult } from "@/lib/karaoke/timer-requests";
 import { posBell } from "@/lib/prices/pos";
 import { soldOutBell, soldOutDigestLine } from "@/lib/site-menu/sold-out";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -17,13 +18,14 @@ import { posPendingSummary } from "@/server/data/prices";
 import { loadTillScope } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { countProgress } from "@/server/data/count-progress";
+import { myKaraokeRequests, pendingKaraokeSummary } from "@/server/data/karaoke-requests";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
 import type { DigestBox } from "@/server/notify/digest-template";
 
 /*
  * Zilin operasyon satırları (src/server/actions/notifications.ts toplar; docs/BILDIRIMLER.md). Operasyon grubunun
- * modülü: kasada (ModPOS) değişecek fiyatlar ve sonra Tükendi ve zayi isteklerinin satırları (plan
- * docs/planlar/personel-yetki.md §2.1, §2.2, §2.8). İki rol dalında da çağrılır; personelin satırları yalnız personelin
+ * modülü: kasada (ModPOS) değişecek fiyatlar ve sonra Tükendi, zayi ve karaoke sayacı silme isteklerinin satırları (plan
+ * docs/planlar/personel-yetki.md §2.1, §2.2, §2.8; denetim E-15). İki rol dalında da çağrılır; personelin satırları yalnız personelin
  * yükleyicilerinden (tutar ve maliyet yok). Mal siparişi taslağının satırları (§2.4) 26 Eki 2026'da kaldırıldı.
  */
 
@@ -100,6 +102,48 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
 }
 
 /**
+ * Karaoke sayacı silme istekleri (denetim E-15). Yönetici: bekleyenler tek satır ("1 karaoke sayacı silme isteği onay
+ * bekliyor"; kimlik en yeni isteğin zil anından), ilk karta. Personel ("İsteklerim"): son 7 günde sonuçlanan kendi
+ * istekleri ("Silme onaylandı: karaoke sayacı 24 Eki 21:00–23:00"), Karaoke ekranına. Ad, etiket ve tutar yok.
+ */
+async function karaokeRequestNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  if (user.role === "admin") {
+    const k = await pendingKaraokeSummary();
+    if (!k.count) return [];
+    return [
+      {
+        id: `karaoke-istek-${k.bumped?.getTime() ?? 0}`,
+        kind: "warning",
+        title: `${num(k.count)} karaoke sayacı silme isteği onay bekliyor`,
+        body: "Açılışından 10 dakika sonra silinmesi istenen sayaçlar",
+        timeLabel: k.oldestAt ? waitedText(k.oldestAt, now) : "",
+        unread: true,
+        href: k.firstId ? `/panel/onaylar#istek-${k.firstId}` : "/panel/onaylar",
+        group: "onay",
+      },
+    ];
+  }
+  const today = todayTR(now);
+  const when = (iso: string) => (todayTR(new Date(iso)) === today ? "Bugün" : dateTR(todayTR(new Date(iso))));
+  return (await myKaraokeRequests(user.id, now))
+    .filter((r) => r.when && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired"))
+    .slice(0, 5)
+    .map((r) => {
+      const t = staffKaraokeResult({ status: r.status as "approved" | "rejected" | "superseded" | "expired", when: r.when!, note: r.reviewNote });
+      return {
+        id: `istek-${r.id}-${r.status}`,
+        kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
+        title: t.title,
+        body: t.body,
+        timeLabel: when(r.updatedAt),
+        unread: true,
+        href: "/panel/karaoke",
+        group: "onay" as const,
+      };
+    });
+}
+
+/**
  * Tükendi (§2.1; yalnız yönetici, grup Uyarılar): personelin bar ekranında kapattığı ve hâlâ satışta olmayan ürünler
  * ("Tükendi: Tiramisu, Cheesecake"; kim ve saat). Bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da
  * daha çok ürün kapattıysa uyarı. Ürün satışa açılınca satır kalkar; push yok. Fiyat yok.
@@ -152,14 +196,15 @@ async function countAlertNotifications(user: CurrentUser, now: Date): Promise<Pa
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste, soldOut, count, countAlerts] = await Promise.all([
+  const [pos, waste, karaoke, soldOut, count, countAlerts] = await Promise.all([
     posNotifications(user, now).catch(() => []),
     wasteRequestNotifications(user, now).catch(() => []),
+    karaokeRequestNotifications(user, now).catch(() => []),
     soldOutNotifications(user, now).catch(() => []),
     pastCountNotifications(user, now).catch(() => []),
     countAlertNotifications(user, now).catch(() => []),
   ]);
-  return [...waste, ...soldOut, ...count, ...countAlerts, ...pos];
+  return [...waste, ...karaoke, ...soldOut, ...count, ...countAlerts, ...pos];
 }
 
 /**

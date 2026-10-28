@@ -1938,8 +1938,9 @@ export const posMarks = pgTable(
 // ---------------------------------------------------------------- Personel istekleri (ortak onay kuyruğu)
 /**
  * Personelin yöneticinin onayına giden istekleri (docs/ONAYLAR.md): kasa düzeltmesi ve silmesi, geç kasa raporu,
- * kasadan çıkan, fotoğraf kaldırma, kapalı gün, geç zayi / ikram ve zayi silme (eski `mal-taslak`: mal siparişi
- * taslağı, 26 Eki 2026'da kaldırıldı; tür eski satırlar için enumda kalır, kuyruklar onu okumaz). Kayıt onaya kadar
+ * kasadan çıkan, fotoğraf kaldırma, kapalı gün, geç zayi / ikram, zayi silme ve karaoke sayacı silme (eski
+ * `mal-taslak`: mal siparişi taslağı, 26 Eki 2026'da kaldırıldı; tür eski satırlar için enumda kalır, kuyruklar onu
+ * okumaz; `karaoke-sil` 28 Eki 2026'da eklendi, denetim E-15). Kayıt onaya kadar
  * değişmez; istek burada bekler, türe özel alanlar `payload` ve `result` içinde (zod ile her okumada çözülür). Kişi
  * başına konu başına tek bekleyen istek (yenisi onu günceller, `version` artar); yönetici yalnız gördüğü sürümü onaylar,
  * kimse kendi isteğini onaylayamaz. Reçete önerileri ayrı tablodadır (recipe_change_requests). Türler ve durumlar
@@ -1950,9 +1951,9 @@ export const staffRequests = pgTable(
   {
     id: serial("id").primaryKey(),
     kind: text("kind", {
-      enum: ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun", "zayi-gec", "zayi-sil", "mal-taslak"],
+      enum: ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun", "zayi-gec", "zayi-sil", "mal-taslak", "karaoke-sil"],
     }).notNull(),
-    /** İsteğin konusu: gun:<D>, cikan:<id>, cikan-yeni:<anahtar>, foto:<id>, zayi:<id>, zayi-yeni:<anahtar>, tedarikci:<anahtar> */
+    /** İsteğin konusu: gun:<D>, cikan:<id>, cikan-yeni:<anahtar>, foto:<id>, zayi:<id>, zayi-yeni:<anahtar>, karaoke:<id>, tedarikci:<anahtar> */
     subject: text("subject").notNull(),
     /** Etkilenen iş günü (YYYY-MM-DD); günü olmayan istekte boş */
     day: text("day"),

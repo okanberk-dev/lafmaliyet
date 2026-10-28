@@ -17,6 +17,7 @@ import { getDb } from "@/server/db";
 
 import { categoryFireDefault } from "../urunler/logic";
 
+import { KaraokeRequests } from "./karaoke-section";
 import { KasaRequests } from "./kasa-section";
 import { OpsRequests } from "./ops-section";
 import { RecentDecisions } from "./recent-decisions";
@@ -26,7 +27,7 @@ export const metadata: Metadata = { title: "Onaylar" };
 
 /**
  * Onaylar (docs/ONAYLAR.md): personelin yöneticinin onayına giden istekleri ve önerileri, sırayla kasa, zayi ve ikram,
- * reçete; en altta personel isteklerinin son kararları. Her bölüm kendi Suspense'inde ve kendi requireAdmin'iyle;
+ * karaoke, reçete; en altta personel isteklerinin son kararları. Her bölüm kendi Suspense'inde ve kendi requireAdmin'iyle;
  * maliyet modeli istek başına bir kez kurulur (loadModelOnce). Kartların çapası `#istek-<id>`, reçete kartlarınınki
  * `#oneri-<id>`.
  */
@@ -36,7 +37,7 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Onaylar"
         eyebrow="Günlük"
-        description="Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
+        description="Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, karaoke, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">
             <BookOpen size={16} aria-hidden="true" /> Reçete defteri
@@ -49,6 +50,9 @@ export default function ApprovalsPage() {
         </Suspense>
         <Suspense fallback={null}>
           <OpsRequests />
+        </Suspense>
+        <Suspense fallback={null}>
+          <KaraokeRequests />
         </Suspense>
         <Suspense fallback={<PageSkeleton rows={6} />}>
           <ApprovalsContent />

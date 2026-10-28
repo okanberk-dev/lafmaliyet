@@ -105,6 +105,12 @@ export function dayLabel(date: string, nowMs: number): string {
   return `${d} ${MONTHS[m - 1]} ${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
 }
 
+/** Göreli olmayan kısa gün: "24 Eki" (kalıcı metinlerde: istek başlığı, işlem geçmişi) */
+export function dayShortTR(date: string): string {
+  const [, m, d] = date.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]}`;
+}
+
 /** "20:00–22:00" (bitiş uzatmayla) */
 export function timeRange(startMs: number, endMs: number): string {
   return `${trClock(startMs).time}–${trClock(endMs).time}`;
