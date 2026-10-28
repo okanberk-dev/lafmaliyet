@@ -12,8 +12,9 @@ import { breakEvenNeeds, scenarioBreakEvenItems, scenarioFixedItems } from "../s
 import { createModel } from "../src/lib/calc/engine";
 import { applyScenario, breakEvenOf, dashboard, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, SalesLine } from "../src/lib/calc/types";
+import { buildCashPlan, EXCLUDABLE_KEY, fixedReminderDrifts, planInputFromModel, planNotes, reminderDriftText, type CashPlan, type CashPlanInput } from "../src/lib/cash-plan";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
-import { addDays } from "../src/lib/reminders";
+import { addDays, fixedReminderFollow, type ReminderRow } from "../src/lib/reminders";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -253,4 +254,168 @@ test("E-41: süren ayda kapalı işaretli gün ay sonu öngörüsünü orantıl�
   const b = est(closedModel);
   close(b.basis.posRevenue, (a.basis.posRevenue! / 31) * 29, "KDV tahmininin cirosu 29 günle");
   assert.ok(b.pos < a.pos, "KDV tahmini düştü");
+});
+
+// ---------------------------------------------------------------- Nakit planı (E-13, E-41, E-46)
+
+const TODAY = "2026-10-22";
+const PAYROLL0 = { net: 0, sgk: 0, people: 0 };
+function planInput(over: Partial<CashPlanInput> = {}): CashPlanInput {
+  return {
+    today: TODAY,
+    opening: null,
+    excluded: [],
+    settings: { komisyon: 0.025, kartOrani: 0.8, acikGun: 30, kdv: 0.1, kdvHizmet: 0.2 },
+    invoiceTermDays: 30,
+    cashReports: [],
+    posMonth: null,
+    online: null,
+    invoices: [],
+    reminders: [],
+    goods: [],
+    goodsSpanDays: 0,
+    months: Object.fromEntries(["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"].map((m) => [m, { payroll: PAYROLL0, fixed: [] }])),
+    fixedNames: [],
+    vat: { months: [], firstSalesMonth: null, hasSite: false },
+    vatAnchor: null,
+    ...over,
+  };
+}
+const planLines = (p: CashPlan) => p.weeks.flatMap((w) => w.lines);
+let remId = 500;
+const reminder = (over: Partial<ReminderRow>): ReminderRow => ({
+  id: remId++,
+  title: "Kira",
+  kind: "kira",
+  amount: 5_000,
+  dueDate: "2026-11-01",
+  anchorDate: over.dueDate ?? "2026-11-01",
+  repeat: "monthly",
+  remindDaysBefore: 3,
+  note: null,
+  active: true,
+  ...over,
+});
+
+test("E-13 nakit planı: aylık girişe çevrilen gider her ay yayılır; bu ay ödenen düşülür; hatırlatıcı varsa onun gününde", () => {
+  const model = createModel(converted());
+  const inp = planInputFromModel(model, TODAY);
+  assert.deepEqual(inp.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 50_000, paid: 50_000, from: "2026-10" }]);
+  assert.deepEqual(inp.months["2026-11"].expenses, [{ id: 1, name: "Influencer", amount: 50_000, paid: 0, from: "2026-10" }]);
+  const plan = buildCashPlan(planInput({ months: inp.months, fixedNames: inp.fixedNames }));
+  const exp = planLines(plan).filter((l) => l.key === "expense");
+  const total = exp.reduce((a, l) => a + l.amount, 0);
+  // Ekim ödendi (kalan 0); Kasım'ın tamamı + 1–2 Aralık
+  close(total, 50_000 + (50_000 / 31) * 2, "Kasım + 2 gün Aralık", 1e-3);
+  assert.match(exp[1].detail ?? "", /Influencer/);
+  assert.equal(exp[1].kind, "expense");
+  const row = plan.estimates.find((r) => r.key === "expense:1")!;
+  assert.equal(row.status, "on");
+  assert.equal(row.monthly, 50_000);
+  assert.match(planNotes(plan, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "expense")!.text, /her ay girilen 1 kategori/);
+  // Tahmine katılanlar'dan kapatılır
+  assert.ok(EXCLUDABLE_KEY.test("expense:1"));
+  const off = buildCashPlan(planInput({ months: inp.months, excluded: ["expense:1"] }));
+  assert.equal(planLines(off).some((l) => l.key === "expense"), false);
+  // Adı aynı tutarsız hatırlatıcı: onun gününde Aylık harcamalar'daki tutar, yayılmaz (iki kez sayılmaz)
+  const rem = reminder({ title: "Influencer", kind: "odeme", amount: null, dueDate: "2026-11-05", note: "Sabit giderlerden" });
+  const withRem = buildCashPlan(planInput({ months: inp.months, fixedNames: inp.fixedNames, reminders: [rem] }));
+  assert.equal(planLines(withRem).some((l) => l.key === "expense"), false);
+  const remLines = planLines(withRem).filter((l) => l.key.startsWith(`reminder:${rem.id}@`));
+  assert.deepEqual(remLines.map((l) => [l.date, l.amount, l.kind]), [["2026-11-05", 50_000, "expense"]]);
+  assert.equal(withRem.estimates.find((r) => r.key === "expense:1")!.status, "covered");
+});
+
+test("E-13 nakit planı: süren ayda geçen aydan az girildiyse kalanı ayın kalan günlerine yayılır", () => {
+  const model = createModel(converted([entry(1, 1, "2026-09-05", 40_000), entry(2, 1, "2026-10-02", 10_000)]));
+  const inp = planInputFromModel(model, TODAY);
+  assert.deepEqual(inp.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 40_000, paid: 10_000, from: "2026-09" }]);
+  const plan = buildCashPlan(planInput({ months: inp.months }));
+  const oct = plan.weeks[0].lines.find((l) => l.key === "expense")!;
+  // 23–28 Ekim (ilk haftanın yarından sonraki 6 günü) ÷ 9 kalan gün × 30.000
+  close(oct.amount, (30_000 / 9) * 6, "ilk hafta", 1e-6);
+});
+
+test("E-41 nakit planı: kapalı işaretli günde satış ve online girişi yok; not ve girdi", () => {
+  const reports = Array.from({ length: 10 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 10_000, card: 6_000, mealCard: 2_000 }));
+  const online = { month: "2026-09", perDay: 1_000 };
+  const open = buildCashPlan(planInput({ cashReports: reports, online }));
+  const shut = buildCashPlan(planInput({ cashReports: reports, online, closedDays: ["2026-10-25", "2026-10-22"] }));
+  const sum = (p: CashPlan, key: string) => p.weeks[0].lines.filter((l) => l.key === key).reduce((a, l) => a + l.amount, 0);
+  const perDay = 10_000 * (1 - 0.025 * 0.8);
+  close(sum(open, "sales") - sum(shut, "sales"), perDay, "bir günlük satış düştü (bugün zaten yok)");
+  close(sum(open, "online") - sum(shut, "online"), 1_000, "bir günlük online düştü");
+  assert.deepEqual(shut.basis.closedDays, ["2026-10-25"]);
+  assert.match(planNotes(shut, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "closed")!.text, /1 günde \(25 Eki\)/);
+  // Modelden: ufuktaki kapalı günler
+  const m = createModel({ ...base, closedDays: ["2026-10-20", "2026-10-25", "2027-01-01"] });
+  assert.deepEqual(planInputFromModel(m, TODAY).closedDays, ["2026-10-25"]);
+});
+
+test("E-46 nakit planı: tutarlı sabit gider hatırlatıcısı sonraki sürümle farklıysa satırda ve uyarıda söylenir", () => {
+  const months = planInput().months;
+  const kira = (amount: number) => ({ payroll: PAYROLL0, fixed: [{ id: 1, name: "Kira", period: "aylik" as const, amount, vatRate: 0.2 }] });
+  const plan = buildCashPlan(
+    planInput({
+      months: { ...months, "2026-10": kira(160_000), "2026-11": kira(200_000), "2026-12": kira(200_000) },
+      fixedNames: [{ id: 1, name: "Kira", period: "aylik" }],
+      reminders: [reminder({ title: "Kira", amount: 192_000, dueDate: "2026-11-01", note: "Sabit giderlerden" })],
+    }),
+  );
+  const line = planLines(plan).find((l) => l.key.startsWith("reminder:") && l.date === "2026-11-01")!;
+  assert.equal(line.amount, 192_000, "plan hatırlatıcının tutarını öder");
+  assert.match(line.detail ?? "", /Sabit giderde Kasım 2026 tutarı 240\.000/);
+  assert.deepEqual(
+    plan.reminderDrift.map((d) => [d.month, d.reminderAmount, d.fixedAmount]),
+    [["2026-11", 192_000, 240_000]],
+  );
+  // Tutar aynıysa uyarı yok
+  const same = buildCashPlan(
+    planInput({
+      months: { ...months, "2026-11": kira(160_000), "2026-12": kira(160_000) },
+      fixedNames: [{ id: 1, name: "Kira", period: "aylik" }],
+      reminders: [reminder({ title: "Kira", amount: 192_000, dueDate: "2026-11-01" })],
+    }),
+  );
+  assert.deepEqual(same.reminderDrift, []);
+});
+
+test("E-46 Ödemeler: hatırlatıcı tutarı bir yıl içindeki sürümle karşılaştırılır; bitmiş ve farklı dönemli kalem karşılaştırılmaz", () => {
+  const fixed = [
+    { id: 1, name: "Kira", period: "aylik" as const, amount: 160_000, section: "kira" as const, vatRate: null, startMonth: null, endMonth: null },
+    { id: 2, name: "Eski reklam", period: "aylik" as const, amount: 10_000, section: "genel" as const, vatRate: null, startMonth: null, endMonth: "2026-09" },
+    { id: 3, name: "Sigorta", period: "yillik" as const, amount: 12_000, section: "genel" as const, vatRate: 0, startMonth: null, endMonth: null },
+  ];
+  const versions = [{ fixedExpenseId: 1, fromMonth: "2027-01", period: "aylik" as const, amount: 200_000 }];
+  const rems = [
+    reminder({ id: 1, title: "Kira", amount: 192_000, dueDate: "2026-11-01" }),
+    reminder({ id: 2, title: "eski reklam", amount: 12_000, dueDate: "2026-11-01" }),
+    reminder({ id: 3, title: "Sigorta", amount: 1_000, dueDate: "2026-11-01", repeat: "monthly" }),
+    reminder({ id: 4, title: "Kira", amount: 192_000, dueDate: "2026-11-01", active: false }),
+  ];
+  const drifts = fixedReminderDrifts(rems, fixed, versions, TODAY);
+  assert.deepEqual(drifts, [{ reminderId: 1, title: "Kira", month: "2027-01", reminderAmount: 192_000, fixedAmount: 240_000 }]);
+  assert.equal(reminderDriftText(drifts[0]).replace(/\s/g, " "), "Kira: Ocak 2027 döneminde sabit giderde 240.000 ₺ (KDV dahil); hatırlatıcıda 192.000 ₺");
+  // Zam bir yıldan sonraysa henüz söylenmez
+  assert.deepEqual(fixedReminderDrifts(rems, fixed, [{ ...versions[0], fromMonth: "2028-01" }], TODAY), []);
+});
+
+test("E-46: sabit gider değişince otomatik tutarlı hatırlatıcı yeni sürümü izler; elle yazılmışa dokunulmaz", () => {
+  const kira = { amount: 160_000, period: "aylik" as const, section: "kira" as const, vatRate: null };
+  const r = { amount: 192_000, dueDate: "2026-11-01", repeat: "monthly" as const };
+  // Kasım'dan zam: yeni tutar
+  assert.deepEqual(fixedReminderFollow(r, kira, [], kira, [{ fromMonth: "2026-11", period: "aylik", amount: 200_000 }]), { kind: "update", amount: 240_000 });
+  // Ocak'tan zam: tek tutar iki dönemi taşıyamaz, boşalır
+  assert.deepEqual(fixedReminderFollow(r, kira, [], kira, [{ fromMonth: "2027-01", period: "aylik", amount: 200_000 }]), { kind: "update", amount: null });
+  // KDV oranı değişti (bütün aylar): yeni brüt
+  assert.deepEqual(fixedReminderFollow(r, kira, [], { ...kira, vatRate: 0.1 }, []), { kind: "update", amount: 176_000 });
+  // Değişiklik yok
+  assert.deepEqual(fixedReminderFollow(r, kira, [], kira, []), { kind: "same" });
+  // Elle yazılmış tutar: dokunulmaz; yeni tutar farklıysa uyarılır
+  assert.deepEqual(fixedReminderFollow({ ...r, amount: 193_500 }, kira, [], kira, [{ fromMonth: "2026-11", period: "aylik", amount: 200_000 }]), { kind: "manual", expected: 240_000 });
+  assert.deepEqual(fixedReminderFollow({ ...r, amount: 193_500 }, kira, [], kira, []), { kind: "manual", expected: 192_000 });
+  assert.deepEqual(fixedReminderFollow({ ...r, amount: 192_000.4 }, kira, [], kira, []), { kind: "same" });
+  // Tutarsız hatırlatıcı zaten Giderler'i izler; dönemi değişen kalem (aylık → yıllık) boşalır
+  assert.deepEqual(fixedReminderFollow({ ...r, amount: null }, kira, [], kira, [{ fromMonth: "2026-11", period: "aylik", amount: 1 }]), { kind: "same" });
+  assert.deepEqual(fixedReminderFollow(r, kira, [], { ...kira, period: "yillik", amount: 1_920_000 }, []), { kind: "update", amount: null });
 });

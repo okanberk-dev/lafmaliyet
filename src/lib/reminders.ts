@@ -506,6 +506,34 @@ export function fixedReminderAt(
   return { period: at.period, amount: gross > 0 && !changesFrom ? gross : null, gross, vatRate, changesFrom };
 }
 
+/** Hatırlatıcı tekrarının sabit gider karşılığı (çeyreklik ve tek seferlik yok) */
+const REPEAT_PERIOD: Partial<Record<ReminderRow["repeat"], FixedPeriod>> = { weekly: "haftalik", monthly: "aylik", yearly: "yillik" };
+
+/**
+ * Sabit gider değişince (tutar, dönem, KDV oranı; denetim E-46) "Sabit giderlerden ekle" ile açılmış hatırlatıcının
+ * tutarı ne olsun. Hatırlatıcıdaki tutar eskisinin otomatik tutarıysa (sıradaki ödeme ayının sürümü, KDV dahil; ±1 ₺)
+ * yeni sürümle aynı kural uygulanır: o ayın tutarı, sonraki bir aydan değişiyorsa ya da dönemi tutmuyorsa boş (nakit planı
+ * Giderler'deki tutarı her ay izler; eklerkenki kural, fixedReminderAt). Elle başka bir tutar yazılmışsa dokunulmaz:
+ * yeni tutar farklıysa "manual" (uyarılır). Tutarsız hatırlatıcı zaten Giderler'i izler.
+ */
+export function fixedReminderFollow(
+  r: { amount: number | null; dueDate: string; repeat: ReminderRow["repeat"] },
+  before: Parameters<typeof fixedReminderAt>[0],
+  beforeVersions: Parameters<typeof fixedReminderAt>[1],
+  after: Parameters<typeof fixedReminderAt>[0],
+  afterVersions: Parameters<typeof fixedReminderAt>[1],
+): { kind: "same" } | { kind: "update"; amount: number | null } | { kind: "manual"; expected: number } {
+  if (r.amount === null) return { kind: "same" };
+  const month = r.dueDate.slice(0, 7);
+  const cadence = REPEAT_PERIOD[r.repeat];
+  const old = fixedReminderAt(before, beforeVersions, month);
+  const now = fixedReminderAt(after, afterVersions, month);
+  const next = cadence && now.period === cadence ? now.amount : null;
+  const auto = cadence !== undefined && old.period === cadence && Math.abs(old.gross - r.amount) <= 1;
+  if (!auto) return now.changesFrom || Math.abs(now.gross - r.amount) > 1 ? { kind: "manual", expected: now.gross } : { kind: "same" };
+  return next !== null && Math.abs(next - r.amount) <= 1 ? { kind: "same" } : { kind: "update", amount: next };
+}
+
 const FIXED_PERIOD_LABEL: Record<FixedPeriod, string> = { aylik: "aylık", haftalik: "haftalık", yillik: "yıllık", gunluk: "günlük" };
 
 /** "Sabit giderlerden ekle" listesindeki satır: seçilen ilk ödeme ayında hatırlatıcıya yazılacak olan (eylemle aynı) */
