@@ -652,6 +652,29 @@ export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount
   return r.repeat !== "none" && r.amount !== null && (isVatReminder(r) || isVatWithholdingReminder(r));
 }
 
+/**
+ * Muhtasar hatırlatıcısı (Vergi ve nakit planı sınıfı; docs/VERGI.md): başlıkta "muhtasar" ya da "stopaj"; KDV, KDV-2,
+ * SGK ve yalnız damga vergisi değil. "Kira stopajı" da muhtasarla ödenir
+ */
+export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  const t = foldTR(r.title);
+  if (!/muhtasar|stopaj/.test(t) || stampOnly(t)) return false;
+  return !isVatReminder(r) && !isVatWithholdingReminder(r) && reminderCategory(r.kind, r.title) !== "sgk";
+}
+
+/** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */
+export function isProvisionalTaxReminder(r: Pick<ReminderRow, "title">): boolean {
+  return /gecici\s+vergi/.test(foldTR(r.title));
+}
+
+/** Yerel vergi hatırlatıcısı: çevre temizlik vergisi ("ÇTV") ya da ilan ve reklam vergisi; değilse null */
+export function isLocalTaxReminder(r: Pick<ReminderRow, "title">): "ctv" | "ilan" | null {
+  const t = foldTR(r.title);
+  if (/cevre\s+temizlik|(^|[^a-z])ctv([^a-z]|$)/.test(t)) return "ctv";
+  if (/ilan/.test(t) && /reklam/.test(t)) return "ilan";
+  return null;
+}
+
 /** Zaman çizelgesi grupları: geciken, bugün, bu hafta (pazara kadar), bu ay, daha sonra */
 export type TimelineGroup = "overdue" | "today" | "week" | "month" | "later";
 

@@ -148,7 +148,7 @@ export interface ExcludedItem {
 }
 
 export interface BridgeRow {
-  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "end";
+  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "stock" | "end";
   label: string;
   amount: number;
 }
@@ -341,7 +341,7 @@ function entryNet(e: ExpenseEntry, section: FixedSection | "mal"): number {
 interface Ctx {
   input: TaxPnlInput;
   candidates: Set<number>;
-  allocated: Map<number, number>;
+  linkedCost: Map<number, number>;
   fixedById: Map<number, FixedExpense>;
   catById: Map<number, ExpenseCategory>;
 }
@@ -356,7 +356,7 @@ function makeCtx(input: TaxPnlInput): Ctx {
   return {
     input,
     candidates,
-    allocated: allocatedByInvoice(input.assets),
+    linkedCost: allocatedByInvoice(input.assets),
     fixedById: new Map(input.fixed.map((f) => [f.id, f])),
     catById: new Map(input.expenseCategories.map((c) => [c.id, c])),
   };
@@ -461,7 +461,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
       if (GOODS_CATEGORIES.includes(inv.category) || inv.category === COMMISSION_CATEGORY) prePeriod = r2(prePeriod + n);
       continue;
     }
-    const a = ctx.allocated.get(inv.id) ?? 0;
+    const a = ctx.linkedCost.get(inv.id) ?? 0;
     const rem = a > 0 ? Math.max(0, r2(n - a)) : n;
     if (SEPARATE_CATEGORIES.includes(inv.category)) {
       const note = inv.category === "Alp Koç" ? ALP_KOC_NOTE : undefined;

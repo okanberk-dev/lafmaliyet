@@ -12,6 +12,9 @@ import {
   dueNotifications,
   fixedReminderAt,
   fixedReminderText,
+  isLocalTaxReminder,
+  isMuhtasarReminder,
+  isProvisionalTaxReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
@@ -371,4 +374,22 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   assert.equal(fixedReminderText({ amount: 1_000, period: "aylik", section: "faturalar" }, [{ fromMonth: "2026-11", period: "aylik", amount: 0 }], "2026-11"), "Tutar yazılmaz · aylık");
   // Personel KDV'siz
   assert.equal(fixedReminderText({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11"), "40.000\u00a0₺ · aylık");
+});
+
+test("Vergi: muhtasar, geçici vergi ve yerel vergi hatırlatıcıları başlıktan (docs/VERGI.md)", () => {
+  const r = (title: string, kind: ReminderRow["kind"] = "vergi") => ({ title, kind });
+  assert.equal(isMuhtasarReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
+  assert.equal(isMuhtasarReminder(r("Kira stopajı", "kira")), true);
+  assert.equal(isMuhtasarReminder(r("SGK prim ödemesi")), false);
+  assert.equal(isMuhtasarReminder(r("KDV beyannamesi ve ödemesi")), false);
+  assert.equal(isMuhtasarReminder(r("Muhtasar damga vergisi")), false);
+  assert.equal(isMuhtasarReminder(r("Geçici vergi beyanı ve ödemesi")), false);
+  assert.equal(isProvisionalTaxReminder(r("Geçici vergi beyanı ve ödemesi")), true);
+  assert.equal(isProvisionalTaxReminder(r("GEÇİCİ VERGİ 2026/3")), true);
+  assert.equal(isProvisionalTaxReminder(r("Kurumlar vergisi")), false);
+  assert.equal(isLocalTaxReminder(r("Çevre temizlik vergisi (2. taksit)")), "ctv");
+  assert.equal(isLocalTaxReminder(r("ÇTV 1. taksit")), "ctv");
+  assert.equal(isLocalTaxReminder(r("İlan ve reklam vergisi")), "ilan");
+  assert.equal(isLocalTaxReminder(r("Instagram reklamı")), null);
+  assert.equal(isLocalTaxReminder(r("Elektrik")), null);
 });
