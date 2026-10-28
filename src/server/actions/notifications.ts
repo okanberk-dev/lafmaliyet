@@ -382,7 +382,7 @@ function modelFailed(e: unknown): { priceNote: PanelNotification[]; warnings: Pa
         id: `uyari-model-${todayTR()}`,
         kind: "warning",
         title: "Maliyet uyarıları yüklenemedi",
-        body: "Satış ayının uyarıları ve hammadde zammı şu an okunamadı; öbür bildirimler aşağıda. Zili birazdan yeniden açın.",
+        body: "Satış ayının uyarıları ve hammadde zammı şu an okunamadı; öbür bildirimler etkilenmedi. Zili birazdan yeniden açın.",
         timeLabel: "",
         unread: false,
         href: "/panel",
