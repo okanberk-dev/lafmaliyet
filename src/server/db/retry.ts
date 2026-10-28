@@ -14,6 +14,17 @@
 //   hatasıdır ve bağlantı hiç kurulmadığı için gönderilmemiş sayılır: yazım da yeniden denenir. Canlıda 24 Ekim 2026'da
 //   Bugün'ün ilk sorgusunda görüldü (denetim E-50). Çıplak 08P01 eklenmez: genel protokol hatası kodudur, kurulmuş bir
 //   bağlantıda da gelir; yalnız bu mesajla birlikte sayılır.
+// - İşlemin bağlantısı gövde çalışırken kapanırsa (BEGIN geçti, havuz soketi kapattı; canlıda 20 ve 28 Ekim 2026, /panel'den
+//   gönderilen bir eylem: "write CONNECTION_CLOSED" ve hemen ardından "Cannot read properties of null (reading 'write')"):
+//   postgres.js 3.4.9 işlemi bağlantının kapanışıyla hemen reddeder, ama kendi kapsamı ölü bağlantıya ROLLBACK ya da
+//   COMMIT yazmayı sürdürür. Soket artık null olduğu için setImmediate'teki yazım süreçte yakalanmamış hata olur ve o havuz
+//   yuvası işlev ölene kadar bozulur (sonraki her bağlantısı connect_timeout'u bekleyip düşer; RST'de yuvada hayalet bir
+//   sorgu kalır, sonraki işlem sonsuza dek bekler). Bu yüzden işlem gövdesine korumalı bir istemci verilir (28 Ekim 2026):
+//   bağlantı kapandıktan (begin bağlantı hatasıyla reddedildi) ya da işlemin bir sorgusu bağlantı hatasıyla düştükten
+//   sonra gövdenin sorgusu ve savepoint'i postgres.js'e gitmez, aynı hatayla reddedilir; gövde bağlantı ölmüşken biterse
+//   (hatayla ya da başarıyla) sonucu postgres.js'e hiç dönmez, ROLLBACK da COMMIT de yazılmaz (sunucu kopan bağlantının
+//   işlemini zaten geri aldı). İşlem yeniden denenmez: hata çağırana gider, gövde dışarıya yazmış olabilir (Paraşüt
+//   belirtecinin yenilenmesi işlemin içindedir, refresh_token tek kullanımlık).
 // "server-only" yok: komut satırı betikleri (migrate, yedek) ve testler de kullanır. Testler: tests/veritabani-baglanti.test.ts,
 // gerçek postgres.js ve sahte Neon'la tests/veritabani-baglanti-db.test.ts.
 
@@ -78,10 +89,125 @@ export interface RetryOptions {
 }
 
 /**
+ * Gövdenin sorgusu bağlantı hatasıyla düşünce begin'in reddi (bağlantının kapanışı) en çok bu kadar beklenir: RST'de
+ * soketin "close"u "error"undan sonra, olay döngüsünün ayrı bir turunda gelir
+ */
+const DEAD_GRACE_MS = 250;
+
+/** Hiç sonuçlanmayan söz: her seferinde yenisi (paylaşılan bir söz, bekleyen her kapsamı sonsuza dek bellekte tutardı) */
+const never = () => new Promise<never>(() => {});
+
+/**
+ * Bir işlemin (bir begin denemesinin) bağlantı durumu. `dead`: postgres.js begin'i bağlantı hatasıyla reddetti (işlemin
+ * bağlantısı kapandı; pool › onclose → begin'deki Promise.race). `broken`: işlemin bir sorgusu bağlantı hatasıyla düştü
+ * (RST'de sorgu hatası bağlantının kapanışından önce gelir).
+ */
+function txState() {
+  let markDead!: () => void;
+  const st = {
+    dead: null as unknown,
+    broken: null as unknown,
+    died: new Promise<void>((resolve) => (markDead = resolve)),
+    kill(e: unknown) {
+      if (st.dead !== null) return;
+      st.dead = e;
+      markDead();
+    },
+    /** Bağlantı ölü mü; şüphe varsa (gövde bağlantı hatasıyla düştü ya da bir sorgusu düştü) kapanış kısa süre beklenir */
+    async isDead(suspect: boolean): Promise<boolean> {
+      if (st.dead === null && (suspect || st.broken !== null)) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([st.died, new Promise<void>((resolve) => (timer = setTimeout(resolve, DEAD_GRACE_MS)))]);
+        clearTimeout(timer);
+      }
+      return st.dead !== null;
+    },
+  };
+  return st;
+}
+type TxState = ReturnType<typeof txState>;
+
+/**
+ * İşlemin istemcisi (postgres.js'in kapsamdaki `sql`'i): bağlantı ölüyse ya da bir sorgusu bağlantı hatasıyla düştüyse
+ * unsafe() ve savepoint() postgres.js'e gitmez, o hatayla reddedilir. Denetim sorgunun gönderildiği anda yapılır
+ * (postgres.js de sorguyu beklenince gönderir); sorgunun bağlantı hatası `broken`'a yazılır. drizzle'ın işlem içinde
+ * kullandığı yalnız bu ikisidir (postgres-js/session.js); öteki her şey kapsamın kendisi.
+ */
+function guardTx(sql: unknown, st: TxState): unknown {
+  if (sql === null || (typeof sql !== "object" && typeof sql !== "function")) return sql;
+  return new Proxy(sql, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      if (prop === "unsafe") {
+        return (...a: unknown[]) => {
+          let asValues = false;
+          let started: Promise<unknown> | null = null;
+          const run = () =>
+            (started ??= (async () => {
+              const stop = st.dead ?? st.broken;
+              if (stop !== null) throw stop;
+              const q = (value as (...x: unknown[]) => PendingLike).apply(target, a);
+              try {
+                return await (asValues ? q.values() : q);
+              } catch (e) {
+                if (connectionErrorCode(e) !== null) st.broken ??= e;
+                throw e;
+              }
+            })());
+          const pending = {
+            values() {
+              asValues = true;
+              return pending;
+            },
+            then<A = unknown, B = never>(onFulfilled?: ((v: unknown) => A | PromiseLike<A>) | null, onRejected?: ((e: unknown) => B | PromiseLike<B>) | null) {
+              return run().then(onFulfilled, onRejected);
+            },
+          };
+          return pending;
+        };
+      }
+      if (prop === "savepoint") {
+        // drizzle'ın iç içe işlemi: savepoint(gövde); gövde de aynı korumayla sarılır (ölü bağlantıya ROLLBACK TO yazılmasın)
+        return (...a: unknown[]) => {
+          const stop = st.dead ?? st.broken;
+          if (stop !== null) return Promise.reject(stop);
+          const fn = a[a.length - 1];
+          const args = typeof fn === "function" ? [...a.slice(0, -1), guardBody(fn as (...x: unknown[]) => unknown, st)] : a;
+          return (value as (...x: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return value;
+    },
+  });
+}
+
+/**
+ * İşlem gövdesi: korumalı istemciyle çalışır. Bağlantı ölmüşken biterse (hatayla ya da başarıyla) hiç sonuçlanmaz:
+ * postgres.js'in kapsamı ölü bağlantıya ROLLBACK ya da COMMIT yazmaz; begin zaten reddedildi, çağıran beklemez.
+ * Bağlantı canlıysa sonuç ve hata olduğu gibi döner (başka bir havuzun bağlantı hatası da: ROLLBACK canlı bağlantıya gider).
+ */
+function guardBody(fn: (...a: unknown[]) => unknown, st: TxState) {
+  return async (sql: unknown, ...rest: unknown[]) => {
+    let result: unknown;
+    try {
+      const x = fn(guardTx(sql, st), ...rest);
+      // postgres.js gibi: dizi dönen gövdenin sorguları birlikte beklenir
+      result = await (Array.isArray(x) ? Promise.all(x) : x);
+    } catch (e) {
+      if (await st.isDead(connectionErrorCode(e) !== null)) return never();
+      throw e;
+    }
+    if (await st.isDead(false)) return never();
+    return result;
+  };
+}
+
+/**
  * İstemcinin unsafe()'ini (drizzle bütün sorguları bununla gönderir: postgres-js/session.js) bağlantı hatasında bir
  * kez yeniden deneyen hâliyle değiştirir; begin()'i gövdesi çalışmadan bağlantı hatasıyla düşen işlemi bir kez yeniden
- * başlatan hâliyle sarar; öteki her şey (reserve, end, options) istemcinin kendisidir. Dönen nesne unsafe()'in yanıtı
- * gibi tembeldir: beklenince gönderilir, values() satır biçimini seçer.
+ * başlatan, gövdeye korumalı istemci veren hâliyle sarar; öteki her şey (reserve, end, options) istemcinin kendisidir.
+ * Dönen nesne unsafe()'in yanıtı gibi tembeldir: beklenince gönderilir, values() satır biçimini seçer.
  */
 export function withConnectionRetry<C extends RetryClient>(client: C, opts: RetryOptions = {}): C {
   const delayMs = opts.delayMs ?? 150;
@@ -123,7 +249,8 @@ export function withConnectionRetry<C extends RetryClient>(client: C, opts: Retr
   /**
    * İşlem: BEGIN bağlantı hatasıyla düşer ve gövde hiç çağrılmadıysa (bağlantı kurulamadı ya da BEGIN ölü sokete
    * yazıldı) bir kez daha açılır. Gövde çağrıldıysa hata olduğu gibi gider: gövdenin yazımı sunucuya ulaşmış ya da
-   * COMMIT gönderilmiş olabilir.
+   * COMMIT gönderilmiş olabilir. Her açılışta gövde korumalı istemciyle çalışır (guardBody): bağlantı gövde
+   * çalışırken kapanırsa ölü bağlantıya ne sorgu ne ROLLBACK / COMMIT gider.
    */
   async function begin(...args: unknown[]) {
     const call = (client.begin as (...a: unknown[]) => Promise<unknown>).bind(client);
@@ -131,18 +258,27 @@ export function withConnectionRetry<C extends RetryClient>(client: C, opts: Retr
     if (typeof fn !== "function") return call(...args);
     const head = args.slice(0, -1);
     let entered = false;
-    const body = (...a: unknown[]) => {
-      entered = true;
-      return fn(...a);
+    const attempt = () => {
+      const st = txState();
+      const body = guardBody((...a: unknown[]) => {
+        entered = true;
+        return (fn as (...x: unknown[]) => unknown)(...a);
+      }, st);
+      const p = Promise.resolve(call(...head, body));
+      // begin'in bağlantı hatasıyla reddi: BEGIN düştü (gövde çalışmadı) ya da işlemin bağlantısı kapandı
+      p.catch((e: unknown) => {
+        if (connectionErrorCode(e) !== null) st.kill(e);
+      });
+      return p;
     };
     try {
-      return await call(...head, body);
+      return await attempt();
     } catch (e) {
       const code = connectionErrorCode(e);
       if (entered || code === null) throw e;
       opts.onRetry?.(code, "begin");
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      return await call(...head, fn);
+      return await attempt();
     }
   }
   return new Proxy(client, {
