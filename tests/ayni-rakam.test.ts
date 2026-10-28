@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { breakEvenNeeds, profitGroups, scenarioBreakEvenItems, scenarioFixedItems } from "../src/app/panel/analiz/breakdowns";
+import { impactData, impactModel, settingsImpact } from "../src/app/panel/ayarlar/impact";
 import { createModel } from "../src/lib/calc/engine";
 import { applyScenario, breakEvenOf, dashboard, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice, SalesLine } from "../src/lib/calc/types";
@@ -74,8 +75,9 @@ test("E-13: sabit gideri aynı tutarlı aylık girişe çevirmek başabaşı ve 
   const nov = model.monthlyExpensePlan("2026-11");
   assert.deepEqual(nov.map((x) => [x.amount, x.source, x.from]), [[50_000, "carried", "2026-10"]]);
   close(model.breakEvenFixedFor("2026-11"), createModel(base).breakEvenFixedFor("2026-11"), "Kasım aynı");
-  // Ayarlar'daki etki ve Analiz aynı kuraldan
-  close(requiredDailyRevenue(model, "2026-10", 0), after.breakEvenDaily, "Ayarlar etkisi = Genel bakış");
+  // Ayarlar'daki etki tarayıcıdaki küçük modelle (impactModel(impactData)) aynı kuraldan
+  close(requiredDailyRevenue(impactModel(impactData(model)), "2026-10", 0), after.breakEvenDaily, "Ayarlar etkisi = Genel bakış");
+  close(settingsImpact(impactModel(impactData(model)), impactModel(impactData(model))).breakEvenDaily!.before, after.breakEvenDaily, "Ayarlar önizlemesi");
   // "En büyük giderler": toplam başabaşın sabit gideri, aylık harcama da kalem
   assert.ok(after.topExpenses.some((e) => e.name === "Influencer (Aylık harcamalar)" && e.amount === 50_000));
 });
@@ -144,6 +146,11 @@ test("E-59: kapanmış site ayında Genel bakış, Sabit giderler, Analiz ve Aya
   close(be.daily, d.breakEvenDaily, "Genel bakış");
   close(applyScenario(scenarioBase(model, M), ZERO, model.settings.acikGun).base.breakEvenDaily, d.breakEvenDaily, "Analiz › Şu an");
   close(requiredDailyRevenue(model, M, 0), d.breakEvenDaily, "Ayarlar etkisi");
+  // Ayarlar tarayıcıda küçük modelle hesaplar: süren ayın listesi varken de son kapanmış online ay düşülür
+  const cur = createModel({ ...base, currentMonth: M, siteSales: [siteMonth("2026-08"), siteMonth("2026-09", false)] });
+  const curBe = breakEvenOf(cur, M);
+  assert.equal(curBe.onlineCover?.month, "2026-08", "son kapanmış online ay");
+  close(requiredDailyRevenue(impactModel(impactData(cur)), M, 0), curBe.daily, "Ayarlar = Genel bakış (online örtü)");
   // Eski Giderler formülü (online düşülmeden) daha yüksekti
   assert.ok(be.fixed / be.grossRatio / be.acikGun > d.breakEvenDaily! + 1);
   // Sabit giderler sayfası aynı yardımcıyı çağırır, kartın alt satırı online örtüyü söyler
@@ -287,6 +294,16 @@ test("E-41: süren ayda kapalı işaretli gün ay sonu öngörüsünü orantıl�
   const b = est(closedModel);
   close(b.basis.posRevenue, (a.basis.posRevenue! / 31) * 29, "KDV tahmininin cirosu 29 günle");
   assert.ok(b.pos < a.pos, "KDV tahmini düştü");
+  // Cirosu henüz girilmemiş ay (ilk kasa raporundan önce): önceki ayın günlük ortalaması × açık gün (kapalılar hariç)
+  const fallback = (closed: string[]) => {
+    const m = createModel({ ...base, currentMonth: "2026-11", closedDays: closed });
+    const inp = vatMonthInputs(m, "2026-11-03");
+    return vatEstimates({ today: "2026-11-03", months: inp.months, firstSalesMonth: inp.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-11"], hasSite: false }).get("2026-11")!;
+  };
+  const open30 = fallback([]);
+  const open27 = fallback(["2026-11-01", "2026-11-02", "2026-11-03"]);
+  assert.ok(open30.basis.posFrom, "önceki ayın ortalaması");
+  close(open27.basis.posRevenue, (open30.basis.posRevenue! / 30) * 27, "kapalı 3 gün düşüldü");
 });
 
 // ---------------------------------------------------------------- Nakit planı (E-13, E-41, E-46)
