@@ -7,6 +7,7 @@ import { z } from "zod";
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
 import { DEFAULT_SETTINGS, FIFO_OFF, settingsFromRows } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
+import { blockReasonOf, userListNotice } from "@/lib/notify-recipients";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
 import { hashPassword, passwordProblem } from "@/server/auth/password";
@@ -15,11 +16,24 @@ import { requireStepUp } from "@/server/auth/step-up";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
+import { listsWithEmail } from "@/server/notify/recipients";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zText } from "./util";
 
 const numKey = z.number().finite();
+
+/**
+ * Kaydedilen hesap e-posta almıyorsa (personel ya da pasif) ve adresi kasa raporu alıcılarında ya da sabah e-postasının
+ * bildirim adreslerindeyse yöneticiye uyarı (E-53): gönderim o adresi zaten düşürür, liste temizlensin diye söylenir.
+ * Dışa açılmaz ("use server" dosyasının her dışa verdiği bir uçtur).
+ */
+async function listNotice(user: { name: string; email: string; role: "admin" | "staff"; active: boolean }): Promise<string | null> {
+  const reason = blockReasonOf(user);
+  if (!reason) return null;
+  const lists = await listsWithEmail(user.email);
+  return lists.length ? userListNotice(user, reason, lists) : null;
+}
 const settingsSchema = z.object({
   kdv: numKey.min(0).max(1),
   kdvHizmet: numKey.min(0).max(1),
@@ -225,7 +239,7 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     if (after && after.id === me.id) await startSession(after);
     await logActivity(me, "Kullanıcı güncellendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
     refresh();
-    return { handle: data.password ? accessMailHandle(data.id, data.password) : null };
+    return { handle: data.password ? accessMailHandle(data.id, data.password) : null, notice: await listNotice(data) };
   });
 }
 
@@ -277,9 +291,10 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
       `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`,
     );
     refresh();
-    if (data.mode === "password") return { kind: "password", userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris`, handle: accessMailHandle(u.id, data.password) };
+    const notice = (await listNotice(data)) ?? undefined;
+    if (data.mode === "password") return { kind: "password", userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris`, handle: accessMailHandle(u.id, data.password), notice };
     const { raw, expiresAt } = await issueUserToken(u.id, "invite", TOKEN_HOURS.invite);
-    return linkAccessInfo(appUrl(), u, "invite", raw, expiresAt);
+    return { ...linkAccessInfo(appUrl(), u, "invite", raw, expiresAt), notice };
   });
 }
 

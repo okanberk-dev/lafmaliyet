@@ -349,16 +349,19 @@ test("yazım yolu sunucu eylemi değil; gönderim kapıdan 'request' dönerse hi
 
 test("kasa e-postasına personel adresi yazılamaz ve gönderimde düşer; personel yükleyicisi başkasının isteğinin yalnız türünü, adını ve anını verir", () => {
   const settings = fnBody(read("src/server/actions/cash-report.ts"), "updateCashSettings");
-  assert.match(settings, /await staffEmailsIn\(getDb\(\), valid\)/);
-  assert.match(settings, /Bu adres bir personel hesabının; kasa e-postasında karaoke ön ödemesi var\./);
-  // Gönderim anında da süzülür: ayar kaydedildikten sonra personel olan adres kasa e-postasını (ve denemesini) almaz
+  // Personel ve pasif hesabın adresi (E-53): ortak süzgeç, adresi adıyla söyleyen ret metni
+  assert.match(settings, /const blocked = await blockedAccounts\(getDb\(\), valid\);/);
+  assert.match(settings, /throw new UserError\(recipientRefusal\("cash", \{ email: first, reason: blocked\.get\(first\)! \}\)\)/);
+  // Gönderim anında da süzülür: ayar kaydedildikten sonra personele indirilen ya da pasif yapılan hesabın adresi kasa
+  // e-postasını (ve denemesini) almaz; hepsi düşerse e-posta gitmedi sayılır (kapalı değil), yönetici nedenini görür
   const email = fnBody(read("src/server/cash/report-email.ts"), "emailReport");
-  assert.match(email, /const recipients = settings\.emailEnabled \? await cashEmailRecipients\(getDb\(\), settings\.recipients\) : \[\];/);
-  assert.match(email, /if \(!settings\.emailEnabled \|\| !recipients\.length\)/);
+  assert.match(email, /const \{ to: recipients, dropped \} = settings\.emailEnabled \? await sendableRecipients\(getDb\(\), settings\.recipients\) : \{ to: \[\], dropped: \[\] \};/);
+  assert.match(email, /if \(!settings\.emailEnabled \|\| !settings\.recipients\.length\)/);
+  assert.match(email, /\} else if \(!recipients\.length\) \{\s*outcome = \{ status: "failed", error: allDroppedText\(dropped\), to: 0 \};/);
   assert.match(email, /to: recipients,/);
   assert.match(email, /recipients: recipients\.join\(", "\)/);
   const test = fnBody(read("src/server/actions/cash-report.ts"), "sendCashTestEmail");
-  assert.match(test, /const recipients = await cashEmailRecipients\(getDb\(\), settings\.recipients\);/);
+  assert.match(test, /const \{ to: recipients, dropped \} = await sendableRecipients\(getDb\(\), settings\.recipients\);/);
   assert.match(test, /to: recipients,/);
   for (const body of [email, test]) assert.doesNotMatch(body, /to: settings\.recipients/);
   const loader = read("src/server/data/cash-requests.ts");

@@ -46,6 +46,7 @@ import {
 } from "@/lib/photo-read/kasa";
 import { MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
+import { emailFailedLine } from "@/lib/staff-errors";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
 import { requestCashCorrection, requestLateCashReport } from "@/server/actions/cash-requests";
@@ -232,7 +233,8 @@ function preview(v: Values): ReturnType<typeof computeCash> | null {
 
 function emailLine(status: CashReportDTO["emailStatus"], error: string | null, recipients: number) {
   if (status === "sent") return { tone: "green" as const, text: `E-posta gönderildi${recipients ? ` · ${recipients} adres` : ""}` };
-  if (status === "failed") return { tone: "red" as const, text: `E-posta gitmedi: ${error ?? "bilinmeyen hata"}` };
+  // Personelin metni sunucudan sabit gelir ("E-posta gitmedi; yöneticiye haber verin…"; E-64), yöneticinin neden
+  if (status === "failed") return { tone: "red" as const, text: emailFailedLine(error) };
   if (status === "off") return { tone: "gray" as const, text: "E-posta kapalı (yönetici ayarlarından açılır)" };
   return null;
 }

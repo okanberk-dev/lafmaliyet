@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { z } from "zod";
 
 import { nameTakenBy, sameName } from "@/lib/activity-person";
+import { PROFILE_LIST_REFUSAL } from "@/lib/notify-recipients";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
@@ -26,6 +27,7 @@ import {
 } from "@/server/auth/totp";
 import { expireUserTokens } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
+import { listsWithEmail } from "@/server/notify/recipients";
 import { open, seal } from "@/server/secret-box";
 
 import { logActivity } from "./log";
@@ -352,6 +354,9 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .from(s.users)
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
     if (n > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
+    // Personel giriş e-postasını kasa raporu alıcılarındaki ya da sabah e-postasının bildirim adreslerindeki bir adrese
+    // çeviremez (E-52): gönderim personel hesabının adresini düşürür, kasa ve sabah e-postası sahibine uyarısız gitmezdi
+    if (me.role !== "admin" && data.email !== u.email && (await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);
     // Ad değişmediyse (eskiden aynı adla açılmış iki hesap) e-posta yine değiştirilebilir
     if (!sameName(data.name, u.name) && nameTakenBy(data.name, me.id, await db.select({ id: s.users.id, name: s.users.name }).from(s.users))) {
       throw new UserError("Bu ad başka bir kullanıcıda kayıtlı; ayırt edilecek bir ad yazın (ör. soyadının baş harfiyle)");

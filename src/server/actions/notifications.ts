@@ -10,6 +10,7 @@ import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, monthShort, num, tl } from "@/lib/format";
+import { blockedBell } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
@@ -31,6 +32,7 @@ import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
 import { loadUpcoming } from "@/server/notify/digest";
+import { blockedRecipientsNow } from "@/server/notify/recipients";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 
 export interface PanelNotification {
@@ -64,6 +66,21 @@ async function systemNotifications(): Promise<PanelNotification[]> {
     href: a.href,
     group: "sistem" as const,
   }));
+}
+
+/**
+ * Bildirim alıcıları (E-52, E-53): kasa raporu alıcılarında ya da sabah e-postasının etkin bildirim adreslerinde duran
+ * ama personel ya da pasif hesabın olduğu için gönderimde düşen adresler. Durumdan türer (ayar ve hesaplar; iki küçük
+ * sorgu): adres listeden çıkınca ya da hesap yeniden yönetici olunca satır kalkar. Kimlik adreslerden: yeni bir adres
+ * düşünce yeniden okunmamış olur.
+ */
+async function recipientNotifications(): Promise<PanelNotification[]> {
+  const now = await blockedRecipientsNow();
+  return (["cash", "digest"] as const).flatMap((list) => {
+    if (!now[list].length) return [];
+    const b = blockedBell(list, now[list]);
+    return [{ id: b.id, kind: "warning" as const, title: b.title, body: b.body, timeLabel: "", unread: true, href: b.href, group: "sistem" as const }];
+  });
 }
 
 /**
@@ -377,7 +394,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     opsBell(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
-  const [model, upcoming, invoices, system, unpriced, holds, commission] = await Promise.all([
+  const [model, upcoming, invoices, system, unpriced, holds, commission, recipients] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
@@ -385,6 +402,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     unpricedNotifications().catch(() => []),
     holdNotifications().catch(() => []),
     commissionNotifications().catch(() => []),
+    recipientNotifications().catch(() => []),
   ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -449,5 +467,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...recipients, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...priceNote, ...unpriced, ...warnings];
 }

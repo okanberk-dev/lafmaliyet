@@ -1,7 +1,7 @@
 "use client";
 
 import { BellRing, ChevronDown, Eye, KeyRound, Mail, Plus, Send, Trash2 } from "lucide-react";
-import { useId, useOptimistic, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/icon-tile";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR } from "@/lib/format";
+import { BLOCK_ROW_TEXT, type BlockReason } from "@/lib/notify-recipients";
 import { digestSummary } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { weeklyLogText } from "@/lib/weekly/text";
@@ -27,7 +28,12 @@ export interface Recipient {
   email: string;
   name: string | null;
   active: boolean;
+  /** Adres personel ya da pasif bir hesabın: listede durur, e-posta almaz (E-53) */
+  blocked?: BlockReason | null;
 }
+
+/** Zilden gelen bağlantının çapası: bölüm açılır */
+const SECTION_ID = "e-posta-bildirimleri";
 export interface LogRow {
   id: number;
   key: string;
@@ -81,7 +87,12 @@ export function NotificationsSection({
   const [removing, setRemoving] = useState<Recipient | null>(null);
   const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; system?: number; holds?: number; boxes?: string[]; sample: boolean } | null>(null);
   const addrRef = useRef<HTMLInputElement>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const settingsForm = useId();
+  // Zilin "Sabah e-postası … gitmiyor" satırı buraya getirir: bölüm kapalıysa açılır
+  useEffect(() => {
+    if (window.location.hash === `#${SECTION_ID}` && detailsRef.current) detailsRef.current.open = true;
+  }, []);
   const [enabled, setEnabled] = useOptimistic(settings.emailEnabled);
   const [shownRecipients, patchRecipients] = useOptimistic(recipients, (state, p: { id: number; active?: boolean; remove?: boolean }) =>
     p.remove ? state.filter((r) => r.id !== p.id) : state.map((r) => (r.id === p.id ? { ...r, active: p.active ?? r.active } : r)),
@@ -93,7 +104,8 @@ export function NotificationsSection({
   const daysError = daysN === null || daysN < 0 || daysN > 30 ? "0 ile 30 gün arasında olmalı" : null;
   const termError = termN === null || termN < 0 || termN > 120 ? "0 ile 120 gün arasında olmalı" : null;
   const addrInvalid = addr.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr.trim());
-  const activeRecipients = shownRecipients.filter((r) => r.active).length;
+  // Personel ya da pasif hesabın adresi gönderimde düşer: sayılmaz
+  const activeRecipients = shownRecipients.filter((r) => r.active && !r.blocked).length;
   const missing = [!email.configured && "RESEND_API_KEY", !email.cron && "CRON_SECRET"].filter(Boolean) as string[];
   const ready = enabled && email.configured && activeRecipients > 0;
 
@@ -137,8 +149,8 @@ export function NotificationsSection({
 
   return (
     // Yüzen "Ekle" bu bölümün üstüne gelince çekilir ("Adres ekle" ile yanyana iki "Ekle" olmasın)
-    <section {...FAB_AVOID} className={cn("@container rounded-3xl bg-panel", className)} aria-label="E-posta bildirimleri">
-      <details className="group/n">
+    <section {...FAB_AVOID} id={SECTION_ID} className={cn("@container scroll-mt-20 rounded-3xl bg-panel", className)} aria-label="E-posta bildirimleri">
+      <details ref={detailsRef} className="group/n">
         <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 rounded-3xl px-4 py-4 outline-none focus-visible:ring-2 focus-visible:ring-ink/30 sm:px-5 [&::-webkit-details-marker]:hidden">
           <span className="relative flex size-10 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface text-ink" aria-hidden="true">
             <Mail size={18} strokeWidth={1.75} />
@@ -205,7 +217,8 @@ export function NotificationsSection({
                       <Avatar name={r.name || r.email} size="sm" />
                       <div className={cn("min-w-0 flex-1", !r.active && "opacity-60")}>
                         <p className="text-sm font-medium break-all text-ink">{r.name || r.email}</p>
-                        <p className="text-xs break-all text-ink-mute">{r.name ? r.email : r.active ? "Hatırlatma alır" : "Duraklatıldı"}</p>
+                        <p className="text-xs break-all text-ink-mute">{r.name ? r.email : r.blocked ? null : r.active ? "Hatırlatma alır" : "Duraklatıldı"}</p>
+                        {r.blocked ? <p className="text-xs font-medium text-bad">{BLOCK_ROW_TEXT[r.blocked]}</p> : null}
                       </div>
                       <Switch
                         checked={r.active}
@@ -338,7 +351,7 @@ export function NotificationsSection({
                   start(async () => {
                     const r = await sendTestNotification();
                     if (!r.ok) return void toast.error(r.error);
-                    toast.success(`Deneme e-postası ${r.data.recipients} adrese gönderildi`);
+                    toast.success(`Deneme e-postası ${r.data.recipients} adrese gönderildi`, r.data.skipped ? { description: `Gönderilmedi: ${r.data.skipped}` } : undefined);
                   })
                 }
               >

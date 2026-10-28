@@ -26,6 +26,7 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
+import { emailKey, recipientRefusal } from "@/lib/notify-recipients";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { unreachable } from "@/lib/unreachable";
@@ -41,6 +42,7 @@ import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
 import { loadDigestExtras } from "@/server/notify/digest-extras";
+import { blockedAccounts } from "@/server/notify/recipients";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
@@ -488,6 +490,12 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
 // ---------------------------------------------------------------- Bildirim adresleri ve ayarlar
 const emailSchema = z.string().trim().toLowerCase().email("Geçerli bir e-posta girin");
 
+/** Adres personel ya da pasif bir hesabınsa UserError (dışa açılmaz: "use server" dosyasının her dışa verdiği bir uçtur) */
+async function refuseBlocked(email: string) {
+  const reason = (await blockedAccounts(getDb(), [email])).get(emailKey(email));
+  if (reason) throw new UserError(recipientRefusal("digest", { email, reason }));
+}
+
 export async function addRecipient(email: string, name: string | null) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -496,6 +504,9 @@ export async function addRecipient(email: string, name: string | null) {
     const db = getDb();
     const [dup] = await db.select({ id: s.notificationRecipients.id }).from(s.notificationRecipients).where(eq(s.notificationRecipients.email, e)).limit(1);
     if (dup) throw new UserError(`${e} zaten listede`);
+    // Sabah e-postasında ödemeler, fatura tutarları ve maliyet var: personel hesabının adresi alıcı olamaz, pasif hesaba
+    // gitmez (E-53; kasa alıcılarıyla aynı kural). Gönderim de aynı kuralla süzer
+    await refuseBlocked(e);
     await db.insert(s.notificationRecipients).values({ email: e, name: n });
     await logActivity(me, "Bildirim adresi eklendi", e);
     refresh();
@@ -506,10 +517,15 @@ export async function addRecipient(email: string, name: string | null) {
 export async function setRecipientActive(id: number, active: boolean) {
   return attempt(async () => {
     await requireAdmin();
-    await getDb()
-      .update(s.notificationRecipients)
-      .set({ active: z.boolean().parse(active) })
-      .where(eq(s.notificationRecipients.id, zId.parse(id)));
+    const rid = zId.parse(id);
+    const on = z.boolean().parse(active);
+    const db = getDb();
+    if (on) {
+      // Yeniden açılan adres de: personel ya da pasif hesabınsa açılmaz (gönderimde zaten düşerdi)
+      const [r] = await db.select({ email: s.notificationRecipients.email }).from(s.notificationRecipients).where(eq(s.notificationRecipients.id, rid)).limit(1);
+      if (r) await refuseBlocked(r.email);
+    }
+    await db.update(s.notificationRecipients).set({ active: on }).where(eq(s.notificationRecipients.id, rid));
     refresh();
     return null;
   });
@@ -554,7 +570,7 @@ export async function sendTestNotification() {
     await requireAdmin();
     const r = await sendTestEmail();
     if (!r.ok) throw new UserError(r.error);
-    return { recipients: r.recipients };
+    return { recipients: r.recipients, skipped: r.skipped };
   });
 }
 

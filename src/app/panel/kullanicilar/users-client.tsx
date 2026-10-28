@@ -150,8 +150,12 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
   const stepUp = useStepUp();
 
   const saveActive = (u: UserRow, active: boolean, confirm?: StepUpConfirm) => saveUser({ id: u.id, name: u.name, email: u.email, role: u.role, active }, confirm);
-  const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<unknown>) =>
-    void (res.ok ? toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`) : toast.error(res.error));
+  const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<{ notice?: string | null } | null>) => {
+    if (!res.ok) return void toast.error(res.error);
+    toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`);
+    // Pasif hesabın adresi bir bildirim listesindeyse: e-posta artık gitmez, liste temizlensin (E-53)
+    if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
+  };
 
   /** Personel: anahtar hemen döner (iyimser), sunucu yenileyince kesinleşir */
   function setActive(u: UserRow, active: boolean) {
@@ -728,6 +732,7 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
         }
         // "… eklendi" bilgisi açılan "Giriş bilgileri" penceresinde yazar (ayrı bildirim pencerenin başlığını örtmesin)
         onCreated(mode === "password" ? { ...res.data, password, reason: "new" } : { ...res.data, reason: "new" });
+        if (res.data.notice) toast.warning(res.data.notice, { duration: 12_000 });
       },
     );
   }
@@ -910,6 +915,8 @@ function UserDialog({
       },
       (res) => {
         if (!res.ok) return void toast.error(res.error);
+        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse: e-posta artık gitmez (E-53)
+        if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
         // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
         // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
         if (password && !self) {

@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { SITE_ORDER_ID } from "@/lib/site-orders/schema";
-import { canAdvance, STAGE_OFF_ERROR, STAGE_PATH, staleMessage, stageDoneMessage, stageFailureMessage, UNREADABLE_MESSAGE } from "@/lib/site-orders/stage";
+import { canAdvance, STAGE_PATH, staleMessage, stageDoneMessage, stageFailureMessage, UNREADABLE_MESSAGE } from "@/lib/site-orders/stage";
 import { buildStageBody, readStageAnswer } from "@/lib/site-orders/stage-request";
 import { requireUser } from "@/server/auth/dal";
 import { siteLinkSecret } from "@/server/site-link";
@@ -56,7 +56,8 @@ export async function advanceSiteOrder(input: z.input<typeof zStage>) {
     const me = await requireUser();
     const data = zStage.parse(input);
     const secret = siteLinkSecret();
-    if (!secret) throw new UserError(STAGE_OFF_ERROR);
+    // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel sabit metni görür (E-64)
+    if (!secret) throw new UserError(stageFailureMessage({ kind: "off" }, me.role));
     // Numara ve teslim biçimi son listenin kopyasından (istemcinin gönderdiğine güvenilmez)
     const known = (await readOrdersSnapshot()).orders.find((o) => o.id === data.id) ?? null;
     if (known && !canAdvance(data.action, data.from, known.fulfillment)) {
@@ -66,7 +67,7 @@ export async function advanceSiteOrder(input: z.input<typeof zStage>) {
     try {
       res = await callSite(secret, STAGE_PATH, { method: "POST", body: JSON.stringify(buildStageBody({ ...data, actor: me.name })) });
     } catch (e) {
-      if (e instanceof SiteRequestError) throw new UserError(stageFailureMessage(e.failure));
+      if (e instanceof SiteRequestError) throw new UserError(stageFailureMessage(e.failure, me.role));
       throw e;
     }
     const answer = readStageAnswer(res, data.id);
@@ -76,7 +77,7 @@ export async function advanceSiteOrder(input: z.input<typeof zStage>) {
       console.error("[siparis] aşama", data.id, data.action, res.status, failure.kind === "http" ? (failure.error ?? "") : "");
       // Sipariş sitede artık bar ekranında değil: ekrandan da kalksın
       if (failure.kind === "http" && failure.status === 404 && failure.error) await resync();
-      throw new UserError(stageFailureMessage(failure));
+      throw new UserError(stageFailureMessage(failure, me.role));
     }
     const synced = await resync();
     if (answer.kind === "stale") throw new UserError(staleMessage(answer.now));

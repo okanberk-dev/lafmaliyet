@@ -284,7 +284,8 @@ test("site hatası: bağlantıyla ilgili nedenlerde metnin sonuna 'Yöneticiye h
   assert.equal(siteFailureText("x", undefined), "x");
   // 409 stale: site bu arada değişti, panel yeniden okuyor; bağlantı hatası değil, yeniden denenir
   assert.equal(siteFailureText("Bu ürün sitede bu arada değişti; ürün tükendi yapılmadı. Panel siteyi yeniden okuyor: birazdan bakıp yeniden dene.", { kind: "http", status: 409, error: "stale" }, "staff"), "Bu ürün sitede bu arada değişti; ürün tükendi yapılmadı. Panel siteyi yeniden okuyor: birazdan bakıp yeniden dene.");
-  assert.equal(siteFailureText("x", { kind: "http", status: 409, error: "single_size" }, "staff"), "x Yöneticiye haber verin.");
+  // Personel bağlantının kurulumuyla ilgili her nedende sabit metni görür (E-64): anahtar adı, imza, sitenin sürümü yok
+  assert.equal(siteFailureText("x", { kind: "http", status: 409, error: "single_size" }, "staff"), "Site bağlantısında sorun var; yöneticiye haber verin.");
   // Yazımın zaman aşımı: personel Site menüsüne gönderilmez (o ekran ona kapalı), ne yapacağını görür; yönetici aynı metni
   const slow = "Siteye ulaşılamadı; değişiklik sitede yapılmış olabilir, panelde ürün tükendi yapılmadı. Site menüsünde kontrol et; panel siteyi hemen yeniden okuyor.";
   assert.equal(siteFailureText(slow, { kind: "timeout" }, "staff"), SOLD_OUT_TEXT.siteSlow);

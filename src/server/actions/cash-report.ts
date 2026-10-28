@@ -5,16 +5,20 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
+import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
+import { droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
+import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
-import { emailReport } from "@/server/cash/report-email";
-import { cashEmailRecipients, clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
+import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
+import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, cashReportsBetween, getCashReport, loadCashSettings, nextReportAfter, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
 import { renderCashReport } from "@/server/notify/cash-report-template";
+import { blockedAccounts, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -25,6 +29,13 @@ import { attempt, UserError, zDate } from "./util";
 // Gün sonu kasa raporu: personel (ve yönetici) her akşam girer; kayıt iş günü başına bir tane, yeniden gönderilince
 // güncellenir. Gönderilince kasa raporu alıcılarına e-posta gider; WhatsApp metni ekranda hazırlanır (docs/KASA-RAPORU.md).
 // Yazım yolu src/server/cash/report-store.ts, e-posta src/server/cash/report-email.ts; bu dosyada yalnız uçlar.
+
+/**
+ * E-postanın sonucu okuyana göre (E-64): personel neden gitmediğini (Resend anahtarı, alıcı listesi) görmez, sabit metni
+ * görür ("E-posta gitmedi; yöneticiye haber verin…"); yönetici olduğu gibi. Kayıtlı raporun satırı da aynı kuralla
+ * (toCashDTO).
+ */
+const outcomeFor = (role: Role, e: CashEmailOutcome): CashEmailOutcome => ({ ...e, error: emailErrorFor(role, e.error) });
 
 /**
  * Raporu kaydeder (yoksa ekler, varsa günceller), alıcılara e-postalar; WhatsApp metnini ve bağlantısını döner.
@@ -63,7 +74,7 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
       id: saved.id,
       revision: saved.revision,
       cashDiff,
-      email,
+      email: outcomeFor(me.role, email),
       whatsapp: { text, link: whatsappLink(text, settings.whatsapp) },
       next: integrity.next ?? null,
       // Bu düzeltmeyle mi bozuldu: sonraki raporun açılışı önceki sürümün devriyle tutuyordu
@@ -83,7 +94,7 @@ export async function resendCashReportEmail(id: number) {
     if (me.role !== "admin" && (row.submittedBy !== me.id || !staffCanReport(row.date))) throw new UserError("Bu raporu yalnız yönetici yeniden gönderebilir");
     const email = await emailReport(row.id);
     refresh();
-    return email;
+    return outcomeFor(me.role, email);
   });
 }
 
@@ -132,8 +143,11 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     if (invalid.length) throw new UserError(`Geçersiz e-posta: ${invalid.slice(0, 3).join(", ")}`);
     if (valid.length > 10) throw new UserError("En çok 10 adres girilebilir");
     if (data.emailEnabled && !valid.length) throw new UserError("E-posta açıkken en az bir adres girin");
-    // Kasa e-postasında karaoke ön ödemesi var: personel tutarları görmez, adresi alıcı olamaz
-    if ((await staffEmailsIn(getDb(), valid)).length) throw new UserError("Bu adres bir personel hesabının; kasa e-postasında karaoke ön ödemesi var.");
+    // Kasa e-postasında karaoke ön ödemesi var: personel hesabının adresi alıcı olamaz; pasif hesaba e-posta gitmez (E-53).
+    // Gönderim aynı kuralla süzer (kayıttan sonra personele indirilen ya da pasif yapılan hesap da düşer)
+    const blocked = await blockedAccounts(getDb(), valid);
+    const first = valid.find((e) => blocked.has(e));
+    if (first) throw new UserError(recipientRefusal("cash", { email: first, reason: blocked.get(first)! }));
     const whatsapp = data.whatsapp.trim() ? waPhone(data.whatsapp) : null;
     if (data.whatsapp.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
     await saveCashSettings({ recipients: valid, emailEnabled: data.emailEnabled, whatsapp });
@@ -149,9 +163,9 @@ export async function sendCashTestEmail() {
     await requireAdmin();
     const settings = await loadCashSettings();
     if (!settings.recipients.length) throw new UserError("Önce bir adres girin");
-    // Personel hesabına ait adres (ayar kaydedildikten sonra personel olan) deneme e-postasını da almaz
-    const recipients = await cashEmailRecipients(getDb(), settings.recipients);
-    if (!recipients.length) throw new UserError("Kayıtlı adreslerin hepsi personel hesabının; kasa e-postasında karaoke ön ödemesi var. Yöneticinin adresini girin.");
+    // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra değişen) deneme e-postasını da almaz
+    const { to: recipients, dropped } = await sendableRecipients(getDb(), settings.recipients);
+    if (!recipients.length) throw new UserError(`Kayıtlı adreslerin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}). Yöneticinin ya da muhasebecinin adresini girin.`);
     if (!isEmailConfigured()) throw new UserError("E-posta kurulmamış: Vercel'de RESEND_API_KEY tanımlı değil");
     const [last] = await cashReportsBetween("2000-01-01", businessDate());
     const sample: CashReportFields = last ?? {
@@ -189,7 +203,7 @@ export async function sendCashTestEmail() {
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, subject: `[Deneme] ${msg.subject}` });
     if (!res.ok) throw new UserError(res.error);
-    return { to: recipients.length };
+    return { to: recipients.length, skipped: dropped.length ? droppedListText(dropped) : null };
   });
 }
 

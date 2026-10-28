@@ -8,6 +8,7 @@ import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
+import { droppedListText, droppedLogSuffix } from "@/lib/notify-recipients";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
@@ -21,6 +22,7 @@ import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
 import { invoiceNewsOf, renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
+import { activeDigestEmails, sendableRecipients } from "./recipients";
 import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
 
@@ -261,8 +263,12 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     };
   }
 
-  const recipients = await db.select().from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true));
-  if (!recipients.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
+  // Personel hesabının ya da pasif hesabın adresi düşer (E-53): özette ödemeler, fatura tutarları, zam ve kâr rakamları
+  // var. Düşen adres yöneticinin zilinde ve Bildirim adresleri listesinde görünür
+  const { to, dropped } = await sendableRecipients(db, await activeDigestEmails(db));
+  if (!to.length) {
+    return { status: "skipped", reason: dropped.length ? `Etkin bildirim adreslerinin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}).` : "Etkin bildirim adresi yok.", off: "norecipient" };
+  }
 
   const { subject, html, text } = renderDigest(
     fresh,
@@ -272,7 +278,6 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     system.length ? { items: system } : null,
     extras.extras,
   );
-  const to = recipients.map((r) => r.email);
   // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
   // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
   const keySeed = [
@@ -308,7 +313,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     ...extras.logKeys.map((key) => ({ key, subject, recipients: to.join(", "), ok: true })),
   ];
   if (logRows.length) await db.insert(s.notificationLog).values(logRows).onConflictDoNothing();
-  await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres`);
+  await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres${droppedLogSuffix(dropped)}`);
   return {
     status: "sent",
     count: fresh.length,
@@ -327,12 +332,12 @@ export async function recentNotifications(limit = 12) {
   return getDb().select().from(s.notificationLog).orderBy(desc(s.notificationLog.sentAt)).limit(limit);
 }
 
-/** Deneme e-postası: kayıtlı gönderenle, etkin adreslere */
-export async function sendTestEmail(): Promise<{ ok: true; recipients: number } | { ok: false; error: string }> {
+/** Deneme e-postası: kayıtlı gönderenle, etkin adreslere (personel ya da pasif hesabın adresi düşer; `skipped` onlar) */
+export async function sendTestEmail(): Promise<{ ok: true; recipients: number; skipped: string | null } | { ok: false; error: string }> {
   const db = getDb();
   const settings = await loadNotifySettings();
-  const recipients = await db.select().from(s.notificationRecipients).where(and(eq(s.notificationRecipients.active, true)));
-  if (!recipients.length) return { ok: false, error: "Önce bir bildirim adresi ekleyin." };
+  const { to, dropped } = await sendableRecipients(db, await activeDigestEmails(db));
+  if (!to.length) return { ok: false, error: dropped.length ? `Etkin bildirim adreslerinin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}).` : "Önce bir bildirim adresi ekleyin." };
   const today = todayTR();
   const sample: UpcomingItem = {
     ref: "test:0",
@@ -349,7 +354,7 @@ export async function sendTestEmail(): Promise<{ ok: true; recipients: number } 
     repeat: "none",
   };
   const { html, text } = renderDigest([{ item: sample, stage: "due" }], today);
-  const res = await sendEmail({ from: resolveFrom(settings.from), to: recipients.map((r) => r.email), subject: "L'Affogato · deneme bildirimi", html, text });
+  const res = await sendEmail({ from: resolveFrom(settings.from), to, subject: "L'Affogato · deneme bildirimi", html, text });
   if (!res.ok) return { ok: false, error: res.error };
-  return { ok: true, recipients: recipients.length };
+  return { ok: true, recipients: to.length, skipped: dropped.length ? droppedListText(dropped) : null };
 }
