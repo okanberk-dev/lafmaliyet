@@ -8,7 +8,7 @@ import type { Dataset, Settings } from "@/lib/calc/types";
 
 /**
  * Önizleme için hesaplama motorunun ihtiyaç duyduğu en küçük veri: ürünler, reçeteler, hammaddeler, son satış ayının
- * ve su faturası ayının satış listesi, su faturası ayının laffogato.net satışı (litre online siparişleri de sayar,
+ * ve su faturası ayının satış listesi, aynı ayların laffogato.net satışı (litre online siparişleri de sayar,
  * denetim E-57), SU GİDERİ satırları, personel ve sabit giderler. Faturalar, sayımlar ve öteki gelir-gider satırları
  * ayarlardan etkilenmediği için gönderilmez.
  */
@@ -41,8 +41,10 @@ export function impactData(model: Model): ImpactData {
     products: ds.products.map((p) => ({ ...p, note: null })),
     recipeItems: ds.recipeItems.map((r) => ({ ...r, note: null })),
     salesLines: ds.salesLines.filter((l) => keep.has(l.month)).map((l) => ({ ...l, note: null })),
-    // Su litresi online siparişleri de sayar: önizlemenin litre fiyatı Hammaddeler'dekiyle aynı kalsın
-    siteSales: (ds.siteSales ?? []).filter((r) => r.month === model.water.month),
+    // Su litresi online siparişleri de sayar: önizlemenin litre fiyatı Hammaddeler'dekiyle aynı kalsın. Elle girilmiş
+    // su fiyatı varken water.month boştur; fiyat önizlemede silinince fatura ayı son satış ayı olur, onun online
+    // satışı da gitsin (satış listesiyle aynı aylar)
+    siteSales: (ds.siteSales ?? []).filter((r) => keep.has(r.month)),
     months: ds.months.filter((m) => keep.has(m.month)),
     pnlEntries: ds.pnlEntries.filter((e) => e.rowKey === "manual:su").map((e) => ({ ...e, note: null })),
     staff: ds.staff,

@@ -407,3 +407,24 @@ test("E-57: Hammaddeler dökümü, Ayarlar ve Excel online litreyi ayrı söyler
   close(impactModel(data).water.perLiter, w.perLiter, "önizleme = model", 1e-12);
   assert.equal(impactData(createModel(base)).siteSales?.length, 0, "su ayı yoksa online veri gitmez");
 });
+
+test("E-57: elle su fiyatı silinince önizleme online litreyi de sayar (kayıttan sonraki modelle aynı)", () => {
+  // Elle girilmiş fiyat varken water.month boş; önizlemede silinince fatura ayı son satış ayıdır (Eylül)
+  const ds = withOnlineAmericano(withBill(base), 2000);
+  const manual = { ...ds.settings, suBirimLTOverride: 0.5 };
+  const withOverride = createModel({ ...ds, settings: manual });
+  assert.equal(withOverride.water.reason, "override");
+  assert.equal(withOverride.water.month, null);
+  const data = impactData(withOverride);
+  assert.equal(data.siteSales?.length, 1, "son satış ayının online satışı veride");
+  const cleared = { ...manual, suBirimLTOverride: null };
+  const preview = impactModel(data, cleared);
+  const saved = createModel({ ...ds, settings: cleared });
+  assert.equal(saved.water.month, M);
+  close(saved.water.onlineLiters, 360, "2.000 Americano × 180 ml", 1e-9);
+  close(preview.water.onlineLiters, saved.water.onlineLiters, "online litre", 1e-9);
+  close(preview.water.liters, saved.water.liters, "toplam litre", 1e-9);
+  close(preview.water.perLiter, saved.water.perLiter, "litre fiyatı", 1e-12);
+  const cost = (m: Model, id: number) => m.products.find((p) => p.product.id === id)!.cost;
+  close(cost(preview, americano.id), cost(saved, americano.id), "Americano maliyeti", 1e-9);
+});
