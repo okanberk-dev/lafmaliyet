@@ -8,7 +8,7 @@ import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl, tl2 } from "@/lib/format";
 
-import { menuAverages, productHref } from "./logic";
+import { menuAverages, productHref, soldProfit } from "./logic";
 import type { ProductRow } from "./products-table";
 
 /** Dökümün kullandığı ürün alanları (sayfadaki `ProductRow`) */
@@ -28,7 +28,7 @@ export interface ProductBreakdowns {
   sold: BreakdownGroup[];
   /** Satılan çeşit toplam satırı: "24 çeşit · 1.250 adet" (kartın rakamı ve alt satırı) */
   soldTotal: string;
-  /** Brüt kâr: kategori kategori ürünlerin birim kâr × adedi; ağırlıklı marj ayrı */
+  /** Brüt kâr: kategori kategori reçeteli ürünlerin birim kâr × adedi; ağırlıklı marj ve reçetesi boş satılanlar ayrı */
   profit: BreakdownGroup[];
   /** Zararına satılan ürün var: pay sütunu kapanır (artı/eksi karışık) */
   profitHasLoss: boolean;
@@ -200,8 +200,8 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
       ]
     : [];
 
-  const totalProfit = sum(soldRows.map((r) => r.monthProfit));
-  const totalNet = sum(soldRows.map((r) => r.monthNet));
+  // Kârın ürünleri: satılan reçeteliler (reçetesi boş ürünün kârı ~cirosu kadar görünürdü; denetim E-47)
+  const { profit: totalProfit, net: totalNet, counted: profitRows, noRecipe: soldNoRecipe } = soldProfit(active);
   const profitRow = (r: BreakdownProduct): BreakdownRow => ({
     key: `urun:${r.id}`,
     label: productLabel(r),
@@ -213,7 +213,7 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
     ? [
         // Kategoriler kârı büyükten küçüğe; zarardaki kategori sonda
         ...cats
-          .map((c) => ({ ...c, live: soldRows.filter((r) => r.categoryId === c.id) }))
+          .map((c) => ({ ...c, live: profitRows.filter((r) => r.categoryId === c.id) }))
           .filter((c) => c.live.length)
           .map((c) => ({ ...c, total: sum(c.live.map((r) => r.monthProfit)) }))
           .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "tr"))
@@ -224,7 +224,7 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
           apart: true,
           noSubtotal: true,
           rows: [
-            { key: "net", label: "Net satış", sub: "Eşleşen ürünler: fiyat ÷ (1 + KDV) × adet", amount: 0, display: tl(totalNet) },
+            { key: "net", label: "Net satış", sub: "Eşleşen reçeteli ürünler: fiyat ÷ (1 + KDV) × adet", amount: 0, display: tl(totalNet) },
             { key: "kar", label: "Brüt kâr", sub: "Net satış − malzeme maliyeti − komisyon", amount: 0, display: tl(totalProfit), tone: totalProfit < 0 ? "bad" : undefined },
             {
               key: "oran",
@@ -234,6 +234,16 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
               display: totalNet ? pct(totalProfit / totalNet) : "–",
             },
           ],
+        },
+        {
+          key: "recetesiz",
+          label: "Reçetesi boş (kâra girmedi)",
+          note: "Bu ay satılan ama reçete kartı boş ürünler: maliyeti bilinmiyor, kârı neredeyse cirosu kadar görünürdü. Reçetesini girince kâra katılır.",
+          apart: true,
+          noSubtotal: true,
+          rows: [...soldNoRecipe]
+            .sort((a, b) => b.soldQty - a.soldQty || byName(a, b))
+            .map((r) => ({ key: `urun:${r.id}`, label: productLabel(r), sub: `${r.category} · net ${tl(r.monthNet)}`, amount: 0, display: `${num(r.soldQty)} adet`, tone: "warn" as const, href: card(r) })),
         },
         {
           key: "pasif",
@@ -252,6 +262,6 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
     sold,
     soldTotal: kinds(soldRows.length, soldQty),
     profit,
-    profitHasLoss: soldRows.some((r) => r.monthProfit < 0),
+    profitHasLoss: profitRows.some((r) => r.monthProfit < 0),
   };
 }

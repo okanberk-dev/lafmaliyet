@@ -128,9 +128,15 @@ const SETTINGS_ROW: BreakdownRow = {
 /**
  * Su + buz birim maliyeti nasıl çıktı (`model.water`, motorun hesabıyla aynı kalemler): SU GİDERİ ÷ o ay reçeteye
  * göre harcanan su + buz litresi; elle girilmişse Ayarlar'daki değer; hesaplanamıyorsa neyin eksik olduğu.
- * `usage`: hesabın ayında (water.month) reçeteye göre harcanan malzeme (`model.ingredientUsage`), malzemenin biriminde.
+ * `usage`: hesabın ayında (water.month) satış listesine göre harcanan malzeme (`model.ingredientUsage`), `online`: aynı
+ * ayın laffogato.net siparişlerininki (`model.onlineUsage`; denetim E-57), malzemenin biriminde.
  */
-export function waterBreakdown(water: WaterCost, items: Pick<Ingredient, "id" | "name" | "priceSource">[], usage: ReadonlyMap<number, number>): WaterBreakdown {
+export function waterBreakdown(
+  water: WaterCost,
+  items: Pick<Ingredient, "id" | "name" | "priceSource">[],
+  usage: ReadonlyMap<number, number>,
+  online: ReadonlyMap<number, number> = new Map(),
+): WaterBreakdown {
   const perLiter = perLiterText(water.perLiter);
   switch (water.reason) {
     case "override":
@@ -153,15 +159,18 @@ export function waterBreakdown(water: WaterCost, items: Pick<Ingredient, "id" | 
       const liters = items
         .filter((i) => i.priceSource === "water")
         .map((i): BreakdownRow => {
-          const l = (usage.get(i.id) ?? 0) / 1000;
+          const list = (usage.get(i.id) ?? 0) / 1000;
+          const web = (online.get(i.id) ?? 0) / 1000;
+          const l = list + web;
           // Bağlantı yok: "?ara=Su" adı "su" geçen başka malzemeleri de süzerdi
-          return { key: `litre:${i.id}`, label: i.name, sub: "Satış adedi × reçetedeki miktar", amount: l, display: `${num(l, 1)} L` };
+          const sub = web > 0 ? `Satış listesi ${num(list, 1)} L + laffogato.net ${num(web, 1)} L` : "Satış adedi × reçetedeki miktar";
+          return { key: `litre:${i.id}`, label: i.name, sub, amount: l, display: `${num(l, 1)} L` };
         })
         .filter((r) => r.amount > 0)
         .sort((a, b) => b.amount - a.amount);
       const skipped = water.latestBillMonth && water.latestBillMonth !== month ? water.latestBillMonth : null;
       return {
-        description: `Reçetelerdeki su ve buzun litre maliyeti: ${m} SU GİDERİ (KDV hariç) ÷ o ay satılan ürünlerin reçetesine göre harcanan su + buz. SU GİDERİ girilmiş ve ürün satış listesi olan en son ay kullanılır.`,
+        description: `Reçetelerdeki su ve buzun litre maliyeti: ${m} SU GİDERİ (KDV hariç) ÷ o ay satılan ürünlerin (satış listesi ve laffogato.net online siparişleri) reçetesine göre harcanan su + buz. SU GİDERİ girilmiş ve ürün satış listesi olan en son ay kullanılır.`,
         groups: [
           {
             key: "fatura",

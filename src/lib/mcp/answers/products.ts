@@ -61,7 +61,9 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   const category = input.kategori ? findCategory(model, input.kategori) : undefined;
   const me = menuEngineering(model, basis.salesMonth ?? input.ay, category?.id);
   const hasSales = me.totalQty > 0;
-  let items = me.items;
+  // Reçetesi boş ürün menü sınıfına girmez (menuEngineering.noRecipe); adet sıralamasında ve uyarıda yine görünür
+  const unclassified = me.noRecipe.map((x) => ({ p: x.p, qty: x.qty, cm: x.p.unitProfit, totalCm: x.p.unitProfit * x.qty, cls: null }));
+  let items: { p: ProductCalc; qty: number; cm: number; totalCm: number; cls: MenuClass | null }[] = [...me.items, ...unclassified];
   if (input.urun) items = items.filter((x) => nameMatches(`${x.p.product.name} ${x.p.product.size}`, input.urun!));
 
   const byTotal = (a: (typeof items)[number], b: (typeof items)[number]) => b.totalCm - a.totalCm || b.cm - a.cm;
@@ -89,7 +91,7 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   const salesMonthParam = basis.salesMonth ?? input.ay;
   const rows: ProductRow[] = sorted.slice(0, input.limit).map((x) => {
     const p = x.p;
-    const cls = hasSales ? MENU_CLASS_INFO[x.cls as MenuClass] : null;
+    const cls = hasSales && x.cls ? MENU_CLASS_INFO[x.cls] : null;
     return {
       ad: cleanName(p.product.name),
       boy: p.product.size,
@@ -123,7 +125,7 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   }
   if (hasSales) {
     hesap.push(
-      `Menü sınıfı (Kasavana-Smith): satış payı ≥ ${pct(me.popThreshold, 2)} (= 1 ÷ ${num(me.items.length)} ürün × 0,7) ise çok satan; birim kâr ≥ ${tl2(me.avgCm)} (satış ağırlıklı ortalama) ise çok kazandıran.`,
+      `Menü sınıfı (Kasavana-Smith): satış payı ≥ ${pct(me.popThreshold, 2)} (= 1 ÷ ${num(me.items.length)} ürün × 0,7) ise çok satan; birim kâr ≥ ${tl2(me.avgCm)} (satış ağırlıklı ortalama) ise çok kazandıran. Reçetesi boş ürün sınıflanmaz ve eşiklere girmez.`,
     );
   }
 

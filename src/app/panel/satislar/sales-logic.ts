@@ -164,9 +164,12 @@ export interface MarginScale {
   count: number;
 }
 
-/** Ölçeğe giren satır: reçeteli bir ürüne bağlı ve cirosu olan satış (HİZMET ve tahmini maliyetliler dışarıda) */
-export function inMarginScale(r: { matched: boolean; isService: boolean; net: number }): boolean {
-  return r.matched && !r.isService && r.net > 0;
+/**
+ * Ölçeğe giren satır: reçeteli bir ürüne bağlı ve cirosu olan satış (HİZMET ve tahmini maliyetliler dışarıda: eşleşmeyen
+ * ve reçetesi boş ürüne bağlı satır)
+ */
+export function inMarginScale(r: { matched: boolean; isService: boolean; net: number; noRecipe?: boolean }): boolean {
+  return r.matched && !r.isService && !r.noRecipe && r.net > 0;
 }
 
 /**

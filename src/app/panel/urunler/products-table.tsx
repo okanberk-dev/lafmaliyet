@@ -52,7 +52,7 @@ import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
 
-import { compareBy, LIST_QUERY_KEY, menuAverages, productHref, STATUS_CHIPS, statusChips } from "./logic";
+import { compareBy, LIST_QUERY_KEY, menuAverages, NO_RECIPE_LAST_KEYS, productHref, soldProfit, STATUS_CHIPS, statusChips } from "./logic";
 import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection, SheetToggle } from "./filter-sheet";
 import { filterSummary } from "./filter-text";
 import { bulkHref, productSearchText } from "./fiyatlar/logic";
@@ -521,8 +521,13 @@ export function ProductsTable({
     if (sort) {
       const d = sort.dir === "asc" ? 1 : -1;
       const key = sort.key;
+      // Reçetesiz ürünün kârı ve oranı anlamsız (tire): bu sütunlarda yön ne olursa olsun sona kalır
+      const noRecipeLast = (NO_RECIPE_LAST_KEYS as readonly string[]).includes(key);
+      const last = (r: ProductRow) => (noRecipeLast && r.status === "Reçete yok" ? 1 : 0);
       // Sıralama kararlı: eşitlikte menü sırası korunur
-      list = [...list].sort((a, b) => (TEXT_KEYS.includes(key as TextKey) ? compareBy(key as TextKey, a, b) : a[key as NumKey] - b[key as NumKey]) * d);
+      list = [...list].sort(
+        (a, b) => last(a) - last(b) || (TEXT_KEYS.includes(key as TextKey) ? compareBy(key as TextKey, a, b) : a[key as NumKey] - b[key as NumKey]) * d,
+      );
     }
     return list;
   }, [base, statuses, sort]);
@@ -530,15 +535,17 @@ export function ProductsTable({
   const paged = useUrlPaged(filtered, pageSize, `${q}|${category}|${size}|${durum}|${includeInactive}|${sira}|${pageSize}`);
 
   // Görünen ürünlerin bu ayki toplamları ve Excel'in "ORTALAMA" satırı (tablonun alt satırı ve telefon özeti)
-  const totals = useMemo(
-    () => ({
+  // Brüt kâr reçeteli satılanlardan (kartla aynı kural); net ciro görünen bütün satılanlardan
+  const totals = useMemo(() => {
+    const sp = soldProfit(filtered);
+    return {
       qty: filtered.reduce((a, r) => a + r.soldQty, 0),
-      profit: filtered.reduce((a, r) => a + r.monthProfit, 0),
+      profit: sp.profit,
+      noRecipe: sp.noRecipe.length,
       net: filtered.reduce((a, r) => a + r.monthNet, 0),
       avg: menuAverages(filtered),
-    }),
-    [filtered],
-  );
+    };
+  }, [filtered]);
 
   // Sayısal sütunda ve durumda ilk tık büyükten küçüğe, ad ve kategoride A→Z; üçüncü tık sıralamayı kaldırır
   const toggleSort = (key: SortKey) => {
@@ -934,7 +941,7 @@ export function ProductsTable({
                   {head("margin", "Kâr marjı", "Birim kâr ÷ net satış.")}
                   {head("suggestedPrice", "Önerilen fiyat", "Maliyetin hedef orana denk geldiği KDV dahil fiyat, 5 ₺'ye yuvarlanmış. Ok işareti: fiyatınız bunun altında.")}
                   {head("soldQty", "Adet", "Satış raporundan (ModPOS) ve laffogato.net online siparişlerinden bu ürünle eşleşen adet.", monthLabel)}
-                  {head("monthProfit", "Brüt kâr", "Birim kâr × satış adedi.", monthLabel)}
+                  {head("monthProfit", "Brüt kâr", "Birim kâr × satış adedi. Reçetesi boş üründe hesaplanmaz (tire) ve toplama girmez.", monthLabel)}
                   {col("monthNet") ? head("monthNet", "Net ciro", "Net satış × satış adedi.", monthLabel) : null}
                   {col("fireRate") ? head("fireRate", "Fire", "Zayi / fire oranı. (özel) = reçete kartında bu ürüne özel oran; yoksa Ayarlar'daki genel oran.") : null}
                   <TH className="w-px">
@@ -990,7 +997,15 @@ export function ProductsTable({
                         </span>
                       </TD>
                       <TD numeric>{r.soldQty ? num(r.soldQty) : <span className="text-ink-quiet">0</span>}</TD>
-                      <TD numeric>{r.soldQty ? <Signed value={r.monthProfit}>{tl(r.monthProfit)}</Signed> : <span className="text-ink-quiet">–</span>}</TD>
+                      <TD numeric>
+                        {r.soldQty && r.status !== "Reçete yok" ? (
+                          <Signed value={r.monthProfit}>{tl(r.monthProfit)}</Signed>
+                        ) : (
+                          <span className="text-ink-quiet" title={r.soldQty ? "Reçete boş: kâr hesaplanmaz" : undefined}>
+                            –
+                          </span>
+                        )}
+                      </TD>
                       {col("monthNet") ? <TD numeric>{r.soldQty ? tl(r.monthNet) : <span className="text-ink-quiet">–</span>}</TD> : null}
                       {col("fireRate") ? (
                         <TD numeric>
@@ -1033,6 +1048,7 @@ export function ProductsTable({
                   <TD numeric>{num(totals.qty)} adet</TD>
                   <TD numeric>
                     <Signed value={totals.profit}>{tl(totals.profit)}</Signed>
+                    {totals.noRecipe ? <span className="block text-xs font-normal text-ink-mute">reçetesiz {num(totals.noRecipe)} hariç</span> : null}
                   </TD>
                   {col("monthNet") ? <TD numeric>{tl(totals.net)}</TD> : null}
                   <TD colSpan={1 + Number(col("fireRate"))} />
@@ -1082,7 +1098,7 @@ export function ProductsTable({
                   </Metric>
                   <Metric label={monthLabel}>
                     {num(r.soldQty)} adet
-                    {r.soldQty ? (
+                    {r.soldQty && r.status !== "Reçete yok" ? (
                       <Signed value={r.monthProfit} className="block text-xs font-normal text-ink-mute">
                         {tl(r.monthProfit)} kâr
                       </Signed>
@@ -1118,7 +1134,7 @@ export function ProductsTable({
                 <Signed value={totals.profit} className="font-semibold text-ink">
                   {tl(totals.profit)}
                 </Signed>{" "}
-                brüt kâr
+                brüt kâr{totals.noRecipe ? ` (reçetesiz ${num(totals.noRecipe)} hariç)` : ""}
               </span>
             </p>
             <p className="tabular">

@@ -209,6 +209,36 @@ export function menuAverages(rows: AverageRow[]): { count: number; costRatio: nu
   };
 }
 
+/** Ayın kâr dökümüne giren ürün satırı (Ürünler sayfasındaki `ProductRow`'un alanları) */
+export interface SoldProfitRow {
+  status: ProductStatus;
+  soldQty: number;
+  monthProfit: number;
+  monthNet: number;
+}
+
+/**
+ * Ayın brüt kârı ve net satışı, satılan reçeteli ürünlerden (Ürünler'in brüt kâr kartı, dökümü ve tablonun alt satırı).
+ * Reçetesi boş ürün katılmaz: maliyeti 0 sayılınca birim kârı ~fiyatı kadar görünür ve kartı şişirirdi (Genel bakış'ın
+ * kâr sıralaması ve Analiz'deki gruplarla aynı kural, denetim E-47); satılan reçetesizler `noRecipe`'te ayrı döner.
+ */
+export function soldProfit<T extends SoldProfitRow>(rows: readonly T[]): { profit: number; net: number; counted: T[]; noRecipe: T[] } {
+  const sold = rows.filter((r) => r.soldQty > 0);
+  const counted = sold.filter((r) => r.status !== "Reçete yok");
+  return {
+    profit: counted.reduce((a, r) => a + r.monthProfit, 0),
+    net: counted.reduce((a, r) => a + r.monthNet, 0),
+    counted,
+    noRecipe: sold.filter((r) => r.status === "Reçete yok"),
+  };
+}
+
+/**
+ * Kârı ve oranı anlamsız ürün (reçete yok): birim kâr, aylık kâr, marj ve maliyet oranı sıralamasında sona kalır
+ * (yön ne olursa olsun); tabloda bu sütunlarda tire görünür
+ */
+export const NO_RECIPE_LAST_KEYS = ["unitProfit", "monthProfit", "margin", "costRatio"] as const;
+
 // ---------------------------------------------------------------- Durum süzgeci
 
 /** Durum çiplerinin sırası (en iyiden en kötüye, sonda reçetesiz) */

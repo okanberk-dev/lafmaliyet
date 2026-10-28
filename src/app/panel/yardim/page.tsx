@@ -706,7 +706,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel" /> reçeteye göre (teorik) kârı, <Path href="/panel/gelir-gider" /> tablosu ise faturaya göre (gerçekleşen) kârı gösterir. Aradaki fark fire, ikram,
             stok birikmesi ya da reçetede eksik malzemedir. Stok sayımı girdikçe iki rakam birbirine yaklaşır. İkisi de laffogato.net online satışını (uygulama
-            siparişleri, mağaza, karaoke) içerir: Genel bakış&apos;ta online satış reçetesiyle, menüye bağlı olmayan satırlar ortalama maliyet oranıyla sayılır.
+            siparişleri, mağaza, karaoke) içerir: Genel bakış&apos;ta online satış reçetesiyle, menüye bağlı olmayan satırlar ve reçetesi boş ürünler ortalama maliyet oranıyla sayılır.
           </>
         ),
         icon: Scale,
@@ -915,6 +915,10 @@ const FORMULAS = [
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
   ["Eşleşmeyen POS ürünü", "Net ciro × eşleşen ürünlerin ortalama maliyet oranı"],
+  [
+    "Reçetesi boş ürün",
+    "Satışı eşleşmeyen satır gibi: net ciro × ortalama maliyet oranı (orana girmez). Kâr sıralamalarına, Analiz'deki gruplara ve Ürünler'in brüt kâr kartına girmez",
+  ],
   ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu; Genel bakış'ta laffogato.net online satışı da dahil"],
   [
     "Net kâr / zarar (reçeteye göre)",

@@ -194,12 +194,56 @@ const PAGE_SIZE = 25;
 /** Ürünler tablosunun süzgeçleri (kategori ayrı: sınıfları da yeniden hesaplar) */
 const TABLE_FILTERS = ["ara", "grup", "zam", "satilmayan"];
 
+/** Gruplara girmeyen ürün: reçetesi boş (maliyeti bilinmiyor; insights.ts menuEngineering.noRecipe) */
+interface SkippedItem {
+  id: number;
+  name: string;
+  size: string;
+  categoryId: number;
+  qty: number;
+}
+
+/**
+ * Reçetesi boş ürünler: maliyeti 0 görünür, birim kârı ~fiyatı kadar olur; gruplara ve eşiklere girmez (denetim E-47).
+ * Satılanlar önce; her ürün reçete kartına gider
+ */
+function NoRecipeNote({ items, month }: { items: SkippedItem[]; month: string }) {
+  if (!items.length) return null;
+  const list = [...items].sort((a, b) => b.qty - a.qty || `${a.name} ${a.size}`.localeCompare(`${b.name} ${b.size}`, "tr"));
+  const sold = list.filter((i) => i.qty > 0).length;
+  return (
+    <div role="note" className="space-y-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
+      <p className="font-medium">
+        Reçetesi boş {num(items.length)} ürün gruplara girmedi{sold ? `, ${num(sold)} tanesi bu ay satıldı` : ""}
+      </p>
+      <p className="text-[13px]">
+        Maliyeti bilinmediği için birim kârı neredeyse fiyatı kadar görünür ve kâr eşiğini yükseltirdi. Reçetesini girince
+        gruplara katılır; o zamana kadar satışlarının maliyeti ortalama maliyet oranıyla tahmin edilir.
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {list.map((i) => (
+          <li key={i.id}>
+            <Link
+              href={productHref(i.id, month)}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-xl bg-surface px-2.5 text-[13px] font-medium text-ink ring-1 ring-line ring-inset hover:ring-line-strong pointer-coarse:min-h-11"
+            >
+              {i.name} · {i.size}
+              <span className="font-normal text-ink-mute tabular">{num(i.qty)} adet</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function MenuEngineering({
   month,
   monthLabel,
   items: allItems,
   popThreshold: allThreshold,
   avgCm: allAvg,
+  noRecipe: allNoRecipe = [],
   classInfo,
   categories,
 }: {
@@ -209,6 +253,8 @@ export function MenuEngineering({
   items: Item[];
   popThreshold: number;
   avgCm: number;
+  /** Reçetesi boş ürünler: sınıflanmaz, eşiklere girmez; kartta ayrı not */
+  noRecipe?: SkippedItem[];
   classInfo: Record<MenuClass, { label: string; advice: string; tone: string }>;
   categories: { id: number; name: string }[];
 }) {
@@ -294,6 +340,7 @@ export function MenuEngineering({
   };
 
   const catName = cat === null ? "Bütün menü" : (categories.find((c) => c.id === cat)?.name ?? "Kategori");
+  const noRecipe = cat === null ? allNoRecipe : allNoRecipe.filter((i) => i.categoryId === cat);
 
   return (
     <div className="flex flex-col gap-4">
@@ -422,6 +469,7 @@ export function MenuEngineering({
               })}
             </div>
           </LayoutGroup>
+          <NoRecipeNote items={noRecipe} month={month} />
         </CardContent>
       </Card>
 

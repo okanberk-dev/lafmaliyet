@@ -121,7 +121,7 @@ const product = (id: number, name: string, size: string, category: string | unde
   ({ product: { id, name, size }, category: category ? { name: category } : undefined }) as unknown as SalesLineCalc["product"];
 
 let nextId = 1;
-const line = (posName: string, qty: number, revenue: number, o: { product?: SalesLineCalc["product"]; service?: boolean; cost?: number } = {}): SalesLineCalc => {
+const line = (posName: string, qty: number, revenue: number, o: { product?: SalesLineCalc["product"]; service?: boolean; cost?: number; noRecipe?: boolean } = {}): SalesLineCalc => {
   const net = revenue / (o.service ? 1.2 : 1.1);
   const cost = o.cost ?? 0;
   const commission = revenue * 0.025 * 0.856;
@@ -129,6 +129,7 @@ const line = (posName: string, qty: number, revenue: number, o: { product?: Sale
     line: { id: nextId++, posName, qty, revenue, isService: !!o.service, productId: o.product ? 1 : null } as SalesLineCalc["line"],
     product: o.product,
     matched: !!o.product && !o.service,
+    noRecipe: !!o.noRecipe,
     unitCost: null,
     net,
     cost,

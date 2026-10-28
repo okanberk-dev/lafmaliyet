@@ -114,6 +114,9 @@ export function salesBreakdowns(
   const buckets = bucketsOf(sales.lines, month);
   const byKind = (k: Kind) => sales.lines.filter((l) => kindOf(l) === k);
   const matched = byKind("matched");
+  // Ürüne bağlı ama ürünün reçetesi boş: maliyeti eşleşmeyen gibi ortalama oranla tahmini (denetim E-47)
+  const recipe = matched.filter((l) => !l.noRecipe);
+  const noRecipe = matched.filter((l) => l.noRecipe);
   const unmatched = byKind("unmatched");
   const services = byKind("service");
   const unmatchedNet = total(unmatched, (l) => l.net);
@@ -184,9 +187,19 @@ export function salesBreakdowns(
         {
           key: "recipe",
           label: "Reçeteli ürünler",
-          sub: `${num(matched.length)} POS kalemi · reçete maliyeti × adet`,
-          amount: -total(matched, (l) => l.cost),
+          sub: `${num(recipe.length)} POS kalemi · reçete maliyeti × adet`,
+          amount: -total(recipe, (l) => l.cost),
         },
+        ...(noRecipe.length
+          ? [
+              {
+                key: "no-recipe",
+                label: "Reçetesi boş ürünler (tahmini)",
+                sub: `${num(noRecipe.length)} POS kalemi · net ciro ${tl(total(noRecipe, (l) => l.net))} × ort. maliyet oranı ${pct(sales.avgCostRatio)}`,
+                amount: -total(noRecipe, (l) => l.cost),
+              },
+            ]
+          : []),
         {
           key: "estimate",
           label: "Eşleşmeyen ürünler (tahmini)",
