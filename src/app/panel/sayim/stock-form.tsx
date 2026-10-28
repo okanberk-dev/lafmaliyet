@@ -961,7 +961,7 @@ const StockTotalCard = memo(function StockTotalCard({
   live: LiveTotals;
   coveredShare: number;
   hasExtras: boolean;
-  prevTotal: { value: number; overridden: boolean } | null;
+  prevTotal: { value: number; note: string | null } | null;
   closingOverride: number | null;
   breakdown: () => BreakdownGroup[];
 }) {
@@ -1048,7 +1048,8 @@ const StockTotalCard = memo(function StockTotalCard({
               label={
                 <span>
                   Açılış ({prevMonthLabel} devri)
-                  {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
+                  {prevTotal.note ? <span className="ml-1.5 text-xs font-medium text-info">elle girildi</span> : null}
+                  {prevTotal.note ? <InfoTip className="ml-1" text={prevTotal.note} /> : null}
                 </span>
               }
               value={tl(prevTotal.value)}
@@ -1243,8 +1244,11 @@ export function StockCountForm({
   hasPrev: boolean;
   /** Seçili ay dahil son 6 ayın sayım durumu */
   history: HistoryMonth[];
-  /** Bu ayın açılış stoğu = geçen ayın devreden malı (yalnızca yönetici); Gelir-giderde elle girildiyse o */
-  prevTotal: { value: number; overridden: boolean } | null;
+  /**
+   * Bu ayın açılış stoğu, kâr-zararın kullandığı (yalnızca yönetici; logic.ts countOpening): geçen ayın devreden malı
+   * ya da Gelir-giderde elle girilen; `note` elle girildiyse ipucu
+   */
+  prevTotal: { value: number; note: string | null } | null;
   /** Gelir-giderde bu ayın stoğu elle girildiyse o tutar (kâr-zarar sayımı değil bunu kullanır) */
   closingOverride: number | null;
   /** "Sayan: … · son kayıt …" */

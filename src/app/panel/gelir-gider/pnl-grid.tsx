@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarRange, MessageSquareText, RotateCcw, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarRange, MessageSquareText, RotateCcw, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,6 +41,7 @@ import {
   type CellField,
 } from "./cell-rules";
 import { MonthView } from "./month-view";
+import { rowLink, type RowLink } from "./row-links";
 
 export interface GridSection {
   key: string;
@@ -1058,7 +1059,7 @@ export function PnlGrid({
                 </tr>
               ) : null}
               {shownSections.map((sec) => (
-                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} onSave={save} onNote={openNote} />
+                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} current={currentMonth} onSave={save} onNote={openNote} />
               ))}
             </tbody>
           </table>
@@ -1071,7 +1072,9 @@ export function PnlGrid({
       <CardFooter className="justify-start gap-2 max-md:hidden">
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
         <span>
-          Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Faturadan gelen mal alışlarını değiştirmek için{" "}
+          Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Noktalı çizgili tutar ve ok simgesi (
+          <ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar (o ayın faturaları,
+          harcamaları, stok sayımı, komisyonu; personel, sabit giderler). Faturadan gelen mal alışlarını değiştirmek için{" "}
           <Link href="/panel/faturalar" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
             Faturalar
           </Link>{" "}
@@ -1097,14 +1100,37 @@ function LegendItem({ tone, children }: { tone: StripMonth["tone"]; children: st
   );
 }
 
+/**
+ * Kaynak bağlantısı simgesi (rowLink): satırın adında (personel, sabit gider: her ay aynı sayfa) ya da girilebilen
+ * hücrenin solunda (stok sayımı, satışlar: o ayın sayfası). Girilemeyen hücrede tutarın kendisi bağlantıdır
+ */
+function SourceLink({ link, label, className }: { link: RowLink; label: string; className?: string }) {
+  return (
+    <Link
+      href={link.href}
+      aria-label={`${label}: ${link.label} sayfasını aç`}
+      title={`${link.label} ›`}
+      className={cn(
+        "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-quiet transition-colors hover:bg-surface hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none pointer-coarse:size-9",
+        className,
+      )}
+    >
+      <ArrowUpRight size={14} aria-hidden="true" />
+    </Link>
+  );
+}
+
 function SectionRows({
   sec,
   visibleIdx,
+  current,
   onSave,
   onNote,
 }: {
   sec: GridSection;
   visibleIdx: { m: string; i: number }[];
+  /** "Bu ay": stok sayımı bağlantısı sonraki aylara gitmez */
+  current: string;
   onSave: (month: string, key: string, v: number | null, hadNote?: boolean, kasa?: boolean) => Promise<unknown>;
   onNote: (month: string, i: number, def: PnlRowDef, c: PnlCell, amountText: string) => void;
 }) {
@@ -1121,6 +1147,8 @@ function SectionRows({
       {sec.rows.map(({ def, cells, total }) => {
         const isProfit = def.key === "profit" || def.key === "ratio:profit";
         const tone = (v: number | null) => (v !== null && v < 0 ? "text-bad" : isProfit && v !== null && v > 0 ? "text-good" : null);
+        // Her ay aynı kaynak (personel, sabit giderler): satırın adında tek bağlantı
+        const rowSource = rowLink(def.key, current);
         return (
           <tr key={`${sec.key}-${def.key}`} className={cn(ROW, def.strong && "font-semibold [&>td]:border-line-strong")}>
             <TD sticky className={cn(STICKY, "py-1.5", def.strong ? "text-ink" : "text-ink-soft")}>
@@ -1130,34 +1158,57 @@ function SectionRows({
                   {def.sub ? <span className="block text-xs leading-4 font-normal text-ink-mute max-sm:line-clamp-2">{def.sub}</span> : null}
                 </span>
                 {def.hint ? <InfoTip text={def.hint} className="shrink-0" /> : null}
+                {rowSource?.scope === "row" ? <SourceLink link={rowSource} label={def.label} /> : null}
               </span>
             </TD>
             {visibleIdx.map(({ m, i }) => {
               const c = cells[i];
               // Aylık ciro kasa raporlarından geliyorsa hesaplanan hücre gibi (elle yazılan mavi, boşaltınca kasaya döner)
               const kasa = def.key === "revenue" && c.computed !== null;
+              // Bu ayın kaynağı (faturalar, harcamalar, stok sayımı, komisyon, satışlar); faturasız ayda yok
+              const link = rowLink(def.key, m, { value: c.value, current });
+              const monthLink = link?.scope === "month" ? link : null;
               return (
                 <td key={m} className={cn(CELL, "text-right")}>
                   {def.editable ? (
-                    <EditableCell
-                      value={c.value}
-                      computed={c.computed}
-                      overridden={c.overridden}
-                      kind={kasa ? "auto" : def.kind}
-                      computedLabel={kasa ? KASA_LABEL : undefined}
-                      format={def.format}
-                      label={`${def.label} · ${MONTH_NAMES[i]}`}
-                      col={m}
-                      note={c.note}
-                      outOfRange={c.outOfRange}
-                      info={c.info}
-                      warn={c.warn}
-                      onSave={async (v) => {
-                        await onSave(m, def.key, v, !!c.note, kasa);
-                      }}
-                      // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
-                      onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}
-                    />
+                    <div className="flex items-center gap-0.5">
+                      {monthLink ? <SourceLink link={monthLink} label={`${def.label} · ${MONTH_NAMES[i]}`} /> : null}
+                      <div className="min-w-0 flex-1">
+                        <EditableCell
+                          value={c.value}
+                          computed={c.computed}
+                          overridden={c.overridden}
+                          kind={kasa ? "auto" : def.kind}
+                          computedLabel={kasa ? KASA_LABEL : undefined}
+                          format={def.format}
+                          label={`${def.label} · ${MONTH_NAMES[i]}`}
+                          col={m}
+                          note={c.note}
+                          outOfRange={c.outOfRange}
+                          info={c.info}
+                          warn={c.warn}
+                          onSave={async (v) => {
+                            await onSave(m, def.key, v, !!c.note, kasa);
+                          }}
+                          // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
+                          onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}
+                        />
+                      </div>
+                    </div>
+                  ) : monthLink ? (
+                    // Girilemeyen hücre kaynağından gelir: tutara tıklayınca o ayın faturaları / harcamaları açılır
+                    <Link
+                      href={monthLink.href}
+                      title={`${monthLink.label} ›`}
+                      aria-label={`${def.label} · ${MONTH_NAMES[i]}: ${fmt(c.value, def.format)}. ${monthLink.label} sayfasını aç`}
+                      className={cn(
+                        "block rounded-md px-2 py-1 whitespace-nowrap tabular underline decoration-line-strong decoration-dotted underline-offset-4 transition-colors hover:bg-surface hover:text-ink hover:decoration-ink-quiet focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none",
+                        def.strong ? "text-ink" : "text-ink-mute",
+                        tone(c.value),
+                      )}
+                    >
+                      {fmt(c.value, def.format)}
+                    </Link>
                   ) : (
                     <span
                       className={cn(

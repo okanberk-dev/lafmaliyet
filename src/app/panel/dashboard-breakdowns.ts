@@ -1,11 +1,11 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
 import type { Model } from "@/lib/calc/engine";
 import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
-import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
+import { rowLink } from "./gelir-gider/row-links";
 import { productHref } from "./urunler/logic";
 
 /**
@@ -53,17 +53,12 @@ const biggestFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => b.amount
 const salesHref = (month: string, durum?: string) => `/panel/satislar?ay=${month}${durum ? `&durum=${durum}#satirlar` : ""}`;
 /** Gelir-gider: ayın yılı; telefondaki tek ay görünümü de o ayla açılır (month-view.tsx ile aynı adres) */
 const pnlHref = (month: string) => `/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`;
-const invoicesHref = (filters: { kategori?: string; ay?: string; ara?: string }) =>
-  `/panel/faturalar?${new URLSearchParams(Object.entries(filters).filter((e): e is [string, string] => Boolean(e[1])))}#fatura-listesi`;
-
-/** Gider kaleminin girildiği sayfa: personel, sabit gider, aylık harcama; ötekiler Gelir-gider tablosunda */
+/**
+ * Gider kaleminin kaynağı, Gelir-gider tablosundakiyle aynı (rowLink): personel, sabit gider, aylık harcama, faturalar,
+ * komisyon. POS komisyonu ve kaynağı olmayan satırlar Gelir-gider tablosunda (POS komisyonu orada düzeltilir)
+ */
 function lineHref(key: string, month: string): string {
-  if (key.startsWith("personnel:")) return "/panel/personel";
-  if (key.startsWith("fixed:")) return "/panel/giderler";
-  if (key.startsWith("expense:")) return `/panel/harcamalar?ay=${month}`;
-  if (key.startsWith("purchase:")) return invoicesHref({ ay: month, ara: key.slice("purchase:".length) });
-  if (key.startsWith("commission:") && key !== "commission:pos") return invoicesHref({ kategori: COMMISSION_CATEGORY, ay: month, ara: key.slice("commission:".length) });
-  return pnlHref(month);
+  return (key === "commission:pos" ? null : rowLink(key, month)?.href) ?? pnlHref(month);
 }
 
 // ---------------------------------------------------------------- Ürün satışları

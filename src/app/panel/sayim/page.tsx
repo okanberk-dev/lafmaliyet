@@ -15,7 +15,7 @@ import { requireUser } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { counterLine, countComplete, countStatus, defaultCountMonth, staffCountMonths } from "./logic";
+import { counterLine, countComplete, countOpening, countOpeningNote, countStatus, defaultCountMonth, staffCountMonths } from "./logic";
 import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
@@ -110,9 +110,10 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
     const st = countStatus(sh);
     return { month: m, short: monthShort(m), label: monthLabel(m), counted: st.counted, total: st.total, hasData: sh.hasData, open: allowed(m) };
   });
-  // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli
+  // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli. Açılış kâr-zararınki
+  // (pnlMonth): bu ayın "Önceki aydan devir"i ayrıca elle değiştirilebilir (denetim E-30). Yalnız yönetici görür
   const closing = model.closingStock(month);
-  const opening = model.closingStock(prevMonth);
+  const opening = isAdmin ? countOpening(model.pnlMonth(month).cells.get("stock:opening") ?? { value: 0, overridden: false }, model.closingStock(prevMonth)) : null;
 
   const groups: FormGroup[] = sheet.groups.map((g, gi) => ({
     name: g.name,
@@ -170,7 +171,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         hasPrev={prev.hasData}
         history={history}
-        prevTotal={isAdmin && (prev.hasData || opening.overridden) ? { value: opening.value, overridden: opening.overridden } : null}
+        prevTotal={opening && (prev.hasData || opening.source !== "sayim") ? { value: opening.value, note: countOpeningNote(opening, month) } : null}
         closingOverride={isAdmin && closing.overridden ? closing.value : null}
         counter={counterLine(counters)}
         me={user.name}
