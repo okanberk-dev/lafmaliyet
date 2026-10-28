@@ -60,6 +60,15 @@ export function adjustmentPeriodLabel(a: Pick<TaxAdjustment, "month" | "span">):
 
 export type RevenueSource = "beyanname" | "z" | "yonetim";
 
+/**
+ * Ayın geliri mali belgeye dayanıyor mu (K11, K31): beyanname ya da Z. Biten ve hiç geliri olmayan ay (hesap dönemi
+ * açılışın öncesinde başladıysa, örneğin 25–30 Haziran) belge beklemez: girilecek satış yok, Başlarken de sormaz.
+ * Süren ayın sıfırı belge sayılmaz (veri henüz gelmemiş olabilir)
+ */
+export function revenueDocumented(m: Pick<TaxMonth, "revenueSource" | "inProgress"> & { income: { total: number } }): boolean {
+  return m.revenueSource !== "yonetim" || (!m.inProgress && Math.abs(m.income.total) < 0.005);
+}
+
 /** Yazarkasanın ayı (okc-z.ts okcMonth): oran oran KDV hariç matrah toplamı ve ayın her açık günü girildi mi */
 export interface ZMonth {
   base: number;
@@ -831,7 +840,7 @@ export function taxQuarters(input: TaxPnlInput, months: readonly TaxMonth[], yea
     if (candidatesQ.count) reasons.push("Demirbaş olabilir faturası var");
     const missingLife = input.assets.some((a) => a.method === "amortisman" && !a.lifeYears && a.acquiredOn <= p.to);
     if (missingLife) reasons.push("Faydalı ömrü girilmemiş varlık var");
-    if (!ms.length || ms.some((m) => m.revenueSource === "yonetim")) reasons.push("Gelir mali belgeden girilmedi");
+    if (!ms.length || !ms.every(revenueDocumented)) reasons.push("Gelir mali belgeden girilmedi");
     if (!input.settings.checks.kafe_disi) reasons.push("Kafe dışı işler muhasebeciyle konuşulmadı");
     out.push({
       key: p.key,

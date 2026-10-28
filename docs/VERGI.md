@@ -171,6 +171,9 @@ Kafenin payı; şirketin beyannamesi muhasebecidedir." Bloklar: ay ay vergiye g�
 (yalnız geliri mali belgeden gelen aylar; diğerlerinin yerine "Gelir mali belgeden girilmedi; hesap ekranda
 (taslak)"), geçici ve kurumlar vergisi satır satır formülüyle (hesap döneminin başından ya da çapadan beri her ay mali
 belgeliyse), takvim, kullanılan kurallar ("Derlendi 24.10.2026; resmî metinlerle karşılaştırılmadı"), sahibin notları.
+Biten ve hiç geliri olmayan ay (açılıştan önceki 25–30 Haziran gibi) belge beklemez: gelir kaynağı "gelir yok", yönetim
+verisi satırı yazılmaz, sonraki çeyreğin kümülatif hesabını da kapatmaz (`revenueDocumented`; aynı kural çeyreğin
+"Gelir mali belgeden girilmedi" taslak gerekçesinde; Başlarken de o ayı sormaz). Süren ayın sıfırı belge sayılmaz.
 Belgesi yok kalemleri yazılmaz, sınıflandırılmamışların yalnız toplamı. Vergi sayfasının yılını yazar (30 Nisan'a
 kadar geçen yıl); hazırlanamazsa sekme yok, dosya iner.
 

@@ -182,8 +182,15 @@ test("Excel 'Vergi' sayfası: ilk satır, yönetim verisiyle gelen ay ve çeyrek
   assert.equal(TAX_SHEET_FIRST_LINE, "Tahmin; beyanname değildir. Kafenin payı; şirketin beyannamesi muhasebecidedir.");
   const { texts, numbers } = cellsOf(ws);
   const all = texts.join("\n");
-  // Excel verisinde her ayın geliri yönetim verisi (ModPOS): üç çeyrek, üç geçici vergi dönemi ve kurumlar vergisi yerine tek satır
-  assert.equal(texts.filter((t) => t === TAX_NOT_FISCAL).length, view.quarters.length + view.corp.length + 1);
+  // Excel verisinde Temmuz–Ekim'in geliri yönetim verisi (ModPOS): 2026/3 ve 2026/4, iki geçici vergi dönemi ve
+  // kurumlar vergisi yerine tek satır. 25–30 Haziran (2026/2) bitti ve geliri yok: belge beklemez, yazılır ("gelir yok")
+  assert.deepEqual(
+    view.quarters.map((q) => q.key),
+    ["2026-Q2", "2026-Q3", "2026-Q4"],
+  );
+  assert.equal(texts.filter((t) => t === TAX_NOT_FISCAL).length, view.quarters.length - 1 + (view.corp.length - 1) + 1);
+  assert.ok(texts.includes("gelir yok"));
+  assert.ok(texts.includes("Geçici vergi 2026/2 · Taslak"));
   assert.doesNotMatch(all, /Kasa satışları|Yönetim verisi|ModPOS/);
   for (const m of view.months) for (const r of m.income.rows) assert.ok(!numbers.some((n) => Math.abs(n - r.amount) < 0.005 && r.amount !== 0), `${m.month} ${r.label}`);
   // Kullanılan kurallar, derleme notu, takvim başlığı; "onay" kelimesi yok
@@ -200,6 +207,22 @@ test("Excel 'Vergi' sayfası: ilk satır, yönetim verisiyle gelen ay ve çeyrek
   assert.match(purpose, /^Tahmin, beyanname değil/);
   // Vergi görünümü verilmezse sekme yok (eski dosya düzeni)
   assert.ok(!buildWorkbook(model, "2026-09", EXTRAS).getWorksheet(TAX_SHEET));
+});
+
+test("Excel 'Vergi' sayfası: gelirsiz Haziran beyanname beklemez; Temmuz–Eylül beyannamesiyle 2026/3'ün geçici vergisi yazılır (§17-9)", () => {
+  const filing = (period: string, m10: number): TaxFiling => ({ id: Number(period.slice(5)), kind: "kdv_matrah", period, payable: 0, stamp: 0, values: { m10, m20: 0 }, enteredByName: "Sahip" });
+  const inputs2: TaxInputs = { ...inputs, filings: [filing("2026-07", 128_700.46), filing("2026-08", 369_994.62), filing("2026-09", 347_099.03)] };
+  const v2 = buildTaxView(taxViewInputFromModel(model, inputs2, { today: TODAY, year: 2026, quarter: "2026-Q3" }));
+  // Başlarken Haziran'ı sormaz; çeyreğin durum gerekçelerinde gelir yok
+  assert.ok(!v2.quarters.find((q) => q.key === "2026-Q3")!.stateReasons.includes("Gelir mali belgeden girilmedi"));
+  assert.ok(!v2.quarters.find((q) => q.key === "2026-Q2")!.stateReasons.includes("Gelir mali belgeden girilmedi"));
+  assert.ok(v2.quarters.find((q) => q.key === "2026-Q4")!.stateReasons.includes("Gelir mali belgeden girilmedi"));
+  const { texts, numbers } = cellsOf(buildWorkbook(model, "2026-09", { ...EXTRAS, tax: { view: v2, settings: DEFAULT_TAX_SETTINGS } }).getWorksheet(TAX_SHEET)!);
+  const c3 = v2.corp.find((c) => c.key === "2026-Q3")!;
+  assert.ok(texts.includes("Geçici vergi 2026/3 · Taslak") && texts.includes("Kafenin katkısı (tahmini ödenecek)"));
+  assert.ok(numbers.some((n) => Math.abs(n - c3.matrah) < 0.005), String(c3.matrah));
+  // 2026/4 (Ekim, ModPOS) ve onun kümülatifine dayanan kurumlar vergisi yazılmaz
+  assert.equal(texts.filter((t) => t === TAX_NOT_FISCAL).length, 3);
 });
 
 test("Excel 'Vergi' sayfası: beyannameli aylar ve çeyrek yazılır; belgesi yok kalemi ve sınıflandırılmamış kalem adları yazılmaz; sahibin notu", () => {

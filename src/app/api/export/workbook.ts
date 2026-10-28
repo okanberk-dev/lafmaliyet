@@ -21,7 +21,7 @@ import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
 import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
 import { ACCOUNTANT_CHECKS } from "../../../lib/tax/checks";
 import type { QuarterCalc } from "../../../lib/tax/corporate";
-import type { RevenueSource, TaxMonth, TaxRow } from "../../../lib/tax/pnl";
+import { revenueDocumented, type RevenueSource, type TaxMonth, type TaxRow } from "../../../lib/tax/pnl";
 import { allRules, CONFIDENCE_LABELS, overrideText, RULE_GROUPS, RULES_COMPILED_AT, RULES_VERIFIED_AT, rulesCompiledText, rulesFor, ruleValueText } from "../../../lib/tax/rules";
 import type { TaxSettings } from "../../../lib/tax/settings";
 import { CALENDAR_DAYS, INFLATION_LINE, type TaxView } from "../../../lib/tax/view";
@@ -1132,7 +1132,9 @@ export const TAX_SHEET_FIRST_LINE = "Tahmin; beyanname değildir. Kafenin payı;
 export const TAX_NOT_FISCAL = "Gelir mali belgeden girilmedi; hesap ekranda (taslak)";
 
 const REVENUE_SOURCE_TEXT: Record<RevenueSource, string> = { beyanname: "beyanname", z: "Z", yonetim: "yönetim verisi" };
-const isFiscal = (m: TaxMonth) => m.revenueSource !== "yonetim";
+const isFiscal = revenueDocumented;
+/** Gelir kaynağı satırı: biten ve gelirsiz ay "gelir yok" (belge beklemez) */
+const revenueSourceText = (m: TaxMonth) => (m.revenueSource === "yonetim" ? "gelir yok" : REVENUE_SOURCE_TEXT[m.revenueSource]);
 const dotted = (d: string) => d.split("-").reverse().join(".");
 
 /**
@@ -1202,7 +1204,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       ...(whole ? { e: "Çeyrek" } : {}),
       f: whole ? "Esas / not" : `${missing.join(", ")}: ${TAX_NOT_FISCAL}`,
     });
-    ws.addRow({ a: "Gelir kaynağı", ...Object.fromEntries(fiscal.map((m, i) => [cols[i], REVENUE_SOURCE_TEXT[m.revenueSource]])) });
+    ws.addRow({ a: "Gelir kaynağı", ...Object.fromEntries(fiscal.map((m, i) => [cols[i], revenueSourceText(m)])) });
     const block = (pick: (m: TaxMonth) => readonly TaxRow[]) => {
       const keys: { id: string; label: string; badge: string | null }[] = [];
       for (const m of fiscal) for (const r of pick(m)) if (!keys.some((k) => k.id === `${r.key}|${r.label}`)) keys.push({ id: `${r.key}|${r.label}`, label: r.label, badge: r.badge ?? null });
@@ -1227,7 +1229,8 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       money(r, [...cols, "e"]);
       return r;
     };
-    block((m) => m.income.rows);
+    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / LafPOS Excel'e girmez (K31)
+    block((m) => (m.revenueSource === "yonetim" ? m.income.rows.filter((r) => r.key !== "pos") : m.income.rows));
     total("Gelir toplamı", fiscal.map((m) => m.income.total), q.income);
     block((m) => m.expense.rows);
     if (whole && Math.abs(q.stock.adjust) >= 0.005) {
