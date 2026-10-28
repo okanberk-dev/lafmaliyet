@@ -127,3 +127,18 @@ test("harcamalar: her ay girilecek kategori girilmediyse Bu ayın işleri hatır
   const plain = createModel(base);
   assert.equal(monthTasks(monthTaskFacts(plain, M, "closed", null, { payments: null, parasut: null })).some((t) => t.key === "harcama"), false);
 });
+
+test("harcamalar (E-60): girilen fiş KDV dahil ödenen tutarıyla sayılır; kartlar bunu söyler, 'KDV hariç' demez", () => {
+  // 1.200 ₺'lik market fişi (200 ₺ KDV): gelir-giderde 1.200 ₺ (fişin KDV'si ayrılmaz; sahibe soru 8)
+  const before = createModel({ ...base, expenseCategories: [cat({ id: 7, name: "Market" })], expenseEntries: [] }).pnlMonth(M);
+  const after = createModel({ ...base, expenseCategories: [cat({ id: 7, name: "Market" })], expenseEntries: [entry(1, 7, "2026-09-10", 1_200)] }).pnlMonth(M);
+  assert.equal(after.cells.get("expense:7")?.value, 1_200);
+  assert.ok(Math.abs(after.expenses - before.expenses - 1_200) < 1e-6);
+  const page = readFileSync(join(__dirname, "..", "src/app/panel/harcamalar/monthly-expenses.tsx"), "utf8");
+  assert.match(page, /girilen harcamalar \(ödenen tutar, KDV dahil\) ve bağlı faturalar \(KDV hariç\)/);
+  assert.match(page, /girilen harcamalar \(ödenen tutar, KDV dahil; fişin KDV'si ayrılmaz\) ve kategoriye bağlı faturalar \(KDV hariç\)/);
+  assert.doesNotMatch(page, /girilen harcamalar ve (kategoriye )?bağlı faturalar \(KDV hariç\)/);
+  // Çevirmede yazılan tahmini kayıt KDV hariç olduğunu söyler
+  const actions = readFileSync(join(__dirname, "..", "src/server/actions/expenses.ts"), "utf8");
+  assert.match(actions, /Sabit giderdeki KDV hariç tutar \(tahmini\): ödediğiniz tutarı yazın/);
+});

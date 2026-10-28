@@ -4,7 +4,7 @@ import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { fixedMonthly, shiftMonth } from "@/lib/calc/engine";
+import { activeFromRange, currentMonthTR, fixedMonthly, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, tl } from "@/lib/format";
@@ -241,6 +241,9 @@ export async function deleteExpenseCategory(id: number) {
 
 // ---------------------------------------------------------------- Sabit gideri aylık girişe çevir
 
+/** Çevirmede başlangıç ayına yazılan tahmini kaydın açıklaması: tutar sabit giderin KDV hariç tutarı (denetim E-60) */
+const ESTIMATE_DESCRIPTION = "Sabit giderdeki KDV hariç tutar (tahmini): ödediğiniz tutarı yazın";
+
 /**
  * Her ay aynı tutarla sayılan bir sabit gideri (ör. Instagram reklamı, Influencer) `fromMonth`tan itibaren aylık
  * girilen harcamaya çevirir: sabit kalem bir önceki ayda biter (geçmiş aylar aynı kalır), aynı adlı kategori açılır
@@ -290,10 +293,14 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
       let estimated = false;
       // Başlangıç ayına elle yazılmış her tutar (0 dahil: "bu ay reklam yok") gerçektir; tahmin yalnız boş ayda yazılır
       if (!overrides.some((o) => o.month === month) && planned) {
-        await tx.insert(s.expenseEntries).values({ date: `${month}-01`, categoryId: cat!.id, description: "Sabit giderdeki tutar (tahmini): gerçeğini yazın", amount: planned, createdBy: me.name });
+        await tx
+          .insert(s.expenseEntries)
+          .values({ date: `${month}-01`, categoryId: cat!.id, description: ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name });
         estimated = true;
       }
-      await tx.update(s.fixedExpenses).set({ endMonth: shiftMonth(month, -1) }).where(eq(s.fixedExpenses.id, fe.id));
+      // Saklı `active` sütunu da bitiş ayıyla (Ödemeler › Sabit giderlerden ekle bitmiş kalemi önermesin; E-62)
+      const endMonth = shiftMonth(month, -1);
+      await tx.update(s.fixedExpenses).set({ endMonth, active: activeFromRange(endMonth, currentMonthTR()) }).where(eq(s.fixedExpenses.id, fe.id));
       return { categoryId: cat!.id, moved: moved.length, estimated };
     });
     await logActivity(me, "Sabit gider aylık girişe çevrildi", `${fe.name}: ${monthLabel(month)}'dan itibaren Aylık harcamalar'da`);
