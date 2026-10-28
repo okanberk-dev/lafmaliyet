@@ -64,7 +64,7 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 
 - **Faz 1 (sahibin örneği: menü, aktif / pasif; kayıp yazım ve kayıp sinyal):** S1 → S2 → M1 → P1 → P2 → M2.
   Fazdan bağımsız: P0 (Web Push'tan ad). **Durum (28 Ekim 2026):** S1 (laffogato #269), S2 (laffogato #270), M1
-  (lafmobil #35), P1 (B12, #52 ve #53) ve P2 (dal `claude/senkron-p2-bar-odeme`) yapıldı; Faz 1'de M2 ve P0 kaldı.
+  (lafmobil #35), P1 (B12, #52 ve #53) ve P2 (lafmaliyet #60) yapıldı; Faz 1'de M2 ve P0 kaldı.
 - **Faz 2 (yararlı senkron):** ayar ucu ve tüketicileri, 304, ping sınaması, override ve tarihli kapanış, seçenek
   fiyatı, menü yan uyarıları, karaoke.
 - **Faz 3:** satış ekleri, mağaza maliyeti ve POS kesintisi, llms.txt, temizlikler, KVKK metni.
@@ -502,7 +502,7 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** S1 canlıda; dalga 10 birleşmiş (push.ts ve products.ts aynı satırlar).
 
 **P2 · Bar ekranı: ödeme takibi ve "ping kaçtı"**
-- **Durum (28 Ekim 2026):** yapıldı, dal `claude/senkron-p2-bar-odeme`; kurallar saf `src/lib/site-orders/follow.ts`'te,
+- **Durum (28 Ekim 2026):** yapıldı, lafmaliyet #60; kurallar saf `src/lib/site-orders/follow.ts`'te,
   ayrıntı `docs/SITE-SIPARIS.md` › Ödeme takibi. Plandan farklar:
   1. Takip yalnız 0 → > 0'da değil, sayı artınca ve sayı sıfırdan büyükken gelen her pingte de yeniden başlar (S2'nin
      notu: yeniden açılan ödeme sayfası ping atar ama sayıyı artırmaz); ekranın kendi çekmesi uzatmaz. Takibin
