@@ -259,8 +259,9 @@ overrides: Record<string, { value: number | boolean; note: string; by: string; d
 - `legalDueDate(date)`: gün Cumartesi ya da Pazar'sa, ya da `TR_CALENDAR`'da `resmi`, `ramazan-bayrami` ya da
   `kurban-bayrami` türündeyse ertesi güne geçilir; iş gününe gelene kadar sürer. `arife` kaydırmaz. Dönüş
   `{ date, shifted, reason }`, reason örneği "25 Ekim Pazar".
-  - `CALENDAR_COVERAGE.holidaysTo`'dan sonraki günlerde yalnız hafta sonu kaydırılır ve
-    `reason: "tatil listesi 2028'de bitiyor"` döner.
+  - `CALENDAR_COVERAGE.holidaysTo`'dan sonraki günlerde hafta sonu ve her yıl aynı gün olan resmî tatiller (1 Ocak,
+    23 Nisan …) kaydırılır, bayramlar bilinmez; sonuç günü tablonun dışındaysa (tablo içindeki 31.12.2028 Pazar
+    2.1.2029'a kayar) `reason: "tatil listesi 2028'de bitiyor"` döner.
 - Nominal günler:
   - `kdv1(P)` = P+1'in 28'i;
   - `kdv2(P)` = P+1'in 25'i;
@@ -497,12 +498,14 @@ floor(q)    = aynı hesap §3.2 alt sınırıyla ve ömrü girilmemiş varlıkla
 ### 3.8 Kurumlar vergisi (yıllık)
 
 ```
-yıllıkKazanç = (kv kaydı varsa onun matrahı) ; yoksa Q4'ün kümülatifKazanç'ı (Q4 kaydı çapa olabilir)
+yıllıkKazanç = (kv kaydı varsa onun matrahı) ; yoksa Q4'ün matrahlı kaydının matrahı (çapa, sonrasında indirim yok) ;
+               yoksa Q4'ün kümülatifKazanç'ı
 zarar        = min(max(0, yıllıkKazanç), devredenZarar)   // tek alan: önceki yılın KV kaydındaki "Sonraki yıllara devreden zarar"
 matrah       = max(0, yıllıkKazanç − zarar − indirim)
 hesaplanan   = r2(matrah × 0,25); asgari = §3.7 gibi; KV = max(hesaplanan, asgari ?? 0)
 ödenmiş      = Σ yılın geçici vergileri, yalnız "Ödendi" işaretli dönemler (payments.vat-paid, tür gecici)
-               tutar: muhasebeci kaydının payable'ı, yoksa Ödendi anındaki hatırlatıcı tutarı, o da yoksa tahmin
+               tutar: muhasebeci kaydının payable'ı, yoksa Ödendi anındaki hatırlatıcı tutarı (tahakkuk toplamı:
+               beyanname damgası düşülür, damga mahsup edilmez), o da yoksa tahmin
 ödenecek     = max(0, KV − ödenmiş); iadeAlacağı = max(0, ödenmiş − KV)
 damga        = damga.beyanname.kv + damga.mali.bilanco + damga.mali.gelirTablosu   // 2026: 2.516,30
                (izleyen yılın tutarı; bilinmiyorsa 2026'nınki, "2027 tutarı açıklanmadı")
@@ -1183,7 +1186,8 @@ Satırların görünümü:
 **Stopajlı sabit gider** (K25, mm-05): `withholding` doluysa satırın tutarı
 `amount × (1 + vatRate) − amount × withholdingRate` olur; stopaj yalnız muhtasar satırındadır. Örnek: şahsa kira
 160.000 brüt, KDV yok → satır 128.000 + muhtasarda 32.000 = 160.000. Serbest meslek 10.000, KDV %20 → satır 10.000 +
-muhtasarda 2.000. `internet_reklam_yurtdisi` ve `yurt_disi_hizmet`te satır tutarı olduğu gibi (yabancı firmaya ödenen),
+muhtasarda 2.000. `internet_reklam_yurtdisi` ve `yurt_disi_hizmet`te satır tutarı olduğu gibi (yabancı firmaya ödenen;
+KDV oranı 0, yabancı firma Türk KDV'si kesmez: `paidFixedRates`),
 KDV-2 ayrı satırdadır. Satır notu: "Kira 160.000 ₺ brüt · stopaj %20 muhtasarda". Aynı net tutar "Sabit giderlerden
 ekle"nin hatırlatıcıya yazdığı ve E-46 karşılaştırmasının beklediği tutardır (`fixedReminderAt`'in `withholdingRate`'i,
 `paidWithholdingRate`).
@@ -1495,7 +1499,9 @@ Diğer vakalar:
 - **Stopaj.** "Kira" (160.000) `kira` → +32.000. "Muhasebeci" (10.000) `serbest_meslek` → +2.000. "Instagram reklamı"
   (30.000) `internet_reklam_yurtdisi` → +4.500 ve `kdv2Hizmet` 6.000. "Influencer" (50.000) `yok`. Toplam 39.474,38,
   `atLeast: false`.
-- **Personelsiz, yalnız stopaj.** Damga 791,00. Hiçbiri yoksa satır yok.
+- **Personelsiz, yalnız stopaj.** Damga 791,00. Hiçbiri yoksa satır yok. Stopajı bilinmeyen kalem varsa satır kalır:
+  tutar 0 ise "Tutarı bilinmiyor" (geçmiş dönemde "Tahakkuk fişindeki tutarı girin") ve kalemlerin adları; nakit planına
+  satır olarak girmez (hatırlatıcısı "Tutarı girilmemiş ödemeler"de).
 - **Üç aylık.** Temmuz ve Ağustos'ta yalnız damga; Eylül'de üç ayın vergisi + damga.
 - **Muhasebeci kaydı** `{ payable: 120, stamp: 939,70 }` → ödenecek 1.059,70, kaynak "Muhasebeci", `atLeast: false`.
 

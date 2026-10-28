@@ -327,6 +327,29 @@ test("K4: muhasebecinin kaydı ve Ödemeler'deki tutar; ÇTV hatırlatıcısı v
   // Kayıt ile Ödemeler farklıysa uyarı
   const diff = view({ filings, reminders: [reminder({ id: 3, title: "Geçici vergi beyanı ve ödemesi", repeat: "quarterly", dueDate: "2026-11-17", anchorDate: "2026-11-17", amount: 40000 })] });
   assert.ok(diff.warnings.some((w) => w.startsWith("Ödemeler'deki tutar (40.000")));
+  // Matrahı girilmemiş kayıt çapa değil: kart söyler (§3.7, §11-C)
+  const card = v.geciciCard!;
+  assert.equal(card.key, "2026-Q3");
+  assert.equal(card.badge, "Muhasebeci");
+  assert.equal(nb(card.headline), "Şirketin beyannamesi 41.200 ₺");
+  assert.ok(card.notes.includes("Sonraki tahmin panelin verisiyle (matrah girilmedi)"));
+  // Matrahı girilmiş kayıt çapadır: not yok
+  assert.ok(!view({ filings: [{ ...filings[0], values: { matrah: 300000, hesaplanan: 75000 } }] }).geciciCard!.notes.includes("Sonraki tahmin panelin verisiyle (matrah girilmedi)"));
+});
+
+test("§3.7: gelir beyannameden gelince kart ve kapsam uyarır (gider yalnız kafe)", () => {
+  const bey: TaxFiling[] = [
+    { id: 1, kind: "kdv_matrah", period: "2026-07", payable: 0, stamp: 0, values: { m10: 128700.46, m20: 12569.37 } },
+    { id: 2, kind: "kdv_matrah", period: "2026-08", payable: 0, stamp: 0, values: { m10: 369994.62, m20: 0 } },
+    { id: 3, kind: "kdv_matrah", period: "2026-09", payable: 0, stamp: 0, values: { m10: 347099.03, m20: 335000 } },
+  ];
+  const v = view({ filings: bey });
+  const warning = "Gelir şirketin tamamı (beyanname), gider yalnız kafe: kafe dışı giderleri girmezseniz rakam yüksek çıkar";
+  assert.equal(v.geciciCard!.notes[0], warning);
+  assert.equal(v.scope.warning, warning);
+  assert.equal(v.scope.text, "Gelir: şirketin tamamı (beyanname) · gider: kafe");
+  assert.ok(!V.geciciCard!.notes.includes(warning));
+  assert.equal(V.scope.warning, null);
 });
 
 test("§4.1: hesap için veri yoksa; kural tablosu bayatlayınca bant", () => {

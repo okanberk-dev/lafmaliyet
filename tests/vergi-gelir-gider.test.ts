@@ -13,10 +13,9 @@ import { createModel } from "../src/lib/calc/engine";
 import type { Dataset, ExpenseCategory, ExpenseEntry, FixedExpense, Invoice } from "../src/lib/calc/types";
 import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
 import type { TaxAsset } from "../src/lib/tax/assets";
-import type { TaxFiling } from "../src/lib/tax/corporate";
+import { quarterTaxes, type TaxFiling } from "../src/lib/tax/corporate";
 import {
   adjustmentPeriodLabel,
-  ALP_KOC_NOTE,
   bridge,
   classificationTargets,
   SCOPE_TEXT,
@@ -142,6 +141,39 @@ test("D, Örnek C beyanname matrahıyla: gelir mali belgeden, kapsam şirketin t
   assert.equal(row(k.m("2026-09"), "income", "kafe_disi_payi")!.amount, -335000);
   const k3 = k.months.filter((x) => k.q("2026-Q3").months.includes(x.month));
   assert.equal(SCOPE_TEXT[taxScope(k3, k.input)], "Kapsam: yalnız kafe");
+
+  // Beyanname matrahı olan aya kafe dışı gelir düzeltmesi: sayılmaz (beyannamede içinde), uyarı (§13); diğer gelir sayılır
+  const adj = (kind: TaxAdjustment["kind"], id: number): TaxAdjustment => ({ id, month: "2026-09", span: "ay", kind, amount: 25000, label: "Karaoke box" });
+  const withAdj = run({ extras: { filings: filings(), adjustments: [adj("gelir_kafe_disi", 1)] } });
+  assert.equal(withAdj.m("2026-09").income.total, r.m("2026-09").income.total);
+  assert.equal(row(withAdj.m("2026-09"), "income", "gelir_kafe_disi"), undefined);
+  assert.ok(withAdj.m("2026-09").warnings.includes("Bu ayın geliri beyannameden geliyor; kafe dışı satış zaten içinde."));
+  assert.ok(!r.m("2026-09").warnings.includes("Bu ayın geliri beyannameden geliyor; kafe dışı satış zaten içinde."));
+  const other = run({ extras: { filings: filings(), adjustments: [adj("gelir_diger", 2)] } });
+  close(other.m("2026-09").income.total, r.m("2026-09").income.total + 25000, "diğer gelir her kaynakta");
+});
+
+test("D: yazarkasa mali Z'si (K11 (2)): ayın her açık günü için Z varsa gelir Z'den + site, rozet 'mali belge · Z'; eksik ay yönetim verisi", () => {
+  const zMonths = new Map([
+    ["2026-07", { base: 150000, days: 23, complete: true }],
+    ["2026-08", { base: 450000, days: 31, complete: true }],
+    ["2026-09", { base: 380000, days: 30, complete: false }],
+  ]);
+  const adj: TaxAdjustment = { id: 1, month: "2026-08", span: "ay", kind: "gelir_kafe_disi", amount: 1000, label: "Karaoke box" };
+  const r = run({ extras: { zMonths, adjustments: [adj] } });
+  const jul = r.m("2026-07");
+  assert.equal(jul.revenueSource, "z");
+  const z = row(jul, "income", "z")!;
+  assert.deepEqual([z.label, z.amount, z.badge, z.note], ["Yazarkasa Z raporları", 150000, "mali belge · Z", "23 gün"]);
+  assert.equal(row(jul, "income", "pos"), undefined, "ModPOS cirosu Z ayında yazılmaz");
+  assert.equal(bridge(jul).income, "Gelir: yazarkasa Z raporları");
+  // Z ayında kafe dışı gelir düzeltmesi eklenir (beyannamede değil)
+  close(r.m("2026-08").income.total, C.m("2026-08").income.total - C.m("2026-08").income.rows.find((x) => x.key === "pos")!.amount + 450000 + 1000, "Ağustos: Z + site + kafe dışı");
+  assert.equal(row(r.m("2026-08"), "income", "gelir_kafe_disi")!.amount, 1000);
+  // Z'si eksik ay yönetim verisi kalır; çeyrek taslak
+  assert.equal(r.m("2026-09").revenueSource, "yonetim");
+  assert.equal(row(r.m("2026-09"), "income", "pos")!.badge, "Yönetim verisi (ModPOS), mali belge değil");
+  assert.ok(r.q("2026-Q3").stateReasons.includes("Gelir mali belgeden girilmedi"));
 });
 
 test("D: sınıflandırmanın etkileri", () => {
@@ -265,6 +297,17 @@ test("D: çeyrek sonu sayımı yoksa en son ay sonu sayımı (K15)", () => {
   const counted = run({ ds: { stockCounts: [{ month: "2026-09", ingredientId: ing.id, qty: 10 }] } });
   assert.deepEqual(counted.q("2026-Q3").warnings, []);
   assert.equal(counted.q("2026-Q3").stock.adjust, 0);
+  // Sonraki çeyrek önceki çeyreğin devrettiği stoku açılış sayar (prevAdjust): Ağustos sayımı yıl boyunca bir kez sayılır
+  const later = run({ ds: { stockCounts: [{ month: "2026-08", ingredientId: ing.id, qty: 10 }] }, extras: { today: "2027-01-10" } });
+  const q4 = later.q("2026-Q4");
+  assert.equal(aug, 10220);
+  assert.deepEqual([q4.stock.usedFrom, q4.stock.adjust], ["2026-08", -10220]);
+  assert.equal(q4.warnings[0], "31 Aralık sayımı yok: 31 Ağustos sayımı kullanıldı; vergi için çeyrek sonu sayımı gerekir");
+  const q4Months = later.months.filter((x) => q4.months.includes(x.month));
+  close(q4.result, q4Months.reduce((s, x) => s + x.result, 0), "Q4 = ayların toplamı (Eylül sonu stoku açılış, Aralık sonu kapanış)");
+  close(later.q("2026-Q3").result, later.months.filter((x) => later.q("2026-Q3").months.includes(x.month)).reduce((s, x) => s + x.result, 0) + aug, "Q3");
+  const corp = quarterTaxes({ year: 2026, quarters: later.quarters, filings: [], settings: DEFAULT_TAX_SETTINGS, today: "2027-01-10" });
+  close(corp.at(-1)!.cumulative, later.months.reduce((s, x) => s + x.result, 0) + aug, "yıllık kümülatif: ayların toplamı + yıl sonu stoku bir kez");
 });
 
 test("D: site geliri iadesi bekleyen karaokeyi KDV hariç düşer (50.000 kuruş → 416,67 ₺)", () => {
@@ -296,7 +339,7 @@ test("D: kafe dışı faturalar ayar kapalıyken sayılmaz (Alp Koç notuyla); a
   const off = run({ ds: { invoices: [...base.invoices, alp] } });
   const x = off.m("2026-09").excluded.find((e) => e.key === "invoice:9001")!;
   assert.equal(x.reason, "kafe_disi");
-  assert.equal(x.note, ALP_KOC_NOTE);
+  assert.equal(x.note, "Ortağın hesabına alınan fatura şirketin gideri olmayabilir; muhasebecinize sorun.");
   close(off.m("2026-09").result, C.m("2026-09").result, "sayılmaz");
   const on = run({ ds: { invoices: [...base.invoices, alp] }, settings: { includeSeparate: true } });
   assert.equal(row(on.m("2026-09"), "expense", "kafe_disi")!.amount, 5000);
