@@ -3,6 +3,7 @@
 // ekranın kendiliğinden yenileneceği an. Olguları sunucu toplar (src/server/data/today.ts); yöneticiye ait olgular
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
+import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
 import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
@@ -115,8 +116,12 @@ export interface DayFacts {
    */
   commission?: { overdue: { label: string; month: string; due: string }[] } | null;
   /** Kontrol bekleyen faturalar */
-  /** Kontrol bekleyen faturalar; `stockOnly`: bunların kalemi hammaddeye bağlı ama mal alışı sayılmayanları (E-07) */
-  invoices?: { review: number; stockOnly?: number } | null;
+  /**
+   * Kontrol bekleyen faturalar; `stockOnly`: bunların kalemi hammaddeye bağlı ama mal alışı sayılmayanları (E-07);
+   * `cashOuts`: kasadan faturalı alımlar, faturası Faturalar'da yok ve Aylık harcamalar'a yazılmadı (E-42; sayı ve
+   * "Migros 2.400,00 ₺ ve 1 alım daha")
+   */
+  invoices?: { review: number; stockOnly?: number; cashOuts?: { count: number; summary: string } | null } | null;
   /** Hammaddeye bağlanmayı bekleyen fatura ürünleri */
   unlinked?: number | null;
   /** Fiyatı girilmemiş hammaddeler (ilk birkaç ad) */
@@ -615,6 +620,11 @@ const commissionRow: Row = (f, c) => {
 const invoicesRow: Row = (f) => {
   const inv = f.invoices;
   if (!inv) return null;
+  // Kasadan faturalı alımlar (E-42): faturası Faturalar'da yok, hiçbir hesaba girmedi
+  const cash = inv.cashOuts?.count ? inv.cashOuts : null;
+  const cashText = cash
+    ? `${num(cash.count)} kasadan faturalı alım Faturalar'da yok (${cash.summary}): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez`
+    : "";
   if (inv.review > 0) {
     const stockOnly = Math.min(inv.stockOnly ?? 0, inv.review);
     const guessed = inv.review - stockOnly;
@@ -627,9 +637,20 @@ const invoicesRow: Row = (f) => {
       key: "fatura",
       title: "Faturalar",
       status: "todo",
-      badge: `${num(inv.review)} kontrol`,
-      detail: `${num(inv.review)} fatura kontrol bekliyor: ${why.join("; ")}.`,
+      badge: `${num(inv.review + (cash?.count ?? 0))} kontrol`,
+      detail: `${num(inv.review)} fatura kontrol bekliyor: ${why.join("; ")}.${cash ? ` Ayrıca ${cashText}.` : ""}`,
       href: "/panel/faturalar?durum=kontrol",
+      action: "Kontrol et",
+    };
+  }
+  if (cash) {
+    return {
+      key: "fatura",
+      title: "Faturalar",
+      status: "todo",
+      badge: `${num(cash.count)} kasa alımı`,
+      detail: `${cashText.charAt(0).toLocaleUpperCase("tr-TR")}${cashText.slice(1)}.`,
+      href: CASH_OUT_INVOICES_HREF,
       action: "Kontrol et",
     };
   }

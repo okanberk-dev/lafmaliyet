@@ -10,6 +10,7 @@ import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { debtLabel, invoiceLabel, payableFloorProblem } from "@/lib/cari/account";
 import { round2 } from "@/lib/cari/balance";
 import { linkedInvoiceProblem, linkedInvoiceRefusal } from "@/lib/cari/match";
+import { sniffMime } from "@/lib/documents";
 import { dateTR, tl } from "@/lib/format";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -25,10 +26,13 @@ import {
   resettleInvoices,
   type CreditUse,
 } from "@/server/cari/settle";
+import { loadPendingCashOutInvoices, updateHandledCashOuts, type PendingCashOutInvoice } from "@/server/data/cash-out-invoices";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
 import { getDb, schema as s } from "@/server/db";
+import { storeUpload } from "@/server/documents";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
+import { readPhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zOptText, zText } from "./util";
@@ -52,6 +56,11 @@ const invoiceSchema = z.object({
   dueDate: zDate.nullable().optional(),
   /** Ödeme günü (ödendi faturada; null: bilinmiyor); gönderilmezse ödenmemişten ödendiye geçerken bugün, yoksa değişmez */
   paidAt: zDate.nullable().optional(),
+  /**
+   * Yeni fatura kasadan faturalı bir alımdan açılıyor (denetim E-42, Faturalar › Kontrol › "Faturalar'a ekle"): satır
+   * bekleyen listeden kalkar, fişin fotoğrafı faturanın belgesi olur, ödendiyse ödeme şekli nakit
+   */
+  cashOutId: zId.nullable().optional(),
 });
 
 /**
@@ -79,31 +88,42 @@ async function recomputeSeparateMoves(moves: { id: number; date: string; from: s
 export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, paidAt, ...data } = invoiceSchema.parse(input);
+    const { id, paidAt, cashOutId, ...data } = invoiceSchema.parse(input);
     if (paidAt && paidAt > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const db = getDb();
     const none: CreditUse = { allocationIds: [], used: new Map(), closed: [] };
     if (!id) {
+      // Kasadan faturalı alımdan açılıyor (E-42): satır hâlâ bekliyor olmalı (arada Aylık harcamalar'a yazıldıysa ya da
+      // faturası geldiyse alım iki kez sayılırdı)
+      const fromCash = cashOutId ? (await loadPendingCashOutInvoices(db, { ids: [cashOutId] }))[0] : null;
+      if (cashOutId && !fromCash) throw new UserError("Bu kasa satırı artık beklemiyor (faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı); fatura eklenmedi. Sayfayı yenileyin.");
       // Cari takipteki kartın yeni faturası panelde sayılır (taban 0; src/lib/cari/balance.ts)
       const ledgerBase = await ledgerBaseForNew(data.supplier, null);
       // Ödendi eklenen fatura (pencerenin varsayılanı) takipli kartta önce hesaptaki parayı kullanır (K6): ödenmemiş
       // yazılır, hesaptaki para sayılır, karşılanmayan kalan kullanıcının günüyle ödendi işaretlenir
       const viaCredit = !data.unpaid && ledgerBase !== null;
+      // Kasadan ödenmiş alımın faturası: ödeme şekli nakit (hesaptaki parayla kapanırsa defterin)
+      const cashPaid = fromCash && !data.unpaid ? { paidVia: "nakit" as const } : {};
       const [row] = await db
         .insert(s.invoices)
-        .values({ ...data, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
+        .values({ ...data, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase, ...(viaCredit ? {} : cashPaid) })
         .returning({ id: s.invoices.id });
       const credit = viaCredit ? await creditFirstForInvoices([row.id], me.name) : none;
       if (viaCredit && !credit.closed.includes(row.id)) {
         await db
           .update(s.invoices)
-          .set({ unpaid: false, paidAt: paidAt ?? null, paidByLedger: false })
+          .set({ unpaid: false, paidAt: paidAt ?? null, paidByLedger: false, ...cashPaid })
           .where(and(eq(s.invoices.id, row.id), eq(s.invoices.unpaid, true)));
       }
-      await logActivity(me, "Fatura eklendi", `${dateTR(data.date)} ${data.supplier}: ${tl(data.amount - data.discount, 2)} (KDV hariç)${creditText(credit, [row.id])}`);
+      const cash = fromCash ? await adoptCashOut(fromCash, row.id, me.name) : null;
+      await logActivity(
+        me,
+        "Fatura eklendi",
+        `${dateTR(data.date)} ${data.supplier}: ${tl(data.amount - data.discount, 2)} (KDV hariç)${creditText(credit, [row.id])}${fromCash ? ` · kasadan (${dateTR(fromCash.date)}, ${fromCash.createdByName})` : ""}`,
+      );
       refresh();
       // Elle eklenen faturanın kalemi yoktur: stoğa girmez (E-07 yalnız Paraşüt kalemli faturada)
-      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit), stockOnly: false };
+      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit), stockOnly: false, cashOut: cash };
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
@@ -186,8 +206,28 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       ? // Kilitli alanlar formda salt okunur: fark ancak pencere açıkken eşitleme değeri değiştirdiyse çıkar
         `${names.charAt(0).toLocaleUpperCase("tr-TR")}${names.slice(1)} bu pencere açıkken Paraşüt eşitlemesiyle güncellendi; Paraşüt'teki yeni değer geçerli kaldı. Diğer değişiklikleriniz kaydedildi.`
       : null;
-    return { id, kept, message, credit: creditSummary(credit), stockOnly };
+    return { id, kept, message, credit: creditSummary(credit), stockOnly, cashOut: null };
   });
+}
+
+/**
+ * Kasadan faturalı alımdan açılan faturanın son adımı (E-42): satır bekleyen listeden kalkar (fatura silinirse geri
+ * gelir) ve fişin fotoğrafı faturanın belgesi olarak kopyalanır (fotoğrafın süresi dolar, belge kalır). Fotoğraf
+ * okunamazsa fatura yine kaydedilmiştir; `document` false döner ve pencere söyler.
+ */
+async function adoptCashOut(row: PendingCashOutInvoice, invoiceId: number, by: string): Promise<{ document: boolean | null }> {
+  await getDb().transaction((tx) => updateHandledCashOuts(tx, { add: [{ id: row.id, invoiceId, by }] }));
+  if (!row.photoId) return { document: null };
+  try {
+    const photo = await readPhoto(row.photoId);
+    const mime = photo ? sniffMime(photo.bytes) : null;
+    if (!photo || !mime) return { document: false };
+    await storeUpload(invoiceId, { bytes: Buffer.from(photo.bytes), mime, originalName: null }, by);
+    return { document: true };
+  } catch (e) {
+    console.error("Kasa fişi faturaya belge olarak eklenemedi", e);
+    return { document: false };
+  }
 }
 
 /**

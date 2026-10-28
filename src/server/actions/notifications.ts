@@ -5,6 +5,7 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
+import { CASH_OUT_INVOICES_HREF, pendingCashOutSummary } from "@/lib/cash-outs";
 import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
@@ -23,6 +24,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
+import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -227,7 +229,7 @@ async function holdNotifications(): Promise<PanelNotification[]> {
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [[review], [fresh], [lastRun], unlinked, stockOnly] = await Promise.all([
+  const [[review], [fresh], [lastRun], unlinked, stockOnly, cashOuts] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
@@ -235,6 +237,8 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     countUnlinkedProducts().catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),
+    // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42)
+    loadPendingCashOutInvoices(db).catch(() => []),
   ]);
   const out: PanelNotification[] = [];
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 48 * 60 * 60 * 1000) {
@@ -270,6 +274,19 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       timeLabel: "",
       unread: true,
       href: "/panel/faturalar?durum=kontrol",
+      group: "fatura",
+    });
+  }
+  if (cashOuts.length) {
+    out.push({
+      // Yeni satır gelince (en büyük numara) ya da sayı değişince yeniden okunmamış olur
+      id: `fatura-kasa-${cashOuts.length}-${Math.max(...cashOuts.map((c) => c.id))}`,
+      kind: "warning",
+      title: cashOuts.length === 1 ? "Kasadan faturalı alım bekliyor" : `${cashOuts.length} kasadan faturalı alım bekliyor`,
+      body: `${pendingCashOutSummary(cashOuts)}: e-Arşiv / fatura, Faturalar'da yok, gelir-gidere girmedi. Faturalar'a ekleyin ya da Aylık harcamalar'a yazın`,
+      timeLabel: dateTR(cashOuts[0].date),
+      unread: true,
+      href: CASH_OUT_INVOICES_HREF,
       group: "fatura",
     });
   }
