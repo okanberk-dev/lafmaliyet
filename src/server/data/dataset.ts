@@ -38,6 +38,7 @@ export async function loadDataset(): Promise<Dataset> {
     months,
     salesLines,
     invoices,
+    supplierCards,
     staff,
     staffVersions,
     fixedExpenses,
@@ -58,7 +59,6 @@ export async function loadDataset(): Promise<Dataset> {
     till,
     lateWaiting,
     closedRows,
-    supplierCards,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -68,6 +68,8 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.months).orderBy(asc(s.months.month)),
     db.select().from(s.salesLines).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     db.select().from(s.invoices).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
+    // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
+    db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
     db.select().from(s.staff).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
     db.select().from(s.staffVersions).orderBy(asc(s.staffVersions.staffId), asc(s.staffVersions.fromMonth)),
     db.select().from(s.fixedExpenses).orderBy(asc(s.fixedExpenses.sortOrder), asc(s.fixedExpenses.id)),
@@ -117,8 +119,6 @@ export async function loadDataset(): Promise<Dataset> {
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
-    // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
-    db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
