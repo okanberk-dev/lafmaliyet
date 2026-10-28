@@ -818,7 +818,7 @@ test("eylemler: toplu fiyat yöneticinin; kasaya işle iki rolde (requireUser); 
   assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(scope\) : await staffPosSummary\(scope\)/);
   assert.match(pos, /posBell\(user\.role, summary, now, scope\.kasa\)/);
   // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
-  assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
+  assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.costs\.priceNote, \.\.\.unpriced, \.\.\.costs\.warnings\]/);
 });
 
 test("kaynak: personelin kasaya işle yükleyicisi sabit sütunlu (beyaz liste), yalnız etkin ürünler; sayfa yönetici okuyucularına uzanmaz", () => {

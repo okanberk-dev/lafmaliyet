@@ -1238,9 +1238,9 @@ export function Findings({ items }: { items: FindingItem[] }) {
   const [sectionParam, setSection] = useQueryState<string>("bolum", "");
   const [q, setQ] = useQueryText("bulgu");
   const [editing, setEditing] = useState<FindingItem | "new" | null>(null);
-  // İşaretleme anında görünsün; sunucu yenilenince gerçek değer gelir, hata olursa geri döner
   // Eylem atarsa (ağ kesildi, panel güncellendi; E-51) madde eski yerine döner ve bildirim çıkar
   const [, startTransition] = useActionTransition();
+  // İşaretleme anında görünsün; sunucu yenilenince gerçek değer gelir, hata olursa geri döner
   const [list, setOptimistic] = useOptimistic(items, (state, change: { id: number; resolved: boolean }) =>
     state.map((i) => (i.id === change.id ? { ...i, resolved: change.resolved } : i)),
   );
