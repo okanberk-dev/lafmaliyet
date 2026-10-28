@@ -368,7 +368,8 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
   raporsuz LafPOS günü ay rakamına girer (B09, yukarıda "Kasa raporu"); ürün satışları aylık modele girer, satış
   tahmini raporsuz günde LafPOS Z'sini okur (B08, yukarıda "Günlük satış"); Komisyon & hakediş kart kart satışı LafPOS'un
   ödeme türlerinden alır, ürün ikramı LafPOS'tan gelir ve panelde girilmez (B10, yukarıda "Komisyon" ve "İkram");
-  "Kasadaki fiyatlar" yalnız siteye bağlı olmayan ürünler içindir ve ModPOS metinleri LafPOS der (B11, aşağıda
+  "Kasadaki fiyatlar" yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünler içindir ve yalnız
+  yöneticinin işidir, ModPOS metinleri LafPOS der (B11, aşağıda
   "Metinler ve kasadaki fiyatlar"). Onay penceresinin listesi (`LAFPOS_SWITCH_EFFECTS`) kodun yaptığından fazlasını
   söylemez.
 - **Kural tek yerde:** `src/lib/lafpos/switch.ts` (`isLafposDay`, `kasaName`, `monthSource`, `switchAffectedMonths`,
@@ -389,20 +390,27 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
 Denetimin önerdiği ayrı "kasa kipi" ayarı (ya da "son günlerde LafPOS günü geldiyse LafPOS" sezgisi) yerine geçiş günü
 kullanılır: deneme günleri hiçbir metni değiştirmez. Günün kasası `kasaName(gün, geçiş günü)`, ayın kasası
 `monthKasa(ay, geçiş günü)` (`src/lib/lafpos/kasa.ts`; geçiş ayında "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)").
-Geçiş günü boşken her metin bugünkünün aynısıdır.
+Ürün satışlarının etiketi (Genel bakış'ın net satışı, Excel'in Özet'i, Claude'un ürün kârlılığı) geçiş ayında modelin
+saydığı bölünmeyi yazar (`salesMonthKasa`: ModPOS listesinin son günü, LafPOS'un sayılan günleri; liste yoksa "ModPOS
+listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü boşken her metin bugünkünün aynısıdır.
 
 - **Kasadaki fiyatlar** (`docs/FIYATLAR.md` › LafPOS'a geçiş gününden itibaren): bugün LafPOS günüyse siteye bağlı
-  ürünün fiyat değişikliği Kasaya işle'ye girmez (LafPOS fiyatı siteden alır), listede bekleyen eski işaret gizlenir
-  ama silinmez; bağlı olmayan ürün (LafPOS'ta yerel ürünse) "LafPOS'ta elle" der. Zil, Bugün, haftalık özet, ürün kartı,
-  Ürünler ve Fiyatlar aynı süzgeçten okur (`src/server/data/till-scope.ts`).
+  ürün Kasaya işle'de görünmez (LafPOS fiyatı siteden alır); kasanın ModPOS durumu yine yazılır, geçiş günü kaldırılır
+  ya da ileri alınırsa eksiksiz geri gelir. Bağlı olmayan ürün yalnız fiyatı LafPOS başladıktan sonra panelde
+  değiştiyse görünür; metin "LafPOS ürünü siteden alıyorsa Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin;
+  yerelse LafPOS'ta elle" der. Bu iş yalnız yöneticinindir (LafPOS'ta ürün fiyatını kasiyer değiştiremez): personelin
+  zilinde ve Bugün'ünde satır yok, Kasadaki fiyatlar boş, işaret eylemi personeli reddeder. Zil, Bugün, haftalık özet,
+  ürün kartı, Ürünler ve Fiyatlar aynı süzgeçten okur (`src/server/data/till-scope.ts`).
 - **Günün kasası:** Bugün'ün ve zilin akşam satırı ("Kapanışta LafPOS'ta Günü kapat'a basın"), Kasa raporunun
   başlığı, yazarkasa karşılaştırmaları (form, kayıtlı görünüm, onay kartı, e-posta, WhatsApp: "Kart LafPOS ile aynı",
   "LafPOS kart"), günün online satış satırı, kapalı gün kartı ve Bugün'ün kapalı gün satırı ("o günün LafPOS / banka
   POS'una bakın"). LafPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.
 - **Ayın kasası:** Genel bakış (net satış, POS cirosu, döküm), Gelir-gider (online kartı, yıl dökümü, telefon görünümü,
   tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, Excel ve Claude'un yanıtları.
-- Yardım (yönetici ve personel) LafPOS'a geçildiyse ne değiştiğini yazar (akşam kasası, kasadaki fiyatlar, Tükendi'nin
-  kasaya da yansıması).
+- Yardım (yönetici ve personel) LafPOS'a geçildiyse ne değiştiğini yazar: akşam kasası (LafPOS'ta Günü kapat, form gün
+  sonundan dolar, ModPOS Z fotoğrafı yok, yazarkasa LafPOS'la karşılaştırılır), banka POS Z'si, kasadaki fiyatlar
+  (personele düşmez; yönetici bağlar ya da LafPOS'ta değiştirir), Tükendi'nin kasaya da yansıması (gün açıkken en geç
+  15 dakika; acilse LafPOS'ta da Tükendi).
 
 ## Durum ve onarım
 

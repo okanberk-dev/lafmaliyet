@@ -117,6 +117,10 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    **Yapıldı (B11):** E-39'un "kasa kipi" ayrı bir ayar değil, bu gündür (son günlerde LafPOS günü var mı sezgisi
    kullanılmadı: deneme günleri kipi değiştirmesin). Geçiş gününden itibaren "Kasadaki fiyatlar" yalnız siteye bağlı
    olmayan ürünler için çalışır ve ModPOS metinleri LafPOS der; boşken her şey bugünkü gibi.
+   **Açık (B11 incelemesi):** (a) LafPOS gününde bağsız ürünün fiyat işi yalnız yöneticide (LafPOS'ta ürün fiyatını
+   `menu.yonet` olmadan kasiyer değiştiremez); LafPOS'ta kasiyere fiyat yetkisi verilecekse personelin listesi geri
+   açılabilir. (b) Geçiş gününden sonra siteye bağlı olmayan ürünler Kasaya işle'de kalsın mı, yoksa hepsi siteye
+   bağlansın ve liste kapansın mı? **Varsayılan:** kalsın, metin bağlamayı ya da LafPOS'ta elle değiştirmeyi söyler.
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
    yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
@@ -394,9 +398,11 @@ bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bi
 zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
 Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
 sığmayanları tek satırda özetler (E-68).
-B11 (E-39): geçiş gününden itibaren siteye bağlı ürünün fiyat değişikliği "Kasadaki fiyatlar"a (Kasaya işle, zil,
-Bugün, haftalık özet, ürün kartı) girmez, LafPOS fiyatı siteden alır; listede bekleyen eski işaretler gizlenir, silinmez
-(geçiş günü kaldırılırsa geri gelir); siteye bağlı olmayan ürün (LafPOS'ta yerel ürünse) listede "LafPOS'ta elle" der.
+B11 (E-39): geçiş gününden itibaren siteye bağlı ürün "Kasadaki fiyatlar"da (Kasaya işle, zil, Bugün, haftalık özet,
+ürün kartı) görünmez, LafPOS fiyatı siteden alır; kasanın ModPOS durumu yine yazılır, gizlenen işaretler silinmez
+(geçiş günü kaldırılır ya da ileri alınırsa LafPOS günlerindeki değişikliklerle birlikte geri gelir). Bağlı olmayan ürün
+yalnız fiyatı LafPOS günü panelde değiştiyse görünür; metin "siteden geliyorsa Site menüsü'nde bağlayın, yerelse
+LafPOS'ta elle" der. LafPOS gününde bu iş yalnız yöneticinindir (kasiyer LafPOS'ta fiyat değiştiremez).
 Bugün'ün ve zilin akşam kasa satırı "LafPOS'ta Günü kapat" der; Kasa raporu, e-posta ve WhatsApp karşılaştırmaları,
 kapalı gün kartı günün kasasını, aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV
 tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · LafPOS 10–30)"). Geçiş günü boşken

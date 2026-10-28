@@ -150,18 +150,29 @@ ve en eski / en yeni an tek sorguyla `posPendingSummary()`'den (Ürünler başl�
 ### LafPOS'a geçiş gününden itibaren (denetim B11, E-39)
 
 Kasa LafPOS olunca (Ayarlar › LafPOS › "LafPOS'a geçiş günü"; bugünün iş günü, 05:00 kuralı, o günden önce değilse)
-siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır (menü çekmesi, en çok 5 dakika). Kural tek yerde
-(`src/lib/lafpos/kasa.ts` `tillScope`, `tillPriceManual`; okuyucu `src/server/data/till-scope.ts`):
+siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: LafPOS menüyü gün açıkken 15 dakikada bir çeker (gece
+hiç; gün açılınca bir kez; lafpos `server/jobs.ts` `MENU_SYNC_INTERVAL_MS`), sitenin herkese açık menüsü de önbellekli
+(`s-maxage=300, stale-while-revalidate`), yani yeni fiyat kasaya 15-30 dakikada, gece yapılan değişiklik ertesi gün
+açılışta geçer. Kural tek yerde (`src/lib/lafpos/kasa.ts` `tillScope`, `tillPriceManual`;
+okuyucu `src/server/data/till-scope.ts` `tillProductFilter`, `tillSince`):
 
 | | ModPOS günü (geçiş günü boş ya da bugün ondan önce) | LafPOS günü |
 |---|---|---|
-| Siteye bağlı ürünün fiyatı değişti (her yol: hücre, kart, toplu, geri alma, sitenin çekmesi) | Listeye girer (bugünkü gibi) | Girmez: `recordPriceChange` kasanın durumuna dokunmaz, fiyat geçmişine yine yazılır; bildirim "LafPOS yeni fiyatı siteden alır" |
-| Siteye bağlı olmayan ürün (LafPOS'ta yerel ürünse) | Listeye girer | Girer; metinler "LafPOS'ta elle", bildirim "LafPOS'ta yerel ürünse fiyatını LafPOS'ta elle değiştir" |
-| Listede bekleyen, siteye bağlı ürünün eski (ModPOS) işareti | Görünür | Hiçbir okuyucuda görünmez (Kasaya işle, Kasadaki fiyatlar, zil, Bugün, haftalık özet, ürün kartı, Ürünler'in "Kasa N"si); **silinmez**, geçiş günü kaldırılırsa geri gelir |
+| Siteye bağlı ürünün fiyatı değişti (her yol: hücre, kart, toplu, geri alma, sitenin çekmesi) | Listeye girer (bugünkü gibi) | Kasanın (ModPOS) durumu yine yazılır ama hiçbir okuyucuda görünmez; fiyat geçmişine yazılır; bildirim "LafPOS yeni fiyatı siteden alır" (`posPending` false) |
+| Siteye bağlı olmayan ürünün fiyatı panelde değişti | Listeye girer | Girer; tarihi en erken LafPOS'un başladığı an. Bildirim: "LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin" (LafPOS siteden gelen ürünün fiyatını değiştirtmez) |
+| Bekleyen eski (ModPOS) işaret: siteye bağlı ürünün, geçiş gününden sonra siteden ayrılan ürünün ya da fiyatı geçiş gününden beri panelde değişmeyen bağlı olmayan ürünün | Görünür | Hiçbir okuyucuda görünmez (Kasaya işle, Kasadaki fiyatlar, zil, Bugün, haftalık özetin kâr kaybı, ürün kartı, Ürünler'in "Kasa N"si); **silinmez**, geçiş günü kaldırılır ya da ileri alınırsa geri gelir |
+| Görev kimde | Yönetici ve personel (Kasadaki fiyatlar, zil, Bugün) | Yalnız yönetici: LafPOS'ta ürün fiyatını yalnız menüyü yöneten (`menu.yonet`: patron, müdür) değiştirir, kasiyer değiştiremez. Personelin zilinde ve Bugün'ünde satır yok, Kasadaki fiyatlar "Fiyatları yönetici değiştirir" der, `markPosDone` personeli reddeder (kendi işaretini geri alması sürer) |
 | "Kasada: …" adı | ModPOS listelerinde geçen ad | LafPOS'un gün sonlarında geçen ad |
 
-Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Metinlerin hepsi geçiş günü
-boşken bugünkünün aynısıdır (`tests/lafpos-metin.test.ts`, veritabanında `tests/lafpos-metin-db.test.ts`).
+LafPOS gününde listede görünme kuralı: ürün siteye bağlı değil **ve** geçmişinde geçiş gününün 05:00'inden sonra
+yalnız panelde (`on_site` olmayan) bir fiyat değişikliği var. Kasanın durumu tektir (`products.pos_stale_*`, ModPOS
+için tutulur); LafPOS'un yerel ürünü kurulurken fiyat panelden alındığı varsayılır. Bilinen sınır: geçiş gününden önce
+ModPOS'ta kalmış bir işaretin üstüne LafPOS günü fiyat yeniden değişirse listede ModPOS'un eski fiyatı yazar (yapılacak
+iş doğrudur: LafPOS'ta yeni fiyat); fiyat LafPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
+
+Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Fiyat yazımı da geçiş gününe göre
+farklı bir şey saklamaz (yalnız bildirimin metni değişir). Metinlerin hepsi geçiş günü boşken bugünkünün aynısıdır
+(`tests/lafpos-metin.test.ts`, veritabanında `tests/lafpos-metin-db.test.ts`).
 
 ### Personel: Kasadaki fiyatlar ve işaret kaydı (dalga 10 §2.2)
 

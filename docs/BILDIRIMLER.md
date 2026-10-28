@@ -55,8 +55,10 @@ başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişe
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
 fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). LafPOS'a geçiş gününden itibaren
-satır yalnız siteye bağlı olmayan ürünleri sayar ("LafPOS'ta elle değiştirip …"); siteye bağlı ürünün fiyatını LafPOS
-siteden alır, zil çıkmaz (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
+satır yalnız yöneticide ve yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünleri sayar ("Siteye
+bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip …; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde
+bağlayın"); siteye bağlı ürünün fiyatını LafPOS siteden alır, zil çıkmaz. Personelde satır yok: LafPOS'ta ürün fiyatını
+kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
 basın, kasayı girin" der. Yöneticinin **Uyarılar** başlığında
 personelin bar ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", bar

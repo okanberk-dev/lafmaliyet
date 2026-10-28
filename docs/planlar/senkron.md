@@ -212,7 +212,7 @@ ve `LAFMALIYET_SYNC_SECRET`.
 
 | ID | Bilgi | Kaynak → kopya | Bağlantı | Sıklık | Panelde | Not |
 |---|---|---|---|---|---|---|
-| lafpos-menu | Menü: ad, fiyat (M, L), KDV, Satışta / Tükendi, seçenekler | site → LafPOS | Herkese açık `GET /api/mobile/v1/menu`, `If-None-Match` (ETag; 304 değişmedi). Anahtar verilirse imzalı `GET /api/panel/menu` (Tükendi kalemler de) | En çok 5 dk'da bir + "Siteyle eşitle" | Geçiş gününden itibaren siteye bağlı ürünün kasadaki fiyatı elle değişmez: Kasaya işle'ye girmez (B11) | Menüde olmayan bağlı ürün LafPOS'ta Tükendi olur (silinmez) |
+| lafpos-menu | Menü: ad, fiyat (M, L), KDV, Satışta / Tükendi, seçenekler | site → LafPOS | Herkese açık `GET /api/mobile/v1/menu`, `If-None-Match` (ETag; 304 değişmedi). Anahtar verilirse imzalı `GET /api/panel/menu` (Tükendi kalemler de) | Gün açıkken 15 dakikada bir (gece hiç; gün açılınca bir kez; lafpos server/jobs.ts `MENU_SYNC_INTERVAL_MS`), LafPOS'un kendi Tükendi / Satışa aç yazımından hemen sonra bir kez + "Siteyle eşitle". Herkese açık menünün önbelleğiyle yeni fiyat 15-30 dakikada | Geçiş gününden itibaren siteye bağlı ürünün kasadaki fiyatı elle değişmez: Kasaya işle'de görünmez (kasanın ModPOS durumu yine yazılır; B11) | Menüde olmayan bağlı ürün LafPOS'ta Tükendi olur (silinmez) |
 | lafpos-tukendi | Tükendi / Satışa aç | LafPOS → site (önce site, 2xx gelince yerel) | İmzalı `POST /api/panel/menu {id, isActive, actor}` | Kullanıcı işlemi | Panel sitenin pingiyle alır (menü pingi) | Panelin bar ekranındaki Tükendi de siteye yazar; kasa sonraki menü çekmesinde görür |
 | lafpos-siparis | Online sipariş (masa, gel-al, kurye) ve aşaması | site → LafPOS; aşama LafPOS → site | Sürüm sinyali imzalı `GET /api/pos/orders/version` (20 sn; sitenin önbelleğinden, veritabanına dokunmaz), değişince `GET /api/panel/orders`; aşama `POST /api/panel/orders/stage` | 20 sn sinyal; okuma 5 dk + ekran açılınca + elle | Panelin bar ekranı aynı uçları okur (sipariş pingi) | LafPOS online ödenmiş siparişi tahsil etmez ve satış listesine koymaz |
 | lafpos-gun-sonu | Gün sonu: Z özeti, ürün satış satırları, ödeme türleri, ikram ve zayi | LafPOS → panel | İmzalı `POST /api/pos/gun` (panelin `pos_day_reports`, `pos_daily_sales`) | Günü kapatınca, gelmeyen gün LafPOS'tan yeniden gönderilir | Geçiş gününden itibaren: Satışlar, Kasa raporu (ön doldurma, karşılaştırma), komisyon, ikram, kapalı gün kanıtı, ay rakamları; öncesi deneme (yalnız Ayarlar › LafPOS) | B07-B10; durum ve onarım Ayarlar › LafPOS |
@@ -681,8 +681,9 @@ Sıra: S3 → S4 → S5 → S6 → F1 → S7 → F2 → S8 → M3; panelde (dalg
   `applySiteList` önceki kopyayla karşılaştırır; yalnız yöneticiye /panel/urunler/site satırı ve zil "Sitede fiyatı
   değişti, panele bağlı değil: X · Bağla". (c) Silinen kalem: aynı yazımda `showOnMenu=false`. (d) Alerjen
   hatırlatması: `saveRecipe`, öneri onayı, ürün açma. LafPOS'a geçiş gününden itibaren (b)'nin "kasada da değiştir"
-  kısmı yalnız LafPOS'ta yerel ürün içindir: siteye bağlanan kalemin fiyatını LafPOS siteden alır, Kasaya işle'ye
-  girmez (denetim B11, E-39).
+  kısmı yalnız LafPOS'ta yerel ürün içindir: siteye bağlanan kalemin fiyatını LafPOS siteden alır, Kasaya işle'de
+  görünmez; siteden gelen ama panelde bağsız ürünün fiyatını LafPOS değiştirtmez, metinler bağlamayı söyler (denetim
+  B11, E-39).
 - **Dosyalar:** src/lib/site-menu/plan.ts,
   src/server/site-menu/sync.ts, src/app/panel/urunler/site/*, dalga 10'un bell/ops.ts ve rows-ops.ts,
   src/server/actions/products.ts, recipe-requests.ts, src/server/data/product-create.ts.
