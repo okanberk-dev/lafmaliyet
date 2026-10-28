@@ -1503,7 +1503,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     out.push({
       key: "expense",
       title: "Aylık harcamalar",
-      text: `Aylık harcamalar'da her ay girilen ${num(b.expenseSpread.count)} kategori (ayda ${tl(b.expenseSpread.monthly)}): girilen tutarı, girilmediyse geçen ayınki. Bu ay girilen kadarı ödenmiş sayılır, kalanı ayın kalan günlerine eşit yayılır. Gününü bilmek için Ödemeler'e aynı adla ekleyin.`,
+      text: `Aylık harcamalar'da her ay girilen ${num(b.expenseSpread.count)} kategori (ayda ${tl(b.expenseSpread.monthly)}): o ay girilen tutar, daha azsa geçen ayınki; bağlı faturalar KDV dahil. Bu ay girilen kadarı ve bu ayın bağlı faturaları ödenmiş sayılır (sabit gideri çevirmenin tahmini kaydı sayılmaz), kalanı ayın kalan günlerine eşit yayılır. Gününü bilmek için Ödemeler'e aynı adla ekleyin.`,
     });
   }
   out.push({

@@ -497,9 +497,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               compact
               icon={<Target />}
               label="Başabaş günlük ciro"
-              info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
+              // Toplam paranteze alınır: (A + B − C) ÷ oran ÷ gün (dökümle aynı)
+              info={`Zarar etmemek için gereken günlük ciro (KDV dahil): ${d.breakEven.expensesTotal || d.onlineCover ? "(" : ""}standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
                 d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""
-              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
+              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
               value={<CountUp value={d.breakEvenDaily} />}
               sub={
                 showBreakEven ? (

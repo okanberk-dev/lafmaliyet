@@ -21,7 +21,7 @@ açamaz (`requireAdmin`), ⌘K'da da görmez.
 | **Maaşlar** (`salary`) | ödenecek, tahmini | Personel: net maaş + ek ödemeler. Ödeme ayın 1–15'indeyse önceki ayın bordrosu, sonrasındaysa o ayınki. Gün: maaş hatırlatıcısı yoksa **her ayın 1'i**. Maaş hatırlatıcıları var ama hiçbirinde tutar yoksa kimliği en küçük olanın günlerinde (“taşıyıcı”). Tutarlı maaş hatırlatıcısı varsa tahmin yapılmaz. |
 | **SGK primi** (`sgk`) | ödenecek, tahmini | Önceki ayın işçi ve işveren SGK + işsizlik payları. Gün: SGK hatırlatıcısı yoksa **ayın son günü**; varsa maaştaki kural. Gelir ve damga vergisi dahil değil. |
 | **Sabit giderler** (`fixed:<id>`) | ödenecek, tahmini | Hatırlatıcısı olmayan her sabit gider ay içine eşit yayılır (o ayın sürümlü tutarı): aylık ÷ ayın gün sayısı, haftalık ÷ 7, günlük × `ayda açık gün ÷ 30`. Giderler'de KDV hariç girilen tutara **faturadaki KDV** eklenir: kalemin “Faturadaki KDV” alanı (KDV yok, %1, %10, %20), boşsa bölümün varsayılanı (kira, faturalar, genel giderler %20; personel KDV'siz). 160.000 ₺ kira bankadan 192.000 ₺ çıkar. Gelir-gider KDV hariç tutarla kalır. **Yıllık** plana girmez (“Dahil değil”de adıyla yazar). |
-| **Aylık harcamalar** (`expense:<id>`) | ödenecek, tahmini | Aylık harcamalar'da “her ay girilir” işaretli, mal dışı kategoriler (reklam, influencer; denetim E-13): ayın beklenen ödemesi girilen harcamalardan (`model.monthlyExpensePlan`: o ay girilen, daha azsa geçen ayın gerçekleşeni; sahibe soru 7 cevaplanana kadar). Bu ay bugüne kadar girilen ödenmiş sayılır, kalanı ayın kalan günlerine; gelecek ayda ayın bütün günlerine eşit yayılır. Girilen tutar ödenen tutardır (KDV dahil); bağlı fatura kategorisinin faturaları Ödemeler'de kesin kalemdir, burada sayılmaz. Adı aynı hatırlatıcı varsa onun gününde (yayılmaz). Tahmine katılanlar'dan kapatılır. |
+| **Aylık harcamalar** (`expense:<id>`) | ödenecek, tahmini | Aylık harcamalar'da “her ay girilir” işaretli, mal dışı kategoriler (reklam, influencer; denetim E-13): ayın beklenen ödemesi (`model.monthlyExpensePlan`: o ay girilen, daha azsa geçen ayın gerçekleşeni; sahibe soru 7 cevaplanana kadar). Girilen tutar ödenen tutardır (KDV dahil); kategori bir fatura kategorisine bağlıysa o faturalar ödenecek tutarlarıyla (KDV dahil) eklenir. Bu ay bugüne kadar girilenler ve bu ayın bağlı faturaları (ödenmiş ya da Ödemeler'de kesin kalem) karşılanmış sayılır, kalanı ayın kalan günlerine; gelecek ayda (faturası henüz gelmemiş bağlı kategori dahil) ayın bütün günlerine eşit yayılır. Sabit gideri aylık girişe çevirmenin yazdığı tahmini kayıt (“Sabit giderdeki KDV hariç tutar (tahmini)”) ödeme sayılmaz: tutarı ya da günü düzeltilene kadar plan onu ayın kalan günlerinde öder. Adı aynı hatırlatıcı varsa onun gününde (yayılmaz). Tahmine katılanlar'dan kapatılır. |
 | **Mal alımı** (`goods`) | ödenecek, tahmini | Son 8 haftanın mal faturaları (kafe dışı, demirbaş ve komisyon girmez; geçmiş kısaysa en eski mal faturasından bu yana, **14 günden kısaysa tahmin yok**). Her fatura günlük orana bölünür ve tedarikçinin gecikmesiyle ödenir: peşin çalışılan tedarikçide 0, değilse kartındaki vade, o da yoksa bildirim ayarındaki gün. Böylece bugünden sonra kesilecek faturalar vadelerinde ödenmiş olur; bugünkü ödenmemiş faturalarla çakışmaz. Tedarikçi adla bulunur (gelecek faturanın vergi nosu yok). Bir tedarikçinin açık “Faturası gelecek” borçları varsa onun tahmini o tutar kadar düşürülür (haftalık irsaliyenin aylık faturası hem tahminde hem kesin kalemde sayılmasın): notta “Sütaş tahmini, faturası beklenen 1.250 ₺ kadar düşürüldü”. Elle borç ve ödeme mal tahminine girmez (yalnız faturalar okunur). |
 | **KDV** (`kdv`) | ödenecek, tahmini | Aşağıda *KDV tahmini*. |
 
@@ -37,19 +37,29 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    eşleşmesi) o giderin yerine geçer: gider ay içine yayılmaz. Hatırlatıcı tutarlıysa kendi tutarı, tutarsızsa giderin
    KDV dahil tutarı onun günlerine “tahmini” yazılır. “Sabit giderlerden ekle” hatırlatıcıya ilk ödeme ayındaki
    sürümün tutarını faturadaki KDV'siyle yazar (160.000 ₺ kira → 192.000 ₺; o aydan geçerli zam dahil; listede seçilen
-   günün ayındaki tutar ve dönem, “%20 KDV dahil”). Giderler'de sonraki bir aydan zam ya da dönem değişikliği zaten
-   girilmişse tutar yazılmaz (“Aralık 2026 itibarıyla değişiyor: tutar yazılmaz”): plan her ayın sürümünü KDV'siyle,
-   hatırlatıcının dönemine çevirerek taşır (aylıktan yıllığa geçen giderin aylık hatırlatıcısına her ay yıllık tutarın
-   tamamı değil, on ikide biri).
+   günün ayındaki tutar ve dönem, “%20 KDV dahil”). Böyle açılmış ve tutarı sıradaki ödeme ayının sürümüne eşit
+   hatırlatıcı **gideri izler** (`fixedReminderFollows`): Giderler'de sonraki bir aydan zam girilmişse (“Ocak 2027
+   itibarıyla değişiyor: hatırlatıcı yeni tutarı izler”) plan zamdan sonraki dönemlerde sürümün tutarını öder (satırda
+   “Sabit giderdeki Ocak 2027 tutarı (KDV dahil); hatırlatıcı gideri izler”, uyarı çıkmaz), **Ödendi** sıradaki dönem
+   zamlı aya gelince tutarı o ayın sürümüne taşır (Geri al eski tutarı yazar). Ödemeler ve sabah e-postası hep sıradaki
+   dönemin tutarını gösterir. Yalnız dönemi sonradan değişen giderde (aylıktan yıllığa) tutar yazılmaz (“… itibarıyla
+   dönemi değişiyor: tutar yazılmaz”): plan her ayın sürümünü KDV'siyle, hatırlatıcının dönemine çevirerek taşır (aylık
+   hatırlatıcıya her ay yıllık tutarın tamamı değil, on ikide biri).
    Hatırlatıcı eklendikten sonra Giderler'de zam (tutar, dönem ya da KDV oranı) girilince “Sabit giderlerden ekle” ile
    açılmış, tutarı elle değiştirilmemiş hatırlatıcı uyar (denetim E-46): sıradaki ödeme ayının yeni tutarı yazılır; zam
-   daha sonraki bir aydan başlıyorsa tutar boşalır ve plan her ayın sürümünü izler (eklerkenki kural). Elle başka bir
-   tutar yazılmışsa dokunulmaz, kaydın mesajı uyarır. Tutarlı hatırlatıcının tutarı o ayın sabit gider tutarından (KDV
-   dahil, aynı dönem) 1 ₺'den fazla farklıysa plan yine hatırlatıcının tutarını öder ama satırda söyler
-   (“Sabit giderde Kasım 2026 tutarı 240.000 ₺”), Nakit planında “Hatırlatıcı tutarı sabit giderden farklı” kartı ve
-   Ödemeler'in üstünde bir yıl ilerisine bakan uyarı çıkar (`fixedReminderDrifts`). 23 Ekim 2026'ya kadar kalemin taban
-   tutarını KDV'siz yazıyordu: bu yolla açılmış tutarlı hatırlatıcılar bu uyarıda görünür.
-   “Sabit giderlerden ekle” yalnız bitmemiş kalemleri önerir (bitiş ayı yok ya da bu ay ve sonrası; E-62).
+   daha sonraki bir aydan başlıyorsa bu ayın tutarı kalır, kaydın mesajı zammın ayını ve tutarını söyler (“Ocak 2027
+   itibarıyla 240.000 ₺ sayılır”); dönemi değişirse tutar boşalır. Elle başka bir tutar yazılmışsa dokunulmaz, kaydın
+   mesajı uyarır. Gideri izlemeyen (elle açılmış ya da elle tutar yazılmış) tutarlı hatırlatıcının tutarı o ayın sabit
+   gider tutarından (KDV dahil, aynı dönem) 1 ₺'den fazla farklıysa plan yine hatırlatıcının tutarını öder ama satırda
+   söyler (“Sabit giderde Kasım 2026 tutarı 240.000 ₺ (KDV dahil); plan hatırlatıcıdaki 192.000 ₺ tutarını sayar,
+   Ödemeler'de güncelleyin”), Nakit planında “Hatırlatıcı tutarı sabit giderden farklı” kartı ve Ödemeler'in üstünde
+   bir yıl ilerisine bakan uyarı çıkar (`fixedReminderDrifts`). 23 Ekim 2026'ya kadar kalemin taban tutarını KDV'siz
+   yazıyordu: bu yolla açılmış tutarlı hatırlatıcılar bu uyarıda görünür.
+   “Sabit giderlerden ekle” yalnız bitmemiş kalemleri önerir (bitiş ayı yok ya da bu ay ve sonrası; E-62), bitiş ayını
+   satırda söyler ve ilk ödemesi bitişten sonraya düşen hatırlatıcıyı açmaz (bu ay biten kalemde varsayılan gün bugün).
+   Biten bir giderin tutarlı hatırlatıcısı bitişten sonraki dönemlerde de plana girer ama satırda ve aynı uyarıda
+   söylenir (“Sabit gider Kasım 2026 ayında bitti; plan hatırlatıcıdaki 36.000 ₺ tutarını sayar, ödeme bittiyse
+   Ödemeler'de kapatın”). Aylık girişe çevrilmiş gider (aynı adlı her ay girilen harcama) bitmiş sayılmaz.
    **Aylık harcamalar** (her ay girilen kategori; reklam, influencer) adı aynı hatırlatıcıyla aynı şekilde eşleşir:
    hatırlatıcı tutarsızsa harcamanın beklenen tutarını onun gününde taşır, harcama ayrıca yayılmaz. Sabit gideri aylık
    girişe çevrilmiş (dönemi bitmiş) kaleme bağlı tutarsız hatırlatıcı da Aylık harcamalar'daki tutarı taşır.
@@ -109,13 +119,13 @@ Bir tahmini kesinleştirmenin yolu Ödemeler'e tutarıyla hatırlatıcı eklemek
 
 ## Tahmine katılanlar
 
-**Nasıl hesaplandı** kartının altındaki düğme. Satışlar, laffogato.net online, maaşlar, SGK, mal alımı, KDV ve
-hatırlatıcısı olmayan her sabit gider tek tek kapatılabilir. Faturası ayrıca gelen bir sabit gider kapatılır, iki kez
+**Nasıl hesaplandı** kartının altındaki düğme. Satışlar, laffogato.net online, maaşlar, SGK, mal alımı, KDV,
+hatırlatıcısı olmayan her sabit gider ve her ay girilen her harcama kategorisi tek tek kapatılabilir. Faturası ayrıca gelen bir sabit gider kapatılır, iki kez
 sayılmasın. Ödemeler'de hatırlatıcısı olan ve yıllık kalemler değiştirilemez (gri). “Gününü girmek için Ödemeler'e ekle”
 Ödemeler'i açar.
 
-**Dahil değil** (ekranda yazar): tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'daki fatura dışı
-ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım ve kredi. Kart, yemek kartı ve online
+**Dahil değil** (ekranda yazar): tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'da her ay
+girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım ve kredi. Kart, yemek kartı ve online
 platform tahsilatı satış günü sayılır (bankaya geçiş gecikmesi yok).
 
 **Çift sayım:** aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası
@@ -153,7 +163,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 | Dönem ve gün | Ay P'nin KDV'si P+1'in **28'inde**. Hafta sonu kaydırması yok: 28 Kasım 2026 Cumartesi, yasal son gün 30 Kasım; plan 28'ine yazar (para iki gün erken çıkmış görünür, güvenli taraf). Üç aylık KDV desteklenmez. |
 | Kasa (ModPOS) | Satışlar'daki ay cirosu (KDV dahil): ciro − KDV hariç ciro, gelir-giderdeki kuralla. Ürünler satış oranıyla (%10), HİZMET satırları yani karaoke hizmet oranıyla (%20). |
 | Süren ay | Ciro Genel bakış'taki ay sonu tahminiyle aya tamamlanır (÷ açık gün × ayın gün sayısı; açık gün yoksa ÷ geçen gün). Ekranda “Ekim bitmedi: 16 günün satışıyla tahmin”. |
-| Ciro girilmemiş ay | Önceki, cirosu ve açık günü olan son ayın günlük KDV'si × ayın gün sayısı (“Ekim cirosu yok: Eylül'ün günlük ortalamasıyla”). |
+| Ciro girilmemiş ay | Önceki, cirosu ve açık günü olan son ayın günlük KDV'si × ayın açık günü (ayın gün sayısı − Özel günler'de kafe kapalı işaretli günler; E-41) (“Ekim cirosu yok: Eylül'ün günlük ortalamasıyla”). Süren ayın ilk kasa raporundan önce de bu kural geçer. |
 | laffogato.net | Sitenin her siparişte sakladığı KDV; oranı saklı olmayanlara panelin oranı (kafe ve mağaza %10, karaoke %20; `siteVat`, `src/lib/site-sales/calc.ts`). Süren ayın açık kaydı çekildiği günün dününe kadardır, aya tamamlanır. Kayıt yoksa 0; site bağlıysa dökümde “laffogato.net: bu ay çekilmedi”. Elle girilen siparişler ModPOS'tadır, sayılmaz. |
 | Alış KDV'si | Faturanın **KDV toplamı** (`vat`, Paraşüt'ün `total_vat`'ı, tevkifat düşülmemiş); `vat` yoksa (Excel'den ya da elle girilenlerde 0; Paraşüt bağı çözülen kayıtta tutar, iskonto ya da ödenecek panelde değişince 0 yazılır) ya da net tutarın %20'sinden fazlaysa (24 Ekim 2026'dan önce tutarı düşürülmüş böyle bir kayıt) **ödenecek − (tutar − iskonto)**. Tevkifatlı faturada KDV'nin tamamı indirilir: beyannamede tedarikçiye ödenen kısmı “yurtiçi alımlara ilişkin KDV”, tevkif edilen kısmı “sorumlu sıfatıyla beyan edilerek ödenen KDV” olarak (23 Ekim 2026'ya kadar yalnız ilki sayılıyordu; Eylül 2026'da 1.800 ₺ eksik indirildi). İadede eksi (fark; tevkifatın iadesi 2 No.lu beyannamede düzeltilir). Kontrol bekleyen faturalar sayılır. **Kafe dışı** (Karaoke box, Alp Koç) sayılmaz. Süren ayda yalnız bugüne kadar gelen faturalar (ay sonuna tamamlanmaz; tahmin yüksek tarafta kalır). |
 | KDV-2 (tevkifat) | Dönemin kafe faturalarındaki tevkifat: `vat` − (ödenecek − net), 100 ₺'ye yuvarlı (`purchaseWithheld`). **2 No.lu beyannameyle izleyen ayın 25'inde** ödenir (Eylül 2026 tahakkuk fişi: vade 25.10.2026), 1 No.lu beyannamede aynı dönemde indirilir. 1 No.lu ödenecek sıfır ya da devreden olsa da ödenir. Beyannamenin damga vergisi (Eylül 2026 KDV2'sinde 791 ₺) sayılmaz. |

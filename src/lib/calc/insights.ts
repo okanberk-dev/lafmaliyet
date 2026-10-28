@@ -598,9 +598,13 @@ export function breakEvenOf(model: Model, month: string): BreakEven {
   };
 }
 
-/** "Ekim 2026 girişi" / "Eylül 2026 tutarı taşındı (bu ay girilen daha az)": başabaş ve tahmin dökümlerinin alt satırı */
-export function expensePlanSub(x: Pick<MonthlyExpensePlan, "source" | "from">): string {
-  return x.source === "entered" ? `${monthLabel(x.from)} girişi` : `${monthLabel(x.from)} tutarı taşındı (bu ay girilen daha az)`;
+/**
+ * "Ekim 2026 girişi" / "Eylül 2026 tutarı taşındı (bu ay girilmedi)" / "… (bu ay girilen daha az)": başabaş ve tahmin
+ * dökümlerinin alt satırı
+ */
+export function expensePlanSub(x: Pick<MonthlyExpensePlan, "source" | "from" | "entered">): string {
+  if (x.source === "entered") return `${monthLabel(x.from)} girişi`;
+  return `${monthLabel(x.from)} tutarı taşındı (${x.entered > 0.005 ? "bu ay girilen daha az" : "bu ay girilmedi"})`;
 }
 
 /**

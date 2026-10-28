@@ -168,7 +168,10 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
   tutarları (liste kasa raporlarından kısaysa o döneme düşen payı), indirim listenin döneminden, online brüt kârı ayrı
   satır. Kaydırıcılar yalnız kasanın satış karmasını değiştirir; online brüt kârı sabit kalır (zam / adet kaydırıcılarına
   katmak başabaşın tanımını değiştirirdi: Genel bakış'ta başabaş kasanın cirosudur). Başabaş ve hedef kâr kartları
-  Genel bakış'ın başabaşıyla aynı tabandan (`breakEvenOf`).
+  Genel bakış'ın başabaşıyla aynı tabandan (`breakEvenOf`). "Aylık sabit gider değişimi" aylık bir tutardır: net kâra
+  tabanın sabit gideri gibi dönemin payıyla (`fixedShare` = Gelir-gider'in açık gün oranı × liste dönemi; 1–15 Kasım
+  listesinde %50), başabaşa tamamıyla girer. Net kâr tam ayın değilse kart başlıkları dönemi söyler ("Net kâr / zarar
+  (1–15 Kasım)", "Karşılaştırma (1–15 Kasım)").
 
 ### Kasa raporu satırı
 

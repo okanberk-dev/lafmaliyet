@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { breakEvenNeeds, profitGroups, scenarioBreakEvenItems, scenarioFixedItems } from "../src/app/panel/analiz/breakdowns";
 import { impactData, impactModel, settingsImpact } from "../src/app/panel/ayarlar/impact";
 import { createModel } from "../src/lib/calc/engine";
-import { applyScenario, breakEvenOf, dashboard, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
+import { applyScenario, breakEvenOf, dashboard, expensePlanSub, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice, SalesLine } from "../src/lib/calc/types";
 import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
 import { buildCashPlan, EXCLUDABLE_KEY, fixedReminderDrifts, planInputFromModel, planNotes, reminderDriftText, type CashPlan, type CashPlanInput } from "../src/lib/cash-plan";
@@ -111,6 +111,10 @@ test("E-13: kural: biten ay kendi tutarı; süren ay geçen aydan azsa geçen ay
   assert.deepEqual(model.monthlyExpensePlan("2026-10").map((x) => [x.cat.name, x.amount, x.source, x.from]), [["Influencer", 40_000, "carried", "2026-09"]]);
   // Kasım (gelecek): geçen aydan beri en büyüğü
   assert.deepEqual(model.monthlyExpensePlan("2026-11").map((x) => [x.amount, x.from]), [[40_000, "2026-09"]]);
+  // Döküm alt satırı: Ekim'de 10.000 girildi (daha az), Kasım'da hiç girilmedi
+  assert.equal(expensePlanSub(model.monthlyExpensePlan("2026-10")[0]), "Eylül 2026 tutarı taşındı (bu ay girilen daha az)");
+  assert.equal(expensePlanSub(model.monthlyExpensePlan("2026-11")[0]), "Eylül 2026 tutarı taşındı (bu ay girilmedi)");
+  assert.equal(expensePlanSub(model.monthlyExpensePlan("2026-09")[0]), "Eylül 2026 girişi");
   // Ağustos: kayıt yok
   assert.deepEqual(model.monthlyExpensePlan("2026-08"), []);
   // Kategori yokken başabaşın sabit gideri Excel temeliyle aynı (Excel uyumu)
@@ -153,6 +157,8 @@ test("E-59: kapanmış site ayında Genel bakış, Sabit giderler, Analiz ve Aya
   close(requiredDailyRevenue(impactModel(impactData(cur)), M, 0), curBe.daily, "Ayarlar = Genel bakış (online örtü)");
   // Eski Giderler formülü (online düşülmeden) daha yüksekti
   assert.ok(be.fixed / be.grossRatio / be.acikGun > d.breakEvenDaily! + 1);
+  // Genel bakış'ın bilgi ipucu formülü paranteze alır: (A + B − C) ÷ oran ÷ gün (döküm gibi)
+  assert.match(read("src/app/panel/page.tsx"), /d\.breakEven\.expensesTotal \|\| d\.onlineCover \? "\(" : ""\}standart aylık sabit gider/);
   // Sabit giderler sayfası aynı yardımcıyı çağırır, kartın alt satırı online örtüyü söyler
   const page = read("src/app/panel/giderler/page.tsx");
   assert.match(page, /const be = breakEvenOf\(model, cur\);/);
@@ -362,7 +368,14 @@ test("E-13 nakit planı: aylık girişe çevrilen gider her ay yayılır; bu ay 
   const row = plan.estimates.find((r) => r.key === "expense:1")!;
   assert.equal(row.status, "on");
   assert.equal(row.monthly, 50_000);
-  assert.match(planNotes(plan, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "expense")!.text, /her ay girilen 1 kategori/);
+  const note = planNotes(plan, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "expense")!.text;
+  assert.match(note, /her ay girilen 1 kategori/);
+  // Not, belge ve kural aynı şeyi söyler: o ay girilen, daha azsa geçen ayınki (girilmediyse değil)
+  assert.match(note, /o ay girilen tutar, daha azsa geçen ayınki/);
+  const doc = read("docs/NAKIT-PLANI.md");
+  assert.match(doc, /Aylık harcamalar'da her ay\s+girilmeyen \(tek seferlik\) ödemeler/);
+  assert.match(doc, /her ay girilen her harcama kategorisi tek tek kapatılabilir/);
+  assert.doesNotMatch(doc, /Aylık harcamalar'daki fatura dışı\s+ödemeler \(cari/);
   // Tahmine katılanlar'dan kapatılır
   assert.ok(EXCLUDABLE_KEY.test("expense:1"));
   const off = buildCashPlan(planInput({ months: inp.months, excluded: ["expense:1"] }));
