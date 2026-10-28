@@ -7,6 +7,7 @@
 import { daysInMonth, yearMonths, type Model } from "../../calc/engine";
 import { alerts, dashboard, missingRevenueText, yearTotals, yearTrend } from "../../calc/insights";
 import { kasaMonthLine, missingSentence } from "../../cash-month";
+import { monthKasa, periodKasa } from "../../lafpos/kasa";
 import { cleanName, monthLabel, num, panelUrl, pct, pctNum, r2, r2n, tl } from "./common";
 
 export interface MonthSummary {
@@ -77,6 +78,8 @@ const kdvText = (rate: number) => num(1 + rate, 2, 2);
 
 export function monthSummary(model: Model, month: string, ctx: { base: string }): MonthSummary {
   const st = model.settings;
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra LafPOS; denetim E-39)
+  const mk = monthKasa(month, st.lafposGecisGunu);
   const d = dashboard(model, month);
   const pm = model.pnlMonth(month);
   const info = d.info;
@@ -119,7 +122,7 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
         service > 0
           ? `(${tl(pm.revenue)} − ${tl(service)} hizmet) ÷ ${kdvText(st.kdv)} + ${tl(service)} ÷ ${kdvText(st.kdvHizmet)}`
           : `${tl(pm.revenue)} ÷ ${kdvText(st.kdv)}`;
-      hesap.push(`KDV hariç ciro = ${pos} = ${tl(ciroNet)} (ModPOS${pm.site ? `; laffogato.net online ${tl(pm.site.total)} ayrıca eklendi, toplam ${tl(total)}` : "; online satış yok"})`);
+      hesap.push(`KDV hariç ciro = ${pos} = ${tl(ciroNet)} (${mk.long}${pm.site ? `; laffogato.net online ${tl(pm.site.total)} ayrıca eklendi, toplam ${tl(total)}` : "; online satış yok"})`);
     } else if (pm.site) {
       hesap.push(`laffogato.net online satışı ${tl(pm.site.total)} (KDV hariç); POS cirosu girilmediği için kâr hesaplanmadı`);
     }
@@ -157,7 +160,7 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   if (t) {
     hesap.push(
       `Reçeteye göre net kâr = brüt kâr ${tl(t.grossProfit)} (net satış ${tl(t.netSales)}${
-        t.online ? ` = ModPOS ${tl(t.posNetSales)} + laffogato.net online ${tl(t.online.revenue)}` : ""
+        t.online ? ` = ${mk.short} ${tl(t.posNetSales)} + laffogato.net online ${tl(t.online.revenue)}` : ""
       } − malzeme ${tl(t.material)} − komisyon ${tl(t.commission)}) − indirim ${tl(t.discountsNet)} − sabit gider ${tl(t.fixedTotal)} = ${tl(t.netProfit)}`,
     );
     if (t.listPeriod) {
@@ -231,7 +234,7 @@ export function yearSummary(model: Model, year: number, ctx: { base: string }): 
   const toplam = { ciroKdvHaric: r2(yt.revenueNet), gider: r2(yt.expenses), kar: r2(yt.profit) };
   const months = yearMonths(year);
   const hesap = [
-    `Her ayın kârı = KDV hariç ciro (ModPOS + laffogato.net online) − giderler (Gelir-gider)`,
+    `Her ayın kârı = KDV hariç ciro (${periodKasa(months, model.settings.lafposGecisGunu).both} + laffogato.net online) − giderler (Gelir-gider)`,
     active.length
       ? `Yıl toplamı cirosu girilmiş ${num(active.length)} ay: ${active.map((r) => monthLabel(r.month)).join(", ")} → ciro ${tl(toplam.ciroKdvHaric)} − gider ${tl(toplam.gider)} = ${tl(toplam.kar)}`
       : `${year} yılında cirosu girilmiş ay yok`,

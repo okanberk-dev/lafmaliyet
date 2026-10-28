@@ -789,16 +789,18 @@ const moreLess = (d: number) => `${money(Math.abs(d))} ${d > 0 ? "fazla" : "az"}
  * gün sonu; yazarkasanın günlük toplamı, KDV'si, fiş sayısı ve ModPOS'la öteki karşılaştırmalar (toplam, nakit, yemek
  * kartı, banka, kendi içinde) yalnız e-postada (`"admin"`). Kart satırı `computeCash`'in kaynağıyla (D5). Yazarkasa
  * alanları boş raporda (eski ya da yalnız banka gün sonu yazılmış) bugünkü "Kart" bloğu, etiket "Banka POS" (§3.7:
- * eski günlerde alan banka gün sonunu da yazarkasanın kart satırını da tutabilir, anlam iddia edilmez)
+ * eski günlerde alan banka gün sonunu da yazarkasanın kart satırını da tutabilir, anlam iddia edilmez). `kasa` günün
+ * kasası (geçiş gününden itibaren LafPOS; denetim E-39), karşılaştırmalar onun adıyla
  */
-export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, audience: CashTextAudience): string[] {
+export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, audience: CashTextAudience, kasa: CashReportExtras["kasa"] = "ModPOS"): string[] {
+  const k = kasa ?? "ModPOS";
   const c = computeCash(f);
   const same = (d: number) => Math.abs(d) < CASH_TOLERANCE;
   // LafPOS'un kartla bahşiş ve cari tahsilatı düşüldüyse kart satırı söyler (G11; personelde tutarsız)
   const extra = cardExtraSuffix(f.cardExtra, audience);
   if (!okcHasFigures(f)) {
     if (c.cardDiff === null) return [];
-    return ["*Kart*", `Banka POS: ${money(f.bankPos)} ${same(c.cardDiff) ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${moreLess(c.cardDiff)}`}${extra}`];
+    return ["*Kart*", `Banka POS: ${money(f.bankPos)} ${same(c.cardDiff) ? `✅ ${k} ile aynı` : `⚠️ ${k}'tan ${moreLess(c.cardDiff)}`}${extra}`];
   }
   const admin = audience === "admin";
   const out = ["*Banka POS Z raporu*"];
@@ -812,11 +814,11 @@ export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, 
   if (admin && f.okcMealCard) out.push(`• Yemek kartı: ${money(f.okcMealCard)}`);
   if (admin && f.okcOther) out.push(`• Diğer: ${money(f.okcOther)}`);
   if (c.cardDiff !== null) {
-    out.push(`${same(c.cardDiff) ? "✅ Kart ModPOS ile aynı" : `⚠️ ${c.cardSource === "okc" ? "Yazarkasa kartı" : "Banka gün sonu"} ModPOS'tan ${moreLess(c.cardDiff)}`}${extra}`);
+    out.push(`${same(c.cardDiff) ? `✅ Kart ${k} ile aynı` : `⚠️ ${c.cardSource === "okc" ? "Yazarkasa kartı" : "Banka gün sonu"} ${k}'tan ${moreLess(c.cardDiff)}`}${extra}`);
   }
   if (f.bankPos !== null) out.push(`Banka gün sonu: ${money(f.bankPos)}`);
   // Yöneticinin satırları (kart satırı yukarıda kısa hâliyle)
-  if (admin) for (const l of okcReconcile(f, "admin")) if (l.key !== "okc-card") out.push(`${TONE_MARK[l.tone]} ${l.text}`);
+  if (admin) for (const l of okcReconcile(f, "admin", k)) if (l.key !== "okc-card") out.push(`${TONE_MARK[l.tone]} ${l.text}`);
   return out;
 }
 
@@ -866,7 +868,7 @@ export function cashReportText(
     ...(f.handedOver ? [`Teslim edilen: ${money(f.handedOver)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
     ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
   ];
-  const kart = okcTextBlock(f, audience);
+  const kart = okcTextBlock(f, audience, meta.kasa);
   const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
   const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
   return blocks.map((b) => b.join("\n")).join("\n\n");

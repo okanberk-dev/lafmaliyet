@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-plan";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -206,13 +207,15 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
   const m = monthName(e.period);
   const b = e.basis;
   const service = b.serviceRevenue > 0 && vat.rates.kdvHizmet !== vat.rates.kdv ? `, karaoke ${tl(b.serviceRevenue)} ${pctText(vat.rates.kdvHizmet)}` : "";
+  // Dönemin kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
+  const kasa = monthKasa(e.period, vat.switchDay).both;
   const posText = b.posFrom
     ? `${m} cirosu yok: ${monthGenitiveTR(b.posFrom)} günlük ortalamasıyla`
     : b.posRevenue === null
       ? null
       : e.projected
-        ? `Kasa (ModPOS) cirosu ≈ ${tl(round100(b.posRevenue))} (${b.openDays ? `${num(b.openDays)} günden ` : ""}ay sonuna) · ${pctText(vat.rates.kdv)}${service}`
-        : `Kasa (ModPOS) cirosu ${tl(b.posRevenue)} · ${pctText(vat.rates.kdv)}${service}`;
+        ? `Kasa (${kasa}) cirosu ≈ ${tl(round100(b.posRevenue))} (${b.openDays ? `${num(b.openDays)} günden ` : ""}ay sonuna) · ${pctText(vat.rates.kdv)}${service}`
+        : `Kasa (${kasa}) cirosu ${tl(b.posRevenue)} · ${pctText(vat.rates.kdv)}${service}`;
   const onlineText = b.online === "ok" ? `laffogato.net online ≈ ${tl(e.online)}` : b.online === "missing" ? "laffogato.net: bu ay çekilmedi" : null;
   const invoiceText = `${num(b.invoices)} fatura${b.inProgress ? ", bugüne kadar gelenler" : ""}${b.separate ? " · Karaoke box ve Alp Koç faturaları sayılmadı" : ""}`;
   // Sonuç: Ödemeler'deki tutar; beyannamedeki devreden (o ay ödeme yok); ödenecek ya da sonraki aya devreden

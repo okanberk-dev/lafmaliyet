@@ -62,6 +62,7 @@ export function OkcCard({
   audience,
   forceDetails,
   modpos,
+  kasa = "ModPOS",
 }: {
   values: OkcValues & { bankPos: string };
   /** Tutar alanı (cash-form'un `field`ı: etiket, fotoğraf işareti, hata) */
@@ -85,6 +86,8 @@ export function OkcCard({
   /** Yönetici düzenliyor: Ayrıntılar açık gelir */
   forceDetails: boolean;
   modpos: ModposFigures | null;
+  /** Günün kasası (karşılaştırma satırları onun adıyla; geçiş gününden itibaren LafPOS, denetim E-39) */
+  kasa?: "ModPOS" | "LafPOS";
 }) {
   const uid = useId();
   const f = okcFigures(values);
@@ -118,7 +121,7 @@ export function OkcCard({
   // Kart satırı ve (yöneticide) öteki karşılaştırmalar; kendi içindeki denetim özet satırında
   const lines =
     modpos && (any || values.bankPos.trim())
-      ? okcReconcile({ ...modpos, bankPos: amountOf(values.bankPos), ...f, okcVat: f.okcVat }, audience).filter((l) => l.key !== "okc-self")
+      ? okcReconcile({ ...modpos, bankPos: amountOf(values.bankPos), ...f, okcVat: f.okcVat }, audience, kasa).filter((l) => l.key !== "okc-self")
       : [];
 
   return (

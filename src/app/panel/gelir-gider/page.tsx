@@ -11,6 +11,7 @@ import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
+import { periodKasa } from "@/lib/lafpos/kasa";
 import { salesMonthsToPull } from "@/lib/site-sales/calc";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
@@ -183,6 +184,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     sitePanelUrl: `${siteUrl()}/admin`,
     kdvRate: model.settings.kdv,
     serviceKdvRate: model.settings.kdvHizmet,
+    switchDay: model.settings.lafposGecisGunu,
+    current,
   };
 
   // Yılın 12 ayı: kâr yeşil, zarar kırmızı, cirosu girilmemiş aktif ay sarı, boş ay ve bu aydan sonrası gri; verisi olan
@@ -205,6 +208,10 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     ...yearBreakdowns(
       sections,
       countedIdx.map((i) => calcs[i]),
+      periodKasa(
+        countedIdx.map((i) => months[i]),
+        model.settings.lafposGecisGunu,
+      ).short,
     ),
     revenue: revenueBreakdown(
       throughIdx.map((i) => calcs[i]),
@@ -329,6 +336,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         strip={strip}
         latestMonth={latestMonth}
         expectedDebts={expected}
+        lafposSwitch={model.settings.lafposGecisGunu}
         yearNote={
           yt.counted.length < activeMonths.length
             ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }

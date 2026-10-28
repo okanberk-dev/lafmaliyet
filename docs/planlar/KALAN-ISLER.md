@@ -67,7 +67,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
-| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
+| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-lafpos-metin`) |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | PR (dal `claude/denetim-b13-menu-maliyet`) |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | bekliyor |
@@ -114,6 +114,13 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
    **Yanıt (26 Ekim):** belli değil; panelde bir ayar olsun. B07: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü",
    varsayılan boş (kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez); B08-B11 okuyucularını bu güne bağlar.
+   **Yapıldı (B11):** E-39'un "kasa kipi" ayrı bir ayar değil, bu gündür (son günlerde LafPOS günü var mı sezgisi
+   kullanılmadı: deneme günleri kipi değiştirmesin). Geçiş gününden itibaren "Kasadaki fiyatlar" yalnız siteye bağlı
+   olmayan ürünler için çalışır ve ModPOS metinleri LafPOS der; boşken her şey bugünkü gibi.
+   **Açık (B11 incelemesi):** (a) LafPOS gününde bağsız ürünün fiyat işi yalnız yöneticide (LafPOS'ta ürün fiyatını
+   `menu.yonet` olmadan kasiyer değiştiremez); LafPOS'ta kasiyere fiyat yetkisi verilecekse personelin listesi geri
+   açılabilir. (b) Geçiş gününden sonra siteye bağlı olmayan ürünler Kasaya işle'de kalsın mı, yoksa hepsi siteye
+   bağlansın ve liste kapansın mı? **Varsayılan:** kalsın, metin bağlamayı ya da LafPOS'ta elle değiştirmeyi söyler.
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
    yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
@@ -391,7 +398,16 @@ bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bi
 zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
 Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
 sığmayanları tek satırda özetler (E-68).
-Kalan: ModPOS metinleri ve işleri geçiş gününe göre (E-39, B11); sahibe soru 5.
+B11 (E-39): geçiş gününden itibaren siteye bağlı ürün "Kasadaki fiyatlar"da (Kasaya işle, zil, Bugün, haftalık özet,
+ürün kartı) görünmez, LafPOS fiyatı siteden alır; kasanın ModPOS durumu yine yazılır, gizlenen işaretler silinmez
+(geçiş günü kaldırılır ya da ileri alınırsa LafPOS günlerindeki değişikliklerle birlikte geri gelir). Bağlı olmayan ürün
+yalnız fiyatı LafPOS günü panelde değiştiyse görünür; metin "siteden geliyorsa Site menüsü'nde bağlayın, yerelse
+LafPOS'ta elle" der. LafPOS gününde bu iş yalnız yöneticinindir (kasiyer LafPOS'ta fiyat değiştiremez).
+Bugün'ün ve zilin akşam kasa satırı "LafPOS'ta Günü kapat" der; Kasa raporu, e-posta ve WhatsApp karşılaştırmaları,
+kapalı gün kartı günün kasasını, aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV
+tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · LafPOS 10–30)"). Geçiş günü boşken
+metinlerin hepsi bugünkünün aynısı.
+Kalan: sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.

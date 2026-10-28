@@ -721,7 +721,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.equal(posts.length, 0);
     const ok = await actions.updateProductPrice(prod.tira, 200, false, "manual", 190);
     assert.ok(ok.ok, JSON.stringify(ok));
-    assert.deepEqual(ok.data, { price: 200, site: true, posPending: true });
+    assert.deepEqual(ok.data, { price: 200, site: true, posPending: true, kasa: "ModPOS" });
     assert.equal(site.get(ids.tira)!.priceMinor, 20_000);
     assert.deepEqual(await priceRows(prod.tira), [["site", 180, 190], ["manual", 190, 200]]);
     // Eski sekme görüleni göndermez: bugünkü gibi yazılır

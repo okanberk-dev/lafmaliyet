@@ -188,13 +188,13 @@ export function CashBreakdown({
         />
       </section>
       {okc ? (
-        <OkcBreakdown report={report} audience={audience} okcAdmin={okcAdmin} />
+        <OkcBreakdown report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} />
       ) : c.cardDiff !== null ? (
         // Yazarkasa bölümünden önceki rapor: bugünkü "Kart" bölümü; o günlerde alan banka gün sonunu da yazarkasa
         // Z'sinin kart satırını da tutabilir, anlam iddia edilmez (§3.7)
         <section aria-label="Kart">
           <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
-          <Line label="ModPOS kart" value={money(report.card)} />
+          <Line label={`${kasa} kart`} value={money(report.card)} />
           <Line label="Banka POS" value={money(report.bankPos)} />
           {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
           {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}
@@ -221,8 +221,19 @@ export function CashBreakdown({
  * KDV ve oran oran döküm, ödemeler, banka gün sonu (varsa); altında karşılaştırma satırları (personele yalnız kart ve
  * kendi içinde). Yöneticiye kümülatif ve "Kümülatifi temizle".
  */
-function OkcBreakdown({ report: f, audience, okcAdmin }: { report: CashReportFields; audience: "staff" | "admin"; okcAdmin: OkcAdminView | null }) {
-  const lines = okcReconcile({ ...f, bankPos: f.bankPos ?? null }, audience);
+function OkcBreakdown({
+  report: f,
+  audience,
+  okcAdmin,
+  kasa,
+}: {
+  report: CashReportFields;
+  audience: "staff" | "admin";
+  okcAdmin: OkcAdminView | null;
+  /** Günün kasası (karşılaştırma satırları onun adıyla; denetim E-39) */
+  kasa: "ModPOS" | "LafPOS";
+}) {
+  const lines = okcReconcile({ ...f, bankPos: f.bankPos ?? null }, audience, kasa);
   const head = [f.okcZNo ? `Z no ${f.okcZNo}` : null, f.okcReceipts ? `${f.okcReceipts} fiş` : null].filter(Boolean).join(" · ");
   return (
     <section aria-label="Banka POS Z (yazarkasa)">

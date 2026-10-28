@@ -9,6 +9,7 @@ import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { siteGaps, suggestLinks } from "@/lib/site-menu/names";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { siteUrl } from "@/server/site-link";
 import { syncSiteMenu } from "@/server/site-menu/sync";
@@ -68,8 +69,10 @@ async function SiteMenuContent() {
       console.error("[menu] sayfa eşitlemesi", e);
     }
   });
-  const [site, rows] = await Promise.all([
+  const [site, till, rows] = await Promise.all([
     loadSiteLinks(),
+    // Bugünün kasası (bilgi metni: LafPOS fiyatı siteden alır; denetim E-39)
+    loadTillScope().catch(() => null),
     getDb()
       .select({
         id: s.products.id,
@@ -115,6 +118,7 @@ async function SiteMenuContent() {
         products={products}
         suggestions={suggestions}
         gaps={gaps}
+        kasa={till?.kasa ?? "ModPOS"}
       />
     </>
   );

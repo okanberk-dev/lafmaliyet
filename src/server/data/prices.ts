@@ -3,16 +3,20 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, max, min, notInArray } from "drizzle-orm";
 
 import { logPerson } from "@/lib/activity-person";
+import type { KasaName, TillScope } from "@/lib/lafpos/kasa";
 import type { HistoryRow, PriceSource } from "@/lib/prices/history";
 import { POS_MARKS_RECENT_MS, posUndoRefusal, type PosItem, type RecentPosMark } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
-import { modposNameFilter } from "./pos-staff";
+import { kasaNameFilter } from "./pos-staff";
+import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
 
 /**
  * Fiyatlar ekranının, ürün kartının, zilin ve (sonra) Bugün ekranının okumaları: kasada (ModPOS) değişecek fiyatlar,
- * satış fiyatı geçmişi (docs/FIYATLAR.md). Hepsi yalnız okur.
+ * satış fiyatı geçmişi (docs/FIYATLAR.md). Hepsi yalnız okur. Kasa listesi bugünün kasasına göre (till-scope.ts):
+ * geçiş gününden itibaren (LafPOS) siteye bağlı ürünler sayılmaz, LafPOS onların fiyatını siteden alır; bağlı olmayan
+ * da yalnız fiyatı LafPOS başladıktan sonra değiştiyse sayılır (denetim E-39).
  */
 
 export interface PosPendingSummary {
@@ -20,15 +24,19 @@ export interface PosPendingSummary {
   /** Kasanın en eski ve en yeni geri kalışı */
   oldest: Date | null;
   newest: Date | null;
+  /** Bugünün kasası (metinler: "ModPOS'ta" / "LafPOS'ta") */
+  kasa: KasaName;
 }
 
-/** Kasada değişecek fiyat sayısı (tek sorgu): Ürünler başlığı, sekme rozeti, zil ve Bugün ekranı */
-export async function posPendingSummary(): Promise<PosPendingSummary> {
-  const [r] = await getDb()
+/** Kasada değişecek fiyat sayısı (tek sorgu ve geçiş günü): Ürünler başlığı, sekme rozeti, zil ve Bugün ekranı */
+export async function posPendingSummary(scope?: TillScope): Promise<PosPendingSummary> {
+  const db = getDb();
+  const sc = scope ?? (await loadTillScope(db));
+  const [r] = await db
     .select({ n: count(), oldest: min(s.products.posStaleSince), newest: max(s.products.posStaleSince) })
     .from(s.products)
-    .where(isNotNull(s.products.posStalePrice));
-  return { count: r?.n ?? 0, oldest: r?.oldest ?? null, newest: r?.newest ?? null };
+    .where(and(isNotNull(s.products.posStalePrice), tillProductFilter(sc, db)));
+  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa };
 }
 
 export interface PosChecklistItem extends PosItem {
@@ -40,9 +48,13 @@ export interface PosChecklistItem extends PosItem {
   changedAt: string | null;
 }
 
-/** Kasaya işle listesi: kasada eski fiyatı duran ürünler, ModPOS adları ve son değişikliğin kaynağı */
-export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
+/**
+ * Kasaya işle listesi: kasada eski fiyatı duran ürünler, ModPOS adları ve son değişikliğin kaynağı. LafPOS gününde
+ * yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişenler (till-scope.ts tillProductFilter)
+ */
+export async function loadPosChecklist(scope?: TillScope): Promise<PosChecklistItem[]> {
   const db = getDb();
+  const sc = scope ?? (await loadTillScope(db));
   const rows = await db
     .select({
       id: s.products.id,
@@ -57,7 +69,7 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
     })
     .from(s.products)
     .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
-    .where(isNotNull(s.products.posStalePrice));
+    .where(and(isNotNull(s.products.posStalePrice), tillProductFilter(sc, db)));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const [names, latest, inModpos] = await Promise.all([
@@ -76,8 +88,8 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
       .from(s.productPrices)
       .where(inArray(s.productPrices.productId, ids))
       .orderBy(s.productPrices.productId, desc(s.productPrices.changedAt), desc(s.productPrices.id)),
-    // Yalnız LafPOS'tan öğrenilmiş ad ModPOS'ta yok (pos-staff.ts modposNameFilter)
-    modposNameFilter(db),
+    // Yalnız LafPOS'tan öğrenilmiş ad ModPOS'ta yok, ModPOS'un adı LafPOS'ta (pos-staff.ts kasaNameFilter)
+    kasaNameFilter(db, sc.kasa),
   ]);
   const namesOf = new Map<number, string[]>();
   for (const n of names) if (n.productId && inModpos(n.posName)) namesOf.set(n.productId, [...(namesOf.get(n.productId) ?? []), n.posName]);
@@ -94,7 +106,7 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
       posNames: namesOf.get(r.id) ?? [],
       stalePrice: r.stalePrice!,
       price: r.price,
-      since: (r.since ?? new Date()).toISOString(),
+      since: tillSince(sc, r.since ?? new Date()).toISOString(),
       source: last?.source ?? null,
       changedBy: last?.changedBy ?? null,
       changedAt: last?.changedAt.toISOString() ?? null,
@@ -240,15 +252,22 @@ export interface ProductPriceHistory {
   rows: HistoryRow[];
   /** Panelin bugünkü fiyatı ("Kasada değiştirdim" kasaya bunun yazıldığını söyler); ürün yoksa null */
   price: number | null;
-  /** Kasada duran eski fiyat ve ne zamandan beri (ISO); kasa güncelse null */
+  /**
+   * Kasada duran eski fiyat ve ne zamandan beri (ISO); kasa güncelse null. LafPOS gününde kasa listesindeki gibi
+   * (till-scope.ts tillProductFilter): siteye bağlı üründe ve ModPOS'tan kalan işarette null (silinmez, gösterilmez)
+   */
   posStalePrice: number | null;
   posStaleSince: string | null;
+  /** Bugünün kasası ("Kasada (ModPOS) hâlâ …") */
+  kasa: KasaName;
 }
 
 /** Ürün kartındaki "Fiyat geçmişi": son `limit` değişiklik ve kasanın durumu */
 export async function loadProductPriceHistory(productId: number, limit = 20): Promise<ProductPriceHistory> {
   const db = getDb();
-  const [rows, [p]] = await Promise.all([
+  const scope = await loadTillScope(db);
+  const filter = tillProductFilter(scope, db);
+  const [rows, [p], listed] = await Promise.all([
     db
       .select(historyColumns)
       .from(s.productPrices)
@@ -261,8 +280,24 @@ export async function loadProductPriceHistory(productId: number, limit = 20): Pr
       .from(s.products)
       .where(eq(s.products.id, productId))
       .limit(1),
+    // LafPOS gününde ürün kasa listesinde mi (ModPOS gününde süzgeç yok)
+    filter
+      ? db
+          .select({ id: s.products.id })
+          .from(s.products)
+          .where(and(eq(s.products.id, productId), filter))
+          .limit(1)
+          .then((r) => r.length > 0)
+      : true,
   ]);
-  return { rows: rows.map(toHistoryRow), price: p?.price ?? null, posStalePrice: p?.stalePrice ?? null, posStaleSince: p?.since?.toISOString() ?? null };
+  const stale = p && listed ? p : null;
+  return {
+    rows: rows.map(toHistoryRow),
+    price: p?.price ?? null,
+    posStalePrice: stale?.stalePrice ?? null,
+    posStaleSince: stale?.since ? tillSince(scope, stale.since).toISOString() : null,
+    kasa: scope.kasa,
+  };
 }
 
 /** Bir toplu değişikliğin bütün satırları (geri alma), ürünün bugünkü fiyatıyla */

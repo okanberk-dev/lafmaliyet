@@ -17,7 +17,8 @@ import {
 } from "@/lib/closed-days";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema, type PosDayZ } from "@/lib/lafpos/day";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import type { KasaName } from "@/lib/lafpos/kasa";
+import { isLafposDay, kasaName, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -369,6 +370,8 @@ export interface ClosedDayCard {
   evidence: ClosedEvidence;
   /** Aynı kişinin ya da başkasının üst üste kapalı bildirdiği / işaretli günlerle birlikte kaç gün */
   run: { from: string; to: string; days: number } | null;
+  /** Günün kasası (denetim E-39): "Onaylamadan önce o günün ModPOS / banka POS'una bakın" */
+  kasa: KasaName;
 }
 
 /** Bekleyen kapalı gün bildirimlerinin kartları (yalnız yönetici; loadCashRequestQueue toplar) */
@@ -384,7 +387,11 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
   const from = addDays(days[0], -7);
   const to = addDays(days[days.length - 1], 7);
   // Üst üste günler: bekleyen bildirimler ve zaten kapalı işaretli günler birlikte
-  const marked = await closedDaysBetween(from, to, db);
+  const [marked, [setting]] = await Promise.all([
+    closedDaysBetween(from, to, db),
+    db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1),
+  ]);
+  const switchDay = readLafposSwitchDay(setting?.value);
   const all = new Set([...days, ...marked]);
   const runOf = (d: string) => {
     let a = d;
@@ -407,6 +414,7 @@ export async function closedDayCards(): Promise<ClosedDayCard[]> {
       reason: p.success ? p.data.reason : null,
       evidence: await closedDayEvidence(db, r.day!).catch(() => EMPTY_EVIDENCE),
       run: runOf(r.day!),
+      kasa: kasaName(r.day!, switchDay),
     });
   }
   return out;

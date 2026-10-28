@@ -38,6 +38,7 @@ import {
   type PriceSettings,
   type RoundingId,
 } from "@/lib/prices/bulk";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { batchPosNote } from "@/lib/prices/pos";
 import { toMinor } from "@/lib/site-menu/slot";
 import { cn } from "@/lib/utils";
@@ -113,6 +114,7 @@ export function BulkEditor({
   settings,
   siteConfigured,
   basis,
+  kasa = "ModPOS",
 }: {
   rows: BulkRow[];
   categories: { id: number; name: string }[];
@@ -120,6 +122,8 @@ export function BulkEditor({
   siteConfigured: boolean;
   /** Aylık etkinin satış dayanağı (zam etkisiyle aynı: price-loss.ts); satış verisi yoksa null */
   basis: SalesBasis | null;
+  /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır */
+  kasa?: KasaName;
 }) {
   // Süzgeçler adreste, Ürün listesiyle aynı adlarla (listedeki "Toplu fiyat" süzgeçleriyle açar)
   const [q, setQ] = useQueryText("ara");
@@ -241,7 +245,7 @@ export function BulkEditor({
       setOutcome({ kind: "bulk", batchId: res.batchId, note: sent.note, applied: res.applied, failed: res.failed, skipped: [] });
       setShowApplied(false);
       resetRule();
-      if (res.applied.length) toast.success(`${num(res.applied.length)} fiyat değişti`, { description: batchPosNote("bulk", res.applied) });
+      if (res.applied.length) toast.success(`${num(res.applied.length)} fiyat değişti`, { description: batchPosNote("bulk", res.applied, kasa) });
       else toast.error("Hiçbir fiyat değişmedi", { description: res.failed[0]?.reason });
     });
   }
@@ -282,7 +286,7 @@ export function BulkEditor({
       const res = r.data;
       setOutcome({ kind: "undo", batchId, note: outcome?.note ?? "", applied: res.applied, failed: res.failed, skipped: res.skipped });
       setShowApplied(false);
-      if (res.applied.length) toast.success(`${num(res.applied.length)} fiyat eski haline döndü`, { description: batchPosNote("undo", res.applied) });
+      if (res.applied.length) toast.success(`${num(res.applied.length)} fiyat eski haline döndü`, { description: batchPosNote("undo", res.applied, kasa) });
       else toast.error("Hiçbir fiyat geri alınmadı", { description: res.failed[0]?.reason });
     });
   }
@@ -506,6 +510,7 @@ export function BulkEditor({
   const resultCard = outcome ? (
     <ResultCard
       outcome={outcome}
+      kasa={kasa}
       pending={pending}
       showApplied={showApplied}
       onShowApplied={setShowApplied}
@@ -590,7 +595,11 @@ export function BulkEditor({
         description={[
           `${note}.`,
           summary.linked ? `${num(summary.linked)} ürün laffogato.net menüsünde de değişir (siteye tek tek yazılır, birkaç saniye sürebilir).` : null,
-          "Kasadaki (ModPOS) fiyatları elle değiştirmeniz gerekecek; liste Kasaya işle sekmesinde.",
+          kasa === "LafPOS"
+            ? summary.count > summary.linked
+              ? `LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Bağlı olmayan ${num(summary.count - summary.linked)} ürün Kasaya işle sekmesinde: LafPOS onları siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin, LafPOS'ta yerelse orada elle değiştirin.`
+              : "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez."
+            : "Kasadaki (ModPOS) fiyatları elle değiştirmeniz gerekecek; liste Kasaya işle sekmesinde.",
           summary.decreases ? `${num(summary.decreases)} ürünün fiyatı düşüyor.` : null,
         ]
           .filter(Boolean)
@@ -891,6 +900,7 @@ function PreviewCards({ rows, target, onToggle, onOverride }: RowsProps) {
 
 function ResultCard({
   outcome,
+  kasa,
   pending,
   showApplied,
   onShowApplied,
@@ -899,6 +909,7 @@ function ResultCard({
   onNew,
 }: {
   outcome: Outcome;
+  kasa: KasaName;
   pending: boolean;
   showApplied: boolean;
   onShowApplied: (v: boolean) => void;
@@ -917,7 +928,7 @@ function ResultCard({
       : "Hiçbir fiyat değişmedi.";
   // Elle yapılacaklar: sitede fiyat listesinin tarihi; geri almada kasada bir şey kalıp kalmadığı (toplu değişiklikte
   // kasaya giden düğme zaten aşağıda)
-  const notes = [site ? "Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma." : null, undo && n ? batchPosNote("undo", outcome.applied) : null].filter(
+  const notes = [site ? "Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma." : null, undo && n ? batchPosNote("undo", outcome.applied, kasa) : null].filter(
     (x): x is string => !!x,
   );
   return (

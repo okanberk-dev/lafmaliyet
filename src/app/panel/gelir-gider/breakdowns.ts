@@ -99,7 +99,12 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
  * maliyeti (mal alışları + stok devri) ve kâr (ciro − bölüm giderleri). Her bölüm ay hesaplarının toplamını tutar:
  * tabloda satırı olmayan bir tutar (ör. eski bir elle giriş) "Diğer" kalemi olur, döküm kartla aynı toplamı verir.
  */
-export function yearBreakdowns(sections: GridSection[], calcs: YearMonthCalc[]): { cogs: BreakdownGroup[]; expenses: BreakdownGroup[]; profit: BreakdownGroup[] } {
+export function yearBreakdowns(
+  sections: GridSection[],
+  calcs: YearMonthCalc[],
+  /** Ayların kasası (src/lib/lafpos/kasa.ts periodKasa; geçiş günü boşken ModPOS) */
+  kasa: string = "ModPOS",
+): { cogs: BreakdownGroup[]; expenses: BreakdownGroup[]; profit: BreakdownGroup[] } {
   const rowsOf = (key: string): BreakdownRow[] =>
     (sections.find((s) => s.key === key)?.rows ?? [])
       .filter((r) => r.def.kind !== "total" && r.total !== null)
@@ -139,7 +144,7 @@ export function yearBreakdowns(sections: GridSection[], calcs: YearMonthCalc[]):
         key: "gelir",
         label: "Gelir",
         rows: [
-          { key: "revenueNet", label: online ? "ModPOS cirosu (KDV hariç)" : "Ciro (KDV hariç)", amount: revenueNet },
+          { key: "revenueNet", label: online ? `${kasa} cirosu (KDV hariç)` : "Ciro (KDV hariç)", amount: revenueNet },
           ...(online ? [siteRow("cafe", "Kafe online (site + uygulama)"), siteRow("shop", "Mağaza (online)"), siteRow("karaoke", "Karaoke (ön ödemeli)")] : []),
         ],
       },

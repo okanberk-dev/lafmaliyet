@@ -83,7 +83,7 @@ export function ClosedDayItem({ card, site }: { card: ClosedDayCard; site?: Reac
           <ExternalLink size={14} aria-hidden="true" /> Günü aç
         </Link>
       </section>
-      <p className="text-[13px] leading-5 text-ink-mute">Onaylamadan önce o günün ModPOS / banka POS&apos;una bakın; satış varsa reddedin.</p>
+      <p className="text-[13px] leading-5 text-ink-mute">Onaylamadan önce o günün {card.kasa} / banka POS&apos;una bakın; satış varsa reddedin.</p>
       <Field label="Not (bütün personele görünür; tutar yazmayın)" htmlFor={`not-${card.id}`}>
         <Textarea id={`not-${card.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={300} />
       </Field>

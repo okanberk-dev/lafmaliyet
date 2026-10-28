@@ -4,6 +4,7 @@ import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffTe
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
+import { kasaName } from "@/lib/lafpos/switch";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
@@ -12,6 +13,7 @@ import { cashReportsBetween, cashRevisionsFor, previousCarryOver, reportedDays }
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { loadKasaLafposDays } from "@/server/data/lafpos-day";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
 
 /*
@@ -32,12 +34,14 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const reports = await cashReportsBetween(addDays(day, -6), day);
   if (user.role !== "admin") {
     if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
+    // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS
+    const lafpos = kasaName(day, await loadLafposSwitchDay().catch(() => null)) === "LafPOS";
     return [
       {
         id: `kasa-bekliyor-${day}`,
         kind: "warning",
         title: "Bugünün kasa raporu bekliyor",
-        body: "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
+        body: lafpos ? "Kapanışta LafPOS'ta Günü kapat'a basın, kasayı girin" : "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
         timeLabel: "Bugün",
         unread: true,
         href: "/panel/kasa",

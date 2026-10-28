@@ -199,11 +199,19 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             fiyat&quot; der. Kasada değiştirdikçe işaretleyin, işaretlenen listeden düşer (bildirimdeki Geri al geri getirir); liste açıkken fiyat yeniden
             değiştiyse işaretlenmez, yeni fiyatıyla listede kalır. Metni kopyala ile listeyi
             WhatsApp&apos;a yapıştırabilirsiniz. Fiyat kasadaki fiyata geri dönerse (ör. toplu değişiklik geri alındı) kendiliğinden düşer. Yeni ürün listeye girmez;
-            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir.
+            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir. LafPOS&apos;a geçiş gününden itibaren (Ayarlar › LafPOS)
+            siteye bağlı ürünlerin fiyatını LafPOS siteden kendisi alır (gün açıkken 15 dakikada bir): onlar listede görünmez. ModPOS için kayıt sürer, geçiş
+            günü kaldırılır ya da ileri alınırsa ModPOS&apos;ta değişecek fiyatlar eksiksiz geri gelir. Listede yalnız siteye bağlı olmayan ve fiyatı LafPOS
+            başladıktan sonra değişen ürünler çıkar: LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez) Ürünler › Site
+            menüsü&apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin.
+            LafPOS&apos;ta ürün fiyatını kasiyer değiştiremez: bu iş yöneticide, personelin Bugün&apos;ünde ve zilinde çıkmaz.
           </>
         ),
         icon: Receipt,
-        links: [{ href: "/panel/urunler/fiyatlar?sekme=kasa", label: "Kasaya işle" }],
+        links: [
+          { href: "/panel/urunler/fiyatlar?sekme=kasa", label: "Kasaya işle" },
+          { href: "/panel/urunler/site", label: "Site menüsü" },
+        ],
       },
       {
         id: "site-menusu",
@@ -452,7 +460,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin
             fotoğrafını çekin: tutar, KDV ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf
             başına yaklaşık 0,03 $; banka POS Z&apos;si için tahmini 0,05–0,10 $, henüz ölçülmedi); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
-            okuma&apos;da. Fotoğraflar kasa için 6 ay (banka POS Z 400 gün), fiş için 13 ay saklanır.
+            okuma&apos;da. Fotoğraflar kasa için 6 ay (banka POS Z 400 gün), fiş için 13 ay saklanır. Kasada LafPOS&apos;a geçildiyse (Ayarlar › LafPOS ›
+            geçiş günü) o günden itibaren LafPOS&apos;ta Günü kapat&apos;a basılır: form LafPOS&apos;un gün sonundan dolar (bölümün adı &quot;LafPOS gün sonu
+            (Z)&quot;), ModPOS Z fotoğrafı istenmez; banka POS Z&apos;si yine çekilir.
           </>
         ),
         icon: Receipt,
@@ -474,7 +484,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             (online satış, faturalı satış, Z&apos;nin alındığı saat): personelin ekranına ve WhatsApp metnine girmez, yalnız sizde ve seçtiğiniz e-posta
             adreslerinde. Personel yalnız kart satırını ve yazarkasanın kendi içinde tutmadığını görür. Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok
             rozetleri; ayın satırında yazarkasa (mali) toplamı ve KDV&apos;si (yalnız bilgi, hiçbir hesaba girmez). Kümülatif (cihaz açılışından beri) fotoğraftan
-            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın.
+            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın. LafPOS&apos;a
+            geçildiyse o günden itibaren ModPOS Z bölümünün yerinde LafPOS&apos;un gün sonu durur ve yazarkasa LafPOS&apos;la karşılaştırılır (karşılaştırmalar
+            &quot;LafPOS&quot; der); ModPOS bölümüne okutma yoktur.
           </>
         ),
         icon: ScanText,

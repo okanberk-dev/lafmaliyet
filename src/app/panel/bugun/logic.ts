@@ -11,6 +11,8 @@ import { money, monthLabel, num } from "@/lib/format";
 import { staffForecastLines, type StaffForecastView } from "@/lib/forecast/text";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
+import type { KasaName } from "@/lib/lafpos/kasa";
+import { kasaName } from "@/lib/lafpos/switch";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { pendingSummary } from "@/lib/recipe-change";
 import { addDays, dayMonthTR, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
@@ -85,6 +87,11 @@ export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi 
 export interface DayFacts {
   role: "admin" | "staff";
   now: Date;
+  /**
+   * LafPOS'a geçiş günü (iki rol; yalnız metinler: günün kasası "ModPOS" ya da "LafPOS", src/lib/lafpos/switch.ts
+   * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
+   */
+  lafposSwitch?: string | null;
   /** Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı */
   cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
   /**
@@ -128,8 +135,11 @@ export interface DayFacts {
    * girilmemiş ek kalemleri ve personelin ay bittikten sonra geçen ayın sayımına yaptığı kayıtlar
    */
   countAlerts?: { extras: UnpricedExtras[]; late: { month: string; edits: StaffLateEdit[] } | null } | null;
-  /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı (operasyonun yükleyicisi, src/server/data/today-ops.ts) */
-  pos?: { count: number; oldest: string | null } | null;
+  /**
+   * Kasada (ModPOS) değişecek fiyatlar, en eskisinin anı ve bugünün kasası (operasyonun yükleyicisi,
+   * src/server/data/today-ops.ts; LafPOS gününde yalnız siteye bağlı olmayan ürünler)
+   */
+  pos?: { count: number; oldest: string | null; kasa?: KasaName } | null;
   // ---- İkisi (kontrol listeleri)
   /** Dünün (iş günü) kontrol listeleri: tamamlanmayan ve sorunlu olan (docs/KONTROL-LISTELERI.md); personelde kendininkiler */
   checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;
@@ -270,7 +280,7 @@ const cashYesterday: Row = (f, c) => {
           title,
           status: "todo",
           badge: "Onay bekliyor",
-          detail: `${closed.by} ${longDateTR(c.yesterday)} için kafe kapalıydı dedi. Onaylamadan önce o günün ModPOS / banka POS'una bakın.`,
+          detail: `${closed.by} ${longDateTR(c.yesterday)} için kafe kapalıydı dedi. Onaylamadan önce o günün ${kasaName(c.yesterday, f.lafposSwitch ?? null)} / banka POS'una bakın.`,
           href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar",
           action: "Onaya bak",
         }
@@ -317,6 +327,16 @@ const cashYesterday: Row = (f, c) => {
       };
 };
 
+/**
+ * Personelin akşam kasa satırı ve zili (src/server/bell/kasa.ts): ModPOS gününde Z raporu ModPOS'tan alınır; LafPOS
+ * gününde (geçiş gününden itibaren) LafPOS'ta "Günü kapat" gün sonunu panele gönderir, form ondan dolar
+ */
+export function eveningCashText(kasa: KasaName): string {
+  return kasa === "LafPOS"
+    ? "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin."
+    : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
+}
+
 /** Bugünün (iş günü) raporu: gündüz "Akşam", 20:00'den sonra yapılacak; gönderilince yöneticiye farkı */
 const cashToday: Row = (f, c) => {
   const href = `/panel/kasa?gun=${c.day}`;
@@ -333,7 +353,7 @@ const cashToday: Row = (f, c) => {
   if (!f.cash) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
   const r = f.cash.today;
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
-  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin."), href: "/panel/kasa", action: "Raporu gir" };
+  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasaName(c.day, f.lafposSwitch ?? null))), href: "/panel/kasa", action: "Raporu gir" };
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };
 };
 

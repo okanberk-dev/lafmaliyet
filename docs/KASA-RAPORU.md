@@ -118,7 +118,11 @@ bugünkü gibi; denetim B09): Z bölümünün adı **LafPOS gün sonu (Z)**, Mod
 kalır). LafPOS günün sonunu gönderdiyse yeni form açılırken Z ve kasa rakamları fotoğrafınkiyle aynı kuralla yalnız
 boş alanlara kendiliğinden yazılır; Düzenle'de (ve düzeltme önerisinde) form yalnız karşılaştırır, LafPOS'tan farklı
 olanlar turuncu ve öneri olarak durur; bant **LafPOS'tan doldur** ile boş alanları doldurur; hiçbir şey kaydedilmez. Kayıtlı rapor, günden güne görünüm, e-posta ve WhatsApp "LafPOS'tan farklı yazılan"ı gösterir
-([LAFPOS.md](LAFPOS.md) › Kasa raporu).
+([LAFPOS.md](LAFPOS.md) › Kasa raporu). LafPOS gününde metinler de günün kasasıyla yazılır (denetim B11): sayfanın
+açıklaması ve Bugün'ün / zilin akşam satırı "LafPOS'ta Günü kapat", yazarkasa karşılaştırmaları ("Kart: yazarkasa ile
+LafPOS aynı.", "LafPOS kart") form, kayıtlı görünüm, onay kartı, e-posta ve WhatsApp'ta; kapalı gün kartının ipucu "o
+günün LafPOS / banka POS'una bakın". Yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez
+([LAFPOS.md](LAFPOS.md) › Metinler ve kasadaki fiyatlar).
 
 ## Banka POS Z raporu (yazarkasa)
 

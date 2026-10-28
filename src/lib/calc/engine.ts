@@ -8,6 +8,7 @@ import {
 } from "../constants";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
+import { periodKasa } from "../lafpos/kasa";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
@@ -1902,12 +1903,14 @@ export function createModel(ds: Dataset) {
     });
     // laffogato.net online satışları: yalnız bu aylardan en az biri siteden çekildiyse (çekilmemiş ay boş kalır, 0 değil)
     if (months.some((m) => siteByMonth.has(m))) {
+      // Yılın kasası (metinler; geçiş günü boşken "ModPOS", sonra "LafPOS", iki kasalı yılda ikisi; denetim E-39)
+      const yk = periodKasa(months, st.lafposGecisGunu);
       const from = "laffogato.net'ten çekilir (Gelir-gider › laffogato.net online satışları, her sabah ve Siteden yenile).";
-      const vat = (what: string, r: number) => `KDV hariç: net − KDV − oranı bilinmeyen ${what} ${pctOf(r)} KDV'si. Kasadan (ModPOS) geçmez; AYLIK CİRO'ya eklenmez.`;
-      sonuc({ key: "site:cafe", label: "KAFE ONLİNE (SİTE + UYGULAMA)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Uygulama ve web kafe siparişleri (masa, gel-al, kurye), iadeler düşülmüş. Panelden elle girilen siparişler ModPOS'ta olduğu için girmez. ${vat("siparişlerin", st.kdv)} ${from}` });
+      const vat = (what: string, r: number) => `KDV hariç: net − KDV − oranı bilinmeyen ${what} ${pctOf(r)} KDV'si. Kasadan (${yk.both}) geçmez; AYLIK CİRO'ya eklenmez.`;
+      sonuc({ key: "site:cafe", label: "KAFE ONLİNE (SİTE + UYGULAMA)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Uygulama ve web kafe siparişleri (masa, gel-al, kurye), iadeler düşülmüş. Panelden elle girilen siparişler ${yk.short === "Kasa" ? "kasada" : `${yk.short}'ta`} olduğu için girmez. ${vat("siparişlerin", st.kdv)} ${from}` });
       sonuc({ key: "site:shop", label: "MAĞAZA (ONLİNE)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Sitenin mağaza kolileri (kargo ücreti dahil), iadeler düşülmüş. ${vat("siparişlerin", st.kdv)} ${from}` });
       sonuc({ key: "site:karaoke", label: "KARAOKE (ÖN ÖDEMELİ)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Sitede ödenen karaoke rezervasyonlarının köşkte kalan tutarı, parasının alındığı ayda. ${vat("rezervasyonların", st.kdvHizmet)} ${from}` });
-      sonuc({ key: "revenue:total", label: "TOPLAM CİRO (KDV hariç)", kind: "total", editable: false, hint: "ModPOS cirosu + online satışlar (KDV hariç). Kâr / zarar ve oranlar bununla hesaplanır." });
+      sonuc({ key: "revenue:total", label: "TOPLAM CİRO (KDV hariç)", kind: "total", editable: false, hint: `${yk.short} cirosu + online satışlar (KDV hariç). Kâr / zarar ve oranlar bununla hesaplanır.` });
     }
     sonuc({ key: "total:expenses", label: "MAL MALİYETİ VE GİDER TOPLAMLARI", kind: "total", editable: false });
     sonuc({ key: "profit", label: "KÂR / ZARAR", kind: "total", editable: false, strong: true });

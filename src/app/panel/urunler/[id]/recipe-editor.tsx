@@ -527,7 +527,7 @@ export function RecipeEditor({
       saved.active !== sent.active ? `Menüde aktif de ${saved.active ? "açıldı" : "kapandı"}` : null,
     ].filter(Boolean);
     // Fiyat değiştiyse elle yapılacaklar: sitede fiyat listesinin tarihi, kasada (ModPOS) fiyat (Fiyatlar › Kasaya işle)
-    const reminder = priceReminder({ site: !!saved.site?.price, posPending: saved.posPending });
+    const reminder = priceReminder({ site: !!saved.site?.price, posPending: saved.posPending, kasa: saved.kasa });
     const siteNote =
       [
         // Dokunulmayan fiyat kart açıldıktan sonra başka yerde (sitede, toplu Fiyatlar'da) değişmişti: o korundu

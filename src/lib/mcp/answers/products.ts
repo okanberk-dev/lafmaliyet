@@ -6,6 +6,7 @@
 
 import type { Model, ProductCalc, ProductStatus } from "../../calc/engine";
 import { MENU_CLASS_INFO, menuEngineering, type MenuClass } from "../../calc/insights";
+import { salesMonthKasa } from "../../lafpos/kasa";
 import type { UrunKarliligiInput } from "../schemas";
 import { cleanName, costIncomplete, foldName, monthLabel, nameMatches, num, panelUrl, pct, pctNum, r2, salesFor, tl, ToolInputError, unpricedInRecipes, unpricedWarnings } from "./common";
 
@@ -115,6 +116,8 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   });
 
   const salesLabel = basis.salesMonth ? monthLabel(basis.salesMonth) : null;
+  // Satış ayının kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
+  const salesKasa = basis.salesMonth ? salesMonthKasa(basis.salesMonth, model.settings.lafposGecisGunu, model.ds.lafposSales) : null;
   const hesap = [
     `Birim kâr = fiyat ÷ ${num(1 + st.kdv, 2, 2)} (KDV) − maliyet − komisyon (fiyat × ${pct(st.komisyon)} × kartlı oran ${pct(st.kartOrani)})`,
     `Maliyet = reçete malzemeleri (KDV hariç) + fire ${pct(st.fire)}${st.fireExcludesPackaging ? " (ambalaj hariç)" : ""}; ürüne özel fire varsa o`,
@@ -158,7 +161,9 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
     uyarilar,
     hesap,
     kaynak: [
-      salesLabel ? `Adetler ${salesLabel} ModPOS ürün satış listesinden (Satışlar); laffogato.net online siparişleri dahil değil` : "Satış listesi yok: adetler 0",
+      salesLabel && salesKasa
+        ? `Adetler ${salesLabel} ${salesKasa.source === "modpos" ? "ModPOS ürün satış listesinden" : `${salesKasa.long} ürün satışlarından`} (Satışlar); laffogato.net online siparişleri dahil değil`
+        : "Satış listesi yok: adetler 0",
       "Fiyat ve maliyet bugünkü reçete ve hammadde fiyatlarıyla (Ürünler ekranıyla aynı)",
       ...(category ? [`Yalnız “${cleanName(category.name)}” kategorisi; menü sınıfı kategori içinde`] : []),
     ],

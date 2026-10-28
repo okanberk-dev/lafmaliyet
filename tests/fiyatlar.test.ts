@@ -813,8 +813,10 @@ test("eylemler: toplu fiyat yöneticinin; kasaya işle iki rolde (requireUser); 
   const ops = read("src/server/bell/ops.ts");
   // Personel dalı kendi sabit sütunlu özetinden okur (yalnız etkin ürünler), yönetici posPendingSummary'den
   const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));
-  assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(\) : await staffPosSummary\(\)/);
-  assert.match(pos, /posBell\(user\.role, summary, now\)/);
+  // Bugünün kasası (geçiş gününden itibaren LafPOS; denetim E-39) iki özete ve metne aynı
+  assert.match(pos, /const scope = await loadTillScope\(undefined, now\);/);
+  assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(scope\) : await staffPosSummary\(scope\)/);
+  assert.match(pos, /posBell\(user\.role, summary, now, scope\.kasa\)/);
   // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
   assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
 });

@@ -15,6 +15,7 @@ import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
+import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const c = consistency(model, month);
   const autos = alerts(model, month);
   const st = model.settings;
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
+  const mk = monthKasa(month, st.lafposGecisGunu);
   const ml = monthLabel(month);
 
   const listDays = c.sales.listPeriod ? listDaysText(c.sales.listPeriod) : null;
@@ -274,6 +277,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         key={month}
         month={month}
         monthLabel={ml}
+        kasa={mk.short}
         rows={c.rows.map((r) => ({
           ingredientId: r.ingredient.id,
           name: r.ingredient.name,
@@ -307,7 +311,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         fire={st.fire}
       />
 
-      <OnlineSalesCard online={c.online} month={month} monthLabel={ml} configured={Boolean(siteLinkSecret())} />
+      <OnlineSalesCard online={c.online} month={month} monthLabel={ml} configured={Boolean(siteLinkSecret())} kasa={mk.short} />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
@@ -420,9 +424,11 @@ function OnlineSalesCard({
   month,
   monthLabel: ml,
   configured,
+  kasa,
 }: {
   online: ReturnType<typeof consistency>["online"];
   month: string;
+  kasa: MonthKasa["short"];
   monthLabel: string;
   configured: boolean;
 }) {
@@ -432,7 +438,7 @@ function OnlineSalesCard({
       <CardHeader
         icon={<Globe />}
         title="Online kafe siparişleri (laffogato.net)"
-        description={`${ml} · uygulama ve web siparişlerinin tüketimi; ModPOS satışlarından ayrı sayılır, tabloda "online" diye görünür`}
+        description={`${ml} · uygulama ve web siparişlerinin tüketimi; ${kasa} satışlarından ayrı sayılır, tabloda "online" diye görünür`}
         actions={
           online?.unmapped.length ? (
             <ButtonLink href="/panel/urunler/site" variant="secondary" size="sm">

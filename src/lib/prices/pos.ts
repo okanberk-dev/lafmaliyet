@@ -3,8 +3,16 @@
  * Panel bunu ürün satırında tutar (products.pos_stale_price / pos_stale_since): kasada hâlâ duran eski fiyat ve
  * kasanın ne zamandan beri geride olduğu. "Fiyatlar › Kasaya işle" listesi bunlardan; işaretlenince boşalır, fiyat
  * kasadaki fiyata geri dönerse kendiliğinden boşalır. Saf modül; tests/fiyatlar.test.ts sınar (docs/FIYATLAR.md).
+ *
+ * LafPOS'a geçiş gününden itibaren (src/lib/lafpos/kasa.ts tillScope; denetim E-39) siteye bağlı ürünün fiyatını LafPOS
+ * siteden kendisi alır: listede yalnız siteye bağlı olmayan ürünler görünür ve metinler `kasa` ile "LafPOS" der. Bağlı
+ * olmayan ürün LafPOS'ta yerel olabilir (fiyatı orada elle değişir) ya da LafPOS onu siteden alıyor olabilir (LafPOS
+ * siteden gelen ürünün fiyatını değiştirtmez: ürün panelde siteye bağlanmalı ya da fiyat sitede değişmeli); metinler
+ * ikisini de söyler. LafPOS'ta ürün fiyatını yalnız menüyü yöneten (patron, müdür) değiştirir: bu iş personele düşmez
+ * (posBell). `kasa` verilmezse (ya da "ModPOS") her metin bugünkü gibidir.
  */
 
+import type { KasaName } from "../lafpos/kasa";
 import { MONTH_NAMES } from "../constants";
 import { money, num } from "../format";
 import { daysBetween, todayTR } from "../reminders";
@@ -48,17 +56,29 @@ export function staleForText(since: Date | string, now: Date = new Date()): stri
 /** Bağlı olmayan ürünün fiyatı değişince bildirimin açıklaması */
 export const POS_PRICE_REMINDER = "Kasadaki (ModPOS) fiyatı da değiştir; Fiyatlar › Kasaya işle listesine eklendi.";
 
+/**
+ * LafPOS gününde bağlı olmayan ürün: LafPOS ürünü siteden alıyorsa fiyatı LafPOS'ta değişmez (ürünü bağlamak ya da
+ * fiyatı sitede değiştirmek gerekir); LafPOS'ta yerel ürünse fiyatı orada elle değişir
+ */
+export const POS_PRICE_REMINDER_LAFPOS =
+  "Ürün siteye bağlı değil: LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine eklendi.";
+
 /** Sitede de değişen fiyat kasadakine döndüyse yalnız fiyat listesinin tarihi kalır */
 const SITE_DATE_REMINDER = "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma.";
+
+/** LafPOS gününde sitede değişen fiyat: LafPOS onu siteden alır, kasada yapılacak bir şey yok */
+const SITE_DATE_REMINDER_LAFPOS = "Fiyat sitede de değişti; LafPOS yeni fiyatı siteden alır. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma.";
 
 /**
  * Tek fiyat değişikliğinden sonra bildirimin açıklaması: fiyat sitede de değiştiyse fiyat listesinin tarihi (sitede elle)
  * ve kasa (PRICE_PUSH_REMINDER); yalnız panelde değiştiyse kasa. Kasada bekleyen bir şey kalmadıysa (fiyat kasadakine
- * döndü ya da hiç değişmedi) kasa yazılmaz.
+ * döndü ya da hiç değişmedi) kasa yazılmaz. `kasa` bugünün kasası (eylemin yanıtında; verilmezse ModPOS): LafPOS
+ * gününde siteye bağlı ürün kasa listesine girmez, LafPOS yeni fiyatı siteden alır.
  */
-export function priceReminder(r: { site: boolean; posPending: boolean }): string | null {
-  if (r.site) return r.posPending ? PRICE_PUSH_REMINDER : SITE_DATE_REMINDER;
-  return r.posPending ? POS_PRICE_REMINDER : null;
+export function priceReminder(r: { site: boolean; posPending: boolean; kasa?: KasaName }): string | null {
+  const lafpos = r.kasa === "LafPOS";
+  if (r.site) return r.posPending ? PRICE_PUSH_REMINDER : lafpos ? SITE_DATE_REMINDER_LAFPOS : SITE_DATE_REMINDER;
+  return r.posPending ? (lafpos ? POS_PRICE_REMINDER_LAFPOS : POS_PRICE_REMINDER) : null;
 }
 
 /**
@@ -68,10 +88,16 @@ export function priceReminder(r: { site: boolean; posPending: boolean }): string
  * döner ve listeden düşer: o zaman bu fiyatlar için kasada bir şey yapılmayacağı söylenir (sahibi kasayı boşuna geri
  * çevirmesin). Cümle yalnız bu değişikliğin ürünlerini anlatır: listede başka ürünler bekliyor olabilir.
  */
-export function batchPosNote(kind: "bulk" | "undo", applied: readonly { posPending: boolean }[]): string | undefined {
-  if (applied.some((a) => a.posPending)) return "Kasadaki (ModPOS) fiyatlar Kasaya işle listesinde.";
+export function batchPosNote(kind: "bulk" | "undo", applied: readonly { posPending: boolean; site?: boolean }[], kasa: KasaName = "ModPOS"): string | undefined {
+  if (applied.some((a) => a.posPending)) {
+    return kasa === "LafPOS"
+      ? "Siteye bağlı olmayanlar Kasaya işle listesinde: LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin."
+      : "Kasadaki (ModPOS) fiyatlar Kasaya işle listesinde.";
+  }
+  // LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır: kasada yapılacak bir şey yok
+  if (kasa === "LafPOS" && applied.some((a) => a.site)) return "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez.";
   if (kind !== "undo" || !applied.length) return undefined;
-  return `${applied.length === 1 ? "Bu fiyat" : "Bu fiyatlar"} kasada (ModPOS) henüz değişmemişti; kasada bir şey yapmanız gerekmez.`;
+  return `${applied.length === 1 ? "Bu fiyat" : "Bu fiyatlar"} kasada (${kasa}) henüz değişmemişti; kasada bir şey yapmanız gerekmez.`;
 }
 
 /**
@@ -149,11 +175,11 @@ export const posLabel = (it: Pick<PosItem, "name" | "size" | "posNames">) => (it
  *   Espresso Bazlı
  *   - LATTE MEDİUM: 195 → 205 ₺
  *
- * `date` Türkiye günü (YYYY-MM-DD).
+ * `date` Türkiye günü (YYYY-MM-DD); `kasa` bugünün kasası (LafPOS gününde başlık "Kasada (LafPOS)").
  */
-export function posChecklistText(items: readonly PosItem[], date: string): string {
+export function posChecklistText(items: readonly PosItem[], date: string, kasa: KasaName = "ModPOS"): string {
   const [y, m, d] = date.split("-").map(Number);
-  const lines = [`Kasada (ModPOS) değişecek fiyatlar · ${d} ${MONTH_NAMES[m - 1]} ${y}`];
+  const lines = [`Kasada (${kasa}) değişecek fiyatlar · ${d} ${MONTH_NAMES[m - 1]} ${y}`];
   for (const g of groupByCategory(items)) {
     lines.push(g.category);
     for (const it of g.items) lines.push(`- ${posLabel(it)}: ${price(it.stalePrice)} → ${price(it.price)} ₺`);
@@ -258,14 +284,20 @@ export interface PosBellItem {
 /**
  * Zil: kasada değişecek fiyatlar. Kimlik iki rolde en yeni geri kalıştan: bir fiyatın işaretlenmesi zili yeniden okunmamış
  * yapmaz, listeye yeni bir fiyat girmesi yapar. Personel Kasadaki fiyatlar'a (Kasa grubu), yönetici Fiyatlar › Kasaya
- * işle'ye (Uyarılar). Bekleyen yoksa satır yok.
+ * işle'ye (Uyarılar). Bekleyen yoksa satır yok. LafPOS gününde yalnız yöneticide: LafPOS'ta ürün fiyatını kasiyer
+ * değiştiremez (menüyü yöneten değiştirir), personele görev düşmez.
  */
-export function posBell(role: "admin" | "staff", p: PosSummaryLite, now: Date): PosBellItem | null {
+export function posBell(role: "admin" | "staff", p: PosSummaryLite, now: Date, kasa: KasaName = "ModPOS"): PosBellItem | null {
   if (!p.count) return null;
+  if (role !== "admin" && kasa === "LafPOS") return null;
   const base = { id: `kasa-fiyat-${p.newest?.getTime() ?? 0}`, kind: "info" as const, title: `Kasada değişecek ${num(p.count)} fiyat`, timeLabel: p.oldest ? agoLabel(p.oldest, now) : "", unread: true as const };
-  return role === "admin"
-    ? { ...base, body: "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin", href: "/panel/urunler/fiyatlar?sekme=kasa", group: "uyari" }
-    : { ...base, body: "ModPOS'ta değiştirip Kasadaki fiyatlar'da işaretleyin", href: "/panel/kasa/fiyatlar", group: "kasa" };
+  if (role !== "admin") return { ...base, body: "ModPOS'ta değiştirip Kasadaki fiyatlar'da işaretleyin", href: "/panel/kasa/fiyatlar", group: "kasa" };
+  // LafPOS gününde listede yalnız siteye bağlı olmayan ürünler var: yerelse LafPOS'ta elle, siteden geliyorsa bağlanır
+  const body =
+    kasa === "LafPOS"
+      ? "Siteye bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın"
+      : "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin";
+  return { ...base, body, href: "/panel/urunler/fiyatlar?sekme=kasa", group: "uyari" };
 }
 
 /**

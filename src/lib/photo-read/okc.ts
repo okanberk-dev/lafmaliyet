@@ -43,6 +43,17 @@ function wrongOkcDocument(documentType: KasaOkc["documentType"]): CashReading {
   }
 }
 
+/**
+ * LafPOS gününde (geçiş gününden itibaren; denetim E-39) ModPOS Z bölümü yok: yazılım Z'si (LafPOS'un gün sonu çıktısı)
+ * yazarkasa bölümüne çekilirse "ModPOS bölümüne okut" önerilmez, kasanın rakamları gün sonuyla kendiliğinden gelir
+ */
+export const OKC_SOFTWARE_Z_LAFPOS_TEXT = "Bu kasanın (LafPOS) gün sonu gibi görünüyor; onun rakamları panele kendiliğinden gelir. Banka POS'un (yazarkasa) Z raporunu çekin.";
+
+/** Yazarkasa okumasını LafPOS gününe uyarlar: ModPOS bölümüne okutma önerisi kalkar (yalnız o hata değişir) */
+export function okcReadingOnLafposDay(r: CashReading): CashReading {
+  return r.kind === "kasa-okc" && !r.ok && r.switchTo === "kasa-z" ? { ...r, error: OKC_SOFTWARE_Z_LAFPOS_TEXT, switchTo: null } : r;
+}
+
 const PAY_FIELD = { cash: "okcCash", card: "okcCard", meal_card: "okcMealCard", other: "okcOther", unknown: "okcOther" } as const;
 
 /** Banka gün sonu fişlerinin neti (net yoksa satış − iade) ve uyarıları (bugünkü normalizePos kuralları) */

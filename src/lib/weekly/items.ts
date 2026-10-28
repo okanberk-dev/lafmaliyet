@@ -12,6 +12,7 @@ import { listTitle, lowerFirst, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { percentText, WEEKDAY_NAMES } from "@/lib/karaoke/occupancy-text";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { addDays, daysBetween, longDateTR } from "@/lib/reminders";
 
 import { WEEKLY_BALANCE_MAX_AGE, WEEKLY_CASH_DAYS, WEEKLY_KARAOKE_EMPTY, WEEKLY_MIN_TL, WEEKLY_POS_MIN_DAYS, WEEKLY_SALES_FULL_DAYS, WEEKLY_STOCK_MIN_TL, WEEKLY_WASTE_FACTOR, type WeekInfo, type WeeklyItem } from "./core";
@@ -270,6 +271,8 @@ export interface PosPriceIn {
    * ModPOS'ta satılan adet (salesBasis ölçeğiyle; online kafe siparişi sitenin fiyatını öder, sayılmaz); dayanak yoksa null
    */
   rows: { label: string; price: number; posPrice: number; since: string; perMonth: number | null }[];
+  /** Bugünün kasası (src/lib/lafpos/kasa.ts; verilmezse ModPOS): LafPOS gününde satırlar yalnız siteye bağlı olmayanlar */
+  kasa?: KasaName;
 }
 
 /**
@@ -278,6 +281,7 @@ export interface PosPriceIn {
  */
 export function posPriceItem(i: PosPriceIn): WeeklyItem | null {
   if (!i.rows.length) return null;
+  const kasa = i.kasa ?? "ModPOS";
   const href = "/panel/urunler/fiyatlar?sekme=kasa";
   const action = "Kasadaki fiyatlara bak";
   const losses = i.rows
@@ -292,7 +296,7 @@ export function posPriceItem(i: PosPriceIn): WeeklyItem | null {
     return {
       key: "kasa-fiyat",
       source: "kasa-fiyat",
-      title: `ModPOS'ta ${n} ürün eski fiyatla: ayda ≈ ${tl(total)} kâr kaybı`,
+      title: `${kasa}'ta ${n} ürün eski fiyatla: ayda ≈ ${tl(total)} kâr kaybı`,
       detail: `En çok ${top.label}: kasada ${tl(top.posPrice)}, menüde ${tl(top.price)} · ${days ? `${days} gündür bekliyor` : "bugün değişti"}`,
       tl: total,
       href,
@@ -301,7 +305,7 @@ export function posPriceItem(i: PosPriceIn): WeeklyItem | null {
   }
   const oldest = i.rows.map((r) => r.since).sort()[0];
   if (daysBetween(oldest, i.today) < WEEKLY_POS_MIN_DAYS) return null;
-  return { key: "kasa-fiyat", source: "kasa-fiyat", title: `ModPOS'ta ${n} fiyat değişecek`, detail: "Kasada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.", tl: null, href, action };
+  return { key: "kasa-fiyat", source: "kasa-fiyat", title: `${kasa}'ta ${n} fiyat değişecek`, detail: "Kasada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.", tl: null, href, action };
 }
 
 // ---------------------------------------------------------------- Zayi ve ikram (kayıtlar)

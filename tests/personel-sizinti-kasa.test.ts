@@ -166,7 +166,7 @@ test("yazarkasa Z'si: personelin kartında kümülatif, toplam dışı tahsilat 
   for (const k of OKC_ADMIN_KEYS) assert.doesNotMatch(card, keyRe(k), `okc-card.tsx: ${k}`);
   for (const k of OKC_ADMIN_LINES) assert.ok(!card.includes(k), `okc-card.tsx: ${k}`);
   // Karşılaştırma satırları kime göre: kart personelde "staff" ile çağırır (yönetici formu düzenlerken "admin")
-  assert.match(card, /okcReconcile\(\{[^\n]*\}, audience\)/);
+  assert.match(card, /okcReconcile\(\{[^\n]*\}, audience, kasa\)/);
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(form, /audience=\{photoUi\.admin \? "admin" : "staff"\}/);
   // Kayıtlı raporun kümülatif satırı yalnız yönetici dalında

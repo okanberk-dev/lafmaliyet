@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCheck, Copy, RotateCcw, Store } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -12,6 +13,7 @@ import { EmptyState } from "@/components/ui/misc";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
 import { money, num } from "@/lib/format";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { PRICE_SOURCE_LABEL } from "@/lib/prices/history";
 import { agoLabel, groupByCategory, posChangedText, posChecklistText, staleForText, type MyPosMark, type StaffPosItem } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
@@ -30,10 +32,15 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour:
  *   dakikada işaretledikleri listenin üstünde ("Son işaretledikleriniz", Geri al).
  * İşaretlenen satır hemen gizlenir; bildirimdeki "Geri al" işareti geri alır (istemciden fiyat gitmez, yalnız işaretin
  * kimliği). Liste düz metin olarak kopyalanıp WhatsApp'a yapıştırılabilir (posChecklistText).
+ * `kasa` bugünün kasası (src/lib/lafpos/kasa.ts; verilmezse ModPOS): LafPOS gününde listede yalnız siteye bağlı olmayan
+ * ürünler var, LafPOS öbürlerinin fiyatını siteden alır; metinler bunu söyler (denetim E-39).
  */
-export function PosChecklist(props: { staff?: false; items: PosChecklistItem[] } | { staff: true; items: StaffPosItem[]; mine: MyPosMark[] }) {
+export function PosChecklist(
+  props: ({ staff?: false; items: PosChecklistItem[] } | { staff: true; items: StaffPosItem[]; mine: MyPosMark[] }) & { kasa?: KasaName },
+) {
   const { items } = props;
   const staff = props.staff === true;
+  const lafpos = props.kasa === "LafPOS";
   // İşaretlenenler hemen gizlenir (sunucu yanıtını beklemeden); kasanın geri kalış anıyla tutulur: aynı ürün sonra
   // yeniden listeye girerse (yeni bir fiyat) yine görünür
   const [done, setDone] = useState<ReadonlyMap<number, string>>(() => new Map());
@@ -108,7 +115,7 @@ export function PosChecklist(props: { staff?: false; items: PosChecklistItem[] }
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(posChecklistText(visible, todayTR()));
+      await navigator.clipboard.writeText(posChecklistText(visible, todayTR(), props.kasa));
       toast.success("Liste kopyalandı; WhatsApp'a yapıştırabilirsiniz");
     } catch {
       toast.error("Kopyalanamadı: tarayıcı panoya yazmaya izin vermedi");
@@ -121,11 +128,25 @@ export function PosChecklist(props: { staff?: false; items: PosChecklistItem[] }
     <Card>
       <CardHeader
         icon={<Store />}
-        title={staff ? "ModPOS'ta değişecek fiyatlar" : "Kasaya işle"}
+        title={staff ? (lafpos ? "LafPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}
         description={
           staff
-            ? "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
-            : "Panelde ya da sitede değişen fiyatlar ModPOS'a kendiliğinden geçmez. Kasada değiştirdikçe işaretleyin; işaretlenen listeden düşer. Personel de Bugün'den işaretler; yanlış işareti aşağıdan geri alın."
+            ? lafpos
+              ? undefined
+              : "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
+            : lafpos
+              ? (
+                  <>
+                    LafPOS siteye bağlı ürünlerin fiyatını siteden kendisi alır; burada yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişen
+                    ürünler çıkar. LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez){" "}
+                    <Link href="/panel/urunler/site" className="font-medium text-ink underline underline-offset-2">
+                      Ürünler › Site menüsü
+                    </Link>
+                    &apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin. LafPOS&apos;ta fiyatı
+                    yönetici değiştirir, personele bu iş düşmez.
+                  </>
+                )
+              : "Panelde ya da sitede değişen fiyatlar ModPOS'a kendiliğinden geçmez. Kasada değiştirdikçe işaretleyin; işaretlenen listeden düşer. Personel de Bugün'den işaretler; yanlış işareti aşağıdan geri alın."
         }
         meta={
           visible.length ? (
@@ -198,11 +219,15 @@ export function PosChecklist(props: { staff?: false; items: PosChecklistItem[] }
       ) : (
         <EmptyState
           icon={<CheckCheck />}
-          title="Kasa güncel"
+          title={lafpos && staff ? "Burada işaretlenecek bir şey yok" : "Kasa güncel"}
           description={
-            staff
-              ? "Panelde değişen bütün fiyatlar kasada da değişti."
-              : "Panelde ya da sitede değişen bütün fiyatlar kasada da değiştirildi. Yeni bir fiyat değişince burada listelenir."
+            lafpos
+              ? staff
+                ? "Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin."
+                : "LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı panelde değişince burada listelenir."
+              : staff
+                ? "Panelde değişen bütün fiyatlar kasada da değişti."
+                : "Panelde ya da sitede değişen bütün fiyatlar kasada da değiştirildi. Yeni bir fiyat değişince burada listelenir."
           }
         />
       )}

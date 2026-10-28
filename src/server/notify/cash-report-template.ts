@@ -133,8 +133,10 @@ export function renderCashReport(
   // (§3.7); kart farkı computeCash'in kaynağıyla (D5; burada her zaman banka)
   const okc = okcHasFigures(f);
   const bankDiff = okc ? null : c.cardDiff;
+  // Günün kasası (geçiş gününden itibaren LafPOS; denetim E-39): karşılaştırma ve satır adları onun adıyla
+  const kasa = meta.kasa ?? "ModPOS";
   const cardWarning =
-    bankDiff !== null && Math.abs(bankDiff) >= CASH_TOLERANCE ? `Banka POS ModPOS'taki karttan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}.` : null;
+    bankDiff !== null && Math.abs(bankDiff) >= CASH_TOLERANCE ? `Banka POS ${kasa}'taki karttan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}.` : null;
 
   const laf = meta.lafposIkram ?? null;
   const zRows = [
@@ -159,7 +161,7 @@ export function renderCashReport(
         laf.notCounted ? `Panele bu güne girilen ${laf.notCounted} ürün ikramı sayılmadı: ikram LafPOS'tan geliyor.` : null,
       ].filter((x): x is string => x !== null)
     : f.offRevenue !== null && meta.ikramValue != null && Math.abs(f.offRevenue - meta.ikramValue) >= CASH_TOLERANCE
-      ? `ModPOS'un ödenmez tutarı panelde kayıtlı ikramdan ${money(Math.abs(f.offRevenue - meta.ikramValue))} ${f.offRevenue > meta.ikramValue ? "fazla" : "az"}: kaydı eksik ikram olabilir.`
+      ? `${kasa}'un ödenmez tutarı panelde kayıtlı ikramdan ${money(Math.abs(f.offRevenue - meta.ikramValue))} ${f.offRevenue > meta.ikramValue ? "fazla" : "az"}: kaydı eksik ikram olabilir.`
       : null;
   const wasteRows = [
     ...(meta.waste?.ikram ? [textRow("İkram", meta.waste.ikram)] : []),
@@ -183,7 +185,7 @@ export function renderCashReport(
     bankDiff === null
       ? ""
       : [
-          row("ModPOS kart", money(f.card)),
+          row(`${kasa} kart`, money(f.card)),
           row("Banka POS", money(f.bankPos)),
           // Fark bunu düşerek (G11): 10.150 − 150 = 10.000 okunur
           ...(meta.cardExtra && meta.cardExtra > 0 ? [row(CARD_EXTRA_LABEL, money(meta.cardExtra))] : []),
@@ -217,7 +219,7 @@ export function renderCashReport(
         ...(f.bankPos !== null ? [row("Banka gün sonu", money(f.bankPos))] : []),
       ].join("\n")
     : "";
-  const okcLines = okc ? `${toneLines(okcReconcile(f, "admin"))}${warnBox([okcPhotoWarning])}` : "";
+  const okcLines = okc ? `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` : "";
   const photoList = photoNames(meta.photos).join(", ");
   const link = `${APP_URL}/panel/kasa?gun=${f.date}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)

@@ -18,6 +18,7 @@ import { SIZE_LABELS } from "@/lib/constants";
 import { money, num, pct } from "@/lib/format";
 import { numPossessive } from "@/lib/prices/bulk";
 import { groupHistory, historyDayLabel, PRICE_SOURCE_LABEL, timeTR, undoPlan, type HistoryEntry, type HistoryRow } from "@/lib/prices/history";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { batchPosNote } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -48,7 +49,16 @@ type Shown = { entry: HistoryEntry; rows: HistoryRow[] };
  * Ürünler › Fiyatlar › Geçmiş: menünün satış fiyatı geçmişi, en yeni önce ve güne göre (Türkiye saati). Toplu değişiklik
  * tek satırda katlanır, açılınca ürünleri; fiyatı hâlâ toplu değişikliğin yazdığı ürün varsa "Geri al".
  */
-export function PriceHistory({ rows, products }: { rows: HistoryRow[]; products: { id: number; price: number; linked: boolean }[] }) {
+export function PriceHistory({
+  rows,
+  products,
+  kasa = "ModPOS",
+}: {
+  rows: HistoryRow[];
+  products: { id: number; price: number; linked: boolean }[];
+  /** Bugünün kasası (geri almanın kasa cümlesi; src/lib/lafpos/kasa.ts) */
+  kasa?: KasaName;
+}) {
   const [q, setQ] = useQueryText("ara");
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [confirm, setConfirm] = useState<Extract<HistoryEntry, { kind: "batch" }> | null>(null);
@@ -82,7 +92,7 @@ export function PriceHistory({ rows, products }: { rows: HistoryRow[]; products:
         toast.success(`${num(applied.length)} fiyat eski haline döndü`, {
           description: failed.length
             ? `${num(failed.length)} ürün geri alınamadı: ${failed[0].label} — ${failed[0].reason}`
-            : batchPosNote("undo", applied),
+            : batchPosNote("undo", applied, kasa),
           duration: failed.length ? 12_000 : undefined,
         });
       } else toast.error("Hiçbir fiyat geri alınmadı", { description: failed[0] ? `${failed[0].label} — ${failed[0].reason}` : undefined });

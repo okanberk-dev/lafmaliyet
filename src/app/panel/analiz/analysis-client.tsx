@@ -41,6 +41,7 @@ import type { BreakdownRow } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { applyScenario, type MenuClass, type ScenarioBase } from "@/lib/calc/insights";
 import { num, pct, tl } from "@/lib/format";
+import type { MonthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
 
 import { productHref } from "../urunler/logic";
@@ -834,12 +835,15 @@ export function ScenarioSimulator({
   month,
   monthLabel,
   fixedItems,
+  kasa = "ModPOS",
 }: {
   base: ScenarioBase;
   acikGun: number;
   /** Seçili ay (YYYY-MM): döküm satırlarının bağlantıları bu ayı taşır */
   month: string;
   monthLabel: string;
+  /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa"; denetim E-39) */
+  kasa?: MonthKasa["short"];
   /** Sabit giderlerin kalemleri (standart ay tutarı, sunucuda kurulur): net kâr dökümünde */
   fixedItems: BreakdownRow[];
 }) {
@@ -887,7 +891,7 @@ export function ScenarioSimulator({
             </span>
           }
           // Senaryo ModPOS satış listesinin karmasıyladır; online satışın kârı Genel bakış'ta (docs/SITE-SATIS.md)
-          description={`${monthLabel} ModPOS satış karmasından yola çıkar (laffogato.net online satışı dahil değil).`}
+          description={`${monthLabel} ${kasa} satış karmasından yola çıkar (laffogato.net online satışı dahil değil).`}
           actions={
             <Button
               variant="secondary"

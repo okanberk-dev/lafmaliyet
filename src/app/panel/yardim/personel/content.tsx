@@ -114,7 +114,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Akşam kasa raporu",
     body: (
       <>
-        Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin.{" "}
+        Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
+        LafPOS kullanılmaya başlandıysa ModPOS yerine LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: gün sonu panele gönderilir, form ondan dolar.{" "}
         {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
@@ -171,7 +172,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             dolar; banka POS Z&apos;si için aşağıdaki soruya bakın. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez,{" "}
             <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
             yazın. Satış dışında kasaya para konduysa (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile yazın. Kasa farkı yazarken
-            hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır.
+            hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır. Kasada LafPOS
+            kullanılmaya başlandıysa önce LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: form LafPOS&apos;un gün sonundan dolar (bölümün adı &quot;LafPOS gün
+            sonu (Z)&quot;), ModPOS Z fotoğrafı istenmez ve banka POS Z&apos;sinin kartı LafPOS&apos;la karşılaştırılır.
           </>
         ),
         icon: Banknote,
@@ -199,7 +202,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             toplam, nakit ve kredi kartı da gerekir (yoksa 0 yazın). Rakamlar birbirini tutmazsa tutmayan alan turuncu olur ve altında nedeni yazar: fişe bakıp
             düzeltin. Kartın altında yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa kartla alınan bir ödeme ModPOS&apos;ta başka ödeme
             türüyle girilmiş olabilir. Yanlış bölüme çekilen fotoğraf hiçbir alanı doldurmaz: altındaki <B>ModPOS bölümüne okut</B> ya da{" "}
-            <B>Banka POS Z bölümüne okut</B> ile doğru bölüme okutun.
+            <B>Banka POS Z bölümüne okut</B> ile doğru bölüme okutun. Kasada LafPOS kullanılmaya başlandıysa yazarkasanın kartı LafPOS&apos;taki kartla
+            karşılaştırılır ve ModPOS bölümü yoktur: bu fiş yalnız bu karta çekilir.
           </>
         ),
         icon: ScrollText,
@@ -292,7 +296,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Menüde satış fiyatı değişince ModPOS&apos;ta da elle değiştirilir. Bekleyenler <StaffPath href="/panel/kasa/fiyatlar" /> ekranında, kasadaki adlarıyla
             durur; Bugün&apos;de satır olarak da çıkar. ModPOS&apos;ta değiştirdikçe ürüne tek tek dokunun: satır listeden düşer, bildirimde <B>Geri al</B> vardır.
             Son işaretledikleriniz listenin üstünde {minutes(POS_UNDO_WINDOW_MS)} kalır, oradan da geri alırsınız; sonrasını yönetici geri alır. Her işaret adınızla
-            kaydedilir.
+            kaydedilir. Kasada LafPOS kullanılmaya başlandıysa bu iş size düşmez: menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır, öbürlerini
+            LafPOS&apos;ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin.
           </>
         ),
         icon: Tags,
@@ -322,7 +327,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Bar ekranındaki <B>Tükenenler</B> kartında <B>Tükendi işaretle</B>: ürünü arayıp seçin. Ürün laffogato.net&apos;te, uygulamada ve QR menüde hemen
             kapanır; M ve L birlikte kapanır. Ürün gelince aynı kartta <B>Satışa aç</B>. Onay gerekmez, her dokunuş adınızla kaydedilir. Aynı anda en çok{" "}
-            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar.
+            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar. Kasada LafPOS kullanılıyorsa ürün en geç 15 dakika içinde
+            (gün açıkken) kasada da tükendi görünür; acilse LafPOS&apos;ta da Tükendi işaretleyin.
           </>
         ),
         icon: PackageX,
