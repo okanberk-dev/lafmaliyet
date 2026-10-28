@@ -81,7 +81,9 @@ liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aral�
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
 ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye kasadan faturalı alımlar
 (faturası Faturalar'da yok, Aylık harcamalar'a yazılmadı; "2 kasadan faturalı alım bekliyor", Faturalar › Kontrol
-bekleyen'deki karta götürür; denetim E-42, [KASA-RAPORU.md](KASA-RAPORU.md) "Faturalı alımlar") ve komisyon ve hakediş uyarıları da
+bekleyen'deki karta götürür; denetim E-42, [KASA-RAPORU.md](KASA-RAPORU.md) "Faturalı alımlar"), Aylık harcamalar'a
+yazılmışken faturası sonradan gelen kasa alımları (kırmızı, "Kasa alımı iki kez sayılıyor": gider kaydını silin; aynı
+karta götürür) ve komisyon ve hakediş uyarıları da
 durur: geciken hakediş, yemek kartında kesin %6 aşımı, komisyon dışı ücret olabilecek kalem (en çok 5; Komisyon &
 hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8). Gecikenler en eski son gün önce gelir; beşe
 sığmazsa son satır özettir ("6 hakediş daha gecikti: Getir (Ağustos), …") ve ay seçmeden Komisyon & hakediş'e götürür.
@@ -127,7 +129,8 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - **kontrol bekleyen** fatura sayısı, bağlantısıyla; iki neden ayrı söylenir: kategorisi tahminle yazılanlar ve mal
   alışı sayılmayanlar (kalemi hammaddeye bağlı, kategorisi mal alışı değil; `docs/PARASUT.md` 6b);
 - **kasadan faturalı alımlar** (kontrol kutusunun altında): faturası Faturalar'da yok, Aylık harcamalar'a yazılmadı;
-  sayı ve ilk mağaza, Faturalar'daki karta bağlantıyla. E-postayı tek başına göndermez (denetim E-42);
+  sayı ve ilk mağaza, Faturalar'daki karta bağlantıyla; Aylık harcamalar'a yazılmışken faturası gelenler "iki kez
+  sayılıyor" diye ayrı cümleyle. E-postayı tek başına göndermez (denetim E-42);
 - **onay bekleyen hammadde fiyatları** (Paraşüt bölümünde, kontrol kutusunun altında): faturada şimdikinden %40'tan
   fazla farklı gelen ya da fiyatı olmayan hammaddenin çarpanı kesin olmayan ilk fiyatı ("ilk fiyat"), onay bekleyen
   fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.

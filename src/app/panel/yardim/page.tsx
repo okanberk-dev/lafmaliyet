@@ -134,7 +134,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
         güncelle&quot;): alınan miktar ve paket fiyatı sonraki faturalardan güncellenir, ürün maliyetleri kendiliğinden değişir. Yalnızca Paraşüt&apos;te olmayan
         faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin. Personelin Kasa&apos;ya girdiği e-Arşiv ve faturalı alımlar
         faturası gelene kadar Kontrol bekleyen&apos;in üstündeki Kasadan faturalı alımlar kartında durur: Faturalar&apos;a ekle (kasadan dolu, fiş belge olur) ya
-        da Aylık harcamalar&apos;a yaz.
+        da Aylık harcamalar&apos;a yaz. Aylık harcamalar&apos;a yazdığınızın faturası sonra gelirse aynı kartta &quot;İki kez sayılıyor&quot; der: Gider
+        kaydını sil.
       </>
     ),
     href: "/panel/faturalar?durum=kontrol",

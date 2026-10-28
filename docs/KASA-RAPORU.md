@@ -219,19 +219,32 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   ödeme şekli nakit, harcama tarihi fişin tarihi (kasa gününden en çok 3 gün önceyse). Fatura ya da e-Arşiv fatura
   yazılmaz (Paraşüt'ten de gelir, iki kez sayılmasın); teslim hiçbir zaman. Yönetici her satırda
   "Aylık harcamalar'a da yaz"ı seçer. Personel yalnız alım ve genel gider kategorilerini seçebilir.
-- **Faturalı alımlar** (denetim E-42): e-Arşiv ve kâğıt fatura Paraşüt'e kendiliğinden düşmez ([PARASUT.md](PARASUT.md)),
-  bu yüzden fatura ya da e-Arşiv belgeli alışveriş satırı faturası gelene kadar yöneticinin **bekleyen listesinde**
-  durur (`src/server/data/cash-out-invoices.ts`): Aylık harcamalar'da kaydı yok, bir tedarikçi ödemesine bağlı değil,
+- **Faturalı alımlar** (denetim E-42): e-Arşiv ve kâğıt fatura Paraşüt'e ancak muhasebeci girerse düşer
+  ([PARASUT.md](PARASUT.md)), bu yüzden fatura ya da e-Arşiv belgeli alışveriş satırı (personelin ya da "Aylık
+  harcamalar'a da yaz"ı kapalı yöneticinin) faturası gelene kadar yöneticinin **bekleyen listesinde** durur
+  (`src/server/data/cash-out-invoices.ts`): Aylık harcamalar'da kaydı yok, bir tedarikçi ödemesine bağlı değil,
   listeden çıkarılmamış ve aynı mağazadan (aynı ad, adın baştan kelimeleri ya da aynı tedarikçi kartı: diğer adlar,
-  vergi no) fişin gününden ±7 gün, ±1 ₺ içinde faturası olmayan satır. Bir fatura tek satırı kapatır. Zil (Faturalar
-  başlığı), Bugün'ün Faturalar satırı, Faturalar'ın uyarısı ve (giderse) sabah e-postası sayar; liste **Faturalar › Kontrol bekleyen**'in
-  üstündeki **Kasadan faturalı alımlar** kartında. Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih
-  fişin günü, tedarikçi yer, Ödenecek kasadan çıkan, net fişteki KDV'yle, Ödendi · nakit; kaydedince fişin fotoğrafı
-  faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir), **Aylık harcamalar'a yaz** (kategori seçilir;
-  aynı yerin son kasa harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar**
-  (faturası başka adla var ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
-  Personel listeyi görmez; pencerede "Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür"
-  yazar.
+  vergi no) fişin gününden ±7 gün, ±1 ₺ içinde faturası olmayan satır. Bir fatura tek satırı kapatır; aynı alımdan iki
+  tane varsa fatura günü yakın olanındır, öteki bekler ve eylemleri çalışır. Son bir yılın satırlarına bakılır (daha
+  eskisi kapanmış yıldadır); kapatılan satırlar sayılmaz. Zil (Faturalar başlığı), Bugün'ün Faturalar satırı,
+  Genel bakış › Bu ayın işleri (fişin günü o aydaysa Faturalar yapılacak kalır), Faturalar'ın uyarısı ve (giderse)
+  sabah e-postası sayar; liste **Faturalar › Kontrol bekleyen**'in üstündeki **Kasadan faturalı alımlar** kartında.
+  Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih fişin günü, tedarikçi yer, Ödenecek kasadan çıkan,
+  net fişteki KDV'yle, Ödendi · nakit; parası kasadan çıktığı için cari takipteki kartın hesaptaki parasını kullanmaz;
+  kaydedince fişin fotoğrafı faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir, silme Geri al'la
+  geri alınırsa satır yine o faturaya bağlanır), **Aylık harcamalar'a yaz** (kategori seçilir; aynı yerin son kasa
+  harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar** (faturası başka adla var
+  ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
+- **İki kez sayılan alım** (inceleme D2): Aylık harcamalar'a yazılmış faturalı satırın faturası sonradan Faturalar'a
+  gelirse (muhasebeci e-Arşiv'i Paraşüt'e girdi) alım hem faturada hem gider kaydında sayılıyordur. Satır eşleştirmede
+  kendi faturasını alır (başka bir bekleyeni kapatmaz) ve aynı kartta, zilde (kırmızı), Bugün'de, Genel bakış'ta ve sabah
+  e-postasında **iki kez sayılıyor** diye çıkar: **Gider kaydını sil** (alım faturayla sayılır; Geri al'lı) ya da **Ayrı
+  alım** (fatura başka bir alımın; gider kaydı kalır, satır listeden çıkar). Kaydı bir cari borcun olan satır burada
+  çıkmaz: faturası Tedarikçiler'de borca bağlanır. "Faturalar'a ekle" ile faturasına bağlanmış satıra sonradan gider
+  kaydı açıldıysa o da iki kez sayılıyor diye çıkar.
+- Personel listeyi görmez; pencerede "Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür"
+  yazar. Faturalı diye girdiği satırı **Fiş**'e (ya da belgesize) düzeltirse satır hâlâ faturasını bekliyorsa Aylık
+  harcamalar'a yazılır (kategori sorulur); faturası geldiyse ya da yönetici listeden çıkardıysa yazılmaz (inceleme D5).
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
 - **LafPOS gününde de kaynak bu satırlardır** (denetim E-35; sahip sorusu 5 cevaplanana kadar varsayılan): Aylık
