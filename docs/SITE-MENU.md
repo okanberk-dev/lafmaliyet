@@ -106,7 +106,9 @@ yazımı toplu değişikliğin `writeSalePrice`'ından geçer) ve `saveRecipe` (
    bu arada 190 ₺ olmuştu (kart açıldığında 180 ₺); o korundu." der). Dokunulan fiyat bu arada başka yerde de başka bir
    fiyata değiştiyse hiçbir şey yazılmaz, siteye gidilmez: kart yenilenir, fiyat alanının altında "190 ₺ kalsın" /
    "200 ₺ yazılsın" sorulur; hücre güncel fiyatı söyler ve yeni fiyatı alır. Panelde yazım da koşulludur: okumadan sonra
-   fiyat değiştiyse ya da ürün bu arada siteye bağlandıysa yazılmaz.
+   fiyat değiştiyse ya da ürün bu arada siteye bağlandıysa yazılmaz (kart, fiyat ya da anahtar yalnız panele
+   yazılacakken ürün bağlandıysa "Ürün bu arada laffogato.net menüsüne bağlandı …; değişiklikler kaydedilmedi" der;
+   yenilenen karttan yeniden kayıt siteye de gider).
 1. Değişiklik siteyi ilgilendiriyor mu: fiyatın kuruşu ya da `active && showOnMenu` değişiyor mu. Değişmiyorsa
    (yalnız reçete, ad, not) her zamanki gibi yazılır.
 2. Panelin kendi denetimleri önce (aynı ad + boy, malzemeler): site kabul ettikten sonra kayıt düşmesin.

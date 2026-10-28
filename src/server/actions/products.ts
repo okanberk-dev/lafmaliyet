@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -8,7 +8,7 @@ import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
 import type { PriceAck } from "@/lib/calc/price-impact";
-import { priceMovedText, priceRefusedText, seenPriceDecision } from "@/lib/prices/seen";
+import { LINK_CHANGED_TEXT, priceMovedText, priceRefusedText, seenPriceDecision } from "@/lib/prices/seen";
 import { isStaleFailure } from "@/lib/site-menu/push";
 import { panelIsActive } from "@/lib/site-menu/slot";
 import { keepSeen } from "@/lib/site-menu/sold-out";
@@ -259,6 +259,8 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
         ...(touched.active ? { active: desired.active } : {}),
         ...(touched.showOnMenu ? { showOnMenu: desired.showOnMenu } : {}),
       };
+      /** Satış alanlarından biri siteye gitmeden yalnız panele yazılıyor */
+      const localSale = !pushed && Object.keys(saleSet).length > 0;
       // Ürün yeniden aktif olur ya da reçetesine pasif malzeme yazılırsa o malzeme sayım listesine bu aydan girer
       const ingredientIds = data.items.map((it) => it.ingredientId);
       const written = await withPassiveRelist(tx, [data.productId], ingredientIds, async () => {
@@ -273,12 +275,24 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
             ...saleSet,
             updatedAt: now,
           })
-          // Yerel fiyat yazımı koşullu: okumadan sonra fiyat değiştiyse yazılmaz
-          .where(and(eq(s.products.id, data.productId), !pushed && touched.price ? sql`abs(${s.products.price} - ${before.price}) < 0.005` : undefined))
+          // Yerel yazım koşullu: okumadan sonra fiyat değiştiyse yazılmaz. Satış alanı yalnız panele yazılacaksa ürün bu
+          // arada siteye bağlanmamış (ya da bağlantısı değişmemiş) olmalı; yoksa site ile panel ayrışır (writeSalePrice)
+          .where(
+            and(
+              eq(s.products.id, data.productId),
+              !pushed && touched.price ? sql`abs(${s.products.price} - ${before.price}) < 0.005` : undefined,
+              localSale ? (before.siteMenuId ? eq(s.products.siteMenuId, before.siteMenuId) : isNull(s.products.siteMenuId)) : undefined,
+            ),
+          )
           .returning({ price: s.products.price, active: s.products.active, showOnMenu: s.products.showOnMenu });
         if (!row) {
-          const [cur] = await tx.select({ price: s.products.price }).from(s.products).where(eq(s.products.id, data.productId));
+          const [cur] = await tx.select({ price: s.products.price, siteMenuId: s.products.siteMenuId }).from(s.products).where(eq(s.products.id, data.productId));
           if (!cur) throw new UserError("Ürün bulunamadı; sayfayı yenileyin");
+          if (localSale && cur.siteMenuId !== before.siteMenuId) {
+            // Kart sayfası yeniden çizilir; yeniden kayıt bağlı ürün olarak siteye gider
+            refresh();
+            throw new UserError(LINK_CHANGED_TEXT);
+          }
           // Okumadan bu yana başka bir yazım fiyatı değiştirdi: çakışma (kart güncel fiyatı ve iki seçeneği gösterir)
           refresh();
           throw new PriceChangedError(priceMovedText(cur.price, data.seenPrice ?? before.price), cur.price);

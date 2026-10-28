@@ -49,7 +49,9 @@ Tükendi / Satışa aç / Kapalı tut'u (`sold-out-core.ts`).
    site `400 field:"body"` (bugünkü sitenin katı şeması bilinmeyen alanı böyle bildirir) ya da `field:"expect"` verirse
    panel bir kez `expect`'siz dener ve bayrağı sonraki çekmeye kadar kapatır. Bayrak `menu_sync.writesExpect`'te, her
    çekmede yenilenir.
-3. **Belirsiz sonuç.** Zaman aşımında site yazmış olabilir: panel yazmaz, bunu söyler ve yanıttan sonra siteyi okur.
+3. **Belirsiz sonuç.** Zaman aşımında site yazmış olabilir: panel yazmaz, bunu söyler ve yanıttan sonra siteyi okur
+   (istek dışında, betikte ya da testte, yazım bir işlemin içindeyse, ör. Tükendi, ikinci bağlantı açılmaz; sonraki
+   çekme düzeltir).
    Sitenin JSON `not_found`'u (kalem yok) ile gövdesi JSON olmayan 404 (uç yok, site güncel değil) ayrı söylenir.
 4. **Eski liste yeni yazımı geri almaz.** Çekme, uygulanan son listenin ya da panel yazımının site saatinden eski bir
    listeyi uygulamaz; panelin son bir saatte yazdığı kalemlerin damgası saklanır (`pushed`, [SITE-MENU.md](SITE-MENU.md)
