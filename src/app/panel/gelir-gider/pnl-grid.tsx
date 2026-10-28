@@ -580,14 +580,15 @@ const NO_EXPECTED: ExpectedDebts = {};
 
 /**
  * Masaüstü tablonun altında: görünen aylarda faturası beklenen alımlar (bu ayların giderinde yok; fatura gelince
- * fatura gider olur). Yoksa çizilmez.
+ * fatura gider olur). Tutar cari borcun kendisi, KDV dahil: tablo KDV hariç, fatura gelince satır KDV'siz tutarı kadar
+ * büyür (denetim E-63). Yoksa çizilmez.
  */
 function ExpectedDebtsNote({ months, expected, className }: { months: readonly string[]; expected: ExpectedDebts; className?: string }) {
   const shown = months.filter((m) => expected[m]?.total);
   if (!shown.length) return null;
   return (
     <p className={cn("px-5 pt-1 pb-3 text-xs leading-5 text-ink-mute", className)}>
-      Faturası beklenen alımlar (bu ayların giderinde yok):{" "}
+      Faturası beklenen alımlar (KDV dahil; bu ayların giderinde yok):{" "}
       {shown.map((m, i) => {
         const e = expected[m];
         return (

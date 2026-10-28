@@ -329,3 +329,10 @@ export function ignoredBills(ignore: unknown, deleted: unknown): IgnoredBill[] {
     .sort((a, b) => (b.bill.deletedAt ?? "").localeCompare(a.bill.deletedAt ?? "") || b.idx - a.idx)
     .map((x) => x.bill);
 }
+
+/**
+ * "Ödenmemiş" kartının ipucunun sonu: kart yalnız faturaların kalanıdır; Ödemeler ve Tedarikçiler aynı rakamdan başlar
+ * ama tedarikçinin hesabındaki parayı (avans) düşer, faturasız borçları ekler (denetim E-61). Üç rakam aynı sanılmasın
+ */
+export const UNPAID_VS_PAYMENTS =
+  "Ödemeler aynı kalan tutardan başlar; tedarikçinin hesabında bekleyen ödeme (avans) varsa onu düşer ve faturasız borçları ekler. Tedarikçiler'deki kalan borç da bu ikisini sayar.";

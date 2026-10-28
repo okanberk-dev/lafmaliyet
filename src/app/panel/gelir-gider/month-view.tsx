@@ -375,7 +375,7 @@ export function MonthView({
             ) : null}
             {sec.key === "mal" && expectedDebts?.[month]?.total ? (
               <p className="mx-5 mt-2 text-xs leading-5 text-ink-mute">
-                Faturası beklenen alımlar: {tl(expectedDebts[month].total, 2)} (bu ayın giderinde yok)
+                Faturası beklenen alımlar (KDV dahil): {tl(expectedDebts[month].total, 2)} (bu ayın giderinde yok)
                 {expectedDebts[month].href ? (
                   <>
                     {" · "}

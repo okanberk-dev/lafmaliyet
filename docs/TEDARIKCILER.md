@@ -181,7 +181,7 @@ biri:
 
 | Seçenek | Gider |
 |---|---|
-| **Faturası gelecek** | Şimdi yok; fatura gelince fatura gider olur. Son 90 günde Paraşüt faturası olan tedarikçide varsayılan. Gelir-gider'de "Faturası beklenen alımlar" bilgi satırı çıkar (toplama girmez). |
+| **Faturası gelecek** | Şimdi yok; fatura gelince fatura gider olur. Son 90 günde Paraşüt faturası olan tedarikçide varsayılan. Gelir-gider'de "Faturası beklenen alımlar (KDV dahil)" bilgi satırı çıkar (toplama girmez; fatura gelince satır KDV hariç tutarı kadar büyür). |
 | **Faturası yok · gider yaz** | Aylık harcamalar'a tek bir kayıt (alım günü, KDV dahil tutarla, KDV ayrılmadan; varsayılan kategori "Nakit malzeme alımı"). Kayıt borcundur: Aylık harcamalar'da tutarı, günü, kategorisi kilitli, silinemez ("Cari · Sütaş"). |
 | **Gideri zaten girildi** | Aylık harcamalar'daki var olan kayıt seçilir (±31 gün, Kasa'dan yazılmamış); tutarı ve günü borca eşitlenir, borcun olur. Eski günü ve tutarı saklanır (`adopt_prev`): borç silinince (eklemenin "Geri al"ı dahil) ya da kip veya kayıt değişince kayıt eski hâline döner (geçmiş aysa onayla). |
 | **Eski borç (devir)** | Hiçbir zaman gider değil. O tarihten önce ödenmemiş fatura varsa uyarır. |

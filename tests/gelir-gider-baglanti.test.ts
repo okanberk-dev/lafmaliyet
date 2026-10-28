@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { UNPAID_VS_PAYMENTS } from "../src/app/panel/faturalar/rules";
 import { rowLink } from "../src/app/panel/gelir-gider/row-links";
 import { countOpening, countOpeningNote } from "../src/app/panel/sayim/logic";
 import { createModel } from "../src/lib/calc/engine";
@@ -124,4 +125,20 @@ test("Sayım sayfası açılışı pnlMonth'tan okur ve yalnız yöneticiye hesa
   assert.match(page, /countOpening\(model\.pnlMonth\(month\)\.cells\.get\("stock:opening"\)/);
   assert.match(page, /const opening = isAdmin \?/);
   assert.doesNotMatch(page, /const opening = model\.closingStock\(prevMonth\)/);
+});
+
+// ---------------------------------------------------------------- Metinler (E-61, E-63)
+
+test("E-61: Faturalar'ın 'Ödenmemiş' ipucu Ödemeler'le aynı rakam demez; avans ve faturasız borç farkını söyler", () => {
+  const page = read("src/app/panel/faturalar/page.tsx");
+  assert.doesNotMatch(page, /Hatırlatıcılar da aynı tutarı kullanır/);
+  assert.match(page, /\$\{UNPAID_VS_PAYMENTS\}/);
+  assert.match(UNPAID_VS_PAYMENTS, /Ödemeler aynı kalan tutardan başlar/);
+  assert.match(UNPAID_VS_PAYMENTS, /avans/);
+  assert.match(UNPAID_VS_PAYMENTS, /faturasız borçları ekler/);
+});
+
+test("E-63: 'Faturası beklenen alımlar' notu KDV dahil olduğunu söyler (tablo KDV hariç)", () => {
+  assert.match(read("src/app/panel/gelir-gider/pnl-grid.tsx"), /Faturası beklenen alımlar \(KDV dahil; bu ayların giderinde yok\)/);
+  assert.match(read("src/app/panel/gelir-gider/month-view.tsx"), /Faturası beklenen alımlar \(KDV dahil\): /);
 });
