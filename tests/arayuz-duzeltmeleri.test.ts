@@ -31,7 +31,7 @@ test("eylem çağıran istemci dosyaları geçişi useActionTransition ile açar
   const helper = read("src/components/ui/action-error.ts");
   assert.match(helper, /unstable_rethrow\(e\)/);
   assert.match(helper, /unstable_isUnrecognizedActionError\(e\)/);
-  assert.match(helper, /try \{\s+await fn\(\);\s+\} catch \(e\) \{\s+toastUnreachable\(e\);/);
+  assert.match(helper, /try \{\s+await fn\(\);\s+\} catch \(e\) \{\s+toastUnreachable\(e, options\);/);
 });
 
 test("eylem hatası bekçisi (E-51): istemcideki her sunucu eylemi çağrısının reddi bir yerde yakalanır", () => {
@@ -168,7 +168,7 @@ test("geçişsiz eylem çağrıları da yakalanır: reçete önerileri, fatura, 
     "src/app/panel/tedarikciler/[cari]/supplier-client.tsx",
     "src/app/panel/hatirlaticilar/payment-ui.tsx",
   ]) {
-    assert.match(read(f), /\} catch \(e\) \{\s+toastUnreachable\(e[^)]*\);/, f);
+    assert.match(read(f), /\} catch \(e\) \{\s+(?:\/\/[^\n]*\n\s+)*toastUnreachable\(e[^)]*\);/, f);
   }
   // Fatura penceresi yanıt gelmeden aşağıdaki res.ok satırına inmez
   assert.match(read("src/app/panel/faturalar/invoice-dialog.tsx"), /toastUnreachable\(e\);\s+return;\s+\} finally \{/);

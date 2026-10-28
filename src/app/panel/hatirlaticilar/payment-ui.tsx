@@ -205,7 +205,9 @@ export function usePaymentActions(hide: (key: string) => void) {
       try {
         await run();
       } catch (e) {
-        toastUnreachable(e);
+        // Ödendi ve Ertele tekrarlanınca iki kez işler (hatırlatıcı bir dönem atlar, borca ikinci ödeme yazılır): yanıt
+        // yolda kaybolduysa "Kaydedilemedi" denmez, yenileyip bakması söylenir
+        toastUnreachable(e, { maybeSaved: true });
       } finally {
         setInFlight((s) => {
           const next = new Set(s);

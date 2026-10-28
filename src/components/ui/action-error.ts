@@ -114,17 +114,18 @@ export function toastUnreachable(e: unknown, options?: string | number | ActionT
 
 /**
  * useTransition gibi; geçişin içindeki eylem atarsa hata sayfayı düşürmez (toastUnreachable). Atılan noktadan sonraki
- * satırlar çalışmadığı için formu boşaltan kod da çalışmaz: yazılanlar ekranda kalır, yeniden denenir.
+ * satırlar çalışmadığı için formu boşaltan kod da çalışmaz: yazılanlar ekranda kalır, yeniden denenir. Yeni kayıt
+ * açan geçiş `{ maybeSaved: true }` verir (ActionToastOptions).
  */
-export function useActionTransition(): [boolean, (fn: () => unknown) => void] {
+export function useActionTransition(): [boolean, (fn: () => unknown, options?: ActionToastOptions) => void] {
   const [pending, start] = useTransition();
   const run = useCallback(
-    (fn: () => unknown) =>
+    (fn: () => unknown, options?: ActionToastOptions) =>
       start(async () => {
         try {
           await fn();
         } catch (e) {
-          toastUnreachable(e);
+          toastUnreachable(e, options);
         }
       }),
     [start],

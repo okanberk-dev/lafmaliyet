@@ -301,6 +301,8 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
         { label, type, section: section || null, hint: hint || null, required, unit: type === "number" ? unit || null : null, min: type === "number" ? lo : null, max: type === "number" ? hi : null },
         item?.id ?? null,
       ),
+      // Yeni maddede yanıt yolda kaybolursa madde yazılmış olabilir: ikinci "Kaydet" aynı maddeyi iki kez ekler
+      { maybeSaved: !item },
     );
     setSaving(false);
     if (!res) return;

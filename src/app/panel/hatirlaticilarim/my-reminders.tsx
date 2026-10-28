@@ -107,7 +107,8 @@ export function MyReminders({ role, open, done }: { role: Role; open: UserRemind
       setQuickTime("");
       toast.success("Hatırlatıcı eklendi", { description: `${title} · ${quickDay === "today" ? "Bugün" : "Yarın"}${quickTime ? ` ${quickTime}` : ""}` });
       await after();
-    });
+      // Yanıt yolda kaybolursa hatırlatıcı eklenmiş olabilir (ikinci dokunuş ikincisini ekler)
+    }, { maybeSaved: true });
   }
 
   const groups = DUE_GROUPS.map((g) => ({ ...g, items: open.filter((r) => dueGroup(r, now) === g.key) })).filter((g) => g.items.length);
@@ -359,7 +360,9 @@ function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDT
     if (!title.trim()) return setError("Ne hatırlatılacağını yazın");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError("Tarih seçin");
     setBusy(true);
-    const res = await tryAction(() => saveUserReminder({ id: initial?.id ?? null, title, note: note || null, dueDate: date, dueTime: withTime ? time : null, repeat }));
+    const res = await tryAction(() => saveUserReminder({ id: initial?.id ?? null, title, note: note || null, dueDate: date, dueTime: withTime ? time : null, repeat }), {
+      maybeSaved: !initial,
+    });
     setBusy(false);
     // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
     if (!res) return;

@@ -526,8 +526,8 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
      `useActionTransition`, `tryAction`, `catchingFormAction` ve `actionErrorText` (`src/components/ui/action-error.ts`);
      parola penceresi pencereyi ve parolayı tutar, nedeni alanın altında ayrı durum satırında yazar (parola alanı
      geçersiz işaretlenmez), giriş formu yazılan e-postayı tutar. Yeni kayıt açan ya da ekleyen eylemlerde (yeni satış
-     satırı, ekleme kipinde içe aktarma, yeni personel, sabit gider, yatırım, bulgu, kontrol listesi; tekrarı ikinci bir
-     kayıt yazar) kopan bağlantı "Kaydedilemedi" demez: "kayıt yapılmış olabilir; sayfayı yenileyip kontrol edin" ve
+     satırı, ekleme kipinde içe aktarma, yeni personel, sabit gider, yatırım, bulgu, kontrol listesi ve maddesi,
+     hatırlatıcı, tedarikçiye ödeme ve faturasız alım, zayi, Ödemeler'de Ödendi / Ertele; tekrarı ikinci bir kayıt yazar) kopan bağlantı "Kaydedilemedi" demez: "kayıt yapılmış olabilir; sayfayı yenileyip kontrol edin" ve
      **Yenile** (`tryAction(fn, { maybeSaved: true })`); gönderen eylemler "Gönderilemedi" der. Daha sağlamı, ekleme
      kipindeki içe aktarmaya istemci anahtarı (kasa isteklerindeki `clientKey` gibi): satış satırlarında anahtar
      sütunu yok, göç ister; açık. Bekçi sözdizimi ağacını tarar
