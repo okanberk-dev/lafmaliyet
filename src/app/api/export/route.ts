@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadTaxView } from "@/server/data/tax";
 import { getDb, schema as s } from "@/server/db";
 
 import { buildWorkbook } from "./workbook";
@@ -13,6 +14,7 @@ import { buildWorkbook } from "./workbook";
  * ?ay=YYYY-MM seçili ayın sekmelerini (Özet, Sayım, Tutarlılık, Satış, Personel, Sabit Giderler) belirler;
  * verilmezse satış verisi olan son ay. Gelir-Gider o ayın yılının 12 ayını, Faturalar bütün faturaları içerir;
  * gri yedek sekmeleri (Satış / Gelir-Gider / Sayım Kayıtları, Ay Bilgileri, Alım Miktarları) bütün ayları taşır.
+ * Vergi sekmesi Vergi sayfasının yılını yazar (tahmin; geliri mali belgeden gelmeyen çeyrek yazılmaz).
  * Sekme düzeni ve testleri: ./workbook.ts, tests/export-workbook.test.ts.
  */
 export async function GET(request: NextRequest) {
@@ -29,11 +31,20 @@ export async function GET(request: NextRequest) {
       loadCariExport(),
     ]);
     const month = resolveMonth(request.nextUrl.searchParams.get("ay") ?? undefined, model);
+    // "Vergi" sekmesi (dalga 12, docs/VERGI.md): Vergi sayfasının varsayılan yılı (30 Nisan'a kadar geçen yıl), takvimi
+    // nakit planıyla. Okunamazsa sekme yok, dosyanın geri kalanı iner
+    const tax = await loadTaxView(model)
+      .then((d) => ({ view: d.view, settings: d.inputs.settings }))
+      .catch((e) => {
+        console.error("[export] Vergi sekmesi hazırlanamadı", e);
+        return null;
+      });
     const wb = buildWorkbook(model, month, {
       investments,
       findings,
       // Faturanın kalan borcu faturanın kendisinden (Paraşüt'ün kalanı ve panelde sayılan ödemeler; openBalance)
       cari,
+      tax,
     });
     const buffer = await wb.xlsx.writeBuffer();
     return new Response(buffer as ArrayBuffer, {
