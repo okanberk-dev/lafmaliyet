@@ -274,7 +274,8 @@ export function overrideRefusal(key: string, value: number | null): string | nul
 
 /** İşlem geçmişi: "damga.gecici 791 → 820 (not)" */
 export function overrideLogText(key: string, from: number, to: number | null, note: string): string {
-  const fmt = (v: number) => String(r2(v)).replace(".", ",");
+  // Oranlar dört ondalıklı (0,1975), tutarlar kuruşlu
+  const fmt = (v: number) => String(Math.round(v * 10_000) / 10_000).replace(".", ",");
   return `${key} ${fmt(from)} → ${to === null ? "tablodaki değer" : fmt(to)}${note ? ` (${note})` : ""}`;
 }
 
