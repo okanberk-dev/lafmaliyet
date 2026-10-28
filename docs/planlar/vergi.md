@@ -1314,8 +1314,8 @@ Tutarlar kuruşa kadar `assert.equal` ile karşılaştırılır. Excel modeline 
 3. **Bilinmeyen yıl.** `rulesFor(2027)`: `estimated: true`, `fromYear: 2026`, değerler 2026'nınki.
 4. **Elle değer.** `rulesFor(2026, { "damga.gecici": 820 })` → 820; `{ "sgk.isverenOran": 0.1475 }` → bordroda %14,75.
    Kesin bir anahtara verilen elle değer yok sayılır; `kv.asgariZararDusulur` elle değiştirilemez.
-5. **Bayatlama.** Bugün 2027-01-23'te uyarı yok, 2027-01-24'te var (90 gün). Yıl 2027 iken "2027 kuralları tabloda
-   yok" cümlesi çıkar.
+5. **Bayatlama.** Bugün 2027-01-22'de uyarı yok, 2027-01-23'te var (24.10.2026 + 90 gün = 22.01.2027; Ekim 31 gün).
+   Yıl 2027 iken "2027 kuralları tabloda yok" cümlesi çıkar.
 6. **Metinler sahibin dilinde.** `ACCOUNTANT_CHECKS`, `TAX_DOC_LABELS`, `WITHHOLDING_LABELS` ve ekran sabitlerinde
    `.ts`, `src/`, camelCase tanımlayıcı ve "müşavir", "onayladı" geçmez.
 
