@@ -1402,7 +1402,7 @@ test("Nasıl hesaplandı: rakamlarıyla; yedek ve 'satış verisi yok' metinleri
   assert.match(text("goods"), /^Son 56 günün mal faturalarına göre haftada [\d.]+ ₺\./);
   assert.match(text("invoices"), /Gecikmiş 1 fatura bugüne yazıldı\./);
   assert.match(text("fixed"), /^Hatırlatıcısı olmayan 14 sabit gider/);
-  assert.equal(text("excluded"), "Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'daki fatura dışı ödemeler (cari borçların gider kayıtları dahil), yıllık giderler (ModPOS / Patron aboneliği), yatırım ve kredi.");
+  assert.equal(text("excluded"), "Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler (ModPOS / Patron aboneliği), yatırım ve kredi.");
   assert.doesNotMatch(text("excluded"), /KDV/);
   assert.match(text("kdv"), /ayın 28'inde/);
   const reports = Array.from({ length: 8 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 9_850, card: 7_683, mealCard: 0 }));

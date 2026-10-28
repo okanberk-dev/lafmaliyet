@@ -11,7 +11,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { useQueryState } from "@/components/ui/filters";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
 import { lineLabel, rangeText, shortDate, STALE_BALANCE_DAYS, weekTitle, type CashPlan, type CashPlanState, type PlanLine, type PlanWeek } from "@/lib/cash-plan";
-import { money, tl } from "@/lib/format";
+import { monthLabel, money, tl } from "@/lib/format";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,7 @@ const signed = (v: number) => `${v < 0 ? "−" : "+"}${tl(Math.abs(v))}`;
 /** Yayılan satırın ne olduğu (günü belli değil) */
 const SPREAD_NOTE: Partial<Record<PlanLine["kind"], string>> = {
   fixed: "ay içine yayıldı",
+  expense: "ay içine yayıldı",
   goods: "tedarikçinin vadesinde",
   sales: "günlük ortalamayla",
   online: "günlük ortalamayla",
@@ -206,6 +207,32 @@ export function CashPlanClient({
                   </Button>
                 </CardFooter>
               </Card>
+              {plan.reminderDrift.length ? (
+                <Card>
+                  <CardHeader
+                    icon={<CalendarClock />}
+                    title="Hatırlatıcı tutarı sabit giderden farklı"
+                    description="Plan hatırlatıcıdaki tutarı öder. Giderler'de zam girildiyse hatırlatıcının tutarını güncelleyin ya da boşaltın (boşken plan Giderler'deki tutarı izler); gider bittiyse hatırlatıcıyı kapatın."
+                  />
+                  <CardContent className="space-y-3">
+                    <ul className="divide-y divide-line rounded-2xl bg-surface px-3 text-sm">
+                      {plan.reminderDrift.map((d) => (
+                        <li key={d.reminderId} className="py-2.5">
+                          <span className="block min-w-0 break-words text-ink">{d.title}</span>
+                          <span className="block text-xs text-ink-mute tabular">
+                            {d.ended
+                              ? `Sabit gider ${monthLabel(d.ended)} ayında bitti · ${monthLabel(d.month)}: hatırlatıcıda ${tl(d.reminderAmount)}`
+                              : `${monthLabel(d.month)}: sabit giderde ${tl(d.fixedAmount)} · hatırlatıcıda ${tl(d.reminderAmount)}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <ButtonLink href="/panel/hatirlaticilar" variant="secondary" size="sm" className="pointer-coarse:h-11">
+                      Ödemeler&apos;de düzeltin
+                    </ButtonLink>
+                  </CardContent>
+                </Card>
+              ) : null}
               {plan.unknownAmounts.length ? (
                 <Card>
                   <CardHeader icon={<CalendarClock />} title="Tutarı girilmemiş ödemeler" description="Tutarı bilinmediği için plana girmedi." />

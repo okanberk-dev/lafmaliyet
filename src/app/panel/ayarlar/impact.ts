@@ -2,15 +2,18 @@
 // başabaş anında güncellenir; panelde aynı hesap, kaydedilmemiş değerlerle tarayıcıda yeniden çalıştırılır.
 // Saf modül: hem sunucu sayfası (veriyi hazırlar) hem istemci (hesaplar) hem testler kullanır.
 
-import { createModel, type Model, type ProductStatus } from "@/lib/calc/engine";
-import { latestSalesMonth, requiredDailyRevenue } from "@/lib/calc/insights";
+import { createModel, shiftMonth, type Model, type ProductStatus } from "@/lib/calc/engine";
+import { latestSalesMonth, onlineCoverFor, referenceSalesMonth, requiredDailyRevenue } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 
 /**
  * Önizleme için hesaplama motorunun ihtiyaç duyduğu en küçük veri: ürünler, reçeteler, hammaddeler, son satış ayının
  * ve su faturası ayının satış listesi, aynı ayların laffogato.net satışı (litre online siparişleri de sayar,
- * denetim E-57), SU GİDERİ satırları, personel ve sabit giderler. Faturalar, sayımlar ve öteki gelir-gider satırları
- * ayarlardan etkilenmediği için gönderilmez.
+ * denetim E-57), SU GİDERİ satırları, personel ve sabit giderler. Başabaş Genel bakış'takiyle aynı kalsın diye (denetim
+ * E-59, E-13) başabaşın düştüğü son kapanmış online ay, her ay girilen harcamalar (geçen ay ve bu ay) ve bunlara bağlı
+ * fatura kategorisinin faturaları da gelir. Öteki faturalar, sayımlar ve gelir-gider satırları ayarlardan
+ * etkilenmediği için gönderilmez.
  */
 export type ImpactData = Pick<
   Dataset,
@@ -28,11 +31,25 @@ export type ImpactData = Pick<
   | "fixedExpenses"
   | "fixedExpenseVersions"
   | "currentMonth"
+  | "expenseCategories"
+  | "expenseEntries"
+  | "invoices"
 >;
 
 export function impactData(model: Model): ImpactData {
   const ds = model.ds;
-  const keep = new Set([latestSalesMonth(model), model.water.month].filter((m): m is string => Boolean(m)));
+  const cur = ds.currentMonth ?? model.currentMonth;
+  const ref = referenceSalesMonth(model, cur);
+  const keep = new Set([latestSalesMonth(model), ref, model.water.month].filter((m): m is string => Boolean(m)));
+  // Başabaşın düştüğü online brüt kâr (son kapanmış online ay, breakEvenOf): o ayın satışı da gelir
+  const cover = onlineCoverFor(model, ref)?.month;
+  // Başabaşın her ay girilen harcamaları (monthlyExpensePlan: geçen aydan bu aya) ve bağlı fatura kategorileri
+  const from = shiftMonth(cur, -1);
+  const linked = new Set(
+    (ds.expenseCategories ?? [])
+      .map((c) => c.invoiceCategory)
+      .filter((c): c is string => Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!)),
+  );
   return {
     settings: ds.settings,
     // Notlar ve açıklamalar hesaba girmez; istemciye giden veri küçük kalsın
@@ -44,19 +61,25 @@ export function impactData(model: Model): ImpactData {
     // Su litresi online siparişleri de sayar: önizlemenin litre fiyatı Hammaddeler'dekiyle aynı kalsın. Elle girilmiş
     // su fiyatı varken water.month boştur; fiyat önizlemede silinince fatura ayı son satış ayı olur, onun online
     // satışı da gitsin (satış listesiyle aynı aylar)
-    siteSales: (ds.siteSales ?? []).filter((r) => keep.has(r.month)),
+    siteSales: (ds.siteSales ?? []).filter((r) => keep.has(r.month) || r.month === cover),
     months: ds.months.filter((m) => keep.has(m.month)),
     pnlEntries: ds.pnlEntries.filter((e) => e.rowKey === "manual:su").map((e) => ({ ...e, note: null })),
     staff: ds.staff,
     staffVersions: ds.staffVersions,
     fixedExpenses: ds.fixedExpenses,
     fixedExpenseVersions: ds.fixedExpenseVersions,
-    currentMonth: ds.currentMonth ?? model.currentMonth,
+    currentMonth: cur,
+    expenseCategories: ds.expenseCategories ?? [],
+    expenseEntries: (ds.expenseEntries ?? []).filter((e) => e.date.slice(0, 7) >= from).map((e) => ({ ...e, description: null, note: null })),
+    // Mal, komisyon ve kafe dışı faturalar harcamaya bağlanamaz (motor da saymaz); yalnız bağlı kategoriler
+    invoices: ds.invoices
+      .filter((i) => linked.has(i.category) && i.date.slice(0, 7) >= from)
+      .map((i) => ({ id: i.id, date: i.date, supplier: i.supplier, description: null, invoiceNo: null, category: i.category, amount: i.amount, discount: i.discount, payable: i.payable, unpaid: i.unpaid, note: null })),
   };
 }
 
 export function impactModel(data: ImpactData, settings: Settings = data.settings): Model {
-  return createModel({ ...data, settings, invoices: [], stockCounts: [], stockExtras: [], purchaseQuantities: [] });
+  return createModel({ ...data, settings, invoices: data.invoices ?? [], stockCounts: [], stockExtras: [], purchaseQuantities: [] });
 }
 
 export interface StatusChange {

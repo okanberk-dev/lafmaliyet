@@ -219,7 +219,7 @@ export function MonthlyExpenses({
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${monthLabel(month)} harcamaları`}
-          description="Kategori kategori: girilen harcamalar ve bağlı faturalar (KDV hariç)."
+          description="Kategori kategori: girilen harcamalar (ödenen tutar, KDV dahil) ve bağlı faturalar (KDV hariç)."
           groups={breakdown.total}
           total={total}
           exact
@@ -231,7 +231,7 @@ export function MonthlyExpenses({
             label={`${monthLabel(month)} toplamı`}
             value={tl(total)}
             sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
-            info="Bu sayfadaki bütün kategoriler: girilen harcamalar ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında sayılır."
+            info="Bu sayfadaki bütün kategoriler: girilen harcamalar (ödenen tutar, KDV dahil; fişin KDV'si ayrılmaz) ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında bu tutarla sayılır."
           />
         </StatBreakdown>
         <StatBreakdown
@@ -246,13 +246,13 @@ export function MonthlyExpenses({
         </StatBreakdown>
         <StatBreakdown
           title={`Fatura dışı · ${monthLabel(month)}`}
-          description="Bu sayfada girilen harcamalar, kategori kategori."
+          description="Bu sayfada girilen harcamalar (ödenen tutar, KDV dahil), kategori kategori."
           groups={breakdown.offInvoice}
           total={offInvoice}
           exact
           empty="Bu ay girilmiş harcama yok."
         >
-          <Stat compact icon={<ReceiptText />} label="Fatura dışı" value={tl(offInvoice)} sub="Bu sayfada girilenler" />
+          <Stat compact icon={<ReceiptText />} label="Fatura dışı" value={tl(offInvoice)} sub="Bu sayfada girilenler, KDV dahil" />
         </StatBreakdown>
         <StatBreakdown
           title={`Faturadan · ${monthLabel(month)}`}
@@ -537,7 +537,7 @@ export function MonthlyExpenses({
         title={converting ? `${converting.name} aylık girilsin mi?` : ""}
         description={
           converting
-            ? `${monthLabel(month)}'dan itibaren ${converting.name} sabit giderlerde sayılmaz; tutarı her ay bu sayfada girersiniz ("her ay" kategorisi, girilmezse hatırlatılır). Geçmiş aylar aynı kalır. ${monthLabel(month)} için şimdilik sabit tutar (${tl(converting.amount)}) tahmini harcama olarak yazılır; gerçeğini girince düzeltin. Gelir-gider'de bu aylara elle yazılmış tutarlar buraya taşınır.`
+            ? `${monthLabel(month)}'dan itibaren ${converting.name} sabit giderlerde sayılmaz; tutarı her ay bu sayfada girersiniz ("her ay" kategorisi, girilmezse hatırlatılır). Geçmiş aylar aynı kalır. ${monthLabel(month)} için şimdilik sabit giderdeki KDV hariç tutar (${tl(converting.amount)}) tahmini harcama olarak yazılır; ödediğiniz tutarı (KDV dahil) girince düzeltin. Başabaş, ay sonu tahmini ve nakit planı bu gideri buradaki tutarıyla saymaya devam eder (bu ay girilmezse geçen ayın tutarıyla). Gelir-gider'de bu aylara elle yazılmış tutarlar buraya taşınır.`
             : undefined
         }
         pending={pending}
@@ -548,7 +548,9 @@ export function MonthlyExpenses({
             const r = await convertFixedToMonthly(f.id, month);
             if (!r.ok) return void toast.error(r.error);
             setConverting(null);
-            toast.success(`${f.name} artık aylık giriliyor${r.data.moved ? ` · ${r.data.moved} ayın tutarı taşındı` : ""}${r.data.estimated ? " · bu ay için tahmini tutar yazıldı" : ""}`);
+            toast.success(
+              `${f.name} artık aylık giriliyor${r.data.moved ? ` · ${r.data.moved} ayın tutarı taşındı` : ""}${r.data.estimated ? " · bu ay için tahmini tutar (KDV hariç) yazıldı" : ""} · başabaş ve nakit planı buradaki tutarı sayar`,
+            );
           });
         }}
       />

@@ -1,10 +1,11 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { dateTR, tl } from "@/lib/format";
+import { foldName } from "@/lib/cash-plan";
+import { dateTR, monthLabel, tl } from "@/lib/format";
 import {
   addDays,
   advancePast,
@@ -12,6 +13,7 @@ import {
   endOfMonthAnchor,
   FIXED_REMINDER_NOTE,
   fixedReminderAt,
+  fixedReminderNextAmount,
   isLastDayOfMonth,
   isVatReminder,
   isVatWithholdingReminder,
@@ -152,9 +154,12 @@ export async function markReminderDone(id: number, through?: string) {
     const repeat = r.repeat as ReminderRepeat;
     const next = until && until >= r.dueDate ? advancePast(r.dueDate, repeat, r.anchorDate, until) : nextOccurrence(r.dueDate, repeat, r.anchorDate);
     const clear = next !== null && vatAmountTravels(r);
+    // Sabit gideri izleyen hatırlatıcı (Sabit giderlerden ekle): sıradaki dönem zamlı ayda ise tutar o ayın sürümüne
+    // geçer (nakit planı ve Ödemeler aynı tutarı söyler; geri al eski tutarı yazar)
+    const follow = next && !clear ? await followedAmount(r, next) : null;
     await db
       .update(s.reminders)
-      .set(next ? { dueDate: next, lastDoneAt: new Date(), ...(clear ? { amount: null } : {}) } : { active: false, lastDoneAt: new Date() })
+      .set(next ? { dueDate: next, lastDoneAt: new Date(), ...(clear ? { amount: null } : follow !== null ? { amount: follow } : {}) } : { active: false, lastDoneAt: new Date() })
       .where(eq(s.reminders.id, rid));
     await rememberPaid([{ kind: "reminder", id: rid, title: r.title, amount: r.amount, dueDate: r.dueDate, prev: snapshot(r), next }]);
     // KDV ve KDV-2: nakit planının kalıcı kaydı (son ödenenler 30 günde düşer, bir sonraki KDV gününden önce)
@@ -166,7 +171,7 @@ export async function markReminderDone(id: number, through?: string) {
     await logActivity(
       me,
       "Ödeme yapıldı",
-      `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}${clear ? " · tutar silindi (KDV)" : ""}`,
+      `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}${clear ? " · tutar silindi (KDV)" : ""}${follow !== null ? ` · tutar ${tl(follow)} (sabit giderdeki yeni tutar)` : ""}`,
     );
     refresh();
     // prev: "Geri al" düğmesi kaydı bu hâline döndürür (restoreReminder; tutar dahil)
@@ -175,6 +180,22 @@ export async function markReminderDone(id: number, through?: string) {
 }
 
 type ReminderDbRow = typeof s.reminders.$inferSelect;
+
+/** Sabit gideri izleyen hatırlatıcının sıradaki dönemdeki tutarı (fixedReminderNextAmount); değişmiyorsa null */
+async function followedAmount(r: ReminderDbRow, nextDue: string): Promise<number | null> {
+  if (!r.note?.startsWith(FIXED_REMINDER_NOTE) || r.amount === null) return null;
+  const db = getDb();
+  const fixed = await db.select().from(s.fixedExpenses).orderBy(asc(s.fixedExpenses.id));
+  // Eşleşme nakit planınınkiyle aynı: katlanmış ad, en küçük kimlik
+  const f = fixed.find((x) => foldName(x.name) === foldName(r.title));
+  if (!f) return null;
+  const versions = await db
+    .select({ fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
+    .from(s.fixedExpenseVersions)
+    .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
+  if (f.endMonth && nextDue.slice(0, 7) > f.endMonth) return null;
+  return fixedReminderNextAmount({ note: r.note, amount: r.amount, dueDate: r.dueDate, repeat: r.repeat as ReminderRepeat }, f, versions, nextDue);
+}
 
 function snapshot(r: ReminderDbRow) {
   return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null, amount: r.amount, note: r.note };
@@ -461,6 +482,10 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
     const db = getDb();
     const [f] = await db.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, zId.parse(fixedExpenseId))).limit(1);
     if (!f) throw new UserError("Sabit gider bulunamadı");
+    // Biten gider: hatırlatıcı bitişten sonra başlamaz (yoksa nakit planı bitmiş gideri her ay öderdi; E-62)
+    if (f.endMonth && dueDate.slice(0, 7) > f.endMonth) {
+      throw new UserError(`${f.name} ${monthLabel(f.endMonth)} ayında bitiyor; ilk ödeme en geç ${monthLabel(f.endMonth)} içinde olmalı`);
+    }
     const versions = await db
       .select({ fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
       .from(s.fixedExpenseVersions)
@@ -483,7 +508,7 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
     });
     await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();
-    return { dueDate, amount: at.amount, changesFrom: at.changesFrom };
+    return { dueDate, amount: at.amount, changesFrom: at.changesFrom, endMonth: f.endMonth };
   });
 }
 

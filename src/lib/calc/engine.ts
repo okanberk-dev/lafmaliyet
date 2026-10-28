@@ -545,6 +545,26 @@ export interface PnlRowDef {
   strong?: boolean;
 }
 
+/** Her ay girilen bir harcama kategorisinin bir ayın başabaşına ve tahminine giren tutarı (model.monthlyExpensePlan) */
+export interface MonthlyExpensePlan {
+  cat: ExpenseCategory;
+  /** Girilen harcamalar + bağlı fatura kategorisindeki faturalar (Aylık harcamalar'daki satırın tutarı) */
+  amount: number;
+  /** Bunun girilen harcamalardan gelen kısmı (ödenen tutar) */
+  entries: number;
+  /**
+   * Nakit karşılığı: girilen harcamalar + bağlı faturaların ödenecek tutarı (KDV dahil; nakit planı bunu yayar). Bağlı
+   * fatura yoksa `entries`
+   */
+  cash: number;
+  /** Ayın kendi tutarı (taşınan tutarda "bu ay girilmedi" mi "daha az girildi" mi; E-13) */
+  entered: number;
+  /** entered: ayın kendi girişi; carried: önceki bir ayın (geçen ay ya da süren ay) tutarı taşındı */
+  source: "entered" | "carried";
+  /** Tutarın alındığı ay */
+  from: string;
+}
+
 export interface PnlMonthCalc {
   month: string;
   info: Month | undefined;
@@ -1599,13 +1619,68 @@ export function createModel(ds: Dataset) {
   const invoiceCategoryMappable = (c: string | null): c is string =>
     Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!);
   /** Kategorilerin aydaki tutarı: girilen harcamalar + bağlı fatura kategorisindeki faturalar (KDV hariç, iskonto düşülmüş) */
-  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; total: number }[] {
+  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; invoicesPayable: number; total: number }[] {
     const invs = invoicesByMonth.get(month) ?? [];
     return expenseCats.map((cat) => {
       const entries = expenseByMonth.get(month)?.get(cat.id) ?? 0;
-      const invoices = invoiceCategoryMappable(cat.invoiceCategory) ? sum(invs.filter((i) => i.category === cat.invoiceCategory).map(invoiceNet)) : 0;
-      return { cat, entries, invoices, total: entries + invoices };
+      const linked = invoiceCategoryMappable(cat.invoiceCategory) ? invs.filter((i) => i.category === cat.invoiceCategory) : [];
+      const invoices = sum(linked.map(invoiceNet));
+      // Ödenecek tutar (KDV dahil); Excel'den gelen ödenecek tutarı boş faturada KDV hariç tutar
+      const invoicesPayable = sum(linked.map((i) => (i.payable > 0 ? i.payable : invoiceNet(i))));
+      return { cat, entries, invoices, invoicesPayable, total: entries + invoices };
     });
+  }
+
+  /**
+   * Her ay girilen harcamaların (Aylık harcamalar'da "her ay girilir", mal dışı kategori: reklam, influencer…) bir ayın
+   * hesabına giren tutarı (denetim E-13). Sabit gider "aylık girişe çevrilince" başabaştan, ay sonu tahmininden ve
+   * nakit planından düşmesin diye bunlar Excel temeline (fixedStandardTotalFor) ek olarak sayılır:
+   * - biten ay: o ayın girilen tutarı;
+   * - süren ve gelecek ay: geçen aydan o aya kadarki ayların en büyüğü (süren ay girildiyse ve daha büyükse o; değilse
+   *   geçen ayın gerçekleşeni taşınır). Pasif kategori yalnız kendi ayının tutarıyla.
+   * Sahibe soru 7 (geçen ayın gerçekleşeni mi, son 3 ay ortalaması mı) cevaplanana kadar geçerli kural.
+   * `entries`: tutarın girilen harcamalardan gelen kısmı; `cash`: nakit planının yaydığı ödeme (bağlı faturalar KDV dahil)
+   */
+  function monthlyExpensePlan(month: string): MonthlyExpensePlan[] {
+    const cats = expenseCats.filter((c) => c.monthly && c.section !== "mal");
+    if (!cats.length) return [];
+    const amountsOf = (m: string) => new Map(expenseAmounts(m).map((x) => [x.cat.id, x]));
+    const own = amountsOf(month);
+    const out: MonthlyExpensePlan[] = [];
+    const window: string[] = [];
+    if (month >= currentMonth) for (let m = shiftMonth(currentMonth, -1); m <= month; m = shiftMonth(m, 1)) window.push(m);
+    const byMonth = new Map(window.map((m) => [m, m === month ? own : amountsOf(m)]));
+    for (const cat of cats) {
+      const mine = own.get(cat.id);
+      const entered = mine?.total ?? 0;
+      let best = { from: month, total: entered, entries: mine?.entries ?? 0, cash: (mine?.entries ?? 0) + (mine?.invoicesPayable ?? 0) };
+      if (cat.active && month >= currentMonth) {
+        for (const m of window) {
+          const x = byMonth.get(m)?.get(cat.id);
+          // Eşitlikte ayın kendisi (girilen tutar), sonra en yakın ay
+          if (x && x.total > best.total + 0.005) best = { from: m, total: x.total, entries: x.entries, cash: x.entries + x.invoicesPayable };
+        }
+      }
+      if (!(best.total > 0.005)) continue;
+      out.push({ cat, amount: best.total, entries: best.entries, cash: best.cash, entered, source: best.from === month ? "entered" : "carried", from: best.from });
+    }
+    return out;
+  }
+
+  const closedByMonth = new Map<string, string[]>();
+  for (const d of ds.closedDays ?? []) {
+    const m = d.slice(0, 7);
+    closedByMonth.set(m, [...(closedByMonth.get(m) ?? []), d]);
+  }
+  /** Ayın kafe kapalı işaretli günleri (raporsuz; ileri tarihliler dahil): ay sonu öngörüsü bunları açık saymaz (E-41) */
+  const closedDaysOf = (month: string): string[] => closedByMonth.get(month) ?? [];
+
+  /**
+   * Başabaşın ve ay sonu tahmininin sabit gideri: standart aylık sabit gider (Excel temeli, personel dahil) + her ay
+   * girilen harcamalar (monthlyExpensePlan). Genel bakış, Sabit giderler, Analiz ve Ayarlar aynı toplamı kullanır
+   */
+  function breakEvenFixedFor(month: string): number {
+    return fixedStandardTotalFor(month) + sum(monthlyExpensePlan(month).map((x) => x.amount));
   }
 
   // --- Genel Maliyet (aylık gelir-gider) --------------------------------------
@@ -2063,5 +2138,10 @@ export function createModel(ds: Dataset) {
     expenseCategories: expenseCats,
     expenseAmounts,
     expenseExpected,
+    /** Her ay girilen harcamaların bir ayın başabaşına ve tahminine giren tutarı (E-13) */
+    monthlyExpensePlan,
+    /** Başabaşın sabit gideri: standart aylık sabit gider + her ay girilen harcamalar */
+    breakEvenFixedFor,
+    closedDaysOf,
   };
 }

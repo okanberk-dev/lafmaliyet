@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { InfoTip, PageSkeleton } from "@/components/ui/misc";
 import { fixedMonthly, shiftMonth } from "@/lib/calc/engine";
-import { latestSalesMonth } from "@/lib/calc/insights";
+import { breakEvenOf } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { fixedExpenseDeleteBlockers } from "@/server/actions/costs";
@@ -57,10 +57,9 @@ async function ExpensesContent() {
     label: sec.label,
     total: model.activeFixed.filter((f) => f.section === sec.key).reduce((a, f) => a + fixedMonthly(f, st), 0) + (sec.key === "personel" ? model.personnel.total : 0),
   }));
-  const ref = latestSalesMonth(model);
-  const refSales = ref ? model.monthSales(ref) : null;
-  const grossRatio = refSales && refSales.revenue ? refSales.grossProfit / refSales.revenue : 0;
-  const breakEvenDaily = grossRatio > 0 ? model.fixedStandardTotal / grossRatio / st.acikGun : null;
+  // Başabaş Genel bakış ve Analiz'le aynı kuraldan (breakEvenOf, denetim E-59): her ay girilen harcamalar dahil, son
+  // kapanmış online ayın brüt kârı düşülmüş
+  const be = breakEvenOf(model, cur);
   const totalInvestment = investments.reduce((a, i) => a + i.amount, 0);
   const total = model.fixedStandardTotal;
   const nextMonth = shiftMonth(cur, 1);
@@ -105,8 +104,10 @@ async function ExpensesContent() {
         acikGun={st.acikGun}
         sections={bySection}
         personnelCount={model.personnel.rows.length}
-        breakEvenDaily={breakEvenDaily}
-        breakEvenRef={ref ? monthLabel(ref) : null}
+        breakEvenDaily={be.daily}
+        breakEvenRef={be.refMonth ? monthLabel(be.refMonth) : null}
+        breakEvenOnline={be.onlineCover ? { month: monthLabel(be.onlineCover.month), amount: be.onlineCover.grossProfit } : null}
+        monthlyExpenses={be.expenses.map((x) => ({ name: x.cat.name, amount: x.amount, from: x.from }))}
         next={Math.abs(nextTotal - total) >= 1 ? { month: monthLabel(nextMonth), total: nextTotal } : null}
       />
 

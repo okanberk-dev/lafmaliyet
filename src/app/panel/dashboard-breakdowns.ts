@@ -1,6 +1,6 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
 import type { Model } from "@/lib/calc/engine";
-import { listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
+import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
@@ -273,6 +273,23 @@ function standardRows(d: DashboardData, sign: 1 | -1): BreakdownRow[] {
   return withRemainder(sign < 0 ? costFirst(rows) : biggestFirst(rows), sign * d.fixedStandardTotal, "Diğer", "standart:diger");
 }
 
+/**
+ * Başabaşa ve ay sonu tahminine standart sabit giderle birlikte giren, her ay girilen harcamalar (Aylık harcamalar,
+ * denetim E-13): kategori kategori, tutarın ayıyla. Yoksa grup yok
+ */
+function expensePlanGroup(d: DashboardData, sign: 1 | -1): BreakdownGroup[] {
+  const xs = d.breakEven.expenses;
+  if (!xs.length) return [];
+  const rows: BreakdownRow[] = xs.map((x) => ({
+    key: `harcama:${x.cat.id}`,
+    label: x.cat.name,
+    sub: expensePlanSub(x),
+    amount: sign * x.amount,
+    href: `/panel/harcamalar?ay=${x.from}`,
+  }));
+  return [{ key: "harcama", label: "Her ay girilen harcamalar", rows: sign < 0 ? costFirst(rows) : biggestFirst(rows) }];
+}
+
 /** Net kâr / zarar: brüt kâr − indirimler − bu ayın sabit giderleri; karttaki iki karşılaştırma toplamın altında */
 export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
@@ -504,11 +521,14 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
     };
   }
   const gross = fc.projectedRevenue * d.grossRatio;
+  const days = fc.closedDays ? "ayın açık günü" : "ayın gün sayısı";
   return {
     title,
-    description: `Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+    description: `Bu tempo sürerse: POS cirosu ÷ açık gün × ${days}${fc.closedDays ? ` (kapalı işaretli ${num(fc.closedDays)} gün hariç)` : ""} × ${
       fc.refMonth ? `${monthLabel(fc.refMonth)} ` : "son satış ayının "
-    }brüt kâr oranı${fc.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün bugüne kadar geçen gün sayılır.`,
+    }brüt kâr oranı${fc.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
+      d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
+    } (Excel Panel B19). Açık gün bugüne kadar geçen gün sayılır.`,
     groups: [
       {
         key: "ciro",
@@ -517,7 +537,10 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
         rows: [
           { key: "pos", label: "POS cirosu (bugüne kadar, KDV dahil)", display: tl(d.info?.posRevenue ?? 0), amount: 0, href: salesHref(d.month) },
           { key: "gun", label: "Geçen gün", display: `${num(fc.daysElapsed)} / ${num(fc.dim)} gün`, amount: 0 },
-          { key: "ciro", label: "Bu tempoyla ay sonu ciro", sub: "POS cirosu ÷ geçen gün × ayın gün sayısı", display: tl(fc.projectedRevenue), amount: 0 },
+          ...(fc.closedDays
+            ? [{ key: "kapali", label: "Kafe kapalı işaretli", sub: "Özel günler; ay sonu öngörüsüne açık gün olarak girmez", display: `${num(fc.closedDays)} gün`, amount: 0, href: "/panel/ozel-gunler" }]
+            : []),
+          { key: "ciro", label: "Bu tempoyla ay sonu ciro", sub: `POS cirosu ÷ geçen gün × ${days}`, display: tl(fc.projectedRevenue), amount: 0 },
         ],
       },
       {
@@ -535,7 +558,7 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
                 {
                   key: "online",
                   label: "laffogato.net online brüt kârı",
-                  sub: "Bugüne kadarki ÷ geçen gün × ayın gün sayısı, reçeteye göre",
+                  sub: `Bugüne kadarki ÷ geçen gün × ${days}, reçeteye göre`,
                   amount: fc.projectedOnline,
                   href: pnlHref(d.month),
                 },
@@ -544,6 +567,7 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
         ],
       },
       { key: "sabit", label: "Standart aylık sabit gider", rows: standardRows(d, -1) },
+      ...expensePlanGroup(d, -1),
     ],
     total: fc.projectedProfit,
     totalLabel: "Tahmini kâr / zarar",
@@ -560,7 +584,8 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
   const st = model.settings;
   const ref = d.refMonth ? model.monthSales(d.refMonth) : null;
   const cover = d.onlineCover;
-  const monthly = d.grossRatio > 0 ? Math.max(0, d.fixedStandardTotal - (cover?.grossProfit ?? 0)) / d.grossRatio : null;
+  const monthly = d.breakEven.monthly;
+  const exp = d.breakEven.expensesTotal > 0;
   const progress = d.breakEvenProgress;
   const lp = d.theoretical?.listPeriod;
   const tempo: BreakdownRow[] =
@@ -578,11 +603,12 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
       : [];
   return {
     title: "Başabaş günlük ciro",
-    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider${cover ? " − laffogato.net online satışın brüt kârı" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
+    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): ${exp || cover ? "(" : ""}standart aylık sabit gider${exp ? " + her ay girilen harcamalar" : ""}${cover ? " − laffogato.net online satışın brüt kârı" : ""}${exp || cover ? ")" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
       d.refMonth ? ` Brüt kâr oranı ${monthLabel(d.refMonth)} satışlarından.` : ""
     }${cover ? ` Online satış (laffogato.net) sabit giderin bir kısmını karşılar: ${monthLabel(cover.month)} brüt kârı düşülür, kalanı kasanın cirosu karşılar.` : ""}`,
     groups: [
       { key: "sabit", label: "Standart aylık sabit gider", rows: standardRows(d, 1) },
+      ...expensePlanGroup(d, 1),
       {
         key: "hesap",
         label: "Hesap",
@@ -608,7 +634,13 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
                 },
               ]
             : []),
-          { key: "aylik", label: "Başabaş aylık ciro", sub: cover ? "(Sabit gider − laffogato.net brüt kârı) ÷ brüt kâr oranı" : "Sabit gider ÷ brüt kâr oranı", display: tl(monthly), amount: 0 },
+          {
+            key: "aylik",
+            label: "Başabaş aylık ciro",
+            sub: `${exp || cover ? "(" : ""}${exp ? "Sabit gider + aylık harcamalar" : "Sabit gider"}${cover ? " − laffogato.net brüt kârı" : ""}${exp || cover ? ")" : ""} ÷ brüt kâr oranı`,
+            display: tl(monthly),
+            amount: 0,
+          },
           { key: "gun", label: "Ayda açık gün", sub: "Ayarlar", display: `${num(st.acikGun)} gün`, amount: 0, href: "/panel/ayarlar" },
         ],
       },

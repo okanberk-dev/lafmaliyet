@@ -4,11 +4,13 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
-import { shiftMonth } from "@/lib/calc/engine";
+import { currentMonthTR, shiftMonth } from "@/lib/calc/engine";
+import { fixedReminderDrifts, reminderDriftText } from "@/lib/cash-plan";
 import { emailKey } from "@/lib/notify-recipients";
 import { liveRecentPaid } from "@/lib/recent-paid";
 import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadFixedForReminders } from "@/server/data/fixed-reminders";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
@@ -41,18 +43,12 @@ async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
   const now = new Date();
-  const [{ today, settings, reminders, items, laterInvoices, covered }, recipients, log, fixedRows, versions, unpaid, recentPaid, weekly] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices, covered }, recipients, log, fixedData, unpaid, recentPaid, weekly] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
-    db
-      .select({ id: s.fixedExpenses.id, name: s.fixedExpenses.name, amount: s.fixedExpenses.amount, period: s.fixedExpenses.period, section: s.fixedExpenses.section, vatRate: s.fixedExpenses.vatRate })
-      .from(s.fixedExpenses)
-      .where(eq(s.fixedExpenses.active, true))
-      .orderBy(asc(s.fixedExpenses.sortOrder)),
-    db
-      .select({ fixedExpenseId: s.fixedExpenseVersions.fixedExpenseId, fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
-      .from(s.fixedExpenseVersions),
+    // Bitiş ayına göre (saklı `active` bayatlayabilir; E-62): biten kalem "Sabit giderlerden ekle"de önerilmez
+    loadFixedForReminders(db, currentMonthTR(now)),
     // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
     db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
     loadRecentPaid(),
@@ -79,9 +75,10 @@ async function RemindersContent() {
   // "Sabit giderlerden ekle": kalem, sürümleri ve gelecek ayın (varsayılan ilk ödeme) dönemi; sayfa seçilen günün
   // ayındaki tutarı fixedReminderAt ile kendisi hesaplar (eylemin yazacağıyla aynı)
   const firstMonth = shiftMonth(today.slice(0, 7), 1);
-  const fixed = fixedRows.map((f) => {
+  const versions = fixedData.versions;
+  const fixed = fixedData.candidates.map((f) => {
     const own = versions.filter((v) => v.fixedExpenseId === f.id).map((v) => ({ fromMonth: v.fromMonth, period: v.period, amount: v.amount }));
-    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own };
+    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own, endMonth: f.endMonth };
   });
 
   return (
@@ -94,6 +91,8 @@ async function RemindersContent() {
       recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
+      // Sabit gidere bağlı tutarlı hatırlatıcının tutarı Giderler'deki sürümden farklı (E-46): nakit planı eski tutarı öderdi
+      drifts={fixedReminderDrifts(reminders, fixedData.all, versions, today, undefined, fixedData.monthlyExpenseNames).map((d) => ({ ...d, text: reminderDriftText(d) }))}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
       recentPaid={undoable.map(({ conversion, ...e }) => (conversion ? { ...e, converted: true } : e))}
       email={{

@@ -15,6 +15,7 @@ import { Fab } from "@/components/ui/fab";
 import { EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTR, money, num, tl } from "@/lib/format";
+import type { ReminderDrift } from "@/lib/cash-plan";
 import type { RecentPaid } from "@/lib/recent-paid";
 import {
   inSummaryRange,
@@ -94,6 +95,7 @@ const EMPTY_TITLE: Record<Source, string> = {
   cari: "Yaklaşan faturasız borç yok",
 };
 const NO_RECENT: RecentPaid[] = [];
+const NO_DRIFTS: (ReminderDrift & { text: string })[] = [];
 
 type ItemHide = { key: string } | { reminderId: number };
 type ReminderPatch = { type: "active"; id: number; active: boolean } | { type: "remove"; id: number };
@@ -112,6 +114,7 @@ export function RemindersClient({
   invoiceSource,
   recentPaid = NO_RECENT,
   weekly = null,
+  drifts = NO_DRIFTS,
 }: {
   today: string;
   items: UpcomingItem[];
@@ -130,6 +133,11 @@ export function RemindersClient({
   recentPaid?: RecentPaid[];
   /** Haftalık özetin satırı (E-posta bildirimleri içinde); okunamadıysa null */
   weekly?: WeeklyPanel | null;
+  /**
+   * Sabit gidere bağlı tutarlı hatırlatıcının tutarı Giderler'deki sürümden farklı (denetim E-46; src/lib/cash-plan.ts
+   * fixedReminderDrifts): nakit planı hatırlatıcıdaki tutarı öder
+   */
+  drifts?: (ReminderDrift & { text: string })[];
 }) {
   const [sourceRaw, setSource] = useQueryState<Source>("kaynak", "tumu");
   const source = oneOf(sourceRaw, SOURCES, "tumu");
@@ -381,6 +389,31 @@ export function RemindersClient({
           );
         })}
       </div>
+
+      {drifts.length ? (
+        <div role="status" className="mb-4 rounded-2xl bg-warn-soft px-4 py-3 text-sm ring-1 ring-warn/20 ring-inset">
+          <p className="font-medium text-ink">Hatırlatıcı tutarı sabit giderden farklı</p>
+          <p className="mt-0.5 text-[13px] text-ink-soft">
+            Nakit planı hatırlatıcıdaki tutarı öder. Tutarı güncelleyin ya da boşaltın (boşken plan Giderler&apos;deki tutarı izler); gider bittiyse
+            hatırlatıcıyı kapatın.
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {drifts.map((d) => {
+              const r = byId.get(d.reminderId);
+              return (
+                <li key={d.reminderId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <span className="min-w-0 text-[13px] break-words text-ink">{d.text}</span>
+                  {r ? (
+                    <Button variant="secondary" size="sm" className="pointer-coarse:h-11" onClick={() => setEditing({ reminder: r })}>
+                      <Pencil size={14} aria-hidden="true" /> Düzenle
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-12 xl:items-start">
         <Card className="xl:col-span-8">

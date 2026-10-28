@@ -108,6 +108,8 @@ export interface VatMonthInput {
    * beyanname); kafe dışı faturalar yalnız sayılır
    */
   purchases: { vat: number; withheld: number; count: number; separateCount: number };
+  /** Ayın kafe kapalı işaretli gün sayısı (ileri tarihliler dahil): süren ayın kasa cirosu bu günler olmadan tamamlanır (E-41) */
+  closedDays?: number;
 }
 
 /**
@@ -144,7 +146,8 @@ export function vatMonthInputs(model: Model, today: string): { months: VatMonthI
       purchases.withheld += purchaseWithheld(inv);
       purchases.count++;
     }
-    months.push({ month: m, pos, online, purchases });
+    const closedDays = model.closedDaysOf(m).length;
+    months.push({ month: m, pos, online, purchases, ...(closedDays ? { closedDays } : {}) });
   }
   return { months, firstSalesMonth, hasSite };
 }
@@ -223,17 +226,21 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
     let projected = false;
     if (inp?.pos) {
       const od = inp.pos.openDays ?? 0;
-      // Süren ay ay sonuna: açık gün varsa ÷ açık gün, yoksa ÷ geçen gün (Genel bakış'taki ay sonu tahmini gibi)
-      const f = m === cur ? (od > 0 && od < dim ? dim / od : od > 0 ? 1 : dim / Math.max(1, day - 1)) : 1;
+      // Süren ay ay sonuna: açık gün varsa ÷ açık gün × ayın açık günü (kafe kapalı işaretli günler hariç, E-41), yoksa
+      // ÷ geçen gün (Genel bakış'taki ay sonu tahmini gibi)
+      const open = Math.max(od, dim - (inp.closedDays ?? 0));
+      const f = m === cur ? (od > 0 && od < dim ? open / od : od > 0 ? 1 : Math.max(1, dim - (inp.closedDays ?? 0)) / Math.max(1, day - 1)) : 1;
       posRaw = inp.pos.vat * f;
       posRevenue = inp.pos.revenue * f;
       projected = f !== 1;
     } else if (firstSalesMonth !== null && m >= firstSalesMonth) {
-      // Ciro girilmemiş ay: önceki, cirosu ve açık günü olan son ayın günlük ortalamasıyla
+      // Ciro girilmemiş ay: önceki, cirosu ve açık günü olan son ayın günlük ortalamasıyla, ayın kafe kapalı işaretli
+      // günleri düşülerek (E-41)
       const fb = sorted.filter((x) => x.month < m && x.pos && (x.pos.openDays ?? 0) > 0).at(-1);
       if (fb?.pos) {
-        posRaw = (fb.pos.vat / fb.pos.openDays!) * dim;
-        posRevenue = (fb.pos.revenue / fb.pos.openDays!) * dim;
+        const open = Math.max(0, dim - (inp?.closedDays ?? 0));
+        posRaw = (fb.pos.vat / fb.pos.openDays!) * open;
+        posRevenue = (fb.pos.revenue / fb.pos.openDays!) * open;
         posFrom = fb.month;
         projected = true;
       }

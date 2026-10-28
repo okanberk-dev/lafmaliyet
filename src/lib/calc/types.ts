@@ -473,6 +473,11 @@ export interface Dataset {
    * (varsayılan) ikram yalnız Zayi & ikram'dan
    */
   lafposIkram?: LafposIkramData;
+  /**
+   * Kafe kapalı işaretli günler (Özel günler'in `kapali` satırı, kasa raporu olmayan; geçmiş ve ileri tarihli,
+   * YYYY-MM-DD, sıralı). Süren ayın ay sonu öngörüsü bu günleri açık saymaz (denetim E-41). Yoksa boş
+   */
+  closedDays?: string[];
 }
 
 /**

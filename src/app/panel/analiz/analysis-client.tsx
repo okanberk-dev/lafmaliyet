@@ -835,6 +835,7 @@ export function ScenarioSimulator({
   month,
   monthLabel,
   fixedItems,
+  breakEvenItems,
   kasa = "ModPOS",
 }: {
   base: ScenarioBase;
@@ -844,8 +845,10 @@ export function ScenarioSimulator({
   monthLabel: string;
   /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa"; denetim E-39) */
   kasa?: MonthKasa["short"];
-  /** Sabit giderlerin kalemleri (standart ay tutarı, sunucuda kurulur): net kâr dökümünde */
+  /** Bu ayın sabit gider kalemleri (Genel bakış'taki net kârla aynı tutarlar, sunucuda kurulur): net kâr dökümünde */
   fixedItems: BreakdownRow[];
+  /** Başabaşın sabit gider kalemleri (standart ay + her ay girilen harcamalar): başabaş dökümünde */
+  breakEvenItems?: BreakdownRow[];
 }) {
   const [price, setPrice] = useState(0);
   const [cost, setCost] = useState(0);
@@ -877,7 +880,13 @@ export function ScenarioSimulator({
     { label: "Brüt kâr", b: b.gross, s: s.gross, good: "up" },
     { label: "– İndirimler", b: b.discountsNet, s: s.discountsNet, good: "down" },
     { label: "– Sabit giderler", b: b.fixed, s: s.fixed, good: "down" },
+    ...(b.online ? [{ label: "+ laffogato.net online brüt kârı", b: b.online, s: s.online, good: "up" as const }] : []),
   ];
+  const period = base.listPeriod ? `${base.listPeriod} listesi` : `${monthLabel} satış karması`;
+  // Net kâr tam ayın değilse (yarım liste, süren ay) başlıklar dönemi söyler; aylık değişimin o döneme düşen payı sayılır
+  const profitTitle = (scenario: boolean) =>
+    base.period ? `${scenario ? "Senaryoda net" : "Net"} kâr / zarar (${base.period})` : `${scenario ? "Senaryoda aylık" : "Aylık"} net kâr / zarar`;
+  const sharePct = pct(base.fixedShare, 0);
 
   return (
     <div className="grid gap-4 xl:grid-cols-12">
@@ -890,8 +899,9 @@ export function ScenarioSimulator({
               <InfoTip text="Örnek: “Bütün menüye %5 zam yaparsam, süt %10 zamlanırsa, satışlar %15 artarsa ay sonu ne olur?”" />
             </span>
           }
-          // Senaryo ModPOS satış listesinin karmasıyladır; online satışın kârı Genel bakış'ta (docs/SITE-SATIS.md)
-          description={`${monthLabel} ${kasa} satış karmasından yola çıkar (laffogato.net online satışı dahil değil).`}
+          // Senaryo kasanın satış listesinin karmasıyladır; "Şu an" Genel bakış'taki net kârla aynı taban (denetim E-12):
+          // liste döneminin sabit gideri ve indirimi, online brüt kâr ayrı satır (kaydırıcılar değiştirmez)
+          description={`${base.listPeriod ? `${base.listPeriod} ${kasa} listesinin` : `${monthLabel} ${kasa} satış`} karmasından yola çıkar. laffogato.net online brüt kârı ayrı satırda; kaydırıcılar onu değiştirmez.`}
           actions={
             <Button
               variant="secondary"
@@ -923,7 +933,7 @@ export function ScenarioSimulator({
             <PercentSlider label="Satış adedi" value={volume} onChange={setVolume} min={-50} max={100} info="Daha çok / daha az müşteri." />
             <Field
               label="Aylık sabit gider değişimi (₺)"
-              hint="ör. reklamı 30.000 ₺ azaltmak için -30.000 (± düğmesi eksi yapar), yeni personel için 25.000"
+              hint={`ör. reklamı 30.000 ₺ azaltmak için -30.000 (± düğmesi eksi yapar), yeni personel için 25.000${base.period ? `. Net kâra ${base.period} payı (${sharePct}), başabaşa tamamı girer` : ""}`}
               error={extraParsed === null ? "Sayı okunamadı. Örnek: -30.000 ya da 12.500,50" : undefined}
               htmlFor="sc-extra"
             >
@@ -961,7 +971,7 @@ export function ScenarioSimulator({
         {/* Telefonda ve tablette sonuçlar kaydırıcıların altında kalır: kart boyunca altta yapışık özet */}
         <div className="sticky bottom-[calc(var(--mobile-nav-h,0px)+0.75rem)] z-10 mx-3 mb-3 xl:hidden">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-surface px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-line-strong">
-            <span className="text-[13px] text-ink-mute">Senaryoda aylık net kâr / zarar</span>
+            <span className="text-[13px] text-ink-mute">{profitTitle(true)}</span>
             <span className="flex items-baseline gap-2">
               <Signed value={s.profit} className={cn("text-base font-semibold whitespace-nowrap", s.profit >= 0 && "text-good")}>
                 {tl(s.profit)}
@@ -978,8 +988,8 @@ export function ScenarioSimulator({
           <Reveal index={0}>
             <StatBreakdown
               className="h-full"
-              title={dirty ? "Senaryoda aylık net kâr / zarar" : "Aylık net kâr / zarar"}
-              description={`${monthLabel} satış karmasıyla: brüt kâr − indirimler − sabit giderler (KDV hariç). Sabit giderler standart ay tutarıdır.${scope}`}
+              title={profitTitle(dirty)}
+              description={`${period} ile: brüt kâr − indirimler − sabit giderler${b.online ? " + laffogato.net online brüt kârı" : ""} (KDV hariç). Genel bakış'taki net kârla aynı hesap: sabit giderler bu ayın tutarlarıdır${base.listPeriod ? ", listenin dönemine düşen payıyla" : base.period ? ", şimdiye kadarki günlerin payıyla" : ""}.${base.period && extraNum ? ` Aylık sabit gider değişiminin bu döneme düşen payı (${sharePct}) sayılır.` : ""}${scope}`}
               groups={profitGroups({ ...sides, fixedItems, month })}
               total={s.profit}
               totalLabel={dirty ? "Senaryoda net kâr / zarar" : "Net kâr / zarar"}
@@ -990,7 +1000,7 @@ export function ScenarioSimulator({
               <Stat
                 className="h-full"
                 icon={<Wallet />}
-                label="Aylık net kâr / zarar"
+                label={profitTitle(false)}
                 value={<CountUp value={s.profit} />}
                 tone={s.profit < 0 ? "bad" : "good"}
                 badge={dirty ? <DiffPill diff={profitDiff} /> : null}
@@ -1006,8 +1016,8 @@ export function ScenarioSimulator({
             <StatBreakdown
               className="h-full"
               title="Başabaş günlük ciro"
-              description={`Sabit giderler ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil; indirimler bu hesaba girmez.${scope}`}
-              groups={breakEvenGroups({ ...sides, acikGun })}
+              description={`Genel bakış'taki başabaşla aynı: (standart aylık sabit gider + her ay girilen harcamalar${b.onlineCover ? " − laffogato.net online brüt kârı" : ""}) ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil; indirimler bu hesaba girmez.${scope}`}
+              groups={breakEvenGroups({ ...sides, acikGun, breakEvenItems })}
               total={s.breakEvenDaily ?? 0}
               totalLabel="Başabaş günlük ciro"
               totalDisplay={tl(s.breakEvenDaily)}
@@ -1050,7 +1060,7 @@ export function ScenarioSimulator({
             <StatBreakdown
               className="h-full"
               title="Hedef kâr için günlük ciro"
-              description={`(Sabit giderler + hedef kâr) ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil.${scope}`}
+              description={`(Sabit giderler${b.onlineCover ? " − online brüt kâr" : ""} + hedef kâr) ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil.${scope}`}
               groups={targetGroups({ ...sides, acikGun, target: targetNum, targetValid: targetParsed !== null })}
               total={dailyForTarget ?? 0}
               totalLabel="Hedef kâr için günlük ciro"
@@ -1090,7 +1100,11 @@ export function ScenarioSimulator({
         </div>
 
         <Card>
-          <CardHeader icon={<Calculator />} title="Aylık karşılaştırma" description="Şu anki ay ile senaryo, kalem kalem." />
+          <CardHeader
+            icon={<Calculator />}
+            title={base.period ? `Karşılaştırma (${base.period})` : "Aylık karşılaştırma"}
+            description={base.period ? "Şu an ile senaryo, kalem kalem; sabit giderler bu döneme düşen payla." : "Şu anki ay ile senaryo, kalem kalem."}
+          />
           {/* Telefonda dört sütun sığmaz: her kalem iki satır (senaryo değeri, altında şu an ve fark) */}
           <ul className="divide-y divide-line px-5 pb-2 sm:hidden">
             {rows.map((r) => {
@@ -1132,7 +1146,7 @@ export function ScenarioSimulator({
             <Table>
               <THead>
                 <tr>
-                  <TH sticky>Aylık</TH>
+                  <TH sticky>{base.period ? "Kalem" : "Aylık"}</TH>
                   <TH numeric>Şu an</TH>
                   <TH numeric>Senaryo</TH>
                   <TH numeric>Fark</TH>

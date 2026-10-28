@@ -611,8 +611,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             giderler (faturadaki KDV&apos;siyle: kira ve faturalar %20, personel KDV&apos;siz; oran Giderler&apos;de kalemin Faturadaki KDV alanında). Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
             yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
             tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
-            onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Her varsayım
-            ekrandaki Nasıl hesaplandı kartında rakamlarıyla yazar.
+            onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Aylık
+            harcamalar&apos;da her ay girilen giderler (reklam, influencer) o ay girilen tutarla, daha azsa geçen ayınkiyle ayın kalan günlerine yayılır.
+            Özel günler&apos;de kafe kapalı işaretli günlerde satış ve online girişi yazılmaz. Sabit giderlerden eklenen hatırlatıcı gideri izler: zam girilince
+            plan zamlı aydan yeni tutarı öder; gider bittiyse hatırlatıcıyı kapatın. Her varsayım ekrandaki Nasıl hesaplandı kartında rakamlarıyla yazar.
           </>
         ),
         icon: ChartNoAxesColumn,
@@ -960,10 +962,17 @@ const FORMULAS = [
   ],
   ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil)"],
   ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün; liste ayın bir kısmını kapsıyorsa listenin kendi açık günü"],
-  ["Başabaş günlük ciro", "(Standart aylık sabit gider − kapanmış son ayın laffogato.net online brüt kârı) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
+  [
+    "Başabaş günlük ciro",
+    "(Standart aylık sabit gider + Aylık harcamalar'da her ay girilenler − kapanmış son ayın laffogato.net online brüt kârı) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. Genel bakış, Sabit giderler ve Analiz aynı rakamı gösterir",
+  ],
   [
     "Ay sonu tahmini (yalnızca devam eden ay)",
-    "POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + laffogato.net online brüt kârı (aynı tempoyla) − standart aylık sabit gider",
+    "POS cirosu ÷ açık gün × ayın açık günü (ayın gün sayısı − kafe kapalı işaretli günler) × son satış ayının brüt kâr oranı + laffogato.net online brüt kârı (aynı tempoyla) − standart aylık sabit gider − her ay girilen harcamalar",
+  ],
+  [
+    "Her ay girilen harcama (başabaş, tahmin, nakit planı)",
+    "Biten ayda o ay girilen; süren ve gelecek ayda o ay girilen, daha azsa geçen ayın gerçekleşeni",
   ],
   [
     "Aylık sabit gider (gelir-gider)",

@@ -485,9 +485,10 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
  * geçerli zam dahil), tutar faturadaki KDV'siyle (nakit planı sabit gideri KDV dahil öder; hatırlatıcının tutarı
  * bankadan çıkan paradır, plan onu olduğu gibi kesin sayar). `gross` o ayın KDV dahil tutarı.
  *
- * Giderler'de sonraki bir aydan geçerli değişiklik (zam, dönem) zaten girilmişse (`changesFrom`) tutar yazılmaz:
- * tutarsız hatırlatıcıya plan her ayın sürümünü KDV'siyle taşır, sabit bir tutar zamdan sonraki ayları eksik
- * gösterirdi. Tutar 0 ise de yazılmaz.
+ * Giderler'de sonraki bir aydan geçerli değişiklik zaten girilmişse `changesFrom` o ay. Tutar yine yazılır: bu
+ * hatırlatıcı sabit gideri izler (fixedReminderFollows; nakit planı zamdan sonraki dönemlerde sürümün tutarını öder,
+ * "Ödendi" tutarı sıradaki dönemin sürümüne taşır). Yalnız dönemi sonradan değişen kalemde (aylık → yıllık) tutar
+ * yazılmaz: tutarsız hatırlatıcıya plan her ayın sürümünü dönemine çevirerek taşır. Tutar 0 ise de yazılmaz.
  */
 export function fixedReminderAt(
   f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null },
@@ -501,9 +502,82 @@ export function fixedReminderAt(
       .filter((v) => v.fromMonth > month && (v.amount !== at.amount || v.period !== at.period))
       .map((v) => v.fromMonth)
       .sort()[0] ?? null;
+  const periodChanges = versions.some((v) => v.fromMonth > month && v.period !== at.period);
   const vatRate = fixedVatRate(f);
   const gross = Math.round(at.amount * (1 + vatRate) * 100) / 100;
-  return { period: at.period, amount: gross > 0 && !changesFrom ? gross : null, gross, vatRate, changesFrom };
+  return { period: at.period, amount: gross > 0 && !periodChanges ? gross : null, gross, vatRate, changesFrom };
+}
+
+/** Hatırlatıcı tekrarının sabit gider karşılığı (çeyreklik ve tek seferlik yok) */
+const REPEAT_PERIOD: Partial<Record<ReminderRow["repeat"], FixedPeriod>> = { weekly: "haftalik", monthly: "aylik", yearly: "yillik" };
+
+/**
+ * Sabit gideri izleyen hatırlatıcı mı: "Sabit giderlerden ekle" ile açılmış (not), dönemi gideriyle aynı ve tutarı
+ * sıradaki ödeme ayının sürümüne eşit (KDV dahil, ±1 ₺). Böyle bir hatırlatıcıda nakit planı her dönemin sürümünü öder
+ * (zam uyarısı çıkmaz), "Ödendi" tutarı sıradaki dönemin sürümüne taşır. Elle başka tutar yazılmışsa izlemez
+ */
+export function fixedReminderFollows(
+  r: Pick<ReminderRow, "note" | "amount" | "dueDate" | "repeat">,
+  f: Parameters<typeof fixedReminderAt>[0],
+  versions: Parameters<typeof fixedReminderAt>[1],
+): boolean {
+  const cadence = REPEAT_PERIOD[r.repeat];
+  if (!r.note?.startsWith(FIXED_REMINDER_NOTE) || r.amount === null || !cadence) return false;
+  const at = fixedReminderAt(f, versions, r.dueDate.slice(0, 7));
+  return at.period === cadence && at.gross > 0 && Math.abs(at.gross - r.amount) <= 1;
+}
+
+/**
+ * Sıradaki dönemi `nextDue` olan izleyen hatırlatıcının yeni tutarı (o ayın sürümü, KDV dahil); izlemiyorsa, dönemi
+ * tutmuyorsa ya da tutar aynıysa null ("Ödendi" sabit gideri izleyen tutarı ileri taşır)
+ */
+export function fixedReminderNextAmount(
+  r: Pick<ReminderRow, "note" | "amount" | "dueDate" | "repeat">,
+  f: Parameters<typeof fixedReminderAt>[0],
+  versions: Parameters<typeof fixedReminderAt>[1],
+  nextDue: string,
+): number | null {
+  if (!fixedReminderFollows(r, f, versions)) return null;
+  const at = fixedReminderAt(f, versions, nextDue.slice(0, 7));
+  return at.period === REPEAT_PERIOD[r.repeat] && at.gross > 0 && Math.abs(at.gross - r.amount!) > 1 ? at.gross : null;
+}
+
+/** Sabit gideri izleyen hatırlatıcının sonraki bir aydan değişen tutarı (sonuç mesajı) */
+export interface FixedReminderLater {
+  month: string;
+  amount: number;
+}
+
+/**
+ * Sabit gider değişince (tutar, dönem, KDV oranı; denetim E-46) "Sabit giderlerden ekle" ile açılmış hatırlatıcının
+ * tutarı ne olsun. Hatırlatıcıdaki tutar eskisinin otomatik tutarıysa (sıradaki ödeme ayının sürümü, KDV dahil; ±1 ₺)
+ * hatırlatıcı gideri izler: tutarı sıradaki ödeme ayının yeni sürümü olur (sonraki bir aydan zam girildiyse bu ayınki
+ * kalır, `later` o zammı söyler; nakit planı zamdan sonraki dönemlerde sürümü öder), dönemi tutmuyorsa boşalır. Elle
+ * başka bir tutar yazılmışsa dokunulmaz: yeni tutar farklıysa ya da ileride değişiyorsa "manual" (uyarılır). Tutarsız
+ * hatırlatıcı zaten Giderler'i izler.
+ */
+export function fixedReminderFollow(
+  r: { amount: number | null; dueDate: string; repeat: ReminderRow["repeat"] },
+  before: Parameters<typeof fixedReminderAt>[0],
+  beforeVersions: Parameters<typeof fixedReminderAt>[1],
+  after: Parameters<typeof fixedReminderAt>[0],
+  afterVersions: Parameters<typeof fixedReminderAt>[1],
+):
+  | { kind: "same"; later?: FixedReminderLater }
+  | { kind: "update"; amount: number | null; later?: FixedReminderLater }
+  | { kind: "manual"; expected: number } {
+  if (r.amount === null) return { kind: "same" };
+  const month = r.dueDate.slice(0, 7);
+  const cadence = REPEAT_PERIOD[r.repeat];
+  const old = fixedReminderAt(before, beforeVersions, month);
+  const now = fixedReminderAt(after, afterVersions, month);
+  const auto = cadence !== undefined && old.period === cadence && Math.abs(old.gross - r.amount) <= 1;
+  if (!auto) return now.changesFrom || Math.abs(now.gross - r.amount) > 1 ? { kind: "manual", expected: now.gross } : { kind: "same" };
+  const next = now.period === cadence && now.gross > 0 ? now.gross : null;
+  // Sonraki bir aydan değişen tutar (dönemi aynı): hatırlatıcı izler, mesaj söyler
+  const laterAt = next !== null && now.changesFrom ? fixedReminderAt(after, afterVersions, now.changesFrom) : null;
+  const later = laterAt && laterAt.period === cadence && laterAt.gross > 0 ? { later: { month: now.changesFrom!, amount: laterAt.gross } } : {};
+  return next !== null && Math.abs(next - r.amount) <= 1 ? { kind: "same", ...later } : { kind: "update", amount: next, ...later };
 }
 
 const FIXED_PERIOD_LABEL: Record<FixedPeriod, string> = { aylik: "aylık", haftalik: "haftalık", yillik: "yıllık", gunluk: "günlük" };
@@ -513,8 +587,15 @@ export function fixedReminderText(...args: Parameters<typeof fixedReminderAt>): 
   const at = fixedReminderAt(...args);
   const period = FIXED_PERIOD_LABEL[at.period];
   const vat = at.vatRate > 0 ? ` (%${Math.round(at.vatRate * 100)} KDV dahil)` : "";
-  if (at.changesFrom) return `${money(at.gross)}${vat} · ${period} · ${monthLabel(at.changesFrom)} itibarıyla değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler`;
+  const [, versions, month] = args;
+  const periodFrom = versions
+    .filter((v) => v.fromMonth > month && v.period !== at.period)
+    .map((v) => v.fromMonth)
+    .sort()[0];
+  if (at.amount === null && at.gross > 0 && periodFrom)
+    return `${money(at.gross)}${vat} · ${period} · ${monthLabel(periodFrom)} itibarıyla dönemi değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler`;
   if (at.amount === null) return `Tutar yazılmaz · ${period}`;
+  if (at.changesFrom) return `${money(at.amount)}${vat} · ${period} · ${monthLabel(at.changesFrom)} itibarıyla değişiyor: hatırlatıcı yeni tutarı izler`;
   return `${money(at.amount)}${vat} · ${period}`;
 }
 

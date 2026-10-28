@@ -149,10 +149,13 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
   Gelir-gider'de komisyon olarak.
 - **Brüt kâr** = ModPOS brüt kârı + online (gelir − malzeme); **net kâr** = brüt kâr − indirimler − sabit giderler.
   Kategoriler kutusunda online ayrı satır.
-- **Başabaş günlük ciro** = (standart aylık sabit gider − online brüt kârı) ÷ brüt kâr oranı ÷ ayda açık gün. Online
+- **Başabaş günlük ciro** = (standart aylık sabit gider + her ay girilen harcamalar − online brüt kârı) ÷ brüt kâr
+  oranı ÷ ayda açık gün; tek kural `breakEvenOf` (Genel bakış, Sabit giderler, Analiz, Ayarlar ve Claude; denetim
+  E-59, E-13). Online
   brüt kârı referans satış ayının, ay kapanmadıysa ondan önceki son kapanmış online ayın (süren ayın yarım online
   satışı bir ayı karşılamaz); yoksa düşülmez.
-- **Ay sonu tahmini** online satışın bugüne kadarki brüt kârını aynı tempoyla ekler (÷ geçen gün × ayın gün sayısı).
+- **Ay sonu tahmini** online satışın bugüne kadarki brüt kârını aynı tempoyla ekler (÷ geçen gün × ayın açık günü:
+  Özel günler'de kafe kapalı işaretli günler düşülür, denetim E-41).
 - **Adetler:** kategoriler, menü mühendisliği, en kârlı / en çok satan ürünler ve zam etkisinin "ayda …" adetleri
   online satılanı da sayar (`soldWithOnline`, `salesBasis`); zam etkisinin "brüt kârın %X'i" paydası online brüt kârı
   içerir. Online adet ayın açık günüyle standart aya çevrilir. Ürünler sayfası (adet, brüt kâr), ürün kartı (ayın adedi
@@ -161,8 +164,14 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
 - Süren ayda satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (Satışlar › "Liste hangi güne kadar?")
   online satış o günlere düşen payla girer (`listShareOf`), sabit gider gibi.
 - Çekilmemiş ayda eskisi gibi yalnız ModPOS.
-- **Analiz › Senaryo** ModPOS satış karmasıyla kalır (kartında "online satışı dahil değil" yazar): online satışı
-  zam / adet kaydırıcılarına katmak başabaşın tanımını değiştirirdi (Genel bakış'ta başabaş kasanın cirosudur).
+- **Analiz › Senaryo** "Şu an"ı Genel bakış'taki reçeteye göre net kârla aynıdır (denetim E-12): sabit gider o ayın
+  tutarları (liste kasa raporlarından kısaysa o döneme düşen payı), indirim listenin döneminden, online brüt kârı ayrı
+  satır. Kaydırıcılar yalnız kasanın satış karmasını değiştirir; online brüt kârı sabit kalır (zam / adet kaydırıcılarına
+  katmak başabaşın tanımını değiştirirdi: Genel bakış'ta başabaş kasanın cirosudur). Başabaş ve hedef kâr kartları
+  Genel bakış'ın başabaşıyla aynı tabandan (`breakEvenOf`). "Aylık sabit gider değişimi" aylık bir tutardır: net kâra
+  tabanın sabit gideri gibi dönemin payıyla (`fixedShare` = Gelir-gider'in açık gün oranı × liste dönemi; 1–15 Kasım
+  listesinde %50), başabaşa tamamıyla girer. Net kâr tam ayın değilse kart başlıkları dönemi söyler ("Net kâr / zarar
+  (1–15 Kasım)", "Karşılaştırma (1–15 Kasım)").
 
 ### Kasa raporu satırı
 

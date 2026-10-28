@@ -222,6 +222,14 @@ export async function loadDataset(): Promise<Dataset> {
     salesLines: sales.salesLines,
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     ...(lafposIkram ? { lafposIkram } : {}),
+    // Kapalı işaretli bütün günler (ileri tarihliler dahil): süren ayın ay sonu öngörüsü bunları açık saymaz (E-41).
+    // Raporlu gün ve satışlı LafPOS gün sonu kapalı sayılmaz (tillMonths ile aynı kural)
+    closedDays: closedDaysIn(
+      closedRows,
+      "2000-01-01",
+      "9999-12-31",
+      till.filter((r) => r.source !== "lafpos" || r.zTotal > 0 || (r.receipts ?? 0) > 0).map((r) => r.date),
+    ),
     invoices: invoices.map((i) => ({
       id: i.id,
       date: i.date,
