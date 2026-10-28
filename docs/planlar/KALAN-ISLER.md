@@ -67,7 +67,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** (`0044_lafpos_satir_site_kalemi`) | 2 | PR (dal `claude/denetim-b08-lafpos-satis`) |
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | PR (dal `claude/denetim-b09-lafpos-kasa`) |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 (yanıtlandı) | PR (dal `claude/denetim-b10-lafpos-odeme-ikram`) |
-| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 | bekliyor |
+| B11 | LafPOS 5: kasa kipi ve ModPOS metinleri | E-39 | yok | 2 (yanıtlandı) | PR (dal `claude/denetim-b11-lafpos-metin`) |
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | bekliyor |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | bekliyor |
@@ -114,6 +114,9 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
    **Yanıt (26 Ekim):** belli değil; panelde bir ayar olsun. B07: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü",
    varsayılan boş (kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez); B08-B11 okuyucularını bu güne bağlar.
+   **Yapıldı (B11):** E-39'un "kasa kipi" ayrı bir ayar değil, bu gündür (son günlerde LafPOS günü var mı sezgisi
+   kullanılmadı: deneme günleri kipi değiştirmesin). Geçiş gününden itibaren "Kasadaki fiyatlar" yalnız siteye bağlı
+   olmayan ürünler için çalışır ve ModPOS metinleri LafPOS der; boşken her şey bugünkü gibi.
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
    yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
@@ -391,7 +394,14 @@ bağlanır; sonraki ayın 15'ine kadar kesilen fatura "fatura gelmedi" yerine bi
 zayi yazılan ürünün panel zayisi gün sonu gelen günde sayılmasın mı (şimdilik ikisi sayılır, gün listesi işaretler).
 Geçiş günü boşken bunların hiçbiri çalışmaz. ModPOS'ta da: komisyon zili gecikenleri en eski son gün önce alır, beşe
 sığmayanları tek satırda özetler (E-68).
-Kalan: ModPOS metinleri ve işleri geçiş gününe göre (E-39, B11); sahibe soru 5.
+B11 (E-39): geçiş gününden itibaren siteye bağlı ürünün fiyat değişikliği "Kasadaki fiyatlar"a (Kasaya işle, zil,
+Bugün, haftalık özet, ürün kartı) girmez, LafPOS fiyatı siteden alır; listede bekleyen eski işaretler gizlenir, silinmez
+(geçiş günü kaldırılırsa geri gelir); siteye bağlı olmayan ürün (LafPOS'ta yerel ürünse) listede "LafPOS'ta elle" der.
+Bugün'ün ve zilin akşam kasa satırı "LafPOS'ta Günü kapat" der; Kasa raporu, e-posta ve WhatsApp karşılaştırmaları,
+kapalı gün kartı günün kasasını, aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV
+tahmini, Excel, Claude) ayın kasasını yazar (geçiş ayında "Kasa (ModPOS 1–9 · LafPOS 10–30)"). Geçiş günü boşken
+metinlerin hepsi bugünkünün aynısı.
+Kalan: sahibe soru 5.
 
 **Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
 anahtarlar en erken B07 yayındayken girilir.

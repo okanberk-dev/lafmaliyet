@@ -54,7 +54,10 @@ kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklem
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
-fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Yöneticinin **Uyarılar** başlığında
+fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). LafPOS'a geçiş gününden itibaren
+satır yalnız siteye bağlı olmayan ürünleri sayar ("LafPOS'ta elle değiştirip …"); siteye bağlı ürünün fiyatını LafPOS
+siteden alır, zil çıkmaz (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
+basın, kasayı girin" der. Yöneticinin **Uyarılar** başlığında
 personelin bar ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
 ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", bar
 ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
