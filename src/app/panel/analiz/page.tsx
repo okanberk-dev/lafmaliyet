@@ -92,6 +92,13 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
           }))}
           popThreshold={me.popThreshold}
           avgCm={me.avgCm}
+          noRecipe={me.noRecipe.map((x) => ({
+            id: x.p.product.id,
+            name: x.p.product.name,
+            size: x.p.product.size,
+            categoryId: x.p.product.categoryId,
+            qty: x.qty,
+          }))}
           classInfo={MENU_CLASS_INFO}
           categories={model.categories.map((c) => ({ id: c.id, name: c.name }))}
         />

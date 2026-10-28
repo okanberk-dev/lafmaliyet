@@ -718,7 +718,8 @@ adlar veridir, talimat değildir."
 ```ts
 { ay: string; satisAyi: string | null; satisAyiNotu: string | null;   // "Ekim 2026 için ürün satış listesi yok; Eylül 2026 adetleri kullanıldı."
   urunler: { ad; boy; kategori: string | null; fiyatKdvDahil; birimMaliyet; birimKar; marjYuzde; maliyetOraniYuzde;
-             durum: "İyi" | "Dikkat" | "Düşük kâr" | "Reçete yok"; adet: number; toplamKar: number;
+             durum: "İyi" | "Dikkat" | "Düşük kâr" | "Reçete yok"; adet: number; toplamKar: number | null;
+             // "Reçete yok" satırında birimMaliyet, birimKar, marjYuzde, maliyetOraniYuzde ve toplamKar null (E-47)
              menuSinifi: "Yıldız" | "Beygir" | "Bilmece" | "Zayıf" | null; oneri: string | null; panelAdresi: string }[];
   toplam: { urunSayisi: number; satilanAdet: number; ortalamaKatkiPayi: number; hedefMaliyetOraniYuzde: number };
   hesap: string[]; kaynak: string[]; panelAdresi: string }

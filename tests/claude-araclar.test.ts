@@ -238,7 +238,7 @@ test("ürün kârlılığı: menü sınıfı Analiz'deki menü mühendisliğiyle
   assert.equal(p.urunler.length, 50);
   for (const u of p.urunler) assert.equal(u.menuSinifi, cls.get(`${u.ad} ${u.boy}`), u.ad);
   // Toplam kâr sırası azalan
-  for (let i = 1; i < p.urunler.length; i++) assert.ok(p.urunler[i - 1].toplamKar >= p.urunler[i].toplamKar);
+  for (let i = 1; i < p.urunler.length; i++) assert.ok((p.urunler[i - 1].toplamKar ?? -Infinity) >= (p.urunler[i].toplamKar ?? -Infinity));
   const latte = urun({ ay: "2026-09", urun: "LATTE", limit: 50 });
   assert.ok(latte.urunler.length > 10 && latte.urunler.every((u) => /latte/i.test(u.ad)));
   // Menüdeki İngilizce adlar: Türkçe küçük harfte "I" "ı" olur; "ice", "ICE" ve "İce" hepsi Ice Latte'yi bulur

@@ -196,7 +196,8 @@ async function IngredientsContent() {
   const unused = active.filter((r) => !activeUses(r)).length;
   // Kartların dökümü (karta dokununca açılan pencere): yüklenen satırlardan ve modelin su hesabından
   const breakdown = ingredientBreakdowns(rows);
-  const waterDokum = waterBreakdown(model.water, rows, model.water.month ? model.ingredientUsage(model.water.month) : new Map<number, number>());
+  const waterMonth = model.water.month;
+  const waterDokum = waterBreakdown(model.water, rows, waterMonth ? model.ingredientUsage(waterMonth) : new Map<number, number>(), waterMonth ? model.onlineUsage(waterMonth) : undefined);
   const categoryCount = new Set(active.map((r) => r.category)).size;
   const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
 
@@ -274,7 +275,7 @@ async function IngredientsContent() {
             suffix="/L"
             tone={model.water.reason === "no-usage" ? "warn" : "default"}
             sub={<span title={waterSource(model.water)}>{waterSource(model.water, true)}</span>}
-            info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre); ürün satış listesi olan en son ayın faturası kullanılır.`}
+            info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre; satış listesi ve laffogato.net online siparişleri); ürün satış listesi olan en son ayın faturası kullanılır.`}
           />
         </StatBreakdown>
       </div>

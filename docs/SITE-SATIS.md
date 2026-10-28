@@ -122,6 +122,9 @@ online satış ModPOS satışını şişirmez):
 - Bağlı olmayan satır varsa zilde uyarı: "N online satış satırı panel ürününe bağlı değil".
 - Ay çekilmediyse kart bunu söyler ve Gelir-gider'e (Siteden yenile) götürür; o ayın beklenen kullanımı yalnız
   ModPOS'tandır.
+- **Su + buz litre maliyeti** de online siparişleri sayar (denetim E-57): SU GİDERİ ÷ (satış listesine göre + aynı
+  ayın online siparişlerine göre harcanan su ve buz). Ay yine satış listesiyle seçilir (listesi yüklenmemiş ayın
+  faturası yalnız online litreye bölünmez); Hammaddeler'deki su kartının dökümü iki kaynağı ayrı yazar.
 - **Seçenekler** (v1'e eklenen, isteğe bağlı satır alanları; eski site göndermez): `extraShots` (satırdaki toplam
   ekstra shot, adet dahil), `syrups` ve `milks` (seçeneğin kimliğine göre adet; `normal` süt sayılmaz). Kasada bunlar
   ayrı satır olarak çalınır ("Extra Shot", "Syrup", "Alternatif Süt"): panel online seçenekleri de aynı ürünlere
@@ -139,9 +142,10 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
 - **Net satış** = ModPOS satış listesi (KDV hariç) + üç online satır (KDV hariç, Gelir-gider'deki tutarlar). Kartın
   dökümünde ayrı "laffogato.net online" bölümü; "Para nereye gitti?" çubuğunun tabanı ikisinin toplamı.
 - **Malzeme + ambalaj** (online kısmı): ürüne eşlenen kafe satırları ve ürünü olan seçenekler adet × ürünün reçete
-  maliyeti; menüye bağlı olmayan kafe satırları (liste fiyatı) ve mağaza kolileri (kargo ücreti hizmet KDV'siyle
-  düşülerek) KDV hariç tutar × ayın ortalama maliyet oranı (ModPOS'ta eşleşmeyen satırın kuralı; ayın satış listesi
-  yoksa son satış ayınınki). Karaokenin malzemesi yoktur. Online ödemenin komisyonu bu görünümde yok: faturası gelince
+  maliyeti; menüye bağlı olmayan kafe satırları (liste fiyatı), reçetesi boş ürüne eşlenen satırlar (liste fiyatı;
+  seçenekte ürünün menü fiyatı) ve mağaza kolileri (kargo ücreti hizmet KDV'siyle düşülerek) KDV hariç tutar × ayın
+  ortalama maliyet oranı (ModPOS'ta eşleşmeyen ve reçetesi boş satırın kuralı; ayın satış listesi yoksa son satış
+  ayınınki). Reçetesi boş ürün sıfır maliyet sayılmaz, ortalama orana da girmez (denetim E-47). Karaokenin malzemesi yoktur. Online ödemenin komisyonu bu görünümde yok: faturası gelince
   Gelir-gider'de komisyon olarak.
 - **Brüt kâr** = ModPOS brüt kârı + online (gelir − malzeme); **net kâr** = brüt kâr − indirimler − sabit giderler.
   Kategoriler kutusunda online ayrı satır.

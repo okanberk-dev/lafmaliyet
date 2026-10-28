@@ -100,7 +100,7 @@ test("Reçete ölçüleri özeti: shot, şurup ve püre pompası, açık gün ve
 });
 
 test("Su özeti: litre maliyeti 4 ondalık ve kaynağın kısa adı", () => {
-  const base: WaterCost = { perLiter: 0.1234, month: "2026-09", bill: 1000, liters: 8100, reason: "ok", latestBillMonth: "2026-09" };
+  const base: WaterCost = { perLiter: 0.1234, month: "2026-09", bill: 1000, liters: 8100, onlineLiters: 0, reason: "ok", latestBillMonth: "2026-09" };
   assert.equal(waterSummary(base), `0,1234${NBSP}₺/L · Eylül 2026 su faturasından`);
   assert.equal(waterSummary({ ...base, reason: "override" }), `0,1234${NBSP}₺/L · Ayarlar'dan elle`);
   // Hesaplanamayan maliyet "0,0000 ₺/L" diye yazılmaz: yalnızca neden

@@ -117,6 +117,8 @@ export interface SalesRow {
   productLabel: string | null;
   isService: boolean;
   matched: boolean;
+  /** Bağlı ürünün reçetesi boş: maliyet ortalama oranla tahmini (unitCost null), marj ölçeğine girmez */
+  noRecipe: boolean;
   unitCost: number | null;
   net: number;
   cost: number;
@@ -607,7 +609,9 @@ const MATCH_TONE = {
 } as const;
 
 type Totals = { qty: number; revenue: number; net: number; cost: number; commission: number; grossProfit: number; margin: number };
-type Optimistic = { kind: "match"; id: number; productId: number | null; isService: boolean; label: string | null } | { kind: "delete"; id: number };
+type Optimistic =
+  | { kind: "match"; id: number; productId: number | null; isService: boolean; label: string | null; noRecipe: boolean }
+  | { kind: "delete"; id: number };
 
 /** Tablo başlığı: kalın ad + altında küçük birim/açıklama satırı (sütunlar dar kalsın, birim görünsün) */
 function HeadLabel({ children, sub, wrap }: { children: ReactNode; sub?: string; wrap?: boolean }) {
@@ -646,7 +650,15 @@ function MarginPill({ row, scale }: { row: SalesRow; scale: MarginScale | null }
         row.grossProfit < 0 && "text-bad",
       )}
       style={colored ? { backgroundColor: marginColor(row.margin, scale) } : undefined}
-      title={row.isService ? "HİZMET: maliyetsiz" : !row.matched ? "Maliyet tahmini (ortalama oran); ölçeğe girmez" : (level ?? undefined)}
+      title={
+        row.isService
+          ? "HİZMET: maliyetsiz"
+          : !row.matched
+            ? "Maliyet tahmini (ortalama oran); ölçeğe girmez"
+            : row.noRecipe
+              ? "Ürünün reçetesi boş: maliyet tahmini (ortalama oran); ölçeğe girmez"
+              : (level ?? undefined)
+      }
     >
       {pct(row.margin, 1)}
       {level ? <span className="sr-only"> · {level}</span> : null}
@@ -679,7 +691,9 @@ export function SalesTable({
     a.kind === "delete"
       ? state.filter((r) => r.id !== a.id)
       : state.map((r) =>
-          r.id === a.id ? { ...r, productId: a.productId, isService: a.isService, matched: !!a.productId && !a.isService, productLabel: a.label } : r,
+          r.id === a.id
+            ? { ...r, productId: a.productId, isService: a.isService, matched: !!a.productId && !a.isService, noRecipe: a.noRecipe, productLabel: a.label }
+            : r,
         ),
   );
   const [rawFilter, setFilter] = useQueryState<string>("durum", "tumu");
@@ -766,7 +780,8 @@ export function SalesTable({
     const p = v.productId ? productById.get(v.productId) : undefined;
     keepScroll();
     startTransition(async () => {
-      applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null });
+      // Reçetesi boş ürün (maliyeti 0): sunucu yanıtına kadar da tahmini maliyetli satır gibi görünsün
+      applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null, noRecipe: !!p && !v.isService && !(p.cost > 0) });
       if (row.lafposDays !== null) {
         // LafPOS satırı: bu ay toplamının satırları, o ayın aynı adlı ürünsüz satırları ve ad hafızası (başka aylardaki
         // ürünsüz satırlar da bağlanır; aynı adın başka ürüne bağlı satırı değişmez)
@@ -1078,9 +1093,9 @@ export function SalesTable({
                       <p className="mt-0.5 flex items-center justify-end gap-1.5 text-xs text-ink-mute">
                         brüt kâr <MarginPill row={r} scale={scale} />
                       </p>
-                      <p className={cn("text-xs", status === "unmatched" ? "text-warn" : "text-ink-mute")}>
+                      <p className={cn("text-xs", status === "unmatched" || r.noRecipe ? "text-warn" : "text-ink-mute")}>
                         maliyet {tl(r.cost)}
-                        {status === "unmatched" ? " (tahmini)" : ""}
+                        {status === "unmatched" ? " (tahmini)" : r.noRecipe ? " (tahmini, reçete boş)" : ""}
                       </p>
                     </div>
                   </div>
@@ -1138,7 +1153,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="malzeme + ambalaj" wrap>
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde net ciro × ortalama maliyet oranı (turuncu, tahmini). Birim maliyet bugünkü reçete ve hammadde fiyatlarıyla hesaplanır (Excel'deki gibi): geçmiş bir ayda da bugünün maliyetidir. Gelir-gider'in mal maliyeti faturalardan ve ay sonu sayımından gelir, sonraki zamla değişmez." />
+                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde ve reçetesi boş ürüne bağlı satırlarda net ciro × ortalama maliyet oranı (turuncu, tahmini). Birim maliyet bugünkü reçete ve hammadde fiyatlarıyla hesaplanır (Excel'deki gibi): geçmiş bir ayda da bugünün maliyetidir. Gelir-gider'in mal maliyeti faturalardan ve ay sonu sayımından gelir, sonraki zamla değişmez." />
                         <SortButton numeric dir={dirOf("maliyet")} onClick={() => toggleSort("maliyet")}>
                           Maliyet
                         </SortButton>
@@ -1160,7 +1175,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="kâr ÷ net">
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Excel'deki 'Kâr marjı %' sütunu ve renk ölçeği: bu ayın en düşük marjı kırmızı, ortancası sarı, en yükseği yeşil. Ölçeğe reçeteli ürünler girer; HİZMET ve eşleşmeyen (maliyeti tahmini) satırlar renksizdir." />
+                        <InfoTip text="Excel'deki 'Kâr marjı %' sütunu ve renk ölçeği: bu ayın en düşük marjı kırmızı, ortancası sarı, en yükseği yeşil. Ölçeğe reçeteli ürünler girer; HİZMET, eşleşmeyen ve reçetesi boş ürüne bağlı (maliyeti tahmini) satırlar renksizdir." />
                         <SortButton numeric dir={dirOf("marj")} onClick={() => toggleSort("marj")}>
                           Marj
                         </SortButton>
@@ -1218,10 +1233,14 @@ export function SalesTable({
                           </span>
                         ) : null}
                       </TD>
-                      <TD numeric className={cn(status === "unmatched" && "text-warn")}>
+                      <TD numeric className={cn((status === "unmatched" || r.noRecipe) && "text-warn")}>
                         {tl(r.cost)}
                         {status === "unmatched" ? (
                           <span className="block text-xs">tahmini</span>
+                        ) : r.noRecipe ? (
+                          <span className="block text-xs" title="Ürünün reçetesi boş: maliyet net ciro × ortalama maliyet oranı">
+                            tahmini · reçete boş
+                          </span>
                         ) : (
                           <span className="block text-xs text-ink-mute">birim {r.unitCost !== null ? tl(r.unitCost, 2) : "–"}</span>
                         )}

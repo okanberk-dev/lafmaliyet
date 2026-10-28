@@ -92,6 +92,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     productLabel: l.product ? `${l.product.product.name} · ${l.product.product.size}` : null,
     isService: l.line.isService,
     matched: l.matched,
+    noRecipe: l.noRecipe,
     unitCost: l.unitCost,
     net: l.net,
     cost: l.cost,

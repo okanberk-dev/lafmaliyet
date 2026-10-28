@@ -73,7 +73,7 @@
 | **Hammaddeler** | 74 malzeme: kategori, tedarikçi, paket, paket fiyatı (KDV hariç, iskontolu), paket içeriği, birim, alış KDV'si. 21'i tahmini (sarı) | `Birim maliyet = Paket fiyatı ÷ Paket içeriği` |
 | **Reçete Kartları** | 129 kart (ürün × boy). Her kart: malzemeler, miktarlar (bir kısmı Ayarlar'a bağlı: `=ShotTek`, `=2*ShotCift`, `=200*PotGr/PotMl`), ürüne özel fire oranı, satış fiyatı | `Toplam = Σ miktar × birim maliyet`; `Fire = Toplam × (ürün fire oranı ya da genel oran)`; `Maliyet = Toplam + Fire`; `Net = Fiyat ÷ 1,10`; `Komisyon = Fiyat × %2,5 × %85,6`; `Birim kâr = Net − Maliyet − Komisyon` |
 | **Ürün Kârlılık** | 13 kategoride 129 satır | `Marj = Birim kâr ÷ Net`; `Maliyet oranı = Maliyet ÷ Net`; `Önerilen fiyat = TAVAN(Maliyet ÷ %30 × 1,10; 5)`; `Durum`: İyi (≤ %30) / Dikkat (≤ %40) / Düşük kâr |
-| **Satış Raporu** | Patron (ModPOS) Eylül 2026: 125 POS ürünü, 2.543 adet, 441.955 ₺. Her satır bir ürün anahtarıyla eşleşiyor (`Ürün\|Boy`), HİZMET (karaoke) ya da eşleşmemiş | Eşleşen satırda `maliyet = adet × birim maliyet`. Eşleşmeyende `net ciro × eşleşenlerin ortalama maliyet oranı` (%25,5). HİZMET satırında 0. Komisyon ve brüt kâr |
+| **Satış Raporu** | Patron (ModPOS) Eylül 2026: 125 POS ürünü, 2.543 adet, 441.955 ₺. Her satır bir ürün anahtarıyla eşleşiyor (`Ürün\|Boy`), HİZMET (karaoke) ya da eşleşmemiş | Eşleşen satırda `maliyet = adet × birim maliyet`. Eşleşmeyende (panelde reçetesi boş ürüne bağlı satırda da; oran yalnız reçeteli ürünlerden) `net ciro × eşleşenlerin ortalama maliyet oranı` (%25,5). HİZMET satırında 0. Komisyon ve brüt kâr |
 | **Faturalar** | Paraşüt'ten 81 fatura, 9 kategori. Kategori × ay özeti | `Net = Tutar − İskonto`; `KDV = Ödenecek − Net`; mal maliyeti = ilk 3 kategori |
 | **Personel** | 2 personel, net 30.000 ₺. SGK oranları | `Brüt = Net ÷ (1 − %14 − %1)`; `İşveren maliyeti = Brüt + %15,75 SGK + %2 işsizlik + ekler` (kişi başı 41.559 ₺) |
 | **Sabit Giderler** | Kira 160.000 ₺, personel, yemek (330 ₺ × gün), part-time, reklam, elektrik, muhasebe … Toplam 377.813 ₺/ay. Tek seferlik yatırımlar (~1,04 M ₺) ayrıca listelenmiş | `Toplam = Σ` |
@@ -190,12 +190,13 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
     Ödenecek'in tamamı (Hatırlatıcılar ile aynı kural, `openBalance`). Kalan tutar çekirdek veride
     `Invoice.outstanding` olarak gelir; Genel bakış, Faturalar, Hatırlatıcılar ve Excel'e aktar aynı rakamı gösterir.
 12. **Su + buz birim maliyeti:** Excel sabit Eylül faturasını kullanır; panel SU GİDERİ girilmiş ve ürün satış
-    listesi olan en son ayı kullanır (litre satışlardan bulunur). Elle fiyatlanan buz litreye katılmaz. Fatura
+    listesi olan en son ayı kullanır (litre satışlardan bulunur; aynı ayın laffogato.net online siparişlerinin su ve
+    buzu da litreye girer, denetim E-57). Elle fiyatlanan buz litreye katılmaz. Fatura
     girilmiş ama o ayın satış listesi yoksa "SU GİDERİ girilmedi" denmez; ekranlar ve genel bakış uyarısı litrenin
     neden hesaplanamadığını söyler (`water.reason`, `waterSource`).
 13. **Kâr marjı renk ölçeği:** Excel J10:J134 tüm satırları kapsar (HİZMET/karaoke en yeşil); panel ölçeği yalnızca
-    reçeteli ürüne bağlı ve net cirosu > 0 satırlardan kurar, HİZMET ve tahmini maliyetli (eşleşmeyen) satırlar
-    renksiz. Renk ve "en düşük / en yüksek" etiketi ekrandaki duyarlıkla (%78,5) karşılaştırılır: aynı görünen iki
+    reçeteli ürüne bağlı ve net cirosu > 0 satırlardan kurar, HİZMET ve tahmini maliyetli (eşleşmeyen ya da reçetesi
+    boş ürüne bağlı) satırlar renksiz. Renk ve "en düşük / en yüksek" etiketi ekrandaki duyarlıkla (%78,5) karşılaştırılır: aynı görünen iki
     marj zıt renk almaz; ayın bütün satırları aynı oranı gösteriyorsa ölçek kurulmaz.
 14. **Tutar değişikliği "şu aydan itibaren" geçerlidir** (Sabit giderler, Personel). Excel'de her ay sütunu kendi
     tutarını taşır; panelde kayıt sürümlüdür: "Hangi aydan itibaren?" (varsayılan bu ay) önceki ayları değiştirmez,

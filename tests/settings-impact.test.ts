@@ -118,7 +118,7 @@ test("elle su birim maliyeti: su ve buz kullanan ürünlerin maliyeti değişir"
 });
 
 test("su mesajı nedeni söyler: fatura girildi ama satış listesi yoksa 'girilmedi' denmez", () => {
-  const w = (p: Partial<WaterCost>): WaterCost => ({ perLiter: 0, month: null, bill: 0, liters: 0, reason: "no-bill", latestBillMonth: null, ...p });
+  const w = (p: Partial<WaterCost>): WaterCost => ({ perLiter: 0, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "no-bill", latestBillMonth: null, ...p });
   const noUsage = waterSource(w({ reason: "no-usage", latestBillMonth: "2026-10" }));
   assert.match(noUsage, /Ekim 2026 su faturası girildi ama Ekim 2026 ürün satış listesi yok; litre hesaplanamadı/);
   assert.doesNotMatch(noUsage, /girilmedi/);

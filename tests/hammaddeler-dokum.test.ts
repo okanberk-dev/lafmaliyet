@@ -112,7 +112,7 @@ test("Su + buz kartı: fatura ÷ litre; litre kalemleri motorun litresini tutar,
 });
 
 test("Su + buz kartı: elle değer, satış listesi olmayan fatura, hiç fatura yok", () => {
-  const water = (x: Partial<WaterCost>): WaterCost => ({ perLiter: 0, month: null, bill: 0, liters: 0, reason: "no-bill", latestBillMonth: null, ...x });
+  const water = (x: Partial<WaterCost>): WaterCost => ({ perLiter: 0, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "no-bill", latestBillMonth: null, ...x });
   const none = new Map<number, number>();
 
   const ov = waterBreakdown(water({ reason: "override", perLiter: 0.5 }), base.ingredients, none);

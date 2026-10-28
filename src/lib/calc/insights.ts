@@ -498,6 +498,8 @@ export interface OnlineTheory {
   estimatedCost: number;
   estimatedBase: number;
   avgCostRatio: number;
+  /** Reçetesi boş (maliyeti ortalama oranla tahmini) online satılan ürün sayısı */
+  noRecipe: number;
   grossProfit: number;
   share: number;
   closed: boolean;
@@ -517,6 +519,7 @@ function onlineTheory(o: OnlineMonthCalc | null, share: number): OnlineTheory | 
     estimatedCost: k(o.estimatedCost),
     estimatedBase: k(o.estimatedBase),
     avgCostRatio: o.avgCostRatio,
+    noRecipe: o.noRecipe.length,
     grossProfit: k(o.grossProfit),
     share,
     closed: o.revenue.closed,
@@ -1314,10 +1317,23 @@ export interface MenuEngItem {
   cls: MenuClass;
 }
 
+/** Menü mühendisliğine girmeyen ürün: reçetesi boş (maliyeti bilinmiyor), ayın satış adediyle */
+export interface MenuEngSkipped {
+  p: ProductCalc;
+  qty: number;
+}
+
+/**
+ * Kasavana & Smith sınıfları. Reçetesi boş ürün ("Reçete yok": maliyeti 0) sınıflanmaz ve eşiklere girmez: birim kârı
+ * ~fiyatı kadar görünür, en iyi "Yıldız" olurdu ve kâr eşiğini yükseltirdi (Genel bakış'taki kâr sıralamasıyla aynı kural,
+ * denetim E-47). Bu ürünler `noRecipe`'te satış adediyle ayrı döner
+ */
 export function menuEngineering(model: Model, month: string, categoryId?: number) {
   // ModPOS + online (laffogato.net): online satılan ürün de satılmıştır
   const sold = soldWithOnline(model, month);
-  const items = model.activeProducts.filter((p) => categoryId === undefined || p.product.categoryId === categoryId);
+  const inScope = model.activeProducts.filter((p) => categoryId === undefined || p.product.categoryId === categoryId);
+  const items = inScope.filter((p) => p.status !== "Reçete yok");
+  const noRecipe: MenuEngSkipped[] = inScope.filter((p) => p.status === "Reçete yok").map((p) => ({ p, qty: sold.get(p.product.id) ?? 0 }));
   const totalQty = sum(items.map((p) => sold.get(p.product.id) ?? 0));
   const n = items.length;
   const popThreshold = n ? (1 / n) * 0.7 : 0;
@@ -1330,7 +1346,7 @@ export function menuEngineering(model: Model, month: string, categoryId?: number
     const cls: MenuClass = highPop ? (highCm ? "star" : "plowhorse") : highCm ? "puzzle" : "dog";
     return { p, qty, mix, cm: p.unitProfit, totalCm: p.unitProfit * qty, cls };
   });
-  return { items: result, totalQty, popThreshold, avgCm };
+  return { items: result, totalQty, popThreshold, avgCm, noRecipe };
 }
 
 export interface ScenarioInput {
