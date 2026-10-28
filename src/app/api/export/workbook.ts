@@ -244,7 +244,8 @@ export function waterExplanation(water: Model["water"]): string {
     case "override":
       return "Ayarlar'da elle girildi; su faturasından hesaplanmıyor.";
     case "ok": {
-      const base = `${monthLabel(water.month!)} SU GİDERİ (${tl(water.bill)}) ÷ reçetelere göre ${num(water.liters, 1)} L su + buz.`;
+      const web = water.onlineLiters > 0 ? ` (${num(water.onlineLiters, 1)} L laffogato.net siparişlerinden)` : "";
+      const base = `${monthLabel(water.month!)} SU GİDERİ (${tl(water.bill)}) ÷ reçetelere göre ${num(water.liters, 1)} L su + buz${web}.`;
       return water.latestBillMonth && water.latestBillMonth !== water.month
         ? `${base} ${monthName(water.latestBillMonth)} su faturası da girildi ama ${monthName(water.latestBillMonth)} satış listesi yok; o ay litre hesaplanamadı.`
         : base;
@@ -309,9 +310,14 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
     ],
     { x: 3, y: 1, landscape: true },
   );
-  headerRow(uk, colHeaders(uk));
+  const ukHeader = headerRow(uk, colHeaders(uk));
+  ukHeader.getCell("mp").note = "Birim kâr × satış adedi. Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
+  for (const k of ["profit", "margin", "ratio", "sug"]) ukHeader.getCell(k).note = "Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
   for (const p of model.products) {
     const qty = sold.get(p.product.id) ?? 0;
+    // Reçetesi boş üründe kâr, marj, oran ve önerilen fiyat boş: maliyeti bilinmiyor, ~%98 marjla sıralamanın başına
+    // çıkardı (Ürünler'deki tire; denetim E-47)
+    const nr = p.status === "Reçete yok";
     uk.addRow({
       cat: p.category?.name,
       name: p.product.name,
@@ -322,13 +328,13 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       kom: p.commission,
       cost: p.cost,
       total: p.totalCost,
-      profit: p.unitProfit,
-      margin: p.margin,
-      ratio: p.costRatio,
-      sug: p.suggestedPrice,
+      profit: nr ? null : p.unitProfit,
+      margin: nr ? null : p.margin,
+      ratio: nr ? null : p.costRatio,
+      sug: nr ? null : p.suggestedPrice,
       status: p.status,
       qty,
-      mp: p.unitProfit * qty,
+      mp: nr ? null : p.unitProfit * qty,
       mn: p.net * qty,
       fire: p.fireRate,
       active: p.product.active ? "Evet" : "Pasif",
@@ -998,7 +1004,7 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
     ["Ciro dışı (ödenmez / ikram)", info?.offRevenue ?? null, MONEY0, "Malzemesi harcanan ama geliri olmayan siparişler."],
     ["Yönetici indirimleri", info?.discounts ?? null, MONEY0, "Ürün listesi indirim öncesi fiyatlardır; Özet bu tutarı cirodan düşer."],
     ["Açık gün", info?.openDays ?? null, "0"],
-    ["Eşleşen ürünlerin ortalama maliyet oranı", sales.lines.length ? sales.avgCostRatio : null, PCT, "Reçetesi olan ürünlerin toplam maliyeti ÷ net cirosu. Eşleşmeyen satırlara bu oran uygulanır."],
+    ["Eşleşen ürünlerin ortalama maliyet oranı", sales.lines.length ? sales.avgCostRatio : null, PCT, "Reçetesi olan ürünlerin toplam maliyeti ÷ net cirosu. Eşleşmeyen satırlara ve reçetesi boş ürünlere bu oran uygulanır."],
     ["Liste – indirim – POS cirosu (fark)", c.sales.diff, MONEY0, "Satış listesi toplamı − yönetici indirimleri − POS cirosu. 1.000 ₺'nin altı tutarlı sayılır."],
   ];
   for (const [k, v, fmt, note] of summary) {
@@ -1022,10 +1028,16 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
     note: "Not",
   });
   ws.views = [{ state: "frozen", xSplit: 1, ySplit: head.number }];
-  head.getCell("c").note = "Eşleşen ürünlerde Adet × Birim maliyet; eşleşmeyenlerde Net ciro × ortalama maliyet oranı; hizmette 0.";
+  head.getCell("c").note = "Eşleşen ürünlerde Adet × Birim maliyet; eşleşmeyenlerde ve reçetesi boş ürünlerde Net ciro × ortalama maliyet oranı; hizmette 0.";
   const ratio = pct(sales.avgCostRatio);
   for (const l of sales.lines) {
-    const st = l.line.isService ? "Hizmet – malzeme maliyeti yok" : l.matched ? "Eşleşti" : `Eşleşmedi – ortalama maliyet oranı (${ratio}) uygulandı`;
+    const st = l.line.isService
+      ? "Hizmet – malzeme maliyeti yok"
+      : l.noRecipe
+        ? `Eşleşti, reçete boş – ortalama maliyet oranı (${ratio}) uygulandı`
+        : l.matched
+          ? "Eşleşti"
+          : `Eşleşmedi – ortalama maliyet oranı (${ratio}) uygulandı`;
     ws.addRow({ n: l.line.posName, q: l.line.qty, r: l.line.revenue, m: l.line.isService ? "HİZMET" : l.product ? l.product.key : "", uc: l.unitCost, net: l.net, c: l.cost, k: l.commission, g: l.grossProfit, mg: l.margin, st, note: l.line.note });
   }
   if (!sales.lines.length) ws.addRow({ n: "Bu ay satış listesi yüklenmemiş." });

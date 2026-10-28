@@ -167,9 +167,13 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
     {
       key: "malzeme",
       label: "Malzeme + ambalaj",
-      sub: `Satılan her ürün × reçete maliyeti${d.sales.unmatched.length ? "; eşleşmeyen satırlar ortalama maliyet oranıyla" : ""}${
+      sub: `Satılan her ürün × reçete maliyeti${
+        d.sales.unmatched.length || d.sales.noRecipe.length
+          ? `; ${[d.sales.unmatched.length ? "eşleşmeyen satırlar" : "", d.sales.noRecipe.length ? "reçetesi boş ürünler" : ""].filter(Boolean).join(" ve ")} ortalama maliyet oranıyla`
+          : ""
+      }${
         o
-          ? `; laffogato.net ${tl(o.material)}${o.estimatedCost > 0 ? ` (menüye bağlı olmayan satırlar ve mağaza kolileri ortalama maliyet oranıyla, %${num(o.avgCostRatio * 100, 1)})` : ""}`
+          ? `; laffogato.net ${tl(o.material)}${o.estimatedCost > 0 ? ` (${o.noRecipe ? "menüye bağlı olmayan satırlar, reçetesi boş ürünler" : "menüye bağlı olmayan satırlar"} ve mağaza kolileri ortalama maliyet oranıyla, %${num(o.avgCostRatio * 100, 1)})` : ""}`
           : ""
       }`,
       amount: -t.material,

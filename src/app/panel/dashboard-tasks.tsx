@@ -69,6 +69,12 @@ export interface MonthTaskFacts {
   sales: {
     lines: number;
     unmatched: number;
+    /**
+     * Ayın satılan (satış listesi ya da laffogato.net online) ama reçetesi boş ürünleri, satış adedine göre: maliyetleri
+     * ortalama oranla tahmin edilir (denetim E-47); yoksa alan yok
+     */
+    /** inactive: bunlardan menüde pasif olanlar (eski ayda satılıp kaldırılmış); "Reçete gir" pasifleri de listeler */
+    noRecipe?: { count: number; names: string[]; unpriced: number; inactive?: number };
     summaryRows: number;
     refMonth: string | null;
     lafpos?: { source: "gecis" | "lafpos"; days: number; warning: string | null };
@@ -151,6 +157,17 @@ export function monthTaskFacts(
 ): MonthTaskFacts {
   const sales = model.monthSales(month);
   const info = model.monthInfo.get(month);
+  // Satılan reçetesiz ürünler (satış listesi + online), en çok satılan önce
+  const noRecipeQty = new Map<number, number>();
+  for (const l of sales.noRecipe) if (l.product) noRecipeQty.set(l.product.product.id, (noRecipeQty.get(l.product.product.id) ?? 0) + l.line.qty);
+  for (const x of model.onlineMonth(month)?.noRecipe ?? []) noRecipeQty.set(x.productId, (noRecipeQty.get(x.productId) ?? 0) + x.qty);
+  const noRecipeProducts = [...noRecipeQty]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => model.products.find((p) => p.product.id === id))
+    .filter((p) => !!p);
+  const noRecipeNames = noRecipeProducts.map((p) => `${p.product.name} · ${p.product.size}`);
+  // Satırı olan ama maliyeti 0 çıkan ürün: reçetesi boş değil, malzemeleri fiyatsız (durumu yine "Reçete yok")
+  const unpricedRecipes = noRecipeProducts.filter((p) => p.lines.length > 0).length;
   const pm = model.pnlMonth(month);
   const sheet = model.stockSheet(month);
   // Kafe dışı (karaoke box, Alp Koç) faturalar kafenin sayısına girmez; kontrol bekleyenler hepsinden
@@ -168,6 +185,9 @@ export function monthTaskFacts(
     sales: {
       lines: sales.lines.length,
       unmatched: sales.unmatched.filter((l) => !isSummaryRow(l.line.posName)).length,
+      ...(noRecipeNames.length
+        ? { noRecipe: { count: noRecipeNames.length, names: noRecipeNames, unpriced: unpricedRecipes, inactive: noRecipeProducts.filter((p) => !p.product.active).length } }
+        : {}),
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
       ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
@@ -204,6 +224,16 @@ export function monthTaskFacts(
 
 const later = (state: MonthState) => state !== "closed";
 
+/**
+ * "2 satılan ürünün reçetesi boş (Pumpkin Latte · M, Pumpkin Latte · L)": en çok satılan üç ürünün adı ve boyuyla. Biri
+ * reçeteli ama malzemeleri fiyatsızsa (maliyeti yine 0) "reçetesi boş ya da malzemesi fiyatsız"
+ */
+function noRecipeText(n: { count: number; names: string[]; unpriced: number }): string {
+  const shown = n.names.slice(0, 3).join(", ");
+  const more = n.names.length > 3 ? ` ve ${num(n.names.length - 3)} ürün daha` : "";
+  return `${num(n.count)} satılan ürünün ${n.unpriced ? "reçetesi boş ya da malzemesi fiyatsız" : "reçetesi boş"} (${shown}${more})`;
+}
+
 /** Seçili ayın işleri, Satışlar → Ödemeler sırasıyla */
 export function monthTasks(f: MonthTaskFacts): MonthTask[] {
   const m = f.month;
@@ -229,13 +259,25 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
       // LafPOS'a geçilen ayda eksik ya da sayılmayan gün, liste ↔ Z farkı: satırlar olsa da ay tamam değil
       out.push({ key: "satis", title: "Satış raporu", status: "warn", detail: s.lafpos.warning, href, action: "Satışlara bak" });
     } else if (s.lines && s.unmatched) {
+      const noRecipe = s.noRecipe ? ` Ayrıca ${noRecipeText(s.noRecipe)}.` : "";
       out.push({
         key: "satis",
         title: "Satış raporu",
         status: "todo",
-        detail: `${s.lafpos ? `${num(s.lines)} satır` : `${num(s.lines)} satır yüklendi`}; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.`,
+        detail: `${s.lafpos ? `${num(s.lines)} satır` : `${num(s.lines)} satır yüklendi`}; ${num(s.unmatched)} POS ürünü reçeteyle eşleşmedi, bunlara ortalama maliyet oranı uygulanıyor.${noRecipe}`,
         href: `${href}&durum=eslesmeyen#satirlar`,
         action: "Eşleştir",
+      });
+    } else if (s.lines && s.noRecipe) {
+      // Satırlar ürüne bağlı ama ürünün reçetesi boş: maliyeti 0 değil, ortalama oranla tahmini (denetim E-47)
+      out.push({
+        key: "satis",
+        title: "Satış raporu",
+        status: "todo",
+        detail: `${num(s.lines)} satır ürünlere bağlı ama ${noRecipeText(s.noRecipe)}: maliyetleri ortalama maliyet oranıyla tahmin ediliyor. ${s.noRecipe.unpriced ? "Reçetelerini ve malzeme fiyatlarını girin." : "Reçetelerini girin."}`,
+        // Ürünler pasifleri ?pasif=1 olmadan göstermez: adı geçen pasif ürün listede bulunsun
+        href: `/panel/urunler?${new URLSearchParams({ durum: "Reçete yok", ...(s.noRecipe.inactive ? { pasif: "1" } : {}), ay: m })}`,
+        action: "Reçete gir",
       });
     } else if (s.lines) {
       const detail =

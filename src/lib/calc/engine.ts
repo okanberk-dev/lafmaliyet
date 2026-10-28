@@ -471,7 +471,15 @@ export interface ProductCalc extends ProductEconomics {
 export interface SalesLineCalc {
   line: SalesLine;
   product: ProductCalc | undefined;
+  /** Satır bir menü ürününe bağlı (HİZMET değil); reçetesi boş olsa da (bkz. noRecipe) */
   matched: boolean;
+  /**
+   * Bağlı ürünün reçetesi boş ya da malzemeleri fiyatsız (maliyeti 0, durumu "Reçete yok"): maliyeti eşleşmeyen satır
+   * gibi net × ayın ortalama maliyet oranıyla tahmin edilir ve ortalama orana girmez (denetim E-47). Ürün kâr
+   * sıralamalarında olduğu gibi burada da sıfır maliyet sayılmaz: yoksa satırın bütün cirosu kâr görünürdü
+   */
+  noRecipe: boolean;
+  /** Reçeteye göre birim maliyet; eşleşmeyen, HİZMET ve reçetesi boş satırda null (maliyet tahmini ya da yok) */
   unitCost: number | null;
   net: number;
   cost: number;
@@ -491,10 +499,14 @@ export interface MonthSales {
   commission: number;
   grossProfit: number;
   margin: number;
+  /** Reçeteli (maliyeti > 0) ürüne bağlı satırların net cirosu ve reçete maliyeti: ortalama maliyet oranının dayanağı */
   matchedNet: number;
   matchedCost: number;
+  /** matchedCost ÷ matchedNet: eşleşmeyen, reçetesi boş ve online tahmini satırlara uygulanır */
   avgCostRatio: number;
   unmatched: SalesLineCalc[];
+  /** Ürüne bağlı ama ürünün reçetesi boş satırlar (SalesLineCalc.noRecipe); maliyetleri ortalama oranla tahmini */
+  noRecipe: SalesLineCalc[];
   services: SalesLineCalc[];
   /** HİZMET işaretli satırların cirosu (KDV dahil): net'i hizmet KDV oranıyla ayrılır */
   serviceRevenue: number;
@@ -589,16 +601,19 @@ export interface SiteLinesCalc {
 /**
  * Bir ayın laffogato.net online satışı, reçeteye göre (Genel bakış, zam etkisi; docs/SITE-SATIS.md). Gelir KDV hariç
  * (Gelir-gider'deki üç satırla aynı). Malzeme: ürüne eşlenen kafe satırları ve ürünü olan seçenekler adet × ürünün
- * reçete maliyeti; eşlenmeyen kafe satırları ve mağaza kolileri (kargo hariç) KDV hariç tutar × ayın ortalama maliyet
- * oranı (ModPOS'ta eşleşmeyen satırın kuralı). Karaokenin malzemesi yok; online ödemenin komisyonu faturasıyla
- * Gelir-gider'de (reçeteye göre görünümde yok).
+ * reçete maliyeti; eşlenmeyen kafe satırları, reçetesi boş ürüne eşlenenler ve mağaza kolileri (kargo hariç) KDV hariç
+ * tutar × ayın ortalama maliyet oranı (ModPOS'ta eşleşmeyen ve reçetesi boş satırın kuralı). Karaokenin malzemesi yok;
+ * online ödemenin komisyonu faturasıyla Gelir-gider'de (reçeteye göre görünümde yok).
  */
 export interface OnlineMonthCalc {
   month: string;
   revenue: SiteMonthRevenue;
-  /** Ürüne eşlenen satırların ve seçeneklerin reçete maliyeti */
+  /** Reçeteli ürüne eşlenen satırların ve seçeneklerin reçete maliyeti */
   mappedCost: number;
-  /** Ortalama maliyet oranıyla tahmin edilen kısmın dayanağı (KDV hariç) ve maliyeti */
+  /**
+   * Ortalama maliyet oranıyla tahmin edilen kısmın dayanağı (KDV hariç) ve maliyeti: eşlenmeyen kafe satırları,
+   * reçetesi boş ürüne eşlenen satırlar ve seçenekler (noRecipe), mağaza kolileri
+   */
   estimatedBase: number;
   estimatedCost: number;
   /** Ayın ModPOS ortalama maliyet oranı (ayın satış listesi yoksa son satış ayınınki; hiç yoksa 0) */
@@ -609,6 +624,11 @@ export interface OnlineMonthCalc {
   /** Ürüne eşlenen kafe adedi (seçenekler dahil: Extra Shot ürünü gibi) */
   mappedQty: number;
   soldByProduct: Map<number, number>;
+  /**
+   * Reçetesi boş (maliyeti 0) ürüne eşlenen online satış: ürün, adet ve tahminin dayanağı (KDV hariç; satırın liste
+   * tutarı, seçenekte ürünün menü fiyatı). estimatedBase'in içinde (denetim E-47)
+   */
+  noRecipe: { productId: number; qty: number; base: number }[];
 }
 
 export interface StockLine {
@@ -689,7 +709,10 @@ export interface WaterCost {
   perLiter: number;
   month: string | null;
   bill: number;
+  /** Faturanın bölündüğü su + buz litresi: satış listesi (ModPOS / LafPOS) ve laffogato.net online siparişleri */
   liters: number;
+  /** liters'ın online siparişlerden gelen kısmı (reçeteye göre; denetim E-57) */
+  onlineLiters: number;
   reason: "override" | "ok" | "no-bill" | "no-usage";
   /** SU GİDERİ girilmiş en son ay (satış listesi olsun olmasın) */
   latestBillMonth: string | null;
@@ -965,10 +988,14 @@ export function createModel(ds: Dataset) {
   // --- Su + buz birim maliyeti (Ayarlar!B17) -----------------------------------
   // Excel her zaman Eylül SU GİDERİ ÷ Eylül su + buz litresini kullanır. Panel SU GİDERİ girilmiş ve
   // satış listesinden (reçeteye göre) su kullanımı çıkan en son ayı alır; Excel verisinde ikisi aynı sonucu verir.
+  // Fatura kafede harcanan bütün suyu kapsar: litreye aynı ayın laffogato.net / uygulama siparişlerinin su ve buzu da
+  // girer (denetim E-57; LafPOS'un satırları satış listesinin içinde). Ay yine satış listesiyle seçilir: listesi
+  // yüklenmemiş ayın faturası yalnız online litreye bölünürse litre fiyatı katlarca şişerdi.
   const waterIngredients = ds.ingredients.filter((i) => i.priceSource === "water");
+  const waterLiters = (usage: ReadonlyMap<number, number>) => sum(waterIngredients.map((i) => usage.get(i.id) ?? 0)) / 1000;
   function computeWater(): WaterCost {
     if (st.suBirimLTOverride !== null && st.suBirimLTOverride !== undefined) {
-      return { perLiter: st.suBirimLTOverride, month: null, bill: 0, liters: 0, reason: "override", latestBillMonth: null };
+      return { perLiter: st.suBirimLTOverride, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "override", latestBillMonth: null };
     }
     const candidates = [...pnlByMonth.entries()]
       .filter(([, rows]) => (rows.get("manual:su") ?? 0) > 0)
@@ -977,14 +1004,15 @@ export function createModel(ds: Dataset) {
       .reverse();
     const latestBillMonth = candidates[0] ?? null;
     for (const m of candidates) {
-      const usage = ingredientUsage(m);
-      const liters = sum(waterIngredients.map((i) => usage.get(i.id) ?? 0)) / 1000;
-      if (liters > 0) {
+      const listLiters = waterLiters(ingredientUsage(m));
+      if (listLiters > 0) {
+        const onlineLiters = waterLiters(onlineUsage(m));
+        const liters = listLiters + onlineLiters;
         const bill = pnlByMonth.get(m)!.get("manual:su")!;
-        return { perLiter: bill / liters, month: m, bill, liters, reason: "ok", latestBillMonth };
+        return { perLiter: bill / liters, month: m, bill, liters, onlineLiters, reason: "ok", latestBillMonth };
       }
     }
-    return { perLiter: 0, month: null, bill: 0, liters: 0, reason: latestBillMonth ? "no-usage" : "no-bill", latestBillMonth };
+    return { perLiter: 0, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: latestBillMonth ? "no-usage" : "no-bill", latestBillMonth };
   }
   const water = computeWater();
 
@@ -1131,19 +1159,23 @@ export function createModel(ds: Dataset) {
       const commission = line.revenue * st.komisyon * cardShare;
       return { line, pc, net, commission };
     });
-    const matched = base.filter((b) => b.pc && !b.line.isService);
-    const matchedNet = sum(matched.map((b) => b.net));
-    const matchedCost = sum(matched.map((b) => b.line.qty * b.pc!.cost));
+    // Ortalama maliyet oranı yalnız reçeteli ürünlerden: reçetesi boş ürünün maliyeti 0 sayılırsa oranı düşürür, o
+    // düşük oran da eşleşmeyen ve online satırlara uygulanırdı (denetim E-47)
+    const costed = base.filter((b) => b.pc && !b.line.isService && b.pc.cost > 0);
+    const matchedNet = sum(costed.map((b) => b.net));
+    const matchedCost = sum(costed.map((b) => b.line.qty * b.pc!.cost));
     const avgCostRatio = safeDiv(matchedCost, matchedNet);
     const lines: SalesLineCalc[] = base.map(({ line, pc, net, commission }) => {
       const isMatched = !!pc && !line.isService;
-      const cost = line.isService ? 0 : isMatched ? line.qty * pc!.cost : net * avgCostRatio;
+      const noRecipe = isMatched && !(pc!.cost > 0);
+      const cost = line.isService ? 0 : isMatched && !noRecipe ? line.qty * pc!.cost : net * avgCostRatio;
       const grossProfit = net - cost - commission;
       return {
         line,
         product: pc,
         matched: isMatched,
-        unitCost: isMatched ? pc!.cost : null,
+        noRecipe,
+        unitCost: isMatched && !noRecipe ? pc!.cost : null,
         net,
         cost,
         commission,
@@ -1169,6 +1201,7 @@ export function createModel(ds: Dataset) {
       matchedCost,
       avgCostRatio,
       unmatched: lines.filter((l) => !l.matched && !l.line.isService),
+      noRecipe: lines.filter((l) => l.noRecipe),
       services: lines.filter((l) => l.line.isService),
       serviceRevenue: sum(lines.filter((l) => l.line.isService).map((l) => l.line.revenue)),
       soldByProduct: soldByProduct(month),
@@ -1189,24 +1222,49 @@ export function createModel(ds: Dataset) {
     if (r) {
       const revenue = siteRevenueOf(month)!;
       const soldBy = onlineSold(month);
+      const lines = siteLines(month);
       let mappedCost = 0;
       let mappedQty = 0;
+      // Reçetesi boş ürün sıfır maliyet sayılmaz: satırı eşlenmemiş gibi ortalama oranla maliyetlenir (denetim E-47)
+      const noRecipeBase = new Map<number, number>();
       for (const [productId, qty] of soldBy) {
         const product = productById.get(productId);
         if (!product) continue;
-        mappedCost += qty * computeProduct(product).cost;
+        const pc = computeProduct(product);
+        if (pc.cost > 0) mappedCost += qty * pc.cost;
+        else noRecipeBase.set(productId, 0);
         mappedQty += qty;
       }
+      // Dayanak: satırın liste tutarı (eşlenmeyen satırınki gibi), seçenekte ürünün menü fiyatı (satırın tutarı yok)
+      for (const { line, product } of lines.mapped) {
+        if (noRecipeBase.has(product.id)) noRecipeBase.set(product.id, noRecipeBase.get(product.id)! + line.listMinor / 100 / (1 + st.kdv));
+      }
+      for (const o of lines.options) {
+        if (o.product && noRecipeBase.has(o.product.id)) noRecipeBase.set(o.product.id, noRecipeBase.get(o.product.id)! + o.qty * computeProduct(o.product).net);
+      }
+      const noRecipe = [...noRecipeBase].map(([productId, base]) => ({ productId, qty: soldBy.get(productId) ?? 0, base }));
       // Eşlenmeyen kafe satırları liste fiyatıyla, mağaza kolileri kargo ücreti (taşıma hizmeti, hizmet KDV'si) düşülerek
-      const unmappedNet = sum(siteLines(month).unmapped.map((l) => l.listMinor)) / 100 / (1 + st.kdv);
+      const unmappedNet = sum(lines.unmapped.map((l) => l.listMinor)) / 100 / (1 + st.kdv);
       const shopGoods = Math.max(0, revenue.shop - r.shop.deliveryMinor / 100 / (1 + st.kdvHizmet));
       // Ayın satış listesi yoksa (süren ay, liste ay sonunda) son satış ayının oranı
       const ratioMonth = linesByMonth.has(month) ? month : (salesMonths.filter((m) => m <= month).at(-1) ?? salesMonths[0]);
       const avgCostRatio = ratioMonth ? monthSales(ratioMonth).avgCostRatio : 0;
-      const estimatedBase = unmappedNet + shopGoods;
+      const estimatedBase = unmappedNet + shopGoods + sum(noRecipe.map((x) => x.base));
       const estimatedCost = estimatedBase * avgCostRatio;
       const material = mappedCost + estimatedCost;
-      out = { month, revenue, mappedCost, estimatedBase, estimatedCost, avgCostRatio, material, grossProfit: revenue.total - material, mappedQty, soldByProduct: soldBy };
+      out = {
+        month,
+        revenue,
+        mappedCost,
+        estimatedBase,
+        estimatedCost,
+        avgCostRatio,
+        material,
+        grossProfit: revenue.total - material,
+        mappedQty,
+        soldByProduct: soldBy,
+        noRecipe,
+      };
     }
     onlineMonthCache.set(month, out);
     return out;

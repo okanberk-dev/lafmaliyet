@@ -20,7 +20,7 @@ import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
 import { productBreakdowns } from "./breakdowns";
-import { menuAverages } from "./logic";
+import { menuAverages, soldProfit } from "./logic";
 import { NewProductButton } from "./new-product";
 import { PriceImpactPanel } from "./price-impact-panel";
 import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products-table";
@@ -105,8 +105,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
 
   const active = rows.filter((r) => r.active);
   const soldRows = active.filter((r) => r.soldQty > 0);
-  const totalProfit = soldRows.reduce((a, r) => a + r.monthProfit, 0);
-  const totalNet = soldRows.reduce((a, r) => a + r.monthNet, 0);
+  // Brüt kâr kartı satılan reçeteli ürünlerden: reçetesi boş ürünün kârı ~cirosu kadar görünürdü (denetim E-47)
+  const { profit: totalProfit, net: totalNet, noRecipe: soldNoRecipe } = soldProfit(active);
   const count = (s: ProductRow["status"]) => active.filter((r) => r.status === s).length;
   const good = count("İyi");
   const warn = count("Dikkat");
@@ -240,7 +240,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         </StatBreakdown>
         <StatBreakdown
           title={`${ml} brüt kâr`}
-          description={`Eşleşen ürünlerin birim kârı × satılan adet (${mk.both} ve laffogato.net online), kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır.`}
+          description={`Eşleşen reçeteli ürünlerin birim kârı × satılan adet (${mk.both} ve laffogato.net online), kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları ve reçetesi boş ürünler dahil değil. Ürüne dokununca reçete kartı açılır.`}
           groups={bd.profit}
           total={totalProfit}
           totalLabel="Brüt kâr"
@@ -253,8 +253,14 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             label={`${ml} brüt kâr`}
             value={<CountUp value={totalProfit} suffix=" ₺" />}
             tone={totalProfit < 0 ? "bad" : "default"}
-            info={`Eşleşen ürünler: satış raporunda ve laffogato.net online siparişlerinde bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
-            sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
+            info={`Eşleşen ürünler: satış raporunda ve laffogato.net online siparişlerinde bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar ve reçetesi boş ürünler dahil değildir (reçetesiz ürünün maliyeti 0 görünür, kârı neredeyse cirosu kadar olurdu). Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
+            sub={
+              soldNoRecipe.length
+                ? `${totalNet ? `Marj ${pct(totalProfit / totalNet)} · ` : ""}reçetesiz ${num(soldNoRecipe.length)} ürün hariç`
+                : totalNet
+                  ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}`
+                  : "Satış yok"
+            }
           />
         </StatBreakdown>
       </div>

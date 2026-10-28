@@ -381,9 +381,9 @@ test("Personel ve sabit giderler seçili ayın kayıtlarıyla; değişiklik geç
 });
 
 test("Su + buz açıklaması nedenini söyler", () => {
-  assert.match(waterExplanation({ perLiter: 0, month: null, bill: 0, liters: 0, reason: "no-usage", latestBillMonth: "2026-10" }), /^Ekim su faturası girildi ama Ekim satış listesi yok; litre hesaplanamadı/);
-  assert.match(waterExplanation({ perLiter: 2, month: null, bill: 0, liters: 0, reason: "override", latestBillMonth: null }), /elle girildi/);
-  assert.match(waterExplanation({ perLiter: 0.5, month: "2026-09", bill: 1000, liters: 2000, reason: "ok", latestBillMonth: "2026-09" }), /^Eylül 2026 SU GİDERİ/);
+  assert.match(waterExplanation({ perLiter: 0, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "no-usage", latestBillMonth: "2026-10" }), /^Ekim su faturası girildi ama Ekim satış listesi yok; litre hesaplanamadı/);
+  assert.match(waterExplanation({ perLiter: 2, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "override", latestBillMonth: null }), /elle girildi/);
+  assert.match(waterExplanation({ perLiter: 0.5, month: "2026-09", bill: 1000, liters: 2000, onlineLiters: 0, reason: "ok", latestBillMonth: "2026-09" }), /^Eylül 2026 SU GİDERİ/);
   assert.match(waterExplanation(model.water), /SU GİDERİ girilmemiş/);
 });
 

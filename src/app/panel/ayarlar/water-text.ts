@@ -15,7 +15,9 @@ export function waterSource(water: WaterCost, short = false): string {
         water.latestBillMonth && water.latestBillMonth !== water.month
           ? `; ${monthLabel(water.latestBillMonth)} faturası o ayın satış listesi olmadığı için kullanılmadı`
           : "";
-      return short ? `${m} su faturasından` : `${m} su faturası ${tl(water.bill)} ÷ ${num(water.liters, 1)} L su + buz${skipped}`;
+      // Litreye online siparişlerin su ve buzu da girer (denetim E-57)
+      const web = water.onlineLiters > 0 ? ` (${num(water.onlineLiters, 1)} L laffogato.net dahil)` : "";
+      return short ? `${m} su faturasından` : `${m} su faturası ${tl(water.bill)} ÷ ${num(water.liters, 1)} L su + buz${web}${skipped}`;
     }
     case "no-usage": {
       const m = monthLabel(water.latestBillMonth!);
