@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/profile-dropdown";
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
+import { actionFailure } from "@/components/ui/action-error";
 import { ROLES } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
@@ -59,21 +60,30 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   // Personelin ana sayfası girişteki açılış sayfasıyla aynı (src/lib/roles.ts)
   const home = homeFor(user.role);
 
-  // Uyarılar kabuk açılınca yüklenir, zil her açıldığında arka planda tazelenir; masaüstü ve mobil zil aynı listeyi gösterir
+  // Uyarılar kabuk açılınca yüklenir, zil her açıldığında arka planda tazelenir; masaüstü ve mobil zil aynı listeyi gösterir.
+  // Okuma düşerse (ağ, sunucu, panel güncellendi) liste boş sayılmaz: zil "okunamadı" der, önceki liste kalır (E-49)
   const [alerts, setAlerts] = useState<PanelNotification[] | null>(null);
+  const [alertsFailure, setAlertsFailure] = useState<"stale" | "failed" | null>(null);
+  const [alertsLoading, setAlertsLoading] = useState(true);
   const fetchedAt = useRef(0);
   const refreshAlerts = useCallback(() => {
     fetchedAt.current = Date.now();
+    setAlertsLoading(true);
     loadPanelNotifications()
-      .then(setAlerts)
-      .catch(() => setAlerts((a) => a ?? []));
+      .then((n) => {
+        setAlerts(n);
+        setAlertsFailure(null);
+      })
+      .catch((e: unknown) => setAlertsFailure(actionFailure(e)))
+      .finally(() => setAlertsLoading(false));
   }, []);
   useEffect(() => {
     let alive = true;
     fetchedAt.current = Date.now();
     loadPanelNotifications()
       .then((n) => alive && setAlerts(n))
-      .catch(() => alive && setAlerts([]));
+      .catch((e: unknown) => alive && setAlertsFailure(actionFailure(e)))
+      .finally(() => alive && setAlertsLoading(false));
     // Telefonda panel çoğunlukla arka plandan geri açılır: görünür olunca (en çok dakikada bir) tazelenir
     const onVisible = () => {
       if (document.visibilityState === "visible" && Date.now() - fetchedAt.current > ALERTS_STALE_MS) refreshAlerts();
@@ -164,7 +174,7 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
             <X className="size-[18px]" strokeWidth={1.75} aria-hidden />
           </button>
         ) : (
-          <NotificationMenu items={alerts} onOpen={refreshAlerts} align="left" role={user.role} />
+          <NotificationMenu items={alerts} failure={alertsFailure} loading={alertsLoading} onOpen={refreshAlerts} align="left" role={user.role} />
         )}
       </header>
 
@@ -242,11 +252,11 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
         {isAdmin ? (
           <>
             <SearchTrigger compact onClick={openSearch} />
-            <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
+            <NotificationMenu items={alerts} failure={alertsFailure} loading={alertsLoading} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
           </>
         ) : (
           <>
-            <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
+            <NotificationMenu items={alerts} failure={alertsFailure} loading={alertsLoading} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
             <button
               ref={menuButtonRef}
               type="button"

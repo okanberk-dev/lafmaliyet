@@ -373,6 +373,71 @@ async function commissionNotifications(): Promise<PanelNotification[]> {
   }));
 }
 
+/** Maliyet modeli okunamadı (E-49): okunmamış sayılmaz (geçici; rozeti şişirmez), kimliği günden */
+function modelFailed(e: unknown): { priceNote: PanelNotification[]; warnings: PanelNotification[] } {
+  console.error("Zil: maliyet modeli okunamadı", e);
+  return {
+    priceNote: [
+      {
+        id: `uyari-model-${todayTR()}`,
+        kind: "warning",
+        title: "Maliyet uyarıları yüklenemedi",
+        body: "Satış ayının uyarıları ve hammadde zammı şu an okunamadı; öbür bildirimler aşağıda. Zili birazdan yeniden açın.",
+        timeLabel: "",
+        unread: false,
+        href: "/panel",
+        group: "uyari",
+      },
+    ],
+    warnings: [],
+  };
+}
+
+/**
+ * Yönetici: maliyet modeline bağlı satırlar, son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler"
+ * ile aynı kaynak) ve hammadde zammı. Model okunamazsa (Neon uyanırken modelin paralel sorgularından biri zaman aşımına
+ * düşer; denetim E-49) zil boş kalmaz: ödemeler, onaylar, sistem ve öbür satırlar yine gelir, bunların yerine tek bir
+ * "yüklenemedi" satırı durur (modelFailed).
+ */
+async function modelNotifications(): Promise<{ priceNote: PanelNotification[]; warnings: PanelNotification[] }> {
+  const model = await loadModel();
+  const month = latestSalesMonth(model);
+  const warnings: PanelNotification[] = month
+    ? alerts(model, month).map((a) => ({
+        // Kimlik metinden türer: aynı uyarı okundu kalır, sayısı değişen uyarı yeniden okunmamış olur
+        id: `uyari-${month}-${a.title}`,
+        kind: a.level,
+        title: a.title,
+        body: a.detail,
+        timeLabel: monthShort(month),
+        unread: a.level !== "info",
+        href: a.href ?? "/panel",
+        group: "uyari" as const,
+      }))
+    : [];
+  // Hammadde zammı: kimlik ürün sayısı ve son zam tarihinden (İstanbul günü, E-70); yeni zam ya da yeni ürün gelince
+  // yeniden okunmamış olur
+  const prices = await loadPriceAlerts(model).catch(() => null);
+  const zam = prices ? priceAlert(prices.changes, prices.actionable, prices.loss.totalLoss) : null;
+  const lastChange = prices?.changes.map((c) => dayTR(c.changedAt)).sort().at(-1) ?? "";
+  const priceNote: PanelNotification[] =
+    zam && prices
+      ? [
+          {
+            id: `uyari-zam-${prices.actionable.length}-${lastChange}`,
+            kind: "warning",
+            title: zam.title,
+            body: zam.detail,
+            timeLabel: lastChange ? dateTR(lastChange) : "",
+            unread: true,
+            href: zam.href,
+            group: "uyari",
+          },
+        ]
+      : [];
+  return { priceNote, warnings };
+}
+
 /**
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve onaylar
  * (reçete önerileri ve personel istekleri), sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında),
@@ -394,8 +459,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     opsBell(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
-  const [model, upcoming, invoices, system, unpriced, holds, commission, recipients] = await Promise.all([
-    loadModel(),
+  // Maliyet modeli zilin tek ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını koyar
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients] = await Promise.all([
+    modelNotifications().catch(modelFailed),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
@@ -434,39 +500,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  const month = latestSalesMonth(model);
-  const warnings: PanelNotification[] = month
-    ? alerts(model, month).map((a) => ({
-        // Kimlik metinden türer: aynı uyarı okundu kalır, sayısı değişen uyarı yeniden okunmamış olur
-        id: `uyari-${month}-${a.title}`,
-        kind: a.level,
-        title: a.title,
-        body: a.detail,
-        timeLabel: monthShort(month),
-        unread: a.level !== "info",
-        href: a.href ?? "/panel",
-        group: "uyari" as const,
-      }))
-    : [];
-  // Hammadde zammı: kimlik ürün sayısı ve son zam tarihinden (İstanbul günü, E-70); yeni zam ya da yeni ürün gelince
-  // yeniden okunmamış olur
-  const prices = await loadPriceAlerts(model).catch(() => null);
-  const zam = prices ? priceAlert(prices.changes, prices.actionable, prices.loss.totalLoss) : null;
-  const lastChange = prices?.changes.map((c) => dayTR(c.changedAt)).sort().at(-1) ?? "";
-  const priceNote: PanelNotification[] =
-    zam && prices
-      ? [
-          {
-            id: `uyari-zam-${prices.actionable.length}-${lastChange}`,
-            kind: "warning",
-            title: zam.title,
-            body: zam.detail,
-            timeLabel: lastChange ? dateTR(lastChange) : "",
-            unread: true,
-            href: zam.href,
-            group: "uyari",
-          },
-        ]
-      : [];
-  return [...system, ...recipients, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...recipients, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

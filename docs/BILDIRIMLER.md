@@ -363,6 +363,15 @@ Sipariş / Karaoke bildirimlerini açık tutun: bildirim yokken öndeki ekran si
 veritabanı gün boyu uyumaz (ayda ~105 CU-saat), arka plandaki sekmede zil 10 dakikaya kadar gecikir. Aylık kullanımı
 Vercel › Storage › lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 CU-saate yaklaşıyorsa ücretli plana geçin.
 
+### Zil okunamayınca
+
+Zil kabuk açılınca (çoğu zaman Neon uyanırken) okunur. **Maliyet modeli** (son satış ayının uyarıları ve hammadde
+zammı) zilin tek ağır okumasıdır; düşerse zil boş gelmez (denetim E-49): ödemeler, onaylar, kasa, kontrol listeleri,
+faturalar ve sistem satırları yine gelir, modelin satırları yerine Uyarılar'da tek bir **"Maliyet uyarıları
+yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimliği günden). Zilin bütün okuması düşerse (ağ,
+sunucu) menü "Dikkat isteyen bir şey yok" demez: üstte "Bildirimler okunamadı" ve **Yeniden dene** durur, önceki liste
+varsa altında kalır; panel yeniden yayınlandıysa "Panel güncellendi" ve **Yenile** (`src/components/panel/notifications.tsx`).
+
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
 
 Ekran: **Hatırlatıcılarım** (`/panel/hatirlaticilarim`), personel ve yönetici. Herkes yalnız kendi hatırlatıcılarını

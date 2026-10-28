@@ -40,3 +40,22 @@ test("gün etiketleri ve zil kimlikleri UTC'den kesilmez (E-70)", () => {
   assert.match(bell, /const lastChange = prices\?\.changes\.map\(\(c\) => dayTR\(c\.changedAt\)\)\.sort\(\)\.at\(-1\) \?\? "";/);
   assert.match(bell, /id: `fatura-yeni-\$\{todayTR\(\)\}-\$\{fresh\.n\}`/);
 });
+
+test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasını 'Dikkat isteyen bir şey yok'tan ayırır (E-49)", () => {
+  const bell = read("src/server/actions/notifications.ts");
+  const action = bell.slice(bell.indexOf("export async function loadPanelNotifications"));
+  // Yöneticinin Promise.all'ında catch'siz üye yok; model kendi satırını koyar
+  assert.match(action, /modelNotifications\(\)\.catch\(modelFailed\),/);
+  assert.doesNotMatch(action, /\bloadModel\(\)/);
+  const all = action.slice(action.indexOf("await Promise.all(["), action.indexOf("]);", action.indexOf("await Promise.all([")));
+  for (const line of all.split("\n").slice(1).filter((l) => l.trim())) assert.match(line, /\.catch\(/, line);
+  const menu = read("src/components/panel/notifications.tsx");
+  assert.match(menu, /failure === "stale"\s+\? "Panel güncellendi; bildirimler için sayfayı yenileyin\."/);
+  assert.match(menu, /"Bildirimler okunamadı; bağlantıyı kontrol edip yeniden deneyin\."/);
+  // Okunamayınca boş liste metni yok
+  assert.match(menu, /failure && !\(filter === "unread" && list\.length\) \? null : \(/);
+  assert.match(menu, /list\.length \? "Hepsi okundu" : failure \? "Okunamadı" : "Dikkat isteyen bir şey yok"/);
+  const shell = read("src/components/panel/sidebar.tsx");
+  assert.doesNotMatch(shell, /setAlerts\(\[\]\)|setAlerts\(\(a\) => a \?\? \[\]\)/);
+  assert.match(shell, /\.catch\(\(e: unknown\) => setAlertsFailure\(actionFailure\(e\)\)\)/);
+});

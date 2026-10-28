@@ -19,6 +19,15 @@ export function isNetworkError(e: unknown): boolean {
   return e instanceof TypeError && /fetch|network|load failed/i.test(e.message);
 }
 
+/**
+ * Atılan eylem hatasının türü, bildirim çıkarmadan kendi yerinde gösterenler için (zil, okuma pencereleri): panel
+ * güncellendi (sayfa yenilenmeli) ya da istek düştü (yeniden denenebilir). Next'in kendi hataları geri atılır.
+ */
+export function actionFailure(e: unknown): "stale" | "failed" {
+  unstable_rethrow(e);
+  return unstable_isUnrecognizedActionError(e) ? "stale" : "failed";
+}
+
 /** Atılan eylem hatasının bildirimi; `id` verilirse art arda dokunuşlar üst üste yığılmaz */
 export function toastUnreachable(e: unknown, id?: string | number): void {
   unstable_rethrow(e);
