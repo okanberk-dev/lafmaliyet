@@ -46,7 +46,7 @@ import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
 import { activeUses, productListText, usageText } from "@/lib/ingredient-usage";
-import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { dateTR, dayTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
@@ -304,7 +304,7 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
             </Badge>
           ) : null}
           {r.recentChange ? (
-            <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(r.recentChange.at.slice(0, 10))})`}>
+            <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(dayTR(r.recentChange.at))})`}>
               {r.recentChange.pct > 0 ? "↑" : "↓"} {pct(Math.abs(r.recentChange.pct), 0)}
             </Badge>
           ) : null}
@@ -1524,7 +1524,7 @@ function IngredientDialog({
                 {/* gr ve ml için kg / L başına: 0,0275 ₺/gr yerine 27,50 ₺/kg, eksen ve ipucu okunur kalsın */}
                 <PriceLine
                   valueLabel={`1 ${bulk.unit} maliyeti`}
-                  data={row.history.map((h) => ({ label: dateTR(h.at.slice(0, 10)), value: h.size ? (h.price / h.size) * bulk.scale : 0 }))}
+                  data={row.history.map((h) => ({ label: dateTR(dayTR(h.at)), value: h.size ? (h.price / h.size) * bulk.scale : 0 }))}
                 />
                 <ul className="mt-3 max-h-48 divide-y divide-line overflow-y-auto rounded-xl bg-surface px-3 text-xs text-ink-soft scroll-thin">
                   {row.history
@@ -1539,7 +1539,7 @@ function IngredientDialog({
                       <li key={key} className="py-1.5">
                         <div className="flex justify-between gap-2">
                           <span>
-                            {dateTR(h.at.slice(0, 10))} · {h.by ?? "–"}
+                            {dateTR(dayTR(h.at))} · {h.by ?? "–"}
                           </span>
                           <span className="tabular">
                             {tl(h.price, 2)} / {num(h.size)} {row.unit}

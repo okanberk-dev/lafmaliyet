@@ -9,7 +9,7 @@ import { CASH_OUT_INVOICES_HREF, pendingCashOutSummary } from "@/lib/cash-outs";
 import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
-import { dateTR, monthShort, num, tl } from "@/lib/format";
+import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
 import { blockedBell } from "@/lib/notify-recipients";
 import { holdReason, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
@@ -177,7 +177,7 @@ async function recipeNotifications(user: CurrentUser): Promise<PanelNotification
       const common = {
         id: `oneri-${r.id}-${r.status}`,
         kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
-        timeLabel: r.reviewedAt ? dateTR(r.reviewedAt.toISOString().slice(0, 10)) : "",
+        timeLabel: r.reviewedAt ? dateTR(dayTR(r.reviewedAt)) : "",
         unread: true,
         group: "onay" as const,
       };
@@ -267,7 +267,7 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       kind: "danger",
       title: "Paraşüt eşitlemesi başarısız",
       body: (lastRun.message ?? "Bilinmeyen hata").slice(0, 200),
-      timeLabel: dateTR(lastRun.startedAt.toISOString().slice(0, 10)),
+      timeLabel: dateTR(dayTR(lastRun.startedAt)),
       unread: true,
       href: "/panel/parasut",
       group: "fatura",
@@ -275,7 +275,7 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
   }
   if (fresh.n) {
     out.push({
-      id: `fatura-yeni-${new Date().toISOString().slice(0, 10)}-${fresh.n}`,
+      id: `fatura-yeni-${todayTR()}-${fresh.n}`,
       kind: "info",
       title: `Paraşüt'ten ${fresh.n} yeni fatura`,
       body: "Son 24 saatte eşitlemeyle geldi",
@@ -448,10 +448,11 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
         group: "uyari" as const,
       }))
     : [];
-  // Hammadde zammı: kimlik ürün sayısı ve son zam tarihinden; yeni zam ya da yeni ürün gelince yeniden okunmamış olur
+  // Hammadde zammı: kimlik ürün sayısı ve son zam tarihinden (İstanbul günü, E-70); yeni zam ya da yeni ürün gelince
+  // yeniden okunmamış olur
   const prices = await loadPriceAlerts(model).catch(() => null);
   const zam = prices ? priceAlert(prices.changes, prices.actionable, prices.loss.totalLoss) : null;
-  const lastChange = prices?.changes.map((c) => c.changedAt.slice(0, 10)).sort().at(-1) ?? "";
+  const lastChange = prices?.changes.map((c) => dayTR(c.changedAt)).sort().at(-1) ?? "";
   const priceNote: PanelNotification[] =
     zam && prices
       ? [

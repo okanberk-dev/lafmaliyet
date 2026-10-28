@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { IngredientChange, ProductImpact } from "@/lib/calc/price-impact";
 import { basisText, type PriceLoss } from "@/lib/calc/price-loss";
-import { dateTR, num, pct, tl, tl2 } from "@/lib/format";
+import { dateTR, dayTR, num, pct, tl, tl2 } from "@/lib/format";
 import { monthLocativeTR } from "@/lib/reminders";
 import { priceReminder } from "@/lib/prices/pos";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ function perUnit(v: number, unit: string): string {
 }
 
 const changeTitle = (c: IngredientChange) =>
-  `${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} · ${dateTR(c.changedAt.slice(0, 10))}${c.changedBy ? ` · ${c.changedBy}` : ""}${c.note ? ` (${c.note})` : ""}`;
+  `${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} · ${dateTR(dayTR(c.changedAt))}${c.changedBy ? ` · ${c.changedBy}` : ""}${c.note ? ` (${c.note})` : ""}`;
 
 /**
  * Ürünler sayfasındaki "Hammadde zamları": son 30 günde fiyatı değişen hammaddeler ve maliyeti artan ürünler.

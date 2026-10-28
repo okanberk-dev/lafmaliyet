@@ -22,7 +22,7 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
+import { dateTR, dayTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import type { MonthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
 import { HOLDS_HREF } from "@/lib/price-hold";
@@ -1380,7 +1380,7 @@ export function Findings({ items }: { items: FindingItem[] }) {
                           </span>
                         ) : null}
                         <span className="mt-1 block text-xs text-ink-mute tabular">
-                          {dateTR(i.createdAt.slice(0, 10))}
+                          {dateTR(dayTR(i.createdAt))}
                           {i.resolved ? " · çözüldü" : ""}
                         </span>
                       </button>
@@ -1502,7 +1502,7 @@ function FindingDialog({
       open
       onClose={onClose}
       title={item ? "Bulguyu düzenle" : "Bulgu ekle"}
-      description={item ? `${dateTR(item.createdAt.slice(0, 10))} tarihinde eklendi${item.resolved ? " · çözüldü" : ""}` : "Kontrol edilecek ya da düzeltilecek bir şeyi not edin."}
+      description={item ? `${dateTR(dayTR(item.createdAt))} tarihinde eklendi${item.resolved ? " · çözüldü" : ""}` : "Kontrol edilecek ya da düzeltilecek bir şeyi not edin."}
       footerStart={deleteButton}
       footerStartOnPhone="body"
       footer={
