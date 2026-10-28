@@ -635,7 +635,13 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
   });
 
   lines.push({ k: "HEDEF", section: true });
-  lines.push({ k: "Zarar etmemek için GÜNLÜK ciro (KDV dahil)", v: d.breakEvenDaily, note: "Standart sabit gider ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün." });
+  lines.push({
+    k: "Zarar etmemek için GÜNLÜK ciro (KDV dahil)",
+    v: d.breakEvenDaily,
+    note: `(Standart sabit gider${d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""}${
+      d.onlineCover ? ` − laffogato.net online brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""
+    }) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün.`,
+  });
   lines.push({ k: `${name} günlük ortalama ciro (KDV dahil)`, v: d.dailyAvg });
   // Excel B18 / B19: süren ayın ilk günlerine göre ay sonu tahmini (seçili ay hangisi olursa olsun)
   const fm = forecastMonthOf(model);
@@ -646,12 +652,18 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     // Seçili ay süren aysa üstteki günlük ortalama aynı rakamdır; ikinci kez yazılmaz
     const sameAsAbove = fm === month && d.dailyAvg !== null && fd.dailyPosAvg !== null && Math.abs(d.dailyAvg - fd.dailyPosAvg) < 1;
     if (!sameAsAbove) lines.push({ k: `${fn} günlük ortalama ciro (1–${f.daysElapsed} ${fn}, POS)`, v: fd.dailyPosAvg });
-    lines.push({ k: `${fn} ay sonu ciro tahmini (KDV dahil)`, v: f.projectedRevenue, note: `Günlük ortalama × ${f.dim} gün.` });
+    lines.push({
+      k: `${fn} ay sonu ciro tahmini (KDV dahil)`,
+      v: f.projectedRevenue,
+      note: `Günlük ortalama × ${f.monthDays} gün${f.closedDays ? ` (kapalı işaretli ${f.closedDays} gün hariç)` : ""}.`,
+    });
     lines.push({
       k: `${fn} tahmini net kâr / zarar`,
       v: f.projectedProfit,
       strong: true,
-      note: `Ay sonu ciro tahmini × ${f.refMonth ? monthLabel(f.refMonth) : "son satış ayı"} brüt kâr oranı − standart sabit gider.`,
+      note: `Ay sonu ciro tahmini × ${f.refMonth ? monthLabel(f.refMonth) : "son satış ayı"} brüt kâr oranı${f.projectedOnline !== null ? " + online brüt kâr" : ""} − standart sabit gider${
+        fd.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
+      }.`,
     });
   }
 

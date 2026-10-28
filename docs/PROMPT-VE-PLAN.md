@@ -150,7 +150,8 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
    verilir: standart sabit gider, açık gün etkisi, bu aya özel giderler (düzeltmeler + elle satırlar). Excel
    temelindeki değer de ayrıca hesaplanır (`netProfitStandard`). Açık gün sayısı girilmemiş ayda standart tutar
    kullanılır. Başabaş günlük ciro ve ay sonu tahmini Excel'deki gibi standart tutarla kalır (o ayda geçerli
-   kalemler ve tutarlarla).
+   kalemler ve tutarlarla); Aylık harcamalar'da her ay girilen kategoriler (reklam, influencer) buna eklenir: sabit
+   gider aylık girişe çevrilince başabaştan düşmesin (denetim E-13, `breakEvenOf`).
 2. **SU GİDERİ iki kez sayılmaz.** Excel su faturasını reçetelerdeki su + buz litre maliyetine dağıtır; Sabit
    Giderler'de su satırı yoktur. Panelde su faturası Gelir-gider'in Faturalar bölümündedir. Reçetelerde su maliyeti
    varken (su faturasından ya da Ayarlar'daki elle birim maliyetten) reçeteye göre net kârda sabit gider olarak

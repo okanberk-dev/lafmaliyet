@@ -15,6 +15,7 @@ import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
+import { emailErrorFor } from "@/lib/staff-errors";
 import { getDb, schema as s } from "@/server/db";
 
 /** Kasa raporunun gideceği adresler ve WhatsApp (integration_state, anahtar "cash.settings"; yönetici değiştirir) */
@@ -129,7 +130,8 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
     countedBy: r.countedBy,
     countedByName: r.countedByName,
     emailStatus: r.emailStatus,
-    emailError: r.emailError,
+    // E-postanın neden gitmediği (Resend anahtarı, alıcı listesi) yalnız yöneticiye; personele sabit metin (E-64)
+    emailError: emailErrorFor(audience, r.emailError),
     emailedAt: r.emailedAt?.toISOString() ?? null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

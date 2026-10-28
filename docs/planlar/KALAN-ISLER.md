@@ -71,11 +71,11 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B12 | Senkron P1: panel fiyatı başkasının değişikliğini ezmesin | E-11 | yok |  | PR (dal `claude/denetim-b12-senkron-fiyat`) |
 | B13 | Menü maliyeti: reçetesiz ürün ve su | E-47, E-57 | yok |  | PR (dal `claude/denetim-b13-menu-maliyet`) |
 | B14 | Ürün açma ve öneri onayı | E-48, E-55 | yok |  | PR (dal `claude/denetim-b14-urun-onay`) |
-| B15 | Aynı rakam her yerde: senaryo, başabaş, ay sonu öngörüsü, nakit planı | E-12, E-13, E-41, E-46, E-59, E-60, E-62 | yok | 7, 8 | bekliyor |
+| B15 | Aynı rakam her yerde: senaryo, başabaş, ay sonu öngörüsü, nakit planı | E-12, E-13, E-41, E-46, E-59, E-60, E-62 | yok | 7, 8 (varsayılanla) | PR (dal `claude/denetim-b15-ayni-rakam`) |
 | B16 | Gelir-gider: komisyon, SGK satırı, kaynak bağlantıları, notlar | E-30, E-43, E-44, E-61, E-63 | yok | 9 | bekliyor |
 | B17 | Alış: kasadan e-Arşiv alımları ve fatura kategori koruması | E-42, E-45 | yok |  | bekliyor |
 | B18 | Karaoke: silme isteği ve bitirme izi | E-15, E-65 | **evet** |  | bekliyor |
-| B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | bekliyor |
+| B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | PR (dal `claude/denetim-b19-bildirim`) |
 | B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | bekliyor |
 
 **B21 (sahibin isteği, 26 Ekim 19:30; raporda yok): Hızlı sayım ve mal siparişi kaldırıldı.** Sahip: "Hızlı sayım
@@ -135,8 +135,12 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    gününden itibaren ürün ikramı yalnız LafPOS'tan; panelde hammadde ikramı ve zayi kalır.
 7. **Aylık girişe çevrilen giderler** (E-13, B15): reklam, influencer gibi değişen giderler başabaşta ve nakit planında
    geçen ayın gerçekleşeniyle mi, son 3 ayın ortalamasıyla mı sayılsın?
+   **Varsayılan (B15):** geçen ayın gerçekleşeni: biten ayda o ay girilen; süren ve gelecek ayda o ay girilen, daha
+   azsa geçen ayınki (`model.monthlyExpensePlan`). 3 ay ortalaması istenirse yalnız bu fonksiyon değişir.
 8. **Fişlerin KDV'si** (E-60, B15): Aylık harcamalar'daki fişler gelir-giderde KDV dahil mi kalsın, KDV düşülüp mü
    sayılsın? (Muhasebeciyle.)
+   **Varsayılan (B15):** KDV dahil kalır (bugünkü hesap); kartlar artık "ödenen tutar, KDV dahil" der. Sabit gideri
+   aylık girişe çevirirken yazılan tahmini kayıt KDV hariç tutardır ve bunu söyler (nakit planı ödenen tutarı yayar).
 9. **Banka POS komisyonu** (E-43, B16): ayrıca fatura ya da dekont olarak geliyor mu, Paraşüt'te Komisyon
    kategorisine mi düşüyor?
 10. **Vercel planı** (E-67, B05): panel Hobby planında (ticari kullanım yok, günlükler bir saat); Pro'ya geçilsin mi?
@@ -520,8 +524,9 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
      yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
      `setSaving` / `setDeleting` ile düzeltilmeli. 26 Ekim denetiminde daha geniş hâliyle E-51 (B20; reçete
      düzenleyici B12'de yapılırsa B20 onu atlar).
-  2. Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir (`src/lib/site-orders/stage.ts`
-     86, 118, 128). 26 Ekim denetiminde E-64 (B19; Tükendi, `/api/canli`, `/api/siparisler` ve kasa e-postası dahil).
+  2. ~~Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir~~ B19'da kapandı (E-64, D-08):
+     aşama, Tükendi, `/api/canli`, `/api/siparisler` ve kasa e-postası personele sabit metin döner
+     (`src/lib/staff-errors.ts`); ayrıntı yöneticide.
   3. İsteğe bağlı: Postgres dışında ucuz bir değişiklik işareti (Vercel Runtime Cache ya da Edge Config sürüm sayacı);
      yalnız bar ekranı bildirimsiz çalışmak zorundaysa.
   4. B3 sağlamlaştırması: yeniden denetimin `SHOW_INCLUDE`'una tedarikçi (desteklenmezse geri düşerek); sahte

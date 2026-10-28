@@ -150,8 +150,12 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
   const stepUp = useStepUp();
 
   const saveActive = (u: UserRow, active: boolean, confirm?: StepUpConfirm) => saveUser({ id: u.id, name: u.name, email: u.email, role: u.role, active }, confirm);
-  const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<unknown>) =>
-    void (res.ok ? toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`) : toast.error(res.error));
+  const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<{ notice?: string | null } | null>) => {
+    if (!res.ok) return void toast.error(res.error);
+    toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`);
+    // Pasif hesabın adresi bir bildirim listesindeyse: e-posta artık gitmez, liste temizlensin (E-53)
+    if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
+  };
 
   /** Personel: anahtar hemen döner (iyimser), sunucu yenileyince kesinleşir */
   function setActive(u: UserRow, active: boolean) {
@@ -728,6 +732,7 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
         }
         // "… eklendi" bilgisi açılan "Giriş bilgileri" penceresinde yazar (ayrı bildirim pencerenin başlığını örtmesin)
         onCreated(mode === "password" ? { ...res.data, password, reason: "new" } : { ...res.data, reason: "new" });
+        if (res.data.notice) toast.warning(res.data.notice, { duration: 12_000 });
       },
     );
   }
@@ -919,11 +924,15 @@ function UserDialog({
           toast.success("Kullanıcı kaydedildi");
           onClose();
         }
+        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse (e-posta artık gitmez) ya da
+        // böyle bir hesabın eski adresi listede kaldıysa (artık hiçbir hesabın değil, e-posta gider): E-53. "Kaydedildi"den
+        // sonra: yığının üstünde dursun, altında kalıp gözden kaçmasın
+        if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
       },
     );
   }
 
-  const act = (kind: Confirm | "unlock", confirm?: StepUpConfirm) =>
+  const act = (kind: Confirm | "unlock", confirm?: StepUpConfirm): Promise<ActionResult<{ notice?: string | null } | null>> =>
     kind === "2fa"
       ? resetUserTwoFactor(user.id, confirm)
       : kind === "logout"
@@ -931,11 +940,13 @@ function UserDialog({
         : kind === "delete"
           ? deleteUser(user.id, confirm)
           : unlockUser(user.id);
-  const finish = (kind: Confirm | "unlock") => (res: ActionResult<null>) => {
+  const finish = (kind: Confirm | "unlock") => (res: ActionResult<{ notice?: string | null } | null>) => {
     if (!res.ok) return void toast.error(res.error);
     toast.success(
       { "2fa": "İki adımlı doğrulama kapatıldı", logout: "Oturumları kapatıldı", unlock: "Hesap kilidi açıldı", delete: `${user.name} silindi` }[kind],
     );
+    // Silinen personel ya da pasif hesabın adresi bir bildirim listesindeyse: artık hesabı yok, e-posta ona gider (E-53)
+    if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
     onClose();
   };
 

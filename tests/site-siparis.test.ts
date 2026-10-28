@@ -538,7 +538,11 @@ test("aşama eylemi: oturum gerekir (personel de); önce doğrulama, ortak imzal
   assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), `sıra: oturum → doğrulama → anahtar → site (${order})`);
   assert.match(action, /\.refine\(\(d\) => canAdvance\(d\.action, d\.from\)/, "olmayan işlem / aşama çifti siteye gitmeden reddedilir");
   assert.match(action, /id: z\.string\(\)\.regex\(SITE_ORDER_ID/);
-  assert.match(action, /if \(!secret\) throw new UserError\(STAGE_OFF_ERROR\)/);
+  // Kurulum ayrıntısı yalnız yöneticiye (E-64): bütün hata metinleri oturumun rolüyle
+  assert.match(action, /if \(!secret\) throw new UserError\(stageFailureMessage\(\{ kind: "off" \}, me\.role\)\)/);
+  const calls = [...action.matchAll(/stageFailureMessage\(([^;]*)\)\)/g)].map((m) => m[1]);
+  assert.equal(calls.length, 3);
+  for (const c of calls) assert.match(c, /, me\.role$/, "her çağrı rolü verir");
   // İmza ortak yardımcıdan (menü yazımıyla aynı); HMAC burada yeniden yazılmaz
   assert.match(action, /callSite\(secret, STAGE_PATH, \{ method: "POST", body: JSON\.stringify\(buildStageBody\(\{ \.\.\.data, actor: me\.name \}\)\) \}\)/);
   assert.doesNotMatch(action, /createHmac|signedRequest|signedHeaders/);

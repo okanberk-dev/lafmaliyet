@@ -38,8 +38,10 @@ test("önizleme verisi tam modelle aynı ürün maliyetini, durumunu ve Eylül b
   assert.ok(Math.abs(base.monthSales(m).grossProfit - full.monthSales(m).grossProfit) < 1e-6);
   assert.ok(Math.abs(base.water.perLiter - full.water.perLiter) < 1e-12);
   assert.ok(Math.abs(base.fixedStandardTotal - full.fixedStandardTotal) < 1e-6);
-  // İstemciye giden veri küçük: faturalar, sayımlar ve SU GİDERİ dışındaki gelir-gider satırları yok
-  assert.ok(!("invoices" in slim) && !("stockCounts" in slim));
+  // İstemciye giden veri küçük: sayımlar ve SU GİDERİ dışındaki gelir-gider satırları yok; faturalardan yalnız her ay
+  // girilen harcamaya bağlı kategoriler (başabaş, E-13), geçen aydan
+  assert.ok(!("stockCounts" in slim));
+  assert.deepEqual(slim.invoices, []);
   assert.ok(slim.pnlEntries.every((e) => e.rowKey === "manual:su"));
 });
 

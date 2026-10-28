@@ -354,7 +354,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           },
         ]
       : []),
-    { value: "gider", label: "En büyük giderler", short: "Giderler", content: <ExpensesTab month={month} items={d.topExpenses} total={d.fixedStandardTotal} /> },
+    { value: "gider", label: "En büyük giderler", short: "Giderler", content: <ExpensesTab month={month} items={d.topExpenses} total={d.breakEven.fixed} expenses={d.breakEven.expensesTotal} /> },
   ];
 
   return (
@@ -497,9 +497,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               compact
               icon={<Target />}
               label="Başabaş günlük ciro"
-              info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
-                d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""
-              } ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
+              // Toplam paranteze alınır: (A + B − C) ÷ oran ÷ gün (dökümle aynı)
+              info={`Zarar etmemek için gereken günlük ciro (KDV dahil): ${d.breakEven.expensesTotal || d.onlineCover ? "(" : ""}standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
+                d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""
+              }${d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""}${d.breakEven.expensesTotal || d.onlineCover ? ")" : ""} ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
               value={<CountUp value={d.breakEvenDaily} />}
               sub={
                 showBreakEven ? (
@@ -671,6 +672,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 progress={current.breakEvenProgress}
                 grossRatio={current.grossRatio}
                 fixedStandard={current.fixedStandardTotal}
+                monthlyExpenses={current.breakEven.expensesTotal}
               />
             ) : null}
           </div>
@@ -719,15 +721,18 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
         compact
         icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
         label="Ay sonu tahmini kâr/zarar"
-        info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+        info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı${d.forecast?.closedDays ? ` (kapalı işaretli ${d.forecast.closedDays} gün hariç)` : ""} × ${
           d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
-        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
+          d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
+        } (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
         value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
         tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
         sub={
           d.forecast ? (
             <>
               Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span> · {d.forecast.daysElapsed} / {d.forecast.dim} gün
+              {d.forecast.closedDays ? <span className="whitespace-nowrap"> · {d.forecast.closedDays} gün kapalı</span> : null}
             </>
           ) : d.monthState === "future" ? (
             "Ay başlamadı"
@@ -911,6 +916,7 @@ function ForecastCard({
   progress,
   grossRatio,
   fixedStandard,
+  monthlyExpenses,
 }: {
   className?: string;
   month: string;
@@ -919,6 +925,8 @@ function ForecastCard({
   progress: number | null;
   grossRatio: number;
   fixedStandard: number;
+  /** Her ay girilen harcamalar (Aylık harcamalar; tahmine sabit giderle birlikte girer, E-13) */
+  monthlyExpenses: number;
 }) {
   return (
     <Card className={className}>
@@ -928,13 +936,13 @@ function ForecastCard({
           <span className="inline-flex items-center gap-1.5">
             {monthLabel(month)} gidişatı
             <InfoTip
-              text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+              text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı${forecast.closedDays ? ` (kapalı işaretli ${forecast.closedDays} gün hariç)` : ""} × ${
                 forecast.refMonth ? `${monthLabel(forecast.refMonth)} ` : "son satış ayının "
-              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
+              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${monthlyExpenses ? " − her ay girilen harcamalar" : ""} (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
             />
           </span>
         }
-        description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`}
+        description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti${forecast.closedDays ? ` · ${forecast.closedDays} gün kapalı` : ""}`}
       />
       <CardContent className="flex-1">
         <Well className="py-2">
@@ -955,6 +963,9 @@ function ForecastCard({
               <KeyValue label="laffogato.net online brüt kârı (ay sonu)" value={<span className="whitespace-nowrap">{tl(forecast.projectedOnline)}</span>} />
             ) : null}
             <KeyValue label="Standart aylık sabit gider" value={<span className="whitespace-nowrap">{tl(fixedStandard)}</span>} />
+            {monthlyExpenses ? (
+              <KeyValue label="Her ay girilen harcamalar" value={<span className="whitespace-nowrap">{tl(monthlyExpenses)}</span>} />
+            ) : null}
             <KeyValue
               label="Tahmini net kâr / zarar"
               strong
@@ -1125,7 +1136,7 @@ function ProductRank({
 /** Kaç gider kalemi tek tek listelensin; kalanı tek satırda toplanır */
 const TOP_EXPENSES = 6;
 
-function ExpensesTab({ month, items, total }: { month: string; items: { name: string; amount: number }[]; total: number }) {
+function ExpensesTab({ month, items, total, expenses }: { month: string; items: { name: string; amount: number }[]; total: number; expenses: number }) {
   const top = items.slice(0, TOP_EXPENSES);
   const rest = items.slice(TOP_EXPENSES);
   const restSum = rest.reduce((s, e) => s + e.amount, 0);
@@ -1137,8 +1148,8 @@ function ExpensesTab({ month, items, total }: { month: string; items: { name: st
         title="En büyük aylık gider kalemleri"
         description={
           <>
-            {monthLabel(month)} standart aylık sabit gider <span className="font-medium whitespace-nowrap text-ink tabular">{tl(total)}</span> · yüzde: toplamdaki
-            payı
+            {monthLabel(month)} standart aylık sabit gider{expenses ? " ve her ay girilen harcamalar" : ""}{" "}
+            <span className="font-medium whitespace-nowrap text-ink tabular">{tl(total)}</span> · yüzde: toplamdaki payı
           </>
         }
         actions={

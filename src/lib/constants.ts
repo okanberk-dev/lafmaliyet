@@ -146,6 +146,13 @@ export const GOODS_CATEGORIES = ["Hammadde & İçecek", "Tatlı & Hazır Ürün"
 /** Platform / yemek kartı komisyon faturaları (Genel Maliyet > Komisyon giderleri) */
 export const COMMISSION_CATEGORY = "Komisyon";
 
+/**
+ * Sabit gider aylık girişe çevrilince başlangıç ayına yazılan tahmini harcamanın açıklaması (denetim E-60). Tutar sabit
+ * giderin KDV hariç tutarıdır, ödeme değildir: nakit planı bunu ödenmiş saymaz (E-13); tutarı ya da günü düzeltilince
+ * açıklama kalkar, kayıt gerçek ödeme olur (saveExpenseEntry)
+ */
+export const FIXED_ESTIMATE_DESCRIPTION = "Sabit giderdeki KDV hariç tutar (tahmini): ödediğiniz tutarı yazın";
+
 export const FIXED_SECTIONS: { key: FixedSection; label: string }[] = [
   { key: "personel", label: "Personel giderleri" },
   { key: "faturalar", label: "Faturalar" },

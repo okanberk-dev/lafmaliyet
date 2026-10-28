@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, like, lt } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -9,7 +9,8 @@ import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { FIXED_VAT_RATES, MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, tl } from "@/lib/format";
-import { addDays } from "@/lib/reminders";
+import { foldName } from "@/lib/cash-plan";
+import { addDays, FIXED_REMINDER_NOTE, fixedReminderFollow } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -353,6 +354,60 @@ const fixedSchema = z.object({
 });
 
 /**
+ * Sabit gider değişince "Sabit giderlerden ekle" ile açılmış (notu FIXED_REMINDER_NOTE), adı eski ya da yeni adla aynı
+ * etkin hatırlatıcılar (denetim E-46): otomatik tutarı sıradaki ödeme ayının yeni sürümüne uyar (sonraki bir aydan
+ * değişiyorsa bu ayınki kalır; hatırlatıcı gideri izler, nakit planı zamdan sonra yeni tutarı öder, mesaj söyler; dönemi
+ * değişirse boşalır); elle başka tutar yazılmışsa dokunulmaz, sonuç mesajında uyarılır. Kaydın işleminde
+ */
+async function followFixedReminders(
+  tx: Tx,
+  before: typeof s.fixedExpenses.$inferSelect,
+  beforeVersions: (typeof s.fixedExpenseVersions.$inferSelect)[],
+  after: typeof s.fixedExpenses.$inferSelect,
+): Promise<FollowResult> {
+  const out: FollowResult = { updated: [], manual: [], later: [] };
+  const names = new Set([foldName(before.name), foldName(after.name)]);
+  const rems = (
+    await tx
+      .select({ id: s.reminders.id, title: s.reminders.title, amount: s.reminders.amount, dueDate: s.reminders.dueDate, repeat: s.reminders.repeat, note: s.reminders.note })
+      .from(s.reminders)
+      .where(and(eq(s.reminders.active, true), like(s.reminders.note, `${FIXED_REMINDER_NOTE}%`)))
+  ).filter((r) => names.has(foldName(r.title)));
+  if (!rems.length) return out;
+  const afterVersions = await tx.select().from(s.fixedExpenseVersions).where(eq(s.fixedExpenseVersions.fixedExpenseId, before.id));
+  for (const r of rems) {
+    const f = fixedReminderFollow(r, before, beforeVersions, after, afterVersions);
+    if (f.kind === "update") {
+      await tx.update(s.reminders).set({ amount: f.amount }).where(eq(s.reminders.id, r.id));
+      out.updated.push({ title: r.title, from: r.amount!, to: f.amount });
+    } else if (f.kind === "manual") out.manual.push({ title: r.title, amount: r.amount!, expected: f.expected });
+    if (f.kind !== "manual" && f.later) out.later.push({ title: r.title, ...f.later });
+  }
+  return out;
+}
+
+interface FollowResult {
+  updated: { title: string; from: number; to: number | null }[];
+  manual: { title: string; amount: number; expected: number }[];
+  /** Gideri izleyen hatırlatıcı: sonraki bir aydan değişen tutar (hatırlatıcı o aydan yeni tutarla sayılır) */
+  later: { title: string; month: string; amount: number }[];
+}
+
+/** Sonuç mesajının hatırlatıcı cümlesi: "Ödemeler'deki “Kira” hatırlatıcısı 192.000 ₺ → 240.000 ₺." */
+function fixedReminderMessage(r: FollowResult): string | null {
+  const parts = [
+    ...r.updated.map((u) =>
+      u.to === null
+        ? `Ödemeler'deki “${u.title}” hatırlatıcısının tutarı kaldırıldı (önce ${tl(u.from)}): dönemi değiştiği için nakit planı Giderler'deki tutarı her ay izler.`
+        : `Ödemeler'deki “${u.title}” hatırlatıcısı da güncellendi: ${tl(u.from)} → ${tl(u.to)} (KDV dahil).`,
+    ),
+    ...r.later.map((l) => `Ödemeler'deki “${l.title}” hatırlatıcısı ${monthLabel(l.month)} itibarıyla ${tl(l.amount)} (KDV dahil) sayılır; nakit planı da öyle öder.`),
+    ...r.manual.map((m) => `Ödemeler'deki “${m.title}” hatırlatıcısında ${tl(m.amount)} yazılı, sabit giderde ${tl(m.expected)} (KDV dahil): kontrol edin.`),
+  ];
+  return parts.length ? parts.join(" ") : null;
+}
+
+/**
  * Sabit gideri kaydeder. Tutar ya da dönem değişirse varsayılan olarak bu aydan itibaren geçerlidir:
  * geçmiş aylar eski tutarla kalır. `effectiveFrom: "YYYY-MM"` başka bir ay, `"all"` bütün ayları düzeltir
  * (tabanı yeniden yazar, değişiklik geçmişini siler). Ad, bölüm ve not her zaman bütün aylar için değişir.
@@ -364,7 +419,15 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
     const cur = currentMonthTR();
     const eff: Effective = effectiveFrom ?? cur;
     const db = getDb();
-    type Result = { id: number; mode: ChangeMode; fromMonth: string | null; previous: { period: string; amount: number } | null };
+    type Result = {
+      id: number;
+      mode: ChangeMode;
+      fromMonth: string | null;
+      previous: { period: string; amount: number } | null;
+      /** "Sabit giderlerden ekle" ile açılmış hatırlatıcılar: tutarı izleyenler ve elle yazılmış farklı tutarlar (E-46) */
+      reminders: FollowResult;
+    };
+    const noReminders: Result["reminders"] = { updated: [], manual: [], later: [] };
     const result = await db.transaction(async (tx): Promise<Result> => {
       let mode: ChangeMode = "none";
       let fromMonth: string | null = null;
@@ -377,7 +440,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
           .insert(s.fixedExpenses)
           .values({ ...data, startMonth, endMonth, active: activeFromRange(endMonth, cur), sortOrder: Math.max(0, ...all.map((r) => r.o)) + 1 })
           .returning({ id: s.fixedExpenses.id });
-        return { id: row.id, mode: "base", fromMonth: startMonth, previous: null };
+        return { id: row.id, mode: "base", fromMonth: startMonth, previous: null, reminders: noReminders };
       }
       const [before] = await tx.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, id));
       if (!before) throw new UserError("Gider bulunamadı (sayfayı yenileyin)");
@@ -442,11 +505,12 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         fromMonth = plan.fromMonth;
       }
       await tx.update(s.fixedExpenses).set(set).where(eq(s.fixedExpenses.id, id));
-      return { id, mode, fromMonth, previous };
+      const reminders = await followFixedReminders(tx, before, versions, { ...before, ...set });
+      return { id, mode, fromMonth, previous, reminders };
     });
     const { mode, fromMonth } = result;
     const prevAmount = result.previous?.amount;
-    const message =
+    const base =
       mode === "version" && fromMonth
         ? `${monthLabel(fromMonth)} itibarıyla ${tl(data.amount)}${prevAmount !== undefined ? ` (önce ${tl(prevAmount)})` : ""}; önceki aylar değişmedi.`
         : mode === "base" && id && effectiveFrom === "all"
@@ -454,6 +518,11 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
           : !id && fromMonth
             ? `${monthLabel(fromMonth)} itibarıyla hesaba girer; önceki aylar değişmedi.`
             : null;
+    const reminderText = fixedReminderMessage(result.reminders);
+    const message = [base, reminderText].filter(Boolean).join(" ") || null;
+    for (const u of result.reminders.updated) {
+      await logActivity(me, "Hatırlatıcı tutarı sabit gidere uydu", `${u.title}: ${tl(u.from)} → ${u.to === null ? "tutar yazılmaz (Giderler'i izler)" : tl(u.to)}`);
+    }
     await logActivity(
       me,
       id ? "Sabit gider düzenlendi" : "Sabit gider eklendi",

@@ -14,7 +14,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 
 import { AnalysisTabs, MenuEngineering, ScenarioSimulator } from "./analysis-client";
-import { scenarioFixedItems } from "./breakdowns";
+import { scenarioBreakEvenItems, scenarioFixedItems } from "./breakdowns";
 
 export const metadata: Metadata = { title: "Analiz & senaryo" };
 
@@ -111,6 +111,7 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
           month={month}
           monthLabel={monthLabel(month)}
           fixedItems={scenarioFixedItems(model, month)}
+          breakEvenItems={scenarioBreakEvenItems(model, month)}
           kasa={monthKasa(month, model.settings.lafposGecisGunu).short}
         />
       }

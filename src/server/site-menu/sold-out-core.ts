@@ -85,17 +85,20 @@ async function sitePush(
   try {
     return await pushSaleChange(me, before, desired, consequence, tx, { live });
   } catch (e) {
-    if (e instanceof UserError) throw new UserError(siteFailureText(e.message, e.cause as PushFailure | undefined, me.role));
+    if (e instanceof UserError) throw new UserError(siteFailureText(e.message, e.cause as PushFailure | undefined, me.role, { consequence }));
     throw e;
   }
 }
 
-/** Kalemin sitedeki canlı hâli (kopya eski olabilir); sitede yoksa undefined */
-async function liveItem(secret: string, id: string, consequence: string): Promise<SiteMenuItem | undefined> {
+/**
+ * Kalemin sitedeki canlı hâli (kopya eski olabilir); sitede yoksa undefined. Okuma hatasının ayrıntısı (anahtar adı,
+ * imza) yalnız yöneticiye; personel sabit metni görür (E-64)
+ */
+async function liveItem(me: Actor, secret: string, id: string, consequence: string): Promise<SiteMenuItem | undefined> {
   try {
     return (await fetchSiteMenu(secret)).items.find((i) => i.id === id);
   } catch (e) {
-    if (e instanceof SiteRequestError) throw new UserError(siteFailureText(`${e.message}; ${consequence}.`, e.failure));
+    if (e instanceof SiteRequestError) throw new UserError(siteFailureText(`${e.message}; ${consequence}.`, e.failure, me.role, { consequence, read: true }));
     throw e;
   }
 }
@@ -249,7 +252,7 @@ async function closeLocked(tx: Tx, me: Actor, id: string, secret: string, now: D
   }
   await assertPace(tx, me, c, now);
   // Kopya eski olabilir (sahip sitede, yönetici ürün kartından az önce kapatmış): kaydın koşulu canlı hâle bakar
-  const liveBefore = await liveItem(secret, c.id, "ürün tükendi yapılmadı");
+  const liveBefore = await liveItem(me, secret, c.id, "ürün tükendi yapılmadı");
   const r = await closeOnSite(tx, me, c, now, { marker: true, liveBefore });
   const log = r.written || r.capHit ? { action: SOLD_OUT_ACTIONS.close, detail: `${c.name}${sizesText(c.rows)} · ${WHERE}${r.capHit ? " (Tükenenler listesi dolu)" : ""}` } : null;
   if (r.written) return { log, result: { changed: true, name: c.name, message: `${c.name} tükendi` } };
@@ -263,7 +266,7 @@ async function openLocked(tx: Tx, me: Actor, id: string, secret: string, now: Da
   const c = await context(tx, id);
   // Satışa aç: sitenin canlı listesi (kopya eski olabilir; sahibin sitede yaptığı değişiklik damgayı değiştirir)
   await assertPace(tx, me, c, now);
-  const live = await liveItem(secret, c.id, "ürün satışa açılmadı");
+  const live = await liveItem(me, secret, c.id, "ürün satışa açılmadı");
   if (live?.isActive) {
     const record = await lockSoldOut(tx);
     delete record.items[c.id];

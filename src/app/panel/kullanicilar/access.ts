@@ -32,6 +32,8 @@ export interface AccessInfo {
   token?: string;
   /** Bağlantının son geçerlilik anı (ISO) */
   expiresAt?: string;
+  /** Yeni hesap e-posta almıyor (personel ya da pasif) ve adresi bir bildirim listesinde (E-53): yöneticiye uyarı */
+  notice?: string;
 }
 
 /** Tek kullanımlık bağlantının adresi: https://ladmin.laffogato.net/davet?t=… */
