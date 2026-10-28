@@ -62,7 +62,7 @@ test("türler ve durumlar şemayla aynı; her türün etiketi, sayı ifadesi, gr
   // Eski satırlar için etiket kalır; tür şemanın enumunda (eski satırlar okunabilsin)
   assert.deepEqual([...RETIRED_REQUEST_KINDS], ["mal-taslak"]);
   assert.equal(KIND_LABEL["mal-taslak"], "Mal siparişi taslağı");
-  // Yardım'ın satırları: sekiz canlı tür, reçete değişikliği ve yeni ürün önerisi
+  // Yardım'ın satırları: dokuz canlı tür, reçete değişikliği ve yeni ürün önerisi
   assert.equal(STAFF_APPROVAL_KINDS.length, STAFF_REQUEST_KINDS.length - RETIRED_REQUEST_KINDS.length + 2);
   assert.ok(STAFF_APPROVAL_KINDS.some((a) => a.kind === "recete"));
   assert.ok(STAFF_APPROVAL_KINDS.some((a) => a.kind === "yeni-urun"));
@@ -103,8 +103,8 @@ test("süre dolması: süresi olmayan dolmaz; süre anı geçince ya da tam o an
   assert.equal(isExpired({ expiresAt: tr("2026-10-23T10:00") }, NOW), true);
 });
 
-test("sınırlar: tür grubu başına açık istek (kasa 10, geç kasa 5, zayi 20, mal 10), iş günü başına 30, konu başına günde 3", () => {
-  assert.deepEqual(LIMITS.open, { kasa: 10, "kasa-gec": 5, zayi: 20, mal: 10 });
+test("sınırlar: tür grubu başına açık istek (kasa 10, geç kasa 5, zayi 20, mal 10, karaoke 5), iş günü başına 30, konu başına günde 3", () => {
+  assert.deepEqual(LIMITS.open, { kasa: 10, "kasa-gec": 5, zayi: 20, mal: 10, karaoke: 5 });
   assert.equal(LIMITS.perDay, 30);
   assert.equal(LIMITS.perSubjectDay, 3);
   assert.equal(KIND_GROUP["kasa-duzeltme"], "kasa");
@@ -115,7 +115,10 @@ test("sınırlar: tür grubu başına açık istek (kasa 10, geç kasa 5, zayi 2
   assert.equal(KIND_GROUP["zayi-gec"], "zayi");
   assert.equal(KIND_GROUP["zayi-sil"], "zayi");
   assert.equal(KIND_GROUP["mal-taslak"], "mal");
+  assert.equal(KIND_GROUP["karaoke-sil"], "karaoke");
   const ok = { open: 0, today: 0, subjectToday: 0 };
+  assert.equal(limitRefusal("karaoke-sil", { ...ok, open: 4 }), null);
+  assert.match(limitRefusal("karaoke-sil", { ...ok, open: 5 }) ?? "", /^Onay bekleyen 5 isteğiniz var/);
   assert.equal(limitRefusal("kasa-duzeltme", ok), null);
   assert.equal(limitRefusal("kasa-duzeltme", { ...ok, open: 9 }), null);
   assert.match(limitRefusal("kasa-duzeltme", { ...ok, open: 10 }) ?? "", /^Onay bekleyen 10 isteğiniz var/);
@@ -201,6 +204,7 @@ test("kilit sırası: her karar istek satırından önce konu nesnesini kilitler
     "src/server/cash-outs/requests.ts",
     "src/server/cash/requests.ts",
     "src/server/closed-day-requests.ts",
+    "src/server/karaoke/timer.ts",
     "src/server/waste/core.ts",
   ]);
   for (const f of callers) {
@@ -235,16 +239,17 @@ test("/panel/onaylar: adı Onaylar; bölümler sırasıyla kendi Suspense'inde, 
   assert.match(page, /title="Onaylar"/);
   assert.match(
     page,
-    /Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, reçete\. Reddederseniz notunuz personele görünür; tutar yazmayın\./,
+    /Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, karaoke, reçete\. Reddederseniz notunuz personele görünür; tutar yazmayın\./,
   );
-  const order = ["<KasaRequests />", "<OpsRequests />", "<ApprovalsContent />", "<RecentDecisions />"].map((tag) => page.indexOf(tag));
+  const order = ["<KasaRequests />", "<OpsRequests />", "<KaraokeRequests />", "<ApprovalsContent />", "<RecentDecisions />"].map((tag) => page.indexOf(tag));
   for (const [i, at] of order.entries()) assert.ok(at > 0, `bölüm ${i + 1} yok`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, "bölüm sırası");
-  assert.equal(page.match(/<Suspense /g)?.length, 4);
+  assert.equal(page.match(/<Suspense /g)?.length, 5);
   assert.match(page.slice(page.indexOf("async function ApprovalsContent")), /^async function ApprovalsContent\(\) \{\s+await requireAdmin\(\);/);
   for (const [file, fn] of [
     ["src/app/panel/onaylar/kasa-section.tsx", "KasaRequests"],
     ["src/app/panel/onaylar/ops-section.tsx", "OpsRequests"],
+    ["src/app/panel/onaylar/karaoke-section.tsx", "KaraokeRequests"],
     ["src/app/panel/onaylar/recent-decisions.tsx", "RecentDecisions"],
   ] as const) {
     const src = read(file);
@@ -286,7 +291,7 @@ test("push: onay bildirimleri ayrı konu (varsayılan açık, yalnız açık abo
   if (senders.length) assert.match(device, /title="Onay bildirimleri"/, senders.join(", "));
   else assert.doesNotMatch(device, /title="Onay bildirimleri"|changeTopic\("approvals"/);
   assert.match(device, /approvals: topics\?\.approvals \?\? true, \[key\]: value/);
-  assert.equal(staffRequests.kind.enumValues.length, 9);
+  assert.equal(staffRequests.kind.enumValues.length, 10);
 });
 
 test("sabah e-postası: Onay bekleyenler kutusu haberdir (konu, başlık, düğme Onaylar'a); yoksa e-posta kutusuz hâliyle aynı", async () => {

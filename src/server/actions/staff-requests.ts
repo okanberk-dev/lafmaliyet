@@ -6,6 +6,7 @@ import { z } from "zod";
 import { WITHDRAW_LOG } from "@/lib/staff-requests";
 import { requireUser } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
+import { bumpKaraokeVersion } from "@/server/karaoke/board";
 import { withdrawOwn } from "@/server/staff-requests/core";
 
 import { logActivity } from "./log";
@@ -25,6 +26,8 @@ export async function withdrawStaffRequest(id: number) {
     const rid = z.number().int().positive().parse(id);
     const row = await withdrawOwn(getDb(), me, rid);
     await logActivity(me, WITHDRAW_LOG[row.kind], row.title);
+    // Karaoke sayacının silme isteği bar ekranının satırında görünür (canlı uç): açık sekmeler geri çekmeyi de alsın
+    if (row.kind === "karaoke-sil") await bumpKaraokeVersion();
     refresh();
     return null;
   });

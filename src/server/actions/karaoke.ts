@@ -1,16 +1,17 @@
 "use server";
 
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
 import { durationLabel, trClock } from "@/lib/karaoke/session";
-import { requireUser } from "@/server/auth/dal";
+import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { bumpKaraokeVersion, toSessionDTO } from "@/server/karaoke/board";
 import { addExtraMinutes, MAX_EXTRA_MINUTES } from "@/server/karaoke/extend";
 import { ensureKaraokeFresh, syncKaraoke } from "@/server/karaoke/sync";
+import { endKaraokeCore, proposeKaraokeDelete, removeKaraokeTimerCore, reopenKaraokeCore, reviewKaraokeDeleteCore } from "@/server/karaoke/timer";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zOptText, type ActionResult } from "./util";
@@ -24,6 +25,10 @@ import { attempt, UserError, zOptText, type ActionResult } from "./util";
 // gelenin rezervasyonu yapan grup olduğunu bilebilir). Kural src/lib/karaoke/overlap.ts'te (docs/KARAOKE.md). Çakışma
 // panelin kopyasına bakar: kopya birkaç dakikadan eskiyse ya da bir pingin çekmesi kaybolduysa önce site sorulur
 // (freshBeforeConflict).
+//
+// Bitirme, geri açma ve sayacın silinmesi çekirdekte (src/server/karaoke/timer.ts; denetim E-15, E-65): her biri işlem
+// geçmişine yazılır. Personel panelden açılan sayacı açılışından sonraki ilk 10 dakikada siler, sonra silinmesini
+// ister (Onaylar › Karaoke); yönetici doğrudan siler ve isteği karara bağlar.
 
 const zId = z.number().int().positive();
 
@@ -143,7 +148,9 @@ export async function extendKaraokeSession(
       throw new UserError(!cur ? SESSION_GONE : cur.status === "cancelled" ? CANCELLED : TOO_LONG);
     }
     await bumpKaraokeVersion();
-    await logActivity(me, "Karaoke süresi uzatıldı", `${row.customerName ?? "Oturum"} · +${add} dk`);
+    // Bitmiş oturumu uzatmak onu yeniden açar (bitti işareti silinir): kimin ne zaman bitirdiği izde kalsın (E-65)
+    const reopened = row.endedAt ? ` · ${row.endedBy ?? "Biri"} ${trClock(row.endedAt.getTime()).time}'de bitirmişti, yeniden açıldı` : "";
+    await logActivity(me, "Karaoke süresi uzatıldı", `${row.customerName ?? "Oturum"} · +${add} dk${reopened}`);
     refresh();
     return { extraMinutes: done.extraMinutes };
   });
@@ -151,56 +158,91 @@ export async function extendKaraokeSession(
 
 /**
  * Bitir: süre dolunca "haber verdim" (alarm susar) ya da erken bitirme. Alarm başka cihazda susturulduysa da bir
- * sonraki kontrolde orada da susar. Zaten bitmişse bir şey yapmaz.
+ * sonraki kontrolde orada da susar. Zaten bitmişse bir şey yapmaz. İşlem geçmişine planlanan bitişle yazılır (E-65).
  */
 export async function endKaraokeSession(id: number) {
   return attempt(async () => {
     const me = await requireUser();
     const sid = zId.parse(id);
-    const [row] = await getDb()
-      .update(s.karaokeSessions)
-      .set({ endedAt: new Date(), endedBy: me.name, updatedAt: new Date() })
-      .where(and(eq(s.karaokeSessions.id, sid), isNull(s.karaokeSessions.endedAt)))
-      .returning({ customerName: s.karaokeSessions.customerName });
-    if (row) {
-      await bumpKaraokeVersion();
-      refresh();
-    }
+    const row = await endKaraokeCore(getDb(), me, sid);
+    if (row) refresh();
     return null;
   });
 }
 
-/** "Bitti"yi geri al (yanlışlıkla bitirildi) */
+/**
+ * "Bitti"yi geri al (yanlışlıkla bitirildi): iptal edilmiş ya da süresi dolmuş oturum açılmaz; kimin bitirdiği işlem
+ * geçmişine yazılır (E-65)
+ */
 export async function reopenKaraokeSession(id: number) {
   return attempt(async () => {
-    await requireUser();
+    const me = await requireUser();
     const sid = zId.parse(id);
-    const [row] = await getDb()
-      .update(s.karaokeSessions)
-      .set({ endedAt: null, endedBy: null, updatedAt: new Date() })
-      .where(eq(s.karaokeSessions.id, sid))
-      .returning({ id: s.karaokeSessions.id });
-    if (!row) throw new UserError("Oturum bulunamadı");
-    await bumpKaraokeVersion();
+    await reopenKaraokeCore(getDb(), me, sid);
     refresh();
     return null;
   });
 }
 
-/** Panelden açılan sayacı siler (sitenin rezervasyonları silinmez) */
+/**
+ * Panelden açılan sayacı siler (sitenin rezervasyonları silinmez): yönetici her zaman, personel açılışından sonraki ilk
+ * 10 dakikada. Personelde süre geçtiyse silinmez, `{ deleted: false }` döner: ekran nedenini sorup silinmesini ister
+ * (requestKaraokeTimerDelete).
+ */
 export async function deleteKaraokeTimer(id: number) {
   return attempt(async () => {
     const me = await requireUser();
     const sid = zId.parse(id);
-    const [row] = await getDb()
-      .delete(s.karaokeSessions)
-      .where(and(eq(s.karaokeSessions.id, sid), eq(s.karaokeSessions.source, "panel")))
-      .returning({ customerName: s.karaokeSessions.customerName });
-    if (!row) throw new UserError("Yalnızca panelden açılan sayaç silinebilir");
-    await bumpKaraokeVersion();
-    await logActivity(me, "Karaoke sayacı silindi", row.customerName ?? "Rezervasyonsuz");
+    const out = await removeKaraokeTimerCore(getDb(), me, sid);
+    if (out.status === "deleted") refresh();
+    return { deleted: out.status === "deleted" };
+  });
+}
+
+const deleteRequestSchema = z.object({
+  id: zId,
+  message: z.string().trim().min(3, "Açıklama en az 3 karakter olmalı").max(300, "Açıklama en çok 300 karakter"),
+  clientKey: z
+    .string()
+    .min(8)
+    .max(80)
+    .nullish()
+    .transform((v) => v ?? null),
+});
+
+/**
+ * Personel: açılışından 10 dakika sonra sayacın silinmesini ister (zorunlu neden). Sayaç onaya kadar durur; yönetici
+ * Onaylar › Karaoke'de karar verir. Yanıtta yalnız isteğin kimliği ve sürümü.
+ */
+export async function requestKaraokeTimerDelete(input: z.input<typeof deleteRequestSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    if (me.role === "admin") throw new UserError("Yönetici doğrudan siler; istek gerekmez");
+    const data = deleteRequestSchema.parse(input);
+    const out = await proposeKaraokeDelete(getDb(), me, data);
+    if (out.wrote) refresh();
+    return { id: out.row.id, version: out.row.version };
+  });
+}
+
+const reviewSchema = z.object({
+  id: zId,
+  seenVersion: z.number().int().min(1),
+  decision: z.enum(["approve", "reject"]),
+  note: zOptText(300),
+});
+
+/**
+ * Yönetici: sayaç silme isteğini karara bağlar (Onaylar › Karaoke; yalnız ekranda görülen sürüm, başkasının isteği).
+ * Onay sayacı siler (sayaç arada silindiyse istek kapanır). Not personele görünür (tutar yazılmaz).
+ */
+export async function reviewKaraokeDeleteRequest(input: z.input<typeof reviewSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = reviewSchema.parse(input);
+    const out = await reviewKaraokeDeleteCore(getDb(), me, data);
     refresh();
-    return null;
+    return { status: out.status };
   });
 }
 

@@ -1,5 +1,6 @@
 import type { Role } from "./constants";
 import type { KaraokeSessionDTO } from "./karaoke/session";
+import type { KaraokeDeleteAsk } from "./karaoke/timer-requests";
 import type { SiteOrder } from "./site-orders/schema";
 import type { UserRepeat } from "./user-reminders";
 
@@ -21,6 +22,11 @@ export interface LiveResponse {
      */
     okAt?: string | null;
     error?: string | null;
+    /**
+     * Bekleyen sayaç silme istekleri (denetim E-15): satırda "Ayşe silinmesini istedi", isteyene "Geri çek". Kim istedi
+     * ve hangi sayaç; neden ve yük yok. Yayın sırasında eski sunucunun yanıtında olmayabilir
+     */
+    deleteAsks?: KaraokeDeleteAsk[];
   };
   /** laffogato.net'in açık kafe siparişleri: son çekmenin listesi ve bağlantının durumu (docs/SITE-SIPARIS.md) */
   orders: LiveOrders;
