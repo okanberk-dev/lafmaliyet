@@ -41,6 +41,26 @@ hatasında; yazımı ve işlemi (transaction) yalnız hiçbir şey gönderilmede
 aşımı, gövdesi çalışmamış işlemin BEGIN'i). Günlükte `[db] bağlantı yenilendi (AUTH_TIMEOUT), sorgu yeniden gönderildi: …`
 satırı olağandır; aynı istekte ikinci deneme de düşerse hata sayfaya ya da işe gider.
 
+**İşlemin ortasında kopan bağlantı (28 Eki 2026).** Havuz bir işlemin bağlantısını gövde çalışırken de kapatabilir
+(BEGIN geçti; canlıda 20 ve 28 Ekim 2026, `/panel`'den gönderilen bir eylemde). postgres.js 3.4.9 işlemi
+`write CONNECTION_CLOSED …-pooler…:5432` ile hemen reddeder (drizzle'ın "Failed query"si olmadan), ama kendisi ölü
+bağlantıya ROLLBACK ya da COMMIT yazmayı sürdürür: hemen ardından günlüğe yakalanmamış
+`TypeError: Cannot read properties of null (reading 'write')` düşer ve o havuz yuvası işlev ölene kadar bozulur
+(sonraki istekler `connect_timeout`'u, 10 sn, bekleyip `CONNECT_TIMEOUT` alır; RST'de sonraki işlem hiç bitmez).
+Yükseltilecek sürüm yok: 3.4.9 son sürüm, ana dalda da düzeltme yok. `src/server/db/retry.ts` bu yüzden işlem
+gövdesine korumalı bir istemci verir: bağlantı kapandıktan ya da işlemin bir sorgusu bağlantı hatasıyla düştükten
+sonra gövdenin sorguları gönderilmez, aynı hatayla reddedilir; gövde bittiğinde ROLLBACK da COMMIT de yazılmaz.
+İşlem yeniden denenmez (gövde çalıştı, dışarıya yazmış olabilir: Paraşüt belirtecinin yenilenmesi işlemin içindedir):
+eylem bir kez hata verir. Kayıt yazılmamıştır (COMMIT gönderilmeden kopan bağlantının işlemini Postgres geri alır);
+bağlantı tam COMMIT yoldayken koptuysa yazılmış olabilir, yeniden denemeden önce sayfa yenilenip bakılır. Günlükte
+yalnız `write CONNECTION_CLOSED` satırı kalır; `reading 'write'` TypeError'ı yeniden görünürse bu koruma aşılmış
+demektir (testler: `tests/veritabani-baglanti.test.ts`, sahte Neon'la `tests/veritabani-baglanti-db.test.ts`).
+Korumanın kapatamadığı dar bir pencere kalır: soketin kapanışı postgres.js'in henüz göndermediği bir yazımla aynı olay
+döngüsü turuna denk gelirse (işlemde ya da işlemsiz bir sorguda; işlemde bağlantı listede olmayan bir soket hatasıyla,
+ör. TLS'in `EPROTO`'su, koptuğunda da) postgres.js bekleyen yazımı iptal eder ama işaretini sıfırlamaz; o yuvanın
+sonraki açılışları yine `connect_timeout`'u bekler. Günlükte TypeError olmadan art arda `CONNECT_TIMEOUT` görünür.
+Bu postgres.js'in içindedir, dışarıdan düzeltilemez; canlıda görülmedi.
+
 **Önizlemeler ve migration.** `DATABASE_URL` hem Production hem Preview ortamında aynı veritabanını gösteriyor:
 önizleme (PR) dağıtımları canlının verisini kullanır. Bu yüzden derleme öncesi hazırlık (`scripts/predeploy.ts`)
 önizlemede **migration ve seed çalıştırmaz** (`! Önizleme dağıtımı …: migration ve seed atlandı`); migration yalnız

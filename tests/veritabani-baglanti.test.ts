@@ -1,7 +1,8 @@
 // Veritabanı bağlantısı (src/server/db/index.ts, src/server/db/retry.ts): uyuyan bağlantının ilk sorgusu bir kez
 // yeniden denenir (okuma her bağlantı hatasında, yazım yalnız bağlantı hiç kurulmadıysa: CONNECT_TIMEOUT ya da Neon'un
-// "Authentication timed out"u; işlem içi sarılmaz), drizzle sorguları gerçekten bu yoldan gönderir, TLS sertifikası
-// doğrulanır, canlı derleme havuzlu adresi de açar. Gerçek postgres.js ile Neon'un hatası: veritabani-baglanti-db.test.ts.
+// "Authentication timed out"u; işlem içi sarılmaz), işlemin bağlantısı gövdede kapanınca ölü bağlantıya ne sorgu ne
+// ROLLBACK / COMMIT gider, drizzle sorguları gerçekten bu yoldan gönderir, TLS sertifikası doğrulanır, canlı derleme
+// havuzlu adresi de açar. Gerçek postgres.js ile Neon'un hataları: veritabani-baglanti-db.test.ts.
 // Çalıştırma: npx tsx --test tests/veritabani-baglanti.test.ts
 
 import assert from "node:assert/strict";
@@ -276,6 +277,291 @@ test("işlem: gövde çalıştıysa, hata bağlantı hatası değilse ya da ikin
   assert.deepEqual([twice.calls.length, twice.bodies()], [2, 0]);
 });
 
+/** Sorgu cevapsız kalır: bağlantı kapanınca bağlantı hatasıyla düşer */
+const HOLD = Symbol("cevapsız");
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Gövdenin işlem istemcisi (postgres.js'in kapsamdaki sql'i; drizzle'ın kullandığı iki yöntem) */
+type TxSql = { unsafe(q: string): PromiseLike<unknown> & { values(): PromiseLike<unknown> }; savepoint(fn: (sql: TxSql) => unknown): Promise<unknown> };
+
+/**
+ * Sahte postgres.js işlemi (node_modules/postgres/cjs/src/index.js › begin/scope): BEGIN gönderilir, gövde kapsamın
+ * `sql`'iyle çalışır; gövde düşerse ROLLBACK, biterse COMMIT gönderilir; begin kapsamla bağlantının kapanışı (onclose)
+ * arasında yarışır. savepoint(gövde) "savepoint sN" gönderir, iç gövde düşerse "rollback to sN". `close("fin")`
+ * uçuştaki sorguları ve begin'i aynı anda CONNECTION_CLOSED'la reddeder (connection.js › closed()); `close("rst")`
+ * sorguları önce ECONNRESET'le, begin'i 20 ms sonra (soketin "close"u ayrı turda gelir). Kapandıktan sonra bağlantıya
+ * giden her ifade `afterClose`'a yazılır ve hiç sonuçlanmaz: postgres.js'te ölü sokete yazımdır (canlıdaki TypeError
+ * ve bozulan havuz yuvası).
+ */
+function fakeTxClient(answer: (query: string, asValues: boolean) => unknown = () => []) {
+  const wire: string[] = [];
+  const afterClose: string[] = [];
+  let closed = false;
+  let inflight: ((e: unknown) => void)[] = [];
+  let onclose: ((e: unknown) => void) | null = null;
+  const send = (query: string, asValues = false): Promise<unknown> => {
+    if (closed) {
+      afterClose.push(query);
+      return new Promise(() => {});
+    }
+    wire.push(query);
+    const r = answer(query, asValues);
+    if (r === HOLD) return new Promise((_, reject) => inflight.push(reject));
+    return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+  };
+  const lazy = (query: string) => {
+    let asValues = false;
+    const pending = {
+      values() {
+        asValues = true;
+        return pending;
+      },
+      then: <A, B>(a?: ((v: unknown) => A | PromiseLike<A>) | null, b?: ((e: unknown) => B | PromiseLike<B>) | null) => send(query, asValues).then(a, b),
+    };
+    return pending;
+  };
+  const scopeSql = (depth: number): TxSql => ({
+    unsafe: (q: string) => lazy(q),
+    async savepoint(fn: (sql: TxSql) => unknown) {
+      await send(`savepoint s${depth}`);
+      try {
+        return await fn(scopeSql(depth + 1));
+      } catch (e) {
+        await send(`rollback to s${depth}`);
+        throw e;
+      }
+    },
+  });
+  const conn = {
+    wire,
+    afterClose,
+    close(mode: "fin" | "rst") {
+      closed = true;
+      const rejects = inflight;
+      inflight = [];
+      for (const reject of rejects) reject(connErr(mode === "fin" ? "CONNECTION_CLOSED" : "ECONNRESET"));
+      if (mode === "fin") onclose?.(connErr("CONNECTION_CLOSED"));
+      else setTimeout(() => onclose?.(connErr("CONNECTION_CLOSED")), 20);
+    },
+    client: {
+      options: { parsers: {} as Record<string, unknown>, serializers: {} as Record<string, unknown> },
+      unsafe: (q: string) => lazy(q),
+      async begin(...args: unknown[]) {
+        const fn = args[args.length - 1] as (sql: TxSql) => unknown;
+        await send("begin");
+        const scope = async () => {
+          let result: unknown;
+          try {
+            result = await fn(scopeSql(0));
+          } catch (e) {
+            await send("rollback");
+            throw e;
+          }
+          await send("commit");
+          return result;
+        };
+        return await Promise.race([scope(), new Promise((_, reject) => (onclose = reject))]);
+      },
+    } satisfies RetryClient & Record<string, unknown>,
+  };
+  return conn;
+}
+
+/** Sorgu gönderilince cevapsız kalır, bağlantı bir sonraki turda kapanır */
+function closeOn(match: string, mode: "fin" | "rst") {
+  const conn: ReturnType<typeof fakeTxClient> = fakeTxClient((q) => {
+    if (q !== match) return [];
+    setImmediate(() => conn.close(mode));
+    return HOLD;
+  });
+  return conn;
+}
+
+const isClosed = (e: unknown) => connectionErrorCode(e) === "CONNECTION_CLOSED";
+
+test("işlem: bağlantı gövdenin sorgusunda kapanınca (FIN) begin düşer; ölü bağlantıya ROLLBACK ya da sonraki sorgu gitmez", async () => {
+  // Canlıdaki sıra (20 ve 28 Ekim 2026): BEGIN geçti, gövdenin sorgusu uçuşta, havuz soketi kapattı
+  const conn = closeOn("select ilk", "fin");
+  let bodies = 0;
+  await assert.rejects(
+    withConnectionRetry(conn.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      bodies++;
+      await sql.unsafe("select ilk");
+      await sql.unsafe("insert sonra");
+    }),
+    isClosed,
+  );
+  await pause(400);
+  assert.equal(bodies, 1, "gövde çalıştı: yeniden denenmez");
+  assert.deepEqual(conn.wire, ["begin", "select ilk"]);
+  assert.deepEqual(conn.afterClose, [], "ölü bağlantıya ROLLBACK yazılmadı");
+
+  // Gövde hatayı yakalayıp devam ederse sonraki sorgusu gönderilmez, bağlantı hatasıyla reddedilir; gövde başarıyla
+  // bitse de COMMIT yazılmaz
+  const caught = closeOn("select ilk", "fin");
+  const seen: unknown[] = [];
+  await assert.rejects(
+    withConnectionRetry(caught.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      await sql.unsafe("select ilk").then(undefined, (e: unknown) => seen.push(e));
+      await sql.unsafe("insert sonra").then(undefined, (e: unknown) => seen.push(e));
+      return "bitti";
+    }),
+    isClosed,
+  );
+  await pause(400);
+  assert.deepEqual(caught.wire, ["begin", "select ilk"]);
+  assert.deepEqual(caught.afterClose, [], "ne sorgu ne COMMIT");
+  assert.deepEqual(seen.map(connectionErrorCode), ["CONNECTION_CLOSED", "CONNECTION_CLOSED"]);
+});
+
+test("işlem: gövde dışarıyı beklerken bağlantı kapanırsa çağıran hemen hatayı alır; sonraki sorgu ve COMMIT gitmez", async () => {
+  for (const then of ["sorgu", "dön", "hata"] as const) {
+    const conn = fakeTxClient();
+    let release!: () => void;
+    const outside = new Promise<void>((resolve) => (release = resolve));
+    let finished = false;
+    const tx = withConnectionRetry(conn.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      await sql.unsafe("select ilk");
+      await outside; // Paraşüt'e istek gibi
+      try {
+        if (then === "sorgu") await sql.unsafe("insert sonra");
+        if (then === "hata") throw new Error("gövdenin kendi hatası");
+        return "bitti";
+      } finally {
+        finished = true;
+      }
+    });
+    await pause(10);
+    conn.close("fin");
+    await assert.rejects(tx, isClosed);
+    assert.equal(finished, false, "begin gövdeyi beklemeden reddedildi");
+    release();
+    await pause(400);
+    assert.equal(finished, true);
+    assert.deepEqual(conn.wire, ["begin", "select ilk"], then);
+    assert.deepEqual(conn.afterClose, [], `${then}: ölü bağlantıya yazım yok`);
+  }
+});
+
+test("işlem: RST'de sorgu önce ECONNRESET'le düşer, kapanış sonra gelir; o arada ROLLBACK ya da yeni sorgu gönderilmez", async () => {
+  // Gövde hatayı geçirir / yakalayıp başka hatayla düşer (waste/core.ts: resolveWasteTarget(...).catch(() => null)) /
+  // yakalayıp yeni sorgu gönderir
+  for (const how of ["geçir", "başka hata", "yeni sorgu"] as const) {
+    const conn = closeOn("select ilk", "rst");
+    const seen: unknown[] = [];
+    await assert.rejects(
+      withConnectionRetry(conn.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+        if (how === "geçir") return await sql.unsafe("select ilk");
+        const first = await sql.unsafe("select ilk").then(undefined, (e: unknown) => (seen.push(e), null));
+        if (how === "başka hata" && first === null) throw new Error("Kalem silinmiş");
+        await sql.unsafe("insert sonra").then(undefined, (e: unknown) => seen.push(e));
+        return "bitti";
+      }),
+      isClosed,
+    );
+    await pause(400);
+    assert.deepEqual(conn.wire, ["begin", "select ilk"], how);
+    assert.deepEqual(conn.afterClose, [], `${how}: ROLLBACK / COMMIT yok`);
+    if (how === "yeni sorgu") assert.deepEqual(seen.map(connectionErrorCode), ["ECONNRESET", "ECONNRESET"], "ikinci sorgu ilk hatayla reddedildi");
+  }
+});
+
+test("işlem: bağlantı canlıyken gövdenin hatası ROLLBACK'le, sonucu COMMIT'le döner; values() korunur", async () => {
+  const ok = fakeTxClient((q, asValues) => (q === "select ilk" ? (asValues ? [[1]] : [{ n: 1 }]) : []));
+  const db = withConnectionRetry(ok.client, { delayMs: 0 });
+  assert.deepEqual(await db.begin(async (sql: TxSql) => [await sql.unsafe("select ilk"), await sql.unsafe("select ilk").values()]), [[{ n: 1 }], [[1]]]);
+  assert.deepEqual(ok.wire, ["begin", "select ilk", "select ilk", "commit"]);
+
+  const own = new Error("deadlock detected");
+  const failed = fakeTxClient((q) => (q === "update" ? own : []));
+  await assert.rejects(
+    withConnectionRetry(failed.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      await sql.unsafe("update");
+    }),
+    (e: unknown) => e === own,
+  );
+  assert.deepEqual(failed.wire, ["begin", "update", "rollback"]);
+
+  // Başka bir yerden gelen bağlantı hatası (işlemin bağlantısı canlı): kapanış kısa süre beklenir, gelmeyince ROLLBACK
+  // canlı bağlantıya gider ve hata olduğu gibi çağırana döner
+  const other = connErr("CONNECT_TIMEOUT");
+  const live = fakeTxClient();
+  const t0 = Date.now();
+  await assert.rejects(
+    withConnectionRetry(live.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      await sql.unsafe("select ilk");
+      throw other;
+    }),
+    (e: unknown) => e === other,
+  );
+  assert.ok(Date.now() - t0 >= 200, "kapanış beklendi");
+  assert.deepEqual(live.wire, ["begin", "select ilk", "rollback"]);
+  assert.deepEqual(live.afterClose, []);
+});
+
+test("işlem: iç içe işlem (savepoint) de korumalı; bağlantı kapandıktan sonra savepoint gönderilmez", async () => {
+  const inner = closeOn("select içte", "fin");
+  await assert.rejects(
+    withConnectionRetry(inner.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+      await sql.unsafe("select ilk");
+      await sql.savepoint(async (sp) => {
+        await sp.unsafe("select içte");
+        await sp.unsafe("insert içte");
+      });
+    }),
+    isClosed,
+  );
+  await pause(400);
+  assert.deepEqual(inner.wire, ["begin", "select ilk", "savepoint s0", "select içte"]);
+  assert.deepEqual(inner.afterClose, [], "ne ROLLBACK TO ne ROLLBACK");
+
+  const late = fakeTxClient();
+  let release!: () => void;
+  const outside = new Promise<void>((resolve) => (release = resolve));
+  const seen: unknown[] = [];
+  const tx = withConnectionRetry(late.client, { delayMs: 0 }).begin(async (sql: TxSql) => {
+    await outside;
+    await sql.savepoint(async (sp) => sp.unsafe("select içte")).catch((e: unknown) => seen.push(e));
+  });
+  await pause(10);
+  late.close("fin");
+  await assert.rejects(tx, isClosed);
+  release();
+  await pause(400);
+  assert.deepEqual(late.wire, ["begin"]);
+  assert.deepEqual(late.afterClose, []);
+  assert.deepEqual(seen.map(connectionErrorCode), ["CONNECTION_CLOSED"]);
+});
+
+test("drizzle'ın işlemi: bağlantı gövdede kapanınca hata canlıdaki gibi sarılmamış CONNECTION_CLOSED; değerler values()'la okunur", async () => {
+  const t = pgTable("t", { id: integer("id").primaryKey(), name: text("name") });
+  const conn: ReturnType<typeof fakeTxClient> = fakeTxClient((q, asValues) => {
+    if (q.startsWith("insert")) {
+      setImmediate(() => conn.close("fin"));
+      return HOLD;
+    }
+    return q.startsWith("select") && asValues ? [[7, "Latte"]] : [];
+  });
+  const db = drizzle(withConnectionRetry(conn.client as never, { delayMs: 0 }));
+  const rows: unknown[] = [];
+  await assert.rejects(
+    db.transaction(async (tx) => {
+      rows.push(...(await tx.select().from(t)));
+      await tx.insert(t).values({ id: 8, name: "Mocha" });
+      await tx.update(t).set({ name: "x" });
+    }),
+    (e: unknown) => {
+      assert.ok(isClosed(e));
+      assert.match((e as Error).message, /^write CONNECTION_CLOSED /, "drizzle'ın 'Failed query'si yok: begin'in yarışı");
+      return true;
+    },
+  );
+  await pause(400);
+  assert.deepEqual(rows, [{ id: 7, name: "Latte" }]);
+  assert.equal(conn.wire.length, 3, conn.wire.join(" | "));
+  assert.match(conn.wire[2], /^insert into "t"/);
+  assert.deepEqual(conn.afterClose, []);
+});
+
 test("drizzle bütün sorguları sarılı unsafe()'ten gönderir: execute ve select bir kez yeniden denenir", async () => {
   const t = pgTable("t", { id: integer("id").primaryKey(), name: text("name") });
   const { client, sent } = fakeClient((q, n) => (n % 2 === 1 ? connErr("CONNECTION_CLOSED") : q.startsWith("select 1") ? [{ "?column?": 1 }] : [[7, "Latte"]]));
@@ -349,6 +635,10 @@ test("DEPLOY.md: Neon'un uyanışında yeniden deneme; günlükteki satır creat
   // createDb'nin onRetry satırı: belgede AUTH_TIMEOUT'la yazılan biçim
   assert.match(read("src/server/db/index.ts"), /console\.warn\(`\[db\] bağlantı yenilendi \(\$\{code\}\), sorgu yeniden gönderildi: \$\{query\.slice\(0, 80\)\}`\)/);
   assert.ok(s3.includes(`\`[db] bağlantı yenilendi (${AUTH_TIMEOUT}), sorgu yeniden gönderildi: …\``));
+  // İşlemin ortasında kopan bağlantı: canlıdaki iki hata ve korumanın yeri
+  assert.match(s3, /\*\*İşlemin ortasında kopan bağlantı \(28 Eki 2026\)\.\*\*/);
+  assert.ok(s3.includes("`TypeError: Cannot read properties of null (reading 'write')`"));
+  assert.ok(s3.includes("`write CONNECTION_CLOSED …-pooler…:5432`"));
 });
 
 test("DEPLOY.md § 8: Vercel Hobby planı, bir saatlik günlük, 7 günlük hata kümesi, cron penceresi, kullanım şartı", async () => {
