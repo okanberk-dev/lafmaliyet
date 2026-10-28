@@ -23,7 +23,7 @@ export interface LiveResponse {
     okAt?: string | null;
     error?: string | null;
     /**
-     * Bekleyen sayaç silme istekleri (denetim E-15): satırda "Ayşe silinmesini istedi", isteyene "Geri çek". Kim istedi
+     * Bekleyen sayaç silme istekleri (denetim E-15): satırda "Ayşe silinmesini istedi", isteyene "İsteği geri çek". Kim istedi
      * ve hangi sayaç; neden ve yük yok. Yayın sırasında eski sunucunun yanıtında olmayabilir
      */
     deleteAsks?: KaraokeDeleteAsk[];

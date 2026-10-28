@@ -117,8 +117,8 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
   Personel açılışından sonraki **ilk 10 dakikada** çöp kutusuyla siler (yanlış açılan sayaç); sonrasında satırda
   **Silinmesini iste** durur: neden zorunlu (3-300 karakter), sayaç onaya kadar listede kalır ve sayar. İstek
   `staff_requests`'e `karaoke-sil` türüyle gider ([ONAYLAR.md](ONAYLAR.md)); satırda "Ayşe silinmesini istedi" (isteyene
-  "Silinmesi onay bekliyor" ve **Geri çek**), yöneticide rozet Onaylar'daki karta götürür. Ekran onay penceresi açıkken
-  10 dakika dolarsa sunucu silmez, nedeni soran pencere açılır.
+  "Silinmesi onay bekliyor" ve **İsteği geri çek**; "Geri aç"tan ayrı okunsun diye iki kelime), yöneticide rozet
+  Onaylar'daki karta götürür. Ekran onay penceresi açıkken 10 dakika dolarsa sunucu silmez, nedeni soran pencere açılır.
 - **Onaylar › Karaoke:** sayacın adı, saati (uzatmalar dahil), kişi sayısı, kimin açtığı, bugünkü durumu ("Sürüyor · 40 dk
   kaldı", "Bitti 22:40 (Mehmet)"), istekten sonra ne değiştiği ("İstekten sonra 30 dk uzatıldı"), isteyen ve neden.
   **Onayla ve sil** sayacı siler, **Reddet** dokunmaz (not personele görünür); sayaç arada silindiyse tek düğme **Kapat**
@@ -129,7 +129,7 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
   kutusu da sayar. İstek başlığı ("Karaoke sayacı silme · 24 Eki 21:00–23:00") ve yükü adsızdır: etiket (misafirin adı
   olabilir) oturumdan okunur, 3 × 366 günlük temizlik onu boşaltır, istek tutmaz. Tutar hiçbir yerde yok.
 - **İşlem geçmişi:** "Karaoke sayacı silindi", "Karaoke sayacının silinmesi istendi" (neden), "… onaylandı", "…
-  reddedildi", "Karaoke sayacı silme isteği kapandı", "Karaoke sayacının silinmesi isteği geri çekildi". Her biri yazımla
+  reddedildi", "Karaoke sayacı silme isteği kapandı", "Karaoke sayacı silme isteği geri çekildi". Her biri yazımla
   aynı işlemde (iz ve yazım birlikte kalır ya da ikisi birden düşer).
 - **Kilit sırası** onay kuyruğununki: önce oturum satırı (FOR UPDATE), sonra istek; personelin isteği, yöneticinin
   doğrudan silmesi ve onay aynı sırayla kilitler. Bar ekranı istekleri canlı uçtan alır (`deleteAsks`); istek açılınca,

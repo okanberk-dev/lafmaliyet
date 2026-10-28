@@ -37,7 +37,6 @@ describe("Karaoke sayacı: silme isteği ve bitirme izi (veritabanında)", { ski
   let db: DB;
   let core: typeof import("../src/server/karaoke/timer");
   let reads: typeof import("../src/server/data/karaoke-requests");
-  let withdrawOwn: typeof import("../src/server/staff-requests/core").withdrawOwn;
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
   const users: Record<"ali" | "veli" | "ayse" | "mehmet", Who> = {
@@ -84,6 +83,11 @@ describe("Karaoke sayacı: silme isteği ve bitirme izi (veritabanında)", { ski
       .from(s.activityLog)
       .where(eq(s.activityLog.userId, who.id))
       .orderBy(desc(s.activityLog.id));
+  /** Karaoke sayacı (canlı ucun ETag'i); öteki testler de yalnız artırır */
+  const karaokeV = async () => {
+    const [row] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, "karaoke_version"));
+    return Number((row?.value as { v?: number } | undefined)?.v ?? 0);
+  };
   const refused = async (p: Promise<unknown>, text: string | RegExp) => {
     await assert.rejects(p, (e: unknown) => e instanceof UserError && (typeof text === "string" ? e.message === text : text.test(e.message)));
   };
@@ -98,7 +102,6 @@ describe("Karaoke sayacı: silme isteği ve bitirme izi (veritabanında)", { ski
     db = dbModule.createDb(URL!, 4);
     core = await import("../src/server/karaoke/timer");
     reads = await import("../src/server/data/karaoke-requests");
-    withdrawOwn = (await import("../src/server/staff-requests/core")).withdrawOwn;
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db.insert(s.users).values({ email: `karaoke-istek-${k}-${tag}@ornek.com`, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -229,9 +232,23 @@ describe("Karaoke sayacı: silme isteği ve bitirme izi (veritabanında)", { ski
     assert.equal(closed.status, "superseded");
     assert.equal(closed.reviewNote, KARAOKE_REQUEST_TEXT.alreadyGone);
 
-    // Personel kendi isteğini geri çeker
+    // Personel kendi isteğini geri çeker: iz ve karaoke sayacı geri çekmeyle aynı işlemde (inceleme D1)
     const w = await ask(users.mehmet, kept, at(50));
-    assert.equal((await withdrawOwn(db, users.mehmet, w.row.id)).status, "withdrawn");
+    const before = await karaokeV();
+    const pulled = await core.withdrawRequestCore(db, users.mehmet, w.row.id, at(51));
+    assert.equal(pulled.row.status, "withdrawn");
+    assert.equal(pulled.traced, true);
+    assert.equal((await requestOf(w.row.id)).status, "withdrawn");
+    const [trace] = await logsOf(users.mehmet);
+    assert.equal(trace.action, "Karaoke sayacı silme isteği geri çekildi");
+    assert.equal(trace.detail, w.row.title);
+    assert.ok((await karaokeV()) > before, "karaoke sayacı arttı (açık sekmeler satırı bırakır)");
+    // İkinci basış: istek artık beklemede değil; iz ve sayaç yeniden yazılmaz
+    const again = await karaokeV();
+    const traces = (await logsOf(users.mehmet)).length;
+    await refused(core.withdrawRequestCore(db, users.mehmet, w.row.id, at(52)), REQUEST_TEXT.notPending);
+    assert.equal((await logsOf(users.mehmet)).length, traces);
+    assert.equal(await karaokeV(), again);
   });
 
   test("kilit sırası: onay ile personelin güncellemesi ve yöneticinin doğrudan silmesi aynı anda kilitlenmez", async () => {

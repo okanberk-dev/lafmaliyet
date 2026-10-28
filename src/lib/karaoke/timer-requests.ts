@@ -37,7 +37,8 @@ export const KARAOKE_REQUEST_TEXT = {
   deleteAsk: "Silinmesini iste",
   reasonLabel: "Neden?",
   pending: "Silinmesi onay bekliyor",
-  withdraw: "Geri çek",
+  /** Satırda "Geri aç"ın yanında durur: tek kelimeyle ayrışmasın */
+  withdraw: "İsteği geri çek",
   /** Doğrudan silme ya da onay aynı sayacın öteki bekleyen isteklerini bu notla kapatır */
   deleted: "Sayaç silindi",
   /** Onayda sayaç yoksa istek bu notla kapanır, hiçbir şey silinmez */

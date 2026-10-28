@@ -6,8 +6,7 @@ import { z } from "zod";
 import { WITHDRAW_LOG } from "@/lib/staff-requests";
 import { requireUser } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
-import { bumpKaraokeVersion } from "@/server/karaoke/board";
-import { withdrawOwn } from "@/server/staff-requests/core";
+import { withdrawRequestCore } from "@/server/karaoke/timer";
 
 import { logActivity } from "./log";
 import { attempt } from "./util";
@@ -18,16 +17,16 @@ import { attempt } from "./util";
 
 /**
  * Personel kendi bekleyen isteğini geri çeker (koşullu: yalnız bekleyen ve kendisinin; aynı anda verilen onayla yarışta
- * tek sonuç kalır). Tutulan fotoğraflar 7 gün sonra silinmek üzere bırakılır. Dönüşte istek yok.
+ * tek sonuç kalır). Tutulan fotoğraflar 7 gün sonra silinmek üzere bırakılır. Karaoke sayacının silme isteğinde iz ve
+ * karaoke sayacı geri çekmeyle aynı işlemde (bar ekranının satırı canlı uçtan iner); öteki türlerin izi sonra. Dönüşte
+ * istek yok.
  */
 export async function withdrawStaffRequest(id: number) {
   return attempt(async () => {
     const me = await requireUser();
     const rid = z.number().int().positive().parse(id);
-    const row = await withdrawOwn(getDb(), me, rid);
-    await logActivity(me, WITHDRAW_LOG[row.kind], row.title);
-    // Karaoke sayacının silme isteği bar ekranının satırında görünür (canlı uç): açık sekmeler geri çekmeyi de alsın
-    if (row.kind === "karaoke-sil") await bumpKaraokeVersion();
+    const { row, traced } = await withdrawRequestCore(getDb(), me, rid);
+    if (!traced) await logActivity(me, WITHDRAW_LOG[row.kind], row.title);
     refresh();
     return null;
   });

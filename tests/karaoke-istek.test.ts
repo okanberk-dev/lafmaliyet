@@ -26,6 +26,7 @@ import {
   sessionWhen,
   staffKaraokeResult,
 } from "../src/lib/karaoke/timer-requests";
+import { WITHDRAW_LOG } from "../src/lib/staff-requests";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 /** Türkiye saatiyle an */
@@ -80,6 +81,8 @@ test("işlem geçmişi metinleri: oturum, planlanan bitiş ve ne olduğu; geri a
   assert.equal(reopenLogDetail({ ...row, endedAt: null, endedBy: null }), "Selin · 24 Eki 21:00–23:00 · bitirilmemişti");
   assert.equal(deletedLogDetail({ ...row, source: "panel", createdBy: "Ayşe" }), "Selin · 24 Eki 21:00–23:00 · Ayşe açmıştı");
   assert.equal(deletedLogDetail({ ...row, source: "panel", createdBy: null }), "Selin · 24 Eki 21:00–23:00");
+  // Geri çekmenin izi kardeşleriyle aynı kalıpta ("… silme isteği kapandı"; inceleme K3)
+  assert.equal(WITHDRAW_LOG["karaoke-sil"], "Karaoke sayacı silme isteği geri çekildi");
   // Gece yarısını geçen oturum Türkiye günüyle
   assert.equal(sessionWhen({ startsAt: tr("2026-10-24T23:30").toISOString(), endsAt: tr("2026-10-25T01:00").toISOString(), extraMinutes: 30 }), "24 Eki 23:30–01:30");
 });
@@ -181,17 +184,27 @@ test("bağlantılar: bar ekranı, canlı uç, geri çekme, zil, Bugün, Onaylar 
   assert.match(live, /pendingKaraokeAsks\(\),/);
   assert.match(live, /      deleteAsks,\n/);
   assert.match(read("src/lib/live.ts"), /deleteAsks\?: KaraokeDeleteAsk\[\];/);
-  // Geri çekme bar ekranının satırını da değiştirir: karaoke sayacı artar (ETag)
-  assert.match(read("src/server/actions/staff-requests.ts"), /if \(row\.kind === "karaoke-sil"\) await bumpKaraokeVersion\(\);/);
+  // Geri çekme bar ekranının satırını da değiştirir: iz ve karaoke sayacı (ETag) geri çekmeyle aynı işlemde (inceleme D1)
+  const action = read("src/server/actions/staff-requests.ts");
+  assert.match(action, /const \{ row, traced \} = await withdrawRequestCore\(getDb\(\), me, rid\);\n    if \(!traced\) await logActivity\(me, WITHDRAW_LOG\[row\.kind\], row\.title\);/);
+  assert.doesNotMatch(action, /bumpKaraokeVersion|withdrawOwn/, "eylem işlem dışında yazmaz");
+  const timer = read("src/server/karaoke/timer.ts");
+  const withdraw = timer.slice(timer.indexOf("export async function withdrawRequestCore"));
+  assert.match(withdraw, /return db\.transaction\(async \(tx\) => \{\n    const row = await withdrawOwn\(tx, me, id, now\);/);
+  assert.match(withdraw, /await logIn\(tx, me, WITHDRAW_LOG\["karaoke-sil"\], row\.title\);\n    await bumpKaraokeVersion\(tx\);/);
   // Bar ekranının okuyucusu yük ve neden okumaz
   const reads = read("src/server/data/karaoke-requests.ts");
   const asks = reads.slice(reads.indexOf("export async function pendingKaraokeAsks"), reads.indexOf("export interface MyKaraokeRequest"));
   assert.doesNotMatch(asks, /payload|message/);
-  // Ekran: kural sunucuyla aynı; istekte neden zorunlu, istemci anahtarı; isteyene Geri çek; yönetici Onaylar'a
+  // Ekran: kural sunucuyla aynı; istekte neden zorunlu, istemci anahtarı; isteyene İsteği geri çek; yönetici Onaylar'a
   const board = read("src/app/panel/karaoke/karaoke-board.tsx");
   assert.match(board, /const deleteMode = karaokeDeleteMode\(s, admin \? "admin" : "staff", now\);/);
   assert.match(board, /requestKaraokeTimerDelete\(\{ id: s\.id, message: reason\.trim\(\), clientKey: key \}\)/);
   assert.match(board, /withdrawStaffRequest\(requestId\)/);
+  // Satırda "Geri aç"ın yanında durur: tek kelimeyle ayrışmaz, telefonda karışmaz (inceleme K1)
+  assert.equal(KARAOKE_REQUEST_TEXT.withdraw, "İsteği geri çek");
+  assert.match(board, /<RotateCcw size=\{14\} \/> Geri aç/);
+  assert.match(board, /<Undo2 size=\{14\} \/> \{KARAOKE_REQUEST_TEXT\.withdraw\}/);
   assert.match(board, /href=\{`\/panel\/onaylar#istek-\$\{a\.requestId\}`\}/);
   assert.match(board, /if \(!res\.data\.deleted\) return void \(toast\.info\(KARAOKE_REQUEST_TEXT\.askOnly\), openAsk\(\)\);/);
   assert.match(board, /p === "done" && s\.endedAt && !reopenRefusal\(s, now\)/);

@@ -67,7 +67,7 @@ export const WITHDRAW_LOG: Record<StaffRequestKind, string> = {
   "zayi-gec": "Geç zayi / ikram isteği geri çekildi",
   "zayi-sil": "Zayi silme isteği geri çekildi",
   "mal-taslak": "Mal siparişi taslağı geri çekildi",
-  "karaoke-sil": "Karaoke sayacının silinmesi isteği geri çekildi",
+  "karaoke-sil": "Karaoke sayacı silme isteği geri çekildi",
 };
 
 export const STATUS_LABEL: Record<StaffRequestStatus, string> = {

@@ -145,7 +145,7 @@ export function KaraokeBoard({
   const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
   const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));
   const later = sessions.filter((s) => s.date > today);
-  // Sayaçların bekleyen silme istekleri (E-15; canlı uçtan): satırda kim istedi, isteyene "Geri çek"
+  // Sayaçların bekleyen silme istekleri (E-15; canlı uçtan): satırda kim istedi, isteyene "İsteği geri çek"
   const rowEnv: RowEnv = { role, meId: live.data?.me.id ?? null, asks: live.data?.karaoke.deleteAsks ?? [] };
 
   return (
@@ -467,7 +467,7 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
         {showDay ? <span className="block text-xs font-normal text-ink-mute">{dayLabel(s.date, now)}</span> : null}
         {timeRange(start, end)}
       </div>
-      {/* Ad en az 7rem: geniş düğme sığmazsa (telefonda "Silinmesini iste", "Geri çek") alt satıra iner, ad harf harf kırılmaz */}
+      {/* Ad en az 7rem: geniş düğme sığmazsa (telefonda "Silinmesini iste", "İsteği geri çek") alt satıra iner, ad harf harf kırılmaz */}
       <div className="min-w-0 grow basis-28">
         <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
           {nameOf(s)}

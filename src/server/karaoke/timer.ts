@@ -14,9 +14,9 @@ import {
   reopenRefusal,
   type KaraokeDeletePayloadT,
 } from "@/lib/karaoke/timer-requests";
-import { REQUEST_TEXT } from "@/lib/staff-requests";
+import { REQUEST_TEXT, WITHDRAW_LOG } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
-import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
+import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, withdrawOwn, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 import { bumpKaraokeVersion } from "./board";
@@ -208,5 +208,21 @@ export async function reviewKaraokeDeleteCore(
     await logIn(tx, me, "Karaoke sayacının silinmesi onaylandı", `${deletedLogDetail(session)} ${tail}`);
     await bumpKaraokeVersion(tx);
     return { status: "approved", request, session };
+  });
+}
+
+/**
+ * Personelin kendi bekleyen isteğini geri çekmesi (her tür; src/server/actions/staff-requests.ts › withdrawStaffRequest
+ * çağırır). Karaoke sayacının silme isteğinde geri çekme, işlem geçmişi izi ve karaoke sayacı tek işlemde (`traced`):
+ * iz yazımla birlikte kalır ya da ikisi birden düşer, açık sekmeler bar ekranının satırındaki "Ayşe silinmesini istedi"
+ * yazısını canlı uçtan bırakır. Öteki türlerde yalnız geri çekme; izini eylem yazar.
+ */
+export async function withdrawRequestCore(db: DB, me: KaraokeActor, id: number, now = new Date()): Promise<{ row: StaffRequestRow; traced: boolean }> {
+  return db.transaction(async (tx) => {
+    const row = await withdrawOwn(tx, me, id, now);
+    if (row.kind !== "karaoke-sil") return { row, traced: false };
+    await logIn(tx, me, WITHDRAW_LOG["karaoke-sil"], row.title);
+    await bumpKaraokeVersion(tx);
+    return { row, traced: true };
   });
 }
