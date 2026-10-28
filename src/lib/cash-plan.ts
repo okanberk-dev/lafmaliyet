@@ -707,11 +707,13 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const covered = new Set<number>();
   const coveredExpense = new Set<number>();
   const drift: ReminderDrift[] = [];
-  // Hatırlatıcının ayındaki her ay girilen harcaması (dönemine çevrilmiş): tutarsız hatırlatıcı bunu taşır
+  // Hatırlatıcının ayındaki her ay girilen harcaması (dönemine çevrilmiş; o ay girilmiş olan ödenmiş sayılır): tutarsız
+  // hatırlatıcı bunu taşır
   const expenseForReminder = (r: ReminderRow, o: { date: string; due: string }, id: number) => {
     const x = expenseIn(o.due.slice(0, 7), id) ?? expenseIn(o.date.slice(0, 7), id);
-    if (!x) return 0;
-    return r.repeat === "none" || r.repeat === "monthly" ? x.amount : x.amount * REPEAT_PER_MONTH[r.repeat];
+    if (!x) return null;
+    const left = Math.max(0, x.amount - x.paid);
+    return r.repeat === "none" || r.repeat === "monthly" ? left : left * REPEAT_PER_MONTH[r.repeat];
   };
   for (const r of active) {
     const c = classify(r);
@@ -738,10 +740,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
             reminderLine(r, o, { detail: `Sabit giderde ${monthLabel(o.due.slice(0, 7))} tutarı ${tl(expected)} (KDV dahil); hatırlatıcıdaki tutar ödendi sayıldı` });
           } else reminderLine(r, o);
         } else if (r.amount === null && e !== undefined && !fixedIn(o.due.slice(0, 7)).some((x) => x.id === c.id)) {
-          // Sabit gider aylık girişe çevrilmiş (dönemi bitmiş): hatırlatıcı Aylık harcamalar'daki tutarı taşır
+          // Sabit gider aylık girişe çevrilmiş (dönemi bitmiş): hatırlatıcı Aylık harcamalar'daki tutarı taşır (o ay girilmiş
+          // olan ödenmiş sayılır: 0 kalırsa satır yok)
           const amount = off(`expense:${e}`) ? 0 : expenseForReminder(r, o, e);
-          if (amount > 0) reminderLine(r, o, { kind: "expense", amount, estimated: true, detail: "Aylık harcamalar'daki tutar" });
-          else if (!off(`expense:${e}`)) addUnknown(r, o.date);
+          if (amount === null) addUnknown(r, o.date);
+          else if (amount > 0) reminderLine(r, o, { kind: "expense", amount, estimated: true, detail: "Aylık harcamalar'daki tutar" });
         } else if (r.amount === null && !off(`fixed:${c.id}`)) {
           const f = fixedIn(o.due.slice(0, 7)).find((x) => x.id === c.id) ?? fixedIn(o.date.slice(0, 7)).find((x) => x.id === c.id);
           // O ayın sürümü hatırlatıcının dönemine çevrilir: dönemi sonradan değişen gider (aylık → yıllık) her ayda
@@ -760,8 +763,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         if (hasAmount(r)) reminderLine(r, o);
         else if (r.amount === null && !off(`expense:${c.id}`)) {
           const amount = expenseForReminder(r, o, c.id);
-          if (amount > 0) reminderLine(r, o, { kind: "expense", amount, estimated: true, detail: "Aylık harcamalar'daki tutar" });
-          else addUnknown(r, o.date);
+          if (amount === null) addUnknown(r, o.date);
+          else if (amount > 0) reminderLine(r, o, { kind: "expense", amount, estimated: true, detail: "Aylık harcamalar'daki tutar" });
         }
       }
     } else {

@@ -419,3 +419,17 @@ test("E-46: sabit gider değişince otomatik tutarlı hatırlatıcı yeni sürü
   assert.deepEqual(fixedReminderFollow({ ...r, amount: null }, kira, [], kira, [{ fromMonth: "2026-11", period: "aylik", amount: 1 }]), { kind: "same" });
   assert.deepEqual(fixedReminderFollow(r, kira, [], { ...kira, period: "yillik", amount: 1_920_000 }, []), { kind: "update", amount: null });
 });
+
+test("E-13 nakit planı: bu ay girilmiş harcamanın hatırlatıcısı aynı ay ikinci kez ödenmez", () => {
+  const model = createModel(converted());
+  const inp = planInputFromModel(model, TODAY);
+  // Ekim'in 50.000'i girildi (ödendi); Ekim 30'daki tutarsız hatırlatıcı Ekim için 0, Kasım 30'da 50.000
+  const rem = reminder({ title: "Influencer", kind: "odeme", amount: null, dueDate: "2026-10-30" });
+  const plan = buildCashPlan(planInput({ months: inp.months, reminders: [rem] }));
+  const lines = planLines(plan).filter((l) => l.key.startsWith(`reminder:${rem.id}@`));
+  assert.deepEqual(lines.map((l) => [l.date, l.amount]), [["2026-11-30", 50_000]]);
+  assert.deepEqual(plan.unknownAmounts, [], "Ekim ödendi: tutarı girilmemiş ödeme de değil");
+  // Harcaması hiç olmayan ayda (kategori yok) tutarı girilmemiş ödemedir
+  const none = buildCashPlan(planInput({ reminders: [reminder({ title: "Influencer", kind: "odeme", amount: null, dueDate: "2026-11-30" })] }));
+  assert.equal(none.unknownAmounts.length, 1);
+});
