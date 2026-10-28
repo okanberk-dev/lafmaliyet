@@ -950,10 +950,17 @@ const FORMULAS = [
   ],
   ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil)"],
   ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün; liste ayın bir kısmını kapsıyorsa listenin kendi açık günü"],
-  ["Başabaş günlük ciro", "(Standart aylık sabit gider − kapanmış son ayın laffogato.net online brüt kârı) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
+  [
+    "Başabaş günlük ciro",
+    "(Standart aylık sabit gider + Aylık harcamalar'da her ay girilenler − kapanmış son ayın laffogato.net online brüt kârı) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. Genel bakış, Sabit giderler ve Analiz aynı rakamı gösterir",
+  ],
   [
     "Ay sonu tahmini (yalnızca devam eden ay)",
-    "POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + laffogato.net online brüt kârı (aynı tempoyla) − standart aylık sabit gider",
+    "POS cirosu ÷ açık gün × ayın açık günü (ayın gün sayısı − kafe kapalı işaretli günler) × son satış ayının brüt kâr oranı + laffogato.net online brüt kârı (aynı tempoyla) − standart aylık sabit gider − her ay girilen harcamalar",
+  ],
+  [
+    "Her ay girilen harcama (başabaş, tahmin, nakit planı)",
+    "Biten ayda o ay girilen; süren ve gelecek ayda o ay girilen, daha azsa geçen ayın gerçekleşeni",
   ],
   [
     "Aylık sabit gider (gelir-gider)",
