@@ -14,6 +14,7 @@ import { logPerson } from "@/lib/activity-person";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
+import { missedPingShown } from "@/lib/site-orders/follow";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
 import { loadBackupInfo } from "@/server/backup/state";
@@ -220,6 +221,7 @@ async function SiteLinksCard() {
       tryAt: karaoke.lastTryAt,
       pingAt: karaoke.lastPingAt,
       error: karaoke.lastError,
+      missedPingAt: null,
     },
     {
       key: "menu",
@@ -230,6 +232,7 @@ async function SiteLinksCard() {
       tryAt: menu.lastPullAt,
       pingAt: menu.lastPingAt,
       error: menu.lastError,
+      missedPingAt: null,
     },
     {
       key: "orders",
@@ -240,6 +243,9 @@ async function SiteLinksCard() {
       tryAt: orders.lastPullAt,
       pingAt: orders.lastPingAt,
       error: orders.lastError,
+      // Pingle olmayan bir çekme, pingi hiç gelmemiş ödenmiş bir sipariş buldu (src/lib/site-orders/follow.ts); son yedi
+      // günde değilse gösterilmez (missedPingShown)
+      missedPingAt: orders.missedPingAt,
     },
     {
       key: "sales",
@@ -250,6 +256,7 @@ async function SiteLinksCard() {
       tryAt: sales.lastPullAt,
       pingAt: null,
       error: sales.lastError,
+      missedPingAt: null,
     },
   ];
   const errors = rows.filter((r) => r.health.tone === "red").length;
@@ -313,6 +320,13 @@ async function SiteLinksCard() {
                 <p className="mt-0.5 text-[13px] text-ink-mute">
                   Son çekme {r.okAt ? dateTimeTR(r.okAt) : "—"}
                   {r.key !== "sales" ? ` · sitenin son pingi ${r.pingAt ? dateTimeTR(r.pingAt) : "—"}` : " · her sabah ve Siteden yenile"}
+                </p>
+              ) : null}
+              {configured && r.missedPingAt && missedPingShown(r.missedPingAt, nowMs) ? (
+                <p className="mt-0.5 text-[13px] text-warn">
+                  Ping kaçtı {dateTimeTR(r.missedPingAt)}: ödenmiş bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi.
+                  Panel yayındayken tek tük olur. Tarih sık sık yenileniyorsa sitedeki PANEL_URL&apos;yi kontrol edin ve sitenin
+                  günlüğündeki &quot;[panel-orders] ping not delivered&quot; satırlarını panelin yayın saatleriyle karşılaştırın.
                 </p>
               ) : null}
               {r.health.tone === "red" && r.error ? (

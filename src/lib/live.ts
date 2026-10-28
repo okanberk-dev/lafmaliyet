@@ -56,7 +56,14 @@ export interface LiveOrders {
   pulledAt: string | null;
   okAt: string | null;
   error: string | null;
-  /** Sitenin son pingi ve listenin son değiştiği an (ekranın "yoğun" sayılması için) */
+  /** Sitenin son pingi (bilgi; ekranın yoğunluğunu artık yalnız liste değişikliği ve ödeme takibi belirler, boardBusy) */
   pingAt: string | null;
+  /** Listenin son değiştiği an (ekran bundan sonra iki saat "yoğun" sayılır) */
   changeAt: string | null;
+  /**
+   * Ödeme takibinin bittiği an: sitede ödemesi beklenen sipariş varken (`awaitingPayment` > 0) takibin başlangıcı + 30
+   * dakika, yoksa null. Ekran bu ana kadar yoğun sayılır (src/lib/site-orders/follow.ts). Yayın sırasında eski sunucunun
+   * yanıtında olmayabilir
+   */
+  awaitingUntil?: string | null;
 }

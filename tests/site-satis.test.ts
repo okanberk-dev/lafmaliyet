@@ -1,6 +1,7 @@
 // laffogato.net online satışları (docs/SITE-SATIS.md): sitenin satış yanıtının doğrulanması, KDV hariç gelir (oranı
 // bilinmeyen kısım dahil), kâr-zarardaki ayrı gelir satırları ve kâr, menü bağlantısıyla satır → ürün eşlemesi ve
-// tüketim, kasa raporunun bilgi satırı (site düşükse satır yok), günlük işin ayları ve sunucu kodunun kuralları.
+// tüketim, kasa raporunun bilgi satırı (site düşükse satır yok), günlük işin ayları, imza vektörü ve sunucu kodunun
+// kuralları.
 // Çalıştırma: npx tsx --test tests/site-satis.test.ts
 
 import assert from "node:assert/strict";
@@ -9,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { computeCash, type CashReportFields } from "../src/lib/cash-report";
+import { sign } from "../src/lib/karaoke/signature";
 import { createModel } from "../src/lib/calc/engine";
 import { alerts, consistency, dashboard, yearTrend } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
@@ -395,4 +397,19 @@ test("yanıt: satırın seçenekleri (ekstra shot, şurup, süt) isteğe bağlı
   assert.equal(optionProductId("syrups", new Map(), products), 3);
   assert.equal(optionProductId("milks", new Map(), products), 4);
   assert.equal(optionProductId("milks", new Map(), products.slice(0, 3)), null);
+});
+
+test("imza: ayın satışının okumasının sabit vektörü (sitedeki testler aynı değeri sabitler)", () => {
+  // laffogato tests/panel-karaoke-sync-core.test.ts (#270) aynı anahtar ve anla aynı değeri sabitler (senkron planı P2);
+  // kural bir tarafta değişirse okuma 401 olur. Adres panelin kurduğu gibi (src/server/site-sales/sync.ts)
+  const url = new URL("/api/panel/sales", "https://laffogato.net");
+  url.searchParams.set("month", "2026-10");
+  assert.equal(url.href, "https://laffogato.net/api/panel/sales?month=2026-10");
+  assert.equal(
+    sign("test-secret-0123456789-abcdefghijklmnop", { timestamp: 1760000000, method: "GET", url, body: "" }),
+    "cc20c85f8eebb2ea76b79c12e3e0b7e327fbca21ebd519148231ee6a9bb69f89",
+  );
+  const sync = read("src/server/site-sales/sync.ts");
+  assert.match(sync, /const url = new URL\("\/api\/panel\/sales", siteUrl\(\)\);/);
+  assert.match(sync, /for \(const \[k, v\] of Object\.entries\(query\)\) url\.searchParams\.set\(k, v\);/);
 });

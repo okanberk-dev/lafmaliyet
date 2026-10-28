@@ -4,7 +4,7 @@ Durum: karar, 25 Ekim 2026. 24 Ekim taslağı üç eleştiri turundan geçti (s�
 neden alındığı §6'da. Sahibin isteği (24 Ekim 2026): *"laffogato ve lafmobil repolarıyla bağlantılı, senkronize
 gitmesi gereken bilgiler var; birinde bir şey değişince diğer yerlerde de varsa değişsin. Örneğin menü, aktif / pasif
 ürün."* Kısa harita lafmaliyet'te `docs/SENKRON.md` (P1 ile, denetim B12 #52'de yazıldı); laffogato'daki karşılığı
-`docs/PANEL-SENKRON.md` sitenin S1 görevidir ve henüz yazılmadı (27 Ekim 2026 itibarıyla laffogato `main`'de yok).
+`docs/PANEL-SENKRON.md` S1 ile yazıldı (laffogato #269, 28 Ekim 2026).
 Kafenin kasası LafPOS bu belgenin ilk sürümünden sonra geldi; envanteri §2.7'de, sözleşmesi lafmaliyet `docs/LAFPOS.md`
 ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 
@@ -43,10 +43,13 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 
 1. **Menüde kayıp yazım.** Site formu ve panel kartı fiyatı ve durumu açılıştaki değerle yazıyor; arada değişen değer
    sessizce geri alınır, Tükendi kalem yeniden satışa çıkabilir. Dalga 10 personele serviste Tükendi verince bu
-   nadir yarış günlük riske döner.
-2. **Kaçan ödeme pingi** ödenmiş kafe siparişini bar ekranında sakin saatte 60 dakikaya kadar gizleyebilir.
+   nadir yarış günlük riske döner. *S1 (laffogato #269) ve P1 (#52, #53) ile kapandı.*
+2. **Kaçan ödeme pingi** ödenmiş kafe siparişini bar ekranında sakin saatte 60 dakikaya kadar gizleyebilir. *S2
+   (laffogato #270) ve P2 ile: ödeme beklenirken bildirimi kapalı ya da açık siparişi olan görünür bar ekranında
+   birkaç dakika; bildirimi açık, boş ekranda hâlâ bir saate kadar (P2 › Durum 5, açık iş KALAN-ISLER'de).*
 3. **Uygulamada pasif kalem ve eski fiyat ≈ 2 saate kadar kalıyor** (CDN SWR 3600 sn + uygulama staleTime 1 sa); admin
-   formu "en geç 5 dakika" diyor.
+   formu "en geç 5 dakika" diyor. *S1 (laffogato #269) ile CDN'de en çok 10 dakika ve form metni düzeldi; uygulamanın
+   staleTime'ı M2'de.*
 4. **Kapanış günleri:** sitede tarihli kapanış yok; elle "Kapalı" genel sayfalara yansımıyor; saatler panele hiç
    gitmiyor (tahmin, Bugün, doluluk, açık gün yanlış).
 5. **Ping teslimini kimse görmüyor.** "Bağlantıları sına" yalnız panelden siteye okumaları sınıyor.
@@ -60,7 +63,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 ### Plan bir bakışta
 
 - **Faz 1 (sahibin örneği: menü, aktif / pasif; kayıp yazım ve kayıp sinyal):** S1 → S2 → M1 → P1 → P2 → M2.
-  Fazdan bağımsız: P0 (Web Push'tan ad).
+  Fazdan bağımsız: P0 (Web Push'tan ad). **Durum (28 Ekim 2026):** S1 (laffogato #269), S2 (laffogato #270), M1
+  (lafmobil #35), P1 (B12, #52 ve #53) ve P2 (lafmaliyet #60) yapıldı; Faz 1'de M2 ve P0 kaldı.
 - **Faz 2 (yararlı senkron):** ayar ucu ve tüketicileri, 304, ping sınaması, override ve tarihli kapanış, seçenek
   fiyatı, menü yan uyarıları, karaoke.
 - **Faz 3:** satış ekleri, mağaza maliyeti ve POS kesintisi, llms.txt, temizlikler, KVKK metni.
@@ -272,7 +276,9 @@ ve `LAFMALIYET_SYNC_SECRET`.
   `../lafmobil` (`main`) ile karşılaştırıp kırmızı olur ya da worktree'de atlar (:31-36). lafmobil'de `RECONCILED`,
   "Re-synced" satırı ve yeni başlıklar `SECTIONS`'a (app:src/data/contract-sync.test.ts:22-31, :89-113).
 - **Gecikme hedefi (varsayılan).** Site → panel ≤ 10 sn. Kaçan ping: ilgili ekranın yoklaması ya da ertesi sabah. Ödeme
-  pingi kaçarsa bar ekranında ≤ 6 dk (yalnız ödeme beklenirken). Site → uygulama: menü ≤ 15 dk, mağaza ≤ 20 dk (yeni
+  pingi kaçarsa bar ekranında ≤ 6 dk (yalnız ödeme beklenirken; bildirimi kapalı ya da ekranında açık sipariş olan
+  görünür ekranda. Bildirimi açık, boş ekran takibi kabuğun 30 dakikalık kontrolünde öğrenir: P2 › Durum 5). Site →
+  uygulama: menü ≤ 15 dk, mağaza ≤ 20 dk (yeni
   uygulama sürümünden sonra). Genel sayfalar: etiket düştükten sonraki ilk sayfa yüklemesi. llms.txt ≤ 1 gün. Sipariş
   anındaki karar her zaman güncel.
 
@@ -400,6 +406,10 @@ ve `LAFMALIYET_SYNC_SECRET`.
 Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 PR'ları başka fazdan madde taşımaz.
 
 **S1 · Menü yazım güvenliği ve uygulama tazeliği**
+- **Durum (28 Ekim 2026):** yapıldı, laffogato #269 (3dbd014): `expect` ve 409 `stale` (değişen alan yoksa 200 ve eski
+  kalem), GET'te `writes: {expect: true}`, menü formunun yalnız dokunulan satış sütununu yüklendiği değere koşullu yazması
+  ("Bu kalem bu arada değişti"), /menu `stale-while-revalidate=300`, panelin üç menü vektörü sitede,
+  `docs/PANEL-SENKRON.md`. Sözleşme kopyası M1'de.
 - **Repo / dal:** laffogato · `claude/senkron-s1-menu-yazim` (arka yüz PR'ı).
 - **Ne:**
   1. `POST /api/panel/menu`: isteğe bağlı `expect {priceMinor?, priceMinorL?, isActive?}`; §3.1'deki sıra; değişen alan
@@ -430,6 +440,11 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** yok. Dalga 10'un Tükendi'sinden önce, en geç aynı gün yayında.
 
 **S2 · Bar ekranı için ödeme bekleyen sayısı ve sipariş vektörleri**
+- **Durum (28 Ekim 2026):** yapıldı, laffogato #270 (5e50c28). Plandan fazlası: sayı siparişin açılışından başka yeniden
+  açılan ödeme sayfasından (`recordPendingCheckout`; "Şimdi öde", kaybolan isteğin tekrarı) da 30 dakika sayar ve bu
+  yeniden açılış panele ping atar; sayı listeden önce okunur (iki okuma arasında ödenen sipariş listede çıkar), okunamazsa
+  503 `unavailable`. P2 için sitenin notu: takip sayı sıfırdan büyükken her pingte yeniden başlasın (P2 öyle yaptı).
+  API-MOBILE.md'ye dokunmadı, kopya gerekmedi.
 - **Repo / dal:** laffogato · `claude/senkron-s2-odeme-bekleyen` (arka yüz).
 - **Ne:** `GET /api/panel/orders` yanıtına isteğe bağlı `awaitingPayment`: son 30 dk'da oluşturulmuş, `pending_payment`
   durumdaki, bar ekranına düşecek türden kafe siparişlerinin sayısı (manual ve mağaza hariç). Kişisel veri yok,
@@ -445,6 +460,8 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** yok.
 
 **M1 · API-MOBILE kopyası (S1)**
+- **Durum (28 Ekim 2026):** yapıldı, lafmobil #35 (263794d): kopya sitenin 3dbd014'üyle bayt bayt aynı, `RECONCILED` ve
+  "Re-synced" satırı; yalnız metin (alan, hata kodu, durum kodu değişmedi), mağaza sürümü gerekmedi.
 - **Repo / dal:** lafmobil · `claude/senkron-m1-sozlesme-s1`.
 - **Ne:** S1 birleştikten sonra sitenin `main`'indeki docs/API-MOBILE.md kopyalanır; src/data/contract-sync.test.ts
   `RECONCILED` + "Re-synced" satırı.
@@ -454,7 +471,8 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** S1 birleşmiş.
 
 **P1 · Panel menü yazımı: `expect`, 409, `seenPrice`, harita**
-- **Durum (27 Ekim 2026):** 26 Ekim denetiminin B12 partisiyle yapıldı (dal `claude/denetim-b12-senkron-fiyat`, E-11).
+- **Durum (27 Ekim 2026):** 26 Ekim denetiminin B12 partisiyle yapıldı (dal `claude/denetim-b12-senkron-fiyat`, E-11;
+  #52, #53).
   S1'i beklemedi: `expect` yalnız site `writes.expect` duyurunca gider, o zamana kadar yazım bugünkü gibi. Uçtan uca
   (1)-(3) sitenin sahte ucuyla `tests/tukendi-db.test.ts`'te; gerçek siteyle S1 yayına çıkınca yinelenir. Harita
   `docs/SENKRON.md`. `seenPrice` fiyat hücresine ve zam önerisine de (writeSalePrice'ın `expectFrom`'u), yerel yazım
@@ -484,6 +502,32 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** S1 canlıda; dalga 10 birleşmiş (push.ts ve products.ts aynı satırlar).
 
 **P2 · Bar ekranı: ödeme takibi ve "ping kaçtı"**
+- **Durum (28 Ekim 2026):** yapıldı, lafmaliyet #60; kurallar saf `src/lib/site-orders/follow.ts`'te,
+  ayrıntı `docs/SITE-SIPARIS.md` › Ödeme takibi. Plandan farklar:
+  1. Takip yalnız 0 → > 0'da değil, sayı artınca ve sayı sıfırdan büyükken gelen her pingte de yeniden başlar (S2'nin
+     notu: yeniden açılan ödeme sayfası ping atar ama sayıyı artırmaz); ekranın kendi çekmesi uzatmaz. Takibin
+     başlaması, yeniden başlaması ve bitmesi sürümü artırır (yoksa açık sekme yeni bitişi görmez); pingin kendisi
+     artırmaz.
+  2. "Ping kaçtı" kuralı yazıldığı gibi ("`paidAt`'i bir önceki başarılı çekmeden eski") kaçan ödeme pingini neredeyse
+     hiç yakalamaz: önceki başarılı çekme çoğunlukla ödemeden önceki "ödeme bekleniyor" pinginin çekmesidir. Uygulanan: pingle
+     olmayan çekmenin ilk kez gördüğü yeni sipariş en az bir dakika önce ödenmiş ve ödemeden sonra hiç ping gelmemiş.
+     Ping gelip çekmesi düştüyse kaçan ping değil, çekme hatasıdır.
+  3. "Saatlik karar": `maxAgeMs` ≥ 10 dk olan kontrol yalnız ekranın ve elle yapılan çekmeleri sayar (`lastCheckAt`);
+     sık kontroller (1 ve 3 dk) pingin çekmesini sayar.
+  4. Sitenin #270'te sabitlediği dört vektör (sipariş okuması, sipariş pingi, aşama, ayın satışı) panelde de:
+     `tests/site-siparis.test.ts`, `tests/site-satis.test.ts`. Uçtan uca akış sitenin sahte ucuyla
+     `tests/siparis-takip-db.test.ts`'te; gerçek siteyle canlıda yinelenir.
+  5. `busy` (Ne 4): bugünkü kuralın "son iki saatte ping" yarısı kalktı, "son iki saatte liste değişti" kaldı. Takibin
+     sürüm artışı son pingi ekrana taşıdığından o yarı vazgeçilen her kartlı ödemede görünür ekranı iki saat üç
+     dakikalık çekmede tutardı (§3.1 bütçe kuralı 4: pingte iki saatlik yoğun mod yok). Listeyi değiştiren ping
+     `changeAt`'i yazar; değiştirmeyen ping takibi başlatır ve o en çok 30 dakika sürer.
+  6. Sınır (§3.1 gecikme hedefi buna göre daraltıldı): bildirimi açık, ekranı boş cihaz (Yardım'ın önerdiği bar
+     tableti) takibi kabuğun bir sonraki kontrolünde (30 dakikada bir) öğrenir, takibin başlaması bildirim göndermez.
+     Takip o ana kadar bitmişse sipariş saatlik kontrolle gelir (en geç ≈ 1 saat, P2 öncesi gibi); arka plandaki sekme
+     siteyi çekmez. Kapatmak için aday: takip başlayınca `orders` konusunda içeriksiz bir "yenile" bildirimi, service
+     worker yalnız görünür panel sekmesi varsa canlı veriyi yeniletir. Görünmeyen sekmede tarayıcı bildirim göstermek
+     zorunda olduğu için sahibin kararını ister; kısa aralıklı canlı sorgu panelin Neon bütçesini bozar, yapılmadı.
+     Açık iş KALAN-ISLER'de.
 - **Repo / dal:** lafmaliyet · `claude/senkron-p2-bar-odeme`.
 - **Ne:**
   1. src/lib/site-orders/schema.ts: isteğe bağlı `awaitingPayment` (yoksa 0).
@@ -498,8 +542,10 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Testler:** tests/site-siparis.test.ts (alan yokken 0; geçişte sürüm artar; 30 dk sonra `busy` düşer; ping çekmesi
   saatlik kararı sıfırlamaz; `missedPingAt`); tests/canli-yoklama.test.ts.
 - **Migration:** yok (`integration_state`).
-- **Uçtan uca:** ödeme anında paneli 2 sn durdur (ödeme pingi düşer) → ekran ≤ 6 dk içinde siparişi gösterir, Ayarlar
-  "ping kaçtı" der. Ödeme beklenmeyen sakin saatte yoklama 60 dk kalır.
+- **Uçtan uca:** ödeme anında paneli 2 sn durdur (ödeme pingi düşer) → bildirimi kapalı (ya da ekranında açık sipariş
+  olan) görünür bar ekranı ≤ 6 dk içinde siparişi gösterir, Ayarlar "ping kaçtı" der. Bildirimi açık, boş ekranda en geç
+  ≈ 1 saat (Durum 6). Ödeme beklenmeyen sakin saatte yoklama 60 dk kalır; vazgeçilen kartlı ödemeden sonra ekran en çok
+  30 dk yoğun kalır.
 - **Bütçe:** kartlı sipariş başına ≤ 30 dk, çoğunlukla site veritabanı zaten uyanıkken.
 - **Bağımlı:** S2 canlıda (alan yoksa davranış bugünkü).
 

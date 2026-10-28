@@ -13,6 +13,7 @@ import { defaultPrefs } from "../src/components/panel/live/prefs";
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
 import { CATCH_UP } from "../src/lib/karaoke/freshness";
 import { hiddenTabNote, LIVE_POLL, listensForAlerts, livePollDue, livePollMs, pushCovers, type LivePollInput } from "../src/lib/live-poll";
+import { awaitingUntil, boardBusy } from "../src/lib/site-orders/follow";
 import { createTtlCache } from "../src/lib/ttl-cache";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -135,6 +136,24 @@ test("yedek kontrol: son karaoke çekmesi başarısızken bildirim açık ya da 
   const src = read("src/components/panel/live/alert-center.tsx");
   assert.match(src, /const failing = Boolean\(data\?\.karaoke\.error\);/);
   assert.match(src, /soon: p\.soon, failing: p\.failing, listening: p\.listening \}/);
+});
+
+test("ödeme beklenirken yalnız bar ekranının çekmesi sıklaşır (3 dk, en çok 30 dk); kabuğun yedek kontrolü değişmez", () => {
+  // Senkron planı P2: sitede ödemesi beklenen sipariş varken bar ekranı yoğun sayılır (src/lib/site-orders/follow.ts)
+  const now = 1_000_000_000_000;
+  const until = awaitingUntil({ awaitingPayment: 1, awaitingSince: new Date(now).toISOString() });
+  assert.equal(boardBusy({ open: 0, awaitingUntil: until }, now + 29 * 60_000), true);
+  assert.equal(boardBusy({ open: 0, awaitingUntil: until }, now + 30 * 60_000), false, "takip 30 dakikada biter");
+  assert.equal(boardBusy({ open: 0, awaitingUntil: null }, now), false, "ödeme beklenmeyen sakin saatte saatlik çekme kalır");
+  // Kabuğun yedek kontrolü ve uyarı motoru ödeme takibine bakmaz (veritabanı uyusun): sıklaşan yalnız bar ekranının
+  // görünürken yaptığı çekme, o da her seferinde 304'lü canlı veri ister
+  assert.doesNotMatch(read("src/lib/live-poll.ts"), /awaiting/);
+  assert.doesNotMatch(read("src/components/panel/live/alert-center.tsx"), /awaiting/);
+  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  assert.match(board, /if \(document\.visibilityState === "visible"\) void pullOrders\(ms - 30_000\);/);
+  // Canlı uç: 304 kararı (sürüm ETag'te) bitişi okumadan önce
+  const live = read("src/app/api/canli/route.ts");
+  assert.ok(live.indexOf("status: 304") < live.indexOf("awaitingUntil(ordersState)"));
 });
 
 test("uyarı motoru: zamanlayıcı yalnız vaktin gelip gelmediğine bakar; görünürlük ve son soruluş kurala verilir", () => {
