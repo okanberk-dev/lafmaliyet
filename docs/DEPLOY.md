@@ -55,6 +55,11 @@ eylem bir kez hata verir. Kayıt yazılmamıştır (COMMIT gönderilmeden kopan 
 bağlantı tam COMMIT yoldayken koptuysa yazılmış olabilir, yeniden denemeden önce sayfa yenilenip bakılır. Günlükte
 yalnız `write CONNECTION_CLOSED` satırı kalır; `reading 'write'` TypeError'ı yeniden görünürse bu koruma aşılmış
 demektir (testler: `tests/veritabani-baglanti.test.ts`, sahte Neon'la `tests/veritabani-baglanti-db.test.ts`).
+Korumanın kapatamadığı dar bir pencere kalır: soketin kapanışı postgres.js'in henüz göndermediği bir yazımla aynı olay
+döngüsü turuna denk gelirse (işlemde ya da işlemsiz bir sorguda; işlemde bağlantı listede olmayan bir soket hatasıyla,
+ör. TLS'in `EPROTO`'su, koptuğunda da) postgres.js bekleyen yazımı iptal eder ama işaretini sıfırlamaz; o yuvanın
+sonraki açılışları yine `connect_timeout`'u bekler. Günlükte TypeError olmadan art arda `CONNECT_TIMEOUT` görünür.
+Bu postgres.js'in içindedir, dışarıdan düzeltilemez; canlıda görülmedi.
 
 **Önizlemeler ve migration.** `DATABASE_URL` hem Production hem Preview ortamında aynı veritabanını gösteriyor:
 önizleme (PR) dağıtımları canlının verisini kullanır. Bu yüzden derleme öncesi hazırlık (`scripts/predeploy.ts`)
