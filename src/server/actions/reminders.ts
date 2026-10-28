@@ -31,7 +31,7 @@ import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
 import { emailKey, recipientRefusal } from "@/lib/notify-recipients";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
 import { reminderUnchanged } from "@/lib/recent-paid";
-import { paidWithholdingRate } from "@/lib/tax/rules";
+import { paidFixedRates } from "@/lib/tax/rules";
 import { unreachable } from "@/lib/unreachable";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
@@ -195,8 +195,8 @@ async function followedAmount(r: ReminderDbRow, nextDue: string): Promise<number
     .from(s.fixedExpenseVersions)
     .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
   if (f.endMonth && nextDue.slice(0, 7) > f.endMonth) return null;
-  // Stopajlı kalemde tutar bankadan çıkan nettir (stopaj muhtasarda; docs/VERGI.md)
-  const rated = { ...f, withholdingRate: paidWithholdingRate(f.taxWithholding, Number(nextDue.slice(0, 4))) };
+  // Stopajlı kalemde tutar bankadan çıkan nettir (stopaj muhtasarda); yurt dışı hizmette KDV yok (KDV-2'de; docs/VERGI.md)
+  const rated = paidFixedRates(f, Number(nextDue.slice(0, 4)));
   return fixedReminderNextAmount({ note: r.note, amount: r.amount, dueDate: r.dueDate, repeat: r.repeat as ReminderRepeat }, rated, versions, nextDue);
 }
 
@@ -495,8 +495,9 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
     // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder); sonraki bir aydan
     // değişiklik girilmişse tutarsız (plan her ayın sürümünü taşır)
-    // Stopajlı kalemde stopaj düşülür: bankadan çıkan net (stopaj muhtasarda; docs/VERGI.md)
-    const at = fixedReminderAt({ ...f, withholdingRate: paidWithholdingRate(f.taxWithholding, Number(dueDate.slice(0, 4))) }, versions, dueDate.slice(0, 7));
+    // Stopajlı kalemde stopaj düşülür: bankadan çıkan net (stopaj muhtasarda); yurt dışı hizmette KDV yok (KDV-2'de;
+    // docs/VERGI.md)
+    const at = fixedReminderAt(paidFixedRates(f, Number(dueDate.slice(0, 4))), versions, dueDate.slice(0, 7));
     if (at.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
     const repeat = at.period === "yillik" ? "yearly" : at.period === "haftalik" ? "weekly" : "monthly";
     const kind = f.section === "kira" ? "kira" : f.section === "personel" ? "maas" : "odeme";

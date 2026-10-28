@@ -363,6 +363,17 @@ export function withholdingKdv2(w: Withholding | null | undefined, rules: TaxYea
   return w === "internet_reklam_yurtdisi" || w === "yurt_disi_hizmet" ? rules.kdv.sorumluYurtDisi.value : 0;
 }
 
+/**
+ * Sabit giderin bankadan çıkan tutarının oranları (nakit planı, "Sabit giderlerden ekle", Ödemeler'in E-46
+ * karşılaştırması; plan §8.2, K20): ödemeden kesilen stopaj (paidWithholdingRate) ve faturadaki KDV. Doğrudan yurt
+ * dışına ödenen reklam ve hizmette yabancı firma Türk KDV'si kesmez: KDV oranı 0, tutar olduğu gibi gider, KDV'si
+ * yalnız KDV-2 satırındadır (bölümün varsayılan %20'si iki kez sayılmasın). Yılın kuralı yoksa en son bilinen yılınki
+ */
+export function paidFixedRates<T extends { taxWithholding?: Withholding | null; vatRate?: number | null }>(f: T, year: number): T & { withholdingRate: number } {
+  const foreign = withholdingKdv2(f.taxWithholding, rulesFor(year).rules) > 0;
+  return { ...f, ...(foreign ? { vatRate: 0 } : {}), withholdingRate: paidWithholdingRate(f.taxWithholding, year) };
+}
+
 // ---------------------------------------------------------------- Metinler ve yuvarlama
 
 /** Üst bant (K27, §4.0) */

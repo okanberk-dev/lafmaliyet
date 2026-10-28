@@ -89,7 +89,10 @@ export interface TaxViewInput {
   quarter?: string | null;
   settings: TaxSettings;
   pnl: TaxPnlInput;
-  /** Muhtasar kalemleri, dönem dönem (muhtasarItemsFromModel); bordro pnl.payroll'dan */
+  /**
+   * Muhtasar kalemleri, dönem dönem (muhtasarItemsFromModel); bordro pnl.payroll'dan. Bugünden 4 ay önceden (üç aylık
+   * seçenekte 6 ay önceden: ilk çeyrek sonunun önceki ayları) takvim penceresinin sonuna kadar
+   */
   muhtasarItems: ReadonlyMap<string, readonly MuhtasarItem[]>;
   filings: readonly TaxFiling[];
   reminders: readonly ReminderRow[];
@@ -470,6 +473,8 @@ export function taxCalendar(
         source = "Ödemeler'de";
         atLeast = false;
       } else if (!mm.filing && ended) ask = "tahakkuk";
+      // Personelsiz, stopajı bilinmeyen ay: "en az 0 ₺" yazılmaz, tutar bilinmiyor (kalemler notta)
+      if (amount === 0 && atLeast) amount = null;
       for (const x of muhtasarBreakdown(mm)) b.detail.push({ label: x.label, value: money(x.amount) + (x.note ? ` (${x.note})` : "") });
       if (mm.unknown.length) b.notes.push(`${mm.unknown.length} kalemin stopajı bilinmiyor: ${mm.unknown.join(", ")}.`);
       if (!mm.filing) b.notes.push("Tahmin; kesin tutar tahakkuk fişindedir.");
@@ -715,13 +720,7 @@ function kvCard(y: YearView): KvCard {
 function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muhtasar: Map<string, MuhtasarMonth> }): TaxPlanFeed {
   const items: TaxPlanFeed["items"] = [];
   const pending: TaxPlanFeed["pending"] = [];
-  for (const m of ctx.muhtasar.values()) {
-    if (m.empty) continue;
-    const parts = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.map((s) => `${s.name} stopajı ${amt(s.amount)}`), `damga ${amt(m.damga)}`];
-    const detail = m.filing
-      ? `Muhasebecinin rakamı. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`
-      : `${parts.join(" + ")}${m.atLeast ? `; en az (${m.unknown.length} kalemin stopajı bilinmiyor)` : ""}. Tahmin; kesin tutar tahakkuk fişindedir. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`;
-    items.push({ kind: "muhtasar", period: m.period, nominal: m.nominal, legalDue: m.due, amount: m.payable, atLeast: m.atLeast, source: m.filing ? "filing" : "estimate", detail });
+  const kdv2Item = (m: MuhtasarMonth) => {
     if (m.kdv2Hizmet > 0) {
       const nominal = nominalDue("kdv2", m.period);
       items.push({
@@ -735,6 +734,22 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
         detail: `Yurt dışı hizmetin KDV'si (sorumlu sıfatıyla): ${m.kdv2Items.map((x) => `${x.name} ${amt(x.base)} × %20`).join(" + ")}. Aynı ay 1 No.lu beyannamede indirilir. ${legalDayText(legalDueDate(nominal)).replace(/^s/, "S")}.`,
       });
     }
+  };
+  for (const m of ctx.muhtasar.values()) {
+    // Yurt dışı hizmetin KDV-2'si ayrı beyannamedir: muhtasar boş olsa da (takvimdeki gibi)
+    kdv2Item(m);
+    // Tutarı 0 olan ay (personelsiz, stopajı bilinmeyen) plana girmez; hatırlatıcısı varsa "Tutarı girilmemiş"te kalır
+    if (m.empty || !(m.payable > 0)) continue;
+    // Döküm tutara eşit (üç aylıkta ara ayın vergisi çeyrek sonunda, çeyrek sonunda önceki aylar da)
+    const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
+    const prior = r2(m.vergiPayable - m.vergi);
+    const parts = m.deferred
+      ? `Damga ${amt(m.damga)}; vergi kısmı (${own}) çeyrek sonunda ödenir (üç aylık)`
+      : `${own}${prior !== 0 ? ` + çeyreğin önceki ayları ${amt(prior)}` : ""} + damga ${amt(m.damga)}`;
+    const detail = m.filing
+      ? `Muhasebecinin rakamı. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`
+      : `${parts}${m.atLeast ? `; en az (${m.unknown.length} kalemin stopajı bilinmiyor)` : ""}. Tahmin; kesin tutar tahakkuk fişindedir. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`;
+    items.push({ kind: "muhtasar", period: m.period, nominal: m.nominal, legalDue: m.due, amount: m.payable, atLeast: m.atLeast, source: m.filing ? "filing" : "estimate", detail });
   }
   for (const y of ctx.years.values()) {
     for (const c of y.corp) {
@@ -818,13 +833,19 @@ export function buildTaxView(input: TaxViewInput): TaxView {
   for (const y of [...new Set([ty - 1, ty, year])].sort()) if (periodOf(y, settings) && `${y}-01-01` <= today) years.set(y, yearView(input, y));
   const selected = years.get(year) ?? yearView(input, year);
 
-  // Muhtasar: bugünden 4 ay önce (üç aylık seçenek) … pencerenin sonu
+  // Muhtasar: bugünden 4 ay önce (gecikmiş dönem) … pencerenin sonu. Üç aylık seçenekte ilk çeyrek sonunun önceki iki
+  // ayı da girdidir (pencerenin dışında kalsa da çeyreğin vergisi üç ayın toplamı)
   const end = addDays(today, CALENDAR_DAYS);
+  const first = shiftMonth(today.slice(0, 7), -4);
   const periods: string[] = [];
-  for (let m = shiftMonth(today.slice(0, 7), -4); m <= end.slice(0, 7); m = shiftMonth(m, 1)) if (m >= settings.periodStart.slice(0, 7)) periods.push(m);
-  const muhtasar = muhtasarMonths(
-    periods.map((p) => ({ period: p, payroll: input.pnl.payroll.get(p), items: input.muhtasarItems.get(p) ?? [] })),
-    { filings: input.filings, overrides: settings.overrides, quarterly: settings.muhtasarQuarterly },
+  for (let m = settings.muhtasarQuarterly ? shiftMonth(first, -2) : first; m <= end.slice(0, 7); m = shiftMonth(m, 1)) if (m >= settings.periodStart.slice(0, 7)) periods.push(m);
+  const muhtasar = new Map(
+    [
+      ...muhtasarMonths(
+        periods.map((p) => ({ period: p, payroll: input.pnl.payroll.get(p), items: input.muhtasarItems.get(p) ?? [] })),
+        { filings: input.filings, overrides: settings.overrides, quarterly: settings.muhtasarQuarterly },
+      ),
+    ].filter(([p]) => p >= first),
   );
   const ctx = { years, muhtasar };
   const cal = taxCalendar(input, ctx);

@@ -11,7 +11,7 @@ import { FIXED_VAT_RATES, MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, tl } from "@/lib/format";
 import { foldName } from "@/lib/cash-plan";
 import { addDays, FIXED_REMINDER_NOTE, fixedReminderFollow } from "@/lib/reminders";
-import { paidWithholdingRate } from "@/lib/tax/rules";
+import { paidFixedRates } from "@/lib/tax/rules";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -377,9 +377,10 @@ async function followFixedReminders(
   if (!rems.length) return out;
   const afterVersions = await tx.select().from(s.fixedExpenseVersions).where(eq(s.fixedExpenseVersions.fixedExpenseId, before.id));
   for (const r of rems) {
-    // Stopajlı kalemde hatırlatıcının tutarı bankadan çıkan nettir (stopaj muhtasarda; docs/VERGI.md)
+    // Stopajlı kalemde hatırlatıcının tutarı bankadan çıkan nettir (stopaj muhtasarda); yurt dışı hizmette KDV yok
+    // (KDV-2'de; docs/VERGI.md)
     const year = Number(r.dueDate.slice(0, 4));
-    const rated = (x: typeof before) => ({ ...x, withholdingRate: paidWithholdingRate(x.taxWithholding, year) });
+    const rated = (x: typeof before) => paidFixedRates(x, year);
     const f = fixedReminderFollow(r, rated(before), beforeVersions, rated(after), afterVersions);
     if (f.kind === "update") {
       await tx.update(s.reminders).set({ amount: f.amount }).where(eq(s.reminders.id, r.id));

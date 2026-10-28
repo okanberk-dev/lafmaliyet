@@ -94,12 +94,57 @@ test("C, Örnek A: yıllık kurumlar vergisi; yalnız ödendi işaretli geçici 
   assert.equal(q4open.payable, 36928.95);
   assert.deepEqual(q4open.unpaid, [{ period: "2026-Q4", amount: 36928.95 }]);
   assert.equal(unpaidText("2026-Q4"), "2026/4 ödendi olarak işaretlenmedi: ödenmezse yıllık beyannamede mahsup edilemez.");
-  // Ödendi anındaki hatırlatıcı tutarı mahsup edilir (kaydı yoksa)
-  assert.equal(corporateTax(input({ paidQuarters: [{ period: "2026-Q3", amount: 15000 }] })).paidProvisional, 15000);
+  // Ödendi anındaki hatırlatıcı tutarı mahsup edilir (kaydı yoksa); tahakkuk toplamıdır, beyanname damgası (791) düşülür
+  assert.equal(corporateTax(input({ paidQuarters: [{ period: "2026-Q3", amount: 15791 }] })).paidProvisional, 15000);
   const k = kvStamps(2026);
   assert.equal(paid.stamps.total, 2516.3);
   assert.equal(k.estimated, true);
   assert.equal(paid.inProgress, false);
+});
+
+test("C: 2026/4'ün matrahlı kaydı yıllık kurumlar vergisinin çapası; ödenen dördüncü dönem iade göstermez", () => {
+  const all = ["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4"].map((period) => ({ period, amount: null }));
+  const q4: TaxFiling = { id: 9, kind: "gecici", period: "2026-Q4", payable: 112213.13, stamp: 791, values: { matrah: 500000, hesaplanan: 125000 } };
+  const kv = corporateTax(input({ filings: [q4], paidQuarters: all }));
+  assert.equal(kv.income, 500000);
+  assert.equal(kv.indirim, 0, "çapadan sonra indirim yok");
+  assert.equal(kv.matrah, 500000);
+  assert.equal(kv.tax, 125000);
+  assert.equal(kv.paidProvisional, 125000);
+  assert.equal(kv.payable, 0);
+  assert.equal(kv.refund, 0);
+  // Devreden zarar çapadan da düşülür
+  const loss = corporateTax(input({ filings: [q4], paidQuarters: all, settings: { ...S_A, carriedLoss: { amount: 100000, note: "2025 KV", by: "x", date: "2026-10-01" } } }));
+  assert.equal(loss.loss, 100000);
+  assert.equal(loss.matrah, 400000);
+  // Matrahsız 2026/4 kaydı çapa değil: panelin kümülatifi
+  const bare = corporateTax(input({ filings: [{ ...q4, values: {} }], paidQuarters: all }));
+  assert.equal(bare.income, 201863.28);
+  assert.equal(bare.matrah, 198863.28);
+});
+
+test("C: hatırlatıcının tahakkuk toplamındaki beyanname damgası mahsup edilmez (sıfır beyan yalnız damga)", () => {
+  const qs: CorpQuarterInput[] = [
+    { key: "2026-Q2", q: 2, from: "2026-06-25", to: "2026-06-30", result: -5000, depreciation: 0, direct: 0, kkeg: 0, indirim: 0, floorResult: 0, state: "hazir" },
+    { key: "2026-Q3", q: 3, from: "2026-07-01", to: "2026-09-30", result: 100000, depreciation: 0, direct: 0, kkeg: 0, indirim: 0, floorResult: 0, state: "hazir" },
+    { key: "2026-Q4", q: 4, from: "2026-10-01", to: "2026-12-31", result: 100000, depreciation: 0, direct: 0, kkeg: 0, indirim: 3000, floorResult: 0, state: "hazir" },
+  ];
+  const base = { year: 2026, quarters: qs, filings: [], settings: { ...DEFAULT_TAX_SETTINGS }, today: "2027-03-01" };
+  const c = quarterTaxes(base);
+  assert.deepEqual(
+    c.map((x) => [x.key, x.estimate, x.stamp]),
+    [
+      ["2026-Q2", 0, 791],
+      ["2026-Q3", 23750, 791],
+      ["2026-Q4", 24250, 791],
+    ],
+  );
+  // Ödemeler'deki hatırlatıcıya tahakkuk toplamı (vergi + 791 damga) yazılıp "Ödendi" denmiş
+  const paid = c.map((x) => ({ period: x.key, amount: r2(x.estimate + x.stamp) }));
+  const kv = corporateTax({ ...base, paidQuarters: paid }, c);
+  assert.deepEqual([kv.tax, kv.paidProvisional, kv.payable, kv.refund], [48000, 48000, 0, 0]);
+  // Yalnız damga ödenmiş sıfır beyan 0 mahsup eder
+  assert.deepEqual(corporateTax({ ...base, paidQuarters: [{ period: "2026-Q2", amount: 791 }] }, c).paidQuarters, [{ period: "2026-Q2", amount: 0 }]);
 });
 
 test("C: asgari vergi: ilk defa faaliyete başlayan şirkette 2026–2028 uygulanmaz; işaretlenmediyse hesaplanır", () => {

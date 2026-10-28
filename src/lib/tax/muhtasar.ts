@@ -69,7 +69,7 @@ export interface MuhtasarMonth {
   atLeast: boolean;
   filing: TaxFiling | null;
   source: "Muhasebeci" | "tahmin";
-  /** Beyanname yok: personel yok, vergi yok, kayıt yok */
+  /** Beyanname yok: personel yok, vergi yok, stopajı bilinmeyen kalem yok, kayıt yok */
   empty: boolean;
 }
 
@@ -167,7 +167,8 @@ export function muhtasarMonth(
     atLeast: !filing && unknown.length > 0,
     filing,
     source: filing ? "Muhasebeci" : "tahmin",
-    empty: !filing && o.people === 0 && vergiPayable === 0 && stamp.amount === 0,
+    // Stopajı bilinmeyen kalem varsa beyanname olabilir: satır "en az" ya da tutarı bilinmiyor diye kalır (§3.5, §13)
+    empty: !filing && o.people === 0 && vergiPayable === 0 && stamp.amount === 0 && unknown.length === 0,
   };
 }
 

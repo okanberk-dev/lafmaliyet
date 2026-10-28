@@ -52,6 +52,7 @@ test("G: legalDueDate (VUK 18)", () => {
     ["2026-12-26", "2026-12-28"], // Cumartesi
     ["2027-01-31", "2027-02-01"], // Pazar
     ["2029-01-06", "2029-01-08"], // tablo dışı Cumartesi
+    ["2028-12-31", "2029-01-02"], // Pazar; 1 Ocak 2029 Yılbaşı (her yıl aynı gün, tablo dışında da)
     ["2026-11-17", "2026-11-17"], // Salı
     ["2026-05-26", "2026-05-26"], // Kurban arifesi
     ["2026-05-27", "2026-06-01"], // Kurban Bayramı 27–30 Mayıs, 31 Mayıs Pazar
@@ -63,6 +64,10 @@ test("G: legalDueDate (VUK 18)", () => {
   assert.equal(legalDueDate("2026-10-28").reason, null);
   assert.equal(legalDueDate("2029-01-06").reason, "tatil listesi 2028'de bitiyor");
   assert.equal(legalDueDate("2029-01-03").reason, "tatil listesi 2028'de bitiyor");
+  // Kasım 2028 SGK'sı (31.12.2028 Pazar): tablonun içindeki gün 2029'a kayar, kapsam notu düşer
+  assert.deepEqual(legalDueDate("2028-12-31"), { date: "2029-01-02", nominal: "2028-12-31", shifted: true, reason: "tatil listesi 2028'de bitiyor" });
+  assert.equal(plain(shiftText(legalDueDate("2028-12-31"))), "Son gün 31 Aralık Pazar → 2 Ocak (tatil listesi 2028'de bitiyor)");
+  assert.equal(legalDueDate("2029-04-23").date, "2029-04-24", "23 Nisan 2029 Pazartesi, tablo dışında da tatil");
   assert.equal(plain(shiftText(legalDueDate("2026-10-25"))), "Son gün 25 Ekim Pazar → 26 Ekim");
   assert.equal(shiftText(legalDueDate("2026-11-17")), null);
   assert.equal(legalDayText(legalDueDate("2026-10-31")), "son gün 2 Kasım Pazartesi (31 Ekim Cumartesi)");

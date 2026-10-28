@@ -6,7 +6,7 @@
  * öbürünün gününü yazar. Saf modül; tests/vergi-takvim.test.ts. Takvimin satırları view.ts'te (taxCalendar).
  */
 
-import { calendarDay, CALENDAR_COVERAGE, weekdayOf } from "../forecast/calendar";
+import { calendarDay, CALENDAR_COVERAGE, fixedHolidayName, weekdayOf } from "../forecast/calendar";
 import { addDays, dayMonthTR, longDateTR, monthEnd, shiftMonth } from "../reminders";
 import { MONTH_NAMES } from "../constants";
 
@@ -35,9 +35,12 @@ export interface LegalDue {
   reason: string | null;
 }
 
-/** Tatil listesinde iş günü olmayan gün: resmî tatil ve bayram (arife değil) */
+/**
+ * Tatil listesinde iş günü olmayan gün: resmî tatil ve bayram (arife değil). Tablonun kapsamı dışında yalnız her yıl aynı
+ * gün olan resmî tatiller bilinir (1 Ocak 2029 Yılbaşı); bayramlar bilinmez, gün kapsam notunu taşır
+ */
 function holidayOf(date: string): string | null {
-  if (date > CALENDAR_COVERAGE.holidaysTo) return null;
+  if (date > CALENDAR_COVERAGE.holidaysTo) return fixedHolidayName(date);
   const ev = calendarDay(date).event;
   return ev && ev.kind !== "arife" ? ev.name : null;
 }
@@ -52,7 +55,8 @@ export function legalDueDate(date: string): LegalDue {
   let d = date;
   for (let guard = 0; !isWorkday(d) && guard < 15; guard++) d = addDays(d, 1);
   const shifted = d !== date;
-  const beyond = date > CALENDAR_COVERAGE.holidaysTo;
+  // Kapsam sonucun gününden: tablonun içindeki bir gün kaydırılıp 2029'a geçerse de not düşer
+  const beyond = d > CALENDAR_COVERAGE.holidaysTo;
   let reason: string | null = null;
   if (beyond) reason = COVERAGE_NOTE;
   else if (shifted) {

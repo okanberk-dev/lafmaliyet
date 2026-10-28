@@ -48,7 +48,7 @@ import {
 import { unreachable } from "./unreachable";
 import { legalDayText, legalDueDate, mphbPeriodOf, quarterLabel, quarterOfDue } from "./tax/calendar";
 import { taxPayrollFromModel, type PayrollMonth } from "./tax/payroll";
-import { paidWithholdingRate, r2, rulesFor, type Withholding } from "./tax/rules";
+import { paidFixedRates, r2, rulesFor, type Withholding } from "./tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
 import type { TaxPlanFeed } from "./tax/view";
 import { originalDue, paidPeriodOf, paidPeriodsOf, type VatPaidEntry } from "./vat-paid";
@@ -107,13 +107,14 @@ interface FixedItem {
   amount: number;
   /**
    * Faturasındaki KDV oranı (constants.ts fixedVatRate; kalemde boşsa bölümün varsayılanı). Plan gideri KDV dahil öder:
-   * kiranın %20'si de bankadan çıkar (KDV tahmini faturası panele gelen giderin KDV'sini zaten indirir)
+   * kiranın %20'si de bankadan çıkar (KDV tahmini faturası panele gelen giderin KDV'sini zaten indirir). Yurt dışı
+   * hizmette 0 (src/lib/tax/rules.ts paidFixedRates): yabancı firma KDV kesmez, KDV-2 ayrı satırdadır
    */
   vatRate?: number;
   /**
    * Stopaj profili ve ödemeden kesilen stopaj oranı (Vergi › sınıflandırma; src/lib/tax/rules.ts paidWithholdingRate):
    * şahsa kira, serbest meslek ve şahsa internet reklamında bankadan net çıkar, stopaj muhtasar satırındadır (kira
-   * 160.000 brüt, KDV'siz → 128.000). Yurt dışına ödenende oran 0 (tutar olduğu gibi; KDV-2 ayrı satırda)
+   * 160.000 brüt, KDV'siz → 128.000). Yurt dışına ödenende oran 0 ve KDV yok (tutar olduğu gibi; KDV-2 ayrı satırda)
    */
   withholding?: Withholding | null;
   withholdingRate?: number;
@@ -440,8 +441,9 @@ export function fixedReminderDrifts(
     period: FixedPeriod;
     amount: number;
     section: FixedSection;
+    /** Yurt dışı hizmette 0 (src/lib/tax/rules.ts paidFixedRates) */
     vatRate?: number | null;
-    /** Ödemeden kesilen stopaj oranı (src/lib/tax/rules.ts paidWithholdingRate): tutar bankadan çıkan net */
+    /** Ödemeden kesilen stopaj oranı (src/lib/tax/rules.ts paidFixedRates): tutar bankadan çıkan net */
     withholdingRate?: number | null;
     startMonth: string | null;
     endMonth: string | null;
@@ -586,14 +588,15 @@ export function planInputFromModel(
     months[m] = {
       payroll: t ? { net: r2(t.net + t.extras), sgk: t.sgkTotal, people: t.people } : { net: 0, sgk: 0, people: 0 },
       fixed: model.fixedInMonth(m).map((f) => {
-        const withholdingRate = paidWithholdingRate(f.taxWithholding, year);
+        // Stopajlı kalemde stopaj düşülür; yurt dışı hizmette KDV yok (KDV-2 ayrı satırda; paidFixedRates)
+        const rated = paidFixedRates({ taxWithholding: f.taxWithholding, vatRate: fixedVatRate(f) }, year);
         return {
           id: f.id,
           name: f.name,
           period: f.period,
           amount: f.amount,
-          vatRate: fixedVatRate(f),
-          ...(f.taxWithholding ? { withholding: f.taxWithholding, withholdingRate } : {}),
+          vatRate: rated.vatRate,
+          ...(f.taxWithholding ? { withholding: f.taxWithholding, withholdingRate: rated.withholdingRate } : {}),
         };
       }),
       expenses: monthExpenses(m),
@@ -860,9 +863,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     if (cat === "sgk") return { kind: "sgk" };
     if (isVatWithholdingReminder(r)) return { kind: "kdv2" };
     if (isVatReminder(r)) return { kind: "kdv" };
-    // Vergi (docs/VERGI.md): muhtasar ("stopaj" da) ve geçici vergi; KDV damga vergisi diğerdir (kendi satırını çizer)
-    if (isMuhtasarReminder(r)) return { kind: "muhtasar" };
-    if (isProvisionalTaxReminder(r)) return { kind: "gecici" };
+    // Vergi (docs/VERGI.md): muhtasar ("stopaj" da) ve geçici vergi; KDV damga vergisi diğerdir (kendi satırını çizer).
+    // Besleme yoksa (alınamadı ya da verilmedi) bugünkü gibi diğerdir: her dönemi tutarını çizer (§8.1)
+    if (tax && isMuhtasarReminder(r)) return { kind: "muhtasar" };
+    if (tax && isProvisionalTaxReminder(r)) return { kind: "gecici" };
     return { kind: "other" };
   };
   const active = input.reminders.filter((r) => r.active).sort((a, b) => a.id - b.id);
@@ -1232,8 +1236,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const taxClass = (kind: "muhtasar" | "gecici", rems: readonly ReminderRow[]) => {
     const items = new Map((tax?.items ?? []).filter((i) => i.kind === kind).map((i) => [i.period, i]));
     const pending = new Map((tax?.pending ?? []).filter((p) => p.kind === kind).map((p) => [p.period, p]));
-    // Ödendi: son ödenenler (30 gün); geçici vergide kalıcı kayıt da (payments.vat-paid, çeyrek)
-    const paid = kind === "gecici" ? paidVatPeriods(paidRecords, new Map(rems.map((r) => [r.id, r])), "gecici", allIds) : paidVatPeriods(input.paidReminders, new Map(rems.map((r) => [r.id, r])));
+    // Ödendi: son ödenenler (30 gün); geçici vergide kalıcı kayıt da (payments.vat-paid, çeyrek). Sınıfın bütün
+    // hatırlatıcılarından (etkin olmayanlar da): ödenince kapanan tek seferliğin dönemi de ödenmiştir (KDV'deki gibi)
+    const all = new Map(input.reminders.filter((r) => classify(r).kind === kind).map((r) => [r.id, r]));
+    const paid = kind === "gecici" ? paidVatPeriods(paidRecords, all, "gecici", allIds) : paidVatPeriods(input.paidReminders, all);
     const periodOf = (r: ReminderRow, due: string) => (kind === "gecici" ? quarterOfDue(originalDue(r, due)) : mphbPeriodOf(originalDue(r, due)));
     if (rems.length) {
       // Tutarı tek döneme ait hatırlatıcıda (taxAmountTravels) tutar yalnız kayıtlı dönemindedir; sabit tutarlıda ("Kira

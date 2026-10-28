@@ -99,7 +99,10 @@ export interface CorpInput {
   quarters: readonly CorpQuarterInput[];
   filings: readonly TaxFiling[];
   settings: Pick<TaxSettings, "firstActivity" | "periodStart" | "carriedLoss" | "overrides">;
-  /** "Ödendi" işaretli geçici vergi dönemleri ve Ödendi anındaki hatırlatıcı tutarı (payments.vat-paid, tür gecici) */
+  /**
+   * "Ödendi" işaretli geçici vergi dönemleri ve Ödendi anındaki hatırlatıcı tutarı (payments.vat-paid, tür gecici). Tutar
+   * tahakkuk fişinin toplamıdır (damga dahil): mahsupta beyanname damgası düşülür
+   */
   paidQuarters?: readonly { period: string; amount: number | null }[];
   today: string;
 }
@@ -297,8 +300,11 @@ export function corporateTax(input: CorpInput, quarters: QuarterCalc[] = quarter
   const filing = filingFor(input.filings, "kv", String(input.year));
   const carried = carriedLossFor(input.year, input.filings, input.settings);
   const fMatrah = filing ? filingValue(filing, "matrah") : undefined;
-  const income = fMatrah ?? last?.cumulative ?? 0;
-  const indirim = fMatrah !== undefined ? 0 : (last?.indirim ?? 0);
+  // Son çeyreğin (2026/4) matrahlı kaydı da çapadır (§3.7): yıllık kazanç onun kümülatif matrahı, çapadan sonra indirim yok
+  const lf = last ? filingFor(input.filings, "gecici", last.key) : null;
+  const lastMatrah = lf ? filingValue(lf, "matrah") : undefined;
+  const income = fMatrah ?? lastMatrah ?? last?.cumulative ?? 0;
+  const indirim = fMatrah !== undefined || lastMatrah !== undefined ? 0 : (last?.indirim ?? 0);
   const loss = Math.min(Math.max(0, income), carried);
   const matrah = Math.max(0, r2(income - loss - indirim));
   const hesaplanan = filing && filingValue(filing, "hesaplanan") !== undefined ? filingValue(filing, "hesaplanan")! : r2(matrah * rules.kv.oran.value);
@@ -309,7 +315,14 @@ export function corporateTax(input: CorpInput, quarters: QuarterCalc[] = quarter
   const paidQuarters: { period: string; amount: number }[] = [];
   const unpaid: { period: string; amount: number }[] = [];
   for (const q of quarters) {
-    const amount = q.filing ? q.filing.payable : paidSet.has(q.key) ? (paidSet.get(q.key) ?? q.estimate) : q.estimate;
+    // Ödendi anındaki hatırlatıcı tutarı tahakkuk fişinin toplamıdır (damga dahil, §8.3): damga vergisi geçici vergi
+    // değildir, mahsup edilmez (gecici.mahsup)
+    const reminderAmount = paidSet.get(q.key);
+    const amount = q.filing
+      ? q.filing.payable
+      : reminderAmount !== undefined && reminderAmount !== null
+        ? Math.max(0, r2(reminderAmount - q.stamp))
+        : q.estimate;
     if (paidSet.has(q.key)) paidQuarters.push({ period: q.key, amount });
     else if (amount > 0.005) unpaid.push({ period: q.key, amount });
   }
