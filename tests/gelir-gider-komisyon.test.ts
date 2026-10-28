@@ -161,6 +161,14 @@ test("E-43: satır ipucu yemek kartının hariç olduğunu ve banka faturasında
   assert.match(def.hint!, /0 yazın/);
 });
 
+test("B16: Genel bakış'ın 'Kart / POS komisyonu' satış raporunun tahmini olduğunu ve Gelir-gider'den farkını söyler", () => {
+  const dash = readFileSync(join(root, "src/app/panel/dashboard-breakdowns.ts"), "utf8");
+  const page = readFileSync(join(root, "src/app/panel/page.tsx"), "utf8");
+  assert.match(dash, /kartlı oran \$\{rate\(model\.cardShareOf\(d\.month\)\.rate\)\} \(yemek kartı dahil\)/);
+  assert.match(dash, /POS_COMMISSION_SALES_NOTE =\s*"Satış raporunun tahmini: kartlı oran yemek kartı satışını da içerir\. Gelir-gider'deki banka POS komisyonu yalnız banka kartı payıyla/);
+  assert.match(page, /label: "Kart \/ POS komisyonu",[\s\S]{0,300}info: POS_COMMISSION_SALES_NOTE/);
+});
+
 // ---------------------------------------------------------------- E-44 personel satırı
 
 test("E-44: personel satırı maliyet − net: çalışan kesintisi, işveren payı ve ekler; etiket ve hücre bileşimi bunu söyler", () => {

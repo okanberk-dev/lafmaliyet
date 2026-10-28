@@ -50,6 +50,13 @@ const biggestFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => b.amount
 
 // ---------------------------------------------------------------- Bağlantılar
 
+/**
+ * Genel bakış'ın "Kart / POS komisyonu" satış raporunun tahminidir: ciro × komisyon × kartlı oran (yemek kartı dahil).
+ * Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla (denetim E-43); iki rakam kasa raporu olan ayda ayrışır
+ */
+export const POS_COMMISSION_SALES_NOTE =
+  "Satış raporunun tahmini: kartlı oran yemek kartı satışını da içerir. Gelir-gider'deki banka POS komisyonu yalnız banka kartı payıyla hesaplanır, yemek kartlarının komisyonu kendi faturalarıyla sayılır; kasa raporu olan ayda iki rakam farklı çıkar.";
+
 const salesHref = (month: string, durum?: string) => `/panel/satislar?ay=${month}${durum ? `&durum=${durum}#satirlar` : ""}`;
 /** Gelir-gider: ayın yılı; telefondaki tek ay görünümü de o ayla açılır (month-view.tsx ile aynı adres) */
 const pnlHref = (month: string) => `/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`;
@@ -173,7 +180,13 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
       }`,
       amount: -t.material,
     },
-    { key: "komisyon", label: "Kart / POS komisyonu", sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)}`, amount: -t.commission },
+    {
+      key: "komisyon",
+      label: "Kart / POS komisyonu",
+      // Satış raporunun tahmini: kartlı oran yemek kartını da içerir (Gelir-gider'in banka POS komisyonu yalnız banka kartı payıyla)
+      sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)} (yemek kartı dahil)`,
+      amount: -t.commission,
+    },
   ];
 }
 

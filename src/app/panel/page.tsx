@@ -71,6 +71,7 @@ import {
   grossProfitBreakdown,
   netProfitBreakdown,
   netSalesBreakdown,
+  POS_COMMISSION_SALES_NOTE,
   posRevenueBreakdown,
   withComparison,
   type CardBreakdown,
@@ -231,7 +232,14 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
         { label: "Malzeme + ambalaj", value: -t.material, sub: t.online ? "Satılan her ürün × reçete maliyeti (laffogato.net dahil)" : "Satılan her ürün × reçete maliyeti", sign: -1 },
-        { label: "Kart / POS komisyonu", value: -t.commission, sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`, sign: -1 },
+        {
+          label: "Kart / POS komisyonu",
+          value: -t.commission,
+          sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`,
+          // Satış raporunun ürün başına tahmini (yemek kartı dahil); Gelir-gider'in banka POS komisyonu ayrı kuralla (E-43)
+          info: POS_COMMISSION_SALES_NOTE,
+          sign: -1,
+        },
         ...t.fixedFlow.map((l) => ({
           label: l.label,
           value: -l.amount,
