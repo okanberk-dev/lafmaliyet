@@ -248,7 +248,7 @@ test("D: harcama kaydının belgesi: kasadan çıkan, cari borç, kategori, tahm
   assert.ok(!sep.excluded.some((x) => x.key === "entry:6"), "kasanın e-Arşiv'i sayılır");
   // Köprü yine tutar (Gelir-gider kayıtları KDV dahil sayıyor)
   const b = bridge(sep).rows;
-  close(b[0].amount + b.slice(1, -1).reduce((s, x) => s + x.amount, 0), b.at(-1)!.amount, "köprü", 0.02);
+  close(b[0].amount + b.slice(1, -1).reduce((s, x) => s + x.amount, 0), b.at(-1)!.amount, "köprü", 0.001);
   assert.ok(b.some((x) => x.key === "receiptVat"));
 });
 
@@ -375,7 +375,8 @@ test("D: köprü (Eylül): Gelir-gider'deki gider − sayılmayanlar ± farklar 
   close(start.amount, C.model.pnlMonth("2026-09").expenses, "başlangıç");
   assert.equal(end.label, "Vergiye göre gider");
   close(end.amount, C.m("2026-09").expense.total, "son");
-  close(start.amount + b.rows.slice(1, -1).reduce((s, x) => s + x.amount, 0), end.amount, "iki uç", 0.02);
+  // Satırlar iki ucu kuruşu kuruşuna tutar (yuvarlama farkı en büyük satıra eklenir)
+  close(start.amount + b.rows.slice(1, -1).reduce((s, x) => s + x.amount, 0), end.amount, "iki uç", 0.001);
   close(b.rows.find((x) => x.key === "excluded")!.amount, -294695.17, "sayılmayan");
   close(b.rows.find((x) => x.key === "payroll")!.amount, 85990.86 - 83117.65, "bordro farkı");
   assert.equal(b.income, "Gelir: Gelir-gider'deki kasa cirosu, yönetim verisi");
@@ -386,7 +387,7 @@ test("D: köprü (Eylül): Gelir-gider'deki gider − sayılmayanlar ± farklar 
   );
   for (const k of ["2026-07", "2026-08", "2026-10"]) {
     const r = bridge(C.m(k)).rows;
-    close(r[0].amount + r.slice(1, -1).reduce((s, x) => s + x.amount, 0), r.at(-1)!.amount, `${k} köprü`, 0.02);
+    close(r[0].amount + r.slice(1, -1).reduce((s, x) => s + x.amount, 0), r.at(-1)!.amount, `${k} köprü`, 0.001);
   }
 });
 

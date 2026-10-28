@@ -668,8 +668,16 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
     { key: "invoices", label: "Gelir-gider'e girmeyen faturalar", amount: r2(invoicesTotal + notAsset - commissionInv - base.linkedInvoices) },
     { key: "adjustments", label: "Düzeltmeler", amount: r2(adjustments + separate) },
   ];
+  // Kuruş yuvarlaması: satırlar ayrı ayrı yuvarlandığı için toplamları sonla 1–2 kuruş ayrışabilir; fark en büyük satıra
+  // eklenir, kartta satırlar iki ucu birebir tutar (ayrışma yuvarlamadan büyükse olduğu gibi kalır, testler yakalar)
+  const bridgeStart = r2(base.pnlExpenses);
+  const residual = r2(expenseTotal - bridgeStart - sumOf(bridgeParts.map((r) => r.amount)));
+  if (residual !== 0 && Math.abs(residual) <= 0.05) {
+    const big = bridgeParts.reduce((a, r) => (Math.abs(r.amount) > Math.abs(a.amount) ? r : a), bridgeParts[0]);
+    big.amount = r2(big.amount + residual);
+  }
   const bridge: BridgeRow[] = [
-    { key: "start", label: "Gelir-gider'deki gider", amount: r2(base.pnlExpenses) },
+    { key: "start", label: "Gelir-gider'deki gider", amount: bridgeStart },
     ...bridgeParts.filter((r) => Math.abs(r.amount) >= 0.005),
     { key: "end", label: "Vergiye göre gider", amount: expenseTotal },
   ];

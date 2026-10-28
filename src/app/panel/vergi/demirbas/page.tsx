@@ -65,9 +65,12 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   const choices = invoiceChoices(model.ds.invoices, assets, today);
   const directLimit = rulesFor(year).rules.vuk.dogrudanGider.value;
   const missingLife = assets.filter((a) => a.method === "amortisman" && !a.lifeYears).length;
+  // Yılın amortismanı yalnız amortismana tabi varlıklardan; doğrudan gider yazılanlar (VUK 313) ayrı yazılır
+  const depreciable = (r: (typeof rows)[number]) => r.asset.method === "amortisman";
   const totals = {
     cost: rows.reduce((s, r) => s + r.asset.cost, 0),
-    year: rows.reduce((s, r) => s + r.thisYear, 0),
+    year: rows.filter(depreciable).reduce((s, r) => s + r.thisYear, 0),
+    direct: rows.filter((r) => !depreciable(r)).reduce((s, r) => s + r.thisYear, 0),
     net: rows.reduce((s, r) => s + r.netValue, 0),
   };
   const method = QUARTER_DEPRECIATION_LABELS[settings.quarterDepreciation];
@@ -92,7 +95,12 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
           <Stat compact label="Varlıklar (maliyet)" value={money(totals.cost)} sub={`${assets.length} varlık`} />
-          <Stat compact label={`${year} amortismanı`} value={money(totals.year)} sub={`Çeyreklere: ${method.toLocaleLowerCase("tr-TR")}`} />
+          <Stat
+            compact
+            label={`${year} amortismanı`}
+            value={money(totals.year)}
+            sub={`Çeyreklere: ${method.toLocaleLowerCase("tr-TR")}${totals.direct ? ` · doğrudan gider ${money(totals.direct)} ayrı` : ""}`}
+          />
           <Stat compact className="col-span-2 lg:col-span-1" label={`Net değer (${year} sonu)`} value={money(totals.net)} sub={missingLife ? `${missingLife} varlığın ömrü girilmedi` : null} tone={missingLife ? "warn" : "default"} />
         </div>
 
