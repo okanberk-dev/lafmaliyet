@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { money } from "./format";
+import { daysBetween } from "./reminders";
 
 export type CashOutKind = "harcama" | "teslim";
 export type CashOutDocType = "fis" | "e_arsiv" | "fatura" | "yok";
@@ -88,11 +89,15 @@ export function staffCategory(c: { section: string; panelGroup: string; active: 
 
 /**
  * Personelin girdiği satır Aylık harcamalar'a yazılır mı: alışveriş fişi (ya da fişsiz alışveriş) evet; fatura ve
- * e-Arşiv hayır (Paraşüt'ten de gelir, iki kez sayılmasın; yönetici bakar); teslim hiçbir zaman.
+ * e-Arşiv hayır (Paraşüt'ten de gelir, iki kez sayılmasın; faturası gelmezse yöneticinin bekleyen listesinde durur,
+ * matchCashOutInvoices); teslim hiçbir zaman.
  */
 export function staffToExpenses(kind: CashOutKind, docType: CashOutDocType): boolean {
   return kind === "harcama" && (docType === "fis" || docType === "yok");
 }
+
+/** Satırın belgesi fatura ya da e-Arşiv mi: personelin satırı Aylık harcamalar'a yazılmaz (staffToExpenses) */
+export const isInvoiceDoc = (docType: CashOutDocType) => docType === "fatura" || docType === "e_arsiv";
 
 /** Satırın kaydedilişi: yeni satır, düzeltme ya da silinenin geri alınması */
 export type CashOutSaveMode = "new" | "edit" | "restore";
@@ -100,7 +105,9 @@ export type CashOutSaveMode = "new" | "edit" | "restore";
 /**
  * Satırın Aylık harcamalar kaydı olacak mı. Yönetici anahtarla seçer. Personel yalnız satırı eklerken kurala göre
  * (staffToExpenses); düzeltmede kaydın şimdiki hâli kalır: yöneticinin Aylık harcamalar'dan sildiği kayıt geri gelmez,
- * faturaya açtığı kayıt silinmez. Geri almada ikisinde de silinen satırdaki gibi. Teslimin kaydı olmaz.
+ * faturaya açtığı kayıt silinmez. Tek istisna: fatura ya da e-Arşiv diye girilmiş, hâlâ faturasını bekleyen satır
+ * fişe (ya da belgesize) düzeltilince kural yeniden uygulanır ve kayıt açılır (inceleme D5; yoksa alım ne bekleyen
+ * listede ne gelir-giderde kalırdı). Geri almada ikisinde de silinen satırdaki gibi. Teslimin kaydı olmaz.
  */
 export function cashOutWritesExpense(o: {
   admin: boolean;
@@ -111,10 +118,20 @@ export function cashOutWritesExpense(o: {
   requested: boolean;
   /** Satırın şimdi bir harcama kaydı var mı (düzeltmede) */
   hasExpense: boolean;
+  /** Düzeltmede satırın kayıtlı belge türü */
+  prevDocType?: CashOutDocType | null;
+  /**
+   * Düzeltmede satır kasadan faturalı alımların bekleyen listesinde mi (faturası gelmedi, yönetici kapatmadı). Sunucu
+   * bilir; pencere bilmez (verilmezse bekliyor sayılır: kategori alanı görünür, kararı sunucu verir)
+   */
+  awaitingInvoice?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
-  if (o.mode === "edit") return o.hasExpense;
+  if (o.mode === "edit") {
+    const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
+    return o.hasExpense || leftInvoice;
+  }
   return staffToExpenses(o.kind, o.docType);
 }
 
@@ -257,4 +274,91 @@ export function supplierNameHint(store: string, names: readonly string[]): strin
   const key = nameKey(store);
   if (!key) return null;
   return names.find((n) => nameKey(n) === key) ?? null;
+}
+
+// ---------------------------------------------------------------- Kasadan faturalı alımlar (denetim E-42)
+
+/**
+ * Kasadan faturalı alımın faturası: fişin gününden en çok 7 gün önce ya da sonra, tutarı (Ödenecek, KDV dahil) en çok
+ * 1 ₺ farklı, aynı mağazadan
+ */
+export const CASH_OUT_INVOICE_WINDOW = { days: 7, amount: 1 } as const;
+
+/** Bekleyen listesinin satırı: kasadan çıkan, fatura ya da e-Arşiv, Aylık harcamalar'da kaydı yok */
+export interface InvoiceCashOut {
+  id: number;
+  /** Kasanın günü */
+  date: string;
+  /** Fişin (faturanın) günü; okunmadıysa null */
+  receiptDate: string | null;
+  store: string | null;
+  amount: number;
+}
+
+/** Eşleşme adayı fatura */
+export interface CashOutInvoiceCandidate {
+  id: number;
+  date: string;
+  supplier: string;
+  payable: number;
+}
+
+/** Faturanın günü: fişte okunan gün, yoksa kasanın günü */
+export const cashOutInvoiceDay = (o: Pick<InvoiceCashOut, "date" | "receiptDate">) => o.receiptDate ?? o.date;
+
+/**
+ * Kasanın yazdığı yer ile faturadaki tedarikçi aynı mağaza mı (adın anahtarıyla, nameKey): aynı ad ya da biri ötekinin
+ * baştan kelimeleri ("Migros" ile "Migros Ticaret A.Ş."; en az 3 harf). Tedarikçiler'deki diğer adlar ve vergi no
+ * çağıranda (aynı tedarikçi kartı) ayrıca bakılır.
+ */
+export function sameStoreName(store: string, supplier: string): boolean {
+  const a = nameKey(store);
+  const b = nameKey(supplier);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 3 && long.startsWith(`${short} `);
+}
+
+/**
+ * Kasadan faturalı alımlar ile faturalar (saf; tests/kasa-faturali.test.ts): pencerede (±7 gün, ±1 ₺) ve aynı
+ * mağazadan (`sameStore`) faturası olan satır eşleşir, olmayan bekler. Bir faturanın tek alımı olur: önce günü en
+ * yakın, sonra tutarı en yakın çift, sonra küçük kimlik. Yersiz satır hiçbir faturayla eşleşmez.
+ */
+export function matchCashOutInvoices<O extends InvoiceCashOut, I extends CashOutInvoiceCandidate>(
+  outs: readonly O[],
+  invoices: readonly I[],
+  sameStore: (o: O, i: I) => boolean = (o, i) => sameStoreName(o.store ?? "", i.supplier),
+): { pending: O[]; matched: Map<number, number> } {
+  const pairs: { o: O; i: I; days: number; diff: number }[] = [];
+  for (const o of outs) {
+    if (!o.store?.trim()) continue;
+    const day = cashOutInvoiceDay(o);
+    for (const i of invoices) {
+      const days = Math.abs(daysBetween(day, i.date));
+      const diff = Math.abs(i.payable - o.amount);
+      if (days > CASH_OUT_INVOICE_WINDOW.days || diff > CASH_OUT_INVOICE_WINDOW.amount + 0.005) continue;
+      if (sameStore(o, i)) pairs.push({ o, i, days, diff });
+    }
+  }
+  pairs.sort((x, y) => x.days - y.days || x.diff - y.diff || x.i.id - y.i.id || x.o.id - y.o.id);
+  const matched = new Map<number, number>();
+  const used = new Set<number>();
+  for (const p of pairs) {
+    if (matched.has(p.o.id) || used.has(p.i.id)) continue;
+    matched.set(p.o.id, p.i.id);
+    used.add(p.i.id);
+  }
+  return { pending: outs.filter((o) => !matched.has(o.id)), matched };
+}
+
+/** Bekleyen listenin yeri: Faturalar › Kontrol bekleyen, listenin başındaki kart */
+export const CASH_OUT_INVOICES_HREF = "/panel/faturalar?durum=kontrol#kasa-faturali";
+
+/** Bildirimdeki ve Bugün'deki özet: "Migros 2.400,00 ₺ (24.10)" ya da "Migros 2.400,00 ₺ ve 2 alım daha" */
+export function pendingCashOutSummary(rows: readonly Pick<InvoiceCashOut, "store" | "amount" | "date" | "receiptDate">[]): string {
+  if (!rows.length) return "";
+  const first = rows[0];
+  const head = `${first.store?.trim() || "Yeri yazılmamış alım"} ${money(first.amount)}`;
+  return rows.length > 1 ? `${head} ve ${rows.length - 1} alım daha` : head;
 }

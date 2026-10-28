@@ -7,7 +7,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CariDebt } from "../src/lib/cari/account";
-import { adoptCandidates, cariAlerts, defaultCostMode, expenseDuplicates, kasaMatches, kasaStoreKeys, linkCandidates, type ExpenseLite, type KasaLine } from "../src/lib/cari/match";
+import {
+  adoptCandidates,
+  cariAlerts,
+  defaultCostMode,
+  expenseDuplicates,
+  kasaMatches,
+  kasaStoreKeys,
+  linkCandidates,
+  linkedInvoiceProblem,
+  linkedInvoiceRefusal,
+  type ExpenseLite,
+  type KasaLine,
+} from "../src/lib/cari/match";
 
 const debt = (p: Partial<CariDebt> & { id: number; date: string; amount: number }): CariDebt => ({ description: null, costMode: "fatura", dueDate: null, invoiceId: null, ...p });
 const inv = (id: number, date: string, payable: number, category = "Hammadde & İçecek") => ({ id, date, payable, category });
@@ -145,4 +157,51 @@ test("Genel bakış uyarısı: aday fatura sayısı değil alım sayısı", () =
   assert.equal(one[0].title, "Faturasız alımın faturası gelmiş olabilir");
   const two = cariAlerts({ late: [], strong: [{ name: "Sütaş", href: null, debtIds: [1] }, { name: "Pınar", href: null, debtIds: [2, 3] }] });
   assert.equal(two[0].title, "3 faturasız alımın faturası gelmiş olabilir");
+});
+
+test("bağlı alımı olan faturanın yeni hâli (E-45): kafe dışı, komisyon, iade; yalnız değişen alan", () => {
+  const cur = { payable: 600, category: "Hammadde & İçecek" };
+  assert.equal(linkedInvoiceProblem(cur, { payable: 600, category: "Tatlı & Hazır Ürün" }), null);
+  assert.equal(linkedInvoiceProblem(cur, { payable: 600, category: "Diğer" }), null, "linkableInvoice'ın izin verdiği kategori");
+  for (const c of ["Alp Koç", "Karaoke box", "Komisyon"]) assert.equal(linkedInvoiceProblem(cur, { payable: 600, category: c }), `${c} faturası kafenin mal alışına girmez`);
+  assert.match(linkedInvoiceProblem(cur, { payable: 0, category: cur.category }) ?? "", /iade/);
+  assert.match(linkedInvoiceProblem(cur, { payable: -50, category: cur.category }) ?? "", /iade/);
+  assert.equal(linkedInvoiceProblem(cur, { payable: 650, category: cur.category }), null);
+  // Eski bağ: kategori zaten kafe dışı, değişmiyor
+  assert.equal(linkedInvoiceProblem({ payable: 600, category: "Alp Koç" }, { payable: 600, category: "Alp Koç" }), null);
+  assert.equal(linkedInvoiceProblem({ payable: 600, category: "Alp Koç" }, { payable: 600, category: "Karaoke box" }), "Karaoke box faturası kafenin mal alışına girmez");
+  // İade faturası (Ödenecek eksi) bağlıysa ve kategorisi değişiyorsa: kategori kafe içi kaldıkça sorulmaz
+  assert.equal(linkedInvoiceProblem({ payable: -10, category: "Hammadde & İçecek" }, { payable: -10, category: "Ambalaj" }), null);
+});
+
+test("bağlı alım reddinin metni: fatura, alım, sebep, ne yapılacağı; birden çok faturada hepsi adıyla (inceleme U2)", () => {
+  const alp = "Alp Koç faturası kafenin mal alışına girmez";
+  const one = linkedInvoiceRefusal({ blocked: [{ invoice: "Pruva PRV101", purchases: ["içecekler"], reason: alp }], kept: "Kategori değişmedi." });
+  assert.equal(
+    one,
+    "Pruva PRV101: faturasız alım bağlı (içecekler). Alp Koç faturası kafenin mal alışına girmez; bağlı alım gelir-giderden düşerdi. Önce Tedarikçiler'de, Hesap hareketleri'nde alımın Bağı kaldır'ına dokunun. Kategori değişmedi.",
+  );
+  const two = linkedInvoiceRefusal({
+    blocked: [
+      { invoice: "Pruva PRV101", purchases: ["içecekler"], reason: alp },
+      { invoice: "Damla D7", purchases: ["su", "buz"], reason: alp },
+    ],
+    kept: "Faturaların hiçbirinin kategorisi değişmedi; bağlı faturaları ayırıp kalanları yeniden değiştirin.",
+  });
+  assert.equal(
+    two,
+    "2 faturaya faturasız alım bağlı: Pruva PRV101 (içecekler); Damla D7 (2 alım). Alp Koç faturası kafenin mal alışına girmez; bağlı alımlar gelir-giderden düşerdi. Önce Tedarikçiler'de, Hesap hareketleri'nde alımların Bağı kaldır'ına dokunun. Faturaların hiçbirinin kategorisi değişmedi; bağlı faturaları ayırıp kalanları yeniden değiştirin.",
+  );
+  // Sebep farklıysa faturanın yanında; altıdan fazlası sayıyla
+  const mixed = linkedInvoiceRefusal({
+    blocked: [
+      { invoice: "A 1", purchases: ["x"], reason: alp },
+      { invoice: "B 2", purchases: ["y"], reason: "Ödenecek 0 ya da eksi olursa fatura iade sayılır" },
+    ],
+    kept: "z",
+  });
+  assert.match(mixed, /^2 faturaya faturasız alım bağlı: A 1 \(x; Alp Koç faturası kafenin mal alışına girmez\); B 2 \(y; Ödenecek 0 ya da eksi olursa fatura iade sayılır\)\. Bağlı alımlar gelir-giderden düşerdi\./);
+  const many = linkedInvoiceRefusal({ blocked: Array.from({ length: 8 }, (_, i) => ({ invoice: `F${i + 1}`, purchases: ["a"], reason: alp })), kept: "y" });
+  assert.match(many, /^8 faturaya faturasız alım bağlı: F1 \(a\); .*F6 \(a\) ve 2 fatura daha\. /);
+  assert.ok(!many.includes("F7"));
 });

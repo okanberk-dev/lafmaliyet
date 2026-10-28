@@ -192,6 +192,60 @@ export function guessVat(invoice: { amount: number; discount: number; payable: n
   return VAT_RATES.reduce((best, r) => (Math.abs(Number(r) - rate) < Math.abs(Number(best) - rate) ? r : best));
 }
 
+// ---------------------------------------------------------------- Kasadan faturalı alımdan fatura (denetim E-42)
+
+/** Faturalar › Kontrol'deki kasa satırı (yalnız yönetici; src/server/data/cash-out-invoices.ts) */
+export interface CashOutInvoiceSource {
+  id: number;
+  date: string;
+  receiptDate: string | null;
+  store: string | null;
+  description: string | null;
+  amount: number;
+  vat: number | null;
+  docType: "fis" | "e_arsiv" | "fatura" | "yok";
+  receiptNo: string | null;
+  photoId: number | null;
+  createdByName: string;
+}
+
+/**
+ * Aylık harcamalar'a yazılmış, faturası sonradan Faturalar'a gelmiş kasa satırı: alım iki kez sayılıyor (inceleme D2;
+ * src/server/data/cash-out-invoices.ts DuplicateCashOutInvoice)
+ */
+export interface CashOutDuplicateSource extends CashOutInvoiceSource {
+  expenseId: number;
+  expenseCategory: string | null;
+  invoice: { id: number; date: string; supplier: string; invoiceNo: string | null; payable: number };
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * Fatura penceresinin kasa satırından ön dolumu ("Faturalar'a ekle"): tarih fişin günü (yoksa kasanın), tedarikçi
+ * yer, fatura no fişte okunan, Ödenecek kasadan çıkan (KDV dahil), Ödendi (kasanın günü). Fişteki KDV okunduysa net =
+ * tutar − KDV ve oran ona en yakın; okunmadıysa tedarikçinin son faturasının oranı (yoksa %1) ile geri hesaplanır
+ * (`vatGuessed`: pencere kontrol etmesini söyler). Kategori tedarikçinin son faturasından, yoksa Hammadde & İçecek.
+ */
+export function cashOutInvoiceDraft(o: CashOutInvoiceSource, known?: Pick<SupplierDefault, "category" | "vatRate"> | null) {
+  const vat = o.vat !== null && o.vat > 0 && o.vat < o.amount ? o.vat : null;
+  const vatRate = vat !== null ? guessVat({ amount: r2(o.amount - vat), discount: 0, payable: o.amount }) : (known?.vatRate ?? "1");
+  const net = vat !== null ? r2(o.amount - vat) : r2(o.amount / (1 + Number(vatRate) / 100));
+  return {
+    date: o.receiptDate ?? o.date,
+    supplier: o.store?.trim() ?? "",
+    description: o.description ?? "",
+    invoiceNo: o.receiptNo ?? "",
+    category: known?.category ?? "Hammadde & İçecek",
+    amount: net,
+    payable: o.amount,
+    vatRate,
+    unpaid: false,
+    paidAt: o.date,
+    vatGuessed: vat === null,
+  };
+}
+
 /** Tedarikçi eşleştirme anahtarı: parantezli not atılır; büyük/küçük harf, I/ı ve boşluk farkı sayılmaz ("KALDI" = "Kaldi") */
 export function supplierMatchKey(supplier: string): string {
   return splitSupplier(supplier).base.replace(/\s+/g, " ").trim().toLocaleLowerCase("tr-TR").replace(/ı/g, "i");

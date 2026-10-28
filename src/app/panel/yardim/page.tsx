@@ -132,7 +132,10 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
         yazılanları Kontrol bekleyen süzgecinde onaylayın; “Mal alışı sayılmıyor” yazanın kalemi hammaddeye bağlı, kategorisini mal alışı yapın (bilerek öyleyse
         Kalsın). Yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın (çarpan, &quot;Fiyatı
         güncelle&quot;): alınan miktar ve paket fiyatı sonraki faturalardan güncellenir, ürün maliyetleri kendiliğinden değişir. Yalnızca Paraşüt&apos;te olmayan
-        faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin.
+        faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin. Personelin Kasa&apos;ya girdiği e-Arşiv ve faturalı alımlar
+        faturası gelene kadar Kontrol bekleyen&apos;in üstündeki Kasadan faturalı alımlar kartında durur: Faturalar&apos;a ekle (kasadan dolu, fiş belge olur) ya
+        da Aylık harcamalar&apos;a yaz. Aylık harcamalar&apos;a yazdığınızın faturası sonra gelirse aynı kartta &quot;İki kez sayılıyor&quot; der: Gider
+        kaydını sil.
       </>
     ),
     href: "/panel/faturalar?durum=kontrol",
@@ -316,7 +319,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
             Reddedilen faturanın miktarı alınana girmez; Tutarlılık o ayın alımını elle yazdırır.
             Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
-            Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
+            Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Kasadan ödenmiş
+            olanı Kontrol bekleyen&apos;deki Kasadan faturalı alımlar kartından Faturalar&apos;a ekle ile açın: pencere kasadan dolar, fişin fotoğrafı belge olur. Bağlı olmayan bir malzemenin fiyatını{" "}
             <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır). Satışın iadesi (site ya da müşteri iadesi) Paraşüt&apos;te gider
             listesine düşse de gider sayılmaz; tedarikçiye iadeniz panele kendiliğinden girmez: ikisi de <Path href="/panel/parasut" /> ekranının başında yazar,
             tedarikçiye iadeyi Faturalar&apos;a aynı tedarikçiye eksi tutarla girin.

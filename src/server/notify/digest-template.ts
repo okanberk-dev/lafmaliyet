@@ -5,6 +5,7 @@
  * (`emailLayout`, `esc`, `FONT`) öteki e-postalar için dışa açık.
  */
 
+import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
 import { holdReasonSentence, holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
@@ -35,6 +36,12 @@ export interface DigestInvoices {
    * sayılmıyor; yoksa 0
    */
   stockOnlyCount?: number;
+  /**
+   * Kasadan faturalı alımlar (denetim E-42): faturası Faturalar'da yok, Aylık harcamalar'a yazılmadı; sayı ve özet
+   * ("Migros 2.400 ₺ ve 1 alım daha"); `duplicates`: Aylık harcamalar'a yazılmışken faturası sonradan gelenler (iki kez
+   * sayılıyor, inceleme D2). Tek başına e-postayı göndermez; giden e-postanın Paraşüt bölümünde söylenir
+   */
+  cashOuts?: { count: number; summary: string; duplicates?: number } | null;
   /** Son eşitleme başarısızsa mesajı */
   syncError?: string | null;
   /**
@@ -63,6 +70,18 @@ function reviewSentence(inv: Pick<DigestInvoices, "reviewCount" | "stockOnlyCoun
   return [
     guessed ? `${guessed} faturanın kategorisi tahminle yazıldı.` : "",
     stockOnly ? `${stockOnly} fatura mal alışı sayılmıyor: kalemi hammaddeye bağlı, kategorisi mal alışı değil.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Kasadan faturalı alımların cümlesi (E-42; zil ve Bugün'deki gibi) */
+function cashOutSentence(c: { count: number; summary: string; duplicates?: number }, html = true): string {
+  return [
+    c.count
+      ? `${c.count} kasadan faturalı alım Faturalar'da yok (${html ? esc(c.summary) : c.summary}): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez.`
+      : "",
+    c.duplicates ? `${c.duplicates} kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin.` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -321,7 +340,8 @@ export function renderDigest(
   const counts = { overdue: 0, due: 0, before: 0 };
   for (const r of rows) counts[r.stage]++;
   const parts = [counts.overdue ? `${counts.overdue} gecikmiş` : null, counts.due ? `${counts.due} bugün` : null, counts.before ? `${counts.before} yaklaşan` : null].filter(Boolean);
-  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count) ? invoices : null;
+  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count || invoices.cashOuts?.count || invoices.cashOuts?.duplicates) ? invoices : null;
+  const cashOuts = inv?.cashOuts?.count || inv?.cashOuts?.duplicates ? inv.cashOuts : null;
   const invPart = inv?.items.length ? `${inv.items.length} yeni fatura` : null;
   const reviewPart = inv?.reviewCount ? `${inv.reviewCount} fatura kontrol bekliyor` : null;
   // Onay bekleyen fiyatlar bölümde hep görünür; konuya ve başlığa yalnız son e-postadan beri yenisi geldiyse girer
@@ -459,6 +479,10 @@ export function renderDigest(
           ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${reviewSentence(inv)} <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
           : ""
       }${
+        cashOuts
+          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${cashOutSentence(cashOuts)} <a href="${APP_URL}${CASH_OUT_INVOICES_HREF}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
+          : ""
+      }${
         holds
           ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). ${holdReasonSentence(holds.items)}. <a href="${HOLDS_LINK}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
           : ""
@@ -498,8 +522,8 @@ export function renderDigest(
   const actionBox = com ?? kon ?? apv;
   const button = rows.length
     ? { href: link, label: "Panelde aç" }
-    : inv && (inv.items.length || inv.reviewCount || inv.syncError)
-      ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
+    : inv && (inv.items.length || inv.reviewCount || inv.syncError || cashOuts)
+      ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount || cashOuts ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
       : holdPart
         ? { href: HOLDS_LINK, label: "Hammaddeleri aç" }
         : actionBox
@@ -572,6 +596,7 @@ export function renderDigest(
       ? ["", `Paraşüt'ten gelen yeni faturalar (${inv.items.length}) · ${money(invoiceTotal)}`, ...inv.items.slice(0, MAX_INVOICE_ROWS).map((i) => `- ${i.supplier} · ${dateTR(i.date)} · ${i.category} · ${money(i.payable)}${i.unpaid && i.dueDate ? ` · vade ${dateTR(i.dueDate)}` : ""}${i.needsReview ? " · kontrol edin" : ""}`), ...(inv.items.length > MAX_INVOICE_ROWS ? [`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`] : [])]
       : []),
     ...(inv?.reviewCount ? ["", `${inv.reviewCount} fatura kontrol bekliyor: ${APP_URL}/panel/faturalar?durum=kontrol`] : []),
+    ...(cashOuts ? ["", `${cashOutSentence(cashOuts, false)} ${APP_URL}${CASH_OUT_INVOICES_HREF}`] : []),
     ...(holds ? ["", `${holds.count} hammadde fiyatı onay bekliyor (${holdsSummary(holds.items)}): ${HOLDS_LINK}`] : []),
     ...(com ? boxText(com) : []),
     ...(kon ? boxText(kon) : []),
