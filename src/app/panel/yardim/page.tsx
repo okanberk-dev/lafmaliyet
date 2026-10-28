@@ -675,6 +675,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             kayıt ve kapalı gün gibi önemli işler isteğe döner, kararı siz <Path href="/panel/onaylar" /> ekranında verirsiniz. Personelin
             Yardım&apos;ı (bu sayfanın başlığındaki düğme) yalnız onun ekranlarını anlatır; hesabı açınca ona gösterin. Her kullanıcı Hesabım&apos;dan parolasını
             değiştirip iki adımlı doğrulamayı (Google Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
+            Kasa raporu ve sabah e-postası personel hesabının ve pasif hesabın adresine gitmez: bir yöneticiyi personele indirir ya da pasif yaparsanız adresi
+            listelerden de kaldırın (kaydederken uyarı çıkar, zil de söyler); personel giriş e-postasını bir alıcının adresine çeviremez.
           </>
         ),
         icon: UserPlus,
@@ -793,6 +795,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <Path href="/panel" />&apos;ta kırmızı şeritle ve <Path href="/panel/bugun" />&apos;de ilk satırda görünür, ertesi sabah e-postayla
             da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
             Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder.
+            Bir adrese gelmiyorsa: personel hesabının ya da pasif hesabın adresine e-posta gitmez; zil &quot;Sabah e-postası … adrese gitmiyor&quot; der, adresin satırında
+            da yazar.
           </>
         ),
         icon: Timer,

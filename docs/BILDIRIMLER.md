@@ -228,13 +228,43 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   rozeti ve açınca anahtarın nereye girileceği görünür (`CRON_SECRET` yoksa da);
 - e-postaları açma / kapatma anahtarı: yalnız açık/kapalıyı kaydeder, "Gönderim ayarları"nda yazılıp
   kaydedilmemiş değerlere dokunmaz;
-- bildirim adresi ekleme, kapatma, silme;
+- bildirim adresi ekleme, kapatma, silme (personel ya da pasif hesabın adresi eklenmez ve yeniden açılmaz; listede
+  duran böyle bir adresin satırında kırmızı "Personel hesabının adresi · e-posta gitmez" yazar, adres sayısına
+  girmez; aşağıda "Alıcılar ve hesaplar");
 - **E-postayı önizle** (gönderilmez): bugün gidecek sabah e-postasının kendisi, sistem, Paraşüt ve zam bölümleriyle;
   ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla;
-- **Deneme gönder** (kayıtlı gönderenle, etkin adreslere);
+- **Deneme gönder** (kayıtlı gönderenle, etkin adreslere; düşen adres bildirimin alt satırında "Gönderilmedi: …");
 - **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";
 - gönderen adresi ve gün ayarları (Gönderim ayarları › Kaydet).
+
+### Alıcılar ve hesaplar
+
+Kasa raporu e-postası (Kasa › Rapor alıcıları), sabah e-postası, bekçi uyarısı ve iki deneme e-postası ödemeler,
+fatura tutarları, maliyet, zam ve kâr rakamları, kasa farkı ve karaoke ön ödemesi taşır. Bu yüzden (denetim E-52,
+E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
+
+- **Gönderim anında süzülür.** Listedeki bir adres paneldeki bir hesaba aitse e-postayı yalnız **etkin bir
+  yöneticinin** hesabıysa alır: personel hesabının ve pasif hesabın adresi düşer. Hesabı olmayan adres (muhasebeci,
+  sahibin kişisel adresi) alır. Büyük-küçük harf fark etmez. Kayıttan sonra personele indirilen, pasif yapılan ya da
+  personel hesabı açılan adres de düşer: kural kaydı beklemez. Sıra korunur.
+- **Kaydederken reddedilir.** Kasa alıcılarına ve bildirim adreslerine personel ya da pasif hesabın adresi yazılmaz
+  ("ayse@… bir personel hesabının adresi; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
+  Kullanıcılar'dan silerseniz adres alıcı olabilir."). Duraklatılmış bir adres böyle bir hesaba aitse yeniden açılmaz.
+- **Personel Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim adresleri,
+  duraklatılmış da) çeviremez: "Bu adres bildirim listesinde; giriş e-postanız olamaz. Yöneticiye yazın." Parola önce
+  sorulur. Yönetici kendi adresini çevirebilir (alıcı olmaya devam eder).
+- **Yönetici görür.** Zilde, Sistem başlığında: "Kasa raporu e-postası bir adrese gitmiyor" / "Sabah e-postası 2 adrese
+  gitmiyor" (adresler ve nedenleri; Rapor alıcıları kartına ya da bu kutuya götürür). Durumdan türer: adres listeden
+  çıkınca ya da hesap yeniden yönetici olunca kalkar. Rapor alıcıları kartında ve bildirim adresinin satırında aynı
+  not. Kullanıcılar'da bir hesabı personele indirmek, pasif yapmak ya da listedeki bir adresle personel hesabı açmak
+  uyarı verir ("Mehmet (…) kasa raporu alıcıları arasında; personel hesabına bu e-posta gitmez. Gerekmiyorsa listeden
+  kaldırın."). İşlem geçmişindeki "Sabah e-postası" ve "Sistem uyarısı e-postası" satırı atlananları sayar ("→ 2 adres
+  · 1 adres atlandı (personel ya da pasif hesap)").
+- **Hepsi düşerse:** sabah e-postası "gitmedi: bildirim adresi yok" (iş "Kısmen"; neden adreslerle); kasa e-postası
+  "gitmedi" (kapalı değil): yönetici formda nedenini, personel sabit metni görür ([KASA-RAPORU.md](KASA-RAPORU.md)).
+
+Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 
 ## Haftalık özet (pazartesi)
 

@@ -209,8 +209,11 @@ taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
   gönderir (`seenActive`, `seenShowOnMenu`); dokunulmayan anahtar yazılmaz, veritabanındaki güncel değerde kalır
   (`keepSeen`), bu arada tükendi yapılan ürün sessizce yeniden açılmaz. Fiyat için aynı kural: `seenPrice` (yukarıda
   Panel → site yazımı › 0).
-- **Hatalar** sunucuda kurulur: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409; 409 `stale`
-  hariç, o "bu arada değişti, yeniden dene" der) metnin sonunda "Yöneticiye haber verin."; yazım zaman aşımına uğradıysa
+- **Hatalar** sunucuda kurulur: yöneticide bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409; 409
+  `stale` hariç, o "bu arada değişti, yeniden dene" der) metnin sonunda "Yöneticiye haber verin.". Personel kurulum
+  ayrıntısını (anahtar adı, imza, sitenin sürümü) görmez (denetim E-64): ağ hatası, zaman aşımı ve 409 `stale` dışındaki
+  her nedende, canlı kalemin okunmasında da, "Site bağlantısında sorun var; ürün tükendi yapılmadı. Yöneticiye haber
+  verin." (Satışa aç'ta "ürün satışa açılmadı"); yazım zaman aşımına uğradıysa
   personel "Site geç yanıt verdi; değişiklik sitede yapılmış olabilir. Birkaç saniye sonra Tükendi işaretle
   penceresinde ürünün durumuna bakın; değişmediyse yeniden deneyin." görür (Site menüsü ekranı ona kapalı; yönetici
   Site menüsü metnini görür). Site yazdıysa panelde kayıt yoktur: ürün pencerede "Kapalı · yönetici açar" görünür; site yazdı ama panel yazamadıysa "Sitede tükendi oldu ama panele yazılamadı; yöneticiye
