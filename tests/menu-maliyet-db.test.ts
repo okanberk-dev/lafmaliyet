@@ -145,7 +145,7 @@ describe("reçetesiz ürün ve su maliyeti: veritabanında", { skip: !SERVER_URL
     assert.deepEqual(me.noRecipe.map((x) => [x.p.product.id, x.qty]), [[pumpkin, 60]]);
     const t = await satisTask();
     assert.equal(t.status, "todo");
-    assert.match(t.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte M\)/);
+    assert.match(t.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\)/);
     assert.equal(t.action, "Reçete gir");
 
     // Reçete kartı kaydedilir: satır kendi maliyetiyle, ortalama orana da girer

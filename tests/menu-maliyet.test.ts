@@ -276,7 +276,7 @@ test("E-47: Bu ayın işleri satılan reçetesiz ürünü söyler, 'hepsi eşle�
 
   const t = tasks(linkedOnly(withPumpkin())).find((x) => x.key === "satis")!;
   assert.equal(t.status, "todo");
-  assert.match(t.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte M\): maliyetleri ortalama maliyet oranıyla tahmin ediliyor\. Reçetelerini girin\./);
+  assert.match(t.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\): maliyetleri ortalama maliyet oranıyla tahmin ediliyor\. Reçetelerini girin\./);
   assert.doesNotMatch(t.detail, /hepsi/);
   assert.equal(t.href, "/panel/urunler?durum=Re%C3%A7ete+yok&ay=2026-09");
   assert.equal(t.action, "Reçete gir");
@@ -284,7 +284,7 @@ test("E-47: Bu ayın işleri satılan reçetesiz ürünü söyler, 'hepsi eşle�
   // Eşleşmeyen satır da varsa eşleştirme önce, reçetesiz ürün ek cümle
   const both = tasks(withPumpkin()).find((x) => x.key === "satis")!;
   assert.equal(both.action, "Eşleştir");
-  assert.match(both.detail, /Ayrıca 1 satılan ürünün reçetesi boş \(Pumpkin Latte M\)\.$/);
+  assert.match(both.detail, /Ayrıca 1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\)\.$/);
 
   // Reçetesi var ama malzemesi fiyatsız (maliyet yine 0): "ya da malzemesi fiyatsız"
   const free = { ...base.ingredients[0], id: 9101, name: "Kabak püresi", packagePrice: 0, packageSize: 1000 };
@@ -294,7 +294,7 @@ test("E-47: Bu ayın işleri satılan reçetesiz ürünü söyler, 'hepsi eşle�
     recipeItems: [...base.recipeItems, { id: 990_101, productId: PUMPKIN, ingredientId: free.id, qty: 30, qtyExpr: null, note: null, sortOrder: 1 }],
   };
   const u = tasks(unpriced).find((x) => x.key === "satis")!;
-  assert.match(u.detail, /1 satılan ürünün reçetesi boş ya da malzemesi fiyatsız \(Pumpkin Latte M\)/);
+  assert.match(u.detail, /1 satılan ürünün reçetesi boş ya da malzemesi fiyatsız \(Pumpkin Latte · M\)/);
   assert.match(u.detail, /Reçetelerini ve malzeme fiyatlarını girin\.$/);
 
   // Yalnız online satılan reçetesiz ürün de sayılır
@@ -303,7 +303,7 @@ test("E-47: Bu ayın işleri satılan reçetesiz ürünü söyler, 'hepsi eşle�
     products: [...base.products, { ...pumpkin, siteMenuId: "mnu-0200", siteMenuSlot: "M" }],
     siteSales: [siteMonth(M, [{ menuItemId: "mnu-0200", size: "M", name: "Pumpkin Latte", qty: 12, listMinor: 264_000 }])],
   };
-  assert.match(tasks(onlineOnly).find((x) => x.key === "satis")!.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte M\)/);
+  assert.match(tasks(onlineOnly).find((x) => x.key === "satis")!.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\)/);
 });
 
 // ---------------------------------------------------------------- E-57: su + buz

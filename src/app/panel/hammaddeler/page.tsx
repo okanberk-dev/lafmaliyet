@@ -275,7 +275,7 @@ async function IngredientsContent() {
             suffix="/L"
             tone={model.water.reason === "no-usage" ? "warn" : "default"}
             sub={<span title={waterSource(model.water)}>{waterSource(model.water, true)}</span>}
-            info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre); ürün satış listesi olan en son ayın faturası kullanılır.`}
+            info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre; satış listesi ve laffogato.net online siparişleri); ürün satış listesi olan en son ayın faturası kullanılır.`}
           />
         </StatBreakdown>
       </div>

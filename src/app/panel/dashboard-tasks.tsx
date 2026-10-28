@@ -164,7 +164,7 @@ export function monthTaskFacts(
     .sort((a, b) => b[1] - a[1])
     .map(([id]) => model.products.find((p) => p.product.id === id))
     .filter((p) => !!p);
-  const noRecipeNames = noRecipeProducts.map((p) => `${p.product.name} ${p.product.size}`);
+  const noRecipeNames = noRecipeProducts.map((p) => `${p.product.name} · ${p.product.size}`);
   // Satırı olan ama maliyeti 0 çıkan ürün: reçetesi boş değil, malzemeleri fiyatsız (durumu yine "Reçete yok")
   const unpricedRecipes = noRecipeProducts.filter((p) => p.lines.length > 0).length;
   const pm = model.pnlMonth(month);
@@ -222,7 +222,7 @@ export function monthTaskFacts(
 const later = (state: MonthState) => state !== "closed";
 
 /**
- * "2 satılan ürünün reçetesi boş (Pumpkin Latte M, Pumpkin Latte L)": en çok satılan üç ürünün adı ve boyuyla. Biri
+ * "2 satılan ürünün reçetesi boş (Pumpkin Latte · M, Pumpkin Latte · L)": en çok satılan üç ürünün adı ve boyuyla. Biri
  * reçeteli ama malzemeleri fiyatsızsa (maliyeti yine 0) "reçetesi boş ya da malzemesi fiyatsız"
  */
 function noRecipeText(n: { count: number; names: string[]; unpriced: number }): string {

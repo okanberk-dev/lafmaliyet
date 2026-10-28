@@ -214,7 +214,9 @@ function NoRecipeNote({ items, month }: { items: SkippedItem[]; month: string })
   return (
     <div role="note" className="space-y-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
       <p className="font-medium">
-        Reçetesi boş {num(items.length)} ürün gruplara girmedi{sold ? `, ${num(sold)} tanesi bu ay satıldı` : ""}
+        {sold === items.length
+          ? `Bu ay satılan ${num(sold)} ürünün reçetesi boş; gruplara girmedi`
+          : `Reçetesi boş ${num(items.length)} ürün gruplara girmedi${sold ? ` (${num(sold)} tanesi bu ay satıldı)` : ""}`}
       </p>
       <p className="text-[13px]">
         Maliyeti bilinmediği için birim kârı neredeyse fiyatı kadar görünür ve kâr eşiğini yükseltirdi. Reçetesini girince
