@@ -56,8 +56,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 6. **Ayarlar paylaşılmıyor:** karaoke oda saatleri ve ücreti, KDV oranları, sipariş anahtarları, açık gün.
 7. **Kod sabiti ile menü kalemi ayrışıyor:** seçenek ek ücreti, ödül kuponu değeri, kilometre taşı hediyesi (ada göre).
 8. **KVKK:** karaoke Web Push gövdesinde ad; hesap silmede panel kopyasındaki ad; hukuk metni panel kopyasından söz
-   etmiyor. *Push'taki ve sekmenin kendi sistem bildirimlerindeki ad P0 ile kalktı (lafmaliyet, dal
-   `claude/senkron-p0-push-ad`); panel kopyasının silinmesi P5 ve S11'de, hukuk metni S12'de.*
+   etmiyor. *Push'taki ve sekmenin kendi sistem bildirimlerindeki ad P0 ile kalktı (lafmaliyet #61); panel kopyasının
+   silinmesi P5 ve S11'de, hukuk metni S12'de.*
 9. **Panelde mağaza malının maliyeti ve online POS kesintisi yok.**
 10. **Türetilmiş kopyalar bayatlıyor:** llms*.txt, saat metinleri, telefon kopyaları, CATALOG.md, panelin "Opera AVM"si.
 
@@ -65,9 +65,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 
 - **Faz 1 (sahibin örneği: menü, aktif / pasif; kayıp yazım ve kayıp sinyal):** S1 → S2 → M1 → P1 → P2 → M2.
   Fazdan bağımsız: P0 (Web Push'tan ad). **Durum (28 Ekim 2026):** S1 (laffogato #269), S2 (laffogato #270), M1
-  (lafmobil #35), P1 (B12, #52 ve #53), P2 (lafmaliyet #60) ve P0 (lafmaliyet, dal `claude/senkron-p0-push-ad`)
-  yapıldı; Faz 1'de yalnız M2 kaldı: uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini yürüten
-  oturumun işi.
+  (lafmobil #35), P1 (B12, #52 ve #53), P2 (lafmaliyet #60) ve P0 (lafmaliyet #61) yapıldı; Faz 1'de yalnız M2
+  kaldı: uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini yürüten oturumun işi.
 - **Faz 2 (yararlı senkron):** ayar ucu ve tüketicileri, 304, ping sınaması, override ve tarihli kapanış, seçenek
   fiyatı, menü yan uyarıları, karaoke.
 - **Faz 3:** satış ekleri, mağaza maliyeti ve POS kesintisi, llms.txt, temizlikler, KVKK metni.
@@ -567,7 +566,7 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** yok.
 
 **P0 · Karaoke Web Push gövdesinden ad (fazdan bağımsız, KVKK)**
-- **Durum (28 Ekim 2026):** yapıldı (lafmaliyet, dal `claude/senkron-p0-push-ad`). Bildirimin metni artık saf
+- **Durum (28 Ekim 2026):** yapıldı (lafmaliyet #61). Bildirimin metni artık saf
   `pushMessages`'ta (src/lib/karaoke/session.ts, `eventMessage`'ın yanında): `name: null` ile kurar, üçten fazla olayın
   özeti de orada; `announce` (src/server/karaoke/sync.ts) yalnız gönderir. Aynı kilit ekranına düşen ikinci yol da
   kapandı (incelemeden, plandan fazla): sekme arkadayken sayacın kendi sistem bildirimleri (alert-center.tsx › `fire`:
