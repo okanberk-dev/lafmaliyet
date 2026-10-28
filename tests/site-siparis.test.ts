@@ -1,6 +1,7 @@
 // laffogato.net bar ekranı (docs/SITE-SIPARIS.md): sitenin açık sipariş listesinin doğrulanması, ilk kez görülen yeni
 // sipariş, listenin değişmesi, kartın metinleri ve sırası, "Sitede aç" adresi, zil kuralı, sipariş pinginin denetimi,
-// bar ekranının aşama düğmeleri (izinli çiftler, adlar, isteğin gövdesi, sitenin yanıtı ve hata metinleri) ve sunucu
+// bar ekranının aşama düğmeleri (izinli çiftler, adlar, isteğin gövdesi, sitenin yanıtı ve hata metinleri), ödeme
+// takibi ve kaçan ping (senkron planı P2; veritabanıyla tests/siparis-takip-db.test.ts), imza vektörleri ve sunucu
 // kodunun kuralları (kaynaktan).
 // Çalıştırma: npx tsx --test tests/site-siparis.test.ts
 
@@ -9,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { signedHeaders } from "../src/lib/karaoke/signature";
+import { sign, signedHeaders } from "../src/lib/karaoke/signature";
 import {
   dueAt,
   lineLabel,
@@ -25,6 +26,19 @@ import {
   STAGE_LABEL,
   waitLabel,
 } from "../src/lib/site-orders/feed";
+import {
+  AWAITING_FOLLOW_MS,
+  AWAITING_MAX,
+  awaitingUntil,
+  boardBusy,
+  MISSED_PING_GRACE_MS,
+  MISSED_PING_SHOW_MS,
+  missedPing,
+  missedPingShown,
+  nextAwaiting,
+  pullDue,
+  QUIET_CHECK_MIN_MS,
+} from "../src/lib/site-orders/follow";
 import { parseSiteOrder, parseSiteOrders, safeOrderPath, SiteOrdersFormatError, type OrderFulfillment, type OrderStage, type SiteOrder } from "../src/lib/site-orders/schema";
 import {
   canAdvance,
@@ -334,7 +348,7 @@ test("çekme: tek işlemde ve danışma kilidiyle; eski yanıt yazılmaz; liste 
   assert.match(sync, /if \(last > Date\.parse\(list\.now\) && last < Date\.now\(\) \+ 10 \* 60_000\)/);
   assert.match(sync, /const SNAPSHOT_KEY = "site_orders"/);
   assert.match(sync, /const VERSION_KEY = "site_orders_version"/);
-  assert.match(sync, /if \(changed \|\| state\.lastError\) await bumpOrdersVersion\(tx\)/);
+  assert.match(sync, /if \(changed \|\| state\.lastError \|\| followChanged\) await bumpOrdersVersion\(tx\)/);
   assert.match(sync, /newOrderIds\(prev\.at \? prev\.orders : null, orders\)/, "ilk çekmede bildirim yok");
   assert.match(sync, /signedSiteFetch\(secret, new URL\("\/api\/panel\/orders", siteUrl\(\)\)\)/);
   // KVKK: ad işlem geçmişine ve günlüğe yazılmaz
@@ -352,8 +366,8 @@ test("ekranın isteği: oturum gerekir, güncel listede siteye gidilmez; tetikle
   assert.match(route, /if \(!me\) return Response\.json\(\{ error: "Giriş gerekli" \}, \{ status: 401/);
   assert.match(route, /ensureOrdersFresh\(/);
   const sync = read("src/server/site-orders/sync.ts");
-  assert.match(sync, /if \(Number\.isFinite\(last\) && Date\.now\(\) - last < stale\) return \{ status: "fresh" \}/);
-  assert.match(sync, /const stale = state\.lastError \? \(opts\.manual \? 0 : Math\.min\(maxAgeMs, ERROR_RETRY_MS\)\) : maxAgeMs/, "hatadan sonra çabuk yeniden dener; Yenile hemen");
+  // Kural saf yardımcıda (pullDue; aşağıda "ekranın isteği: sakin saatin kontrolü")
+  assert.match(sync, /if \(!pullDue\(state, maxAgeMs, \{ manual: opts\.manual, nowMs: Date\.now\(\) \}\)\) return \{ status: "fresh" \}/);
   assert.match(route, /ensureOrdersFresh\(Math\.max\(maxAgeMs, MANUAL_MIN_MS\), \{ manual: maxAgeMs === 0 \}\)/, "Yenile art arda basılsa da siteyi 10 sn'de bir sorar");
   const board = read("src/app/panel/karaoke/orders-board.tsx");
   assert.match(board, /const OPEN_STALE_MS = 60_000/);
@@ -583,4 +597,178 @@ test("Ayarlar › laffogato.net: 'Bağlantıları sına' dördünü hemen çeker
   // Yarım saatten eski kırmızı satır sayfadan sonra (after) yeniden denenir; sayfa beklemez
   assert.match(page, /r\.health\.tone === "red" && \(!r\.tryAt \|\| nowMs - Date\.parse\(r\.tryAt\) > 30 \* 60_000\)/);
   assert.match(page, /after\(async \(\) => \{/);
+});
+
+// ---------------------------------------------------------------- Ödeme takibi ve kaçan ping (senkron planı P2)
+
+test("liste: ödeme bekleyen sayısı isteğe bağlı; yoksa ya da bozuksa 0, liste yine okunur", () => {
+  assert.equal(parseSiteOrders(list([contractOrder()])).awaitingPayment, 0, "S2 öncesi site alanı göndermez");
+  assert.equal(parseSiteOrders(list([], { awaitingPayment: 0 })).awaitingPayment, 0, "sözleşmedeki örnek");
+  assert.equal(parseSiteOrders(list([], { awaitingPayment: 2 })).awaitingPayment, 2);
+  for (const bad of [-1, 1.5, "2", null, true, {}, []]) {
+    const r = parseSiteOrders(list([contractOrder()], { awaitingPayment: bad }));
+    assert.equal(r.awaitingPayment, 0, JSON.stringify(bad));
+    assert.equal(r.orders.length, 1, "isteğe bağlı alan bütün yanıtı reddetmez");
+  }
+  assert.equal(parseSiteOrders(list([], { awaitingPayment: 1e9 })).awaitingPayment, AWAITING_MAX);
+});
+
+test("ödeme takibi: 0 → > 0, sayı artınca ve sayı sıfırdan büyükken her pingte (yeniden) başlar; ekranın çekmesi uzatmaz; 0'da biter", () => {
+  const T0 = "2026-10-28T12:00:00.000Z";
+  const T1 = "2026-10-28T12:10:00.000Z";
+  const none = { awaitingPayment: 0, awaitingSince: null };
+  assert.deepEqual(nextAwaiting(none, 0, "ping", T0), none);
+  const started = nextAwaiting(none, 1, "ping", T0);
+  assert.deepEqual(started, { awaitingPayment: 1, awaitingSince: T0 });
+  assert.deepEqual(nextAwaiting(none, 1, "screen", T0), started, "pingi kaçan ödeme sayfası: ekranın çekmesi de başlatır");
+  assert.deepEqual(nextAwaiting(started, 1, "screen", T1), started, "ekran uzatmaz");
+  assert.deepEqual(nextAwaiting(started, 1, "manual", T1), started);
+  assert.deepEqual(nextAwaiting(started, 1, "ping", T1), { awaitingPayment: 1, awaitingSince: T1 }, "yeniden açılan ödeme sayfası ping atar, sayıyı artırmaz");
+  assert.deepEqual(nextAwaiting(started, 2, "screen", T1), { awaitingPayment: 2, awaitingSince: T1 }, "yeni ödeme sayfası");
+  assert.deepEqual(nextAwaiting({ awaitingPayment: 2, awaitingSince: T0 }, 1, "screen", T1), { awaitingPayment: 1, awaitingSince: T0 }, "biri ödendi");
+  assert.deepEqual(nextAwaiting(started, 0, "screen", T1), none);
+  assert.deepEqual(nextAwaiting({ awaitingPayment: 1, awaitingSince: null }, 1, "screen", T1), { awaitingPayment: 1, awaitingSince: T1 }, "bozuk satır");
+
+  assert.equal(AWAITING_FOLLOW_MS, 30 * 60_000);
+  assert.equal(awaitingUntil(started), "2026-10-28T12:30:00.000Z");
+  assert.equal(awaitingUntil(none), null);
+  assert.equal(awaitingUntil({}), null, "P2 öncesi durum satırı");
+  assert.equal(awaitingUntil({ awaitingPayment: 1, awaitingSince: "bozuk" }), null);
+
+  // Sunucu: başarılı çekmede durum satırına; bitiş değişince sürüm artar (açık sekme yeni bitişi alsın). Pingin kaydı
+  // sürüme dokunmaz; ekranın çekmesi süren takibi değiştirmediği için sürüm de artmaz
+  const sync = read("src/server/site-orders/sync.ts");
+  assert.match(sync, /const awaiting = nextAwaiting\(state, list\.awaitingPayment, trigger, iso\);/);
+  assert.match(sync, /const followChanged = awaitingUntil\(state\) !== awaitingUntil\(awaiting\);/);
+  assert.match(sync, /\.\.\.awaiting,/);
+  const note = sync.slice(sync.indexOf("export async function noteOrdersPing"), sync.indexOf("export type OrdersSyncResult"));
+  assert.match(note, /await patchState\(\{ lastPingAt: new Date\(\)\.toISOString\(\) \}\);/);
+  assert.doesNotMatch(note, /bumpOrdersVersion/);
+  // Hatada takip olduğu gibi kalır (yalnız başarılı çekme yazar)
+  const failed = sync.slice(sync.indexOf("} catch (e) {", sync.indexOf("export async function syncSiteOrders")), sync.indexOf("const at = new Date();"));
+  assert.doesNotMatch(failed, /awaiting/);
+  // Canlı uç bitişi verir; 304 kararı veri okunmadan önce
+  const live = read("src/app/api/canli/route.ts");
+  assert.match(live, /awaitingUntil: linked \? awaitingUntil\(ordersState\) : null/);
+  assert.ok(live.indexOf("status: 304") < live.indexOf("awaitingUntil(ordersState)"));
+});
+
+test("bar ekranı yoğun mu: açık sipariş, son iki saatte liste değişti ya da ödeme bekleniyor; ping tek başına saymaz", () => {
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const quiet = { open: 0, changeAt: null, awaitingUntil: null };
+  assert.equal(boardBusy(quiet, now), false);
+  assert.equal(boardBusy({ open: 0 }, now), false, "eski sunucunun yanıtı");
+  assert.equal(boardBusy({ ...quiet, open: 1 }, now), true);
+  assert.equal(boardBusy({ ...quiet, changeAt: iso(119 * 60_000) }, now), true, "liste değişti: iki saat kalır");
+  assert.equal(boardBusy({ ...quiet, changeAt: iso(121 * 60_000) }, now), false);
+  const until = awaitingUntil({ awaitingPayment: 1, awaitingSince: iso(0) });
+  assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now), true, "ödeme bekleniyor");
+  assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now + 29 * 60_000), true);
+  assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now + 30 * 60_000), false, "30 dakika doldu");
+  // Vazgeçilen kartlı ödeme: ödeme sayfasının pingi listeyi değiştirmez, takibi başlatır; takip bitince ekran sakinleşir.
+  // Takibin sürüm artışı pingAt'i ekrana taşır; ping iki saat yoğun sayılsaydı ekran iki saat üç dakikada bir çekerdi
+  // (senkron planı §3.1 bütçe kuralı 4: pingte iki saatlik yoğun mod yok)
+  const pingAt = iso(0);
+  const ended = { ...quiet, pingAt, awaitingUntil: null } as Parameters<typeof boardBusy>[0];
+  for (const min of [31, 60, 90, 119]) assert.equal(boardBusy(ended, now + min * 60_000), false, `ping tek başına yoğunluk değil (+${min} dk)`);
+
+  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  assert.match(board, /const busy = boardBusy\(\{ open: list\.length, changeAt: data\?\.changeAt, awaitingUntil: data\?\.awaitingUntil \}, now\);/);
+  assert.doesNotMatch(read("src/lib/site-orders/follow.ts"), /recent\(o\.pingAt/);
+  assert.match(board, /const ms = failing \? ERROR_REPULL_MS : busy \? BUSY_REPULL_MS : QUIET_REPULL_MS;/);
+  assert.match(board, /const clock = useClock\(30_000\);/, "takip bitince ekran en geç yarım dakikada sakinleşir");
+  // Kurallar ekranın paketine girer: zod ve sunucu modülü yok (şemadan yalnız tip)
+  assert.doesNotMatch(read("src/lib/site-orders/follow.ts"), /from "zod"|^import (?!type )/m);
+});
+
+test("ekranın isteği: sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz, sık kontroller sayar; hatada çabuk yeniden", () => {
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  const at = (min: number) => new Date(now - min * 60_000).toISOString();
+  // Ekranın gönderdiği değerler (orders-board.tsx: aralık − 30 sn)
+  const HOURLY = 60 * 60_000 - 30_000;
+  const BUSY = 3 * 60_000 - 30_000;
+  const OPEN = 60_000;
+  assert.ok(HOURLY >= QUIET_CHECK_MIN_MS && BUSY < QUIET_CHECK_MIN_MS && OPEN < QUIET_CHECK_MIN_MS);
+  const due = (state: Parameters<typeof pullDue>[0], maxAgeMs: number, manual = false) => pullDue(state, maxAgeMs, { manual, nowMs: now });
+  // Ping bir dakika önce çekti, ekranın son kontrolü 61 dakika önce: saatlik kontrol yine sorar
+  const pinged = { lastPullAt: at(1), lastCheckAt: at(61), lastError: null };
+  assert.equal(due(pinged, HOURLY), true, "ping çekmesi saatlik kararı sıfırlamaz");
+  assert.equal(due({ ...pinged, lastCheckAt: at(50) }, HOURLY), false, "ekranın son kontrolü 50 dakika önce");
+  assert.equal(due({ ...pinged, lastCheckAt: null }, HOURLY), true, "P2 öncesi durum satırı");
+  assert.equal(due({ lastPullAt: at(1), lastError: null }, HOURLY), true);
+  assert.equal(due(pinged, BUSY), false, "yoğun saatin kontrolü pingin çekmesini sayar");
+  assert.equal(due({ ...pinged, lastPullAt: at(0.5) }, OPEN), false);
+  assert.equal(due({ ...pinged, lastPullAt: at(3) }, BUSY), true);
+  assert.equal(due({ lastPullAt: null, lastCheckAt: null, lastError: null }, OPEN), true, "hiç çekilmedi");
+  // Son çekme hatalı: beş saniyeden eski her istek yeniden dener, Yenile hemen
+  const failed = { lastPullAt: new Date(now - 3_000).toISOString(), lastCheckAt: new Date(now - 3_000).toISOString(), lastError: "Siteye ulaşılamadı" };
+  assert.equal(due(failed, HOURLY), false);
+  assert.equal(due(failed, BUSY), false);
+  assert.equal(due(failed, HOURLY, true), true);
+  const older = { ...failed, lastPullAt: new Date(now - 6_000).toISOString(), lastCheckAt: new Date(now - 6_000).toISOString() };
+  assert.equal(due(older, HOURLY), true);
+  assert.equal(due(older, OPEN), true);
+  // Pingle olmayan her deneme (hata, eski yanıt, başarı) kontrol anını yazar
+  const sync = read("src/server/site-orders/sync.ts");
+  assert.equal(sync.match(/\.\.\.checked\(trigger, tryAt\)/g)?.length, 3);
+  assert.match(sync, /const checked = \(trigger: OrdersTrigger, tryAt: string\): Partial<OrdersSyncState> => \(trigger === "ping" \? \{\} : \{ lastCheckAt: tryAt \}\);/);
+});
+
+test("ping kaçtı: pingle olmayan çekmenin getirdiği, bir dakikadan önce ödenmiş ve ödemeden sonra pingi gelmemiş yeni sipariş", () => {
+  const siteNow = "2026-10-28T12:00:00.000Z";
+  const paidAgo = (sec: number) => ({ paidAt: new Date(Date.parse(siteNow) - sec * 1000).toISOString() });
+  const base = { trigger: "screen" as const, siteNow, lastPingAt: "2026-10-28T11:50:00.000Z", prevComplete: true };
+  assert.equal(MISSED_PING_GRACE_MS, 60_000);
+  assert.equal(missedPing([paidAgo(120)], base), true);
+  assert.equal(missedPing([paidAgo(60)], base), true, "tam bir dakika");
+  assert.equal(missedPing([paidAgo(59)], base), false, "pingi yolda olabilir (aynı anda gelen ekran çekmesi)");
+  assert.equal(missedPing([paidAgo(30), paidAgo(120)], base), true);
+  assert.equal(missedPing([paidAgo(120)], { ...base, lastPingAt: null }), true, "hiç ping gelmedi");
+  assert.equal(missedPing([paidAgo(120)], { ...base, lastPingAt: "2026-10-28T11:59:00.000Z" }), false, "ödemeden sonra ping geldi, çekmesi düştü");
+  assert.equal(missedPing([paidAgo(120)], { ...base, trigger: "ping" }), false, "pingin kendi çekmesi");
+  assert.equal(missedPing([paidAgo(120)], { ...base, trigger: "manual" }), true, "Yenile, aşama sonrası çekme, Bağlantıları sına");
+  assert.equal(missedPing([paidAgo(120)], { ...base, prevComplete: false }), false, "önceki liste eksikti");
+  assert.equal(missedPing([], base), false);
+  assert.equal(missedPing([{ paidAt: "bozuk" }], base), false);
+
+  // Sunucu: yalnız ilk kez görülen yeni siparişlerle; an durum satırına (KVKK: sipariş ya da ad yazılmaz)
+  const sync = read("src/server/site-orders/sync.ts");
+  assert.match(sync, /const missed = missedPing\(\s*orders\.filter\(\(o\) => fresh\.includes\(o\.id\)\),\s*\{ trigger, siteNow: list\.now, lastPingAt: state\.lastPingAt, prevComplete: prev\.complete \},?\s*\);/);
+  assert.match(sync, /\.\.\.\(missed \? \{ missedPingAt: iso \} : \{\}\)/);
+  // Ayarlar › laffogato.net (yalnız yönetici) gösterir
+  const page = read("src/app/panel/ayarlar/page.tsx");
+  assert.match(page, /missedPingAt: orders\.missedPingAt/);
+  assert.match(page, /\{configured && r\.missedPingAt && missedPingShown\(r\.missedPingAt, nowMs\) \? \(/);
+  assert.match(page, /Ping kaçtı \{dateTimeTR\(r\.missedPingAt\)\}: ödenmiş bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi\./);
+  assert.match(page, /await requireAdmin\(\);/);
+  // Öneri doğru yere bakar: ping ve çekme aynı anahtarla imzalanır, çekme başarılıyken anahtar sorun olamaz
+  const missedLine = page.slice(page.indexOf("Ping kaçtı {"), page.indexOf("</p>", page.indexOf("Ping kaçtı {")));
+  assert.doesNotMatch(missedLine, /anahtar/);
+  assert.match(missedLine, /PANEL_URL/);
+  assert.match(missedLine, /\[panel-orders\] ping not delivered/);
+  assert.doesNotMatch(read("docs/SITE-SIPARIS.md").split("\n").find((l) => l.startsWith("| Ping kaçtı")) ?? "", /anahtar/);
+
+  // Satır yedi gün görünür, sonra kendiliğinden düşer (tek tük kaçan ping haftalarca uyarı olarak kalmasın)
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  assert.equal(MISSED_PING_SHOW_MS, 7 * 86_400_000);
+  assert.equal(missedPingShown(new Date(now - 60_000).toISOString(), now), true);
+  assert.equal(missedPingShown(new Date(now - MISSED_PING_SHOW_MS + 1).toISOString(), now), true);
+  assert.equal(missedPingShown(new Date(now - MISSED_PING_SHOW_MS).toISOString(), now), false, "yedi gün doldu");
+  assert.equal(missedPingShown(null, now), false);
+  assert.equal(missedPingShown("bozuk", now), false);
+});
+
+test("imza: sipariş okuması, sipariş pingi ve aşama dokunuşunun sabit vektörleri (sitedeki testler aynı değerleri sabitler)", () => {
+  // laffogato tests/panel-karaoke-sync-core.test.ts (#270) aynı anahtar ve anla aynı değerleri sabitler; kural bir
+  // tarafta değişirse bu istekler 401 olur. Yollar ve gövdeler panelin kurduğu gibi
+  const orders = new URL("/api/panel/orders", "https://laffogato.net");
+  assert.equal(sign(SECRET, { timestamp: T, method: "GET", url: orders, body: "" }), "a2664bca1515711b3d757f1a9359c4866c7b864a51e6c547f779c8f8d1676401");
+  const ping = new URL("https://ladmin.laffogato.net/api/orders/ping");
+  const pingBody = JSON.stringify({ event: "orders.changed", at: "2026-10-21T10:00:00.000Z" });
+  assert.equal(sign(SECRET, { timestamp: T, method: "POST", url: ping, body: pingBody }), "1f746949b11c4a3adbe74ac4e26ade3d82e05057f9ed61c864647e1e39b758b5");
+  const stage = new URL(STAGE_PATH, "https://laffogato.net");
+  const tap = JSON.stringify(buildStageBody({ id: "ord-0042", action: "ready", from: "new", actor: "Selin" }));
+  assert.equal(tap, '{"id":"ord-0042","action":"ready","from":"new","actor":"Selin"}');
+  assert.equal(sign(SECRET, { timestamp: T, method: "POST", url: stage, body: tap }), "61bdc771bae90abcf187561a6657da487035c209f14553ecb7e66cb53c963ba3");
 });

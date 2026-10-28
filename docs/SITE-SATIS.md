@@ -277,5 +277,5 @@ bilgidir; yokluğu raporu etkilemez.
 | `src/app/panel/gelir-gider/site-sales-card.tsx` | laffogato.net online satışları kartı |
 | `src/app/panel/tutarlilik/` | Online tüketim kartı, "ModPOS · online" ayrımı |
 | `src/app/panel/kasa/page.tsx`, `src/server/actions/cash-report.ts`, `src/server/notify/cash-report-template.ts` | Kasa raporu satırı, gönderim, e-posta |
-| `tests/site-satis.test.ts` | Şema, KDV hariç formül, aylar, eşleme, kasa satırının zaman sınırı, motor satırları, kasada ödenen siparişler, seçenekler |
+| `tests/site-satis.test.ts` | Şema, KDV hariç formül, aylar, eşleme, kasa satırının zaman sınırı, motor satırları, kasada ödenen siparişler, seçenekler, okumanın imza vektörü (site aynısını tutar, laffogato #270) |
 | `tests/genel-bakis-online.test.ts` | Genel bakış: online satışın reçeteye göre kârı, başabaş, ay sonu tahmini, kategoriler, zam etkisi |
