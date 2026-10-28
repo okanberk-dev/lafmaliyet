@@ -73,7 +73,8 @@ export interface MonthTaskFacts {
      * Ayın satılan (satış listesi ya da laffogato.net online) ama reçetesi boş ürünleri, satış adedine göre: maliyetleri
      * ortalama oranla tahmin edilir (denetim E-47); yoksa alan yok
      */
-    noRecipe?: { count: number; names: string[]; unpriced: number };
+    /** inactive: bunlardan menüde pasif olanlar (eski ayda satılıp kaldırılmış); "Reçete gir" pasifleri de listeler */
+    noRecipe?: { count: number; names: string[]; unpriced: number; inactive?: number };
     summaryRows: number;
     refMonth: string | null;
     lafpos?: { source: "gecis" | "lafpos"; days: number; warning: string | null };
@@ -184,7 +185,9 @@ export function monthTaskFacts(
     sales: {
       lines: sales.lines.length,
       unmatched: sales.unmatched.filter((l) => !isSummaryRow(l.line.posName)).length,
-      ...(noRecipeNames.length ? { noRecipe: { count: noRecipeNames.length, names: noRecipeNames, unpriced: unpricedRecipes } } : {}),
+      ...(noRecipeNames.length
+        ? { noRecipe: { count: noRecipeNames.length, names: noRecipeNames, unpriced: unpricedRecipes, inactive: noRecipeProducts.filter((p) => !p.product.active).length } }
+        : {}),
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
       ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
@@ -272,7 +275,8 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         title: "Satış raporu",
         status: "todo",
         detail: `${num(s.lines)} satır ürünlere bağlı ama ${noRecipeText(s.noRecipe)}: maliyetleri ortalama maliyet oranıyla tahmin ediliyor. ${s.noRecipe.unpriced ? "Reçetelerini ve malzeme fiyatlarını girin." : "Reçetelerini girin."}`,
-        href: `/panel/urunler?${new URLSearchParams({ durum: "Reçete yok", ay: m })}`,
+        // Ürünler pasifleri ?pasif=1 olmadan göstermez: adı geçen pasif ürün listede bulunsun
+        href: `/panel/urunler?${new URLSearchParams({ durum: "Reçete yok", ...(s.noRecipe.inactive ? { pasif: "1" } : {}), ay: m })}`,
         action: "Reçete gir",
       });
     } else if (s.lines) {

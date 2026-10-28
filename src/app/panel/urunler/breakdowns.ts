@@ -250,7 +250,14 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
           label: "Pasif ürünler",
           note: inactiveNote,
           apart: true,
-          rows: [...soldInactive].sort((a, b) => b.monthProfit - a.monthProfit || byName(a, b)).map(profitRow),
+          // Reçetesi boş pasif ürünün kârı da hesaplanmaz (yukarıdaki grupla aynı kural): tutarı yok, sonda
+          rows: [...soldInactive]
+            .sort((a, b) => Number(a.status === "Reçete yok") - Number(b.status === "Reçete yok") || b.monthProfit - a.monthProfit || byName(a, b))
+            .map((r) =>
+              r.status === "Reçete yok"
+                ? { key: `urun:${r.id}`, label: productLabel(r), sub: `${num(r.soldQty)} adet · reçete boş`, amount: 0, display: "–", tone: "warn" as const, href: card(r) }
+                : profitRow(r),
+            ),
         },
       ]
     : [];

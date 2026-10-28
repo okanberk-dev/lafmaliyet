@@ -234,6 +234,14 @@ export function soldProfit<T extends SoldProfitRow>(rows: readonly T[]): { profi
 }
 
 /**
+ * Görünen ürünlerin brüt kârı (tablonun alt satırı ve telefon özeti): satılanların hepsi reçetesizse null, "0 ₺" değil
+ * "–" görünür (kâr sıfır değil, hesaplanmadı); satılan yoksa 0
+ */
+export function visibleProfit(sp: { profit: number; counted: readonly unknown[]; noRecipe: readonly unknown[] }): number | null {
+  return sp.counted.length === 0 && sp.noRecipe.length > 0 ? null : sp.profit;
+}
+
+/**
  * Kârı ve oranı anlamsız ürün (reçete yok): birim kâr, aylık kâr, marj ve maliyet oranı sıralamasında sona kalır
  * (yön ne olursa olsun); tabloda bu sütunlarda tire görünür
  */

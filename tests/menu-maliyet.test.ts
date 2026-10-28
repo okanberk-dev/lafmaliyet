@@ -17,7 +17,7 @@ import { waterBreakdown } from "../src/app/panel/hammaddeler/breakdowns";
 import { salesBreakdowns } from "../src/app/panel/satislar/breakdowns";
 import { inMarginScale } from "../src/app/panel/satislar/sales-logic";
 import { productBreakdowns, type BreakdownProduct } from "../src/app/panel/urunler/breakdowns";
-import { NO_RECIPE_LAST_KEYS, soldProfit } from "../src/app/panel/urunler/logic";
+import { NO_RECIPE_LAST_KEYS, soldProfit, visibleProfit } from "../src/app/panel/urunler/logic";
 import { createModel, type Model } from "../src/lib/calc/engine";
 import { dashboard, menuEngineering, soldWithOnline } from "../src/lib/calc/insights";
 import type { Dataset, Product, SalesLine } from "../src/lib/calc/types";
@@ -252,6 +252,10 @@ test("E-47: Ürünler'in brüt kâr kartı ve dökümü reçetesiz ürünü kâr
   assert.deepEqual(sp.noRecipe.map((r) => r.id), [PUMPKIN]);
   assert.equal(reference.noRecipe.length, 0);
   assert.ok(sp.counted.every((r) => r.status !== "Reçete yok" && r.soldQty > 0));
+  // Tablonun alt satırı: görünenlerin hepsi reçetesizse (Reçete yok süzgeci) "0 ₺" değil "–"
+  close(visibleProfit(sp), sp.profit, "reçeteliler varken kâr");
+  assert.equal(visibleProfit(soldProfit(active.filter((r) => r.status === "Reçete yok"))), null);
+  assert.equal(visibleProfit(soldProfit(active.filter((r) => r.soldQty === 0))), 0, "satılan yoksa 0");
 
   const cats = model.categories.map((c) => ({ id: c.id, name: c.name }));
   const bd = productBreakdowns(rows, cats, M, model.settings.hedefMaliyet);
@@ -267,6 +271,23 @@ test("E-47: Ürünler'in brüt kâr kartı ve dökümü reçetesiz ürünü kâr
   assert.equal(plainBd.profit.find((g) => g.key === "recetesiz")!.rows.length, 0);
   // Tablo: kârı ve oranı anlamsız sütunlarda sona kalır
   assert.deepEqual([...NO_RECIPE_LAST_KEYS], ["unitProfit", "monthProfit", "margin", "costRatio"]);
+
+  // Sezonu bitip menüden kaldırılan reçetesiz ürün: "Pasif ürünler" grubunda da kârı yok, sonda
+  const latteInactive = { ...latte, active: false };
+  const offDs = withPumpkin({ ...base, products: base.products.map((p) => (p.id === latte.id ? latteInactive : p)) });
+  const off = createModel({ ...offDs, products: offDs.products.map((p) => (p.id === PUMPKIN ? { ...p, active: false } : p)) });
+  const offBd = productBreakdowns(rowsOf(off), cats, M, off.settings.hedefMaliyet);
+  const pasif = offBd.profit.find((g) => g.key === "pasif")!;
+  const keys = pasif.rows.map((r) => r.key);
+  assert.deepEqual(keys.slice(-1), [`urun:${PUMPKIN}`], "reçetesiz pasif ürün sonda");
+  const pRow = pasif.rows.at(-1)!;
+  assert.equal(pRow.amount, 0);
+  assert.equal(pRow.display, "–");
+  assert.equal(pRow.tone, "warn");
+  assert.equal(pRow.sub, "400 adet · reçete boş");
+  const lRow = pasif.rows.find((r) => r.key === `urun:${latte.id}`)!;
+  assert.match(lRow.sub ?? "", /adet × .+ birim kâr$/, "reçeteli pasif ürün kârıyla");
+  assert.ok(lRow.amount > 0);
 });
 
 test("E-47: Excel'e aktar: reçetesiz ürünün aylık brüt kârı boş, satış satırı 'reçete boş' der", () => {
@@ -289,6 +310,14 @@ test("E-47: Excel'e aktar: reçetesiz ürünün aylık brüt kârı boş, satı�
   assert.equal((pumpkinRow as ExcelJS.Row).getCell(qty).value, 400);
   assert.equal((pumpkinRow as ExcelJS.Row).getCell(mp).value, null, "kârı boş");
   assert.equal(typeof (latteRow as ExcelJS.Row).getCell(mp).value, "number", "reçeteli üründe dolu");
+  // Birim kâr, marj, maliyet oranı ve önerilen fiyat da boş (~%98 marjla sıralamanın başına çıkmasın)
+  for (const name of [/^Birim kâr$/, /^Kâr marjı %$/, /^Maliyet oranı %$/, /^Önerilen fiyat/]) {
+    const c = col(name);
+    assert.ok(c > 0, String(name));
+    assert.equal((pumpkinRow as ExcelJS.Row).getCell(c).value, null, `${name} boş`);
+    assert.equal(typeof (latteRow as ExcelJS.Row).getCell(c).value, "number", `${name} reçeteli üründe dolu`);
+    assert.match(String(header.getCell(c).note ?? ""), /Reçetesi boş/);
+  }
   // Satış raporu sekmesi: satır eşleşti ama reçete boş, oran uygulandı
   let status = "";
   wb.eachSheet((ws) => ws.eachRow((r) => r.eachCell((c) => {
@@ -341,6 +370,12 @@ test("E-47: Bu ayın işleri satılan reçetesiz ürünü söyler, 'hepsi eşle�
     siteSales: [siteMonth(M, [{ menuItemId: "mnu-0200", size: "M", name: "Pumpkin Latte", qty: 12, listMinor: 264_000 }])],
   };
   assert.match(tasks(onlineOnly).find((x) => x.key === "satis")!.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\)/);
+
+  // Menüden kaldırılmış (pasif) reçetesiz ürün: Ürünler pasifleri ?pasif=1 olmadan göstermez, bağlantı onu da açar
+  const inactive = linkedOnly(withPumpkin());
+  const off = tasks({ ...inactive, products: inactive.products.map((p) => (p.id === PUMPKIN ? { ...p, active: false } : p)) }).find((x) => x.key === "satis")!;
+  assert.match(off.detail, /1 satılan ürünün reçetesi boş \(Pumpkin Latte · M\)/);
+  assert.equal(off.href, "/panel/urunler?durum=Re%C3%A7ete+yok&pasif=1&ay=2026-09");
 });
 
 // ---------------------------------------------------------------- E-57: su + buz

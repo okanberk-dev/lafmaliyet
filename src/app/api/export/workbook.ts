@@ -309,9 +309,14 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
     ],
     { x: 3, y: 1, landscape: true },
   );
-  headerRow(uk, colHeaders(uk)).getCell("mp").note = "Birim kâr × satış adedi. Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
+  const ukHeader = headerRow(uk, colHeaders(uk));
+  ukHeader.getCell("mp").note = "Birim kâr × satış adedi. Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
+  for (const k of ["profit", "margin", "ratio", "sug"]) ukHeader.getCell(k).note = "Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
   for (const p of model.products) {
     const qty = sold.get(p.product.id) ?? 0;
+    // Reçetesi boş üründe kâr, marj, oran ve önerilen fiyat boş: maliyeti bilinmiyor, ~%98 marjla sıralamanın başına
+    // çıkardı (Ürünler'deki tire; denetim E-47)
+    const nr = p.status === "Reçete yok";
     uk.addRow({
       cat: p.category?.name,
       name: p.product.name,
@@ -322,14 +327,13 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       kom: p.commission,
       cost: p.cost,
       total: p.totalCost,
-      profit: p.unitProfit,
-      margin: p.margin,
-      ratio: p.costRatio,
-      sug: p.suggestedPrice,
+      profit: nr ? null : p.unitProfit,
+      margin: nr ? null : p.margin,
+      ratio: nr ? null : p.costRatio,
+      sug: nr ? null : p.suggestedPrice,
       status: p.status,
       qty,
-      // Reçetesi boş üründe boş: maliyeti bilinmiyor, kârı ~cirosu kadar görünürdü (Ürünler'deki tire; denetim E-47)
-      mp: p.status === "Reçete yok" ? null : p.unitProfit * qty,
+      mp: nr ? null : p.unitProfit * qty,
       mn: p.net * qty,
       fire: p.fireRate,
       active: p.product.active ? "Evet" : "Pasif",

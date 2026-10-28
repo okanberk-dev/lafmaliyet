@@ -1358,9 +1358,16 @@ export function RecipeEditor({
                         value={tl(econ.commission, 2)}
                       />
                       <KeyValue label={`${monthLabel} satılan adet`} value={num(soldQty)} />
+                      {/* Reçetesi boş ürünün maliyeti bilinmiyor: kâr neredeyse cironun tamamı görünürdü (denetim E-47) */}
                       <KeyValue
                         label={`${monthLabel} bu üründen kalan kâr`}
-                        value={<Signed value={econ.unitProfit * soldQty}>{tl(econ.unitProfit * soldQty)}</Signed>}
+                        value={
+                          noRecipe ? (
+                            <span className="text-ink-quiet">–</span>
+                          ) : (
+                            <Signed value={econ.unitProfit * soldQty}>{tl(econ.unitProfit * soldQty)}</Signed>
+                          )
+                        }
                         strong
                       />
                     </div>

@@ -52,7 +52,7 @@ import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
 
-import { compareBy, LIST_QUERY_KEY, menuAverages, NO_RECIPE_LAST_KEYS, productHref, soldProfit, STATUS_CHIPS, statusChips } from "./logic";
+import { compareBy, LIST_QUERY_KEY, menuAverages, NO_RECIPE_LAST_KEYS, productHref, soldProfit, STATUS_CHIPS, statusChips, visibleProfit } from "./logic";
 import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection, SheetToggle } from "./filter-sheet";
 import { filterSummary } from "./filter-text";
 import { bulkHref, productSearchText } from "./fiyatlar/logic";
@@ -540,7 +540,8 @@ export function ProductsTable({
     const sp = soldProfit(filtered);
     return {
       qty: filtered.reduce((a, r) => a + r.soldQty, 0),
-      profit: sp.profit,
+      // Görünenlerin hepsi reçetesizse null: "0 ₺ brüt kâr" değil "–" (Reçete yok süzgeci, işin "Reçete gir" bağlantısı)
+      profit: visibleProfit(sp),
       noRecipe: sp.noRecipe.length,
       net: filtered.reduce((a, r) => a + r.monthNet, 0),
       avg: menuAverages(filtered),
@@ -1047,8 +1048,16 @@ export function ProductsTable({
                   <TD />
                   <TD numeric>{num(totals.qty)} adet</TD>
                   <TD numeric>
-                    <Signed value={totals.profit}>{tl(totals.profit)}</Signed>
-                    {totals.noRecipe ? <span className="block text-xs font-normal text-ink-mute">reçetesiz {num(totals.noRecipe)} hariç</span> : null}
+                    {totals.profit === null ? (
+                      <span className="text-ink-quiet">–</span>
+                    ) : (
+                      <Signed value={totals.profit}>{tl(totals.profit)}</Signed>
+                    )}
+                    {totals.noRecipe ? (
+                      <span className="block text-xs font-normal text-ink-mute">
+                        {totals.profit === null ? "reçete boş: hesaplanmaz" : `reçetesiz ${num(totals.noRecipe)} hariç`}
+                      </span>
+                    ) : null}
                   </TD>
                   {col("monthNet") ? <TD numeric>{tl(totals.net)}</TD> : null}
                   <TD colSpan={1 + Number(col("fireRate"))} />
@@ -1131,10 +1140,16 @@ export function ProductsTable({
               <span>Görünen {num(filtered.length)} ürün</span>
               <span className="tabular">
                 {monthLabel}: {num(totals.qty)} adet ·{" "}
-                <Signed value={totals.profit} className="font-semibold text-ink">
-                  {tl(totals.profit)}
-                </Signed>{" "}
-                brüt kâr{totals.noRecipe ? ` (reçetesiz ${num(totals.noRecipe)} hariç)` : ""}
+                {totals.profit === null ? (
+                  "brüt kâr hesaplanmaz (reçete boş)"
+                ) : (
+                  <>
+                    <Signed value={totals.profit} className="font-semibold text-ink">
+                      {tl(totals.profit)}
+                    </Signed>{" "}
+                    brüt kâr{totals.noRecipe ? ` (reçetesiz ${num(totals.noRecipe)} hariç)` : ""}
+                  </>
+                )}
               </span>
             </p>
             <p className="tabular">

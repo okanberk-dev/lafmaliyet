@@ -914,7 +914,7 @@ const FORMULAS = [
   ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef: Ayarlar › Oranlar, ör. %30)"],
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
-  ["Eşleşmeyen POS ürünü", "Net ciro × eşleşen ürünlerin ortalama maliyet oranı"],
+  ["Eşleşmeyen POS ürünü", "Net ciro × reçeteli eşleşen ürünlerin ortalama maliyet oranı"],
   [
     "Reçetesi boş ürün",
     "Satışı eşleşmeyen satır gibi: net ciro × ortalama maliyet oranı (orana girmez). Kâr sıralamalarına, Analiz'deki gruplara ve Ürünler'in brüt kâr kartına girmez",
@@ -939,7 +939,10 @@ const FORMULAS = [
     "Aylık sabit gider (gelir-gider)",
     "Aylık tutar × gün ÷ ayın gün sayısı. Gün: açık gün elle yazıldıysa o; kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler × açık gün",
   ],
-  ["Su + buz litre maliyeti", "SU GİDERİ ÷ satışlara göre su + buz litresi (fatura girilmiş ve satış listesi olan son ay)"],
+  [
+    "Su + buz litre maliyeti",
+    "SU GİDERİ ÷ satış listesine ve aynı ayın laffogato.net siparişlerine göre su + buz litresi (fatura girilmiş ve satış listesi olan son ay)",
+  ],
   ["Satılan malın maliyeti", "Önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)"],
 ];
 
