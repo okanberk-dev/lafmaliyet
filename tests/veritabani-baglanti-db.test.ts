@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import { after, before, describe, test } from "node:test";
 
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -42,17 +42,31 @@ function errorResponse(code: string, message: string): Buffer {
   return Buffer.concat([head, fields]);
 }
 
+/** Havuzun soketi kapatışı: "end" PgBouncer'ın olağan kapatması (TLS close_notify + FIN), "reset" RST */
+type CloseMode = "end" | "reset";
+
 /**
  * Sahte Neon: `fail(n, mesaj)` sonraki n bağlantının açılış iletisine (StartupMessage) 08P01 ile cevap verip soketi
- * kapatır; öteki bağlantılar gerçek sunucuya olduğu gibi geçer.
+ * kapatır; öteki bağlantılar gerçek sunucuya olduğu gibi geçer. `closeOn(işaret, kip)` istemcinin metni işarete uyan ilk
+ * iletisini sunucuya geçirmez ve o soketi bir sonraki turda kapatır (işlem gövdesinin sorgusu uçuştayken havuz
+ * bağlantıyı kapattı); `closeAll(kip)` açık bütün istemci soketlerini kapatır. Sunucu tarafı da kapanır: Postgres
+ * kopan bağlantının işlemini geri alır.
  */
 async function neonProxy(target: URL) {
   const stats = { connections: 0, refused: 0 };
   let pending: string[] = [];
+  let closeOn: { match: string; mode: CloseMode } | null = null;
   const sockets = new Set<net.Socket>();
+  const pairs = new Set<{ client: net.Socket; upstream: net.Socket }>();
   const track = (sock: net.Socket) => {
     sockets.add(sock);
     sock.on("close", () => sockets.delete(sock));
+  };
+  const shut = (pair: { client: net.Socket; upstream: net.Socket }, mode: CloseMode) => {
+    pairs.delete(pair);
+    pair.upstream.destroy();
+    if (mode === "reset") pair.client.resetAndDestroy();
+    else pair.client.end();
   };
   const server = net.createServer((client) => {
     track(client);
@@ -73,9 +87,22 @@ async function neonProxy(target: URL) {
     }
     const upstream = net.connect(Number(target.port || 5432), target.hostname);
     track(upstream);
+    const pair = { client, upstream };
+    pairs.add(pair);
+    client.on("close", () => pairs.delete(pair));
     client.on("error", () => upstream.destroy());
     upstream.on("error", () => client.destroy());
-    client.pipe(upstream).pipe(client);
+    client.on("data", (d) => {
+      if (closeOn && d.toString("latin1").includes(closeOn.match)) {
+        const { mode } = closeOn;
+        closeOn = null;
+        setImmediate(() => shut(pair, mode));
+        return;
+      }
+      upstream.write(d);
+    });
+    client.on("end", () => upstream.end());
+    upstream.pipe(client);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as net.AddressInfo;
@@ -89,6 +116,12 @@ async function neonProxy(target: URL) {
       pending = Array.from({ length: n }, () => message);
       stats.connections = 0;
       stats.refused = 0;
+    },
+    closeOn(match: string, mode: CloseMode) {
+      closeOn = { match, mode };
+    },
+    closeAll(mode: CloseMode) {
+      for (const pair of [...pairs]) shut(pair, mode);
     },
     async close() {
       for (const sock of sockets) sock.destroy();
@@ -219,6 +252,122 @@ describe("Neon'un kimlik doğrulama zaman aşımı: gerçek postgres.js, drizzle
       await raw.end();
     }
   });
+
+  /** Süreç düzeyinde yakalanmamış hatalar (Next'in sunucusu da yalnız günlüğe yazar, süreç düşmez) */
+  function catchUncaught() {
+    const seen: unknown[] = [];
+    const onError = (e: unknown) => void seen.push(e);
+    process.on("uncaughtException", onError);
+    process.on("unhandledRejection", onError);
+    return {
+      seen,
+      stop() {
+        process.off("uncaughtException", onError);
+        process.off("unhandledRejection", onError);
+      },
+    };
+  }
+
+  /** Söz `ms` içinde sonuçlanmazsa düşer (düzeltmeden önce sonraki işlem sonsuza dek bekleyebiliyordu) */
+  async function within<T>(ms: number, label: string, p: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([p, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(`${label}: ${ms} ms içinde bitmedi`)), ms)))]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Kopan işlemden sonra aynı havuz (tek bağlantı) hemen okur ve yeni bir işlemi bitirir */
+  async function poolStillServes(db: DB, label: string) {
+    const t0 = Date.now();
+    await within(5_000, `${label}: sonraki okuma`, db.select({ n: count() }).from(s.jobRuns));
+    const readMs = Date.now() - t0;
+    assert.ok(readMs < 2_000, `${label}: sonraki okuma ${readMs} ms (bozuk yuva connect_timeout'u bekler)`);
+    const [row] = await within(
+      5_000,
+      `${label}: sonraki işlem`,
+      db.transaction((tx) => tx.insert(s.jobRuns).values({ job: "gunluk", message: `${label}-sonra` }).returning({ id: s.jobRuns.id })),
+    );
+    assert.equal(typeof row.id, "number");
+  }
+
+  const isRawClosed = (e: unknown) => {
+    assert.equal(connectionErrorCode(e), "CONNECTION_CLOSED");
+    assert.match((e as Error).message, /^write CONNECTION_CLOSED 127\.0\.0\.1/, "canlıdaki ham hata: drizzle'ın 'Failed query'si yok");
+    return true;
+  };
+
+  for (const mode of ["end", "reset"] as const) {
+    test(`işlemin bağlantısı gövdenin sorgusunda kapanınca (${mode === "end" ? "FIN, canlıdaki sıra" : "RST"}): bir kez CONNECTION_CLOSED, TypeError yok, satır yazılmaz, havuz bozulmaz`, async () => {
+      // Canlıda 20 ve 28 Ekim 2026: "write CONNECTION_CLOSED …-pooler…:5432" ve hemen ardından "TypeError: Cannot read
+      // properties of null (reading 'write') at Immediate" (postgres.js ölü bağlantıya ROLLBACK yazdı); sonra o yuvanın
+      // her bağlantısı connect_timeout'u bekleyip düşer. RST'de TypeError yok ama yuvada hayalet ROLLBACK kalır, sonraki
+      // işlem hiç bitmez.
+      const label = `islem-kopan-${mode}`;
+      const uncaught = catchUncaught();
+      warnings.length = 0;
+      try {
+        await viaNeon(async (db) => {
+          await db.select({ n: count() }).from(s.jobRuns); // sayfanın okuması: havuzun tek bağlantısı açık
+          proxy.closeOn(`${label}-isaret`, mode);
+          let bodies = 0;
+          await assert.rejects(
+            db.transaction(async (tx) => {
+              bodies++;
+              await tx.execute(sql.raw(`select '${label}-isaret' as m`));
+              await tx.insert(s.jobRuns).values({ job: "gunluk", message: label });
+            }),
+            isRawClosed,
+          );
+          assert.equal(bodies, 1, "gövde yeniden çalışmaz");
+          await pause(400);
+          assert.deepEqual(uncaught.seen.map(String), [], "yakalanmamış hata yok");
+          await poolStillServes(db, label);
+        });
+      } finally {
+        uncaught.stop();
+      }
+      assert.deepEqual(uncaught.seen.map(String), []);
+      assert.equal((await direct.select().from(s.jobRuns).where(eq(s.jobRuns.message, label))).length, 0, "yarıda kalan işlem yazılmadı");
+      assert.equal((await direct.select().from(s.jobRuns).where(eq(s.jobRuns.message, `${label}-sonra`))).length, 1);
+      assert.deepEqual(warnings, [], "işlem yeniden denenmedi");
+    });
+  }
+
+  for (const then of ["sorgu", "dön"] as const) {
+    test(`gövde dışarıyı beklerken bağlantı kapanınca (sonra ${then === "sorgu" ? "bir sorgu daha" : "COMMIT"}): çağıran hemen düşer, ölü bağlantıya yazılmaz`, async () => {
+      const label = `islem-bekleyen-${then}`;
+      const uncaught = catchUncaught();
+      try {
+        await viaNeon(async (db) => {
+          let finished = false;
+          const tx = db.transaction(async (t) => {
+            await t.insert(s.jobRuns).values({ job: "gunluk", message: label });
+            proxy.closeAll("end");
+            await pause(200); // Paraşüt'e istek gibi: bu sırada havuz bağlantıyı kapattı
+            try {
+              if (then === "sorgu") await t.update(s.jobRuns).set({ status: "ok" }).where(eq(s.jobRuns.message, label));
+              return "bitti";
+            } finally {
+              finished = true;
+            }
+          });
+          await assert.rejects(tx, isRawClosed);
+          assert.equal(finished, false, "begin gövdeyi beklemeden reddedildi");
+          await pause(600);
+          assert.equal(finished, true);
+          assert.deepEqual(uncaught.seen.map(String), [], "yakalanmamış hata yok");
+          await poolStillServes(db, label);
+        });
+      } finally {
+        uncaught.stop();
+      }
+      assert.equal((await direct.select().from(s.jobRuns).where(eq(s.jobRuns.message, label))).length, 0, "sunucu işlemi geri aldı");
+    });
+  }
 
   test("günlük işin çalışma kaydı: Neon uyanırken bütün açılışlar düşse de startJobRun kaydı yazar (sahte 'çalışmadı' yok)", async () => {
     // startJobRun paylaşılan bağlantıyı (getDb, DATABASE_URL) kullanır: vekilin adresi verilir. "server-only" Next'in
