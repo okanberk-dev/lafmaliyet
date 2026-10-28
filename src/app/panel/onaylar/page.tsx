@@ -9,10 +9,11 @@ import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression } from "@/lib/calc/expr";
 import { PACKAGING_CATEGORY } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
-import { estimateNames, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
+import { estimateNames, negativeQtyIssue, proposalGroupKey, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModelOnce } from "@/server/data/model-once";
-import { loadReviewQueue } from "@/server/data/recipe-requests";
+import { approvedNewPairs, loadReviewQueue } from "@/server/data/recipe-requests";
+import { getDb } from "@/server/db";
 
 import { categoryFireDefault } from "../urunler/logic";
 
@@ -81,11 +82,23 @@ function modelSnapshot(model: Model, productId: number): RecipeSnapshot | null {
 
 /** Önerideki satırın bugünkü ayarlarla miktarı (formül yeniden hesaplanır, okunamazsa öneri anındaki değer) */
 function lineQty(model: Model, l: RecipeSnapshot["items"][number]): number {
-  if (!l.qtyExpr) return l.qty;
+  return lineCheck(model, l).qty;
+}
+
+/**
+ * Önerideki satırın bugünkü ayarlarla miktarı ve onayı engelleyen sorunu: formül eksiye düşüyor (negativeQtyIssue) ya da
+ * hesaplanamıyor. Onay eylemleri aynı satırı aynı kuralla reddeder; kart düğmeyi kapatıp nedenini önceden söyler.
+ */
+function lineCheck(model: Model, l: RecipeSnapshot["items"][number]): { qty: number; issue: string | null } {
+  if (!l.qtyExpr) return { qty: l.qty, issue: negativeQtyIssue(l, l.qty) };
   try {
-    return evaluateExpression(l.qtyExpr, model.settings);
-  } catch {
-    return l.qty;
+    const qty = evaluateExpression(l.qtyExpr, model.settings);
+    return { qty, issue: negativeQtyIssue(l, qty) };
+  } catch (e) {
+    return {
+      qty: l.qty,
+      issue: `${l.name}: formül hatası (${l.qtyExpr}): ${(e as Error).message}; öneri onaylanamaz. Ayarlar'daki ölçüyü düzeltin ya da öneriyi reddedin`,
+    };
   }
 }
 
@@ -104,16 +117,26 @@ function economics(model: Model, productId: number, snap: RecipeSnapshot) {
 async function ApprovalsContent() {
   await requireAdmin();
   const [model, queue] = await Promise.all([loadModelOnce(), loadReviewQueue()]);
+  // Yeni ürün önerisinin daha önce eklenmiş öteki boyu: bu boy onun adını alır (denetim E-55)
+  const pairs = await approvedNewPairs(
+    getDb(),
+    queue.pending
+      .filter((r) => r.kind === "new" || r.productId === null)
+      .map((r) => ({ id: r.id, requestedBy: r.requestedBy, requestedByName: r.requestedByName, name: r.proposed?.name ?? r.productName, size: r.size })),
+  );
   const pending: (ReviewItem | NewProductItem)[] = queue.pending.map((r): ReviewItem | NewProductItem => {
     if (r.kind === "new" || r.productId === null) {
       // Yeni ürün: maliyet satır satır bugünkü fiyatlarla; satış fiyatı ve marj yöneticinin yazdığı fiyatla tarayıcıda
       // (personel fiyat yazdıysa alan onunla dolu gelir)
+      const pair = pairs.get(r.id);
       return {
         kind: "new",
         id: r.id,
         name: r.proposed?.name ?? r.productName,
         size: r.size,
         categoryId: r.proposed?.categoryId ?? 0,
+        group: proposalGroupKey({ requestedBy: r.requestedBy, requestedByName: r.requestedByName, name: r.proposed?.name ?? r.productName }),
+        pair: pair ? { name: pair.name, size: pair.size, categoryId: pair.categoryId } : null,
         requestedByName: r.requestedByName,
         updatedAt: r.updatedAt.toISOString(),
         message: r.message,
@@ -122,15 +145,19 @@ async function ApprovalsContent() {
         lines: r.after.items.map((l) => {
           const ing = model.ingById.get(l.ingredientId);
           const unpriced = !!ing && isUnpriced(ing);
+          const { qty, issue } = lineCheck(model, l);
           return {
             name: l.name,
-            qtyLabel: qtyLabel({ ...l, qty: lineQty(model, l) }),
+            qtyLabel: qtyLabel({ ...l, qty }),
             note: l.note,
-            qty: lineQty(model, l),
+            qty,
             unitCost: model.unitCost.get(l.ingredientId) ?? 0,
             vatRate: ing?.vatRate ?? 0,
             isPackaging: ing?.category === PACKAGING_CATEGORY,
             missing: !ing,
+            // Öneriden sonra pasife alındı ya da formülü bugünkü ayarlarla eksiye düşüyor: onay olmaz (sunucu da reddeder)
+            inactive: !!ing && !ing.active,
+            qtyIssue: issue,
             unpriced,
             // Fiyatı tahmini (öneride "Yeni malzeme" ile açılan ya da faturada bulunmayan): maliyet kesin değil
             estimate: !!ing && ing.isEstimate && !unpriced,
@@ -172,6 +199,8 @@ async function ApprovalsContent() {
         ),
       ],
       estimates: estimateNames(r.before, r.after, model.ingById),
+      // Ayar öneriden sonra değiştiyse formül eksiye düşebilir: onay olmaz (reviewRecipeChange da reddeder)
+      qtyIssues: [...new Set(r.after.items.flatMap((l) => lineCheck(model, l).issue ?? []))],
     };
   });
   const recent: RecentItem[] = queue.recent.map((r) => ({
@@ -197,7 +226,7 @@ async function ApprovalsContent() {
       model.categories.map((c) => [c.id, categoryFireDefault(model.ds.products.filter((p) => p.categoryId === c.id).map((p) => ({ id: p.id, fireOverride: p.fireOverride })))]),
     ),
     settings: model.settings,
-    taken: model.ds.products.map((p) => ({ name: p.name, size: p.size })),
+    taken: model.ds.products.map((p) => ({ id: p.id, name: p.name, size: p.size })),
   };
   return <ReviewList pending={pending} recent={recent} env={env} />;
 }

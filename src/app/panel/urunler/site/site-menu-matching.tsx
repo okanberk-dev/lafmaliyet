@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Globe, Link2, ListChecks, Plug, RefreshCw, Store, Unlink } from "lucide-react";
+import { ArrowRight, Globe, Link2, ListChecks, Plug, Plus, RefreshCw, Store, Unlink } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { dateTimeTR, num, tl } from "@/lib/format";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { CONFIDENCE_LABEL, type LinkSuggestion, type SiteGap } from "@/lib/site-menu/names";
+import type { NewFromSiteDraft } from "@/lib/site-menu/new-product";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
 import { fromMinor, linkStatus, slotLabel, slotPriceMinor, toMinor, visibilityFromSite, type SiteMenuSlot } from "@/lib/site-menu/slot";
 import { cn } from "@/lib/utils";
@@ -25,10 +26,13 @@ import type { MenuSyncState } from "@/server/site-menu/sync";
 import { productHref } from "../logic";
 import { SiteLinkDialog } from "../site-link-dialog";
 
+import { SiteNewProductDialog } from "./site-new-product";
+
 export interface MatchProduct {
   id: number;
   name: string;
   size: string;
+  categoryId: number;
   category: string;
   price: number;
   active: boolean;
@@ -72,6 +76,9 @@ export function SiteMenuMatching({
   products,
   suggestions,
   gaps,
+  drafts = [],
+  categories = [],
+  pendingNew = [],
   kasa = "ModPOS",
 }: {
   configured: boolean;
@@ -81,6 +88,11 @@ export function SiteMenuMatching({
   products: MatchProduct[];
   suggestions: LinkSuggestion[];
   gaps: SiteGap[];
+  /** "Panelde aç ve bağla" penceresinin ön dolumu, kalem başına (src/lib/site-menu/new-product.ts; denetim E-48) */
+  drafts?: NewFromSiteDraft[];
+  categories?: { id: number; name: string }[];
+  /** Bekleyen yeni ürün önerileri (aynı ad + boyda öneri varken pencere ürün açmaz) */
+  pendingNew?: { name: string; size: "M" | "L" | "Tek"; by: string }[];
   /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS fiyatı siteden kendisi alır */
   kasa?: KasaName;
 }) {
@@ -99,6 +111,17 @@ export function SiteMenuMatching({
   const [dialogFor, setDialogFor] = useState<MatchProduct | null>(null);
   const [unlinkFor, setUnlinkFor] = useState<MatchProduct | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Yalnız sitede" kalemden ürün açma penceresi (kalemin kimliği)
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const draftOf = useMemo(() => new Map(drafts.map((d) => [d.siteMenuId, d])), [drafts]);
+  /** Kalemin boş fiyatlarına önerilen panel ürünleri: "Ice Latte · M" */
+  const coveringOf = (g: SiteGap) =>
+    suggestions
+      .filter((sg) => sg.siteMenuId === g.item.id && g.slots.includes(sg.slot))
+      .flatMap((c) => {
+        const p = productById.get(c.productId);
+        return p ? [`${p.name} · ${p.size}`] : [];
+      });
 
   const selected = suggestions.filter((s) => chosen.has(s.productId));
 
@@ -405,15 +428,16 @@ export function SiteMenuMatching({
               <CardHeader
                 icon={<Globe />}
                 title="Yalnız sitede olan kalemler"
-                description="Panelde bağlı ürünü olmayan site kalemleri ve fiyatları. Bağlantı ürün açmaz: panelde yoksa Ürünler › Yeni ürün ile açıp bağlayın."
+                description="Panelde bağlı ürünü olmayan site kalemleri ve fiyatları. Panelde ürünü yoksa “Panelde aç ve bağla” her fiyatı bir boy olarak sitenin adı, fiyatı ve menü durumuyla açar ve bağlar; reçetesini sonra girin. Panelde başka adla varsa “Panelde bağlı değil” sekmesinden bağlayın."
               />
               {gaps.length ? (
                 <ul className="divide-y divide-line border-t border-line">
                   {gaps.map((g) => {
-                    const covering = suggestions.filter((sg) => sg.siteMenuId === g.item.id && g.slots.includes(sg.slot));
+                    const covering = coveringOf(g);
                     return (
-                      <li key={g.item.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
-                        <span className="min-w-0 flex-1">
+                      <li key={g.item.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5 text-sm">
+                        {/* Telefonda ad kendi satırında; fiyatlar ve düğme altında */}
+                        <span className="min-w-0 flex-1 max-sm:basis-full">
                           <span className="font-medium text-ink">{g.item.name}</span>
                           <span className="block text-xs text-ink-mute">
                             {g.item.categoryLabel} · {g.item.id}
@@ -423,11 +447,19 @@ export function SiteMenuMatching({
                           {g.slots.map((sl) => `${capSlot(sl, g.item)} ${money(slotPriceMinor(g.item, sl) ?? 0)}`).join(" · ")}
                         </span>
                         {!g.item.isActive ? <Badge tone="amber">Tükendi</Badge> : null}
-                        {covering.length ? (
-                          <span className="w-full text-xs text-info">
-                            Öneride: {covering.map((c) => `${productById.get(c.productId)?.name ?? c.productId} ${productById.get(c.productId)?.size ?? ""}`).join(", ")}
-                          </span>
+                        {draftOf.get(g.item.id)?.rows.length ? (
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            className="max-sm:ml-auto"
+                            onClick={() => setOpenFor(g.item.id)}
+                            disabled={!configured}
+                            title={configured ? "Ürünü sitenin adı ve fiyatıyla panelde açar ve bu kaleme bağlar" : "Site bağlantısı kurulmamış"}
+                          >
+                            <Plus size={13} aria-hidden="true" /> Panelde aç ve bağla
+                          </Button>
                         ) : null}
+                        {covering.length ? <span className="w-full text-xs text-info">Öneride: {covering.join(", ")}</span> : null}
                       </li>
                     );
                   })}
@@ -439,6 +471,18 @@ export function SiteMenuMatching({
           ) : null}
         </div>
       </div>
+
+      {openFor && itemById.get(openFor) && draftOf.get(openFor) ? (
+        <SiteNewProductDialog
+          item={itemById.get(openFor)!}
+          draft={draftOf.get(openFor)!}
+          categories={categories}
+          products={products}
+          pendingNew={pendingNew}
+          covering={coveringOf(gaps.find((g) => g.item.id === openFor) ?? { item: itemById.get(openFor)!, slots: [] })}
+          onClose={() => setOpenFor(null)}
+        />
+      ) : null}
 
       {dialogFor ? (
         <SiteLinkDialog

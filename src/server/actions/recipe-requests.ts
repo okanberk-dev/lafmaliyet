@@ -12,9 +12,12 @@ import {
   diffRecipe,
   EMPTY_SNAPSHOT,
   genitive,
+  inactiveIngredientsIssue,
+  negativeQtyIssue,
   NEW_PRODUCT_NAME_MAX,
   NEW_PRODUCT_NAME_MIN,
   newProductIssue,
+  pairedName,
   productSizeLabel,
   PROPOSED_PRICE_MAX,
   sameRecipe,
@@ -26,6 +29,7 @@ import { CountItemExists, countItemSchema, createCountItem } from "@/server/data
 import { loadSettings } from "@/server/data/dataset";
 import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { insertProduct } from "@/server/data/product-create";
+import { approvedNewPairs, lockNewProducts } from "@/server/data/recipe-requests";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { getDb, schema as s } from "@/server/db";
 
@@ -226,6 +230,9 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
             throw new UserError(`${line.name}: formül hatası (${line.qtyExpr}): ${(e as Error).message}`);
           }
         }
+        // Formül bugünkü ayarlarla eksiye düşebilir (ayar öneriden sonra değişti; denetim E-55)
+        const negative = negativeQtyIssue(line, qty);
+        if (negative) throw new UserError(negative);
         return { ...line, qty };
       });
       // Onaylanan reçeteye pasif malzeme yazıldıysa (ürün aktifse) o malzeme sayım listesine bu aydan girer
@@ -259,10 +266,6 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
 // ---------------------------------------------------------------- Yeni ürün önerisi
 
 const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
-
-/** İki kişi aynı ad + boyu aynı anda öneremesin / onaylanırken araya öneri girmesin (boş productId benzersiz dizine girmez) */
-const lockNewProducts = (tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0]) =>
-  tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
 
 /**
  * Personelin önerdiği satış fiyatı (KDV dahil, boy başına, isteğe bağlı): kuruşa yuvarlanır, 0'dan büyük ve en çok
@@ -410,6 +413,10 @@ const approveNewSchema = z.object({
  * yeniden denetlenir, ürün Ürünler › Yeni ürün ile aynı kuralla açılır (insertProduct: kategoriden zayi oranı, sıra en
  * sonda, aktif) ve reçetesi yazılır; öneri ürüne bağlanır. Formüller bugünkü ayarlarla yeniden hesaplanır. Ürün
  * laffogato.net menüsüne bağlanmaz (Ürünler › Site menüsü).
+ *
+ * Denetim E-55: önerinin öteki boyu daha önce eklendiyse ad onunkidir (pairedName; başka ad reddedilir, yazım farkı
+ * onun adına döner); öneriden sonra pasife alınan malzeme ve bugünkü ayarlarla eksiye düşen formül reddedilir. Dönen
+ * `name` yazılan addır.
  */
 export async function approveNewProduct(input: z.input<typeof approveNewSchema>) {
   return attempt(async () => {
@@ -428,13 +435,21 @@ export async function approveNewProduct(input: z.input<typeof approveNewSchema>)
       const size = req.proposed.size;
       const [category] = await tx.select({ id: s.categories.id }).from(s.categories).where(eq(s.categories.id, data.categoryId)).limit(1);
       if (!category) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+      // Önerinin öteki boyu (aynı kişi, aynı önerilen ad) daha önce eklendiyse bu boy da onun adını alır: M/L çifti
+      // tek ürün olarak eşleşsin (denetim E-55). Kilit altında okunur: iki boyun onayı aynı anda koşamaz
+      const pair = (await approvedNewPairs(tx, [{ id: req.id, requestedBy: req.requestedBy, requestedByName: req.requestedByName, name: req.proposed.name, size }])).get(req.id) ?? null;
+      const paired = pairedName(data.name, size, pair);
+      if (paired.error !== null) throw new UserError(paired.error);
+      const name = paired.name;
       const sameSize = await tx.select({ name: s.products.name }).from(s.products).where(eq(s.products.size, size));
-      if (sameSize.some((p) => nameKey(p.name) === nameKey(data.name)))
-        throw new UserError(`“${productSizeLabel(data.name, size)}” zaten var; adı değiştirin ya da öneriyi reddedin`);
+      if (sameSize.some((p) => nameKey(p.name) === nameKey(name))) throw new UserError(`“${productSizeLabel(name, size)}” zaten var; adı değiştirin ya da öneriyi reddedin`);
       const ids = [...new Set(req.after.items.map((i) => i.ingredientId))];
-      const found = ids.length ? await tx.select({ id: s.ingredients.id }).from(s.ingredients).where(inArray(s.ingredients.id, ids)) : [];
+      const found = ids.length ? await tx.select({ id: s.ingredients.id, active: s.ingredients.active }).from(s.ingredients).where(inArray(s.ingredients.id, ids)) : [];
       const missing = req.after.items.filter((i) => !found.some((f) => f.id === i.ingredientId));
       if (missing.length) throw new UserError(`${missing.map((m) => m.name).join(", ")} artık hammaddelerde yok; öneriyi reddedin`);
+      // Öneriden sonra pasife alınan malzeme yeni reçeteye yazılmaz (öneri penceresi de seçtirmez)
+      const inactive = inactiveIngredientsIssue(req.after.items.filter((i) => found.some((f) => f.id === i.ingredientId && !f.active)).map((i) => i.name));
+      if (inactive) throw new UserError(inactive);
       const items = req.after.items.map((line) => {
         let qty = line.qty;
         if (line.qtyExpr) {
@@ -444,20 +459,23 @@ export async function approveNewProduct(input: z.input<typeof approveNewSchema>)
             throw new UserError(`${line.name}: formül hatası (${line.qtyExpr}): ${(e as Error).message}`);
           }
         }
+        // Formül bugünkü ayarlarla eksiye düşebilir (ayar öneriden sonra değişti)
+        const negative = negativeQtyIssue(line, qty);
+        if (negative) throw new UserError(negative);
         return { ingredientId: line.ingredientId, qty, qtyExpr: line.qtyExpr, note: line.note };
       });
-      const created = await insertProduct(tx, { name: data.name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note, changedBy: me.name });
+      const created = await insertProduct(tx, { name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note, changedBy: me.name });
       const now = new Date();
       await tx
         .update(s.recipeChangeRequests)
         .set({ productId: created.id, status: "approved", reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: now, updatedAt: now })
         .where(eq(s.recipeChangeRequests.id, req.id));
-      return { productId: created.id, size, who: req.requestedByName, proposedPrice: req.proposed.price ?? null };
+      return { productId: created.id, name, size, who: req.requestedByName, proposedPrice: req.proposed.price ?? null };
     });
     // Personelin önerdiği fiyat değiştirildiyse o da yazılır: "Çilekli Matcha M · 190 ₺ (önerilen 185 ₺) · Ayşe'nin önerisi"
     const proposed = outcome.proposedPrice !== null && Math.abs(outcome.proposedPrice - data.price) >= 0.005 ? ` (önerilen ${money(outcome.proposedPrice)})` : "";
-    await logActivity(me, "Yeni ürün (öneriden)", `${data.name} ${outcome.size} · ${money(data.price)}${proposed} · ${genitive(outcome.who)} önerisi`);
+    await logActivity(me, "Yeni ürün (öneriden)", `${outcome.name} ${outcome.size} · ${money(data.price)}${proposed} · ${genitive(outcome.who)} önerisi`);
     refresh();
-    return { productId: outcome.productId };
+    return { productId: outcome.productId, name: outcome.name };
   });
 }

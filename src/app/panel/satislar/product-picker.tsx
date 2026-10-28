@@ -124,10 +124,10 @@ export function ProductPicker({
           {!list.length ? (
             <li className="px-3 py-4 text-sm text-ink-mute">
               Sonuç yok. Ürün yoksa önce{" "}
-              <Link href="/panel/urunler" className="font-medium text-ink underline underline-offset-2">
-                Ürünler
+              <Link href="/panel/urunler?yeni=1" className="font-medium text-ink underline underline-offset-2">
+                Ürünler › Yeni ürün
               </Link>{" "}
-              sayfasından ekleyin.
+              ile ekleyin.
             </li>
           ) : null}
         </ul>
