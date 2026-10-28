@@ -255,3 +255,48 @@ export function genitive(name: string): string {
   const v = "aı".includes(last) ? "ı" : "ei".includes(last) ? "i" : "ou".includes(last) ? "u" : "ü";
   return `${n}'${vowels.includes(lower.at(-1) ?? "") ? "n" : ""}${v}n`;
 }
+
+// ---------------------------------------------------------------- Yeni ürün önerisinin onayı (denetim E-55)
+
+/**
+ * Yeni ürün önerisinin grubu: aynı kişinin aynı adla (önerdiği ad, nameKey) başka boylarda önerdikleri aynı ürünün
+ * boylarıdır ("Cilekli latte" M ve L). Kişinin hesabı silindiyse (requestedBy boş) adıyla. Yönetici bir boyu başka
+ * adla onaylarsa öteki boy da o adı alır: M/L çifti POS eşleşmesinde, site bağında, reçete defterinde ve analizde
+ * aynı adı ister. Grup önerilen adla kurulur (onaydaki adla değil): onaydan sonra da aynı kalır.
+ */
+export function proposalGroupKey(r: { requestedBy: number | null; requestedByName: string; name: string }): string {
+  return `${r.requestedBy !== null ? `u${r.requestedBy}` : `ad:${nameKey(r.requestedByName)}`}|${nameKey(r.name)}`;
+}
+
+/**
+ * Onaylanan boyun adı. Önerinin öteki boyu daha önce eklendiyse (`pair`: o ürünün bugünkü adı ve boyu) ad onunkidir:
+ * yalnız büyük/küçük harf ve boşluk farkıyla yazılan ad o ada döner, başka bir ad reddedilir. Öteki boy yoksa yazılan ad.
+ */
+export function pairedName(typed: string, size: ProductSize, pair: { name: string; size: string } | null): { name: string; error: null } | { name: null; error: string } {
+  const name = cleanName(typed);
+  if (!pair || nameKey(pair.name) === nameKey(name)) return { name: pair ? pair.name : name, error: null };
+  const pairSize = SIZE_LABELS[pair.size as ProductSize] ?? pair.size;
+  return {
+    name: null,
+    error: `Bu önerinin ${pairSize} boyu “${pair.name}” adıyla eklendi; ${SIZE_LABELS[size]} boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)`,
+  };
+}
+
+/**
+ * Formülü bugünkü ayarlarla negatif (ya da sayı olmayan) çıkan satır onaylanmaz: reçeteye eksi miktar yazılırsa
+ * maliyet ve stok tüketimi ters işler. Personel önerirken denetlenir; ayar sonradan değişmiş olabilir.
+ */
+export function negativeQtyIssue(line: Pick<SnapshotLine, "name" | "qtyExpr" | "unit">, qty: number): string | null {
+  if (Number.isFinite(qty) && qty >= 0) return null;
+  const expr = line.qtyExpr ? line.qtyExpr.replace(/^=/, "").trim() : "";
+  const fix = "öneri onaylanamaz. Ayarlar'daki ölçüyü düzeltin ya da öneriyi reddedin";
+  if (!Number.isFinite(qty)) return `${line.name}: miktar bugünkü ayarlarla hesaplanamıyor${expr ? ` (${expr})` : ""}; ${fix}`;
+  const value = `${num(qty, 3)} ${line.unit}`.trim();
+  return `${line.name}: miktar bugünkü ayarlarla negatif çıkıyor (${expr ? `${expr} = ${value}` : value}); ${fix}`;
+}
+
+/** Arada pasife alınan malzeme: yeni ürünün reçetesine yazılmaz (öneri penceresi de pasif malzemeyi seçtirmez) */
+export function inactiveIngredientsIssue(names: readonly string[]): string | null {
+  if (!names.length) return null;
+  return `${[...new Set(names)].join(", ")} pasif; öneri onaylanamaz. Malzemeyi Hammaddeler › Pasif'ten yeniden açın ya da öneriyi reddedin`;
+}

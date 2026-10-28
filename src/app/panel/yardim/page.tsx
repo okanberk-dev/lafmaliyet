@@ -264,8 +264,11 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             ekle&apos;nin kuralıyla, sayım listesine de girer; paket fiyatı yazıldıysa Tahmini). Değişiklik önerisinde de tahmini fiyatlı malzeme onay kartında
             &quot;Tahmini fiyatlı&quot; diye yazar. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada
             malzemelerin maliyetini satır satır görün (tahmini fiyatlı malzeme işaretli); satış fiyatı personelin önerisiyle dolu gelir, değiştirebilirsiniz, kâr marjı
-            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
-            kategoriden); reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz.
+            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. Aynı önerinin boyları (M ve L) adı ve kategoriyi birlikte değiştirir; bir boyu onayladıysanız
+            öteki boy o adla eklenir (iki boy tek ürün olarak eşleşsin). &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
+            kategoriden). Öneriden sonra pasife alınan malzeme ya da bugünkü ölçülerle eksiye düşen formül varsa kart söyler ve onay olmaz: malzemeyi yeniden açın,
+            ölçüyü düzeltin ya da reddedin. Reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden
+            bağlanmaz: Site menüsü&apos;nde aynı adlı kalem öneri olarak çıkar.
           </>
         ),
         icon: Lightbulb,

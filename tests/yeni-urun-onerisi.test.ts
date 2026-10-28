@@ -12,9 +12,13 @@ import { test } from "node:test";
 import {
   genitive,
   groupNewProposals,
+  inactiveIngredientsIssue,
+  negativeQtyIssue,
   newProductIssue,
+  pairedName,
   pendingSummary,
   productSizeLabel,
+  proposalGroupKey,
   PROPOSED_PRICE_MAX,
   readProposedPrice,
   takenIssue,
@@ -123,6 +127,54 @@ test("reçete defteri şeridi ve işlem geçmişindeki tamlayan eki", () => {
   assert.equal(genitive("IRMAK"), "IRMAK'ın");
 });
 
+// ---------------------------------------------------------------- Onayda kardeş boy, pasif malzeme, eksi miktar (denetim E-55)
+
+test("önerinin grubu: aynı kişi + aynı önerilen ad (büyük/küçük harf ve boşluk farkı gözetmeden); hesabı silinmişse adıyla", () => {
+  const m = proposalGroupKey({ requestedBy: 7, requestedByName: "Ayşe", name: "Cilekli latte" });
+  assert.equal(proposalGroupKey({ requestedBy: 7, requestedByName: "Ayşe K.", name: "CİLEKLİ  LATTE " }), m);
+  // Başka kişinin aynı adlı önerisi ayrı grup (iki ayrı öneri; onaylanınca ikincisi "zaten var"a takılır)
+  assert.notEqual(proposalGroupKey({ requestedBy: 8, requestedByName: "Ayşe", name: "Cilekli latte" }), m);
+  assert.notEqual(proposalGroupKey({ requestedBy: 7, requestedByName: "Ayşe", name: "Cilekli soda" }), m);
+  // Hesabı silinen kişinin önerileri adıyla gruplanır; hesabı olanınkiyle karışmaz
+  const gone = proposalGroupKey({ requestedBy: null, requestedByName: "Ayşe", name: "Cilekli latte" });
+  assert.equal(proposalGroupKey({ requestedBy: null, requestedByName: "AYŞE", name: "cilekli latte" }), gone);
+  assert.notEqual(gone, m);
+});
+
+test("onaylanan boyun adı: öteki boy eklendiyse onun adı (yazım farkı ona döner), başka ad reddedilir; yoksa yazılan ad", () => {
+  assert.deepEqual(pairedName("  Çilekli   Latte ", "L", null), { name: "Çilekli Latte", error: null });
+  const pair = { name: "Çilekli Latte", size: "M" };
+  assert.deepEqual(pairedName("ÇİLEKLİ LATTE", "L", pair), { name: "Çilekli Latte", error: null });
+  assert.deepEqual(pairedName("Cilekli latte", "L", pair), {
+    name: null,
+    error: "Bu önerinin Medium boyu “Çilekli Latte” adıyla eklendi; Large boyunu da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)",
+  });
+  assert.equal(pairedName("Çilekli Latte", "Tek", { name: "Çilekli Latte", size: "L" }).error, null);
+});
+
+test("eksi miktar: formül bugünkü ayarlarla eksiye düşerse ya da sayı çıkmazsa onay yok; 0 ve artı serbest", () => {
+  const line = { name: "Çilek püresi", qtyExpr: "PurePompa - 40", unit: "ml" };
+  assert.equal(negativeQtyIssue(line, 0), null);
+  assert.equal(negativeQtyIssue(line, 30), null);
+  assert.equal(
+    negativeQtyIssue(line, -10),
+    "Çilek püresi: miktar bugünkü ayarlarla negatif çıkıyor (PurePompa - 40 = -10 ml); öneri onaylanamaz. Ayarlar'daki ölçüyü düzeltin ya da öneriyi reddedin",
+  );
+  assert.equal(
+    negativeQtyIssue({ ...line, qtyExpr: "=PurePompa - 40" }, Number.NaN),
+    "Çilek püresi: miktar bugünkü ayarlarla hesaplanamıyor (PurePompa - 40); öneri onaylanamaz. Ayarlar'daki ölçüyü düzeltin ya da öneriyi reddedin",
+  );
+  assert.match(negativeQtyIssue({ name: "Süt", qtyExpr: null, unit: "ml" }, -2.5)!, /^Süt: miktar bugünkü ayarlarla negatif çıkıyor \(-2,5 ml\); /);
+});
+
+test("pasif malzeme: adlar bir kez sayılır; pasif yoksa engel yok", () => {
+  assert.equal(inactiveIngredientsIssue([]), null);
+  assert.equal(
+    inactiveIngredientsIssue(["Çilek püresi", "Vanilya şurubu", "Çilek püresi"]),
+    "Çilek püresi, Vanilya şurubu pasif; öneri onaylanamaz. Malzemeyi Hammaddeler › Pasif'ten yeniden açın ya da öneriyi reddedin",
+  );
+});
+
 // ---------------------------------------------------------------- Sunucu kuralları (kaynaktan)
 
 const actions = read("src/server/actions/recipe-requests.ts");
@@ -158,7 +210,7 @@ test("ürün açma kuralı tek yerde: Yeni ürün ve öneri onayı aynı yardım
   // Ürün tablosuna yazan başka ekleme yok (kopya kod kalmadı)
   assert.doesNotMatch(products, /\.insert\(s\.products\)/);
   assert.doesNotMatch(actions, /\.insert\(s\.products\)/);
-  assert.match(body("approveNewProduct"), /insertProduct\(tx, \{ name: data\.name, size, categoryId: data\.categoryId, price: data\.price \}, \{ items, note: req\.after\.note, changedBy: me\.name \}\)/);
+  assert.match(body("approveNewProduct"), /insertProduct\(tx, \{ name, size, categoryId: data\.categoryId, price: data\.price \}, \{ items, note: req\.after\.note, changedBy: me\.name \}\)/);
 });
 
 test("öneri ve onay: kilit, durum ve aynı ad + boy yeniden denetlenir; formüller sunucuda; red ürünü açmaz", () => {
@@ -172,7 +224,7 @@ test("öneri ve onay: kilit, durum ve aynı ad + boy yeniden denetlenir; formül
   assert.match(approve, /await lockNewProducts\(tx\);/);
   assert.match(approve, /\.for\("update"\)/);
   assert.match(approve, /if \(req\.status !== "pending"\)/);
-  assert.match(approve, /nameKey\(p\.name\) === nameKey\(data\.name\)/);
+  assert.match(approve, /nameKey\(p\.name\) === nameKey\(name\)/);
   assert.match(approve, /\.set\(\{ productId: created\.id, status: "approved",/);
   // Fiyatsız onay yok: fiyatı 0 bir ürün kârlılığı ve uyarıları bozardı
   assert.match(actions, /price: zMoney\.positive\("Satış fiyatını yazın"\)/);
@@ -181,6 +233,35 @@ test("öneri ve onay: kilit, durum ve aynı ad + boy yeniden denetlenir; formül
   assert.match(review, /if \(req\.kind === "new"\) \{/);
   assert.match(review, /if \(data\.decision !== "reject" \|\| !req\.proposed\) throw new UserError/);
   assert.ok(review.indexOf('req.kind === "new"') < review.indexOf("tx.select({ id: s.products.id"), "ürün okunmadan önce ayrılır");
+});
+
+test("onay (denetim E-55): kardeş boy kilit altında aranır, adı ondan; pasif malzeme ve eksi miktar reddedilir", () => {
+  const approve = body("approveNewProduct");
+  // Kardeş boy, yeni ürün kilidi ve önerinin satır kilidi alındıktan sonra okunur: iki boyun onayı yarışamaz
+  const lock = approve.indexOf("await lockNewProducts(tx);");
+  const pair = approve.indexOf("approvedNewPairs(tx, [");
+  assert.ok(lock >= 0 && pair > lock && pair > approve.indexOf('.for("update")'), "kardeş boy kilitten sonra");
+  assert.match(approve, /const paired = pairedName\(data\.name, size, pair\);\s+if \(paired\.error !== null\) throw new UserError\(paired\.error\);/);
+  // Aynı ad + boy denetimi ve ürünün adı onaylanan addan (yazılandan değil)
+  assert.ok(approve.indexOf("const name = paired.name;") < approve.indexOf("nameKey(p.name) === nameKey(name)"));
+  assert.match(approve, /select\(\{ id: s\.ingredients\.id, active: s\.ingredients\.active \}\)/);
+  assert.match(approve, /inactiveIngredientsIssue\(req\.after\.items\.filter\(\(i\) => found\.some\(\(f\) => f\.id === i\.ingredientId && !f\.active\)\)/);
+  assert.match(approve, /const negative = negativeQtyIssue\(line, qty\);\s+if \(negative\) throw new UserError\(negative\);/);
+  assert.ok(approve.indexOf("negativeQtyIssue(") < approve.indexOf("insertProduct("), "ürün açılmadan önce");
+  assert.match(approve, /return \{ productId: outcome\.productId, name: outcome\.name \};/);
+  // Değişiklik önerisinin onayı da eksi miktarı reddeder
+  assert.match(body("reviewRecipeChange"), /const negative = negativeQtyIssue\(line, qty\);\s+if \(negative\) throw new UserError\(negative\);/);
+  // Onaylar sayfası: kardeş boy ve satır sorunları kartta; Onayla düğmesi engelde kapalı, ad kardeşten salt okunur
+  const page = read("src/app/panel/onaylar/page.tsx");
+  assert.match(page, /const pairs = await approvedNewPairs\(/);
+  assert.match(page, /inactive: !!ing && !ing\.active,/);
+  assert.match(page, /qtyIssue: negativeQtyIssue\(l, qty\),/);
+  const list = read("src/app/panel/onaylar/review-list.tsx");
+  assert.match(list, /const blocked = missing\.length > 0 \|\| inactive !== null \|\| qtyIssues\.length > 0;/);
+  assert.match(list, /disabled=\{busy \|\| blocked\}/);
+  assert.match(list, /readOnly=\{!!item\.pair\}/);
+  // Bekleyen boyların adı ve kategorisi tek taslakta (önerinin grubuna göre)
+  assert.match(list, /setDrafts\(\(cur\) => \(\{ \.\.\.cur, \[item\.group\]: \{ \.\.\.draftOf\(item\), \.\.\.patch \} \}\)\)/);
 });
 
 test("satış fiyatı öneride saklanır (eski önerilerde yok), onayda alan onunla dolu gelir; tahmini malzeme işaretli", () => {
@@ -208,7 +289,8 @@ test("satış fiyatı öneride saklanır (eski önerilerde yok), onayda alan onu
 test("productId boş olabilir: okuyan her yer yeni ürün önerisini karşılar", () => {
   const data = read("src/server/data/recipe-requests.ts");
   assert.match(data, /\.leftJoin\(s\.products, eq\(s\.products\.id, s\.recipeChangeRequests\.productId\)\)/);
-  assert.doesNotMatch(data, /innerJoin/);
+  // Kuyruk ve liste okuyucuları iç birleşim kullanmaz; yalnız onaylanmış kardeş boyu arayan approvedNewPairs ürünü olanı ister
+  assert.doesNotMatch(data.slice(0, data.indexOf("export async function approvedNewPairs")), /innerJoin/);
   assert.match(data, /productName: currentName \?\? r\.proposed\?\.name/);
   assert.match(data, /eq\(s\.recipeChangeRequests\.kind, "change"\), isNotNull\(s\.recipeChangeRequests\.productId\)/);
   const bell = read("src/server/actions/notifications.ts");
