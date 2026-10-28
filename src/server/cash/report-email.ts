@@ -3,18 +3,18 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { cashEmailKey } from "@/lib/cash-report";
+import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
 import { renderCashReport } from "@/server/notify/cash-report-template";
+import { sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { UserError } from "@/server/user-error";
-
-import { cashEmailRecipients } from "./report-store";
 
 /*
  * Kasa raporunun e-postası (docs/KASA-RAPORU.md › Gönderince): rapor her kaydedildiğinde (gönderim, düzeltme,
@@ -22,6 +22,14 @@ import { cashEmailRecipients } from "./report-store";
  */
 
 export type CashEmailOutcome = { status: "sent" | "failed" | "off"; error: string | null; to: number };
+
+/**
+ * Kayıtlı adreslerin hepsi personel ya da pasif hesabın: yöneticinin gördüğü neden (personel sabit metni görür). Formda
+ * "E-posta gitmedi: " ile başlar (emailFailedLine); burada yinelenmez
+ */
+export function allDroppedText(dropped: readonly DroppedRecipient[]): string {
+  return `${allDroppedSentence("Alıcıların", dropped)} Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.`;
+}
 
 /**
  * Raporu alıcılara e-postalar. `site`: laffogato.net'in o günkü online satış satırı (önceden başlatılmış istek; yoksa
@@ -37,11 +45,16 @@ export async function emailReport(
   const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).limit(1);
   if (!row) throw new UserError("Rapor bulunamadı");
   const settings = await loadCashSettings();
-  // Personel hesabına ait adres (ayar kaydedildikten sonra personel olan) gönderim anında düşer; kalmazsa e-posta kapalı
-  const recipients = settings.emailEnabled ? await cashEmailRecipients(getDb(), settings.recipients) : [];
+  // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra personele indirilen, pasif yapılan) gönderim
+  // anında düşer (E-53). Düşen adres yöneticinin zilinde ve Rapor alıcıları kartında görünür; hepsi düştüyse e-posta
+  // gitmedi sayılır (kapalı değil): yönetici nedenini formda görür, personel sabit metni (staff-errors.ts)
+  const { to: recipients, dropped } = settings.emailEnabled ? await sendableRecipients(getDb(), settings.recipients) : { to: [], dropped: [] };
+  if (dropped.length) console.warn(`[kasa e-postası] ${dropped.length} alıcı atlandı (personel ya da pasif hesap)`);
   let outcome: CashEmailOutcome;
-  if (!settings.emailEnabled || !recipients.length) {
+  if (!settings.emailEnabled || !settings.recipients.length) {
     outcome = { status: "off", error: null, to: 0 };
+  } else if (!recipients.length) {
+    outcome = { status: "failed", error: allDroppedText(dropped), to: 0 };
   } else if (!isEmailConfigured()) {
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
   } else {

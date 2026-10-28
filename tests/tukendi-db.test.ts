@@ -832,4 +832,26 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.equal((await productRow(prod.cake)).showOnMenu, true);
     assert.equal((await record()).items[ids.cake], undefined);
   });
+
+  test("iki projenin anahtarı farklı (HTTP 401): personel sabit metni görür, anahtar adı ve imza yok; yönetici ayrıntıyı (E-64)", async () => {
+    process.env.KARAOKE_SYNC_SECRET = "tukendi-test-baska-anahtar-gercek-degil-9876543210";
+    try {
+      // Tükendi: okuma (canlı kalem) 401; Satışa aç da aynı okumadan geçer
+      for (const soldOut of [true, false]) {
+        await assert.rejects(set(users.ayse, ids.brownie, soldOut), (e: unknown) => {
+          assert.ok(e instanceof UserError);
+          assert.equal(e.message, `Site bağlantısında sorun var; ${soldOut ? "ürün tükendi yapılmadı" : "ürün satışa açılmadı"}. Yöneticiye haber verin.`);
+          assert.doesNotMatch(e.message, /KARAOKE_SYNC_SECRET|imza|İmza/);
+          return true;
+        });
+        await forgetToggles();
+      }
+      await refused(set(users.ali, ids.brownie, true), /KARAOKE_SYNC_SECRET/);
+    } finally {
+      process.env.KARAOKE_SYNC_SECRET = SECRET;
+    }
+    assert.equal(posts.length, 0, "siteye yazım gitmedi");
+    assert.equal((await productRow(prod.brownie)).showOnMenu, true);
+    assert.equal((await record()).items[ids.brownie], undefined);
+  });
 });

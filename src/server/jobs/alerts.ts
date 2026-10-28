@@ -2,13 +2,15 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 
 import { emailProblems, jobHealth, systemAlerts, trClock, type EmailProblem, type JobHealth, type JobKey, type JobRunLite, type SystemAlert } from "@/lib/job-health";
+import { droppedLogSuffix } from "@/lib/notify-recipients";
 import { logActivity } from "@/server/actions/log";
 import { readLastBackup } from "@/server/backup/state";
 import { getDb, schema as s } from "@/server/db";
 import { renderSystemAlert } from "@/server/notify/digest-template";
+import { activeDigestEmails, sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 
@@ -82,11 +84,12 @@ export async function sendWatchdogAlert(now = new Date()): Promise<"sent" | "non
   const settings = await loadNotifySettings();
   if (!settings.emailEnabled || !isEmailConfigured()) return "none";
   const db = getDb();
-  const [items, recipients] = await Promise.all([loadEmailProblems("watchdog", { now }), db.select().from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true))]);
-  if (!items.length || !recipients.length) return "none";
+  // Personel hesabının ya da pasif hesabın adresi düşer (E-53; sabah e-postasıyla aynı alıcılar, aynı kural)
+  const [items, recipients] = await Promise.all([loadEmailProblems("watchdog", { now }), activeDigestEmails(db).then((emails) => sendableRecipients(db, emails))]);
+  const to = recipients.to;
+  if (!items.length || !to.length) return "none";
   const today = trClock(now).day;
   const { subject, html, text } = renderSystemAlert(items, today);
-  const to = recipients.map((r) => r.email);
   const keys = items.map((i) => i.key);
   const res = await sendEmail({
     from: resolveFrom(settings.from),
@@ -107,6 +110,6 @@ export async function sendWatchdogAlert(now = new Date()): Promise<"sent" | "non
     .insert(s.notificationLog)
     .values(keys.map((key) => ({ key, subject, recipients: to.join(", "), ok: true })))
     .onConflictDoNothing();
-  await logActivity(null, "Sistem uyarısı e-postası", `${subject} → ${to.length} adres`);
+  await logActivity(null, "Sistem uyarısı e-postası", `${subject} → ${to.length} adres${droppedLogSuffix(recipients.dropped)}`);
   return "sent";
 }

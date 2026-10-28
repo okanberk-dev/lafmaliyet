@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -29,6 +29,7 @@ import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
+import { sendableRecipients } from "@/server/notify/recipients";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
@@ -440,26 +441,14 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
 }
 
 /**
- * Kasa e-postasının alıcılarından personel hesaplarına ait olanlar (küçük harfle): kasa e-postasında karaoke ön ödemesi
- * var, personel tutarları görmez (updateCashSettings reddeder)
- */
-export async function staffEmailsIn(db: DB | CashTx, emails: readonly string[]): Promise<string[]> {
-  if (!emails.length) return [];
-  const rows = await db
-    .select({ email: s.users.email })
-    .from(s.users)
-    .where(and(eq(s.users.role, "staff"), inArray(sql`lower(${s.users.email})`, emails.map((e) => e.toLocaleLowerCase("en")))));
-  return rows.map((r) => r.email.toLocaleLowerCase("en"));
-}
-
-/**
- * Kasa e-postasının gönderim anındaki alıcıları: kayıtlı adreslerden personel hesaplarına ait olanlar düşer (ayarlar
- * kaydedildikten sonra personele indirilen ya da personel hesabı açılan adres: kasa e-postasında karaoke ön ödemesi
- * var). Kural ayarı kaydederken de denetlenir (updateCashSettings); gönderim ona güvenmez. Sıra korunur.
+ * Kasa e-postasının gönderim anındaki alıcıları: kayıtlı adreslerden personel hesabının ya da pasif hesabın adresi düşer
+ * (ayarlar kaydedildikten sonra personele indirilen, pasif yapılan ya da personel hesabı açılan adres: kasa e-postasında
+ * karaoke ön ödemesi var). Hesabı olmayan adres (muhasebeci) kalır. Kural ayarı kaydederken de denetlenir
+ * (updateCashSettings); gönderim ona güvenmez. Sıra korunur. Düşenler `dropped`ta (yönetici zilde ve ayarda görür;
+ * src/lib/notify-recipients.ts).
  */
 export async function cashEmailRecipients(db: DB | CashTx, emails: readonly string[]): Promise<string[]> {
-  const staff = new Set(await staffEmailsIn(db, emails));
-  return emails.filter((e) => !staff.has(e.toLocaleLowerCase("en")));
+  return (await sendableRecipients(db, emails)).to;
 }
 
 /**

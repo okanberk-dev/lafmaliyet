@@ -3,6 +3,7 @@ import { after, connection, type NextRequest } from "next/server";
 import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
+import { siteErrorFor } from "@/lib/staff-errors";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
@@ -56,9 +57,10 @@ export async function GET(request: NextRequest) {
     karaoke: {
       configured: linked,
       sessions,
-      // Son çekme düştüyse ekran uyarır (ping kaçmış olabilir; rezervasyonlar sitenin panelinde de kontrol edilsin)
+      // Son çekme düştüyse ekran uyarır (ping kaçmış olabilir; rezervasyonlar sitenin panelinde de kontrol edilsin).
+      // Hatanın ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personele sabit metin (E-64)
       okAt: linked ? karaoke.sync.lastOkAt : null,
-      error: linked ? karaoke.sync.lastError : null,
+      error: linked ? siteErrorFor(me.role, karaoke.sync.lastError) : null,
     },
     orders: {
       configured: linked,
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
       at: snapshot.at,
       pulledAt: ordersState.lastPullAt,
       okAt: ordersState.lastOkAt,
-      error: ordersState.lastError,
+      error: siteErrorFor(me.role, ordersState.lastError),
       pingAt: ordersState.lastPingAt,
       changeAt: ordersState.lastChangeAt,
     },

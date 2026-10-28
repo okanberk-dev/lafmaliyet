@@ -477,9 +477,19 @@ değiştirmek doğrudan kaydedilir.
   susmaz.
 - **İşlem geçmişi:** "Kasa düzeltmesi önerildi", "Kasa raporunun silinmesi istendi", "… geri çekildi"; "Kasa
   düzeltmesi onaylandı / reddedildi", "Kasa raporu silindi … · Mehmet istedi".
-- **Kasa e-postasının alıcıları** arasına personel hesabının adresi yazılamaz: e-postada karaoke ön ödemesi var. Kural
-  gönderim anında da uygulanır (`cashEmailRecipients`): ayarlar kaydedildikten sonra personele indirilen ya da personel
-  hesabı açılan adres raporu ve deneme e-postasını almaz; adres kalmazsa e-posta kapalı sayılır.
+- **Kasa e-postasının alıcıları** arasına personel hesabının ya da pasif hesabın adresi yazılamaz: e-postada karaoke ön
+  ödemesi var. Kural gönderim anında da uygulanır (`cashEmailRecipients`, ortak süzgeç `src/server/notify/recipients.ts`):
+  ayarlar kaydedildikten sonra personele indirilen, pasif yapılan ya da personel hesabı açılan adres raporu ve deneme
+  e-postasını almaz. Düşen adres yöneticinin zilinde ve Rapor alıcıları kartında yazar; hepsi düşerse e-posta "gitmedi"
+  sayılır (kapalı değil) ve yönetici nedenini formda görür ("E-posta gitmedi: Alıcıların hepsi personel ya da pasif
+  hesaba ait: …"). Personel giriş e-postasını bir alıcının adresine çeviremez, kendi adresi listedeyken de değiştiremez
+  (eski adres hesapsız kalıp e-postayı yeniden alırdı); yönetici böyle bir hesabın adresini değiştirince ya da hesabı
+  silince uyarı görür ([BILDIRIMLER.md](BILDIRIMLER.md) › Alıcılar ve hesaplar). Kartın notu nedeni kişiye göre yazar:
+  personel adresinde karaoke ön ödemesi, pasif hesapta "pasif hesaba e-posta gitmez".
+- **Personel e-postanın neden gitmediğini görmez** (denetim E-64): Resend anahtarı ya da alıcı listesi yöneticinin
+  işidir. Gönderimde, "Yeniden dene"de ve kayıtlı raporun satırında personel "E-posta gitmedi; yöneticiye haber verin.
+  Raporu WhatsApp ile gönderebilirsiniz." görür (`src/lib/staff-errors.ts`; personelin DTO'sunda da bu metin);
+  yönetici ayrıntıyı.
 
 Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
 kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),

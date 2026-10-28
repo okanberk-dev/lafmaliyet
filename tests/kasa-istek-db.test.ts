@@ -304,9 +304,11 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
   test("kasa e-postasına personel adresi yazılamaz ve gönderimde düşer (büyük-küçük harf fark etmez); yöneticinin adresi yazılır", async () => {
     const staff = `kasa-istek-ayse-${tag}@ornek.com`;
     const admin = `kasa-istek-ali-${tag}@ornek.com`;
-    assert.deepEqual(await store.staffEmailsIn(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [staff]);
-    assert.deepEqual(await store.staffEmailsIn(db, [admin]), []);
-    assert.deepEqual(await store.staffEmailsIn(db, []), []);
+    // Ortak süzgeç (src/server/notify/recipients.ts; E-53): personel hesabının adresi, büyük-küçük harf fark etmez
+    const recipients = await import("../src/server/notify/recipients");
+    assert.deepEqual(await recipients.blockedAccountEmails(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [staff]);
+    assert.deepEqual(await recipients.blockedAccountEmails(db, [admin]), []);
+    assert.deepEqual(await recipients.blockedAccountEmails(db, []), []);
     // Gönderim anında: ayar kaydedildikten sonra personel olan adres düşer, ötekiler sırasıyla kalır
     assert.deepEqual(await store.cashEmailRecipients(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [admin, "dis@ornek.com"]);
     assert.deepEqual(await store.cashEmailRecipients(db, [staff]), []);

@@ -1,3 +1,6 @@
+import type { Role } from "@/lib/constants";
+import { staffSiteText } from "@/lib/staff-errors";
+
 import { STAGE_LABEL } from "./feed";
 import type { OrderFulfillment, OrderStage, SiteOrder } from "./schema";
 
@@ -106,8 +109,29 @@ const FIELD_LABEL: Record<string, string> = {
 /** Ağ hatasından sonra yeniden denemek güvenli: `from` aynı dokunuşun iki kez uygulanmasını önler */
 const RETRY = "tekrar deneyin (sipariş iki kez ilerlemez)";
 
-/** İşlem olmayınca bar ekranında gösterilen metin */
-export function stageFailureMessage(failure: StageFailure): string {
+/** Personelin sipariş aşamasında gördüğü kurulum hatası: anahtar adı, imza ve sitenin sürümü yalnız yöneticiye (E-64) */
+export const STAGE_STAFF_ERROR = staffSiteText("sipariş ilerletilmedi");
+
+/**
+ * Hata bağlantının kurulumundan mı (anahtar yok ya da tutmuyor, site güncel değil, panel ile site uyumsuz): personel
+ * bunu düzeltemez, yöneticiye haber verir. Ağ, zaman aşımı, "sipariş bu arada değişti" (409), "sipariş artık ekranda
+ * değil" (JSON'lu 404) ve sitenin veritabanının kısa kesintisi (503 `unavailable`) değil: onlar yeniden denenir.
+ */
+export function isStageSetupFailure(failure: StageFailure): boolean {
+  if (failure.kind === "off") return true;
+  if (failure.kind !== "http") return false;
+  if (failure.status === 409) return false;
+  if (failure.status === 404) return !failure.error;
+  if (failure.status === 503) return failure.error !== "unavailable";
+  return true;
+}
+
+/**
+ * İşlem olmayınca bar ekranında gösterilen metin. Personel (`role` "staff") kurulum hatasında sabit metni görür
+ * (STAGE_STAFF_ERROR); yönetici ayrıntıyı.
+ */
+export function stageFailureMessage(failure: StageFailure, role: Role = "admin"): string {
+  if (role !== "admin" && isStageSetupFailure(failure)) return STAGE_STAFF_ERROR;
   if (failure.kind === "off") return STAGE_OFF_ERROR;
   if (failure.kind === "timeout") return `Site 8 saniyede yanıt vermedi; ${RETRY}.`;
   if (failure.kind === "network") return `Siteye ulaşılamadı; ${RETRY}.`;
