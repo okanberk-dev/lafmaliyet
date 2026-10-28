@@ -12,6 +12,7 @@ import {
   breakEvenNeedGroups,
   breakEvenNeeds,
   profitGroups,
+  scenarioBreakEvenItems,
   scenarioFixedItems,
   targetDaily,
   targetGroups,
@@ -30,6 +31,7 @@ const month = model.salesMonths.at(-1)!;
 const acikGun = model.settings.acikGun;
 const base = scenarioBase(model, month);
 const fixedItems = scenarioFixedItems(model, month);
+const breakEvenItems = scenarioBreakEvenItems(model, month);
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const groupsSum = (gs: BreakdownGroup[]) => sum(gs.flatMap((g) => g.rows.map((r) => r.amount)));
@@ -58,13 +60,18 @@ test("Excel verisinde senaryonun çıkış noktası dolu", () => {
 });
 
 test("Sabit gider kalemleri senaryonun sabit giderini tutar; personel ve kalemler bağlantılı", () => {
+  // Net kâr kartı: bu ayın tutarları (Genel bakış'taki net kârla aynı taban, E-12)
   close(sum(fixedItems.map((r) => r.amount)), base.fixed, 0.5);
-  close(sum(fixedItems.map((r) => r.amount)), model.fixedStandardTotalFor(month), 0.5);
   assert.equal(fixedItems[0].key, "personel");
   assert.equal(fixedItems[0].href, "/panel/personel");
-  close(fixedItems[0].amount, model.personnelFor(month).total);
-  assert.ok(fixedItems.slice(1).every((r) => r.href === "/panel/giderler" || r.key === "fixed:other"));
   assert.ok(!fixedItems.some((r) => r.key === "fixed:other"), "Excel verisinde fark kalmaz");
+  // Başabaş kartı: standart ay + her ay girilen harcamalar (breakEvenOf, E-59)
+  close(sum(breakEvenItems.map((r) => r.amount)), base.breakEvenFixed, 0.5);
+  close(base.breakEvenFixed, model.breakEvenFixedFor(month), 1e-6);
+  assert.equal(breakEvenItems[0].key, "personel");
+  close(breakEvenItems[0].amount, model.personnelFor(month).total);
+  assert.ok(breakEvenItems.slice(1).every((r) => r.href === "/panel/giderler" || r.key === "fixed:other"));
+  assert.ok(!breakEvenItems.some((r) => r.key === "fixed:other"), "Excel verisinde fark kalmaz");
 });
 
 test("Net kâr / zarar: döküm kartın rakamını tutar, şu an ve kaydırıcılarla", () => {
@@ -109,11 +116,11 @@ test("Başabaş günlük ciro: girdiler ve ara sonuç kartın rakamını verir",
     const o = sides(input);
     const gs = breakEvenGroups({ ...o, acikGun });
     assert.ok(o.s.breakEvenDaily !== null);
-    assert.equal(row(gs, "fixed").display, tl(o.s.fixed));
+    assert.equal(row(gs, "fixed").display, tl(o.s.breakEvenFixed));
     assert.equal(row(gs, "ratio").display, pct(o.s.grossRatio, 1));
     const monthly = row(gs, "monthly");
     close(monthly.amount / acikGun, o.s.breakEvenDaily);
-    assert.equal(monthly.display, tl(o.s.fixed / o.s.grossRatio));
+    assert.equal(monthly.display, tl(o.s.toCover / o.s.grossRatio));
     assert.equal(row(gs, "days").display, `${acikGun} gün`);
     // Bilgi satırları pencerede kalır (tutarı 0 olsa da), toplam satırı yazılı değerle
     assert.equal(prepareBreakdown(gs, { order: "given" }).groups[0].rows.length, 4);
@@ -137,10 +144,12 @@ test("Hedef kâr için günlük ciro: kartın eski formülüyle aynı; döküm g
   ] as const) {
     const o = sides(input);
     const daily = targetDaily(o.s, target, acikGun);
-    const old = o.s.grossRatio > 0 ? (o.s.fixed + target) / o.s.grossRatio / acikGun : null;
-    assert.equal(daily, old);
+    // Başabaşla aynı taban: (standart sabit gider + aylık harcamalar − online brüt kâr + hedef)
+    const expected = o.s.grossRatio > 0 ? (o.s.toCover + target) / o.s.grossRatio / acikGun : null;
+    assert.equal(daily, expected);
+    if (target === 0) assert.equal(daily, o.s.breakEvenDaily);
     const gs = targetGroups({ ...o, acikGun, target, targetValid: true });
-    close(row(gs, "need").amount, o.s.fixed + target);
+    close(row(gs, "need").amount, o.s.toCover + target);
     close(row(gs, "monthly").amount / acikGun, daily!);
     assert.equal(row(gs, "target").display, tl(target));
     assert.equal(row(gs, "target").tone, undefined);
@@ -174,7 +183,18 @@ test("Zarar etmemek için: kartın eski formülüyle aynı zam ve satış artı�
 });
 
 test("Zarar etmemek için: gelir yoksa iki yol da hesaplanamaz", () => {
-  const empty: ScenarioBase = { revenue: 0, net: 0, discountsNet: 0, material: 0, commission: 0, fixed: 10_000 };
+  const empty: ScenarioBase = {
+    revenue: 0,
+    net: 0,
+    discountsNet: 0,
+    material: 0,
+    commission: 0,
+    fixed: 10_000,
+    online: 0,
+    breakEvenFixed: 10_000,
+    onlineCover: 0,
+    listPeriod: null,
+  };
   const n = breakEvenNeeds(empty);
   assert.equal(n.price, null);
   assert.equal(n.volume, null);

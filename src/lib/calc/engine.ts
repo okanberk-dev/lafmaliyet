@@ -545,6 +545,19 @@ export interface PnlRowDef {
   strong?: boolean;
 }
 
+/** Her ay girilen bir harcama kategorisinin bir ayın başabaşına ve tahminine giren tutarı (model.monthlyExpensePlan) */
+export interface MonthlyExpensePlan {
+  cat: ExpenseCategory;
+  /** Girilen harcamalar + bağlı fatura kategorisindeki faturalar (Aylık harcamalar'daki satırın tutarı) */
+  amount: number;
+  /** Bunun girilen harcamalardan gelen kısmı (ödenen tutar) */
+  entries: number;
+  /** entered: ayın kendi girişi; carried: önceki bir ayın (geçen ay ya da süren ay) tutarı taşındı */
+  source: "entered" | "carried";
+  /** Tutarın alındığı ay */
+  from: string;
+}
+
 export interface PnlMonthCalc {
   month: string;
   info: Month | undefined;
@@ -1608,6 +1621,57 @@ export function createModel(ds: Dataset) {
     });
   }
 
+  /**
+   * Her ay girilen harcamaların (Aylık harcamalar'da "her ay girilir", mal dışı kategori: reklam, influencer…) bir ayın
+   * hesabına giren tutarı (denetim E-13). Sabit gider "aylık girişe çevrilince" başabaştan, ay sonu tahmininden ve
+   * nakit planından düşmesin diye bunlar Excel temeline (fixedStandardTotalFor) ek olarak sayılır:
+   * - biten ay: o ayın girilen tutarı;
+   * - süren ve gelecek ay: geçen aydan o aya kadarki ayların en büyüğü (süren ay girildiyse ve daha büyükse o; değilse
+   *   geçen ayın gerçekleşeni taşınır). Pasif kategori yalnız kendi ayının tutarıyla.
+   * Sahibe soru 7 (geçen ayın gerçekleşeni mi, son 3 ay ortalaması mı) cevaplanana kadar geçerli kural.
+   * `entries`: tutarın girilen harcamalardan gelen kısmı (nakit planı yalnız bunu yayar; bağlı faturalar Ödemeler'de)
+   */
+  function monthlyExpensePlan(month: string): MonthlyExpensePlan[] {
+    const cats = expenseCats.filter((c) => c.monthly && c.section !== "mal");
+    if (!cats.length) return [];
+    const amountsOf = (m: string) => new Map(expenseAmounts(m).map((x) => [x.cat.id, x]));
+    const own = amountsOf(month);
+    const out: MonthlyExpensePlan[] = [];
+    const window: string[] = [];
+    if (month >= currentMonth) for (let m = shiftMonth(currentMonth, -1); m <= month; m = shiftMonth(m, 1)) window.push(m);
+    const byMonth = new Map(window.map((m) => [m, m === month ? own : amountsOf(m)]));
+    for (const cat of cats) {
+      const mine = own.get(cat.id);
+      let best = { from: month, total: mine?.total ?? 0, entries: mine?.entries ?? 0 };
+      if (cat.active && month >= currentMonth) {
+        for (const m of window) {
+          const x = byMonth.get(m)?.get(cat.id);
+          // Eşitlikte ayın kendisi (girilen tutar), sonra en yakın ay
+          if (x && x.total > best.total + 0.005) best = { from: m, total: x.total, entries: x.entries };
+        }
+      }
+      if (!(best.total > 0.005)) continue;
+      out.push({ cat, amount: best.total, entries: best.entries, source: best.from === month ? "entered" : "carried", from: best.from });
+    }
+    return out;
+  }
+
+  const closedByMonth = new Map<string, string[]>();
+  for (const d of ds.closedDays ?? []) {
+    const m = d.slice(0, 7);
+    closedByMonth.set(m, [...(closedByMonth.get(m) ?? []), d]);
+  }
+  /** Ayın kafe kapalı işaretli günleri (raporsuz; ileri tarihliler dahil): ay sonu öngörüsü bunları açık saymaz (E-41) */
+  const closedDaysOf = (month: string): string[] => closedByMonth.get(month) ?? [];
+
+  /**
+   * Başabaşın ve ay sonu tahmininin sabit gideri: standart aylık sabit gider (Excel temeli, personel dahil) + her ay
+   * girilen harcamalar (monthlyExpensePlan). Genel bakış, Sabit giderler, Analiz ve Ayarlar aynı toplamı kullanır
+   */
+  function breakEvenFixedFor(month: string): number {
+    return fixedStandardTotalFor(month) + sum(monthlyExpensePlan(month).map((x) => x.amount));
+  }
+
   // --- Genel Maliyet (aylık gelir-gider) --------------------------------------
   function closingStock(month: string): { value: number; computed: number; overridden: boolean } {
     const computed = stockSheet(month).total;
@@ -2063,5 +2127,10 @@ export function createModel(ds: Dataset) {
     expenseCategories: expenseCats,
     expenseAmounts,
     expenseExpected,
+    /** Her ay girilen harcamaların bir ayın başabaşına ve tahminine giren tutarı (E-13) */
+    monthlyExpensePlan,
+    /** Başabaşın sabit gideri: standart aylık sabit gider + her ay girilen harcamalar */
+    breakEvenFixedFor,
+    closedDaysOf,
   };
 }

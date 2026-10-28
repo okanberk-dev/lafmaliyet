@@ -247,6 +247,8 @@ export function FixedSummary({
   personnelCount,
   breakEvenDaily,
   breakEvenRef,
+  breakEvenOnline = null,
+  monthlyExpenses = [],
   next,
 }: {
   total: number;
@@ -258,6 +260,10 @@ export function FixedSummary({
   breakEvenDaily: number | null;
   /** Başabaş hesabında kullanılan satış ayı, ör. "Eylül 2026" */
   breakEvenRef: string | null;
+  /** Başabaşta sabit giderden düşülen laffogato.net online brüt kârı (Genel bakış'taki gibi); yoksa null */
+  breakEvenOnline?: { month: string; amount: number } | null;
+  /** Başabaşa sabit giderle birlikte giren, her ay girilen harcamalar (Aylık harcamalar; denetim E-13) */
+  monthlyExpenses?: { name: string; amount: number; from: string }[];
   /** Gelecek ay toplam değişiyorsa (planlı zam, biten kalem): o ayın toplamı */
   next: { month: string; total: number } | null;
 }) {
@@ -275,6 +281,22 @@ export function FixedSummary({
             <CountUp value={total} />
           </p>
           <p className="mt-1 text-[13px] text-ink-mute">{acikGun} açık gün varsayımıyla · KDV hariç</p>
+          {monthlyExpenses.length ? (
+            <p className="mt-1.5 max-w-xl text-[13px] text-pretty text-ink-soft">
+              Başabaşa ayrıca her ay girilen harcamalar girer:{" "}
+              {monthlyExpenses.map((x, i) => (
+                <span key={x.name}>
+                  {i ? ", " : null}
+                  {x.name} <span className="font-medium whitespace-nowrap text-ink tabular">{tl(x.amount)}</span>
+                </span>
+              ))}{" "}
+              (
+              <Link href={`/panel/harcamalar?ay=${monthlyExpenses[0].from}`} className="underline underline-offset-2 hover:text-ink">
+                Aylık harcamalar
+              </Link>
+              ).
+            </p>
+          ) : null}
           {next ? (
             <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-soft">
               <CalendarClock size={14} className="shrink-0 text-ink-mute" aria-hidden="true" />
@@ -297,10 +319,14 @@ export function FixedSummary({
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[13px] text-ink-mute">
                 Başabaş için günlük ciro
-                <InfoTip text="Bu giderleri karşılamak için günde ortalama gereken ciro (KDV dahil)." />
+                <InfoTip text="Bu giderleri karşılamak için günde ortalama gereken ciro (KDV dahil). Genel bakış ve Analiz'deki başabaşla aynı hesap: sabit giderler ve her ay girilen harcamalar, varsa laffogato.net online satışın brüt kârı düşülerek." />
               </p>
               <p className="text-lg font-semibold text-ink tabular">{tl(breakEvenDaily)}</p>
-              <p className="text-xs leading-5 text-ink-mute">KDV dahil{breakEvenRef ? ` · ${breakEvenRef} brüt kâr oranıyla` : null}</p>
+              <p className="text-xs leading-5 text-ink-mute">
+                KDV dahil{breakEvenRef ? ` · ${breakEvenRef} brüt kâr oranıyla` : null}
+                {monthlyExpenses.length ? " · aylık harcamalar dahil" : null}
+                {breakEvenOnline ? ` · ${breakEvenOnline.month} online brüt kârı (${tl(breakEvenOnline.amount)}) düşüldü` : null}
+              </p>
             </div>
           </Well>
         ) : null}

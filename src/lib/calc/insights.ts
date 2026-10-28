@@ -8,7 +8,7 @@ import {
 } from "../constants";
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
-import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
+import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
@@ -541,6 +541,68 @@ export function onlineCoverFor(model: Model, refMonth: string | null): { month: 
   return null;
 }
 
+/** Başabaş günlük ciro ve girdileri: Genel bakış, Sabit giderler, Analiz, Ayarlar ve Claude aynı rakamı söyler */
+export interface BreakEven {
+  month: string;
+  /** Brüt kâr oranının ayı (referenceSalesMonth); satış yoksa null */
+  refMonth: string | null;
+  /** 1 ₺ (KDV dahil) cirodan kalan brüt kâr (Excel: EylulBrutKar / EylulCiro) */
+  grossRatio: number;
+  /** Standart aylık sabit gider (Excel SabitGiderToplam, personel dahil) */
+  standard: number;
+  /** Her ay girilen harcamalar (Aylık harcamalar; model.monthlyExpensePlan) */
+  expenses: MonthlyExpensePlan[];
+  expensesTotal: number;
+  /** standard + expensesTotal */
+  fixed: number;
+  /** Sabit giderden düşülen online brüt kâr (onlineCoverFor); yoksa null */
+  onlineCover: { month: string; grossProfit: number } | null;
+  /** Kasanın karşılaması gereken: max(0, fixed − online brüt kâr) */
+  toCover: number;
+  /** Başabaş aylık ciro (KDV dahil); brüt kâr oranı sıfır ya da eksiyse null */
+  monthly: number | null;
+  /** Başabaş günlük ciro (KDV dahil): aylık ÷ Ayarlar'daki ayda açık gün */
+  daily: number | null;
+  acikGun: number;
+}
+
+/**
+ * Başabaş günlük ciro, tek kuraldan (denetim E-59): (standart aylık sabit gider + her ay girilen harcamalar − son
+ * kapanmış online ayın brüt kârı) ÷ referans satış ayının brüt kâr oranı ÷ ayda açık gün.
+ */
+export function breakEvenOf(model: Model, month: string): BreakEven {
+  const refMonth = referenceSalesMonth(model, month);
+  const ref = refMonth ? model.monthSales(refMonth) : null;
+  const grossRatio = ref ? safeDiv(ref.grossProfit, ref.revenue) : 0;
+  const standard = model.fixedStandardTotalFor(month);
+  const expenses = model.monthlyExpensePlan(month);
+  const expensesTotal = sum(expenses.map((x) => x.amount));
+  const fixed = standard + expensesTotal;
+  const onlineCover = onlineCoverFor(model, refMonth);
+  const toCover = Math.max(0, fixed - (onlineCover?.grossProfit ?? 0));
+  const monthly = grossRatio > 0 ? toCover / grossRatio : null;
+  const acikGun = model.settings.acikGun;
+  return {
+    month,
+    refMonth,
+    grossRatio,
+    standard,
+    expenses,
+    expensesTotal,
+    fixed,
+    onlineCover,
+    toCover,
+    monthly,
+    daily: monthly === null ? null : monthly / acikGun,
+    acikGun,
+  };
+}
+
+/** "Ekim 2026 girişi" / "Eylül 2026 tutarı taşındı (bu ay girilen daha az)": başabaş ve tahmin dökümlerinin alt satırı */
+export function expensePlanSub(x: Pick<MonthlyExpensePlan, "source" | "from">): string {
+  return x.source === "entered" ? `${monthLabel(x.from)} girişi` : `${monthLabel(x.from)} tutarı taşındı (bu ay girilen daha az)`;
+}
+
 /**
  * Genel bakış (Excel Panel) verileri.
  * Ay sonu tahmini yalnızca devam eden ay için yapılır (bkz. resolveCurrentMonth). Sunucuda loadModel()
@@ -621,13 +683,10 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
     hasRevenue: pm.revenue !== null,
   };
 
-  const refMonth = referenceSalesMonth(model, month);
-  const ref = refMonth ? model.monthSales(refMonth) : null;
-  /** 1 ₺ (KDV dahil) cirodan kalan brüt kâr (Excel: EylulBrutKar / EylulCiro) */
-  const grossRatio = ref ? safeDiv(ref.grossProfit, ref.revenue) : 0;
-  // Online satışın brüt kârı sabit giderin bir kısmını karşılar: kasanın (POS) karşılaması gereken kalanı
-  const onlineCover = onlineCoverFor(model, refMonth);
-  const breakEvenDaily = grossRatio > 0 ? Math.max(0, fixedStandardTotal - (onlineCover?.grossProfit ?? 0)) / grossRatio / st.acikGun : null;
+  // Başabaş tek kuraldan (breakEvenOf, E-59): standart sabit gider + her ay girilen harcamalar (E-13) − online brüt kâr
+  const breakEven = breakEvenOf(model, month);
+  const { refMonth, grossRatio, onlineCover } = breakEven;
+  const breakEvenDaily = breakEven.daily;
   const grossRevenue = hasSales ? sales.revenue : (info?.posRevenue ?? 0);
   /**
    * Excel B17: satış listesi varsa liste toplamı (indirim öncesi) ÷ açık gün, yoksa POS cirosu ÷ açık gün. Liste kasa
@@ -645,17 +704,25 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const partial = monthState === "running" && forecastMonthOf(model, { currentMonth: currentMonth! }) === month;
   const forecast = partial
     ? (() => {
-        const projectedRevenue = ((info!.posRevenue as number) / openDays) * dim;
+        // Kafe kapalı işaretli günler (geçmiş ve ileri tarihli) açık sayılmaz (E-41): ay sonuna ayın açık günüyle
+        const closedDays = model.closedDaysOf(month).length;
+        const monthDays = Math.max(openDays, dim - closedDays);
+        const projectedRevenue = ((info!.posRevenue as number) / openDays) * monthDays;
         // Online satışın bugüne kadarki brüt kârı aynı tempoyla (çekilmediyse yok)
         const onlineSoFar = model.onlineMonth(month)?.grossProfit ?? null;
-        const projectedOnline = onlineSoFar === null ? null : (onlineSoFar / openDays) * dim;
+        const projectedOnline = onlineSoFar === null ? null : (onlineSoFar / openDays) * monthDays;
         return {
           daysElapsed: openDays,
           dim,
+          /** Ayın kapalı işaretli günleri (ay sonu öngörüsüne açık gün olarak girmez) */
+          closedDays,
+          /** Öngörünün gün sayısı: ayın günü − kapalı işaretli günler (geçen günden az olmaz) */
+          monthDays,
           projectedRevenue,
-          /** Online satışın ay sonu brüt kârı (bugüne kadarki ÷ geçen gün × ayın günü); çekilmediyse null */
+          /** Online satışın ay sonu brüt kârı (bugüne kadarki ÷ geçen gün × ayın açık günü); çekilmediyse null */
           projectedOnline,
-          projectedProfit: projectedRevenue * grossRatio + (projectedOnline ?? 0) - fixedStandardTotal,
+          /** Ay sonu kârı: öngörülen ciro × brüt kâr oranı + online − başabaşın sabit gideri (standart + aylık harcamalar) */
+          projectedProfit: projectedRevenue * grossRatio + (projectedOnline ?? 0) - breakEven.fixed,
           refMonth,
         };
       })()
@@ -672,9 +739,11 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const bestSellers = [...withProfit].sort((a, b) => b.qty - a.qty).slice(0, 5);
   const weakest = [...ranked].sort((a, b) => a.p.margin - b.p.margin).slice(0, 5);
 
+  // Başabaşın sabit gideriyle aynı kalemler: personel, sabit giderler ve her ay girilen harcamalar (toplam breakEven.fixed)
   const topExpenses = [
     { name: "Personel (maaş + SGK)", amount: model.personnelFor(month).total },
     ...model.fixedInMonth(month).map((f) => ({ name: f.name, amount: fixedMonthly(f, st) })),
+    ...breakEven.expenses.map((x) => ({ name: `${x.cat.name} (Aylık harcamalar)`, amount: x.amount })),
   ]
     .filter((e) => e.amount > 0)
     .sort((a, b) => b.amount - a.amount);
@@ -719,6 +788,8 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
     categoryMonthIsOther: categoryMonth !== null && categoryMonth !== month,
     topExpenses,
     fixedStandardTotal,
+    /** Başabaşın ve ay sonu tahmininin girdileri (standart sabit gider + her ay girilen harcamalar, online örtü) */
+    breakEven,
   };
 }
 
@@ -1357,26 +1428,48 @@ export interface ScenarioInput {
 }
 
 export interface ScenarioBase {
+  /** Satış listesi (ModPOS / LafPOS) cirosu, KDV dahil */
   revenue: number;
   net: number;
   discountsNet: number;
   material: number;
   commission: number;
+  /**
+   * Bu ayın sabit gideri, Genel bakış'taki net kârla aynı (fixedCostsForMonth: Gelir-gider tutarları, bu aya özel
+   * giderler ve aylık harcamalar; liste kasa raporlarından kısaysa o döneme düşen payı)
+   */
   fixed: number;
+  /** laffogato.net online brüt kârı (liste döneminin payı; çekilmediyse 0). Kaydırıcılar değiştirmez */
+  online: number;
+  /** Başabaşın sabit gideri (breakEvenOf): standart aylık sabit gider + her ay girilen harcamalar, tam ay */
+  breakEvenFixed: number;
+  /** Başabaşta düşülen online brüt kâr (son kapanmış online ay); yoksa 0 */
+  onlineCover: number;
+  /** Satış listesi kasa raporlarından kısaysa listenin dönemi ("1–15 Kasım"); yoksa null */
+  listPeriod: string | null;
 }
 
-/** Senaryonun çıkış noktası: seçilen ayın satış karması + aylık sabit giderler */
+/**
+ * Senaryonun çıkış noktası: seçilen ayın satış karması, Genel bakış'ın aynı ay için kullandığı taban (denetim E-12).
+ * "Şu an"ın kârı Genel bakış'taki reçeteye göre net kârla aynıdır: yarım ayın satış listesi tam ayın sabit gideriyle
+ * karşılaştırılmaz (liste döneminin payı), indirim listenin döneminden, online brüt kâr ayrı satır. Başabaş
+ * Genel bakış'takiyle aynı kuraldan (breakEvenOf).
+ */
 export function scenarioBase(model: Model, month: string): ScenarioBase {
-  const st = model.settings;
+  const d = dashboard(model, month);
+  const t = d.theoretical;
   const sales = model.monthSales(month);
-  const info = model.monthInfo.get(month);
   return {
     revenue: sales.revenue,
     net: sales.net,
-    discountsNet: (info?.discounts ?? 0) / (1 + st.kdv),
+    discountsNet: t?.discountsNet ?? 0,
     material: sales.cost,
     commission: sales.commission,
-    fixed: model.fixedStandardTotalFor(month),
+    fixed: t?.fixedTotal ?? d.fixedMonth.total,
+    online: t?.online?.grossProfit ?? 0,
+    breakEvenFixed: d.breakEven.fixed,
+    onlineCover: d.breakEven.onlineCover?.grossProfit ?? 0,
+    listPeriod: t?.listPeriod ? listDaysText(t.listPeriod) : null,
   };
 }
 
@@ -1386,23 +1479,28 @@ export function applyScenario(base: ScenarioBase, input: ScenarioInput, acikGun:
   const v = 1 + input.volumeChangePct;
   const c = 1 + input.costChangePct;
   const sc: ScenarioBase = {
+    ...base,
     revenue: base.revenue * p * v,
     net: base.net * p * v,
     discountsNet: base.discountsNet * p * v,
     material: base.material * c * v,
     commission: base.commission * p * v,
     fixed: base.fixed + input.extraFixed,
+    breakEvenFixed: base.breakEvenFixed + input.extraFixed,
   };
   const finish = (x: ScenarioBase) => {
     const gross = x.net - x.material - x.commission;
-    const profit = gross - x.discountsNet - x.fixed;
+    const profit = gross - x.discountsNet - x.fixed + x.online;
     const grossRatio = safeDiv(gross, x.revenue);
+    /** Kasanın karşılaması gereken sabit gider: max(0, başabaşın sabit gideri − online brüt kâr) (breakEvenOf) */
+    const toCover = Math.max(0, x.breakEvenFixed - x.onlineCover);
     return {
       ...x,
       gross,
       profit,
       grossRatio,
-      breakEvenDaily: grossRatio > 0 ? x.fixed / grossRatio / acikGun : null,
+      toCover,
+      breakEvenDaily: grossRatio > 0 ? toCover / grossRatio / acikGun : null,
       materialRatio: safeDiv(x.material, x.net),
     };
   };
@@ -1413,12 +1511,12 @@ export function scenario(model: Model, month: string, input: ScenarioInput) {
   return applyScenario(scenarioBase(model, month), input, model.settings.acikGun);
 }
 
-/** Hedef aylık kâr için gereken günlük ciro (KDV dahil) */
+/**
+ * Hedef aylık kâr için gereken günlük ciro (KDV dahil); hedef 0 iken Genel bakış'ın başabaşı (breakEvenOf: standart
+ * sabit gider + her ay girilen harcamalar − online brüt kâr)
+ */
 export function requiredDailyRevenue(model: Model, month: string, targetProfit: number): number | null {
-  const ref = referenceSalesMonth(model, month);
-  if (!ref) return null;
-  const s = model.monthSales(ref);
-  const ratio = safeDiv(s.grossProfit, s.revenue);
-  if (ratio <= 0) return null;
-  return (model.fixedStandardTotalFor(month) + targetProfit) / ratio / model.settings.acikGun;
+  const be = breakEvenOf(model, month);
+  if (!be.refMonth || be.grossRatio <= 0) return null;
+  return (be.toCover + targetProfit) / be.grossRatio / be.acikGun;
 }

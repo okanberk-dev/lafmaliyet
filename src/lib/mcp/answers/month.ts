@@ -175,14 +175,22 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   const f = d.forecast;
   const tahmin = f ? { aySonuCiroKdvDahil: r2(f.projectedRevenue), aySonuKar: r2(f.projectedProfit), dayanakAy: f.refMonth } : null;
   if (f && info?.posRevenue) {
-    hesap.push(`Ay sonu tahmini = ${tl(info.posRevenue)} ÷ ${num(f.daysElapsed)} gün × ${num(f.dim)} gün = ${tl(f.projectedRevenue)} ciro (KDV dahil)`);
     hesap.push(
-      `Ay sonu kârı ≈ ${tl(f.projectedRevenue)} × ${pct(d.grossRatio)} brüt kâr oranı${f.refMonth ? ` (${monthLabel(f.refMonth)})` : ""} − ${tl(d.fixedStandardTotal)} standart aylık sabit gider = ${tl(f.projectedProfit)}`,
+      `Ay sonu tahmini = ${tl(info.posRevenue)} ÷ ${num(f.daysElapsed)} gün × ${num(f.monthDays)} gün${f.closedDays ? ` (${num(f.dim)} günden ${num(f.closedDays)} kapalı işaretli gün düşüldü)` : ""} = ${tl(f.projectedRevenue)} ciro (KDV dahil)`,
+    );
+    hesap.push(
+      `Ay sonu kârı ≈ ${tl(f.projectedRevenue)} × ${pct(d.grossRatio)} brüt kâr oranı${f.refMonth ? ` (${monthLabel(f.refMonth)})` : ""}${
+        f.projectedOnline !== null ? ` + ${tl(f.projectedOnline)} laffogato.net online brüt kârı` : ""
+      } − ${tl(d.fixedStandardTotal)} standart aylık sabit gider${d.breakEven.expensesTotal ? ` − ${tl(d.breakEven.expensesTotal)} her ay girilen harcamalar` : ""} = ${tl(f.projectedProfit)}`,
     );
   }
   if (d.breakEvenDaily !== null) {
+    const be = d.breakEven;
+    const parts = [`${tl(be.standard)} standart aylık sabit gider`];
+    if (be.expensesTotal) parts.push(`+ ${tl(be.expensesTotal)} her ay girilen harcamalar`);
+    if (be.onlineCover) parts.push(`− ${tl(be.onlineCover.grossProfit)} laffogato.net online brüt kârı (${monthLabel(be.onlineCover.month)})`);
     hesap.push(
-      `Başabaş günlük ciro = ${tl(d.fixedStandardTotal)} standart aylık sabit gider ÷ ${pct(d.grossRatio)} brüt kâr oranı ÷ ayda ${num(st.acikGun)} açık gün = ${tl(d.breakEvenDaily)} (KDV dahil)`,
+      `Başabaş günlük ciro = ${parts.length > 1 ? `(${parts.join(" ")})` : parts[0]} ÷ ${pct(d.grossRatio)} brüt kâr oranı ÷ ayda ${num(st.acikGun)} açık gün = ${tl(d.breakEvenDaily)} (KDV dahil)`,
     );
   }
 
