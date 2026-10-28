@@ -4,7 +4,7 @@ import { ArrowUpRight, CalendarRange, MessageSquareText, RotateCcw, TriangleAler
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -151,6 +151,7 @@ function EditableCell({
   computedLabel = "Hesaplanan",
   info,
   warn,
+  source,
 }: {
   value: number | null;
   computed: number | null;
@@ -178,6 +179,11 @@ function EditableCell({
   info?: string;
   /** Bu ayda dikkat edilecek durum: hücrede uyarı işareti, ipucunun başında */
   warn?: string;
+  /**
+   * Hücrenin solundaki kaynak bağlantısı (SourceLink). Yalnız gösterimde: düzenlerken kutu hücrenin bütün genişliğini
+   * alır (dokunmatikte rakamın başı kesilmesin)
+   */
+  source?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
@@ -325,56 +331,65 @@ function EditableCell({
       : computed !== null && kind === "auto" && computedLabel !== "Hesaplanan"
         ? `${computedLabel}. Değer girmek için tıklayın ya da rakam yazın`
         : "Değer girmek için tıklayın ya da rakam yazın";
+  // Uyarı ve bu ayın açıklaması dokunmatikte de okunur: hücrenin solunda dokununca açılan ipucu (title yalnız farede).
+  // Düğmenin içinde değil (düğmede düğme olmaz), üstüne konumlu; düğmeye dokunmak yine düzenlemeyi açar
+  const tip = [warn ? `Dikkat: ${warn}` : null, info ?? null].filter(Boolean).join(" ");
   return (
-    <button
-      type="button"
-      data-pnl-col={col}
-      ref={(el) => {
-        if (!el || !refocus.current) return;
-        const where = refocus.current;
-        refocus.current = null;
-        if (where === "next") {
-          // Aynı aydaki bir sonraki girilebilir hücre (sayfadaki sırayla); yoksa bu hücrede kalır
-          const list = [...document.querySelectorAll<HTMLButtonElement>(`button[data-pnl-col="${col}"]`)];
-          const next = list[list.indexOf(el) + 1];
-          (next ?? el).focus();
-          next?.scrollIntoView({ block: "nearest", inline: "nearest" });
-        } else el.focus();
-      }}
-      onClick={() => begin()}
-      onKeyDown={(e) => {
-        if (noteKeys(e, valueText())) return;
-        // Excel gibi: hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
-        if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
-          e.preventDefault();
-          begin(e.key);
-        }
-      }}
-      title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, note ? help : `${help}${onNote ? " · Not için Shift+F2" : ""}`]
-        .filter(Boolean)
-        .join("\n\n")}
-      aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}${warn ? `. Dikkat: ${warn}` : ""}. Değiştirmek için tıklayın`}
-      className={cn(
-        "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
-        CELL_MIN,
-        "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
-        // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
-        (overridden || kind === "manual") && !negative && "cell-input",
-        overridden && kind === "auto" && "bg-info-soft font-medium hover:bg-info-soft",
-        negative && "text-bad",
-        value === null && "text-ink-quiet",
-        muted && "bg-transparent ring-0 outline-1 -outline-offset-1 outline-line-strong outline-dashed hover:bg-surface/60",
-      )}
-    >
-      {fmt(value, format)}
-      {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
-      {note ? (
-        // Excel'deki not üçgeni: sol üst köşede
-        <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
-      ) : null}
-      {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
-      {warn ? <TriangleAlert size={12} className="absolute top-1/2 left-1.5 -translate-y-1/2 text-warn" aria-hidden="true" /> : null}
-    </button>
+    <div className="flex items-center gap-0.5">
+      {source}
+      <div className="relative min-w-0 flex-1">
+        {tip ? <InfoTip text={tip} tone={warn ? "warn" : undefined} className="absolute top-1/2 left-1.5 z-10 -translate-y-1/2" /> : null}
+        <button
+          type="button"
+          data-pnl-col={col}
+          ref={(el) => {
+            if (!el || !refocus.current) return;
+            const where = refocus.current;
+            refocus.current = null;
+            if (where === "next") {
+              // Aynı aydaki bir sonraki girilebilir hücre (sayfadaki sırayla); yoksa bu hücrede kalır
+              const list = [...document.querySelectorAll<HTMLButtonElement>(`button[data-pnl-col="${col}"]`)];
+              const next = list[list.indexOf(el) + 1];
+              (next ?? el).focus();
+              next?.scrollIntoView({ block: "nearest", inline: "nearest" });
+            } else el.focus();
+          }}
+          onClick={() => begin()}
+          onKeyDown={(e) => {
+            if (noteKeys(e, valueText())) return;
+            // Excel gibi: hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
+            if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
+              e.preventDefault();
+              begin(e.key);
+            }
+          }}
+          title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, note ? help : `${help}${onNote ? " · Not için Shift+F2" : ""}`]
+            .filter(Boolean)
+            .join("\n\n")}
+          aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}${warn ? `. Dikkat: ${warn}` : ""}. Değiştirmek için tıklayın`}
+          className={cn(
+            "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
+            CELL_MIN,
+            "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
+            // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
+            (overridden || kind === "manual") && !negative && "cell-input",
+            overridden && kind === "auto" && "bg-info-soft font-medium hover:bg-info-soft",
+            negative && "text-bad",
+            value === null && "text-ink-quiet",
+            muted && "bg-transparent ring-0 outline-1 -outline-offset-1 outline-line-strong outline-dashed hover:bg-surface/60",
+            tip && "pl-6",
+          )}
+        >
+          {fmt(value, format)}
+          {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
+          {note ? (
+            // Excel'deki not üçgeni: sol üst köşede
+            <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
+          ) : null}
+          {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1172,30 +1187,26 @@ function SectionRows({
               return (
                 <td key={m} className={cn(CELL, "text-right")}>
                   {def.editable ? (
-                    <div className="flex items-center gap-0.5">
-                      {monthLink ? <SourceLink link={monthLink} label={`${def.label} · ${MONTH_NAMES[i]}`} /> : null}
-                      <div className="min-w-0 flex-1">
-                        <EditableCell
-                          value={c.value}
-                          computed={c.computed}
-                          overridden={c.overridden}
-                          kind={kasa ? "auto" : def.kind}
-                          computedLabel={kasa ? KASA_LABEL : undefined}
-                          format={def.format}
-                          label={`${def.label} · ${MONTH_NAMES[i]}`}
-                          col={m}
-                          note={c.note}
-                          outOfRange={c.outOfRange}
-                          info={c.info}
-                          warn={c.warn}
-                          onSave={async (v) => {
-                            await onSave(m, def.key, v, !!c.note, kasa);
-                          }}
-                          // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
-                          onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}
-                        />
-                      </div>
-                    </div>
+                    <EditableCell
+                      value={c.value}
+                      computed={c.computed}
+                      overridden={c.overridden}
+                      kind={kasa ? "auto" : def.kind}
+                      computedLabel={kasa ? KASA_LABEL : undefined}
+                      format={def.format}
+                      label={`${def.label} · ${MONTH_NAMES[i]}`}
+                      col={m}
+                      note={c.note}
+                      outOfRange={c.outOfRange}
+                      info={c.info}
+                      warn={c.warn}
+                      source={monthLink ? <SourceLink link={monthLink} label={`${def.label} · ${MONTH_NAMES[i]}`} /> : null}
+                      onSave={async (v) => {
+                        await onSave(m, def.key, v, !!c.note, kasa);
+                      }}
+                      // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
+                      onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}
+                    />
                   ) : monthLink ? (
                     // Girilemeyen hücre kaynağından gelir: tutara tıklayınca o ayın faturaları / harcamaları açılır
                     <Link

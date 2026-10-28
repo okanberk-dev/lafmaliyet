@@ -1,6 +1,6 @@
 "use client";
 
-import { Info } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils";
  * dokununca açılır, başka yere dokununca, kaydırınca ya da Esc ile kapanır. Balon gövdeye (portal) çizilir;
  * tabloların kaydırma kabı onu kesmez. Üstte yer yoksa alta açılır, ekran kenarından taşmaz. Açık bir modal
  * pencerenin (Dialog, telefonda alttan açılan sayfa) içindeyse balon o pencereye çizilir: üst katmandaki pencerenin
- * arkasında kalmaz.
+ * arkasında kalmaz. `tone="warn"`: simge turuncu uyarı üçgeni, ekran okuyucuya "Dikkat" (ör. Gelir-gider hücresinin uyarısı).
  */
-export function InfoTip({ text, className }: { text: ReactNode; className?: string }) {
+export function InfoTip({ text, className, tone }: { text: ReactNode; className?: string; tone?: "warn" }) {
   const ref = useRef<HTMLSpanElement>(null);
   const pointer = useRef<string>("");
   const id = useId();
@@ -54,7 +54,7 @@ export function InfoTip({ text, className }: { text: ReactNode; className?: stri
         ref={ref}
         tabIndex={0}
         role="button"
-        aria-label="Açıklama"
+        aria-label={tone === "warn" ? "Dikkat" : "Açıklama"}
         aria-expanded={open}
         aria-describedby={pos ? id : undefined}
         onPointerEnter={(e) => e.pointerType === "mouse" && show()}
@@ -83,9 +83,12 @@ export function InfoTip({ text, className }: { text: ReactNode; className?: stri
           }
         }}
         // Görünen ikon 14px; dokunma alanı görünmez bir kenarla farede 30px'e, dokunmatikte 44px'e çıkar
-        className="relative cursor-help rounded-full text-ink-quiet outline-none after:absolute after:-inset-2 after:content-[''] hover:text-ink-mute focus-visible:text-ink-mute focus-visible:ring-2 focus-visible:ring-ink/30 pointer-coarse:after:-inset-[15px]"
+        className={cn(
+          "relative cursor-help rounded-full outline-none after:absolute after:-inset-2 after:content-[''] focus-visible:ring-2 focus-visible:ring-ink/30 pointer-coarse:after:-inset-[15px]",
+          tone === "warn" ? "text-warn" : "text-ink-quiet hover:text-ink-mute focus-visible:text-ink-mute",
+        )}
       >
-        <Info size={14} />
+        {tone === "warn" ? <TriangleAlert size={14} /> : <Info size={14} />}
       </span>
       {pos
         ? createPortal(

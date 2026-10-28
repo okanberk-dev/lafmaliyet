@@ -87,6 +87,16 @@ test("rowLink tek kaynak: tablo, telefon görünümü ve Genel bakış aynı yar
   // her ikisi de değeri ve bu ayı verir (faturasız ay, gelecek ayın sayımı bağlantısız)
   assert.match(grid, /rowLink\(def\.key, m, \{ value: c\.value, current \}\)/);
   assert.match(grid, /<SourceLink link=\{monthLink\}/);
+  // Girilebilen hücrenin bağlantısı yalnız gösterimde: düzenlerken kutu hücrenin bütün genişliğini alır (dokunmatikte
+  // rakamın başı kesilmesin)
+  assert.match(grid, /source=\{monthLink \? <SourceLink link=\{monthLink\}/);
+  const editing = grid.slice(grid.indexOf("if (editing) {"), grid.indexOf("const help = muted"));
+  assert.ok(editing.length > 100 && !editing.includes("{source}"), "düzenleme kutusunun yanında bağlantı yok");
+  // Uyarı ve ayın açıklaması dokunmatikte de okunur: dokununca açılan ipucu (yalnız title değil)
+  assert.match(grid, /const tip = \[warn \? `Dikkat: \$\{warn\}` : null, info \?\? null\]/);
+  assert.match(grid, /<InfoTip text=\{tip\} tone=\{warn \? "warn" : undefined\}/);
+  // Telefonda bağlantılı satır açıklamasını (i) korur
+  assert.match(phone, /<Link\s+href=\{source\.href\}\s+className="absolute inset-0[^"]*"[\s\S]{0,200}\/>\s*\{label\}\s*\{def\.hint \? <InfoTip/);
   assert.match(grid, /rowSource\?\.scope === "row" \? <SourceLink/);
   assert.match(phone, /rowLink\(def\.key, month, \{ value: c\.value, current: currentMonth \}\)/);
   // Telefonda girilebilen satırın sayfasında kaynağa bağlantı
