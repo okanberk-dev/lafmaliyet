@@ -17,6 +17,7 @@ import {
   isLive,
   isPlayable,
   phase,
+  pushMessages,
   timeRange,
   type KaraokeSessionDTO,
   type SiteReservation,
@@ -263,6 +264,50 @@ test("metinler: kalan süre, süre, gün, saat aralığı ve bildirim", () => {
   const msg = eventMessage("created", { startsAt: at("2026-10-24T17:00:00Z"), endsAt: at("2026-10-24T19:00:00Z"), guests: 4, name: "Ayşe", status: "requested", paymentStatus: "none" }, now);
   assert.deepEqual(msg, { title: "Yeni karaoke rezervasyonu", body: "Bugün 20:00–22:00 · 4 kişi · Ayşe · onay bekliyor" });
   assert.equal(eventMessage("cancelled", { startsAt: at("2026-10-25T17:00:00Z"), endsAt: at("2026-10-25T18:00:00Z"), guests: null, name: null, status: "cancelled", paymentStatus: "refunding" }, now).body, "Yarın 20:00–21:00");
+});
+
+test("Web Push gövdesinde misafirin adı yok (kilit ekranı); ekrandaki zil satırında var", () => {
+  const now = at("2026-10-24T09:00:00Z");
+  const r = (firstName: string, startsAt = "2026-10-24T17:00:00.000Z", endsAt = "2026-10-24T19:00:00.000Z"): SiteReservation => ({
+    id: `kr-${firstName}`,
+    date: startsAt.slice(0, 10),
+    startHour: 20,
+    hours: 2,
+    startsAt,
+    endsAt,
+    guests: 4,
+    status: "requested",
+    paymentStatus: "none",
+    firstName,
+    note: "Doğum günü",
+    totalMinor: 120_000,
+    channel: "web",
+    createdAt: "2026-10-24T08:00:00.000Z",
+    updatedAt: "2026-10-24T08:00:00.000Z",
+  });
+  const push = pushMessages([{ event: "created", r: r("Ayşe") }], now);
+  assert.deepEqual(push, [{ event: "created", title: "Yeni karaoke rezervasyonu", body: "Bugün 20:00–22:00 · 4 kişi · onay bekliyor" }]);
+  // Aynı olayın ekrandaki zil metni adı gösterir (alert-center.tsx kopyanın adını verir)
+  const ring = eventMessage("created", { startsAt: at("2026-10-24T17:00:00Z"), endsAt: at("2026-10-24T19:00:00Z"), guests: 4, name: "Ayşe", status: "requested", paymentStatus: "none" }, now);
+  assert.equal(ring.body, "Bugün 20:00–22:00 · 4 kişi · Ayşe · onay bekliyor");
+  // Üç olaya kadar her biri ayrı, adsız
+  const three = pushMessages([{ event: "created", r: r("Ayşe") }, { event: "changed", r: r("Deniz") }, { event: "cancelled", r: r("Mert") }], now);
+  assert.equal(three.length, 3);
+  assert.deepEqual(three.map((m) => m.event), ["created", "changed", "cancelled"]);
+  // Üçten fazlası tek özet; özette de ad ve not yok
+  const names = ["Ayşe", "Deniz", "Mert", "Zeynep"];
+  const many = pushMessages(names.map((n) => ({ event: "created" as const, r: r(n) })), now);
+  assert.equal(many.length, 1);
+  assert.equal(many[0].title, "4 karaoke güncellemesi");
+  assert.equal(many[0].event, "created");
+  for (const list of [push, three, many]) assert.doesNotMatch(JSON.stringify(list), /Ayşe|Deniz|Mert|Zeynep|Doğum günü/);
+  // Eşitleme bildirimi yalnız bu yardımcıyla kurar; ekrandaki zil kopyanın adını vermeye devam eder
+  const sync = readFileSync(join(process.cwd(), "src/server/karaoke/sync.ts"), "utf8");
+  const announce = sync.slice(sync.indexOf("async function announce"));
+  assert.match(announce, /for \(const m of pushMessages\(events, nowMs\)\)/);
+  assert.doesNotMatch(announce, /firstName|eventMessage|\bnote\b/);
+  const alerts = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
+  assert.match(alerts, /eventMessage\(s\.lastEvent, \{[^}]*name: s\.customerName/);
 });
 
 test("ping ucu imzasız isteği reddeder, eşitleme yanıttan sonra; personel tutarı görmez", () => {

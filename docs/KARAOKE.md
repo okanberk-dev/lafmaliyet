@@ -22,7 +22,8 @@ Ekranın en üstünde sitenin ödenmiş, açık kafe siparişleri durur (**Uygul
 >   sekmeye dönünce ve seyrek bir yedek kontrolde ister; ETag ile, değişiklik yoksa 304.
 > - **Güvenlik:** iki yön HMAC-SHA256 ile imzalı (zaman, yöntem, yol, sıralı sorgu, gövde özeti; ±5 dk; sabit süreli
 >   karşılaştırma), ortak anahtar yalnız sunucuda; siteden panele yalnız ad, saat, kişi sayısı, durum ve not gelir
->   (e-posta, telefon, soyad asla); push yalnız bilinen push servislerine gider.
+>   (e-posta, telefon, soyad asla); push yalnız bilinen push servislerine gider ve misafirin adını taşımaz (kilit
+>   ekranı; ad yalnız açık panel ekranında).
 > - **Hız:** ping sitedeki yazımı yavaşlatmaz, panel pinge hemen yanıt verir, eşitleme arka planda; alarm sesi ses
 >   saatinden zamanlanır (arka plandaki sekmede de zamanında çalar).
 > - **Basit kurulum:** tek değişken (`KARAOKE_SYNC_SECRET`, iki projede aynı); bildirim anahtarları kendiliğinden
@@ -167,6 +168,11 @@ kendi cihazında açar.
 - Web Push içeriği uçtan uca şifrelidir (RFC 8291, aes128gcm), VAPID imzalıdır (RFC 8292). Abonelik yalnız bilinen
   push servislerine (Google, Mozilla, Apple, Microsoft) kaydedilir; çıkışta cihazın aboneliği silinir, parola ya da
   rol değişince (oturum sürümü) eski cihazlara bildirim gitmez.
+- **Bildirimde misafirin adı yok:** bildirim kilit ekranında ve bildirim merkezinde herkese görünür; gövdesi gün,
+  saat, kişi sayısı ve "onay bekliyor"dur ("Yeni karaoke rezervasyonu" · "Bugün 20:00–22:00 · 4 kişi · onay
+  bekliyor"; üçten fazla olayın özetinde de ad yok). Ad yalnız açık panel ekranında görünür: zil satırı ("… · 4 kişi ·
+  Ayşe · onay bekliyor") ve liste, ikisi de canlı veriden (`pushMessages` ve `eventMessage`,
+  `src/lib/karaoke/session.ts`). Uygulama siparişinin bildiriminde de ad yok ([SITE-SIPARIS.md](SITE-SIPARIS.md)).
 - Service worker yalnız bildirim işi yapar: sayfa önbelleklemez, istek yakalamaz.
 
 ### KVKK
@@ -277,4 +283,4 @@ dene** seçilen hoparlörden çalmalı.
 | `src/lib/karaoke/occupancy.ts`, `occupancy-text.ts`, `history.ts` | Doluluk hesabı (dönem, ızgara, göstergeler, öne çıkanlar, ay ay), ekran metinleri, geçmişi alma ve KVKK kuralları (saf, testli) |
 | `src/server/karaoke/occupancy.ts`, `history.ts` | Doluluğun verisi (ad ve not okunmaz), oda saatleri; geçmişi siteden alma, KVKK temizliği ve sabah işinin karaoke adımı |
 | `src/server/actions/karaoke-doluluk.ts`, `src/app/panel/karaoke/doluluk/` | Oda saatleri ve geçmişi alma eylemleri (yalnız yönetici); Doluluk ekranı, ısı haritası, ay ay |
-| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
+| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, adsız bildirim metni, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
