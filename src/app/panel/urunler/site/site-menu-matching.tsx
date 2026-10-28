@@ -433,7 +433,8 @@ export function SiteMenuMatching({
                     const covering = coveringOf(g);
                     return (
                       <li key={g.item.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5 text-sm">
-                        <span className="min-w-0 flex-1">
+                        {/* Telefonda ad kendi satırında; fiyatlar ve düğme altında */}
+                        <span className="min-w-0 flex-1 max-sm:basis-full">
                           <span className="font-medium text-ink">{g.item.name}</span>
                           <span className="block text-xs text-ink-mute">
                             {g.item.categoryLabel} · {g.item.id}
@@ -443,10 +444,11 @@ export function SiteMenuMatching({
                           {g.slots.map((sl) => `${capSlot(sl, g.item)} ${money(slotPriceMinor(g.item, sl) ?? 0)}`).join(" · ")}
                         </span>
                         {!g.item.isActive ? <Badge tone="amber">Tükendi</Badge> : null}
-                        {draftOf.has(g.item.id) ? (
+                        {draftOf.get(g.item.id)?.rows.length ? (
                           <Button
                             size="xs"
                             variant="secondary"
+                            className="max-sm:ml-auto"
                             onClick={() => setOpenFor(g.item.id)}
                             disabled={!configured}
                             title={configured ? "Ürünü sitenin adı ve fiyatıyla panelde açar ve bu kaleme bağlar" : "Site bağlantısı kurulmamış"}
