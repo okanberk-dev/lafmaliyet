@@ -7,7 +7,7 @@ import { z } from "zod";
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
-import { droppedListText, recipientRefusal } from "@/lib/notify-recipients";
+import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/notify-recipients";
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
@@ -165,7 +165,7 @@ export async function sendCashTestEmail() {
     if (!settings.recipients.length) throw new UserError("Önce bir adres girin");
     // Personel hesabının ya da pasif hesabın adresi (ayar kaydedildikten sonra değişen) deneme e-postasını da almaz
     const { to: recipients, dropped } = await sendableRecipients(getDb(), settings.recipients);
-    if (!recipients.length) throw new UserError(`Kayıtlı adreslerin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}). Yöneticinin ya da muhasebecinin adresini girin.`);
+    if (!recipients.length) throw new UserError(`${allDroppedSentence("Alıcıların", dropped)} Yöneticinin ya da muhasebecinin adresini girin.`);
     if (!isEmailConfigured()) throw new UserError("E-posta kurulmamış: Vercel'de RESEND_API_KEY tanımlı değil");
     const [last] = await cashReportsBetween("2000-01-01", businessDate());
     const sample: CashReportFields = last ?? {

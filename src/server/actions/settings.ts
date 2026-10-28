@@ -7,7 +7,7 @@ import { z } from "zod";
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
 import { DEFAULT_SETTINGS, FIFO_OFF, settingsFromRows } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
-import { blockReasonOf, userListNotice } from "@/lib/notify-recipients";
+import { blockReasonOf, oldAddressNotice, userListNotice } from "@/lib/notify-recipients";
 import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { accessMailHandle } from "@/server/auth/access-handle";
 import { hashPassword, passwordProblem } from "@/server/auth/password";
@@ -33,6 +33,18 @@ async function listNotice(user: { name: string; email: string; role: "admin" | "
   if (!reason) return null;
   const lists = await listsWithEmail(user.email);
   return lists.length ? userListNotice(user, reason, lists) : null;
+}
+
+/**
+ * E-posta almayan hesabın eski adresi bir listede kaldı ve artık hiçbir hesaba ait değil (E-53): giriş e-postası
+ * değişti (hesap önce ya da sonra personel / pasif) ya da hesap silindi. Gönderim o adresi hesabı olmayan adres
+ * (muhasebeci gibi) sayar, kasa ve sabah e-postası ona gider; yönetici istemiyorsa listeden kaldırsın diye söylenir.
+ * Dışa açılmaz.
+ */
+async function oldAddressListNotice(user: { name: string; email: string }, blocked: boolean, why: "rename" | "delete"): Promise<string | null> {
+  if (!blocked) return null;
+  const lists = await listsWithEmail(user.email);
+  return lists.length ? oldAddressNotice(user, lists, why) : null;
 }
 const settingsSchema = z.object({
   kdv: numKey.min(0).max(1),
@@ -239,7 +251,10 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     if (after && after.id === me.id) await startSession(after);
     await logActivity(me, "Kullanıcı güncellendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
     refresh();
-    return { handle: data.password ? accessMailHandle(data.id, data.password) : null, notice: await listNotice(data) };
+    // Yeni adres listede (hesap e-posta almıyorsa) ve eski adres listede kaldıysa (artık hiçbir hesabın değil): ikisi de
+    const renamed = before.email !== data.email ? await oldAddressListNotice({ name: data.name, email: before.email }, Boolean(blockReasonOf(before) || blockReasonOf(data)), "rename") : null;
+    const notice = [await listNotice(data), renamed].filter(Boolean).join(" ") || null;
+    return { handle: data.password ? accessMailHandle(data.id, data.password) : null, notice };
   });
 }
 
@@ -323,7 +338,8 @@ export async function deleteUser(id: number, confirm?: StepUpConfirm) {
     await db.delete(s.users).where(eq(s.users.id, userId));
     await logActivity(me, "Kullanıcı silindi", `${u.name} (${u.email})`);
     refresh();
-    return null;
+    // Personel ya da pasif hesabın adresi listede kaldıysa artık hesabı yok: e-posta ona gider, yönetici uyarılır
+    return { notice: await oldAddressListNotice(u, Boolean(blockReasonOf(u)), "delete") };
   });
 }
 

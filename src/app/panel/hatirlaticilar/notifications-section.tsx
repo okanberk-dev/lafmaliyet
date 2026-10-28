@@ -106,6 +106,8 @@ export function NotificationsSection({
   const addrInvalid = addr.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr.trim());
   // Personel ya da pasif hesabın adresi gönderimde düşer: sayılmaz
   const activeRecipients = shownRecipients.filter((r) => r.active && !r.blocked).length;
+  // Etkin adres var ama hepsi düşüyor: "Adres yok" denmez (liste etkin satırı gösterir), gidecek adres yoktur
+  const allBlocked = activeRecipients === 0 && shownRecipients.some((r) => r.active && r.blocked);
   const missing = [!email.configured && "RESEND_API_KEY", !email.cron && "CRON_SECRET"].filter(Boolean) as string[];
   const ready = enabled && email.configured && activeRecipients > 0;
 
@@ -140,7 +142,7 @@ export function NotificationsSection({
   const delivery: { text: string; tone: "green" | "amber" | "gray" } = !enabled
     ? { text: "E-postalar kapalı", tone: "gray" }
     : activeRecipients === 0
-      ? { text: "Adres yok", tone: "amber" }
+      ? { text: allBlocked ? "Gidecek adres yok" : "Adres yok", tone: "amber" }
       : !email.configured
         ? { text: `${activeRecipients} adres · gönderim bekliyor`, tone: "amber" }
         : email.cron
@@ -377,7 +379,9 @@ export function NotificationsSection({
             {!email.configured ? (
               <p className="px-1 text-xs text-ink-mute">Gönderim düğmeleri Resend anahtarı girilince açılır; önizleme her zaman çalışır.</p>
             ) : activeRecipients === 0 ? (
-              <p className="px-1 text-xs text-ink-mute">Deneme için en az bir etkin adres ekleyin.</p>
+              <p className="px-1 text-xs text-ink-mute">
+                {allBlocked ? "Etkin adreslerin hepsi personel ya da pasif hesaba ait; yöneticinin ya da muhasebecinin adresini ekleyin." : "Deneme için en az bir etkin adres ekleyin."}
+              </p>
             ) : null}
           </div>
 

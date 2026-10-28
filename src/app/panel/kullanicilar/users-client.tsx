@@ -915,7 +915,8 @@ function UserDialog({
       },
       (res) => {
         if (!res.ok) return void toast.error(res.error);
-        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse: e-posta artık gitmez (E-53)
+        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse (e-posta artık gitmez) ya da
+        // böyle bir hesabın eski adresi listede kaldıysa (artık hiçbir hesabın değil, e-posta gider): E-53
         if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
         // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
         // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
@@ -930,7 +931,7 @@ function UserDialog({
     );
   }
 
-  const act = (kind: Confirm | "unlock", confirm?: StepUpConfirm) =>
+  const act = (kind: Confirm | "unlock", confirm?: StepUpConfirm): Promise<ActionResult<{ notice?: string | null } | null>> =>
     kind === "2fa"
       ? resetUserTwoFactor(user.id, confirm)
       : kind === "logout"
@@ -938,11 +939,13 @@ function UserDialog({
         : kind === "delete"
           ? deleteUser(user.id, confirm)
           : unlockUser(user.id);
-  const finish = (kind: Confirm | "unlock") => (res: ActionResult<null>) => {
+  const finish = (kind: Confirm | "unlock") => (res: ActionResult<{ notice?: string | null } | null>) => {
     if (!res.ok) return void toast.error(res.error);
     toast.success(
       { "2fa": "İki adımlı doğrulama kapatıldı", logout: "Oturumları kapatıldı", unlock: "Hesap kilidi açıldı", delete: `${user.name} silindi` }[kind],
     );
+    // Silinen personel ya da pasif hesabın adresi bir bildirim listesindeyse: artık hesabı yok, e-posta ona gider (E-53)
+    if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
     onClose();
   };
 

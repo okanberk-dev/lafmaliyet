@@ -8,7 +8,7 @@ import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import { droppedListText, droppedLogSuffix } from "@/lib/notify-recipients";
+import { allDroppedSentence, droppedListText, droppedLogSuffix } from "@/lib/notify-recipients";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
@@ -104,8 +104,9 @@ export type DigestResult =
   /**
    * `off`: neden gitmedi. "disabled" e-posta kapalı, "nokey" Resend kurulmamış (gönderilecek bir şey olsa da gitmezdi);
    * "norecipient" gönderilecek bir şey vardı ama etkin bildirim adresi yok. Yoksa gönderilecek yeni bir şey yoktu.
+   * `blocked`: etkin adresler vardı ama hepsi personel ya da pasif hesabın (droppedListText; Günlük işler nedeni yazar)
    */
-  | { status: "skipped"; reason: string; off?: "disabled" | "nokey" | "norecipient" }
+  | { status: "skipped"; reason: string; off?: "disabled" | "nokey" | "norecipient"; blocked?: string }
   | { status: "error"; error: string };
 
 /** Paraşüt bölümünün anahtarı: her gönderimde yeni satır; "son gönderimden bu yana" buna göre bulunur */
@@ -267,7 +268,8 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
   // var. Düşen adres yöneticinin zilinde ve Bildirim adresleri listesinde görünür
   const { to, dropped } = await sendableRecipients(db, await activeDigestEmails(db));
   if (!to.length) {
-    return { status: "skipped", reason: dropped.length ? `Etkin bildirim adreslerinin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}).` : "Etkin bildirim adresi yok.", off: "norecipient" };
+    if (!dropped.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
+    return { status: "skipped", reason: allDroppedSentence("Etkin bildirim adreslerinin", dropped), off: "norecipient", blocked: droppedListText(dropped) };
   }
 
   const { subject, html, text } = renderDigest(
@@ -337,7 +339,7 @@ export async function sendTestEmail(): Promise<{ ok: true; recipients: number; s
   const db = getDb();
   const settings = await loadNotifySettings();
   const { to, dropped } = await sendableRecipients(db, await activeDigestEmails(db));
-  if (!to.length) return { ok: false, error: dropped.length ? `Etkin bildirim adreslerinin hepsi personel ya da pasif hesabın (${droppedListText(dropped)}).` : "Önce bir bildirim adresi ekleyin." };
+  if (!to.length) return { ok: false, error: dropped.length ? allDroppedSentence("Etkin bildirim adreslerinin", dropped) : "Önce bir bildirim adresi ekleyin." };
   const today = todayTR();
   const sample: UpcomingItem = {
     ref: "test:0",

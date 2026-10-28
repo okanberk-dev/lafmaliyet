@@ -3,7 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { cashEmailKey } from "@/lib/cash-report";
-import { droppedListText, type DroppedRecipient } from "@/lib/notify-recipients";
+import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
@@ -23,9 +23,12 @@ import { UserError } from "@/server/user-error";
 
 export type CashEmailOutcome = { status: "sent" | "failed" | "off"; error: string | null; to: number };
 
-/** Kayıtlı adreslerin hepsi personel ya da pasif hesabın: yöneticinin gördüğü neden (personel sabit metni görür) */
+/**
+ * Kayıtlı adreslerin hepsi personel ya da pasif hesabın: yöneticinin gördüğü neden (personel sabit metni görür). Formda
+ * "E-posta gitmedi: " ile başlar (emailFailedLine); burada yinelenmez
+ */
 export function allDroppedText(dropped: readonly DroppedRecipient[]): string {
-  return `Kasa e-postasının alıcıları personel ya da pasif hesabın (${droppedListText(dropped)}); e-posta gitmedi. Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.`;
+  return `${allDroppedSentence("Alıcıların", dropped)} Kasa › Rapor alıcıları'na yöneticinin ya da muhasebecinin adresini yazın.`;
 }
 
 /**

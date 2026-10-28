@@ -18,7 +18,10 @@ import {
   droppedListText,
   droppedLogSuffix,
   emailKey,
+  allDroppedSentence,
+  oldAddressNotice,
   PROFILE_LIST_REFUSAL,
+  PROFILE_OWN_LIST_REFUSAL,
   recipientRefusal,
   splitByBlocked,
   userListNotice,
@@ -92,6 +95,27 @@ test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabı
   assert.match(userListNotice({ name: "Ayşe", email: "a@b.co" }, "staff", ["digest"]), /^Ayşe \(a@b\.co\) sabah e-postasının bildirim adresleri arasında; personel hesabına bu e-posta gitmez\./);
 });
 
+test("eski adres listede kaldı (yeni giriş e-postası, silinen hesap): artık hesabı yok, e-posta gider; personelin ret metni", () => {
+  assert.equal(
+    oldAddressNotice({ name: "Mehmet", email: "mehmet@laffogato.net" }, ["cash"], "rename"),
+    "Mehmet hesabının eski adresi mehmet@laffogato.net kasa raporu alıcıları arasında; adres artık hiçbir hesaba ait değil, bu adrese e-posta gider. Gerekmiyorsa listeden kaldırın.",
+  );
+  assert.equal(
+    oldAddressNotice({ name: "Ayşe", email: "a@b.co" }, ["cash", "digest"], "delete"),
+    "Ayşe (a@b.co) kasa raporu alıcıları ve sabah e-postasının bildirim adresleri arasında; hesap silindiği için adres hiçbir hesaba ait değil, bu adrese e-posta gider. Gerekmiyorsa listeden kaldırın.",
+  );
+  assert.equal(PROFILE_OWN_LIST_REFUSAL, "Giriş e-postanız bildirim listesinde; değiştirmek için yöneticiye yazın.");
+});
+
+test("bütün adresler düştü: tek cümle, iç içe parantez yok", () => {
+  const dropped = [{ email: "ayse@laffogato.net", reason: "staff" as const }];
+  assert.equal(allDroppedSentence("Alıcıların", dropped), "Alıcıların hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı).");
+  assert.equal(
+    allDroppedSentence("Etkin bildirim adreslerinin", [...dropped, { email: "eski@laffogato.net", reason: "inactive" }]),
+    "Etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı), eski@laffogato.net (pasif hesap).",
+  );
+});
+
 test("zil satırı: listeye göre başlık, adresler ve nedenleri, ayarın adresi; kimlik adreslerden", () => {
   const one = blockedBell("cash", [{ email: "Ayse@Laffogato.net", reason: "staff" }]);
   assert.equal(one.title, "Kasa raporu e-postası bir adrese gitmiyor");
@@ -143,18 +167,27 @@ test("kaydederken: bildirim adresi ve kasa alıcısı personel ya da pasif hesab
 test("Kullanıcılar: kaydedilen ve eklenen hesap için liste uyarısı; yardımcı dışa açılmaz", () => {
   const src = read("src/server/actions/settings.ts");
   assert.match(src, /^async function listNotice\(/m);
-  assert.match(fnBody(src, "saveUser"), /return \{ handle: [^}]*, notice: await listNotice\(data\) \};/);
+  const save = fnBody(src, "saveUser");
+  assert.match(save, /const notice = \[await listNotice\(data\), renamed\]\.filter\(Boolean\)\.join\(" "\) \|\| null;/);
+  // Eski adres: yalnız e-posta değişince ve hesap önce ya da sonra e-posta almıyorsa
+  assert.match(save, /before\.email !== data\.email \? await oldAddressListNotice\(\{ name: data\.name, email: before\.email \}, Boolean\(blockReasonOf\(before\) \|\| blockReasonOf\(data\)\), "rename"\) : null/);
+  assert.match(fnBody(src, "deleteUser"), /return \{ notice: await oldAddressListNotice\(u, Boolean\(blockReasonOf\(u\)\), "delete"\) \};/);
+  assert.match(src, /^async function oldAddressListNotice\(/m);
   assert.match(fnBody(src, "createUser"), /const notice = \(await listNotice\(data\)\) \?\? undefined;/);
   const client = read("src/app/panel/kullanicilar/users-client.tsx");
-  assert.equal([...client.matchAll(/toast\.warning\(res\.data(?:\?)?\.notice, \{ duration: 12_000 \}\)/g)].length, 3, "pasif yapma, düzenleme, ekleme");
+  assert.equal([...client.matchAll(/toast\.warning\(res\.data(?:\?)?\.notice, \{ duration: 12_000 \}\)/g)].length, 4, "pasif yapma, düzenleme, ekleme, silme");
 });
 
 // ---------------------------------------------------------------- E-52: Hesabım
 
-test("Hesabım: personel giriş e-postasını bir listedeki adrese çeviremez; parola önce, yazımdan önce", () => {
+test("Hesabım: personel giriş e-postasını bir listedeki adrese çeviremez, kendi adresi listedeyken değiştiremez; parola önce, yazımdan önce", () => {
   const body = fnBody(read("src/server/actions/auth.ts"), "updateProfile");
-  const guard = body.indexOf('if (me.role !== "admin" && data.email !== u.email && (await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);');
+  const guard = body.indexOf('if (me.role !== "admin" && data.email !== u.email) {');
   assert.ok(guard > 0);
+  // Kendi adresi listedeyken hiç (eski adres hesapsız kalıp yeniden e-posta alırdı), yeni adres listedeyse de
+  const own = body.indexOf("if ((await listsWithEmail(u.email)).length) throw new UserError(PROFILE_OWN_LIST_REFUSAL);");
+  const target = body.indexOf("if ((await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);");
+  assert.ok(guard < own && own < target, "ikisi de aynı koşulun içinde");
   assert.ok(body.indexOf("requirePassword(") < guard, "parola doğrulanmadan liste sorulmaz");
   assert.ok(guard < body.indexOf(".update(s.users)"));
   // Listeler: kasa alıcıları (kapalıyken de) ve bütün bildirim adresleri (duraklatılmış da)

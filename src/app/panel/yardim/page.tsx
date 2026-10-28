@@ -676,7 +676,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Yardım&apos;ı (bu sayfanın başlığındaki düğme) yalnız onun ekranlarını anlatır; hesabı açınca ona gösterin. Her kullanıcı Hesabım&apos;dan parolasını
             değiştirip iki adımlı doğrulamayı (Google Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
             Kasa raporu ve sabah e-postası personel hesabının ve pasif hesabın adresine gitmez: bir yöneticiyi personele indirir ya da pasif yaparsanız adresi
-            listelerden de kaldırın (kaydederken uyarı çıkar, zil de söyler); personel giriş e-postasını bir alıcının adresine çeviremez.
+            listelerden de kaldırın (kaydederken uyarı çıkar, zil de söyler); personel giriş e-postasını bir alıcının adresine çeviremez, kendi adresi listedeyken
+            de değiştiremez. Böyle bir hesabın e-postasını değiştirir ya da hesabı silerseniz eski adres hesapsız kalır ve e-posta ona yeniden gider: uyarı çıkar,
+            gerekmiyorsa listeden kaldırın.
           </>
         ),
         icon: UserPlus,

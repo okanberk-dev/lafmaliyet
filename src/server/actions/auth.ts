@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { z } from "zod";
 
 import { nameTakenBy, sameName } from "@/lib/activity-person";
-import { PROFILE_LIST_REFUSAL } from "@/lib/notify-recipients";
+import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "@/lib/notify-recipients";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
@@ -355,8 +355,13 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
     if (n > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
     // Personel giriş e-postasını kasa raporu alıcılarındaki ya da sabah e-postasının bildirim adreslerindeki bir adrese
-    // çeviremez (E-52): gönderim personel hesabının adresini düşürür, kasa ve sabah e-postası sahibine uyarısız gitmezdi
-    if (me.role !== "admin" && data.email !== u.email && (await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);
+    // çeviremez (E-52): gönderim personel hesabının adresini düşürür, kasa ve sabah e-postası sahibine uyarısız gitmezdi.
+    // Kendi adresi bir listedeyken de değiştiremez (E-53): gönderim adresi hesaba bakarak düşürür, hesabı kalmayan eski
+    // adres yeniden kasa ve sabah e-postası alır, zil susardı. Yönetici listeyi düzeltir
+    if (me.role !== "admin" && data.email !== u.email) {
+      if ((await listsWithEmail(u.email)).length) throw new UserError(PROFILE_OWN_LIST_REFUSAL);
+      if ((await listsWithEmail(data.email)).length) throw new UserError(PROFILE_LIST_REFUSAL);
+    }
     // Ad değişmediyse (eskiden aynı adla açılmış iki hesap) e-posta yine değiştirilebilir
     if (!sameName(data.name, u.name) && nameTakenBy(data.name, me.id, await db.select({ id: s.users.id, name: s.users.name }).from(s.users))) {
       throw new UserError("Bu ad başka bir kullanıcıda kayıtlı; ayırt edilecek bir ad yazın (ör. soyadının baş harfiyle)");

@@ -84,6 +84,12 @@ export function recipientRefusal(list: RecipientList, d: DroppedRecipient): stri
  */
 export const PROFILE_LIST_REFUSAL = "Bu adres bildirim listesinde; giriş e-postanız olamaz. Yöneticiye yazın.";
 
+/**
+ * Personel, adresi bir bildirim listesindeyken giriş e-postasını değiştiremez: gönderim adresi hesaba bakarak düşürür,
+ * hesabı kalmayan eski adres muhasebecininki gibi yeniden e-posta alırdı (kasa farkı, ödemeler, kâr) ve zil susardı
+ */
+export const PROFILE_OWN_LIST_REFUSAL = "Giriş e-postanız bildirim listesinde; değiştirmek için yöneticiye yazın.";
+
 /** "kasa raporu alıcıları" / "… ve sabah e-postasının bildirim adresleri" */
 export function listsText(lists: readonly RecipientList[]): string {
   return lists.map((l) => RECIPIENT_LIST_LABEL[l]).join(" ve ");
@@ -96,6 +102,22 @@ export function listsText(lists: readonly RecipientList[]): string {
 export function userListNotice(user: { name: string; email: string }, reason: BlockReason, lists: readonly RecipientList[]): string {
   const who = reason === "staff" ? "personel hesabına" : "pasif hesaba";
   return `${user.name} (${user.email}) ${listsText(lists)} arasında; ${who} bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.`;
+}
+
+/**
+ * Kullanıcılar: e-posta almayan (personel ya da pasif) hesabın eski adresi bir listede ve artık hiçbir hesaba ait değil
+ * (giriş e-postası değişti ya da hesap silindi). Gönderim onu hesabı olmayan adres sayar, e-posta gider; yönetici
+ * istemiyorsa listeden kaldırsın diye söylenir
+ */
+export function oldAddressNotice(user: { name: string; email: string }, lists: readonly RecipientList[], why: "rename" | "delete"): string {
+  const what = why === "rename" ? `${user.name} hesabının eski adresi ${user.email}` : `${user.name} (${user.email})`;
+  const because = why === "rename" ? "adres artık hiçbir hesaba ait değil" : "hesap silindiği için adres hiçbir hesaba ait değil";
+  return `${what} ${listsText(lists)} arasında; ${because}, bu adrese e-posta gider. Gerekmiyorsa listeden kaldırın.`;
+}
+
+/** Listenin bütün adresleri düştü: "Alıcıların hepsi personel ya da pasif hesaba ait: ayse@… (personel hesabı)." */
+export function allDroppedSentence(subject: "Alıcıların" | "Etkin bildirim adreslerinin", dropped: readonly DroppedRecipient[]): string {
+  return `${subject} hepsi personel ya da pasif hesaba ait: ${droppedListText(dropped)}.`;
 }
 
 /** Zilin satırı: listedeki adreslerden gönderilmeyenler (yalnız yönetici) */

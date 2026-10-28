@@ -61,7 +61,11 @@ export function CashSettingsCard({ settings, emailConfigured, blocked = [] }: { 
                 <span className="font-medium">{b.email}</span>: {BLOCK_ROW_TEXT[b.reason].toLocaleLowerCase("tr-TR")}
               </p>
             ))}
-            <p>Kasa e-postasında karaoke ön ödemesi var; bu adresi listeden çıkarın ya da doğru adresi yazın.</p>
+            {/* Neden kişiye göre: personele karaoke ön ödemesi gitmesin; pasif hesaba e-posta hiç gitmez */}
+            <p>
+              {blocked.some((b) => b.reason === "staff") ? "Kasa e-postasında karaoke ön ödemesi var; personel hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
+              {blocked.length > 1 ? "Bu adresleri" : "Bu adresi"} listeden çıkarın ya da doğru adresi yazın.
+            </p>
           </div>
         ) : null}
         <ToggleRow title="E-posta gönder" description="Kapalıyken rapor yalnız panelde ve WhatsApp'ta" label="Kasa raporu e-postası" checked={emailEnabled} onChange={setEmailEnabled} />

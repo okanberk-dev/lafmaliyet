@@ -323,7 +323,12 @@ test("adımlar gerçekte olanı söyler: cihazı olmayan hatırlatıcı, alıcı
   assert.deepEqual(digestStep({ status: "skipped", off: "nokey" }), { code: "nokey" });
   assert.equal(digestStep({ status: "skipped", off: "norecipient" }).code, "norecipient");
   assert.deepEqual(digestStep({ status: "error", error: "Resend yanıt vermiyor" }), { code: "error", error: "Resend yanıt vermiyor" });
-  assert.deepEqual(stepTexts({ digest: "norecipient", reminders: "nodevice" }), ["E-posta gitmedi: bildirim adresi yok", "Hatırlatıcı var, bildirim açık cihaz yok"]);
+  assert.deepEqual(stepTexts({ digest: "norecipient", reminders: "nodevice" }), ["E-posta gitmedi: gönderilecek adres yok", "Hatırlatıcı var, bildirim açık cihaz yok"]);
+  // Etkin adreslerin hepsi personel ya da pasif hesabın (E-53): neden adresleriyle
+  assert.deepEqual(digestStep({ status: "skipped", off: "norecipient", blocked: "ayse@laffogato.net (personel hesabı)" }), {
+    code: "norecipient",
+    error: "gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ayse@laffogato.net (personel hesabı)",
+  });
   assert.deepEqual(stepTexts({ digest: "nokey" }), ["E-posta: Resend kurulmadı"]);
   // Gönderilecek bir şey varken alıcı yok: iş "kısmen", mesajda neden
   const ok = { code: "ok" };
