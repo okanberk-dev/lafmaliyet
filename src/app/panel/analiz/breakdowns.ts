@@ -237,7 +237,20 @@ export function profitGroups(o: Sides & { fixedItems: BreakdownRow[]; month: str
     {
       key: "sabit",
       label: "Sabit giderler",
-      rows: [...fixed, ...(o.extraFixed ? [{ key: "extra", label: "Senaryo: sabit gider değişimi", amount: -o.extraFixed }] : [])],
+      // Aylık değişimin tabanın dönemine düşen payı (yarım listede yarısı; applyScenario)
+      rows: [
+        ...fixed,
+        ...(o.extraFixed
+          ? [
+              {
+                key: "extra",
+                label: "Senaryo: sabit gider değişimi",
+                ...(b.period ? { sub: `Aylık ${signedTl(o.extraFixed)}; ${b.period} payı (${pct(b.fixedShare, 0)})` } : {}),
+                amount: -o.extraFixed * b.fixedShare,
+              },
+            ]
+          : []),
+      ],
     },
   ];
 }

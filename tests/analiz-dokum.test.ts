@@ -194,6 +194,8 @@ test("Zarar etmemek için: gelir yoksa iki yol da hesaplanamaz", () => {
     breakEvenFixed: 10_000,
     onlineCover: 0,
     listPeriod: null,
+    fixedShare: 1,
+    period: null,
   };
   const n = breakEvenNeeds(empty);
   assert.equal(n.price, null);

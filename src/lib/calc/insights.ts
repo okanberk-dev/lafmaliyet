@@ -1447,6 +1447,13 @@ export interface ScenarioBase {
   onlineCover: number;
   /** Satış listesi kasa raporlarından kısaysa listenin dönemi ("1–15 Kasım"); yoksa null */
   listPeriod: string | null;
+  /**
+   * `fixed`in tam aya oranı: Gelir-gider'in açık gün oranı × listenin dönemi (süren ay, yarım liste); tam ayda 1. Senaryodaki
+   * aylık sabit gider değişimi net kâra bu oranla, başabaşa tamamıyla girer
+   */
+  fixedShare: number;
+  /** Net kârın dönemi tam ay değilse metni ("1–15 Kasım", "Ekim 2026, 16 gün"); tam ayda null */
+  period: string | null;
 }
 
 /**
@@ -1459,6 +1466,12 @@ export function scenarioBase(model: Model, month: string): ScenarioBase {
   const d = dashboard(model, month);
   const t = d.theoretical;
   const sales = model.monthSales(month);
+  // Sabit giderin tam aya oranı: aylık kalemler Gelir-gider'de açık gün oranıyla, liste dönemi payıyla küçülür (ayın
+  // tutarları yoksa standart ay, oran 1)
+  const f = t?.fixedBreakdown ?? d.fixedMonth;
+  const pm = model.pnlMonth(month);
+  const fixedShare = f.basis === "month" ? Math.min(1, pm.ratio * listShareFactor(f)) : 1;
+  const listPeriod = t?.listPeriod ? listDaysText(t.listPeriod) : null;
   return {
     revenue: sales.revenue,
     net: sales.net,
@@ -1469,7 +1482,9 @@ export function scenarioBase(model: Model, month: string): ScenarioBase {
     online: t?.online?.grossProfit ?? 0,
     breakEvenFixed: d.breakEven.fixed,
     onlineCover: d.breakEven.onlineCover?.grossProfit ?? 0,
-    listPeriod: t?.listPeriod ? listDaysText(t.listPeriod) : null,
+    listPeriod,
+    fixedShare,
+    period: listPeriod ?? (fixedShare < 0.995 ? `${monthLabel(month)}, ${num(pm.prorationDays)} gün` : null),
   };
 }
 
@@ -1485,7 +1500,8 @@ export function applyScenario(base: ScenarioBase, input: ScenarioInput, acikGun:
     discountsNet: base.discountsNet * p * v,
     material: base.material * c * v,
     commission: base.commission * p * v,
-    fixed: base.fixed + input.extraFixed,
+    // Aylık değişim: net kâra tabanın dönemine düşen payı (yarım listede yarısı), başabaşa tam ay
+    fixed: base.fixed + input.extraFixed * base.fixedShare,
     breakEvenFixed: base.breakEvenFixed + input.extraFixed,
   };
   const finish = (x: ScenarioBase) => {

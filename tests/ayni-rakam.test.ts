@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { breakEvenNeeds, scenarioBreakEvenItems, scenarioFixedItems } from "../src/app/panel/analiz/breakdowns";
+import { breakEvenNeeds, profitGroups, scenarioBreakEvenItems, scenarioFixedItems } from "../src/app/panel/analiz/breakdowns";
 import { createModel } from "../src/lib/calc/engine";
 import { applyScenario, breakEvenOf, dashboard, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice, SalesLine } from "../src/lib/calc/types";
@@ -215,6 +215,38 @@ test("E-12: yarım ayın satış listesinde senaryonun 'Şu an'ı Genel bakış'
     0.5,
   );
   assert.ok(items.some((x) => x.sub?.includes("1–15 Kasım payı")));
+});
+
+test("E-12: aylık sabit gider değişimi net kâra tabanın dönemine düşen payıyla, başabaşa tamamıyla girer", () => {
+  const model = createModel(november());
+  const M = "2026-11";
+  const b = scenarioBase(model, M);
+  // Kasım 1–22 kasa raporu (22 ÷ 30 gün), liste 1–15 (15 ÷ 22): tam ayın yarısı
+  close(b.fixedShare, 0.5, "pay");
+  assert.equal(b.period, "1–15 Kasım");
+  close(model.pnlMonth(M).ratio, 22 / 30, "süren ayın açık gün oranı");
+  const r = applyScenario(b, { ...ZERO, extraFixed: -30_000 }, model.settings.acikGun);
+  close(r.scenario.profit - r.base.profit, 15_000, "net kâra 30.000'in yarısı");
+  close(r.scenario.breakEvenFixed - r.base.breakEvenFixed, -30_000, "başabaşa tamamı");
+  // Döküm satırı aynı payı gösterir
+  const gs = profitGroups({ b: r.base, s: r.scenario, dirty: true, extraFixed: -30_000, fixedItems: scenarioFixedItems(model, M), month: M });
+  const extra = gs.find((g) => g.key === "sabit")!.rows.find((x) => x.key === "extra")!;
+  close(extra.amount, 15_000, "döküm satırı");
+  assert.match(extra.sub ?? "", /1–15 Kasım payı \(%50\)/);
+  close(
+    gs.flatMap((g) => g.rows).reduce((a, x) => a + x.amount, 0),
+    r.scenario.profit,
+    "döküm net kârı tutar",
+    1,
+  );
+  // Kapanmış tam ayda pay 1, dönem yazılmaz
+  const sep = scenarioBase(createModel(base), "2026-09");
+  assert.equal(sep.fixedShare, 1);
+  assert.equal(sep.period, null);
+  // Excel'den 16 açık günlü süren Ekim: oran 16 ÷ 31
+  const oct = scenarioBase(createModel(base), "2026-10");
+  close(oct.fixedShare, 16 / 31, "Ekim payı");
+  assert.equal(oct.period, "Ekim 2026, 16 gün");
 });
 
 test("E-12: online brüt kâr senaryoda ayrı satır; kaydırıcılar değiştirmez", () => {
