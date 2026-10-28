@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select } from "@/components/ui/form";
-import { money } from "@/lib/format";
+import { num } from "@/lib/format";
 import { PAYROLL_EXTRAS_NOTE, PAYROLL_FULL_MONTH_NOTE, PAYROLL_NOTE } from "@/lib/tax/payroll";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +62,9 @@ function PayrollDialog({ months, initial, onClose }: { months: PayrollSheetMonth
   const [month, setMonth] = useState(() => (initial && months.some((m) => m.month === initial) ? initial : months[0].month));
   const m = months.find((x) => x.month === month) ?? months[0];
   const rows = ROWS.filter((r) => r.key !== "extras" || m.total.extras !== 0);
-  const cell = "px-2 py-1.5 text-right whitespace-nowrap tabular";
+  const cell = "px-1.5 py-1.5 text-right whitespace-nowrap tabular sm:px-2";
+  // Hücrelerde ₺ yazılmaz (başlıkta): 2–4 kişi 390 px'te sığsın
+  const amount = (v: number) => num(v, 2, 2);
   return (
     <Dialog
       open
@@ -87,18 +89,18 @@ function PayrollDialog({ months, initial, onClose }: { months: PayrollSheetMonth
           </Select>
         </Field>
         <div className="scroll-thin overflow-x-auto rounded-2xl bg-surface ring-1 ring-line">
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full border-collapse text-xs sm:text-[13px]">
             <thead>
               <tr className="border-b border-line-strong">
-                <th scope="col" className="sticky left-0 z-10 bg-surface px-2 py-2 text-left font-semibold text-ink">
-                  <span className="sr-only">Alan</span>
+                <th scope="col" className="sticky left-0 z-10 bg-surface px-1.5 py-2 text-left text-[11px] font-normal text-ink-mute sm:px-2">
+                  ₺
                 </th>
                 {m.people.map((p) => (
-                  <th key={p.name} scope="col" className="max-w-24 px-2 py-2 text-right font-semibold break-words text-ink">
+                  <th key={p.name} scope="col" className="max-w-24 px-1.5 py-2 text-right font-semibold break-words text-ink sm:px-2">
                     {p.name}
                   </th>
                 ))}
-                <th scope="col" className="px-2 py-2 text-right font-semibold text-ink">
+                <th scope="col" className="px-1.5 py-2 text-right font-semibold text-ink sm:px-2">
                   Toplam
                 </th>
               </tr>
@@ -106,24 +108,24 @@ function PayrollDialog({ months, initial, onClose }: { months: PayrollSheetMonth
             <tbody>
               {rows.map((r) => (
                 <tr key={r.key} className={cn("border-b border-line last:border-0", r.strong && "font-semibold")}>
-                  <th scope="row" className={cn("sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-normal whitespace-nowrap text-ink-mute", r.strong && "font-semibold text-ink")}>
+                  <th scope="row" className={cn("sticky left-0 z-10 max-w-28 min-w-20 bg-surface px-1.5 py-1.5 text-left font-normal text-ink-mute sm:px-2", r.strong && "font-semibold text-ink")}>
                     {r.label}
                   </th>
                   {m.people.map((p) => (
                     <td key={p.name} className={cell}>
-                      {money(p.values[r.key])}
+                      {amount(p.values[r.key])}
                     </td>
                   ))}
-                  <td className={cn(cell, "bg-ink/[0.03]")}>{money(m.total[r.key])}</td>
+                  <td className={cn(cell, "bg-ink/[0.03]")}>{amount(m.total[r.key])}</td>
                 </tr>
               ))}
               {m.support ? (
                 <tr>
-                  <th scope="row" className="sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-normal text-ink-mute">
+                  <th scope="row" className="sticky left-0 z-10 max-w-28 bg-surface px-1.5 py-1.5 text-left font-normal text-ink-mute sm:px-2">
                     Asgari ücret desteği (şartlı)
                   </th>
                   <td colSpan={m.people.length} />
-                  <td className={cn(cell, "bg-ink/[0.03]")}>{money(-m.support)}</td>
+                  <td className={cn(cell, "bg-ink/[0.03]")}>{amount(-m.support)}</td>
                 </tr>
               ) : null}
             </tbody>

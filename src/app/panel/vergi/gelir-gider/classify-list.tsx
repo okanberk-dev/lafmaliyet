@@ -15,6 +15,7 @@ import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { money } from "@/lib/format";
 import { VAT_TO_ZERO_LABEL, type Withholding, WITHHOLDING_GROSS_HINT, WITHHOLDING_LABELS, WITHHOLDINGS } from "@/lib/tax/rules";
+import { unreachable } from "@/lib/unreachable";
 import { cn } from "@/lib/utils";
 import { saveTaxClassifications, saveTaxSettings } from "@/server/actions/tax";
 
@@ -68,6 +69,20 @@ type Change = { doc?: string; withholding?: string; vatToZero?: boolean };
 
 /** Ödemeden kesilen stopajlar: tutar brüt olmalı (§3.5 ipucu) */
 const GROSS = new Set(["kira", "serbest_meslek", "internet_reklam"]);
+
+/** Demirbaş adayı mı: seçeneği belge değil karardır ("Gider (demirbaş değil)"); kaynak tam switch'le (K25 bekçisi) */
+function isCandidate(it: ClassifyItem): boolean {
+  switch (it.source) {
+    case "invoice":
+      return true;
+    case "fixed":
+    case "category":
+    case "manual":
+      return false;
+    default:
+      return unreachable(it.source);
+  }
+}
 
 const GROUPS: { source: ClassifyItem["source"]; title: string }[] = [
   { source: "fixed", title: "Sabit giderler" },
@@ -183,7 +198,7 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                             </div>
                             <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                               <label className="flex min-w-0 flex-col gap-1">
-                                <span className="text-xs font-medium text-ink-soft">{it.source === "invoice" ? "Karar" : "Belgesi nerede"}</span>
+                                <span className="text-xs font-medium text-ink-soft">{isCandidate(it) ? "Karar" : "Belgesi nerede"}</span>
                                 <Select value={e.doc} disabled={pending} onChange={(ev) => set(it, { doc: ev.target.value })} className="pointer-coarse:h-12">
                                   {it.options.map((o) => (
                                     <option key={o.value} value={o.value}>
@@ -214,7 +229,7 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                               {e.vatBox ? (
                                 <Checkbox label={VAT_TO_ZERO_LABEL} checked={e.vatToZero} disabled={pending} onChange={(ev) => set(it, { vatToZero: ev.target.checked })} className="text-[13px] sm:col-span-2" />
                               ) : null}
-                              {it.source === "invoice" && it.id !== null ? (
+                              {isCandidate(it) && it.id !== null ? (
                                 <div className="flex items-end">
                                   <AssetButton label="Varlık olarak ekle" invoices={data.invoices} invoiceId={it.id} directLimit={data.directLimit} today={data.today} />
                                 </div>
