@@ -45,7 +45,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
    sessizce geri alınır, Tükendi kalem yeniden satışa çıkabilir. Dalga 10 personele serviste Tükendi verince bu
    nadir yarış günlük riske döner. *S1 (laffogato #269) ve P1 (#52, #53) ile kapandı.*
 2. **Kaçan ödeme pingi** ödenmiş kafe siparişini bar ekranında sakin saatte 60 dakikaya kadar gizleyebilir. *S2
-   (laffogato #270) ve P2 ile: ödeme beklenirken görünür bar ekranında birkaç dakika (P2 › Durum, sınırıyla).*
+   (laffogato #270) ve P2 ile: ödeme beklenirken bildirimi kapalı ya da açık siparişi olan görünür bar ekranında
+   birkaç dakika; bildirimi açık, boş ekranda hâlâ bir saate kadar (P2 › Durum 5, açık iş KALAN-ISLER'de).*
 3. **Uygulamada pasif kalem ve eski fiyat ≈ 2 saate kadar kalıyor** (CDN SWR 3600 sn + uygulama staleTime 1 sa); admin
    formu "en geç 5 dakika" diyor. *S1 (laffogato #269) ile CDN'de en çok 10 dakika ve form metni düzeldi; uygulamanın
    staleTime'ı M2'de.*
@@ -275,7 +276,9 @@ ve `LAFMALIYET_SYNC_SECRET`.
   `../lafmobil` (`main`) ile karşılaştırıp kırmızı olur ya da worktree'de atlar (:31-36). lafmobil'de `RECONCILED`,
   "Re-synced" satırı ve yeni başlıklar `SECTIONS`'a (app:src/data/contract-sync.test.ts:22-31, :89-113).
 - **Gecikme hedefi (varsayılan).** Site → panel ≤ 10 sn. Kaçan ping: ilgili ekranın yoklaması ya da ertesi sabah. Ödeme
-  pingi kaçarsa bar ekranında ≤ 6 dk (yalnız ödeme beklenirken). Site → uygulama: menü ≤ 15 dk, mağaza ≤ 20 dk (yeni
+  pingi kaçarsa bar ekranında ≤ 6 dk (yalnız ödeme beklenirken; bildirimi kapalı ya da ekranında açık sipariş olan
+  görünür ekranda. Bildirimi açık, boş ekran takibi kabuğun 30 dakikalık kontrolünde öğrenir: P2 › Durum 5). Site →
+  uygulama: menü ≤ 15 dk, mağaza ≤ 20 dk (yeni
   uygulama sürümünden sonra). Genel sayfalar: etiket düştükten sonraki ilk sayfa yüklemesi. llms.txt ≤ 1 gün. Sipariş
   anındaki karar her zaman güncel.
 
@@ -514,10 +517,17 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
   4. Sitenin #270'te sabitlediği dört vektör (sipariş okuması, sipariş pingi, aşama, ayın satışı) panelde de:
      `tests/site-siparis.test.ts`, `tests/site-satis.test.ts`. Uçtan uca akış sitenin sahte ucuyla
      `tests/siparis-takip-db.test.ts`'te; gerçek siteyle canlıda yinelenir.
-  5. Sınır: bildirimi açık, ekranı boş cihaz takibi kabuğun bir sonraki kontrolünde (en çok 30 dakika) öğrenir; arka
-     plandaki sekme siteyi çekmez. Bugünkü kural (son iki saatte ping ya da değişiklik varsa yoğun) kaldı: takibin
-     sürüm artışı son pingi görünür kıldığından vazgeçilen bir kartlı ödeme de görünür ekranı iki saat üç dakikalık
-     çekmede tutabilir; §4.0'ın 48 saatlik ölçümü bunu gösterir, gerekirse `pingAt` kuralı kalkar (P2 onu gereksiz kılar).
+  5. `busy` (Ne 4): bugünkü kuralın "son iki saatte ping" yarısı kalktı, "son iki saatte liste değişti" kaldı. Takibin
+     sürüm artışı son pingi ekrana taşıdığından o yarı vazgeçilen her kartlı ödemede görünür ekranı iki saat üç
+     dakikalık çekmede tutardı (§3.1 bütçe kuralı 4: pingte iki saatlik yoğun mod yok). Listeyi değiştiren ping
+     `changeAt`'i yazar; değiştirmeyen ping takibi başlatır ve o en çok 30 dakika sürer.
+  6. Sınır (§3.1 gecikme hedefi buna göre daraltıldı): bildirimi açık, ekranı boş cihaz (Yardım'ın önerdiği bar
+     tableti) takibi kabuğun bir sonraki kontrolünde (30 dakikada bir) öğrenir, takibin başlaması bildirim göndermez.
+     Takip o ana kadar bitmişse sipariş saatlik kontrolle gelir (en geç ≈ 1 saat, P2 öncesi gibi); arka plandaki sekme
+     siteyi çekmez. Kapatmak için aday: takip başlayınca `orders` konusunda içeriksiz bir "yenile" bildirimi, service
+     worker yalnız görünür panel sekmesi varsa canlı veriyi yeniletir. Görünmeyen sekmede tarayıcı bildirim göstermek
+     zorunda olduğu için sahibin kararını ister; kısa aralıklı canlı sorgu panelin Neon bütçesini bozar, yapılmadı.
+     Açık iş KALAN-ISLER'de.
 - **Repo / dal:** lafmaliyet · `claude/senkron-p2-bar-odeme`.
 - **Ne:**
   1. src/lib/site-orders/schema.ts: isteğe bağlı `awaitingPayment` (yoksa 0).
@@ -532,8 +542,10 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Testler:** tests/site-siparis.test.ts (alan yokken 0; geçişte sürüm artar; 30 dk sonra `busy` düşer; ping çekmesi
   saatlik kararı sıfırlamaz; `missedPingAt`); tests/canli-yoklama.test.ts.
 - **Migration:** yok (`integration_state`).
-- **Uçtan uca:** ödeme anında paneli 2 sn durdur (ödeme pingi düşer) → ekran ≤ 6 dk içinde siparişi gösterir, Ayarlar
-  "ping kaçtı" der. Ödeme beklenmeyen sakin saatte yoklama 60 dk kalır.
+- **Uçtan uca:** ödeme anında paneli 2 sn durdur (ödeme pingi düşer) → bildirimi kapalı (ya da ekranında açık sipariş
+  olan) görünür bar ekranı ≤ 6 dk içinde siparişi gösterir, Ayarlar "ping kaçtı" der. Bildirimi açık, boş ekranda en geç
+  ≈ 1 saat (Durum 6). Ödeme beklenmeyen sakin saatte yoklama 60 dk kalır; vazgeçilen kartlı ödemeden sonra ekran en çok
+  30 dk yoğun kalır.
 - **Bütçe:** kartlı sipariş başına ≤ 30 dk, çoğunlukla site veritabanı zaten uyanıkken.
 - **Bağımlı:** S2 canlıda (alan yoksa davranış bugünkü).
 

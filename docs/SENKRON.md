@@ -67,8 +67,10 @@ Tükendi / Satışa aç / Kapalı tut'u (`sold-out-core.ts`).
   önbelleği 300 sn. Site bayrağı duyurunca (S1 yayında) panel her menü yazımında `expect` gönderir. Uygulamanın sözleşme
   kopyası lafmobil #35 (M1).
 - **Site (S2, laffogato #270) ve panel (P2):** sipariş okumasının yanında ödeme bekleyen sayısı; panel sayı sıfırdan
-  büyükken bar ekranını en çok 30 dakika yoğun tutar, sakin saatin kontrolü pingle yapılan çekmeyi saymaz, kaçan ping
-  Ayarlar › laffogato.net'te görünür ([SITE-SIPARIS.md](SITE-SIPARIS.md) › Ödeme takibi). Sipariş okuması, sipariş
+  büyükken bar ekranını en çok 30 dakika yoğun tutar (pingin kendisi artık yoğunluk sayılmaz), sakin saatin kontrolü
+  pingle yapılan çekmeyi saymaz, kaçan ping Ayarlar › laffogato.net'te yedi gün görünür
+  ([SITE-SIPARIS.md](SITE-SIPARIS.md) › Ödeme takibi). Bildirimi açık, boş bar ekranı takibi kabuğun 30 dakikalık
+  kontrolünde öğrenir; onu uyandırmak sahibin kararını bekliyor (`planlar/KALAN-ISLER.md`). Sipariş okuması, sipariş
   pingi, aşama dokunuşu ve ayın satışı için imza vektörleri iki tarafta aynı (`tests/site-siparis.test.ts`,
   `tests/site-satis.test.ts`).
 - **Sonraki** (uygulamanın menü ve mağaza tazeliği M2; Faz 2: ayarlar ve kapanışlar): planın §4'ü.

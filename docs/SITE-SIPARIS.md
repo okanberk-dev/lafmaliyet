@@ -180,7 +180,7 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 |-------------|---------|
 | Sitenin pingi (`/api/orders/ping`) | Hemen (202'den sonra, `after()`); hata olursa 4 saniye sonra bir kez daha |
 | Ekran açılınca ya da öne gelince | Son çekme bir dakikadan eskiyse |
-| Arka planda, yalnız ekran görünürken | Ekranda sipariş varken, son iki saatte ping / değişiklik olduysa ya da sitede ödemesi beklenen sipariş varken (en çok 30 dakika, aşağıda **Ödeme takibi**) üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir. Sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz |
+| Arka planda, yalnız ekran görünürken | Ekranda sipariş varken, son iki saatte liste değiştiyse ya da sitede ödemesi beklenen sipariş varken (en çok 30 dakika, aşağıda **Ödeme takibi**) üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir. Sitenin pingi tek başına ekranı yoğun yapmaz. Sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz |
 | **Yenile** | Hemen; art arda basılırsa siteyi en çok on saniyede bir sorar (son çekme hatalıysa her basışta) |
 | Günlük iş | Yok: Vercel'in cron kotası dolu, ping ve ekran yeter |
 
@@ -221,11 +221,18 @@ açılmış olanlar). Kurallar `src/lib/site-orders/follow.ts`'te (saf, ekranın
   zaten sayılıyorsa sayıyı artırmaz) yeniden başlar; ekranın kendi çekmesi takibi uzatmaz. Sayı 0 olunca takip biter.
   Takibin başlaması, yeniden başlaması ve bitmesi sürümü artırır: açık sekme yeni bitişi canlı uçtan alır. Pingin
   kendisi sürümü artırmaz.
-- **Gecikme:** ödeme pingi kaçsa da görünür bar ekranı siparişi birkaç dakikada (en geç ≈ 6 dakika) gösterir: ekran
-  takibi ilk canlı veride öğrenir (ekranda açık sipariş varken ya da cihaz bildirimi almıyorken 20 saniyede bir).
-  Bildirimi açık, ekranı boş cihaz yeniliği sormadan bildirimle bekler: takibi kabuğun bir sonraki kontrolünde (en
-  çok 30 dakika) öğrenir, sonra üç dakikada bir çeker. Arka plandaki sekme siteyi kendisi çekmez (kabuğun 10
-  dakikalık kontrolü yalnız panelin listesine bakar).
+- **Ping yoğunluk sayılmaz:** P2'den önce son iki saatte ping gelen ekran yoğundu. Takibin sürüm artışı son pingi
+  ekrana taşıdığından bu kural vazgeçilen her kartlı ödemede ekranı iki saat üç dakikalık çekmede tutardı; kalktı.
+  Yoğunluğu açık sipariş, son iki saatteki liste değişikliği (`changeAt`) ve ödeme takibi belirler (`boardBusy`).
+  Listeyi değiştiren her ping `changeAt`'i yazar, değiştirmeyen ping (ödeme sayfası açıldı) yalnız takibi başlatır.
+- **Gecikme:** ödeme pingi kaçsa da **bildirimi kapalı** ya da **ekranında açık sipariş olan** görünür bar ekranı
+  siparişi birkaç dakikada (en geç ≈ 6 dakika) gösterir: ekran takibi ilk canlı veride öğrenir (20 saniyede bir).
+  **Bildirimi açık, ekranı boş cihaz** (Yardım'ın önerdiği bar tableti) yeniliği sormadan bildirimle bekler ve takibin
+  başlaması bildirim göndermez: takibi kabuğun bir sonraki kontrolünde (30 dakikada bir) öğrenir. Takip o ana kadar
+  sürüyorsa üç dakikada bir çeker; bittiyse sipariş saatlik kontrolle gelir (en geç ≈ 1 saat, P2 öncesi gibi). Arka
+  plandaki sekme siteyi kendisi çekmez (kabuğun 10 dakikalık kontrolü yalnız panelin listesine bakar). Bu cihazı
+  takip başlayınca uyandırmak sahibin kararını ister (görünmeyen sekmede tarayıcı bildirim göstermek zorunda; kısa
+  aralıklı canlı sorgu ise panelin Neon bütçesini bozar): `planlar/KALAN-ISLER.md`.
 - **Bütçe:** sürekli sorgu yok, yeni zamanlanmış iş yok; sık çekme yalnız ödeme beklenirken ve sipariş başına en çok
   30 dakika (sitenin sayısı da her siparişi son ödeme sayfasından 30 dakika sonra düşer; takip sayı 0 olunca biter).
   Alanı göndermeyen eski site için davranış eskisi gibidir.
@@ -234,9 +241,11 @@ açılmış olanlar). Kurallar `src/lib/site-orders/follow.ts`'te (saf, ekranın
   sık kontroller (açılış 1 dk, yoğun 3 dk) pingin çekmesini sayar, o çekme listeyi zaten getirdi.
 - **Kaçan ping:** pingle olmayan bir çekme (ekran, Yenile, aşama sonrası, Bağlantıları sına) ilk kez gördüğü yeni bir
   siparişi getirir, sipariş en az bir dakika önce ödenmiş (sitenin saatiyle) ve ödemeden sonra siteden hiç ping
-  gelmemişse `missedPingAt` yazılır. **Ayarlar › laffogato.net** siparişler satırında gösterir: "Ping kaçtı …: ödenmiş
-  bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi." Ping gelip çekmesi düştüyse bu kaçan ping değil, çekme
-  hatasıdır (satır onu hata olarak gösterir). İlk çekme ve önceki listesi eksik (200'den çok sipariş) çekme sayılmaz.
+  gelmemişse `missedPingAt` yazılır (yalnız son an; sayaç yok). **Ayarlar › laffogato.net** siparişler satırında yedi
+  gün gösterir (`missedPingShown`): "Ping kaçtı …: ödenmiş bir sipariş sitenin pingiyle değil ekranın kontrolüyle
+  geldi." Ping gelip çekmesi düştüyse bu kaçan ping değil, çekme hatasıdır (satır onu hata olarak gösterir). İlk çekme
+  ve önceki listesi eksik (200'den çok sipariş) çekme sayılmaz. Anahtar sebep olamaz: ping ve çekme aynı anahtarla
+  imzalanır, kaçan ping ancak başarılı bir çekmeden sonra yazılır.
 
 ## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
@@ -301,7 +310,7 @@ vermesini söyleyen kısa sözü görür.
 | Sitenin sipariş listesi tanınmayan sürümde (2); panel güncel değil | Site sözleşmeyi değiştirmiş: paneli güncelleyin |
 | N sipariş okunamadı | Sitenin bir siparişi beklenen biçimde değil; sitenin panelinde kontrol edin |
 | Zil çalmıyor | **Sipariş zili bu cihazda** açık mı, ekrana bir kez dokunuldu mu (tarayıcı ilk dokunuştan önce ses çaldırmaz)? |
-| Ping kaçtı (Ayarlar › laffogato.net) | Bir siparişin ödeme pingi panele ulaşmadı, sipariş ekranın kontrolüyle geldi. Tek tük olur (panel yayındayken); sık görülürse sitedeki `PANEL_URL`'yi, iki projedeki anahtarı ve sitenin günlüğünde "[panel-orders] ping not delivered" uyarılarını kontrol edin |
+| Ping kaçtı (Ayarlar › laffogato.net) | Bir siparişin ödeme pingi panele ulaşmadı, sipariş ekranın kontrolüyle geldi. Tek tük olur (panel yayındayken); satır yedi gün görünür. Tarih sık sık yenileniyorsa sitedeki `PANEL_URL`'yi kontrol edin ve sitenin günlüğündeki "[panel-orders] ping not delivered" satırlarını panelin yayın saatleriyle karşılaştırın. Ping ve çekme aynı imzayı kullanır: çekme başarılıyken sebep o değildir |
 | Sitede sipariş ilerletme ucu yok (laffogato.net güncel değil) | Sitenin aşama ucu yayımlanmamış; o zamana kadar aşamayı **Sitede aç** ile sitenin panelinden değiştirin |
 | Sipariş bu arada değişti; ekran yenilendi | Sipariş başka yerden (sitenin paneli, başka cihaz) ilerlemiş; kartın yeni hâline bakın, gerekiyorsa yeniden dokunun |
 | Sipariş sitede bulunamadı ya da artık bar ekranında değil | Sitede iade / iptal edilmiş ya da tamamlanmış; ekran yenilenir, kart kalkar |
@@ -327,7 +336,7 @@ anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker;
 | `src/lib/site-orders/schema.ts` | Sitenin listesinin doğrulanması: sürüm, sıkı alanlar, atlanan siparişler, güvenli yol (saf) |
 | `src/lib/site-orders/feed.ts` | Yeni sipariş tespiti, parmak izi, kart metinleri, sıralama, "Sitede aç" adresi, zil kuralı, bildirim metni (saf) |
 | `src/lib/site-orders/stage.ts` | Aşama düğmeleri: izin verilen işlem / aşama çiftleri, düğme adları, bildirim ve hata metinleri (saf, zod'suz: ekranın paketine girer) |
-| `src/lib/site-orders/follow.ts` | Ödeme takibi (başlama, yeniden başlama, bitiş), ekranın yoğunluğu, "son çekme bundan eskiyse sor" kuralı, kaçan ping (saf, zod'suz) |
+| `src/lib/site-orders/follow.ts` | Ödeme takibi (başlama, yeniden başlama, bitiş), ekranın yoğunluğu, "son çekme bundan eskiyse sor" kuralı, kaçan ping ve Ayarlar'daki satırının süresi (saf, zod'suz) |
 | `src/lib/site-orders/stage-request.ts` | Aşama ucunun gövdesi ve yanıtın anlamı (200 / 409 / okunamayan / hata; sipariş listedeki şemayla doğrulanır) (saf) |
 | `src/server/actions/site-orders.ts` | `advanceSiteOrder`: oturum, doğrulama, imzalı istek (`callSite`), ardından listeyi yeniden çekme |
 | `src/lib/site-ping.ts` | Pingin denetimi (menü pingiyle ortak; `src/lib/site-menu/ping.ts` bunu yeniden dışa verir) |

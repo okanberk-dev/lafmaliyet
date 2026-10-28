@@ -167,6 +167,13 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 - **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür. 26 Ekim denetiminde E-15 (bitirme izi E-65), B18 (migration).
 - **Site tarafı, ayrı laffogato PR'ı (ek alan):** `POST /api/panel/menu` yanıtına `changed: boolean` (`setMenuItemSaleFields` yazdıysa true, "değişmedi" yolunda false). Panel Tükendi kaydını şimdi istekten hemen önceki canlı listeye ve yanıtın damgasına bakarak yazıyor (10b incelemesi); sahip sitede ya da yönetici ürün kartından tam bu gidiş-dönüş içinde kapatırsa personelin kaydı yine yazılabilir. Alan gelince panel kaydı yalnız `changed === true`'da yazar (`docs/SITE-MENU.md` › Kayıt).
 - Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06; 26 Ekim'de yeniden doğrulanmadı, sahibe soru 11).
+- **Senkron P2'nin açığı (sahibe karar, ayrı PR):** bildirimi açık, ekranı boş bar tableti (Yardım'ın önerdiği kurulum)
+  ödeme takibinin başladığını kabuğun 30 dakikalık kontrolünde öğrenir; ödeme pingi kaçarsa sipariş o cihazda bir
+  saate kadar gecikebilir (bildirimi kapalı ya da açık siparişi olan ekranda ≤ 6 dk). Aday: takip başlayınca `orders`
+  konusunda içeriksiz bir "yenile" bildirimi; service worker görünür panel sekmesi varsa yalnız canlı veriyi yeniletir.
+  Görünür sekme yoksa tarayıcı bir bildirim göstermek zorunda (sessiz push yok): sahibin "ödeme bekleniyor" bildirimine
+  razı olup olmadığı sorulur. Kısa aralıklı canlı sorgu panelin Neon bütçesini bozar, yapılmaz. Ayrıntı `senkron.md`
+  › P2 › Durum 6, `docs/SITE-SIPARIS.md` › Ödeme takibi.
 - Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1; 26 Ekim'de sahibe soru 11).
 
 ### Birinci paket (planlar hazır; kurallar ve birleştirme sırası `CRITIQUE.md`)

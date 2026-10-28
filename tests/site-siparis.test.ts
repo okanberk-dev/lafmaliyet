@@ -32,7 +32,9 @@ import {
   awaitingUntil,
   boardBusy,
   MISSED_PING_GRACE_MS,
+  MISSED_PING_SHOW_MS,
   missedPing,
+  missedPingShown,
   nextAwaiting,
   pullDue,
   QUIET_CHECK_MIN_MS,
@@ -647,22 +649,29 @@ test("ödeme takibi: 0 → > 0, sayı artınca ve sayı sıfırdan büyükken he
   assert.ok(live.indexOf("status: 304") < live.indexOf("awaitingUntil(ordersState)"));
 });
 
-test("bar ekranı yoğun mu: açık sipariş, son iki saatte hareket ya da ödeme bekleniyor; takip 30 dakikada düşer", () => {
+test("bar ekranı yoğun mu: açık sipariş, son iki saatte liste değişti ya da ödeme bekleniyor; ping tek başına saymaz", () => {
   const now = Date.parse("2026-10-28T12:00:00.000Z");
   const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
-  const quiet = { open: 0, pingAt: null, changeAt: null, awaitingUntil: null };
+  const quiet = { open: 0, changeAt: null, awaitingUntil: null };
   assert.equal(boardBusy(quiet, now), false);
   assert.equal(boardBusy({ open: 0 }, now), false, "eski sunucunun yanıtı");
   assert.equal(boardBusy({ ...quiet, open: 1 }, now), true);
-  assert.equal(boardBusy({ ...quiet, pingAt: iso(119 * 60_000) }, now), true, "bugünkü kural kalır");
+  assert.equal(boardBusy({ ...quiet, changeAt: iso(119 * 60_000) }, now), true, "liste değişti: iki saat kalır");
   assert.equal(boardBusy({ ...quiet, changeAt: iso(121 * 60_000) }, now), false);
   const until = awaitingUntil({ awaitingPayment: 1, awaitingSince: iso(0) });
   assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now), true, "ödeme bekleniyor");
   assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now + 29 * 60_000), true);
   assert.equal(boardBusy({ ...quiet, awaitingUntil: until }, now + 30 * 60_000), false, "30 dakika doldu");
+  // Vazgeçilen kartlı ödeme: ödeme sayfasının pingi listeyi değiştirmez, takibi başlatır; takip bitince ekran sakinleşir.
+  // Takibin sürüm artışı pingAt'i ekrana taşır; ping iki saat yoğun sayılsaydı ekran iki saat üç dakikada bir çekerdi
+  // (senkron planı §3.1 bütçe kuralı 4: pingte iki saatlik yoğun mod yok)
+  const pingAt = iso(0);
+  const ended = { ...quiet, pingAt, awaitingUntil: null } as Parameters<typeof boardBusy>[0];
+  for (const min of [31, 60, 90, 119]) assert.equal(boardBusy(ended, now + min * 60_000), false, `ping tek başına yoğunluk değil (+${min} dk)`);
 
   const board = read("src/app/panel/karaoke/orders-board.tsx");
-  assert.match(board, /const busy = boardBusy\(\{ open: list\.length, pingAt: data\?\.pingAt, changeAt: data\?\.changeAt, awaitingUntil: data\?\.awaitingUntil \}, now\);/);
+  assert.match(board, /const busy = boardBusy\(\{ open: list\.length, changeAt: data\?\.changeAt, awaitingUntil: data\?\.awaitingUntil \}, now\);/);
+  assert.doesNotMatch(read("src/lib/site-orders/follow.ts"), /recent\(o\.pingAt/);
   assert.match(board, /const ms = failing \? ERROR_REPULL_MS : busy \? BUSY_REPULL_MS : QUIET_REPULL_MS;/);
   assert.match(board, /const clock = useClock\(30_000\);/, "takip bitince ekran en geç yarım dakikada sakinleşir");
   // Kurallar ekranın paketine girer: zod ve sunucu modülü yok (şemadan yalnız tip)
@@ -726,9 +735,24 @@ test("ping kaçtı: pingle olmayan çekmenin getirdiği, bir dakikadan önce öd
   // Ayarlar › laffogato.net (yalnız yönetici) gösterir
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.match(page, /missedPingAt: orders\.missedPingAt/);
-  assert.match(page, /\{configured && r\.missedPingAt \? \(/);
+  assert.match(page, /\{configured && r\.missedPingAt && missedPingShown\(r\.missedPingAt, nowMs\) \? \(/);
   assert.match(page, /Ping kaçtı \{dateTimeTR\(r\.missedPingAt\)\}: ödenmiş bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi\./);
   assert.match(page, /await requireAdmin\(\);/);
+  // Öneri doğru yere bakar: ping ve çekme aynı anahtarla imzalanır, çekme başarılıyken anahtar sorun olamaz
+  const missedLine = page.slice(page.indexOf("Ping kaçtı {"), page.indexOf("</p>", page.indexOf("Ping kaçtı {")));
+  assert.doesNotMatch(missedLine, /anahtar/);
+  assert.match(missedLine, /PANEL_URL/);
+  assert.match(missedLine, /\[panel-orders\] ping not delivered/);
+  assert.doesNotMatch(read("docs/SITE-SIPARIS.md").split("\n").find((l) => l.startsWith("| Ping kaçtı")) ?? "", /anahtar/);
+
+  // Satır yedi gün görünür, sonra kendiliğinden düşer (tek tük kaçan ping haftalarca uyarı olarak kalmasın)
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  assert.equal(MISSED_PING_SHOW_MS, 7 * 86_400_000);
+  assert.equal(missedPingShown(new Date(now - 60_000).toISOString(), now), true);
+  assert.equal(missedPingShown(new Date(now - MISSED_PING_SHOW_MS + 1).toISOString(), now), true);
+  assert.equal(missedPingShown(new Date(now - MISSED_PING_SHOW_MS).toISOString(), now), false, "yedi gün doldu");
+  assert.equal(missedPingShown(null, now), false);
+  assert.equal(missedPingShown("bozuk", now), false);
 });
 
 test("imza: sipariş okuması, sipariş pingi ve aşama dokunuşunun sabit vektörleri (sitedeki testler aynı değerleri sabitler)", () => {

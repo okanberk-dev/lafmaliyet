@@ -45,8 +45,8 @@ import { advanceSiteOrder } from "@/server/actions/site-orders";
 /** Ekran açılınca ya da öne gelince son çekme bundan eskiyse site sorulur */
 const OPEN_STALE_MS = 60_000;
 /**
- * Yoğunken (ekranda açık sipariş var, son iki saatte sitede sipariş hareketi oldu ya da sitede ödemesi beklenen sipariş
- * var; boardBusy) arka planda yeniden çekme
+ * Yoğunken (ekranda açık sipariş var, son iki saatte liste değişti ya da sitede ödemesi beklenen sipariş var; boardBusy)
+ * arka planda yeniden çekme
  */
 const BUSY_REPULL_MS = 3 * 60_000;
 /** Sakinken (gece, kapalı saat) yeniden çekme: sitenin veritabanı (Neon) uyusun diye seyrek */
@@ -100,7 +100,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
   const list = data ? sortForScreen(data.list) : [];
   const clock = useClock(30_000);
   const now = clock || serverNow;
-  const busy = boardBusy({ open: list.length, pingAt: data?.pingAt, changeAt: data?.changeAt, awaitingUntil: data?.awaitingUntil }, now);
+  const busy = boardBusy({ open: list.length, changeAt: data?.changeAt, awaitingUntil: data?.awaitingUntil }, now);
   const [pulling, setPulling] = useState(false);
 
   // Açılışta ve sekmeye dönünce: son çekme bir dakikadan eskiyse site sorulur

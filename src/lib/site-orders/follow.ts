@@ -16,7 +16,7 @@ import type { SiteOrder } from "./schema";
 /** Ödeme takibinin süresi: başladığı ya da yeniden başladığı andan itibaren */
 export const AWAITING_FOLLOW_MS = 30 * 60_000;
 
-/** Ekran yoğunken (açık sipariş, son iki saatte ping ya da değişiklik) arka planda üç dakikada bir çeker */
+/** Ekran yoğunken (açık sipariş, son iki saatte listede değişiklik, ödeme takibi) arka planda üç dakikada bir çeker */
 export const BUSY_WINDOW_MS = 2 * 3_600_000;
 
 /**
@@ -34,6 +34,12 @@ export const ERROR_RETRY_MS = 5_000;
  * çekmesi kaçan sayılmasın).
  */
 export const MISSED_PING_GRACE_MS = 60_000;
+
+/**
+ * Ayarlar'daki "Ping kaçtı" satırı bu kadar süre görünür: tek tük kaçan ping (panel yayındayken) haftalarca uyarı
+ * olarak kalmasın
+ */
+export const MISSED_PING_SHOW_MS = 7 * 86_400_000;
 
 /** Ödeme bekleyen sayısının üst sınırı (bozuk yanıt ekranı bozmasın) */
 export const AWAITING_MAX = 9_999;
@@ -75,14 +81,20 @@ const recent = (iso: string | null | undefined, nowMs: number) => Boolean(iso) &
 
 /**
  * Bar ekranı yoğun mu (arka planda üç dakikada bir çeker; değilse saatte bir): ekranda açık sipariş var, son iki saatte
- * sitede sipariş hareketi oldu (ping ya da liste değişti) ya da ödeme bekleniyor (`awaitingUntil` geçmedi).
+ * liste değişti ya da ödeme bekleniyor (`awaitingUntil` geçmedi). Sitenin pingi tek başına yoğunluk sayılmaz: listeyi
+ * değiştiren ping `changeAt`'i yazar, listeyi değiştirmeyen ping (ödeme sayfası açıldı) ödeme takibini başlatır ve o
+ * en çok 30 dakika sürer. Pingi iki saat saymak, takibin sürüm artışıyla ekrana ulaşan pingAt'i vazgeçilen her kartlı
+ * ödemede iki saatlik üç dakikalık çekmeye çevirirdi.
  */
-export function boardBusy(
-  o: { open: number; pingAt?: string | null; changeAt?: string | null; awaitingUntil?: string | null },
-  nowMs: number,
-): boolean {
+export function boardBusy(o: { open: number; changeAt?: string | null; awaitingUntil?: string | null }, nowMs: number): boolean {
   const awaiting = Boolean(o.awaitingUntil) && Date.parse(o.awaitingUntil!) > nowMs;
-  return o.open > 0 || recent(o.pingAt, nowMs) || recent(o.changeAt, nowMs) || awaiting;
+  return o.open > 0 || recent(o.changeAt, nowMs) || awaiting;
+}
+
+/** Ayarlar'daki "Ping kaçtı" satırı görünsün mü: son kaçan ping son yedi günde (sayfanın sunucu saatiyle) */
+export function missedPingShown(missedPingAt: string | null | undefined, nowMs: number): boolean {
+  const at = missedPingAt ? Date.parse(missedPingAt) : NaN;
+  return Number.isFinite(at) && nowMs - at < MISSED_PING_SHOW_MS;
 }
 
 /**

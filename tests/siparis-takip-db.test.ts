@@ -20,7 +20,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import { eq, inArray, sql } from "drizzle-orm";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
-import { AWAITING_FOLLOW_MS } from "../src/lib/site-orders/follow";
+import { AWAITING_FOLLOW_MS, awaitingUntil as followUntil, boardBusy } from "../src/lib/site-orders/follow";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
@@ -201,6 +201,28 @@ describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { s
     const after_ = await state();
     assert.deepEqual([after_.awaitingPayment, after_.awaitingSince, awaitingUntil(after_)], [0, null, null]);
     assert.equal((await sync.readOrdersSnapshot(db)).orders.length, 1);
+  });
+
+  test("vazgeçilen kartlı ödeme: takip bitince ekran sakinleşir, ödeme sayfasının pingi iki saat yoğunluk sayılmaz", async () => {
+    await sync.syncSiteOrders("screen");
+    await patch({ lastChangeAt: ago(3 * 3_600_000) });
+    // Canlı ucun ekrana verdiği alanlarla (src/app/api/canli/route.ts) bar ekranının kararı
+    const busyAt = async (nowMs: number) => {
+      const st = await state();
+      return boardBusy({ open: (await sync.readOrdersSnapshot(db)).orders.length, changeAt: st.lastChangeAt, awaitingUntil: followUntil(st) }, nowMs);
+    };
+    site.awaiting = 1;
+    await ping();
+    const pingAt = (await state()).lastPingAt!;
+    assert.equal(await busyAt(Date.now()), true, "ödeme bekleniyor");
+    assert.equal(await version(), "2", "takip başladı: pingAt de ekrana ulaşır");
+    // Müşteri vazgeçti: site sayıdan düşürdü, ekranın çekmesi takibi bitirir
+    site.awaiting = 0;
+    await sync.syncSiteOrders("screen");
+    assert.equal(await version(), "3");
+    for (const min of [1, 31, 60, 119]) {
+      assert.equal(await busyAt(Date.parse(pingAt) + min * 60_000), false, `takip bitti, ping tek başına yoğunluk değil (+${min} dk)`);
+    }
   });
 
   test("site hata verirse takip olduğu gibi kalır; ekranın denemesi kontrol anını yazar", async () => {
