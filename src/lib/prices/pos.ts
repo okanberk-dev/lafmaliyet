@@ -5,8 +5,11 @@
  * kasadaki fiyata geri dönerse kendiliğinden boşalır. Saf modül; tests/fiyatlar.test.ts sınar (docs/FIYATLAR.md).
  *
  * LafPOS'a geçiş gününden itibaren (src/lib/lafpos/kasa.ts tillScope; denetim E-39) siteye bağlı ürünün fiyatını LafPOS
- * siteden kendisi alır: listeye yalnız siteye bağlı olmayan (LafPOS'ta yerel) ürünler girer ve metinler `kasa` ile
- * "LafPOS" der. `kasa` verilmezse (ya da "ModPOS") her metin bugünkü gibidir.
+ * siteden kendisi alır: listede yalnız siteye bağlı olmayan ürünler görünür ve metinler `kasa` ile "LafPOS" der. Bağlı
+ * olmayan ürün LafPOS'ta yerel olabilir (fiyatı orada elle değişir) ya da LafPOS onu siteden alıyor olabilir (LafPOS
+ * siteden gelen ürünün fiyatını değiştirtmez: ürün panelde siteye bağlanmalı ya da fiyat sitede değişmeli); metinler
+ * ikisini de söyler. LafPOS'ta ürün fiyatını yalnız menüyü yöneten (patron, müdür) değiştirir: bu iş personele düşmez
+ * (posBell). `kasa` verilmezse (ya da "ModPOS") her metin bugünkü gibidir.
  */
 
 import type { KasaName } from "../lafpos/kasa";
@@ -53,9 +56,12 @@ export function staleForText(since: Date | string, now: Date = new Date()): stri
 /** Bağlı olmayan ürünün fiyatı değişince bildirimin açıklaması */
 export const POS_PRICE_REMINDER = "Kasadaki (ModPOS) fiyatı da değiştir; Fiyatlar › Kasaya işle listesine eklendi.";
 
-/** LafPOS gününde bağlı olmayan ürün: LafPOS'ta yerel ürünse fiyatı orada elle değişir */
+/**
+ * LafPOS gününde bağlı olmayan ürün: LafPOS ürünü siteden alıyorsa fiyatı LafPOS'ta değişmez (ürünü bağlamak ya da
+ * fiyatı sitede değiştirmek gerekir); LafPOS'ta yerel ürünse fiyatı orada elle değişir
+ */
 export const POS_PRICE_REMINDER_LAFPOS =
-  "Ürün siteye bağlı değil: LafPOS'ta yerel ürünse fiyatını LafPOS'ta elle değiştir; Fiyatlar › Kasaya işle listesine eklendi.";
+  "Ürün siteye bağlı değil: LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin. Fiyatlar › Kasaya işle listesine eklendi.";
 
 /** Sitede de değişen fiyat kasadakine döndüyse yalnız fiyat listesinin tarihi kalır */
 const SITE_DATE_REMINDER = "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma.";
@@ -85,7 +91,7 @@ export function priceReminder(r: { site: boolean; posPending: boolean; kasa?: Ka
 export function batchPosNote(kind: "bulk" | "undo", applied: readonly { posPending: boolean; site?: boolean }[], kasa: KasaName = "ModPOS"): string | undefined {
   if (applied.some((a) => a.posPending)) {
     return kasa === "LafPOS"
-      ? "Siteye bağlı olmayanlar Kasaya işle listesinde: LafPOS'ta yerel ürünse fiyatı orada elle değişir."
+      ? "Siteye bağlı olmayanlar Kasaya işle listesinde: LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin."
       : "Kasadaki (ModPOS) fiyatlar Kasaya işle listesinde.";
   }
   // LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır: kasada yapılacak bir şey yok
@@ -278,16 +284,20 @@ export interface PosBellItem {
 /**
  * Zil: kasada değişecek fiyatlar. Kimlik iki rolde en yeni geri kalıştan: bir fiyatın işaretlenmesi zili yeniden okunmamış
  * yapmaz, listeye yeni bir fiyat girmesi yapar. Personel Kasadaki fiyatlar'a (Kasa grubu), yönetici Fiyatlar › Kasaya
- * işle'ye (Uyarılar). Bekleyen yoksa satır yok.
+ * işle'ye (Uyarılar). Bekleyen yoksa satır yok. LafPOS gününde yalnız yöneticide: LafPOS'ta ürün fiyatını kasiyer
+ * değiştiremez (menüyü yöneten değiştirir), personele görev düşmez.
  */
 export function posBell(role: "admin" | "staff", p: PosSummaryLite, now: Date, kasa: KasaName = "ModPOS"): PosBellItem | null {
   if (!p.count) return null;
+  if (role !== "admin" && kasa === "LafPOS") return null;
   const base = { id: `kasa-fiyat-${p.newest?.getTime() ?? 0}`, kind: "info" as const, title: `Kasada değişecek ${num(p.count)} fiyat`, timeLabel: p.oldest ? agoLabel(p.oldest, now) : "", unread: true as const };
-  // LafPOS gününde listede yalnız siteye bağlı olmayan (LafPOS'ta yerel) ürünler var
-  const where = kasa === "LafPOS" ? "LafPOS'ta (siteye bağlı olmayan ürün)" : "ModPOS'ta";
-  return role === "admin"
-    ? { ...base, body: `${where} elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin`, href: "/panel/urunler/fiyatlar?sekme=kasa", group: "uyari" }
-    : { ...base, body: `${kasa === "LafPOS" ? "LafPOS'ta elle" : "ModPOS'ta"} değiştirip Kasadaki fiyatlar'da işaretleyin`, href: "/panel/kasa/fiyatlar", group: "kasa" };
+  if (role !== "admin") return { ...base, body: "ModPOS'ta değiştirip Kasadaki fiyatlar'da işaretleyin", href: "/panel/kasa/fiyatlar", group: "kasa" };
+  // LafPOS gününde listede yalnız siteye bağlı olmayan ürünler var: yerelse LafPOS'ta elle, siteden geliyorsa bağlanır
+  const body =
+    kasa === "LafPOS"
+      ? "Siteye bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın"
+      : "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin";
+  return { ...base, body, href: "/panel/urunler/fiyatlar?sekme=kasa", group: "uyari" };
 }
 
 /**

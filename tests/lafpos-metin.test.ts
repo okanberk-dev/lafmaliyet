@@ -11,8 +11,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { dayTasks, eveningCashText, type DayFacts, type DayTask } from "../src/app/panel/bugun/logic";
+import type { LafposSalesMonth } from "../src/lib/calc/types";
 import { cashReportText, whatsappText, type CashReportFields } from "../src/lib/cash-report";
-import { monthKasa, periodKasa, tillPriceManual, tillScope } from "../src/lib/lafpos/kasa";
+import { monthKasa, periodKasa, salesMonthKasa, tillPriceManual, tillScope } from "../src/lib/lafpos/kasa";
 import { kasaName } from "../src/lib/lafpos/switch";
 import { okcReconcile } from "../src/lib/okc-z";
 import { failed } from "../src/lib/photo-read/kasa";
@@ -35,10 +36,10 @@ const S = "2026-11-10";
 // ---------------------------------------------------------------- Günün ve ayın kasası
 
 test("günün kasası: geçiş günü boşken ve öncesinde ModPOS, geçiş gününden itibaren LafPOS", () => {
-  assert.deepEqual(tillScope("2026-11-20", null), { kasa: "ModPOS", lafpos: false });
-  assert.deepEqual(tillScope("2026-11-09", S), { kasa: "ModPOS", lafpos: false });
-  assert.deepEqual(tillScope(S, S), { kasa: "LafPOS", lafpos: true });
-  assert.deepEqual(tillScope("2026-12-01", S), { kasa: "LafPOS", lafpos: true });
+  assert.deepEqual(tillScope("2026-11-20", null), { kasa: "ModPOS", lafpos: false, switchDay: null });
+  assert.deepEqual(tillScope("2026-11-09", S), { kasa: "ModPOS", lafpos: false, switchDay: null }, "geçiş günü yalnız LafPOS gününde taşınır");
+  assert.deepEqual(tillScope(S, S), { kasa: "LafPOS", lafpos: true, switchDay: S });
+  assert.deepEqual(tillScope("2026-12-01", S), { kasa: "LafPOS", lafpos: true, switchDay: S });
   assert.equal(kasaName("2026-11-09", S), "ModPOS");
   assert.equal(kasaName(S, S), "LafPOS");
 });
@@ -67,6 +68,37 @@ test("ayın kasası: önce ModPOS (Patron), sonra LafPOS; geçiş ayında iki ka
   // Ayın 1'i: ay bütünüyle LafPOS; 2'si: ModPOS'un tek günü
   assert.equal(monthKasa("2026-11", "2026-11-01").source, "lafpos");
   assert.equal(plain(monthKasa("2026-11", "2026-11-02").long), "Kasa (ModPOS 1 Kasım · LafPOS 2–30 Kasım)");
+  // Ürün satışlarının etiketi: modelin saydığı bölünme (lafposSalesFrom), geçiş günü değil (denetim B11 incelemesi D3)
+  const month = (over: Partial<LafposSalesMonth>): LafposSalesMonth => ({
+    month: "2026-11",
+    source: "gecis",
+    from: S,
+    lafpos: { days: 21, last: "2026-11-30" },
+    modpos: { lines: 40, revenue: 90_000, through: "2026-11-09", counted: true },
+    modposZ: null,
+    gap: null,
+    overlap: null,
+    ...over,
+  });
+  assert.equal(plain(monthKasa("2026-11", S, month({})).long), "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)", "liste geçiş gününe kadar");
+  // Liste 12 Kasım'a kadar (overlap): LafPOS 13'ünden sayılır
+  const overlap = monthKasa("2026-11", S, month({ from: "2026-11-13", modpos: { lines: 40, revenue: 99_000, through: "2026-11-12", counted: true }, overlap: { from: S, to: "2026-11-12" } }));
+  assert.equal(plain(overlap.long), "Kasa (ModPOS 1–12 Kasım · LafPOS 13–30 Kasım)");
+  assert.equal(overlap.report, overlap.long);
+  assert.equal(overlap.short, "Kasa");
+  // Liste yok (gap): ModPOS günleri sayılmıyor
+  assert.equal(plain(monthKasa("2026-11", S, month({ modpos: null, gap: { from: "2026-11-01", to: "2026-11-09" } })).long), "Kasa (ModPOS listesi yok · LafPOS 10–30 Kasım)");
+  // Süren ay: LafPOS'un sayılan son günü; kasa raporunu bekleyen günler sayılmaz
+  assert.equal(plain(monthKasa("2026-11", S, month({ lafpos: { days: 5, last: "2026-11-14" }, held: { from: "2026-11-14", to: "2026-11-14" } })).long), "Kasa (ModPOS 1–9 Kasım · LafPOS 10–13 Kasım)");
+  // Geçiş günü henüz gelmedi (5 Kasım): LafPOS'tan sayılan gün yok
+  assert.equal(plain(monthKasa("2026-11", S, month({ lafpos: null, modpos: null })).long), "Kasa (ModPOS listesi yok · LafPOS 10 Kasım'dan itibaren)");
+  // Liste ayın tamamı (LafPOS sayılmıyor): ay ModPOS
+  assert.deepEqual(monthKasa("2026-11", S, month({ from: null, modpos: { lines: 40, revenue: 120_000, through: "2026-11-30", counted: true } })), modpos);
+  // Ayın özeti yoksa geçiş günündeki bölünme; geçiş ayı dışında `sales` hiçbir şey değiştirmez
+  assert.equal(plain(monthKasa("2026-11", S, null).long), "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)");
+  assert.deepEqual(monthKasa("2026-12", S, month({ month: "2026-12", source: "lafpos" })).source, "lafpos");
+  assert.deepEqual(salesMonthKasa("2026-11", S, { months: [month({ modpos: null })] }), monthKasa("2026-11", S, month({ modpos: null })));
+  assert.deepEqual(salesMonthKasa("2026-11", null, undefined), modpos, "geçiş günü boş: bugünkü metinler");
   // Birden çok ay (Gelir-gider'in yılı, Claude'un yıl özeti)
   assert.deepEqual(periodKasa(["2026-09", "2026-10"], S), { short: "ModPOS", both: "ModPOS" });
   assert.deepEqual(periodKasa(["2026-12"], S), { short: "LafPOS", both: "LafPOS" });
@@ -103,19 +135,23 @@ test("fiyat metinleri LafPOS gününde: siteye bağlı ürünü LafPOS siteden a
   assert.doesNotMatch(POS_PRICE_REMINDER_LAFPOS, /ModPOS/);
   assert.equal(priceReminder({ site: false, posPending: false, kasa: "LafPOS" }), null);
   assert.equal(batchPosNote("bulk", [{ posPending: false, site: true }], "LafPOS"), "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez.");
-  assert.match(batchPosNote("bulk", [{ posPending: true, site: false }], "LafPOS")!, /^Siteye bağlı olmayanlar Kasaya işle listesinde: LafPOS'ta yerel ürünse/);
+  assert.match(batchPosNote("bulk", [{ posPending: true, site: false }], "LafPOS")!, /^Siteye bağlı olmayanlar Kasaya işle listesinde: LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın/);
+  assert.match(POS_PRICE_REMINDER_LAFPOS, /Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin; LafPOS'ta yerel ürünse orada elle değiştirin/);
   assert.equal(batchPosNote("undo", [{ posPending: false, site: false }], "LafPOS"), "Bu fiyat kasada (LafPOS) henüz değişmemişti; kasada bir şey yapmanız gerekmez.");
   assert.equal(batchPosNote("bulk", [{ posPending: false, site: false }], "LafPOS"), undefined);
   assert.match(posChecklistText([ITEM], "2026-11-12", "LafPOS"), /^Kasada \(LafPOS\) değişecek fiyatlar · 12 Kasım 2026\n/);
   const now = tr("2026-11-12T14:00");
   const p = { count: 1, oldest: tr("2026-11-12T10:00"), newest: tr("2026-11-12T10:00") };
   const admin = posBell("admin", p, now, "LafPOS")!;
-  const staff = posBell("staff", p, now, "LafPOS")!;
-  assert.equal(admin.body, "LafPOS'ta (siteye bağlı olmayan ürün) elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin");
-  assert.equal(staff.body, "LafPOS'ta elle değiştirip Kasadaki fiyatlar'da işaretleyin");
-  for (const b of [admin, staff]) assert.doesNotMatch(`${b.title} ${b.body}`, /ModPOS/);
+  assert.equal(
+    admin.body,
+    "Siteye bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın",
+  );
+  assert.doesNotMatch(`${admin.title} ${admin.body}`, /ModPOS/);
+  // Personele görev yok: LafPOS'ta ürün fiyatını kasiyer değiştiremez (menüyü yöneten değiştirir; B11 incelemesi K1)
+  assert.equal(posBell("staff", p, now, "LafPOS"), null);
   // Bekleyen yoksa satır yok (LafPOS gününde siteye bağlı ürünler sayılmaz: çoğu gün hiç çıkmaz)
-  assert.equal(posBell("staff", { count: 0, oldest: null, newest: null }, now, "LafPOS"), null);
+  assert.equal(posBell("admin", { count: 0, oldest: null, newest: null }, now, "LafPOS"), null);
 });
 
 test("haftalık özetin kasa fiyatı maddesi günün kasasıyla", () => {
@@ -158,15 +194,23 @@ test("Bugün: yöneticinin kapalı gün satırı dünün kasasını söyler", ()
   assert.match(byKey(dayTasks(facts("2026-11-12")))["kasa-dun"].detail, /o günün ModPOS \//, "dün geçiş gününden önce");
 });
 
-test("Bugün: kasadaki fiyatlar satırı LafPOS gününde 'LafPOS'ta elle' der (yalnız siteye bağlı olmayanlar)", () => {
+test("Bugün: kasadaki fiyatlar satırı LafPOS gününde yalnız yöneticide (yalnız siteye bağlı olmayanlar)", () => {
   const noon = tr("2026-11-12T14:00");
   const pos = (kasa?: "ModPOS" | "LafPOS") => ({ count: 2, oldest: tr("2026-11-10T10:00").toISOString(), ...(kasa ? { kasa } : {}) });
-  assert.equal(byKey(dayTasks(staffFacts(noon, { pos: pos() }))).modpos.detail, "ModPOS'ta değişecek 2 fiyat; değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.");
-  const staff = byKey(dayTasks(staffFacts(noon, { pos: pos("LafPOS") }))).modpos;
-  assert.equal(staff.detail, "LafPOS'ta elle değişecek 2 fiyat (siteye bağlı olmayan ürün); değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.");
-  assert.equal(staff.href, "/panel/kasa/fiyatlar");
+  const modpos = byKey(dayTasks(staffFacts(noon, { pos: pos() }))).modpos;
+  assert.equal(modpos.detail, "ModPOS'ta değişecek 2 fiyat; değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.");
+  assert.equal(modpos.href, "/panel/kasa/fiyatlar");
+  // Personele görev yok: LafPOS'ta ürün fiyatını kasiyer değiştiremez (B11 incelemesi K1)
+  assert.equal(byKey(dayTasks(staffFacts(noon, { pos: pos("LafPOS") }))).modpos, undefined);
   const admin = byKey(dayTasks(adminFacts(noon, { pos: pos("LafPOS") }))).modpos;
-  assert.equal(admin.detail, "Kasada değişecek 2 fiyat: siteye bağlı olmayan ürünler, LafPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin. En eskisi 2 gündür bekliyor.");
+  assert.equal(
+    admin.detail,
+    "Kasada değişecek 2 fiyat (siteye bağlı olmayan ürünler): LafPOS'ta yerel ürünse orada elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin; LafPOS ürünü siteden alıyorsa Ürünler › Site menüsü'nde bağlayın. En eskisi 2 gündür bekliyor.",
+  );
+  assert.equal(
+    byKey(dayTasks(adminFacts(noon, { pos: pos("ModPOS") }))).modpos.detail,
+    "Kasada değişecek 2 fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin. En eskisi 2 gündür bekliyor.",
+  );
   // Bekleyen yoksa satır yok (LafPOS'ta siteye bağlı ürün sayılmaz)
   assert.equal(byKey(dayTasks(staffFacts(noon, { pos: { count: 0, oldest: null, kasa: "LafPOS" } }))).modpos, undefined);
 });
@@ -259,10 +303,12 @@ test("yazarkasa bölümüne çekilen kasa çıktısı: LafPOS gününde ModPOS b
 
 test("kaynak: kasadaki fiyatların okuyucuları ve yazımı bugünün kasasına bakar; hiçbir işaret silinmez", () => {
   const record = read("src/server/prices/record.ts");
-  // Geçiş günü yalnız siteye bağlı üründe okunur; LafPOS gününde o ürünün değişikliği kasa listesine girmez
-  assert.match(record, /row\.siteMenuId === null \|\| tillPriceManual\(await loadTillScope\(tx, at\), true\)/);
+  // Kasanın durumu geçiş gününden bağımsız yazılır (B11 incelemesi D1); geçiş günü yalnız bildirimin `posPending`'i için
+  // ve yalnız siteye bağlı üründe okunur
+  assert.match(record, /if \(opts\.pos !== false && c\.before !== null\) \{\n    const next = posAfterPriceChange/);
+  assert.match(record, /posPending = next\.stalePrice !== null && \(row\.siteMenuId === null \|\| tillPriceManual\(await loadTillScope\(tx, at\), true\)\);/);
   const scope = read("src/server/data/till-scope.ts");
-  assert.match(scope, /return scope\.lafpos \? isNull\(s\.products\.siteMenuId\) : undefined;/);
+  assert.match(scope, /return and\(isNull\(s\.products\.siteMenuId\), changedSinceStart\);/);
   const prices = read("src/server/data/prices.ts");
   const staff = read("src/server/data/pos-staff.ts");
   for (const [name, src] of [
@@ -271,9 +317,22 @@ test("kaynak: kasadaki fiyatların okuyucuları ve yazımı bugünün kasasına 
     ["loadStaffPosList", staff],
     ["staffPosSummary", staff],
   ] as const) {
-    const body = src.slice(src.indexOf(`export async function ${name}`), src.indexOf(`export async function ${name}`) + 1600);
-    assert.match(body, /tillProductFilter\(sc\)/, name);
+    const start = src.indexOf(`export async function ${name}`);
+    const end = src.indexOf("\nexport ", start + 1);
+    const body = src.slice(start, end < 0 ? undefined : end);
+    assert.match(body, /tillProductFilter\(sc, db\)/, name);
+    assert.match(body, /tillSince\(sc, /, name);
   }
+  // LafPOS gününde personele fiyat görevi yok (B11 incelemesi K1): zil sorgusu hiç yapılmaz, işaret eylemi reddeder,
+  // Kasadaki fiyatlar listesi okunmaz (kendi işaretini geri alması sürer)
+  const bell = read("src/server/bell/ops.ts");
+  assert.match(bell, /if \(user\.role !== "admin" && scope\.lafpos\) return \[\];/);
+  const action = read("src/server/actions/pos-marks.ts");
+  const mark = action.slice(action.indexOf("export async function markPosDone"), action.indexOf("export async function undoPosMarks"));
+  assert.match(mark, /if \(me\.role !== "admin" && \(await loadTillScope\(\)\)\.lafpos\) throw new UserError\(/);
+  assert.doesNotMatch(action.slice(action.indexOf("export async function undoPosMarks")), /loadTillScope/);
+  const page = read("src/app/panel/kasa/fiyatlar/page.tsx");
+  assert.match(page, /scope\.lafpos \? \[\] : loadStaffPosList\(scope\)/);
   // Geçiş günü değişince hiçbir kasa işareti yazılmaz ya da silinmez (yalnız okuyucular değişir)
   for (const f of ["src/server/data/till-scope.ts", "src/server/lafpos/admin.ts", "src/server/actions/lafpos.ts"]) {
     assert.doesNotMatch(read(f), /posStalePrice|pos_stale_price/, f);

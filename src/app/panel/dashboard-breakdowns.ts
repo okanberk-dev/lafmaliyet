@@ -3,7 +3,7 @@ import type { Model } from "@/lib/calc/engine";
 import { listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
-import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
+import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
 import { productHref } from "./urunler/logic";
@@ -133,7 +133,7 @@ function onlineRows(d: DashboardData): BreakdownRow[] {
 export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
   const online = onlineRows(d);
-  const mk = kasaOf(model, d.month);
+  const mk = salesKasaOf(model, d.month);
   return {
     title: `${monthLabel(d.month)} net satış`,
     description: `${mk.report} ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.${
@@ -162,7 +162,7 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
   const st = model.settings;
   const o = t.online;
   return [
-    { key: "net", label: o ? `Net satış (${kasaOf(model, d.month).short})` : "Net satış", sub: salesNetSub(model, d), amount: t.posNetSales, href: salesHref(d.month) },
+    { key: "net", label: o ? `Net satış (${salesKasaOf(model, d.month).short})` : "Net satış", sub: salesNetSub(model, d), amount: t.posNetSales, href: salesHref(d.month) },
     ...(o ? [{ key: "online", label: "Online satış (laffogato.net)", sub: "Kafe, mağaza, karaoke; KDV hariç", amount: o.revenue, href: pnlHref(d.month) }] : []),
     {
       key: "malzeme",
@@ -328,6 +328,11 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
 
 /** Ayın kasası (metinler; denetim E-39): geçiş günü boşken ve öncesinde "Patron (ModPOS)", sonra "LafPOS" */
 const kasaOf = (model: Model, month: string) => monthKasa(month, model.settings.lafposGecisGunu);
+
+/** Ürün satışlarının kasası: geçiş ayında modelin saydığı bölünmeyle (ModPOS listesinin son günü, LafPOS'un sayılan günleri) */
+function salesKasaOf(model: Model, month: string) {
+  return salesMonthKasa(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
+}
 
 /** POS cirosu kartının açıklaması: ModPOS ayında bugünkü metin; LafPOS (ya da geçiş) ayında gün sonlarının cirosu */
 function posRevenueText(mk: MonthKasa): string {

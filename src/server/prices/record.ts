@@ -21,10 +21,12 @@ type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 /**
  * Geçmişe satır düşer, kasanın durumu güncellenir. Kuruşu aynı fiyat yazılmaz. Satır kilitlenir (aynı ürüne iki yazım
  * kasa durumunu birbirinin üstüne yazmasın); ürün bu arada silindiyse hiçbir şey yazılmaz. `pos: false`: kasa listesine
- * dokunulmaz (yeni ürün kasaya zaten elle girilir, sahibin kararı D3). LafPOS gününde (geçiş gününden itibaren;
- * src/lib/lafpos/kasa.ts) siteye bağlı ürünün değişikliği de kasa listesine girmez: LafPOS fiyatı siteden alır (denetim
- * E-39); listede bekleyen eski işaret silinmez. Dönen `posPending`: bu değişiklikten sonra kasada değiştirilecek fiyat
- * kaldı mı (bildirim "Kasaya işle" der); fiyat değişmediyse false (söylenecek bir şey yok).
+ * dokunulmaz (yeni ürün kasaya zaten elle girilir, sahibin kararı D3). Kasanın durumu geçiş gününden bağımsız yazılır
+ * (src/lib/lafpos/switch.ts: ayar değişince yalnız okuyanlar değişir): LafPOS gününde siteye bağlı ürünün işareti de
+ * güncellenir ama okuyucular onu göstermez (till-scope.ts tillProductFilter; LafPOS fiyatı siteden alır, denetim E-39),
+ * geçiş günü kaldırılır ya da ileri alınırsa ModPOS'ta değişecek fiyat olarak eksiksiz geri gelir. Dönen `posPending`:
+ * bu değişiklikten sonra bugünün kasasında elle değiştirilecek fiyat kaldı mı (bildirim "Kasaya işle" der); LafPOS
+ * gününde siteye bağlı üründe ve fiyat değişmediyse false (söylenecek bir şey yok).
  */
 export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: { pos?: boolean } = {}): Promise<{ posPending: boolean }> {
   if (c.before !== null && toMinor(c.before) === toMinor(c.after)) return { posPending: false };
@@ -35,13 +37,13 @@ export async function recordPriceChange(tx: Tx, c: PriceChange, at: Date, opts: 
     .for("update");
   if (!row) return { posPending: false };
   let posPending = false;
-  // Geçiş günü yalnız siteye bağlı üründe okunur (bağlı olmayanın fiyatı kasada her zaman elle değişir)
-  if (opts.pos !== false && c.before !== null && (row.siteMenuId === null || tillPriceManual(await loadTillScope(tx, at), true))) {
+  if (opts.pos !== false && c.before !== null) {
     const next = posAfterPriceChange({ stalePrice: row.stalePrice, since: row.since }, c.before, c.after, at);
     if (next.stalePrice !== row.stalePrice || next.since?.getTime() !== row.since?.getTime()) {
       await tx.update(s.products).set({ posStalePrice: next.stalePrice, posStaleSince: next.since }).where(eq(s.products.id, c.productId));
     }
-    posPending = next.stalePrice !== null;
+    // Geçiş günü yalnız siteye bağlı üründe okunur (bağlı olmayanın fiyatı kasada her zaman elle değişir)
+    posPending = next.stalePrice !== null && (row.siteMenuId === null || tillPriceManual(await loadTillScope(tx, at), true));
   }
   await tx.insert(s.productPrices).values({
     productId: c.productId,

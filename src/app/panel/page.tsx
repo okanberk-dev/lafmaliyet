@@ -47,7 +47,7 @@ import {
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
-import { monthKasa } from "@/lib/lafpos/kasa";
+import { salesMonthKasa } from "@/lib/lafpos/kasa";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
@@ -196,8 +196,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Yıl toplamı Gelir-gider kartlarıyla ve Claude'la aynı kuraldan (bu aya kadar, cirosu girilmiş aylar)
   const yearSum = yearTotals(model, year);
   const st = model.settings;
-  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
-  const mk = monthKasa(month, st.lafposGecisGunu);
+  // Ayın kasası (ürün satışlarının metinleri; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS", geçiş ayında
+  // modelin saydığı bölünmeyle; denetim E-39)
+  const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
 
   // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
   const forecastMonth = forecastMonthOf(model);

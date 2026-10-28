@@ -31,10 +31,13 @@ import type { DigestBox } from "@/server/notify/digest-template";
  * Kasada (ModPOS) elle değiştirilecek fiyatlar (docs/FIYATLAR.md; posBell). Yönetici bütün ürünlerden, Fiyatlar ›
  * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
  * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. LafPOS
- * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler; siteye bağlınınkini LafPOS siteden alır (E-39).
+ * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler ve yalnız yöneticide; siteye bağlınınkini LafPOS
+ * siteden alır, öbürünü LafPOS'ta menüyü yöneten değiştirir (E-39).
  */
 async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   const scope = await loadTillScope(undefined, now);
+  // LafPOS gününde personele fiyat görevi yok (LafPOS'ta ürün fiyatını kasiyer değiştiremez; posBell)
+  if (user.role !== "admin" && scope.lafpos) return [];
   const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
   const item = posBell(user.role, summary, now, scope.kasa);
   return item ? [item] : [];

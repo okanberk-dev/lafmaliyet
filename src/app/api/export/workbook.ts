@@ -15,7 +15,7 @@ import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/type
 import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
-import { monthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
+import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
 
 // ---------------------------------------------------------------------------- Biçimler
 
@@ -574,7 +574,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     lines.push({ k: "Bu ayın satış listesi yüklenmemiş: reçeteye göre satırlar boş. Faturaya göre kâr yine aşağıda.", v: null });
   }
   // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra LafPOS; denetim E-39)
-  const mk = monthKasa(month, model.settings.lafposGecisGunu);
+  const mk = salesMonthKasa(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
   const kasaSales = mk.source === "modpos" ? `${mk.report} satış listesi` : `${mk.report} satışları`;
   lines.push(
     // ModPOS + laffogato.net online (kâr-zarardaki gibi); online ayrıca alt satırda

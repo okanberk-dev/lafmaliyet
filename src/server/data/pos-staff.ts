@@ -7,7 +7,7 @@ import type { KasaName, TillScope } from "@/lib/lafpos/kasa";
 import { POS_UNDO_WINDOW_MS, type MyPosMark, type PosSummaryLite, type StaffPosItem } from "@/lib/prices/pos";
 import { getDb, schema as s, type DB } from "@/server/db";
 
-import { loadTillScope, tillProductFilter } from "./till-scope";
+import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
 
 /*
  * Personelin Kasadaki fiyatlar okumaları (/panel/kasa/fiyatlar, Bugün, zil; plan docs/planlar/personel-yetki.md §2.2).
@@ -67,7 +67,7 @@ export async function loadStaffPosList(scope?: TillScope): Promise<StaffPosItem[
     })
     .from(s.products)
     .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
-    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc)));
+    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc, db)));
   if (!rows.length) return [];
   const [names, inModpos] = await Promise.all([
     db
@@ -89,7 +89,7 @@ export async function loadStaffPosList(scope?: TillScope): Promise<StaffPosItem[
     posNames: namesOf.get(r.id) ?? [],
     stalePrice: r.stalePrice!,
     price: r.price,
-    since: (r.since ?? new Date(0)).toISOString(),
+    since: tillSince(sc, r.since ?? new Date(0)).toISOString(),
   }));
 }
 
@@ -128,10 +128,11 @@ export async function loadMyPosMarks(userId: number, now: Date): Promise<MyPosMa
  * günü) ve bugünün kasası
  */
 export async function staffPosSummary(scope?: TillScope): Promise<PosSummaryLite & { kasa: KasaName }> {
-  const sc = scope ?? (await loadTillScope());
-  const [r] = await getDb()
+  const db = getDb();
+  const sc = scope ?? (await loadTillScope(db));
+  const [r] = await db
     .select({ n: count(), oldest: min(s.products.posStaleSince), newest: max(s.products.posStaleSince) })
     .from(s.products)
-    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc)));
-  return { count: r?.n ?? 0, oldest: r?.oldest ?? null, newest: r?.newest ?? null, kasa: sc.kasa };
+    .where(and(isNotNull(s.products.posStalePrice), eq(s.products.active, true), tillProductFilter(sc, db)));
+  return { count: r?.n ?? 0, oldest: tillSince(sc, r?.oldest ?? null), newest: tillSince(sc, r?.newest ?? null), kasa: sc.kasa };
 }

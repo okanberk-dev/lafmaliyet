@@ -14,16 +14,19 @@ export const metadata: Metadata = { title: "Kasadaki fiyatlar" };
 
 const TITLE = "Kasadaki fiyatlar";
 const DESCRIPTION = "Bu fiyatlar panelde değişti, ModPOS'ta hâlâ eski. ModPOS'ta değiştirdikçe işaretleyin.";
-/** LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatı LafPOS'a siteden kendiliğinden gelir */
-const DESCRIPTION_LAFPOS =
-  "LafPOS menüdeki fiyatları siteden kendisi alır. Burada yalnız siteye bağlı olmayan ürünler çıkar: LafPOS'ta elle değiştirdikçe işaretleyin.";
+/**
+ * LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatı LafPOS'a siteden kendiliğinden gelir,
+ * öbürünü LafPOS'ta menüyü yöneten (patron, müdür) değiştirir; kasiyer değiştiremez, personele iş düşmez
+ */
+const DESCRIPTION_LAFPOS = "LafPOS menüdeki fiyatları siteden kendisi alır; siteye bağlı olmayan ürünlerin fiyatını LafPOS'ta yönetici değiştirir.";
 
 /**
  * Personelin Kasadaki fiyatlar listesi (dalga 10 §2.2; docs/FIYATLAR.md): ModPOS'ta değişecek satış fiyatları, tek tek
  * işaretlenir (onaysız; her işaret kişinin adıyla kayıtlı, geri alınabilir). Okumalar personelin sabit sütunlu
  * yükleyicisinden (src/server/data/pos-staff.ts): kaynak, değiştiren kişi, not ve maliyet yok. Yönetici bu adresi açarsa
- * Ürünler › Fiyatlar › Kasaya işle'ye gider. LafPOS'a geçiş gününden itibaren yalnız siteye bağlı olmayan ürünler
- * (src/lib/lafpos/kasa.ts tillScope) ve metinler "LafPOS" der.
+ * Ürünler › Fiyatlar › Kasaya işle'ye gider. LafPOS'a geçiş gününden itibaren (src/lib/lafpos/kasa.ts tillScope) liste
+ * yok: LafPOS'ta ürün fiyatını yönetici değiştirir (Bugün ve zil de personele bu görevi vermez); son işaretleri yine
+ * geri alınabilir.
  */
 export default function StaffPosPage() {
   return (
@@ -41,6 +44,6 @@ async function StaffPosContent() {
   if (me.role === "admin") redirect("/panel/urunler/fiyatlar?sekme=kasa");
   const now = new Date();
   const scope = await loadTillScope(undefined, now);
-  const [items, mine] = await Promise.all([loadStaffPosList(scope), loadMyPosMarks(me.id, now)]);
+  const [items, mine] = await Promise.all([scope.lafpos ? [] : loadStaffPosList(scope), loadMyPosMarks(me.id, now)]);
   return <PosChecklist staff items={items} mine={mine} kasa={scope.kasa} />;
 }

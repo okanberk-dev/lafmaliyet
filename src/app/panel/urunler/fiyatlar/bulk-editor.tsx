@@ -597,7 +597,7 @@ export function BulkEditor({
           summary.linked ? `${num(summary.linked)} ürün laffogato.net menüsünde de değişir (siteye tek tek yazılır, birkaç saniye sürebilir).` : null,
           kasa === "LafPOS"
             ? summary.count > summary.linked
-              ? `LafPOS siteye bağlı ürünlerin fiyatını siteden alır; bağlı olmayan ${num(summary.count - summary.linked)} ürünü LafPOS'ta elle değiştirmeniz gerekebilir, liste Kasaya işle sekmesinde.`
+              ? `LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Bağlı olmayan ${num(summary.count - summary.linked)} ürün Kasaya işle sekmesinde: LafPOS onları siteden alıyorsa Ürünler › Site menüsü'nde bağlayın ya da fiyatı sitede değiştirin, LafPOS'ta yerelse orada elle değiştirin.`
               : "LafPOS yeni fiyatları siteden alır; kasada bir şey yapmanız gerekmez."
             : "Kasadaki (ModPOS) fiyatları elle değiştirmeniz gerekecek; liste Kasaya işle sekmesinde.",
           summary.decreases ? `${num(summary.decreases)} ürünün fiyatı düşüyor.` : null,

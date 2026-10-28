@@ -1,4 +1,5 @@
-import { addDays, monthEnd } from "@/lib/reminders";
+import type { LafposSalesMonth } from "@/lib/calc/types";
+import { addDays, dayAblativeTR, monthEnd } from "@/lib/reminders";
 
 import { dayRangeTR } from "./sales";
 import { isLafposDay, kasaName, monthSource } from "./switch";
@@ -25,14 +26,37 @@ export interface MonthKasa {
   report: string;
 }
 
-/** Ayın kasası (geçiş günü boşken ve geçiş gününden önceki aylarda bugünkü metinler) */
-export function monthKasa(month: string, switchDay: string | null): MonthKasa {
+const MODPOS_MONTH: MonthKasa = { source: "modpos", short: "ModPOS", both: "ModPOS", long: "ModPOS", report: "Patron (ModPOS)" };
+
+/**
+ * Ayın kasası (geçiş günü boşken ve geçiş gününden önceki aylarda bugünkü metinler). Geçiş ayında iki kullanım var:
+ * - `sales` verilmezse (Z, ciro, kasa raporu etiketleri) bölünme geçiş günündedir: "Kasa (ModPOS 1–9 Kasım · LafPOS
+ *   10–30 Kasım)".
+ * - `sales` verilirse (ürün satışlarının etiketi; modelin ayı: Dataset.lafposSales) bölünme modelin saydığıdır
+ *   (lafposSalesFrom): ModPOS listesi kendi son gününe kadar, LafPOS `from`'dan sayılan son güne kadar; liste yoksa
+ *   "ModPOS listesi yok", LafPOS'tan henüz sayılan gün yoksa "LafPOS 10 Kasım'dan itibaren". Liste ayın tamamını
+ *   kapsıyorsa (LafPOS sayılmıyor) ay ModPOS'tur. `sales` null ise (ayın özeti yok) geçiş günündeki bölünme.
+ */
+export function monthKasa(month: string, switchDay: string | null, sales?: LafposSalesMonth | null): MonthKasa {
   const source = monthSource(month, switchDay);
-  if (source === "modpos" || switchDay === null) return { source: "modpos", short: "ModPOS", both: "ModPOS", long: "ModPOS", report: "Patron (ModPOS)" };
+  if (source === "modpos" || switchDay === null) return MODPOS_MONTH;
   if (source === "lafpos") return { source, short: "LafPOS", both: "LafPOS", long: "LafPOS", report: "LafPOS" };
   const first = `${month}-01`;
-  const long = `Kasa (ModPOS ${dayRangeTR(first, addDays(switchDay, -1))} · LafPOS ${dayRangeTR(switchDay, monthEnd(first))})`;
+  let long = `Kasa (ModPOS ${dayRangeTR(first, addDays(switchDay, -1))} · LafPOS ${dayRangeTR(switchDay, monthEnd(first))})`;
+  if (sales) {
+    if (sales.from === null) return MODPOS_MONTH;
+    const modpos = sales.modpos?.counted ? `ModPOS ${dayRangeTR(first, sales.modpos.through)}` : "ModPOS listesi yok";
+    // Sayılan son LafPOS günü: kasa raporunu bekleyen günler (held) henüz sayılmaz
+    const last = sales.lafpos ? (sales.held ? addDays(sales.held.from, -1) : sales.lafpos.last) : null;
+    const lafpos = last !== null && last >= sales.from ? `LafPOS ${dayRangeTR(sales.from, last)}` : `LafPOS ${dayAblativeTR(sales.from)} itibaren`;
+    long = `Kasa (${modpos} · ${lafpos})`;
+  }
   return { source, short: "Kasa", both: "ModPOS / LafPOS", long, report: long };
+}
+
+/** Ürün satışlarının etiketi için ayın kasası: modelin ayıyla (Dataset.lafposSales; geçiş günü yoksa alan yok) */
+export function salesMonthKasa(month: string, switchDay: string | null, lafposSales: { months: readonly LafposSalesMonth[] } | undefined): MonthKasa {
+  return monthKasa(month, switchDay, lafposSales?.months.find((m) => m.month === month) ?? null);
 }
 
 /**
@@ -48,19 +72,23 @@ export function periodKasa(months: readonly string[], switchDay: string | null):
 
 /**
  * Kasadaki fiyatların kapsamı (denetim E-39; docs/FIYATLAR.md › LafPOS): bugünün (iş günü) kasası ve LafPOS günü mü.
- * LafPOS gününde siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: fiyat değişince kasa listesine girmez,
- * listede bekleyen eski işareti de gösterilmez (silinmez; geçiş günü kaldırılırsa yeniden görünür). Siteye bağlı
- * olmayan ürün (LafPOS'ta yerel ürünse) kasada yine elle değişir.
+ * LafPOS gününde siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: listede gösterilmez. Kasanın durumu
+ * (products.pos_stale_*) geçiş gününden bağımsız yazılmaya devam eder, yalnız okuyanlar süzer: geçiş günü kaldırılır ya
+ * da ileri alınırsa ModPOS'un bekleyen fiyatları eksiksiz geri gelir. Siteye bağlı olmayan ürün (LafPOS'ta yerel ürünse)
+ * yalnız fiyatı geçiş gününden sonra panelde değiştiyse listededir (src/server/data/till-scope.ts tillProductFilter):
+ * ModPOS'tan kalan işaret LafPOS'un işi değildir.
  */
 export interface TillScope {
   kasa: KasaName;
   lafpos: boolean;
+  /** Geçiş günü (YYYY-MM-DD), yalnız LafPOS gününde; ModPOS gününde null */
+  switchDay: string | null;
 }
 
 /** `day` iş günü (05:00 kuralı) */
 export function tillScope(day: string, switchDay: string | null): TillScope {
   const lafpos = isLafposDay(day, switchDay);
-  return { kasa: lafpos ? "LafPOS" : "ModPOS", lafpos };
+  return { kasa: lafpos ? "LafPOS" : "ModPOS", lafpos, switchDay: lafpos ? switchDay : null };
 }
 
 /** Bu ürünün fiyatı kasada elle mi değişir: LafPOS gününde siteye bağlı ürününki değişmez (LafPOS siteden alır) */

@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCheck, Copy, RotateCcw, Store } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -127,12 +128,24 @@ export function PosChecklist(
     <Card>
       <CardHeader
         icon={<Store />}
-        title={staff ? (lafpos ? "LafPOS'ta elle değişecek fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}
+        title={staff ? (lafpos ? "LafPOS'taki fiyatlar" : "ModPOS'ta değişecek fiyatlar") : "Kasaya işle"}
         description={
           staff
-            ? "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
+            ? lafpos
+              ? "LafPOS'ta fiyatı yönetici değiştirir; burada işaretlenecek bir şey yok."
+              : "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
             : lafpos
-              ? "LafPOS siteye bağlı ürünlerin fiyatını siteden kendisi alır; burada yalnız siteye bağlı olmayan ürünler çıkar (LafPOS'ta yerel ürünse fiyatı orada elle değişir). Kasada değiştirdikçe işaretleyin; işaretlenen listeden düşer. Personel de Bugün'den işaretler; yanlış işareti aşağıdan geri alın."
+              ? (
+                  <>
+                    LafPOS siteye bağlı ürünlerin fiyatını siteden kendisi alır; burada yalnız siteye bağlı olmayan ve fiyatı LafPOS başladıktan sonra değişen
+                    ürünler çıkar. LafPOS ürünü siteden alıyorsa (orada fiyatı değiştirilemez){" "}
+                    <Link href="/panel/urunler/site" className="font-medium text-ink underline underline-offset-2">
+                      Ürünler › Site menüsü
+                    </Link>
+                    &apos;nde bağlayın ya da fiyatı sitede değiştirin; LafPOS&apos;ta yerel ürünse orada elle değiştirip işaretleyin. LafPOS&apos;ta fiyatı
+                    yönetici değiştirir, personele bu iş düşmez.
+                  </>
+                )
               : "Panelde ya da sitede değişen fiyatlar ModPOS'a kendiliğinden geçmez. Kasada değiştirdikçe işaretleyin; işaretlenen listeden düşer. Personel de Bugün'den işaretler; yanlış işareti aşağıdan geri alın."
         }
         meta={
@@ -206,12 +219,12 @@ export function PosChecklist(
       ) : (
         <EmptyState
           icon={<CheckCheck />}
-          title="Kasa güncel"
+          title={lafpos && staff ? "Fiyatları yönetici değiştirir" : "Kasa güncel"}
           description={
             lafpos
               ? staff
-                ? "LafPOS menüdeki fiyatları siteden kendisi alır; elle değişecek fiyat yok."
-                : "LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı değişince burada listelenir."
+                ? "LafPOS menüdeki fiyatları siteden kendisi alır; siteye bağlı olmayan bir ürünün fiyatını LafPOS'ta yönetici değiştirir. Kasada yanlış bir fiyat görürseniz yöneticinize haber verin."
+                : "LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı panelde değişince burada listelenir."
               : staff
                 ? "Panelde değişen bütün fiyatlar kasada da değişti."
                 : "Panelde ya da sitede değişen bütün fiyatlar kasada da değiştirildi. Yeni bir fiyat değişince burada listelenir."

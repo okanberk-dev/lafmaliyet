@@ -32,7 +32,7 @@ const TITLE = "Fiyatlar";
 const DESCRIPTION = "Menü fiyatlarını toplu değiştirin, kasada (ModPOS) elle değiştirdiklerinizi işaretleyin; her fiyat değişikliği geçmişte kalır.";
 /** LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatını LafPOS siteden alır */
 const DESCRIPTION_LAFPOS =
-  "Menü fiyatlarını toplu değiştirin; LafPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanları kasada elle değiştirip işaretleyin. Her fiyat değişikliği geçmişte kalır.";
+  "Menü fiyatlarını toplu değiştirin; LafPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanlar Kasaya işle'de. Her fiyat değişikliği geçmişte kalır.";
 
 function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }) {
   return (
