@@ -723,6 +723,23 @@ export function taxAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount
   return (/muhtasar/.test(t) && !stampOnly(t)) || isProvisionalTaxReminder(r);
 }
 
+/**
+ * "Ödendi" ya da ertelemede seriden silinen tutarın türü (taxAmountTravels; bildirim metni): KDV ve KDV-2 her ay,
+ * muhtasar her ay, geçici vergi her dönem değişir. Tutar seride kalıyorsa null
+ */
+export function travelingAmountKind(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): "kdv" | "muhtasar" | "gecici" | null {
+  if (!taxAmountTravels(r)) return null;
+  if (vatAmountTravels(r)) return "kdv";
+  return isProvisionalTaxReminder(r) ? "gecici" : "muhtasar";
+}
+
+/** Ödendi bildiriminin cümlesi: "Muhtasar tutarı her ay değiştiği için silindi." */
+export const AMOUNT_CLEARED_TEXT: Record<"kdv" | "muhtasar" | "gecici", string> = {
+  kdv: "KDV tutarı her ay değiştiği için silindi.",
+  muhtasar: "Muhtasar tutarı her ay değiştiği için silindi.",
+  gecici: "Geçici vergi tutarı her dönem değiştiği için silindi.",
+};
+
 /** Yerel vergi hatırlatıcısı: çevre temizlik vergisi ("ÇTV") ya da ilan ve reklam vergisi; değilse null */
 export function isLocalTaxReminder(r: Pick<ReminderRow, "title">): "ctv" | "ilan" | null {
   const t = foldTR(r.title);

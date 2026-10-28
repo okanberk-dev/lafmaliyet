@@ -27,6 +27,7 @@ import { useCalmMotion } from "@/components/ui/motion";
 import { METHOD_LABEL, round2 } from "@/lib/cari/balance";
 import { dateTR, money, tl } from "@/lib/format";
 import {
+  AMOUNT_CLEARED_TEXT,
   CATEGORY_LABEL,
   daysLeftLabel,
   longDateTR,
@@ -270,9 +271,11 @@ export function usePaymentActions(hide: (key: string) => void) {
         case "reminder": {
           const r = await markReminderDone(item.sourceId, item.projected ? item.dueDate : undefined);
           if (!r.ok) return void toast.error(r.error);
-          const { next, prev, amountCleared } = r.data;
-          // Tekrarlı KDV hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi (geri al geri yazar)
-          const nextText = next ? (amountCleared ? `Sıradaki tarih ${dateTR(next)}; KDV tutarı her ay değiştiği için silindi.` : `Sıradaki tarih ${dateTR(next)}.`) : "Tek seferlikti; hatırlatıcı kapandı.";
+          const { next, prev, amountCleared, clearedKind } = r.data;
+          // Tekrarlı KDV, muhtasar ya da geçici vergi hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi
+          // (geri al geri yazar; docs/VERGI.md)
+          const cleared = amountCleared ? AMOUNT_CLEARED_TEXT[clearedKind ?? "kdv"] : null;
+          const nextText = next ? `Sıradaki tarih ${dateTR(next)}.${cleared ? ` ${cleared}` : ""}` : "Tek seferlikti; hatırlatıcı kapandı.";
           toast.success(`${item.title} ödendi`, {
             description: `${nextText} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
             duration: 8000,

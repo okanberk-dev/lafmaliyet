@@ -19,6 +19,8 @@ import {
   isVatWithholdingReminder,
   monthGenitiveTR,
   taxAmountTravels,
+  travelingAmountKind,
+  AMOUNT_CLEARED_TEXT,
   vatStampReminder,
   postponedFrom,
   postponeNote,
@@ -301,13 +303,19 @@ test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü k
   assert.match(restore, /snap\.note !== undefined \? \{ note: snap\.note \}/);
 });
 
-test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
+test("KDV, muhtasar ve geçici vergi tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
   const src = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
   const done = src.slice(src.indexOf("export async function markReminderDone"), src.indexOf("type ReminderDbRow"));
-  assert.match(done, /const clear = next !== null && vatAmountTravels\(r\);/);
-  assert.match(done, /amountCleared: clear/);
+  // K26: vatAmountTravels yerine taxAmountTravels (muhtasar ve geçici vergi de); işlem geçmişi eki "(vergi)"
+  assert.match(done, /const clear = next !== null && taxAmountTravels\(r\);/);
+  assert.match(done, /amountCleared: clear, clearedKind: clear \? travelingAmountKind\(r\) : null/);
+  assert.match(done, / · tutar silindi \(vergi\)/);
+  assert.doesNotMatch(src, /vatAmountTravels/);
+  // Geçici vergi "Ödendi"si kalıcı kayda çeyrek dönemiyle (kurumlar vergisi yalnız ödenmiş geçici vergiyi mahsup eder)
+  assert.match(done, /isProvisionalTaxReminder\(r\) \? "gecici" : null/);
+  assert.match(done, /rememberVatPaid\(\{ id: rid, kind: vatKind, dueDate: r\.dueDate, next, periods: paidPeriodsOf\(row, r\.dueDate, next, vatKind\), amount: r\.amount \}\)/);
   const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
-  assert.match(postpone, /vatAmountTravels\(r\)/);
+  assert.match(postpone, /taxAmountTravels\(r\)/);
   // Ertelenen dönemin kopyası tutarı taşır
   assert.match(postpone, /amount: r\.amount,/);
   assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*amount: r\.amount/);
@@ -316,7 +324,24 @@ test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sun
   const undo = src.slice(src.indexOf("export async function undoRecentPaid"), src.indexOf("const zPostpone"));
   // Ödendikten sonra yazılmış tutar ezilmez
   assert.match(undo, /cur\.amount === null/);
-  assert.match(readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/payment-ui.tsx"), "utf8"), /KDV tutarı her ay değiştiği için silindi\./);
+  const ui = readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/payment-ui.tsx"), "utf8");
+  assert.match(ui, /AMOUNT_CLEARED_TEXT\[clearedKind \?\? "kdv"\]/);
+  assert.deepEqual(AMOUNT_CLEARED_TEXT, {
+    kdv: "KDV tutarı her ay değiştiği için silindi.",
+    muhtasar: "Muhtasar tutarı her ay değiştiği için silindi.",
+    gecici: "Geçici vergi tutarı her dönem değiştiği için silindi.",
+  });
+});
+
+test("silinen tutarın türü (bildirim): KDV, muhtasar, geçici vergi; sabit tutarlı stopaj ve tek seferlik değil", () => {
+  const r = (title: string, repeat: ReminderRow["repeat"] = "monthly", amount: number | null = 8_000) => ({ title, kind: "vergi" as const, amount, repeat });
+  assert.equal(travelingAmountKind(r("KDV beyannamesi ve ödemesi")), "kdv");
+  assert.equal(travelingAmountKind(r("KDV2 tevkifat")), "kdv");
+  assert.equal(travelingAmountKind(r("Muhtasar ve prim hizmet beyannamesi")), "muhtasar");
+  assert.equal(travelingAmountKind(r("Geçici vergi beyanı ve ödemesi", "quarterly")), "gecici");
+  assert.equal(travelingAmountKind(r("Kira stopajı")), null);
+  assert.equal(travelingAmountKind(r("Muhtasar ve prim hizmet beyannamesi", "none")), null);
+  assert.equal(travelingAmountKind(r("Geçici vergi beyanı ve ödemesi", "quarterly", null)), null);
 });
 
 test("ay adının ekleri: bulunma ve tamlayan hâli", () => {

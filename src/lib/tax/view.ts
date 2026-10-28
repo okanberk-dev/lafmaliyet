@@ -161,7 +161,8 @@ export const NOTE_MUNICIPAL = "tutar belediyeden";
 export const INFLATION_LINE = "Enflasyon düzeltmesi 2026'da yapılmaz (VUK geçici 37) · Bu kafede hesaplanmayanlar";
 
 const fold = (s: string) => s.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFD").replace(/[̀-ͯ]/g, "");
-const isKvReminder = (r: Pick<ReminderRow, "title">) => /kurumlar\s+vergi/.test(fold(r.title)) && !/gecici/.test(fold(r.title));
+/** Kurumlar vergisi hatırlatıcısı: başlıkta "kurumlar vergisi", "geçici" değil */
+export const isKvReminder = (r: Pick<ReminderRow, "title">) => /kurumlar\s+vergi/.test(fold(r.title)) && !/gecici/.test(fold(r.title));
 const dmy = (d: string) => dateTR(d);
 /** "17.02.2027 Çar" */
 const dueShort = (d: string) => `${dmy(d)} ${WEEKDAY_SHORT[weekdayOf(d)]}`;
@@ -823,6 +824,38 @@ function monthsText(ms: readonly string[]): string {
   return runs.map((r) => (r.length === 1 ? monthName(r[0]) : `${monthName(r[0])}–${monthName(r.at(-1)!)}`)).join(", ");
 }
 
+/**
+ * Muhtasar ayları: bugünden 4 ay önce (gecikmiş dönem) … takvim penceresinin sonu. Üç aylık seçenekte ilk çeyrek
+ * sonunun önceki iki ayı da girdidir (pencerenin dışında kalsa da çeyreğin vergisi üç ayın toplamı)
+ */
+function muhtasarWindow(input: TaxViewInput): Map<string, MuhtasarMonth> {
+  const { today, settings } = input;
+  const end = addDays(today, CALENDAR_DAYS);
+  const first = shiftMonth(today.slice(0, 7), -4);
+  const periods: string[] = [];
+  for (let m = settings.muhtasarQuarterly ? shiftMonth(first, -2) : first; m <= end.slice(0, 7); m = shiftMonth(m, 1)) if (m >= settings.periodStart.slice(0, 7)) periods.push(m);
+  return new Map(
+    [
+      ...muhtasarMonths(
+        periods.map((p) => ({ period: p, payroll: input.pnl.payroll.get(p), items: input.muhtasarItems.get(p) ?? [] })),
+        { filings: input.filings, overrides: settings.overrides, quarterly: settings.muhtasarQuarterly },
+      ),
+    ].filter(([p]) => p >= first),
+  );
+}
+
+/**
+ * Yalnız nakit planının beslemesi (§8.1; K30): takvim, kartlar ve sınıflandırma olmadan, `buildTaxView(input).planFeed`
+ * ile aynı. Geçici vergi satırı son 60 günün ve sonrasının dönemleridir: geçen ve bu yılın çeyrekleri yeter. Nakit
+ * planı (src/server/data/cash-plan.ts) bunu çağırır; KDV'yi kendisi hesapladığı için `vat` ve hatırlatıcılar okunmaz
+ */
+export function taxPlanFeed(input: TaxViewInput): TaxPlanFeed {
+  const ty = Number(input.today.slice(0, 4));
+  const years = new Map<number, YearView>();
+  for (const y of [ty - 1, ty]) if (periodOf(y, input.settings) && `${y}-01-01` <= input.today) years.set(y, yearView(input, y));
+  return planFeed(input, { years, muhtasar: muhtasarWindow(input) });
+}
+
 /** Vergi sayfasının görünümü: bütün sayılar buradan */
 export function buildTaxView(input: TaxViewInput): TaxView {
   const { today, settings } = input;
@@ -832,21 +865,7 @@ export function buildTaxView(input: TaxViewInput): TaxView {
   const years = new Map<number, YearView>();
   for (const y of [...new Set([ty - 1, ty, year])].sort()) if (periodOf(y, settings) && `${y}-01-01` <= today) years.set(y, yearView(input, y));
   const selected = years.get(year) ?? yearView(input, year);
-
-  // Muhtasar: bugünden 4 ay önce (gecikmiş dönem) … pencerenin sonu. Üç aylık seçenekte ilk çeyrek sonunun önceki iki
-  // ayı da girdidir (pencerenin dışında kalsa da çeyreğin vergisi üç ayın toplamı)
-  const end = addDays(today, CALENDAR_DAYS);
-  const first = shiftMonth(today.slice(0, 7), -4);
-  const periods: string[] = [];
-  for (let m = settings.muhtasarQuarterly ? shiftMonth(first, -2) : first; m <= end.slice(0, 7); m = shiftMonth(m, 1)) if (m >= settings.periodStart.slice(0, 7)) periods.push(m);
-  const muhtasar = new Map(
-    [
-      ...muhtasarMonths(
-        periods.map((p) => ({ period: p, payroll: input.pnl.payroll.get(p), items: input.muhtasarItems.get(p) ?? [] })),
-        { filings: input.filings, overrides: settings.overrides, quarterly: settings.muhtasarQuarterly },
-      ),
-    ].filter(([p]) => p >= first),
-  );
+  const muhtasar = muhtasarWindow(input);
   const ctx = { years, muhtasar };
   const cal = taxCalendar(input, ctx);
 
