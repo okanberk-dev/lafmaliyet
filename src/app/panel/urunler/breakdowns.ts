@@ -250,6 +250,8 @@ export function productBreakdowns(rows: BreakdownProduct[], categories: { id: nu
           label: "Pasif ürünler",
           note: inactiveNote,
           apart: true,
+          // Hepsi reçetesizse "0 ₺" ara toplamı yanıltır (kâr sıfır değil, hesaplanmadı)
+          noSubtotal: soldInactive.every((r) => r.status === "Reçete yok"),
           // Reçetesi boş pasif ürünün kârı da hesaplanmaz (yukarıdaki grupla aynı kural): tutarı yok, sonda
           rows: [...soldInactive]
             .sort((a, b) => Number(a.status === "Reçete yok") - Number(b.status === "Reçete yok") || b.monthProfit - a.monthProfit || byName(a, b))

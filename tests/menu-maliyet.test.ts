@@ -288,6 +288,10 @@ test("E-47: Ürünler'in brüt kâr kartı ve dökümü reçetesiz ürünü kâr
   const lRow = pasif.rows.find((r) => r.key === `urun:${latte.id}`)!;
   assert.match(lRow.sub ?? "", /adet × .+ birim kâr$/, "reçeteli pasif ürün kârıyla");
   assert.ok(lRow.amount > 0);
+  assert.ok(!pasif.noSubtotal, "reçeteli pasif varken ara toplam");
+  // Yalnız reçetesiz pasif ürün: "0 ₺" ara toplamı yok
+  const onlyPumpkin = createModel({ ...withPumpkin(), products: withPumpkin().products.map((p) => (p.id === PUMPKIN ? { ...p, active: false } : p)) });
+  assert.equal(productBreakdowns(rowsOf(onlyPumpkin), cats, M, onlyPumpkin.settings.hedefMaliyet).profit.find((g) => g.key === "pasif")!.noSubtotal, true);
 });
 
 test("E-47: Excel'e aktar: reçetesiz ürünün aylık brüt kârı boş, satış satırı 'reçete boş' der", () => {
