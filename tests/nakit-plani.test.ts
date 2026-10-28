@@ -11,6 +11,8 @@ import { test } from "node:test";
 import { mobileTitleFor, NAV_GROUPS } from "../src/components/panel/nav";
 import {
   buildCashPlan,
+  EXCLUDABLE_KEY,
+  fixedReminderDrifts,
   goodsRows,
   lineLabel,
   parseCashPlanState,
@@ -19,12 +21,20 @@ import {
   planNotes,
   rangeText,
   reminderOccurrences,
+  STAMP_INCLUDED,
+  TAX_NOTE,
+  TAX_NOTE_OFF,
   weekTitle,
   type CashPlan,
   type CashPlanInput,
   type PlanLine,
 } from "../src/lib/cash-plan";
-import { createModel } from "../src/lib/calc/engine";
+import { createModel, shiftMonth, type Model } from "../src/lib/calc/engine";
+import type { TaxFiling } from "../src/lib/tax/corporate";
+import { muhtasarItemsFromModel, type MuhtasarItem } from "../src/lib/tax/muhtasar";
+import { taxPnlInputFromModel } from "../src/lib/tax/pnl";
+import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
+import { buildTaxView, type TaxPlanFeed } from "../src/lib/tax/view";
 import { addVatPaid, forgetVatPeriod, paidPeriodsOf, parseVatPaid, removeVatPaid, type VatPaidEntry } from "../src/lib/vat-paid";
 import type { Dataset } from "../src/lib/calc/types";
 import { vatForgetText, vatMonthInputs } from "../src/lib/kdv";
@@ -233,7 +243,7 @@ test("hatırlatıcılar: tutarlı olan her dönemiyle kesin; tutarsız diğer ha
   assert.equal(aidat[0].due, "2026-10-01");
   assert.equal(lineAt(p, `reminder:${weekly.id}@`).length, 6);
   assert.equal(lineAt(p, `reminder:${closed.id}@`).length, 0);
-  assert.deepEqual(p.unknownAmounts, [{ reminderId: muhtasar.id, title: muhtasar.title, date: "2026-10-26" }]);
+  assert.deepEqual(p.unknownAmounts, [{ key: `reminder:${muhtasar.id}`, reminderId: muhtasar.id, title: muhtasar.title, date: "2026-10-26" }]);
 });
 
 test("hatırlatıcılar: bir hafta geciken haftalık ödemenin iki dönemi bugünde, satır anahtarları ayrı", () => {
@@ -1341,7 +1351,10 @@ test("girdiler (Excel, bugün 2026-10-22): POS yedeği Ekim, 2 kişi, sabit gide
   const oct = base.months["2026-10"];
   assert.equal(oct.payroll.people, 2);
   assert.equal(oct.payroll.net, 60_000);
-  close(oct.payroll.sgk, 23_117.647, "SGK", 0.01);
+  // Bordro Vergi'ninkidir (K18, src/lib/tax/payroll.ts): netten brüt, 2026 yasal oranları (işveren %19,75 + %2),
+  // asgari ücret istisnası; Ayarlar'ın %15,75'iyle 23.117,65'ti
+  close(oct.payroll.sgk, 25_956.18, "SGK", 0.005);
+  assert.deepEqual(base.sgkRates, { year: 2026, isveren: 0.1975, issizlik: 0.02 });
   assert.equal(oct.fixed.length, 16);
   assert.equal(oct.fixed.find((f) => f.name === "ModPOS / Patron aboneliği")!.period, "yillik");
   assert.ok(base.months["2026-12"] && base.months["2026-08"]);
@@ -1443,3 +1456,299 @@ test("ekran: yalnız yönetici; menüde (⌘K) Para grubunda, telefonda başlı�
   // db:reset nakit planının durumunu siler (sabit gider kimlikleri baştan sayar)
   assert.match(read("scripts/seed.ts"), /'cashflow\.plan'/);
 });
+
+// ---------------------------------------------------------------- Vergi (docs/VERGI.md, plan docs/planlar/vergi.md §8, §11-I)
+
+/** Vergi sayfasının nakit planı beslemesi (buildTaxView › planFeed), Excel verisinden; varsayılan vergi ayarları */
+function taxFeed(m: Model = model, filings: TaxFiling[] = [], today = TODAY): TaxPlanFeed {
+  const settings = DEFAULT_TAX_SETTINGS;
+  const pnl = taxPnlInputFromModel(m, { settings, today, adjustments: [], assets: [], filings });
+  const items = new Map<string, MuhtasarItem[]>();
+  for (let p = shiftMonth(today.slice(0, 7), -4); p <= shiftMonth(today.slice(0, 7), 4); p = shiftMonth(p, 1)) items.set(p, muhtasarItemsFromModel(m, p));
+  return buildTaxView({ today, settings, pnl, muhtasarItems: items, filings, reminders: [], vat: null }).planFeed;
+}
+const FEED = taxFeed();
+const muhtasarRem = (over: Partial<ReminderRow> = {}) => rem({ title: "Muhtasar ve prim hizmet beyannamesi", kind: "vergi", amount: null, dueDate: "2026-10-26", ...over });
+const geciciRem = (over: Partial<ReminderRow> = {}) => rem({ title: "Geçici vergi beyanı ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-11-17", repeat: "quarterly", ...over });
+const taxLines = (p: CashPlan) => lines(p).filter((l) => l.kind === "vergi");
+
+test("vergi (I-1): muhtasar tahmini ayın 26'sında, 'en az'; tutarsız hatırlatıcı onun gününde taşır; yazılı tutar kesin", () => {
+  const sep = FEED.items.find((i) => i.kind === "muhtasar" && i.period === "2026-09")!;
+  assert.equal(sep.amount, 974.38);
+  assert.equal(sep.atLeast, true);
+  // Hatırlatıcı yok: nominal günde tahmin, başlık ve "en az"
+  const p = buildCashPlan(input({ tax: FEED }));
+  const [line] = byKey(p, "vergi:muhtasar@2026-10-26");
+  assert.deepEqual([line.title, line.amount, line.estimated, line.href, lineLabel(line)], ["Muhtasar (Eylül)", 974.38, true, "/panel/vergi", "Muhtasar (Eylül, tahmini)"]);
+  assert.match(line.detail!, /^Ücret GV 0 \+ DV 34,68 \+ damga 939,70; en az \(4 kalemin stopajı bilinmiyor\)\. Tahmin; kesin tutar tahakkuk fişindedir\. Son gün 26 Ekim Pazartesi\.$/);
+  assert.deepEqual(byKey(p, "vergi:muhtasar@2026-11-26").map((l) => l.title), ["Muhtasar (Ekim)"]);
+  assert.equal(p.unknownAmounts.length, 1, "yalnız taslak çeyreğin geçici vergisi");
+  // Tutarsız aylık hatırlatıcı (26'sı): satır onun gününde, "Tutarı girilmemiş ödemeler"de değil
+  const r = muhtasarRem();
+  const withRem = buildCashPlan(input({ tax: FEED, reminders: [r] }));
+  assert.deepEqual(
+    taxLines(withRem).filter((l) => l.key.startsWith("vergi:muhtasar")).map((l) => [l.key, l.date, l.amount]),
+    [
+      ["vergi:muhtasar@2026-10-26", "2026-10-26", 974.38],
+      ["vergi:muhtasar@2026-11-26", "2026-11-26", 974.38],
+    ],
+  );
+  assert.ok(!withRem.unknownAmounts.some((u) => u.reminderId === r.id));
+  // Tutar 1.200 yazılı: o dönem kesin 1.200, tahmin yok; tutar o döneme ait, sonraki dönem tahmin
+  const known = buildCashPlan(input({ tax: FEED, reminders: [muhtasarRem({ id: r.id, amount: 1_200 })] }));
+  assert.deepEqual(
+    lineAt(known, `reminder:${r.id}@`).map((l) => [l.date, l.amount, l.estimated]),
+    [["2026-10-26", 1_200, false]],
+  );
+  assert.equal(byKey(known, "vergi:muhtasar@2026-10-26").length, 0);
+  assert.equal(byKey(known, "vergi:muhtasar@2026-11-26").length, 1);
+  // Gecikmiş tutarsız dönem bugüne, asıl günüyle
+  const late = buildCashPlan(input({ today: "2026-10-27", tax: FEED, reminders: [muhtasarRem({ id: r.id })] }));
+  const [overdue] = byKey(late, "vergi:muhtasar@2026-10-27");
+  assert.deepEqual([overdue.title, overdue.due, overdue.overdue], ["Muhtasar (Eylül)", "2026-10-26", true]);
+  // Sabit tutarlı "Kira stopajı" (tutarı Ödendi'den sonra kalır): her dönemde kesin, dönemi sahiplenir
+  const stopaj = rem({ title: "Kira stopajı", kind: "vergi", amount: 8_000, dueDate: "2026-10-26" });
+  const sp = buildCashPlan(input({ tax: FEED, reminders: [stopaj] }));
+  assert.deepEqual(
+    lineAt(sp, `reminder:${stopaj.id}@`).map((l) => [l.date, l.amount]),
+    [
+      ["2026-10-26", 8_000],
+      ["2026-11-26", 8_000],
+    ],
+  );
+  assert.equal(taxLines(sp).filter((l) => l.key.startsWith("vergi:muhtasar")).length, 0);
+  // Besleme yoksa bugünkü gibi: tahmin satırı yok, tutarsız hatırlatıcı listede
+  const none = buildCashPlan(input({ reminders: [muhtasarRem({ id: r.id })] }));
+  assert.equal(taxLines(none).length, 0);
+  assert.deepEqual(none.unknownAmounts.map((u) => u.reminderId), [r.id]);
+});
+
+test("vergi (I-2): taslak çeyreğin geçici vergisi plana girmez, 'Tutarı girilmemiş ödemeler'de; muhasebeci kaydı kesin, rozetle", () => {
+  const p = buildCashPlan(input({ tax: FEED }));
+  assert.equal(lineAt(p, "vergi:gecici").length, 0);
+  assert.deepEqual(p.unknownAmounts, [
+    {
+      key: "vergi:gecici:2026-Q3",
+      reminderId: null,
+      title: "Geçici vergi 2026/3 · tutarı muhasebecinizden isteyin",
+      date: "2026-11-17",
+      note: "Geçici vergi 2026/3: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün 17.11)",
+    },
+  ]);
+  // Hatırlatıcı tutarsızken: hatırlatıcının satırı notuyla
+  const g = geciciRem();
+  const withRem = buildCashPlan(input({ tax: FEED, reminders: [g] }));
+  assert.deepEqual(
+    withRem.unknownAmounts.map((u) => [u.key, u.reminderId, u.date, u.note]),
+    [[`reminder:${g.id}`, g.id, "2026-11-17", "Geçici vergi 2026/3: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün 17.11)"]],
+  );
+  // Muhasebeci kaydı { ödenecek 41.200, damga 791 }: 17 Kasım'da kesin 41.991, rozet "Muhasebeci"
+  const filed = taxFeed(model, [{ id: 1, kind: "gecici", period: "2026-Q3", payable: 41_200, stamp: 791, values: {} }]);
+  const fp = buildCashPlan(input({ tax: filed }));
+  const [line] = byKey(fp, "vergi:gecici@2026-11-17");
+  assert.deepEqual([line.title, line.amount, line.estimated, line.badge], ["Geçici vergi (2026/3)", 41_991, false, "Muhasebeci"]);
+  assert.equal(fp.unknownAmounts.length, 0);
+  // Tutarsız hatırlatıcı varken muhasebecinin rakamı onun gününde; yazılı tutar önce gelir (nakit planında 2 › 1 › 3)
+  assert.deepEqual(byKey(buildCashPlan(input({ tax: filed, reminders: [geciciRem({ id: g.id, dueDate: "2026-11-16" })] })), "vergi:gecici@2026-11-16").map((l) => l.amount), [41_991]);
+  const written = buildCashPlan(input({ tax: filed, reminders: [geciciRem({ id: g.id, amount: 40_000 })] }));
+  assert.deepEqual(lineAt(written, `reminder:${g.id}@`).map((l) => l.amount), [40_000]);
+  assert.equal(lineAt(written, "vergi:gecici").length, 0);
+  // Hazır çeyrek (tahmin): tahmin satırı
+  const ready: TaxPlanFeed = { ...FEED, pending: [], items: [...FEED.items, { kind: "gecici", period: "2026-Q3", nominal: "2026-11-17", legalDue: "2026-11-17", amount: 12_791, atLeast: false, source: "estimate", detail: "Geçici vergi 2026/3: kafenin katkısı" }] };
+  const rp = buildCashPlan(input({ tax: ready }));
+  assert.deepEqual(byKey(rp, "vergi:gecici@2026-11-17").map((l) => [l.amount, l.estimated, l.badge]), [[12_791, true, undefined]]);
+  // "Ödendi" (kalıcı kayıt, tür gecici): dönem bitti, satır yok
+  const paid = buildCashPlan(
+    input({ tax: ready, reminders: [geciciRem({ id: g.id, dueDate: "2027-02-17" })], vatPaid: [{ id: g.id, kind: "gecici", dueDate: "2026-11-17", next: "2027-02-17", periods: ["2026-Q3"], amount: 12_791, at: "2026-11-10T10:00:00.000Z" }] }),
+  );
+  assert.equal(lineAt(paid, "vergi:gecici").length, 0);
+  assert.equal(buildCashPlan(input({ tax: ready, vatPaid: [{ id: 999, kind: "gecici", dueDate: "2026-11-17", next: null, periods: ["2026-Q3"], amount: 12_791, at: "2026-11-10T10:00:00.000Z" }] })).weeks.flatMap((w) => w.lines).filter((l) => l.key.startsWith("vergi:gecici")).length, 0, "silinmiş hatırlatıcının kalıcı kaydı");
+});
+
+test("vergi (I-3): 'vergi' kapalı: tahmin ve damga yok, kesinler kalır, tutarsız muhtasar listede; Tahmine katılanlar ve not", () => {
+  const r = muhtasarRem();
+  const known = rem({ title: "Geçici vergi beyanı ve ödemesi", kind: "vergi", amount: 40_000, dueDate: "2026-11-17", repeat: "quarterly" });
+  const p = buildCashPlan(input({ vat, vatAnchor: { month: "2026-09", amount: 121_204.69 }, tax: FEED, excluded: ["vergi"], reminders: [r, known] }));
+  assert.equal(taxLines(p).length, 0);
+  assert.equal(lineAt(p, "damga:").length, 0);
+  assert.deepEqual(lineAt(p, `reminder:${known.id}@`).map((l) => l.amount), [40_000]);
+  assert.ok(p.unknownAmounts.some((u) => u.reminderId === r.id));
+  const row = p.estimates.find((e) => e.key === "vergi")!;
+  assert.equal(row.status, "off");
+  assert.equal(row.title, "Muhtasar, geçici vergi ve damga");
+  assert.equal(planNotes(p, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "vergi")!.text, TAX_NOTE_OFF);
+  // Açıkken: sıradaki muhtasar ve geçici vergi notta; kayıtlı durumda "vergi" anahtarı kalır
+  const on = buildCashPlan(input({ tax: FEED }));
+  const est = on.estimates.find((e) => e.key === "vergi")!;
+  assert.equal(est.status, "on");
+  assert.equal(est.monthly, 974.38);
+  assert.match(est.note!, /^Ayın 26'sında muhtasar \(en az 974\s₺\) · 17\sKasım geçici vergi: tutarı muhasebecinizden$/);
+  assert.equal(planNotes(on, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "vergi")!.text, TAX_NOTE);
+  assert.ok(EXCLUDABLE_KEY.test("vergi"));
+  assert.deepEqual(parseCashPlanState({ excluded: ["vergi", "kdv", "vergi:x"] }).excluded, ["vergi", "kdv"]);
+  // Bütün dönemler hatırlatıcıdaki tutarla kesin: "Ödemeler'de karşılığı var"
+  const covered = buildCashPlan(input({ tax: { ...FEED, items: [], pending: [] }, reminders: [rem({ title: "Muhtasar ve prim hizmet beyannamesi", kind: "vergi", amount: 1_200, dueDate: "2026-10-26", repeat: "none" })] }));
+  assert.equal(covered.estimates.find((e) => e.key === "vergi")!.status, "covered");
+  // Besleme yoksa satır da yok
+  assert.equal(buildCashPlan(input()).estimates.some((e) => e.key === "vergi"), false);
+});
+
+test("vergi (I-4): KDV beyannamesinin damgası tahmin satırının gününde (ödenecek 0 olsa da); yalnız damga ya da tutarı yazılı hatırlatıcı varken yok", () => {
+  const base = { vat, vatAnchor: { month: "2026-09", amount: 121_204.69 }, tax: FEED };
+  const p = buildCashPlan(input(base));
+  // Eylül'ün KDV'si devredenle 0: satır yok, damgası var
+  assert.equal(byKey(p, "kdv@2026-10-28").length, 0);
+  const [stamp] = byKey(p, "damga:kdv@2026-10-28");
+  assert.deepEqual([stamp.title, stamp.amount, stamp.estimated, stamp.kind], ["Damga vergisi (Eylül KDV beyannamesi)", 791, false, "vergi"]);
+  assert.deepEqual(byKey(p, "damga:kdv@2026-11-28").map((l) => l.title), ["Damga vergisi (Ekim KDV beyannamesi)"]);
+  // "Eylül KDV damga vergisi" başlıklı, tutarlı hatırlatıcı: o ayın damga satırını o çizer
+  const only = rem({ title: "Eylül KDV damga vergisi", kind: "vergi", amount: 791, dueDate: "2026-10-28", repeat: "none" });
+  const withStamp = buildCashPlan(input({ ...base, reminders: [only] }));
+  assert.equal(byKey(withStamp, "damga:kdv@2026-10-28").length, 0);
+  assert.deepEqual(lineAt(withStamp, `reminder:${only.id}@`).map((l) => l.amount), [791]);
+  assert.equal(byKey(withStamp, "damga:kdv@2026-11-28").length, 1, "öteki ay");
+  // Tutarı yazılmış "KDV Eylül" (başlıkta damga yok): tahakkuk fişinin toplamı, damga dahil
+  const k = kdvRem({ title: "KDV Eylül", amount: 5_000, repeat: "none" });
+  const written = buildCashPlan(input({ ...base, reminders: [k] }));
+  assert.equal(byKey(written, "damga:kdv@2026-10-28").length, 0);
+  assert.deepEqual(lineAt(written, `reminder:${k.id}@`).map((l) => [l.amount, l.detail]), [[5_000, STAMP_INCLUDED]]);
+  // KDV tahmine katılmıyorsa ya da besleme yoksa damga da yok
+  assert.equal(lineAt(buildCashPlan(input({ ...base, excluded: ["kdv"] })), "damga:kdv@").length, 0);
+  assert.equal(lineAt(buildCashPlan(input({ ...base, tax: null })), "damga:").length, 0);
+  assert.equal(lineAt(buildCashPlan(input({ ...base, excluded: ["vergi"] })), "damga:").length, 0);
+});
+
+test("vergi (I-5): SGK yasal oranlarla (Eylül 25.956,18); not ve satırın yasal son günü", () => {
+  const base = planInputFromModel(model, TODAY);
+  close(base.months["2026-09"].payroll.sgk, 25_956.18, "Eylül SGK", 0.005);
+  const p = buildCashPlan(input({ ...base, tax: FEED }));
+  const [sgk] = byKey(p, "sgk@2026-10-31");
+  close(sgk.amount, 25_956.18, "satır", 0.005);
+  assert.equal(sgk.detail, "Son gün 2 Kasım Pazartesi (31 Ekim Cumartesi)");
+  assert.equal(byKey(p, "sgk@2026-11-30")[0].detail, "Son gün 30 Kasım Pazartesi");
+  const notes = planNotes(p, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
+  assert.equal(
+    notes.find((n) => n.key === "sgk")!.text,
+    "İşçi ve işveren SGK + işsizlik payları (ayda 25.956\u00a0₺), takip eden ayın son günü. Brüt, gelir ve damga vergisiyle; 2026 yasal oranlarıyla (işveren %19,75 + %2) hesaplanır; vergiler muhtasar satırındadır.",
+  );
+  assert.equal(
+    notes.find((n) => n.key === "excluded")!.text,
+    "Tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi, Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler (ModPOS / Patron aboneliği), yatırım ve kredi.",
+  );
+  // Besleme yoksa satırda yasal gün yazmaz (bugünkü gibi)
+  assert.equal(byKey(buildCashPlan(input({ ...base })), "sgk@2026-10-31")[0].detail, undefined);
+  // Elle işveren oranı (teşvik): bordro ve not onu kullanır
+  const manual = planInputFromModel(model, TODAY, { ...DEFAULT_TAX_SETTINGS, overrides: { "sgk.isverenOran": { value: 0.1575, note: "5 puan teşvik", by: "Yönetici", date: "2026-10-22" } } });
+  assert.deepEqual(manual.sgkRates, { year: 2026, isveren: 0.1575, issizlik: 0.02 });
+  assert.ok(manual.months["2026-09"].payroll.sgk < base.months["2026-09"].payroll.sgk);
+});
+
+test("vergi (I-6): stopajlı sabit gider net ödenir (kira 160.000 → 128.000; SMM 10.000 + KDV − stopaj); stopaj muhtasarda, toplam brütü aşmaz", () => {
+  const withheld = createModel({
+    ...ds,
+    fixedExpenses: ds.fixedExpenses.map((f) =>
+      f.name === "Kira" ? { ...f, taxWithholding: "kira" as const, vatRate: 0 } : f.name === "Muhasebeci" ? { ...f, taxWithholding: "serbest_meslek" as const, vatRate: 0.2 } : f,
+    ),
+  });
+  const base = planInputFromModel(withheld, TODAY);
+  const fixed = base.months["2026-11"].fixed;
+  assert.deepEqual(
+    fixed.filter((f) => f.withholding).map((f) => [f.name, f.withholding, f.withholdingRate, f.vatRate]),
+    [
+      ["Kira", "kira", 0.2, 0],
+      ["Muhasebeci", "serbest_meslek", 0.2, 0.2],
+    ],
+  );
+  const feed = taxFeed(withheld);
+  const p = buildCashPlan(input({ ...base, tax: feed }));
+  const est = (title: string) => p.estimates.find((e) => e.title === title)!;
+  assert.equal(est("Kira").monthly, 128_000);
+  assert.equal(est("Kira").note, "ay içine yayılır · 160.000\u00a0₺ brüt, stopaj %20 muhtasarda");
+  close(est("Muhasebeci").monthly, 10_000, "SMM: 10.000 + %20 KDV − %20 stopaj");
+  // Kasım'ın bütün günleri ufukta: yayılan kira 128.000; stopaj (32.000) Ekim muhtasarında, 26 Kasım
+  const nov = (key: string) => p.weeks.flatMap((w) => w.lines).filter((l) => l.key === key);
+  const muhtasarNov = nov("vergi:muhtasar@2026-11-26")[0];
+  assert.match(muhtasarNov.detail!, /Kira stopajı 32\.000 \+ Muhasebeci stopajı 2\.000/);
+  close(muhtasarNov.amount, 974.38 + 32_000 + 2_000, "muhtasar: ücret vergileri + damga + stopajlar");
+  const kiraNov = p.weeks.flatMap((w) => w.lines.filter((l) => l.key === "fixed")).map((l) => l.detail!);
+  assert.ok(kiraNov.every((d) => d.includes("Kira 160.000\u00a0₺ brüt · stopaj %20 muhtasarda · ödenen 128.000\u00a0₺")));
+  assert.match(planNotes(p, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "fixed")!.text, /Stopajlı kalemde \(Vergi'de seçilen; şahsa kira, serbest meslek\) ödemeden kesilen stopaj düşüldü, muhtasar satırındadır\./);
+  // Tutarsız "Kira" hatırlatıcısı giderin net tutarını taşır
+  const kira = rem({ title: "Kira", kind: "kira", amount: null, dueDate: "2026-11-01" });
+  const carried = buildCashPlan(input({ ...base, reminders: [kira] }));
+  assert.deepEqual(
+    lineAt(carried, `reminder:${kira.id}@2026-11-01`).map((l) => [l.amount, l.detail]),
+    [[128_000, "Sabit giderdeki tutar; Kira 160.000\u00a0₺ brüt · stopaj %20 muhtasarda · ödenen 128.000\u00a0₺"]],
+  );
+  // "Sabit giderlerden ekle" net tutarı yazar; 128.000 tutarlı hatırlatıcı "farklı tutar" uyarısı vermez (E-46)
+  const f = withheld.ds.fixedExpenses.find((x) => x.name === "Kira")!;
+  const rated = { ...f, withholdingRate: 0.2 };
+  assert.equal(fixedReminderAt(rated, [], "2026-11").amount, 128_000);
+  const r128 = { ...kira, amount: 128_000 };
+  assert.deepEqual(fixedReminderDrifts([r128], [{ ...rated, startMonth: null, endMonth: null }], [], TODAY), []);
+  assert.equal(fixedReminderDrifts([r128], [{ ...f, startMonth: null, endMonth: null }], [], TODAY).length, 1, "stopajsız kalemde 160.000 beklenir");
+  assert.equal(lineAt(buildCashPlan(input({ ...base, reminders: [r128] })), `reminder:${kira.id}@2026-11-01`)[0].detail, undefined);
+});
+
+test("vergi (I-7): yurt dışı hizmetin KDV-2'si ayın 25'inde, damgasıyla; dönemi karşılayan tutarlı KDV-2 hatırlatıcısı varken yok", () => {
+  const ig = createModel({ ...ds, fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Instagram reklamı" ? { ...f, taxWithholding: "internet_reklam_yurtdisi" as const } : f)) });
+  const feed = taxFeed(ig);
+  const base = planInputFromModel(ig, TODAY);
+  // Yabancı firmaya ödenen tutar olduğu gibi (stopaj muhtasarda, KDV-2 ayrı satırda)
+  assert.equal(base.months["2026-11"].fixed.find((f) => f.name === "Instagram reklamı")!.withholdingRate, 0);
+  const p = buildCashPlan(input({ ...base, tax: feed }));
+  const [line] = byKey(p, "vergi:kdv2_hizmet@2026-10-25");
+  assert.deepEqual([line.title, line.amount, line.estimated], ["KDV-2: yurt dışı hizmet (Eylül)", 6_000, true]);
+  assert.match(line.detail!, /Instagram reklamı 30\.000 × %20/);
+  assert.deepEqual(byKey(p, "damga:kdv2@2026-10-25").map((l) => [l.title, l.amount]), [["Damga vergisi (Eylül KDV-2 beyannamesi)", 791]]);
+  assert.match(byKey(p, "vergi:muhtasar@2026-10-26")[0].detail!, /Instagram reklamı stopajı 4\.500/);
+  // Tutarlı KDV-2 hatırlatıcısı Eylül'ü karşılıyor: tahakkuk fişi hizmetin KDV'sini de içerir
+  const k2 = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: 6_000, dueDate: "2026-10-25" });
+  const covered = buildCashPlan(input({ ...base, tax: feed, reminders: [k2] }));
+  assert.equal(byKey(covered, "vergi:kdv2_hizmet@2026-10-25").length, 0);
+  assert.equal(byKey(covered, "damga:kdv2@2026-10-25").length, 0);
+  assert.deepEqual(lineAt(covered, `reminder:${k2.id}@2026-10-25`).map((l) => [l.amount, l.detail]), [[6_000, STAMP_INCLUDED]]);
+  // Tutarsız KDV-2 hatırlatıcısı: o dönemin tahmini (faturalardaki tevkifat + hizmet) onun gününde
+  const open = buildCashPlan(input({ ...base, tax: feed, reminders: [{ ...k2, amount: null }] }));
+  const [carried] = lineAt(open, `reminder:${k2.id}@2026-10-25`);
+  assert.deepEqual([carried.amount, carried.estimated, carried.title], [6_000, true, "KDV2 beyannamesi (Eylül)"]);
+  assert.equal(byKey(open, "vergi:kdv2_hizmet@2026-10-25").length, 0);
+  assert.equal(byKey(open, "damga:kdv2@2026-10-25").length, 1);
+});
+
+test("vergi (I-8): hatırlatıcı sınıfı: muhtasar, SGK, geçici vergi; stopaj muhtasardır, yalnız damga diğerdir", () => {
+  const m = muhtasarRem();
+  const sgk = rem({ title: "SGK prim ödemesi", kind: "vergi", amount: null, dueDate: "2026-10-31" });
+  const g = geciciRem();
+  const stopaj = rem({ title: "Kira stopajı", kind: "vergi", amount: null, dueDate: "2026-10-26" });
+  const damga = rem({ title: "KDV damga vergisi", kind: "vergi", amount: null, dueDate: "2026-10-28" });
+  const p = buildCashPlan(input({ months: monthsWith(), tax: FEED, reminders: [m, sgk, g, stopaj, damga] }));
+  // Muhtasar: beslemenin tutarı onun gününde; ikinci muhtasar sınıfı hatırlatıcı ("Kira stopajı") dönemi alamaz
+  assert.deepEqual(taxLines(p).filter((l) => l.key.startsWith("vergi:muhtasar")).map((l) => l.date), ["2026-10-26", "2026-11-26"]);
+  // SGK: bordronun tutarını taşır
+  assert.deepEqual(lineAt(p, `reminder:${sgk.id}@`).map((l) => [l.kind, l.amount]), [
+    ["sgk", 23_118],
+    ["sgk", 23_118],
+  ]);
+  const unknownOf = (id: number) => p.unknownAmounts.find((u) => u.reminderId === id);
+  // Geçici vergi: taslak çeyrekte notuyla listede; stopaj (muhtasarın dönemi alınmış) ve yalnız damga listede, notsuz
+  assert.equal(unknownOf(g.id)!.note, "Geçici vergi 2026/3: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün 17.11)");
+  assert.equal(unknownOf(stopaj.id)!.note, undefined);
+  assert.equal(unknownOf(damga.id)!.note, undefined);
+  assert.equal(p.basis.sgkMode, "carrier");
+  // Yalnız damga KDV değildir: KDV tahmini hatırlatıcısız kipte kalır
+  assert.equal(p.vat, null);
+});
+
+test("vergi: geçici verginin 'Ödendi' kaydı çeyrekle (payments.vat-paid, tür gecici); KDV'ninki ayla kalır", () => {
+  const g = geciciRem({ dueDate: "2026-11-17", anchorDate: "2026-11-17" });
+  assert.deepEqual(paidPeriodsOf(g, "2026-11-17", "2027-02-17", "gecici"), ["2026-Q3"]);
+  // "Tarihe kadar ödendi" iki dönemi kapatır; ertelenmiş kopyanın dönemi asıl gününden
+  assert.deepEqual(paidPeriodsOf(g, "2026-11-17", "2027-05-17", "gecici"), ["2026-Q3", "2026-Q4"]);
+  assert.deepEqual(paidPeriodsOf({ ...g, repeat: "none", note: postponeNote(null, "2026-11-17") }, "2026-11-30", null, "gecici"), ["2026-Q3"]);
+  assert.deepEqual(paidPeriodsOf(kdvRem(), "2026-10-28", "2026-11-28"), ["2026-09"]);
+  const at = "2026-11-10T10:00:00.000Z";
+  const ok = { id: 3, kind: "gecici", dueDate: "2026-11-17", next: "2027-02-17", periods: ["2026-Q3"], amount: 41_991, at };
+  assert.deepEqual(parseVatPaid([ok, { ...ok, periods: ["2026-09"] }, { ...ok, kind: "kdv", periods: ["2026-Q3"] }, { ...ok, kind: "kv" }]), [ok]);
+});
+

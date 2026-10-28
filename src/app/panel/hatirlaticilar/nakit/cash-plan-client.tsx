@@ -239,8 +239,11 @@ export function CashPlanClient({
                   <CardContent className="space-y-3">
                     <ul className="divide-y divide-line rounded-2xl bg-surface px-3 text-sm">
                       {plan.unknownAmounts.map((u) => (
-                        <li key={u.reminderId} className="flex items-baseline justify-between gap-3 py-2.5">
-                          <span className="min-w-0 break-words text-ink">{u.title}</span>
+                        <li key={u.key} className="flex items-baseline justify-between gap-3 py-2.5">
+                          <span className="min-w-0 break-words text-ink">
+                            {u.title}
+                            {u.note ? <span className="block text-xs text-ink-mute">{u.note}</span> : null}
+                          </span>
                           <span className="shrink-0 text-ink-mute tabular">{shortDate(u.date)}</span>
                         </li>
                       ))}
@@ -403,6 +406,7 @@ function PlanLineRow({ line: l, today }: { line: PlanLine; today: string }) {
             </Badge>
           ) : null}
           {l.estimated ? <Badge tone="gray">tahmini</Badge> : null}
+          {l.badge ? <Badge tone="blue">{l.badge}</Badge> : null}
           {shownDetail ? <span className="wrap-anywhere">{shownDetail}</span> : null}
           {!l.date && SPREAD_NOTE[l.kind] ? <span>{SPREAD_NOTE[l.kind]}</span> : null}
         </p>

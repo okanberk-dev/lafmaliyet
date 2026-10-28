@@ -850,8 +850,9 @@ Başlık "Vergiye göre gelir-gider". **Çeyrek seçici** `?ceyrek=2026-Q3` (`Mo
 | default | "Muhtasar (ücret gelir ve damga vergisi, işaretli stopajlar, beyanname damgası) ayın 26'sında, Vergi sayfasının tahminiyle; stopajı bilinmeyen kalem varsa 'en az'. Geçici vergi yalnız tutarı Ödemeler'e ya da Vergi'ye yazıldıysa (ya da çeyreğin hesabı hazırsa) Şubat, Mayıs, Ağustos ve Kasım'ın 17'sinde; yoksa 'Tutarı girilmemiş ödemeler'de. KDV beyannamelerinin damgası (791 ₺) ayrı satır; tutarı yazılmış KDV hatırlatıcısı damga dahil sayılır." |
 | excluded | "Muhtasar, geçici vergi ve beyanname damgaları plana katılmıyor (Tahmine katılanlar'dan açın)." |
 
-- "Dahil değil" metni şöyle değişir: "Tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi, Aylık
-  harcamalar'daki fatura dışı ödemeler, yıllık giderler (…), yatırım ve kredi."
+- "Dahil değil" metni şöyle değişir (B15'in Aylık harcamalar cümlesiyle birleşir): "Tutarı girilmemiş yerel vergiler (ÇTV,
+  ilan reklam), kurumlar vergisi, Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider
+  kayıtları dahil), yıllık giderler (…), yatırım ve kredi."
 - SGK notunun "Gelir ve damga vergisi dahil değil." cümlesi şöyle olur: "Brüt, gelir ve damga vergisiyle; 2026 yasal
   oranlarıyla (işveren %19,75 + %2) hesaplanır; vergiler muhtasar satırındadır."
 - Sabit gider satırının notu, stopaj profili varsa: "Kira 160.000 ₺ brüt · stopaj %20 muhtasarda · ödenen 128.000 ₺".
@@ -970,7 +971,8 @@ Diğer kurallar:
   - `ExpenseCategory.taxDoc?: TaxDoc | null`;
   - `ExpenseEntry.cashOutId?: number | null`, `docType?: "fis" | "e_arsiv" | "fatura" | "yok" | null`;
   - `Invoice.taxNotAsset?: boolean`.
-  - `ExpenseEntry.supplierEntryId` dalga 11'den gelir; vergi dalı yeniden eklemez.
+  - `ExpenseEntry.supplierEntryId?: number | null`: veritabanı sütunu dalga 11'den gelir; hesap tipi ve yükleyici onu
+    taşımıyordu, vergi dalı ekler (yalnız okunur).
 - **Yükleme:** `src/server/data/dataset.ts` bunları doldurur. Harcamalar `cash_outs`'la sol birleşimle okunur. Engine bu
   alanlara bakmaz; golden testleri değişmez.
 - **Yedek** yeni tabloları kendiliğinden alır (`row_to_json`, tablolar alfabe ve yabancı anahtar sırasıyla).
@@ -1150,21 +1152,23 @@ CashPlanInput.tax?: TaxPlanFeed | null;   // yoksa bugünkü davranış
 
 ### 8.2 Sınıflar ve yerleşim
 
-`classify` sırası: sabit gider adı → maaş → SGK → KDV-2 → KDV → **muhtasar** (başlıkta "muhtasar" ya da "stopaj") →
-**geçici** → diğer.
+`classify` sırası: sabit gider adı → her ay girilen harcama adı (B15) → maaş → SGK → KDV-2 → KDV → **muhtasar** (başlıkta
+"muhtasar" ya da "stopaj") → **geçici** → diğer.
 
 Muhtasar ve geçici sınıfı için (her biri ayrı, KDV'nin `reminder` / `default` / `excluded` kipleriyle aynı yapı):
 
 ```
 dönem(o) = muhtasar: mphbPeriodOf(originalDue(r, o.due)); geçici: quarterOfDue(originalDue(r, o.due))
 reminder kipi (bu sınıftan etkin hatırlatıcı var):
-  first && r.amount !== null → KESİN (normal hatırlatıcı satırı; 0 ise satır yok); dönem sahiplenilir
+  r.amount !== null && (first || !taxAmountTravels(r)) → KESİN (normal hatırlatıcı satırı; 0 ise satır yok); dönem
+               sahiplenilir (sabit tutarlı "Kira stopajı"nın tutarı her döneminde kesindir, K26)
   kalan her o: feed'de dönemin item'ı varsa ve dönem sahiplenilmemişse TAHMİN o.date gününe
                (key `vergi:<kind>@<date>`, kind "vergi", estimated: source === "estimate", overdue: o.overdue)
                yoksa unknownAmounts (pending'deyse notuyla)
   paidReminders'ta (son 30 gün) ya da vat-paid'de (gecici) o dönem "Ödendi" ise satır yok
 default kipi: feed item'ının nominal günü [yarın, end] içindeyse TAHMİN o güne; pending'in nominal günü bu aralıktaysa
-              unknownAmounts'a sentetik satır ("Geçici vergi 2026/3 · tutarı muhasebecinizden isteyin")
+              unknownAmounts'a sentetik satır ("Geçici vergi 2026/3 · tutarı muhasebecinizden isteyin"; `unknownAmounts`
+              satırı `{ key, reminderId: number | null, title, date, note? }`, anahtar "vergi:gecici:2026-Q3")
 excluded ("vergi" excluded'da): kesinler aynen; tahmin yok; tutarsız hatırlatıcılar unknownAmounts'a
 ```
 
@@ -1180,7 +1184,13 @@ Satırların görünümü:
 `amount × (1 + vatRate) − amount × withholdingRate` olur; stopaj yalnız muhtasar satırındadır. Örnek: şahsa kira
 160.000 brüt, KDV yok → satır 128.000 + muhtasarda 32.000 = 160.000. Serbest meslek 10.000, KDV %20 → satır 10.000 +
 muhtasarda 2.000. `internet_reklam_yurtdisi` ve `yurt_disi_hizmet`te satır tutarı olduğu gibi (yabancı firmaya ödenen),
-KDV-2 ayrı satırdadır. Satır notu: "Kira 160.000 ₺ brüt · stopaj %20 muhtasarda".
+KDV-2 ayrı satırdadır. Satır notu: "Kira 160.000 ₺ brüt · stopaj %20 muhtasarda". Aynı net tutar "Sabit giderlerden
+ekle"nin hatırlatıcıya yazdığı ve E-46 karşılaştırmasının beklediği tutardır (`fixedReminderAt`'in `withholdingRate`'i,
+`paidWithholdingRate`).
+
+**KDV-2: yurt dışı hizmet** (`kdv2_hizmet`): dönemi bir KDV-2 hatırlatıcısı karşılamıyorsa ayın 25'inde kendi satırı
+(`vergi:kdv2_hizmet@<date>`). Tutarı yazılı KDV-2 hatırlatıcısı onu içerir (tahakkuk fişi); tutarsız KDV-2
+hatırlatıcısının tahmini faturalardaki tevkifat + hizmetin KDV'sidir.
 
 ### 8.3 Beyanname damga satırları
 
@@ -1205,8 +1215,8 @@ eklenmez.
 - `EstimateRow` `{ key: "vergi", title: "Muhtasar, geçici vergi ve damga", monthly: son muhtasar tahmini, status, note }`.
 - `status`: kapalıysa `"off"`, bütün satırlar hatırlatıcıyla kesinse `"covered"`, diğer durumda `"on"`.
 - `note`: "Ayın 26'sında muhtasar (en az 974 ₺) · 17 Kasım geçici vergi: tutarı muhasebecinizden".
-- `EXCLUDABLE_KEY`: `/^(sales|online|salary|sgk|goods|kdv|vergi|fixed:\d+)$/`. Aynı düzenli ifade
-  `saveCashPlanExcluded`'da da kullanılır.
+- `EXCLUDABLE_KEY`: `/^(sales|online|salary|sgk|goods|kdv|vergi|fixed:\d+|expense:\d+)$/` (B15'in `expense:` anahtarı
+  kalır). Aynı düzenli ifade `saveCashPlanExcluded`'da da kullanılır.
 - `planNotes`: §4.6.
 
 ---
