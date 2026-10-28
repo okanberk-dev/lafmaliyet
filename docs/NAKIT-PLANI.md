@@ -130,9 +130,9 @@ geçici vergi ve damga (tek anahtar, `vergi`), hatırlatıcısı olmayan her sab
 sayılmasın. Ödemeler'de hatırlatıcısı olan ve yıllık kalemler değiştirilemez (gri). “Gününü girmek için Ödemeler'e ekle”
 Ödemeler'i açar.
 
-**Dahil değil** (ekranda yazar): tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi, Aylık
-harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım
-ve kredi. Vergi beslemesi yoksa ilk cümle “tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)” der. Kart, yemek kartı ve online
+**Dahil değil** (ekranda yazar): tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi,
+Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler,
+yatırım ve kredi. Vergi beslemesi yoksa ilk cümle “tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)” der. Kart, yemek kartı ve online
 platform tahsilatı satış günü sayılır (bankaya geçiş gecikmesi yok).
 
 **Çift sayım:** aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası
