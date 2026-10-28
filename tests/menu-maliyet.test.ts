@@ -7,9 +7,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import type ExcelJS from "exceljs";
+
 import { waterSource } from "../src/app/panel/ayarlar/water-text";
 import { impactData, impactModel } from "../src/app/panel/ayarlar/impact";
-import { waterExplanation } from "../src/app/api/export/workbook";
+import { buildWorkbook, waterExplanation } from "../src/app/api/export/workbook";
 import { monthTaskFacts, monthTasks } from "../src/app/panel/dashboard-tasks";
 import { waterBreakdown } from "../src/app/panel/hammaddeler/breakdowns";
 import { salesBreakdowns } from "../src/app/panel/satislar/breakdowns";
@@ -22,7 +24,7 @@ import type { Dataset, Product, SalesLine } from "../src/lib/calc/types";
 import { productProfitability } from "../src/lib/mcp/answers/products";
 import { urunKarliligiInput } from "../src/lib/mcp/schemas";
 import type { SiteSalesLine, SiteSalesMonth } from "../src/lib/site-sales/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
 const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
@@ -258,6 +260,34 @@ test("E-47: Ürünler'in brüt kâr kartı ve dökümü reçetesiz ürünü kâr
   assert.equal(plainBd.profit.find((g) => g.key === "recetesiz")!.rows.length, 0);
   // Tablo: kârı ve oranı anlamsız sütunlarda sona kalır
   assert.deepEqual([...NO_RECIPE_LAST_KEYS], ["unitProfit", "monthProfit", "margin", "costRatio"]);
+});
+
+test("E-47: Excel'e aktar: reçetesiz ürünün aylık brüt kârı boş, satış satırı 'reçete boş' der", () => {
+  const model = createModel(withPumpkin());
+  const wb = buildWorkbook(model, M, { investments: data.investments.map(investmentSeed), findings: data.findings, now: new Date("2026-10-20T10:00:00Z") });
+  const uk = wb.getWorksheet("Ürün Kârlılık")!;
+  const header = uk.getRow(1);
+  const col = (name: RegExp) => (header.values as unknown[]).findIndex((v) => typeof v === "string" && name.test(v));
+  const mp = col(/brüt kâr$/);
+  const qty = col(/satış adedi$/);
+  assert.ok(mp > 0 && qty > 0);
+  assert.match(String(header.getCell(mp).note ?? ""), /Reçetesi boş/);
+  let pumpkinRow: ExcelJS.Row | null = null;
+  let latteRow: ExcelJS.Row | null = null;
+  uk.eachRow((r) => {
+    if (r.getCell(2).value === "Pumpkin Latte") pumpkinRow = r;
+    if (r.getCell(2).value === "Latte" && r.getCell(3).value === "M") latteRow = r;
+  });
+  assert.ok(pumpkinRow && latteRow);
+  assert.equal((pumpkinRow as ExcelJS.Row).getCell(qty).value, 400);
+  assert.equal((pumpkinRow as ExcelJS.Row).getCell(mp).value, null, "kârı boş");
+  assert.equal(typeof (latteRow as ExcelJS.Row).getCell(mp).value, "number", "reçeteli üründe dolu");
+  // Satış raporu sekmesi: satır eşleşti ama reçete boş, oran uygulandı
+  let status = "";
+  wb.eachSheet((ws) => ws.eachRow((r) => r.eachCell((c) => {
+    if (typeof c.value === "string" && c.value.startsWith("Eşleşti, reçete boş")) status = c.value;
+  })));
+  assert.match(status, /^Eşleşti, reçete boş – ortalama maliyet oranı \(%[\d,]+\) uygulandı$/);
 });
 
 // ---------------------------------------------------------------- E-47: Bu ayın işleri

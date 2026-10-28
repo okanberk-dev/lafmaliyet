@@ -309,7 +309,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
     ],
     { x: 3, y: 1, landscape: true },
   );
-  headerRow(uk, colHeaders(uk));
+  headerRow(uk, colHeaders(uk)).getCell("mp").note = "Birim kâr × satış adedi. Reçetesi boş (Durum: Reçete yok) üründe boş: maliyeti bilinmiyor.";
   for (const p of model.products) {
     const qty = sold.get(p.product.id) ?? 0;
     uk.addRow({
@@ -328,7 +328,8 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
       sug: p.suggestedPrice,
       status: p.status,
       qty,
-      mp: p.unitProfit * qty,
+      // Reçetesi boş üründe boş: maliyeti bilinmiyor, kârı ~cirosu kadar görünürdü (Ürünler'deki tire; denetim E-47)
+      mp: p.status === "Reçete yok" ? null : p.unitProfit * qty,
       mn: p.net * qty,
       fire: p.fireRate,
       active: p.product.active ? "Evet" : "Pasif",
