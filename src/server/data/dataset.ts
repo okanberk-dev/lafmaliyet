@@ -2,13 +2,15 @@ import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
 
+import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
-import { settingsFromRows } from "@/lib/constants";
+import { channelOf } from "@/lib/commission/channels";
+import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s } from "@/server/db";
@@ -56,6 +58,7 @@ export async function loadDataset(): Promise<Dataset> {
     till,
     lateWaiting,
     closedRows,
+    supplierCards,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -114,10 +117,20 @@ export async function loadDataset(): Promise<Dataset> {
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
+    // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
+    db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
+  // Adı bir kanala bağlanmayan Komisyon faturası: kanal tedarikçi kartının adları ve diğer adlarıyla da aranır (ekranın
+  // kuralı, vergi no öteki faturalar üzerinden de; Gelir-gider'in POS komisyonu uyarısı, denetim B16)
+  const channelNamesOf = invoices.some((i) => i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]))
+    ? channelNameResolver(
+        supplierCards.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases.filter((a): a is string => typeof a === "string") : [] })),
+        invoices.map((i) => ({ supplier: i.supplier, supplierTaxNumber: i.supplierTaxNumber })),
+      )
+    : null;
   // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
   const today = businessDate();
   const through = addDays(today, -1);
@@ -254,6 +267,7 @@ export async function loadDataset(): Promise<Dataset> {
       needsReview: i.needsReview,
       paidAt: i.paidAt,
       paymentRequestedAt: i.paymentRequestedAt,
+      ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).
     // active sütuna değil aralığa göre hesaplanır: ay değişince kendiliğinden doğru olur.

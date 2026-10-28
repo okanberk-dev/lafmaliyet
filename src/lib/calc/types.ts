@@ -255,6 +255,12 @@ export interface Invoice {
   paidAt?: string | null;
   /** Ödemesi istendiği gün: ödenmemiş faturada "Talep edildi" (hesaplarda kullanılmaz) */
   paymentRequestedAt?: string | null;
+  /**
+   * Komisyon faturasının kanalının aranacağı adlar, faturadaki ad bir kanala bağlanmıyorsa: faturadaki ad, tedarikçi
+   * kartının adı ve diğer adları (Komisyon & hakediş'in kuralı, channelNameResolver; dataset.ts). Yalnız Gelir-gider'in
+   * POS komisyonu uyarısı okur ("kanalı bulunamayan" fatura iki ekranda aynı)
+   */
+  channelNames?: string[];
 }
 
 /**

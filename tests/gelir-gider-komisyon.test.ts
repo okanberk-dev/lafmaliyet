@@ -8,10 +8,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { channelNameResolver } from "../src/app/panel/tedarikciler/logic";
 import { bankShareText, createModel, PERSONNEL_EXTRA_LABEL, staffCost } from "../src/lib/calc/engine";
 import { fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, Invoice } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type MonthEntry, type TillRow } from "../src/lib/cash-month";
+import { channelOf } from "../src/lib/commission/channels";
 import { addDays } from "../src/lib/reminders";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -102,6 +104,31 @@ test("E-43: kanalı bulunamayan komisyon faturası (banka) tahmin hücresinde uy
   assert.equal(c2.overridden, true);
   assert.equal(c2.warn, undefined);
   close(fixed.sections.komisyon, 5_000, "komisyon yalnız bankanın faturası");
+});
+
+test("B16: kanal tedarikçi kartının diğer adıyla bulununca (Komisyon & hakediş'teki gibi) uyarı yok", () => {
+  // Paraşüt'te unvanla gelen Pluxee faturası; sahip unvanı Pluxee kartının "Diğer adlar"ına ekledi (dataset.ts channelNames)
+  const aliased = { ...invoice("Avantaj Kart Hizmetleri A.Ş.", 300), channelNames: ["Avantaj Kart Hizmetleri A.Ş.", "Pluxee", "Avantaj Kart Hizmetleri A.Ş."] };
+  const pm = november({ invoices: [aliased] }).pnlMonth("2026-11");
+  assert.equal(pm.cells.get("commission:pos")!.warn, undefined, "kanalı kartın adından bulunan fatura uyarı vermez");
+  close(pm.cells.get("commission:Avantaj Kart Hizmetleri A.Ş.")!.value, 300, "fatura kendi satırında");
+  // Kartı olmayan (ya da kartı kanal adı taşımayan) aynı fatura uyarır
+  const lone = november({ invoices: [{ ...aliased, channelNames: ["Avantaj Kart Hizmetleri A.Ş."] }] }).pnlMonth("2026-11");
+  assert.match(lone.cells.get("commission:pos")!.warn ?? "", /Avantaj Kart Hizmetleri A\.Ş\..*0 yazın/);
+});
+
+test("B16: channelNameResolver Komisyon & hakediş'in kuralı: diğer ad, kartta yazılı vergi no, öteki faturalar", () => {
+  const cards = [{ id: 1, name: "Pluxee", aliases: ["Avantaj Kart Hizmetleri A.Ş."], taxNumber: "7810030532" }];
+  const refs = [
+    { supplier: "Pluxee", supplierTaxNumber: "1234567808" },
+    { supplier: "PLX Ödeme Hizmetleri A.Ş.", supplierTaxNumber: "1234567808" },
+  ];
+  const names = channelNameResolver(cards, refs);
+  assert.equal(channelOf(names("Avantaj Kart Hizmetleri A.Ş.")), "pluxee", "diğer ad");
+  assert.equal(channelOf(names("Başka Unvan A.Ş.", "7810030532")), "pluxee", "kartta yazılı vergi no");
+  assert.equal(channelOf(names("PLX Ödeme Hizmetleri A.Ş.")), "pluxee", "öteki faturalardaki vergi no üzerinden");
+  assert.equal(channelOf(names("Akbank T.A.Ş.")), null, "kartı yok: kanal yok");
+  assert.deepEqual(names("Akbank T.A.Ş."), ["Akbank T.A.Ş."]);
 });
 
 test("E-43: elle yazılan kartlı orandan kasa raporlarındaki yemek kartı payı düşülür", () => {

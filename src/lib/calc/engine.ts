@@ -1860,8 +1860,9 @@ export function createModel(ds: Dataset) {
     const posCell = cells.get("commission:pos")!;
     posCell.info = bankShareText(bank);
     // Kanalı bulunamayan Komisyon faturası (yemek kartı ya da platform değil): bankanın POS komisyonu faturasıysa tahmin
-    // onu ikinci kez sayar. Elle yazılmış hücrede sahip karar vermiştir, uyarı yok (sahibe soru 9; docs/KOMISYON.md)
-    const unknown = [...new Set(commInvs.filter((i) => !channelOf([i.supplier])).map((i) => normalizeSupplier(i.supplier)))];
+    // onu ikinci kez sayar. Elle yazılmış hücrede sahip karar vermiştir, uyarı yok (sahibe soru 9; docs/KOMISYON.md).
+    // Kanal Komisyon & hakediş'teki gibi tedarikçi kartının adları ve diğer adlarıyla da aranır (channelNames)
+    const unknown = [...new Set(commInvs.filter((i) => !channelOf(i.channelNames ?? [i.supplier])).map((i) => normalizeSupplier(i.supplier)))];
     if (unknown.length && !posCell.overridden && posCell.value) {
       posCell.warn = `Bu ay kanalı bulunamayan komisyon faturası var (${unknown.join(", ")}). Bankanın POS komisyonu faturasıysa bu tahmin onu ikinci kez sayar: hücreye 0 yazın (fatura gerçek tutardır).`;
     }

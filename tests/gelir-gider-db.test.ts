@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
@@ -107,6 +108,22 @@ describe("gelir-gider komisyon ve açılış: veritabanında", { skip: !SERVER_U
     assert.equal(pm.cells.get("commission:pos")!.warn, undefined);
     assert.ok(Math.abs(pm.sections.komisyon - (420 + 1_500)) < 1e-6);
     await pnl.setPnlCell(PREV, "commission:pos", null);
+  });
+
+  test("B16: unvanı Pluxee kartının 'Diğer adlar'ında olan komisyon faturası Gelir-gider'de de kanallı (uyarı yok)", async () => {
+    // Yalnız bu testin faturaları: bir önceki testin Akbank faturası kaldırılır
+    await db.delete(s.invoices);
+    const [inv] = await invoice("Avantaj Kart Hizmetleri A.Ş.", 300).returning();
+    let pm = (await loadModel()).pnlMonth(PREV);
+    assert.match(pm.cells.get("commission:pos")!.warn ?? "", /Avantaj Kart Hizmetleri A\.Ş\..*0 yazın/, "kartı yokken kanalı bulunamaz");
+
+    // Komisyon & hakediş'in önerisi: unvanı Pluxee kartının diğer adlarına ekle
+    await db.insert(s.suppliers).values({ name: "Pluxee", key: "pluxee", aliases: ["Avantaj Kart Hizmetleri A.Ş."] });
+    pm = (await loadModel()).pnlMonth(PREV);
+    assert.equal(pm.cells.get("commission:pos")!.warn, undefined, "kanal kartın adından bulundu");
+    assert.ok(Math.abs(pm.cells.get("commission:Avantaj Kart Hizmetleri A.Ş.")!.value! - 300) < 1e-6, "fatura kendi satırında bir kez");
+    await db.delete(s.suppliers);
+    await db.delete(s.invoices).where(eq(s.invoices.id, inv.id));
   });
 
   test("E-30: 'Önceki aydan devir' elle yazılınca Sayım kartının açılışı K/Z ile aynı ve 'elle girildi'", async () => {
