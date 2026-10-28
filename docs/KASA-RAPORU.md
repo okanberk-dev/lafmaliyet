@@ -224,7 +224,7 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   durur (`src/server/data/cash-out-invoices.ts`): Aylık harcamalar'da kaydı yok, bir tedarikçi ödemesine bağlı değil,
   listeden çıkarılmamış ve aynı mağazadan (aynı ad, adın baştan kelimeleri ya da aynı tedarikçi kartı: diğer adlar,
   vergi no) fişin gününden ±7 gün, ±1 ₺ içinde faturası olmayan satır. Bir fatura tek satırı kapatır. Zil (Faturalar
-  başlığı), Bugün'ün Faturalar satırı ve Faturalar'ın uyarısı sayar; liste **Faturalar › Kontrol bekleyen**'in
+  başlığı), Bugün'ün Faturalar satırı, Faturalar'ın uyarısı ve (giderse) sabah e-postası sayar; liste **Faturalar › Kontrol bekleyen**'in
   üstündeki **Kasadan faturalı alımlar** kartında. Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih
   fişin günü, tedarikçi yer, Ödenecek kasadan çıkan, net fişteki KDV'yle, Ödendi · nakit; kaydedince fişin fotoğrafı
   faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir), **Aylık harcamalar'a yaz** (kategori seçilir;
