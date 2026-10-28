@@ -1,7 +1,8 @@
 // Derleme öncesi veritabanı hazırlığı (scripts/predeploy.ts): önizleme dağıtımları canlının veritabanını kullandığı
 // için migration ve seed yalnız canlı dağıtımda çalışır; önizlemelerin kendi veritabanı varsa MIGRATE_ON_PREVIEW=1.
 // Production derlemesi yalnız main dalından: Production'a terfi ya da redeploy edilen dal önizlemesi derlemeyi durdurur
-// (denetim E-10); bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister.
+// (denetim E-10); bilerek yapılan dağıtım ALLOW_BRANCH_PRODUCTION=1 ister. vercel.json'ın `claude/**` önizleme kuralı da
+// burada tutulur (DEPLOY.md § 3).
 // Çalıştırma: npx tsx --test tests/predeploy.test.ts
 
 import assert from "node:assert/strict";
@@ -142,4 +143,17 @@ test("DEPLOY.md ve README: bekçi yalnız onu içeren commit'te çalışır; esk
   assert.match(readme, /bekçiyi içeren commit'lerde `main` dışındaki bir dalın Production derlemesi veritabanına dokunmadan durur; ondan önce açılmış eski dallar durmaz/);
   const kalan = readFileSync(join(process.cwd(), "docs/planlar/KALAN-ISLER.md"), "utf8").replace(/\s*\n\s*/g, " ");
   assert.match(kalan, /\*\*Ayrıca \(E-10\):\*\* dal bekçisi yalnız onu içeren commit'lerde çalışır/);
+});
+
+test("vercel.json: claude/** dallarında önizleme kapalı; DEPLOY.md satırı çıkarmayı önermez (inceleme #45)", () => {
+  // Vercel Hobby günde en çok 100 dağıtım açar; 26 Ekim'de sınır doldu ve canlı dağıtımlar da reddedildi. Kuralı
+  // kaybeden bir birleştirme (dalda "geçici olarak" çıkarılmış satır) bu testte düşer.
+  const vercel = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8")) as { git?: { deploymentEnabled?: Record<string, boolean> } };
+  assert.equal(vercel.git?.deploymentEnabled?.["claude/**"], false);
+  const doc = readFileSync(join(process.cwd(), "docs/DEPLOY.md"), "utf8").replace(/\s*\n\s*/g, " ");
+  const s3 = doc.slice(doc.indexOf("## 3."), doc.indexOf("## 4."));
+  assert.match(s3, /\*\*`claude\/\*\*` dallarında önizleme yok \(26 Eki 2026\)\.\*\*/);
+  assert.doesNotMatch(s3, /geçici olarak çıkarılır/);
+  assert.match(s3, /önizleme gerekirse dal `claude\/` dışında bir adla açılır/);
+  assert.match(s3, /`vercel\.json`'daki satır \*\*çıkarılmaz\*\*/);
 });

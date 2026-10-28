@@ -31,7 +31,8 @@ const UNDO_MS = 10_000;
  * ekle" (pencere kasadan dolu, fiş belge olur), "Aylık harcamalar'a yaz" (kategoriyle, nakit) ve "Listeden çıkar"
  * (faturası başka adla var ya da kafenin gideri değil). Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır
  * kendiliğinden kalkar. Aylık harcamalar'a yazılmış satırın faturası sonradan gelirse (iki kez sayılıyor) aynı kartta
- * "Gider kaydını sil" ve "Ayrı alım" (inceleme D2). Yalnız yönetici görür.
+ * "Gider kaydını sil" ve "Ayrı alım" (inceleme D2); fatura o satırdan açıldıysa ("Faturalar'a ekle") yalnız "Gider kaydını
+ * sil": fatura başka bir alımın olamaz. Yalnız yönetici görür.
  */
 export function CashOutInvoicesCard({
   rows,
@@ -208,7 +209,15 @@ export function CashOutInvoicesCard({
                         .join(" · ")}
                     </p>
                     <p className="text-[13px] leading-5 text-ink-mute">
-                      {[`Fatura ${dateTR(r.invoice.date)}`, r.invoice.supplier, r.invoice.invoiceNo ? `No ${r.invoice.invoiceNo}` : null, money(r.invoice.payable)].filter(Boolean).join(" · ")}
+                      {[
+                        `Fatura ${dateTR(r.invoice.date)}`,
+                        r.invoice.supplier,
+                        r.invoice.invoiceNo ? `No ${r.invoice.invoiceNo}` : null,
+                        money(r.invoice.payable),
+                        r.adopted ? "bu satırdan eklendi" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <span className="shrink-0 text-[15px] font-semibold text-ink tabular">{money(r.amount)}</span>
@@ -217,16 +226,19 @@ export function CashOutInvoicesCard({
                   <Button size="sm" disabled={pending} onClick={() => dropExpense(r)} className="max-sm:w-full">
                     <Trash2 size={15} /> Gider kaydını sil
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending}
-                    onClick={() => dismiss(r, true)}
-                    title="Fatura başka bir alımın: gider kaydı kalsın, satır listeden çıksın"
-                    className="max-sm:w-full sm:ml-auto"
-                  >
-                    <X size={15} /> Ayrı alım
-                  </Button>
+                  {/* Fatura bu satırdan açıldıysa ("Faturalar'a ekle") başka bir alımın olamaz: sunucu da reddeder */}
+                  {r.adopted ? null : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={pending}
+                      onClick={() => dismiss(r, true)}
+                      title="Fatura başka bir alımın: gider kaydı kalsın, satır listeden çıksın"
+                      className="max-sm:w-full sm:ml-auto"
+                    >
+                      <X size={15} /> Ayrı alım
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}
