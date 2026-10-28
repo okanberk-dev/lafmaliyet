@@ -73,6 +73,22 @@ yeniden göndermeden ([LAFPOS.md](LAFPOS.md) › Gün sonu, "Sonradan bağlama")
 Kartta kaydedilmemiş değişiklik varken bağlantı değiştirilmez. **Bağlantıyı kaldırmak** fiyatı ve durumu olduğu gibi
 bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açmaz, adı ya da kategoriyi değiştirmez.
 
+**Panelde aç ve bağla** (denetim E-48, 28 Eki 2026): "Yalnız sitede" sekmesindeki her kalemin satırında. Pencere
+sitenin adıyla (kalemin öteki fiyatı panelde bir ürüne bağlıysa onun adıyla: M/L tek ürün olarak eşleşsin), kategori
+tahminiyle (sırayla: öteki boyun kategorisi; sitede aynı kategorideki kalemlere bağlı ürünlerin çoğunun kategorisi;
+sitedeki kategori adıyla aynı panel kategorisi; yoksa yönetici seçer) ve kalemin panelde bağlısı olmayan fiyatlarıyla
+dolu gelir: iki boylu kalemde M fiyatı Medium, L fiyatı Large; tek boylu kalemde tek fiyat bir boy (önerisi "Tek",
+değiştirilebilir). Fiyat pencerede yazılmaz, sitenindir. "Aç, bağla ve reçeteye geç" (`createProductsFromSite` →
+`src/server/site-menu/link.ts` › `createLinkedProducts`) listeyi imzalı yeniden çeker ve menü kilidi altında tek
+işlemde her boyu Yeni ürün'ün kuralıyla (zayi oranı kategoriden, fiyat geçmişinin ilk satırı) sitenin fiyatıyla açar,
+bağlama çekirdeğiyle (`linkUnderLock`: liste uygulanır, sitede Tükendi kalem QR menüde gizli açılır, bu kalemle gelmiş
+ürünsüz LafPOS satırları ürüne bağlanır) yuvasına bağlar; sonra ilk boyun reçete kartı açılır. Aynı ad + boyda panel
+ürünü varsa (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), aynı ad + boyda bekleyen yeni ürün önerisi varsa
+(menü kilidinden sonra yeni ürün kilidi altında okunur; önce Onaylar'da onaylanır, ürün personelin reçetesiyle açılır,
+sonra Öneriler'den bağlanır; Ürünler › Yeni ürün de aynı kuralla), yuva bu arada dolduysa, kalem sitede yoksa ya da
+siteye ulaşılamıyorsa hiçbir ürün açılmaz. İstek sürerken pencere kapanmaz. İşlem geçmişinde "Yeni ürün (siteden)". Ön dolum `src/lib/site-menu/new-product.ts`;
+testler `tests/site-urun-acma.test.ts` ve `tests/site-urun-acma-db.test.ts` (sahte siteyle).
+
 ### Değerlerin karşılığı
 
 - **Fiyat:** site kuruş tamsayı, panel TL (ikisi de KDV dahil). Panel → site `Math.round(TL * 100)`, site → panel
@@ -237,7 +253,8 @@ ve kasaya işlenecekler listesine eklenir; yalnız menü durumu değişen satır
 3. Panel yayınlanınca migration (`0018_site_menu_baglantisi`) build öncesinde kendiliğinden uygulanır.
 4. **Ürünler › Site menüsü** → **Siteyle eşitle**: sitenin listesi gelir, öneriler görünür. Önerileri gözden geçirip
    **Önerileri bağla**; kalanları satırdaki **Bağla** ile ya da ürün kartından bağlayın. "Yalnız sitede" sekmesi
-   panelde bağlısı olmayan kalemleri gösterir (panelde yoksa Yeni ürün ile açıp bağlayın).
+   panelde bağlısı olmayan kalemleri gösterir; panelde ürünü yoksa satırdaki **Panelde aç ve bağla** onu sitenin adı,
+   fiyatı ve menü durumuyla açar ve bağlar (yukarıda, Eşleştirme).
 5. Anahtar yokken ekranlar "kurulmamış" der; bağlı olmayan ürünler ve panelin geri kalanı eskisi gibi çalışır. Bağlı
    kalmış bir ürünün fiyatı ve menü durumu anahtar gelene kadar değiştirilemez (iki yer ayrışmasın; anahtar gelince
    sitenin değeri yeniden geçerli olurdu); bağlantısı kaldırılabilir.

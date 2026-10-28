@@ -18,8 +18,20 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
+import { nameKey } from "@/lib/count-item";
 import { dateTimeTR, money, pct, tl } from "@/lib/format";
-import { genitive, NEW_PRODUCT_NAME_MAX, REQUEST_STATUS_LABEL, takenIssue, type ProductSize, type RecipeSnapshot, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
+import {
+  genitive,
+  inactiveIngredientsIssue,
+  NEW_PRODUCT_NAME_MAX,
+  productSizeLabel,
+  REQUEST_STATUS_LABEL,
+  sizePhrase,
+  type ProductSize,
+  type RecipeSnapshot,
+  type RequestKind,
+  type RequestStatus,
+} from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import { approveNewProduct, reviewRecipeChange } from "@/server/actions/recipe-requests";
 
@@ -49,6 +61,11 @@ export interface ReviewItem {
   unpriced: string[];
   /** Eklenen ya da miktarı değişen satırlarda paket fiyatı tahmini olan malzemeler (estimateNames): maliyet farkı kesin değil */
   estimates: string[];
+  /**
+   * Önerilen satırların formülü bugünkü ayarlarla eksiye düşüyor ya da hesaplanamıyor (negativeQtyIssue): onay olmaz,
+   * sunucu da reddeder. Farktaki miktar öneri anınınkidir; kart sorunu bugünkü değerle söyler
+   */
+  qtyIssues: string[];
 }
 
 /** Personelin yeni ürün önerisi (boy başına bir öneri): satır maliyetleri bugünkü hammadde fiyatlarıyla */
@@ -58,6 +75,13 @@ export interface NewProductItem {
   name: string;
   size: ProductSize;
   categoryId: number;
+  /**
+   * Önerinin grubu (proposalGroupKey: aynı kişi, aynı önerilen ad): bekleyen kardeş boylar adı ve kategoriyi birlikte
+   * değiştirir (denetim E-55)
+   */
+  group: string;
+  /** Önerinin daha önce eklenmiş öteki boyu: bu boy onun adını alır (sunucu da başka adı reddeder) */
+  pair: { name: string; size: ProductSize; categoryId: number } | null;
   requestedByName: string;
   updatedAt: string;
   message: string | null;
@@ -76,6 +100,10 @@ export interface NewProductItem {
     isPackaging: boolean;
     /** Malzeme artık hammaddelerde yok (onay olmaz) */
     missing: boolean;
+    /** Malzeme öneriden sonra pasife alındı (onay olmaz) */
+    inactive: boolean;
+    /** Formül bugünkü ayarlarla eksiye düşüyor (negativeQtyIssue; onay olmaz) */
+    qtyIssue: string | null;
     /** Paket fiyatı girilmemiş (sayımda eklenen kalem): maliyet eksik */
     unpriced: boolean;
     /** Paket fiyatı tahmini (öneride "Yeni malzeme" ile ya da sayımda personelin yazdığı, faturada bulunmayan) */
@@ -88,7 +116,8 @@ export interface NewProductEnv {
   categories: { id: number; name: string }[];
   fireByCategory: Record<number, number | null>;
   settings: Settings;
-  taken: { name: string; size: ProductSize }[];
+  /** Var olan ürünler (pasif de): aynı ad + boy varsa onay olmaz, kart o ürünün kartına bağlantı verir */
+  taken: { id: number; name: string; size: ProductSize }[];
 }
 
 export interface RecentItem {
@@ -107,6 +136,9 @@ export interface RecentItem {
   after: RecipeSnapshot;
 }
 
+/** Yeni ürün kartında yöneticinin düzelttiği ad ve kategori (önerinin boyları birlikte) */
+type NewProductDraftValue = { name: string; categoryId: number };
+
 /** Reddetme penceresinin konusu (iki tür öneri) ve ekranda görülen sürümü */
 type RejectTarget = { id: number; version: number; kind: RequestKind; productName: string; size: ProductSize };
 
@@ -122,6 +154,19 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
   const [reason, setReason] = useState("");
   const [conflict, setConflict] = useState<{ item: ReviewItem; current: RecipeSnapshot } | null>(null);
   const [openRecent, setOpenRecent] = useState<number | null>(null);
+  // Yeni ürün önerisinin boyları (aynı kişi, aynı önerilen ad) adı ve kategoriyi birlikte taşır: bir boy yeni adla
+  // onaylanınca öteki boyun kartı o adla kalır (denetim E-55). Önerinin grubuna göre tutulur
+  const [drafts, setDrafts] = useState<Record<string, NewProductDraftValue>>({});
+  const newItems = pending.filter((x): x is NewProductItem => x.kind === "new");
+  const draftOf = (item: NewProductItem): NewProductDraftValue => {
+    const known = (id: number) => env.categories.some((c) => c.id === id);
+    const first = newItems.find((x) => x.group === item.group) ?? item;
+    const base = drafts[item.group] ?? { name: first.name, categoryId: known(first.categoryId) ? first.categoryId : (env.categories[0]?.id ?? 0) };
+    // Öteki boy eklendiyse ad onunkidir; kategori o ürününkiyle gelir (değiştirilebilir)
+    if (!item.pair) return base;
+    return { name: item.pair.name, categoryId: drafts[item.group] ? base.categoryId : known(item.pair.categoryId) ? item.pair.categoryId : base.categoryId };
+  };
+  const setDraft = (item: NewProductItem, patch: Partial<NewProductDraftValue>) => setDrafts((cur) => ({ ...cur, [item.group]: { ...draftOf(item), ...patch } }));
 
   function approve(item: ReviewItem, force = false) {
     startTransition(async () => {
@@ -160,6 +205,9 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                 key={item.id}
                 item={item}
                 env={env}
+                draft={draftOf(item)}
+                onDraft={(patch) => setDraft(item, patch)}
+                siblings={newItems.filter((x) => x.group === item.group && x.id !== item.id).map((x) => x.size)}
                 busy={busy}
                 startTransition={startTransition}
                 onReject={() => askReject({ id: item.id, version: item.version, kind: "new", productName: item.name, size: item.size })}
@@ -196,8 +244,9 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                   <UnpricedNote names={item.unpriced} />
                   {item.cost ? <CostImpact cost={item.cost} /> : null}
                   <EstimateNote names={item.estimates} />
+                  <QtyIssues texts={item.qtyIssues} />
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <Button onClick={() => approve(item)} disabled={busy} className="max-sm:flex-1">
+                    <Button onClick={() => approve(item)} disabled={busy || item.qtyIssues.length > 0} className="max-sm:flex-1">
                       <Check size={16} /> Onayla ve uygula
                     </Button>
                     <Button
@@ -332,19 +381,26 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
 function NewProductCard({
   item,
   env,
+  draft,
+  onDraft,
+  siblings,
   busy,
   startTransition,
   onReject,
 }: {
   item: NewProductItem;
   env: NewProductEnv;
+  /** Ad ve kategori: önerinin boyları birlikte (ReviewList tutar) */
+  draft: NewProductDraftValue;
+  onDraft: (patch: Partial<NewProductDraftValue>) => void;
+  /** Aynı önerinin bekleyen öteki boyları */
+  siblings: ProductSize[];
   busy: boolean;
   startTransition: (fn: () => Promise<void>) => void;
   onReject: () => void;
 }) {
   const router = useRouter();
-  const [name, setName] = useState(item.name);
-  const [categoryId, setCategoryId] = useState(env.categories.some((c) => c.id === item.categoryId) ? item.categoryId : (env.categories[0]?.id ?? 0));
+  const { name, categoryId } = draft;
   // Personelin önerdiği satış fiyatı (yoksa alan boş gelir)
   const proposed = item.proposedPrice;
   const [price, setPrice] = useState(proposed !== null ? priceText(proposed) : "");
@@ -357,8 +413,16 @@ function NewProductCard({
     item.lines.map((l) => ({ qty: l.qty, unitCost: l.unitCost, vatRate: l.vatRate, isPackaging: l.isPackaging })),
     env.settings,
   );
-  const taken = takenIssue(name, item.size, env.taken, []);
+  // Aynı ad + boyda ürün (pasif de): onay olmaz (sunucu da reddeder). Ad öteki boydan geliyorsa (salt okunur) yalnız
+  // reddetmek kalır; reçete o ürünün kartına girilir
+  const clash = nameKey(name) ? env.taken.find((p) => p.size === item.size && nameKey(p.name) === nameKey(name)) : undefined;
+  const taken = clash
+    ? `“${productSizeLabel(clash.name, item.size)}” zaten var; ${item.pair ? "öneriyi reddedin, reçeteyi o ürünün kartına girin" : "adı değiştirin ya da öneriyi reddedip reçeteyi o ürünün kartına girin"}`
+    : null;
   const missing = item.lines.filter((l) => l.missing);
+  const inactive = inactiveIngredientsIssue(item.lines.filter((l) => l.inactive).map((l) => l.name));
+  const qtyIssues = item.lines.flatMap((l) => (l.qtyIssue ? [l.qtyIssue] : []));
+  const blocked = missing.length > 0 || inactive !== null || qtyIssues.length > 0 || !!clash;
   const unpriced = item.lines.filter((l) => l.unpriced);
   const nameId = `yeni-ad-${item.id}`;
   const priceId = `yeni-fiyat-${item.id}`;
@@ -375,8 +439,10 @@ function NewProductCard({
       const res = await approveNewProduct({ id: item.id, name, categoryId, price: priceValue });
       if (!res.ok) return void toast.error(res.error);
       const productId = res.data.productId;
-      toast.success(`${name.trim()} · ${SIZE_LABELS[item.size]} eklendi`, {
-        description: `${genitive(item.requestedByName)} önerisi onaylandı; ürün reçetesiyle Ürünler'de.`,
+      toast.success(`${res.data.name} · ${SIZE_LABELS[item.size]} eklendi`, {
+        description: `${genitive(item.requestedByName)} önerisi onaylandı; ürün reçetesiyle Ürünler'de.${
+          siblings.length ? ` ${capFirst(sizePhrase(siblings))} da aynı adla bekliyor.` : ""
+        }`,
         action: { label: "Ürün kartı", onClick: () => router.push(`/panel/urunler/${productId}`) },
       });
     });
@@ -409,6 +475,29 @@ function NewProductCard({
             {missing.map((l) => l.name).join(", ")} artık hammaddelerde yok; bu öneri onaylanamaz, reddedin.
           </p>
         ) : null}
+        {inactive ? (
+          <p role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              {inactive}.{" "}
+              <Link href="/panel/hammaddeler?durum=pasif" className="font-medium underline underline-offset-2">
+                Pasif malzemeler
+              </Link>
+            </span>
+          </p>
+        ) : null}
+        <QtyIssues texts={qtyIssues} />
+        {item.pair ? (
+          <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info">
+            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            Bu önerinin {sizePhrase(item.pair.size)} “{item.pair.name}” adıyla eklendi; {sizePhrase(item.size)} da aynı adla eklenir (iki boy tek ürün olarak eşleşsin).
+          </p>
+        ) : siblings.length ? (
+          <p className="flex items-start gap-2 rounded-2xl bg-surface px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft ring-1 ring-line">
+            <Info size={16} className="mt-0.5 shrink-0 text-ink-mute" aria-hidden="true" />
+            Aynı önerinin {sizePhrase(siblings)} da bekliyor: ad ve kategori boylarda birlikte değişir.
+          </p>
+        ) : null}
         <UnpricedNote names={[...new Set(unpriced.map((l) => l.name))]} />
 
         <div className="overflow-x-auto rounded-2xl bg-surface ring-1 ring-line">
@@ -431,7 +520,11 @@ function NewProductCard({
                 <tr key={i} className="border-b border-line align-top">
                   <td className="px-3 py-2">
                     <span className={cn("font-medium break-words", l.missing ? "text-bad line-through" : "text-ink")}>{l.name}</span>
-                    {l.unpriced ? (
+                    {l.inactive ? (
+                      <Badge tone="red" className="ml-1.5">
+                        Pasif
+                      </Badge>
+                    ) : l.unpriced ? (
                       <Badge tone="amber" className="ml-1.5">
                         Fiyat yok
                       </Badge>
@@ -442,7 +535,7 @@ function NewProductCard({
                     ) : null}
                     {l.note ? <span className="mt-1 block text-xs text-ink-mute">Not: {l.note}</span> : null}
                   </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap text-ink tabular">{l.qtyLabel}</td>
+                  <td className={cn("px-3 py-2 text-right whitespace-nowrap tabular", l.qtyIssue ? "font-semibold text-bad" : "text-ink")}>{l.qtyLabel}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap text-ink tabular">{tl(l.qty * l.unitCost, 2)}</td>
                 </tr>
               ))}
@@ -466,11 +559,32 @@ function NewProductCard({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Ürün adı" htmlFor={nameId} error={taken}>
-            <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={NEW_PRODUCT_NAME_MAX} aria-invalid={taken ? true : undefined} />
+          <Field
+            label="Ürün adı"
+            htmlFor={nameId}
+            error={
+              clash ? (
+                <>
+                  {taken}.{" "}
+                  <Link href={`/panel/urunler/${clash.id}`} className="font-medium underline underline-offset-2">
+                    Ürün kartı
+                  </Link>
+                </>
+              ) : null
+            }
+            hint={item.pair ? `${capFirst(sizePhrase(item.pair.size, "nun"))} adı` : undefined}
+          >
+            <Input
+              id={nameId}
+              value={name}
+              onChange={(e) => onDraft({ name: e.target.value })}
+              readOnly={!!item.pair}
+              maxLength={NEW_PRODUCT_NAME_MAX}
+              aria-invalid={taken ? true : undefined}
+            />
           </Field>
           <Field label="Kategori" htmlFor={`yeni-kategori-${item.id}`}>
-            <Select id={`yeni-kategori-${item.id}`} value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
+            <Select id={`yeni-kategori-${item.id}`} value={categoryId} onChange={(e) => onDraft({ categoryId: Number(e.target.value) })}>
               {env.categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -548,7 +662,7 @@ function NewProductCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button onClick={approve} disabled={busy || missing.length > 0} className="max-sm:flex-1">
+          <Button onClick={approve} disabled={busy || blocked} className="max-sm:flex-1">
             <Check size={16} /> Onayla ve ürünü ekle
           </Button>
           <Button variant="secondary" disabled={busy} onClick={onReject} className="max-sm:flex-1">
@@ -558,6 +672,18 @@ function NewProductCard({
       </div>
     </Card>
   );
+}
+
+const capFirst = (t: string) => t.charAt(0).toLocaleUpperCase("tr-TR") + t.slice(1);
+
+/** Formülü bugünkü ayarlarla eksiye düşen ya da hesaplanamayan satırlar: onay düğmesi kapalı, sunucu da reddeder */
+function QtyIssues({ texts }: { texts: string[] }) {
+  return texts.map((text) => (
+    <p key={text} role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      {text}.
+    </p>
+  ));
 }
 
 /** Paket fiyatı girilmemiş malzeme (sayımda "Listeye ekle" ile eklenen kalem) maliyete 0 ₺ girer: karar vermeden önce söylenir */

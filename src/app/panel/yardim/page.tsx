@@ -224,7 +224,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
             “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde görünür / gizli” anahtarını değiştirince önce siteye yazılır, site ulaşılamazsa
             kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
-            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır. Ürün kartı açıkken fiyat sitede ya da
+            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez. Sitede yeni açılan kalem &quot;Yalnız sitede&quot; sekmesinde görünür: Panelde aç ve
+            bağla onu her fiyatı bir boy olarak sitenin adı ve fiyatıyla panelde açar, bağlar ve reçete kartına götürür. Ürün kartı açıkken fiyat sitede ya da
             başka bir yerde değişirse kartın kaydı onu geri almaz: fiyata dokunmadıysanız yeni fiyat kalır; dokunduysanız kart fiyatın altında hangisinin
             kalacağını sorar.
           </>
@@ -249,7 +250,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Yeni ürün eklemek",
         a: (
           <>
-            <Path href="/panel/urunler" /> › Yeni ürün. İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
+            <Path href="/panel/urunler" /> › Yeni ürün (Reçete defterindeki Yeni ürün de bu pencereyi açar). İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın.
+            Ürün laffogato.net menüsünde zaten varsa Site menüsü › Yalnız sitede › Panelde aç ve bağla daha kısadır: ad, boylar ve fiyat siteden gelir, ürün
+            siteye bağlı açılır. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
             yok. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif
             anahtarını kapatın.
           </>
@@ -267,8 +270,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             ekle&apos;nin kuralıyla, sayım listesine de girer; paket fiyatı yazıldıysa Tahmini). Değişiklik önerisinde de tahmini fiyatlı malzeme onay kartında
             &quot;Tahmini fiyatlı&quot; diye yazar. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada
             malzemelerin maliyetini satır satır görün (tahmini fiyatlı malzeme işaretli); satış fiyatı personelin önerisiyle dolu gelir, değiştirebilirsiniz, kâr marjı
-            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
-            kategoriden); reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz.
+            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. Aynı önerinin boyları (M ve L) adı ve kategoriyi birlikte değiştirir; bir boyu onayladıysanız
+            öteki boy o adla eklenir (iki boy tek ürün olarak eşleşsin). &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
+            kategoriden). Öneriden sonra pasife alınan malzeme ya da bugünkü ölçülerle eksiye düşen formül varsa kart söyler ve onay olmaz: malzemeyi yeniden açın,
+            ölçüyü düzeltin ya da reddedin (reçete değişikliği önerisinde de eksiye düşen formül böyle). Öneri beklerken aynı ad ve boyda ürün Ürünler&apos;de ya da Site
+            menüsü&apos;nde açılmaz: önce öneriyi onaylayın ya da reddedin. Aynı ad ve boyda ürün zaten varsa kart onaylatmaz; öneriyi reddedip reçeteyi o ürünün kartına
+            girin. Reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz: Site menüsü&apos;nde aynı
+            adlı kalem öneri olarak çıkar.
           </>
         ),
         icon: Lightbulb,

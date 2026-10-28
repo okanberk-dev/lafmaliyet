@@ -1,9 +1,7 @@
-import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
 import { countGroupOptions } from "@/lib/count-item";
@@ -14,6 +12,7 @@ import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposa
 
 import { countComplete, defaultCountMonth } from "../sayim/logic";
 
+import { NewProductLink } from "./new-product-link";
 import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
 import { RecipeBook, type MyRequest, type ProposeKit, type RecipeGroup } from "./recipe-book";
@@ -171,11 +170,9 @@ async function RecipeBookContent() {
     updatedAt: r.updatedAt.toISOString(),
   }));
 
-  // Yönetici ürünü doğrudan Ürünler › Yeni ürün'den açar; personel önerir
+  // Yönetici ürünü doğrudan Ürünler › Yeni ürün'den açar (pencere açık gelir; denetim E-48); personel önerir
   const action = isAdmin ? (
-    <ButtonLink href="/panel/urunler" variant="secondary">
-      <Plus size={16} aria-hidden="true" /> Yeni ürün
-    </ButtonLink>
+    <NewProductLink />
   ) : propose && newProduct ? (
     <ProposeProductButton kit={propose} product={newProduct} />
   ) : null;

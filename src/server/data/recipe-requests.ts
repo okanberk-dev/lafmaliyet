@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 
-import type { ProductSize, ProposedProduct, RequestKind, RequestStatus } from "@/lib/recipe-change";
-import { getDb, schema as s } from "@/server/db";
+import { proposalGroupKey, type ProductSize, type ProposedProduct, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
+import { getDb, schema as s, type DB } from "@/server/db";
 
 export interface RecipeRequestRow {
   id: number;
@@ -130,9 +130,75 @@ export async function pendingByProduct(): Promise<Map<number, number>> {
 
 /** Bekleyen yeni ürün önerilerinin ad ve boyu (öneri penceresi aynı ad + boyu göndermeden uyarır) */
 export async function pendingNewProposals(): Promise<{ name: string; size: ProductSize }[]> {
-  const rows = await getDb()
-    .select({ proposed: s.recipeChangeRequests.proposed })
+  return (await pendingNewProposalRows()).map(({ name, size }) => ({ name, size }));
+}
+
+/** Bekleyen yeni ürün önerilerinin ad, boy ve önereni; işlem içinde (kilit altında) da okunur */
+export async function pendingNewProposalRows(db: Pick<DB, "select"> = getDb()): Promise<{ name: string; size: ProductSize; by: string }[]> {
+  const rows = await db
+    .select({ proposed: s.recipeChangeRequests.proposed, by: s.recipeChangeRequests.requestedByName })
     .from(s.recipeChangeRequests)
     .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "new")));
-  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size }] : []));
+  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size, by: r.by }] : []));
+}
+
+/**
+ * Yeni ürün önerisinin kilidi: iki kişi aynı ad + boyu aynı anda öneremesin, onaylanırken araya öneri ya da aynı adlı
+ * ürün girmesin (boş productId benzersiz dizine girmez). Öneri, onay, Ürünler › Yeni ürün ve Site menüsü › "Panelde aç
+ * ve bağla" alır; menü kilidi (lockMenu) gerekiyorsa önce o alınır, öneri ve onay menü kilidini hiç almaz.
+ */
+export const lockNewProducts = (tx: { execute: (query: SQL) => Promise<unknown> }) => tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
+
+
+/** Yeni ürün önerisinin daha önce eklenmiş öteki boyu: ürünün bugünkü adı, boyu ve kategorisi */
+export interface NewProposalPair {
+  productId: number;
+  name: string;
+  size: ProductSize;
+  categoryId: number;
+}
+
+/**
+ * Yeni ürün önerilerinin daha önce onaylanıp eklenmiş kardeş boyu (aynı kişi, aynı önerilen ad, başka boy; ürünü
+ * duruyor; denetim E-55): onaylanan boy onun adını alır (pairedName). Birden çoksa en son onaylanan. Onay eylemi
+ * kendi işleminde (yeni ürün kilidiyle) çağırır, Onaylar sayfası kartı çizerken.
+ */
+export async function approvedNewPairs(
+  db: Pick<DB, "select">,
+  reqs: readonly { id: number; requestedBy: number | null; requestedByName: string; name: string; size: ProductSize }[],
+): Promise<Map<number, NewProposalPair>> {
+  const out = new Map<number, NewProposalPair>();
+  if (!reqs.length) return out;
+  const users = [...new Set(reqs.flatMap((r) => (r.requestedBy !== null ? [r.requestedBy] : [])))];
+  const names = [...new Set(reqs.flatMap((r) => (r.requestedBy === null ? [r.requestedByName] : [])))];
+  const rows = await db
+    .select({
+      id: s.recipeChangeRequests.id,
+      requestedBy: s.recipeChangeRequests.requestedBy,
+      requestedByName: s.recipeChangeRequests.requestedByName,
+      proposed: s.recipeChangeRequests.proposed,
+      productId: s.products.id,
+      name: s.products.name,
+      size: s.products.size,
+      categoryId: s.products.categoryId,
+    })
+    .from(s.recipeChangeRequests)
+    .innerJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId))
+    .where(
+      and(
+        eq(s.recipeChangeRequests.kind, "new"),
+        eq(s.recipeChangeRequests.status, "approved"),
+        or(
+          users.length ? inArray(s.recipeChangeRequests.requestedBy, users) : undefined,
+          names.length ? and(isNull(s.recipeChangeRequests.requestedBy), inArray(s.recipeChangeRequests.requestedByName, names)) : undefined,
+        ),
+      ),
+    )
+    .orderBy(desc(s.recipeChangeRequests.reviewedAt), desc(s.recipeChangeRequests.id));
+  for (const req of reqs) {
+    const key = proposalGroupKey(req);
+    const pair = rows.find((r) => r.id !== req.id && r.proposed && r.size !== req.size && proposalGroupKey({ ...r, name: r.proposed.name }) === key);
+    if (pair) out.set(req.id, { productId: pair.productId, name: pair.name, size: pair.size, categoryId: pair.categoryId });
+  }
+  return out;
 }

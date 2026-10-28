@@ -154,6 +154,19 @@ export const NEW_PRODUCT_NAME_MAX = 120;
 /** "Çilekli Latte · Medium" (ekranda boyun uzun adı, Reçete defteri ve onaylarla aynı) */
 export const productSizeLabel = (name: string, size: ProductSize) => `${name} · ${SIZE_LABELS[size]}`;
 
+/**
+ * Cümle içinde boy: "Medium boyu", "Large boyunu", "tek boyunun" (`suffix` u, nu, nun: boyu, boyunu, boyunun).
+ * SIZE_LABELS.Tek zaten "Tek boy" olduğu için "Tek boy boyu" yazılmasın (öneri penceresinin "Tek boydan kopyala"sı
+ * gibi). Birden çok boy çoğul: "Medium ve tek boyları", "boylarını", "boylarının".
+ */
+export function sizePhrase(sizes: ProductSize | readonly ProductSize[], suffix: "u" | "nu" | "nun" = "u"): string {
+  const list = typeof sizes === "string" ? [sizes] : [...sizes];
+  const names = list.map((x) => (x === "Tek" ? "tek" : SIZE_LABELS[x]));
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} ve ${names.at(-1)}` : (names[0] ?? "");
+  const word = names.length > 1 ? { u: "boyları", nu: "boylarını", nun: "boylarının" }[suffix] : { u: "boyu", nu: "boyunu", nun: "boyunun" }[suffix];
+  return `${joined} ${word}`;
+}
+
 export interface NewProductDraft {
   name: string;
   categoryId: number | null;
@@ -208,6 +221,25 @@ export function takenIssue(name: string, size: ProductSize, existing: { name: st
   return null;
 }
 
+/**
+ * Aynı ad + boyda bekleyen yeni ürün önerisi varsa metni (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden), yoksa
+ * null. Öneri bekliyorken aynı ürün başka yoldan (Ürünler › Yeni ürün, Site menüsü › "Panelde aç ve bağla") açılırsa
+ * öneri "zaten var"a takılır, personelin reçetesi ürüne ulaşmaz (denetim B14): önce öneri karara bağlanır. Sunucu yeni
+ * ürün kilidi altında, pencere göndermeden söyler. `then`: metnin sonu ("önce Onaylar'da onaylayın …").
+ */
+export function pendingProposalIssue(
+  name: string,
+  sizes: readonly ProductSize[],
+  pending: readonly { name: string; size: ProductSize; by: string }[],
+  then: string,
+): string | null {
+  const key = nameKey(name);
+  if (!key) return null;
+  const hit = pending.find((p) => sizes.includes(p.size) && nameKey(p.name) === key);
+  if (!hit) return null;
+  return `“${productSizeLabel(hit.name, hit.size)}” için ${genitive(hit.by)} bekleyen yeni ürün önerisi var: ${then}`;
+}
+
 const SIZE_ORDER: ProductSize[] = ["M", "L", "Tek"];
 
 /**
@@ -254,4 +286,49 @@ export function genitive(name: string): string {
   const last = [...lower].reverse().find((c) => vowels.includes(c)) ?? "e";
   const v = "aı".includes(last) ? "ı" : "ei".includes(last) ? "i" : "ou".includes(last) ? "u" : "ü";
   return `${n}'${vowels.includes(lower.at(-1) ?? "") ? "n" : ""}${v}n`;
+}
+
+// ---------------------------------------------------------------- Yeni ürün önerisinin onayı (denetim E-55)
+
+/**
+ * Yeni ürün önerisinin grubu: aynı kişinin aynı adla (önerdiği ad, nameKey) başka boylarda önerdikleri aynı ürünün
+ * boylarıdır ("Cilekli latte" M ve L). Kişinin hesabı silindiyse (requestedBy boş) adıyla. Yönetici bir boyu başka
+ * adla onaylarsa öteki boy da o adı alır: M/L çifti POS eşleşmesinde, site bağında, reçete defterinde ve analizde
+ * aynı adı ister. Grup önerilen adla kurulur (onaydaki adla değil): onaydan sonra da aynı kalır.
+ */
+export function proposalGroupKey(r: { requestedBy: number | null; requestedByName: string; name: string }): string {
+  return `${r.requestedBy !== null ? `u${r.requestedBy}` : `ad:${nameKey(r.requestedByName)}`}|${nameKey(r.name)}`;
+}
+
+/**
+ * Onaylanan boyun adı. Önerinin öteki boyu daha önce eklendiyse (`pair`: o ürünün bugünkü adı ve boyu) ad onunkidir:
+ * yalnız büyük/küçük harf ve boşluk farkıyla yazılan ad o ada döner, başka bir ad reddedilir. Öteki boy yoksa yazılan ad.
+ */
+export function pairedName(typed: string, size: ProductSize, pair: { name: string; size: string } | null): { name: string; error: null } | { name: null; error: string } {
+  const name = cleanName(typed);
+  if (!pair || nameKey(pair.name) === nameKey(name)) return { name: pair ? pair.name : name, error: null };
+  const pairSize = pair.size in SIZE_LABELS ? sizePhrase(pair.size as ProductSize) : `${pair.size} boyu`;
+  return {
+    name: null,
+    error: `Bu önerinin ${pairSize} “${pair.name}” adıyla eklendi; ${sizePhrase(size, "nu")} da aynı adla onaylayın (iki boy tek ürün olarak eşleşsin)`,
+  };
+}
+
+/**
+ * Formülü bugünkü ayarlarla negatif (ya da sayı olmayan) çıkan satır onaylanmaz: reçeteye eksi miktar yazılırsa
+ * maliyet ve stok tüketimi ters işler. Personel önerirken denetlenir; ayar sonradan değişmiş olabilir.
+ */
+export function negativeQtyIssue(line: Pick<SnapshotLine, "name" | "qtyExpr" | "unit">, qty: number): string | null {
+  if (Number.isFinite(qty) && qty >= 0) return null;
+  const expr = line.qtyExpr ? line.qtyExpr.replace(/^=/, "").trim() : "";
+  const fix = "öneri onaylanamaz. Ayarlar'daki ölçüyü düzeltin ya da öneriyi reddedin";
+  if (!Number.isFinite(qty)) return `${line.name}: miktar bugünkü ayarlarla hesaplanamıyor${expr ? ` (${expr})` : ""}; ${fix}`;
+  const value = `${num(qty, 3)} ${line.unit}`.trim();
+  return `${line.name}: miktar bugünkü ayarlarla negatif çıkıyor (${expr ? `${expr} = ${value}` : value}); ${fix}`;
+}
+
+/** Arada pasife alınan malzeme: yeni ürünün reçetesine yazılmaz (öneri penceresi de pasif malzemeyi seçtirmez) */
+export function inactiveIngredientsIssue(names: readonly string[]): string | null {
+  if (!names.length) return null;
+  return `${[...new Set(names)].join(", ")} pasif; öneri onaylanamaz. Malzemeyi Hammaddeler › Pasif'ten yeniden açın ya da öneriyi reddedin`;
 }

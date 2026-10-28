@@ -30,17 +30,26 @@ export interface ProductOption {
   fireOverride?: number | null;
 }
 
-/** Sayfa başlığındaki "Yeni ürün" düğmesi; kategori süzgeci açıksa o kategori seçili gelir */
+/**
+ * Sayfa başlığındaki "Yeni ürün" düğmesi; kategori süzgeci açıksa o kategori seçili gelir. `/panel/urunler?yeni=1`
+ * pencereyi açık getirir (Reçete defterinin "Yeni ürün"ü; denetim E-48); kapanınca adres temizlenir.
+ */
 export function NewProductButton({ categories, products }: { categories: { id: number; name: string }[]; products: ProductOption[] }) {
   const [open, setOpen] = useState(false);
+  const [yeni, setYeni] = useQueryState<string>("yeni", "");
   const [kategori] = useQueryState<string>("kategori", "");
   const initialCategory = categories.find((c) => String(c.id) === kategori)?.id;
+  const shown = open || yeni === "1";
+  function close() {
+    setOpen(false);
+    if (yeni) setYeni("");
+  }
   return (
     <>
       <Button onClick={() => setOpen(true)}>
         <Plus size={16} /> Yeni ürün
       </Button>
-      {open ? <NewProductDialog categories={categories} products={products} initialCategory={initialCategory} onClose={() => setOpen(false)} /> : null}
+      {shown ? <NewProductDialog categories={categories} products={products} initialCategory={initialCategory} onClose={close} /> : null}
     </>
   );
 }
