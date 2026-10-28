@@ -36,6 +36,7 @@ import { ADJUSTMENT_LABELS, adjustmentPeriodLabel, BEYANNAME_ADJ_WARNING } from 
 import { r2, rulesFor, TAX_DOCS, taxDocAllowed, WITHHOLDINGS } from "@/lib/tax/rules";
 import { parseTaxSettings, TAX_SETTINGS_KEY, type TaxSettings } from "@/lib/tax/settings";
 import type { ReminderRow } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 import { requireAdmin } from "@/server/auth/dal";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -187,6 +188,7 @@ const itemSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("manual"), key: z.string().max(60), doc: zDoc.nullable() }),
   z.object({ source: z.literal("invoice"), id: zId, notAsset: z.boolean() }),
 ]);
+type ClassifyItem = z.infer<typeof itemSchema>;
 const classifySchema = z.object({ items: z.array(itemSchema).min(1, "Kaydedilecek değişiklik yok").max(200, "Tek seferde en çok 200 kalem") });
 
 /**
@@ -199,12 +201,38 @@ export async function saveTaxClassifications(input: z.input<typeof classifySchem
   return attempt(async () => {
     const me = await requireAdmin();
     const { items } = classifySchema.parse(input);
-    const keys = items.map((i) => (i.source === "manual" ? `manual:${i.key}` : `${i.source}:${i.id}`));
+    // Kaynağa göre gruplar (tam switch: yeni kaynak eklenirse derleme uyarır)
+    const fixedItems: Extract<ClassifyItem, { source: "fixed" }>[] = [];
+    const catItems: Extract<ClassifyItem, { source: "category" }>[] = [];
+    const manualItems: Extract<ClassifyItem, { source: "manual" }>[] = [];
+    const invItems: Extract<ClassifyItem, { source: "invoice" }>[] = [];
+    const keys: string[] = [];
+    for (const it of items) {
+      switch (it.source) {
+        case "fixed":
+          fixedItems.push(it);
+          keys.push(`fixed:${it.id}`);
+          break;
+        case "category":
+          catItems.push(it);
+          keys.push(`category:${it.id}`);
+          break;
+        case "manual":
+          manualItems.push(it);
+          keys.push(`manual:${it.key}`);
+          break;
+        case "invoice":
+          invItems.push(it);
+          keys.push(`invoice:${it.id}`);
+          break;
+        default:
+          unreachable(it);
+      }
+    }
     if (new Set(keys).size !== keys.length) throw new UserError("Aynı kalem iki kez gönderildi");
     const follows: FollowResult = { updated: [], manual: [], later: [] };
     await getDb().transaction(async (tx) => {
       // Sabit giderler
-      const fixedItems = items.filter((i) => i.source === "fixed");
       if (fixedItems.length) {
         const rows = await tx
           .select()
@@ -237,7 +265,6 @@ export async function saveTaxClassifications(input: z.input<typeof classifySchem
         }
       }
       // Aylık harcama kategorileri
-      const catItems = items.filter((i) => i.source === "category");
       if (catItems.length) {
         const rows = await tx
           .select({ id: s.expenseCategories.id, name: s.expenseCategories.name, section: s.expenseCategories.section })
@@ -253,7 +280,6 @@ export async function saveTaxClassifications(input: z.input<typeof classifySchem
         }
       }
       // Gelir-gider'in elle satırları (tax.settings › manualRows)
-      const manualItems = items.filter((i) => i.source === "manual");
       if (manualItems.length) {
         for (const it of manualItems) {
           const row = MANUAL_PNL_ROWS.find((r) => r.key === it.key);
@@ -270,7 +296,6 @@ export async function saveTaxClassifications(input: z.input<typeof classifySchem
         });
       }
       // Demirbaş adayı: "Gider (demirbaş değil)" ya da geri alınması
-      const invItems = items.filter((i) => i.source === "invoice");
       if (invItems.length) {
         const [invoices, assets] = await Promise.all([
           tx
