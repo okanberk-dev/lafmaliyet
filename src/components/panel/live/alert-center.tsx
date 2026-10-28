@@ -324,6 +324,8 @@ export function AlertCenter({ role }: { role: Role }) {
       saveKeys(FIRED_KEY, fired.current);
       const s = sessions.find((x) => x.id === a.sessionId);
       if (!s || !isLive(s) || s.endedAt) return;
+      // Ad yalnız ekrandaki toast'ta; sistem bildirimi kilit ekranında ve bildirim merkezinde görünür, adı taşımaz
+      // (KVKK, senkron P0; Web Push metni de adsız: src/lib/karaoke/session.ts › pushMessages)
       const name = sessionName(s);
       const range = timeRange(sessionStart(s), sessionEnd(s));
       const silent = prefs.sound && audioState() === "ready";
@@ -331,17 +333,19 @@ export function AlertCenter({ role }: { role: Role }) {
         // Sayacı bu cihaz başlattı: bildirim sayacın üstünü kapatmasın (başlatma bildirimi zaten çıktı)
         if (STARTED_HERE.has(s.id)) return;
         if (prefs.sound) play("start");
-        toast(`Karaoke başladı: ${name}`, { description: `${s.guests ? `${s.guests} kişi · ` : ""}${range}`, duration: 15_000 });
-        void notify(`Karaoke başladı: ${name}`, range, `karaoke-start-${s.id}`, "/panel/karaoke", { silent });
+        const detail = `${s.guests ? `${s.guests} kişi · ` : ""}${range}`;
+        toast(`Karaoke başladı: ${name}`, { description: detail, duration: 15_000 });
+        void notify("Karaoke başladı", detail, `karaoke-start-${s.id}`, "/panel/karaoke", { silent });
       } else if (a.kind === "warn") {
         if (prefs.sound) play("warn");
-        toast.warning(`${prefs.warnMinutes} dakika kaldı: ${name}`, { description: `Bitiş ${trClock(sessionEnd(s)).time}`, duration: 20_000 });
-        void notify(`${prefs.warnMinutes} dakika kaldı: ${name}`, `Bitiş ${trClock(sessionEnd(s)).time}`, `karaoke-warn-${s.id}`, "/panel/karaoke", { silent });
+        const end = `Bitiş ${trClock(sessionEnd(s)).time}`;
+        toast.warning(`${prefs.warnMinutes} dakika kaldı: ${name}`, { description: end, duration: 20_000 });
+        void notify(`Karaokede ${prefs.warnMinutes} dakika kaldı`, end, `karaoke-warn-${s.id}`, "/panel/karaoke", { silent });
       } else {
         // Süre doldu: şerit ve alarm döngüsü aşağıdaki evre hesabından; burada saat ilerletilir ve bildirim gider
         bursts.current.get(a.key)?.();
         bursts.current.delete(a.key);
-        void notify(`Süre doldu: ${name}`, "Gruba haber verin; panelden “Haber verdim”e basın.", `karaoke-end-${s.id}`, "/panel/karaoke", { requireInteraction: true, silent });
+        void notify("Karaokede süre doldu", "Gruba haber verin; panelden “Haber verdim”e basın.", `karaoke-end-${s.id}`, "/panel/karaoke", { requireInteraction: true, silent });
       }
     },
     [sessions, prefs.sound, prefs.warnMinutes],

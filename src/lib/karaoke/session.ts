@@ -131,6 +131,23 @@ export function eventMessage(
   return { title, body: parts.filter(Boolean).join(" · ") };
 }
 
+/**
+ * Web Push metinleri: zil metninin aynısı, misafirin adı olmadan. Bildirim kilit ekranında ve bildirim merkezinde
+ * görünür; ad yalnız açık panel ekranındaki zil satırında (alert-center.tsx) ve listede kalır (KVKK, senkron P0).
+ * Üçten fazla olay tek özet bildirim olur.
+ */
+export function pushMessages(
+  events: readonly { event: KaraokeEvent; r: Pick<SiteReservation, "startsAt" | "endsAt" | "guests" | "status" | "paymentStatus"> }[],
+  nowMs: number,
+): { title: string; body: string; event: KaraokeEvent }[] {
+  const messages = events.map(({ event, r }) => ({
+    event,
+    ...eventMessage(event, { startsAt: Date.parse(r.startsAt), endsAt: Date.parse(r.endsAt), guests: r.guests, name: null, status: r.status, paymentStatus: r.paymentStatus }, nowMs),
+  }));
+  if (messages.length <= 3) return messages;
+  return [{ title: `${messages.length} karaoke güncellemesi`, body: messages.slice(0, 2).map((m) => `${m.title}: ${m.body}`).join(" · "), event: "created" }];
+}
+
 // ---------------------------------------------------------------- Sayaç
 
 export type Phase = "held" | "cancelled" | "upcoming" | "active" | "overtime" | "done";
