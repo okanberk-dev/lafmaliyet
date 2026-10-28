@@ -132,7 +132,7 @@ export function PosChecklist(
         description={
           staff
             ? lafpos
-              ? "LafPOS'ta fiyatı yönetici değiştirir; burada işaretlenecek bir şey yok."
+              ? undefined
               : "Kasada değiştirdiğiniz fiyatı işaretleyin; işaretlenen listeden düşer."
             : lafpos
               ? (
@@ -219,11 +219,11 @@ export function PosChecklist(
       ) : (
         <EmptyState
           icon={<CheckCheck />}
-          title={lafpos && staff ? "Fiyatları yönetici değiştirir" : "Kasa güncel"}
+          title={lafpos && staff ? "Burada işaretlenecek bir şey yok" : "Kasa güncel"}
           description={
             lafpos
               ? staff
-                ? "LafPOS menüdeki fiyatları siteden kendisi alır; siteye bağlı olmayan bir ürünün satış fiyatını LafPOS'ta yönetici değiştirir. Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin."
+                ? "Kasada yanlış bir satış fiyatı görürseniz yöneticinize haber verin."
                 : "LafPOS siteye bağlı ürünlerin fiyatını siteden alır. Siteye bağlı olmayan bir ürünün fiyatı panelde değişince burada listelenir."
               : staff
                 ? "Panelde değişen bütün fiyatlar kasada da değişti."
