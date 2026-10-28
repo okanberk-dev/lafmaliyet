@@ -1311,6 +1311,7 @@ export function CashForm({
           day={date}
           audience={photoUi.admin ? "admin" : "staff"}
           forceDetails={photoUi.admin}
+          kasa={lafposMode ? "LafPOS" : "ModPOS"}
           modpos={
             values.card.trim()
               ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other"), cardExtra: lafpos?.cardExtra ?? null }

@@ -793,9 +793,10 @@ function selfCheck(f: OkcReportFields): OkcFormCheck | null {
 /**
  * ModPOS ↔ yazarkasa ↔ banka satırları (plan §8). Tolerans 1 ₺; satır yalnız iki tarafın da değeri varsa çıkar.
  * Personel (`"staff"`) yalnız Kart ve Kendi içinde satırlarını alır (İlke 8, D13); öteki satırlar yöneticide.
- * Yazarkasa alanları boş eski raporda yalnız bugünkü "Banka POS" kart satırı.
+ * Yazarkasa alanları boş eski raporda yalnız bugünkü "Banka POS" kart satırı. `kasa` raporun gününün kasası (geçiş
+ * gününden itibaren "LafPOS"; denetim E-39): metinler o kasanın adıyla, verilmezse ModPOS (bugünkü gibi).
  */
-export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin"): OkcReconcileLine[] {
+export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", kasa: "ModPOS" | "LafPOS" = "ModPOS"): OkcReconcileLine[] {
   const out: OkcReconcileLine[] = [];
   const okcCard = isNum(f.okcCard) ? f.okcCard : null;
   const hasOkc = isNum(f.okcTotal) || okcCard !== null;
@@ -808,16 +809,16 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin"): O
     const d = r2(okcCard - f.card - extra);
     out.push(
       same(d)
-        ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ModPOS aynı.${extraNote}`, diff: d }
-        : { key: "okc-card", tone: "warn", text: `Yazarkasa kartı, ModPOS'taki karttan ${moreLess(d)}. Kartla alınan bir ödeme ModPOS'ta başka ödeme türüyle girilmiş olabilir.${extraNote}`, diff: d },
+        ? { key: "okc-card", tone: "good", text: `Kart: yazarkasa ile ${kasa} aynı.${extraNote}`, diff: d }
+        : { key: "okc-card", tone: "warn", text: `Yazarkasa kartı, ${kasa}'taki karttan ${moreLess(d)}. Kartla alınan bir ödeme ${kasa}'ta başka ödeme türüyle girilmiş olabilir.${extraNote}`, diff: d },
     );
   } else if (isNum(f.bankPos)) {
     const d = r2(f.bankPos - f.card - extra);
     const label = hasOkc ? "Banka gün sonu" : "Banka POS";
     out.push(
       same(d)
-        ? { key: "okc-card", tone: "good", text: `Kart: ${label.toLocaleLowerCase("tr-TR")} ile ModPOS aynı.${extraNote}`, diff: d }
-        : { key: "okc-card", tone: "warn", text: `${label}, ModPOS'taki karttan ${moreLess(d)}.${extraNote}`, diff: d },
+        ? { key: "okc-card", tone: "good", text: `Kart: ${label.toLocaleLowerCase("tr-TR")} ile ${kasa} aynı.${extraNote}`, diff: d }
+        : { key: "okc-card", tone: "warn", text: `${label}, ${kasa}'taki karttan ${moreLess(d)}.${extraNote}`, diff: d },
     );
   }
   // Kendi içinde: personele tek satır, yöneticiye ayrıntılı
@@ -828,7 +829,7 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin"): O
 
   if (isNum(f.okcCash)) {
     const d = r2(f.okcCash - f.cash);
-    out.push(same(d) ? { key: "okc-cash", tone: "good", text: "Nakit: yazarkasa ile ModPOS aynı.", diff: d } : { key: "okc-cash", tone: "info", text: `Yazarkasa nakdi, ModPOS'taki nakitten ${moreLess(d)}.`, diff: d });
+    out.push(same(d) ? { key: "okc-cash", tone: "good", text: `Nakit: yazarkasa ile ${kasa} aynı.`, diff: d } : { key: "okc-cash", tone: "info", text: `Yazarkasa nakdi, ${kasa}'taki nakitten ${moreLess(d)}.`, diff: d });
   }
   if (isNum(f.okcTotal)) {
     const d = r2(f.zTotal - f.okcTotal);
@@ -837,13 +838,13 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin"): O
       same(d)
         ? { key: "okc-total", tone: "good", text: "Toplam: iki Z aynı.", diff: d }
         : d > 0 && offFiscal > 0 && same(r2(d - offFiscal))
-          ? { key: "okc-total", tone: "info", text: `ModPOS toplamı ${money(d)} fazla; online ve diğer satışlar kadar (yazarkasadan geçmez).`, diff: d }
-          : { key: "okc-total", tone: "info", text: `ModPOS toplamı yazarkasadan ${moreLess(d)}.`, diff: d },
+          ? { key: "okc-total", tone: "info", text: `${kasa} toplamı ${money(d)} fazla; online ve diğer satışlar kadar (yazarkasadan geçmez).`, diff: d }
+          : { key: "okc-total", tone: "info", text: `${kasa} toplamı yazarkasadan ${moreLess(d)}.`, diff: d },
     );
   }
   if (isNum(f.okcMealCard) && f.okcMealCard > 0 && f.mealCard > 0) {
     const d = r2(f.okcMealCard - f.mealCard);
-    if (!same(d)) out.push({ key: "okc-meal", tone: "info", text: `Yazarkasa yemek kartı, ModPOS'takinden ${moreLess(d)}.`, diff: d });
+    if (!same(d)) out.push({ key: "okc-meal", tone: "info", text: `Yazarkasa yemek kartı, ${kasa}'takinden ${moreLess(d)}.`, diff: d });
   }
   if (okcCard !== null && isNum(f.bankPos)) {
     const d = r2(f.bankPos - okcCard);

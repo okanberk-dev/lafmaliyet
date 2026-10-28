@@ -302,7 +302,8 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her oku
   assert.match(page, /\.\.\.extrasFrom\(photoInfo, outs, report, lafposState\)/, "WhatsApp aynı özetle");
   // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
-  assert.match(wa, /✅ Kart ModPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
+  // LafPOS gününde karşılaştırma LafPOS'un adıyla (denetim E-39)
+  assert.match(wa, /✅ Kart LafPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
   assert.doesNotMatch(plain(wa), /(?<![\d.])520 ₺/, "kartla bahşiş ve cari tahsilatının tutarı yok (8.520 yazarkasa kartı)");
 });
 
@@ -316,14 +317,14 @@ test("G11: personelin formdaki kart sonucu WhatsApp'taki sonuçla aynı (yalnız
   assert.match(form[0].text, /Kart: banka pos ile ModPOS aynı\. LafPOS'taki kartla bahşiş ve cari tahsilatı düşüldü\./);
   assert.equal(computeCash(withCardExtra(f, day.cardExtra)).cardDiff, 0, "kayıtlı görünümün farkı");
   const wa = plain(whatsappText(f, { by: "Ayşe", kasa: "LafPOS", cardExtra: day.cardExtra }));
-  assert.match(wa, /\*Kart\*\nBanka POS: 8\.150 ₺ ✅ ModPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
+  assert.match(wa, /\*Kart\*\nBanka POS: 8\.150 ₺ ✅ LafPOS ile aynı \(bahşiş \/ cari tahsilatı düşüldü\)/);
   assert.doesNotMatch(wa, /(?<![\d.])150 ₺/, "personelin metninde tutar yok");
   // Yöneticinin e-postası: satır tutarıyla, fark yok; metin sürümü de söyler
   const mail = renderCashReport(f, { by: "Ayşe", revision: 1, submittedAt: new Date("2026-11-11T20:00:00Z"), kasa: "LafPOS", cardExtra: day.cardExtra });
   const html = plain(mail.html);
   assert.match(html, /− LafPOS kartla bahşiş \+ cari tahsilatı[\s\S]{0,400}150 ₺/);
   assert.match(html, /Fark[\s\S]{0,400}Yok/);
-  assert.match(plain(mail.text), /Banka POS: 8\.150 ₺ ✅ ModPOS ile aynı \(LafPOS kartla bahşiş \+ cari tahsilatı 150 ₺ düşüldü\)/);
+  assert.match(plain(mail.text), /Banka POS: 8\.150 ₺ ✅ LafPOS ile aynı \(LafPOS kartla bahşiş \+ cari tahsilatı 150 ₺ düşüldü\)/);
   // Kayıtlı görünümün satırı: yöneticiye tutar, personele "düşüldü"
   const summary = read("src/app/panel/kasa/cash-summary.tsx");
   assert.match(summary, /<Line label=\{CARD_EXTRA_LABEL\} value=\{audience === "admin" \? money\(cardExtra\) : "düşüldü"\} \/>/);

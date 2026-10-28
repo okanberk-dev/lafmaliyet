@@ -2,8 +2,9 @@ import "server-only";
 
 import { and, desc, gte, lt, lte } from "drizzle-orm";
 
+import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
-import { normalizeOkc, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
+import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
 import type { PhotoReading } from "@/lib/photo-read/reading";
 import { normalizeReceipt, receiptToStore } from "@/lib/photo-read/receipt";
@@ -14,6 +15,7 @@ import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType }
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
 
 export interface ReadOutcome {
@@ -93,13 +95,16 @@ export async function readPhotoFor(
     return { reading: normalizeZ(res.data, { day: input.day, prevZNo }), readError: null, readCode: null, canRetry: false };
   }
   if (kind === "kasa-okc" || kind === "kasa-pos") {
-    const [prev, recentTotals, res] = await Promise.all([
+    const [prev, recentTotals, switchDay, res] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),
+      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39)
+      lafposSwitchDayOf(getDb()).catch(() => null),
       extractImage({ ...base, task: OKC_TASK(input.day), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS }),
     ]);
     if (!res.ok) return failed(res.code, res.message);
-    const full = normalizeOkc(res.data, { day: input.day, prev, recentTotals });
+    const normalized = normalizeOkc(res.data, { day: input.day, prev, recentTotals });
+    const full = isLafposDay(input.day, switchDay) ? okcReadingOnLafposDay(normalized) : normalized;
     const reading = input.me.role === "admin" ? full : toStaffReading(full);
     return { reading: kind === "kasa-pos" ? okcToLegacyPos(reading) : reading, readError: null, readCode: null, canRetry: false };
   }
