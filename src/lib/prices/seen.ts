@@ -44,3 +44,9 @@ export function priceChangedText(current: number): string {
 export function priceRefusedText(current: number): string {
   return `Fiyat bu arada başka bir yerde ${money(current)} oldu; yazılmadı. Liste güncellendi, istersen yeniden değiştir.`;
 }
+
+/**
+ * Reçete kartının metni: ürün kart açıkken laffogato.net menüsüne bağlandı (ya da bağlantısı değişti). Satış alanı
+ * yalnız panele yazılsaydı site ile panel ayrışırdı; kayıt yapılmadı, sayfa yenilendi, yeniden kayıt siteye de gider
+ */
+export const LINK_CHANGED_TEXT = "Ürün bu arada laffogato.net menüsüne bağlandı ya da bağlantısı değişti; değişiklikler kaydedilmedi. Sayfa yenilendi, yeniden kaydet.";

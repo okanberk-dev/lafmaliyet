@@ -55,10 +55,11 @@ let pullQueuedAt = 0;
 
 /**
  * Sitenin menüsünü yanıttan sonra yeniden okur (zaman aşımı: site yazmış olabilir; işlem içindeki 409 `stale`). İstek
- * dışında (test, betik: `after` yok) hemen ve beklenerek. Çekmenin hatası yalnız günlüğe: kullanıcının hatası zaten
- * gösteriliyor.
+ * dışında (test, betik: `after` yok) hemen ve beklenerek; çağıran bir işlemin (ve kalemin kilidinin) içindeyse
+ * (`inTx`) havuzdan ikinci bir bağlantı açılmaz, çekme atlanır (sonraki çekme düzeltir). Çekmenin hatası yalnız
+ * günlüğe: kullanıcının hatası zaten gösteriliyor.
  */
-async function pullSoon(): Promise<void> {
+async function pullSoon(inTx: boolean): Promise<void> {
   const run = async () => {
     try {
       await syncSiteMenu("manual");
@@ -71,11 +72,10 @@ async function pullSoon(): Promise<void> {
     afterResponse(run);
     pullQueuedAt = Date.now();
   } catch {
-    await run();
+    if (!inTx) await run();
   }
 }
 
-/** 409 `stale`'den sonra sitenin güncel menüsü: işlem dışındaysa hemen (true: yüklendi), işlem içindeyse yanıttan sonra */
 /**
  * Sitenin 400'ü `expect`'i tanımadığı için mi: bugünkü site katı şemasıyla bilinmeyen alanı yolsuz bir hatayla bildirir
  * ve alan adı "body" olur (`issues[0].path[0]` yok); `expect`'i adıyla anan bir site de olabilir. Panelin gövdesi her
@@ -102,10 +102,11 @@ async function forgetExpect(inTx: boolean): Promise<void> {
   }
 }
 
+/** 409 `stale`'den sonra sitenin güncel menüsü: işlem dışındaysa hemen (true: yüklendi), işlem içindeyse yanıttan sonra */
 async function reloadAfterStale(inTx: boolean): Promise<boolean> {
   if (inTx) {
     // Çağıran bir işlemin (ve kalemin kilidinin) içinde: havuzdan ikinci bir bağlantı beklenmez (sold-out-core.ts)
-    await pullSoon();
+    await pullSoon(true);
     return false;
   }
   try {
@@ -160,7 +161,7 @@ export async function pushSaleChange(
     } catch (e) {
       if (!(e instanceof SiteRequestError)) throw e;
       // Zaman aşımı: istek siteye varmış, site yazmış olabilir; panel yanıttan sonra siteyi yeniden okur
-      if (e.failure.kind === "timeout") await pullSoon();
+      if (e.failure.kind === "timeout") await pullSoon(db !== undefined);
       throw new UserError(pushFailureMessage(e.failure, consequence), { cause: e.failure });
     }
   };
