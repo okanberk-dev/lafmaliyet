@@ -172,7 +172,16 @@ export function CashOutDialog({
   const withPhoto = photoId !== null || mode.mode === "photo";
   const harcama = draft.kind === "harcama";
   const docInvoice = draft.docType === "fatura" || draft.docType === "e_arsiv";
-  const writes = cashOutWritesExpense({ admin, mode: line ? "edit" : "new", kind: draft.kind, docType: draft.docType, requested: draft.toExpenses, hasExpense: line?.expenseEntryId != null });
+  // Faturalı diye girilmiş satır fişe düzeltilince kategori sorulur (satır faturasını hâlâ bekliyorsa sunucu kaydı açar)
+  const writes = cashOutWritesExpense({
+    admin,
+    mode: line ? "edit" : "new",
+    kind: draft.kind,
+    docType: draft.docType,
+    requested: draft.toExpenses,
+    hasExpense: line?.expenseEntryId != null,
+    prevDocType: line?.docType ?? null,
+  });
   // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
   // İstekte kategori değiştirilmez (yönetici onayda seçer); kapanmış günün fişi personele görünmez

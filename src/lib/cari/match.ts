@@ -54,11 +54,36 @@ export function linkedInvoiceProblem(cur: { payable: number; category: string },
   return null;
 }
 
-/** Bağlı alımı olan faturanın değişikliği reddedilirken söylenen: ne bağlı, neden olmaz, ne yapılmalı */
-export function linkedInvoiceRefusal(o: { invoice: string; purchases: readonly string[]; reason: string; count?: number; kept: string }): string {
-  const what = o.purchases.length === 1 ? `faturasız alım bağlı (${o.purchases[0]})` : `${o.purchases.length} faturasız alım bağlı`;
-  const more = o.count && o.count > 1 ? ` ve ${o.count - 1} fatura daha` : "";
-  return `${o.invoice}${more}: ${what}. ${o.reason}; bağlı alım gelir-giderden düşerdi. Önce Tedarikçiler'de, Hesap hareketleri'nde alımın Bağı kaldır'ına dokunun. ${o.kept}`;
+/** Reddin bir faturası: adı ("Pruva PRV101"), bağlı alımların adı ve neden */
+export interface LinkedRefusalItem {
+  invoice: string;
+  purchases: readonly string[];
+  reason: string;
+}
+
+/** Reddin adıyla saydığı en çok fatura (kalanı "ve 3 fatura daha") */
+export const LINKED_REFUSAL_NAMED = 6;
+
+/**
+ * Bağlı alımı olan faturaların değişikliği reddedilirken söylenen: hangi faturalar (hepsi adıyla, en çok
+ * LINKED_REFUSAL_NAMED), ne bağlı, neden olmaz, ne yapılmalı. Toplu değişiklikte yönetici hangilerini ayıracağını
+ * görsün (inceleme U2).
+ */
+export function linkedInvoiceRefusal(o: { blocked: readonly LinkedRefusalItem[]; kept: string }): string {
+  const fix = "Önce Tedarikçiler'de, Hesap hareketleri'nde";
+  if (o.blocked.length === 1) {
+    const [b] = o.blocked;
+    const what = b.purchases.length === 1 ? `faturasız alım bağlı (${b.purchases[0]})` : `${b.purchases.length} faturasız alım bağlı`;
+    return `${b.invoice}: ${what}. ${b.reason}; bağlı alım gelir-giderden düşerdi. ${fix} alımın Bağı kaldır'ına dokunun. ${o.kept}`;
+  }
+  const reasons = [...new Set(o.blocked.map((b) => b.reason))];
+  const named = o.blocked.slice(0, LINKED_REFUSAL_NAMED).map((b) => {
+    const what = b.purchases.length === 1 ? b.purchases[0] : `${b.purchases.length} alım`;
+    return `${b.invoice} (${what}${reasons.length > 1 ? `; ${b.reason}` : ""})`;
+  });
+  const more = o.blocked.length > LINKED_REFUSAL_NAMED ? ` ve ${o.blocked.length - LINKED_REFUSAL_NAMED} fatura daha` : "";
+  const why = reasons.length === 1 ? `${reasons[0]}; bağlı alımlar` : "Bağlı alımlar";
+  return `${o.blocked.length} faturaya faturasız alım bağlı: ${named.join("; ")}${more}. ${why} gelir-giderden düşerdi. ${fix} alımların Bağı kaldır'ına dokunun. ${o.kept}`;
 }
 
 /** Faturanın aday alanları (kalanı varsa açık) */

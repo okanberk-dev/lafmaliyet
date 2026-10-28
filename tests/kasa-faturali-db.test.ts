@@ -30,6 +30,9 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
   let admin: postgres.Sql;
   let db: import("../src/server/db").DB;
   let pendingOf: typeof import("../src/server/data/cash-out-invoices").loadPendingCashOutInvoices;
+  let stateOf: typeof import("../src/server/data/cash-out-invoices").loadCashOutInvoiceState;
+  let cari: typeof import("../src/server/actions/cari");
+  let expenses: typeof import("../src/server/actions/expenses");
   let actions: typeof import("../src/server/actions/cash-out-invoices");
   let invoices: typeof import("../src/server/actions/invoices");
   let cashOuts: typeof import("../src/server/actions/cash-outs");
@@ -74,6 +77,9 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     driver = drivers.memoryDriver();
     photos.__setPhotoDriverForTests(driver);
     pendingOf = (await import("../src/server/data/cash-out-invoices")).loadPendingCashOutInvoices;
+    stateOf = (await import("../src/server/data/cash-out-invoices")).loadCashOutInvoiceState;
+    cari = await import("../src/server/actions/cari");
+    expenses = await import("../src/server/actions/expenses");
     actions = await import("../src/server/actions/cash-out-invoices");
     invoices = await import("../src/server/actions/invoices");
     cashOuts = await import("../src/server/actions/cash-outs");
@@ -276,5 +282,186 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     ok(await actions.writeCashOutInvoiceExpense({ id: w.id, categoryId: cat.id }));
     const refused = await invoices.saveInvoice({ ...base, supplier: "Bim", payable: 300, amount: 297, cashOutId: w.id });
     assert.ok(!refused.ok && /artık beklemiyor/.test(refused.error));
+  });
+  // ---------------------------------------------------------------- inceleme bulguları (D1-D6)
+
+  /** "Faturalar'a ekle"nin penceresi (Migros, ödendi) */
+  const addForm = (cashOutId: number, p: { supplier?: string; payable?: number } = {}) => ({
+    id: null,
+    date: today,
+    supplier: p.supplier ?? "Migros",
+    description: "",
+    invoiceNo: "",
+    category: "Hammadde & İçecek",
+    amount: (p.payable ?? 500) - 5,
+    discount: 0,
+    payable: p.payable ?? 500,
+    unpaid: false,
+    note: "",
+    paidAt: today,
+    cashOutId,
+  });
+
+  test("D1: iki aynı alım, bir fatura: listenin gösterdiği satırda üç eylem de çalışır", async () => {
+    const cat = await category();
+    const a = await out({ amount: 500, date: addDays(today, -3) });
+    const b = await out({ amount: 500, date: today });
+    await invoice({ payable: 500, date: today });
+    assert.deepEqual(await pendingIds(), [a.id], "fatura günü yakın olan b'nin");
+    // Aylık harcamalar'a yaz ve Geri al
+    const w = ok(await actions.writeCashOutInvoiceExpense({ id: a.id, categoryId: cat.id }));
+    assert.deepEqual(await pendingIds(), []);
+    assert.deepEqual((await stateOf()).duplicates, [], "a'nın faturası yok: iki kez sayılmıyor");
+    ok(await actions.undoCashOutInvoiceExpense({ id: a.id, expenseId: w.expenseId }));
+    // Listeden çıkar ve Geri al
+    ok(await actions.dismissCashOutInvoices({ ids: [a.id] }));
+    assert.deepEqual(await pendingIds(), []);
+    ok(await actions.dismissCashOutInvoices({ ids: [a.id], undo: true }));
+    assert.deepEqual(await pendingIds(), [a.id]);
+    // Faturalar'a ekle
+    ok(await invoices.saveInvoice(addForm(a.id)));
+    assert.deepEqual(await pendingIds(), []);
+    assert.ok(b.id);
+  });
+
+  test("D2: Aylık harcamalar'a yazılmışken faturası gelen alım iki kez sayılıyor diye çıkar, başka bekleyeni kapatmaz; Gider kaydını sil ve Geri al", async () => {
+    const cat = await category();
+    const p = await out({ amount: 800, date: addDays(today, -4) });
+    const w = await out({ amount: 800, date: addDays(today, -2) });
+    ok(await actions.writeCashOutInvoiceExpense({ id: w.id, categoryId: cat.id }));
+    assert.deepEqual(await pendingIds(), [p.id]);
+    // Muhasebeci e-Arşiv'i Paraşüt'e girdi, fatura geldi: w'nin (günü yakın), p hâlâ bekler
+    const f = await invoice({ payable: 800, date: today, invoiceNo: "GIB2026000000777" });
+    const state = await stateOf();
+    assert.deepEqual(state.pending.map((r) => r.id), [p.id], "yazılmış satırın faturası başka bekleyeni kapatmaz");
+    assert.deepEqual(
+      state.duplicates.map((d) => [d.id, d.expenseCategory, d.invoice.id, d.invoice.invoiceNo]),
+      [[w.id, cat.name, f.id, "GIB2026000000777"]],
+    );
+    const [entry] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, w.id));
+    assert.equal(state.duplicates[0].expenseId, entry.id);
+    // Personel çağıramaz
+    current = { ...staffUser, role: "staff" };
+    assert.equal((await actions.dropCashOutInvoiceExpense({ id: w.id, expenseId: entry.id })).ok, false);
+    current = { ...adminUser, role: "admin" };
+    // Gider kaydını sil: alım yalnız faturayla sayılır
+    const dropped = ok(await actions.dropCashOutInvoiceExpense({ id: w.id, expenseId: entry.id }));
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, w.id))).length, 0);
+    assert.deepEqual(await stateOf().then((x) => [x.pending.map((r) => r.id), x.duplicates.length]), [[p.id], 0]);
+    // İkinci dokunuş bir şey silmez
+    const again = await actions.dropCashOutInvoiceExpense({ id: w.id, expenseId: entry.id });
+    assert.ok(!again.ok && /artık iki kez sayılmıyor/.test(again.error));
+    // Geri al: kayıt geri gelir, yine iki kez sayılıyor
+    ok(await expenses.restoreExpenseEntry(dropped.snapshot));
+    assert.deepEqual((await stateOf()).duplicates.map((d) => d.id), [w.id]);
+    // "Ayrı alım": fatura başka alımın; gider kaydı kalır, satır listeden çıkar ve fatura bekleyen p'yi kapatır
+    ok(await actions.dismissCashOutInvoices({ ids: [w.id] }));
+    assert.deepEqual(await stateOf().then((x) => [x.pending.length, x.duplicates.length]), [0, 0]);
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, w.id))).length, 1);
+    // Cari borcun sahiplendiği kayıt burada sayılmaz (faturası Tedarikçiler'de borca bağlanır)
+    ok(await actions.dismissCashOutInvoices({ ids: [w.id], undo: true }));
+    const [card] = await db.insert(s.suppliers).values({ name: "Migros", key: "migros" }).returning();
+    const [debt] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "borc", date: addDays(today, -2), amount: 800, costMode: "mevcut", createdByName: "Mehmet" }).returning();
+    await db.update(s.expenseEntries).set({ supplierEntryId: debt.id }).where(eq(s.expenseEntries.cashOutId, w.id));
+    assert.deepEqual((await stateOf()).duplicates, []);
+  });
+
+  test("D3: takipli kartta Faturalar'a ekle hesaptaki parayı kullanmaz: ödendi · nakit, kasanın günü, dağıtım yok", async () => {
+    const [c] = await db.insert(s.suppliers).values({ name: "Metro", key: "metro" }).returning();
+    ok(
+      await cari.saveSupplierPayment({
+        target: { cardId: c.id },
+        id: null,
+        date: addDays(today, -10),
+        amount: 1000,
+        method: "havale",
+        cashOut: null,
+        allocation: { mode: "none", lines: [] },
+        note: null,
+        photoId: null,
+      }),
+    );
+    const o = await out({ store: "Metro", amount: 2400, receiptDate: addDays(today, -1) });
+    const r = ok(await invoices.saveInvoice({ ...addForm(o.id, { supplier: "Metro", payable: 2400 }), paidAt: addDays(today, -1) }));
+    assert.equal(r.credit?.used ?? 0, 0, "hesaptaki para sayılmadı");
+    const [f] = await db.select().from(s.invoices).where(eq(s.invoices.id, r.id));
+    assert.deepEqual([f.unpaid, f.paidVia, f.paidAt, f.paidByLedger, f.ledgerBase], [false, "nakit", addDays(today, -1), false, 0], "takipli kartta sayılır, kasadan ödendi");
+    assert.equal((await db.select().from(s.supplierAllocations)).length, 0, "avans bir sonraki faturanın");
+    // Pencerenin varsayılanıyla eklenen öteki fatura avansı kullanır (K6 değişmedi)
+    const next = ok(await invoices.saveInvoice({ ...addForm(0, { supplier: "Metro", payable: 600 }), cashOutId: undefined }));
+    assert.equal((await db.select().from(s.supplierAllocations).where(eq(s.supplierAllocations.invoiceId, next.id))).length, 1);
+  });
+
+  test("D4: Faturalar'a ekle'nin faturası silinip geri alınınca satır yine ona bağlı (bekleyen değil)", async () => {
+    const o = await out({ amount: 2400 });
+    const r = ok(await invoices.saveInvoice(addForm(o.id, { supplier: "Migros Ticaret", payable: 2390 })));
+    assert.deepEqual(await pendingIds(), []);
+    const del = ok(await invoices.deleteInvoice(r.id));
+    assert.deepEqual(await pendingIds(), [o.id], "fatura silinince yeniden bekler");
+    assert.ok(del.snapshot);
+    const back = ok(await invoices.restoreInvoice(del.snapshot!));
+    assert.deepEqual(await pendingIds(), [], "geri alınan fatura satırı yeniden kapatır");
+    const [restored] = await db.select({ id: s.invoices.id }).from(s.invoices);
+    assert.equal(back.id ?? restored.id, restored.id);
+    // Arada Aylık harcamalar'a yazılmış satır da bağlanır ve iki kez sayılıyor diye çıkar (tutar ±1 ₺ dışında olsa da)
+    const del2 = ok(await invoices.deleteInvoice(restored.id));
+    const cat = await category();
+    ok(await actions.writeCashOutInvoiceExpense({ id: o.id, categoryId: cat.id }));
+    const again = ok(await invoices.restoreInvoice(del2.snapshot!));
+    const state = await stateOf();
+    assert.deepEqual(state.pending, []);
+    assert.deepEqual(
+      state.duplicates.map((d) => [d.id, d.invoice.id, d.invoice.payable]),
+      [[o.id, again.id, 2390]],
+    );
+    // Gider kaydını sil: yalnız fatura kalır
+    ok(await actions.dropCashOutInvoiceExpense({ id: o.id, expenseId: state.duplicates[0].expenseId }));
+    assert.deepEqual(await stateOf().then((x) => [x.pending.length, x.duplicates.length]), [0, 0]);
+  });
+
+  test("D5: personel e-Arşiv diye girdiği satırı fişe düzeltince Aylık harcamalar'a yazılır; faturası gelmiş satırda yazılmaz", async () => {
+    const cat = await category();
+    current = { ...staffUser, role: "staff" };
+    const base = { date: today, receiptDate: today, receiptNo: null, vat: null, photoId: null, categoryId: cat.id, toExpenses: true, kind: "harcama" as const, amount: 300, store: "Bim", description: "buz" };
+    const a = ok(await cashOuts.saveCashOut({ ...base, id: null, docType: "e_arsiv" }));
+    assert.equal(a.expenseId, null);
+    assert.deepEqual(await pendingIds(), [a.id]);
+    const e = ok(await cashOuts.saveCashOut({ ...base, id: a.id, docType: "fis" }));
+    assert.notEqual(e.expenseId, null, "fişe düzeltilen satır gidere yazıldı");
+    assert.deepEqual(await pendingIds(), []);
+    const [entry] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, a.id));
+    assert.deepEqual([entry.amount, entry.categoryId], [300, cat.id]);
+    // Faturası gelmiş satır: fişe düzeltilse de yazılmaz (fatura sayılıyor)
+    const b = ok(await cashOuts.saveCashOut({ ...base, id: null, amount: 450, store: "Şok", docType: "fatura" }));
+    await invoice({ payable: 450, supplier: "Şok" });
+    const eb = ok(await cashOuts.saveCashOut({ ...base, id: b.id, amount: 450, store: "Şok", docType: "fis" }));
+    assert.equal(eb.expenseId, null);
+    // Yöneticinin listeden çıkardığı satır da yazılmaz
+    const c = ok(await cashOuts.saveCashOut({ ...base, id: null, amount: 75, store: "A101", docType: "e_arsiv" }));
+    current = { ...adminUser, role: "admin" };
+    ok(await actions.dismissCashOutInvoices({ ids: [c.id] }));
+    current = { ...staffUser, role: "staff" };
+    const ec = ok(await cashOuts.saveCashOut({ ...base, id: c.id, amount: 75, store: "A101", docType: "fis" }));
+    assert.equal(ec.expenseId, null);
+    assert.equal((await db.select().from(s.expenseEntries)).length, 1);
+  });
+
+  test("D6: kapatılmış satırlar sorguda dışarıda; eski bekleyen kaybolmaz; bir yıldan eskisine bakılmaz", async () => {
+    const old = await out({ store: "Bim", amount: 300, date: addDays(today, -60) });
+    const vals = Array.from({ length: 520 }, (_, i) => ({
+      date: addDays(today, -(i % 50)),
+      kind: "harcama" as const,
+      amount: 100 + i,
+      store: "Migros",
+      description: "x",
+      docType: "e_arsiv" as const,
+      createdByName: "Ayşe",
+      createdBy: staffUser.id,
+    }));
+    const rows = await db.insert(s.cashOuts).values(vals).returning({ id: s.cashOuts.id });
+    await db.insert(s.integrationState).values({ key: "cashOuts.invoiceHandled", value: rows.map((r) => ({ id: r.id, by: "Mehmet", at: new Date().toISOString() })) });
+    assert.deepEqual(await pendingIds(), [old.id]);
+    await out({ store: "Bim", amount: 300, date: addDays(today, -400) });
+    assert.deepEqual(await pendingIds(), [old.id], "bir yıldan eski satır listede değil");
   });
 });

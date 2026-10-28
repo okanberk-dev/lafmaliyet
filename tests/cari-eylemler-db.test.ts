@@ -358,8 +358,22 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
       { id: other.id, category: "Alp Koç" },
       { id: f.id, category: "Alp Koç" },
     ]);
-    assert.ok(!bulk.ok && bulk.error.startsWith("Pruva PRV101") && bulk.error.includes("hiçbiri değişmedi"), bulk.ok ? "" : bulk.error);
+    // Seçim olmayan yoldan da ("N faturaya da uygula") okunur: hangi fatura, ne yapılacak (inceleme U2)
+    assert.ok(
+      !bulk.ok && bulk.error.startsWith("Pruva PRV101: faturasız alım bağlı (içecekler)") && bulk.error.endsWith("Faturaların hiçbirinin kategorisi değişmedi; bağlı faturayı ayırıp kalanları yeniden değiştirin."),
+      bulk.ok ? "" : bulk.error,
+    );
     assert.deepEqual([(await inv(f.id)).category, (await inv(other.id)).category], ["Hammadde & İçecek", "Hammadde & İçecek"]);
+    // İki bağlı fatura: ikisi de adıyla
+    const r2 = await addDebt(c.id, { amount: 900, date: todayTR(), description: "sular", costMode: "gider", categoryId: cat.id });
+    assert.ok(r2.ok);
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [(r2.data as { id: number }).id], invoiceId: other.id }));
+    const both = await invoices.setInvoiceCategory([
+      { id: f.id, category: "Alp Koç" },
+      { id: other.id, category: "Alp Koç" },
+    ]);
+    assert.ok(!both.ok && /^2 faturaya faturasız alım bağlı: Pruva PRV101 \(içecekler\); Pruva PRV102 \(sular\)\./.test(both.error) && both.error.includes("bağlı faturaları ayırıp"), both.ok ? "" : both.error);
+    ok(await cari.unlinkDebts({ debtIds: [(r2.data as { id: number }).id] }));
     // Fatura penceresi: kategori ve elle faturanın Ödenecek'i (iade)
     const form = await invoices.saveInvoice({ ...invoiceForm(await inv(f.id), {}), category: "Alp Koç" });
     assert.ok(!form.ok && form.error.includes("Fatura kaydedilmedi"));

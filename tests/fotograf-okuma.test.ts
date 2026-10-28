@@ -598,6 +598,15 @@ test("kasadan çıkanın harcama kaydı: personelin düzeltmesi açmaz ve silmez
   assert.equal(writes({ mode: "restore", docType: "fis", requested: false }), false);
   assert.equal(writes({ admin: true, mode: "restore", requested: true }), true);
   assert.equal(writes({ mode: "restore", kind: "teslim", requested: true }), false);
+  // Faturalı diye girilmiş, faturasını bekleyen satır fişe düzeltilince kayıt açılır (inceleme D5); faturası geldiyse
+  // ya da yönetici kapattıysa açılmaz; pencere bilmez, kategoriyi sorar
+  assert.equal(writes({ mode: "edit", docType: "fis", prevDocType: "e_arsiv", awaitingInvoice: true }), true);
+  assert.equal(writes({ mode: "edit", docType: "yok", prevDocType: "fatura", awaitingInvoice: true }), true);
+  assert.equal(writes({ mode: "edit", docType: "fis", prevDocType: "e_arsiv", awaitingInvoice: false }), false);
+  assert.equal(writes({ mode: "edit", docType: "fis", prevDocType: "e_arsiv" }), true);
+  assert.equal(writes({ mode: "edit", docType: "e_arsiv", prevDocType: "fatura", awaitingInvoice: true }), false);
+  assert.equal(writes({ mode: "edit", docType: "fis", prevDocType: "fis" }), false);
+  assert.equal(writes({ mode: "edit", kind: "teslim", docType: "yok", prevDocType: "e_arsiv", awaitingInvoice: true }), false);
   // Yöneticinin kategorisindeki (ya da kapatılmış kategorideki) kayıt personele kapalı: silme, teslime çevirme, taşıma
   assert.equal(staffExpenseLocked({ section: "personel", panelGroup: "personel", active: true }), true);
   assert.equal(staffExpenseLocked({ section: "genel", panelGroup: "reklam", active: true }), true);

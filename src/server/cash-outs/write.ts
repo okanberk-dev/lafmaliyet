@@ -3,11 +3,12 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { cashOutWritesExpense, staffCategory, staffExpenseLocked, type CashOutSnapshot } from "@/lib/cash-outs";
+import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
+import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
@@ -98,7 +99,20 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
   if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
   const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
   const mode = o.restore ? "restore" : prev ? "edit" : "new";
-  const toExpenses = cashOutWritesExpense({ admin, mode, kind: d.kind, docType: d.docType, requested: d.toExpenses, hasExpense: Boolean(existing) });
+  // Personel faturalı satırı fişe düzeltiyor: satır hâlâ faturasını bekliyorsa kayıt açılır (faturası geldiyse ya da
+  // yönetici kapattıysa açılmaz: iki kez sayılırdı). Bakış yazımdan önce, satırın kayıtlı hâliyle
+  const leavesInvoice = !admin && mode === "edit" && prev !== null && !existing && isInvoiceDoc(prev.docType) && staffToExpenses(d.kind, d.docType);
+  const awaitingInvoice = leavesInvoice ? (await loadPendingCashOutInvoices(tx, { ids: [prev.id] })).length > 0 : undefined;
+  const toExpenses = cashOutWritesExpense({
+    admin,
+    mode,
+    kind: d.kind,
+    docType: d.docType,
+    requested: d.toExpenses,
+    hasExpense: Boolean(existing),
+    prevDocType: prev?.docType ?? null,
+    awaitingInvoice,
+  });
 
   // Yöneticinin kategorisindeki kayıt: personel tutarı düzeltir, kaydı kaldıramaz (teslime çevirerek) ve taşıyamaz
   if (!admin && existing && (!toExpenses || d.categoryId !== existing.categoryId)) {

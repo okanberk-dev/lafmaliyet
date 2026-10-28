@@ -96,13 +96,18 @@ export function staffToExpenses(kind: CashOutKind, docType: CashOutDocType): boo
   return kind === "harcama" && (docType === "fis" || docType === "yok");
 }
 
+/** Satırın belgesi fatura ya da e-Arşiv mi: personelin satırı Aylık harcamalar'a yazılmaz (staffToExpenses) */
+export const isInvoiceDoc = (docType: CashOutDocType) => docType === "fatura" || docType === "e_arsiv";
+
 /** Satırın kaydedilişi: yeni satır, düzeltme ya da silinenin geri alınması */
 export type CashOutSaveMode = "new" | "edit" | "restore";
 
 /**
  * Satırın Aylık harcamalar kaydı olacak mı. Yönetici anahtarla seçer. Personel yalnız satırı eklerken kurala göre
  * (staffToExpenses); düzeltmede kaydın şimdiki hâli kalır: yöneticinin Aylık harcamalar'dan sildiği kayıt geri gelmez,
- * faturaya açtığı kayıt silinmez. Geri almada ikisinde de silinen satırdaki gibi. Teslimin kaydı olmaz.
+ * faturaya açtığı kayıt silinmez. Tek istisna: fatura ya da e-Arşiv diye girilmiş, hâlâ faturasını bekleyen satır
+ * fişe (ya da belgesize) düzeltilince kural yeniden uygulanır ve kayıt açılır (inceleme D5; yoksa alım ne bekleyen
+ * listede ne gelir-giderde kalırdı). Geri almada ikisinde de silinen satırdaki gibi. Teslimin kaydı olmaz.
  */
 export function cashOutWritesExpense(o: {
   admin: boolean;
@@ -113,10 +118,20 @@ export function cashOutWritesExpense(o: {
   requested: boolean;
   /** Satırın şimdi bir harcama kaydı var mı (düzeltmede) */
   hasExpense: boolean;
+  /** Düzeltmede satırın kayıtlı belge türü */
+  prevDocType?: CashOutDocType | null;
+  /**
+   * Düzeltmede satır kasadan faturalı alımların bekleyen listesinde mi (faturası gelmedi, yönetici kapatmadı). Sunucu
+   * bilir; pencere bilmez (verilmezse bekliyor sayılır: kategori alanı görünür, kararı sunucu verir)
+   */
+  awaitingInvoice?: boolean;
 }): boolean {
   if (o.kind !== "harcama") return false;
   if (o.admin || o.mode === "restore") return o.requested;
-  if (o.mode === "edit") return o.hasExpense;
+  if (o.mode === "edit") {
+    const leftInvoice = o.prevDocType != null && isInvoiceDoc(o.prevDocType) && staffToExpenses(o.kind, o.docType) && o.awaitingInvoice !== false;
+    return o.hasExpense || leftInvoice;
+  }
   return staffToExpenses(o.kind, o.docType);
 }
 
@@ -262,9 +277,6 @@ export function supplierNameHint(store: string, names: readonly string[]): strin
 }
 
 // ---------------------------------------------------------------- Kasadan faturalı alımlar (denetim E-42)
-
-/** Satırın belgesi fatura ya da e-Arşiv mi: personelin satırı Aylık harcamalar'a yazılmaz (staffToExpenses) */
-export const isInvoiceDoc = (docType: CashOutDocType) => docType === "fatura" || docType === "e_arsiv";
 
 /**
  * Kasadan faturalı alımın faturası: fişin gününden en çok 7 gün önce ya da sonra, tutarı (Ödenecek, KDV dahil) en çok
