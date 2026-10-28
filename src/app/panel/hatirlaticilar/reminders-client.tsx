@@ -394,7 +394,8 @@ export function RemindersClient({
         <div role="status" className="mb-4 rounded-2xl bg-warn-soft px-4 py-3 text-sm ring-1 ring-warn/20 ring-inset">
           <p className="font-medium text-ink">Hatırlatıcı tutarı sabit giderden farklı</p>
           <p className="mt-0.5 text-[13px] text-ink-soft">
-            Nakit planı hatırlatıcıdaki tutarı öder. Tutarı güncelleyin ya da boşaltın (boşken plan Giderler&apos;deki tutarı izler).
+            Nakit planı hatırlatıcıdaki tutarı öder. Tutarı güncelleyin ya da boşaltın (boşken plan Giderler&apos;deki tutarı izler); gider bittiyse
+            hatırlatıcıyı kapatın.
           </p>
           <ul className="mt-2 space-y-1.5">
             {drifts.map((d) => {

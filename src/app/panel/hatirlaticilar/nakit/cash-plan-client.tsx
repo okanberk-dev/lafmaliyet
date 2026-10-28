@@ -212,7 +212,7 @@ export function CashPlanClient({
                   <CardHeader
                     icon={<CalendarClock />}
                     title="Hatırlatıcı tutarı sabit giderden farklı"
-                    description="Plan hatırlatıcıdaki tutarı öder. Giderler'de zam girildiyse hatırlatıcının tutarını güncelleyin ya da boşaltın (boşken plan Giderler'deki tutarı izler)."
+                    description="Plan hatırlatıcıdaki tutarı öder. Giderler'de zam girildiyse hatırlatıcının tutarını güncelleyin ya da boşaltın (boşken plan Giderler'deki tutarı izler); gider bittiyse hatırlatıcıyı kapatın."
                   />
                   <CardContent className="space-y-3">
                     <ul className="divide-y divide-line rounded-2xl bg-surface px-3 text-sm">
@@ -220,7 +220,9 @@ export function CashPlanClient({
                         <li key={d.reminderId} className="py-2.5">
                           <span className="block min-w-0 break-words text-ink">{d.title}</span>
                           <span className="block text-xs text-ink-mute tabular">
-                            {monthLabel(d.month)}: sabit giderde {tl(d.fixedAmount)} · hatırlatıcıda {tl(d.reminderAmount)}
+                            {d.ended
+                              ? `Sabit gider ${monthLabel(d.ended)} ayında bitti · ${monthLabel(d.month)}: hatırlatıcıda ${tl(d.reminderAmount)}`
+                              : `${monthLabel(d.month)}: sabit giderde ${tl(d.fixedAmount)} · hatırlatıcıda ${tl(d.reminderAmount)}`}
                           </span>
                         </li>
                       ))}

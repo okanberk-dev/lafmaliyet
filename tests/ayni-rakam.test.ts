@@ -16,7 +16,7 @@ import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice, SalesLine } from 
 import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
 import { buildCashPlan, EXCLUDABLE_KEY, fixedReminderDrifts, planInputFromModel, planNotes, reminderDriftText, type CashPlan, type CashPlanInput } from "../src/lib/cash-plan";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
-import { addDays, fixedReminderFollow, type ReminderRow } from "../src/lib/reminders";
+import { addDays, fixedReminderFollow, fixedReminderFollows, fixedReminderNextAmount, type ReminderRow } from "../src/lib/reminders";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -444,10 +444,26 @@ test("E-46 Ödemeler: hatırlatıcı tutarı bir yıl içindeki sürümle karş�
     reminder({ id: 4, title: "Kira", amount: 192_000, dueDate: "2026-11-01", active: false }),
   ];
   const drifts = fixedReminderDrifts(rems, fixed, versions, TODAY);
-  assert.deepEqual(drifts, [{ reminderId: 1, title: "Kira", month: "2027-01", reminderAmount: 192_000, fixedAmount: 240_000 }]);
+  // Bitmiş kalemin tutarlı hatırlatıcısı bitişten sonraki ilk dönemde söylenir (E-62)
+  assert.deepEqual(drifts, [
+    { reminderId: 1, title: "Kira", month: "2027-01", reminderAmount: 192_000, fixedAmount: 240_000 },
+    { reminderId: 2, title: "eski reklam", month: "2026-11", reminderAmount: 12_000, fixedAmount: 0, ended: "2026-09" },
+  ]);
   assert.equal(reminderDriftText(drifts[0]).replace(/\s/g, " "), "Kira: Ocak 2027 döneminde sabit giderde 240.000 ₺ (KDV dahil); hatırlatıcıda 192.000 ₺");
+  assert.equal(reminderDriftText(drifts[1]).replace(/\s/g, " "), "eski reklam: sabit gider Eylül 2026 ayında bitti; hatırlatıcı Kasım 2026 döneminde hâlâ 12.000 ₺");
+  // Aylık girişe çevrilmiş gider (aynı adlı her ay girilen harcama) bitmiş sayılmaz
+  assert.deepEqual(
+    fixedReminderDrifts(rems, fixed, versions, TODAY, undefined, ["Eski Reklam"]).map((d) => d.reminderId),
+    [1],
+  );
   // Zam bir yıldan sonraysa henüz söylenmez
-  assert.deepEqual(fixedReminderDrifts(rems, fixed, [{ ...versions[0], fromMonth: "2028-01" }], TODAY), []);
+  assert.deepEqual(
+    fixedReminderDrifts(rems, fixed, [{ ...versions[0], fromMonth: "2028-01" }], TODAY).map((d) => d.reminderId),
+    [2],
+  );
+  // "Sabit giderlerden ekle" ile açılmış, tutarı sıradaki dönemin sürümü olan hatırlatıcı gideri izler: uyarı yok
+  const follows = reminder({ id: 1, title: "Kira", amount: 192_000, dueDate: "2026-11-01", note: "Sabit giderlerden" });
+  assert.deepEqual(fixedReminderDrifts([follows], fixed, versions, TODAY), []);
 });
 
 test("E-46: sabit gider değişince otomatik tutarlı hatırlatıcı yeni sürümü izler; elle yazılmışa dokunulmaz", () => {
@@ -455,8 +471,19 @@ test("E-46: sabit gider değişince otomatik tutarlı hatırlatıcı yeni sürü
   const r = { amount: 192_000, dueDate: "2026-11-01", repeat: "monthly" as const };
   // Kasım'dan zam: yeni tutar
   assert.deepEqual(fixedReminderFollow(r, kira, [], kira, [{ fromMonth: "2026-11", period: "aylik", amount: 200_000 }]), { kind: "update", amount: 240_000 });
-  // Ocak'tan zam: tek tutar iki dönemi taşıyamaz, boşalır
-  assert.deepEqual(fixedReminderFollow(r, kira, [], kira, [{ fromMonth: "2027-01", period: "aylik", amount: 200_000 }]), { kind: "update", amount: null });
+  // Ocak'tan zam: Kasım'ın tutarı kalır, hatırlatıcı gideri izler (Ocak'tan 240.000; nakit planı da öyle öder)
+  assert.deepEqual(fixedReminderFollow(r, kira, [], kira, [{ fromMonth: "2027-01", period: "aylik", amount: 200_000 }]), {
+    kind: "same",
+    later: { month: "2027-01", amount: 240_000 },
+  });
+  // Kasım'dan zam ve Ocak'tan bir zam daha: Kasım'ın yeni tutarı, Ocak'ınki söylenir
+  assert.deepEqual(
+    fixedReminderFollow(r, kira, [], kira, [
+      { fromMonth: "2026-11", period: "aylik", amount: 170_000 },
+      { fromMonth: "2027-01", period: "aylik", amount: 200_000 },
+    ]),
+    { kind: "update", amount: 204_000, later: { month: "2027-01", amount: 240_000 } },
+  );
   // KDV oranı değişti (bütün aylar): yeni brüt
   assert.deepEqual(fixedReminderFollow(r, kira, [], { ...kira, vatRate: 0.1 }, []), { kind: "update", amount: 176_000 });
   // Değişiklik yok
@@ -549,4 +576,76 @@ test("E-13 nakit planı: bağlı fatura kategorisi faturası gelmemiş aylarda t
   const part = createModel({ ...ds, invoices: ds.invoices.filter((i) => i.id !== 990_002), expenseEntries: [entry(1, 1, "2026-09-10", 30_000)] });
   const pi = planInputFromModel(part, TODAY);
   assert.deepEqual(pi.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 30_000, paid: 24_000, from: "2026-09" }]);
+});
+
+test("U1: sabit gideri izleyen hatırlatıcı zamdan sonraki dönemde sürümün tutarını öder; uyarı yok; Ödendi tutarı taşır", () => {
+  const months = planInput().months;
+  const kira = (amount: number) => ({ payroll: PAYROLL0, fixed: [{ id: 1, name: "Kira", period: "aylik" as const, amount, vatRate: 0.2 }] });
+  const input = (note: string | null) =>
+    planInput({
+      months: { ...months, "2026-11": kira(160_000), "2026-12": kira(200_000) },
+      fixedNames: [{ id: 1, name: "Kira", period: "aylik" }],
+      reminders: [reminder({ id: 900, title: "Kira", amount: 192_000, dueDate: "2026-11-01", note })],
+    });
+  const plan = buildCashPlan(input("Sabit giderlerden"));
+  const lines = planLines(plan).filter((l) => l.key.startsWith("reminder:900@"));
+  assert.deepEqual(
+    lines.map((l) => [l.date, l.amount]),
+    [
+      ["2026-11-01", 192_000],
+      ["2026-12-01", 240_000],
+    ],
+  );
+  assert.match(lines[1].detail ?? "", /Sabit giderdeki Aralık 2026 tutarı \(KDV dahil\); hatırlatıcı gideri izler/);
+  assert.deepEqual(plan.reminderDrift, []);
+  // Elle açılmış (notsuz) hatırlatıcı izlemez: tutarını öder, uyarır (U3: "ödendi sayıldı" demez)
+  const manual = buildCashPlan(input(null));
+  const m = planLines(manual).filter((l) => l.key.startsWith("reminder:900@"));
+  assert.deepEqual(
+    m.map((l) => l.amount),
+    [192_000, 192_000],
+  );
+  assert.equal(m[1].detail, "Sabit giderde Aralık 2026 tutarı 240.000\u00a0₺ (KDV dahil); plan hatırlatıcıdaki 192.000\u00a0₺ tutarını sayar, Ödemeler'de güncelleyin");
+  assert.doesNotMatch(m[1].detail ?? "", /ödendi sayıldı/);
+  assert.equal(manual.reminderDrift.length, 1);
+  // "Ödendi" sıradaki dönemin sürümüne taşır
+  const f = { amount: 160_000, period: "aylik" as const, section: "kira" as const, vatRate: null };
+  const v = [{ fromMonth: "2026-12", period: "aylik" as const, amount: 200_000 }];
+  const rem = { note: "Sabit giderlerden", amount: 192_000, dueDate: "2026-11-01", repeat: "monthly" as const };
+  assert.equal(fixedReminderNextAmount(rem, f, v, "2026-12-01"), 240_000);
+  assert.equal(fixedReminderNextAmount(rem, f, [], "2026-12-01"), null, "tutar aynı");
+  assert.equal(fixedReminderNextAmount({ ...rem, note: null }, f, v, "2026-12-01"), null, "elle açılmış");
+  assert.equal(fixedReminderNextAmount({ ...rem, amount: 190_000 }, f, v, "2026-12-01"), null, "elle yazılmış tutar");
+  assert.equal(fixedReminderFollows(rem, f, v), true);
+});
+
+test("E-62: bitmiş sabit giderin tutarlı hatırlatıcısı bitişten sonra planda söylenir; aylık girişe çevrilmişse söylenmez", () => {
+  const months = planInput().months;
+  const ig = { payroll: PAYROLL0, fixed: [{ id: 7, name: "Instagram reklamı", period: "aylik" as const, amount: 30_000, vatRate: 0.2 }] };
+  const rem = reminder({ id: 901, title: "Instagram reklamı", kind: "odeme", amount: 36_000, dueDate: "2026-11-01", note: "Sabit giderlerden" });
+  const input = planInput({
+    months: { ...months, "2026-11": ig },
+    fixedNames: [{ id: 7, name: "Instagram reklamı", period: "aylik", endMonth: "2026-11" }],
+    reminders: [rem],
+  });
+  const plan = buildCashPlan(input);
+  const lines = planLines(plan).filter((l) => l.key.startsWith("reminder:901@"));
+  assert.deepEqual(
+    lines.map((l) => [l.date, l.amount]),
+    [
+      ["2026-11-01", 36_000],
+      ["2026-12-01", 36_000],
+    ],
+  );
+  assert.match(lines[1].detail ?? "", /Sabit gider Kasım 2026 ayında bitti; plan hatırlatıcıdaki 36\.000\s₺ tutarını sayar/);
+  assert.deepEqual(plan.reminderDrift, [{ reminderId: 901, title: "Instagram reklamı", month: "2026-12", reminderAmount: 36_000, fixedAmount: 0, ended: "2026-11" }]);
+  // Aylık girişe çevrilmiş (aynı adlı her ay girilen harcama): hatırlatıcı onu karşılar, bitti denmez
+  const conv = buildCashPlan({
+    ...input,
+    months: { ...input.months, "2026-12": { payroll: PAYROLL0, fixed: [], expenses: [{ id: 3, name: "Instagram reklamı", amount: 36_000, paid: 0, from: "2026-11" }] } },
+  });
+  assert.deepEqual(conv.reminderDrift, []);
+  // Modelden: bitiş ayı plan girdisinde
+  const m = createModel({ ...base, fixedExpenses: base.fixedExpenses.map((f) => (f.id === influencer.id ? { ...f, endMonth: "2026-11" } : f)) });
+  assert.equal(planInputFromModel(m, TODAY).fixedNames.find((f) => f.id === influencer.id)?.endMonth, "2026-11");
 });

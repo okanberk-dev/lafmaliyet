@@ -128,11 +128,25 @@ describe("aynı rakam: veritabanında", { skip: !SERVER_URL && "AYNI_TEST_DATABA
     assert.equal(a.ok, true, JSON.stringify(a));
     assert.equal((await rem("Kira")).amount, 204_000);
     assert.match((a.ok && a.data.message) || "", /“Kira” hatırlatıcısı da güncellendi/);
-    // Sonraki bir aydan zam (Ocak'tan): tek tutar iki dönemi taşıyamaz, boşalır (nakit planı her ay Giderler'i izler)
-    const b = await save(kira.id, "Kira", 200_000, shiftMonth(CUR, 3));
+    // Sonraki bir aydan zam: sıradaki ödemenin tutarı kalır (Ödemeler ve sabah e-postası boşalmaz), hatırlatıcı gideri
+    // izler; mesaj zammın ayını söyler
+    const later = shiftMonth(CUR, 3);
+    const b = await save(kira.id, "Kira", 200_000, later);
     assert.equal(b.ok, true, JSON.stringify(b));
-    assert.equal((await rem("Kira")).amount, null);
-    assert.match((b.ok && b.data.message) || "", /tutarı kaldırıldı/);
+    assert.equal((await rem("Kira")).amount, 204_000);
+    assert.match((b.ok && b.data.message) || "", /“Kira” hatırlatıcısı .+ itibarıyla 240\.000\s₺ \(KDV dahil\) sayılır/);
+    // "Ödendi": sıradaki dönem zamlı aya gelince tutar o ayın sürümüne geçer; geri al eski tutarı yazar
+    const k = await rem("Kira");
+    const done1 = await reminders.markReminderDone(k.id);
+    assert.equal(done1.ok, true, JSON.stringify(done1));
+    assert.equal((await rem("Kira")).dueDate, `${shiftMonth(CUR, 2)}-01`);
+    assert.equal((await rem("Kira")).amount, 204_000);
+    const done2 = await reminders.markReminderDone(k.id);
+    assert.equal(done2.ok, true);
+    assert.equal((await rem("Kira")).dueDate, `${later}-01`);
+    assert.equal((await rem("Kira")).amount, 240_000);
+    assert.equal((await reminders.restoreReminder(k.id, done2.ok ? done2.data.prev : ({} as never))).ok, true);
+    assert.equal((await rem("Kira")).amount, 204_000);
 
     // Elle yazılmış tutar: dokunulmaz, uyarılır
     const aidat = await fixed("Aidat", 10_000, { startMonth: PREV });
@@ -142,6 +156,14 @@ describe("aynı rakam: veritabanında", { skip: !SERVER_URL && "AYNI_TEST_DATABA
     assert.equal(c.ok, true, JSON.stringify(c));
     assert.equal((await rem("Aidat")).amount, 12_500);
     assert.match((c.ok && c.data.message) || "", /“Aidat” hatırlatıcısında 12\.500\s₺ yazılı, sabit giderde 13\.200\s₺ \(KDV dahil\): kontrol edin/);
+    // Biten gider: hatırlatıcı bitişten sonra başlamaz (E-62)
+    const ends = await fixed("Kampanya", 3_000, { startMonth: PREV, endMonth: CUR });
+    const late = await reminders.addFixedExpenseReminder(ends.id, `${NEXT}-01`);
+    assert.equal(late.ok, false);
+    assert.match(late.ok ? "" : late.error, /Kampanya .+ ayında bitiyor; ilk ödeme en geç .+ içinde olmalı/);
+    const inMonth = await reminders.addFixedExpenseReminder(ends.id, `${CUR}-28`);
+    assert.equal(inMonth.ok, true, JSON.stringify(inMonth));
+    assert.equal(inMonth.ok && inMonth.data.endMonth, CUR);
     // Elle açılmış (notsuz) aynı adlı hatırlatıcı izlenmez
     await db.insert(s.reminders).values({ title: "Su", kind: "odeme", amount: 600, dueDate: due, anchorDate: due, repeat: "monthly", remindDaysBefore: 3 });
     const su = await fixed("Su", 500, { startMonth: PREV });

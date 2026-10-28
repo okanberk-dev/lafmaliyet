@@ -74,7 +74,7 @@ async function RemindersContent() {
   const versions = fixedData.versions;
   const fixed = fixedData.candidates.map((f) => {
     const own = versions.filter((v) => v.fixedExpenseId === f.id).map((v) => ({ fromMonth: v.fromMonth, period: v.period, amount: v.amount }));
-    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own };
+    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own, endMonth: f.endMonth };
   });
 
   return (
@@ -88,7 +88,7 @@ async function RemindersContent() {
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       // Sabit gidere bağlı tutarlı hatırlatıcının tutarı Giderler'deki sürümden farklı (E-46): nakit planı eski tutarı öderdi
-      drifts={fixedReminderDrifts(reminders, fixedData.all, versions, today).map((d) => ({ ...d, text: reminderDriftText(d) }))}
+      drifts={fixedReminderDrifts(reminders, fixedData.all, versions, today, undefined, fixedData.monthlyExpenseNames).map((d) => ({ ...d, text: reminderDriftText(d) }))}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
       recentPaid={undoable.map(({ conversion, ...e }) => (conversion ? { ...e, converted: true } : e))}
       email={{

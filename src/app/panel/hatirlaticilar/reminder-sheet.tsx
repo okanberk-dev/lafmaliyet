@@ -64,6 +64,8 @@ export interface FixedRow {
   /** Kalemin kendi KDV oranı; boşsa bölümün varsayılanı */
   vatRate: number | null;
   versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
+  /** Bitiş ayı (bu ay ya da sonrası; bitmişler listelenmez): ilk ödeme en geç bu ayda (E-62) */
+  endMonth: string | null;
 }
 
 /**
@@ -504,17 +506,21 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
     const [y, m] = today.split("-").map(Number);
     return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
   }, [today]);
+  // Bu ay biten giderin ilk ödemesi gelecek aya düşmez (sunucu reddeder): bugün
+  const firstFor = (f: FixedRow) => (f.endMonth && f.endMonth < defaultFirst.slice(0, 7) ? today : defaultFirst);
   const add = (f: FixedRow) =>
     start(async () => {
-      const r = await addFixedExpenseReminder(f.id, days[f.id] ?? defaultFirst);
+      const r = await addFixedExpenseReminder(f.id, days[f.id] ?? firstFor(f));
       if (!r.ok) return void toast.error(r.error);
       setAdded((a) => ({ ...a, [f.id]: r.data.dueDate }));
-      const what = r.data.changesFrom
-        ? ` · tutar yazılmadı (${monthLabel(r.data.changesFrom)} itibarıyla değişiyor; nakit planı Giderler'deki tutarı izler)`
-        : r.data.amount
-          ? ` · ${money(r.data.amount)}`
-          : "";
-      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}${what}` });
+      const what =
+        r.data.amount === null && r.data.changesFrom
+          ? ` · tutar yazılmadı (${monthLabel(r.data.changesFrom)} itibarıyla dönemi değişiyor; nakit planı Giderler'deki tutarı izler)`
+          : r.data.amount
+            ? ` · ${money(r.data.amount)}${r.data.changesFrom ? `; ${monthLabel(r.data.changesFrom)} itibarıyla Giderler'deki yeni tutarı izler` : ""}`
+            : "";
+      const ends = r.data.endMonth ? ` · gider ${monthLabel(r.data.endMonth)} ayında bitiyor: sonra hatırlatıcıyı kapatın` : "";
+      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}${what}${ends}` });
     });
 
   return (
@@ -573,7 +579,8 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">
-                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate }, f.versions, (days[f.id] ?? defaultFirst).slice(0, 7))}
+                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate }, f.versions, (days[f.id] ?? firstFor(f)).slice(0, 7))}
+                          {f.endMonth ? ` · ${monthLabel(f.endMonth)} ayında bitiyor` : ""}
                         </p>
                       </div>
                     </div>
@@ -583,7 +590,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                         <Input
                           type="date"
                           className="min-w-0 max-sm:h-11 sm:w-40"
-                          value={days[f.id] ?? defaultFirst}
+                          value={days[f.id] ?? firstFor(f)}
                           disabled={Boolean(added[f.id])}
                           onChange={(e) => setDays((d) => ({ ...d, [f.id]: e.target.value }))}
                           aria-label={`${f.name} ilk ödeme tarihi`}
@@ -596,7 +603,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                       ) : (
                         <Button
                           variant={exists ? "secondary" : "primary"}
-                          disabled={pending || !(days[f.id] ?? defaultFirst)}
+                          disabled={pending || !(days[f.id] ?? firstFor(f))}
                           onClick={() => add(f)}
                           className="max-sm:h-11"
                         >

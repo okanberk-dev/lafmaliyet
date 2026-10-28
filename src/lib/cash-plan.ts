@@ -26,6 +26,7 @@ import {
   daysBetween,
   FIXED_REMINDER_NOTE,
   fixedReminderAt,
+  fixedReminderFollows,
   isVatReminder,
   isVatWithholdingReminder,
   monthEnd,
@@ -152,8 +153,8 @@ export interface CashPlanInput {
       }
     >
   >;
-  /** Bütün sabit giderler (hatırlatıcı eşleşmesi için) */
-  fixedNames: readonly { id: number; name: string; period: FixedPeriod }[];
+  /** Bütün sabit giderler (hatırlatıcı eşleşmesi için; `endMonth` biten kalemin hatırlatıcısı söylensin diye) */
+  fixedNames: readonly { id: number; name: string; period: FixedPeriod; endMonth?: string | null }[];
   /** Kafe kapalı işaretli günler (Özel günler; denetim E-41): o günlerde satış ve online girişi yazılmaz. Yoksa boş */
   closedDays?: readonly string[];
   /** `switchDay`: LafPOS'a geçiş günü (yalnız metinler: dönemin kasası "ModPOS" / "LafPOS"; denetim E-39) */
@@ -345,8 +346,10 @@ export interface ReminderDrift {
   month: string;
   /** Hatırlatıcıdaki tutar (planın ödediği) */
   reminderAmount: number;
-  /** Sabit giderin o ayki tutarı, KDV dahil (Giderler'deki sürüm) */
+  /** Sabit giderin o ayki tutarı, KDV dahil (Giderler'deki sürüm); bitmiş kalemde 0 */
   fixedAmount: number;
+  /** Sabit gider bu ayda bitti (bitiş ayı); hatırlatıcı sonraki dönemlerde hâlâ tutar taşıyor (E-62) */
+  ended?: string;
 }
 
 /** Hatırlatıcının dönemine karşılık gelen sabit gider dönemi (çeyreklik ve tek seferlik karşılaştırılmaz) */
@@ -356,21 +359,26 @@ function cadenceOf(repeat: ReminderRow["repeat"]): FixedPeriod | null {
 
 /** Ödemeler'deki "farklı tutar" notu: "Kira: Ocak 2027'den sabit giderde 240.000 ₺; hatırlatıcıda 192.000 ₺" */
 export function reminderDriftText(d: ReminderDrift): string {
+  if (d.ended) return `${d.title}: sabit gider ${monthLabel(d.ended)} ayında bitti; hatırlatıcı ${monthLabel(d.month)} döneminde hâlâ ${tl(d.reminderAmount)}`;
   return `${d.title}: ${monthLabel(d.month)} döneminde sabit giderde ${tl(d.fixedAmount)} (KDV dahil); hatırlatıcıda ${tl(d.reminderAmount)}`;
 }
 
 /**
  * Ödemeler için (sayfa nakit planını kurmaz): adı bir sabit giderle aynı, tutarı yazılı, etkin hatırlatıcıların önümüzdeki
  * dönemlerinde (varsayılan bir yıl) sabit giderin o ayki tutarı (sürümüyle, KDV dahil; aynı dönemde) 1 ₺'den fazla farklı mı.
- * Eşleşme nakit planınınkiyle aynı (katlanmış ad, en küçük kimlik); dönemi dışındaki (bitmiş) kalem karşılaştırılmaz
+ * Eşleşme nakit planınınkiyle aynı (katlanmış ad, en küçük kimlik). Gideri izleyen hatırlatıcı (fixedReminderFollows)
+ * karşılaştırılmaz: plan sürümü öder. Bitmiş kalemin hatırlatıcısı bitişten sonraki ilk dönemde söylenir (`ended`)
  */
 export function fixedReminderDrifts(
-  reminders: readonly Pick<ReminderRow, "id" | "title" | "amount" | "active" | "dueDate" | "repeat" | "anchorDate">[],
+  reminders: readonly Pick<ReminderRow, "id" | "title" | "amount" | "active" | "dueDate" | "repeat" | "anchorDate" | "note">[],
   fixed: readonly { id: number; name: string; period: FixedPeriod; amount: number; section: FixedSection; vatRate?: number | null; startMonth: string | null; endMonth: string | null }[],
   versions: readonly { fixedExpenseId: number; fromMonth: string; period: FixedPeriod; amount: number }[],
   today: string,
   horizonDays = 366,
+  /** Aylık harcamalar'da her ay girilen kategorilerin adları: aylık girişe çevrilmiş gider bitmiş sayılmaz */
+  monthlyExpenseNames: readonly string[] = [],
 ): ReminderDrift[] {
+  const converted = new Set(monthlyExpenseNames.map(foldName));
   const byName = new Map<string, (typeof fixed)[number]>();
   for (const f of [...fixed].sort((a, b) => a.id - b.id)) if (!byName.has(foldName(f.name))) byName.set(foldName(f.name), f);
   const end = addDays(today, horizonDays);
@@ -381,9 +389,15 @@ export function fixedReminderDrifts(
     const cadence = cadenceOf(r.repeat);
     if (!f || !cadence) continue;
     const own = versions.filter((v) => v.fixedExpenseId === f.id);
+    const follows = fixedReminderFollows(r, f, own);
     for (const o of reminderOccurrences(r, today, end)) {
       const m = o.due.slice(0, 7);
-      if ((f.startMonth && f.startMonth > m) || (f.endMonth && f.endMonth < m)) continue;
+      if (f.endMonth && f.endMonth < m) {
+        if (converted.has(foldName(r.title))) break;
+        out.push({ reminderId: r.id, title: r.title, month: m, reminderAmount: r.amount!, fixedAmount: 0, ended: f.endMonth });
+        break;
+      }
+      if (follows || (f.startMonth && f.startMonth > m)) continue;
       const at = fixedReminderAt(f, own, m);
       if (at.period !== cadence || Math.abs(at.gross - r.amount!) <= 1) continue;
       out.push({ reminderId: r.id, title: r.title, month: m, reminderAmount: r.amount!, fixedAmount: at.gross });
@@ -487,7 +501,7 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
     posMonth: pos ? { month: pos.month, posRevenue: pos.posRevenue!, openDays: pos.openDays! } : null,
     online: onlineBasis(model, today),
     months,
-    fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period })),
+    fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period, endMonth: f.endMonth ?? null })),
     vat: { ...vatMonthInputs(model, today), switchDay: st.lafposGecisGunu },
     // Ufuktaki kafe kapalı işaretli günler (E-41)
     closedDays: (model.ds.closedDays ?? []).filter((d) => d >= today && d <= addDays(today, PLAN_DAYS - 1)),
@@ -529,7 +543,7 @@ function monthlyOf(f: Pick<FixedItem, "period" | "amount" | "vatRate">, acikGun:
   return withVat(f);
 }
 
-type RemClass = { kind: "fixed"; id: number } | { kind: "expense"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "kdv2" } | { kind: "other" };
+type RemClass = { kind: "fixed"; id: number; endMonth: string | null } | { kind: "expense"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "kdv2" } | { kind: "other" };
 
 const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amount > 0;
 
@@ -689,10 +703,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   }
 
   // ------------------------------------------------------------ Hatırlatıcılar: sınıf ve dönemler
-  const fixedByName = new Map<string, { id: number; period: FixedPeriod }>();
+  const fixedByName = new Map<string, { id: number; period: FixedPeriod; endMonth: string | null }>();
   for (const f of [...input.fixedNames].sort((a, b) => a.id - b.id)) {
     const k = foldName(f.name);
-    if (!fixedByName.has(k)) fixedByName.set(k, { id: f.id, period: f.period });
+    if (!fixedByName.has(k)) fixedByName.set(k, { id: f.id, period: f.period, endMonth: f.endMonth ?? null });
   }
   // Her ay girilen harcama kategorileri (ufuktaki aylardan): adı aynı hatırlatıcı onun yerine geçer (E-13)
   const expenseByName = new Map<string, number>();
@@ -700,7 +714,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const expenseIn = (m: string, id: number) => input.months[m]?.expenses?.find((x) => x.id === id) ?? null;
   const classify = (r: ReminderRow): RemClass => {
     const f = fixedByName.get(foldName(r.title));
-    if (f) return { kind: "fixed", id: f.id };
+    if (f) return { kind: "fixed", id: f.id, endMonth: f.endMonth };
     const e = expenseByName.get(foldName(r.title));
     if (e !== undefined) return { kind: "expense", id: e };
     const cat = reminderCategory(r.kind, r.title);
@@ -742,16 +756,37 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       // Gideri bir hatırlatıcı karşılıyor: ay içine yayılmaz; tutarsızsa hatırlatıcının günlerine giderin tutarı
       covered.add(c.id);
       let drifted = false;
+      const rep = r.repeat === "none" ? null : r.repeat;
+      /** Sabit giderin o ayki sürümü, hatırlatıcının döneminde ve KDV dahil (dönem tutmuyorsa ya da kalem o ay yoksa null) */
+      const grossIn = (m: string) => {
+        const f = fixedIn(m).find((x) => x.id === c.id);
+        return f && rep && f.period === CADENCE_OF[rep] ? Math.round(withVat(f) * 100) / 100 : null;
+      };
+      // "Sabit giderlerden ekle" ile açılmış, tutarı sıradaki dönemin sürümü olan hatırlatıcı gideri izler: zamdan sonraki
+      // dönemlerde sürümün tutarı ödenir, uyarı çıkmaz (fixedReminderFollows)
+      const dueGross = hasAmount(r) ? grossIn(r.dueDate.slice(0, 7)) : null;
+      const follows = Boolean(r.note?.startsWith(FIXED_REMINDER_NOTE)) && dueGross !== null && Math.abs(dueGross - r.amount!) <= 1;
       for (const o of reminderOccurrences(r, today, end)) {
         if (hasAmount(r)) {
-          // Tutar sabit giderin o ayki sürümünden (aynı dönem, KDV dahil) farklıysa satırda ve uyarıda söylenir (E-46)
-          const f = fixedIn(o.due.slice(0, 7)).find((x) => x.id === c.id);
-          const rep = r.repeat === "none" ? null : r.repeat;
-          const expected = f && rep && f.period === CADENCE_OF[rep] ? Math.round(withVat(f) * 100) / 100 : null;
-          if (expected !== null && Math.abs(expected - r.amount!) > 1) {
-            if (!drifted) drift.push({ reminderId: r.id, title: r.title, month: o.due.slice(0, 7), reminderAmount: r.amount!, fixedAmount: expected });
+          const m = o.due.slice(0, 7);
+          // Sabit gider bitti: plan hatırlatıcının tutarını saymaya devam eder ama söyler (E-62; Ödemeler'de kapatılır).
+          // Aylık girişe çevrilmiş gider (aynı adlı her ay girilen harcama) bitmiş sayılmaz: hatırlatıcı onu karşılar
+          if (c.endMonth && m > c.endMonth && e === undefined) {
+            if (!drifted) drift.push({ reminderId: r.id, title: r.title, month: m, reminderAmount: r.amount!, fixedAmount: 0, ended: c.endMonth });
             drifted = true;
-            reminderLine(r, o, { detail: `Sabit giderde ${monthLabel(o.due.slice(0, 7))} tutarı ${tl(expected)} (KDV dahil); hatırlatıcıdaki tutar ödendi sayıldı` });
+            reminderLine(r, o, { detail: `Sabit gider ${monthLabel(c.endMonth)} ayında bitti; plan hatırlatıcıdaki ${tl(r.amount!)} tutarını sayar, ödeme bittiyse Ödemeler'de kapatın` });
+            continue;
+          }
+          // Tutar sabit giderin o ayki sürümünden (aynı dönem, KDV dahil) farklıysa satırda ve uyarıda söylenir (E-46)
+          const expected = grossIn(m);
+          if (expected !== null && Math.abs(expected - r.amount!) > 1) {
+            if (follows) {
+              reminderLine(r, o, { amount: expected, detail: `Sabit giderdeki ${monthLabel(m)} tutarı (KDV dahil); hatırlatıcı gideri izler` });
+              continue;
+            }
+            if (!drifted) drift.push({ reminderId: r.id, title: r.title, month: m, reminderAmount: r.amount!, fixedAmount: expected });
+            drifted = true;
+            reminderLine(r, o, { detail: `Sabit giderde ${monthLabel(m)} tutarı ${tl(expected)} (KDV dahil); plan hatırlatıcıdaki ${tl(r.amount!)} tutarını sayar, Ödemeler'de güncelleyin` });
           } else reminderLine(r, o);
         } else if (r.amount === null && e !== undefined && !fixedIn(o.due.slice(0, 7)).some((x) => x.id === c.id)) {
           // Sabit gider aylık girişe çevrilmiş (dönemi bitmiş): hatırlatıcı Aylık harcamalar'daki tutarı taşır (o ay girilmiş

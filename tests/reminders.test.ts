@@ -332,9 +332,11 @@ test("Sabit giderlerden ekle: tutar ilk ödeme ayındaki sürümden, faturadaki 
   const raise = [{ fromMonth: "2026-10", period: "aylik" as const, amount: 160_000 }];
   assert.equal(fixedReminderAt(kira, raise, "2026-11").amount, 192_000);
   assert.equal(fixedReminderAt(kira, raise, "2026-10").amount, 192_000);
-  // Eylül'deki ilk ödemeden sonra zam girilmiş: tutar yazılmaz (plan her ayın sürümünü KDV'siyle taşır)
-  assert.deepEqual(fixedReminderAt(kira, raise, "2026-09"), { period: "aylik", amount: null, gross: 180_000, vatRate: 0.2, changesFrom: "2026-10" });
-  // Birden çok sürümde ayda geçerli olan en son sürüm; sonraki değişikliklerin ilki söylenir; sürüm dönemi de değiştirir
+  // Eylül'deki ilk ödemeden sonra zam girilmiş: Eylül'ün tutarı yazılır, hatırlatıcı gideri izler (plan Ekim'den zamlı
+  // tutarı öder, "Ödendi" tutarı taşır; denetim B15 inceleme U1)
+  assert.deepEqual(fixedReminderAt(kira, raise, "2026-09"), { period: "aylik", amount: 180_000, gross: 180_000, vatRate: 0.2, changesFrom: "2026-10" });
+  // Birden çok sürümde ayda geçerli olan en son sürüm; sonraki değişikliklerin ilki söylenir; sürüm dönemi de değiştirir.
+  // Dönemi sonradan değişen kalemde (aylık → yıllık) tutar yazılmaz
   const two = [...raise, { fromMonth: "2027-01", period: "yillik" as const, amount: 1_000_000 }, { fromMonth: "2026-12", period: "aylik" as const, amount: 170_000 }];
   assert.deepEqual(fixedReminderAt(kira, two, "2026-11"), { period: "aylik", amount: null, gross: 192_000, vatRate: 0.2, changesFrom: "2026-12" });
   assert.deepEqual(fixedReminderAt(kira, two, "2027-03"), { period: "yillik", amount: 1_200_000, gross: 1_200_000, vatRate: 0.2, changesFrom: null });
@@ -355,7 +357,12 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   // Seçilen günün ayı: Ekim'de zamsız, Kasım'dan zamlı
   const raise = [{ fromMonth: "2026-11", period: "aylik" as const, amount: 160_000 }];
   assert.equal(fixedReminderText(kira, raise, "2026-11"), "192.000\u00a0₺ (%20 KDV dahil) · aylık");
-  assert.equal(fixedReminderText(kira, raise, "2026-10"), "180.000\u00a0₺ (%20 KDV dahil) · aylık · Kasım 2026 itibarıyla değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler");
+  assert.equal(fixedReminderText(kira, raise, "2026-10"), "180.000\u00a0₺ (%20 KDV dahil) · aylık · Kasım 2026 itibarıyla değişiyor: hatırlatıcı yeni tutarı izler");
+  // Dönemi değişen kalem: tutar yazılmaz
+  assert.equal(
+    fixedReminderText(kira, [{ fromMonth: "2027-01", period: "yillik", amount: 1_000_000 }], "2026-11"),
+    "180.000\u00a0₺ (%20 KDV dahil) · aylık · Ocak 2027 itibarıyla dönemi değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler",
+  );
   // Ocak zammı (en sık): yılın sonuna ek getirilmez ("2027'dan" yanlış olurdu)
   assert.match(fixedReminderText(kira, [{ fromMonth: "2027-01", period: "aylik", amount: 170_000 }], "2026-11"), /· Ocak 2027 itibarıyla değişiyor:/);
   // Dönem sürümden: haftalıkken aylığa geçen kalem aylık yazılır
