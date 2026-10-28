@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { bankShareText, createModel } from "../src/lib/calc/engine";
+import { bankShareText, createModel, PERSONNEL_EXTRA_LABEL, staffCost } from "../src/lib/calc/engine";
+import { fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, Invoice } from "../src/lib/calc/types";
 import { resolveMonth, tillMonths, type MonthEntry, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
@@ -131,4 +132,51 @@ test("E-43: satır ipucu yemek kartının hariç olduğunu ve banka faturasında
   assert.match(def.hint!, /banka kartı payı/);
   assert.match(def.hint!, /yemek kartı hariç/);
   assert.match(def.hint!, /0 yazın/);
+});
+
+// ---------------------------------------------------------------- E-44 personel satırı
+
+test("E-44: personel satırı maliyet − net: çalışan kesintisi, işveren payı ve ekler; etiket ve hücre bileşimi bunu söyler", () => {
+  // Yemek / yol / prim eki olan bir personel: hücre ekleri ve çalışanın kendi kesintisini de taşır
+  const staff = base.staff.map((x, i) => (i === 0 ? { ...x, extras: 4_000 } : x));
+  const model = createModel({ ...base, staff });
+  const st = model.settings;
+  const pm = model.pnlMonth("2026-09");
+  const pers = model.personnelFor("2026-09");
+  const parts = pers.rows.map((r) => staffCost(r.staff, st));
+  const deductions = parts.reduce((a, r) => a + r.deductions, 0);
+  const employer = parts.reduce((a, r) => a + r.employerSgk + r.employerUnemployment, 0);
+  const extras = parts.reduce((a, r) => a + r.staff.extras, 0);
+  assert.ok(extras >= 4_000, "ek ödeme var");
+  const cell = pm.cells.get("personnel:employer")!;
+  close(cell.value, (deductions + employer + extras) * pm.ratio, "hücre = kesinti + işveren payı + ekler");
+  close(cell.value, (pers.total - pers.net) * pm.ratio, "hücre = maliyet − net");
+  // Yalnız işveren payı olsaydı kesinti ve ekler düşerdi: hücre ondan büyük
+  assert.ok(cell.value! > employer * pm.ratio + 1);
+  // Bileşim metni üç parçayı yazar
+  assert.match(cell.info!, /çalışanların SGK \+ işsizlik kesintisi/);
+  assert.match(cell.info!, /işveren SGK \+ işsizlik/);
+  assert.match(cell.info!, /yemek \/ yol \/ prim/);
+  // Etiket ve ipucu: bileşimle uyuşur, bordronun yalnız işveren payını yazdırmaz
+  const def = model.pnlRowDefs(["2026-09"]).find((d) => d.key === "personnel:employer")!;
+  assert.equal(def.label, PERSONNEL_EXTRA_LABEL);
+  assert.match(def.label, /KESİNTİLER \+ EK ÖDEMELER/);
+  assert.doesNotMatch(def.label, /\(işveren\)/);
+  assert.match(def.hint!, /yalnız işveren payını yazmayın/);
+  assert.match(def.hint!, /yemek \/ yol \/ prim/);
+  // Genel bakış aynı satırı aynı adla gösterir
+  const line = fixedCostsForMonth(model, "2026-09").lines.find((l) => l.key === "personnel:employer")!;
+  assert.equal(line.label, "Personel SGK, kesintiler + ek ödemeler (maliyet − net)");
+});
+
+test("E-44: bileşim metni gün oranıyla ve parçalarının toplamı hücreyi tutar", () => {
+  const model = createModel(base);
+  // Ekim: ayın bir kısmı açık (Excel verisi, 16 gün): parçalar gün oranıyla
+  const pm = model.pnlMonth("2026-10");
+  const cell = pm.cells.get("personnel:employer")!;
+  assert.ok(pm.ratio < 1);
+  assert.match(cell.info!, new RegExp(`^Bu ay \\(${pm.prorationDays} / ${pm.dim} gün\\): `));
+  const amounts = [...cell.info!.matchAll(/([\d.]+)\s₺/g)].map((m) => Number(m[1].replace(/\./g, "")));
+  assert.equal(amounts.length, 3);
+  assert.ok(Math.abs(amounts.reduce((a, b) => a + b, 0) - cell.value!) <= 2, `parçalar ${amounts.join(" + ")} ≈ ${cell.value}`);
 });

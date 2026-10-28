@@ -7,7 +7,7 @@ import {
   SEPARATE_CATEGORIES,
 } from "../constants";
 import { channelOf } from "../commission/channels";
-import { pct } from "../format";
+import { pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
@@ -532,6 +532,30 @@ export interface PnlCell {
   info?: string;
   /** Bu ayda dikkat edilecek bir durum (hücrede görünür), ör. POS komisyonu bir faturayla çift sayılabilir */
   warn?: string;
+}
+
+/**
+ * Gelir-gider'in personel satırı `personnel:employer`: Personel'deki maliyet − net maaş. Yalnız işveren SGK'sı değil,
+ * çalışanların kendi SGK + işsizlik kesintisi ve yemek / yol / prim ekleri de içindedir (denetim E-44): bordrodaki
+ * işveren payı yazılırsa ödenen kesintiler ve ekler giderden düşerdi. Genel bakış da aynı adı kullanır (insights.ts)
+ */
+export const PERSONNEL_EXTRA_LABEL = "PERSONEL SGK, KESİNTİLER + EK ÖDEMELER (maliyet − net)";
+export const PERSONNEL_EXTRA_HINT =
+  "Personel sayfasındaki maliyet − net maaş: çalışanların SGK + işsizlik kesintisi, işveren SGK + işsizlik payı ve yemek / yol / prim ekleri; × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. Elle yazacaksanız bordrodaki toplam işveren maliyeti − net maaşlar (yemek / yol / prim dahil); yalnız işveren payını yazmayın.";
+
+/** `personnel:employer` hücresinin bu ayki bileşimi (gün oranıyla; parçaların toplamı hücrenin hesaplanan değeri) */
+export function personnelExtraText(
+  p: Pick<PersonnelSummary, "deductions" | "employerSgk" | "employerUnemployment" | "extras">,
+  ratio: number,
+  days: number,
+  dim: number,
+): string {
+  const parts = [
+    `çalışanların SGK + işsizlik kesintisi ${tl(p.deductions * ratio)}`,
+    `işveren SGK + işsizlik ${tl((p.employerSgk + p.employerUnemployment) * ratio)}`,
+    `yemek / yol / prim ${tl(p.extras * ratio)}`,
+  ];
+  return `Bu ay${Math.abs(ratio - 1) > 1e-9 ? ` (${days} / ${dim} gün)` : ""}: ${parts.join(", ")}.`;
 }
 
 /** POS komisyonu hücresinin bu ayki kart payı: nereden ve yemek kartı hariç mi (bankShareOf) */
@@ -1787,7 +1811,10 @@ export function createModel(ds: Dataset) {
     // Personel: o ay çalışanlar, o ayın maaşıyla (elle girilen bordro tutarı her zaman geçerli)
     const pers = personnelFor(month);
     sections.personel += auto("personnel:net", pers.net * ratio);
+    // Maliyet − net: çalışanların SGK + işsizlik kesintisi, işveren payları ve yemek / yol / prim ekleri (denetim E-44;
+    // yalnız işveren payı değil). Hücre bu ayın bileşimini taşır
     sections.personel += auto("personnel:employer", (pers.total - pers.net) * ratio);
+    cells.get("personnel:employer")!.info = personnelExtraText(pers, ratio, days, dim);
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
     for (const fe of allFixed) {
@@ -1964,7 +1991,7 @@ export function createModel(ds: Dataset) {
           editable: true,
           hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı). Açık günü kasa raporlarından gelen ayda raporların kapsadığı takvim günüyle: kapalı gün maaşı düşürmez.",
         });
-        add({ key: "personnel:employer", label: "PERSONEL SGK + İŞSİZLİK (işveren)", kind: "auto", editable: true, hint: "Personel sayfasındaki tahmini işveren maliyeti − net maaş. Bordrodaki gerçek tutarı yazabilirsiniz." });
+        add({ key: "personnel:employer", label: PERSONNEL_EXTRA_LABEL, kind: "auto", editable: true, hint: PERSONNEL_EXTRA_HINT });
       }
       // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
       for (const fe of allFixed.filter((f) => f.section === key)) {
