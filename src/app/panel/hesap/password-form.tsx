@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { catchingFormAction, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AvatarFallback, LiquidMetalAvatar } from "@/components/akmanos/liquid-metal-avatar";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { changePasswordAction, updateProfile, type PasswordState } from "@/server/actions/auth";
+
+/** Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51) */
+const changePassword = catchingFormAction(changePasswordAction);
 
 const initialsOf = (name: string) =>
   name
@@ -43,7 +46,7 @@ export function AccountAvatar({ name }: { name: string }) {
 }
 
 export function PasswordForm() {
-  const [state, action, pending] = useActionState<PasswordState, FormData>(changePasswordAction, {});
+  const [state, action, pending] = useActionState<PasswordState, FormData>(changePassword, {});
   const ref = useRef<HTMLFormElement>(null);
   // Yazarken uyarı: kısa parola ve tekrarın tutmaması gönderilmeden görünsün (sunucu yine denetler)
   const [next, setNext] = useState("");

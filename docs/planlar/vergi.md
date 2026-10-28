@@ -1814,8 +1814,8 @@ durumdadır (yükleyici bağlanmadan).
 - **Kısmi süreli personel** (gün sayısı) ve personelin giriş günü.
 - **Satılan, hurdaya çıkan demirbaş; azalan bakiyeler yöntemi.**
 - **`staffCost`'un düzeltilmesi** (Gelir-gider'in doğru brüt ve yasal oranı kullanması Excel eşitliğini bozar; sahip
-  isterse ayrı karar) ve Gelir-gider'deki POS komisyonunun yemek kartını iki kez sayması (`cardShareOf`, K12a'nın
-  Gelir-gider karşılığı). Personel ekranındaki "5 puan teşvikli: 15,75" ipucu.
+  isterse ayrı karar). Personel ekranındaki "5 puan teşvikli: 15,75" ipucu. (Gelir-gider'deki POS komisyonunun yemek
+  kartını iki kez sayması denetim B16 / E-43 ile düzeldi: `bankShareOf`, K12a ile aynı pay.)
 - **Giderler ekranındaki sabit gider formuna "Vergi belgesi" ve "Stopaj" alanları** (bugün yalnız Vergi'den).
 - **KDV hatırlatıcısında "tutar damga dahil mi" işareti** (bugün tutarı yazılmış hatırlatıcı hep damga dahil sayılır;
   işaret hatırlatıcılar tablosunda migration ister).

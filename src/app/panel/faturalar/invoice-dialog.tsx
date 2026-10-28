@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { PhotoThumb } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
-import { toastUnreachable } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -234,13 +234,15 @@ export function InvoiceDialog({
    * kalemleri stoğa girmeye devam eder. Geri al yeniden kontrol bekleyene döndürür (karar da düşer)
    */
   async function keepCategory(id: number, category: string) {
-    const r = await confirmInvoices([id], false, { acceptStockOnly: true });
+    // Atarsa (E-51) bildirimi tryAction gösterir; fatura kaydedildi, yalnız "Kalsın" yazılmadı
+    const r = await tryAction(() => confirmInvoices([id], false, { acceptStockOnly: true }));
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     toast.success(`Fatura kaydedildi · ${category} kaldı`, {
       description: "Hammaddeye bağlı kalemleri stoğa girmeye devam eder; gelir-gidere mal alışı olarak girmez.",
       action: {
         label: "Geri al",
-        onClick: () => void confirmInvoices([id], true).then((b) => (b.ok ? toast.success("Yeniden kontrol bekliyor") : toast.error(b.error))),
+        onClick: () => void tryAction(() => confirmInvoices([id], true)).then((b) => b && (b.ok ? toast.success("Yeniden kontrol bekliyor") : toast.error(b.error))),
       },
       duration: 8000,
     });

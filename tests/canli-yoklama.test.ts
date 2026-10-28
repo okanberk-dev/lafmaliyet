@@ -106,7 +106,8 @@ test("bildirim açık: uyarı motoru ve bar ekranı yalnız izne değil kayıtl�
   assert.match(client, /noteDeviceTopics\(res\.ok \? \{ karaoke: res\.karaoke, reminders: res\.reminders, orders: res\.orders, approvals: res\.approvals \} : null\)/);
   assert.match(client, /noteDeviceTopics\(null\);/);
   const device = read("src/components/panel/live/device-alerts.tsx");
-  assert.match(device, /if \(res\.ok\) noteDeviceTopics\(next\);/);
+  // Kaydedilemeyen seçim (ret ya da atılan eylem, E-51) cihaza yazılmaz, anahtar eski hâline döner
+  assert.match(device, /if \(!res\?\.ok\) \{\s+setTopics\(prev\);\s+if \(res\) toast\.error\(res\.error\);\s+return;\s+\}\s+noteDeviceTopics\(next\);/);
 });
 
 test("yedek kontrol: bildirim kapalıyken ekran kullanılıyorsa ya da yakında bir şey varsa dakikada bir, boşta 10 dk", () => {

@@ -274,7 +274,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
 
   const defs: Omit<FixedLine, "computed" | "value" | "overridden">[] = [
     { key: "personnel:net", label: "Personel maaş (net)", section: "personel", group: "personel", standard: p.net },
-    { key: "personnel:employer", label: "Personel SGK + işsizlik (işveren)", section: "personel", group: "personel", standard: p.total - p.net },
+    { key: "personnel:employer", label: "Personel SGK, kesintiler + ek ödemeler (maliyet − net)", section: "personel", group: "personel", standard: p.total - p.net },
     ...model.fixedInMonth(month).map((fe) => ({
       key: `fixed:${fe.id}`,
       label: fe.name,

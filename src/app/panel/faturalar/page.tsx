@@ -32,7 +32,7 @@ import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
 import { MonthStatCards } from "./month-stat-cards";
 import { ReviewNotice } from "./review-notice";
-import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
+import { DELETED_BILLS_KEY, ignoredBills, UNPAID_VS_PAYMENTS, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
 
@@ -178,9 +178,11 @@ async function InvoicesContent() {
             value={<CountUp value={unpaid.count} />}
             tone={unpaid.count ? "warn" : "good"}
             info={
-              unpaid.partialCount
-                ? `Kalan borç, KDV dahil. ${unpaid.partialCount} fatura kısmen ödendi: onlarda Paraşüt'ün bildirdiği kalan tutar sayılır (faturaların tamamı ${tl(unpaid.payableTotal)}). Hatırlatıcılar da aynı tutarı kullanır.`
-                : "Kalan borç, KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır; Hatırlatıcılar da aynı tutarı kullanır."
+              `${
+                unpaid.partialCount
+                  ? `Kalan borç, KDV dahil. ${unpaid.partialCount} fatura kısmen ödendi: onlarda Paraşüt'ün bildirdiği kalan tutar sayılır (faturaların tamamı ${tl(unpaid.payableTotal)}).`
+                  : "Kalan borç, KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır."
+              } ${UNPAID_VS_PAYMENTS}`
             }
             sub={
               unpaid.count ? (

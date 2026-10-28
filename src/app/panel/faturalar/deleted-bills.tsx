@@ -4,7 +4,7 @@ import { ChevronDown, Undo2 } from "lucide-react";
 import { useOptimistic, useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { keepScroll } from "@/components/ui/filters";
@@ -30,8 +30,9 @@ export function DeletedBills({ bills }: { bills: IgnoredBill[] }) {
     keepScroll();
     startTransition(async () => {
       hide(b.externalId);
-      const res = await unignoreParasutBill(b.externalId);
+      const res = await tryAction(() => unignoreParasutBill(b.externalId));
       setBusyId(null);
+      if (!res) return;
       if (!res.ok) return void toast.error(res.error);
       toast.success("Paraşüt faturası geri alındı", { description: res.data.message });
     });

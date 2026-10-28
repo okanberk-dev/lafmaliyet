@@ -9,7 +9,7 @@ import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 export { invoiceLayer, layerText } from "@/lib/calc/fifo";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
-import { dateTimeTR, monthLabel, num } from "@/lib/format";
+import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { isLastDayOfMonth } from "@/lib/reminders";
 
 // ---------------------------------------------------------------- Hangi ay açılsın?
@@ -871,4 +871,42 @@ export function staffLateEditNotice(month: string, edits: StaffLateEdit[]): { id
     href: `/panel/sayim?ay=${month}`,
     lastAt: sorted[0].lastAt,
   };
+}
+
+// ---------------------------------------------------------------- Açılış stoğu
+
+/**
+ * Yönetici kartındaki "Açılış (… devri)": Gelir-gider'in bu ayki açılışı (pnlMonth, `stock:opening` hücresi), kâr-zarar
+ * hangisini kullanıyorsa o (denetim E-30). Kaynağı:
+ * - "sayim": geçen ayın sayımı (sonraki aya devreden mal);
+ * - "devreden": geçen ayın devreden malı Gelir-giderde elle girildi;
+ * - "acilis": bu ayın "Önceki aydan devir"i Gelir-giderde elle girildi (geçen ayın sayımından ayrı).
+ * `counted`: geçen ayın sayımının değeri (elle girilmişse karşılaştırma için); geçen ay sayılmadıysa (`prevCounted`
+ * false, stockSheet().hasData) null: ipucu "0 ₺" değil "sayımı yok" der
+ */
+export interface CountOpening {
+  value: number;
+  source: "sayim" | "devreden" | "acilis";
+  counted: number | null;
+}
+
+export function countOpening(
+  opening: { value: number | null; overridden: boolean },
+  prevClosing: { value: number; computed: number; overridden: boolean },
+  prevCounted = true,
+): CountOpening {
+  const counted = prevCounted ? prevClosing.computed : null;
+  if (opening.overridden) return { value: opening.value ?? 0, source: "acilis", counted };
+  return { value: prevClosing.value, source: prevClosing.overridden ? "devreden" : "sayim", counted };
+}
+
+/** Açılış elle girildiyse kartta ipucu: kâr-zarar hangi tutarı kullanıyor, sayım neydi; sayımdan geliyorsa null */
+export function countOpeningNote(o: CountOpening, month: string): string | null {
+  const prev = monthLabel(shiftMonth(month, -1));
+  const counted = o.counted === null ? `${prev} sayımı yok.` : `${prev} sayımı: ${tl(o.counted)}.`;
+  if (o.source === "acilis") {
+    return `Gelir-giderde ${monthLabel(month)} için "Önceki aydan devir" elle ${tl(o.value)} girildi; kâr-zarar bu tutarı kullanır. ${counted}`;
+  }
+  if (o.source === "devreden") return `${prev} stoğu Gelir-giderde elle ${tl(o.value)} girildi; açılış o tutardır. ${counted}`;
+  return null;
 }

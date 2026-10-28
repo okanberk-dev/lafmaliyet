@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
@@ -72,8 +73,9 @@ export function StockValuationCard({
 
   const save = async () => {
     setBusy(true);
-    const res = await saveStockValuationStart(next);
+    const res = await tryAction(() => saveStockValuationStart(next));
     setBusy(false);
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     toast.success(res.data.change ?? "Değişiklik yok");
     router.refresh();

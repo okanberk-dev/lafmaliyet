@@ -332,7 +332,8 @@ export function CariPaymentDialog({
       });
       onClose();
       onSaved?.({ slug: d.slug });
-    });
+      // Yeni ödemede yanıt yolda kaybolursa ödeme yazılmış olabilir: ikinci "Kaydet" ikinci ödemeyi yazar
+    }, { maybeSaved: !edit });
   }
 
   /** Ödemeye çevir: alışveriş satırı Teslim olur, gider kaydı silinir, satıra bağlı ödeme açılır */

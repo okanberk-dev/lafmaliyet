@@ -146,6 +146,11 @@ export interface TillMonth {
   offDays: number;
   /** (Kart + yemek kartı) ÷ Z toplamı; Z toplamı 0 ise null */
   cardShare: number | null;
+  /**
+   * Yalnız banka kartı ÷ Z toplamı (yemek kartı hariç; Z toplamı 0 ise null): Gelir-gider'in banka POS komisyonu bununla
+   * (engine.ts bankShareOf; denetim E-43). Yoksa (eski kayıt, test) yemek kartı payı ayrılamaz, kartlı oran geçer
+   */
+  bankShare?: number | null;
   /** [from, to] içinde raporu olmayan günler */
   missing: string[];
   /**
@@ -251,6 +256,12 @@ export interface Invoice {
   paidAt?: string | null;
   /** Ödemesi istendiği gün: ödenmemiş faturada "Talep edildi" (hesaplarda kullanılmaz) */
   paymentRequestedAt?: string | null;
+  /**
+   * Komisyon faturasının kanalının aranacağı adlar, faturadaki ad bir kanala bağlanmıyorsa: faturadaki ad, tedarikçi
+   * kartının adı ve diğer adları (Komisyon & hakediş'in kuralı, channelNameResolver; dataset.ts). Yalnız Gelir-gider'in
+   * POS komisyonu uyarısı okur ("kanalı bulunamayan" fatura iki ekranda aynı)
+   */
+  channelNames?: string[];
   /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
   taxNotAsset?: boolean;
 }

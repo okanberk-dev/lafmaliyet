@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useOptimistic, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -55,8 +55,10 @@ export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await createChecklistTemplate(draftOf(draft));
+    // Yanıt yolda kaybolursa liste açılmış olabilir: ikinci "Ekle" aynı listeyi iki kez açar
+    const res = await tryAction(() => createChecklistTemplate(draftOf(draft)), { maybeSaved: true });
     setSaving(false);
+    if (!res) return;
     if (!res.ok) return setError(res.error);
     // Önce pencere kapanır, sonra listenin sayfasına gidilir
     setOpen(false);

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -90,15 +91,18 @@ export function RemoveSupplierDialog({ target, onClose, onDone }: { target: Remo
   async function confirm() {
     setPending(true);
     keepScroll();
-    const r = await removeSupplier({ cardId: target.cardId, key: target.key });
+    const r = await tryAction(() => removeSupplier({ cardId: target.cardId, key: target.key }));
     setPending(false);
+    // Atılan eylem (E-51): bildirim çıktı, onay penceresi açık kalır
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     onClose();
     onDone();
     const res = r.data;
     const undo = async () => {
       keepScroll();
-      const back = res.mode === "deleted" ? await restoreSupplier(res.snapshot) : await unhideSupplier({ cardId: res.cardId });
+      const back = await tryAction(async () => (res.mode === "deleted" ? await restoreSupplier(res.snapshot) : await unhideSupplier({ cardId: res.cardId })));
+      if (!back) return;
       if (!back.ok) return void toast.error(back.error);
       toast.success(res.mode === "deleted" ? "Tedarikçi geri alındı" : "Tedarikçi listeye geri alındı", { description: name });
       if (back.data.slug) router.push(supplierHref(back.data.slug));

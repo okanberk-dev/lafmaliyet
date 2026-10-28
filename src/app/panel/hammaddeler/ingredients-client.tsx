@@ -25,6 +25,7 @@ import Link from "next/link";
 import { createElement, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
@@ -46,7 +47,7 @@ import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
 import { activeUses, productListText, usageText } from "@/lib/ingredient-usage";
-import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { dateTR, dayTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
@@ -207,11 +208,13 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
     if (Math.abs(v - last) < 0.0001) return setValue(priceText(v));
     setSaving(true);
     const keepEstimate = row.isEstimate;
-    const res = await updateIngredientPrice(row.id, v, !keepEstimate);
+    const res = await tryAction(() => updateIngredientPrice(row.id, v, !keepEstimate));
     setSaving(false);
-    if (!res.ok) {
+    // Kaydedilemeyen fiyat kutuda kalmaz (kaydedilmiş gibi görünmesin); atılan eylemin bildirimi tryAction'dan (E-51)
+    if (!res?.ok) {
       setValue(priceText(last));
-      return toast.error(res.error);
+      if (res) toast.error(res.error);
+      return;
     }
     setLast(v);
     setValue(priceText(v));
@@ -224,8 +227,9 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
         ? {
             label: "Tahmini işaretini kaldır",
             onClick: async () => {
-              const r = await setIngredientEstimate(row.id, false);
+              const r = await tryAction(() => setIngredientEstimate(row.id, false));
               toast.dismiss(`price-${row.id}`);
+              if (!r) return;
               if (r.ok) toast.success(`${row.name}: Tahmini işareti kaldırıldı`);
               else toast.error(r.error);
             },
@@ -304,7 +308,7 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
             </Badge>
           ) : null}
           {r.recentChange ? (
-            <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(r.recentChange.at.slice(0, 10))})`}>
+            <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(dayTR(r.recentChange.at))})`}>
               {r.recentChange.pct > 0 ? "↑" : "↓"} {pct(Math.abs(r.recentChange.pct), 0)}
             </Badge>
           ) : null}
@@ -971,7 +975,8 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
   const canPassivate = row.active && !inActive;
 
   async function makePassive() {
-    const res = await setIngredientActive(row.id, false);
+    const res = await tryAction(() => setIngredientActive(row.id, false));
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     toast.success(`${row.name} pasif yapıldı`, { description: PASSIVE_EFFECT });
   }
@@ -984,8 +989,9 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
       setBusy(false);
       return onClose();
     }
-    const res = await deleteIngredient(row.id);
+    const res = await tryAction(() => deleteIngredient(row.id));
     setBusy(false);
+    if (!res) return;
     if (!res.ok) {
       // Sayfa açıkken başka yerde sayım, alım ya da zayi girildiyse sunucu reddeder: pasif yapmak tek tıkta
       toast.error(res.error, row.active ? { action: { label: "Pasif yap", onClick: () => void makePassive() } } : undefined);
@@ -1186,26 +1192,30 @@ function IngredientDialog({
       return;
     }
     setBusy(true);
-    const res = await saveIngredient({
-      id: row?.id ?? null,
-      name: f.name,
-      category: f.category,
-      supplier: f.supplier,
-      packageDesc: f.packageDesc,
-      // Dokunulmamış alan kayıttaki değerle gider (2 haneye yuvarlanmaz, geçmişe sahte kayıt düşmez)
-      packagePrice: base && priceUntouched ? base.packagePrice : (price ?? 0),
-      packageSize: base && sizeUntouched ? base.packageSize : (size ?? 0),
-      base,
-      unit: f.unit,
-      vatRate: vat ?? 0,
-      note: f.note,
-      isEstimate: f.isEstimate,
-      priceSource: f.priceSource as "manual",
-      countUnit: f.countUnit || null,
-      countGroup: f.countGroup || null,
-      active: f.active,
-    });
+    const res = await tryAction(() =>
+      saveIngredient({
+        id: row?.id ?? null,
+        name: f.name,
+        category: f.category,
+        supplier: f.supplier,
+        packageDesc: f.packageDesc,
+        // Dokunulmamış alan kayıttaki değerle gider (2 haneye yuvarlanmaz, geçmişe sahte kayıt düşmez)
+        packagePrice: base && priceUntouched ? base.packagePrice : (price ?? 0),
+        packageSize: base && sizeUntouched ? base.packageSize : (size ?? 0),
+        base,
+        unit: f.unit,
+        vatRate: vat ?? 0,
+        note: f.note,
+        isEstimate: f.isEstimate,
+        priceSource: f.priceSource as "manual",
+        countUnit: f.countUnit || null,
+        countGroup: f.countGroup || null,
+        active: f.active,
+      }),
+    );
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     const name = f.name.trim();
     toast.success(row ? `${name} güncellendi` : `${name} eklendi`, {
@@ -1524,7 +1534,7 @@ function IngredientDialog({
                 {/* gr ve ml için kg / L başına: 0,0275 ₺/gr yerine 27,50 ₺/kg, eksen ve ipucu okunur kalsın */}
                 <PriceLine
                   valueLabel={`1 ${bulk.unit} maliyeti`}
-                  data={row.history.map((h) => ({ label: dateTR(h.at.slice(0, 10)), value: h.size ? (h.price / h.size) * bulk.scale : 0 }))}
+                  data={row.history.map((h) => ({ label: dateTR(dayTR(h.at)), value: h.size ? (h.price / h.size) * bulk.scale : 0 }))}
                 />
                 <ul className="mt-3 max-h-48 divide-y divide-line overflow-y-auto rounded-xl bg-surface px-3 text-xs text-ink-soft scroll-thin">
                   {row.history
@@ -1539,7 +1549,7 @@ function IngredientDialog({
                       <li key={key} className="py-1.5">
                         <div className="flex justify-between gap-2">
                           <span>
-                            {dateTR(h.at.slice(0, 10))} · {h.by ?? "–"}
+                            {dateTR(dayTR(h.at))} · {h.by ?? "–"}
                           </span>
                           <span className="tabular">
                             {tl(h.price, 2)} / {num(h.size)} {row.unit}

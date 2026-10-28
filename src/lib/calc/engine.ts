@@ -6,6 +6,8 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
+import { channelOf } from "../commission/channels";
+import { pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
@@ -526,6 +528,43 @@ export interface PnlCell {
    * Elle girilmiş tutar varsa yine de sayılır (overridden = true).
    */
   outOfRange?: boolean;
+  /** Bu ayın hesabı nasıl yapıldı (hücrenin ipucuna eklenir), ör. POS komisyonunun kart payı */
+  info?: string;
+  /** Bu ayda dikkat edilecek bir durum (hücrede görünür), ör. POS komisyonu bir faturayla çift sayılabilir */
+  warn?: string;
+}
+
+/**
+ * Gelir-gider'in personel satırı `personnel:employer`: Personel'deki maliyet − net maaş. Yalnız işveren SGK'sı değil,
+ * çalışanların kendi SGK + işsizlik kesintisi ve yemek / yol / prim ekleri de içindedir (denetim E-44): bordrodaki
+ * işveren payı yazılırsa ödenen kesintiler ve ekler giderden düşerdi. Genel bakış da aynı adı kullanır (insights.ts)
+ */
+export const PERSONNEL_EXTRA_LABEL = "PERSONEL SGK, KESİNTİLER + EK ÖDEMELER (maliyet − net)";
+export const PERSONNEL_EXTRA_HINT =
+  "Personel sayfasındaki maliyet − net maaş: çalışanların SGK + işsizlik kesintisi, işveren SGK + işsizlik payı ve yemek / yol / prim ekleri; × (açık gün ÷ ayın gün sayısı), maaş satırı gibi. Elle yazacaksanız bordrodaki toplam işveren maliyeti − net maaşlar (yemek / yol / prim dahil); yalnız işveren payını yazmayın.";
+
+/** `personnel:employer` hücresinin bu ayki bileşimi (gün oranıyla; parçaların toplamı hücrenin hesaplanan değeri) */
+export function personnelExtraText(
+  p: Pick<PersonnelSummary, "deductions" | "employerSgk" | "employerUnemployment" | "extras">,
+  ratio: number,
+  days: number,
+  dim: number,
+): string {
+  const parts = [
+    `çalışanların SGK + işsizlik kesintisi ${tl(p.deductions * ratio)}`,
+    `işveren SGK + işsizlik ${tl((p.employerSgk + p.employerUnemployment) * ratio)}`,
+    `yemek / yol / prim ${tl(p.extras * ratio)}`,
+  ];
+  return `Bu ay${Math.abs(ratio - 1) > 1e-9 ? ` (${days} / ${dim} gün)` : ""}: ${parts.join(", ")}.`;
+}
+
+/** POS komisyonu hücresinin bu ayki kart payı: nereden ve yemek kartı hariç mi (bankShareOf) */
+export function bankShareText(b: { rate: number; source: "manual" | "kasa" | "ayar"; split: boolean; meal: number | null }): string {
+  const p = (r: number) => pct(r);
+  if (b.split && b.source === "kasa") return `Kart payı ${p(b.rate)}: kasa raporlarından kart ÷ Z toplamı${b.meal ? ` (yemek kartı ${p(b.meal)} hariç)` : ""}.`;
+  if (b.split) return `Kart payı ${p(b.rate)}: elle yazılan kartlı orandan kasa raporlarındaki yemek kartı payı (${p(b.meal ?? 0)}) düşüldü.`;
+  if (b.source === "manual") return `Kartlı satış oranı ${p(b.rate)} (elle yazılan; kasa raporu yok, yemek kartı payı ayrılamadı).`;
+  return `Kartlı satış oranı ${p(b.rate)} (Ayarlar; bu ay kasa raporu yok, yemek kartı payı ayrılamadı).`;
 }
 
 export interface PnlRowDef {
@@ -787,6 +826,24 @@ export function createModel(ds: Dataset) {
     const v = info?.cardShare ?? null;
     if (v === null) return { rate: st.kartOrani, source: "ayar" };
     return { rate: v, source: info?.sources?.cardShare === "kasa" ? "kasa" : "manual" };
+  }
+  /**
+   * Banka POS komisyonunun kart payı (Gelir-gider `commission:pos`; denetim E-43, vergi planı K12a): yalnız banka kartı.
+   * Yemek kartlarının komisyonu kendi faturalarıyla (Pluxee, Multinet …) Komisyon giderlerinde zaten sayılır; kartlı
+   * satış oranı (kart + yemek kartı) kullanılsaydı yemek kartı satışına bir de banka oranı uygulanırdı.
+   * - Ayın kasa raporu varsa: kart ÷ Z toplamı. Kartlı oran elle yazıldıysa ondan kasa raporlarındaki yemek kartı payı
+   *   düşülür (elle yazılan oran yemek kartını da içerir).
+   * - Yoksa kartlı satış oranı (elle ya da Ayarlar'daki): yemek kartı payı ayrılamaz (`split: false`).
+   * `meal`: düşülen yemek kartı payı (ayrılamadıysa null)
+   */
+  function bankShareOf(month: string): { rate: number; source: "manual" | "kasa" | "ayar"; split: boolean; meal: number | null } {
+    const base = cardShareOf(month);
+    const till = monthInfo.get(month)?.kasa?.till;
+    const bank = till?.bankShare ?? null;
+    if (!till || bank === null || base.source === "ayar") return { ...base, split: false, meal: null };
+    const meal = Math.max(0, Math.round(((till.cardShare ?? bank) - bank) * 10_000) / 10_000);
+    if (base.source === "kasa") return { rate: bank, source: "kasa", split: true, meal };
+    return { rate: Math.max(0, Math.round((base.rate - meal) * 10_000) / 10_000), source: "manual", split: true, meal };
   }
   /** "Bu ay": listelerde gösterilen güncel tutar ve aktiflik buna göre */
   const currentMonth = ds.currentMonth ?? currentMonthTR();
@@ -1754,7 +1811,10 @@ export function createModel(ds: Dataset) {
     // Personel: o ay çalışanlar, o ayın maaşıyla (elle girilen bordro tutarı her zaman geçerli)
     const pers = personnelFor(month);
     sections.personel += auto("personnel:net", pers.net * ratio);
+    // Maliyet − net: çalışanların SGK + işsizlik kesintisi, işveren payları ve yemek / yol / prim ekleri (denetim E-44;
+    // yalnız işveren payı değil). Hücre bu ayın bileşimini taşır
     sections.personel += auto("personnel:employer", (pers.total - pers.net) * ratio);
+    cells.get("personnel:employer")!.info = personnelExtraText(pers, ratio, days, dim);
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
     for (const fe of allFixed) {
@@ -1783,17 +1843,28 @@ export function createModel(ds: Dataset) {
       sections[x.cat.section] += x.total;
     }
 
-    // Komisyonlar
+    // Komisyonlar. Banka POS komisyonu yalnız banka kartı payıyla (yemek kartınınki aşağıda kendi faturalarıyla; E-43)
     const revenue = info?.posRevenue ?? null;
-    sections.komisyon += auto("commission:pos", (revenue ?? 0) * st.komisyon * cardShareOf(month).rate);
+    const bank = bankShareOf(month);
+    sections.komisyon += auto("commission:pos", (revenue ?? 0) * st.komisyon * bank.rate);
     const commBySupplier = new Map<string, number>();
-    for (const inv of invs.filter((i) => i.category === COMMISSION_CATEGORY)) {
+    const commInvs = invs.filter((i) => i.category === COMMISSION_CATEGORY);
+    for (const inv of commInvs) {
       const s = normalizeSupplier(inv.supplier);
       commBySupplier.set(s, (commBySupplier.get(s) ?? 0) + invoiceNet(inv));
     }
     for (const [s, v] of commBySupplier) {
       cells.set(`commission:${s}`, { value: v, computed: v, overridden: false });
       sections.komisyon += v;
+    }
+    const posCell = cells.get("commission:pos")!;
+    posCell.info = bankShareText(bank);
+    // Kanalı bulunamayan Komisyon faturası (yemek kartı ya da platform değil): bankanın POS komisyonu faturasıysa tahmin
+    // onu ikinci kez sayar. Elle yazılmış hücrede sahip karar vermiştir, uyarı yok (sahibe soru 9; docs/KOMISYON.md).
+    // Kanal Komisyon & hakediş'teki gibi tedarikçi kartının adları ve diğer adlarıyla da aranır (channelNames)
+    const unknown = [...new Set(commInvs.filter((i) => !channelOf(i.channelNames ?? [i.supplier])).map((i) => normalizeSupplier(i.supplier)))];
+    if (unknown.length && !posCell.overridden && posCell.value) {
+      posCell.warn = `Bu ay kanalı bulunamayan komisyon faturası var (${unknown.join(", ")}). Bankanın POS komisyonu faturasıysa bu tahmin onu ikinci kez sayar: hücreye 0 yazın (fatura gerçek tutardır).`;
     }
 
     const expenses = cogs + sections.personel + sections.faturalar + sections.kira + sections.genel + sections.komisyon;
@@ -1900,9 +1971,9 @@ export function createModel(ds: Dataset) {
     mal({ key: "total:mal", label: "AYLIK MAL ALIMI TOPLAMI", kind: "total", editable: false, strong: true });
 
     const devir = sec("devir");
-    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal)." });
+    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal). Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
     devir({ key: "stock:purchased", label: "AY İÇİNDE ALINAN", kind: "auto", editable: false });
-    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok Sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmezse 0 olur ve alınan malın tamamı o ayın maliyeti sayılır." });
+    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmezse 0 olur ve alınan malın tamamı o ayın maliyeti sayılır." });
     devir({ key: "total:cogs", label: "CİRO İÇİN KULLANILAN MALIN MALİYETİ", kind: "total", editable: false, strong: true, hint: "Devir + Alınan − Devreden" });
 
     const sectionLabels: Record<FixedSection, string> = {
@@ -1921,7 +1992,7 @@ export function createModel(ds: Dataset) {
           editable: true,
           hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı). Açık günü kasa raporlarından gelen ayda raporların kapsadığı takvim günüyle: kapalı gün maaşı düşürmez.",
         });
-        add({ key: "personnel:employer", label: "PERSONEL SGK + İŞSİZLİK (işveren)", kind: "auto", editable: true, hint: "Personel sayfasındaki tahmini işveren maliyeti − net maaş. Bordrodaki gerçek tutarı yazabilirsiniz." });
+        add({ key: "personnel:employer", label: PERSONNEL_EXTRA_LABEL, kind: "auto", editable: true, hint: PERSONNEL_EXTRA_HINT });
       }
       // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
       for (const fe of allFixed.filter((f) => f.section === key)) {
@@ -1947,7 +2018,7 @@ export function createModel(ds: Dataset) {
       label: `BANKA POS KOMİSYONU (%${(st.komisyon * 100).toLocaleString("tr-TR")})`,
       kind: "auto",
       editable: true,
-      hint: "Aylık ciro (KDV dahil) × komisyon × kartlı satış oranı (kasa raporu olan ayda o ayın oranı, yoksa Ayarlar'daki). Banka ekstresindeki gerçek tutarı yazabilirsiniz.",
+      hint: "Tahmin: aylık ciro (KDV dahil) × komisyon × banka kartı payı. Kasa raporu olan ayda pay kart ÷ Z toplamıdır, yemek kartı hariç: yemek kartlarının komisyonu kendi faturalarıyla aşağıda sayılır. Kasa raporu olmayan ayda Satışlar'daki ya da Ayarlar'daki kartlı satış oranı (yemek kartı dahil). Banka dekontundaki gerçek tutarı yazabilirsiniz; banka POS komisyonunu Komisyon faturası olarak kesiyorsa 0 yazın.",
     });
     for (const k of [...commSuppliers].sort()) {
       kom({ key: k, label: `${k.slice("commission:".length).toLocaleUpperCase("tr-TR")} KOMİSYONU`, kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (Komisyon kategorisi)." });
@@ -2072,6 +2143,8 @@ export function createModel(ds: Dataset) {
     monthInfo,
     /** Ayın kartlı satış oranı ve kaynağı (elle, kasa raporlarından ya da Ayarlar) */
     cardShareOf,
+    /** Banka POS komisyonunun kart payı: yemek kartı hariç (kasa raporu olan ayda; E-43) */
+    bankShareOf,
     salesMonths,
     monthSales,
     /** Süren ayda yapıştırılan satış listesinin dönemi (kasa raporlarından kısaysa; yoksa null) */

@@ -26,9 +26,10 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { startTransition, useMemo, useOptimistic, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useMemo, useOptimistic, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -303,8 +304,10 @@ export function MonthInfoForm({
     if (invalid) return toast.error(daysError ?? cardError ?? "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
     setBusy(true);
     keepScroll();
-    const res = await saveMonthInfo({ month, ...payloads, note });
+    const res = await tryAction(() => saveMonthInfo({ month, ...payloads, note }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, yazılanlar yerinde
+    if (!res) return;
     if (res.ok) {
       setSaved(snapshot);
       const msg = monthSavedToast(res.data, label);
@@ -500,7 +503,7 @@ export function MonthInfoForm({
             <Field
               label="Kartlı satış oranı (%)"
               aside={chipOf("cardShare")}
-              tip="Kredi kartı + yemek kartı ÷ Z toplamı. POS komisyonu = ciro × komisyon × bu oran."
+              tip="Kredi kartı + yemek kartı ÷ Z toplamı. Satış raporundaki POS komisyonu = ciro × komisyon × bu oran. Gelir-gider'deki banka POS komisyonu yemek kartını saymaz (yemek kartının komisyonu kendi faturasıyla): kasa raporu olan ayda bu orandan kasanın yemek kartı payı düşülür."
               htmlFor="m-card"
               error={cardError ?? undefined}
               hint={hintOf("cardShare", kasaOf("cardShare") === null && !texts.cardShare.trim() ? "Boşsa Ayarlar'daki oran kullanılır" : undefined)}
@@ -687,6 +690,8 @@ export function SalesTable({
   // Sayfadaki her eylem (eşleştirme, ay bilgisi, içe aktarma…) yenilemeyle yeni satır dizisi getirir
   useSettleScroll(serverRows);
   // Eşleştirme ve silme sunucu yanıtını beklemeden görünür; hata olursa satır eski haline döner
+  // Eylem atarsa (ağ kesildi, panel güncellendi; E-51) iyimser satır geri döner ve bildirim çıkar
+  const [, startTransition] = useActionTransition();
   const [rows, applyOptimistic] = useOptimistic(serverRows, (state: SalesRow[], a: Optimistic) =>
     a.kind === "delete"
       ? state.filter((r) => r.id !== a.id)
@@ -838,11 +843,15 @@ export function SalesTable({
     // ModPOS satırları satır kimliğiyle, LafPOS'un ay toplamları POS adıyla (iki ayrı eylem)
     const modpos = suggestions.filter((x) => x.row.lafposDays === null);
     const laf = suggestions.filter((x) => x.row.lafposDays !== null);
-    const results = [
-      modpos.length ? await applyLineMatches(month, modpos.map((x) => ({ lineId: x.row.id, productId: x.product.id }))) : null,
-      laf.length ? await applyLafposMatches(month, laf.map((x) => ({ posName: x.row.posName, productId: x.product.id }))) : null,
-    ].filter((r) => r !== null);
+    const results = await tryAction(async () =>
+      [
+        modpos.length ? await applyLineMatches(month, modpos.map((x) => ({ lineId: x.row.id, productId: x.product.id }))) : null,
+        laf.length ? await applyLafposMatches(month, laf.map((x) => ({ posName: x.row.posName, productId: x.product.id }))) : null,
+      ].filter((r) => r !== null),
+    );
     setBulkBusy(false);
+    // Atılan eylem: pencere açık kalır, yeniden denenir
+    if (!results) return;
     setBulkOpen(false);
     const done = results.flatMap((r) => (r.ok ? [r.data] : []));
     const failed = results.find((r) => !r.ok);
@@ -1441,8 +1450,10 @@ function LineDialog({
     if (qtyNum === null || bad.revenue) return toast.error("Adet ve ciroyu kontrol edin");
     setBusy(true);
     keepScroll();
-    const res = await saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note });
+    // Yeni satırda yanıt yolda kaybolursa satır yazılmış olabilir: "Kaydedilemedi" denmez, yenileyip bakması söylenir
+    const res = await tryAction(() => saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note }), { maybeSaved: !line.id });
     setBusy(false);
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     toast.success(line.id ? "Satır güncellendi" : "Satır eklendi", {
       description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}${res.data.linked && linkLabel ? ` · ${linkLabel} ile eşleşti` : ""}`,
@@ -1739,9 +1750,12 @@ export function ImportCard({
   async function submit() {
     setBusy(true);
     keepScroll();
-    const res = await importSales({ month, lines: rows, mode, through: running ? through : null });
+    // Ekleme kipinde yanıt yolda kaybolursa satırlar yazılmış olabilir; ikinci "Yükle" hepsini iki kez ekler
+    const res = await tryAction(() => importSales({ month, lines: rows, mode, through: running ? through : null }), { maybeSaved: mode === "append" });
     setBusy(false);
     setConfirmingReplace(false);
+    // Atılan eylem (E-51): düğme bırakılır, yapıştırılan liste yerinde kalır
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     const d = res.data;
     // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyor (sonraki günleri de içeriyor olabilir)
@@ -1764,8 +1778,9 @@ export function ImportCard({
   async function clearMonth() {
     setClearing(true);
     keepScroll();
-    const res = await clearMonthSales(month, { withInfo });
+    const res = await tryAction(() => clearMonthSales(month, { withInfo }));
     setClearing(false);
+    if (!res) return;
     setConfirmClear(false);
     setWithInfo(false);
     if (!res.ok) return toast.error(res.error);

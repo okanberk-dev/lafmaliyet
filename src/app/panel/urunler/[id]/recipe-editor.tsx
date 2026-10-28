@@ -35,7 +35,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 
-import { toastUnreachable } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -1643,8 +1643,10 @@ function CopyDialog({
       return document.getElementById("c-price")?.focus();
     }
     setBusy(true);
-    const res = await createProduct({ name, size, categoryId: product.categoryId, price: p, copyFromId: product.id });
+    const res = await tryAction(() => createProduct({ name, size, categoryId: product.categoryId, price: p, copyFromId: product.id }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere açık kalır
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     toast.success(`${name.trim()} · ${size} oluşturuldu`, { description: `${copiedSummary(res.data)} Miktarları yeni boya göre düzeltin.` });
     onClose();

@@ -4,7 +4,7 @@ import { Ban, Eye, EyeOff, Loader2, ShieldCheck, TriangleAlert } from "lucide-re
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthError, AuthHeading, authButton, authCard, FloatingField } from "@/app/giris/auth-ui";
-import { useActionTransition } from "@/components/ui/action-error";
+import { actionErrorText, useActionTransition } from "@/components/ui/action-error";
 import type { ConsentText, Rich } from "@/lib/mcp/oauth";
 import { approveConnection, denyConnection } from "@/server/actions/mcp";
 
@@ -87,7 +87,15 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
     setError(null);
     setBusy(kind);
     start(async () => {
-      const res = kind === "approve" ? await approveConnection({ istek, password }) : await denyConnection({ istek });
+      let res: Awaited<ReturnType<typeof approveConnection>> | Awaited<ReturnType<typeof denyConnection>>;
+      try {
+        res = kind === "approve" ? await approveConnection({ istek, password }) : await denyConnection({ istek });
+      } catch (e) {
+        // Ağ kesildi ya da panel güncellendi (E-51): düğmeler bırakılır, nedeni formda
+        setBusy(null);
+        setError(actionErrorText(e));
+        return;
+      }
       if (!res.ok) {
         setBusy(null);
         setError(res.error);

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
-import { useActionTransition } from "@/components/ui/action-error";
+import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -68,6 +68,7 @@ function useStepUp() {
     const ask = (t: StepUpText) =>
       setRequest({
         ...t,
+        // eylem-hatası: ConfirmPasswordDialog'un onConfirm'ü yakalar (pencere ve parola kalır, nedeni alanın altında)
         run: async (confirm) => {
           const res = await call(confirm);
           if (!res.ok && isStepUpError(res.error)) return res.error;
@@ -76,7 +77,13 @@ function useStepUp() {
         },
       });
     if (text) return ask(text);
-    const res = await call();
+    let res: ActionResult<T>;
+    try {
+      res = await call();
+    } catch (e) {
+      // Ağ kesildi ya da panel güncellendi (E-51): bildirim çıkar, form yerinde kalır
+      return toastUnreachable(e);
+    }
     if (!res.ok && res.error === STEP_UP_REQUIRED) return ask(stepUpText({ kind: "fallback" }));
     const after = done(res);
     if (after) document.getElementById(after.focus)?.focus();

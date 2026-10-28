@@ -7,6 +7,7 @@
 import type { Model, ProductCalc } from "../../calc/engine";
 import type { IngredientChange, ProductImpact } from "../../calc/price-impact";
 import { basisText, type PriceLoss } from "../../calc/price-loss";
+import { dayTR } from "../../format";
 import { cleanName, costIncomplete, num, panelUrl, pct, pctNum, r2, tl, unpricedInRecipes, unpricedWarnings } from "./common";
 
 /** loadPriceAlerts'in bu araca gereken parçası */
@@ -78,7 +79,7 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
       eskiBirimFiyat: r2(i.before * u.factor),
       yeniBirimFiyat: r2(i.after * u.factor),
       artisYuzde: pctNum(i.pct),
-      tarih: i.changedAt.slice(0, 10),
+      tarih: dayTR(i.changedAt),
       aylikKullanim: basis ? r1(i.monthlyUsage / u.factor) : null,
       aylikKayip: basis ? r2(i.monthly) : null,
       urunSayisi: i.productCount,

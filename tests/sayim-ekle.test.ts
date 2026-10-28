@@ -745,7 +745,8 @@ test("zil: fiyatı girilmemiş hammaddeler yalnız yöneticide, hata zili düş�
   const fn = src.slice(src.indexOf("async function unpricedNotifications"), src.indexOf("export async function loadPanelNotifications"));
   assert.match(fn, /href: "\/panel\/hammaddeler\?durum=fiyatsiz"/);
   assert.match(fn, /group: "uyari"/);
-  assert.match(src, /\.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
+  // Maliyet modeline bağlı satırlar (zam, ayın uyarıları) modelNotifications'tan; model düşerse yerine tek satır (E-49)
+  assert.match(src, /\.\.\.costs\.priceNote, \.\.\.unpriced, \.\.\.costs\.warnings\]/);
   // Hammaddeler süzgeci aynı kural
   const client = read("src/app/panel/hammaddeler/ingredients-client.tsx");
   assert.match(client, /fiyatsiz: "Fiyat yok"/);

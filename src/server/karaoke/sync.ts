@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { CATCH_UP, needsCatchUp } from "@/lib/karaoke/freshness";
-import { detectEvent, eventMessage, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
+import { detectEvent, pushMessages, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
 import { cancelledAtFor, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -254,15 +254,10 @@ export async function ensureKaraokeFresh(opts: { maxAgeMs?: number; state?: Sync
   return syncKaraoke("screen");
 }
 
-/** Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim */
+/** Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim; misafirin adı bildirime yazılmaz (kilit ekranı) */
 async function announce(events: { event: KaraokeEvent; r: SiteReservation }[], nowMs: number) {
-  const messages = events.map(({ event, r }) => ({
-    event,
-    ...eventMessage(event, { startsAt: Date.parse(r.startsAt), endsAt: Date.parse(r.endsAt), guests: r.guests, name: r.firstName, status: r.status, paymentStatus: r.paymentStatus }, nowMs),
-  }));
-  const fresh = messages.some((m) => m.event === "created");
-  const list = messages.length > 3 ? [{ title: `${messages.length} karaoke güncellemesi`, body: messages.slice(0, 2).map((m) => `${m.title}: ${m.body}`).join(" · "), event: "created" as const }] : messages;
-  for (const m of list) {
+  const fresh = events.some((e) => e.event === "created");
+  for (const m of pushMessages(events, nowMs)) {
     await sendPush("karaoke", {
       kind: "karaoke",
       title: m.title,

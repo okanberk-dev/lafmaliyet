@@ -4,7 +4,7 @@ import { ExternalLink, Globe, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, UNREACHABLE_TEXT, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -88,8 +88,10 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
   function pull(months: string[]) {
     setBusyMonth(months.length === 1 ? months[0] : "*");
     start(async () => {
-      const res = await refreshSiteSales(months);
+      // Bağlantı yoksa "Kaydedilemedi" denmez (kaydedilen bir şey yok); aynı ayı yeniden çekmek zararsız
+      const res = await tryAction(() => refreshSiteSales(months), { offline: UNREACHABLE_TEXT });
       setBusyMonth(null);
+      if (!res) return;
       if (!res.ok) return void toast.error("Siteden çekilemedi", { description: res.error, duration: 10_000 });
       const { ok, failed } = res.data;
       if (failed.length) toast.warning(`${ok.join(", ")} çekildi`, { description: failed.map((f) => `${monthLabel(f.month)}: ${f.error}`).join(" · "), duration: 10_000 });

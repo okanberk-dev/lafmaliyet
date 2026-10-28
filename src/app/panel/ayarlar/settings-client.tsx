@@ -30,6 +30,7 @@ import {
 import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
@@ -165,8 +166,10 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
     const previous: Out = {};
     for (const k of Object.keys(out) as FormKey[]) previous[k] = settings[k];
     setBusy(true);
-    const res = await saveSettings(out as SettingsInput);
+    const res = await tryAction(() => saveSettings(out as SettingsInput));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     setDetails(false);
     if (!res.data.changes.length) return void toast("Değişiklik yok", { description: "Değerler zaten kayıtlıydı." });
@@ -176,7 +179,8 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
       action: {
         label: "Geri al",
         onClick: async () => {
-          const back = await saveSettings(previous as SettingsInput);
+          const back = await tryAction(() => saveSettings(previous as SettingsInput));
+          if (!back) return;
           if (back.ok) toast.success("Önceki değerler geri yüklendi", { description: back.data.changes.join(" · ") || undefined });
           else toast.error(back.error);
         },
@@ -595,8 +599,9 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
       return void toast.error(`"${dup.name.trim()}" iki kez yazılmış`, { description: "Her kategorinin adı farklı olmalı." });
     }
     setBusy(true);
-    const res = await saveCategories(rows.map((r) => ({ id: r.id || null, name: r.name })));
+    const res = await tryAction(() => saveCategories(rows.map((r) => ({ id: r.id || null, name: r.name }))));
     setBusy(false);
+    if (!res) return;
     if (res.ok) toast.success("Kategoriler kaydedildi", { description: "Sıra ürün listesinde ve QR menüde de güncellendi." });
     else toast.error(res.error);
   }
@@ -604,8 +609,9 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
   async function remove(r: CategoryRow) {
     if (r.id) {
       setDeleting(true);
-      const res = await deleteCategory(r.id);
+      const res = await tryAction(() => deleteCategory(r.id));
       setDeleting(false);
+      if (!res) return;
       if (!res.ok) return toast.error(res.error);
       toast.success(`"${r.name}" silindi`);
     }
