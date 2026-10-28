@@ -14,6 +14,7 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
+import { loadTillScope } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { countProgress } from "@/server/data/count-progress";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
@@ -29,11 +30,13 @@ import type { DigestBox } from "@/server/notify/digest-template";
 /**
  * Kasada (ModPOS) elle değiştirilecek fiyatlar (docs/FIYATLAR.md; posBell). Yönetici bütün ürünlerden, Fiyatlar ›
  * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
- * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar.
+ * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. LafPOS
+ * gününde (geçiş gününden itibaren) yalnız siteye bağlı olmayan ürünler; siteye bağlınınkini LafPOS siteden alır (E-39).
  */
 async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
-  const summary = user.role === "admin" ? await posPendingSummary() : await staffPosSummary();
-  const item = posBell(user.role, summary, now);
+  const scope = await loadTillScope(undefined, now);
+  const summary = user.role === "admin" ? await posPendingSummary(scope) : await staffPosSummary(scope);
+  const item = posBell(user.role, summary, now, scope.kasa);
   return item ? [item] : [];
 }
 

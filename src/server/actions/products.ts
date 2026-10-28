@@ -18,6 +18,7 @@ import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
 import { productHistoryCounts } from "@/server/data/product-history";
+import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { recordPriceChange } from "@/server/prices/record";
 import { PriceChangedError, writeSalePrice } from "@/server/prices/write";
@@ -36,7 +37,8 @@ const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
  *
  * Ürün laffogato.net menüsüne bağlıysa fiyat önce siteye yazılır (docs/SITE-MENU.md); site kabul etmezse fiyat
  * değişmez ve hata döner. Dönen `price` yazılan fiyattır (sitenin kuruşu), `site` fiyatın sitede de değiştiği,
- * `posPending` kasada (ModPOS) değiştirilecek fiyat kaldığı (Fiyatlar › Kasaya işle; docs/FIYATLAR.md).
+ * `posPending` kasada (ModPOS) değiştirilecek fiyat kaldığı (Fiyatlar › Kasaya işle; docs/FIYATLAR.md), `kasa` bugünün
+ * kasası (geçiş gününden itibaren LafPOS: siteye bağlı ürünün fiyatını siteden alır; src/lib/lafpos/kasa.ts).
  *
  * `source`: fiyat geçmişindeki kaynak. Hammadde zamları kartındaki "Fiyatı X yap" iki dayanakta da "suggestion"
  * gönderir: `ackAlert` yalnız "zammın payı"nda verilir, hedef orana çekilen fiyat da öneridir. Fiyat hücresi ve
@@ -82,7 +84,9 @@ export async function updateProductPrice(id: number, price: number, ackAlert = f
       `${before.name} ${before.size}: ${tl(before.price)} → ${tl(written.price)}${from === "suggestion" ? " (zam önerisi)" : ""}${written.site ? " (sitede de)" : ""}`,
     );
     refresh();
-    return { price: written.price, site: written.site, posPending };
+    // Bugünün kasası: bildirim "ModPOS'ta" ya da (geçiş gününden itibaren) "LafPOS siteden alır" der (denetim E-39)
+    const { kasa } = await loadTillScope();
+    return { price: written.price, site: written.site, posPending, kasa };
   });
 }
 
@@ -324,11 +328,12 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
       }`,
     );
     refresh();
+    const { kasa } = await loadTillScope();
     /**
-     * Yazılan satış alanları (site "Tükendi" derse QR menüde göster de kapanır), sitede neyin değiştiği ve kasada
-     * (ModPOS) değiştirilecek fiyat kaldığı (posPending; bildirim "Kasaya işle" der)
+     * Yazılan satış alanları (site "Tükendi" derse QR menüde göster de kapanır), sitede neyin değiştiği, kasada
+     * (ModPOS) değiştirilecek fiyat kaldığı (posPending; bildirim "Kasaya işle" der) ve bugünün kasası (E-39)
      */
-    return { ...sale, site, priceKept };
+    return { ...sale, site, priceKept, kasa };
   });
 }
 

@@ -30,11 +30,14 @@ export interface OpsDayFacts {
  * Kasada (ModPOS) elle değiştirilecek fiyatlar (§2.2; zil ile aynı metin). Personel: Kasadaki fiyatlar listesine
  * ("Listeyi aç"). Yönetici: Fiyatlar › Kasaya işle'ye; son 48 saatte personel kasada işaretlediyse açıklamanın sonuna
  * "Ayşe dün 3 fiyatı kasada işaretledi." eklenir, bekleyen fiyat kalmadıysa satır Tamamlananlar'a düşer ve Son
- * işaretlenenler kartına götürür (işaret onaysızdır; yönetici oradan geri alır).
+ * işaretlenenler kartına götürür (işaret onaysızdır; yönetici oradan geri alır). LafPOS gününde (geçiş gününden
+ * itibaren; denetim E-39) sayıda yalnız siteye bağlı olmayan ürünler var: siteye bağlınınkini LafPOS siteden alır, satır
+ * çoğu gün hiç çıkmaz; çıkarsa "LafPOS'ta elle" der.
  */
 export const posRow: DayRow = (f) => {
   const p = f.pos;
   const pending = p && p.count > 0 ? p : null;
+  const lafpos = p?.kasa === "LafPOS";
   const oldest = pending?.oldest ? ` En eskisi ${staleForText(pending.oldest, f.now)} bekliyor.` : "";
   if (f.role !== "admin") {
     if (!pending) return null;
@@ -43,7 +46,9 @@ export const posRow: DayRow = (f) => {
       title: "Kasadaki fiyatlar",
       status: "todo",
       badge: `${num(pending.count)} fiyat`,
-      detail: `ModPOS'ta değişecek ${num(pending.count)} fiyat; değiştirdikçe işaretleyin.${oldest}`,
+      detail: lafpos
+        ? `LafPOS'ta elle değişecek ${num(pending.count)} fiyat (siteye bağlı olmayan ürün); değiştirdikçe işaretleyin.${oldest}`
+        : `ModPOS'ta değişecek ${num(pending.count)} fiyat; değiştirdikçe işaretleyin.${oldest}`,
       href: "/panel/kasa/fiyatlar",
       action: "Listeyi aç",
     };
@@ -58,7 +63,7 @@ export const posRow: DayRow = (f) => {
     title: "Kasadaki fiyatlar",
     status: "todo",
     badge: `${num(pending.count)} fiyat`,
-    detail: `Kasada değişecek ${num(pending.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${oldest}${marks ? ` ${marks}` : ""}`,
+    detail: `Kasada değişecek ${num(pending.count)} fiyat: ${lafpos ? "siteye bağlı olmayan ürünler, LafPOS'ta" : "ModPOS'ta"} elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${oldest}${marks ? ` ${marks}` : ""}`,
     href: "/panel/urunler/fiyatlar?sekme=kasa",
     action: "Kasaya işle",
   };

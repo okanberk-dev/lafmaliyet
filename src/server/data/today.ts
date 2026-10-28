@@ -31,6 +31,7 @@ import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret } from "@/server/karaoke/sync";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 import { readOrdersSnapshot, readOrdersState, type OrdersSnapshot, type OrdersSyncState } from "@/server/site-orders/sync";
@@ -223,7 +224,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
   const cashP = safe(cashReportsBetween(c.yesterday, c.day));
-  const [reports, firstDate, stock, due, sessions, orders, checklists, closed, ops, own] = await Promise.all([
+  const [reports, firstDate, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
     cashP,
     safe(firstCashReportDate()),
     safe(stockProgress(c.month, c.prevMonth)),
@@ -237,6 +238,8 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
     opsFacts(user, now),
     admin ? adminFacts(now, user.id, cashP) : staffFacts(c),
+    // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi)
+    safe(loadLafposSwitchDay()),
   ]);
 
   const lite = (date: string): CashLite | null => {
@@ -250,6 +253,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     ...ops,
     role: user.role,
     now,
+    lafposSwitch,
     cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
     stock,
     checklists: checklists ? { day: c.day, lists: checklists.get(c.day) ?? [] } : null,

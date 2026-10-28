@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { KasaText } from "@/components/panel/kasa-text";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
 import { staffCashOutRow } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { shortDayTR } from "@/lib/cash-requests";
+import type { KasaName, MonthKasa } from "@/lib/lafpos/kasa";
 import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
@@ -88,7 +90,12 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
       <PageHeader
         title="Kasa raporu"
         eyebrow="Günlük"
-        description="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
+        description={
+          <KasaText
+            modpos="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
+            lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
+          />
+        }
       />
       <Suspense fallback={<PageSkeleton rows={8} />}>
         <CashContent searchParams={searchParams} />
@@ -260,7 +267,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // laffogato.net'in o günkü online satışı: bilgi satırı, sayfayı bekletmez (site gelene kadar boş, gelmezse yok)
   const siteRow = showForm ? (
     <Suspense fallback={null}>
-      <SiteDayRow date={date} admin={admin} />
+      <SiteDayRow date={date} admin={admin} kasa={lafposState.lafpos ? "LafPOS" : "ModPOS"} />
     </Suspense>
   ) : null;
   const form = showForm ? (
@@ -483,7 +490,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             latePending={latePending}
             okcAdmin={okcAdmin}
             okcFirst={okcFirst}
-            okcLine={okcMonthLine(okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc, month)}
+            okcLine={okcMonthLine(
+              okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc,
+              month,
+              // Ayın kasası (E-39): ayın 1'i LafPOS günüyse LafPOS, yalnız sonu LafPOS ise geçiş ayı ("Kasa")
+              lafposOf(`${month}-01`).lafpos ? "LafPOS" : lafposOf(monthEnd).lafpos ? "Kasa" : "ModPOS",
+            )}
             monthLine={
               monthLine ? (
                 <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
@@ -585,7 +597,7 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
  * bağlantı kapalıysa, site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır görünmez (rapor beklemez). Personele
  * karaoke tutarı gösterilmez (README: karaoke tutarları yalnız yöneticiye).
  */
-async function SiteDayRow({ date, admin }: { date: string; admin: boolean }) {
+async function SiteDayRow({ date, admin, kasa }: { date: string; admin: boolean; kasa: KasaName }) {
   const row = await fetchTillOnlineRow(date);
   if (!row) return null;
   return (
@@ -595,7 +607,7 @@ async function SiteDayRow({ date, admin }: { date: string; admin: boolean }) {
         <span className="font-semibold">laffogato.net · {longDateTR(date)}:</span> Online (site + uygulama) {money(row.online)}
         {admin ? <> · Karaoke ön ödeme {money(row.karaoke)}</> : null} — kasadan geçmez.
         <span className="block text-[13px] text-info/80">
-          Bilgi için: kasa farkına ve Z raporuna girmez; ModPOS&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
+          Bilgi için: kasa farkına ve Z raporuna girmez; {kasa}&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
         </span>
       </p>
     </div>
@@ -648,14 +660,15 @@ function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPre
 
 /**
  * Yönetici ay kartının yazarkasa satırı (plan §8, §9): ayın mali toplamı, kapsamı, ModPOS'la oranı ve KDV dökümü.
- * Yalnız bilgi; hiçbir hesaba girmez. Yazarkasa Z'si girilmemiş ayda yok
+ * Yalnız bilgi; hiçbir hesaba girmez. Yazarkasa Z'si girilmemiş ayda yok. `kasa` ayın kasası (geçiş gününden
+ * itibaren LafPOS, geçiş ayında "Kasa"; denetim E-39)
  */
-function okcMonthLine(rows: Awaited<ReturnType<typeof okcRows>>, month: string): string[] | null {
+function okcMonthLine(rows: Awaited<ReturnType<typeof okcRows>>, month: string, kasa: MonthKasa["short"]): string[] | null {
   const m = okcMonth(rows, month);
   if (!m.days) return null;
   const modpos = rows.filter((r) => r.date.slice(0, 7) === month && r.okcTotal != null).reduce((a, r) => a + r.zTotal, 0);
   const share = modpos > 0 ? Math.round(((modpos - m.total) / modpos) * 100) : null;
-  const vs = share === null ? "" : share === 0 ? " · ModPOS toplamıyla aynı" : ` · ModPOS toplamından %${Math.abs(share)} ${share > 0 ? "az" : "fazla"}`;
+  const vs = share === null ? "" : share === 0 ? ` · ${kasa} toplamıyla aynı` : ` · ${kasa} toplamından %${Math.abs(share)} ${share > 0 ? "az" : "fazla"}`;
   const out = [`Yazarkasa (mali) toplamı: ${money(m.total)} · ${m.days} / ${m.reportDays} gün${vs}`];
   if (m.byRate.length) out.push(`KDV: ${m.byRate.map((g) => `%${g.rate} ${money(g.vat)}`).join(" · ")}${m.vatMissing.length ? ` · Yazarkasa KDV dökümü eksik: ${m.vatMissing.length} gün` : ""}`);
   else if (m.vatMissing.length) out.push(`Yazarkasa KDV dökümü eksik: ${m.vatMissing.length} gün`);

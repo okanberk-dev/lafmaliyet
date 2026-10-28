@@ -25,6 +25,7 @@ import { loadCommissionInput } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadPosChecklist } from "@/server/data/prices";
+import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadForecastCore } from "@/server/forecast/load";
 import { capped } from "@/server/jobs/capped";
@@ -180,7 +181,9 @@ const kasaFiyat: Collector = {
   source: "kasa-fiyat",
   timeoutMs: 4_000,
   async run(ctx) {
-    const [model, pending] = await Promise.all([ctx.model(), loadPosChecklist()]);
+    // Bugünün kasası: LafPOS gününde liste yalnız siteye bağlı olmayan ürünler (denetim E-39)
+    const scope = await loadTillScope();
+    const [model, pending] = await Promise.all([ctx.model(), loadPosChecklist(scope)]);
     if (!pending.length) return {};
     const month = latestSalesMonth(model);
     const basis = month ? salesBasis(model, month) : null;
@@ -196,6 +199,7 @@ const kasaFiyat: Collector = {
           since: todayTR(new Date(p.since)),
           perMonth: basis ? (sold.get(p.productId) ?? 0) * basis.basis.scale : null,
         })),
+        kasa: scope.kasa,
       }),
     );
   },

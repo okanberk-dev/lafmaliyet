@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { money } from "@/lib/format";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { historyWhen, PRICE_SOURCE_LABEL, type HistoryRow } from "@/lib/prices/history";
 import { posChangedText, staleForText } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
@@ -23,6 +24,8 @@ export interface ProductPriceHistoryInfo {
   price: number | null;
   posStalePrice: number | null;
   posStaleSince: string | null;
+  /** Bugünün kasası (LafPOS gününde siteye bağlı üründe uyarı hiç gelmez: LafPOS fiyatı siteden alır) */
+  kasa?: KasaName;
 }
 
 /**
@@ -90,7 +93,7 @@ export function PriceHistoryCard({ product, history }: { product: { id: number; 
             <p className="flex min-w-0 items-start gap-2">
               <Store size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>
-                Kasada (ModPOS) hâlâ <span className="font-semibold tabular">{money(history.posStalePrice!)}</span>, panelde{" "}
+                Kasada ({history.kasa ?? "ModPOS"}) hâlâ <span className="font-semibold tabular">{money(history.posStalePrice!)}</span>, panelde{" "}
                 <span className="tabular">{money(history.price!)}</span> · {staleForText(history.posStaleSince!)}
               </span>
             </p>

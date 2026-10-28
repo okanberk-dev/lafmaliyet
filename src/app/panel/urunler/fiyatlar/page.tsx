@@ -9,11 +9,13 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { salesBasis } from "@/lib/calc/price-loss";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import type { BulkRow } from "@/lib/prices/bulk";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { loadPosChecklist, loadPriceHistory, loadRecentPosMarks, posPendingSummary } from "@/server/data/prices";
+import { loadTillScope } from "@/server/data/till-scope";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
 import { BulkEditor } from "./bulk-editor";
@@ -28,13 +30,16 @@ export const maxDuration = 60;
 
 const TITLE = "Fiyatlar";
 const DESCRIPTION = "Menü fiyatlarını toplu değiştirin, kasada (ModPOS) elle değiştirdiklerinizi işaretleyin; her fiyat değişikliği geçmişte kalır.";
+/** LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatını LafPOS siteden alır */
+const DESCRIPTION_LAFPOS =
+  "Menü fiyatlarını toplu değiştirin; LafPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanları kasada elle değiştirip işaretleyin. Her fiyat değişikliği geçmişte kalır.";
 
-function Header({ tabs }: { tabs?: ReactNode }) {
+function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }) {
   return (
     <PageHeader
       eyebrow="Menü"
       title={TITLE}
-      description={DESCRIPTION}
+      description={kasa === "LafPOS" ? DESCRIPTION_LAFPOS : DESCRIPTION}
       actions={
         <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
           <ArrowLeft size={16} aria-hidden="true" /> Ürünler
@@ -75,23 +80,25 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
   await requireAdmin();
   const sp = await searchParams;
   const tab = tabOf(sp.sekme);
-  const pending = await posPendingSummary();
+  // Bugünün kasası: LafPOS gününde Kasaya işle'de yalnız siteye bağlı olmayan ürünler (denetim E-39)
+  const scope = await loadTillScope();
+  const pending = await posPendingSummary(scope);
   const options: { value: FiyatlarTab; label: string; href: string; count?: number }[] = [
     { value: "toplu", label: "Toplu değiştir", href: tabHref("toplu", tab === "toplu" ? bulkQuery(sp) : undefined) },
     // Sayı yalnız kasada bekleyen varken (boş listede "0" yazmasın)
     { value: "kasa", label: "Kasaya işle", href: tabHref("kasa"), count: pending.count || undefined },
     { value: "gecmis", label: "Geçmiş", href: tabHref("gecmis") },
   ];
-  const header = <Header tabs={<SegmentedLinks label="Fiyatlar" value={tab} options={options} />} />;
+  const header = <Header kasa={scope.kasa} tabs={<SegmentedLinks label="Fiyatlar" value={tab} options={options} />} />;
 
   if (tab === "kasa") {
     const now = new Date();
-    const [items, marks] = await Promise.all([loadPosChecklist(), loadRecentPosMarks({ days: 14, now })]);
+    const [items, marks] = await Promise.all([loadPosChecklist(scope), loadRecentPosMarks({ days: 14, now })]);
     return (
       <>
         {header}
         <div className="space-y-4">
-          <PosChecklist items={items} />
+          <PosChecklist items={items} kasa={scope.kasa} />
           <RecentPosMarks marks={marks} now={now.toISOString()} />
         </div>
       </>
@@ -102,7 +109,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
     return (
       <>
         {header}
-        <PriceHistory rows={history.rows} products={history.products} />
+        <PriceHistory rows={history.rows} products={history.products} kasa={scope.kasa} />
       </>
     );
   }
@@ -143,6 +150,7 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
         settings={{ kdv: st.kdv, komisyon: st.komisyon, kartOrani: st.kartOrani, hedefMaliyet: st.hedefMaliyet }}
         siteConfigured={site.configured}
         basis={sb?.basis ?? null}
+        kasa={scope.kasa}
       />
     </>
   );

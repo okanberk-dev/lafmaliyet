@@ -153,7 +153,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             <ButtonLink
               href={pos?.count ? "/panel/urunler/fiyatlar?sekme=kasa" : "/panel/urunler/fiyatlar"}
               variant="secondary"
-              title={pos?.count ? `Kasada (ModPOS) değişecek ${num(pos.count)} fiyat` : "Menü fiyatlarını toplu değiştirin; fiyat geçmişi"}
+              title={pos?.count ? `Kasada (${pos.kasa}) değişecek ${num(pos.count)} fiyat` : "Menü fiyatlarını toplu değiştirin; fiyat geçmişi"}
             >
               <Tags size={16} aria-hidden="true" /> Fiyatlar
               {pos?.count ? (
