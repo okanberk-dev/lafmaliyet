@@ -172,7 +172,8 @@ kendi cihazında açar.
   saat, kişi sayısı ve "onay bekliyor"dur ("Yeni karaoke rezervasyonu" · "Bugün 20:00–22:00 · 4 kişi · onay
   bekliyor"; üçten fazla olayın özetinde de ad yok). Ad yalnız açık panel ekranında görünür: zil satırı ("… · 4 kişi ·
   Ayşe · onay bekliyor") ve liste, ikisi de canlı veriden (`pushMessages` ve `eventMessage`,
-  `src/lib/karaoke/session.ts`). Uygulama siparişinin bildiriminde de ad yok ([SITE-SIPARIS.md](SITE-SIPARIS.md)).
+  `src/lib/karaoke/session.ts`; `tests/karaoke.test.ts`, `tests/karaoke-bildirim-db.test.ts`). Uygulama siparişinin
+  bildiriminde de ad yok ([SITE-SIPARIS.md](SITE-SIPARIS.md)).
 - Service worker yalnız bildirim işi yapar: sayfa önbelleklemez, istek yakalamaz.
 
 ### KVKK
@@ -284,3 +285,4 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/occupancy.ts`, `history.ts` | Doluluğun verisi (ad ve not okunmaz), oda saatleri; geçmişi siteden alma, KVKK temizliği ve sabah işinin karaoke adımı |
 | `src/server/actions/karaoke-doluluk.ts`, `src/app/panel/karaoke/doluluk/` | Oda saatleri ve geçmişi alma eylemleri (yalnız yönetici); Doluluk ekranı, ısı haritası, ay ay |
 | `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, adsız bildirim metni, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
+| `tests/karaoke-bildirim-db.test.ts` | Gerçek Postgres ve sitenin sahte ucuyla: pingle gelen yeni, iptal edilen ve saati değişen rezervasyonun bildiriminde ad ve not yok, kopyada ve canlı veride ad var (`BAGLANTI_TEST_DATABASE_URL`) |
