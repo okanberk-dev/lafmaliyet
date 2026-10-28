@@ -13,6 +13,8 @@ import { toast } from "sonner";
 export const OFFLINE_TEXT = "Kaydedilemedi: bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin.";
 export const STALE_TEXT = "Panel güncellendi; sayfayı yenileyip yeniden deneyin.";
 const FAILED_TEXT = "İşlem tamamlanamadı; sayfayı yenileyip yeniden deneyin.";
+/** Formun kendi satırında (kayıt değil: giriş, parola onayı) */
+const UNREACHABLE_TEXT = "Bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin.";
 
 /** Tarayıcının ağ hatası (Chrome "Failed to fetch", Firefox "NetworkError…", Safari "Load failed") */
 export function isNetworkError(e: unknown): boolean {
@@ -26,6 +28,48 @@ export function isNetworkError(e: unknown): boolean {
 export function actionFailure(e: unknown): "stale" | "failed" {
   unstable_rethrow(e);
   return unstable_isUnrecognizedActionError(e) ? "stale" : "failed";
+}
+
+/**
+ * Atılan eylem hatasının metni, bildirim yerine formun kendi hata satırında gösterenler için (parola penceresi, giriş
+ * formları). Next'in kendi hataları (yönlendirme) geri atılır.
+ */
+export function actionErrorText(e: unknown): string {
+  unstable_rethrow(e);
+  if (unstable_isUnrecognizedActionError(e)) return STALE_TEXT;
+  if (isNetworkError(e)) return UNREACHABLE_TEXT;
+  console.error(e);
+  return FAILED_TEXT;
+}
+
+/**
+ * Eylemi geçişsiz çağıranlar için (düğmenin kendi `busy` durumu, pencere, iyimser satır): eylem atarsa (ağ kesildi,
+ * panel güncellendi) bildirim çıkar ve `undefined` döner; çağıran düğmeyi bırakır, pencere ve yazılanlar yerinde kalır,
+ * iyimser değişikliği geri alır. Eylemin kendi hatası (`{ ok: false }`) yanıt olarak gelir, bundan geçmez. Next'in
+ * kendi hataları (yönlendirme) geri atılır.
+ */
+export async function tryAction<T>(fn: () => Promise<T>, id?: string | number): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (e) {
+    toastUnreachable(e, id);
+    return undefined;
+  }
+}
+
+/**
+ * useActionState'in eylemi atarsa (ağ kesildi, panel güncellendi) React hatayı en yakın hata sınırına atar ve sayfa
+ * hata ekranına düşer. Bu sarmalayıcıyla form önceki durumunda kalır, hata formun kendi `error` satırında görünür
+ * (yönlendirme gibi Next'in kendi hataları geri atılır). Bileşenin dışında, modül düzeyinde bir kez sarılır.
+ */
+export function catchingFormAction<S extends { error?: string }, P>(action: (state: S, payload: P) => Promise<S>): (state: S, payload: P) => Promise<S> {
+  return async (state, payload) => {
+    try {
+      return await action(state, payload);
+    } catch (e) {
+      return { ...state, error: actionErrorText(e) };
+    }
+  };
 }
 
 /** Atılan eylem hatasının bildirimi; `id` verilirse art arda dokunuşlar üst üste yığılmaz */

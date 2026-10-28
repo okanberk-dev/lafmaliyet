@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { toastUnreachable } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
@@ -379,8 +379,8 @@ export function AlertCenter({ role }: { role: Role }) {
                 action: {
                   label: "Tamamlandı",
                   onClick: () =>
-                    void completeUserReminder(r.id).then((res) => {
-                      if (!res.ok) toast.error(res.error);
+                    void tryAction(() => completeUserReminder(r.id)).then((res) => {
+                      if (res && !res.ok) toast.error(res.error);
                       void refreshLive().then(() => refreshScreen());
                     }),
                 },

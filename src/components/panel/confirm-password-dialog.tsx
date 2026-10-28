@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 
+import { actionErrorText } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
@@ -9,8 +10,10 @@ import { Field, Input } from "@/components/ui/form";
 /**
  * Kendi parolanızı isteyen eylemlerin penceresi: Hesabım (iki adımlı doğrulamayı aç / kapat, kurtarma kodları, diğer
  * cihazlardaki oturumlar) ve Kullanıcılar'daki yönetici işlemleri. `onConfirm` eylemi parolayla çalıştırır; hata olursa
- * sözünü döndürür, pencere açık kalır. `description` başlığın altında satır içi durur (Dialog <p> içinde gösterir); özet
- * gibi blok içerik `children` ile alanın üstüne gelir. Açık bir pencerenin içinde değil yanında bağlanır.
+ * sözünü döndürür, pencere açık kalır. Eylem atarsa (ağ kesildi, panel güncellendi; denetim E-51) sayfa hata ekranına
+ * düşmez: pencere ve yazılan parola yerinde kalır, nedeni alanın altında görünür. `description` başlığın altında satır
+ * içi durur (Dialog <p> içinde gösterir); özet gibi blok içerik `children` ile alanın üstüne gelir. Açık bir pencerenin
+ * içinde değil yanında bağlanır.
  */
 export function ConfirmPasswordDialog({
   title,
@@ -37,7 +40,12 @@ export function ConfirmPasswordDialog({
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const problem = await onConfirm(password);
+      let problem: string | null;
+      try {
+        problem = await onConfirm(password);
+      } catch (e) {
+        problem = actionErrorText(e);
+      }
       if (problem) setError(problem);
     });
   }

@@ -5,10 +5,16 @@ import { useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import { takeLoginEmail } from "@/app/davet/keys";
+import { catchingFormAction } from "@/components/ui/action-error";
 import { cancelLoginCodeAction, loginAction, verifyLoginCodeAction, type LoginState, type TotpState } from "@/server/actions/auth";
 import { requestPasswordReset, type ForgotState } from "@/server/actions/invites";
 
 import { AuthError, AuthHeading, authButton, authCard, authInput, authLink, FloatingField } from "./auth-ui";
+
+/** Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51) */
+const login = catchingFormAction(loginAction);
+const verifyCode = catchingFormAction(verifyLoginCodeAction);
+const forgotPassword = catchingFormAction(requestPasswordReset);
 
 /**
  * Giriş kartı: e-posta ve parola, gerekirse ikinci adımda doğrulama kodu. "Parolamı unuttum" aynı kartta ayrı bir
@@ -27,7 +33,7 @@ function SubmitButton({ pending, idle, busy, className }: { pending: boolean; id
 
 /** İkinci adım: doğrulama uygulamasındaki kod ya da kurtarma kodu */
 function CodeStep({ email, onBack, onExpired }: { email?: string; onBack: () => void; onExpired: (message: string) => void }) {
-  const [state, action, pending] = useActionState<TotpState, FormData>(verifyLoginCodeAction, {});
+  const [state, action, pending] = useActionState<TotpState, FormData>(verifyCode, {});
   const [mode, setMode] = useState<"app" | "recovery">("app");
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -95,7 +101,7 @@ function CodeStep({ email, onBack, onExpired }: { email?: string; onBack: () => 
  * gösterilmez; baştan yöneticiye başvurması söylenir (bağlantı gönderilecekmiş gibi vaat edilmez).
  */
 function ForgotStep({ defaultEmail, onBack, emailConfigured }: { defaultEmail: string; onBack: () => void; emailConfigured: boolean }) {
-  const [state, action, pending] = useActionState<ForgotState, FormData>(requestPasswordReset, {});
+  const [state, action, pending] = useActionState<ForgotState, FormData>(forgotPassword, {});
   const backButton = (
     <button type="button" onClick={onBack} className={`inline-flex min-h-11 items-center gap-1.5 self-start text-[15px] ${authLink}`}>
       <ArrowLeft className="size-4" aria-hidden /> Girişe dön
@@ -169,7 +175,7 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
       passwordRef.current?.focus();
     }
   }, []);
-  const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, {});
+  const [state, action, pending] = useActionState<LoginState, FormData>(login, {});
   const [show, setShow] = useState(false);
   // Parola yazarken Caps Lock açıksa uyar (en sık "parola yanlış" sebebi)
   const [caps, setCaps] = useState(false);
@@ -182,7 +188,8 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
   function back(message?: string) {
     setLeft(state);
     setNotice(message ?? null);
-    void cancelLoginCodeAction();
+    // En iyi çaba: bekleyen kod adımının çerezi silinir; istek düşerse çerez kendi süresiyle kalkar
+    cancelLoginCodeAction().catch(() => undefined);
   }
 
   return (

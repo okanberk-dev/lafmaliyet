@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/profile-dropdown";
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
-import { actionFailure } from "@/components/ui/action-error";
+import { actionFailure, toastUnreachable } from "@/components/ui/action-error";
 import { ROLES } from "@/lib/constants";
 import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
@@ -195,7 +195,7 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
           menuAlign="start"
           accountItems={accountItems}
           workspaceItems={cafeItems}
-          onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction())}
+          onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable))}
           className="w-full max-w-none"
         />
       </footer>

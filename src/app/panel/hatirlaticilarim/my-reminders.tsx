@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { refreshLive } from "@/components/panel/live/store";
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -56,8 +56,8 @@ export function MyReminders({ role, open, done }: { role: Role; open: UserRemind
         action: {
           label: "Geri al",
           onClick: () =>
-            void restoreUserReminder(r.id, prev).then((x) => {
-              if (!x.ok) toast.error(x.error);
+            void tryAction(() => restoreUserReminder(r.id, prev)).then((x) => {
+              if (x && !x.ok) toast.error(x.error);
               void after();
             }),
         },
@@ -76,8 +76,8 @@ export function MyReminders({ role, open, done }: { role: Role; open: UserRemind
         action: {
           label: "Geri al",
           onClick: () =>
-            void restoreUserReminder(r.id, prev).then((x) => {
-              if (!x.ok) toast.error(x.error);
+            void tryAction(() => restoreUserReminder(r.id, prev)).then((x) => {
+              if (x && !x.ok) toast.error(x.error);
               void after();
             }),
         },
@@ -359,8 +359,10 @@ function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDT
     if (!title.trim()) return setError("Ne hatırlatılacağını yazın");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError("Tarih seçin");
     setBusy(true);
-    const res = await saveUserReminder({ id: initial?.id ?? null, title, note: note || null, dueDate: date, dueTime: withTime ? time : null, repeat });
+    const res = await tryAction(() => saveUserReminder({ id: initial?.id ?? null, title, note: note || null, dueDate: date, dueTime: withTime ? time : null, repeat }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return setError(res.error);
     toast.success(initial ? "Hatırlatıcı güncellendi" : "Hatırlatıcı eklendi");
     await onSaved();

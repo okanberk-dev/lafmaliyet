@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { actionErrorText, toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
@@ -264,6 +264,9 @@ function EditableCell({
             setBusy(true);
             try {
               await onSave(v);
+            } catch (e) {
+              // Ağ kesildi ya da panel güncellendi (E-51): kaydedilmediği söylenir, hücre eski değerine döner
+              toastUnreachable(e, "pnl-cell");
             } finally {
               setBusy(false);
               setEditing(false);
@@ -385,8 +388,15 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
 
   async function run(nextAmount: number | null, nextNote: string | null | undefined, done: string) {
     setBusy(true);
-    const res = await setPnlCell(target.month, target.rowKey, nextAmount, nextNote);
-    setBusy(false);
+    let res: Awaited<ReturnType<typeof setPnlCell>>;
+    try {
+      res = await setPnlCell(target.month, target.rowKey, nextAmount, nextNote);
+    } catch (e) {
+      // Pencere ve yazılanlar yerinde kalır, yeniden denenir (E-51)
+      return toastUnreachable(e, "pnl-note");
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok) return toast.error(res.error);
     toast.success(done);
     onClose();
@@ -504,8 +514,14 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
 
   async function run(next: string | null) {
     setBusy(true);
-    const res = await setMonthNote(month, next);
-    setBusy(false);
+    let res: Awaited<ReturnType<typeof setMonthNote>>;
+    try {
+      res = await setMonthNote(month, next);
+    } catch (e) {
+      return toastUnreachable(e, "pnl-month-note");
+    } finally {
+      setBusy(false);
+    }
     if (!res.ok) return toast.error(res.error);
     toast.success(next ? "Ay notu kaydedildi" : "Ay notu silindi");
     onClose();
@@ -710,25 +726,35 @@ export function PnlGrid({
   if (onlyOverridden) chips.push({ key: "yazilan", label: "Üzerine yazılan", onRemove: () => setOnlyOverridden("") });
   if (hideEmpty) chips.push({ key: "dolu", label: "Boşlar gizli", onRemove: () => setHideEmpty("") });
 
-  /** Telefondaki hücre sayfasının kaydı; hata metni döner */
+  /** Telefondaki hücre sayfasının kaydı; hata metni döner (eylem atarsa da: ağ kesildi, panel güncellendi; E-51) */
   async function savePlan(month: string, field: CellField, rowKey: string, plan: Extract<CellEditPlan, { action: "save" | "clear" }>): Promise<string | null> {
     const amount = plan.action === "clear" ? null : plan.amount;
-    const res =
-      field === "revenue"
-        ? await setMonthField(month, "posRevenue", amount)
-        : field === "openDays"
-          ? await setMonthField(month, "openDays", amount)
-          : await setPnlCell(month, rowKey, amount, plan.action === "save" ? plan.note : undefined);
-    return res.ok ? null : res.error;
+    try {
+      const res =
+        field === "revenue"
+          ? await setMonthField(month, "posRevenue", amount)
+          : field === "openDays"
+            ? await setMonthField(month, "openDays", amount)
+            : await setPnlCell(month, rowKey, amount, plan.action === "save" ? plan.note : undefined);
+      return res.ok ? null : res.error;
+    } catch (e) {
+      return actionErrorText(e);
+    }
   }
 
   async function save(month: string, key: string, v: number | null, hadNote?: boolean, kasa?: boolean): Promise<void> {
-    const res =
-      key === "revenue"
-        ? await setMonthField(month, "posRevenue", v)
-        : key === "openDays"
-          ? await setMonthField(month, "openDays", v)
-          : await setPnlCell(month, key, v);
+    let res: Awaited<ReturnType<typeof setPnlCell>>;
+    try {
+      res =
+        key === "revenue"
+          ? await setMonthField(month, "posRevenue", v)
+          : key === "openDays"
+            ? await setMonthField(month, "openDays", v)
+            : await setPnlCell(month, key, v);
+    } catch (e) {
+      // Hücre eski değerine döner; yazılanın kaydedilmediği söylenir (E-51)
+      return toastUnreachable(e, "pnl-cell");
+    }
     if (!res.ok) {
       toast.error(res.error);
       return;

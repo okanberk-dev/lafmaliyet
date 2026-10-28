@@ -21,7 +21,7 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
-import { toastUnreachable } from "@/components/ui/action-error";
+import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { DotList } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
 import { METHOD_LABEL, round2 } from "@/lib/cari/balance";
@@ -181,7 +181,9 @@ function undo(run: () => Promise<Result>, done = "Geri alındı") {
     label: "Geri al",
     onClick: () =>
       startTransition(async () => {
-        const r = await run();
+        // Atarsa (ağ kesildi, panel güncellendi; E-51) bildirimi tryAction gösterir
+        const r = await tryAction(run);
+        if (!r) return;
         if (!r.ok) toast.error(r.error);
         else toast.success(done);
       }),

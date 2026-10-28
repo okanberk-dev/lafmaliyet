@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 
+import { catchingFormAction } from "@/components/ui/action-error";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { setPasswordWithToken, type SetPasswordState } from "@/server/actions/invites";
 
@@ -12,6 +13,9 @@ import { AuthError, authButton, authInput } from "@/app/giris/auth-ui";
 
 import { rememberLoginEmail } from "./keys";
 import { TokenProblem } from "./problem";
+
+/** Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51) */
+const submitNewPassword = catchingFormAction(setPasswordWithToken);
 
 const MIN = PASSWORD_MIN;
 
@@ -23,7 +27,7 @@ const input = authInput;
  * ("Parolanız kaydedildi" mesajıyla) geçilir. Oturum açılmaz.
  */
 export function SetPasswordForm({ token, name, email, kind, until }: { token: string; name: string; email: string; kind: "invite" | "reset"; until: string }) {
-  const [state, action, pending] = useActionState<SetPasswordState, FormData>(setPasswordWithToken, {});
+  const [state, action, pending] = useActionState<SetPasswordState, FormData>(submitNewPassword, {});
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [show, setShow] = useState(false);
