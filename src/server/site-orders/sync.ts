@@ -3,6 +3,7 @@ import "server-only";
 import { eq, sql, type SQL } from "drizzle-orm";
 
 import { newOrderIds, ordersFingerprint, ringMessage, sortForScreen } from "@/lib/site-orders/feed";
+import { awaitingUntil, missedPing, nextAwaiting, pullDue, type OrdersTrigger } from "@/lib/site-orders/follow";
 import { parseSiteOrders, SiteOrdersFormatError, type SiteOrder, type SiteOrderList } from "@/lib/site-orders/schema";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
@@ -21,6 +22,11 @@ import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
  * (src/server/actions/site-orders.ts), site kendi durum makinesini işletir ve panel listeyi bu dosyadaki çekmeyle
  * yeniden alır. Son listenin kopyasını yalnız `syncSiteOrders` yazar. İade ve iptal yalnız sitenin panelinde. KVKK:
  * panele yalnız müşterinin adı gelir; adlar günlüğe ve işlem geçmişine yazılmaz.
+ *
+ * Ödeme takibi (senkron planı P2; kurallar src/lib/site-orders/follow.ts): sitenin yanıtındaki `awaitingPayment`
+ * (ödemesini bekleyen siparişlerin sayısı) sıfırdan büyükken ekran en çok 30 dakika yoğun sayılır ve siteyi üç
+ * dakikada bir sorar; ödeme pingi kaçsa da sipariş birkaç dakikada gelir. Pingle olmayan bir çekme kaçan pingin
+ * getirmediği ödenmiş siparişi bulursa `missedPingAt` yazılır (Ayarlar › laffogato.net).
  */
 
 const STATE_KEY = "site_orders_sync";
@@ -45,9 +51,17 @@ export interface OrdersSyncState {
   lastNewAt: string | null;
   /** Son çekmeyi ne başlattı: sitenin pingi, ekran ya da elle */
   lastTrigger: OrdersTrigger | null;
+  /** Pingle olmayan son çekme denemesi (ekran ya da elle): sakin saatin saatlik kontrolü yalnız bunu sayar */
+  lastCheckAt: string | null;
+  /** Son başarılı çekmede sitenin ödeme bekleyen sayısı (alan yoksa 0) */
+  awaitingPayment: number;
+  /** Ödeme takibinin başladığı ya da yeniden başladığı an; takip yoksa null (bitişi `awaitingUntil`) */
+  awaitingSince: string | null;
+  /** Son kaçan ping: pingle olmayan bir çekme, pingi hiç gelmemiş ödenmiş bir sipariş buldu */
+  missedPingAt: string | null;
 }
 
-export type OrdersTrigger = "ping" | "screen" | "manual";
+export type { OrdersTrigger };
 
 const EMPTY: OrdersSyncState = {
   lastPullAt: null,
@@ -58,6 +72,10 @@ const EMPTY: OrdersSyncState = {
   lastChangeAt: null,
   lastNewAt: null,
   lastTrigger: null,
+  lastCheckAt: null,
+  awaitingPayment: 0,
+  awaitingSince: null,
+  missedPingAt: null,
 };
 
 export interface OrdersSnapshot {
@@ -168,7 +186,7 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
     await getDb().transaction(async (tx) => {
       await lockOrders(tx);
       const prev = await readOrdersState(tx);
-      await patchState({ lastPullAt: tryAt, lastError: error, lastTrigger: trigger }, tx);
+      await patchState({ lastPullAt: tryAt, lastError: error, lastTrigger: trigger, ...checked(trigger, tryAt) }, tx);
       // Hata ilk kez görünüyor ya da değişti: açık ekranlar "son çekme başarısız" satırını göstersin
       if (prev.lastError !== error) await bumpOrdersVersion(tx);
     });
@@ -182,7 +200,7 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
     const last = state.lastSiteNow ? Date.parse(state.lastSiteNow) : NaN;
     // Arada daha yeni bir yanıt uygulandıysa bu eski kalır (panelin saatinden on dakika ileri bir kayıt bozuktur)
     if (last > Date.parse(list.now) && last < Date.now() + 10 * 60_000) {
-      await patchState({ lastPullAt: tryAt, lastTrigger: trigger }, tx);
+      await patchState({ lastPullAt: tryAt, lastTrigger: trigger, ...checked(trigger, tryAt) }, tx);
       return null;
     }
     const prev = await readOrdersSnapshot(tx);
@@ -196,6 +214,15 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
         on conflict (key) do update set value = ${JSON.stringify(snapshot)}::jsonb, updated_at = now()`);
     }
     const iso = at.toISOString();
+    // Ödeme takibi: başlaması, yeniden başlaması ve bitmesi ekranın yoğunluğunu değiştirir, sürüm artar (açık sekme
+    // yeni `awaitingUntil`'i alır). Pingin kendisi sürümü artırmaz
+    const awaiting = nextAwaiting(state, list.awaitingPayment, trigger, iso);
+    const followChanged = awaitingUntil(state) !== awaitingUntil(awaiting);
+    // Kaçan ping: pingle olmayan bu çekme, pingi gelmemiş ödenmiş bir sipariş getirdi
+    const missed = missedPing(
+      orders.filter((o) => fresh.includes(o.id)),
+      { trigger, siteNow: list.now, lastPingAt: state.lastPingAt, prevComplete: prev.complete },
+    );
     await patchState(
       {
         lastPullAt: tryAt,
@@ -203,12 +230,15 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
         lastError: null,
         lastSiteNow: list.now,
         lastTrigger: trigger,
+        ...checked(trigger, tryAt),
+        ...awaiting,
         ...(changed ? { lastChangeAt: iso } : {}),
         ...(fresh.length ? { lastNewAt: iso } : {}),
+        ...(missed ? { missedPingAt: iso } : {}),
       },
       tx,
     );
-    if (changed || state.lastError) await bumpOrdersVersion(tx);
+    if (changed || state.lastError || followChanged) await bumpOrdersVersion(tx);
     return { orders, fresh, changed };
   });
   if (!applied) return { status: "fresh" };
@@ -227,20 +257,20 @@ async function lockOrders(tx: Tx): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('site-orders'))`);
 }
 
-/** Son çekme hatalıysa ekranın isteği siteyi en çok bu sıklıkta yeniden dener (site geri gelince liste hemen gelsin) */
-const ERROR_RETRY_MS = 5_000;
+/** Pingle olmayan çekme denemesi `lastCheckAt`'i de yazar (sakin saatin kontrolü yalnız bunu sayar) */
+const checked = (trigger: OrdersTrigger, tryAt: string): Partial<OrdersSyncState> => (trigger === "ping" ? {} : { lastCheckAt: tryAt });
 
 /**
  * Bar ekranının isteği: son çekme `maxAgeMs`'ten eskiyse siteyi yeniden sorar (ekran açılınca ya da öne gelince bir
- * dakika, arka planda birkaç dakika; docs/SITE-SIPARIS.md). Güncelse siteye gidilmez. Son çekme hatalıysa beş saniyeden
- * eski her istek, elle "Yenile" ise hemen yeniden dener (site geri gelince liste beklemeden gelsin).
+ * dakika, arka planda birkaç dakika; docs/SITE-SIPARIS.md). Güncelse siteye gidilmez. Sakin saatin saatlik kontrolü
+ * pingle yapılan çekmeyi saymaz (araya giren başka bir siparişin pingi kaçan ödemeyi bir saat daha gizlemesin). Son
+ * çekme hatalıysa beş saniyeden eski her istek, elle "Yenile" ise hemen yeniden dener (site geri gelince liste
+ * beklemeden gelsin). Kural: src/lib/site-orders/follow.ts `pullDue`.
  */
 export async function ensureOrdersFresh(maxAgeMs: number, opts: { manual?: boolean } = {}): Promise<OrdersSyncResult> {
   if (!siteLinkSecret()) return { status: "off" };
   const state = await readOrdersState();
-  const last = state.lastPullAt ? Date.parse(state.lastPullAt) : NaN;
-  const stale = state.lastError ? (opts.manual ? 0 : Math.min(maxAgeMs, ERROR_RETRY_MS)) : maxAgeMs;
-  if (Number.isFinite(last) && Date.now() - last < stale) return { status: "fresh" };
+  if (!pullDue(state, maxAgeMs, { manual: opts.manual, nowMs: Date.now() })) return { status: "fresh" };
   return syncSiteOrders(opts.manual ? "manual" : "screen");
 }
 
