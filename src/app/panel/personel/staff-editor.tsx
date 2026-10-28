@@ -180,11 +180,12 @@ export function StaffEditor({
 
   /**
    * Sunucu iletisini (hangi aydan itibaren, önceki aylar) bildirim olarak gösterir. Eylem atarsa (ağ kesildi, panel
-   * güncellendi; E-51) bildirim çıkar, düğmeler bırakılır, pencere açık kalır
+   * güncellendi; E-51) bildirim çıkar, düğmeler bırakılır, pencere açık kalır. `maybeSaved`: eylem yeni kayıt açar;
+   * yanıt yolda kaybolursa "Kaydedilemedi" denmez (kayıt yapılmış olabilir, ikinci dokunuş ikinci kişiyi yazar)
    */
-  async function run<T extends { message?: string | null }>(p: Promise<ActionResult<T>>, fallback: string): Promise<T | null> {
+  async function run<T extends { message?: string | null }>(p: Promise<ActionResult<T>>, fallback: string, maybeSaved = false): Promise<T | null> {
     setPending(true);
-    const res = await tryAction(() => p);
+    const res = await tryAction(() => p, { maybeSaved });
     setPending(false);
     if (!res) return null;
     if (!res.ok) {
@@ -215,6 +216,7 @@ export function StaffEditor({
     const done = await run(
       saveStaff([...unchanged(), { id: null, name: x.name, netSalary: x.netSalary, extras: x.extras, effectiveFrom: fromMonth }]),
       `${x.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
+      true,
     );
     const created = done?.changes.find((c) => !staff.some((s) => s.id === c.id));
     if (created) setFlash(created.id);
@@ -925,7 +927,8 @@ function StaffDialog({
     const self = { id: row?.id ?? null, name, netSalary: netValue, extras: extValue, effectiveFrom: !row || changed ? eff : row.valueMonth };
     // Liste sırası korunur: düzenlenen kişi yerinde, yeni kişi sonda
     const list = row ? unchanged().map((x) => (x.id === row.id ? { ...self, id: row.id } : x)) : [...unchanged(), self];
-    const res = await tryAction(() => saveStaff(list));
+    // Yeni kişide yanıt yolda kaybolursa kişi yazılmış olabilir: ikinci "Kaydet" aynı kişiyi iki kez ekler
+    const res = await tryAction(() => saveStaff(list), { maybeSaved: !row });
     setBusy(false);
     // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
     if (!res) return;

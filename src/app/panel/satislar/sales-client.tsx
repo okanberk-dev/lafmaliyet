@@ -1450,7 +1450,8 @@ function LineDialog({
     if (qtyNum === null || bad.revenue) return toast.error("Adet ve ciroyu kontrol edin");
     setBusy(true);
     keepScroll();
-    const res = await tryAction(() => saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note }));
+    // Yeni satırda yanıt yolda kaybolursa satır yazılmış olabilir: "Kaydedilemedi" denmez, yenileyip bakması söylenir
+    const res = await tryAction(() => saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note }), { maybeSaved: !line.id });
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);
@@ -1749,7 +1750,8 @@ export function ImportCard({
   async function submit() {
     setBusy(true);
     keepScroll();
-    const res = await tryAction(() => importSales({ month, lines: rows, mode, through: running ? through : null }));
+    // Ekleme kipinde yanıt yolda kaybolursa satırlar yazılmış olabilir; ikinci "Yükle" hepsini iki kez ekler
+    const res = await tryAction(() => importSales({ month, lines: rows, mode, through: running ? through : null }), { maybeSaved: mode === "append" });
     setBusy(false);
     setConfirmingReplace(false);
     // Atılan eylem (E-51): düğme bırakılır, yapıştırılan liste yerinde kalır

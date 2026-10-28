@@ -220,7 +220,8 @@ export function NotificationMenu({
                   <span className="min-w-0 flex-1">
                     {failure === "stale"
                       ? "Panel güncellendi; bildirimler için sayfayı yenileyin."
-                      : items === null
+                      : // Son okuma boş döndüyse altında gösterilen bir liste yok: "son okunan liste" denmez
+                        items === null || items.length === 0
                         ? "Bildirimler okunamadı; bağlantıyı kontrol edip yeniden deneyin."
                         : "Bildirimler yenilenemedi; son okunan liste gösteriliyor."}
                   </span>

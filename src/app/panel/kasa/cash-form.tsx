@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
-import { tryAction, useActionTransition } from "@/components/ui/action-error";
+import { SEND_OFFLINE_TEXT, tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -845,7 +845,8 @@ export function CashForm({
   async function resend() {
     if (!report) return;
     setResending(true);
-    const res = await tryAction(() => resendCashReportEmail(report.id));
+    // Bağlantı yoksa "Gönderilemedi": rapor kayıtlı, yalnız e-posta gitmedi ("Kaydedilemedi" rapor kayboldu sandırır)
+    const res = await tryAction(() => resendCashReportEmail(report.id), { offline: SEND_OFFLINE_TEXT });
     setResending(false);
     // Atılan eylem (E-51): bildirim çıktı, düğme bırakıldı
     if (!res) return;

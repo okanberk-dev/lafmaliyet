@@ -394,6 +394,27 @@ function modelFailed(e: unknown): { priceNote: PanelNotification[]; warnings: Pa
 }
 
 /**
+ * Zamanı gelen ödemeler okunamadı (E-49'un ödeme yanı: loadUpcoming da Neon uyanırken kendi paralel sorgularıyla
+ * düşebilir). Ödemeler grubu sessizce boş görünmesin, menü "Dikkat isteyen bir şey yok" demesin: tek satır, okunmamış
+ * sayılmaz (geçici; rozeti şişirmez), kimliği günden.
+ */
+function upcomingFailed(e: unknown): null {
+  console.error("Zil: zamanı gelen ödemeler okunamadı", e);
+  return null;
+}
+
+const paymentsFailedRow = (): PanelNotification => ({
+  id: `odeme-okunamadi-${todayTR()}`,
+  kind: "warning",
+  title: "Ödemeler yüklenemedi",
+  body: "Zamanı gelen ödemeler şu an okunamadı; zili birazdan yeniden açın.",
+  timeLabel: "",
+  unread: false,
+  href: "/panel/hatirlaticilar",
+  group: "odeme",
+});
+
+/**
  * Yönetici: maliyet modeline bağlı satırlar, son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler"
  * ile aynı kaynak) ve hammadde zammı. Model okunamazsa (Neon uyanırken modelin paralel sorgularından biri zaman aşımına
  * düşer; denetim E-49) zil boş kalmaz: ödemeler, onaylar, sistem ve öbür satırlar yine gelir, bunların yerine tek bir
@@ -459,10 +480,11 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     opsBell(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
-  // Maliyet modeli zilin tek ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını koyar
+  // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
+  // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed)
   const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients] = await Promise.all([
     modelNotifications().catch(modelFailed),
-    loadUpcoming().catch(() => null),
+    loadUpcoming().catch(upcomingFailed),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
     unpricedNotifications().catch(() => []),
@@ -484,6 +506,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
       href: "/panel/hatirlaticilar",
       group: "odeme" as const,
     }));
+  if (!upcoming) payments.push(paymentsFailedRow());
   // Personelin kasadan tedarikçiye verdiği, hesaba işlenmemiş paralar (Teslim · ödeme; yalnız yönetici). Kimlik sayı ve
   // toplamdan: yeni satır gelince yeniden okunmamış olur
   const kasa = upcoming?.cari.kasaPending;

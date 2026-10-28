@@ -524,7 +524,13 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
      düzenleyici) ve B20'de (E-51, D-07; panelin bütün istemci dosyaları) kapandı. Atılan eylem (ağ kesildi, panel
      güncellendi) düğmeyi kilitli bırakmaz, iyimser değişikliği sessizce geri almaz, sayfayı hata ekranına düşürmez:
      `useActionTransition`, `tryAction`, `catchingFormAction` ve `actionErrorText` (`src/components/ui/action-error.ts`);
-     parola penceresi pencereyi ve parolayı tutar, nedeni alanın altında yazar. Bekçi sözdizimi ağacını tarar
+     parola penceresi pencereyi ve parolayı tutar, nedeni alanın altında ayrı durum satırında yazar (parola alanı
+     geçersiz işaretlenmez), giriş formu yazılan e-postayı tutar. Yeni kayıt açan ya da ekleyen eylemlerde (yeni satış
+     satırı, ekleme kipinde içe aktarma, yeni personel, sabit gider, yatırım, bulgu, kontrol listesi; tekrarı ikinci bir
+     kayıt yazar) kopan bağlantı "Kaydedilemedi" demez: "kayıt yapılmış olabilir; sayfayı yenileyip kontrol edin" ve
+     **Yenile** (`tryAction(fn, { maybeSaved: true })`); gönderen eylemler "Gönderilemedi" der. Daha sağlamı, ekleme
+     kipindeki içe aktarmaya istemci anahtarı (kasa isteklerindeki `clientKey` gibi): satış satırlarında anahtar
+     sütunu yok, göç ister; açık. Bekçi sözdizimi ağacını tarar
      (`tests/helpers/action-guard.ts`, `tests/arayuz-duzeltmeleri.test.ts`): `@/server/actions`'tan alınan her adın
      reddi bir yerde yakalanmalı, useActionTransition'da eylemden sonraki meşgul durumu try/finally dışında
      bırakılmamalı; tek kaçış yorumu (`eylem-hatası:`) Kullanıcılar'daki parola isteğinde.

@@ -4,7 +4,7 @@ import { BellOff, BellRing, MonitorSmartphone, Send, Volume2 } from "lucide-reac
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
-import { tryAction } from "@/components/ui/action-error";
+import { SEND_OFFLINE_TEXT, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -91,7 +91,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
 
   async function test() {
     setBusy(true);
-    const res = await tryAction(() => sendTestPush());
+    // Bağlantı yoksa "Gönderilemedi" (kaydedilen bir şey yok; "Kaydedilemedi" kasa raporu kayboldu sandırır)
+    const res = await tryAction(() => sendTestPush(), { offline: SEND_OFFLINE_TEXT });
     setBusy(false);
     if (!res) return;
     if (res.ok) toast.success("Deneme bildirimi gönderildi", { description: `${res.data.sent} cihaz` });

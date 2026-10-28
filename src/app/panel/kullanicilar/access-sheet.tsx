@@ -4,7 +4,7 @@ import { Check, Copy, Mail, MessageCircle, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { tryAction } from "@/components/ui/action-error";
+import { SEND_OFFLINE_TEXT, tryAction } from "@/components/ui/action-error";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { emailAccess } from "@/server/actions/invites";
@@ -93,7 +93,7 @@ export function AccessSheet({ info, emailConfigured, onClose }: { info: AccessIn
   async function sendMail() {
     if (!secret) return;
     setSending(true);
-    const res = await tryAction(() => emailAccess({ userId: info.userId, kind: info.kind, secret, reason: info.reason }));
+    const res = await tryAction(() => emailAccess({ userId: info.userId, kind: info.kind, secret, reason: info.reason }), { offline: SEND_OFFLINE_TEXT });
     setSending(false);
     if (!res) return;
     if (!res.ok) return void toast.error(res.error);

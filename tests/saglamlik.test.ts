@@ -1,6 +1,6 @@
 // Denetim B20 (sağlamlık süpürmesi): zaman damgalarının günü İstanbul saatiyle (E-70), zilin maliyet modeli
 // yüklenemeyince öbür maddeleri göstermesi (E-49) ve atılan eylemi yakalayan yardımcılar (E-51: tryAction,
-// catchingFormAction, actionErrorText). Eylem hatalarının bekçisi tests/arayuz-duzeltmeleri.test.ts'te.
+// catchingFormAction, actionErrorText; incelemeden: kayıt yapılmış olabilir, gönderilemedi, girişte e-posta kalır). Eylem hatalarının bekçisi tests/arayuz-duzeltmeleri.test.ts'te.
 // Çalıştırma: npx tsx --test tests/saglamlik.test.ts
 
 import assert from "node:assert/strict";
@@ -12,7 +12,16 @@ import { UnrecognizedActionError } from "next/dist/client/components/unrecognize
 import { redirect } from "next/navigation";
 import { toast } from "sonner";
 
-import { actionErrorText, catchingFormAction, OFFLINE_TEXT, STALE_TEXT, tryAction } from "../src/components/ui/action-error";
+import {
+  actionErrorText,
+  catchingFormAction,
+  MAYBE_SAVED_TEXT,
+  OFFLINE_TEXT,
+  SEND_OFFLINE_TEXT,
+  STALE_TEXT,
+  tryAction,
+  UNREACHABLE_TEXT,
+} from "../src/components/ui/action-error";
 import { dateTR, dayTR } from "../src/lib/format";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -57,7 +66,8 @@ test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasın
   for (const line of all.split("\n").slice(1).filter((l) => l.trim())) assert.match(line, /\.catch\(/, line);
   const menu = read("src/components/panel/notifications.tsx");
   assert.match(menu, /failure === "stale"\s+\? "Panel güncellendi; bildirimler için sayfayı yenileyin\."/);
-  assert.match(menu, /"Bildirimler okunamadı; bağlantıyı kontrol edip yeniden deneyin\."/);
+  // Son okuma boş döndüyse "son okunan liste gösteriliyor" denmez (altında liste yok)
+  assert.match(menu, /items === null \|\| items\.length === 0\s+\? "Bildirimler okunamadı; bağlantıyı kontrol edip yeniden deneyin\."\s+: "Bildirimler yenilenemedi; son okunan liste gösteriliyor\."/);
   // Okunamayınca boş liste metni yok
   assert.match(menu, /failure && !\(filter === "unread" && list\.length\) \? null : \(/);
   assert.match(menu, /list\.length \? "Hepsi okundu" : failure \? "Okunamadı" : "Dikkat isteyen bir şey yok"/);
@@ -96,6 +106,62 @@ test("tryAction: atan eylem bildirim çıkarır ve undefined döner; yanıt oldu
   assert.equal(STALE_TEXT, "Panel güncellendi; sayfayı yenileyip yeniden deneyin.");
 });
 
+test("tryAction: yeni kayıt açan eylemde kopan bağlantı 'Kaydedilemedi' demez; gönderen eylemde 'Gönderilemedi' (B20 inceleme)", async () => {
+  const shown: { kind: string; args: unknown[] }[] = [];
+  const t = toast as unknown as { error: (...a: unknown[]) => unknown; warning: (...a: unknown[]) => unknown };
+  const real = { error: t.error, warning: t.warning };
+  t.error = (...a: unknown[]) => void shown.push({ kind: "error", args: a });
+  t.warning = (...a: unknown[]) => void shown.push({ kind: "warning", args: a });
+  try {
+    // Yanıt yolda kayboldu: kayıt yapılmış olabilir; yenileyip bakması söylenir, "Yenile" düğmesiyle
+    assert.equal(await tryAction(() => Promise.reject(new TypeError("Failed to fetch")), { maybeSaved: true }), undefined);
+    const last = shown.at(-1)!;
+    assert.equal(last.kind, "warning");
+    assert.equal(last.args[0], MAYBE_SAVED_TEXT);
+    assert.equal((last.args[1] as { action?: { label: string } }).action?.label, "Yenile");
+    assert.doesNotMatch(MAYBE_SAVED_TEXT, /Kaydedilemedi/);
+    // Eski eylem kimliği: istek eyleme ulaşmadı, yine "Panel güncellendi"
+    await tryAction(() => Promise.reject(new UnrecognizedActionError("x")), { maybeSaved: true });
+    assert.equal(shown.at(-1)!.args[0], STALE_TEXT);
+    // Gönderen eylem: kaydedilen bir şey yok
+    await tryAction(() => Promise.reject(new TypeError("Load failed")), { offline: SEND_OFFLINE_TEXT });
+    assert.deepEqual([shown.at(-1)!.kind, shown.at(-1)!.args[0]], ["error", SEND_OFFLINE_TEXT]);
+    assert.match(SEND_OFFLINE_TEXT, /^Gönderilemedi: /);
+    // Yalnız kimlik verilirse eskisi gibi; kimlik bildirime gider
+    await tryAction(() => Promise.reject(new TypeError("Failed to fetch")), "kayit");
+    assert.deepEqual([shown.at(-1)!.args[0], (shown.at(-1)!.args[1] as { id?: string }).id], [OFFLINE_TEXT, "kayit"]);
+    await tryAction(() => Promise.reject(new TypeError("Failed to fetch")), { id: "x", maybeSaved: false });
+    assert.equal(shown.at(-1)!.args[0], OFFLINE_TEXT);
+  } finally {
+    t.error = real.error;
+    t.warning = real.warning;
+  }
+});
+
+test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken eylemler kendi metniyle çağrılır (B20 inceleme)", () => {
+  const sites: [string, RegExp][] = [
+    ["src/app/panel/satislar/sales-client.tsx", /importSales\(\{ month, lines: rows, mode, through: running \? through : null \}\), \{ maybeSaved: mode === "append" \}\)/],
+    ["src/app/panel/satislar/sales-client.tsx", /saveLine\(\{ id: line\.id \?\? null, month, posName, qty: qtyNum, revenue: revNum, note \}\), \{ maybeSaved: !line\.id \}\)/],
+    ["src/app/panel/personel/staff-editor.tsx", /tryAction\(\(\) => saveStaff\(list\), \{ maybeSaved: !row \}\)/],
+    ["src/app/panel/personel/staff-editor.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
+    ["src/app/panel/giderler/expenses-client.tsx", /effectiveFrom: !row \|\| amountChanged \? eff : row\.valueMonth,\s+\}\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !row \},/],
+    ["src/app/panel/giderler/expenses-client.tsx", /saveInvestment\(\{ id: row\?\.id \?\? null, name, amount: parsed, date, note \}\), \{ maybeSaved: !row \}\)/],
+    ["src/app/panel/giderler/expenses-client.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
+    ["src/app/panel/tutarlilik/consistency-client.tsx", /saveFinding\(\{ id: item\?\.id \?\? null, section, title, detail \}\), \{ maybeSaved: !item \}\)/],
+    ["src/app/panel/kontrol/duzenle/templates-client.tsx", /createChecklistTemplate\(draftOf\(draft\)\), \{ maybeSaved: true \}\)/],
+    ["src/components/panel/live/device-alerts.tsx", /sendTestPush\(\), \{ offline: SEND_OFFLINE_TEXT \}\)/],
+    ["src/app/panel/kasa/cash-form.tsx", /resendCashReportEmail\(report\.id\), \{ offline: SEND_OFFLINE_TEXT \}\)/],
+    ["src/app/panel/kullanicilar/access-sheet.tsx", /emailAccess\(\{[^}]*\}\), \{ offline: SEND_OFFLINE_TEXT \}\)/],
+    ["src/app/panel/gelir-gider/site-sales-card.tsx", /refreshSiteSales\(months\), \{ offline: UNREACHABLE_TEXT \}\)/],
+  ];
+  for (const [f, re] of sites) assert.match(read(f), re, f);
+  // Ortak "run" yardımcıları seçeneği tryAction'a geçirir
+  for (const f of ["src/app/panel/personel/staff-editor.tsx", "src/app/panel/giderler/expenses-client.tsx"]) {
+    assert.match(read(f), /fallback: string, maybeSaved = false\)[^{]*\{\s+setPending\(true\);\s+const res = await tryAction\(\(\) => p, \{ maybeSaved \}\);/, f);
+  }
+  assert.equal(UNREACHABLE_TEXT, "Bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin.");
+});
+
 test("catchingFormAction / actionErrorText: form önceki durumunda kalır, neden formun hata satırında (E-51)", async () => {
   const realLog = console.error;
   console.error = () => {};
@@ -108,6 +174,17 @@ test("catchingFormAction / actionErrorText: form önceki durumunda kalır, neden
     assert.deepEqual(await failing({ step: "password" }, new FormData()), { step: "password", error: "Bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin." });
     const answering = async (state: State, size: number): Promise<State> => ({ ...state, error: size > 1 ? "Büyük" : undefined });
     assert.deepEqual(await catchingFormAction(answering)({ step: "password" }, 2), { step: "password", error: "Büyük" });
+    // recover: React formu boşaltır; gönderilen e-posta duruma geri konur, alan ondan dolar (giriş formu)
+    type Login = { error?: string; email?: string };
+    const offline = async (state: Login, payload: FormData): Promise<Login> => {
+      throw new TypeError(state && payload ? "Failed to fetch" : "x");
+    };
+    const login = catchingFormAction(offline, (fd: FormData) => ({ email: String(fd.get("email") ?? "") }));
+    const fd = new FormData();
+    fd.set("email", "ayse@laffogato.net");
+    fd.set("password", "gizli");
+    assert.deepEqual(await login({}, fd), { email: "ayse@laffogato.net", error: UNREACHABLE_TEXT });
+    assert.match(read("src/app/giris/login-form.tsx"), /catchingFormAction\(loginAction, \(fd: FormData\) => \(\{ email: String\(fd\.get\("email"\) \?\? ""\) \}\)\)/);
     assert.equal(actionErrorText(new Error("beklenmedik")), "İşlem tamamlanamadı; sayfayı yenileyip yeniden deneyin.");
     assert.throws(() => actionErrorText((() => { try { redirect("/giris"); } catch (e) { return e; } })()));
   } finally {

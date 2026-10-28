@@ -1483,7 +1483,7 @@ function FindingDialog({
     e?.preventDefault();
     if (!canSave) return toast.error(title.trim() ? "Bölüm adını yazın" : "Başlık yazın");
     setBusy(true);
-    const res = await tryAction(() => saveFinding({ id: item?.id ?? null, section, title, detail }));
+    const res = await tryAction(() => saveFinding({ id: item?.id ?? null, section, title, detail }), { maybeSaved: !item });
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);

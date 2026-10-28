@@ -1,6 +1,7 @@
 // Zil, maliyet modeli okunamayınca (denetim E-49): gerçek Postgres'te. Neon uyanırken modelin paralel sorgularından biri
 // zaman aşımına düşer; yöneticinin zili boş gelip "Dikkat isteyen bir şey yok" dememeli: ödemeler ve kişinin
 // hatırlatıcıları yine gelir, modele bağlı satırların yerine tek bir "yüklenemedi" satırı durur (okunmamış sayılmaz).
+// Zamanı gelen ödemeler (loadUpcoming) okunamazsa da Ödemeler grubu sessizce boşalmaz: "Ödemeler yüklenemedi".
 // Kendi geçici veritabanını açar (migration'larla), sonunda siler; oturum ve maliyet modeli taklit edilir
 // (src/server/auth/dal, src/server/data/dataset loadModel'i istenince atar).
 //
@@ -35,6 +36,8 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
   let me: Who = users.ali;
   /** true iken loadModel 08P01 benzeri bir hatayla düşer */
   let modelDown = false;
+  /** true iken loadUpcoming (zamanı gelen ödemeler) aynı hatayla düşer */
+  let upcomingDown = false;
   const realError = console.error;
 
   before(async () => {
@@ -67,6 +70,14 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
       loadModel: async (...args: Parameters<typeof dataset.loadModel>) => {
         if (modelDown) throw Object.assign(new Error("Authentication timed out"), { code: "08P01" });
         return dataset.loadModel(...args);
+      },
+    });
+    const digest = require("../src/server/notify/digest") as typeof import("../src/server/notify/digest");
+    stub(require.resolve("../src/server/notify/digest"), {
+      ...digest,
+      loadUpcoming: async (...args: Parameters<typeof digest.loadUpcoming>) => {
+        if (upcomingDown) throw Object.assign(new Error("Authentication timed out"), { code: "08P01" });
+        return digest.loadUpcoming(...args);
       },
     });
     const dbModule = await import("../src/server/db");
@@ -122,6 +133,33 @@ describe("Zil: maliyet modeli okunamayınca öbür maddeler", { skip: !SERVER_UR
       console.error = realError;
       modelDown = false;
     }
+  });
+
+  test("ödemeler okunamayınca grup sessizce boşalmaz: tek 'Ödemeler yüklenemedi' satırı, okunmamış sayılmaz", async () => {
+    me = users.ali;
+    upcomingDown = true;
+    const logged: unknown[] = [];
+    console.error = (...a: unknown[]) => void logged.push(a);
+    try {
+      const items = await bell.loadPanelNotifications();
+      const pay = items.filter((i) => i.group === "odeme");
+      assert.deepEqual(
+        pay.map((i) => [i.id, i.title, i.kind, i.unread, i.href, i.timeLabel]),
+        [[`odeme-okunamadi-${todayTR()}`, "Ödemeler yüklenemedi", "warning", false, "/panel/hatirlaticilar", ""]],
+      );
+      assert.match(pay[0].body, /zili birazdan yeniden açın/);
+      // Öbür maddeler yine gelir
+      assert.ok(items.some((i) => i.group === "hatirlatici" && i.title === "Tedarikçiyi ara"));
+      assert.equal(items.filter((i) => i.id.startsWith("uyari-model-")).length, 0);
+      assert.equal(logged.length, 1);
+    } finally {
+      console.error = realError;
+      upcomingDown = false;
+    }
+    // Okunabilince satır yok, ödeme yerinde
+    const back = await bell.loadPanelNotifications();
+    assert.equal(back.filter((i) => i.id.startsWith("odeme-okunamadi-")).length, 0);
+    assert.ok(back.some((i) => i.group === "odeme" && i.title.startsWith("Kira")));
   });
 
   test("personelin zili modele hiç dokunmaz: model düşse de aynı", async () => {

@@ -11,8 +11,11 @@ import { requestPasswordReset, type ForgotState } from "@/server/actions/invites
 
 import { AuthError, AuthHeading, authButton, authCard, authInput, authLink, FloatingField } from "./auth-ui";
 
-/** Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51) */
-const login = catchingFormAction(loginAction);
+/**
+ * Ağ kesilirse ya da panel güncellendiyse form hata ekranına düşmez; nedeni formun hata satırında (E-51). Yazılan
+ * e-posta duruma geri konur: React formu boşaltır, alan `state.email`'den dolar (hatalı parolada olduğu gibi)
+ */
+const login = catchingFormAction(loginAction, (fd: FormData) => ({ email: String(fd.get("email") ?? "") }));
 const verifyCode = catchingFormAction(verifyLoginCodeAction);
 const forgotPassword = catchingFormAction(requestPasswordReset);
 

@@ -558,6 +558,17 @@ test("banka gün sonu fişi tek tarih uyarısı verir; ertesi sabah basılmış 
   // Tarihi düşük güvende okunmuşsa başlık uyarmaz
   const unsure = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-20", dateConfidence: "low", batches: [{ ...slip(DAY), date: null }] }), { day: DAY, prev: PREV });
   assert.deepEqual(dayWarnings(unsure), []);
+  // İki POS'un partisi aynı yanlış günden: yine tek uyarı (kutunun dört satırından ikisi aynı uyarı olmasın)
+  const twoBanks = [slip("2026-10-27"), { ...slip("2026-10-27"), bank: "BAŞKABANK", batchNo: "7" }];
+  const both = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-27", time: "23:10", batches: twoBanks }), { day: DAY, prev: PREV });
+  assert.equal(dayWarnings(both).length, 1, JSON.stringify(both.checks));
+  assert.ok(both.checks.some((c) => /2 banka gün sonu toplandı/.test(c.text)));
+  // Z raporunun içindeki partiler de aynı kuralla
+  const inZ = normalizeOkc(z({ batches: twoBanks }), { day: DAY, prev: PREV });
+  assert.equal(inZ.checks.filter((c) => /Banka gün sonu fişinin tarihi/.test(c.text)).length, 1, JSON.stringify(inZ.checks));
+  // Partiler iki ayrı yanlış günden: her gün bir kez söylenir
+  const apart = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-27", time: "23:10", batches: [slip("2026-10-27"), { ...slip("2026-10-20"), bank: "BAŞKABANK" }] }), { day: DAY, prev: PREV });
+  assert.equal(apart.checks.filter((c) => /Banka gün sonu fişinin tarihi/.test(c.text)).length, 2);
 });
 
 test("kesik fişin metni bu türde: kalan kısmını ayrıca çekin", () => {

@@ -482,11 +482,12 @@ export function FixedExpensesClient({
 
   /**
    * Eylemi çalıştırır; sunucunun iletisini (hangi ayların etkilendiği) bildirim olarak gösterir. Eylem atarsa (ağ
-   * kesildi, panel güncellendi; E-51) bildirim çıkar, düğmeler bırakılır, pencere açık kalır
+   * kesildi, panel güncellendi; E-51) bildirim çıkar, düğmeler bırakılır, pencere açık kalır. `maybeSaved`: eylem yeni
+   * kayıt açar; yanıt yolda kaybolursa "Kaydedilemedi" denmez (kayıt yapılmış olabilir, ikinci dokunuş ikinci kalemi yazar)
    */
-  async function run<T extends { message?: string | null }>(p: Promise<ActionResult<T>>, fallback: string): Promise<T | null> {
+  async function run<T extends { message?: string | null }>(p: Promise<ActionResult<T>>, fallback: string, maybeSaved = false): Promise<T | null> {
     setPending(true);
-    const res = await tryAction(() => p);
+    const res = await tryAction(() => p, { maybeSaved });
     setPending(false);
     if (!res) return null;
     if (!res.ok) {
@@ -526,6 +527,7 @@ export function FixedExpensesClient({
     const done = await run(
       saveFixedExpense({ id: null, name: r.name, section: r.section, period: r.period, amount: r.amount, note: r.note, vatRate: r.vatRate, effectiveFrom: fromMonth }),
       `${r.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
+      true,
     );
     if (done) onSaved(done.id, true);
     return !!done;
@@ -1140,6 +1142,8 @@ function FixedDialog({
         // Tutar değişmediyse gösterilen ayın değeri geri gider (hiçbir ay değişmez)
         effectiveFrom: !row || amountChanged ? eff : row.valueMonth,
       }),
+      // Yeni kalemde yanıt yolda kaybolursa kalem yazılmış olabilir: ikinci "Kaydet" aynı gideri iki kez ekler
+      { maybeSaved: !row },
     );
     setBusy(false);
     // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
@@ -1573,7 +1577,7 @@ function InvestmentDialog({
     if (!name.trim()) return nameRef.current?.focus();
     if (amountError || parsed === null) return amountRef.current?.focus();
     setBusy(true);
-    const res = await tryAction(() => saveInvestment({ id: row?.id ?? null, name, amount: parsed, date, note }));
+    const res = await tryAction(() => saveInvestment({ id: row?.id ?? null, name, amount: parsed, date, note }), { maybeSaved: !row });
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);

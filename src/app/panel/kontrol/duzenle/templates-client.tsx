@@ -55,7 +55,8 @@ export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await tryAction(() => createChecklistTemplate(draftOf(draft)));
+    // Yanıt yolda kaybolursa liste açılmış olabilir: ikinci "Ekle" aynı listeyi iki kez açar
+    const res = await tryAction(() => createChecklistTemplate(draftOf(draft)), { maybeSaved: true });
     setSaving(false);
     if (!res) return;
     if (!res.ok) return setError(res.error);

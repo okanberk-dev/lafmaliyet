@@ -68,7 +68,8 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
   let confidence: Confidence = "high";
   let count = 0;
   const checks: ReadCheck[] = [];
-  let dayWarned = false;
+  /** Uyarılan yanlış günler: iki POS'un partisi aynı yanlış günden ise tek uyarı (E-69; kutuda dört satır var) */
+  const warnedDays = new Set<string>();
   for (const b of raw.batches) {
     const net = printedAmount(b.netTotal);
     const sales = printedAmount(b.salesTotal);
@@ -93,12 +94,12 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
     } else continue;
     count++;
     const slipDay = businessDayOf(b.date, null);
-    if (slipDay && !slipDayFits(slipDay, day)) {
-      dayWarned = true;
+    if (slipDay && !slipDayFits(slipDay, day) && !warnedDays.has(slipDay)) {
+      warnedDays.add(slipDay);
       checks.push({ fields: ["bankPos"], level: "warn", text: `Banka gün sonu fişinin tarihi ${dayMonthTR(slipDay)}; bu rapor ${dayMonthTR(day)} için. Doğru günün fişi mi?` });
     }
   }
-  return count ? { value: round2(value), confidence, count, checks, dayWarned } : null;
+  return count ? { value: round2(value), confidence, count, checks, dayWarned: warnedDays.size > 0 } : null;
 }
 
 /**

@@ -60,9 +60,15 @@ test("eylem hatası bekçisinin kaçış yorumları sayılı ve nedenli", () => 
   assert.deepEqual(marks, [
     "src/app/panel/kullanicilar/users-client.tsx: eylem-hatası: ConfirmPasswordDialog'un onConfirm'ü yakalar (pencere ve parola kalır, nedeni alanın altında)",
   ]);
-  // O pencere atılan eylemi yakalar: pencere ve yazılan parola kalır, nedeni alanın altında
+  // O pencere atılan eylemi yakalar: pencere ve yazılan parola kalır, nedeni alanın altında ayrı durum satırında; parola
+  // alanı yalnız eylemin döndürdüğü hatada (yanlış parola) geçersiz işaretlenir
   const dialog = read("src/components/panel/confirm-password-dialog.tsx");
-  assert.match(dialog, /try \{\s+problem = await onConfirm\(password\);\s+\} catch \(e\) \{\s+problem = actionErrorText\(e\);\s+\}\s+if \(problem\) setError\(problem\);/);
+  assert.match(dialog, /try \{\s+const problem = await onConfirm\(password\);\s+if \(problem\) setError\(problem\);\s+\} catch \(e\) \{\s+setNotice\(actionErrorText\(e\)\);\s+\}/);
+  assert.match(dialog, /setError\(null\);\s+setNotice\(null\);/);
+  assert.match(dialog, /<Field label="Parolanız" htmlFor="confirm-pw" error=\{error\}>/);
+  assert.match(dialog, /aria-invalid=\{error \? true : undefined\}/);
+  assert.match(dialog, /\{notice \? \(\s+<p role="status"[^>]*>\s+\{notice\}/);
+  assert.doesNotMatch(dialog, /setError\(actionErrorText/);
 });
 
 test("eylem hatası bekçisi kendi örneklerinde yakalanmayanı bulur, yakalananı geçer", () => {

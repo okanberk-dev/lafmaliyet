@@ -366,11 +366,14 @@ Vercel › Storage › lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 C
 ### Zil okunamayınca
 
 Zil kabuk açılınca (çoğu zaman Neon uyanırken) okunur. **Maliyet modeli** (son satış ayının uyarıları ve hammadde
-zammı) zilin tek ağır okumasıdır; düşerse zil boş gelmez (denetim E-49): ödemeler, onaylar, kasa, kontrol listeleri,
+zammı) zilin en ağır okumasıdır; düşerse zil boş gelmez (denetim E-49): ödemeler, onaylar, kasa, kontrol listeleri,
 faturalar ve sistem satırları yine gelir, modelin satırları yerine Uyarılar'da tek bir **"Maliyet uyarıları
-yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimliği günden). Zilin bütün okuması düşerse (ağ,
-sunucu) menü "Dikkat isteyen bir şey yok" demez: üstte "Bildirimler okunamadı" ve **Yeniden dene** durur, önceki liste
-varsa altında kalır; panel yeniden yayınlandıysa "Panel güncellendi" ve **Yenile** (`src/components/panel/notifications.tsx`).
+yüklenemedi"** satırı durur (okunmamış sayılmaz, rozeti şişirmez; kimliği günden). **Zamanı gelen ödemeler** de kendi
+paralel sorgularıyla okunur; düşerse Ödemeler grubu sessizce boşalmaz, yerinde tek bir **"Ödemeler yüklenemedi"**
+satırı durur (okunmamış sayılmaz; gecikmiş ödeme rozeti bu okumada sayılamaz). Zilin bütün okuması düşerse (ağ,
+sunucu) menü "Dikkat isteyen bir şey yok" demez: üstte "Bildirimler okunamadı" ve **Yeniden dene** durur; önceki
+okumada liste varsa altında kalır ve üstteki satır "Bildirimler yenilenemedi; son okunan liste gösteriliyor" der.
+Panel yeniden yayınlandıysa "Panel güncellendi" ve **Yenile** (`src/components/panel/notifications.tsx`).
 
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
 
