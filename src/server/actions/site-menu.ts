@@ -3,13 +3,14 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { cleanName } from "@/lib/count-item";
 import { rowLabel } from "@/lib/site-menu/plan";
 import { SITE_MENU_ID, type SiteMenuItem } from "@/lib/site-menu/schema";
 import type { SiteMenuSlot } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
-import { LINK_OFF_ERROR, linkProducts, unlinkProduct } from "@/server/site-menu/link";
+import { createLinkedProducts, LINK_OFF_ERROR, linkProducts, unlinkProduct } from "@/server/site-menu/link";
 import { fetchSiteMenu, loadLinkedRows, SiteRequestError, syncSiteMenu } from "@/server/site-menu/sync";
 
 import { attempt, UserError } from "./util";
@@ -80,6 +81,36 @@ export async function linkSuggestedProducts(input: z.input<typeof zLink>[]) {
     const r = await linkProducts(me, data);
     if (r.linked.length) refresh();
     return { linked: r.linked.length, skipped: r.skipped };
+  });
+}
+
+const zNewFromSite = z.object({
+  siteMenuId: z.string().regex(SITE_MENU_ID, "Geçersiz kalem"),
+  name: z
+    .string({ message: "Ürün adını yazın" })
+    .transform(cleanName)
+    .pipe(z.string().min(2, "Ürün adı en az 2 harf olmalı").max(120, "Ürün adı çok uzun")),
+  categoryId: z.number({ message: "Kategori seçin" }).int().positive("Kategori seçin"),
+  rows: z
+    .array(z.object({ slot: z.enum(["M", "L"], { message: "Fiyat seçin (M ya da L)" }), size: z.enum(["M", "L", "Tek"], { message: "Boy seçin" }) }))
+    .min(1, "En az bir boy seçin")
+    .max(2, "Bir kalemin en çok iki fiyatı var")
+    .refine((rows) => new Set(rows.map((r) => r.slot)).size === rows.length, "Aynı fiyat iki kez seçildi")
+    .refine((rows) => new Set(rows.map((r) => r.size)).size === rows.length, "İki fiyata aynı boy seçildi"),
+});
+
+/**
+ * "Yalnız sitede" kalemden panel ürünü açar ve bağlar (denetim E-48): seçilen her fiyat (M / L / tek) bir boy olarak
+ * sitenin adı (değiştirilebilir), fiyatı ve menü durumuyla açılır ve aynı işlemde o yuvaya bağlanır. Reçete sonra
+ * ürün kartında girilir.
+ */
+export async function createProductsFromSite(input: z.input<typeof zNewFromSite>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = zNewFromSite.parse(input);
+    const r = await createLinkedProducts(me, data);
+    refresh();
+    return r;
   });
 }
 

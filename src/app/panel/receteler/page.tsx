@@ -171,9 +171,9 @@ async function RecipeBookContent() {
     updatedAt: r.updatedAt.toISOString(),
   }));
 
-  // Yönetici ürünü doğrudan Ürünler › Yeni ürün'den açar; personel önerir
+  // Yönetici ürünü doğrudan Ürünler › Yeni ürün'den açar (pencere açık gelir; denetim E-48); personel önerir
   const action = isAdmin ? (
-    <ButtonLink href="/panel/urunler" variant="secondary">
+    <ButtonLink href="/panel/urunler?yeni=1" variant="secondary">
       <Plus size={16} aria-hidden="true" /> Yeni ürün
     </ButtonLink>
   ) : propose && newProduct ? (

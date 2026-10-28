@@ -221,7 +221,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
             “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde görünür / gizli” anahtarını değiştirince önce siteye yazılır, site ulaşılamazsa
             kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
-            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır. Ürün kartı açıkken fiyat sitede ya da
+            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez. Sitede yeni açılan kalem &quot;Yalnız sitede&quot; sekmesinde görünür: Panelde aç ve
+            bağla onu her fiyatı bir boy olarak sitenin adı ve fiyatıyla panelde açar, bağlar ve reçete kartına götürür. Ürün kartı açıkken fiyat sitede ya da
             başka bir yerde değişirse kartın kaydı onu geri almaz: fiyata dokunmadıysanız yeni fiyat kalır; dokunduysanız kart fiyatın altında hangisinin
             kalacağını sorar.
           </>
@@ -246,7 +247,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Yeni ürün eklemek",
         a: (
           <>
-            <Path href="/panel/urunler" /> › Yeni ürün. İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
+            <Path href="/panel/urunler" /> › Yeni ürün (Reçete defterindeki Yeni ürün de bu pencereyi açar). İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın.
+            Ürün laffogato.net menüsünde zaten varsa Site menüsü › Yalnız sitede › Panelde aç ve bağla daha kısadır: ad, boylar ve fiyat siteden gelir, ürün
+            siteye bağlı açılır. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
             yok. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif
             anahtarını kapatın.
           </>

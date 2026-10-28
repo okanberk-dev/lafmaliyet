@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { siteGaps, suggestLinks } from "@/lib/site-menu/names";
+import { newFromSiteDraft } from "@/lib/site-menu/new-product";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
@@ -69,7 +70,7 @@ async function SiteMenuContent() {
       console.error("[menu] sayfa eşitlemesi", e);
     }
   });
-  const [site, till, rows] = await Promise.all([
+  const [site, till, rows, categories] = await Promise.all([
     loadSiteLinks(),
     // Bugünün kasası (bilgi metni: LafPOS fiyatı siteden alır; denetim E-39)
     loadTillScope().catch(() => null),
@@ -78,6 +79,7 @@ async function SiteMenuContent() {
         id: s.products.id,
         name: s.products.name,
         size: s.products.size,
+        categoryId: s.products.categoryId,
         category: s.categories.name,
         price: s.products.price,
         active: s.products.active,
@@ -88,12 +90,14 @@ async function SiteMenuContent() {
       .from(s.products)
       .innerJoin(s.categories, eq(s.categories.id, s.products.categoryId))
       .orderBy(asc(s.categories.sortOrder), asc(s.products.sortOrder), asc(s.products.id)),
+    getDb().select({ id: s.categories.id, name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder), asc(s.categories.id)),
   ]);
   const items = site.snapshot.at ? site.snapshot.items : [];
   const products: MatchProduct[] = rows.map((r) => ({
     id: r.id,
     name: r.name,
     size: r.size,
+    categoryId: r.categoryId,
     category: r.category,
     price: r.price,
     active: r.active,
@@ -106,6 +110,8 @@ async function SiteMenuContent() {
   const forInactive = items.length ? suggestLinks(unlinked.filter((p) => !p.active), items, [...site.links, ...forActive]) : [];
   const suggestions = [...forActive, ...forInactive];
   const gaps = siteGaps(items, site.links);
+  // "Panelde aç ve bağla" penceresinin ön dolumu: ad, kategori tahmini, boylar ve sitenin fiyatları (denetim E-48)
+  const drafts = gaps.map((g) => newFromSiteDraft(g, items, products, categories));
 
   return (
     <>
@@ -118,6 +124,8 @@ async function SiteMenuContent() {
         products={products}
         suggestions={suggestions}
         gaps={gaps}
+        drafts={drafts}
+        categories={categories}
         kasa={till?.kasa ?? "ModPOS"}
       />
     </>
