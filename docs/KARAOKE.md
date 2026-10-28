@@ -100,6 +100,44 @@ grup olduğunu bilebilir):
 Kural tek yerde: `src/lib/karaoke/overlap.ts` (ekran ve sunucu eylemi aynı fonksiyonu çağırır;
 `tests/karaoke-cakisma.test.ts`).
 
+### Sayacı silmek, bitirmek, geri açmak
+
+Denetim E-15 ve E-65 (28 Ekim 2026). Oturumun bittiği an doluluğu kısaltır, silinen sayaç karaoke geçmişinden,
+doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
+
+- **Bitirmek:** **Erken bitir**, **Haber verdim** (süre dolunca) ve zildeki susturma oturumu bitti işaretler (kim ve
+  ne zaman) ve İşlem geçmişine "Karaoke oturumu bitirildi" yazar: "Selin · 24 Eki 21:00–23:00 · bitirildi 21:30 (1 saat
+  30 dk erken)" ya da "… · süre dolunca haber verildi 23:07". İkinci cihazın basışı bir şey yapmaz.
+- **Geri açmak** (bugünün listesindeki **Geri aç**, yanlışlıkla bitirilen oturum): kimin bitirdiği silinmeden önce
+  okunur ve İşlem geçmişine "Karaoke oturumu yeniden açıldı · … · Ayşe bitirmişti (21:30)" diye yazılır. İptal edilmiş
+  (iade edilen, ödemesi düşen) ve süresi dolmuş oturum açılmaz ("İptal edilmiş oturum yeniden açılamaz", "Süresi dolmuş
+  oturum yeniden açılamaz"; açılsa süre doldu alarmı çalardı). Bitmiş oturumu **uzatmak** da onu açar: uzatmanın izine
+  "Ayşe bitirmişti (21:30), yeniden açıldı" eklenir.
+- **Sayacı silmek** (yalnız panelden açılan sayaç; sitenin rezervasyonu sitede yönetilir): yönetici her zaman siler.
+  Personel açılışından sonraki **ilk 10 dakikada** çöp kutusuyla siler (yanlış açılan sayaç); sonrasında satırda
+  **Silinmesini iste** durur: neden zorunlu (3-300 karakter), sayaç onaya kadar listede kalır ve sayar. İstek
+  `staff_requests`'e `karaoke-sil` türüyle gider ([ONAYLAR.md](ONAYLAR.md)); satırda "Ayşe silinmesini istedi" (isteyene
+  "Silinmesi onay bekliyor" ve **Geri çek**), yöneticide rozet Onaylar'daki karta götürür. Ekran onay penceresi açıkken
+  10 dakika dolarsa sunucu silmez, nedeni soran pencere açılır.
+- **Onaylar › Karaoke:** sayacın adı, saati (uzatmalar dahil), kişi sayısı, kimin açtığı, bugünkü durumu ("Sürüyor · 40 dk
+  kaldı", "Bitti 22:40 (Mehmet)"), istekten sonra ne değiştiği ("İstekten sonra 30 dk uzatıldı"), isteyen ve neden.
+  **Onayla ve sil** sayacı siler, **Reddet** dokunmaz (not personele görünür); sayaç arada silindiyse tek düğme **Kapat**
+  ("Sayaç zaten silinmişti"). Yöneticinin doğrudan silmesi ve onay aynı sayacın öteki bekleyen isteklerini "Sayaç
+  silindi" diye kapatır.
+- **Zil:** yöneticide "1 karaoke sayacı silme isteği onay bekliyor" (ilk karta), personelde sonuç ("Silme onaylandı:
+  karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına). Bugün'ün Onaylar satırı ve sabah e-postasının Onay bekleyenler
+  kutusu da sayar. İstek başlığı ("Karaoke sayacı silme · 24 Eki 21:00–23:00") ve yükü adsızdır: etiket (misafirin adı
+  olabilir) oturumdan okunur, 3 × 366 günlük temizlik onu boşaltır, istek tutmaz. Tutar hiçbir yerde yok.
+- **İşlem geçmişi:** "Karaoke sayacı silindi", "Karaoke sayacının silinmesi istendi" (neden), "… onaylandı", "…
+  reddedildi", "Karaoke sayacı silme isteği kapandı", "Karaoke sayacının silinmesi isteği geri çekildi". Her biri yazımla
+  aynı işlemde (iz ve yazım birlikte kalır ya da ikisi birden düşer).
+- **Kilit sırası** onay kuyruğununki: önce oturum satırı (FOR UPDATE), sonra istek; personelin isteği, yöneticinin
+  doğrudan silmesi ve onay aynı sırayla kilitler. Bar ekranı istekleri canlı uçtan alır (`deleteAsks`); istek açılınca,
+  geri çekilince ve karara bağlanınca karaoke sayacı artar (ETag).
+- Kurallar `src/lib/karaoke/timer-requests.ts` (saf; ekran ve sunucu aynı fonksiyonu çağırır), çekirdek
+  `src/server/karaoke/timer.ts`, okuyucular `src/server/data/karaoke-requests.ts`. Migration yok: `staff_requests.kind`
+  metin sütunu, tür listesi yalnız TypeScript'te.
+
 ## Kurulum
 
 1. Ortak anahtarı bir kez üretin: `openssl rand -base64 48` (en az 32 karakter).
@@ -185,9 +223,10 @@ kendi cihazında açar.
   sabah işinin karaoke adımı, günü (Türkiye) bundan eski oturumların `customer_name` ve `note`'unu boşaltır (iki
   kaynak da: rezervasyonsuz sayacın etiketi de bir ad olabilir). Satır istatistik için kalır
   (`src/server/karaoke/history.ts` `clearOldKaraokePersonalData`).
-- İşlem geçmişi (`activity_log`) bu temizliğe girmez: "Karaoke sayacı başlatıldı", "Karaoke sayacı silindi" ve
-  "Karaoke süresi uzatıldı" satırları misafirin adını ya da sayacın etiketini taşır ve 3 × 366 günden sonra da kalır
-  (işlem geçmişinin saklama süresi yok).
+- İşlem geçmişi (`activity_log`) bu temizliğe girmez: "Karaoke sayacı başlatıldı", "Karaoke sayacı silindi",
+  "Karaoke süresi uzatıldı", "Karaoke oturumu bitirildi" ve "Karaoke oturumu yeniden açıldı" satırları misafirin adını ya
+  da sayacın etiketini taşır ve 3 × 366 günden sonra da kalır (işlem geçmişinin saklama süresi yok). Sayaç silme
+  isteğinin başlığı ve yükü adı taşımaz.
 - Geçmişten alınan rezervasyonlar (Doluluk › Geçmişi siteden al) ad ve not olmadan saklanır.
 
 ## Doluluk haritası (yönetici)
@@ -275,7 +314,9 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/extend.ts` | Uzatmanın tek yazımı (SQL'de toplar, 12 saat sınırı) |
 | `src/server/site-link.ts` | Menü bağlantısıyla ortak: anahtar, sitenin adresi, imzalı istek (8 sn; [SITE-MENU.md](SITE-MENU.md)) |
 | `src/server/karaoke/board.ts` | Oturumlar, sürüm sayacı (ETag), ekran verisi |
-| `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma (ikisi de sitedeki rezervasyonla çakışmayı sorar), bitirme, geri açma, elle eşitleme |
+| `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma (ikisi de sitedeki rezervasyonla çakışmayı sorar), bitirme, geri açma, sayacı silme ve silme isteği, isteğin kararı (yönetici), elle eşitleme |
+| `src/server/karaoke/timer.ts`, `src/lib/karaoke/timer-requests.ts`, `src/server/data/karaoke-requests.ts` | Bitirme, geri açma, sayaç silme ve `karaoke-sil` isteğinin çekirdeği (işlem geçmişi aynı işlemde, önce oturum kilidi), saf kuralları (10 dakika, geri açma reddi, metinler) ve okuyucuları (bar ekranı, zil, Onaylar kartı) |
+| `src/app/panel/onaylar/karaoke-section.tsx`, `karaoke-cards.tsx` | Onaylar › Karaoke: sayaç silme istekleri |
 | `src/lib/karaoke/overlap.ts` | Çakışma kuralı: odayı tutan rezervasyon, aralık kesişimi, uyarı metni (saf, testli) |
 | `src/app/panel/karaoke/orders-board.tsx` | Ekranın üstündeki uygulama siparişleri ve aşama düğmeleri ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
 | `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, uygulama siparişleri, kişisel hatırlatmalar; ETag / 304) |
@@ -288,4 +329,5 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/occupancy.ts`, `history.ts` | Doluluğun verisi (ad ve not okunmaz), oda saatleri; geçmişi siteden alma, KVKK temizliği ve sabah işinin karaoke adımı |
 | `src/server/actions/karaoke-doluluk.ts`, `src/app/panel/karaoke/doluluk/` | Oda saatleri ve geçmişi alma eylemleri (yalnız yönetici); Doluluk ekranı, ısı haritası, ay ay |
 | `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, adsız bildirim metni (push ve sekmenin sistem bildirimleri), şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
+| `tests/karaoke-istek.test.ts`, `tests/karaoke-istek-db.test.ts` | Sayaç silme kipi ve isteği, bitir ve geri aç izi, okuyucuların sızıntısı, kilit sırası yarışı (`ONAY_TEST_DATABASE_URL`) |
 | `tests/karaoke-bildirim-db.test.ts` | Gerçek Postgres ve sitenin sahte ucuyla: pingle gelen yeni, iptal edilen ve saati değişen rezervasyonun bildiriminde ad ve not yok, kopyada ve canlı veride ad var (`BAGLANTI_TEST_DATABASE_URL`) |
