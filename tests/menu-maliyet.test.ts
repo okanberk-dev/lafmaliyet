@@ -199,7 +199,14 @@ test("E-47: Claude'un ürün kârlılığı reçetesiz ürüne menü sınıfı v
   assert.ok(row, "adet sıralamasında var");
   assert.equal(row.menuSinifi, null);
   assert.equal(row.durum, "Reçete yok");
-  assert.ok(byQty.urunler.filter((r) => r.ad !== "Pumpkin Latte").every((r) => r.menuSinifi !== null), "ötekiler sınıflı");
+  // Maliyeti bilinmiyor: kâr ve marj neredeyse fiyatın tamamı olarak verilmez, uyarı adet sırasında da var
+  assert.equal(row.birimMaliyet, null);
+  assert.equal(row.birimKar, null);
+  assert.equal(row.marjYuzde, null);
+  assert.equal(row.maliyetOraniYuzde, null);
+  assert.equal(row.toplamKar, null);
+  assert.ok(byQty.uyarilar.some((u) => /Reçetesi boş 1 ürünün maliyeti ve kârı hesaplanmadı/.test(u)), byQty.uyarilar.join(" | "));
+  assert.ok(byQty.urunler.filter((r) => r.ad !== "Pumpkin Latte").every((r) => r.menuSinifi !== null && r.toplamKar !== null), "ötekiler sınıflı");
   const byProfit = productProfitability(model, { ...urunKarliligiInput.parse({ limit: 50 }), ay: M }, ctx);
   assert.equal(byProfit.urunler.some((r) => r.ad === "Pumpkin Latte"), false, "kâr sıralamasında yok");
   assert.ok(byProfit.uyarilar.some((u) => /Reçetesi olmayan 1 ürün/.test(u)));

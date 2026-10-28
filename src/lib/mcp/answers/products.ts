@@ -14,15 +14,16 @@ export interface ProductRow {
   boy: string;
   kategori: string | null;
   fiyatKdvDahil: number;
-  birimMaliyet: number;
-  birimKar: number;
+  /** Reçetesi boş üründe (durum "Reçete yok") null: maliyeti bilinmiyor, kâr ve marj da hesaplanmaz (denetim E-47) */
+  birimMaliyet: number | null;
+  birimKar: number | null;
   marjYuzde: number | null;
   maliyetOraniYuzde: number | null;
   /** Reçetede fiyatı girilmemiş hammadde var: maliyet eksik, kâr ve marj olduğundan yüksek */
   maliyetEksik: boolean;
   durum: ProductStatus;
   adet: number;
-  toplamKar: number;
+  toplamKar: number | null;
   menuSinifi: "Yıldız" | "Beygir" | "Bilmece" | "Zayıf" | null;
   oneri: string | null;
   panelAdresi: string;
@@ -92,19 +93,21 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   const rows: ProductRow[] = sorted.slice(0, input.limit).map((x) => {
     const p = x.p;
     const cls = hasSales && x.cls ? MENU_CLASS_INFO[x.cls] : null;
+    // Reçetesi boş ürünün maliyeti 0 görünür, kârı neredeyse fiyatı kadar: rakam verilmez (panelde de "–")
+    const known = ranked(p);
     return {
       ad: cleanName(p.product.name),
       boy: p.product.size,
       kategori: p.category ? cleanName(p.category.name) : null,
       fiyatKdvDahil: r2(p.price),
-      birimMaliyet: r2(p.cost),
-      birimKar: r2(p.unitProfit),
-      marjYuzde: pctNum(p.margin),
-      maliyetOraniYuzde: pctNum(p.costRatio),
+      birimMaliyet: known ? r2(p.cost) : null,
+      birimKar: known ? r2(p.unitProfit) : null,
+      marjYuzde: known ? pctNum(p.margin) : null,
+      maliyetOraniYuzde: known ? pctNum(p.costRatio) : null,
       maliyetEksik: costIncomplete(p),
       durum: p.status,
       adet: x.qty,
-      toplamKar: r2(x.totalCm),
+      toplamKar: known ? r2(x.totalCm) : null,
       menuSinifi: cls ? (cls.label as ProductRow["menuSinifi"]) : null,
       oneri: cls ? cls.advice : null,
       panelAdresi: panelUrl(ctx.base, `/panel/urunler/${p.product.id}?ay=${salesMonthParam}`),
@@ -133,7 +136,13 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   // Kapsam süzülmüş liste (kategori, ürün adı), limitten önce: eksik maliyet ürünün sıradaki yerini de değiştirir
   // ("zarar" sırasında hiç görünmeyebilir), uyarı yine verilir
   const uyarilar = [...(basis.note ? [basis.note] : []), ...unpricedWarnings(unpricedInRecipes(items.map((x) => x.p)))];
-  if (noRecipe && input.siralama !== "adet") uyarilar.push(`Reçetesi olmayan ${num(noRecipe)} ürün kâr sıralamasına girmedi (maliyeti bilinmiyor).`);
+  if (noRecipe) {
+    uyarilar.push(
+      input.siralama === "adet"
+        ? `Reçetesi boş ${num(noRecipe)} ürünün maliyeti ve kârı hesaplanmadı (maliyeti bilinmiyor; birim kâr, marj ve toplam kâr boş).`
+        : `Reçetesi olmayan ${num(noRecipe)} ürün kâr sıralamasına girmedi (maliyeti bilinmiyor).`,
+    );
+  }
 
   return {
     ay: input.ay,
