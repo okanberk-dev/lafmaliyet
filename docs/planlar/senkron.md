@@ -56,7 +56,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 6. **Ayarlar paylaşılmıyor:** karaoke oda saatleri ve ücreti, KDV oranları, sipariş anahtarları, açık gün.
 7. **Kod sabiti ile menü kalemi ayrışıyor:** seçenek ek ücreti, ödül kuponu değeri, kilometre taşı hediyesi (ada göre).
 8. **KVKK:** karaoke Web Push gövdesinde ad; hesap silmede panel kopyasındaki ad; hukuk metni panel kopyasından söz
-   etmiyor.
+   etmiyor. *Push'taki ad P0 ile kalktı (lafmaliyet, dal `claude/senkron-p0-push-ad`); panel kopyasının silinmesi P5
+   ve S11'de, hukuk metni S12'de.*
 9. **Panelde mağaza malının maliyeti ve online POS kesintisi yok.**
 10. **Türetilmiş kopyalar bayatlıyor:** llms*.txt, saat metinleri, telefon kopyaları, CATALOG.md, panelin "Opera AVM"si.
 
@@ -64,7 +65,9 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 
 - **Faz 1 (sahibin örneği: menü, aktif / pasif; kayıp yazım ve kayıp sinyal):** S1 → S2 → M1 → P1 → P2 → M2.
   Fazdan bağımsız: P0 (Web Push'tan ad). **Durum (28 Ekim 2026):** S1 (laffogato #269), S2 (laffogato #270), M1
-  (lafmobil #35), P1 (B12, #52 ve #53) ve P2 (lafmaliyet #60) yapıldı; Faz 1'de M2 ve P0 kaldı.
+  (lafmobil #35), P1 (B12, #52 ve #53), P2 (lafmaliyet #60) ve P0 (lafmaliyet, dal `claude/senkron-p0-push-ad`)
+  yapıldı; Faz 1'de yalnız M2 kaldı: uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini yürüten
+  oturumun işi.
 - **Faz 2 (yararlı senkron):** ayar ucu ve tüketicileri, 304, ping sınaması, override ve tarihli kapanış, seçenek
   fiyatı, menü yan uyarıları, karaoke.
 - **Faz 3:** satış ekleri, mağaza maliyeti ve POS kesintisi, llms.txt, temizlikler, KVKK metni.
@@ -564,6 +567,17 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 - **Bağımlı:** yok.
 
 **P0 · Karaoke Web Push gövdesinden ad (fazdan bağımsız, KVKK)**
+- **Durum (28 Ekim 2026):** yapıldı (lafmaliyet, dal `claude/senkron-p0-push-ad`). Bildirimin metni artık saf
+  `pushMessages`'ta (src/lib/karaoke/session.ts, `eventMessage`'ın yanında): `name: null` ile kurar, üçten fazla olayın
+  özeti de orada; `announce` (src/server/karaoke/sync.ts) yalnız gönderir. Ekrandaki zil satırı ve liste adı göstermeye
+  devam eder (alert-center.tsx değişmedi). Belge docs/KARAOKE.md (istek metninin Güvenlik maddesi ve Güvenlik ›
+  "Bildirimde misafirin adı yok"). Testler: tests/karaoke.test.ts (push metninde ad ve not yok, özet dahil; zil
+  metninde ad var; `announce` yalnız `pushMessages`'tan geçer) ve plandan fazla tests/karaoke-bildirim-db.test.ts
+  (gerçek Postgres, sitenin sahte ucu: pingle gelen yeni, iptal edilen, saati değişen ve dört birden rezervasyonun
+  yakalanan bildiriminde ad yok; kopyada ve canlı veride var; eski kodla üç test de kırmızı). Uçtan uca yerelde: sahte
+  siteye bağlı `next dev`, imzalı pingle yeni rezervasyon → bar ekranında (personel 390 px, yönetici 1440 ve 390 px)
+  liste ve zil satırı adı gösterir. Bildirimin cihaza düştüğü hâl yerelde görülemez (gerçek push servisi gerekir):
+  canlıda bir rezervasyonla kilit ekranında bakılır.
 - **Repo / dal:** lafmaliyet · `claude/senkron-p0-push-ad`.
 - **Ne:** src/server/karaoke/sync.ts:261 push gövdesine `name: null` geçer; ekrandaki zil satırı adı göstermeye devam
   eder (panel:src/components/panel/live/alert-center.tsx:246). docs/KARAOKE.md (Güvenlik maddesi, :22-24).
