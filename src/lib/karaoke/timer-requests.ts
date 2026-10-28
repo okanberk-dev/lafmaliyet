@@ -89,17 +89,17 @@ export function endedLogDetail(s: { customerName: string | null; source: "site" 
   const at = trClock(now.getTime()).time;
   const what =
     now.getTime() < s.startsAt.getTime()
-      ? `başlamadan bitirildi (${at})`
+      ? `başlamadan bitirildi ${at}`
       : now.getTime() < end
-        ? `${at}'de bitirildi (${durationLabel(Math.ceil((end - now.getTime()) / 60_000))} erken)`
-        : `süre dolunca ${at}'de haber verildi`;
+        ? `bitirildi ${at} (${durationLabel(Math.ceil((end - now.getTime()) / 60_000))} erken)`
+        : `süre dolunca haber verildi ${at}`;
   return `${sessionName(s)} · ${when} · ${what}`;
 }
 
 /** "Geri aç"ın ayrıntısı: kimin ne zaman bitirdiği (temizlenmeden önce okunur) */
 export function reopenLogDetail(s: { customerName: string | null; source: "site" | "panel"; startsAt: Date; endsAt: Date; extraMinutes: number; endedAt: Date | null; endedBy: string | null }): string {
   const when = sessionWhen({ startsAt: s.startsAt.toISOString(), endsAt: s.endsAt.toISOString(), extraMinutes: s.extraMinutes });
-  const ended = s.endedAt ? `${s.endedBy ?? "Biri"} ${trClock(s.endedAt.getTime()).time}'de bitirmişti` : "bitirilmemişti";
+  const ended = s.endedAt ? `${s.endedBy ?? "Biri"} bitirmişti (${trClock(s.endedAt.getTime()).time})` : "bitirilmemişti";
   return `${sessionName(s)} · ${when} · ${ended}`;
 }
 

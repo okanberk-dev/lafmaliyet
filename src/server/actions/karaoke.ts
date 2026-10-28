@@ -149,7 +149,7 @@ export async function extendKaraokeSession(
     }
     await bumpKaraokeVersion();
     // Bitmiş oturumu uzatmak onu yeniden açar (bitti işareti silinir): kimin ne zaman bitirdiği izde kalsın (E-65)
-    const reopened = row.endedAt ? ` · ${row.endedBy ?? "Biri"} ${trClock(row.endedAt.getTime()).time}'de bitirmişti, yeniden açıldı` : "";
+    const reopened = row.endedAt ? ` · ${row.endedBy ?? "Biri"} bitirmişti (${trClock(row.endedAt.getTime()).time}), yeniden açıldı` : "";
     await logActivity(me, "Karaoke süresi uzatıldı", `${row.customerName ?? "Oturum"} · +${add} dk${reopened}`);
     refresh();
     return { extraMinutes: done.extraMinutes };
