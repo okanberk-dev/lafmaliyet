@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/form";
 import { EmptyState, KeyValue } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTimeTR, num, tl } from "@/lib/format";
+import type { KasaName } from "@/lib/lafpos/kasa";
 import { CONFIDENCE_LABEL, type LinkSuggestion, type SiteGap } from "@/lib/site-menu/names";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
 import { fromMinor, linkStatus, slotLabel, slotPriceMinor, toMinor, visibilityFromSite, type SiteMenuSlot } from "@/lib/site-menu/slot";
@@ -71,6 +72,7 @@ export function SiteMenuMatching({
   products,
   suggestions,
   gaps,
+  kasa = "ModPOS",
 }: {
   configured: boolean;
   state: MenuSyncState;
@@ -79,6 +81,8 @@ export function SiteMenuMatching({
   products: MatchProduct[];
   suggestions: LinkSuggestion[];
   gaps: SiteGap[];
+  /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS fiyatı siteden kendisi alır */
+  kasa?: KasaName;
 }) {
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
@@ -169,6 +173,7 @@ export function SiteMenuMatching({
             itemCount={items.length}
             onSync={syncNow}
             syncing={pending}
+            kasa={kasa}
           />
         </div>
 
@@ -470,6 +475,7 @@ function StatusCard({
   itemCount,
   onSync,
   syncing,
+  kasa,
 }: {
   configured: boolean;
   state: MenuSyncState;
@@ -478,6 +484,7 @@ function StatusCard({
   itemCount: number;
   onSync: () => void;
   syncing: boolean;
+  kasa: KasaName;
 }) {
   return (
     <Card>
@@ -536,7 +543,8 @@ function StatusCard({
             ) : null}
             <p className="text-[13px] leading-5 text-ink-mute">
               Sitede bir kalem değişince site panele imzalı bir ping atar, panel bütün menüyü hemen çeker. Ayrıca Ürünler açılınca en çok beş dakikada
-              bir ve her sabah bir kez sorulur. Fiyat panelde değişince önce siteye yazılır; kasadaki (ModPOS) fiyat elle değişir.
+              bir ve her sabah bir kez sorulur. Fiyat panelde değişince önce siteye yazılır;{" "}
+              {kasa === "LafPOS" ? "LafPOS yeni fiyatı siteden kendisi alır." : "kasadaki (ModPOS) fiyat elle değişir."}
             </p>
           </>
         ) : (

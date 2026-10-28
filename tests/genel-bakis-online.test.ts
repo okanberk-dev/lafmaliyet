@@ -206,7 +206,9 @@ test("seçenekler: ekstra shot Extra Shot ürününün reçetesiyle tüketime gi
 
 test("ekranlar: Genel bakış, döküm, Excel ve Claude aracı online satırını gösterir; belge cümlesi doğru", () => {
   const page = read("src/app/panel/page.tsx");
-  assert.match(page, /ModPOS \$\{tl\(t\.posNetSales\)\} \+ laffogato\.net \$\{tl\(t\.online\.revenue\)\}/);
+  // Ayın kasası (ModPOS; geçiş gününden itibaren LafPOS: src/lib/lafpos/kasa.ts monthKasa, denetim E-39)
+  assert.match(page, /\$\{mk\.short\} \$\{tl\(t\.posNetSales\)\} \+ laffogato\.net \$\{tl\(t\.online\.revenue\)\}/);
+  assert.match(page, /const mk = monthKasa\(month, st\.lafposGecisGunu\);/);
   assert.match(page, /<span className="whitespace-nowrap">laffogato\.net \{tl\(t\.online\.revenue\)\}<\/span>/);
   // R18: Z raporunun "Online"ı platform satışıdır (ModPOS'un içinde); laffogato.net satışı hiçbir yerde yalın "online" yazmaz
   assert.doesNotMatch(page, /[+·] online \$\{|"Online satışın|\(online dahil\)/);

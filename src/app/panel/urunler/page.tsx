@@ -10,6 +10,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -63,6 +64,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   // Satılan adet ModPOS + laffogato.net online: Genel bakış, Analiz, ürün kartı, Excel ve Claude aracıyla aynı sayı
   const sold = soldWithOnline(model, month);
   const st = model.settings;
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
+  const mk = monthKasa(month, st.lafposGecisGunu);
   const linkOf = new Map(site.links.map((l) => [l.productId, l]));
   const siteItems = site.snapshot.at ? site.snapshot.items : null;
 
@@ -237,7 +240,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         </StatBreakdown>
         <StatBreakdown
           title={`${ml} brüt kâr`}
-          description="Eşleşen ürünlerin birim kârı × satılan adet (ModPOS ve laffogato.net online), kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır."
+          description={`Eşleşen ürünlerin birim kârı × satılan adet (${mk.both} ve laffogato.net online), kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır.`}
           groups={bd.profit}
           total={totalProfit}
           totalLabel="Brüt kâr"
@@ -258,7 +261,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
       {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} loss={prices.loss} /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
-      <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} />
+      <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} kasa={mk.both} />
     </>
   );
 }

@@ -47,6 +47,7 @@ import {
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
@@ -195,6 +196,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Yıl toplamı Gelir-gider kartlarıyla ve Claude'la aynı kuraldan (bu aya kadar, cirosu girilmiş aylar)
   const yearSum = yearTotals(model, year);
   const st = model.settings;
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
+  const mk = monthKasa(month, st.lafposGecisGunu);
 
   // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
   const forecastMonth = forecastMonthOf(model);
@@ -214,8 +217,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           label: "Satışlar (net ciro)",
           value: t.netSales,
           // Tek satıra sığsın (telefonda kesilmesin): KDV hariç olduğu kartın başlığında yazar
-          sub: t.online ? `ModPOS ${tl(t.posNetSales)} + laffogato.net ${tl(t.online.revenue)}` : "Ürün satışları ÷ (1 + KDV)",
-          info: t.online ? "Patron (ModPOS) satış listesi ve laffogato.net online satışı (kafe, mağaza, karaoke; Gelir-gider'deki gibi), KDV hariç." : undefined,
+          sub: t.online ? `${mk.short} ${tl(t.posNetSales)} + laffogato.net ${tl(t.online.revenue)}` : "Ürün satışları ÷ (1 + KDV)",
+          info: t.online ? `${mk.report} ${mk.source === "modpos" ? "satış listesi" : "satışları"} ve laffogato.net online satışı (kafe, mağaza, karaoke; Gelir-gider'deki gibi), KDV hariç.` : undefined,
           sign: 1,
         },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
@@ -391,7 +394,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   compact
                   icon={<Receipt />}
                   label="Net satış"
-                  info={`Patron (ModPOS) ürün satışları ÷ (1 + KDV)${
+                  info={`${mk.report} ürün satışları ÷ (1 + KDV)${
                     t.online ? " + laffogato.net online satışı (kafe, mağaza, karaoke; KDV hariç, Gelir-gider'deki gibi)" : ""
                   }. Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
                   value={<CountUp value={t.netSales} />}
@@ -400,7 +403,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                     // Dar kartta iki satıra iner: satır "·"dan kırılır, ad tutarından ayrılmaz
                     t.online ? (
                       <>
-                        <span className="whitespace-nowrap">ModPOS {tl(t.posNetSales)}</span> ·{" "}
+                        <span className="whitespace-nowrap">{`${mk.short} ${tl(t.posNetSales)}`}</span> ·{" "}
                         <span className="whitespace-nowrap">laffogato.net {tl(t.online.revenue)}</span>
                       </>
                     ) : (

@@ -15,6 +15,7 @@ import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/type
 import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
+import { monthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
 
 // ---------------------------------------------------------------------------- Biçimler
 
@@ -467,7 +468,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
 export const GUIDE_SHEET = "Nasıl Okunur";
 
 /** Sekme adının başına göre bir satırlık açıklama (seçili ay ve yıl adlarda) */
-function sheetPurpose(name: string, label: string): string {
+function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "ModPOS"): string {
   const year = name.match(/^Gelir-Gider (\d{4})$/)?.[1];
   if (name === "Özet") return `Excel'deki Panel: ${label} para nereye gitti, net kâr / zarar, başabaş cirosu, süren ayın tahmini, en kârlı ürün, kategori ortalamaları (sağda).`;
   if (year) return `Excel'deki Genel Maliyet: Ocak–Aralık gelir-gider tablosu ve ${year} YILI toplamı. Elle düzeltilen hücrelerde not var.`;
@@ -475,7 +476,7 @@ function sheetPurpose(name: string, label: string): string {
   if (name.startsWith("Tutarlılık ")) return `${label}: POS ↔ satış listesi, reçete ↔ fatura ↔ sayım karşılaştırması ve bulgular.`;
   if (name.startsWith("Satış ") && name !== "Satış Kayıtları") return `${label} POS ürün satışları: eşleşen ürün, maliyet, kâr, durum ve not; üstte POS ciro, ödenmez, indirim ve ortalama maliyet oranı.`;
   const fixed: Record<string, string> = {
-    "Ürün Kârlılık": `Her ürün ve boy: fiyat, maliyet, birim kâr, marj, önerilen fiyat, ${label} satış adedi (ModPOS + laffogato.net online). Süzgeç açık.`,
+    "Ürün Kârlılık": `Her ürün ve boy: fiyat, maliyet, birim kâr, marj, önerilen fiyat, ${label} satış adedi (${kasa} + laffogato.net online). Süzgeç açık.`,
     "Reçete Kartları": "Her ürünün malzemeleri, miktarı, birim maliyeti ve KDV dahil tutarı; son satır fire dahil ürün maliyeti.",
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
     Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, durum, kalan borç, vade ve not. Net, KDV ve Ay sütunları formül.",
@@ -528,7 +529,8 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
   ]);
   block(
     "SEKMELER (adına tıklayınca açılır)",
-    wb.worksheets.filter((w) => w.name !== ws.name).map((w) => [sheetLink(w.name), sheetPurpose(w.name, label)]),
+    // Ayın kasası (geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
+    wb.worksheets.filter((w) => w.name !== ws.name).map((w) => [sheetLink(w.name), sheetPurpose(w.name, label, monthKasa(month, model.settings.lafposGecisGunu).both)]),
   );
   // Bağlantılar mavi ve altı çizili görünsün
   ws.eachRow((r) => {
@@ -571,12 +573,15 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
   if (!t) {
     lines.push({ k: "Bu ayın satış listesi yüklenmemiş: reçeteye göre satırlar boş. Faturaya göre kâr yine aşağıda.", v: null });
   }
+  // Ayın kasası (metinler; geçiş günü boşken ve öncesinde ModPOS, sonra LafPOS; denetim E-39)
+  const mk = monthKasa(month, model.settings.lafposGecisGunu);
+  const kasaSales = mk.source === "modpos" ? `${mk.report} satış listesi` : `${mk.report} satışları`;
   lines.push(
     // ModPOS + laffogato.net online (kâr-zarardaki gibi); online ayrıca alt satırda
-    { k: "Satışlar (net ciro)", v: t?.netSales ?? null, note: t?.online ? "Patron (ModPOS) satış listesi + laffogato.net online satışı, KDV hariç." : undefined },
+    { k: "Satışlar (net ciro)", v: t?.netSales ?? null, note: t?.online ? `${kasaSales} + laffogato.net online satışı, KDV hariç.` : undefined },
     ...(t?.online
       ? [
-          { k: "   ModPOS satış listesi", v: t.posNetSales },
+          { k: `   ${mk.source === "modpos" ? "ModPOS satış listesi" : `${mk.short} satışları`}`, v: t.posNetSales },
           {
             k: "   laffogato.net online (kafe, mağaza, karaoke)",
             v: t.online.revenue,

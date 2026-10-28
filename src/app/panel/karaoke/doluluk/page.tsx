@@ -40,6 +40,7 @@ import {
 } from "@/lib/karaoke/occupancy-text";
 import { todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadTillScope } from "@/server/data/till-scope";
 import { readHistoryState } from "@/server/karaoke/history";
 import { karaokeCoverage, loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
 import { karaokeSecret } from "@/server/karaoke/sync";
@@ -107,7 +108,8 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
   const sp = await searchParams;
   // Çerez okunduktan sonra (istek anı): önbelleğe alınan kabukta saat okunmaz
   const now = new Date().getTime();
-  const [{ hours, saved }, coverage, history] = await Promise.all([readKaraokeHours(), karaokeCoverage(), readHistoryState()]);
+  // Bugünün kasası (bilgi metni; geçiş günü boşken ve öncesinde ModPOS; denetim E-39)
+  const [{ hours, saved }, coverage, history, till] = await Promise.all([readKaraokeHours(), karaokeCoverage(), readHistoryState(), loadTillScope().catch(() => null)]);
   const configured = Boolean(karaokeSecret());
   const progress = historyProgress(history, todayTR(new Date(now)));
   const historyLabel = progress.complete && progress.done ? "Yeniden al" : progress.done ? "Devam et" : "Geçmişi siteden al";
@@ -296,7 +298,9 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
             <DataRow label="Kasadaki karaoke ve odadaki siparişler">
               <span className="inline-flex items-center gap-1.5">
                 Saat başına gelire girmez
-                <InfoTip text="Uzatmaların, rezervasyonsuz oturumların ve odadaki siparişlerin parası kasada (ModPOS) alınır; hangi oturuma ait olduğu ayrılmıyor. Uygulama siparişleri bar ekranına “Masa” olarak gelir ve panel sipariş geçmişi tutmaz." />
+                <InfoTip
+                  text={`Uzatmaların, rezervasyonsuz oturumların ve odadaki siparişlerin parası kasada (${till?.kasa ?? "ModPOS"}) alınır; hangi oturuma ait olduğu ayrılmıyor. Uygulama siparişleri bar ekranına “Masa” olarak gelir ve panel sipariş geçmişi tutmaz.`}
+                />
               </span>
             </DataRow>
             <DataRow label="Gelmeyenler">Personel “Erken bitir”e basarsa oda o andan boş sayılır; basılmazsa rezervasyonun süresi dolu sayılır.</DataRow>

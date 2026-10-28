@@ -199,7 +199,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             fiyat&quot; der. Kasada değiştirdikçe işaretleyin, işaretlenen listeden düşer (bildirimdeki Geri al geri getirir); liste açıkken fiyat yeniden
             değiştiyse işaretlenmez, yeni fiyatıyla listede kalır. Metni kopyala ile listeyi
             WhatsApp&apos;a yapıştırabilirsiniz. Fiyat kasadaki fiyata geri dönerse (ör. toplu değişiklik geri alındı) kendiliğinden düşer. Yeni ürün listeye girmez;
-            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir.
+            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir. LafPOS&apos;a geçiş gününden itibaren (Ayarlar › LafPOS)
+            siteye bağlı ürünlerin fiyatını LafPOS siteden kendisi alır: onlar listeye girmez, bekleyen eski işaretleri de gösterilmez (silinmez; geçiş günü
+            kaldırılırsa geri gelir). Listede yalnız siteye bağlı olmayan ürünler kalır; LafPOS&apos;ta yerel ürünse fiyatını orada elle değiştirin.
           </>
         ),
         icon: Receipt,

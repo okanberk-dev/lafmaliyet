@@ -23,6 +23,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
+import type { MonthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { deleteFinding, saveFinding, setFindingResolved, setNoPurchase, setPurchaseQty } from "@/server/actions/consistency";
@@ -70,12 +71,15 @@ interface Row {
   unexplainedAmount: number | null;
 }
 
-/** Beklenen tüketimin kaynağı: online kafe siparişlerinin payı varsa "ModPOS 1.200 · online 300" */
-function UsageSplit({ row }: { row: Pick<Row, "usage" | "onlineUsage"> }) {
+/**
+ * Beklenen tüketimin kaynağı: online kafe siparişlerinin payı varsa "ModPOS 1.200 · online 300" (`kasa` ayın kasası,
+ * geçiş gününden itibaren "LafPOS", geçiş ayında "Kasa"; denetim E-39)
+ */
+function UsageSplit({ row, kasa }: { row: Pick<Row, "usage" | "onlineUsage">; kasa: MonthKasa["short"] }) {
   if (!row.onlineUsage) return null;
   return (
-    <span className="block text-xs font-normal text-ink-mute" title="ModPOS satışları ve laffogato.net online kafe siparişleri, reçeteye göre">
-      ModPOS {num(row.usage - row.onlineUsage)} · online {num(row.onlineUsage)}
+    <span className="block text-xs font-normal text-ink-mute" title={`${kasa} satışları ve laffogato.net online kafe siparişleri, reçeteye göre`}>
+      {kasa} {num(row.usage - row.onlineUsage)} · online {num(row.onlineUsage)}
     </span>
   );
 }
@@ -463,9 +467,12 @@ export function ConsistencyTable({
   hasComparison,
   ingredients,
   fire,
+  kasa = "ModPOS",
 }: {
   month: string;
   monthLabel: string;
+  /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa") */
+  kasa?: MonthKasa["short"];
   rows: Row[];
   totalDiff: number;
   totalVariance: number;
@@ -653,7 +660,7 @@ export function ConsistencyTable({
                       <dt className="text-xs text-ink-mute">Reçeteye göre</dt>
                       <dd className="text-ink tabular">
                         {num(r.usage)} {r.unit}
-                        <UsageSplit row={r} />
+                        <UsageSplit row={r} kasa={kasa} />
                       </dd>
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right">
@@ -729,7 +736,7 @@ export function ConsistencyTable({
                     <TH numeric>
                       Reçeteye göre
                       <InfoTip
-                        text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar; ModPOS satışları ve laffogato.net'in online kafe siparişleri (ayrı gösterilir). Fire payı ve ödenmez siparişler hariç."
+                        text={`Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar; ${kasa} satışları ve laffogato.net'in online kafe siparişleri (ayrı gösterilir). Fire payı ve ödenmez siparişler hariç.`}
                         className="ml-1"
                       />
                     </TH>
@@ -788,7 +795,7 @@ export function ConsistencyTable({
                       </TD>
                       <TD numeric>
                         {num(r.usage)} {r.unit}
-                        <UsageSplit row={r} />
+                        <UsageSplit row={r} kasa={kasa} />
                       </TD>
                       <TD numeric>
                         <div className="flex items-center justify-end gap-1.5">

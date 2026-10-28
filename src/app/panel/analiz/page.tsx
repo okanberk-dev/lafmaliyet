@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { MENU_CLASS_INFO, menuEngineering, scenarioBase } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 
@@ -103,6 +104,7 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
           month={month}
           monthLabel={monthLabel(month)}
           fixedItems={scenarioFixedItems(model, month)}
+          kasa={monthKasa(month, model.settings.lafposGecisGunu).short}
         />
       }
     />

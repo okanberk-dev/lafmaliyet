@@ -15,6 +15,7 @@ import { useIsPhone } from "@/components/ui/use-media";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { MONTH_NAMES } from "@/lib/constants";
 import { money, monthLabel, num, pct, tl } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
 
 import { CELL_NOTE_MAX, noteSaveEffect, openDaysError, planCellEdit, planCellRestore, sectionTotalKey, shiftMonth, type CellEditPlan, type CellField } from "./cell-rules";
@@ -74,6 +75,7 @@ export function MonthView({
   onMonthNote,
   onSave,
   expectedDebts,
+  lafposSwitch = null,
 }: {
   year: number;
   months: string[];
@@ -98,6 +100,8 @@ export function MonthView({
   onSave: (month: string, field: CellField, rowKey: string, plan: Extract<CellEditPlan, { action: "save" | "clear" }>) => Promise<string | null>;
   /** Ay → faturası beklenen cari alımlar: Mal alışları'nın altında bilgi satırı (toplamlara katılmaz) */
   expectedDebts?: Readonly<Record<string, { total: number; href: string | null; name: string }>>;
+  /** LafPOS'a geçiş günü (yalnız metinler: ayın kasası; denetim E-39) */
+  lafposSwitch?: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -221,7 +225,7 @@ export function MonthView({
                 <dt className="sr-only">Maliyet oranı</dt>
                 <dd className="text-xs text-ink-mute tabular">
                   Giderler cironun {pct((expenses ?? 0) / revenueBase, 0)} · kâr oranı {pct((profit ?? 0) / revenueBase)}
-                  {online !== null ? " (ciro: ModPOS + online)" : ""}
+                  {online !== null ? ` (ciro: ${monthKasa(month, lafposSwitch).short} + online)` : ""}
                 </dd>
               </div>
             ) : null}

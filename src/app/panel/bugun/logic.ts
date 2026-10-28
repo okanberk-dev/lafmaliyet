@@ -333,7 +333,7 @@ const cashYesterday: Row = (f, c) => {
  */
 export function eveningCashText(kasa: KasaName): string {
   return kasa === "LafPOS"
-    ? "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gelir), kasadaki nakdi sayıp girin."
+    ? "Kapanışta LafPOS'ta Günü kapat'a basın (gün sonu panele gönderilir), kasadaki nakdi sayıp girin."
     : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
 }
 

@@ -17,6 +17,8 @@ export interface MonthKasa {
   source: ReturnType<typeof monthSource>;
   /** Kısa ad (tutarın yanında): "ModPOS", "LafPOS"; geçiş ayında "Kasa" */
   short: "ModPOS" | "LafPOS" | "Kasa";
+  /** Parantez içinde ("kasadan (ModPOS) geçmez"): "ModPOS", "LafPOS"; geçiş ayında "ModPOS / LafPOS" */
+  both: "ModPOS" | "LafPOS" | "ModPOS / LafPOS";
   /** Uzun ad (açıklamada): "ModPOS", "LafPOS"; geçiş ayında "Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)" */
   long: string;
   /** Ürün satışlarının kaynağı: "Patron (ModPOS)", "LafPOS"; geçiş ayında uzun ad */
@@ -26,11 +28,22 @@ export interface MonthKasa {
 /** Ayın kasası (geçiş günü boşken ve geçiş gününden önceki aylarda bugünkü metinler) */
 export function monthKasa(month: string, switchDay: string | null): MonthKasa {
   const source = monthSource(month, switchDay);
-  if (source === "modpos" || switchDay === null) return { source: "modpos", short: "ModPOS", long: "ModPOS", report: "Patron (ModPOS)" };
-  if (source === "lafpos") return { source, short: "LafPOS", long: "LafPOS", report: "LafPOS" };
+  if (source === "modpos" || switchDay === null) return { source: "modpos", short: "ModPOS", both: "ModPOS", long: "ModPOS", report: "Patron (ModPOS)" };
+  if (source === "lafpos") return { source, short: "LafPOS", both: "LafPOS", long: "LafPOS", report: "LafPOS" };
   const first = `${month}-01`;
   const long = `Kasa (ModPOS ${dayRangeTR(first, addDays(switchDay, -1))} · LafPOS ${dayRangeTR(switchDay, monthEnd(first))})`;
-  return { source, short: "Kasa", long, report: long };
+  return { source, short: "Kasa", both: "ModPOS / LafPOS", long, report: long };
+}
+
+/**
+ * Birden çok ayın kasası (Gelir-gider'in yıl tablosu ve kartları, Excel): ayların hepsi ModPOS ya da hepsi LafPOS ise
+ * o, karışıksa (geçiş ayı ya da iki kasalı yıl) "Kasa" / "ModPOS / LafPOS". Ay yoksa ModPOS
+ */
+export function periodKasa(months: readonly string[], switchDay: string | null): Pick<MonthKasa, "short" | "both"> {
+  const kinds = new Set(months.map((m) => monthSource(m, switchDay)));
+  if (!kinds.size || (kinds.size === 1 && kinds.has("modpos"))) return { short: "ModPOS", both: "ModPOS" };
+  if (kinds.size === 1 && kinds.has("lafpos")) return { short: "LafPOS", both: "LafPOS" };
+  return { short: "Kasa", both: "ModPOS / LafPOS" };
 }
 
 /**

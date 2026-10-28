@@ -3,6 +3,7 @@ import type { Model } from "@/lib/calc/engine";
 import { listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
+import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
 import { productHref } from "./urunler/logic";
@@ -132,9 +133,10 @@ function onlineRows(d: DashboardData): BreakdownRow[] {
 export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
   const online = onlineRows(d);
+  const mk = kasaOf(model, d.month);
   return {
     title: `${monthLabel(d.month)} net satış`,
-    description: `Patron (ModPOS) ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.${
+    description: `${mk.report} ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.${
       t?.online ? " laffogato.net online satışı (kafe, mağaza, karaoke) Gelir-gider'deki gibi KDV hariç, ayrı bölümde." : ""
     }`,
     groups: t
@@ -145,7 +147,7 @@ export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown
             note: b.note,
             rows: [...b.items.values()].map((i) => ({ key: i.key, label: i.label, sub: `${num(i.qty)} adet`, amount: i.net, href: i.href })),
           })),
-          ...(online.length ? [{ key: "online", label: "laffogato.net online", note: "Uygulama ve web siparişleri; kasadan (ModPOS) geçmez.", rows: online }] : []),
+          ...(online.length ? [{ key: "online", label: "laffogato.net online", note: `Uygulama ve web siparişleri; kasadan (${mk.both}) geçmez.`, rows: online }] : []),
         ]
       : [],
     total: t?.netSales,
@@ -160,7 +162,7 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
   const st = model.settings;
   const o = t.online;
   return [
-    { key: "net", label: o ? "Net satış (ModPOS)" : "Net satış", sub: salesNetSub(model, d), amount: t.posNetSales, href: salesHref(d.month) },
+    { key: "net", label: o ? `Net satış (${kasaOf(model, d.month).short})` : "Net satış", sub: salesNetSub(model, d), amount: t.posNetSales, href: salesHref(d.month) },
     ...(o ? [{ key: "online", label: "Online satış (laffogato.net)", sub: "Kafe, mağaza, karaoke; KDV hariç", amount: o.revenue, href: pnlHref(d.month) }] : []),
     {
       key: "malzeme",
@@ -324,6 +326,16 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
 
 // ---------------------------------------------------------------- Satış listesi olmayan ay
 
+/** Ayın kasası (metinler; denetim E-39): geçiş günü boşken ve öncesinde "Patron (ModPOS)", sonra "LafPOS" */
+const kasaOf = (model: Model, month: string) => monthKasa(month, model.settings.lafposGecisGunu);
+
+/** POS cirosu kartının açıklaması: ModPOS ayında bugünkü metin; LafPOS (ya da geçiş) ayında gün sonlarının cirosu */
+function posRevenueText(mk: MonthKasa): string {
+  return mk.source === "modpos"
+    ? "Patron (ModPOS) ciro raporu, KDV dahil: indirimler düşülmüş, ödenmez / ikram hariç. Bu ayın ürün satış raporu yüklenince kart ürün ürün net satışı gösterir."
+    : `${mk.long} gün sonlarının cirosu, KDV dahil: indirimler düşülmüş, ödenmez / ikram hariç. Bu ayın ürün satışları gelince kart ürün ürün net satışı gösterir.`;
+}
+
 /** POS cirosu: KDV hariç ciro + KDV; ayın indirim, ikram ve açık gün bilgisi toplamın altında */
 export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const pos = d.info?.posRevenue ?? 0;
@@ -336,8 +348,7 @@ export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdo
   if (d.info?.offRevenue) info.push({ key: "odenmez", label: "Ödenmez / ikram", sub: "KDV dahil; ciroya girmez", display: tl(d.info.offRevenue), amount: 0 });
   return {
     title: `${monthLabel(d.month)} POS cirosu`,
-    description:
-      "Patron (ModPOS) ciro raporu, KDV dahil: indirimler düşülmüş, ödenmez / ikram hariç. Bu ayın ürün satış raporu yüklenince kart ürün ürün net satışı gösterir.",
+    description: posRevenueText(kasaOf(model, d.month)),
     groups: pos
       ? [
           {

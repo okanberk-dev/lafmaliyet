@@ -114,7 +114,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Akşam kasa raporu",
     body: (
       <>
-        Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin.{" "}
+        Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. Kasada
+        LafPOS kullanılmaya başlandıysa ModPOS yerine LafPOS&apos;ta <B>Günü kapat</B>&apos;a basın: gün sonu panele gönderilir, form ondan dolar.{" "}
         {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
@@ -292,7 +293,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Menüde satış fiyatı değişince ModPOS&apos;ta da elle değiştirilir. Bekleyenler <StaffPath href="/panel/kasa/fiyatlar" /> ekranında, kasadaki adlarıyla
             durur; Bugün&apos;de satır olarak da çıkar. ModPOS&apos;ta değiştirdikçe ürüne tek tek dokunun: satır listeden düşer, bildirimde <B>Geri al</B> vardır.
             Son işaretledikleriniz listenin üstünde {minutes(POS_UNDO_WINDOW_MS)} kalır, oradan da geri alırsınız; sonrasını yönetici geri alır. Her işaret adınızla
-            kaydedilir.
+            kaydedilir. Kasada LafPOS kullanılmaya başlandıysa menüdeki ürünlerin satış fiyatını LafPOS siteden kendisi alır; listede yalnız siteye bağlı olmayan
+            ürünler çıkar, onları LafPOS&apos;ta elle değiştirin.
           </>
         ),
         icon: Tags,
@@ -322,7 +324,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Bar ekranındaki <B>Tükenenler</B> kartında <B>Tükendi işaretle</B>: ürünü arayıp seçin. Ürün laffogato.net&apos;te, uygulamada ve QR menüde hemen
             kapanır; M ve L birlikte kapanır. Ürün gelince aynı kartta <B>Satışa aç</B>. Onay gerekmez, her dokunuş adınızla kaydedilir. Aynı anda en çok{" "}
-            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar.
+            {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar. Kasada LafPOS kullanılıyorsa ürün birkaç dakika içinde kasada da
+            tükendi görünür.
           </>
         ),
         icon: PackageX,

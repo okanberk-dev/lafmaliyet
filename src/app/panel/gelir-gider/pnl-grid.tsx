@@ -616,6 +616,7 @@ export function PnlGrid({
   latestMonth,
   expectedDebts = NO_EXPECTED,
   yearNote = null,
+  lafposSwitch = null,
 }: {
   year: number;
   months: string[];
@@ -641,6 +642,8 @@ export function PnlGrid({
    * başlığın altındaki kısa yazı ve açıklaması. Hepsi toplanıyorsa null
    */
   yearNote?: { short: string; long: string } | null;
+  /** LafPOS'a geçiş günü (yalnız metinler: ayın kasası, src/lib/lafpos/kasa.ts; denetim E-39) */
+  lafposSwitch?: string | null;
 }) {
   const reduce = useCalmMotion();
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -957,6 +960,7 @@ export function PnlGrid({
         onMonthNote={setMonthNoteFor}
         onSave={savePlan}
         expectedDebts={expectedDebts}
+        lafposSwitch={lafposSwitch}
       />
       <ExpectedDebtsNote months={visibleIdx.map((v) => v.m)} expected={expectedDebts} className="max-md:hidden" />
 

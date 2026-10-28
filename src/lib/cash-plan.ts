@@ -125,7 +125,8 @@ export interface CashPlanInput {
   months: Readonly<Record<string, { payroll: { net: number; sgk: number; people: number }; fixed: readonly FixedItem[] }>>;
   /** Bütün sabit giderler (hatırlatıcı eşleşmesi için) */
   fixedNames: readonly { id: number; name: string; period: FixedPeriod }[];
-  vat: { months: VatMonthInput[]; firstSalesMonth: string | null; hasSite: boolean };
+  /** `switchDay`: LafPOS'a geçiş günü (yalnız metinler: dönemin kasası "ModPOS" / "LafPOS"; denetim E-39) */
+  vat: { months: VatMonthInput[]; firstSalesMonth: string | null; hasSite: boolean; switchDay?: string | null };
   vatAnchor: { month: string; amount: number } | null;
 }
 
@@ -215,6 +216,8 @@ export interface CashPlanVat {
   chainFrom: string | null;
   rates: { kdv: number; kdvHizmet: number };
   hasSite: boolean;
+  /** LafPOS'a geçiş günü (dökümün "Kasa (ModPOS) cirosu" satırı dönemin kasasıyla) */
+  switchDay: string | null;
   /** En az bir dönem tahmin edilebildi */
   ok: boolean;
   /** "Ödendi" denmiş, ödeme günü (ayın 28'i) bugünden ufkun sonuna kadar olan asıl KDV dönemleri: satırları yoktur */
@@ -363,7 +366,7 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
     online: onlineBasis(model, today),
     months,
     fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period })),
-    vat: vatMonthInputs(model, today),
+    vat: { ...vatMonthInputs(model, today), switchDay: st.lafposGecisGunu },
   };
 }
 
@@ -834,6 +837,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
           chainFrom: input.vatAnchor ? null : input.vat.firstSalesMonth,
           rates: { kdv: st.kdv, kdvHizmet: st.kdvHizmet },
           hasSite: input.vat.hasSite,
+          switchDay: input.vat.switchDay ?? null,
           // Satır yalnız ödendiği için yoksa tahmin "edilemedi" sayılmaz
           ok: vatRows.some((r) => r.estimate?.status === "ok") || (!vatRows.length && vatPaidInWindow.length > 0),
           paid: vatPaidInWindow,

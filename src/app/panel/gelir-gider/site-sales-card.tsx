@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/form";
 import { InfoTip } from "@/components/ui/misc";
 import { dateTimeTR, monthLabel, money, num, pct, tl } from "@/lib/format";
+import { monthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
 import { refreshSiteSales } from "@/server/actions/site-sales";
 
@@ -54,6 +55,9 @@ export interface SiteSalesCardData {
   kdvRate: number;
   /** Oranı saklı olmayan karaoke rezervasyonlarının oranı (Ayarlar › Hizmet satışı KDV) */
   serviceKdvRate: number;
+  /** LafPOS'a geçiş günü ve bu ay (metinlerde ayın kasası: src/lib/lafpos/kasa.ts monthKasa; denetim E-39) */
+  switchDay: string | null;
+  current: string;
 }
 
 /**
@@ -74,6 +78,13 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
         ? { tone: "green" as const, text: "Bağlı" }
         : { tone: "amber" as const, text: "Henüz çekilmedi" };
 
+  // Ayın kasası: geçiş günü boşken her metin ModPOS der; sonra LafPOS, geçiş ayında "kasada"
+  const headKasa = monthKasa(data.current, data.switchDay).both;
+  const tillIn = (month: string) => {
+    const k = monthKasa(month, data.switchDay);
+    return k.source === "gecis" ? "kasada" : `${k.short}'ta`;
+  };
+
   function pull(months: string[]) {
     setBusyMonth(months.length === 1 ? months[0] : "*");
     start(async () => {
@@ -91,7 +102,7 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
       <CardHeader
         icon={<Globe />}
         title="laffogato.net online satışları"
-        description="Uygulama ve web kafe siparişleri, mağaza kolileri ve ön ödemeli karaoke: tabloda Maliyet bölümünde ayrı gelir satırları (KDV hariç). Kasadan (ModPOS) geçmez; AYLIK CİRO'ya eklenmez, kâr ve oranlar ikisinin toplamıyla hesaplanır."
+        description={`Uygulama ve web kafe siparişleri, mağaza kolileri ve ön ödemeli karaoke: tabloda Maliyet bölümünde ayrı gelir satırları (KDV hariç). Kasadan (${headKasa}) geçmez; AYLIK CİRO'ya eklenmez, kâr ve oranlar ikisinin toplamıyla hesaplanır.`}
         meta={
           <Badge tone={health.tone} dot>
             {health.text}
@@ -137,8 +148,8 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-ink-mute">
                       Çekildi {dateTimeTR(m.pulledAt)}
-                      {m.manualOrders ? ` · panelden elle girilen ${num(m.manualOrders)} sipariş (${money(m.manualNet)}, KDV dahil) ModPOS'ta olduğu için eklenmedi` : ""}
-                      {m.counterOrders ? ` · kasada ödenen ${num(m.counterOrders)} uygulama siparişi (${money(m.counterNet)}, KDV dahil) ModPOS'ta da çalındığı için eklenmedi` : ""}
+                      {m.manualOrders ? ` · panelden elle girilen ${num(m.manualOrders)} sipariş (${money(m.manualNet)}, KDV dahil) ${tillIn(m.month)} olduğu için eklenmedi` : ""}
+                      {m.counterOrders ? ` · kasada ödenen ${num(m.counterOrders)} uygulama siparişi (${money(m.counterNet)}, KDV dahil) ${tillIn(m.month)} da çalındığı için eklenmedi` : ""}
                       {m.refundPending ? ` · karaokede iadesi bekleyen ${money(m.refundPending)} (KDV dahil; geri ödenince tutardan düşer)` : ""}
                       {m.unmapped ? ` · ${num(m.unmapped)} kafe satırı panel ürününe bağlı değil (tutarlılıkta sayılmaz)` : ""}
                     </p>
