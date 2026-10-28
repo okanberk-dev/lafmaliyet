@@ -7,12 +7,14 @@ import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
+import { pendingCashOutSummary } from "@/lib/cash-outs";
 import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
+import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
@@ -124,7 +126,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
-  const [rows, [{ n }], [lastRun], holds, stockOnly] = await Promise.all([
+  const [rows, [{ n }], [lastRun], holds, stockOnly, cashOuts] = await Promise.all([
     db
       .select({
         supplier: s.invoices.supplier,
@@ -150,6 +152,11 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
       return 0;
     }),
+    // Kasadan faturalı alımlar, faturası yok (E-42)
+    loadPendingCashOutInvoices(db).catch((e) => {
+      console.error("Sabah e-postası kasadan faturalı alımlar", e);
+      return [];
+    }),
   ]);
   const sinceIso = since.toISOString();
   const priceHolds = holds?.count
@@ -167,7 +174,12 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
-  return { invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), syncError, priceHolds }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
+  const cashOutPart = cashOuts.length ? { count: cashOuts.length, summary: pendingCashOutSummary(cashOuts) } : null;
+  return {
+    invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), cashOuts: cashOutPart, syncError, priceHolds },
+    failedRunKey,
+    sinceKey: lastSent?.at?.toISOString() ?? "",
+  };
 }
 
 /** Zam bölümünün anahtarı: her gönderimde yeni satır; yalnız son zam e-postasından sonraki zamlar yeni sayılır */
@@ -251,7 +263,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
   const { subject, html, text } = renderDigest(
     fresh,
     today,
-    invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null,
+    invoiceNews || invoices.reviewCount || invoices.priceHolds || invoices.cashOuts ? invoices : null,
     prices,
     system.length ? { items: system } : null,
     extras.extras,
