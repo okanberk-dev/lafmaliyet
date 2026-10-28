@@ -68,6 +68,7 @@ import {
 import { loadKasaLafpos, loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
+import { sendableRecipients } from "@/server/notify/recipients";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { staffLateDayOpen } from "@/server/photo-read/rules";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -414,6 +415,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     // Raporsuz LafPOS günlerinin yedek ay satırları (G6; yalnız geçiş gününden sonra): Gelir-gider'deki ay rakamıyla aynı
     lafposTillRows(getDb(), `${month}-01`, monthEnd),
   ]);
+  // Rapor alıcılarından personel ya da pasif hesabın olanlar (E-53): gönderimde düşer, kartta söylenir
+  const { dropped: blockedRecipients } = await sendableRecipients(getDb(), settings.recipients);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
   const [monthRevisions, monthProposed, lateApproved, latePending] = await Promise.all([
@@ -526,7 +529,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
               </div>
             </Card>
           ) : null}
-          <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} />
+          <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} blocked={blockedRecipients} />
         </div>
       </div>
     </div>

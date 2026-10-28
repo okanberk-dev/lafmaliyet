@@ -266,6 +266,7 @@ vermesini söyleyen kısa sözü görür.
 | Sipariş bu arada değişti; ekran yenilendi | Sipariş başka yerden (sitenin paneli, başka cihaz) ilerlemiş; kartın yeni hâline bakın, gerekiyorsa yeniden dokunun |
 | Sipariş sitede bulunamadı ya da artık bar ekranında değil | Sitede iade / iptal edilmiş ya da tamamlanmış; ekran yenilenir, kart kalkar |
 | İmza reddedildi: iki projedeki KARAOKE_SYNC_SECRET aynı mı? | Okumadaki imza hatasıyla aynı: anahtar ve sunucu saatleri |
+| Site bağlantısında sorun var; sipariş ilerletilmedi. Yöneticiye haber verin. | Personelin gördüğü metin (denetim E-64): bağlantının kurulumuyla ilgili her hata (kapalı bağlantı, imza, uç yok, site güncel değil). Yönetici aynı dokunuşta ayrıntıyı görür; bar ekranının uyarı satırı ve `/api/canli`, `/api/siparisler` da personele yalnız "Site bağlantısında sorun var; yöneticiye haber verin." döner |
 | Site 8 saniyede yanıt vermedi / Siteye ulaşılamadı; tekrar deneyin | Yeniden dokunun; sipariş iki kez ilerlemez (site 409 verir) |
 
 **Ayarlar › laffogato.net** kartındaki "Hata", o bağlantının **son denemesinin** hatasıdır ve bir sonraki başarılı

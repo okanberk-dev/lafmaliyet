@@ -235,7 +235,9 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 ## Sorun giderme
 
 "laffogato.net bağlantısı" kartındaki **Hata** açıklamaları. Bu açıklamaları yalnız yönetici görür (bağlantı kartı, bar
-ekranının sarı satırı, Eşitle); personel yöneticiye haber vermesini söyleyen kısa sözü görür.
+ekranının sarı satırı, Eşitle); personel yöneticiye haber vermesini söyleyen kısa sözü görür. Canlı uç (`/api/canli`)
+de hatanın metnini yalnız yöneticiye gönderir; personelin yanıtında "Site bağlantısında sorun var; yöneticiye haber
+verin." yazar (denetim E-64, `src/lib/staff-errors.ts`).
 
 | Mesaj | Ne yapılır |
 |-------|------------|

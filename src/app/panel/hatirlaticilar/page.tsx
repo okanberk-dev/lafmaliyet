@@ -5,12 +5,14 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { shiftMonth } from "@/lib/calc/engine";
+import { emailKey } from "@/lib/notify-recipients";
 import { liveRecentPaid } from "@/lib/recent-paid";
 import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
+import { blockedAccounts } from "@/server/notify/recipients";
 import { DEFAULT_FROM, isEmailConfigured, resolveFrom } from "@/server/notify/resend";
 import { loadWeeklyPanel } from "@/server/weekly/send";
 
@@ -66,6 +68,8 @@ async function RemindersContent() {
   const payments = paymentIds.length
     ? await db.select({ id: s.supplierEntries.id, updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(inArray(s.supplierEntries.id, paymentIds))
     : [];
+  // Personel ya da pasif hesabın adresi (E-53): listede durur ama e-posta almaz; satırında söylenir
+  const blocked = await blockedAccounts(db, recipients.map((r) => r.email));
   const undoable = liveRecentPaid(
     recentPaid,
     reminders,
@@ -87,7 +91,7 @@ async function RemindersContent() {
       laterInvoices={laterInvoices}
       covered={covered}
       reminders={reminders.map((r) => ({ ...r, lastDoneAt: r.lastDoneAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
-      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active }))}
+      recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active, blocked: blocked.get(emailKey(r.email)) ?? null }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}

@@ -1,5 +1,6 @@
 import { MONTH_NAMES } from "@/lib/constants";
 import { addDays, todayTR } from "@/lib/reminders";
+import { staffSiteText } from "@/lib/staff-errors";
 
 import type { PushFailure } from "./push";
 import type { LinkStatus, SiteMenuSlot } from "./slot";
@@ -225,14 +226,26 @@ export function reopenRefusal(input: {
 }
 
 /**
- * Sitenin hata metni: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409) sonuna "Yöneticiye haber
- * verin." eklenir; ağ hatası ve 409 `stale` (site bu arada değişti, panel yeniden okuyor) yeniden denenebilir, metin
- * olduğu gibi kalır. Yazımın zaman aşımında personel kendi metnini görür (yöneticininki Site menüsüne gönderir, o ekran
- * personele kapalı); `role` yalnız yazım hatasında verilir (okumanın zaman aşımında site hiçbir şey yazmamıştır).
+ * Sitenin hata metni. Yöneticide bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409) sonuna
+ * "Yöneticiye haber verin." eklenir. Personel (`role` "staff") ağ hatası, zaman aşımı ve 409 `stale` dışındaki her
+ * nedende sabit metni görür (E-64): "Site bağlantısında sorun var; <consequence>. Yöneticiye haber verin." Anahtar adı,
+ * imza ve sitenin sürümü yalnız yöneticiye. Ağ hatası ve 409 `stale` (site bu arada değişti, panel yeniden okuyor) iki
+ * rolde de yeniden denenebilir, metin olduğu gibi kalır. Yazımın zaman aşımında personel kendi metnini görür
+ * (yöneticininki Site menüsüne gönderir, o ekran personele kapalı); okumanın (`read`) zaman aşımında site hiçbir şey
+ * yazmamıştır, metin olduğu gibi kalır.
  */
-export function siteFailureText(message: string, cause: PushFailure | null | undefined, role: "admin" | "staff" = "admin"): string {
-  if (cause?.kind === "timeout" && role === "staff") return SOLD_OUT_TEXT.siteSlow;
+export function siteFailureText(
+  message: string,
+  cause: PushFailure | null | undefined,
+  role: "admin" | "staff" = "admin",
+  o: { consequence?: string; read?: boolean } = {},
+): string {
   const stale = cause?.kind === "http" && cause.status === 409 && cause.error === "stale";
+  if (role === "staff") {
+    if (cause?.kind === "timeout" && !o.read) return SOLD_OUT_TEXT.siteSlow;
+    if (cause?.kind === "off" || (cause?.kind === "http" && !stale)) return staffSiteText(o.consequence);
+    return message;
+  }
   const link = cause?.kind === "off" || (cause?.kind === "http" && [400, 401, 404, 409].includes(cause.status) && !stale);
   return link ? `${message.trim()} Yöneticiye haber verin.` : message;
 }

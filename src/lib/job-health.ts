@@ -162,7 +162,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     skipped: "E-posta: yeni bir şey yok",
     off: "E-posta kapalı",
     nokey: "E-posta: Resend kurulmadı",
-    norecipient: "E-posta gitmedi: bildirim adresi yok",
+    norecipient: "E-posta gitmedi: gönderilecek adres yok",
     error: "E-posta gönderilemedi",
   },
   sync: { ok: "Paraşüt eşitlendi", today: "Paraşüt bugün eşitlenmişti", busy: "Paraşüt eşitlemesi sürüyordu", off: "Paraşüt bağlı değil", error: "Paraşüt hata" },
@@ -207,11 +207,20 @@ export type StepResult = { code: string; error?: string | null };
 /**
  * Sabah e-postasının adımı. `off` gitmeme nedeni (src/server/notify/digest.ts): kapalı ve Resend kurulmamış sorun
  * sayılmaz (ayar); gönderilecek bir şey varken etkin bildirim adresi yoksa e-posta gitmemiştir, adım sorunlu sayılır.
+ * `blocked`: etkin adresler vardı ama hepsi personel ya da pasif hesabın (E-53); neden adresleriyle yazılır, ekranda
+ * etkin bir adres görünürken "adres yok" denmesin.
  */
-export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "disabled" | "nokey" | "norecipient"; error?: string }): StepResult {
+export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "disabled" | "nokey" | "norecipient"; error?: string; blocked?: string }): StepResult {
   if (r.status === "sent") return { code: "sent" };
   if (r.status === "error") return { code: "error", error: r.error };
-  if (r.off === "norecipient") return { code: "norecipient", error: "gönderilecek bir şey vardı ama etkin bildirim adresi yok" };
+  if (r.off === "norecipient") {
+    return {
+      code: "norecipient",
+      error: r.blocked
+        ? `gönderilecek bir şey vardı ama etkin bildirim adreslerinin hepsi personel ya da pasif hesaba ait: ${r.blocked}`
+        : "gönderilecek bir şey vardı ama etkin bildirim adresi yok",
+    };
+  }
   return { code: r.off === "disabled" ? "off" : (r.off ?? "skipped") };
 }
 
