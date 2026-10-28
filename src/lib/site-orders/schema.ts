@@ -1,12 +1,14 @@
 import { z } from "zod";
 
+import { awaitingCount } from "./follow";
+
 /**
  * laffogato.net'in açık kafe siparişleri (bar ekranı): sitenin `GET /api/panel/orders` yanıtının panelde doğrulanması
  * (saf; sunucu, ekran ve testler paylaşır). Sözleşme sitenin docs/PANEL-ORDERS.md'si, sitedeki karşılığı
  * src/lib/panel/orders-feed-core.ts; panel tarafı docs/SITE-SIPARIS.md.
  *
- * Yanıt: { version: 1, now, complete, orders: [...] }. Tanınmayan sürüm ya da bozuk iskelet bütün yanıtı reddeder
- * (ekran son doğru listeyi göstermeye devam eder ve hatayı söyler). Tek bir siparişin kullanılan alanı bozuksa
+ * Yanıt: { version: 1, now, complete, orders: [...], awaitingPayment? }. Tanınmayan sürüm ya da bozuk iskelet bütün
+ * yanıtı reddeder (ekran son doğru listeyi göstermeye devam eder ve hatayı söyler). Tek bir siparişin kullanılan alanı bozuksa
  * (kimlik, aşama, ödeme anı, satırlar) yalnız o sipariş atlanır ve sayılır: bir siparişteki hata bütün ekranı
  * boşaltmasın. Ekranda gösterilen metinler kısaltılır; bilinmeyen yeni alanlar atılır (site v1'e alan ekleyebilir).
  *
@@ -71,6 +73,11 @@ export interface SiteOrderList {
   orders: SiteOrder[];
   /** Okunamayıp atlanan sipariş sayısı */
   skipped: number;
+  /**
+   * Ödemesini bekleyen bar ekranı siparişlerinin sayısı (son ödeme sayfası son 30 dakikada açılmış; yalnız sayı). Site
+   * 28 Ekim 2026'da ekledi (laffogato #270): alan yoksa ya da bozuksa 0, liste yine okunur (src/lib/site-orders/follow.ts)
+   */
+  awaitingPayment: number;
 }
 
 /** Sitenin yanıtı beklenen biçimde değil: yöneticiye gösterilecek açıklamayla */
@@ -185,5 +192,7 @@ export function parseSiteOrders(json: unknown): SiteOrderList {
     seen.add(order.id);
     orders.push(order);
   }
-  return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped };
+  // İsteğe bağlı (S2 öncesi site göndermez); yoksa ya da bozuksa 0, bütün yanıt reddedilmez
+  const awaitingPayment = awaitingCount((json as { awaitingPayment?: unknown }).awaitingPayment);
+  return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped, awaitingPayment };
 }

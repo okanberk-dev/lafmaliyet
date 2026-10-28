@@ -220,6 +220,7 @@ async function SiteLinksCard() {
       tryAt: karaoke.lastTryAt,
       pingAt: karaoke.lastPingAt,
       error: karaoke.lastError,
+      missedPingAt: null,
     },
     {
       key: "menu",
@@ -230,6 +231,7 @@ async function SiteLinksCard() {
       tryAt: menu.lastPullAt,
       pingAt: menu.lastPingAt,
       error: menu.lastError,
+      missedPingAt: null,
     },
     {
       key: "orders",
@@ -240,6 +242,8 @@ async function SiteLinksCard() {
       tryAt: orders.lastPullAt,
       pingAt: orders.lastPingAt,
       error: orders.lastError,
+      // Pingle olmayan bir çekme, pingi hiç gelmemiş ödenmiş bir sipariş buldu (src/lib/site-orders/follow.ts)
+      missedPingAt: orders.missedPingAt,
     },
     {
       key: "sales",
@@ -250,6 +254,7 @@ async function SiteLinksCard() {
       tryAt: sales.lastPullAt,
       pingAt: null,
       error: sales.lastError,
+      missedPingAt: null,
     },
   ];
   const errors = rows.filter((r) => r.health.tone === "red").length;
@@ -313,6 +318,12 @@ async function SiteLinksCard() {
                 <p className="mt-0.5 text-[13px] text-ink-mute">
                   Son çekme {r.okAt ? dateTimeTR(r.okAt) : "—"}
                   {r.key !== "sales" ? ` · sitenin son pingi ${r.pingAt ? dateTimeTR(r.pingAt) : "—"}` : " · her sabah ve Siteden yenile"}
+                </p>
+              ) : null}
+              {configured && r.missedPingAt ? (
+                <p className="mt-0.5 text-[13px] text-warn">
+                  Ping kaçtı {dateTimeTR(r.missedPingAt)}: ödenmiş bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi.
+                  Sık görülürse sitedeki PANEL_URL&apos;yi ve anahtarı kontrol edin.
                 </p>
               ) : null}
               {r.health.tone === "red" && r.error ? (

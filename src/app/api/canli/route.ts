@@ -3,6 +3,7 @@ import { after, connection, type NextRequest } from "next/server";
 import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
+import { awaitingUntil } from "@/lib/site-orders/follow";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
@@ -72,6 +73,8 @@ export async function GET(request: NextRequest) {
       error: ordersState.lastError,
       pingAt: ordersState.lastPingAt,
       changeAt: ordersState.lastChangeAt,
+      // Ödeme bekleniyor: ekran bu ana kadar yoğun (üç dakikada bir çeker); takibin başlaması ve bitmesi sürümü artırır
+      awaitingUntil: linked ? awaitingUntil(ordersState) : null,
     },
     reminders,
     push: { publicKey },

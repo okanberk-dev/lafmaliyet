@@ -35,6 +35,7 @@ import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
 import { pushCovers } from "@/lib/live-poll";
 import { lineLabel, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitInfo } from "@/lib/site-orders/feed";
+import { boardBusy } from "@/lib/site-orders/follow";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
 import { stageButtons, type StageAction, type StageButton } from "@/lib/site-orders/stage";
 import { lineSlot } from "@/lib/site-sales/calc";
@@ -43,7 +44,10 @@ import { advanceSiteOrder } from "@/server/actions/site-orders";
 
 /** Ekran açılınca ya da öne gelince son çekme bundan eskiyse site sorulur */
 const OPEN_STALE_MS = 60_000;
-/** Yoğunken (ekranda açık sipariş var ya da son iki saatte sitede sipariş hareketi oldu) arka planda yeniden çekme */
+/**
+ * Yoğunken (ekranda açık sipariş var, son iki saatte sitede sipariş hareketi oldu ya da sitede ödemesi beklenen sipariş
+ * var; boardBusy) arka planda yeniden çekme
+ */
 const BUSY_REPULL_MS = 3 * 60_000;
 /** Sakinken (gece, kapalı saat) yeniden çekme: sitenin veritabanı (Neon) uyusun diye seyrek */
 const QUIET_REPULL_MS = 60 * 60_000;
@@ -55,7 +59,6 @@ const ERROR_REPULL_MS = 60_000;
  * (veritabanı uyusun).
  */
 const FAST_REFRESH_MS = 20_000;
-const BUSY_WINDOW_MS = 2 * 3_600_000;
 
 const STAGE_TONE: Record<OrderStage, Tone> = { new: "amber", preparing: "blue", ready: "green" };
 
@@ -77,8 +80,6 @@ async function pullOrders(maxAgeMs: number): Promise<{ status: string; error?: s
   }
 }
 
-const recent = (iso: string | null | undefined, nowMs: number) => Boolean(iso) && nowMs - Date.parse(iso!) < BUSY_WINDOW_MS;
-
 /**
  * Bar ekranının "Uygulama siparişleri" bölümü (docs/SITE-SIPARIS.md): laffogato.net'te (uygulama ve web) ödenmiş, hâlâ
  * açık kafe siparişleri. Kart: nereye ("Masa 4", "Gel-al", "Kurye"), aşama, planlı saat, müşterinin adı, satırlar,
@@ -88,7 +89,9 @@ const recent = (iso: string | null | undefined, nowMs: number) => Boolean(iso) &
  * kabuktaki uyarı motorunda çalar (alert-center.tsx; planlı sipariş vaktine 15 dakika kala bir kez daha).
  *
  * Veri canlı uçtan gelir; ekran ayrıca siteyi yeniden çektirir: açılınca ve öne gelince (son çekme bir dakikadan
- * eskiyse), yoğunken üç dakikada, sakinken saatte bir (ping kaçtıysa diye). Sürekli sorgu yok.
+ * eskiyse), yoğunken üç dakikada, sakinken saatte bir (ping kaçtıysa diye). Sitede ödemesi beklenen sipariş varken
+ * (kartlı sipariş; en çok 30 dakika, `awaitingUntil`) ekran yoğun sayılır: ödeme pingi kaçsa da sipariş birkaç dakikada
+ * gelir. Sürekli sorgu yok.
  */
 export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role; siteBase: string; recipes: Record<string, string>; serverNow: number }) {
   const live = useLive();
@@ -97,7 +100,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
   const list = data ? sortForScreen(data.list) : [];
   const clock = useClock(30_000);
   const now = clock || serverNow;
-  const busy = list.length > 0 || recent(data?.pingAt, now) || recent(data?.changeAt, now);
+  const busy = boardBusy({ open: list.length, pingAt: data?.pingAt, changeAt: data?.changeAt, awaitingUntil: data?.awaitingUntil }, now);
   const [pulling, setPulling] = useState(false);
 
   // Açılışta ve sekmeye dönünce: son çekme bir dakikadan eskiyse site sorulur
