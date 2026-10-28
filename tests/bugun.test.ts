@@ -385,6 +385,25 @@ test("8. faturalar: kontrol bekleyen yapılacak, yoksa tamam; okunamazsa satır 
   );
   const onlyStock = byKey(dayTasks(admin(NOON, { invoices: { review: 1, stockOnly: 1 } }))).fatura;
   assert.equal(onlyStock.detail, "1 fatura kontrol bekliyor: 1 fatura mal alışı sayılmıyor (kalemi hammaddeye bağlı): kategorisini mal alışı yapın ya da bilerek böyleyse Kalsın deyin.");
+  // Kasadan faturalı alımlar (E-42): yalnız onlar varsa kendi satırı ve kartın adresi; faturalarla birlikte ek cümle
+  const cash = { count: 2, summary: "Migros 2.400 ₺ ve 1 alım daha" };
+  const onlyCash = byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: cash } }))).fatura;
+  assert.deepEqual([onlyCash.status, onlyCash.badge, onlyCash.href], ["todo", "2 kasa alımı", "/panel/faturalar?durum=kontrol#kasa-faturali"]);
+  assert.equal(
+    onlyCash.detail,
+    "2 kasadan faturalı alım Faturalar'da yok (Migros 2.400 ₺ ve 1 alım daha): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez.",
+  );
+  const both = byKey(dayTasks(admin(NOON, { invoices: { review: 3, cashOuts: cash } }))).fatura;
+  assert.equal(both.badge, "5 kontrol");
+  assert.match(both.detail, /^3 fatura kontrol bekliyor: .*\. Ayrıca 2 kasadan faturalı alım Faturalar'da yok \(Migros/);
+  assert.equal(byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: null } }))).fatura.status, "done");
+  // Aylık harcamalar'a yazılmışken faturası gelen (iki kez sayılıyor; inceleme D2): tek başına da satırı açar
+  const twice = byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: { count: 0, summary: "", duplicates: 1 } } }))).fatura;
+  assert.deepEqual([twice.status, twice.badge, twice.href], ["todo", "1 kasa alımı", "/panel/faturalar?durum=kontrol#kasa-faturali"]);
+  assert.equal(twice.detail, "1 kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin.");
+  const mixedCash = byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: { ...cash, duplicates: 1 } } }))).fatura;
+  assert.equal(mixedCash.badge, "3 kasa alımı");
+  assert.match(mixedCash.detail, /yoksa gelir-gidere girmez; 1 kasa alımı iki kez sayılıyor .*: gider kaydını silin\.$/);
   const none = byKey(dayTasks(admin(NOON))).fatura;
   assert.equal(none.status, "done");
   assert.equal(none.detail, "Kontrol bekleyen fatura yok.");

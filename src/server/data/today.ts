@@ -6,6 +6,7 @@ import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, ty
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
+import { pendingCashOutSummary } from "@/lib/cash-outs";
 import type { StaffForecastView } from "@/lib/forecast/text";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -20,6 +21,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
@@ -145,9 +147,19 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       : Promise.resolve([]),
     safe(loadUpcoming()),
     safe(
-      Promise.all([db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)), countStockOnlyReview(db)]).then(([[r], stockOnly]) => ({
+      Promise.all([
+        db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
+        countStockOnlyReview(db),
+        // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar; okunamazsa satır
+        // yalnız faturaları söyler
+        loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+      ]).then(([[r], stockOnly, { pending, duplicates }]) => ({
         review: r?.n ?? 0,
         stockOnly,
+        cashOuts:
+          pending.length || duplicates.length
+            ? { count: pending.length, summary: pendingCashOutSummary(pending), ...(duplicates.length ? { duplicates: duplicates.length } : {}) }
+            : null,
       })),
     ),
     safe(countUnlinkedProducts()),

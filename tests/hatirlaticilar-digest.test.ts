@@ -204,6 +204,27 @@ test("e-posta: mal alışı sayılmayan fatura “kategorisi tahminle yazıldı�
   assert.ok(only.includes("2 fatura mal alışı sayılmıyor"));
 });
 
+test("e-posta: kasadan faturalı alımlar Paraşüt bölümünde söylenir, e-postayı tek başına göndermez (denetim E-42)", () => {
+  const cashOuts = { count: 2, summary: "D&R 2.400 ₺ ve 1 alım daha" };
+  const inv: DigestInvoices = { items: [], reviewCount: 0, cashOuts, syncError: null };
+  assert.equal(invoiceNewsOf(inv), false, "haber değil");
+  const r = renderDigest([], "2026-10-22", inv);
+  assert.ok(r.html.includes("2 kasadan faturalı alım Faturalar'da yok (D&amp;R 2.400 ₺ ve 1 alım daha): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın"));
+  assert.ok(r.html.includes(`href="${APP_URL}/panel/faturalar?durum=kontrol#kasa-faturali"`));
+  assert.ok(r.text.includes(`2 kasadan faturalı alım Faturalar'da yok (D&R 2.400 ₺ ve 1 alım daha): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez. ${APP_URL}/panel/faturalar?durum=kontrol#kasa-faturali`));
+  assert.ok(r.html.includes(`${APP_URL}/panel/faturalar?durum=kontrol"`), "düğme Kontrol süzgecine");
+  // Kontrol bekleyen kutusundan sonra; yoksa hiç
+  const both = renderDigest([], "2026-10-22", { ...inv, reviewCount: 3 }).html;
+  assert.ok(both.indexOf("faturanın kategorisi tahminle yazıldı") < both.indexOf("kasadan faturalı alım"));
+  assert.ok(!renderDigest([], "2026-10-22", { ...inv, reviewCount: 3, cashOuts: null }).html.includes("kasadan faturalı"));
+  // Aylık harcamalar'a yazılmışken faturası gelen (iki kez sayılıyor; inceleme D2): tek başına da söylenir
+  const twice = renderDigest([], "2026-10-22", { ...inv, cashOuts: { count: 0, summary: "", duplicates: 1 } });
+  assert.ok(twice.text.includes(`1 kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin. ${APP_URL}/panel/faturalar?durum=kontrol#kasa-faturali`));
+  assert.ok(!twice.text.includes("kasadan faturalı alım Faturalar'da yok"));
+  const mixed = renderDigest([], "2026-10-22", { ...inv, cashOuts: { ...cashOuts, duplicates: 2 } }).text;
+  assert.ok(mixed.includes("yoksa gelir-gidere girmez. 2 kasa alımı iki kez sayılıyor"));
+});
+
 test("e-posta konusu: yeni onaya düşen fiyat ötekilerin arkasına eklenir; eskisi yalnız bölümde görünür", () => {
   const withInvoices: DigestInvoices = { ...invoices, priceHolds: holds(1).priceHolds };
   assert.equal(renderDigest([], "2026-10-22", withInvoices, prices).subject, "Sabah özeti: 2 yeni fatura · 2 fiyat onay bekliyor · 1 hammaddeye zam");

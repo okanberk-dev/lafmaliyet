@@ -52,6 +52,7 @@ import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -81,7 +82,7 @@ import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
-import { debtFacts, monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { debtFacts, monthCashOuts, monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
@@ -172,7 +173,13 @@ async function loadParasut(): Promise<ParasutFacts | null> {
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, upcoming, parasut] = await Promise.all([loadModel(), loadPayments(), loadParasut()]);
+  const [model, upcoming, parasut, cashOutState] = await Promise.all([
+    loadModel(),
+    loadPayments(),
+    loadParasut(),
+    // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
+    loadCashOutInvoiceState().catch(() => null),
+  ]);
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
@@ -263,6 +270,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     monthTaskFacts(model, month, d.monthState, d.refMonth, {
       payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null,
       parasut,
+      cashOuts: cashOutState ? monthCashOuts(cashOutState, month) : null,
     }),
   );
 

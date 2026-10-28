@@ -33,7 +33,18 @@ import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uplo
 import { DocumentPicker, UploadStatus, useDocumentUpload } from "./document-sheet";
 import { prepareDocument, uploadDocument, type UploadResult } from "./document-upload";
 import { InvoiceLines } from "./invoice-lines";
-import { guessVat, isEInvoiceOnly, isParasutLinked, parasutBillUrl, supplierMatchKey, VAT_RATES, type InvoiceRow, type SupplierDefault } from "./rules";
+import {
+  cashOutInvoiceDraft,
+  guessVat,
+  isEInvoiceOnly,
+  isParasutLinked,
+  parasutBillUrl,
+  supplierMatchKey,
+  VAT_RATES,
+  type CashOutInvoiceSource,
+  type InvoiceRow,
+  type SupplierDefault,
+} from "./rules";
 
 /** Boş değil ama sayı olarak okunamayan tutar */
 const badNumber = (t: string) => t.trim() !== "" && parseNumberTR(t) === null;
@@ -63,6 +74,26 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
   };
 }
 
+/** Kasadan faturalı alımdan açılan yeni faturanın formu (E-42; rules.ts cashOutInvoiceDraft) */
+function cashOutForm(o: CashOutInvoiceSource, defaults: Map<string, SupplierDefault>) {
+  const d = cashOutInvoiceDraft(o, defaults.get(supplierMatchKey(o.store ?? "")));
+  return {
+    ...blankForm(null),
+    date: d.date,
+    supplier: d.supplier,
+    description: d.description,
+    invoiceNo: d.invoiceNo,
+    category: d.category,
+    amount: num(d.amount, 2, 2),
+    payable: num(d.payable, 2, 2),
+    vatRate: d.vatRate,
+    unpaid: false,
+    paidAt: d.paidAt,
+  };
+}
+
+const CASH_DOC: Record<CashOutInvoiceSource["docType"], string> = { e_arsiv: "e-Arşiv", fatura: "fatura", fis: "fiş", yok: "belgesiz" };
+
 /**
  * Kategorinin gelir-giderde nereye gittiği (pencere ve toplu değiştirme ipucu). `links`: fatura kategorisi → bağlı
  * Aylık harcamalar kategorisinin adı; bağlı kategorinin faturaları orada gelir-gidere girer. Liste verilmediyse
@@ -80,6 +111,7 @@ export function categoryEffect(category: string, links?: Record<string, string>)
 
 export function InvoiceDialog({
   invoice,
+  fromCashOut = null,
   suppliers,
   defaults,
   onClose,
@@ -92,6 +124,11 @@ export function InvoiceDialog({
   cari,
 }: {
   invoice: InvoiceRow | null;
+  /**
+   * Yeni fatura kasadan faturalı bir alımdan (Faturalar › Kontrol › "Faturalar'a ekle"; E-42): form kasadan dolu, fişin
+   * fotoğrafı kaydedince faturanın belgesi olur, satır bekleyen listeden kalkar
+   */
+  fromCashOut?: CashOutInvoiceSource | null;
   suppliers: string[];
   /** Tedarikçinin son faturasından kategori ve KDV (yalnızca yeni faturada önerilir) */
   defaults: Map<string, SupplierDefault>;
@@ -112,7 +149,11 @@ export function InvoiceDialog({
   /** Bu faturaya sayılan cari ödemeler ve bağlı faturasız alımlar (salt okunur; Tedarikçiler'de değişir) */
   cari?: InvoiceCariLinks;
 }) {
-  const [f, setF] = useState(() => blankForm(invoice));
+  const [f, setF] = useState(() => (fromCashOut && !invoice ? cashOutForm(fromCashOut, defaults) : blankForm(invoice)));
+  const cashOut = invoice ? null : fromCashOut;
+  /** Fişte KDV okunmadı: net tutar tedarikçinin son oranıyla geri hesaplandı, kontrol edilmeli */
+  const cashVatGuessed = cashOut ? cashOutInvoiceDraft(cashOut).vatGuessed : false;
+  const [cashViewer, setCashViewer] = useState<{ id: number; caption: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string | null>(null);
   const router = useRouter();
@@ -236,6 +277,7 @@ export function InvoiceDialog({
         // Boş ödeme günü: yeni faturada fatura günü (ileri tarihli faturada bugün); kayıtlı faturada bilinmiyor (ödendiye
         // geçerken pencere bugünü yazar)
         paidAt: f.unpaid ? null : f.paidAt || (invoice ? null : f.date > localToday() ? localToday() : f.date),
+        cashOutId: cashOut?.id ?? null,
       });
       if (res.ok && !invoice && attachment) {
         setBusyText("Belge yükleniyor…");
@@ -248,7 +290,7 @@ export function InvoiceDialog({
       setBusy(false);
       setBusyText(null);
     }
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) return toast.error(res.error, { duration: res.error.length > 120 ? 12_000 : undefined });
     const shown = locked && invoice ? invoice.payable : payableToSave;
     const withDoc = uploaded?.ok ? " · belge eklendi" : "";
     // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir
@@ -264,7 +306,15 @@ export function InvoiceDialog({
         duration: 12_000,
         ...(savedId !== null ? { action: { label: "Kalsın", onClick: () => void keepCategory(savedId, category) } } : {}),
       });
-    } else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
+    } else if (cashOut && res.data.cashOut?.document === false) {
+      toast.warning("Fatura eklendi, fişin fotoğrafı eklenemedi", {
+        description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}. Kasadaki alım listeden kalktı; fotoğrafı faturanın belgesi olarak elle ekleyin.`,
+        duration: 10_000,
+      });
+    } else {
+      const fromCash = cashOut ? ` · kasadan${res.data.cashOut?.document ? ", fiş belge olarak eklendi" : ""}` : "";
+      toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}${fromCash}` });
+    }
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
       keepScroll();
@@ -294,9 +344,11 @@ export function InvoiceDialog({
       open
       onClose={onClose}
       size="lg"
-      title={invoice ? "Faturayı düzenle" : "Fatura ekle"}
+      title={invoice ? "Faturayı düzenle" : cashOut ? "Faturalar'a ekle · kasadan" : "Fatura ekle"}
       description={
-        added
+        cashOut
+          ? "Kasaya girilen alımdan dolduruldu. Tutarları ve kategoriyi faturadaki gibi kontrol edip kaydedin."
+          : added
           ? `${added} fatura eklendi. Sıradakini girin ya da pencereyi kapatın.`
           : locked
             ? "Paraşüt'ten gelen fatura: kategori, açıklama, not, vade ve ödeme durumu burada değişir."
@@ -337,7 +389,7 @@ export function InvoiceDialog({
               Kalsın
             </Button>
           ) : null}
-          {invoice ? null : (
+          {invoice || cashOut ? null : (
             <Button
               variant="secondary"
               disabled={busy || up.busy}
@@ -365,6 +417,18 @@ export function InvoiceDialog({
         noValidate
         className={cn("grid gap-x-3 gap-y-4 pb-2 sm:grid-cols-2", BIG_FIELDS)}
       >
+        {cashOut ? (
+          <div className="flex items-start gap-3 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] leading-5 text-info sm:col-span-2">
+            {cashOut.photoId ? (
+              <PhotoThumb id={cashOut.photoId} caption={`Kasa fişi · ${dateTR(cashOut.receiptDate ?? cashOut.date)}`} size="sm" onOpen={() => setCashViewer({ id: cashOut.photoId!, caption: `Kasa fişi · ${dateTR(cashOut.receiptDate ?? cashOut.date)}` })} className="flex-none [&>div]:hidden" />
+            ) : null}
+            <p className="min-w-0 flex-1">
+              Kasadan {dateTR(cashOut.date)} · {cashOut.createdByName} · {CASH_DOC[cashOut.docType]} · {tl(cashOut.amount, 2)}.{" "}
+              {cashOut.photoId ? "Fişin fotoğrafı kaydedince faturanın belgesi olur. " : ""}
+              {cashVatGuessed ? "Fişte KDV okunmadı: net tutar seçili KDV oranıyla hesaplandı, faturadaki gibi düzeltin." : "Net tutar fişteki KDV'yle hesaplandı."}
+            </p>
+          </div>
+        ) : null}
         <Field
           label="Tedarikçi"
           htmlFor="f-sup"
@@ -461,34 +525,36 @@ export function InvoiceDialog({
           </Select>
         </Field>
 
-        <DocumentField
-          invoice={invoice}
-          docs={docs}
-          attachment={attachment}
-          phase={up.phase}
-          busy={up.busy || busy}
-          onOpen={onOpenDocuments}
-          onRemove={() => {
-            setAttachment(null);
-            up.setPhase({ kind: "idle" });
-          }}
-          onPick={async (file) => {
-            if (invoice) {
-              const doc = await up.upload(invoice.id, file);
-              if (!doc) return;
-              setAddedDocs((a) => [doc, ...a]);
-              toast.success("Belge eklendi", { description: `${documentKind(doc.mime) === "pdf" ? "PDF" : "Fotoğraf"} · ${formatBytes(doc.size)}` });
-              keepScroll();
-              startTransition(() => router.refresh());
-              return;
-            }
-            up.setPhase(uploadPlan(file).action === "compress" ? { kind: "preparing" } : { kind: "idle" });
-            const prepared = await prepareDocument(file);
-            if (!prepared.ok) return up.setPhase({ kind: "error", message: prepared.error });
-            up.setPhase({ kind: "idle" });
-            setAttachment(prepared.file);
-          }}
-        />
+        {cashOut?.photoId ? null : (
+          <DocumentField
+            invoice={invoice}
+            docs={docs}
+            attachment={attachment}
+            phase={up.phase}
+            busy={up.busy || busy}
+            onOpen={onOpenDocuments}
+            onRemove={() => {
+              setAttachment(null);
+              up.setPhase({ kind: "idle" });
+            }}
+            onPick={async (file) => {
+              if (invoice) {
+                const doc = await up.upload(invoice.id, file);
+                if (!doc) return;
+                setAddedDocs((a) => [doc, ...a]);
+                toast.success("Belge eklendi", { description: `${documentKind(doc.mime) === "pdf" ? "PDF" : "Fotoğraf"} · ${formatBytes(doc.size)}` });
+                keepScroll();
+                startTransition(() => router.refresh());
+                return;
+              }
+              up.setPhase(uploadPlan(file).action === "compress" ? { kind: "preparing" } : { kind: "idle" });
+              const prepared = await prepareDocument(file);
+              if (!prepared.ok) return up.setPhase({ kind: "error", message: prepared.error });
+              up.setPhase({ kind: "idle" });
+              setAttachment(prepared.file);
+            }}
+          />
+        )}
 
         {locked && invoice ? (
           <LockedAmounts invoice={invoice} href={parasutHref} />
@@ -615,6 +681,7 @@ export function InvoiceDialog({
           />
         </Field>
       </form>
+      {cashOut ? <PhotoViewer photo={cashViewer} onClose={() => setCashViewer(null)} /> : null}
     </Dialog>
   );
 }

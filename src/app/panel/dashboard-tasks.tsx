@@ -7,6 +7,7 @@ import type { MonthState } from "@/lib/calc/insights";
 import { isSummaryRow } from "@/lib/calc/pos-paste";
 import type { FieldSource } from "@/lib/calc/types";
 import { missingText } from "@/lib/cash-month";
+import { CASH_OUT_INVOICES_HREF, cashOutInvoiceDay, pendingCashOutSummary, type InvoiceCashOut } from "@/lib/cash-outs";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import { lafposMonthNotes } from "@/lib/lafpos/sales";
@@ -106,6 +107,13 @@ export interface MonthTaskFacts {
   parasut: ParasutFacts | null;
   /** Aylık harcamalar: her ay girilmesi gereken ama girilmemiş kategoriler; girilen kategori sayısı ve toplam */
   expenses?: { missing: string[]; entered: number; total: number };
+  /**
+   * Ayın kasadan faturalı alımları (denetim E-42, inceleme U4; fişin günü bu ayda): `count` faturası Faturalar'da yok,
+   * Aylık harcamalar'a yazılmadı (mal maliyetine, gelir-gidere ve KDV'ye girmedi; `summary` "Migros 2.400,00 ₺ ve 1
+   * alım daha"); `duplicates` Aylık harcamalar'a yazılmışken faturası sonradan geldi (iki kez sayılıyor). Okunamadıysa
+   * ya da yoksa alan yok
+   */
+  cashOuts?: { count: number; summary: string; duplicates: number } | null;
 }
 
 /** Ödemeler kalemi faturasız borç mu (cari kayıt) */
@@ -147,13 +155,27 @@ export function paymentFacts(items: UpcomingItem[], unpaid: { count: number; tot
   };
 }
 
+/**
+ * Kasadan faturalı alımların seçili aya düşenleri (fişin günü; yoksa kasanın): bekleyenler ve iki kez sayılanlar
+ * (src/server/data/cash-out-invoices.ts loadCashOutInvoiceState); ikisi de yoksa null
+ */
+export function monthCashOuts(
+  state: { pending: readonly Pick<InvoiceCashOut, "store" | "amount" | "date" | "receiptDate">[]; duplicates: readonly Pick<InvoiceCashOut, "date" | "receiptDate">[] },
+  month: string,
+): MonthTaskFacts["cashOuts"] {
+  const inMonth = (r: Pick<InvoiceCashOut, "date" | "receiptDate">) => cashOutInvoiceDay(r).startsWith(month);
+  const pending = state.pending.filter(inMonth);
+  const duplicates = state.duplicates.filter(inMonth).length;
+  return pending.length || duplicates ? { count: pending.length, summary: pendingCashOutSummary(pending), duplicates } : null;
+}
+
 /** Modelden seçili ayın gerçekleri; ödemeler ve Paraşüt sunucuda ayrıca okunur */
 export function monthTaskFacts(
   model: Model,
   month: string,
   state: MonthState,
   refMonth: string | null,
-  extra: { payments: PaymentFacts | null; parasut: ParasutFacts | null },
+  extra: { payments: PaymentFacts | null; parasut: ParasutFacts | null; cashOuts?: MonthTaskFacts["cashOuts"] },
 ): MonthTaskFacts {
   const sales = model.monthSales(month);
   const info = model.monthInfo.get(month);
@@ -396,14 +418,22 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         href: "/panel/parasut",
         action: "Paraşüt'e bak",
       });
-    } else if (f.invoices.review) {
+    } else if (f.invoices.review || f.cashOuts?.count || f.cashOuts?.duplicates) {
+      // Kasadan faturalı alımlar (E-42): faturası yokken mal alımı eksik, gider kaydı da varken iki kez sayılıyor;
+      // ikisinde de ay kapanmış görünmesin (Bugün'ün Faturalar satırıyla aynı söz)
+      const cash = f.cashOuts;
+      const parts = [
+        // İki sayı ayrı kümelerden (kafe dışı faturalar da kontrol bekleyebilir): "N fatura · M tanesinin" denmez
+        f.invoices.review ? `${num(f.invoices.review)} fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.` : "",
+        cash?.count ? `${num(cash.count)} kasa alımı Faturalar'da yok (${cash.summary}): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa mal alımı eksik kalır.` : "",
+        cash?.duplicates ? `${num(cash.duplicates)} kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin.` : "",
+      ].filter(Boolean);
       out.push({
         key: "fatura",
         title: "Faturalar",
         status: "todo",
-        // İki sayı ayrı kümelerden (kafe dışı faturalar da kontrol bekleyebilir): "N fatura · M tanesinin" denmez
-        detail: `${num(f.invoices.review)} fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.${f.invoices.count ? ` Bu ay ${num(f.invoices.count)} kafe faturası var.` : ""}${sync}`,
-        href: `/panel/faturalar?ay=${m}&durum=kontrol`,
+        detail: `${parts.join(" ")}${f.invoices.count ? ` Bu ay ${num(f.invoices.count)} kafe faturası var.` : ""}${sync}`,
+        href: cash?.count || cash?.duplicates ? CASH_OUT_INVOICES_HREF : `/panel/faturalar?ay=${m}&durum=kontrol`,
         action: "Kontrol et",
       });
     } else if (f.invoices.count) {
