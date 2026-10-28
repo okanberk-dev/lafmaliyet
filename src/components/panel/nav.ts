@@ -356,15 +356,22 @@ function treeTabs(id: string): SectionTab[] {
  * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok sekmeleri kenar çubuğunun Stok grubundan türer
  * (denetim E-56, 27 Eki 2026): menüye eklenen ya da çıkan Stok sayfası sekmelerde de aynı sırayla görünür; telefonda
  * (kenar çubuğu gizli) Sayım, Zayi & ikram ve Tutarlılık arasında hamburger menü açmadan geçilir. Giderler'in
- * sekmeleri kenar çubuğunda tek öğedir (Giderler & personel), o yüzden elle.
+ * sekmeleri kenar çubuğunda tek öğedir (Giderler & personel), o yüzden elle. Vergi'nin dört ekranı da kenar
+ * çubuğunda tek öğedir (Finans › Vergi; alt ekranlar adresin önekiyle eşleşir), yalnız yönetici (docs/planlar/vergi.md §4.0).
  */
-export const SECTION_TABS: Record<"giderler" | "stok", readonly SectionTab[]> = {
+export const SECTION_TABS: Record<"giderler" | "stok" | "vergi", readonly SectionTab[]> = {
   giderler: [
     { href: "/panel/giderler", label: "Sabit giderler", roles: ["admin"] },
     { href: "/panel/harcamalar", label: "Aylık harcamalar", roles: ["admin"] },
     { href: "/panel/personel", label: "Personel", roles: ["admin"] },
   ],
   stok: treeTabs("stok"),
+  vergi: [
+    { href: "/panel/vergi", label: "Özet", roles: ["admin"] },
+    { href: "/panel/vergi/gelir-gider", label: "Vergiye göre", roles: ["admin"] },
+    { href: "/panel/vergi/demirbas", label: "Demirbaş", roles: ["admin"] },
+    { href: "/panel/vergi/kurallar", label: "Kurallar", roles: ["admin"] },
+  ],
 };
 
 /** Kişinin açabildiği sekmeler (personel Tutarlılık'ı görmez); tek sekme kalırsa sekme çubuğu çizilmez (boş dizi) */
