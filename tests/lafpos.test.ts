@@ -592,7 +592,7 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   assert.equal(dayMonthYearTR("2026-11-10"), "10 Kasım 2026");
   // Onay penceresi kodun bugün yaptığından fazlasını söylemez: B07/B09 Kasa raporu, geç rapor ve ay rakamı, kapalı gün,
   // B08 ürün satışları ve satış tahmini, B10 komisyon ve ikram, deneme günleri
-  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 8);
+  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 10);
   assert.match(LAFPOS_SWITCH_EFFECTS[0], /Kasa raporu bu günden itibaren LafPOS'un gün sonuyla açılır/);
   assert.match(LAFPOS_SWITCH_EFFECTS[1], /Geç kasa raporu bu günden itibaren LafPOS'un gün sonuyla girilir/);
   assert.match(LAFPOS_SWITCH_EFFECTS[2], /Kafe kapalıydı/);
@@ -601,6 +601,9 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   assert.match(LAFPOS_SWITCH_EFFECTS[5], /Komisyon & hakediş bu günden itibaren/);
   assert.match(LAFPOS_SWITCH_EFFECTS[6], /Ürün ikramı bu günden itibaren LafPOS'ta işaretlenir/);
   assert.match(LAFPOS_SWITCH_EFFECTS[7], /deneme sayılır/);
+  // Denetim B11 (E-39): kasadaki fiyatlar ve metinler
+  assert.match(LAFPOS_SWITCH_EFFECTS[8], /siteye bağlı ürünün yeni fiyatını LafPOS siteden kendisi alır/);
+  assert.match(LAFPOS_SWITCH_EFFECTS[9], /ModPOS yerine LafPOS der/);
 });
 
 test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECRET bağlantıyı açmaz; nedeni söylenir", () => {
