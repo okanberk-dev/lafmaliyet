@@ -144,6 +144,13 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
   (`maxDuration`). Efor `medium` ancak canlı değerlendirmede yanlış dolumu ve "doğrulandı ama yanlış"ı düşürür ve ilk
   okumanın p90'ı 20 sn'yi aşmazsa seçilir (§ 8; plan §4.4). Zaman aşımına düşen yazarkasa okumasının sunucu günlüğünde
   eforu da yazar. Öteki okumaların isteği birebir aynı kalır (`tests/ai-istemci.test.ts`).
+- **Yazarkasa Z'si yapılandırılmış çıktısız gider.** Yapılandırılmış çıktının açık sınırı istek başına en çok 16
+  birleşim türlü (`anyOf` ya da `["string","null"]`) ve 24 isteğe bağlı parametredir; aşan şemayla istek 400 alır.
+  `KasaOkcRaw`'da 42 birleşim türlü parametre var (her tutarın `text` ve `value`'su null alabilir; Z 14, banka gün sonu
+  11, fiş 14, fatura 8). Bu yüzden sınırı aşan şema `output_config.format` olmadan gönderilir, şema görev metninin
+  sonuna yazılır (`JSON_REPLY`) ve yanıt yine zod'dan geçer; çitli ya da cümleli JSON da okunur, uymayan "invalid" olur
+  (`fitsStructuredOutputs`, `src/lib/photo-read/claude-schema.ts`). 28 Ekim'de canlıdaki ilk "[foto] okuma badrequest
+  400" büyük olasılıkla buydu (o gün günlük API'nin hata metnini yazmıyordu).
 - İstemler `src/lib/photo-read/prompts.ts`, şemalar `schemas.ts` (açıklamalar modele gider, İngilizce). Yanıt zod ile
   doğrulanır; tutmazsa "Fotoğraftaki rakamlar güvenilir okunamadı. Elle yazın."
 - **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40;
@@ -151,7 +158,10 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 - **Günlük:** her okuma `ai_calls`'a yazılır: zaman, tür, kişi, fotoğraf, durum ve hata kodu, token sayıları, tutar
   (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı, tarih, kalemler;
   satıcının vergi numarası saklanmaz). Sonuç fotoğrafla birlikte silinir, maliyet satırı kalır. **Görsel ve istem
-  hiçbir yere yazılmaz.** Anahtar hatası, kredi bitmesi ve reddedilen istek sunucu günlüğüne de düşer.
+  hiçbir yere yazılmaz.** Anahtar hatası, kredi bitmesi ve reddedilen istek sunucu günlüğüne de düşer: okuma türü,
+  kod, durum, istek kimliği ve API'nin kendi hata türü ve metni (`aiAlertLog`, en çok 300 karakter; ör. `[foto] okuma
+  kasa-okc badrequest 400 req_… · BadRequestError 400: invalid_request_error: …`). SDK'nın hata metni yalnız API'nin
+  yanıt gövdesidir, isteğin hiçbir parçasını taşımaz; günlüğe ondan da yalnız `error.type` ve `error.message` girer.
 - **Tutar:** denemelerde (1600 px görsellerle) okuma başına 0,017–0,031 $ (çoğu ~0,03 $). Görsel artık ~3,7 MP
   olduğundan bir okuma ~0,01 $ daha pahalı olur (görsel ~4.800 token); ayda ~60 kasa + ~60 fiş okuması ≈ 4–5 $.
   Ayarlar kartı bu ayın okumasını ve tutarını, bugünkü okuma / sınırı gösterir. Anthropic Console'da aylık harcama

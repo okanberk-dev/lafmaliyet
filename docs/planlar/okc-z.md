@@ -438,6 +438,9 @@ export type KasaOkc = z.infer<typeof KasaOkcRaw>;
 - Ödemeler bir dizidir (şart kitabındaki `{cash, card, mealCard, other}` nesnesi kodda bu satırlardan toplanır): etiket ile
   tutarın eşleşmesi, banka alt satırları ve tanınmayan etiket yalnız satır satır denetlenebilir.
 - İlk canlı denemede `claudeSchema(KasaOkcRaw)` API'ce kabul edildiği doğrulanır (şema öncekilerden büyük).
+  **28 Ekim 2026:** kabul edilmez. Yapılandırılmış çıktının açık sınırı 16 birleşim türlü parametre, şemada 42 var;
+  canlıdaki ilk okuma "badrequest 400" aldı (büyük olasılıkla bu yüzden). Sınırı aşan şema artık `format` olmadan,
+  görev metninde gider (`docs/FOTOGRAF.md` § 5, `fitsStructuredOutputs`); b2 değerlendirmesi bu biçimle ölçer.
 - `stored` kancası yok: Z'de kişisel veri yok (şirketin unvanı ve VKN'si alınmıyor, şemada alanı yok).
 
 ### 4.2 İstem (`src/lib/photo-read/prompts.ts`)
