@@ -177,6 +177,31 @@ export function filingSavedText(kind: TaxFilingKind, period: string, reminder: F
 }
 export const FILING_REMOVED_TEXT = "Kaldırıldı; tahmin kullanılıyor";
 
+/** Kaldırmadan sonra Ödemeler'deki karşılık: kaydın yazdığı tutar silindi ("silindi") ya da başka bir tutar kaldı ("kaldi") */
+export type FilingRemovedReminder = "silindi" | "kaldi" | null;
+
+/**
+ * Kaldırılan kaydın Ödemeler'deki karşılığı (K4): tek karşılığın tutarı kaydın ödenecek + damgasına eşitse o tutar
+ * kaydın kopyasıdır ("Ödemeler'deki hatırlatıcıya da yaz") ve kayıtla birlikte silinir; yoksa takvim 1 › 2 › 3
+ * önceliğinde Ödemeler'deki tutarı kullanmaya devam ederdi, "tahmin kullanılıyor" yanlış olurdu. Başka bir tutar
+ * yazılmışsa ona dokunulmaz
+ */
+export function filingRemovedReminder<R extends ReminderRow>(
+  reminders: readonly R[],
+  filing: { kind: TaxFilingKind; period: string; payable: number; stamp: number },
+): { clear: R | null; result: FilingRemovedReminder } {
+  const hits = filingReminders(reminders, filing.kind, filing.period).filter((r) => r.amount !== null);
+  if (!hits.length) return { clear: null, result: null };
+  const copy = Math.round((filing.payable + filing.stamp) * 100) / 100;
+  if (hits.length === 1 && Math.abs((hits[0].amount ?? 0) - copy) < 0.005) return { clear: hits[0], result: "silindi" };
+  return { clear: null, result: "kaldi" };
+}
+
+/** Kaldırmanın bildirimi: "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar da silindi" */
+export function filingRemovedText(reminder: FilingRemovedReminder): string {
+  return reminder === "silindi" ? `${FILING_REMOVED_TEXT} · Ödemeler'deki tutar da silindi` : reminder === "kaldi" ? "Kaldırıldı; Ödemeler'deki tutar kullanılıyor" : FILING_REMOVED_TEXT;
+}
+
 /** İşlem geçmişi: "Geçici vergi 2026/3 · ödenecek 41.200 ₺ · Ödemeler'e de yazıldı" */
 export function filingLogText(kind: TaxFilingKind, period: string, payable: number, reminder: FilingReminderResult): string {
   const tail = reminder === "yazildi" ? " · Ödemeler'e de yazıldı" : reminder === "birden_cok" ? " · Ödemeler'e yazılmadı (birden çok karşılık)" : "";

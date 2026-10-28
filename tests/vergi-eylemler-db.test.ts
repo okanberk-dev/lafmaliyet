@@ -232,12 +232,22 @@ describe("vergi eylemleri: veritabanında", { skip: !SERVER_URL && "VERGI_TEST_D
     refused(await tax.saveTaxFiling({ kind: "gecici", period: `${YEAR + 1}-Q1`, payable: 0, stamp: 0, values: {}, note: null, alsoReminder: false }), /henüz başlamadı/);
     refused(await tax.saveTaxFiling({ kind: "mphb", period: shiftMonth(CUR, 1), payable: 0, stamp: 0, values: {}, note: null, alsoReminder: false }), /son 24 aydan/);
     refused(await tax.saveTaxFiling({ kind: "gecici", period: Q, payable: -1, stamp: 791, values: {}, note: null, alsoReminder: false }), /Tutar eksi olamaz/);
+    // Kaldırma: hatırlatıcıdaki 41.991 bu kaydın (40.791) kopyası değil, kalır ve takvim onu kullanır
     const del = ok(await tax.deleteTaxFiling(r1.id));
-    assert.equal(del.message, "Kaldırıldı; tahmin kullanılıyor");
+    assert.equal(del.message, "Kaldırıldı; Ödemeler'deki tutar kullanılıyor");
     assert.equal((await db.select().from(s.taxFilings).where(eq(s.taxFilings.kind, "gecici"))).length, 0);
+    assert.equal((await db.select().from(s.reminders).where(eq(s.reminders.id, g.id)))[0].amount, 41_991);
+    // Kaydın yazdığı kopya kayıtla birlikte silinir (§17-5: takvim yine "Tutarı bilinmiyor" der)
+    const r3 = ok(await tax.saveTaxFiling({ kind: "gecici", period: Q, payable: 41_200, stamp: 791, values: {}, note: null, alsoReminder: true }));
+    assert.equal(r3.reminder, "yazildi");
+    const del2 = ok(await tax.deleteTaxFiling(r3.id));
+    assert.equal(del2.message, "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar da silindi");
+    assert.equal((await db.select().from(s.reminders).where(eq(s.reminders.id, g.id)))[0].amount, null);
+    refused(await tax.deleteTaxFiling(r3.id), /Kayıt bulunamadı/);
     const l = await logs();
     assert.equal(l[0], `Vergi: muhasebeci kaydı · Geçici vergi ${quarterLabel(Q)} · ödenecek 41.200 ₺ · Ödemeler'e de yazıldı`);
-    assert.equal(l.at(-1), `Vergi: muhasebeci kaydı · Geçici vergi ${quarterLabel(Q)} kaldırıldı`);
+    assert.equal(l.at(-3), `Vergi: muhasebeci kaydı · Geçici vergi ${quarterLabel(Q)} kaldırıldı`);
+    assert.equal(l.at(-1), `Vergi: muhasebeci kaydı · Geçici vergi ${quarterLabel(Q)} kaldırıldı · Ödemeler'deki tutar da silindi`);
   });
 
   test("muhasebeci kaydı: birden çok karşılık varsa ya da hiç yoksa hatırlatıcıya yazılmaz; kira stopajı muhtasar karşılığı değil", async () => {

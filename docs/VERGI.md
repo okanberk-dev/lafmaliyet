@@ -53,6 +53,10 @@ sorulacaklar" ayrıca bulunur.
 Rozetler: tahminde yok (`≈` yeter), "Muhasebeci", "Ödemeler'de", "sabit tutar" (beyanname damgası), "Taslak", "2026
 kuralları" (tablosu olmayan yıl). İşaretler sahibindir; hiçbir yerde muhasebecinin tabloyu onayladığı yazmaz.
 
+Muhasebecinin rakamı kaldırılınca Ödemeler'deki tek karşılığın tutarı kaydın ödenecek + damgasına eşitse (pencerenin
+"Ödemeler'deki hatırlatıcıya da yaz" kopyası) o tutar da silinir: "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar
+da silindi". Başka bir tutar yazılmışsa kalır ve takvim onu kullanır: "Kaldırıldı; Ödemeler'deki tutar kullanılıyor".
+
 Diğer ekranlara dokunuşlar:
 - **Gelir-gider:** başlığın altında "Vergiye göre karşılığı: Vergi › Vergiye göre". Ayarlar'daki işveren SGK oranı
   vergi ve nakit planının oranından farklıysa uyarı (K19): "Ayarlar'da işveren SGK %15,75. 2026'da imalat dışı

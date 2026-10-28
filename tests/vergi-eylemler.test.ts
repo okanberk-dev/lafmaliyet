@@ -24,6 +24,8 @@ import {
   filingLogText,
   filingPeriodRefusal,
   filingReminders,
+  filingRemovedReminder,
+  filingRemovedText,
   filingSavedText,
   fixedClassificationRefusal,
   overrideLogText,
@@ -112,6 +114,25 @@ test("Ödemeler'deki karşılık: sıradaki günü o döneme düşen etkin hatı
   assert.deepEqual(filingReminders([postponed], "gecici", "2026-Q3").map((r) => r.id), [6]);
   assert.deepEqual(filingReminders([postponed], "gecici", "2026-Q4"), []);
   assert.equal(filingReminders([gecici, rem({ id: 7, title: "Geçici vergi 2026/3" })], "gecici", "2026-Q3").length, 2);
+});
+
+test("muhasebeci kaydı kaldırılınca: Ödemeler'deki kopyası (tek karşılık, tutar = ödenecek + damga) silinir; başka tutar kalır", () => {
+  const f = { kind: "gecici" as const, period: "2026-Q3", payable: 41_200, stamp: 791 };
+  const copy = rem({ id: 1, amount: 41_991 });
+  assert.deepEqual(filingRemovedReminder([copy], f), { clear: copy, result: "silindi" });
+  // Elle başka bir tutar yazılmış: dokunulmaz, takvim onu kullanır
+  assert.deepEqual(filingRemovedReminder([rem({ id: 1, amount: 40_000 })], f), { clear: null, result: "kaldi" });
+  // Tutarsız karşılık ya da karşılık yok: tahmin
+  assert.deepEqual(filingRemovedReminder([rem({ id: 1 })], f), { clear: null, result: null });
+  assert.deepEqual(filingRemovedReminder([], f), { clear: null, result: null });
+  // Başka dönemin hatırlatıcısı ve birden çok karşılık silinmez
+  assert.deepEqual(filingRemovedReminder([rem({ id: 1, amount: 41_991, dueDate: "2027-02-17", anchorDate: "2027-02-17" })], f), { clear: null, result: null });
+  assert.deepEqual(filingRemovedReminder([copy, rem({ id: 7, title: "Geçici vergi 2026/3", amount: 41_991 })], f), { clear: null, result: "kaldi" });
+  // KDV beyannamesi satışlarının karşılığı yoktur
+  assert.deepEqual(filingRemovedReminder([copy], { kind: "kdv_matrah", period: "2026-09", payable: 0, stamp: 0 }), { clear: null, result: null });
+  assert.equal(filingRemovedText(null), "Kaldırıldı; tahmin kullanılıyor");
+  assert.equal(filingRemovedText("silindi"), "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar da silindi");
+  assert.equal(filingRemovedText("kaldi"), "Kaldırıldı; Ödemeler'deki tutar kullanılıyor");
 });
 
 test("muhasebeci kaydının bildirimi ve işlem geçmişi (§4.5-a, §7.2)", () => {

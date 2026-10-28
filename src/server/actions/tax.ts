@@ -10,6 +10,7 @@ import { todayTR } from "@/lib/reminders";
 import { assetCandidates, invoiceLabelOf, invoiceRemaining } from "@/lib/tax/assets";
 import { quarterOfMonth } from "@/lib/tax/calendar";
 import { accountantCheck, ACCOUNTANT_CHECK_KEYS } from "@/lib/tax/checks";
+import type { TaxFilingKind } from "@/lib/tax/corporate";
 import {
   adjustmentRefusal,
   assetRefusal,
@@ -20,10 +21,11 @@ import {
   filingLogText,
   filingPeriodRefusal,
   filingReminders,
+  filingRemovedReminder,
+  filingRemovedText,
   type FilingReminderResult,
   filingSavedText,
   filingTitle,
-  FILING_REMOVED_TEXT,
   fixedClassificationRefusal,
   overrideLogText,
   overrideRefusal,
@@ -384,16 +386,29 @@ export async function saveTaxFiling(input: z.input<typeof filingSchema>) {
   });
 }
 
-/** Muhasebeci kaydını kaldırır: tahmin kullanılır (Ödemeler'deki tutara dokunulmaz) */
+/**
+ * Muhasebeci kaydını kaldırır: tahmin kullanılır. Ödemeler'deki tek karşılığın tutarı kaydın ödenecek + damgasıysa
+ * (kaydın oraya yazdığı kopya) o tutar da silinir; başka bir tutar yazılmışsa kalır ve bildirim onu söyler
+ */
 export async function deleteTaxFiling(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const fid = zId.parse(id);
-    const [row] = await getDb().delete(s.taxFilings).where(eq(s.taxFilings.id, fid)).returning({ kind: s.taxFilings.kind, period: s.taxFilings.period });
-    if (!row) throw new UserError("Kayıt bulunamadı (sayfayı yenileyin)");
-    await logActivity(me, "Vergi: muhasebeci kaydı", `${filingTitle(row.kind, row.period)} kaldırıldı`);
+    const result = await getDb().transaction(async (tx) => {
+      const [row] = await tx
+        .delete(s.taxFilings)
+        .where(eq(s.taxFilings.id, fid))
+        .returning({ kind: s.taxFilings.kind, period: s.taxFilings.period, payable: s.taxFilings.payable, stamp: s.taxFilings.stamp });
+      if (!row) throw new UserError("Kayıt bulunamadı (sayfayı yenileyin)");
+      const kind = row.kind as TaxFilingKind;
+      const rems = (await tx.select().from(s.reminders).where(eq(s.reminders.active, true)).orderBy(asc(s.reminders.dueDate))) as ReminderRow[];
+      const copy = filingRemovedReminder(rems, { kind, period: row.period, payable: row.payable, stamp: row.stamp });
+      if (copy.clear) await tx.update(s.reminders).set({ amount: null }).where(eq(s.reminders.id, copy.clear.id));
+      return { kind, period: row.period, reminder: copy.result };
+    });
+    await logActivity(me, "Vergi: muhasebeci kaydı", `${filingTitle(result.kind, result.period)} kaldırıldı${result.reminder === "silindi" ? " · Ödemeler'deki tutar da silindi" : ""}`);
     refresh();
-    return { message: FILING_REMOVED_TEXT };
+    return { message: filingRemovedText(result.reminder) };
   });
 }
 

@@ -809,7 +809,10 @@ Başlık "Vergiye göre gelir-gider". **Çeyrek seçici** `?ceyrek=2026-Q3` (`Mo
 - Hatalar: boş zorunlu alan "Tutar girin (0 olabilir)"; eksi tutar "Tutar eksi olamaz" (matrah hariç).
 - Düğmeler: "Kaydet", "Vazgeç", kayıt varsa "Kaldır".
 - Toast metinleri: "Muhasebecinin rakamı kaydedildi: Geçici vergi 2026/3" (hatırlatıcıya yazıldıysa "· Ödemeler'e de
-  yazıldı") ve "Kaldırıldı; tahmin kullanılıyor".
+  yazıldı") ve "Kaldırıldı; tahmin kullanılıyor". Kaldırmada Ödemeler'deki tek karşılığın tutarı kaydın ödenecek +
+  damgasına eşitse (bu pencerenin yazdığı kopya) o tutar da silinir ("… · Ödemeler'deki tutar da silindi"); başka bir
+  tutar yazılmışsa kalır ve bildirim "Kaldırıldı; Ödemeler'deki tutar kullanılıyor" der (K4'ün önceliği: takvim onu
+  kullanır). Uygulamada eklendi: kopya kalsaydı §17-5'teki "Tutarı bilinmiyor" görünmezdi.
 
 **b) "Düzeltme ekle"**
 - Alanlar: "Dönem" (Ay / Çeyrek; çeyrek yalnız kafe dışı türlerde), "Tür" (§4.2 etiketleri), "Tutar (₺, KDV hariç)"
@@ -1114,7 +1117,7 @@ kalıbı). Dosyada yalnız eylemler dışa açılır (yardımcı yok).
 | `saveTaxCheck` | `{ key, checked, note }` | anahtar `ACCOUNTANT_CHECKS`'te | "Vergi: muhasebeciyle konuşuldu" · madde |
 | `saveTaxClassifications` | `{ items: ({ source: "fixed", id, doc: TaxDoc \| null, withholding?: Withholding \| null, vatToZero?: boolean } \| { source: "category", id, doc } \| { source: "manual", key, doc } \| { source: "invoice", id, notAsset: boolean })[] }` (1–200) | tek transaction; kalem var; `bordro` yalnız personel bölümünde, `yok` personel bölümünde değil; `withholding` yalnız kira, genel ve personelde `belgeli`; `vatToZero` yalnız `kira` stopajında (`fixed_expenses.vat_rate = 0`); `invoice` yalnız demirbaş adayı | "Vergi: sınıflandırma · 5 kalem" (ad ve belge yazılmaz) |
 | `saveTaxFiling` | `{ kind, period, payable, stamp, values, note, alsoReminder }` | dönem biçimi türe uygun (`^\d{4}-Q[1-4]$`, `^\d{4}$`, `^\d{4}-(0[1-9]\|1[0-2])$`); geçici ve KV hesap dönemi içinde; muhtasar ve `kdv_matrah` son 24 ay; tutarlar `zMoney`, matrah eksi olabilir; `kdv_matrah`'ta `payable = 0`, `stamp = 0`. `alsoReminder`: o dönemin sıradaki günü olan tek eşleşen hatırlatıcının (`isProvisionalTaxReminder` / `isMuhtasarReminder` + başlıkta "muhtasar") tutarına `payable + stamp` yazılır; birden çok ya da hiç yoksa yazılmaz, sonuç mesajı söyler | "Vergi: muhasebeci kaydı" · "Geçici vergi 2026/3 · ödenecek 41.200 ₺ · Ödemeler'e de yazıldı" |
-| `deleteTaxFiling` | `{ id }` | – | "kaldırıldı" |
+| `deleteTaxFiling` | `{ id }` | kaydın Ödemeler'e yazdığı kopya (tek karşılık, tutar = ödenecek + damga) aynı işlemde silinir | "kaldırıldı" (· "Ödemeler'deki tutar da silindi") |
 | `saveTaxAdjustment` | `{ id?, month, span, kind, amount, label, note }` | ay hesap dönemi içinde ve ≤ bu ay; `span = "ceyrek"` yalnız kafe dışı türlerde, ay çeyreğin son ayı; tutar > 0 | "Vergi: düzeltme" |
 | `deleteTaxAdjustment` | `{ id }` | – | – |
 | `saveTaxAsset` | `{ id?, name, invoiceId?, acquiredOn, cost, kind, method, lifeYears?, note }` | §3.3 kuralları; fatura kafe kategorisinde; bağlı maliyetler toplamı ≤ faturanın neti (+0,01); `invoiceLabel` sunucuda yazılır | "Vergi: demirbaş" |
