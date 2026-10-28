@@ -12,7 +12,9 @@ import { test } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-import { OKC_TASK, POS_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
+import { InvoiceReadingRaw } from "../src/lib/invoice-reading";
+import { claudeSchema, fitsStructuredOutputs, schemaComplexity, STRUCTURED_OUTPUT_LIMITS } from "../src/lib/photo-read/claude-schema";
+import { OKC_TASK, POS_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas";
 import { OKC_PREFILL_ENABLED, OKC_SUGGEST_TEXT } from "../src/lib/okc-z";
 import { FISCAL_Z_CARD_TEXT, prefillPlan, type ReadField } from "../src/lib/photo-read/kasa";
@@ -23,8 +25,10 @@ import {
   AI_FALLBACK_BETA,
   AI_INVOICE_MODEL,
   AI_MODEL,
+  aiAlertLog,
   aiErrorText,
   buildRequest,
+  JSON_REPLY,
   mapAiError,
   OKC_EFFORT,
   OKC_MAX_TOKENS,
@@ -350,11 +354,15 @@ test("yazarkasa Z isteği (dalga 13 PR-b): efor low, 8000 token, tek 50 sn'lik d
   assert.equal(params.model, "claude-opus-5-5");
   assert.equal(params.max_tokens, 8000);
   assert.deepEqual(params.betas, [AI_FALLBACK_BETA]);
-  assert.deepEqual(params.output_config, { effort: "low", format: params.output_config!.format });
+  // KasaOkcRaw yapılandırılmış çıktının sınırını aşar (42 birleşim türlü parametre > 16): format yok, şema metinde
+  assert.deepEqual(params.output_config, { effort: "low" });
   for (const key of ["temperature", "top_p", "top_k", "thinking"]) assert.equal(key in params, false, key);
   assert.deepEqual([options.timeout, options.maxRetries], [50_000, 1]);
-  assert.match((params.messages[0].content as { type: string; text?: string }[])[1].text!, /^This should be the fiscal Z report/);
-  const docTypes = ((params.output_config?.format as { schema: Record<string, unknown> }).schema.properties as Record<string, { enum: string[] }>).documentType.enum;
+  const okcText = (params.messages[0].content as { type: string; text?: string }[])[1].text!;
+  assert.match(okcText, /^This should be the fiscal Z report/);
+  assert.ok(okcText.startsWith(`${OKC_TASK("2026-10-24")}\n\n`));
+  assert.ok(okcText.endsWith(JSON_REPLY(claudeSchema(KasaOkcRaw))));
+  const docTypes = (JSON.parse(okcText.slice(okcText.lastIndexOf("\n") + 1)) as { properties: Record<string, { enum: string[] }> }).properties.documentType.enum;
   assert.deepEqual(docTypes, ["z_report", "x_report", "period_report", "batch_slip", "software_z", "other"]);
 
   // "medium" yalnız değerlendirmenin kararıyla; istek onu aynen taşır
@@ -462,4 +470,103 @@ test("sunucu yolu (AI_REPLAY yanıtlarıyla): yazarkasa okuması, personelin yan
   // ModPOS Z'si yazarkasa bölümüne: eski sayfada da ModPOS bölümüne okutulur
   const soft = okcToLegacyPos(normalizeOkc(KasaOkcRaw.parse(replayAnswer("kasa-okc", { width: 864, height: 1390 }).json), ctx));
   assert.deepEqual([soft.kind, soft.ok, soft.switchTo], ["kasa-pos", false, "kasa-z"]);
+});
+
+// ---------------------------------------------------------------- yapılandırılmış çıktının sınırı ve 400'ün günlüğü
+
+test("yapılandırılmış çıktı sınırı (en çok 16 birleşim türlü, 24 isteğe bağlı parametre): yalnız yazarkasa Z'si aşar", () => {
+  assert.deepEqual(STRUCTURED_OUTPUT_LIMITS, { unionParams: 16, optionalParams: 24 });
+  // Canlıda kabul edilen şemalar sınırın içinde ve format ile gider; isteklerin biçimi değişmez
+  const sent: [string, z.ZodType, number][] = [
+    ["Z", KasaZRaw, 14],
+    ["banka gün sonu", KasaPosRaw, 11],
+    ["fiş", ReceiptRaw, 14],
+    ["fatura", InvoiceReadingRaw, 8],
+  ];
+  for (const [name, schema, unions] of sent) {
+    const json = claudeSchema(schema);
+    assert.deepEqual(schemaComplexity(json), { unionParams: unions, optionalParams: 0 }, name);
+    assert.equal(fitsStructuredOutputs(json), true, name);
+    const { params } = buildRequest({ image: IMAGE, system: SYSTEM, task: "GÖREV", schema });
+    assert.equal(params.output_config?.format?.type, "json_schema", name);
+    assert.deepEqual((params.messages[0].content as { text?: string }[])[1], { type: "text", text: "GÖREV" }, name);
+  }
+  const receipt = buildRequest({ image: IMAGE, system: SYSTEM, task: RECEIPT_TASK("2026-10-24", []), schema: ReceiptRaw }).params;
+  assert.equal(receipt.output_config?.format?.type, "json_schema");
+  // Yazarkasa Z'si: her Amount'un text ve value'su null alabilir; 42 birleşim türlü parametre
+  assert.deepEqual(schemaComplexity(claudeSchema(KasaOkcRaw)), { unionParams: 42, optionalParams: 0 });
+  assert.equal(fitsStructuredOutputs(claudeSchema(KasaOkcRaw)), false);
+
+  // Sayım: tür dizisi ve anyOf birer parametre; required dışı alan isteğe bağlı; "anyOf" adlı alan anahtar sözcük değil
+  const nullable = (n: number) => z.object(Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}`, z.string().nullable()])));
+  assert.equal(fitsStructuredOutputs(claudeSchema(nullable(16))), true);
+  assert.equal(fitsStructuredOutputs(claudeSchema(nullable(17))), false);
+  const optional = (n: number) => z.object(Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}`, z.string().optional()])));
+  assert.deepEqual(schemaComplexity(claudeSchema(optional(24))), { unionParams: 0, optionalParams: 24 });
+  assert.equal(fitsStructuredOutputs(claudeSchema(optional(25))), false);
+  assert.deepEqual(schemaComplexity(claudeSchema(z.object({ anyOf: z.string(), type: z.number().int().nullable() }))), { unionParams: 1, optionalParams: 0 });
+  // Sınırı aşan her şema format olmadan gider (yazarkasa Z'sine özgü değil)
+  assert.deepEqual(buildRequest({ image: IMAGE, system: "S", task: "T", schema: nullable(17) }).params.output_config, { effort: "low" });
+});
+
+test("format olmadan okunan yanıt: çitli ya da cümleli JSON da okunur, şemadan geçer; format'lı istekte eskisi gibi", async () => {
+  const rec = fixture("okc");
+  const okcReq = { image: IMAGE, system: SYSTEM, task: OKC_TASK("2026-10-24"), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS };
+  const body = JSON.stringify(rec.json);
+  for (const answer of [body, `\`\`\`json\n${body}\n\`\`\``, `Here is the JSON:\n${body}\n`]) {
+    const res = await runExtraction(fake({ content: [text(answer)], usage: rec.usage }).client, okcReq);
+    assert.equal(res.ok, true, answer.slice(0, 20));
+    assert.deepEqual(res.ok && res.data, KasaOkcRaw.parse(rec.json));
+  }
+  const prose = await runExtraction(fake({ content: [text("Toplam okunamadı.")] }).client, okcReq);
+  assert.equal(!prose.ok && prose.code, "invalid");
+  const partial = await runExtraction(fake({ content: [text('{"documentType": "z_report"}')] }).client, okcReq);
+  assert.equal(!partial.ok && partial.code, "invalid");
+  // Yapılandırılmış çıktılı istekte yanıt saf JSON'dur; çitli metin eskisi gibi okunmaz
+  const fenced = await runExtraction(fake({ content: [text('```json\n{"total": 1, "kind": "a"}\n```')] }).client, req(Small));
+  assert.equal(!fenced.ok && fenced.code, "invalid");
+});
+
+test("400 / 401 / 402 günlük satırı: API'nin hata metni var; görsel, istem, görev ve yanıt gövdesinin JSON'u yok", async () => {
+  // SDK'nın canlıdaki hâli: gövde JSON, mesaj yok (APIError.message = "400 " + gövdenin JSON'u)
+  const apiMessage = "output_config.format.schema: example reason from the API";
+  const body = { type: "error", error: { type: "invalid_request_error", message: apiMessage }, request_id: "req_test400" };
+  const err = Anthropic.APIError.generate(400, body, undefined, new Headers({ "request-id": "req_test400" }));
+  assert.ok(err instanceof Anthropic.BadRequestError);
+  assert.match(err.message, /^400 \{"type":"error"/);
+  // Ayırt edilebilir görsel: base64'ü günlükte aranır
+  const bytes = new Uint8Array(3000).map((_, i) => (i * 37 + 11) % 256);
+  const image = { bytes, mediaType: "image/jpeg" as const };
+  const base64 = Buffer.from(bytes).toString("base64");
+  const task = OKC_TASK("2026-10-24");
+  const res = await runExtraction(fake(err).client, { image, system: SYSTEM, task, schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS });
+  assert.equal(res.ok, false);
+  if (res.ok) return;
+  assert.equal(res.code, "badrequest");
+  assert.equal(res.detail, `BadRequestError 400: invalid_request_error: ${apiMessage}`);
+
+  const line = aiAlertLog("kasa-okc", res);
+  assert.equal(line, `kasa-okc badrequest 400 req_test400 · BadRequestError 400: invalid_request_error: ${apiMessage}`);
+  for (const leak of [base64, base64.slice(0, 40), SYSTEM.slice(0, 60), task.slice(0, 60), '"type":"error"', "Reply with one JSON object"]) {
+    assert.ok(!line!.includes(leak), `günlükte: ${leak.slice(0, 30)}`);
+  }
+
+  // Anahtar ve kredi de günlüğe; uzun API metni 300 karakterde kesilir; JSON olmayan gövde olduğu gibi (yanıtın metni)
+  const auth = mapAiError(Anthropic.APIError.generate(401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, undefined, new Headers({ "request-id": "req_401" })));
+  assert.equal(aiAlertLog("fis", { ...auth, code: "auth" }), "fis auth 401 req_401 · AuthenticationError 401: authentication_error: invalid x-api-key");
+  const billing = mapAiError(Anthropic.APIError.generate(402, { type: "error", error: { type: "billing_error", message: "credit balance too low" } }, undefined, new Headers()));
+  assert.equal(aiAlertLog("fatura", billing), "fatura billing 402 - · APIError 402: billing_error: credit balance too low");
+  const long = mapAiError(Anthropic.APIError.generate(400, { type: "error", error: { type: "invalid_request_error", message: "x".repeat(1000) } }, undefined, new Headers()));
+  assert.equal(long.detail.length, 300);
+  const html = mapAiError(Anthropic.APIError.generate(400, undefined, "<html>Bad Request</html>", new Headers()));
+  assert.equal(html.detail, "BadRequestError 400: 400 <html>Bad Request</html>");
+
+  // Öteki kodlar günlüğe bu satırla düşmez
+  for (const code of ["rate", "overloaded", "timeout", "connection", "toolarge", "refusal", "invalid", "incomplete"] as const) {
+    assert.equal(aiAlertLog("kasa-z", { code, status: null, requestId: null, detail: "x" }), null, code);
+  }
+  // claude.ts günlüğe bu satırı yazar (eskiden yalnız kod, durum ve istek kimliği)
+  const src = readFileSync(join(__dirname, "..", "src", "server", "ai", "claude.ts"), "utf8");
+  assert.match(src, /const alert = aiAlertLog\(req\.feature, res\);\n\s*if \(alert\) console\.error\(tag, alert\);/);
+  assert.doesNotMatch(src, /console\.error\(tag, res\.code/);
 });
