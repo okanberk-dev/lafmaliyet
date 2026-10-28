@@ -1259,9 +1259,9 @@ eklenmez.
   - Sayfanın ilk satırı: "Tahmin; beyanname değildir. Kafenin payı; şirketin beyannamesi muhasebecidedir."
   - **1. blok:** ay ay vergiye göre gelir-gider (§3.2 satırları) ve çeyrek toplamları; her ayın gelir kaynağı
     ("beyanname", "Z"). Geliri yönetim verisinden gelen aylar ve çeyrekler yazılmaz; yerlerinde tek satır: "Gelir mali
-    belgeden girilmedi; hesap ekranda (taslak)" (K31). Biten ve hiç geliri olmayan ay (hesap dönemi açılıştan önce
-    başladıysa 25–30 Haziran) belge beklemez ("gelir yok"; Başlarken de sormaz) ve kümülatif hesabı kapatmaz; süren ayın
-    sıfırı sayılmaz. Uygulamada eklendi (§17-9: Temmuz–Eylül beyannamesi girilince 2026/3 yazılmıyordu).
+    belgeden girilmedi; hesap ekranda (taslak)" (K31). Biten ve hiç hareketi olmayan ay (gelir de gider de 0; hesap
+    dönemi açılıştan önce başladıysa 25–30 Haziran) belge beklemez ("gelir yok"; Başlarken de sormaz) ve kümülatif hesabı
+    kapatmaz; cirosu girilmemiş ama gideri olan ay ve süren ay boş sayılmaz. Uygulamada eklendi (§17-9: Temmuz–Eylül beyannamesi girilince 2026/3 yazılmıyordu).
   - **2. blok:** geçici vergi ve kurumlar vergisi hesabı (yalnız geliri mali belgeden gelen çeyrekler), satır satır
     formülüyle.
   - **3. blok:** takvim.

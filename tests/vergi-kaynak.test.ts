@@ -19,6 +19,7 @@ import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import type { TaxFiling } from "../src/lib/tax/corporate";
 import { taxViewInputFromModel, type TaxInputs } from "../src/lib/tax/inputs";
+import { emptyMonth, revenueDocumented } from "../src/lib/tax/pnl";
 import { TAX_DOC_LABELS } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { buildTaxView } from "../src/lib/tax/view";
@@ -223,6 +224,22 @@ test("Excel 'Vergi' sayfası: gelirsiz Haziran beyanname beklemez; Temmuz–Eyl�
   assert.ok(numbers.some((n) => Math.abs(n - c3.matrah) < 0.005), String(c3.matrah));
   // 2026/4 (Ekim, ModPOS) ve onun kümülatifine dayanan kurumlar vergisi yazılmaz
   assert.equal(texts.filter((t) => t === TAX_NOT_FISCAL).length, 3);
+});
+
+test("boş ay (gelir de gider de 0) belge beklemez; cirosu girilmemiş ama gideri olan ay veri eksiğidir: sorulur, taslak kalır", () => {
+  assert.equal(emptyMonth({ inProgress: false, income: { total: 0 }, expense: { total: 0 } }), true);
+  assert.equal(emptyMonth({ inProgress: true, income: { total: 0 }, expense: { total: 0 } }), false);
+  assert.equal(emptyMonth({ inProgress: false, income: { total: 0 }, expense: { total: 86_982.92 } }), false);
+  assert.equal(revenueDocumented({ revenueSource: "yonetim", inProgress: false, income: { total: 0 }, expense: { total: 0 } }), true);
+  assert.equal(revenueDocumented({ revenueSource: "yonetim", inProgress: false, income: { total: 157_806.36 }, expense: { total: 1 } }), false);
+  assert.equal(revenueDocumented({ revenueSource: "z", inProgress: true, income: { total: 1 }, expense: { total: 1 } }), true);
+  // 12 Ocak 2028'de 2027: Excel verisi Ekim 2026'da biter, 2027'nin ayları ciro girilmeden bordrolu → taslak, Başlarken sorar
+  const model27 = createModel({ ...ds, currentMonth: "2028-01" });
+  const v27 = buildTaxView(taxViewInputFromModel(model27, inputs, { today: "2028-01-12", year: 2027, quarter: "2027-Q4" }));
+  const q4 = v27.quarters.find((q) => q.key === "2027-Q4")!;
+  assert.ok(q4.stateReasons.includes("Gelir mali belgeden girilmedi"));
+  assert.equal(q4.state, "taslak");
+  assert.match(v27.gettingStarted.steps.find((x) => x.key === "muhasebeci")?.detail ?? "", /KDV beyannamesi satışları/);
 });
 
 test("Excel 'Vergi' sayfası: beyannameli aylar ve çeyrek yazılır; belgesi yok kalemi ve sınıflandırılmamış kalem adları yazılmaz; sahibin notu", () => {

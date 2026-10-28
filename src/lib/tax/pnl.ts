@@ -61,12 +61,19 @@ export function adjustmentPeriodLabel(a: Pick<TaxAdjustment, "month" | "span">):
 export type RevenueSource = "beyanname" | "z" | "yonetim";
 
 /**
- * Ayın geliri mali belgeye dayanıyor mu (K11, K31): beyanname ya da Z. Biten ve hiç geliri olmayan ay (hesap dönemi
- * açılışın öncesinde başladıysa, örneğin 25–30 Haziran) belge beklemez: girilecek satış yok, Başlarken de sormaz.
- * Süren ayın sıfırı belge sayılmaz (veri henüz gelmemiş olabilir)
+ * Biten ve hiç hareketi olmayan ay: gelir de gider de 0 (hesap dönemi açılıştan önce başladıysa 25–30 Haziran gibi).
+ * Ciro girilmemiş ama gideri olan ay boş değildir: veri eksiktir. Süren ay boş sayılmaz (veri henüz gelmemiş olabilir)
  */
-export function revenueDocumented(m: Pick<TaxMonth, "revenueSource" | "inProgress"> & { income: { total: number } }): boolean {
-  return m.revenueSource !== "yonetim" || (!m.inProgress && Math.abs(m.income.total) < 0.005);
+export function emptyMonth(m: Pick<TaxMonth, "inProgress"> & { income: { total: number }; expense: { total: number } }): boolean {
+  return !m.inProgress && Math.abs(m.income.total) < 0.005 && Math.abs(m.expense.total) < 0.005;
+}
+
+/**
+ * Ayın geliri mali belgeye dayanıyor mu (K11, K31): beyanname ya da Z. Boş ay (`emptyMonth`) belge beklemez: girilecek
+ * satış yok, Başlarken de sormaz
+ */
+export function revenueDocumented(m: Pick<TaxMonth, "revenueSource" | "inProgress"> & { income: { total: number }; expense: { total: number } }): boolean {
+  return m.revenueSource !== "yonetim" || emptyMonth(m);
 }
 
 /** Yazarkasanın ayı (okc-z.ts okcMonth): oran oran KDV hariç matrah toplamı ve ayın her açık günü girildi mi */

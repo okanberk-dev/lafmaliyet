@@ -49,6 +49,7 @@ import { type MuhtasarItem, type MuhtasarMonth, muhtasarBreakdown, muhtasarMonth
 import {
   classificationTargets,
   type ClassifyTarget,
+  emptyMonth,
   type QuarterPnl,
   SCOPE_HINT,
   SCOPE_TEXT,
@@ -899,7 +900,7 @@ export function buildTaxView(input: TaxViewInput): TaxView {
   };
 
   const missingLife = input.pnl.assets.filter((a) => a.method === "amortisman" && !a.lifeYears).length;
-  const missingMatrah = selected.months.filter((m) => m.month < today.slice(0, 7) && m.revenueSource !== "beyanname" && m.income.total !== 0 && !filingFor(input.filings, "kdv_matrah", m.month)).map((m) => m.month);
+  const missingMatrah = selected.months.filter((m) => m.month < today.slice(0, 7) && m.revenueSource !== "beyanname" && !emptyMonth(m) && !filingFor(input.filings, "kdv_matrah", m.month)).map((m) => m.month);
   const missingGecici = selected.corp.filter((c) => legalDueDate(nominalDue("gecici", c.key)).date < today && !c.filing).map((c) => quarterLabel(c.key));
   const muhasebeParts = [missingMatrah.length ? `${monthsText(missingMatrah)} KDV beyannamesi satışları` : "", missingGecici.length ? `${joinTr(missingGecici)} geçici vergi` : ""].filter(Boolean);
   const steps: GettingStartedStep[] = [
