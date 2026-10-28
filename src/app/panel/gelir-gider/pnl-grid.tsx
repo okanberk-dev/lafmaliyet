@@ -148,6 +148,8 @@ function EditableCell({
   onSave,
   onNote,
   computedLabel = "Hesaplanan",
+  info,
+  warn,
 }: {
   value: number | null;
   computed: number | null;
@@ -171,6 +173,10 @@ function EditableCell({
   onNote?: (amountText: string) => void;
   /** Hesaplanan değerin adı (ipucunda): ciro ve açık günde "Kasa raporlarından" */
   computedLabel?: string;
+  /** Bu ayın hesabının açıklaması (ipucuna eklenir), ör. POS komisyonunun kart payı */
+  info?: string;
+  /** Bu ayda dikkat edilecek durum: hücrede uyarı işareti, ipucunun başında */
+  warn?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
@@ -343,8 +349,10 @@ function EditableCell({
           begin(e.key);
         }
       }}
-      title={note ? `Not: ${note}\n\n${help}` : `${help}${onNote ? " · Not için Shift+F2" : ""}`}
-      aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}. Değiştirmek için tıklayın`}
+      title={[warn ? `Dikkat: ${warn}` : null, note ? `Not: ${note}` : null, info ?? null, note ? help : `${help}${onNote ? " · Not için Shift+F2" : ""}`]
+        .filter(Boolean)
+        .join("\n\n")}
+      aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}${warn ? `. Dikkat: ${warn}` : ""}. Değiştirmek için tıklayın`}
       className={cn(
         "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
         CELL_MIN,
@@ -364,6 +372,7 @@ function EditableCell({
         <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
       ) : null}
       {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
+      {warn ? <TriangleAlert size={12} className="absolute top-1/2 left-1.5 -translate-y-1/2 text-warn" aria-hidden="true" /> : null}
     </button>
   );
 }
@@ -1141,6 +1150,8 @@ function SectionRows({
                       col={m}
                       note={c.note}
                       outOfRange={c.outOfRange}
+                      info={c.info}
+                      warn={c.warn}
                       onSave={async (v) => {
                         await onSave(m, def.key, v, !!c.note, kasa);
                       }}

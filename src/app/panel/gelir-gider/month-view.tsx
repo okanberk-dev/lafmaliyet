@@ -311,6 +311,15 @@ export function MonthView({
                           </span>
                         </span>
                       ) : null}
+                      {c.warn ? (
+                        <span className="mt-1 flex items-start gap-1 text-xs leading-4 font-medium text-warn">
+                          <TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 break-words">
+                            <span className="sr-only">Dikkat: </span>
+                            {c.warn}
+                          </span>
+                        </span>
+                      ) : null}
                     </span>
                   );
                   return (
@@ -597,7 +606,13 @@ function CellSheet({
             </Button>
           </div>
         ) : null}
-        {target.hint ? <p className="text-xs leading-5 text-ink-mute">{target.hint}</p> : null}
+        {cell.warn ? (
+          <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn">
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>{cell.warn}</span>
+          </p>
+        ) : null}
+        {target.hint || cell.info ? <p className="text-xs leading-5 text-ink-mute">{[cell.info, target.hint].filter(Boolean).join(" ")}</p> : null}
         {field === "pnl" ? (
           <Field label="Not" htmlFor={`${formId}-n`} hint={`${noteText.trim().length} / ${CELL_NOTE_MAX}`}>
             <Textarea

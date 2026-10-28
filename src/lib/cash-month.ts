@@ -89,9 +89,12 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
     const posRevenue = sum(list, (r) => r.zTotal);
     const disc = list.filter((r) => r.discounts != null);
     const off = list.filter((r) => r.offRevenue != null);
-    // Kart + yemek kartı (bankanın POS komisyonu alınan ödemeler); online ve diğer komisyonsuz. Yanlış yazılmış bir
+    // Kart + yemek kartı (kartlı satış oranı: satış raporunun tahmini komisyonu); online ve diğer komisyonsuz. Banka POS
+    // komisyonu yalnız banka kartından (yemek kartının komisyonu kendi faturasıyla; denetim E-43). Yanlış yazılmış bir
     // ödeme türü oranı %100'ün üstüne taşımasın
     const card = sum(list, (r) => r.card + r.mealCard);
+    const bank = sum(list, (r) => r.card);
+    const share = (v: number) => (posRevenue > 0 ? Math.min(1, Math.round((v / posRevenue) * 10_000) / 10_000) : null);
     return {
       month,
       from,
@@ -103,7 +106,8 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
       discountDays: disc.length,
       offRevenue: off.length ? sum(off, (r) => r.offRevenue!) : null,
       offDays: off.length,
-      cardShare: posRevenue > 0 ? Math.min(1, Math.round((card / posRevenue) * 10_000) / 10_000) : null,
+      cardShare: share(card),
+      bankShare: share(bank),
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       ...(shut ? { closed } : {}),

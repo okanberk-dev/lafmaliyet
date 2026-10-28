@@ -60,7 +60,7 @@ const entry = (month: string, o: Partial<MonthEntry> = {}): MonthEntry => ({
 
 // ---------------------------------------------------------------- tillMonths
 
-test("tillMonths: açık gün yalnız satış olan gün; ciro Z toplamı; oran (kart + yemek kartı) ÷ ciro", () => {
+test("tillMonths: açık gün yalnız satış olan gün; ciro Z toplamı; oran (kart + yemek kartı) ÷ ciro, banka kartı payı ayrı", () => {
   const rows = [...november(), row("2026-10-31", { zTotal: 0, card: 0, mealCard: 0 })];
   // 31 Ekim (ilk rapor) ayın son günü: Ekim ay ortasında başlamış sayılır
   const [oct, nov] = tillMonths(rows, "2026-12-05");
@@ -74,6 +74,8 @@ test("tillMonths: açık gün yalnız satış olan gün; ciro Z toplamı; oran (
   assert.equal(nov.openDays, 30);
   assert.equal(nov.posRevenue, 300_000);
   assert.equal(nov.cardShare, 0.8);
+  assert.equal(nov.bankShare, 0.7, "yalnız kart ÷ Z (yemek kartı hariç; E-43)");
+  assert.equal(oct.bankShare, null, "ciro yoksa banka payı da yok");
   assert.equal(nov.partialFrom, null, "ilk rapor önceki ayda");
   assert.deepEqual(nov.missing, []);
   assert.equal(nov.lastDate, "2026-11-30");
@@ -256,7 +258,7 @@ const root = join(__dirname, "..");
 const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
 const ds: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
 
-test("motor: POS komisyonu ayın kartlı oranıyla (yoksa Ayarlar'daki); oranın kaynağı", () => {
+test("motor: POS komisyonu ayın banka kartı payıyla (kasa raporu yoksa Ayarlar'daki kartlı oran); oranın kaynağı", () => {
   const base = createModel(ds);
   const st = base.settings;
   assert.deepEqual(base.cardShareOf("2026-09"), { rate: st.kartOrani, source: "ayar" });
@@ -276,7 +278,10 @@ test("motor: POS komisyonu ayın kartlı oranıyla (yoksa Ayarlar'daki); oranın
   );
   const model = createModel({ ...ds, months });
   assert.deepEqual(model.cardShareOf("2026-09"), { rate: 0.8, source: "kasa" });
-  assert.ok(Math.abs(model.pnlMonth("2026-09").cells.get("commission:pos")!.value! - posRevenue * st.komisyon * 0.8) < 1e-6);
+  // Banka POS komisyonu yalnız banka kartıyla (7.000 ÷ 10.000): yemek kartının komisyonu kendi faturasıyla (E-43)
+  assert.deepEqual(model.bankShareOf("2026-09"), { rate: 0.7, source: "kasa", split: true, meal: 0.1 });
+  assert.ok(Math.abs(model.pnlMonth("2026-09").cells.get("commission:pos")!.value! - posRevenue * st.komisyon * 0.7) < 1e-6);
+  // Satış raporunun ürün başına tahmini komisyonu kartlı oranla (kart + yemek kartı) kalır
   const ms = model.monthSales("2026-09");
   assert.ok(Math.abs(ms.commission - sep.commission * (0.8 / st.kartOrani)) < 1e-6);
   assert.ok(Math.abs(ms.lines[0].commission - ms.lines[0].line.revenue * st.komisyon * 0.8) < 1e-6);

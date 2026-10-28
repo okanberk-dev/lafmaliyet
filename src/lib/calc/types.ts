@@ -145,6 +145,11 @@ export interface TillMonth {
   offDays: number;
   /** (Kart + yemek kartı) ÷ Z toplamı; Z toplamı 0 ise null */
   cardShare: number | null;
+  /**
+   * Yalnız banka kartı ÷ Z toplamı (yemek kartı hariç; Z toplamı 0 ise null): Gelir-gider'in banka POS komisyonu bununla
+   * (engine.ts bankShareOf; denetim E-43). Yoksa (eski kayıt, test) yemek kartı payı ayrılamaz, kartlı oran geçer
+   */
+  bankShare?: number | null;
   /** [from, to] içinde raporu olmayan günler */
   missing: string[];
   /**
