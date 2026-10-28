@@ -13,6 +13,7 @@ import { test } from "node:test";
 import postgres from "postgres";
 
 import { readJournal } from "../scripts/migration-check";
+import { taxAssetsResetNote } from "../scripts/seed";
 
 const DIR = join(process.cwd(), "drizzle");
 const files = readdirSync(DIR).filter((f) => /^\d{4}_vergi\.sql$/.test(f));
@@ -105,4 +106,20 @@ test("vergi tabloları veritabanında: CHECK ve tekil indeks reddeder, varsayıl
   assert.equal(seen.adjSpanOk, null);
   assert.equal(seen.cols, 4);
   assert.equal(seen.invoice, false);
+});
+
+test("db:reset (K32): demirbaş listesi faturalarla gider ve söylenir; vergi kayıtları ve ayarları kalır", () => {
+  const seed = readFileSync(join(process.cwd(), "scripts/seed.ts"), "utf8");
+  const serial = seed.slice(seed.indexOf("const SERIAL_TABLES = ["), seed.indexOf("];", seed.indexOf("const SERIAL_TABLES = [")));
+  // tax_assets faturalara yabancı anahtarla bağlı: TRUNCATE invoices … CASCADE onu boşaltır; muhasebecinin kayıtları
+  // (tax_filings, users'a bağlı) ve düzeltmeler listede yok, tax.settings integration_state'te kalır
+  assert.match(serial, /"invoices"/);
+  for (const t of ["tax_filings", "tax_adjustments", "tax_assets"]) assert.doesNotMatch(serial, new RegExp(`"${t}"`), t);
+  assert.match(seed, /RESTART IDENTITY CASCADE/);
+  assert.doesNotMatch(seed, /tax\.settings/);
+  const run = seed.slice(seed.indexOf("export async function runSeed"));
+  assert.ok(run.indexOf("cariResetBlock(entries, wipeCari, file)") < run.indexOf("from(s.taxAssets)"));
+  assert.ok(run.indexOf("from(s.taxAssets)") < run.indexOf("`TRUNCATE "), "silmeden önce sayılır");
+  assert.equal(taxAssetsResetNote(0), null);
+  assert.equal(taxAssetsResetNote(3), "Vergi demirbaş listesi de silinecek (3 varlık; yedekte duruyor, Vergi › Demirbaş'tan yeniden girilir).");
 });

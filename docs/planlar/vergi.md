@@ -1,7 +1,9 @@
 # Dalga 12: Vergi bölümü (`/panel/vergi`)
 
 Grup: **vergi** · Dal: `claude/dalga-12-vergi` · Taban: `origin/main` @ 950dbdb. Durum: plan, iki eleştiri turu
-işlendi (sonda "Eleştiri kaydı"), henüz uygulanmadı.
+işlendi (sonda "Eleştiri kaydı"); **uygulandı** (28 Ekim 2026, `main` @ c199b4e üstünde, migration `0045_vergi`;
+kullanım belgesi [../VERGI.md](../VERGI.md)). Tabanın değiştiği yerler (Dalga 10, 11, 13–15, denetim partileri)
+planın ilgili maddelerine işlendi; aşağıdaki birleştirme sırası ve "R2" notu tarihçedir.
 
 **Birleştirme sırası 10 → 11 → 12** (dalga 13 ile sıra R2'ye göre). Dalga 10 (personel yetkileri) `nav.ts`,
 `roles.ts`, Yardım (`yardim/faq-build.tsx`) ve personel sızıntı betiğine; dalga 11 (cari hesap) `types.ts`,
@@ -46,7 +48,7 @@ Mevcut kalıplar:
 Sahibin isteği (24 Ekim 2026): *"Köşeye bir de vergi gibi bir kısım açar mısın; oradan gelir-gider, kurumlar vergisi,
 damga, hepsini Türkiye'ye göre hesaplasın ama dikkatli yap."*
 
-Kenar çubuğunda **Satış & gider › Vergi** açılır. Yalnız yöneticiye görünür, dört sekmesi vardır:
+Kenar çubuğunda **Finans › Vergi** açılır (planın ilk yazıldığı tabanda bu grup "Satış & gider" idi; Dalga 15'ten beri Finans). Yalnız yöneticiye görünür, dört sekmesi vardır:
 
 1. **Özet.** En üstte üç rakam (sıradaki ödeme, önümüzdeki 30 gün, hazırlık). İlk açılışta "Başlarken" kartı. Sonra
    önümüzdeki 100 günün vergi takvimi; her satırda tek tutar ve tutarın kaynağı. Yanında yalnız iki kart: geçici vergi
@@ -83,7 +85,7 @@ Yapılmayanlar:
 
 | # | Konu | Karar | Neden |
 |---|---|---|---|
-| K1 | Yer | `NAV_TREE` › "Satış & gider" (`para`) altında "Gelir-gider"den sonra **Vergi** (`/panel/vergi`). `NAV_GROUPS` › "Para"da da var, alt ekranlar ⌘K'da. Sekmeler `SECTION_TABS.vergi` | Sahip "köşeye" dedi (kenar çubuğu). Para işleri o grupta |
+| K1 | Yer | `NAV_TREE` › "Finans" (`finans`; Dalga 15'ten önceki adı "Satış & gider") altında "Gelir-gider"den sonra **Vergi** (`/panel/vergi`). `NAV_GROUPS` › "Finans"ta da var, alt ekranlar ⌘K'da. Sekmeler `SECTION_TABS.vergi` | Sahip "köşeye" dedi (kenar çubuğu). Para işleri o grupta |
 | K2 | Rol | Yalnız yönetici: her sayfa ve eylem `requireAdmin`. `STAFF_PATHS`'e eklenmez. `ROLE_PERMISSIONS`'a bir satır (yönetici evet, personel hayır). Dalga 10'un personel sızıntı betiğine `/panel/vergi` ve üç alt sayfası eklenir | Personel hiçbir yerde para görmez |
 | K3 | Kapsam | Hesap **kafe payıdır**. Kafe dışı gelir ve gider düzeltme olarak elle girilir (ay ya da çeyrek). Başlıktaki çip giriş yoksa "Kapsam: yalnız kafe", varsa "Kafe + elle girilen kafe dışı", gelir bir ayda KDV beyannamesinden geliyorsa "Gelir: şirketin tamamı (beyanname) · gider: kafe" der. Kafe dışı faturalar (`SEPARATE_CATEGORIES`) varsayılan olarak sayılmaz; ayarla açılır. **"Alp Koç" kategorisi** ayar kapalıyken de "şirket defterinde gider yazılamayabilir" notuyla listelenir (M16) | Panel karaoke box'ın, yazılım işinin ve ortağın satışını görmüyor. Yalnız alışlarını düşmek vergiyi sistemli olarak düşük gösterirdi. Ortağın hesabına şirket adına alınan fatura şirketin gideri değildir (ortaklar carisi) |
 | K4 | Kesin rakamın önceliği | Üç kaynak: (1) muhasebecinin Vergi'ye girdiği rakam ("Muhasebeci"), (2) Ödemeler'deki hatırlatıcıya o dönem için yazılan tutar ("Ödemeler'de"), (3) tahmin ("≈"). **Vergi sayfasının kartlarında** öncelik 1 › 2 › 3; **nakit planında** 2 › 1 › 3 (bankadan çıkacak para). 1 ile 2 birlikte varsa ve 1 ₺'den fazla farklıysa iki yerde de uyarı çıkar. Muhasebeci rakamı penceresi "Ödemeler'deki hatırlatıcıya da yaz" kutusuyla (varsayılan açık) ikisini tek girişte eşitler (§4.5-a) | Yükümlülüğün yasal tutarı tahakkuk fişidir; nakit planı ise Ödemeler'deki tutarı ödeyecek para sayıyor. Sahip tutarı tek yerden girer |
@@ -102,7 +104,7 @@ Yapılmayanlar:
 | K16 | Bordro | Yeni saf `src/lib/tax/payroll.ts`. Netten brüt yinelemeyle çözülür; GV yıl içindeki kümülatif matrahla, asgari ücret GV ve DV istisnası, ücret damgası, PEK alt ve üst sınırı uygulanır. **SGK oranları kural tablosundan** (yasal 2026: işçi %14 + %1, işveren %19,75 + %2); `sgk.isverenOran` elle değiştirilebilir (teşvik, M2). Ayarlar'daki oranlar yalnız Gelir-gider'de kalır. Aylar tam sayılır (personelin giriş günü panelde yok). Ek ödemeler (`extras`) vergisiz ve brütleştirilmeden maliyete eklenir (not yazılır) | Bugünkü `staffCost` brüt = net ÷ 0,85, GV ve DV'yi yok sayıyor. Ayarlar'daki %15,75 2025 Ocak ayının (5 puan) oranı; 2026'da imalat dışı işyerinde Hazine indirimi 2 puandır (%21,75 − 2). Vergi sayfası en büyük düzenli prim ödemesini bilerek düşük göstermemeli |
 | K17 | Gelir-gider ve Excel eşitliği | `engine.ts` `staffCost` **değişmez**; Gelir-gider Ayarlar'ın oranlarıyla kalır (`tests/golden.json`). Vergi sayfası doğru bordroyu kullanır. Ayarlar'daki işveren oranı kural tablosundan farklıysa **yalnız Gelir-gider'de** tek satır uyarı çıkar (K19) | Excel eşitliği bozulmaz |
 | K18 | Nakit planındaki SGK | `planInputFromModel`'in bordrosu `taxPayrollFromModel`'den gelir (yasal oranlar, doğru brüt, PEK sınırı). Kesin tutar SGK hatırlatıcısındaki tutardır (bugünkü gibi); geçmiş ve süren dönemde takvim önce "tahakkuk fişindeki tutarı girin" der | Vergi sayfasıyla nakit planı aynı SGK'yı göstermeli. Excel verisinde Eylül SGK'sı 23.117,65 ₺'den **25.956,18 ₺**'ye çıkar (ayda ≈ 2.840 ₺) |
-| K19 | SGK oran uyuşmazlığı | Gelir-gider'de uyarı: "Ayarlar'da işveren SGK %15,75. 2026'da imalat dışı işyerinde 2 puan indirimle standart oran %19,75; ek teşvikiniz varsa farklı olabilir. Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › Oranlar'dan değiştirin." M2 işaretlenince satırda "Ayarlar'daki oranı %19,75 yap" düğmesi çıkar; yeni küçük eylem `setEmployerSgkRate(rate)` yalnız `isverenSgk` anahtarını yazar (`ConfirmDialog`, geçmiş ayların değişeceğini söyler). **Kendiliğinden değişmez** | Ayarlar bütün aylar için tek değerdir; değişiklik Temmuz–Ekim gelir-giderini de değiştirir. `saveStaffRates` dört oranı birden ister; istemcinin eski değerlerle göndermesi başka sekmedeki değişikliği ezerdi |
+| K19 | SGK oran uyuşmazlığı | Gelir-gider'de uyarı: "Ayarlar'da işveren SGK %15,75. 2026'da imalat dışı işyerinde 2 puan indirimle standart oran %19,75; ek teşvikiniz varsa farklı olabilir. Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › SGK oranları bölümünden değiştirin." (Personel ekranındaki bölümün adı "SGK oranları"; ilk metin "Personel › Oranlar" diyordu.) M2 işaretlenince satırda "Ayarlar'daki oranı %19,75 yap" düğmesi çıkar; yeni küçük eylem `setEmployerSgkRate(rate)` yalnız `isverenSgk` anahtarını yazar (`ConfirmDialog`, geçmiş ayların değişeceğini söyler). **Kendiliğinden değişmez** | Ayarlar bütün aylar için tek değerdir; değişiklik Temmuz–Ekim gelir-giderini de değiştirir. `saveStaffRates` dört oranı birden ister; istemcinin eski değerlerle göndermesi başka sekmedeki değişikliği ezerdi |
 | K20 | Muhtasar (vergi kısmı) | Ay P için, P+1'in 26'sında ödenir. İçeriği: ücret GV ve ücret DV (bordrodan), sabit giderin stopaj profiline göre stopaj (§3.5), artı beyanname damgası. Profiller (`taxWithholding`): `yok`, `kira` (%20), `serbest_meslek` (SMM %20), `internet_reklam` (şahsa ya da yurt dışına internet reklamı %15), `internet_reklam_yurtdisi` (doğrudan yurt dışına: %15 + KDV-2 %20), `yurt_disi_hizmet` (KDV-2 %20). Tutar **brüt** kabul edilir. Adı kira, reklam ya da dışarıdan hizmet anahtar kelimelerine uyan (`PANEL_GROUP_KEYWORDS`) ya da kira bölümündeki sabit gider profilsizse muhtasar tek rakam değildir: "en az 974 ₺; 4 kalemin stopajı bilinmiyor". Personel varsa MPHB damgası 939,70 ₺, yalnız stopaj varsa muhtasar damgası 791,00 ₺. `tax.settings.muhtasarQuarterly` açıksa vergi kısmı Mart, Haziran, Eylül ve Aralık dönemlerinde toplanır; MPHB damgası her ay ödenir | Faturalardaki stopaj Paraşüt'ten okunmuyor. Instagram reklamı (30.000 ₺/ay), influencer (50.000 ₺/ay) ve muhasebeci (10.000 ₺/ay) kime nasıl ödendiğine göre %0–%20 stopaj ve KDV-2 doğurur; bilinmeden tek rakam gerçeğin çok altında kalabilirdi |
 | K21 | Geçici ve kurumlar vergisi | Kümülatif hesaplanır, oran %25. Asgari kurumlar vergisi (%10) muafiyet yoksa karşılaştırılır. Önceki dönemlerin geçici vergisi düşülür. Muhasebecinin bir döneme girdiği kayıt, matrahı girildiyse **çapa** olur: sonraki dönemin tahmini o kaydın kümülatif matrahına çapadan sonraki ayları ekler. Süren dönem ay sonuna **tamamlanmaz**. Kart başlığı "Kafenin geçici vergi matrahına katkısı (yalnız kafe)"; şirketin geçici vergisi muhasebecinin rakamıdır. **Tahmin nakit planına ve takvimin tutar sütununa yazılmaz** (K25). Yıllık KV'de yalnız **ödendi** işaretli geçici vergi mahsup edilir | Geçici vergi bütün şirketin beyannamesidir; kafe payı tahmini kira, demirbaş, stok ve kafe dışı işler bilinmeden 0 da olabilir, çok daha fazla da. Ödenmeyen geçici vergi yıllık beyannamede mahsup edilemez |
 | K22 | Damga vergisi | Beyanname damgaları kural tablosundan gelir. Kurumlar vergisi beyannamesiyle **bilanço ve gelir tablosu** damgası da tahakkuk eder (2026: 616,30 + 294,20). Ücret damgası bordrodan gelir. Sözleşme damgası için hesaplayıcı **yok** (§19); oranlar Kurallar'da bilgi olarak durur | Tek seferlik iş için mekanizma gereksizdi |
@@ -1228,9 +1230,9 @@ eklenmez.
 ## 9. Menü, roller, Excel
 
 - `src/components/panel/nav.ts`:
-  - `NAV_TREE` › `para.children`'a "gelir-gider"den sonra
+  - `NAV_TREE` › `finans.children`'a "gelir-gider"den sonra
     `{ id: "vergi", label: "Vergi", href: "/panel/vergi", roles: ["admin"] }`.
-  - `NAV_GROUPS` › "Para"ya şu öğe:
+  - `NAV_GROUPS` › "Finans"a şu öğe:
 
     ```ts
     { href: "/panel/vergi", label: "Vergi", icon: Landmark, roles: ["admin"],
@@ -1739,7 +1741,7 @@ durumdadır (yükleyici bağlanmadan).
 - `npx next typegen && npx tsc --noEmit`, `npx eslint . --ignore-pattern '.claude/**'`, `npm test`. Boş veritabanında
   `npm run db:migrate && npm run db:seed`; migration sayısı bir artar. `VERGI_TEST_DATABASE_URL` ile migration testi.
 - `npm run dev`, Excel verisi, bugün 2026-10-24:
-  1. **Yönetici.** Kenar çubuğunda Satış & gider › Vergi var. **Personel** girişinde menüde yok; `/panel/vergi`'ye ve
+  1. **Yönetici.** Kenar çubuğunda Finans › Vergi var. **Personel** girişinde menüde yok; `/panel/vergi`'ye ve
      üç alt sayfaya gidince Bugün açılır; dalga 10'un sızıntı betiği RSC yükünde vergi verisi bulmaz.
   2. **Özet.**
      - Üç rakam: "KDV-2 ve muhtasar · 26 Ekim · en az ≈ 3.600 ₺", "en az ≈ 30.300 ₺ · tutarı bilinmeyen 1 ödeme",

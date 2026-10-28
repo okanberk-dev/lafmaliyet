@@ -871,12 +871,12 @@ export function okcMonth(rows: OkcRow[], month: string): OkcMonth;
 bir günü olan ay `complete: false` döner (toplamı tam olsa bile), ekran o ay bugünkü hesabı kullanır ve
 `Yazarkasa KDV dökümü eksik: 2 gün` yazar. `byRateEstimated` yalnız "tahmini" işaretiyle gösterilebilir.
 
-**Sonraki adım (ayrı küçük PR "13b", dalga 12 ve 13 birleştikten sonra):**
+**Sonraki adım (ayrı küçük PR "13b", dalga 12 ve 13 birleştikten sonra; vergi bölümünün satırı dalga 12'de yapıldı):**
 
 | Ekran | Bugün | Sonra | Koşul |
 |---|---|---|---|
 | Nakit planı › KDV tahmini (`src/lib/kdv.ts`) | ModPOS cirosu × satış oranları + laffogato.net | satış KDV'si = Σ yazarkasa KDV'si (oran oran) + ModPOS'un yazarkasa dışı satışları (online + diğer) için bugünkü oranlı tahmin + laffogato.net. Satırda kaynak: `Yazarkasa Z'lerinden (30 / 30 gün)` | `okcMonth.complete`; değilse bugünkü hesap ve `Yazarkasa Z'si eksik: 2 gün` notu |
-| Vergi bölümü (dalga 12) kasa geliri | ModPOS cirosu | KDV hariç kasa geliri = Σ (oran toplamı − KDV); dalga 12'nin "Sonraya" maddesi: `pnl.ts`'in gelir satırının tek kaynağı değişir | aynı |
+| Vergi bölümü (dalga 12) kasa geliri | **Dalga 12'de yapıldı** (28 Ekim 2026): `okcMonth.complete` olan ayda gelir yazarkasanın KDV hariç matrah toplamı (Σ `byRate[].base`, rozet "mali belge · Z") + laffogato.net; muhasebecinin KDV beyannamesi satışları girilmişse o önce gelir; ikisi de yoksa kasa cirosu "Yönetim verisi" rozetiyle ([../VERGI.md](../VERGI.md) § 2) | — | `okcMonth.complete`; `byRateEstimated` kullanılmaz |
 | Satışlar › Ay bilgisi (POS cirosu, açık gün, kartlı oran) | ModPOS | **değişmez** (işletme cirosu ModPOS'tur) | — |
 | Komisyon, satış tahmini, nakit planının nakit satırları, Bugün, MCP | ModPOS | değişmez | — |
 

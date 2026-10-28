@@ -19,11 +19,12 @@ açamaz (`requireAdmin`), ⌘K'da da görmez.
 | **Faturasız borçlar** (`cari:<id>`) | ödenecek, kesin | Tedarikçiler › Borç ekle ile girilen, bir faturaya bağlanmamış borçların kalanı ([TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*), faturayla aynı vade kuralıyla: “Sütaş · faturasız alım”, “Sütaş · fatura bekleniyor”, “Sütaş · eski borç”. Gecikmiş olan bugüne. |
 | **Hatırlatıcılar** | ödenecek, kesin | Etkin hatırlatıcının plan içindeki her tekrarı; geciken dönem bugüne. **Tutarı > 0** olan kesindir. Tutarsız olan aşağıdaki eşleşmeye bakar. |
 | **Maaşlar** (`salary`) | ödenecek, tahmini | Personel: net maaş + ek ödemeler. Ödeme ayın 1–15'indeyse önceki ayın bordrosu, sonrasındaysa o ayınki. Gün: maaş hatırlatıcısı yoksa **her ayın 1'i**. Maaş hatırlatıcıları var ama hiçbirinde tutar yoksa kimliği en küçük olanın günlerinde (“taşıyıcı”). Tutarlı maaş hatırlatıcısı varsa tahmin yapılmaz. |
-| **SGK primi** (`sgk`) | ödenecek, tahmini | Önceki ayın işçi ve işveren SGK + işsizlik payları. Gün: SGK hatırlatıcısı yoksa **ayın son günü**; varsa maaştaki kural. Gelir ve damga vergisi dahil değil. |
-| **Sabit giderler** (`fixed:<id>`) | ödenecek, tahmini | Hatırlatıcısı olmayan her sabit gider ay içine eşit yayılır (o ayın sürümlü tutarı): aylık ÷ ayın gün sayısı, haftalık ÷ 7, günlük × `ayda açık gün ÷ 30`. Giderler'de KDV hariç girilen tutara **faturadaki KDV** eklenir: kalemin “Faturadaki KDV” alanı (KDV yok, %1, %10, %20), boşsa bölümün varsayılanı (kira, faturalar, genel giderler %20; personel KDV'siz). 160.000 ₺ kira bankadan 192.000 ₺ çıkar. Gelir-gider KDV hariç tutarla kalır. **Yıllık** plana girmez (“Dahil değil”de adıyla yazar). |
+| **SGK primi** (`sgk`) | ödenecek, tahmini | Önceki ayın işçi ve işveren SGK + işsizlik payları, Vergi'nin bordrosundan (`taxPayrollFromModel`, dalga 12; [VERGI.md](VERGI.md)): brüt netten gelir ve damga vergisiyle bulunur, 2026 yasal oranlarıyla (işçi %14 + %1, işveren %19,75 + %2; teşvik Vergi › Kurallar'da elle), prime esas kazancın alt ve üst sınırıyla. Excel verisinde Eylül SGK'sı **25.956,18 ₺** (Gelir-gider Ayarlar'daki %15,75'le 23.117,65 ₺ gösterir; o tablo Excel eşitliği için değişmedi). Gelir ve damga vergisi muhtasar satırındadır. Gün: SGK hatırlatıcısı yoksa **ayın son günü**; varsa maaştaki kural. Alt yazı yasal son günü söyler: “son gün 2 Kasım Pazartesi (31 Ekim Cumartesi)” (VUK 18; plan nominal günde, erken öder). Vergi girdileri okunamazsa bordro varsayılan vergi ayarlarıyla aynı yasal oranlardan hesaplanır; yalnız muhtasar, geçici vergi ve damga satırları çıkmaz (not “gelir ve damga vergisi (muhtasar) bu planda yok”). |
+| **Sabit giderler** (`fixed:<id>`) | ödenecek, tahmini | Hatırlatıcısı olmayan her sabit gider ay içine eşit yayılır (o ayın sürümlü tutarı): aylık ÷ ayın gün sayısı, haftalık ÷ 7, günlük × `ayda açık gün ÷ 30`. Giderler'de KDV hariç girilen tutara **faturadaki KDV** eklenir: kalemin “Faturadaki KDV” alanı (KDV yok, %1, %10, %20), boşsa bölümün varsayılanı (kira, faturalar, genel giderler %20; personel KDV'siz). 160.000 ₺ kira bankadan 192.000 ₺ çıkar. Gelir-gider KDV hariç tutarla kalır. **Stopajlı sabit gider** (Vergi › Vergiye göre'de seçilen profil): şahsa kira, serbest meslek ve şahsa internet reklamında bankadan net çıkar, stopaj muhtasar satırındadır: şahsa 160.000 ₺ kira, KDV yok → 128.000 ₺ + muhtasarda 32.000 ₺; muhasebeci 10.000 ₺ serbest meslek, %20 KDV → 10.000 ₺ + muhtasarda 2.000 ₺. Satırın notu “Kira 160.000 ₺ brüt · stopaj %20 muhtasarda · ödenen 128.000 ₺”. Yurt dışına ödenen hizmette KDV yok (yabancı firma Türk KDV'si kesmez), KDV-2 ayrı satırdır. Aynı net tutar “Sabit giderlerden ekle”nin hatırlatıcıya yazdığı ve sabit giderle farkın uyarısının beklediği tutardır. **Yıllık** plana girmez (“Dahil değil”de adıyla yazar). |
 | **Aylık harcamalar** (`expense:<id>`) | ödenecek, tahmini | Aylık harcamalar'da “her ay girilir” işaretli, mal dışı kategoriler (reklam, influencer; denetim E-13): ayın beklenen ödemesi (`model.monthlyExpensePlan`: o ay girilen, daha azsa geçen ayın gerçekleşeni; sahibe soru 7 cevaplanana kadar). Girilen tutar ödenen tutardır (KDV dahil); kategori bir fatura kategorisine bağlıysa o faturalar ödenecek tutarlarıyla (KDV dahil) eklenir. Bu ay bugüne kadar girilenler ve bu ayın bağlı faturaları (ödenmiş ya da Ödemeler'de kesin kalem) karşılanmış sayılır, kalanı ayın kalan günlerine; gelecek ayda (faturası henüz gelmemiş bağlı kategori dahil) ayın bütün günlerine eşit yayılır. Sabit gideri aylık girişe çevirmenin yazdığı tahmini kayıt (“Sabit giderdeki KDV hariç tutar (tahmini)”) ödeme sayılmaz: tutarı ya da günü düzeltilene kadar plan onu ayın kalan günlerinde öder. Adı aynı hatırlatıcı varsa onun gününde (yayılmaz). Tahmine katılanlar'dan kapatılır. |
 | **Mal alımı** (`goods`) | ödenecek, tahmini | Son 8 haftanın mal faturaları (kafe dışı, demirbaş ve komisyon girmez; geçmiş kısaysa en eski mal faturasından bu yana, **14 günden kısaysa tahmin yok**). Her fatura günlük orana bölünür ve tedarikçinin gecikmesiyle ödenir: peşin çalışılan tedarikçide 0, değilse kartındaki vade, o da yoksa bildirim ayarındaki gün. Böylece bugünden sonra kesilecek faturalar vadelerinde ödenmiş olur; bugünkü ödenmemiş faturalarla çakışmaz. Tedarikçi adla bulunur (gelecek faturanın vergi nosu yok). Bir tedarikçinin açık “Faturası gelecek” borçları varsa onun tahmini o tutar kadar düşürülür (haftalık irsaliyenin aylık faturası hem tahminde hem kesin kalemde sayılmasın): notta “Sütaş tahmini, faturası beklenen 1.250 ₺ kadar düşürüldü”. Elle borç ve ödeme mal tahminine girmez (yalnız faturalar okunur). |
 | **KDV** (`kdv`) | ödenecek, tahmini | Aşağıda *KDV tahmini*. |
+| **Muhtasar, geçici vergi ve damga** (`vergi`) | ödenecek, tahmini ya da kesin | Vergi sayfasının beslemesi (dalga 12): aşağıda *Muhtasar, geçici vergi ve damga*. |
 
 **Bugün kuralı:** girilen bakiye bugünü kapsar. Bu yüzden bugüne (gün 0) yalnız fatura ve hatırlatıcı yazılır (gecikmişler
 dahil); bütün tahminler (satış, online, yayılan sabit gider, mal alımı, varsayılan gündeki maaş, SGK ve KDV) **yarından**
@@ -72,8 +73,9 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    “2 No.lu beyanname”. Yalnız damga vergisi (“KDV2 damga vergisi”, “KDV damga vergisi”) ayrı ödemedir, ne KDV ne
    KDV-2 hatırlatıcısıdır; tahakkukla birlikte yazılan (“KDV2 + damga vergisi”, “Damga vergisi ve Eylül KDV2”, “damga
    dahil”) ya da damgayı dışarıda bırakan (“KDV2 (damga hariç)”) KDV-2'dir. Başlık serbest metindir: en sağlamı
-   tahakkuku “KDV2 Eylül”, damgayı ayrı “KDV2 damga vergisi” diye yazmaktır; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
-   beyannamesi”, “Tevkifat beyannamesi” (muhtasar da böyle anılır) ve “2 No.lu dükkan” diğer hatırlatıcıdır.
+   tahakkuku “KDV2 Eylül”, damgayı ayrı “KDV2 damga vergisi” diye yazmaktır; “Muhtasar (gelir vergisi tevkifatı)” ve
+   “Stopaj” muhtasardır (4. madde); “Kira tevkifatı beyannamesi”, “Tevkifat beyannamesi” ve “2 No.lu dükkan” diğer
+   hatırlatıcıdır.
    KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü), 1 No.lu KDV'deki gibi:
    - yazılı tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) gününe aittir: o gün kesin girer ve dönemi
      alır. Tevkifat her ay o ayın faturalarındandır; tekrarlı seride **Ödendi** ve **Ertele** tutarı seriden siler
@@ -100,8 +102,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
      tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
    Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: bu dönemin tutarı
    yazılıysa o, yoksa bu tahmin” yazar.
-4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
-   görünür (“Ödemeler'de tutar girin”).
+4. **Muhtasar** (adında “muhtasar” ya da “stopaj”; yalnız damga vergisi değil) ve **geçici vergi** (adında “geçici
+   vergi”): Vergi beslemesi varken KDV'nin kipleriyle (aşağıda *Muhtasar, geçici vergi ve damga*). Besleme yoksa diğer
+   hatırlatıcıdır.
+5. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
+   görünür (“Ödemeler'de tutar girin”). “KDV damga vergisi” diğerdir: kendi satırını çizer, o ayın damga satırını
+   kapatır.
 
 Bir tahmini kesinleştirmenin yolu Ödemeler'e tutarıyla hatırlatıcı eklemektir; plan onun gününü ve tutarını kullanır.
 
@@ -119,13 +125,14 @@ Bir tahmini kesinleştirmenin yolu Ödemeler'e tutarıyla hatırlatıcı eklemek
 
 ## Tahmine katılanlar
 
-**Nasıl hesaplandı** kartının altındaki düğme. Satışlar, laffogato.net online, maaşlar, SGK, mal alımı, KDV,
-hatırlatıcısı olmayan her sabit gider ve her ay girilen her harcama kategorisi tek tek kapatılabilir. Faturası ayrıca gelen bir sabit gider kapatılır, iki kez
+**Nasıl hesaplandı** kartının altındaki düğme. Satışlar, laffogato.net online, maaşlar, SGK, mal alımı, KDV, muhtasar,
+geçici vergi ve damga (tek anahtar, `vergi`), hatırlatıcısı olmayan her sabit gider ve her ay girilen her harcama kategorisi tek tek kapatılabilir. Faturası ayrıca gelen bir sabit gider kapatılır, iki kez
 sayılmasın. Ödemeler'de hatırlatıcısı olan ve yıllık kalemler değiştirilemez (gri). “Gününü girmek için Ödemeler'e ekle”
 Ödemeler'i açar.
 
-**Dahil değil** (ekranda yazar): tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'da her ay
-girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım ve kredi. Kart, yemek kartı ve online
+**Dahil değil** (ekranda yazar): tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi, Aylık
+harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım
+ve kredi. Vergi beslemesi yoksa ilk cümle “tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)” der. Kart, yemek kartı ve online
 platform tahsilatı satış günü sayılır (bankaya geçiş gecikmesi yok).
 
 **Çift sayım:** aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası
@@ -166,7 +173,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 | Ciro girilmemiş ay | Önceki, cirosu ve açık günü olan son ayın günlük KDV'si × ayın açık günü (ayın gün sayısı − Özel günler'de kafe kapalı işaretli günler; E-41) (“Ekim cirosu yok: Eylül'ün günlük ortalamasıyla”). Süren ayın ilk kasa raporundan önce de bu kural geçer. |
 | laffogato.net | Sitenin her siparişte sakladığı KDV; oranı saklı olmayanlara panelin oranı (kafe ve mağaza %10, karaoke %20; `siteVat`, `src/lib/site-sales/calc.ts`). Süren ayın açık kaydı çekildiği günün dününe kadardır, aya tamamlanır. Kayıt yoksa 0; site bağlıysa dökümde “laffogato.net: bu ay çekilmedi”. Elle girilen siparişler ModPOS'tadır, sayılmaz. |
 | Alış KDV'si | Faturanın **KDV toplamı** (`vat`, Paraşüt'ün `total_vat`'ı, tevkifat düşülmemiş); `vat` yoksa (Excel'den ya da elle girilenlerde 0; Paraşüt bağı çözülen kayıtta tutar, iskonto ya da ödenecek panelde değişince 0 yazılır) ya da net tutarın %20'sinden fazlaysa (24 Ekim 2026'dan önce tutarı düşürülmüş böyle bir kayıt) **ödenecek − (tutar − iskonto)**. Tevkifatlı faturada KDV'nin tamamı indirilir: beyannamede tedarikçiye ödenen kısmı “yurtiçi alımlara ilişkin KDV”, tevkif edilen kısmı “sorumlu sıfatıyla beyan edilerek ödenen KDV” olarak (23 Ekim 2026'ya kadar yalnız ilki sayılıyordu; Eylül 2026'da 1.800 ₺ eksik indirildi). İadede eksi (fark; tevkifatın iadesi 2 No.lu beyannamede düzeltilir). Kontrol bekleyen faturalar sayılır. **Kafe dışı** (Karaoke box, Alp Koç) sayılmaz. Süren ayda yalnız bugüne kadar gelen faturalar (ay sonuna tamamlanmaz; tahmin yüksek tarafta kalır). |
-| KDV-2 (tevkifat) | Dönemin kafe faturalarındaki tevkifat: `vat` − (ödenecek − net), 100 ₺'ye yuvarlı (`purchaseWithheld`). **2 No.lu beyannameyle izleyen ayın 25'inde** ödenir (Eylül 2026 tahakkuk fişi: vade 25.10.2026), 1 No.lu beyannamede aynı dönemde indirilir. 1 No.lu ödenecek sıfır ya da devreden olsa da ödenir. Beyannamenin damga vergisi (Eylül 2026 KDV2'sinde 791 ₺) sayılmaz. |
+| KDV-2 (tevkifat) | Dönemin kafe faturalarındaki tevkifat: `vat` − (ödenecek − net), 100 ₺'ye yuvarlı (`purchaseWithheld`). **2 No.lu beyannameyle izleyen ayın 25'inde** ödenir (Eylül 2026 tahakkuk fişi: vade 25.10.2026), 1 No.lu beyannamede aynı dönemde indirilir. 1 No.lu ödenecek sıfır ya da devreden olsa da ödenir. Beyannamenin damga vergisi (Eylül 2026 KDV2'sinde 791 ₺) Vergi beslemesiyle ayrı satırdır (aşağıda *Muhtasar, geçici vergi ve damga*). |
 | Devreden | **Otomatik:** cirosu olan ilk aydan (yoksa ilk site kaydının ayından; en çok 24 ay geriden) ay ay zincir. İlk satış ayından önceki faturalar sayılmaz. Verisiz ay zinciri bozmaz. **Muhasebeciden:** “Devreden KDV'yi gir” penceresi (ay + “sonraki döneme devreden KDV”); zincir o ayın ertesinden başlar. O ayın kendi ödemesi devreden > 0 ise 0'dır (“Beyannamede devreden …”). |
 | Ödemeler'deki tutar | KDV hatırlatıcısına yazılan tutar (0 dahil) **o dönemin kesin tutarıdır**, tahminin önüne geçer; > 0 ise sonraki aya devreden sıfırlanır. Tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir: **Ödendi** deyince ve tekrarlı seri ertelenince tutar silinir (Geri al geri getirir). Ödenen tutar (Ödendi anında hatırlatıcıdaki, > 0) kalıcı Ödendi kaydından (`payments.vat-paid`, 24 ay) o dönemin kesin tutarı olarak okunur: ödemeden sonra da devredeni sıfırlar. Tutarsız Ödendi zinciri değiştirmez (beyanname devreden göstermiş olabilir). |
 | Yuvarlama | Kasa, online ve alış KDV'si ile muhasebecinin tutarı ayrı ayrı en yakın **100 ₺**'ye yuvarlanır (yarım yukarı, işaret korunur); ödenecek ve devreden bunlardan çıkar, ekrandaki çıkarma birebir tutar. Ödemeler'deki tutar ve muhasebecinin tutarı olduğu gibi yazılır. |
@@ -257,6 +264,35 @@ Karaoke payı (`monthSales(ay).serviceRevenue`) ayın satış satırlarındaki h
 LafPOS'a geçiş günü seçildikten sonra her gün sonunda (LafPOS'un karaoke satırları; [LAFPOS.md](LAFPOS.md) › Günlük
 satış) kendiliğinden kesinleşir; ek iş yok.
 
+## Muhtasar, geçici vergi ve damga
+
+Vergi sayfası (dalga 12, [VERGI.md](VERGI.md)) plana bir besleme verir (`taxPlanFeed`, `src/lib/tax/view.ts`;
+yükleyici `loadCashPlan(model, upcoming, { taxInputs })`, Vergi'nin Özet'i aynı girdiyi paylaşır). Hepsinin anahtarı
+`vergi`; Tahmine katılanlar'da tek satır, **Muhtasar, geçici vergi ve damga** (not: sıradaki muhtasar tahmini ve geçici
+vergi). Nasıl hesaplandı'daki satır: “Muhtasar (ücret gelir ve damga vergisi, işaretli stopajlar, beyanname damgası)
+ayın 26'sında, Vergi sayfasının tahminiyle; stopajı bilinmeyen kalem varsa 'en az'. Geçici vergi yalnız tutarı
+Ödemeler'e ya da Vergi'ye yazıldıysa (ya da çeyreğin hesabı hazırsa) Şubat, Mayıs, Ağustos ve Kasım'ın 17'sinde; yoksa
+'Tutarı girilmemiş ödemeler'de. KDV beyannamelerinin damgası (791 ₺) ayrı satır; tutarı yazılmış KDV hatırlatıcısı damga
+dahil sayılır.” Kapalıyken: “Muhtasar, geçici vergi ve beyanname damgaları plana katılmıyor (Tahmine katılanlar'dan
+açın).”
+
+| Satır | Kural |
+|---|---|
+| **Muhtasar** (`vergi:muhtasar@…`) | Ay P'nin tahmini (ücret gelir ve damga vergisi, stopaj profili seçilmiş sabit giderlerin stopajı, beyanname damgası) P+1'in 26'sında. Stopajı bilinmeyen kalem (kira bölümündeki, reklam ya da dışarıdan hizmet adlı profilsiz kalemler) varsa “en az”. Muhasebecinin kaydı varsa o, rozeti “Muhasebeci”. |
+| **Geçici vergi** (`vergi:gecici@…`) | Yalnız üç durumda tutarla: hatırlatıcıya o dönemin tutarı yazıldıysa, Vergi'de muhasebecinin kaydı varsa (ödenecek + damga), ya da çeyrek **Hazır**sa (sınıflandırma tam, gelir mali belgeden, kafe dışı sorusu işaretli). Değilse “Tutarı girilmemiş ödemeler”de: “Geçici vergi 2026/3 · tutarı muhasebecinizden isteyin” (anahtar `vergi:gecici:2026-Q3`). |
+| **KDV-2: yurt dışı hizmet** (`vergi:kdv2_hizmet@…`) | Yurt dışı hizmet profilli sabit giderin sorumlu sıfatıyla KDV'si, ayın 25'inde; dönemi tutarı yazılı bir KDV-2 hatırlatıcısı karşılıyorsa yok. |
+| **Damga** (`damga:kdv@…`, `damga:kdv2@…`) | KDV ve KDV-2 tahmini plana giren dönemin beyanname damgası (791 ₺), aynı gün, kesin. O ayın “KDV damga vergisi” hatırlatıcısı varsa yok; tutarı yazılmış KDV hatırlatıcısı damga dahil sayılır (satır yok, not “damga dahil”). KDV tahmini 0 olsa da damga satırı çıkar. |
+
+Yerleşme KDV'nin kipleriyle: sınıfın (muhtasar ya da geçici) etkin hatırlatıcısı varsa onun günlerinde, tutarı yazılı
+dönem kesin (sabit tutarlı “Kira stopajı”nın tutarı her döneminde kesin), öteki dönemlerde beslemenin tutarı; yoksa
+beslemenin nominal gününde (yarından). Ödendi denen dönem (son ödenenler; geçici vergide kalıcı kayıt
+`payments.vat-paid`, tür `gecici`) yeniden girmez. `vergi` kapalıyken kesinler kalır, tahmin yok, tutarsız muhtasar ve
+geçici vergi hatırlatıcıları “Tutarı girilmemiş ödemeler”e döner. İki muhtasar hatırlatıcısı aynı döneme düşerse
+ikincisi “Tutarı girilmemiş”e gider.
+
+Ödemeler'de “muhtasar” ya da “geçici vergi” geçen tekrarlı hatırlatıcının tutarı yalnız o dönemindir: **Ödendi** ve
+**Ertele** onu seriden siler (“Muhtasar tutarı her ay değiştiği için silindi · Geri al”), KDV'deki gibi.
+
 ## Saklama
 
 Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
@@ -266,13 +302,14 @@ Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
   balance: number | null;      // girilen bakiye (TL)
   balanceDate: string | null;  // YYYY-MM-DD (Türkiye)
   balanceBy: string | null;    // girenin adı
-  excluded: string[];          // "sales" | "online" | "salary" | "sgk" | "goods" | "kdv" | `fixed:${id}`
+  excluded: string[];          // "sales" | "online" | "salary" | "sgk" | "goods" | "kdv" | "vergi" | `fixed:${id}` | `expense:${id}`
   vatCarry: { month: string; amount: number; date: string; by: string } | null; // muhasebecinin devreden KDV'si
 }
 ```
 
-**`payments.vat-paid`** (KDV ve KDV-2 hatırlatıcılarının kalıcı Ödendi kaydı, `src/lib/vat-paid.ts`): `{ id, kind:
-"kdv" | "kdv2", dueDate, next, periods, amount, at }[]`, 24 ay. `markReminderDone` yazar; `restoreReminder`,
+**`payments.vat-paid`** (KDV, KDV-2 ve geçici vergi hatırlatıcılarının kalıcı Ödendi kaydı, `src/lib/vat-paid.ts`):
+`{ id, kind: "kdv" | "kdv2" | "gecici", dueDate, next, periods, amount, at }[]` (geçici vergide dönem çeyrek,
+`2026-Q3`), 24 ay. `markReminderDone` yazar; `restoreReminder`,
 `undoRecentPaid`, kapalı tek seferliği yeniden açmak ve KDV kartındaki "kaydını kaldır" siler. `db:reset` bırakır
 (hatırlatıcı kimlikleri yeniden başlamaz), tam yedeğe girer; bozuk kayıt okunurken atılır.
 
@@ -291,7 +328,8 @@ Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
 | `src/lib/cash-plan.ts` | `buildCashPlan`, `planInputFromModel`, `goodsRows`, `reminderOccurrences`, `planNotes` (saf) |
 | `src/lib/kdv.ts` | `vatMonthInputs`, `vatEstimates`, `vatDueDate`, `vatPeriodOf`, metinler (saf) |
 | `src/lib/vat-paid.ts` | KDV / KDV-2 Ödendi kaydının kuralları: `paidPeriodsOf`, `addVatPaid`, `removeVatPaid`, `forgetVatPeriod` (saf) |
-| `src/server/data/cash-plan.ts` | `loadCashPlan(model, upcoming?)`, `loadCashPlanState` |
+| `src/server/data/cash-plan.ts` | `loadCashPlan(model, upcoming?, { taxInputs }?)` (vergi beslemesi), `loadCashPlanState` |
+| `src/lib/tax/view.ts`, `src/lib/tax/payroll.ts` | Vergi beslemesi (`taxPlanFeed`), yasal oranlı bordro (`taxPayrollFromModel`); [VERGI.md](VERGI.md) |
 | `src/server/data/vat-paid.ts` | `payments.vat-paid`'in okunması ve yazılması |
 | `src/server/actions/cash-plan.ts` | bakiye, tahmin ayarı, devreden KDV |
 | `src/app/panel/hatirlaticilar/nakit/` | ekran, bakiye ve devreden KDV pencereleri, Tahmine katılanlar, KDV kartı |
