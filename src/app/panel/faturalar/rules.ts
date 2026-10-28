@@ -217,6 +217,8 @@ export interface CashOutDuplicateSource extends CashOutInvoiceSource {
   expenseId: number;
   expenseCategory: string | null;
   invoice: { id: number; date: string; supplier: string; invoiceNo: string | null; payable: number };
+  /** Fatura bu satırdan açıldı ("Faturalar'a ekle"): başka bir alımın olamaz, "Ayrı alım" yok */
+  adopted: boolean;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;

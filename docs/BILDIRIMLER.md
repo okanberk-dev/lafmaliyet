@@ -42,7 +42,9 @@ fotoğraf kaldırma istekleri yöneticide tek satırdır ("3 kasa isteği onay b
 "Kapalı gün onayı bekliyor", personelde sonucu "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Geç zayi /
 ikram ve zayi silme istekleri yöneticide tek satırdır ("3 zayi / ikram isteği onay bekliyor"); personelde sonucu "Geç
 kayıt onaylandı: 2× Latte M (15 Eki)", "Silme reddedildi: …", kaydı başkasının isteğiyle silinen kişiye "Kaydınız
-silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)). Personel
+silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)). Karaoke sayacı silme istekleri
+yöneticide tek satırdır ("1 karaoke sayacı silme isteği onay bekliyor", ilk karta); personelde sonucu "Silme onaylandı:
+karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına ([KARAOKE.md](KARAOKE.md) › Sayacı silmek). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
 bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
 kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·

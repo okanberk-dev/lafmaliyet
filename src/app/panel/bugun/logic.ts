@@ -697,9 +697,9 @@ const unpricedRow: Row = (f) => {
   };
 };
 
-/** Onay satırında türlerin sırası: kasa istekleri, reçete önerileri, zayi istekleri */
+/** Onay satırında türlerin sırası: kasa istekleri, reçete önerileri, zayi ve karaoke istekleri */
 const KASA_KINDS: StaffRequestKind[] = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun"];
-const OPS_KINDS: StaffRequestKind[] = ["zayi-gec", "zayi-sil"];
+const OPS_KINDS: StaffRequestKind[] = ["zayi-gec", "zayi-sil", "karaoke-sil"];
 
 /**
  * Onaylar (yönetici): reçete önerileri ve personel istekleri. İstek yoksa reçete metni ("Personelin önerdiği 2 reçete

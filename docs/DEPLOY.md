@@ -52,8 +52,10 @@ Preview ortamına `MIGRATE_ON_PREVIEW=1` eklenir; o zaman her önizleme kendi da
 **`claude/**` dallarında önizleme yok (26 Eki 2026).** Vercel Hobby planı ekip başına 24 saatte en çok 100 dağıtım
 açar (`api-deployments-free-per-day`); 26 Ekim akşamı bu sınır doldu ve canlı dağıtımlar da reddedildi. Bu yüzden
 `vercel.json` `git.deploymentEnabled` ile `claude/**` dallarına önizleme açılmaz; yalnız `main` (canlı) dağıtılır.
-Bu dallardaki değişiklik yerelde `npm run build` ile derlenir. Bir dalda önizleme gerekirse o dalın `vercel.json`'ından
-bu satır geçici olarak çıkarılır (ya da dal başka adla açılır).
+Bu dallardaki değişiklik yerelde `npm run build` ile derlenir. Bir dalda önizleme gerekirse dal `claude/` dışında bir
+adla açılır (ör. `onizleme/<konu>`); `vercel.json`'daki satır **çıkarılmaz**: dal birleşince kural main'den de
+düşer, her `claude/**` push'u yine önizleme açar ve günlük sınır sessizce dolar (`tests/predeploy.test.ts` kuralı
+tutar).
 
 ## 4. Ortam değişkenleri
 

@@ -19,9 +19,11 @@ Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse öteki
 1. **Kasa:** kasa düzeltmesi ve silmesi, geç kasa raporu, kasadan çıkan, fotoğraf kaldırma, kapalı gün.
 2. **Zayi ve ikram:** geç zayi / ikram, zayi silme. (Mal siparişi taslağı kartları 26 Ekim 2026'da mal siparişiyle
    birlikte kalktı; [MAL-SIPARISI.md](MAL-SIPARISI.md).)
-3. **Reçete önerileri:** değişiklik ve yeni ürün (eskisi gibi; önce / sonra farkı, maliyet etkisi, "Reçete: son
+3. **Karaoke:** açılışından 10 dakika sonra silinmesi istenen panel sayacı: sayacın saati, kimin açtığı, bugünkü
+   durumu, istekten sonra ne değiştiği, isteyen ve neden ([KARAOKE.md](KARAOKE.md) › Sayacı silmek; denetim E-15).
+4. **Reçete önerileri:** değişiklik ve yeni ürün (eskisi gibi; önce / sonra farkı, maliyet etkisi, "Reçete: son
    kararlar").
-4. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
+5. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
 
 Kartların çapası `#istek-<id>` (reçete kartlarınınki `#oneri-<id>`); zil ve sabah e-postası doğrudan karta götürür.
 Reddederken yazılan not personele görünür: **tutar yazmayın**. Onayla / Reddet parola sormaz (parola onayı yalnız hesap
@@ -39,6 +41,7 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 | `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |
+| `karaoke-sil` | Panelden açılan karaoke sayacını, açılışından 10 dakika sonra sildirmek (ilk 10 dakikada personel kendisi siler) | `karaoke:<id>` | yok | denetim E-15 |
 | `mal-taslak` | **Kaldırıldı (26 Ekim 2026).** Eskiden hızlı sayımdan sonra fiyatsız mal siparişi taslağı. Tür eski satırlar için enumda kalır (`RETIRED_REQUEST_KINDS`): yeni istek açılmaz, Onaylar, Bugün, zil, sabah e-postası ve Son kararlar okumaz, sabah işi bekleyen ya da onaylanmış eski taslağı "Süresi doldu" yapar ([MAL-SIPARISI.md](MAL-SIPARISI.md)) | `tedarikci:<anahtar>` | (sabah işi kapatır) | §2.4 |
 
 Türe özel alanlar `payload` (istek) ve `result` (karar) içinde, her okumada zod ile çözülür. `title` tutarsız ve kişisel
@@ -75,7 +78,7 @@ sabah e-postası ve Son kararlar bunu yazar.
 - **Fotoğraf tutma:** istek beklerken eklenen fotoğraflar (`photo_ids`) bağlanmaz ve silinmez; başka bir istek ya da
   kayıt aynı fotoğrafı alamaz ("Bu fotoğraf onay bekleyen bir istekte"). Geri çekme, ret, kapanma ve süre dolmasında
   fotoğraf bırakılır (7 gün sonra silinir; geç kasa raporunun reddinde 30 gün).
-- **Sınırlar (kişi başına):** açık istek tür grubu başına 10 (kasa), 5 (geç kasa raporu), 20 (zayi);
+- **Sınırlar (kişi başına):** açık istek tür grubu başına 10 (kasa), 5 (geç kasa raporu), 20 (zayi), 5 (karaoke);
   iş günü başına 30 istek; konu başına iş günü başına 3 istek (geri çekilen ve reddedilen dahil). İş günü 05:00'te
   döner.
 - **Zil kimliği** (`bumped_at`) istek güncellenince en çok 10 dakikada bir yenilenir.
@@ -92,7 +95,8 @@ sabah e-postası ve Son kararlar bunu yazar.
   başlığın adı **İsteklerim**: kendi isteklerinin ve reçete önerilerinin sonucu. Satırları alanların modülleri üretir
   (`src/server/bell/kasa.ts`, `src/server/bell/ops.ts`; [BILDIRIMLER.md](BILDIRIMLER.md)).
 - **Bugün:** yöneticinin **Onaylar** satırı reçete önerilerini ve istekleri birlikte sayar: "1 kasa düzeltmesi · 2
-  reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür" ([BUGUN.md](BUGUN.md)).
+  reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür"; karaoke sayacı silme isteği zayinin ardından
+  ([BUGUN.md](BUGUN.md)).
 - **Sabah e-postası:** "Onay bekleyenler" kutusu: "2 istek onay bekliyor", en eskisinin beklediği ve istek başına
   başlık ile isteyenin adı; karar verilene kadar her sabah.
 - **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık). Tek gönderen mal siparişi taslağıydı
@@ -119,7 +123,7 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
   hatalar `UserError` (`src/server/user-error.ts`).
 - **Kilit sırası: önce konu, sonra istek.** İsteği açan ve güncelleyen yol konu nesnesini kilitleyip
   `createOrUpdateRequest`'e geçer: kasadan çıkan satırı, kasa raporu, günün danışma kilidi (`kasa-gec:<gün>`,
-  `kapali-gun:<gün>`), zayi kaydı. Doğrudan yazımlar da (satırı ya da
+  `kapali-gun:<gün>`), zayi kaydı, karaoke oturumu. Doğrudan yazımlar da (satırı ya da
   kaydı silmek, günü doğrudan girmek ya da kapalı işaretlemek) konu nesnesini kilitleyip bekleyen istekleri öyle kapatır.
   Karar aynı sırayla: `peekForReview` kilitsiz okur, konu nesnesi kilitlenir, sonra `lockForReview(…, { peeked })`
   bütün denetimleri kilit altında yeniden yapar. Ters sıra, personelin güncellemesiyle aynı anda verilen onayı
@@ -129,11 +133,12 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
 - Genel eylem: `src/server/actions/staff-requests.ts` → `withdrawStaffRequest` (tek export). İstek ve karar eylemleri
   her alanın kendi `"use server"` dosyasında; her biri kendi oturum ve rol denetimini yapar (`requireUser` /
   `requireAdmin`).
-- Yeni tür: şemadaki enum ve `STAFF_REQUEST_KINDS` (migration), `KIND_LABEL`, `KIND_COUNT_LABEL`, `KIND_GROUP`,
-  `WITHDRAW_LOG`, `STAFF_APPROVAL_KINDS` (personel Yardım'ı); Onaylar'da kartı, zilde satırı.
+- Yeni tür: şemadaki enum ve `STAFF_REQUEST_KINDS` (metin sütunu: drizzle-kit migration üretmez), `KIND_LABEL`,
+  `KIND_COUNT_LABEL`, `KIND_GROUP`, `WITHDRAW_LOG`, `STAFF_APPROVAL_KINDS` (personel Yardım'ı), Bugün'ün tür sırası
+  (`src/app/panel/bugun/logic.ts`; `tests/bugun.test.ts` her canlı türü arar); Onaylar'da kartı, zilde satırı.
 - Testler: `tests/onay-kuyrugu.test.ts` (saf kurallar ve kaynak denetimleri), `tests/onay-kuyrugu-db.test.ts`
   (`ONAY_TEST_DATABASE_URL`; tek bekleyen, istemci anahtarı, sürüm, kendini onaylama, geri çekme ile onay yarışı,
   sınırlar, supersede, fotoğraf tutma, süre dolması). Kilit sırası yarışları her alanın kendi veritabanı testinde
   ("kilit sırası: …"): kasadan çıkan ve fotoğraf kaldırma, kasa düzeltme ve silme, geç rapor (yöneticinin doğrudan
-  girişi dahil), zayi silme, kapalı gün. Kaldırılan tür: `tests/onay-kuyrugu-db.test.ts` › "kaldırılan tür" ve
+  girişi dahil), zayi silme, kapalı gün, karaoke sayacı silme (`tests/karaoke-istek-db.test.ts`). Kaldırılan tür: `tests/onay-kuyrugu-db.test.ts` › "kaldırılan tür" ve
   `tests/hizli-siparis-kaldirildi.test.ts`.

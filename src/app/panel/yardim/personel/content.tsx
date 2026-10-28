@@ -38,6 +38,7 @@ import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { POS_UNDO_WINDOW_MS } from "@/lib/prices/pos";
 import { clockSuffixTR } from "@/lib/reminders";
 import { STAFF_SOLD_OUT_MAX } from "@/lib/site-menu/sold-out";
+import { KARAOKE_DELETE_FREE_MINUTES } from "@/lib/karaoke/timer-requests";
 import { STAFF_APPROVAL_KINDS } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS } from "@/lib/waste-requests";
 
@@ -341,7 +342,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             laffogato.net&apos;te rezervasyon açılınca bar ekranı çalar. Oturum başlayınca kısa ses, bitime az kala uyarı çalar; süre dolunca alarm, siz{" "}
             <B>Haber verdim</B>&apos;e basana kadar çalar. <B>+15</B> / <B>+30 dk</B> ile uzatın, erken çıkan grupta <B>Erken bitir</B>. Rezervasyonsuz gelen grup
-            için hızlı sayacı başlatın; o saatte sitede rezervasyon varsa ekran sorar.
+            için hızlı sayacı başlatın; o saatte sitede rezervasyon varsa ekran sorar. Yanlış açılan sayacı ilk {KARAOKE_DELETE_FREE_MINUTES} dakikada
+            çöp kutusuyla silersiniz; sonrasında <B>Silinmesini iste</B>: nedenini yazın, yönetici onaylarsa silinir. Bitirdiğiniz, geri açtığınız ve
+            sildiğiniz oturum işlem geçmişine adınızla yazılır.
           </>
         ),
         icon: MicVocal,

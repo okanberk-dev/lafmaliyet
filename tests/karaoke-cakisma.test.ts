@@ -90,7 +90,8 @@ test("sunucu: çakışma kaydetmeden önce sorulur, `force` ile yine de kaydedil
   assert.ok(start.indexOf("if (!data.force)") < start.indexOf(".insert(s.karaokeSessions)"), "sayaç açılmadan önce");
   assert.match(start, /if \(conflict\) return \{ conflict \}/);
   const extend = actions.slice(actions.indexOf("export async function extendKaraokeSession"));
-  assert.ok(extend.indexOf("if (!force)") < extend.indexOf(".update(s.karaokeSessions)"), "uzatılmadan önce");
+  // Yazım tek adımda (src/server/karaoke/extend.ts addExtraMinutes); çakışma ondan önce sorulur
+  assert.ok(extend.indexOf("if (!force)") > 0 && extend.indexOf("if (!force)") < extend.indexOf("await addExtraMinutes(db, sid, add)"), "uzatılmadan önce");
   assert.match(extend, /extensionWindow\(toSessionDTO\(row, \{ admin: false \}\), add\), "extend", row\.id\)/);
   // Yalnız sitedeki rezervasyonlar sorulur (sorgu sütun dışı ifadeye ISO metni verir, board.ts gibi)
   assert.match(actions, /eq\(s\.karaokeSessions\.source, "site"\)/);

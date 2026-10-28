@@ -865,6 +865,24 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         icon: Grid3x3,
         links: [{ href: "/panel/karaoke/doluluk", label: "Karaoke doluluğu" }],
       },
+      {
+        id: "karaoke-sayac-silme",
+        q: "Karaoke sayacını kim bitirdi, kim sildi?",
+        a: (
+          <>
+            Karaoke ekranındaki Haber verdim, Erken bitir, Geri aç ve sayaç silme <Path href="/panel/ayarlar" /> › İşlem geçmişi&apos;ne kimin yaptığıyla ve
+            planlanan bitişle yazılır (erken bitirme doluluğu kısaltır). İptal edilmiş ya da süresi dolmuş
+            oturum yeniden açılmaz. Personel panelden açılan sayacı ilk 10 dakikada silebilir (yanlış açılan sayaç); sonrası{" "}
+            <Path href="/panel/onaylar" /> › Karaoke&apos;ye istek olarak gelir: sayacın saati, kimin açtığı, bugünkü durumu ve neden. Onaylarsanız sayaç karaoke
+            geçmişinden ve doluluktan çıkar; oda kullanıldıysa reddedin. Siz her sayacı doğrudan silersiniz, bekleyen istek kendiliğinden kapanır.
+          </>
+        ),
+        icon: Timer,
+        links: [
+          { href: "/panel/onaylar", label: "Onaylar" },
+          { href: "/panel/karaoke", label: "Karaoke (bar ekranı)" },
+        ],
+      },
     ],
   },
   {

@@ -241,7 +241,9 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   e-postasında **iki kez sayılıyor** diye çıkar: **Gider kaydını sil** (alım faturayla sayılır; Geri al'lı) ya da **Ayrı
   alım** (fatura başka bir alımın; gider kaydı kalır, satır listeden çıkar). Kaydı bir cari borcun olan satır burada
   çıkmaz: faturası Tedarikçiler'de borca bağlanır. "Faturalar'a ekle" ile faturasına bağlanmış satıra sonradan gider
-  kaydı açıldıysa o da iki kez sayılıyor diye çıkar.
+  kaydı açıldıysa o da iki kez sayılıyor diye çıkar; faturası o satırdan açıldığı için başka bir alımın olamaz: satırda
+  yalnız **Gider kaydını sil** var ("bu satırdan eklendi"), Ayrı alım yoktur ve sunucu da reddeder (kapatmak faturayla
+  bağını siler, gider kaydı uyarısız kalırdı).
 - Personel listeyi görmez; pencerede "Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür"
   yazar. Faturalı diye girdiği satırı **Fiş**'e (ya da belgesize) düzeltirse satır hâlâ faturasını bekliyorsa Aylık
   harcamalar'a yazılır (kategori sorulur); faturası geldiyse ya da yönetici listeden çıkardıysa yazılmaz (inceleme D5).

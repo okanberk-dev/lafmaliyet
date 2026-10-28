@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, TriangleAlert, Users } from "lucide-react";
+import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, TriangleAlert, Undo2, Users } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -14,7 +15,8 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, Input } from "@/components/ui/form";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Input, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import type { Role } from "@/lib/constants";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
@@ -33,8 +35,18 @@ import {
   type KaraokeSessionDTO,
   type Phase,
 } from "@/lib/karaoke/session";
+import { KARAOKE_DELETE_FREE_MINUTES, KARAOKE_REQUEST_TEXT, karaokeDeleteMode, reopenRefusal, type KaraokeDeleteAsk } from "@/lib/karaoke/timer-requests";
 import { cn } from "@/lib/utils";
-import { deleteKaraokeTimer, endKaraokeSession, extendKaraokeSession, reopenKaraokeSession, startKaraokeTimer, syncKaraokeNow } from "@/server/actions/karaoke";
+import {
+  deleteKaraokeTimer,
+  endKaraokeSession,
+  extendKaraokeSession,
+  reopenKaraokeSession,
+  requestKaraokeTimerDelete,
+  startKaraokeTimer,
+  syncKaraokeNow,
+} from "@/server/actions/karaoke";
+import { withdrawStaffRequest } from "@/server/actions/staff-requests";
 
 const PRESETS = [30, 60, 90, 120] as const;
 
@@ -133,6 +145,8 @@ export function KaraokeBoard({
   const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
   const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));
   const later = sessions.filter((s) => s.date > today);
+  // Sayaçların bekleyen silme istekleri (E-15; canlı uçtan): satırda kim istedi, isteyene "İsteği geri çek"
+  const rowEnv: RowEnv = { role, meId: live.data?.me.id ?? null, asks: live.data?.karaoke.deleteAsks ?? [] };
 
   return (
     <div className="space-y-6">
@@ -172,8 +186,8 @@ export function KaraokeBoard({
               </div>
             </Card>
           )}
-          <TodayList sessions={todays} now={now} siteAdminBase={siteAdminBase} configured={configured} />
-          <UpcomingList sessions={later} now={now} siteAdminBase={siteAdminBase} admin={role === "admin"} />
+          <TodayList sessions={todays} now={now} siteAdminBase={siteAdminBase} configured={configured} env={rowEnv} />
+          <UpcomingList sessions={later} now={now} siteAdminBase={siteAdminBase} admin={role === "admin"} env={rowEnv} />
         </div>
         <div className="space-y-4">
           <QuickTimer sessions={sessions} now={now} />
@@ -194,6 +208,13 @@ function useSessionActions() {
       await refreshLive();
     });
   return { pending, run };
+}
+
+/** Satırların ortak bağlamı: kimin baktığı ve sayaçların bekleyen silme istekleri (canlı uçtan) */
+interface RowEnv {
+  role: Role;
+  meId: number | null;
+  asks: KaraokeDeleteAsk[];
 }
 
 function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSessionDTO; now: number; warnMinutes: number }) {
@@ -383,9 +404,58 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
   );
 }
 
-function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSessionDTO; now: number; siteAdminBase: string | null; showDay?: boolean }) {
-  const { pending, run } = useSessionActions();
+/**
+ * Silme (E-15): yönetici panel sayacını doğrudan siler; personel açılışından sonraki ilk 10 dakikada doğrudan, sonra
+ * nedenini yazıp silinmesini ister (Onaylar › Karaoke). Kural sunucuyla aynı (src/lib/karaoke/timer-requests.ts); saat
+ * sunucunun. Bekleyen istek satırda görünür; isteyen geri çekebilir.
+ */
+function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: KaraokeSessionDTO; now: number; siteAdminBase: string | null; showDay?: boolean; env: RowEnv }) {
+  const { pending: rowPending, run } = useSessionActions();
+  const [deletePending, startAction] = useActionTransition();
+  const pending = rowPending || deletePending;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Silme isteğinin penceresi: açılınca istemci anahtarı üretilir (çift dokunuş ikinci istek açmaz) */
+  const [askKey, setAskKey] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const admin = env.role === "admin";
+  const deleteMode = karaokeDeleteMode(s, admin ? "admin" : "staff", now);
+  const asks = env.asks.filter((a) => a.sessionId === s.id);
+  const mine = asks.find((a) => a.byId !== null && a.byId === env.meId);
+  const openAsk = () => {
+    setReason("");
+    setAskKey(crypto.randomUUID());
+  };
+  function remove() {
+    startAction(async () => {
+      const res = await deleteKaraokeTimer(s.id);
+      if (!res.ok) return void toast.error(res.error);
+      // Pencere açıkken 10 dakika doldu: sayaç silinmedi, neden sorulur
+      if (!res.data.deleted) return void (toast.info(KARAOKE_REQUEST_TEXT.askOnly), openAsk());
+      toast.success("Sayaç silindi");
+      await refreshLive();
+    });
+  }
+  function ask() {
+    const key = askKey;
+    if (!key) return;
+    if (reason.trim().length < 3) return void (toast.error(KARAOKE_REQUEST_TEXT.messageShort), document.getElementById(`ks-sil-neden-${s.id}`)?.focus());
+    startAction(async () => {
+      const res = await requestKaraokeTimerDelete({ id: s.id, message: reason.trim(), clientKey: key });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success("Silme isteği yöneticiye gönderildi", { description: "Onaylanana kadar sayaç listede kalır." });
+      setAskKey(null);
+      setReason("");
+      await refreshLive();
+    });
+  }
+  function withdraw(requestId: number) {
+    startAction(async () => {
+      const res = await withdrawStaffRequest(requestId);
+      if (!res.ok) return void toast.error(res.error);
+      toast.success("İstek geri çekildi");
+      await refreshLive();
+    });
+  }
   const p = phase(s, now);
   const status = statusBadge(s);
   const phaseBadge = PHASE_BADGE[p];
@@ -397,7 +467,8 @@ function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSess
         {showDay ? <span className="block text-xs font-normal text-ink-mute">{dayLabel(s.date, now)}</span> : null}
         {timeRange(start, end)}
       </div>
-      <div className="min-w-0 flex-1">
+      {/* Ad en az 7rem: geniş düğme sığmazsa (telefonda "Silinmesini iste", "İsteği geri çek") alt satıra iner, ad harf harf kırılmaz */}
+      <div className="min-w-0 grow basis-28">
         <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
           {nameOf(s)}
           {s.guests ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {s.guests} kişi</span> : null}
@@ -410,11 +481,22 @@ function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSess
           {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
           {s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
           {s.endedBy && p === "done" ? <span className="text-xs text-ink-mute">· {s.endedBy}</span> : null}
+          {asks.map((a) =>
+            admin ? (
+              <Link key={a.requestId} href={`/panel/onaylar#istek-${a.requestId}`} className="rounded-full pointer-coarse:py-2" title="Onaylar'da karar verin">
+                <Badge tone="amber">{a.by} silinmesini istedi</Badge>
+              </Link>
+            ) : (
+              <Badge key={a.requestId} tone="amber">
+                {a === mine ? KARAOKE_REQUEST_TEXT.pending : `${a.by} silinmesini istedi`}
+              </Badge>
+            ),
+          )}
         </p>
         {s.note ? <p className="mt-1 text-[13px] break-words text-ink-mute">Not: {s.note}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        {p === "done" && s.endedAt && end > now ? (
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {p === "done" && s.endedAt && !reopenRefusal(s, now) ? (
           <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => reopenKaraokeSession(s.id), "Sayaç yeniden açıldı")}>
             <RotateCcw size={14} /> Geri aç
           </Button>
@@ -431,10 +513,18 @@ function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSess
             <ExternalLink size={14} />
           </a>
         ) : null}
-        {s.source === "panel" ? (
+        {mine ? (
+          <Button variant="ghost" size="sm" disabled={pending} onClick={() => withdraw(mine.requestId)} className="min-h-11 sm:min-h-8">
+            <Undo2 size={14} /> {KARAOKE_REQUEST_TEXT.withdraw}
+          </Button>
+        ) : deleteMode === "direct" ? (
           <IconButton label={`${nameOf(s)} sayacını sil`} tone="danger" disabled={pending} onClick={() => setConfirmDelete(true)}>
             <Trash2 size={14} />
           </IconButton>
+        ) : deleteMode === "request" && !asks.length ? (
+          <Button variant="secondary" size="sm" disabled={pending} onClick={openAsk} className="min-h-11 sm:min-h-8">
+            {KARAOKE_REQUEST_TEXT.deleteAsk}
+          </Button>
         ) : null}
       </div>
       <ConfirmDialog
@@ -442,16 +532,45 @@ function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSess
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => {
           setConfirmDelete(false);
-          run(() => deleteKaraokeTimer(s.id), "Sayaç silindi");
+          remove();
         }}
         title={`${nameOf(s)} sayacı silinsin mi?`}
-        description="Yanlış açılan sayaç için. Aylık özetteki rezervasyonsuz oturum sayısından da düşer."
+        description={
+          admin
+            ? "Yanlış açılan sayaç için. Karaoke geçmişinden, doluluktan ve aylık özetteki rezervasyonsuz oturum sayısından da düşer."
+            : `Yanlış açılan sayaç için. Açılışından ${KARAOKE_DELETE_FREE_MINUTES} dakika sonra silmek yöneticinin onayıyla olur.`
+        }
       />
+      <Dialog
+        open={askKey !== null}
+        onClose={() => setAskKey(null)}
+        title={`${nameOf(s)} sayacının silinmesini isteyin`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAskKey(null)} disabled={pending} className="max-sm:bg-panel">
+              Vazgeç
+            </Button>
+            <Button variant="danger" onClick={ask} disabled={pending}>
+              {pending ? "Gönderiliyor…" : KARAOKE_REQUEST_TEXT.deleteAsk}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-ink-mute">
+            Sayacın açılışından {KARAOKE_DELETE_FREE_MINUTES} dakika geçti. Yönetici onaylarsa sayaç silinir; o zamana kadar listede kalır ve sayar.
+          </p>
+          <Field label={KARAOKE_REQUEST_TEXT.reasonLabel} htmlFor={`ks-sil-neden-${s.id}`} hint="zorunlu">
+            <Textarea id={`ks-sil-neden-${s.id}`} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={300} placeholder="ör. yanlışlıkla iki kez açıldı" />
+          </Field>
+        </div>
+      </Dialog>
     </li>
   );
 }
 
-function TodayList({ sessions, now, siteAdminBase, configured }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; configured: boolean }) {
+function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; configured: boolean; env: RowEnv }) {
   const [pending, start] = useActionTransition();
   function sync() {
     start(async () => {
@@ -479,7 +598,7 @@ function TodayList({ sessions, now, siteAdminBase, configured }: { sessions: Kar
       {sessions.length ? (
         <ul className="divide-y divide-line border-t border-line">
           {sessions.map((s) => (
-            <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} />
+            <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} env={env} />
           ))}
         </ul>
       ) : (
@@ -489,7 +608,7 @@ function TodayList({ sessions, now, siteAdminBase, configured }: { sessions: Kar
   );
 }
 
-function UpcomingList({ sessions, now, siteAdminBase, admin }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; admin: boolean }) {
+function UpcomingList({ sessions, now, siteAdminBase, admin, env }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; admin: boolean; env: RowEnv }) {
   if (!sessions.length) return null;
   const live = sessions.filter((s) => s.status !== "cancelled" && !isHold(s));
   return (
@@ -501,7 +620,7 @@ function UpcomingList({ sessions, now, siteAdminBase, admin }: { sessions: Karao
       />
       <ul className="divide-y divide-line border-t border-line">
         {sessions.map((s) => (
-          <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} showDay />
+          <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} showDay env={env} />
         ))}
       </ul>
     </Card>

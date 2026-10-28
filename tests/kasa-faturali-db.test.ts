@@ -419,6 +419,49 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     assert.deepEqual(await stateOf().then((x) => [x.pending.length, x.duplicates.length]), [0, 0]);
   });
 
+  test("B17 takip: faturası bu satırdan açılmış (Faturalar'a ekle) iki kez sayılan alımda Ayrı alım yok; Gider kaydını sil çalışır", async () => {
+    const cat = await category();
+    const o = await out({ amount: 2400 });
+    const r = ok(await invoices.saveInvoice(addForm(o.id, { supplier: "Migros Ticaret", payable: 2390 })));
+    // Sonra Kasa'da yöneticinin anahtarıyla gider kaydı açıldı: alım hem faturada hem Aylık harcamalar'da
+    await db.insert(s.expenseEntries).values({ date: today, categoryId: cat.id, amount: 2400, cashOutId: o.id, createdBy: "Mehmet" });
+    // Eşleşmeyle bulunan öteki iki kez sayılan alımın faturası başka bir alımın olabilir: Ayrı alım onda kalır
+    const w = await out({ store: "Bim", amount: 300, date: addDays(today, -1) });
+    ok(await actions.writeCashOutInvoiceExpense({ id: w.id, categoryId: cat.id }));
+    await invoice({ payable: 300, supplier: "Bim" });
+    const state = await stateOf();
+    // Yeniden eskiye: o bugünün, w dünün
+    assert.deepEqual(
+      state.duplicates.map((d) => [d.id, d.adopted]),
+      [
+        [o.id, true],
+        [w.id, false],
+      ],
+    );
+    const mine = state.duplicates.find((d) => d.id === o.id)!;
+    assert.equal(mine.invoice.id, r.id);
+    // Ayrı alım reddedilir (tek başına da, ötekiyle birlikte de): bağ ve gider kaydı yerinde, satır hâlâ iki kez sayılıyor
+    for (const ids of [[o.id], [w.id, o.id]]) {
+      const refused = await actions.dismissCashOutInvoices({ ids });
+      assert.ok(!refused.ok && /bu satırdan açıldı/.test(refused.error), refused.ok ? "reddedilmedi" : refused.error);
+    }
+    const [handled] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, "cashOuts.invoiceHandled"));
+    assert.deepEqual(
+      (handled.value as { id: number; invoiceId?: number }[]).map((h) => [h.id, h.invoiceId]),
+      [[o.id, r.id]],
+    );
+    assert.deepEqual(
+      (await stateOf()).duplicates.map((d) => d.id),
+      [o.id, w.id],
+    );
+    // Öteki satırda Ayrı alım çalışır
+    ok(await actions.dismissCashOutInvoices({ ids: [w.id] }));
+    // Gider kaydını sil: alım yalnız faturayla sayılır
+    ok(await actions.dropCashOutInvoiceExpense({ id: o.id, expenseId: mine.expenseId }));
+    assert.deepEqual(await stateOf().then((x) => [x.pending.length, x.duplicates.length]), [0, 0]);
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, o.id))).length, 0);
+  });
+
   test("D5: personel e-Arşiv diye girdiği satırı fişe düzeltince Aylık harcamalar'a yazılır; faturası gelmiş satırda yazılmaz", async () => {
     const cat = await category();
     current = { ...staffUser, role: "staff" };

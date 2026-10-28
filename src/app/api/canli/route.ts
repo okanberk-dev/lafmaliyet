@@ -6,6 +6,7 @@ import { todayTR } from "@/lib/reminders";
 import { awaitingUntil } from "@/lib/site-orders/follow";
 import { siteErrorFor } from "@/lib/staff-errors";
 import { getCurrentUser } from "@/server/auth/dal";
+import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
@@ -13,11 +14,11 @@ import { vapidPublicKey } from "@/server/push/send";
 import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/site-orders/sync";
 
 /**
- * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları, laffogato.net'in açık kafe siparişleri (bar
- * ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına kadarki hatırlatıcıları, sunucu saati (sayaç
- * cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu sürekli sormaz: açılışta, bildirim gelince,
- * sekmeye dönünce ve seyrek bir yedek kontrolde ister (sekme öndeyken; arka planda yalnız bildirim gelmeyen zil cihazı,
- * 10 dakikada bir; src/lib/live-poll.ts). ETag üç ucuz işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların
+ * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları (ve sayaçların bekleyen silme istekleri),
+ * laffogato.net'in açık kafe siparişleri (bar ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına
+ * kadarki hatırlatıcıları, sunucu saati (sayaç cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu
+ * sürekli sormaz: açılışta, bildirim gelince, sekmeye dönünce ve seyrek bir yedek kontrolde ister (sekme öndeyken; arka
+ * planda yalnız bildirim gelmeyen zil cihazı, 10 dakikada bir; src/lib/live-poll.ts). ETag üç ucuz işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların
  * değişim işareti) ve günden oluşur; değişiklik yoksa veri okunmadan 304 döner.
  *
  * Karaoke kopyası bayatsa (ping kaçtı, son çekme düştü) yanıttan sonra site yeniden sorulur
@@ -45,8 +46,10 @@ export async function GET(request: NextRequest) {
   const etag = `W/"${version}.o${orders}.${marker}.${today}.${me.role}"`;
   if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ...headers, ETag: etag } });
   const { from, to } = liveWindow();
-  const [sessions, reminders, publicKey, snapshot, ordersState] = await Promise.all([
+  const [sessions, deleteAsks, reminders, publicKey, snapshot, ordersState] = await Promise.all([
     loadSessions(from, to, { admin: me.role === "admin" }),
+    // Sayaç silme istekleri (E-15): istek açılınca, geri çekilince ve karara bağlanınca karaoke sayacı artar (ETag)
+    pendingKaraokeAsks(),
     loadDueReminders(me.id, today),
     vapidPublicKey(),
     readOrdersSnapshot(),
@@ -62,6 +65,7 @@ export async function GET(request: NextRequest) {
       // Hatanın ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personele sabit metin (E-64)
       okAt: linked ? karaoke.sync.lastOkAt : null,
       error: linked ? siteErrorFor(me.role, karaoke.sync.lastError) : null,
+      deleteAsks,
     },
     orders: {
       configured: linked,
