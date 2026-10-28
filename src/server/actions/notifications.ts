@@ -24,7 +24,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -229,7 +229,7 @@ async function holdNotifications(): Promise<PanelNotification[]> {
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [[review], [fresh], [lastRun], unlinked, stockOnly, cashOuts] = await Promise.all([
+  const [[review], [fresh], [lastRun], unlinked, stockOnly, cashState] = await Promise.all([
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     db.select({ n: count() }).from(s.invoices).where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, dayAgo))),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
@@ -237,9 +237,12 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
     countUnlinkedProducts().catch(() => 0),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan, kontrol bekleyen faturalar (E-07)
     countStockOnlyReview(db).catch(() => 0),
-    // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42)
-    loadPendingCashOutInvoices(db).catch(() => []),
+    // Kasadan faturalı alımlar: faturası Faturalar'da yok, Aylık harcamalar'a da yazılmadı (E-42); yazılmışken
+    // faturası sonradan gelenler (iki kez sayılıyor)
+    loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
   ]);
+  const cashOuts = cashState.pending;
+  const twice = cashState.duplicates;
   const out: PanelNotification[] = [];
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 48 * 60 * 60 * 1000) {
     out.push({
@@ -285,6 +288,18 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
       title: cashOuts.length === 1 ? "Kasadan faturalı alım bekliyor" : `${cashOuts.length} kasadan faturalı alım bekliyor`,
       body: `${pendingCashOutSummary(cashOuts)}: e-Arşiv / fatura, Faturalar'da yok, gelir-gidere girmedi. Faturalar'a ekleyin ya da Aylık harcamalar'a yazın`,
       timeLabel: dateTR(cashOuts[0].date),
+      unread: true,
+      href: CASH_OUT_INVOICES_HREF,
+      group: "fatura",
+    });
+  }
+  if (twice.length) {
+    out.push({
+      id: `fatura-kasa-iki-${twice.length}-${Math.max(...twice.map((c) => c.id))}`,
+      kind: "danger",
+      title: twice.length === 1 ? "Kasa alımı iki kez sayılıyor" : `${twice.length} kasa alımı iki kez sayılıyor`,
+      body: `${pendingCashOutSummary(twice)}: Aylık harcamalar'a yazılmıştı, faturası sonra geldi. Aylık harcamalar'daki kaydı silin`,
+      timeLabel: dateTR(twice[0].invoice.date),
       unread: true,
       href: CASH_OUT_INVOICES_HREF,
       group: "fatura",

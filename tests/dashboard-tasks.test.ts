@@ -11,9 +11,11 @@ import { createModel } from "../src/lib/calc/engine";
 import { dashboard } from "../src/lib/calc/insights";
 import type { Dataset, PnlEntry } from "../src/lib/calc/types";
 import type { UpcomingItem } from "../src/lib/reminders";
+import { money } from "../src/lib/format";
 import { lafposMonthStatus } from "../src/lib/lafpos/sales";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import {
+  monthCashOuts,
   monthTaskFacts,
   monthTasks,
   paymentFacts,
@@ -377,6 +379,45 @@ test("Faturalar: kontrol bekleyenler (kafe dışı dahil) kafe faturası sayıs�
   // Kafe faturası yoksa "0 fatura" denmez
   const none = monthTasks({ ...f, invoices: { count: 0, goods: 0, review: 2 } }).find((x) => x.key === "fatura")!;
   assert.equal(none.detail, "2 fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.");
+});
+
+test("Faturalar: ayın kasadan faturalı alımları bekliyorsa ya da iki kez sayılıyorsa ay kapanmış görünmez (inceleme U4)", () => {
+  const f = {
+    month: "2026-09",
+    state: "closed",
+    dim: 30,
+    sales: { lines: 120, unmatched: 0, summaryRows: 0, refMonth: "2026-09" },
+    info: { openDays: 30, posRevenue: 1000 },
+    invoices: { count: 4, goods: 10, review: 0 },
+    water: { bill: null, usedInRecipes: false, perLiter: 0, costMonth: null, reason: "no-bill" },
+    stock: { lines: 1, total: 1, counted: 1, listed: 1 },
+    payments: null,
+    parasut: null,
+  } satisfies MonthTaskFacts;
+  assert.equal(monthTasks(f).find((x) => x.key === "fatura")!.status, "done");
+  // Fişin günü ayda olanlar (yoksa kasanın günü); başka ayınkiler sayılmaz
+  const state = {
+    pending: [
+      { store: "Migros", amount: 2400, date: "2026-10-01", receiptDate: "2026-09-29" },
+      { store: "Metro", amount: 900, date: "2026-09-12", receiptDate: null },
+      { store: "Bim", amount: 300, date: "2026-10-02", receiptDate: null },
+    ],
+    duplicates: [{ date: "2026-09-20", receiptDate: null }],
+  };
+  const cashOuts = monthCashOuts(state, "2026-09");
+  assert.deepEqual(cashOuts, { count: 2, summary: `Migros ${money(2400)} ve 1 alım daha`, duplicates: 1 });
+  assert.equal(monthCashOuts(state, "2026-08"), null);
+  const t = monthTasks({ ...f, cashOuts }).find((x) => x.key === "fatura")!;
+  assert.equal(t.status, "todo");
+  assert.equal(t.href, "/panel/faturalar?durum=kontrol#kasa-faturali");
+  assert.equal(
+    t.detail,
+    `2 kasa alımı Faturalar'da yok (Migros ${money(2400)} ve 1 alım daha): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa mal alımı eksik kalır. 1 kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin. Bu ay 4 kafe faturası var.`,
+  );
+  // Kontrol bekleyen faturalarla birlikte: önce faturalar
+  const both = monthTasks({ ...f, invoices: { ...f.invoices, review: 3 }, cashOuts: { count: 0, summary: "", duplicates: 2 } }).find((x) => x.key === "fatura")!;
+  assert.match(both.detail, /^3 fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın\. 2 kasa alımı iki kez sayılıyor/);
+  assert.equal(both.href, "/panel/faturalar?durum=kontrol#kasa-faturali");
 });
 
 test("Açık gün ve POS cirosu kasa raporlarından: tamamsa kaynağı yazar; kapanmış ayda eksik gün uyarıdır", () => {

@@ -1,9 +1,9 @@
-import { and, desc, eq, gte, inArray, isNotNull, lte, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, notExists, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { supplierResolver } from "@/app/panel/tedarikciler/logic";
 import { CASH_OUT_INVOICE_WINDOW, cashOutInvoiceDay, matchCashOutInvoices, nameKey, sameStoreName, type CashOutDocType } from "@/lib/cash-outs";
-import { addDays } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -15,6 +15,8 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
  * gelmeyen satır hiçbir hesaba girmezdi. Bekleyen liste: belgesi fatura ya da e-Arşiv, Aylık harcamalar'da kaydı yok,
  * bir tedarikçi ödemesine bağlı değil, yöneticinin elle kapatmadığı ve aynı mağazadan ±7 gün, ±1 ₺ içinde faturası
  * olmayan satırlar. Zil, Bugün ve Faturalar'ın Kontrol süzgeci gösterir; eşleşen fatura gelince kendiliğinden kalkar.
+ * Aylık harcamalar'a yazılmış satırın faturası sonradan gelirse alım iki kez sayılıyordur: aynı yerlerde "faturası geldi,
+ * gider kaydını silin" diye çıkar (inceleme D2).
  */
 
 /**
@@ -73,66 +75,127 @@ export interface PendingCashOutInvoice {
   suggestedCategoryId: number | null;
 }
 
-/** Listenin en çok bu kadar satırı okunur (en yeniler); eşleşmeyen eski satırlar da bunlara dahil */
-const MAX_ROWS = 500;
+/**
+ * İki kez sayılan satır (yalnız yönetici görür): Aylık harcamalar'a yazılmış kasadan faturalı alımın faturası sonradan
+ * Faturalar'a geldi (muhasebeci e-Arşiv'i Paraşüt'e girdi). Alım hem faturada hem gider kaydında sayılıyor; kayıt
+ * silinmeli ("Ayrı alım" denirse listeden çıkar).
+ */
+export interface DuplicateCashOutInvoice extends Omit<PendingCashOutInvoice, "suggestedCategoryId"> {
+  /** Aylık harcamalar'daki kayıt ve kategorisi */
+  expenseId: number;
+  expenseCategory: string | null;
+  /** Eşleşen fatura */
+  invoice: { id: number; date: string; supplier: string; invoiceNo: string | null; payable: number };
+}
+
+export interface CashOutInvoiceState {
+  /** Faturası yok, hiçbir hesaba girmedi (yeniden eskiye) */
+  pending: PendingCashOutInvoice[];
+  /** Aylık harcamalar'a yazılmış, sonra faturası gelmiş: iki kez sayılıyor (yeniden eskiye) */
+  duplicates: DuplicateCashOutInvoice[];
+}
 
 /**
- * Bekleyen kasadan faturalı alımlar, yeniden eskiye. `ids` verilirse yalnız onlara bakılır (eylemlerin denetimi:
- * satır hâlâ bekliyor mu).
+ * Bakılan en eski kasa günü: bugünden bu kadar gün önce (daha eskisi kapanmış yıldadır). Kapatılan satırlar sorguda
+ * dışarıda kalır; sınır olmasa yıllar içinde biriken eşleşmiş satırlar her zil açılışında okunurdu.
+ */
+export const CASH_OUT_INVOICE_HORIZON_DAYS = 365;
+
+/**
+ * Bekleyen kasadan faturalı alımlar, yeniden eskiye. `ids` verilirse yalnız onlar döner (eylemlerin denetimi: satır
+ * hâlâ bekliyor mu); eşleştirme yine bütün satırlarla yapılır (liste ile eylem aynı satırı bekleyen görsün).
  */
 export async function loadPendingCashOutInvoices(db: DB | Tx = getDb(), opts: { ids?: readonly number[] } = {}): Promise<PendingCashOutInvoice[]> {
-  if (opts.ids && !opts.ids.length) return [];
+  return (await loadCashOutInvoiceState(db, opts)).pending;
+}
+
+/**
+ * Kasadan faturalı alımların durumu: bekleyenler ve iki kez sayılanlar. Eşleştirme havuzu: son bir yılın fatura ya da
+ * e-Arşiv belgeli harcama satırları (tedarikçi ödemesine bağlı olmayan, yöneticinin kapatmadığı). Aylık harcamalar'a
+ * yazılmış satır da havuzdadır: kendi faturasını alır (bir başka bekleyeni kapatmasın), aldıysa iki kez sayılıyordur;
+ * hiçbir zaman bekleyen değildir. "Faturalar'a ekle" ile faturasına bağlanmış satırın sonradan gider kaydı olduysa (fatura
+ * silinip geri alınırken yazılmış ya da Kasa'da yöneticinin anahtarıyla) o da iki kez sayılıyordur. `ids` verilirse
+ * eşleştirmeden sonra yalnız onlar döner.
+ */
+export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids?: readonly number[] } = {}): Promise<CashOutInvoiceState> {
+  if (opts.ids && !opts.ids.length) return { pending: [], duplicates: [] };
   const co = s.cashOuts;
-  const [rows, handled] = await Promise.all([
-    db
-      .select({
-        id: co.id,
-        date: co.date,
-        receiptDate: co.receiptDate,
-        store: co.store,
-        description: co.description,
-        amount: co.amount,
-        vat: co.vat,
-        docType: co.docType,
-        receiptNo: co.receiptNo,
-        photoId: co.photoId,
-        createdByName: co.createdByName,
-      })
-      .from(co)
-      .where(
-        and(
-          eq(co.kind, "harcama"),
-          inArray(co.docType, ["fatura", "e_arsiv"]),
-          opts.ids ? inArray(co.id, [...opts.ids]) : undefined,
-          // Aylık harcamalar'a yazılmış (personel kuralı dışında yöneticinin anahtarıyla ya da buradan) satır sayıldı
-          notExists(db.select({ one: sql`1` }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, co.id))),
-          // Tedarikçi ödemesine bağlı satır cari hesabında izlenir (borç, faturası orada bağlanır)
-          notExists(db.select({ one: sql`1` }).from(s.supplierEntries).where(eq(s.supplierEntries.cashOutId, co.id))),
-        ),
-      )
-      .orderBy(desc(co.date), desc(co.id))
-      .limit(MAX_ROWS),
-    loadHandledCashOuts(db),
-  ]);
-  if (!rows.length) return [];
-  // Kapatılanlar: "Listeden çıkar" ya da hâlâ duran bir faturayla "Faturalar'a ekle"
+  // Kapatılanlar: "Listeden çıkar" ya da hâlâ duran bir faturayla "Faturalar'a ekle" (önce okunur: sorguda dışarıda
+  // kalsınlar, sınırı doldurmasınlar)
+  const handled = await loadHandledCashOuts(db);
   const linkedIds = [...new Set(handled.map((h) => h.invoiceId).filter((x): x is number => typeof x === "number"))];
   const alive = new Set(
     linkedIds.length ? (await db.select({ id: s.invoices.id }).from(s.invoices).where(inArray(s.invoices.id, linkedIds))).map((r) => r.id) : [],
   );
-  const closed = new Set(handled.filter((h) => !h.invoiceId || alive.has(h.invoiceId)).map((h) => h.id));
-  const open = rows.filter((r) => !closed.has(r.id));
-  if (!open.length) return [];
+  const closed = [...new Set(handled.filter((h) => !h.invoiceId || alive.has(h.invoiceId)).map((h) => h.id))];
+  // "Faturalar'a ekle" ile faturasına bağlı satırlar → fatura
+  const adopted = new Map(handled.filter((h) => h.invoiceId && alive.has(h.invoiceId)).map((h) => [h.id, h.invoiceId!]));
+  const horizon = addDays(todayTR(), -CASH_OUT_INVOICE_HORIZON_DAYS);
+  const fields = {
+    id: co.id,
+    date: co.date,
+    receiptDate: co.receiptDate,
+    store: co.store,
+    description: co.description,
+    amount: co.amount,
+    vat: co.vat,
+    docType: co.docType,
+    receiptNo: co.receiptNo,
+    photoId: co.photoId,
+    createdByName: co.createdByName,
+    // Aylık harcamalar'daki kaydı (personel kuralı dışında yöneticinin anahtarıyla ya da buradan yazılmış)
+    expenseId: s.expenseEntries.id,
+    expenseCategory: s.expenseCategories.name,
+    // Kayıt bir cari borcun ("Gideri zaten girildi"): faturası Tedarikçiler'de borca bağlanır, bağlama kaydı siler
+    expenseDebtId: s.expenseEntries.supplierEntryId,
+  };
+  // Tedarikçi ödemesine bağlı satır cari hesabında izlenir (borç, faturası orada bağlanır)
+  const notPayment = notExists(db.select({ one: sql`1` }).from(s.supplierEntries).where(eq(s.supplierEntries.cashOutId, co.id)));
+  const [rows, adoptedRows] = await Promise.all([
+    db
+      .select(fields)
+      .from(co)
+      .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, co.id))
+      .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+      .where(
+        and(
+          eq(co.kind, "harcama"),
+          inArray(co.docType, ["fatura", "e_arsiv"]),
+          gte(co.date, horizon),
+          closed.length ? notInArray(co.id, closed) : undefined,
+          notPayment,
+        ),
+      )
+      .orderBy(desc(co.date), desc(co.id)),
+    // Faturasına bağlı satırlardan gider kaydı olanlar (cari borcun kaydı değil)
+    adopted.size
+      ? db
+          .select(fields)
+          .from(co)
+          .innerJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, co.id))
+          .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+          .where(and(inArray(co.id, [...adopted.keys()]), eq(co.kind, "harcama"), gte(co.date, horizon), isNull(s.expenseEntries.supplierEntryId), notPayment))
+          .orderBy(desc(co.date), desc(co.id))
+      : Promise.resolve([] as never[]),
+  ]);
+  if (!rows.length && !adoptedRows.length) return { pending: [], duplicates: [] };
 
   // Pencerenin faturaları (±7 gün) ve tedarikçi kartları (diğer adları, vergi no): aynı karta giden ad aynı mağazadır
-  const days = open.map(cashOutInvoiceDay).sort();
-  const from = addDays(days[0], -CASH_OUT_INVOICE_WINDOW.days);
-  const to = addDays(days[days.length - 1], CASH_OUT_INVOICE_WINDOW.days);
-  const [invoices, cards, refs, recent] = await Promise.all([
-    db
-      .select({ id: s.invoices.id, date: s.invoices.date, supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber, payable: s.invoices.payable })
-      .from(s.invoices)
-      .where(and(gte(s.invoices.date, from), lte(s.invoices.date, to))),
+  const days = rows.map(cashOutInvoiceDay).sort();
+  const from = days.length ? addDays(days[0], -CASH_OUT_INVOICE_WINDOW.days) : null;
+  const to = days.length ? addDays(days[days.length - 1], CASH_OUT_INVOICE_WINDOW.days) : null;
+  const adoptedInvoiceIds = [...new Set(adoptedRows.map((r) => adopted.get(r.id)!))];
+  const invoiceFields = {
+    id: s.invoices.id,
+    date: s.invoices.date,
+    supplier: s.invoices.supplier,
+    supplierTaxNumber: s.invoices.supplierTaxNumber,
+    payable: s.invoices.payable,
+    invoiceNo: s.invoices.invoiceNo,
+  };
+  const [invoices, adoptedInvoices, cards, refs, recent] = await Promise.all([
+    from && to ? db.select(invoiceFields).from(s.invoices).where(and(gte(s.invoices.date, from), lte(s.invoices.date, to))) : Promise.resolve([]),
+    adoptedInvoiceIds.length ? db.select(invoiceFields).from(s.invoices).where(inArray(s.invoices.id, adoptedInvoiceIds)) : Promise.resolve([]),
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
     db.selectDistinct({ supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber }).from(s.invoices),
     // Aynı yerin son Kasa harcamalarının kategorisi (öneri)
@@ -152,11 +215,51 @@ export async function loadPendingCashOutInvoices(db: DB | Tx = getDb(), opts: { 
   };
   // "Faturalar'a ekle" ile başka bir satırdan açılmış fatura o satırındır, bir başkasını kapatmaz
   const candidates = invoices.filter((i) => !alive.has(i.id));
-  const { pending } = matchCashOutInvoices(open, candidates, (o, i) => sameStoreName(o.store ?? "", i.supplier) || groupOfStore(o.store ?? "") === resolve(i.supplier, i.supplierTaxNumber).id);
+  const { matched } = matchCashOutInvoices(rows, candidates, (o, i) => sameStoreName(o.store ?? "", i.supplier) || groupOfStore(o.store ?? "") === resolve(i.supplier, i.supplierTaxNumber).id);
+  const wanted = opts.ids ? new Set(opts.ids) : null;
+  const pick = <R extends { id: number }>(list: R[]) => (wanted ? list.filter((r) => wanted.has(r.id)) : list);
   const suggested = new Map<string, number>();
   for (const r of recent) {
     const k = r.store ? nameKey(r.store) : "";
     if (k && !suggested.has(k)) suggested.set(k, r.categoryId);
   }
-  return pending.map((r) => ({ ...r, suggestedCategoryId: (r.store && suggested.get(nameKey(r.store))) || null }));
+  const invoiceById = new Map([...candidates, ...adoptedInvoices].map((i) => [i.id, i]));
+  const pending: PendingCashOutInvoice[] = [];
+  const duplicates: DuplicateCashOutInvoice[] = [];
+  // Kasa satırının kendisi (gider kaydının alanları olmadan)
+  const rowOf = (r: (typeof rows)[number]) => ({
+    id: r.id,
+    date: r.date,
+    receiptDate: r.receiptDate,
+    store: r.store,
+    description: r.description,
+    amount: r.amount,
+    vat: r.vat,
+    docType: r.docType,
+    receiptNo: r.receiptNo,
+    photoId: r.photoId,
+    createdByName: r.createdByName,
+  });
+  const duplicate = (r: (typeof rows)[number], expenseId: number, inv: (typeof invoices)[number]): DuplicateCashOutInvoice => ({
+    ...rowOf(r),
+    expenseId,
+    expenseCategory: r.expenseCategory,
+    invoice: { id: inv.id, date: inv.date, supplier: inv.supplier, invoiceNo: inv.invoiceNo, payable: inv.payable },
+  });
+  for (const r of pick(rows)) {
+    const inv = invoiceById.get(matched.get(r.id) ?? 0);
+    if (r.expenseId === null) {
+      if (!inv) pending.push({ ...rowOf(r), suggestedCategoryId: (r.store && suggested.get(nameKey(r.store))) || null });
+    } else if (inv && r.expenseDebtId === null) {
+      // Cari borcun kaydı sayılmaz: faturası geldiyse Tedarikçiler'de borca bağlanır (kayıt orada silinir)
+      duplicates.push(duplicate(r, r.expenseId, inv));
+    }
+  }
+  for (const r of pick(adoptedRows)) {
+    const inv = invoiceById.get(adopted.get(r.id)!);
+    if (inv && r.expenseId !== null) duplicates.push(duplicate(r, r.expenseId, inv));
+  }
+  // Yeniden eskiye (iki kaynak birleşti)
+  duplicates.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  return { pending, duplicates };
 }

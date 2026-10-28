@@ -1,26 +1,30 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { cashOutLabel } from "@/lib/cash-outs";
-import { money } from "@/lib/format";
+import { dateTR, money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { cashOutSchema, lockCashOut, writeCashOut } from "@/server/cash-outs/write";
-import { loadPendingCashOutInvoices, updateHandledCashOuts } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState, loadPendingCashOutInvoices, updateHandledCashOuts } from "@/server/data/cash-out-invoices";
 import { getDb, schema as s } from "@/server/db";
 
+import type { ExpenseEntrySnapshot } from "./expenses";
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
 
 // Kasadan faturalı alımların bekleyen listesi (denetim E-42; src/server/data/cash-out-invoices.ts): yalnız yönetici.
 // "Aylık harcamalar'a yaz" Kasa'nın kendi yazım yolundan geçer (writeCashOut, yöneticinin "Aylık harcamalar'a da yaz"ı
-// gibi); "Listeden çıkar" satırı kapatır; "Faturalar'a ekle" fatura penceresinden (saveInvoice `cashOutId`).
+// gibi); "Listeden çıkar" satırı kapatır; "Faturalar'a ekle" fatura penceresinden (saveInvoice `cashOutId`). Aylık
+// harcamalar'a yazılmış satırın faturası sonradan gelirse (iki kez sayılıyor) "Gider kaydını sil" kaydı siler, "Ayrı
+// alım" listeden çıkarır.
 
 const zId = z.number().int().positive();
 const NOT_PENDING = "Bu alım artık beklemiyor: faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı. Sayfayı yenileyin.";
+const NOT_DUPLICATE = "Bu alım artık iki kez sayılmıyor: gider kaydı ya da faturası değişti. Sayfayı yenileyin.";
 
 /**
  * Bekleyen satırı Aylık harcamalar'a yazar (nakit, kasanın notuyla; tarih fişin günü). Satır kilitlenir ve hâlâ
@@ -81,8 +85,9 @@ export async function undoCashOutInvoiceExpense(input: { id: number; expenseId: 
 }
 
 /**
- * "Listeden çıkar": faturası başka adla ya da tutarla Faturalar'da var, ya da kafenin gideri değil. `undo` satırları
- * yeniden bekleyene döndürür (bildirimdeki "Geri al"). Yalnız bekleyen satırlar kapatılır.
+ * "Listeden çıkar": faturası başka adla ya da tutarla Faturalar'da var, ya da kafenin gideri değil; iki kez sayılan
+ * satırda "Ayrı alım" (fatura başka bir alımın, gider kaydı kalsın). `undo` satırları yeniden listeye döndürür
+ * (bildirimdeki "Geri al"). Yalnız bekleyen ya da iki kez sayılan satırlar kapatılır.
  */
 export async function dismissCashOutInvoices(input: { ids: number[]; undo?: boolean }) {
   return attempt(async () => {
@@ -94,10 +99,11 @@ export async function dismissCashOutInvoices(input: { ids: number[]; undo?: bool
         await updateHandledCashOuts(tx, { remove: ids });
         return [];
       }
-      const pending = await loadPendingCashOutInvoices(tx, { ids });
-      if (!pending.length) throw new UserError(NOT_PENDING);
-      await updateHandledCashOuts(tx, { add: pending.map((p) => ({ id: p.id, by: me.name })) });
-      return pending;
+      const state = await loadCashOutInvoiceState(tx, { ids });
+      const listed = [...state.pending, ...state.duplicates];
+      if (!listed.length) throw new UserError(NOT_PENDING);
+      await updateHandledCashOuts(tx, { add: listed.map((p) => ({ id: p.id, by: me.name })) });
+      return listed;
     });
     if (rows.length)
       await logActivity(
@@ -107,5 +113,48 @@ export async function dismissCashOutInvoices(input: { ids: number[]; undo?: bool
       );
     refresh();
     return { ids: rows.map((r) => r.id) };
+  });
+}
+
+/**
+ * İki kez sayılan satırın gider kaydını siler (faturası geldi; alım faturayla sayılır). Satır kilitlenir ve hâlâ iki
+ * kez sayılıyor mu bakılır: arada fatura silindiyse kayıt kalır (alım yeniden hiçbir hesaba girmezdi). "Geri al" için
+ * kaydın kopyası döner (restoreExpenseEntry).
+ */
+export async function dropCashOutInvoiceExpense(input: { id: number; expenseId: number }) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const { id, expenseId } = z.object({ id: zId, expenseId: zId }).parse(input);
+    const done = await getDb().transaction(async (tx) => {
+      const row = await lockCashOut(tx, id);
+      if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+      const dup = (await loadCashOutInvoiceState(tx, { ids: [id] })).duplicates.find((d) => d.expenseId === expenseId);
+      if (!dup) throw new UserError(NOT_DUPLICATE);
+      const [gone] = await tx
+        .delete(s.expenseEntries)
+        .where(and(eq(s.expenseEntries.id, expenseId), eq(s.expenseEntries.cashOutId, id), isNull(s.expenseEntries.supplierEntryId)))
+        .returning();
+      if (!gone) throw new UserError(NOT_DUPLICATE);
+      return { row, dup, gone };
+    });
+    const { row, dup, gone } = done;
+    await logActivity(
+      me,
+      "Kasadan faturalı alımın gider kaydı silindi (faturası geldi)",
+      [longDateTR(row.date), cashOutLabel(row), money(row.amount), `fatura ${dateTR(dup.invoice.date)} ${dup.invoice.supplier}`].join(" · "),
+    );
+    refresh();
+    const snapshot: ExpenseEntrySnapshot = {
+      date: gone.date,
+      categoryId: gone.categoryId,
+      description: gone.description,
+      amount: gone.amount,
+      paymentMethod: gone.paymentMethod,
+      note: gone.note,
+      photoId: gone.photoId,
+      vat: gone.vat,
+      cashOutId: gone.cashOutId,
+    };
+    return { snapshot };
   });
 }

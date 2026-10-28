@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePlus2, Info, Receipt, WalletCards, X } from "lucide-react";
+import { FilePlus2, Info, Receipt, Trash2, WalletCards, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,9 +13,10 @@ import { Select } from "@/components/ui/form";
 import { cashOutsTotal } from "@/lib/cash-outs";
 import { dateTR, money, num } from "@/lib/format";
 import { photoUrl } from "@/lib/photo-rules";
-import { dismissCashOutInvoices, undoCashOutInvoiceExpense, writeCashOutInvoiceExpense } from "@/server/actions/cash-out-invoices";
+import { dismissCashOutInvoices, dropCashOutInvoiceExpense, undoCashOutInvoiceExpense, writeCashOutInvoiceExpense } from "@/server/actions/cash-out-invoices";
+import { restoreExpenseEntry } from "@/server/actions/expenses";
 
-import type { CashOutInvoiceSource } from "./rules";
+import type { CashOutDuplicateSource, CashOutInvoiceSource } from "./rules";
 
 /** Bekleyen satır: kasa satırı ve "Aylık harcamalar'a yaz"ın önerdiği kategori */
 export type PendingCashOut = CashOutInvoiceSource & { suggestedCategoryId: number | null };
@@ -24,18 +25,23 @@ const DOC_LABEL: Record<CashOutInvoiceSource["docType"], string> = { e_arsiv: "e
 const UNDO_MS = 10_000;
 
 /**
- * Faturalar › Kontrol bekleyen: kasadan faturalı alımlar (denetim E-42). Personel Kasa'ya e-Arşiv ya da faturalı
- * alışveriş girdi; Aylık harcamalar'a yazılmadı (Paraşüt'ten de gelir diye), ama e-Arşiv ve kâğıt fatura Paraşüt'e
- * kendiliğinden düşmez. Satır başına üç yol: "Faturalar'a ekle" (pencere kasadan dolu, fiş belge olur), "Aylık
- * harcamalar'a yaz" (kategoriyle, nakit) ve "Listeden çıkar" (faturası başka adla var ya da kafenin gideri değil).
- * Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar. Yalnız yönetici görür.
+ * Faturalar › Kontrol bekleyen: kasadan faturalı alımlar (denetim E-42). Kasa'ya e-Arşiv ya da faturalı alışveriş
+ * girildi (personel ya da "Aylık harcamalar'a da yaz"ı kapalı yönetici); Aylık harcamalar'a yazılmadı (Paraşüt'ten de
+ * gelir diye), ama e-Arşiv ve kâğıt fatura Paraşüt'e ancak muhasebeci girerse düşer. Satır başına üç yol: "Faturalar'a
+ * ekle" (pencere kasadan dolu, fiş belge olur), "Aylık harcamalar'a yaz" (kategoriyle, nakit) ve "Listeden çıkar"
+ * (faturası başka adla var ya da kafenin gideri değil). Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır
+ * kendiliğinden kalkar. Aylık harcamalar'a yazılmış satırın faturası sonradan gelirse (iki kez sayılıyor) aynı kartta
+ * "Gider kaydını sil" ve "Ayrı alım" (inceleme D2). Yalnız yönetici görür.
  */
 export function CashOutInvoicesCard({
   rows,
+  duplicates = [],
   categories,
   onAddInvoice,
 }: {
   rows: PendingCashOut[];
+  /** Aylık harcamalar'a yazılmış, faturası sonradan gelmiş satırlar */
+  duplicates?: CashOutDuplicateSource[];
   categories: { id: number; name: string }[];
   onAddInvoice: (row: PendingCashOut) => void;
 }) {
@@ -45,7 +51,8 @@ export function CashOutInvoicesCard({
   const [chosen, setChosen] = useState<Record<number, string>>({});
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const visible = rows.filter((r) => !hidden.has(r.id));
-  if (!visible.length) return null;
+  const twice = duplicates.filter((r) => !hidden.has(r.id));
+  if (!visible.length && !twice.length) return null;
   const total = cashOutsTotal(visible);
   const known = new Set(categories.map((c) => c.id));
 
@@ -58,7 +65,7 @@ export function CashOutInvoicesCard({
       }
       return next;
     });
-  const nameOf = (r: PendingCashOut) => r.store?.trim() || "Yeri yazılmamış alım";
+  const nameOf = (r: Pick<CashOutInvoiceSource, "store">) => r.store?.trim() || "Yeri yazılmamış alım";
 
   function toExpenses(r: PendingCashOut) {
     const value = chosen[r.id] ?? (r.suggestedCategoryId && known.has(r.suggestedCategoryId) ? String(r.suggestedCategoryId) : "");
@@ -75,7 +82,8 @@ export function CashOutInvoicesCard({
         return void toast.error(res.error);
       }
       toast.success(`${nameOf(r)} Aylık harcamalar'a yazıldı`, {
-        description: `${money(r.amount)} · ${category} · nakit`,
+        // Faturası sonradan Paraşüt'e girilirse alım iki kez sayılır: kart onu "faturası geldi" diye gösterir (U3)
+        description: `${money(r.amount)} · ${category} · nakit. Faturası sonra Paraşüt'e girilirse burada "iki kez sayılıyor" diye çıkar.`,
         duration: UNDO_MS,
         action: {
           label: "Geri al",
@@ -91,7 +99,33 @@ export function CashOutInvoicesCard({
     });
   }
 
-  function dismiss(r: PendingCashOut) {
+  /** İki kez sayılan satır: gider kaydı silinir (alım faturayla sayılır); "Geri al" kaydı geri yazar */
+  function dropExpense(r: CashOutDuplicateSource) {
+    hide([r.id], true);
+    run(async () => {
+      const res = await dropCashOutInvoiceExpense({ id: r.id, expenseId: r.expenseId });
+      if (!res.ok) {
+        hide([r.id], false);
+        return void toast.error(res.error);
+      }
+      toast.success(`${nameOf(r)}: gider kaydı silindi`, {
+        description: `${money(r.amount)} artık yalnız faturayla sayılıyor (${dateTR(r.invoice.date)} · ${r.invoice.supplier}).`,
+        duration: UNDO_MS,
+        action: {
+          label: "Geri al",
+          onClick: () =>
+            run(async () => {
+              const back = await restoreExpenseEntry(res.data.snapshot);
+              if (!back.ok) return void toast.error(back.error);
+              hide([r.id], false);
+              toast.success("Geri alındı; gider kaydı yeniden duruyor");
+            }),
+        },
+      });
+    });
+  }
+
+  function dismiss(r: CashOutInvoiceSource, separate = false) {
     hide([r.id], true);
     run(async () => {
       const res = await dismissCashOutInvoices({ ids: [r.id] });
@@ -100,7 +134,7 @@ export function CashOutInvoicesCard({
         return void toast.error(res.error);
       }
       toast.success(`${nameOf(r)} listeden çıkarıldı`, {
-        description: "Gelir-gidere bu satırdan bir şey yazılmadı.",
+        description: separate ? "Fatura başka bir alımın sayıldı; gider kaydı duruyor." : "Gelir-gidere bu satırdan bir şey yazılmadı.",
         duration: UNDO_MS,
         action: {
           label: "Geri al",
@@ -121,23 +155,85 @@ export function CashOutInvoicesCard({
         icon={<Receipt />}
         title="Kasadan faturalı alımlar"
         description={
-          <>
-            Personel Kasa&apos;ya e-Arşiv ya da faturalı alışveriş girdi; Aylık harcamalar&apos;a yazılmadı, faturası da Faturalar&apos;da yok: gelir-gidere,
-            mal maliyetine ve KDV tahminine girmedi.
-            <span className="max-sm:hidden"> Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.</span>
-          </>
+          visible.length ? (
+            <>
+              Kasa&apos;ya e-Arşiv ya da faturalı alışveriş girildi; Aylık harcamalar&apos;a yazılmadı, faturası da Faturalar&apos;da yok: gelir-gidere, mal
+              maliyetine ve KDV tahminine girmedi.
+              <span className="max-sm:hidden"> Aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.</span>
+            </>
+          ) : (
+            <>Aylık harcamalar&apos;a yazılmış kasa alımlarının faturası sonradan Faturalar&apos;a geldi: alım iki kez sayılıyor.</>
+          )
         }
         meta={
           <>
-            <span>
-              <span className="font-semibold text-ink tabular">{num(visible.length)}</span> alım
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="font-semibold text-ink tabular">{money(total)}</span>
+            {visible.length ? (
+              <>
+                <span>
+                  <span className="font-semibold text-ink tabular">{num(visible.length)}</span> alım
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-semibold text-ink tabular">{money(total)}</span>
+              </>
+            ) : null}
+            {visible.length && twice.length ? <span aria-hidden="true">·</span> : null}
+            {twice.length ? (
+              <span className="font-semibold text-bad">
+                <span className="tabular">{num(twice.length)}</span> iki kez sayılıyor
+              </span>
+            ) : null}
           </>
         }
       />
-      <ul className="divide-y divide-line border-t border-line">
+      {twice.length ? (
+        <section aria-labelledby="kasa-iki-kez" className="border-t border-line">
+          <h3 id="kasa-iki-kez" className="bg-bad-soft/60 px-4 py-2 text-[13px] leading-5 font-semibold text-bad sm:px-5">
+            Faturası geldi, Aylık harcamalar&apos;da da sayılıyor
+          </h3>
+          <ul className="divide-y divide-line border-t border-line">
+            {twice.map((r) => (
+              <li key={r.id} className="px-4 py-3.5 sm:px-5">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-bad-soft text-bad ring-1 ring-line" aria-hidden="true">
+                    <Receipt size={18} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] leading-6 font-medium text-ink">
+                      <span className="min-w-0 break-words">{[nameOf(r), r.description].filter(Boolean).join(" · ")}</span>
+                      <Badge tone="red">İki kez sayılıyor</Badge>
+                    </p>
+                    <p className="text-[13px] leading-5 text-ink-mute">
+                      {[`Kasa ${dateTR(r.receiptDate ?? r.date)}`, r.createdByName, r.expenseCategory ? `Aylık harcamalar: ${r.expenseCategory}` : "Aylık harcamalar'da"]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    <p className="text-[13px] leading-5 text-ink-mute">
+                      {[`Fatura ${dateTR(r.invoice.date)}`, r.invoice.supplier, r.invoice.invoiceNo ? `No ${r.invoice.invoiceNo}` : null, money(r.invoice.payable)].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[15px] font-semibold text-ink tabular">{money(r.amount)}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[3.25rem]">
+                  <Button size="sm" disabled={pending} onClick={() => dropExpense(r)} className="max-sm:w-full">
+                    <Trash2 size={15} /> Gider kaydını sil
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pending}
+                    onClick={() => dismiss(r, true)}
+                    title="Fatura başka bir alımın: gider kaydı kalsın, satır listeden çıksın"
+                    className="max-sm:w-full sm:ml-auto"
+                  >
+                    <X size={15} /> Ayrı alım
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      <ul className={visible.length ? "divide-y divide-line border-t border-line" : "hidden"}>
         {visible.map((r) => {
           const day = r.receiptDate ?? r.date;
           const caption = `${nameOf(r)} · ${dateTR(day)}`;
@@ -221,8 +317,9 @@ export function CashOutInvoicesCard({
       </ul>
       <p className="flex items-start gap-2 border-t border-line px-4 py-3 text-xs leading-5 text-ink-mute sm:px-5">
         <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-        Faturası Paraşüt&apos;e e-fatura olarak düşecekse beklemeniz yeter: aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince satır kendiliğinden kalkar.
-        e-Arşiv ve kâğıt fatura Paraşüt&apos;e kendiliğinden gelmez.
+        Faturası Paraşüt&apos;e düşecekse (e-fatura ya da muhasebecinin girdiği e-Arşiv) beklemeniz yeter: aynı mağazadan ±7 gün, ±1 ₺ içinde fatura gelince
+        satır kendiliğinden kalkar. Şirket adına kesilmiş e-Arşiv&apos;i Faturalar&apos;a ekleyin; Aylık harcamalar&apos;a yazılan alımın faturası sonra
+        gelirse burada &quot;iki kez sayılıyor&quot; diye çıkar.
       </p>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Card>

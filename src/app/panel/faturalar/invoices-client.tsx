@@ -61,6 +61,7 @@ import {
   statusCounts,
   supplierDefaults,
   visibleNote,
+  type CashOutDuplicateSource,
   type InvoiceRow,
   type InvoiceStatus,
 } from "./rules";
@@ -107,6 +108,7 @@ const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
 const NO_CARI: Record<number, InvoiceCariLinks> = {};
 const NO_DOCS: DocumentMeta[] = [];
 const NO_CASH_OUTS: PendingCashOut[] = [];
+const NO_DUPLICATES: CashOutDuplicateSource[] = [];
 
 type SortKey = "tarih" | "tedarikci" | "net" | "odenecek";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
@@ -180,6 +182,7 @@ export function InvoicesClient({
   supplierSlugs,
   cariLinks = NO_CARI,
   cashOuts = NO_CASH_OUTS,
+  cashOutDuplicates = NO_DUPLICATES,
   cashOutCategories = [],
 }: {
   invoices: InvoiceRow[];
@@ -199,6 +202,8 @@ export function InvoicesClient({
   cariLinks?: Record<number, InvoiceCariLinks>;
   /** Kasadan faturalı alımlar, faturası yok (E-42): "Kontrol bekleyen" süzgecinde listenin üstünde */
   cashOuts?: PendingCashOut[];
+  /** Aylık harcamalar'a yazılmış, faturası sonradan gelmiş kasa alımları (iki kez sayılıyor): aynı kartta */
+  cashOutDuplicates?: CashOutDuplicateSource[];
   /** "Aylık harcamalar'a yaz"ın kategorileri (etkin olanlar) */
   cashOutCategories?: { id: number; name: string }[];
 }) {
@@ -389,7 +394,7 @@ export function InvoicesClient({
    * Kategori değişikliği (satır içi, toplu, geri alma, "aynı tedarikçinin diğerlerine"). Kategorisi tahminle
    * yazılmış fatura bununla onaylanmış olur; "Geri al" kategoriyle birlikte "Kontrol" işaretini de geri koyar.
    */
-  function changeCategory(changes: { id: number; category: string }[], opts: { undo?: boolean; from?: InvoiceRow; reReview?: number[] } = {}) {
+  function changeCategory(changes: { id: number; category: string }[], opts: { undo?: boolean; from?: InvoiceRow; reReview?: number[]; onDone?: () => void } = {}) {
     if (!changes.length) return;
     keepScroll();
     // "Hepsine uygula" önerisi değişiklikten önceki listeye göre (aynı tedarikçinin farklı kategorideki diğerleri)
@@ -402,6 +407,7 @@ export function InvoicesClient({
       const res = await setInvoiceCategory(changes);
       // Bağlı faturasız alımın reddi (E-45) ne yapılacağını da söyler: okunacak kadar kalır
       if (!res.ok) return void toast.error(res.error, { duration: res.error.length > 120 ? 12_000 : undefined });
+      opts.onDone?.();
       if (reReview.length) {
         const back = await confirmInvoices(reReview, true);
         if (!back.ok) toast.error(back.error);
@@ -521,8 +527,12 @@ export function InvoicesClient({
     const c = e.target.value;
     e.target.value = "";
     if (!c) return;
-    changeCategory(selected.map((i) => ({ id: i.id, category: c })));
-    clearSelection();
+    // Seçim değişiklik yazılınca temizlenir: reddedilirse (bağlı faturasız alım, E-45) yönetici bağlı olanı seçimden
+    // çıkarıp kalanları yeniden değiştirebilsin
+    changeCategory(
+      selected.map((i) => ({ id: i.id, category: c })),
+      { onDone: clearSelection },
+    );
   }
 
   function confirmDelete() {
@@ -723,9 +733,10 @@ export function InvoicesClient({
 
   // Kasadan faturalı alımlar (E-42): "Kontrol bekleyen" süzgecinde listenin üstünde ayrı kart
   const cashOutCard =
-    status === "kontrol" && cashOuts.length ? (
+    status === "kontrol" && (cashOuts.length || cashOutDuplicates.length) ? (
       <CashOutInvoicesCard
         rows={cashOuts}
+        duplicates={cashOutDuplicates}
         categories={cashOutCategories}
         onAddInvoice={(r) => {
           setFromCashOut(r);

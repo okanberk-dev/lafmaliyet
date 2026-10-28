@@ -209,6 +209,16 @@ export interface CashOutInvoiceSource {
   createdByName: string;
 }
 
+/**
+ * Aylık harcamalar'a yazılmış, faturası sonradan Faturalar'a gelmiş kasa satırı: alım iki kez sayılıyor (inceleme D2;
+ * src/server/data/cash-out-invoices.ts DuplicateCashOutInvoice)
+ */
+export interface CashOutDuplicateSource extends CashOutInvoiceSource {
+  expenseId: number;
+  expenseCategory: string | null;
+  invoice: { id: number; date: string; supplier: string; invoiceNo: string | null; payable: number };
+}
+
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /**

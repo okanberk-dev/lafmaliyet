@@ -38,9 +38,10 @@ export interface DigestInvoices {
   stockOnlyCount?: number;
   /**
    * Kasadan faturalı alımlar (denetim E-42): faturası Faturalar'da yok, Aylık harcamalar'a yazılmadı; sayı ve özet
-   * ("Migros 2.400 ₺ ve 1 alım daha"). Tek başına e-postayı göndermez; giden e-postanın Paraşüt bölümünde söylenir
+   * ("Migros 2.400 ₺ ve 1 alım daha"); `duplicates`: Aylık harcamalar'a yazılmışken faturası sonradan gelenler (iki kez
+   * sayılıyor, inceleme D2). Tek başına e-postayı göndermez; giden e-postanın Paraşüt bölümünde söylenir
    */
-  cashOuts?: { count: number; summary: string } | null;
+  cashOuts?: { count: number; summary: string; duplicates?: number } | null;
   /** Son eşitleme başarısızsa mesajı */
   syncError?: string | null;
   /**
@@ -75,8 +76,15 @@ function reviewSentence(inv: Pick<DigestInvoices, "reviewCount" | "stockOnlyCoun
 }
 
 /** Kasadan faturalı alımların cümlesi (E-42; zil ve Bugün'deki gibi) */
-function cashOutSentence(c: { count: number; summary: string }, html = true): string {
-  return `${c.count} kasadan faturalı alım Faturalar'da yok (${html ? esc(c.summary) : c.summary}): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez.`;
+function cashOutSentence(c: { count: number; summary: string; duplicates?: number }, html = true): string {
+  return [
+    c.count
+      ? `${c.count} kasadan faturalı alım Faturalar'da yok (${html ? esc(c.summary) : c.summary}): Faturalar'a ekleyin ya da Aylık harcamalar'a yazın, yoksa gelir-gidere girmez.`
+      : "",
+    c.duplicates ? `${c.duplicates} kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** E-postada listelenen en fazla yeni fatura (kalanı "ve N fatura daha") */
@@ -332,8 +340,8 @@ export function renderDigest(
   const counts = { overdue: 0, due: 0, before: 0 };
   for (const r of rows) counts[r.stage]++;
   const parts = [counts.overdue ? `${counts.overdue} gecikmiş` : null, counts.due ? `${counts.due} bugün` : null, counts.before ? `${counts.before} yaklaşan` : null].filter(Boolean);
-  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count || invoices.cashOuts?.count) ? invoices : null;
-  const cashOuts = inv?.cashOuts?.count ? inv.cashOuts : null;
+  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count || invoices.cashOuts?.count || invoices.cashOuts?.duplicates) ? invoices : null;
+  const cashOuts = inv?.cashOuts?.count || inv?.cashOuts?.duplicates ? inv.cashOuts : null;
   const invPart = inv?.items.length ? `${inv.items.length} yeni fatura` : null;
   const reviewPart = inv?.reviewCount ? `${inv.reviewCount} fatura kontrol bekliyor` : null;
   // Onay bekleyen fiyatlar bölümde hep görünür; konuya ve başlığa yalnız son e-postadan beri yenisi geldiyse girer

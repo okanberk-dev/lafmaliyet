@@ -10,20 +10,21 @@ import { parseStatus } from "./rules";
 /**
  * Listenin üstündeki uyarı: eşitleme bazı faturaların kategorisini tahminle yazdı ya da (E-07) kalemi hammaddeye bağlı
  * faturanın kategorisi mal alışı değil (`stockOnly`: stoğa giriyor, gelir-gidere girmiyor) ya da (E-42) kasadan
- * faturalı alımın faturası yok (`cashOuts`: hiçbir hesaba girmedi). Düğme listeyi "Kontrol
+ * faturalı alımın faturası yok (`cashOuts`: hiçbir hesaba girmedi) ya da Aylık harcamalar'a yazılmış kasa alımının
+ * faturası sonradan geldi (`cashOutDuplicates`: iki kez sayılıyor). Düğme listeyi "Kontrol
  * bekleyen" süzgecine alır (?durum=kontrol); süzgeç açıkken uyarı çekilir (liste ve alttaki çubuk aynı şeyi söyler).
  * Sayı sunucudan gelir; onaylayınca sunucu eylemi sayfayı yeniler.
  */
-export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0 }: { count: number; stockOnly?: number; cashOuts?: number }) {
+export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0, cashOutDuplicates = 0 }: { count: number; stockOnly?: number; cashOuts?: number; cashOutDuplicates?: number }) {
   const [rawStatus, setStatus] = useQueryState<string>("durum", "tumu");
-  if ((!count && !cashOuts) || parseStatus(rawStatus) === "kontrol") return null;
+  if ((!count && !cashOuts && !cashOutDuplicates) || parseStatus(rawStatus) === "kontrol") return null;
   const guessed = count - stockOnly;
 
   function show() {
     setStatus("kontrol");
     // Görünen liste: Next önceki gezinmenin sayfasını gizli tutabilir (aynı kimlikli ikinci, görünmez kopya). Kasadan
     // faturalı alımlar varsa onların kartı (listenin üstünde)
-    const target = cashOuts ? "#kasa-faturali" : "#fatura-listesi";
+    const target = cashOuts || cashOutDuplicates ? "#kasa-faturali" : "#fatura-listesi";
     requestAnimationFrame(() => {
       const list = [...document.querySelectorAll<HTMLElement>(target)].find((el) => el.getClientRects().length > 0);
       list?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -50,6 +51,12 @@ export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0 }: { count: nu
           <span className="block">
             <span className="font-semibold">{cashOuts} kasadan faturalı alım bekliyor:</span> e-Arşiv ya da faturalı, faturası Faturalar&apos;da yok ve
             gelir-gidere girmedi. Faturalar&apos;a ekleyin ya da Aylık harcamalar&apos;a yazın.
+          </span>
+        ) : null}
+        {cashOutDuplicates > 0 ? (
+          <span className="block">
+            <span className="font-semibold">{cashOutDuplicates} kasa alımı iki kez sayılıyor:</span> Aylık harcamalar&apos;a yazılmıştı, faturası sonra
+            geldi. Gider kaydını silin.
           </span>
         ) : null}
       </p>

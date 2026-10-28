@@ -397,6 +397,13 @@ test("8. faturalar: kontrol bekleyen yapılacak, yoksa tamam; okunamazsa satır 
   assert.equal(both.badge, "5 kontrol");
   assert.match(both.detail, /^3 fatura kontrol bekliyor: .*\. Ayrıca 2 kasadan faturalı alım Faturalar'da yok \(Migros/);
   assert.equal(byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: null } }))).fatura.status, "done");
+  // Aylık harcamalar'a yazılmışken faturası gelen (iki kez sayılıyor; inceleme D2): tek başına da satırı açar
+  const twice = byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: { count: 0, summary: "", duplicates: 1 } } }))).fatura;
+  assert.deepEqual([twice.status, twice.badge, twice.href], ["todo", "1 kasa alımı", "/panel/faturalar?durum=kontrol#kasa-faturali"]);
+  assert.equal(twice.detail, "1 kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin.");
+  const mixedCash = byKey(dayTasks(admin(NOON, { invoices: { review: 0, cashOuts: { ...cash, duplicates: 1 } } }))).fatura;
+  assert.equal(mixedCash.badge, "3 kasa alımı");
+  assert.match(mixedCash.detail, /yoksa gelir-gidere girmez; 1 kasa alımı iki kez sayılıyor .*: gider kaydını silin\.$/);
   const none = byKey(dayTasks(admin(NOON))).fatura;
   assert.equal(none.status, "done");
   assert.equal(none.detail, "Kontrol bekleyen fatura yok.");

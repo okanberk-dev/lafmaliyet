@@ -16,7 +16,7 @@ import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadInvoiceCariLinks } from "@/server/data/cari";
-import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { loadModel } from "@/server/data/dataset";
 import { stockOnlyIds } from "@/server/data/stock-only-invoices";
@@ -94,10 +94,11 @@ async function InvoicesContent() {
     loadInvoiceCariLinks(),
     // Kalemi hammaddeye bağlı ama mal alışı sayılmayan faturalar (E-07): rozet, uyarı ve pencere ipucu
     stockOnlyIds(db).then((ids) => new Set(ids)),
-    // Kasadan faturalı alımlar, faturası yok (E-42): Kontrol süzgecinin kartı; okunamazsa kart çıkmaz, liste açılır
-    loadPendingCashOutInvoices(db).catch((e) => {
+    // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar: Kontrol süzgecinin
+    // kartı; okunamazsa kart çıkmaz, liste açılır
+    loadCashOutInvoiceState(db).catch((e) => {
       console.error("Kasadan faturalı alımlar okunamadı", e);
-      return [];
+      return { pending: [], duplicates: [] };
     }),
     cashOutCategories("admin"),
   ]);
@@ -201,7 +202,7 @@ async function InvoicesContent() {
         </StatBreakdown>
       </div>
 
-      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} cashOuts={cashOuts.length} />
+      <ReviewNotice count={reviewCount} stockOnly={stockOnlyCount} cashOuts={cashOuts.pending.length} cashOutDuplicates={cashOuts.duplicates.length} />
 
       {/* Süzgeçler (?ara, ?durum=odenmedi|kontrol, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
       <InvoicesClient
@@ -214,7 +215,8 @@ async function InvoicesContent() {
         expenseLinks={expenseLinks}
         supplierSlugs={supplierSlugs}
         cariLinks={cariLinks}
-        cashOuts={cashOuts}
+        cashOuts={cashOuts.pending}
+        cashOutDuplicates={cashOuts.duplicates}
         cashOutCategories={cashOutCats.map(({ id, name }) => ({ id, name }))}
       />
 

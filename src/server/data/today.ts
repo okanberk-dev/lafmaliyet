@@ -21,7 +21,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
@@ -150,12 +150,16 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       Promise.all([
         db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
         countStockOnlyReview(db),
-        // Kasadan faturalı alımlar, faturası yok (E-42); okunamazsa satır yalnız faturaları söyler
-        loadPendingCashOutInvoices(db).catch(() => []),
-      ]).then(([[r], stockOnly, cashOuts]) => ({
+        // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar; okunamazsa satır
+        // yalnız faturaları söyler
+        loadCashOutInvoiceState(db).catch(() => ({ pending: [], duplicates: [] })),
+      ]).then(([[r], stockOnly, { pending, duplicates }]) => ({
         review: r?.n ?? 0,
         stockOnly,
-        cashOuts: cashOuts.length ? { count: cashOuts.length, summary: pendingCashOutSummary(cashOuts) } : null,
+        cashOuts:
+          pending.length || duplicates.length
+            ? { count: pending.length, summary: pendingCashOutSummary(pending), ...(duplicates.length ? { duplicates: duplicates.length } : {}) }
+            : null,
       })),
     ),
     safe(countUnlinkedProducts()),

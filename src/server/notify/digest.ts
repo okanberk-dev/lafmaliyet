@@ -14,7 +14,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
-import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
+import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
@@ -152,10 +152,10 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       console.error("Sabah e-postası mal alışı sayılmayan faturalar", e);
       return 0;
     }),
-    // Kasadan faturalı alımlar, faturası yok (E-42)
-    loadPendingCashOutInvoices(db).catch((e) => {
+    // Kasadan faturalı alımlar, faturası yok (E-42) ve faturası sonradan gelip iki kez sayılanlar
+    loadCashOutInvoiceState(db).catch((e) => {
       console.error("Sabah e-postası kasadan faturalı alımlar", e);
-      return [];
+      return { pending: [], duplicates: [] };
     }),
   ]);
   const sinceIso = since.toISOString();
@@ -174,7 +174,11 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
-  const cashOutPart = cashOuts.length ? { count: cashOuts.length, summary: pendingCashOutSummary(cashOuts) } : null;
+  const { pending: waiting, duplicates } = cashOuts;
+  const cashOutPart =
+    waiting.length || duplicates.length
+      ? { count: waiting.length, summary: pendingCashOutSummary(waiting), ...(duplicates.length ? { duplicates: duplicates.length } : {}) }
+      : null;
   return {
     invoices: { items: rows, reviewCount: n, stockOnlyCount: Math.min(stockOnly, n), cashOuts: cashOutPart, syncError, priceHolds },
     failedRunKey,

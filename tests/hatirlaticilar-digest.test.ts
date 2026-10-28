@@ -217,6 +217,12 @@ test("e-posta: kasadan faturalı alımlar Paraşüt bölümünde söylenir, e-po
   const both = renderDigest([], "2026-10-22", { ...inv, reviewCount: 3 }).html;
   assert.ok(both.indexOf("faturanın kategorisi tahminle yazıldı") < both.indexOf("kasadan faturalı alım"));
   assert.ok(!renderDigest([], "2026-10-22", { ...inv, reviewCount: 3, cashOuts: null }).html.includes("kasadan faturalı"));
+  // Aylık harcamalar'a yazılmışken faturası gelen (iki kez sayılıyor; inceleme D2): tek başına da söylenir
+  const twice = renderDigest([], "2026-10-22", { ...inv, cashOuts: { count: 0, summary: "", duplicates: 1 } });
+  assert.ok(twice.text.includes(`1 kasa alımı iki kez sayılıyor (Aylık harcamalar'a yazılmıştı, faturası sonra geldi): gider kaydını silin. ${APP_URL}/panel/faturalar?durum=kontrol#kasa-faturali`));
+  assert.ok(!twice.text.includes("kasadan faturalı alım Faturalar'da yok"));
+  const mixed = renderDigest([], "2026-10-22", { ...inv, cashOuts: { ...cashOuts, duplicates: 2 } }).text;
+  assert.ok(mixed.includes("yoksa gelir-gidere girmez. 2 kasa alımı iki kez sayılıyor"));
 });
 
 test("e-posta konusu: yeni onaya düşen fiyat ötekilerin arkasına eklenir; eskisi yalnız bölümde görünür", () => {
