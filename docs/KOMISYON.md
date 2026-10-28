@@ -202,8 +202,20 @@ ya da ay sonunda kesilmeyen faturada turuncu ve "… %6'yı aşıyor olabilir.",
 varken satışı yazılmamış kart varsa kart kart oranın ekstreyle çıkacağı yazar. Zil ve e-posta yalnız kırmızıda uyarır.
 
 Bu turda yok (kesildi): faturada yazan işlem tutarı ve dönem okuması, oran sıçraması, taban farkı, başka kategorideki
-kanal faturası ve platformun tek kalemli faturası uyarıları; Tedarikçiler'deki bağlantı; Nakit planı satırları. Kasa
-raporunun kartlı satış payı (banka POS komisyonu için) değişmedi: (kart + yemek kartı) ÷ Z.
+kanal faturası ve platformun tek kalemli faturası uyarıları; Tedarikçiler'deki bağlantı; Nakit planı satırları.
+
+**Gelir-gider'in banka POS komisyonu** (`commission:pos`, denetim E-43) yalnız banka kartı payıyla hesaplanır: kasa
+raporu olan ayda Σ kart ÷ Σ Z (`TillMonth.bankShare`, `engine.ts bankShareOf`); yemek kartı hariç, çünkü yemek
+kartlarının komisyonu bu ekrandaki faturalarıyla Gelir-gider'in Komisyon bölümünde zaten sayılır. Satışlar'da kartlı
+oran elle yazıldıysa ondan kasa raporlarındaki yemek kartı payı düşülür. Kasa raporu olmayan ayda kartlı satış oranı
+(elle ya da Ayarlar'daki, yemek kartı dahil; hücre ipucu "yemek kartı payı ayrılamadı" der). Kartlı satış oranı
+((kart + yemek kartı) ÷ Z) yalnız satış raporunun ürün başına tahmini komisyonunda kalır. Ayda **kanalı bulunamayan**
+bir Komisyon faturası varsa (ör. bankanın POS komisyonu faturası; kanal bu ekrandaki gibi faturadaki adla, sonra
+tedarikçi kartının adı ve diğer adlarıyla aranır: "Diğer adlar"a eklenen unvan uyarıyı da kaldırır) ve hücre elle
+yazılmamışsa hücrede uyarı çıkar: banka faturasıysa tahmin onu ikinci kez sayar, hücreye 0 yazılır. Gelir-gider'deki
+komisyon faturası satırı Faturalar'da o ayın tarihli Komisyon faturalarını açar (bu ekran 1-5'inde kesilen yemek kartı
+faturasını önceki aya koyar).
+Bankanın POS komisyonunu ayrıca fatura ya da dekont olarak gönderip göndermediği sahibe soru (denetim, soru 9).
 
 ## 7. Hakediş
 

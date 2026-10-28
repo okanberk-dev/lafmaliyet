@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 import { CELL_NOTE_MAX, noteSaveEffect, openDaysError, planCellEdit, planCellRestore, sectionTotalKey, shiftMonth, type CellEditPlan, type CellField } from "./cell-rules";
 import type { GridSection } from "./pnl-grid";
+import { rowLink, type RowLink } from "./row-links";
 
 /**
  * Gelir-gider telefonda: tek ay. Üstte yapışkan ay seçici (yıl sınırını geçer), ayın özeti (kâr / zarar, ciro,
@@ -46,6 +47,8 @@ interface EditTarget {
   cell: PnlCell;
   /** Açık günde ayın gün sayısı */
   dim?: number;
+  /** Tutarın kaynağı (rowLink): sayfanın altında bağlantı, ör. "Stok sayımı · Eylül 2026" */
+  source?: RowLink | null;
 }
 
 const ROW = "flex min-h-12 w-full items-center gap-3 px-3.5 py-2.5 text-left";
@@ -146,6 +149,7 @@ export function MonthView({
       kind: def.kind === "manual" && !(def.key === "revenue" && cell.computed !== null) ? "manual" : "auto",
       format: def.format,
       cell,
+      source: rowLink(def.key, month, { value: cell.value, current: currentMonth }),
     });
   const daysKasa = openDaysKasa?.[i] ?? null;
   const daysManual = openDaysManual ? openDaysManual[i] !== null : openDays[i] !== null;
@@ -298,6 +302,7 @@ export function MonthView({
                 {rows.map(({ def, cells }) => {
                   const c = cells[i];
                   const isProfit = def.key === "profit" || def.key === "ratio:profit";
+                  const source = rowLink(def.key, month, { value: c.value, current: currentMonth });
                   const label = (
                     <span className="min-w-0 flex-1">
                       <span className={cn("block text-[15px] leading-5 break-words", def.strong ? "font-semibold text-ink" : "text-ink-soft")}>{def.label}</span>
@@ -308,6 +313,15 @@ export function MonthView({
                           <span className="min-w-0 break-words">
                             <span className="sr-only">Not: </span>
                             {c.note}
+                          </span>
+                        </span>
+                      ) : null}
+                      {c.warn ? (
+                        <span className="mt-1 flex items-start gap-1 text-xs leading-4 font-medium text-warn">
+                          <TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 break-words">
+                            <span className="sr-only">Dikkat: </span>
+                            {c.warn}
                           </span>
                         </span>
                       ) : null}
@@ -327,26 +341,24 @@ export function MonthView({
                             muted={c.outOfRange && !c.overridden}
                           />
                         </button>
-                      ) : def.key.startsWith("purchase:") ? (
-                        // Tedarikçi satırı faturalardan gelir: dokununca o ayın o tedarikçi faturaları açılır
-                        <Link
-                          href={`/panel/faturalar?ara=${encodeURIComponent(def.key.slice("purchase:".length))}&ay=${month}#fatura-listesi`}
-                          className={cn(ROW, "cursor-pointer")}
-                          aria-label={`${def.label}: ${fmt(c.value, def.format)}, faturaları göster`}
-                        >
+                      ) : source ? (
+                        // Girilemeyen satır kaynağından gelir (rowLink): dokununca o ayın faturaları (komisyon faturaları
+                        // dahil), harcamaları ya da personel / sabit giderler açılır. O ayda faturası olmayan tedarikçi
+                        // satırı bağlantısız (boş aramaya gitmesin). Bağlantı satırı kaplar; açıklama (i) onun üstünde
+                        // ayrı dokunulur (bağlantının içinde düğme olmaz)
+                        <div className={cn(ROW, "relative")}>
+                          <Link
+                            href={source.href}
+                            className="absolute inset-0 cursor-pointer rounded-[inherit]"
+                            aria-label={`${def.label}: ${fmt(c.value, def.format)}. ${source.label} sayfasını aç`}
+                          />
                           {label}
-                          <span className={cn("shrink-0 text-right text-[15px] text-ink-mute tabular", c.value === null && "text-ink-quiet")}>{fmt(c.value, def.format)}</span>
-                          <ChevronRight size={16} className="-mr-1 shrink-0 text-ink-quiet" aria-hidden="true" />
-                        </Link>
-                      ) : def.key.startsWith("expense:") ? (
-                        // Aylık harcama satırı Aylık harcamalar'dan gelir: dokununca o ayın harcamaları açılır (tutar orada girilir)
-                        <Link href={`/panel/harcamalar?ay=${month}`} className={cn(ROW, "cursor-pointer")} aria-label={`${def.label}: ${fmt(c.value, def.format)}, harcamaları göster`}>
-                          {label}
+                          {def.hint ? <InfoTip text={def.hint} className="relative z-10 shrink-0" /> : null}
                           <span className={cn("shrink-0 text-right text-[15px] text-ink-mute tabular", c.value === null && "text-ink-quiet", c.value !== null && c.value < 0 && "text-bad")}>
                             {fmt(c.value, def.format)}
                           </span>
                           <ChevronRight size={16} className="-mr-1 shrink-0 text-ink-quiet" aria-hidden="true" />
-                        </Link>
+                        </div>
                       ) : (
                         <div className={ROW}>
                           {label}
@@ -371,7 +383,7 @@ export function MonthView({
             ) : null}
             {sec.key === "mal" && expectedDebts?.[month]?.total ? (
               <p className="mx-5 mt-2 text-xs leading-5 text-ink-mute">
-                Faturası beklenen alımlar: {tl(expectedDebts[month].total, 2)} (bu ayın giderinde yok)
+                Faturası beklenen alımlar (KDV dahil): {tl(expectedDebts[month].total, 2)} (bu ayın giderinde yok)
                 {expectedDebts[month].href ? (
                   <>
                     {" · "}
@@ -597,7 +609,23 @@ function CellSheet({
             </Button>
           </div>
         ) : null}
-        {target.hint ? <p className="text-xs leading-5 text-ink-mute">{target.hint}</p> : null}
+        {cell.warn ? (
+          <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn">
+            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>{cell.warn}</span>
+          </p>
+        ) : null}
+        {target.hint || cell.info ? <p className="text-xs leading-5 text-ink-mute">{[cell.info, target.hint].filter(Boolean).join(" ")}</p> : null}
+        {/* Tutarın kaynağı (rowLink): o ayın sayımı, satışları, personel ya da sabit giderler */}
+        {target.source ? (
+          <Link
+            href={target.source.href}
+            className="-mx-1 -mt-2 flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-info underline-offset-2 hover:underline"
+          >
+            <span className="min-w-0 flex-1">{target.source.label} sayfasını aç</span>
+            <ChevronRight size={16} className="shrink-0" aria-hidden="true" />
+          </Link>
+        ) : null}
         {field === "pnl" ? (
           <Field label="Not" htmlFor={`${formId}-n`} hint={`${noteText.trim().length} / ${CELL_NOTE_MAX}`}>
             <Textarea
