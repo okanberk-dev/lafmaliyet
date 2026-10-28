@@ -27,7 +27,7 @@ import postgres from "postgres";
 import { z } from "zod";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
-import { priceChangedText, priceMovedText, priceRefusedText } from "../src/lib/prices/seen";
+import { LINK_CHANGED_TEXT, priceChangedText, priceMovedText, priceRefusedText } from "../src/lib/prices/seen";
 import { SITE_MENU_ID, type SiteMenuItem } from "../src/lib/site-menu/schema";
 import { keepSeen, SOLD_OUT_KEY, SOLD_OUT_TEXT, STAFF_SOLD_OUT_MAX } from "../src/lib/site-menu/sold-out";
 import type { DB } from "../src/server/db";
@@ -63,6 +63,8 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
   const site = new Map<string, SiteMenuItem>();
   type Expect = { priceMinor?: number; priceMinorL?: number; isActive?: boolean };
   let posts: { id: string; isActive?: boolean; priceMinor?: number; priceMinorL?: number; actor: string; expect?: Expect }[] = [];
+  /** Sitenin aldığı isteklerin sırası (zaman aşımından sonra çekme oldu mu) */
+  let calls: ("GET" | "POST")[] = [];
   /**
    * Sitenin sürümü: `expect` duyurur ve uygular (S1), duyurmadan uygular (önizleme), ya da bilmez ve 400 verir (eski
    * site, katı şema). `post`: sıradaki POST'un sonu: yazıp yanıtı kaybeder (zaman aşımı) ya da uç yokmuş gibi HTML 404.
@@ -93,6 +95,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     const ok = verifySignature(SECRET, { method: init?.method ?? "GET", url, body, timestamp: headers[TIMESTAMP_HEADER] ?? null, signature: headers[SIGNATURE_HEADER] ?? null });
     if (!ok) return json(401, { error: "unauthorized" });
     if (url.pathname !== "/api/panel/menu") return json(404, { error: "not_found" });
+    calls.push((init?.method ?? "GET") === "GET" ? "GET" : "POST");
     if ((init?.method ?? "GET") === "GET" && getGate) {
       const g = getGate;
       getGate = null;
@@ -269,6 +272,7 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     site.set(ids.cake, siteItem(ids.cake, "Cheesecake"));
     site.set(ids.brownie, siteItem(ids.brownie, "Brownie"));
     posts = [];
+    calls = [];
     Object.assign(mode, { announce: false, honor: false, rejectExpect: false, post: "ok" });
     await db.delete(s.integrationState).where(inArray(s.integrationState.key, MENU_KEYS));
     await db.update(s.products).set({ price: 120 }).where(eq(s.products.id, prod.lemonade));
@@ -662,6 +666,53 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.deepEqual(await priceRows(prod.lemonade), []);
   });
 
+  test("reçete kartı: ürün kart kaydedilirken siteye bağlandıysa satış alanı yalnız panele yazılmaz (site ile ayrışmaz)", { timeout: 15_000 }, async () => {
+    const linkId = `tk-limon-${tag}`;
+    await db.update(s.products).set({ note: null }).where(eq(s.products.id, prod.lemonade));
+    let release!: () => void;
+    const hold = new Promise<void>((r) => (release = r));
+    let linked!: () => void;
+    const linkedNow = new Promise<void>((r) => (linked = r));
+    // Site menüsünden bağlama (ayrı işlem): satırı kilitler, kart yazımı onu bekler; bağlama bitince kartın koşulu yeni satırda denetlenir
+    const linking = db.transaction(async (tx) => {
+      await tx.update(s.products).set({ siteMenuId: linkId, siteMenuSlot: "M" }).where(eq(s.products.id, prod.lemonade));
+      linked();
+      await hold;
+    });
+    try {
+      await linkedNow;
+      const save = actions.saveRecipe(card("lemonade", { price: 125, note: "yazılmamalı", ...seen(120) }));
+      // Kartın yerel yazımı bağlamanın kilidini bekleyene dek (önce okuması bağsız ürünü görür, siteye gidilmez)
+      const until = Date.now() + 5_000;
+      for (;;) {
+        const rows = await db.execute<{ n: number }>(
+          sql`select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and query ilike ${'update "products"%'} and query ilike ${"%site_menu_id%is null%"}`,
+        );
+        if (rows[0]?.n) break;
+        if (Date.now() > until) throw new Error("kartın yazımı bağlamayı beklemiyor");
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      release();
+      await linking;
+      const r = await save;
+      assert.equal(!r.ok && r.error, LINK_CHANGED_TEXT);
+      assert.equal(posts.length, 0);
+      const row = await productRow(prod.lemonade);
+      assert.equal(row.price, 120, "fiyat yalnız panele yazılmadı");
+      assert.equal(row.note, null, "kart kaydedilmedi");
+      assert.deepEqual(await priceRows(prod.lemonade), []);
+      // Fiyata ve anahtarlara dokunmayan kayıt (yalnız reçete) bağlantıdan etkilenmez
+      const recipeOnly = await actions.saveRecipe(card("lemonade", { note: "buzlu", ...seen(120) }));
+      assert.ok(recipeOnly.ok, JSON.stringify(recipeOnly));
+      assert.equal((await productRow(prod.lemonade)).note, "buzlu");
+      assert.equal(posts.length, 0);
+    } finally {
+      release();
+      await linking.catch(() => {});
+      await db.update(s.products).set({ siteMenuId: null, siteMenuSlot: null, note: null }).where(eq(s.products.id, prod.lemonade));
+    }
+  });
+
   test("fiyat hücresi: gördüğü fiyat bu arada değiştiyse yazılmaz (güncel fiyat söylenir); güncel fiyatla yazılır", async () => {
     await ownerPriceSynced(ids.tira, 19_000);
     posts = [];
@@ -750,6 +801,19 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     // İstek dışında (test) çekme hemen ve beklenerek: panel sitenin yazdığını aldı
     assert.equal((await productRow(prod.tira)).price, 200);
     assert.deepEqual(await priceRows(prod.tira), [["site", 180, 200]]);
+  });
+
+  test("zaman aşımı işlemin içinde (Tükendi): kalemin kilidi tutulurken havuzdan ikinci bağlantıyla çekilmez", { timeout: 15_000 }, async () => {
+    mode.post = "timeout";
+    await refused(set(users.ayse, ids.tira, true), SOLD_OUT_TEXT.siteSlow);
+    assert.equal(site.get(ids.tira)!.isActive, false, "site yazmıştı");
+    const post = calls.indexOf("POST");
+    assert.ok(post >= 0);
+    assert.deepEqual(calls.slice(post + 1), [], "POST'tan sonra işlemin içinde GET yok (istek dışında after çalışmaz; sonraki çekme düzeltir)");
+    assert.equal((await record()).items[ids.tira], undefined, "personelin kaydı yazılmadı");
+    // İşlemin dışında sonraki çekme sitenin yazdığını alır
+    assert.equal((await sync.syncSiteMenu("manual")).status, "ok");
+    assert.equal((await productRow(prod.tira)).showOnMenu, false);
   });
 
   test("JSON olmayan 404 uç yok demek (site güncel değil); JSON not_found kalem yok demek", async () => {
