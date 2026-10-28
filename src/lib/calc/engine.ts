@@ -552,6 +552,13 @@ export interface MonthlyExpensePlan {
   amount: number;
   /** Bunun girilen harcamalardan gelen kısmı (ödenen tutar) */
   entries: number;
+  /**
+   * Nakit karşılığı: girilen harcamalar + bağlı faturaların ödenecek tutarı (KDV dahil; nakit planı bunu yayar). Bağlı
+   * fatura yoksa `entries`
+   */
+  cash: number;
+  /** Ayın kendi tutarı (taşınan tutarda "bu ay girilmedi" mi "daha az girildi" mi; E-13) */
+  entered: number;
   /** entered: ayın kendi girişi; carried: önceki bir ayın (geçen ay ya da süren ay) tutarı taşındı */
   source: "entered" | "carried";
   /** Tutarın alındığı ay */
@@ -1612,12 +1619,15 @@ export function createModel(ds: Dataset) {
   const invoiceCategoryMappable = (c: string | null): c is string =>
     Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!);
   /** Kategorilerin aydaki tutarı: girilen harcamalar + bağlı fatura kategorisindeki faturalar (KDV hariç, iskonto düşülmüş) */
-  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; total: number }[] {
+  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; invoicesPayable: number; total: number }[] {
     const invs = invoicesByMonth.get(month) ?? [];
     return expenseCats.map((cat) => {
       const entries = expenseByMonth.get(month)?.get(cat.id) ?? 0;
-      const invoices = invoiceCategoryMappable(cat.invoiceCategory) ? sum(invs.filter((i) => i.category === cat.invoiceCategory).map(invoiceNet)) : 0;
-      return { cat, entries, invoices, total: entries + invoices };
+      const linked = invoiceCategoryMappable(cat.invoiceCategory) ? invs.filter((i) => i.category === cat.invoiceCategory) : [];
+      const invoices = sum(linked.map(invoiceNet));
+      // Ödenecek tutar (KDV dahil); Excel'den gelen ödenecek tutarı boş faturada KDV hariç tutar
+      const invoicesPayable = sum(linked.map((i) => (i.payable > 0 ? i.payable : invoiceNet(i))));
+      return { cat, entries, invoices, invoicesPayable, total: entries + invoices };
     });
   }
 
@@ -1629,7 +1639,7 @@ export function createModel(ds: Dataset) {
    * - süren ve gelecek ay: geçen aydan o aya kadarki ayların en büyüğü (süren ay girildiyse ve daha büyükse o; değilse
    *   geçen ayın gerçekleşeni taşınır). Pasif kategori yalnız kendi ayının tutarıyla.
    * Sahibe soru 7 (geçen ayın gerçekleşeni mi, son 3 ay ortalaması mı) cevaplanana kadar geçerli kural.
-   * `entries`: tutarın girilen harcamalardan gelen kısmı (nakit planı yalnız bunu yayar; bağlı faturalar Ödemeler'de)
+   * `entries`: tutarın girilen harcamalardan gelen kısmı; `cash`: nakit planının yaydığı ödeme (bağlı faturalar KDV dahil)
    */
   function monthlyExpensePlan(month: string): MonthlyExpensePlan[] {
     const cats = expenseCats.filter((c) => c.monthly && c.section !== "mal");
@@ -1642,16 +1652,17 @@ export function createModel(ds: Dataset) {
     const byMonth = new Map(window.map((m) => [m, m === month ? own : amountsOf(m)]));
     for (const cat of cats) {
       const mine = own.get(cat.id);
-      let best = { from: month, total: mine?.total ?? 0, entries: mine?.entries ?? 0 };
+      const entered = mine?.total ?? 0;
+      let best = { from: month, total: entered, entries: mine?.entries ?? 0, cash: (mine?.entries ?? 0) + (mine?.invoicesPayable ?? 0) };
       if (cat.active && month >= currentMonth) {
         for (const m of window) {
           const x = byMonth.get(m)?.get(cat.id);
           // Eşitlikte ayın kendisi (girilen tutar), sonra en yakın ay
-          if (x && x.total > best.total + 0.005) best = { from: m, total: x.total, entries: x.entries };
+          if (x && x.total > best.total + 0.005) best = { from: m, total: x.total, entries: x.entries, cash: x.entries + x.invoicesPayable };
         }
       }
       if (!(best.total > 0.005)) continue;
-      out.push({ cat, amount: best.total, entries: best.entries, source: best.from === month ? "entered" : "carried", from: best.from });
+      out.push({ cat, amount: best.total, entries: best.entries, cash: best.cash, entered, source: best.from === month ? "entered" : "carried", from: best.from });
     }
     return out;
   }

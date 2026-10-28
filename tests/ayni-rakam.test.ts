@@ -11,7 +11,8 @@ import { test } from "node:test";
 import { breakEvenNeeds, scenarioBreakEvenItems, scenarioFixedItems } from "../src/app/panel/analiz/breakdowns";
 import { createModel } from "../src/lib/calc/engine";
 import { applyScenario, breakEvenOf, dashboard, requiredDailyRevenue, scenarioBase } from "../src/lib/calc/insights";
-import type { Dataset, ExpenseCategory, ExpenseEntry, SalesLine } from "../src/lib/calc/types";
+import type { Dataset, ExpenseCategory, ExpenseEntry, Invoice, SalesLine } from "../src/lib/calc/types";
+import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
 import { buildCashPlan, EXCLUDABLE_KEY, fixedReminderDrifts, planInputFromModel, planNotes, reminderDriftText, type CashPlan, type CashPlanInput } from "../src/lib/cash-plan";
 import { resolveMonth, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { addDays, fixedReminderFollow, type ReminderRow } from "../src/lib/reminders";
@@ -432,4 +433,71 @@ test("E-13 nakit planı: bu ay girilmiş harcamanın hatırlatıcısı aynı ay 
   // Harcaması hiç olmayan ayda (kategori yok) tutarı girilmemiş ödemedir
   const none = buildCashPlan(planInput({ reminders: [reminder({ title: "Influencer", kind: "odeme", amount: null, dueDate: "2026-11-30" })] }));
   assert.equal(none.unknownAmounts.length, 1);
+});
+
+test("E-13 nakit planı: çevirmenin tahmini kaydı ödenmiş sayılmaz; bu ayın kalan günlerine ve tutarsız hatırlatıcıya girer", () => {
+  // 1 Ekim'den çevrildi, tahmini 50.000 yazıldı; Influencer'ın gerçek ödemesi henüz girilmedi
+  const model = createModel(converted([{ ...entry(1, 1, "2026-10-01", 50_000), description: FIXED_ESTIMATE_DESCRIPTION }]));
+  const inp = planInputFromModel(model, TODAY);
+  assert.deepEqual(inp.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 50_000, paid: 0, from: "2026-10" }]);
+  // Başabaş ve tahmin tahmini tutarı saymaya devam eder
+  close(model.monthlyExpensePlan("2026-10")[0].amount, 50_000, "başabaşın tutarı");
+  const plan = buildCashPlan(planInput({ months: inp.months }));
+  const oct = plan.weeks[0].lines.find((l) => l.key === "expense")!;
+  // 23–28 Ekim: Ekim'in kalan 9 gününe yayılan 50.000'in 6 günü
+  close(oct.amount, (50_000 / 9) * 6, "ilk hafta");
+  // Ekim 30'daki tutarsız hatırlatıcı Ekim'de de tahmini tutarı taşır
+  const rem = reminder({ title: "Influencer", kind: "odeme", amount: null, dueDate: "2026-10-30" });
+  const withRem = buildCashPlan(planInput({ months: inp.months, reminders: [rem] }));
+  assert.deepEqual(
+    planLines(withRem)
+      .filter((l) => l.key.startsWith(`reminder:${rem.id}@`))
+      .map((l) => [l.date, l.amount]),
+    [
+      ["2026-10-30", 50_000],
+      ["2026-11-30", 50_000],
+    ],
+  );
+  // Gerçek kayıt (açıklaması değişmiş) ödenmiş sayılır
+  const real = planInputFromModel(createModel(converted([{ ...entry(1, 1, "2026-10-01", 60_000), description: null }])), TODAY);
+  assert.equal(real.months["2026-10"].expenses![0].paid, 60_000);
+});
+
+test("E-13 nakit planı: bağlı fatura kategorisi faturası gelmemiş aylarda tutarıyla (KDV dahil) yayılır; ayın faturası karşılanmış", () => {
+  const inv = (id: number, date: string, amount: number, payable: number): Invoice => ({
+    id,
+    date,
+    supplier: "Meta",
+    description: null,
+    invoiceNo: null,
+    category: "Reklam & Tabela",
+    amount,
+    discount: 0,
+    payable,
+    unpaid: false,
+    note: null,
+  });
+  const ds: Dataset = {
+    ...converted([], { invoiceCategory: "Reklam & Tabela" }),
+    invoices: [...base.invoices.filter((i) => i.category !== "Reklam & Tabela"), inv(990_001, "2026-10-05", 20_000, 24_000), inv(990_002, "2026-10-12", 10_000, 12_000)],
+  };
+  const model = createModel(ds);
+  // Başabaş KDV hariç tutarla (30.000), nakit planı ödenecek tutarla (36.000)
+  close(model.monthlyExpensePlan("2026-11")[0].amount, 30_000, "Kasım başabaşı");
+  close(breakEvenOf(model, "2026-11").fixed - model.fixedStandardTotalFor("2026-11"), 30_000, "başabaşta");
+  const inp = planInputFromModel(model, TODAY);
+  // Ekim'in faturaları geldi (ödenmiş ya da Ödemeler'de kesin kalem): kalan yok
+  assert.deepEqual(inp.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 36_000, paid: 36_000, from: "2026-10", linked: true }]);
+  assert.deepEqual(inp.months["2026-11"].expenses, [{ id: 1, name: "Influencer", amount: 36_000, paid: 0, from: "2026-10", linked: true }]);
+  assert.deepEqual(inp.months["2026-12"].expenses, [{ id: 1, name: "Influencer", amount: 36_000, paid: 0, from: "2026-10", linked: true }]);
+  const plan = buildCashPlan(planInput({ months: inp.months }));
+  const total = planLines(plan)
+    .filter((l) => l.key === "expense")
+    .reduce((a, l) => a + l.amount, 0);
+  close(total, 36_000 + (36_000 / 31) * 2, "Kasım + 1–2 Aralık", 1e-3);
+  assert.match(plan.estimates.find((r) => r.key === "expense:1")!.note ?? "", /bağlı faturalar KDV dahil/);
+  // Süren ayda faturanın bir kısmı geldiyse kalanı yayılır: 12 Ekim'deki fatura yok, 24.000 geldi
+  const part = createModel({ ...ds, invoices: ds.invoices.filter((i) => i.id !== 990_002), expenseEntries: [entry(1, 1, "2026-09-10", 30_000)] });
+  const pi = planInputFromModel(part, TODAY);
+  assert.deepEqual(pi.months["2026-10"].expenses, [{ id: 1, name: "Influencer", amount: 30_000, paid: 24_000, from: "2026-09" }]);
 });

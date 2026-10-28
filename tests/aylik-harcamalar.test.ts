@@ -11,6 +11,7 @@ import { monthTaskFacts, monthTasks } from "../src/app/panel/dashboard-tasks";
 import { createModel } from "../src/lib/calc/engine";
 import { fixedCostsForMonth } from "../src/lib/calc/insights";
 import type { Dataset, ExpenseCategory, ExpenseEntry } from "../src/lib/calc/types";
+import { FIXED_ESTIMATE_DESCRIPTION } from "../src/lib/constants";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
@@ -139,6 +140,7 @@ test("harcamalar (E-60): girilen fiş KDV dahil ödenen tutarıyla sayılır; ka
   assert.match(page, /girilen harcamalar \(ödenen tutar, KDV dahil; fişin KDV'si ayrılmaz\) ve kategoriye bağlı faturalar \(KDV hariç\)/);
   assert.doesNotMatch(page, /girilen harcamalar ve (kategoriye )?bağlı faturalar \(KDV hariç\)/);
   // Çevirmede yazılan tahmini kayıt KDV hariç olduğunu söyler
+  assert.equal(FIXED_ESTIMATE_DESCRIPTION, "Sabit giderdeki KDV hariç tutar (tahmini): ödediğiniz tutarı yazın");
   const actions = readFileSync(join(__dirname, "..", "src/server/actions/expenses.ts"), "utf8");
-  assert.match(actions, /Sabit giderdeki KDV hariç tutar \(tahmini\): ödediğiniz tutarı yazın/);
+  assert.match(actions, /description: FIXED_ESTIMATE_DESCRIPTION, amount: planned/);
 });

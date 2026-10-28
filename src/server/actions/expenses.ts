@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { activeFromRange, currentMonthTR, fixedMonthly, shiftMonth } from "@/lib/calc/engine";
 import { panelGroupOf } from "@/lib/calc/insights";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
@@ -60,6 +60,14 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       // Cari borcun gideri: tutarı, günü ve kategorisi borçla birlikte Tedarikçiler'de değişir (açıklama ve not serbest)
       if (prev?.supplierEntryId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId)) {
         throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin`);
+      }
+      // Çevirmenin tahmini kaydı: tutarı ya da günü düzeltilince ödenen tutar olur (nakit planı ödenmiş sayar; E-13)
+      if (
+        prev?.description === FIXED_ESTIMATE_DESCRIPTION &&
+        values.description === FIXED_ESTIMATE_DESCRIPTION &&
+        (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date)
+      ) {
+        values.description = null;
       }
       const [row] = await db.update(s.expenseEntries).set({ ...values, updatedAt: new Date() }).where(eq(s.expenseEntries.id, id)).returning({ id: s.expenseEntries.id });
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
@@ -241,9 +249,6 @@ export async function deleteExpenseCategory(id: number) {
 
 // ---------------------------------------------------------------- Sabit gideri aylık girişe çevir
 
-/** Çevirmede başlangıç ayına yazılan tahmini kaydın açıklaması: tutar sabit giderin KDV hariç tutarı (denetim E-60) */
-const ESTIMATE_DESCRIPTION = "Sabit giderdeki KDV hariç tutar (tahmini): ödediğiniz tutarı yazın";
-
 /**
  * Her ay aynı tutarla sayılan bir sabit gideri (ör. Instagram reklamı, Influencer) `fromMonth`tan itibaren aylık
  * girilen harcamaya çevirir: sabit kalem bir önceki ayda biter (geçmiş aylar aynı kalır), aynı adlı kategori açılır
@@ -295,7 +300,7 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
       if (!overrides.some((o) => o.month === month) && planned) {
         await tx
           .insert(s.expenseEntries)
-          .values({ date: `${month}-01`, categoryId: cat!.id, description: ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name });
+          .values({ date: `${month}-01`, categoryId: cat!.id, description: FIXED_ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name });
         estimated = true;
       }
       // Saklı `active` sütunu da bitiş ayıyla (Ödemeler › Sabit giderlerden ekle bitmiş kalemi önermesin; E-62)

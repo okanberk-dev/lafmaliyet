@@ -18,7 +18,7 @@
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod, FixedSection } from "./calc/types";
-import { fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
+import { FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
 import {
@@ -139,8 +139,8 @@ export interface CashPlanInput {
   goodsSpanDays: number;
   /**
    * Önceki aylardan ufkun son ayına kadar: bordro, o ayın sabit giderleri ve her ay girilen harcamaları (Aylık
-   * harcamalar, denetim E-13: `amount` ayın beklenen ödemesi, girilen harcamalardan; `paid` bugüne kadar girilen; `from`
-   * tutarın ayı, model.monthlyExpensePlan)
+   * harcamalar, denetim E-13: `amount` ayın beklenen ödemesi, bağlı faturalar KDV dahil; `paid` bugüne kadar girilen ve o
+   * ayın bağlı faturaları; `from` tutarın ayı, model.monthlyExpensePlan; `linked` tutarda bağlı fatura var)
    */
   months: Readonly<
     Record<
@@ -148,7 +148,7 @@ export interface CashPlanInput {
       {
         payroll: { net: number; sgk: number; people: number };
         fixed: readonly FixedItem[];
-        expenses?: readonly { id: number; name: string; amount: number; paid: number; from: string }[];
+        expenses?: readonly { id: number; name: string; amount: number; paid: number; from: string; linked?: boolean }[];
       }
     >
   >;
@@ -448,24 +448,38 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
     .at(-1);
   const months: Record<string, CashPlanInput["months"][string]> = {};
   const last = addDays(today, PLAN_DAYS - 1).slice(0, 7);
-  // Aylık harcamalar: bugüne kadar girilenler (ödenmiş), kategori ve ay başına
+  // Aylık harcamalar: bugüne kadar girilenler (ödenmiş), kategori ve ay başına. Sabit gideri aylık girişe çevirmenin
+  // tahmini kaydı ödeme değildir: ayın beklenen tutarında kalır, ödendi sayılmaz (gerçeği girilene kadar plan öder)
   const paid = new Map<string, number>();
   for (const e of model.ds.expenseEntries ?? []) {
-    if (e.date > today) continue;
+    if (e.date > today || e.description === FIXED_ESTIMATE_DESCRIPTION) continue;
     const k = `${e.date.slice(0, 7)}|${e.categoryId}`;
     paid.set(k, (paid.get(k) ?? 0) + e.amount);
   }
+  // Her ay girilen harcamalar (E-13): ayın beklenen ödemesi (bağlı faturalar KDV dahil). O ay girilmiş harcamalar ve o
+  // ayın bağlı faturaları (ödenmiş ya da Ödemeler'de kesin kalem) karşılanmış sayılır; gelecek ayda faturası henüz
+  // gelmemiş bağlı kategori de tutarıyla yayılır
+  const monthExpenses = (m: string): NonNullable<CashPlanInput["months"][string]["expenses"]> => {
+    const linked = new Map(model.expenseAmounts(m).map((x) => [x.cat.id, x.invoicesPayable]));
+    return model
+      .monthlyExpensePlan(m)
+      .filter((x) => x.cash > 0.005)
+      .map((x) => ({
+        id: x.cat.id,
+        name: x.cat.name,
+        amount: x.cash,
+        paid: (paid.get(`${m}|${x.cat.id}`) ?? 0) + (linked.get(x.cat.id) ?? 0),
+        from: x.from,
+        ...(x.cash > x.entries + 0.005 ? { linked: true } : {}),
+      }));
+  };
   // Gecikmiş maaş / SGK hatırlatıcısının bordrosu için iki ay geriden
   for (let m = shiftMonth(cur, -2); m <= last; m = shiftMonth(m, 1)) {
     const p = model.personnelFor(m);
     months[m] = {
       payroll: { net: p.net + p.extras, sgk: p.deductions + p.employerSgk + p.employerUnemployment, people: p.rows.length },
       fixed: model.fixedInMonth(m).map((f) => ({ id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) })),
-      // Her ay girilen harcamalar (E-13): ayın beklenen ödemesi girilen harcamalardan (bağlı faturalar Ödemeler'de kesin kalem)
-      expenses: model
-        .monthlyExpensePlan(m)
-        .filter((x) => x.entries > 0)
-        .map((x) => ({ id: x.cat.id, name: x.cat.name, amount: x.entries, paid: paid.get(`${m}|${x.cat.id}`) ?? 0, from: x.from })),
+      expenses: monthExpenses(m),
     };
   }
   return {
@@ -1033,8 +1047,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
 
   // ------------------------------------------------------------ Her ay girilen harcamalar (yayılan, tahmini, yarından)
   // Aylık harcamalar'da "her ay" kategoriler (reklam, influencer…; E-13): ayın beklenen ödemesinden bugüne kadar
-  // girileni düşülür, kalanı ayın kalan günlerine (gelecek ayda bütün günlerine) eşit yayılır. Adı aynı hatırlatıcı varsa
-  // onun gününde (yukarıda); bağlı fatura kategorisinin faturaları Ödemeler'de kesin kalem
+  // girileni ve o ayın bağlı faturaları düşülür (faturalar ödenmiş ya da Ödemeler'de kesin kalem), kalanı ayın kalan
+  // günlerine (gelecek ayda bütün günlerine) eşit yayılır. Adı aynı hatırlatıcı varsa onun gününde (yukarıda)
   const curMonth = today.slice(0, 7);
   const expenseOut = dates.map(() => 0);
   const expenseParts = new Map<number, { name: string; perDay: number[] }>();
@@ -1053,7 +1067,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     }
   }
   // Ufuktaki her ay girilen harcamalar (ilk göründükleri ayın tutarıyla): Tahmine katılanlar
-  const horizonExpenses = new Map<number, { id: number; name: string; amount: number; from: string }>();
+  const horizonExpenses = new Map<number, { id: number; name: string; amount: number; from: string; linked?: boolean }>();
   for (const m of monthKeys.filter((m) => m >= curMonth && m <= end.slice(0, 7)))
     for (const x of input.months[m]?.expenses ?? []) if (!horizonExpenses.has(x.id)) horizonExpenses.set(x.id, x);
 
@@ -1329,7 +1343,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       title: x.name,
       monthly: x.amount,
       status: st3,
-      note: st3 === "covered" ? "Ödemeler'de hatırlatıcısı var" : `Aylık harcamalar'daki ${monthLabel(x.from)} tutarı · ay içine yayılır`,
+      note:
+        st3 === "covered"
+          ? "Ödemeler'de hatırlatıcısı var"
+          : `Aylık harcamalar'daki ${monthLabel(x.from)} tutarı${x.linked ? " (bağlı faturalar KDV dahil)" : ""} · ay içine yayılır`,
       direction: "out",
     });
   }

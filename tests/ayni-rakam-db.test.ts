@@ -1,6 +1,6 @@
 // Aynı rakam her yerde (denetim 26 Eki 2026, B15) gerçek Postgres'te, oturum ve next/cache taklit edilerek:
 // - E-62: "Sabit giderlerden ekle" adayları bitiş ayına göre (saklı `active` bayat olsa da); aylık girişe çevirme
-//   `active`'i de yazar;
+//   `active`'i de yazar; çevirmenin tahmini kaydı tutarı düzeltilene kadar ödenmiş sayılmaz (E-13);
 // - E-46: sabit giderde zam girilince "Sabit giderlerden ekle" ile açılmış hatırlatıcının otomatik tutarı uyar (ileride
 //   değişiyorsa boşalır), elle yazılmış tutara dokunulmaz ama sonuç mesajı uyarır;
 // - E-41: kapalı işaretli günler (ileri tarihli dahil) modele gelir; raporlu gün kapalı sayılmaz.
@@ -100,6 +100,16 @@ describe("aynı rakam: veritabanında", { skip: !SERVER_URL && "AYNI_TEST_DATABA
       model.monthlyExpensePlan(NEXT).map((x) => [x.cat.name, x.amount, x.source]),
       [["Instagram reklamı", 30_000, "carried"]],
     );
+    // Tahmini kayıt ödeme değildir: nakit planı onu ödemeye devam eder (E-13)
+    const { planInputFromModel } = await import("../src/lib/cash-plan");
+    const planned = async () => planInputFromModel(await loadModel(), `${CUR}-15`).months[CUR].expenses?.map((x) => [x.amount, x.paid]);
+    assert.deepEqual(await planned(), [[30_000, 0]]);
+    // Açıklamasına dokunmadan tutarı düzeltilince ödenen tutar olur
+    const edit = await expenses.saveExpenseEntry({ id: entry.id, date: entry.date, categoryId: entry.categoryId, description: entry.description, amount: 36_000, paymentMethod: null, note: null });
+    assert.equal(edit.ok, true, JSON.stringify(edit));
+    const [paid] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, entry.id));
+    assert.equal(paid.description, null);
+    assert.deepEqual(await planned(), [[36_000, 36_000]]);
   });
 
   test("E-46: zam girilince otomatik tutarlı hatırlatıcı uyar; ileride değişiyorsa boşalır; elle yazılmışa dokunulmaz", async () => {
