@@ -128,7 +128,8 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Stok › Stok sayımı, Zayi & ikram, Tutarlılık",
     "Satış › Satışlar, Komisyon & hakediş, Analiz & senaryo",
     "Alış & gider › Faturalar, Tedarikçiler, Giderler & personel",
-    "Finans › Gelir-gider, Ödemeler & hatırlatıcılar",
+    // Vergi (dalga 12): dört sekmesi kenar çubuğunda tek öğe, yalnız yönetici
+    "Finans › Gelir-gider, Vergi, Ödemeler & hatırlatıcılar",
     "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu",
     "Yardım (/panel/yardim)",
   ]);
@@ -176,11 +177,12 @@ test("tek alt sayfası kalan grup o sayfanın bağlantısına döner (personelde
 
 test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve alt menü aynı adresleri tutar", () => {
   // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti. Hızlı sayım ve Mal
-  // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts)
+  // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts);
+  // Vergi dalga 12'de Finans'a eklendi
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/tahmin",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
-    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/hatirlaticilar", "/panel/sayim",
+    "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/parasut", "/panel/yardim",
   ];
   assert.deepEqual([...hrefsOf(navTreeFor("admin"))].sort(), [...ADMIN_PAGES].sort());
@@ -236,6 +238,8 @@ test("etkin sayfanın grubu kendiliğinden açık: alt ekran ve sekme de kendi b
   assert.equal(groupOf("/panel/karaoke/doluluk"), "Kafe");
   assert.equal(groupOf("/panel/kontrol/gecmis"), "Kafe");
   assert.equal(groupOf("/panel/hatirlaticilar/nakit"), "Finans");
+  // Vergi'nin sekmeleri (Vergiye göre, Demirbaş, Kurallar) Finans'ı açar
+  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) assert.equal(groupOf(p), "Finans", p);
   assert.equal(groupOf("/panel/harcamalar"), "Alış & gider");
   assert.equal(groupOf("/panel/personel"), "Alış & gider");
   assert.equal(groupOf("/panel/tedarikciler/12"), "Alış & gider");

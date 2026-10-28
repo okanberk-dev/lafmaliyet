@@ -190,6 +190,19 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Finans",
     items: [
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
+      // Vergi (dalga 12, docs/VERGI.md): tahmin, beyanname değil; alt ekranları ⌘K'da ayrı bulunur (kenar çubuğunda tek öğe)
+      {
+        href: "/panel/vergi",
+        label: "Vergi",
+        icon: Landmark,
+        roles: ["admin"],
+        keywords:
+          "vergi kurumlar vergisi geçici vergi muhtasar stopaj damga vergisi sgk prim bordro gelir vergisi kdv beyanname tahakkuk muhasebeci amortisman demirbaş çevre temizlik ilan reklam vergi takvimi",
+      },
+      { href: "/panel/vergi/gelir-gider", label: "Vergiye göre gelir-gider", icon: Receipt, roles: ["admin"], keywords: "vergi matrah gider sınıflandırma belgesi muhasebecide kdv beyannamesi satışları çeyrek" },
+      { href: "/panel/vergi/demirbas", label: "Demirbaş & amortisman", icon: Package, roles: ["admin"], keywords: "vergi demirbaş amortisman faydalı ömür varlık doğrudan gider" },
+      { href: "/panel/vergi/kurallar", label: "Vergi kuralları", icon: BookOpen, roles: ["admin"], keywords: "vergi oran dayanak kaynak 2026 elle değer ayarlar" },
+      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
       { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet" },
       // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
       {
@@ -309,13 +322,15 @@ export const NAV_TREE: NavNode[] = [
     ],
   },
   {
-    // Aylık tablo, ödemeler ve nakit planı (Ödemeler'in sekmesi); Vergi de buraya gelecek (docs/planlar/vergi.md)
+    // Aylık tablo, vergi (dört sekme; alt ekranlar adresin önekiyle eşleşir, docs/VERGI.md), ödemeler ve nakit planı
+    // (Ödemeler'in sekmesi)
     id: "finans",
     label: "Finans",
     icon: Landmark,
     roles: ["admin"],
     children: [
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
+      { id: "vergi", label: "Vergi", href: "/panel/vergi", roles: ["admin"] },
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
     ],
   },
@@ -500,6 +515,10 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",
+  "/panel/vergi": "Vergi",
+  "/panel/vergi/gelir-gider": "Vergiye göre",
+  "/panel/vergi/demirbas": "Demirbaş",
+  "/panel/vergi/kurallar": "Vergi kuralları",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

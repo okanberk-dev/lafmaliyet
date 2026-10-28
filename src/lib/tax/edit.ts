@@ -289,6 +289,38 @@ export function ruleTableValue(key: string): number | null {
 export const EMPLOYER_SGK_MAX = 0.2175;
 export const rateText = (v: number) => `%${(Math.round(v * 10000) / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Gelir-gider'deki SGK oranı uyarısı (K19, §4.6) */
+export interface EmployerRateNotice {
+  text: string;
+  /** Vergi ve nakit planının kullandığı oran (kural tablosu, elle değer uygulanmış) */
+  target: number;
+  /** "Ayarlar'daki oranı %19,75 yap" düğmesi: yalnız Muhasebeciye sorulacaklar › SGK oranı işaretliyse (M2) */
+  canApply: boolean;
+}
+
+/**
+ * Ayarlar'daki işveren SGK oranı (Gelir-gider ve Excel'in oranı, K17) vergi ve nakit planının oranından farklıysa
+ * Gelir-gider'deki uyarı satırı; aynıysa null. Oran kendiliğinden değişmez (K19): sahip muhasebecisine sorup M2'yi
+ * işaretleyince düğme çıkar, düğme yalnız `isverenSgk`'yi yazar (`setEmployerSgkRate`)
+ */
+export function employerRateNotice(settingsRate: number, tax: Pick<TaxSettings, "overrides" | "checks">, year: number): EmployerRateNotice | null {
+  const { rules, fromYear, estimated } = rulesFor(year, tax.overrides);
+  const rule = rules.sgk.isverenOran;
+  const target = rule.value;
+  if (!Number.isFinite(settingsRate) || Math.abs(settingsRate - target) < 1e-9) return null;
+  const head = `Ayarlar'da işveren SGK ${rateText(settingsRate)}.`;
+  // Tablosu olmayan yıl son bilinen yılın kurallarıyla (tahmini)
+  const when = !estimated && fromYear === 2026 ? "2026'da" : `${fromYear} kurallarıyla`;
+  const middle = rule.override
+    ? `Vergi'de elle girilen oran ${rateText(target)} (Kurallar › SGK işveren payı).`
+    : `${when} imalat dışı işyerinde 2 puan indirimle standart oran ${rateText(target)}; ek teşvikiniz varsa farklı olabilir.`;
+  return {
+    text: `${head} ${middle} Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › SGK oranları bölümünden değiştirin.`,
+    target,
+    canApply: Boolean(tax.checks.sgk_oran),
+  };
+}
+
 /** Ayarlar'ın işlem geçmişi: değişen alanlar ("hesap dönemi 25.06.2026", "muhtasar 3 aylık: açık" …) */
 export function settingsChangeText(before: TaxSettings, after: TaxSettings): string[] {
   const out: string[] = [];

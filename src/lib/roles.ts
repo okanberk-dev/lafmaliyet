@@ -105,6 +105,7 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Ürün maliyeti, fiyat değiştirme ve kârlılık", admin: true, staff: false },
   { label: "Hammadde fiyatları", admin: true, staff: false },
   { label: "Satış, fatura, gelir-gider, kasa raporlarının geçmişi", admin: true, staff: false },
+  { label: "Vergi: tahmini vergi takvimi, vergiye göre gelir-gider, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
   { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu", admin: true, staff: false },

@@ -126,6 +126,11 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
   assert.equal(mobileTitleFor("/panel/giderler"), "Sabit giderler");
   assert.equal(mobileTitleFor("/panel/gelir-gider"), "Gelir-gider");
+  // Vergi (dalga 12): dört sekmenin kısa başlıkları
+  assert.equal(mobileTitleFor("/panel/vergi"), "Vergi");
+  assert.equal(mobileTitleFor("/panel/vergi/gelir-gider"), "Vergiye göre");
+  assert.equal(mobileTitleFor("/panel/vergi/demirbas"), "Demirbaş");
+  assert.equal(mobileTitleFor("/panel/vergi/kurallar"), "Vergi kuralları");
   assert.equal(mobileTitleFor("/panel/personel"), "Personel");
   assert.equal(mobileTitleFor("/panel/sayim"), "Stok sayımı");
   assert.equal(mobileTitleFor("/panel/tutarlilik"), "Tutarlılık");

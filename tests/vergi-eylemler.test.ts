@@ -20,6 +20,7 @@ import {
   assetRefusal,
   categoryClassificationRefusal,
   cleanFiling,
+  employerRateNotice,
   filingLogText,
   filingPeriodRefusal,
   filingReminders,
@@ -323,4 +324,38 @@ test("vergi yükleyicileri: Özet nakit planını vergi girdisiyle okur; nakit p
     const src = read(`src/lib/tax/${f}.ts`);
     assert.doesNotMatch(src, /from "@\/server|from "drizzle-orm|from "\.\.\/\.\.\/server/, f);
   }
+});
+
+test("Gelir-gider'deki SGK oranı uyarısı (K19): Ayarlar yasal orandan farklıysa; düğme yalnız M2 işaretliyse; elle değer hedefi değiştirir", () => {
+  const tax = { overrides: {}, checks: {} };
+  const n = employerRateNotice(0.1575, tax, 2026)!;
+  assert.equal(
+    n.text,
+    "Ayarlar'da işveren SGK %15,75. 2026'da imalat dışı işyerinde 2 puan indirimle standart oran %19,75; ek teşvikiniz varsa farklı olabilir. Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › SGK oranları bölümünden değiştirin.",
+  );
+  assert.equal(n.target, 0.1975);
+  assert.equal(n.canApply, false);
+  // Aynıysa uyarı yok (yuvarlama payıyla)
+  assert.equal(employerRateNotice(0.1975, tax, 2026), null);
+  assert.equal(employerRateNotice(0.19750000001, tax, 2026), null);
+  // M2 işaretlenince düğme
+  const marked = { overrides: {}, checks: { sgk_oran: { by: "Sahip", date: "2026-10-28", note: null } } };
+  assert.equal(employerRateNotice(0.1575, marked, 2026)!.canApply, true);
+  // Kurallar'da elle girilen oran (ör. teşvikle %15,75): Ayarlar'la aynıysa uyarı yok; farklıysa hedef elle değer
+  const own = (v: number) => ({ overrides: { "sgk.isverenOran": { value: v, note: "muhasebeci", by: "Sahip", date: "2026-10-28" } }, checks: {} });
+  assert.equal(employerRateNotice(0.1575, own(0.1575), 2026), null);
+  const o = employerRateNotice(0.1575, own(0.2075), 2026)!;
+  assert.equal(o.target, 0.2075);
+  assert.match(o.text, /^Ayarlar'da işveren SGK %15,75\. Vergi'de elle girilen oran %20,75 \(Kurallar › SGK işveren payı\)\./);
+  // Tablosu olmayan yıl son bilinen yılın kurallarıyla
+  assert.match(employerRateNotice(0.1575, tax, 2027)!.text, /2026 kurallarıyla imalat dışı/);
+  // Gelir-gider sayfası uyarıyı yalnız sayfada çizer (B16'nın tablo dosyalarına dokunmaz), düğme onaylı pencereyle
+  const page = read("src/app/panel/gelir-gider/page.tsx");
+  assert.match(page, /employerRateNotice\(model\.settings\.isverenSgk, taxSettings, Number\(current\.slice\(0, 4\)\)\)/);
+  assert.match(page, /href="\/panel\/vergi\/gelir-gider"/);
+  assert.match(page, /Vergiye göre karşılığı:/);
+  const notice = read("src/app/panel/gelir-gider/sgk-rate-notice.tsx");
+  assert.match(notice, /<ConfirmDialog/);
+  assert.match(notice, /setEmployerSgkRate\(target\)/);
+  assert.match(notice, /\{canApply \? \(/);
 });

@@ -1,5 +1,6 @@
 import { Banknote, Percent, PiggyBank, Wallet } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -13,14 +14,17 @@ import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/lafpos/kasa";
 import { salesMonthsToPull } from "@/lib/site-sales/calc";
+import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
 import { loadModel } from "@/server/data/dataset";
+import { loadTaxSettings } from "@/server/data/tax";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
 import { readSalesState, SITE_SALES_FIRST_MONTH } from "@/server/site-sales/sync";
 
 import { pnlRowLabel, revenueBreakdown, yearBreakdowns } from "./breakdowns";
 import { CountUp, PnlGrid, YearPicker, type GridSection, type StripMonth } from "./pnl-grid";
+import { SgkRateNotice } from "./sgk-rate-notice";
 import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
@@ -62,7 +66,15 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
 async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/gelir-gider">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, salesState] = await Promise.all([loadModel(), readSalesState()]);
+  // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
+  const [model, salesState, taxSettings] = await Promise.all([
+    loadModel(),
+    readSalesState(),
+    loadTaxSettings().catch((e) => {
+      console.error("[gelir-gider] vergi ayarları", e);
+      return null;
+    }),
+  ]);
   const known = [...model.monthInfo.keys(), ...model.ds.invoices.map((i) => i.date.slice(0, 7))].sort();
   const knownYears = new Set(known.map((k) => Number(k.slice(0, 4))));
   // Varsayılan yıl: bu yıl (verisi varsa); yoksa verisi olan son yıl. İleri tarihli tek bir kayıt tabloyu boş bir yıla atmasın.
@@ -219,6 +231,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     ),
   };
   // Yıl kartlarının notu: toplama girmeyen aylar ve sayımı olmayan aylar (tablo bu ayları yine gösterir)
+  // Ayarlar'daki işveren SGK oranı (bu tablo ve Excel) vergi ve nakit planının yasal oranından farklıysa (K17, K19)
+  const sgkNotice = taxSettings ? employerRateNotice(model.settings.isverenSgk, taxSettings, Number(current.slice(0, 4))) : null;
   const yearNotes = [
     ...yt.missingRevenue.map(missingRevenueText),
     ...(yt.uncounted.length ? [`${yt.uncounted.map((m) => monthLabel(m)).join(", ")}: ay sonu sayımı yok, mal maliyeti tahmini (kapanış stoğu 0 sayıldı)`] : []),
@@ -244,6 +258,14 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           )
         }
       />
+      {/* Vergi bölümündeki karşılığı (dalga 12, docs/VERGI.md) */}
+      <p className="-mt-2 mb-4 text-[13px] text-ink-mute">
+        Vergiye göre karşılığı:{" "}
+        <Link href="/panel/vergi/gelir-gider" className="font-medium text-ink underline underline-offset-2">
+          Vergi › Vergiye göre
+        </Link>
+      </p>
+      {sgkNotice ? <SgkRateNotice text={sgkNotice.text} target={sgkNotice.target} targetText={rateText(sgkNotice.target)} canApply={sgkNotice.canApply} /> : null}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
