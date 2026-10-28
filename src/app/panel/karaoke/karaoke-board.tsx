@@ -467,7 +467,8 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
         {showDay ? <span className="block text-xs font-normal text-ink-mute">{dayLabel(s.date, now)}</span> : null}
         {timeRange(start, end)}
       </div>
-      <div className="min-w-0 flex-1">
+      {/* Ad en az 7rem: geniş düğme sığmazsa (telefonda "Silinmesini iste", "Geri çek") alt satıra iner, ad harf harf kırılmaz */}
+      <div className="min-w-0 grow basis-28">
         <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
           {nameOf(s)}
           {s.guests ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {s.guests} kişi</span> : null}
@@ -494,7 +495,7 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
         </p>
         {s.note ? <p className="mt-1 text-[13px] break-words text-ink-mute">Not: {s.note}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {p === "done" && s.endedAt && !reopenRefusal(s, now) ? (
           <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => reopenKaraokeSession(s.id), "Sayaç yeniden açıldı")}>
             <RotateCcw size={14} /> Geri aç

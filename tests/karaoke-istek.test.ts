@@ -202,6 +202,10 @@ test("bağlantılar: bar ekranı, canlı uç, geri çekme, zil, Bugün, Onaylar 
   assert.match(bell, /karaokeRequestNotifications\(user, now\)\.catch\(\(\) => \[\]\)/);
   assert.match(read("src/app/panel/bugun/logic.ts"), /const OPS_KINDS: StaffRequestKind\[\] = \["zayi-gec", "zayi-sil", "karaoke-sil"\];/);
   assert.match(read("src/app/panel/onaylar/karaoke-cards.tsx"), /reviewKaraokeDeleteRequest\(\{ id: card\.id, seenVersion: card\.version, decision, note: note\.trim\(\) \|\| null \}\)/);
+  // İşlem geçmişinde karaoke kendi türünde ("Karaoke oturumu …" hesabın oturumu sayılmaz)
+  const log = read("src/app/panel/ayarlar/settings-client.tsx");
+  assert.ok(log.indexOf('{ kind: "karaoke", label: "Karaoke", keys: ["karaoke"]') > 0);
+  assert.ok(log.indexOf('{ kind: "karaoke"') < log.indexOf('{ kind: "kullanici"'), "kullanıcıdan önce");
   // Personel Yardım'ı
   assert.match(read("src/app/panel/yardim/personel/content.tsx"), /Yanlış açılan sayacı ilk \{KARAOKE_DELETE_FREE_MINUTES\} dakikada/);
 });

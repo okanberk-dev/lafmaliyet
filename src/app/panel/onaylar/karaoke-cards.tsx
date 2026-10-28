@@ -71,6 +71,12 @@ function KaraokeDeleteItem({ card }: { card: KaraokeDeleteCard }) {
           {card.requestedByName} istedi · {stampTR(card.createdAt)} · {card.waited} bekliyor
         </p>
         {card.message ? <p className="text-sm break-words text-ink-soft">Neden: {card.message}</p> : null}
+        <Link
+          href="/panel/karaoke"
+          className="inline-flex items-center gap-1 text-[13px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5"
+        >
+          <ExternalLink size={14} aria-hidden="true" /> Karaoke ekranı
+        </Link>
       </div>
       {card.gone ? (
         <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">Sayaç zaten silinmiş</p>
@@ -89,13 +95,7 @@ function KaraokeDeleteItem({ card }: { card: KaraokeDeleteCard }) {
           <Textarea id={`karaoke-not-${card.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={300} />
         </Field>
       ) : null}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Link
-          href="/panel/karaoke"
-          className="mr-auto inline-flex items-center gap-1 text-[13px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5"
-        >
-          <ExternalLink size={14} aria-hidden="true" /> Karaoke ekranı
-        </Link>
+      <div className="flex flex-wrap justify-end gap-2">
         {card.gone ? (
           <Button variant="secondary" onClick={() => decide("approve")} disabled={pending}>
             Kapat
