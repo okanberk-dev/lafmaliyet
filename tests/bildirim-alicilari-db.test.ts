@@ -341,10 +341,13 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     assert.equal(wrong.ok, false);
     assert.notEqual(wrong.ok ? "" : wrong.error, PROFILE_LIST_REFUSAL);
     assert.equal((await db.select().from(s.users).where(eq(s.users.id, users.ayse.id)))[0].email, users.ayse.email);
+    // Başka bir hesabın adresi: personele aynı metin (adres deneyerek liste öğrenilmez), yöneticiye nedeni
+    assert.deepEqual(await authActions.updateProfile({ name: users.ayse.name, email: users.mehmet.email, password: PASSWORD }), { ok: false, error: PROFILE_LIST_REFUSAL });
     // Listede olmayan adres
     assert.equal((await authActions.updateProfile({ name: users.ayse.name, email: "ayse.yeni@laffogato.net", password: PASSWORD })).ok, true);
-    // Yönetici kendi adresini listedeki bir adrese çevirebilir (alıcı olmaya devam eder)
+    // Yönetici kendi adresini listedeki bir adrese çevirebilir (alıcı olmaya devam eder); başka hesabın adresinde nedeni
     me = users.ali;
+    assert.deepEqual(await authActions.updateProfile({ name: users.ali.name, email: users.veli.email, password: PASSWORD }), { ok: false, error: "Bu e-posta başka bir kullanıcıda kayıtlı" });
     assert.equal((await authActions.updateProfile({ name: users.ali.name, email: "sahip@gmail.com", password: PASSWORD })).ok, true);
   });
 

@@ -353,7 +353,8 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .select({ n: count() })
       .from(s.users)
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
-    if (n > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
+    // Personele "listede" ile "başka hesapta" aynı metin (PROFILE_LIST_REFUSAL): adres deneyerek liste öğrenilmesin
+    if (n > 0) throw new UserError(me.role === "admin" ? "Bu e-posta başka bir kullanıcıda kayıtlı" : PROFILE_LIST_REFUSAL);
     // Personel giriş e-postasını kasa raporu alıcılarındaki ya da sabah e-postasının bildirim adreslerindeki bir adrese
     // çeviremez (E-52): gönderim personel hesabının adresini düşürür, kasa ve sabah e-postası sahibine uyarısız gitmezdi.
     // Kendi adresi bir listedeyken de değiştiremez (E-53): gönderim adresi hesaba bakarak düşürür, hesabı kalmayan eski

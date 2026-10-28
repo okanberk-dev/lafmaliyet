@@ -253,7 +253,8 @@ E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
   ("ayse@… bir personel hesabının adresi; …", "eski@… pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı
   Kullanıcılar'dan silerseniz adres alıcı olabilir."). Duraklatılmış bir adres böyle bir hesaba aitse yeniden açılmaz.
 - **Personel Hesabım'da** giriş e-postasını bir listedeki adrese (kasa alıcıları, kapalıyken de; bildirim adresleri,
-  duraklatılmış da) çeviremez: "Bu adres bildirim listesinde; giriş e-postanız olamaz. Yöneticiye yazın." Parola önce
+  duraklatılmış da) çeviremez: "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun."
+  Başka bir hesabın adresinde de aynı metin: personel adres deneyerek kimin listede olduğunu öğrenemez. Parola önce
   sorulur. Kendi adresi bir listedeyken giriş e-postasını hiç değiştiremez: "Giriş e-postanız bildirim listesinde;
   değiştirmek için yöneticiye yazın." (personele indirilen vardiya sorumlusu adresini değiştirince eski kutusu hesapsız
   kalır, kasa ve sabah e-postası ona yeniden giderdi, zil susardı). Yönetici kendi adresini çevirebilir (alıcı olmaya

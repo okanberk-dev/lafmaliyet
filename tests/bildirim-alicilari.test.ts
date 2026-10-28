@@ -84,7 +84,7 @@ test("kaydederken ret metni: adresi adıyla söyler; personelde nedeni listeye g
     recipientRefusal("digest", { email: "eski@laffogato.net", reason: "inactive" }),
     "eski@laffogato.net pasif bir hesabın adresi; pasif hesaba e-posta gitmez. Hesabı Kullanıcılar'dan silerseniz adres alıcı olabilir.",
   );
-  assert.equal(PROFILE_LIST_REFUSAL, "Bu adres bildirim listesinde; giriş e-postanız olamaz. Yöneticiye yazın.");
+  assert.equal(PROFILE_LIST_REFUSAL, "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun.");
 });
 
 test("Kullanıcılar uyarısı: personele indirilen ya da pasif yapılan hesabın adresi listede", () => {

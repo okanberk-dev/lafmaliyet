@@ -80,9 +80,10 @@ export function recipientRefusal(list: RecipientList, d: DroppedRecipient): stri
 
 /**
  * Personel Hesabım'da giriş e-postasını bir bildirim listesindeki adrese çeviremez (E-52): o adres gönderimde düşerdi,
- * kasa ya da sabah e-postası sahibine uyarısız gitmezdi
+ * kasa ya da sabah e-postası sahibine uyarısız gitmezdi. Başka bir hesabın adresine de aynı metinle: personel adres
+ * deneyerek kimin listede olduğunu öğrenemesin (yöneticiye nedeni ayrı yazılır)
  */
-export const PROFILE_LIST_REFUSAL = "Bu adres bildirim listesinde; giriş e-postanız olamaz. Yöneticiye yazın.";
+export const PROFILE_LIST_REFUSAL = "Bu adres giriş e-postanız olamaz; başka bir adres yazın ya da yöneticiye sorun.";
 
 /**
  * Personel, adresi bir bildirim listesindeyken giriş e-postasını değiştiremez: gönderim adresi hesaba bakarak düşürür,
