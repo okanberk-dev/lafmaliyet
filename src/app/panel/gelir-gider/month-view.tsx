@@ -342,15 +342,23 @@ export function MonthView({
                           />
                         </button>
                       ) : source ? (
-                        // Girilemeyen satır kaynağından gelir (rowLink): dokununca o ayın faturaları, harcamaları ya da
-                        // komisyonu açılır. O ayda faturası olmayan tedarikçi satırı bağlantısız (boş aramaya gitmesin)
-                        <Link href={source.href} className={cn(ROW, "cursor-pointer")} aria-label={`${def.label}: ${fmt(c.value, def.format)}. ${source.label} sayfasını aç`}>
+                        // Girilemeyen satır kaynağından gelir (rowLink): dokununca o ayın faturaları (komisyon faturaları
+                        // dahil), harcamaları ya da personel / sabit giderler açılır. O ayda faturası olmayan tedarikçi
+                        // satırı bağlantısız (boş aramaya gitmesin). Bağlantı satırı kaplar; açıklama (i) onun üstünde
+                        // ayrı dokunulur (bağlantının içinde düğme olmaz)
+                        <div className={cn(ROW, "relative")}>
+                          <Link
+                            href={source.href}
+                            className="absolute inset-0 cursor-pointer rounded-[inherit]"
+                            aria-label={`${def.label}: ${fmt(c.value, def.format)}. ${source.label} sayfasını aç`}
+                          />
                           {label}
+                          {def.hint ? <InfoTip text={def.hint} className="relative z-10 shrink-0" /> : null}
                           <span className={cn("shrink-0 text-right text-[15px] text-ink-mute tabular", c.value === null && "text-ink-quiet", c.value !== null && c.value < 0 && "text-bad")}>
                             {fmt(c.value, def.format)}
                           </span>
                           <ChevronRight size={16} className="-mr-1 shrink-0 text-ink-quiet" aria-hidden="true" />
-                        </Link>
+                        </div>
                       ) : (
                         <div className={ROW}>
                           {label}

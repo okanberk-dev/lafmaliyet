@@ -1,8 +1,9 @@
 // Gelir-gider satırlarının kaynak ekranları (saf; tablo, telefondaki ay görünümü ve Genel bakış'ın dökümü birlikte
-// kullanır). Tutar nereden geliyorsa oraya: faturalar, aylık harcamalar, stok sayımı, komisyon, personel, sabit
-// giderler, satışlar (denetim E-30). Testleri: tests/gelir-gider-baglanti.test.ts
+// kullanır). Tutar nereden geliyorsa oraya: faturalar (komisyon faturaları dahil), aylık harcamalar, stok sayımı,
+// personel, sabit giderler, satışlar (ciro, POS komisyonunun kartlı satış oranı; denetim E-30). Testleri: tests/gelir-gider-baglanti.test.ts
 
 import { shiftMonth } from "@/lib/calc/engine";
+import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 
 export interface RowLink {
@@ -35,10 +36,13 @@ export function rowLink(key: string, month: string, o: { value?: number | null; 
     if (empty) return null;
     return { href: invoicesHref({ ay: month, ara: key.slice("purchase:".length) }), label: `Faturalar · ${monthLabel(month)}`, scope: "month" };
   }
-  if (key === "commission:pos") return { href: `/panel/satislar?ay=${month}#m-card`, label: `Kartlı satış oranı · ${monthLabel(month)}`, scope: "month" };
+  // Tahminin kartlı satış oranı Satışlar'da (#m-card alanı)
+  if (key === "commission:pos") return { href: `/panel/satislar?ay=${month}#m-card`, label: `Satışlar · ${monthLabel(month)}`, scope: "month" };
+  // Komisyon faturası: o ayın tarihli faturaları (Gelir-gider faturayı kendi tarihinin ayında sayar). Komisyon & hakediş
+  // değil: orada 1-5'inde kesilen yemek kartı faturası önceki aydadır, sayfa yalnız son 13 ayı açar
   if (key.startsWith("commission:")) {
     if (empty) return null;
-    return { href: `/panel/komisyonlar?ay=${month}`, label: `Komisyon & hakediş · ${monthLabel(month)}`, scope: "month" };
+    return { href: invoicesHref({ kategori: COMMISSION_CATEGORY, ay: month, ara: key.slice("commission:".length) }), label: `Faturalar · ${monthLabel(month)}`, scope: "month" };
   }
   if (key.startsWith("expense:")) return { href: `/panel/harcamalar?ay=${month}`, label: `Aylık harcamalar · ${monthLabel(month)}`, scope: "month" };
   if (key === "stock:closing") return notFuture(month) ? { href: `/panel/sayim?ay=${month}`, label: `Stok sayımı · ${monthLabel(month)}`, scope: "month" } : null;

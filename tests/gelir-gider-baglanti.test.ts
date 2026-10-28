@@ -35,8 +35,16 @@ test("rowLink: her satır tutarın geldiği ekrana, o ayla", () => {
   // Açılış önceki ayın sayımıdır
   assert.equal(rowLink("stock:opening", m, { current: m })!.href, "/panel/sayim?ay=2026-09");
   assert.equal(rowLink("stock:opening", "2026-01")!.href, "/panel/sayim?ay=2025-12", "yıl sınırı");
-  assert.equal(rowLink("commission:Pluxee", m, { value: 30 })!.href, "/panel/komisyonlar?ay=2026-10");
-  assert.equal(rowLink("commission:pos", m)!.href, "/panel/satislar?ay=2026-10#m-card");
+  // Komisyon faturası: o ayın tarihli Komisyon faturaları (Gelir-gider'in saydığı faturalar; Komisyon & hakediş 1-5'inde
+  // kesileni önceki aya koyar ve yalnız son 13 ayı açar)
+  assert.deepEqual(rowLink("commission:Pluxee Türkiye", m, { value: 30 }), {
+    href: "/panel/faturalar?kategori=Komisyon&ay=2026-10&ara=Pluxee+T%C3%BCrkiye#fatura-listesi",
+    label: "Faturalar · Ekim 2026",
+    scope: "month",
+  });
+  assert.equal(rowLink("commission:Pluxee", "2024-07", { value: 30 })!.href, "/panel/faturalar?kategori=Komisyon&ay=2024-07&ara=Pluxee#fatura-listesi", "pencere yok");
+  // POS komisyonunun kartlı satış oranı Satışlar'da; ad sayfanın adı
+  assert.deepEqual(rowLink("commission:pos", m), { href: "/panel/satislar?ay=2026-10#m-card", label: "Satışlar · Ekim 2026", scope: "month" });
   assert.equal(rowLink("revenue", m)!.href, "/panel/satislar?ay=2026-10#m-pos");
   assert.deepEqual(rowLink("personnel:net", m), { href: "/panel/personel", label: "Personel", scope: "row" });
   assert.deepEqual(rowLink("personnel:employer", m)?.scope, "row");

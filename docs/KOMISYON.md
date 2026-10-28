@@ -210,8 +210,11 @@ kartlarının komisyonu bu ekrandaki faturalarıyla Gelir-gider'in Komisyon böl
 oran elle yazıldıysa ondan kasa raporlarındaki yemek kartı payı düşülür. Kasa raporu olmayan ayda kartlı satış oranı
 (elle ya da Ayarlar'daki, yemek kartı dahil; hücre ipucu "yemek kartı payı ayrılamadı" der). Kartlı satış oranı
 ((kart + yemek kartı) ÷ Z) yalnız satış raporunun ürün başına tahmini komisyonunda kalır. Ayda **kanalı bulunamayan**
-bir Komisyon faturası varsa (ör. bankanın POS komisyonu faturası; ad yalnız faturadaki adın önekiyle denetlenir) ve
-hücre elle yazılmamışsa hücrede uyarı çıkar: banka faturasıysa tahmin onu ikinci kez sayar, hücreye 0 yazılır.
+bir Komisyon faturası varsa (ör. bankanın POS komisyonu faturası; kanal bu ekrandaki gibi faturadaki adla, sonra
+tedarikçi kartının adı ve diğer adlarıyla aranır: "Diğer adlar"a eklenen unvan uyarıyı da kaldırır) ve hücre elle
+yazılmamışsa hücrede uyarı çıkar: banka faturasıysa tahmin onu ikinci kez sayar, hücreye 0 yazılır. Gelir-gider'deki
+komisyon faturası satırı Faturalar'da o ayın tarihli Komisyon faturalarını açar (bu ekran 1-5'inde kesilen yemek kartı
+faturasını önceki aya koyar).
 Bankanın POS komisyonunu ayrıca fatura ya da dekont olarak gönderip göndermediği sahibe soru (denetim, soru 9).
 
 ## 7. Hakediş
