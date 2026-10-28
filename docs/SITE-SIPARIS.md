@@ -48,7 +48,8 @@ sipariş yazıldı (live:orders)
      {"event":"orders.changed","at"} (imzalı)       └─ after(): çek (hata olursa 4 sn sonra bir kez daha)
                                                        GET laffogato.net/api/panel/orders (imzalı)
 GET /api/panel/orders  ◀────────────────────────        ├─ doğrula (sürüm 1; bozuk sipariş atlanır)
-  {version:1, now, complete, orders:[…]}                ├─ son listenin kopyası (site_orders; üzerine yazılır)
+  {version:1, now, complete, orders:[…],                ├─ son listenin kopyası (site_orders; üzerine yazılır)
+   awaitingPayment}                                     ├─ ödeme bekleyen sayısı > 0: ekran 30 dk yoğun
   yalnız açık kafe siparişleri, beyaz liste             ├─ değiştiyse sürümü artır (canlı ucun ETag'i)
                                                         └─ ilk kez görülen yeni sipariş: Web Push "orders"
                                                               └─ service worker → açık sekme /api/canli'yi
@@ -179,7 +180,7 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 |-------------|---------|
 | Sitenin pingi (`/api/orders/ping`) | Hemen (202'den sonra, `after()`); hata olursa 4 saniye sonra bir kez daha |
 | Ekran açılınca ya da öne gelince | Son çekme bir dakikadan eskiyse |
-| Arka planda, yalnız ekran görünürken | Ekranda sipariş varken ya da son iki saatte ping / değişiklik olduysa üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir |
+| Arka planda, yalnız ekran görünürken | Ekranda sipariş varken, son iki saatte ping / değişiklik olduysa ya da sitede ödemesi beklenen sipariş varken (en çok 30 dakika, aşağıda **Ödeme takibi**) üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir. Sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz |
 | **Yenile** | Hemen; art arda basılırsa siteyi en çok on saniyede bir sorar (son çekme hatalıysa her basışta) |
 | Günlük iş | Yok: Vercel'in cron kotası dolu, ping ve ekran yeter |
 
@@ -201,10 +202,41 @@ saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran ist
 | Anahtar | İçerik |
 |---------|--------|
 | `site_orders` | Son listenin kopyası: `now` (sitenin saati), `at` (çekme anı), `complete`, `skipped`, `orders` (ekranın alanları; tutar saklanmaz). Liste değişince üzerine yazılır; **sipariş geçmişi tutulmaz** |
-| `site_orders_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `lastChangeAt`, `lastNewAt`, `lastTrigger` (`ping` / `screen` / `manual`) |
-| `site_orders_version` | Sayaç: liste ya da hata durumu değişince artar; canlı ucun ETag'ine girer |
+| `site_orders_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `lastChangeAt`, `lastNewAt`, `lastTrigger` (`ping` / `screen` / `manual`), `lastCheckAt` (pingle olmayan son deneme), `awaitingPayment` ve `awaitingSince` (ödeme takibi), `missedPingAt` (son kaçan ping) |
+| `site_orders_version` | Sayaç: liste, hata durumu ya da ödeme takibinin bitişi değişince artar (pingin kendisi artırmaz); canlı ucun ETag'ine girer |
 
 Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bunu durum satırıyla söyler.
+
+### Ödeme takibi ve kaçan ping (senkron planı P2, 28 Ekim 2026)
+
+Kartlı siparişte site iki kez ping atar: sipariş açılınca (ödeme bekleniyor) ve ödeme gelince. İkincisi kaybolursa
+(panel o an yayında, ağ, zaman aşımı) ödenmiş sipariş ekrana ancak ekranın kendi çekmesiyle gelir; sakin saatte bu bir
+saat sürebilirdi. Site bu yüzden listenin yanında **ödemesini bekleyen** bar ekranı siparişlerinin **sayısını** verir
+(`awaitingPayment`, laffogato #270; yalnız sayı, sipariş, müşteri ya da tutar yok; son ödeme sayfası son 30 dakikada
+açılmış olanlar). Kurallar `src/lib/site-orders/follow.ts`'te (saf, ekranın paketine de girer):
+
+- **Takip:** sayı sıfırdan büyükken panel "ödeme bekleniyor" der ve ekran **en çok 30 dakika** yoğun sayılır
+  (`awaitingUntil` = başlangıç + 30 dk; görünürken üç dakikada bir çeker). Takip 0 → > 0 geçişinde, sayı artınca (yeni
+  bir ödeme sayfası) ve sayı sıfırdan büyükken gelen **her pingte** (yeniden açılan ödeme sayfası ping atar ama sipariş
+  zaten sayılıyorsa sayıyı artırmaz) yeniden başlar; ekranın kendi çekmesi takibi uzatmaz. Sayı 0 olunca takip biter.
+  Takibin başlaması, yeniden başlaması ve bitmesi sürümü artırır: açık sekme yeni bitişi canlı uçtan alır. Pingin
+  kendisi sürümü artırmaz.
+- **Gecikme:** ödeme pingi kaçsa da görünür bar ekranı siparişi birkaç dakikada (en geç ≈ 6 dakika) gösterir: ekran
+  takibi ilk canlı veride öğrenir (ekranda açık sipariş varken ya da cihaz bildirimi almıyorken 20 saniyede bir).
+  Bildirimi açık, ekranı boş cihaz yeniliği sormadan bildirimle bekler: takibi kabuğun bir sonraki kontrolünde (en
+  çok 30 dakika) öğrenir, sonra üç dakikada bir çeker. Arka plandaki sekme siteyi kendisi çekmez (kabuğun 10
+  dakikalık kontrolü yalnız panelin listesine bakar).
+- **Bütçe:** sürekli sorgu yok, yeni zamanlanmış iş yok; sık çekme yalnız ödeme beklenirken ve sipariş başına en çok
+  30 dakika (sitenin sayısı da her siparişi son ödeme sayfasından 30 dakika sonra düşer; takip sayı 0 olunca biter).
+  Alanı göndermeyen eski site için davranış eskisi gibidir.
+- **Sakin saatin kontrolü:** saatlik kontrol (`maxAgeMs` ≥ 10 dk) yalnız ekranın ve elle yapılan çekmeleri sayar
+  (`lastCheckAt`): araya giren başka bir siparişin pingi kontrolü atlatıp kaçan ödemeyi bir saat daha gizlemez. Daha
+  sık kontroller (açılış 1 dk, yoğun 3 dk) pingin çekmesini sayar, o çekme listeyi zaten getirdi.
+- **Kaçan ping:** pingle olmayan bir çekme (ekran, Yenile, aşama sonrası, Bağlantıları sına) ilk kez gördüğü yeni bir
+  siparişi getirir, sipariş en az bir dakika önce ödenmiş (sitenin saatiyle) ve ödemeden sonra siteden hiç ping
+  gelmemişse `missedPingAt` yazılır. **Ayarlar › laffogato.net** siparişler satırında gösterir: "Ping kaçtı …: ödenmiş
+  bir sipariş sitenin pingiyle değil ekranın kontrolüyle geldi." Ping gelip çekmesi düştüyse bu kaçan ping değil, çekme
+  hatasıdır (satır onu hata olarak gösterir). İlk çekme ve önceki listesi eksik (200'den çok sipariş) çekme sayılmaz.
 
 ## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
@@ -212,6 +244,10 @@ Müşterinin notu sitede yayında (laffogato #248) ve panel onu isteğe bağlı 
 siparişinde, kırpılmış ve en çok 300 karakter (kuryede hiç: o alan adres notunu da taşır, "[adres notu] · [not]"; kapı
 kodu siteden çıkmaz, üyenin kurye siparişindeki notu da gelmez); satırın `note`'u `items[].options.note`'tan, en çok 200
 karakter, her siparişte (kurye dahil). Kural ve KVKK bölümü sitenin `docs/PANEL-ORDERS.md`'sinde.
+
+Ödeme bekleyen sayısı (`awaitingPayment`, 28 Ekim 2026, laffogato #270): yanıtın üst düzeyinde isteğe bağlı tam sayı,
+`version` 1 kalır; panel yoksa ya da bozuksa 0 sayar ve listeyi yine okur (`parseSiteOrders`). Site sayıyı listeden önce
+okur: iki okuma arasında ödenen sipariş listede çıkar, hiçbirinde kalmaz. Kullanımı yukarıda **Ödeme takibi**.
 
 ## Kurulum
 
@@ -231,6 +267,9 @@ karakter, her siparişte (kurye dahil). Kural ve KVKK bölümü sitenin `docs/PA
 
 - Ping ve okuma karaoke bağlantısının imzasıyla: `x-laf-timestamp`, `x-laf-signature: v1=<hex>`, HMAC-SHA256 (zaman,
   yöntem, yol, sıralı sorgu, gövdenin SHA-256'sı), ±5 dakika, sabit süreli karşılaştırma (`src/lib/karaoke/signature.ts`).
+  Okumanın, pingin ve aşama dokunuşunun vektörleri `tests/site-siparis.test.ts`'te, ayın satışınınki
+  `tests/site-satis.test.ts`'te sabit; site aynılarını `tests/panel-karaoke-sync-core.test.ts`'te tutar (laffogato #270).
+  Kural bir tarafta değişirse istekler 401 olur.
 - Ping ucu: anahtar yoksa `503`, gövde 4 KB'tan büyükse `413`, imza yok / yanlış / eskiyse `401` (ayrıntı yok);
   doğruysa hemen `202` (`src/lib/site-ping.ts`, menü pingiyle ortak). Gövde sipariş taşımaz.
 - Sitenin yanıtı doğrulanır (`src/lib/site-orders/schema.ts`): tanınmayan sürüm bütün listeyi reddeder ("panel güncel
@@ -262,6 +301,7 @@ vermesini söyleyen kısa sözü görür.
 | Sitenin sipariş listesi tanınmayan sürümde (2); panel güncel değil | Site sözleşmeyi değiştirmiş: paneli güncelleyin |
 | N sipariş okunamadı | Sitenin bir siparişi beklenen biçimde değil; sitenin panelinde kontrol edin |
 | Zil çalmıyor | **Sipariş zili bu cihazda** açık mı, ekrana bir kez dokunuldu mu (tarayıcı ilk dokunuştan önce ses çaldırmaz)? |
+| Ping kaçtı (Ayarlar › laffogato.net) | Bir siparişin ödeme pingi panele ulaşmadı, sipariş ekranın kontrolüyle geldi. Tek tük olur (panel yayındayken); sık görülürse sitedeki `PANEL_URL`'yi, iki projedeki anahtarı ve sitenin günlüğünde "[panel-orders] ping not delivered" uyarılarını kontrol edin |
 | Sitede sipariş ilerletme ucu yok (laffogato.net güncel değil) | Sitenin aşama ucu yayımlanmamış; o zamana kadar aşamayı **Sitede aç** ile sitenin panelinden değiştirin |
 | Sipariş bu arada değişti; ekran yenilendi | Sipariş başka yerden (sitenin paneli, başka cihaz) ilerlemiş; kartın yeni hâline bakın, gerekiyorsa yeniden dokunun |
 | Sipariş sitede bulunamadı ya da artık bar ekranında değil | Sitede iade / iptal edilmiş ya da tamamlanmış; ekran yenilenir, kart kalkar |
@@ -287,6 +327,7 @@ anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker;
 | `src/lib/site-orders/schema.ts` | Sitenin listesinin doğrulanması: sürüm, sıkı alanlar, atlanan siparişler, güvenli yol (saf) |
 | `src/lib/site-orders/feed.ts` | Yeni sipariş tespiti, parmak izi, kart metinleri, sıralama, "Sitede aç" adresi, zil kuralı, bildirim metni (saf) |
 | `src/lib/site-orders/stage.ts` | Aşama düğmeleri: izin verilen işlem / aşama çiftleri, düğme adları, bildirim ve hata metinleri (saf, zod'suz: ekranın paketine girer) |
+| `src/lib/site-orders/follow.ts` | Ödeme takibi (başlama, yeniden başlama, bitiş), ekranın yoğunluğu, "son çekme bundan eskiyse sor" kuralı, kaçan ping (saf, zod'suz) |
 | `src/lib/site-orders/stage-request.ts` | Aşama ucunun gövdesi ve yanıtın anlamı (200 / 409 / okunamayan / hata; sipariş listedeki şemayla doğrulanır) (saf) |
 | `src/server/actions/site-orders.ts` | `advanceSiteOrder`: oturum, doğrulama, imzalı istek (`callSite`), ardından listeyi yeniden çekme |
 | `src/lib/site-ping.ts` | Pingin denetimi (menü pingiyle ortak; `src/lib/site-menu/ping.ts` bunu yeniden dışa verir) |
@@ -298,4 +339,5 @@ anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker;
 | `src/server/actions/site-links.ts`, `src/app/panel/ayarlar/site-links-test.tsx` | Ayarlar › laffogato.net: **Bağlantıları sına** |
 | `src/components/panel/live/alert-center.tsx`, `sounds.ts`, `prefs.ts`, `device-alerts.tsx` | Zil (masa deseni), cihaz tercihleri |
 | `src/server/push/send.ts`, `src/server/actions/push.ts` | `orders` bildirim konusu ve tercihi |
-| `tests/site-siparis.test.ts` | Şema, yeni sipariş, sıralama, kart metinleri, zil kuralı, ping, tetikleyiciler, bildirim, aşama düğmeleri (çiftler, adlar, gövde, yanıt ve hata metinleri, eylemin oturumu) |
+| `tests/site-siparis.test.ts` | Şema, yeni sipariş, sıralama, kart metinleri, zil kuralı, ping, tetikleyiciler, bildirim, aşama düğmeleri (çiftler, adlar, gövde, yanıt ve hata metinleri, eylemin oturumu), ödeme takibi, kaçan ping, imza vektörleri |
+| `tests/siparis-takip-db.test.ts` | Ödeme takibi, sakin saatin kontrolü ve kaçan ping gerçek Postgres'te, sitenin sahte ucuyla (`BAGLANTI_TEST_DATABASE_URL`) |
