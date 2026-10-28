@@ -20,11 +20,13 @@ import { attempt, UserError } from "./util";
 // "Aylık harcamalar'a yaz" Kasa'nın kendi yazım yolundan geçer (writeCashOut, yöneticinin "Aylık harcamalar'a da yaz"ı
 // gibi); "Listeden çıkar" satırı kapatır; "Faturalar'a ekle" fatura penceresinden (saveInvoice `cashOutId`). Aylık
 // harcamalar'a yazılmış satırın faturası sonradan gelirse (iki kez sayılıyor) "Gider kaydını sil" kaydı siler, "Ayrı
-// alım" listeden çıkarır.
+// alım" listeden çıkarır (faturası bu satırdan açılmışsa reddedilir).
 
 const zId = z.number().int().positive();
 const NOT_PENDING = "Bu alım artık beklemiyor: faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı. Sayfayı yenileyin.";
 const NOT_DUPLICATE = "Bu alım artık iki kez sayılmıyor: gider kaydı ya da faturası değişti. Sayfayı yenileyin.";
+const ADOPTED =
+  "Bu alımın faturası bu satırdan açıldı (Faturalar'a ekle): başka bir alımın faturası olamaz, Ayrı alım denemez. Alım iki kez sayılmasın diye gider kaydını silin.";
 
 /**
  * Bekleyen satırı Aylık harcamalar'a yazar (nakit, kasanın notuyla; tarih fişin günü). Satır kilitlenir ve hâlâ
@@ -87,7 +89,9 @@ export async function undoCashOutInvoiceExpense(input: { id: number; expenseId: 
 /**
  * "Listeden çıkar": faturası başka adla ya da tutarla Faturalar'da var, ya da kafenin gideri değil; iki kez sayılan
  * satırda "Ayrı alım" (fatura başka bir alımın, gider kaydı kalsın). `undo` satırları yeniden listeye döndürür
- * (bildirimdeki "Geri al"). Yalnız bekleyen ya da iki kez sayılan satırlar kapatılır.
+ * (bildirimdeki "Geri al"). Yalnız bekleyen ya da iki kez sayılan satırlar kapatılır. Faturası bu satırdan açılmış
+ * ("Faturalar'a ekle") iki kez sayılan satır kapatılmaz: fatura başka bir alımın olamaz, kapatmak faturayla bağını
+ * siler ve gider kaydı uyarısız kalırdı.
  */
 export async function dismissCashOutInvoices(input: { ids: number[]; undo?: boolean }) {
   return attempt(async () => {
@@ -102,6 +106,7 @@ export async function dismissCashOutInvoices(input: { ids: number[]; undo?: bool
       const state = await loadCashOutInvoiceState(tx, { ids });
       const listed = [...state.pending, ...state.duplicates];
       if (!listed.length) throw new UserError(NOT_PENDING);
+      if (state.duplicates.some((d) => d.adopted)) throw new UserError(ADOPTED);
       await updateHandledCashOuts(tx, { add: listed.map((p) => ({ id: p.id, by: me.name })) });
       return listed;
     });

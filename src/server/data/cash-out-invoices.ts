@@ -78,7 +78,7 @@ export interface PendingCashOutInvoice {
 /**
  * İki kez sayılan satır (yalnız yönetici görür): Aylık harcamalar'a yazılmış kasadan faturalı alımın faturası sonradan
  * Faturalar'a geldi (muhasebeci e-Arşiv'i Paraşüt'e girdi). Alım hem faturada hem gider kaydında sayılıyor; kayıt
- * silinmeli ("Ayrı alım" denirse listeden çıkar).
+ * silinmeli ("Ayrı alım" denirse listeden çıkar; fatura bu satırdan açıldıysa Ayrı alım yok).
  */
 export interface DuplicateCashOutInvoice extends Omit<PendingCashOutInvoice, "suggestedCategoryId"> {
   /** Aylık harcamalar'daki kayıt ve kategorisi */
@@ -86,6 +86,11 @@ export interface DuplicateCashOutInvoice extends Omit<PendingCashOutInvoice, "su
   expenseCategory: string | null;
   /** Eşleşen fatura */
   invoice: { id: number; date: string; supplier: string; invoiceNo: string | null; payable: number };
+  /**
+   * Fatura bu satırdan açıldı ("Faturalar'a ekle"; silinip geri alınınca yeniden bağlanan da): başka bir alımın faturası
+   * olamaz, "Ayrı alım" yok (dismissCashOutInvoices reddeder); yalnız gider kaydı silinir
+   */
+  adopted: boolean;
 }
 
 export interface CashOutInvoiceState {
@@ -240,11 +245,12 @@ export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids
     photoId: r.photoId,
     createdByName: r.createdByName,
   });
-  const duplicate = (r: (typeof rows)[number], expenseId: number, inv: (typeof invoices)[number]): DuplicateCashOutInvoice => ({
+  const duplicate = (r: (typeof rows)[number], expenseId: number, inv: (typeof invoices)[number], adopted: boolean): DuplicateCashOutInvoice => ({
     ...rowOf(r),
     expenseId,
     expenseCategory: r.expenseCategory,
     invoice: { id: inv.id, date: inv.date, supplier: inv.supplier, invoiceNo: inv.invoiceNo, payable: inv.payable },
+    adopted,
   });
   for (const r of pick(rows)) {
     const inv = invoiceById.get(matched.get(r.id) ?? 0);
@@ -252,12 +258,12 @@ export async function loadCashOutInvoiceState(db: DB | Tx = getDb(), opts: { ids
       if (!inv) pending.push({ ...rowOf(r), suggestedCategoryId: (r.store && suggested.get(nameKey(r.store))) || null });
     } else if (inv && r.expenseDebtId === null) {
       // Cari borcun kaydı sayılmaz: faturası geldiyse Tedarikçiler'de borca bağlanır (kayıt orada silinir)
-      duplicates.push(duplicate(r, r.expenseId, inv));
+      duplicates.push(duplicate(r, r.expenseId, inv, false));
     }
   }
   for (const r of pick(adoptedRows)) {
     const inv = invoiceById.get(adopted.get(r.id)!);
-    if (inv && r.expenseId !== null) duplicates.push(duplicate(r, r.expenseId, inv));
+    if (inv && r.expenseId !== null) duplicates.push(duplicate(r, r.expenseId, inv, true));
   }
   // Yeniden eskiye (iki kaynak birleşti)
   duplicates.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
