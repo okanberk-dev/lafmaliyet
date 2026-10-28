@@ -56,12 +56,19 @@ export function okcReadingOnLafposDay(r: CashReading): CashReading {
 
 const PAY_FIELD = { cash: "okcCash", card: "okcCard", meal_card: "okcMealCard", other: "okcOther", unknown: "okcOther" } as const;
 
+/**
+ * Banka gün sonu fişi raporun gününe mi ait: aynı gün ya da ertesi gün (fiş çoğu zaman ertesi sabah, kasa açılınca
+ * basılır). Partilerin tarihi de fişin başlık tarihi de bu kuralla denetlenir (denetim E-69)
+ */
+const slipDayFits = (slipDay: string, day: string) => slipDay === day || slipDay === addDays(day, 1);
+
 /** Banka gün sonu fişlerinin neti (net yoksa satış − iade) ve uyarıları (bugünkü normalizePos kuralları) */
-function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Confidence; count: number; checks: ReadCheck[] } | null {
+function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Confidence; count: number; checks: ReadCheck[]; dayWarned: boolean } | null {
   let value = 0;
   let confidence: Confidence = "high";
   let count = 0;
   const checks: ReadCheck[] = [];
+  let dayWarned = false;
   for (const b of raw.batches) {
     const net = printedAmount(b.netTotal);
     const sales = printedAmount(b.salesTotal);
@@ -86,11 +93,12 @@ function batchesOf(raw: KasaOkc, day: string): { value: number; confidence: Conf
     } else continue;
     count++;
     const slipDay = businessDayOf(b.date, null);
-    if (slipDay && slipDay !== day && slipDay !== addDays(day, 1)) {
+    if (slipDay && !slipDayFits(slipDay, day)) {
+      dayWarned = true;
       checks.push({ fields: ["bankPos"], level: "warn", text: `Banka gün sonu fişinin tarihi ${dayMonthTR(slipDay)}; bu rapor ${dayMonthTR(day)} için. Doğru günün fişi mi?` });
     }
   }
-  return count ? { value: round2(value), confidence, count, checks } : null;
+  return count ? { value: round2(value), confidence, count, checks, dayWarned } : null;
 }
 
 /**
@@ -113,7 +121,9 @@ export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
     if (b && b.count > 1) checks.push({ fields: [], level: "info", text: `${b.count} banka gün sonu toplandı: ${money(b.value)}.` });
     checks.push({ fields: [], level: "info", text: "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." });
     const printedDay = businessDayOf(raw.date, raw.time);
-    if (raw.dateConfidence !== "low") checks.push(dayCheck(printedDay, ctx.day, "banka gün sonu fişi mi"));
+    // Fişin başlık tarihi partilerinkiyle aynı kuralla (ertesi gün de olur) ve partiler zaten uyarmadıysa: tek tarih
+    // uyarısı (E-69; önceden ertesi sabah basılmış fişi bir kural kabul edip öbürü uyarıyordu)
+    if (raw.dateConfidence !== "low" && printedDay && !slipDayFits(printedDay, ctx.day) && !b?.dayWarned) checks.push(dayCheck(printedDay, ctx.day, "banka gün sonu fişi mi"));
     checks.push(...issues(values));
     return { kind: "kasa-okc", ok: true, error: null, switchTo: null, printedDay, values, missing: values.bankPos ? [] : ["bankPos"], checks: ordered(checks) };
   }

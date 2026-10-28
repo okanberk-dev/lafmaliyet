@@ -541,6 +541,25 @@ test("banka gün sonu: yalnız fişse yalnız Banka gün sonu; Z ile aynı şeri
   assert.ok(toStaffReading(one).checks.some((c) => c.text === "Aynı fişte banka gün sonu da var: Banka gün sonu 6.900\u00a0₺."));
 });
 
+test("banka gün sonu fişi tek tarih uyarısı verir; ertesi sabah basılmış fiş uyarı vermez (E-69)", () => {
+  const slip = (date: string) => ({ bank: "ÖRNEKBANK", batchNo: "112", date, salesTotal: A(6900), refundTotal: NONE, netTotal: A(6900), transactionCount: 10 });
+  const dayWarnings = (r: CashReading) => r.checks.filter((c) => /tarih/i.test(c.text));
+  // Üç gün kaymış fiş: partinin ve başlığın tarihi aynı, tek uyarı
+  const late = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-27", time: "23:10", batches: [slip("2026-10-27")] }), { day: DAY, prev: PREV });
+  assert.equal(dayWarnings(late).length, 1, JSON.stringify(late.checks));
+  assert.equal(late.checks.filter((c) => c.level === "warn").length, 1);
+  // Ertesi sabah 10:00'da basılmış fiş: ne parti ne başlık uyarır
+  const morning = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-25", time: "10:00", batches: [slip("2026-10-25")] }), { day: DAY, prev: PREV });
+  assert.deepEqual(dayWarnings(morning), []);
+  // Partide tarih yok: başlık tarihi yine tek uyarıyla denetlenir (bütün okumaya dair)
+  const noBatchDay = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-20", time: "23:10", batches: [{ ...slip(DAY), date: null }] }), { day: DAY, prev: PREV });
+  assert.equal(dayWarnings(noBatchDay).length, 1);
+  assert.equal(dayWarnings(noBatchDay)[0].whole, true);
+  // Tarihi düşük güvende okunmuşsa başlık uyarmaz
+  const unsure = normalizeOkc(z({ documentType: "batch_slip", date: "2026-10-20", dateConfidence: "low", batches: [{ ...slip(DAY), date: null }] }), { day: DAY, prev: PREV });
+  assert.deepEqual(dayWarnings(unsure), []);
+});
+
 test("kesik fişin metni bu türde: kalan kısmını ayrıca çekin", () => {
   const r = normalizeOkc(z({ issues: ["cut_off"] }), { day: DAY, prev: PREV });
   assert.ok(r.checks.some((c) => c.text === OKC_CUT_OFF_TEXT));
