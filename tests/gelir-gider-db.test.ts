@@ -136,10 +136,11 @@ describe("gelir-gider komisyon ve açılış: veritabanında", { skip: !SERVER_U
     assert.equal(r.ok, true, JSON.stringify(r));
     model = await loadModel();
     const pm = model.pnlMonth(PREV);
-    o = countOpening(pm.cells.get("stock:opening")!, model.closingStock(BEFORE));
+    // Sayfa gibi: önceki ay sayılmadıysa (stockSheet().hasData) sayımın değeri yok, ipucu "0 ₺" değil "sayımı yok"
+    o = countOpening(pm.cells.get("stock:opening")!, model.closingStock(BEFORE), model.stockSheet(BEFORE).hasData);
     assert.equal(pm.opening, 12_345);
-    assert.deepEqual(o, { value: 12_345, source: "acilis", counted: 0 });
-    assert.match(countOpeningNote(o, PREV)!.replace(/ /g, " "), /"Önceki aydan devir" elle 12\.345 ₺ girildi; kâr-zarar bu tutarı kullanır/);
+    assert.deepEqual(o, { value: 12_345, source: "acilis", counted: null });
+    assert.match(countOpeningNote(o, PREV)!.replace(/ /g, " "), /"Önceki aydan devir" elle 12\.345 ₺ girildi; kâr-zarar bu tutarı kullanır\. .+ sayımı yok\.$/);
     // Eski kural (geçen ayın kapanışı) 0 gösterirdi
     assert.equal(model.closingStock(BEFORE).value, 0);
   });

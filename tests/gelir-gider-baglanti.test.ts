@@ -95,6 +95,11 @@ test("rowLink tek kaynak: tablo, telefon görünümü ve Genel bakış aynı yar
   // Uyarı ve ayın açıklaması dokunmatikte de okunur: dokununca açılan ipucu (yalnız title değil)
   assert.match(grid, /const tip = \[warn \? `Dikkat: \$\{warn\}` : null, info \?\? null\]/);
   assert.match(grid, /<InfoTip text=\{tip\} tone=\{warn \? "warn" : undefined\}/);
+  // Yardım ve tablonun altı Satışlar hedeflerini ve telefondaki dokunuşu da söyler
+  assert.match(grid, /satışları \(ciro, kartlı satış oranı\)/);
+  const help = read("src/app/panel/yardim/page.tsx").replace(/\s+/g, " ");
+  assert.match(help, /satışları: ciro ve kartlı satış oranı/);
+  assert.match(help, /Telefonda satıra ya da düzenleme penceresindeki bağlantıya dokunun/);
   // Telefonda bağlantılı satır açıklamasını (i) korur
   assert.match(phone, /<Link\s+href=\{source\.href\}\s+className="absolute inset-0[^"]*"[\s\S]{0,200}\/>\s*\{label\}\s*\{def\.hint \? <InfoTip/);
   assert.match(grid, /rowSource\?\.scope === "row" \? <SourceLink/);
@@ -126,6 +131,17 @@ test("Sayım açılışı K/Z'ninki: bu ayın 'Önceki aydan devir'i elle girild
       new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(o.counted),
     )} ₺.`,
   );
+});
+
+test("Sayım açılışı: geçen ay hiç sayılmadıysa ipucu '0 ₺' değil 'sayımı yok' der", () => {
+  const model = createModel({ ...base, pnlEntries: [...base.pnlEntries, { month: "2026-10", rowKey: "stock:opening", amount: 12_345, note: null }] });
+  const o = countOpening(model.pnlMonth("2026-10").cells.get("stock:opening")!, model.closingStock("2026-09"), false);
+  assert.deepEqual(o, { value: 12_345, source: "acilis", counted: null });
+  assert.equal(plain(countOpeningNote(o, "2026-10")), `Gelir-giderde Ekim 2026 için "Önceki aydan devir" elle 12.345 ₺ girildi; kâr-zarar bu tutarı kullanır. Eylül 2026 sayımı yok.`);
+  const d = countOpening({ value: 8_000, overridden: false }, { value: 8_000, computed: 0, overridden: true }, false);
+  assert.equal(plain(countOpeningNote(d, "2026-10")), "Eylül 2026 stoğu Gelir-giderde elle 8.000 ₺ girildi; açılış o tutardır. Eylül 2026 sayımı yok.");
+  // Sayfa önceki ayın sayılıp sayılmadığını verir
+  assert.match(read("src/app/panel/sayim/page.tsx"), /model\.closingStock\(prevMonth\), prev\.hasData\)/);
 });
 
 test("Sayım açılışı: geçen ayın devreden malı elle girildiyse o tutar ve ipucu", () => {

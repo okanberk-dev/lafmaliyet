@@ -881,28 +881,32 @@ export function staffLateEditNotice(month: string, edits: StaffLateEdit[]): { id
  * - "sayim": geçen ayın sayımı (sonraki aya devreden mal);
  * - "devreden": geçen ayın devreden malı Gelir-giderde elle girildi;
  * - "acilis": bu ayın "Önceki aydan devir"i Gelir-giderde elle girildi (geçen ayın sayımından ayrı).
- * `counted`: geçen ayın sayımının değeri (elle girilmişse karşılaştırma için)
+ * `counted`: geçen ayın sayımının değeri (elle girilmişse karşılaştırma için); geçen ay sayılmadıysa (`prevCounted`
+ * false, stockSheet().hasData) null: ipucu "0 ₺" değil "sayımı yok" der
  */
 export interface CountOpening {
   value: number;
   source: "sayim" | "devreden" | "acilis";
-  counted: number;
+  counted: number | null;
 }
 
 export function countOpening(
   opening: { value: number | null; overridden: boolean },
   prevClosing: { value: number; computed: number; overridden: boolean },
+  prevCounted = true,
 ): CountOpening {
-  if (opening.overridden) return { value: opening.value ?? 0, source: "acilis", counted: prevClosing.computed };
-  return { value: prevClosing.value, source: prevClosing.overridden ? "devreden" : "sayim", counted: prevClosing.computed };
+  const counted = prevCounted ? prevClosing.computed : null;
+  if (opening.overridden) return { value: opening.value ?? 0, source: "acilis", counted };
+  return { value: prevClosing.value, source: prevClosing.overridden ? "devreden" : "sayim", counted };
 }
 
 /** Açılış elle girildiyse kartta ipucu: kâr-zarar hangi tutarı kullanıyor, sayım neydi; sayımdan geliyorsa null */
 export function countOpeningNote(o: CountOpening, month: string): string | null {
   const prev = monthLabel(shiftMonth(month, -1));
+  const counted = o.counted === null ? `${prev} sayımı yok.` : `${prev} sayımı: ${tl(o.counted)}.`;
   if (o.source === "acilis") {
-    return `Gelir-giderde ${monthLabel(month)} için "Önceki aydan devir" elle ${tl(o.value)} girildi; kâr-zarar bu tutarı kullanır. ${prev} sayımı: ${tl(o.counted)}.`;
+    return `Gelir-giderde ${monthLabel(month)} için "Önceki aydan devir" elle ${tl(o.value)} girildi; kâr-zarar bu tutarı kullanır. ${counted}`;
   }
-  if (o.source === "devreden") return `${prev} stoğu Gelir-giderde elle ${tl(o.value)} girildi; açılış o tutardır. ${prev} sayımı: ${tl(o.counted)}.`;
+  if (o.source === "devreden") return `${prev} stoğu Gelir-giderde elle ${tl(o.value)} girildi; açılış o tutardır. ${counted}`;
   return null;
 }

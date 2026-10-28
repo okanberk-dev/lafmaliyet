@@ -1089,8 +1089,9 @@ export function PnlGrid({
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
         <span>
           Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Noktalı çizgili tutar ve ok simgesi (
-          <ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar (o ayın faturaları,
-          harcamaları, stok sayımı, komisyonu; personel, sabit giderler). Faturadan gelen mal alışlarını değiştirmek için{" "}
+          <ArrowUpRight size={13} className="inline align-[-2px]" aria-hidden="true" />) tutarın geldiği sayfayı açar: o ayın faturaları
+          (komisyon faturaları dahil), harcamaları, stok sayımı, satışları (ciro, kartlı satış oranı); personel, sabit giderler. Hücrenin
+          solundaki uyarı ya da bilgi simgesi o ayın hesabını açıklar. Faturadan gelen mal alışlarını değiştirmek için{" "}
           <Link href="/panel/faturalar" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
             Faturalar
           </Link>{" "}

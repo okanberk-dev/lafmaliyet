@@ -113,7 +113,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli. Açılış kâr-zararınki
   // (pnlMonth): bu ayın "Önceki aydan devir"i ayrıca elle değiştirilebilir (denetim E-30). Yalnız yönetici görür
   const closing = model.closingStock(month);
-  const opening = isAdmin ? countOpening(model.pnlMonth(month).cells.get("stock:opening") ?? { value: 0, overridden: false }, model.closingStock(prevMonth)) : null;
+  const opening = isAdmin ? countOpening(model.pnlMonth(month).cells.get("stock:opening") ?? { value: 0, overridden: false }, model.closingStock(prevMonth), prev.hasData) : null;
 
   const groups: FormGroup[] = sheet.groups.map((g, gi) => ({
     name: g.name,
