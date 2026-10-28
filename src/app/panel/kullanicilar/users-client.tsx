@@ -915,9 +915,6 @@ function UserDialog({
       },
       (res) => {
         if (!res.ok) return void toast.error(res.error);
-        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse (e-posta artık gitmez) ya da
-        // böyle bir hesabın eski adresi listede kaldıysa (artık hiçbir hesabın değil, e-posta gider): E-53
-        if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
         // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
         // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
         if (password && !self) {
@@ -927,6 +924,10 @@ function UserDialog({
           toast.success("Kullanıcı kaydedildi");
           onClose();
         }
+        // Personele indirilen ya da pasif yapılan hesabın adresi bir bildirim listesindeyse (e-posta artık gitmez) ya da
+        // böyle bir hesabın eski adresi listede kaldıysa (artık hiçbir hesabın değil, e-posta gider): E-53. "Kaydedildi"den
+        // sonra: yığının üstünde dursun, altında kalıp gözden kaçmasın
+        if (res.data?.notice) toast.warning(res.data.notice, { duration: 12_000 });
       },
     );
   }
