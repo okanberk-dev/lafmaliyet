@@ -608,6 +608,16 @@ function CellSheet({
           </p>
         ) : null}
         {target.hint || cell.info ? <p className="text-xs leading-5 text-ink-mute">{[cell.info, target.hint].filter(Boolean).join(" ")}</p> : null}
+        {/* Tutarın kaynağı (rowLink): o ayın sayımı, satışları, personel ya da sabit giderler */}
+        {target.source ? (
+          <Link
+            href={target.source.href}
+            className="-mx-1 -mt-2 flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-info underline-offset-2 hover:underline"
+          >
+            <span className="min-w-0 flex-1">{target.source.label} sayfasını aç</span>
+            <ChevronRight size={16} className="shrink-0" aria-hidden="true" />
+          </Link>
+        ) : null}
         {field === "pnl" ? (
           <Field label="Not" htmlFor={`${formId}-n`} hint={`${noteText.trim().length} / ${CELL_NOTE_MAX}`}>
             <Textarea
@@ -623,15 +633,6 @@ function CellSheet({
               className="max-h-40 [field-sizing:content]"
             />
           </Field>
-        ) : null}
-        {target.source ? (
-          <Link
-            href={target.source.href}
-            className="-mx-1 flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-sm font-medium text-info underline-offset-2 hover:underline"
-          >
-            <span className="min-w-0 flex-1">{target.source.label} sayfasını aç</span>
-            <ChevronRight size={16} className="shrink-0" aria-hidden="true" />
-          </Link>
         ) : null}
         {freezeWarn ? (
           <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn" aria-live="polite">

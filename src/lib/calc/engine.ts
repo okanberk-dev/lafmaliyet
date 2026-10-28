@@ -1970,9 +1970,9 @@ export function createModel(ds: Dataset) {
     mal({ key: "total:mal", label: "AYLIK MAL ALIMI TOPLAMI", kind: "total", editable: false, strong: true });
 
     const devir = sec("devir");
-    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal); hücrenin yanındaki ok o sayımı açar. Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
+    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal). Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
     devir({ key: "stock:purchased", label: "AY İÇİNDE ALINAN", kind: "auto", editable: false });
-    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç); hücrenin yanındaki ok o ayın sayımını açar. Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmezse 0 olur ve alınan malın tamamı o ayın maliyeti sayılır." });
+    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmezse 0 olur ve alınan malın tamamı o ayın maliyeti sayılır." });
     devir({ key: "total:cogs", label: "CİRO İÇİN KULLANILAN MALIN MALİYETİ", kind: "total", editable: false, strong: true, hint: "Devir + Alınan − Devreden" });
 
     const sectionLabels: Record<FixedSection, string> = {

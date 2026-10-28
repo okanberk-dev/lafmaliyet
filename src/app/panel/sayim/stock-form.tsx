@@ -1048,8 +1048,13 @@ const StockTotalCard = memo(function StockTotalCard({
               label={
                 <span>
                   Açılış ({prevMonthLabel} devri)
-                  {prevTotal.note ? <span className="ml-1.5 text-xs font-medium text-info">elle girildi</span> : null}
-                  {prevTotal.note ? <InfoTip className="ml-1" text={prevTotal.note} /> : null}
+                  {prevTotal.note ? (
+                    // Gelir-giderde elle girilen açılış: kâr-zarar onu kullanır, sayım değeri ipucunda
+                    <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-info">
+                      elle girildi
+                      <InfoTip text={prevTotal.note} />
+                    </span>
+                  ) : null}
                 </span>
               }
               value={tl(prevTotal.value)}
