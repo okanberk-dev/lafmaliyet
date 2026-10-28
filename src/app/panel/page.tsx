@@ -712,15 +712,18 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
         compact
         icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
         label="Ay sonu tahmini kâr/zarar"
-        info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+        info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı${d.forecast?.closedDays ? ` (kapalı işaretli ${d.forecast.closedDays} gün hariç)` : ""} × ${
           d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
-        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider${
+          d.breakEven.expensesTotal ? " − her ay girilen harcamalar" : ""
+        } (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
         value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
         tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
         sub={
           d.forecast ? (
             <>
               Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span> · {d.forecast.daysElapsed} / {d.forecast.dim} gün
+              {d.forecast.closedDays ? <span className="whitespace-nowrap"> · {d.forecast.closedDays} gün kapalı</span> : null}
             </>
           ) : d.monthState === "future" ? (
             "Ay başlamadı"

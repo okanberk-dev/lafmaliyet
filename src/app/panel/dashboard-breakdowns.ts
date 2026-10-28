@@ -603,7 +603,7 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
       : [];
   return {
     title: "Başabaş günlük ciro",
-    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider${exp ? " + her ay girilen harcamalar" : ""}${cover ? " − laffogato.net online satışın brüt kârı" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
+    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): ${exp || cover ? "(" : ""}standart aylık sabit gider${exp ? " + her ay girilen harcamalar" : ""}${cover ? " − laffogato.net online satışın brüt kârı" : ""}${exp || cover ? ")" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
       d.refMonth ? ` Brüt kâr oranı ${monthLabel(d.refMonth)} satışlarından.` : ""
     }${cover ? ` Online satış (laffogato.net) sabit giderin bir kısmını karşılar: ${monthLabel(cover.month)} brüt kârı düşülür, kalanı kasanın cirosu karşılar.` : ""}`,
     groups: [
@@ -637,7 +637,7 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
           {
             key: "aylik",
             label: "Başabaş aylık ciro",
-            sub: `${cover ? "(" : ""}${exp ? "Sabit gider + aylık harcamalar" : "Sabit gider"}${cover ? " − laffogato.net brüt kârı)" : ""} ÷ brüt kâr oranı`,
+            sub: `${exp || cover ? "(" : ""}${exp ? "Sabit gider + aylık harcamalar" : "Sabit gider"}${cover ? " − laffogato.net brüt kârı" : ""}${exp || cover ? ")" : ""} ÷ brüt kâr oranı`,
             display: tl(monthly),
             amount: 0,
           },
