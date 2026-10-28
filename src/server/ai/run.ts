@@ -9,12 +9,13 @@
  * claude-haiku-5-5, efor "medium" (modelin varsayılanı, açıkça yazılır), PDF belge ya da görsel; Haiku 5.5'te sunucu
  * tarafı yedek model yok, `fallbacks` gönderilmez. İkisinde de gönderilmeyenler: `thinking` (iki modelde de düşünme
  * uyarlamalı ve varsayılan; Opus 5.5'te kapatmak 400), temperature / top_p / top_k (400) ve asistan ön doldurması (400).
+ * Yapılandırılmış çıktının karmaşıklık sınırını aşan şema (yazarkasa Z'si) `format` olmadan, metinde gider (JSON_REPLY).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod";
 
-import { claudeSchema } from "@/lib/photo-read/claude-schema";
+import { claudeSchema, fitsStructuredOutputs } from "@/lib/photo-read/claude-schema";
 
 import type { UsageLike } from "./pricing";
 
@@ -175,8 +176,17 @@ export interface AiClient {
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 /**
+ * Şema yapılandırılmış çıktının karmaşıklık sınırını aşınca (fitsStructuredOutputs: en çok 16 birleşim türlü
+ * parametre; yazarkasa Z'sinin KasaOkcRaw'ı 42) `output_config.format` gönderilmez, gönderilirse API isteği 400 ile
+ * reddeder. Şema görev metninin sonuna yazılır; yanıt yine zod'dan geçer, uymayan "invalid" olur.
+ */
+export const JSON_REPLY = (schema: Record<string, unknown>) =>
+  `Reply with one JSON object and nothing else: no prose, no code fences. It must match this JSON Schema; include every property, and use null only where the schema allows it.\n${JSON.stringify(schema)}`;
+
+/**
  * İsteğin kendisi (testte biçimi sınanır). Fotoğraf isteği alan alan ve sırasıyla canlıda denenen hâlidir; fatura
- * isteğinde yedek model alanları yok, belge görselin yerinde (PDF, metinden önce).
+ * isteğinde yedek model alanları yok, belge görselin yerinde (PDF, metinden önce). Şema sınırı aşarsa `format` yok,
+ * şema görev metninde (JSON_REPLY).
  */
 export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams; options: CreateOptions } {
   const model = req.model ?? AI_MODEL;
@@ -184,13 +194,16 @@ export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams;
   const input = req.document
     ? ({ type: "document", source: { type: "base64", media_type: req.document.mediaType, data: base64(req.document.bytes) } } as const)
     : ({ type: "image", source: { type: "base64", media_type: req.image.mediaType, data: base64(req.image.bytes) } } as const);
+  const schema = claudeSchema(req.schema);
+  const structured = fitsStructuredOutputs(schema);
+  const effort = req.effort ?? m.effort;
   const params: CreateParams = {
     model,
     max_tokens: req.maxTokens ?? AI_MAX_TOKENS,
     ...(m.fallback ? { betas: [AI_FALLBACK_BETA], fallbacks: "default" as const } : {}),
-    output_config: { effort: req.effort ?? m.effort, format: { type: "json_schema", schema: claudeSchema(req.schema) } },
+    output_config: structured ? { effort, format: { type: "json_schema", schema } } : { effort },
     system: req.system,
-    messages: [{ role: "user", content: [input, { type: "text", text: req.task }] }],
+    messages: [{ role: "user", content: [input, { type: "text", text: structured ? req.task : `${req.task}\n\n${JSON_REPLY(schema)}` }] }],
   };
   const t = req.timeouts ?? AI_TIMEOUTS;
   return { params, options: { timeout: t.timeout, maxRetries: t.maxRetries, signal: AbortSignal.timeout(req.totalMs ?? t.totalMs) } };
@@ -210,13 +223,25 @@ export type RunResult<T> =
 const NO_META: RunMeta = { usage: null, servedModel: null, stopReason: null, requestId: null };
 
 /**
+ * API hatasının kendi türü ve metni. SDK'nın `message`'ı yanıt gövdesinin JSON'udur (`400 {"type":"error","error":
+ * {"type":…,"message":…},"request_id":…}`; gövde JSON değilse yanıtın metni): isteğin hiçbir parçasını (görsel, istem,
+ * şema, anahtar) taşımaz. Yine de yalnız ayrıştırılmış `error.type` ve `error.message` alınır: 300 karaktere neden sığar.
+ */
+function apiErrorText(e: InstanceType<typeof Anthropic.APIError>): string {
+  const message = (e.error as { error?: { message?: unknown } } | undefined)?.error?.message;
+  if (typeof message !== "string") return e.message;
+  return typeof e.type === "string" && e.type ? `${e.type}: ${message}` : message;
+}
+
+/**
  * SDK hatası → kod, en özelden genele. Bizim toplam süre sinyalimiz (45 sn; yazarkasa Z'sinde 50 sn) kesince SDK APIUserAbortError atar (zaman aşımı);
- * bağlantı zaman aşımı bağlantı hatasının alt türüdür, önce bakılır.
+ * bağlantı zaman aşımı bağlantı hatasının alt türüdür, önce bakılır. Ayrıntı: sınıf, durum ve API'nin hata metni.
  */
 export function mapAiError(e: unknown): { code: AiErrorCode; status: number | null; requestId: string | null; detail: string } {
   const status = e instanceof Anthropic.APIError && typeof e.status === "number" ? e.status : null;
   const requestId = e instanceof Anthropic.APIError ? (e.requestID ?? null) : null;
-  const detail = `${e instanceof Error ? e.constructor.name : "Hata"}${status ? ` ${status}` : ""}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
+  const text = e instanceof Anthropic.APIError ? apiErrorText(e) : e instanceof Error ? e.message : String(e);
+  const detail = `${e instanceof Error ? e.constructor.name : "Hata"}${status ? ` ${status}` : ""}: ${text}`.slice(0, 300);
   const out = (code: AiErrorCode) => ({ code, status, requestId, detail });
   if (e instanceof Anthropic.APIConnectionTimeoutError || e instanceof Anthropic.APIUserAbortError) return out("timeout");
   if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) return out("timeout");
@@ -231,10 +256,36 @@ export function mapAiError(e: unknown): { code: AiErrorCode; status: number | nu
   return out("connection");
 }
 
+/** Sunucu günlüğüne düşen, yöneticinin bakması gereken hatalar: anahtar, kredi, reddedilen istek */
+const ALERT_CODES: readonly AiErrorCode[] = ["auth", "billing", "badrequest"];
+
+/**
+ * Bu hatalar için günlük satırı (src/server/ai/claude.ts): okuma türü, kod, durum, Anthropic'in istek kimliği ve
+ * API'nin hata metni (mapAiError'ın ayrıntısı, en çok 300 karakter). Görsel, belge, istem ve anahtar asla; öteki
+ * kodlarda null
+ */
+export function aiAlertLog(feature: AiFeature, res: { code: AiErrorCode; status: number | null; requestId: string | null; detail: string }): string | null {
+  if (!ALERT_CODES.includes(res.code)) return null;
+  return `${feature} ${res.code} ${res.status ?? "-"} ${res.requestId ?? "-"} · ${res.detail}`;
+}
+
+/** Metindeki JSON nesnesi: önce olduğu gibi, olmazsa ilk `{` ile son `}` arası (kod çiti, baştaki ya da sondaki cümle) */
+function looseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) throw e;
+    return JSON.parse(text.slice(start, end + 1));
+  }
+}
+
 /**
  * Görseli ya da belgeyi okur. Ret (refusal) içerik okunmadan döner; yarım kalan yanıt "incomplete"; JSON ya da şema tutmazsa
  * "invalid" (ilk zod sorununun yolu ayrıntıya). Yedek model çalıştıysa içeriğin başında bir `fallback` bloğu olur:
- * bloklar sırasına göre değil türüne göre okunur.
+ * bloklar sırasına göre değil türüne göre okunur. `format`suz istekte (JSON_REPLY) yanıt kod çiti ya da çevresinde
+ * metinle gelebilir: ilk `{` ile son `}` arası okunur.
  */
 export async function runExtraction<T>(client: AiClient, req: ExtractRequest<T>): Promise<RunResult<T>> {
   const { params, options } = buildRequest(req);
@@ -255,7 +306,7 @@ export async function runExtraction<T>(client: AiClient, req: ExtractRequest<T>)
     .join("");
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = params.output_config?.format ? JSON.parse(text) : looseJson(text);
   } catch {
     return fail("invalid", `JSON okunamadı (${text.length} karakter)`);
   }

@@ -13,6 +13,7 @@ import { replayClient, replayEnabled } from "./replay";
 import {
   AI_INVOICE_MODEL,
   AI_MODEL,
+  aiAlertLog,
   aiErrorText,
   runExtraction,
   type AiClient,
@@ -193,8 +194,9 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
       .update(s.aiCalls)
       .set({ ...common, status: STATUS[res.code] ?? "error", errorCode: res.code, error: res.detail.slice(0, 300) })
       .where(eq(s.aiCalls.id, call.id));
-    // Yöneticinin bakması gerekenler günlüğe (anahtar, görsel, belge, istem asla)
-    if (res.code === "auth" || res.code === "billing" || res.code === "badrequest") console.error(tag, res.code, res.status, res.requestId);
+    // Yöneticinin bakması gerekenler günlüğe, API'nin hata metniyle (anahtar, görsel, belge, istem asla; aiAlertLog)
+    const alert = aiAlertLog(req.feature, res);
+    if (alert) console.error(tag, alert);
     else if (req.effort && res.code === "timeout") console.warn(tag, req.feature, `efor ${req.effort}`, res.code, ms);
     return { ok: false, code: res.code, message: subject === "fatura" ? aiErrorText(res.code, undefined, subject) : res.message, callId: call.id };
   }
