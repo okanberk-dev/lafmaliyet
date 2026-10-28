@@ -78,7 +78,7 @@ async function RemindersContent() {
   const versions = fixedData.versions;
   const fixed = fixedData.candidates.map((f) => {
     const own = versions.filter((v) => v.fixedExpenseId === f.id).map((v) => ({ fromMonth: v.fromMonth, period: v.period, amount: v.amount }));
-    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own, endMonth: f.endMonth };
+    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, withholdingRate: f.withholdingRate, versions: own, endMonth: f.endMonth };
   });
 
   return (

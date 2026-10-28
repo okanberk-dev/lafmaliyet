@@ -361,6 +361,8 @@ export function daysLeftLabel(daysLeft: number): string {
   return `${-daysLeft} gün gecikti`;
 }
 
+const CTV_NOTE = "Tutarı ve günü belediyenin tahakkukundan yazın; gün tahakkuka göre değişebilir.";
+
 /**
  * Hazır şablonlar. Vergi tarihleri genel takvimdir (takip eden ayın günü); işletmenize göre
  * muhasebecinizle kontrol edin. dueDay ayın günü, "son" ayın son günü.
@@ -373,16 +375,39 @@ export const REMINDER_PRESETS: {
   dueDay: number | "son";
   remindDaysBefore: number;
   note: string;
-  /** Üç aylıklar için ilk ay (1–12) */
+  /** Üç aylık ve yıllık şablonların ayları (1–12) */
   months?: number[];
 }[] = [
   { key: "kdv", title: "KDV beyannamesi ve ödemesi", kind: "vergi", repeat: "monthly", dueDay: 28, remindDaysBefore: 5, note: "Önceki ayın KDV'si; takip eden ayın 28'i." },
   { key: "muhtasar", title: "Muhtasar ve prim hizmet beyannamesi", kind: "vergi", repeat: "monthly", dueDay: 26, remindDaysBefore: 5, note: "Önceki ayın stopaj ve SGK bildirimi; takip eden ayın 26'sı." },
   { key: "sgk", title: "SGK prim ödemesi", kind: "vergi", repeat: "monthly", dueDay: "son", remindDaysBefore: 5, note: "Önceki ayın primleri; takip eden ayın son günü." },
-  { key: "gecici", title: "Geçici vergi beyanı ve ödemesi", kind: "vergi", repeat: "quarterly", dueDay: 17, months: [2, 5, 8, 11], remindDaysBefore: 7, note: "Çeyrek bitiminden sonraki ikinci ayın 17'si." },
+  {
+    key: "gecici",
+    title: "Geçici vergi beyanı ve ödemesi",
+    kind: "vergi",
+    repeat: "quarterly",
+    dueDay: 17,
+    months: [2, 5, 8, 11],
+    remindDaysBefore: 7,
+    note: "Çeyrek bitiminden sonraki ikinci ayın 17'si; 4. dönem (Ekim–Aralık) Şubat'ta, 2025'ten beri yeniden veriliyor.",
+  },
   { key: "maas", title: "Maaş ödemesi", kind: "maas", repeat: "monthly", dueDay: 1, remindDaysBefore: 2, note: "Personel maaşları." },
   { key: "kira", title: "Kira", kind: "kira", repeat: "monthly", dueDay: 1, remindDaysBefore: 3, note: "Dükkân kirası." },
   { key: "abonelik", title: "Abonelik", kind: "fatura", repeat: "monthly", dueDay: 15, remindDaysBefore: 2, note: "İnternet, POS, yazılım, müzik gibi aylık abonelik." },
+  // Vergi bölümünün yıllık şablonları (docs/VERGI.md): kurumlar vergisi ve belediyenin tahakkuk ettirdiği yerel vergiler
+  { key: "kv", title: "Kurumlar vergisi beyannamesi ve ödemesi", kind: "vergi", repeat: "yearly", dueDay: "son", months: [4], remindDaysBefore: 14, note: "Önceki yılın kurumlar vergisi; Nisan'ın son günü." },
+  { key: "ctv1", title: "Çevre temizlik vergisi (1. taksit)", kind: "vergi", repeat: "yearly", dueDay: "son", months: [5], remindDaysBefore: 7, note: CTV_NOTE },
+  { key: "ctv2", title: "Çevre temizlik vergisi (2. taksit)", kind: "vergi", repeat: "yearly", dueDay: "son", months: [11], remindDaysBefore: 7, note: CTV_NOTE },
+  {
+    key: "ilan",
+    title: "İlan ve reklam vergisi",
+    kind: "vergi",
+    repeat: "yearly",
+    dueDay: "son",
+    months: [1],
+    remindDaysBefore: 7,
+    note: "Tabelanın vergisi; yeni tabela asılmadan önce beyan edilir. Gün ve tutar belediyenin tahakkukundan.",
+  },
 ];
 
 /** Tekrar eden hatırlatıcıyı, tarihi verilen günü geçene kadar ilerletir (ödendi / yeniden etkinleştirme) */
@@ -489,9 +514,13 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
  * hatırlatıcı sabit gideri izler (fixedReminderFollows; nakit planı zamdan sonraki dönemlerde sürümün tutarını öder,
  * "Ödendi" tutarı sıradaki dönemin sürümüne taşır). Yalnız dönemi sonradan değişen kalemde (aylık → yıllık) tutar
  * yazılmaz: tutarsız hatırlatıcıya plan her ayın sürümünü dönemine çevirerek taşır. Tutar 0 ise de yazılmaz.
+ *
+ * Stopajlı kalemde (`withholdingRate`, Vergi › sınıflandırma; şahsa kira, serbest meslek, şahsa internet reklamı)
+ * ödemeden kesilen stopaj düşülür: bankadan çıkan net tutardır, stopaj muhtasarla ödenir (docs/VERGI.md; kira 160.000
+ * brüt → 128.000). `gross` o ayın bankadan çıkan tutarıdır (KDV dahil, stopaj düşülmüş).
  */
 export function fixedReminderAt(
-  f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null },
+  f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null; withholdingRate?: number | null },
   versions: readonly { fromMonth: string; period: FixedPeriod; amount: number }[],
   month: string,
 ): { period: FixedPeriod; amount: number | null; gross: number; vatRate: number; changesFrom: string | null } {
@@ -504,7 +533,8 @@ export function fixedReminderAt(
       .sort()[0] ?? null;
   const periodChanges = versions.some((v) => v.fromMonth > month && v.period !== at.period);
   const vatRate = fixedVatRate(f);
-  const gross = Math.round(at.amount * (1 + vatRate) * 100) / 100;
+  const withheld = f.withholdingRate ?? 0;
+  const gross = Math.round(at.amount * (1 + vatRate - withheld) * 100) / 100;
   return { period: at.period, amount: gross > 0 && !periodChanges ? gross : null, gross, vatRate, changesFrom };
 }
 
@@ -586,7 +616,8 @@ const FIXED_PERIOD_LABEL: Record<FixedPeriod, string> = { aylik: "aylık", hafta
 export function fixedReminderText(...args: Parameters<typeof fixedReminderAt>): string {
   const at = fixedReminderAt(...args);
   const period = FIXED_PERIOD_LABEL[at.period];
-  const vat = at.vatRate > 0 ? ` (%${Math.round(at.vatRate * 100)} KDV dahil)` : "";
+  const withheld = args[0].withholdingRate ?? 0;
+  const vat = (at.vatRate > 0 ? ` (%${Math.round(at.vatRate * 100)} KDV dahil)` : "") + (withheld > 0 ? ` (stopaj %${Math.round(withheld * 100)} düşüldü, muhtasarda)` : "");
   const [, versions, month] = args;
   const periodFrom = versions
     .filter((v) => v.fromMonth > month && v.period !== at.period)
@@ -653,6 +684,19 @@ export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount
 }
 
 /**
+ * Yalnız beyanname damgası hatırlatıcısı ("KDV damga vergisi", "KDV2 damga vergisi"): hangi beyannamenin damgası; damga
+ * değilse ya da KDV'ye bağlı değilse null. Nakit planı bu ayın KDV ya da KDV-2 damga satırını bunun varken çizmez
+ * (hatırlatıcı kendi satırını çizer; docs/NAKIT-PLANI.md)
+ */
+export function vatStampReminder(r: Pick<ReminderRow, "kind" | "title">): "kdv" | "kdv2" | null {
+  if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return null;
+  const t = foldTR(r.title);
+  if (!stampOnly(t)) return null;
+  if (VAT_WITHHOLDING.test(t)) return "kdv2";
+  return /(^|[^a-z])kdv|katma deger/.test(t) ? "kdv" : null;
+}
+
+/**
  * Muhtasar hatırlatıcısı (Vergi ve nakit planı sınıfı; docs/VERGI.md): başlıkta "muhtasar" ya da "stopaj"; KDV, KDV-2,
  * SGK ve yalnız damga vergisi değil. "Kira stopajı" da muhtasarla ödenir
  */
@@ -665,6 +709,18 @@ export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): bool
 /** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */
 export function isProvisionalTaxReminder(r: Pick<ReminderRow, "title">): boolean {
   return /gecici\s+vergi/.test(foldTR(r.title));
+}
+
+/**
+ * Tekrarlı hatırlatıcının tutarı yalnız o döneme mi ait (K26): KDV ve KDV-2 (vatAmountTravels) ile başlığında "muhtasar"
+ * ya da "geçici vergi" geçen tutarlı hatırlatıcı. "Ödendi" ve erteleme tutarı seriden siler, geri al geri yazar.
+ * "Stopaj" yalnız nakit planı sınıfıdır: sabit tutarlı "Kira stopajı"nın tutarı kalır
+ */
+export function taxAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): boolean {
+  if (vatAmountTravels(r)) return true;
+  if (r.repeat === "none" || r.amount === null) return false;
+  const t = foldTR(r.title);
+  return (/muhtasar/.test(t) && !stampOnly(t)) || isProvisionalTaxReminder(r);
 }
 
 /** Yerel vergi hatırlatıcısı: çevre temizlik vergisi ("ÇTV") ya da ilan ve reklam vergisi; değilse null */

@@ -63,6 +63,8 @@ export interface FixedRow {
   section: FixedSection;
   /** Kalemin kendi KDV oranı; boşsa bölümün varsayılanı */
   vatRate: number | null;
+  /** Ödemeden kesilen stopaj oranı (Vergi › sınıflandırma; 0 = yok): tutar bankadan çıkan net (docs/VERGI.md) */
+  withholdingRate: number;
   versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
   /** Bitiş ayı (bu ay ya da sonrası; bitmişler listelenmez): ilk ödeme en geç bu ayda (E-62) */
   endMonth: string | null;
@@ -82,6 +84,10 @@ const PRESET_CARDS: { key: string; label: string; category: ReminderCategory }[]
   { key: "maas", label: "Maaş", category: "maas" },
   { key: "kira", label: "Kira", category: "kira" },
   { key: "abonelik", label: "Abonelik", category: "abonelik" },
+  { key: "kv", label: "Kurumlar vergisi", category: "vergi" },
+  { key: "ctv1", label: "ÇTV 1. taksit", category: "vergi" },
+  { key: "ctv2", label: "ÇTV 2. taksit", category: "vergi" },
+  { key: "ilan", label: "İlan-reklam", category: "vergi" },
 ];
 
 /** Başlıktan tür tahmini (yeni hatırlatıcıda tür elle seçilmediyse) */
@@ -579,7 +585,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">
-                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate }, f.versions, (days[f.id] ?? firstFor(f)).slice(0, 7))}
+                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate, withholdingRate: f.withholdingRate }, f.versions, (days[f.id] ?? firstFor(f)).slice(0, 7))}
                           {f.endMonth ? ` · ${monthLabel(f.endMonth)} ayında bitiyor` : ""}
                         </p>
                       </div>

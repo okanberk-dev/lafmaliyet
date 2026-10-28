@@ -371,7 +371,18 @@ export function reminderDriftText(d: ReminderDrift): string {
  */
 export function fixedReminderDrifts(
   reminders: readonly Pick<ReminderRow, "id" | "title" | "amount" | "active" | "dueDate" | "repeat" | "anchorDate" | "note">[],
-  fixed: readonly { id: number; name: string; period: FixedPeriod; amount: number; section: FixedSection; vatRate?: number | null; startMonth: string | null; endMonth: string | null }[],
+  fixed: readonly {
+    id: number;
+    name: string;
+    period: FixedPeriod;
+    amount: number;
+    section: FixedSection;
+    vatRate?: number | null;
+    /** Ödemeden kesilen stopaj oranı (src/lib/tax/rules.ts paidWithholdingRate): tutar bankadan çıkan net */
+    withholdingRate?: number | null;
+    startMonth: string | null;
+    endMonth: string | null;
+  }[],
   versions: readonly { fixedExpenseId: number; fromMonth: string; period: FixedPeriod; amount: number }[],
   today: string,
   horizonDays = 366,

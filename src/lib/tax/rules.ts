@@ -347,6 +347,17 @@ export function withholdingRate(w: Withholding | null | undefined, rules: TaxYea
   }
 }
 
+/**
+ * Ödemeden kesilen stopaj oranı (nakit planı ve "Sabit giderlerden ekle"; plan §8.2): Türkiye'deki şahsa ödenen kira,
+ * serbest meslek ve internet reklamında stopaj ödemeden kesilir, muhtasarla ayrıca ödenir (kira 160.000 brüt → bankadan
+ * 128.000 + muhtasarda 32.000). Doğrudan yurt dışına ödenen reklam ve hizmette tutar olduğu gibi gider (yabancı
+ * firmanın faturası), KDV-2 ayrı satırdadır. Yılın kuralı yoksa en son bilinen yılınki
+ */
+export function paidWithholdingRate(w: Withholding | null | undefined, year: number): number {
+  if (!w || w === "internet_reklam_yurtdisi" || w === "yurt_disi_hizmet") return 0;
+  return withholdingRate(w, rulesFor(year).rules);
+}
+
 /** Profilin sorumlu sıfatıyla KDV'si (2 No.lu beyanname) oranı */
 export function withholdingKdv2(w: Withholding | null | undefined, rules: TaxYearRules): number {
   return w === "internet_reklam_yurtdisi" || w === "yurt_disi_hizmet" ? rules.kdv.sorumluYurtDisi.value : 0;
