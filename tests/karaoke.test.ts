@@ -310,6 +310,31 @@ test("Web Push gövdesinde misafirin adı yok (kilit ekranı); ekrandaki zil sat
   assert.match(alerts, /eventMessage\(s\.lastEvent, \{[^}]*name: s\.customerName/);
 });
 
+test("panelin kendi sistem bildirimleri (sekme arkadayken) misafirin adını taşımaz; ekrandaki toast'ta ad kalır", () => {
+  const src = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
+  // Her `void notify(...)` çağrısının argümanları (parantez dengesiyle)
+  const calls: string[] = [];
+  for (let i = src.indexOf("void notify("); i !== -1; i = src.indexOf("void notify(", i + 1)) {
+    let depth = 0;
+    let j = i + "void notify".length;
+    for (; j < src.length; j++) {
+      if (src[j] === "(") depth++;
+      else if (src[j] === ")" && --depth === 0) break;
+    }
+    calls.push(src.slice(i, j + 1));
+  }
+  // Sipariş, planlı sipariş, karaoke başladı / az kaldı / süre doldu, hatırlatıcı
+  assert.equal(calls.length, 6);
+  for (const c of calls) assert.doesNotMatch(c, /\bname\b|customerName|sessionName|firstName/, c);
+  const fire = src.slice(src.indexOf("const fire = useCallback("), src.indexOf("// Karaoke uyarılarını ve saatli hatırlatmaları kur"));
+  assert.match(fire, /void notify\("Karaoke başladı", detail,/);
+  assert.match(fire, /void notify\(`Karaokede \$\{prefs\.warnMinutes\} dakika kaldı`, end,/);
+  assert.match(fire, /void notify\("Karaokede süre doldu",/);
+  // Açık ekrandaki toast adı göstermeye devam eder
+  assert.match(fire, /toast\(`Karaoke başladı: \$\{name\}`/);
+  assert.match(fire, /toast\.warning\(`\$\{prefs\.warnMinutes\} dakika kaldı: \$\{name\}`/);
+});
+
 test("ping ucu imzasız isteği reddeder, eşitleme yanıttan sonra; personel tutarı görmez", () => {
   const ping = readFileSync(join(process.cwd(), "src/app/api/karaoke/ping/route.ts"), "utf8");
   assert.match(ping, /if \(!secret\) return Response\.json\(\{ error: "not_configured" \}, \{ status: 503 \}\)/);

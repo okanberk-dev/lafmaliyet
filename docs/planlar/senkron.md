@@ -56,8 +56,8 @@ ve LafPOS `docs/03-ENTEGRASYON.md`'de.
 6. **Ayarlar paylaşılmıyor:** karaoke oda saatleri ve ücreti, KDV oranları, sipariş anahtarları, açık gün.
 7. **Kod sabiti ile menü kalemi ayrışıyor:** seçenek ek ücreti, ödül kuponu değeri, kilometre taşı hediyesi (ada göre).
 8. **KVKK:** karaoke Web Push gövdesinde ad; hesap silmede panel kopyasındaki ad; hukuk metni panel kopyasından söz
-   etmiyor. *Push'taki ad P0 ile kalktı (lafmaliyet, dal `claude/senkron-p0-push-ad`); panel kopyasının silinmesi P5
-   ve S11'de, hukuk metni S12'de.*
+   etmiyor. *Push'taki ve sekmenin kendi sistem bildirimlerindeki ad P0 ile kalktı (lafmaliyet, dal
+   `claude/senkron-p0-push-ad`); panel kopyasının silinmesi P5 ve S11'de, hukuk metni S12'de.*
 9. **Panelde mağaza malının maliyeti ve online POS kesintisi yok.**
 10. **Türetilmiş kopyalar bayatlıyor:** llms*.txt, saat metinleri, telefon kopyaları, CATALOG.md, panelin "Opera AVM"si.
 
@@ -569,10 +569,13 @@ Sıra: **S1 → S2 → M1 → P1 → P2 → M2**; P0 fazdan bağımsız. Faz 1 P
 **P0 · Karaoke Web Push gövdesinden ad (fazdan bağımsız, KVKK)**
 - **Durum (28 Ekim 2026):** yapıldı (lafmaliyet, dal `claude/senkron-p0-push-ad`). Bildirimin metni artık saf
   `pushMessages`'ta (src/lib/karaoke/session.ts, `eventMessage`'ın yanında): `name: null` ile kurar, üçten fazla olayın
-  özeti de orada; `announce` (src/server/karaoke/sync.ts) yalnız gönderir. Ekrandaki zil satırı ve liste adı göstermeye
-  devam eder (alert-center.tsx değişmedi). Belge docs/KARAOKE.md (istek metninin Güvenlik maddesi ve Güvenlik ›
-  "Bildirimde misafirin adı yok"). Testler: tests/karaoke.test.ts (push metninde ad ve not yok, özet dahil; zil
-  metninde ad var; `announce` yalnız `pushMessages`'tan geçer) ve plandan fazla tests/karaoke-bildirim-db.test.ts
+  özeti de orada; `announce` (src/server/karaoke/sync.ts) yalnız gönderir. Aynı kilit ekranına düşen ikinci yol da
+  kapandı (incelemeden, plandan fazla): sekme arkadayken sayacın kendi sistem bildirimleri (alert-center.tsx › `fire`:
+  "Karaoke başladı", "Karaokede 10 dakika kaldı", "Karaokede süre doldu") artık adsız. Ekrandaki zil satırı, sayacın
+  ekran içi uyarısı ve liste adı göstermeye devam eder. Belge docs/KARAOKE.md (istek metninin Güvenlik maddesi ve
+  Güvenlik › "Bildirimde misafirin adı yok"). Testler: tests/karaoke.test.ts (push metninde ad ve not yok, özet dahil;
+  zil metninde ad var; `announce` yalnız `pushMessages`'tan geçer; alert-center.tsx'teki her `notify(` çağrısı adsız,
+  toast'ta ad var) ve plandan fazla tests/karaoke-bildirim-db.test.ts
   (gerçek Postgres, sitenin sahte ucu: pingle gelen yeni, iptal edilen, saati değişen ve dört birden rezervasyonun
   yakalanan bildiriminde ad yok; kopyada ve canlı veride var; eski kodla üç test de kırmızı). Uçtan uca yerelde: sahte
   siteye bağlı `next dev`, imzalı pingle yeni rezervasyon → bar ekranında (personel 390 px, yönetici 1440 ve 390 px)
