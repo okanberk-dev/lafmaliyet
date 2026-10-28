@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { EASE_OUT, SPRING_PRESS } from "@/components/akmanos/lib/motion-ease";
 import { SERIES } from "@/components/charts";
@@ -177,11 +178,15 @@ export function StaffEditor({
     .sort((a, b) => b.h.fromMonth!.localeCompare(a.h.fromMonth!) || a.x.name.localeCompare(b.x.name, "tr-TR"));
   const showSearch = live.length > 6 || q.trim() !== "";
 
-  /** Sunucu iletisini (hangi aydan itibaren, önceki aylar) bildirim olarak gösterir */
+  /**
+   * Sunucu iletisini (hangi aydan itibaren, önceki aylar) bildirim olarak gösterir. Eylem atarsa (ağ kesildi, panel
+   * güncellendi; E-51) bildirim çıkar, düğmeler bırakılır, pencere açık kalır
+   */
   async function run<T extends { message?: string | null }>(p: Promise<ActionResult<T>>, fallback: string): Promise<T | null> {
     setPending(true);
-    const res = await p;
+    const res = await tryAction(() => p);
     setPending(false);
+    if (!res) return null;
     if (!res.ok) {
       toast.error(res.error);
       return null;
@@ -224,8 +229,9 @@ export function StaffEditor({
   async function confirmDelete() {
     if (!deleting) return;
     setPending(true);
-    const res = await saveStaff([], [deleting.id]);
+    const res = await tryAction(() => saveStaff([], [deleting.id]));
     setPending(false);
+    if (!res) return;
     // Sunucu son sözü söyler: kapanmış bir ayın maaş hesabına girmişse silmez, nedenini yazar
     if (!res.ok) return toast.error(res.error);
     toast.success(`${deleting.name} silindi`);
@@ -260,13 +266,16 @@ export function StaffEditor({
       return toast.error(check.formError ?? Object.values(check.errors)[0] ?? "Oranları kontrol edin");
     }
     setRatesBusy(true);
-    const res = await saveStaffRates({
-      isciSgk: check.values.isciSgk!,
-      isciIssizlik: check.values.isciIssizlik!,
-      isverenSgk: check.values.isverenSgk!,
-      isverenIssizlik: check.values.isverenIssizlik!,
-    });
+    const res = await tryAction(() =>
+      saveStaffRates({
+        isciSgk: check.values.isciSgk!,
+        isciIssizlik: check.values.isciIssizlik!,
+        isverenSgk: check.values.isverenSgk!,
+        isverenIssizlik: check.values.isverenIssizlik!,
+      }),
+    );
     setRatesBusy(false);
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     toast.success("SGK oranları kaydedildi", { description: `Bütün ayların SGK tutarı yeniden hesaplandı. Bu ay işveren maliyeti ${tl(sums.total)}.` });
   }
@@ -916,8 +925,10 @@ function StaffDialog({
     const self = { id: row?.id ?? null, name, netSalary: netValue, extras: extValue, effectiveFrom: !row || changed ? eff : row.valueMonth };
     // Liste sırası korunur: düzenlenen kişi yerinde, yeni kişi sonda
     const list = row ? unchanged().map((x) => (x.id === row.id ? { ...self, id: row.id } : x)) : [...unchanged(), self];
-    const res = await saveStaff(list);
+    const res = await tryAction(() => saveStaff(list));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     const id = row?.id ?? res.data.changes.find((c) => !staff.some((s) => s.id === c.id))?.id;
     if (id) onSaved(id);

@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, NumberInput } from "@/components/ui/form";
@@ -25,8 +26,10 @@ export function BalanceDialog({ balance, carry, onClose }: { balance: number | n
 
   async function save(amount: number | null) {
     setBusy(true);
-    const r = await saveCashBalance(amount);
+    const r = await tryAction(() => saveCashBalance(amount));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere açık kalır
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     toast.success(amount === null ? "Bakiye kaldırıldı" : `Bakiye kaydedildi: ${money(amount)}`);
     onClose();

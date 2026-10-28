@@ -76,7 +76,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B17 | Alış: kasadan e-Arşiv alımları ve fatura kategori koruması | E-42, E-45 | yok |  | bekliyor |
 | B18 | Karaoke: silme isteği ve bitirme izi | E-15, E-65 | **evet** |  | bekliyor |
 | B19 | Bildirim alıcıları ve personele sabit hata metni | E-52, E-53, E-64 | yok |  | PR (dal `claude/denetim-b19-bildirim`) |
-| B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | bekliyor |
+| B20 | Sağlamlık süpürmesi: eylem hataları, zil, gün kesimi, ÖKC uyarısı | E-49, E-51, E-69, E-70 | yok |  | PR (dal `claude/denetim-b20-saglamlik`) |
 
 **B21 (sahibin isteği, 26 Ekim 19:30; raporda yok): Hızlı sayım ve mal siparişi kaldırıldı.** Sahip: "Hızlı sayım
 ile mal siparişi kısmını kaldır, gereksiz çünkü normal sayım olsun". Dal `claude/denetim-b21-hizli-siparis-kaldir`.
@@ -513,10 +513,14 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
   değişiklik sayılır. Kaydetmeye inen iki kenar durum (kayıtlı fiyatı 0 iken silinen fiyat, kayıtlı miktarı 0 satırda
   "=") alana özel uyarı gösterir.
 - Açık kalanlar:
-  1. Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler: eylem fırlatırsa (ağ
-     yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
-     `setSaving` / `setDeleting` ile düzeltilmeli. 26 Ekim denetiminde daha geniş hâliyle E-51 (B20; reçete
-     düzenleyici B12'de yapılırsa B20 onu atlar).
+  1. ~~Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler~~ B12'de (reçete
+     düzenleyici) ve B20'de (E-51, D-07; panelin bütün istemci dosyaları) kapandı. Atılan eylem (ağ kesildi, panel
+     güncellendi) düğmeyi kilitli bırakmaz, iyimser değişikliği sessizce geri almaz, sayfayı hata ekranına düşürmez:
+     `useActionTransition`, `tryAction`, `catchingFormAction` ve `actionErrorText` (`src/components/ui/action-error.ts`);
+     parola penceresi pencereyi ve parolayı tutar, nedeni alanın altında yazar. Bekçi sözdizimi ağacını tarar
+     (`tests/helpers/action-guard.ts`, `tests/arayuz-duzeltmeleri.test.ts`): `@/server/actions`'tan alınan her adın
+     reddi bir yerde yakalanmalı, useActionTransition'da eylemden sonraki meşgul durumu try/finally dışında
+     bırakılmamalı; tek kaçış yorumu (`eylem-hatası:`) Kullanıcılar'daki parola isteğinde.
   2. ~~Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir~~ B19'da kapandı (E-64, D-08):
      aşama, Tükendi, `/api/canli`, `/api/siparisler` ve kasa e-postası personele sabit metin döner
      (`src/lib/staff-errors.ts`); ayrıntı yöneticide.

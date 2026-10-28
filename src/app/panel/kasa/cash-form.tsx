@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -845,8 +845,10 @@ export function CashForm({
   async function resend() {
     if (!report) return;
     setResending(true);
-    const res = await resendCashReportEmail(report.id);
+    const res = await tryAction(() => resendCashReportEmail(report.id));
     setResending(false);
+    // Atılan eylem (E-51): bildirim çıktı, düğme bırakıldı
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     if (res.data.status === "sent") toast.success(`E-posta ${res.data.to} adrese gitti`);
     else toast.error(res.data.error ?? "E-posta gitmedi");

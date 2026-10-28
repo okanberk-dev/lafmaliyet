@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { fold, useQueryState } from "@/components/ui/filters";
@@ -114,8 +115,10 @@ export function NewProductDialog({
     }
     if (duplicate) return;
     setBusy(true);
-    const res = await createProduct({ name, size, categoryId, price: p, copyFromId: copyFrom ? Number(copyFrom) : null });
+    const res = await tryAction(() => createProduct({ name, size, categoryId, price: p, copyFromId: copyFrom ? Number(copyFrom) : null }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     if (copyFrom) toast.success(`${name.trim()} oluşturuldu`, { description: copiedSummary(res.data) });
     else

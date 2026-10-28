@@ -3,10 +3,11 @@
 import { Info, ListChecks, Pencil, Plus, Scale, SearchX, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { startTransition, useOptimistic, useState, type FormEvent } from "react";
+import { useOptimistic, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
@@ -270,8 +271,10 @@ function NoPurchaseButton({ month, rows, bulk }: { month: string; rows: Row[]; b
   const ids = rows.map((r) => r.ingredientId);
   async function write() {
     setBusy(true);
-    const res = await setNoPurchase(month, ids);
+    const res = await tryAction(() => setNoPurchase(month, ids));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı; onay penceresi açık kalır, yeniden denenir
+    if (!res) return;
     setConfirm(false);
     if (!res.ok) return void toast.error(res.error);
     const done = res.data.changed;
@@ -281,7 +284,7 @@ function NoPurchaseButton({ month, rows, bulk }: { month: string; rows: Row[]; b
       description: "Sayım sapması hesaplandı.",
       action: {
         label: "Geri al",
-        onClick: () => void setNoPurchase(month, done, true).then((r) => (r.ok ? toast.success(`${label}: alım yok geri alındı`) : toast.error(r.error))),
+        onClick: () => void tryAction(() => setNoPurchase(month, done, true)).then((r) => r && (r.ok ? toast.success(`${label}: alım yok geri alındı`) : toast.error(r.error))),
       },
     });
   }
@@ -335,11 +338,13 @@ function PurchaseCell({ month, row, className, id }: { month: string; row: Row; 
 
   async function write(v: number | null) {
     setBusy(true);
-    const res = await setPurchaseQty(month, row.ingredientId, v);
+    const res = await tryAction(() => setPurchaseQty(month, row.ingredientId, v));
     setBusy(false);
-    if (!res.ok) {
+    // Kaydedilemeyen değer kutuda kalmaz (kaydedilmiş gibi görünmesin); atılan eylemin bildirimi tryAction'dan
+    if (!res?.ok) {
       setValue(saved);
-      return toast.error(res.error);
+      if (res) toast.error(res.error);
+      return;
     }
     if (v === null) {
       const prev = { qty: row.purchased, note: row.note };
@@ -351,7 +356,8 @@ function PurchaseCell({ month, row, className, id }: { month: string; row: Row; 
                 label: "Geri al",
                 onClick: () => {
                   const qty = prev.qty!;
-                  void setPurchaseQty(month, row.ingredientId, qty, prev.note).then((r) => {
+                  void tryAction(() => setPurchaseQty(month, row.ingredientId, qty, prev.note)).then((r) => {
+                    if (!r) return;
                     if (!r.ok) return void toast.error(r.error);
                     setValue(num(qty, 3));
                     toast.success(`${row.name}: alım geri alındı`);
@@ -1028,8 +1034,9 @@ function PurchaseDialog({
     e.preventDefault();
     if (finalQty === null || qtyInvalid) return toast.error("Miktar girin", { description: "Yalnızca sayı; ondalık için virgül (ör. 2,5)." });
     setBusy(true);
-    const res = await setPurchaseQty(month, id, finalQty, note);
+    const res = await tryAction(() => setPurchaseQty(month, id, finalQty, note));
     setBusy(false);
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     const name = options.find((i) => i.id === id)?.name ?? "";
     toast.success(`${name}: ${num(finalQty, 2)} ${unit} ${row || already !== null ? "kaydedildi" : "eklendi"}`);
@@ -1046,8 +1053,9 @@ function PurchaseDialog({
   async function remove() {
     if (!row) return;
     setBusy(true);
-    const res = await setPurchaseQty(month, row.ingredientId, null);
+    const res = await tryAction(() => setPurchaseQty(month, row.ingredientId, null));
     setBusy(false);
+    if (!res) return;
     setConfirmDelete(false);
     if (!res.ok) return toast.error(res.error);
     const prev = { qty: row.purchased, note: row.note };
@@ -1058,8 +1066,8 @@ function PurchaseDialog({
           : {
               label: "Geri al",
               onClick: () =>
-                void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note).then((r) =>
-                  r.ok ? toast.success(`${row.name}: alım geri alındı`) : toast.error(r.error),
+                void tryAction(() => setPurchaseQty(month, row.ingredientId, prev.qty, prev.note)).then((r) =>
+                  r && (r.ok ? toast.success(`${row.name}: alım geri alındı`) : toast.error(r.error)),
                 ),
             },
     });
@@ -1231,6 +1239,8 @@ export function Findings({ items }: { items: FindingItem[] }) {
   const [q, setQ] = useQueryText("bulgu");
   const [editing, setEditing] = useState<FindingItem | "new" | null>(null);
   // İşaretleme anında görünsün; sunucu yenilenince gerçek değer gelir, hata olursa geri döner
+  // Eylem atarsa (ağ kesildi, panel güncellendi; E-51) madde eski yerine döner ve bildirim çıkar
+  const [, startTransition] = useActionTransition();
   const [list, setOptimistic] = useOptimistic(items, (state, change: { id: number; resolved: boolean }) =>
     state.map((i) => (i.id === change.id ? { ...i, resolved: change.resolved } : i)),
   );
@@ -1473,8 +1483,9 @@ function FindingDialog({
     e?.preventDefault();
     if (!canSave) return toast.error(title.trim() ? "Bölüm adını yazın" : "Başlık yazın");
     setBusy(true);
-    const res = await saveFinding({ id: item?.id ?? null, section, title, detail });
+    const res = await tryAction(() => saveFinding({ id: item?.id ?? null, section, title, detail }));
     setBusy(false);
+    if (!res) return;
     if (!res.ok) return toast.error(res.error);
     toast.success(item ? "Bulgu kaydedildi" : `"${title.trim()}" eklendi`);
     onClose();
@@ -1489,8 +1500,9 @@ function FindingDialog({
   async function remove() {
     if (!item) return;
     setBusy(true);
-    const res = await deleteFinding(item.id);
+    const res = await tryAction(() => deleteFinding(item.id));
     setBusy(false);
+    if (!res) return;
     setConfirmDelete(false);
     if (!res.ok) return toast.error(res.error);
     toast.success(`"${item.title}" silindi`);

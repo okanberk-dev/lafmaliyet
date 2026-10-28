@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput } from "@/components/ui/form";
@@ -95,7 +95,7 @@ export function PayoutButton({
         action: {
           label: "Geri al",
           onClick: () =>
-            void saveChannelMonth(previous).then((x) => (x.ok ? toast.success(`${shortName(data)}: geri alındı`) : toast.error(x.error))),
+            void tryAction(() => saveChannelMonth(previous)).then((x) => x && (x.ok ? toast.success(`${shortName(data)}: geri alındı`) : toast.error(x.error))),
         },
       });
     });

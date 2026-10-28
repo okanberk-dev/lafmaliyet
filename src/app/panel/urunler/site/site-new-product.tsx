@@ -7,6 +7,7 @@ import { useId, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select } from "@/components/ui/form";
@@ -86,8 +87,10 @@ export function SiteNewProductDialog({
     e.preventDefault();
     if (!ready || categoryId === null) return;
     setBusy(true);
-    const res = await createProductsFromSite({ siteMenuId: item.id, name: clean, categoryId, rows: chosen.map((r) => ({ slot: r.slot, size: r.size })) });
+    const res = await tryAction(() => createProductsFromSite({ siteMenuId: item.id, name: clean, categoryId, rows: chosen.map((r) => ({ slot: r.slot, size: r.size })) }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere açık kalır
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     const created = res.data.created;
     toast.success(`${clean} açıldı ve siteye bağlandı; şimdi reçetesini girin`, {

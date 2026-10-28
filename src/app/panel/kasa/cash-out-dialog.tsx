@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { PhotoStatus, PhotoThumb, ReadError, type PhotoPhase } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -285,7 +285,8 @@ export function CashOutDialog({
         action: {
           label: "Geri al",
           onClick: () =>
-            void restoreCashOut(res.data.undo).then((r) => {
+            void tryAction(() => restoreCashOut(res.data.undo)).then((r) => {
+              if (!r) return;
               if (!r.ok) toast.error(r.error);
               else toast.success(`Geri alındı: ${cashOutShortLabel(line)} · ${money(line.amount)}`);
             }),

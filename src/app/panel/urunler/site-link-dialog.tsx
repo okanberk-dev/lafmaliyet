@@ -4,6 +4,7 @@ import { Globe, Link2, RefreshCw } from "lucide-react";
 import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { actionErrorText, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -88,9 +89,14 @@ export function SiteLinkDialog({
   const onReceive = useEffectEvent(receive);
   useEffect(() => {
     let alive = true;
-    void loadSiteMenuChoices().then((res) => {
-      if (alive) onReceive(res);
-    });
+    // Okuma atarsa (ağ kesildi, panel güncellendi; E-51) pencere "yükleniyor"da kalmaz: hata ve Yeniden dene
+    loadSiteMenuChoices()
+      .then((res) => {
+        if (alive) onReceive(res);
+      })
+      .catch((e: unknown) => {
+        if (alive) onReceive({ ok: false, error: actionErrorText(e) });
+      });
     return () => {
       alive = false;
     };
@@ -107,7 +113,9 @@ export function SiteLinkDialog({
 
   function retry() {
     setLoad({ status: "loading" });
-    void loadSiteMenuChoices().then(receive);
+    loadSiteMenuChoices()
+      .then(receive)
+      .catch((e: unknown) => receive({ ok: false, error: actionErrorText(e) }));
   }
 
   const items = useMemo(() => choices?.items ?? [], [choices]);
@@ -143,8 +151,10 @@ export function SiteLinkDialog({
   async function submit() {
     if (!item || busy || takenByOther || sameAsCurrent) return;
     setBusy(true);
-    const res = await linkProductToSite({ productId: product.id, siteMenuId: item.id, slot: effectiveSlot });
+    const res = await tryAction(() => linkProductToSite({ productId: product.id, siteMenuId: item.id, slot: effectiveSlot }));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere ve seçim yerinde
+    if (!res) return;
     if (!res.ok) return void toast.error(res.error);
     const d = res.data;
     const changes = [

@@ -30,7 +30,7 @@ import { useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from 
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -782,7 +782,7 @@ function ProductLinks({
       if (!r.ok) return void toast.error(r.error);
       toast.success(`${u.productName}: hammadde değil`, {
         description: "Bekleyenlerden çıktı; listenin altındaki “Hammadde değil” bölümünden geri alınabilir.",
-        action: { label: "Geri al", onClick: () => void unignoreProduct(u.productKey).then((x) => (x.ok ? undefined : toast.error(x.error))) },
+        action: { label: "Geri al", onClick: () => void tryAction(() => unignoreProduct(u.productKey)).then((x) => (!x || x.ok ? undefined : toast.error(x.error))) },
       });
     });
   const unignore = (e: IgnoredProduct) =>

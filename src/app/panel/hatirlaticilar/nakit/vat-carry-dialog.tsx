@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 
+import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, NumberInput, Select } from "@/components/ui/form";
@@ -39,8 +40,10 @@ export function VatCarryDialog({ carry, today, onClose }: { carry: CashPlanState
 
   async function save(input: { month: string; amount: number } | null) {
     setBusy(true);
-    const r = await saveVatCarry(input);
+    const r = await tryAction(() => saveVatCarry(input));
     setBusy(false);
+    // Atılan eylem (E-51): bildirim çıktı, pencere açık kalır
+    if (!r) return;
     if (!r.ok) return void toast.error(r.error);
     toast.success(input ? `Devreden KDV kaydedildi: ${money(input.amount)} (${monthLabel(input.month)})` : "Devreden KDV kaldırıldı; panelin hesabı kullanılıyor");
     onClose();

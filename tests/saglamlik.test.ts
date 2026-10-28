@@ -1,5 +1,6 @@
-// Denetim B20 (sağlamlık süpürmesi): zaman damgalarının günü İstanbul saatiyle (E-70) ve zilin maliyet modeli
-// yüklenemeyince öbür maddeleri göstermesi (E-49). Eylem hatalarının bekçisi tests/arayuz-duzeltmeleri.test.ts'te.
+// Denetim B20 (sağlamlık süpürmesi): zaman damgalarının günü İstanbul saatiyle (E-70), zilin maliyet modeli
+// yüklenemeyince öbür maddeleri göstermesi (E-49) ve atılan eylemi yakalayan yardımcılar (E-51: tryAction,
+// catchingFormAction, actionErrorText). Eylem hatalarının bekçisi tests/arayuz-duzeltmeleri.test.ts'te.
 // Çalıştırma: npx tsx --test tests/saglamlik.test.ts
 
 import assert from "node:assert/strict";
@@ -7,6 +8,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { UnrecognizedActionError } from "next/dist/client/components/unrecognized-action-error";
+import { redirect } from "next/navigation";
+import { toast } from "sonner";
+
+import { actionErrorText, catchingFormAction, OFFLINE_TEXT, STALE_TEXT, tryAction } from "../src/components/ui/action-error";
 import { dateTR, dayTR } from "../src/lib/format";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -58,4 +64,53 @@ test("zil: maliyet modeli düşünce öbür maddeler gelir; menü okuma hatasın
   const shell = read("src/components/panel/sidebar.tsx");
   assert.doesNotMatch(shell, /setAlerts\(\[\]\)|setAlerts\(\(a\) => a \?\? \[\]\)/);
   assert.match(shell, /\.catch\(\(e: unknown\) => setAlertsFailure\(actionFailure\(e\)\)\)/);
+});
+
+test("tryAction: atan eylem bildirim çıkarır ve undefined döner; yanıt olduğu gibi geçer; yönlendirme geri atılır (E-51)", async () => {
+  const shown: unknown[][] = [];
+  const t = toast as unknown as { error: (...a: unknown[]) => unknown };
+  const realError = t.error;
+  const realLog = console.error;
+  t.error = (...a: unknown[]) => void shown.push(a);
+  console.error = () => {};
+  try {
+    // Ağ kesildi: Chrome "Failed to fetch", Safari "Load failed"
+    assert.equal(await tryAction(() => Promise.reject(new TypeError("Failed to fetch"))), undefined);
+    assert.equal(shown.at(-1)?.[0], OFFLINE_TEXT);
+    // Eylemin kendi hatası yanıt olarak gelir: bildirimi çağıran gösterir
+    assert.deepEqual(await tryAction(async () => ({ ok: false as const, error: "Reddedildi" })), { ok: false, error: "Reddedildi" });
+    assert.equal(shown.length, 1);
+    // Panel güncellendi (eski eylem kimliği): "Yenile" düğmeli bildirim
+    assert.equal(await tryAction(() => Promise.reject(new UnrecognizedActionError("Server Action not found"))), undefined);
+    assert.equal(shown.at(-1)?.[0], STALE_TEXT);
+    assert.equal(actionErrorText(new UnrecognizedActionError("x")), STALE_TEXT);
+    // Next'in yönlendirmesi yutulmaz
+    await assert.rejects(
+      tryAction(async () => redirect("/panel")),
+      (e: unknown) => typeof (e as { digest?: string }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT"),
+    );
+  } finally {
+    t.error = realError;
+    console.error = realLog;
+  }
+  assert.equal(STALE_TEXT, "Panel güncellendi; sayfayı yenileyip yeniden deneyin.");
+});
+
+test("catchingFormAction / actionErrorText: form önceki durumunda kalır, neden formun hata satırında (E-51)", async () => {
+  const realLog = console.error;
+  console.error = () => {};
+  try {
+    type State = { error?: string; step?: string };
+    const throwing = async (state: State, payload: FormData): Promise<State> => {
+      throw new TypeError(payload instanceof FormData && state ? "Load failed" : "x");
+    };
+    const failing = catchingFormAction(throwing);
+    assert.deepEqual(await failing({ step: "password" }, new FormData()), { step: "password", error: "Bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin." });
+    const answering = async (state: State, size: number): Promise<State> => ({ ...state, error: size > 1 ? "Büyük" : undefined });
+    assert.deepEqual(await catchingFormAction(answering)({ step: "password" }, 2), { step: "password", error: "Büyük" });
+    assert.equal(actionErrorText(new Error("beklenmedik")), "İşlem tamamlanamadı; sayfayı yenileyip yeniden deneyin.");
+    assert.throws(() => actionErrorText((() => { try { redirect("/giris"); } catch (e) { return e; } })()));
+  } finally {
+    console.error = realLog;
+  }
 });

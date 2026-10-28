@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
-import { useActionTransition } from "@/components/ui/action-error";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -128,7 +128,8 @@ export function scrollToHolds(smooth = false) {
 
 /** "Geri al": karar geri alınır, öneri yeniden onay bekler */
 async function undo(id: number, name: string) {
-  const r = await undoPriceHold(id);
+  const r = await tryAction(() => undoPriceHold(id));
+  if (!r) return;
   if (r.ok) toast.success(`${name}: fiyat yeniden onay bekliyor`);
   else toast.error(r.error);
 }
@@ -156,8 +157,9 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
     setBusyId(x.id);
     start(async () => {
       hide(x.id);
-      const r = await approvePriceHold(x.id);
+      const r = await tryAction(() => approvePriceHold(x.id));
       setBusyId(null);
+      if (!r) return;
       if (!r.ok) return void toast.error(r.error);
       toast.success(`${r.data.name}: ${bulkPrice(r.data.before, r.data.unit)} → ${bulkPrice(r.data.after, r.data.unit)} uygulandı`, {
         action: { label: "Geri al", onClick: () => void undo(x.id, r.data.name) },
@@ -170,8 +172,9 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
     setRejecting(null);
     start(async () => {
       hide(x.id);
-      const r = await rejectPriceHold({ id: x.id, stopUpdates, note });
+      const r = await tryAction(() => rejectPriceHold({ id: x.id, stopUpdates, note }));
       setBusyId(null);
+      if (!r) return;
       if (!r.ok) return void toast.error(r.error);
       toast.success(`${r.data.name} fiyatı değişmedi`, {
         description: r.data.stoppedUpdates ? "Bu üründen fiyat güncellemesi kapatıldı" : undefined,
@@ -185,8 +188,9 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
     setBusyId(x.id);
     start(async () => {
       hide(x.id);
-      const r = await saveProductLink({ productKey: x.productKey, productName: x.productName, ingredientId: x.ingredientId, factor, updatePrice: true });
+      const r = await tryAction(() => saveProductLink({ productKey: x.productKey, productName: x.productName, ingredientId: x.ingredientId, factor, updatePrice: true }));
       setBusyId(null);
+      if (!r) return;
       if (!r.ok) return void toast.error(r.error);
       const f = num(factor, 3);
       // İlk fiyat (hammaddenin fiyatı yoktu) çarpan faturanın biriminden gelmedikçe yine onaya düşer (E-06)

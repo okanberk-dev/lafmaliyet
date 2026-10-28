@@ -5,13 +5,16 @@
 // Çalıştırma: npx tsx --test tests/arayuz-duzeltmeleri.test.ts
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { splitTasks, type DayTask } from "../src/app/panel/bugun/logic";
 import { navTreeFor } from "../src/components/panel/nav";
 import { wordHit } from "../src/lib/word-hit";
+
+import { scanActionErrors, scanBusyAfterAwait } from "./helpers/action-guard";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 function walk(dir: string): string[] {
@@ -29,6 +32,122 @@ test("eylem çağıran istemci dosyaları geçişi useActionTransition ile açar
   assert.match(helper, /unstable_rethrow\(e\)/);
   assert.match(helper, /unstable_isUnrecognizedActionError\(e\)/);
   assert.match(helper, /try \{\s+await fn\(\);\s+\} catch \(e\) \{\s+toastUnreachable\(e\);/);
+});
+
+test("eylem hatası bekçisi (E-51): istemcideki her sunucu eylemi çağrısının reddi bir yerde yakalanır", () => {
+  // Ağ kesildi ya da panel yeniden yayınlandı: yakalanmayan ret düğmeyi kilitli bırakır, iyimser değişikliği sessizce
+  // geri alır ya da (React'in çıplak startTransition'ında, useActionState'te) sayfayı hata ekranına düşürür.
+  // Kural ve tanınan yollar tests/helpers/action-guard.ts'in başında.
+  const { files, unhandled } = scanActionErrors(process.cwd());
+  assert.ok(files.length > 90, String(files.length));
+  assert.deepEqual(
+    unhandled.map((u) => `${u.file}:${u.line} ${u.action} ← ${u.why}`),
+    [],
+    "Eylemi try/catch içinde bekleyin ya da tryAction / useActionTransition / catchingFormAction kullanın (src/components/ui/action-error.ts)",
+  );
+});
+
+test("eylem hatası bekçisi: useActionTransition içinde eylemden sonra meşgul durumu try/finally dışında bırakılmaz", () => {
+  // Başlatıcı hatayı yakalar ama ardındaki setBusy(false) hiç çalışmaz: düğme kilitli kalır (fiyat zammı kartı, onay
+  // bekleyen fiyatlar, siteden satış çekme, silinen Paraşüt faturası, Claude bağlantı onayı)
+  assert.deepEqual(scanBusyAfterAwait(process.cwd()), []);
+});
+
+test("eylem hatası bekçisinin kaçış yorumları sayılı ve nedenli", () => {
+  const marks = walk("src")
+    .filter((f) => /\.tsx?$/.test(f))
+    .flatMap((f) => (read(f).match(/eylem-hatası: .*/g) ?? []).map((m) => `${f}: ${m.trim()}`));
+  assert.deepEqual(marks, [
+    "src/app/panel/kullanicilar/users-client.tsx: eylem-hatası: ConfirmPasswordDialog'un onConfirm'ü yakalar (pencere ve parola kalır, nedeni alanın altında)",
+  ]);
+  // O pencere atılan eylemi yakalar: pencere ve yazılan parola kalır, nedeni alanın altında
+  const dialog = read("src/components/panel/confirm-password-dialog.tsx");
+  assert.match(dialog, /try \{\s+problem = await onConfirm\(password\);\s+\} catch \(e\) \{\s+problem = actionErrorText\(e\);\s+\}\s+if \(problem\) setError\(problem\);/);
+});
+
+test("eylem hatası bekçisi kendi örneklerinde yakalanmayanı bulur, yakalananı geçer", () => {
+  const root = mkdtempSync(join(tmpdir(), "eylem-bekcisi-"));
+  const put = (p: string, text: string) => {
+    mkdirSync(dirname(join(root, p)), { recursive: true });
+    writeFileSync(join(root, p), text);
+  };
+  try {
+    put(
+      "src/components/ui/action-error.ts",
+      `"use client";
+export function useActionTransition(): [boolean, (fn: () => unknown) => void] { return [false, () => {}]; }
+export async function tryAction<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch {
+    return undefined;
+  }
+}
+`,
+    );
+    put(
+      "src/components/confirm.tsx",
+      `"use client";
+export function Confirm({ onConfirm }: { onConfirm: () => Promise<void> }) {
+  async function go() {
+    try {
+      await onConfirm();
+    } catch {}
+  }
+  return <button onClick={() => void go()} />;
+}
+export function Plain({ onConfirm }: { onConfirm: () => Promise<void> }) {
+  return <button onClick={() => void onConfirm()} />;
+}
+`,
+    );
+    put(
+      "src/app/demo.tsx",
+      `"use client";
+import { startTransition, useActionState } from "react";
+import { Confirm, Plain } from "@/components/confirm";
+import { tryAction, useActionTransition } from "@/components/ui/action-error";
+import { load, remove, save, submit } from "@/server/actions/demo";
+
+export function Demo() {
+  const [, start] = useActionTransition();
+  const [, act] = useActionState(submit, {});
+  async function good() {
+    try {
+      await save();
+    } catch {}
+  }
+  async function bad() {
+    await save();
+  }
+  const run = (fn: () => Promise<unknown>) => start(async () => { await fn(); });
+  return (
+    <form action={act}>
+      <button onClick={() => void good()} />
+      <button onClick={() => void bad()} />
+      <button onClick={() => start(async () => { await remove(); })} />
+      <button onClick={() => startTransition(async () => { await remove(); })} />
+      <button onClick={() => run(() => remove())} />
+      <button onClick={() => void tryAction(() => load())} />
+      <button onClick={() => void load().then(() => {})} />
+      <button onClick={() => void load().catch(() => {})} />
+      <Confirm onConfirm={async () => { await save(); }} />
+      <Plain onConfirm={async () => { await save(); }} />
+    </form>
+  );
+}
+`,
+    );
+    const { files, unhandled } = scanActionErrors(root);
+    assert.deepEqual(files, ["src/app/demo.tsx"]);
+    assert.deepEqual(
+      unhandled.map((u) => `${u.line} ${u.action}`).sort(),
+      ["16 save", "24 remove", "27 load", "30 save", "9 submit"].sort(),
+      JSON.stringify(unhandled, null, 1),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("geçişsiz eylem çağrıları da yakalanır: reçete önerileri, fatura, tedarikçi, ödeme düğmeleri", () => {
