@@ -333,8 +333,8 @@ banka POS Z raporu (yazarkasa)" ve "Banka POS Z'sinin fotoğraftan doldurulması
   `OKC_TASK` taslaktır (gün cümlesi, `software_z`, etiketler gerçek fişlerle yeniden denetlenir); `okc*.json` kayıtlı
   yanıtları sentetiktir. Ölçümle kesinleşecekler: efor (`low` / `medium`), "önce üst, sonra alt yarı"nın varsayılan
   çekim olması, telefonda kalite 0,8 (`OKC_COMPRESS`, yazılmadı), okuma süresi metni ("Okunuyor… genelde N saniye"),
-  okuma başına tutar (S8), şemadan çıkacak alanlar. Yalnız banka gün sonu fişi okumasında tarih uyarısı iki kez çıkıyor
-  (`okc.ts`; denetimde E-69, B20).
+  okuma başına tutar (S8), şemadan çıkacak alanlar. Banka gün sonu fişi okumasındaki çift tarih uyarısı B20'de kapandı
+  (`okc.ts`, denetim E-69): fiş tek tarih uyarısı verir, ertesi sabah basılmış fiş uyarmaz.
 - **Kapı:** gerçek fotoğraflarda `--tekrar 3` ile yanlış dolum 0, "doğrulandı ama yanlış" 0, alan doğruluğu ≥ %95, ilk
   okuma p90 ≤ 20 sn → `OKC_PREFILL_ENABLED = true` (ekran değişmez). Sonuç `ekler/okc-z/eval.md`'ye.
 - **b8 yapıldı** (#35): veritabanı testleriyle 1978/1978 test, derleme, boş ve canlı benzeri veritabanında 43 migration,
