@@ -313,8 +313,8 @@ test("inceleme (U1, U2, U4, R6): telefon çeyrek görünümü çeyrek değişinc
   assert.match(ui, /<dd className="max-w-\[60%\] text-right break-words text-ink tabular">/);
   // U4: takvim satırındaki "Muhasebecinin rakamını gir" yalnız pencerenin seçeneklerindeki dönemde
   assert.match(read(`${DIR}/tax-calendar.tsx`), /const filing = kindFiling\?\.options\.some\(\(o\) => o\.period === row\.period\) \? kindFiling : null;/);
-  // R6: Özet uyarıları (K4 farkı, faturası iptal edilen varlık) sarı satırla ve Demirbaş bağlantısıyla
+  // R6: Özet uyarıları (K4 farkı, faturası iptal edilen varlık) tek turuncu Notice'te (ux-sade Ek A 265) ve Demirbaş bağlantısıyla
   const ozet = read(`${DIR}/page.tsx`);
-  assert.match(ozet, /<NoteList notes=\{view\.warnings\} tone="warn" \/>/);
+  assert.match(ozet, /<NoteNotice notes=\{view\.warnings\}/);
   assert.match(ozet, /href="\/panel\/vergi\/demirbas"/);
 });

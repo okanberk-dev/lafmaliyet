@@ -11,6 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Checkbox, Select } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { money } from "@/lib/format";
@@ -166,10 +167,11 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
 
   return (
     <Card id="siniflandir" className="scroll-mt-20">
-      <CardHeader icon={<FileQuestion />} title="Vergi hesabına girmeyen giderler" description={data.header} />
+      {/* Rakamlar sayfanın başındaki uyarıda (docs/planlar/ux-sade.md H1): burada tekrar edilmez */}
+      <CardHeader icon={<FileQuestion />} title="Eksik belgeler" />
       <div className="space-y-5 px-2 pb-5 sm:px-5">
         <p className="px-2 text-sm text-ink-soft sm:px-0">Aynı gider iki kez sayılmasın diye soruyoruz: bu giderin belgesi nerede?</p>
-        {data.noDocText ? <p className="rounded-2xl bg-warn-soft px-4 py-3 text-[13px] leading-5 text-warn">{data.noDocText}</p> : null}
+        {data.noDocText ? <NoDocNotice text={data.noDocText} /> : null}
 
         {GROUPS.map((g) => {
           const items = data.items.filter((it) => it.source === g.source);
@@ -367,5 +369,15 @@ function IdleRows({ items, onPick, pending }: { items: ClassifyItem[]; onPick: (
         ))}
       </ul>
     </details>
+  );
+}
+
+/** "Belgesi yok: 3 kalem, 12.000 ₺. Belgesiz ödeme …": ilk cümle (tutarıyla) başlık, kalanı Ayrıntı; yasal sonuç, katlanmaz */
+function NoDocNotice({ text }: { text: string }) {
+  const cut = text.indexOf(". ");
+  return (
+    <Notice tone="warn" risk="hukuk" title={cut > 0 ? text.slice(0, cut) : text}>
+      {cut > 0 ? text.slice(cut + 2) : null}
+    </Notice>
   );
 }

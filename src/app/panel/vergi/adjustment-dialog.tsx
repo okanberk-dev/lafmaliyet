@@ -9,6 +9,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { ADJUSTMENT_LABELS, type AdjustmentKind, BEYANNAME_ADJ_WARNING, QUARTER_SPAN_KINDS } from "@/lib/tax/pnl";
@@ -220,11 +221,21 @@ function AdjustmentDialog({ choices, row, onClose }: { choices: AdjustmentChoice
           <Input id={`${formId}-not`} value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="İsteğe bağlı" disabled={pending} className={big} />
         </Field>
         {warnings.length ? (
-          <ul className="space-y-1 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-            {warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
+          // İlk uyarı başlık, kalanı görünür ikinci satır (pencere içi)
+          <Notice
+            tone="warn"
+            size="sm"
+            title={warnings[0]}
+            text={
+              warnings.length > 1
+                ? warnings.slice(1).map((w) => (
+                    <span key={w} className="block">
+                      {w}
+                    </span>
+                  ))
+                : undefined
+            }
+          />
         ) : null}
       </form>
       <ConfirmDialog

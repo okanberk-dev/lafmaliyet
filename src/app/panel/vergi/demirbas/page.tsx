@@ -5,8 +5,9 @@ import { Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { dateTR, money } from "@/lib/format";
-import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, ORPHAN_ASSET_WARNING, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
+import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
 import { quarterLabel } from "@/lib/tax/calendar";
 import { rulesFor } from "@/lib/tax/rules";
 import { requireAdmin } from "@/server/auth/dal";
@@ -18,7 +19,7 @@ import { type AssetData, AssetButton } from "../asset-dialog";
 import { RelinkButton } from "../relink-button";
 import { invoiceChoices } from "../dialog-data";
 import { PeriodPicker } from "../period-picker";
-import { type BannerData, DetailList, NoteList, TaxBanner, VergiHeader } from "../ui";
+import { type BannerData, DetailList, NoteNotice, TaxBanner, VergiHeader } from "../ui";
 
 export const metadata: Metadata = { title: "Demirbaş" };
 
@@ -64,7 +65,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   const rows = assetRows(assets, year, settings);
   const choices = invoiceChoices(model.ds.invoices, assets, today);
   const directLimit = rulesFor(year).rules.vuk.dogrudanGider.value;
-  const missingLife = assets.filter((a) => a.method === "amortisman" && !a.lifeYears).length;
+  const lifeless = assets.filter((a) => a.method === "amortisman" && !a.lifeYears);
+  const missingLife = lifeless.length;
   // Yılın amortismanı yalnız amortismana tabi varlıklardan; doğrudan gider yazılanlar (VUK 313) ayrı yazılır
   const depreciable = (r: (typeof rows)[number]) => r.asset.method === "amortisman";
   const totals = {
@@ -106,18 +108,26 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
 
         {missingLife || view.orphans.length ? (
           <Card className="gap-3 p-5">
-            {missingLife ? <NoteList notes={[lifeMissingText(missingLife)]} tone="warn" /> : null}
+            {missingLife ? (
+              // Ömür girilmeyen varlığa amortisman ayrılmaz, vergi yüksek çıkar: katlanmaz; eylem ilk varlığın düzenleme penceresi
+              <NoteNotice
+                notes={[lifeMissingText(missingLife)]}
+                action={lifeless[0] ? <AssetButton label="Ömrü gir" size="xs" invoices={choices} asset={assetData(lifeless[0])} directLimit={directLimit} today={today} /> : undefined}
+              />
+            ) : null}
             {view.orphans.map((o) => {
               const label = parseInvoiceLabel(o.asset.invoiceLabel);
               return (
-                <div key={o.asset.id} className="space-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
-                  <NoteList notes={[`${o.asset.name}: ${ORPHAN_ASSET_WARNING}`]} tone="bad" />
-                  <p className="text-xs text-ink-mute">
+                <div key={o.asset.id} className="space-y-2">
+                  {/* ORPHAN_ASSET_WARNING ("yeni faturaya bağlayın") kısaltıldı: faturası silinen varlık listede kalırsa yeni
+                      faturayla iki kez gider sayılır; bağlama düğmeleri aşağıda */}
+                  <Notice tone="warn" size="sm" risk="hukuk" title={`${o.asset.name}: faturası silinmiş demirbaş`} text="Yeni faturaya bağlayın ya da listeden çıkarın; yoksa iki kez gider sayılır." />
+                  <p className="pl-3 text-xs text-ink-mute">
                     Silinen fatura: {o.asset.invoiceLabel ?? "bilinmiyor"}
                     {o.doubleCounted ? ` · aday fatura şimdi gider sayılıyor: ${money(o.doubleCounted)} iki kez sayılabilir` : ""}
                   </p>
                   {o.candidates.length ? (
-                    <ul className="space-y-2">
+                    <ul className="space-y-2 pl-3">
                       {o.candidates.map((c) => (
                         <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-ink-soft">
                           <span className="min-w-0 break-words">
@@ -128,7 +138,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-xs text-ink-mute">{label ? `Aynı tedarikçiden (${label.supplier}) benzer tutarlı fatura yok; Düzenle'den başka bir faturaya bağlayın.` : "Düzenle'den yeni faturaya bağlayın."}</p>
+                    <p className="pl-3 text-xs text-ink-mute">{label ? `Aynı tedarikçiden (${label.supplier}) benzer tutarlı fatura yok; Düzenle'den başka bir faturaya bağlayın.` : "Düzenle'den yeni faturaya bağlayın."}</p>
                   )}
                 </div>
               );
@@ -181,7 +191,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                               { label: `Birikmiş (${year} sonuna)`, value: money(r.accumulated) },
                             ]}
                           />
-                          {r.warning ? <NoteList notes={[r.warning]} tone="warn" /> : null}
+                          {r.warning ? <NoteNotice notes={[r.warning]} /> : null}
                           {a.note ? <p className="text-xs text-ink-mute">Not: {a.note}</p> : null}
                           <AssetButton label="Düzenle" invoices={choices} asset={assetData(a)} directLimit={directLimit} today={today} />
                         </div>

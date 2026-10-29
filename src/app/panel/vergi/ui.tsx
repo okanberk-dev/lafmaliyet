@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Notice, type NoticeRisk } from "@/components/ui/notice";
 import { type Confidence, CONFIDENCE_LABELS, TAX_DISCLAIMER, TAX_DISCLAIMER_SHORT } from "@/lib/tax/rules";
 import { cn } from "@/lib/utils";
 
@@ -124,18 +125,49 @@ export function DetailList({ rows, className }: { rows: readonly { label: ReactN
   );
 }
 
-/** Not cümleleri; `tone="warn"` uyarı üçgeniyle */
-export function NoteList({ notes, tone, className }: { notes: readonly string[]; tone?: "warn" | "bad"; className?: string }) {
+/** Döküm notları (uyarı değil; uyarı cümleleri `NoteNotice` ile) */
+export function NoteList({ notes, className }: { notes: readonly string[]; className?: string }) {
   if (!notes.length) return null;
   return (
-    <ul className={cn("space-y-1 text-[13px] leading-5", tone === "bad" ? "font-medium text-bad" : tone === "warn" ? "font-medium text-warn" : "text-ink-mute", className)}>
+    <ul className={cn("space-y-1 text-[13px] leading-5 text-ink-mute", className)}>
       {notes.map((n, i) => (
-        <li key={i} className="flex items-start gap-1.5">
-          {tone ? <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : null}
-          <span className="min-w-0 break-words text-pretty">{n}</span>
+        <li key={i} className="min-w-0 break-words text-pretty">
+          {n}
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * Vergi uyarı cümleleri tek kutuda (docs/planlar/ux-sade.md §6.2): ilk not başlık, kalanı Ayrıntı. Tutarı ya da yasal
+ * sonucu bozduğu için hiç katlanmaz (`risk`). `size="line"` takvim satırının açık gövdesinde.
+ */
+export function NoteNotice({
+  notes,
+  risk = "para",
+  action,
+  size = "sm",
+  className,
+}: {
+  notes: readonly string[];
+  risk?: NoticeRisk;
+  action?: ReactNode;
+  size?: "sm" | "line";
+  className?: string;
+}) {
+  const [first, ...rest] = notes;
+  if (!first) return null;
+  return (
+    <Notice tone="warn" size={size} risk={risk} title={first.replace(/\.$/, "")} action={action} className={className}>
+      {rest.length
+        ? rest.map((n, i) => (
+            <p key={i} className="break-words">
+              {n}
+            </p>
+          ))
+        : null}
+    </Notice>
   );
 }
 
