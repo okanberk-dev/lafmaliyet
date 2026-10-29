@@ -718,6 +718,10 @@ test("geçmişten gelen satır: ad ve not yok, rezervasyon anı createdAt'ten; i
   assert.equal(historyChanged(base, { ...base }), false);
   assert.equal(historyChanged(base, { ...base, status: "cancelled" }), true);
   assert.equal(historyChanged(base, { ...base, bookedAt: null }), true);
+  // İptalin iade tutarı (29 Ekim 2026): yeniden satılan saatin iadesi yalnız onu değiştirir
+  assert.equal(historyValues(site({ status: "cancelled", paymentStatus: "refunded", refundMinor: 0 })).refundMinor, 0);
+  assert.equal(historyValues(site()).refundMinor, null);
+  assert.equal(historyChanged(base, { ...base, refundMinor: 0 }), true);
   assert.equal(historyChanged(base, { ...base, startsAt: new Date(base.startsAt.getTime()) }), false, "aynı an farklı nesne");
 });
 

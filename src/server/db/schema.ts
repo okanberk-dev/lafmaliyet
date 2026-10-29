@@ -1098,6 +1098,11 @@ export const karaokeSessions = pgTable(
     paymentStatus: text("payment_status", { enum: ["none", "pending", "paid", "refunding", "refunded", "expired"] }).notNull().default("none"),
     /** Sitenin tuttuğu toplam (kuruş); yalnız yönetici görür */
     totalMinor: integer("total_minor"),
+    /**
+     * İptalin iade tutarı (kuruş; sitenin `refundMinor`'ı, 29 Ekim 2026): 0 hiçbir şey geri gitmedi, toplamdan küçük bir
+     * kısmı, boş tamamı ya da bilinmiyor. Tutar gibi yalnız yönetici görür; personel ekranı yalnız türünü yazar
+     */
+    refundMinor: integer("refund_minor"),
     channel: text("channel"),
     /** Sitedeki satırın updatedAt değeri (bilgi için) */
     extUpdatedAt: text("ext_updated_at"),
