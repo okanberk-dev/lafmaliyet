@@ -88,7 +88,7 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
         <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
         <TaxBanner data={banner} />
         <Card>
-          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Kurallar › Vergi ayarları'ndan değiştirebilirsiniz." />
+          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Muhasebeci › Vergi ayarları'ndan değiştirebilirsiniz." />
         </Card>
       </>
     );

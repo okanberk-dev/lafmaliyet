@@ -264,8 +264,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
               <Badge tone="gray">Özel maliyet</Badge>
               Kiralanan yere yapılan dekorasyon özel maliyettir; ömrü kira süresine bağlıdır. Muhasebecinize sorun.
             </li>
-            <li>Yatırımlar listesi (Giderler &amp; personel) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
-            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Kurallar › Vergi ayarları).</li>
+            <li>Yatırımlar listesi (Giderler &amp; maaşlar) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
+            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Muhasebeci › Vergi ayarları).</li>
           </ul>
         </Card>
       </div>

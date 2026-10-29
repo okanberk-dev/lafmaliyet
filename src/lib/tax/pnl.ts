@@ -232,7 +232,7 @@ function kasaLabel(month: string, switchDay: string | null): string {
 
 export const EXCLUDE_REASON_TEXT: Record<Exclude<ExcludeReason, null>, string> & { none: string } = {
   none: "Seçilmedi",
-  bordro: "Personel'e ekleyin",
+  bordro: "Maaşlar'a ekleyin",
   fatura: "Paraşüt'te faturası var",
   yok: "Belgesi yok",
   aday: "Demirbaş olabilir",

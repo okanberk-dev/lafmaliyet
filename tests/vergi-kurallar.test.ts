@@ -218,7 +218,7 @@ test("A6: ekranda görünen metinlerde kod adı, dosya adı, 'müşavir' ve 'ona
 test("A6: belge seçenekleri bölüme göre; personelde 'belgesi yok' yok, 'bordroda' var", () => {
   assert.deepEqual(
     taxDocOptions("personel").map((o) => o.label),
-    ["Seçilmedi", "Bordroda (Personel'e ekleyin)", "Paraşüt'te faturası var", "Dışarıdan hizmet: belgesi muhasebecide (fatura, SMM)"],
+    ["Seçilmedi", "Bordroda (Maaşlar'a ekleyin)", "Paraşüt'te faturası var", "Dışarıdan hizmet: belgesi muhasebecide (fatura, SMM)"],
   );
   assert.deepEqual(
     taxDocOptions("kira").map((o) => o.label),
