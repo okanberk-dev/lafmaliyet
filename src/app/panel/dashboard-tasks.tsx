@@ -582,6 +582,17 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
 }
 
 /**
+ * Genel bakış'ın başındaki ödeme satırı (docs/planlar/ux-sade.md K22): ay listesinden çıkan "Ödemeler · bugün" işinin
+ * aynı olgularından. Gecikme varsa kırmızı tek satır (para riski, hiç katlanmaz); liste okunamadıysa nötr satır;
+ * yalnız yaklaşan ödeme varsa satır yok ("Yaklaşan ödemeler" kartı zaten gösterir).
+ */
+export function overdueNotice(p: PaymentFacts | null): { tone: "bad"; risk: "para"; title: string } | { tone: "neutral"; title: string } | null {
+  if (!p) return { tone: "neutral", title: "Ödeme listesi şu an okunamadı" };
+  if (p.overdue) return { tone: "bad", risk: "para", title: `${num(p.overdue)} ödeme gecikti · ${money(p.overdueTotal)}` };
+  return null;
+}
+
+/**
  * Özet: kaç iş bitti, kaçı açık; sıradaki iş (önce sorunlar, sonra eksikler).
  * `monthOpen`: ayın rakamlarını etkileyen açık işler. Ödemeler bugüne bağlıdır, ayın kâr/zararını değiştirmez:
  * yalnızca ödeme işi açıksa ay "eksiksiz" sayılır (kart kapanır, özet ödemeyi ayrıca söyler).

@@ -10,11 +10,12 @@ import { taskSummary, type MonthTask } from "./dashboard-tasks";
 import { TASK_BAR } from "./task-style";
 
 /**
- * Genel bakış · "Bu ayın işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar,
- * su faturası, stok sayımı, ödemeler) durumu. Her satır ilgili ekranın tam yerine götürür; sıradaki iş
- * (önce sorunlar, sonra eksikler) siyah çerçeveyle tek birincil eylem olarak öne çıkar.
- * Açık iş yoksa kart tek satıra kapanır (<details>; JavaScript'siz de açılıp kapanır). Telefonda liste kısadır:
- * sıradaki iş tam kart, diğerleri tek satır (dashboard-checklist-tasks.tsx).
+ * Genel bakış · "{Ay Yıl} işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar, su
+ * faturası, stok sayımı) durumu. Başlık ayı adıyla söyler: Genel bakış son satış ayıyla açılır, süren ay olmayabilir.
+ * Ödemeler bu listede değil (bugüne bağlı; gecikme varsa sayfanın başında tek satır, page.tsx). Her satır ilgili
+ * ekranın tam yerine götürür; sıradaki iş (önce sorunlar, sonra eksikler) siyah çerçeveyle tek birincil eylem olarak
+ * öne çıkar. Açık iş yoksa kart tek satıra kapanır (<details>; JavaScript'siz de açılıp kapanır). Telefonda sıradaki
+ * iş tam kart, diğerleri "Diğer N iş" arkasında (dashboard-checklist-tasks.tsx).
  */
 export function DashboardChecklist({ month, state, tasks, className }: { month: string; state: MonthState; tasks: MonthTask[]; className?: string }) {
   const s = taskSummary(tasks);
@@ -23,18 +24,12 @@ export function DashboardChecklist({ month, state, tasks, className }: { month: 
     s.later ? (
       `Şimdilik yapılacak iş yok; ${s.later} iş ${state === "running" ? "ay sonunda" : "sonra"} yapılır.`
     ) : (
-      "Bu ayın bütün işleri tamam; rakamlar eksiksiz veriyle hesaplanıyor."
+      "Ayın bütün işleri tamam; rakamlar eksiksiz veriyle hesaplanıyor."
     )
-  ) : s.monthOpen === 0 ? (
-    // Yalnızca ödeme işi açık: ödemeler bugüne bağlı, ayın rakamlarını etkilemez
-    <>
-      {s.later ? `Şimdilik eksik veri yok; ${s.later} iş ${state === "running" ? "ay sonunda" : "sonra"} yapılır.` : "Bu ayın verileri tamam."}{" "}
-      {s.next?.status === "warn" ? "Geciken ödeme var" : "Yaklaşan ödeme var"}; ödemeler bugüne göre izlenir, ayın kâr/zararını değiştirmez.
-    </>
   ) : (
     <>
       {s.open} iş bekliyor{s.warn ? ` (${s.warn} sorun)` : ""}.
-      <span className="max-sm:hidden"> Bitince bu ayın kâr/zarar ve maliyet rakamları eksiksiz olur.</span>
+      <span className="max-sm:hidden"> Bitince ayın kâr/zarar ve maliyet rakamları eksiksiz olur.</span>
     </>
   );
 
@@ -49,7 +44,7 @@ export function DashboardChecklist({ month, state, tasks, className }: { month: 
             </span>
             <span className="min-w-0">
               <span role="heading" aria-level={2} className="block text-base leading-6 font-semibold tracking-tight text-ink">
-                Bu ayın işleri · {monthLabel(month)}
+                {monthLabel(month)} işleri
               </span>
               <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-ink-mute">{description}</span>
             </span>

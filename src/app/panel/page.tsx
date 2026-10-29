@@ -29,6 +29,7 @@ import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, SegmentStrip, Signed, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
@@ -83,7 +84,7 @@ import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
-import { debtFacts, monthCashOuts, monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { debtFacts, monthCashOuts, monthTaskFacts, monthTasks, overdueNotice, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
@@ -273,14 +274,21 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const changeNote = (x: number | null) => (x !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.` : "");
   const dailyBasis = daily.basis === "pos" ? "POS cirosu ÷ açık gün" : daily.basis === "list" ? "satış listesi ÷ açık gün" : undefined;
 
-  // Bu ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım, ödemeler
-  const tasks = monthTasks(
+  // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
+  // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
+  const payments = upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null;
+  const allTasks = monthTasks(
     monthTaskFacts(model, month, d.monthState, d.refMonth, {
-      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null,
+      payments,
       parasut,
       cashOuts: cashOutState ? monthCashOuts(cashOutState, month) : null,
     }),
   );
+  const tasks = allTasks.filter((t) => t.key !== "odeme");
+  const paymentNotice = overdueNotice(payments);
+  // Bir ekranda bir gerçek bir kez: su işi ay listesinde açıkken "Su ve buz maliyeti …" uyarısı ikinci kez çizilmez
+  const suOpen = tasks.some((t) => t.key === "su" && (t.status === "todo" || t.status === "warn"));
+  const shownAlerts = suOpen ? alertItems.filter((a) => !a.title.startsWith("Su ve buz maliyeti")) : alertItems;
 
   // Reçeteye göre kârın düştüğü sabit gider (süren ayda kısa satış listesinde listenin günlerine düşen pay dahil)
   const fm = t?.fixedBreakdown ?? d.fixedMonth;
@@ -398,7 +406,14 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         <Suspense fallback={null}>
           <SystemBanner />
         </Suspense>
-        {/* 0. Bu ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
+        {paymentNotice ? (
+          <Notice
+            {...paymentNotice}
+            size={paymentNotice.tone === "neutral" ? "sm" : "md"}
+            action={paymentNotice.tone === "bad" ? <NoticeLink href="/panel/hatirlaticilar">Ödemelere bak</NoticeLink> : undefined}
+          />
+        ) : null}
+        {/* 0. Ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
         <DashboardChecklist month={month} state={d.monthState} tasks={tasks} />
 
         {/* 1. Metrikler (AkmanOS statistic-cards: rakam sayılır, yanında önceki aya göre rozet) */}
@@ -529,7 +544,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
             {upcoming ? <DashboardPayments items={upcoming.items} /> : null}
             {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
-            <DashboardAlerts items={alertItems} className="flex-1" />
+            <DashboardAlerts items={shownAlerts} className="flex-1" />
           </div>
           <CostCard
             className="xl:col-span-5"

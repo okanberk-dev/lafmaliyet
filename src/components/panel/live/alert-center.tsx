@@ -1,18 +1,20 @@
 "use client";
 
-import { BellRing, Plus, Volume2 } from "lucide-react";
+import { BellRing, Plus } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { toastUnreachable, tryAction } from "@/components/ui/action-error";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Notice } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
 import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen } from "@/lib/live-poll";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
-import { cn } from "@/lib/utils";
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
 import { completeUserReminder } from "@/server/actions/user-reminders";
 
@@ -68,6 +70,10 @@ async function notify(title: string, body: string, tag: string, url: string, opt
     ?.showNotification(title, { body, tag, requireInteraction: opts.requireInteraction ?? false, silent: opts.silent ?? false, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", lang: "tr", data: { url } })
     .catch(() => {});
 }
+
+/** Panel düzenindeki ses yuvası (app/panel/layout.tsx); düzen kalıcı olduğu için bir kez bulunur */
+const noopSubscribe = () => () => {};
+const soundSlotOf = () => document.getElementById("ses-yuvasi");
 
 /**
  * Panelin uyarı motoru (kabukta bir kez; hangi ekranda olunursa olsun çalışır): canlı veriyi yönetir, karaoke
@@ -481,6 +487,7 @@ export function AlertCenter({ role }: { role: Role }) {
     const at = dueInstant(r);
     return at !== null && at > now && at - now < 24 * 3_600_000;
   });
+  const soundSlot = useSyncExternalStore(noopSubscribe, soundSlotOf, () => null);
   const needsSound = prefs.sound && audio === "locked" && ((prefs.karaokeAlarms && sessions.some((s) => isLive(s) && sessionEnd(s) > now)) || (prefs.reminderAlerts && timedReminderToday) || overtime.length > 0);
 
   return (
@@ -535,18 +542,24 @@ export function AlertCenter({ role }: { role: Role }) {
         confirmLabel="Yine de uzat"
         tone="primary"
       />
-      {needsSound ? (
-        <button
-          type="button"
-          onClick={() => void unlockAudio()}
-          className={cn(
-            "no-print fixed right-4 z-[65] inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white shadow-[0_8px_28px_rgba(0,0,0,0.25)]",
-            "bottom-[calc(var(--mobile-nav-h)+0.75rem)] lg:bottom-6",
-          )}
-        >
-          <Volume2 size={16} aria-hidden="true" /> Sesli uyarılar için dokunun
-        </button>
-      ) : null}
+      {/* Ses kilitliyken sayfanın başındaki yuvaya tek satır (yüzen hap içeriği örtüyordu; §4.6). Yuva yoksa hiçbir
+          şey çizilmez; ilk dokunuşta ses açılır ve satır kaybolur */}
+      {needsSound && soundSlot
+        ? createPortal(
+            <Notice
+              tone="neutral"
+              size="sm"
+              title="Sesli uyarılar kapalı"
+              className="no-print mb-4"
+              action={
+                <Button size="xs" variant="secondary" onClick={() => void unlockAudio()}>
+                  Sesi aç
+                </Button>
+              }
+            />,
+            soundSlot,
+          )
+        : null}
     </>
   );
 }

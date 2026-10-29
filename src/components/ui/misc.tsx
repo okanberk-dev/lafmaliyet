@@ -107,6 +107,7 @@ export function Stat({
   tone = "default",
   icon,
   info,
+  infoTone,
   className,
   children,
   badge,
@@ -119,6 +120,8 @@ export function Stat({
   tone?: keyof typeof STAT_TONE;
   icon?: ReactNode;
   info?: ReactNode;
+  /** Açıklama bir uyarı söylüyor: ⓘ yerine turuncu üçgen ("Dikkat") */
+  infoTone?: "warn";
   className?: string;
   children?: ReactNode;
   /** Rakamın yanındaki küçük rozet (GrowthPill ya da Badge) */
@@ -138,7 +141,7 @@ export function Stat({
       <div className="flex flex-col gap-1">
         <p className="flex min-w-0 items-start gap-1.5 text-sm leading-5 text-pretty text-ink-mute">
           <span className="min-w-0">{label}</span>
-          {info ? <InfoTip text={info} className="mt-0.5" /> : null}
+          {info ? <InfoTip text={info} tone={infoTone} className="mt-0.5" /> : null}
         </p>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className={cn("text-xl font-semibold tracking-tight tabular sm:text-2xl", STAT_TONE[tone])}>{value}</span>

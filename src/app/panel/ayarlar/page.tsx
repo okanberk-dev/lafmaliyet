@@ -138,6 +138,7 @@ async function BackupCard() {
       icon={<HardDriveDownload />}
       title="Yedek"
       summary={info ? backupCardSummary(last, now) : "Durum okunamadı"}
+      summaryTone={!info ? "bad" : !last || backupDue(last.at, now) ? "warn" : undefined}
       description={
         <>
           Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Parolalar

@@ -14,25 +14,27 @@ import { TASK_STYLE } from "./task-style";
 const VIEW: Record<ChecklistView, string | undefined> = { phone: "sm:hidden", wide: "max-sm:hidden", all: undefined };
 
 /**
- * "Bu ayın işleri" kartının listesi. Geniş ekranda her iş açıklaması ve eylemiyle bir kart. Telefonda kısa:
- * sıradaki iş en üstte tam kart (siyah çerçeve, tek birincil eylem), diğerleri tek satır (ad + durum + ok);
- * açıklamaları alttaki "Ayrıntıları göster" ile açılır. Açıklama gizliyken de ekran okuyucu okur.
+ * Ayın işleri kartının listesi. Geniş ekranda her iş açıklaması ve eylemiyle bir kart. Telefonda ilk ekran rakama
+ * dönsün diye kısa: sıradaki iş en üstte tam kart (siyah çerçeve, tek birincil eylem), diğerleri "Diğer N iş"
+ * düğmesinin arkasında; açılınca tek satır (ad + durum + ok). Açıklama tek satırda da ekran okuyucu için kalır.
  * Sunucu HTML'i telefon görünümünü CSS ile verir: ilk boyamada yer kaymaz.
  */
 export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; laterLabel: string }) {
-  const [details, setDetails] = useState(false);
+  const [more, setMore] = useState(false);
   const listId = useId();
-  const { rows, toggle, waiting } = phoneChecklist(tasks);
+  const { rows, toggle } = phoneChecklist(tasks);
+  // Telefonda gizlenen satırlar: sıradaki işin dışındakiler (geniş ekranda hepsi görünür)
+  const others = rows.filter((r) => r.compact).length;
 
   return (
     <div className="px-5 pb-5 max-sm:px-4 max-sm:pb-4">
       <ul id={listId} className="grid gap-2.5 max-sm:gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map(({ task: t, next, compact, view }) => {
           const st = TASK_STYLE[t.status];
-          // Yalnızca telefonda tek satır (sm ve üstünde sınıfların etkisi yok)
-          const short = compact && !details;
+          // Yalnızca telefonda tek satır (sm ve üstünde sınıfların etkisi yok); kapalıyken telefonda hiç görünmez
+          const short = compact;
           return (
-            <li key={`${t.key}-${view}`} className={VIEW[view]}>
+            <li key={`${t.key}-${view}`} className={cn(VIEW[view], compact && !more && "max-sm:hidden")}>
               <Link
                 href={t.href}
                 className={cn(
@@ -76,13 +78,13 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
       {toggle ? (
         <button
           type="button"
-          aria-expanded={details}
+          aria-expanded={more}
           aria-controls={listId}
-          onClick={() => setDetails((d) => !d)}
+          onClick={() => setMore((m) => !m)}
           className="mt-2 flex min-h-11 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl px-3 text-[13px] font-medium text-ink-mute ring-1 ring-line transition-colors ring-inset hover:bg-ink/[0.04] hover:text-ink sm:hidden"
         >
-          <ChevronDown size={15} aria-hidden="true" className={cn("transition-transform", details && "rotate-180")} />
-          {details ? "Ayrıntıları gizle" : waiting ? `Ayrıntıları göster · ${waiting} iş daha bekliyor` : "Ayrıntıları göster"}
+          <ChevronDown size={15} aria-hidden="true" className={cn("motion-safe:transition-transform", more && "rotate-180")} />
+          {more ? "Gizle" : `Diğer ${others} iş`}
         </button>
       ) : null}
     </div>

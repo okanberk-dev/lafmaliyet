@@ -29,9 +29,12 @@ export function ActivityItem({
   href,
   dot,
   wrap,
+  well,
 }: {
   icon: ReactNode;
   tone?: PastelTone;
+  /** Kuyunun kendi renkleri (doygun karonun yerine; ör. uyarının tonu, TONE_TILE) */
+  well?: string;
   title: ReactNode;
   description?: ReactNode;
   /** Sağdaki kısa bilgi: zaman, tutar */
@@ -46,8 +49,9 @@ export function ActivityItem({
     <>
       <span
         className={cn(
-          "mt-0.5 flex size-[34px] shrink-0 items-center justify-center rounded-[9px] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] [&>svg]:size-[15px] [&>svg]:stroke-[2.25]",
-          WELLS[tone],
+          "mt-0.5 flex size-[34px] shrink-0 items-center justify-center rounded-[9px] [&>svg]:size-[15px]",
+          well ?? cn("text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] [&>svg]:stroke-[2.25]", WELLS[tone]),
+          well && "[&>svg]:stroke-[1.75]",
         )}
         aria-hidden="true"
       >
