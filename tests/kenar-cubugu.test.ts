@@ -8,9 +8,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { score } from "../src/components/panel/command-palette";
 import {
+  activeChildOf,
   activeGroupOf,
   BOTTOM_NAV,
+  groupLabelOf,
   isSamePage,
   keepGroupOpen,
   NAV_FOOTER,
@@ -24,6 +27,7 @@ import {
   type NavNode,
 } from "../src/components/panel/nav";
 import { canOpen } from "../src/lib/roles";
+import { wordHit } from "../src/lib/word-hit";
 
 const src = (path: string) => readFileSync(join(process.cwd(), "src/components/panel", path), "utf8");
 
@@ -112,9 +116,14 @@ test("kapanan katmanlar (çekmece, perde, arama, bildirimler) kapanırken dokunu
 
 const outline = (tree: NavNode[]) => tree.map((n) => (n.children ? `${n.label} › ${n.children.map((c) => c.label).join(", ")}` : `${n.label} (${n.href})`));
 const hrefsOf = (tree: NavNode[]) => tree.flatMap((n) => (n.children ? n.children.map((c) => c.href) : [n.href!]));
-/** Ağacın bu adresi açan satırı (alt ekran ve sekme de: /panel/kasa/fiyatlar → Kasa raporu) */
-const reaches = (tree: NavNode[], pathname: string) =>
-  tree.some((n) => (n.children ? n.children.some((c) => pathMatches(pathname, c.href, c.match)) : pathMatches(pathname, n.href!)));
+/**
+ * Ağacın bu adresi açan satırı (alt ekran ve sekme de: /panel/kasa/fiyatlar → Kasa raporu). Adresin ?sorgu ve #çapa
+ * kısmı atılır: paletin kare adresli kaydı (ör. KDV → /panel/vergi#kdv) ekranın satırından açılır
+ */
+const reaches = (tree: NavNode[], pathname: string) => {
+  const path = pathname.replace(/[?#].*$/, "");
+  return tree.some((n) => (n.children ? n.children.some((c) => pathMatches(path, c.href, c.match)) : pathMatches(path, n.href!)));
+};
 
 test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları altında", () => {
   assert.deepEqual(outline(navTreeFor("admin")), [
@@ -123,13 +132,16 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Onaylar (/panel/onaylar)",
     "Kasa raporu (/panel/kasa)",
     "Kafe › Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım",
-    "Menü › Ürünler, Hammaddeler, Reçete defteri",
+    // 29 Eki 2026 (docs/planlar/ux-sade.md §3.1): Ürünler'in adı başlığıyla aynı; Fiyatlar kendi satırında
+    "Menü › Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri",
     // Hızlı sayım ve Mal siparişi 26 Eki 2026'da kaldırıldı (sahibin isteği: "normal sayım olsun")
     "Stok › Stok sayımı, Zayi & ikram, Tutarlılık",
     "Satış › Satışlar, Komisyon & hakediş, Analiz & senaryo",
-    "Alış & gider › Faturalar, Tedarikçiler, Giderler & personel",
-    // Vergi (dalga 12): dört sekmesi kenar çubuğunda tek öğe, yalnız yönetici
-    "Finans › Gelir-gider, Vergi, Ödemeler & hatırlatıcılar",
+    "Alış & gider › Faturalar, Tedarikçiler, Giderler & maaşlar",
+    // "Finans" → "Kâr & ödemeler"; Nakit planı kendi satırında
+    "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı",
+    // Vergi (dalga 12) kendi grubunda; adı KDV ve SGK'yı da söyler, kapalı kenar çubuğunda görünür
+    "Vergi, KDV, SGK › Özet, Vergi kârı, Demirbaş, Muhasebeci",
     "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu",
     "Yardım (/panel/yardim)",
   ]);
@@ -158,7 +170,10 @@ test("personelin ağacı değişmedi (içerik ve sıra; yalnız Hızlı sayım k
     "Yardım (/panel/yardim/personel)",
   ]);
   const staffLabels = new Set(navTreeFor("staff").map((n) => n.label));
-  for (const head of ["Genel bakış", "Onaylar", "Kafe", "Menü", "Satış", "Alış & gider", "Finans", "Ayarlar"]) assert.ok(!staffLabels.has(head), head);
+  // Yöneticinin grup başlıkları ağaçtan türer (yeni grup da denetlenir); Menü personelde Reçete defteri bağlantısına döner
+  const adminHeads = NAV_TREE.filter((n) => n.children && !n.roles.includes("staff")).map((n) => n.label);
+  assert.ok(adminHeads.includes("Vergi, KDV, SGK") && adminHeads.includes("Kâr & ödemeler"), adminHeads.join(", "));
+  for (const head of [...adminHeads, "Genel bakış", "Onaylar", "Menü"]) assert.ok(!staffLabels.has(head), head);
   // Personelin ağacındaki her ekranı personel açabilir (yönetici ekranı sızmaz)
   for (const href of hrefsOf(navTreeFor("staff"))) assert.ok(canOpen("staff", href), href);
 });
@@ -172,18 +187,19 @@ test("tek alt sayfası kalan grup o sayfanın bağlantısına döner (personelde
   // Yöneticinin bütün grupları en az iki alt sayfalı: hiçbiri bağlantıya dönmez
   for (const n of NAV_TREE.filter((x) => x.children && x.roles.includes("admin"))) assert.ok(navTreeFor("admin").find((x) => x.id === n.id)?.children, n.label);
   // Alt sayfası kalmayan grup hiç görünmez (personelde Kafe, Satış, Finans)
-  for (const id of ["kafe", "satis", "alis", "finans", "ayarlar"]) assert.ok(!navTreeFor("staff").some((n) => n.id === id), id);
+  for (const id of ["kafe", "satis", "alis", "finans", "vergi", "ayarlar"]) assert.ok(!navTreeFor("staff").some((n) => n.id === id), id);
 });
 
 test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve alt menü aynı adresleri tutar", () => {
   // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti. Hızlı sayım ve Mal
   // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts);
-  // Vergi dalga 12'de Finans'a eklendi
+  // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/tahmin",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
     "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/parasut", "/panel/yardim",
+    "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar",
   ];
   assert.deepEqual([...hrefsOf(navTreeFor("admin"))].sort(), [...ADMIN_PAGES].sort());
   // Ağaçtaki her ekran komut paletinde de (Tutarlılık Stok sayımı'nın sekmesi olarak bulunur)
@@ -237,9 +253,9 @@ test("etkin sayfanın grubu kendiliğinden açık: alt ekran ve sekme de kendi b
   assert.equal(groupOf("/panel/karaoke"), "Kafe");
   assert.equal(groupOf("/panel/karaoke/doluluk"), "Kafe");
   assert.equal(groupOf("/panel/kontrol/gecmis"), "Kafe");
-  assert.equal(groupOf("/panel/hatirlaticilar/nakit"), "Finans");
-  // Vergi'nin sekmeleri (Vergiye göre, Demirbaş, Kurallar) Finans'ı açar
-  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) assert.equal(groupOf(p), "Finans", p);
+  assert.equal(groupOf("/panel/hatirlaticilar/nakit"), "Kâr & ödemeler");
+  // Vergi'nin dört ekranı (Özet, Vergi kârı, Demirbaş, Muhasebeci) kendi grubunu açar
+  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) assert.equal(groupOf(p), "Vergi, KDV, SGK", p);
   assert.equal(groupOf("/panel/harcamalar"), "Alış & gider");
   assert.equal(groupOf("/panel/personel"), "Alış & gider");
   assert.equal(groupOf("/panel/tedarikciler/12"), "Alış & gider");
@@ -335,4 +351,102 @@ test("Stok: yükleme başlığı yüklenen başlıkla aynı boyda (açıklama, a
   assert.match(fallback, /description=\{DESCRIPTION\}/);
   assert.match(fallback, /actions=\{<MonthPickerSkeleton \/>\}/);
   assert.equal(tut.match(/description=\{DESCRIPTION\}/g)?.length, 2, "iki başlıkta aynı açıklama");
+});
+
+// ---------------------------------------------------------------- Anlaşılır menü (29 Eki 2026, docs/planlar/ux-sade.md §3)
+
+test("grupta tek alt öğe yanar: adresle eşleşenlerden en uzun adres (Nakit planı'nda Ödemeler, Fiyatlar'da Ürünler yanmaz)", () => {
+  const children = (id: string) => NAV_TREE.find((n) => n.id === id)!.children!;
+  assert.equal(activeChildOf(children("finans"), "/panel/hatirlaticilar/nakit"), "nakit");
+  assert.equal(activeChildOf(children("finans"), "/panel/hatirlaticilar"), "hatirlaticilar");
+  assert.equal(activeChildOf(children("menu"), "/panel/urunler/fiyatlar"), "fiyatlar");
+  assert.equal(activeChildOf(children("menu"), "/panel/urunler/12"), "urunler");
+  assert.equal(activeChildOf(children("vergi"), "/panel/vergi/kurallar"), "muhasebeci");
+  assert.equal(activeChildOf(children("vergi"), "/panel/vergi"), "vergi-ozet");
+  // Sekmesi aynı satırda olan ekran (match) o satırı yakar
+  assert.equal(activeChildOf(children("alis"), "/panel/personel"), "giderler");
+  assert.equal(activeChildOf(children("alis"), "/panel/bugun"), undefined);
+  // Kenar çubuğu alt öğenin etkinliğini bu işlevden alır
+  assert.match(src("sidebar-nav.tsx"), /const active = child\.id === activeChild;/);
+});
+
+test("KDV adıyla bulunur: kapalı kenar çubuğunda grup adında, palette başlığıyla", () => {
+  const closed = navTreeFor("admin").map((n) => n.label);
+  assert.ok(closed.some((l) => /\bKDV\b/.test(l)), closed.join(" · "));
+  const palette = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].filter((i) => i.roles.includes("admin"));
+  assert.ok(palette.some((i) => i.label.startsWith("KDV")), "palette KDV ile başlayan kayıt");
+  // Kare adresli kayıtlar yalnız yöneticinin; personelin paleti aynı kalır
+  for (const i of palette) if (i.href.includes("#")) assert.deepEqual(i.roles, ["admin"], i.href);
+});
+
+test("palet sıralaması: aksanlı arama aksanlı başlığı öne alır ('kâr' Kâr / zarar, 'kar' Karaoke); adıyla bulunanlar", () => {
+  // Paletin ekran kayıtları, sırası ve eşleşmesi command-palette.tsx'teki gibi (buildEntries + wordHit + score)
+  const fold = (s: string) => s.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const pages = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].filter((i) => i.roles.includes("admin"));
+  const entries = pages.map((p) => ({
+    label: p.label,
+    t: fold(p.label),
+    raw: p.label.toLocaleLowerCase("tr-TR"),
+    hay: fold([p.label, p.excel, p.keywords].filter(Boolean).join(" ")),
+  }));
+  const first = (query: string) => {
+    const raw = query.toLocaleLowerCase("tr-TR");
+    const q = fold(query);
+    const words = q.split(" ");
+    return entries
+      .filter((e) => words.every((w) => wordHit(e.hay, w)))
+      .map((e) => ({ e, s: score(e, q, words, raw) }))
+      .sort((a, b) => a.s - b.s)
+      .map((x) => x.e.label);
+  };
+  assert.equal(first("kâr")[0], "Kâr / zarar");
+  assert.ok(first("kâr").indexOf("Kâr / zarar") < first("kâr").indexOf("Karaoke"));
+  assert.equal(first("kar")[0], "Karaoke");
+  assert.equal(first("kdv")[0], "KDV");
+  assert.match(first("sgk")[0], /^SGK /);
+  assert.ok(first("sgk").slice(0, 2).includes("SGK oranı") && first("sgk").slice(0, 2).includes("SGK primi"), first("sgk").join(", "));
+  assert.equal(first("maaş")[0], "Maaşlar");
+  assert.equal(first("geçmiş")[0], "İşlem geçmişi");
+  assert.equal(first("yedek")[0], "Yedek");
+  assert.equal(first("muhtasar")[0], "Maaş vergileri (muhtasar)");
+  assert.equal(first("tutarlılık")[0], "Tutarlılık");
+  // Eski adlar alışkanlıkla yazılınca da bulunur
+  assert.ok(first("vergiye göre").includes("Vergi kârı"));
+  assert.ok(first("hatırlatıcılar").includes("Ödemeler"));
+  assert.ok(first("personel").includes("Maaşlar"));
+});
+
+test("bağlam satırı ağaçtan: grubun adı; üst düzey ekranda ve personelin üst düzey ekranında yok", () => {
+  assert.equal(groupLabelOf("/panel/karaoke", "admin"), "Kafe");
+  assert.equal(groupLabelOf("/panel/karaoke", "staff"), undefined);
+  assert.equal(groupLabelOf("/panel/zayi", "staff"), "Stok");
+  assert.equal(groupLabelOf("/panel/kasa", "admin"), undefined);
+  assert.equal(groupLabelOf("/panel/kasa", "staff"), undefined);
+  assert.equal(groupLabelOf("/panel/vergi/demirbas", "admin"), "Vergi, KDV, SGK");
+  assert.equal(groupLabelOf("/panel/hatirlaticilar/nakit", "admin"), "Kâr & ödemeler");
+  assert.equal(groupLabelOf("/panel/personel", "admin"), "Alış & gider");
+  // Menüde olmayan ekran (Hesabım) bağlam satırı almaz; yöneticinin grubu personele sızmaz
+  assert.equal(groupLabelOf("/panel/hesap", "admin"), undefined);
+  assert.equal(groupLabelOf("/panel/vergi", "staff"), undefined);
+});
+
+test("bölüm sekmeleri: Vergi grubundan türer; Ödemeler ↔ Nakit planı yalnız yöneticide", () => {
+  assert.deepEqual(
+    sectionTabsFor("vergi", "admin").map((t) => t.label),
+    ["Özet", "Vergi kârı", "Demirbaş", "Muhasebeci"],
+  );
+  assert.deepEqual(
+    SECTION_TABS.vergi.map((t) => t.href),
+    NAV_TREE.find((n) => n.id === "vergi")!.children!.map((c) => c.href),
+  );
+  assert.deepEqual(
+    sectionTabsFor("odeme", "admin").map((t) => t.label),
+    ["Ödemeler", "Nakit planı"],
+  );
+  assert.deepEqual(sectionTabsFor("odeme", "staff"), []);
+  assert.deepEqual(sectionTabsFor("vergi", "staff"), []);
+  assert.deepEqual(
+    sectionTabsFor("giderler", "admin").map((t) => t.label),
+    ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],
+  );
 });

@@ -101,7 +101,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     icon: ClipboardList,
   },
   {
-    title: "Satış raporunu yükleyin",
+    title: "Satış raporunu yükleyin (ModPOS raporuyla çalışan aylarda)",
     body: (
       <>
         Patron › Raporlar › Satış ekranından ürün listesini (ad, adet, ciro) kopyalayıp <Path href="/panel/satislar" /> ekranındaki İçe aktar kartında Yapıştır&apos;ı seçip
@@ -434,7 +434,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Maaş / kira değişti",
         a: (
           <>
-            <Path href="/panel/giderler" /> ekranında: Personel sekmesinde net maaşı, Sabit giderler sekmesinde kirayı değiştirin. Kaydederken &quot;Hangi aydan
+            <Path href="/panel/giderler" /> ekranında: Maaşlar sekmesinde net maaşı, Sabit giderler sekmesinde kirayı değiştirin. Kaydederken &quot;Hangi aydan
             itibaren?&quot; sorusunda ayı seçin (varsayılan bu ay); önceki aylar eski tutarla kalır. Yanlış girilmiş bir tutarı bütün aylarda düzeltmek için Gelişmiş ›
             Tüm aylar. Biten bir gider ya da ayrılan personel için Durdur ile son ayı verin (eski &quot;Pasif&quot; yerine); geçmiş aylar etkilenmez. Silme yalnızca hiçbir
             kapanmış ayın hesabına girmemiş kayıtta açıktır.
@@ -442,7 +442,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ),
         icon: Wallet,
         links: [
-          { href: "/panel/personel", label: "Personel" },
+          { href: "/panel/personel", label: "Maaşlar" },
           { href: "/panel/giderler", label: "Sabit giderler" },
         ],
       },
@@ -641,14 +641,18 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
           <>
-            Nakit planındaki KDV tahmini kartı, önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
+            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Dökümü Nakit planındaki KDV tahmini
+            kartında: önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
             sonuç ayın 28&apos;inde plana girer. Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin
             beyannamesindedir. Muhasebeciniz tutarı söyleyince{" "}
             <Path href="/panel/hatirlaticilar" /> ekranındaki KDV hatırlatıcısına yazın, plan onu kullanır; ödendi deyince tutar silinir, çünkü her ay farklıdır.
           </>
         ),
         icon: Percent,
-        links: [{ href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" }],
+        links: [
+          { href: "/panel/vergi#kdv", label: "KDV" },
+          { href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" },
+        ],
       },
       {
         // Vergi bölümü (dalga 12, docs/VERGI.md): tahmin, beyanname değil
@@ -659,13 +663,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Hayır, tahmindir.{" "}
             <Path href="/panel/vergi" /> sayfası satışlardan, faturalardan ve bordrodan muhtasarı, SGK&apos;yı, damga vergisini ve kafenin geçici ve kurumlar
             vergisine katkısını Türkiye&apos;nin 2026 kurallarıyla tahmin eder; her rakamın yanında nasıl hesaplandığı ve dayanağı yazar. Geçici ve kurumlar
-            vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Kurallar sekmesindeki &apos;Muhasebeciye
+            vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Muhasebeci sekmesindeki &apos;Muhasebeciye
             sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin.
           </>
         ),
         icon: Landmark,
         links: [
-          { href: "/panel/vergi", label: "Vergi" },
+          { href: "/panel/vergi", label: "Vergi, KDV, SGK" },
           { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar" },
         ],
       },
@@ -1044,8 +1048,7 @@ export default function HelpPage() {
     <>
       <PageHeader
         title="Yardım"
-        eyebrow="Sistem"
-        excel="Nasıl Kullanılır"
+        path="/panel/yardim"
         description="Sistemin nasıl çalıştığı, her ay ne yapmanız gerektiği ve Excel'deki sayfaların karşılıkları."
         actions={
           <ButtonLink href="/panel/yardim/personel" variant="secondary">

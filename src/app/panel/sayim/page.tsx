@@ -31,9 +31,9 @@ const COUNT_RULE = "ay sonu sayımı: ayın son günü kapanıştan sonra sayın
 function StockHeader({ month, role, picker }: { month: string | null; role: "admin" | "staff"; picker?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Stok"
+      path="/panel/sayim"
+      role={role}
       title="Stok sayımı"
-      excel="Sayım"
       description={
         month ? (
           `${monthLabel(month)} ${COUNT_RULE}`

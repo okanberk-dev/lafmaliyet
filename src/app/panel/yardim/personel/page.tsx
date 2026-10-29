@@ -26,7 +26,7 @@ const FAQ = buildFaq(STAFF_FAQ_GROUPS, staffPathText);
 export default function StaffHelpPage() {
   return (
     <>
-      <PageHeader eyebrow="Personel" title="Yardım" description="Ekranlarınızda ne yapılır, adım adım. Soruya dokunun ya da arayın." />
+      <PageHeader path="/panel/yardim/personel" role="staff" title="Yardım" description="Ekranlarınızda ne yapılır, adım adım. Soruya dokunun ya da arayın." />
       <Suspense fallback={<PageSkeleton rows={6} />}>
         <StaffHelpContent />
       </Suspense>

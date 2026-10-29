@@ -30,7 +30,7 @@ export default function ParasutPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Ayarlar" title="Paraşüt entegrasyonu" />
+          <PageHeader path="/panel/parasut" title="Paraşüt entegrasyonu" />
           <PageSkeleton rows={8} />
         </>
       }

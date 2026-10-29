@@ -17,9 +17,9 @@ import { ChecksList } from "./checks-list";
 import { OverrideButton, type OverrideRule } from "./override-dialog";
 import { SettingsForm } from "./settings-form";
 
-export const metadata: Metadata = { title: "Vergi kuralları" };
+export const metadata: Metadata = { title: "Muhasebeci" };
 
-const TITLE = "Vergi kuralları";
+const TITLE = "Muhasebeci";
 const DESCRIPTION = "Vergi ayarları, muhasebecinize sorulacaklar ve hesabın kullandığı Türkiye kuralları: değer, dayanak, güven ve kaynak.";
 
 export default function TaxRulesPage() {

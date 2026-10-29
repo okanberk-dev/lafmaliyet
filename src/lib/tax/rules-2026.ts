@@ -119,7 +119,7 @@ const BILGI: InfoRule[] = [
     key: "bilgi.kkeg",
     title: "Ceza, gecikme zammı ve faizi (indirilemeyen gider)",
     status: "bilgi",
-    text: "Vergiye göre › Düzeltmeler'e \"İndirilemeyen gider\" olarak girin; gider olarak yazılmışsa matraha geri eklenir.",
+    text: "Vergi kârı › Düzeltmeler'e \"İndirilemeyen gider\" olarak girin; gider olarak yazılmışsa matraha geri eklenir.",
     basis: "KVK m.11/1-d",
     sources: [S.kvk],
     confidence: "kesin",

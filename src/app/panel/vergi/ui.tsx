@@ -21,9 +21,9 @@ export type VergiPath = "/panel/vergi" | "/panel/vergi/gelir-gider" | "/panel/ve
 
 export const OZET_DESCRIPTION = "Tahmini vergi takvimi, vergiye göre gelir-gider ve muhasebecinizin rakamları";
 
-/** Sayfa başlığı ve dört sekme (Özet, Vergiye göre, Demirbaş, Kurallar); yalnız yönetici */
+/** Sayfa başlığı ve dört sekme (Özet, Vergi kârı, Demirbaş, Muhasebeci; kenar çubuğunun "Vergi, KDV, SGK" grubundan); yalnız yönetici */
 export function VergiHeader({ current, title, description, actions }: { current: VergiPath; title: string; description?: ReactNode; actions?: ReactNode }) {
-  return <PageHeader eyebrow="Finans" title={title} description={description} actions={actions} tabs={<SectionTabs section="vergi" current={current} role="admin" />} />;
+  return <PageHeader path={current} title={title} description={description} actions={actions} tabs={<SectionTabs section="vergi" current={current} role="admin" />} />;
 }
 
 export interface BannerData {

@@ -268,7 +268,7 @@ test("Excel 'Vergi' sayfası: beyannameli aylar ve çeyrek yazılır; belgesi yo
   // Belgesi yok işaretli kalem adı ve tutarı yazılmaz; sınıflandırılmamışların yalnız toplamı
   assert.doesNotMatch(all, /Influencer|Instagram reklamı|Belgesi yok/);
   assert.ok(numbers.some((n) => Math.abs(n - q3.unclassified.total) < 0.005));
-  assert.ok(texts.includes("Yalnız toplam; kalemler panelde (Vergi › Vergiye göre)"));
+  assert.ok(texts.includes("Yalnız toplam; kalemler panelde (Vergi, KDV, SGK › Vergi kârı)"));
   // Sahibin notu: işaretlenen madde, tarih ve not; "onay" yazmaz
   assert.ok(texts.includes("Sahibin notu: muhasebecimle konuştum · 27.10.2026 · Instagram doğrudan Meta'ya"));
   assert.doesNotMatch(all, /onay/i);

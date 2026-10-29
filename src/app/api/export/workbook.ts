@@ -1244,7 +1244,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
     total("Gider toplamı", fiscal.map((m) => m.expense.total), q.expense);
     total("Sonuç (amortisman öncesi)", fiscal.map((m) => m.result), q.result);
     if (whole && q.unclassified.count) {
-      const r = ws.addRow({ a: "Sınıflandırılmamış giderler (sayılmadı)", e: q.unclassified.total, f: "Yalnız toplam; kalemler panelde (Vergi › Vergiye göre)" });
+      const r = ws.addRow({ a: "Sınıflandırılmamış giderler (sayılmadı)", e: q.unclassified.total, f: "Yalnız toplam; kalemler panelde (Vergi, KDV, SGK › Vergi kârı)" });
       money(r, ["e"]);
     }
     if (whole && q.candidates.count) {

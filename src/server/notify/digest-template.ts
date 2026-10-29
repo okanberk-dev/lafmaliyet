@@ -278,7 +278,7 @@ function boxHtml(b: DigestBox, key: keyof DigestExtras): string {
 const boxText = (b: DigestBox) => ["", b.title, ...b.lines.map((l) => `- ${l.strong ? `${l.strong}${l.text ? `: ${l.text}` : ""}` : l.text}`), `${b.link}: ${boxUrl(b.href)}`];
 
 /** Ortak kabuğun alt notu (sabah e-postası, bekçi e-postası) */
-const DEFAULT_FOOTER = "Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler & hatırlatıcılar sayfasından değiştirebilirsiniz.";
+const DEFAULT_FOOTER = "Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler sayfasından değiştirebilirsiniz.";
 
 /**
  * E-postaların ortak kabuğu: üstte L'Af başlığı ve tarih, ortada beyaz kart (`card`), altta alıcı notu. `card` ve

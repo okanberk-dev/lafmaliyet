@@ -56,6 +56,9 @@ const RATE_FIELDS: { key: RateKey; label: string; hint?: string }[] = [
 ];
 
 /** Boş alan 0 sayılır; yazılmış ama sayı olmayan metin geçersizdir */
+/** SGK oranları bölümünün çapası: ⌘K'daki "SGK oranı" kaydı buraya iner */
+const RATES_ANCHOR = "sgk-oranlari";
+
 const parseOrZero = (text: string) => (text.trim() === "" ? 0 : parseNumberTR(text));
 const invalidAmount = (text: string) => {
   const v = parseOrZero(text);
@@ -143,6 +146,20 @@ export function StaffEditor({
   }
   const check = checkRates(r);
   const ratesDirty = ratesChanged(r, rates);
+
+  // ⌘K "SGK oranı" (/panel/personel#sgk-oranlari) bölümü açık getirir; aynı sayfada çapaya gelince de açılır
+  // (Ayarlar'ın bölüm deseni, ayarlar/section-card.tsx)
+  const ratesRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const fromHash = () => {
+      if (window.location.hash !== `#${RATES_ANCHOR}`) return;
+      setRatesOpen(true);
+      requestAnimationFrame(() => ratesRef.current?.scrollIntoView({ block: "start" }));
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, []);
 
   // Kaydedilmemiş oran varken sekmeyi kapatmadan önce tarayıcı sorsun
   useEffect(() => {
@@ -641,7 +658,7 @@ export function StaffEditor({
         </div>
 
         {/* SGK oranları: nadiren değişir, kapalı gelir. Bütün aylar için geçerlidir (Excel'deki Personel sayfası gibi). */}
-        <div className="border-t border-line">
+        <div ref={ratesRef} id={RATES_ANCHOR} className="scroll-mt-20 border-t border-line">
           <button
             type="button"
             aria-expanded={ratesOpen}

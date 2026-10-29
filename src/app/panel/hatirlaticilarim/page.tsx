@@ -10,23 +10,40 @@ import { MyReminders } from "./my-reminders";
 
 export const metadata: Metadata = { title: "Hatırlatıcılarım" };
 
+/** Başlık iki rolde: bağlam satırı rolün ağacından (yöneticide "Kafe"; personelde üst düzey ekran, satır yok) */
+function MyRemindersHeader({ role }: { role: "admin" | "staff" }) {
+  return (
+    <PageHeader
+      title="Hatırlatıcılarım"
+      path="/panel/hatirlaticilarim"
+      role={role}
+      description="Kendinize not ve hatırlatma: sipariş verilecekler, temizlik, aranacaklar. Yalnızca siz görürsünüz. Saat verirseniz panel açıkken saatinde sesli uyarır; bildirim açıksa sabah özeti gelir."
+    />
+  );
+}
+
 export default function MyRemindersPage() {
   return (
-    <>
-      <PageHeader
-        title="Hatırlatıcılarım"
-        eyebrow="Kafe"
-        description="Kendinize not ve hatırlatma: sipariş verilecekler, temizlik, aranacaklar. Yalnızca siz görürsünüz. Saat verirseniz panel açıkken saatinde sesli uyarır; bildirim açıksa sabah özeti gelir."
-      />
-      <Suspense fallback={<PageSkeleton rows={6} />}>
-        <MyRemindersContent />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <>
+          <MyRemindersHeader role="staff" />
+          <PageSkeleton rows={6} />
+        </>
+      }
+    >
+      <MyRemindersContent />
+    </Suspense>
   );
 }
 
 async function MyRemindersContent() {
   const user = await requireUser();
   const { open, done } = await loadMyReminders(user.id);
-  return <MyReminders role={user.role} open={open} done={done} />;
+  return (
+    <>
+      <MyRemindersHeader role={user.role} />
+      <MyReminders role={user.role} open={open} done={done} />
+    </>
+  );
 }

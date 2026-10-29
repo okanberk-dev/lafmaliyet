@@ -43,6 +43,8 @@ interface Entry {
   icon: LucideIcon;
   /** Katlanmış başlık (sıralama için) */
   t: string;
+  /** Katlanmamış küçük harfli başlık: aksanlı aramada başlığın aksanı da sayılır ("kâr" → Kâr / zarar, Karaoke değil) */
+  raw: string;
   /** Katlanmış başlık + alt satır + anahtar sözcükler (eşleşme için) */
   hay: string;
 }
@@ -81,6 +83,7 @@ function buildEntries(pages: NavItem[], index: SearchEntry[]): Entry[] {
       href: p.href,
       icon: p.icon,
       t: fold(p.label),
+      raw: p.label.toLocaleLowerCase("tr-TR"),
       hay: fold([p.label, p.excel, p.keywords].filter(Boolean).join(" ")),
     });
   }
@@ -93,19 +96,30 @@ function buildEntries(pages: NavItem[], index: SearchEntry[]): Entry[] {
       href: e.href,
       icon: ICON_OF[e.kind],
       t: fold(e.label),
+      raw: e.label.toLocaleLowerCase("tr-TR"),
       hay: fold(`${e.label} ${e.hint}`),
     });
   }
   return out;
 }
 
-/** Küçük puan daha iyi: tam eşleşme, başlangıç, sözcük başı, başlıkta geçiyor, yalnızca alt satırda */
-function score(e: Entry, q: string, words: string[]): number {
-  if (e.t === q) return 0;
-  if (e.t.startsWith(q)) return 1;
-  if (e.t.split(/[\s·()/,.-]+/).some((w) => w.startsWith(words[0]))) return 2;
-  if (words.every((w) => e.t.includes(w))) return 3;
-  return 4;
+const WORD_SPLIT = /[\s·()/,.-]+/;
+
+/**
+ * Küçük puan daha iyi: tam eşleşme, başlangıç, sözcük başı, başlıkta geçiyor, yalnızca alt satırda. Sorgu aksanlıysa
+ * ("kâr") ve başlığın hiçbir sözcüğü o aksanla başlamıyorsa yarım puan geride kalır: "kâr" Kâr / zarar'ı Karaoke'nin
+ * önüne alır, "kar" yine Karaoke'yi üstte tutar. `rawQuery`: küçük harfli, katlanmamış sorgu.
+ */
+export function score(e: Pick<Entry, "t" | "raw">, q: string, words: string[], rawQuery = q): number {
+  let s: number;
+  if (e.t === q) s = 0;
+  else if (e.t.startsWith(q)) s = 1;
+  else if (e.t.split(WORD_SPLIT).some((w) => w.startsWith(words[0]))) s = 2;
+  else if (words.every((w) => e.t.includes(w))) s = 3;
+  else s = 4;
+  const rawWord = rawQuery.split(" ")[0] ?? "";
+  if (rawQuery !== fold(rawQuery) && !e.raw.split(WORD_SPLIT).some((w) => w.startsWith(rawWord))) s += 0.5;
+  return s;
 }
 
 const noop = () => () => {};
@@ -167,6 +181,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
 
   const { sections, flat, counts, total } = useMemo(() => {
     const q = fold(query).trim().replace(/\s+/g, " ");
+    const rawQuery = query.toLocaleLowerCase("tr-TR").trim().replace(/\s+/g, " ");
     const words = q ? q.split(" ") : [];
     // Kısa sözcük yalnız sözcük başında tutar (wordHit): "süt" Paraşüt'ü getirmesin
     const hits = words.length ? entries.filter((e) => words.every((w) => wordHit(e.hay, w))) : entries;
@@ -189,7 +204,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
       sections = GROUPS.map((g) => {
         const scored = pool
           .filter((e) => e.group === g.id)
-          .map((e) => ({ e, s: words.length ? score(e, q, words) : 0 }))
+          .map((e) => ({ e, s: words.length ? score(e, q, words, rawQuery) : 0 }))
           .sort((a, b) => a.s - b.s);
         return {
           section: { id: g.id, group: g.id, label: g.label, items: scored.slice(0, limit).map((x) => x.e), more: Math.max(0, scored.length - limit), offset: 0 },

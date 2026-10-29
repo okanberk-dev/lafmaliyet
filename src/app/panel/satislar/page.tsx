@@ -35,7 +35,7 @@ export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">
     <Suspense
       fallback={
         <>
-          <PageHeader title="Satışlar" eyebrow="Satış" excel="Satış Raporu" description={DESCRIPTION} />
+          <PageHeader title="Satışlar" path="/panel/satislar" description={DESCRIPTION} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -131,8 +131,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     <>
       <PageHeader
         title="Satışlar"
-        eyebrow="Satış"
-        excel="Satış Raporu"
+        path="/panel/satislar"
         description={lafpos?.source === "lafpos" ? DESCRIPTION_LAFPOS : lafpos?.source === "gecis" ? DESCRIPTION_GECIS : DESCRIPTION}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
       />

@@ -655,7 +655,7 @@ export function InvoiceDialog({
             locked
               ? "Paraşüt'te vade girilmişse eşitleme onu yazar; yoksa buradaki kalır."
               : f.unpaid
-                ? "Ödenmemişse Ödemeler & hatırlatıcılar'a düşer"
+                ? "Ödenmemişse Ödemeler'e düşer"
                 : "İsteğe bağlı"
           }
         >

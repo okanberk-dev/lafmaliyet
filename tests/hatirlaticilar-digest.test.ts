@@ -263,7 +263,7 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 test("e-posta kabuğu: alt not verilmezse bildirim adresleri notu, verilirse o (kaçışlı); esc ve FONT dışa açık", () => {
   const shell = { subject: "Haftalık özet: 3 konu", preheader: "19–25 Ekim · 3 konu", brandSub: "Haftalık özet", today: "2026-10-26", card: "<p>kart</p>" };
   const plain = emailLayout(shell);
-  assert.ok(plain.includes(">Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar sayfasından değiştirebilirsiniz.</td>"));
+  assert.ok(plain.includes(">Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler sayfasından değiştirebilirsiniz.</td>"));
   assert.ok(plain.includes("<p>kart</p>"));
   assert.ok(plain.includes("26 Ekim Pazartesi"));
   assert.ok(plain.includes("<title>Haftalık özet: 3 konu</title>"));
@@ -272,7 +272,7 @@ test("e-posta kabuğu: alt not verilmezse bildirim adresleri notu, verilirse o (
   assert.ok(!own.includes("bildirim adreslerine gönderildi"));
   assert.ok(emailLayout({ ...shell, footer: "<script>" }).includes(">&lt;script&gt;</td>"));
   // Sabah ve bekçi e-postası aynı kabukta, aynı notla
-  assert.ok(renderDigest(rows, "2026-10-20").html.includes("bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar"));
+  assert.ok(renderDigest(rows, "2026-10-20").html.includes("bildirim adreslerine gönderildi. Adresleri Ödemeler sayfasından"));
   assert.ok(renderSystemAlert(system.items, "2026-10-22").html.includes("bildirim adreslerine gönderildi."));
   assert.equal(esc(`<a href="x">'&'</a>`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;");
   assert.match(FONT, /^-apple-system,.*Geist/);
@@ -331,13 +331,15 @@ test("ek kutular: verilmezse ya da boşsa e-posta kutusuz hâliyle birebir aynı
 });
 
 test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz metnin özeti 0671969'daki şablonunkiyle aynı", () => {
-  // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir
+  // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir. 29 Eki
+  // 2026: yalnız alt not değişti ("Ödemeler & hatırlatıcılar" → "Ödemeler", docs/planlar/ux-sade.md §3.10); eski notla
+  // dört özet eskisiyle aynıydı
   const sha = (r: { subject: string; html: string; text: string }) =>
     createHash("sha256").update([r.subject, r.html, r.text].join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
-  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "e8d6a4e8a1ae42ba");
-  assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "bb7dbd83bd9f361b");
-  assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "02b9362fad5fa62a");
-  assert.equal(sha(renderDigest([], "2026-10-22")), "209cf167133b0239");
+  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "eadccd86bf1df18b");
+  assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "4bc12f6bec7c8664");
+  assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "265d05fbed6eb763");
+  assert.equal(sha(renderDigest([], "2026-10-22")), "a1dab6e01442bef7");
 });
 
 test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme", () => {

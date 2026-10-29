@@ -20,9 +20,9 @@ import { invoiceChoices } from "../dialog-data";
 import { PeriodPicker } from "../period-picker";
 import { type BannerData, DetailList, NoteList, TaxBanner, VergiHeader } from "../ui";
 
-export const metadata: Metadata = { title: "Demirbaş & amortisman" };
+export const metadata: Metadata = { title: "Demirbaş" };
 
-const TITLE = "Demirbaş & amortisman";
+const TITLE = "Demirbaş";
 const DESCRIPTION = "Varlık listesi ve amortisman (KDV hariç). Bir varlığa bağlanan fatura tutarı gider yerine amortismanla düşülür; ömür girilmeyen varlığa amortisman ayrılmaz.";
 
 export default function TaxAssetsPage({ searchParams }: PageProps<"/panel/vergi/demirbas">) {

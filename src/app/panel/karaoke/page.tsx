@@ -22,18 +22,30 @@ export const metadata: Metadata = { title: "Karaoke" };
 // yeniden çeker (en çok 8 saniye daha); "Şimdi eşitle" de siteye gider
 export const maxDuration = 30;
 
+/** Başlık iki rolde: bağlam satırı rolün ağacından (yöneticide "Kafe"; personelde üst düzey ekran, satır yok) */
+function KaraokeHeader({ role }: { role: "admin" | "staff" }) {
+  return (
+    <PageHeader
+      title="Karaoke"
+      path="/panel/karaoke"
+      role={role}
+      description="Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
+    />
+  );
+}
+
 export default function KaraokePage() {
   return (
-    <>
-      <PageHeader
-        title="Karaoke"
-        eyebrow="Kafe"
-        description="Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
-      />
-      <Suspense fallback={<PageSkeleton rows={8} />}>
-        <KaraokeContent />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <>
+          <KaraokeHeader role="staff" />
+          <PageSkeleton rows={8} />
+        </>
+      }
+    >
+      <KaraokeContent />
+    </Suspense>
   );
 }
 
@@ -96,23 +108,26 @@ async function KaraokeContent() {
   ]);
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
-    <div className="space-y-6">
-      <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
-      {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
-      <KaraokeBoard role={user.role} upcoming={upcoming} siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null} configured={Boolean(karaokeSecret())} serverNow={now} />
-      {admin ? (
-        <KaraokeAdmin
-          history={history.filter((r) => sessionEnd(r) < now).reverse()}
-          stats={monthStats(month.filter((r) => r.date >= monthStart && r.date < nextMonth))}
-          monthLabel={new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric", timeZone: "Europe/Istanbul" }).format(new Date(now))}
-          sync={sync}
-          configured={Boolean(karaokeSecret())}
-          devices={devices?.[0]?.n ?? 0}
-          siteAdminBase={`${siteUrl()}/admin/mobil/karaoke`}
-          sitePanelUrl={`${siteUrl()}/admin`}
-          nowMs={now}
-        />
-      ) : null}
-    </div>
+    <>
+      <KaraokeHeader role={user.role} />
+      <div className="space-y-6">
+        <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
+        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
+        <KaraokeBoard role={user.role} upcoming={upcoming} siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null} configured={Boolean(karaokeSecret())} serverNow={now} />
+        {admin ? (
+          <KaraokeAdmin
+            history={history.filter((r) => sessionEnd(r) < now).reverse()}
+            stats={monthStats(month.filter((r) => r.date >= monthStart && r.date < nextMonth))}
+            monthLabel={new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric", timeZone: "Europe/Istanbul" }).format(new Date(now))}
+            sync={sync}
+            configured={Boolean(karaokeSecret())}
+            devices={devices?.[0]?.n ?? 0}
+            siteAdminBase={`${siteUrl()}/admin/mobil/karaoke`}
+            sitePanelUrl={`${siteUrl()}/admin`}
+            nowMs={now}
+          />
+        ) : null}
+      </div>
+    </>
   );
 }

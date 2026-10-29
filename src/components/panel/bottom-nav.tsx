@@ -123,7 +123,7 @@ function PendingPill() {
 /**
  * Telefon ve tabletin alt menüsü (lg altında): 64px + güvenli alan, her öğe hücrenin tamamı kadar dokunma alanı.
  * Etkin öğenin ikonunun arkasında zinc-100 hap yaylı kayar (kenar çubuğundaki vurgu gibi). Yönetici için son öğe
- * "Menü": çekmeceyi açar. "Ödemeler" öğesinde gecikmiş ödeme sayısı kırmızı rozetle görünür.
+ * "Tümü": çekmeceyi açar. "Ödemeler" öğesinde gecikmiş ödeme sayısı kırmızı rozetle görünür.
  */
 export function BottomNav({
   role,

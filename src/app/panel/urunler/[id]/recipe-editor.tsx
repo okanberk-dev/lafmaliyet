@@ -661,8 +661,7 @@ export function RecipeEditor({
   return (
     <div className="pb-28">
       <PageHeader
-        eyebrow="Menü"
-        excel="Reçete Kartları"
+        path="/panel/urunler"
         title={`${product.name} – ${SIZE_LABELS[product.size]}`}
         description={
           <span className="flex flex-wrap items-center gap-2">

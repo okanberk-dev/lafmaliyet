@@ -52,7 +52,13 @@ export interface CalendarExtras {
   payroll: PayrollSheetMonth[];
 }
 
-function Row({ row, extras }: { row: TaxCalendarRow; extras: CalendarExtras }) {
+/**
+ * Türün ilk satırının çapası (docs/planlar/ux-sade.md §3.7): ⌘K'daki "KDV", "SGK primi" ve "Maaş vergileri" o satıra
+ * iner; satır kapalı kalır, yalnız halkayla belirir (JS yok)
+ */
+const ANCHOR_OF: Partial<Record<TaxCalendarRow["kind"], string>> = { kdv1: "kdv", sgk: "sgk", mphb: "muhtasar" };
+
+function Row({ row, extras, anchor }: { row: TaxCalendarRow; extras: CalendarExtras; anchor?: string }) {
   const al = row.amount === null ? amountless(row.note) : null;
   const sub = [row.shift, al ? al.sub : row.note].filter(Boolean).join(" · ");
   const due = new Date(`${row.due}T12:00:00Z`).toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long", timeZone: "UTC" });
@@ -64,7 +70,7 @@ function Row({ row, extras }: { row: TaxCalendarRow; extras: CalendarExtras }) {
   const hasPayroll = row.kind === "mphb" && extras.payroll.some((p) => p.month === row.period);
   const kdv = row.kind === "kdv1" || row.kind === "kdv2";
   return (
-    <li>
+    <li id={anchor} className={anchor ? "scroll-mt-20 target:ring-2 target:ring-ink/20 target:ring-inset" : undefined}>
       <details className="group/row">
         <summary className="grid min-h-14 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 outline-none select-none hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
           <DateTile date={row.due} />
@@ -117,13 +123,15 @@ function Row({ row, extras }: { row: TaxCalendarRow; extras: CalendarExtras }) {
 /** Takvim kartı: satırlar, pencerenin dışındaki geçici ve kurumlar vergisi ("Sonra") ve hesaplanmayanlar satırı */
 export function TaxCalendarCard({ view, extras }: { view: Pick<TaxView, "calendar" | "later">; extras: CalendarExtras }) {
   const [inflation, rest] = INFLATION_LINE.split(" · ");
+  const firstOfKind = new Map<string, string>();
+  for (const r of view.calendar) if (!firstOfKind.has(r.kind)) firstOfKind.set(r.kind, r.key);
   return (
     <Card>
       <CardHeader icon={<CalendarClock />} title="Sıradaki vergi ödemeleri" description="Önümüzdeki 100 gün; yasal son günle (hafta sonu ve tatilde ilk iş günü). Satıra dokunun: döküm ve dayanak." />
       {view.calendar.length ? (
         <ul className="mx-2 divide-y divide-line overflow-hidden rounded-2xl bg-surface ring-1 ring-line sm:mx-5">
           {view.calendar.map((r) => (
-            <Row key={r.key} row={r} extras={extras} />
+            <Row key={r.key} row={r} extras={extras} anchor={firstOfKind.get(r.kind) === r.key ? ANCHOR_OF[r.kind] : undefined} />
           ))}
         </ul>
       ) : (

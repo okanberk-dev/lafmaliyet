@@ -1,13 +1,14 @@
 "use client";
 
-import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChartNoAxesColumn, ChevronDown, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
+import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChevronDown, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { useActionTransition } from "@/components/ui/action-error";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { fold, useQueryState } from "@/components/ui/filters";
@@ -336,21 +337,17 @@ export function RemindersClient({
 
   return (
     <>
+      {/* Nakit planı (önümüzdeki 6 hafta) sekmeden açılır; telefonda da (docs/planlar/ux-sade.md K7) */}
       <PageHeader
-        eyebrow="Finans"
-        title="Ödemeler & hatırlatıcılar"
+        path="/panel/hatirlaticilar"
+        title="Ödemeler"
         description="Kira, vergi, SGK, maaş ve fatura ödemeleri tek yerde. Zamanı gelenler her sabah e-postayla hatırlatılır."
         actions={
-          <>
-            {/* Önümüzdeki 6 haftanın gelen, ödenecek ve kalan parası (alt ekran); telefonda da görünür */}
-            <ButtonLink href="/panel/hatirlaticilar/nakit" variant="secondary">
-              <ChartNoAxesColumn size={16} aria-hidden="true" /> Nakit planı
-            </ButtonLink>
-            <Button onClick={() => add()} className="max-lg:hidden">
-              <Plus size={16} /> Hatırlatıcı ekle
-            </Button>
-          </>
+          <Button onClick={() => add()} className="max-lg:hidden">
+            <Plus size={16} /> Ödeme ekle
+          </Button>
         }
+        tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar" role="admin" />}
       />
 
       {/* Özet karoları: dokununca liste o aralığa süzülür */}
@@ -484,7 +481,7 @@ export function RemindersClient({
                 description="Kira, vergi ya da maaş için hatırlatıcı ekleyin. Ödenmemiş faturalar burada kendiliğinden görünür."
                 action={
                   <Button onClick={() => add()} className="max-sm:h-12">
-                    <Plus size={16} /> Hatırlatıcı ekle
+                    <Plus size={16} /> Ödeme ekle
                   </Button>
                 }
               />
@@ -590,7 +587,7 @@ export function RemindersClient({
       <Fab
         ref={fabRef}
         onClick={() => add()}
-        aria-label="Hatırlatıcı ekle"
+        aria-label="Ödeme ekle"
         aria-hidden={fabBlocked || undefined}
         tabIndex={fabBlocked ? -1 : undefined}
         className={cn(fabBlocked && "pointer-events-none translate-y-[calc(100%+1rem)] opacity-0")}

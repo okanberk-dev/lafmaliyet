@@ -22,9 +22,8 @@ export const metadata: Metadata = { title: "Sabit giderler" };
 function Header({ description }: { description?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Alış & gider"
+      path="/panel/giderler"
       title="Sabit giderler"
-      excel="Sabit Giderler"
       description={description}
       tabs={<SectionTabs section="giderler" current="/panel/giderler" role="admin" />}
     />

@@ -199,7 +199,7 @@ export function filingRemovedReminder<R extends ReminderRow>(
 
 /**
  * "Muhasebecinin rakamı kaldırılsın mı?" penceresinin açıklaması (§4.5-a): Ödemeler'e ne olacağını filingRemovedReminder
- * ile aynı kuralla söyler. `removal` null: Ödemeler okunmadı (Vergiye göre), kural cümlesi yazılır
+ * ile aynı kuralla söyler. `removal` null: Ödemeler okunmadı (Vergi kârı), kural cümlesi yazılır
  */
 export function filingRemoveConfirmText(title: string, removal: { result: FilingRemovedReminder; amount: number | null } | null, hasReminder = true): string {
   const head = `${title} için girilen rakam silinir`;
@@ -355,14 +355,14 @@ export function employerRateNotice(settingsRate: number, tax: Pick<TaxSettings, 
   const rule = rules.sgk.isverenOran;
   const target = rule.value;
   if (!Number.isFinite(settingsRate) || Math.abs(settingsRate - target) < 1e-9) return null;
-  const head = `Ayarlar'da işveren SGK ${rateText(settingsRate)}.`;
+  const head = `Maaşlar'da işveren SGK ${rateText(settingsRate)}.`;
   // Tablosu olmayan yıl son bilinen yılın kurallarıyla (tahmini)
   const when = !estimated && fromYear === 2026 ? "2026'da" : `${fromYear} kurallarıyla`;
   const middle = rule.override
-    ? `Vergi'de elle girilen oran ${rateText(target)} (Kurallar › SGK işveren payı).`
+    ? `Vergi'de elle girilen oran ${rateText(target)} (Muhasebeci › SGK işveren payı).`
     : `${when} imalat dışı işyerinde 2 puan indirimle standart oran ${rateText(target)}; ek teşvikiniz varsa farklı olabilir.`;
   return {
-    text: `${head} ${middle} Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › SGK oranları bölümünden değiştirin.`,
+    text: `${head} ${middle} Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Maaşlar › SGK oranları bölümünden değiştirin.`,
     target,
     canApply: Boolean(tax.checks.sgk_oran),
   };

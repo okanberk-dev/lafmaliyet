@@ -37,7 +37,7 @@ const DESCRIPTION_LAFPOS =
 function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }) {
   return (
     <PageHeader
-      eyebrow="Menü"
+      path="/panel/urunler/fiyatlar"
       title={TITLE}
       description={kasa === "LafPOS" ? DESCRIPTION_LAFPOS : DESCRIPTION}
       actions={

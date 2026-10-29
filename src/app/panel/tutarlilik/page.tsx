@@ -29,10 +29,10 @@ import { consistencyBreakdowns, hasNegative } from "./breakdowns";
 import { ConsistencyTable, CountUp, Findings, SeverityBar } from "./consistency-client";
 import { severityOf } from "./severity";
 
-export const metadata: Metadata = { title: "Tutarlılık kontrolü" };
+export const metadata: Metadata = { title: "Tutarlılık" };
 
-const TITLE = "Tutarlılık kontrolü";
-const EXCEL = "Tutarlılık Kontrolü";
+// Bir ekran bir ad (docs/planlar/ux-sade.md §3.6): kenar çubuğu, sekme ve başlık aynı; Excel'deki adı Yardım'da
+const TITLE = "Tutarlılık";
 const DESCRIPTION =
   "POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?";
 
@@ -43,9 +43,8 @@ export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tuta
         <>
           {/* Yüklenen başlıkla aynı boy (açıklama, ay seçicinin yeri): Stok sekmeleri içerik gelince kaymaz */}
           <PageHeader
-            eyebrow="Stok"
+            path="/panel/tutarlilik"
             title={TITLE}
-            excel={EXCEL}
             description={DESCRIPTION}
             actions={<MonthPickerSkeleton />}
             tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
@@ -131,9 +130,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   return (
     <>
       <PageHeader
-        eyebrow="Stok"
+        path="/panel/tutarlilik"
         title={TITLE}
-        excel={EXCEL}
         description={DESCRIPTION}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}

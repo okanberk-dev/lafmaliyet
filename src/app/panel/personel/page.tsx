@@ -11,14 +11,13 @@ import { loadModel } from "@/server/data/dataset";
 import { choiceMonths, closedDataMonths, staffDeleteBlocker } from "../giderler/history-text";
 import { StaffEditor, type StaffRow } from "./staff-editor";
 
-export const metadata: Metadata = { title: "Personel" };
+export const metadata: Metadata = { title: "Maaşlar" };
 
 function Header({ description }: { description?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Alış & gider"
-      title="Personel"
-      excel="Personel"
+      path="/panel/personel"
+      title="Maaşlar"
       description={description}
       tabs={<SectionTabs section="giderler" current="/panel/personel" role="admin" />}
     />

@@ -26,7 +26,7 @@ const DESCRIPTION =
   "Önümüzdeki 7 günde beklenen satış (Z toplamı), kaç kişinin çalışması ve kaç tatlı hazırlanması gerektiği. Kasa raporları, takvim (bayram, resmî tatil, Ramazan, okul tatili), hava durumu ve girdiğiniz özel günlerden hesaplanır.";
 
 function Header({ description = DESCRIPTION, actions }: { description?: string; actions?: ReactNode }) {
-  return <PageHeader eyebrow="Kafe" title="Satış tahmini" description={description} actions={actions} />;
+  return <PageHeader path="/panel/tahmin" title="Satış tahmini" description={description} actions={actions} />;
 }
 
 /** Kafe › Satış tahmini (docs/SATIS-TAHMINI.md); yalnız yönetici, proxy personeli buraya sokmaz */

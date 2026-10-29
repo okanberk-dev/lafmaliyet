@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Hesabım" };
 export default function AccountPage() {
   return (
     <div className="mx-auto w-full max-w-2xl">
-      <PageHeader title="Hesabım" eyebrow="Sistem" description="Bilgileriniz, giriş parolanız ve iki adımlı doğrulama." />
+      <PageHeader title="Hesabım" path="/panel/hesap" description="Bilgileriniz, giriş parolanız ve iki adımlı doğrulama." />
       <Suspense fallback={<AccountSkeleton />}>
         <Account />
       </Suspense>

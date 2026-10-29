@@ -10,7 +10,7 @@ const TAB_LISTS: readonly (readonly { href: string; label: string }[])[] = Objec
 
 /**
  * Bir ekranın kenar çubuğundaki yolu, ör. "/panel/satislar" → ["Satış", "Satışlar"]. Menüde ayrı öğesi
- * olmayan sekme menü öğesinin altında: "/panel/harcamalar" → ["Alış & gider", "Giderler & personel", "Aylık harcamalar"].
+ * olmayan sekme menü öğesinin altında: "/panel/harcamalar" → ["Alış & gider", "Giderler & maaşlar", "Aylık harcamalar"].
  */
 export function pathOf(href: string): string[] {
   // Önce yöneticinin başlıkları: Kasa raporu ve Karaoke personelde üst düzeyde de durur, Yardım yöneticinin yolunu yazar
@@ -39,20 +39,21 @@ const fold = (s: string) => s.toLocaleLowerCase("tr-TR");
 
 /**
  * Ekranın Excel karşılığı. Sekmeli ekranlarda menü öğesinin Excel adı ("Sabit Giderler + Personel") parçalara
- * bölünür, her sekme adıyla başlayan parçayı alır (Tutarlılık → "Tutarlılık Kontrolü"); parçası olmayan sekme
- * (Aylık harcamalar) yenidir. Sıra ya da sekme sayısı eşleşmeyi bozmaz.
+ * bölünür, her sekme adıyla başlayan parçayı alır (Tutarlılık → "Tutarlılık Kontrolü"); parçası bulunamayan sekme
+ * kaydın kendi Excel adına düşer ("Maaşlar" sekmesi Excel'de "Personel"), o da yoksa (Aylık harcamalar) yenidir.
+ * Sıra ya da sekme sayısı eşleşmeyi bozmaz.
  */
 export function excelFor(href: string): string | undefined {
   for (const tabs of TAB_LISTS) {
     const tab = tabs.find((t) => t.href === href);
     if (!tab) continue;
     const parts = NAV_ITEMS.find((n) => n.href === tabs[0].href)?.excel?.split(" + ") ?? [];
-    return parts.find((p) => fold(p).startsWith(fold(tab.label)));
+    return parts.find((p) => fold(p).startsWith(fold(tab.label))) ?? NAV_ITEMS.find((n) => n.href === href)?.excel;
   }
   return NAV_ITEMS.find((n) => n.href === href)?.excel;
 }
 
-/** Aynı menü öğesinin altındaki sekmeler (Giderler & personel → Sabit giderler, Aylık harcamalar, Personel) */
+/** Aynı menü öğesinin altındaki sekmeler (Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar) */
 export const tabsOf = (href: string) => TAB_LISTS.find((tabs) => tabs[0].href === href);
 
 // ---------------------------------------------------------------- Personelin menü yolları (personel Yardım'ı)

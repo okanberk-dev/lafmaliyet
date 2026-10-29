@@ -9,7 +9,7 @@ import { Icon } from "@/components/akmanos/icons/icon";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
-import { activeGroupOf, keepGroupOpen, navLit, pathMatches, type NavNode } from "./nav";
+import { activeChildOf, activeGroupOf, keepGroupOpen, navLit, pathMatches, type NavNode } from "./nav";
 
 /**
  * AkmanOS "Sidebar" bloğundaki SidebarNav (src/components/akmanos/sidebar/sidebar-nav.tsx), Next.js bağlantıları
@@ -154,6 +154,8 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
               }
               const open = isOpen(item.id);
               const parentActive = activeParent === item.id;
+              // Grupta tek alt öğe yanar: Fiyatlar'da Ürünler, Nakit planı'nda Ödemeler yanmaz (en uzun eşleşen adres)
+              const activeChild = activeChildOf(item.children, pathname);
               return (
                 <li key={item.id} className="flex flex-col">
                   <div className="relative flex h-11 min-h-11 w-full items-stretch rounded-xl" {...point(key)}>
@@ -178,7 +180,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                   </div>
                   <SubList open={open}>
                     {item.children.map((child) => {
-                      const active = pathMatches(pathname, child.href, child.match);
+                      const active = child.id === activeChild;
                       const ck = `c-${child.id}`;
                       return (
                         <Link

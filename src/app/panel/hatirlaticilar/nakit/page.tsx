@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { planNotes } from "@/lib/cash-plan";
 import { requireAdmin } from "@/server/auth/dal";
@@ -20,7 +21,7 @@ export default function CashPlanPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Finans" title={TITLE} description={DESCRIPTION} />
+          <PageHeader path="/panel/hatirlaticilar/nakit" title={TITLE} description={DESCRIPTION} tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar/nakit" role="admin" />} />
           <PageSkeleton rows={6} />
         </>
       }

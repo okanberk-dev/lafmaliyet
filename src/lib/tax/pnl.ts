@@ -1,5 +1,5 @@
 /**
- * Vergiye göre gelir-gider (plan docs/planlar/vergi.md §3.2, K11–K15): KDV hariç, belgeye dayanan satırlar, ay ay ve
+ * Vergi kârı, vergiye göre gelir-gider (plan docs/planlar/vergi.md §3.2, K11–K15): KDV hariç, belgeye dayanan satırlar, ay ay ve
  * çeyrek çeyrek. Gelirin kaynağı mali belgedir: muhasebecinin KDV beyannamesi satış matrahı, yoksa yazarkasanın tam mali
  * Z'si, o da yoksa yönetim verisi (ModPOS cirosu) rozetiyle; yönetim verisi "vergi esasında gelir" diye adlandırılmaz ve
  * mali belgeyle farkı hiçbir yerde yazılmaz. Gider fatura tarihine göre; fatura dışı her kalem vergi belgesine göre
@@ -903,7 +903,7 @@ export interface ClassifyTarget {
 }
 
 /**
- * Sınıflandırılacak kalemler (Vergiye göre › Vergi hesabına girmeyen giderler, Başlarken): yılda hesaba giren ya da
+ * Sınıflandırılacak kalemler (Vergi kârı › Vergi hesabına girmeyen giderler, Başlarken): yılda hesaba giren ya da
  * elle tutarı olan sabit giderler, Gelir-gider'in elle satırları ve aylık harcama kategorileri (etkin olanlar ve
  * kaydı olan pasifler)
  */
@@ -988,7 +988,7 @@ export const SCOPE_TEXT: Record<TaxScope, string> = {
   beyanname: "Gelir: şirketin tamamı (beyanname) · gider: kafe",
 };
 export const SCOPE_HINT =
-  "Kurumlar ve geçici vergi şirketin bütün işleri için tek beyannamedir; panel yalnız kafeyi görür. Şirketin diğer gelir ve giderlerini Vergiye göre › Düzeltme ekle'den girin.";
+  "Kurumlar ve geçici vergi şirketin bütün işleri için tek beyannamedir; panel yalnız kafeyi görür. Şirketin diğer gelir ve giderlerini Vergi kârı › Düzeltme ekle'den girin.";
 
 /**
  * Başlıktaki kapsam çipi: gelir KDV beyannamesinden geliyor ve kafe dışı kısmı hiçbir ayda girilmediyse "şirketin

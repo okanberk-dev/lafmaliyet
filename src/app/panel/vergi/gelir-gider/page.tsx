@@ -26,9 +26,9 @@ import { quarterGrid } from "./grid";
 import { QuarterPhone } from "./quarter-phone";
 import { QuarterTable } from "./quarter-table";
 
-export const metadata: Metadata = { title: "Vergiye göre gelir-gider" };
+export const metadata: Metadata = { title: "Vergi kârı" };
 
-const TITLE = "Vergiye göre gelir-gider";
+const TITLE = "Vergi kârı";
 const DESCRIPTION =
   "Seçilen çeyreğin ayları, çeyrek toplamı ve yılbaşından kümülatif: vergi esasında, KDV hariç, belgeye dayanan satırlar. Gelir mali belgeden (KDV beyannamesi, yazarkasa Z'si) gelir; girilmeyen ayda yönetim verisi kullanılır ve hesap taslaktır.";
 
@@ -50,7 +50,7 @@ export default function TaxPnlPage({ searchParams }: PageProps<"/panel/vergi/gel
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
- * Vergi › Vergiye göre (plan docs/planlar/vergi.md §4.2): çeyreğin tablosu, köprü, KDV beyannamesi satışları,
+ * Vergi, KDV, SGK › Vergi kârı (plan docs/planlar/vergi.md §4.2; eski adı "Vergiye göre"): çeyreğin tablosu, köprü, KDV beyannamesi satışları,
  * sınıflandırma listesi ve düzeltmeler. Nakit planını okumaz (K30): model ve vergi girdileri yeter.
  */
 async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/gelir-gider">["searchParams"] }) {

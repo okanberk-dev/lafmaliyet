@@ -360,7 +360,7 @@ test("Gelir-gider'deki SGK oranı uyarısı (K19): Ayarlar yasal orandan farklı
   const n = employerRateNotice(0.1575, tax, 2026)!;
   assert.equal(
     n.text,
-    "Ayarlar'da işveren SGK %15,75. 2026'da imalat dışı işyerinde 2 puan indirimle standart oran %19,75; ek teşvikiniz varsa farklı olabilir. Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Personel › SGK oranları bölümünden değiştirin.",
+    "Maaşlar'da işveren SGK %15,75. 2026'da imalat dışı işyerinde 2 puan indirimle standart oran %19,75; ek teşvikiniz varsa farklı olabilir. Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Maaşlar › SGK oranları bölümünden değiştirin.",
   );
   assert.equal(n.target, 0.1975);
   assert.equal(n.canApply, false);
@@ -375,14 +375,14 @@ test("Gelir-gider'deki SGK oranı uyarısı (K19): Ayarlar yasal orandan farklı
   assert.equal(employerRateNotice(0.1575, own(0.1575), 2026), null);
   const o = employerRateNotice(0.1575, own(0.2075), 2026)!;
   assert.equal(o.target, 0.2075);
-  assert.match(o.text, /^Ayarlar'da işveren SGK %15,75\. Vergi'de elle girilen oran %20,75 \(Kurallar › SGK işveren payı\)\./);
+  assert.match(o.text, /^Maaşlar'da işveren SGK %15,75\. Vergi'de elle girilen oran %20,75 \(Muhasebeci › SGK işveren payı\)\./);
   // Tablosu olmayan yıl son bilinen yılın kurallarıyla
   assert.match(employerRateNotice(0.1575, tax, 2027)!.text, /2026 kurallarıyla imalat dışı/);
   // Gelir-gider sayfası uyarıyı yalnız sayfada çizer (B16'nın tablo dosyalarına dokunmaz), düğme onaylı pencereyle
   const page = read("src/app/panel/gelir-gider/page.tsx");
   assert.match(page, /employerRateNotice\(model\.settings\.isverenSgk, taxSettings, Number\(current\.slice\(0, 4\)\)\)/);
   assert.match(page, /href="\/panel\/vergi\/gelir-gider"/);
-  assert.match(page, /Vergiye göre karşılığı:/);
+  assert.match(page, /Vergi hesabındaki karşılığı:/);
   const notice = read("src/app/panel/gelir-gider/sgk-rate-notice.tsx");
   assert.match(notice, /<ConfirmDialog/);
   assert.match(notice, /setEmployerSgkRate\(target\)/);

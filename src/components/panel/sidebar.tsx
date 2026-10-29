@@ -38,7 +38,7 @@ const ALERTS_STALE_MS = 60_000;
  * AkmanOS "App Shell" + "Sidebar" blokları: zinc-100 kenar çubuğu; logo ve zil, geniş ⌘K araması,
  * beyaz kapta ikon karolu menü, altta profil menüsü. İçerik sağda beyaz zeminde.
  * Telefon ve tablette (lg altı): üstte 56px yapışkan çubuk (logo, sayfa başlığı, arama, zil), altta alt menü
- * (bottom-nav.tsx) ve "Menü"yle açılan yaylı çekmece. Arama paleti tek örnektir; kenar çubuğu, çekmece ve üst çubuk
+ * (bottom-nav.tsx) ve "Tümü"yle açılan yaylı çekmece. Arama paleti tek örnektir; kenar çubuğu, çekmece ve üst çubuk
  * aynı paleti açar.
  */
 export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[] }) {
@@ -53,7 +53,7 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   const navMenuRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
-  // Çekmeceyi açan düğme (alt menüdeki "Menü" ya da personelin üst çubuktaki düğmesi): kapanınca odak ona döner
+  // Çekmeceyi açan düğme (alt menüdeki "Tümü" ya da personelin üst çubuktaki düğmesi): kapanınca odak ona döner
   const openerRef = useRef<HTMLElement | null>(null);
 
   const isAdmin = user.role === "admin";

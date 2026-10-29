@@ -30,7 +30,7 @@ export default function TodayPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Günlük" title="Bugün" description="Yükleniyor…" />
+          <PageHeader path="/panel/bugun" role="staff" title="Bugün" description="Yükleniyor…" />
           <PageSkeleton rows={6} />
         </>
       }
@@ -59,7 +59,7 @@ async function TodayContent() {
   return (
     <>
       {/* Gece 05:00'e kadar iş günü dündür (kasa, kontrol listeleri, işler ona bakar): başlık da o günü söyler */}
-      <PageHeader eyebrow="Günlük" title="Bugün" description={`${dayTitle(now)} · ${summary.headline}`} />
+      <PageHeader path="/panel/bugun" role={user.role} title="Bugün" description={`${dayTitle(now)} · ${summary.headline}`} />
       {/* Saat sınırları: karaoke oturumu ve kontrol listelerinin açılış / son saati (satır 08:00'de "Yapılacak" olsun) */}
       <TodayRefresh at={nextRefreshAt(now, [...(changeAt ? [changeAt] : []), ...checklistBoundaries(data.facts.checklists)])} renderedAt={data.renderedAt} />
       {/* Geniş ekranda solda Yapılacaklar, sağda kartlar (Kasa sayfasının düzeni); telefonda tek sütun, bu sırayla */}
