@@ -381,7 +381,8 @@ test("düzenleme öneriye dönünce eklenen fotoğraf sessizce düşmez: bildiri
   const form = read("src/app/panel/kasa/cash-form.tsx");
   assert.match(form, /setProposal\(\{ gate: res\.data\.gate, fromSubmit: true, dropped: photos\.length \}\);/);
   assert.match(form, /const dropped = photos\.length \? ` \$\{droppedPhotoText\(res\.data\.gate\)\}` : "";/);
-  assert.match(form, /\{proposal\.dropped \? <p className="mt-0\.5 font-medium">\{droppedPhotoText\(proposal\.gate\)\}<\/p> : null\}/);
+  // Öneri notu ortak Notice'te (ux-sade Ek A 91): düşen fotoğrafın cümlesi görünür ikinci satırda
+  assert.match(form, /\{proposal\.dropped \? <span className="block font-medium text-ink">\{droppedPhotoText\(proposal\.gate\)\}<\/span> : null\}/);
   assert.match(form, /gate === "gec"\s*\? "Eklediğiniz fotoğraf öneriye gitmez\. Öneriyi gönderdikten sonra Düzenle ile yalnız fotoğrafı ekleyin; onay gerekmez\."/);
   // Kilitli günde personel o güne fotoğraf ekleyemez (staffDayOpen): metin "Düzenle" demez
   assert.match(form, /: "Eklediğiniz fotoğraf öneriye gitmez; ertesi günün raporu girildiği için bu güne fotoğrafı artık yönetici ekler\."/);

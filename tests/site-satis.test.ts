@@ -340,7 +340,8 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   // Kasa sayfası: satır ayrı Suspense'te (sayfa beklemez); personele karaoke tutarı yok
   const kasa = read("src/app/panel/kasa/page.tsx");
   assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} admin=\{admin\} kasa=\{lafposState\.lafpos \? "LafPOS" : "ModPOS"\} \/>/);
-  assert.match(kasa, /\{admin \? <> · Karaoke ön ödeme/);
+  // ux-sade Ek A 122: tek satır başlık; karaoke tutarı yalnız yöneticide
+  assert.match(kasa, /\$\{admin \? ` · karaoke ön ödeme \$\{money\(row\.karaoke\)\}` : ""\}/);
   // Gönderim: site isteği kayıtla aynı anda başlar, e-posta en çok 8 saniye bekler
   const actions = read("src/server/actions/cash-report.ts");
   assert.ok(actions.indexOf("const site = fetchTillOnlineRow(data.date)") < actions.indexOf("await saveCashReport("));
