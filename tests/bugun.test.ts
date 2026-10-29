@@ -839,6 +839,8 @@ function session(id: number, local: string, hours: number, o: Partial<KaraokeSes
     status: "confirmed",
     paymentStatus: "paid",
     totalMinor: 150_000,
+    refund: null,
+    refundMinor: null,
     lastEvent: null,
     lastEventAt: null,
     createdBy: null,

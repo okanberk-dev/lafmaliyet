@@ -178,6 +178,8 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron" |
         status: r.status,
         paymentStatus: r.paymentStatus,
         totalMinor: r.totalMinor,
+        // İptalin iadesi: "iade yok" ile "iade edildi" ayrımı (site göndermezse boş)
+        refundMinor: r.refundMinor ?? null,
         channel: r.channel || null,
         extUpdatedAt: r.updatedAt || null,
         // Doluluk haritası için: rezervasyonun yapıldığı an ve iptal anı (docs/KARAOKE.md › Doluluk haritası)
@@ -201,6 +203,8 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron" |
           prev.status === values.status &&
           prev.paymentStatus === values.paymentStatus &&
           prev.totalMinor === values.totalMinor &&
+          // Yeniden satılan saatin iadesi yalnız bunu değiştirir (sitedeki updatedAt ve ödeme durumu aynı kalabilir)
+          prev.refundMinor === values.refundMinor &&
           prev.channel === values.channel &&
           (prev.bookedAt?.getTime() ?? null) === (values.bookedAt?.getTime() ?? null) &&
           (prev.cancelledAt?.getTime() ?? null) === (values.cancelledAt?.getTime() ?? null);
