@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, CalendarRange, MessageSquareText, RotateCcw, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarRange, MessageSquareText, RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,6 +18,7 @@ import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState,
 import { Field, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip, SegmentStrip } from "@/components/ui/misc";
 import { ActiveFilters, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { TableWrap, TD, TH } from "@/components/ui/table";
@@ -511,23 +512,14 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
           />
         </Field>
         {effect === "clear" && (target.overridden || target.kind === "manual") ? (
-          <Warn>Tutar boş: kayıt silinir{target.note || note.trim() ? ", not da gider" : ""}.</Warn>
+          <Notice tone="warn" size="line" live="polite" title={`Tutar boş: kayıt silinir${target.note || note.trim() ? ", not da gider" : ""}.`} />
         ) : effect === "clear" && cleanNote(note) ? (
-          <Warn>Not, bir tutarla birlikte saklanır. Tutar yazın.</Warn>
+          <Notice tone="warn" size="line" live="polite" title="Not, bir tutarla birlikte saklanır. Tutar yazın." />
         ) : effect === "freeze" && cleanNote(note) ? (
-          <Warn>Not kaydedilince bu tutar elle girilmiş sayılır: hesaplanan değer sonradan değişse de {tl(amount, 2)} kalır.</Warn>
+          <Notice tone="warn" size="line" live="polite" title={`Not kaydedilince bu tutar elle girilmiş sayılır: hesaplanan değer sonradan değişse de ${tl(amount, 2)} kalır.`} />
         ) : null}
       </form>
     </Dialog>
-  );
-}
-
-function Warn({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn" aria-live="polite">
-      <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <span>{children}</span>
-    </p>
   );
 }
 

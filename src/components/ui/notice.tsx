@@ -112,19 +112,27 @@ function DetailsLabel({ label }: { label: string }) {
   );
 }
 
+/**
+ * Kapalı "Teknik ayrıntı (geliştirici için)": anahtar adı, komut, belge yolu. Notice'in Ayrıntı'sının içinde; uyarı
+ * olmayan bir kurulum talimatı (ör. karaoke Bağlantı kartı) tek başına da kullanır. Personelin açtığı ekranda verilmez.
+ */
+export function NoticeTech({ tech, className }: { tech: ReactNode; className?: string }) {
+  return (
+    <details className={cn("group/t", className)}>
+      <summary className="relative inline-flex cursor-pointer list-none text-xs text-ink-mute underline decoration-current/40 underline-offset-2 outline-none select-none [&::-webkit-details-marker]:hidden focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30 after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] pointer-fine:after:-inset-y-1">
+        Teknik ayrıntı (geliştirici için)
+      </summary>
+      <div className="mt-1 font-mono text-xs break-words text-ink-mute">{tech}</div>
+    </details>
+  );
+}
+
 /** Ayrıntı'nın gövdesi: çocuklar, sonra (varsa) kapalı "Teknik ayrıntı" */
 function DetailsBody({ children, tech, className }: { children?: ReactNode; tech?: ReactNode; className?: string }) {
   return (
     <div className={cn(BODY, className)}>
       {present(children) ? children : null}
-      {present(tech) ? (
-        <details className="group/t">
-          <summary className="relative inline-flex cursor-pointer list-none text-xs text-ink-mute underline decoration-current/40 underline-offset-2 outline-none select-none [&::-webkit-details-marker]:hidden focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30 after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] pointer-fine:after:-inset-y-1">
-            Teknik ayrıntı (geliştirici için)
-          </summary>
-          <div className="mt-1 font-mono text-xs break-words text-ink-mute">{tech}</div>
-        </details>
-      ) : null}
+      {present(tech) ? <NoticeTech tech={tech} /> : null}
     </div>
   );
 }

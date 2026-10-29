@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Eraser, MessageSquareText, PencilLine, TriangleAlert } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, MessageSquareText, PencilLine } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useLayoutEffect, useState, useTransition } from "react";
@@ -11,6 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, NumberInput, Textarea } from "@/components/ui/form";
 import { InfoTip } from "@/components/ui/misc";
 import { SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { useIsPhone } from "@/components/ui/use-media";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { MONTH_NAMES } from "@/lib/constants";
@@ -316,15 +317,7 @@ export function MonthView({
                           </span>
                         </span>
                       ) : null}
-                      {c.warn ? (
-                        <span className="mt-1 flex items-start gap-1 text-xs leading-4 font-medium text-warn">
-                          <TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
-                          <span className="min-w-0 break-words">
-                            <span className="sr-only">Dikkat: </span>
-                            {c.warn}
-                          </span>
-                        </span>
-                      ) : null}
+                      {c.warn ? <Notice tone="warn" size="line" className="mt-1" title={c.warn} /> : null}
                     </span>
                   );
                   return (
@@ -609,12 +602,7 @@ function CellSheet({
             </Button>
           </div>
         ) : null}
-        {cell.warn ? (
-          <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>{cell.warn}</span>
-          </p>
-        ) : null}
+        {cell.warn ? <Notice tone="warn" size="line" title={cell.warn} /> : null}
         {target.hint || cell.info ? <p className="text-xs leading-5 text-ink-mute">{[cell.info, target.hint].filter(Boolean).join(" ")}</p> : null}
         {/* Tutarın kaynağı (rowLink): o ayın sayımı, satışları, personel ya da sabit giderler */}
         {target.source ? (
@@ -643,10 +631,7 @@ function CellSheet({
           </Field>
         ) : null}
         {freezeWarn ? (
-          <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn" aria-live="polite">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>Not kaydedilince bu tutar elle girilmiş sayılır: hesaplanan değer sonradan değişse de {tl(amount, 2)} kalır.</span>
-          </p>
+          <Notice tone="warn" size="line" live="polite" title={`Not kaydedilince bu tutar elle girilmiş sayılır: hesaplanan değer sonradan değişse de ${tl(amount, 2)} kalır.`} />
         ) : null}
       </form>
     </Dialog>

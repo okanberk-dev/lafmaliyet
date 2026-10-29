@@ -8,6 +8,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { diffKind, diffText, stampTR } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { LafposDay } from "@/lib/lafpos/prefill";
@@ -74,9 +75,11 @@ export function LateReport({
   }
 
   const othersNote = others.length ? (
-    <p className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">
-      {others.map((o) => `${o.requestedByName} bu günü ${dayLocativeTR(todayTR(new Date(o.createdAt)))} gönderdi`).join("; ")}; yöneticinin onayını bekliyor.
-    </p>
+    <Notice
+      tone="neutral"
+      size="sm"
+      title={`${others.map((o) => `${o.requestedByName} bu günü ${dayLocativeTR(todayTR(new Date(o.createdAt)))} gönderdi`).join("; ")}; yöneticinin onayını bekliyor.`}
+    />
   ) : null;
 
   // Fotoğraf deposu yoksa geç rapor kanıtsız kalır; LafPOS'un gün sonu geldiyse kanıt odur (G8)
@@ -162,10 +165,12 @@ export function LateReport({
     <div className="space-y-3">
       {othersNote}
       {own?.status === "rejected" ? (
-        <div role="alert" className="rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
-          <p className="font-semibold">Reddedildi{own.reviewedByName ? ` · ${own.reviewedByName}` : ""}{own.reviewNote ? `: ${own.reviewNote}` : ""}</p>
-          <p className="mt-0.5">Önceki değerleriniz formda; düzeltip yeniden gönderebilirsiniz.</p>
-        </div>
+        <Notice
+          tone="warn"
+          live="assertive"
+          title={`Reddedildi${own.reviewedByName ? ` · ${own.reviewedByName}` : ""}${own.reviewNote ? `: ${own.reviewNote}` : ""}`}
+          text="Önceki değerleriniz formda; düzeltip yeniden gönderebilirsiniz."
+        />
       ) : null}
       <CashForm
         key={`gec:${date}:${pendingOwn?.version ?? 0}:${own?.id ?? 0}`}

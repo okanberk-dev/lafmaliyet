@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { KeyValue, Stat } from "@/components/ui/misc";
+import { Notice, NoticeTech } from "@/components/ui/notice";
 import { dateTimeTR, num, tl } from "@/lib/format";
 import { dayLabel, isHold, isLive, sessionEnd, sessionStart, timeRange, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { cn } from "@/lib/utils";
@@ -159,7 +160,7 @@ export function KaraokeAdmin({
                 <KeyValue className="py-2.5" label="Penceredeki rezervasyon" value={sync?.count !== null && sync?.count !== undefined ? num(sync.count) : "—"} />
                 <KeyValue className="py-2.5" label="Bildirim alan cihaz" value={num(devices)} />
               </div>
-              {health.tone === "red" && sync?.lastError ? <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{sync.lastError}</p> : null}
+              {health.tone === "red" && sync?.lastError ? <Notice tone="bad" size="sm" title={sync.lastError} /> : null}
               <p className="text-[13px] leading-5 text-ink-mute">
                 Site her rezervasyon değişikliğinde panele imzalı bir ping atar; panel değişenleri hemen çeker ve cihazlara bildirir. Ayrıca bu sayfa açılınca en
                 çok beş dakikada bir kontrol edilir. Sürekli sorgu yapılmaz. Bütün bağlantıların durumu: Ayarlar › laffogato.net.
@@ -169,16 +170,17 @@ export function KaraokeAdmin({
               </a>
             </>
           ) : (
-            <ol className="list-decimal space-y-1.5 pl-5 text-[13px] leading-5 text-ink-soft">
-              <li>
-                Güçlü bir anahtar üretin (ör. <code className="rounded bg-surface px-1 font-mono text-xs ring-1 ring-line">openssl rand -hex 32</code>).
-              </li>
-              <li>
-                Vercel&apos;de iki projeye de (laffogato.net ve bu panel) aynı değerle <code className="rounded bg-surface px-1 font-mono text-xs ring-1 ring-line">KARAOKE_SYNC_SECRET</code>{" "}
-                ekleyin, ikisini yeniden yayınlayın.
-              </li>
-              <li>Bu sayfayı yenileyin: “Şimdi eşitle” görünür, rezervasyonlar gelir. Ayrıntı: docs/KARAOKE.md.</li>
-            </ol>
+            // Kurulum adımları geliştirici içindir (durum başlıktaki rozette, sonucu sayfanın başındaki uyarıda); tam
+            // talimatın evi Ayarlar › laffogato.net
+            <NoticeTech
+              tech={
+                <ol className="list-decimal space-y-1.5 pl-5">
+                  <li>Güçlü bir anahtar üretin (ör. openssl rand -hex 32).</li>
+                  <li>Vercel&apos;de iki projeye de (laffogato.net ve bu panel) aynı değerle KARAOKE_SYNC_SECRET ekleyin, ikisini yeniden yayınlayın.</li>
+                  <li>Bu sayfayı yenileyin: “Şimdi eşitle” görünür, rezervasyonlar gelir. Ayrıntı: docs/KARAOKE.md.</li>
+                </ol>
+              }
+            />
           )}
         </div>
       </Card>

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import type { Unit } from "@/lib/calc/types";
 import { dateTimeTR, dateTR, num, pct, tl2 } from "@/lib/format";
 import { ESTIMATE_BADGE, ESTIMATE_TEXT, FIRST_PRICE_TEXT, HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
@@ -415,18 +416,19 @@ function HoldItem({
           )}
         </p>
         {x.suggestion ? (
-          <div className={cn("mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2", x.suggestion.kind === "reading" ? "bg-info-soft text-info" : "bg-warn-soft text-warn")}>
-            <p className="min-w-0 flex-1 basis-60 text-pretty">
-              {x.suggestion.kind === "reading" ? <ScanText size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" /> : null}
-              {x.suggestion.kind === "conflict" ? <TriangleAlert size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" /> : null}
-              {x.suggestion.text}
-            </p>
-            {x.suggestion.factor ? (
-              <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onFactor(x.suggestion!.factor!)}>
-                Çarpanı {num(x.suggestion.factor, 3)} yap
-              </Button>
-            ) : null}
-          </div>
+          <Notice
+            tone={x.suggestion.kind === "reading" ? "neutral" : "warn"}
+            size="sm"
+            className="mt-1.5"
+            title={x.suggestion.text}
+            action={
+              x.suggestion.factor ? (
+                <Button size="xs" variant="secondary" disabled={disabled} onClick={() => onFactor(x.suggestion!.factor!)}>
+                  Çarpanı {num(x.suggestion.factor, 3)} yap
+                </Button>
+              ) : undefined
+            }
+          />
         ) : null}
         {/* Faturanın okunması: bilgi satırı, okunamadıysa nedeni, okunuyor ya da düğme */}
         {x.reading || x.readError || x.read ? (

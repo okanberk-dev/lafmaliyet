@@ -8,6 +8,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { BLOCK_ROW_TEXT, type DroppedRecipient } from "@/lib/notify-recipients";
 import { sendCashTestEmail, updateCashSettings } from "@/server/actions/cash-report";
@@ -50,23 +51,33 @@ export function CashSettingsCard({ settings, emailConfigured, blocked = [] }: { 
       <CardHeader icon={<Mail />} title="Rapor alıcıları" description="Personel raporu gönderince bu adreslere e-posta gider" />
       <div className="space-y-3 px-5 pb-5">
         {!emailConfigured ? (
-          <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-            E-posta kurulmamış: Vercel&apos;de RESEND_API_KEY tanımlı değil. Raporlar kaydedilir, WhatsApp ile gönderilebilir.
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title="E-posta gönderimi kurulmadı: raporlar WhatsApp'la gider"
+            tech="Vercel'de RESEND_API_KEY tanımlı değil. Raporlar yine kaydedilir."
+          />
         ) : null}
         {blocked.length ? (
-          <div role="note" className="space-y-1 rounded-xl bg-bad-soft px-3 py-2 text-[13px] leading-5 text-bad">
-            {blocked.map((b) => (
-              <p key={b.email} className="break-words">
-                <span className="font-medium">{b.email}</span>: {BLOCK_ROW_TEXT[b.reason].toLocaleLowerCase("tr-TR")}
-              </p>
-            ))}
-            {/* Neden kişiye göre: personele karaoke ön ödemesi gitmesin; pasif hesaba e-posta hiç gitmez */}
-            <p>
-              {blocked.some((b) => b.reason === "staff") ? "Kasa e-postasında karaoke ön ödemesi var; personel hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
-              {blocked.length > 1 ? "Bu adresleri" : "Bu adresi"} listeden çıkarın ya da doğru adresi yazın.
-            </p>
-          </div>
+          <Notice
+            tone="bad"
+            size="sm"
+            title="Bu adreslere rapor gitmez"
+            text={
+              <>
+                {blocked.map((b) => (
+                  <span key={b.email} className="block break-words">
+                    <span className="font-medium text-ink">{b.email}</span>: {BLOCK_ROW_TEXT[b.reason].toLocaleLowerCase("tr-TR")}
+                  </span>
+                ))}
+                {/* Neden kişiye göre: personele karaoke ön ödemesi gitmesin; pasif hesaba e-posta hiç gitmez */}
+                <span className="block">
+                  {blocked.some((b) => b.reason === "staff") ? "Kasa e-postasında karaoke ön ödemesi var; personel hesabına gitmez." : "Pasif hesaba e-posta gitmez."}{" "}
+                  {blocked.length > 1 ? "Bu adresleri" : "Bu adresi"} listeden çıkarın ya da doğru adresi yazın.
+                </span>
+              </>
+            }
+          />
         ) : null}
         <ToggleRow title="E-posta gönder" description="Kapalıyken rapor yalnız panelde ve WhatsApp'ta" label="Kasa raporu e-postası" checked={emailEnabled} onChange={setEmailEnabled} />
         <Field label="E-posta adresleri" htmlFor="kasa-alicilar" hint="Her satıra bir adres (en çok 10)">

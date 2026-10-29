@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, TriangleAlert, Undo2, Users } from "lucide-react";
+import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Undo2, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
@@ -150,19 +151,23 @@ export function KaraokeBoard({
 
   return (
     <div className="space-y-6">
+      {/* Tek kutu (docs/planlar/ux-sade.md U6 / U7): siparişler panelindeki ayrı "bağlantı yok" satırı kalktı; kurulum
+          talimatı yalnız yöneticide, geliştirici ayrıntısında */}
       {!configured ? (
-        <p role="status" className="rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          {role === "admin"
-            ? "laffogato.net bağlantısı henüz kurulmadı: iki projeye de aynı KARAOKE_SYNC_SECRET eklenince rezervasyonlar buraya kendiliğinden gelir (aşağıdaki Bağlantı kartı). O zamana kadar hızlı sayaç çalışır."
-            : "Sitedeki rezervasyonlar henüz bağlanmadı; o zamana kadar hızlı sayacı kullanabilirsiniz."}
-        </p>
+        role === "admin" ? (
+          <Notice
+            tone="neutral"
+            live="polite"
+            title="Site bağlantısı kurulmadı: rezervasyon ve sipariş gelmiyor"
+            text="Hızlı sayaç çalışır."
+            action={<NoticeLink href="#baglanti">Bağlantı</NoticeLink>}
+            tech="İki projeye (laffogato.net ve bu panel) aynı KARAOKE_SYNC_SECRET eklenince rezervasyon ve siparişler buraya kendiliğinden gelir."
+          />
+        ) : (
+          <Notice tone="neutral" live="polite" title="Site bağlı değil: rezervasyon ve sipariş buraya gelmez" text="Hızlı sayacı kullanın." />
+        )
       ) : null}
-      {stale ? (
-        <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0">{stale}</span>
-        </p>
-      ) : null}
+      {stale ? <Notice tone="warn" risk="bar" live="polite" title={stale} /> : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-4">
@@ -380,9 +385,7 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
           <Input id="ks-ad" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder="ör. Mehmet, doğum günü" />
         </Field>
         {clash ? (
-          <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-            Dikkat: {clash} Sayacın bitişi {trClock(endsAt).time}.
-          </p>
+          <Notice tone="warn" size="sm" title={`${clash} Sayacın bitişi ${trClock(endsAt).time}.`} />
         ) : null}
         <Button onClick={() => submit()} disabled={pending || !valid} className="w-full" size="lg">
           <Hourglass size={16} /> {pending ? "Başlatılıyor…" : valid ? `${durationLabel(Math.round(chosen))} başlat` : "Süre seçin"}

@@ -3,7 +3,7 @@
 // "Hangi aydan itibaren?" seçimi, durdur / devam ettir pencereleri, tutar geçmişi ve açılır "Geçmiş" bölümü.
 // Sabit giderler ve Personel aynı parçaları kullanır: iki ekranda da aynı soru, aynı dil.
 
-import { ChevronDown, TriangleAlert } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
 import { useId, useState, type ReactNode } from "react";
 
@@ -14,6 +14,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/form";
 import { InfoTip } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
+import { Notice } from "@/components/ui/notice";
 import { shiftMonth, type RangeStatus } from "@/lib/calc/engine";
 import type { MonthRange } from "@/lib/calc/types";
 import { monthLabel } from "@/lib/format";
@@ -69,10 +70,7 @@ export function EffectNote({ effect, className }: { effect: EffectText | null; c
     <div className={cn("space-y-1.5 text-xs leading-5", className)} aria-live="polite">
       {effect.text ? <p className="text-ink-soft">{effect.text}</p> : null}
       {effect.warn ? (
-        <p className="flex items-start gap-1.5 font-medium text-warn">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>{effect.warn}</span>
-        </p>
+        <Notice tone="warn" size="line" title={effect.warn} />
       ) : null}
     </div>
   );

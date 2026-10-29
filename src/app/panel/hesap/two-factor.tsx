@@ -13,6 +13,7 @@ import { CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { beginTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
 
 type Setup = { qr: string; secret: string; uri: string };
@@ -50,9 +51,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
         {enabled ? (
           <>
             {recoveryLeft <= 2 ? (
-              <p role="status" className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-sm text-warn">
-                Kurtarma kodunuz azaldı. Yeni kodlar oluşturun ve güvenli bir yere kaydedin.
-              </p>
+              <Notice tone="warn" size="sm" risk="veri" live="polite" title="Kurtarma kodunuz azaldı: yenilerini oluşturun" text="Güvenli bir yere kaydedin." />
             ) : null}
             <div className="flex flex-wrap gap-2 max-sm:[&>*]:flex-1">
               <Button variant="secondary" onClick={() => setAskPassword("regenerate")}>

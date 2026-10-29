@@ -11,6 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import {
   CASH_TOLERANCE,
   computeCash,
@@ -29,7 +30,6 @@ import {
 import { money } from "@/lib/format";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
-import { cn } from "@/lib/utils";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
 import type { PhotoDiff } from "@/lib/photo-read/kasa";
 import type { CashOutDTO } from "@/server/data/cash-outs";
@@ -320,7 +320,7 @@ export function CashHistory({
         {open ? (
           <div className="space-y-4">
             <DiffHeadline diff={open.cashDiff} />
-            {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
+            {open.emailStatus === "failed" ? <Notice tone="bad" size="sm" title={`E-posta gitmedi: ${open.emailError}`} /> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
             <LafposDiffList diffs={openPhotos?.extras.lafposDiffs} />
             <CashBreakdown

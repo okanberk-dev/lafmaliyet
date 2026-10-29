@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightLeft, CalendarClock, Camera, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
+import { ArrowRightLeft, Camera, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
@@ -267,13 +268,14 @@ export function MonthlyExpenses({
       </div>
 
       {missing.length ? (
-        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          <CalendarClock size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0">
-            <span className="font-semibold">{missing.map((c) => c.name).join(", ")}</span> {monthLabel(month)} için henüz girilmedi. Her ay girilecek kategoriler; girilmezse
-            o ayın gideri eksik görünür.
-          </p>
-        </div>
+        <Notice
+          tone="warn"
+          risk="para"
+          live="polite"
+          className="mb-4"
+          title={`${missing.map((c) => c.name).join(", ")} ${monthLabel(month)} için girilmedi`}
+          text="Girilmezse ayın gideri eksik görünür."
+        />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-12">
@@ -606,36 +608,46 @@ function EntryDialog({
           <PhotoThumb id={draft.photoId} caption="Fişin fotoğrafı" onOpen={() => setViewer({ id: draft.photoId!, caption: "Fişin fotoğrafı" })} className="sm:col-span-2" />
         ) : null}
         {cari ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn sm:col-span-2">
-            <span className="min-w-0 flex-1">Bu harcama {cari.name} tedarikçisinin faturasız alımından. Tutarını, gününü ve kategorisini Tedarikçiler&apos;de düzeltin.</span>
-            {cari.href ? (
+          <Notice
+            tone="warn"
+            size="sm"
+            className="sm:col-span-2"
+            title={`Bu harcama ${cari.name} tedarikçisinin faturasız alımından. Tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin.`}
+            action={
+              cari.href ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={() => {
+                    onClose();
+                    router.push(cari.href!);
+                  }}
+                >
+                  Tedarikçiye git
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : draft.cashOutDate ? (
+          <Notice
+            tone="neutral"
+            size="sm"
+            className="sm:col-span-2"
+            title={`Kasa raporundaki bir fişten (${dateTR(draft.cashOutDate!)}). Tutarı ve tarihi Kasa raporu'nda düzeltin.`}
+            action={
               <Button
                 size="xs"
                 variant="secondary"
                 onClick={() => {
+                  // Önce pencere kapanır, sonra sayfa değişir (açık pencereyle gezinme olmaz)
                   onClose();
-                  router.push(cari.href!);
+                  router.push(`/panel/kasa?gun=${draft.cashOutDate}`);
                 }}
               >
-                Tedarikçiye git
+                Kasa raporuna git
               </Button>
-            ) : null}
-          </div>
-        ) : draft.cashOutDate ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">
-            <span className="min-w-0 flex-1">Kasa raporundaki bir fişten ({dateTR(draft.cashOutDate!)}). Tutarı ve tarihi Kasa raporu&apos;nda düzeltin.</span>
-            <Button
-              size="xs"
-              variant="secondary"
-              onClick={() => {
-                // Önce pencere kapanır, sonra sayfa değişir (açık pencereyle gezinme olmaz)
-                onClose();
-                router.push(`/panel/kasa?gun=${draft.cashOutDate}`);
-              }}
-            >
-              Kasa raporuna git
-            </Button>
-          </div>
+            }
+          />
         ) : null}
         <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
           <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })} disabled={Boolean(cari)}>

@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { fold, useQueryState } from "@/components/ui/filters";
 import { Fab } from "@/components/ui/fab";
 import { EmptyState } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTR, money, num, tl } from "@/lib/format";
 import type { ReminderDrift } from "@/lib/cash-plan";
@@ -397,12 +398,17 @@ export function RemindersClient({
       </div>
 
       {drifts.length ? (
-        <div role="status" className="mb-4 rounded-2xl bg-warn-soft px-4 py-3 text-sm ring-1 ring-warn/20 ring-inset">
-          <p className="font-medium text-ink">Hatırlatıcı tutarı sabit giderden farklı</p>
-          <p className="mt-0.5 text-[13px] text-ink-soft">
-            Nakit planı hatırlatıcıdaki tutarı öder. Tutarı güncelleyin ya da boşaltın (boşken plan Giderler&apos;deki tutarı izler); gider bittiyse
-            hatırlatıcıyı kapatın.
-          </p>
+        // Satır başına eylemli liste: Ayrıntı açık başlar (docs/planlar/ux-sade.md §4.4)
+        <Notice
+          tone="warn"
+          risk="para"
+          live="polite"
+          defaultOpen
+          className="mb-4"
+          title={`${drifts.length} hatırlatıcının tutarı sabit giderden farklı`}
+          text="Nakit planı hatırlatıcıdaki tutarı öder."
+        >
+          <p>Tutarı güncelleyin ya da boşaltın (boşken plan Giderler&apos;deki tutarı izler); gider bittiyse hatırlatıcıyı kapatın.</p>
           <ul className="mt-2 space-y-1.5">
             {drifts.map((d) => {
               const r = byId.get(d.reminderId);
@@ -418,7 +424,7 @@ export function RemindersClient({
               );
             })}
           </ul>
-        </div>
+        </Notice>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-12 xl:items-start">

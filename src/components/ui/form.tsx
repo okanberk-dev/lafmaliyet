@@ -86,7 +86,8 @@ export function Field({
         {aside ? <span className="ml-auto shrink-0">{aside}</span> : null}
       </span>
       {children}
-      {error ? <p className="text-xs text-bad">{error}</p> : hint ? <p className="text-xs text-ink-mute">{hint}</p> : null}
+      {/* İpucu div: bir uyarı (Notice) da taşıyabilir */}
+      {error ? <p className="text-xs text-bad">{error}</p> : hint ? <div className="text-xs text-ink-mute">{hint}</div> : null}
     </div>
   );
 }

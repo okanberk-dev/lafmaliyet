@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, ChevronDown, Eye, KeyRound, Mail, Plus, Send, Trash2 } from "lucide-react";
+import { BellRing, ChevronDown, Eye, Mail, Plus, Send, Trash2 } from "lucide-react";
 import { useEffect, useId, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input, NumberInput } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR } from "@/lib/format";
@@ -108,7 +109,7 @@ export function NotificationsSection({
   const activeRecipients = shownRecipients.filter((r) => r.active && !r.blocked).length;
   // Etkin adres var ama hepsi düşüyor: "Adres yok" denmez (liste etkin satırı gösterir), gidecek adres yoktur
   const allBlocked = activeRecipients === 0 && shownRecipients.some((r) => r.active && r.blocked);
-  const missing = [!email.configured && "RESEND_API_KEY", !email.cron && "CRON_SECRET"].filter(Boolean) as string[];
+  const missing = [!email.configured && "RESEND_API_KEY", !email.cron && "CRON_SECRET"].filter(Boolean) as string[]; // tech-metni
   const ready = enabled && email.configured && activeRecipients > 0;
 
   /** Anahtar yalnız açık/kapalıyı yazar (kayıtlı ayarlarla); "Gönderim ayarları"ndaki kaydedilmemiş taslak Kaydet'i bekler */
@@ -188,23 +189,21 @@ export function NotificationsSection({
           {weekly}
 
           {missing.length ? (
-            <div role="note" className="flex gap-2.5 rounded-2xl bg-info-soft px-3.5 py-3 text-[13px] leading-5 text-ink-soft">
-              <KeyRound size={16} className="mt-0.5 shrink-0 text-info" aria-hidden="true" />
-              <div className="min-w-0 space-y-1">
-                {!email.configured ? (
-                  <p>
-                    <span className="font-semibold text-ink">Resend anahtarı girilmedi.</span> <code className="rounded bg-surface px-1 font-mono text-xs">RESEND_API_KEY</code> Vercel ortam
-                    değişkenlerine (yerelde <code className="rounded bg-surface px-1 font-mono text-xs">.env.local</code>) eklenince e-postalar gitmeye başlar; adresler ve ayarlar şimdiden
-                    kaydedilebilir.
-                  </p>
-                ) : null}
-                {!email.cron ? (
-                  <p>
-                    <code className="rounded bg-surface px-1 font-mono text-xs">CRON_SECRET</code> yok: sabah gönderimi kendiliğinden çalışmaz, elle gönderebilirsiniz.
-                  </p>
-                ) : null}
-              </div>
-            </div>
+            <Notice
+              tone="neutral"
+              title={!email.configured ? "E-posta gönderimi kurulmadı" : "Sabah gönderimi kendiliğinden çalışmaz"}
+              text={!email.configured ? "Adresler ve ayarlar şimdiden kaydedilebilir." : "Elle gönderebilirsiniz."}
+              tech={
+                <>
+                  {!email.configured ? (
+                    <p>
+                      RESEND_API_KEY Vercel ortam değişkenlerine (yerelde .env.local) eklenince e-postalar gitmeye başlar; adresler ve ayarlar şimdiden kaydedilebilir.
+                    </p>
+                  ) : null}
+                  {!email.cron ? <p>CRON_SECRET yok: sabah gönderimi kendiliğinden çalışmaz, elle gönderebilirsiniz.</p> : null}
+                </>
+              }
+            />
           ) : null}
 
           <div>

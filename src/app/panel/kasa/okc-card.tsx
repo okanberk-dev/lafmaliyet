@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Info, ScrollText, TriangleAlert } from "lucide-react";
+import { ChevronDown, ScrollText } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Card, CardHeader } from "@/components/ui/card";
+import { Notice, type NoticeTone } from "@/components/ui/notice";
 import { okcFormChecks, okcReconcile, type OkcField } from "@/lib/okc-z";
 import { cn } from "@/lib/utils";
 
@@ -176,18 +177,10 @@ export function OkcCard({
         </div>
         {live?.summary || lines.length ? (
           <div className="space-y-1.5 sm:col-span-2">
-            {live?.summary ? <Note tone="warn">{live.summary}</Note> : null}
-            {audience === "admin" && live?.summary
-              ? live.admin.slice(0, 3).map((t) => (
-                  <Note key={t} tone="info">
-                    {t}
-                  </Note>
-                ))
-              : null}
+            {live?.summary ? <Notice tone="warn" size="sm" title={live.summary} /> : null}
+            {audience === "admin" && live?.summary ? live.admin.slice(0, 3).map((t) => <Notice key={t} tone="neutral" size="sm" title={t} />) : null}
             {lines.map((l) => (
-              <Note key={l.key} tone={l.tone}>
-                {l.text}
-              </Note>
+              <Notice key={l.key} tone={NOTE_TONE[l.tone]} size="sm" title={l.text} />
             ))}
           </div>
         ) : null}
@@ -196,11 +189,5 @@ export function OkcCard({
   );
 }
 
-function Note({ tone, children }: { tone: "good" | "info" | "warn"; children: ReactNode }) {
-  return (
-    <p className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-[13px] leading-5", tone === "warn" ? "bg-warn-soft text-warn" : tone === "good" ? "bg-lime/25 text-good-ink" : "bg-info-soft text-info")}>
-      {tone === "warn" ? <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
-      <span className="min-w-0">{children}</span>
-    </p>
-  );
-}
+// Denetim satırının tonu uyarı tonuna (mavi artık uyarı rengi değil: bilgi nötr)
+const NOTE_TONE: Record<"good" | "info" | "warn", NoticeTone> = { good: "good", info: "neutral", warn: "warn" };
