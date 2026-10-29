@@ -5,7 +5,7 @@ import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { periodQuarters, quarterLabel, yearOptions } from "@/lib/tax/calendar";
 import type { TaxFiling } from "@/lib/tax/corporate";
 import { ALP_KOC_NOTE, type TaxAdjustment } from "@/lib/tax/pnl";
-import { PART_TIME_NOTE, rulesFor, taxDocOptions } from "@/lib/tax/rules";
+import { PART_TIME_NOTE, rulesFor, taxDocOptions, withholdingGrossHint, WITHHOLDINGS } from "@/lib/tax/rules";
 import type { TaxSettings } from "@/lib/tax/settings";
 import type { TaxView } from "@/lib/tax/view";
 
@@ -90,6 +90,12 @@ export function classifyData(view: TaxView, ctx: { invoices: readonly Invoice[];
     separateNote: SEPARATE_NOTE,
     invoices: ctx.choices,
     directLimit: rulesFor(year).rules.vuk.dogrudanGider.value,
+    grossHints: Object.fromEntries(
+      WITHHOLDINGS.flatMap((w) => {
+        const hint = withholdingGrossHint(w, rulesFor(year, ctx.settings.overrides).rules);
+        return hint ? [[w, hint]] : [];
+      }),
+    ),
     today: ctx.today,
   };
 }

@@ -98,6 +98,9 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const warnInfo = q.warnings.filter((w) => w === (PAYROLL_FULL_MONTH_NOTE as string));
   const warnOther = q.warnings.filter((w) => !warnBad.includes(w) && !warnInfo.includes(w));
   const kdvMatrah = filingKindData("kdv_matrah", { today: view.today, settings, filings: inputs.filings, reminders: null });
+  // Başlarken'in "Muhasebecinin rakamları" adımı geçici vergiyi de ister: çeyreğin penceresi burada da (§4.1-2)
+  const gecici = filingKindData("gecici", { today: view.today, settings, filings: inputs.filings, reminders: null });
+  const geciciFiling = filingFor(inputs.filings, "gecici", q.key);
   const choices = invoiceChoices(model.ds.invoices, inputs.assets, view.today);
   const classify = classifyData(view, { invoices: model.ds.invoices, settings, choices, today: view.today });
   const adjChoices = adjustmentChoices(view.today, settings, inputs.filings);
@@ -118,18 +121,24 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
           />
           <div className="space-y-2 px-5 pb-4">
             {q.totals.state === "taslak" ? <p className="text-[13px] leading-5 text-ink-mute">Taslak: {q.totals.stateReasons.join(" · ")}.</p> : null}
+            {gecici.options.some((o) => o.period === q.key) ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <FilingButton data={gecici} period={q.key} label={geciciFiling ? `${q.label} geçici vergi kaydını düzelt` : `${q.label} geçici vergi rakamını gir`} />
+                {geciciFiling ? <span className="text-xs text-ink-mute">Muhasebeci: {money(geciciFiling.payable)}</span> : null}
+              </div>
+            ) : null}
             <NoteList notes={warnBad} tone="bad" />
             <NoteList notes={warnOther} tone="warn" />
             <NoteList notes={warnInfo} />
           </div>
           <QuarterTable grid={grid} />
-          <QuarterPhone grid={grid} />
+          <QuarterPhone key={q.key} grid={grid} />
           <div className="h-5" />
         </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <BridgeCard quarter={q} />
-          <Card>
+          <Card id="kdv-beyannamesi" className="scroll-mt-20">
             <CardHeader
               icon={<FileSpreadsheet />}
               title="KDV beyannamesi satışları"

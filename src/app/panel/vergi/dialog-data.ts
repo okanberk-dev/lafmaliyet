@@ -6,7 +6,7 @@ import { dayMonthTR, type ReminderRow } from "@/lib/reminders";
 import { invoiceRemaining, type TaxAsset } from "@/lib/tax/assets";
 import { periodOf, periodQuarters, quarterLabel, yearOptions } from "@/lib/tax/calendar";
 import { filingFor, type TaxFiling, type TaxFilingKind } from "@/lib/tax/corporate";
-import { filingPeriodRefusal, filingReminders } from "@/lib/tax/edit";
+import { filingPeriodRefusal, filingReminders, filingRemovedReminder } from "@/lib/tax/edit";
 import type { MuhtasarMonth } from "@/lib/tax/muhtasar";
 import type { PayrollMonth } from "@/lib/tax/payroll";
 import { r2 } from "@/lib/tax/rules";
@@ -102,6 +102,15 @@ export function filingKindData(
       filing: f ? { id: f.id, payable: f.payable, stamp: f.stamp, values, note: f.note ?? null, by: f.enteredByName ?? null } : null,
       defaultStamp: stampOf(kind, period, ctx.settings, ctx.muhtasar ?? []),
       reminder: ctx.reminders ? reminderOf(kind, period, ctx.reminders) : null,
+      // Kaldırınca Ödemeler'deki tutara ne olur (sunucunun deleteTaxFiling kuralı); Ödemeler okunmadıysa bilinmiyor
+      removal:
+        f && ctx.reminders && kind !== "kdv_matrah"
+          ? (() => {
+              const r = filingRemovedReminder(ctx.reminders, { kind, period, payable: f.payable, stamp: f.stamp });
+              const withAmount = filingReminders(ctx.reminders, kind, period).filter((x) => x.amount !== null);
+              return { result: r.result, amount: withAmount.length === 1 ? withAmount[0].amount : null };
+            })()
+          : null,
       addHref: preset ? `/panel/hatirlaticilar?yeni=${preset}` : null,
     };
   });

@@ -362,16 +362,21 @@ interface Ctx {
   catById: Map<number, ExpenseCategory>;
 }
 
-function makeCtx(input: TaxPnlInput): Ctx {
+/** "Demirbaş olabilir" faturaların kimlikleri, her biri kendi yılının sınırıyla: karar verilene kadar gider sayılmaz */
+export function candidateInvoiceIds(input: Pick<TaxPnlInput, "invoices" | "assets" | "settings">): Set<number> {
   const candidates = new Set<number>();
   const years = new Set(input.invoices.map((i) => Number(i.date.slice(0, 4))));
   for (const y of years) {
     const { rules } = rulesFor(y, input.settings.overrides);
     for (const c of assetCandidates(input.invoices, input.assets, rules)) if (c.invoice.date.startsWith(`${y}-`)) candidates.add(c.invoice.id);
   }
+  return candidates;
+}
+
+function makeCtx(input: TaxPnlInput): Ctx {
   return {
     input,
-    candidates,
+    candidates: candidateInvoiceIds(input),
     linkedCost: allocatedByInvoice(input.assets),
     fixedById: new Map(input.fixed.map((f) => [f.id, f])),
     catById: new Map(input.expenseCategories.map((c) => [c.id, c])),

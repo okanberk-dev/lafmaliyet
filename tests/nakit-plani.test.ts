@@ -1572,6 +1572,12 @@ test("vergi (I-2): taslak çeyreğin geçici vergisi plana girmez, 'Tutarı giri
   const written = buildCashPlan(input({ tax: filed, reminders: [geciciRem({ id: g.id, amount: 40_000 })] }));
   assert.deepEqual(lineAt(written, `reminder:${g.id}@`).map((l) => l.amount), [40_000]);
   assert.equal(lineAt(written, "vergi:gecici").length, 0);
+  // K4 (P3): muhasebecinin rakamı 1 ₺'den fazla farklıysa satır söyler; aynıysa not yok
+  assert.deepEqual(
+    lineAt(written, `reminder:${g.id}@`).map((l) => l.detail?.replace(/\u00a0/g, " ")),
+    ["Muhasebecinin rakamı 41.991 ₺, Ödemeler'deki tutar 40.000 ₺: nakit planı Ödemeler'dekini kullanıyor. Hangisi doğruysa öbürünü düzeltin."],
+  );
+  assert.equal(lineAt(buildCashPlan(input({ tax: filed, reminders: [geciciRem({ id: g.id, amount: 41_991 })] })), `reminder:${g.id}@`)[0].detail, undefined);
   // Hazır çeyrek (tahmin): tahmin satırı
   const ready: TaxPlanFeed = { ...FEED, pending: [], items: [...FEED.items, { kind: "gecici", period: "2026-Q3", nominal: "2026-11-17", legalDue: "2026-11-17", amount: 12_791, atLeast: false, source: "estimate", detail: "Geçici vergi 2026/3: kafenin katkısı" }] };
   const rp = buildCashPlan(input({ tax: ready }));
@@ -1749,6 +1755,17 @@ test("vergi (I-6): stopajlı sabit gider net ödenir (kira 160.000 → 128.000; 
   assert.deepEqual(fixedReminderDrifts([r128], [{ ...rated, startMonth: null, endMonth: null }], [], TODAY), []);
   assert.equal(fixedReminderDrifts([r128], [{ ...f, startMonth: null, endMonth: null }], [], TODAY).length, 1, "stopajsız kalemde 160.000 beklenir");
   assert.equal(lineAt(buildCashPlan(input({ ...base, reminders: [r128] })), `reminder:${kira.id}@2026-11-01`)[0].detail, undefined);
+  // P4: vergi beslemesi alınamadıysa (loadCashPlan, feed: false) stopaj ve KDV-2 satırı yok: kalem brüt, faturasının KDV'siyle
+  const gross = planInputFromModel(withheld, TODAY, DEFAULT_TAX_SETTINGS, { feed: false }).months["2026-11"].fixed;
+  assert.deepEqual(
+    gross.filter((f) => f.name === "Kira" || f.name === "Muhasebeci").map((f) => [f.name, f.withholding, f.withholdingRate, f.vatRate]),
+    [
+      ["Kira", undefined, undefined, 0],
+      ["Muhasebeci", undefined, undefined, 0.2],
+    ],
+  );
+  const noFeed = buildCashPlan(input({ ...base, months: planInputFromModel(withheld, TODAY, DEFAULT_TAX_SETTINGS, { feed: false }).months, tax: null }));
+  assert.equal(noFeed.estimates.find((e) => e.title === "Kira")!.monthly, 160_000);
 });
 
 test("vergi (I-7): yurt dışı hizmetin KDV-2'si ayın 25'inde, damgasıyla; dönemi karşılayan tutarlı KDV-2 hatırlatıcısı varken yok", () => {

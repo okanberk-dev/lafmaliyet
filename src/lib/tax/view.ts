@@ -23,15 +23,18 @@ import {
   postponedFrom,
   reminderCategory,
   shiftMonth,
+  taxAmountTravels,
 } from "../reminders";
 import type { CashPlanVat } from "../cash-plan";
 import { dateTR, money, num, tl } from "../format";
+import { paidVatPeriods } from "../vat-paid";
 
 import { ASSET_CATEGORY, assetCandidates, type AssetCandidate, orphanAssets, type OrphanAsset, QUARTER_DEPRECIATION_LABELS, unlistedAssetInvoices } from "./assets";
 import {
   defaultQuarter,
   defaultYear,
   legalDayText,
+  nextDueQuarter,
   legalDueDate,
   mphbPeriodOf,
   monthName,
@@ -40,6 +43,7 @@ import {
   periodQuarters,
   quarterLabel,
   quarterOfDue,
+  quarterOfMonth,
   shiftText,
   yearOptions,
 } from "./calendar";
@@ -47,6 +51,7 @@ import { checksChipText, type CheckStatus, checkStatus } from "./checks";
 import { corporateTax, filingFor, minTaxText, type QuarterCalc, quarterTaxes, type TaxFiling, unpaidText, type YearCalc } from "./corporate";
 import { type MuhtasarItem, type MuhtasarMonth, muhtasarBreakdown, muhtasarMonths, muhtasarTitle } from "./muhtasar";
 import {
+  candidateInvoiceIds,
   classificationTargets,
   type ClassifyTarget,
   emptyMonth,
@@ -101,6 +106,11 @@ export interface TaxViewInput {
   vat: CashPlanVat | null;
   /** "Ödendi" işaretli geçici vergi dönemleri (payments.vat-paid, tür gecici) */
   paidQuarters?: readonly { period: string; amount: number | null }[];
+  /**
+   * Son "Ödendi"ler (payments, 30 gün; nakit planının `paidReminders`'ı): ödenen muhtasar, SGK ve geçici vergi dönemi
+   * takvimde satır olmaz (nakit planındaki gibi)
+   */
+  paidReminders?: readonly { id: number; dueDate: string | null; next?: string | null; amount?: number | null }[];
   /** Ayarlar'daki işveren SGK oranı (Gelir-gider'in kullandığı; yasal orandan farklıysa not) */
   settingsEmployerRate?: number;
 }
@@ -159,6 +169,8 @@ export const ASK_TAHAKKUK = "Tahakkuk fişindeki tutarı girin";
 export const NOTE_LATER = "Tutar yaklaşınca nakit planında";
 export const NOTE_UNKNOWN = "Tutarı bilinmiyor · şirketin beyannamesi; muhasebecinizden isteyin";
 export const NOTE_MUNICIPAL = "tutar belediyeden";
+/** K4: muhasebecinin rakamı ile Ödemeler'deki tutar farklı (takvim satırında ve Özet'in uyarılarında sarı) */
+export const isMismatchNote = (n: string) => n.startsWith("Ödemeler'deki tutar (");
 export const INFLATION_LINE = "Enflasyon düzeltmesi 2026'da yapılmaz (VUK geçici 37) · Bu kafede hesaplanmayanlar";
 
 const fold = (s: string) => s.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -182,7 +194,11 @@ interface ReminderHit {
   amount: number | null;
 }
 
-/** Sınıfın hatırlatıcıları, dönem dönem: tutar yalnız sıradaki dönemindir (§8.2, K26) */
+/**
+ * Sınıfın hatırlatıcıları, dönem dönem. Tutarı tek döneme ait hatırlatıcıda (taxAmountTravels: KDV, muhtasar, geçici
+ * vergi) tutar yalnız sıradaki dönemindir; sabit tutarlıda ("SGK prim ödemesi", "Kira stopajı") her döneminde (§8.2,
+ * K26; nakit planındaki gibi)
+ */
 function remindersByPeriod(reminders: readonly ReminderRow[], match: (r: ReminderRow) => boolean, periodOfDue: (d: string) => string, until: string): Map<string, ReminderHit> {
   const out = new Map<string, ReminderHit>();
   for (const r of reminders) {
@@ -190,7 +206,7 @@ function remindersByPeriod(reminders: readonly ReminderRow[], match: (r: Reminde
     let d: string | null = r.dueDate;
     for (let g = 0; d && d <= until && g < 60; g++) {
       const p = periodOfDue(originalDueOf(r, d));
-      if (!out.has(p)) out.set(p, { reminder: r, amount: d === r.dueDate ? r.amount : null });
+      if (!out.has(p)) out.set(p, { reminder: r, amount: d === r.dueDate || !taxAmountTravels(r) ? r.amount : null });
       if (r.repeat === "none") break;
       d = nextOccurrence(d, r.repeat, r.anchorDate);
     }
@@ -373,7 +389,7 @@ function finish(row: Omit<TaxCalendarRow, "badge" | "amountText">, estimatedRule
 export function taxCalendar(
   input: TaxViewInput,
   ctx: { years: Map<number, YearView>; muhtasar: Map<string, MuhtasarMonth> },
-): { rows: TaxCalendarRow[]; later: TaxView["later"] } {
+): { rows: TaxCalendarRow[]; later: TaxView["later"]; hits: { gecici: Map<string, ReminderHit>; kv: Map<string, ReminderHit> } } {
   const { today } = input;
   const end = addDays(today, CALENDAR_DAYS);
   const inWindow = (nominal: string) => {
@@ -388,8 +404,16 @@ export function taxCalendar(
   const remSgk = remindersByPeriod(input.reminders, (r) => reminderCategory(r.kind, r.title) === "sgk", mphbPeriodOf, until);
   const remKdv = remindersByPeriod(input.reminders, isVatReminder, mphbPeriodOf, until);
   const remKdv2 = remindersByPeriod(input.reminders, isVatWithholdingReminder, mphbPeriodOf, until);
-  const remGecici = remindersByPeriod(input.reminders, isProvisionalTaxReminder, quarterOfDue, until);
-  const remKv = remindersByPeriod(input.reminders, isKvReminder, (d) => String(Number(d.slice(0, 4)) - 1), until);
+  // Geçici ve kurumlar vergisinin hatırlatıcıları kartlar için de (K4): kurumlar vergisi kartının günü 16 aya kadar ileride
+  const cardUntil = addDays(today, 500);
+  const remGecici = remindersByPeriod(input.reminders, isProvisionalTaxReminder, quarterOfDue, cardUntil);
+  const remKv = remindersByPeriod(input.reminders, isKvReminder, (d) => String(Number(d.slice(0, 4)) - 1), cardUntil);
+  // "Ödendi" denen dönem (vadesinden önce de) bitmiştir: satırı yok (nakit planındaki gibi; K26, §8.2). Sınıfın bütün
+  // hatırlatıcılarından: ödenince kapanan tek seferliğin dönemi de ödenmiştir
+  const classOf = (match: (r: ReminderRow) => boolean) => new Map(input.reminders.filter(match).map((r) => [r.id, r]));
+  const paidMphb = paidVatPeriods(input.paidReminders, classOf(isMuhtasarReminder));
+  const paidSgk = paidVatPeriods(input.paidReminders, classOf((r) => reminderCategory(r.kind, r.title) === "sgk"));
+  const paidGecici = new Set([...(input.paidQuarters ?? []).map((x) => x.period), ...paidVatPeriods(input.paidReminders, classOf(isProvisionalTaxReminder), "gecici").keys()]);
   const rows: TaxCalendarRow[] = [];
   const stampsOf = (period: string) => returnStamps(period, { kdv2: true, personnel: false, withholding: false }, input.settings.overrides);
   const planNote = (b: { due: string; cashPlanDate: string | null; notes: string[] }) => {
@@ -398,16 +422,21 @@ export function taxCalendar(
   const mismatch = (filing: number, reminder: number) =>
     `Ödemeler'deki tutar (${money(reminder)}) muhasebecinin rakamından (${money(filing)}) farklı; nakit planı Ödemeler'dekini, Vergi sayfası muhasebecininkini kullanıyor.`;
 
+  // Ödeme günü gelmiş, yasal son günü gelmemiş dönem nakit planında yoktur (plan.vat.onDue; bugünün ödemesi eldeki paradan)
+  const onDueNote = (nominal: string) => `Ödeme günü (${dayMonthTR(nominal)}) geldiği için nakit planında yok; eldeki paradan ödenir.`;
   for (const p of months) {
     const ended = p < cur;
     // ---- KDV-1 (nakit planının KDV'si + beyanname damgası)
     const kdvNominal = nominalDue("kdv1", p);
-    if (inWindow(kdvNominal) && !input.vat?.paid.some((x) => x.period === p)) {
+    if (inWindow(kdvNominal) && !input.vat?.paid.some((x) => x.period === p) && !input.vat?.onDue.paid.includes(p)) {
       const st = stampsOf(p);
-      const vr = input.vat?.rows.find((x) => x.period === p) ?? null;
+      const planned = input.vat?.rows.find((x) => x.period === p) ?? null;
+      const due = planned ? null : (input.vat?.onDue.rows.find((x) => x.period === p) ?? null);
+      const vr = planned ?? due;
       const rem = remKdv.get(p);
       const known = vr?.source === "reminder" && vr.estimate?.known != null ? vr.estimate.known : rem?.amount ?? null;
-      const b = baseRow("kdv1", p, kdvNominal, vr?.date ?? kdvNominal);
+      const b = baseRow("kdv1", p, kdvNominal, due ? null : (vr?.date ?? kdvNominal));
+      if (due) b.notes.push(onDueNote(kdvNominal));
       let amount: number | null = null;
       let source: CalendarSource | null = null;
       let note: string | null = null;
@@ -432,13 +461,15 @@ export function taxCalendar(
 
     // ---- KDV-2 (tevkifat ve yurt dışı hizmet)
     const kdv2Nominal = nominalDue("kdv2", p);
-    if (inWindow(kdv2Nominal) && !input.vat?.paid2.some((x) => x.period === p)) {
-      const v2 = input.vat?.vat2.find((x) => x.period === p) ?? null;
+    if (inWindow(kdv2Nominal) && !input.vat?.paid2.some((x) => x.period === p) && !input.vat?.onDue.paid2.includes(p)) {
+      const v2Due = kdv2Nominal <= today;
+      const v2 = (v2Due ? input.vat?.onDue.vat2 : input.vat?.vat2)?.find((x) => x.period === p) ?? null;
       const rem = remKdv2.get(p);
       const hizmet = ctx.muhtasar.get(p)?.kdv2Hizmet ?? 0;
       if (v2 || rem || hizmet > 0) {
         const st = stampsOf(p);
-        const b = baseRow("kdv2", p, kdv2Nominal, v2?.date ?? kdv2Nominal);
+        const b = baseRow("kdv2", p, kdv2Nominal, v2Due ? null : (v2?.date ?? kdv2Nominal));
+        if (v2Due && !rem) b.notes.push(onDueNote(kdv2Nominal));
         let amount: number | null;
         let source: CalendarSource;
         if (rem?.amount != null) {
@@ -462,7 +493,7 @@ export function taxCalendar(
     // ---- Muhtasar ve prim hizmet
     const mm = ctx.muhtasar.get(p);
     const mNominal = nominalDue("mphb", p);
-    if (mm && !mm.empty && inWindow(mNominal)) {
+    if (mm && !mm.empty && inWindow(mNominal) && !paidMphb.has(p)) {
       const rem = remMphb.get(p);
       const b = baseRow("mphb", p, mNominal);
       let amount: number | null = mm.payable;
@@ -480,6 +511,7 @@ export function taxCalendar(
       for (const x of muhtasarBreakdown(mm)) b.detail.push({ label: x.label, value: money(x.amount) + (x.note ? ` (${x.note})` : "") });
       if (mm.unknown.length) b.notes.push(`${mm.unknown.length} kalemin stopajı bilinmiyor: ${mm.unknown.join(", ")}.`);
       if (!mm.filing) b.notes.push("Tahmin; kesin tutar tahakkuk fişindedir.");
+      planNote(b);
       if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=muhtasar";
       rows.push(finish({ ...b, amount, stamp: mm.damga, atLeast, source, ask, note: ask ? ASK_TAHAKKUK : null }, mm.stampEstimated));
     }
@@ -487,7 +519,7 @@ export function taxCalendar(
     // ---- SGK primi
     const pay = input.pnl.payroll.get(p);
     const sNominal = nominalDue("sgk", p);
-    if (pay && pay.totals.people > 0 && inWindow(sNominal)) {
+    if (pay && pay.totals.people > 0 && inWindow(sNominal) && !paidSgk.has(p)) {
       const rem = remSgk.get(p);
       const b = baseRow("sgk", p, sNominal);
       const t = pay.totals;
@@ -524,7 +556,7 @@ export function taxCalendar(
   for (const key of quarterKeys) {
     const nominal = nominalDue("gecici", key);
     const l = legalDueDate(nominal);
-    if (l.date < today) continue;
+    if (l.date < today || paidGecici.has(key)) continue;
     const calc = corpOf(key);
     if (!inWindow(nominal)) {
       if (!later.some((x) => x.kind === "gecici")) later.push({ kind: "gecici", period: key, title: titleOfKind("gecici", key), due: l.date, text: `${titleOfKind("gecici", key)} · ${dueShort(l.date)}` });
@@ -544,10 +576,11 @@ export function taxCalendar(
       source = "Ödemeler'de";
     }
     if (calc) {
-      const head = calc.state === "taslak" ? `kafenin katkısı en çok ${formatEstimate(calc.estimate)}` : `kafenin katkısı ${formatEstimate(calc.estimate)}`;
-      b.detail.push({ label: "Kafenin katkısı (yalnız kafe)", value: `${head} + damga ${n2(calc.stamp)}` });
+      const head = calc.state === "taslak" ? `en çok ${formatEstimate(calc.estimate)}` : formatEstimate(calc.estimate);
+      b.detail.push({ label: "Kafenin katkısı (yalnız kafe)", value: `${head} + damga ${n2(calc.stamp)} ₺` });
     }
     b.notes.push("Şirketin beyannamesi; geçici vergi şirketin bütün işleri için tektir.");
+    planNote(b);
     if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=gecici";
     rows.push(finish({ ...b, amount, stamp: calc?.stamp ?? 0, atLeast: false, source, state: calc?.state, note: amount === null ? NOTE_UNKNOWN : null }));
   }
@@ -571,11 +604,12 @@ export function taxCalendar(
     if (filing) {
       amount = r2(filing.payable + filing.stamp);
       source = "Muhasebeci";
+      if (rem?.amount != null && Math.abs(rem.amount - amount) > 1) b.notes.push(mismatch(amount, rem.amount));
     } else if (rem?.amount != null) {
       amount = rem.amount;
       source = "Ödemeler'de";
     }
-    if (calc) b.detail.push({ label: "Kafenin katkısı (yalnız kafe)", value: `${formatEstimate(calc.payable)} + damga ${n2(stamps.total)}` });
+    if (calc) b.detail.push({ label: "Kafenin katkısı (yalnız kafe)", value: `${formatEstimate(calc.payable)} + damga ${n2(stamps.total)} ₺` });
     if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=kv";
     const state = calc?.quarters.at(-1)?.state;
     rows.push(finish({ ...b, amount, stamp: stamps.total, atLeast: false, source, state, note: amount === null ? NOTE_UNKNOWN : null }));
@@ -589,7 +623,7 @@ export function taxCalendar(
       if (d >= today) {
         const l = legalDueDate(d);
         const period = kind === "ctv" ? `${d.slice(0, 4)}-${Number(d.slice(5, 7)) <= 6 ? 1 : 2}` : d.slice(0, 4);
-        const amount = d === r.dueDate ? r.amount : null;
+        const amount = d === r.dueDate || !taxAmountTravels(r) ? r.amount : null;
         rows.push(
           finish({
             key: `${kind}:${r.id}@${d}`,
@@ -632,7 +666,7 @@ export function taxCalendar(
 
   const order: CalendarKind[] = ["kdv2", "mphb", "kdv1", "sgk", "gecici", "kv", "ctv", "yerel"];
   rows.sort((a, b) => a.due.localeCompare(b.due) || order.indexOf(a.kind) - order.indexOf(b.kind) || a.period.localeCompare(b.period));
-  return { rows, later };
+  return { rows, later, hits: { gecici: remGecici, kv: remKv } };
 }
 
 // ---------------------------------------------------------------- Kartlar
@@ -641,7 +675,11 @@ const RANGE = (from: string, to: string) => `${Number(from.slice(8))} ${monthNam
 
 export const SCOPE_WARNING = "Gelir şirketin tamamı (beyanname), gider yalnız kafe: kafe dışı giderleri girmezseniz rakam yüksek çıkar";
 
-function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope: TaxScope, classify: ClassifyView, quarters: readonly QuarterCalc[]): GeciciCard {
+/**
+ * Kaynakların önceliği kartta da muhasebeci › Ödemeler › tahmin (K4): kayıt yoksa dönemin Ödemeler'deki tutarı büyük
+ * satırdır ("Ödemeler'de" rozeti), kafenin katkısı alt satırda kalır
+ */
+function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope: TaxScope, quarters: readonly QuarterCalc[], rem: ReminderHit | undefined): GeciciCard {
   const { rules } = rulesFor(Number(calc.key.slice(0, 4)), input.settings.overrides);
   const l = legalDueDate(nominalDue("gecici", calc.key));
   const title = `Kafenin geçici vergi matrahına katkısı (${scope === "kafe_elle" ? "kafe + elle girilen kafe dışı" : "yalnız kafe"})`;
@@ -658,12 +696,16 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
   }
   let headline: string;
   let subline: string | null = null;
+  const remAmount = calc.filing ? null : (rem?.amount ?? null);
   if (calc.filing) {
     headline = `Şirketin beyannamesi ${money(calc.filing.payable)}`;
     subline = `Kafenin katkısı ${formatEstimate(calc.estimate)} · şirketin beyannamesi ${money(calc.filing.payable)}`;
+  } else if (remAmount !== null) {
+    headline = `Ödemeler'deki tutar ${money(remAmount)}`;
+    subline = `Kafenin katkısı ${calc.state === "taslak" ? "en çok " : ""}${formatEstimate(calc.estimate)} · Ödemeler'deki tutar ${money(remAmount)} (damga dahil)`;
   } else if (calc.state === "taslak") {
     headline = `Giderler sınıflandırılınca netleşir · şimdilik en çok ${formatEstimate(calc.estimate)}`;
-    const parts = [`${tl(q.unclassified.total)} gider henüz hesaba girmedi (${classify.unclassifiedCount} kalem)`];
+    const parts = [`${tl(q.unclassified.total)} gider henüz hesaba girmedi (${q.unclassified.count} kalem)`];
     if (q.candidates.count) parts.push(`${tl(q.candidates.total)} demirbaş olabilir (${q.candidates.count} fatura)`);
     subline = parts.join(" · ");
   } else headline = formatEstimate(calc.estimate);
@@ -680,7 +722,7 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
     title,
     periodLine: `${label} · ${RANGE(calc.from, calc.to)} · son gün ${longDateTR(l.date)}`,
     state: calc.state,
-    badge: calc.filing ? "Muhasebeci" : calc.state === "taslak" ? "Taslak" : null,
+    badge: calc.filing ? "Muhasebeci" : remAmount !== null ? "Ödemeler'de" : calc.state === "taslak" ? "Taslak" : null,
     headline,
     subline,
     rows,
@@ -690,8 +732,10 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
   };
 }
 
-function kvCard(y: YearView): KvCard {
+function kvCard(y: YearView, rem: ReminderHit | undefined): KvCard {
   const k = y.kv;
+  // K4: kayıt yoksa Ödemeler'deki tutar "Ödenecek"tir; kafenin katkısı ayrı satırda
+  const remAmount = k.filing ? null : (rem?.amount ?? null);
   const s = k.stamps;
   const l = legalDueDate(nominalDue("kv", String(y.year)));
   const rows: CardRow[] = [
@@ -699,7 +743,12 @@ function kvCard(y: YearView): KvCard {
     { label: "Hesaplanan", value: money(k.hesaplanan) },
     { label: "Asgari kurumlar vergisi", value: k.asgari === null ? "uygulanmaz" : money(k.asgari) },
     { label: "Mahsup edilecek geçici vergi (yalnız ödendi işaretli)", value: money(k.paidProvisional) },
-    k.refund > 0 ? { label: "İade / mahsup alacağı", value: formatEstimate(k.refund) } : { label: "Ödenecek", value: k.filing ? money(k.payable) : formatEstimate(k.payable) },
+    ...(remAmount !== null
+      ? [
+          { label: "Kafenin katkısı", value: k.refund > 0 ? `iade ${formatEstimate(k.refund)}` : formatEstimate(k.payable) },
+          { label: "Ödenecek (Ödemeler'deki tutar, damga dahil)", value: money(remAmount) },
+        ]
+      : [k.refund > 0 ? { label: "İade / mahsup alacağı", value: formatEstimate(k.refund) } : { label: "Ödenecek", value: k.filing ? money(k.payable) : formatEstimate(k.payable) }]),
   ];
   if (k.newLoss > 0) rows.push({ label: "Oluşan zarar (sonraki 5 yılın kazancından düşülür)", value: money(k.newLoss) });
   const notes = k.unpaid.map((u) => unpaidText(u.period));
@@ -709,7 +758,7 @@ function kvCard(y: YearView): KvCard {
     year: y.year,
     title: `Kurumlar vergisi (${y.year}) · kafenin katkısı`,
     subtitle: k.inProgress ? "Bugüne kadarki kârla" : null,
-    badge: k.filing ? "Muhasebeci" : (y.quarters.at(-1)?.state ?? "taslak") === "taslak" ? "Taslak" : null,
+    badge: k.filing ? "Muhasebeci" : remAmount !== null ? "Ödemeler'de" : (y.quarters.at(-1)?.state ?? "taslak") === "taslak" ? "Taslak" : null,
     rows,
     notes,
     footer: `Beyanname 1–30 Nisan ${y.year + 1} · ödeme ${longDateYear(l.date)} · damga ${n2(s.total)} ₺ (${stampParts})`,
@@ -784,10 +833,16 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
 const joinTr = (xs: readonly string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} ve ${xs.at(-1)}`);
 const capitalize = (s: string) => (s ? s[0].toLocaleUpperCase("tr-TR") + s.slice(1) : s);
 
-function sumStat(rows: readonly TaxCalendarRow[]): { known: number; atLeast: boolean; unknown: TaxCalendarRow[] } {
-  const known = r2(rows.filter((r) => r.amount !== null).reduce((s, r) => s + r.amount!, 0));
+const EXACT_SOURCES: readonly (CalendarSource | null)[] = ["Muhasebeci", "Ödemeler'de", "sabit tutar"];
+
+function sumStat(rows: readonly TaxCalendarRow[]): { known: number; atLeast: boolean; unknown: TaxCalendarRow[]; text: string } {
+  const withAmount = rows.filter((r) => r.amount !== null);
+  const known = r2(withAmount.reduce((s, r) => s + r.amount!, 0));
   const unknown = rows.filter((r) => r.amount === null);
-  return { known, atLeast: rows.some((r) => r.atLeast) || unknown.length > 0, unknown };
+  const atLeast = rows.some((r) => r.atLeast) || unknown.length > 0;
+  // Kesin rakamlar (muhasebeci, Ödemeler, sabit tutar) olduğu gibi; içinde tahmin varsa "≈" (K27)
+  const exact = withAmount.every((r) => EXACT_SOURCES.includes(r.source) && !r.atLeast);
+  return { known, atLeast, unknown, text: `${atLeast ? "en az " : ""}${exact ? money(known) : formatEstimate(known)}` };
 }
 
 function stats(rows: readonly TaxCalendarRow[], today: string, readiness: { done: number; total: number }): TaxView["stats"] {
@@ -798,7 +853,7 @@ function stats(rows: readonly TaxCalendarRow[], today: string, readiness: { done
     const same = upcoming.filter((r) => r.due === first.due);
     const s = sumStat(same);
     const kinds = [...new Set(same.map((r) => SHORT[r.kind]))];
-    const value = s.known > 0 || !s.unknown.length ? `${s.atLeast ? "en az " : ""}${formatEstimate(s.known)}` : "Tutarı bilinmiyor";
+    const value = s.known > 0 || !s.unknown.length ? s.text : "Tutarı bilinmiyor";
     const unknownText = s.unknown.length && s.known > 0 ? ` + ${s.unknown.length} ödemenin tutarı bilinmiyor` : "";
     next = { label: "Sıradaki ödeme", value: value + unknownText, sub: `${capitalize(joinTr(kinds))} · ${dayMonthTR(first.due)}` };
   }
@@ -807,7 +862,7 @@ function stats(rows: readonly TaxCalendarRow[], today: string, readiness: { done
   const unknownKinds = [...new Set(w.unknown.map((r) => SHORT[r.kind]))];
   const next30: StatView = {
     label: `Önümüzdeki ${NEXT_DAYS} gün`,
-    value: `${w.atLeast ? "en az " : ""}${formatEstimate(w.known)}`,
+    value: w.text,
     sub: w.unknown.length ? `tutarı bilinmeyen ${w.unknown.length} ödeme (${joinTr(unknownKinds)})` : null,
   };
   return { next, next30, readiness: { label: "Hazırlık", value: `${readiness.done} / ${readiness.total}`, sub: null } };
@@ -894,15 +949,15 @@ export function buildTaxView(input: TaxViewInput): TaxView {
       text: noDocItems.length ? `Belgesi yok: ${noDocItems.length} kalem, ${tl(noDocTotal)}. Belgesiz ödeme deftere giremez; şirket kasasından çıktıysa muhasebeciniz ortak hesabına yazar.` : null,
     },
     header: qp
-      ? `Bu çeyrekte ${tl(qp.unclassified.total)} gider sayılmadı (${unclassifiedCount} kalem)${qp.candidates.count ? ` · ${tl(qp.candidates.total)} demirbaş olabilir (${qp.candidates.count} fatura)` : ""}`
+      ? `Bu çeyrekte ${tl(qp.unclassified.total)} gider sayılmadı (${qp.unclassified.count} kalem)${qp.candidates.count ? ` · ${tl(qp.candidates.total)} demirbaş olabilir (${qp.candidates.count} fatura)` : ""}`
       : "",
     excluded,
   };
 
   const missingLife = input.pnl.assets.filter((a) => a.method === "amortisman" && !a.lifeYears).length;
   const missingMatrah = selected.months.filter((m) => m.month < today.slice(0, 7) && m.revenueSource !== "beyanname" && !emptyMonth(m) && !filingFor(input.filings, "kdv_matrah", m.month)).map((m) => m.month);
-  const missingGecici = selected.corp.filter((c) => legalDueDate(nominalDue("gecici", c.key)).date < today && !c.filing).map((c) => quarterLabel(c.key));
-  const muhasebeParts = [missingMatrah.length ? `${monthsText(missingMatrah)} KDV beyannamesi satışları` : "", missingGecici.length ? `${joinTr(missingGecici)} geçici vergi` : ""].filter(Boolean);
+  const missingGecici = selected.corp.filter((c) => legalDueDate(nominalDue("gecici", c.key)).date < today && !c.filing).map((c) => c.key);
+  const muhasebeParts = [missingMatrah.length ? `${monthsText(missingMatrah)} KDV beyannamesi satışları` : "", missingGecici.length ? `${joinTr(missingGecici.map(quarterLabel))} geçici vergi` : ""].filter(Boolean);
   const steps: GettingStartedStep[] = [
     { key: "sirket", title: "Şirket nasıl kuruldu?", detail: settings.firstActivity === "ilk" ? "İlk defa faaliyete başladı" : settings.firstActivity === "devir" ? "Birleşme, devir, bölünme ya da tür değişikliğiyle" : null, done: settings.firstActivity !== null, href: "/panel/vergi/kurallar" },
     {
@@ -919,17 +974,30 @@ export function buildTaxView(input: TaxViewInput): TaxView {
       done: unlisted.length === 0 && missingLife === 0,
       href: "/panel/vergi/demirbas",
     },
-    { key: "muhasebeci", title: "Muhasebecinin rakamları", detail: muhasebeParts.join(", ") || null, done: muhasebeParts.length === 0, href: "/panel/vergi/gelir-gider" },
+    {
+      key: "muhasebeci",
+      title: "Muhasebecinin rakamları",
+      detail: muhasebeParts.join(", ") || null,
+      done: muhasebeParts.length === 0,
+      // Önce KDV beyannamesi satışları (Vergiye göre'nin kartı), sonra eksik ilk geçici vergi (o çeyreğin Vergiye göre'sinde
+      // "… geçici vergi rakamını gir" düğmesi)
+      href: missingMatrah.length
+        ? `/panel/vergi/gelir-gider?ceyrek=${quarterOfMonth(missingMatrah[0])}#kdv-beyannamesi`
+        : missingGecici.length
+          ? `/panel/vergi/gelir-gider?ceyrek=${missingGecici[0]}`
+          : "/panel/vergi/gelir-gider#kdv-beyannamesi",
+    },
   ];
   const doneSteps = steps.filter((s) => s.done).length;
 
   // Kapsam, kartlar
   const scope = taxScope(selected.months, input.pnl);
-  const nextQuarter = defaultQuarter(today, ty, settings);
+  // Kartın çeyreği: geçici vergi günü bugün ya da sonra gelen ilk çeyrek (1 Ocak–17 Şubat'ta geçen yılın 4. çeyreği)
+  const nextQuarter = nextDueQuarter(today, settings)?.key ?? null;
   const nqYear = nextQuarter ? years.get(Number(nextQuarter.slice(0, 4))) : null;
   const nqCalc = nqYear?.corp.find((c) => c.key === nextQuarter) ?? null;
   const nqPnl = nqYear?.quarters.find((x) => x.key === nextQuarter) ?? null;
-  const gCard = nqCalc && nqPnl && nqYear ? geciciCard(nqCalc, nqPnl, input, scope, classify, nqYear.corp) : null;
+  const gCard = nqCalc && nqPnl && nqYear ? geciciCard(nqCalc, nqPnl, input, scope, nqYear.corp, cal.hits.gecici.get(nqCalc.key)) : null;
 
   // Vergiye göre: seçilen çeyrek ve kümülatif
   let quarter: QuarterView | null = null;
@@ -970,10 +1038,10 @@ export function buildTaxView(input: TaxViewInput): TaxView {
     };
   }
 
-  const orphans = orphanAssets(input.pnl.assets, input.pnl.invoices);
+  const orphans = orphanAssets(input.pnl.assets, input.pnl.invoices, { notExpense: candidateInvoiceIds(input.pnl), periodStart: settings.periodStart });
   const warnings = [
     ...orphans.map((o) => `${o.asset.name}: Faturası Paraşüt'te iptal edildi: yeni faturaya bağlayın${o.doubleCounted ? ` (aday fatura şimdi gider sayılıyor: ${tl(o.doubleCounted)} iki kez sayılabilir)` : ""}`),
-    ...cal.rows.flatMap((r) => r.notes.filter((n) => n.startsWith("Ödemeler'deki tutar"))),
+    ...cal.rows.flatMap((r) => r.notes.filter(isMismatchNote).map((n) => `${r.title}: ${n}`)),
   ];
   const checks = checkStatus(settings);
   const hasData = selected.months.some((m) => m.income.total !== 0 || m.expense.total !== 0) || input.pnl.invoices.some((i) => i.date >= settings.periodStart && i.category !== ASSET_CATEGORY);
@@ -997,7 +1065,7 @@ export function buildTaxView(input: TaxViewInput): TaxView {
     calendar: cal.rows,
     later: cal.later,
     geciciCard: gCard,
-    kvCard: kvCard(selected),
+    kvCard: kvCard(selected, cal.hits.kv.get(String(selected.year))),
     years: [...years.values()],
     months: selected.months,
     quarters: selected.quarters,

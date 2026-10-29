@@ -197,6 +197,20 @@ export function filingRemovedReminder<R extends ReminderRow>(
   return { clear: null, result: "kaldi" };
 }
 
+/**
+ * "Muhasebecinin rakamı kaldırılsın mı?" penceresinin açıklaması (§4.5-a): Ödemeler'e ne olacağını filingRemovedReminder
+ * ile aynı kuralla söyler. `removal` null: Ödemeler okunmadı (Vergiye göre), kural cümlesi yazılır
+ */
+export function filingRemoveConfirmText(title: string, removal: { result: FilingRemovedReminder; amount: number | null } | null, hasReminder = true): string {
+  const head = `${title} için girilen rakam silinir`;
+  if (!hasReminder) return `${head}; tahmin kullanılır.`;
+  if (!removal) return `${head}; tahmin kullanılır. Ödemeler'deki hatırlatıcıda bu kaydın yazdığı tutar (ödenecek + damga) varsa o da silinir; başka bir tutar yazılıysa kalır.`;
+  if (removal.result === "silindi")
+    return `${head}; tahmin kullanılır. Ödemeler'deki tutar${removal.amount !== null ? ` (${money(removal.amount)})` : ""} bu kaydın yazdığı kopya; o da silinir.`;
+  if (removal.result === "kaldi") return `${head}. Ödemeler'deki tutar${removal.amount !== null ? ` (${money(removal.amount)})` : "lar"} kalır; nakit planı ve takvim onu kullanır.`;
+  return `${head}; tahmin kullanılır.`;
+}
+
 /** Kaldırmanın bildirimi: "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar da silindi" */
 export function filingRemovedText(reminder: FilingRemovedReminder): string {
   return reminder === "silindi" ? `${FILING_REMOVED_TEXT} · Ödemeler'deki tutar da silindi` : reminder === "kaldi" ? "Kaldırıldı; Ödemeler'deki tutar kullanılıyor" : FILING_REMOVED_TEXT;
@@ -241,6 +255,7 @@ export function assetRefusal(
   invoice: { category: string; remaining: number } | null,
   today: string,
 ): string | null {
+  if (!isCalendarDate(a.acquiredOn)) return "Geçersiz tarih";
   if (a.acquiredOn > today) return "Edinme günü bugünden sonra olamaz";
   if (!(a.cost > 0)) return "Maliyet sıfırdan büyük olmalı";
   if (a.method === "amortisman" && a.lifeYears !== null && (!Number.isInteger(a.lifeYears) || a.lifeYears < 1 || a.lifeYears > 50)) return ASSET_LIFE_RANGE;
@@ -281,8 +296,15 @@ export const classificationLogText = (n: number) => `${n} kalem`;
 // ---------------------------------------------------------------- Ayarlar ve elle değer (§2.4, §4.4)
 
 /** Hesap döneminin başı: 2000-01-01 … bugün */
+/** Takvimde var olan gün mü: "2026-13-01", "2026-02-31" ve "2026-00-10" değil (Date.parse 31 Şubat'ı Mart'a taşır) */
+export function isCalendarDate(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
 export function periodStartRefusal(day: string, today: string): string | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00Z`))) return "Geçersiz tarih";
+  if (!isCalendarDate(day)) return "Geçersiz tarih";
   if (day < "2000-01-01") return "Tarih 2000'den önce olamaz";
   return day > today ? "Hesap dönemi bugünden sonra başlayamaz" : null;
 }

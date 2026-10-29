@@ -102,7 +102,8 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
   const plan = buildCashPlan({
-    ...planInputFromModel(model, today, taxInputs?.settings),
+    // Besleme yoksa stopajlı sabit gider brüt ödenir: muhtasar ve KDV-2 satırı da yok, stopaj kaybolmasın (§13)
+    ...planInputFromModel(model, today, taxInputs?.settings, { feed: tax !== null }),
     tax,
     today,
     opening: state.balance !== null && state.balanceDate ? { amount: state.balance, date: state.balanceDate } : null,

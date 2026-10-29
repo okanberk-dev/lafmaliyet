@@ -292,3 +292,29 @@ test("personel sızıntı betiği: Vergi'nin dört adresi personel çereziyle (H
   for (const p of PAGES.map((x) => x.replace(/^src\/app/, "").replace(/\/page\.tsx$/, ""))) assert.ok(leak.includes(`"${p}"`), p);
   assert.match(leak, /for \(const rsc of \[false, true\]\) \{\n\s+const res = await fetchPage\(path, rsc\);/);
 });
+
+test("inceleme (U1, U2, U4, R6): telefon çeyrek görünümü çeyrek değişince yeniden kurulur; döküm sarar; gelecek dönemde rakam düğmesi yok; Özet uyarıları", async () => {
+  // U1: sütun dizini sınırda; sayfa bileşeni çeyrek anahtarıyla kurar (3 sütundan 5'e, 5'ten 3'e geçişte çökmez)
+  const phone = read(`${DIR}/gelir-gider/quarter-phone.tsx`);
+  assert.match(phone, /const col = Math\.min\(Math\.max\(picked, 0\), grid\.columns\.length - 1\);/);
+  assert.match(read(`${DIR}/gelir-gider/page.tsx`), /<QuarterPhone key=\{q\.key\} grid=\{grid\} \/>/);
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createElement } = await import("react");
+  const { QuarterPhone } = await import("../src/app/panel/vergi/gelir-gider/quarter-phone");
+  for (const key of ["2026-Q2", "2026-Q3", "2026-Q4"]) {
+    const v = buildTaxView(taxViewInputFromModel(model, inputs, { today: TODAY, year: 2026, quarter: key }));
+    const g = quarterGrid(v.quarter!, v.months);
+    const html = renderToStaticMarkup(createElement(QuarterPhone, { grid: g }));
+    assert.match(html, /Çeyrek toplamı/, key);
+  }
+  // U2: etiket en az %35, değer en çok %60 ve sarar (telefonda harf harf düşmez, taşmaz)
+  const ui = read(`${DIR}/ui.tsx`);
+  assert.match(ui, /<dt className=\{cn\("min-w-\[35%\] break-words"/);
+  assert.match(ui, /<dd className="max-w-\[60%\] text-right break-words text-ink tabular">/);
+  // U4: takvim satırındaki "Muhasebecinin rakamını gir" yalnız pencerenin seçeneklerindeki dönemde
+  assert.match(read(`${DIR}/tax-calendar.tsx`), /const filing = kindFiling\?\.options\.some\(\(o\) => o\.period === row\.period\) \? kindFiling : null;/);
+  // R6: Özet uyarıları (K4 farkı, faturası iptal edilen varlık) sarı satırla ve Demirbaş bağlantısıyla
+  const ozet = read(`${DIR}/page.tsx`);
+  assert.match(ozet, /<NoteList notes=\{view\.warnings\} tone="warn" \/>/);
+  assert.match(ozet, /href="\/panel\/vergi\/demirbas"/);
+});

@@ -15,6 +15,7 @@ import { buildTaxView, type TaxPlanFeed, taxPlanFeed, type TaxView } from "@/lib
 import { loadCashPlan, type CashPlanView } from "@/server/data/cash-plan";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { okcRows } from "@/server/data/cash-reports";
+import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -128,13 +129,16 @@ export async function loadTaxView(
 ): Promise<TaxViewData> {
   // Vergiye göre (cashPlan: null) Ödemeler'i okumaz: takvimi yok
   const withPlan = opts.cashPlan === undefined;
-  const [taxInputs, upcoming] = await Promise.all([
+  const [taxInputs, upcoming, recentPaid] = await Promise.all([
     opts.taxInputs ?? loadTaxInputs({ year: opts.year, today: opts.today }),
     opts.upcoming ?? (withPlan ? loadUpcoming(opts.today) : null),
+    // Son "Ödendi"ler: ödenen muhtasar, SGK ve geçici vergi dönemi takvimde satır olmaz (nakit planının paidReminders'ı)
+    withPlan ? loadRecentPaid() : [],
   ]);
   const today = opts.today ?? upcoming?.today ?? todayTR();
   const cashPlan = withPlan ? await loadCashPlan(model, upcoming ?? undefined, { taxInputs }) : (opts.cashPlan ?? null);
   const reminders = upcoming?.reminders ?? [];
-  const view = buildTaxView(taxViewInputFromModel(model, taxInputs, { today, year: opts.year, quarter: opts.quarter, reminders, vat: cashPlan?.plan.vat ?? null }));
+  const paidReminders = recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount }));
+  const view = buildTaxView(taxViewInputFromModel(model, taxInputs, { today, year: opts.year, quarter: opts.quarter, reminders, vat: cashPlan?.plan.vat ?? null, paidReminders }));
   return { view, inputs: taxInputs, cashPlan, reminders };
 }

@@ -109,3 +109,40 @@ export function forgetVatPeriod(list: VatPaidEntry[], kind: VatPaidEntry["kind"]
   }
   return out;
 }
+
+/**
+ * KDV ve KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler ve ödenen tutar (> 0 ise; ilk döneme aittir, yoksa null).
+ * Kaynak son ödenenler (`payments.recent`: ödenen gün ile sıradaki gün arasındaki her gün, "tarihe kadar ödendi"
+ * birkaç dönem kapatır) ve kalıcı kayıt (`payments.vat-paid`: dönemleri ödenirken yazılmış). `byId` bu türün
+ * hatırlatıcıları; `allIds` bütün hatırlatıcılar. Erteleme ve hatırlatıcıyı kapatma bunu değiştirmez; şimdiki dönemi
+ * ödenenlerden olan etkin hatırlatıcı (tarihi geri alınan seri, yeniden açılan tek seferlik) o dönemi yine bekler.
+ * Silinmiş hatırlatıcının kalıcı kaydı ödenmiş sayılır (türü ödenirkenki); KDV kartındaki "Kaydı kaldır" siler.
+ * Geçici vergide (`kind` "gecici") dönem çeyrektir; muhtasarda (`kind` yok) KDV gibi ay.
+ */
+export function paidVatPeriods(
+  paid: readonly { id: number; dueDate: string | null; next?: string | null; amount?: number | null; periods?: readonly string[]; kind?: VatPaidEntry["kind"] }[] | undefined,
+  byId: ReadonlyMap<number, ReminderRow>,
+  kind?: VatPaidEntry["kind"],
+  allIds?: ReadonlySet<number>,
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  for (const e of paid ?? []) {
+    if (!e.dueDate) continue;
+    const r = byId.get(e.id);
+    let periods: readonly string[];
+    if (r) {
+      periods = e.periods ?? paidPeriodsOf(r, e.dueDate, e.next ?? null, kind ?? "kdv");
+      // Yeniden açılmış ödeme sayılmaz: etkin hatırlatıcının şimdiki dönemi ödenenlerdense (tarihi geri alınmış seri,
+      // yeniden açılmış tek seferlik) o dönemi yine bekler. Tarihi başka döneme taşınmış (28'i Cumartesi diye 27'ye
+      // alınan seri, ertesi aya yeniden kullanılan tek seferlik) hatırlatıcı ödemeyi geri açmaz
+      if (r.active && periods.includes(paidPeriodOf(kind ?? "kdv", originalDue(r, r.dueDate)))) continue;
+    } else if (e.periods && e.kind !== undefined && e.kind === kind && !allIds?.has(e.id)) periods = e.periods;
+    else continue;
+    let amount = e.amount !== undefined && e.amount !== null && e.amount > 0 ? e.amount : null;
+    for (const period of periods) {
+      if (!out.has(period) || (out.get(period) === null && amount !== null)) out.set(period, amount);
+      amount = null;
+    }
+  }
+  return out;
+}

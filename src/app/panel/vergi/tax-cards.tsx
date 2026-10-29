@@ -19,7 +19,7 @@ import { DetailList, Explain, NoteList, RuleRefList } from "./ui";
  * tek rakam yok ("şimdilik en çok"), alt sınır yalnız "Nasıl hesaplandı"da.
  */
 
-const STATE_TONE = { Muhasebeci: "green", Taslak: "amber" } as const;
+const STATE_TONE = { Muhasebeci: "green", "Ödemeler'de": "blue", Taslak: "amber" } as const;
 
 /** Başlarken (K33): dört adım; hepsi bitince kart katlanır ("Hazırlık tamam · yeniden aç") */
 export function GettingStartedCard({ data }: { data: TaxView["gettingStarted"] }) {
@@ -77,6 +77,7 @@ export function GettingStartedCard({ data }: { data: TaxView["gettingStarted"] }
 
 /** Kafenin geçici vergi matrahına katkısı (yalnız kafe): sıradaki dönem */
 export function GeciciCardView({ card, filing, rules }: { card: GeciciCard; filing: FilingKindData; rules: RuleRef[] }) {
+  // Başlarken'in "Muhasebecinin rakamları" adımı buraya iner (#gecici)
   const c = card.calc;
   const floorRows = [
     { label: "Alt sınırla kümülatif kazanç", value: money(c.floor.cumulative) },
@@ -100,7 +101,7 @@ export function GeciciCardView({ card, filing, rules }: { card: GeciciCard; fili
     { label: "Kafenin katkısı", value: money(c.estimate), strong: true },
   ];
   return (
-    <Card>
+    <Card id="gecici" className="scroll-mt-20">
       <CardHeader
         icon={<Landmark />}
         title={card.title}
@@ -109,7 +110,7 @@ export function GeciciCardView({ card, filing, rules }: { card: GeciciCard; fili
       />
       <CardContent className="space-y-4">
         <div>
-          <p className={cn("font-semibold tracking-tight text-ink tabular", card.state === "taslak" && !c.filing ? "text-base leading-6" : "text-2xl")}>{card.headline}</p>
+          <p className={cn("font-semibold tracking-tight text-ink tabular", card.badge === "Taslak" ? "text-base leading-6" : "text-2xl")}>{card.headline}</p>
           {card.subline ? <p className="mt-1 text-[13px] leading-5 text-ink-mute">{card.subline}</p> : null}
           {card.state === "taslak" && !c.filing ? (
             <ButtonLink href="/panel/vergi/gelir-gider#siniflandir" size="sm" variant="primary" className="mt-3">

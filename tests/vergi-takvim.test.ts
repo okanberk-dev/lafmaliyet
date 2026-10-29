@@ -147,7 +147,10 @@ const excel = excelToDataset(data);
 const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };
 const TODAY = "2026-10-24";
 
-function view(over: { settings?: Partial<TaxSettings>; filings?: TaxFiling[]; reminders?: ReminderRow[]; today?: string } = {}): TaxView {
+type Paid = { id: number; dueDate: string | null; next?: string | null; amount?: number | null };
+function view(
+  over: { settings?: Partial<TaxSettings>; filings?: TaxFiling[]; reminders?: ReminderRow[]; today?: string; paidQuarters?: { period: string; amount: number | null }[]; paidReminders?: Paid[] } = {},
+): TaxView {
   const today = over.today ?? TODAY;
   const settings = { ...DEFAULT_TAX_SETTINGS, ...over.settings };
   const model = createModel(base);
@@ -167,8 +170,19 @@ function view(over: { settings?: Partial<TaxSettings>; filings?: TaxFiling[]; re
   const filings = over.filings ?? [];
   const pnl = taxPnlInputFromModel(model, { settings, today, adjustments: [], assets: [], filings });
   const items = new Map<string, MuhtasarItem[]>();
-  for (let m = "2026-06"; m <= "2027-03"; m = shiftMonth(m, 1)) items.set(m, muhtasarItemsFromModel(model, m));
-  return buildTaxView({ today, settings, pnl, muhtasarItems: items, filings, reminders: over.reminders ?? [], vat: plan.vat, settingsEmployerRate: model.settings.isverenSgk });
+  for (let m = "2026-06"; m <= "2027-05"; m = shiftMonth(m, 1)) items.set(m, muhtasarItemsFromModel(model, m));
+  return buildTaxView({
+    today,
+    settings,
+    pnl,
+    muhtasarItems: items,
+    filings,
+    reminders: over.reminders ?? [],
+    vat: plan.vat,
+    settingsEmployerRate: model.settings.isverenSgk,
+    paidQuarters: over.paidQuarters,
+    paidReminders: over.paidReminders,
+  });
 }
 const V = view();
 const nb = (s: string | null | undefined) => (s ?? "").replace(/ /g, " ");
@@ -222,7 +236,7 @@ test("G, §3.12: Excel verisinde 24.10.2026'nın takvimi sırasıyla", () => {
   assert.equal(legalDayText(legalDueDate(by("sgk:2026-09").nominal)), "son gün 2 Kasım Pazartesi (31 Ekim Cumartesi)");
   assert.equal(by("gecici:2026-Q3").state, "taslak");
   assert.equal(by("gecici:2026-Q3").badge, "Taslak");
-  assert.equal(nb(by("gecici:2026-Q3").detail[0].value), "kafenin katkısı en çok ≈ 68.900 ₺ + damga 791,00");
+  assert.equal(nb(by("gecici:2026-Q3").detail[0].value), "en çok ≈ 68.900 ₺ + damga 791,00 ₺");
   assert.equal(by("ctv:2026-2").addHref, "/panel/hatirlaticilar?yeni=ctv2");
   assert.equal(by("mphb:2026-12").badge, "2026 kuralları");
   assert.ok(by("sgk:2026-12").notes.includes("Aralık bordrosu 2026 kurallarıyla."));
@@ -254,12 +268,19 @@ test("§4.1: üç rakam, Başlarken, kartlar", () => {
       ["Muhasebecinin rakamları", "Temmuz–Eylül KDV beyannamesi satışları, 2026/2 geçici vergi", false],
     ],
   );
+  // U6: önce KDV beyannamesi satışları (o çeyreğin Vergiye göre'si), sonra eksik geçici vergi çeyreğinin sayfası
+  const mstep = V.gettingStarted.steps.find((s) => s.key === "muhasebeci")!;
+  assert.equal(mstep.href, "/panel/vergi/gelir-gider?ceyrek=2026-Q3#kdv-beyannamesi");
+  const months = ["2026-07", "2026-08", "2026-09"].map((m, i): TaxFiling => ({ id: 10 + i, kind: "kdv_matrah", period: m, payable: 0, stamp: 0, values: { m10: 1, m20: 0 } }));
+  assert.equal(view({ filings: months }).gettingStarted.steps.find((s) => s.key === "muhasebeci")!.href, "/panel/vergi/gelir-gider?ceyrek=2026-Q2");
   const g = V.geciciCard!;
   assert.equal(g.title, "Kafenin geçici vergi matrahına katkısı (yalnız kafe)");
   assert.equal(g.periodLine, "2026/3 · 25 Haziran–30 Eylül · son gün 17 Kasım Salı");
   assert.equal(g.badge, "Taslak");
   assert.equal(nb(g.headline), "Giderler sınıflandırılınca netleşir · şimdilik en çok ≈ 68.900 ₺");
-  assert.equal(nb(g.subline), "808.610 ₺ gider henüz hesaba girmedi (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)");
+  // Çeyreğin tutarı çeyreğin kalem sayısıyla (U7): 2026/3'te tutarı olan 15 sınıflandırılmamış kalem; Başlarken yılın
+  // bütün kalemlerini sayar (24 + 2 demirbaş adayı)
+  assert.equal(nb(g.subline), "808.610 ₺ gider henüz hesaba girmedi (15 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)");
   assert.deepEqual(
     g.rows.map((r) => r.label),
     ["Kümülatif kurum kazancı", "× %25", "Asgari kurumlar vergisi (%10)", "Önceki dönemler", "Kafenin katkısı", "Beyanname damgası"],
@@ -279,7 +300,7 @@ test("§4.1: üç rakam, Başlarken, kartlar", () => {
     "Beyanname 1–30 Nisan 2027 · ödeme 30 Nisan 2027 Cuma · damga 2.516,30 ₺ (beyanname 1.605,80, bilanço 616,30, gelir tablosu 294,20; 2027 tutarları açıklanmadı)",
   );
   assert.ok(k.notes.includes("2026/3 ödendi olarak işaretlenmedi: ödenmezse yıllık beyannamede mahsup edilemez."));
-  assert.equal(nb(V.classify.header), "Bu çeyrekte 808.610 ₺ gider sayılmadı (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)");
+  assert.equal(nb(V.classify.header), "Bu çeyrekte 808.610 ₺ gider sayılmadı (15 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)");
   assert.equal(V.scope.text, "Kapsam: yalnız kafe");
   assert.equal(V.checks.chip, "Muhasebeciye sorulacaklar: 0 / 8");
   assert.equal(V.rulesInfo.compiled, "Kurallar 24.10.2026'da derlendi; resmî metinlerle henüz karşılaştırılmadı · Türkiye 2026");
@@ -326,7 +347,7 @@ test("K4: muhasebecinin kaydı ve Ödemeler'deki tutar; ÇTV hatırlatıcısı v
   assert.equal(feed.source, "filing");
   // Kayıt ile Ödemeler farklıysa uyarı
   const diff = view({ filings, reminders: [reminder({ id: 3, title: "Geçici vergi beyanı ve ödemesi", repeat: "quarterly", dueDate: "2026-11-17", anchorDate: "2026-11-17", amount: 40000 })] });
-  assert.ok(diff.warnings.some((w) => w.startsWith("Ödemeler'deki tutar (40.000")));
+  assert.ok(diff.warnings.some((w) => w.startsWith("Geçici vergi 2026/3: Ödemeler'deki tutar (40.000")));
   // Matrahı girilmemiş kayıt çapa değil: kart söyler (§3.7, §11-C)
   const card = v.geciciCard!;
   assert.equal(card.key, "2026-Q3");
@@ -361,4 +382,106 @@ test("§4.1: hesap için veri yoksa; kural tablosu bayatlayınca bant", () => {
   assert.deepEqual(late.rulesInfo.stale, ["Kural tablosu 90 günden eski; yeni tutarlar açıklanmış olabilir."]);
   assert.deepEqual(late.yearOptions, [2026, 2027]);
   assert.equal(late.year, 2026);
+});
+
+// ---------------------------------------------------------------- İnceleme düzeltmeleri (rakam R1–R10)
+
+const row = (v: TaxView, key: string) => v.calendar.find((r) => r.key === key);
+
+test("R1: ödeme günü gelmiş, yasal günü gelmemiş KDV ve KDV-2 tutarıyla kalır (nakit planının onDue'su)", () => {
+  // 25 Ekim Pazar ve 26 Ekim: Eylül KDV-2'si (nominal 25.10) tutarıyla; sıradaki ödeme KDV-2 ve muhtasar
+  for (const today of ["2026-10-25", "2026-10-26"]) {
+    const v = view({ today });
+    const k2 = row(v, "kdv2:2026-09")!;
+    assert.equal(k2.amount, 2591, today);
+    assert.equal(k2.cashPlanDate, null, "nakit planında yok");
+    assert.ok(k2.notes.some((n) => nb(n) === "Ödeme günü (25 Ekim) geldiği için nakit planında yok; eldeki paradan ödenir."), today);
+    assert.deepEqual([nb(v.stats.next.value), nb(v.stats.next.sub)], ["en az ≈ 3.600 ₺", "KDV-2 ve muhtasar · 26 Ekim"], today);
+  }
+  // 28 Ekim (KDV günü): satır damgasıyla, "tutar yaklaşınca" değil; tutar kesin (R8: ≈ yok)
+  const d28 = view({ today: "2026-10-28" });
+  const kdv = row(d28, "kdv1:2026-09")!;
+  assert.deepEqual([kdv.amount, kdv.source, nb(kdv.amountText), kdv.note], [791, "sabit tutar", "791 ₺", null]);
+  assert.deepEqual([nb(d28.stats.next.value), nb(d28.stats.next.sub)], ["791 ₺", "KDV · 28 Ekim"]);
+  // 28 Kasım Cumartesi → 30 Kasım: 29 ve 30 Kasım'da Ekim KDV'si yine tutarıyla
+  for (const today of ["2026-11-29", "2026-11-30"]) {
+    const k = row(view({ today }), "kdv1:2026-10")!;
+    assert.deepEqual([k.due, k.amount, k.source, k.note], ["2026-11-30", 791, "sabit tutar", null], today);
+  }
+  // Nakit planı ödeme gününü planlamaz (bugünkü ödeme eldeki paradan), Vergi için onDue'da tutar
+  const model = createModel(base);
+  const plan = buildCashPlan({
+    ...planInputFromModel(model, "2026-10-25"),
+    today: "2026-10-25",
+    opening: null,
+    excluded: [],
+    invoiceTermDays: 30,
+    cashReports: [],
+    invoices: [],
+    reminders: [],
+    goods: [],
+    goodsSpanDays: 0,
+    vatAnchor: { month: "2026-09", amount: 121204.69 },
+  });
+  assert.ok(!plan.vat!.vat2.some((r) => r.period === "2026-09"));
+  assert.deepEqual(plan.vat!.onDue.vat2.map((r) => [r.period, r.date, r.amount]), [["2026-09", "2026-10-25", 1800]]);
+  assert.ok(!plan.weeks.flatMap((w) => w.lines).some((l) => l.key === "kdv2@2026-10-25"));
+});
+
+test("R2: 1 Ocak–17 Şubat arasında geçici vergi kartı geçen yılın 4. çeyreği (beyannamesi sıradaki)", () => {
+  const v = view({ today: "2027-01-15" });
+  assert.equal(v.geciciCard!.key, "2026-Q4");
+  assert.equal(nb(v.geciciCard!.periodLine), "2026/4 · 25 Haziran–31 Aralık · son gün 17 Şubat Çarşamba");
+  assert.ok(v.calendar.some((r) => r.key === "gecici:2026-Q4"));
+  assert.equal(view({ today: "2027-02-18" }).geciciCard!.key, "2027-Q1");
+});
+
+test("R3: sabit tutarlı SGK ve 'Kira stopajı' hatırlatıcısının tutarı her döneminde (nakit planı gibi)", () => {
+  const sgk = reminder({ id: 5, title: "SGK prim ödemesi", kind: "odeme", amount: 27000, dueDate: "2026-11-30", anchorDate: "2026-11-30" });
+  const stopaj = reminder({ id: 6, title: "Kira stopajı", kind: "vergi", amount: 8000, dueDate: "2026-11-26", anchorDate: "2026-11-26" });
+  const v = view({ today: "2026-11-20", reminders: [sgk, stopaj] });
+  for (const key of ["sgk:2026-10", "sgk:2026-11"]) assert.deepEqual([row(v, key)!.amount, row(v, key)!.source], [27000, "Ödemeler'de"], key);
+  for (const key of ["mphb:2026-10", "mphb:2026-11"]) assert.deepEqual([row(v, key)!.amount, row(v, key)!.source], [8000, "Ödemeler'de"], key);
+  // Tutarı tek döneme ait muhtasar hatırlatıcısı: yalnız sıradaki döneminde (K26)
+  const m = view({ today: "2026-11-20", reminders: [reminder({ amount: 1200, dueDate: "2026-11-26", anchorDate: "2026-11-26" })] });
+  assert.deepEqual([row(m, "mphb:2026-10")!.amount, row(m, "mphb:2026-11")!.source], [1200, "tahmin"]);
+});
+
+test("R4: Ödendi denen geçici vergi, muhtasar ve SGK dönemi takvimde ve rakamlarda yok", () => {
+  const g = reminder({ id: 7, title: "Geçici vergi beyanı ve ödemesi", repeat: "quarterly", dueDate: "2027-02-17", anchorDate: "2026-11-17" });
+  const m = reminder({ id: 8, dueDate: "2026-12-26", anchorDate: "2026-10-26" });
+  const s = reminder({ id: 9, title: "SGK prim ödemesi", kind: "odeme", dueDate: "2026-12-31", anchorDate: "2026-10-31" });
+  const paidReminders: Paid[] = [
+    { id: 8, dueDate: "2026-11-26", next: "2026-12-26", amount: 974 },
+    { id: 9, dueDate: "2026-11-30", next: "2026-12-31", amount: 26000 },
+  ];
+  const open = view({ today: "2026-11-10", reminders: [g, m, s] });
+  for (const key of ["gecici:2026-Q3", "mphb:2026-10", "sgk:2026-10"]) assert.ok(row(open, key), key);
+  const paid = view({ today: "2026-11-10", reminders: [g, m, s], paidQuarters: [{ period: "2026-Q3", amount: 41991 }], paidReminders });
+  for (const key of ["gecici:2026-Q3", "mphb:2026-10", "sgk:2026-10"]) assert.equal(row(paid, key), undefined, key);
+  assert.ok(row(paid, "mphb:2026-11"), "sonraki dönem kalır");
+  assert.notEqual(nb(paid.stats.next.sub), "Geçici vergi · 17 Kasım");
+  // KV kartı aynı çeyreği mahsup eder (tutarlılık)
+  assert.ok(paid.kvCard.calc.paidQuarters.some((p) => p.period === "2026-Q3"));
+});
+
+test("R5, R8, R10: kartta Ödemeler'deki tutar (K4); kesin tutar ≈ almaz; kayan muhtasar günü notta", () => {
+  const rem = reminder({ id: 3, title: "Geçici vergi beyanı ve ödemesi", repeat: "quarterly", dueDate: "2026-11-17", anchorDate: "2026-11-17", amount: 50000 });
+  const v = view({ reminders: [rem] });
+  const g = v.geciciCard!;
+  assert.deepEqual([g.badge, nb(g.headline)], ["Ödemeler'de", "Ödemeler'deki tutar 50.000 ₺"]);
+  assert.equal(nb(g.subline), "Kafenin katkısı en çok ≈ 68.900 ₺ · Ödemeler'deki tutar 50.000 ₺ (damga dahil)");
+  // Kurumlar vergisi kartı: kayıt yoksa Ödemeler'deki tutar
+  const kvRem = reminder({ id: 4, title: "Kurumlar vergisi beyannamesi", repeat: "yearly", dueDate: "2027-04-30", anchorDate: "2027-04-30", amount: 90000 });
+  const kv = view({ reminders: [kvRem] }).kvCard;
+  assert.equal(kv.badge, "Ödemeler'de");
+  assert.ok(kv.rows.some((r) => r.label === "Ödenecek (Ödemeler'deki tutar, damga dahil)" && nb(r.value) === "90.000 ₺"));
+  // Muhasebecinin kaydı: sıradaki ödeme kesin tutarıyla (≈ yok)
+  const filed = view({ today: "2026-11-10", filings: [{ id: 1, kind: "gecici", period: "2026-Q3", payable: 41200, stamp: 791, values: {} }] });
+  assert.deepEqual([nb(filed.stats.next.value), nb(filed.stats.next.sub)], ["41.991 ₺", "Geçici vergi · 17 Kasım"]);
+  // Muhtasar (Kasım) son günü 26 Aralık Cumartesi → 28 Aralık; nakit planı 26'sında
+  assert.ok(row(V, "mphb:2026-11")!.notes.some((n) => nb(n) === "Nakit planında 26 Aralık'ta."));
+  // Uyarılar Özet'te: kayıt ile Ödemeler farklı (satırın adıyla)
+  const diff = view({ filings: [{ id: 1, kind: "kv", period: "2026", payable: 80000, stamp: 2516.3, values: {} }], reminders: [kvRem], today: "2027-03-01" });
+  assert.ok(diff.warnings.some((w) => w.startsWith("Kurumlar vergisi 2026: Ödemeler'deki tutar (90.000")), diff.warnings.join(" | "));
 });

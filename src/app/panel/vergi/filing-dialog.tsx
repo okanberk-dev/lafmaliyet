@@ -13,7 +13,7 @@ import { Checkbox, Field, Input, NumberInput, Select } from "@/components/ui/for
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num } from "@/lib/format";
 import { FILING_KIND_LABELS, type TaxFilingKind } from "@/lib/tax/corporate";
-import { AMOUNT_NEGATIVE, AMOUNT_REQUIRED, FILING_VALUE_FIELDS } from "@/lib/tax/edit";
+import { AMOUNT_NEGATIVE, AMOUNT_REQUIRED, FILING_VALUE_FIELDS, filingRemoveConfirmText, type FilingRemovedReminder } from "@/lib/tax/edit";
 import { cn } from "@/lib/utils";
 import { deleteTaxFiling, saveTaxFiling } from "@/server/actions/tax";
 
@@ -25,6 +25,8 @@ export interface FilingOption {
   defaultStamp: number;
   /** null: karşılığı yok (KDV beyannamesi satışları) */
   reminder: { state: "tek" | "birden_cok" | "yok"; text: string } | null;
+  /** Kayıt kaldırılınca Ödemeler'deki tutar: kopyası silinir ya da kalır; null = Ödemeler okunmadı ya da kayıt yok */
+  removal: { result: FilingRemovedReminder; amount: number | null } | null;
   addHref: string | null;
 }
 
@@ -328,7 +330,7 @@ function FilingDialog({ data, initialPeriod, onClose }: { data: FilingKindData; 
         onConfirm={remove}
         pending={pending}
         title="Muhasebecinin rakamı kaldırılsın mı?"
-        description={`${FILING_KIND_LABELS[kind]} ${option.label} için girilen rakam silinir; tahmin kullanılır. Ödemeler'deki tutara dokunulmaz.`}
+        description={filingRemoveConfirmText(`${FILING_KIND_LABELS[kind]} ${option.label}`, option.removal, kind !== "kdv_matrah")}
         confirmLabel="Kaldır"
       />
     </Dialog>

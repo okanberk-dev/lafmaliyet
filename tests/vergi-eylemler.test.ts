@@ -31,6 +31,8 @@ import {
   overrideLogText,
   overrideRefusal,
   periodStartRefusal,
+  isCalendarDate,
+  filingRemoveConfirmText,
   rateText,
   settingsChangeText,
 } from "../src/lib/tax/edit";
@@ -170,6 +172,8 @@ test("varlık: ömür 1–50, doğrudan gider 12.000 ₺'ye kadar, faturanın ka
   assert.equal(nb(assetRefusal({ ...a, cost: 12_345.7 }, { category: "Kuruluş & Demirbaş", remaining: 12_345.67 }, TODAY)), "Maliyet faturanın kalan tutarını aşıyor (en çok 12.345,67 ₺)");
   assert.equal(assetRefusal(a, { category: "Alp Koç", remaining: 50_000 }, TODAY), "Kafe dışı fatura varlığa bağlanamaz");
   assert.equal(assetRefusal({ ...a, acquiredOn: "2026-10-29" }, null, TODAY), "Edinme günü bugünden sonra olamaz");
+  // SEC-2: takvimde olmayan gün kaydedilmez (amortismanı yanlış yılın çeyreklerine düşerdi)
+  for (const d of ["2026-13-01", "2026-00-10", "2026-02-31"]) assert.equal(assetRefusal({ ...a, acquiredOn: d }, null, TODAY), "Geçersiz tarih", d);
 });
 
 test("sınıflandırma bölüme uygun: bordro yalnız personelde, 'belgesi yok' personelde değil, stopaj kira, genel ve dışarıdan hizmette", () => {
@@ -211,7 +215,10 @@ test("ayarlar: hesap dönemi 2000 … bugün; işlem geçmişinde yalnız deği�
   assert.equal(periodStartRefusal("2026-06-25", TODAY), null);
   assert.equal(periodStartRefusal("1999-12-31", TODAY), "Tarih 2000'den önce olamaz");
   assert.equal(periodStartRefusal("2026-10-29", TODAY), "Hesap dönemi bugünden sonra başlayamaz");
-  assert.equal(periodStartRefusal("2026-02-30", TODAY), periodStartRefusal("2026-02-30", TODAY));
+  // SEC-2: takvimde olmayan gün (Date.parse 31 Şubat'ı Mart'a taşır) reddedilir
+  for (const d of ["2026-02-30", "2026-02-31", "2026-04-31", "2026-13-01", "2026-00-10", "2026-6-25"]) assert.equal(periodStartRefusal(d, TODAY), "Geçersiz tarih", d);
+  for (const d of ["2024-02-29", "2026-02-28", "2026-12-31"]) assert.equal(isCalendarDate(d), true, d);
+  assert.equal(isCalendarDate("2026-02-29"), false);
   assert.deepEqual(settingsChangeText(S, S), []);
   assert.deepEqual(
     settingsChangeText(S, { ...S, firstActivity: "ilk", muhtasarQuarterly: true, quarterDepreciation: "ay12", carriedLoss: { amount: 12_000, note: "2025 beyannamesi", by: "Mehmet", date: TODAY } }).map(nb),
@@ -338,7 +345,8 @@ test("vergi yükleyicileri: Özet nakit planını vergi girdisiyle okur; nakit p
   assert.match(plan, /export async function loadCashPlan\(model: Model, upcoming\?: Awaited<ReturnType<typeof loadUpcoming>>, opts: \{ taxInputs\?: TaxInputs \} = \{\}\)/);
   assert.match(plan, /opts\.taxInputs \?\? taxInputsForPlan\(\)/);
   assert.match(plan, /tax = loadTaxPlanFeed\(model, today, taxInputs\);/);
-  assert.match(plan, /planInputFromModel\(model, today, taxInputs\?\.settings\)/);
+  // Besleme yoksa stopajlı sabit gider brüt ödenir (P4: stopaj ve KDV-2 satırı da yok)
+  assert.match(plan, /planInputFromModel\(model, today, taxInputs\?\.settings, \{ feed: tax !== null \}\)/);
   assert.match(plan, /console\.error\("\[vergi\] nakit planı: vergi beslemesi hesaplanamadı", e\)/);
   // Saf vergi kodu sunucuya ve veritabanına uzanmaz
   for (const f of ["assets", "calendar", "checks", "corporate", "edit", "inputs", "muhtasar", "payroll", "pnl", "rules", "rules-2026", "settings", "stamp", "view"]) {
@@ -379,4 +387,21 @@ test("Gelir-gider'deki SGK oranı uyarısı (K19): Ayarlar yasal orandan farklı
   assert.match(notice, /<ConfirmDialog/);
   assert.match(notice, /setEmployerSgkRate\(target\)/);
   assert.match(notice, /\{canApply \? \(/);
+});
+
+test("U3: muhasebecinin rakamını kaldırma onayı Ödemeler'e ne olacağını eylemin kuralıyla söyler", () => {
+  const t = "Geçici vergi 2026/3";
+  assert.equal(
+    nb(filingRemoveConfirmText(t, { result: "silindi", amount: 41_991 })),
+    "Geçici vergi 2026/3 için girilen rakam silinir; tahmin kullanılır. Ödemeler'deki tutar (41.991 ₺) bu kaydın yazdığı kopya; o da silinir.",
+  );
+  assert.equal(nb(filingRemoveConfirmText(t, { result: "kaldi", amount: 40_000 })), "Geçici vergi 2026/3 için girilen rakam silinir. Ödemeler'deki tutar (40.000 ₺) kalır; nakit planı ve takvim onu kullanır.");
+  assert.equal(filingRemoveConfirmText(t, { result: null, amount: null }), "Geçici vergi 2026/3 için girilen rakam silinir; tahmin kullanılır.");
+  // Ödemeler okunmadı (Vergiye göre): kural cümlesi
+  assert.match(filingRemoveConfirmText(t, null), /bu kaydın yazdığı tutar \(ödenecek \+ damga\) varsa o da silinir; başka bir tutar yazılıysa kalır\.$/);
+  assert.equal(filingRemoveConfirmText("KDV beyannamesi satışları Eylül 2026", null, false), "KDV beyannamesi satışları Eylül 2026 için girilen rakam silinir; tahmin kullanılır.");
+  // Pencere bu metni kullanır; eski "dokunulmaz" sözü yok
+  const dialog = read("src/app/panel/vergi/filing-dialog.tsx");
+  assert.match(dialog, /description=\{filingRemoveConfirmText\(/);
+  assert.doesNotMatch(dialog, /tutara dokunulmaz/);
 });

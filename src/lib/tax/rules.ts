@@ -329,7 +329,7 @@ export const WITHHOLDING_LABELS: Record<Withholding, string> = {
 };
 /** "Şahsa işyeri kirası" seçilince faturadaki KDV'nin kaldırılması (§4.2) */
 export const VAT_TO_ZERO_LABEL = "Faturadaki KDV'yi 'KDV yok' yap (şahıs kirasında KDV olmaz)";
-/** Tutar ipucu (§3.5) */
+/** Tutar ipucu (§3.5): %20 stopajlı profiller (kira, serbest meslek) */
 export const WITHHOLDING_GROSS_HINT = "Tutar brüt olmalı; elinize geçen tutarı yazdıysanız brüt = net ÷ 0,80.";
 
 /** Profilin gelir vergisi stopajı oranı (muhtasarda) */
@@ -345,6 +345,17 @@ export function withholdingRate(w: Withholding | null | undefined, rules: TaxYea
     default:
       return 0;
   }
+}
+
+/**
+ * Ödemeden kesilen stopajlı profilin tutar ipucu, profilin kendi oranıyla: kira ve serbest meslek ÷ 0,80, şahsa internet
+ * reklamı ÷ 0,85 (yurt dışı ve stopajsız profilde null)
+ */
+export function withholdingGrossHint(w: Withholding | null | undefined, rules: TaxYearRules): string | null {
+  if (w !== "kira" && w !== "serbest_meslek" && w !== "internet_reklam") return null;
+  const rate = withholdingRate(w, rules);
+  if (!(rate > 0)) return null;
+  return `Tutar brüt olmalı; elinize geçen tutarı yazdıysanız brüt = net ÷ ${(1 - rate).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}.`;
 }
 
 /**

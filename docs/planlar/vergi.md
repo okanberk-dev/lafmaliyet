@@ -98,7 +98,7 @@ Yapılmayanlar:
 | K11 | Gelir: mali belgeye dayanır | KDV hariç. Ay ay kaynak sırası: **(1)** muhasebecinin o ay için girdiği KDV beyannamesi satış matrahı (`tax_filings` › `kdv_matrah`; oran oran toplam, varsa "kafe dışı kısmı" düşülür). Şirketin tamamıdır; laffogato.net ve kafe dışı gelir düzeltmesi o ay ayrıca eklenmez (içindedir). **(2)** Dalga 13 birleştiyse yazarkasanın mali Z kayıtları (ayın her açık günü için varsa, oran oran KDV hariç matrah toplamı) + laffogato.net. **(3)** Bunlar yoksa ModPOS cirosu (`pnlMonth(ay).revenueNet`) + laffogato.net, **"Yönetim verisi (ModPOS), mali belge değil"** rozetiyle; o çeyreğin hesabı Taslak'tır (K33). laffogato.net `site.total − karaoke.refundPendingMinor / 100 / (1 + kdvHizmet)` (iadesi bekleyen karaoke KDV hariç düşülür), rozeti "yaklaşık; e-Arşiv tarihinden farklı olabilir". ModPOS ile mali Z ya da beyanname arasındaki fark Vergi sayfasında, Excel'in "Vergi" sayfasında ve köprü kartında **hiç yazılmaz**; mutabakat (§19, B3) ayrı ekranda, gerekçe alanlarıyla yapılır. "Vergi esasında gelir" etiketi ModPOS'a hiçbir yerde verilmez | Vergi matrahı mali belgeye dayanır; muhasebecinin beyannameleri de onu kullanıyor. Q3 2026'da ModPOS cirosu KDV hariç 1.002.831 ₺, beyannamelerin %10 matrahı 845.794 ₺ (`docs/NAKIT-PLANI.md`): fark tahmini %25'ten ≈ 39.300 ₺ şişirirdi. Mali belgeden yüksek bir ciroyu "vergi geliri" diye saklayıp muhasebeciye vermek, incelemede fişsiz satış delili gibi okunabilir (VUK 256, 353) |
 | K12 | Gider: belge esası | Kafe kategorilerindeki faturalar **fatura tarihine göre** gider sayılır (tahakkuk). Mal faturaları satılan mal maliyetine (SMM) girer, diğerleri döneme. "Kuruluş & Demirbaş" faturaları ve bir varlığa bağlanan fatura tutarları gider sayılmaz, Demirbaş'a gider (K14). **Demirbaş olabilir:** mal, Komisyon, Kira & AVM, kafe dışı ve Kuruluş & Demirbaş dışındaki kategorilerde KDV hariç 12.000 ₺'yi aşan ve aynı tedarikçiden aynı kategoride önceki 90 günde faturası olmayan fatura, sahip "Gider (demirbaş değil)" ya da "Varlık olarak ekle" diyene kadar sınıflandırılmamış sayılır (K13). Fatura dışı her kalem (sabit gider, Aylık harcamalar kategorisi, Gelir-gider'in elle satırı) **vergi belgesine** göre sayılır. Seçenekler (`TaxDoc`): `fatura` "Paraşüt'te faturası var (burada sayılmaz)", `belgeli` "Belgesi muhasebecide (fiş, makbuz, serbest meslek makbuzu)" (sayılır), `yok` "Belgesi yok: muhasebecinize sorun (vergiden düşülmez)" (sayılmaz). **Personel bölümündeki sabit giderlerde** `yok` seçeneği yoktur; seçenekler `bordro` "Bordroda (Personel'e ekleyin; burada sayılmaz)", `fatura` ve `belgeli` "Dışarıdan hizmet: belgesi muhasebecide (fatura, SMM)". Seçilmemiş kalem **sayılmaz**, listede durur. POS komisyonu tahmini sayılır ama "tahmini" rozetiyle (K12a) | Bugünkü gelir-gider faturaların çoğunu saymıyor, kira ve reklam gibi kalemler elle girilmiş tahmin. Hem faturayı hem sabit gideri saymak çift sayımdır. Belgesiz ödeme deftere giremez; "KKEG" değildir (şirket kasasından çıktıysa muhasebeci ortak hesabına ya da kasa farkına yazar). Personel kalemine "belgesiz" demek kayıt dışı istihdamın yazılı izi olurdu (5510 m.102). VUK 313: 12.000 ₺'yi aşan, bir yıldan uzun kullanılan kıymet amortismana tabidir (tabela, POS donanımı, yazılım lisansı) |
 | K12a | POS komisyonu | Vergi hesabında `commission:pos` hücresi Gelir-gider'de **elle girildiyse** (banka dekontundaki tutar) o kullanılır. Değilse yeniden hesaplanır: KDV dahil ciro × `komisyon` × **banka kartı payı** (kasa raporlarından Σ kart ÷ Σ Z; yemek kartı hariç, çünkü yemek kartı komisyonu Pluxee, Multinet, Edenred faturalarıyla Faturalar › Komisyon'da zaten sayılıyor). Kasa raporu olmayan ayda Ayarlar'daki `kartOrani`, notla: "yemek kartı payı ayrılamadı". Rozet "tahmini (banka dekontundaki tutarı Gelir-gider'e yazabilirsiniz)" | `cardShareOf` kart + yemek kartını sayıyor (`cash-month.ts`); vergi hesabında yemek kartı komisyonu iki kez gider olurdu. Komisyonun kendisi her ay vardır ve belgesi bankanın aylık dekontudur; aralığa almak geçici vergiyi gereksiz yükseltirdi |
-| K13 | Sınıflandırılmamış giderler ve aralık | Asıl rakam (üst uç) sınıflandırılmamış kalemleri saymaz, demirbaş adaylarını gider saymaz, ömrü girilmemiş varlığa amortisman ayırmaz. **Alt sınır** (yalnız "Nasıl hesaplandı"da, tanımıyla): sınıflandırılmamış kalemler `belgeli`, demirbaş adayları gider, varlık listesine eklenmemiş Kuruluş & Demirbaş faturaları ve ömrü girilmemiş varlıkların maliyeti tamamen gider sayılsaydı. Kart ve takvim alt sınırı göstermez; yerine "808.610 ₺ gider henüz hesaba girmedi (24 kalem)" ve "Giderleri sınıflandır" yazar (K33) | Tek rakam yanıltırdı; "≈ 0 ₺" gibi bir alt uç ise gerçek bir alt sınır değildi ve sahibi ya paniğe ya güvensizliğe itiyordu. Tanımlı alt sınır uydurma ömür kullanmaz (amortisman maliyeti aşamaz) |
+| K13 | Sınıflandırılmamış giderler ve aralık | Asıl rakam (üst uç) sınıflandırılmamış kalemleri saymaz, demirbaş adaylarını gider saymaz, ömrü girilmemiş varlığa amortisman ayırmaz. **Alt sınır** (yalnız "Nasıl hesaplandı"da, tanımıyla): sınıflandırılmamış kalemler `belgeli`, demirbaş adayları gider, varlık listesine eklenmemiş Kuruluş & Demirbaş faturaları ve ömrü girilmemiş varlıkların maliyeti tamamen gider sayılsaydı. Kart ve takvim alt sınırı göstermez; yerine "808.610 ₺ gider henüz hesaba girmedi (15 kalem)" ve "Giderleri sınıflandır" yazar (K33) | Tek rakam yanıltırdı; "≈ 0 ₺" gibi bir alt uç ise gerçek bir alt sınır değildi ve sahibi ya paniğe ya güvensizliğe itiyordu. Tanımlı alt sınır uydurma ömür kullanmaz (amortisman maliyeti aşamaz) |
 | K14 | Demirbaş ve amortisman | Yeni `tax_assets` tablosu. Varlığın faturası bağlanabilir; bağlanan maliyet o faturanın giderinden düşer. Yöntem yalnız **normal (eşit)**: yıllık tutar = maliyet ÷ ömür. Edinilen yıl **tam yıl** sayılır (binek dışı kıst amortisman yok); son yıl kalanı alır. Geçici vergi dönemlerine dağıtım **ayarla seçilir** (`tax.settings.quarterDepreciation`): `"kalan"` (varsayılan; edinilen çeyrek dahil yılın kalan çeyreklerine eşit) ya da `"ay12"` (kümülatif ay ÷ 12). Kartın dökümünde kullanılan yöntem yazar. **Ömür girilmezse amortisman 0'dır** ve uyarı çıkar; varsayılan ömür uydurulmaz. Maliyeti KDV hariç 12.000 ₺'yi aşmayan varlık "doğrudan gider" seçilebilir (VUK 313) | Araştırma amortisman ömürlerini ve özel maliyet kuralını doğrulamadı. Geçici vergide yöntem uygulamada iki türlü; yıl sonunda aynı yere varılır, 2026/3 tahmini yönteme bağlı. Varsayılan Q3'te daha az amortisman ayırandır (güvenli taraf). M7 |
 | K15 | SMM | `pnlMonth`'un devir ve sayımı (`opening`, `closing`, elle düzeltmeler dahil) kullanılır; sayımın değeri Ayarlar › Stok değerleme'yi izler (başlangıç ayından itibaren FIFO, öncesi ay sonu fiyatı; [../STOK-DEGERLEME.md](../STOK-DEGERLEME.md); resmi defterde muhasebecinin yöntemi geçerlidir). Alışlar vergi kuralıyla yeniden toplanır: mal faturalarının neti, belgeli mal harcamaları (**KDV hariç tahmin**: tutar ÷ 1,10; M10) ve "DİĞER (market / nakit alımlar)" satırı (yalnız `belgeli` seçildiyse, aynı ÷ 1,10). **Çeyrek sonu ayında (Mart, Haziran, Eylül, Aralık) sayım yoksa** en son ay sonu sayımı devreden stok sayılır ve ekranda kırmızı uyarı çıkar: "30 Eylül sayımı yok: 31 Ağustos sayımı kullanıldı; vergi için çeyrek sonu sayımı gerekir". Önceki sayım da yoksa stok 0 sayılır ("alışın tamamı gider; vergi düşük çıkabilir"). Çeyrek içi ayların sayımı çeyreğin toplamını değiştirmez (yalnız aylık görünüm) | Stok 0 kârı ve vergiyi düşük gösterir, varsayılan güvenli taraf ilkesine aykırıydı. Geçici vergide muhasebeci çeyrek sonunda kaydî envanterle stok düşer. KDV dahil fiş tutarını KDV hariç fatura ve sayım değerleriyle toplamak gideri şişirirdi |
 | K16 | Bordro | Yeni saf `src/lib/tax/payroll.ts`. Netten brüt yinelemeyle çözülür; GV yıl içindeki kümülatif matrahla, asgari ücret GV ve DV istisnası, ücret damgası, PEK alt ve üst sınırı uygulanır. **SGK oranları kural tablosundan** (yasal 2026: işçi %14 + %1, işveren %19,75 + %2); `sgk.isverenOran` elle değiştirilebilir (teşvik, M2). Ayarlar'daki oranlar yalnız Gelir-gider'de kalır. Aylar tam sayılır (personelin giriş günü panelde yok). Ek ödemeler (`extras`) vergisiz ve brütleştirilmeden maliyete eklenir (not yazılır) | Bugünkü `staffCost` brüt = net ÷ 0,85, GV ve DV'yi yok sayıyor. Ayarlar'daki %15,75 2025 Ocak ayının (5 puan) oranı; 2026'da imalat dışı işyerinde Hazine indirimi 2 puandır (%21,75 − 2). Vergi sayfası en büyük düzenli prim ödemesini bilerek düşük göstermemeli |
@@ -489,7 +489,7 @@ floor(q)    = aynı hesap §3.2 alt sınırıyla ve ömrü girilmemiş varlıkla
   vergisi: uygulanmaz (ilk 3 hesap dönemi, 2026–2028)" yazar. `firstActivity` boşsa "uygulandı; muafiyet için ilk
   defa faaliyete başlama işaretlenmedi (Kurallar › Vergi ayarları)" yazar.
 - **Durum** (`state`, K33): `taslak` ya da `hazir`. Taslakta kart başlığı tek rakam değildir: "Giderler
-  sınıflandırılınca netleşir · şimdilik en çok ≈ 68.900 ₺" ve altında "808.610 ₺ gider henüz hesaba girmedi (24 kalem)
+  sınıflandırılınca netleşir · şimdilik en çok ≈ 68.900 ₺" ve altında "808.610 ₺ gider henüz hesaba girmedi (15 kalem)
   · Giderleri sınıflandır".
 - **Tamamlık:** `complete` = çeyreğin son günü < bugün. Değilse "Dönem sürüyor: bugüne kadarki veriyle".
 - **Kapsam:** kart başlığı "Kafenin geçici vergi matrahına katkısı (yalnız kafe)" ya da "… (kafe + elle girilen kafe
@@ -535,6 +535,10 @@ yıllıkKazanç < 0 → oluşan mali zarar = −yıllıkKazanç ("sonraki 5 yıl
   Ayrı KDV kartı yoktur; satırın ayrıntısında "Nakit planında aç" (`/panel/hatirlaticilar/nakit#kdv`) ve "Devreden
   KDV'yi gir" bağlantıları.
 - Plan ufku 42 gündür. Daha sonraki KDV günleri takvimde **tutarsız** yazılır: "tutar yaklaşınca nakit planında".
+- Ödeme günü (nominal) bugün ya da geçmiş, yasal son günü gelmemiş dönem (28'i hafta sonuna düşen KDV, 25'i Pazar olan
+  KDV-2) nakit planına girmez (bugünün ödemesi eldeki paradan); tutarı ve dökümü `plan.vat.onDue`'dan okunur, satırın
+  notu "Ödeme günü (25 Ekim) geldiği için nakit planında yok; eldeki paradan ödenir." (inceleme R1: önce "tutar
+  yaklaşınca" yazıyor, KDV-2 hiç görünmüyordu).
 - Yurt dışı hizmet KDV-2'si (`kdv2Hizmet`, §3.5) KDV-2 satırına ayrı döküm satırıyla eklenir.
 
 ### 3.11 Yerel vergiler
@@ -670,7 +674,7 @@ kartları (1/3) alt alta. `md` altında tek sütun, aynı sıra.
 4. **"Kafenin geçici vergi matrahına katkısı (yalnız kafe)"** kartı. Sıradaki dönem, örnek "2026/3 · 25 Haziran–30
    Eylül · son gün 17 Kasım Salı".
    - Taslakta: "Taslak" rozeti; büyük satır "Giderler sınıflandırılınca netleşir · şimdilik en çok ≈ 68.900 ₺";
-     altında "808.610 ₺ gider henüz hesaba girmedi (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)" ve düğme
+     altında "808.610 ₺ gider henüz hesaba girmedi (15 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)" ve düğme
      "Giderleri sınıflandır" → `/panel/vergi/gelir-gider#siniflandir`. Alt sınır karta yazılmaz.
    - Hazırda: "≈ X ₺".
    - Satırlar: "Kümülatif kurum kazancı", "× %25", "Asgari kurumlar vergisi (%10)" ya da "uygulanmaz", "Önceki
@@ -732,7 +736,9 @@ Başlık "Vergiye göre gelir-gider". **Çeyrek seçici** `?ceyrek=2026-Q3` (`Mo
     giremez; şirket kasasından çıktıysa muhasebeciniz ortak hesabına yazar."
   - **Seçimler istemcide toplanır**; `FloatingBar` "3 değişikliği kaydet" ve "Vazgeç". Kayıt tek eylemle
     (`saveTaxClassifications`), tek `refresh()`. Kaydedilmemiş değişiklik varken sayfadan çıkmak uyarır.
-  - Kart başlığında toplam: "Bu çeyrekte 808.610 ₺ gider sayılmadı (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)".
+  - Kart başlığında toplam: "Bu çeyrekte 808.610 ₺ gider sayılmadı (15 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)". Sayı
+    çeyreğin tutarı olan kalemleridir (tutar da çeyreğin); yılın bütün kalemleri yalnız Başlarken'de ("26 kalem kaldı").
+    İnceleme (U7) düzeltti; ilk metin yılın sayısını (24) yazıyordu.
 - **"Düzeltmeler"** kartı. Ay ay liste ve düğme "Düzeltme ekle" (§4.5-b). Tür etiketleri:
 
 | Tür | Etiket |
@@ -812,7 +818,12 @@ Başlık "Vergiye göre gelir-gider". **Çeyrek seçici** `?ceyrek=2026-Q3` (`Mo
   yazıldı") ve "Kaldırıldı; tahmin kullanılıyor". Kaldırmada Ödemeler'deki tek karşılığın tutarı kaydın ödenecek +
   damgasına eşitse (bu pencerenin yazdığı kopya) o tutar da silinir ("… · Ödemeler'deki tutar da silindi"); başka bir
   tutar yazılmışsa kalır ve bildirim "Kaldırıldı; Ödemeler'deki tutar kullanılıyor" der (K4'ün önceliği: takvim onu
-  kullanır). Uygulamada eklendi: kopya kalsaydı §17-5'teki "Tutarı bilinmiyor" görünmezdi.
+  kullanır). Uygulamada eklendi: kopya kalsaydı §17-5'teki "Tutarı bilinmiyor" görünmezdi. "Kaldır"ın onay penceresi
+  aynı kuralı önceden söyler (`filingRemoveConfirmText`): "… için girilen rakam silinir; tahmin kullanılır. Ödemeler'deki
+  tutar (41.991 ₺) bu kaydın yazdığı kopya; o da silinir." ya da "… Ödemeler'deki tutar (40.000 ₺) kalır; nakit planı
+  ve takvim onu kullanır."; Ödemeler okunmayan sayfada (Vergiye göre) kural cümlesi (inceleme U3).
+- Pencere yalnız seçeneklerindeki dönemleri açar (muhtasarda son 12 ay): takvimin gelecek dönem satırında düğme yok
+  (inceleme U4).
 
 **b) "Düzeltme ekle"**
 - Alanlar: "Dönem" (Ay / Çeyrek; çeyrek yalnız kafe dışı türlerde), "Tür" (§4.2 etiketleri), "Tutar (₺, KDV hariç)"
@@ -1156,7 +1167,9 @@ CashPlanInput.tax?: TaxPlanFeed | null;   // yoksa bugünkü davranış
   `sgk.isverenOran` için `TaxSettings`'i isteğe bağlı parametre olarak alır. Sabit giderlere `withholding` ve
   `withholdingRate` geçer (§8.2).
 - `loadCashPlan(model, upcoming?, opts?: { taxInputs? })` `tax`'ı `loadTaxPlanFeed(model, today, taxInputs ?? await
-  loadTaxInputs())`'den geçirir. Feed alınamazsa `tax: null` ile bugünkü gibi çalışır (try/catch, `console.error`).
+  loadTaxInputs())`'den geçirir. Feed alınamazsa `tax: null` ile bugünkü gibi çalışır (try/catch, `console.error`):
+  stopajlı ve yurt dışı sabit gider de bugünkü gibi brüt, faturasının KDV'siyle ödenir
+  (`planInputFromModel(…, { feed: false })`), çünkü muhtasar ve KDV-2 satırı yoktur (inceleme P4).
 
 ### 8.2 Sınıflar ve yerleşim
 

@@ -56,6 +56,31 @@ kuralları" (tablosu olmayan yıl). İşaretler sahibindir; hiçbir yerde muhase
 Muhasebecinin rakamı kaldırılınca Ödemeler'deki tek karşılığın tutarı kaydın ödenecek + damgasına eşitse (pencerenin
 "Ödemeler'deki hatırlatıcıya da yaz" kopyası) o tutar da silinir: "Kaldırıldı; tahmin kullanılıyor · Ödemeler'deki tutar
 da silindi". Başka bir tutar yazılmışsa kalır ve takvim onu kullanır: "Kaldırıldı; Ödemeler'deki tutar kullanılıyor".
+Onay penceresi bunu önceden söyler ("Ödemeler'deki tutar (41.991 ₺) bu kaydın yazdığı kopya; o da silinir." ya da
+"… kalır; nakit planı ve takvim onu kullanır."). Pencere yalnız seçeneklerindeki dönemleri açar: takvimin gelecek
+muhtasar satırında "Muhasebecinin rakamını gir" yoktur.
+
+Takvim ve kartlarda kaynakların önceliği her yerde muhasebeci › Ödemeler › tahmin (K4): geçici ve kurumlar vergisi
+kartı, kayıt yokken Ödemeler'deki tutarı büyük satır yazar ("Ödemeler'deki tutar 50.000 ₺", rozet "Ödemeler'de";
+kafenin katkısı alt satırda). İkisi 1 ₺'den fazla farklıysa Özet'in üstünde sarı satır ("Geçici vergi 2026/3:
+Ödemeler'deki tutar (40.000 ₺) muhasebecinin rakamından (41.991 ₺) farklı; …"), takvim satırında sarı not ve nakit
+planının satırında not ("Muhasebecinin rakamı 41.991 ₺, Ödemeler'deki tutar 40.000 ₺: nakit planı Ödemeler'dekini
+kullanıyor."). Faturası Paraşüt'te iptal edilen varlık da Özet'in üstünde uyarır ("Demirbaş'ı aç"); çift sayım yalnız
+aday fatura gerçekten gider sayılıyorsa yazılır ("demirbaş olabilir" ve hesap döneminden önceki fatura sayılmaz).
+
+Takvimin satırları nakit planıyla aynı kuralla düşer ve kalır:
+- **Ödendi** denen dönem (son ödenenler; geçici vergide kalıcı kayıt da) satır olmaz: muhtasar, SGK, geçici vergi,
+  KDV ve KDV-2. "Sıradaki ödeme" ve "Önümüzdeki 30 gün" onu saymaz.
+- Sabit tutarlı hatırlatıcının ("SGK prim ödemesi", "Kira stopajı") tutarı her döneminde Ödemeler'dedir; muhtasar, KDV
+  ve geçici vergi hatırlatıcısının tutarı yalnız sıradaki dönemindir.
+- Ödeme günü gelmiş, yasal son günü gelmemiş KDV ve KDV-2 (28'i Cumartesi olan KDV, 25'i Pazar olan KDV-2) son güne
+  kadar tutarıyla kalır; nakit planı onu planlamaz (bugünün ödemesi eldeki paradan, `plan.vat.onDue`), satırın notu
+  "Ödeme günü (25 Ekim) geldiği için nakit planında yok; eldeki paradan ödenir.".
+- Kayan muhtasar ve geçici vergi günü ayrıntıda "Nakit planında 26 Aralık'ta." der.
+- Kesin tutarlar (muhasebeci, Ödemeler'deki, sabit tutar) üç rakamda da `≈` almaz ("791 ₺ · KDV · 28 Ekim").
+- Geçici vergi kartı 1 Ocak–17 Şubat arasında geçen yılın 4. çeyreğidir (beyannamesi sıradaki).
+- Sınıflandırma başlığındaki ve kartın alt satırındaki kalem sayısı çeyreğindir ("Bu çeyrekte 808.610 ₺ gider
+  sayılmadı (15 kalem)"); Başlarken yılın bütün kalemlerini sayar ("26 kalem kaldı").
 
 Diğer ekranlara dokunuşlar:
 - **Gelir-gider:** başlığın altında "Vergiye göre karşılığı: Vergi › Vergiye göre". Ayarlar'daki işveren SGK oranı
@@ -164,7 +189,8 @@ Tahmine katılanlar'daki tek **Muhtasar, geçici vergi ve damga** anahtarıyla k
 
 Nakit planını okuyan her yüzey bu satırları görür: Genel bakış'ın nakit kartı, haftalık özetin "ilk eksi gün"
 maddesi ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)), Claude'un nakit planı aracı. Zil, sabah e-postası ve Bugün
-değişmedi. Besleme hesaplanamazsa plan vergisiz, bugünkü gibi çalışır (`console.error`).
+değişmedi. Besleme hesaplanamazsa plan vergisiz, bugünkü gibi çalışır (`console.error`): stopajlı ve yurt dışı sabit
+gider de bugünkü gibi brüt, faturasının KDV'siyle ödenir (muhtasar ve KDV-2 satırı olmadığı için stopaj kaybolmaz).
 
 **Excel "Vergi" sekmesi** (`src/app/api/export/workbook.ts` › `addTax`): ilk satır "Tahmin; beyanname değildir.
 Kafenin payı; şirketin beyannamesi muhasebecidedir." Bloklar: ay ay vergiye göre gelir-gider ve çeyrek toplamı

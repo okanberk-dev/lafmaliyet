@@ -373,6 +373,16 @@ ModPOS ↔ mali belge mutabakat ekranı; KDV tahmininin yazarkasa tabanına geç
   eşit; "demirbaş olabilir" eşiği KDV hariç 12.000 ₺ ve aynı tedarikçiden 90 günde ilk fatura.
 - `npm run db:reset` vergi demirbaş listesini faturalarla birlikte siler (önce kaç varlık olduğunu yazar; yedekte
   durur); muhasebecinin rakamları, düzeltmeler ve vergi ayarları kalır.
+- **İnceleme düzeltmeleri (PR öncesi, 29 Ekim):** KDV ve KDV-2 ödeme gününden yasal son güne kadar tutarıyla kalır
+  (`plan.vat.onDue`); 1 Ocak–17 Şubat'ta geçici vergi kartı geçen yılın 4. çeyreği; sabit tutarlı SGK ve "Kira
+  stopajı" hatırlatıcısının tutarı her döneminde; Ödendi denen muhtasar, SGK ve geçici vergi takvimden düşer; kartlar
+  Ödemeler'deki tutarı da kullanır (K4) ve fark Özet'te, takvimde ve nakit planında yazılır; faturası iptal edilen
+  varlık uyarısı Özet'te; kesin tutar `≈` almaz; telefonda Vergiye göre'nin çeyrek değişince çökmesi, döküm
+  satırlarının taşması, "Kaldır" onayının yanlış metni, gelecek muhtasar ayında yanlış döneme açılan pencere, %15
+  reklam stopajının ipucu (÷ 0,85) ve Başlarken'in geçici vergi bağlantısı düzeltildi; vergi beslemesi alınamazsa
+  stopajlı sabit gider brüt ödenir; `tax.settings`'in ilk yazımı kilitli; takvimde olmayan gün reddedilir.
+  Sınıflandırma başlığındaki sayı artık çeyreğin kalemleri: Excel verisinde 2026/3 "(15 kalem)" (planın ilk metni
+  yılın sayısını, 24'ü, yazıyordu).
 
 ### Dalga 13: yazarkasa (banka POS) mali Z
 

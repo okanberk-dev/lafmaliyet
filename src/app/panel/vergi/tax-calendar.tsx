@@ -6,7 +6,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { MONTH_NAMES } from "@/lib/constants";
 import { WEEKDAY_SHORT, weekdayOf } from "@/lib/forecast/calendar";
-import { INFLATION_LINE, NOTE_LATER, NOTE_MUNICIPAL, NOTE_UNKNOWN, type TaxCalendarRow, type TaxView } from "@/lib/tax/view";
+import { INFLATION_LINE, isMismatchNote, NOTE_LATER, NOTE_MUNICIPAL, NOTE_UNKNOWN, type TaxCalendarRow, type TaxView } from "@/lib/tax/view";
 import { cn } from "@/lib/utils";
 
 import { FilingButton, type FilingKindData } from "./filing-dialog";
@@ -56,7 +56,11 @@ function Row({ row, extras }: { row: TaxCalendarRow; extras: CalendarExtras }) {
   const al = row.amount === null ? amountless(row.note) : null;
   const sub = [row.shift, al ? al.sub : row.note].filter(Boolean).join(" · ");
   const due = new Date(`${row.due}T12:00:00Z`).toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long", timeZone: "UTC" });
-  const filing = row.kind === "mphb" ? extras.filings.mphb : row.kind === "gecici" ? extras.filings.gecici : row.kind === "kv" ? extras.filings.kv : null;
+  const kindFiling = row.kind === "mphb" ? extras.filings.mphb : row.kind === "gecici" ? extras.filings.gecici : row.kind === "kv" ? extras.filings.kv : null;
+  // Pencere yalnız seçeneklerindeki dönemleri açar (muhtasarda son 12 ay): gelecek dönemin satırında düğme yok, başka
+  // bir ayın kaydına yazılmasın
+  const filing = kindFiling?.options.some((o) => o.period === row.period) ? kindFiling : null;
+  const warnNotes = row.notes.filter(isMismatchNote);
   const hasPayroll = row.kind === "mphb" && extras.payroll.some((p) => p.month === row.period);
   const kdv = row.kind === "kdv1" || row.kind === "kdv2";
   return (
@@ -78,7 +82,8 @@ function Row({ row, extras }: { row: TaxCalendarRow; extras: CalendarExtras }) {
         </summary>
         <div className="space-y-3 border-t border-line bg-surface/40 px-4 pt-3 pb-4">
           {row.detail.length ? <DetailList rows={row.detail} /> : null}
-          <NoteList notes={row.notes} />
+          <NoteList notes={warnNotes} tone="warn" />
+          <NoteList notes={row.notes.filter((n) => !warnNotes.includes(n))} />
           <RuleRefList refs={extras.rules[row.kind] ?? []} />
           <div className="flex flex-wrap gap-2">
             {hasPayroll ? <PayrollButton months={extras.payroll} month={row.period} /> : null}

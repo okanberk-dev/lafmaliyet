@@ -257,14 +257,20 @@ export interface OrphanAsset {
   doubleCounted: number;
 }
 
-/** Faturası silinen varlıklar ve adayları; aday fatura demirbaş kategorisinde değilse tamamı gider sayılıyordur */
-export function orphanAssets(assets: readonly TaxAsset[], invoices: readonly Invoice[]): OrphanAsset[] {
+/**
+ * Faturası silinen varlıklar ve adayları. Aday fatura yalnız tamamı gider sayılıyorsa çift sayılır: demirbaş ve kafe dışı
+ * kategoride değil, bir varlığa bağlı değil, "demirbaş olabilir" (karar verilmemiş; `notExpense`) değil ve hesap
+ * döneminin içinde (§3.3)
+ */
+export function orphanAssets(assets: readonly TaxAsset[], invoices: readonly Invoice[], opts: { notExpense?: ReadonlySet<number>; periodStart?: string } = {}): OrphanAsset[] {
   const linked = allocatedByInvoice(assets);
+  const counted = (i: Invoice) =>
+    i.category !== ASSET_CATEGORY && !linked.has(i.id) && !SEPARATE_CATEGORIES.includes(i.category) && !opts.notExpense?.has(i.id) && (!opts.periodStart || i.date >= opts.periodStart);
   return assets
     .filter((a) => a.invoiceId === null && a.invoiceLabel)
     .map((asset) => {
       const candidates = relinkCandidates(asset, invoices);
-      const doubleCounted = r2(candidates.filter((i) => i.category !== ASSET_CATEGORY && !linked.has(i.id) && !SEPARATE_CATEGORIES.includes(i.category)).reduce((s, i) => s + net(i), 0));
+      const doubleCounted = r2(candidates.filter(counted).reduce((s, i) => s + net(i), 0));
       return { asset, candidates, doubleCounted };
     });
 }

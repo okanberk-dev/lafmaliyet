@@ -185,6 +185,10 @@ test("E: faturası silinen varlık: uyarı ve aday faturalar (aynı tedarikçi, 
   const o = orphanAssets([orphan, asset({ id: 6, invoiceId: 99 })], list);
   assert.equal(o.length, 1);
   assert.equal(o[0].doubleCounted, 340000);
+  // R7: "demirbaş olabilir" (karar verilmemiş) aday gider sayılmıyor, hesap döneminden önceki fatura da: çift sayım yok
+  assert.equal(orphanAssets([orphan], list, { notExpense: new Set([21]) })[0].doubleCounted, 0);
+  assert.equal(orphanAssets([orphan], list, { periodStart: "2026-08-01" })[0].doubleCounted, 0);
+  assert.equal(orphanAssets([orphan], list, { notExpense: new Set([99]), periodStart: "2026-06-25" })[0].doubleCounted, 340000);
   // Bağlı varlıklar faturanın netini aşamaz: kalan tutar
   assert.equal(invoiceRemaining(original, [asset({ id: 1, invoiceId: 20, cost: 300000 })]), 38169.58);
   assert.equal(invoiceRemaining(original, [asset({ id: 1, invoiceId: 20, cost: 300000 })], 1), 338169.58);

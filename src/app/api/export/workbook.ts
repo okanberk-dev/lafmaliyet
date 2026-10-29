@@ -1289,7 +1289,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
         ? `${quarterLabel(c.anchor.period)} muhasebeci kaydının matrahı (${tl(c.anchor.matrah, 2)}) + sonraki dönem kazançları`
         : `hesap döneminin başından (${dotted(c.from)}) bu çeyreğin sonuna dönem kazançlarının toplamı`,
     );
-    if (c.loss) line("Devreden zarar", -c.loss, "Önceki yıllardan (Kurallar › Ayarlar ya da önceki yılın kaydı)");
+    if (c.loss) line("Devreden zarar", -c.loss, "Önceki yılın kurumlar vergisi kaydındaki 'Sonraki yıllara devreden zarar'");
     if (c.indirim) line("İndirim", -c.indirim, "Düzeltmelerden");
     line("Matrah", c.matrah, "kümülatif kazanç − devreden zarar − indirim; eksiyse 0", { bold: true });
     line("Hesaplanan geçici vergi", c.hesaplanan, `matrah × ${pctOf(rules.gecici.oran.value)}`);

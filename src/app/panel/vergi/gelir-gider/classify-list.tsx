@@ -14,7 +14,7 @@ import { Checkbox, Select } from "@/components/ui/form";
 import { useLeaveGuard } from "@/components/ui/leave-guard";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { money } from "@/lib/format";
-import { VAT_TO_ZERO_LABEL, type Withholding, WITHHOLDING_GROSS_HINT, WITHHOLDING_LABELS, WITHHOLDINGS } from "@/lib/tax/rules";
+import { VAT_TO_ZERO_LABEL, type Withholding, WITHHOLDING_LABELS, WITHHOLDINGS } from "@/lib/tax/rules";
 import { unreachable } from "@/lib/unreachable";
 import { cn } from "@/lib/utils";
 import { saveTaxClassifications, saveTaxSettings } from "@/server/actions/tax";
@@ -62,13 +62,12 @@ export interface ClassifyData {
   separateNote: string;
   invoices: InvoiceChoice[];
   directLimit: number;
+  /** Ödemeden kesilen stopajlı profilin tutar ipucu, kendi oranıyla (kira ÷ 0,80, şahsa internet reklamı ÷ 0,85) */
+  grossHints: Partial<Record<Withholding, string>>;
   today: string;
 }
 
 type Change = { doc?: string; withholding?: string; vatToZero?: boolean };
-
-/** Ödemeden kesilen stopajlar: tutar brüt olmalı (§3.5 ipucu) */
-const GROSS = new Set(["kira", "serbest_meslek", "internet_reklam"]);
 
 /** Demirbaş adayı mı: seçeneği belge değil karardır ("Gider (demirbaş değil)"); kaynak tam switch'le (K25 bekçisi) */
 function isCandidate(it: ClassifyItem): boolean {
@@ -225,7 +224,7 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                                   </Select>
                                 </label>
                               ) : null}
-                              {GROSS.has(e.withholding) ? <p className="text-xs leading-4 text-ink-mute sm:col-span-2">{WITHHOLDING_GROSS_HINT}</p> : null}
+                              {data.grossHints[e.withholding as Withholding] ? <p className="text-xs leading-4 text-ink-mute sm:col-span-2">{data.grossHints[e.withholding as Withholding]}</p> : null}
                               {e.vatBox ? (
                                 <Checkbox label={VAT_TO_ZERO_LABEL} checked={e.vatToZero} disabled={pending} onChange={(ev) => set(it, { vatToZero: ev.target.checked })} className="text-[13px] sm:col-span-2" />
                               ) : null}

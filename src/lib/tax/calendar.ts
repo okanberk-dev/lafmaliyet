@@ -207,12 +207,21 @@ export function yearOptions(today: string, settings: Pick<TaxSettings, "periodSt
 }
 
 /**
+ * Geçici vergi günü (yasal) bugün ya da sonra gelen, hesap dönemindeki ilk çeyrek: Özet'in geçici vergi kartı. 1 Ocak ile
+ * 17 Şubat arasında geçen yılın son çeyreğidir (15.01.2027 → 2026-Q4)
+ */
+export function nextDueQuarter(today: string, settings: Pick<TaxSettings, "periodStart">): { key: string; from: string; to: string } | null {
+  const ty = Number(today.slice(0, 4));
+  const candidates = [ty - 1, ty, ty + 1].flatMap((y) => periodQuarters(y, settings));
+  return candidates.find((c) => legalDueDate(nominalDue("gecici", c.key)).date >= today) ?? null;
+}
+
+/**
  * Varsayılan çeyrek: geçici vergi günü bugünden sonra gelen, hesap dönemindeki ilk çeyrek (24.10.2026 → 2026-Q3); başka
  * bir yıl seçildiyse o yılın son verili (geçmiş yılda dönemin son) çeyreği, sonraki yılda ilk çeyreği.
  */
 export function defaultQuarter(today: string, year: number, settings: Pick<TaxSettings, "periodStart">): string | null {
-  const candidates = [Number(today.slice(0, 4)) - 1, Number(today.slice(0, 4)), Number(today.slice(0, 4)) + 1].flatMap((y) => periodQuarters(y, settings));
-  const next = candidates.find((c) => legalDueDate(nominalDue("gecici", c.key)).date >= today) ?? null;
+  const next = nextDueQuarter(today, settings);
   const own = periodQuarters(year, settings);
   if (!own.length) return null;
   if (next && next.key.startsWith(`${year}-`)) return next.key;

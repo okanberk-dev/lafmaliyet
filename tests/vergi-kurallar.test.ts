@@ -30,6 +30,7 @@ import {
   taxDocOptions,
   WITHHOLDING_GROSS_HINT,
   WITHHOLDING_LABELS,
+  withholdingGrossHint,
   withholdingKdv2,
   withholdingRate,
   VAT_TO_ZERO_LABEL,
@@ -130,6 +131,11 @@ test("A2: stopaj ve sorumlu sıfatıyla KDV oranları profilden", () => {
   assert.equal(withholdingKdv2("yurt_disi_hizmet", R), 0.2);
   assert.equal(withholdingKdv2("internet_reklam", R), 0);
   assert.equal(withholdingKdv2("kira", R), 0);
+  // U5: tutar ipucu profilin oranıyla (şahsa internet reklamı %15 → ÷ 0,85); yurt dışı ve stopajsızda yok
+  assert.equal(withholdingGrossHint("kira", R), WITHHOLDING_GROSS_HINT);
+  assert.equal(withholdingGrossHint("serbest_meslek", R), WITHHOLDING_GROSS_HINT);
+  assert.equal(withholdingGrossHint("internet_reklam", R), "Tutar brüt olmalı; elinize geçen tutarı yazdıysanız brüt = net ÷ 0,85.");
+  for (const w of ["internet_reklam_yurtdisi", "yurt_disi_hizmet", "yok", null] as const) assert.equal(withholdingGrossHint(w, R), null, String(w));
 });
 
 // ---------------------------------------------------------------- 3. Bilinmeyen yıl

@@ -71,7 +71,14 @@ export function muhtasarItemsWindow(model: Pick<Model, "fixedInMonth" | "pnlMont
 export function taxViewInputFromModel(
   model: Model,
   inputs: TaxInputs,
-  opts: { today: string; year?: number | null; quarter?: string | null; reminders?: readonly ReminderRow[]; vat?: CashPlanVat | null },
+  opts: {
+    today: string;
+    year?: number | null;
+    quarter?: string | null;
+    reminders?: readonly ReminderRow[];
+    vat?: CashPlanVat | null;
+    paidReminders?: TaxViewInput["paidReminders"];
+  },
 ): TaxViewInput {
   const { settings } = inputs;
   const pnl = taxPnlInputFromModel(model, {
@@ -94,6 +101,7 @@ export function taxViewInputFromModel(
     reminders: opts.reminders ?? [],
     vat: opts.vat ?? null,
     paidQuarters: paidQuartersOf(inputs.vatPaid),
+    paidReminders: opts.paidReminders ?? [],
     settingsEmployerRate: model.settings.isverenSgk,
   };
 }

@@ -15,7 +15,7 @@ import { PeriodPicker } from "./period-picker";
 import { CALENDAR_RULES, GECICI_RULES, KV_RULES, ruleRefs } from "./refs";
 import { GeciciCardView, GettingStartedCard, KvCardView } from "./tax-cards";
 import { TaxCalendarCard } from "./tax-calendar";
-import { type BannerData, DisclaimerBody, OZET_DESCRIPTION, TaxBanner, VergiHeader } from "./ui";
+import { type BannerData, DisclaimerBody, NoteList, OZET_DESCRIPTION, TaxBanner, VergiHeader } from "./ui";
 
 export const metadata: Metadata = { title: "Vergi" };
 
@@ -101,6 +101,18 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
         </div>
 
         <GettingStartedCard data={view.gettingStarted} />
+
+        {view.warnings.length ? (
+          // K4 ve §3.3: muhasebecinin rakamı ile Ödemeler'deki tutar farklı; faturası iptal edilen varlık (çift sayım)
+          <div role="note" aria-label="Vergi uyarıları" className="space-y-2.5 rounded-2xl bg-panel px-4 py-3">
+            <NoteList notes={view.warnings} tone="warn" />
+            {view.orphans.length ? (
+              <ButtonLink href="/panel/vergi/demirbas" size="sm">
+                Demirbaş&apos;ı aç
+              </ButtonLink>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="min-w-0 lg:col-span-2">

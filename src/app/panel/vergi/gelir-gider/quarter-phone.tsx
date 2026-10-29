@@ -15,15 +15,17 @@ import type { GridData } from "./grid";
  */
 export function QuarterPhone({ grid }: { grid: GridData }) {
   const months = grid.columns.length - 2;
-  // Açılışta çeyrek toplamı
-  const [col, setCol] = useState(months);
+  // Açılışta çeyrek toplamı. Sayfa çeyrek değişince bileşeni yeniden kurar (key); sütun sayısı değişirse dizin yine de
+  // sınırın içinde kalır (3 aylık çeyrekten 1 aylığa geçerken)
+  const [picked, setCol] = useState(months);
+  const col = Math.min(Math.max(picked, 0), grid.columns.length - 1);
   const c = grid.columns[col];
   const step = "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-surface text-ink-mute ring-1 ring-line-strong ring-inset hover:text-ink disabled:cursor-default disabled:opacity-30";
   return (
     <div className="md:hidden">
       <div className="sticky top-(--mobile-top-h) z-20 border-y border-line bg-panel/95 px-4 py-2 backdrop-blur-md">
         <div role="group" aria-label="Sütun" className="flex items-center gap-2">
-          <button type="button" className={step} disabled={col <= 0} onClick={() => setCol((i) => Math.max(0, i - 1))} aria-label="Önceki">
+          <button type="button" className={step} disabled={col <= 0} onClick={() => setCol(Math.max(0, col - 1))} aria-label="Önceki">
             <ChevronLeft size={20} aria-hidden="true" />
           </button>
           <select
@@ -39,7 +41,7 @@ export function QuarterPhone({ grid }: { grid: GridData }) {
               </option>
             ))}
           </select>
-          <button type="button" className={step} disabled={col >= grid.columns.length - 1} onClick={() => setCol((i) => Math.min(grid.columns.length - 1, i + 1))} aria-label="Sonraki">
+          <button type="button" className={step} disabled={col >= grid.columns.length - 1} onClick={() => setCol(Math.min(grid.columns.length - 1, col + 1))} aria-label="Sonraki">
             <ChevronRight size={20} aria-hidden="true" />
           </button>
         </div>

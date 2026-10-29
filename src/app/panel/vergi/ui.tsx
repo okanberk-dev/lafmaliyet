@@ -115,8 +115,9 @@ export function DetailList({ rows, className }: { rows: readonly { label: ReactN
     <dl className={cn("divide-y divide-line rounded-xl bg-surface px-3 ring-1 ring-line", className)}>
       {rows.map((r, i) => (
         <div key={i} className={cn("flex items-baseline justify-between gap-3 py-2 text-[13px] leading-5", r.strong && "font-semibold")}>
-          <dt className={cn("min-w-0 break-words", r.strong ? "text-ink" : "text-ink-mute")}>{r.label}</dt>
-          <dd className="shrink-0 text-right text-ink tabular">{r.value}</dd>
+          {/* Uzun değer sarar (en çok %60), etiket en az %35'te kalır: telefonda harf harf alt alta düşmez (§4.0) */}
+          <dt className={cn("min-w-[35%] break-words", r.strong ? "text-ink" : "text-ink-mute")}>{r.label}</dt>
+          <dd className="max-w-[60%] text-right break-words text-ink tabular">{r.value}</dd>
         </div>
       ))}
     </dl>
