@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Info } from "lucide-react";
+import { Globe } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
@@ -11,6 +11,7 @@ import { tryAction } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { cleanName } from "@/lib/count-item";
 import { tl } from "@/lib/format";
@@ -208,16 +209,15 @@ export function SiteNewProductDialog({
         </fieldset>
 
         {!item.isActive ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Kalem sitede Tükendi: ürün QR menüde gizli açılır, site Satışta deyince menüye girer.
-          </p>
+          <Notice tone="neutral" size="sm" title="Kalem sitede Tükendi: ürün QR menüde gizli açılır, site Satışta deyince menüye girer" />
         ) : null}
         {covering.length ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info">
-            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Öneriler sekmesinde bu kaleme önerilen ürün var: {covering.join(", ")}. Aynı ürünse yenisini açmak yerine onu bağlayın.
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title={`Öneriler sekmesinde bu kaleme önerilen ürün var: ${covering.join(", ")}`}
+            text="Aynı ürünse yenisini açmak yerine onu bağlayın."
+          />
         ) : null}
       </form>
     </Dialog>

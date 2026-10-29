@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { AlertTriangle, CheckCircle2, CircleAlert, ClipboardList, Globe, Info, Link2, Receipt, Scale, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CircleAlert, ClipboardList, Globe, Info, Link2, Receipt, Scale, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -12,13 +12,13 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import type { PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { sizeLabel } from "@/lib/site-sales/calc";
-import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { pendingWasteSummary } from "@/server/data/waste-requests";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -138,12 +138,12 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
       />
 
       {waiting?.count ? (
-        <p className="mb-4 rounded-xl bg-warn-soft px-4 py-2.5 text-sm text-warn">
-          Bu ay için onay bekleyen {num(waiting.count)} zayi / ikram isteği ·{" "}
-          <Link href={`/panel/onaylar#istek-${waiting.firstId}`} className="font-medium underline underline-offset-2">
-            Onaylar
-          </Link>
-        </p>
+        <Notice
+          tone="warn"
+          className="mb-4"
+          title={`Bu ay ${num(waiting.count)} zayi / ikram isteği onay bekliyor`}
+          action={<NoticeLink href={`/panel/onaylar#istek-${waiting.firstId}`}>Onaylar</NoticeLink>}
+        />
       ) : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -333,15 +333,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                     />
                   ))}
                 </Well>
-                <p
-                  className={cn(
-                    "mt-3 flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-medium",
-                    c.sales.ok ? "bg-good-soft text-good" : "bg-warn-soft text-warn",
-                  )}
-                >
-                  {c.sales.ok ? <CheckCircle2 size={16} className="shrink-0" /> : <AlertTriangle size={16} className="shrink-0" />}
-                  {salesMessage}
-                </p>
+                <Notice tone={c.sales.ok ? "good" : "warn"} className="mt-3" title={salesMessage} />
               </>
             ) : (
               <Well>
@@ -388,9 +380,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                 })}
               </ActivityList>
             ) : (
-              <p className="flex items-center gap-2 rounded-2xl bg-good-soft px-3.5 py-2.5 text-sm font-medium text-good">
-                <CheckCircle2 size={16} className="shrink-0" /> Her şey yolunda görünüyor.
-              </p>
+              <Notice tone="good" title="Her şey yolunda görünüyor" />
             )}
           </CardContent>
         </Card>
@@ -471,22 +461,19 @@ function OnlineSalesCard({
               </p>
             ) : null}
             {online.unmapped.length ? (
-              <div className="rounded-2xl bg-warn-soft px-4 py-3 text-[13px] text-warn">
-                <p className="font-medium">Panel ürününe bağlı olmayan satırlar: malzemesi tüketime girmedi</p>
-                <ul className="mt-1.5 space-y-0.5">
+              <Notice tone="warn" risk="para" title={`${num(online.unmapped.length)} online satır panel ürününe bağlı değil: malzemesi tüketime girmedi`}>
+                <ul className="space-y-0.5">
                   {online.unmapped.map((l, i) => (
                     <li key={`${l.menuItemId}-${l.size}-${i}`}>
                       {l.qty}× {l.name}
                       {sizeLabel(l.size) ? ` ${sizeLabel(l.size)}` : ""}
-                      <span className="opacity-75">{l.menuItemId ? ` (${l.menuItemId}, ${l.size === "L" ? "L yuvası" : "M yuvası"})` : " (sitede kalemsiz satır)"}</span>
+                      <span className="text-ink-mute">{l.menuItemId ? ` (${l.menuItemId}, ${l.size === "L" ? "L yuvası" : "M yuvası"})` : " (sitede kalemsiz satır)"}</span>
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Notice>
             ) : online.mapped.length ? (
-              <p className="flex items-center gap-2 rounded-2xl bg-good-soft px-3.5 py-2.5 text-[13px] font-medium text-good">
-                <CheckCircle2 size={16} className="shrink-0" /> Bütün online satırlar panel ürünlerine bağlı.
-              </p>
+              <Notice tone="good" size="sm" title="Bütün online satırlar panel ürünlerine bağlı" />
             ) : null}
           </>
         ) : (

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { KeyValue } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, tl } from "@/lib/format";
 import { CONFIDENCE_LABEL, type LinkSuggestion } from "@/lib/site-menu/names";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
@@ -121,13 +122,17 @@ export function SiteMenuCard({
       />
       <CardContent className="space-y-3 text-sm">
         {!site.configured ? (
-          <p className={link ? "rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn" : "text-[13px] leading-5 text-ink-mute"}>
-            Site bağlantısı kurulmamış (iki projede de aynı <code className="rounded bg-surface px-1 font-mono text-xs ring-1 ring-line">KARAOKE_SYNC_SECRET</code>
-            ).{" "}
-            {link
-              ? "Ürün sitedeki bir kaleme bağlı kaldığı için fiyatı ve menü durumu şimdi değiştirilemez (iki yer ayrışmasın); anahtarı ekleyin ya da bağlantıyı kaldırın."
-              : "Ürünün fiyatı ve menü durumu yalnız panelde; her şey eskisi gibi çalışır."}
-          </p>
+          <Notice
+            tone={link ? "warn" : "neutral"}
+            size="sm"
+            title={link ? "Site bağlantısı kurulmadı: fiyat ve menü durumu şimdi değiştirilemez" : "Site bağlantısı kurulmadı: fiyat ve menü durumu yalnız panelde"}
+            tech={
+              <>
+                İki projede de (laffogato.net ve bu panel) aynı <code>KARAOKE_SYNC_SECRET</code> gerekir.{" "}
+                {link ? "Ürün sitedeki bir kaleme bağlı kaldığı için iki yer ayrışmasın diye fiyat kilitli: anahtarı ekleyin ya da bağlantıyı kaldırın." : "Ürün her şeyiyle eskisi gibi çalışır."}
+              </>
+            }
+          />
         ) : null}
 
         {link ? (
@@ -143,14 +148,15 @@ export function SiteMenuCard({
               <KeyValue className="py-2.5" label="Son eşitleme" value={site.snapshotAt ? dateTimeTR(site.snapshotAt) : "—"} />
             </div>
             {status === "broken" ? (
-              <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] leading-5 text-bad" role="alert">
-                Bağlantı kopuk: {item?.name ?? link.siteMenuId} sitede tek boy (L fiyatı silinmiş). Fiyata ve menü durumuna dokunulmuyor; bu sırada
-                fiyat da değiştirilemez. Bağlantıyı kaldırın ya da ürünü kalemin tek fiyatına bağlayın.
-              </p>
+              <Notice
+                tone="bad"
+                size="sm"
+                live="assertive"
+                title={`Bağlantı kopuk: ${item?.name ?? link.siteMenuId} sitede tek boy`}
+                text="Fiyat ve menü durumu değiştirilemez; bağlantıyı kaldırın ya da kalemin tek fiyatına bağlayın."
+              />
             ) : status === "missing" ? (
-              <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn" role="status">
-                {link.siteMenuId} sitenin son listesinde yok (silinmiş olabilir). Sonraki eşitlemede bağlantı kaldırılır; fiyat ve durum kalır.
-              </p>
+              <Notice tone="warn" size="sm" live="polite" title={`${link.siteMenuId} sitenin son listesinde yok`} text="Sonraki eşitlemede bağlantı kaldırılır; fiyat ve durum kalır." />
             ) : (
               <p className="text-[13px] leading-5 text-ink-mute">
                 Fiyat ya da menü durumu (Menüde aktif ve QR menüde göster birlikte açıkken sitede Satışta) kaydedilince önce siteye yazılır; site

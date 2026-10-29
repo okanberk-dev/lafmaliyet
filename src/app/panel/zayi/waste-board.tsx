@@ -12,6 +12,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
@@ -216,9 +217,9 @@ export function WasteBoard({
             ]}
           />
           {noProducts ? (
-            <p className="rounded-xl bg-info-soft px-3 py-2 text-xs leading-5 text-info">{lafpos.note}</p>
+            <Notice tone="neutral" size="sm" title={lafpos.note} />
           ) : lafpos && kind === "zayi" ? (
-            <p className="rounded-xl bg-info-soft px-3 py-2 text-xs leading-5 text-info">{LAFPOS_IKRAM_TEXT.zayiNote}</p>
+            <Notice tone="neutral" size="sm" title={LAFPOS_IKRAM_TEXT.zayiNote} />
           ) : kind === "ikram" ? (
             <p className="text-xs leading-5 text-ink-mute">
               Uygulamadaki ödülle (damga kartı, davet kuponu) verilen içecek ikram değildir: bar ekranına uygulama siparişi olarak düşer ve online satışta sayılır. Buraya

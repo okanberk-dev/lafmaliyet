@@ -12,6 +12,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Checkbox } from "@/components/ui/form";
 import { EmptyState, KeyValue } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTimeTR, num, tl } from "@/lib/format";
 import type { KasaName } from "@/lib/lafpos/kasa";
@@ -242,9 +243,12 @@ export function SiteMenuMatching({
           <Segmented<Tab> label="Eşleştirme görünümü" value={tab} onChange={setTab} options={tabs} />
 
           {!snapshotAt && configured ? (
-            <p className="rounded-2xl bg-info-soft px-4 py-3 text-sm text-info" role="status">
-              Sitenin menüsü henüz alınmadı. Sağdaki “Siteyle eşitle” ile listeyi alın; öneriler ve sitedeki kalemler ondan sonra görünür.
-            </p>
+            <Notice
+              tone="neutral"
+              live="polite"
+              title="Sitenin menüsü henüz alınmadı"
+              text="Sağdaki “Siteyle eşitle” ile listeyi alın; öneriler ve sitedeki kalemler ondan sonra görünür."
+            />
           ) : null}
 
           {tab === "oneriler" ? (
@@ -559,7 +563,7 @@ function StatusCard({
               <KeyValue className="py-2.5" label="Bağlı ürün" value={num(linkedCount)} />
               <KeyValue className="py-2.5" label="Son eşitlemede değişen" value={state.changedRows !== null ? `${num(state.changedRows)} ürün` : "—"} />
             </div>
-            {health.tone === "red" && state.lastError ? <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{state.lastError}</p> : null}
+            {health.tone === "red" && state.lastError ? <Notice tone="bad" size="sm" title={state.lastError} /> : null}
             {state.lastChanges.length ? (
               <details className="rounded-2xl bg-surface px-4 py-2.5 ring-1 ring-line">
                 <summary className="cursor-pointer text-[13px] font-medium text-ink-soft">
@@ -575,16 +579,15 @@ function StatusCard({
               </details>
             ) : null}
             {state.unlinked.length ? (
-              <details className="rounded-2xl bg-warn-soft px-4 py-2.5">
-                <summary className="cursor-pointer text-[13px] font-medium text-warn">Sitede silindiği için bağlantısı kaldırılanlar ({num(state.unlinked.length)})</summary>
-                <ul className="mt-2 space-y-1 text-[13px] text-warn">
+              <Notice tone="warn" size="sm" title={`Sitede silindiği için bağlantısı kaldırılanlar (${num(state.unlinked.length)})`}>
+                <ul className="space-y-1">
                   {state.unlinked.map((u, i) => (
                     <li key={`${u.productId}-${u.at}-${i}`}>
                       {dateTimeTR(u.at)} · {u.label} ({u.siteMenuId}, {u.slot})
                     </li>
                   ))}
                 </ul>
-              </details>
+              </Notice>
             ) : null}
             <p className="text-[13px] leading-5 text-ink-mute">
               Sitede bir kalem değişince site panele imzalı bir ping atar, panel bütün menüyü hemen çeker. Ayrıca Ürünler açılınca en çok beş dakikada
@@ -593,18 +596,24 @@ function StatusCard({
             </p>
           </>
         ) : (
-          <ol className="list-decimal space-y-1.5 pl-5 text-[13px] leading-5 text-ink-soft">
-            <li>
-              Bağlantı karaokeyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de (laffogato.net ve bu panel) aynı değerle{" "}
-              <code className="rounded bg-surface px-1 font-mono text-xs ring-1 ring-line">KARAOKE_SYNC_SECRET</code> ekleyin (en az 32 karakter), ikisini
-              yeniden yayınlayın.
-            </li>
-            <li>Bu sayfayı yenileyin, “Siteyle eşitle”ye basın; öneriler görünür.</li>
-            <li>
-              Anahtar yokken bağlı olmayan ürünler eskisi gibi çalışır; bağlı kalmış ürünlerin fiyatı ve menü durumu anahtar gelene kadar değiştirilemez
-              (iki yer ayrışmasın) ya da bağlantıları kaldırılır. Ayrıntı: docs/SITE-MENU.md.
-            </li>
-          </ol>
+          // H4: kurulum talimatı sahibin işi değil; evi Ayarlar › laffogato.net, burada yalnız Teknik ayrıntı'da
+          <Notice
+            tone="neutral"
+            title="Site bağlantısı kurulmadı: eşleştirme yapılamaz"
+            tech={
+              <ol className="list-decimal space-y-1.5 pl-5">
+                <li>
+                  Bağlantı karaokeyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de (laffogato.net ve bu panel) aynı değerle <code>KARAOKE_SYNC_SECRET</code>{" "}
+                  ekleyin (en az 32 karakter), ikisini yeniden yayınlayın.
+                </li>
+                <li>Bu sayfayı yenileyin, “Siteyle eşitle”ye basın; öneriler görünür.</li>
+                <li>
+                  Anahtar yokken bağlı olmayan ürünler eskisi gibi çalışır; bağlı kalmış ürünlerin fiyatı ve menü durumu anahtar gelene kadar değiştirilemez
+                  (iki yer ayrışmasın) ya da bağlantıları kaldırılır. Ayrıntı: docs/SITE-MENU.md.
+                </li>
+              </ol>
+            }
+          />
         )}
       </CardContent>
     </Card>

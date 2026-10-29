@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { looksWireless, suggestedOutput, type OutputDevice } from "@/lib/audio-output";
 import type { Role } from "@/lib/constants";
 
@@ -119,7 +120,7 @@ export function OutputPicker({ role }: { role: Role }) {
           ))}
         </Select>
       )}
-      {warning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">{warning}</p> : null}
+      {warning ? <Notice tone="warn" size="sm" title={warning} /> : null}
     </div>
   );
 }
