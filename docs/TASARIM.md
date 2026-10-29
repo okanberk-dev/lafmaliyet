@@ -27,12 +27,18 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
 | Olumsuz | `text-bad`, `bg-bad-soft` | `#dc2626` / `#fef2f2` | `red-600` / `red-50` |
 | Uyarı | `text-warn`, `bg-warn-soft`, `brass-*` (turuncu ölçek) | `#c2410c` / `#fff7ed` | `#f97316` |
 | Bilgi | `text-info`, `bg-info-soft` | `#2563eb` / `#eff6ff` | |
+| Uyarı kutusunun mürekkebi (kırmızı) | `text-bad-ink` | `#b91c1c` (bad-soft üstünde 5,91; beyazda 6,47) | |
+| Uyarı kutusunun mürekkebi (turuncu) | `text-warn-ink` | `#9a3412` (warn-soft üstünde 6,88; beyazda 7,31) | |
+| Nötr not zemini | `bg-note` | `rgb(23 23 23 / 0.045)` (beyazda `#f5f5f5`, panelde `#eaeaeb` gibi) | |
 | Grafik serileri | `SERIES` (`charts.tsx`) | mavi `#2563eb`, turuncu `#e8590c`, yeşil `#16a34a` | doğrulandı |
 
 - Birincil düğme **siyah** (`Button variant="primary"` = `bg-ink`), ikincil beyaz, vurgulu tek çağrı limon (`accent`).
 - `coffee-*`, `crema`, `paper` adları eski; sayfalarda kullanılmaz. Tailwind'in `emerald/rose/amber/sky/violet`
   ölçekleri yalnızca paylaşılan bileşenlerin içinde (pastel karolar) kullanılır.
 - Negatif tutar `text-bad` ya da `<Signed>`. Renk tek başına anlam taşımaz: yanında işaret, rozet metni ya da ikon.
+- Uyarı kutusunda metin `text-bad` / `text-warn` ile yazılmaz: açık zeminde AA'nın altında ya da sınırında
+  (`text-bad` bad-soft üstünde 4,41); kutunun mürekkebi `text-bad-ink` / `text-warn-ink`, başlık `text-ink`.
+- **Mavi (`bg-info-soft`) uyarı rengi değildir**: yalnız seçim, hücre ve rozet. Bilgi notu nötr (`bg-note`).
 
 ## 2. Yazı
 
@@ -125,6 +131,36 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `@/components/akmanos/streak` | streak | Şu an kullanılmıyor (sayım yapılan aylar için ayrılmış desen). |
 | `@/components/akmanos/capacity-allocation-card`, `agent-limits-card` | bölümlü kullanım çubuğu | Gider dağılımı gibi parçalı toplamlar için desen. |
 | `charts.tsx` | — | Recharts; serileri `SERIES[i]` ile, grafikler `Well` içinde. |
+| `Notice({ tone, title, text, children, tech, action, risk, size, live, defaultOpen })`, `NoticeGroup`, `NoticeLink`, `foldPlan`, `TONE_ICON`, `TONE_LABEL`, `TONE_TILE` (`ui/notice.tsx`) | — | Panelin **tek uyarı bileşeni** (ayrıntı aşağıda). Dört ton (bad · warn · neutral · good), üç boy (md sayfa, sm kart ve pencere içi, line kutusuz satır), başlık + isteğe bağlı ikinci satır + kapalı "Ayrıntı" + tek eylem. Sunucu bileşeni, `<details>` ile JavaScript'siz açılır. Zil, "Dikkat edilmesi gerekenler" kartı ve iş listeleri ikon ve kuyuyu `TONE_ICON` / `TONE_TILE`'dan alır. |
+
+### Uyarılar (`Notice`)
+
+Elle renkli kutu, elle uyarı ikonu ve elle `role="alert|status|note"` yazılmaz; uyarı `Notice`'tir
+(`tests/uyari-goc.test.ts` bekçisi; izinli istisnalar orada: rozet, hap, form içi onay bloğu, başlık ikonu). Alanın
+kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialog` bileşenin dışındadır.
+
+**Ton seçme kuralı** (yukarıdan aşağı, ilk "evet" kazanır):
+
+| Soru | Ton | `risk` | Eylem |
+|---|---|---|---|
+| İşlem yapılamadı, kaydedilmedi, okunamadı | `bad` (kullanıcının eylemine cevapsa `live="assertive"`) | – | yeniden dene / düzelt |
+| Para, yasal son gün ya da barın işleyişi **şimdi** bozuk (gecikmiş ödeme, kasa eksiği, sipariş gelmiyor, onaylanamaz istek) | `bad` | varsa yaz | varsa |
+| Ay sonu rakamını bozan eksik veri, çift sayılma riski, geri alınamaz işlemden önceki dikkat, onay bekleyen istek, oran farkı | `warn` | para / hukuk / veri sonucu varsa **zorunlu** | **zorunlu**: `action` ya da `text`'te ne yapılacağı |
+| Durum, kurulum, bağlantı, kaynak, tahmin kalitesi, nasıl çalışır | `neutral` | – | isteğe bağlı |
+| Tutarlı, tamam, kaydedildi | `good` | – | – |
+
+- **Kompakt hâl parayı, son günü, kaybı asla gizlemez**: tutar, gün ve sonuç başlıkta (≤ 10 sözcük, sonda nokta yok);
+  ikinci satır (`text`, ≤ 18 sözcük) ne yapılacağı; "Ayrıntı"ya yalnız neden, varsayım, liste.
+- `risk` (para · hukuk · veri · bar) taşıyan `warn` ve her `bad` **hiç katlanmaz**; aynı yerdeki birden çok uyarı
+  `NoticeGroup`'ta, ötekilerden ilk ikisi görünür, kalanı "+{n} uyarı daha" (`foldPlan`).
+- `<details>` kapalı başlar; açık başlar yalnız satır başına eylemi olan liste ve kullanıcının eylemine cevap veren
+  hata dökümü (`defaultOpen`).
+- Rol: `live` yoksa `note`, `polite` → `status`, `assertive` → `alert`; sayfayla sunucudan gelen uyarıya `alert`
+  verilmez. Her tonun kendi ikon şekli ve başlığın başında ekran okuyucu öneki ("Önemli: ", "Dikkat: ", "Bilgi: ",
+  "Tamam: ") var.
+- Geliştirici dili (anahtar adı, Vercel, komut, `docs/…` yolu) yalnız `tech`'te ("Teknik ayrıntı (geliştirici
+  için)", Ayrıntı'nın içinde kapalı); personelin açtığı ekranda `tech` hiç verilmez, yönetici talimatı yerine "sorun
+  sürerse yöneticiye haber verin". Turuncu yalnız uyarıdır: iş listelerinin "Yapılacak" durumu gri.
 
 ## 5. Sadeleştirme ilkeleri
 
@@ -148,6 +184,12 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 - Yazı alanları telefonda en az 16px (iOS yakınlaştırmasın); eksi değer girilebilecek alanlarda `inputMode="text"`
   (iOS ondalık klavyesinde eksi yok), gün sayısı gibi tam sayılarda `inputMode="numeric"`.
 - Masaüstü yardım metni ("tıklayın", "Enter kaydeder") telefonda dokunmaya göre yazılır.
+- **Uyarı bütçesi** (390×844): sayfanın asıl cevabından önce katlanabilir uyarı (`bad` ve `risk` taşıyanlar hariç)
+  + iş listesi + ipucu toplamı ≤ 90 px (Genel bakış ≤ 300, Bugün ≤ 340); 1440×900'de ≤ 60 px. Katlanamayan uyarılar
+  bütçeye girmez ama her biri Ayrıntı kapalıyken ≤ 60 px. Eylem başlığın yanına sığmazsa ikon hizasına iner; kutu
+  iki satırı geçmez. Ölçü `[data-notice]` / `[data-risk]` öznitelikleriyle (docs/planlar/ux-sade.md §13).
+- **Yüzen öğe içerik örtmez**: sesli uyarıların kilidi sayfanın içinde (`#ses-yuvasi`, `Notice` "Sesli uyarılar
+  kapalı" + "Sesi aç"); iş listelerinde telefonda sıradaki iş tam kart, ötekiler "Diğer {n} iş" arkasında.
 
 ### Telefonda uygulama hissi (kontrol listesi)
 

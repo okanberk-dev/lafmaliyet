@@ -472,7 +472,7 @@ export function DebtDialog({
               ) : null}
             </fieldset>
           ) : (
-            <Notice tone="warn" size="sm" live="polite" title="Uygun harcama kaydı yok. Gideri başka yerdeyse “Eski borç (devir)” seçin." />
+            <Notice tone="warn" size="sm" live="polite" title="Uygun harcama kaydı yok" text="Gideri başka yerdeyse “Eski borç (devir)” seçin." />
           )
         ) : null}
 

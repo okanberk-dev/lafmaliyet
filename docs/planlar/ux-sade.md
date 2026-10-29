@@ -1880,3 +1880,30 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
    `tests/sayfa-basligi.test.ts` tutar. Takvimin `<ul>`'u `overflow-hidden` yerine `overflow-clip`: hidden bir kaydırma
    kabı olduğu için Chrome ilk satırın `scroll-mt-20` payını kırpıyor, `#sgk` (ilk satır) telefonun üst çubuğunun
    altında kalıyordu; köşeler aynı.
+
+**Bölüm 2 (29 Eki 2026)**
+
+8. **H5, H6 ve U17 Bölüm 3'te.** §6.1 bunları "U / H" satırlarında sayar, ama §11'in Bölüm 3 listesi H5'i
+   (`device-alerts.tsx` + `output-picker.tsx`, "Ses ve bildirim ipuçları (4)") ve H6'yı (`recipe-book.tsx` personel not
+   süzgeci, §9 #23) adıyla defterde sayar; U17'nin metni `plainBadge()` §7.11 sözlüğünden (`glossary.ts`, Bölüm 3'ün
+   yeni dosyası) gelir. Vergi bandı (Ek A 267, §7.4) da Bölüm 3'te; bekçinin uyarı ikonu izin listesinde `vergi/ui.tsx`
+   o güne kadar geçici olarak duruyor (bant kutusuz satıra inince kalkar).
+9. **H1 Bölüm 2'de** (§6.1 ve §11 "U, H"): Vergi kârı'nın başında `warn·md risk=hukuk` uyarı, `ClassifyList` kartı
+   "Eksik belgeler" ve açıklamasız. Rakamlar `view.ts`'e eklenen `classify.summary`'den (yalnız ekleme, K11); belgesi
+   seçilmemiş gider yoksa ama demirbaş adayı varsa başlık "{Y}'lik {m} fatura demirbaş olabilir" (bilgi düşmesin).
+10. **Rol `live`'a taşındı** (§5 "role ve ref prop'a taşınır"): `role="status"` → `live="polite"`, `role="alert"` →
+    `live="assertive"`; sayfayla sunucudan gelen sistem uyarısı §4.5 gereği `note`. Ek A'nın D satırlarındaki elle rol
+    (alan hatası, okunuyor / ilerleme durumu, boş önizleme) ve U4'ün kalan gri ciro satırı bekçide izinli.
+11. **Faturası silinen demirbaş** (§6.2 `demirbas:114`): text "Yeni faturaya bağlayın ya da listeden çıkarın; yoksa
+    iki kez gider sayılır." Belgedeki cümle ("Listeden çıkarın; …") "bugünkü metnin anlamı" diyordu, bugünkü metin ise
+    "yeni faturaya bağlayın" der ve kartın bağlama düğmeleri aynen duruyor; ikisi birlikte yazıldı. "Ömrü gir" eylemi
+    ömrü girilmemiş ilk varlığın düzenleme penceresini açar (bugünkü "Düzenle" penceresi).
+12. **On sözcüğü aşan düz başlıklar §5 kuralıyla bölündü** (bekçi ≤ 10 / ≤ 18): `cash-out-dialog` "Bu satır
+    yöneticinin harcama kaydına bağlı" + "Silmek için yöneticiye haber verin.", `debt-dialog` "Uygun harcama kaydı yok" +
+    devamı, `card-dialog` (Ek A 217) "Unvan, vergi no, adres ve IBAN Paraşüt faturasından okunabilir" + kaynak ve "yalnız
+    boş alanlar dolar", `site-new-product` (Ek A 260) "Kalem sitede Tükendi" + devamı. Hiçbir bilgi düşmedi.
+13. **Ek A 243'ün metni "reçete, fire ve not geçer" diye kaldı** (belgedeki kısaltma "fire ve not"u düşürüyordu; kopya
+    penceresi üçünü de taşır, 16 sözcük). Ek A 228'de belgenin metni aynen kullanıldı ("sayım sapması hesaplanır" yan
+    cümlesi 18 sözcük sınırına sığmadığı için düştü; düğmenin kendisi 0 yazar ve sapma tabloda görünür).
+14. **Kontrast bekçisi düğme hâllerini saymaz**: `hover:bg-bad-soft` (Sil düğmeleri) kutu değil; Ek A'nın D satırlarındaki
+    değer hapları ve ikon karoları (`text-bad` + `bg-bad-soft`) izin listesinde, dokunulmadı.

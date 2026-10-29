@@ -209,7 +209,7 @@ export function SiteNewProductDialog({
         </fieldset>
 
         {!item.isActive ? (
-          <Notice tone="neutral" size="sm" title="Kalem sitede Tükendi: ürün QR menüde gizli açılır, site Satışta deyince menüye girer" />
+          <Notice tone="neutral" size="sm" title="Kalem sitede Tükendi" text="Ürün QR menüde gizli açılır, site Satışta deyince menüye girer." />
         ) : null}
         {covering.length ? (
           <Notice

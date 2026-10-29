@@ -415,7 +415,7 @@ export function CashOutDialog({
           <Notice tone="neutral" size="sm" title="Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür" />
         ) : null}
         {locked && !request ? (
-          <Notice tone="neutral" size="sm" title="Bu satır yöneticinin harcama kaydına bağlı; silmek için yöneticiye haber verin" />
+          <Notice tone="neutral" size="sm" title="Bu satır yöneticinin harcama kaydına bağlı" text="Silmek için yöneticiye haber verin." />
         ) : null}
         {request ? (
           <Field label="Yöneticiye not" htmlFor="co-note" hint="İsteğe bağlı; neden eklendiğini ya da değiştiğini yazın">

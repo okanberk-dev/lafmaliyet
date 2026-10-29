@@ -24,6 +24,7 @@ import {
   explainLines,
   factorTable,
   qualityBanner,
+  qualityTitle,
   reasonChips,
   reasonNames,
   signedPct,
@@ -185,12 +186,15 @@ test("veri katmanları: 8 normal gün ortalama, her hafta gününden 3 gün tam 
   assert.deepEqual([byDate(full, "2026-10-26").low, byDate(full, "2026-10-26").high], [8_500, 11_500]);
   assert.equal(byDate(full, "2026-10-29").spreadPct, 0.2);
   assert.equal(qualityBanner(full), null);
+  assert.equal(qualityTitle(full), null);
 
   const noTue = buildForecast(input({ today: "2026-10-26", history: days("2026-10-05", "2026-10-25", (d, w) => (w === 2 ? null : week(d))) }));
   assert.equal(noTue.quality, "karma");
   assert.deepEqual(noTue.missingWeekdays, [2]);
   assert.equal(noTue.bases[2]?.source, "ortalama");
   assert.equal(qualityBanner(noTue), "Salı için henüz 3 rapor yok; o günler ortalama güne göre hesaplandı.");
+  // Kutunun kısa başlığı (ux-sade U9); uzun metin Ayrıntı'da aynen
+  assert.equal(qualityTitle(noTue), "Salı için 3 rapor yok: ortalama gün kullanıldı");
 });
 
 test("dayanıklı ortalama ve yüzdelik", () => {
@@ -650,6 +654,7 @@ test("metinler: yüzde, gün başlığı, açıklama satırları, veri uyarısı
   const withSnap = explainLines(byDate(ay, "2026-10-22"), { ...ctx, snapshot: snap("2026-10-22", 16_000, "2026-10-22T05:00:00Z") });
   assert.equal(withSnap.at(-1), "Bu sabah kaydedilen tahmin: 16.000 ₺; tutturma bununla ölçülür.");
   assert.match(qualityBanner(ay)!, /^Henüz kasa raporu yok\. Tahmin şimdilik Ekim 2026 ortalamasına \(günde 18\.369 ₺, 16 açık gün\)/);
+  assert.equal(qualityTitle(ay), "Kaba tahmin: kasa raporu yok");
 
   const tam = buildForecast(input({ today: "2026-10-26", history: days("2026-10-05", "2026-10-25", (d) => (d < "2026-10-12" ? 10_000 : d < "2026-10-19" ? 9_000 : 11_000)) }));
   assert.equal(explainLines(byDate(tam, "2026-10-26"), { ...ctx, forecast: tam })[0], "Taban: son 3 Pazartesi gününün ortancası 10.000 ₺.");
@@ -659,6 +664,7 @@ test("metinler: yüzde, gün başlığı, açıklama satırları, veri uyarısı
   const ort = buildForecast(input({ today: "2026-12-14", history: days("2026-12-06", "2026-12-13", () => 10_000) }));
   assert.match(explainLines(byDate(ort, "2026-12-14"), { ...ctx, forecast: ort })[0], /^Taban: son 28 günün 8 kasa raporuna göre ortalama gün .+ × Pazartesi payı %85 \(varsayılan\) = /);
   assert.equal(qualityBanner(ort), "Son 28 günde 8 günlük kasa raporu var. Hafta günü farkları şimdilik varsayılan; her gün için 3 rapor birikince kendi verinizden hesaplanır.");
+  assert.equal(qualityTitle(ort), "Hafta günü farkları varsayılan: son 28 günde 8 rapor");
 
   const table = factorTable(ay);
   assert.deepEqual(table[0], { label: "Hafta içi resmî tatil", effect: "+%20", basis: "varsayılan" });

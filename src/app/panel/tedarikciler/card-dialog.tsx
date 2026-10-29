@@ -287,7 +287,8 @@ export function SupplierCardDialog({
             <Notice
               tone="neutral"
               size="sm"
-              title="Unvan, vergi no, adres ve IBAN tedarikçinin en yeni Paraşüt faturasından (e-fatura belgesi ya da Paraşüt'teki kişi kartı) okunabilir; yalnız boş alanlar dolar."
+              title="Unvan, vergi no, adres ve IBAN Paraşüt faturasından okunabilir"
+              text="En yeni faturanın e-fatura belgesinden ya da Paraşüt'teki kişi kartından; yalnız boş alanlar dolar."
               action={
                 <Button size="xs" variant="secondary" onClick={fill} disabled={filling || busy}>
                   <FileSearch size={16} aria-hidden="true" /> {filling ? "Fatura okunuyor…" : "Faturadan doldur"}
