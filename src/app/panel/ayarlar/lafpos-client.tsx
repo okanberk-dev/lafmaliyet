@@ -10,6 +10,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { monthLabel, num } from "@/lib/format";
 import { LAFPOS_RESEND_HINT } from "@/lib/lafpos/status";
 import { dayMonthYearTR, LAFPOS_SWITCH_EFFECTS, switchAffectedMonths, switchDayProblem } from "@/lib/lafpos/switch";
@@ -109,7 +110,7 @@ export function LafposSwitchDayForm({ value, today, min, max, linked }: { value:
                   <li key={e}>{e}</li>
                 ))}
               </ul>
-              {!linked ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">Bağlantı henüz kurulmadı: anahtar girilene kadar LafPOS günleri gelemez.</p> : null}
+              {!linked ? <Notice tone="warn" size="sm" title="Bağlantı kurulmadı: anahtar girilene kadar LafPOS günleri gelmez" /> : null}
             </>
           ) : (
             <p>Kasa yeniden ModPOS sayılır; LafPOS&apos;tan gelen bütün günler deneme olur ve hiçbir hesaba girmez.</p>

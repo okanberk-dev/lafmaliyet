@@ -1,9 +1,8 @@
 "use client";
 
-import { CircleDashed } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
 import { useQueryState } from "@/components/ui/filters";
+import { Notice } from "@/components/ui/notice";
 
 import { parseStatus } from "./rules";
 
@@ -31,38 +30,48 @@ export function ReviewNotice({ count, stockOnly = 0, cashOuts = 0, cashOutDuplic
     });
   }
 
+  // Her gerçek bir kez: ilki başlık; birden çoksa ötekilerin başlığı ikinci satırda, açıklamaları Ayrıntı'da
+  const facts = [
+    guessed > 0 ? { head: `${guessed} faturanın kategorisi tahmin: kontrol edin`, body: "Doğruysa onaylayın, değilse kategoriyi değiştirin." } : null,
+    stockOnly > 0
+      ? {
+          head: `${stockOnly} fatura mal alışı sayılmıyor`,
+          body: "Kalemleri hammaddeye bağlı, stoğa giriyor ama gelir-gidere girmiyor. Kategorisini mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) yapın.",
+        }
+      : null,
+    cashOuts > 0
+      ? {
+          head: `${cashOuts} kasadan faturalı alım bekliyor`,
+          body: "E-Arşiv ya da faturalı, faturası Faturalar'da yok ve gelir-gidere girmedi. Faturalar'a ekleyin ya da Aylık harcamalar'a yazın.",
+        }
+      : null,
+    cashOutDuplicates > 0 ? { head: `${cashOutDuplicates} kasa alımı iki kez sayılıyor`, body: "Aylık harcamalar'a yazılmıştı, faturası sonra geldi. Gider kaydını silin." } : null,
+  ].filter((f) => f !== null);
+  const [first, ...rest] = facts;
+  if (!first) return null;
+
   return (
-    <div role="status" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2.5 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-      <CircleDashed size={18} className="shrink-0" aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-pretty">
-        {guessed > 0 ? (
-          <span className="block">
-            <span className="font-semibold">{guessed} fatura kategorisi tahminle yazıldı;</span> kontrol edin.
-            <span className="text-warn/85 max-sm:hidden"> Doğruysa onaylayın, değilse kategoriyi değiştirin.</span>
-          </span>
-        ) : null}
-        {stockOnly > 0 ? (
-          <span className="block">
-            <span className="font-semibold">{stockOnly} fatura mal alışı sayılmıyor:</span> kalemleri hammaddeye bağlı, stoğa giriyor ama gelir-gidere
-            girmiyor. Kategorisini mal alışı (Hammadde &amp; İçecek, Tatlı &amp; Hazır Ürün, Ambalaj) yapın.
-          </span>
-        ) : null}
-        {cashOuts > 0 ? (
-          <span className="block">
-            <span className="font-semibold">{cashOuts} kasadan faturalı alım bekliyor:</span> e-Arşiv ya da faturalı, faturası Faturalar&apos;da yok ve
-            gelir-gidere girmedi. Faturalar&apos;a ekleyin ya da Aylık harcamalar&apos;a yazın.
-          </span>
-        ) : null}
-        {cashOutDuplicates > 0 ? (
-          <span className="block">
-            <span className="font-semibold">{cashOutDuplicates} kasa alımı iki kez sayılıyor:</span> Aylık harcamalar&apos;a yazılmıştı, faturası sonra
-            geldi. Gider kaydını silin.
-          </span>
-        ) : null}
-      </p>
-      <Button variant="secondary" size="sm" onClick={show} className="text-ink max-sm:w-full">
-        Kontrol bekleyenleri göster
-      </Button>
-    </div>
+    <Notice
+      tone="warn"
+      live="polite"
+      // Kasa alımı gelir-gidere girmedi ya da iki kez sayılıyor: ayın gideri yanlış (katlanmaz)
+      risk={cashOuts || cashOutDuplicates ? "para" : undefined}
+      className="mb-4"
+      title={first.head}
+      text={rest.length ? rest.map((f) => f.head).join(" · ") : first.body}
+      action={
+        <Button variant="secondary" size="xs" onClick={show}>
+          Kontrol bekleyenleri göster
+        </Button>
+      }
+    >
+      {rest.length
+        ? facts.map((f) => (
+            <p key={f.head}>
+              <span className="font-medium text-ink">{f.head}:</span> {f.body}
+            </p>
+          ))
+        : null}
+    </Notice>
   );
 }

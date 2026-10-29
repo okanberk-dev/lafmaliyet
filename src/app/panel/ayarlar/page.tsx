@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { logPerson } from "@/lib/activity-person";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
@@ -188,7 +189,7 @@ async function BackupCard() {
             ) : null}
           </div>
         ) : (
-          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Son yedeğin bilgisi okunamadı; sayfayı yenileyin. İndirme yine çalışır.</p>
+          <Notice tone="bad" size="sm" title="Son yedeğin bilgisi okunamadı; sayfayı yenileyin" text="İndirme yine çalışır." />
         )}
       </CardContent>
     </SectionCard>
@@ -330,10 +331,7 @@ async function SiteLinksCard() {
                 </p>
               ) : null}
               {r.health.tone === "red" && r.error ? (
-                <p className="mt-1 rounded-lg bg-bad-soft px-2.5 py-1.5 text-[13px] text-bad">
-                  {r.tryAt ? `${dateTimeTR(r.tryAt)}: ` : null}
-                  {r.error}
-                </p>
+                <Notice tone="bad" size="sm" className="mt-1" title={`${r.tryAt ? `${dateTimeTR(r.tryAt)}: ` : ""}${r.error}`} />
               ) : null}
             </div>
           </li>

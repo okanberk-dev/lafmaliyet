@@ -3,11 +3,11 @@ import { Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, money, num } from "@/lib/format";
 import { clearedText, isUnverifiedAfterOk, lafposCardSummary, rejectionText, unverifiedText } from "@/lib/lafpos/status";
 import { LAFPOS_SWITCH_MAX_AHEAD, LAFPOS_SWITCH_MIN } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
-import { cn } from "@/lib/utils";
 import { loadLafposCard } from "@/server/lafpos/status";
 
 import type { ProductOption } from "../satislar/product-picker";
@@ -35,7 +35,7 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
     return (
       <SectionCard id="lafpos" icon={<Store />} title="LafPOS (kasa)" summary="Durum okunamadı">
         <CardContent>
-          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">LafPOS bağlantısının durumu okunamadı; sayfayı yenileyin.</p>
+          <Notice tone="bad" size="sm" title="LafPOS bağlantısının durumu okunamadı; sayfayı yenileyin" />
         </CardContent>
       </SectionCard>
     );
@@ -43,9 +43,8 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
   const sum = lafposCardSummary(data);
   const { state, today } = data;
   const linked = data.secretProblem === null;
-  const box = "space-y-2 rounded-2xl px-4 py-3 text-[13px] leading-5 text-pretty";
   // Bağlantı kapalıyken retler kırmızı değil (özet de saymaz)
-  const redBox = linked ? "bg-bad-soft text-bad" : "bg-surface text-ink-mute ring-1 ring-line";
+  const rejectTone = linked ? "bad" : "neutral";
   const undated = sum.undated;
   const unverified = state.unverified && now.getTime() - Date.parse(state.unverified.lastAt) < UNVERIFIED_DAYS * 86_400_000 ? state.unverified : null;
   // Sonradan başarılı gönderim geldiyse bağlantı çalışıyor: uyarı değil, soluk bilgi
@@ -81,36 +80,31 @@ export async function LafposCard({ products }: { products: ProductOption[] }) {
 
         {sum.dayRejections.map(({ rejection: e, day, status }) =>
           status === "cleared" ? (
-            <div key={e.date} className={cn(box, linked ? "bg-warn-soft text-warn" : "bg-surface text-ink-mute ring-1 ring-line")}>
-              <p>
-                <span className="font-medium">LafPOS&apos;tan Gönder bekleniyor</span> · {longDateTR(e.date)}
-              </p>
-              <p>{clearedText(e, today)}</p>
-            </div>
+            <Notice key={e.date} tone={linked ? "warn" : "neutral"} size="sm" title={`LafPOS'tan Gönder bekleniyor · ${longDateTR(e.date)}`} text={clearedText(e, today)} />
           ) : (
-            <div key={e.date} className={cn(box, redBox)}>
-              <p>
-                <span className="font-medium">{longDateTR(e.date)} reddedildi</span> · {dateTimeTR(e.at)} · {e.status}
-              </p>
-              <p>{rejectionText(e, today)}</p>
-              {/* 409'un çözümü: gün hâlâ reddeden Z ile kayıtlıysa silinebilir */}
-              {e.error === "z_conflict" && day && day.zNo === e.zNo ? <LafposDayDelete date={e.date} zNo={day.zNo} lines={day.lines} label="Bu günün LafPOS kaydını sil" /> : null}
-            </div>
+            <Notice
+              key={e.date}
+              tone={rejectTone}
+              size="sm"
+              title={`${longDateTR(e.date)} reddedildi · ${dateTimeTR(e.at)} · ${e.status}`}
+              // 409'un çözümü: gün hâlâ reddeden Z ile kayıtlıysa silinebilir
+              action={e.error === "z_conflict" && day && day.zNo === e.zNo ? <LafposDayDelete date={e.date} zNo={day.zNo} lines={day.lines} label="Bu günün LafPOS kaydını sil" /> : undefined}
+            >
+              {rejectionText(e, today)}
+            </Notice>
           ),
         )}
         {undated ? (
-          <div className={cn(box, undated.fresh ? redBox : "bg-surface text-ink-mute ring-1 ring-line")}>
-            <p>
-              <span className="font-medium">{undated.fresh ? "Son gönderim reddedildi" : "Önceki ret"}</span> · {dateTimeTR(undated.rejection.at)} · {undated.rejection.status}
-            </p>
-            <p>{rejectionText(undated.rejection, today)}</p>
-          </div>
+          <Notice
+            tone={undated.fresh ? rejectTone : "neutral"}
+            size="sm"
+            title={`${undated.fresh ? "Son gönderim reddedildi" : "Önceki ret"} · ${dateTimeTR(undated.rejection.at)} · ${undated.rejection.status}`}
+          >
+            {rejectionText(undated.rejection, today)}
+          </Notice>
         ) : null}
         {unverified ? (
-          <p className={cn("rounded-xl px-3 py-2 text-[13px] leading-5 text-pretty", unverifiedLoud ? "bg-warn-soft text-warn" : "text-ink-mute ring-1 ring-line")}>
-            {unverifiedText(unverified)}
-            {unverifiedLoud ? null : " O günden beri gün sonları geliyor."}
-          </p>
+          <Notice tone={unverifiedLoud ? "warn" : "neutral"} size="sm" title={`${unverifiedText(unverified)}${unverifiedLoud ? "" : " O günden beri gün sonları geliyor."}`} />
         ) : null}
 
         <LafposSwitchDayForm value={data.switchDay} today={today} min={LAFPOS_SWITCH_MIN} max={addDays(today, LAFPOS_SWITCH_MAX_AHEAD)} linked={linked} />

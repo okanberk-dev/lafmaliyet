@@ -720,10 +720,15 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
           />
         )}
         {dirty ? (
-          <p className="mt-3 flex items-center gap-2 text-xs text-warn" role="status">
-            <span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />
-            Değişiklikler henüz kaydedilmedi. Kaydet&apos;e ya da bir adın içindeyken Enter&apos;a basın.
-          </p>
+          <Notice
+            tone="warn"
+            size="line"
+            risk="veri"
+            live="polite"
+            className="mt-3"
+            title="Değişiklikler kaydedilmedi"
+            text="Kaydet'e ya da bir adın içindeyken Enter'a basın."
+          />
         ) : null}
       </CardContent>
       <ConfirmDialog

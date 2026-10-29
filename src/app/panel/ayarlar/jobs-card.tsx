@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { Badge, type Tone } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
 import { addDays } from "@/lib/reminders";
 import { loadJobsOverview } from "@/server/jobs/alerts";
@@ -61,7 +62,7 @@ function JobRow({ health: h, job, now }: { health: JobHealth; job: (typeof JOB_K
         Her sabah {meta.window} · {run ? `son çalışma ${runWhen(run, h.state, now)}` : "henüz çalışmadı"}
       </p>
       {steps.length ? <p className="mt-0.5 text-[13px] text-pretty text-ink-mute">{steps.join(" · ")}</p> : null}
-      {showError ? <p className="mt-1 rounded-lg bg-bad-soft px-2.5 py-1.5 text-[13px] break-words text-bad">{run.message}</p> : null}
+      {showError ? <Notice tone="bad" size="sm" title={run.message} className="mt-1" /> : null}
       {run?.message && h.state === "skipped" ? <p className="mt-0.5 text-[13px] text-ink-mute">{run.message}</p> : null}
     </li>
   );
@@ -88,15 +89,16 @@ export async function JobsCard() {
     >
       <CardContent className="space-y-3">
         {o?.production && !o.cronSecret ? (
-          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">
-            CRON_SECRET tanımlı değil: Vercel bu işleri çalıştıramıyor. Vercel › Settings › Environment Variables&apos;a ekleyip yeniden yayınlayın
-            (docs/DEPLOY.md § 4).
-          </p>
+          <Notice
+            tone="bad"
+            size="sm"
+            risk="veri"
+            title="Günlük işler çalışmıyor: zamanlayıcı anahtarı yok"
+            tech={<>CRON_SECRET tanımlı değil; Vercel › Settings › Environment Variables&apos;a ekleyip yeniden yayınlayın (docs/DEPLOY.md § 4).</>}
+          />
         ) : null}
         {o && !o.production ? (
-          <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-mute ring-1 ring-line">
-            Günlük işler yalnız canlı sitede (Vercel Cron) çalışır; burada uyarı verilmez.
-          </p>
+          <Notice tone="neutral" size="sm" title="Günlük işler yalnız canlı sitede çalışır" tech="Vercel Cron; yerelde uyarı verilmez." />
         ) : null}
         {o ? (
           <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
@@ -105,7 +107,7 @@ export async function JobsCard() {
             ))}
           </ul>
         ) : (
-          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">İşlerin durumu okunamadı; sayfayı yenileyin.</p>
+          <Notice tone="bad" size="sm" title="İşlerin durumu okunamadı; sayfayı yenileyin" />
         )}
         <p className="text-[13px] leading-5 text-pretty text-ink-mute">
           Elle çalıştırmak için: Vercel › lafmaliyet › Settings › Cron Jobs › Run; uyarıyı bu kaldırır. Paraşüt&apos;ü{" "}
