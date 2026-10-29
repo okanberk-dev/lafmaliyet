@@ -129,6 +129,13 @@ test("kasaya giren: tek ifade, kasa raporuna varsayılanlı NOT NULL sütun (esk
   assert.equal(sql, 'ALTER TABLE "cash_reports" ADD COLUMN "cash_in" double precision DEFAULT 0 NOT NULL;');
 });
 
+test("karaokenin iade tutarı (29 Ekim 2026): tek boş olabilen sütun, yalnız ekleme (eski kod yazmazken boş; Instant Rollback'e uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_karaoke_iade_tutari"));
+  assert.ok(entry, "karaoke_iade_tutari migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8").trim();
+  assert.equal(sql, 'ALTER TABLE "karaoke_sessions" ADD COLUMN "refund_minor" integer;');
+});
+
 test("LafPOS satırının site kalemi ve hizmet işareti (denetim B08, E-33): iki boş olabilen, bir varsayılanlı sütun, yalnız ekleme (Instant Rollback'e uygun)", () => {
   const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_satir_site_kalemi"));
   assert.ok(entry, "lafpos_satir_site_kalemi migration'ı yok");

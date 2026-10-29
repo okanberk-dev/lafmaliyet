@@ -9,6 +9,7 @@ import { test } from "node:test";
 
 import {
   alarmPlan,
+  cancelledBadgeText,
   countdown,
   dayLabel,
   detectEvent,
@@ -18,6 +19,7 @@ import {
   isPlayable,
   phase,
   pushMessages,
+  refundKindOf,
   timeRange,
   type KaraokeSessionDTO,
   type SiteReservation,
@@ -124,6 +126,70 @@ test("sitenin yanıtı: isteğe bağlı iptal anı (site bugün göndermiyor); y
   assert.equal(siteTime(undefined), null);
 });
 
+test("sitenin yanıtı: isteğe bağlı iade tutarı (site 29 Ekim 2026'dan beri); eski site göndermez, bozuksa yok sayılır", () => {
+  const snap = parseSiteResponse({
+    now: "2026-10-29T10:00:00.000Z",
+    from: "2026-10-28",
+    to: "2027-01-26",
+    complete: true,
+    reservations: [
+      site(),
+      site({ id: "krk-0002", status: "cancelled", paymentStatus: "refunded", refundMinor: 0 }),
+      site({ id: "krk-0003", status: "cancelled", paymentStatus: "refunding", refundMinor: 50_000 }),
+      site({ id: "krk-0004", status: "cancelled", paymentStatus: "refunded", refundMinor: null }),
+      site({ id: "krk-0005", refundMinor: -1 }),
+      site({ id: "krk-0006", refundMinor: 1.5 }),
+      site({ id: "krk-0007", refundMinor: "0" }),
+    ],
+  });
+  // Bozuk bir alan satırı atlatmaz, yalnız alan yok sayılır
+  assert.equal(snap.reservations.length, 7);
+  assert.deepEqual(
+    snap.reservations.map((r) => r.refundMinor),
+    [undefined, 0, 50_000, null, undefined, undefined, undefined],
+  );
+});
+
+test("iptalin iadesi: tutar personele gitmeden türü (iade yok, kısmi, tamamı) ve bar ekranının rozeti", () => {
+  const cancelled = { status: "cancelled" as const, totalMinor: 200_000 };
+  // %0 kuralında geç istekle saat satışa açıldı: sitede "refunded" ama hiçbir şey geri gitmedi
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunded", refundMinor: 0 }), "none");
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunded", refundMinor: 50_000 }), "partial");
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunding", refundMinor: 50_000 }), "partial");
+  // Yeniden satış bütün saatleri kapsadıysa tutulanın tamamı geri gider
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunded", refundMinor: 200_000 }), "full");
+  // Tutarı bilinmeyen (null) ya da eski siteden gelen (undefined) iade tamamıdır: bugünkü söz
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunded", refundMinor: null }), "full");
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "refunded", refundMinor: undefined }), "full");
+  // Tutarı personele gitmeyen satırda (toplam null) kısmi iade tamamından ayrılamaz: yönetici ekranı tutarı görür
+  assert.equal(refundKindOf({ status: "cancelled", paymentStatus: "refunded", refundMinor: 0, totalMinor: null }), "none");
+  // İade olmayan satırlar
+  assert.equal(refundKindOf({ ...cancelled, paymentStatus: "paid", refundMinor: 0 }), null);
+  assert.equal(refundKindOf({ status: "confirmed", paymentStatus: "refunded", refundMinor: 0, totalMinor: 1 }), null);
+
+  assert.equal(cancelledBadgeText("refunded", "none"), "İptal · iade yok");
+  assert.equal(cancelledBadgeText("refunded", "partial"), "İptal · kısmi iade edildi");
+  assert.equal(cancelledBadgeText("refunded", "full"), "İptal · iade edildi");
+  assert.equal(cancelledBadgeText("refunded", null), "İptal · iade edildi");
+  assert.equal(cancelledBadgeText("refunding", "partial"), "İptal · kısmi iade sürüyor");
+  assert.equal(cancelledBadgeText("refunding", "full"), "İptal · iade sürüyor");
+  assert.equal(cancelledBadgeText("paid", null), "İptal");
+  assert.equal(cancelledBadgeText("expired", null), "İptal");
+});
+
+test("iade tutarı eşitlenir ve karşılaştırılır; tutar yalnız yöneticiye, türü herkese; rozet ortak metinden", () => {
+  const sync = readFileSync(join(process.cwd(), "src/server/karaoke/sync.ts"), "utf8");
+  assert.match(sync, /refundMinor: r\.refundMinor \?\? null,/);
+  // Yeniden satılan saatin iadesi yalnız tutarı değiştirir: karşılaştırmada olmasa yazılmazdı
+  assert.match(sync, /prev\.refundMinor === values\.refundMinor &&/);
+  const board = readFileSync(join(process.cwd(), "src/server/karaoke/board.ts"), "utf8");
+  assert.match(board, /refundMinor: opts\.admin \? r\.refundMinor : null/);
+  assert.match(board, /refund: refundKindOf\(\{/);
+  const ui = readFileSync(join(process.cwd(), "src/app/panel/karaoke/karaoke-board.tsx"), "utf8");
+  assert.match(ui, /cancelledBadgeText\(s\.paymentStatus, s\.refund\)/);
+  assert.doesNotMatch(ui, /"İptal · iade edildi"/);
+});
+
 test("iptal anı (doluluk): geçişi görünce sitenin son değişikliği; bilinen korunur; yeniden açılınca boşalır", () => {
   const now = new Date("2026-10-21T10:00:00.000Z");
   const live = { cancelledAt: null, status: "confirmed" as const, paymentStatus: "paid" as const };
@@ -196,6 +262,8 @@ const session = (over: Partial<KaraokeSessionDTO> = {}): KaraokeSessionDTO => ({
   status: "confirmed",
   paymentStatus: "paid",
   totalMinor: null,
+  refund: null,
+  refundMinor: null,
   lastEvent: null,
   lastEventAt: null,
   createdBy: null,

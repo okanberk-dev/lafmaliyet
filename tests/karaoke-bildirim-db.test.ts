@@ -19,7 +19,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 
 import { inArray, like } from "drizzle-orm";
 
-import { eventMessage, sessionEnd, sessionStart, type SiteReservation } from "../src/lib/karaoke/session";
+import { cancelledBadgeText, eventMessage, sessionEnd, sessionStart, type SiteReservation } from "../src/lib/karaoke/session";
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -193,5 +193,44 @@ describe("Karaoke bildirimi: Web Push'ta ad yok, ekranda var (sitenin sahte ucuy
     assert.equal(res.status === "ok" && res.events, 2);
     assert.deepEqual(pushes.map((p) => p.msg.title).sort(), ["Karaoke rezervasyonu iptal edildi", "Karaoke rezervasyonunun saati değişti"]);
     assert.doesNotMatch(JSON.stringify(pushes), /Ayşe|Deniz|Doğum günü/);
+  });
+
+  test("iptalin iadesi (site 29 Ekim 2026): 'iade yok' yazılır, yeniden satışın iadesi yalnız tutarı değiştirse de eşitlenir; tutar yalnız yöneticiye", async () => {
+    const paid = { ...reservation(1, "Ayşe"), status: "confirmed" as const, paymentStatus: "paid" as const };
+    site.reservations = [paid];
+    await ping();
+    // %0 kuralında geç istekle saat satışa açıldı: "refunded" ama hiçbir şey geri gitmedi
+    site.reservations = [{ ...paid, status: "cancelled", paymentStatus: "refunded", refundMinor: 0, updatedAt: new Date().toISOString() }];
+    await ping();
+    const read = async () => (await db.select().from(s.karaokeSessions).where(like(s.karaokeSessions.externalId, `${PREFIX}1`)))[0];
+    assert.equal((await read()).refundMinor, 0);
+    const { from, to } = board.liveWindow();
+    const dto = async (admin: boolean) => (await board.loadSessions(from, to, { admin })).find((x) => x.externalId === `${PREFIX}1`)!;
+    const staff = await dto(false);
+    assert.equal(staff.refund, "none");
+    assert.equal(staff.refundMinor, null, "personel tutarı görmez");
+    assert.equal(cancelledBadgeText(staff.paymentStatus, staff.refund), "İptal · iade yok");
+    assert.equal((await dto(true)).refundMinor, 0);
+
+    // Saatin biri yeniden satıldı: sitede yalnız tutar ve ödeme durumu değişir, updatedAt aynı kalabilir
+    const before = (await read()).updatedAt.getTime();
+    site.reservations = [{ ...site.reservations[0], paymentStatus: "refunding", refundMinor: 60_000 }];
+    await ping();
+    assert.equal((await read()).refundMinor, 60_000);
+    assert.ok((await read()).updatedAt.getTime() >= before);
+    assert.equal(cancelledBadgeText("refunding", (await dto(false)).refund), "İptal · kısmi iade sürüyor");
+    // Yalnız tutar değişse de (ödeme durumu aynı) yazılır
+    site.reservations = [{ ...site.reservations[0], refundMinor: 120_000 }];
+    await ping();
+    assert.equal((await read()).refundMinor, 120_000);
+    assert.equal((await dto(false)).refund, "full");
+
+    // Alanı göndermeyen eski site: boş, eski söz
+    const { refundMinor: _omit, ...old } = site.reservations[0];
+    void _omit;
+    site.reservations = [{ ...old, paymentStatus: "refunded" }];
+    await ping();
+    assert.equal((await read()).refundMinor, null);
+    assert.equal(cancelledBadgeText("refunded", (await dto(false)).refund), "İptal · iade edildi");
   });
 });

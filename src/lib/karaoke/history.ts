@@ -138,6 +138,7 @@ export function historyValues(r: SiteReservation) {
     status: r.status,
     paymentStatus: r.paymentStatus,
     totalMinor: r.totalMinor,
+    refundMinor: r.refundMinor ?? null,
     channel: r.channel || null,
     extUpdatedAt: r.updatedAt || null,
     bookedAt: siteTime(r.createdAt),
@@ -165,6 +166,7 @@ interface Comparable {
   status: string;
   paymentStatus: string;
   totalMinor: number | null;
+  refundMinor: number | null;
   channel: string | null;
   bookedAt: Date | null;
   cancelledAt: Date | null;
@@ -182,6 +184,7 @@ export function historyChanged(prev: Comparable, next: Comparable): boolean {
     prev.status !== next.status ||
     prev.paymentStatus !== next.paymentStatus ||
     prev.totalMinor !== next.totalMinor ||
+    prev.refundMinor !== next.refundMinor ||
     prev.channel !== next.channel ||
     time(prev.bookedAt) !== time(next.bookedAt) ||
     time(prev.cancelledAt) !== time(next.cancelledAt)

@@ -26,6 +26,8 @@ const reservationSchema = z.object({
   updatedAt: z.string().catch("").transform((v) => v.slice(0, 40)),
   // İsteğe bağlı: site bugün göndermiyor; gönderirse iptal anı ondan (yoksa ya da bozuksa yok sayılır)
   cancelledAt: z.string().max(40).optional().catch(undefined),
+  // İsteğe bağlı (site 29 Ekim 2026'dan beri gönderir): iptalin iade tutarı; eski site göndermez, bozuksa yok sayılır
+  refundMinor: z.number().int().min(0).nullable().optional().catch(undefined),
 });
 
 const responseSchema = z.object({

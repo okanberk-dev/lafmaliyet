@@ -29,6 +29,13 @@ export interface SiteReservation {
   updatedAt: string;
   /** İptal anı: site bugün göndermiyor; eklerse panel onu kullanır (docs/KARAOKE.md › Doluluk haritası) */
   cancelledAt?: string;
+  /**
+   * İptal edilmiş rezervasyonun iadesi (kuruş; site 29 Ekim 2026'dan beri gönderir): 0 = hiçbir şey geri gitmedi (%0
+   * kuralında misafirin geç isteğiyle saat satışa açıldı; ödeme durumu yine de `refunded`), ödenenden küçük = geç iptal
+   * payı ya da yeniden satılan saatin payı, null = kısmi tutar yok (bir şey geri gidiyorsa tamamı). Alanı göndermeyen
+   * eski site: undefined
+   */
+  refundMinor?: number | null;
 }
 
 /** Panelin tuttuğu oturum (ekrana giden biçim); tutar yalnız yöneticiye gider */
@@ -48,9 +55,46 @@ export interface KaraokeSessionDTO {
   status: KaraokeStatus;
   paymentStatus: PaymentStatus;
   totalMinor: number | null;
+  /** İptalin iadesi, personelin de görebileceği biçimde (tutarsız): bkz. `refundKindOf` */
+  refund: RefundKind | null;
+  /** İptalin iade tutarı (kuruş); tutar gibi yalnız yöneticiye */
+  refundMinor: number | null;
   lastEvent: KaraokeEvent | null;
   lastEventAt: string | null;
   createdBy: string | null;
+}
+
+/** İptal edilmiş rezervasyonda ne geri gitti ya da gidiyor: hiçbir şey, bir kısmı, tamamı */
+export type RefundKind = "none" | "partial" | "full";
+
+/**
+ * İptal edilmiş ve iadesi yapılmış ya da süren rezervasyonun iade türü; başka her satırda null. `refundMinor` 0 ise
+ * hiçbir şey geri gitmedi (sitenin %0 kuralında geç istekle saat satışa açıldı, 29 Ekim 2026); toplamdan küçükse bir
+ * kısmı (geç iptal payı ya da yeniden satılan saatin payı); yoksa ya da toplama eşit ya da büyükse tamamı. Tutar bu
+ * türe çevrilir ki personel ekranı tutarı görmeden doğru yazsın.
+ */
+export function refundKindOf(r: {
+  status: KaraokeStatus;
+  paymentStatus: PaymentStatus;
+  refundMinor: number | null | undefined;
+  totalMinor: number | null | undefined;
+}): RefundKind | null {
+  if (r.status !== "cancelled") return null;
+  if (r.paymentStatus !== "refunded" && r.paymentStatus !== "refunding") return null;
+  const refund = r.refundMinor;
+  if (typeof refund !== "number" || !Number.isFinite(refund)) return "full";
+  if (refund <= 0) return "none";
+  return typeof r.totalMinor === "number" && refund < r.totalMinor ? "partial" : "full";
+}
+
+/** İptal edilmiş rezervasyonun rozet metni: iade sürüyor mu, yapıldı mı, hiç yapılmadı mı */
+export function cancelledBadgeText(paymentStatus: PaymentStatus, refund: RefundKind | null): string {
+  if (paymentStatus === "refunding") return refund === "partial" ? "İptal · kısmi iade sürüyor" : "İptal · iade sürüyor";
+  if (paymentStatus === "refunded") {
+    if (refund === "none") return "İptal · iade yok";
+    return refund === "partial" ? "İptal · kısmi iade edildi" : "İptal · iade edildi";
+  }
+  return "İptal";
 }
 
 /** Ödemesi beklenen geçici tutma: saat ayrılmış ama rezervasyon henüz yok (ödenmezse kendiliğinden düşer) */
