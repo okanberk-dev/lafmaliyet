@@ -27,7 +27,7 @@ export default function ChecklistRunPage({ params }: PageProps<"/panel/kontrol/[
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Kontrol listesi" title="Kontrol listesi" description="Yükleniyor…" />
+          <PageHeader path="/panel/kontrol" role="staff" title="Kontrol listesi" description="Yükleniyor…" />
           <PageSkeleton rows={6} />
         </>
       }
@@ -60,7 +60,7 @@ async function RunContent({ params }: { params: PageProps<"/panel/kontrol/[id]">
   }
   const grace = view.day !== today;
   const title = listTitle(view.name);
-  const header = <PageHeader eyebrow="Kontrol listesi" title={title} description={`${longDateTR(view.day)} · ${view.opensAt} – ${view.dueAt}`} />;
+  const header = <PageHeader path="/panel/kontrol" role={user.role} title={title} description={`${longDateTR(view.day)} · ${view.opensAt} – ${view.dueAt}`} />;
   const back = (
     <ButtonLink href="/panel/kontrol" variant="ghost" size="sm">
       <ArrowLeft size={14} aria-hidden="true" /> Kontrol listeleri

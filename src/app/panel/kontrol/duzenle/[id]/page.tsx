@@ -21,7 +21,7 @@ export default function ChecklistTemplatePage({ params }: PageProps<"/panel/kont
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Listeleri düzenle" title="Liste" description="Yükleniyor…" />
+          <PageHeader path="/panel/kontrol/duzenle" title="Liste" description="Yükleniyor…" />
           <PageSkeleton rows={6} />
         </>
       }
@@ -41,7 +41,7 @@ async function EditorContent({ params }: { params: PageProps<"/panel/kontrol/duz
   return (
     <>
       <PageHeader
-        eyebrow="Listeleri düzenle"
+        path="/panel/kontrol/duzenle"
         title={listTitle(t.name)}
         description={`${weekdaysText(t.weekdays)} · ${t.opensAt} – ${t.dueAt}${t.active ? "" : " · pasif"}`}
         actions={

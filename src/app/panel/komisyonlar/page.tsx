@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -16,7 +17,6 @@ import { loadCommissionReport } from "@/server/data/commission";
 
 import { ChannelCard, FlagList } from "./channel-card";
 import { ChannelSettingsCard } from "./channel-settings";
-import { HashScroll } from "./hash-scroll";
 import { MealTotalCard } from "./meal-total-card";
 import { PendingCard } from "./pending-card";
 import { mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine } from "./texts";
@@ -28,7 +28,7 @@ const DESCRIPTION =
   "Yemek kartı şirketlerinin ve sipariş platformlarının her ay gerçekte ne kadar kestiği, faturadaki ücretler ve hakedişin gelip gelmediği. Faturalar Paraşüt'ten, satış kasa raporlarından ya da kanalın ekstresinden gelir; hakediş gelince siz işaretlersiniz.";
 
 function Header({ description = DESCRIPTION, actions }: { description?: string; actions?: ReactNode }) {
-  return <PageHeader eyebrow="Satış" title={TITLE} description={description} actions={actions} />;
+  return <PageHeader path="/panel/komisyonlar" title={TITLE} description={description} actions={actions} />;
 }
 
 export default function CommissionPage({ searchParams }: PageProps<"/panel/komisyonlar">) {

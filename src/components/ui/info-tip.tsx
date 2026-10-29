@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * pencerenin (Dialog, telefonda alttan açılan sayfa) içindeyse balon o pencereye çizilir: üst katmandaki pencerenin
  * arkasında kalmaz. `tone="warn"`: simge turuncu uyarı üçgeni, ekran okuyucuya "Dikkat" (ör. Gelir-gider hücresinin uyarısı).
  */
-export function InfoTip({ text, className, tone }: { text: ReactNode; className?: string; tone?: "warn" }) {
+export function InfoTip({ text, className, tone, label }: { text: ReactNode; className?: string; tone?: "warn"; /** Ekran okuyucunun duyduğu ad (varsayılan "Açıklama", uyarıda "Dikkat") */ label?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const pointer = useRef<string>("");
   const id = useId();
@@ -54,7 +54,7 @@ export function InfoTip({ text, className, tone }: { text: ReactNode; className?
         ref={ref}
         tabIndex={0}
         role="button"
-        aria-label={tone === "warn" ? "Dikkat" : "Açıklama"}
+        aria-label={label ?? (tone === "warn" ? "Dikkat" : "Açıklama")}
         aria-expanded={open}
         aria-describedby={pos ? id : undefined}
         onPointerEnter={(e) => e.pointerType === "mouse" && show()}

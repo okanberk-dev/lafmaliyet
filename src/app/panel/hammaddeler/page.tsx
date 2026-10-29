@@ -46,7 +46,7 @@ export default function IngredientsPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader title="Hammaddeler" eyebrow="Menü" excel="Hammaddeler" />
+          <PageHeader title="Hammaddeler" path="/panel/hammaddeler" />
           <PageSkeleton rows={10} />
         </>
       }
@@ -204,9 +204,8 @@ async function IngredientsContent() {
   return (
     <>
       <PageHeader
-        eyebrow="Menü"
+        path="/panel/hammaddeler"
         title="Hammaddeler"
-        excel="Hammaddeler"
         description="Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatı değişince bütün ürün maliyetleri kendiliğinden güncellenir, fiyat geçmişi saklanır."
         actions={<NewIngredientButton categories={categories} rows={rows} />}
       />

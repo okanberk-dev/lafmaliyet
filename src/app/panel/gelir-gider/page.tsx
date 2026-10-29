@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
@@ -53,7 +54,7 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Finans" title="Gelir-gider" excel="Genel Maliyet" description={DESCRIPTION} />
+          <PageHeader path="/panel/gelir-gider" title="Gelir-gider" description={DESCRIPTION} />
           <PageSkeleton rows={14} />
         </>
       }
@@ -241,9 +242,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   return (
     <>
       <PageHeader
-        eyebrow="Finans"
+        path="/panel/gelir-gider"
         title="Gelir-gider"
-        excel="Genel Maliyet"
         description={DESCRIPTION}
         actions={
           // Tek yıl varsa seçim göstermeyiz (tek seçenekli sekme düğme gibi durur, bir şey yapmaz)
@@ -258,15 +258,18 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           )
         }
       />
+      {/* ⌘K "Kâr / zarar" (#kar-zarar) başka sayfadan gelince içerik akınca iner */}
+      <HashScroll key={`capa-${year}`} />
       {/* Vergi bölümündeki karşılığı (dalga 12, docs/VERGI.md) */}
       <p className="-mt-2 mb-4 text-[13px] text-ink-mute">
-        Vergiye göre karşılığı:{" "}
+        Vergi hesabındaki karşılığı:{" "}
         <Link href="/panel/vergi/gelir-gider" className="font-medium text-ink underline underline-offset-2">
-          Vergi › Vergiye göre
+          Vergi kârı ›
         </Link>
       </p>
       {sgkNotice ? <SgkRateNotice text={sgkNotice.text} target={sgkNotice.target} targetText={rateText(sgkNotice.target)} canApply={sgkNotice.canApply} /> : null}
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* ⌘K "Kâr / zarar" buraya iner (docs/planlar/ux-sade.md §3.7) */}
+      <div id="kar-zarar" className="mb-6 grid scroll-mt-20 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
           description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Yıl kartlarına bu aya kadar, POS cirosu girilmiş aylar girer (Genel bakış ve Claude da aynı kuralla). Aya dokununca Satışlar'da o ay açılır.`}

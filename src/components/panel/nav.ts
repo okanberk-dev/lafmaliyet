@@ -13,10 +13,13 @@ import {
   ClipboardList,
   Coffee,
   FileText,
+  FileWarning,
   Gift,
   Globe,
   Grid3x3,
+  HardDriveDownload,
   HelpCircle,
+  History,
   Landmark,
   LayoutDashboard,
   LayoutGrid,
@@ -26,6 +29,7 @@ import {
   Package,
   Percent,
   Receipt,
+  Scale,
   Settings,
   Store,
   Tags,
@@ -52,8 +56,10 @@ export interface NavItem {
 
 /**
  * Komut paletinin ve Yardım'ın ekran listesi. Başlıklar kenar çubuğu ağacının (NAV_TREE) başlıklarıyla aynı sırada;
- * birbirine yakın ekranlar aynı öğenin altında sekme: Giderler = Sabit giderler + Personel, Stok = Sayım + Tutarlılık.
- * Adresler değişmedi.
+ * birbirine yakın ekranlar aynı öğenin altında sekme: Giderler & maaşlar = Sabit giderler + Aylık harcamalar + Maaşlar.
+ * Bir ekran bir ad (29 Eki 2026, docs/planlar/ux-sade.md §3.6): etiket kenar çubuğundaki ve başlıktaki adla aynı; eski
+ * ad `keywords`'te kalır, alışkanlıkla yazılan da bulunur. Kare adresli kayıtlar (ör. "KDV" → /panel/vergi#kdv) bir
+ * ekranın bölümünü adıyla açar; kenar çubuğuna ve telefon başlığına girmez. Adresler değişmedi.
  */
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
@@ -113,7 +119,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Menü",
     items: [
-      { href: "/panel/urunler", label: "Ürünler", icon: Coffee, excel: "Ürün Kârlılık + Reçete Kartları", roles: ["admin"], keywords: "reçete kartı fiyat marj kârlılık" },
+      {
+        href: "/panel/urunler",
+        label: "Ürünler & kârlılık",
+        icon: Coffee,
+        excel: "Ürün Kârlılık + Reçete Kartları",
+        roles: ["admin"],
+        keywords: "reçete kartı fiyat marj kârlılık ürünler kâr düşük az kazandıran",
+      },
       // Ürünler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
       {
         href: "/panel/urunler/site",
@@ -143,10 +156,11 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: ClipboardList,
         excel: "Sayım + Tutarlılık Kontrolü",
         roles: ["admin", "staff"],
-        match: ["/panel/tutarlilik"],
         keywords: "envanter tutarlılık fark",
       },
       { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
+      // Stok'un üçüncü sekmesi, yalnız yönetici; kendi adıyla aranır (eskiden Stok sayımı'nın eşi olarak)
+      { href: "/panel/tutarlilik", label: "Tutarlılık", icon: ClipboardList, roles: ["admin"], keywords: "tutarlılık kontrolü fark sapma reçeteden fazla alım" },
     ],
   },
   {
@@ -177,49 +191,109 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       {
         href: "/panel/giderler",
-        label: "Giderler & personel",
+        label: "Giderler & maaşlar",
         icon: Wallet,
         excel: "Sabit Giderler + Personel",
         roles: ["admin"],
         match: ["/panel/personel", "/panel/harcamalar"],
-        keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider",
+        keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider giderler & personel sabit gider kira aidat",
       },
+      // Giderler & maaşlar'ın sekmeleri ve bölümü: kenar çubuğunda tek öğenin altında, burada adıyla
+      { href: "/panel/harcamalar", label: "Aylık harcamalar", icon: Wallet, roles: ["admin"], keywords: "harcama reklam influencer nakit alım bakım fatura dışı" },
+      { href: "/panel/personel", label: "Maaşlar", icon: UserRound, excel: "Personel", roles: ["admin"], keywords: "personel maaş net brüt bordro çalışan işveren maliyeti" },
+      { href: "/panel/personel#sgk-oranlari", label: "SGK oranı", icon: Percent, roles: ["admin"], keywords: "sgk oranı işveren payı işsizlik prim oranı" },
     ],
   },
   {
-    title: "Finans",
+    // Kâr ettim mi (Gelir-gider), ne ödeyeceğim (Ödemeler), param yeter mi (Nakit planı)
+    title: "Kâr & ödemeler",
     items: [
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
-      // Vergi (dalga 12, docs/VERGI.md): tahmin, beyanname değil; alt ekranları ⌘K'da ayrı bulunur (kenar çubuğunda tek öğe)
+      { href: "/panel/gelir-gider#kar-zarar", label: "Kâr / zarar", icon: Scale, roles: ["admin"], keywords: "kâr zarar kar zarar net kâr yıl" },
       {
-        href: "/panel/vergi",
-        label: "Vergi",
-        icon: Landmark,
+        href: "/panel/hatirlaticilar",
+        label: "Ödemeler",
+        icon: BellRing,
         roles: ["admin"],
-        keywords:
-          "vergi kurumlar vergisi geçici vergi muhtasar stopaj damga vergisi sgk prim bordro gelir vergisi kdv beyanname tahakkuk muhasebeci amortisman demirbaş çevre temizlik ilan reklam vergi takvimi",
+        keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet ödemeler & hatırlatıcılar ödeme ekle ödendi",
       },
-      { href: "/panel/vergi/gelir-gider", label: "Vergiye göre gelir-gider", icon: Receipt, roles: ["admin"], keywords: "vergi matrah gider sınıflandırma belgesi muhasebecide kdv beyannamesi satışları çeyrek" },
-      { href: "/panel/vergi/demirbas", label: "Demirbaş & amortisman", icon: Package, roles: ["admin"], keywords: "vergi demirbaş amortisman faydalı ömür varlık doğrudan gider" },
-      { href: "/panel/vergi/kurallar", label: "Vergi kuralları", icon: BookOpen, roles: ["admin"], keywords: "vergi oran dayanak kaynak 2026 elle değer ayarlar" },
-      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
-      { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet" },
-      // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
       {
         href: "/panel/hatirlaticilar/nakit",
         label: "Nakit planı",
         icon: ChartNoAxesColumn,
         roles: ["admin"],
-        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden",
+        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden kdv hesabı devreden kdv param yeter mi",
       },
+    ],
+  },
+  {
+    // Devlete ödemeler (dalga 12, docs/VERGI.md): tahmin, beyanname değil. Takvimin satırları (KDV, SGK, muhtasar) ve kâr
+    // vergisi kartı kare adresle adıyla bulunur
+    title: "Vergi, KDV, SGK",
+    items: [
+      {
+        href: "/panel/vergi",
+        label: "Vergi, KDV, SGK",
+        icon: Landmark,
+        roles: ["admin"],
+        keywords:
+          "vergi kurumlar vergisi geçici vergi muhtasar stopaj damga vergisi sgk prim bordro gelir vergisi kdv beyanname tahakkuk muhasebeci amortisman demirbaş çevre temizlik ilan reklam vergi takvimi vergi özet vergi takvimi devlete ödemeler",
+      },
+      {
+        href: "/panel/vergi#kdv",
+        label: "KDV",
+        icon: Percent,
+        roles: ["admin"],
+        keywords: "kdv katma değer bu ay ne kadar devreden indirilecek hesaplanan beyanname damga",
+      },
+      { href: "/panel/vergi#sgk", label: "SGK primi", icon: Users, roles: ["admin"], keywords: "sgk prim işveren sigorta tahakkuk" },
+      { href: "/panel/vergi#muhtasar", label: "Maaş vergileri (muhtasar)", icon: Receipt, roles: ["admin"], keywords: "muhtasar stopaj ücret gelir vergisi prim hizmet" },
+      { href: "/panel/vergi#kar-vergisi", label: "Kâr vergisi (geçici, kurumlar)", icon: Landmark, roles: ["admin"], keywords: "geçici vergi kurumlar vergisi peşin mahsup matrah" },
+      {
+        href: "/panel/vergi/gelir-gider",
+        label: "Vergi kârı",
+        icon: Receipt,
+        roles: ["admin"],
+        keywords:
+          "vergi matrah gider sınıflandırma belgesi muhasebecide kdv beyannamesi satışları çeyrek vergiye göre gelir-gider vergiye göre kâr kurum kazancı matrah çeyrek",
+      },
+      {
+        href: "/panel/vergi/gelir-gider#siniflandir",
+        label: "Eksik belgeler",
+        icon: FileWarning,
+        roles: ["admin"],
+        keywords: "belgesi seçilmemiş sınıflandır stopaj vergi kesintisi",
+      },
+      { href: "/panel/vergi/demirbas", label: "Demirbaş", icon: Package, roles: ["admin"], keywords: "vergi demirbaş amortisman faydalı ömür varlık doğrudan gider demirbaş & amortisman varlık" },
+      {
+        href: "/panel/vergi/kurallar",
+        label: "Muhasebeci",
+        icon: BookOpen,
+        roles: ["admin"],
+        keywords: "vergi oran dayanak kaynak 2026 elle değer ayarlar vergi kuralları vergi ayarları şirket nasıl kuruldu",
+      },
+      { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar", icon: ListChecks, roles: ["admin"], keywords: "vergi muhasebeci soru konuştum gözden geçir" },
     ],
   },
 ];
 
-/** Kenar çubuğunun altındaki sistem bağlantıları (kenar çubuğunda Ayarlar başlığı ve profil menüsü) */
+/**
+ * Paletin "Ayarlar" kayıtları (kenar çubuğunda Ayarlar başlığı). Yalnız paletin kaynağı: profil menüsü ayrı
+ * (sidebar.tsx); kare adresli kayıtlar (Ayarlar'ın bölümleri, Paraşüt'ün ürün bağlantıları) başka yere girmez.
+ */
 export const NAV_FOOTER: NavItem[] = [
   { href: "/panel/parasut", label: "Paraşüt entegrasyonu", icon: Plug, roles: ["admin"], keywords: "parasut fatura eşitleme muhasebe e-fatura" },
+  {
+    href: "/panel/parasut#urun-baglantilari",
+    label: "Fatura kalemini hammaddeye bağla",
+    icon: Plug,
+    roles: ["admin"],
+    keywords: "ürün hammadde bağlantısı eşleştir fatura kalemi",
+  },
   { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı lafpos kasa geçiş günü" },
+  { href: "/panel/ayarlar#oranlar", label: "KDV ve komisyon oranları", icon: Percent, roles: ["admin"], keywords: "kdv oranı %10 %20 hizmet pos komisyon oranı" },
+  { href: "/panel/ayarlar#gecmis", label: "İşlem geçmişi", icon: History, roles: ["admin"], keywords: "kim neyi değiştirdi kayıt geçmiş log" },
+  { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir excel" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
   { href: "/panel/yardim", label: "Yardım", icon: HelpCircle, excel: "Nasıl Kullanılır", roles: ["admin"], keywords: "nasıl kullanılır" },
   { href: "/panel/hesap", label: "Hesabım", icon: UserRound, roles: ["admin", "staff"], keywords: "parola şifre e-posta iki adımlı doğrulama 2fa authenticator" },
@@ -243,10 +317,13 @@ export interface NavNode {
 /**
  * Ağaç (26 Eki 2026, docs/TASARIM.md "Menü ağacı"): yöneticide en sık açılan dört ekran (Genel bakış, Bugün, Onaylar,
  * Kasa raporu) tek tıkla üst düzeyde, gerisi konu başlıkları altında: işletme (Kafe, Menü, Stok), para (Satış, Alış &
- * gider, Finans), Ayarlar. Başlık satırı yalnız grubu açıp kapatır; etkin sayfanın grubu kendiliğinden açık
- * (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey öğeleri (Karaoke, Kontrol listeleri, Hatırlatıcılarım)
- * yalnız personelde, yönetici aynı ekranları Kafe altında görür. Personelin görebildiği düğümlerin sırası değişmez
- * (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi sabitler). Adresler değişmedi, yalnız gruplama.
+ * gider, Kâr & ödemeler), devlete ödemeler (Vergi, KDV, SGK), Ayarlar. 29 Eki 2026 (docs/planlar/ux-sade.md §3.1):
+ * "Finans" → "Kâr & ödemeler" (Gelir-gider, Ödemeler, Nakit planı); Vergi kendi grubunda, adı KDV ve SGK'yı da söyler,
+ * kapalı kenar çubuğunda görünür; Menü'ye Fiyatlar, Kâr & ödemeler'e Nakit planı girdi. Başlık satırı yalnız grubu
+ * açıp kapatır; etkin sayfanın grubu kendiliğinden açık (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey
+ * öğeleri (Karaoke, Kontrol listeleri, Hatırlatıcılarım) yalnız personelde, yönetici aynı ekranları Kafe altında
+ * görür. Personelin görebildiği düğümlerin sırası değişmez (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi
+ * sabitler). Adresler değişmedi, yalnız gruplama.
  */
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
@@ -281,7 +358,9 @@ export const NAV_TREE: NavNode[] = [
     icon: Coffee,
     roles: ["admin", "staff"],
     children: [
-      { id: "urunler", label: "Ürünler", href: "/panel/urunler", roles: ["admin"] },
+      { id: "urunler", label: "Ürünler & kârlılık", href: "/panel/urunler", roles: ["admin"] },
+      // Toplu fiyat ve kasaya işleme (docs/FIYATLAR.md); Ürünler'in alt adresi ama kendi satırı (activeChildOf)
+      { id: "fiyatlar", label: "Fiyatlar", href: "/panel/urunler/fiyatlar", roles: ["admin"] },
       { id: "hammaddeler", label: "Hammaddeler", href: "/panel/hammaddeler", roles: ["admin"] },
       { id: "receteler", label: "Reçete defteri", href: "/panel/receteler", roles: ["admin", "staff"] },
     ],
@@ -318,20 +397,33 @@ export const NAV_TREE: NavNode[] = [
     children: [
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
-      { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
+      // Sabit giderler, Aylık harcamalar ve Maaşlar tek satırın sekmeleri (SECTION_TABS.giderler)
+      { id: "giderler", label: "Giderler & maaşlar", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
     ],
   },
   {
-    // Aylık tablo, vergi (dört sekme; alt ekranlar adresin önekiyle eşleşir, docs/VERGI.md), ödemeler ve nakit planı
-    // (Ödemeler'in sekmesi)
+    // Kâr ve ödemeler: aylık tablo (kâr ettim mi), ödemeler (ne ödeyeceğim), nakit planı (param yeter mi)
     id: "finans",
-    label: "Finans",
-    icon: Landmark,
+    label: "Kâr & ödemeler",
+    icon: Scale,
     roles: ["admin"],
     children: [
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
-      { id: "vergi", label: "Vergi", href: "/panel/vergi", roles: ["admin"] },
-      { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
+      { id: "hatirlaticilar", label: "Ödemeler", href: "/panel/hatirlaticilar", roles: ["admin"] },
+      { id: "nakit", label: "Nakit planı", href: "/panel/hatirlaticilar/nakit", roles: ["admin"] },
+    ],
+  },
+  {
+    // Devlete ödemeler (dalga 12, docs/VERGI.md): dört ekran, sekmeleri bu gruptan türer (SECTION_TABS.vergi)
+    id: "vergi",
+    label: "Vergi, KDV, SGK",
+    icon: Landmark,
+    roles: ["admin"],
+    children: [
+      { id: "vergi-ozet", label: "Özet", href: "/panel/vergi", roles: ["admin"] },
+      { id: "vergi-kari", label: "Vergi kârı", href: "/panel/vergi/gelir-gider", roles: ["admin"] },
+      { id: "demirbas", label: "Demirbaş", href: "/panel/vergi/demirbas", roles: ["admin"] },
+      { id: "muhasebeci", label: "Muhasebeci", href: "/panel/vergi/kurallar", roles: ["admin"] },
     ],
   },
   // Personelde üst düzeyde; yönetici Kafe altında görür
@@ -368,24 +460,24 @@ function treeTabs(id: string): SectionTab[] {
 }
 
 /**
- * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok sekmeleri kenar çubuğunun Stok grubundan türer
- * (denetim E-56, 27 Eki 2026): menüye eklenen ya da çıkan Stok sayfası sekmelerde de aynı sırayla görünür; telefonda
- * (kenar çubuğu gizli) Sayım, Zayi & ikram ve Tutarlılık arasında hamburger menü açmadan geçilir. Giderler'in
- * sekmeleri kenar çubuğunda tek öğedir (Giderler & personel), o yüzden elle. Vergi'nin dört ekranı da kenar
- * çubuğunda tek öğedir (Finans › Vergi; alt ekranlar adresin önekiyle eşleşir), yalnız yönetici (docs/planlar/vergi.md §4.0).
+ * Bölüm içi sekmeler: aynı menü öğesinin altındaki ekranlar. Stok ve Vergi sekmeleri kenar çubuğunun grubundan türer
+ * (denetim E-56, 27 Eki 2026; Vergi 29 Eki 2026'dan beri kendi grubu "Vergi, KDV, SGK"): menüye eklenen ya da çıkan
+ * sayfa sekmelerde de aynı sırayla görünür; telefonda (kenar çubuğu gizli) sayfalar arasında hamburger menü açmadan
+ * geçilir. Giderler'in sekmeleri kenar çubuğunda tek öğedir (Giderler & maaşlar), o yüzden elle. Ödemeler ile Nakit
+ * planı kenar çubuğunda iki ayrı satır, sekmeyle de birbirine bağlı (docs/planlar/ux-sade.md K7).
  */
-export const SECTION_TABS: Record<"giderler" | "stok" | "vergi", readonly SectionTab[]> = {
+export const SECTION_TABS: Record<"giderler" | "stok" | "vergi" | "odeme", readonly SectionTab[]> = {
   giderler: [
     { href: "/panel/giderler", label: "Sabit giderler", roles: ["admin"] },
     { href: "/panel/harcamalar", label: "Aylık harcamalar", roles: ["admin"] },
-    { href: "/panel/personel", label: "Personel", roles: ["admin"] },
+    { href: "/panel/personel", label: "Maaşlar", roles: ["admin"] },
   ],
   stok: treeTabs("stok"),
-  vergi: [
-    { href: "/panel/vergi", label: "Özet", roles: ["admin"] },
-    { href: "/panel/vergi/gelir-gider", label: "Vergiye göre", roles: ["admin"] },
-    { href: "/panel/vergi/demirbas", label: "Demirbaş", roles: ["admin"] },
-    { href: "/panel/vergi/kurallar", label: "Kurallar", roles: ["admin"] },
+  // Özet · Vergi kârı · Demirbaş · Muhasebeci (390 px'te kaydırmasız)
+  vergi: treeTabs("vergi"),
+  odeme: [
+    { href: "/panel/hatirlaticilar", label: "Ödemeler", roles: ["admin"] },
+    { href: "/panel/hatirlaticilar/nakit", label: "Nakit planı", roles: ["admin"] },
   ],
 };
 
@@ -411,6 +503,39 @@ export function pathMatches(pathname: string, href: string, match: string[] = []
 /** Etkin sayfanın grubu: kenar çubuğunda kendiliğinden açık durur. Sayfa üst düzeyde ya da menüde değilse undefined */
 export function activeGroupOf(items: NavNode[], pathname: string): string | undefined {
   return items.find((i) => i.children?.some((c) => pathMatches(pathname, c.href, c.match)))?.id;
+}
+
+/** Grubun etkin alt öğesi: adresle eşleşenlerden en uzun href (Fiyatlar'da Ürünler, Nakit planı'nda Ödemeler, Muhasebeci'de Özet yanmaz) */
+export function activeChildOf(children: NonNullable<NavNode["children"]>, pathname: string): string | undefined {
+  return children.filter((c) => pathMatches(pathname, c.href, c.match)).sort((a, b) => b.href.length - a.href.length)[0]?.id;
+}
+
+/** Sayfa başlığının bağlam satırı: rolün ağacında bu adresi açan grubun adı; üst düzey ekranda ya da ağaçta yoksa undefined */
+export function groupLabelOf(pathname: string, role: "admin" | "staff"): string | undefined {
+  const tree = navTreeFor(role);
+  const id = activeGroupOf(tree, pathname);
+  return tree.find((n) => n.id === id)?.label;
+}
+
+/**
+ * Başlığın üstündeki bağlam satırı (page-header.tsx): grubun adı. Grubun giriş ekranı grubun adını taşıyorsa ("Vergi,
+ * KDV, SGK" Özet'te, "Ayarlar") satır yok: başlığı bir kez daha yazmaz.
+ */
+export function contextLineOf(pathname: string, role: "admin" | "staff", title: string): string | undefined {
+  const group = groupLabelOf(pathname, role);
+  return group === title ? undefined : group;
+}
+
+/**
+ * Kenar çubuğunun kaydırma kutusunda etkin sayfanın satırı görünmüyorsa kutunun ne kadar kaydırılacağı (artı: aşağı),
+ * görünüyorsa 0 (sidebar-nav.tsx). Satır kenara yapışmasın diye `pad` kadar pay kalır; kutudan uzun satırda üst kenar
+ * esastır. Vergi grubu listenin sonunda: 900 px yüksek dizüstünde Muhasebeci kutunun altında kalıyordu.
+ */
+export function revealDelta(box: { top: number; bottom: number }, item: { top: number; bottom: number }, pad = 8): number {
+  const up = item.top - (box.top + pad);
+  if (up < 0) return up;
+  const down = item.bottom - (box.bottom - pad);
+  return down > 0 ? Math.min(down, up) : 0;
 }
 
 /**
@@ -439,8 +564,23 @@ export function isSamePage(href: string | null | undefined, pathname: string): b
 }
 
 /**
- * Telefon ve tabletteki alt menü (lg altında), beş öğe. Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey
- * orada; ayda bir açılan Satışlar ve Faturalar da). Personel: günün beş ekranı; Sayım ve Hatırlatıcılarım çekmecede
+ * ⌘K'nın kare adresli kaydı bulunulan ekranın bir bölümünü mü açıyor (yol aynı; adreste sorgu yok ya da bugünküyle
+ * aynı): öyleyse "#bölüm", değilse null. Next'in yönlendiricisi adresi pushState ile değiştirir; o yol hashchange
+ * göndermez, :target'ı güncellemez: kapalı bölüm (Maaşlar'ın SGK oranları, telefonda Ayarlar'ın kartları) açılmaz,
+ * takvim satırının halkası çıkmaz. Bu kayıtta palet tarayıcının kendi çapa gezinmesini kullanır (command-palette.tsx).
+ * Sorgusuz kayıt sayfanın süzgecini korur, sayfadaki bir #bölüm bağlantısı gibi.
+ */
+export function samePageHash(href: string, current: { pathname: string; search: string }): string | null {
+  const at = href.indexOf("#");
+  if (at < 0 || at === href.length - 1 || !isSamePage(href, current.pathname)) return null;
+  const q = href.indexOf("?");
+  const search = q < 0 || q > at ? "" : href.slice(q, at);
+  return search === "" || search === current.search ? href.slice(at) : null;
+}
+
+/**
+ * Telefon ve tabletteki alt menü (lg altında), beş öğe. Yönetici: dört sık ekran + "Tümü" (çekmeceyi açar, her şey
+ * orada; ayda bir açılan Satışlar ve Faturalar da; kenar çubuğundaki Menü grubuyla karışmasın diye "Menü" değil). Personel: günün beş ekranı; Sayım ve Hatırlatıcılarım çekmecede
  * (üst çubuktaki menü düğmesi), Sayım Zayi'nin Stok sekmelerinde de; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
  * gecikmiş ödeme sayısı görünür.
  */
@@ -460,7 +600,7 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun" },
     { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
-    { id: "menu", label: "Menü", icon: LayoutGrid },
+    { id: "menu", label: "Tümü", icon: LayoutGrid },
   ],
   // Günün işleri; Sayım ve Hatırlatıcılarım çekmece menüde (Sayım Zayi'nin sekmesinde, Hatırlatıcılarım zilde de), Hesabım profil menüsünde
   staff: [
@@ -473,8 +613,8 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
 };
 
 /**
- * Alt menüde etkin öğe: çekmece açıksa "Menü"; değilse adresle eşleşen öğe; hiçbiri eşleşmiyorsa (Ürünler,
- * Ayarlar gibi çekmecedeki bir ekran) "Menü". Menü öğesi olmayan listede eşleşme yoksa null.
+ * Alt menüde etkin öğe: çekmece açıksa "Tümü"; değilse adresle eşleşen öğe; hiçbiri eşleşmiyorsa (Ürünler,
+ * Ayarlar gibi çekmecedeki bir ekran) "Tümü". Çekmeceyi açan öğesi olmayan listede eşleşme yoksa null.
  */
 export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOpen = false): string | null {
   const menu = items.find((i) => !i.href);
@@ -494,14 +634,17 @@ export function badgeText(n: number): string | null {
   return n > 9 ? "9+" : String(Math.floor(n));
 }
 
-/** Telefonun üst çubuğundaki kısa başlıklar; listede olmayan ekran menüdeki adını alır */
+/**
+ * Telefonun üst çubuğundaki kısa başlıklar; listede olmayan ekran menüdeki adını alır. Bir ekran bir ad
+ * (docs/planlar/ux-sade.md §3.6): üst çubuk yalnız kısaltır, başka ad koymaz.
+ */
 const SHORT_TITLES: Record<string, string> = {
   "/panel": "Genel bakış",
   "/panel/urunler": "Ürünler",
   "/panel/urunler/site": "Site menüsü",
   "/panel/urunler/fiyatlar": "Fiyatlar",
   "/panel/giderler": "Sabit giderler",
-  "/panel/personel": "Personel",
+  "/panel/personel": "Maaşlar",
   "/panel/harcamalar": "Harcamalar",
   "/panel/hatirlaticilar": "Ödemeler",
   "/panel/hatirlaticilar/nakit": "Nakit planı",
@@ -515,10 +658,10 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",
-  "/panel/vergi": "Vergi",
-  "/panel/vergi/gelir-gider": "Vergiye göre",
+  "/panel/vergi": "Vergi, KDV, SGK",
+  "/panel/vergi/gelir-gider": "Vergi kârı",
   "/panel/vergi/demirbas": "Demirbaş",
-  "/panel/vergi/kurallar": "Vergi kuralları",
+  "/panel/vergi/kurallar": "Muhasebeci",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

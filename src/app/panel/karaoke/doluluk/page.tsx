@@ -61,7 +61,7 @@ const DESCRIPTION =
 function Header({ tabs }: { tabs?: ReactNode }) {
   return (
     <PageHeader
-      eyebrow="Kafe"
+      path="/panel/karaoke/doluluk"
       title={TITLE}
       description={DESCRIPTION}
       actions={

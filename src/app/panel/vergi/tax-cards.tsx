@@ -124,7 +124,7 @@ export function GeciciCardView({ card, filing, rules }: { card: GeciciCard; fili
         <div className="flex flex-wrap gap-2">
           <FilingButton data={filing} period={card.key} />
           <ButtonLink href={`/panel/vergi/gelir-gider?ceyrek=${card.key}`} size="sm">
-            Vergiye göre&apos;yi aç
+            Vergi kârını aç
           </ButtonLink>
         </div>
         <Explain>

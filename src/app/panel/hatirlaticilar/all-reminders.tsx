@@ -128,7 +128,7 @@ export function AllReminders({
               description="Kira, KDV, SGK ya da maaş gibi düzenli ödemeleri ekleyin; tarih yaklaşınca e-postayla haber verilir. Hazır şablonlardan ya da sabit giderlerden tek dokunuşla da eklenebilir."
               action={
                 <Button onClick={onAdd} className="max-sm:h-12">
-                  <Plus size={16} /> Hatırlatıcı ekle
+                  <Plus size={16} /> Ödeme ekle
                 </Button>
               }
             />

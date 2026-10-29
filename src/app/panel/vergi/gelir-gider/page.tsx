@@ -2,6 +2,7 @@ import { Calculator, FileSpreadsheet, SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
@@ -26,9 +27,9 @@ import { quarterGrid } from "./grid";
 import { QuarterPhone } from "./quarter-phone";
 import { QuarterTable } from "./quarter-table";
 
-export const metadata: Metadata = { title: "Vergiye göre gelir-gider" };
+export const metadata: Metadata = { title: "Vergi kârı" };
 
-const TITLE = "Vergiye göre gelir-gider";
+const TITLE = "Vergi kârı";
 const DESCRIPTION =
   "Seçilen çeyreğin ayları, çeyrek toplamı ve yılbaşından kümülatif: vergi esasında, KDV hariç, belgeye dayanan satırlar. Gelir mali belgeden (KDV beyannamesi, yazarkasa Z'si) gelir; girilmeyen ayda yönetim verisi kullanılır ve hesap taslaktır.";
 
@@ -50,7 +51,7 @@ export default function TaxPnlPage({ searchParams }: PageProps<"/panel/vergi/gel
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
- * Vergi › Vergiye göre (plan docs/planlar/vergi.md §4.2): çeyreğin tablosu, köprü, KDV beyannamesi satışları,
+ * Vergi, KDV, SGK › Vergi kârı (plan docs/planlar/vergi.md §4.2; eski adı "Vergiye göre"): çeyreğin tablosu, köprü, KDV beyannamesi satışları,
  * sınıflandırma listesi ve düzeltmeler. Nakit planını okumaz (K30): model ve vergi girdileri yeter.
  */
 async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/gelir-gider">["searchParams"] }) {
@@ -87,7 +88,7 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
         <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
         <TaxBanner data={banner} />
         <Card>
-          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Kurallar › Vergi ayarları'ndan değiştirebilirsiniz." />
+          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Muhasebeci › Vergi ayarları'ndan değiştirebilirsiniz." />
         </Card>
       </>
     );
@@ -110,6 +111,8 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   return (
     <>
       <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
+      {/* ⌘K "Eksik belgeler" (#siniflandir) ve Özet'in bağlantıları içerik akınca iner */}
+      <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
         <Card>

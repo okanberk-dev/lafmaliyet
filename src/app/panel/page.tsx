@@ -94,7 +94,7 @@ export default function DashboardPage({ searchParams }: PageProps<"/panel">) {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Genel" title="Genel bakış" excel="Panel" description="Yükleniyor…" />
+          <PageHeader path="/panel" title="Genel bakış" description="Yükleniyor…" />
           <PageSkeleton />
         </>
       }
@@ -133,7 +133,7 @@ function Change({ g, prevMonth, prevValue, basis }: { g: number | null; prevMont
 }
 
 /**
- * Ödemeler & hatırlatıcılar (liste, hatırlatıcılar, ayarlar); okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu
+ * Ödemeler (liste, hatırlatıcılar, ayarlar); okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu
  * söyler). Nakit planı kartı aynı sonucu paylaşır (ikinci kez okunmaz).
  */
 async function loadPayments(): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
@@ -368,9 +368,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   return (
     <>
       <PageHeader
-        eyebrow="Genel"
+        path="/panel"
         title="Genel bakış"
-        excel="Panel"
         description={
           <>
             {monthLabel(month)}
@@ -624,7 +623,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 </div>
                 <div className="mt-auto flex flex-wrap gap-2">
                   <ButtonLink href={`/panel/tutarlilik?ay=${month}`} variant="secondary">
-                    Tutarlılık kontrolü
+                    Tutarlılık
                   </ButtonLink>
                   <ButtonLink href={`/panel/sayim?ay=${month}`} variant="ghost">
                     Stok sayımı gir

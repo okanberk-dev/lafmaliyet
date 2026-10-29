@@ -66,7 +66,7 @@ export default function InvoicesPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Alış & gider" title="Faturalar" excel="Faturalar" description={DESCRIPTION} />
+          <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -139,7 +139,7 @@ async function InvoicesContent() {
 
   return (
     <>
-      <PageHeader eyebrow="Alış & gider" title="Faturalar" excel="Faturalar" description={DESCRIPTION} />
+      <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

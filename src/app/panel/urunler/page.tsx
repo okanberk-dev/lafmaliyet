@@ -27,14 +27,12 @@ import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products
 
 export const metadata: Metadata = { title: "Ürünler & kârlılık" };
 
-const EXCEL = "Ürün Kârlılık + Reçete Kartları";
-
 export default function ProductsPage({ searchParams }: PageProps<"/panel/urunler">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Ürünler & kârlılık" eyebrow="Menü" excel={EXCEL} />
+          <PageHeader title="Ürünler & kârlılık" path="/panel/urunler" />
           <PageSkeleton rows={10} />
         </>
       }
@@ -123,9 +121,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   return (
     <>
       <PageHeader
-        eyebrow="Menü"
+        path="/panel/urunler"
         title="Ürünler & kârlılık"
-        excel={EXCEL}
         description={
           <>
             Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat.{" "}

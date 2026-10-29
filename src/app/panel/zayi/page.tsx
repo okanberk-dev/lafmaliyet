@@ -37,7 +37,8 @@ function WasteHeader({ role, lafpos = false }: { role: "admin" | "staff"; lafpos
   return (
     <PageHeader
       title="Zayi & ikram"
-      eyebrow="Stok"
+      path="/panel/zayi"
+      role={role}
       description={
         lafpos
           ? "Atılan, bozulan, dökülen (zayi) ürün ve malzemeyi ve hammadde ikramını (ör. personele süt) gün içinde girin; ürün ikramı LafPOS'ta işaretlenir. Tutarlılık ekranı bunları satıştan ayrı gösterir; günün özeti kasa raporuna geçer."

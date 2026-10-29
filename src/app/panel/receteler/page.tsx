@@ -25,7 +25,7 @@ export default function RecipeBookPage() {
     <Suspense
       fallback={
         <>
-          <RecipeBookHeader />
+          <RecipeBookHeader role="staff" />
           <RecipeBookSkeleton />
         </>
       }
@@ -35,11 +35,12 @@ export default function RecipeBookPage() {
   );
 }
 
-function RecipeBookHeader({ action }: { action?: ReactNode }) {
+function RecipeBookHeader({ action, role }: { action?: ReactNode; role: "admin" | "staff" }) {
   return (
     <PageHeader
       title="Reçete defteri"
-      eyebrow="Menü"
+      path="/panel/receteler"
+      role={role}
       description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik ya da yeni ürün önerir, yönetici onaylayınca uygulanır."
       actions={
         <>
@@ -179,7 +180,7 @@ async function RecipeBookContent() {
 
   return (
     <>
-      <RecipeBookHeader action={action} />
+      <RecipeBookHeader action={action} role={user.role} />
       <RecipeBook groups={groups} canEdit={isAdmin} propose={propose} myRequests={myRequests} pending={pendingKinds} />
     </>
   );

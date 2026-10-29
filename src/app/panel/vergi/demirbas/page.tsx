@@ -20,9 +20,9 @@ import { invoiceChoices } from "../dialog-data";
 import { PeriodPicker } from "../period-picker";
 import { type BannerData, DetailList, NoteList, TaxBanner, VergiHeader } from "../ui";
 
-export const metadata: Metadata = { title: "Demirbaş & amortisman" };
+export const metadata: Metadata = { title: "Demirbaş" };
 
-const TITLE = "Demirbaş & amortisman";
+const TITLE = "Demirbaş";
 const DESCRIPTION = "Varlık listesi ve amortisman (KDV hariç). Bir varlığa bağlanan fatura tutarı gider yerine amortismanla düşülür; ömür girilmeyen varlığa amortisman ayrılmaz.";
 
 export default function TaxAssetsPage({ searchParams }: PageProps<"/panel/vergi/demirbas">) {
@@ -264,8 +264,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
               <Badge tone="gray">Özel maliyet</Badge>
               Kiralanan yere yapılan dekorasyon özel maliyettir; ömrü kira süresine bağlıdır. Muhasebecinize sorun.
             </li>
-            <li>Yatırımlar listesi (Giderler &amp; personel) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
-            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Kurallar › Vergi ayarları).</li>
+            <li>Yatırımlar listesi (Giderler &amp; maaşlar) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
+            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Muhasebeci › Vergi ayarları).</li>
           </ul>
         </Card>
       </div>

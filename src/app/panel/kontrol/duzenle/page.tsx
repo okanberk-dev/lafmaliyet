@@ -21,7 +21,7 @@ export default function ChecklistTemplatesPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Kontrol listeleri" title="Listeleri düzenle" description={DESCRIPTION} />
+          <PageHeader path="/panel/kontrol/duzenle" title="Listeleri düzenle" description={DESCRIPTION} />
           <PageSkeleton rows={4} />
         </>
       }
@@ -37,7 +37,7 @@ async function TemplatesContent() {
   const storage = photoStorage();
   return (
     <>
-      <PageHeader eyebrow="Kontrol listeleri" title="Listeleri düzenle" description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/duzenle" role="admin" />} />
+      <PageHeader path="/panel/kontrol/duzenle" title="Listeleri düzenle" description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/duzenle" role="admin" />} />
       {!storage.available ? (
         <p role="note" className="mb-4 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
           Fotoğraf deposu bu ortamda kurulu değil: fotoğraflı maddeler depo bağlanana kadar listelerde görünmez.

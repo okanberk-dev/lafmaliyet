@@ -132,7 +132,8 @@ export function KaraokeAdmin({
           )}
         </Card>
       </div>
-      <Card>
+      {/* Bağlantı uyarısının eylemi buraya iner (#baglanti) */}
+      <Card id="baglanti" className="scroll-mt-20">
         <CardHeader
           icon={<Plug />}
           title="laffogato.net bağlantısı"

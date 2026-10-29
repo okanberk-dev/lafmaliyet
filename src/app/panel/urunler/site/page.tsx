@@ -28,7 +28,7 @@ const TITLE = "Site menüsü";
 function Header() {
   return (
     <PageHeader
-      eyebrow="Menü"
+      path="/panel/urunler/site"
       title={TITLE}
       description="Panel ürünlerini laffogato.net menüsündeki kalemlere bağlayın: bağlı ürünün satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir. Ad, kategori, reçete ve maliyet eşitlenmez."
       actions={

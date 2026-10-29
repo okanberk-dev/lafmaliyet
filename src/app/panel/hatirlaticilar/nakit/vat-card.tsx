@@ -85,7 +85,7 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
             <div className="flex flex-wrap items-center gap-2">
               <p className="min-w-0 flex-1">Ödemeler&apos;de KDV hatırlatıcısı yok; tahmin ayın 28&apos;ine yazıldı.</p>
               <ButtonLink href="/panel/hatirlaticilar" variant="secondary" size="sm" className="pointer-coarse:h-11">
-                Hatırlatıcı ekle
+                Ödemeler&apos;e ekle
               </ButtonLink>
             </div>
           )}

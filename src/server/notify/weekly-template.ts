@@ -11,7 +11,7 @@ import { failedText, headlineOf, subjectOf, weekRangeText } from "@/lib/weekly/t
 import { APP_URL, emailLayout, esc, FONT } from "./digest-template";
 
 /** E-postanın alt notu (kabuğun alıcı notunun yerine) */
-export const WEEKLY_FOOTER = "Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet.";
+export const WEEKLY_FOOTER = "Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler › E-posta bildirimleri › Haftalık özet.";
 export const WEEKLY_NOTE = "Maddeler kasanıza etkisine göre sıralandı; ≈ işaretli tutarlar tahmindir.";
 const QUIET_LINE = "Paneldeki kontrollerde bu hafta öne çıkan bir şey yok.";
 const SAMPLE_LINE = "Bu bir örnektir; asıl özet pazartesi sabahı gider.";

@@ -8,10 +8,10 @@ import { test } from "node:test";
 import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, navTreeFor, overdueCount } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 
-test("yönetici alt menüsü: Genel bakış, Bugün, Kasa, Ödemeler, Menü (Satışlar ve Faturalar çekmecede)", () => {
+test("yönetici alt menüsü: Genel bakış, Bugün, Kasa, Ödemeler, Tümü (Satışlar ve Faturalar çekmecede; kenar çubuğunun Menü grubuyla karışmasın diye 'Tümü')", () => {
   assert.deepEqual(
     BOTTOM_NAV.admin.map((i) => i.label),
-    ["Genel bakış", "Bugün", "Kasa", "Ödemeler", "Menü"],
+    ["Genel bakış", "Bugün", "Kasa", "Ödemeler", "Tümü"],
   );
   assert.deepEqual(
     BOTTOM_NAV.admin.map((i) => i.href ?? null),
@@ -126,12 +126,14 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
   assert.equal(mobileTitleFor("/panel/giderler"), "Sabit giderler");
   assert.equal(mobileTitleFor("/panel/gelir-gider"), "Gelir-gider");
-  // Vergi (dalga 12): dört sekmenin kısa başlıkları
-  assert.equal(mobileTitleFor("/panel/vergi"), "Vergi");
-  assert.equal(mobileTitleFor("/panel/vergi/gelir-gider"), "Vergiye göre");
+  // Vergi (dalga 12): dört ekranın başlıkları, kenar çubuğu ve sayfa başlığıyla aynı (docs/planlar/ux-sade.md §3.6)
+  assert.equal(mobileTitleFor("/panel/vergi"), "Vergi, KDV, SGK");
+  assert.equal(mobileTitleFor("/panel/vergi/gelir-gider"), "Vergi kârı");
   assert.equal(mobileTitleFor("/panel/vergi/demirbas"), "Demirbaş");
-  assert.equal(mobileTitleFor("/panel/vergi/kurallar"), "Vergi kuralları");
-  assert.equal(mobileTitleFor("/panel/personel"), "Personel");
+  assert.equal(mobileTitleFor("/panel/vergi/kurallar"), "Muhasebeci");
+  assert.equal(mobileTitleFor("/panel/personel"), "Maaşlar");
+  assert.equal(mobileTitleFor("/panel/harcamalar"), "Harcamalar");
+  assert.equal(mobileTitleFor("/panel/hatirlaticilar/nakit"), "Nakit planı");
   assert.equal(mobileTitleFor("/panel/sayim"), "Stok sayımı");
   assert.equal(mobileTitleFor("/panel/tutarlilik"), "Tutarlılık");
   assert.equal(mobileTitleFor("/panel/receteler"), "Reçete defteri");

@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, isNotNull, isNull, lt, max, sql } from "driz
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
@@ -30,7 +31,7 @@ export default function ParasutPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Ayarlar" title="Paraşüt entegrasyonu" />
+          <PageHeader path="/panel/parasut" title="Paraşüt entegrasyonu" />
           <PageSkeleton rows={8} />
         </>
       }
@@ -139,33 +140,37 @@ async function ParasutContent() {
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
 
   return (
-    <ParasutScreen
-      configured={isParasutConfigured()}
-      env={parasutEnvStatus()}
-      cronSet={Boolean(process.env.CRON_SECRET)}
-      syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}
-      cursor={(cursorRow[0]?.value as { lastIssueDate?: string } | undefined)?.lastIssueDate ?? null}
-      pendingEInvoices={pending ?? null}
-      stats={invoiceStats(invoiceMix)}
-      invoiceGroups={invoiceBreakdown(invoiceMix)}
-      runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
-      rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
-      links={links.map((l) => ({ ...l, line: lineOf.get(l.productKey) ?? null }))}
-      checks={checks}
-      readState={readState}
-      ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
-      unlinked={unlinked.items}
-      unlinkedTotal={unlinked.total}
-      ignored={ignored}
-      lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
-      categories={INVOICE_CATEGORIES}
-      returns={{
-        sales: { count: returnLog.sales.length, total: returnLog.sales.reduce((a, e) => a + e.amount, 0) },
-        // Faturalar'a eksi tutarla girilmiş tedarikçi iadesi listede kalmaz
-        supplier: returnLog.supplier
-          .filter((e) => !supplierReturnEntered(e, negatives))
-          .map((e) => ({ id: e.id, date: e.date, amount: e.amount, invoiceNo: e.invoiceNo, supplier: e.supplier ?? "Tedarikçi" })),
-      }}
-    />
+    <>
+      {/* ⌘K "Fatura kalemini hammaddeye bağla" ve Hammaddeler'in bağlantıları (#urun-baglantilari) içerik akınca iner */}
+      <HashScroll />
+      <ParasutScreen
+        configured={isParasutConfigured()}
+        env={parasutEnvStatus()}
+        cronSet={Boolean(process.env.CRON_SECRET)}
+        syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}
+        cursor={(cursorRow[0]?.value as { lastIssueDate?: string } | undefined)?.lastIssueDate ?? null}
+        pendingEInvoices={pending ?? null}
+        stats={invoiceStats(invoiceMix)}
+        invoiceGroups={invoiceBreakdown(invoiceMix)}
+        runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
+        rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
+        links={links.map((l) => ({ ...l, line: lineOf.get(l.productKey) ?? null }))}
+        checks={checks}
+        readState={readState}
+        ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
+        unlinked={unlinked.items}
+        unlinkedTotal={unlinked.total}
+        ignored={ignored}
+        lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
+        categories={INVOICE_CATEGORIES}
+        returns={{
+          sales: { count: returnLog.sales.length, total: returnLog.sales.reduce((a, e) => a + e.amount, 0) },
+          // Faturalar'a eksi tutarla girilmiş tedarikçi iadesi listede kalmaz
+          supplier: returnLog.supplier
+            .filter((e) => !supplierReturnEntered(e, negatives))
+            .map((e) => ({ id: e.id, date: e.date, amount: e.amount, invoiceNo: e.invoiceNo, supplier: e.supplier ?? "Tedarikçi" })),
+        }}
+      />
+    </>
   );
 }

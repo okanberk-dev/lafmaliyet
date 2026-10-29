@@ -285,7 +285,7 @@ export const TAX_DOC_LABELS: Record<TaxDoc, string> = {
   fatura: "Paraşüt'te faturası var (burada sayılmaz)",
   belgeli: "Belgesi muhasebecide (fiş, makbuz, serbest meslek makbuzu)",
   yok: "Belgesi yok: muhasebecinize sorun (vergiden düşülmez)",
-  bordro: "Bordroda (Personel'e ekleyin)",
+  bordro: "Bordroda (Maaşlar'a ekleyin)",
 };
 /** Personel bölümündeki `belgeli`: dışarıdan alınan hizmet (muhasebeci, temizlik firması) */
 export const TAX_DOC_PERSONEL_BELGELI = "Dışarıdan hizmet: belgesi muhasebecide (fatura, SMM)";

@@ -31,7 +31,7 @@ const DESCRIPTION_LAFPOS = "LafPOS menüdeki fiyatları siteden kendisi alır; s
 export default function StaffPosPage() {
   return (
     <>
-      <PageHeader eyebrow="Günlük" title={TITLE} description={<KasaText modpos={DESCRIPTION} lafpos={DESCRIPTION_LAFPOS} />} />
+      <PageHeader path="/panel/kasa/fiyatlar" role="staff" title={TITLE} description={<KasaText modpos={DESCRIPTION} lafpos={DESCRIPTION_LAFPOS} />} />
       <Suspense fallback={<PageSkeleton rows={6} />}>
         <StaffPosContent />
       </Suspense>

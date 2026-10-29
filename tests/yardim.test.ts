@@ -15,8 +15,8 @@ const PAGE = readFileSync(join(process.cwd(), "src/app/panel/yardim/page.tsx"), 
 test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel"), ["Genel bakış"]);
   assert.deepEqual(pathOf("/panel/satislar"), ["Satış", "Satışlar"]);
-  assert.deepEqual(pathOf("/panel/giderler"), ["Alış & gider", "Giderler & personel"]);
-  assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Finans", "Ödemeler & hatırlatıcılar"]);
+  assert.deepEqual(pathOf("/panel/giderler"), ["Alış & gider", "Giderler & maaşlar"]);
+  assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Kâr & ödemeler", "Ödemeler"]);
   assert.deepEqual(pathOf("/panel/tutarlilik"), ["Stok", "Tutarlılık"]);
   assert.deepEqual(pathOf("/panel/parasut"), ["Ayarlar", "Paraşüt entegrasyonu"]);
   assert.deepEqual(pathOf("/panel/komisyonlar"), ["Satış", "Komisyon & hakediş"]);
@@ -28,19 +28,20 @@ test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel/kasa"), ["Kasa raporu"]);
   assert.deepEqual(pathOf("/panel/onaylar"), ["Onaylar"]);
   assert.deepEqual(pathOf("/panel/bugun"), ["Bugün"]);
-  assert.deepEqual(pathOf("/panel/gelir-gider"), ["Finans", "Gelir-gider"]);
+  assert.deepEqual(pathOf("/panel/gelir-gider"), ["Kâr & ödemeler", "Gelir-gider"]);
   assert.deepEqual(pathOf("/panel/yok"), []);
 });
 
 test("menüde ayrı öğesi olmayan sekme, menü öğesinin altında (Aylık harcamalar boş çıkmaz)", () => {
-  assert.deepEqual(pathOf("/panel/harcamalar"), ["Alış & gider", "Giderler & personel", "Aylık harcamalar"]);
-  assert.deepEqual(pathOf("/panel/personel"), ["Alış & gider", "Giderler & personel", "Personel"]);
+  assert.deepEqual(pathOf("/panel/harcamalar"), ["Alış & gider", "Giderler & maaşlar", "Aylık harcamalar"]);
+  assert.deepEqual(pathOf("/panel/personel"), ["Alış & gider", "Giderler & maaşlar", "Maaşlar"]);
   for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) assert.ok(pathOf(t.href).length >= 2, t.href);
 });
 
 test("Excel karşılığı sekme adından: sekme eklenince ötekiler kaymaz, yeni sekme 'yeni'", () => {
   assert.equal(excelFor("/panel/giderler"), "Sabit Giderler");
   assert.equal(excelFor("/panel/harcamalar"), undefined);
+  // "Maaşlar" sekmesinin parçası yok: kaydın kendi Excel adına düşer
   assert.equal(excelFor("/panel/personel"), "Personel");
   assert.equal(excelFor("/panel/sayim"), "Sayım");
   assert.equal(excelFor("/panel/tutarlilik"), "Tutarlılık Kontrolü");
@@ -49,7 +50,7 @@ test("Excel karşılığı sekme adından: sekme eklenince ötekiler kaymaz, yen
   assert.equal(excelFor("/panel/hatirlaticilar"), undefined);
   assert.deepEqual(
     tabsOf("/panel/giderler")?.map((t) => t.label),
-    ["Sabit giderler", "Aylık harcamalar", "Personel"],
+    ["Sabit giderler", "Aylık harcamalar", "Maaşlar"],
   );
   assert.equal(tabsOf("/panel/harcamalar"), undefined);
 });
@@ -108,7 +109,7 @@ test("yöneticinin yardımı: Vergi sorusu (dalga 12, docs/planlar/vergi.md §4.
   assert.match(item, /q: "Vergi sayfasındaki rakamlar beyanname mi\?"/);
   for (const s of ["Hayır, tahmindir.", "2026 kurallarıyla tahmin eder", "şirketin tamamının beyannamesidir", "muhasebecinizle bir kez gözden geçirin"]) assert.ok(item.includes(s), s);
   assert.match(item, /Hayır, tahmindir\.\{" "\}\n\s*<Path href="\/panel\/vergi" \/>/);
-  assert.deepEqual(pathOf("/panel/vergi"), ["Finans", "Vergi"]);
-  assert.deepEqual(pathOf("/panel/vergi/kurallar"), ["Finans", "Vergi", "Kurallar"]);
+  assert.deepEqual(pathOf("/panel/vergi"), ["Vergi, KDV, SGK", "Özet"]);
+  assert.deepEqual(pathOf("/panel/vergi/kurallar"), ["Vergi, KDV, SGK", "Muhasebeci"]);
   assert.match(PAGE, /\{ href: "\/panel\/vergi\/kurallar#sorular", label: "Muhasebeciye sorulacaklar" \}/);
 });

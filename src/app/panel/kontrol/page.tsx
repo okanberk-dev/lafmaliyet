@@ -30,7 +30,7 @@ export default function ChecklistsPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Kafe" title={TITLE} description={DESCRIPTION} />
+          <PageHeader path="/panel/kontrol" role="staff" title={TITLE} description={DESCRIPTION} />
           <PageSkeleton rows={4} />
         </>
       }
@@ -56,7 +56,7 @@ async function ChecklistsContent() {
   });
   return (
     <>
-      <PageHeader eyebrow="Kafe" title={TITLE} description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol" role={user.role} />} />
+      <PageHeader path="/panel/kontrol" role={user.role} title={TITLE} description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol" role={user.role} />} />
       <TodayRefresh at={nextRefreshAt(now, checklistBoundaries({ day, lists }))} renderedAt={now.toISOString()} />
       {lists.length ? (
         <div className="grid gap-4 lg:grid-cols-2">

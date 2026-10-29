@@ -36,7 +36,7 @@ export default function ApprovalsPage() {
     <>
       <PageHeader
         title="Onaylar"
-        eyebrow="Günlük"
+        path="/panel/onaylar"
         description="Personelin onay isteyen önerileri ve istekleri: kasa, zayi ve ikram, karaoke, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">

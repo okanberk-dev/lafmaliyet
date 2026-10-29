@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { currentMonthTR, shiftMonth } from "@/lib/calc/engine";
 import { fixedReminderDrifts, reminderDriftText } from "@/lib/cash-plan";
@@ -20,7 +21,7 @@ import { loadWeeklyPanel } from "@/server/weekly/send";
 
 import { RemindersClient } from "./reminders-client";
 
-export const metadata: Metadata = { title: "Ödemeler & hatırlatıcılar" };
+export const metadata: Metadata = { title: "Ödemeler" };
 // Haftalık özet önizlemesi ve örnek gönderimi (en çok ~16 sn): bu sayfanın sunucu eylemleri sayfanın süresini kullanır
 export const maxDuration = 30;
 
@@ -29,7 +30,7 @@ export default function RemindersPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Finans" title="Ödemeler & hatırlatıcılar" />
+          <PageHeader path="/panel/hatirlaticilar" title="Ödemeler" tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar" role="admin" />} />
           <PageSkeleton rows={6} />
         </>
       }

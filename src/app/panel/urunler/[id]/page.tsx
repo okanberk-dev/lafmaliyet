@@ -39,8 +39,7 @@ function RecipeSkeleton() {
   return (
     <>
       <PageHeader
-        eyebrow="Menü"
-        excel="Reçete Kartları"
+        path="/panel/urunler"
         title="Reçete kartı"
         actions={
           <ButtonLink href="/panel/urunler" variant="ghost" size="sm">

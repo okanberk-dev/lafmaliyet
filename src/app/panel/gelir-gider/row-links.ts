@@ -51,7 +51,7 @@ export function rowLink(key: string, month: string, o: { value?: number | null; 
     return notFuture(prev) ? { href: `/panel/sayim?ay=${prev}`, label: `Stok sayımı · ${monthLabel(prev)}`, scope: "month" } : null;
   }
   if (key === "revenue") return { href: `/panel/satislar?ay=${month}#m-pos`, label: `Satışlar · ${monthLabel(month)}`, scope: "month" };
-  if (key.startsWith("personnel:")) return { href: "/panel/personel", label: "Personel", scope: "row" };
+  if (key.startsWith("personnel:")) return { href: "/panel/personel", label: "Maaşlar", scope: "row" };
   if (key.startsWith("fixed:")) return { href: "/panel/giderler", label: "Sabit giderler", scope: "row" };
   return null;
 }

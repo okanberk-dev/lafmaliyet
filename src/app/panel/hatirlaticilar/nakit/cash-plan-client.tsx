@@ -4,7 +4,9 @@ import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronD
 import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -78,18 +80,14 @@ export function CashPlanClient({
   return (
     <>
       <PageHeader
-        eyebrow="Finans"
+        path="/panel/hatirlaticilar/nakit"
         title={title}
         description={description}
-        actions={
-          <>
-            <ButtonLink href="/panel/hatirlaticilar" variant="secondary">
-              Ödemeler
-            </ButtonLink>
-            {balanceButton}
-          </>
-        }
+        actions={balanceButton}
+        tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar/nakit" role="admin" />}
       />
+      {/* Yardım'ın ve Vergi'nin "KDV tahmini" bağlantısı (#kdv) içerik akınca iner */}
+      <HashScroll />
 
       {!plan.hasData ? (
         <Card>

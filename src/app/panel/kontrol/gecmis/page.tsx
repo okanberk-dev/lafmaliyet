@@ -34,7 +34,7 @@ export default function ChecklistHistoryPage({ searchParams }: PageProps<"/panel
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" />
+          <PageHeader path="/panel/kontrol/gecmis" role="staff" title="Geçmiş" />
           <PageSkeleton rows={6} />
         </>
       }
@@ -54,7 +54,7 @@ async function HistoryContent({ searchParams }: { searchParams: PageProps<"/pane
   const today = checklistDay(now);
   const first = await firstChecklistDay();
   const header = (
-    <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" description={admin ? DESCRIPTION : STAFF_DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/gecmis" role={user.role} />} />
+    <PageHeader path="/panel/kontrol/gecmis" role={user.role} title="Geçmiş" description={admin ? DESCRIPTION : STAFF_DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/gecmis" role={user.role} />} />
   );
   if (!first) {
     return (

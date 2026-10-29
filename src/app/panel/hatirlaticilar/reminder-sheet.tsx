@@ -252,7 +252,7 @@ export function ReminderSheet({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-semibold text-ink">Sabit giderlerden ekle</span>
-          <span className="block text-xs text-ink-mute">{usableFixed ? `Kira, aidat, internet… ${usableFixed} sabit gider` : "Giderler & personel sayfasındaki sabit giderler"}</span>
+          <span className="block text-xs text-ink-mute">{usableFixed ? `Kira, aidat, internet… ${usableFixed} sabit gider` : "Giderler & maaşlar › Sabit giderler sayfasındaki giderler"}</span>
         </span>
         <ChevronRight size={18} className="shrink-0 text-ink-quiet" aria-hidden="true" />
       </button>
@@ -558,7 +558,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
       {usable.length === 0 ? (
         <EmptyState
           title="Sabit gider yok"
-          description="Önce Giderler & personel sayfasında kira, aidat, internet gibi sabit giderleri girin."
+          description="Önce Giderler & maaşlar › Sabit giderler sayfasında kira, aidat, internet gibi sabit giderleri girin."
           action={
             <Link href="/panel/giderler" className="inline-flex h-11 items-center text-sm font-medium text-ink underline">
               Sabit giderlere git

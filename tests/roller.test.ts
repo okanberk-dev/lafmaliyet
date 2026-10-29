@@ -64,7 +64,7 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   }
   const staffIds = navTreeFor("staff").flatMap((n) => [n.id, ...(n.children ?? []).map((c) => c.id)]);
   assert.ok(!staffIds.includes("vergi") && !staffIds.includes("finans"));
-  assert.ok(navTreeFor("admin").find((n) => n.id === "finans")?.children?.some((c) => c.id === "vergi" && c.href === "/panel/vergi"));
+  assert.ok(navTreeFor("admin").find((n) => n.id === "vergi")?.children?.some((c) => c.href === "/panel/vergi"));
 });
 
 test("personel yolunun altındaki yönetici ekranları (Karaoke › Doluluk, Kontrol › Listeler) personele kapalı", () => {

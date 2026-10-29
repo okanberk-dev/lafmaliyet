@@ -25,6 +25,7 @@ import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteStaffVersion, endStaff, saveStaff, saveStaffRates } from "@/server/actions/costs";
 
+import { pinSection } from "../ayarlar/pin-scroll";
 import { CountUp, HeadIcon, ShareBreakdown } from "../giderler/expenses-client";
 import { amountChangeText, choiceValue, entryAt, rangeText, spanText, startText, type EffectText, type MonthChoice } from "../giderler/history-text";
 import { Disclosure, EffectNote, HistoryList, MonthChoiceField, RangeBadge, ResumeDialog, StopDialog } from "../giderler/history-ui";
@@ -56,6 +57,9 @@ const RATE_FIELDS: { key: RateKey; label: string; hint?: string }[] = [
 ];
 
 /** Boş alan 0 sayılır; yazılmış ama sayı olmayan metin geçersizdir */
+/** SGK oranları bölümünün çapası: ⌘K'daki "SGK oranı" kaydı buraya iner */
+const RATES_ANCHOR = "sgk-oranlari";
+
 const parseOrZero = (text: string) => (text.trim() === "" ? 0 : parseNumberTR(text));
 const invalidAmount = (text: string) => {
   const v = parseOrZero(text);
@@ -143,6 +147,27 @@ export function StaffEditor({
   }
   const check = checkRates(r);
   const ratesDirty = ratesChanged(r, rates);
+
+  // ⌘K "SGK oranı" (/panel/personel#sgk-oranlari) bölümü açık getirir; aynı sayfada çapaya gelince de açılır (palet
+  // aynı sayfada tarayıcının çapa gezinmesini kullanır, nav.ts samePageHash). Ayarlar'ın bölüm deseni
+  // (ayarlar/section-card.tsx): kaydırma bölümün açılışı işlendikten sonra yapılır ve sayfa uzadıkça yeniden hizalanır;
+  // kapalı bölümle sayfa kısa kalır, kaydırma alt sınırda kırpılırdı.
+  const ratesRef = useRef<HTMLDivElement>(null);
+  const [hashHits, setHashHits] = useState(0);
+  useEffect(() => {
+    const fromHash = () => {
+      if (window.location.hash !== `#${RATES_ANCHOR}`) return;
+      setRatesOpen(true);
+      setHashHits((n) => n + 1);
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, []);
+  useEffect(() => {
+    if (!hashHits || !ratesRef.current) return;
+    return pinSection(ratesRef.current);
+  }, [hashHits]);
 
   // Kaydedilmemiş oran varken sekmeyi kapatmadan önce tarayıcı sorsun
   useEffect(() => {
@@ -641,7 +666,7 @@ export function StaffEditor({
         </div>
 
         {/* SGK oranları: nadiren değişir, kapalı gelir. Bütün aylar için geçerlidir (Excel'deki Personel sayfası gibi). */}
-        <div className="border-t border-line">
+        <div ref={ratesRef} id={RATES_ANCHOR} className="scroll-mt-20 border-t border-line">
           <button
             type="button"
             aria-expanded={ratesOpen}
