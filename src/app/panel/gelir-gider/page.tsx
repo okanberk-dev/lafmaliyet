@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
@@ -257,6 +258,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           )
         }
       />
+      {/* ⌘K "Kâr / zarar" (#kar-zarar) başka sayfadan gelince içerik akınca iner */}
+      <HashScroll key={`capa-${year}`} />
       {/* Vergi bölümündeki karşılığı (dalga 12, docs/VERGI.md) */}
       <p className="-mt-2 mb-4 text-[13px] text-ink-mute">
         Vergi hesabındaki karşılığı:{" "}

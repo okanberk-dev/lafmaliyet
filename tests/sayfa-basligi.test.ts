@@ -129,4 +129,17 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   assert.match(staff, /window\.addEventListener\("hashchange", fromHash\)/);
   // Karaoke bağlantı kartının çapası (uyarının eylemi buraya iner)
   assert.match(read("src/app/panel/karaoke/karaoke-admin.tsx"), /<Card id="baglanti" className="scroll-mt-20">/);
+  // Başka sayfadan gelen çapa: sayfa sunucudan sonradan aktığı için Next'in kaydırması hedefi bulamayabilir; hedef
+  // sayfanın akan içeriği çizilince kendisi iner (HashScroll ya da bölümün kendi hash dinleyicisi)
+  const LANDS: Record<string, [string, RegExp]> = {
+    "/panel/vergi": ["src/app/panel/vergi/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
+    "/panel/vergi/gelir-gider": ["src/app/panel/vergi/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{q\.key\}`\} \/>/],
+    "/panel/vergi/kurallar": ["src/app/panel/vergi/kurallar/page.tsx", /<HashScroll \/>/],
+    "/panel/gelir-gider": ["src/app/panel/gelir-gider/page.tsx", /<HashScroll key=\{`capa-\$\{year\}`\} \/>/],
+    "/panel/personel": ["src/app/panel/personel/staff-editor.tsx", /window\.addEventListener\("hashchange", fromHash\)/],
+    "/panel/ayarlar": ["src/app/panel/ayarlar/section-card.tsx", /window\.location\.hash !== `#\$\{id\}`/],
+    "/panel/parasut": ["src/app/panel/parasut/page.tsx", /<HashScroll \/>/],
+  };
+  assert.deepEqual([...new Set(hashed.map((h) => h.split("#")[0]))].sort(), Object.keys(LANDS).sort());
+  for (const [path, [file, re]] of Object.entries(LANDS)) assert.match(read(file), re, path);
 });

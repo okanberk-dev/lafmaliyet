@@ -1867,3 +1867,16 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
 5. **Sabah e-postasının dört şablon özeti (`tests/hatirlaticilar-digest.test.ts`) yenilendi**: §3.10'un altbilgi metni
    ("Ödemeler sayfasından") şablonun bayt özetini değiştirir; testte eski altbilgiyle dört özetin eskisiyle aynı olduğu
    denetlendi, yalnız değerler yazıldı.
+6. **`tests/sayfa-basligi.test.ts`'in açıklama uzunluğu denetimi (≤ 100 harf, §3.11) Bölüm 3'te eklenir.** Neden: §11
+   açıklama metinlerini Bölüm 3'e bırakır ("Açıklama metinleri Bölüm 3'te"); bugünkü açıklamaların çoğu 100 harfi aşar,
+   denetim Bölüm 1'de eklense her bölümün kendi sonunda yeşil olması (§11) bozulurdu. Testin öbür dört denetimi (elle
+   bağlam ve Excel yok, her başlıkta `path`, bir ekran bir ad, paletin kare adresleri var olan çapaya iner) Bölüm 1'de.
+7. **Çapalı adresler sayfa akınca iner: `HashScroll` ortak bileşen oldu ve takvim listesi `overflow-clip`.** §3.7'nin
+   çapaları tarayıcıda ölçüldü (§14): ⌘K başka sayfadan açınca Next kaydırmayı sayfa sunucudan akmadan yapabiliyor;
+   `#sgk`, `#muhtasar` ve `#siniflandir` kimi açılışta hedefe inmedi (hedef henüz yoktu). Komisyon'daki `HashScroll`
+   (içerik çizilince bir kez kaydırır) `src/components/panel/hash-scroll.tsx`'e taşındı; ⌘K'nın kare adresli
+   kayıtlarının açtığı her sayfanın akan içeriğinde var (Vergi Özet, Vergi kârı, Muhasebeci, Gelir-gider, Paraşüt; Nakit
+   planı `#kdv` için de) ya da bölüm kendi hash dinleyicisini taşıyor (Maaşlar'ın SGK oranları, Ayarlar'ın bölümleri);
+   `tests/sayfa-basligi.test.ts` tutar. Takvimin `<ul>`'u `overflow-hidden` yerine `overflow-clip`: hidden bir kaydırma
+   kabı olduğu için Chrome ilk satırın `scroll-mt-20` payını kırpıyor, `#sgk` (ilk satır) telefonun üst çubuğunun
+   altında kalıyordu; köşeler aynı.

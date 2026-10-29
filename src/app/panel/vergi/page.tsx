@@ -2,6 +2,7 @@ import { CalendarClock, ClipboardList, Hourglass } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
@@ -86,6 +87,8 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   return (
     <>
       <VergiHeader current="/panel/vergi" title="Vergi, KDV, SGK" description={OZET_DESCRIPTION} actions={yearPicker} />
+      {/* ⌘K "KDV", "SGK primi", "Maaş vergileri", "Kâr vergisi" (#kdv, #sgk, #muhtasar, #kar-vergisi) içerik akınca iner */}
+      <HashScroll key={`capa-${year}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">

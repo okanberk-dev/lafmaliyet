@@ -2,6 +2,7 @@ import { Calculator, FileSpreadsheet, SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
@@ -110,6 +111,8 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   return (
     <>
       <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
+      {/* ⌘K "Eksik belgeler" (#siniflandir) ve Özet'in bağlantıları içerik akınca iner */}
+      <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
         <Card>

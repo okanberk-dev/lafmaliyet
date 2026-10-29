@@ -129,7 +129,8 @@ export function TaxCalendarCard({ view, extras }: { view: Pick<TaxView, "calenda
     <Card>
       <CardHeader icon={<CalendarClock />} title="Sıradaki vergi ödemeleri" description="Önümüzdeki 100 gün; yasal son günle (hafta sonu ve tatilde ilk iş günü). Satıra dokunun: döküm ve dayanak." />
       {view.calendar.length ? (
-        <ul className="mx-2 divide-y divide-line overflow-hidden rounded-2xl bg-surface ring-1 ring-line sm:mx-5">
+        // overflow-clip (hidden değil): kaydırma kabı olmaz, ilk satırın çapası (#sgk) scroll-mt payını kaybetmez
+        <ul className="mx-2 divide-y divide-line overflow-clip rounded-2xl bg-surface ring-1 ring-line sm:mx-5">
           {view.calendar.map((r) => (
             <Row key={r.key} row={r} extras={extras} anchor={firstOfKind.get(r.kind) === r.key ? ANCHOR_OF[r.kind] : undefined} />
           ))}

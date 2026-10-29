@@ -2,6 +2,7 @@ import { BookOpenCheck, CircleSlash, MessagesSquare, Settings2 } from "lucide-re
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -66,6 +67,8 @@ async function TaxRulesContent() {
   return (
     <>
       <VergiHeader current="/panel/vergi/kurallar" title={TITLE} description={DESCRIPTION} />
+      {/* ⌘K "Muhasebeciye sorulacaklar" (#sorular) içerik akınca iner */}
+      <HashScroll />
       <TaxBanner data={banner} />
       <div className="space-y-6">
         <DisclaimerBody data={banner} />

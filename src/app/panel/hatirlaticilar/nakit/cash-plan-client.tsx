@@ -4,6 +4,7 @@ import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronD
 import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 
+import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,8 @@ export function CashPlanClient({
         actions={balanceButton}
         tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar/nakit" role="admin" />}
       />
+      {/* Yardım'ın ve Vergi'nin "KDV tahmini" bağlantısı (#kdv) içerik akınca iner */}
+      <HashScroll />
 
       {!plan.hasData ? (
         <Card>
