@@ -100,3 +100,15 @@ test("yöneticinin yardımı: ModPOS Z ve banka POS Z (yazarkasa) karşılaştı
   assert.match(PAGE, /import \{ OKC_PREFILL_ENABLED \} from "@\/lib\/okc-z"/);
 });
 
+
+test("yöneticinin yardımı: Vergi sorusu (dalga 12, docs/planlar/vergi.md §4.6): tahmin, beyanname değil; menü yolu ve Muhasebeciye sorulacaklar", () => {
+  const start = PAGE.indexOf('id: "vergi"');
+  assert.ok(start > PAGE.indexOf('id: "kdv-tahmini"'), "vergi sorusu KDV tahmininden sonra, Gider, ödeme ve ekip grubunda");
+  const item = PAGE.slice(start, PAGE.indexOf("icon: Landmark", start));
+  assert.match(item, /q: "Vergi sayfasındaki rakamlar beyanname mi\?"/);
+  for (const s of ["Hayır, tahmindir.", "2026 kurallarıyla tahmin eder", "şirketin tamamının beyannamesidir", "muhasebecinizle bir kez gözden geçirin"]) assert.ok(item.includes(s), s);
+  assert.match(item, /Hayır, tahmindir\.\{" "\}\n\s*<Path href="\/panel\/vergi" \/>/);
+  assert.deepEqual(pathOf("/panel/vergi"), ["Finans", "Vergi"]);
+  assert.deepEqual(pathOf("/panel/vergi/kurallar"), ["Finans", "Vergi", "Kurallar"]);
+  assert.match(PAGE, /\{ href: "\/panel\/vergi\/kurallar#sorular", label: "Muhasebeciye sorulacaklar" \}/);
+});

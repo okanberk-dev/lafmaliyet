@@ -120,7 +120,10 @@ export function resetCheck(
 ): { ok: true } | { ok: false; error: string } | { ok: false; warning: string } {
   if (target.local || confirm === target.host) return { ok: true };
   if (confirm !== null) return { ok: false, error: `Onay tutmuyor: --onay=${target.host} yazın (sunucu adı). Hiçbir şey silinmedi.` };
-  return { ok: false, warning: `Bu veritabanındaki ürünler, faturalar, satışlar, sayımlar ve ayarlar silinip Excel verisi yüklenecek: ${target.label}.` };
+  return {
+    ok: false,
+    warning: `Bu veritabanındaki ürünler, faturalar (vergi demirbaş listesiyle), satışlar, sayımlar ve ayarlar silinip Excel verisi yüklenecek: ${target.label}.`,
+  };
 }
 
 /**
@@ -130,6 +133,16 @@ export function resetCheck(
 export function cariResetBlock(entries: number, wipe: boolean, backupFile: string): string | null {
   if (!entries || wipe) return null;
   return `Cari hareketleri var (${entries} kayıt). db:reset onları siler, Kasa satırları kalır ve faturalar ödenmemiş geri gelir. Yedek alındı: ${backupFile}. Yine de silmek için: npm run db:reset -- --cari-sil`;
+}
+
+/**
+ * db:reset'in vergi demirbaş listesi notu (dalga 12, K32; saf): `tax_assets` faturalara bağlı olduğu için `TRUNCATE
+ * invoices … CASCADE` onu da boşaltır. Elle girilmiş liste durdurmaz (yedekte kalır), silineceği söylenir. Vergi
+ * kayıtları (muhasebecinin rakamları, düzeltmeler) ve vergi ayarları kalır; sabit gider ve aylık harcama kategorisinin
+ * vergi belgesi kendi satırıyla birlikte gider ya da kalır (sabit giderler Excel'den yeniden yüklenir, sınıflandırmasız)
+ */
+export function taxAssetsResetNote(assets: number): string | null {
+  return assets ? `Vergi demirbaş listesi de silinecek (${assets} varlık; yedekte duruyor, Vergi › Demirbaş'tan yeniden girilir).` : null;
 }
 
 /** drizzle/*_sayim_yeni_kalemler.sql: sayım listesine sonradan eklenen sekiz kalem (tek ifade, korumalı) */
@@ -189,6 +202,10 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       const [{ entries }] = await db.select({ entries: count() }).from(s.supplierEntries);
       const block = cariResetBlock(entries, wipeCari, file);
       if (block) throw new Error(block);
+      // Vergi demirbaş listesi faturalarla birlikte gider (K32): durdurmaz, söylenir
+      const [{ assets }] = await db.select({ assets: count() }).from(s.taxAssets);
+      const assetNote = taxAssetsResetNote(assets);
+      if (assetNote) console.log(`! ${assetNote}`);
     }
 
     await db.transaction(async (tx) => {

@@ -3,6 +3,7 @@
 // hem sunucuda hem tarayıcıda (canlı hesap) kullanılabilir.
 
 import type { SiteSalesMonth } from "../site-sales/schema";
+import type { TaxDoc, Withholding } from "../tax/rules";
 
 import type { LafposIkramData } from "../lafpos/ikram";
 
@@ -261,6 +262,8 @@ export interface Invoice {
    * POS komisyonu uyarısı okur ("kanalı bulunamayan" fatura iki ekranda aynı)
    */
   channelNames?: string[];
+  /** Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi (yalnız vergi hesabı; docs/VERGI.md) */
+  taxNotAsset?: boolean;
 }
 
 /**
@@ -301,6 +304,9 @@ export interface FixedExpense extends MonthRange {
   amount: number;
   /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (constants.ts fixedVatRate). Yalnız nakit planı kullanır */
   vatRate?: number | null;
+  /** Vergi belgesi ve stopaj profili (yalnız vergi hesabı ve nakit planı; boş = seçilmedi; docs/VERGI.md) */
+  taxDoc?: TaxDoc | null;
+  taxWithholding?: Withholding | null;
   note: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
@@ -390,6 +396,8 @@ export interface ExpenseCategory {
   monthly: boolean;
   active: boolean;
   sortOrder: number;
+  /** Vergi belgesi: kategorinin kayıtları vergide nasıl sayılır (boş = seçilmedi; docs/VERGI.md) */
+  taxDoc?: Exclude<TaxDoc, "bordro"> | null;
 }
 
 /** Aylık harcama kaydı: ödenen tutar gider sayılır (KDV ayrılmaz) */
@@ -401,6 +409,11 @@ export interface ExpenseEntry {
   amount: number;
   paymentMethod: PaymentMethod | null;
   note: string | null;
+  /** Kasadan çıkan bir satırdan geldiyse onun kimliği ve belgesi (vergide kaydın belgesi; docs/VERGI.md) */
+  cashOutId?: number | null;
+  docType?: "fis" | "e_arsiv" | "fatura" | "yok" | null;
+  /** Cari hesaptaki faturasız bir borca aitse onun kimliği (dalga 11; vergide "belgesi yok") */
+  supplierEntryId?: number | null;
 }
 
 /**

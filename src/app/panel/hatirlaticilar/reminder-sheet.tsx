@@ -63,6 +63,8 @@ export interface FixedRow {
   section: FixedSection;
   /** Kalemin kendi KDV oranı; boşsa bölümün varsayılanı */
   vatRate: number | null;
+  /** Ödemeden kesilen stopaj oranı (Vergi › sınıflandırma; 0 = yok): tutar bankadan çıkan net (docs/VERGI.md) */
+  withholdingRate: number;
   versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
   /** Bitiş ayı (bu ay ya da sonrası; bitmişler listelenmez): ilk ödeme en geç bu ayda (E-62) */
   endMonth: string | null;
@@ -82,6 +84,10 @@ const PRESET_CARDS: { key: string; label: string; category: ReminderCategory }[]
   { key: "maas", label: "Maaş", category: "maas" },
   { key: "kira", label: "Kira", category: "kira" },
   { key: "abonelik", label: "Abonelik", category: "abonelik" },
+  { key: "kv", label: "Kurumlar vergisi", category: "vergi" },
+  { key: "ctv1", label: "ÇTV 1. taksit", category: "vergi" },
+  { key: "ctv2", label: "ÇTV 2. taksit", category: "vergi" },
+  { key: "ilan", label: "İlan-reklam", category: "vergi" },
 ];
 
 /** Başlıktan tür tahmini (yeni hatırlatıcıda tür elle seçilmediyse) */
@@ -120,14 +126,29 @@ function draftOf(r: Reminder): Draft {
   };
 }
 
+/** Şablonun taslağı (kart ya da `?yeni=<şablon>`); "ozel" boş başlıkla */
+function presetDraftOf(key: string, today: string, initialDate?: string): Draft {
+  if (key === "ozel") return { title: "", kind: "odeme", amount: "", dueDate: initialDate ?? today, repeat: "monthly", before: "3", note: "", endOfMonth: false, preset: "Özel" };
+  const p = REMINDER_PRESETS.find((x) => x.key === key)!;
+  const d = presetDraft(p, initialDate && initialDate > today ? initialDate : today);
+  return { ...d, amount: "", before: String(d.remindDaysBefore), preset: PRESET_CARDS.find((c) => c.key === key)?.label };
+}
+
+/** Şablon anahtarı mı (`?yeni=` adresten gelir; bilinmeyen değer yok sayılır) */
+export function isPresetKey(key: string | null | undefined): key is string {
+  return Boolean(key) && REMINDER_PRESETS.some((p) => p.key === key);
+}
+
 /**
  * Yeni hatırlatıcı ve düzenleme. Yenide önce şablon kartları (KDV, Muhtasar, SGK, Geçici vergi, Maaş, Kira,
- * Abonelik, Özel) ve "Sabit giderlerden ekle"; şablon başlık, gün, tekrar ve haber gününü doldurur.
+ * Abonelik, kurumlar vergisi, ÇTV, ilan-reklam, Özel) ve "Sabit giderlerden ekle"; şablon başlık, gün, tekrar ve haber
+ * gününü doldurur. `initialPreset` (Vergi › takvimin "Ödemeler'e ekle"si, `?yeni=<şablon>`) formu o şablonla açar.
  */
 export function ReminderSheet({
   reminder,
   today,
   initialDate,
+  initialPreset,
   existing,
   fixedExpenses,
   onClose,
@@ -137,22 +158,19 @@ export function ReminderSheet({
   today: string;
   /** Takvimde bir güne dokunup "Bu güne ekle" denince: Özel şablonun tarihi */
   initialDate?: string;
+  /** Şablonla dolu açılış (`REMINDER_PRESETS` anahtarı); geri düğmesi şablon kartlarına döner */
+  initialPreset?: string | null;
   existing: Set<string>;
   fixedExpenses: FixedRow[];
   onClose: () => void;
   onDelete: (r: Reminder) => void;
 }) {
-  const [step, setStep] = useState<"pick" | "form" | "fixed">(reminder ? "form" : "pick");
-  const [draft, setDraft] = useState<Draft | null>(reminder ? draftOf(reminder) : null);
+  const preset = !reminder && isPresetKey(initialPreset) ? initialPreset : null;
+  const [step, setStep] = useState<"pick" | "form" | "fixed">(reminder || preset ? "form" : "pick");
+  const [draft, setDraft] = useState<Draft | null>(reminder ? draftOf(reminder) : preset ? presetDraftOf(preset, today, initialDate) : null);
 
   const choose = (key: string) => {
-    if (key === "ozel") {
-      setDraft({ title: "", kind: "odeme", amount: "", dueDate: initialDate ?? today, repeat: "monthly", before: "3", note: "", endOfMonth: false, preset: "Özel" });
-    } else {
-      const p = REMINDER_PRESETS.find((x) => x.key === key)!;
-      const d = presetDraft(p, initialDate && initialDate > today ? initialDate : today);
-      setDraft({ ...d, amount: "", before: String(d.remindDaysBefore), preset: PRESET_CARDS.find((c) => c.key === key)?.label });
-    }
+    setDraft(presetDraftOf(key, today, initialDate));
     setStep("form");
   };
 
@@ -579,7 +597,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">
-                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate }, f.versions, (days[f.id] ?? firstFor(f)).slice(0, 7))}
+                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate, withholdingRate: f.withholdingRate }, f.versions, (days[f.id] ?? firstFor(f)).slice(0, 7))}
                           {f.endMonth ? ` · ${monthLabel(f.endMonth)} ayında bitiyor` : ""}
                         </p>
                       </div>

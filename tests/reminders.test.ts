@@ -12,9 +12,16 @@ import {
   dueNotifications,
   fixedReminderAt,
   fixedReminderText,
+  isLocalTaxReminder,
+  isMuhtasarReminder,
+  isProvisionalTaxReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
+  taxAmountTravels,
+  travelingAmountKind,
+  AMOUNT_CLEARED_TEXT,
+  vatStampReminder,
   postponedFrom,
   postponeNote,
   monthLocativeTR,
@@ -296,13 +303,19 @@ test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü k
   assert.match(restore, /snap\.note !== undefined \? \{ note: snap\.note \}/);
 });
 
-test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
+test("KDV, muhtasar ve geçici vergi tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
   const src = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
   const done = src.slice(src.indexOf("export async function markReminderDone"), src.indexOf("type ReminderDbRow"));
-  assert.match(done, /const clear = next !== null && vatAmountTravels\(r\);/);
-  assert.match(done, /amountCleared: clear/);
+  // K26: vatAmountTravels yerine taxAmountTravels (muhtasar ve geçici vergi de); işlem geçmişi eki "(vergi)"
+  assert.match(done, /const clear = next !== null && taxAmountTravels\(r\);/);
+  assert.match(done, /amountCleared: clear, clearedKind: clear \? travelingAmountKind\(r\) : null/);
+  assert.match(done, / · tutar silindi \(vergi\)/);
+  assert.doesNotMatch(src, /vatAmountTravels/);
+  // Geçici vergi "Ödendi"si kalıcı kayda çeyrek dönemiyle (kurumlar vergisi yalnız ödenmiş geçici vergiyi mahsup eder)
+  assert.match(done, /isProvisionalTaxReminder\(r\) \? "gecici" : null/);
+  assert.match(done, /rememberVatPaid\(\{ id: rid, kind: vatKind, dueDate: r\.dueDate, next, periods: paidPeriodsOf\(row, r\.dueDate, next, vatKind\), amount: r\.amount \}\)/);
   const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
-  assert.match(postpone, /vatAmountTravels\(r\)/);
+  assert.match(postpone, /taxAmountTravels\(r\)/);
   // Ertelenen dönemin kopyası tutarı taşır
   assert.match(postpone, /amount: r\.amount,/);
   assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*amount: r\.amount/);
@@ -311,7 +324,24 @@ test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sun
   const undo = src.slice(src.indexOf("export async function undoRecentPaid"), src.indexOf("const zPostpone"));
   // Ödendikten sonra yazılmış tutar ezilmez
   assert.match(undo, /cur\.amount === null/);
-  assert.match(readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/payment-ui.tsx"), "utf8"), /KDV tutarı her ay değiştiği için silindi\./);
+  const ui = readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/payment-ui.tsx"), "utf8");
+  assert.match(ui, /AMOUNT_CLEARED_TEXT\[clearedKind \?\? "kdv"\]/);
+  assert.deepEqual(AMOUNT_CLEARED_TEXT, {
+    kdv: "KDV tutarı her ay değiştiği için silindi.",
+    muhtasar: "Muhtasar tutarı her ay değiştiği için silindi.",
+    gecici: "Geçici vergi tutarı her dönem değiştiği için silindi.",
+  });
+});
+
+test("silinen tutarın türü (bildirim): KDV, muhtasar, geçici vergi; sabit tutarlı stopaj ve tek seferlik değil", () => {
+  const r = (title: string, repeat: ReminderRow["repeat"] = "monthly", amount: number | null = 8_000) => ({ title, kind: "vergi" as const, amount, repeat });
+  assert.equal(travelingAmountKind(r("KDV beyannamesi ve ödemesi")), "kdv");
+  assert.equal(travelingAmountKind(r("KDV2 tevkifat")), "kdv");
+  assert.equal(travelingAmountKind(r("Muhtasar ve prim hizmet beyannamesi")), "muhtasar");
+  assert.equal(travelingAmountKind(r("Geçici vergi beyanı ve ödemesi", "quarterly")), "gecici");
+  assert.equal(travelingAmountKind(r("Kira stopajı")), null);
+  assert.equal(travelingAmountKind(r("Muhtasar ve prim hizmet beyannamesi", "none")), null);
+  assert.equal(travelingAmountKind(r("Geçici vergi beyanı ve ödemesi", "quarterly", null)), null);
 });
 
 test("ay adının ekleri: bulunma ve tamlayan hâli", () => {
@@ -372,3 +402,91 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   // Personel KDV'siz
   assert.equal(fixedReminderText({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11"), "40.000\u00a0₺ · aylık");
 });
+
+test("Vergi: muhtasar, geçici vergi ve yerel vergi hatırlatıcıları başlıktan (docs/VERGI.md)", () => {
+  const r = (title: string, kind: ReminderRow["kind"] = "vergi") => ({ title, kind });
+  assert.equal(isMuhtasarReminder(r("Muhtasar ve prim hizmet beyannamesi")), true);
+  assert.equal(isMuhtasarReminder(r("Kira stopajı", "kira")), true);
+  assert.equal(isMuhtasarReminder(r("SGK prim ödemesi")), false);
+  assert.equal(isMuhtasarReminder(r("KDV beyannamesi ve ödemesi")), false);
+  assert.equal(isMuhtasarReminder(r("Muhtasar damga vergisi")), false);
+  assert.equal(isMuhtasarReminder(r("Geçici vergi beyanı ve ödemesi")), false);
+  assert.equal(isProvisionalTaxReminder(r("Geçici vergi beyanı ve ödemesi")), true);
+  assert.equal(isProvisionalTaxReminder(r("GEÇİCİ VERGİ 2026/3")), true);
+  assert.equal(isProvisionalTaxReminder(r("Kurumlar vergisi")), false);
+  assert.equal(isLocalTaxReminder(r("Çevre temizlik vergisi (2. taksit)")), "ctv");
+  assert.equal(isLocalTaxReminder(r("ÇTV 1. taksit")), "ctv");
+  assert.equal(isLocalTaxReminder(r("İlan ve reklam vergisi")), "ilan");
+  assert.equal(isLocalTaxReminder(r("Instagram reklamı")), null);
+  assert.equal(isLocalTaxReminder(r("Elektrik")), null);
+});
+
+test("Vergi: tutarı tek döneme ait hatırlatıcı (taxAmountTravels): KDV, KDV-2, muhtasar, geçici vergi; sabit tutarlı stopaj değil", () => {
+  const r = (title: string, repeat: ReminderRow["repeat"] = "monthly", amount: number | null = 8_000, kind: ReminderRow["kind"] = "vergi") => ({ title, kind, amount, repeat });
+  assert.equal(taxAmountTravels(r("Muhtasar ve prim hizmet beyannamesi")), true);
+  assert.equal(taxAmountTravels(r("Geçici vergi beyanı ve ödemesi", "quarterly")), true);
+  assert.equal(taxAmountTravels(r("KDV beyannamesi ve ödemesi")), true);
+  assert.equal(taxAmountTravels(r("KDV2 beyannamesi")), true);
+  // "Kira stopajı" her ay aynı: Ödendi'den sonra tutar kalır (K26); tek seferlik ve tutarsız da kalır
+  assert.equal(taxAmountTravels(r("Kira stopajı")), false);
+  assert.equal(taxAmountTravels(r("Kira stopajı", "monthly", 8_000, "kira")), false);
+  assert.equal(taxAmountTravels(r("Muhtasar ve prim hizmet beyannamesi", "none")), false);
+  assert.equal(taxAmountTravels(r("Muhtasar ve prim hizmet beyannamesi", "monthly", null)), false);
+  assert.equal(taxAmountTravels(r("Muhtasar damga vergisi")), false);
+  assert.equal(taxAmountTravels(r("SGK prim ödemesi")), false);
+});
+
+test("Vergi: yalnız beyanname damgası hatırlatıcısı (KDV ya da KDV-2'nin); vergiyle birlikte yazılan damga değil", () => {
+  const r = (title: string) => ({ title, kind: "vergi" as const });
+  assert.equal(vatStampReminder(r("KDV damga vergisi")), "kdv");
+  assert.equal(vatStampReminder(r("Eylül KDV damga vergisi")), "kdv");
+  assert.equal(vatStampReminder(r("KDV2 damga vergisi")), "kdv2");
+  assert.equal(vatStampReminder(r("KDV + damga")), null);
+  assert.equal(vatStampReminder(r("KDV beyannamesi ve ödemesi")), null);
+  assert.equal(vatStampReminder(r("Damga vergisi")), null);
+  assert.equal(vatStampReminder(r("Muhtasar damga vergisi")), null);
+});
+
+test("Vergi şablonları: kurumlar vergisi, ÇTV ve ilan-reklam yıllık, ayın son günü; geçici verginin 4. dönemi notta; her şablonun kartı var", () => {
+  const p = (key: string) => REMINDER_PRESETS.find((x) => x.key === key)!;
+  // Bugün 2026-10-24: yıllık şablonda da ilk gün `months`tan
+  assert.equal(presetFirstDate(p("kv"), "2026-10-24"), "2027-04-30");
+  assert.equal(presetFirstDate(p("ctv1"), "2026-10-24"), "2027-05-31");
+  assert.equal(presetFirstDate(p("ctv2"), "2026-10-24"), "2026-11-30");
+  assert.equal(presetFirstDate(p("ilan"), "2026-10-24"), "2027-01-31");
+  for (const key of ["kv", "ctv1", "ctv2", "ilan"]) {
+    assert.equal(p(key).kind, "vergi", key);
+    assert.equal(p(key).repeat, "yearly", key);
+    assert.equal(p(key).dueDay, "son", key);
+  }
+  assert.equal(p("kv").title, "Kurumlar vergisi beyannamesi ve ödemesi");
+  assert.equal(p("kv").remindDaysBefore, 14);
+  assert.equal(p("kv").note, "Önceki yılın kurumlar vergisi; Nisan'ın son günü.");
+  assert.equal(p("ctv1").title, "Çevre temizlik vergisi (1. taksit)");
+  assert.equal(p("ctv2").note, "Tutarı ve günü belediyenin tahakkukundan yazın; gün tahakkuka göre değişebilir.");
+  assert.equal(p("ilan").note, "Tabelanın vergisi; yeni tabela asılmadan önce beyan edilir. Gün ve tutar belediyenin tahakkukundan.");
+  assert.equal(p("gecici").note, "Çeyrek bitiminden sonraki ikinci ayın 17'si; 4. dönem (Ekim–Aralık) Şubat'ta, 2025'ten beri yeniden veriliyor.");
+  // Yıllık "son gün" şablonunun çapası 31: Nisan'dan Nisan'a son gün
+  assert.equal(nextOccurrence("2027-04-30", "yearly", presetAnchor(p("kv"), "2027-04-30")), "2028-04-30");
+  assert.equal(nextOccurrence("2026-11-30", "yearly", presetAnchor(p("ctv2"), "2026-11-30")), "2027-11-30");
+  // Yeni şablonlar hatırlatıcı sınıfına uyar: yerel vergiler takvimde, kurumlar vergisi muhtasar ya da geçici değil
+  assert.equal(isLocalTaxReminder(p("ctv1")), "ctv");
+  assert.equal(isLocalTaxReminder(p("ilan")), "ilan");
+  assert.equal(isMuhtasarReminder(p("kv")) || isProvisionalTaxReminder(p("kv")), false);
+  const sheet = readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/reminder-sheet.tsx"), "utf8");
+  const cards = sheet.slice(sheet.indexOf("const PRESET_CARDS"), sheet.indexOf("];", sheet.indexOf("const PRESET_CARDS")));
+  for (const { key } of REMINDER_PRESETS) assert.match(cards, new RegExp(`key: "${key}"`), `${key} şablonunun kartı yok`);
+  for (const label of ["Kurumlar vergisi", "ÇTV 1. taksit", "ÇTV 2. taksit", "İlan-reklam"]) assert.match(cards, new RegExp(`label: "${label}", category: "vergi"`));
+});
+
+test("Sabit giderlerden ekle: stopajlı kalemde bankadan çıkan net (şahsa kira 160.000 → 128.000; SMM 10.000 + KDV − stopaj)", () => {
+  const kira = { amount: 160_000, period: "aylik" as const, section: "kira" as const, vatRate: 0, withholdingRate: 0.2 };
+  assert.deepEqual(fixedReminderAt(kira, [], "2026-11"), { period: "aylik", amount: 128_000, gross: 128_000, vatRate: 0, changesFrom: null });
+  assert.equal(fixedReminderText(kira, [], "2026-11"), "128.000\u00a0₺ (stopaj %20 düşüldü, muhtasarda) · aylık");
+  const smm = { amount: 10_000, period: "aylik" as const, section: "personel" as const, vatRate: 0.2, withholdingRate: 0.2 };
+  assert.equal(fixedReminderAt(smm, [], "2026-11").amount, 10_000);
+  assert.equal(fixedReminderText(smm, [], "2026-11"), "10.000\u00a0₺ (%20 KDV dahil) (stopaj %20 düşüldü, muhtasarda) · aylık");
+  // Oran yoksa (stopaj seçilmedi) bugünkü gibi
+  assert.equal(fixedReminderAt({ ...kira, withholdingRate: undefined }, [], "2026-11").amount, 160_000);
+});
+

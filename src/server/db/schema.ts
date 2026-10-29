@@ -358,6 +358,11 @@ export const invoices = pgTable(
     ledgerBase: doublePrecision("ledger_base"),
     /** Faturayı cari ödemelerin dağıtımı kapattı (ödendi): karşılık düşerse defter yeniden açar; elle ✓'ye dokunulmaz */
     paidByLedger: boolean("paid_by_ledger").notNull().default(false),
+    /**
+     * Vergi: "Demirbaş olabilir" listesinde "Gider (demirbaş değil)" denildi; yalnız vergi hesabı okur, Paraşüt eşitlemesi
+     * dokunmaz (docs/VERGI.md)
+     */
+    taxNotAsset: boolean("tax_not_asset").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -593,6 +598,15 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   startMonth: text("start_month"),
   endMonth: text("end_month"),
   sortOrder: integer("sort_order").notNull().default(0),
+  /**
+   * Vergi: giderin belgesi (boş = sınıflandırılmadı). `bordro` yalnız personel bölümünde, `yok` personel bölümünde değil
+   * (eylem denetler; docs/VERGI.md)
+   */
+  taxDoc: text("tax_doc", { enum: ["fatura", "belgeli", "yok", "bordro"] }),
+  /** Vergi: ödemeden kesilen stopaj ya da sorumlu sıfatıyla KDV (boş = seçilmedi; muhtasar "en az" sayar) */
+  taxWithholding: text("tax_withholding", {
+    enum: ["yok", "kira", "serbest_meslek", "internet_reklam", "internet_reklam_yurtdisi", "yurt_disi_hizmet"],
+  }),
 });
 
 /** Sabit gider tutar değişiklikleri: fromMonth ayından itibaren geçerli dönem ve tutar */
@@ -637,6 +651,8 @@ export const expenseCategories = pgTable("expense_categories", {
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
+  /** Vergi: kategorideki harcamaların belgesi (boş = sınıflandırılmadı; docs/VERGI.md) */
+  taxDoc: text("tax_doc", { enum: ["fatura", "belgeli", "yok"] }),
 });
 
 /**
@@ -2053,3 +2069,81 @@ export const posDayReports = pgTable("pos_day_reports", {
   /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------- Vergi (docs/VERGI.md)
+/** Demirbaş ve özel maliyet: vergi amortismanı; faturaya bağlanan maliyet o faturanın giderinden düşer */
+export const taxAssets = pgTable(
+  "tax_assets",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    /** Bağlandığı anki fatura künyesi ("XND Teknoloji · 13.07.2026 · 338.169,58"); fatura silinince uyarı ve aday arama için */
+    invoiceLabel: text("invoice_label"),
+    /** YYYY-MM-DD */
+    acquiredOn: text("acquired_on").notNull(),
+    /** KDV hariç */
+    cost: doublePrecision("cost").notNull(),
+    kind: text("kind", { enum: ["demirbas", "ozel_maliyet", "diger"] }).notNull().default("demirbas"),
+    method: text("method", { enum: ["amortisman", "dogrudan_gider"] }).notNull().default("amortisman"),
+    /** Boş = girilmedi (amortisman 0) */
+    lifeYears: integer("life_years"),
+    note: text("note"),
+    createdByName: text("created_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("tax_assets_invoice_idx").on(t.invoiceId),
+    check("tax_assets_cost_pos", sql`${t.cost} > 0`),
+    check("tax_assets_life_range", sql`${t.lifeYears} is null or ${t.lifeYears} between 1 and 50`),
+  ],
+);
+
+/** Muhasebecinin beyanname / tahakkuk rakamları: dönem başına bir kayıt; tahminin yerine geçer, matrahı varsa sonraki tahminin çapasıdır */
+export const taxFilings = pgTable(
+  "tax_filings",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind", { enum: ["gecici", "kv", "mphb", "kdv_matrah"] }).notNull(),
+    /** "2026-Q3" | "2026" | "2026-09" */
+    period: text("period").notNull(),
+    /** Ödenecek vergi; kdv_matrah'ta 0 (KDV ödemesi nakit planında) */
+    payable: doublePrecision("payable").notNull(),
+    /** Beyanname damgası */
+    stamp: doublePrecision("stamp").notNull().default(0),
+    /** Türüne göre değerler (src/lib/tax/corporate.ts, muhtasar.ts, pnl.ts) */
+    values: jsonb("values").$type<Record<string, unknown>>().notNull().default({}),
+    note: text("note"),
+    enteredBy: integer("entered_by").references(() => users.id, { onDelete: "set null" }),
+    enteredByName: text("entered_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("tax_filings_kind_period_uq").on(t.kind, t.period)],
+);
+
+/** Panelin bilemediği gelir ve gider: kafe dışı, indirilemeyen gider, indirim (ay başına çok kayıt) */
+export const taxAdjustments = pgTable(
+  "tax_adjustments",
+  {
+    id: serial("id").primaryKey(),
+    /** YYYY-MM (çeyrekse çeyreğin son ayı) */
+    month: text("month").notNull(),
+    span: text("span", { enum: ["ay", "ceyrek"] }).notNull().default("ay"),
+    kind: text("kind", {
+      enum: ["gelir_kafe_disi", "gelir_diger", "gider_kafe_disi", "gider_belgeli", "kkeg", "indirim"],
+    }).notNull(),
+    amount: doublePrecision("amount").notNull(),
+    label: text("label").notNull(),
+    note: text("note"),
+    createdByName: text("created_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("tax_adjustments_month_idx").on(t.month),
+    check("tax_adjustments_amount_pos", sql`${t.amount} > 0`),
+    check("tax_adjustments_span_kind", sql`${t.span} = 'ay' or ${t.kind} in ('gelir_kafe_disi', 'gider_kafe_disi')`),
+  ],
+);

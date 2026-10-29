@@ -89,6 +89,11 @@ function buildCalendar(): CalendarEntry[] {
 
 export const TR_CALENDAR: readonly CalendarEntry[] = buildCalendar();
 
+/** Her yıl aynı gün olan resmî tatilin adı (tablonun kapsamı dışındaki yıllar için; bayramlar orada bilinmez) */
+export function fixedHolidayName(date: string): string | null {
+  return RESMI.find((r) => r.md === date.slice(5, 10))?.name ?? null;
+}
+
 /** Tablonun kapsadığı son günler; ekran bunlardan önce uyarır (coverageNote) */
 export const CALENDAR_COVERAGE = { holidaysTo: "2028-12-31", schoolTo: "2027-06-25", schoolEstimatedTo: "2027-09-12" } as const;
 

@@ -57,6 +57,14 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(canOpen("staff", "/panel/yardim/personelx"), false);
   assert.equal(canOpen("staff", "/panel/onaylar"), false);
   assert.ok(canOpen("admin", "/panel/yardim/personel"));
+  // Vergi (dalga 12) ve üç alt sayfası yalnız yöneticinin; personelin ağacında Vergi yok (proxy Bugün'e gönderir)
+  for (const p of ["/panel/vergi", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar"]) {
+    assert.equal(canOpen("staff", p), false, p);
+    assert.ok(canOpen("admin", p), p);
+  }
+  const staffIds = navTreeFor("staff").flatMap((n) => [n.id, ...(n.children ?? []).map((c) => c.id)]);
+  assert.ok(!staffIds.includes("vergi") && !staffIds.includes("finans"));
+  assert.ok(navTreeFor("admin").find((n) => n.id === "finans")?.children?.some((c) => c.id === "vergi" && c.href === "/panel/vergi"));
 });
 
 test("personel yolunun altındaki yönetici ekranları (Karaoke › Doluluk, Kontrol › Listeler) personele kapalı", () => {

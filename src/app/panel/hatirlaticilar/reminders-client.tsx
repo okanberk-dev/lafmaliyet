@@ -45,7 +45,7 @@ import { useFabBlocked } from "./fab-clear";
 import { NotificationsSection, type EmailStatus, type LogRow, type Recipient } from "./notifications-section";
 import { itemKey, PaymentCard, sourceOf, usePaymentActions, type MenuAction } from "./payment-ui";
 import { RecentPaidList } from "./recent-paid";
-import { DueDateSheet, ReminderSheet, type FixedRow, type Reminder } from "./reminder-sheet";
+import { DueDateSheet, isPresetKey, ReminderSheet, type FixedRow, type Reminder } from "./reminder-sheet";
 import { Sheet } from "./sheet";
 import { WeeklyRow, type WeeklyPanel } from "./weekly-row";
 
@@ -150,6 +150,15 @@ export function RemindersClient({
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthRaw) ? monthRaw : thisMonth;
 
   const [editing, setEditing] = useState<{ reminder: Reminder | null; date?: string } | null>(null);
+  // `?yeni=<şablon>` (Vergi › takvimin "Ödemeler'e ekle"si): ekleme sayfası o şablonla dolu açılır; kapanınca adres
+  // temizlenir (yenileme yeniden açmasın). Bilinmeyen şablon yok sayılır
+  const [yeni, setYeni] = useQueryState<string>("yeni", "");
+  const urlPreset = isPresetKey(yeni) ? yeni : null;
+  const sheet = editing ?? (urlPreset ? { reminder: null, preset: urlPreset } : null);
+  const closeSheet = () => {
+    setEditing(null);
+    if (yeni) setYeni("");
+  };
   const [dueFor, setDueFor] = useState<UpcomingItem | null>(null);
   const [removing, setRemoving] = useState<Reminder | null>(null);
   const [day, setDay] = useState<string | null>(null);
@@ -644,17 +653,18 @@ export function RemindersClient({
         </Sheet>
       ) : null}
 
-      {editing ? (
+      {sheet ? (
         <ReminderSheet
-          key={editing.reminder ? editing.reminder.id : `new-${editing.date ?? ""}`}
-          reminder={editing.reminder}
+          key={sheet.reminder ? sheet.reminder.id : "preset" in sheet ? `preset-${sheet.preset}` : `new-${sheet.date ?? ""}`}
+          reminder={sheet.reminder}
           today={today}
-          initialDate={editing.date}
+          initialDate={"date" in sheet ? sheet.date : undefined}
+          initialPreset={"preset" in sheet ? sheet.preset : null}
           existing={existingTitles}
           fixedExpenses={fixedExpenses}
-          onClose={() => setEditing(null)}
+          onClose={closeSheet}
           onDelete={(r) => {
-            setEditing(null);
+            closeSheet();
             setRemoving(r);
           }}
         />

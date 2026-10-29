@@ -95,7 +95,12 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
-    db.select().from(s.expenseEntries).orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
+    // Kasadan çıkan satırın belgesi (fiş / e-Arşiv / fatura / yok) vergide kaydın belgesidir (docs/VERGI.md)
+    db
+      .select({ entry: s.expenseEntries, docType: s.cashOuts.docType })
+      .from(s.expenseEntries)
+      .leftJoin(s.cashOuts, eq(s.cashOuts.id, s.expenseEntries.cashOutId))
+      .orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
     db
       .select({
         date: s.wasteEntries.date,
@@ -267,6 +272,7 @@ export async function loadDataset(): Promise<Dataset> {
       needsReview: i.needsReview,
       paidAt: i.paidAt,
       paymentRequestedAt: i.paymentRequestedAt,
+      taxNotAsset: i.taxNotAsset,
       ...(channelNamesOf && i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]) ? { channelNames: channelNamesOf(i.supplier, i.supplierTaxNumber) } : {}),
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).
@@ -293,6 +299,8 @@ export async function loadDataset(): Promise<Dataset> {
       startMonth: f.startMonth,
       endMonth: f.endMonth,
       sortOrder: f.sortOrder,
+      taxDoc: f.taxDoc,
+      taxWithholding: f.taxWithholding,
     })),
     fixedExpenseVersions: fixedExpenseVersions.map((v) => ({
       id: v.id,
@@ -330,10 +338,11 @@ export async function loadDataset(): Promise<Dataset> {
       monthly: c.monthly,
       active: c.active,
       sortOrder: c.sortOrder,
+      taxDoc: c.taxDoc,
     })),
     wasteEntries,
     siteSales,
-    expenseEntries: expenseEntries.map((e) => ({
+    expenseEntries: expenseEntries.map(({ entry: e, docType }) => ({
       id: e.id,
       date: e.date,
       categoryId: e.categoryId,
@@ -341,6 +350,9 @@ export async function loadDataset(): Promise<Dataset> {
       amount: e.amount,
       paymentMethod: e.paymentMethod,
       note: e.note,
+      cashOutId: e.cashOutId,
+      docType,
+      supplierEntryId: e.supplierEntryId,
     })),
   };
 }

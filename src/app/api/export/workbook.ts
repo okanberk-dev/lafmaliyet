@@ -3,8 +3,9 @@
 //
 // Sekmeler (Excel sırası): Nasıl Okunur (Nasıl Kullanılır) · Özet (Panel) · Gelir-Gider (Genel Maliyet) · Sayım ·
 // Tutarlılık · Ürün Kârlılık · Reçete Kartları · Satış (Satış Raporu) · Hammaddeler · Faturalar · Aylık Alımlar ·
-// Personel · Sabit Giderler · Ayarlar, ardından gri sekmelerde yedek için bütün ayların ham kayıtları
-// (Satış Kayıtları, Ay Bilgileri, Gelir-Gider Kayıtları, Sayım Kayıtları, Alım Miktarları). Dosya Özet'te açılır.
+// Personel · Sabit Giderler · Vergi (tahmin, dalga 12; vergi görünümü verildiyse) · Ayarlar, ardından gri sekmelerde
+// yedek için bütün ayların ham kayıtları (Satış Kayıtları, Ay Bilgileri, Gelir-Gider Kayıtları, Sayım Kayıtları, Alım
+// Miktarları). Dosya Özet'te açılır.
 
 import ExcelJS from "exceljs";
 
@@ -16,6 +17,14 @@ import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "../../../lib/lafpos/kasa";
+import { QUARTER_DEPRECIATION_LABELS } from "../../../lib/tax/assets";
+import { monthName as taxMonthName, quarterLabel, quarterMonths } from "../../../lib/tax/calendar";
+import { ACCOUNTANT_CHECKS } from "../../../lib/tax/checks";
+import type { QuarterCalc } from "../../../lib/tax/corporate";
+import { revenueDocumented, type RevenueSource, type TaxMonth, type TaxRow } from "../../../lib/tax/pnl";
+import { allRules, CONFIDENCE_LABELS, overrideText, RULE_GROUPS, RULES_COMPILED_AT, RULES_VERIFIED_AT, rulesCompiledText, rulesFor, ruleValueText } from "../../../lib/tax/rules";
+import type { TaxSettings } from "../../../lib/tax/settings";
+import { CALENDAR_DAYS, INFLATION_LINE, type TaxView } from "../../../lib/tax/view";
 
 // ---------------------------------------------------------------------------- Biçimler
 
@@ -71,8 +80,16 @@ export interface ExportExtras {
   outstanding?: Map<number, number | null>;
   /** Tedarikçilere elle girilen cari kayıtlar (borç ve ödeme); yoksa "Cari hareketleri" sekmesi yok */
   cari?: CariExportRow[];
+  /** Vergi sayfasının görünümü ve ayarları (dalga 12); yoksa "Vergi" sekmesi yok */
+  tax?: TaxExport | null;
   /** Dosyanın hazırlandığı an (testte sabitlenir) */
   now?: Date;
+}
+
+/** "Vergi" sekmesinin girdisi (src/app/api/export/route.ts kurar: loadTaxView, vergi ayarları) */
+export interface TaxExport {
+  view: TaxView;
+  settings: TaxSettings;
 }
 
 /** "Cari hareketleri" sekmesinin satırı (src/app/api/export/route.ts kurar; tutarlar KDV dahil) */
@@ -420,6 +437,8 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   addInvoices(wb, model, extras.outstanding);
   if (extras.cari?.length) addCari(wb, extras.cari);
   addPeople(wb, model, month, extras.investments);
+  // Vergi (dalga 12): tahmin, beyanname değil; Personel ve Sabit Giderler'den sonra
+  if (extras.tax) addTax(wb, extras.tax);
 
   // ---------------------------------------------------------------- Ayarlar
   const ay = addSheet(
@@ -487,6 +506,7 @@ function sheetPurpose(name: string, label: string, kasa: MonthKasa["both"] = "Mo
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
     Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, durum, kalan borç, vade ve not. Net, KDV ve Ay sütunları formül.",
     "Aylık Alımlar": "Excel Faturalar'daki 'Aylara göre net alımlar': kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
+    Vergi: "Tahmin, beyanname değil: vergiye göre gelir-gider (yalnız geliri mali belgeden gelen aylar), kafenin geçici ve kurumlar vergisine katkısı, vergi takvimi, kullanılan kurallar ve sahibin notları.",
     "Cari hareketleri": "Tedarikçilere elle girilen faturasız alımlar, eski borçlar ve ödemeler: tutar, şekil, ödemenin sayıldığı kalemler ve bağlandığı fatura. Ödeme gider değildir.",
     Personel: `${label} maaş + SGK işveren maliyeti, TOPLAM, SGK oranları; varsa başlangıç / bitiş ve maaş geçmişi.`,
     "Sabit Giderler": `${label} sabit giderleri, aylık karşılığı ve TOPLAM; tek seferlik yatırımlar; varsa tutar geçmişi.`,
@@ -1101,6 +1121,257 @@ function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
     });
   }
   ws.autoFilter = { from: "A1", to: `${colLetter(ws.columnCount)}1` };
+}
+
+// ---------------------------------------------------------------------------- Vergi (dalga 12, docs/VERGI.md)
+
+export const TAX_SHEET = "Vergi";
+/** Sayfanın ilk satırı (plan docs/planlar/vergi.md §9) */
+export const TAX_SHEET_FIRST_LINE = "Tahmin; beyanname değildir. Kafenin payı; şirketin beyannamesi muhasebecidedir.";
+/** Geliri yönetim verisinden (ModPOS / LafPOS) gelen ayın ve çeyreğin yerine (K11, K31) */
+export const TAX_NOT_FISCAL = "Gelir mali belgeden girilmedi; hesap ekranda (taslak)";
+
+const REVENUE_SOURCE_TEXT: Record<RevenueSource, string> = { beyanname: "beyanname", z: "Z", yonetim: "yönetim verisi" };
+const isFiscal = revenueDocumented;
+/** Gelir kaynağı satırı: biten ve gelirsiz ay "gelir yok" (belge beklemez) */
+const revenueSourceText = (m: TaxMonth) => (m.revenueSource === "yonetim" ? "gelir yok" : REVENUE_SOURCE_TEXT[m.revenueSource]);
+const dotted = (d: string) => d.split("-").reverse().join(".");
+
+/**
+ * Çeyreğin geçici vergi hesabı Excel'e yazılabilir mi: hesap kümülatiftir, çapadan (muhasebecinin matrahlı kaydı) ya da
+ * hesap döneminin başından çeyreğin sonuna her ayın geliri mali belgeden (beyanname ya da Z) gelmeli (K11, K31)
+ */
+export function taxQuarterFiscal(months: readonly TaxMonth[], calc: Pick<QuarterCalc, "to" | "anchor">): boolean {
+  const end = calc.to.slice(0, 7);
+  const anchorEnd = calc.anchor ? (quarterMonths(calc.anchor.period).at(-1) ?? "") : "";
+  const span = months.filter((m) => m.month <= end && m.month > anchorEnd);
+  return span.length > 0 && span.every(isFiscal);
+}
+
+/**
+ * "Vergi" sayfası: vergiye göre gelir-gider (yalnız geliri mali belgeden gelen aylar), geçici ve kurumlar vergisi
+ * hesabı (yalnız mali belgeli çeyrekler), takvim, kullanılan kurallar ve sahibin notları. ModPOS ile mali belge farkı,
+ * belgesi yok işaretli kalemler ve sınıflandırılmamış kalemlerin adları yazılmaz (K11, K12, K31)
+ */
+function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
+  const { view, settings } = tax;
+  const { rules, fromYear } = rulesFor(view.year, settings.overrides);
+  const ws = addSheet(
+    wb,
+    TAX_SHEET,
+    [
+      { key: "a", width: 52 },
+      { key: "b", width: 16 },
+      { key: "c", width: 16 },
+      { key: "d", width: 16 },
+      { key: "e", width: 16 },
+      { key: "f", width: 80 },
+    ],
+    { landscape: true },
+  );
+  const grey = { color: { argb: "FF71717A" } };
+  const first = ws.addRow({ a: TAX_SHEET_FIRST_LINE });
+  first.font = { bold: true, size: 13 };
+  ws.addRow({ a: `${view.year} hesap dönemi · tutarlar KDV hariç, Türk lirası · ${rulesCompiledText(fromYear)}` }).font = grey;
+  const money = (r: ExcelJS.Row, keys: string[]) => setFmt(r, keys, MONEY);
+  const wrap = (r: ExcelJS.Row) => (r.getCell("f").alignment = { wrapText: true, vertical: "top" });
+
+  // ---- 1. Vergiye göre gelir-gider
+  ws.addRow({});
+  sectionRow(ws, "a", "1. VERGİYE GÖRE GELİR-GİDER (ay ay, KDV hariç)");
+  wrap(
+    ws.addRow({
+      a: "Okuma notu",
+      f: "Gelir kaynağı beyanname: muhasebecinin girdiği KDV beyannamesi satışları · Z: yazarkasanın mali Z raporları. Geliri yönetim verisinden gelen ay ve çeyrek yazılmaz. Sınıflandırılmamış giderlerin yalnız toplamı yazılır.",
+    }),
+  );
+  for (const q of view.quarters) {
+    const months = view.months.filter((m) => q.months.includes(m.month));
+    const fiscal = months.filter(isFiscal);
+    const whole = months.length > 0 && fiscal.length === months.length;
+    const title = `${quarterLabel(q.key)} (${dotted(q.from)} – ${dotted(q.to)})`;
+    ws.addRow({});
+    if (!fiscal.length) {
+      const r = ws.addRow({ a: title, f: TAX_NOT_FISCAL });
+      r.getCell("a").font = { bold: true };
+      continue;
+    }
+    const cols = ["b", "c", "d"].slice(0, fiscal.length);
+    const missing = months.filter((m) => !isFiscal(m)).map((m) => taxMonthName(m.month));
+    subHeaderRow(ws, {
+      a: title,
+      ...Object.fromEntries(fiscal.map((m, i) => [cols[i], `${taxMonthName(m.month)}${m.inProgress ? " (bugüne kadar)" : ""}`])),
+      ...(whole ? { e: "Çeyrek" } : {}),
+      f: whole ? "Esas / not" : `${missing.join(", ")}: ${TAX_NOT_FISCAL}`,
+    });
+    ws.addRow({ a: "Gelir kaynağı", ...Object.fromEntries(fiscal.map((m, i) => [cols[i], revenueSourceText(m)])) });
+    const block = (pick: (m: TaxMonth) => readonly TaxRow[]) => {
+      const keys: { id: string; label: string; badge: string | null }[] = [];
+      for (const m of fiscal) for (const r of pick(m)) if (!keys.some((k) => k.id === `${r.key}|${r.label}`)) keys.push({ id: `${r.key}|${r.label}`, label: r.label, badge: r.badge ?? null });
+      for (const k of keys) {
+        const vals = fiscal.map((m) => pick(m).find((r) => `${r.key}|${r.label}` === k.id)?.amount ?? null);
+        const notes = fiscal.flatMap((m) => {
+          const note = pick(m).find((r) => `${r.key}|${r.label}` === k.id)?.note;
+          return note ? [`${taxMonthName(m.month)}: ${note}`] : [];
+        });
+        const r = ws.addRow({
+          a: k.label,
+          ...Object.fromEntries(vals.map((v, i) => [cols[i], v])),
+          ...(whole ? { e: round2(sum(vals.map((v) => v ?? 0))) } : {}),
+          f: [k.badge, ...notes].filter(Boolean).join(" · ") || null,
+        });
+        money(r, [...cols, "e"]);
+      }
+    };
+    const total = (a: string, vals: number[], quarter: number) => {
+      const r = ws.addRow({ a, ...Object.fromEntries(vals.map((v, i) => [cols[i], v])), ...(whole ? { e: quarter } : {}) });
+      r.font = { bold: true };
+      money(r, [...cols, "e"]);
+      return r;
+    };
+    // Gelirsiz ayın (belge beklemez) yönetim verisi satırı yazılmaz: ModPOS / LafPOS Excel'e girmez (K31)
+    block((m) => (m.revenueSource === "yonetim" ? m.income.rows.filter((r) => r.key !== "pos") : m.income.rows));
+    total("Gelir toplamı", fiscal.map((m) => m.income.total), q.income);
+    block((m) => m.expense.rows);
+    if (whole && Math.abs(q.stock.adjust) >= 0.005) {
+      const r = ws.addRow({
+        a: "Çeyrek sonu stoğu (en son sayım)",
+        e: round2(q.expense - sum(months.map((m) => m.expense.total))),
+        f: q.stock.warning ?? (q.stock.usedFrom ? `${taxMonthName(q.stock.usedFrom)} sonu sayımı kullanıldı` : "sayım yok: stok 0 sayıldı"),
+      });
+      money(r, ["e"]);
+    }
+    total("Gider toplamı", fiscal.map((m) => m.expense.total), q.expense);
+    total("Sonuç (amortisman öncesi)", fiscal.map((m) => m.result), q.result);
+    if (whole && q.unclassified.count) {
+      const r = ws.addRow({ a: "Sınıflandırılmamış giderler (sayılmadı)", e: q.unclassified.total, f: "Yalnız toplam; kalemler panelde (Vergi › Vergiye göre)" });
+      money(r, ["e"]);
+    }
+    if (whole && q.candidates.count) {
+      const r = ws.addRow({ a: "Demirbaş olabilir (sayılmadı)", e: q.candidates.total, f: `${q.candidates.count} fatura` });
+      money(r, ["e"]);
+    }
+    for (const w of q.warnings) wrap(ws.addRow({ a: "Uyarı", f: w }));
+  }
+
+  // ---- 2. Geçici vergi ve kurumlar vergisi
+  ws.addRow({});
+  sectionRow(ws, "a", "2. GEÇİCİ VERGİ VE KURUMLAR VERGİSİ (yalnız kafe; yalnız geliri mali belgeden gelen çeyrekler)");
+  wrap(ws.addRow({ a: "Kafenin katkısı", f: "Şirketin geçici ve kurumlar vergisi muhasebecinin beyannamesidir; burada kafenin matraha katkısı hesaplanır." }));
+  const pctOf = (x: number) => `%${num(x * 100, 2).replace(/,00$/, "")}`;
+  const line = (a: string, v: number | null, f: string | null, opts: { bold?: boolean; text?: string } = {}) => {
+    const r = ws.addRow({ a, b: opts.text ?? v, f });
+    if (opts.text === undefined) money(r, ["b"]);
+    if (opts.bold) r.font = { bold: true };
+    wrap(r);
+    return r;
+  };
+  const minText = (s: QuarterCalc["minTax"]) => (s === "muaf" ? "muaf (ilk 3 hesap dönemi)" : s === "bilinmiyor" ? "uygulandı (şirketin kuruluşu sorulmadı)" : "uygulandı");
+  for (const c of view.corp) {
+    const qp = view.quarters.find((x) => x.key === c.key);
+    ws.addRow({});
+    const title = `Geçici vergi ${quarterLabel(c.key)} · ${c.state === "hazir" ? "Hazır" : "Taslak"}${c.source === "Muhasebeci" ? " · Muhasebeci" : ""}`;
+    if (!qp || !taxQuarterFiscal(view.months, c)) {
+      const r = ws.addRow({ a: title, f: TAX_NOT_FISCAL });
+      r.getCell("a").font = { bold: true };
+      continue;
+    }
+    subHeaderRow(ws, { a: title, b: "Tutar", f: "Formül" });
+    line("Çeyreğin sonucu", qp.result, "gelir − gider (çeyrek sonu stoğu dahil), yukarıdaki tablodan");
+    line("Amortisman", -c.depreciation, `Demirbaş listesinden; ${QUARTER_DEPRECIATION_LABELS[settings.quarterDepreciation].toLocaleLowerCase("tr-TR")}`);
+    if (c.direct) line("Doğrudan gider yazılan demirbaş", -c.direct, "Demirbaş listesinden");
+    if (c.kkeg) line("İndirilemeyen gider (eklenir)", c.kkeg, "Düzeltmelerden");
+    line("Dönem kazancı", c.periodResult, "sonuç − amortisman − doğrudan gider + indirilemeyen gider", { bold: true });
+    line(
+      "Kümülatif kurum kazancı",
+      c.cumulative,
+      c.anchor
+        ? `${quarterLabel(c.anchor.period)} muhasebeci kaydının matrahı (${tl(c.anchor.matrah, 2)}) + sonraki dönem kazançları`
+        : `hesap döneminin başından (${dotted(c.from)}) bu çeyreğin sonuna dönem kazançlarının toplamı`,
+    );
+    if (c.loss) line("Devreden zarar", -c.loss, "Önceki yılın kurumlar vergisi kaydındaki 'Sonraki yıllara devreden zarar'");
+    if (c.indirim) line("İndirim", -c.indirim, "Düzeltmelerden");
+    line("Matrah", c.matrah, "kümülatif kazanç − devreden zarar − indirim; eksiyse 0", { bold: true });
+    line("Hesaplanan geçici vergi", c.hesaplanan, `matrah × ${pctOf(rules.gecici.oran.value)}`);
+    if (c.asgari === null) line("Asgari kurumlar vergisi", null, minText(c.minTax), { text: "muaf" });
+    else line("Asgari kurumlar vergisi", c.asgari, `kümülatif kazanç × ${pctOf(rules.kv.asgariOran.value)}; ${minText(c.minTax)}`);
+    line("Kümülatif vergi", c.cumulativeTax, "hesaplanan ile asgariden büyük olan");
+    line("Önceki dönemler", -c.previous, c.anchor ? "çapa kaydının hesaplanan vergisi + aradaki dönemlerin ödenecekleri" : "önceki çeyreklerin ödenecekleri");
+    line("Kafenin katkısı (tahmini ödenecek)", c.estimate, "kümülatif vergi − önceki dönemler; eksiyse 0", { bold: true });
+    line("Beyanname damgası", c.stamp, c.stampEstimated ? "tahmini (yılın tutarı açıklanmadı)" : "maktu");
+    if (c.filing) line("Muhasebecinin rakamı (ödenecek)", c.filing.payable, `Muhasebeci kaydı · ${c.filing.enteredByName ?? ""}`.replace(/ · $/, ""), { bold: true });
+  }
+  const kv = view.kv;
+  ws.addRow({});
+  const kvTitle = `Kurumlar vergisi ${kv.year}${kv.inProgress ? " (yıl sürüyor: bugüne kadarki kârla)" : ""}${kv.source === "Muhasebeci" ? " · Muhasebeci" : ""}`;
+  const lastCorp = view.corp.at(-1);
+  if (!lastCorp || !taxQuarterFiscal(view.months, lastCorp)) {
+    const r = ws.addRow({ a: kvTitle, f: TAX_NOT_FISCAL });
+    r.getCell("a").font = { bold: true };
+  } else {
+    subHeaderRow(ws, { a: kvTitle, b: "Tutar", f: "Formül" });
+    line("Yıllık kurum kazancı", kv.income, kv.filing ? "Muhasebeci kaydının matrahı" : "son çeyreğin kümülatif kazancı");
+    if (kv.loss) line("Devreden zarar", -kv.loss, "Önceki yıllardan");
+    if (kv.indirim) line("İndirim", -kv.indirim, "Düzeltmelerden");
+    line("Matrah", kv.matrah, "kazanç − devreden zarar − indirim; eksiyse 0", { bold: true });
+    line("Hesaplanan kurumlar vergisi", kv.hesaplanan, `matrah × ${pctOf(rules.kv.oran.value)}`);
+    if (kv.asgari === null) line("Asgari kurumlar vergisi", null, minText(kv.minTax), { text: "muaf" });
+    else line("Asgari kurumlar vergisi", kv.asgari, `kazanç × ${pctOf(rules.kv.asgariOran.value)}; ${minText(kv.minTax)}`);
+    line("Kurumlar vergisi", kv.tax, "hesaplanan ile asgariden büyük olan", { bold: true });
+    line("Mahsup edilen geçici vergi", -kv.paidProvisional, kv.paidQuarters.length ? `Ödendi işaretli: ${kv.paidQuarters.map((p) => quarterLabel(p.period)).join(", ")}` : "Ödendi işaretli geçici vergi yok");
+    if (kv.refund) line("İade / mahsup alacağı", kv.refund, "mahsup edilen − kurumlar vergisi");
+    else line("Ödenecek", kv.payable, "kurumlar vergisi − mahsup edilen geçici vergi", { bold: true });
+    line("Beyanname, bilanço ve gelir tablosu damgası", kv.stamps.total, "maktu");
+  }
+
+  // ---- 3. Takvim
+  ws.addRow({});
+  sectionRow(ws, "a", "3. VERGİ TAKVİMİ");
+  if (view.calendar.length) {
+    subHeaderRow(ws, { a: "Ödeme", b: "Son gün", c: "Tutar", d: "Kaynak", f: "Not" });
+    for (const r of view.calendar) {
+      // Tutarı bilinmeyen satırda tutar sütunu notun kendisi: not bir kez yazılır
+      const note = r.note && r.note !== r.amountText ? r.note : null;
+      const row = ws.addRow({ a: r.title, b: excelDate(r.due), c: r.amountText, d: r.badge, f: [note, r.shift].filter(Boolean).join(" · ") || null });
+      row.getCell("b").numFmt = DATE;
+      wrap(row);
+    }
+  } else ws.addRow({ a: "Önümüzdeki günlerde vergi ödemesi yok." });
+  for (const l of view.later) {
+    const row = ws.addRow({ a: l.title, b: excelDate(l.due), c: "Tutarı bilinmiyor", f: `Sonra (önümüzdeki ${CALENDAR_DAYS} günün dışında)` });
+    row.getCell("b").numFmt = DATE;
+    wrap(row);
+  }
+  ws.addRow({ a: INFLATION_LINE.split(" · ")[0] });
+
+  // ---- 4. Kullanılan kurallar
+  ws.addRow({});
+  sectionRow(ws, "a", "4. KULLANILAN KURALLAR");
+  ws.addRow({ a: `Derlendi ${dotted(RULES_COMPILED_AT)}; ${RULES_VERIFIED_AT ? `resmî metinlerle karşılaştırıldı: ${dotted(RULES_VERIFIED_AT)}` : "resmî metinlerle karşılaştırılmadı"}` }).font = grey;
+  subHeaderRow(ws, { a: "Kural", b: "Değer", c: "Güven", d: "Anahtar", f: "Dayanak · kaynak" });
+  for (const g of RULE_GROUPS) {
+    for (const rule of allRules(rules).filter((x) => x.key === g.key || x.key.startsWith(`${g.key}.`))) {
+      const r = ws.addRow({
+        a: rule.title,
+        b: ruleValueText(rule),
+        c: CONFIDENCE_LABELS[rule.confidence],
+        d: rule.key,
+        f: [rule.basis, overrideText(rule), ...rule.sources.map((s) => `${s.label}: ${s.url}`)].filter(Boolean).join(" · "),
+      });
+      r.getCell("b").alignment = { horizontal: "right" };
+      wrap(r);
+    }
+  }
+
+  // ---- 5. Sahibin notları (Muhasebeciye sorulacaklar'da işaretlenenler)
+  ws.addRow({});
+  sectionRow(ws, "a", "5. SAHİBİN NOTLARI");
+  const marked = ACCOUNTANT_CHECKS.filter((c) => settings.checks[c.key]);
+  if (!marked.length) ws.addRow({ a: "Muhasebeciye sorulacaklar'da henüz işaretlenen madde yok." });
+  for (const c of marked) {
+    const m = settings.checks[c.key]!;
+    wrap(ws.addRow({ a: c.title, f: ["Sahibin notu: muhasebecimle konuştum", dotted(m.date), m.note].filter(Boolean).join(" · ") }));
+  }
 }
 
 export function invoiceCategories(invoices: { category: string }[]): string[] {

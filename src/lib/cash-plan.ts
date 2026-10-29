@@ -13,13 +13,17 @@
  *   değilse Maaş, SGK, KDV ya da diğer. Tutarsız hatırlatıcı eşleştiği tahminin tutarını taşır; eşleşmeyeni "Tutarı
  *   girilmemiş ödemeler"e girer. Sabit gidere bağlı tutarlı hatırlatıcının tutarı o ayın sabit gider tutarından farklıysa
  *   satırda ve `reminderDrift`'te söylenir (denetim E-46).
+ * - Vergi (docs/VERGI.md, `tax` beslemesi): muhtasar tahmini ayın 26'sında (bilinmeyen stopaj varsa "en az"), geçici vergi
+ *   yalnız tutarı bilinince (hatırlatıcı, muhasebeci kaydı ya da hazır çeyrek; yoksa "Tutarı girilmemiş ödemeler"),
+ *   yurt dışı hizmetin KDV-2'si ve KDV beyannamelerinin damgası; hepsi tek anahtarla (`vergi`) kapatılır. Bordro yasal
+ *   oranlarla (src/lib/tax/payroll.ts), stopajlı sabit gider net ödenir (stopaj muhtasarda).
  */
 
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod, FixedSection } from "./calc/types";
 import { FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
-import { monthLabel, num, pct, tl } from "./format";
+import { money, monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
 import {
   addDays,
@@ -27,17 +31,27 @@ import {
   FIXED_REMINDER_NOTE,
   fixedReminderAt,
   fixedReminderFollows,
+  dayMonthTR,
+  isMuhtasarReminder,
+  isProvisionalTaxReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthEnd,
   nextOccurrence,
   reminderCategory,
+  taxAmountTravels,
   todayTR,
+  vatStampReminder,
   type ReminderRow,
   type UpcomingItem,
 } from "./reminders";
 import { unreachable } from "./unreachable";
-import { originalDue, paidPeriodsOf, type VatPaidEntry } from "./vat-paid";
+import { legalDayText, legalDueDate, mphbPeriodOf, quarterLabel, quarterOfDue } from "./tax/calendar";
+import { taxPayrollFromModel, type PayrollMonth } from "./tax/payroll";
+import { paidFixedRates, r2, rulesFor, type Withholding } from "./tax/rules";
+import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
+import type { TaxPlanFeed } from "./tax/view";
+import { originalDue, paidVatPeriods, type VatPaidEntry } from "./vat-paid";
 
 export const PLAN_WEEKS = 6;
 /** 42 gün; Ödemeler'in ufkundan (UPCOMING_HORIZON_DAYS, 45) kısa: faturaların hepsi yükleyicinin listesinde (testli) */
@@ -48,10 +62,10 @@ export const GOODS_LOOKBACK_DAYS = 56;
 export const MIN_GOODS_DAYS = 14;
 export const STALE_BALANCE_DAYS = 3;
 
-export type PlanKind = "sales" | "online" | "invoice" | "reminder" | "salary" | "sgk" | "fixed" | "expense" | "goods" | "kdv";
+export type PlanKind = "sales" | "online" | "invoice" | "reminder" | "salary" | "sgk" | "fixed" | "expense" | "goods" | "kdv" | "vergi";
 
-/** Tahminden çıkarılabilen anahtarlar (Tahmine katılanlar) */
-export const EXCLUDABLE_KEY = /^(sales|online|salary|sgk|goods|kdv|fixed:\d+|expense:\d+)$/;
+/** Tahminden çıkarılabilen anahtarlar (Tahmine katılanlar); `vergi`: muhtasar, geçici vergi ve beyanname damgaları */
+export const EXCLUDABLE_KEY = /^(sales|online|salary|sgk|goods|kdv|vergi|fixed:\d+|expense:\d+)$/;
 
 /** integration_state › "cashflow.plan": girilen bakiye, tahminden çıkarılanlar, muhasebecinin devreden KDV'si */
 export interface CashPlanState {
@@ -93,13 +107,38 @@ interface FixedItem {
   amount: number;
   /**
    * Faturasındaki KDV oranı (constants.ts fixedVatRate; kalemde boşsa bölümün varsayılanı). Plan gideri KDV dahil öder:
-   * kiranın %20'si de bankadan çıkar (KDV tahmini faturası panele gelen giderin KDV'sini zaten indirir)
+   * kiranın %20'si de bankadan çıkar (KDV tahmini faturası panele gelen giderin KDV'sini zaten indirir). Yurt dışı
+   * hizmette 0 (src/lib/tax/rules.ts paidFixedRates): yabancı firma KDV kesmez, KDV-2 ayrı satırdadır
    */
   vatRate?: number;
+  /**
+   * Stopaj profili ve ödemeden kesilen stopaj oranı (Vergi › sınıflandırma; src/lib/tax/rules.ts paidWithholdingRate):
+   * şahsa kira, serbest meslek ve şahsa internet reklamında bankadan net çıkar, stopaj muhtasar satırındadır (kira
+   * 160.000 brüt, KDV'siz → 128.000). Yurt dışına ödenende oran 0 ve KDV yok (tutar olduğu gibi; KDV-2 ayrı satırda)
+   */
+  withholding?: Withholding | null;
+  withholdingRate?: number;
 }
 
-/** Sabit giderin bankadan çıkan tutarı: KDV hariç tutar × (1 + KDV oranı) */
-const withVat = (f: Pick<FixedItem, "amount" | "vatRate">, amount = f.amount) => amount * (1 + (f.vatRate ?? 0));
+/**
+ * Sabit giderin bankadan çıkan tutarı: KDV hariç tutar × (1 + KDV oranı), stopajlı kalemde ödemeden kesilen stopaj
+ * düşülür (muhtasarla ayrıca ödenir; plan docs/planlar/vergi.md §8.2)
+ */
+const paidOut = (f: Pick<FixedItem, "amount" | "vatRate" | "withholdingRate">, amount = f.amount) => amount * (1 + (f.vatRate ?? 0) - (f.withholdingRate ?? 0));
+
+/** Stopajlı sabit giderin aylık brütü (KDV hariç), stopaj oranı ve bankadan çıkanı; stopajsızsa null */
+function withheldParts(f: Pick<FixedItem, "period" | "amount" | "vatRate" | "withholdingRate">, acikGun: number): { gross: number; rate: number; paid: number } | null {
+  const rate = f.withholdingRate ?? 0;
+  if (!(rate > 0)) return null;
+  const paid = monthlyOf(f, acikGun);
+  return { gross: paid / (1 + (f.vatRate ?? 0) - rate), rate, paid };
+}
+
+/** Stopajlı sabit giderin notu: "Kira 160.000 ₺ brüt · stopaj %20 muhtasarda · ödenen 128.000 ₺" (aylık karşılığıyla) */
+function withheldNote(f: Pick<FixedItem, "name" | "period" | "amount" | "vatRate" | "withholdingRate">, acikGun: number): string | null {
+  const w = withheldParts(f, acikGun);
+  return w ? `${f.name} ${tl(w.gross)} brüt · stopaj %${num(w.rate * 100)} muhtasarda · ödenen ${tl(w.paid)}` : null;
+}
 
 export interface CashPlanInput {
   today: string;
@@ -160,6 +199,14 @@ export interface CashPlanInput {
   /** `switchDay`: LafPOS'a geçiş günü (yalnız metinler: dönemin kasası "ModPOS" / "LafPOS"; denetim E-39) */
   vat: { months: VatMonthInput[]; firstSalesMonth: string | null; hasSite: boolean; switchDay?: string | null };
   vatAnchor: { month: string; amount: number } | null;
+  /**
+   * Vergi beslemesi (src/lib/tax/view.ts buildTaxView › planFeed; docs/VERGI.md): muhtasar, geçici vergi ve yurt dışı
+   * hizmetin KDV-2'si tutarlarıyla, tutarı bilinmeyen geçici vergi ve KDV beyannamelerinin damgası. Yoksa vergi satırı,
+   * damga ve yasal gün notu yok (bugünkü davranış)
+   */
+  tax?: TaxPlanFeed | null;
+  /** Bordronun SGK oranları (yasal, elle işveren oranı uygulanmış; planInputFromModel): SGK notu bunlarla */
+  sgkRates?: { year: number; isveren: number; issizlik: number } | null;
 }
 
 export interface PlanLine {
@@ -179,6 +226,8 @@ export interface PlanLine {
   /** "Fatura 2026-123 · vade tahmini (30 gün)" / "Kira 37.300 ₺ · Influencer 11.700 ₺ …" */
   detail?: string;
   href?: string;
+  /** Kaynağın rozeti: muhasebecinin girdiği rakam (Vergi) */
+  badge?: "Muhasebeci";
 }
 
 export interface PlanWeek {
@@ -197,6 +246,14 @@ export interface PlanWeek {
   low: { date: string; value: number };
   /** Kesinler tarih sırasıyla, sonra tahminler, sonra gelenler */
   lines: PlanLine[];
+}
+
+export interface UnknownAmount {
+  key: string;
+  reminderId: number | null;
+  title: string;
+  date: string;
+  note?: string;
 }
 
 export interface EstimateRow {
@@ -256,6 +313,12 @@ export interface CashPlanVat {
   paid: { period: string; amount: number | null }[];
   /** Aynısı KDV-2 için (ödeme günü izleyen ayın 25'i) */
   paid2: { period: string; amount: number | null }[];
+  /**
+   * Nominal günü bugün ya da geçmiş, yasal son günü (VUK 18) gelmemiş KDV ve KDV-2 dönemleri: plana girmez (bugünün
+   * ödemesi eldeki paradan), satırları da yoktur; Vergi takvimi son güne kadar tutarını buradan okur (plan §3.10).
+   * "Ödendi" denen dönem `paid` / `paid2` listelerinde (yasal güne kadar)
+   */
+  onDue: { rows: VatRow[]; vat2: Vat2Row[]; paid: string[]; paid2: string[] };
 }
 
 export interface CashPlan {
@@ -285,16 +348,23 @@ export interface CashPlan {
     /** default: her ayın 1'i / son günü; carrier: tutarsız hatırlatıcının gününde; reminder: hatırlatıcıdaki tutar */
     salaryMode: "default" | "carrier" | "reminder";
     sgkMode: "default" | "carrier" | "reminder";
-    /** Yayılan sabit giderlerin sayısı ve aylık toplamı (KDV dahil); `vat`: KDV'li kalem var */
-    fixedSpread: { count: number; monthly: number; vat: boolean };
+    /** Yayılan sabit giderlerin sayısı ve aylık toplamı (KDV dahil); `vat`: KDV'li kalem var; `withheld`: stopajlı kalem var */
+    fixedSpread: { count: number; monthly: number; vat: boolean; withheld: boolean };
     /** Yayılan, her ay girilen harcamaların (Aylık harcamalar) sayısı ve bu ayın beklenen toplamı (E-13) */
     expenseSpread: { count: number; monthly: number };
     /** Ufuktaki kafe kapalı işaretli günler (yarından): satış ve online girişi yazılmadı (E-41) */
     closedDays: string[];
     overdueInvoices: number;
+    /** Vergi beslemesi verildi (muhtasar, geçici vergi, damga satırları; docs/VERGI.md) */
+    tax: boolean;
+    sgkRates: { year: number; isveren: number; issizlik: number } | null;
   };
-  /** Plana girmeyen, tutarı girilmemiş hatırlatıcılar (ad ve ilk tarih) */
-  unknownAmounts: { reminderId: number; title: string; date: string }[];
+  /**
+   * Plana girmeyen, tutarı girilmemiş hatırlatıcılar (ad ve ilk tarih) ve tutarı bilinmeyen vergiler (geçici vergi:
+   * hatırlatıcısı yoksa `reminderId` null; `note` "Geçici vergi 2026/3: şirketin beyannamesi; tutarı muhasebecinizden
+   * isteyin (son gün 17.11)"). `key` satırın kimliği ("reminder:4", "vergi:gecici:2026-Q3")
+   */
+  unknownAmounts: UnknownAmount[];
   /** Yıllık sabit giderler: günü bilinmediği için plana girmez */
   notIncluded: { title: string; amount: number; period: FixedPeriod }[];
   /**
@@ -371,7 +441,19 @@ export function reminderDriftText(d: ReminderDrift): string {
  */
 export function fixedReminderDrifts(
   reminders: readonly Pick<ReminderRow, "id" | "title" | "amount" | "active" | "dueDate" | "repeat" | "anchorDate" | "note">[],
-  fixed: readonly { id: number; name: string; period: FixedPeriod; amount: number; section: FixedSection; vatRate?: number | null; startMonth: string | null; endMonth: string | null }[],
+  fixed: readonly {
+    id: number;
+    name: string;
+    period: FixedPeriod;
+    amount: number;
+    section: FixedSection;
+    /** Yurt dışı hizmette 0 (src/lib/tax/rules.ts paidFixedRates) */
+    vatRate?: number | null;
+    /** Ödemeden kesilen stopaj oranı (src/lib/tax/rules.ts paidFixedRates): tutar bankadan çıkan net */
+    withholdingRate?: number | null;
+    startMonth: string | null;
+    endMonth: string | null;
+  }[],
   versions: readonly { fixedExpenseId: number; fromMonth: string; period: FixedPeriod; amount: number }[],
   today: string,
   horizonDays = 366,
@@ -452,10 +534,31 @@ function onlineBasis(model: Model, today: string): CashPlanInput["online"] {
   return null;
 }
 
-/** Modelden planın girdileri: oranlar, POS yedeği, online, bordro ve sabit giderler (önceki aylardan ufkun sonuna), KDV */
-export function planInputFromModel(model: Model, today: string): Pick<CashPlanInput, "settings" | "posMonth" | "online" | "months" | "fixedNames" | "vat" | "closedDays"> {
+/**
+ * Modelden planın girdileri: oranlar, POS yedeği, online, bordro ve sabit giderler (önceki aylardan ufkun sonuna), KDV.
+ * Bordro Vergi'nin bordrosudur (K18; src/lib/tax/payroll.ts taxPayrollFromModel): netten brüt, 2026 yasal SGK oranları,
+ * PEK sınırı; Ayarlar'daki SGK oranları yalnız Gelir-gider'de kalır. `tax` vergi ayarlarıdır (hesap dönemi, asgari ücret
+ * desteği, elle işveren oranı); verilmezse varsayılanlar. Hesap döneminden önceki ayda bordro yok (0). Stopajlı sabit
+ * giderin ödemeden kesilen stopaj oranı da buradan (`withholdingRate`). `opts.feed: false`: vergi beslemesi alınamadı
+ * (loadCashPlan, §8.1, §13); stopaj ve KDV-2 satırı olmayacağı için stopajlı ve yurt dışı kalem bugünkü gibi brüt,
+ * faturasının KDV'siyle ödenir (stopaj ve KDV-2 kaybolmaz)
+ */
+export function planInputFromModel(
+  model: Model,
+  today: string,
+  tax: Pick<TaxSettings, "periodStart" | "minWageSupport" | "overrides"> = DEFAULT_TAX_SETTINGS,
+  opts: { feed?: boolean } = {},
+): Pick<CashPlanInput, "settings" | "posMonth" | "online" | "months" | "fixedNames" | "vat" | "closedDays" | "sgkRates"> {
+  const feed = opts.feed ?? true;
   const st = model.settings;
   const cur = today.slice(0, 7);
+  // Yılın vergi bordrosu (yıl başına bir kez; ufuk yıl sonunu geçebilir)
+  const payrolls = new Map<number, Map<string, PayrollMonth>>();
+  const payrollAt = (m: string) => {
+    const y = Number(m.slice(0, 4));
+    if (!payrolls.has(y)) payrolls.set(y, taxPayrollFromModel(model, y, tax));
+    return payrolls.get(y)!.get(m) ?? null;
+  };
   const pos = [...model.monthInfo.values()]
     .filter((m) => m.month <= cur && (m.openDays ?? 0) > 0 && (m.posRevenue ?? 0) > 0)
     .sort((a, b) => a.month.localeCompare(b.month))
@@ -489,13 +592,29 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
   };
   // Gecikmiş maaş / SGK hatırlatıcısının bordrosu için iki ay geriden
   for (let m = shiftMonth(cur, -2); m <= last; m = shiftMonth(m, 1)) {
-    const p = model.personnelFor(m);
+    // Maaş: net + ek ödemeler (personele giden); SGK: dört pay, asgari ücret desteği düşülmüş (ayın tahakkuku)
+    const t = payrollAt(m)?.totals;
+    const year = Number(m.slice(0, 4));
     months[m] = {
-      payroll: { net: p.net + p.extras, sgk: p.deductions + p.employerSgk + p.employerUnemployment, people: p.rows.length },
-      fixed: model.fixedInMonth(m).map((f) => ({ id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) })),
+      payroll: t ? { net: r2(t.net + t.extras), sgk: t.sgkTotal, people: t.people } : { net: 0, sgk: 0, people: 0 },
+      fixed: model.fixedInMonth(m).map((f) => {
+        // Stopajlı kalemde stopaj düşülür; yurt dışı hizmette KDV yok (KDV-2 ayrı satırda; paidFixedRates). Besleme
+        // yoksa brüt, faturanın KDV'siyle
+        if (!feed) return { id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) };
+        const rated = paidFixedRates({ taxWithholding: f.taxWithholding, vatRate: fixedVatRate(f) }, year);
+        return {
+          id: f.id,
+          name: f.name,
+          period: f.period,
+          amount: f.amount,
+          vatRate: rated.vatRate,
+          ...(f.taxWithholding ? { withholding: f.taxWithholding, withholdingRate: rated.withholdingRate } : {}),
+        };
+      }),
       expenses: monthExpenses(m),
     };
   }
+  const { rules } = rulesFor(Number(cur.slice(0, 4)), tax.overrides);
   return {
     settings: { komisyon: st.komisyon, kartOrani: st.kartOrani, acikGun: st.acikGun, kdv: st.kdv, kdvHizmet: st.kdvHizmet },
     posMonth: pos ? { month: pos.month, posRevenue: pos.posRevenue!, openDays: pos.openDays! } : null,
@@ -505,8 +624,28 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
     vat: { ...vatMonthInputs(model, today), switchDay: st.lafposGecisGunu },
     // Ufuktaki kafe kapalı işaretli günler (E-41)
     closedDays: (model.ds.closedDays ?? []).filter((d) => d >= today && d <= addDays(today, PLAN_DAYS - 1)),
+    sgkRates: { year: Number(cur.slice(0, 4)), isveren: rules.sgk.isverenOran.value, issizlik: rules.sgk.isverenIssizlik.value },
   };
 }
+
+/** Tutarı yazılmış KDV ve KDV-2 hatırlatıcısının notu (vergi beslemesiyle; plan §8.3) */
+export const STAMP_INCLUDED = "Tutar tahakkuk fişinin toplamı sayıldı (damga dahil).";
+
+/** Vergi satırının başlığı: "Muhtasar (Eylül)", "Geçici vergi (2026/3)", "KDV-2: yurt dışı hizmet (Eylül)" */
+function taxTitle(kind: TaxPlanFeed["items"][number]["kind"], period: string): string {
+  if (kind === "gecici") return `Geçici vergi (${quarterLabel(period)})`;
+  const m = MONTH_NAMES[Number(period.slice(5, 7)) - 1];
+  return kind === "muhtasar" ? `Muhtasar (${m})` : `KDV-2: yurt dışı hizmet (${m})`;
+}
+
+/** Nominal günün yasal son günü (K24, VUK 18): "son gün 2 Kasım Pazartesi (31 Ekim Cumartesi)" */
+const legalText = (nominal: string) => legalDayText(legalDueDate(nominal));
+
+/** K4: muhasebecinin rakamı ile Ödemeler'deki tutar farklı (nakit planı Ödemeler'dekini kullanır) */
+export function filingMismatchText(filing: number, reminder: number): string {
+  return `Muhasebecinin rakamı ${money(filing)}, Ödemeler'deki tutar ${money(reminder)}: nakit planı Ödemeler'dekini kullanıyor. Hangisi doğruysa öbürünü düzeltin.`;
+}
+const capitalize = (t: string) => (t ? t[0].toLocaleUpperCase("tr-TR") + t.slice(1) : t);
 
 /** "Bu hafta" | "Gelecek hafta" | "3. hafta" */
 export function weekTitle(index: number): string {
@@ -535,15 +674,27 @@ export function lineLabel(l: Pick<PlanLine, "title" | "estimated">): string {
   return l.title.endsWith(")") ? `${l.title.slice(0, -1)}, tahmini)` : `${l.title} (tahmini)`;
 }
 
-/** Sabit giderin aylık karşılığı, KDV dahil (notlar ve Tahmine katılanlar için; günlük gider ayda en çok 30 açık gün) */
-function monthlyOf(f: Pick<FixedItem, "period" | "amount" | "vatRate">, acikGun: number): number {
-  if (f.period === "gunluk") return withVat(f, f.amount * Math.min(30, acikGun));
-  if (f.period === "haftalik") return withVat(f, (f.amount * 52) / 12);
-  if (f.period === "yillik") return withVat(f, f.amount / 12);
-  return withVat(f);
+/**
+ * Sabit giderin aylık karşılığı, bankadan çıkan (KDV dahil, stopaj düşülmüş; notlar ve Tahmine katılanlar için; günlük
+ * gider ayda en çok 30 açık gün)
+ */
+function monthlyOf(f: Pick<FixedItem, "period" | "amount" | "vatRate" | "withholdingRate">, acikGun: number): number {
+  if (f.period === "gunluk") return paidOut(f, f.amount * Math.min(30, acikGun));
+  if (f.period === "haftalik") return paidOut(f, (f.amount * 52) / 12);
+  if (f.period === "yillik") return paidOut(f, f.amount / 12);
+  return paidOut(f);
 }
 
-type RemClass = { kind: "fixed"; id: number; endMonth: string | null } | { kind: "expense"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "kdv2" } | { kind: "other" };
+type RemClass =
+  | { kind: "fixed"; id: number; endMonth: string | null }
+  | { kind: "expense"; id: number }
+  | { kind: "salary" }
+  | { kind: "sgk" }
+  | { kind: "kdv" }
+  | { kind: "kdv2" }
+  | { kind: "muhtasar" }
+  | { kind: "gecici" }
+  | { kind: "other" };
 
 const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amount > 0;
 
@@ -551,46 +702,12 @@ const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amo
 const REPEAT_PER_MONTH: Record<Exclude<ReminderRow["repeat"], "none">, number> = { weekly: 12 / 52, monthly: 1, quarterly: 3, yearly: 12 };
 const CADENCE_OF: Record<Exclude<ReminderRow["repeat"], "none">, FixedPeriod | null> = { weekly: "haftalik", monthly: "aylik", quarterly: null, yearly: "yillik" };
 
-export { originalDue } from "./vat-paid";
-
-/**
- * KDV ve KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler ve ödenen tutar (> 0 ise; ilk döneme aittir, yoksa null).
- * Kaynak son ödenenler (`payments.recent`: ödenen gün ile sıradaki gün arasındaki her gün, "tarihe kadar ödendi"
- * birkaç dönem kapatır) ve kalıcı kayıt (`payments.vat-paid`: dönemleri ödenirken yazılmış). `byId` bu türün
- * hatırlatıcıları; `allIds` bütün hatırlatıcılar. Erteleme ve hatırlatıcıyı kapatma bunu değiştirmez; şimdiki dönemi
- * ödenenlerden olan etkin hatırlatıcı (tarihi geri alınan seri, yeniden açılan tek seferlik) o dönemi yine bekler.
- * Silinmiş hatırlatıcının kalıcı kaydı ödenmiş sayılır (türü ödenirkenki); KDV kartındaki "Kaydı kaldır" siler.
- */
-export function paidVatPeriods(
-  paid: readonly { id: number; dueDate: string | null; next?: string | null; amount?: number | null; periods?: readonly string[]; kind?: VatPaidEntry["kind"] }[] | undefined,
-  byId: ReadonlyMap<number, ReminderRow>,
-  kind?: VatPaidEntry["kind"],
-  allIds?: ReadonlySet<number>,
-): Map<string, number | null> {
-  const out = new Map<string, number | null>();
-  for (const e of paid ?? []) {
-    if (!e.dueDate) continue;
-    const r = byId.get(e.id);
-    let periods: readonly string[];
-    if (r) {
-      periods = e.periods ?? paidPeriodsOf(r, e.dueDate, e.next ?? null);
-      // Yeniden açılmış ödeme sayılmaz: etkin hatırlatıcının şimdiki dönemi ödenenlerdense (tarihi geri alınmış seri,
-      // yeniden açılmış tek seferlik) o dönemi yine bekler. Tarihi başka döneme taşınmış (28'i Cumartesi diye 27'ye
-      // alınan seri, ertesi aya yeniden kullanılan tek seferlik) hatırlatıcı ödemeyi geri açmaz
-      if (r.active && periods.includes(vatPeriodOf(originalDue(r, r.dueDate)))) continue;
-    } else if (e.periods && e.kind !== undefined && e.kind === kind && !allIds?.has(e.id)) periods = e.periods;
-    else continue;
-    let amount = e.amount !== undefined && e.amount !== null && e.amount > 0 ? e.amount : null;
-    for (const period of periods) {
-      if (!out.has(period) || (out.get(period) === null && amount !== null)) out.set(period, amount);
-      amount = null;
-    }
-  }
-  return out;
-}
+export { originalDue, paidVatPeriods } from "./vat-paid";
 
 export function buildCashPlan(input: CashPlanInput): CashPlan {
   const { today, settings: st } = input;
+  /** Vergi beslemesi (docs/VERGI.md); yoksa vergi satırı, damga ve yasal gün notu yok */
+  const tax = input.tax ?? null;
   const N = PLAN_DAYS;
   const dates = Array.from({ length: N }, (_, i) => addDays(today, i));
   const end = dates[N - 1];
@@ -609,11 +726,12 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // Günü belli satırlar (kesinler ve hatırlatıcının, maaşın, SGK'nın, KDV'nin tahmini); gün dizini tarihinden
   const dated: PlanLine[] = [];
   const dayOfLine = (l: PlanLine) => dayIndex(l.date!);
-  const unknown = new Map<number, { reminderId: number; title: string; date: string }>();
-  const addUnknown = (r: ReminderRow, date: string) => {
-    const cur = unknown.get(r.id);
-    if (!cur || date < cur.date) unknown.set(r.id, { reminderId: r.id, title: r.title, date });
+  const unknown = new Map<string, UnknownAmount>();
+  const putUnknown = (u: UnknownAmount) => {
+    const cur = unknown.get(u.key);
+    if (!cur || u.date < cur.date) unknown.set(u.key, { ...u, ...(u.note ?? cur?.note ? { note: u.note ?? cur?.note } : {}) });
   };
+  const addUnknown = (r: ReminderRow, date: string, note?: string) => putUnknown({ key: `reminder:${r.id}`, reminderId: r.id, title: r.title, date, ...(note ? { note } : {}) });
   // Anahtar dönemin asıl vadesinden: geciken dönem ile bugünkü dönem aynı güne düşse de (haftalık, bir hafta geciken)
   // iki satır ayrı kalır
   const reminderLine = (r: ReminderRow, o: { date: string; due: string; overdue: boolean }, extra: Partial<PlanLine> = {}) => {
@@ -725,6 +843,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     if (cat === "sgk") return { kind: "sgk" };
     if (isVatWithholdingReminder(r)) return { kind: "kdv2" };
     if (isVatReminder(r)) return { kind: "kdv" };
+    // Vergi (docs/VERGI.md): muhtasar ("stopaj" da) ve geçici vergi; KDV damga vergisi diğerdir (kendi satırını çizer).
+    // Besleme yoksa (alınamadı ya da verilmedi) bugünkü gibi diğerdir: her dönemi tutarını çizer (§8.1)
+    if (tax && isMuhtasarReminder(r)) return { kind: "muhtasar" };
+    if (tax && isProvisionalTaxReminder(r)) return { kind: "gecici" };
     return { kind: "other" };
   };
   const active = input.reminders.filter((r) => r.active).sort((a, b) => a.id - b.id);
@@ -732,6 +854,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const sgkRems: ReminderRow[] = [];
   const vatRems: ReminderRow[] = [];
   const vat2Rems: ReminderRow[] = [];
+  const muhtasarRems: ReminderRow[] = [];
+  const geciciRems: ReminderRow[] = [];
   const covered = new Set<number>();
   const coveredExpense = new Set<number>();
   const drift: ReminderDrift[] = [];
@@ -752,6 +876,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     else if (c.kind === "sgk") sgkRems.push(r);
     else if (c.kind === "kdv") vatRems.push(r);
     else if (c.kind === "kdv2") vat2Rems.push(r);
+    else if (c.kind === "muhtasar") muhtasarRems.push(r);
+    else if (c.kind === "gecici") geciciRems.push(r);
     else if (c.kind === "fixed") {
       // Gideri bir hatırlatıcı karşılıyor: ay içine yayılmaz; tutarsızsa hatırlatıcının günlerine giderin tutarı
       covered.add(c.id);
@@ -760,7 +886,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       /** Sabit giderin o ayki sürümü, hatırlatıcının döneminde ve KDV dahil (dönem tutmuyorsa ya da kalem o ay yoksa null) */
       const grossIn = (m: string) => {
         const f = fixedIn(m).find((x) => x.id === c.id);
-        return f && rep && f.period === CADENCE_OF[rep] ? Math.round(withVat(f) * 100) / 100 : null;
+        return f && rep && f.period === CADENCE_OF[rep] ? Math.round(paidOut(f) * 100) / 100 : null;
       };
       // "Sabit giderlerden ekle" ile açılmış, tutarı sıradaki dönemin sürümü olan hatırlatıcı gideri izler: zamdan sonraki
       // dönemlerde sürümün tutarı ödenir, uyarı çıkmaz (fixedReminderFollows)
@@ -800,8 +926,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
           // yıllık tutarı göstermesin; dönemler aynıysa tutar giderinkidir (günlük, aylık hatırlatıcıda ayda açık gün)
           const rep = r.repeat === "none" ? null : r.repeat;
           const converted = f !== undefined && rep !== null && f.period !== CADENCE_OF[rep] && !(f.period === "gunluk" && rep === "monthly");
-          const amount = !f ? 0 : converted && rep !== null ? monthlyOf(f, st.acikGun) * REPEAT_PER_MONTH[rep] : withVat(f, f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount);
-          const detail = `Sabit giderdeki tutar${converted ? ", hatırlatıcının dönemine çevrildi" : ""}${f?.vatRate ? ` + %${num(f.vatRate * 100)} KDV` : ""}`;
+          const amount = !f ? 0 : converted && rep !== null ? monthlyOf(f, st.acikGun) * REPEAT_PER_MONTH[rep] : paidOut(f, f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount);
+          const withheld = f ? withheldNote(f, st.acikGun) : null;
+          const detail = `Sabit giderdeki tutar${converted ? ", hatırlatıcının dönemine çevrildi" : ""}${f?.vatRate ? ` + %${num(f.vatRate * 100)} KDV` : ""}${withheld ? `; ${withheld}` : ""}`;
           if (amount > 0) reminderLine(r, o, { kind: "fixed", amount, estimated: true, detail });
           else addUnknown(r, o.date);
         }
@@ -833,13 +960,16 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     amountFor: (date: string) => { amount: number; month: string },
     title: (month: string) => string,
     defaultDays: number[],
+    /** Satırın alt yazısı (dönemin ayından): SGK'da yasal son gün (K24) */
+    detailFor: (month: string) => string | undefined = () => undefined,
   ): "default" | "carrier" | "reminder" => {
     const anyAmount = rems.some(hasAmount);
     if (!rems.length) {
       if (off(key)) return "default";
       for (const i of defaultDays) {
         const { amount, month } = amountFor(dates[i]);
-        if (amount > 0) dated.push({ key: `${key}@${dates[i]}`, kind: key, direction: "out", title: title(month), date: dates[i], amount, estimated: true, overdue: false });
+        const detail = detailFor(month);
+        if (amount > 0) dated.push({ key: `${key}@${dates[i]}`, kind: key, direction: "out", title: title(month), date: dates[i], amount, estimated: true, overdue: false, ...(detail ? { detail } : {}) });
       }
       return "default";
     }
@@ -852,7 +982,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         else if (r.id === carrier) {
           if (off(key)) continue;
           const { amount, month } = amountFor(o.due);
-          if (amount > 0) reminderLine(r, o, { kind: key, amount, estimated: true, title: `${r.title} (${MONTH_NAMES[Number(month.slice(5, 7)) - 1]})` });
+          const detail = detailFor(month);
+          if (amount > 0) reminderLine(r, o, { kind: key, amount, estimated: true, title: `${r.title} (${MONTH_NAMES[Number(month.slice(5, 7)) - 1]})`, ...(detail ? { detail } : {}) });
         } else addUnknown(r, o.date);
       }
     }
@@ -879,6 +1010,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     },
     (month) => `SGK primi (${MONTH_NAMES[Number(month.slice(5, 7)) - 1]})`,
     lasts,
+    // Vergi beslemesiyle: dönemin yasal son günü (ay sonu hafta sonuysa izleyen iş günü; nakit planı nominal günde öder)
+    (month) => (tax ? capitalize(legalText(monthEnd(`${shiftMonth(month, 1)}-01`))) : undefined),
   );
 
   // ------------------------------------------------------------ KDV (src/lib/kdv.ts)
@@ -899,7 +1032,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     // Ödemeler'e yazılan tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir
     for (const x of occs) {
       if (!x.first || x.r.amount === null) continue;
-      if (x.r.amount > 0) reminderLine(x.r, x.o);
+      // Hatırlatıcıya yazılan tutar tahakkuk fişinin toplamıdır: beyanname damgası dahil (ayrı damga satırı yok)
+      if (x.r.amount > 0) reminderLine(x.r, x.o, tax ? { detail: STAMP_INCLUDED } : {});
       known.set(x.period, x.r.amount);
       claimed.add(x.period);
       knownRows.push({ key: `reminder:${x.r.id}@${x.o.due}`, period: x.period, date: x.o.date, due: x.o.due, overdue: x.o.overdue, source: "reminder", amount: x.r.amount, estimate: null, reminderId: x.r.id });
@@ -921,7 +1055,14 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     }
   }
   for (const [period, amount] of vatPaid) if (amount !== null && !known.has(period)) known.set(period, amount);
-  const vatPeriods = [...new Set([...placements.map((p) => p.period), ...known.keys()])].sort();
+  // Ödeme günü gelmiş, yasal son günü gelmemiş dönemler (hafta sonuna denk gelen 28'i de): plana girmez, Vergi takvimi
+  // tutarını son güne kadar okur. Hatırlatıcının (geciken de) bugüne yazdığı dönem zaten satırdır
+  const onDuePeriods: string[] = [];
+  for (let p = shiftMonth(today.slice(0, 7), -2); vatDueDate(p) <= today; p = shiftMonth(p, 1)) {
+    if (legalDueDate(vatDueDate(p)).date < today || claimed.has(p) || placements.some((x) => x.period === p)) continue;
+    if (!vatPaid.has(p)) onDuePeriods.push(p);
+  }
+  const vatPeriods = [...new Set([...placements.map((p) => p.period), ...known.keys(), ...onDuePeriods])].sort();
   const estimates = vatEstimates({
     today,
     months: input.vat.months,
@@ -933,6 +1074,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   });
   const vatRows: VatRow[] = knownRows.map((r) => ({ ...r, estimate: estimates.get(r.period) ?? null }));
   const usedKeys = new Set<string>();
+  // Beyanname damgasının günleri (vergi beslemesiyle; plan §8.3): tahmin olarak giren KDV ve KDV-2 dönemleri
+  const stampAt: Record<"kdv" | "kdv2", Map<string, { date: string; due: string; overdue: boolean }>> = { kdv: new Map(), kdv2: new Map() };
+  const stampOf = (k: "kdv" | "kdv2", period: string, at: { date: string; due: string; overdue: boolean }) => {
+    if (!stampAt[k].has(period)) stampAt[k].set(period, at);
+  };
   for (const p of placements) {
     const e = estimates.get(p.period) ?? null;
     const ok = e?.status === "ok";
@@ -949,6 +1095,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       if (p.reminder) addUnknown(p.reminder, p.date);
       continue;
     }
+    // Ödenecek KDV çıkmasa da beyanname verilir: damgası o gün (tutarı 0 olsa da)
+    stampOf("kdv", p.period, { date: p.date, due: p.due, overdue: p.overdue });
     if (e!.payable > 0) {
       dated.push({
         key,
@@ -960,12 +1108,17 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         amount: e!.payable,
         estimated: true,
         overdue: p.overdue,
-        detail: vatLineDetail(e!),
+        detail: tax ? `${vatLineDetail(e!)} ${capitalize(legalText(vatDueDate(p.period)))}.` : vatLineDetail(e!),
         href: "#kdv",
       });
     }
   }
   vatRows.sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+  const onDueRows: VatRow[] = onDuePeriods.map((period) => {
+    const e = estimates.get(period) ?? null;
+    const due = vatDueDate(period);
+    return { key: `kdv@${due}`, period, date: due, due, overdue: false, source: "estimate", amount: e?.status === "ok" ? e.payable : null, estimate: e, reminderId: null };
+  });
   const vatPaidInWindow = [...vatPaid]
     .filter(([period]) => vatDueDate(period) >= today && vatDueDate(period) <= end)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -987,36 +1140,50 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const vat2Claimed = new Set<string>();
   // Yazılı tutar yalnız hatırlatıcının kayıtlı gününe (1 No.lu'daki `first` gibi)
   const written = (x: (typeof vat2Occs)[number]) => (x.o.due === x.r.dueDate ? x.r.amount : null);
+  // Yurt dışı hizmetin KDV'si (sorumlu sıfatıyla, Vergi beslemesi): aynı 2 No.lu beyannamede ödenir; dönemi bir KDV-2
+  // hatırlatıcısı karşılıyorsa onun tahminine eklenir, yazılı tutar (tahakkuk fişi) onu zaten içerir
+  const taxOff = off("vergi");
+  const hizmetOf = (period: string) => (tax && !taxOff ? tax.items.find((i) => i.kind === "kdv2_hizmet" && i.period === period) : undefined);
   for (const x of vat2Occs) {
     const amount = written(x);
     if (amount === null) continue;
-    if (amount > 0) reminderLine(x.r, x.o);
+    if (amount > 0) reminderLine(x.r, x.o, tax ? { detail: STAMP_INCLUDED } : {});
     vat2Claimed.add(x.period);
   }
   for (const x of vat2Occs) {
     if (written(x) !== null || vat2Paid.has(x.period)) continue;
-    const amount = withheldOf.get(x.period);
-    if (vat2Claimed.has(x.period) || vatMode === "excluded" || amount === undefined) {
+    const base = withheldOf.get(x.period);
+    const hizmet = hizmetOf(x.period);
+    if (vat2Claimed.has(x.period) || vatMode === "excluded" || (base === undefined && !hizmet)) {
       addUnknown(x.r, x.o.date);
       continue;
     }
     vat2Claimed.add(x.period);
-    if (amount > 0)
+    const amount = (base ?? 0) + (hizmet?.amount ?? 0);
+    if (amount > 0) {
       reminderLine(x.r, x.o, {
         kind: "kdv",
         amount,
         estimated: true,
         title: `${x.r.title} (${MONTH_NAMES[Number(x.period.slice(5, 7)) - 1]})`,
-        detail: vat2LineDetail(x.period),
+        detail: [base ? vat2LineDetail(x.period) : "", hizmet?.detail ?? ""].filter(Boolean).join(" "),
         href: "#kdv",
       });
+      stampOf("kdv2", x.period, x.o);
+    }
   }
   const vat2: Vat2Row[] = [];
+  const vat2OnDue: Vat2Row[] = [];
   for (const m of input.vat.months) {
     const date = vat2DueDate(m.month);
     const amount = round100(m.purchases.withheld);
-    if (date <= today || date > end || amount <= 0 || vat2Paid.has(m.month)) continue;
+    if (date > end || amount <= 0 || vat2Paid.has(m.month)) continue;
     const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Claimed.has(m.month) };
+    // Ödeme günü bugün ya da geçmiş: plana girmez; yasal son günü gelmediyse Vergi takvimi için (onDue)
+    if (date <= today) {
+      if (legalDueDate(date).date >= today) vat2OnDue.push(row);
+      continue;
+    }
     vat2.push(row);
     if (vatMode === "excluded" || row.covered) continue;
     dated.push({
@@ -1028,9 +1195,125 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       amount,
       estimated: true,
       overdue: false,
-      detail: vat2LineDetail(m.month),
+      detail: tax ? `${vat2LineDetail(m.month)} ${capitalize(legalText(date))}.` : vat2LineDetail(m.month),
       href: "#kdv",
     });
+    stampOf("kdv2", m.month, { date, due: date, overdue: false });
+  }
+
+  // ------------------------------------------------------------ Vergi: muhtasar, geçici vergi, KDV-2 hizmet, damga
+  // (docs/VERGI.md, plan §8). Muhtasar ve geçici vergi KDV'nin kipleriyle yerleşir: sınıfın hatırlatıcısı varsa onun
+  // günlerinde (tutarı yazılı dönem kesin; öteki dönemlerde beslemenin tutarı), yoksa beslemenin nominal gününde
+  // (yarından). Kapalıyken (`vergi`) kesinler kalır, tutarsız hatırlatıcılar "Tutarı girilmemiş ödemeler"e döner.
+  // Geçici vergi tutarı bilinmeden (taslak çeyrek, muhasebeci kaydı yok) plana girmez: "Tutarı girilmemiş ödemeler"de
+  const taxKeys = new Set<string>();
+  /** Beslemeden çizilen vergi satırları (tahmin ya da muhasebeci) ve damga satırları; hatırlatıcının kesin satırları */
+  let taxDrawn = 0;
+  let taxKesin = 0;
+  const taxLine = (item: TaxPlanFeed["items"][number], at: { date: string; due: string; overdue: boolean }) => {
+    if (!(item.amount > 0)) return;
+    let key = `vergi:${item.kind}@${at.date}`;
+    if (taxKeys.has(key)) key = `${key}#${item.period}`;
+    taxKeys.add(key);
+    taxDrawn++;
+    dated.push({
+      key,
+      kind: "vergi",
+      direction: "out",
+      title: taxTitle(item.kind, item.period),
+      date: at.date,
+      ...(at.overdue ? { due: at.due } : {}),
+      amount: item.amount,
+      estimated: item.source === "estimate",
+      overdue: at.overdue,
+      detail: item.detail,
+      href: "/panel/vergi",
+      ...(item.source === "filing" ? { badge: "Muhasebeci" as const } : {}),
+    });
+  };
+  const taxClass = (kind: "muhtasar" | "gecici", rems: readonly ReminderRow[]) => {
+    const items = new Map((tax?.items ?? []).filter((i) => i.kind === kind).map((i) => [i.period, i]));
+    const pending = new Map((tax?.pending ?? []).filter((p) => p.kind === kind).map((p) => [p.period, p]));
+    // Ödendi: son ödenenler (30 gün); geçici vergide kalıcı kayıt da (payments.vat-paid, çeyrek). Sınıfın bütün
+    // hatırlatıcılarından (etkin olmayanlar da): ödenince kapanan tek seferliğin dönemi de ödenmiştir (KDV'deki gibi)
+    const all = new Map(input.reminders.filter((r) => classify(r).kind === kind).map((r) => [r.id, r]));
+    const paid = kind === "gecici" ? paidVatPeriods(paidRecords, all, "gecici", allIds) : paidVatPeriods(input.paidReminders, all);
+    const periodOf = (r: ReminderRow, due: string) => (kind === "gecici" ? quarterOfDue(originalDue(r, due)) : mphbPeriodOf(originalDue(r, due)));
+    if (rems.length) {
+      // Tutarı tek döneme ait hatırlatıcıda (taxAmountTravels) tutar yalnız kayıtlı dönemindedir; sabit tutarlıda ("Kira
+      // stopajı") her dönemde. Tutar yazılan dönem sahiplenilir (beslemenin tahmini o dönemde girmez)
+      const occs = rems.flatMap((r) =>
+        reminderOccurrences(r, today, end).map((o) => ({ r, o, period: periodOf(r, o.due), kesin: r.amount !== null && (o.due === r.dueDate || !taxAmountTravels(r)) })),
+      );
+      const owned = new Set<string>();
+      for (const x of occs) {
+        if (!x.kesin) continue;
+        if (x.r.amount! > 0) {
+          // K4: muhasebecinin rakamı Ödemeler'dekinden 1 ₺'den fazla farklıysa satır söyler (Vergi sayfası da uyarır)
+          const filed = items.get(x.period);
+          const differs = filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
+          reminderLine(x.r, x.o, differs ? { detail: filingMismatchText(filed.amount, x.r.amount!) } : {});
+          taxKesin++;
+        }
+        owned.add(x.period);
+      }
+      const rest = occs.filter((x) => !x.kesin).sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
+      for (const x of rest) {
+        if (paid.has(x.period)) continue;
+        const item = items.get(x.period);
+        if (!taxOff && item && !owned.has(x.period)) {
+          owned.add(x.period);
+          taxLine(item, x.o);
+        } else addUnknown(x.r, x.o.date, owned.has(x.period) ? undefined : pending.get(x.period)?.note);
+      }
+      return;
+    }
+    for (const item of items.values()) {
+      if (!taxOff && item.nominal > today && item.nominal <= end && !paid.has(item.period)) taxLine(item, { date: item.nominal, due: item.nominal, overdue: false });
+    }
+    for (const p of pending.values()) {
+      if (p.nominal > today && p.nominal <= end && !paid.has(p.period)) {
+        putUnknown({ key: `vergi:${kind}:${p.period}`, reminderId: null, title: `Geçici vergi ${quarterLabel(p.period)} · tutarı muhasebecinizden isteyin`, date: p.nominal, note: p.note });
+      }
+    }
+  };
+  taxClass("muhtasar", muhtasarRems);
+  taxClass("gecici", geciciRems);
+  if (tax && !taxOff) {
+    // Yurt dışı hizmetin KDV-2'si: dönemi bir KDV-2 hatırlatıcısı karşılamıyorsa kendi satırı, ayın 25'inde
+    for (const item of tax.items) {
+      if (item.kind !== "kdv2_hizmet" || item.nominal <= today || item.nominal > end || vat2Paid.has(item.period) || vat2Claimed.has(item.period)) continue;
+      taxLine(item, { date: item.nominal, due: item.nominal, overdue: false });
+      stampOf("kdv2", item.period, { date: item.nominal, due: item.nominal, overdue: false });
+    }
+    // Beyanname damgaları (plan §8.3): tahmin olarak giren KDV ve KDV-2 dönemine, aynı gün. O ayın "yalnız damga"
+    // hatırlatıcısı ("KDV damga vergisi") varsa o kendi satırını çizer; tutarı yazılmış KDV hatırlatıcısı damga dahildir
+    const stampMonths: Record<"kdv" | "kdv2", Set<string>> = { kdv: new Set(), kdv2: new Set() };
+    for (const r of active) {
+      const k = vatStampReminder(r);
+      if (k) for (const o of reminderOccurrences(r, today, end)) stampMonths[k].add(o.due.slice(0, 7));
+    }
+    for (const k of ["kdv", "kdv2"] as const) {
+      const amount = tax.stamps[k];
+      for (const [period, at] of stampAt[k]) {
+        const dueMonth = (k === "kdv" ? vatDueDate(period) : vat2DueDate(period)).slice(0, 7);
+        if (!(amount > 0) || stampMonths[k].has(dueMonth)) continue;
+        taxDrawn++;
+        dated.push({
+          key: `damga:${k}@${at.date}`,
+          kind: "vergi",
+          direction: "out",
+          title: `Damga vergisi (${MONTH_NAMES[Number(period.slice(5, 7)) - 1]} ${k === "kdv" ? "KDV" : "KDV-2"} beyannamesi)`,
+          date: at.date,
+          ...(at.overdue ? { due: at.due } : {}),
+          amount,
+          estimated: false,
+          overdue: at.overdue,
+          detail: "Beyannamenin damga vergisi (sabit tutar), beyannameyle aynı gün ödenir. Tutarı yazılmış KDV hatırlatıcısı damgayı içerir sayılır.",
+          href: "/panel/vergi",
+        });
+      }
+    }
   }
   const vat: CashPlanVat | null =
     !input.vat.months.length && !vatRems.length
@@ -1052,11 +1335,17 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
             .filter(([period]) => vat2DueDate(period) >= today && vat2DueDate(period) <= end)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([period, amount]) => ({ period, amount })),
+          onDue: {
+            rows: onDueRows,
+            vat2: vat2OnDue,
+            paid: [...vatPaid.keys()].filter((p) => vatDueDate(p) < today && legalDueDate(vatDueDate(p)).date >= today).sort(),
+            paid2: [...vat2Paid.keys()].filter((p) => vat2DueDate(p) < today && legalDueDate(vat2DueDate(p)).date >= today).sort(),
+          },
         };
 
   // ------------------------------------------------------------ Sabit giderler (yayılan, tahmini, yarından)
   const fixedOut = dates.map(() => 0);
-  const fixedParts = new Map<number, { name: string; perDay: number[] }>();
+  const fixedParts = new Map<number, { name: string; perDay: number[]; withheld: string | null }>();
   // Faturası KDV'li bir gider yayıldı mı ("Sabit giderler" satırının açıklaması bunu söyler)
   let fixedVat = false;
   const spreadable = (f: FixedItem) => f.amount > 0 && f.period !== "yillik" && !covered.has(f.id) && !off(`fixed:${f.id}`);
@@ -1066,9 +1355,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     for (const f of fixedIn(m)) {
       if (!spreadable(f)) continue;
       if (f.vatRate) fixedVat = true;
-      const v = withVat(f, f.period === "aylik" ? f.amount / dim : f.period === "haftalik" ? f.amount / 7 : f.amount * openRatio);
+      const v = paidOut(f, f.period === "aylik" ? f.amount / dim : f.period === "haftalik" ? f.amount / 7 : f.amount * openRatio);
       fixedOut[i] += v;
-      const part = fixedParts.get(f.id) ?? { name: f.name, perDay: dates.map(() => 0) };
+      const part = fixedParts.get(f.id) ?? { name: f.name, perDay: dates.map(() => 0), withheld: withheldNote(f, st.acikGun) };
       part.perDay[i] += v;
       fixedParts.set(f.id, part);
     }
@@ -1078,7 +1367,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   for (const m of monthKeys.filter((m) => m >= today.slice(0, 7) && m <= end.slice(0, 7))) for (const f of fixedIn(m)) if (!horizonFixed.has(f.id)) horizonFixed.set(f.id, f);
   const spreadNow = [...horizonFixed.values()].filter(spreadable);
   // Yıllık gider günü bilinmediği için plana girmez (Ödemeler'de hatırlatıcısı varsa onun gününde girer)
-  const notIncluded = [...horizonFixed.values()].filter((f) => f.period === "yillik" && f.amount > 0 && !covered.has(f.id)).map((f) => ({ title: f.name, amount: withVat(f), period: f.period }));
+  const notIncluded = [...horizonFixed.values()].filter((f) => f.period === "yillik" && f.amount > 0 && !covered.has(f.id)).map((f) => ({ title: f.name, amount: paidOut(f), period: f.period }));
 
   // ------------------------------------------------------------ Her ay girilen harcamalar (yayılan, tahmini, yarından)
   // Aylık harcamalar'da "her ay" kategoriler (reklam, influencer…; E-13): ayın beklenen ödemesinden bugüne kadar
@@ -1210,7 +1499,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         overdue: false,
         detail: `Ay içine yayıldı${fixedVat ? " (faturadaki KDV dahil)" : ""}: ${topParts(fixedNamed(), a, b)
           .map((x) => `${x.name} ${tl(x.sum)}`)
-          .join(" · ")}${fixedParts.size > 4 ? " …" : ""}`,
+          .join(" · ")}${fixedParts.size > 4 ? " …" : ""}${(() => {
+          // Stopajlı kalem (bu hafta yayılan): brütü, stopajı ve bankadan çıkanı
+          const notes = [...fixedParts.values()].filter((p) => p.withheld && p.perDay.slice(a, b + 1).some((v) => v > 0)).map((p) => p.withheld);
+          return notes.length ? `; ${notes.join("; ")}` : "";
+        })()}`,
       });
     }
     const expenseSum = sum(expenseOut);
@@ -1358,15 +1651,39 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       direction: "out",
     });
   }
+  if (tax) {
+    // Muhtasar, geçici vergi ve damga (plan §8.4): sıradaki muhtasar tahmini; not sıradaki muhtasar ve geçici vergi
+    const byNominal = (x: { nominal: string }, y: { nominal: string }) => x.nominal.localeCompare(y.nominal);
+    const nextMuhtasar = tax.items.filter((i) => i.kind === "muhtasar" && i.nominal > today).sort(byNominal)[0];
+    const nextGecici = [...tax.items.filter((i) => i.kind === "gecici"), ...tax.pending].filter((i) => i.nominal > today).sort(byNominal)[0];
+    const parts: string[] = [];
+    if (nextMuhtasar) parts.push(`Ayın 26'sında muhtasar (${nextMuhtasar.atLeast ? "en az " : ""}${tl(nextMuhtasar.amount)})`);
+    if (nextGecici) {
+      const what = !("amount" in nextGecici) ? ": tutarı muhasebecinizden" : nextGecici.source === "filing" ? ` ${tl(nextGecici.amount)} (muhasebeci)` : ` ≈ ${tl(nextGecici.amount)}`;
+      parts.push(`${dayMonthTR(nextGecici.nominal)} geçici vergi${what}`);
+    }
+    estimatesRows.push({
+      key: "vergi",
+      title: "Muhtasar, geçici vergi ve damga",
+      monthly: nextMuhtasar?.amount ?? 0,
+      // Bütün vergi satırları hatırlatıcıdaki tutarla kesinse "Ödemeler'de karşılığı var"
+      status: taxOff ? "off" : taxDrawn === 0 && taxKesin > 0 ? "covered" : "on",
+      note: parts.join(" · ") || "Önümüzdeki aylarda vergi tahmini yok",
+      direction: "out",
+    });
+  }
   for (const f of [...horizonFixed.values()].filter((f) => f.amount > 0)) {
     const key = `fixed:${f.id}`;
     const st2: EstimateRow["status"] = covered.has(f.id) ? "covered" : f.period === "yillik" ? "yearly" : off(key) ? "off" : "on";
+    const w = withheldParts(f, st.acikGun);
     estimatesRows.push({
       key,
       title: f.name,
       monthly: monthlyOf(f, st.acikGun),
       status: st2,
-      note: `${st2 === "yearly" ? "Yıllık: gününü bilmek için Ödemeler'e ekleyin" : st2 === "covered" ? "Ödemeler'de hatırlatıcısı var" : "ay içine yayılır"}${f.vatRate ? ` · %${num(f.vatRate * 100)} KDV dahil` : ""}`,
+      note: `${st2 === "yearly" ? "Yıllık: gününü bilmek için Ödemeler'e ekleyin" : st2 === "covered" ? "Ödemeler'de hatırlatıcısı var" : "ay içine yayılır"}${f.vatRate ? ` · %${num(f.vatRate * 100)} KDV dahil` : ""}${
+        w ? ` · ${tl(w.gross)} brüt, stopaj %${num(w.rate * 100)} muhtasarda` : ""
+      }`,
       direction: "out",
     });
   }
@@ -1408,13 +1725,20 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       payroll: payroll.people > 0 ? payroll : null,
       salaryMode,
       sgkMode,
-      fixedSpread: { count: spreadNow.length, monthly: spreadNow.reduce((a, f) => a + monthlyOf(f, st.acikGun), 0), vat: spreadNow.some((f) => (f.vatRate ?? 0) > 0) },
+      fixedSpread: {
+        count: spreadNow.length,
+        monthly: spreadNow.reduce((a, f) => a + monthlyOf(f, st.acikGun), 0),
+        vat: spreadNow.some((f) => (f.vatRate ?? 0) > 0),
+        withheld: spreadNow.some((f) => (f.withholdingRate ?? 0) > 0),
+      },
       expenseSpread: (() => {
         const xs = [...horizonExpenses.values()].filter((x) => spreadableExpense(x.id));
         return { count: xs.length, monthly: xs.reduce((a, x) => a + x.amount, 0) };
       })(),
       closedDays: closedAhead,
       overdueInvoices,
+      tax: tax !== null,
+      sgkRates: input.sgkRates ?? null,
     },
     unknownAmounts,
     notIncluded,
@@ -1489,14 +1813,16 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
         ? "SGK primleri tahmine katılmıyor (Tahmine katılanlar'dan açın)."
         : b.sgkMode === "reminder"
           ? "SGK hatırlatıcısına yazdığınız tutar, onun gününde; ayrıca tahmin yapılmadı."
-          : `İşçi ve işveren SGK + işsizlik payları (ayda ${tl(b.payroll.sgk)}), ${b.sgkMode === "carrier" ? "SGK hatırlatıcısının gününde" : "takip eden ayın son günü"}. Gelir ve damga vergisi dahil değil.`,
+          : `İşçi ve işveren SGK + işsizlik payları (ayda ${tl(b.payroll.sgk)}), ${b.sgkMode === "carrier" ? "SGK hatırlatıcısının gününde" : "takip eden ayın son günü"}. ${sgkBasis(b)}`,
     });
   }
   if (b.fixedSpread.count) {
     out.push({
       key: "fixed",
       title: "Sabit giderler",
-      text: `Hatırlatıcısı olmayan ${num(b.fixedSpread.count)} sabit gider (ayda ${tl(b.fixedSpread.monthly)}${b.fixedSpread.vat ? ", faturadaki KDV dahil" : ""}) ay içine eşit yayıldı. Giderler'de KDV hariç girilen tutara kalemin KDV'si eklenir (kira, faturalar ve genel giderler varsayılan %20, personel KDV'siz; kalemde değiştirilir). Gününü bilmek için Ödemeler'e ekleyin.`,
+      text: `Hatırlatıcısı olmayan ${num(b.fixedSpread.count)} sabit gider (ayda ${tl(b.fixedSpread.monthly)}${b.fixedSpread.vat ? ", faturadaki KDV dahil" : ""}) ay içine eşit yayıldı. Giderler'de KDV hariç girilen tutara kalemin KDV'si eklenir (kira, faturalar ve genel giderler varsayılan %20, personel KDV'siz; kalemde değiştirilir).${
+        b.fixedSpread.withheld ? " Stopajlı kalemde (Vergi'de seçilen; şahsa kira, serbest meslek) ödemeden kesilen stopaj düşüldü, muhtasar satırındadır." : ""
+      } Gününü bilmek için Ödemeler'e ekleyin.`,
     });
   }
   if (b.expenseSpread.count) {
@@ -1518,6 +1844,13 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
         : "Mal alımı tahmini için en az 2 haftalık fatura gerekir.",
   });
   if (plan.vat) out.push({ key: "kdv", title: "KDV", text: vatNote(plan.vat.mode, plan.vat.ok, plan.vat.rates, plan.vat.hasSite) });
+  if (b.tax) {
+    out.push({
+      key: "vergi",
+      title: "Muhtasar, geçici vergi ve damga",
+      text: off("vergi") ? TAX_NOTE_OFF : TAX_NOTE,
+    });
+  }
   out.push({
     key: "double",
     title: "Çift sayım",
@@ -1529,9 +1862,25 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
   out.push({
     key: "excluded",
     title: "Dahil değil",
-    text: `Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
+    text: `${b.tax ? "Tutarı girilmemiş yerel vergiler (ÇTV, ilan reklam), kurumlar vergisi" : "Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.)"}, Aylık harcamalar'da her ay girilmeyen (tek seferlik) ödemeler (cari borçların gider kayıtları dahil), yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
   });
   return out;
+}
+
+/** "Nasıl hesaplandı"nın vergi satırı (docs/VERGI.md; plan §4.6) */
+export const TAX_NOTE =
+  "Muhtasar (ücret gelir ve damga vergisi, işaretli stopajlar, beyanname damgası) ayın 26'sında, Vergi sayfasının tahminiyle; stopajı bilinmeyen kalem varsa 'en az'. Geçici vergi yalnız tutarı Ödemeler'e ya da Vergi'ye yazıldıysa (ya da çeyreğin hesabı hazırsa) Şubat, Mayıs, Ağustos ve Kasım'ın 17'sinde; yoksa 'Tutarı girilmemiş ödemeler'de. KDV beyannamelerinin damgası (791 ₺) ayrı satır; tutarı yazılmış KDV hatırlatıcısı damga dahil sayılır.";
+export const TAX_NOTE_OFF = "Muhtasar, geçici vergi ve beyanname damgaları plana katılmıyor (Tahmine katılanlar'dan açın).";
+
+/**
+ * SGK notunun bordro cümlesi (K18): yasal oranlarla hesaplandıysa oranlar ("işveren %19,75 + %2"); vergiler muhtasarda
+ * (vergi beslemesi yoksa planda da yok)
+ */
+function sgkBasis(b: CashPlan["basis"]): string {
+  if (!b.sgkRates) return "Gelir ve damga vergisi dahil değil.";
+  const r = b.sgkRates;
+  const rates = `${r.year} yasal oranlarıyla (işveren %${num(r.isveren * 100, 0, 2)} + %${num(r.issizlik * 100, 0, 2)})`;
+  return b.tax ? `Brüt, gelir ve damga vergisiyle; ${rates} hesaplanır; vergiler muhtasar satırındadır.` : `Brüt, gelir ve damga vergisiyle; ${rates} hesaplanır; gelir ve damga vergisi (muhtasar) bu planda yok.`;
 }
 
 export type { VatEstimate };

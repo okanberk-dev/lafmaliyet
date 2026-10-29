@@ -1,0 +1,283 @@
+import { Boxes, FileWarning, PackageSearch } from "lucide-react";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { dateTR, money } from "@/lib/format";
+import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, ORPHAN_ASSET_WARNING, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
+import { quarterLabel } from "@/lib/tax/calendar";
+import { rulesFor } from "@/lib/tax/rules";
+import { requireAdmin } from "@/server/auth/dal";
+import { loadModel } from "@/server/data/dataset";
+import { loadTaxView } from "@/server/data/tax";
+
+import { DirectExpenseButton, NotAssetButton } from "../asset-actions";
+import { type AssetData, AssetButton } from "../asset-dialog";
+import { RelinkButton } from "../relink-button";
+import { invoiceChoices } from "../dialog-data";
+import { PeriodPicker } from "../period-picker";
+import { type BannerData, DetailList, NoteList, TaxBanner, VergiHeader } from "../ui";
+
+export const metadata: Metadata = { title: "Demirbaş & amortisman" };
+
+const TITLE = "Demirbaş & amortisman";
+const DESCRIPTION = "Varlık listesi ve amortisman (KDV hariç). Bir varlığa bağlanan fatura tutarı gider yerine amortismanla düşülür; ömür girilmeyen varlığa amortisman ayrılmaz.";
+
+export default function TaxAssetsPage({ searchParams }: PageProps<"/panel/vergi/demirbas">) {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} />
+          <PageSkeleton rows={8} />
+        </>
+      }
+    >
+      <TaxAssetsContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+/**
+ * Vergi › Demirbaş (plan docs/planlar/vergi.md §4.3, K14): varlıklar, varlık listesine eklenmemiş Kuruluş & Demirbaş
+ * faturaları, "demirbaş olabilir" faturalar ve faturası Paraşüt'te silinen varlıklar. Nakit planını okumaz (K30).
+ */
+async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/demirbas">["searchParams"] }) {
+  await requireAdmin();
+  const sp = await searchParams;
+  const rawYear = pick(sp.yil);
+  const model = await loadModel();
+  const { view, inputs } = await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null, cashPlan: null });
+  const { settings, assets } = inputs;
+  const year = view.year;
+  const today = view.today;
+  const banner: BannerData = {
+    compiled: view.rulesInfo.compiled,
+    stale: view.rulesInfo.stale,
+    scope: { text: view.scope.text, hint: view.scope.hint },
+    checks: { chip: view.checks.chip, allDone: view.checks.allDone },
+  };
+  const rows = assetRows(assets, year, settings);
+  const choices = invoiceChoices(model.ds.invoices, assets, today);
+  const directLimit = rulesFor(year).rules.vuk.dogrudanGider.value;
+  const missingLife = assets.filter((a) => a.method === "amortisman" && !a.lifeYears).length;
+  // Yılın amortismanı yalnız amortismana tabi varlıklardan; doğrudan gider yazılanlar (VUK 313) ayrı yazılır
+  const depreciable = (r: (typeof rows)[number]) => r.asset.method === "amortisman";
+  const totals = {
+    cost: rows.reduce((s, r) => s + r.asset.cost, 0),
+    year: rows.filter(depreciable).reduce((s, r) => s + r.thisYear, 0),
+    direct: rows.filter((r) => !depreciable(r)).reduce((s, r) => s + r.thisYear, 0),
+    net: rows.reduce((s, r) => s + r.netValue, 0),
+  };
+  const method = QUARTER_DEPRECIATION_LABELS[settings.quarterDepreciation];
+  const assetData = (a: (typeof assets)[number]): AssetData => ({
+    id: a.id,
+    name: a.name,
+    invoiceId: a.invoiceId,
+    acquiredOn: a.acquiredOn,
+    cost: a.cost,
+    kind: a.kind,
+    method: a.method,
+    lifeYears: a.lifeYears,
+    note: a.note ?? null,
+  });
+  const actions =
+    view.yearOptions.length >= 2 ? <PeriodPicker param="yil" label="Yıl" value={String(year)} options={view.yearOptions.map((y) => ({ value: String(y), label: String(y) }))} /> : null;
+
+  return (
+    <>
+      <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} actions={actions} />
+      <TaxBanner data={banner} />
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+          <Stat compact label="Varlıklar (maliyet)" value={money(totals.cost)} sub={`${assets.length} varlık`} />
+          <Stat
+            compact
+            label={`${year} amortismanı`}
+            value={money(totals.year)}
+            sub={`Çeyreklere: ${method.toLocaleLowerCase("tr-TR")}${totals.direct ? ` · doğrudan gider ${money(totals.direct)} ayrı` : ""}`}
+          />
+          <Stat compact className="col-span-2 lg:col-span-1" label={`Net değer (${year} sonu)`} value={money(totals.net)} sub={missingLife ? `${missingLife} varlığın ömrü girilmedi` : null} tone={missingLife ? "warn" : "default"} />
+        </div>
+
+        {missingLife || view.orphans.length ? (
+          <Card className="gap-3 p-5">
+            {missingLife ? <NoteList notes={[lifeMissingText(missingLife)]} tone="warn" /> : null}
+            {view.orphans.map((o) => {
+              const label = parseInvoiceLabel(o.asset.invoiceLabel);
+              return (
+                <div key={o.asset.id} className="space-y-2 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+                  <NoteList notes={[`${o.asset.name}: ${ORPHAN_ASSET_WARNING}`]} tone="bad" />
+                  <p className="text-xs text-ink-mute">
+                    Silinen fatura: {o.asset.invoiceLabel ?? "bilinmiyor"}
+                    {o.doubleCounted ? ` · aday fatura şimdi gider sayılıyor: ${money(o.doubleCounted)} iki kez sayılabilir` : ""}
+                  </p>
+                  {o.candidates.length ? (
+                    <ul className="space-y-2">
+                      {o.candidates.map((c) => (
+                        <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-ink-soft">
+                          <span className="min-w-0 break-words">
+                            {c.supplier} · {dateTR(c.date)} · {money(c.amount - c.discount)}
+                          </span>
+                          <RelinkButton asset={assetData(o.asset)} invoice={{ id: c.id, label: `${c.supplier} · ${dateTR(c.date)}` }} />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-ink-mute">{label ? `Aynı tedarikçiden (${label.supplier}) benzer tutarlı fatura yok; Düzenle'den başka bir faturaya bağlayın.` : "Düzenle'den yeni faturaya bağlayın."}</p>
+                  )}
+                </div>
+              );
+            })}
+          </Card>
+        ) : null}
+
+        <Card>
+          <CardHeader
+            icon={<Boxes />}
+            title="Varlıklar"
+            description="Satıra dokunun: edinme günü, tür, çeyrek payları ve birikmiş amortisman."
+            meta={`${assets.length} varlık`}
+            actions={<AssetButton label="Varlık ekle" variant="primary" invoices={choices} directLimit={directLimit} today={today} />}
+          />
+          <CardContent>
+            {rows.length ? (
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                <li aria-hidden="true" className="hidden grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] gap-3 px-4 py-2 text-xs font-semibold text-ink-soft lg:grid">
+                  <span>Varlık</span>
+                  <span className="text-right">Maliyet</span>
+                  <span className="text-right">Ömür / yöntem</span>
+                  <span className="text-right">{year} amortismanı</span>
+                  <span className="text-right">Net değer</span>
+                </li>
+                {rows.map((r) => {
+                  const a = r.asset;
+                  const lifeText = a.method === "dogrudan_gider" ? "Doğrudan gider" : a.lifeYears ? `${a.lifeYears} yıl` : "Ömür girilmedi";
+                  const quarters = [...r.quarters].filter(([k]) => k.startsWith(`${year}-`));
+                  return (
+                    <li key={a.id}>
+                      <details className="group/asset">
+                        <summary className="grid cursor-pointer list-none grid-cols-2 gap-x-3 gap-y-1 px-4 py-3 outline-none select-none hover:bg-panel/40 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-inset lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] lg:items-center [&::-webkit-details-marker]:hidden">
+                          <span className="col-span-2 min-w-0 lg:col-span-1">
+                            <span className="block text-sm leading-5 font-medium break-words text-ink">{a.name}</span>
+                            <span className="block text-xs leading-4 break-words text-ink-mute">{a.invoiceLabel ?? "Faturasız"}</span>
+                          </span>
+                          <Cell label="Maliyet" value={money(a.cost)} />
+                          <Cell label="Ömür / yöntem" value={lifeText} warn={a.method === "amortisman" && !a.lifeYears} />
+                          <Cell label={`${year} amortismanı`} value={money(r.thisYear)} />
+                          <Cell label="Net değer" value={money(r.netValue)} />
+                        </summary>
+                        <div className="space-y-3 border-t border-line px-4 pt-3 pb-4">
+                          <DetailList
+                            rows={[
+                              { label: "Edinme günü", value: dateTR(a.acquiredOn) },
+                              { label: "Tür", value: ASSET_KIND_LABELS[a.kind] },
+                              { label: "Yöntem", value: ASSET_METHOD_LABELS[a.method] },
+                              ...quarters.map(([k, v]) => ({ label: `${quarterLabel(k)} payı`, value: money(v) })),
+                              { label: `Birikmiş (${year} sonuna)`, value: money(r.accumulated) },
+                            ]}
+                          />
+                          {r.warning ? <NoteList notes={[r.warning]} tone="warn" /> : null}
+                          {a.note ? <p className="text-xs text-ink-mute">Not: {a.note}</p> : null}
+                          <AssetButton label="Düzenle" invoices={choices} asset={assetData(a)} directLimit={directLimit} today={today} />
+                        </div>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Varlık listesi boş. Kuruluş &amp; Demirbaş faturalarını aşağıdan ekleyin.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
+            icon={<FileWarning />}
+            title="Varlık listesine eklenmemiş demirbaş faturaları"
+            description="Kuruluş & Demirbaş kategorisindeki faturalar: varlık olarak eklenene kadar ne gider ne amortisman sayılır."
+            meta={view.classify.unlisted.length ? `${view.classify.unlisted.length} fatura` : undefined}
+          />
+          <CardContent>
+            {view.classify.unlisted.length ? (
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                {view.classify.unlisted.map((u) => (
+                  <li key={u.invoiceId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm leading-5 font-medium break-words text-ink">{u.supplier}</p>
+                      <p className="text-xs leading-4 text-ink-mute">
+                        {dateTR(u.date)} · eşlenmemiş: {money(u.remaining)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <AssetButton label="Varlık olarak ekle" invoices={choices} invoiceId={u.invoiceId} directLimit={directLimit} today={today} />
+                      {u.remaining <= directLimit + 0.005 ? <DirectExpenseButton invoice={{ id: u.invoiceId, supplier: u.supplier, date: u.date, remaining: u.remaining }} /> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Bütün demirbaş faturaları varlık listesinde.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
+            icon={<PackageSearch />}
+            title="Demirbaş olabilir"
+            description={`KDV hariç ${money(directLimit)}'yi aşan ve aynı tedarikçiden 90 günde ilk fatura: karar verilene kadar gider sayılmaz.`}
+            meta={view.classify.candidates.length ? `${view.classify.candidates.length} fatura` : undefined}
+          />
+          <CardContent>
+            {view.classify.candidates.length ? (
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                {view.classify.candidates.map((c) => (
+                  <li key={c.invoice.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm leading-5 font-medium break-words text-ink">{c.invoice.supplier}</p>
+                      <p className="text-xs leading-4 break-words text-ink-mute">
+                        {dateTR(c.invoice.date)} · {c.invoice.category} · {money(c.net)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <AssetButton label="Varlık olarak ekle" invoices={choices} invoiceId={c.invoice.id} directLimit={directLimit} today={today} />
+                      <NotAssetButton invoice={{ id: c.invoice.id, supplier: c.invoice.supplier }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Demirbaş olabilecek fatura yok.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-5">
+          <ul className="space-y-1.5 text-[13px] leading-5 text-ink-mute">
+            <li className="flex flex-wrap items-center gap-2">
+              <Badge tone="gray">Özel maliyet</Badge>
+              Kiralanan yere yapılan dekorasyon özel maliyettir; ömrü kira süresine bağlıdır. Muhasebecinize sorun.
+            </li>
+            <li>Yatırımlar listesi (Giderler &amp; personel) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
+            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Kurallar › Vergi ayarları).</li>
+          </ul>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function Cell({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <span className="min-w-0 lg:text-right">
+      <span className="block text-[11px] leading-4 text-ink-mute lg:hidden">{label}</span>
+      <span className={warn ? "text-sm font-medium text-warn" : "text-sm text-ink tabular"}>{value}</span>
+    </span>
+  );
+}

@@ -70,10 +70,10 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   **Kafe** (Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım) · **Menü** (Ürünler, Hammaddeler, Reçete
   defteri) · **Stok** (Stok sayımı, Zayi & ikram, Tutarlılık; Hızlı sayım ve Mal siparişi 26 Eki 2026'da kaldırıldı) · **Satış** (Satışlar, Komisyon
   & hakediş, Analiz & senaryo) · **Alış & gider** (Faturalar, Tedarikçiler, Giderler & personel) · **Finans**
-  (Gelir-gider, Ödemeler & hatırlatıcılar; Vergi de buraya gelecek) · **Ayarlar** (Genel ayarlar, Kullanıcılar &
+  (Gelir-gider, Vergi, Ödemeler & hatırlatıcılar; Vergi'nin dört sekmesi tek öğe, dalga 12) · **Ayarlar** (Genel ayarlar, Kullanıcılar &
   roller, Paraşüt entegrasyonu) · Yardım. Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, ay ve ödemeler).
   Başlık satırı yalnız grubu açıp kapatır, kendisi bir ekran açmaz; etkin sayfanın grubu kendiliğinden açık
-  (`activeGroupOf`; alt ekran ve sekme de: Nakit planı Finans'ı, Aylık harcamalar Alış & gider'i açar), başka bölüme
+  (`activeGroupOf`; alt ekran ve sekme de: Nakit planı ve Vergi'nin sekmeleri Finans'ı, Aylık harcamalar Alış & gider'i açar), başka bölüme
   gidince önceki grup açık kalır (`keepGroupOpen`). Bir grup iki ile beş alt sayfa tutar; yeni ekran uygun başlığın
   altına girer, sık açılmıyorsa yeni üst düzey öğe açılmaz. Personelin ağacı (yalnız Hızlı sayım kalktı): Bugün · Karaoke · Kasa raporu ·
   Kontrol listeleri · Özel günler · Reçete defteri · Stok (Stok sayımı, Zayi & ikram) · Hatırlatıcılarım

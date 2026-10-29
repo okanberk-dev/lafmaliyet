@@ -164,7 +164,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 |---|---|---|
 | Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **Bitti: 10a (#30) ve 10b (#32) main'de.** 10a (migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. 10b (#32, migration yok): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Canlıda personel hesabıyla `/panel/yardim/personel` bir kez açılıp bakılır (2.4 mal siparişi taslağı B21'de kaldırıldı). Karaoke sayacının silinmesi B18'de daraltıldı (denetim E-15: ilk 10 dakika serbest, sonrası `karaoke-sil` isteği). |
 | Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | **PR-a (#33) ve PR-b (#35) main'de.** PR-a: yanlış bölüme çekilen yazarkasa Z'si alan doldurmaz, başlıklar. PR-b (migration `0042_okc_z`, `0041_kasaya_giren`'in ardına yeniden üretildi): b1 ve b3–b8 (saf çekirdek, Claude istemcisi, veri ve sunucu sütunları, ekran, e-posta / WhatsApp, belgeler ve Yardım, son doğrulama). **Açık:** yalnız b2 (canlı değerlendirme: gerçek fotoğraf ve `ANTHROPIC_API_KEY` bekliyor); banka gün sonu fişindeki iki tarih uyarısı (denetim E-69) B20'de kapandı: fiş tek tarih uyarısı verir, ertesi sabah basılmış fiş uyarmaz. O zamana kadar `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`): yazarkasa Z'sinin okuması yalnız öneri, hiçbir alanı doldurmaz. PR-c yalnız değerlendirme gerek gösterirse. Ayrıntı ve sahibe notlar aşağıda, "Dalga 13". |
-| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır, başlamadı; muhasebeciye sorulacak 8 madde planın sonunda. Gelir dayanağı mali Z: Dalga 13 PR-b birleşti, doldurma kapısı b2'de. Kenar çubuğunda Finans başlığına girer (Dalga 15). |
+| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | **Bitti: #68 main'de** (`main` @ 296fadb üstünde; migration `0045_vergi`). Finans › Vergi, dört sekme, yalnız yönetici; belge `docs/VERGI.md`. Ayrıntı ve sahibe notlar aşağıda, "Dalga 12". |
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | **Faz 1'in çoğu bitti (28 Ekim):** S1 (laffogato #269: menü `expect`, 409 `stale`, koşullu form, uygulama önbelleği 300 sn), S2 (laffogato #270: ödeme bekleyen sayısı, imza vektörleri), M1 (lafmobil #35: sözleşme kopyası), P1 (B12, #52 ve #53), P2 (lafmaliyet #60: bar ekranında ödeme takibi, sakin saatin kontrolü pingi saymaz, kaçan ping Ayarlar › laffogato.net'te; `docs/SITE-SIPARIS.md` › Ödeme takibi; açık: bildirimi açık, boş bar ekranını takip başlayınca uyandırmak, aşağıda "Senkron P2'nin açığı"), P0 (lafmaliyet #61: karaoke Web Push'ta misafirin adı ve notu yok, sekme arkadayken sayacın kendi sistem bildirimlerinde (başladı, az kaldı, süre doldu) de ad yok; ekrandaki zil satırında, ekran içi uyarıda ve listede ad kalır; `docs/KARAOKE.md` › Güvenlik; birleşince canlıda bir rezervasyonla kilit ekranındaki bildirime bakılır). Kalan Faz 1 yalnız M2: uygulamanın menü ve mağaza tazeliği (lafmobil `claude/senkron-m2-tazelik`, staleTime ve satır reddinde geçersiz kılma); uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini (1.1.0) yürüten oturumun işi. Sonra Faz 2 (ayar ucu, 304, ping sınaması, kapanışlar). Bütçe (§4.0): P2'den önce ve sonra 48'er saat iki projenin CU-saat/gün ölçümü sahipte. Sahibe soru A (sitenin Neon planı), 7, 10. |
 | Genel denetim (25 Ekim): sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | Yerine 26 Ekim denetimi geçti: D-01..D-19'un 26 Ekim durumu `denetim-2026-10-26.md` › "Önceki denetim"; açık kalanlar E-maddelerine ve partilere taşındı, doğrulanmayanlar sahibe sorulardır. |
 | Denetim (26 Ekim): panel geneli ve stok sayımı | `denetim-2026-10-26.md` | 70 madde, 20 parti (B01-B20), sahibe 11 soru; aşağıda "Denetim (26 Ekim): düzeltme partileri". |
@@ -322,6 +322,68 @@ dalga 10 (personel yetkileri) de Kasa'ya dokunuyordu (`src/app/panel/kasa/*`, `s
   Kasa'daki **Hesaba işle**'den ödemeye bağlarsınız.
 - `npm run db:reset` cari kaydı varken durur (`-- --cari-sil` ile silinir).
 
+### Dalga 12: vergi, tahmin, beyanname değil (#68)
+
+Sahibin isteği (24 Ekim): "Köşeye bir de vergi gibi bir kısım açar mısın; oradan gelir-gider, kurumlar vergisi, damga,
+hepsini Türkiye'ye göre hesaplasın ama dikkatli yap." Plan `vergi.md` (kararlar K1–K34, §14 muhasebeciye sorulacaklar,
+§15 varsayılanlar); belge `docs/VERGI.md`. Dal `claude/dalga-12-vergi`, tek migration `0045_vergi` (üç tablo:
+`tax_filings`, `tax_adjustments`, `tax_assets`; dört sütun; yalnız ekleme). Yeni bağımlılık ve zamanlanmış iş yok.
+**Finans › Vergi** (yalnız yönetici; personel Bugün'e döner): Özet (sıradaki ödeme, 30 gün, hazırlık, Başlarken, 100
+günlük takvim, geçici ve kurumlar vergisi kartları), Vergiye göre (çeyrek tablosu, köprü, sınıflandırma, düzeltmeler),
+Demirbaş, Kurallar (ayarlar, muhasebeciye sorulacaklar, kaynaklı kural tablosu). Gelir mali belgeden: KDV beyannamesi
+satışları, yoksa yazarkasa Z'si (Dalga 13'ün `okcMonth`), yoksa "Yönetim verisi" rozetiyle kasa cirosu (o çeyrek
+Taslak, Excel'e yazılmaz). Nakit planına muhtasar, beyanname damgaları, yasal oranlı SGK (Excel verisinde Eylül
+25.956,18 ₺; önce 23.117,65), stopajlı sabit giderin net ödemesi ve hazır çeyreğin geçici vergisi girer; bunlar
+Genel bakış'ın nakit kartına ve haftalık özetin nakit maddesine de yansır. Gelir-gider'de "Vergiye göre karşılığı"
+bağlantısı ve SGK oranı uyarısı; Ödemeler'de dört yeni şablon (Kurumlar vergisi, ÇTV 1. ve 2. taksit, İlan-reklam),
+`?yeni=`; Excel'de "Vergi" sekmesi; Yardım'da soru. 2026 değerleri 28 Ekim'de resmî kaynaklarla yeniden
+karşılaştırıldı: düzeltilecek değer çıkmadı (`RULES_VERIFIED_AT` boş kalır; resmî PDF'lerin kendisi açılamadı).
+
+**Sonraya (planın §19'u):** Claude (MCP) vergi aracı; sözleşme damgası hesaplayıcısı; Paraşüt satış faturaları;
+ModPOS ↔ mali belge mutabakat ekranı; KDV tahmininin yazarkasa tabanına geçmesi (Dalga 13'ün "13b"si).
+
+**Sahibe notlar (dalga 12):**
+- **Rakamlar tahmindir.** Kesin tutar muhasebecinizin beyannamesinde ve tahakkuk fişindedir; Vergi'ye "Muhasebecinin
+  rakamını gir" ile yazınca tahminin yerine geçer (isterseniz Ödemeler'deki hatırlatıcıya da yazılır; kaydı
+  kaldırınca oraya yazılan tutar da silinir). Geçici ve kurumlar vergisi şirketin tamamının beyannamesidir; panel
+  yalnız kafenin katkısını hesaplar.
+- **Başlarken:** (1) Kurallar › Vergi ayarları'nda şirket nasıl kuruldu; (2) Vergiye göre › giderleri sınıflandırın
+  (her sabit gider ve harcama kategorisi için belgesi nerede; seçilmemiş kalem sayılmaz ve hesap Taslak kalır);
+  (3) Demirbaş: Kuruluş & Demirbaş faturalarını varlık listesine ekleyip ömürlerini girin; (4) muhasebecinin
+  rakamları: Temmuz–Eylül KDV beyannamesi satışları ve 2026/2 geçici vergi.
+- **Muhasebeciye sorulacaklar** (Kurallar › `#sorular`; sekiz temel madde): şirketin kuruluşu ve MERSİS numarasının
+  vergi numarasıyla uyuşmaması (asgari kurumlar vergisi muafiyeti buna bağlı; varsayılan uygulanmaz); bordrodaki
+  işveren SGK oranı ve teşvik; Eylül bordrosunun brüt, vergi ve SGK toplamları; kira (kime, gerçek tutar, sözleşme
+  damgası); stopaj (Instagram, influencer, muhasebeci); demirbaşlar ve ömürleri; 2026/2 ve 2026/3 geçici vergi; kafe
+  dışı işler ve Eylül beyannamesindeki %20'lik 335.000 ₺. Konuştukça "Muhasebecimle konuştum" ile işaretleyin; işaret
+  sizindir, muhasebecinin onayı anlamına gelmez.
+- **SGK oranı:** vergi ve nakit planı 2026 yasal oranını (işveren %19,75 + %2) kullanır; Gelir-gider Ayarlar'daki
+  %15,75'le kalır (Excel eşitliği). Muhasebeciniz %19,75 derse SGK oranı maddesini işaretleyin: Gelir-gider'deki
+  uyarıda **Ayarlar'daki oranı %19,75 yap** çıkar (geçmiş ayların gelir-gideri de değişir). Kendiliğinden değişmez.
+- **KDV beyannamesi satışları:** her ayın beyannamesindeki satış matrahlarını (oran oran) Vergi › Vergiye göre ›
+  KDV beyannamesi satışları'ndan girin; girilmeyen ayın geliri kasa cirosundan "Yönetim verisi" diye gelir, o çeyrek
+  Taslak kalır ve Excel'e yazılmaz. Hiç hareketi olmayan ay (açılıştan önceki 25–30 Haziran) sorulmaz ve beklemez;
+  cirosu girilmemiş ama gideri olan ay sorulur.
+- **Adres çelişkisi:** vergi levhasında Atatürk Cad. No: 28, panelde Opera AVM yazıyor (yerel vergiler maddesi); ÇTV
+  ve ilan-reklam vergisi belediyeden, tutarları Ödemeler'e şablonla girilir.
+- **Varsayılanlar** (planın §15'i, cevap beklemeden uygulandı): kapsam yalnız kafe; Ayarlar'daki SGK oranı değişmez;
+  asgari kurumlar vergisi muafiyeti uygulanmaz; sınıflandırılmamış giderler ve demirbaş adayları sayılmaz (Taslak);
+  KDV beyannamesi girilmeyen ayda kasa cirosu rozetle kullanılır; muhtasar ve geçici vergi tutarı "Ödendi"de silinir;
+  nakit planı muhtasarı ve damgaları gösterir; personel ayları tam sayılır; geçici vergide amortisman kalan çeyreklere
+  eşit; "demirbaş olabilir" eşiği KDV hariç 12.000 ₺ ve aynı tedarikçiden 90 günde ilk fatura.
+- `npm run db:reset` vergi demirbaş listesini faturalarla birlikte siler (önce kaç varlık olduğunu yazar; yedekte
+  durur); muhasebecinin rakamları, düzeltmeler ve vergi ayarları kalır.
+- **İnceleme düzeltmeleri (PR öncesi, 29 Ekim):** KDV ve KDV-2 ödeme gününden yasal son güne kadar tutarıyla kalır
+  (`plan.vat.onDue`); 1 Ocak–17 Şubat'ta geçici vergi kartı geçen yılın 4. çeyreği; sabit tutarlı SGK ve "Kira
+  stopajı" hatırlatıcısının tutarı her döneminde; Ödendi denen muhtasar, SGK ve geçici vergi takvimden düşer; kartlar
+  Ödemeler'deki tutarı da kullanır (K4) ve fark Özet'te, takvimde ve nakit planında yazılır; faturası iptal edilen
+  varlık uyarısı Özet'te; kesin tutar `≈` almaz; telefonda Vergiye göre'nin çeyrek değişince çökmesi, döküm
+  satırlarının taşması, "Kaldır" onayının yanlış metni, gelecek muhtasar ayında yanlış döneme açılan pencere, %15
+  reklam stopajının ipucu (÷ 0,85) ve Başlarken'in geçici vergi bağlantısı düzeltildi; vergi beslemesi alınamazsa
+  stopajlı sabit gider brüt ödenir; `tax.settings`'in ilk yazımı kilitli; takvimde olmayan gün reddedilir.
+  Sınıflandırma başlığındaki sayı artık çeyreğin kalemleri: Excel verisinde 2026/3 "(15 kalem)" (planın ilk metni
+  yılın sayısını, 24'ü, yazıyordu).
+
 ### Dalga 13: yazarkasa (banka POS) mali Z
 
 Plan `okc-z.md` (§17 adım tablosu, her adımın "Durum (26 Ekim)" notu), araştırma notları `okc-z-notlar.md`. PR-a
@@ -451,7 +513,7 @@ kategorili fatura stoğa girip gelir-gidere girmiyordu (E-07, B03: artık "Mal a
 ### Dalga 15: kenar çubuğu (#39)
 
 Yöneticinin kenar çubuğu: Genel bakış, Bugün, Onaylar ve Kasa raporu tek tıkta; sonra ana başlıklar Kafe, Menü, Stok,
-Satış, Alış & gider, Finans (Vergi sonra buraya girer), Ayarlar ve Yardım, alt sekmeleriyle (`src/components/panel/nav.ts`
+Satış, Alış & gider, Finans (Vergi Dalga 12'de buraya girdi), Ayarlar ve Yardım, alt sekmeleriyle (`src/components/panel/nav.ts`
 `NAV_TREE`, `docs/TASARIM.md`). Personelin ağacı ve adresler değişmedi; açık sayfanın grubu kendiliğinden açılır, komut
 paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çubuğuyla tutarsızlığı denetimde E-56 (B04).
 
@@ -614,6 +676,7 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 9. Cari: personelin listeden tedarikçi seçip onaylı ödeme girmesi **yok** (v2); personel Teslim · ödeme girer,
    yönetici Hesaba işle ile bağlar.
 10. 26 Ekim denetiminin 11 sorusu ve yanıt gelene kadarki varsayılanlar: §2 › "Denetim (26 Ekim): düzeltme partileri".
+11. Vergi (dalga 12): muhasebeciye sorulacak sekiz temel madde ve varsayılanlar: §2 › "Dalga 12" › Sahibe notlar.
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 

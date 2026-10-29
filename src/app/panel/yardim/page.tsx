@@ -12,6 +12,7 @@ import {
   Grid3x3,
   HardDriveDownload,
   Info,
+  Landmark,
   LayoutList,
   Lightbulb,
   ListChecks,
@@ -648,6 +649,25 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ),
         icon: Percent,
         links: [{ href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" }],
+      },
+      {
+        // Vergi bölümü (dalga 12, docs/VERGI.md): tahmin, beyanname değil
+        id: "vergi",
+        q: "Vergi sayfasındaki rakamlar beyanname mi?",
+        a: (
+          <>
+            Hayır, tahmindir.{" "}
+            <Path href="/panel/vergi" /> sayfası satışlardan, faturalardan ve bordrodan muhtasarı, SGK&apos;yı, damga vergisini ve kafenin geçici ve kurumlar
+            vergisine katkısını Türkiye&apos;nin 2026 kurallarıyla tahmin eder; her rakamın yanında nasıl hesaplandığı ve dayanağı yazar. Geçici ve kurumlar
+            vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Kurallar sekmesindeki &apos;Muhasebeciye
+            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin.
+          </>
+        ),
+        icon: Landmark,
+        links: [
+          { href: "/panel/vergi", label: "Vergi" },
+          { href: "/panel/vergi/kurallar#sorular", label: "Muhasebeciye sorulacaklar" },
+        ],
       },
       {
         id: "zam-etkisi",

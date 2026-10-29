@@ -42,8 +42,21 @@ const STAFF_PAGES: { path: string; lira: boolean }[] = [
   { path: "/panel/hatirlaticilarim", lira: true },
 ];
 
-/** Personel çereziyle Bugün'e dönmesi gereken yönetici adresleri */
-const ADMIN_PAGES = ["/panel/onaylar", "/panel/urunler/fiyatlar", "/panel/kontrol/duzenle", "/panel/tahmin", "/panel/yardim"];
+/**
+ * Personel çereziyle Bugün'e dönmesi gereken yönetici adresleri. Vergi'nin dört ekranı (dalga 12, docs/VERGI.md):
+ * RSC isteği de Bugün'e döner, yükte vergi verisi olmaz
+ */
+const ADMIN_PAGES = [
+  "/panel/onaylar",
+  "/panel/urunler/fiyatlar",
+  "/panel/kontrol/duzenle",
+  "/panel/tahmin",
+  "/panel/yardim",
+  "/panel/vergi",
+  "/panel/vergi/gelir-gider",
+  "/panel/vergi/demirbas",
+  "/panel/vergi/kurallar",
+];
 
 /** JSON anahtarı olarak (HTML'deki RSC parçalarında tırnaklar kaçışlı: \"cost\":) */
 const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])\\\\?"(${COST_KEYS.join("|")})\\\\?"\\s*:`, "g");
@@ -113,11 +126,15 @@ async function main() {
   }
 
   for (const path of ADMIN_PAGES) {
-    const res = await fetchPage(path, false);
-    const to = res.headers.get("location") ?? "";
-    const ok = res.status >= 300 && res.status < 400 && new URL(to, BASE).pathname === "/panel/bugun";
-    if (!ok) failures.push(`${path}: personel Bugün'e dönmedi (${res.status} ${to})`);
-    console.log(`${ok ? "✓" : "✗"} ${path} → ${res.status} ${to}`);
+    // HTML ve RSC isteği ayrı ayrı: ikisi de gövdesiz yönlendirme (yönetici ekranının yükü personele hiç gitmez)
+    for (const rsc of [false, true]) {
+      const res = await fetchPage(path, rsc);
+      const to = res.headers.get("location") ?? "";
+      const ok = res.status >= 300 && res.status < 400 && new URL(to, BASE).pathname === "/panel/bugun";
+      const label = `${path} (${rsc ? "RSC" : "HTML"})`;
+      if (!ok) failures.push(`${label}: personel Bugün'e dönmedi (${res.status} ${to})`);
+      console.log(`${ok ? "✓" : "✗"} ${label} → ${res.status} ${to}`);
+    }
   }
 
   console.log(`\n${checked} yanıt tarandı, ${ADMIN_PAGES.length} yönetici adresi denendi.`);
