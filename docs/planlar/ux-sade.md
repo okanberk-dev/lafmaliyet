@@ -1880,3 +1880,23 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
    `tests/sayfa-basligi.test.ts` tutar. Takvimin `<ul>`'u `overflow-hidden` yerine `overflow-clip`: hidden bir kaydırma
    kabı olduğu için Chrome ilk satırın `scroll-mt-20` payını kırpıyor, `#sgk` (ilk satır) telefonun üst çubuğunun
    altında kalıyordu; köşeler aynı.
+8. **Etkin satır kenar çubuğunun kutusunda görünür** (inceleme, 29 Eki 2026). §3.2'nin 13. satırı ("Vergi, KDV, SGK",
+   dört alt öğe) listenin sonuna yakın: 1440 × 900'de Muhasebeci kaydırma kutusunun altında, telefonun çekmecesinde
+   Nakit planı da görünmüyordu (`main`'de "Finans › Vergi" görünüyordu). `SidebarNav` adres değişince, çekmece açılınca
+   ve kutu görünür olunca etkin bağlantıyı kutunun içine getirir: yalnız kutunun `scrollTop`'u (`revealDelta`,
+   `nav.ts`), grubun yaylı açılışı sürerken içerik büyüdükçe yeniden; kullanıcı listeye dokunur ya da kaydırırsa bırakır.
+9. **⌘K aynı sayfanın çapasında tarayıcının çapa gezinmesini kullanır; SGK oranları açıldıktan sonra iner; takvim
+   satırının halkası uygulamanın içinden gelince de çıkar** (inceleme). Next'in yönlendiricisi adresi `pushState` ile
+   değiştirir: `hashchange` gelmez, `:target` güncellenmez. Maaşlar'dayken "SGK oranı", telefonda Ayarlar'dayken
+   "Yedek" kapalı bölüme iniyordu; §3.7'nin halkası yalnız adres çubuğundan açılınca çıkıyordu. Palet bulunulan sayfanın
+   çapasında `location.hash` yazar (`samePageHash`; zaten o çapadaysa olayı elle gönderir), Maaşlar'ın bölümü Ayarlar'ın
+   deseniyle açılış işlendikten sonra kaydırır (`pinSection`), `HashScroll` hedefi `data-hash-hit` ile işaretler ve
+   takvim satırı halkayı ondan da çizer. Bağlam satırı grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar)
+   çizilmez (`contextLineOf`): başlığı iki kez yazıyordu.
+10. **Bölüm 1 `main`'e ayrı gittiği için eski adların kalanı da Bölüm 1'de düzeldi** (inceleme). "Kurallar › Vergi
+    ayarları" → "Muhasebeci › Vergi ayarları" (`corporate.ts`, Demirbaş, Vergi kârı'nın boş durumu; kartın adı Bölüm 3'te
+    "Şirketin vergi ayarları" olunca metin §7'deki haliyle yeniden yazılır), Sabit giderler'in personel satırı ve
+    Gelir-gider'in kaynak bağlantısı "Maaşlar", vergi sınıflandırmasının "Maaşlar'a ekleyin"i, Demirbaş'ın "Giderler &
+    maaşlar"ı, Kullanıcılar'daki yetki satırı "Vergi, KDV, SGK: … vergi kârı …". Dokunulmayanlar: `src/lib/calc`
+    ipuçları (K11), Excel'in "Personel" sayfasını anan metinler (Maaşlar'daki not, `constants.ts`'in Excel Panel B10
+    ipucu), `pnl.ts`'in "Vergiye göre gider"i ve `OZET_DESCRIPTION` (§7.7, §8: Bölüm 3).

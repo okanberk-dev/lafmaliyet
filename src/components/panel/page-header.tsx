@@ -2,14 +2,15 @@ import type { ReactNode } from "react";
 
 import { InfoTip } from "@/components/ui/info-tip";
 
-import { groupLabelOf } from "./nav";
+import { contextLineOf } from "./nav";
 
 /**
  * Sayfa başlığı: üstte küçük bağlam satırı (kenar çubuğunda bu ekranı açan grubun adı), başlık, tek cümlelik açıklama,
  * sağda eylemler. `tabs` verilirse başlığın altına bölüm sekmeleri gelir.
  *
  * Bağlam satırı ağaçtan türer (docs/planlar/ux-sade.md §3.8): elle yazılmaz, menüde olmayan ad ("Günlük", "Sistem")
- * çıkmaz; üst düzey ekranda (Bugün, Kasa raporu) çizilmez. Telefonda gizli: üst çubuk ekranın adını zaten yazıyor.
+ * çıkmaz; üst düzey ekranda (Bugün, Kasa raporu) ve grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar)
+ * çizilmez. Telefonda gizli: üst çubuk ekranın adını zaten yazıyor.
  * Excel karşılığı başlıkta yok; Yardım'ın "Ekranlar" tablosunda ve ⌘K'nın alt satırında.
  */
 export function PageHeader({
@@ -29,13 +30,13 @@ export function PageHeader({
   /** Açıklamanın altında tek satır (ör. satış kaynağı) */
   meta?: ReactNode;
   actions?: ReactNode;
-  /** Ekranın adresi: bağlam satırı rolün ağacından (groupLabelOf); üst düzey ekranda çizilmez */
+  /** Ekranın adresi: bağlam satırı rolün ağacından (contextLineOf); üst düzey ekranda çizilmez */
   path?: string;
   /** Ekranı açan rol; iki rolün açtığı sayfada kullanıcınınki, yükleme iskeletinde "staff" (ortak olan en dar bağlam) */
   role?: "admin" | "staff";
   tabs?: ReactNode;
 }) {
-  const group = path ? groupLabelOf(path, role) : undefined;
+  const group = path ? contextLineOf(path, role, title) : undefined;
   return (
     <header className="mb-6">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">

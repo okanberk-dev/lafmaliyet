@@ -3,13 +3,13 @@
 import { ChevronRight } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion, type Transition } from "motion/react";
 import Link, { useLinkStatus } from "next/link";
-import { useId, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 
 import { Icon } from "@/components/akmanos/icons/icon";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
-import { activeChildOf, activeGroupOf, keepGroupOpen, navLit, pathMatches, type NavNode } from "./nav";
+import { activeChildOf, activeGroupOf, keepGroupOpen, navLit, pathMatches, revealDelta, type NavNode } from "./nav";
 
 /**
  * AkmanOS "Sidebar" bloğundaki SidebarNav (src/components/akmanos/sidebar/sidebar-nav.tsx), Next.js bağlantıları
@@ -22,6 +22,51 @@ import { activeChildOf, activeGroupOf, keepGroupOpen, navLit, pathMatches, type 
  * gidiyordu. Dokunmatikte "üstüne gelme" yok: iOS ilk dokunuşu üzerine gelme sayıp tıklamayı yutmaz.
  */
 const SUBLIST_TRANSITION: Transition = { type: "spring", duration: 0.55, bounce: 0.12 };
+/** Adres değişince (ya da kutu görünür olunca) etkin satır bu süre boyunca izlenir: grubun yaylı açılışı ~0,55 sn */
+const REVEAL_FOLLOW_MS = 1000;
+const REVEAL_RELEASE = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+
+/**
+ * Etkin sayfanın satırı kaydırma kutusunun dışında kalmasın (Vergi grubu listenin sonunda; 900 px yüksek dizüstünde
+ * Muhasebeci kutunun altındaydı, telefonun çekmecesinde Nakit planı da). Adres değişince, çekmece açılınca ve kutu
+ * görünür olunca (masaüstü genişliğine geçince) kutu yalnız gereken kadar kaydırılır. Grup açılırken kutunun kaydırma
+ * payı içerik büyüdükçe artar: açılış sürerken her boyut değişiminde yeniden bakılır. Yalnız kutu kaydırılır
+ * (scrollIntoView sayfayı da kaydırabilirdi); kullanıcı listeye dokunur, kaydırır ya da tuşa basarsa bırakılır.
+ */
+function useRevealActive(box: RefObject<HTMLDivElement | null>, pathname: string) {
+  useEffect(() => {
+    const el = box.current;
+    const list = el?.firstElementChild;
+    if (!el || !list) return;
+    const shown = () => el.getClientRects().length > 0;
+    let until = performance.now() + REVEAL_FOLLOW_MS;
+    let wasShown = shown();
+    const reveal = () => {
+      const now = shown();
+      if (now && !wasShown) until = performance.now() + REVEAL_FOLLOW_MS;
+      wasShown = now;
+      if (!now || performance.now() > until) return;
+      const link = el.querySelector<HTMLElement>('a[aria-current="page"]');
+      if (!link) return;
+      // Kullanıcının kapattığı grupta satır görünmez: grubun başlığı gösterilir
+      const target = link.closest("[inert]")?.closest("li")?.querySelector("button") ?? link;
+      const delta = revealDelta(el.getBoundingClientRect(), target.getBoundingClientRect());
+      if (delta) el.scrollTop += delta;
+    };
+    const release = () => {
+      until = 0;
+    };
+    const observer = new ResizeObserver(reveal);
+    observer.observe(el);
+    observer.observe(list);
+    const opts = { passive: true, capture: true };
+    for (const t of REVEAL_RELEASE) el.addEventListener(t, release, opts);
+    return () => {
+      observer.disconnect();
+      for (const t of REVEAL_RELEASE) el.removeEventListener(t, release, opts);
+    };
+  }, [box, pathname]);
+}
 
 function SubList({ open, children }: { open: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -95,6 +140,8 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
   const [hovered, setHovered] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const isOpen = (id: string) => toggled[id] ?? id === activeParent;
+  const scrollBox = useRef<HTMLDivElement>(null);
+  useRevealActive(scrollBox, pathname);
   const lit = (key: string, active: boolean) => navLit(key, active, hovered ?? focused);
 
   const highlight = (rounded: string) => (
@@ -128,7 +175,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
   return (
     <nav aria-label={label} className="flex min-h-0 flex-1 flex-col gap-3">
       <p className="shrink-0 px-2 text-[0.65rem] font-medium tracking-wide text-chart-muted uppercase">{label}</p>
-      <div className="sidebar-nav-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div ref={scrollBox} className="sidebar-nav-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <LayoutGroup id={`panel-nav${groupId}`}>
           {/* Fare listeden çıkınca vurgu etkin sayfaya döner; satır aralarındaki 2px boşlukta zıplamaz */}
           <ul onPointerLeave={() => setHovered(null)} className="flex flex-col gap-0.5 rounded-2xl bg-chart-metric-bg p-1.5">

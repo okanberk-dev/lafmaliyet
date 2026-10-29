@@ -13,7 +13,7 @@ import { wordHit } from "@/lib/word-hit";
 import type { SearchEntry } from "@/server/data/search";
 
 import { useLocalList } from "./local-list";
-import type { NavItem } from "./nav";
+import { samePageHash, type NavItem } from "./nav";
 
 /**
  * AkmanOS "Command Palette" görünümünde panel araması: ⌘K / Ctrl+K ile her yerden açılır; ekranlar, ürünler,
@@ -244,7 +244,12 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
     (e: Entry) => {
       setRecentIds([e.id, ...recentIds.filter((id) => id !== e.id)]);
       onClose();
-      router.push(e.href);
+      // Bulunulan ekranın bölümü (nav.ts samePageHash): tarayıcının kendi çapa gezinmesi hashchange gönderir ve
+      // :target'ı günceller; zaten o çapadaysa adres değişmez, olay elle gönderilir (bölüm yine açılır ve iner)
+      const hash = samePageHash(e.href, window.location);
+      if (hash === null) router.push(e.href);
+      else if (window.location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL: window.location.href, newURL: window.location.href }));
+      else window.location.hash = hash;
     },
     [onClose, recentIds, router, setRecentIds],
   );
