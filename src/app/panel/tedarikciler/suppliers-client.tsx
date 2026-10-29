@@ -1,6 +1,6 @@
 "use client";
 
-import { Banknote, ChevronRight, Copy, EyeOff, Plus, Truck } from "lucide-react";
+import { ChevronRight, Copy, EyeOff, Plus, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -18,6 +18,7 @@ import { Field, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { dateTR, money, num, tl } from "@/lib/format";
@@ -243,15 +244,19 @@ export function SuppliersClient({
       />
 
       {kasa.length ? (
-        <div className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info max-sm:mx-4" role="status">
-          <Banknote size={16} className="shrink-0" aria-hidden="true" />
-          <span className="min-w-[14rem] flex-1">
-            Kasadan tedarikçiye {num(kasa.length)} ödeme hesaba işlenmedi ({money(kasa.reduce((a, l) => a + l.amount, 0))}).
-          </span>
-          <Button size="sm" variant="secondary" className="text-ink max-sm:w-full" onClick={() => setKasaOpen(true)}>
-            İşle
-          </Button>
-        </div>
+        // Borç bakiyesi yanlış görünür: turuncu, katlanmaz (docs/planlar/ux-sade.md Ek A 227)
+        <Notice
+          tone="warn"
+          risk="para"
+          live="polite"
+          className="mx-5 mb-3 max-sm:mx-4"
+          title={`Kasadan tedarikçiye ${num(kasa.length)} ödeme hesaba işlenmedi (${money(kasa.reduce((a, l) => a + l.amount, 0))})`}
+          action={
+            <Button size="xs" variant="secondary" onClick={() => setKasaOpen(true)}>
+              İşle
+            </Button>
+          }
+        />
       ) : null}
       <Dialog
         open={showKasa}

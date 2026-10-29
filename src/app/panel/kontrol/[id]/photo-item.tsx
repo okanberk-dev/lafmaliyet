@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { DAY_CLOSED_TEXT, NOTE_MAX, timeTR, type AnswerLite, type ChecklistItemSnap, type RunLite } from "@/lib/checklists";
 import { compressImage, COMPRESS_ERROR_TEXT, PhotoCompressError, PHOTO_COMPRESS } from "@/lib/photo-compress";
 import { photoUrl, uploadErrorText } from "@/lib/photo-rules";
@@ -178,12 +179,17 @@ export function PhotoItem({
         </p>
       ) : null}
       {phase.kind === "error" ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-bad">
-          <span className="min-w-0 flex-1">Yüklenemedi: {phase.message}</span>
-          <Button size="sm" variant="secondary" onClick={retry}>
-            <RotateCw size={14} aria-hidden="true" /> Tekrar dene
-          </Button>
-        </div>
+        <Notice
+          tone="bad"
+          size="sm"
+          live="assertive"
+          title={`Yüklenemedi: ${phase.message}`}
+          action={
+            <Button size="xs" variant="secondary" onClick={retry}>
+              <RotateCw size={14} aria-hidden="true" /> Tekrar dene
+            </Button>
+          }
+        />
       ) : null}
 
       {noting ? (

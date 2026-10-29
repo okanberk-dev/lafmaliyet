@@ -6,12 +6,10 @@ import {
   CircleCheck,
   Contact,
   Copy,
-  EyeOff,
   ExternalLink,
   FileText,
   HandCoins,
   History,
-  IdCard,
   Mail,
   MessageCircle,
   NotebookPen,
@@ -36,6 +34,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { keepScroll, useQueryState } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { PRODUCT_NAME } from "@/components/akmanos/lib/brand";
@@ -780,15 +779,18 @@ export function SupplierClient({
       )}
 
       {hidden && card ? (
-        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-panel px-4 py-3 text-[13px] leading-5 text-ink-soft ring-1 ring-line" role="status">
-          <EyeOff size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
-          <span className="min-w-[14rem] flex-1">
-            Bu tedarikçi {card.hiddenOn ? `${dateTR(card.hiddenOn)} tarihinde ` : ""}listeden kaldırıldı; faturaları Faturalar&apos;da duruyor. Yeni faturası gelirse listeye kendiliğinden döner.
-          </span>
-          <Button variant="secondary" size="sm" onClick={restoreToList} className="text-ink">
-            Listeye geri al
-          </Button>
-        </div>
+        <Notice
+          tone="neutral"
+          live="polite"
+          className="mb-4"
+          title={`Bu tedarikçi ${card.hiddenOn ? `${dateTR(card.hiddenOn)} tarihinde ` : ""}listeden kaldırıldı`}
+          text="Faturaları Faturalar'da duruyor; yeni faturası gelirse listeye kendiliğinden döner."
+          action={
+            <Button variant="secondary" size="xs" onClick={restoreToList}>
+              Listeye geri al
+            </Button>
+          }
+        />
       ) : null}
 
       <TaxNotices notes={taxNotes} />
@@ -940,15 +942,19 @@ export function SupplierClient({
             </div>
 
             {parasutPaid.length ? (
-              <div className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-bordo-50 px-3.5 py-2.5 text-[13px] leading-5 text-bordo-800 max-sm:mx-4" role="status">
-                <span className="min-w-[14rem] flex-1">
-                  Paraşüt&apos;te {num(parasutPaid.length)} faturanın ödemesi kayıtlı ({money(parasutPaid.reduce((a, r) => a + openBalance(r), 0))}); panelde ödenmedi duruyor.
-                  Ödediyseniz işaretleyin.
-                </span>
-                <Button size="sm" variant="secondary" className="text-ink" onClick={() => setPayment(parasutPaid, { status: "paid", date: null, via: null }, { onlyOpen: true })}>
-                  <CircleCheck size={15} aria-hidden="true" /> Ödendi yap ({num(parasutPaid.length)})
-                </Button>
-              </div>
+              <Notice
+                tone="warn"
+                risk="para"
+                live="polite"
+                className="mx-5 mb-3 max-sm:mx-4"
+                title={`Paraşüt'te ödenmiş ${num(parasutPaid.length)} fatura panelde ödenmedi (${money(parasutPaid.reduce((a, r) => a + openBalance(r), 0))})`}
+                text="Ödediyseniz işaretleyin."
+                action={
+                  <Button size="xs" variant="secondary" onClick={() => setPayment(parasutPaid, { status: "paid", date: null, via: null }, { onlyOpen: true })}>
+                    <CircleCheck size={15} aria-hidden="true" /> Ödendi işaretle
+                  </Button>
+                }
+              />
             ) : null}
 
             {visible.length ? (
@@ -1401,13 +1407,7 @@ function TaxNotices({ notes }: { notes: TaxNote[] }) {
   return (
     <div className="mb-4 space-y-2">
       {notes.slice(0, TAX_NOTES_SHOWN).map((n) => (
-        <div key={n.slug} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-panel px-4 py-3 text-[13px] leading-5 text-ink-soft ring-1 ring-line" role="status">
-          <IdCard size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
-          <span className="min-w-[14rem] flex-1">{n.text}</span>
-          <ButtonLink href={supplierHref(n.slug)} variant="secondary" size="sm" className="text-ink max-sm:w-full">
-            Sayfasına git →
-          </ButtonLink>
-        </div>
+        <Notice key={n.slug} tone="neutral" live="polite" title={n.text} action={<NoticeLink href={supplierHref(n.slug)}>Sayfasına git</NoticeLink>} />
       ))}
       {rest > 0 ? <p className="px-1 text-xs text-ink-mute">+{num(rest)} tedarikçi daha aynı vergi nosunu taşıyor.</p> : null}
     </div>
@@ -1506,13 +1506,16 @@ function CariPanel({
               {card.accountHolder ? <p className="mt-1 text-xs text-ink-mute">Hesap sahibi: {card.accountHolder}</p> : null}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={onEdit}
-              className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-2xl bg-warn-soft px-3.5 py-3 text-left text-[13px] font-medium text-warn"
-            >
-              IBAN girilmemiş: ödeme talebinde gerekir <span aria-hidden="true">Ekle →</span>
-            </button>
+            <Notice
+              tone="warn"
+              size="sm"
+              title="IBAN girilmemiş: ödeme talebinde gerekir"
+              action={
+                <Button size="xs" variant="secondary" onClick={onEdit}>
+                  Ekle
+                </Button>
+              }
+            />
           )}
           {tel || wa || mail ? (
             <div className="flex flex-wrap gap-2">

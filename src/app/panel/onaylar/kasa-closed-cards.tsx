@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ExternalLink, Info, X } from "lucide-react";
+import { Check, ExternalLink, Info, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { stampTR } from "@/lib/cash-report";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { genitive } from "@/lib/recipe-change";
@@ -57,15 +58,13 @@ export function ClosedDayItem({ card, site }: { card: ClosedDayCard; site?: Reac
         {lines.red.length || lines.warn.length || lines.info.length ? (
           <ul className="space-y-1">
             {lines.red.map((x) => (
-              <li key={x} className="flex items-start gap-1.5 font-medium text-bad">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 break-words">{x}</span>
+              <li key={x}>
+                <Notice tone="bad" size="line" title={x} />
               </li>
             ))}
             {lines.warn.map((x) => (
-              <li key={x} className="flex items-start gap-1.5 text-warn">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 break-words">{x}</span>
+              <li key={x}>
+                <Notice tone="warn" size="line" title={x} />
               </li>
             ))}
             {lines.info.map((x) => (

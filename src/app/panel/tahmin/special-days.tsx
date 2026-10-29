@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { STAFF_EFFECTS, STAFF_SPECIAL_KINDS } from "@/lib/closed-days";
 import { rangeTR, shortRangeTR, type SpecialKind } from "@/lib/forecast/calendar";
 import { HISTORY_DAYS, SPECIAL_KIND_LABEL } from "@/lib/forecast/model";
@@ -124,7 +125,7 @@ function SpecialDayDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useActionTransition();
   const editing = draft.id !== undefined;
-  const alertRef = useRef<HTMLParagraphElement>(null);
+  const alertRef = useRef<HTMLDivElement>(null);
   // Telefonda form pencerenin içinde kayar: sunucunun reddi (aynı adla kayıt, eski gün) Kaydet'in arkasında kalmasın
   useEffect(() => {
     if (error) alertRef.current?.scrollIntoView({ block: "nearest" });
@@ -253,9 +254,7 @@ function SpecialDayDialog({
           <Textarea id="ozel-not" value={v.note} maxLength={200} rows={2} onChange={(e) => set("note", e.target.value)} />
         </Field>
         {error ? (
-          <p ref={alertRef} role="alert" className="scroll-my-3 rounded-xl bg-bad-soft px-3 py-2.5 text-sm text-bad">
-            {error}
-          </p>
+          <Notice ref={alertRef} tone="bad" size="sm" live="assertive" className="scroll-my-3" title={error} />
         ) : null}
         {/* Enter ile gönderim (düğmeler pencerenin altbilgisinde) */}
         <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />

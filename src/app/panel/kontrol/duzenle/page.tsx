@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadChecklistTemplates } from "@/server/data/checklists";
 import { photoStorage } from "@/server/storage/photos";
@@ -39,9 +40,13 @@ async function TemplatesContent() {
     <>
       <PageHeader path="/panel/kontrol/duzenle" title="Listeleri düzenle" description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/duzenle" role="admin" />} />
       {!storage.available ? (
-        <p role="note" className="mb-4 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          Fotoğraf deposu bu ortamda kurulu değil: fotoğraflı maddeler depo bağlanana kadar listelerde görünmez.
-        </p>
+        <Notice
+          tone="neutral"
+          className="mb-4"
+          title="Fotoğraf deposu kurulmadı: fotoğraflı maddeler görünmez"
+        >
+          Depo bağlanana kadar fotoğraf isteyen maddeler listelerde görünmez.
+        </Notice>
       ) : null}
       <TemplatesClient
         templates={templates.map((t) => ({

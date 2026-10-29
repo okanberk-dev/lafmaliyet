@@ -1,4 +1,4 @@
-import { Banknote, ShoppingBag, Store, TrendingUp, TriangleAlert, Unlink } from "lucide-react";
+import { Banknote, ShoppingBag, TrendingUp, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { listDaysText } from "@/lib/calc/insights";
 import { manualOf } from "@/lib/cash-month";
@@ -310,17 +311,10 @@ function LafposBand({ notes, source }: { notes: LafposMonthNotes; source: "gecis
   if (source === "lafpos" && !notes.warnings.length) return null;
   return (
     <div className="mb-4 space-y-2">
-      {source === "gecis" ? (
-        <p role="note" className="flex items-start gap-2.5 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-6 text-pretty text-info">
-          <Store size={16} className="mt-1 shrink-0" aria-hidden="true" />
-          <span className="min-w-0">{notes.info}</span>
-        </p>
-      ) : null}
+      {source === "gecis" ? <Notice tone="neutral" title={notes.info} /> : null}
+      {/* Her ay uyarısı ayrı kutu; ayın rakamını bozar, katlanmaz (veri) */}
       {notes.warnings.map((w) => (
-        <p key={w} role="note" className="flex items-start gap-2.5 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-6 text-pretty text-warn">
-          <TriangleAlert size={16} className="mt-1 shrink-0" aria-hidden="true" />
-          <span className="min-w-0">{w}</span>
-        </p>
+        <Notice key={w} tone="warn" risk="veri" title={w} />
       ))}
     </div>
   );

@@ -10,7 +10,6 @@ import {
   Coffee,
   Eraser,
   FileUp,
-  Info,
   ListChecks,
   LoaderCircle,
   Mic,
@@ -19,7 +18,6 @@ import {
   RotateCcw,
   Store,
   Trash2,
-  TriangleAlert,
   Upload,
   Wand2,
   X,
@@ -43,6 +41,7 @@ import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/compone
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
@@ -397,23 +396,13 @@ export function MonthInfoForm({
         {/* Telefonda tek sütun ve 48px alanlar */}
         <form onSubmit={save} className={cn("flex flex-1 flex-col gap-3", BIG_FIELDS)}>
           {strip ? (
-            <div
-              role="status"
-              className={cn("flex items-start gap-2.5 rounded-2xl px-3 py-2.5 text-xs leading-5", strip.tone === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")}
-            >
-              {strip.tone === "warn" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={15} className="mt-0.5 shrink-0" aria-hidden="true" />}
-              <p className="min-w-0">
-                {strip.text}
-                {strip.link ? (
-                  <>
-                    {" "}
-                    <Link href={`/panel/kasa?ay=${month}`} className="font-semibold underline underline-offset-2 pointer-coarse:inline-block pointer-coarse:py-1">
-                      Kasa raporuna git
-                    </Link>
-                  </>
-                ) : null}
-              </p>
-            </div>
+            <Notice
+              tone={strip.tone === "warn" ? "warn" : "neutral"}
+              size="sm"
+              live="polite"
+              title={strip.text}
+              action={strip.link ? <NoticeLink href={`/panel/kasa?ay=${month}`}>Kasa raporuna git</NoticeLink> : undefined}
+            />
           ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
@@ -515,23 +504,14 @@ export function MonthInfoForm({
             <Textarea id="m-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="max-h-48 min-h-16 [field-sizing:content]" />
           </Field>
           {diff !== null ? (
-            <div
-              className={cn(
-                "flex items-start gap-2.5 rounded-2xl px-3 py-2.5 text-xs leading-5",
-                consistent ? "bg-good-soft text-good" : "bg-warn-soft text-warn",
-              )}
-              role="status"
-            >
-              {consistent ? (
-                <CircleCheck size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-              )}
-              <p className="tabular">
-                <span className="font-semibold">{consistent ? "Tutarlı" : "Kontrol edin"}:</span> ürün listesi{byList ? ` (${byList.label})` : ""} {tl(listTotal)} −
-                indirim {tl(discNum)} = {tl(listTotal - discNum)} · {byList ? `${byList.label} POS cirosu` : "POS cirosu"} ile fark {tl(diff)}
-              </p>
-            </div>
+            <Notice
+              tone={consistent ? "good" : "warn"}
+              size="sm"
+              risk={consistent ? undefined : "para"}
+              live="polite"
+              className="tabular"
+              title={`${consistent ? "Tutarlı" : "Kontrol edin"}: ürün listesi${byList ? ` (${byList.label})` : ""} ${tl(listTotal)} − indirim ${tl(discNum)} = ${tl(listTotal - discNum)} · ${byList ? `${byList.label} POS cirosu` : "POS cirosu"} ile fark ${tl(diff)}`}
+            />
           ) : null}
           <div className="mt-auto flex flex-wrap items-center justify-end gap-3 pt-1">
             {dirty ? (
@@ -973,23 +953,27 @@ export function SalesTable({
         }
       />
       {summaryRows.length ? (
-        <div className="mx-5 mb-3 flex items-start gap-2.5 rounded-2xl bg-bad-soft px-3 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-          <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p>
-              <span className="font-semibold">Listede toplam satırı var:</span> ürün gibi sayıldığı için ay cirosu ve kâr iki kat görünür. Silin.
-            </p>
-            <ul className="mt-1.5 flex flex-wrap gap-2">
-              {summaryRows.map((r) => (
-                <li key={r.id}>
-                  <Button size="sm" variant="secondary" onClick={() => setDeleting(r)} className="text-bad pointer-coarse:h-11">
-                    <Trash2 size={14} /> {r.posName} · {tl(r.revenue)}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        // Satır başına eylem (sil): Ayrıntı açık başlar
+        <Notice
+          tone="bad"
+          risk="para"
+          live="assertive"
+          defaultOpen
+          className="mx-5 mb-3"
+          title="Listede toplam satırı var: ciro ve kâr iki kat görünür"
+          text="Silin."
+        >
+          <p>Ürün gibi sayıldığı için ay cirosu ve kâr iki kat görünür.</p>
+          <ul className="flex flex-wrap gap-2 pt-0.5">
+            {summaryRows.map((r) => (
+              <li key={r.id}>
+                <Button size="sm" variant="secondary" onClick={() => setDeleting(r)} className="text-bad pointer-coarse:h-11">
+                  <Trash2 size={14} /> {r.posName} · {tl(r.revenue)}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Notice>
       ) : null}
       {rows.length ? (
         // Telefon: arama + "Süzgeç" düğmesi (durum ve sıralama alt sayfada)
@@ -1800,11 +1784,14 @@ export function ImportCard({
         <motion.div key="lafpos" {...fade} className="flex flex-1 flex-col">
           <CardHeader icon={<Store />} title="LafPOS'tan geliyor" description={`${label.split(" ")[0]} satışları her gün sonunda LafPOS'tan kendiliğinden gelir; ModPOS listesi yüklenmez.`} />
           <CardContent className="flex flex-1 flex-col gap-3 text-sm text-ink-soft">
-            <p className="rounded-2xl bg-info-soft px-4 py-3 text-info">
-              {lafposOnly.days && lafposOnly.last
-                ? `${num(lafposOnly.days)} gün sonu geldi, son gün ${dayMonthTR(lafposOnly.last)}. Satırlar aşağıda; eşleşmeyen adları ürüne bağlayın.`
-                : "Bu ay için henüz gün sonu gelmedi; geldikçe satırlar aşağıda görünür."}
-            </p>
+            <Notice
+              tone="neutral"
+              title={
+                lafposOnly.days && lafposOnly.last
+                  ? `${num(lafposOnly.days)} gün sonu geldi, son gün ${dayMonthTR(lafposOnly.last)}. Satırlar aşağıda; eşleşmeyen adları ürüne bağlayın.`
+                  : "Bu ay için henüz gün sonu gelmedi; geldikçe satırlar aşağıda görünür."
+              }
+            />
             <p className="text-[13px] text-ink-mute">
               Gelen ve gelmeyen günler, retler:{" "}
               <Link href="/panel/ayarlar#lafpos" className="font-medium text-ink underline-offset-2 hover:underline">
@@ -1932,39 +1919,34 @@ export function ImportCard({
               </span>
             </div>
             {skippedText ? (
-              <div className="rounded-2xl bg-info-soft px-3 py-2.5 text-xs leading-5 text-info" role="status">
-                <p className="flex items-start gap-2">
-                  <CircleCheck size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    <span className="font-semibold">{skippedText}.</span> Bunlar ürün sayılmaz; ay cirosu iki kez sayılmasın diye yüklenmez.
-                  </span>
-                </p>
+              <Notice tone="neutral" size="sm" live="polite" title={`${skippedText}: ürün sayılmaz`}>
+                <p>Ay cirosu iki kez sayılmasın diye yüklenmez.</p>
                 {parsed.skippedRows.length ? (
-                  <details className="mt-1.5 pl-6">
-                    <summary className="cursor-pointer font-medium underline-offset-2 hover:underline pointer-coarse:min-h-11">Atlanan satırları göster</summary>
-                    <ul className="mt-1 space-y-0.5 text-ink-soft">
-                      {parsed.skippedRows.map((r) => (
-                        <li key={r.line} className="break-words">
-                          <span className="text-ink-mute tabular">{r.line}. satır</span> · {SKIP_REASON[r.reason]} ·{" "}
-                          <span className="font-mono text-[11px]">{r.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                  <ul className="space-y-0.5">
+                    {parsed.skippedRows.map((r) => (
+                      <li key={r.line} className="break-words">
+                        <span className="text-ink-mute tabular">{r.line}. satır</span> · {SKIP_REASON[r.reason]} · <span className="font-mono text-[11px]">{r.text}</span>
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
-              </div>
+              </Notice>
             ) : null}
             {[...suspects].map((i) => (
-              <div key={`s${i}`} className="flex flex-wrap items-start gap-2.5 rounded-2xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn" role="alert">
-                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <p className="min-w-0 flex-1">
-                  <span className="font-semibold">“{rows[i].posName}” toplam satırı olabilir:</span> cirosu ({tl(rows[i].revenue)}) diğer satırların
-                  toplamına eşit. Ürün değilse çıkarın, yoksa ay cirosu iki kat görünür.
-                </p>
-                <Button size="sm" variant="secondary" onClick={() => dropRow(i)} className="pointer-coarse:h-11">
-                  <X size={14} /> Listeden çıkar
-                </Button>
-              </div>
+              <Notice
+                key={`s${i}`}
+                tone="warn"
+                size="sm"
+                risk="para"
+                live="assertive"
+                title={`“${rows[i].posName}” toplam satırı olabilir`}
+                text={`Cirosu (${tl(rows[i].revenue)}) diğer satırların toplamına eşit; ürün değilse çıkarın, yoksa ay cirosu iki kat görünür.`}
+                action={
+                  <Button size="xs" variant="secondary" onClick={() => dropRow(i)}>
+                    <X size={14} /> Listeden çıkar
+                  </Button>
+                }
+              />
             ))}
             {/* Telefon: liste (tablo 375px'te yana kayardı); sm'den itibaren tablo */}
             <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong sm:hidden">

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, ChevronDown, CirclePause, CirclePlay, Pencil, Plus, RotateCcw, Save, Trash2, TriangleAlert, Undo2, Users, Wallet } from "lucide-react";
+import { CalendarClock, ChevronDown, CirclePause, CirclePlay, Pencil, Plus, RotateCcw, Save, Trash2, Undo2, Users, Wallet } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { FilterBar, matches, SearchField, useQueryText } from "@/components/ui/f
 import { Field, Input, NumberInput } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { shiftMonth, staffCost, type RangeStatus, type StaffCost, type StaffHistoryEntry } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -735,10 +736,7 @@ export function StaffEditor({
                   })}
                 </Well>
                 {check.formError ? (
-                  <p className="mt-2.5 flex items-start gap-1.5 text-xs font-medium text-bad">
-                    <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                    {check.formError}
-                  </p>
+                  <Notice tone="bad" size="line" className="mt-2.5" title={check.formError} />
                 ) : null}
                 <p className="mt-2.5 text-xs leading-5 text-ink-mute">
                   Yüzde olarak yazın: 14 ya da %14. Teşvikten yararlanmıyorsanız işveren SGK primini 20,75 yazın. Oranlar bütün aylar için geçerlidir

@@ -1,11 +1,10 @@
 "use client";
 
-import { AlarmClock, Banknote, CircleAlert, Link2, Wallet, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { NoticeGroup, type NoticeItem, type NoticeTone } from "@/components/ui/notice";
 import { dateTR, tl } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 import { kasaLineText } from "../cari-payment-dialog";
 
@@ -29,23 +28,13 @@ export interface KasaStrip {
   createdByName: string;
 }
 
-const TONE = {
-  good: "bg-good-soft text-good-ink",
-  info: "bg-info-soft text-info",
-  warn: "bg-warn-soft text-warn",
-  gray: "bg-panel text-ink-soft ring-1 ring-line",
-} as const;
+// Şeridin tonu: mavi artık uyarı rengi değil (öneri ve bilgi nötr); borç ve ödeme uyarıları para riski taşır, katlanmaz
+const STRIP_TONE = { good: "good", info: "neutral", warn: "warn", gray: "neutral" } as const satisfies Record<string, NoticeTone>;
 
-function Strip({ icon, tone, children, actions }: { icon: ReactNode; tone: keyof typeof TONE; children: ReactNode; actions: ReactNode }) {
-  return (
-    <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-4 py-3 text-[13px] leading-5", TONE[tone])} role="status">
-      <span className="shrink-0 [&>svg]:size-4" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="min-w-[14rem] flex-1">{children}</span>
-      <span className="flex flex-wrap gap-2 max-sm:w-full max-sm:[&>*]:flex-1">{actions}</span>
-    </div>
-  );
+/** Bir şerit: başlık + düğmeler (docs/planlar/ux-sade.md §6.2; eski yerel Strip) */
+function strip(key: string, tone: keyof typeof STRIP_TONE, title: ReactNode, action: ReactNode): NoticeItem {
+  const t = STRIP_TONE[tone];
+  return { key, tone: t, risk: t === "warn" ? "para" : undefined, live: "polite", title, action: <span className="flex flex-wrap gap-1.5">{action}</span> };
 }
 
 /**
@@ -93,142 +82,116 @@ export function CariStrips({
   onRemoveForeign: (f: { paymentId: number; allocationIds: number[]; amount: number }) => void;
   onFixDrift: () => void;
 }) {
-  const strips: ReactNode[] = [];
+  const strips: NoticeItem[] = [];
   if (credit > 0.005 && hasOpen) {
     strips.push(
-      <Strip
-        key="hesap"
-        icon={<Wallet />}
-        tone="good"
-        actions={
-          <Button size="sm" variant="secondary" onClick={onApplyCredit} disabled={busy} className="text-ink">
-            Borçlara say
-          </Button>
-        }
-      >
-        Hesapta {tl(credit, 2)} sayılmamış ödeme var.
-      </Strip>,
+      strip(
+        "hesap",
+        "good",
+        `Hesapta ${tl(credit, 2)} sayılmamış ödeme var.`,
+        <Button size="xs" variant="secondary" onClick={onApplyCredit} disabled={busy}>
+          Borçlara say
+        </Button>,
+      ),
     );
   }
   for (const c of candidates) {
     strips.push(
-      <Strip
-        key={`aday-${c.invoiceId}-${c.debtIds.join(".")}`}
-        icon={<Link2 />}
-        tone={c.strong ? "info" : "gray"}
-        actions={
-          <>
-            <Button size="sm" variant="secondary" onClick={() => onLink(c)} disabled={busy} className="text-ink">
-              Bağla
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onDismissCandidate(c)} disabled={busy}>
-              Ayrı alım
-            </Button>
-          </>
-        }
-      >
-        {c.strong ? "Faturası gelmiş olabilir" : "Faturası gelmiş olabilir (tutar farklı)"}: {dateTR(c.date).slice(0, 5)} · {c.label} · {tl(c.payable, 2)}
-        {c.strong ? "" : ` · alımlar ${tl(c.debtTotal, 2)}`}
-      </Strip>,
+      strip(
+        `aday-${c.invoiceId}-${c.debtIds.join(".")}`,
+        c.strong ? "info" : "gray",
+        `${c.strong ? "Faturası gelmiş olabilir" : "Faturası gelmiş olabilir (tutar farklı)"}: ${dateTR(c.date).slice(0, 5)} · ${c.label} · ${tl(c.payable, 2)}${
+          c.strong ? "" : ` · alımlar ${tl(c.debtTotal, 2)}`
+        }`,
+        <>
+          <Button size="xs" variant="secondary" onClick={() => onLink(c)} disabled={busy}>
+            Bağla
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => onDismissCandidate(c)} disabled={busy}>
+            Ayrı alım
+          </Button>
+        </>,
+      ),
     );
   }
   for (const d of late) {
     strips.push(
-      <Strip
-        key={`gec-${d.id}`}
-        icon={<AlarmClock />}
-        tone="warn"
-        actions={
-          <>
-            <Button size="sm" variant="secondary" onClick={() => onLateExpense(d.id)} disabled={busy} className="text-ink">
-              Gider olarak yaz
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onSnooze(d.id)} disabled={busy}>
-              Beklemeye devam
-            </Button>
-          </>
-        }
-      >
-        Faturası 45 gündür gelmedi: {dateTR(d.date).slice(0, 5)} · {d.label} · {tl(d.amount, 2)}
-      </Strip>,
+      strip(
+        `gec-${d.id}`,
+        "warn",
+        `Faturası 45 gündür gelmedi: ${dateTR(d.date).slice(0, 5)} · ${d.label} · ${tl(d.amount, 2)}`,
+        <>
+          <Button size="xs" variant="secondary" onClick={() => onLateExpense(d.id)} disabled={busy}>
+            Gider olarak yaz
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => onSnooze(d.id)} disabled={busy}>
+            Beklemeye devam
+          </Button>
+        </>,
+      ),
     );
   }
   const teslim = kasa.filter((l) => l.kind === "teslim");
   const fissiz = kasa.filter((l) => l.kind === "harcama");
   for (const l of teslim) {
     strips.push(
-      <Strip
-        key={`kasa-${l.id}`}
-        icon={<Banknote />}
-        tone="info"
-        actions={
-          <>
-            <Button size="sm" variant="secondary" onClick={() => onProcessKasa(l)} disabled={busy} className="text-ink">
-              İşle
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
-              Ayrı tut
-            </Button>
-          </>
-        }
-      >
-        Kasadan bu tedarikçiye ödeme hesaba işlenmedi: {dateTR(l.date).slice(0, 5)} {kasaLineText(l)}
-      </Strip>,
+      strip(
+        `kasa-${l.id}`,
+        // Borç bakiyesi yanlış görünür: Tedarikçiler listesindeki aynı uyarıyla aynı önemde (Ek A 227)
+        "warn",
+        `Kasadan bu tedarikçiye ödeme hesaba işlenmedi: ${dateTR(l.date).slice(0, 5)} ${kasaLineText(l)}`,
+        <>
+          <Button size="xs" variant="secondary" onClick={() => onProcessKasa(l)} disabled={busy}>
+            İşle
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
+            Ayrı tut
+          </Button>
+        </>,
+      ),
     );
   }
   for (const l of fissiz) {
     strips.push(
-      <Strip
-        key={`kasa-${l.id}`}
-        icon={<Banknote />}
-        tone="gray"
-        actions={
-          <>
-            <Button size="sm" variant="secondary" onClick={() => onConvertKasa(l)} disabled={busy} className="text-ink">
-              Ödemeye çevir
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
-              Ayrı alım
-            </Button>
-          </>
-        }
-      >
-        Tedarikçi ödemesi miydi? {dateTR(l.date).slice(0, 5)} · fişsiz alışveriş · {l.store} · {tl(l.amount, 2)} · {l.createdByName}
-      </Strip>,
+      strip(
+        `kasa-${l.id}`,
+        "gray",
+        `Tedarikçi ödemesi miydi? ${dateTR(l.date).slice(0, 5)} · fişsiz alışveriş · ${l.store} · ${tl(l.amount, 2)} · ${l.createdByName}`,
+        <>
+          <Button size="xs" variant="secondary" onClick={() => onConvertKasa(l)} disabled={busy}>
+            Ödemeye çevir
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
+            Ayrı alım
+          </Button>
+        </>,
+      ),
     );
   }
   for (const f of foreign) {
     strips.push(
-      <Strip
-        key={`baska-${f.paymentId}`}
-        icon={<CircleAlert />}
-        tone="warn"
-        actions={
-          <Button size="sm" variant="secondary" onClick={() => onRemoveForeign(f)} disabled={busy} className="text-ink">
-            Ödemeden çıkar
-          </Button>
-        }
-      >
-        Bu tedarikçinin bir ödemesinin {tl(f.amount, 2)}&apos;si başka tedarikçide görünen bir faturaya sayılı.
-      </Strip>,
+      strip(
+        `baska-${f.paymentId}`,
+        "warn",
+        `Bu tedarikçinin bir ödemesinin ${tl(f.amount, 2)}'si başka tedarikçide görünen bir faturaya sayılı.`,
+        <Button size="xs" variant="secondary" onClick={() => onRemoveForeign(f)} disabled={busy}>
+          Ödemeden çıkar
+        </Button>,
+      ),
     );
   }
   if (drift) {
     strips.push(
-      <Strip
-        key="sapma"
-        icon={<Wrench />}
-        tone="warn"
-        actions={
-          <Button size="sm" variant="secondary" onClick={onFixDrift} disabled={busy} className="text-ink">
-            Düzelt
-          </Button>
-        }
-      >
-        Dağıtım toplamı tutmuyor ({drift} fatura).
-      </Strip>,
+      strip(
+        "sapma",
+        "warn",
+        `Dağıtım toplamı tutmuyor (${drift} fatura).`,
+        <Button size="xs" variant="secondary" onClick={onFixDrift} disabled={busy}>
+          Düzelt
+        </Button>,
+      ),
     );
   }
   if (!strips.length) return null;
-  return <div className="mb-4 space-y-2">{strips}</div>;
+  return <NoticeGroup items={strips} label="Hesap uyarıları" className="mb-4" />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowDown, ArrowUp, Camera, CircleCheck, ListChecks, Pencil, Plus, RotateCcw, Thermometer, Trash2, Type } from "lucide-react";
+import { ArrowDown, ArrowUp, Camera, CircleCheck, ListChecks, Pencil, Plus, RotateCcw, Thermometer, Trash2, Type } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { groupBySection, ITEM_TYPE_LABEL, ITEM_TYPES, listTitle, parseReading, PHOTO_PRIVACY_HINT, rangeText, type ChecklistItemType } from "@/lib/checklists";
 import { num } from "@/lib/format";
@@ -129,9 +130,7 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
               full
             />
             {error && !field ? (
-              <p role="alert" className="text-sm text-bad">
-                {error}
-              </p>
+              <Notice tone="bad" size="sm" live="assertive" title={error} />
             ) : null}
             <Button type="submit" disabled={saving} className="max-sm:h-12 max-sm:w-full">
               {saving ? "Bekleyin…" : "Kaydet"}
@@ -269,7 +268,7 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
   const [required, setRequired] = useState(item?.required ?? true);
   const [error, setError] = useState<ItemError | null>(null);
   const [saving, setSaving] = useState(false);
-  const alertRef = useRef<HTMLParagraphElement>(null);
+  const alertRef = useRef<HTMLDivElement>(null);
 
   // Telefonda form pencerenin içinde kayar ve alttaki hata Kaydet'in arkasında kalırdı: ret gelince alan odaklanır
   // (pencere ona kayar), genel hata formun başında görünür kılınır
@@ -332,10 +331,7 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
     >
       <form id="madde" onSubmit={save} className="space-y-4 pb-1">
         {error && !error.field ? (
-          <p ref={alertRef} role="alert" className="flex scroll-my-3 items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {error.text}
-          </p>
+          <Notice ref={alertRef} tone="bad" size="sm" live="assertive" className="scroll-my-3" title={error.text} />
         ) : null}
         <Field label="Tür">
           <div role="radiogroup" aria-label="Tür" className="grid grid-cols-2 gap-2">

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, ChoiceList, SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { allocateFifo, allocationPreview, validateManual, type AllocationLine, type OpenItem } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, round2, type CariMethod } from "@/lib/cari/balance";
@@ -485,9 +486,7 @@ export function CariPaymentDialog({
             </>
           )
         ) : edit?.method === "kasa" ? (
-          <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-            {edit.cashOutCreated ? "Bu ödemenin kasaya açtığı satır silinir." : "Bağlı kasa satırı kalır ve işlenmemişe döner."}
-          </p>
+          <Notice tone="warn" size="sm" title={edit.cashOutCreated ? "Bu ödemenin kasaya açtığı satır silinir." : "Bağlı kasa satırı kalır ve işlenmemişe döner."} />
         ) : null}
 
         {edit ? (
@@ -557,9 +556,7 @@ export function CariPaymentDialog({
         <CariPhotoField label="Fotoğraf (dekont / makbuz)" value={photoId} onChange={setPhotoId} day={date && date < businessDay ? date : businessDay} />
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
-          <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-            {error}
-          </p>
+          <Notice tone="bad" size="sm" live="assertive" title={error} />
         ) : null}
       </div>
     </Dialog>

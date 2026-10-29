@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { SIZE_LABELS } from "@/lib/constants";
 import { diffRecipe, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
@@ -167,9 +168,12 @@ export function ChangeEditor({
       <div className="space-y-4 pb-2">
         {variants.length > 1 ? <Segmented label="Boy" value={active} onChange={setActive} options={sizeOptions} /> : null}
         {v.myPending ? (
-          <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-            {SIZE_LABELS[v.size]} için bekleyen bir öneriniz var; pencere ondan başladı. Gönderirseniz öneri güncellenir, bugünkü reçeteye geri getirirseniz geri çekilir.
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title={`${SIZE_LABELS[v.size]} için bekleyen öneriniz var`}
+            text="Gönderirseniz öneri güncellenir; bugünkü reçeteye geri getirirseniz geri çekilir."
+          />
         ) : null}
 
         <RecipeLinesEditor rows={rows} onChange={setRows} kit={recipeKit} idPrefix={`onr-${v.id}`} label={SIZE_LABELS[v.size]}>

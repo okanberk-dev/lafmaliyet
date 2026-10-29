@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
-import { qualityBanner } from "@/lib/forecast/text";
+import { Notice } from "@/components/ui/notice";
+import { qualityBanner, qualityTitle } from "@/lib/forecast/text";
 import { addDays } from "@/lib/reminders";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/forecast";
 import { requireAdmin } from "@/server/auth/dal";
@@ -50,6 +51,7 @@ async function ForecastContent() {
   const data = await loadForecastPage();
   const f = data.forecast;
   const banner = qualityBanner(f);
+  const bannerTitle = qualityTitle(f);
   const { upcoming, past } = specialList(data);
   const specialCard = <SpecialDaysCard upcoming={upcoming} past={past} />;
   const settingsCard = <ForecastSettingsCard settings={data.settings} categories={data.categories} />;
@@ -63,9 +65,10 @@ async function ForecastContent() {
     >
       <Header actions={<ForecastActions />} />
       {banner ? (
-        <p role="status" className="mb-4 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          {banner}
-        </p>
+        // Kısa sonuç başlıkta, uzun açıklama Ayrıntı'da (docs/planlar/ux-sade.md U9)
+        <Notice tone="neutral" live="polite" className="mb-4" title={bannerTitle ?? banner}>
+          {bannerTitle ? banner : null}
+        </Notice>
       ) : null}
       {f.quality === "yok" ? (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">

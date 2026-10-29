@@ -1,8 +1,7 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 /**
  * Pencereyi kapatmadan önceki soru, ayrı bir onay penceresi yerine pencerenin kendi altbilgisinde: üst üste iki
@@ -24,12 +23,7 @@ export function CloseGuardFooter({
 }) {
   return (
     <>
-      <p role="alert" className="flex w-full items-start gap-2 rounded-xl bg-warn-soft px-3 py-2.5 text-[13px] leading-5 text-warn">
-        <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden />
-        <span>
-          <span className="font-semibold">{title}</span> {description}
-        </span>
-      </p>
+      <Notice tone="warn" size="sm" live="assertive" className="w-full" title={title} text={description} />
       {/* Klavyeyle gelen soru da odağı güvenli seçeneğe alır */}
       <Button variant="ghost" autoFocus onClick={onStay} className="max-sm:h-11 max-sm:bg-panel">
         Geri dön

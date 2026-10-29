@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { ANSWER_GRACE_MIN, checklistDay, clockInstant, listTitle, nowBusinessMinute } from "@/lib/checklists";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
@@ -93,9 +94,7 @@ async function RunContent({ params }: { params: PageProps<"/panel/kontrol/[id]">
       <TodayRefresh at={clockInstant(addDays(view.day, 1), "05:30").getTime()} renderedAt={now.toISOString()} />
       {view.template.description ? <p className="-mt-3 mb-5 max-w-3xl text-sm leading-6 text-ink-mute">{view.template.description}</p> : null}
       {grace ? (
-        <p role="note" className="mb-4 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          Dünün listesi: yeni gün 05:00&apos;te başladı, başlanmış liste 05:30&apos;a kadar bitirilebilir.
-        </p>
+        <Notice tone="warn" className="mb-4" title="Dünün listesi: 05:30'a kadar bitirilebilir" text="Yeni gün 05:00'te başladı." />
       ) : null}
       <RunForm
         key={`${tid}:${view.day}`}

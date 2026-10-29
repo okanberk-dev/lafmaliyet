@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileSearch, Plus, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, FileSearch, Plus, Trash2, X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { cn } from "@/lib/utils";
 import { saveSupplier, supplierInfoFromParasut } from "@/server/actions/suppliers";
@@ -283,14 +284,16 @@ export function SupplierCardDialog({
       >
         <form id="supplier-form" onSubmit={onSubmit} noValidate className={cn("space-y-5 pb-2", BIG_FIELDS)}>
           {canFill ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-3.5 py-3">
-              <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-soft">
-                Unvan, vergi no, adres ve IBAN tedarikçinin en yeni Paraşüt faturasından (e-fatura belgesi ya da Paraşüt&apos;teki kişi kartı) okunabilir; yalnız boş alanlar dolar.
-              </p>
-              <Button variant="secondary" onClick={fill} disabled={filling || busy} className="text-ink max-sm:min-h-11">
-                <FileSearch size={16} aria-hidden="true" /> {filling ? "Fatura okunuyor…" : "Faturadan doldur"}
-              </Button>
-            </div>
+            <Notice
+              tone="neutral"
+              size="sm"
+              title="Unvan, vergi no, adres ve IBAN tedarikçinin en yeni Paraşüt faturasından (e-fatura belgesi ya da Paraşüt'teki kişi kartı) okunabilir; yalnız boş alanlar dolar."
+              action={
+                <Button size="xs" variant="secondary" onClick={fill} disabled={filling || busy}>
+                  <FileSearch size={16} aria-hidden="true" /> {filling ? "Fatura okunuyor…" : "Faturadan doldur"}
+                </Button>
+              }
+            />
           ) : null}
 
           <fieldset className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
@@ -388,13 +391,15 @@ export function SupplierCardDialog({
               />
             </Field>
             {ibanChanged ? (
-              <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2" role="status">
-                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span>
-                  IBAN değişiyor. Yeni IBAN&apos;ı tedarikçiyi bildiğiniz numaradan arayarak teyit edin: e-postayla ya da mesajla gelen “IBAN&apos;ımız değişti”
-                  bildirimi sık kullanılan bir dolandırıcılık yoludur. Değişiklik işlem geçmişine yazılır.
-                </span>
-              </p>
+              <Notice
+                tone="warn"
+                size="sm"
+                risk="para"
+                live="polite"
+                className="sm:col-span-2"
+                title="IBAN değişiyor: tedarikçiyi bildiğiniz numaradan arayıp teyit edin"
+                text="E-postayla ya da mesajla gelen “IBAN'ımız değişti” bildirimi sık kullanılan bir dolandırıcılık yoludur. Değişiklik işlem geçmişine yazılır."
+              />
             ) : null}
             <Field label="Banka" htmlFor="s-bank" hint={filledHint("bankName") ?? (bank && !f.bankName.trim() ? `Boş kalırsa “${bank}” yazılır` : undefined)}>
               <Input id="s-bank" value={f.bankName} onChange={(e) => set({ bankName: e.target.value })} autoComplete="off" placeholder={bank ?? undefined} />

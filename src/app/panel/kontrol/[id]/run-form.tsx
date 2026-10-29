@@ -9,6 +9,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
 import { Progress } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import {
   DAY_CLOSED_TEXT,
   groupBySection,
@@ -158,17 +159,16 @@ export function RunForm({
     <div className="max-w-3xl space-y-5 pb-6">
       <ProgressBar summary={summary} />
       {summary.complete ? (
-        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-lime/25 px-4 py-3 text-sm text-good-ink">
-          <p className="flex min-w-0 items-center gap-2 font-medium">
-            <CircleCheck size={18} className="shrink-0" aria-hidden="true" />
-            <span>
-              Liste tamam{summary.completedAt ? ` · ${timeTR(summary.completedAt)}` : ""} · {whoText(summary.contributors)}
-            </span>
-          </p>
-          <ButtonLink href="/panel/bugun" variant="secondary" size="sm" className="max-sm:w-full">
-            Bugün&apos;e dön
-          </ButtonLink>
-        </div>
+        <Notice
+          tone="good"
+          live="polite"
+          title={`Liste tamam${summary.completedAt ? ` · ${timeTR(summary.completedAt)}` : ""} · ${whoText(summary.contributors)}`}
+          action={
+            <ButtonLink href="/panel/bugun" variant="secondary" size="xs">
+              Bugün&apos;e dön
+            </ButtonLink>
+          }
+        />
       ) : null}
       {groupBySection(items).map((g) => (
         <section key={g.section ?? "-"} aria-label={g.section ?? "Maddeler"} className="space-y-2.5">
@@ -335,8 +335,7 @@ function CheckItem({ item, answer, submit, draft }: ItemProps) {
   if (answer.status === "issue") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 rounded-xl bg-warn-soft px-3 py-2 text-sm text-pretty break-words text-warn">Sorun: {answer.note}</p>
-        <TextButton onClick={openEditor}>Düzelt</TextButton>
+        <Notice tone="warn" size="sm" className="min-w-0 flex-1" title={`Sorun: ${answer.note}`} action={<TextButton onClick={openEditor}>Düzelt</TextButton>} />
       </div>
     );
   }

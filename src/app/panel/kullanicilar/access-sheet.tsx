@@ -1,12 +1,13 @@
 "use client";
 
-import { Check, Copy, Mail, MessageCircle, TriangleAlert } from "lucide-react";
+import { Check, Copy, Mail, MessageCircle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { SEND_OFFLINE_TEXT, tryAction } from "@/components/ui/action-error";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Notice } from "@/components/ui/notice";
 import { emailAccess } from "@/server/actions/invites";
 
 import { accessSheetText, credentialsText, formatExpiry, whatsappUrl, type AccessInfo } from "./access";
@@ -176,18 +177,17 @@ export function AccessSheet({ info, emailConfigured, onClose }: { info: AccessIn
             </Button>
           </div>
           {/* Kopyalama / gönderim sonucu burada yazar (ekran okuyucu da duyurur) */}
-          <div role="status" aria-live="polite" className="space-y-1 text-xs leading-5">
-            {note ? (
-              <p className="flex items-start gap-1.5 font-medium text-good-ink">
-                <Check size={14} className="mt-0.5 shrink-0" aria-hidden /> {note}
-              </p>
-            ) : null}
+          <div aria-live="polite" className="space-y-1.5">
+            {note ? <Notice tone="good" size="line" title={note} /> : null}
             {!emailConfigured ? (
-              <p className="text-ink-mute">E-posta gönderimi kapalı (sunucuda RESEND_API_KEY tanımlı değil). Kopyala ya da WhatsApp ile iletin.</p>
+              <Notice
+                tone="neutral"
+                size="sm"
+                title={`E-posta kapalı · ${info.kind === "password" ? "parolayı" : "bağlantıyı"} kopyalayın ya da WhatsApp'la iletin`}
+                tech="Sunucuda RESEND_API_KEY tanımlı değil."
+              />
             ) : sentTo ? (
-              <p className="flex items-start gap-1.5 font-medium text-good-ink">
-                <Check size={14} className="mt-0.5 shrink-0" aria-hidden /> {sentTo} adresine gönderildi. Gelmezse istenmeyen klasörüne baksın.
-              </p>
+              <Notice tone="good" size="line" title={`${sentTo} adresine gönderildi. Gelmezse istenmeyen klasörüne baksın.`} />
             ) : null}
           </div>
         </div>
@@ -197,12 +197,17 @@ export function AccessSheet({ info, emailConfigured, onClose }: { info: AccessIn
           <pre className="px-4 pb-4 font-sans text-[13px] leading-5 whitespace-pre-wrap break-words text-ink-soft">{message}</pre>
         </details>
 
-        <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-3 text-xs leading-5 text-warn">
-          <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden />
-          {info.kind === "password"
-            ? "Parola bu pencere kapanınca bir daha gösterilmez. Unutulursa düzenle › Güvenlik'ten sıfırlama bağlantısı oluşturun."
-            : "Bağlantı bu pencere kapanınca bir daha gösterilmez. Kaybolursa yenisini oluşturun; eskisi o an geçersiz olur."}
-        </p>
+        <Notice
+          tone="warn"
+          size="sm"
+          risk="veri"
+          title={info.kind === "password" ? "Parola bir daha gösterilmez" : "Bağlantı bir daha gösterilmez"}
+          text={
+            info.kind === "password"
+              ? "Unutulursa düzenle › Güvenlik'ten sıfırlama bağlantısı oluşturun."
+              : "Kaybolursa yenisini oluşturun; eskisi o an geçersiz olur."
+          }
+        />
       </div>
     </Dialog>
   );

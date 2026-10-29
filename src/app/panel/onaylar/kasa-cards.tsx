@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ExternalLink, Pencil, Trash2, Wallet, X } from "lucide-react";
+import { Check, ExternalLink, Pencil, Trash2, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Checkbox, Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { carryDiffText, changeLine, computeCash, diffText, stampTR, zNoOrder, type CashReportFields } from "@/lib/cash-report";
 import { olderFirstText } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
@@ -149,7 +150,7 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
           </ul>
         </section>
       ) : (
-        <p className="rounded-xl bg-panel px-3 py-2 text-sm text-ink-mute">Rapor zaten bu hâlde; isteği kapatın.</p>
+        <Notice tone="neutral" size="sm" title="Rapor zaten bu hâlde; isteği kapatın" />
       )}
       {card.threeCols?.length ? (
         <div className="overflow-x-auto">
@@ -197,9 +198,8 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
             </li>
           ) : null}
           {card.monthPassed ? (
-            <li className="flex items-start gap-1.5 text-warn">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{card.monthPassed}</span>
+            <li>
+              <Notice tone="warn" size="line" title={card.monthPassed} />
             </li>
           ) : null}
         </ul>
@@ -246,10 +246,18 @@ function DeleteItem({ card }: { card: DeleteCard }) {
     <article id={`istek-${card.id}`} className="scroll-mt-24 space-y-3 px-5 py-4">
       <Head card={card} title={`Kasa raporu silme · ${longDateTR(card.date)}`} badge={<Badge tone="red">Silme</Badge>} />
       <p className="text-sm text-ink tabular">{card.summary}</p>
-      <div className="space-y-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-        <p>Silinince rapor ve önceki sürümleri gider; değerleri işlem geçmişinde kalır, fotoğraflar 30 gün saklanır.</p>
-        {card.next ? <p className="font-medium">{card.next}</p> : null}
-      </div>
+      <Notice
+        tone="warn"
+        size="sm"
+        risk="veri"
+        title="Silinince rapor ve önceki sürümleri gider"
+        text={
+          <>
+            Değerleri işlem geçmişinde kalır, fotoğraflar 30 gün saklanır.
+            {card.next ? <span className="block font-medium text-ink">{card.next}</span> : null}
+          </>
+        }
+      />
       <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
         <ExternalLink size={14} aria-hidden="true" /> Raporu aç
       </Link>
@@ -341,12 +349,12 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       {card.photos.length ? <SavedPhotos photos={card.photos} diffs={card.diffs} admin={false} /> : null}
       {/* LafPOS gününde kanıt LafPOS'un gün sonu (G8); personelin ondan farklı yazdıkları (E-09) */}
       {card.lafpos.day ? (
-        <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info tabular">{lafposZLine(card.lafpos.day)}</p>
+        <Notice tone="neutral" size="sm" className="tabular" title={lafposZLine(card.lafpos.day)} />
       ) : card.lafpos.lafpos ? (
-        <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">LafPOS&apos;un bu günün sonu gelmedi: rakamları yazarkasa Z fotoğrafından kontrol edin.</p>
+        <Notice tone="warn" size="sm" title="LafPOS'un bu gün sonu gelmedi: Z fotoğrafından kontrol edin" />
       ) : null}
       <LafposDiffList diffs={card.lafpos.diffs} />
-      {card.unread ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin.</p> : null}
+      {card.unread ? <Notice tone="warn" size="sm" title="Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin" /> : null}
       <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>
         {z.text}
         {zOtherTill ? " · komşu rapor öteki kasanın (ModPOS / LafPOS), Z no karşılaştırılmaz" : ""}
@@ -374,19 +382,17 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
         </li>
         <li className="text-ink-soft">{card.monthLine}</li>
         {card.outs.warning ? <li className={card.outs.lafposHanded !== null && card.outs.unreceipted < 1 ? "text-ink-soft" : "font-medium text-bad"}>{card.outs.warning}</li> : null}
-        <li className="flex items-start gap-1.5 text-ink-mute">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir.</span>
+        <li>
+          <Notice tone="neutral" size="line" title="Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir." />
         </li>
       </ul>
       <p className="text-sm text-ink">
         Kasa farkı: <span className="font-semibold">{diffText(card.cashDiff)}</span>
       </p>
-      {blocked ? <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">{blocked}</p> : null}
+      {blocked ? <Notice tone="bad" size="sm" title={blocked} /> : null}
       {needsNote ? (
-        <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-          Açılış önceki raporun devriyle tutmuyor ve not yazılmamış: olduğu gibi kaydedilemez. Düzeltip onaylayın ve nedeni nota yazın.
-        </p>
+        // Onayı engelliyor: kırmızı (docs/planlar/ux-sade.md Ek A 148)
+        <Notice tone="bad" size="sm" title="Açılış devirle tutmuyor ve not yok: bu hâliyle kaydedilemez" text="Düzeltip onaylayın ve nedeni nota yazın." />
       ) : null}
       {correcting ? (
         <CashForm

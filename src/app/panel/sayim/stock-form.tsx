@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AlertTriangle,
   ArrowDown,
   Check,
   ClipboardCheck,
@@ -49,6 +48,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { useIsPhone, useMediaQuery } from "@/components/ui/use-media";
 import { Input, NumberInput, Select } from "@/components/ui/form";
 import { useLeaveGuard } from "@/components/ui/leave-guard";
@@ -1062,20 +1062,15 @@ const StockTotalCard = memo(function StockTotalCard({
           ) : null}
         </div>
         {closingOverride !== null ? (
-          <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
-            <p className="flex items-start gap-1.5 font-medium">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
-              </span>
-            </p>
-            <Link
-              href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}
-              className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
-            >
-              Gelir-giderde aç
-            </Link>
-          </div>
+          <Notice
+            tone="warn"
+            size="sm"
+            risk="para"
+            className="mt-2"
+            title={`Gelir-giderde ${monthLabel} stoğu elle ${tl(closingOverride)}: kâr-zarar bu sayımı kullanmaz`}
+            text={`Bu sayım ${tl(live.total)}; kâr-zarar elle girilen tutarı kullanır.`}
+            action={<NoticeLink href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}>Gelir-giderde aç</NoticeLink>}
+          />
         ) : null}
       </Stat>
     </StatBreakdown>
@@ -1867,23 +1862,32 @@ export function StockCountForm({
     // Altta yüzen sayım / kaydetme çubuğu var: son satırlar onun altında kalmasın (alt menünün payını kabuk verir)
     <div className="space-y-4 pb-32">
       {denied ? (
-        <p role="status" className="no-print rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          {denied} sayımını yalnız yönetici açabilir; {monthLabel} sayımı açıldı. Eski bir ayda düzeltme gerekiyorsa yöneticiye haber verin.
-        </p>
+        <Notice
+          tone="neutral"
+          live="polite"
+          className="no-print"
+          title={`${denied} sayımını yalnız yönetici açar; ${monthLabel} açıldı`}
+          text="Eski bir ayda düzeltme gerekiyorsa yöneticiye haber verin."
+        />
       ) : null}
       {draftSize ? (
-        <div role="status" className="no-print flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          <span className="min-w-0 flex-1">
-            {draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş {num(draftSize)} kalemlik {monthLabel} sayımı var (sayfa
-            kapanmış ya da bağlantı gitmiş olabilir).
-          </span>
-          <Button size="sm" onClick={restoreDraft}>
-            Geri yükle
-          </Button>
-          <Button size="sm" variant="ghost" onClick={forgetDraft}>
-            Sil
-          </Button>
-        </div>
+        <Notice
+          tone="neutral"
+          live="polite"
+          className="no-print"
+          title={`${draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş ${num(draftSize)} kalemlik sayım var`}
+          text={`${monthLabel} sayımı; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
+          action={
+            <span className="flex flex-wrap gap-1.5">
+              <Button size="xs" onClick={restoreDraft}>
+                Geri yükle
+              </Button>
+              <Button size="xs" variant="ghost" onClick={forgetDraft}>
+                Sil
+              </Button>
+            </span>
+          }
+        />
       ) : null}
       <div className={cn("grid gap-3", isAdmin && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
         {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni (memo'lu, ertelenmiş sayılarla) */}
@@ -2102,16 +2106,26 @@ export function StockCountForm({
         />
         <CardContent>
           {extraConflicts.length ? (
-            <p role="status" className="no-print mb-3 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
-              Bu liste siz yazarken başkası tarafından da kaydedildi: {extraConflicts.join(", ")} için sizin yazdığınız duruyor; kaydederseniz
-              onunkinin yerine geçer.
-            </p>
+            <Notice
+              tone="warn"
+              size="sm"
+              risk="veri"
+              live="polite"
+              className="no-print mb-3"
+              title="Bu liste siz yazarken başkası tarafından da kaydedildi"
+              text={`${extraConflicts.join(", ")} için sizin yazdığınız duruyor; kaydederseniz onunkinin yerine geçer.`}
+            />
           ) : null}
           {listDuplicates.length ? (
-            <p role="status" className="no-print mb-3 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
-              {listDuplicates.join(", ")} sayım listesinde de var: aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın, yoksa stok iki
-              kez sayılır.
-            </p>
+            <Notice
+              tone="warn"
+              size="sm"
+              risk="para"
+              live="polite"
+              className="no-print mb-3"
+              title={`${listDuplicates.join(", ")} sayım listesinde de var: stok iki kez sayılabilir`}
+              text="Aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın."
+            />
           ) : null}
           {extras.length ? (
             <>

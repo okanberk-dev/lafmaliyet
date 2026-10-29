@@ -1,7 +1,7 @@
 "use client";
 
-import { Banknote, TriangleAlert } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { Banknote } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COST_MODE_LABEL, type CostMode } from "@/lib/cari/account";
@@ -396,24 +397,33 @@ export function DebtDialog({
               </Select>
             </Field>
             {duplicates.slice(0, 2).map((x) => (
-              <Warn key={x.id}>
-                {dateTR(x.date).slice(0, 5)} {x.categoryName} {tl(x.amount, 2)} zaten gider: bu alımsa “Gideri zaten girildi”yi seçin.{" "}
-                <button
-                  type="button"
-                  className="cursor-pointer font-semibold underline underline-offset-2"
-                  onClick={() => {
-                    setMode("mevcut");
-                    setAdoptId(x.id);
-                  }}
-                >
-                  Bu kaydı seç
-                </button>
-              </Warn>
+              <Notice
+                key={x.id}
+                tone="warn"
+                size="sm"
+                live="polite"
+                title={`${dateTR(x.date).slice(0, 5)} ${x.categoryName} ${tl(x.amount, 2)} zaten gider: bu alımsa “Gideri zaten girildi”yi seçin.`}
+                action={
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => {
+                      setMode("mevcut");
+                      setAdoptId(x.id);
+                    }}
+                  >
+                    Bu kaydı seç
+                  </Button>
+                }
+              />
             ))}
             {digerMal !== null ? (
-              <Warn>
-                {monthLabel(date.slice(0, 7)).split(" ")[0]} ayının DİĞER (market / nakit alımlar) hücresinde {tl(digerMal)} var; bu alım oradaysa “Eski borç” seçin ya da hücreyi düzeltin.
-              </Warn>
+              <Notice
+                tone="warn"
+                size="sm"
+                live="polite"
+                title={`${monthLabel(date.slice(0, 7)).split(" ")[0]} ayının DİĞER (market / nakit alımlar) hücresinde ${tl(digerMal)} var; bu alım oradaysa “Eski borç” seçin ya da hücreyi düzeltin.`}
+              />
             ) : null}
           </>
         ) : null}
@@ -462,14 +472,17 @@ export function DebtDialog({
               ) : null}
             </fieldset>
           ) : (
-            <Warn>Uygun harcama kaydı yok. Gideri başka yerdeyse “Eski borç (devir)” seçin.</Warn>
+            <Notice tone="warn" size="sm" live="polite" title="Uygun harcama kaydı yok. Gideri başka yerdeyse “Eski borç (devir)” seçin." />
           )
         ) : null}
 
         {olderUnpaid.length ? (
-          <Warn>
-            Bu tarihten önce {olderUnpaid.length} ödenmemiş fatura var ({tl(round2(olderUnpaid.reduce((a, i) => a + i.balance, 0)), 2)}); eski borç bunları da içeriyorsa önce onları ödendi yapın.
-          </Warn>
+          <Notice
+            tone="warn"
+            size="sm"
+            live="polite"
+            title={`Bu tarihten önce ${olderUnpaid.length} ödenmemiş fatura var (${tl(round2(olderUnpaid.reduce((a, i) => a + i.balance, 0)), 2)}); eski borç bunları da içeriyorsa önce onları ödendi yapın.`}
+          />
         ) : null}
 
         <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
@@ -546,21 +559,10 @@ export function DebtDialog({
         {kasa ? <KasaCheck lines={kasa} amount={value} credit={useCredit ? credit : 0} value={kasaPick} onChange={setKasaPick} /> : null}
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
-          <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-            {error}
-          </p>
+          <Notice tone="bad" size="sm" live="assertive" title={error} />
         ) : null}
       </div>
     </Dialog>
-  );
-}
-
-function Warn({ children }: { children: ReactNode }) {
-  return (
-    <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
-      <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <span>{children}</span>
-    </p>
   );
 }
 
@@ -600,9 +602,9 @@ function KasaCheck({ lines, amount, credit, value, onChange }: { lines: KasaFoun
     { key: "ayri", title: "Ayrı alım", note: apart },
   ];
   return (
-    <fieldset className="space-y-2 rounded-2xl bg-info-soft p-3.5">
+    <fieldset className="space-y-2 rounded-2xl bg-ink/[0.04] p-3.5">
       <legend className="sr-only">Kasa denetimi</legend>
-      <p className="flex items-start gap-2 text-[13px] leading-5 text-info">
+      <p className="flex items-start gap-2 text-[13px] leading-5 text-ink-soft">
         <Banknote size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
         <span>Kasada bu tedarikçinin adıyla {lines.length === 1 ? "bir satır" : `${lines.length} satır`} var (alım gününün 3 gün öncesi ve sonrası). Aynı alım olabilir; kaydetmeden önce seçin.</span>
       </p>

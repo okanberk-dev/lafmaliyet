@@ -16,6 +16,7 @@ import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryTex
 import { Field, Input } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { DotList, EmptyState } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
@@ -1095,7 +1096,7 @@ function UserDialog({
             />
           )}
           {self ? (
-            <p className="rounded-2xl bg-panel px-3.5 py-3 text-xs text-ink-mute">Kendi hesabınızı pasif yapamazsınız.</p>
+            <Notice tone="neutral" size="sm" title="Kendi hesabınızı pasif yapamazsınız" />
           ) : (
             <ToggleRow
               title={invited ? "Aktif" : "Aktif (giriş yapabilir)"}
