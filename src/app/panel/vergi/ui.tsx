@@ -1,4 +1,4 @@
-import { ChevronDown, TriangleAlert } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -6,25 +6,31 @@ import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { InfoTip } from "@/components/ui/info-tip";
-import { Notice, type NoticeRisk } from "@/components/ui/notice";
+import { Notice, NoticeGroup, type NoticeItem, NoticeLink, type NoticeRisk } from "@/components/ui/notice";
 import { type Confidence, CONFIDENCE_LABELS, TAX_DISCLAIMER, TAX_DISCLAIMER_SHORT } from "@/lib/tax/rules";
 import { cn } from "@/lib/utils";
 
 import type { RuleRef } from "./refs";
 
 /*
- * Vergi bölümünün ortak parçaları (plan docs/planlar/vergi.md §4.0): başlık ve sekmeler, üst bant (TAX_DISCLAIMER),
- * kapsam ve muhasebeci çipleri, "Nasıl hesaplandı" açılırı, döküm listesi ve kullanılan kuralların dayanağı. Sunucu
- * bileşenleri; içlerindeki InfoTip istemcide açılır.
+ * Vergi bölümünün ortak parçaları (plan docs/planlar/vergi.md §4.0, docs/planlar/ux-sade.md §7.4): başlık ve sekmeler,
+ * üst bant (kutusuz tek satır: kısa feragat ve tam metni açan ⓘ, kapsam ve muhasebeci çipleri), bandın altındaki
+ * uyarılar, "Nasıl hesaplandı" açılırı, döküm listesi ve kullanılan kuralların dayanağı. Sunucu bileşenleri;
+ * içlerindeki InfoTip istemcide açılır.
  */
 
 export type VergiPath = "/panel/vergi" | "/panel/vergi/gelir-gider" | "/panel/vergi/demirbas" | "/panel/vergi/kurallar";
 
-export const OZET_DESCRIPTION = "Tahmini vergi takvimi, vergiye göre gelir-gider ve muhasebecinizin rakamları";
+export const OZET_DESCRIPTION = "Devlete ödenecekler: KDV, SGK, maaş vergileri ve kâr vergisi; tahmini tutar ve son gün.";
 
-/** Sayfa başlığı ve dört sekme (Özet, Vergi kârı, Demirbaş, Muhasebeci; kenar çubuğunun "Vergi, KDV, SGK" grubundan); yalnız yönetici */
-export function VergiHeader({ current, title, description, actions }: { current: VergiPath; title: string; description?: ReactNode; actions?: ReactNode }) {
-  return <PageHeader path={current} title={title} description={description} actions={actions} tabs={<SectionTabs section="vergi" current={current} role="admin" />} />;
+/**
+ * Sayfa başlığı ve dört sekme (Özet, Vergi kârı, Demirbaş, Muhasebeci; kenar çubuğunun "Vergi, KDV, SGK" grubundan);
+ * yalnız yönetici. `more`: eski uzun açıklama, açıklamanın sonundaki ⓘ "Nasıl çalışır?" (§8)
+ */
+export function VergiHeader({ current, title, description, more, actions }: { current: VergiPath; title: string; description?: ReactNode; more?: string; actions?: ReactNode }) {
+  return (
+    <PageHeader path={current} title={title} description={description} more={more} actions={actions} tabs={<SectionTabs section="vergi" current={current} role="admin" />} />
+  );
 }
 
 export interface BannerData {
@@ -36,73 +42,75 @@ export interface BannerData {
   scope: { text: string; hint: string } | null;
   /** "Muhasebeciye sorulacaklar: 0 / 8" ya da "Muhasebecinizle gözden geçirildi (sahibin işareti)" */
   checks: { chip: string; allDone: boolean };
+  /**
+   * Bandın altında bayat kurallarla aynı grupta çizilen uyarılar (Özet'in günü geçmiş vergi ödemesi, §7.2). Bant
+   * çağrısı her sekmede aynı kalır (`<TaxBanner data={banner} />`)
+   */
+  notices?: readonly NoticeItem[];
 }
 
 const CHIP = "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs leading-4 font-medium whitespace-nowrap text-ink-soft ring-1 ring-line";
 
-function Chips({ data }: { data: BannerData }) {
+/** Kurallar bayatlayınca bandın altında (§7.4): cümleler Ayrıntı'da, eylem kural tablosu (adres onu açık getirir) */
+function staleNotice(stale: readonly string[]): NoticeItem | null {
+  if (!stale.length) return null;
+  return {
+    key: "stale",
+    tone: "warn",
+    size: "sm",
+    title: "Vergi kuralları güncel olmayabilir",
+    action: <NoticeLink href="/panel/vergi/kurallar#kurallar">Kural tablosu</NoticeLink>,
+    children: stale.map((s) => (
+      <p key={s} className="break-words">
+        {s}
+      </p>
+    )),
+  };
+}
+
+/**
+ * Üst bant (§7.4): kutusuz tek satır, her sekmede ve her genişlikte aynı. Kısa feragat ve tam metni (feragat,
+ * kuralların derlendiği gün, bayatlama cümleleri) açan ⓘ; kapsam çipi; muhasebeci çipi yalnız masaüstünde (telefonda
+ * "Muhasebeci" sekmesi aynı yere gider). Bayat kurallar ve Özet'in günü geçmiş ödemesi altında tek `NoticeGroup`'ta
+ */
+export function TaxBanner({ data }: { data: BannerData }) {
+  const full = [TAX_DISCLAIMER, data.compiled, ...data.stale].join(" ");
+  const stale = staleNotice(data.stale);
+  const notices = [...(data.notices ?? []), ...(stale ? [stale] : [])];
   return (
     <>
-      {data.scope ? (
-        <span className={CHIP}>
-          {data.scope.text}
-          <InfoTip text={data.scope.hint} />
+      <div role="note" aria-label="Vergi tahmini hakkında" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] leading-5 text-ink-soft">
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+          {TAX_DISCLAIMER_SHORT}
+          <InfoTip text={full} label="Tahmin hakkında" />
         </span>
-      ) : null}
-      <Link
-        href="/panel/vergi/kurallar#sorular"
-        className={cn(
-          CHIP,
-          // Dokunmatikte 44 px dokunma alanı görünmez kenarla (çip satırının boyu değişmez)
-          "relative outline-none after:absolute after:-inset-y-3 after:inset-x-0 after:content-[''] hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30",
-          data.checks.allDone && "bg-lime/25 text-good-ink ring-lime/40",
-        )}
-      >
-        {data.checks.chip}
-      </Link>
+        {data.scope ? (
+          <span className={CHIP}>
+            {data.scope.text}
+            <InfoTip text={data.scope.hint} />
+          </span>
+        ) : null}
+        <Link
+          href="/panel/vergi/kurallar#sorular"
+          className={cn(
+            CHIP,
+            // Dokunmatikte 44 px dokunma alanı görünmez kenarla (çip satırının boyu değişmez)
+            "relative outline-none after:absolute after:-inset-y-3 after:inset-x-0 after:content-[''] hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 max-sm:hidden",
+            data.checks.allDone && "bg-lime/25 text-good-ink ring-lime/40",
+          )}
+        >
+          {data.checks.chip}
+        </Link>
+      </div>
+      <NoticeGroup items={notices} className="mb-4" />
     </>
   );
 }
 
-/**
- * Üst bant (gri bilgi kutusu): masaüstünde tam metin, kuralların derlendiği gün ve bayatlama cümleleri; telefonda tek
- * satır "Tahmin, beyanname değil" ve tam metni açan ipucu, çipler aynı satırda kayar
- */
-export function TaxBanner({ data }: { data: BannerData }) {
-  const full = [TAX_DISCLAIMER, data.compiled, ...data.stale].join(" ");
-  return (
-    <div role="note" aria-label="Vergi tahmini hakkında" className="mb-6 rounded-2xl bg-panel px-4 py-3 text-[13px] leading-5 text-ink-soft">
-      <div className="max-sm:hidden">
-        <p className="text-pretty text-ink">{TAX_DISCLAIMER}</p>
-        <p className="mt-1 text-pretty text-ink-mute">{data.compiled}</p>
-        {data.stale.map((s) => (
-          <p key={s} className="mt-1 flex items-start gap-1.5 font-medium text-warn">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0">{s}</span>
-          </p>
-        ))}
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Chips data={data} />
-        </div>
-      </div>
-      <div className="flex min-w-0 items-center gap-2 sm:hidden">
-        <span className="flex shrink-0 items-center gap-1.5 font-medium text-ink">
-          {data.stale.length ? <TriangleAlert size={14} className="text-warn" aria-hidden="true" /> : null}
-          {TAX_DISCLAIMER_SHORT}
-          <InfoTip text={full} tone={data.stale.length ? "warn" : undefined} />
-        </span>
-        <div className="-my-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <Chips data={data} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Telefonda bantta yalnız kısa metin var; tam metin Özet ve Kurallar'ın gövdesinde de durur (§4.0) */
+/** Feragatin tam metni: yalnız Muhasebeci'nin sonunda, her genişlikte (§7.4; bandın ⓘ'si aynı metni açar) */
 export function DisclaimerBody({ data }: { data: Pick<BannerData, "compiled" | "stale"> }) {
   return (
-    <p className="text-xs leading-5 text-pretty text-ink-mute sm:hidden">
+    <p id="feragat" className="scroll-mt-20 text-xs leading-5 text-pretty text-ink-mute">
       {TAX_DISCLAIMER} {data.compiled}
       {data.stale.length ? ` ${data.stale.join(" ")}` : ""}
     </p>

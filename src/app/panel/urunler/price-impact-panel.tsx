@@ -48,12 +48,15 @@ export function PriceImpactPanel({
   target,
   month,
   loss = null,
+  salesMissing,
 }: {
   changes: IngredientChange[];
   impacts: ImpactRow[];
   target: number;
   month: string;
   loss?: PriceLoss | null;
+  /** Satış verisi yokken ne yapılır (src/lib/sales-source.ts `missing`, sayfanın ayı) */
+  salesMissing: string;
 }) {
   const [pending, start] = useActionTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -164,7 +167,7 @@ export function PriceImpactPanel({
               <>{basisText(basis)} Ürüne eşleşmeyen satışlar sayılmadı.</>
             ) : (
               <>
-                Ayda kaç lira tuttuğunu görmek için Satışlar&apos;a ürün satış raporunu yükleyin.{" "}
+                Ayda kaç lira tuttuğunu görmek için satış verisi gerekir: {salesMissing}.{" "}
                 <Link href="/panel/satislar" className="font-medium text-ink underline-offset-2 hover:underline">
                   Satışlara git
                 </Link>

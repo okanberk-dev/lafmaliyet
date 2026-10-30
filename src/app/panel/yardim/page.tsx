@@ -591,7 +591,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
       },
       {
         id: "odendi-geri-al",
-        q: "Yanlışlıkla “Ödendi” dedim",
+        q: "Yanlışlıkla “Ödedim”e bastım",
         a: (
           <>
             Hemen çıkan bildirimdeki Geri al&apos;a dokunun (birkaç saniye durur). Kaçırdıysanız <Path href="/panel/hatirlaticilar" /> ekranında yaklaşan ödemelerin altındaki Son
@@ -641,8 +641,9 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
           <>
-            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün. Dökümü Nakit planındaki KDV tahmini
-            kartında: önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
+            Kısa cevap <Path href="/panel/vergi" /> ekranında, takvimin KDV satırında: tahmini tutar ve son gün; ödeme yoksa satır kapalıyken
+            &quot;Ödeme yok&quot; ve sonraki aya geçen KDV&apos;yi yazar. Satırı açınca &quot;Döküm ve devreden KDV&quot; Nakit planındaki KDV tahmini
+            kartına iner: önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
             sonuç ayın 28&apos;inde plana girer. Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin
             beyannamesindedir. Muhasebeciniz tutarı söyleyince{" "}
             <Path href="/panel/hatirlaticilar" /> ekranındaki KDV hatırlatıcısına yazın, plan onu kullanır; ödendi deyince tutar silinir, çünkü her ay farklıdır.
@@ -664,7 +665,10 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <Path href="/panel/vergi" /> sayfası satışlardan, faturalardan ve bordrodan muhtasarı, SGK&apos;yı, damga vergisini ve kafenin geçici ve kurumlar
             vergisine katkısını Türkiye&apos;nin 2026 kurallarıyla tahmin eder; her rakamın yanında nasıl hesaplandığı ve dayanağı yazar. Geçici ve kurumlar
             vergisi şirketin tamamının beyannamesidir: tutarı muhasebecinizden isteyin ve Vergi&apos;ye girin. Muhasebeci sekmesindeki &apos;Muhasebeciye
-            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin.
+            sorulacaklar&apos; listesini muhasebecinizle bir kez gözden geçirin. Ekranda önce sade söz, resmî terim parantezde yazar (Maaş vergileri ve
+            stopaj (muhtasar), Kâr vergisi peşinatı (geçici vergi)); &quot;Eksik bilgi&quot; rozeti hesabın neden kesinleşmediğini yanında söyler.
+            Ödemeler&apos;de günü geçmiş bir vergi ya da SGK ödemesi varsa Özet&apos;in başında tek turuncu satır olur; ödeme Ödemeler&apos;de
+            &quot;Ödedim&quot; ile kapanır.
           </>
         ),
         icon: Landmark,
@@ -1049,7 +1053,7 @@ export default function HelpPage() {
       <PageHeader
         title="Yardım"
         path="/panel/yardim"
-        description="Sistemin nasıl çalıştığı, her ay ne yapmanız gerektiği ve Excel'deki sayfaların karşılıkları."
+        description="Ne zaman ne yapılır, sık sorular ve Excel'deki sayfaların karşılıkları."
         actions={
           <ButtonLink href="/panel/yardim/personel" variant="secondary">
             <UsersRound size={16} aria-hidden="true" /> Personelin Yardım&apos;ı

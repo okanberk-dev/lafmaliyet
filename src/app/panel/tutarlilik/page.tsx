@@ -6,6 +6,7 @@ import { Suspense } from "react";
 
 import { MonthPicker, MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { ButtonLink } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insigh
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 import { HOLDS_HREF } from "@/lib/price-hold";
+import { salesSourceOf } from "@/lib/sales-source";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { requireAdmin } from "@/server/auth/dal";
 import { pendingWasteSummary } from "@/server/data/waste-requests";
@@ -33,7 +35,9 @@ export const metadata: Metadata = { title: "Tutarlılık" };
 
 // Bir ekran bir ad (docs/planlar/ux-sade.md §3.6): kenar çubuğu, sekme ve başlık aynı; Excel'deki adı Yardım'da
 const TITLE = "Tutarlılık";
-const DESCRIPTION =
+const DESCRIPTION = "Satış, alış ve reçete tutuyor mu: hangi malzeme fazla gidiyor.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?";
 
 export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tutarlilik">) {
@@ -46,6 +50,7 @@ export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tuta
             path="/panel/tutarlilik"
             title={TITLE}
             description={DESCRIPTION}
+            more={MORE}
             actions={<MonthPickerSkeleton />}
             tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
           />
@@ -84,6 +89,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   // Ayın kasası (metinler; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS"; denetim E-39)
   const mk = monthKasa(month, st.lafposGecisGunu);
   const ml = monthLabel(month);
+  // Ayın satış kaynağı (docs/planlar/ux-sade.md §10): "yükleyin" yalnız elle yüklenen ayda
+  const source = salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales);
 
   const listDays = c.sales.listPeriod ? listDaysText(c.sales.listPeriod) : null;
   const salesRows: { label: string; value: string; note?: string; strong?: boolean }[] = [
@@ -133,6 +140,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         path="/panel/tutarlilik"
         title={TITLE}
         description={DESCRIPTION}
+        more={MORE}
+        meta={<SalesSourceLine source={source} />}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" role="admin" />}
       />
@@ -259,14 +268,14 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           totalLabel="Fark (hesaplanan − POS)"
           order="given"
           shares={false}
-          empty="Bu ay satış raporu yok; POS ürün listesi yüklenince karşılaştırma çıkar."
+          empty={`Bu ay satış verisi yok; gelince karşılaştırma çıkar. ${source.missing}.`}
         >
           <Stat
             icon={<Receipt />}
             label="Satış ↔ POS"
             value={!c.sales.hasLines ? "Rapor yok" : c.sales.ok ? "Tutarlı" : c.sales.pos === null ? "POS yok" : <CountUp value={c.sales.diff ?? 0} kind="tl" />}
             tone={!c.sales.hasLines ? "default" : c.sales.ok ? "good" : "warn"}
-            sub={!c.sales.hasLines ? "Bu ay satış raporu yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
+            sub={!c.sales.hasLines ? "Bu ay satış verisi yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
           />
         </StatBreakdown>
       </div>
@@ -276,6 +285,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         month={month}
         monthLabel={ml}
         kasa={mk.short}
+        salesSource={{ missing: source.missing, manual: source.manual }}
         rows={c.rows.map((r) => ({
           ingredientId: r.ingredient.id,
           name: r.ingredient.name,
@@ -339,11 +349,11 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
               <Well>
                 <EmptyState
                   icon={<Receipt />}
-                  title="Bu ay için satış raporu yok"
-                  description="POS ürün listesi yüklenince ciro karşılaştırması burada çıkar."
+                  title="Bu ay için satış verisi yok"
+                  description={`Satış verisi gelince ciro karşılaştırması burada çıkar. ${source.missing}.`}
                   action={
                     <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
-                      Satışlar sayfasından yükleyin
+                      {source.manual ? "Satışlar sayfasından yükleyin" : "Satışlar'a git"}
                     </ButtonLink>
                   }
                 />

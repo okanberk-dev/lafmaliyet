@@ -30,7 +30,7 @@ export default function RemindersPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/hatirlaticilar" title="Ödemeler" tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar" role="admin" />} />
+          <PageHeader path="/panel/hatirlaticilar" title="Ödemeler" description="Kira, vergi, SGK, maaş ve fatura ödemeleri; zamanı gelenler sabah e-postayla gelir." tabs={<SectionTabs section="odeme" current="/panel/hatirlaticilar" role="admin" />} />
           <PageSkeleton rows={6} />
         </>
       }

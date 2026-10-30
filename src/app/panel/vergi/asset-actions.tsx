@@ -34,13 +34,13 @@ export function DirectExpenseButton({ invoice }: { invoice: { id: number; suppli
               note: null,
             });
             if (!r.ok) return void toast.error(r.error, { duration: 10_000 });
-            toast.success(`Doğrudan gider yazıldı: ${invoice.supplier} · ${money(invoice.remaining)} (Demirbaş listesinde)`);
+            toast.success(`Bu yıl gider yazıldı: ${invoice.supplier} · ${money(invoice.remaining)} (Demirbaş listesinde)`);
           },
           { maybeSaved: true },
         )
       }
     >
-      {pending ? "Kaydediliyor…" : "Doğrudan gider"}
+      {pending ? "Kaydediliyor…" : "Bu yıl gider yaz"}
     </Button>
   );
 }

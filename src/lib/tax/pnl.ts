@@ -700,7 +700,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   const bridge: BridgeRow[] = [
     { key: "start", label: "Gelir-gider'deki gider", amount: bridgeStart },
     ...bridgeParts.filter((r) => Math.abs(r.amount) >= 0.005),
-    { key: "end", label: "Vergiye göre gider", amount: expenseTotal },
+    { key: "end", label: "Vergi hesabındaki gider", amount: expenseTotal },
   ];
   const others = r2(base.personnel.section - persCells);
   const personnelNote =

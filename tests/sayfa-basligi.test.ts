@@ -1,6 +1,7 @@
 // Sayfa başlığı ve bir ekran bir ad (docs/planlar/ux-sade.md §3.6-§3.8): bağlam satırı ağaçtan türer ve telefonda gizli,
 // başlıkta "Excel: …" yok, her başlık adresini verir; kenar çubuğu, H1, sekme başlığı ve paletin adı aynı; paletin kare
-// adresli kayıtları var olan bir çapaya iner. (§8'in açıklama uzunluğu denetimi açıklamalar kısalınca eklenir.)
+// adresli kayıtları var olan bir çapaya iner; §8'in yeni açıklamaları tek cümle, en çok 100 harf (Bölüm 3), eski uzun
+// metin "Nasıl çalışır?" ⓘ'sinde (`more`).
 // Çalıştırma: npx tsx --test tests/sayfa-basligi.test.ts
 
 import assert from "node:assert/strict";
@@ -108,7 +109,8 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
     "/panel/vergi#kdv": ["src/app/panel/vergi/tax-calendar.tsx", /kdv1: "kdv"/],
     "/panel/vergi#sgk": ["src/app/panel/vergi/tax-calendar.tsx", /sgk: "sgk"/],
     "/panel/vergi#muhtasar": ["src/app/panel/vergi/tax-calendar.tsx", /mphb: "muhtasar"/],
-    "/panel/vergi#kar-vergisi": ["src/app/panel/vergi/page.tsx", /id="kar-vergisi"/],
+    // Bölüm 3: çapa "Şirketin kâr vergisi" kartının kendisinde (docs/planlar/ux-sade.md §7.6)
+    "/panel/vergi#kar-vergisi": ["src/app/panel/vergi/tax-cards.tsx", /<Card id="kar-vergisi"/],
     "/panel/vergi/gelir-gider#siniflandir": ["src/app/panel/vergi/gelir-gider/classify-list.tsx", /id="siniflandir"/],
     "/panel/vergi/kurallar#sorular": ["src/app/panel/vergi/kurallar/page.tsx", /id="sorular"/],
     "/panel/gelir-gider#kar-zarar": ["src/app/panel/gelir-gider/page.tsx", /id="kar-zarar"/],
@@ -162,10 +164,11 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
 test("eski adlar ekranda kalmadı: Muhasebeci (eski Kurallar sekmesi), Maaşlar (eski Personel), Giderler & maaşlar", () => {
   // [dosya, eski metin, yeni metin]
   const RENAMED: [string, string, string][] = [
-    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
-    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
+    // Bölüm 3: kartın adı "Şirketin vergi ayarları" (docs/planlar/ux-sade.md §7.9)
+    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
+    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
     ["src/app/panel/vergi/demirbas/page.tsx", "(Giderler &amp; personel)", "(Giderler &amp; maaşlar)"],
-    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Vergi ayarları'ndan"],
+    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Şirketin vergi ayarları'ndan"],
     ["src/app/panel/giderler/expenses-client.tsx", ">Personel sayfasından</TD>", ">Maaşlar sayfasından</TD>"],
     ["src/app/panel/giderler/expenses-client.tsx", 'label="Personel sayfasına git"', 'label="Maaşlar sayfasına git"'],
     ["src/app/panel/giderler/expenses-client.tsx", "</Badge> Personel sayfasından", "</Badge> Maaşlar sayfasından"],
@@ -178,4 +181,99 @@ test("eski adlar ekranda kalmadı: Muhasebeci (eski Kurallar sekmesi), Maaşlar 
     assert.ok(!text.includes(before), `${file}: ${before}`);
     assert.ok(text.includes(after), `${file}: ${after}`);
   }
+});
+
+/**
+ * §8 tablosunda açıklaması yenilenen ekranlar (docs/planlar/ux-sade.md §3.11, Ek C 6): dosyadaki `*DESCRIPTION*`
+ * sabitlerinin, `description="…"` düz metinlerinin ve `description={…}` ifadesindeki düz dizelerin hepsi ≤ 100 harf.
+ * "aynı" kalanlar (Onaylar, Kasadaki fiyatlar, Kontrol geçmişi ve düzenleme, Özel günler, Hesabım, personelin Yardım'ı,
+ * Nakit planı, Sayım, Bugün, ürün kartı) listede yok; dinamik açıklamalar sayılmaz
+ */
+const NEW_DESCRIPTIONS: readonly string[] = [
+  "src/app/panel/kasa/page.tsx",
+  "src/app/panel/karaoke/page.tsx",
+  "src/app/panel/karaoke/doluluk/page.tsx",
+  "src/app/panel/kontrol/page.tsx",
+  "src/app/panel/tahmin/page.tsx",
+  "src/app/panel/hatirlaticilarim/page.tsx",
+  "src/app/panel/urunler/page.tsx",
+  "src/app/panel/urunler/fiyatlar/page.tsx",
+  "src/app/panel/urunler/site/page.tsx",
+  "src/app/panel/hammaddeler/page.tsx",
+  "src/app/panel/receteler/page.tsx",
+  "src/app/panel/zayi/page.tsx",
+  "src/app/panel/tutarlilik/page.tsx",
+  "src/app/panel/satislar/page.tsx",
+  "src/app/panel/komisyonlar/page.tsx",
+  "src/app/panel/analiz/page.tsx",
+  "src/app/panel/faturalar/page.tsx",
+  "src/app/panel/tedarikciler/page.tsx",
+  "src/app/panel/giderler/page.tsx",
+  "src/app/panel/harcamalar/page.tsx",
+  "src/app/panel/personel/page.tsx",
+  "src/app/panel/gelir-gider/page.tsx",
+  "src/app/panel/hatirlaticilar/page.tsx",
+  "src/app/panel/hatirlaticilar/reminders-client.tsx",
+  "src/app/panel/vergi/ui.tsx",
+  "src/app/panel/vergi/gelir-gider/page.tsx",
+  "src/app/panel/vergi/demirbas/page.tsx",
+  "src/app/panel/vergi/kurallar/page.tsx",
+  "src/app/panel/ayarlar/page.tsx",
+  "src/app/panel/kullanicilar/page.tsx",
+  "src/app/panel/parasut/page.tsx",
+  "src/app/panel/parasut/parasut-client.tsx",
+  "src/app/panel/yardim/page.tsx",
+];
+
+/** Başlık öğesinin (`<PageHeader`, `<VergiHeader`, yerel `<Header`) öznitelik metni: süslü parantez derinliği 0'daki ilk `>` */
+function headerAttrs(src: string): string[] {
+  const out: string[] = [];
+  for (const m of src.matchAll(/<(?:PageHeader|VergiHeader|Header)\b/g)) {
+    let depth = 0;
+    let i = m.index! + m[0].length;
+    for (; i < src.length; i++) {
+      const c = src[i];
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) break;
+    }
+    out.push(src.slice(m.index! + m[0].length, i));
+  }
+  return out;
+}
+
+/** Dosyadaki sayfa açıklaması dizeleri: `*DESCRIPTION*` sabitleri (Record dahil) ve başlık öğesinin `description`'ı (düz
+ * metin ya da ifadedeki düz dizeler). Kartların `description`'ı (CardHeader) sayılmaz: yalnız sayfanın başlığı */
+function descriptionStrings(src: string): string[] {
+  const out: string[] = [];
+  const lit = /"((?:[^"\\\n]|\\.)*)"/g;
+  // `const X_DESCRIPTION… = …;` (Satışlar'ın Record'u dahil): ifadenin içindeki bütün düz dizeler
+  for (const m of src.matchAll(/const \w*DESCRIPTION\w*\s*(?::[^=]+)?=([\s\S]*?);\n/g)) for (const x of m[1].matchAll(lit)) out.push(x[1]);
+  for (const attrs of headerAttrs(src)) {
+    for (const m of attrs.matchAll(/\bdescription="([^"]*)"/g)) out.push(m[1]);
+    // description={…} (iç içe süslü parantez yok): üçlü ifadelerin dalları
+    for (const m of attrs.matchAll(/\bdescription=\{([^{}]*)\}/g)) for (const x of m[1].matchAll(lit)) out.push(x[1]);
+  }
+  return out;
+}
+
+test("§8: yeni açıklamalar tek cümle, en çok 100 harf; eski uzun metin ⓘ'de", () => {
+  const long: string[] = [];
+  for (const f of NEW_DESCRIPTIONS) {
+    const strings = descriptionStrings(read(f));
+    assert.ok(strings.length > 0, `${f}: açıklama bulunamadı`);
+    for (const s of strings) if ([...s].length > 100) long.push(`${f}: ${[...s].length} · ${s.slice(0, 60)}`);
+  }
+  assert.deepEqual(long, []);
+  // Örnekler (metin aynen)
+  assert.match(read("src/app/panel/vergi/ui.tsx"), /export const OZET_DESCRIPTION = "Devlete ödenecekler: KDV, SGK, maaş vergileri ve kâr vergisi; tahmini tutar ve son gün\.";/);
+  assert.match(read("src/app/panel/zayi/page.tsx"), /description="Atılan, bozulan \(zayi\) ve ödenmeden verilen \(ikram\) ürünleri girin\."/);
+  assert.doesNotMatch(read("src/app/panel/zayi/page.tsx"), /Tutarlılık ekranı/, "personel Tutarlılık'ı açamaz");
+  // Yöneticinin "Nasıl çalışır?"u: başlıkta ⓘ; personelin ekranında yönetici kavramı içeren `more` yok
+  const header = read("src/components/panel/page-header.tsx");
+  assert.match(header, /<InfoTip text=\{more\} label="Nasıl çalışır\?" \/>/);
+  assert.match(read("src/app/panel/karaoke/page.tsx"), /more=\{role === "admin" \? MORE : undefined\}/);
+  const kasa = read("src/app/panel/kasa/page.tsx");
+  assert.match(kasa, /if \(user\.role !== "admin"\) return STAFF_DESCRIPTION;/);
+  for (const f of ["src/app/panel/receteler/page.tsx", "src/app/panel/kontrol/page.tsx", "src/app/panel/zayi/page.tsx", "src/app/panel/hatirlaticilarim/page.tsx"]) assert.doesNotMatch(read(f), /\bmore=/, f);
 });

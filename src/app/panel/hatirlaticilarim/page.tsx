@@ -17,7 +17,7 @@ function MyRemindersHeader({ role }: { role: "admin" | "staff" }) {
       title="Hatırlatıcılarım"
       path="/panel/hatirlaticilarim"
       role={role}
-      description="Kendinize not ve hatırlatma: sipariş verilecekler, temizlik, aranacaklar. Yalnızca siz görürsünüz. Saat verirseniz panel açıkken saatinde sesli uyarır; bildirim açıksa sabah özeti gelir."
+      description="Kendinize notlar: sipariş, temizlik, aranacaklar. Yalnız siz görürsünüz."
     />
   );
 }

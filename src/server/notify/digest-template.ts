@@ -535,7 +535,7 @@ export function renderDigest(
   const forecastBox = fc ? boxHtml(fc, "forecast") : "";
   // Kapanış notu gövdenin asıl bölümüne göre; yalnız ek kutu varsa not yok (kutular kendi bağlantısını taşır)
   const note = rows.length
-    ? "Ödediklerinizi panelde “Ödendi” olarak işaretleyin; tekrar edenler sıradaki tarihe geçer."
+    ? "Ödediklerinizi panelde “Ödedim” ile işaretleyin; tekrar edenler sıradaki tarihe geçer."
     : inv || zam || (!sys && !actionBox)
       ? "Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın."
       : sys

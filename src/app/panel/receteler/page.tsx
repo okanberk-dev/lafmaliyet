@@ -41,7 +41,7 @@ function RecipeBookHeader({ action, role }: { action?: ReactNode; role: "admin" 
       title="Reçete defteri"
       path="/panel/receteler"
       role={role}
-      description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik ya da yeni ürün önerir, yönetici onaylayınca uygulanır."
+      description={role === "admin" ? "Baristaların reçeteleri; personelin önerileri Onaylar'a gelir." : "Her ürünün her boyunda ne kadar malzeme; değişiklik önerin, yönetici onaylar."}
       actions={
         <>
           {action}
@@ -104,6 +104,8 @@ async function RecipeBookContent() {
             return {
               id: v.product.id,
               size: v.product.size,
+              // Not aynen gelir: öneri penceresi onunla başlar (süzülse personelin önerisi onayda notu silerdi); personelin
+              // kartında fiyat / ModPOS anan not çizilmez (recipe-book.tsx, staff-note.ts)
               note: v.product.note,
               lines: v.lines.map((l) => ({
                 ingredientId: l.item.ingredientId,

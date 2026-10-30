@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { kasaMonthLine, resolveMonth, tillMonths } from "@/lib/cash-month";
@@ -86,6 +87,29 @@ import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
 
+/** Açıklama role göre (docs/planlar/ux-sade.md §8): personel ne yapacağını, yönetici neye baktığını okur */
+const STAFF_DESCRIPTION = "Kapanışta Z raporunu alın, kasadaki nakdi sayın ve buraya girin.";
+const ADMIN_DESCRIPTION = "Personelin akşam raporları: eksik, fazla ve gelmeyen günler.";
+
+/** Yöneticinin "Nasıl çalışır?"u: eski uzun açıklama, günün kasasına göre */
+const MORE = (
+  <KasaText
+    modpos="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
+    lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
+  />
+);
+
+/** Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan) */
+async function CashDescription() {
+  const user = await requireUser();
+  if (user.role !== "admin") return STAFF_DESCRIPTION;
+  return (
+    <>
+      {ADMIN_DESCRIPTION} <InfoTip text={MORE} label="Nasıl çalışır?" />
+    </>
+  );
+}
+
 export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
   return (
     <>
@@ -93,10 +117,9 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
         title="Kasa raporu"
         path="/panel/kasa"
         description={
-          <KasaText
-            modpos="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-            lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-          />
+          <Suspense fallback={STAFF_DESCRIPTION}>
+            <CashDescription />
+          </Suspense>
         }
       />
       <Suspense fallback={<PageSkeleton rows={8} />}>

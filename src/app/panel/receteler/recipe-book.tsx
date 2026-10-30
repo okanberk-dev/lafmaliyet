@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { ChangeEditor, type EditorVariant, type ProposeKit } from "./change-editor";
 import { MyRequests, type MyRequest } from "./my-requests";
+import { staffRecipeNote } from "./staff-note";
 
 export type { MyRequest, ProposeKit };
 
@@ -341,18 +342,19 @@ function RecipeCard({
   const shown = rows
     .map((r) => ({ ...r, cells: r.cells.map((c) => (c && (showPack || !c.packaging) ? c : null)) }))
     .filter((r) => r.cells.some(Boolean));
-  // Boyların aynı notu tek kez yazılır ("M = solo, L = doppio" iki boyda da aynı); farklıysa boy adıyla
+  // Boyların aynı notu tek kez yazılır ("M = solo, L = doppio" iki boyda da aynı); farklıysa boy adıyla. Personelin
+  // kartında fiyat / maliyet / ModPOS anan yönetici notu çizilmez (docs/planlar/ux-sade.md §9 #23, H6)
   const notes = useMemo(() => {
     const byText = new Map<string, Size[]>();
     for (const v of product.variants) {
-      const t = v.note?.trim();
+      const t = (canEdit ? v.note : staffRecipeNote(v.note))?.trim();
       if (t) byText.set(t, [...(byText.get(t) ?? []), v.size]);
     }
     return [...byText.entries()].map(([text, sizes]) => ({
       text,
       label: multi && sizes.length < product.variants.length ? sizes.map((x) => SIZE_LABELS[x]).join(", ") : null,
     }));
-  }, [product.variants, multi]);
+  }, [product.variants, multi, canEdit]);
   // Malzeme adıyla arandıysa (ürün adı uymuyorsa) eşleşen satır vurgulanır: "hangi üründe süt var?"
   const highlight = query.trim() !== "" && !matches(product.name, query);
   const hiddenPack = showPack ? 0 : rows.filter((r) => r.cells.every((c) => !c || c.packaging)).length;

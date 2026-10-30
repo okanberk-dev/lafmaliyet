@@ -23,7 +23,7 @@ export function waterSource(water: WaterCost, short = false): string {
       const m = monthLabel(water.latestBillMonth!);
       return short
         ? `${m} faturası var, satış listesi yok`
-        : `${m} su faturası girildi ama ${m} ürün satış listesi yok; litre hesaplanamadı (satış listesini yükleyin ya da birim maliyeti Ayarlar'da elle yazın)`;
+        : `${m} su faturası girildi ama ${m} ürün satış listesi yok; litre hesaplanamadı (satışlar gelince hesaplanır ya da birim maliyeti Ayarlar'da elle yazın)`;
     }
     case "no-bill":
       return short ? "Su faturası girilmedi" : "Gelir-gider tablosunda hiçbir ay SU GİDERİ girilmedi; su ve buz şimdilik maliyetsiz sayılıyor";

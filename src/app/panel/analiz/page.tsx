@@ -4,12 +4,14 @@ import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { MENU_CLASS_INFO, menuEngineering, scenarioBase } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
 import { monthKasa } from "@/lib/lafpos/kasa";
+import { salesSourceOf } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 
@@ -19,15 +21,17 @@ import { scenarioBreakEvenItems, scenarioFixedItems } from "./breakdowns";
 export const metadata: Metadata = { title: "Analiz & senaryo" };
 
 const TITLE = "Analiz & senaryo";
-const DESCRIPTION =
-  "Excel'de olmayan iki araç: hangi ürünü öne çıkarmalı, hangisine zam yapmalı (menü mühendisliği) ve fiyat, maliyet ya da satış değişirse ay sonu ne olur (senaryo).";
+const DESCRIPTION = "Hangi ürünü öne çıkarmalı, hangisine zam yapmalı; fiyat değişirse ay sonu ne olur.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "İki araç: hangi ürünü öne çıkarmalı, hangisine zam yapmalı (menü mühendisliği) ve fiyat, maliyet ya da satış değişirse ay sonu ne olur (senaryo).";
 
 export default function AnalysisPage({ searchParams }: PageProps<"/panel/analiz">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/analiz" title={TITLE} description={DESCRIPTION} />
+          <PageHeader path="/panel/analiz" title={TITLE} description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -43,10 +47,19 @@ async function AnalysisContent({ searchParams }: { searchParams: PageProps<"/pan
   const model = await loadModel();
   const month = resolveMonth(sp.ay, model);
   const hasSales = model.monthSales(month).lines.length > 0;
+  // Ayın satış kaynağı (docs/planlar/ux-sade.md §10): başlığın altındaki satır ve boş durumun metni
+  const source = salesSourceOf(month, model.settings.lafposGecisGunu, model.ds.lafposSales);
 
   return (
     <>
-      <PageHeader path="/panel/analiz" title={TITLE} description={DESCRIPTION} actions={<MonthPicker months={model.salesMonths} value={month} />} />
+      <PageHeader
+        path="/panel/analiz"
+        title={TITLE}
+        description={DESCRIPTION}
+        more={MORE}
+        meta={<SalesSourceLine source={source} />}
+        actions={<MonthPicker months={model.salesMonths} value={month} />}
+      />
       {hasSales ? (
         <AnalysisReady model={model} month={month} />
       ) : (
@@ -54,7 +67,7 @@ async function AnalysisContent({ searchParams }: { searchParams: PageProps<"/pan
           <EmptyState
             icon={<Receipt />}
             title="Bu ay için satış verisi yok"
-            description="Analiz için Satışlar sayfasından ürün satış raporunu yükleyin ya da satış verisi olan bir ay seçin."
+            description={`Analiz için satış verisi gerekir: ${source.missing}. Ya da satış verisi olan bir ay seçin.`}
             action={
               <ButtonLink href="/panel/satislar" variant="secondary" size="sm">
                 Satışlara git

@@ -1969,3 +1969,77 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     bağlantısı alt satıra sığmıyor), personel 310; Genel bakış 390'da iş kartı 280 (≤ 300) ve ilk KPI rakamı ses
     satırıyla da ilk ekranda, 1440'ta 412 (≤ 404; masaüstü kartlar değişmedi); karaoke yönetici 390'da bağlantı kutusu
     108 px (başlık iki satır + `text` + Ayrıntı/eylem satırı). Metinler değişmedi.
+
+**Bölüm 3 (30 Eki 2026)**
+
+28. **Personelin Reçete defterinde not süzgeci çizimde, veride değil** (§9 #23, H6). İlk uygulama ürünün notunu
+    sunucuda süzüyordu (personelin sayfa verisinde not yok). Değişiklik önerisi penceresi (`change-editor.tsx`) ise
+    notun kendisiyle başlar ve `proposeRecipeChanges` önceki hâli veritabanından okur: süzülen not öneriye "hazırlama
+    notu değişti" diye girer, yönetici onaylayınca ürünün notu silinirdi (yerel veride 40 ürün). §13 madde 10
+    `src/server/actions/**`'a dokunmayı yasaklar; belge de "çizilmez" ve `recipe-book.tsx` der. Not personelin
+    tarayıcısına `main`'deki gibi gider (maliyet anahtarı değil; satış fiyatının nereden alındığını söyler, rakam
+    yok), kartta çizilmez; öneri penceresinde düzenlenen metin olarak görünür. `tests/sadelesen.test.ts` tutar.
+29. **"2026 kuralları"nın alt satır sözü SGK'da "geçen yılın kurallarıyla"** (§7.5 rozet tablosu "geçen yılın damga
+    tutarıyla" der). SGK satırında rozet o yılın bordro kurallarının (PEK sınırları, oranlar) henüz tabloda olmadığını
+    söyler, damga yok; öteki türlerde belgedeki söz (`badgeNote`).
+30. **Kontrol listelerinin boş durumu** (§9 "Bugün açık liste yok · Açılış listesi yarın {saat}'de başlar"): başlık
+    "Bugün açık liste yok", açıklama yarının ilk listesinin adı ve saatiyle ("Açılış listesi yarın 07:30'da başlar.";
+    ad ve saat şablondan, `listTitle`, `clockSuffixTR`). Yarın da liste yoksa bugünkü cümle kalır (yönetici "Listeleri
+    düzenle", personel "Yönetici bir liste açınca burada görünür.").
+31. **Satışlar'ın dördüncü açıklaması** (§8 üç tür sayar): `SalesSourceKind`'in dördüncüsü (ModPOS bağlantısı, bugün
+    hiçbir ay) için "ModPOS bağlantısından kendiliğinden gelir; eşleşmeyen ürünleri bağlayın." ve `more`'u yazıldı
+    (açıklama türe göre bir `Record`; bağlantı gelince kendiliğinden kullanılır). Genel bakış'ın "Satış raporu" işi
+    bağlantı ayında "yükle" demez: "Satışları aç" ve `missing` cümlesi.
+32. **Gecikmiş vergi satırı bandın grubunda** (§7.1 "tek `NoticeGroup`"): `BannerData.notices` (isteğe bağlı) eklendi;
+    bant çağrısı dört sayfada aynı (`<TaxBanner data={banner} />`, `tests/vergi-kaynak.test.ts`). Satırın metinleri
+    saf `overdueTaxNotice` (`overdue.ts`) işlevinde, test edilebilsin diye.
+33. **Kasa raporunun açıklaması rolü kendisi okur**: başlık iki rolün açtığı sayfada `Suspense`'in dışında; açıklama
+    küçük bir sunucu bileşeninde rolü okur (yüklenirken personelin cümlesi, en dar olan). Yöneticinin "Nasıl
+    çalışır?"u günün kasasına göre (ModPOS / LafPOS; eski metin).
+34. **§8 açıklama denetimi yalnız sayfa başlığını okur** (`tests/sayfa-basligi.test.ts`): `*DESCRIPTION*` sabitleri ve
+    `<PageHeader>`, `<VergiHeader>`, yerel `<Header>` öğelerinin `description`'ı. Kartların `description`'ı
+    (`CardHeader`) §8'in konusu değil; ilk sürüm onları da sayıp 30 kart açıklamasını "uzun" buluyordu.
+35. **§13'te kalan aşımlar, Bölüm 3** (ölçüm 30 Eki, yerel üretim derlemesi; tablo ve görüntüler `ux/after/olcum.md`):
+    vergi bandı 1440'ta 102 → 24 px, 390'da 48 → 24 px (Muhasebeci 20); Vergi Özet 390 / 1440 24 / 124 (≤ 90 / 100;
+    1440'ta 100 px "Şirketin kâr vergisi" kartının iki cümlelik açıklaması, dar sağ sütunda beş satır, §7.6'nın metni),
+    Vergi kârı 84 / 44, Demirbaş 24 / 44, Muhasebeci 320 / 233 (≤ 40; sayılan, ilk sıraya alınan "Muhasebeciye
+    sorulacaklar"ın açıklaması ve soruları, uyarı kutusu yok; sayfa boyu 21.858 → 12.090 px telefonda). Katlanamayan iki
+    yeni uyarı 60 px'i aşar: gecikmiş vergi satırı 84 px (başlık + ikinci satır + Ayrıntı) ve kâr vergisi kartının
+    "Eksik belgeler var" uyarısı 124 / 104 px (dar sütunda başlık, eylem, iki satırlık `text`). Metinler değişmedi.
+
+**Bölüm 3 incelemesi (30 Eki 2026)**
+
+36. **Kâr vergisi kartının "Eksik belgeler var" uyarısı yalnız gider belgesi eksikken** (§7.6 koşulu
+    `state === "taslak" && !filing && subline`). Çeyrek gider belgesinden başka sebeplerle de eksik bilgide (gelir mali
+    belgeden girilmedi, kafe dışı işler konuşulmadı, faydalı ömür): uyarı bütün belgeler seçiliyken de "0 ₺ gider henüz
+    hesaba girmedi (0 kalem)" yazıyordu. Koşul `view.ts`'e eklenen `geciciCard.missingDocs` (belgesi seçilmemiş gider ya
+    da demirbaş adayı fatura; yalnız ekleme, veri aynı) ve muhasebecinin rakamı yok; alt satır yalnız sıfır olmayan
+    parçalardan. Öteki sebepler bölümün "Eksik bilgi" rozetinde. `tests/vergi-sade.test.ts` tutar.
+37. **Kartın başlığı peşinatın yılı kartınkinden ayrılınca yılsız** (§7.6 "Şirketin kâr vergisi ({kv.year})"). Kart
+    yılı `defaultYear()` (yılın kurumlar vergisi girilene ya da 30 Nisan geçene kadar geçen yıl), peşinat bölümü bugünden
+    sıradaki çeyrek: 17 Şubat–30 Nisan arasında ve `?yil=` başka yıl seçince başlık "(2026)" altında 2027/1 peşinatını
+    gösteriyordu. O zaman başlık "Şirketin kâr vergisi"; iki bölüm başlığı zaten yılını taşır (`profitTaxTitle`).
+    Takvimin "Sonra"sındaki "tahmin kartta" da yalnız kartın yılındaki kurumlar vergisinde (`laterOnCard`); ötekinde
+    "Tutarı bilinmiyor".
+38. **Kural tablosu aynı sayfadaki bağlantının tıklamasıyla da açılır** (Ek C 9'un tuzağı): bayat kural uyarısı dört
+    sekmede, Muhasebeci'de de çizilir; orada Next'in bağlantısı `hashchange` göndermez. `RulesDetails`
+    `a[href$="#kurallar"]` tıklamasını dinler.
+39. **Sözlüğün ⓘ tanımları henüz çizilmiyor** (§7.11 "tanım ⓘ'de"). `TERMS` başvuru tablosu olarak kalır; ekrandaki
+    sözler `calendarTitle`, `PLAIN_LABELS`, `badgeLabel` / `badgeNote` ve `plainBadge`'den. "Eksik bilgi: …"
+    sebepleri (`stateReasons`, ör. "Sınıflandırılmamış gider var") §7.6 ve §7.7 gereği aynen; takvimin "Tahakkuk
+    fişindeki tutarı girin"i de resmî sözle. Nakit planı KDV kartı sözlüğü içe aktarmıyor (`docs/VERGI.md` §3.6
+    düzeltildi).
+40. **Gelir-gider'in satış kaynağı satırı yılın aylarından** (§10 tek ay der): yıl tablosu iki kasalı yılda yalnız bu
+    ayın (geçmiş yılda Aralık'ın) kaynağını yazıyordu. Satır yılın bu aya kadarki aylarından (`periodSalesSource`):
+    hepsi aynı türse o tür, karışıksa "Satışlar: ModPOS / LafPOS" (tablonun `periodKasa` etiketiyle aynı). Kaynağı
+    sormayan metinler kaynaktan bağımsız sözle: Genel bakış'ın maliyet göstergesi ("Satış verisi gelince …") ve kâr ⓘ'si
+    ("Ürün satışları gelince …"), Hammaddeler ve Ayarlar'ın su metni ("satışlar gelince hesaplanır …"), Tutarlılık'ın
+    boş durumu ("Bu ay için satış verisi yok"). `insights.ts` §10'un listesinde, dokunulmadı.
+41. **"Ödendi" → "Ödedim" (K18) iki talimatta daha**: Ödemeler'in liste altı notu ve sabah e-postasının kapanış notu
+    ("Ödediklerinizi panelde “Ödedim” ile işaretleyin"). Sabah e-postasının dört şablon özetinden yalnız hatırlatma
+    satırlısı değişti (eski notla dördü eskisiyle aynıydı; Ek C 5'in yolu). Bildirim, kaydırma ve durum rozeti "Ödendi"
+    kalır; Son ödenenler'in açıklaması cari ödemelerini de sayar, "Ödendi" kalır.
+42. **Genel bakış'ın KPI rakamları aynı satırdan başlar** (inceleme): "Zarar etmemek için günlük satış (başabaş)"
+    telefonda 3, 640-767 px'te ve dört sütunda 2 satır; komşularının rakamı 20-40 px yukarıda kalıyordu. Izgara o
+    satırdaki etiketlere ortak en az yükseklik verir (`KPI_LABELS`, `Stat`'ın `data-stat-label`'ı); iki sütunda yalnız
+    ikinci satır, üst satır uzamaz. 360-2000 px arası ölçüldü; 340 px'te etiket 4 satır (dar telefon dışı).

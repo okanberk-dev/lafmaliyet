@@ -156,7 +156,7 @@ test("C: asgari vergi: ilk defa faaliyete başlayan şirkette 2026–2028 uygula
     [0, 0, 12786.87, 36928.95],
   );
   assert.equal(minTaxText(2026, ilk), "Asgari kurumlar vergisi: uygulanmaz (ilk 3 hesap dönemi, 2026–2028)");
-  assert.equal(minTaxText(2026, S_A), "Asgari kurumlar vergisi: uygulandı; muafiyet için ilk defa faaliyete başlama işaretlenmedi (Muhasebeci › Vergi ayarları)");
+  assert.equal(minTaxText(2026, S_A), "Asgari kurumlar vergisi: uygulandı; muafiyet için ilk defa faaliyete başlama işaretlenmedi (Muhasebeci › Şirketin vergi ayarları)");
   assert.equal(corporateTax(input({ settings: ilk })).asgari, null);
 });
 

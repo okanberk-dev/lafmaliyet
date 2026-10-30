@@ -9,8 +9,9 @@ import type { QuarterView } from "@/lib/tax/view";
 import { DetailList, Explain, NoteList } from "../ui";
 
 /*
- * Köprü kartı (plan docs/planlar/vergi.md §3.2 `bridge`, §4.2): Gelir-gider ekranındaki giderden vergiye göre gidere,
- * çeyrek ve ay ay. Gelir için yalnız kaynak yazar; yönetim verisiyle mali belge arasındaki fark hiçbir yerde yazılmaz (K11).
+ * Köprü kartı (plan docs/planlar/vergi.md §3.2 `bridge`, §4.2; docs/planlar/ux-sade.md §7.7): Gelir-gider ekranındaki
+ * giderden vergi hesabındaki gidere, çeyrek ve ay ay. Gelir için yalnız kaynak yazar; yönetim verisiyle mali belge
+ * arasındaki fark hiçbir yerde yazılmaz (K11).
  */
 
 const signed = (r: BridgeRow) => (r.key === "start" || r.key === "end" ? money(r.amount) : r.amount < 0 ? `− ${money(-r.amount)}` : `+ ${money(r.amount)}`);
@@ -25,7 +26,7 @@ export function BridgeCard({ quarter }: { quarter: QuarterView }) {
   const lastPersonnel = withPersonnel.filter((x) => !x.m.inProgress).at(-1) ?? withPersonnel.at(-1);
   return (
     <Card>
-      <CardHeader icon={<ArrowRightLeft />} title="Gelir-gider'den vergiye" description={`Gelir-gider ekranındaki gider vergiye göre gidere nasıl dönüşüyor (${quarter.label}, KDV hariç)`} />
+      <CardHeader icon={<ArrowRightLeft />} title="Gelir-gider'den neden farklı?" description={`Gelir-gider ekranındaki gider, vergi hesabında nasıl değişiyor (${quarter.label}, KDV hariç)`} />
       <CardContent className="space-y-3">
         <DetailList rows={rowsOf(quarter.bridge)} />
         <NoteList notes={[...incomeLines, ...(lastPersonnel ? [`${monthName(lastPersonnel.m.month)}: ${lastPersonnel.b.personnel}`] : [])]} />

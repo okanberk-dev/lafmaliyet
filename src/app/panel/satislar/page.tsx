@@ -5,6 +5,7 @@ import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
@@ -15,6 +16,7 @@ import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
 import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
+import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -24,19 +26,31 @@ import { CountUp, ImportCard, MatchCoverage, MonthInfoForm, SalesTable, type Pro
 
 export const metadata: Metadata = { title: "Satışlar" };
 
-const DESCRIPTION =
-  `Patron (ModPOS) ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır. ${RECIPE_COST_NOTE}`;
+/**
+ * Açıklama ayın satış kaynağına göre (docs/planlar/ux-sade.md §8, §10; src/lib/sales-source.ts). ModPOS bağlantısı
+ * gelince (bugün hiçbir ay) dördüncü cümle kendiliğinden kullanılır
+ */
+const DESCRIPTION: Record<SalesSourceKind, string> = {
+  "modpos-rapor": "Ay sonunda ModPOS ürün satış raporunu yükleyin, eşleşmeyen ürünleri bağlayın.",
+  lafpos: "LafPOS'un gün sonları her gece gelir; eşleşmeyen ürünleri bağlayın.",
+  gecis: "Geçiş ayı: önce ModPOS raporu, sonra LafPOS gün sonları; eşleşmeyenleri bağlayın.",
+  "modpos-baglanti": "ModPOS bağlantısından kendiliğinden gelir; eşleşmeyen ürünleri bağlayın.",
+};
 
-/** LafPOS'a geçildiyse ayın kaynağına göre (docs/LAFPOS.md › Günlük satış) */
-const DESCRIPTION_LAFPOS = `LafPOS'un gün sonlarından gelen ürün satışları, ay toplamı. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`;
-const DESCRIPTION_GECIS = `Geçiş ayı: geçiş gününden önceki günler Patron (ModPOS) ürün satış raporundan, sonrası LafPOS'un gün sonlarından. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`;
+/** Eski uzun açıklamalar: başlıktaki ⓘ "Nasıl çalışır?", kaynağa göre (docs/LAFPOS.md › Günlük satış) */
+const MORE: Record<SalesSourceKind, string> = {
+  "modpos-rapor": `ModPOS ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır. ${RECIPE_COST_NOTE}`,
+  lafpos: `LafPOS'un gün sonlarından gelen ürün satışları, ay toplamı. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
+  gecis: `Geçiş ayı: geçiş gününden önceki günler ModPOS ürün satış raporundan, sonrası LafPOS'un gün sonlarından. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
+  "modpos-baglanti": `ModPOS bağlantısından gelen ürün satışları. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır. ${RECIPE_COST_NOTE}`,
+};
 
 export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Satışlar" path="/panel/satislar" description={DESCRIPTION} />
+          <PageHeader title="Satışlar" path="/panel/satislar" description={DESCRIPTION["modpos-rapor"]} more={MORE["modpos-rapor"]} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -62,6 +76,8 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     ? (model.ds.lafposSales?.months.find((m) => m.month === month) ?? lafposMonthStatus({ month, switchDay, today, modpos: null, lafpos: null }))
     : null;
   const notes = lafpos && switchDay ? lafposMonthNotes(lafpos, switchDay) : null;
+  // Ayın satış kaynağı: başlığın açıklaması ve altındaki satır (docs/planlar/ux-sade.md §10)
+  const source = salesSourceOf(month, switchDay, model.ds.lafposSales);
   const defaultThrough = coverageFor(month, today);
   // Geçiş ayında liste en çok geçiş gününden önceki güne kadar (biten ayda da gün seçilir; sunucu aynı kuralla kırpar)
   const lastModpos = switchDay ? addDays(switchDay, -1) : null;
@@ -133,7 +149,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
       <PageHeader
         title="Satışlar"
         path="/panel/satislar"
-        description={lafpos?.source === "lafpos" ? DESCRIPTION_LAFPOS : lafpos?.source === "gecis" ? DESCRIPTION_GECIS : DESCRIPTION}
+        description={DESCRIPTION[source.kind]}
+        more={MORE[source.kind]}
+        meta={<SalesSourceLine source={source} />}
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
       />
 

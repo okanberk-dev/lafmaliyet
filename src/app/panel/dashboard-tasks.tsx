@@ -11,6 +11,7 @@ import { CASH_OUT_INVOICES_HREF, cashOutInvoiceDay, pendingCashOutSummary, type 
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import { lafposMonthNotes } from "@/lib/lafpos/sales";
+import { salesSourceOf, type SalesSource } from "@/lib/sales-source";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
 
@@ -79,6 +80,11 @@ export interface MonthTaskFacts {
     summaryRows: number;
     refMonth: string | null;
     lafpos?: { source: "gecis" | "lafpos"; days: number; warning: string | null };
+    /**
+     * Ayın satış kaynağı (src/lib/sales-source.ts salesSourceOf; docs/planlar/ux-sade.md §10): elle yüklenmeyen ayda
+     * (LafPOS, ileride ModPOS bağlantısı) iş "yükle" demez. Yoksa eski kural (LafPOS ayı elle değil)
+     */
+    source?: Pick<SalesSource, "kind" | "manual" | "missing">;
   };
   /**
    * Ayın etkin açık günü ve cirosu. `source`: elle mi kasa raporlarından mı (yoksa elle sayılır); `till`: ayın kasa
@@ -213,6 +219,7 @@ export function monthTaskFacts(
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
       ...(lp && st ? { lafpos: { source: st.source, days: st.lafpos?.days ?? 0, warning: lafposMonthNotes(st, lp.switchDay).warnings[0] ?? null } } : {}),
+      source: (({ kind, manual, missing }) => ({ kind, manual, missing }))(salesSourceOf(month, lp?.switchDay ?? model.settings.lafposGecisGunu, lp)),
     },
     info: {
       openDays: info?.openDays ?? null,
@@ -309,7 +316,17 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
             ? `ModPOS listesi ve LafPOS'tan ${num(s.lafpos.days)} gün (${num(s.lines)} satır), hepsi reçeteyle eşleşti.`
             : `${num(s.lines)} satır yüklendi, hepsi reçeteyle eşleşti.`;
       out.push({ key: "satis", title: "Satış raporu", status: "done", detail, href, action: "Satışları aç" });
-    } else if (s.lafpos?.source === "lafpos") {
+    } else if (s.source?.kind === "modpos-baglanti") {
+      // ModPOS bağlantısının getirdiği ay (ileride): liste yüklenmez
+      out.push({
+        key: "satis",
+        title: "Satış raporu",
+        status: notStarted || f.state === "running" ? "later" : "todo",
+        detail: notStarted ? "Ay başlamadı." : `${s.source.missing}.`,
+        href,
+        action: "Satışları aç",
+      });
+    } else if (s.source ? !s.source.manual : s.lafpos?.source === "lafpos") {
       // Ayın tamamı LafPOS'tan: liste yüklenmez, satırlar gün sonunda gelir
       out.push({
         key: "satis",

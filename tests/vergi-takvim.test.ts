@@ -264,7 +264,7 @@ test("§4.1: üç rakam, Başlarken, kartlar", () => {
     [
       ["Şirket nasıl kuruldu?", null, false],
       ["Giderleri sınıflandırın", "26 kalem kaldı", false],
-      ["Demirbaşlar", "4 fatura varlık listesinde değil", false],
+      ["Demirbaşlar", "4 fatura demirbaş listesinde değil", false],
       ["Muhasebecinin rakamları", "Temmuz–Eylül KDV beyannamesi satışları, 2026/2 geçici vergi", false],
     ],
   );

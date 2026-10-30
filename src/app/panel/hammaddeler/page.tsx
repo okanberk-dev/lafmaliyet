@@ -38,6 +38,11 @@ import { ListAnchor } from "./list-anchor";
 import { PriceHolds, type HoldView, type RecentHoldView } from "./price-holds";
 
 export const metadata: Metadata = { title: "Hammaddeler" };
+
+const DESCRIPTION = "Malzemelerin paket fiyatları (KDV hariç); değişince maliyetler güncellenir.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatı değişince bütün ürün maliyetleri kendiliğinden güncellenir, fiyat geçmişi saklanır.";
 // Onay bekleyen fiyatın faturasını okuma (belge indirmesi + Claude) bu sayfanın sunucu eylemiyle çalışır
 export const maxDuration = 60;
 
@@ -46,7 +51,7 @@ export default function IngredientsPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader title="Hammaddeler" path="/panel/hammaddeler" />
+          <PageHeader title="Hammaddeler" path="/panel/hammaddeler" description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -206,7 +211,8 @@ async function IngredientsContent() {
       <PageHeader
         path="/panel/hammaddeler"
         title="Hammaddeler"
-        description="Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatı değişince bütün ürün maliyetleri kendiliğinden güncellenir, fiyat geçmişi saklanır."
+        description={DESCRIPTION}
+        more={MORE}
         actions={<NewIngredientButton categories={categories} rows={rows} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

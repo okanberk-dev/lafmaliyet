@@ -168,6 +168,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | **Faz 1'in çoğu bitti (28 Ekim):** S1 (laffogato #269: menü `expect`, 409 `stale`, koşullu form, uygulama önbelleği 300 sn), S2 (laffogato #270: ödeme bekleyen sayısı, imza vektörleri), M1 (lafmobil #35: sözleşme kopyası), P1 (B12, #52 ve #53), P2 (lafmaliyet #60: bar ekranında ödeme takibi, sakin saatin kontrolü pingi saymaz, kaçan ping Ayarlar › laffogato.net'te; `docs/SITE-SIPARIS.md` › Ödeme takibi; açık: bildirimi açık, boş bar ekranını takip başlayınca uyandırmak, aşağıda "Senkron P2'nin açığı"), P0 (lafmaliyet #61: karaoke Web Push'ta misafirin adı ve notu yok, sekme arkadayken sayacın kendi sistem bildirimlerinde (başladı, az kaldı, süre doldu) de ad yok; ekrandaki zil satırında, ekran içi uyarıda ve listede ad kalır; `docs/KARAOKE.md` › Güvenlik; birleşince canlıda bir rezervasyonla kilit ekranındaki bildirime bakılır). Kalan Faz 1 yalnız M2: uygulamanın menü ve mağaza tazeliği (lafmobil `claude/senkron-m2-tazelik`, staleTime ve satır reddinde geçersiz kılma); uygulamanın bir sonraki mağaza sürümüne biner, App Store gönderimini (1.1.0) yürüten oturumun işi. Sonra Faz 2 (ayar ucu, 304, ping sınaması, kapanışlar). Bütçe (§4.0): P2'den önce ve sonra 48'er saat iki projenin CU-saat/gün ölçümü sahipte. Sahibe soru A (sitenin Neon planı), 7, 10. |
 | Genel denetim (25 Ekim): sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | Yerine 26 Ekim denetimi geçti: D-01..D-19'un 26 Ekim durumu `denetim-2026-10-26.md` › "Önceki denetim"; açık kalanlar E-maddelerine ve partilere taşındı, doğrulanmayanlar sahibe sorulardır. |
 | Denetim (26 Ekim): panel geneli ve stok sayımı | `denetim-2026-10-26.md` | 70 madde, 20 parti (B01-B20), sahibe 11 soru; aşağıda "Denetim (26 Ekim): düzeltme partileri". |
+| Panel sadeleştirme: anlaşılır menü, kompakt uyarılar, sade Vergi (sahip, 29 Ekim) | `ux-sade.md` | **Bölüm 1 (#70), Bölüm 2 (#71) ve Bölüm 3 (#72) main'de** (migration yok). Bölüm 1: kenar çubuğu (Kâr & ödemeler, Vergi, KDV, SGK; Fiyatlar ve Nakit planı menüde), bir ekran bir ad, ⌘K kayıtları ve çapalar. Bölüm 2: tek uyarı bileşeni `Notice` ve 290 kutunun göçü, telefon uyarı bütçesi. Bölüm 3: Vergi Özet'i (iki rakam, tek satır bant ve Başlarken, Ödemeler'de günü geçmiş vergi satırı, sade takvim adları, tek kâr vergisi kartı, sözlük `src/lib/tax/glossary.ts`), Muhasebeci'nin sırası, sayfa açıklamaları (tek cümle, eski metin "Nasıl çalışır?" ⓘ'sinde), kaldırılanlar defteri (§9), satış kaynağı (§10). Uygulama notları ve kalan §13 aşımları `ux-sade.md` Ek C'de; sahibe sorular §16 (varsayılanlar uygulandı). |
 
 **Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
 - ~~K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor~~ **Düzeltildi (B03, E-14):** eşitleme takip öncesi faturayı `applyCreditOnArrival`'a göndermez, o da ikinci kapı olarak tarihe bakar (`takesCreditOnArrival`; `tests/parasut-esitleme-db.test.ts`, `tests/cari-db.test.ts`).
@@ -613,6 +614,25 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
      veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık. (D-18; 26 Ekim'de sahibe soru 11.)
 
 ### Bekleyen dış girdi
+- **ModPOS bağlantısı (API):** sahip (29 Ekim): "sonrasında modpos api gelecek, orda cafe açılışından beri satılan
+  ürünler, para vs. yazacak". API kitapçığı sahipten bekleniyor; bağlantı ayrı PR'dır (istemci, ayar kartı, geçmiş
+  ayların aktarımı, elle rapor ile çakışma kuralı). Panelde yeri ayrıldı (`ux-sade.md` §10, `src/lib/sales-source.ts`):
+  - `salesSourceOf(ay, geçiş günü, lafposSales, connectedMonths)`: bağlantının yazdığı aylar `connectedMonths` olarak
+    verilince o aylar "ModPOS bağlantısı" olur; başlıkların satış kaynağı satırı ("Satışlar: ModPOS bağlantısı
+    (kendiliğinden)"), "satış raporunu yükleyin" metinleri (`missing`) ve Genel bakış'ın "Satış raporu" işi (`manual`
+    false: "yükle" demez) kendiliğinden döner. Öncelik: bağlantı > LafPOS / geçiş > ModPOS raporu.
+  - Ayarlar › Bağlantılar: LafPOS kartının (`#lafpos`) yanında "ModPOS bağlantısı" kartı, çapa `#modpos`; ⌘K kaydı
+    ("ModPOS bağlantısı" → `/panel/ayarlar#modpos`) kart gelince eklenir.
+  - Satışlar `ImportCard`: `manual === false` ayda "Bu ayın satışı ModPOS bağlantısından geldi"; elle yükleme "Raporu
+    yine de yükle" ikincil düğmesine iner.
+  - Kasa raporu ModPOS Z karşılaştırması ve Genel bakış "Kasa · {kaynak}" etiketleri `monthKasa` üstünden aydan türer;
+    bağlantı `monthSource`'a dördüncü değer eklerse etiketler tek yerden değişir (`docs/LAFPOS.md` › Metinler).
+  - Kenar çubuğu, ⌘K grupları ve adresler değişmez: Satışlar "Satış" grubunda; geçmiş aylar (açılıştan beri) aynı ay
+    seçiciyle açılır.
+  - Bilerek bağlanmayanlar (bağlantı PR'ının işi): `src/lib/calc/insights.ts` (hesap katmanı), `src/lib/weekly/items.ts`
+    (haftalık e-posta), `src/lib/lafpos/sales.ts` (ModPOS listesi ile LafPOS çakışma cümleleri), Genel bakış'ın
+    "Patron'dan … yükleyin" iş metni (yalnız elle yüklenen aylarda görünür).
+  - Sahibe soru (§16 madde 10): bağlantı gelince elle yüklenmiş eski aylar bağlantının rakamıyla değiştirilsin mi?
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
   **26 Ekim:** ModPOS'un günlük dökümü gelmeyecek; ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`). B08'den

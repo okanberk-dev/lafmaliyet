@@ -30,7 +30,8 @@ function Header() {
     <PageHeader
       path="/panel/urunler/site"
       title={TITLE}
-      description="Panel ürünlerini laffogato.net menüsündeki kalemlere bağlayın: bağlı ürünün satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir. Ad, kategori, reçete ve maliyet eşitlenmez."
+      description="Panel ürünlerini laffogato.net menüsüne bağlayın; fiyat iki yerde aynı kalır."
+      more="Panel ürünlerini laffogato.net menüsündeki kalemlere bağlayın: bağlı ürünün satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir. Ad, kategori, reçete ve maliyet eşitlenmez."
       actions={
         <>
           <ButtonLink href="/panel/urunler" variant="ghost" size="sm">

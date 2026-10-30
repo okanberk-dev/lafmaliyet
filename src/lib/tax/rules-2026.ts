@@ -624,7 +624,7 @@ export const RULES_2026: TaxYearRules = {
       sources: [S.sgkTesvik2026, S.sgkGenelge2026_8, S.kpmgDestek],
       confidence: "muhtemel",
       appliesFrom: D,
-      note: "Yalnız Vergi ayarlarında \"Asgari ücret desteği SGK'dan düşülsün\" açıksa düşülür; emekli çalışanda yok.",
+      note: "Yalnız Şirketin vergi ayarlarında \"Asgari ücret desteği SGK'dan düşülsün\" açıksa düşülür; emekli çalışanda yok.",
       confirm: "destek",
     },
   },

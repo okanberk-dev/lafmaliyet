@@ -5,7 +5,7 @@ yapmam gerekiyor, ne bitti?" sorusunun cevabı tek ekranda. Personel girişte bu
 Genel bakış olarak kalır.
 
 Ekranda yeni bir yazma eylemi yok: her satır ilgili ekranın doğru yerine götürür, hatırlatıcıyı tamamlamak ve ödemeyi
-"Ödendi" yapmak var olan eylemlerle yapılır.
+"Ödedim" demek var olan eylemlerle yapılır.
 
 ## Düzen
 
@@ -16,12 +16,21 @@ sonra" ya da "Bugünün işleri tamam".
 |------|-------|--------|
 | **Yapılacaklar** | İkisi | Üç bölüm: **Şimdi** (sorunlu ve yapılacak işler), **Sonra** (zamanı gelmemiş), kapalı **Tamamlananlar**. İlk sorunlu iş (yoksa ilk yapılacak) **sıradaki**dir: siyah çerçeve ve "Sıradaki: Raporu gir →" hapı. Dünkü kontrol listeleri (`liste-dun`) başka yapılacak ya da sorunlu satır varken hiçbir rolde sıradaki olmaz (geçmişe bakmaktır). Yöneticide altta "Bu ayın işleri Genel bakış'ta →" |
 | **Hatırlatıcılarım** | İkisi | Geciken ve bugünkü hatırlatıcılar (en çok 6; fazlası "Tümü (14)"). ✓ ile tamamlanır, bildirimde "Geri al" |
-| **Yaklaşan ödemeler** | Yönetici | Genel bakış'taki kartın aynısı: geciken ve 7 gün içindekiler, tek dokunuşla "Ödendi" |
+| **Yaklaşan ödemeler** | Yönetici | Genel bakış'taki kartın aynısı: geciken ve 7 gün içindekiler, tek dokunuşla "Ödedim" |
 | **Satış tahmini** | Yönetici | Bugünün tahmini (Z toplamı, ≈ 18.500 ₺) ve aralığı, yoğunluk (Yüksek / Normal / Düşük), kaç kişi ("3 kişi · yoğunsa 4"), kaç tatlı, en çok üç etiket ("Cumhuriyet Bayramı +%20"), 7 günün çubukları (rakamsız; dokununca Satış tahmini'nde o gün) ve altta "Dün: tahmin …, gerçekleşen …" (bugünün raporu girildiyse bugünün sonucu). Kaba tahminde "Kaba tahmin: kasa raporu biriktikçe netleşir."; kapalı işaretli günde "Bugün kafe kapalı olarak işaretli (Tadilat)." Okunamazsa kart çizilmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
 | **Bugün kafede** | İkisi | Personelde önce satış tahmininin satırları (Satış tahmini › Tahmin ayarları'nda "Personel bugünün yoğunluğunu görsün" açıkken): "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı, yağmur" ve "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)"; tutar, aralık ve kişi önerisi personele hiç gitmez. Sonra karaoke odası (süren oturum ya da "Süre doldu", iş gününün rezervasyonları ve rezervasyonsuz oturumları, sıradaki; ödenmemiş tutma ve iptal sayılmaz) ve uygulama siparişleri ("2 açık uygulama siparişi · 1 teslime hazır"; yalnız sayı, liste son 30 dakikada siteden doğrulanmadıysa yazılmaz: bağlantı kopmuş olabilir). Satırın kendi adresi varsa ona götürür (yoğunluk satırı personelin Özel günler'ine), yoksa bar ekranına; tatlı satırı bağlantısız. Sonda bar ekranının Tükenenler kartıyla kapatılıp hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en eskisi önce, en çok 3 ad), `/panel/karaoke#tukenenler`'e götürür; personelin kaydı 16 saatten eskiyse uyarı rengi ve "Tiramisu 2 gündür tükendi: geldiyse satışa açın" (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). "Bar ekranı" düğmesi. Tutar ve sipariş sahibinin adı yazmaz. laffogato.net bağlı değilse ve bugün oturum yoksa görünmez |
 
 Geniş ekranda (xl) solda Yapılacaklar, sağda öteki kartlar (Hatırlatıcılarım, Yaklaşan ödemeler, Satış tahmini, Bugün
 kafede); telefonda tek sütun, bu sırayla.
+
+**Telefon deseni** (29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md) §4.8; [TASARIM.md](TASARIM.md) §6 "Uyarı
+bütçesi"): Yapılacaklar'da yalnız **sıradaki** iş tam kart (açıklamasıyla); öteki işler "Diğer {n} iş" düğmesinin
+arkasında, açıklamasız tek satır. Kartın en altında yan yana tek satır: **Sonra (n)**, **Tamamlananlar (n)** ve
+yöneticide "Ayın işleri Genel bakış'ta" bağlantısı; düğmeler (`aria-expanded`) listeyi satırın altında tam genişlikte
+açar. Telefonda "Şimdi" başlığı yalnız ekran okuyucuya. Sıradaki iş yoksa bütün işler tek satır, düğme yok. Geniş
+ekran aynı (Sonra açık bölüm, Tamamlananlar kapalı `<details>`). Ödeme düğmesi "Ödedim" (boş daire, ikincil); yeşil
+"Ödendi" yalnız durum rozeti. Personelde sesli uyarıların kilidi sayfanın içindeki "Sesli uyarılar kapalı" satırıdır
+(yüzen düğme yok).
 
 ## Satırlar
 

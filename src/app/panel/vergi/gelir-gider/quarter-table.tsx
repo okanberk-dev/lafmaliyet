@@ -1,12 +1,13 @@
 import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/format";
+import { plainBadge, plainBadgeTone } from "@/lib/tax/glossary";
 import { cn } from "@/lib/utils";
 
 import { Explain } from "../ui";
 import type { GridData, GridRow } from "./grid";
 
 /*
- * Vergiye göre tablosu, masaüstü (md ve üstü; plan docs/planlar/vergi.md §4.2): satırlar yukarıda, sütunlar çeyreğin
+ * Vergi kârı tablosu, masaüstü (md ve üstü; plan docs/planlar/vergi.md §4.2): satırlar yukarıda, sütunlar çeyreğin
  * ayları, çeyrek toplamı ve kümülatif. Gelir-gider'in kalıbı: yapışkan ilk sütun, kabın içinde yatay kayan tablo.
  * Satırların dökümü (kategori kategori) tablonun altında açılır.
  */
@@ -100,8 +101,8 @@ function Group({ label, rows, months }: { label: string; rows: GridRow[]; months
           <th scope="row" className={cn(STICKY, "py-2 text-left align-top font-normal group-hover:bg-[color-mix(in_oklab,var(--color-panel),white_60%)]", r.strong ? "font-semibold text-ink" : "text-ink-soft")}>
             <span className={cn("block break-words", r.tone === "bad" && "text-bad")}>{r.label}</span>
             {r.badge ? (
-              <Badge tone={r.badge.startsWith("Yönetim verisi") ? "amber" : r.badge.startsWith("mali belge") ? "green" : "gray"} className="mt-1 whitespace-normal">
-                {r.badge}
+              <Badge tone={plainBadgeTone(r.badge)} className="mt-1 whitespace-normal">
+                {plainBadge(r.badge)}
               </Badge>
             ) : null}
             {r.note ? <span className="mt-0.5 block text-xs font-normal break-words text-ink-mute">{r.note}</span> : null}

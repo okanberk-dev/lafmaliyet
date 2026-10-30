@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
-import { absentReason, checklistBoundaries, checklistDay } from "@/lib/checklists";
+import { absentReason, checklistBoundaries, checklistDay, listTitle } from "@/lib/checklists";
+import { addDays, clockSuffixTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { loadChecklistDay, loadChecklistTemplates } from "@/server/data/checklists";
 
@@ -18,7 +19,7 @@ import { KontrolTabs } from "./tabs";
 export const metadata: Metadata = { title: "Kontrol listeleri" };
 
 const TITLE = "Kontrol listeleri";
-const DESCRIPTION = "Açılışta ve kapanışta maddeleri tek tek işaretleyin; sıcaklığı yazın, istenen yerde fotoğraf çekin. Her madde dokunduğunuz an kaydedilir.";
+const DESCRIPTION = "Açılış ve kapanışta maddeleri işaretleyin; her dokunuş hemen kaydedilir.";
 
 /**
  * Kontrol listeleri: bugünün (iş günü, 05:00'te döner) açılış / kapanış listeleri, açılış saatine göre (docs/KONTROL-LISTELERI.md).
@@ -46,6 +47,8 @@ async function ChecklistsContent() {
   const now = new Date();
   const day = checklistDay(now);
   const [lists, templates] = await Promise.all([loadChecklistDay(day, user.role, now), admin ? loadChecklistTemplates() : Promise.resolve([])]);
+  // Bugün liste yoksa yarının ilk listesi (rolün gördükleri; saat şablondan): boş durum ne zaman başlayacağını söyler
+  const tomorrow = lists.length ? null : ((await loadChecklistDay(addDays(day, 1), user.role, now))[0] ?? null);
   const states = lists.map((l) => todayState(l, now));
   // Sıradaki: önce geciken, yoksa açık olan ilk liste
   const nextIndex = states.indexOf("overdue") >= 0 ? states.indexOf("overdue") : states.indexOf("open");
@@ -67,8 +70,14 @@ async function ChecklistsContent() {
       ) : (
         <EmptyState
           icon={<ListChecks />}
-          title="Bugün için kontrol listesi yok"
-          description={admin ? "Listeleri düzenle ekranından açılış ve kapanış listelerini açın." : "Yönetici bir liste açınca burada görünür."}
+          title="Bugün açık liste yok"
+          description={
+            tomorrow
+              ? `${listTitle(tomorrow.name)} yarın ${clockSuffixTR(tomorrow.opensAt)} başlar.`
+              : admin
+                ? "Listeleri düzenle ekranından açılış ve kapanış listelerini açın."
+                : "Yönetici bir liste açınca burada görünür."
+          }
           action={
             admin ? (
               <ButtonLink href="/panel/kontrol/duzenle" variant="primary">

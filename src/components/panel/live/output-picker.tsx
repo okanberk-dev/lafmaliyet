@@ -21,6 +21,15 @@ const noopSubscribe = () => () => {};
  * hoparlöründen gelsin. Seçim bu cihazda saklanır; Chrome ve Edge'de çalışır (Safari / iPhone'da seçilemez, ses
  * sistemin çıkışından gelir). Chrome hoparlör adlarını yalnız mikrofon izniyle gösterir; mikrofon kullanılmaz.
  */
+/**
+ * Hoparlör ipuçları: cihaz kartının tek "Ses ve bildirim ipuçları" açılırında, metinler aynen (docs/planlar/ux-sade.md
+ * H5, §9 #25); seçicinin yanında tekrar yazılmaz
+ */
+export const OUTPUT_TIPS = {
+  bluetooth: "Müzik Bluetooth hoparlörden çalıyorsa bilgisayarın kendi hoparlörünü seçin: zil ve alarm müziğe karışmaz. Bilgisayarın ses düzeyini yüksek tutun.",
+  permission: "Chrome hoparlörlerin adını göstermek için bir kez mikrofon izni ister; mikrofon kullanılmaz, hemen kapatılır. İzin penceresinde “Her ziyarette izin ver”i seçin.",
+} as const;
+
 export function OutputPicker({ role }: { role: Role }) {
   const prefs = usePrefs(role);
   const selectable = useSyncExternalStore(noopSubscribe, outputSelectable, () => false);
@@ -88,17 +97,11 @@ export function OutputPicker({ role }: { role: Role }) {
           <label htmlFor="cikis-hoparlor" className="text-sm font-medium text-ink">
             Uyarıların çalacağı hoparlör
           </label>
-          <p className="text-[13px] leading-5 text-ink-mute">
-            Müzik Bluetooth hoparlörden çalıyorsa bilgisayarın kendi hoparlörünü seçin: zil ve alarm müziğe karışmaz. Bilgisayarın ses düzeyini yüksek tutun.
-          </p>
         </div>
       </div>
       {devices === "permission" ? (
         <div className="space-y-2">
-          <p className="text-[13px] leading-5 text-ink-soft">
-            {prefs.outputLabel ? `Seçili: ${prefs.outputLabel}. ` : ""}Chrome hoparlörlerin adını göstermek için bir kez mikrofon izni ister; mikrofon kullanılmaz, hemen
-            kapatılır. İzin penceresinde “Her ziyarette izin ver”i seçin.
-          </p>
+          {prefs.outputLabel ? <p className="text-[13px] leading-5 text-ink-soft">Seçili: {prefs.outputLabel}.</p> : null}
           <Button variant="secondary" size="sm" onClick={() => void reveal()} disabled={busy}>
             <Speaker size={14} /> {busy ? "Bekleniyor…" : "Hoparlörleri göster"}
           </Button>

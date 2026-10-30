@@ -36,7 +36,9 @@ import { DELETED_BILLS_KEY, ignoredBills, UNPAID_VS_PAYMENTS, type InvoiceRow } 
 
 export const metadata: Metadata = { title: "Faturalar" };
 
-const DESCRIPTION =
+const DESCRIPTION = "Alış faturaları Paraşüt'ten her sabah gelir; elle de ekleyebilirsiniz.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Paraşüt'e gelen e-faturalar her sabah kendiliğinden gelir, Paraşüt'te “içeri al” gerekmez; elle eklediğiniz faturalar da burada. Mal alımları (hammadde, tatlı, ambalaj) gelir-gider tablosuna tedarikçi bazında, komisyon faturaları komisyon giderlerine otomatik gider.";
 
 /** Sabit kategori sütununun sağındaki ince çizgi (kayarken içerikten ayrılsın) */
@@ -66,7 +68,7 @@ export default function InvoicesPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} />
+          <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -139,7 +141,7 @@ async function InvoicesContent() {
 
   return (
     <>
-      <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} />
+      <PageHeader path="/panel/faturalar" title="Faturalar" description={DESCRIPTION} more={MORE} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

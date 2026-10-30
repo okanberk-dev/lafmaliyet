@@ -2073,7 +2073,7 @@ export function StockCountForm({
           description={
             isAdmin
               ? "Hammaddelerde olmayan ama stokta duran kalemler (elle fiyatlı). Tutar = miktar × birim fiyat."
-              : "Hammaddelerde olmayan ama rafta duran kalemler. Adını ve miktarını yazın; fiyatını yönetici girer."
+              : "Listede olmayan bir şey varsa buraya ekleyin; fiyatını yönetici girer."
           }
           meta={
             filledExtras.length ? (

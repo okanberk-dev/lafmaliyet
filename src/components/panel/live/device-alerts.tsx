@@ -1,6 +1,6 @@
 "use client";
 
-import { BellOff, BellRing, MonitorSmartphone, Send, Volume2 } from "lucide-react";
+import { BellOff, BellRing, ChevronDown, MonitorSmartphone, Send, Volume2 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
@@ -15,7 +15,7 @@ import type { Role } from "@/lib/constants";
 import { hiddenTabNote } from "@/lib/live-poll";
 import { sendTestPush, setPushTopics } from "@/server/actions/push";
 
-import { OutputPicker } from "./output-picker";
+import { OUTPUT_TIPS, OutputPicker } from "./output-picker";
 import { updatePrefs, usePrefs, WARN_CHOICES } from "./prefs";
 import { currentEndpoint, noteDeviceTopics, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
 import { play, unlockAudio, useAudioState } from "./sounds";
@@ -101,6 +101,14 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   }
 
   const subscribed = support === "granted" && Boolean(endpoint);
+  const tips = [
+    karaoke
+      ? "Sekmeyi Chrome'da açık bırakın: yeni sipariş ve rezervasyonda zil, bitime az kala uyarı, süre dolunca alarm çalar."
+      : "Saatli hatırlatmalar panel açıkken saatinde çalar; bildirim açıksa sekme kapalıyken de gelir.",
+    "Tarayıcı sesi ancak sayfaya bir kez dokununca açar; açılış sonrası ilk dokunuş yeter.",
+    OUTPUT_TIPS.bluetooth,
+    OUTPUT_TIPS.permission,
+  ];
   // Bildirim yokken arka plandaki sekmenin ne yaptığı (karaoke sayfasında; bu cihazın zil tercihlerine göre)
   const note = karaoke ? hiddenTabNote(prefs) : null;
   const status =
@@ -117,11 +125,6 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
       <CardHeader
         icon={<MonitorSmartphone />}
         title="Bu cihazda uyarılar"
-        description={
-          karaoke
-            ? "Sekmeyi Chrome'da açık bırakın: yeni sipariş ve rezervasyonda zil, bitime az kala uyarı, süre dolunca alarm çalar."
-            : "Saatli hatırlatmalar panel açıkken saatinde çalar; bildirim açıksa sekme kapalıyken de gelir."
-        }
         meta={
           <Badge tone={status.tone} dot>
             {status.text}
@@ -195,7 +198,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
 
         <ToggleRow
           title="Sesli uyarı"
-          description={audio === "ready" ? "Ses açık." : "Tarayıcı sesi ancak sayfaya bir kez dokununca açar; açılış sonrası ilk dokunuş yeter."}
+          description={audio === "ready" ? "Ses açık." : undefined}
           label="Sesli uyarı"
           checked={prefs.sound}
           onChange={(v) => updatePrefs(role, { sound: v })}
@@ -255,6 +258,18 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
         >
           <Volume2 size={14} /> Sesi dene
         </Button>
+        {/* Dört ipucu tek açılırda, metinler aynen (docs/planlar/ux-sade.md H5, §9 #25): dört gri kutu yerine */}
+        <details className="group/tips">
+          <summary className="relative inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-medium text-ink-soft underline decoration-current/40 underline-offset-2 outline-none select-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+            Ses ve bildirim ipuçları ({tips.length})
+            <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="size-3.5 motion-safe:transition-transform group-open/tips:rotate-180" />
+          </summary>
+          <ul className="list-disc space-y-1 pl-5 text-[13px] leading-5 text-ink-mute">
+            {tips.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </details>
       </div>
     </Card>
   );

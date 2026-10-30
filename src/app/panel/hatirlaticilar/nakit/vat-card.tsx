@@ -176,7 +176,12 @@ function VatRowItem({
           <span className="flex items-start justify-between gap-2">
             <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-5 font-semibold text-ink">
               {vatPeriodTitle(r.period)}
-              {r.overdue ? (
+              {/* Tutarı 0 olan gecikmiş satırda geciken yalnız beyanname ücreti (damga): "Ödeme beklenmez" ile çelişmesin (§7.10) */}
+              {r.overdue && r.amount === 0 ? (
+                <Badge tone="amber" dot>
+                  Damga ödendi mi?
+                </Badge>
+              ) : r.overdue ? (
                 <Badge tone="red" dot>
                   Gecikmiş
                 </Badge>

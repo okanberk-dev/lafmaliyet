@@ -22,16 +22,17 @@ export const metadata: Metadata = { title: "Karaoke" };
 // yeniden çeker (en çok 8 saniye daha); "Şimdi eşitle" de siteye gider
 export const maxDuration = 30;
 
-/** Başlık iki rolde: bağlam satırı rolün ağacından (yöneticide "Kafe"; personelde üst düzey ekran, satır yok) */
+const DESCRIPTION = "Barın ekranı: uygulama siparişleri, karaoke rezervasyonları ve oda sayacı.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın.";
+
+/**
+ * Başlık iki rolde: bağlam satırı rolün ağacından (yöneticide "Kafe"; personelde üst düzey ekran, satır yok); "Nasıl
+ * çalışır?" yalnız yöneticide
+ */
 function KaraokeHeader({ role }: { role: "admin" | "staff" }) {
-  return (
-    <PageHeader
-      title="Karaoke"
-      path="/panel/karaoke"
-      role={role}
-      description="Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
-    />
-  );
+  return <PageHeader title="Karaoke" path="/panel/karaoke" role={role} description={DESCRIPTION} more={role === "admin" ? MORE : undefined} />;
 }
 
 export default function KaraokePage() {

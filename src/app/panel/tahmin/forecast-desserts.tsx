@@ -13,7 +13,8 @@ function joinTR(xs: readonly string[]): string {
 }
 
 /** Kart "Tatlı hazırlığı": önümüzdeki 7 günde kaç dilim / adet, bütün pasta sayısı */
-export function ForecastDesserts({ data }: { data: ForecastPageData }) {
+/** `salesMissing`: satış verisi yokken ne yapılır (src/lib/sales-source.ts, bugünün ayı) */
+export function ForecastDesserts({ data, salesMissing }: { data: ForecastPageData; salesMissing: string }) {
   const days = data.forecast.days;
   if (!days.length) return null;
   if (!data.mix || !data.plan) {
@@ -28,7 +29,7 @@ export function ForecastDesserts({ data }: { data: ForecastPageData }) {
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <p className="min-w-0 flex-[1_1_16rem] text-sm text-ink-mute">
             {!byCategory
-              ? "Tatlı önerisi için Satışlar'a en az bir ayın ürün satışını yükleyin."
+              ? `Tatlı önerisi için en az bir ayın ürün satışı gerekir: ${salesMissing}.`
               : cats.length
                 ? `Son satış aylarında ${where} satış yok. Tatlıların kategorisini Tahmin ayarları'ndan seçin.`
                 : "Adında “tatlı” geçen bir kategori yok. Tatlıların kategorisini Tahmin ayarları'ndan seçin."}

@@ -90,7 +90,7 @@ const GROUPS: { source: ClassifyItem["source"]; title: string }[] = [
 ];
 
 /**
- * Vergiye göre › "Vergi hesabına girmeyen giderler" (plan docs/planlar/vergi.md §4.2, K12): kaynağa göre gruplar, her
+ * Vergi kârı › "Eksik belgeler" (eski "Vergi hesabına girmeyen giderler" (plan docs/planlar/vergi.md §4.2, K12): kaynağa göre gruplar, her
  * kalemde belgenin nerede olduğu (ve kira, genel ve dışarıdan hizmette stopaj). Seçimler istemcide toplanır; yüzen
  * çubukta "N değişikliği kaydet" tek eylemle kaydeder. Kaydedilmemiş değişiklikle sayfadan çıkmak uyarır.
  */
@@ -208,7 +208,7 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                               </label>
                               {e.withholdingShown ? (
                                 <label className="flex min-w-0 flex-col gap-1">
-                                  <span className="text-xs font-medium text-ink-soft">Stopaj</span>
+                                  <span className="text-xs font-medium text-ink-soft">Vergi kesintisi (stopaj)</span>
                                   <Select
                                     value={e.withholding}
                                     disabled={pending}
@@ -230,7 +230,7 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                               ) : null}
                               {isCandidate(it) && it.id !== null ? (
                                 <div className="flex items-end">
-                                  <AssetButton label="Varlık olarak ekle" invoices={data.invoices} invoiceId={it.id} directLimit={data.directLimit} today={data.today} />
+                                  <AssetButton label="Demirbaş listesine ekle" invoices={data.invoices} invoiceId={it.id} directLimit={data.directLimit} today={data.today} />
                                 </div>
                               ) : null}
                             </div>
@@ -255,11 +255,11 @@ export function ClassifyList({ data }: { data: ClassifyData }) {
                   <div className="min-w-0">
                     <p className="text-sm leading-5 font-medium break-words text-ink">{u.supplier}</p>
                     <p className="text-xs leading-4 text-ink-mute">
-                      {u.dateText} · varlık listesinde değil: {money(u.remaining)}
+                      {u.dateText} · demirbaş listesinde değil: {money(u.remaining)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <AssetButton label="Varlık olarak ekle" invoices={data.invoices} invoiceId={u.id} directLimit={data.directLimit} today={data.today} />
+                    <AssetButton label="Demirbaş listesine ekle" invoices={data.invoices} invoiceId={u.id} directLimit={data.directLimit} today={data.today} />
                     {u.remaining <= data.directLimit + 0.005 ? <DirectExpenseButton invoice={u} /> : null}
                   </div>
                 </li>

@@ -59,8 +59,8 @@ export interface Depreciation {
 
 export const LIFE_MISSING_WARNING = "Faydalı ömür girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar).";
 
-/** "3 varlığın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar)." */
-export const lifeMissingText = (n: number) => `${n} varlığın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar).`;
+/** "3 demirbaşın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar)." */
+export const lifeMissingText = (n: number) => `${n} demirbaşın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar).`;
 
 const quarterOfDay = (day: string) => quarterOfMonth(day.slice(0, 7));
 
