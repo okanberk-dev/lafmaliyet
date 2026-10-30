@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { NoticeGroup, type NoticeItem, type NoticeTone } from "@/components/ui/notice";
+import { Notice, type NoticeItem, type NoticeTone } from "@/components/ui/notice";
 import { dateTR, tl } from "@/lib/format";
 
 import { kasaLineText } from "../cari-payment-dialog";
@@ -40,7 +40,9 @@ function strip(key: string, tone: keyof typeof STRIP_TONE, title: ReactNode, act
 /**
  * Tedarikçi sayfasının cari şeritleri (§6.1), öncelik sırasıyla: hesapta sayılmamış ödeme, faturası gelmiş olabilecek
  * alımlar, faturası 45 gündür gelmeyen alımlar, kasadan işlenmemiş ödemeler, başka tedarikçideki faturaya sayılan
- * ödeme ve dağıtım toplamı tutmayan faturalar.
+ * ödeme ve dağıtım toplamı tutmayan faturalar. Her şerit kendi düğmeleriyle, yazıldığı sırada görünür (Ek A 201):
+ * NoticeGroup değil, çünkü her biri yapılacak bir iş; katlanır ya da tona göre yeniden sıralanırsa "Borçlara say"
+ * gibi eylemler "+N not daha"nın arkasına düşer.
  */
 export function CariStrips({
   credit,
@@ -193,5 +195,11 @@ export function CariStrips({
     );
   }
   if (!strips.length) return null;
-  return <NoticeGroup items={strips} label="Hesap uyarıları" className="mb-4" />;
+  return (
+    <div className="mb-4 space-y-2">
+      {strips.map(({ key, ...p }) => (
+        <Notice key={key} {...p} />
+      ))}
+    </div>
+  );
 }

@@ -71,30 +71,164 @@ const D_ALLOW: readonly [string, string][] = [
   ["src/components/panel/error-view.tsx", "rounded-2xl bg-bad-soft text-bad"], // 274 hata ikon karosu
 ];
 
+/**
+ * Sınıf ifadesinde (className={…}, cn(…)) birleşince kutu olan, ama tek dizede kutu olmayan Ek A "D" satırları: dolgu
+ * ve renk ayrı dizelerde (seçili hâl, rozet tonu). Dosya + birleşik metnin bir parçası.
+ */
+const D_EXPR_ALLOW: readonly [string, string][] = [
+  ["src/app/panel/analiz/analysis-client.tsx", "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular"], // senaryo değişim hapı
+  ["src/app/panel/gelir-gider/month-view.tsx", "relative inline-flex h-10 min-w-24 shrink-0 items-center justify-end"], // elle girilen hücre
+  ["src/app/panel/gelir-gider/pnl-grid.tsx", "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg"], // elle girilen hücre
+  ["src/app/panel/hatirlaticilar/reminders-client.tsx", "flex min-h-[6.5rem] cursor-pointer flex-col justify-between"], // süzgeç kartı (gecikmiş)
+  ["src/app/panel/karaoke/orders-board.tsx", "flex min-w-0 flex-col gap-2.5 rounded-2xl bg-surface p-3.5"], // yeni masa siparişinin kartı
+  ["src/app/panel/kasa/okc-card.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // "Ayrıntılar" açma düğmesi
+  ["src/app/panel/satislar/sales-client.tsx", "flex items-start gap-2 py-2 pr-1.5 pl-3"], // şüpheli önizleme satırı
+  ["src/app/panel/vergi/gelir-gider/classify-list.tsx", "grid gap-2 px-4 py-3 md:grid-cols"], // kaydedilmemiş liste satırı
+  ["src/app/panel/faturalar/invoices-client.tsx", "h-7 max-w-full cursor-pointer appearance-none truncate rounded-full"], // kategori hapı (PILL_TONE)
+  ["src/app/panel/hammaddeler/ingredients-client.tsx", "relative rounded-xl px-3 py-3.5 transition-colors"], // tahmini fiyatlı satır (ESTIMATE_ROW)
+  ["src/app/panel/satislar/sales-client.tsx", "inline-flex h-8 max-w-40 cursor-pointer items-center gap-1.5 rounded-[10px]"], // eşleşme düğmesi (MATCH_TONE)
+  ["src/app/panel/vergi/ui.tsx", "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-2.5 py-1"], // bandın "sorular" çipi (CHIP)
+];
+
 const allowed = (file: string, text: string, list: readonly [string, string][]) => list.some(([f, part]) => f === file && text.includes(part));
+
+/**
+ * Konumdaki açılış ayracının (`{` ya da `(`) dengeli kapanışına kadar olan ifade; dize sabitlerinin içi sayılmaz
+ * (`"(1)"`, `"[&_x]:…"`). Şablon dizesindeki `${…}` ayraçları dengeli olduğu için sayıma girer.
+ */
+function balanced(src: string, open: number): string {
+  const pair: Record<string, string> = { "{": "}", "(": ")" };
+  const close = pair[src[open]!]!;
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (c === "\n" && quote !== "`") quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === src[open]) depth++;
+    else if (c === close && --depth === 0) return src.slice(open, i + 1);
+  }
+  return src.slice(open);
+}
+
+/**
+ * Dosyadaki `const AD = …;` tanımlarının dize sabitleri (ilk derinlik-0 `;`'ye kadar): sınıfı sabite ya da ton nesnesine
+ * alınmış kutu (`cn(box, TONE[tone])`, `const redBox = linked ? "bg-bad-soft text-bad" : …`) ifadede adıyla geçer.
+ */
+function constLiterals(src: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*/g)) {
+    let depth = 0;
+    let quote: string | null = null;
+    let i = m.index + m[0].length;
+    const start = i;
+    for (; i < src.length; i++) {
+      const c = src[i]!;
+      if (quote) {
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") quote = c;
+      else if ("{([".includes(c)) depth++;
+      else if ("})]".includes(c)) depth--;
+      else if (depth <= 0 && c === ";") break;
+      if (depth < 0) break;
+    }
+    out.set(m[1]!, stringLiterals(src.slice(start, i)).map((l) => l.text).join(" "));
+  }
+  return out;
+}
+
+/**
+ * Sınıf ifadeleri: her `className=` ("…" ya da {…}) ve onun dışındaki her `cn(…)`; içindeki bütün dize sabitleri ve
+ * adıyla geçen dosya sabitlerinin dizeleri birleştirilir. Eski kutular çoğu kez dolguyu ve rengi ayrı dizelere yazardı:
+ * `cn("rounded-xl px-3 py-2", warn ? "bg-warn-soft text-warn" : "bg-info-soft text-info")`, `cn(box, TONE[tone])`.
+ */
+function classExpressions(src: string): { text: string; index: number }[] {
+  const out: { text: string; index: number }[] = [];
+  const covered: [number, number][] = [];
+  const consts = constLiterals(src);
+  for (const m of src.matchAll(/\bclassName=(?=["{])|\bcn\(/g)) {
+    const at = m.index;
+    if (covered.some(([a, b]) => at > a && at < b)) continue;
+    const open = at + m[0].length - (m[0].startsWith("cn") ? 1 : 0);
+    const expr = src[open] === '"' ? src.slice(open, src.indexOf('"', open + 1) + 1) : balanced(src, open);
+    covered.push([open, open + expr.length]);
+    // Dize sabitlerinin dışındaki adlar (dize içindeki sözcük ad sayılmaz)
+    const bare = expr.replace(/"[^"\n]*"|'[^'\n]*'|`[^`]*`/g, " ");
+    const named = [...new Set(bare.match(/[A-Za-z_$][\w$]*/g) ?? [])].map((n) => consts.get(n) ?? "");
+    out.push({ text: [...stringLiterals(expr).map((l) => l.text), ...named].join(" ").trim(), index: at });
+  }
+  return out;
+}
+
+const BAD_SOFT = /(?<![\w:/-])bg-bad-soft(?:\/\d+)?(?![\w-])/;
+const TEXT_BAD = /(?<![\w:-])text-bad(?![\w-])/;
+
+/**
+ * Bir dosyanın elle kutu bulguları: tek dize (sabit nesnesindeki sınıf da) ve sınıf ifadesi düzeyinde. `box`: renk
+ * zemini + dolgu; `ink`: `bg-bad-soft` + `text-bad` (AA altı).
+ */
+function boxHits(file: string, raw: string): { box: string[]; ink: string[] } {
+  const src = stripComments(raw);
+  const box = new Map<number, string>();
+  const ink = new Map<number, string>();
+  const isBox = (t: string) => BOX_BG.test(t) && PADDING.test(t);
+  const isInk = (t: string) => BAD_SOFT.test(t) && TEXT_BAD.test(t);
+  for (const l of stringLiterals(src)) {
+    const line = lineOf(src, l.index);
+    if (allowed(file, l.text, D_ALLOW)) continue;
+    if (isBox(l.text)) box.set(line, `${file}:${line}: ${l.text.trim()}`);
+    if (isInk(l.text)) ink.set(line, `${file}:${line}: ${l.text.trim()}`);
+  }
+  for (const e of classExpressions(src)) {
+    const line = lineOf(src, e.index);
+    if (allowed(file, e.text, D_ALLOW) || allowed(file, e.text, D_EXPR_ALLOW)) continue;
+    // Tek dizede zaten bulunan kutu ifadede ikinci kez sayılmaz (satır başına bir bulgu)
+    if (isBox(e.text) && !box.has(line)) box.set(line, `${file}:${line}: ${e.text.trim()}`);
+    if (isInk(e.text) && !ink.has(line)) ink.set(line, `${file}:${line}: ${e.text.trim()}`);
+  }
+  return { box: [...box.values()], ink: [...ink.values()] };
+}
 
 test("elle renkli kutu yok: renk zemini + dolgu yalnız Ek A'nın dokunulmaz satırlarında (uyarı Notice'te)", () => {
   const bad: string[] = [];
-  for (const f of scopeFiles()) {
-    const src = stripComments(read(f));
-    for (const s of stringLiterals(src)) {
-      if (BOX_BG.test(s.text) && PADDING.test(s.text) && !allowed(f, s.text, D_ALLOW)) bad.push(`${f}:${lineOf(src, s.index)}: ${s.text}`);
-    }
-  }
+  for (const f of scopeFiles()) bad.push(...boxHits(f, read(f)).box);
   assert.deepEqual(bad, []);
 });
 
 test("açık kırmızı zeminde text-bad yok (bad-soft üstünde 4,41: AA altı); kutunun mürekkebi text-bad-ink", () => {
   const bad: string[] = [];
-  for (const f of scopeFiles()) {
-    const src = stripComments(read(f));
-    for (const s of stringLiterals(src)) {
-      if (/(?<![\w:/-])bg-bad-soft(?:\/\d+)?(?![\w-])/.test(s.text) && /(?<![\w:-])text-bad(?![\w-])/.test(s.text) && !allowed(f, s.text, D_ALLOW)) {
-        bad.push(`${f}:${lineOf(src, s.index)}: ${s.text}`);
-      }
-    }
-  }
+  for (const f of scopeFiles()) bad.push(...boxHits(f, read(f)).ink);
   assert.deepEqual(bad, []);
+});
+
+test("bekçi koşullu sınıfı da yakalar: dolgu ve renk ayrı dizelerde (göç öncesinin en yaygın kutusu; inceleme B2-R2)", () => {
+  const f = "src/app/panel/kasa/check-notices.tsx";
+  // Göç öncesi kasa/check-notices.tsx: dolgu bir dizede, renk koşullu öbüründe
+  const old = `<p className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-[13px] leading-5", c.level === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")}>`;
+  assert.equal(boxHits(f, old).box.length, 1, "koşullu renkli kutu");
+  // Değişkene alınmış cn(…) ve şablon dizesi de
+  assert.equal(boxHits(f, `const cls = cn("rounded-2xl px-3.5 py-2.5", tone === "bad" && "bg-bad-soft text-bad");`).box.length, 1);
+  assert.equal(boxHits(f, `const cls = cn("rounded-2xl px-3.5 py-2.5", tone === "bad" && "bg-bad-soft text-bad");`).ink.length, 1);
+  assert.equal(boxHits(f, "<div className={`rounded-xl px-3 py-2 ${on ? \"bg-good-soft\" : \"\"}`} />").box.length, 1);
+  // Tek dizedeki kutu bir kez sayılır (dize + ifade iki bulgu olmaz)
+  assert.equal(boxHits(f, `<p className="rounded-xl bg-warn-soft px-3 py-2">`).box.length, 1);
+  // Dize içindeki ayraç ifadeyi bölmez; dolgusuz renk ya da renksiz dolgu kutu değildir
+  assert.equal(boxHits(f, `<p className={cn("px-3 py-2 after:content-['(']", ok && "text-ink")}>`).box.length, 0);
+  assert.equal(boxHits(f, `<span className={cn("rounded-full", warn ? "bg-warn-soft" : "bg-note")} />`).box.length, 0);
+  // Yorumdaki eski kutu sayılmaz
+  assert.equal(boxHits(f, `{/* <p className={cn("px-3 py-2", "bg-warn-soft")}> */}`).box.length, 0);
+  // Sabite ya da ton nesnesine alınmış sınıf: göç öncesi cari-strips.tsx (Strip) ve ayarlar/lafpos-card.tsx
+  const strip = `const TONE = {\n  info: "bg-info-soft text-info",\n  warn: "bg-warn-soft text-warn",\n} as const;\nfunction Strip() {\n  return <div className={cn("flex rounded-2xl px-4 py-3 text-[13px]", TONE[tone])} />;\n}`;
+  assert.deepEqual(boxHits("src/app/panel/tedarikciler/[cari]/cari-strips.tsx", strip).box.length, 1);
+  const lafpos = `const box = "space-y-2 rounded-2xl px-4 py-3 text-[13px]";\nconst redBox = linked ? "bg-bad-soft text-bad" : "bg-surface";\n<div className={cn(box, redBox)} />`;
+  assert.equal(boxHits("src/app/panel/ayarlar/lafpos-card.tsx", lafpos).box.length, 1);
+  assert.ok(boxHits("src/app/panel/ayarlar/lafpos-card.tsx", lafpos).ink.length > 0);
 });
 
 /** Uyarı ikonunun JSX'i: yalnız ortak bileşenler ve §4.7'nin kart / rakam başlığı ikonları */
@@ -415,4 +549,24 @@ test("sayfayla gelen sistem uyarısı role=\"alert\" değil note; personelin yü
   assert.match(center, /createPortal\(/);
   assert.match(center, /title="Sesli uyarılar kapalı"/);
   assert.doesNotMatch(stripComments(center), /Sesli uyarılar için dokunun/);
+});
+
+test("inceleme B2: cari şeritleri yazıldığı sırada, eylemli uyarıların eylemi görünür, boş kart gövdesi yok", () => {
+  // R1: her şerit kendi düğmeleriyle görünür (NoticeGroup katlar ve tona göre sıralardı; Ek A 201)
+  const strips = stripComments(read("src/app/panel/tedarikciler/[cari]/cari-strips.tsx"));
+  assert.doesNotMatch(strips, /NoticeGroup/);
+  assert.match(strips, /\{strips\.map\(\(\{ key, \.\.\.p \}\) => \(\s*<Notice key=\{key\} \{\.\.\.p\} \/>/);
+  // R3: iade uyarısının yapılacağı ve bağlantısı Ayrıntı'nın dışında (§4.3: warn'da eylem ya da text zorunlu)
+  const parasut = read("src/app/panel/parasut/parasut-client.tsx");
+  const returns = parasut.slice(parasut.indexOf("function ReturnsNotice"), parasut.indexOf("function Step("));
+  assert.match(returns, /text="Faturalar'da aynı tedarikçiye eksi tutarlı fatura ekleyin; eklenince buradan kalkar\."/);
+  assert.match(returns, /action=\{<NoticeLink href="\/panel\/faturalar">Faturalara git<\/NoticeLink>\}/);
+  assert.doesNotMatch(returns, /Faturalara git →/);
+  // Reçetesiz ürünlerin satır başına bağlantıları açık başlar (§4.4)
+  const analiz = read("src/app/panel/analiz/analysis-client.tsx");
+  const noRecipe = analiz.slice(analiz.indexOf("function NoRecipeNote"), analiz.indexOf("export function MenuEngineering"));
+  assert.match(noRecipe, /<Notice\s+tone="warn"\s+defaultOpen\b/);
+  assert.match(noRecipe, /text="Reçetesini girince gruplara katılır\."/);
+  // V9: site bağlı değilken siparişler kartının gövdesi (boş pay) çizilmez
+  assert.match(read("src/app/panel/karaoke/orders-board.tsx"), /\{data\?\.configured \? \(\s*<div className="space-y-3 px-5 pb-5">/);
 });

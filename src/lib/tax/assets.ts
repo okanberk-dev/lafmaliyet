@@ -237,8 +237,6 @@ export function parseInvoiceLabel(label: string | null): { supplier: string; dat
   return { supplier: m[1], date: `${m[4]}-${m[3]}-${m[2]}`, amount: Number(m[5].replace(/\./g, "").replace(",", ".")) };
 }
 
-export const ORPHAN_ASSET_WARNING = "Faturası Paraşüt'te iptal edildi: yeni faturaya bağlayın";
-
 /** Faturası silinen varlığın aday faturaları: aynı tedarikçi, ±%5 tutar, ±60 gün (§3.3) */
 export function relinkCandidates(asset: Pick<TaxAsset, "invoiceId" | "invoiceLabel" | "cost" | "acquiredOn">, invoices: readonly Invoice[]): Invoice[] {
   if (asset.invoiceId !== null) return [];

@@ -39,7 +39,7 @@ import { clearQuery, FilterBar, FilterChip, fold, matches, SearchField, useQuery
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
@@ -602,7 +602,15 @@ function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof Par
   return (
     <>
       {returns.supplier.length ? (
-        <Notice tone="warn" risk="para" live="polite" className="mb-4" title={`Tedarikçiye ${num(returns.supplier.length)} iade panele girmedi`}>
+        <Notice
+          tone="warn"
+          risk="para"
+          live="polite"
+          className="mb-4"
+          title={`Tedarikçiye ${num(returns.supplier.length)} iade panele girmedi`}
+          text="Faturalar'da aynı tedarikçiye eksi tutarlı fatura ekleyin; eklenince buradan kalkar."
+          action={<NoticeLink href="/panel/faturalar">Faturalara git</NoticeLink>}
+        >
           <ul className="space-y-0.5">
             {shown.map((r) => (
               <li key={r.id} className="break-words">
@@ -612,13 +620,7 @@ function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof Par
             ))}
             {returns.supplier.length > shown.length ? <li>ve {num(returns.supplier.length - shown.length)} iade daha</li> : null}
           </ul>
-          <p className="break-words">
-            Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz. Maliyet ve KDV tahmini düzelsin diye Faturalar&apos;da aynı tedarikçiye eksi tutarlı
-            fatura ekleyin; eklenince buradan kalkar.{" "}
-            <a href="/panel/faturalar" className="font-medium text-ink underline underline-offset-2 pointer-coarse:py-3">
-              Faturalara git →
-            </a>
-          </p>
+          <p className="break-words">Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz; eksi tutarlı fatura maliyet ve KDV tahminini düzeltir.</p>
         </Notice>
       ) : null}
       {returns.sales.count ? (

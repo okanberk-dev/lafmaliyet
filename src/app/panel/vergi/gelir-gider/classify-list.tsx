@@ -48,8 +48,6 @@ export interface ClassifyItem {
 }
 
 export interface ClassifyData {
-  /** "Bu çeyrekte 808.610 ₺ gider sayılmadı (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)" */
-  header: string;
   items: ClassifyItem[];
   /** "Belgesi yok: 2 kalem, 12.400 ₺. …" (yalnız toplam ve sayı) */
   noDocText: string | null;

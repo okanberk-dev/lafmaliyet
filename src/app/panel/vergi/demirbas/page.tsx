@@ -119,8 +119,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
               const label = parseInvoiceLabel(o.asset.invoiceLabel);
               return (
                 <div key={o.asset.id} className="space-y-2">
-                  {/* ORPHAN_ASSET_WARNING ("yeni faturaya bağlayın") kısaltıldı: faturası silinen varlık listede kalırsa yeni
-                      faturayla iki kez gider sayılır; bağlama düğmeleri aşağıda */}
+                  {/* Faturası silinen varlık listede kalırsa yeni faturayla iki kez gider sayılır; bağlama düğmeleri aşağıda */}
                   <Notice tone="warn" size="sm" risk="hukuk" title={`${o.asset.name}: faturası silinmiş demirbaş`} text="Yeni faturaya bağlayın ya da listeden çıkarın; yoksa iki kez gider sayılır." />
                   <p className="pl-3 text-xs text-ink-mute">
                     Silinen fatura: {o.asset.invoiceLabel ?? "bilinmiyor"}

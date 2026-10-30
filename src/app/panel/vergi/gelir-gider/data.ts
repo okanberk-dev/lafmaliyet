@@ -77,7 +77,6 @@ export function classifyData(view: TaxView, ctx: { invoices: readonly Invoice[];
     });
   }
   return {
-    header: view.classify.header,
     items,
     noDocText: view.classify.noDoc.text,
     entries: view.classify.excluded.filter((x) => x.source === "entry").map((x) => ({ key: x.key, name: x.name, amount: x.raw, note: x.note ?? null })),

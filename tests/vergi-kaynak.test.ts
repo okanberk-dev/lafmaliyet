@@ -131,7 +131,9 @@ test("Vergiye göre tablosu (§4.2): çeyreğin üç ayı, çeyrek toplamı, kü
 
 test("sınıflandırma listesi (§4.2, K12): bölüme uygun belge seçenekleri, stopaj alanı, demirbaş adayları", () => {
   const c = classifyData(view, { invoices: model.ds.invoices, settings: DEFAULT_TAX_SETTINGS, choices: [], today: TODAY });
-  assert.equal(c.header, view.classify.header);
+  // Listenin başlık satırı kalktı (kartın açıklaması yok); çeyreğin özeti görünümde kalır (K11), listeye taşınmaz
+  assert.ok(!("header" in c), "ClassifyData başlık taşımaz");
+  assert.match(view.classify.header, /^Bu çeyrekte .* gider sayılmadı \(\d+ kalem\)/);
   const labels = (key: string) => c.items.find((i) => i.key === key)!.options.map((o) => o.label);
   const personel = c.items.find((i) => i.source === "fixed" && i.sectionLabel === "Personel giderleri")!;
   assert.deepEqual(
