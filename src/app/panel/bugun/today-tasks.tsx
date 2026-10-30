@@ -8,15 +8,17 @@ import { cn } from "@/lib/utils";
 
 import { TASK_BAR, TASK_STYLE } from "../task-style";
 import { splitTasks, type DayTask } from "./logic";
-import { PhoneMore } from "./phone-more";
+import { PhoneFoldBar, PhoneMore, type PhoneFold } from "./phone-more";
 
 /**
  * Bugün · "Yapılacaklar": Şimdi (sorunlu ve yapılacak işler), Sonra (zamanı gelmemiş, gri) ve kapalı Tamamlananlar.
  * Her satır bütünüyle ilgili ekrana giden bağlantıdır; satırın görünümü Genel bakış'taki ayın işlerinin geniş ekran
  * kartıyla aynı (durum stilleri task-style.tsx). Sıradaki iş (ilk sorunlu, yoksa ilk yapılacak) siyah çerçeve ve siyah
- * hapla öne çıkar. Telefonda ilk ekran kısa kalsın diye (docs/planlar/ux-sade.md §4.8) sıradaki iş tam kart, Şimdi'nin
- * öbür işleri tek satır olarak "Diğer N iş" arkasında, Sonra kapalı "Sonra (N)"; geniş ekran aynı. Sunucu bileşeni:
- * yalnız "Diğer N iş" düğmesi istemcide (PhoneMore), öbürleri JavaScript'siz de açılıp kapanır.
+ * hapla öne çıkar. Telefonda ilk ekran kısa kalsın diye (docs/planlar/ux-sade.md §4.8, §13) sıradaki iş tam kart,
+ * Şimdi'nin öbür işleri tek satır olarak "Diğer N iş" arkasında; "Sonra (N)", "Tamamlananlar (N)" ve "Ayın işleri"
+ * bağlantısı en altta yan yana tek satır (PhoneFoldBar). Geniş ekran aynı: Sonra açık bölüm, Tamamlananlar kapalı.
+ * Sunucu bileşeni: telefondaki düğmeler istemcide (PhoneMore, PhoneFoldBar), geniş ekrandaki Tamamlananlar
+ * JavaScript'siz de açılıp kapanır.
  */
 export function TodayTasks({ tasks, admin }: { tasks: DayTask[]; admin: boolean }) {
   const { now, later, done, next } = splitTasks(tasks);
@@ -26,6 +28,17 @@ export function TodayTasks({ tasks, admin }: { tasks: DayTask[]; admin: boolean 
   const leadCopy = lead !== null && now[0]?.key !== lead.key;
   const others = now.filter((t) => t.key !== lead?.key).length;
   const nowId = "yapilacaklar-simdi";
+  // Telefonun alt satırı: Sonra ve Tamamlananlar tek satır (açıklama ekran okuyucuya), bağlantı yanlarında
+  const rowsOf = (list: DayTask[]) =>
+    list.map((t) => (
+      <li key={t.key}>
+        <TaskLink task={t} next={false} compact />
+      </li>
+    ));
+  const phoneFolds: PhoneFold[] = [
+    ...(later.length ? [{ id: "yapilacaklar-sonra", title: "Sonra", count: later.length, children: rowsOf(later) }] : []),
+    ...(done.length ? [{ id: "yapilacaklar-tamam", title: "Tamamlananlar", count: done.length, children: rowsOf(done) }] : []),
+  ];
   return (
     <Card className="min-w-0">
       <CardHeader
@@ -46,10 +59,11 @@ export function TodayTasks({ tasks, admin }: { tasks: DayTask[]; admin: boolean 
           ) : undefined
         }
       />
-      <div className="space-y-5 px-5 pb-5 max-sm:px-4 max-sm:pb-4">
+      <div className="space-y-5 px-5 pb-5 max-sm:space-y-3 max-sm:px-4 max-sm:pb-4">
         {now.length ? (
           <section aria-label="Şimdi">
-            <h3 className="mb-2 text-[13px] font-semibold text-ink-soft">Şimdi</h3>
+            {/* Telefonda yalnız ekran okuyucuya: orada tek kart + "Diğer N iş" var, Sonra alt satırda (§13: kart ≤ 340 px) */}
+            <h3 className="mb-2 text-[13px] font-semibold text-ink-soft max-sm:sr-only">Şimdi</h3>
             <PhoneMore count={others} controls={nowId}>
               <ul id={nowId} className="grid gap-2.5 max-sm:gap-2 sm:grid-cols-2">
                 {leadCopy && lead ? (
@@ -75,28 +89,19 @@ export function TodayTasks({ tasks, admin }: { tasks: DayTask[]; admin: boolean 
           </section>
         ) : null}
         {later.length ? (
-          <>
-            <section aria-label="Sonra" className="max-sm:hidden">
-              <h3 className="mb-2 text-[13px] font-semibold text-ink-soft">Sonra</h3>
-              <ul className="grid gap-2.5 sm:grid-cols-2">
-                {later.map((t) => (
-                  <li key={t.key}>
-                    <TaskLink task={t} next={false} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-            <Fold title="Sonra" count={later.length} className="sm:hidden">
+          <section aria-label="Sonra" className="max-sm:hidden">
+            <h3 className="mb-2 text-[13px] font-semibold text-ink-soft">Sonra</h3>
+            <ul className="grid gap-2.5 sm:grid-cols-2">
               {later.map((t) => (
                 <li key={t.key}>
-                  <TaskLink task={t} next={false} compact />
+                  <TaskLink task={t} next={false} />
                 </li>
               ))}
-            </Fold>
-          </>
+            </ul>
+          </section>
         ) : null}
         {done.length ? (
-          <Fold title="Tamamlananlar" count={done.length}>
+          <Fold title="Tamamlananlar" count={done.length} className="max-sm:hidden">
             {done.map((t) => (
               <li key={t.key}>
                 <TaskLink task={t} next={false} />
@@ -106,16 +111,31 @@ export function TodayTasks({ tasks, admin }: { tasks: DayTask[]; admin: boolean 
         ) : null}
         {!tasks.length ? <p className="text-sm text-ink-mute">Bugün için iş yok.</p> : null}
         {admin ? (
-          <Link href="/panel" className="inline-flex min-h-11 items-center gap-1 text-[13px] text-ink-mute outline-none hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-ink/30">
+          <Link href="/panel" className="inline-flex min-h-11 items-center gap-1 text-[13px] text-ink-mute outline-none hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-ink/30 max-sm:hidden">
             Ayın işleri Genel bakış&apos;ta <ArrowRight size={14} aria-hidden="true" />
           </Link>
+        ) : null}
+        {phoneFolds.length || admin ? (
+          <PhoneFoldBar
+            folds={phoneFolds}
+            link={
+              admin ? (
+                <Link
+                  href="/panel"
+                  className="relative inline-flex min-h-5 items-center gap-1 text-[13px] text-ink-mute outline-none after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] hover:text-ink hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30"
+                >
+                  Ayın işleri Genel bakış&apos;ta <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+              ) : undefined
+            }
+          />
         ) : null}
       </div>
     </Card>
   );
 }
 
-/** Kapalı başlayan grup: "Sonra (N)" (telefonda), "Tamamlananlar (N)" */
+/** Kapalı başlayan grup (geniş ekran): "Tamamlananlar (N)" */
 function Fold({ title, count, className, children }: { title: string; count: number; className?: string; children: ReactNode }) {
   return (
     <details className={cn("group/fold", className)}>

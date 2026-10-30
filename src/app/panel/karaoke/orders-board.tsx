@@ -176,32 +176,36 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
           ) : undefined
         }
       />
-      <div className="space-y-3 px-5 pb-5">
-        <StatusLines data={data} now={now} role={role} />
-        {data?.configured && !prefs.orderAlerts ? (
-          <Notice
-            tone="neutral"
-            size="sm"
-            title="Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz"
-            action={
-              <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { orderAlerts: true })}>
-                Zili aç
-              </Button>
-            }
-          />
-        ) : null}
-        {list.length ? (
-          <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
-            {list.map((o) => (
-              <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
-            ))}
-          </ul>
-        ) : data?.configured ? (
-          <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
-            Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
-          </p>
-        ) : null}
-      </div>
+      {/* Gövde yalnız bağlantı varken: yokken StatusLines ve liste boş, kartın altında boş pay kalırdı (sayfanın başındaki
+          tek kutu söylüyor) */}
+      {data?.configured ? (
+        <div className="space-y-3 px-5 pb-5">
+          <StatusLines data={data} now={now} role={role} />
+          {!prefs.orderAlerts ? (
+            <Notice
+              tone="neutral"
+              size="sm"
+              title="Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz"
+              action={
+                <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { orderAlerts: true })}>
+                  Zili aç
+                </Button>
+              }
+            />
+          ) : null}
+          {list.length ? (
+            <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
+              {list.map((o) => (
+                <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
+              Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
+            </p>
+          )}
+        </div>
+      ) : null}
     </Card>
   );
 }

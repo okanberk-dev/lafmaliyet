@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createModel, type WaterCost } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
-import { phoneChecklist, taskSummary, type MonthTask } from "../src/app/panel/dashboard-tasks";
+import { checklistFold, phoneChecklist, taskSummary, type MonthTask } from "../src/app/panel/dashboard-tasks";
 import { needsPin, pinTarget } from "../src/app/panel/ayarlar/pin-scroll";
 import { categoriesSummary, logSummary, measuresSummary, ratesSummary, waterSummary } from "../src/app/panel/ayarlar/summaries";
 import { hasSizeColumns, menuPrice, menuPrices, type MenuItem } from "../src/app/menu/menu-rows";
@@ -73,6 +73,23 @@ test("Telefon listesi: bütün işler bitince sıradaki iş yok, hepsi tek satı
   assert.equal(p.rows.length, 3);
   assert.equal(p.toggle, true, "biten işlerin ayrıntısı da açılabilir");
   assert.equal(p.waiting, 0);
+  // Sıradaki iş yokken katlanmaz: kart açılınca boş görünüp yalnız "Diğer 3 iş" düğmesi kalmasın (inceleme B2-V2)
+  assert.deepEqual(checklistFold(p.rows), { fold: false, others: 3 });
+});
+
+test("Telefon listesi: tek satırlar yalnız sıradaki iş varken \"Diğer N iş\" düğmesinin arkasına katlanır", () => {
+  const withLead = phoneChecklist([task("satis", "todo"), task("gun", "done"), task("fatura", "warn"), task("su", "later")]);
+  // Sıradaki iş (fatura) tam kart; öteki üç iş tek satır ve katlanır (sıradaki işin geniş ekran kopyası sayılmaz)
+  assert.deepEqual(checklistFold(withLead.rows), { fold: true, others: 3 });
+  // Hepsi ay sonuna kaldı (sıradaki iş yok): katlanmaz
+  assert.deepEqual(checklistFold(phoneChecklist([task("su", "later"), task("sayim", "later")]).rows), { fold: false, others: 2 });
+  // Tek iş açık: tek satır yok, düğme yok
+  assert.deepEqual(checklistFold(phoneChecklist([task("odeme", "warn")]).rows), { fold: false, others: 0 });
+  assert.deepEqual(checklistFold([]), { fold: false, others: 0 });
+  // Bileşen düğmeyi ve gizlemeyi bu karara bağlar
+  const ui = readFileSync(join(root, "src/app/panel/dashboard-checklist-tasks.tsx"), "utf8");
+  assert.match(ui, /compact && fold && !more && "max-sm:hidden"/);
+  assert.match(ui, /\{fold \? \(/);
 });
 
 test("Telefon listesi: tek iş açıksa ayrıntı düğmesi gerekmez", () => {
