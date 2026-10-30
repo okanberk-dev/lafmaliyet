@@ -155,9 +155,16 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
   `NoticeGroup`'ta, ötekilerden ilk ikisi görünür, kalanı "+{n} uyarı daha" (`foldPlan`).
 - `<details>` kapalı başlar; açık başlar yalnız satır başına eylemi olan liste ve kullanıcının eylemine cevap veren
   hata dökümü (`defaultOpen`).
-- Rol: `live` yoksa `note`, `polite` → `status`, `assertive` → `alert`; sayfayla sunucudan gelen uyarıya `alert`
-  verilmez. Her tonun kendi ikon şekli ve başlığın başında ekran okuyucu öneki ("Önemli: ", "Dikkat: ", "Bilgi: ",
-  "Tamam: ") var.
+- Rol: `live` yoksa `note`, `polite` → `status`, `assertive` → `alert`; `live` yalnız istemcide sonradan beliren
+  uyarıya, sayfayla sunucudan gelene hiç verilmez. Ayrıntısı olan canlı uyarıda rol kökten başlık + ikinci satır
+  sarmalayıcısına iner: "Ayrıntı" ve eylem canlı bölgenin dışında (canlı bölge atomiktir; açıp kapamak bütün uyarıyı
+  yeniden okuturdu). Her tonun kendi ikon şekli ve başlığın başında ekran okuyucu öneki ("Önemli: ", "Dikkat: ",
+  "Bilgi: ", "Tamam: ") var.
+- Yerleşim: eylem başlığın sağında, sığmazsa ikon hizasına iner; başlık ve eylem satırda dikeyde ortalı. Telefonda
+  eylem ve "Ayrıntı" birlikteyse ikisi aynı (ikinci) satırda: solda "Ayrıntı ⌄", sağda eylem; açılınca gövde tam
+  genişlikte, eylem onun altına iner, özet yerinde kalır. Eylemin görünmez dokunma kenarı komşu özetinkinin üstündedir.
+  `NoticeLink` satır yüksekliğinde (20 px) + 12 px kenar = 44 px; "Teknik ayrıntı" özeti 16 + 2 × 14 = 44 px ve
+  metni `text-ink-soft` (12 px'te `text-ink-mute` nötr kutunun panel zemininde 4,4:1).
 - Geliştirici dili (anahtar adı, Vercel, komut, `docs/…` yolu) yalnız `tech`'te ("Teknik ayrıntı (geliştirici
   için)", Ayrıntı'nın içinde kapalı); personelin açtığı ekranda `tech` hiç verilmez, yönetici talimatı yerine "sorun
   sürerse yöneticiye haber verin". Turuncu yalnız uyarıdır: iş listelerinin "Yapılacak" durumu gri.
@@ -189,7 +196,10 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
   bütçeye girmez ama her biri Ayrıntı kapalıyken ≤ 60 px. Eylem başlığın yanına sığmazsa ikon hizasına iner; kutu
   iki satırı geçmez. Ölçü `[data-notice]` / `[data-risk]` öznitelikleriyle (docs/planlar/ux-sade.md §13).
 - **Yüzen öğe içerik örtmez**: sesli uyarıların kilidi sayfanın içinde (`#ses-yuvasi`, `Notice` "Sesli uyarılar
-  kapalı" + "Sesi aç"); iş listelerinde telefonda sıradaki iş tam kart, ötekiler "Diğer {n} iş" arkasında.
+  kapalı" + "Sesi aç"). Ses ilk dokunuşta açılır ama satır o anda kalkmaz: sayfa değişene kadar aynı yükseklikte
+  "Sesli uyarılar açık" olarak kalır (`soundRow`, `src/lib/live-poll.ts`), içerik dokunuşun altında kaymaz. İş
+  listelerinde telefonda sıradaki iş tam kart, ötekiler "Diğer {n} iş" arkasında (sıradaki iş yoksa hepsi tek satır,
+  düğme yok); Bugün'de "Sonra (n)", "Tamamlananlar (n)" ve "Ayın işleri" bağlantısı en altta yan yana tek satır.
 
 ### Telefonda uygulama hissi (kontrol listesi)
 

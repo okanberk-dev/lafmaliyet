@@ -1907,3 +1907,45 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     cümlesi 18 sözcük sınırına sığmadığı için düştü; düğmenin kendisi 0 yazar ve sapma tabloda görünür).
 14. **Kontrast bekçisi düğme hâllerini saymaz**: `hover:bg-bad-soft` (Sil düğmeleri) kutu değil; Ek A'nın D satırlarındaki
     değer hapları ve ikon karoları (`text-bad` + `bg-bad-soft`) izin listesinde, dokunulmadı.
+
+**Bölüm 2 incelemesi (30 Eki 2026)**
+
+15. **Ses satırı ilk dokunuşta kalkmaz** (§4.6 "ilk dokunuşta kaybolur"): satır akan yuvada olduğu için pointerdown'da
+    kalkınca içerik 44-76 px kayıyor, tıklama başka öğeye düşüyordu. Satır sayfa değişene kadar kalır; ses açılınca
+    aynı yükseklikte `good` "Sesli uyarılar açık"a döner (düğmenin görünmez eşi yeri tutar). Ses yeniden kilitlenirse
+    aynı yerde yeniden "kapalı" olur.
+16. **Notice'in üçüncü yerleşimi** (§4.1 iki yerleşim sayar): eylemsiz, ayrıntılı ve canlı uyarıda bütün kutu tek
+    `<details>` olamaz, çünkü canlı bölge (§4.5) özetin içinde kalır ve Ayrıntı'yı açıp kapamak bütün uyarıyı yeniden
+    okutur. Bu durumda rol başlık + `text` sarmalayıcısında, "Ayrıntı ⌄" onun dışında ve başlık satırının sağında
+    (yüksekliği 2. yerleşiminkiyle aynı). Ayrıntılı canlı uyarıda eylem de canlı bölgenin dışında. Sayfayla sunucudan
+    gelen iki uyarı canlı değil artık: Tahmin bandı (`tahmin/page.tsx`) ve karaoke'nin bağlantı kutusu (bağlantı
+    sunucunun ayarı).
+17. **Telefonda eylem ve Ayrıntı aynı satırda** (§4.6 "kutu iki satırı geçmez"): 1. yerleşimde ikisi birlikteyse
+    telefonda ikinci satır solda "Ayrıntı ⌄", sağda eylem; açılınca gövde tam genişlikte, eylem altına iner, özet
+    yerinde kalır. Masaüstü aynı (eylem başlığın sağında). Başlık ve eylem satırda ortalı (44 px'lik telefon düğmesinin
+    yanında başlık tepede kalmıyordu).
+18. **Ölçü: md kutu Ayrıntı satırıyla 64 px, 60 değil** (§4.2 "60 / 56 px"): `py-2.5` (20) + başlık 20 + `gap-1` (4) +
+    satır 20 = 64; sm 56. §13'ün "≤ 60 px" katlanamayan uyarı ölçütü bu kutuda 64 olarak okunur. Başlığı iki satıra
+    saran uyarı (belgenin metni aynen; ör. "Temmuz 2026, Ağustos 2026, Eylül 2026, Ekim 2026 sayımı yok: …" 390'da
+    80 px) ve 44 px'lik düğme eylemli uyarı (telefonda 88 px) bunu aşar.
+19. **Bugün'ün telefon alt satırı istemci düğmesi** (§4.8 "Sonra grubu kapalı `<details>`"): "Sonra (n)",
+    "Tamamlananlar (n)" ve yöneticinin "Ayın işleri Genel bakış'ta" bağlantısı yan yana tek satır; `<details>` yan
+    yana dizilince açılan liste düğmenin yanındaki dar sütuna sıkışırdı. Düğmeler (`aria-expanded` / `aria-controls`)
+    listeyi satırın altında tam genişlikte açar; geniş ekran aynı (Sonra açık bölüm, Tamamlananlar `<details>`).
+    Telefonda "Şimdi" başlığı yalnız ekran okuyucuya (tek kart + "Diğer N iş" var).
+20. **Ayın işleri kartı sıradaki iş yokken katlanmaz** (§4.8 "Diğer {n} iş"): süren ayda bütün işler "Ay sonunda" ya
+    da tamamken kart açılınca yalnız düğme kalıyordu; o durumda bütün işler tek satır, düğme yok (`checklistFold`).
+    Telefonda kartın açıklaması ile ilerleme ("2 / 5 tamam") aynı satırda, sıradaki işin açıklaması en çok iki satır.
+21. **Cari şeritleri `NoticeGroup` değil** (Ek A 201): her şerit bir iş ve kendi düğmeleriyle yazıldığı sırada görünür;
+    grup onları tona göre sıralayıp "+N not daha"nın arkasına katlıyordu ("Borçlara say" dahil).
+22. **Paraşüt'ün iade uyarısı ve Analiz'in reçetesiz ürünleri** (Ek A 159, 9): eylem Ayrıntı'nın içinde kalmıştı (§4.3
+    warn'da eylem ya da `text` zorunlu). İade uyarısında `text` + "Faturalara git" eylemi, Ayrıntı'da liste ve neden;
+    reçetesiz ürünlerde `text` "Reçetesini girince gruplara katılır." ve satır başına bağlantılı liste açık başlar
+    (§4.4); açıklamanın aynı cümlesi Ayrıntı'dan çıktı.
+23. **Bekçi sınıf ifadesini de okur** (§6.4): dolgu ve renk ayrı dizelerde ya da sabitte (`cn("… px-3 py-2", warn ?
+    "bg-warn-soft …" : …)`, `cn(box, TONE[tone])`) yazılan kutu da yakalanır. İfade düzeyindeki D satırları (seçili
+    hap, hücre, süzgeç kartı, satır vurgusu, açma düğmesi, çip) ayrı izin listesinde.
+24. **§13'te kalan aşımlar** (ölçüm 30 Eki, yerel): Bugün yönetici 390'da 362 px (≤ 340; "Ayın işleri Genel bakış'ta"
+    bağlantısı alt satıra sığmıyor), personel 310; Genel bakış 390'da iş kartı 280 (≤ 300) ve ilk KPI rakamı ses
+    satırıyla da ilk ekranda, 1440'ta 412 (≤ 404; masaüstü kartlar değişmedi); karaoke yönetici 390'da bağlantı kutusu
+    108 px (başlık iki satır + `text` + Ayrıntı/eylem satırı). Metinler değişmedi.
