@@ -1,7 +1,9 @@
 # ModPOS API: açılıştan bugüne satış verisi
 
 Grup: **modpos** · Dallar: `claude/modpos-api-faz1` (Faz 1), `claude/modpos-api-faz2` (Faz 2) · Taban: `origin/main` @
-1947c7c ("Dalga 12: Vergi bölümü (#68)"). Durum: plan; uygulanmadı. **Revizyon 2 (29 Eki 2026):** eleştiri R1–R20
+1947c7c ("Dalga 12: Vergi bölümü (#68)"). Durum: plan; uygulanmadı. **Bekliyor (30 Eki 2026):** sahip ModPOS API
+kitapçığını verince başlanır; o güne kadar Faz 1 de yapılmaz. Başlarken taban `origin/main`'e, migration numarası son
+migration'a göre yeniden bakılır. **Revizyon 2 (29 Eki 2026):** eleştiri R1–R20
 koda bakılarak işlendi; kararlar Ek A'da. Bir migration (Faz 1, adı `modpos_api`: `npm run db:generate -- --name
 modpos_api`; numarası birleştirmede, büyük olasılıkla `0046`, son migration `drizzle/0045_vergi.sql`). **Yeni bağımlılık
 yok, yeni cron yok** (sabah işine bir adım, Faz 3, M22).

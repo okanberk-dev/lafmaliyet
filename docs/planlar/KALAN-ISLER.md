@@ -616,7 +616,8 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 ### Bekleyen dış girdi
 - **ModPOS bağlantısı (API):** sahip (29 Ekim): "sonrasında modpos api gelecek, orda cafe açılışından beri satılan
   ürünler, para vs. yazacak". API kitapçığı sahipten bekleniyor; bağlantı ayrı PR'dır (istemci, ayar kartı, geçmiş
-  ayların aktarımı, elle rapor ile çakışma kuralı). Panelde yeri ayrıldı (`ux-sade.md` §10, `src/lib/sales-source.ts`):
+  ayların aktarımı, elle rapor ile çakışma kuralı). Plan hazır: `modpos-api.md` (Faz 1-5). **30 Ekim:** sahip "modpos
+  gelince sana söyleyeceğim" dedi; Faz 1 dahil hiçbiri kitapçıktan önce başlamaz. Panelde yeri ayrıldı (`ux-sade.md` §10, `src/lib/sales-source.ts`):
   - `salesSourceOf(ay, geçiş günü, lafposSales, connectedMonths)`: bağlantının yazdığı aylar `connectedMonths` olarak
     verilince o aylar "ModPOS bağlantısı" olur; başlıkların satış kaynağı satırı ("Satışlar: ModPOS bağlantısı
     (kendiliğinden)"), "satış raporunu yükleyin" metinleri (`missing`) ve Genel bakış'ın "Satış raporu" işi (`manual`
