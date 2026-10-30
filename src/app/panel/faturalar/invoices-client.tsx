@@ -21,6 +21,7 @@ import { Field, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
@@ -1479,12 +1480,16 @@ export function InvoicesClient({
         {catRow ? (
           <div className="space-y-3 pb-2">
             {catRow.needsReview ? (
-              <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
-                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brass-500" aria-hidden="true" />
-                {catRow.stockOnly && stockOnlyCategory(catRow.category)
-                  ? `${stockOnlyText(catRow.category, expenseLinks)} Bilerek böyleyse “${catRow.category} kalsın”a dokunun.`
-                  : "Kategori eşitlemede tahminle yazıldı. Doğruysa onaylayın; değilse doğrusunu seçin (seçmek de onaylar)."}
-              </p>
+              <Notice
+                tone="warn"
+                size="sm"
+                live="polite"
+                title={
+                  catRow.stockOnly && stockOnlyCategory(catRow.category)
+                    ? `${stockOnlyText(catRow.category, expenseLinks)} Bilerek böyleyse “${catRow.category} kalsın”a dokunun.`
+                    : "Kategori eşitlemede tahminle yazıldı. Doğruysa onaylayın; değilse doğrusunu seçin (seçmek de onaylar)."
+                }
+              />
             ) : null}
             <ChoiceList
               label="Faturanın kategorisi"

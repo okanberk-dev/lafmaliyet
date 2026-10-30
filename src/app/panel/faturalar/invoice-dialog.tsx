@@ -420,7 +420,7 @@ export function InvoiceDialog({
         className={cn("grid gap-x-3 gap-y-4 pb-2 sm:grid-cols-2", BIG_FIELDS)}
       >
         {cashOut ? (
-          <div className="flex items-start gap-3 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] leading-5 text-info sm:col-span-2">
+          <div className="flex items-start gap-3 rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[13px] leading-5 text-ink-soft sm:col-span-2">
             {cashOut.photoId ? (
               <PhotoThumb id={cashOut.photoId} caption={`Kasa fişi · ${dateTR(cashOut.receiptDate ?? cashOut.date)}`} size="sm" onOpen={() => setCashViewer({ id: cashOut.photoId!, caption: `Kasa fişi · ${dateTR(cashOut.receiptDate ?? cashOut.date)}` })} className="flex-none [&>div]:hidden" />
             ) : null}

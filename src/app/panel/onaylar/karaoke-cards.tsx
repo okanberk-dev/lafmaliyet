@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { stampTR } from "@/lib/cash-report";
 import { genitive } from "@/lib/recipe-change";
 import { reviewKaraokeDeleteRequest } from "@/server/actions/karaoke";
@@ -79,16 +80,25 @@ function KaraokeDeleteItem({ card }: { card: KaraokeDeleteCard }) {
         </Link>
       </div>
       {card.gone ? (
-        <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">Sayaç zaten silinmiş</p>
+        <Notice tone="neutral" size="sm" title="Sayaç zaten silinmiş" />
       ) : card.changed.length || card.otherPending.length ? (
-        <section aria-label="İstekten sonra" className="space-y-1 rounded-xl bg-warn-soft px-3 py-2.5 text-[13px] leading-5 text-warn">
-          {card.changed.map((c) => (
-            <p key={c} className="font-medium">
-              {c}
-            </p>
-          ))}
-          {card.otherPending.length ? <p className="font-medium">Aynı sayacın silinmesini {card.otherPending.join(", ")} de istedi</p> : null}
-        </section>
+        <Notice
+          tone="warn"
+          size="sm"
+          title={card.changed.length ? "İstekten sonra değişti" : `Aynı sayacın silinmesini ${card.otherPending.join(", ")} de istedi`}
+          text={
+            card.changed.length ? (
+              <>
+                {card.changed.map((c) => (
+                  <span key={c} className="block">
+                    {c}
+                  </span>
+                ))}
+                {card.otherPending.length ? <span className="block">Aynı sayacın silinmesini {card.otherPending.join(", ")} de istedi</span> : null}
+              </>
+            ) : undefined
+          }
+        />
       ) : null}
       {!card.gone ? (
         <Field label="Not (isteğe bağlı; personele görünür, tutar yazmayın)" htmlFor={`karaoke-not-${card.id}`}>

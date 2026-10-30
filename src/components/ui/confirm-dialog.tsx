@@ -45,7 +45,8 @@ export function ConfirmDialog({
         </>
       }
     >
-      {description ? <p className="text-sm text-ink-mute">{description}</p> : null}
+      {/* div: açıklama bir uyarı kutusu (Notice) da taşıyabilir */}
+      {description ? <div className="text-sm text-ink-mute">{description}</div> : null}
     </Dialog>
   );
 }

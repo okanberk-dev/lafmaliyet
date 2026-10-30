@@ -1,6 +1,7 @@
 import { ScanText } from "lucide-react";
 
 import { CardContent } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { formatBytes } from "@/lib/documents";
 import { KEEP_DAYS } from "@/lib/photo-rules";
 import { aiConfigured, aiUsageSummary, loadAiSettings } from "@/server/ai/claude";
@@ -60,12 +61,15 @@ export async function PhotoReadingCard() {
             </div>
           </>
         ) : (
-          <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] leading-5 text-ink-mute ring-1 ring-line">
-            Bu ortamda ANTHROPIC_API_KEY yok; okuma kapalı. Canlıda Vercel ortam değişkenine eklenir (docs/FOTOGRAF.md).
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title="Fotoğraftan okuma bu ortamda kapalı"
+            tech="Bu ortamda ANTHROPIC_API_KEY yok; okuma kapalı. Canlıda Vercel ortam değişkenine eklenir (docs/FOTOGRAF.md)."
+          />
         )}
         {storageLine ? <p className="text-[13px] leading-5 text-pretty text-ink-mute">{storageLine}</p> : null}
-        {stats && stats.bytes >= STORAGE_WARN_BYTES ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">Fotoğraf deposu 1 GB sınırına yaklaşıyor.</p> : null}
+        {stats && stats.bytes >= STORAGE_WARN_BYTES ? <Notice tone="warn" size="sm" risk="veri" title="Fotoğraf deposu 1 GB sınırına yaklaşıyor" /> : null}
         {configured ? (
           <p className="text-[13px] leading-5 text-pretty text-ink-mute">
             Okumak için fotoğraf ya da faturanın PDF&apos;i Anthropic&apos;e (ABD) gider; okunan sonuç panelde saklanır. Fotoğraf ve PDF panelde de durur (PDF,

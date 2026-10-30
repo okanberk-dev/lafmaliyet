@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { listTitle, weekdaysText } from "@/lib/checklists";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadChecklistTemplate } from "@/server/data/checklists";
@@ -51,9 +52,13 @@ async function EditorContent({ params }: { params: PageProps<"/panel/kontrol/duz
         }
       />
       {!photos ? (
-        <p role="note" className="mb-4 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          Fotoğraf deposu bu ortamda kurulu değil: fotoğraflı maddeler depo bağlanana kadar listede görünmez.
-        </p>
+        <Notice
+          tone="neutral"
+          className="mb-4"
+          title="Fotoğraf deposu kurulmadı: fotoğraflı maddeler görünmez"
+        >
+          Depo bağlanana kadar fotoğraf isteyen maddeler listede görünmez.
+        </Notice>
       ) : null}
       <TemplateEditor key={t.id} template={t} />
     </>

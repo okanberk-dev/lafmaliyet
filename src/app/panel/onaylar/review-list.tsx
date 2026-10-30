@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ExternalLink, History, Info, PackagePlus, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardCheck, ExternalLink, History, Info, PackagePlus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -14,6 +14,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings } from "@/lib/calc/types";
@@ -235,10 +236,13 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                     </p>
                   ) : null}
                   {item.changedSince ? (
-                    <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-                      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-                      Reçete bu öneriden sonra değişti. “Önce” sütunu öneri anındaki reçetedir; onaylarken bugünkü hâliyle karşılaştırmanız istenir.
-                    </p>
+                    <Notice
+                      tone="warn"
+                      size="sm"
+                      live="polite"
+                      title="Reçete bu öneriden sonra değişti"
+                      text="“Önce” sütunu öneri anındaki reçete; onaylarken bugünkü hâliyle karşılaştırın."
+                    />
                   ) : null}
                   <RecipeDiff before={item.before} after={item.after} />
                   <UnpricedNote names={item.unpriced} />
@@ -470,28 +474,18 @@ function NewProductCard({
           </p>
         ) : null}
         {missing.length ? (
-          <p role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {missing.map((l) => l.name).join(", ")} artık hammaddelerde yok; bu öneri onaylanamaz, reddedin.
-          </p>
+          <Notice tone="bad" size="sm" live="polite" title={`${missing.map((l) => l.name).join(", ")} hammaddelerde yok: onaylanamaz, reddedin`} />
         ) : null}
         {inactive ? (
-          <p role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              {inactive}.{" "}
-              <Link href="/panel/hammaddeler?durum=pasif" className="font-medium underline underline-offset-2">
-                Pasif malzemeler
-              </Link>
-            </span>
-          </p>
+          <Notice tone="bad" size="sm" live="polite" title={inactive} action={<NoticeLink href="/panel/hammaddeler?durum=pasif">Pasif malzemeler</NoticeLink>} />
         ) : null}
         <QtyIssues texts={qtyIssues} />
         {item.pair ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info">
-            <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Bu önerinin {sizePhrase(item.pair.size)} “{item.pair.name}” adıyla eklendi; {sizePhrase(item.size)} da aynı adla eklenir (iki boy tek ürün olarak eşleşsin).
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title={`Bu önerinin ${sizePhrase(item.pair.size)} “${item.pair.name}” adıyla eklendi; ${sizePhrase(item.size)} da aynı adla eklenir (iki boy tek ürün olarak eşleşsin).`}
+          />
         ) : siblings.length ? (
           <p className="flex items-start gap-2 rounded-2xl bg-surface px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft ring-1 ring-line">
             <Info size={16} className="mt-0.5 shrink-0 text-ink-mute" aria-hidden="true" />
@@ -679,10 +673,7 @@ const capFirst = (t: string) => t.charAt(0).toLocaleUpperCase("tr-TR") + t.slice
 /** Formülü bugünkü ayarlarla eksiye düşen ya da hesaplanamayan satırlar: onay düğmesi kapalı, sunucu da reddeder */
 function QtyIssues({ texts }: { texts: string[] }) {
   return texts.map((text) => (
-    <p key={text} role="status" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-      {text}.
-    </p>
+    <Notice key={text} tone="bad" size="sm" live="polite" title={`${text}.`} />
   ));
 }
 
@@ -690,16 +681,14 @@ function QtyIssues({ texts }: { texts: string[] }) {
 function UnpricedNote({ names }: { names: string[] }) {
   if (!names.length) return null;
   return (
-    <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <span>
-        {names.join(", ")} için paket fiyatı girilmemiş; maliyet eksik görünür.{" "}
-        <Link href="/panel/hammaddeler?durum=fiyatsiz" className="font-medium underline underline-offset-2">
-          Hammaddeler&apos;den fiyatını girin
-        </Link>
-        .
-      </span>
-    </p>
+    <Notice
+      tone="warn"
+      size="sm"
+      risk="para"
+      live="polite"
+      title={`${names.join(", ")} için paket fiyatı yok: maliyet eksik`}
+      action={<NoticeLink href="/panel/hammaddeler?durum=fiyatsiz">Fiyat gir</NoticeLink>}
+    />
   );
 }
 

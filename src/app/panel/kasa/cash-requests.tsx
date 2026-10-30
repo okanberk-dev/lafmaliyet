@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { stampTR } from "@/lib/cash-report";
 import { genitive } from "@/lib/recipe-change";
 import { STATUS_LABEL, type StaffRequestStatus } from "@/lib/staff-requests";
@@ -63,43 +64,59 @@ export function PendingRequests({ own, others, onEdit }: { own: (OwnCorrection |
     <div className="space-y-2">
       {own.map((r) =>
         r.kind === "kasa-duzeltme" ? (
-          <div key={r.id} role="status" className="space-y-1.5 rounded-xl bg-warn-soft px-3 py-2.5 text-[13px] leading-5 text-warn">
-            <p className="font-semibold">Düzeltme öneriniz onay bekliyor · {stampTR(r.createdAt)}</p>
-            <ul className="space-y-0.5 text-ink-soft">
-              {r.lines.map((l) => (
-                <li key={l} className="break-words">
-                  {l}
-                </li>
-              ))}
-              {r.result ? <li className="font-medium text-ink">{r.result}</li> : null}
-              {r.carry ? <li>{r.carry}</li> : null}
-            </ul>
-            {r.message ? <p className="break-words text-ink-mute">Neden: {r.message}</p> : null}
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              <Button size="sm" variant="secondary" onClick={() => onEdit(r)} disabled={pending}>
-                <Pencil size={14} /> Öneriyi düzenle
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => withdraw(r.id, "Düzeltme öneriniz geri çekildi")} disabled={pending}>
+          // Kendi isteğinin durumu: uyarı değil, nötr (docs/planlar/ux-sade.md Ek A 108)
+          <Notice
+            key={r.id}
+            tone="neutral"
+            size="sm"
+            live="polite"
+            title={`Düzeltme öneriniz onay bekliyor · ${stampTR(r.createdAt)}`}
+            text={
+              <>
+                <span className="block space-y-0.5">
+                  {r.lines.map((l) => (
+                    <span key={l} className="block break-words">
+                      {l}
+                    </span>
+                  ))}
+                  {r.result ? <span className="block font-medium text-ink">{r.result}</span> : null}
+                  {r.carry ? <span className="block">{r.carry}</span> : null}
+                </span>
+                {r.message ? <span className="mt-1 block break-words text-ink-mute">Neden: {r.message}</span> : null}
+                <span className="mt-1.5 flex flex-wrap gap-2">
+                  <Button size="xs" variant="secondary" onClick={() => onEdit(r)} disabled={pending}>
+                    <Pencil size={14} /> Öneriyi düzenle
+                  </Button>
+                  <Button size="xs" variant="ghost" onClick={() => withdraw(r.id, "Düzeltme öneriniz geri çekildi")} disabled={pending}>
+                    <Undo2 size={14} /> Geri çek
+                  </Button>
+                </span>
+              </>
+            }
+          />
+        ) : (
+          <Notice
+            key={r.id}
+            tone="neutral"
+            size="sm"
+            live="polite"
+            title={`Silme isteğiniz onay bekliyor · ${stampTR(r.createdAt)}`}
+            text={r.message ? <span className="break-words">Neden: {r.message}</span> : undefined}
+            action={
+              <Button size="xs" variant="ghost" onClick={() => withdraw(r.id, "Silme isteğiniz geri çekildi")} disabled={pending}>
                 <Undo2 size={14} /> Geri çek
               </Button>
-            </div>
-          </div>
-        ) : (
-          <div key={r.id} role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-warn-soft px-3 py-2.5 text-[13px] leading-5 text-warn">
-            <p className="min-w-0 flex-1 basis-56">
-              <span className="font-semibold">Silme isteğiniz onay bekliyor · {stampTR(r.createdAt)}</span>
-              {r.message ? <span className="block break-words text-ink-mute">Neden: {r.message}</span> : null}
-            </p>
-            <Button size="sm" variant="ghost" onClick={() => withdraw(r.id, "Silme isteğiniz geri çekildi")} disabled={pending}>
-              <Undo2 size={14} /> Geri çek
-            </Button>
-          </div>
+            }
+          />
         ),
       )}
       {others.map((o, i) => (
-        <p key={i} className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">
-          {o.kind === "kasa-silme" ? `${o.requestedByName} raporun silinmesini istedi; onay bekliyor` : `${genitive(o.requestedByName)} düzeltme önerisi onay bekliyor`}
-        </p>
+        <Notice
+          key={i}
+          tone="neutral"
+          size="sm"
+          title={o.kind === "kasa-silme" ? `${o.requestedByName} raporun silinmesini istedi; onay bekliyor` : `${genitive(o.requestedByName)} düzeltme önerisi onay bekliyor`}
+        />
       ))}
     </div>
   );

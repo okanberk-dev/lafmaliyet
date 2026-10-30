@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ExternalLink, ImageMinus, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, ImageMinus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Select, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { diffText, stampTR } from "@/lib/cash-report";
 import { cashOutCardTitle, lineText, photoCardTitle, type CashOutLineT } from "@/lib/cash-out-requests";
@@ -148,19 +149,20 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
           {card.expense.admin ? " (yöneticinin kategorisi)" : ""}
         </p>
       ) : null}
-      {card.rowGone ? <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">Satır silinmiş; isteği reddedin.</p> : null}
+      {card.rowGone ? <Notice tone="bad" size="sm" title="Satır silinmiş; isteği reddedin" /> : null}
       {card.changedSince ? (
-        <p className="flex items-start gap-1.5 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>İstekten sonra değişti: satır, fişi ya da bağlı gider kaydı. Günü açıp bakın; onaylarsanız istenen hâl yazılır.</span>
-        </p>
+        <Notice
+          tone="warn"
+          size="sm"
+          title="İstekten sonra değişti"
+          text="Satır, fişi ya da bağlı gider kaydı. Günü açıp bakın; onaylarsanız istenen hâl yazılır."
+        />
       ) : null}
       {c.flags.length ? (
         <ul className="space-y-1">
           {c.flags.map((f) => (
-            <li key={f} className="flex items-start gap-1.5 text-sm font-medium text-bad">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{f}</span>
+            <li key={f}>
+              <Notice tone="bad" size="line" title={f} />
             </li>
           ))}
         </ul>
@@ -281,7 +283,7 @@ export function PhotoRemovalItem({ card }: { card: PhotoRemovalCard }) {
       <Head title={photoCardTitle(card.photoKind, card.date)} by={card.requestedByName} createdAt={card.createdAt} waited={card.waited} message={card.message} badges={<Badge tone="red">Fotoğraf</Badge>} />
       {card.photo ? <PhotoThumb id={card.photo.id} caption={caption} onOpen={() => setViewer({ id: card.photo!.id, caption })} /> : null}
       <p className="text-sm text-ink-soft">{card.diffs.length ? `Okuma: ${card.diffs.join("; ")}` : "Okuma farkı yok."}</p>
-      {card.refusal ? <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">{card.refusal}; isteği reddedin.</p> : null}
+      {card.refusal ? <Notice tone="bad" size="sm" title={`${card.refusal}; isteği reddedin.`} /> : null}
       <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
         <ExternalLink size={14} aria-hidden="true" /> Raporu aç
       </Link>

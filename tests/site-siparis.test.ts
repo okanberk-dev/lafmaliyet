@@ -593,7 +593,8 @@ test("Ayarlar › laffogato.net: 'Bağlantıları sına' dördünü hemen çeker
   const page = read("src/app/panel/ayarlar/page.tsx");
   // Düğme yalnız bağlantı kuruluyken; kırmızı satır hatanın zamanını gösterir
   assert.match(page, /\{configured \? <SiteLinksTest \/> : null\}/);
-  assert.match(page, /\{r\.tryAt \? `\$\{dateTimeTR\(r\.tryAt\)\}: ` : null\}/);
+  // ux-sade Ek A 20: hata satırı ortak Notice'te, zamanı başlığın başında
+  assert.match(page, /<Notice tone="bad" size="sm" className="mt-1" title=\{`\$\{r\.tryAt \? `\$\{dateTimeTR\(r\.tryAt\)\}: ` : ""\}\$\{r\.error\}`\} \/>/);
   // Yarım saatten eski kırmızı satır sayfadan sonra (after) yeniden denenir; sayfa beklemez
   assert.match(page, /r\.health\.tone === "red" && \(!r\.tryAt \|\| nowMs - Date\.parse\(r\.tryAt\) > 30 \* 60_000\)/);
   assert.match(page, /after\(async \(\) => \{/);

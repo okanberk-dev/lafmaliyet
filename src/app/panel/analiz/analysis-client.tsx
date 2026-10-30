@@ -33,6 +33,7 @@ import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState,
 import { Field, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, type PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, Signed, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
@@ -212,18 +213,23 @@ function NoRecipeNote({ items, month }: { items: SkippedItem[]; month: string })
   if (!items.length) return null;
   const list = [...items].sort((a, b) => b.qty - a.qty || `${a.name} ${a.size}`.localeCompare(`${b.name} ${b.size}`, "tr"));
   const sold = list.filter((i) => i.qty > 0).length;
+  // Satır başına eylemli liste (her ürünün reçetesine bağlantı): Ayrıntı açık başlar (docs/planlar/ux-sade.md §4.4)
   return (
-    <div role="note" className="space-y-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
-      <p className="font-medium">
-        {sold === items.length
+    <Notice
+      tone="warn"
+      defaultOpen
+      title={
+        sold === items.length
           ? `Bu ay satılan ${num(sold)} ürünün reçetesi boş; gruplara girmedi`
-          : `Reçetesi boş ${num(items.length)} ürün gruplara girmedi${sold ? ` (${num(sold)} tanesi bu ay satıldı)` : ""}`}
+          : `Reçetesi boş ${num(items.length)} ürün gruplara girmedi${sold ? ` (${num(sold)} tanesi bu ay satıldı)` : ""}`
+      }
+      text="Reçetesini girince gruplara katılır."
+    >
+      <p>
+        Maliyeti bilinmediği için birim kârı neredeyse fiyatı kadar görünür ve kâr eşiğini yükseltirdi. Reçetesi girilene
+        kadar satışlarının maliyeti ortalama maliyet oranıyla tahmin edilir.
       </p>
-      <p className="text-[13px]">
-        Maliyeti bilinmediği için birim kârı neredeyse fiyatı kadar görünür ve kâr eşiğini yükseltirdi. Reçetesini girince
-        gruplara katılır; o zamana kadar satışlarının maliyeti ortalama maliyet oranıyla tahmin edilir.
-      </p>
-      <ul className="flex flex-wrap gap-1.5">
+      <ul className="flex flex-wrap gap-1.5 pt-1">
         {list.map((i) => (
           <li key={i.id}>
             <Link
@@ -236,7 +242,7 @@ function NoRecipeNote({ items, month }: { items: SkippedItem[]; month: string })
           </li>
         ))}
       </ul>
-    </div>
+    </Notice>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Calculator, Copy, MessageCircle, MonitorCheck, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
+import { Calculator, Copy, MessageCircle, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { cashOutCheck, cashOutNoteOf, cashOutsTotal } from "@/lib/cash-outs";
 import {
@@ -47,7 +48,6 @@ import {
 import { MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { emailFailedLine } from "@/lib/staff-errors";
-import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
 import { requestCashCorrection, requestLateCashReport } from "@/server/actions/cash-requests";
 import type { CashEmailOutcome } from "@/server/cash/report-email";
@@ -890,19 +890,23 @@ export function CashForm({
         <div className="space-y-4 px-5 pb-5">
           <DiffHeadline diff={report.cashDiff} />
           {mail ? (
-            <div className={cn("flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-[13px]", mail.tone === "red" ? "bg-bad-soft text-bad" : mail.tone === "green" ? "bg-lime/25 text-good-ink" : "bg-panel text-ink-mute")}>
-              <span className="min-w-0 flex-1">{mail.text}</span>
-              {report.emailStatus === "failed" ? (
-                <Button size="xs" variant="secondary" onClick={() => void resend()} disabled={resending}>
-                  <RotateCw size={13} /> {resending ? "Gönderiliyor…" : "Yeniden dene"}
-                </Button>
-              ) : null}
-            </div>
+            <Notice
+              tone={mail.tone === "red" ? "bad" : mail.tone === "green" ? "good" : "neutral"}
+              size="sm"
+              title={mail.text}
+              action={
+                report.emailStatus === "failed" ? (
+                  <Button size="xs" variant="secondary" onClick={() => void resend()} disabled={resending}>
+                    <RotateCw size={13} /> {resending ? "Gönderiliyor…" : "Yeniden dene"}
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : null}
           {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} /> : null}
           <LafposDiffList diffs={fromLafpos} />
-          {lafposOuts ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{lafposOuts.text}</p> : null}
-          {laterNote ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{laterNote}</p> : null}
+          {lafposOuts ? <Notice tone="neutral" size="sm" title={lafposOuts.text} /> : null}
+          {laterNote ? <Notice tone="neutral" size="sm" title={laterNote} /> : null}
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
               <a href={whatsapp.link} target="_blank" rel="noopener noreferrer" className={buttonClass("accent", "lg")}>
@@ -923,14 +927,18 @@ export function CashForm({
           </div>
           {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
           {locked ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">
-              <span className="min-w-0 flex-1 basis-56">Ertesi günün raporu girildi; bu raporu yönetici onayıyla düzeltirsiniz.</span>
-              {!ownCorrection && !ownDelete ? (
-                <Button size="sm" variant="secondary" onClick={() => propose(null)}>
-                  <Pencil size={14} /> Düzeltme öner
-                </Button>
-              ) : null}
-            </div>
+            <Notice
+              tone="neutral"
+              size="sm"
+              title="Ertesi günün raporu girildi; bu raporu yönetici onayıyla düzeltirsiniz"
+              action={
+                !ownCorrection && !ownDelete ? (
+                  <Button size="xs" variant="secondary" onClick={() => propose(null)}>
+                    <Pencil size={14} /> Düzeltme öner
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
           <CashBreakdown
@@ -1096,48 +1104,51 @@ export function CashForm({
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
         {isLate && !review ? (
-          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
-            <p className="font-semibold">{longDateTR(date)} · Geç rapor</p>
-            <p className="mt-0.5">
-              {!lafposMode
-                ? "Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın."
+          <Notice
+            tone="neutral"
+            title={`Geç rapor · ${longDateTR(date)}: yönetici onaylayınca kayda geçer`}
+            text={
+              !lafposMode
+                ? "Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın."
                 : lafpos
                   ? lafposCompared
-                    ? "Yöneticinin onayıyla kayda geçer. Önceki yazdıklarınız LafPOS'un gün sonuyla karşılaştırıldı, farklı olanlar turuncu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
-                    : "Yöneticinin onayıyla kayda geçer. Rakamlar LafPOS'un gün sonundan doldu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
-                  : "Yöneticinin onayıyla kayda geçer. LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın."}
-            </p>
-          </div>
+                    ? "Önceki yazdıklarınız LafPOS'un gün sonuyla karşılaştırıldı, farklı olanlar turuncu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                    : "Rakamlar LafPOS'un gün sonundan doldu; fotoğraf gerekmez. Sayımı ve gün içinde kasadan çıkanı kontrol edin."
+                  : "LafPOS'un bu günün sonu gelmedi: yazarkasa (Banka POS) Z raporunun fotoğrafı zorunlu; LafPOS gün sonu bölümündeki Z no'yu LafPOS › Kasa › Geçmiş günler'den yazın."
+            }
+          />
         ) : null}
         {proposal ? (
-          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
-            <p className="font-semibold">{dayMonthTR(date)} kasa raporu · düzeltme önerisi</p>
-            {proposal.fromSubmit ? (
-              <p className="mt-0.5">
-                {proposal.gate === "kilitli"
-                  ? "Ertesi günün raporu girildi; bu değişiklik yöneticinin onayıyla olur. Nedenini yazıp onaya gönderin."
-                  : "Kasa alanlarını ertesi gün değiştirmek yöneticinin onayıyla olur; nedenini yazıp onaya gönderin."}
-              </p>
-            ) : null}
-            <p className="mt-0.5">Yönetici onaylayınca rapora işlenir; o zamana kadar rapor değişmez.</p>
-            {proposal.dropped ? <p className="mt-0.5 font-medium">{droppedPhotoText(proposal.gate)}</p> : null}
-          </div>
+          <Notice
+            tone="neutral"
+            title={`${dayMonthTR(date)} kasa raporu · düzeltme önerisi`}
+            text={
+              <>
+                {proposal.fromSubmit ? (
+                  <span className="block">
+                    {proposal.gate === "kilitli"
+                      ? "Ertesi günün raporu girildi; bu değişiklik yöneticinin onayıyla olur. Nedenini yazıp onaya gönderin."
+                      : "Kasa alanlarını ertesi gün değiştirmek yöneticinin onayıyla olur; nedenini yazıp onaya gönderin."}
+                  </span>
+                ) : null}
+                <span className="block">Yönetici onaylayınca rapora işlenir; o zamana kadar rapor değişmez.</span>
+                {proposal.dropped ? <span className="block font-medium text-ink">{droppedPhotoText(proposal.gate)}</span> : null}
+              </>
+            }
+          />
         ) : null}
         {lafpos ? (
           <div className="space-y-1.5">
-            <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
-              <MonitorCheck size={16} className="shrink-0" aria-hidden="true" />
-              <p className="min-w-0 flex-1 basis-56">
-                <span className="font-semibold">LafPOS gün sonu</span>
-                {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
-                <span className="block text-[13px] text-info/80">
-                  {lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}
-                </span>
-              </p>
-              <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
-                LafPOS&apos;tan doldur
-              </Button>
-            </div>
+            <Notice
+              tone="neutral"
+              title={`LafPOS gün sonu${lafposZNo !== null ? ` · Z ${lafposZNo}` : ""} · ${lafposAt}`}
+              text={lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}
+              action={
+                <Button size="xs" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
+                  LafPOS&apos;tan doldur
+                </Button>
+              }
+            />
             {/* Doldurduktan sonra kasa eşlemesinin bilgi satırları (giren çıkandan fazla, LafPOS'un olması gerekeni farklı) */}
             {lafposNote !== null ? <ReadChecks checks={lafpos.prefill.checks} /> : null}
           </div>
@@ -1178,9 +1189,13 @@ export function CashForm({
               <Input id={fid("receipts")} inputMode="numeric" value={values.receipts} onChange={set("receipts")} maxLength={6} autoComplete="off" data-warn={warnOf("receipts") || undefined} />
             </Field>
             {paymentsOff && live ? (
-              <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">
-                Ödeme türlerinin toplamı {money(live.paymentsTotal)}: Z toplamından {money(Math.abs(live.paymentsDiff))} {live.paymentsDiff > 0 ? "fazla" : "az"}. Bir tutarı yanlış yazmış olabilirsiniz.
-              </p>
+              <Notice
+                tone="warn"
+                size="sm"
+                className="sm:col-span-2"
+                title={`Ödeme türleri Z toplamından ${money(Math.abs(live.paymentsDiff))} ${live.paymentsDiff > 0 ? "fazla" : "az"}`}
+                text={`Toplamları ${money(live.paymentsTotal)}. Bir tutarı yanlış yazmış olabilirsiniz.`}
+              />
             ) : null}
           </div>
         </Card>
@@ -1189,15 +1204,20 @@ export function CashForm({
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
             {field("openingCash", "Açılış (dünden devir)", {
               hint: liveCarry ? (
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn" role="status">
-                  <span className="min-w-0 flex-1 basis-56">
-                    Önceki raporun devri {money(liveCarry.carry)} ({dayMonthTR(liveCarry.prevDate)}); yazdığınız {carryDiffText(liveCarry)}. Kasaya para kondu ya da
-                    alındıysa nedenini nota yazın.
-                  </span>
-                  <Button size="xs" variant="secondary" onClick={() => setValues((v) => ({ ...v, openingCash: input(liveCarry.carry) }))}>
-                    Devri yaz
-                  </Button>
-                </span>
+                <Notice
+                  tone="warn"
+                  size="sm"
+                  risk="para"
+                  live="polite"
+                  className="mt-0.5"
+                  title={`Önceki raporun devri ${money(liveCarry.carry)} (${dayMonthTR(liveCarry.prevDate)}); yazdığınız ${carryDiffText(liveCarry)}`}
+                  text="Kasaya para kondu ya da alındıysa nedenini nota yazın."
+                  action={
+                    <Button size="xs" variant="secondary" onClick={() => setValues((v) => ({ ...v, openingCash: input(liveCarry.carry) }))}>
+                      Devri yaz
+                    </Button>
+                  }
+                />
               ) : carry ? (
                 `Önceki rapordan (${longDateTR(carry.date)}): ${money(carry.amount)}${gap ? ` · arada rapor girilmemiş ${gap} gün var` : ""}`
               ) : (
@@ -1276,8 +1296,8 @@ export function CashForm({
                 </Select>
               </Field>
             ) : null}
-            {outsWarning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">{outsWarning}</p> : null}
-            {lafposOuts ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">{lafposOuts.text}</p> : null}
+            {outsWarning ? <Notice tone="warn" size="sm" className="sm:col-span-2" title={outsWarning} /> : null}
+            {lafposOuts ? <Notice tone="neutral" size="sm" className="sm:col-span-2" title={lafposOuts.text} /> : null}
           </div>
         </Card>
         <OkcCard
@@ -1289,18 +1309,25 @@ export function CashForm({
           photoBlock={photoBlock("kasa-okc")}
           posPrompt={
             posPrompt ? (
-              <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info">
-                <p>Bu günün bir banka gün sonu fişi daha okundu ({money(posPrompt.next)}).</p>
-                {posPrompt.unsure ? <p className="text-warn">{posPrompt.unsure}</p> : null}
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => posChoice(true)}>
-                    Toplama ekle ({money(posPrompt.prev + posPrompt.next)})
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => posChoice(false)}>
-                    Yerine yaz
-                  </Button>
-                </div>
-              </div>
+              // Pencere içi istisna: iki düğme (docs/planlar/ux-sade.md Ek A 97)
+              <Notice
+                tone="neutral"
+                size="sm"
+                title={`Bu günün bir banka gün sonu fişi daha okundu (${money(posPrompt.next)})`}
+                text={
+                  <>
+                    {posPrompt.unsure ? <span className="block text-warn-ink">{posPrompt.unsure}</span> : null}
+                    <span className="mt-1.5 flex flex-wrap gap-2">
+                      <Button size="xs" variant="secondary" onClick={() => posChoice(true)}>
+                        Toplama ekle ({money(posPrompt.prev + posPrompt.next)})
+                      </Button>
+                      <Button size="xs" variant="ghost" onClick={() => posChoice(false)}>
+                        Yerine yaz
+                      </Button>
+                    </span>
+                  </>
+                }
+              />
             ) : null
           }
           description={
@@ -1344,9 +1371,11 @@ export function CashForm({
               <>
                 <DiffHeadline diff={live.cashDiff} />
                 {teslimMissing !== null ? (
-                  <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
-                    LafPOS&apos;taki teslim ({money(teslimMissing)}) Kasadan çıkanlar&apos;da yok; eklenince fark: {diffText(Math.round((live.cashDiff + teslimMissing) * 100) / 100)}.
-                  </p>
+                  <Notice
+                    tone="neutral"
+                    size="sm"
+                    title={`LafPOS'taki teslim (${money(teslimMissing)}) Kasadan çıkanlar'da yok; eklenince fark: ${diffText(Math.round((live.cashDiff + teslimMissing) * 100) / 100)}.`}
+                  />
                 ) : null}
                 <div className="divide-y divide-line text-sm">
                   <p className="flex justify-between py-1.5">

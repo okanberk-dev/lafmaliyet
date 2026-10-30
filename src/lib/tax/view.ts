@@ -342,6 +342,8 @@ export interface ClassifyView {
   noDoc: { count: number; total: number; text: string | null };
   /** Kartın başlığı: "Bu çeyrekte 808.610 ₺ gider sayılmadı (24 kalem) · 69.780 ₺ demirbaş olabilir (2 fatura)" */
   header: string;
+  /** Başlığın rakamları (sayfanın başındaki uyarı, docs/planlar/ux-sade.md H1); çeyrek yoksa null */
+  summary: { unclassified: { total: number; count: number }; candidates: { total: number; count: number } } | null;
   excluded: ExcludedItem[];
 }
 
@@ -951,6 +953,7 @@ export function buildTaxView(input: TaxViewInput): TaxView {
     header: qp
       ? `Bu çeyrekte ${tl(qp.unclassified.total)} gider sayılmadı (${qp.unclassified.count} kalem)${qp.candidates.count ? ` · ${tl(qp.candidates.total)} demirbaş olabilir (${qp.candidates.count} fatura)` : ""}`
       : "",
+    summary: qp ? { unclassified: qp.unclassified, candidates: qp.candidates } : null,
     excluded,
   };
 

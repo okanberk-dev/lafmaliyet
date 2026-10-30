@@ -1,6 +1,4 @@
-import { CircleAlert } from "lucide-react";
-import Link from "next/link";
-
+import { Notice, NoticeGroup, NoticeLink } from "@/components/ui/notice";
 import { JOBS_HREF } from "@/lib/job-health";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
 
@@ -12,20 +10,8 @@ import { loadSystemAlerts } from "@/server/jobs/alerts";
 export async function SystemBanner() {
   const items = (await loadSystemAlerts().catch(() => [])).filter((a) => a.level === "danger");
   if (!items.length) return null;
-  return (
-    <div role="alert" className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-2xl bg-bad-soft px-4 py-3 text-sm text-bad ring-1 ring-bad/20">
-      <CircleAlert size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-0.5 break-words">
-        {items.slice(0, 2).map((i) => (
-          <p key={i.id} className="text-pretty">
-            <strong className="font-semibold">{i.title}</strong> · {i.body}
-          </p>
-        ))}
-        {items.length > 2 ? <p>ve {items.length - 2} uyarı daha</p> : null}
-      </div>
-      <Link href={JOBS_HREF} className="font-medium underline underline-offset-2 max-sm:basis-full max-sm:pl-[1.875rem]">
-        Ayrıntı
-      </Link>
-    </div>
-  );
+  // Sayfayla gelen uyarı: role="note" (alert değil; docs/planlar/ux-sade.md §4.5). Kırmızı ve veri riski: katlanmaz
+  const action = <NoticeLink href={JOBS_HREF}>Günlük işler</NoticeLink>;
+  if (items.length === 1) return <Notice tone="bad" risk="veri" title={items[0].title} text={items[0].body} action={action} />;
+  return <NoticeGroup label="Sistem uyarıları" items={items.map((i) => ({ key: i.id, tone: "bad" as const, risk: "veri" as const, title: i.title, text: i.body, action }))} />;
 }

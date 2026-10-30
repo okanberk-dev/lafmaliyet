@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Notice } from "@/components/ui/notice";
 import type { MonthEffect } from "@/lib/cari/months";
 
 import { PastConfirm } from "../cari-ui";
@@ -77,9 +78,7 @@ export function EntryConfirm<R extends { needs: "past"; effects: MonthEffect[] }
         <div className="text-sm leading-6 text-ink-mute">{description}</div>
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
-          <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-            {error}
-          </p>
+          <Notice tone="bad" size="sm" live="assertive" title={error} />
         ) : null}
       </div>
     </Dialog>

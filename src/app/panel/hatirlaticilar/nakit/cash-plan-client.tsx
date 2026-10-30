@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronDown, CircleAlert, CircleCheck, Info, Layers, PiggyBank, SlidersHorizontal, Wallet } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChartNoAxesColumn, ChevronDown, Layers, PiggyBank, SlidersHorizontal, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 
@@ -12,6 +12,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { useQueryState } from "@/components/ui/filters";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { lineLabel, rangeText, shortDate, STALE_BALANCE_DAYS, weekTitle, type CashPlan, type CashPlanState, type PlanLine, type PlanWeek } from "@/lib/cash-plan";
 import { monthLabel, money, tl } from "@/lib/format";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
@@ -155,32 +156,28 @@ export function CashPlanClient({
             )}
           </div>
 
-          {/* Tek uyarı şeridi */}
+          {/* Tek uyarı şeridi (docs/planlar/ux-sade.md U2): para yetmiyorsa kırmızı (katlanmaz), bakiye girilmediyse nötr
+              (giriş başlıktaki "Bakiyeyi gir"), yetiyorsa yeşil */}
           {firstNegative ? (
-            <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-bad-soft px-4 py-3 text-sm text-bad">
-              <CircleAlert size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <p className="min-w-0 break-words">
-                <span className="font-semibold">{longDateTR(firstNegative.date)} para yetmeyebilir:</span> tahmini {signed(firstNegative.balance)}.
-                {firstNegative.top.length ? ` O gün: ${firstNegative.top.map((l) => `${lineLabel(l)} ${tl(l.amount)}`).join(", ")}.` : null}
-              </p>
-            </div>
+            <Notice
+              tone="bad"
+              risk="para"
+              live="polite"
+              className="mb-4"
+              title={`${longDateTR(firstNegative.date)} para yetmeyebilir: tahmini ${signed(firstNegative.balance)}`}
+            >
+              {firstNegative.top.length ? `O gün: ${firstNegative.top.map((l) => `${lineLabel(l)} ${tl(l.amount)}`).join(", ")}.` : null}
+            </Notice>
           ) : !opening && plan.requiredCash > 0 && lowest ? (
-            <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-              <Info size={18} className="shrink-0 max-sm:hidden" aria-hidden="true" />
-              <p className="min-w-0 flex-1 break-words">
-                Önümüzdeki 6 haftanın ödemeleri için bugün elinizde en az {tl(plan.requiredCash)} olmalı (en sıkışık gün {dayMonthTR(lowest.date)}).
-              </p>
-              <Button size="sm" variant="secondary" onClick={() => setBalanceOpen(true)} className="max-sm:w-full">
-                Bakiyeyi gir
-              </Button>
-            </div>
+            <Notice
+              tone="neutral"
+              live="polite"
+              className="mb-4"
+              title={`Bakiye girilmedi: bugün en az ${tl(plan.requiredCash)} gerekir`}
+              text={`En sıkışık gün ${dayMonthTR(lowest.date)}.`}
+            />
           ) : opening && lowest ? (
-            <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-good-soft px-4 py-3 text-sm text-good-ink">
-              <CircleCheck size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <p className="min-w-0 break-words">
-                6 hafta boyunca para yetiyor; en sıkışık gün {dayMonthTR(lowest.date)}: {tl(lowest.value)}.
-              </p>
-            </div>
+            <Notice tone="good" live="polite" className="mb-4" title="6 hafta boyunca para yetiyor" text={`En sıkışık gün ${dayMonthTR(lowest.date)}: ${tl(lowest.value)}.`} />
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-12 xl:items-start">

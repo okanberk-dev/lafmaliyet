@@ -25,12 +25,10 @@ import {
   StickyNote,
   Tag,
   Trash2,
-  TrendingUp,
   Wheat,
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
@@ -53,6 +51,7 @@ import { Field, Input, Label, NumberInput, Select, Textarea } from "@/components
 import { Gauge } from "@/components/ui/gauge";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, Progress, Signed } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented, SegmentedLinks } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { priceProduct } from "@/lib/calc/engine";
@@ -715,38 +714,26 @@ export function RecipeEditor({
       />
 
       {priceImpact ? (
-        <div
-          role="status"
-          className={cn(
-            "mb-4 flex items-start gap-3 rounded-2xl px-4 py-3 text-sm",
-            priceImpact.needsPrice && !priceImpact.acknowledged ? "bg-warn-soft text-warn" : "bg-info-soft text-info",
-          )}
-        >
-          <TrendingUp size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 break-words">
-            <span className="font-semibold">Hammadde zammı:</span> son 30 günde{" "}
-            {priceImpact.drivers
-              .slice(0, 3)
-              .map((d) => `${d.name} +${pct(d.pct, 0)}`)
-              .join(", ")}
-            ; maliyet <span className="tabular">{tl(priceImpact.costBefore, 2)} → {tl(priceImpact.costAfter, 2)}</span>, maliyet oranı{" "}
-            <span className="tabular">
-              {pct(priceImpact.ratioBefore, 0)} → {pct(priceImpact.ratioAfter, 0)}
-            </span>
-            .{" "}
-            {impactMonthText(priceImpact)}
-            {priceImpact.needsPrice
+        // Hammadde zammı: ilk cümle (zam, maliyet, oran) başlık; ayın kârı ve önerilen fiyat ikinci satır (ne yapılacak)
+        <Notice
+          tone={priceImpact.needsPrice && !priceImpact.acknowledged ? "warn" : "neutral"}
+          live="polite"
+          className="mb-4"
+          title={`Hammadde zammı: son 30 günde ${priceImpact.drivers
+            .slice(0, 3)
+            .map((d) => `${d.name} +${pct(d.pct, 0)}`)
+            .join(", ")}; maliyet ${tl(priceImpact.costBefore, 2)} → ${tl(priceImpact.costAfter, 2)}, maliyet oranı ${pct(priceImpact.ratioBefore, 0)} → ${pct(priceImpact.ratioAfter, 0)}`}
+          text={`${impactMonthText(priceImpact)}${
+            priceImpact.needsPrice
               ? priceImpact.acknowledged
                 ? "Fiyatı korumayı seçtiniz."
                 : priceImpact.basis === "keep"
                   ? `Zammın payı kadar önerilen fiyat ${tl(priceImpact.suggestedPrice)} (eski maliyet oranını korur); fiyat alanından değiştirebilirsiniz.`
                   : `Hedef maliyet oranı için önerilen fiyat ${tl(priceImpact.suggestedPrice)}; fiyat alanından değiştirebilirsiniz.`
-              : "Maliyet oranı hâlâ hedefte."}{" "}
-            <Link href="/panel/urunler#zamlar" className="font-medium underline-offset-2 hover:underline">
-              Bütün zamlar →
-            </Link>
-          </p>
-        </div>
+              : "Maliyet oranı hâlâ hedefte."
+          }`}
+          action={<NoticeLink href="/panel/urunler#zamlar">Bütün zamlar</NoticeLink>}
+        />
       ) : null}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1256,28 +1243,32 @@ export function RecipeEditor({
                     değiştirildi: kayıt çakışır, hangisinin kalacağı fiyat alanının hemen altında seçilir (denetim E-11). Genişte
                     fiyat ile fire ilk satırda kalır, fire'nin okunuşu onun altında; kutu ikisinin altına iner */}
                 {priceMoved ? (
-                  <div id="r-price-moved" role="alert" className="scroll-mt-24 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2">
-                    <p>
-                      Fiyat bu arada başka bir yerde <span className="font-semibold tabular">{money(product.price)}</span> oldu (kart açıldığında{" "}
-                      <span className="tabular">{money(seen.price)}</span>). Hangisi kalsın?
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="pointer-coarse:h-11"
-                        onClick={() => {
-                          setPrice(priceText(product.price));
-                          setSeen((v) => ({ ...v, price: product.price }));
-                        }}
-                      >
-                        {money(product.price)} kalsın
-                      </Button>
-                      <Button size="sm" variant="secondary" className="pointer-coarse:h-11" onClick={() => setSeen((v) => ({ ...v, price: product.price }))}>
-                        {money(priceNum)} yazılsın
-                      </Button>
-                    </div>
-                  </div>
+                  <Notice
+                    id="r-price-moved"
+                    tone="warn"
+                    size="sm"
+                    live="assertive"
+                    className="scroll-mt-24 sm:col-span-2"
+                    title={`Fiyat bu arada ${money(product.price)} oldu (kart açılınca ${money(seen.price)}): hangisi kalsın?`}
+                    action={
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="pointer-coarse:h-11"
+                          onClick={() => {
+                            setPrice(priceText(product.price));
+                            setSeen((v) => ({ ...v, price: product.price }));
+                          }}
+                        >
+                          {money(product.price)} kalsın
+                        </Button>
+                        <Button size="sm" variant="secondary" className="pointer-coarse:h-11" onClick={() => setSeen((v) => ({ ...v, price: product.price }))}>
+                          {money(priceNum)} yazılsın
+                        </Button>
+                      </div>
+                    }
+                  />
                 ) : null}
                 <Field
                   className="sm:col-start-2 sm:row-start-1"
@@ -1680,10 +1671,14 @@ function CopyDialog({
         }}
       >
         {dirty ? (
-          <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs leading-5 text-warn" role="status">
-            Kartta kaydedilmemiş değişiklikler var. Kopyaya son kaydedilen reçete, fire ve not geçer; değişikliklerin de geçmesi için önce
-            Vazgeç&apos;e basıp kaydedin.
-          </p>
+          <Notice
+            tone="warn"
+            size="sm"
+            risk="veri"
+            live="polite"
+            title="Kartta kaydedilmemiş değişiklik var"
+            text="Kopyaya son kaydedilen reçete, fire ve not geçer; değişiklikler de geçsin istiyorsanız önce Vazgeç'e basıp kaydedin."
+          />
         ) : null}
         <Field label="Ürün adı" htmlFor="c-name" error={name.trim() ? undefined : "Ürün adını yazın"}>
           <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-invalid={name.trim() ? undefined : true} />

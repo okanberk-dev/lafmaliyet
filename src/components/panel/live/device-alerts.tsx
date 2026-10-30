@@ -8,6 +8,7 @@ import { SEND_OFFLINE_TEXT, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import type { Role } from "@/lib/constants";
@@ -134,10 +135,10 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
             bildirim gelir. Sekme açıkken sesli uyarılar yine çalışır.{note ? ` ${note}` : null}
           </p>
         ) : support === "denied" ? (
-          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] leading-5 text-bad">
-            Bildirim izni kapalı. Adres çubuğundaki site ayarları simgesinden (kilit) Bildirimler&apos;i “İzin ver” yapın, sonra sayfayı yenileyin.
+          <Notice tone="bad" size="sm" title="Bu cihazda bildirim izni kapalı: uyarılar gelmez">
+            Adres çubuğundaki site ayarları simgesinden (kilit) Bildirimler&apos;i “İzin ver” yapın, sonra sayfayı yenileyin.
             {note ? ` ${note}` : null}
-          </p>
+          </Notice>
         ) : !subscribed ? (
           // Metin dar sütuna sıkışmasın: kart darsa (telefon, karaoke ekranının yan sütunu) düğme alt satıra iner, not ayrı
           <div className="rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
 import { Card, CardHeader } from "@/components/ui/card";
+import { TONE_ICON } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
 
 import { pinSection } from "./pin-scroll";
@@ -47,6 +48,7 @@ export function SectionCard({
   actions,
   actionsClassName,
   summary,
+  summaryTone,
   dirty,
   href,
   className,
@@ -61,6 +63,8 @@ export function SectionCard({
   actionsClassName?: string;
   /** Telefonda kapalıyken başlığın altında: kayıtlı değerlerin kısa özeti */
   summary?: ReactNode;
+  /** Özet bir uyarı söylüyor (yedek yok, su faturası girilmedi): kapalı satır da önemi taşır (tonun mürekkebi + ikon) */
+  summaryTone?: "warn" | "bad";
   /** Bölümde kaydedilmemiş değişiklik var */
   dirty?: boolean;
   /** Telefonda satırın gideceği ekran (bölüm burada açılmaz) */
@@ -116,7 +120,17 @@ export function SectionCard({
             </span>
           ) : null}
         </span>
-        {summary && (href || !open) ? <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-ink-mute">{summary}</span> : null}
+        {summary && (href || !open) ? (
+          <span
+            className={cn(
+              "mt-0.5 flex items-start gap-1 text-[13px] leading-5 text-pretty",
+              summaryTone === "bad" ? "font-medium text-bad-ink" : summaryTone === "warn" ? "font-medium text-warn-ink" : "text-ink-mute",
+            )}
+          >
+            {summaryTone ? <SummaryIcon tone={summaryTone} /> : null}
+            <span className="min-w-0">{summary}</span>
+          </span>
+        ) : null}
       </span>
     </>
   );
@@ -159,5 +173,16 @@ export function SectionCard({
         </div>
       )}
     </Card>
+  );
+}
+
+/** Kapalı satırdaki uyarının ikonu (uyarılarla aynı tablo) */
+function SummaryIcon({ tone }: { tone: "warn" | "bad" }) {
+  const Icon = TONE_ICON[tone];
+  return (
+    <>
+      <Icon size={14} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] size-3.5 shrink-0" />
+      <span className="sr-only">{tone === "bad" ? "Önemli: " : "Dikkat: "}</span>
+    </>
   );
 }

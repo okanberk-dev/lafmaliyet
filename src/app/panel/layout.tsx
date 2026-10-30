@@ -34,7 +34,12 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
         <SidebarWithUser />
       </Suspense>
       <main id="icerik" tabIndex={-1} className="min-w-0 outline-none">
-        <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</div>
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          {/* Ses yuvası: ses kilitliyken AlertCenter "Sesli uyarılar kapalı" satırını buraya çizer (sayfayla kayar,
+              içeriği örtmez; docs/planlar/ux-sade.md §4.6). Boşken yer kaplamaz. */}
+          <div id="ses-yuvasi" />
+          {children}
+        </div>
       </main>
     </div>
   );

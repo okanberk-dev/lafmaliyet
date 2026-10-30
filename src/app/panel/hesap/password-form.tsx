@@ -11,6 +11,7 @@ import { AvatarFallback, LiquidMetalAvatar } from "@/components/akmanos/liquid-m
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { changePasswordAction, updateProfile, type PasswordState } from "@/server/actions/auth";
 
@@ -103,9 +104,7 @@ export function PasswordForm() {
         </Field>
       </div>
       {state.error ? (
-        <p role="alert" className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-sm text-bad">
-          {state.error}
-        </p>
+        <Notice tone="bad" size="sm" live="assertive" title={state.error} />
       ) : null}
       <Button type="submit" disabled={pending || tooShort || Boolean(weak) || mismatch} className="w-full">
         {pending ? "Kaydediliyor…" : "Parolayı değiştir"}
@@ -152,9 +151,7 @@ export function ProfileForm({ name: initialName, email: initialEmail }: { name: 
         </Field>
       ) : null}
       {error ? (
-        <p role="alert" className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-sm text-bad">
-          {error}
-        </p>
+        <Notice tone="bad" size="sm" live="assertive" title={error} />
       ) : null}
       <Button type="submit" variant="secondary" disabled={pending || !dirty || !password} className="w-full sm:w-auto">
         {pending ? "Kaydediliyor…" : "Bilgileri kaydet"}

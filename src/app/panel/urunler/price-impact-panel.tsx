@@ -9,6 +9,7 @@ import { toastUnreachable, tryAction, useActionTransition } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import type { IngredientChange, ProductImpact } from "@/lib/calc/price-impact";
 import { basisText, type PriceLoss } from "@/lib/calc/price-loss";
 import { dateTR, dayTR, num, pct, tl, tl2 } from "@/lib/format";
@@ -189,7 +190,7 @@ export function PriceImpactPanel({
             ))}
           </ul>
         ) : (
-          <p className="rounded-2xl bg-good-soft px-4 py-3 text-sm text-good-ink">Etkilenen ürünlerin maliyet oranı hâlâ hedefte ya da fiyatları güncel.</p>
+          <Notice tone="good" title="Etkilenen ürünlerin maliyet oranı hâlâ hedefte ya da fiyatları güncel" />
         )}
 
         {rest.length ? (

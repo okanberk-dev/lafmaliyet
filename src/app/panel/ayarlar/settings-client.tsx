@@ -42,6 +42,7 @@ import { FloatingBar } from "@/components/ui/floating-bar";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { type PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import type { WaterCost } from "@/lib/calc/engine";
@@ -292,6 +293,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
           title="Su + buz birim maliyeti"
           description="Reçetelerdeki su ve buzun litre maliyeti."
           summary={waterSummary(water)}
+          summaryTone={water.reason === "no-bill" ? "warn" : undefined}
           dirty={waterChanged}
         >
           <CardContent className="space-y-4">
@@ -304,8 +306,19 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
                 {tl(water.perLiter, 4)}
                 <span className="ml-0.5 text-sm font-medium text-ink-mute">/L</span>
               </p>
-              <p className={cn("mt-1 text-xs", water.reason === "no-usage" ? "text-warn" : "text-ink-mute")}>{waterSource(water)}</p>
+              {water.reason === "no-bill" ? null : <p className={cn("mt-1 text-xs", water.reason === "no-usage" ? "text-warn" : "text-ink-mute")}>{waterSource(water)}</p>}
             </Well>
+            {water.reason === "no-bill" ? (
+              <Notice
+                tone="warn"
+                size="sm"
+                risk="para"
+                title="Su faturası girilmedi: su ve buz maliyetsiz"
+                action={<NoticeLink href="/panel/gelir-gider?ara=su+gideri">Gelir-gider&apos;de gir</NoticeLink>}
+              >
+                {waterSource(water)}.
+              </Notice>
+            ) : null}
             <Field
               label="Elle birim maliyet (₺/L)"
               hint={waterChanged && !waterInvalid ? <span className="text-warn">{waterValue === null ? "Kaydedince faturadan otomatik hesaplanır" : `Yeni: ${tl(waterValue, 4)} /L`}</span> : "Boş bırakırsanız su faturasından otomatik hesaplanır"}
@@ -707,10 +720,15 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
           />
         )}
         {dirty ? (
-          <p className="mt-3 flex items-center gap-2 text-xs text-warn" role="status">
-            <span className="size-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />
-            Değişiklikler henüz kaydedilmedi. Kaydet&apos;e ya da bir adın içindeyken Enter&apos;a basın.
-          </p>
+          <Notice
+            tone="warn"
+            size="line"
+            risk="veri"
+            live="polite"
+            className="mt-3"
+            title="Değişiklikler kaydedilmedi"
+            text="Kaydet'e ya da bir adın içindeyken Enter'a basın."
+          />
         ) : null}
       </CardContent>
       <ConfirmDialog

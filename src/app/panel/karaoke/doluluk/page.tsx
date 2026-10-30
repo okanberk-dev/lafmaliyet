@@ -1,4 +1,4 @@
-import { ArrowLeft, CircleAlert, Info, Lightbulb, MicVocal, Settings2 } from "lucide-react";
+import { ArrowLeft, Lightbulb, MicVocal, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { dateTimeTR } from "@/lib/format";
 import { historyProgress } from "@/lib/karaoke/history";
@@ -203,22 +204,22 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
 
       <div className="space-y-4">
         {configured && !progress.complete ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-[13px] leading-5 text-info">
-            {/* Telefonda düğme metnin altına iner (metin sıkışmasın) */}
-            <span className="flex min-w-0 flex-[1_1_16rem] items-start gap-2">
-              <Info size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-              {progress.done
+          <Notice
+            tone="neutral"
+            title={
+              progress.done
                 ? `Geçmiş rezervasyonların ${progress.done} / ${progress.total} ayı alındı.`
-                : `Geçmiş rezervasyonlar henüz siteden alınmadı; harita yalnız ${firstDay ? longDayText(firstDay) : "bugün"} ve sonrasını gösteriyor.`}
-            </span>
-            <HistoryButton label={historyLabel} />
-          </div>
+                : `Geçmiş rezervasyonlar henüz siteden alınmadı; harita yalnız ${firstDay ? longDayText(firstDay) : "bugün"} ve sonrasını gösteriyor.`
+            }
+            action={<HistoryButton label={historyLabel} />}
+          />
         ) : null}
         {!saved ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-panel px-4 py-2.5 text-[13px] leading-5 text-ink-mute">
-            <span className="min-w-0 flex-[1_1_16rem]">Oda saatleri varsayılan: her gün {hoursText(hours)}. Doğru değilse değiştirin; doluluk bu saatlere göre hesaplanır.</span>
-            <HoursButton hours={hours} variant="ghost" />
-          </div>
+          <Notice
+            tone="neutral"
+            title={`Oda saatleri varsayılan: her gün ${hoursText(hours)}. Doğru değilse değiştirin; doluluk bu saatlere göre hesaplanır.`}
+            action={<HoursButton hours={hours} variant="ghost" />}
+          />
         ) : null}
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
@@ -286,10 +287,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
                 {configured ? "Geçmişten alınan rezervasyonlar ad ve not olmadan saklanır." : "laffogato.net bağlantısı kurulmadı; geçmiş alınamaz."}
               </span>
               {configured && history.lastError ? (
-                <span className="flex basis-full items-start gap-1.5 text-[13px] text-bad">
-                  <CircleAlert size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-                  Son deneme: {history.lastError}
-                </span>
+                <Notice tone="bad" size="line" className="basis-full" title={`Son deneme: ${history.lastError}`} />
               ) : null}
             </DataRow>
             <DataRow label="Rezervasyonsuz oturumlar">

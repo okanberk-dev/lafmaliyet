@@ -1,23 +1,26 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, CircleCheck, ListChecks } from "lucide-react";
+import { useState } from "react";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FilterBar, FilterChip, useQueryState } from "@/components/ui/filters";
-import type { PastelTone } from "@/components/ui/icon-tile";
+import { TONE_ICON, TONE_TILE, type NoticeTone } from "@/components/ui/notice";
 import type { Alert } from "@/lib/calc/insights";
 import { cn } from "@/lib/utils";
 
-const STYLE: Record<Alert["level"], { icon: ReactNode; tone: PastelTone; label: string }> = {
-  danger: { icon: <CircleAlert />, tone: 3, label: "Önemli" },
-  warning: { icon: <TriangleAlert />, tone: 1, label: "Uyarı" },
-  info: { icon: <Info />, tone: 2, label: "Bilgi" },
-};
+import { alertTone } from "./alert-tone";
 
-const LEVELS: Alert["level"][] = ["danger", "warning", "info"];
-const RANK: Record<Alert["level"], number> = { danger: 0, warning: 1, info: 2 };
+// Uyarının görünen önemi alertTone'dan (zille aynı); ikon ve kuyu uyarılarınkiyle aynı tablodan (TONE_ICON / TONE_TILE)
+const LABEL: Record<Exclude<NoticeTone, "good">, string> = { bad: "Önemli", warn: "Dikkat", neutral: "Bilgi" };
+const DOT: Record<Exclude<NoticeTone, "good">, string> = { bad: "bg-bad", warn: "bg-warn", neutral: "bg-ink-quiet" };
+
+// Adresteki süzgeç değeri (?uyari=danger|warning|info) eski adlarıyla kalır; görünen öneme eşlenir
+type Level = Alert["level"];
+const TONE_OF: Record<Level, Exclude<NoticeTone, "good">> = { danger: "bad", warning: "warn", info: "neutral" };
+const LEVELS: Level[] = ["danger", "warning", "info"];
+const RANK: Record<NoticeTone, number> = { bad: 0, warn: 1, neutral: 2, good: 3 };
 
 /** Kart kısa kalsın: ilk bu kadar uyarı görünür, kalanı "N uyarı daha" ile açılır */
 const FIRST = 4;
@@ -30,15 +33,16 @@ const keepUnit = (text: string) => text.replace(/ ₺/g, "\u00a0₺");
  * (?uyari=danger, adreste kalır) ve uzun listede ilk birkaçı gösterilir.
  */
 export function DashboardAlerts({ items, className }: { items: Alert[]; className?: string }) {
-  const [level, setLevel] = useQueryState<"" | Alert["level"]>("uyari", "");
+  const [level, setLevel] = useQueryState<"" | Level>("uyari", "");
   const [open, setOpen] = useState(false);
 
-  const sorted = items.map((a, i) => ({ a, i })).sort((x, y) => RANK[x.a.level] - RANK[y.a.level] || x.i - y.i);
-  const count = (l: Alert["level"]) => items.filter((a) => a.level === l).length;
+  const toned = items.map((a, i) => ({ a, i, tone: alertTone(a) }));
+  const sorted = toned.sort((x, y) => RANK[x.tone] - RANK[y.tone] || x.i - y.i);
+  const count = (l: Level) => toned.filter((x) => x.tone === TONE_OF[l]).length;
   const present = LEVELS.filter((l) => count(l) > 0);
   // Adresteki düzey bu ay yoksa süzgeç yok sayılır (ay değişince liste boş kalmasın)
   const active = level && present.includes(level) ? level : "";
-  const shown = sorted.filter(({ a }) => !active || a.level === active);
+  const shown = sorted.filter((x) => !active || x.tone === TONE_OF[active]);
   const visible = open ? shown : shown.slice(0, FIRST);
   const hidden = shown.length - visible.length;
   const important = count("danger");
@@ -46,7 +50,7 @@ export function DashboardAlerts({ items, className }: { items: Alert[]; classNam
   return (
     <Card className={className}>
       <CardHeader
-        icon={<TriangleAlert />}
+        icon={<ListChecks />}
         title="Dikkat edilmesi gerekenler"
         // Telefonda kart kısa kalsın: satırlardaki ok zaten bağlantı olduğunu söylüyor
         description={<span className="max-sm:hidden">Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz.</span>}
@@ -68,8 +72,8 @@ export function DashboardAlerts({ items, className }: { items: Alert[]; classNam
         <FilterBar className="px-5 pb-2" active={!!active} onClear={() => setLevel("")}>
           {present.map((l) => (
             <FilterChip key={l} active={active === l} count={count(l)} onToggle={() => setLevel(active === l ? "" : l)}>
-              <span aria-hidden="true" className={cn("size-1.5 rounded-full", l === "danger" ? "bg-bad" : l === "warning" ? "bg-[#ff9f0a]" : "bg-info")} />
-              {STYLE[l].label}
+              <span aria-hidden="true" className={cn("size-1.5 rounded-full", DOT[TONE_OF[l]])} />
+              {LABEL[TONE_OF[l]]}
             </FilterChip>
           ))}
         </FilterBar>
@@ -77,21 +81,24 @@ export function DashboardAlerts({ items, className }: { items: Alert[]; classNam
       <CardContent className="pb-3">
         <ActivityList>
           {visible.length ? (
-            visible.map(({ a, i }) => (
+            visible.map(({ a, i, tone }) => {
+              const Icon = TONE_ICON[tone];
+              return (
               <ActivityItem
                 key={`${a.level}-${i}`}
                 wrap
-                icon={STYLE[a.level].icon}
-                tone={STYLE[a.level].tone}
+                icon={<Icon />}
+                well={TONE_TILE[tone]}
                 title={keepUnit(a.title)}
                 description={keepUnit(a.detail)}
                 href={a.href}
-                dot={a.level === "danger" ? "danger" : undefined}
+                dot={tone === "bad" ? "danger" : undefined}
                 aside={a.href ? <ChevronRight size={16} className="text-ink-quiet" aria-hidden="true" /> : undefined}
               />
-            ))
+              );
+            })
           ) : (
-            <ActivityItem icon={<CircleCheck />} tone={0} title="Şu an dikkat gerektiren bir şey yok" description="Otomatik kontroller bu ay için bir sorun bulmadı." />
+            <ActivityItem icon={<CircleCheck />} well={TONE_TILE.good} title="Şu an dikkat gerektiren bir şey yok" description="Otomatik kontroller bu ay için bir sorun bulmadı." />
           )}
         </ActivityList>
         {hidden > 0 || (open && shown.length > FIRST) ? (

@@ -39,6 +39,7 @@ import { clearQuery, FilterBar, FilterChip, fold, markUrlWritten, matches, Searc
 import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, useUrlPaged } from "@/components/ui/pagination";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { countUnitsFor } from "@/lib/calc/engine";
@@ -653,9 +654,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       </FilterSheet>
 
       {onlyInactiveMatch ? (
-        <p className="mx-5 mb-3 rounded-xl bg-info-soft px-3.5 py-2 text-[13px] text-info" role="status">
-          Aramanız yalnızca pasif malzemelerle eşleşti; pasif liste gösteriliyor.
-        </p>
+        <Notice tone="neutral" size="sm" live="polite" className="mx-5 mb-3" title="Aramanız yalnızca pasif malzemelerle eşleşti; pasif liste gösteriliyor" />
       ) : null}
 
       {visible.length ? (
@@ -1013,17 +1012,25 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
         title={`${row.name} silinemiyor`}
         description={
           <>
-            <span className="mb-3 block rounded-2xl bg-warn-soft px-3.5 py-2.5 text-warn">
-              {inActive
-                ? row.active
-                  ? `Bu malzeme ${num(activeProducts.length)} aktif ürünün reçetesinde kullanılıyor. Silmek ya da pasif yapmak için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın; yoksa ürünler onu tüketmeye devam eder.`
-                  : `Malzeme pasif ama ${num(activeProducts.length)} aktif ürünün reçetesinde: satıldıkça tüketiliyor ve sayım listesinde duruyor. Silmek için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın.`
-                : passiveProducts.length
-                  ? `Bu malzeme yalnız ${num(passiveProducts.length)} pasif ürünün reçetesinde kullanılıyor; silmek için önce o reçetelerden çıkarın.`
-                  : null}
-              {row.usedIn.length && history ? " " : null}
-              {history ? `${row.usedIn.length ? "Ayrıca" : "Bu malzemenin"} ${history} kaydı var; silinirse geçmiş ayların stok, zayi ve tutarlılık değerleri değişir.` : null}
-            </span>
+            <Notice
+              tone="warn"
+              size="sm"
+              risk="para"
+              className="mb-3"
+              title={
+                <>
+                  {inActive
+                    ? row.active
+                      ? `Bu malzeme ${num(activeProducts.length)} aktif ürünün reçetesinde kullanılıyor. Silmek ya da pasif yapmak için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın; yoksa ürünler onu tüketmeye devam eder.`
+                      : `Malzeme pasif ama ${num(activeProducts.length)} aktif ürünün reçetesinde: satıldıkça tüketiliyor ve sayım listesinde duruyor. Silmek için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın.`
+                    : passiveProducts.length
+                      ? `Bu malzeme yalnız ${num(passiveProducts.length)} pasif ürünün reçetesinde kullanılıyor; silmek için önce o reçetelerden çıkarın.`
+                      : null}
+                  {row.usedIn.length && history ? " " : null}
+                  {history ? `${row.usedIn.length ? "Ayrıca" : "Bu malzemenin"} ${history} kaydı var; silinirse geçmiş ayların stok, zayi ve tutarlılık değerleri değişir.` : null}
+                </>
+              }
+            />
             {inActive ? (
               <span className="block">
                 Kullanan aktif ürünler:
@@ -1363,9 +1370,7 @@ function IngredientDialog({
             </Field>
           </div>
           {recipeWarning ? (
-            <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
-              {recipeWarning}
-            </p>
+            <Notice tone="warn" size="sm" live="polite" title={recipeWarning} />
           ) : null}
           <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-panel px-3.5 py-2.5 text-sm text-ink-mute" aria-live="polite">
             <span>
@@ -1422,9 +1427,7 @@ function IngredientDialog({
             </Field>
           </div>
           {countWarning ? (
-            <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
-              {countWarning}
-            </p>
+            <Notice tone="warn" size="sm" live="polite" title={countWarning} />
           ) : null}
           <Field
             label="Kaynak / not"
@@ -1504,23 +1507,30 @@ function IngredientDialog({
         {row ? (
           <div className="space-y-4">
             {live?.pendingHold ? (
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
-                <p className="min-w-0 flex-1 basis-56 text-pretty">
-                  Faturadan gelen yeni fiyat onay bekliyor: <span className="font-semibold tabular">{bulkPrice(live.pendingHold.proposed, row.unit)}</span> (
-                  {live.pendingHold.supplier}, {dateTR(live.pendingHold.date)}).
-                </p>
-                {/* Kart aynı sayfada: pencere kapanır, sayfa karta kayar (gezinme yok) */}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    onClose();
-                    setTimeout(() => scrollToHolds(true), 0);
-                  }}
-                >
-                  Onaya git
-                </Button>
-              </div>
+              <Notice
+                tone="warn"
+                size="sm"
+                live="polite"
+                title={
+                  <>
+                    Faturadan yeni fiyat onay bekliyor: <span className="tabular">{bulkPrice(live.pendingHold.proposed, row.unit)}</span>
+                  </>
+                }
+                text={`${live.pendingHold.supplier}, ${dateTR(live.pendingHold.date)}`}
+                action={
+                  // Kart aynı sayfada: pencere kapanır, sayfa karta kayar (gezinme yok)
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={() => {
+                      onClose();
+                      setTimeout(() => scrollToHolds(true), 0);
+                    }}
+                  >
+                    Onaya git
+                  </Button>
+                }
+              />
             ) : null}
             {row.history.length ? (
               // Beyaz pencerede kuyu gri zeminle ayrılır

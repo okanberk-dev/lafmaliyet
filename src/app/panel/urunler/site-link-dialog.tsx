@@ -12,6 +12,7 @@ import { matches } from "@/components/ui/filters";
 import { SearchInput } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { tl } from "@/lib/format";
 import { CONFIDENCE_LABEL, suggestLinks } from "@/lib/site-menu/names";
 import type { SiteMenuItem } from "@/lib/site-menu/schema";
@@ -188,12 +189,17 @@ export function SiteLinkDialog({
     >
       <div className="space-y-4 pb-2">
         {load.status === "error" ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad" role="alert">
-            <span className="min-w-0">{load.message}</span>
-            <Button size="sm" variant="secondary" onClick={retry}>
-              <RefreshCw size={14} aria-hidden="true" /> Tekrar dene
-            </Button>
-          </div>
+          <Notice
+            tone="bad"
+            size="sm"
+            live="assertive"
+            title={load.message}
+            action={
+              <Button size="sm" variant="secondary" onClick={retry}>
+                <RefreshCw size={14} aria-hidden="true" /> Tekrar dene
+              </Button>
+            }
+          />
         ) : null}
         <SearchInput
           value={query}
@@ -265,9 +271,13 @@ export function SiteLinkDialog({
               />
             ) : null}
             {takenByOther ? (
-              <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn" role="status">
-                Bu fiyat zaten {takenByOther.label} ürününe bağlı. Önce o ürünün bağlantısını kaldırın ya da başka bir fiyat seçin.
-              </p>
+              <Notice
+                tone="warn"
+                size="sm"
+                live="polite"
+                title={`Bu fiyat zaten ${takenByOther.label} ürününe bağlı`}
+                text="Önce o ürünün bağlantısını kaldırın ya da başka bir fiyat seçin."
+              />
             ) : sameAsCurrent ? (
               <p className="text-[13px] text-ink-mute">Ürün zaten bu fiyata bağlı.</p>
             ) : priceMinor !== null && after ? (

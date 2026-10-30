@@ -1,6 +1,6 @@
 "use client";
 
-import { History, Store } from "lucide-react";
+import { History } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import { money } from "@/lib/format";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { historyWhen, PRICE_SOURCE_LABEL, type HistoryRow } from "@/lib/prices/history";
@@ -89,18 +90,17 @@ export function PriceHistoryCard({ product, history }: { product: { id: number; 
       />
       <CardContent className="space-y-3">
         {stale ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn" role="status">
-            <p className="flex min-w-0 items-start gap-2">
-              <Store size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                Kasada ({history.kasa ?? "ModPOS"}) hâlâ <span className="font-semibold tabular">{money(history.posStalePrice!)}</span>, panelde{" "}
-                <span className="tabular">{money(history.price!)}</span> · {staleForText(history.posStaleSince!)}
-              </span>
-            </p>
-            <Button size="sm" variant="secondary" onClick={markDone} disabled={pending}>
-              Kasada değiştirdim
-            </Button>
-          </div>
+          <Notice
+            tone="warn"
+            live="polite"
+            title={`Kasada (${history.kasa ?? "ModPOS"}) hâlâ ${money(history.posStalePrice!)}, panelde ${money(history.price!)}`}
+            text={upperFirst(staleForText(history.posStaleSince!))}
+            action={
+              <Button size="sm" variant="secondary" onClick={markDone} disabled={pending}>
+                Kasada değiştirdim
+              </Button>
+            }
+          />
         ) : null}
         {history.rows.length ? (
           <ul className="divide-y divide-line-strong/70 rounded-2xl bg-surface px-4">
@@ -130,3 +130,6 @@ export function PriceHistoryCard({ product, history }: { product: { id: number; 
     </Card>
   );
 }
+
+/** "bugünden beri" → "Bugünden beri" (uyarının ikinci satırı cümle başı) */
+const upperFirst = (t: string) => t.charAt(0).toLocaleUpperCase("tr-TR") + t.slice(1);

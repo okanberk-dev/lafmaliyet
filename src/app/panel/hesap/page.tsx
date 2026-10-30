@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { ROLES } from "@/lib/constants";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -101,7 +102,7 @@ async function Account() {
             <>
               <CardHeader icon={<PlugZap />} title="Bağlı uygulamalar" />
               <CardContent>
-                <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Bağlı uygulamalar okunamadı; sayfayı yenileyin.</p>
+                <Notice tone="bad" size="sm" title="Bağlı uygulamalar okunamadı; sayfayı yenileyin" />
               </CardContent>
             </>
           )}

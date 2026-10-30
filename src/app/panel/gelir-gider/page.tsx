@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { HashScroll } from "@/components/panel/hash-scroll";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
@@ -267,7 +268,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           Vergi kârı ›
         </Link>
       </p>
-      {sgkNotice ? <SgkRateNotice text={sgkNotice.text} target={sgkNotice.target} targetText={rateText(sgkNotice.target)} canApply={sgkNotice.canApply} /> : null}
+      {sgkNotice ? <SgkRateNotice text={sgkNotice.text} target={sgkNotice.target} targetText={rateText(sgkNotice.target)} currentText={rateText(sgkNotice.current)} canApply={sgkNotice.canApply} /> : null}
       {/* ⌘K "Kâr / zarar" buraya iner (docs/planlar/ux-sade.md §3.7) */}
       <div id="kar-zarar" className="mb-6 grid scroll-mt-20 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
@@ -336,10 +337,23 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           />
         </StatBreakdown>
       </div>
-      {/* Yıl kartlarına girmeyen aylar (tablo onları yine gösterir): cirosu girilmemiş ayın gideri, sayımı olmayan ay */}
-      {yearNotes.length ? (
-        <p className="-mt-3 mb-6 text-xs text-pretty text-ink-mute" role="note">
-          Yıl kartları bu aya kadar, POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yearNotes.join(" · ")}.
+      {/* Sayımı olmayan ay: mal maliyeti tahmini (para riski, katlanmaz); cirosu girilmemiş ayın gideri gri dipnot.
+          Yıl kartlarına girmeyen aylar tabloda yine görünür */}
+      {yt.uncounted.length ? (
+        <Notice
+          tone="warn"
+          size="sm"
+          risk="para"
+          className="-mt-2 mb-4"
+          title={`${yt.uncounted.map((m) => monthLabel(m)).join(", ")} sayımı yok: mal maliyeti tahmini`}
+          action={<NoticeLink href={`/panel/sayim?ay=${yt.uncounted[yt.uncounted.length - 1]}`}>Sayım gir</NoticeLink>}
+        >
+          Kapanış stoğu 0 sayıldı; alınan malın tamamı maliyet.
+        </Notice>
+      ) : null}
+      {yt.missingRevenue.length ? (
+        <p className="-mt-2 mb-6 text-xs text-pretty text-ink-mute" role="note">
+          Yıl kartları POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yt.missingRevenue.map(missingRevenueText).join(" · ")}.
         </p>
       ) : null}
       <div className="mb-6">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Info, Trash2, TriangleAlert } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -21,12 +22,12 @@ import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
 import { photoCaption } from "@/lib/photo-rules";
 import { longDateTR } from "@/lib/reminders";
-import { cn } from "@/lib/utils";
 import { requestCashOutChange } from "@/server/actions/cash-out-requests";
 import { deleteCashOut, restoreCashOut, saveCashOut } from "@/server/actions/cash-outs";
 import type { CashOutCategory, CashOutView } from "@/server/data/cash-outs";
 
 import { newClientKey } from "./cash-requests";
+import { CheckNotices } from "./check-notices";
 
 /** Pencerenin taslağı (metin alanları formdaki gibi) */
 interface Draft {
@@ -329,13 +330,11 @@ export function CashOutDialog({
     >
       <div className="space-y-4">
         {request ? (
-          <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
-            <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0">
-              {REQUEST_INFO[request.reason]}
-              {request.pendingOp ? ` ${request.pendingOp === "sil" ? "Silme" : "Düzeltme"} isteğiniz bekliyor; yeniden gönderirseniz güncellenir.` : ""}
-            </span>
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title={`${REQUEST_INFO[request.reason]}${request.pendingOp ? ` ${request.pendingOp === "sil" ? "Silme" : "Düzeltme"} isteğiniz bekliyor; yeniden gönderirseniz güncellenir.` : ""}`}
+          />
         ) : null}
         {withPhoto ? (
           <div className="space-y-2">
@@ -368,13 +367,18 @@ export function CashOutDialog({
             <Input id="co-store" value={draft.store} onChange={set("store")} maxLength={60} placeholder={harcama ? "ör. Migros" : "ör. patrona, bankaya, tedarikçiye (Sütaş)"} autoComplete="off" data-warn={warn("store")} />
           </Field>
           {supplierHint ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">
-              <Info size={14} className="shrink-0" aria-hidden="true" />
-              <span className="min-w-[12rem] flex-1">{supplierHint} tedarikçimiz. Borç ödemesiyse &quot;Teslim · ödeme&quot; seçin; alışverişse böyle kalsın.</span>
-              <Button size="sm" variant="secondary" className="text-ink max-sm:w-full" onClick={() => setDraft((d) => ({ ...d, kind: "teslim" }))}>
-                Teslim · ödeme&apos;ye çevir
-              </Button>
-            </div>
+            <Notice
+              tone="neutral"
+              size="sm"
+              className="sm:col-span-2"
+              title={`${supplierHint} tedarikçimiz`}
+              text="Borç ödemesiyse “Teslim · ödeme” seçin; alışverişse böyle kalsın."
+              action={
+                <Button size="xs" variant="secondary" onClick={() => setDraft((d) => ({ ...d, kind: "teslim" }))}>
+                  Teslim · ödeme&apos;ye çevir
+                </Button>
+              }
+            />
           ) : null}
           <Field label={chip("description", harcama ? "Ne alındı" : "Açıklama")} htmlFor="co-desc" className="sm:col-span-2">
             <Input id="co-desc" value={draft.description} onChange={set("description")} maxLength={200} placeholder={harcama ? "ör. süt, buz" : "isteğe bağlı"} autoComplete="off" data-warn={warn("summary")} />
@@ -408,32 +412,17 @@ export function CashOutDialog({
           ) : null}
         </div>
         {harcama && !admin && !writes && docInvoice ? (
-          <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
-            <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Fatura olduğu için Aylık harcamalar&apos;a yazılmadı; yönetici Faturalar&apos;da görür.
-          </p>
+          <Notice tone="neutral" size="sm" title="Fatura olduğu için Aylık harcamalar'a yazılmadı; yönetici Faturalar'da görür" />
         ) : null}
         {locked && !request ? (
-          <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
-            <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-            Bu satır yöneticinin harcama kaydına bağlı; silmek için yöneticiye haber verin.
-          </p>
+          <Notice tone="neutral" size="sm" title="Bu satır yöneticinin harcama kaydına bağlı" text="Silmek için yöneticiye haber verin." />
         ) : null}
         {request ? (
           <Field label="Yöneticiye not" htmlFor="co-note" hint="İsteğe bağlı; neden eklendiğini ya da değiştiğini yazın">
             <Textarea id="co-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={200} />
           </Field>
         ) : null}
-        {checks.length ? (
-          <ul className="space-y-1.5">
-            {checks.slice(0, 5).map((c, i) => (
-              <li key={i} className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-[13px] leading-5", c.level === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")}>
-                {c.level === "warn" ? <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
-                <span className="min-w-0">{c.text}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <CheckNotices checks={checks} max={5} />
       </div>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Dialog>

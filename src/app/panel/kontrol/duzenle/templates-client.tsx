@@ -11,6 +11,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { listTitle, weekdaysText } from "@/lib/checklists";
 import { num } from "@/lib/format";
@@ -142,9 +143,7 @@ export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
             errors={field ? { [field]: error! } : undefined}
           />
           {error && !field ? (
-            <p role="alert" className="text-sm text-bad">
-              {error}
-            </p>
+            <Notice tone="bad" size="sm" live="assertive" title={error} />
           ) : null}
         </form>
       </Dialog>

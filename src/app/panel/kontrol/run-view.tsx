@@ -7,6 +7,7 @@ import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import {
   earlyStart,
   groupBySection,
@@ -197,7 +198,7 @@ function Answer({
   const note = a.note ? <p className="text-[13px] text-pretty break-words text-ink-soft">Not: {a.note}</p> : null;
   if (item.type === "check") {
     return a.status === "issue" ? (
-      <p className="inline-block rounded-lg bg-warn-soft px-2 py-1 text-[13px] text-pretty break-words text-warn">Sorun: {a.note}</p>
+      <Notice tone="warn" size="sm" className="inline-flex" title={`Sorun: ${a.note}`} />
     ) : (
       <p className="text-[13px] text-good-ink">Tamam</p>
     );

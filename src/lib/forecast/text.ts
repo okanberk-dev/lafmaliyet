@@ -176,6 +176,20 @@ export function qualityBanner(f: Forecast): string | null {
   return [text, note].filter(Boolean).join(" ") || null;
 }
 
+/**
+ * Tahmin kalitesi kutusunun başlığı (docs/planlar/ux-sade.md U9): kısa sonuç; uzun açıklama `qualityBanner`'da, kutunun
+ * Ayrıntı'sında. Kip başlık istemiyorsa (yalnız takvim notu) null: kutu açıklamanın kendisini başlık yapar.
+ */
+export function qualityTitle(f: Forecast): string | null {
+  if (f.quality === "ay" && f.level?.month) return f.reports.total ? `Kaba tahmin: ${f.reports.total} günlük kasa raporu var` : "Kaba tahmin: kasa raporu yok";
+  if (f.quality === "ortalama" && f.level) return `Hafta günü farkları varsayılan: son ${f.level.windowDays} günde ${f.level.n} rapor`;
+  if (f.quality === "karma") {
+    const names = WEEK_ORDER.filter((w) => f.missingWeekdays.includes(w)).map((w) => WEEKDAY_NAMES[w]);
+    return `${names.join(", ")} için 3 rapor yok: ortalama gün kullanıldı`;
+  }
+  return null;
+}
+
 /** "Takvim ve etkiler" tablosu: varsayılan etkiler ve hafta günü payları */
 export function factorTable(f: Forecast): { label: string; effect: string; basis: string }[] {
   const ownCount = f.shares.filter((s) => s.own).length;

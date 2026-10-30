@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Mail, MessageCircle, Send, TriangleAlert } from "lucide-react";
+import { Check, Copy, Mail, MessageCircle, Send } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/form";
 import { SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { dateTR, money, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -186,10 +187,13 @@ export function RequestDialog({
         {credits.length ? (
           <fieldset>
             <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">İade faturaları</legend>
-            <p className="mb-2 flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-              <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>Bu tedarikçinin iade faturası var. Ödenmedi duranlar seçili gelir; ötekiler daha önce düşülmediyse seçin: tutardan ve metinden düşülür.</span>
-            </p>
+            <Notice
+              tone="warn"
+              size="sm"
+              className="mb-2"
+              title="Bu tedarikçinin iade faturası var"
+              text="Ödenmedi duranlar seçili gelir; ötekiler daha önce düşülmediyse seçin: tutardan ve metinden düşülür."
+            />
             <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line-strong">
               {credits.map((i) => (
                 <li key={i.id}>
@@ -248,22 +252,28 @@ export function RequestDialog({
         ) : null}
 
         {(chosen.length || chosenBuys.length) && !payable ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info" role="status">
-            <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>Seçilen iadeler faturaları karşılıyor; ödenecek tutar yok. İadeyi ya da faturaları değiştirin.</span>
-          </p>
+          // Talep oluşmaz: turuncu (docs/planlar/ux-sade.md Ek A 225)
+          <Notice
+            tone="warn"
+            size="sm"
+            live="polite"
+            title="Seçilen iadeler faturaları karşılıyor: ödenecek tutar yok"
+            text="İadeyi ya da faturaları değiştirin."
+          />
         ) : null}
 
         {!card?.iban ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
-            <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              IBAN girilmemiş; metinde “IBAN: (girilmemiş)” yazar.{" "}
-              <button type="button" onClick={onEditCard} className="cursor-pointer font-semibold underline underline-offset-2">
+          <Notice
+            tone="warn"
+            size="sm"
+            live="polite"
+            title="IBAN girilmemiş: metinde “(girilmemiş)” yazar"
+            action={
+              <Button size="xs" variant="secondary" onClick={onEditCard}>
                 IBAN&apos;ı ekleyin
-              </button>
-            </span>
-          </p>
+              </Button>
+            }
+          />
         ) : null}
 
         {/* Bankanın havale ekranına tek tek yapıştırmak için */}

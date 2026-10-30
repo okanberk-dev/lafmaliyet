@@ -131,7 +131,9 @@ test("Vergiye göre tablosu (§4.2): çeyreğin üç ayı, çeyrek toplamı, kü
 
 test("sınıflandırma listesi (§4.2, K12): bölüme uygun belge seçenekleri, stopaj alanı, demirbaş adayları", () => {
   const c = classifyData(view, { invoices: model.ds.invoices, settings: DEFAULT_TAX_SETTINGS, choices: [], today: TODAY });
-  assert.equal(c.header, view.classify.header);
+  // Listenin başlık satırı kalktı (kartın açıklaması yok); çeyreğin özeti görünümde kalır (K11), listeye taşınmaz
+  assert.ok(!("header" in c), "ClassifyData başlık taşımaz");
+  assert.match(view.classify.header, /^Bu çeyrekte .* gider sayılmadı \(\d+ kalem\)/);
   const labels = (key: string) => c.items.find((i) => i.key === key)!.options.map((o) => o.label);
   const personel = c.items.find((i) => i.source === "fixed" && i.sectionLabel === "Personel giderleri")!;
   assert.deepEqual(
@@ -313,8 +315,8 @@ test("inceleme (U1, U2, U4, R6): telefon çeyrek görünümü çeyrek değişinc
   assert.match(ui, /<dd className="max-w-\[60%\] text-right break-words text-ink tabular">/);
   // U4: takvim satırındaki "Muhasebecinin rakamını gir" yalnız pencerenin seçeneklerindeki dönemde
   assert.match(read(`${DIR}/tax-calendar.tsx`), /const filing = kindFiling\?\.options\.some\(\(o\) => o\.period === row\.period\) \? kindFiling : null;/);
-  // R6: Özet uyarıları (K4 farkı, faturası iptal edilen varlık) sarı satırla ve Demirbaş bağlantısıyla
+  // R6: Özet uyarıları (K4 farkı, faturası iptal edilen varlık) tek turuncu Notice'te (ux-sade Ek A 265) ve Demirbaş bağlantısıyla
   const ozet = read(`${DIR}/page.tsx`);
-  assert.match(ozet, /<NoteList notes=\{view\.warnings\} tone="warn" \/>/);
+  assert.match(ozet, /<NoteNotice notes=\{view\.warnings\}/);
   assert.match(ozet, /href="\/panel\/vergi\/demirbas"/);
 });

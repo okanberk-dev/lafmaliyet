@@ -1,4 +1,4 @@
-import { ArrowLeft, ClipboardCheck, Gift, Globe, ReceiptText } from "lucide-react";
+import { ArrowLeft, Gift, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { kasaMonthLine, resolveMonth, tillMonths } from "@/lib/cash-month";
 import {
   businessDate,
@@ -301,10 +302,11 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)
   const adminBand = adminRequests.length ? (
-    <div role="note" className="space-y-1 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
-      {adminRequests.map((r) => (
-        <p key={r.id} className="flex flex-wrap items-center gap-x-2">
-          <ClipboardCheck size={15} className="shrink-0" aria-hidden="true" />
+    <Notice
+      tone="warn"
+      title={`Bu gün için ${adminRequests.length} personel isteği bekliyor`}
+      text={adminRequests.map((r) => (
+        <span key={r.id} className="flex flex-wrap items-center gap-x-2">
           <span className="min-w-0">
             {r.kind === "kasa-silme"
               ? `${r.requestedByName} raporun silinmesini istedi`
@@ -312,12 +314,10 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
                 ? `${r.requestedByName} bu günün raporunu ${dayLocativeTR(todayTR(new Date(r.createdAt)))} onaya gönderdi. Burada girerseniz onun isteği kapanır.`
                 : `${genitive(r.requestedByName)} düzeltme önerisi bekliyor`}
           </span>
-          <Link href={`/panel/onaylar#istek-${r.id}`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
-            Onaylar&apos;da bakın
-          </Link>
-        </p>
+          <NoticeLink href={`/panel/onaylar#istek-${r.id}`}>Onaylar&apos;da bakın</NoticeLink>
+        </span>
       ))}
-    </div>
+    />
   ) : null;
   // Gün içinde kasadan çıkanlar: gün boyunca kullanılan kart (akşam formu boşken de)
   const outsCard = showForm ? (
@@ -604,16 +604,12 @@ async function SiteDayRow({ date, admin, kasa }: { date: string; admin: boolean;
   const row = await fetchTillOnlineRow(date);
   if (!row) return null;
   return (
-    <div role="note" className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-      <Globe size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <p className="min-w-0 flex-1">
-        <span className="font-semibold">laffogato.net · {longDateTR(date)}:</span> Online (site + uygulama) {money(row.online)}
-        {admin ? <> · Karaoke ön ödeme {money(row.karaoke)}</> : null} — kasadan geçmez.
-        <span className="block text-[13px] text-info/80">
-          Bilgi için: kasa farkına ve Z raporuna girmez; {kasa}&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
-        </span>
-      </p>
-    </div>
+    <Notice
+      tone="neutral"
+      title={`laffogato.net · ${longDateTR(date)}: online ${money(row.online)}${admin ? ` · karaoke ön ödeme ${money(row.karaoke)}` : ""}, kasadan geçmez`}
+    >
+      Kasa farkına ve Z raporuna girmez; {kasa}&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
+    </Notice>
   );
 }
 

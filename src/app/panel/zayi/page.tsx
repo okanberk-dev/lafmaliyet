@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
 import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
@@ -183,12 +184,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
       {header}
       {strip}
       {waiting?.count ? (
-        <p className="rounded-xl bg-warn-soft px-4 py-2.5 text-sm text-warn">
-          Bu gün için {num(waiting.count)} istek onay bekliyor ·{" "}
-          <Link href={`/panel/onaylar#istek-${waiting.firstId}`} className="font-medium underline underline-offset-2">
-            Onaylar
-          </Link>
-        </p>
+        <Notice tone="warn" title={`Bu gün ${num(waiting.count)} istek onay bekliyor`} action={<NoticeLink href={`/panel/onaylar#istek-${waiting.firstId}`}>Onaylar</NoticeLink>} />
       ) : null}
       {board}
       <WasteMonth month={month} today={today} />

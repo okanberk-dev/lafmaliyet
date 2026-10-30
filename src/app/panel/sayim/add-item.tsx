@@ -1,6 +1,5 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
 import { unstable_isUnrecognizedActionError, unstable_rethrow } from "next/navigation";
 import { useId, useState, type ReactNode } from "react";
 
@@ -8,6 +7,7 @@ import { STALE_TEXT } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { CountUnit } from "@/lib/calc/types";
@@ -183,10 +183,7 @@ export function CountItemFields({ form, nameNotice, priceHint, autoFocusName = t
   return (
     <>
       {form.error ? (
-        <p role="alert" className="flex items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          {form.error}
-        </p>
+        <Notice tone="bad" size="sm" live="assertive" title={form.error} />
       ) : null}
       <Field label="Ad" htmlFor={form.ids.name} error={shownNameError}>
         <Input

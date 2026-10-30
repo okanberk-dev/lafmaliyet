@@ -145,7 +145,8 @@ test("panel güncellemesi 'bağlantı yok' değil 'Yenile' diye bildirilir; yar�
 test("listede de olan ek kalem: uyarılır, geçen aydan taşınmaz", () => {
   const form = read("src/app/panel/sayim/stock-form.tsx");
   assert.match(form, /const carriedExtras = \(\) => prevExtras\.filter\(\(e\) => !listNames\.has\(nameKey\(e\.name\)\)\)/);
-  assert.match(form, /sayım listesinde de var: aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın, yoksa stok iki/);
+  // ux-sade Ek A 190: sonuç başlıkta, ne yapılacağı ikinci satırda
+  assert.match(form, /sayım listesinde de var: stok iki kez sayılabilir`\}\s+text="Aynı kalemse miktarı listedeki satıra yazın ve buradan kaldırın\."/);
 });
 
 test("Stok sayımı: çıkış uyarısı ortak kancadan (Hızlı sayım 26 Eki 2026'da kaldırıldı)", () => {

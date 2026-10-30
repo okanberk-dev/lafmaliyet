@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { FilingButton, type FilingKindData } from "./filing-dialog";
 import { PayrollButton, type PayrollSheetMonth } from "./payroll-sheet";
 import type { RuleRef } from "./refs";
-import { DetailList, NoteList, RuleRefList } from "./ui";
+import { DetailList, NoteList, NoteNotice, RuleRefList } from "./ui";
 
 /*
  * Özet › "Sıradaki vergi ödemeleri" (plan docs/planlar/vergi.md §3.12, §4.1): önümüzdeki 100 günün satırları; her
@@ -93,7 +93,7 @@ function Row({ row, extras, anchor }: { row: TaxCalendarRow; extras: CalendarExt
         </summary>
         <div className="space-y-3 border-t border-line bg-surface/40 px-4 pt-3 pb-4">
           {row.detail.length ? <DetailList rows={row.detail} /> : null}
-          <NoteList notes={warnNotes} tone="warn" />
+          <NoteNotice notes={warnNotes} size="line" />
           <NoteList notes={row.notes.filter((n) => !warnNotes.includes(n))} />
           <RuleRefList refs={extras.rules[row.kind] ?? []} />
           <div className="flex flex-wrap gap-2">

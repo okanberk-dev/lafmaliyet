@@ -6,6 +6,7 @@ import { actionErrorText } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 
 /**
  * Kendi parolanızı isteyen eylemlerin penceresi: Hesabım (iki adımlı doğrulamayı aç / kapat, kurtarma kodları, diğer
@@ -78,9 +79,7 @@ export function ConfirmPasswordDialog({
           <Input id="confirm-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} data-autofocus className="h-11 pointer-coarse:h-11" />
         </Field>
         {notice ? (
-          <p role="status" className="rounded-lg bg-warn-soft px-3 py-2 text-xs leading-5 text-warn">
-            {notice}
-          </p>
+          <Notice tone="warn" size="sm" live="polite" title={notice} />
         ) : null}
       </form>
     </Dialog>

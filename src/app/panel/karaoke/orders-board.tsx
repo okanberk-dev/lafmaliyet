@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BellOff,
   Bike,
   BookOpen,
   Check,
@@ -14,7 +13,6 @@ import {
   PackageCheck,
   RefreshCw,
   ShoppingBag,
-  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +27,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
 import { dateTimeTR, num } from "@/lib/format";
 import { trClock } from "@/lib/karaoke/session";
@@ -177,43 +176,46 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
           ) : undefined
         }
       />
-      <div className="space-y-3 px-5 pb-5">
-        <StatusLines data={data} now={now} role={role} />
-        {data?.configured && !prefs.orderAlerts ? (
-          <p className="flex flex-wrap items-center gap-2 rounded-xl bg-surface px-3 py-2 text-[13px] text-ink-mute ring-1 ring-line">
-            <BellOff size={14} className="shrink-0" aria-hidden="true" />
-            <span className="min-w-0 flex-1">Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz.</span>
-            <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { orderAlerts: true })}>
-              Zili aç
-            </Button>
-          </p>
-        ) : null}
-        {list.length ? (
-          <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
-            {list.map((o) => (
-              <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
-            ))}
-          </ul>
-        ) : data?.configured ? (
-          <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
-            Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
-          </p>
-        ) : null}
-      </div>
+      {/* Gövde yalnız bağlantı varken: yokken StatusLines ve liste boş, kartın altında boş pay kalırdı (sayfanın başındaki
+          tek kutu söylüyor) */}
+      {data?.configured ? (
+        <div className="space-y-3 px-5 pb-5">
+          <StatusLines data={data} now={now} role={role} />
+          {!prefs.orderAlerts ? (
+            <Notice
+              tone="neutral"
+              size="sm"
+              title="Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz"
+              action={
+                <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { orderAlerts: true })}>
+                  Zili aç
+                </Button>
+              }
+            />
+          ) : null}
+          {list.length ? (
+            <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
+              {list.map((o) => (
+                <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
+              Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
+            </p>
+          )}
+        </div>
+      ) : null}
     </Card>
   );
 }
 
-/** Bağlantı kapalı, son çekme başarısız, liste kısa ya da okunamayan sipariş: sessiz bir satır */
+/**
+ * Son çekme başarısız, liste kısa ya da okunamayan sipariş: tek uyarı (barın işleyişi, katlanmaz). Bağlantı kapalıyken
+ * satır yok: sayfanın başındaki tek kutu söylüyor (docs/planlar/ux-sade.md U6 / U7).
+ */
 function StatusLines({ data, now, role }: { data: LiveOrders | null; now: number; role: Role }) {
-  if (!data) return null;
-  if (!data.configured) {
-    return (
-      <p className="rounded-xl bg-surface px-3 py-2 text-[13px] text-ink-mute ring-1 ring-line">
-        laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez, karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net&apos;ten bakabilir.
-      </p>
-    );
-  }
+  if (!data || !data.configured) return null;
   const lines: string[] = [];
   if (data.error) {
     const ok = data.okAt ? Date.parse(data.okAt) : NaN;
@@ -227,16 +229,16 @@ function StatusLines({ data, now, role }: { data: LiveOrders | null; now: number
   }
   if (!data.complete) lines.push("Sitede çok açık sipariş var; en yakın 200'ü gösteriliyor.");
   if (data.skipped) lines.push(`${num(data.skipped)} sipariş okunamadı (panel güncel olmayabilir); sitenin panelinde kontrol edin.`);
-  if (!lines.length) return null;
+  const [first, ...rest] = lines;
+  if (!first) return null;
   return (
-    <div role="status" className="space-y-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-      {lines.map((l) => (
-        <p key={l} className="flex items-start gap-1.5">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>{l}</span>
-        </p>
-      ))}
-    </div>
+    <Notice tone="warn" size="sm" risk="bar" live="polite" title={first}>
+      {rest.length
+        ? rest.map((l) => (
+            <p key={l}>{l}</p>
+          ))
+        : null}
+    </Notice>
   );
 }
 

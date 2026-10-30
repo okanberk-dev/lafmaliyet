@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
-  TriangleAlert,
   Unplug,
   Wand2,
   X,
@@ -40,6 +39,7 @@ import { clearQuery, FilterBar, FilterChip, fold, matches, SearchField, useQuery
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
@@ -429,33 +429,31 @@ export function ParasutClient({
 
       {pendingEInvoices && pendingEInvoices.count > 0 ? (
         pendingEInvoices.ingested ? (
-          <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-            <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">
-                Paraşüt&apos;te içeri alınmamış {num(pendingEInvoices.count)} gelen e-fatura panele doğrudan alındı
-                {pendingEInvoices.total ? ` (toplam ${tl(pendingEInvoices.total)})` : ""}
-              </p>
-              <p className="mt-0.5 break-words text-info/90">
-                Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez: tutar, KDV, kalemler ve e-fatura PDF&apos;i buradan gelir. İçeri alırsanız fatura yeniden
-                açılmaz, aynı kayda bağlanır.{" "}
-                <a href="/panel/faturalar?kaynak=parasut" className="font-medium underline-offset-2 hover:underline pointer-coarse:py-3">
-                  Faturalarda göster →
-                </a>
-              </p>
-            </div>
-          </div>
+          <Notice
+            tone="neutral"
+            live="polite"
+            className="mb-4"
+            title={`Paraşüt'te içeri alınmamış ${num(pendingEInvoices.count)} gelen e-fatura panele doğrudan alındı${pendingEInvoices.total ? ` (toplam ${tl(pendingEInvoices.total)})` : ""}`}
+          >
+            <p className="break-words">
+              Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez: tutar, KDV, kalemler ve e-fatura PDF&apos;i buradan gelir. İçeri alırsanız fatura yeniden açılmaz,
+              aynı kayda bağlanır.{" "}
+              <a href="/panel/faturalar?kaynak=parasut" className="font-medium text-ink underline underline-offset-2 pointer-coarse:py-3">
+                Faturalarda göster →
+              </a>
+            </p>
+          </Notice>
         ) : (
-          <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-            <CircleDashed size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">Paraşüt&apos;te içeri alınmamış yaklaşık {num(pendingEInvoices.count)} gelen e-fatura var</p>
-              <p className="mt-0.5 break-words text-warn/90">
-                Bir sonraki eşitlemede panele doğrudan alınacaklar; Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez.
-                {pendingEInvoices.sample?.length ? ` Örnek: ${pendingEInvoices.sample.map((p) => [p.from, p.date ? dateTR(p.date) : null].filter(Boolean).join(" ")).join(", ")}.` : ""}
-              </p>
-            </div>
-          </div>
+          // Yapılacak iş yok: sonraki eşitlemede kendiliğinden gelir (uyarı değil, durum)
+          <Notice
+            tone="neutral"
+            live="polite"
+            className="mb-4"
+            title={`Paraşüt'te içeri alınmamış ≈ ${num(pendingEInvoices.count)} e-fatura: sonraki eşitlemede gelir`}
+          >
+            Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez.
+            {pendingEInvoices.sample?.length ? ` Örnek: ${pendingEInvoices.sample.map((p) => [p.from, p.date ? dateTR(p.date) : null].filter(Boolean).join(" ")).join(", ")}.` : ""}
+          </Notice>
         )
       ) : null}
 
@@ -604,42 +602,37 @@ function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof Par
   return (
     <>
       {returns.supplier.length ? (
-        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          <RotateCcw size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">Tedarikçiye {num(returns.supplier.length)} iade panele girmedi</p>
-            <ul className="mt-1 space-y-0.5 text-warn/90">
-              {shown.map((r) => (
-                <li key={r.id} className="break-words">
-                  {r.supplier} · {dateTR(r.date)} · <span className="font-medium whitespace-nowrap tabular">{tl(r.amount)}</span>
-                  {r.invoiceNo ? <span className="text-warn/80"> · {r.invoiceNo}</span> : null}
-                </li>
-              ))}
-              {returns.supplier.length > shown.length ? <li>ve {num(returns.supplier.length - shown.length)} iade daha</li> : null}
-            </ul>
-            <p className="mt-1 break-words text-warn/90">
-              Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz. Maliyet ve KDV tahmini düzelsin diye Faturalar&apos;da aynı tedarikçiye eksi
-              tutarlı fatura ekleyin; eklenince buradan kalkar.{" "}
-              <a href="/panel/faturalar" className="font-medium underline-offset-2 hover:underline pointer-coarse:py-3">
-                Faturalara git →
-              </a>
-            </p>
-          </div>
-        </div>
+        <Notice
+          tone="warn"
+          risk="para"
+          live="polite"
+          className="mb-4"
+          title={`Tedarikçiye ${num(returns.supplier.length)} iade panele girmedi`}
+          text="Faturalar'da aynı tedarikçiye eksi tutarlı fatura ekleyin; eklenince buradan kalkar."
+          action={<NoticeLink href="/panel/faturalar">Faturalara git</NoticeLink>}
+        >
+          <ul className="space-y-0.5">
+            {shown.map((r) => (
+              <li key={r.id} className="break-words">
+                {r.supplier} · {dateTR(r.date)} · <span className="font-medium whitespace-nowrap tabular">{tl(r.amount)}</span>
+                {r.invoiceNo ? <span className="text-ink-mute"> · {r.invoiceNo}</span> : null}
+              </li>
+            ))}
+            {returns.supplier.length > shown.length ? <li>ve {num(returns.supplier.length - shown.length)} iade daha</li> : null}
+          </ul>
+          <p className="break-words">Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz; eksi tutarlı fatura maliyet ve KDV tahminini düzeltir.</p>
+        </Notice>
       ) : null}
       {returns.sales.count ? (
-        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">
-              Son 4 ayda {num(returns.sales.count)} satış iadesi gider sayılmadı (toplam {tl(returns.sales.total)})
-            </p>
-            <p className="mt-0.5 break-words text-info/90">
-              laffogato.net&apos;in ya da kafenin faturaladığı bir satışın iadesi Paraşüt&apos;te gider listesine düşer; panel onu tedarikçi faturası saymaz.
-              Online satış zaten iadesi düşülmüş gelir.
-            </p>
-          </div>
-        </div>
+        <Notice
+          tone="neutral"
+          live="polite"
+          className="mb-4"
+          title={`Son 4 ayda ${num(returns.sales.count)} satış iadesi gider sayılmadı (toplam ${tl(returns.sales.total)})`}
+        >
+          laffogato.net&apos;in ya da kafenin faturaladığı bir satışın iadesi Paraşüt&apos;te gider listesine düşer; panel onu tedarikçi faturası saymaz. Online
+          satış zaten iadesi düşülmüş gelir.
+        </Notice>
       ) : null}
     </>
   );
@@ -899,15 +892,17 @@ function ProductLinks({
       ) : null}
 
       {openChecks.length ? (
-        <div className="mx-5 mb-3 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-sm text-warn" role="status">
-          <p className="flex items-center gap-1.5 font-semibold">
-            <TriangleAlert size={16} className="shrink-0" aria-hidden="true" /> Kontrol edilecek bağlantılar · {num(openChecks.length)}
-          </p>
-          <p className="mt-0.5 text-xs text-pretty text-warn/90">
-            Faturadaki adında ya da biriminde yazan paket boyu bağlantının çarpanından farklı. Hiçbir şey kendiliğinden değişmez; çarpan doğruysa olduğu gibi
-            bırakın.
-          </p>
-          <ul className="mt-2 divide-y divide-warn/15">
+        // Satır başına eylemli liste: Ayrıntı açık başlar (docs/planlar/ux-sade.md §4.4)
+        <Notice
+          tone="warn"
+          live="polite"
+          defaultOpen
+          className="mx-5 mb-3"
+          title={`Kontrol edilecek bağlantılar · ${num(openChecks.length)}`}
+          text="Paket boyu çarpandan farklı; çarpan doğruysa olduğu gibi bırakın."
+        >
+          <p className="text-pretty">Faturadaki adında ya da biriminde yazan paket boyu bağlantının çarpanından farklı. Hiçbir şey kendiliğinden değişmez.</p>
+          <ul className="divide-y divide-line">
             {openChecks.map((c) => (
               <li key={c.linkId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
                 <span className="min-w-0 text-[13px] text-pretty">
@@ -920,7 +915,7 @@ function ProductLinks({
               </li>
             ))}
           </ul>
-        </div>
+        </Notice>
       ) : null}
 
       {total + notIngredients.length === 0 ? (
@@ -1497,29 +1492,34 @@ function FactorHelp({
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs", className)}>
       {mismatch ? (
-        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-warn">
-          <TriangleAlert size={13} className="shrink-0" aria-hidden="true" />
-          <span className="min-w-0 text-pretty">
-            {evidenceLead(mismatch)}: {factorText(line.unit, mismatch.factor, unitLabel)} olabilir.
-          </span>
-          <Button size="xs" variant="secondary" onClick={() => onFactor(factorInput(mismatch.factor))}>
-            {num(mismatch.factor, 3)} yap
-          </Button>
-        </p>
+        <Notice
+          tone="warn"
+          size="line"
+          className="min-w-0"
+          title={`${evidenceLead(mismatch)}: ${factorText(line.unit, mismatch.factor, unitLabel)} olabilir.`}
+          action={
+            <Button size="xs" variant="secondary" onClick={() => onFactor(factorInput(mismatch.factor))}>
+              {num(mismatch.factor, 3)} yap
+            </Button>
+          }
+        />
       ) : null}
       {pair ? (
-        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-warn">
-          <TriangleAlert size={13} className="shrink-0" aria-hidden="true" />
-          <span className="min-w-0 text-pretty">
-            Adında “{pair.text}” yazıyor: 1 {line.unit?.trim() || "birim"} = {pair.choices.map((c) => `${num(c, 3)} ${unitLabel}`).join(" mi, ")} mi? Faturadan okuyun ya da
-            doğrusunu seçin.
-          </span>
-          {pair.choices.map((c) => (
-            <Button key={c} size="xs" variant={typed && sameFactor(typed, c) ? "primary" : "secondary"} onClick={() => onFactor(factorInput(c))}>
-              {num(c, 3)} yap
-            </Button>
-          ))}
-        </p>
+        <Notice
+          tone="warn"
+          size="line"
+          className="min-w-0"
+          title={`Adında “${pair.text}” yazıyor: 1 ${line.unit?.trim() || "birim"} = ${pair.choices.map((c) => `${num(c, 3)} ${unitLabel}`).join(" mi, ")} mi? Faturadan okuyun ya da doğrusunu seçin.`}
+          action={
+            <span className="flex flex-wrap gap-1.5">
+              {pair.choices.map((c) => (
+                <Button key={c} size="xs" variant={typed && sameFactor(typed, c) ? "primary" : "secondary"} onClick={() => onFactor(factorInput(c))}>
+                  {num(c, 3)} yap
+                </Button>
+              ))}
+            </span>
+          }
+        />
       ) : null}
       {shown ? (
         <p className="min-w-0 text-pretty text-ink-soft">

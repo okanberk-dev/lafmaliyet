@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, DoorClosed, Undo2 } from "lucide-react";
+import { DoorClosed, Undo2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { CLOSED_REASON_MAX, closedDialogText } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
 import { markClosedDay, requestClosedDay } from "@/server/actions/closed-days";
@@ -33,10 +34,7 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
 
   if (p.marked) {
     return (
-      <p role="note" className="flex items-start gap-2 rounded-2xl bg-panel px-4 py-3 text-sm leading-5 text-ink-soft">
-        <DoorClosed size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0">{longDateTR(p.date)} kafe kapalı işaretli. Kafe açıktıysa raporu girin; işaret kendiliğinden kalkar.</span>
-      </p>
+      <Notice tone="neutral" title={`${longDateTR(p.date)} kafe kapalı işaretli`} text="Kafe açıktıysa raporu girin; işaret kendiliğinden kalkar." />
     );
   }
 
@@ -61,38 +59,34 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
     });
   }
 
-  let body: ReactNode;
+  // Tek satır: durum (başlık) ve varsa tek eylem
+  let title: string;
+  let action: ReactNode = undefined;
   if (p.role === "staff" && p.pending) {
-    body = (
-      <>
-        <span className="min-w-0 flex-1 basis-48">{p.pending.mine ? "Kapalıydı dediniz · onay bekliyor" : `${p.pending.by} kapalıydı dedi · onay bekliyor`}</span>
-        {p.pending.mine ? (
-          <Button size="sm" variant="ghost" onClick={() => withdraw(p.pending!.id)} disabled={pending} className="pointer-coarse:min-h-11">
-            <Undo2 size={14} aria-hidden="true" /> Geri çek
-          </Button>
-        ) : null}
-      </>
-    );
+    title = p.pending.mine ? "Kapalıydı dediniz · onay bekliyor" : `${p.pending.by} kapalıydı dedi · onay bekliyor`;
+    if (p.pending.mine) {
+      action = (
+        <Button size="xs" variant="ghost" onClick={() => withdraw(p.pending!.id)} disabled={pending}>
+          <Undo2 size={14} aria-hidden="true" /> Geri çek
+        </Button>
+      );
+    }
   } else if (p.role === "staff" && p.rejected) {
-    body = <span className="min-w-0">Yönetici bildirimi reddetti{p.rejected.note ? `: ${p.rejected.note}` : ""}. Raporu girin.</span>;
+    title = `Yönetici bildirimi reddetti${p.rejected.note ? `: ${p.rejected.note}` : ""}. Raporu girin.`;
   } else if (p.role === "staff" && !p.canAsk) {
     return null;
   } else {
-    body = (
-      <>
-        <span className="min-w-0 flex-1 basis-48">{p.role === "staff" ? "Dün kafe kapalı mıydı?" : "Bu gün kafe kapalı mıydı?"}</span>
-        <Button size="sm" variant="ghost" onClick={() => setOpen(true)} disabled={pending} className="pointer-coarse:min-h-11">
-          <DoorClosed size={14} aria-hidden="true" /> Kafe kapalıydı
-        </Button>
-      </>
+    title = p.role === "staff" ? "Dün kafe kapalı mıydı?" : "Bu gün kafe kapalı mıydı?";
+    action = (
+      <Button size="xs" variant="ghost" onClick={() => setOpen(true)} disabled={pending}>
+        <DoorClosed size={14} aria-hidden="true" /> Kafe kapalıydı
+      </Button>
     );
   }
 
   return (
     <>
-      <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl bg-panel px-4 py-2.5 text-sm leading-5 text-ink-soft">
-        {body}
-      </div>
+      <Notice tone="neutral" title={title} action={action} />
       <Dialog
         open={open}
         onClose={() => !pending && setOpen(false)}
@@ -114,14 +108,20 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
             {p.role === "staff" ? closedDialogText(p.date) : `${longDateTR(p.date)} için eksik kasa raporu ve kontrol listesi uyarıları kalkar; tahmin o günü kapalı sayar.`}
           </p>
           {p.role === "admin" && p.warnings.length ? (
-            <ul className="space-y-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-              {p.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-1.5">
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 break-words">{w}</span>
-                </li>
-              ))}
-            </ul>
+            <Notice
+              tone="warn"
+              size="sm"
+              title={p.warnings[0]}
+              text={
+                p.warnings.length > 1
+                  ? p.warnings.slice(1).map((w) => (
+                      <span key={w} className="block break-words">
+                        {w}
+                      </span>
+                    ))
+                  : undefined
+              }
+            />
           ) : null}
           <Field label="Neden? (isteğe bağlı)" htmlFor="kapali-neden">
             <Input id="kapali-neden" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={CLOSED_REASON_MAX} placeholder="ör. tadilat, elektrik kesintisi" autoComplete="off" />

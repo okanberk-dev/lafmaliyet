@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, TriangleAlert } from "lucide-react";
+import { Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/form";
 import { SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { debtLabel, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { round2 } from "@/lib/cari/balance";
 import { LINK_WINDOW } from "@/lib/cari/match";
@@ -300,28 +301,25 @@ export function LinkDialog({
                   </span>
                 </label>
               ) : foreign.owner ? (
-                <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
-                  <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>Fatura {foreign.owner.name} tedarikçisinde görünmeye devam eder; ad eklenmez.</span>
-                </p>
+                <Notice tone="warn" size="sm" live="polite" title={`Fatura ${foreign.owner.name} tedarikçisinde görünmeye devam eder; ad eklenmez.`} />
               ) : null
             ) : null}
           </div>
         </fieldset>
         {preview ? <p className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft tabular">{preview}</p> : null}
         {selected.some((d) => d.costMode === "devir") ? (
-          <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
-            <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              Eski borç gider sayılmıyordu; fatura gider sayılır. Bu alımın gideri önceki aylarda başka yerde girildiyse (ör. Gelir-gider › DİĞER) orayı düzeltin, yoksa çift sayılır.
-            </span>
-          </p>
+          <Notice
+            tone="warn"
+            size="sm"
+            risk="para"
+            live="polite"
+            title="Eski borç gider sayılmıyordu; fatura gider sayılır"
+            text="Gideri önceki aylarda başka yerde girildiyse (ör. Gelir-gider › DİĞER) orayı düzeltin, yoksa çift sayılır."
+          />
         ) : null}
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
-          <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-            {error}
-          </p>
+          <Notice tone="bad" size="sm" live="assertive" title={error} />
         ) : null}
       </div>
     </Dialog>

@@ -1,12 +1,13 @@
 "use client";
 
-import { Camera, Eraser, Info, TriangleAlert } from "lucide-react";
+import { Camera, Eraser } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Notice } from "@/components/ui/notice";
 import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import {
   CARD_EXTRA_LABEL,
@@ -35,16 +36,20 @@ import { clearOkcCumulative } from "@/server/actions/cash-report";
 export function LafposDiffList({ diffs }: { diffs: readonly LafposDiff[] | null | undefined }) {
   if (!diffs?.length) return null;
   return (
-    <div role="note" className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-      <p className="font-medium">LafPOS&apos;tan farklı yazılan</p>
-      <ul className="mt-0.5 list-disc pl-4">
-        {diffs.map((d) => (
-          <li key={d.field} className="break-words">
-            {lafposDiffText(d)}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Notice
+      tone="warn"
+      size="sm"
+      title={`LafPOS'tan farklı yazılan ${diffs.length} alan`}
+      text={
+        <ul className="list-disc pl-4">
+          {diffs.map((d) => (
+            <li key={d.field} className="break-words">
+              {lafposDiffText(d)}
+            </li>
+          ))}
+        </ul>
+      }
+    />
   );
 }
 
@@ -145,9 +150,13 @@ export function CashBreakdown({
         ))}
         {report.discounts ? <Line label="İndirim" value={money(report.discounts)} /> : null}
         {paymentsOff ? (
-          <p className="mt-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-            Ödeme türleri toplamı ({money(c.paymentsTotal)}) Z toplamından {money(Math.abs(c.paymentsDiff))} {c.paymentsDiff > 0 ? "fazla" : "az"}.
-          </p>
+          <Notice
+            tone="warn"
+            size="sm"
+            risk="para"
+            className="mt-1"
+            title={`Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}.`}
+          />
         ) : null}
       </section>
       <section aria-label="Kasa">
@@ -253,9 +262,8 @@ function OkcBreakdown({
       {lines.length ? (
         <ul className="mt-1.5 space-y-1.5">
           {lines.map((l) => (
-            <li key={l.key} className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-[13px] leading-5", l.tone === "warn" ? "bg-warn-soft text-warn" : l.tone === "good" ? "bg-lime/25 text-good-ink" : "bg-info-soft text-info")}>
-              {l.tone === "warn" ? <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
-              <span className="min-w-0">{l.text}</span>
+            <li key={l.key}>
+              <Notice tone={l.tone === "warn" ? "warn" : l.tone === "good" ? "good" : "neutral"} size="sm" title={l.text} />
             </li>
           ))}
         </ul>

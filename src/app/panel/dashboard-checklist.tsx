@@ -10,32 +10,26 @@ import { taskSummary, type MonthTask } from "./dashboard-tasks";
 import { TASK_BAR } from "./task-style";
 
 /**
- * Genel bakış · "Bu ayın işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar,
- * su faturası, stok sayımı, ödemeler) durumu. Her satır ilgili ekranın tam yerine götürür; sıradaki iş
- * (önce sorunlar, sonra eksikler) siyah çerçeveyle tek birincil eylem olarak öne çıkar.
- * Açık iş yoksa kart tek satıra kapanır (<details>; JavaScript'siz de açılıp kapanır). Telefonda liste kısadır:
- * sıradaki iş tam kart, diğerleri tek satır (dashboard-checklist-tasks.tsx).
+ * Genel bakış · "{Ay Yıl} işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar, su
+ * faturası, stok sayımı) durumu. Başlık ayı adıyla söyler: Genel bakış son satış ayıyla açılır, süren ay olmayabilir.
+ * Ödemeler bu listede değil (bugüne bağlı; gecikme varsa sayfanın başında tek satır, page.tsx). Her satır ilgili
+ * ekranın tam yerine götürür; sıradaki iş (önce sorunlar, sonra eksikler) siyah çerçeveyle tek birincil eylem olarak
+ * öne çıkar. Açık iş yoksa kart tek satıra kapanır (<details>; JavaScript'siz de açılıp kapanır). Telefonda sıradaki
+ * iş tam kart, diğerleri "Diğer N iş" arkasında (dashboard-checklist-tasks.tsx).
  */
 export function DashboardChecklist({ month, state, tasks, className }: { month: string; state: MonthState; tasks: MonthTask[]; className?: string }) {
   const s = taskSummary(tasks);
   const laterLabel = state === "running" ? "Ay sonunda" : state === "future" ? "Ay başlamadı" : "Sonra";
-  const description = s.allDone ? (
-    s.later ? (
-      `Şimdilik yapılacak iş yok; ${s.later} iş ${state === "running" ? "ay sonunda" : "sonra"} yapılır.`
-    ) : (
-      "Bu ayın bütün işleri tamam; rakamlar eksiksiz veriyle hesaplanıyor."
-    )
-  ) : s.monthOpen === 0 ? (
-    // Yalnızca ödeme işi açık: ödemeler bugüne bağlı, ayın rakamlarını etkilemez
-    <>
-      {s.later ? `Şimdilik eksik veri yok; ${s.later} iş ${state === "running" ? "ay sonunda" : "sonra"} yapılır.` : "Bu ayın verileri tamam."}{" "}
-      {s.next?.status === "warn" ? "Geciken ödeme var" : "Yaklaşan ödeme var"}; ödemeler bugüne göre izlenir, ayın kâr/zararını değiştirmez.
-    </>
-  ) : (
-    <>
-      {s.open} iş bekliyor{s.warn ? ` (${s.warn} sorun)` : ""}.
-      <span className="max-sm:hidden"> Bitince bu ayın kâr/zarar ve maliyet rakamları eksiksiz olur.</span>
-    </>
+  // Açıklama (sonda nokta yok); geniş ekranda nokta ve ek cümle, telefonda yerine aynı satırda ilerleme
+  const description = s.allDone
+    ? s.later
+      ? `Şimdilik yapılacak iş yok; ${s.later} iş ${state === "running" ? "ay sonunda" : "sonra"} yapılır`
+      : "Ayın bütün işleri tamam; rakamlar eksiksiz veriyle hesaplanıyor"
+    : `${s.open} iş bekliyor${s.warn ? ` (${s.warn} sorun)` : ""}`;
+  const progress = (
+    <span className="font-medium whitespace-nowrap text-ink tabular">
+      {s.done} / {s.total} tamam
+    </span>
   );
 
   return (
@@ -43,27 +37,30 @@ export function DashboardChecklist({ month, state, tasks, className }: { month: 
       {/* key: ay değişince kartın açık/kapalı durumu o ayın durumuna göre yeniden kurulur */}
       <details key={month} open={s.monthOpen > 0} className="group/cl">
         <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-3xl px-5 pt-5 pb-4 outline-none max-sm:px-4 max-sm:pt-4 max-sm:pb-3 focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
-          <span className="flex min-w-0 items-start gap-3">
+          {/* Telefonda başlık bloğu satırın kalanını alır (ok sağında kalır), ilerleme açıklamanın satırında (§13: kart ≤ 300 px) */}
+          <span className="flex min-w-0 items-start gap-3 max-sm:flex-1 max-sm:basis-0">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink [&>svg]:size-[18px] [&>svg]:stroke-[1.75]">
               {s.allDone ? <CircleCheck /> : <ListChecks />}
             </span>
             <span className="min-w-0">
               <span role="heading" aria-level={2} className="block text-base leading-6 font-semibold tracking-tight text-ink">
-                Bu ayın işleri · {monthLabel(month)}
+                {monthLabel(month)} işleri
               </span>
-              <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-ink-mute">{description}</span>
+              <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-ink-mute">
+                {description}
+                <span className="max-sm:hidden">.{s.allDone ? "" : " Bitince ayın kâr/zarar ve maliyet rakamları eksiksiz olur."}</span>
+                <span className="sm:hidden"> · {progress}</span>
+              </span>
             </span>
           </span>
-          <span className="ml-12 flex items-center gap-3 sm:ml-0">
-            <span className="flex items-center gap-2 text-[13px] text-ink-mute">
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-2 text-[13px] text-ink-mute max-sm:hidden">
               <span aria-hidden="true" className="flex gap-1">
                 {tasks.map((t) => (
                   <span key={t.key} className={cn("h-1.5 w-3.5 rounded-full", TASK_BAR[t.status])} />
                 ))}
               </span>
-              <span className="font-medium whitespace-nowrap text-ink tabular">
-                {s.done} / {s.total} tamam
-              </span>
+              {progress}
             </span>
             <span className="flex size-8 items-center justify-center rounded-lg text-ink-mute transition-colors group-hover/cl:bg-ink/[0.05] group-hover/cl:text-ink">
               <ChevronDown size={16} aria-hidden="true" className="transition-transform group-open/cl:rotate-180" />

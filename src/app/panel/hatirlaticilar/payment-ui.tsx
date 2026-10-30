@@ -24,6 +24,7 @@ import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { DotList } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
+import { TONE_ICON } from "@/components/ui/notice";
 import { METHOD_LABEL, round2 } from "@/lib/cari/balance";
 import { dateTR, money, tl } from "@/lib/format";
 import {
@@ -541,11 +542,17 @@ function clampsDetail(item: UpcomingItem): boolean {
  * sayfasında Faturası geldi'yi açar, "Ayrı alım" adayı kapatır) ya da kasadan ödenmiş olabilir ("İşle" Ödeme ekle'yi
  * o Kasa satırıyla açar). Satır sarar; bağlantılar dokunmatikte 44 px.
  */
+// Uyarı ikonu uyarılarla aynı tablodan (docs/planlar/ux-sade.md §6.2)
+const WarnIcon = TONE_ICON.warn;
+
 export function HintLine({ hint, onSeparate }: { hint: NonNullable<UpcomingItem["hint"]>; onSeparate?: () => void }) {
   const link = "inline-flex min-h-11 items-center font-medium text-info underline-offset-2 hover:underline sm:pointer-fine:min-h-0";
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs leading-[18px] text-warn">
-      <span className="min-w-0 wrap-anywhere">{hint.text}</span>
+      <span className="flex min-w-0 items-start gap-1 wrap-anywhere">
+        <WarnIcon size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[2.5px] shrink-0" />
+        <span className="min-w-0">{hint.text}</span>
+      </span>
       {(() => {
         switch (hint.kind) {
           case "link":

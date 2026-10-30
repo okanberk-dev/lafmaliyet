@@ -341,6 +341,8 @@ export interface EmployerRateNotice {
   text: string;
   /** Vergi ve nakit planının kullandığı oran (kural tablosu, elle değer uygulanmış) */
   target: number;
+  /** Maaşlar'daki (Ayarlar) oran: uyarının başlığı iki oranı yan yana yazar */
+  current: number;
   /** "Ayarlar'daki oranı %19,75 yap" düğmesi: yalnız Muhasebeciye sorulacaklar › SGK oranı işaretliyse (M2) */
   canApply: boolean;
 }
@@ -364,6 +366,7 @@ export function employerRateNotice(settingsRate: number, tax: Pick<TaxSettings, 
   return {
     text: `${head} ${middle} Muhasebecinize sorun (Muhasebeciye sorulacaklar › SGK oranı); doğruysa Maaşlar › SGK oranları bölümünden değiştirin.`,
     target,
+    current: settingsRate,
     canApply: Boolean(tax.checks.sgk_oran),
   };
 }

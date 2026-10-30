@@ -19,6 +19,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
@@ -622,16 +623,14 @@ export function ConsistencyTable({
           </ul>
           {noInvoice.length ? (
             // Faturası olmayan bağlı malzemeler: alımı faturadan gelir, bu ay faturası yok; tek tek 0 yazmak yerine toplu
-            <div role="status" className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-              <p className="min-w-0 flex-1 basis-64 text-pretty">
-                <span className="font-semibold">
-                  {num(needsPurchase.length)} malzemede alım girilmeli;
-                </span>{" "}
-                {noInvoice.length === needsPurchase.length ? "hepsi" : `${num(noInvoice.length)} tanesi`} Paraşüt&apos;teki ürünlere bağlı ve bu ay faturası yok.
-                <span className="text-warn/85"> Bu ay alınmadıysa tek dokunuşla 0 yazın; sayım sapması hesaplanır.</span>
-              </p>
-              <NoPurchaseButton month={month} rows={noInvoice} bulk />
-            </div>
+            <Notice
+              tone="warn"
+              live="polite"
+              className="mx-5 mb-3"
+              title={`${num(needsPurchase.length)} malzemede alım girilmeli`}
+              text={`${noInvoice.length === needsPurchase.length ? "Hepsi" : `${num(noInvoice.length)} tanesi`} Paraşüt'teki ürünlere bağlı ve bu ay faturası yok. Bu ay alınmadıysa tek dokunuşla 0 yazın.`}
+              action={<NoPurchaseButton month={month} rows={noInvoice} bulk />}
+            />
           ) : null}
         </>
       ) : null}
@@ -1105,7 +1104,7 @@ function PurchaseDialog({
           </Select>
         </Field>
         {already !== null ? (
-          <div className="rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-ink-soft">
+          <div className="rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[13px] text-ink-soft">
             Bu ay zaten <span className="font-semibold text-ink tabular">{num(already, 2)} {unit}</span> girilmiş.
             <Checkbox
               label="Yeni miktarı bunun üstüne ekle"

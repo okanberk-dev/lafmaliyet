@@ -40,6 +40,7 @@ import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState,
 import { NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, Signed } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Pagination, useUrlPaged } from "@/components/ui/pagination";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import type { ProductStatus } from "@/lib/calc/engine";
@@ -908,9 +909,7 @@ export function ProductsTable({
       </FilterSheet>
 
       {onlyInactiveMatch ? (
-        <p className="mx-5 mb-3 rounded-xl bg-info-soft px-3.5 py-2 text-[13px] text-info" role="status">
-          Aramanız yalnızca pasif ürünlerle eşleşti; pasifler de listeleniyor.
-        </p>
+        <Notice tone="neutral" size="sm" live="polite" className="mx-5 mb-3" title="Aramanız yalnızca pasif ürünlerle eşleşti; pasifler de listeleniyor" />
       ) : null}
 
       {filtered.length ? (

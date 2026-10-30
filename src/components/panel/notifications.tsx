@@ -1,12 +1,14 @@
 "use client";
 
-import { Activity, AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info, ListChecks } from "lucide-react";
+import { Activity, AlarmClock, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, ListChecks } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { SPRING_PANEL, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import { TONE_ICON, TONE_TILE, type NoticeTone } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
+import { alertTone } from "@/app/panel/alert-tone";
 import type { Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { PanelNotification } from "@/server/actions/notifications";
@@ -25,11 +27,11 @@ import { useLocalList } from "./local-list";
  */
 const READ_KEY = "laf:bildirim:okundu";
 
-const KIND = {
-  danger: { icon: AlertTriangle, tile: "bg-red-500/15 text-red-600" },
-  warning: { icon: AlertCircle, tile: "bg-amber-500/15 text-amber-700" },
-  info: { icon: Info, tile: "bg-sky-500/15 text-sky-600" },
-} as const;
+// Bildirimin önemi uyarılarla aynı tablodan (TONE_ICON / TONE_TILE): danger → bad, warning → warn, info → neutral;
+// "Uyarılar" grubundaki ayın uyarıları Genel bakış'taki kartla aynı önemde (alertTone)
+const KIND_TONE: Record<PanelNotification["kind"], NoticeTone> = { danger: "bad", warning: "warn", info: "neutral" };
+const toneOf = (n: PanelNotification): NoticeTone => (!n.group || n.group === "uyari" ? alertTone({ level: n.kind, title: n.title }) : KIND_TONE[n.kind]);
+const BadIcon = TONE_ICON.bad;
 
 type Filter = "all" | "unread";
 
@@ -216,7 +218,7 @@ export function NotificationMenu({
             <div className="notification-dropdown-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-1.5">
               {failure ? (
                 <div role="alert" className="mx-1.5 mb-1.5 flex items-center gap-2.5 rounded-xl bg-red-500/10 py-2 pr-1.5 pl-2.5 text-[12px] leading-snug text-red-700">
-                  <AlertTriangle className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <BadIcon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
                   <span className="min-w-0 flex-1">
                     {failure === "stale"
                       ? "Panel güncellendi; bildirimler için sayfayı yenileyin."
@@ -267,7 +269,7 @@ export function NotificationMenu({
                     ) : null}
                     <ul className="flex flex-col gap-0.5">
                       {g.items.map((n) => {
-                        const k = KIND[n.kind];
+                        const tone = toneOf(n);
                         const Icon =
                           n.group === "odeme"
                             ? CalendarClock
@@ -283,7 +285,7 @@ export function NotificationMenu({
                                   ? FileText
                                   : n.group === "sistem" && n.kind !== "danger"
                                     ? Activity
-                                    : k.icon;
+                                    : TONE_ICON[tone];
                         return (
                           <li key={n.id}>
                             <Link
@@ -294,13 +296,13 @@ export function NotificationMenu({
                               }}
                               className="relative flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left outline-none transition-colors hover:bg-chart-bg focus-visible:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/20"
                             >
-                              <span className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl", k.tile)} aria-hidden="true">
+                              <span className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl", TONE_TILE[tone])} aria-hidden="true">
                                 <Icon className="size-4" strokeWidth={1.75} />
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="flex items-start justify-between gap-2">
                                   <span className={cn("min-w-0 text-[13px] leading-5 tracking-tight text-foreground", n.unread ? "font-semibold" : "font-medium")}>{n.title}</span>
-                                  <span className={cn("shrink-0 pt-0.5 text-[11px] tabular", n.kind === "danger" ? "font-medium text-red-600" : "text-chart-muted")}>{n.timeLabel}</span>
+                                  <span className={cn("shrink-0 pt-0.5 text-[11px] tabular", tone === "bad" ? "font-medium text-bad-ink" : "text-chart-muted")}>{n.timeLabel}</span>
                                 </span>
                                 <span className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-chart-muted">{n.body}</span>
                               </span>

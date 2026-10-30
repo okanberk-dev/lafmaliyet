@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CircleHelp, ClipboardCheck, Pencil, SearchX } from "lucide-react";
+import { BookOpen, CircleHelp, Pencil, SearchX } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { Button, ButtonLink, IconButton, IconLink } from "@/components/ui/button
 import { Card, Well } from "@/components/ui/card";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { EmptyState, InfoTip, SectionTitle } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { SIZE_LABELS } from "@/lib/constants";
 import { num } from "@/lib/format";
@@ -183,20 +184,24 @@ export function RecipeBook({
   return (
     <div>
       {canEdit && pending.change + pending.new > 0 ? (
-        <div role="status" className="no-print mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          <ClipboardCheck size={18} className="shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1">
-            <span className="font-semibold">{pendingSummary(pending.change, pending.new)}.</span>{" "}
-            {!pending.new
+        <Notice
+          tone="warn"
+          live="polite"
+          className="no-print mb-4"
+          title={pendingSummary(pending.change, pending.new)}
+          text={
+            !pending.new
               ? "Personelin önerdiği değişiklikleri önce ve sonra hâliyle görüp onaylayın."
               : pending.change
                 ? "Değişiklikleri önce ve sonra hâliyle görün; yeni ürünün satış fiyatını yazıp onaylayın."
-                : "Satış fiyatını yazıp onaylayınca ürün reçetesiyle eklenir."}
-          </p>
-          <ButtonLink href="/panel/onaylar" variant="secondary" size="sm">
-            İncele
-          </ButtonLink>
-        </div>
+                : "Satış fiyatını yazıp onaylayınca ürün reçetesiyle eklenir."
+          }
+          action={
+            <ButtonLink href="/panel/onaylar" variant="secondary" size="xs">
+              İncele
+            </ButtonLink>
+          }
+        />
       ) : null}
       {propose && myRequests.length ? <MyRequests requests={myRequests} /> : null}
       {/* Barda telefonla kullanılır: arama ve kategori kaydırırken üstte kalır (telefon ve tablette kabuğun üst

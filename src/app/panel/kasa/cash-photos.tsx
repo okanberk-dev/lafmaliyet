@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageMinus, Info, Trash2, TriangleAlert } from "lucide-react";
+import { ImageMinus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -12,14 +12,15 @@ import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { photoDiffText, type CashPhotoKind, type CashReading, type PhotoDiff, type ReadCheck } from "@/lib/photo-read/kasa";
 import { photoCaption } from "@/lib/photo-rules";
-import { cn } from "@/lib/utils";
 import { requestPhotoRemoval } from "@/server/actions/cash-out-requests";
 import { deleteStoredPhoto } from "@/server/actions/photos";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
 
 import { newClientKey } from "./cash-requests";
+import { CheckNotices } from "./check-notices";
 
 /** Formdaki (henüz gönderilmemiş) fotoğraf ve okuması */
 export interface FormPhoto {
@@ -39,19 +40,9 @@ export interface FormPhoto {
   summary: string | null;
 }
 
-/** Okumanın denetimleri: önce uyarılar (turuncu), sonra bilgiler (mavi); en çok dördü */
+/** Okumanın denetimleri: önce uyarılar (turuncu), sonra bilgiler (nötr); en çok dördü */
 export function ReadChecks({ checks, className }: { checks: ReadCheck[]; className?: string }) {
-  if (!checks.length) return null;
-  return (
-    <ul className={cn("space-y-1.5", className)}>
-      {checks.slice(0, 4).map((c, i) => (
-        <li key={i} className={cn("flex items-start gap-2 rounded-xl px-3 py-2 text-[13px] leading-5", c.level === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")}>
-          {c.level === "warn" ? <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />}
-          <span className="min-w-0">{c.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <CheckNotices checks={checks} max={4} className={className} />;
 }
 
 // "kasa-pos": ModPOS bölümünün yazarkasa düğmesi (form onu Banka POS Z bölümüne okutur; kasa.ts wrongDocument)
@@ -95,10 +86,7 @@ export function CardPhotos({
           <PhotoThumb key={p.id} id={p.id} caption={caption} onOpen={() => setViewer({ id: p.id, caption })} onRemove={() => onRemove(p.id)}>
             {p.summary ? <p className="text-good-ink">{p.summary}</p> : null}
             {p.error && p.advice ? (
-              <p role="status" className="flex items-start gap-1.5 text-warn">
-                <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">{p.error}</span>
-              </p>
+              <Notice tone="warn" size="line" live="polite" title={p.error} />
             ) : p.error ? (
               <div className="space-y-1.5">
                 <ReadError message={p.error} onRetry={p.canRetry ? () => onRetry(p) : undefined} busy={busy} />
@@ -184,10 +172,7 @@ export function SavedPhotos({ photos, diffs, admin, removal }: { photos: CashPho
         </section>
       ) : null}
       {diffs.length ? (
-        <p className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0">Fotoğraftan farklı yazılan: {diffs.map((d) => photoDiffText(d)).join("; ")}</span>
-        </p>
+        <Notice tone="warn" size="sm" title={`Fotoğraftan farklı yazılan: ${diffs.map((d) => photoDiffText(d)).join("; ")}`} />
       ) : null}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
       <ConfirmDialog

@@ -7,12 +7,13 @@ import { toast } from "sonner";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, STATUS_TONE } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterChip, releaseScroll, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Field, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, InfoTip, Signed, Stat } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -943,19 +944,24 @@ function ResultCard({
           </ul>
         ) : null}
         {outcome.failed.length ? (
-          <Well className="space-y-2 bg-bad-soft">
-            <p className="text-sm font-semibold text-bad">{num(outcome.failed.length)} ürün {undo ? "geri alınamadı" : "değişmedi"}:</p>
-            <ul className="space-y-1 text-sm text-ink-soft">
-              {outcome.failed.map((f) => (
-                <li key={f.productId} className="break-words">
-                  <span className="font-medium text-ink">{f.label}</span> — {f.reason}
-                </li>
-              ))}
-            </ul>
-            <Button size="sm" variant="secondary" onClick={onRetry} disabled={pending}>
-              <RotateCcw size={14} aria-hidden="true" /> {pending ? "Deneniyor…" : `Tekrar dene (${num(outcome.failed.length)})`}
-            </Button>
-          </Well>
+          <Notice
+            tone="bad"
+            title={`${num(outcome.failed.length)} ürün ${undo ? "geri alınamadı" : "değişmedi"}`}
+            text={
+              <ul className="space-y-1">
+                {outcome.failed.map((f) => (
+                  <li key={f.productId} className="break-words">
+                    <span className="font-medium text-ink">{f.label}</span> — {f.reason}
+                  </li>
+                ))}
+              </ul>
+            }
+            action={
+              <Button size="sm" variant="secondary" onClick={onRetry} disabled={pending}>
+                <RotateCcw size={14} aria-hidden="true" /> {pending ? "Deneniyor…" : `Tekrar dene (${num(outcome.failed.length)})`}
+              </Button>
+            }
+          />
         ) : null}
         {outcome.skipped.length ? (
           <div className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-soft">

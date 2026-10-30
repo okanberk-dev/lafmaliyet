@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { NumberInput } from "@/components/ui/form";
 import { BIG_FIELDS, ChoiceList, SHEET_BTN } from "@/components/ui/mobile-filters";
+import { Notice } from "@/components/ui/notice";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { allocateFifo, allocationPreview, validateManual, type AllocationLine, type OpenItem } from "@/lib/cari/account";
 import { EPS, round2 } from "@/lib/cari/balance";
@@ -220,9 +221,7 @@ export function AllocationDialog({
             </div>
             {plan.left > EPS ? <p className="text-[13px] text-ink-mute">{tl(plan.left, 2)} hesapta kalır.</p> : null}
             {error ?? problem ? (
-              <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
-                {error ?? problem}
-              </p>
+              <Notice tone="bad" size="sm" live="assertive" title={error ?? problem} />
             ) : null}
           </>
         )}

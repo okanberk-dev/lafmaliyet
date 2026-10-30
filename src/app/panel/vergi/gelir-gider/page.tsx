@@ -6,6 +6,7 @@ import { HashScroll } from "@/components/panel/hash-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { money, monthLabel } from "@/lib/format";
 import { monthName, quarterLabel } from "@/lib/tax/calendar";
 import { filingFor, filingValue } from "@/lib/tax/corporate";
@@ -19,7 +20,7 @@ import { AdjustmentButton } from "../adjustment-dialog";
 import { filingKindData, invoiceChoices } from "../dialog-data";
 import { FilingButton } from "../filing-dialog";
 import { PeriodPicker } from "../period-picker";
-import { type BannerData, NoteList, TaxBanner, VergiHeader } from "../ui";
+import { type BannerData, NoteList, NoteNotice, TaxBanner, VergiHeader } from "../ui";
 import { BridgeCard } from "./bridge-card";
 import { ClassifyList } from "./classify-list";
 import { adjustmentChoices, adjustmentRows, classifyData } from "./data";
@@ -98,6 +99,10 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const warnBad = q.warnings.filter((w) => /sayımı yok/.test(w));
   const warnInfo = q.warnings.filter((w) => w === (PAYROLL_FULL_MONTH_NOTE as string));
   const warnOther = q.warnings.filter((w) => !warnBad.includes(w) && !warnInfo.includes(w));
+  // Sayımı olmayan çeyrek sonu ayı (U16 "Sayım gir")
+  const countMonth = q.totals.stock.closingMonth;
+  // H1: sınıflandırma kartının başlığındaki rakamlar sayfanın başında tek uyarı (kart başlığı "Eksik belgeler")
+  const missing = view.classify.summary;
   const kdvMatrah = filingKindData("kdv_matrah", { today: view.today, settings, filings: inputs.filings, reminders: null });
   // Başlarken'in "Muhasebecinin rakamları" adımı geçici vergiyi de ister: çeyreğin penceresi burada da (§4.1-2)
   const gecici = filingKindData("gecici", { today: view.today, settings, filings: inputs.filings, reminders: null });
@@ -115,6 +120,20 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
       <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
+        {missing && (missing.unclassified.count > 0 || missing.candidates.count > 0) ? (
+          // Belgesi seçilmemiş gider vergi hesabına girmez: vergi yüksek çıkar (yasal sonuç, katlanmaz)
+          <Notice
+            tone="warn"
+            risk="hukuk"
+            title={
+              missing.unclassified.count > 0
+                ? `${money(missing.unclassified.total)} gider vergi hesabına girmedi (${missing.unclassified.count} kalem)`
+                : `${money(missing.candidates.total)}'lik ${missing.candidates.count} fatura demirbaş olabilir`
+            }
+            text={missing.unclassified.count > 0 && missing.candidates.count > 0 ? `${money(missing.candidates.total)}'lik ${missing.candidates.count} fatura demirbaş olabilir.` : undefined}
+            action={<NoticeLink href="#siniflandir">Belgesini seç</NoticeLink>}
+          />
+        ) : null}
         <Card>
           <CardHeader
             icon={<Calculator />}
@@ -130,8 +149,25 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
                 {geciciFiling ? <span className="text-xs text-ink-mute">Muhasebeci: {money(geciciFiling.payable)}</span> : null}
               </div>
             ) : null}
-            <NoteList notes={warnBad} tone="bad" />
-            <NoteList notes={warnOther} tone="warn" />
+            {warnBad.map((w) => {
+              // U16: başlık ilk virgüle (ya da noktalı virgüle) kadar, kalanı Ayrıntı; yasal sonuç: hiç katlanmaz
+              const cut = [w.indexOf(","), w.indexOf(";")].filter((i) => i > 0).sort((a, b) => a - b)[0] ?? -1;
+              const head = cut > 0 ? w.slice(0, cut) : w;
+              const rest = cut > 0 ? w.slice(cut + 1).trim() : "";
+              return (
+                <Notice
+                  key={w}
+                  tone="warn"
+                  size="sm"
+                  risk="hukuk"
+                  title={head}
+                  action={countMonth ? <NoticeLink href={`/panel/sayim?ay=${countMonth}`}>Sayım gir</NoticeLink> : undefined}
+                >
+                  {rest ? `${rest.charAt(0).toLocaleUpperCase("tr-TR")}${rest.slice(1)}.` : null}
+                </Notice>
+              );
+            })}
+            <NoteNotice notes={warnOther} />
             <NoteList notes={warnInfo} />
           </div>
           <QuarterTable grid={grid} />

@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Link2, ListOrdered, TriangleAlert } from "lucide-react";
+import { ChevronDown, Link2, ListOrdered } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { Notice } from "@/components/ui/notice";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { num, tl2 } from "@/lib/format";
 import { isLinkableCategory } from "@/lib/invoice-linking";
@@ -140,10 +141,12 @@ export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: n
             <span className="font-semibold text-ink tabular">{tl2(sum.total)}</span>
           </div>
           {!sum.matches ? (
-            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warn">
-              <TriangleAlert size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Faturanın KDV hariç tutarı {tl2(invoiceNet)}; kalemler bunu tutmuyor. Kalem fiyatlarını belgeden kontrol edin.
-            </p>
+            <Notice
+              tone="warn"
+              size="line"
+              className="mt-1.5"
+              title={`Faturanın KDV hariç tutarı ${tl2(invoiceNet)}; kalemler bunu tutmuyor. Kalem fiyatlarını belgeden kontrol edin.`}
+            />
           ) : null}
         </>
       )}

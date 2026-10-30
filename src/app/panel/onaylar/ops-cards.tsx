@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ExternalLink, Gift, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Gift, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Textarea } from "@/components/ui/form";
+import { Notice } from "@/components/ui/notice";
 import { stampTR } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { genitive } from "@/lib/recipe-change";
@@ -171,13 +172,8 @@ function WasteDeleteItem({ card }: { card: WasteDeleteCard }) {
         {card.message ? <p className="text-sm break-words text-ink-soft">Neden: {card.message}</p> : null}
         {e.reason || e.note ? <p className="text-[13px] break-words text-ink-mute">Kayıtta: {[e.reason, e.note].filter(Boolean).join(" · ")}</p> : null}
       </div>
-      {card.gone ? <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">Kayıt zaten silinmiş</p> : null}
-      {card.inReportMail ? (
-        <p className="flex items-start gap-1.5 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span>Bu kayıt o günün kasa raporu e-postasına girdi; silinirse e-postadaki özetle tutmaz.</span>
-        </p>
-      ) : null}
+      {card.gone ? <Notice tone="neutral" size="sm" title="Kayıt zaten silinmiş" /> : null}
+      {card.inReportMail ? <Notice tone="warn" size="sm" title="Bu kayıt o günün kasa e-postasında" text="Silinirse e-postadaki özetle tutmaz." /> : null}
       {!card.gone ? <NoteField id={card.id} note={note} setNote={setNote} /> : null}
       <div className="flex flex-wrap justify-end gap-2">
         {card.gone ? (

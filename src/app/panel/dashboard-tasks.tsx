@@ -582,6 +582,17 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
 }
 
 /**
+ * Genel bakış'ın başındaki ödeme satırı (docs/planlar/ux-sade.md K22): ay listesinden çıkan "Ödemeler · bugün" işinin
+ * aynı olgularından. Gecikme varsa kırmızı tek satır (para riski, hiç katlanmaz); liste okunamadıysa nötr satır;
+ * yalnız yaklaşan ödeme varsa satır yok ("Yaklaşan ödemeler" kartı zaten gösterir).
+ */
+export function overdueNotice(p: PaymentFacts | null): { tone: "bad"; risk: "para"; title: string } | { tone: "neutral"; title: string } | null {
+  if (!p) return { tone: "neutral", title: "Ödeme listesi şu an okunamadı" };
+  if (p.overdue) return { tone: "bad", risk: "para", title: `${num(p.overdue)} ödeme gecikti · ${money(p.overdueTotal)}` };
+  return null;
+}
+
+/**
  * Özet: kaç iş bitti, kaçı açık; sıradaki iş (önce sorunlar, sonra eksikler).
  * `monthOpen`: ayın rakamlarını etkileyen açık işler. Ödemeler bugüne bağlıdır, ayın kâr/zararını değiştirmez:
  * yalnızca ödeme işi açıksa ay "eksiksiz" sayılır (kart kapanır, özet ödemeyi ayrıca söyler).
@@ -611,13 +622,14 @@ export type ChecklistView = "phone" | "wide" | "all";
 export type ChecklistRow = { task: MonthTask; next: boolean; compact: boolean; view: ChecklistView };
 
 /**
- * Telefonda "Bu ayın işleri" kısa görünür: sıradaki iş (tek birincil eylem) tam kart olarak en üstte, diğer işler
- * tek satır (ad + durum rozeti); açıklamaları "Ayrıntıları göster" ile açılır. Geniş ekranda bütün kartlar
- * açıklamalarıyla, listedeki sırasıyla görünür.
+ * Telefonda ayın işleri kısa görünür: sıradaki iş (tek birincil eylem) tam kart olarak en üstte, diğer işler tek
+ * satır (ad + durum rozeti, açıklama yalnız ekran okuyucuya); tek satırlar sıradaki iş varken "Diğer N iş" düğmesinin
+ * arkasındadır (checklistFold). Geniş ekranda bütün kartlar açıklamalarıyla, listedeki sırasıyla görünür.
  * Sıradaki iş listenin başında değilse iki kez yer alır: başta yalnızca telefonda ("phone"), kendi yerinde yalnızca
  * geniş ekranda ("wide"). Böylece DOM sırası (ekran okuyucu, klavye odağı) her iki görünümde de görünen sırayla
  * aynıdır; CSS ile yeniden sıralama yapılmaz. Gizli kopya display: none olduğu için okunmaz, odak almaz.
- * `waiting`: tek satıra inen açık (yapılacak / sorunlu) iş sayısı, düğmede söylenir.
+ * `waiting`: tek satıra inen açık (yapılacak / sorunlu) iş sayısı; arayüz kullanmıyor (düğme yalnız sayıyı söyler),
+ * tests/mobil-genel.test.ts için kalır.
  */
 export function phoneChecklist(tasks: MonthTask[]) {
   const { next } = taskSummary(tasks);
@@ -635,4 +647,14 @@ export function phoneChecklist(tasks: MonthTask[]) {
     toggle: compact.length > 0,
     waiting: compact.filter((r) => r.task.status === "todo" || r.task.status === "warn").length,
   };
+}
+
+/**
+ * Telefonda tek satırlar "Diğer N iş" düğmesinin arkasına yalnız sıradaki iş (tam kart) varken katlanır. Sıradaki iş
+ * yoksa (ayda açık iş kalmadı ya da hepsi ay sonuna kaldı) katlanınca kart boş görünürdü: bütün işler tek satır olarak
+ * açık, düğme yok. `others`: düğmenin arkasındaki (tek satır) iş sayısı.
+ */
+export function checklistFold(rows: readonly ChecklistRow[]): { fold: boolean; others: number } {
+  const others = rows.filter((r) => r.compact).length;
+  return { fold: rows.some((r) => r.next) && others > 0, others };
 }

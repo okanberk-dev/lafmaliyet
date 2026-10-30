@@ -10,6 +10,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/form";
 import { InfoTip } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
 import { dateTimeTR, monthLabel, money, num, pct, tl } from "@/lib/format";
 import { monthKasa } from "@/lib/lafpos/kasa";
 import { cn } from "@/lib/utils";
@@ -120,14 +121,15 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
       />
       <CardContent className="space-y-3 text-sm">
         {!data.configured ? (
-          <p className="text-[13px] leading-5 text-ink-mute">
-            Bağlantı karaoke ve menüyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de aynı değerle{" "}
-            <code className="rounded bg-surface px-1 font-mono text-xs ring-1 ring-line">KARAOKE_SYNC_SECRET</code> ekleyin. Kurulana kadar tabloda online satır
-            görünmez.
-          </p>
+          <Notice
+            tone="neutral"
+            size="sm"
+            title="Site bağlantısı kurulmadı: online satış satırları görünmez"
+            tech={<>Bağlantı karaoke ve menüyle aynı anahtarı kullanır: Vercel&apos;de iki projeye de aynı değerle KARAOKE_SYNC_SECRET ekleyin. Kurulana kadar tabloda online satır görünmez.</>}
+          />
         ) : (
           <>
-            {data.lastError ? <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{data.lastError}</p> : null}
+            {data.lastError ? <Notice tone="bad" size="sm" title={data.lastError} /> : null}
             {data.months.length ? (
               <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
                 {data.months.map((m) => (

@@ -67,7 +67,8 @@ test("eylem hatası bekçisinin kaçış yorumları sayılı ve nedenli", () => 
   assert.match(dialog, /setError\(null\);\s+setNotice\(null\);/);
   assert.match(dialog, /<Field label="Parolanız" htmlFor="confirm-pw" error=\{error\}>/);
   assert.match(dialog, /aria-invalid=\{error \? true : undefined\}/);
-  assert.match(dialog, /\{notice \? \(\s+<p role="status"[^>]*>\s+\{notice\}/);
+  // ux-sade Ek A 272: not ortak uyarı bileşeninde (role="status" → live="polite")
+  assert.match(dialog, /\{notice \? \(\s+<Notice[^>]*live="polite"[^>]*title=\{notice\}/);
   assert.doesNotMatch(dialog, /setError\(actionErrorText/);
 });
 
