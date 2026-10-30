@@ -1969,3 +1969,40 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     bağlantısı alt satıra sığmıyor), personel 310; Genel bakış 390'da iş kartı 280 (≤ 300) ve ilk KPI rakamı ses
     satırıyla da ilk ekranda, 1440'ta 412 (≤ 404; masaüstü kartlar değişmedi); karaoke yönetici 390'da bağlantı kutusu
     108 px (başlık iki satır + `text` + Ayrıntı/eylem satırı). Metinler değişmedi.
+
+**Bölüm 3 (30 Eki 2026)**
+
+28. **Personelin Reçete defterinde not süzgeci çizimde, veride değil** (§9 #23, H6). İlk uygulama ürünün notunu
+    sunucuda süzüyordu (personelin sayfa verisinde not yok). Değişiklik önerisi penceresi (`change-editor.tsx`) ise
+    notun kendisiyle başlar ve `proposeRecipeChanges` önceki hâli veritabanından okur: süzülen not öneriye "hazırlama
+    notu değişti" diye girer, yönetici onaylayınca ürünün notu silinirdi (yerel veride 40 ürün). §13 madde 10
+    `src/server/actions/**`'a dokunmayı yasaklar; belge de "çizilmez" ve `recipe-book.tsx` der. Not personelin
+    tarayıcısına `main`'deki gibi gider (maliyet anahtarı değil; satış fiyatının nereden alındığını söyler, rakam
+    yok), kartta çizilmez; öneri penceresinde düzenlenen metin olarak görünür. `tests/sadelesen.test.ts` tutar.
+29. **"2026 kuralları"nın alt satır sözü SGK'da "geçen yılın kurallarıyla"** (§7.5 rozet tablosu "geçen yılın damga
+    tutarıyla" der). SGK satırında rozet o yılın bordro kurallarının (PEK sınırları, oranlar) henüz tabloda olmadığını
+    söyler, damga yok; öteki türlerde belgedeki söz (`badgeNote`).
+30. **Kontrol listelerinin boş durumu** (§9 "Bugün açık liste yok · Açılış listesi yarın {saat}'de başlar"): başlık
+    "Bugün açık liste yok", açıklama yarının ilk listesinin adı ve saatiyle ("Açılış listesi yarın 07:30'da başlar.";
+    ad ve saat şablondan, `listTitle`, `clockSuffixTR`). Yarın da liste yoksa bugünkü cümle kalır (yönetici "Listeleri
+    düzenle", personel "Yönetici bir liste açınca burada görünür.").
+31. **Satışlar'ın dördüncü açıklaması** (§8 üç tür sayar): `SalesSourceKind`'in dördüncüsü (ModPOS bağlantısı, bugün
+    hiçbir ay) için "ModPOS bağlantısından kendiliğinden gelir; eşleşmeyen ürünleri bağlayın." ve `more`'u yazıldı
+    (açıklama türe göre bir `Record`; bağlantı gelince kendiliğinden kullanılır). Genel bakış'ın "Satış raporu" işi
+    bağlantı ayında "yükle" demez: "Satışları aç" ve `missing` cümlesi.
+32. **Gecikmiş vergi satırı bandın grubunda** (§7.1 "tek `NoticeGroup`"): `BannerData.notices` (isteğe bağlı) eklendi;
+    bant çağrısı dört sayfada aynı (`<TaxBanner data={banner} />`, `tests/vergi-kaynak.test.ts`). Satırın metinleri
+    saf `overdueTaxNotice` (`overdue.ts`) işlevinde, test edilebilsin diye.
+33. **Kasa raporunun açıklaması rolü kendisi okur**: başlık iki rolün açtığı sayfada `Suspense`'in dışında; açıklama
+    küçük bir sunucu bileşeninde rolü okur (yüklenirken personelin cümlesi, en dar olan). Yöneticinin "Nasıl
+    çalışır?"u günün kasasına göre (ModPOS / LafPOS; eski metin).
+34. **§8 açıklama denetimi yalnız sayfa başlığını okur** (`tests/sayfa-basligi.test.ts`): `*DESCRIPTION*` sabitleri ve
+    `<PageHeader>`, `<VergiHeader>`, yerel `<Header>` öğelerinin `description`'ı. Kartların `description`'ı
+    (`CardHeader`) §8'in konusu değil; ilk sürüm onları da sayıp 30 kart açıklamasını "uzun" buluyordu.
+35. **§13'te kalan aşımlar, Bölüm 3** (ölçüm 30 Eki, yerel üretim derlemesi; tablo ve görüntüler `ux/after/olcum.md`):
+    vergi bandı 1440'ta 102 → 24 px, 390'da 48 → 24 px (Muhasebeci 20); Vergi Özet 390 / 1440 24 / 124 (≤ 90 / 100;
+    1440'ta 100 px "Şirketin kâr vergisi" kartının iki cümlelik açıklaması, dar sağ sütunda beş satır, §7.6'nın metni),
+    Vergi kârı 84 / 44, Demirbaş 24 / 44, Muhasebeci 320 / 233 (≤ 40; sayılan, ilk sıraya alınan "Muhasebeciye
+    sorulacaklar"ın açıklaması ve soruları, uyarı kutusu yok; sayfa boyu 21.858 → 12.090 px telefonda). Katlanamayan iki
+    yeni uyarı 60 px'i aşar: gecikmiş vergi satırı 84 px (başlık + ikinci satır + Ayrıntı) ve kâr vergisi kartının
+    "Eksik belgeler var" uyarısı 124 / 104 px (dar sütunda başlık, eylem, iki satırlık `text`). Metinler değişmedi.
