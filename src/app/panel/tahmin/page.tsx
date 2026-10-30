@@ -65,8 +65,9 @@ async function ForecastContent() {
     >
       <Header actions={<ForecastActions />} />
       {banner ? (
-        // Kısa sonuç başlıkta, uzun açıklama Ayrıntı'da (docs/planlar/ux-sade.md U9)
-        <Notice tone="neutral" live="polite" className="mb-4" title={bannerTitle ?? banner}>
+        // Kısa sonuç başlıkta, uzun açıklama Ayrıntı'da (docs/planlar/ux-sade.md U9). Sayfayla sunucuda gelir: canlı
+        // bölge değil (role="note", §4.5)
+        <Notice tone="neutral" className="mb-4" title={bannerTitle ?? banner}>
           {bannerTitle ? banner : null}
         </Notice>
       ) : null}

@@ -101,6 +101,24 @@ export function livePollDue(o: LivePollInput, lastAskedAt: number, nowMs: number
   return ms !== null && nowMs - lastAskedAt >= ms;
 }
 
+/**
+ * Sayfanın başındaki ses yuvasının satırı (alert-center.tsx; docs/planlar/ux-sade.md §4.6). Ses ilk dokunuşta
+ * (pointerdown) açılır; "Sesli uyarılar kapalı" satırı o anda kalksaydı içerik dokunuşun altında 40-80 px yukarı kayar,
+ * tıklama başka öğeye düşerdi. Bu yüzden satır çizildiği sayfada ses açılınca kalkmaz, aynı yerde "açık"a döner (yükseklik
+ * aynı); sayfa değişince kalkar. Ses yeniden kilitlenirse (sekme askıya alındı) aynı yerde yeniden "kapalı" olur.
+ * Satıra gerek kalmayıp ses de açılmadıysa (saatli hatırlatıcının vakti geçti, ses ayarı kapatıldı) kalkar.
+ *
+ * `shownOn`: satırın çizili olduğu sayfa (yoksa null); dönen `shownOn` sonraki çizim için saklanır.
+ */
+export function soundRow(o: { needsSound: boolean; audioReady: boolean; pathname: string; shownOn: string | null }): {
+  row: "locked" | "open" | null;
+  shownOn: string | null;
+} {
+  if (o.needsSound) return { row: "locked", shownOn: o.pathname };
+  if (o.audioReady && o.shownOn === o.pathname) return { row: "open", shownOn: o.pathname };
+  return { row: null, shownOn: null };
+}
+
 /** Zilin yeniden okunması için pencere olayı (alert-center yayar, kenar çubuğu dinler) */
 export const ALERTS_REFRESH_EVENT = "laf:zil-yenile";
 

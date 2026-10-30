@@ -1,6 +1,7 @@
 // Ortak uyarı bileşeni (docs/planlar/ux-sade.md §4, §12): katlama planı, tek ikon ve kuyu tablosu, ekran okuyucu
-// önekleri ve rol kuralı, uyarı kutusunun mürekkebi, ayın uyarılarının görünen önemi (alertTone) ve Genel bakış'ın
-// başındaki ödeme satırı (overdueNotice).
+// önekleri ve rol kuralı, uyarı kutusunun mürekkebi, düzenler (canlı bölge, telefonda eylem + Ayrıntı satırı, dokunma
+// alanları), ayın uyarılarının görünen önemi (alertTone), Genel bakış'ın başındaki ödeme satırı (overdueNotice) ve
+// ses yuvasının satırı (soundRow).
 // Çalıştırma: npx tsx --test tests/uyari.test.ts
 
 import assert from "node:assert/strict";
@@ -12,6 +13,7 @@ import { alertTone } from "../src/app/panel/alert-tone";
 import { overdueNotice } from "../src/app/panel/dashboard-tasks";
 import { foldPlan, TONE_ICON, TONE_LABEL, TONE_TILE } from "../src/components/ui/notice";
 import { money } from "../src/lib/format";
+import { soundRow } from "../src/lib/live-poll";
 
 const ROOT = process.cwd();
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -126,4 +128,108 @@ test("overdueNotice: gecikme kırmızı tek satır (para), okunamayan liste nöt
   const page = read("src/app/panel/page.tsx");
   assert.match(page, /overdueNotice\(/);
   assert.match(page, /<NoticeLink href="\/panel\/hatirlaticilar">Ödemelere bak<\/NoticeLink>/);
+});
+
+// ---------------------------------------------------------------- Düzenler (sunucuda çizilen HTML)
+
+/** Konumdaki açılış etiketinin (div) kapanışına kadar olan HTML */
+function element(html: string, start: number): string {
+  let depth = 0;
+  for (const m of html.slice(start).matchAll(/<(\/?)div\b[^>]*>/g)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start, start + m.index + m[0].length);
+  }
+  return html.slice(start);
+}
+
+async function renderNotice(props: Record<string, unknown>): Promise<string> {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createElement } = await import("react");
+  const { Notice } = await import("../src/components/ui/notice");
+  return renderToStaticMarkup(createElement(Notice, props as never));
+}
+
+test("canlı uyarıda Ayrıntı canlı bölgenin dışında: açıp kapamak uyarıyı yeniden okutmaz (inceleme B2-A11Y-5)", async () => {
+  const { createElement } = await import("react");
+  const { NoticeLink } = await import("../src/components/ui/notice");
+  const cases = [
+    // Eylemsiz (eskiden bütün kutu tek <details>, rol onun kökündeydi)
+    { tone: "warn", live: "polite", title: "Tedarikçiye 2 iade panele girmedi", children: "liste" },
+    { tone: "bad", live: "assertive", defaultOpen: true, title: "Listede toplam satırı var", text: "Silin.", children: "liste" },
+    // Eylemli
+    { tone: "warn", live: "polite", title: "3 kasa alımı bekliyor", text: "Ne yapılacak", action: createElement(NoticeLink, { href: "/panel/faturalar", children: "Git" }), children: "neden" },
+  ];
+  for (const props of cases) {
+    const html = await renderNotice(props);
+    const role = props.live === "assertive" ? "alert" : "status";
+    const at = html.indexOf(`<div role="${role}"`);
+    assert.ok(at > 0, `${props.title}: canlı bölge kökün içinde (kök rol taşımaz)`);
+    assert.doesNotMatch(html.slice(0, at), /role=/, "kökte rol yok");
+    const region = element(html, at);
+    assert.match(region, new RegExp(props.title), "başlık bölgede");
+    if (props.text) assert.match(region, new RegExp(props.text), "text bölgede");
+    assert.doesNotMatch(region, /<details|<summary|Ayrıntı|href=/, "Ayrıntı ve eylem bölgenin dışında");
+    assert.match(html, /<details/);
+  }
+  // Ayrıntısız canlı uyarı ve canlı olmayan uyarı: rol kökte (değişmedi)
+  assert.match(await renderNotice({ tone: "bad", live: "assertive", title: "Kaydedilmedi" }), /^<div role="alert" data-notice="bad"/);
+  assert.match(await renderNotice({ tone: "neutral", title: "Bilgi", children: "neden" }), /^<div role="note" data-notice="neutral"/);
+  // Sunucuda sayfayla gelen uyarılar canlı değil (§4.5): Tahmin bandı ve karaoke'nin bağlantı kutusu
+  assert.doesNotMatch(read("src/app/panel/tahmin/page.tsx"), /<Notice tone="neutral" live=/);
+  const board = read("src/app/panel/karaoke/karaoke-board.tsx");
+  assert.match(board, /<Notice\s+tone="neutral"\s+title="Site bağlantısı kurulmadı/);
+  assert.match(board, /<Notice tone="neutral" title="Site bağlı değil/);
+});
+
+test("telefonda eylem ve Ayrıntı aynı satırda, eylemin dokunma alanı önde; başlık ve eylem ortalı (inceleme B2-V5, V6, V8)", async () => {
+  const { createElement } = await import("react");
+  const { NoticeLink } = await import("../src/components/ui/notice");
+  const action = createElement(NoticeLink, { href: "/panel/vergi/kurallar#sorular", children: "Muhasebeciye sor" });
+  const both = await renderNotice({ tone: "warn", risk: "para", title: "SGK oranı farklı", action, children: "neden" });
+  // Eylem telefonda Ayrıntı'nın sağına (order-1), Ayrıntı satırı telefonda dar, açılınca tam genişlik (özet yerinde)
+  assert.match(both, /class="no-print relative z-\[1\] ml-auto shrink-0 self-center max-sm:order-1"/);
+  assert.match(both, /<details class="group\/n min-w-0 basis-full pl-6 max-sm:basis-auto max-sm:self-center max-sm:open:basis-full"/);
+  // Başlık bloğu telefonda tam satır: Ayrıntı başlığın yanına çıkmaz
+  assert.match(both, /flex-1 basis-54 self-center max-sm:basis-full/);
+  // Yalnız eylem: eylem başlığın yanına sığmazsa ikon hizasına iner; başlık ve eylem ortalı (44 px düğmenin yanında
+  // başlık tepede kalmaz)
+  const only = await renderNotice({ tone: "neutral", size: "sm", title: "Sesli uyarılar kapalı", action });
+  assert.match(only, /class="no-print relative z-\[1\] ml-auto shrink-0 self-center max-sm:ml-6"/);
+  assert.match(only, /<div class="flex min-w-0 items-start gap-2 flex-1 basis-54 self-center">/);
+  assert.doesNotMatch(only, /max-sm:order-1|<details/);
+  // Dokunma alanları: bağlantı satır yüksekliğinde (20 px) + 12 px kenar = 44; Teknik ayrıntı 16 + 2 × 14 = 44
+  assert.match(both, /<a class="relative inline-flex min-h-5 items-center font-medium/);
+  const tech = await renderNotice({ tone: "neutral", title: "Bağlantı yok", tech: "ANAHTAR" });
+  assert.match(tech, /<summary class="relative inline-flex[^"]*text-xs text-ink-soft[^"]*after:-inset-y-3\.5/);
+  // 12 px Teknik ayrıntı metni nötr kutunun panel üstündeki zemininde text-ink-mute ile 4,4:1 (AA altı)
+  assert.doesNotMatch(read("src/components/ui/notice.tsx").slice(read("src/components/ui/notice.tsx").indexOf("export function NoticeTech")).split("/** Ayrıntı'nın gövdesi")[0], /text-ink-mute/);
+});
+
+// ---------------------------------------------------------------- Ses yuvası
+
+test("soundRow: satır ilk dokunuşta kalkmaz, sayfa değişene kadar \"açık\" kalır (inceleme B2-V1, A11Y-1)", () => {
+  const base = { needsSound: true, audioReady: false, pathname: "/panel", shownOn: null };
+  // Ses kilitli, gerek var: "kapalı" satırı, çizildiği sayfa saklanır
+  const a = soundRow(base);
+  assert.deepEqual(a, { row: "locked", shownOn: "/panel" });
+  // İlk dokunuş (pointerdown) sesi açtı: satır aynı yerde "açık" (içerik kaymaz, tıklama hedefine düşer)
+  const b = soundRow({ ...base, needsSound: false, audioReady: true, shownOn: a.shownOn });
+  assert.deepEqual(b, { row: "open", shownOn: "/panel" });
+  // Aynı sayfada sonraki çizimler de "açık"
+  assert.deepEqual(soundRow({ ...base, needsSound: false, audioReady: true, shownOn: b.shownOn }), { row: "open", shownOn: "/panel" });
+  // Sayfa değişince kalkar; geri dönülünce de çizilmez (saklanan sayfa sıfırlandı)
+  const c = soundRow({ ...base, needsSound: false, audioReady: true, pathname: "/panel/kasa", shownOn: b.shownOn });
+  assert.deepEqual(c, { row: null, shownOn: null });
+  assert.deepEqual(soundRow({ ...base, needsSound: false, audioReady: true, shownOn: c.shownOn }), { row: null, shownOn: null });
+  // Ses yeniden kilitlendi (sekme askıya alındı): aynı yerde yeniden "kapalı"
+  assert.deepEqual(soundRow({ ...base, shownOn: "/panel" }), { row: "locked", shownOn: "/panel" });
+  // Gerek kalmadı ama ses açılmadı (hatırlatıcının vakti geçti, ses ayarı kapatıldı): kalkar
+  assert.deepEqual(soundRow({ ...base, needsSound: false, shownOn: "/panel" }), { row: null, shownOn: null });
+  // Bileşen satırı needsSound'a değil bu karara bağlar; "açık" satırı düğmenin görünmez eşiyle aynı yükseklikte
+  const center = read("src/components/panel/live/alert-center.tsx");
+  assert.match(center, /const sound = soundRow\(\{ needsSound, audioReady: audio === "ready", pathname, shownOn: soundShownOn \}\);/);
+  assert.match(center, /\{sound\.row && soundSlot\s*\?/);
+  assert.match(center, /title="Sesli uyarılar açık"/);
+  assert.match(center, /<span aria-hidden="true" className="invisible">\s*<Button size="xs" variant="secondary" tabIndex=\{-1\}>/);
+  assert.doesNotMatch(center, /\{needsSound && soundSlot/);
 });

@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Notice } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
-import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen } from "@/lib/live-poll";
+import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen, soundRow } from "@/lib/live-poll";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
@@ -489,6 +489,10 @@ export function AlertCenter({ role }: { role: Role }) {
   });
   const soundSlot = useSyncExternalStore(noopSubscribe, soundSlotOf, () => null);
   const needsSound = prefs.sound && audio === "locked" && ((prefs.karaokeAlarms && sessions.some((s) => isLive(s) && sessionEnd(s) > now)) || (prefs.reminderAlerts && timedReminderToday) || overtime.length > 0);
+  // Satır ilk dokunuşta (ses açılınca) kalkmaz, sayfa değişene kadar "açık" olarak kalır: içerik dokunuşun altında kaymaz
+  const [soundShownOn, setSoundShownOn] = useState<string | null>(null);
+  const sound = soundRow({ needsSound, audioReady: audio === "ready", pathname, shownOn: soundShownOn });
+  if (sound.shownOn !== soundShownOn) setSoundShownOn(sound.shownOn);
 
   return (
     <>
@@ -543,20 +547,37 @@ export function AlertCenter({ role }: { role: Role }) {
         tone="primary"
       />
       {/* Ses kilitliyken sayfanın başındaki yuvaya tek satır (yüzen hap içeriği örtüyordu; §4.6). Yuva yoksa hiçbir
-          şey çizilmez; ilk dokunuşta ses açılır ve satır kaybolur */}
-      {needsSound && soundSlot
+          şey çizilmez. İlk dokunuşta ses açılır; satır kalkmaz, aynı yükseklikte "Sesli uyarılar açık"a döner (düğmenin
+          görünmez eşi yeri tutar) ve sayfa değişince kalkar (soundRow) */}
+      {sound.row && soundSlot
         ? createPortal(
-            <Notice
-              tone="neutral"
-              size="sm"
-              title="Sesli uyarılar kapalı"
-              className="no-print mb-4"
-              action={
-                <Button size="xs" variant="secondary" onClick={() => void unlockAudio()}>
-                  Sesi aç
-                </Button>
-              }
-            />,
+            sound.row === "locked" ? (
+              <Notice
+                tone="neutral"
+                size="sm"
+                title="Sesli uyarılar kapalı"
+                className="no-print mb-4"
+                action={
+                  <Button size="xs" variant="secondary" onClick={() => void unlockAudio()}>
+                    Sesi aç
+                  </Button>
+                }
+              />
+            ) : (
+              <Notice
+                tone="good"
+                size="sm"
+                title="Sesli uyarılar açık"
+                className="no-print mb-4"
+                action={
+                  <span aria-hidden="true" className="invisible">
+                    <Button size="xs" variant="secondary" tabIndex={-1}>
+                      Sesi aç
+                    </Button>
+                  </span>
+                }
+              />
+            ),
             soundSlot,
           )
         : null}

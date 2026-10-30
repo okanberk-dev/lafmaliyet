@@ -152,19 +152,18 @@ export function KaraokeBoard({
   return (
     <div className="space-y-6">
       {/* Tek kutu (docs/planlar/ux-sade.md U6 / U7): siparişler panelindeki ayrı "bağlantı yok" satırı kalktı; kurulum
-          talimatı yalnız yöneticide, geliştirici ayrıntısında */}
+          talimatı yalnız yöneticide, geliştirici ayrıntısında. Bağlantı sunucunun ayarı, sayfayla gelir: canlı bölge değil */}
       {!configured ? (
         role === "admin" ? (
           <Notice
             tone="neutral"
-            live="polite"
             title="Site bağlantısı kurulmadı: rezervasyon ve sipariş gelmiyor"
             text="Hızlı sayaç çalışır."
             action={<NoticeLink href="#baglanti">Bağlantı</NoticeLink>}
             tech="İki projeye (laffogato.net ve bu panel) aynı KARAOKE_SYNC_SECRET eklenince rezervasyon ve siparişler buraya kendiliğinden gelir."
           />
         ) : (
-          <Notice tone="neutral" live="polite" title="Site bağlı değil: rezervasyon ve sipariş buraya gelmez" text="Hızlı sayacı kullanın." />
+          <Notice tone="neutral" title="Site bağlı değil: rezervasyon ve sipariş buraya gelmez" text="Hızlı sayacı kullanın." />
         )
       ) : null}
       {stale ? <Notice tone="warn" risk="bar" live="polite" title={stale} /> : null}

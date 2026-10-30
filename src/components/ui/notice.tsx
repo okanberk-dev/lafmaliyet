@@ -117,12 +117,14 @@ function DetailsLabel({ label }: { label: string }) {
  * olmayan bir kurulum talimatı (ör. karaoke Bağlantı kartı) tek başına da kullanır. Personelin açtığı ekranda verilmez.
  */
 export function NoticeTech({ tech, className }: { tech: ReactNode; className?: string }) {
+  // Özet ve gövde ink-soft: 12 px'te soluk mürekkep (ink-mute) nötr kutunun panel üstündeki zemininde AA'nın altında (4,4:1).
+  // Özetin satırı 16 px; ±14 px görünmez kenarla dokunma alanı 44 px
   return (
     <details className={cn("group/t", className)}>
-      <summary className="relative inline-flex cursor-pointer list-none text-xs text-ink-mute underline decoration-current/40 underline-offset-2 outline-none select-none [&::-webkit-details-marker]:hidden focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30 after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] pointer-fine:after:-inset-y-1">
+      <summary className="relative inline-flex cursor-pointer list-none text-xs text-ink-soft underline decoration-current/40 underline-offset-2 outline-none select-none [&::-webkit-details-marker]:hidden focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30 after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] pointer-fine:after:-inset-y-1">
         Teknik ayrıntı (geliştirici için)
       </summary>
-      <div className="mt-1 font-mono text-xs break-words text-ink-mute">{tech}</div>
+      <div className="mt-1 font-mono text-xs break-words">{tech}</div>
     </details>
   );
 }
@@ -156,10 +158,14 @@ export function Notice({
   const Icon = TONE_ICON[tone];
   const role = live === "assertive" ? "alert" : live === "polite" ? "status" : "note";
   const hasDetails = present(children) || present(tech);
+  const hasAction = present(action);
   const line = size === "line";
+  // Canlı bölge Ayrıntı'yı içine almaz: role="status" / "alert" örtük olarak atomiktir, açıp kapamak ("Gizle" ve
+  // gövde) bütün uyarıyı yeniden okuturdu. Ayrıntılı canlı uyarıda rol kökten başlık + text sarmalayıcısına iner.
+  const liveInner = live !== undefined && hasDetails;
 
   const root = cn(
-    line ? "flex flex-col gap-0.5 text-[13px] leading-5" : "flex flex-col gap-1 text-[13px] leading-5",
+    "text-[13px] leading-5",
     !line && TONE_BG[tone],
     !line && "print:bg-transparent print:px-0",
     size === "md" && "rounded-2xl",
@@ -171,17 +177,18 @@ export function Notice({
 
   const icon = <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", TONE_ICON_INK[tone])} />;
   const heading = (
-    <span className={cn("min-w-0 text-pretty break-words", line ? cn("font-medium", TONE_LINE_INK[tone]) : "flex-1 basis-48 font-medium text-ink")}>
+    <span className={cn("min-w-0 text-pretty break-words", line ? cn("font-medium", TONE_LINE_INK[tone]) : "flex-1 font-medium text-ink")}>
       <span className="sr-only">{TONE_LABEL[tone]}: </span>
       {title}
     </span>
   );
+  const textNode = present(text) ? <div className="pl-6 text-ink-soft">{text}</div> : null;
 
   // 2. Eylemsiz ve ayrıntılı: bütün kutu tek <details>; özet = ikon · başlık · (text) · sağda "Ayrıntı ⌄".
   // Özette etkileşimli öğe yok (vergi takviminin kuralı).
-  if (!present(action) && hasDetails) {
+  if (!hasAction && hasDetails && !liveInner) {
     return (
-      <div ref={ref} id={id} role={role} data-notice={tone} data-risk={risk} className={root}>
+      <div ref={ref} id={id} role={role} data-notice={tone} data-risk={risk} className={cn(root, "flex flex-col gap-1")}>
         <details className="group/n" open={defaultOpen || undefined}>
           <summary
             className={cn(
@@ -208,18 +215,67 @@ export function Notice({
     );
   }
 
-  // 1. Eylemli ya da ayrıntısız: satır = ikon · başlık · eylem (eylem sığmazsa başlığın altına, ikon hizasına iner);
-  // text altında; Ayrıntı varsa en altta.
-  return (
-    <div ref={ref} id={id} role={role} data-notice={tone} data-risk={risk} className={cn(root, pad)}>
-      <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
-        {icon}
-        {heading}
-        {present(action) ? <div className="no-print ml-auto shrink-0 self-center max-sm:ml-6">{action}</div> : null}
+  // 3. Eylemsiz, ayrıntılı ve canlı: canlı bölge (ikon · başlık · text) kökün içinde, "Ayrıntı ⌄" onun dışında ve
+  // başlık satırının sağında (yeri açıkken de kaymaz); gövde altta, başlığın hizasında. Yüksekliği 2. düzeninkiyle aynı.
+  if (!hasAction && liveInner) {
+    return (
+      <div ref={ref} id={id} data-notice={tone} data-risk={risk} className={cn(root, "relative", pad)}>
+        <div role={role} className="flex flex-col gap-1">
+          {/* Sağdaki özetin yeri ("Ayrıntı ⌄" ≈ 64 px) başlık satırında boş kalır */}
+          <div className="flex items-start gap-2 pr-20">
+            {icon}
+            {heading}
+          </div>
+          {textNode}
+        </div>
+        <details className="group/n" open={defaultOpen || undefined}>
+          <summary className={cn(SUMMARY, "absolute", size === "md" ? "top-2.5 right-3.5" : size === "sm" ? "top-2 right-3" : "top-0 right-0")}>
+            <DetailsLabel label={detailsLabel} />
+          </summary>
+          <DetailsBody tech={tech} className="pl-6">
+            {children}
+          </DetailsBody>
+        </details>
       </div>
-      {present(text) ? <div className="pl-6 text-ink-soft">{text}</div> : null}
+    );
+  }
+
+  // 1. Eylemli ya da ayrıntısız: tek flex-wrap satır kümesi. Masaüstünde ikon · başlık · eylem, altta text ve Ayrıntı.
+  // Eylem başlığın yanına sığmazsa ikon hizasına iner. Telefonda eylem ve Ayrıntı birlikteyse ikisi aynı (ikinci)
+  // satırda: solda "Ayrıntı ⌄", sağda eylem (kutu iki satırı geçmez, dokunma alanları üst üste binmez); açılınca gövde
+  // tam genişlikte, eylem onun altına iner, özet yerinde kalır. Başlık ve eylem satırda dikeyde ortalanır (44 px'lik
+  // telefon düğmesinin yanında başlık tepede kalmaz); ikon başlığın ilk satırında.
+  const both = hasAction && hasDetails;
+  const lead = (
+    <div className={cn("flex min-w-0 items-start gap-2", !line && !liveInner && "flex-1 basis-54 self-center", both && !liveInner && "max-sm:basis-full")}>
+      {icon}
+      {heading}
+    </div>
+  );
+  return (
+    <div
+      ref={ref}
+      id={id}
+      role={liveInner ? undefined : role}
+      data-notice={tone}
+      data-risk={risk}
+      className={cn(root, pad, "flex flex-wrap items-start gap-x-2", line ? "gap-y-0.5" : "gap-y-1")}
+    >
+      {liveInner ? (
+        <div role={role} className={cn("flex min-w-0 flex-1 basis-54 flex-col gap-1 self-center", both && "max-sm:basis-full")}>
+          {lead}
+          {textNode}
+        </div>
+      ) : (
+        lead
+      )}
+      {hasAction ? (
+        // relative z-[1]: eylemin görünmez dokunma kenarı komşu özetinkinin üstünde kalır (birincil eylem kazanır)
+        <div className={cn("no-print relative z-[1] ml-auto shrink-0 self-center", both ? "max-sm:order-1" : "max-sm:ml-6")}>{action}</div>
+      ) : null}
+      {!liveInner && textNode ? <div className="min-w-0 basis-full pl-6 text-ink-soft">{text}</div> : null}
       {hasDetails ? (
-        <details className="group/n pl-6" open={defaultOpen || undefined}>
+        <details className={cn("group/n min-w-0 basis-full pl-6", both && "max-sm:basis-auto max-sm:self-center max-sm:open:basis-full")} open={defaultOpen || undefined}>
           <summary className={SUMMARY}>
             <DetailsLabel label={detailsLabel} />
           </summary>
@@ -290,12 +346,12 @@ export function NoticeGroup({ items, max = 2, label = "Uyarılar", className }: 
   );
 }
 
-/** Uyarının eylem bağlantısı: kalın, altı çizili; görünür 20 px, dokunma alanı 44 px */
+/** Uyarının eylem bağlantısı: kalın, altı çizili; görünür 20 px (inline-flex min-h-5: kutu yazı değil satır yüksekliğinde), dokunma alanı 44 px */
 export function NoticeLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className="relative font-medium whitespace-nowrap text-ink underline decoration-ink/30 underline-offset-2 outline-none after:absolute after:-inset-x-1 after:-inset-y-3 after:content-[''] hover:decoration-ink focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30"
+      className="relative inline-flex min-h-5 items-center font-medium whitespace-nowrap text-ink underline decoration-ink/30 underline-offset-2 outline-none after:absolute after:-inset-x-1 after:-inset-y-3 after:content-[''] hover:decoration-ink focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ink/30"
     >
       {children}
     </Link>
