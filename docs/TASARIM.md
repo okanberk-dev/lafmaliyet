@@ -58,9 +58,9 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
 - İçerik beyaz zeminde, `max-w-[1400px]`.
 - **Telefon ve tablet kabuğu (lg altı, `bottom-nav.tsx`, `sidebar.tsx`):** üstte 56px yapışkan çubuk (L'Af karosu →
   ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü**, beş öğe (`BOTTOM_NAV`; yönetici:
-  Genel bakış · Bugün · Kasa · Ödemeler (gecikmiş sayısı rozeti) · Menü; personel: Bugün · Karaoke · Kasa · Zayi ·
-  Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Menü" kenar çubuğunun içeriğini yaylı
-  çekmecede açar (odak çekmecede döner, Esc kapatır). Ekran klavyesi açıkken alt menü gizlenir.
+  Genel bakış · Bugün · Kasa · Ödemeler (gecikmiş sayısı rozeti) · **Tümü**; personel: Bugün · Karaoke · Kasa · Zayi ·
+  Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Tümü" kenar çubuğunun içeriğini yaylı
+  çekmecede açar (odak çekmecede döner, Esc kapatır; yalnız etkin grup açık gelir, etkin satır kutunun içine kayar). Ekran klavyesi açıkken alt menü gizlenir.
 - Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve
   klavye açıkken 0): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
   içeriğin altındaki boşluk (klavyeyle değişmez); `--mobile-top-h` üst çubuk (56px, lg ve üstünde 0): yapışkan araç
@@ -71,25 +71,37 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   başlığını örtmez, dokunulabilir); tablette üst çubuğun altında.
 - Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
   etiketlerini kapatır.
-- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`; konu başlıkları 26 Eki 2026). Yönetici: en sık açılan dört
-  ekran tek tıkla üst düzeyde, **Genel bakış · Bugün · Onaylar · Kasa raporu**; gerisi konu başlıkları altında:
-  **Kafe** (Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım) · **Menü** (Ürünler, Hammaddeler, Reçete
-  defteri) · **Stok** (Stok sayımı, Zayi & ikram, Tutarlılık; Hızlı sayım ve Mal siparişi 26 Eki 2026'da kaldırıldı) · **Satış** (Satışlar, Komisyon
-  & hakediş, Analiz & senaryo) · **Alış & gider** (Faturalar, Tedarikçiler, Giderler & personel) · **Finans**
-  (Gelir-gider, Vergi, Ödemeler & hatırlatıcılar; Vergi'nin dört sekmesi tek öğe, dalga 12) · **Ayarlar** (Genel ayarlar, Kullanıcılar &
-  roller, Paraşüt entegrasyonu) · Yardım. Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, ay ve ödemeler).
-  Başlık satırı yalnız grubu açıp kapatır, kendisi bir ekran açmaz; etkin sayfanın grubu kendiliğinden açık
-  (`activeGroupOf`; alt ekran ve sekme de: Nakit planı ve Vergi'nin sekmeleri Finans'ı, Aylık harcamalar Alış & gider'i açar), başka bölüme
-  gidince önceki grup açık kalır (`keepGroupOpen`). Bir grup iki ile beş alt sayfa tutar; yeni ekran uygun başlığın
-  altına girer, sık açılmıyorsa yeni üst düzey öğe açılmaz. Personelin ağacı (yalnız Hızlı sayım kalktı): Bugün · Karaoke · Kasa raporu ·
-  Kontrol listeleri · Özel günler · Reçete defteri · Stok (Stok sayımı, Zayi & ikram) · Hatırlatıcılarım
-  · Yardım; tek alt sayfası kalan grup o sayfanın bağlantısına döner (`navTreeFor`: personelde Menü → Reçete defteri),
-  alt sayfası kalmayan başlık hiç çizilmez. Komut paleti (`NAV_GROUPS`) aynı başlıklarla aynı sırada; sayfanın bağlam
-  satırı (`PageHeader` `eyebrow`) ekranın başlığını yazar, üst düzeydeki günlük ekranlarda "Günlük".
+- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`; konu başlıkları 26 Eki 2026, adlar 29 Eki 2026,
+  [planlar/ux-sade.md](planlar/ux-sade.md) §3). Yönetici: en sık açılan dört ekran tek tıkla üst düzeyde, **Genel bakış
+  · Bugün · Onaylar · Kasa raporu**; gerisi konu başlıkları altında: **Kafe** (Karaoke, Kontrol listeleri, Satış
+  tahmini, Hatırlatıcılarım) · **Menü** (Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri) · **Stok** (Stok
+  sayımı, Zayi & ikram, Tutarlılık) · **Satış** (Satışlar, Komisyon & hakediş, Analiz & senaryo) · **Alış & gider**
+  (Faturalar, Tedarikçiler, Giderler & maaşlar) · **Kâr & ödemeler** (Gelir-gider, Ödemeler, Nakit planı) · **Vergi,
+  KDV, SGK** (Özet, Vergi kârı, Demirbaş, Muhasebeci) · **Ayarlar** (Genel ayarlar, Kullanıcılar & roller, Paraşüt
+  entegrasyonu) · Yardım. Kapalıyken "KDV" sözcüğü görünür; "Vergi, KDV, SGK" ve "Kâr & ödemeler" kesilmeden sığar.
+  Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, kâr, devlete). Başlık satırı yalnız grubu açıp kapatır,
+  kendisi bir ekran açmaz; etkin sayfanın grubu kendiliğinden açık (`activeGroupOf`; alt ekran ve sekme de: Aylık
+  harcamalar ve Maaşlar Alış & gider'i açar), başka bölüme gidince önceki grup açık kalır (`keepGroupOpen`). Grup
+  içinde aynı anda **tek alt öğe** yanar: adresle eşleşenlerden en uzun `href` (`activeChildOf`; Nakit planı'nda
+  Ödemeler, Fiyatlar'da Ürünler yanmaz). Etkin satır kenar çubuğunun kaydırma kutusunun içine getirilir (`revealDelta`).
+  Bir grup iki ile beş alt sayfa tutar; yeni ekran uygun başlığın altına girer, sık açılmıyorsa yeni üst düzey öğe
+  açılmaz. Personelin ağacı: Bugün · Karaoke · Kasa raporu · Kontrol listeleri · Özel günler · Reçete defteri · Stok
+  (Stok sayımı, Zayi & ikram) · Hatırlatıcılarım · Yardım; tek alt sayfası kalan grup o sayfanın bağlantısına döner
+  (`navTreeFor`: personelde Menü → Reçete defteri), alt sayfası kalmayan başlık hiç çizilmez. Komut paleti
+  (`NAV_GROUPS` + `NAV_FOOTER`) aynı başlıklarla aynı sırada; kare adresli kayıtlar ("KDV" → `/panel/vergi#kdv`, "SGK
+  primi", "Kâr / zarar", "SGK oranı", "İşlem geçmişi", "Yedek" …) var olan bir çapaya iner, eski adlar `keywords`'te
+  (kas hafızası aramayla bulur); aksanlı sorgu ("kâr") aksanlı başlığı öne alır.
+- **Bir ekran bir ad:** kenar çubuğu = H1 = ⌘K; sekme ve telefon üst çubuğu yalnız kısaltabilir ("Ürünler & kârlılık" →
+  "Ürünler"). Grubun giriş ekranı ağaçta ve sekmede "Özet" olabilir, H1'i grubun adıdır ("Vergi, KDV, SGK").
+  `metadata.title` H1'le aynı. `tests/sayfa-basligi.test.ts` tutar.
+- **Bağlam satırı** (H1'in üstündeki küçük satır): elle yazılmaz, ağaçtan türer (`groupLabelOf(path, role)`: bu adresi
+  açan grubun adı); üst düzey ekranda ve grubun adını taşıyan giriş ekranında çizilmez, telefonda hiç yok (üst çubuk
+  adı yazıyor). Başlıklarda "Excel: …" yok; Excel karşılığı Yardım'ın "Ekranlar" tablosunda ve ⌘K alt satırında.
   `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
   açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
-  Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
-  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
+  Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & maaşlar → Sabit giderler, Aylık harcamalar, Maaşlar
+  (son ikisinin menüde ayrı öğesi yok); Ödeme → Ödemeler, Nakit planı; Vergi → Özet, Vergi kârı, Demirbaş, Muhasebeci
+  (ağaçtan); Stok → Sayım, Zayi & ikram, Tutarlılık: kenar çubuğunun Stok grubundan türer
   (aynı sıra, aynı roller; denetim E-56), üç sayfada da çizilir, personel Sayım ve Zayi & ikram'ı görür (`sectionTabsFor`,
   tek sekme kalırsa çubuk çizilmez; sayfa yüklenirken iki rolün ortak sekmeleri, yükleme başlığı yüklenen başlıkla aynı
   boyda: açıklama ve ay seçicinin yeri iskeletle tutulur, sekme satırı içerik gelince kaymaz). Kaldırılan ekranların eski adresleri
@@ -106,7 +118,7 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 
 | Bileşen | AkmanOS kaynağı | Kullanım |
 |---------|-----------------|----------|
-| `PageHeader({ title, description, eyebrow, excel, actions, tabs })` | — | Her sayfanın başı. |
+| `PageHeader({ title, description, path, role, more, meta, actions, tabs })` | — | Her sayfanın başı. Bağlam satırı `path` ve `role`'den (ağaç); açıklama tek cümle, "ne yaparsınız", ≤ 100 harf; eski uzun metin `more` ile ⓘ "Nasıl çalışır?" içinde (yalnız yönetici ekranında); `meta` açıklamanın altında tek satır (satış kaynağı: `SalesSourceLine`, `src/lib/sales-source.ts`). |
 | `SectionTabs({ section, current })`, `Segmented`, `SegmentedLinks` | sidebar vurgusu | Beyaz seçili parça yaylı kayar (`layoutId`). |
 | `Card`, `CardHeader({ icon, title, description, meta, actions })`, `CardContent`, `CardFooter`, `Well` | chart-card / list-table başlığı | `rounded-3xl bg-panel`; başlıkta kenarlıklı beyaz ikon kutusu. |
 | `Stat({ icon, label, value, sub, tone, info, badge, children })`, `GrowthPill` | statistic-cards, growth-badge | `rounded-2xl bg-panel p-3.5`, kenarlıklı ikon kutusu, 24px rakam, limon/kırmızı rozet. |
@@ -165,6 +177,9 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
   genişlikte, eylem onun altına iner, özet yerinde kalır. Eylemin görünmez dokunma kenarı komşu özetinkinin üstündedir.
   `NoticeLink` satır yüksekliğinde (20 px) + 12 px kenar = 44 px; "Teknik ayrıntı" özeti 16 + 2 × 14 = 44 px ve
   metni `text-ink-soft` (12 px'te `text-ink-mute` nötr kutunun panel zemininde 4,4:1).
+- Vergi bandı (`TaxBanner`, `vergi/ui.tsx`) uyarı değil, kutusuz tek satır `role="note"`: "Tahmin, beyanname değil" +
+  ⓘ (tam feragat), kapsam çipi, Muhasebeci çipi. Bekçide izinli tek elle rol; tam metin Muhasebeci'nin sonunda bir kez
+  ([VERGI.md](VERGI.md) §3.2).
 - Geliştirici dili (anahtar adı, Vercel, komut, `docs/…` yolu) yalnız `tech`'te ("Teknik ayrıntı (geliştirici
   için)", Ayrıntı'nın içinde kapalı); personelin açtığı ekranda `tech` hiç verilmez, yönetici talimatı yerine "sorun
   sürerse yöneticiye haber verin". Turuncu yalnız uyarıdır: iş listelerinin "Yapılacak" durumu gri.

@@ -407,6 +407,17 @@ listesi yok"); Z ve ciro etiketleri geçiş gününde böler. Geçiş günü bo�
   POS'una bakın"). LafPOS gününde yazarkasa bölümüne çekilen kasa çıktısına "ModPOS bölümüne okut" önerilmez.
 - **Ayın kasası:** Genel bakış (net satış, POS cirosu, döküm), Gelir-gider (online kartı, yıl dökümü, telefon görünümü,
   tablo ipuçları), Tutarlılık, Ürünler, Analiz'in senaryosu, KDV tahmini, Excel ve Claude'un yanıtları.
+- **Ayın satış kaynağı** (`salesSourceOf`, `src/lib/sales-source.ts`; 29 Eki 2026, [planlar/ux-sade.md](planlar/ux-sade.md)
+  §10): `salesMonthKasa`'nın üstünde tek kaynak. Dört tür: **ModPOS raporu** (geçiş günü yok ya da ay geçişten önce;
+  "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)"), **LafPOS** ("Satışlar: LafPOS (her gece kendiliğinden)"),
+  **geçiş ayı** ("Satışlar: Kasa (ModPOS 1–9 Kasım · LafPOS 10–30 Kasım)") ve ileride **ModPOS bağlantısı**
+  (`connectedMonths`; bugün hiçbir çağıran vermez). Her biri kısa ad (`label`), başlığın altındaki satır (`line`,
+  `SalesSourceLine` ile `PageHeader meta`), veri yokken ne yapılacağı (`missing`) ve elle yüklenip yüklenmediği
+  (`manual`) taşır. Satır Genel bakış, Satışlar, Gelir-gider, Ürünler & kârlılık, Tutarlılık ve Analiz & senaryo'da;
+  Satışlar'ın açıklaması türüne göre; "satış raporunu yükleyin" diyen metinler (Analiz, Fiyatlar, fiyat etkisi paneli,
+  tatlı tahmini, Tutarlılık) `missing`'i, Genel bakış'ın "Satış raporu" işi `manual`'ı okur (LafPOS ayında "yükle"
+  demez). Yalnız yönetici ekranları içe aktarır. Bilerek bağlanmayanlar: hesap katmanı (`insights.ts`), haftalık
+  e-posta, ModPOS listesi ile LafPOS çakışma cümleleri (`sales.ts`; zaten "ModPOS listesi" der).
 - Yardım (yönetici ve personel) LafPOS'a geçildiyse ne değiştiğini yazar: akşam kasası (LafPOS'ta Günü kapat, form gün
   sonundan dolar, ModPOS Z fotoğrafı yok, yazarkasa LafPOS'la karşılaştırılır), banka POS Z'si, kasadaki fiyatlar
   (personele düşmez; yönetici bağlar ya da LafPOS'ta değiştirir), Tükendi'nin kasaya da yansıması (gün açıkken en geç
@@ -534,6 +545,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/lib/lafpos/costs.ts` | Maliyet listesinin beyaz listesi (saf) |
 | `src/lib/lafpos/switch.ts` | Geçiş gününün kuralları (saf): LafPOS günü mü, ayın kaynağı, ModPOS listesi sayılır mı, LafPOS'un sayıldığı ilk gün, değişen aylar, onay penceresinin listesi |
 | `src/lib/lafpos/kasa.ts` | Metinlerde kasanın adı (saf; B11): ayın kasası (`monthKasa`, `periodKasa`), bugünün kasası ve kasadaki fiyatın elle değişip değişmediği (`tillScope`, `tillPriceManual`) |
+| `src/lib/sales-source.ts`, `src/components/panel/sales-source-line.tsx` | Ayın satış kaynağı (saf; ux-sade §10): ModPOS raporu, LafPOS, geçiş ayı, ileride ModPOS bağlantısı; başlığın altındaki satır |
 | `src/server/data/till-scope.ts` | Bugünün kasası (iş günü + geçiş günü) ve Kasaya işle okuyucularının süzgeci (B11) |
 | `src/components/panel/kasa-text.tsx` | Sayfa başlığının günün kasasına göre metni (beklerken ve geçiş günü boşken ModPOS'unki; B11) |
 | `src/lib/lafpos/sales.ts` | LafPOS ay toplamlarıyla ModPOS listesinin birleşmesi (her gün tek kaynak), ayın kaynağı ve Satışlar'ın bandı, ModPOS listesi yükleme kuralı (saf) |

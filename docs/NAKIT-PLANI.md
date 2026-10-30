@@ -1,13 +1,15 @@
 # Nakit planı (önümüzdeki 6 hafta) ve KDV tahmini
 
-Ekran: **Finans › Ödemeler & hatırlatıcılar › Nakit planı** (`/panel/hatirlaticilar/nakit`, yalnız yönetici;
-Ödemeler'in başlığındaki **Nakit planı** düğmesi ve ⌘K). Soru: “önümüzdeki haftalarda param yeter mi?” Plan bugünden
+Ekran: **Kâr & ödemeler › Nakit planı** (`/panel/hatirlaticilar/nakit`, yalnız yönetici; kenar çubuğunda kendi
+öğesi, Ödemeler ile Nakit planı'nın başlığındaki sekmeler **Ödemeler · Nakit planı** (`SECTION_TABS.odeme`) ve ⌘K). Soru: “önümüzdeki haftalarda param yeter mi?” Plan bugünden
 başlayan **42 gündür** (6 dilim × 7 gün, kayan hafta: hafta 1 = bugün … bugün+6). Her dilimde gelen, ödenecek (kesin ve
 tahmini) ve hafta sonunda elde kalacak para görünür. Hesap saf modüldedir: `src/lib/cash-plan.ts` (testleri
 `tests/nakit-plani.test.ts`), KDV `src/lib/kdv.ts` (`tests/kdv-tahmini.test.ts`).
 
-Kenar çubuğunda ayrı öğesi yoktur; Ödemeler etkin kalır, telefonun üst çubuğu “Nakit planı” yazar. Personel ekranı
-açamaz (`requireAdmin`), ⌘K'da da görmez.
+29 Eki 2026'dan beri ([planlar/ux-sade.md](planlar/ux-sade.md) §3) kenar çubuğunda kendi öğesi var ve grupta yalnız o
+yanar (`activeChildOf`: Ödemeler yanmaz); iki sayfanın başlığındaki eski "Nakit planı" ve "Ödemeler" düğmeleri kalktı,
+sekme aynı işi görür. Telefonun üst çubuğu “Nakit planı” yazar. Personel ekranı açamaz (`requireAdmin`), ⌘K'da da
+görmez.
 
 ## Kaynaklar
 
@@ -161,7 +163,11 @@ Nakit planının yan sütununda **KDV tahmini** kartı (`#kdv`). Hesap tek cüml
 
 > **önceki ayın satışlarındaki KDV − alış faturalarındaki KDV − önceki aylardan devreden KDV**, ayın 28'inde ödenir.
 
-Eksi çıkarsa “Ödeme beklenmez” yazar ve fark sonraki aya devreder. Her yerde aynı etiket: “Tahmin; kesin tutar
+Eksi çıkarsa “Ödeme beklenmez” yazar ve fark sonraki aya devreder. Günü geçmiş satır kırmızı **Gecikmiş** rozeti
+taşır; tutarı 0 olan (ödeme beklenmeyen) gecikmiş satırda geciken yalnız beyanname ücretidir (damga), rozet turuncu
+**Damga ödendi mi?** olur (“Ödeme beklenmez” ile çelişmesin; ux-sade §7.10). Vergi, KDV, SGK › Özet'teki KDV satırı
+aynı cevabı kapalıyken yazar (“Ödeme yok · ≈ … sonraki aya geçer”) ve tek düğmesi “Döküm ve devreden KDV” bu karta
+(`#kdv`) iner ([VERGI.md](VERGI.md) §3.3). Her yerde aynı etiket: “Tahmin; kesin tutar
 muhasebecinizin beyannamesindedir.” Her ödeme günü bir satırdır (“28 Kas · Ekim KDV'si ≈ 42.100 ₺”); satıra dokununca
 satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 
@@ -182,7 +188,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 **Plana yerleşme:**
 
 - Ödemeler'de KDV hatırlatıcısı yoksa her dönem ayın 28'ine, yarından itibaren “KDV (Ekim)” tahmini satırı olarak girer.
-  Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Hatırlatıcı ekle** önerir (KDV
+  Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Ödemeler'e ekle** önerir (KDV
   tahmine katılmıyorsa “KDV tahmini plana katılmıyor; Tahmine katılanlar'dan açabilirsiniz.”).
 - KDV hatırlatıcısı varsa tahmin onun günlerine yazılır. Tutar yazılmış dönem kesindir (normal hatırlatıcı satırı);
   tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Ertelenen dönemin (tekrar edenin kopyası

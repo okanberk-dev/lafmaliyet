@@ -16,7 +16,6 @@ import { NewProductLink } from "./new-product-link";
 import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
 import { RecipeBook, type MyRequest, type ProposeKit, type RecipeGroup } from "./recipe-book";
-import { staffRecipeNote } from "./staff-note";
 
 export const metadata: Metadata = { title: "Reçete defteri" };
 
@@ -105,8 +104,9 @@ async function RecipeBookContent() {
             return {
               id: v.product.id,
               size: v.product.size,
-              // Personele fiyat / maliyet / ModPOS anan ürün notu gitmez (§9 #23); yönetici aynen
-              note: isAdmin ? v.product.note : staffRecipeNote(v.product.note),
+              // Not aynen gelir: öneri penceresi onunla başlar (süzülse personelin önerisi onayda notu silerdi); personelin
+              // kartında fiyat / ModPOS anan not çizilmez (recipe-book.tsx, staff-note.ts)
+              note: v.product.note,
               lines: v.lines.map((l) => ({
                 ingredientId: l.item.ingredientId,
                 name: l.ingredient?.name ?? "?",
