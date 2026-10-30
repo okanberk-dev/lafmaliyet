@@ -9,7 +9,7 @@ import { tl } from "@/lib/format";
 import { WEEKDAY_SHORT, weekdayOf } from "@/lib/forecast/calendar";
 import { dayMonthTR } from "@/lib/reminders";
 import { badgeLabel, badgeNote, calendarTitle, KDV2_NOTE, plainLabel } from "@/lib/tax/glossary";
-import { INFLATION_LINE, isMismatchNote, NOTE_LATER, NOTE_MUNICIPAL, NOTE_UNKNOWN, NOTE_VAT_NONE, type TaxCalendarRow, type TaxView } from "@/lib/tax/view";
+import { INFLATION_LINE, isMismatchNote, laterOnCard, NOTE_LATER, NOTE_MUNICIPAL, NOTE_UNKNOWN, NOTE_VAT_NONE, type TaxCalendarRow, type TaxView } from "@/lib/tax/view";
 import { cn } from "@/lib/utils";
 
 import { FilingButton, type FilingKindData } from "./filing-dialog";
@@ -147,9 +147,9 @@ const dayMonthYear = (d: string) => `${dayMonthTR(d)} ${d.slice(0, 4)}`;
 
 /**
  * Takvim kartı: satırlar, pencerenin dışındaki geçici ve kurumlar vergisi ("Sonra", tek satır) ve hesaplanmayanlar
- * satırı. Kurumlar vergisinin tutarı kartta tahmin olarak var: "Tutarı bilinmiyor" yerine kartın bağlantısı
+ * satırı. Kurumlar vergisinin tutarı kartta tahmin olarak var: kartın yılıysa "Tutarı bilinmiyor" yerine kartın bağlantısı
  */
-export function TaxCalendarCard({ view, extras }: { view: Pick<TaxView, "calendar" | "later">; extras: CalendarExtras }) {
+export function TaxCalendarCard({ view, extras }: { view: Pick<TaxView, "calendar" | "later" | "kvCard">; extras: CalendarExtras }) {
   const [inflation, rest] = INFLATION_LINE.split(" · ");
   const firstOfKind = new Map<string, string>();
   for (const r of view.calendar) if (!firstOfKind.has(r.kind)) firstOfKind.set(r.kind, r.key);
@@ -173,7 +173,7 @@ export function TaxCalendarCard({ view, extras }: { view: Pick<TaxView, "calenda
             <span key={l.kind}>
               {i ? " · " : null}
               {calendarTitle(l)} · {dayMonthYear(l.due)} ·{" "}
-              {l.kind === "kv" ? (
+              {laterOnCard(l, view.kvCard.year) ? (
                 <a href="#kar-vergisi" className="font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink">
                   tahmin kartta
                 </a>

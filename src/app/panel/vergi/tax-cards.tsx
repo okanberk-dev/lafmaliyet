@@ -8,7 +8,7 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { money } from "@/lib/format";
 import { badgeLabel, plainLabel } from "@/lib/tax/glossary";
 import { formatEstimate } from "@/lib/tax/rules";
-import type { GeciciCard, KvCard, TaxView } from "@/lib/tax/view";
+import { type GeciciCard, type KvCard, profitTaxTitle, type TaxView } from "@/lib/tax/view";
 import { cn } from "@/lib/utils";
 
 import { FilingButton, type FilingKindData } from "./filing-dialog";
@@ -173,14 +173,16 @@ export function ProfitTaxCard({
   filings: { gecici: FilingKindData; kv: FilingKindData };
   rules: { gecici: RuleRef[]; kv: RuleRef[] };
 }) {
-  const missingDocs = gecici !== null && gecici.state === "taslak" && !gecici.calc.filing && gecici.subline !== null;
+  // Uyarı yalnız gider belgesi eksikken (belgesi seçilmemiş gider ya da demirbaş adayı): eksik bilginin öteki sebepleri
+  // (gelir belgesi, kafe dışı işler) bölümün "Eksik bilgi" rozetinde kalır
+  const missingDocs = gecici !== null && gecici.missingDocs && !gecici.calc.filing;
   // Alt satır "henüz hesaba girmedi" cümlesiyse uyarıya taşınır (tekrar yazılmaz); Ödemeler'deki tutarın satırı kalır
   const docsLine = missingDocs && gecici.headline.startsWith("Giderler sınıflandırılınca") ? gecici.subline : null;
   return (
     <Card id="kar-vergisi" className="scroll-mt-20">
       <CardHeader
         icon={<Landmark />}
-        title={`Şirketin kâr vergisi (${kv.year})`}
+        title={profitTaxTitle(gecici?.key ?? null, kv.year)}
         description={
           <>
             3 ayda bir peşin ödenir (geçici vergi); Nisan&apos;da yıl kapanır (kurumlar vergisi), peşinler düşülür.{" "}

@@ -182,6 +182,18 @@ export const NOTE_MUNICIPAL = "tutar belediyeden";
 export const NOTE_VAT_NONE = "Ödeme beklenmez (devreden); yalnız damga.";
 /** K4: muhasebecinin rakamı ile Ödemeler'deki tutar farklı (takvim satırında ve Özet'in uyarılarında sarı) */
 export const isMismatchNote = (n: string) => n.startsWith("Ödemeler'deki tutar (");
+/**
+ * Kâr vergisi kartının başlığı (ux-sade §7.6): peşinat bölümü kartın yılındaysa "Şirketin kâr vergisi (2026)". Ocak–Nisan'da
+ * kart geçen yılı kapatırken peşinat bu yılın çeyreği olabilir (ya da ?yil= başka bir yılı seçer): başlık yılsız, iki
+ * bölüm kendi yılını taşır
+ */
+export const profitTaxTitle = (geciciKey: string | null, kvYear: number) =>
+  geciciKey && geciciKey.slice(0, 4) !== String(kvYear) ? "Şirketin kâr vergisi" : `Şirketin kâr vergisi (${kvYear})`;
+/**
+ * Takvimin "Sonra" satırındaki kurumlar vergisi maddesinin tahmini kartta mı (§7.5 "tahmin kartta"): yalnız kartın
+ * yılıysa. Ocak–Nisan'da kart geçen yılı gösterirken "Sonra"daki bu yılın kurumlar vergisidir; tutarı bilinmiyor
+ */
+export const laterOnCard = (l: Pick<TaxView["later"][number], "kind" | "period">, kvYear: number) => l.kind === "kv" && l.period === String(kvYear);
 export const INFLATION_LINE = "Enflasyon düzeltmesi 2026'da yapılmaz (VUK geçici 37) · Bu kafede hesaplanmayanlar";
 
 const fold = (s: string) => s.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -270,6 +282,8 @@ export interface GeciciCard {
   badge: string | null;
   headline: string;
   subline: string | null;
+  /** Çeyrekte belgesi seçilmemiş gider ya da demirbaş adayı fatura var (kartın "Eksik belgeler var" uyarısı) */
+  missingDocs: boolean;
   rows: CardRow[];
   notes: string[];
   footer: string;
@@ -729,9 +743,11 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
     subline = `Kafenin katkısı ${calc.state === "taslak" ? "en çok " : ""}${formatEstimate(calc.estimate)} · Ödemeler'deki tutar ${money(remAmount)} (damga dahil)`;
   } else if (calc.state === "taslak") {
     headline = `Giderler sınıflandırılınca netleşir · şimdilik en çok ${formatEstimate(calc.estimate)}`;
-    const parts = [`${tl(q.unclassified.total)} gider henüz hesaba girmedi (${q.unclassified.count} kalem)`];
+    // Eksik bilginin sebebi gider belgesi değilse (gelir belgesi, kafe dışı işler) "0 ₺ gider … (0 kalem)" yazılmaz
+    const parts: string[] = [];
+    if (q.unclassified.total !== 0) parts.push(`${tl(q.unclassified.total)} gider henüz hesaba girmedi (${q.unclassified.count} kalem)`);
     if (q.candidates.count) parts.push(`${tl(q.candidates.total)} demirbaş olabilir (${q.candidates.count} fatura)`);
-    subline = parts.join(" · ");
+    subline = parts.length ? parts.join(" · ") : null;
   } else headline = formatEstimate(calc.estimate);
   const rows: CardRow[] = [
     { label: "Kümülatif kurum kazancı", value: money(calc.cumulative) },
@@ -749,6 +765,7 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
     badge: calc.filing ? "Muhasebeci" : remAmount !== null ? "Ödemeler'de" : calc.state === "taslak" ? "Taslak" : null,
     headline,
     subline,
+    missingDocs: q.unclassified.total !== 0 || q.candidates.count > 0,
     rows,
     notes,
     footer: `Şirketin geçici vergisi muhasebecinizin beyannamesindedir; ${label} rakamını ${monthGenitiveTR(l.date)} ilk haftası isteyin.`,

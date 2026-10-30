@@ -7,7 +7,8 @@ import { type ReactNode, useEffect, useRef } from "react";
  * Kural tablosunun kapalı gövdesi (docs/planlar/ux-sade.md §7.9): kanun tablosu her ziyarette gerekmiyor, telefonda
  * ~15.000 px. Adres `#kurallar` ise (bayat kural uyarısının "Kural tablosu" bağlantısı, yer imi) açık gelir: Ayarlar
  * bölümlerinin deseni. Uygulamanın içinden gelince Next adresi pushState ile değiştirdiği için çapa bir kare sonra
- * okunur (HashScroll ile aynı)
+ * okunur (HashScroll ile aynı). Bu sayfanın kendisinde (bant Muhasebeci'de de çizilir) Next'in bağlantısı `hashchange`
+ * göndermez: `#kurallar`'a giden her bağlantının tıklaması tabloyu açar
  */
 export function RulesDetails({ count, children }: { count: number; children: ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
@@ -15,11 +16,16 @@ export function RulesDetails({ count, children }: { count: number; children: Rea
     const fromHash = () => {
       if (window.location.hash === "#kurallar" && ref.current) ref.current.open = true;
     };
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.('a[href$="#kurallar"]') && ref.current) ref.current.open = true;
+    };
     const frame = requestAnimationFrame(fromHash);
     window.addEventListener("hashchange", fromHash);
+    document.addEventListener("click", onClick);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("hashchange", fromHash);
+      document.removeEventListener("click", onClick);
     };
   }, []);
   return (

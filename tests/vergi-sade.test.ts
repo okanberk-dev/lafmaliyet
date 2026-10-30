@@ -16,9 +16,9 @@ import type { ReminderRow } from "../src/lib/reminders";
 import { badgeLabel, badgeNote, calendarTitle, plainBadge, plainBadgeTone, plainLabel, TERMS } from "../src/lib/tax/glossary";
 import { type MuhtasarItem, muhtasarItemsFromModel } from "../src/lib/tax/muhtasar";
 import { overdueTaxNotice, overdueTaxReminders, taxReminderKind } from "../src/lib/tax/overdue";
-import { managementBadge, taxPnlInputFromModel } from "../src/lib/tax/pnl";
+import { managementBadge, type TaxPnlInput, taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
-import { buildTaxView, NOTE_VAT_NONE, type TaxCalendarRow, type TaxView } from "../src/lib/tax/view";
+import { buildTaxView, laterOnCard, NOTE_VAT_NONE, profitTaxTitle, type TaxCalendarRow, type TaxView } from "../src/lib/tax/view";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -143,7 +143,7 @@ const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
 const excel = excelToDataset(data);
 const base: Dataset = { ...excel, currentMonth: "2026-10", invoices: excel.invoices.map((i) => (i.supplier === "Beyza Karaman" ? { ...i, vat: 6000 } : i)) };
 
-function view(today: string, reminders: ReminderRow[] = []): TaxView {
+function view(today: string, reminders: ReminderRow[] = [], tweak?: (pnl: TaxPnlInput) => TaxPnlInput): TaxView {
   const settings = DEFAULT_TAX_SETTINGS;
   const model = createModel(base);
   const plan = buildCashPlan({
@@ -159,7 +159,8 @@ function view(today: string, reminders: ReminderRow[] = []): TaxView {
     goodsSpanDays: 0,
     vatAnchor: { month: "2026-09", amount: 121204.69 },
   });
-  const pnl = taxPnlInputFromModel(model, { settings, today, adjustments: [], assets: [], filings: [] });
+  const raw = taxPnlInputFromModel(model, { settings, today, adjustments: [], assets: [], filings: [] });
+  const pnl = tweak ? tweak(raw) : raw;
   const items = new Map<string, MuhtasarItem[]>();
   for (let m = "2026-06"; m <= "2027-05"; m = shiftMonth(m, 1)) items.set(m, muhtasarItemsFromModel(model, m));
   return buildTaxView({ today, settings, pnl, muhtasarItems: items, filings: [], reminders, vat: plan.vat, settingsEmployerRate: model.settings.isverenSgk });
@@ -198,6 +199,52 @@ test("Excel verisinde 24.10.2026: KDV satırı ödeme yok (carryOut, not null), 
 
 // ---------------------------------------------------------------- Ekranın bekçileri (§7.1-§7.9)
 
+test("Kâr vergisi kartı ve takvimin \"Sonra\"sı: kartın yılı peşinatın ve Sonra'daki kurumlar vergisinin yılından ayrılınca", () => {
+  // 30 Ekim 2026: kart 2026, peşinat 2026/4, Sonra'daki kurumlar vergisi 2026 → başlık yıllı, "tahmin kartta"
+  const oct = view("2026-10-30");
+  const kvOct = oct.later.find((l) => l.kind === "kv")!;
+  assert.equal(oct.kvCard.year, 2026);
+  assert.equal(kvOct.period, "2026");
+  assert.equal(laterOnCard(kvOct, oct.kvCard.year), true);
+  assert.equal(profitTaxTitle(oct.geciciCard?.key ?? null, oct.kvCard.year), "Şirketin kâr vergisi (2026)");
+  // 20 Şubat 2027: kart 2026 yılını kapatır (beyanname Nisan'da), peşinat 2027/1, Sonra'daki kurumlar vergisi 2027 →
+  // kartta 2027'nin tahmini yok ("Tutarı bilinmiyor"), başlık yılsız (iki bölüm kendi yılını taşır)
+  const feb = view("2027-02-20");
+  const kvFeb = feb.later.find((l) => l.kind === "kv")!;
+  assert.equal(feb.kvCard.year, 2026);
+  assert.equal(kvFeb.period, "2027");
+  assert.equal(laterOnCard(kvFeb, feb.kvCard.year), false);
+  assert.equal(feb.geciciCard!.key, "2027-Q1");
+  assert.equal(profitTaxTitle(feb.geciciCard!.key, feb.kvCard.year), "Şirketin kâr vergisi");
+  assert.equal(profitTaxTitle(null, 2026), "Şirketin kâr vergisi (2026)");
+  assert.equal(laterOnCard({ kind: "gecici", period: "2026" }, 2026), false);
+});
+
+test("\"Eksik belgeler var\" yalnız gider belgesi eksikken: eksik bilginin öteki sebeplerinde uyarı ve \"0 ₺ … (0 kalem)\" yok", () => {
+  // Excel verisi: belgesi seçilmemiş gider ve demirbaş adayı var → uyarı, alt satır iki parça
+  const g = view("2026-10-30").geciciCard!;
+  assert.equal(g.state, "taslak");
+  assert.equal(g.missingDocs, true);
+  assert.match(nb(g.subline ?? ""), /gider henüz hesaba girmedi \(\d+ kalem\)/);
+  // Bütün giderlerin belgesi seçili, adaylar "demirbaş değil": çeyrek yine eksik bilgide (gelir belgesi, kafe dışı
+  // işler) ama uyarı yok, alt satır yok
+  const docs = view("2026-10-30", [], (p) => ({
+    ...p,
+    fixed: p.fixed.map((f) => ({ ...f, taxDoc: "belgeli" as const })),
+    expenseCategories: p.expenseCategories.map((c) => ({ ...c, taxDoc: "belgeli" as const })),
+    settings: { ...p.settings, manualRows: Object.fromEntries(Object.keys(p.settings.manualRows).map((k) => [k, "belgeli" as const])) },
+    invoices: p.invoices.map((i) => ({ ...i, taxNotAsset: true })),
+  }));
+  const d = docs.geciciCard!;
+  const q = docs.quarters.find((x) => x.key === d.key)!;
+  assert.equal(d.state, "taslak");
+  assert.deepEqual(q.stateReasons, ["Gelir mali belgeden girilmedi", "Kafe dışı işler muhasebeciyle konuşulmadı"]);
+  assert.deepEqual(q.unclassified, { total: 0, count: 0 });
+  assert.equal(d.missingDocs, false);
+  assert.equal(d.subline, null);
+  assert.equal(d.badge, "Taslak", "Eksik bilgi rozeti kalır");
+});
+
 const DIR = "src/app/panel/vergi";
 
 test("Özet: Hazırlık karosu ve tam feragat yok, iki rakam yan yana; tek kâr vergisi kartı; gecikmiş satır bandın grubunda", () => {
@@ -213,6 +260,8 @@ test("Özet: Hazırlık karosu ve tam feragat yok, iki rakam yan yana; tek kâr 
   assert.match(cards, /export function ProfitTaxCard\(/);
   assert.match(cards, /<Card id="kar-vergisi"/);
   assert.match(cards, /title="Eksik belgeler var: rakam yüksek çıkabilir"/);
+  assert.match(cards, /const missingDocs = gecici !== null && gecici\.missingDocs && !gecici\.calc\.filing;/);
+  assert.match(cards, /title=\{profitTaxTitle\(gecici\?\.key \?\? null, kv\.year\)\}/);
   // Başlarken tek satır: "Başlarken: 2 / 4"
   assert.match(cards, /Başlarken: \{data\.done\} \/ \{data\.total\}/);
 });
@@ -236,7 +285,11 @@ test("Bant (§7.4): kutusuz tek satır, her sekmede aynı; bayat kurallar ayrı 
   const order = ['id="sorular"', 'title="Şirketin vergi ayarları"', 'id="kurallar"', "<RulesDetails", 'id="bilgi"', "<DisclaimerBody"].map((s) => rules.indexOf(s));
   assert.ok(order.every((i) => i > 0), JSON.stringify(order));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
-  assert.match(read(`${DIR}/kurallar/rules-details.tsx`), /window\.location\.hash === "#kurallar"/);
+  const details = read(`${DIR}/kurallar/rules-details.tsx`);
+  assert.match(details, /window\.location\.hash === "#kurallar"/);
+  // Muhasebeci'nin kendisinde Next'in bağlantısı hashchange göndermez: tıklama da açar
+  assert.match(details, /closest\?\.\('a\[href\$="#kurallar"\]'\)/);
+  assert.match(details, /document\.addEventListener\("click", onClick\)/);
 });
 
 test("Takvim (§7.5): sade ad, rozetler, KDV satırında tek düğme, muhtasarda kesinti, Sonra tek satır", () => {
@@ -247,6 +300,9 @@ test("Takvim (§7.5): sade ad, rozetler, KDV satırında tek düğme, muhtasarda
   assert.match(cal, /title="Vergi ve SGK ödemeleri"/);
   assert.match(cal, /Kesintiyi seç/);
   assert.match(cal, /tahmin kartta/);
+  // Bağlantı yalnız kartın yılındaki kurumlar vergisinde (Ocak–Nisan'da Sonra'daki yıl kartınkinden sonra)
+  assert.match(cal, /\{laterOnCard\(l, view\.kvCard\.year\) \? \(/);
+  assert.match(cal, /Pick<TaxView, "calendar" \| "later" \| "kvCard">/);
   assert.match(cal, /`Ödeme yok\$\{/);
   assert.match(cal, /Ödemeler'de \$\{dayMonthTR\(row\.reminderDue\)\}/);
 });
