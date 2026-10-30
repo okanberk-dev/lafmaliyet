@@ -450,7 +450,7 @@ export function FixedExpensesClient({
     )
     .sort((a, b) => b.h.fromMonth!.localeCompare(a.h.fromMonth!) || a.r.name.localeCompare(b.r.name, "tr-TR"));
 
-  // Personel satırı Personel sayfasından gelir: düzenlenemez, yine de aranır ve süzülür
+  // Personel satırı Maaşlar sayfasından gelir: düzenlenemez, yine de aranır ve süzülür
   const personnelLabel = `Personel (${personnel.count} kişi, maaş + SGK)`;
   const showPersonnel = (bolum === "tumu" || bolum === "personel") && matches(`${personnelLabel} SGK otomatik`, q);
   const visible = sortRows(
@@ -693,7 +693,7 @@ export function FixedExpensesClient({
                         <TD numeric className="text-ink-quiet">
                           –
                         </TD>
-                        <TD className="text-[13px] whitespace-nowrap text-ink-mute">Personel sayfasından</TD>
+                        <TD className="text-[13px] whitespace-nowrap text-ink-mute">Maaşlar sayfasından</TD>
                         <TD numeric className="font-semibold">
                           {tl(personnel.total)}
                         </TD>
@@ -703,7 +703,7 @@ export function FixedExpensesClient({
                         </TD>
                         <TD>
                           <div className="flex justify-end gap-1.5">
-                            <IconLink href="/panel/personel" label="Personel sayfasına git">
+                            <IconLink href="/panel/personel" label="Maaşlar sayfasına git">
                               <ArrowUpRight size={16} />
                             </IconLink>
                           </div>
@@ -784,7 +784,7 @@ export function FixedExpensesClient({
                         <span className="min-w-0">
                           <span className="block font-medium text-ink">{personnelLabel}</span>
                           <span className="mt-1 flex items-center gap-1.5 text-xs text-ink-mute">
-                            <Badge tone="blue">Otomatik</Badge> Personel sayfasından
+                            <Badge tone="blue">Otomatik</Badge> Maaşlar sayfasından
                           </span>
                         </span>
                         <span className="flex shrink-0 items-center gap-2">

@@ -110,6 +110,7 @@ async function applyWindow(tx: Tx, w: HistoryWindow, snapshot: SiteSnapshot, now
           status: k.status,
           paymentStatus: k.paymentStatus,
           totalMinor: k.totalMinor,
+          refundMinor: k.refundMinor,
           channel: k.channel,
           bookedAt: k.bookedAt,
           cancelledAt: k.cancelledAt,

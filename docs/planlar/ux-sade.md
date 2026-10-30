@@ -1880,72 +1880,92 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
    `tests/sayfa-basligi.test.ts` tutar. Takvimin `<ul>`'u `overflow-hidden` yerine `overflow-clip`: hidden bir kaydırma
    kabı olduğu için Chrome ilk satırın `scroll-mt-20` payını kırpıyor, `#sgk` (ilk satır) telefonun üst çubuğunun
    altında kalıyordu; köşeler aynı.
+8. **Etkin satır kenar çubuğunun kutusunda görünür** (inceleme, 29 Eki 2026). §3.2'nin 13. satırı ("Vergi, KDV, SGK",
+   dört alt öğe) listenin sonuna yakın: 1440 × 900'de Muhasebeci kaydırma kutusunun altında, telefonun çekmecesinde
+   Nakit planı da görünmüyordu (`main`'de "Finans › Vergi" görünüyordu). `SidebarNav` adres değişince, çekmece açılınca
+   ve kutu görünür olunca etkin bağlantıyı kutunun içine getirir: yalnız kutunun `scrollTop`'u (`revealDelta`,
+   `nav.ts`), grubun yaylı açılışı sürerken içerik büyüdükçe yeniden; kullanıcı listeye dokunur ya da kaydırırsa bırakır.
+9. **⌘K aynı sayfanın çapasında tarayıcının çapa gezinmesini kullanır; SGK oranları açıldıktan sonra iner; takvim
+   satırının halkası uygulamanın içinden gelince de çıkar** (inceleme). Next'in yönlendiricisi adresi `pushState` ile
+   değiştirir: `hashchange` gelmez, `:target` güncellenmez. Maaşlar'dayken "SGK oranı", telefonda Ayarlar'dayken
+   "Yedek" kapalı bölüme iniyordu; §3.7'nin halkası yalnız adres çubuğundan açılınca çıkıyordu. Palet bulunulan sayfanın
+   çapasında `location.hash` yazar (`samePageHash`; zaten o çapadaysa olayı elle gönderir), Maaşlar'ın bölümü Ayarlar'ın
+   deseniyle açılış işlendikten sonra kaydırır (`pinSection`), `HashScroll` hedefi `data-hash-hit` ile işaretler ve
+   takvim satırı halkayı ondan da çizer. Bağlam satırı grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar)
+   çizilmez (`contextLineOf`): başlığı iki kez yazıyordu.
+10. **Bölüm 1 `main`'e ayrı gittiği için eski adların kalanı da Bölüm 1'de düzeldi** (inceleme). "Kurallar › Vergi
+    ayarları" → "Muhasebeci › Vergi ayarları" (`corporate.ts`, Demirbaş, Vergi kârı'nın boş durumu; kartın adı Bölüm 3'te
+    "Şirketin vergi ayarları" olunca metin §7'deki haliyle yeniden yazılır), Sabit giderler'in personel satırı ve
+    Gelir-gider'in kaynak bağlantısı "Maaşlar", vergi sınıflandırmasının "Maaşlar'a ekleyin"i, Demirbaş'ın "Giderler &
+    maaşlar"ı, Kullanıcılar'daki yetki satırı "Vergi, KDV, SGK: … vergi kârı …". Dokunulmayanlar: `src/lib/calc`
+    ipuçları (K11), Excel'in "Personel" sayfasını anan metinler (Maaşlar'daki not, `constants.ts`'in Excel Panel B10
+    ipucu), `pnl.ts`'in "Vergiye göre gider"i ve `OZET_DESCRIPTION` (§7.7, §8: Bölüm 3).
 
 **Bölüm 2 (29 Eki 2026)**
 
-8. **H5, H6 ve U17 Bölüm 3'te.** §6.1 bunları "U / H" satırlarında sayar, ama §11'in Bölüm 3 listesi H5'i
+11. **H5, H6 ve U17 Bölüm 3'te.** §6.1 bunları "U / H" satırlarında sayar, ama §11'in Bölüm 3 listesi H5'i
    (`device-alerts.tsx` + `output-picker.tsx`, "Ses ve bildirim ipuçları (4)") ve H6'yı (`recipe-book.tsx` personel not
    süzgeci, §9 #23) adıyla defterde sayar; U17'nin metni `plainBadge()` §7.11 sözlüğünden (`glossary.ts`, Bölüm 3'ün
    yeni dosyası) gelir. Vergi bandı (Ek A 267, §7.4) da Bölüm 3'te; bekçinin uyarı ikonu izin listesinde `vergi/ui.tsx`
    o güne kadar geçici olarak duruyor (bant kutusuz satıra inince kalkar).
-9. **H1 Bölüm 2'de** (§6.1 ve §11 "U, H"): Vergi kârı'nın başında `warn·md risk=hukuk` uyarı, `ClassifyList` kartı
+12. **H1 Bölüm 2'de** (§6.1 ve §11 "U, H"): Vergi kârı'nın başında `warn·md risk=hukuk` uyarı, `ClassifyList` kartı
    "Eksik belgeler" ve açıklamasız. Rakamlar `view.ts`'e eklenen `classify.summary`'den (yalnız ekleme, K11); belgesi
    seçilmemiş gider yoksa ama demirbaş adayı varsa başlık "{Y}'lik {m} fatura demirbaş olabilir" (bilgi düşmesin).
-10. **Rol `live`'a taşındı** (§5 "role ve ref prop'a taşınır"): `role="status"` → `live="polite"`, `role="alert"` →
+13. **Rol `live`'a taşındı** (§5 "role ve ref prop'a taşınır"): `role="status"` → `live="polite"`, `role="alert"` →
     `live="assertive"`; sayfayla sunucudan gelen sistem uyarısı §4.5 gereği `note`. Ek A'nın D satırlarındaki elle rol
     (alan hatası, okunuyor / ilerleme durumu, boş önizleme) ve U4'ün kalan gri ciro satırı bekçide izinli.
-11. **Faturası silinen demirbaş** (§6.2 `demirbas:114`): text "Yeni faturaya bağlayın ya da listeden çıkarın; yoksa
+14. **Faturası silinen demirbaş** (§6.2 `demirbas:114`): text "Yeni faturaya bağlayın ya da listeden çıkarın; yoksa
     iki kez gider sayılır." Belgedeki cümle ("Listeden çıkarın; …") "bugünkü metnin anlamı" diyordu, bugünkü metin ise
     "yeni faturaya bağlayın" der ve kartın bağlama düğmeleri aynen duruyor; ikisi birlikte yazıldı. "Ömrü gir" eylemi
     ömrü girilmemiş ilk varlığın düzenleme penceresini açar (bugünkü "Düzenle" penceresi).
-12. **On sözcüğü aşan düz başlıklar §5 kuralıyla bölündü** (bekçi ≤ 10 / ≤ 18): `cash-out-dialog` "Bu satır
+15. **On sözcüğü aşan düz başlıklar §5 kuralıyla bölündü** (bekçi ≤ 10 / ≤ 18): `cash-out-dialog` "Bu satır
     yöneticinin harcama kaydına bağlı" + "Silmek için yöneticiye haber verin.", `debt-dialog` "Uygun harcama kaydı yok" +
     devamı, `card-dialog` (Ek A 217) "Unvan, vergi no, adres ve IBAN Paraşüt faturasından okunabilir" + kaynak ve "yalnız
     boş alanlar dolar", `site-new-product` (Ek A 260) "Kalem sitede Tükendi" + devamı. Hiçbir bilgi düşmedi.
-13. **Ek A 243'ün metni "reçete, fire ve not geçer" diye kaldı** (belgedeki kısaltma "fire ve not"u düşürüyordu; kopya
+16. **Ek A 243'ün metni "reçete, fire ve not geçer" diye kaldı** (belgedeki kısaltma "fire ve not"u düşürüyordu; kopya
     penceresi üçünü de taşır, 16 sözcük). Ek A 228'de belgenin metni aynen kullanıldı ("sayım sapması hesaplanır" yan
     cümlesi 18 sözcük sınırına sığmadığı için düştü; düğmenin kendisi 0 yazar ve sapma tabloda görünür).
-14. **Kontrast bekçisi düğme hâllerini saymaz**: `hover:bg-bad-soft` (Sil düğmeleri) kutu değil; Ek A'nın D satırlarındaki
+17. **Kontrast bekçisi düğme hâllerini saymaz**: `hover:bg-bad-soft` (Sil düğmeleri) kutu değil; Ek A'nın D satırlarındaki
     değer hapları ve ikon karoları (`text-bad` + `bg-bad-soft`) izin listesinde, dokunulmadı.
 
 **Bölüm 2 incelemesi (30 Eki 2026)**
 
-15. **Ses satırı ilk dokunuşta kalkmaz** (§4.6 "ilk dokunuşta kaybolur"): satır akan yuvada olduğu için pointerdown'da
+18. **Ses satırı ilk dokunuşta kalkmaz** (§4.6 "ilk dokunuşta kaybolur"): satır akan yuvada olduğu için pointerdown'da
     kalkınca içerik 44-76 px kayıyor, tıklama başka öğeye düşüyordu. Satır sayfa değişene kadar kalır; ses açılınca
     aynı yükseklikte `good` "Sesli uyarılar açık"a döner (düğmenin görünmez eşi yeri tutar). Ses yeniden kilitlenirse
     aynı yerde yeniden "kapalı" olur.
-16. **Notice'in üçüncü yerleşimi** (§4.1 iki yerleşim sayar): eylemsiz, ayrıntılı ve canlı uyarıda bütün kutu tek
+19. **Notice'in üçüncü yerleşimi** (§4.1 iki yerleşim sayar): eylemsiz, ayrıntılı ve canlı uyarıda bütün kutu tek
     `<details>` olamaz, çünkü canlı bölge (§4.5) özetin içinde kalır ve Ayrıntı'yı açıp kapamak bütün uyarıyı yeniden
     okutur. Bu durumda rol başlık + `text` sarmalayıcısında, "Ayrıntı ⌄" onun dışında ve başlık satırının sağında
     (yüksekliği 2. yerleşiminkiyle aynı). Ayrıntılı canlı uyarıda eylem de canlı bölgenin dışında. Sayfayla sunucudan
     gelen iki uyarı canlı değil artık: Tahmin bandı (`tahmin/page.tsx`) ve karaoke'nin bağlantı kutusu (bağlantı
     sunucunun ayarı).
-17. **Telefonda eylem ve Ayrıntı aynı satırda** (§4.6 "kutu iki satırı geçmez"): 1. yerleşimde ikisi birlikteyse
+20. **Telefonda eylem ve Ayrıntı aynı satırda** (§4.6 "kutu iki satırı geçmez"): 1. yerleşimde ikisi birlikteyse
     telefonda ikinci satır solda "Ayrıntı ⌄", sağda eylem; açılınca gövde tam genişlikte, eylem altına iner, özet
     yerinde kalır. Masaüstü aynı (eylem başlığın sağında). Başlık ve eylem satırda ortalı (44 px'lik telefon düğmesinin
     yanında başlık tepede kalmıyordu).
-18. **Ölçü: md kutu Ayrıntı satırıyla 64 px, 60 değil** (§4.2 "60 / 56 px"): `py-2.5` (20) + başlık 20 + `gap-1` (4) +
+21. **Ölçü: md kutu Ayrıntı satırıyla 64 px, 60 değil** (§4.2 "60 / 56 px"): `py-2.5` (20) + başlık 20 + `gap-1` (4) +
     satır 20 = 64; sm 56. §13'ün "≤ 60 px" katlanamayan uyarı ölçütü bu kutuda 64 olarak okunur. Başlığı iki satıra
     saran uyarı (belgenin metni aynen; ör. "Temmuz 2026, Ağustos 2026, Eylül 2026, Ekim 2026 sayımı yok: …" 390'da
     80 px) ve 44 px'lik düğme eylemli uyarı (telefonda 88 px) bunu aşar.
-19. **Bugün'ün telefon alt satırı istemci düğmesi** (§4.8 "Sonra grubu kapalı `<details>`"): "Sonra (n)",
+22. **Bugün'ün telefon alt satırı istemci düğmesi** (§4.8 "Sonra grubu kapalı `<details>`"): "Sonra (n)",
     "Tamamlananlar (n)" ve yöneticinin "Ayın işleri Genel bakış'ta" bağlantısı yan yana tek satır; `<details>` yan
     yana dizilince açılan liste düğmenin yanındaki dar sütuna sıkışırdı. Düğmeler (`aria-expanded` / `aria-controls`)
     listeyi satırın altında tam genişlikte açar; geniş ekran aynı (Sonra açık bölüm, Tamamlananlar `<details>`).
     Telefonda "Şimdi" başlığı yalnız ekran okuyucuya (tek kart + "Diğer N iş" var).
-20. **Ayın işleri kartı sıradaki iş yokken katlanmaz** (§4.8 "Diğer {n} iş"): süren ayda bütün işler "Ay sonunda" ya
+23. **Ayın işleri kartı sıradaki iş yokken katlanmaz** (§4.8 "Diğer {n} iş"): süren ayda bütün işler "Ay sonunda" ya
     da tamamken kart açılınca yalnız düğme kalıyordu; o durumda bütün işler tek satır, düğme yok (`checklistFold`).
     Telefonda kartın açıklaması ile ilerleme ("2 / 5 tamam") aynı satırda, sıradaki işin açıklaması en çok iki satır.
-21. **Cari şeritleri `NoticeGroup` değil** (Ek A 201): her şerit bir iş ve kendi düğmeleriyle yazıldığı sırada görünür;
+24. **Cari şeritleri `NoticeGroup` değil** (Ek A 201): her şerit bir iş ve kendi düğmeleriyle yazıldığı sırada görünür;
     grup onları tona göre sıralayıp "+N not daha"nın arkasına katlıyordu ("Borçlara say" dahil).
-22. **Paraşüt'ün iade uyarısı ve Analiz'in reçetesiz ürünleri** (Ek A 159, 9): eylem Ayrıntı'nın içinde kalmıştı (§4.3
+25. **Paraşüt'ün iade uyarısı ve Analiz'in reçetesiz ürünleri** (Ek A 159, 9): eylem Ayrıntı'nın içinde kalmıştı (§4.3
     warn'da eylem ya da `text` zorunlu). İade uyarısında `text` + "Faturalara git" eylemi, Ayrıntı'da liste ve neden;
     reçetesiz ürünlerde `text` "Reçetesini girince gruplara katılır." ve satır başına bağlantılı liste açık başlar
     (§4.4); açıklamanın aynı cümlesi Ayrıntı'dan çıktı.
-23. **Bekçi sınıf ifadesini de okur** (§6.4): dolgu ve renk ayrı dizelerde ya da sabitte (`cn("… px-3 py-2", warn ?
+26. **Bekçi sınıf ifadesini de okur** (§6.4): dolgu ve renk ayrı dizelerde ya da sabitte (`cn("… px-3 py-2", warn ?
     "bg-warn-soft …" : …)`, `cn(box, TONE[tone])`) yazılan kutu da yakalanır. İfade düzeyindeki D satırları (seçili
     hap, hücre, süzgeç kartı, satır vurgusu, açma düğmesi, çip) ayrı izin listesinde.
-24. **§13'te kalan aşımlar** (ölçüm 30 Eki, yerel): Bugün yönetici 390'da 362 px (≤ 340; "Ayın işleri Genel bakış'ta"
+27. **§13'te kalan aşımlar** (ölçüm 30 Eki, yerel): Bugün yönetici 390'da 362 px (≤ 340; "Ayın işleri Genel bakış'ta"
     bağlantısı alt satıra sığmıyor), personel 310; Genel bakış 390'da iş kartı 280 (≤ 300) ve ilk KPI rakamı ses
     satırıyla da ilk ekranda, 1440'ta 412 (≤ 404; masaüstü kartlar değişmedi); karaoke yönetici 390'da bağlantı kutusu
     108 px (başlık iki satır + `text` + Ayrıntı/eylem satırı). Metinler değişmedi.

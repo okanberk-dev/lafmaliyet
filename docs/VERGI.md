@@ -103,7 +103,7 @@ Diğer ekranlara dokunuşlar:
   alış − çeyrek sonu sayımı; çeyrek sonunda sayım yoksa en son sayım, kırmızı uyarıyla), diğerleri döneme. Fatura
   dışı her kalem (sabit gider, Aylık harcamalar kategorisi, Gelir-gider'in elle satırı) **vergi belgesine** göre
   sayılır: "Paraşüt'te faturası var" (sayılmaz, faturası sayılıyor), "Belgesi muhasebecide" (sayılır; fişliler KDV
-  hariç tahminle), "Belgesi yok" (sayılmaz). Personel bölümünde "Bordroda" (Personel'e ekleyin) ve "Dışarıdan hizmet".
+  hariç tahminle), "Belgesi yok" (sayılmaz). Personel bölümünde "Bordroda" (Maaşlar'a ekleyin) ve "Dışarıdan hizmet".
   **Seçilmemiş kalem sayılmaz** ve hesap Taslak kalır. Kasadan çıkan fatura / e-Arşiv satırı, faturası Faturalar'a
   gelmişse "Paraşüt'te faturası var" sayılır (denetim B17'nin iki kez sayılan listesi).
 - **Demirbaş olabilir:** mal, komisyon, kira ve kafe dışı dışındaki kategoride KDV hariç 12.000 ₺'yi aşan, aynı
@@ -126,7 +126,7 @@ Diğer ekranlara dokunuşlar:
   çok ≈ X ₺" der.
 - **Kurumlar vergisi:** yıllık kazanç (kayıt varsa onun matrahı), devreden zarar, %25 ya da asgari; yalnız **ödendi**
   işaretli geçici vergi mahsup edilir. Damga: beyanname + bilanço + gelir tablosu (2026: 2.516,30).
-- **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Kurallar › Vergi ayarları'nda şirket "ilk defa faaliyete
+- **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
 - **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur. Yurt dışı hizmet profilli
   sabit giderin KDV-2'si ayrı satırdır.
@@ -146,7 +146,7 @@ düzeltilecek değer çıkmadı ama resmî PDF'lerin kendisi açılamadığı i�
 eskiyse ya da bakılan yılın tablosu yoksa bant söyler; tablosu olmayan yıl son bilinen yılın değerleriyle "2026
 kuralları" rozetini taşır.
 
-Elle değiştirilebilenler (Kurallar › "Elle değer", not zorunlu): `sgk.isverenOran` (teşvik, en çok %21,75),
+Elle değiştirilebilenler (Muhasebeci › "Elle değer", not zorunlu): `sgk.isverenOran` (teşvik, en çok %21,75),
 `damga.gecici`, tahmini yılda beyanname ve mali tablo damgaları.
 
 **Yeni yıl:** `src/lib/tax/rules-2027.ts` yazılır (2026 dosyasını kopyalayıp değerleri ve kaynakları güncelleyin),
@@ -155,7 +155,7 @@ güncellenir. Resmî metinlerle tek tek karşılaştırılınca `RULES_VERIFIED_
 
 ## 6. Muhasebeciye sorulacaklar
 
-Kurallar › Muhasebeciye sorulacaklar (`ACCOUNTANT_CHECKS`, `src/lib/tax/checks.ts`). Sekiz **temel** madde
+Muhasebeci › Muhasebeciye sorulacaklar (`ACCOUNTANT_CHECKS`, `src/lib/tax/checks.ts`). Sekiz **temel** madde
 işaretlenmedikçe çip "Muhasebeciye sorulacaklar: n / 8" der; hepsi işaretlenince "Muhasebecinizle gözden geçirildi
 (sahibin işareti)". Temel maddeler: şirketin kuruluşu (asgari kurumlar vergisi muafiyeti, MERSİS ile vergi
 numarasının uyuşmaması), SGK oranı, bordro, kira (kime ödeniyor, gerçek kira, sözleşme damgası), stopaj (Instagram,

@@ -23,6 +23,7 @@ import type { Role } from "@/lib/constants";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
 import {
+  cancelledBadgeText,
   countdown,
   dayLabel,
   durationLabel,
@@ -56,7 +57,7 @@ const nameOf = (s: KaraokeSessionDTO) => s.customerName || (s.source === "panel"
 /** Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle */
 function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
   if (s.source === "panel") return { tone: "gray", text: s.createdBy ? `Panelden · ${s.createdBy}` : "Panelden" };
-  if (s.status === "cancelled") return { tone: "red", text: s.paymentStatus === "refunding" ? "İptal · iade sürüyor" : s.paymentStatus === "refunded" ? "İptal · iade edildi" : "İptal" };
+  if (s.status === "cancelled") return { tone: "red", text: cancelledBadgeText(s.paymentStatus, s.refund) };
   if (isHold(s)) return { tone: "gray", text: "Ödeme bekleniyor" };
   if (s.status === "requested") return { tone: "amber", text: "Onay bekliyor" };
   return s.paymentStatus === "paid" ? { tone: "green", text: "Ödendi" } : { tone: "green", text: "Onaylı · kasada ödenecek" };

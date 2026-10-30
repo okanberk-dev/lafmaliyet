@@ -54,7 +54,8 @@ export interface CalendarExtras {
 
 /**
  * Türün ilk satırının çapası (docs/planlar/ux-sade.md §3.7): ⌘K'daki "KDV", "SGK primi" ve "Maaş vergileri" o satıra
- * iner; satır kapalı kalır, yalnız halkayla belirir (JS yok)
+ * iner; satır kapalı kalır, yalnız halkayla belirir. Halka :target'la (adres çubuğundan, aynı sayfada ⌘K) ve
+ * HashScroll'un `data-hash-hit` işaretiyle (uygulamanın içinden gelince; Next'in pushState'i :target'ı güncellemez)
  */
 const ANCHOR_OF: Partial<Record<TaxCalendarRow["kind"], string>> = { kdv1: "kdv", sgk: "sgk", mphb: "muhtasar" };
 
@@ -70,7 +71,11 @@ function Row({ row, extras, anchor }: { row: TaxCalendarRow; extras: CalendarExt
   const hasPayroll = row.kind === "mphb" && extras.payroll.some((p) => p.month === row.period);
   const kdv = row.kind === "kdv1" || row.kind === "kdv2";
   return (
-    <li id={anchor} className={anchor ? "scroll-mt-20 target:ring-2 target:ring-ink/20 target:ring-inset" : undefined}>
+    <li id={anchor} className={
+        anchor
+          ? "scroll-mt-20 target:ring-2 target:ring-ink/20 target:ring-inset data-[hash-hit]:ring-2 data-[hash-hit]:ring-ink/20 data-[hash-hit]:ring-inset"
+          : undefined
+      }>
       <details className="group/row">
         <summary className="grid min-h-14 cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 outline-none select-none hover:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
           <DateTile date={row.due} />

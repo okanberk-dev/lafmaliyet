@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 
-import type { KaraokeEvent, KaraokeSessionDTO, KaraokeStatus, PaymentStatus } from "@/lib/karaoke/session";
+import { refundKindOf, type KaraokeEvent, type KaraokeSessionDTO, type KaraokeStatus, type PaymentStatus } from "@/lib/karaoke/session";
 import { getDb, schema as s } from "@/server/db";
 
 type Db = ReturnType<typeof getDb>;
@@ -48,6 +48,14 @@ export function toSessionDTO(r: Row, opts: { admin: boolean }): KaraokeSessionDT
     paymentStatus: r.paymentStatus as PaymentStatus,
     // Tutar yalnız yöneticiye
     totalMinor: opts.admin ? r.totalMinor : null,
+    // İadenin türü herkese (tutarsız), tutarı yalnız yöneticiye
+    refund: refundKindOf({
+      status: r.status as KaraokeStatus,
+      paymentStatus: r.paymentStatus as PaymentStatus,
+      refundMinor: r.refundMinor,
+      totalMinor: r.totalMinor,
+    }),
+    refundMinor: opts.admin ? r.refundMinor : null,
     lastEvent: (r.lastEvent as KaraokeEvent | null) ?? null,
     lastEventAt: r.lastEventAt?.toISOString() ?? null,
     createdBy: r.createdBy,

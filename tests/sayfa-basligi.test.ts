@@ -35,7 +35,8 @@ test("başlıkta elle bağlam ve Excel yok: eyebrow ve excel prop'ları kalktı,
   }
   const header = read("src/components/panel/page-header.tsx");
   assert.doesNotMatch(header, /EYEBROW_ALIAS|Excel: /);
-  assert.match(header, /groupLabelOf\(path, role\)/);
+  // Grubun adını taşıyan giriş ekranında (Vergi, KDV, SGK; Ayarlar) satır başlığı tekrarlamaz (contextLineOf)
+  assert.match(header, /const group = path \? contextLineOf\(path, role, title\) : undefined;/);
   // Bağlam satırı yalnız masaüstünde (telefonda üst çubuk ekranın adını zaten yazar)
   assert.match(header, /\{group \? <p className="[^"]*\bmax-sm:hidden\b[^"]*">\{group\}<\/p> : null\}/);
   // "Nasıl çalışır?" ⓘ ve tek satırlık meta
@@ -122,11 +123,25 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   for (const [href, [file, re]] of Object.entries(ANCHORS)) assert.match(read(file), re, href);
   // Takvimde çapa türün ilk satırında; satır kapalı kalır, halkayla belirir
   const cal = read("src/app/panel/vergi/tax-calendar.tsx");
-  assert.match(cal, /<li id=\{anchor\} className=\{anchor \? "scroll-mt-20 target:ring-2 target:ring-ink\/20 target:ring-inset" : undefined\}>/);
-  // SGK oranları bölümü adres çapası olunca açık başlar (Ayarlar'ın bölüm deseni)
+  // Halka iki yoldan: :target (adres çubuğu, aynı sayfada ⌘K) ve HashScroll'un işareti (uygulamanın içinden gelince:
+  // Next pushState'le gezer, :target boş kalır)
+  assert.match(cal, /<li\s+id=\{anchor\}\s+className=\{\s*anchor\s*\?\s*"scroll-mt-20 target:ring-2 target:ring-ink\/20 target:ring-inset data-\[hash-hit\]:ring-2 data-\[hash-hit\]:ring-ink\/20 data-\[hash-hit\]:ring-inset"/);
+  const hashScroll = read("src/components/panel/hash-scroll.tsx");
+  assert.match(hashScroll, /export const HASH_HIT_ATTR = "data-hash-hit";/);
+  assert.match(hashScroll, /hit\?\.removeAttribute\(HASH_HIT_ATTR\);[\s\S]*hit\?\.setAttribute\(HASH_HIT_ATTR, ""\);/);
+  // Aynı sayfada başka çapaya geçilince işaret taşınır; sayfa gizlenince (Next'in sakladığı kopya) silinir
+  assert.match(hashScroll, /window\.addEventListener\("hashchange", onHash\);/);
+  assert.match(hashScroll, /return \(\) => \{[\s\S]*hit\?\.removeAttribute\(HASH_HIT_ATTR\);\s*\};/);
+  // SGK oranları bölümü adres çapası olunca açık başlar ve açılış işlendikten sonra iner (Ayarlar'ın bölüm deseni):
+  // kapalı bölümle sayfa kısa kalır, eskiden kaydırma alt sınırda kırpılıyordu (bölümün üstü ekranın altında)
   const staff = read("src/app/panel/personel/staff-editor.tsx");
   assert.match(staff, /window\.location\.hash !== `#\$\{RATES_ANCHOR\}`/);
   assert.match(staff, /window\.addEventListener\("hashchange", fromHash\)/);
+  assert.match(staff, /setRatesOpen\(true\);\s*setHashHits\(\(n\) => n \+ 1\);/);
+  assert.match(staff, /if \(!hashHits \|\| !ratesRef\.current\) return;\s*return pinSection\(ratesRef\.current\);/);
+  assert.doesNotMatch(staff, /ratesRef\.current\?\.scrollIntoView/);
+  const section = read("src/app/panel/ayarlar/section-card.tsx");
+  assert.match(section, /if \(!hashHits \|\| !ref\.current\) return;\s*return pinSection\(ref\.current\);/);
   // Karaoke bağlantı kartının çapası (uyarının eylemi buraya iner)
   assert.match(read("src/app/panel/karaoke/karaoke-admin.tsx"), /<Card id="baglanti" className="scroll-mt-20">/);
   // Başka sayfadan gelen çapa: sayfa sunucudan sonradan aktığı için Next'in kaydırması hedefi bulamayabilir; hedef
@@ -142,4 +157,25 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
   };
   assert.deepEqual([...new Set(hashed.map((h) => h.split("#")[0]))].sort(), Object.keys(LANDS).sort());
   for (const [path, [file, re]] of Object.entries(LANDS)) assert.match(read(file), re, path);
+});
+
+test("eski adlar ekranda kalmadı: Muhasebeci (eski Kurallar sekmesi), Maaşlar (eski Personel), Giderler & maaşlar", () => {
+  // [dosya, eski metin, yeni metin]
+  const RENAMED: [string, string, string][] = [
+    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
+    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
+    ["src/app/panel/vergi/demirbas/page.tsx", "(Giderler &amp; personel)", "(Giderler &amp; maaşlar)"],
+    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Vergi ayarları'ndan"],
+    ["src/app/panel/giderler/expenses-client.tsx", ">Personel sayfasından</TD>", ">Maaşlar sayfasından</TD>"],
+    ["src/app/panel/giderler/expenses-client.tsx", 'label="Personel sayfasına git"', 'label="Maaşlar sayfasına git"'],
+    ["src/app/panel/giderler/expenses-client.tsx", "</Badge> Personel sayfasından", "</Badge> Maaşlar sayfasından"],
+    ["src/app/panel/gelir-gider/row-links.ts", 'label: "Personel", scope: "row"', 'label: "Maaşlar", scope: "row"'],
+    ["src/lib/tax/pnl.ts", "\"Personel'e ekleyin\"", "\"Maaşlar'a ekleyin\""],
+    ["src/lib/tax/rules.ts", "\"Bordroda (Personel'e ekleyin)\"", "\"Bordroda (Maaşlar'a ekleyin)\""],
+  ];
+  for (const [file, before, after] of RENAMED) {
+    const text = read(file);
+    assert.ok(!text.includes(before), `${file}: ${before}`);
+    assert.ok(text.includes(after), `${file}: ${after}`);
+  }
 });

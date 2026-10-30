@@ -46,7 +46,7 @@ test("rowLink: her satır tutarın geldiği ekrana, o ayla", () => {
   // POS komisyonunun kartlı satış oranı Satışlar'da; ad sayfanın adı
   assert.deepEqual(rowLink("commission:pos", m), { href: "/panel/satislar?ay=2026-10#m-card", label: "Satışlar · Ekim 2026", scope: "month" });
   assert.equal(rowLink("revenue", m)!.href, "/panel/satislar?ay=2026-10#m-pos");
-  assert.deepEqual(rowLink("personnel:net", m), { href: "/panel/personel", label: "Personel", scope: "row" });
+  assert.deepEqual(rowLink("personnel:net", m), { href: "/panel/personel", label: "Maaşlar", scope: "row" });
   assert.deepEqual(rowLink("personnel:employer", m)?.scope, "row");
   assert.deepEqual(rowLink("fixed:12", m), { href: "/panel/giderler", label: "Sabit giderler", scope: "row" });
 });

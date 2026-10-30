@@ -518,6 +518,27 @@ export function groupLabelOf(pathname: string, role: "admin" | "staff"): string 
 }
 
 /**
+ * Başlığın üstündeki bağlam satırı (page-header.tsx): grubun adı. Grubun giriş ekranı grubun adını taşıyorsa ("Vergi,
+ * KDV, SGK" Özet'te, "Ayarlar") satır yok: başlığı bir kez daha yazmaz.
+ */
+export function contextLineOf(pathname: string, role: "admin" | "staff", title: string): string | undefined {
+  const group = groupLabelOf(pathname, role);
+  return group === title ? undefined : group;
+}
+
+/**
+ * Kenar çubuğunun kaydırma kutusunda etkin sayfanın satırı görünmüyorsa kutunun ne kadar kaydırılacağı (artı: aşağı),
+ * görünüyorsa 0 (sidebar-nav.tsx). Satır kenara yapışmasın diye `pad` kadar pay kalır; kutudan uzun satırda üst kenar
+ * esastır. Vergi grubu listenin sonunda: 900 px yüksek dizüstünde Muhasebeci kutunun altında kalıyordu.
+ */
+export function revealDelta(box: { top: number; bottom: number }, item: { top: number; bottom: number }, pad = 8): number {
+  const up = item.top - (box.top + pad);
+  if (up < 0) return up;
+  const down = item.bottom - (box.bottom - pad);
+  return down > 0 ? Math.min(down, up) : 0;
+}
+
+/**
  * Kenar çubuğundaki tek vurgunun yeri: fare (yoksa klavye odağı) bir öğenin üstündeyse o öğe, değilse etkin sayfa.
  * `pointed` yalnız fareyle ve klavyeyle dolar; fareyle tıklamanın odağı ve dokunmatik "üstüne gelme" saymaz
  * (sidebar-nav.tsx): tıklama sırasında vurgu yer değiştirmez.
@@ -540,6 +561,21 @@ export function isSamePage(href: string | null | undefined, pathname: string): b
   if (href == null) return false;
   const trim = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
   return trim(href.split(/[?#]/)[0] || pathname) === trim(pathname);
+}
+
+/**
+ * ⌘K'nın kare adresli kaydı bulunulan ekranın bir bölümünü mü açıyor (yol aynı; adreste sorgu yok ya da bugünküyle
+ * aynı): öyleyse "#bölüm", değilse null. Next'in yönlendiricisi adresi pushState ile değiştirir; o yol hashchange
+ * göndermez, :target'ı güncellemez: kapalı bölüm (Maaşlar'ın SGK oranları, telefonda Ayarlar'ın kartları) açılmaz,
+ * takvim satırının halkası çıkmaz. Bu kayıtta palet tarayıcının kendi çapa gezinmesini kullanır (command-palette.tsx).
+ * Sorgusuz kayıt sayfanın süzgecini korur, sayfadaki bir #bölüm bağlantısı gibi.
+ */
+export function samePageHash(href: string, current: { pathname: string; search: string }): string | null {
+  const at = href.indexOf("#");
+  if (at < 0 || at === href.length - 1 || !isSamePage(href, current.pathname)) return null;
+  const q = href.indexOf("?");
+  const search = q < 0 || q > at ? "" : href.slice(q, at);
+  return search === "" || search === current.search ? href.slice(at) : null;
 }
 
 /**

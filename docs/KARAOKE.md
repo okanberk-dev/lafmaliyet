@@ -39,7 +39,7 @@ rezervasyon yazıldı
      (içeriksiz, imzalı)                          └─ after(): eşitle
                                                      GET laffogato.net/api/panel/karaoke?from&to (imzalı)
 GET /api/panel/karaoke  ◀───────────────────────     ├─ karaoke_sessions'a yaz (yeni / değişen / silinen)
-  beyaz listeyle: ad, saat, kişi, durum, not         ├─ karaoke sürümünü artır (canlı ucun ETag'i)
+  beyaz listeyle: ad, saat, kişi, durum, not, iade   ├─ karaoke sürümünü artır (canlı ucun ETag'i)
                                                      └─ olay varsa Web Push → cihazlar
                                                            └─ service worker → açık sekme /api/canli'yi yeniler,
                                                               zil çalar, kart gösterir
@@ -77,6 +77,14 @@ GET /api/panel/karaoke  ◀─────────────────�
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
 - Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
   aşağıda).
+- **İptalin iadesi** (`refund_minor`, sitenin `refundMinor`'ı; site 29 Ekim 2026'dan beri gönderir): iptal edilmiş
+  rezervasyonda geri giden ya da gidecek tutar. Sitede %0 kuralında misafir pencereden sonra ama rezervasyon saatinden
+  önce gelemeyeceğini bildirirse rezervasyon iade yapılmadan iptal edilir ve saati satışa açılır; ödeme durumu yine
+  `refunded` gelir ama tutar 0'dır. Bar ekranının rozeti bu yüzden ödeme durumuna değil iadenin türüne
+  (`refundKindOf`) bakar: "İptal · iade yok" (0), "İptal · kısmi iade edildi" / "İptal · kısmi iade sürüyor" (toplamdan
+  küçük: geç iptal payı ya da yeniden satılan saatin payı), "İptal · iade edildi" / "İptal · iade sürüyor" (tamamı ya
+  da tutar bilinmiyor; alanı göndermeyen eski site). Tutar yalnız yöneticiye gider; personel yalnız türünü görür.
+  Yeniden satılan saatin iadesi sitede yalnız bu tutarı değiştirebildiği için eşitleme onu da karşılaştırır.
 
 ### Çakışma uyarısı
 
@@ -199,10 +207,11 @@ kendi cihazında açar.
   farkı en çok 5 dakika, karşılaştırma sabit süreli. Kurallar `src/lib/karaoke/signature.ts`'te; sitenin kopyası
   (`src/lib/panel/karaoke-sync-core.ts`) ile iki depodaki testler aynı iki imza vektörünü sabitler.
 - İmzasız ya da yanlış istek yalnız `401` alır; anahtar tanımlı değilse uç `503` döner.
-- Siteden yalnız ad (soyad değil), gün, saat, kişi sayısı, durum, ödeme durumu, not, tutar, kanal ve rezervasyonun
-  yapıldığı an gelir; geçmişten alınanlar ad ve not olmadan saklanır. Panelde sitenin yanıtı ayrıca doğrulanır: bozuk
+- Siteden yalnız ad (soyad değil), gün, saat, kişi sayısı, durum, ödeme durumu, not, tutar, kanal, rezervasyonun
+  yapıldığı an ve iptalde iade tutarı gelir; geçmişten alınanlar ad ve not olmadan saklanır. Panelde sitenin yanıtı ayrıca doğrulanır: bozuk
   satır atlanır, metinler kısaltılır.
-- **Personel tutar görmez:** canlı veri ve sayfa, personele tutarı hiç göndermez (`toSessionDTO`).
+- **Personel tutar görmez:** canlı veri ve sayfa, personele tutarı ve iade tutarını hiç göndermez (`toSessionDTO`);
+  iadenin yalnız türü ("iade yok", "kısmi", "tamamı") gider.
 - Web Push içeriği uçtan uca şifrelidir (RFC 8291, aes128gcm), VAPID imzalıdır (RFC 8292). Abonelik yalnız bilinen
   push servislerine (Google, Mozilla, Apple, Microsoft) kaydedilir; çıkışta cihazın aboneliği silinir, parola ya da
   rol değişince (oturum sürümü) eski cihazlara bildirim gitmez.

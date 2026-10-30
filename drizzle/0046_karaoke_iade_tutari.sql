@@ -1,0 +1,1 @@
+ALTER TABLE "karaoke_sessions" ADD COLUMN "refund_minor" integer;

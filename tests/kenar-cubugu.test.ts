@@ -13,6 +13,7 @@ import {
   activeChildOf,
   activeGroupOf,
   BOTTOM_NAV,
+  contextLineOf,
   groupLabelOf,
   isSamePage,
   keepGroupOpen,
@@ -22,6 +23,8 @@ import {
   navLit,
   navTreeFor,
   pathMatches,
+  revealDelta,
+  samePageHash,
   SECTION_TABS,
   sectionTabsFor,
   type NavNode,
@@ -64,6 +67,49 @@ test("çekmece: bulunulan ekranın bağlantısı hemen kapatır, başka ekran ge
   assert.equal(isSamePage("/panel/faturalar", "/panel"), false);
   assert.equal(isSamePage("/panel/satislar", "/panel/satislar-arsiv"), false);
   assert.equal(isSamePage(null, "/panel"), false);
+});
+
+test("⌘K aynı sayfanın çapasında tarayıcının çapa gezinmesini kullanır: pushState hashchange göndermez, :target'ı güncellemez", () => {
+  const at = (pathname: string, search = "") => ({ pathname, search });
+  // Maaşlar'dayken "SGK oranı", Ayarlar'dayken "Yedek": bölüm açılsın diye kare tarayıcıya bırakılır
+  assert.equal(samePageHash("/panel/personel#sgk-oranlari", at("/panel/personel")), "#sgk-oranlari");
+  assert.equal(samePageHash("/panel/ayarlar#yedek", at("/panel/ayarlar/")), "#yedek");
+  assert.equal(samePageHash("/panel/personel#sgk-oranlari", at("/panel/personel", "?ara=ay")), "#sgk-oranlari", "sorgusuz kayıt sayfanın süzgecini korur");
+  assert.equal(samePageHash("/panel/komisyonlar?ay=2026-10#pluxee", at("/panel/komisyonlar", "?ay=2026-10")), "#pluxee");
+  // Adres karenin dışında da değişecekse yönlendirici (başka dönem, başka sayfa, çapasız kayıt)
+  assert.equal(samePageHash("/panel/komisyonlar?ay=2026-10#pluxee", at("/panel/komisyonlar", "?ay=2026-09")), null);
+  assert.equal(samePageHash("/panel/personel#sgk-oranlari", at("/panel")), null);
+  assert.equal(samePageHash("/panel/vergi#kdv", at("/panel/vergi/gelir-gider")), null);
+  assert.equal(samePageHash("/panel/ayarlar", at("/panel/ayarlar")), null);
+  assert.equal(samePageHash("/panel/ayarlar#", at("/panel/ayarlar")), null);
+  // Paletin her kare adresli kaydı kendi sayfasında karesini verir
+  for (const item of [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER].filter((i) => i.href.includes("#"))) {
+    const [path, hash] = item.href.split("#");
+    assert.equal(samePageHash(item.href, at(path)), `#${hash}`, item.href);
+  }
+  const palette = src("command-palette.tsx");
+  assert.match(palette, /const hash = samePageHash\(e\.href, window\.location\);\s*if \(hash === null\) router\.push\(e\.href\);/);
+  // Zaten o çapadaysa adres değişmez, tarayıcı olay göndermez: elle gönderilir (bölüm yine açılır, satır yine iner)
+  assert.match(palette, /else if \(window\.location\.hash === hash\) window\.dispatchEvent\(new HashChangeEvent\("hashchange"/);
+  assert.match(palette, /else window\.location\.hash = hash;/);
+});
+
+test("etkin satır kenar çubuğunun kaydırma kutusunda görünür (Vergi grubu listenin sonunda)", () => {
+  // 1440×900: kutu 176-794; Muhasebeci 802-838 (görünmüyordu), Demirbaş 764-800 (kırpıktı)
+  const box = { top: 176, bottom: 794 };
+  assert.equal(revealDelta(box, { top: 802, bottom: 838 }), 52);
+  assert.equal(revealDelta(box, { top: 764, bottom: 800 }), 14);
+  assert.equal(revealDelta(box, { top: 400, bottom: 436 }), 0, "görünen satırda kutu kımıldamaz");
+  assert.equal(revealDelta(box, { top: 150, bottom: 186 }), -34, "üstte kalan satır");
+  assert.equal(revealDelta({ top: 0, bottom: 30 }, { top: 100, bottom: 160 }), 92, "kutudan uzun satırda üst kenar");
+  const nav = src("sidebar-nav.tsx");
+  assert.match(nav, /<div ref=\{scrollBox\} className="sidebar-nav-scroll /);
+  assert.match(nav, /useRevealActive\(scrollBox, pathname\);/);
+  // Grup yaylı açılırken kaydırma payı büyür: içerik ve kutu boyu izlenir; yalnız kutu kaydırılır (sayfa değil)
+  assert.match(nav, /observer\.observe\(el\);\s*observer\.observe\(list\);/);
+  assert.match(nav, /if \(delta\) el\.scrollTop \+= delta;/);
+  assert.doesNotMatch(nav, /\.scrollIntoView\(/);
+  assert.match(nav, /a\[aria-current="page"\]/);
 });
 
 test("menü ağacında her adres bir kez (iki satır aynı ekranı açmaz)", () => {
@@ -428,6 +474,11 @@ test("bağlam satırı ağaçtan: grubun adı; üst düzey ekranda ve personelin
   // Menüde olmayan ekran (Hesabım) bağlam satırı almaz; yöneticinin grubu personele sızmaz
   assert.equal(groupLabelOf("/panel/hesap", "admin"), undefined);
   assert.equal(groupLabelOf("/panel/vergi", "staff"), undefined);
+  // Grubun adını taşıyan giriş ekranında bağlam satırı başlığı tekrarlamaz
+  assert.equal(contextLineOf("/panel/vergi", "admin", "Vergi, KDV, SGK"), undefined);
+  assert.equal(contextLineOf("/panel/ayarlar", "admin", "Ayarlar"), undefined);
+  assert.equal(contextLineOf("/panel/vergi/demirbas", "admin", "Demirbaş"), "Vergi, KDV, SGK");
+  assert.equal(contextLineOf("/panel/personel", "admin", "Maaşlar"), "Alış & gider");
 });
 
 test("bölüm sekmeleri: Vergi grubundan türer; Ödemeler ↔ Nakit planı yalnız yöneticide", () => {
