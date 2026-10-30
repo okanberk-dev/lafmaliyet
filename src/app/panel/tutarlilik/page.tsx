@@ -275,7 +275,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
             label="Satış ↔ POS"
             value={!c.sales.hasLines ? "Rapor yok" : c.sales.ok ? "Tutarlı" : c.sales.pos === null ? "POS yok" : <CountUp value={c.sales.diff ?? 0} kind="tl" />}
             tone={!c.sales.hasLines ? "default" : c.sales.ok ? "good" : "warn"}
-            sub={!c.sales.hasLines ? "Bu ay satış raporu yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
+            sub={!c.sales.hasLines ? "Bu ay satış verisi yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
           />
         </StatBreakdown>
       </div>
@@ -349,7 +349,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
               <Well>
                 <EmptyState
                   icon={<Receipt />}
-                  title="Bu ay için satış raporu yok"
+                  title="Bu ay için satış verisi yok"
                   description={`Satış verisi gelince ciro karşılaştırması burada çıkar. ${source.missing}.`}
                   action={
                     <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">

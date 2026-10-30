@@ -333,10 +333,11 @@ test("ek kutular: verilmezse ya da boşsa e-posta kutusuz hâliyle birebir aynı
 test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz metnin özeti 0671969'daki şablonunkiyle aynı", () => {
   // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir. 29 Eki
   // 2026: yalnız alt not değişti ("Ödemeler & hatırlatıcılar" → "Ödemeler", docs/planlar/ux-sade.md §3.10); eski notla
-  // dört özet eskisiyle aynıydı
+  // dört özet eskisiyle aynıydı. 30 Eki 2026: kapanış notu düğmenin yeni adıyla ("“Ödedim” ile işaretleyin", K18); eski
+  // notla dört özet eskisiyle aynıydı, değişen yalnız hatırlatma satırlı ilki
   const sha = (r: { subject: string; html: string; text: string }) =>
     createHash("sha256").update([r.subject, r.html, r.text].join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
-  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "eadccd86bf1df18b");
+  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "cec006d1f11c6ba4");
   assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "4bc12f6bec7c8664");
   assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "265d05fbed6eb763");
   assert.equal(sha(renderDigest([], "2026-10-22")), "a1dab6e01442bef7");

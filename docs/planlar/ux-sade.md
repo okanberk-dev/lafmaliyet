@@ -2006,3 +2006,40 @@ gerekçesiyle seçildi. Her biri PR gövdesine de yazılır.
     sorulacaklar"ın açıklaması ve soruları, uyarı kutusu yok; sayfa boyu 21.858 → 12.090 px telefonda). Katlanamayan iki
     yeni uyarı 60 px'i aşar: gecikmiş vergi satırı 84 px (başlık + ikinci satır + Ayrıntı) ve kâr vergisi kartının
     "Eksik belgeler var" uyarısı 124 / 104 px (dar sütunda başlık, eylem, iki satırlık `text`). Metinler değişmedi.
+
+**Bölüm 3 incelemesi (30 Eki 2026)**
+
+36. **Kâr vergisi kartının "Eksik belgeler var" uyarısı yalnız gider belgesi eksikken** (§7.6 koşulu
+    `state === "taslak" && !filing && subline`). Çeyrek gider belgesinden başka sebeplerle de eksik bilgide (gelir mali
+    belgeden girilmedi, kafe dışı işler konuşulmadı, faydalı ömür): uyarı bütün belgeler seçiliyken de "0 ₺ gider henüz
+    hesaba girmedi (0 kalem)" yazıyordu. Koşul `view.ts`'e eklenen `geciciCard.missingDocs` (belgesi seçilmemiş gider ya
+    da demirbaş adayı fatura; yalnız ekleme, veri aynı) ve muhasebecinin rakamı yok; alt satır yalnız sıfır olmayan
+    parçalardan. Öteki sebepler bölümün "Eksik bilgi" rozetinde. `tests/vergi-sade.test.ts` tutar.
+37. **Kartın başlığı peşinatın yılı kartınkinden ayrılınca yılsız** (§7.6 "Şirketin kâr vergisi ({kv.year})"). Kart
+    yılı `defaultYear()` (yılın kurumlar vergisi girilene ya da 30 Nisan geçene kadar geçen yıl), peşinat bölümü bugünden
+    sıradaki çeyrek: 17 Şubat–30 Nisan arasında ve `?yil=` başka yıl seçince başlık "(2026)" altında 2027/1 peşinatını
+    gösteriyordu. O zaman başlık "Şirketin kâr vergisi"; iki bölüm başlığı zaten yılını taşır (`profitTaxTitle`).
+    Takvimin "Sonra"sındaki "tahmin kartta" da yalnız kartın yılındaki kurumlar vergisinde (`laterOnCard`); ötekinde
+    "Tutarı bilinmiyor".
+38. **Kural tablosu aynı sayfadaki bağlantının tıklamasıyla da açılır** (Ek C 9'un tuzağı): bayat kural uyarısı dört
+    sekmede, Muhasebeci'de de çizilir; orada Next'in bağlantısı `hashchange` göndermez. `RulesDetails`
+    `a[href$="#kurallar"]` tıklamasını dinler.
+39. **Sözlüğün ⓘ tanımları henüz çizilmiyor** (§7.11 "tanım ⓘ'de"). `TERMS` başvuru tablosu olarak kalır; ekrandaki
+    sözler `calendarTitle`, `PLAIN_LABELS`, `badgeLabel` / `badgeNote` ve `plainBadge`'den. "Eksik bilgi: …"
+    sebepleri (`stateReasons`, ör. "Sınıflandırılmamış gider var") §7.6 ve §7.7 gereği aynen; takvimin "Tahakkuk
+    fişindeki tutarı girin"i de resmî sözle. Nakit planı KDV kartı sözlüğü içe aktarmıyor (`docs/VERGI.md` §3.6
+    düzeltildi).
+40. **Gelir-gider'in satış kaynağı satırı yılın aylarından** (§10 tek ay der): yıl tablosu iki kasalı yılda yalnız bu
+    ayın (geçmiş yılda Aralık'ın) kaynağını yazıyordu. Satır yılın bu aya kadarki aylarından (`periodSalesSource`):
+    hepsi aynı türse o tür, karışıksa "Satışlar: ModPOS / LafPOS" (tablonun `periodKasa` etiketiyle aynı). Kaynağı
+    sormayan metinler kaynaktan bağımsız sözle: Genel bakış'ın maliyet göstergesi ("Satış verisi gelince …") ve kâr ⓘ'si
+    ("Ürün satışları gelince …"), Hammaddeler ve Ayarlar'ın su metni ("satışlar gelince hesaplanır …"), Tutarlılık'ın
+    boş durumu ("Bu ay için satış verisi yok"). `insights.ts` §10'un listesinde, dokunulmadı.
+41. **"Ödendi" → "Ödedim" (K18) iki talimatta daha**: Ödemeler'in liste altı notu ve sabah e-postasının kapanış notu
+    ("Ödediklerinizi panelde “Ödedim” ile işaretleyin"). Sabah e-postasının dört şablon özetinden yalnız hatırlatma
+    satırlısı değişti (eski notla dördü eskisiyle aynıydı; Ek C 5'in yolu). Bildirim, kaydırma ve durum rozeti "Ödendi"
+    kalır; Son ödenenler'in açıklaması cari ödemelerini de sayar, "Ödendi" kalır.
+42. **Genel bakış'ın KPI rakamları aynı satırdan başlar** (inceleme): "Zarar etmemek için günlük satış (başabaş)"
+    telefonda 3, 640-767 px'te ve dört sütunda 2 satır; komşularının rakamı 20-40 px yukarıda kalıyordu. Izgara o
+    satırdaki etiketlere ortak en az yükseklik verir (`KPI_LABELS`, `Stat`'ın `data-stat-label`'ı); iki sütunda yalnız
+    ikinci satır, üst satır uzamaz. 360-2000 px arası ölçüldü; 340 px'te etiket 4 satır (dar telefon dışı).

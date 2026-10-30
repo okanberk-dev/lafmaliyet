@@ -139,7 +139,8 @@ export function Stat({
         </span>
       ) : null}
       <div className="flex flex-col gap-1">
-        <p className="flex min-w-0 items-start gap-1.5 text-sm leading-5 text-pretty text-ink-mute">
+        {/* data-stat-label: ızgara etiketlere ortak en az yükseklik verebilsin (Genel bakış KPI_LABELS) */}
+        <p data-stat-label="" className="flex min-w-0 items-start gap-1.5 text-sm leading-5 text-pretty text-ink-mute">
           <span className="min-w-0">{label}</span>
           {info ? <InfoTip text={info} tone={infoTone} className="mt-0.5" /> : null}
         </p>

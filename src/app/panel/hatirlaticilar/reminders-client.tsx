@@ -528,8 +528,8 @@ export function RemindersClient({
                   );
                 })}
                 <p className="px-1 text-xs leading-5 text-ink-mute">
-                  Gecikenler ve önümüzdeki {UPCOMING_HORIZON_DAYS} gün; daha ilerisi takvimde. “Ödendi” bildirimden hemen, sonra da aşağıdaki “Son ödenenler”den geri alınabilir
-                  <span className="sm:hidden">; kartı sağa kaydırmak da “Ödendi” demektir</span>.
+                  Gecikenler ve önümüzdeki {UPCOMING_HORIZON_DAYS} gün; daha ilerisi takvimde. “Ödedim” bildirimden hemen, sonra da aşağıdaki “Son ödenenler”den geri alınabilir
+                  <span className="sm:hidden">; kartı sağa kaydırmak da “Ödedim” demektir</span>.
                 </p>
               </div>
             )}

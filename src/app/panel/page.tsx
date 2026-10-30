@@ -420,7 +420,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         <DashboardChecklist month={month} state={d.monthState} tasks={tasks} />
 
         {/* 1. Metrikler (AkmanOS statistic-cards: rakam sayılır, yanında önceki aya göre rozet) */}
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className={cn("grid grid-cols-2 gap-3 xl:grid-cols-4", KPI_LABELS)}>
           {t ? (
             <>
               <StatBreakdown {...withComparison(netSalesBreakdown(model, d), { month: prevMonth, value: pt?.netSales, growth: g.netSales })}>
@@ -724,7 +724,7 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
           compact
           icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
           label="Kâr / zarar (faturaya göre)"
-          info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satış raporu yüklenince reçeteye göre kâr da hesaplanır."
+          info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satışları gelince reçeteye göre kâr da hesaplanır."
           value={<CountUp value={has ? d.actual.profit : null} />}
           tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
           sub={
@@ -804,7 +804,7 @@ function CostCard({
           {recipeRatio !== null ? (
             <Gauge value={recipeRatio} target={target} display={pct(recipeRatio)} label="Reçeteye göre maliyet oranı" tone={gaugeTone} />
           ) : (
-            <p className="py-6 text-center text-sm text-ink-mute">Satış raporu yüklenince bu ayın maliyet oranı burada görünür.</p>
+            <p className="py-6 text-center text-sm text-ink-mute">Satış verisi gelince bu ayın maliyet oranı burada görünür.</p>
           )}
           <div className="mt-4 grid grid-cols-2 divide-x divide-line border-t border-line pt-3 text-center">
             <div>
@@ -1159,6 +1159,15 @@ function ProductRank({
 }
 
 /** Kaç gider kalemi tek tek listelensin; kalanı tek satırda toplanır */
+/**
+ * KPI ızgarasında rakamlar aynı satırdan başlar: en uzun etiket ("Zarar etmemek için günlük satış (başabaş)") telefonda
+ * 3 satır (360-430 px), 640-767 px'te ve dört sütunda (1280-1680 px) 2 satır, aradaki iki sütunda tek satır (30 Eki
+ * ölçümü); o satırdaki etiketlere aynı en az yükseklik. İki sütunda yalnız ikinci satır (başabaş ve komşusu): üst satır
+ * uzamaz
+ */
+const KPI_LABELS =
+  "max-sm:[&>:nth-child(n+3)_[data-stat-label]]:min-h-[3lh] sm:max-md:[&>:nth-child(n+3)_[data-stat-label]]:min-h-[2lh] xl:[&_[data-stat-label]]:min-h-[2lh]";
+
 const TOP_EXPENSES = 6;
 
 function ExpensesTab({ month, items, total, expenses }: { month: string; items: { name: string; amount: number }[]; total: number; expenses: number }) {

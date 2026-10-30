@@ -2,10 +2,11 @@ import { monthName, parseQuarter } from "./calendar";
 import type { TaxCalendarRow } from "./view";
 
 /*
- * Vergi ekranlarının sözlüğü (docs/planlar/ux-sade.md §7.11, K17): sade söz önce, resmî terim parantezde; tanım ⓘ'de.
- * Yalnız çizim: veri (`titleOfKind`, `row.badge`, kartların `rows` etiketleri) ve Excel dışa aktarımı resmî adla kalır,
- * muhasebeciye o gider. Yalnız yöneticinin vergi ekranları ve Nakit planı KDV kartı içe aktarır; personel dosyaları
- * değil. Saf.
+ * Vergi ekranlarının sözlüğü (docs/planlar/ux-sade.md §7.11, K17): sade söz önce, resmî terim parantezde. Ekrandaki
+ * sözler `calendarTitle`, `PLAIN_LABELS`, `badgeLabel` / `badgeNote` ve `plainBadge`'den; `TERMS` başvuru tablosudur,
+ * tanımları ⓘ'de henüz çizilmiyor (ux-sade Ek C). Yalnız çizim: veri (`titleOfKind`, `row.badge`, kartların `rows`
+ * etiketleri) ve Excel dışa aktarımı resmî adla kalır, muhasebeciye o gider. Yalnız yöneticinin vergi ekranları içe
+ * aktarır (Nakit planı KDV kartı değil); personel dosyaları da değil. Saf.
  */
 
 export interface Term {

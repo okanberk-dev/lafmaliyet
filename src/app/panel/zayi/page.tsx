@@ -41,7 +41,7 @@ function WasteHeader({ role }: { role: "admin" | "staff" }) {
       path="/panel/zayi"
       role={role}
       // İki rolde tek cümle (docs/planlar/ux-sade.md §8): yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. LafPOS gününde
-      // ürün ikramının LafPOS'ta işaretlendiğini listenin notu söyler (LAFPOS_IKRAM_TEXT.zayiNote)
+      // ürün ikramının LafPOS'ta işaretlendiğini İkram seçilince formun notu söyler (productIkramNote, lafpos.note)
       description="Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin."
       tabs={<SectionTabs section="stok" current="/panel/zayi" role={role} />}
     />

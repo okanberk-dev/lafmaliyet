@@ -109,7 +109,7 @@ aynı. Veri (`titleOfKind`) ve Excel resmî adla kalır.
   (`row.unknownWithholding`); açık gövdede "Kesintiyi seç" → Vergi kârı `#siniflandir`.
 - Döküm etiketleri sade (`plainLabel`): "Bu ayın KDV'si (tahmin)", "Beyanname ücreti (damga vergisi)".
 - "Sonra" kutusu takvimin altında tek satır: "Sonra: {ad} · {gün}"; kurumlar vergisinde "tahmin kartta" →
-  `#kar-vergisi`.
+  `#kar-vergisi` (yalnız kartın yılıysa; §3.5).
 - Çapalar: her türün ilk satırı `#kdv`, `#sgk`, `#muhtasar`.
 
 ### 3.4 Ödemeler'de günü geçmiş vergi satırı (K12)
@@ -125,15 +125,24 @@ günden erken. Kırmızı ve "Ödedim" düğmesi Ödemeler'de; ödenince satır 
 ### 3.5 Şirketin kâr vergisi kartı (K14)
 
 Geçici vergi ve kurumlar vergisi tek kartta (`ProfitTaxCard`, `#kar-vergisi`): başlık "Şirketin kâr vergisi (2026)",
-iki cümle açıklama (3 ayda bir peşin, Nisan'da yıl kapanır; rakamlar yalnız kafenin payı). Geçici vergi taslaksa ve
-muhasebecinin rakamı yoksa kartın başında turuncu "Eksik belgeler var: rakam yüksek çıkabilir" (ikinci satır: henüz
-hesaba girmeyen gider ve demirbaş adayı; eylem "Belgesini seç" → `#siniflandir`). İki bölüm: **Peşinat** (geçici
-vergi, `#gecici`) ve **Yıl sonu** (kurumlar vergisi); her birinde rozet, büyük rakam, döküm (sade etiketler), notlar,
-"Muhasebecinin rakamı", "Nasıl hesaplandı". Veri (`view.geciciCard`, `view.kvCard`) aynı.
+iki cümle açıklama (3 ayda bir peşin, Nisan'da yıl kapanır; rakamlar yalnız kafenin payı). Peşinatın çeyreği kartın
+yılında değilse (Ocak–Nisan'da kart geçen yılı kapatırken peşinat bu yılın çeyreği; `?yil=` başka bir yıl) başlık
+yılsız "Şirketin kâr vergisi", iki bölüm kendi yılını taşır (`profitTaxTitle`). Geçici vergide belgesi seçilmemiş gider
+ya da demirbaş adayı fatura varsa (`geciciCard.missingDocs`) ve muhasebecinin rakamı yoksa kartın başında turuncu "Eksik
+belgeler var: rakam yüksek çıkabilir" (ikinci satır: henüz hesaba girmeyen gider ve demirbaş adayı, yalnız sıfır
+olmayanlar; eylem "Belgesini seç" → `#siniflandir`). Eksik bilginin öteki sebepleri (gelir belgesi, kafe dışı işler)
+uyarı değil, bölümün "Eksik bilgi" rozeti. İki bölüm: **Peşinat** (geçici vergi, `#gecici`): rozet, büyük rakam, döküm
+(sade etiketler), notlar, "Muhasebecinin rakamı", "Vergi kârını aç", "Nasıl hesaplandı"; **Yıl sonu** (kurumlar
+vergisi): rozet, alt başlık, döküm ("Ödenecek" satırı), notlar, "Muhasebecinin rakamı", "Nasıl hesaplandı". Veri
+(`view.geciciCard`, `view.kvCard`) aynı; `missingDocs` yalnız eklendi. Takvimin "Sonra" satırındaki kurumlar vergisi
+"tahmin kartta" bağlantısını yalnız kartın yılıysa taşır (`laterOnCard`); değilse "Tutarı bilinmiyor".
 
 ### 3.6 Sözlük (`src/lib/tax/glossary.ts`, K17)
 
-Ekranda ilk geçtiği yerde "sade söz (resmî terim)", sonra yalnız sade söz; tanım ⓘ'de. Tek kaynak `TERMS`:
+Ekranda ilk geçtiği yerde "sade söz (resmî terim)", sonra yalnız sade söz. Ekrandaki sözleri `calendarTitle` (takvim
+satırının adı), `PLAIN_LABELS` / `plainLabel` (döküm etiketleri), `badgeLabel` / `badgeNote` (rozet ve alt satır) ve
+`plainBadge` (Vergi kârı'nın kaynak rozeti) verir. `TERMS` (resmî terim → { ekranda, tanım }) başvuru tablosudur; ⓘ
+tanımları henüz çizilmiyor (`docs/planlar/ux-sade.md` Ek C). Tablo:
 Hesaplanan KDV → "Satışlarda topladığınız KDV" · İndirilecek KDV → "Alışlarda ödediğiniz KDV" · Devreden KDV →
 "Önceki aylardan kalan KDV (devreden)" · Muhtasar → "Maaş vergileri ve stopaj (muhtasar)" · Stopaj → "Vergi kesintisi
 (stopaj)" · Tahakkuk fişi → "Ödeme belgesi (tahakkuk fişi)" · Beyanname damgası → "Beyanname ücreti (damga vergisi)" ·
@@ -144,8 +153,10 @@ beri kâr (kurum kazancı)" · Amortisman → "Demirbaş payı (amortisman)" · 
 ödediğiniz kısmı (tevkifat)" · Sınıflandırılmamış gider → "Belgesi seçilmemiş gider" · Yönetim verisi (ModPOS) →
 "Kasa programının rakamı (ModPOS)" (gri kaynak rozeti, uyarı değil) · Taslak → "Eksik bilgi". Yardımcılar
 `calendarTitle`, `plainLabel`, `badgeLabel`, `badgeNote`, `plainBadge`. Yalnız çizimdir: veri, Excel dışa aktarımı ve
-kayıtlar resmî adla kalır (muhasebeciye o gider). Yalnız yöneticinin vergi ekranları ve Nakit planı KDV kartı içe
-aktarır; personel dosyaları aktarmaz (`tests/satis-kaynagi.test.ts`). Kanun kısaltmaları (VUK, KVK, GVK …) yalnız
+kayıtlar resmî adla kalır (muhasebeciye o gider). "Eksik bilgi: …" sebepleri (`stateReasons`, ör. "Sınıflandırılmamış
+gider var", "Faydalı ömrü girilmemiş varlık var") resmî sözle kalır (`docs/planlar/ux-sade.md` §7.6, §7.7 aynen ister);
+takvimin "Tahakkuk fişindeki tutarı girin"i (`ASK_TAHAKKUK`) de henüz sözlükten geçmiyor. Yalnız yöneticinin vergi ekranları içe aktarır (takvim, kâr vergisi kartı, Vergi kârı tablosu); Nakit planı KDV
+kartı aktarmaz, personel dosyaları da aktarmaz (`tests/satis-kaynagi.test.ts`). Kanun kısaltmaları (VUK, KVK, GVK …) yalnız
 "Kullanılan kurallar ve kaynaklar" açılırında.
 
 ### 3.7 Diğer kurallar

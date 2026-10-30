@@ -16,7 +16,7 @@ import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/lafpos/kasa";
-import { salesSourceOf } from "@/lib/sales-source";
+import { periodSalesSource } from "@/lib/sales-source";
 import { salesMonthsToPull } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireAdmin } from "@/server/auth/dal";
@@ -97,6 +97,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // ayların sütunlarını yine gösterir
   const indexes = (keep: (m: string) => boolean) => months.flatMap((m, i) => (keep(m) ? [i] : []));
   const throughIdx = indexes((m) => m <= current);
+  // Başlığın satış kaynağı satırı yılın bu aya kadarki aylarından (yıl tablosu; karışık yılda "ModPOS / LafPOS"). Henüz
+  // başlamamış yılda yılın ilk ayı
+  const sourceMonths = throughIdx.length ? throughIdx.map((i) => months[i]) : months.slice(0, 1);
   const yt = yearTotals(model, year);
   const countedIdx = indexes((m) => yt.counted.includes(m));
   // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
@@ -251,7 +254,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         title="Gelir-gider"
         description={DESCRIPTION}
         more={MORE}
-        meta={<SalesSourceLine source={salesSourceOf(year === thisYear ? current : `${year}-12`, model.settings.lafposGecisGunu, model.ds.lafposSales)} />}
+        meta={<SalesSourceLine source={periodSalesSource(sourceMonths, model.settings.lafposGecisGunu, model.ds.lafposSales)} />}
         actions={
           // Tek yıl varsa seçim göstermeyiz (tek seçenekli sekme düğme gibi durur, bir şey yapmaz)
           years.length < 2 ? null : years.length <= MAX_YEAR_TABS ? (

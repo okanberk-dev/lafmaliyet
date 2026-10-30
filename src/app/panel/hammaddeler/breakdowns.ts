@@ -210,7 +210,7 @@ export function waterBreakdown(
       const month = water.latestBillMonth!;
       const m = monthLabel(month);
       return {
-        description: `${m} su faturası girildi ama o ayın ürün satış listesi yok; litre hesaplanamadığı için su ve buz şimdilik 0 ₺ sayılıyor. Satış listesini yükleyin ya da birim maliyeti Ayarlar'da elle yazın.`,
+        description: `${m} su faturası girildi ama o ayın ürün satış listesi yok; litre hesaplanamadığı için su ve buz şimdilik 0 ₺ sayılıyor. Satışlar gelince hesaplanır; beklemeden birim maliyeti Ayarlar'da elle yazabilirsiniz.`,
         groups: [
           {
             key: "durum",

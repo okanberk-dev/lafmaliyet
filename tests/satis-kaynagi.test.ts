@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import type { LafposSalesMonth } from "../src/lib/calc/types";
-import { salesSourceOf } from "../src/lib/sales-source";
+import { periodSalesSource, salesSourceOf } from "../src/lib/sales-source";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -72,12 +72,36 @@ test("geçiş günü yokken her ay ModPOS raporu; geçişten önceki ay da; bağ
   assert.equal(salesSourceOf("2026-11", "2026-11-10", { months: [{ ...gecis, from: null }] }).kind, "modpos-rapor");
 });
 
+test("birden çok ay (Gelir-gider'in yılı): hepsi aynı türdense sonuncusu, karışıksa \"Satışlar: ModPOS / LafPOS\"", () => {
+  const year = (y: number) => Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+  // Geçiş günü yok: bütün ay ModPOS raporu
+  assert.equal(periodSalesSource(year(2026), null, undefined).line, "Satışlar: ModPOS raporu (ay sonunda elle yüklenir)");
+  // Geçiş 10 Kasım 2026: 2026 yılı Ocak–Ekim ModPOS, Kasım geçiş, Aralık LafPOS → karışık. Eski satır yalnız Aralık'ın
+  // ("LafPOS") ya da bu ayın kaynağını yazıyordu
+  const mixed = periodSalesSource(year(2026), "2026-11-10", { months: [gecis] });
+  assert.equal(mixed.line, "Satışlar: ModPOS / LafPOS");
+  assert.equal(salesSourceOf("2026-12", "2026-11-10", { months: [gecis] }).line, "Satışlar: LafPOS (her gece kendiliğinden)");
+  // Bu aya kadarki aylar (Ekim 2026): hepsi ModPOS
+  assert.equal(periodSalesSource(year(2026).slice(0, 10), "2026-11-10", { months: [gecis] }).kind, "modpos-rapor");
+  // Ocak–Kasım: ModPOS + geçiş ayı → karışık
+  assert.equal(periodSalesSource(year(2026).slice(0, 11), "2026-11-10", { months: [gecis] }).line, "Satışlar: ModPOS / LafPOS");
+  // Bütün yıl LafPOS
+  assert.equal(periodSalesSource(year(2027), "2026-11-10", { months: [] }).line, "Satışlar: LafPOS (her gece kendiliğinden)");
+  assert.throws(() => periodSalesSource([], null, undefined));
+});
+
 test("bağlananlar: altı yönetici ekranının başlığında satır; yükleyin metinleri ve Satış raporu işi kaynağa bağlı", () => {
   const META = ["src/app/panel/page.tsx", "src/app/panel/satislar/page.tsx", "src/app/panel/gelir-gider/page.tsx", "src/app/panel/urunler/page.tsx", "src/app/panel/tutarlilik/page.tsx", "src/app/panel/analiz/page.tsx"];
   for (const f of META) {
     const src = read(f);
     assert.match(src, /meta=\{<SalesSourceLine source=\{/, f);
-    assert.match(src, /salesSourceOf\(/, f);
+    assert.match(src, /salesSourceOf\(|periodSalesSource\(/, f);
+  }
+  // Gelir-gider bir yılın tablosu: satır yılın bu aya kadarki aylarından (yalnız bir ayın kaynağı değil)
+  assert.match(read("src/app/panel/gelir-gider/page.tsx"), /periodSalesSource\(sourceMonths, model\.settings\.lafposGecisGunu, model\.ds\.lafposSales\)/);
+  // Kaynağı sormayan metinler "yükle" demez: satış verisi gelince (Genel bakış, Hammaddeler ve Ayarlar'ın su metni, Tutarlılık)
+  for (const f of ["src/app/panel/page.tsx", "src/app/panel/hammaddeler/breakdowns.ts", "src/app/panel/ayarlar/water-text.ts", "src/app/panel/tutarlilik/page.tsx"]) {
+    assert.doesNotMatch(read(f), /[sS]atış raporu yüklenince|[sS]atış listesini yükleyin|Bu ay(?: için)? satış raporu yok/, f);
   }
   // "Satış verisi yok, yükleyin" diyen metinler `missing`'i kullanır; düğme yalnız elle yüklenen ayda "yükle"
   for (const f of ["src/app/panel/analiz/page.tsx", "src/app/panel/urunler/fiyatlar/bulk-editor.tsx", "src/app/panel/urunler/price-impact-panel.tsx", "src/app/panel/tahmin/forecast-desserts.tsx", "src/app/panel/tutarlilik/page.tsx", "src/app/panel/tutarlilik/consistency-client.tsx"]) {

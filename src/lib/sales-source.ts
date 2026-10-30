@@ -1,5 +1,5 @@
 import type { LafposSalesMonth } from "@/lib/calc/types";
-import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { periodKasa, salesMonthKasa } from "@/lib/lafpos/kasa";
 
 /*
  * Ayın ürün satışlarının kaynağı, tek yerden (docs/planlar/ux-sade.md §10, K20): ekranların hiçbiri "satış = ay sonunda
@@ -66,4 +66,21 @@ export function salesSourceOf(
     missing: "Satışlar'a ürün satış raporunu yükleyin",
     manual: true,
   };
+}
+
+/**
+ * Birden çok ayın satış kaynağı (Gelir-gider'in yıl tablosu): ayların hepsi aynı türdense sonuncusu, karışıksa (geçiş
+ * ayı ya da iki kasalı yıl) sonuncusu "Satışlar: ModPOS / LafPOS" satırıyla (`periodKasa`, tablonun etiketleriyle aynı)
+ */
+export function periodSalesSource(
+  months: readonly string[],
+  switchDay: string | null,
+  lafposSales: { months: readonly LafposSalesMonth[] } | undefined,
+  connectedMonths?: ReadonlySet<string>,
+): SalesSource {
+  const sources = months.map((m) => salesSourceOf(m, switchDay, lafposSales, connectedMonths));
+  const last = sources.at(-1);
+  if (!last) throw new Error("periodSalesSource: ay yok");
+  if (sources.every((s) => s.kind === last.kind)) return last;
+  return { ...last, line: `Satışlar: ${periodKasa(months, switchDay).both}` };
 }
