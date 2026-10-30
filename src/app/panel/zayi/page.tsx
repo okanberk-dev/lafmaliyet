@@ -13,13 +13,13 @@ import { Notice, NoticeLink } from "@/components/ui/notice";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
 import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
-import { isLafposDay, monthSource } from "@/lib/lafpos/switch";
+import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { lafposSwitchDayOf, loadDayLafposIkram } from "@/server/data/lafpos-ikram";
+import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
 import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
 import { myWasteRequests, pendingWasteSummary, wasteDayMarks } from "@/server/data/waste-requests";
 import { getDb } from "@/server/db";
@@ -34,17 +34,15 @@ export const metadata: Metadata = { title: "Zayi & ikram" };
  * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
  * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
  */
-function WasteHeader({ role, lafpos = false }: { role: "admin" | "staff"; lafpos?: boolean }) {
+function WasteHeader({ role }: { role: "admin" | "staff" }) {
   return (
     <PageHeader
       title="Zayi & ikram"
       path="/panel/zayi"
       role={role}
-      description={
-        lafpos
-          ? "Atılan, bozulan, dökülen (zayi) ürün ve malzemeyi ve hammadde ikramını (ör. personele süt) gün içinde girin; ürün ikramı LafPOS'ta işaretlenir. Tutarlılık ekranı bunları satıştan ayrı gösterir; günün özeti kasa raporuna geçer."
-          : "Atılan, bozulan, dökülen (zayi) ve ödenmeden verilen (ikram: müşteriye, personele, tadım) ürün ve malzemeyi gün içinde girin. Tutarlılık ekranı bunları satıştan ayrı gösterir; günün özeti kasa raporuna geçer."
-      }
+      // İki rolde tek cümle (docs/planlar/ux-sade.md §8): "Tutarlılık ekranı" sözü yok, personel açamaz. LafPOS gününde
+      // ürün ikramının LafPOS'ta işaretlendiğini listenin notu söyler (LAFPOS_IKRAM_TEXT.zayiNote)
+      description="Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin."
       tabs={<SectionTabs section="stok" current="/panel/zayi" role={role} />}
     />
   );
@@ -73,9 +71,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
-  // LafPOS kullanılıyorsa (geçiş günü seçili ve bugün ondan önce değil) ürün ikramı kasada işaretlenir: başlık söyler
-  const switchDay = await lafposSwitchDayOf(getDb());
-  const header = <WasteHeader role={user.role} lafpos={isLafposDay(today, switchDay)} />;
+  const header = <WasteHeader role={user.role} />;
   const gun = pick(sp.gun);
   const date = gun && /^\d{4}-\d{2}-\d{2}$/.test(gun) && gun <= today ? gun : today;
   const yesterday = addDays(today, -1);

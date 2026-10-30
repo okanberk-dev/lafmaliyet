@@ -342,7 +342,7 @@ export function RemindersClient({
       <PageHeader
         path="/panel/hatirlaticilar"
         title="Ödemeler"
-        description="Kira, vergi, SGK, maaş ve fatura ödemeleri tek yerde. Zamanı gelenler her sabah e-postayla hatırlatılır."
+        description="Kira, vergi, SGK, maaş ve fatura ödemeleri; zamanı gelenler sabah e-postayla gelir."
         actions={
           <Button onClick={() => add()} className="max-lg:hidden">
             <Plus size={16} /> Ödeme ekle

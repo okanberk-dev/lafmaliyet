@@ -26,6 +26,7 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, dayTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import type { MonthKasa } from "@/lib/lafpos/kasa";
+import type { SalesSource } from "@/lib/sales-source";
 import { cn } from "@/lib/utils";
 import { HOLDS_HREF } from "@/lib/price-hold";
 import { deleteFinding, saveFinding, setFindingResolved, setNoPurchase, setPurchaseQty } from "@/server/actions/consistency";
@@ -475,11 +476,14 @@ export function ConsistencyTable({
   ingredients,
   fire,
   kasa = "ModPOS",
+  salesSource,
 }: {
   month: string;
   monthLabel: string;
   /** Ayın kasası (src/lib/lafpos/kasa.ts monthKasa: "ModPOS", "LafPOS", geçiş ayında "Kasa") */
   kasa?: MonthKasa["short"];
+  /** Ayın satış kaynağı (src/lib/sales-source.ts): boş listenin metni ve düğmesi elle yüklenen ayda "yükle" der */
+  salesSource: Pick<SalesSource, "missing" | "manual">;
   rows: Row[];
   totalDiff: number;
   totalVariance: number;
@@ -923,11 +927,11 @@ export function ConsistencyTable({
           <EmptyState
             icon={<Scale />}
             title="Bu ay karşılaştırılacak malzeme yok"
-            description="Satış raporu yüklendiğinde ya da alım girildiğinde malzemeler burada listelenir."
+            description={`Satış verisi geldiğinde ya da alım girildiğinde malzemeler burada listelenir. ${salesSource.missing}.`}
             action={
               <>
                 <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
-                  Satış raporu yükle
+                  {salesSource.manual ? "Satış raporu yükle" : "Satışlar'a git"}
                 </ButtonLink>
                 <Button onClick={() => setDialog("new")}>
                   <Plus size={16} /> Alım ekle

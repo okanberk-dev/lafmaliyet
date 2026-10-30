@@ -9,8 +9,11 @@ import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { qualityBanner, qualityTitle } from "@/lib/forecast/text";
 import { addDays } from "@/lib/reminders";
+import { salesSourceOf } from "@/lib/sales-source";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/forecast";
 import { requireAdmin } from "@/server/auth/dal";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
+import { getDb } from "@/server/db";
 import { loadForecastPage, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS, specialList } from "@/server/forecast/load";
 
 import { ForecastAccuracy } from "./forecast-accuracy";
@@ -23,11 +26,13 @@ import { SpecialDayProvider, SpecialDaysCard } from "./special-days";
 
 export const metadata: Metadata = { title: "Satış tahmini" };
 
-const DESCRIPTION =
+const DESCRIPTION = "Önümüzdeki 7 günün beklenen satışı, kaç kişi çalışmalı, kaç tatlı hazırlanmalı.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Önümüzdeki 7 günde beklenen satış (Z toplamı), kaç kişinin çalışması ve kaç tatlı hazırlanması gerektiği. Kasa raporları, takvim (bayram, resmî tatil, Ramazan, okul tatili), hava durumu ve girdiğiniz özel günlerden hesaplanır.";
 
 function Header({ description = DESCRIPTION, actions }: { description?: string; actions?: ReactNode }) {
-  return <PageHeader path="/panel/tahmin" title="Satış tahmini" description={description} actions={actions} />;
+  return <PageHeader path="/panel/tahmin" title="Satış tahmini" description={description} more={MORE} actions={actions} />;
 }
 
 /** Kafe › Satış tahmini (docs/SATIS-TAHMINI.md); yalnız yönetici, proxy personeli buraya sokmaz */
@@ -50,6 +55,8 @@ async function ForecastContent() {
   await requireAdmin();
   const data = await loadForecastPage();
   const f = data.forecast;
+  // Satış verisi yokken ne yapılacağı bugünün ayının kaynağından (docs/planlar/ux-sade.md §10); tek ayar satırı
+  const salesMissing = salesSourceOf(data.today.slice(0, 7), await lafposSwitchDayOf(getDb()).catch(() => null), undefined).missing;
   const banner = qualityBanner(f);
   const bannerTitle = qualityTitle(f);
   const { upcoming, past } = specialList(data);
@@ -95,7 +102,7 @@ async function ForecastContent() {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
           <div className="min-w-0 space-y-4">
             <ForecastDays data={data} />
-            <ForecastDesserts data={data} />
+            <ForecastDesserts data={data} salesMissing={salesMissing} />
           </div>
           <div className="min-w-0 space-y-4">
             <ForecastAccuracy acc={data.accuracy} />

@@ -314,7 +314,8 @@ export function ParasutClient({
       <PageHeader
         path="/panel/parasut"
         title="Paraşüt entegrasyonu"
-        description="Paraşüt'e gelen e-faturalar (içeri alınmasa da) ve gider faturaları her sabah panele alınır: tutar, KDV, kalemler ve e-fatura PDF'i. Yeni fatura “ödenmedi” gelir; ödendiğini Tedarikçiler ya da Faturalar ekranında siz işaretlersiniz."
+        description="Paraşüt'teki faturalar her sabah gelir; fatura kalemlerini hammaddeye bağlayın."
+        more="Paraşüt'e gelen e-faturalar (içeri alınmasa da) ve gider faturaları her sabah panele alınır: tutar, KDV, kalemler ve e-fatura PDF'i. Yeni fatura “ödenmedi” gelir; ödendiğini Tedarikçiler ya da Faturalar ekranında siz işaretlersiniz."
         actions={
           <>
             <Button

@@ -20,7 +20,8 @@ export default function UsersPage() {
       <PageHeader
         title="Kullanıcılar & roller"
         path="/panel/kullanicilar"
-        description="Panele kimlerin gireceğini ve neleri göreceğini belirleyin. Kullanıcı ekleyip parolasını siz verebilir ya da davet bağlantısı gönderebilirsiniz; iki adımlı doğrulamayı her kullanıcı kendisi açar."
+        description="Panele kim girer, neyi görür: kullanıcı ekleyin ya da davet gönderin."
+        more="Panele kimlerin gireceğini ve neleri göreceğini belirleyin. Kullanıcı ekleyip parolasını siz verebilir ya da davet bağlantısı gönderebilirsiniz; iki adımlı doğrulamayı her kullanıcı kendisi açar."
       />
       <Suspense
         fallback={

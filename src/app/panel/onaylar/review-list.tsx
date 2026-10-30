@@ -13,7 +13,6 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
-import { EmptyState } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -268,13 +267,8 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
           )}
         </section>
       ) : (
-        <Card>
-          <EmptyState
-            icon={<ClipboardCheck />}
-            title="Onay bekleyen reçete önerisi yok"
-            description="Personel reçete defterinde kalemle değişiklik ya da “Yeni ürün öner” ile ürün önerince burada görünür; zilde de haber verilir."
-          />
-        </Card>
+        // Boş durum tek satır (docs/planlar/ux-sade.md §9 #26): 260 px'lik kutu yerine
+        <p className="text-[13px] text-ink-mute">Onay bekleyen reçete önerisi yok</p>
       )}
 
       {recent.length ? (

@@ -17,7 +17,9 @@ import { MonthlyExpenses, type CategoryRow, type EntryRow, type FixedCandidate, 
 
 export const metadata: Metadata = { title: "Aylık harcamalar" };
 
-const DESCRIPTION =
+const DESCRIPTION = "Her ay değişen ve faturasız giderler: reklam, influencer, nakit alım, bakım.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Her ay farklı olan (reklam, influencer) ve fatura dışı (nakit alım, bakım) giderler. Girdiğiniz tutar o ayın gelir-giderine ve Genel bakış'taki “Para nereye gitti”ye kendiliğinden yansır.";
 
 function Header({ actions }: { actions?: React.ReactNode }) {
@@ -26,6 +28,7 @@ function Header({ actions }: { actions?: React.ReactNode }) {
       path="/panel/harcamalar"
       title="Aylık harcamalar"
       description={DESCRIPTION}
+      more={MORE}
       tabs={<SectionTabs section="giderler" current="/panel/harcamalar" role="admin" />}
       actions={actions}
     />

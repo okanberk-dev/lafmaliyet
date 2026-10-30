@@ -11,6 +11,8 @@ import { latestSalesMonth } from "@/lib/calc/insights";
 import { salesBasis } from "@/lib/calc/price-loss";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import type { BulkRow } from "@/lib/prices/bulk";
+import { todayTR } from "@/lib/reminders";
+import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
@@ -29,9 +31,11 @@ export const metadata: Metadata = { title: "Fiyatlar" };
 export const maxDuration = 60;
 
 const TITLE = "Fiyatlar";
-const DESCRIPTION = "Menü fiyatlarını toplu değiştirin, kasada (ModPOS) elle değiştirdiklerinizi işaretleyin; her fiyat değişikliği geçmişte kalır.";
+const DESCRIPTION = "Menü fiyatlarını toplu değiştirin; kasada değiştirdiklerinizi işaretleyin.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE = "Menü fiyatlarını toplu değiştirin, kasada (ModPOS) elle değiştirdiklerinizi işaretleyin; her fiyat değişikliği geçmişte kalır.";
 /** LafPOS'a geçiş gününden itibaren (denetim E-39): siteye bağlı ürünün fiyatını LafPOS siteden alır */
-const DESCRIPTION_LAFPOS =
+const MORE_LAFPOS =
   "Menü fiyatlarını toplu değiştirin; LafPOS siteye bağlı ürünlerin fiyatını siteden alır, bağlı olmayanlar Kasaya işle'de. Her fiyat değişikliği geçmişte kalır.";
 
 function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }) {
@@ -39,7 +43,8 @@ function Header({ tabs, kasa = "ModPOS" }: { tabs?: ReactNode; kasa?: KasaName }
     <PageHeader
       path="/panel/urunler/fiyatlar"
       title={TITLE}
-      description={kasa === "LafPOS" ? DESCRIPTION_LAFPOS : DESCRIPTION}
+      description={DESCRIPTION}
+      more={kasa === "LafPOS" ? MORE_LAFPOS : MORE}
       actions={
         <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
           <ArrowLeft size={16} aria-hidden="true" /> Ürünler
@@ -150,6 +155,8 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
         settings={{ kdv: st.kdv, komisyon: st.komisyon, kartOrani: st.kartOrani, hedefMaliyet: st.hedefMaliyet }}
         siteConfigured={site.configured}
         basis={sb?.basis ?? null}
+        // Satış verisi yokken ne yapılacağı ayın kaynağından (bugünün ayı; docs/planlar/ux-sade.md §10)
+        salesMissing={salesSourceOf(todayTR().slice(0, 7), st.lafposGecisGunu, model.ds.lafposSales).missing}
         kasa={scope.kasa}
       />
     </>

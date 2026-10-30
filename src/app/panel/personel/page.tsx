@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Suspense, type ReactNode } from "react";
+import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
-import { InfoTip, PageSkeleton } from "@/components/ui/misc";
+import { PageSkeleton } from "@/components/ui/misc";
 import { staffDeleteBlockers } from "@/server/actions/costs";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
@@ -13,12 +13,18 @@ import { StaffEditor, type StaffRow } from "./staff-editor";
 
 export const metadata: Metadata = { title: "Maaşlar" };
 
-function Header({ description }: { description?: ReactNode }) {
+const DESCRIPTION = "Çalışanların net maaşı, brüt maaşı ve size maliyeti; SGK oranları en altta.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Net maaştan tahmini brüt maaş ve işveren maliyeti. Bu tutar Sabit giderler ve Gelir-gider tablosuna otomatik gider olarak geçer. SGK oranları tahminidir; muhasebecinizden bordroyu alıp toplam işveren maliyetini kontrol edin. Maaş değişince 'hangi aydan itibaren' sorulur: önceki aylar eski maaşla kalır.";
+
+function Header() {
   return (
     <PageHeader
       path="/panel/personel"
       title="Maaşlar"
-      description={description}
+      description={DESCRIPTION}
+      more={MORE}
       tabs={<SectionTabs section="giderler" current="/panel/personel" role="admin" />}
     />
   );
@@ -63,14 +69,7 @@ async function StaffContent() {
   }));
   return (
     <>
-      <Header
-        description={
-          <>
-            Net maaştan tahmini brüt maaş ve işveren maliyeti. Bu tutar Sabit giderler ve Gelir-gider tablosuna otomatik gider olarak geçer.{" "}
-            <InfoTip text="SGK oranları tahminidir; muhasebecinizden bordroyu alıp toplam işveren maliyetini kontrol edin. Maaş değişince 'hangi aydan itibaren' sorulur: önceki aylar eski maaşla kalır." />
-          </>
-        }
-      />
+      <Header />
       <StaffEditor
         staff={staff}
         rates={{ isciSgk: st.isciSgk, isciIssizlik: st.isciIssizlik, isverenSgk: st.isverenSgk, isverenIssizlik: st.isverenIssizlik }}

@@ -47,7 +47,8 @@ export default function SettingsPage() {
       <PageHeader
         title="Ayarlar"
         path="/panel/ayarlar"
-        description="Bir değeri değiştirince etkisi altta hemen görünür (durumu değişen ürünler, maliyet oranı, başabaş); Kaydet'e basınca bütün hesaplar güncellenir."
+        description="Oranlar, ölçüler ve bağlantılar; değiştirince etkisi hemen altta görünür."
+        more="Bir değeri değiştirince etkisi altta hemen görünür (durumu değişen ürünler, maliyet oranı, başabaş); Kaydet'e basınca bütün hesaplar güncellenir."
       />
       <Suspense fallback={<SettingsSkeleton />}>
         <SettingsContent />

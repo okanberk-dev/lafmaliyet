@@ -57,6 +57,9 @@ export const maxDuration = 60;
 
 const TITLE = "Karaoke doluluğu";
 const DESCRIPTION =
+  "Oda hangi gün ve saatte dolu, hangisinde boş; saat başına gelir.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Oda hangi gün ve saatte dolu, hangisinde boş; saat başına gelir, uzatma, son dakika iptali ve rezervasyonların kaç gün önceden yapıldığı. Yalnız yönetici görür.";
 
 function Header({ tabs }: { tabs?: ReactNode }) {
@@ -65,6 +68,7 @@ function Header({ tabs }: { tabs?: ReactNode }) {
       path="/panel/karaoke/doluluk"
       title={TITLE}
       description={DESCRIPTION}
+      more={MORE}
       actions={
         <ButtonLink href="/panel/karaoke" variant="ghost" size="sm">
           <ArrowLeft size={16} aria-hidden="true" /> Karaoke

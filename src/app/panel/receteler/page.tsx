@@ -16,6 +16,7 @@ import { NewProductLink } from "./new-product-link";
 import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
 import { RecipeBook, type MyRequest, type ProposeKit, type RecipeGroup } from "./recipe-book";
+import { staffRecipeNote } from "./staff-note";
 
 export const metadata: Metadata = { title: "Reçete defteri" };
 
@@ -41,7 +42,7 @@ function RecipeBookHeader({ action, role }: { action?: ReactNode; role: "admin" 
       title="Reçete defteri"
       path="/panel/receteler"
       role={role}
-      description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik ya da yeni ürün önerir, yönetici onaylayınca uygulanır."
+      description={role === "admin" ? "Baristaların reçeteleri; personelin önerileri Onaylar'a gelir." : "Her ürünün her boyunda ne kadar malzeme; değişiklik önerin, yönetici onaylar."}
       actions={
         <>
           {action}
@@ -104,7 +105,8 @@ async function RecipeBookContent() {
             return {
               id: v.product.id,
               size: v.product.size,
-              note: v.product.note,
+              // Personele fiyat / maliyet / ModPOS anan ürün notu gitmez (§9 #23); yönetici aynen
+              note: isAdmin ? v.product.note : staffRecipeNote(v.product.note),
               lines: v.lines.map((l) => ({
                 ingredientId: l.item.ingredientId,
                 name: l.ingredient?.name ?? "?",

@@ -115,6 +115,7 @@ export function BulkEditor({
   settings,
   siteConfigured,
   basis,
+  salesMissing,
   kasa = "ModPOS",
 }: {
   rows: BulkRow[];
@@ -123,6 +124,8 @@ export function BulkEditor({
   siteConfigured: boolean;
   /** Aylık etkinin satış dayanağı (zam etkisiyle aynı: price-loss.ts); satış verisi yoksa null */
   basis: SalesBasis | null;
+  /** Satış verisi yokken ne yapılır (src/lib/sales-source.ts `missing`, bugünün ayı) */
+  salesMissing: string;
   /** Bugünün kasası (src/lib/lafpos/kasa.ts): LafPOS gününde siteye bağlı ürünün fiyatını LafPOS siteden alır */
   kasa?: KasaName;
 }) {
@@ -476,7 +479,7 @@ export function BulkEditor({
             {basis ? (
               <p className="text-xs text-ink-mute">{basisText(basis)} Ürüne eşleşmeyen satışlar sayılmadı.</p>
             ) : (
-              <p className="text-xs text-ink-mute">Aylık etkiyi görmek için Satışlar&apos;a ürün satış raporunu yükleyin.</p>
+              <p className="text-xs text-ink-mute">Aylık etkiyi görmek için satış verisi gerekir: {salesMissing}.</p>
             )}
           </CardContent>
           <PreviewTable rows={listed} target={target} onToggle={toggleRow} onOverride={setOverride} hasBasis={!!basis} />

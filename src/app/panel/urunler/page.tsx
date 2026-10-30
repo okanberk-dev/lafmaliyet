@@ -5,12 +5,14 @@ import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
 import { monthKasa } from "@/lib/lafpos/kasa";
+import { salesSourceOf } from "@/lib/sales-source";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -27,12 +29,16 @@ import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products
 
 export const metadata: Metadata = { title: "Ürünler & kârlılık" };
 
+const DESCRIPTION = "Her ürünün fiyatı, maliyeti ve kârı; ürüne dokunun, reçete kartı açılır.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE = "Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat. Ürün adına dokununca reçete kartı açılır.";
+
 export default function ProductsPage({ searchParams }: PageProps<"/panel/urunler">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Ürünler & kârlılık" path="/panel/urunler" />
+          <PageHeader title="Ürünler & kârlılık" path="/panel/urunler" description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -123,13 +129,9 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
       <PageHeader
         path="/panel/urunler"
         title="Ürünler & kârlılık"
-        description={
-          <>
-            Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat.{" "}
-            <span className="pointer-coarse:hidden">Ürün adına tıklayınca reçete kartı açılır.</span>
-            <span className="hidden pointer-coarse:inline">Ürüne dokununca reçete kartı açılır.</span>
-          </>
-        }
+        description={DESCRIPTION}
+        more={MORE}
+        meta={<SalesSourceLine source={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales)} />}
         actions={
           <>
             <MonthPicker months={availableMonths(model)} value={month} />
@@ -261,7 +263,14 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           />
         </StatBreakdown>
       </div>
-      {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} loss={prices.loss} /> : null}
+      {prices && prices.impacts.length ? <PriceImpactPanel
+          changes={prices.changes}
+          impacts={prices.impacts}
+          target={st.hedefMaliyet}
+          month={month}
+          loss={prices.loss}
+          salesMissing={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales).missing}
+        /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
       <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} kasa={mk.both} />

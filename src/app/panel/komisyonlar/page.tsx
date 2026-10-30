@@ -24,11 +24,13 @@ import { mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLi
 export const metadata: Metadata = { title: "Komisyon & hakediş" };
 
 const TITLE = "Komisyon & hakediş";
-const DESCRIPTION =
+const DESCRIPTION = "Yemek kartı ve platformların kestiği komisyon ve size ödeyecekleri para (hakediş).";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Yemek kartı şirketlerinin ve sipariş platformlarının her ay gerçekte ne kadar kestiği, faturadaki ücretler ve hakedişin gelip gelmediği. Faturalar Paraşüt'ten, satış kasa raporlarından ya da kanalın ekstresinden gelir; hakediş gelince siz işaretlersiniz.";
 
-function Header({ description = DESCRIPTION, actions }: { description?: string; actions?: ReactNode }) {
-  return <PageHeader path="/panel/komisyonlar" title={TITLE} description={description} actions={actions} />;
+function Header({ more = MORE, actions }: { more?: string; actions?: ReactNode }) {
+  return <PageHeader path="/panel/komisyonlar" title={TITLE} description={DESCRIPTION} more={more} actions={actions} />;
 }
 
 export default function CommissionPage({ searchParams }: PageProps<"/panel/komisyonlar">) {
@@ -36,7 +38,7 @@ export default function CommissionPage({ searchParams }: PageProps<"/panel/komis
     <Suspense
       fallback={
         <>
-          <Header description="Yükleniyor…" />
+          <Header />
           <PageSkeleton rows={6} />
         </>
       }
@@ -88,7 +90,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
   return (
     <>
       <Header
-        description={report.switchDay ? DESCRIPTION.replace("satış kasa raporlarından", "satış kasa raporlarından, LafPOS'un ödemelerinden") : DESCRIPTION}
+        more={report.switchDay ? MORE.replace("satış kasa raporlarından", "satış kasa raporlarından, LafPOS'un ödemelerinden") : MORE}
         actions={<MonthPicker months={report.dataMonths} value={month} />}
       />
       <HashScroll key={month} />

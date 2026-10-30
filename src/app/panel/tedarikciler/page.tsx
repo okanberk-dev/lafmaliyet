@@ -17,7 +17,9 @@ import { CountUp, SuppliersClient } from "./suppliers-client";
 
 export const metadata: Metadata = { title: "Tedarikçiler" };
 
-const DESCRIPTION =
+const DESCRIPTION = "Tedarikçilerin bilgileri ve borçları: ödendi, ödenmedi, ödeme talebi.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
   "Tedarikçilerin bilgileri (unvan, vergi no, IBAN, iletişim) ve tedarikçi tedarikçi ödeme takibi. Faturalar Paraşüt'ten her sabah kendiliğinden gelir; ödendi, ödenmedi ya da ödemesi talep edildi işaretini siz koyarsınız.";
 
 /**
@@ -49,7 +51,7 @@ export default function SuppliersPage() {
     <Suspense
       fallback={
         <>
-          <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} />
+          <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={8} />
         </>
       }
@@ -127,7 +129,7 @@ async function SuppliersContent() {
 
   return (
     <>
-      <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} />
+      <PageHeader path="/panel/tedarikciler" title="Tedarikçiler" description={DESCRIPTION} more={MORE} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown title="Kalan borç" description="Ödenmemiş faturaların kalan tutarı (KDV dahil), tedarikçi tedarikçi. Tedarikçiye dokununca sayfası açılır." groups={breakdown.open} total={open} totalLabel="Kalan borç" exact empty="Ödenmemiş fatura yok.">

@@ -24,6 +24,7 @@ import { Suspense, type ReactNode } from "react";
 import { TrendChart } from "@/components/charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SalesSourceLine } from "@/components/panel/sales-source-line";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
@@ -49,6 +50,7 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
@@ -387,6 +389,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             {t?.listPeriod ? ` · satış listesi ${listDaysText(t.listPeriod)}` : ""}
           </>
         }
+        meta={<SalesSourceLine source={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales)} />}
         actions={
           <>
             <MonthPicker months={months} value={month} />
@@ -518,7 +521,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             <Stat
               compact
               icon={<Target />}
-              label="Başabaş günlük ciro"
+              label="Zarar etmemek için günlük satış (başabaş)"
               // Toplam paranteze alınır: (A + B − C) ÷ oran ÷ gün (dökümle aynı)
               info={`Zarar etmemek için gereken günlük ciro (KDV dahil): ${d.breakEven.expensesTotal || d.onlineCover ? "(" : ""}standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
                 d.breakEven.expensesTotal ? ` + her ay girilen harcamalar ${tl(d.breakEven.expensesTotal)}` : ""

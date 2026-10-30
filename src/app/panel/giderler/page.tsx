@@ -1,10 +1,10 @@
 import { asc } from "drizzle-orm";
 import type { Metadata } from "next";
-import { Suspense, type ReactNode } from "react";
+import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
-import { InfoTip, PageSkeleton } from "@/components/ui/misc";
+import { PageSkeleton } from "@/components/ui/misc";
 import { fixedMonthly, shiftMonth } from "@/lib/calc/engine";
 import { breakEvenOf } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
@@ -19,12 +19,18 @@ import { choiceMonths, closedDataMonths } from "./history-text";
 
 export const metadata: Metadata = { title: "Sabit giderler" };
 
-function Header({ description }: { description?: ReactNode }) {
+const DESCRIPTION = "Her ay aynı olan giderler: kira, aidat, internet (KDV hariç).";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir. Gelir-gider tablosunda bu tutarlar ayın gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (Excel'de her ay sütunu kendi tutarını taşıdığı gibi).";
+
+function Header() {
   return (
     <PageHeader
       path="/panel/giderler"
       title="Sabit giderler"
-      description={description}
+      description={DESCRIPTION}
+      more={MORE}
       tabs={<SectionTabs section="giderler" current="/panel/giderler" role="admin" />}
     />
   );
@@ -88,14 +94,7 @@ async function ExpensesContent() {
 
   return (
     <>
-      <Header
-        description={
-          <>
-            Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir.{" "}
-            <InfoTip text="Gelir-gider tablosunda bu tutarlar ayın gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (Excel'de her ay sütunu kendi tutarını taşıdığı gibi)." />
-          </>
-        }
-      />
+      <Header />
 
       <FixedSummary
         total={total}
