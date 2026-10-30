@@ -24,14 +24,17 @@ import { type BannerData, DetailList, NoteNotice, TaxBanner, VergiHeader } from 
 export const metadata: Metadata = { title: "Demirbaş" };
 
 const TITLE = "Demirbaş";
-const DESCRIPTION = "Varlık listesi ve amortisman (KDV hariç). Bir varlığa bağlanan fatura tutarı gider yerine amortismanla düşülür; ömür girilmeyen varlığa amortisman ayrılmaz.";
+const DESCRIPTION = "Makine, mobilya gibi yıllarca kullanılan alımlar; gideri yıllara bölünür (amortisman).";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Demirbaş listesi ve amortisman (KDV hariç). Bir demirbaşa bağlanan fatura tutarı gider yerine amortismanla düşülür; ömür girilmeyen demirbaşa amortisman ayrılmaz.";
 
 export default function TaxAssetsPage({ searchParams }: PageProps<"/panel/vergi/demirbas">) {
   return (
     <Suspense
       fallback={
         <>
-          <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} />
+          <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={8} />
         </>
       }
@@ -44,8 +47,9 @@ export default function TaxAssetsPage({ searchParams }: PageProps<"/panel/vergi/
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
- * Vergi › Demirbaş (plan docs/planlar/vergi.md §4.3, K14): varlıklar, varlık listesine eklenmemiş Kuruluş & Demirbaş
- * faturaları, "demirbaş olabilir" faturalar ve faturası Paraşüt'te silinen varlıklar. Nakit planını okumaz (K30).
+ * Vergi, KDV, SGK › Demirbaş (plan docs/planlar/vergi.md §4.3, K14; docs/planlar/ux-sade.md §7.8): demirbaş listesi,
+ * listeye eklenmemiş Kuruluş & Demirbaş faturaları, "demirbaş olabilir" faturalar ve faturası Paraşüt'te silinen
+ * demirbaşlar. Ekranda "varlık" yerine "demirbaş" (yalnız söz; veri ve Excel aynı). Nakit planını okumaz (K30).
  */
 async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/demirbas">["searchParams"] }) {
   await requireAdmin();
@@ -92,24 +96,24 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
 
   return (
     <>
-      <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} actions={actions} />
+      <VergiHeader current="/panel/vergi/demirbas" title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
       <TaxBanner data={banner} />
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-          <Stat compact label="Varlıklar (maliyet)" value={money(totals.cost)} sub={`${assets.length} varlık`} />
+          <Stat compact label="Demirbaşlar (maliyet)" value={money(totals.cost)} sub={`${assets.length} demirbaş`} />
           <Stat
             compact
             label={`${year} amortismanı`}
             value={money(totals.year)}
-            sub={`Çeyreklere: ${method.toLocaleLowerCase("tr-TR")}${totals.direct ? ` · doğrudan gider ${money(totals.direct)} ayrı` : ""}`}
+            sub={`Çeyreklere: ${method.toLocaleLowerCase("tr-TR")}${totals.direct ? ` · bu yıl gider yazılan ${money(totals.direct)} ayrı` : ""}`}
           />
-          <Stat compact className="col-span-2 lg:col-span-1" label={`Net değer (${year} sonu)`} value={money(totals.net)} sub={missingLife ? `${missingLife} varlığın ömrü girilmedi` : null} tone={missingLife ? "warn" : "default"} />
+          <Stat compact className="col-span-2 lg:col-span-1" label={`Net değer (${year} sonu)`} value={money(totals.net)} sub={missingLife ? `${missingLife} demirbaşın ömrü girilmedi` : null} tone={missingLife ? "warn" : "default"} />
         </div>
 
         {missingLife || view.orphans.length ? (
           <Card className="gap-3 p-5">
             {missingLife ? (
-              // Ömür girilmeyen varlığa amortisman ayrılmaz, vergi yüksek çıkar: katlanmaz; eylem ilk varlığın düzenleme penceresi
+              // Ömür girilmeyen demirbaşa amortisman ayrılmaz, vergi yüksek çıkar: katlanmaz; eylem ilk demirbaşın düzenleme penceresi
               <NoteNotice
                 notes={[lifeMissingText(missingLife)]}
                 action={lifeless[0] ? <AssetButton label="Ömrü gir" size="xs" invoices={choices} asset={assetData(lifeless[0])} directLimit={directLimit} today={today} /> : undefined}
@@ -119,7 +123,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
               const label = parseInvoiceLabel(o.asset.invoiceLabel);
               return (
                 <div key={o.asset.id} className="space-y-2">
-                  {/* Faturası silinen varlık listede kalırsa yeni faturayla iki kez gider sayılır; bağlama düğmeleri aşağıda */}
+                  {/* Faturası silinen demirbaş listede kalırsa yeni faturayla iki kez gider sayılır; bağlama düğmeleri aşağıda */}
                   <Notice tone="warn" size="sm" risk="hukuk" title={`${o.asset.name}: faturası silinmiş demirbaş`} text="Yeni faturaya bağlayın ya da listeden çıkarın; yoksa iki kez gider sayılır." />
                   <p className="pl-3 text-xs text-ink-mute">
                     Silinen fatura: {o.asset.invoiceLabel ?? "bilinmiyor"}
@@ -148,16 +152,16 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
         <Card>
           <CardHeader
             icon={<Boxes />}
-            title="Varlıklar"
+            title="Demirbaş listesi"
             description="Satıra dokunun: edinme günü, tür, çeyrek payları ve birikmiş amortisman."
-            meta={`${assets.length} varlık`}
-            actions={<AssetButton label="Varlık ekle" variant="primary" invoices={choices} directLimit={directLimit} today={today} />}
+            meta={`${assets.length} demirbaş`}
+            actions={<AssetButton label="Demirbaş ekle" variant="primary" invoices={choices} directLimit={directLimit} today={today} />}
           />
           <CardContent>
             {rows.length ? (
               <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
                 <li aria-hidden="true" className="hidden grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] gap-3 px-4 py-2 text-xs font-semibold text-ink-soft lg:grid">
-                  <span>Varlık</span>
+                  <span>Demirbaş</span>
                   <span className="text-right">Maliyet</span>
                   <span className="text-right">Ömür / yöntem</span>
                   <span className="text-right">{year} amortismanı</span>
@@ -165,7 +169,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                 </li>
                 {rows.map((r) => {
                   const a = r.asset;
-                  const lifeText = a.method === "dogrudan_gider" ? "Doğrudan gider" : a.lifeYears ? `${a.lifeYears} yıl` : "Ömür girilmedi";
+                  const lifeText = a.method === "dogrudan_gider" ? "Bu yıl gider yazıldı" : a.lifeYears ? `${a.lifeYears} yıl` : "Ömür girilmedi";
                   const quarters = [...r.quarters].filter(([k]) => k.startsWith(`${year}-`));
                   return (
                     <li key={a.id}>
@@ -185,7 +189,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                             rows={[
                               { label: "Edinme günü", value: dateTR(a.acquiredOn) },
                               { label: "Tür", value: ASSET_KIND_LABELS[a.kind] },
-                              { label: "Yöntem", value: ASSET_METHOD_LABELS[a.method] },
+                              { label: "Yöntem", value: a.method === "dogrudan_gider" ? "Bu yıl gider yazıldı" : ASSET_METHOD_LABELS[a.method] },
                               ...quarters.map(([k, v]) => ({ label: `${quarterLabel(k)} payı`, value: money(v) })),
                               { label: `Birikmiş (${year} sonuna)`, value: money(r.accumulated) },
                             ]}
@@ -200,7 +204,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                 })}
               </ul>
             ) : (
-              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Varlık listesi boş. Kuruluş &amp; Demirbaş faturalarını aşağıdan ekleyin.</p>
+              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Demirbaş listesi boş. Kuruluş &amp; Demirbaş faturalarını aşağıdan ekleyin.</p>
             )}
           </CardContent>
         </Card>
@@ -208,8 +212,8 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
         <Card>
           <CardHeader
             icon={<FileWarning />}
-            title="Varlık listesine eklenmemiş demirbaş faturaları"
-            description="Kuruluş & Demirbaş kategorisindeki faturalar: varlık olarak eklenene kadar ne gider ne amortisman sayılır."
+            title="Listeye eklenmemiş demirbaş faturaları"
+            description="Kuruluş & Demirbaş kategorisindeki faturalar: listeye eklenene kadar ne gider ne amortisman sayılır."
             meta={view.classify.unlisted.length ? `${view.classify.unlisted.length} fatura` : undefined}
           />
           <CardContent>
@@ -220,18 +224,18 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                     <div className="min-w-0">
                       <p className="text-sm leading-5 font-medium break-words text-ink">{u.supplier}</p>
                       <p className="text-xs leading-4 text-ink-mute">
-                        {dateTR(u.date)} · eşlenmemiş: {money(u.remaining)}
+                        {dateTR(u.date)} · listede değil: {money(u.remaining)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <AssetButton label="Varlık olarak ekle" invoices={choices} invoiceId={u.invoiceId} directLimit={directLimit} today={today} />
+                      <AssetButton label="Listeye ekle" invoices={choices} invoiceId={u.invoiceId} directLimit={directLimit} today={today} />
                       {u.remaining <= directLimit + 0.005 ? <DirectExpenseButton invoice={{ id: u.invoiceId, supplier: u.supplier, date: u.date, remaining: u.remaining }} /> : null}
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Bütün demirbaş faturaları varlık listesinde.</p>
+              <p className="rounded-2xl bg-surface px-4 py-5 text-center text-sm text-ink-mute ring-1 ring-line">Bütün demirbaş faturaları listede.</p>
             )}
           </CardContent>
         </Card>
@@ -255,7 +259,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <AssetButton label="Varlık olarak ekle" invoices={choices} invoiceId={c.invoice.id} directLimit={directLimit} today={today} />
+                      <AssetButton label="Listeye ekle" invoices={choices} invoiceId={c.invoice.id} directLimit={directLimit} today={today} />
                       <NotAssetButton invoice={{ id: c.invoice.id, supplier: c.invoice.supplier }} />
                     </div>
                   </li>
@@ -274,7 +278,7 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
               Kiralanan yere yapılan dekorasyon özel maliyettir; ömrü kira süresine bağlıdır. Muhasebecinize sorun.
             </li>
             <li>Yatırımlar listesi (Giderler &amp; maaşlar) bilgi amaçlıdır ve vergiye girmez; vergide bu liste esastır.</li>
-            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Muhasebeci › Vergi ayarları).</li>
+            <li>Geçici vergide amortisman: {method.toLocaleLowerCase("tr-TR")} (Muhasebeci › Şirketin vergi ayarları).</li>
           </ul>
         </Card>
       </div>

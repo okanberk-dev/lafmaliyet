@@ -163,7 +163,7 @@ export function minTaxApplies(year: number, settings: Pick<TaxSettings, "firstAc
 export function minTaxText(year: number, settings: Pick<TaxSettings, "firstActivity" | "periodStart">): string {
   const start = Number(settings.periodStart.slice(0, 4));
   if (!minTaxApplies(year, settings)) return `Asgari kurumlar vergisi: uygulanmaz (ilk 3 hesap dönemi, ${start}–${start + 2})`;
-  if (settings.firstActivity === null) return "Asgari kurumlar vergisi: uygulandı; muafiyet için ilk defa faaliyete başlama işaretlenmedi (Muhasebeci › Vergi ayarları)";
+  if (settings.firstActivity === null) return "Asgari kurumlar vergisi: uygulandı; muafiyet için ilk defa faaliyete başlama işaretlenmedi (Muhasebeci › Şirketin vergi ayarları)";
   if (settings.firstActivity === "devir") return "Asgari kurumlar vergisi: uygulandı (birleşme, devir, bölünme ya da tür değişikliğiyle kurulan şirkette muafiyet yok)";
   return "Asgari kurumlar vergisi: uygulandı (ilk 3 hesap dönemi geçti)";
 }

@@ -102,7 +102,7 @@ test("Vergiye göre tablosu (§4.2): çeyreğin üç ayı, çeyrek toplamı, kü
   const grid = quarterGrid(q, view.months);
   assert.deepEqual(
     grid.columns.map((c) => c.label),
-    ["Temmuz", "Ağustos", "Eylül", "Çeyrek toplamı", "Kümülatif (yılbaşından)"],
+    ["Temmuz", "Ağustos", "Eylül", "Çeyrek toplamı", "Yılbaşından beri"],
   );
   assert.deepEqual(
     grid.groups.map((g) => g.label),

@@ -3,6 +3,7 @@
 import {
   AlarmClock,
   Check,
+  Circle,
   CreditCard,
   Ellipsis,
   FileText,
@@ -488,7 +489,11 @@ export function ActionMenu({
 
 // ---------------------------------------------------------------- Ödeme kartı
 
-/** Ödendi düğmesi: limon onay dairesi + metin; telefonda 44px yüksek, satırı kaplar */
+/**
+ * Ödeme düğmesi (docs/planlar/ux-sade.md K18): boş daire + "Ödedim", beyaz ikincil kontrol; yeşil "Ödendi" yalnız
+ * durum rozeti (gecikmiş satırın yanında ödenmiş gibi okunmasın). Telefonda 44px yüksek, satırı kaplar. Ödemeler, Bugün
+ * ve Genel bakış'ın "Yaklaşan ödemeler"i bu bileşeni kullanır
+ */
 export function PaidButton({ onClick, disabled, label, className, compact }: { onClick: () => void; disabled?: boolean; label: string; className?: string; compact?: boolean }) {
   return (
     <button
@@ -497,16 +502,14 @@ export function PaidButton({ onClick, disabled, label, className, compact }: { o
       disabled={disabled}
       aria-label={label}
       className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-panel font-medium text-ink transition-[background-color,transform] hover:bg-panel-deep active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45",
+        "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-surface font-medium text-ink ring-1 ring-line-strong ring-inset transition-[background-color,transform] hover:bg-panel active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45",
         "focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none",
         compact ? "h-11 px-3 text-sm sm:px-2.5 sm:text-[13px] sm:pointer-fine:h-9 sm:pointer-fine:rounded-[10px]" : "h-11 px-4 text-[15px]",
         className,
       )}
     >
-      <span className="flex size-5 items-center justify-center rounded-full bg-lime text-good-ink" aria-hidden="true">
-        <Check size={12} strokeWidth={3} />
-      </span>
-      Ödendi
+      <Circle size={18} strokeWidth={1.75} className="shrink-0 text-ink-mute" aria-hidden="true" />
+      Ödedim
     </button>
   );
 }
@@ -704,14 +707,14 @@ export function PaymentCard({
         <div className="hidden items-center gap-3 self-center sm:flex">
           <span className="text-[15px] leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount ?? <span className="text-ink-quiet">–</span>}</span>
           <div className="flex items-center gap-1.5">
-            <PaidButton compact onClick={onPaid} disabled={pending} label={`${item.title} ödendi`} />
+            <PaidButton compact onClick={onPaid} disabled={pending} label={`${item.title}: Ödedim`} />
             {actions?.length ? menu : null}
           </div>
         </div>
         {/* Telefon: tutar, büyük Ödendi ve menü alt satırda, başparmak hizasında (başlık tüm genişliği kullanır) */}
         <div className="col-span-2 mt-3 flex items-center gap-2 sm:hidden">
           {amount ? <span className="shrink-0 pr-1 text-base leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount}</span> : null}
-          <PaidButton onClick={onPaid} disabled={pending} label={`${item.title} ödendi`} className="min-w-0 flex-1" />
+          <PaidButton onClick={onPaid} disabled={pending} label={`${item.title}: Ödedim`} className="min-w-0 flex-1" />
           {actions?.length ? menu : null}
         </div>
       </motion.div>

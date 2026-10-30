@@ -373,7 +373,7 @@ test("D: köprü (Eylül): Gelir-gider'deki gider − sayılmayanlar ± farklar 
   const end = b.rows.at(-1)!;
   assert.equal(start.label, "Gelir-gider'deki gider");
   close(start.amount, C.model.pnlMonth("2026-09").expenses, "başlangıç");
-  assert.equal(end.label, "Vergiye göre gider");
+  assert.equal(end.label, "Vergi hesabındaki gider");
   close(end.amount, C.m("2026-09").expense.total, "son");
   // Satırlar iki ucu kuruşu kuruşuna tutar (yuvarlama farkı en büyük satıra eklenir)
   close(start.amount + b.rows.slice(1, -1).reduce((s, x) => s + x.amount, 0), end.amount, "iki uç", 0.001);

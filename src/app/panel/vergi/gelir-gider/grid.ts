@@ -4,8 +4,9 @@ import type { TaxMonth, TaxRow } from "@/lib/tax/pnl";
 import type { QuarterView } from "@/lib/tax/view";
 
 /*
- * Vergiye göre tablosunun satırları ve sütunları (plan docs/planlar/vergi.md §4.2): seçilen çeyreğin ayları, "Çeyrek
- * toplamı" ve "Kümülatif (yılbaşından)". Masaüstü tablosu ve telefonun tek kartı aynı veriyi çizer. Saf.
+ * Vergi kârı tablosunun satırları ve sütunları (plan docs/planlar/vergi.md §4.2; docs/planlar/ux-sade.md §7.7):
+ * seçilen çeyreğin ayları, "Çeyrek toplamı" ve "Yılbaşından beri". Etiketler sade sözle, resmî terim parantezde
+ * (glossary.ts); Excel dışa aktarımı resmî adla kalır. Masaüstü tablosu ve telefonun tek kartı aynı veriyi çizer. Saf.
  */
 
 export interface GridCol {
@@ -91,7 +92,7 @@ export function quarterGrid(q: QuarterView, yearMonths: readonly TaxMonth[]): Gr
   const columns: GridCol[] = [
     ...qMonths.map((m) => ({ key: m.month, label: monthName(m.month), sub: m.inProgress ? "bugüne kadar" : null })),
     { key: "ceyrek", label: "Çeyrek toplamı", sub: q.label },
-    { key: "kumulatif", label: "Kümülatif (yılbaşından)", sub: null },
+    { key: "kumulatif", label: "Yılbaşından beri", sub: null },
   ];
   const onlyTotals = (key: string, label: string, quarter: number | null, ytd: number | null, extra: Partial<GridRow> = {}): GridRow => ({
     key,
@@ -139,21 +140,21 @@ export function quarterGrid(q: QuarterView, yearMonths: readonly TaxMonth[]): Gr
   const result: GridRow[] = [
     {
       key: "sonuc",
-      label: "Sonuç (amortisman öncesi)",
+      label: "Kâr (demirbaş payı düşülmeden)",
       badge: null,
       note: null,
       values: [...qMonths.map((m) => m.result), q.totals.result, q.ytd.result],
       items: columns.map(() => []),
       strong: true,
     },
-    onlyTotals("amortisman", `Amortisman (${q.depreciationMethod.replace(/^Amortisman: /, "")})`, -q.totals.depreciation, -q.ytd.depreciation),
+    onlyTotals("amortisman", `Demirbaş payı, amortisman (${q.depreciationMethod.replace(/^Amortisman: /, "")})`, -q.totals.depreciation, -q.ytd.depreciation),
   ];
-  if (q.totals.direct || q.ytd.direct) result.push(onlyTotals("dogrudan", "Doğrudan gider yazılan demirbaş", -q.totals.direct, -q.ytd.direct));
+  if (q.totals.direct || q.ytd.direct) result.push(onlyTotals("dogrudan", "Bu yıl gider yazılan demirbaş", -q.totals.direct, -q.ytd.direct));
   if (q.totals.kkeg || q.ytd.kkeg) result.push(onlyTotals("kkeg", "İndirilemeyen gider (eklenen)", q.totals.kkeg, q.ytd.kkeg));
   if (q.corp) {
-    result.push(onlyTotals("donem", "Dönem kazancı", q.corp.periodResult, null, { strong: true }));
+    result.push(onlyTotals("donem", "Bu çeyreğin kârı (dönem kazancı)", q.corp.periodResult, null, { strong: true }));
     result.push(
-      onlyTotals("kazanc", "Kurum kazancı (kümülatif)", null, q.corp.cumulative, {
+      onlyTotals("kazanc", "Yılbaşından beri kâr (kurum kazancı)", null, q.corp.cumulative, {
         strong: true,
         note: q.corp.anchor ? `${q.corp.anchor.period.replace("-Q", "/")} muhasebeci kaydının matrahından` : null,
       }),

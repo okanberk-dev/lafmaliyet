@@ -108,7 +108,8 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
     "/panel/vergi#kdv": ["src/app/panel/vergi/tax-calendar.tsx", /kdv1: "kdv"/],
     "/panel/vergi#sgk": ["src/app/panel/vergi/tax-calendar.tsx", /sgk: "sgk"/],
     "/panel/vergi#muhtasar": ["src/app/panel/vergi/tax-calendar.tsx", /mphb: "muhtasar"/],
-    "/panel/vergi#kar-vergisi": ["src/app/panel/vergi/page.tsx", /id="kar-vergisi"/],
+    // Bölüm 3: çapa "Şirketin kâr vergisi" kartının kendisinde (docs/planlar/ux-sade.md §7.6)
+    "/panel/vergi#kar-vergisi": ["src/app/panel/vergi/tax-cards.tsx", /<Card id="kar-vergisi"/],
     "/panel/vergi/gelir-gider#siniflandir": ["src/app/panel/vergi/gelir-gider/classify-list.tsx", /id="siniflandir"/],
     "/panel/vergi/kurallar#sorular": ["src/app/panel/vergi/kurallar/page.tsx", /id="sorular"/],
     "/panel/gelir-gider#kar-zarar": ["src/app/panel/gelir-gider/page.tsx", /id="kar-zarar"/],
@@ -162,10 +163,11 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
 test("eski adlar ekranda kalmadı: Muhasebeci (eski Kurallar sekmesi), Maaşlar (eski Personel), Giderler & maaşlar", () => {
   // [dosya, eski metin, yeni metin]
   const RENAMED: [string, string, string][] = [
-    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
-    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Vergi ayarları)"],
+    // Bölüm 3: kartın adı "Şirketin vergi ayarları" (docs/planlar/ux-sade.md §7.9)
+    ["src/lib/tax/corporate.ts", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
+    ["src/app/panel/vergi/demirbas/page.tsx", "(Kurallar › Vergi ayarları)", "(Muhasebeci › Şirketin vergi ayarları)"],
     ["src/app/panel/vergi/demirbas/page.tsx", "(Giderler &amp; personel)", "(Giderler &amp; maaşlar)"],
-    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Vergi ayarları'ndan"],
+    ["src/app/panel/vergi/gelir-gider/page.tsx", "Kurallar › Vergi ayarları'ndan", "Muhasebeci › Şirketin vergi ayarları'ndan"],
     ["src/app/panel/giderler/expenses-client.tsx", ">Personel sayfasından</TD>", ">Maaşlar sayfasından</TD>"],
     ["src/app/panel/giderler/expenses-client.tsx", 'label="Personel sayfasına git"', 'label="Maaşlar sayfasına git"'],
     ["src/app/panel/giderler/expenses-client.tsx", "</Badge> Personel sayfasından", "</Badge> Maaşlar sayfasından"],

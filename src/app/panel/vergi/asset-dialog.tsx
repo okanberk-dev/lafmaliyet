@@ -45,7 +45,7 @@ export interface AssetData {
 const amountText = (v: number | null | undefined) => (v === null || v === undefined ? "" : Number.isInteger(Math.round(v * 100) / 100) ? num(v, 0) : num(v, 2, 2));
 
 /**
- * "Varlık ekle" / "Varlık olarak ekle" / "Düzenle" düğmesi ve "Varlık" penceresi (plan docs/planlar/vergi.md §4.5-c).
+ * "Demirbaş ekle" / "Listeye ekle" / "Düzenle" düğmesi ve "Demirbaş" penceresi (plan docs/planlar/vergi.md §4.5-c).
  * Fatura seçilince edinme günü ve maliyet (faturanın kalanı) dolar; doğrudan gider yalnız VUK 313 sınırına kadar.
  */
 export function AssetButton({
@@ -61,7 +61,7 @@ export function AssetButton({
   label: string;
   invoices: InvoiceChoice[];
   asset?: AssetData;
-  /** "Varlık olarak ekle": pencere bu faturayla açılır */
+  /** "Listeye ekle": pencere bu faturayla açılır */
   invoiceId?: number;
   directLimit: number;
   today: string;
@@ -158,7 +158,7 @@ function AssetDialog({
         const r = await saveTaxAsset(input);
         if (!r.ok) return void toast.error(r.error, { duration: 10_000 });
         onClose();
-        toast.success(`${asset ? "Varlık kaydedildi" : "Varlık eklendi"}: ${input.name} · ${money(cost)}`);
+        toast.success(`${asset ? "Demirbaş kaydedildi" : "Demirbaş eklendi"}: ${input.name} · ${money(cost)}`);
       },
       { maybeSaved: !asset },
     );
@@ -171,7 +171,7 @@ function AssetDialog({
       if (!r.ok) return void toast.error(r.error, { duration: 10_000 });
       setConfirmDelete(false);
       onClose();
-      toast.success(`Varlık kaldırıldı: ${asset.name}`);
+      toast.success(`Demirbaş listeden kaldırıldı: ${asset.name}`);
     });
   }
 
@@ -181,7 +181,7 @@ function AssetDialog({
       open
       onClose={() => !pending && onClose()}
       size="md"
-      title={asset ? "Varlık" : "Varlık ekle"}
+      title={asset ? "Demirbaş" : "Demirbaş ekle"}
       description="Demirbaş ya da kiralanan yere yapılan özel maliyet (KDV hariç). Faturaya bağlanan tutar o faturanın giderinden düşer, amortismanla gider olur."
       footerStart={
         asset ? (
@@ -272,13 +272,13 @@ function AssetDialog({
             <Select id={`${formId}-yontem`} value={method} onChange={(e) => setMethod(e.target.value as AssetMethod)} disabled={pending} className="pointer-coarse:h-12">
               <option value="amortisman">Amortisman</option>
               <option value="dogrudan_gider" disabled={!directAllowed && method !== "dogrudan_gider"}>
-                Doğrudan gider
+                Bu yıl gider yaz
               </option>
             </Select>
           </Field>
         </div>
         {method === "amortisman" ? (
-          <Field label="Faydalı ömür (yıl)" htmlFor={`${formId}-omur`} error={lifeError} hint="Boş bırakılabilir. Muhasebecinizden öğrenin (VUK amortisman listesi); ömür girilmezse amortisman hesaplanmaz.">
+          <Field label="Kaç yıl kullanılacak (faydalı ömür)" htmlFor={`${formId}-omur`} error={lifeError} hint="Boş bırakılabilir. Muhasebecinizden öğrenin (VUK amortisman listesi); ömür girilmezse amortisman hesaplanmaz.">
             <NumberInput
               id={`${formId}-omur`}
               value={lifeText}
@@ -304,8 +304,8 @@ function AssetDialog({
         onClose={() => setConfirmDelete(false)}
         onConfirm={remove}
         pending={pending}
-        title="Varlık kaldırılsın mı?"
-        description={asset ? `${asset.name} listeden silinir; bağlı faturanın tutarı yeniden "varlık listesinde değil" sayılır.` : undefined}
+        title="Demirbaş listeden kaldırılsın mı?"
+        description={asset ? `${asset.name} listeden silinir; bağlı faturanın tutarı yeniden "listede değil" sayılır.` : undefined}
         confirmLabel="Kaldır"
       />
     </Dialog>

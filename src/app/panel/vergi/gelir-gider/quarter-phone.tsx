@@ -5,12 +5,13 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/format";
+import { plainBadge, plainBadgeTone } from "@/lib/tax/glossary";
 import { cn } from "@/lib/utils";
 
 import type { GridData } from "./grid";
 
 /**
- * Vergiye göre, telefon (md altı; plan docs/planlar/vergi.md §4.2): Gelir-gider'in ay görünümü gibi yapışkan seçici
+ * Vergi kârı tablosu, telefon (md altı; plan docs/planlar/vergi.md §4.2): Gelir-gider'in ay görünümü gibi yapışkan seçici
  * (ay, çeyrek toplamı ya da kümülatif) ve tek kart; satırlar alt alta, dökümü olan satır açılır.
  */
 export function QuarterPhone({ grid }: { grid: GridData }) {
@@ -62,8 +63,8 @@ export function QuarterPhone({ grid }: { grid: GridData }) {
                       <span className="min-w-0 flex-1">
                         <span className={cn("block text-[15px] leading-5 break-words", r.strong ? "font-semibold text-ink" : "text-ink-soft", r.tone === "bad" && "text-bad")}>{r.label}</span>
                         {r.badge ? (
-                          <Badge tone={r.badge.startsWith("Yönetim verisi") ? "amber" : r.badge.startsWith("mali belge") ? "green" : "gray"} className="mt-1 whitespace-normal">
-                            {r.badge}
+                          <Badge tone={plainBadgeTone(r.badge)} className="mt-1 whitespace-normal">
+                            {plainBadge(r.badge)}
                           </Badge>
                         ) : null}
                         {r.note && col < months ? <span className="mt-0.5 block text-xs leading-4 break-words text-ink-mute">{r.note}</span> : null}

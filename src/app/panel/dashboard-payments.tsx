@@ -68,7 +68,7 @@ export function DashboardPayments({ items, className }: { items: UpcomingItem[];
             const u = URGENCY[urgencyOf(i.daysLeft)];
             const category = categoryOf(i);
             const amount = i.amount !== null ? money(i.amount) : null;
-            const paid = <PaidButton compact onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title} ödendi`} />;
+            const paid = <PaidButton compact onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title}: Ödedim`} />;
             return (
               // Telefonda başlık tüm genişliği kullanır; tutar ve "Ödendi" alt satırda (başparmak hizasında)
               <li key={itemKey(i)} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line sm:grid-cols-[auto_minmax(0,1fr)_auto]">
@@ -92,7 +92,7 @@ export function DashboardPayments({ items, className }: { items: UpcomingItem[];
                 </div>
                 <div className="col-span-2 flex items-center gap-2 sm:hidden">
                   {amount ? <span className="shrink-0 pr-1 text-base leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount}</span> : null}
-                  <PaidButton onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title} ödendi`} className="min-w-0 flex-1" />
+                  <PaidButton onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title}: Ödedim`} className="min-w-0 flex-1" />
                 </div>
               </li>
             );

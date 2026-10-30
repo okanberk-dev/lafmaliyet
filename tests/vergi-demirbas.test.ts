@@ -81,7 +81,7 @@ test("E: ömür girilmezse amortisman 0 ve uyarı", () => {
   assert.equal(d.quarters.size, 0);
   assert.equal(d.warning, LIFE_MISSING_WARNING);
   const t = assetTotals([asset({ id: 1, lifeYears: null, cost: 5000 }), asset({ id: 2, lifeYears: null }), asset({ id: 3, lifeYears: 5 })], 2026, S);
-  assert.deepEqual(t.warnings, ["2 varlığın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar)."]);
+  assert.deepEqual(t.warnings, ["2 demirbaşın faydalı ömrü girilmedi; amortisman hesaplanmadı (vergi yüksek çıkar)."]);
   assert.equal(t.missingLife.cost.get("2026-Q3"), 6000);
 });
 

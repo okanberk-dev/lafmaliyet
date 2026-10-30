@@ -238,8 +238,6 @@ const ICON_ALLOW: readonly string[] = [
   "src/app/panel/hammaddeler/price-holds.tsx", // kart başlığı ikonu
   "src/app/panel/faturalar/page.tsx", // Stat ikonu
   "src/app/panel/tutarlilik/page.tsx", // "Büyük fark" Stat ikonu
-  // Geçici: Vergi bandı (TaxBanner) Bölüm 3'te kutusuz tek satıra iner, bayatlık ayrı Notice olur (§7.4); o gün kalkar
-  "src/app/panel/vergi/ui.tsx",
 ];
 
 test("elle uyarı ikonu yok: TriangleAlert / AlertTriangle / CircleAlert / AlertCircle JSX'i yalnız izinli yerlerde", () => {

@@ -31,15 +31,17 @@ import { QuarterTable } from "./quarter-table";
 export const metadata: Metadata = { title: "Vergi kârı" };
 
 const TITLE = "Vergi kârı";
-const DESCRIPTION =
-  "Seçilen çeyreğin ayları, çeyrek toplamı ve yılbaşından kümülatif: vergi esasında, KDV hariç, belgeye dayanan satırlar. Gelir mali belgeden (KDV beyannamesi, yazarkasa Z'si) gelir; girilmeyen ayda yönetim verisi kullanılır ve hesap taslaktır.";
+const DESCRIPTION = "Vergi hesabına göre bu çeyreğin kârı: belgeli gelir ve gider, KDV hariç.";
+// Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
+const MORE =
+  "Seçilen çeyreğin ayları, çeyrek toplamı ve yılbaşından beri: vergi esasında, KDV hariç, belgeye dayanan satırlar. Gelir mali belgeden (KDV beyannamesi, yazarkasa Z'si) gelir; girilmeyen ayda kasa programının rakamı kullanılır ve hesapta bilgi eksiktir.";
 
 export default function TaxPnlPage({ searchParams }: PageProps<"/panel/vergi/gelir-gider">) {
   return (
     <Suspense
       fallback={
         <>
-          <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} />
+          <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} more={MORE} />
           <PageSkeleton rows={12} />
         </>
       }
@@ -52,8 +54,8 @@ export default function TaxPnlPage({ searchParams }: PageProps<"/panel/vergi/gel
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /**
- * Vergi, KDV, SGK › Vergi kârı (plan docs/planlar/vergi.md §4.2; eski adı "Vergiye göre"): çeyreğin tablosu, köprü, KDV beyannamesi satışları,
- * sınıflandırma listesi ve düzeltmeler. Nakit planını okumaz (K30): model ve vergi girdileri yeter.
+ * Vergi, KDV, SGK › Vergi kârı (plan docs/planlar/vergi.md §4.2, docs/planlar/ux-sade.md §7.7; eski adı "Vergiye
+ * göre"): eksik belge uyarısı, çeyreğin tablosu, köprü, KDV beyannamesi satışları, eksik belgeler ve düzeltmeler. Nakit planını okumaz (K30): model ve vergi girdileri yeter.
  */
 async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel/vergi/gelir-gider">["searchParams"] }) {
   await requireAdmin();
@@ -86,10 +88,10 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   if (!q) {
     return (
       <>
-        <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
+        <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
         <TaxBanner data={banner} />
         <Card>
-          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Muhasebeci › Vergi ayarları'ndan değiştirebilirsiniz." />
+          <EmptyState icon={<Calculator />} title="Bu yıl hesap döneminde değil" description="Hesap dönemi başlangıcını Muhasebeci › Şirketin vergi ayarları'ndan değiştirebilirsiniz." />
         </Card>
       </>
     );
@@ -115,7 +117,7 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
 
   return (
     <>
-      <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} actions={actions} />
+      <VergiHeader current="/panel/vergi/gelir-gider" title={TITLE} description={DESCRIPTION} more={MORE} actions={actions} />
       {/* ⌘K "Eksik belgeler" (#siniflandir) ve Özet'in bağlantıları içerik akınca iner */}
       <HashScroll key={`capa-${q.key}`} />
       <TaxBanner data={banner} />
@@ -139,10 +141,10 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
             icon={<Calculator />}
             title={`${q.label} · ${q.totals.months.length > 1 ? rangeText : monthName(q.totals.months[0] ?? "")}`}
             description={q.totals.complete ? "Çeyrek bitti" : "Dönem sürüyor: bugüne kadarki veriyle (süren ay tamamlanmaz)"}
-            actions={q.totals.state === "taslak" ? <Badge tone="amber">Taslak</Badge> : <Badge tone="green">Hazır</Badge>}
+            actions={q.totals.state === "taslak" ? <Badge tone="amber">Eksik bilgi</Badge> : <Badge tone="green">Hazır</Badge>}
           />
           <div className="space-y-2 px-5 pb-4">
-            {q.totals.state === "taslak" ? <p className="text-[13px] leading-5 text-ink-mute">Taslak: {q.totals.stateReasons.join(" · ")}.</p> : null}
+            {q.totals.state === "taslak" ? <p className="text-[13px] leading-5 text-ink-mute">Eksik bilgi: {q.totals.stateReasons.join(" · ")}.</p> : null}
             {gecici.options.some((o) => o.period === q.key) ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <FilingButton data={gecici} period={q.key} label={geciciFiling ? `${q.label} geçici vergi kaydını düzelt` : `${q.label} geçici vergi rakamını gir`} />
