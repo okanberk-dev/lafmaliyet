@@ -330,6 +330,13 @@
       "when": 1793277009667,
       "tag": "0046_karaoke_iade_tutari",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793607025374,
+      "tag": "0047_ekim_sayimi",
+      "breakpoints": true
     }
   ]
 }
