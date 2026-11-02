@@ -3,7 +3,7 @@
 -- (1 "Koyulaştırılmış süt…" listesi, 2 tartılan şişeler, 3 "Çöp torbası…" sayfası, 4 "LAF İLK SAYIM" ön yüz), yazılan =
 -- kâğıtta ne yazdığı, kalem = paneldeki adı, miktar = sayım biriminde (KG, LT, ADET, DİLİM). Aynı kalemin satırları
 -- toplanır (depo, bar ve dolap ayrı kâğıtlara sayılmış). Tartılan açık şişeler kâğıttaki net değerle (şişesi düşülmüş),
--- 1 gr = 1 ml. Okuma, eşleme ve sahibine sorulanlar: docs/sayimlar/2026-10.md.
+-- 1 gr = 1 ml. Okuma, eşleme ve sahibinin cevapları: docs/sayimlar/2026-10.md.
 --
 -- Yazım kuralı, uygulamanın sayım kaydıyla aynı (src/server/actions/stock.ts saveStockCounts):
 --  - Kalem adla eşlenir: Türkçe büyük / küçük harf, düzeltme işareti ve boşluk farkı gözetmeden (anahtar
@@ -16,6 +16,26 @@
 --    geçmişine "elle girilecek" diye düşer.
 -- Korumalar: boş veritabanına bir şey yazılmaz (db:seed Excel'i yükler); Ekim'de panelden kaydedilmiş sayımın ve aynı
 -- adlı ek kalemin üzerine yazılmaz; yeniden çalışırsa bir şey eklemez. Bir şey yazıldıysa işlem geçmişine tek satır.
+--
+-- 1) Sahibinin 2 Kasım 2026 cevabı: "Cooler base" barda ve kâğıtta "Smoothie powder" diye geçiyor, panelde de o adla
+-- görünsün. Kalem aynı kalır (reçete, fatura, Paraşüt bağlantısı ve sayım kimlikle bağlı), yalnız adı değişir. Bu adla
+-- başka hammadde varsa ya da ad zaten değiştiyse dokunulmaz; aynı anahtarla iki kalem olsa yalnız ilki değişir (ad
+-- sütunu benzersiz). Sayım (2) yeni adla eşlenir.
+WITH "ad" AS (
+  UPDATE "ingredients" SET "name" = 'Smoothie powder', "updated_at" = now()
+  WHERE "id" = (
+    SELECT min(c."id") FROM "ingredients" c
+    WHERE lower(translate(regexp_replace(btrim(c."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = 'cooler base'
+  )
+    AND NOT EXISTS (
+      SELECT 1 FROM "ingredients" x
+      WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = 'smoothie powder'
+    )
+  RETURNING "id"
+)
+INSERT INTO "activity_log" ("user_name", "action", "detail")
+SELECT 'Sistem', 'Hammadde güncellendi', 'Cooler base → Smoothie powder (adı değişti; sahibinin isteği, Ekim 2026 sayımı)' FROM "ad";--> statement-breakpoint
+-- 2) Sayım
 WITH "satir" ("no", "foto", "yazilan", "kalem", "miktar", "birim", "tur") AS (
   VALUES
     (1, 4, 'Espresso 1 koli = 12 kg + 1 koli: 12 kg + 2 kg', 'Espresso çekirdeği', 26, 'KG', 'liste'),
@@ -87,9 +107,9 @@ WITH "satir" ("no", "foto", "yazilan", "kalem", "miktar", "birim", "tur") AS (
     (67, 1, 'Çikolata sos 7 adet (Callei, 1 kg)', 'Callei waffle sos sütlü', 7, 'KG', 'liste'),
     (68, 2, 'Callei: çikolata = 112 ml', 'Callei waffle sos sütlü', 0.112, 'KG', 'liste'),
     (69, 1, 'Matcha 0,25', 'Matcha', 0.25, 'KG', 'liste'),
-    (70, 2, 'Matcha = 160 gr', 'Matcha', 0.16, 'KG', 'liste'),
-    (71, 1, 'Cooler base 1 kg', 'Cooler base', 1, 'KG', 'liste'),
-    (72, 2, 'Smoothie powder = 380 gr', 'Cooler base', 0.38, 'KG', 'liste'),
+    (70, 2, 'Matcha = 100 gr', 'Matcha', 0.1, 'KG', 'liste'),
+    (71, 1, 'Cooler base 1 kg', 'Smoothie powder', 1, 'KG', 'liste'),
+    (72, 2, 'Smoothie powder = 380 gr', 'Smoothie powder', 0.38, 'KG', 'liste'),
     (73, 2, 'Frapp powder 1.5 kg', 'Frappe tozu', 1.5, 'KG', 'liste'),
     (74, 2, 'Sıcak çikolata = 800 gr', 'Sıcak çikolata tozu', 0.8, 'KG', 'liste'),
     (75, 2, 'S. çikolata = 700 gr', 'Sıcak çikolata tozu', 0.7, 'KG', 'liste'),
@@ -98,53 +118,54 @@ WITH "satir" ("no", "foto", "yazilan", "kalem", "miktar", "birim", "tur") AS (
     (78, 3, 'San Sebastian 12 dilim + 12 dilim', 'San Sebastian dilim', 24, 'DİLİM', 'liste'),
     (79, 3, 'Yaban mersinli San Sebastian 12 dilim + 2 dilim', 'Yaban mersinli SS dilim', 14, 'DİLİM', 'liste'),
     (80, 3, 'Cedric Mango 9 dilim', 'Tasarım Mango', 9, 'ADET', 'liste'),
-    (81, 3, 'Mono Latte 9 dilim', 'Tasarım Kahve Çekirdeği', 9, 'ADET', 'liste'),
-    (82, 3, 'Fıstık tanesi 2 dilim', 'Tasarım Fıstık Tanesi', 2, 'ADET', 'liste'),
-    (83, 3, 'Marlenka 3 dilim + 12 dilim', 'Marlenka dilim', 15, 'DİLİM', 'liste'),
-    (84, 3, 'Frambuazlı cheesecake 6 dilim', 'Frambuazlı cheesecake', 6, 'ADET', 'liste'),
-    (85, 3, 'Limonlu mono cheesecake 5 dilim', 'Limonlu cheesecake', 5, 'ADET', 'liste'),
-    (86, 3, 'Brownie 16 dilim + 36 dilim', 'Brownie dilim', 52, 'DİLİM', 'liste'),
-    (87, 3, 'Tiramisu cake 6 dilim', 'Tiramisu dilim', 6, 'DİLİM', 'liste'),
-    (88, 2, 'Cam su = 67', 'Su (cam şişe)', 67, 'ADET', 'liste'),
-    (89, 2, 'Pet su = 81', 'Su (PET)', 81, 'ADET', 'liste'),
-    (90, 2, 'Uludağ soda = 24 adet', 'Soda (Uludağ 25 cl)', 24, 'ADET', 'liste'),
-    (91, 4, '4 oz karton 1000 + 100 + 1000 adet', 'Karton bardak 4oz', 2100, 'ADET', 'liste'),
-    (92, 4, '8 oz baskılı 1000', 'Karton bardak 8oz', 1000, 'ADET', 'liste'),
-    (93, 4, '12 oz baskılı karton 850', 'Karton bardak 14oz', 850, 'ADET', 'liste'),
-    (94, 4, '16 oz baskılı 1000 + 1000 + 1000 + 700 + 1000', 'Plastik bardak 16oz', 4700, 'ADET', 'liste'),
-    (95, 4, '8 oz karton kapak 200 adet', 'Kapak 8-12oz', 200, 'ADET', 'liste'),
-    (96, 4, '8 oz siyah kapak 500 adet', 'Kapak 8-12oz', 500, 'ADET', 'liste'),
-    (97, 4, '12 oz karton kapak 500 adet', 'Kapak 14-16oz', 500, 'ADET', 'liste'),
-    (98, 4, 'Kapak şeffaf 600 + 8000 adet', 'Bombe kapak', 8600, 'ADET', 'liste'),
-    (99, 4, 'Siyah pipet 1000 adet', 'Pipet', 1000, 'ADET', 'liste'),
-    (100, 4, 'Peçete 17 koli + 1 koli', 'Peçete', 18, 'ADET', 'koli'),
-    (101, 1, 'Yenilebilir bardak LAF 18 adet', 'Yenilebilir bardak', 18, 'ADET', 'liste'),
-    (102, 2, 'Callei: Antep = 338', 'Callei Antep fıstığı sos', 0.338, 'KG', 'ek'),
-    (103, 1, 'Antep fıstığı sos 5 adet (Callei, 1 kg)', 'Callei Antep fıstığı sos', 5, 'KG', 'ek'),
-    (104, 2, 'Callei: beyaz = 111 ml', 'Callei beyaz çikolata sos', 0.111, 'KG', 'ek'),
-    (105, 2, 'Callei: karamel = 422', 'Callei karamel sos', 0.422, 'KG', 'ek'),
+    (81, 3, 'Fıstık tanesi 2 dilim', 'Tasarım Fıstık Tanesi', 2, 'ADET', 'liste'),
+    (82, 3, 'Marlenka 3 dilim + 12 dilim', 'Marlenka dilim', 15, 'DİLİM', 'liste'),
+    (83, 3, 'Frambuazlı cheesecake 6 dilim', 'Frambuazlı cheesecake', 6, 'ADET', 'liste'),
+    (84, 3, 'Limonlu mono cheesecake 5 dilim', 'Limonlu cheesecake', 5, 'ADET', 'liste'),
+    (85, 3, 'Brownie 16 dilim + 36 dilim', 'Brownie dilim', 52, 'DİLİM', 'liste'),
+    (86, 3, 'Tiramisu cake 6 dilim', 'Tiramisu dilim', 6, 'DİLİM', 'liste'),
+    (87, 2, 'Cam su = 67', 'Su (cam şişe)', 67, 'ADET', 'liste'),
+    (88, 2, 'Pet su = 81', 'Su (PET)', 81, 'ADET', 'liste'),
+    (89, 2, 'Uludağ soda = 24 adet', 'Soda (Uludağ 25 cl)', 24, 'ADET', 'liste'),
+    (90, 4, '4 oz karton 1000 + 100 + 1000 adet', 'Karton bardak 4oz', 2100, 'ADET', 'liste'),
+    (91, 4, '8 oz baskılı 1000', 'Karton bardak 8oz', 1000, 'ADET', 'liste'),
+    (92, 4, '12 oz baskılı karton 850', 'Karton bardak 14oz', 850, 'ADET', 'liste'),
+    (93, 4, '16 oz baskılı 1000 + 1000 + 1000 + 700 + 1000', 'Plastik bardak 16oz', 4700, 'ADET', 'liste'),
+    (94, 4, '8 oz karton kapak 200 adet', 'Kapak 8-12oz', 200, 'ADET', 'liste'),
+    (95, 4, '8 oz siyah kapak 500 adet', 'Kapak 8-12oz', 500, 'ADET', 'liste'),
+    (96, 4, '12 oz karton kapak 500 adet', 'Kapak 14-16oz', 500, 'ADET', 'liste'),
+    (97, 4, 'Kapak şeffaf 600 + 8000 adet', 'Bombe kapak', 8600, 'ADET', 'liste'),
+    (98, 4, 'Siyah pipet 1000 adet', 'Pipet', 1000, 'ADET', 'liste'),
+    (99, 4, 'Peçete 17 koli + 1 koli', 'Peçete', 18, 'ADET', 'koli'),
+    (100, 1, 'Yenilebilir bardak LAF 18 adet', 'Yenilebilir bardak', 18, 'ADET', 'liste'),
+    (101, 2, 'Callei: Antep = 338', 'Callei Antep fıstığı sos', 0.338, 'KG', 'ek'),
+    (102, 1, 'Antep fıstığı sos 5 adet (Callei, 1 kg)', 'Callei Antep fıstığı sos', 5, 'KG', 'ek'),
+    (103, 2, 'Callei: beyaz = 111 ml', 'Callei beyaz çikolata sos', 0.111, 'KG', 'ek'),
+    (104, 2, 'Callei: karamel = 422', 'Callei karamel sos', 0.422, 'KG', 'ek'),
+    (105, 2, 'Callei: son satır = 863 (adı okunamadı; sahibi: 863 l)', 'Callei sos (adı okunamadı)', 0.863, 'LT', 'ek'),
     (106, 2, 'Almond = 200 ml', 'Badem şurubu', 0.2, 'LT', 'ek'),
     (107, 2, 'Lychee = 700 ml', 'Liçi şurubu', 0.7, 'LT', 'ek'),
     (108, 2, 'Beyaz çikolata = 250 gr (tozlar arasında)', 'Beyaz çikolata tozu', 0.25, 'KG', 'ek'),
     (109, 3, 'Lotus cake 9 dilim', 'Lotus cake', 9, 'DİLİM', 'ek'),
-    (110, 3, 'Baget hindi füme sandviç 4 adet', 'Baget hindi füme sandviç', 4, 'ADET', 'ek'),
-    (111, 2, 'Beypazarı = 8 adet', 'Beypazarı maden suyu', 8, 'ADET', 'ek'),
-    (112, 1, 'Stick şeker 400 adet', 'Stick şeker', 400, 'ADET', 'ek'),
-    (113, 4, '8 oz baskısız 1200', 'Bardak 8oz baskısız', 1200, 'ADET', 'ek'),
-    (114, 4, '12 oz baskısız 1000 adet', 'Bardak 12oz baskısız', 1000, 'ADET', 'ek'),
-    (115, 4, '12 oz karton kahverengi 175 adet', 'Karton bardak 12oz kahverengi', 175, 'ADET', 'ek'),
-    (116, 4, '12 oz şeffaf kapak 200 adet', 'Şeffaf kapak 12oz', 200, 'ADET', 'ek'),
-    (117, 4, '8 oz sleeve 1000 adet', 'Sleeve 8oz', 1000, 'ADET', 'ek'),
-    (118, 4, '4''lü bardak taşıyıcı 240 adet', '4''lü bardak taşıyıcı', 240, 'ADET', 'ek'),
-    (119, 1, '4''lü bardak taşıyıcı 27 adet', '4''lü bardak taşıyıcı', 27, 'ADET', 'ek'),
-    (120, 4, '2''li bardak taşıyıcı 100 adet', '2''li bardak taşıyıcı', 100, 'ADET', 'ek'),
-    (121, 1, '2''li bardak taşıyıcı 15 adet', '2''li bardak taşıyıcı', 15, 'ADET', 'ek'),
-    (122, 4, 'Taşıma çantası 125 adet (soldaki ''125 adet bardak taşıyıcı'' aynı kalem sayıldı)', 'Taşıma çantası', 125, 'ADET', 'ek'),
-    (123, 4, 'Kraft çanta 200 adet', 'Kraft çanta', 200, 'ADET', 'ek'),
-    (124, 1, 'Kraft çanta 4 adet', 'Kraft çanta', 4, 'ADET', 'ek'),
-    (125, 4, 'Plastik bıçak 150 adet', 'Plastik bıçak', 150, 'ADET', 'ek'),
-    (126, 4, 'Coldbrew şişesi 90 adet', 'Cold brew şişesi', 90, 'ADET', 'ek'),
-    (127, 1, 'ColdBrew şişesi 4 adet', 'Cold brew şişesi', 4, 'ADET', 'ek')
+    (110, 3, 'Mono Latte 9 dilim (tatlı)', 'Mono Latte', 9, 'DİLİM', 'ek'),
+    (111, 3, 'Baget hindi füme sandviç 4 adet', 'Baget hindi füme sandviç', 4, 'ADET', 'ek'),
+    (112, 2, 'Beypazarı = 8 adet', 'Beypazarı maden suyu', 8, 'ADET', 'ek'),
+    (113, 1, 'Stick şeker 400 adet', 'Stick şeker', 400, 'ADET', 'ek'),
+    (114, 4, '8 oz baskısız 1200', 'Bardak 8oz baskısız', 1200, 'ADET', 'ek'),
+    (115, 4, '12 oz baskısız 1000 adet', 'Bardak 12oz baskısız', 1000, 'ADET', 'ek'),
+    (116, 4, '12 oz karton kahverengi 175 adet', 'Karton bardak 12oz kahverengi', 175, 'ADET', 'ek'),
+    (117, 4, '12 oz şeffaf kapak 200 adet', 'Şeffaf kapak 12oz', 200, 'ADET', 'ek'),
+    (118, 4, '8 oz sleeve 1000 adet', 'Sleeve 8oz', 1000, 'ADET', 'ek'),
+    (119, 4, '4''lü bardak taşıyıcı 240 adet', '4''lü bardak taşıyıcı', 240, 'ADET', 'ek'),
+    (120, 1, '4''lü bardak taşıyıcı 27 adet', '4''lü bardak taşıyıcı', 27, 'ADET', 'ek'),
+    (121, 4, '2''li bardak taşıyıcı 100 adet', '2''li bardak taşıyıcı', 100, 'ADET', 'ek'),
+    (122, 1, '2''li bardak taşıyıcı 15 adet', '2''li bardak taşıyıcı', 15, 'ADET', 'ek'),
+    (123, 4, 'Taşıma çantası 125 adet ve soldaki ''125 adet bardak taşıyıcı'': aynı kalem, sahibi 1250 adet dedi', 'Taşıma çantası', 1250, 'ADET', 'ek'),
+    (124, 4, 'Kraft çanta 200 adet', 'Kraft çanta', 200, 'ADET', 'ek'),
+    (125, 1, 'Kraft çanta 4 adet', 'Kraft çanta', 4, 'ADET', 'ek'),
+    (126, 4, 'Plastik bıçak 150 adet', 'Plastik bıçak', 150, 'ADET', 'ek'),
+    (127, 4, 'Coldbrew şişesi 90 adet', 'Cold brew şişesi', 90, 'ADET', 'ek'),
+    (128, 1, 'ColdBrew şişesi 4 adet', 'Cold brew şişesi', 4, 'ADET', 'ek')
 ),
 "eslesen" AS (
   SELECT s.*, lower(translate(s."kalem", 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AS "anahtar", i."id" AS "ingredient_id", i."count_unit",

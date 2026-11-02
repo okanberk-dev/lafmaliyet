@@ -3,8 +3,9 @@
 // bilinen bir kaleme o kalemin sayım birimiyle gider, ek kalem listedeki bir adla çakışmaz, korumalar ve ad anahtarı
 // yerinde, belge migration'la aynı rakamları söyler. Veritabanı denemesi SAYIM_TEST_DATABASE_URL (yoksa
 // EKLE_TEST_DATABASE_URL) verilince çalışır: kendi geçici veritabanını açar, Excel verisini yükler, migration'ı geri
-// alınan işlemlerde dener (60 kalem + 21 ek kalem; ikinci çalıştırma bir şey eklemez; panelden girilmiş sayımın ve ek
-// kalemin üzerine yazmaz; adı değişmiş kalem ek kaleme, sayım listesinden çıkmış kalem "elle girilecek"e düşer).
+// alınan işlemlerde dener (59 kalem + 23 ek kalem, "Cooler base"in adı "Smoothie powder" olur; ikinci çalıştırma bir şey
+// eklemez; panelden girilmiş sayımın ve ek kalemin üzerine yazmaz; adı değişmiş kalem ek kaleme, sayım listesinden
+// çıkmış kalem "elle girilecek"e düşer).
 // Çalıştırma: SAYIM_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/ekim-sayimi.test.ts
 
 import assert from "node:assert/strict";
@@ -75,24 +76,39 @@ function docNumber(text: string): number {
   return Number(text.replace(/\./g, "").replace(",", "."));
 }
 
+/** Migration'ın önce yeniden adlandırdığı kalem (sahibinin isteği): sayım yeni adla eşlenir */
+const RENAMED: Record<string, string> = { "Smoothie powder": "Cooler base" };
+
 const excel = excelToDataset(JSON.parse(read("src/server/db/seed/excel-data.json")) as ExcelData).ingredients;
 const known = new Map<string, string | null>([...excel.map((i) => [i.name, i.countUnit] as const), ...Object.entries(EIGHT)]);
+for (const [now, before] of Object.entries(RENAMED)) known.set(now, known.get(before) ?? null);
 
-test("migration: satırlar sırayla, dört fotoğraftan, miktar pozitif; tek ifade, yalnız Ekim 2026", () => {
+/** İki ifade: önce yeniden adlandırma, sonra sayım (drizzle'ın kırılma noktasıyla) */
+const statements = (sql: string) => sql.split("--> statement-breakpoint").map((x) => x.trim());
+
+test("migration: satırlar sırayla, dört fotoğraftan, miktar pozitif; iki ifade, yalnız Ekim 2026", () => {
   assert.ok(migrationFile, "ekim_sayimi migration'ı yok");
   const sql = read(`drizzle/${migrationFile}`);
   const rows = lines(sql);
-  assert.equal(rows.length, 127, "kâğıttaki 127 satır");
+  assert.equal(rows.length, 128, "kâğıttaki 128 satır");
   rows.forEach((r, i) => {
     assert.equal(r.no, i + 1, `${r.raw}: sıra`);
     assert.ok([1, 2, 3, 4].includes(r.foto), `${r.raw}: fotoğraf`);
     assert.ok(r.qty > 0, `${r.raw}: miktar`);
     assert.ok(["KG", "LT", "ADET", "DİLİM"].includes(r.unit), `${r.raw}: birim`);
   });
-  // Bütün tarihler Ekim 2026; tek ifade (kırılma noktası yok: birleştirmede --custom ile yeniden üretilip yapıştırılır)
+  // Bütün tarihler Ekim 2026; iki ifade: önce ad (yalnız Cooler base → Smoothie powder), sonra sayım
   assert.deepEqual([...new Set(sql.match(/'\d{4}-\d{2}'/g))], ["'2026-10'"]);
-  assert.doesNotMatch(sql, /statement-breakpoint/);
-  assert.equal(sql.match(/;\s*$/gm)?.length, 1, "tek ifade");
+  const [rename, count] = statements(sql);
+  assert.equal(statements(sql).length, 2);
+  assert.match(rename, /UPDATE "ingredients" SET "name" = 'Smoothie powder'/);
+  assert.match(rename, /= 'cooler base'/);
+  assert.match(rename, /WHERE "id" = \(\s*SELECT min\(c\."id"\)/, "aynı anahtarla iki kalem olsa yalnız biri (ad sütunu benzersiz)");
+  assert.match(rename, /= 'smoothie powder'\s*\)/, "bu adla kalem varsa dokunmaz");
+  assert.match(rename, /'Hammadde güncellendi', 'Cooler base → Smoothie powder/);
+  assert.doesNotMatch(rename.replace(/^--.*$/gm, ""), /stock_counts|stock_extras/, "ad parçası sayıma dokunmaz");
+  assert.match(count, /^-- 2\) Sayım\nWITH "satir"/);
+  for (const st of [rename, count]) assert.equal(st.match(/;\s*$/gm)?.length, 1, "her parça tek ifade");
 });
 
 test("migration: sayım satırı bilinen kaleme o kalemin sayım birimiyle gider; ek kalem listedeki bir adla çakışmaz", () => {
@@ -113,8 +129,8 @@ test("migration: sayım satırı bilinen kaleme o kalemin sayım birimiyle gider
   );
   assert.match(excel.find((i) => i.name === "Peçete")!.packageDesc ?? "", /koli/);
   const t = totals(rows);
-  assert.equal([...t.values()].filter((x) => x.kind !== "ek").length, 60);
-  assert.equal([...t.values()].filter((x) => x.kind === "ek").length, 21);
+  assert.equal([...t.values()].filter((x) => x.kind !== "ek").length, 59);
+  assert.equal([...t.values()].filter((x) => x.kind === "ek").length, 23);
 });
 
 test("migration: korumalar ve ad anahtarı (drizzle/0023 ile aynı)", () => {
@@ -134,14 +150,14 @@ test("migration: korumalar ve ad anahtarı (drizzle/0023 ile aynı)", () => {
   assert.ok(sql.includes(`translate(s."kalem", '${from}', '${to}')`));
 });
 
-test("belge migration'la aynı rakamları söyler (60 kalem, 21 ek kalem)", () => {
+test("belge migration'la aynı rakamları söyler (59 kalem, 23 ek kalem)", () => {
   const doc = read(DOC);
   const t = totals(lines(read(`drizzle/${migrationFile}`)));
   // Sayım listesi tablosu: | Grup | Kalem | Sayım | Kâğıtta |
   const listed = [...doc.matchAll(/^\| [A-ZÇĞİÖŞÜ&/ ()a-zşı]+ \| ([^|]+) \| ([^|]+) \| [^|]+ \|$/gm)]
     .map((m) => [m[1].trim(), m[2].trim()] as const)
     .filter(([name]) => t.has(name) && t.get(name)!.kind !== "ek");
-  assert.equal(listed.length, 60);
+  assert.equal(listed.length, 59);
   for (const [name, text] of listed) {
     const x = t.get(name)!;
     if (x.kind === "koli") {
@@ -176,7 +192,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
 
   type Count = { name: string; qty: number; factor: number; counted_by: string };
   type Extra = { name: string; unit: string; qty: number; unit_price: number };
-  type Trial = { counts: Map<string, Count>; extras: Extra[]; logs: string[] };
+  type Trial = { counts: Map<string, Count>; extras: Extra[]; logs: string[]; renames: string[]; names: string[] };
 
   /** Hazırlığı ve migration'ı (istenirse iki kez) işlemde çalıştırır, sonucu okur, hepsini geri alır */
   async function trial(prepare: (tx: postgres.TransactionSql) => Promise<unknown> = async () => {}, runs = 1): Promise<Trial> {
@@ -185,13 +201,21 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       .begin(async (tx) => {
         await prepare(tx);
         const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
-        for (let i = 0; i < runs; i++) await tx.unsafe(sql());
+        for (let i = 0; i < runs; i++) for (const st of statements(sql())) await tx.unsafe(st);
         const counts = await tx<Count[]>`
           select i.name, c.qty, c.factor, c.counted_by from stock_counts c join ingredients i on i.id = c.ingredient_id
           where c.month = '2026-10'`;
         const extras = await tx<Extra[]>`select name, unit, qty, unit_price from stock_extras where month = '2026-10' order by id`;
         const logs = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Stok sayımı' order by id`;
-        out = { counts: new Map(counts.map((c) => [c.name, c])), extras: [...extras], logs: logs.map((l) => l.detail) };
+        const renames = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Hammadde güncellendi' order by id`;
+        const names = await tx<{ name: string }[]>`select name from ingredients order by id`;
+        out = {
+          counts: new Map(counts.map((c) => [c.name, c])),
+          extras: [...extras],
+          logs: logs.map((l) => l.detail),
+          renames: renames.map((l) => l.detail),
+          names: names.map((n) => n.name),
+        };
         throw ROLLBACK;
       })
       .catch((e) => {
@@ -238,10 +262,12 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     await admin?.end();
   });
 
-  test("Excel verisinde: 60 kalem kendi çarpanıyla, 21 ek kalem fiyatsız ve kâğıt sırasıyla, tek işlem geçmişi satırı", async () => {
+  test("Excel verisinde: Cooler base → Smoothie powder; 59 kalem kendi çarpanıyla, 23 ek kalem fiyatsız ve kâğıt sırasıyla", async () => {
     const t = totals(lines(sql()));
     const r = await trial();
-    assert.equal(r.counts.size, 60);
+    assert.ok(r.names.includes("Smoothie powder") && !r.names.includes("Cooler base"), "ad değişti");
+    assert.deepEqual(r.renames, ["Cooler base → Smoothie powder (adı değişti; sahibinin isteği, Ekim 2026 sayımı)"]);
+    assert.equal(r.counts.size, 59);
     for (const [name, x] of t) {
       if (x.kind === "ek") continue;
       const c = r.counts.get(name);
@@ -252,18 +278,22 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     }
     assert.equal(r.counts.get("Espresso çekirdeği")?.qty, 38);
     assert.equal(r.counts.get("Peçete")?.qty, 45000, "18 koli × 2.500");
+    assert.equal(r.counts.get("Smoothie powder")?.qty, 1.38, "yeni adla, eski kalemin kaydına");
+    assert.equal(r.counts.get("Matcha")?.qty, 0.35);
+    assert.ok(!r.counts.has("Tasarım Kahve Çekirdeği"), "Mono Latte ayrı tatlı");
     assert.deepEqual(
       r.extras,
       [...t.entries()].filter(([, x]) => x.kind === "ek").map(([name, x]) => ({ name, unit: x.unit, qty: x.qty, unit_price: 0 })),
     );
-    assert.deepEqual(r.logs, ["Ekim 2026: 31 Ekim sayım kâğıdından 60 kalem; 21 ek kalem (Listede olmayanlar; birim fiyatını yönetici girer)"]);
+    assert.deepEqual(r.logs, ["Ekim 2026: 31 Ekim sayım kâğıdından 59 kalem; 23 ek kalem (Listede olmayanlar; birim fiyatını yönetici girer)"]);
   });
 
   test("ikinci çalıştırma bir şey eklemez, işlem geçmişine yeniden yazmaz", async () => {
     const r = await trial(undefined, 2);
-    assert.equal(r.counts.size, 60);
-    assert.equal(r.extras.length, 21);
+    assert.equal(r.counts.size, 59);
+    assert.equal(r.extras.length, 23);
     assert.equal(r.logs.length, 1);
+    assert.equal(r.renames.length, 1);
   });
 
   test("panelden girilmiş Ekim sayımı ve aynı adlı ek kalem olduğu gibi kalır", async () => {
@@ -273,14 +303,14 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       await tx`insert into stock_extras (month, name, unit, qty, unit_price) values ('2026-10', 'KRAFT ÇANTA', 'PAKET', 2, 150)`;
     });
     assert.deepEqual({ qty: r.counts.get("Espresso çekirdeği")?.qty, by: r.counts.get("Espresso çekirdeği")?.counted_by }, { qty: 30, by: "Ayşe" });
-    assert.equal(r.counts.size, 60);
+    assert.equal(r.counts.size, 59);
     assert.deepEqual(
       r.extras.filter((e) => looseKey(e.name) === looseKey("Kraft çanta")),
       [{ name: "KRAFT ÇANTA", unit: "PAKET", qty: 2, unit_price: 150 }],
     );
-    assert.equal(r.extras.length, 21, "20 yeni + panelden girilen");
+    assert.equal(r.extras.length, 23, "22 yeni + panelden girilen");
     assert.equal(r.logs.length, 1);
-    assert.match(r.logs[0], /^Ekim 2026: 31 Ekim sayım kâğıdından 59 kalem; 20 ek kalem .+; 1 kalem panelde zaten sayılmıştı, dokunulmadı$/);
+    assert.match(r.logs[0], /^Ekim 2026: 31 Ekim sayım kâğıdından 58 kalem; 22 ek kalem .+; 1 kalem panelde zaten sayılmıştı, dokunulmadı$/);
   });
 
   test("adı değişmiş kalem ek kaleme; sayım listesinden çıkmış ya da birimi değişmiş kalem yazılmaz, işlem geçmişinde", async () => {
@@ -298,15 +328,33 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       // Büyük harfle yazılmış ad yine eşleşir
       await tx`update ingredients set name = 'MATCHA' where name = 'Matcha'`;
     });
-    assert.equal(r.counts.get("MATCHA")?.qty, 0.41, "büyük / küçük harf farkı eşleşir");
+    assert.equal(r.counts.get("MATCHA")?.qty, 0.35, "büyük / küçük harf farkı eşleşir");
     for (const name of ["Frappe tozu", "Su (PET)", "Marlenka dilim", "Peçete", "Colombia (cold brew)"]) assert.ok(!r.counts.has(name), name);
-    assert.equal(r.counts.size, 55);
+    assert.equal(r.counts.size, 54);
     assert.deepEqual(
       r.extras.find((e) => e.name === "Cold brew kahve (Colombia)"),
       { name: "Cold brew kahve (Colombia)", unit: "KG", qty: 0.5, unit_price: 0 },
     );
-    assert.equal(r.extras.length, 22);
+    assert.equal(r.extras.length, 24);
     assert.match(r.logs[0] ?? "", /; elle girilecek: Frappe tozu, Marlenka dilim, Peçete, Su \(PET\)$/);
+  });
+
+  test("Smoothie powder adı panelde zaten varsa ad değişmez; sayım o kaleme yazılır", async () => {
+    // Elle değiştirilmiş (büyük harfle): Cooler base kalmaz, ad olduğu gibi kalır
+    const byHand = await trial(async (tx) => {
+      await tx`update ingredients set name = 'SMOOTHIE POWDER' where name = 'Cooler base'`;
+    });
+    assert.deepEqual(byHand.renames, []);
+    assert.equal(byHand.counts.get("SMOOTHIE POWDER")?.qty, 1.38);
+    // Bu adla ayrı bir kalem açılmış: Cooler base adını korur, sayım Smoothie powder'a gider
+    const twin = await trial(async (tx) => {
+      await tx`insert into ingredients (name, category, unit, count_unit, count_group, package_price, package_size)
+        values ('Smoothie powder', 'Toz', 'gr', 'KG', 'TOZ ÜRÜNLER', 900, 1000)`;
+    });
+    assert.deepEqual(twin.renames, []);
+    assert.ok(twin.names.includes("Cooler base"));
+    assert.equal(twin.counts.get("Smoothie powder")?.qty, 1.38);
+    assert.ok(!twin.counts.has("Cooler base"));
   });
 
   test("pasif ama aktif bir reçetede geçen kalem sayılır (sayım listesinde)", async () => {
