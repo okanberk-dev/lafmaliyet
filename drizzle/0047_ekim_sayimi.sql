@@ -19,13 +19,15 @@
 --
 -- 1) Sahibinin 2 Kasım 2026 cevabı: "Cooler base" barda ve kâğıtta "Smoothie powder" diye geçiyor, panelde de o adla
 -- görünsün. Kalem aynı kalır (reçete, fatura, Paraşüt bağlantısı ve sayım kimlikle bağlı), yalnız adı değişir. Bu adla
--- başka hammadde varsa ya da ad zaten değiştiyse dokunulmaz; aynı anahtarla iki kalem olsa yalnız ilki değişir (ad
--- sütunu benzersiz). Sayım (2) yeni adla eşlenir.
+-- başka hammadde varsa ya da ad zaten değiştiyse dokunulmaz; aynı anahtarla iki kalem olsa yalnız biri değişir (ad
+-- sütunu benzersiz): sayımın eşlemesi gibi önce aktif olan, sonra en küçük kimlik. Sayım (2) yeni adla eşlenir.
 WITH "ad" AS (
   UPDATE "ingredients" SET "name" = 'Smoothie powder', "updated_at" = now()
   WHERE "id" = (
-    SELECT min(c."id") FROM "ingredients" c
+    SELECT c."id" FROM "ingredients" c
     WHERE lower(translate(regexp_replace(btrim(c."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = 'cooler base'
+    ORDER BY c."active" DESC, c."id"
+    LIMIT 1
   )
     AND NOT EXISTS (
       SELECT 1 FROM "ingredients" x
@@ -186,7 +188,7 @@ WITH "satir" ("no", "foto", "yazilan", "kalem", "miktar", "birim", "tur") AS (
 ),
 "uygun" AS (
   SELECT e.*, e."ingredient_id" IS NOT NULL AND e."listede" AND e."count_unit" = e."birim"
-    AND (e."tur" <> 'koli' OR e."package_desc" ILIKE '%koli%') AS "yazilir"
+    AND (e."tur" <> 'koli' OR coalesce(e."package_desc", '') ILIKE '%koli%') AS "yazilir"
   FROM "eslesen" e
 ),
 "sayim" AS (
@@ -239,4 +241,4 @@ SELECT 'Sistem', 'Stok sayımı', concat_ws('; ',
   (SELECT count(*) || ' kalem panelde zaten sayılmıştı, dokunulmadı' FROM "onceden" HAVING count(*) > 0),
   (SELECT 'elle girilecek: ' || string_agg("kalem", ', ' ORDER BY "kalem") FROM "atlanan" HAVING count(*) > 0)
 )
-WHERE EXISTS (SELECT 1 FROM "yazilan") OR EXISTS (SELECT 1 FROM "eklenen") OR EXISTS (SELECT 1 FROM "atlanan");
+WHERE EXISTS (SELECT 1 FROM "yazilan") OR EXISTS (SELECT 1 FROM "eklenen");

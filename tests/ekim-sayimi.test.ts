@@ -103,7 +103,7 @@ test("migration: satırlar sırayla, dört fotoğraftan, miktar pozitif; iki ifa
   assert.equal(statements(sql).length, 2);
   assert.match(rename, /UPDATE "ingredients" SET "name" = 'Smoothie powder'/);
   assert.match(rename, /= 'cooler base'/);
-  assert.match(rename, /WHERE "id" = \(\s*SELECT min\(c\."id"\)/, "aynı anahtarla iki kalem olsa yalnız biri (ad sütunu benzersiz)");
+  assert.match(rename, /WHERE "id" = \(\s*SELECT c\."id" FROM "ingredients" c[\s\S]*?ORDER BY c\."active" DESC, c\."id"\s*LIMIT 1\s*\)/, "aynı anahtarla iki kalem olsa yalnız biri, sayımın eşlemesi gibi önce aktif");
   assert.match(rename, /= 'smoothie powder'\s*\)/, "bu adla kalem varsa dokunmaz");
   assert.match(rename, /'Hammadde güncellendi', 'Cooler base → Smoothie powder/);
   assert.doesNotMatch(rename.replace(/^--.*$/gm, ""), /stock_counts|stock_extras/, "ad parçası sayıma dokunmaz");
@@ -138,7 +138,8 @@ test("migration: korumalar ve ad anahtarı (drizzle/0023 ile aynı)", () => {
   assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "ingredients"\)/, "boş veritabanına yazmaz (db:seed Excel'i yükler)");
   assert.match(sql, /ON CONFLICT \("month", "ingredient_id"\) DO NOTHING/, "panelden girilen sayımın üzerine yazmaz");
   assert.match(sql, /NOT EXISTS \(\s*SELECT 1 FROM "stock_extras" x\s*WHERE x\."month" = '2026-10'/, "aynı adlı ek kalemi yinelemez");
-  assert.match(sql, /"package_desc" ILIKE '%koli%'/, "koli satırı yalnız koliyle satılan pakette çarpılır");
+  assert.match(sql, /coalesce\(e\."package_desc", ''\) ILIKE '%koli%'/, "koli satırı yalnız koliyle satılan pakette çarpılır (paket boşsa yazılmaz, raporlanır)");
+  assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "yazilan"\) OR EXISTS \(SELECT 1 FROM "eklenen"\);\s*$/, "işlem geçmişine yalnız bir şey yazıldıysa");
   // Uygulamanın sayım kaydıyla aynı çarpan ve sayım listesi kuralı (isCountable)
   assert.match(sql, /CASE WHEN "count_unit" IN \('KG', 'LT'\) THEN 1000 ELSE 1 END/);
   assert.match(sql, /i\."count_unit" IS NOT NULL AND \(i\."active" OR EXISTS \(/);
@@ -157,7 +158,11 @@ test("belge migration'la aynı rakamları söyler (59 kalem, 23 ek kalem)", () =
   const listed = [...doc.matchAll(/^\| [A-ZÇĞİÖŞÜ&/ ()a-zşı]+ \| ([^|]+) \| ([^|]+) \| [^|]+ \|$/gm)]
     .map((m) => [m[1].trim(), m[2].trim()] as const)
     .filter(([name]) => t.has(name) && t.get(name)!.kind !== "ek");
-  assert.equal(listed.length, 59);
+  // Her kalem tam bir kez: eksik ya da yinelenen satır olmaz
+  assert.deepEqual(
+    listed.map(([name]) => name).sort(),
+    [...t].filter(([, x]) => x.kind !== "ek").map(([name]) => name).sort(),
+  );
   for (const [name, text] of listed) {
     const x = t.get(name)!;
     if (x.kind === "koli") {
@@ -323,8 +328,9 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       await tx`update products set active = false
         where id in (select r.product_id from recipe_items r join ingredients i on i.id = r.ingredient_id where i.name = 'Su (PET)')`;
       await tx`update ingredients set count_unit = 'ADET' where name = 'Marlenka dilim'`;
-      // Peçetenin paketi artık koli değil: koli × paket yanlış olurdu
+      // Peçetenin paketi artık koli değil: koli × paket yanlış olurdu (boş paket bilgisi de)
       await tx`update ingredients set package_desc = 'Peçete paketi 100 adet', package_size = 100 where name = 'Peçete'`;
+      await tx`update ingredients set package_desc = null where name = 'Yenilebilir bardak'`;
       // Büyük harfle yazılmış ad yine eşleşir
       await tx`update ingredients set name = 'MATCHA' where name = 'Matcha'`;
     });
@@ -355,6 +361,29 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     assert.ok(twin.names.includes("Cooler base"));
     assert.equal(twin.counts.get("Smoothie powder")?.qty, 1.38);
     assert.ok(!twin.counts.has("Cooler base"));
+  });
+
+  test("Peçetenin paket bilgisi boşsa sayılmaz ama işlem geçmişinde elle girilecek", async () => {
+    const r = await trial(async (tx) => {
+      await tx`update ingredients set package_desc = null where name = 'Peçete'`;
+    });
+    assert.ok(!r.counts.has("Peçete"));
+    assert.ok(!r.extras.some((e) => e.name === "Peçete"));
+    assert.match(r.logs[0] ?? "", /; elle girilecek: Peçete$/);
+  });
+
+  test("eski Cooler base pasif, kullanılan aynı adlı kalem aktifse ad ve sayım aktif olana", async () => {
+    const r = await trial(async (tx) => {
+      await tx`update ingredients set active = false where name = 'Cooler base'`;
+      await tx`update products set active = false
+        where id in (select r.product_id from recipe_items r join ingredients i on i.id = r.ingredient_id where i.name = 'Cooler base')`;
+      await tx`insert into ingredients (name, category, unit, count_unit, count_group, package_price, package_size)
+        values ('Cooler Base', 'Toz', 'gr', 'KG', 'TOZ ÜRÜNLER', 836, 1000)`;
+    });
+    assert.ok(r.names.includes("Cooler base"), "pasif eski kalemin adı kalır");
+    assert.ok(!r.names.includes("Cooler Base") && r.names.includes("Smoothie powder"), "aktif kalem yeniden adlandırıldı");
+    assert.equal(r.counts.get("Smoothie powder")?.qty, 1.38);
+    assert.ok(!r.counts.has("Cooler base"));
   });
 
   test("pasif ama aktif bir reçetede geçen kalem sayılır (sayım listesinde)", async () => {
