@@ -337,6 +337,13 @@
       "when": 1793607025374,
       "tag": "0047_ekim_sayimi",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793619693845,
+      "tag": "0048_ekim_kalemleri_listeye",
+      "breakpoints": true
     }
   ]
 }

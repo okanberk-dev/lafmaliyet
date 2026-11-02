@@ -1,4 +1,6 @@
-// Ekim 2026 ay sonu sayımı (drizzle/*_ekim_sayimi.sql): 31 Ekim 2026 kapanışındaki kâğıt sayımının panele işlenmesi
+// Ekim 2026 ay sonu sayımı (drizzle/*_ekim_sayimi.sql): 31 Ekim 2026 kapanışındaki kâğıt sayımının panele işlenmesi;
+// ardından ek kalemlerinin sayım listesine alınması (drizzle/*_ekim_kalemleri_listeye.sql: 22 kalem hammadde olur, Ekim
+// miktarı ek kalemden kalemin sayımına taşınır)
 // (kayıt ve sahibine sorulanlar: docs/sayimlar/2026-10.md). Saf denetimler her zaman çalışır: kâğıttaki her satır
 // bilinen bir kaleme o kalemin sayım birimiyle gider, ek kalem listedeki bir adla çakışmaz, korumalar ve ad anahtarı
 // yerinde, belge migration'la aynı rakamları söyler. Veritabanı denemesi SAYIM_TEST_DATABASE_URL (yoksa
@@ -16,11 +18,16 @@ import { after, before, describe, test } from "node:test";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { looseKey } from "../src/lib/count-item";
+import { countUnitsFor } from "../src/lib/calc/engine";
+import type { CountUnit, Unit } from "../src/lib/calc/types";
+import { BASE_UNIT, COUNT_ITEM_PRICE_NOTE, groupDefaults, looseKey } from "../src/lib/count-item";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const migrationFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_sayimi.sql"));
+const listFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_kalemleri_listeye.sql"));
+/** 0048'in listeye almadığı tek ek kalem: adı okunamadı */
+const UNNAMED = "Callei sos (adı okunamadı)";
 const DOC = "docs/sayimlar/2026-10.md";
 
 /** Sekiz kalem migration'ının (0023) adları ve sayım birimleri: Excel'de yok, canlıda var */
@@ -184,6 +191,80 @@ test("belge migration'la aynı rakamları söyler (59 kalem, 23 ek kalem)", () =
   );
 });
 
+// ---------------------------------------------------------------- Ek kalemler sayım listesine (0048)
+
+interface NewItem {
+  ord: number;
+  name: string;
+  group: string;
+  category: string;
+  unit: string;
+  countUnit: string;
+  packageDesc: string | null;
+  packageSize: number;
+  vat: number;
+}
+
+/** 0048'in VALUES satırları: (sıra, 'ad', 'grup', 'kategori', 'birim', 'sayım birimi', 'paket' | NULL, içerik, kdv) */
+function newItems(sql: string): NewItem[] {
+  const re = /^\s*\((\d+), '((?:[^']|'')*)', '([^']+)', '([^']+)', '(gr|ml|adet|dilim)', '(KG|LT|ADET|DİLİM)', (NULL|'(?:[^']|'')*'), (\d+), ([\d.]+)\),?$/gm;
+  const unq = (x: string) => x.replace(/''/g, "'");
+  return [...sql.matchAll(re)].map((m) => ({
+    ord: Number(m[1]),
+    name: unq(m[2]),
+    group: m[3],
+    category: m[4],
+    unit: m[5],
+    countUnit: m[6],
+    packageDesc: m[7] === "NULL" ? null : unq(m[7].slice(1, -1)),
+    packageSize: Number(m[8]),
+    vat: Number(m[9]),
+  }));
+}
+
+test("ek kalemler listeye: 0047'nin 22 ek kalemi aynı sırayla ve birimle; adı okunamayan Callei hariç", () => {
+  assert.ok(listFile, "ekim_kalemleri_listeye migration'ı yok");
+  const items = newItems(read(`drizzle/${listFile}`));
+  const extras = [...totals(lines(read(`drizzle/${migrationFile}`)))].filter(([, x]) => x.kind === "ek");
+  assert.equal(items.length, 22);
+  assert.deepEqual(
+    items.map((i) => [i.name, i.countUnit]),
+    extras.filter(([name]) => name !== UNNAMED).map(([name, x]) => [name, x.unit]),
+  );
+  items.forEach((i, k) => assert.equal(i.ord, k + 1, `${i.name}: sıra`));
+});
+
+test("ek kalemler listeye: Listeye ekle kuralı (birim, grubun kategorisi ve KDV'si), listedeki bir adla çakışmaz", () => {
+  for (const i of newItems(read(`drizzle/${listFile}`))) {
+    assert.equal(BASE_UNIT[i.countUnit as CountUnit], i.unit, `${i.name}: birim`);
+    assert.ok(countUnitsFor(i.unit as Unit).includes(i.countUnit as CountUnit), `${i.name}: sayım birimi`);
+    assert.ok(excel.some((x) => x.countGroup === i.group), `${i.name}: ${i.group} grubu yok`);
+    assert.deepEqual({ category: i.category, vatRate: i.vat }, groupDefaults(excel, i.group), `${i.name}: grubun kategorisi ve KDV'si`);
+    assert.ok(i.packageSize > 0, `${i.name}: paket içeriği`);
+    if (i.countUnit === "ADET" || i.countUnit === "DİLİM") assert.equal(i.packageSize, 1, `${i.name}: tek adet / dilim`);
+    const twin = [...known.keys()].find((n) => looseKey(n) === looseKey(i.name));
+    assert.equal(twin, undefined, `${i.name}: listede "${twin}" var`);
+  }
+});
+
+test("ek kalemler listeye: korumalar, Listeye ekle'nin fiyat satırı, tek ifade", () => {
+  const sql = read(`drizzle/${listFile}`);
+  assert.doesNotMatch(sql, /statement-breakpoint/);
+  assert.equal(sql.replace(/^--.*$/gm, "").match(/;\s*$/gm)?.length, 1, "tek ifade");
+  assert.deepEqual([...new Set(sql.match(/'\d{4}-\d{2}'/g))], ["'2026-10'"]);
+  assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "ingredients"\)/, "boş veritabanına eklemez");
+  assert.match(sql, /WHERE NOT EXISTS \(SELECT 1 FROM "var" v WHERE v\."sira" = k\."sira"\)/, "bu adla kalem varsa yenisini açmaz");
+  assert.match(sql, /ON CONFLICT \("month", "ingredient_id"\) DO NOTHING/);
+  assert.match(sql, /WHERE NOT EXISTS \(SELECT 1 FROM "stock_counts" c WHERE c\."month" = '2026-10' AND c\."ingredient_id" = h\."ingredient_id"\)/, "panelden girilmiş sayıma dokunmaz");
+  assert.ok(sql.includes(`'${COUNT_ITEM_PRICE_NOTE}', 'Sistem'`), "fiyat satırı Listeye ekle'ninki gibi (düzeltme yerine geçer)");
+  assert.match(sql, /true, 'manual', k\."sayim_birimi", k\."grup", '2026-10', "son"\."m" \+ k\."sira", true/, "Tahmini, Ekim'den listede, grubun sonunda");
+  assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "yeni"\) OR EXISTS \(SELECT 1 FROM "tasinan"\);\s*$/, "işlem geçmişine yalnız bir şey yapıldıysa");
+  const [, from, to] = read(`drizzle/${migrationFile}`).match(/translate\(s\."kalem", '([^']+)', '([^']+)'\)/)!;
+  assert.ok(sql.includes(`translate(k."ad", '${from}', '${to}')`));
+  assert.ok(sql.includes(`translate(regexp_replace(btrim(i."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
+  assert.ok(sql.includes(`translate(regexp_replace(btrim(e."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
+});
+
 // ---------------------------------------------------------------- Veritabanında
 
 const SERVER_URL = process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
@@ -243,6 +324,8 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     db = postgres(url.href, { max: 1, onnotice: () => {} });
     const [{ n }] = await db<{ n: number }[]>`select count(*)::int as n from stock_counts`;
     assert.equal(n, 0, "boş veritabanında sayım yazılmadı");
+    const [{ m }] = await db<{ m: number }[]>`select count(*)::int as m from ingredients`;
+    assert.equal(m, 0, "boş veritabanında kalem açılmadı");
     const { runSeed } = await import("../scripts/seed");
     const env = { url: process.env.DATABASE_URL_UNPOOLED, email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD };
     process.env.DATABASE_URL_UNPOOLED = url.href;
@@ -391,5 +474,126 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       await tx`update ingredients set active = false where name = 'Espresso çekirdeği'`;
     });
     assert.equal(r.counts.get("Espresso çekirdeği")?.qty, 38);
+  });
+
+  // ---- 0048: ek kalemler sayım listesine
+  type Item = {
+    name: string; category: string; unit: string; count_unit: string; count_group: string; count_from: string;
+    package_price: number; package_size: number; vat_rate: number; is_estimate: boolean; active: boolean; supplier: string | null; note: string;
+  };
+  type ListTrial = Trial & { items: Item[]; added: string[]; prices: { name: string; package_price: number; note: string }[] };
+
+  /** 0047'yi, aradaki hazırlığı ve 0048'i (istenirse iki kez) işlemde çalıştırır, sonucu okur, hepsini geri alır */
+  async function listTrial(between: (tx: postgres.TransactionSql) => Promise<unknown> = async () => {}, runs = 1): Promise<ListTrial> {
+    let out: ListTrial | null = null;
+    await db
+      .begin(async (tx) => {
+        for (const st of statements(sql())) await tx.unsafe(st);
+        await between(tx);
+        const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
+        const [{ id: ingBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from ingredients`;
+        for (let i = 0; i < runs; i++) await tx.unsafe(read(`drizzle/${listFile}`));
+        const counts = await tx<Count[]>`
+          select i.name, c.qty, c.factor, c.counted_by from stock_counts c join ingredients i on i.id = c.ingredient_id where c.month = '2026-10'`;
+        const extras = await tx<Extra[]>`select name, unit, qty, unit_price from stock_extras where month = '2026-10' order by id`;
+        const logs = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Stok sayımı' order by id`;
+        const added = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Sayım listesine eklendi' order by id`;
+        const items = await tx<Item[]>`
+          select name, category, unit, count_unit, count_group, count_from, package_price, package_size, vat_rate, is_estimate, active, supplier, note
+          from ingredients where id > ${ingBefore} order by sort_order`;
+        const prices = await tx<{ name: string; package_price: number; note: string }[]>`
+          select i.name, p.package_price, p.note from ingredient_prices p join ingredients i on i.id = p.ingredient_id where i.id > ${ingBefore} order by i.sort_order`;
+        const names = await tx<{ name: string }[]>`select name from ingredients order by id`;
+        out = {
+          counts: new Map(counts.map((c) => [c.name, c])),
+          extras: [...extras],
+          logs: logs.map((l) => l.detail),
+          renames: [],
+          names: names.map((n) => n.name),
+          items: [...items],
+          added: added.map((a) => a.detail),
+          prices: [...prices],
+        };
+        throw ROLLBACK;
+      })
+      .catch((e) => {
+        if (e !== ROLLBACK) throw e;
+      });
+    return out!;
+  }
+
+  test("0048: 22 ek kalem Listeye ekle kuralıyla hammadde, Ekim miktarı kaleme taşınır, ek kalemde yalnız adı okunamayan kalır", async () => {
+    const plan = newItems(read(`drizzle/${listFile}`));
+    const ek = totals(lines(sql()));
+    const r = await listTrial();
+    assert.deepEqual(
+      r.items.map((i) => ({ ...i, note: undefined })),
+      plan.map((p) => ({
+        name: p.name, category: p.category, unit: p.unit, count_unit: p.countUnit, count_group: p.group, count_from: "2026-10",
+        package_price: 0, package_size: p.packageSize, vat_rate: p.vat, is_estimate: true, active: true, supplier: null, note: undefined,
+      })),
+    );
+    assert.ok(r.items.every((i) => i.note === "Ekim 2026 sayım kâğıdından sayım listesine eklendi (02.11.2026). Paket fiyatını ve içeriğini yazın."));
+    assert.deepEqual(r.prices, [], "fiyatsız kalem fiyat satırı yazmaz");
+    assert.equal(r.counts.size, 81);
+    for (const p of plan) {
+      const c = r.counts.get(p.name);
+      assert.ok(c, `${p.name} sayılmadı`);
+      assert.equal(c.qty, ek.get(p.name)!.qty, `${p.name}: miktar ek kalemdeki`);
+      assert.equal(c.factor, p.countUnit === "KG" || p.countUnit === "LT" ? 1000 : 1, `${p.name}: çarpan`);
+      assert.equal(c.counted_by, "Sayım kâğıdı (31 Ekim)");
+    }
+    assert.deepEqual(r.extras, [{ name: UNNAMED, unit: "LT", qty: 0.863, unit_price: 0 }]);
+    assert.deepEqual(r.added, [plan.map((p) => p.name).join(", ")]);
+    assert.deepEqual(r.logs, ["Ekim 2026: 22 ek kalem sayım listesindeki kalemine taşındı"]);
+  });
+
+  test("0048: ikinci çalıştırma bir şey yapmaz", async () => {
+    const r = await listTrial(undefined, 2);
+    assert.equal(r.items.length, 22);
+    assert.equal(r.counts.size, 81);
+    assert.equal(r.extras.length, 1);
+    assert.equal(r.added.length, 1);
+    assert.equal(r.logs.length, 1);
+  });
+
+  test("0048: ek kaleme yazılmış birim fiyat paket fiyatı olur, fiyat geçmişine Listeye ekle'nin başlangıç satırı", async () => {
+    const r = await listTrial(async (tx) => {
+      await tx`update stock_extras set unit_price = 5 where month = '2026-10' and name = 'Kraft çanta'`;
+      await tx`update stock_extras set unit_price = 1013.33 where month = '2026-10' and name = 'Badem şurubu'`;
+    });
+    const kraft = r.items.find((i) => i.name === "Kraft çanta")!;
+    const badem = r.items.find((i) => i.name === "Badem şurubu")!;
+    assert.deepEqual([kraft.package_price, kraft.package_size], [5, 1]);
+    assert.deepEqual([badem.package_price, badem.package_size], [760, 750], "1.013,33 ₺/LT × 0,75 LT");
+    assert.match(kraft.note, /; paket fiyatı sayımdaki ek kalemin birim fiyatından\.$/);
+    assert.deepEqual(r.prices, [
+      { name: "Badem şurubu", package_price: 760, note: COUNT_ITEM_PRICE_NOTE },
+      { name: "Kraft çanta", package_price: 5, note: COUNT_ITEM_PRICE_NOTE },
+    ]);
+  });
+
+  test("0048: bu adla kalem varsa yenisi açılmaz; panelden sayılmış, sayılmaz ve ek kalemi silinmiş olan raporlanır", async () => {
+    const r = await listTrial(async (tx) => {
+      // Listeye ekle ile açılmış (büyük harfle): miktar ona taşınır
+      await tx`insert into ingredients (name, category, unit, count_unit, count_group, count_from) values ('KRAFT ÇANTA', 'Ambalaj', 'adet', 'ADET', 'AMBALAJ MALZEMELERİ', '2026-10')`;
+      // "Sayılmaz" hammadde: açılmaz, ek kalem kalır
+      await tx`insert into ingredients (name, category, unit, count_unit) values ('Sleeve 8oz', 'Ambalaj', 'adet', null)`;
+      // Panelden Ekim'de sayılmış: sayım ve ek kalem olduğu gibi kalır
+      const [{ id }] = await tx<{ id: number }[]>`insert into ingredients (name, category, unit, count_unit, count_group) values ('Stick şeker', 'Diğer', 'adet', 'ADET', 'DİĞER GIDA ÜRÜNLERİ') returning id`;
+      await tx`insert into stock_counts (month, ingredient_id, qty, factor, counted_by) values ('2026-10', ${id}, 300, 1, 'Ayşe')`;
+      // Ek kalemi silinmiş: kalem açılır, miktar taşınmaz
+      await tx`delete from stock_extras where month = '2026-10' and name = 'Plastik bıçak'`;
+    });
+    assert.equal(r.items.length, 19, "Kraft çanta, Sleeve 8oz ve Stick şeker açılmadı");
+    assert.ok(r.items.some((i) => i.name === "Plastik bıçak"));
+    assert.ok(!r.counts.has("Plastik bıçak"));
+    assert.equal(r.counts.get("KRAFT ÇANTA")?.qty, 204);
+    assert.deepEqual({ qty: r.counts.get("Stick şeker")?.qty, by: r.counts.get("Stick şeker")?.counted_by }, { qty: 300, by: "Ayşe" });
+    assert.deepEqual(r.extras.map((e) => e.name), [UNNAMED, "Stick şeker", "Sleeve 8oz"], "0047'nin sırasıyla");
+    assert.deepEqual(r.logs, [
+      "Ekim 2026: 19 ek kalem sayım listesindeki kalemine taşındı; taşınmadı: Stick şeker (Ekim sayımı zaten var, ek kalem duruyor), " +
+        "Sleeve 8oz (listede başka birimle ya da sayılmaz), Plastik bıçak (Ekim ek kalemi bulunamadı, miktar taşınmadı)",
+    ]);
   });
 });
