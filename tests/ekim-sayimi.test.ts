@@ -28,6 +28,9 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const migrationFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_sayimi.sql"));
 const listFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_kalemleri_listeye.sql"));
 const extrasFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_urun_ekleri.sql"));
+/** 0048 ve 0049'un ad anahtarı: src/lib/count-item.ts looseKey'in SQL karşılığı (translate + yalnız ASCII küçültme) */
+const LOOSE_FROM = "ÇĞİIÖŞÜıÂÎÛâîûçğöşü";
+const LOOSE_TO = "cgiiosuiaiuaiucgosu";
 /** 0048'in listeye almadığı tek ek kalem: adı okunamadı */
 const UNNAMED = "Callei sos (adı okunamadı)";
 const DOC = "docs/sayimlar/2026-10.md";
@@ -271,13 +274,29 @@ test("ek kalemler listeye: korumalar, Listeye ekle'nin fiyat satırı, tek ifade
   assert.ok(sql.includes(`'${COUNT_ITEM_PRICE_NOTE}', 'Sistem'`), "fiyat satırı Listeye ekle'ninki gibi (düzeltme yerine geçer)");
   assert.match(sql, /true, 'manual', k\."sayim_birimi", k\."grup", '2026-10', "son"\."m" \+ k\."sira", true/, "Tahmini, Ekim'den listede, grubun sonunda");
   assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "yeni"\) OR EXISTS \(SELECT 1 FROM "tasinan"\);\s*$/, "işlem geçmişine yalnız bir şey yapıldıysa");
-  const [, from, to] = read(`drizzle/${migrationFile}`).match(/translate\(s\."kalem", '([^']+)', '([^']+)'\)/)!;
+  // Adlar "Listeye ekle"nin aynı ad kuralıyla (looseKey: Türkçe harf farkı da gözetilmez) karşılaştırılır
+  const [from, to] = [LOOSE_FROM, LOOSE_TO];
   assert.ok(sql.includes(`translate(k."ad", '${from}', '${to}')`));
   assert.ok(sql.includes(`translate(k."ek_ad", '${from}', '${to}')`));
-  assert.match(sql, /= k\."ek_anahtar"\n/, "ek kalem 0047'deki adıyla bulunur");
+  assert.match(sql, /IN \(k\."ek_anahtar", k\."anahtar"\)/, "ek kalem 0047'deki ya da yeni adıyla bulunur");
   assert.match(sql, /IN \(k\."anahtar", k\."ek_anahtar"\)/, "yeni ya da eski adla var olan kalem yinelenmez");
   assert.ok(sql.includes(`translate(regexp_replace(btrim(i."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
   assert.ok(sql.includes(`translate(regexp_replace(btrim(e."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
+  assert.doesNotMatch(sql, /'çğiiöşüiaiuaiu'/, "katı anahtar kalmadı");
+});
+
+test("0048 / 0049'un ad anahtarı uygulamanın looseKey'iyle aynı (C yerel ayarında da)", () => {
+  const map = new Map([...LOOSE_FROM].map((c, i) => [c, [...LOOSE_TO][i]]));
+  const sqlKey = (name: string) => [...name.trim().replace(/\s+/g, " ")].map((c) => map.get(c) ?? c).join("").replace(/[A-Z]/g, (c) => c.toLowerCase());
+  for (const name of ["Kraft çanta", "KRAFT CANTA", "Kraft canta", "Beypazarı soda", "BEYPAZARI SODA", "Beypazari  Soda ", "Çay", "ÇAY", "cay",
+    "Demlik poşet çay", "DEMLİK POŞET ÇAY", "Meyveli granola bar", "MEYVELİ GRANOLA BAR", "Peçete", "4'lü bardak taşıyıcı", "Şeffaf kapak 12oz", "Liçi şurubu", "Kâse 12oz", "KÛRU ÜZÜM"]) {
+    assert.equal(sqlKey(name), looseKey(name), name);
+  }
+  for (const f of [listFile, extrasFile]) {
+    const sql = read(`drizzle/${f}`);
+    assert.doesNotMatch(sql, /'çğiiöşüiaiuaiu'/, `${f}: katı anahtar kalmadı`);
+    assert.ok(sql.includes(`'${LOOSE_FROM}', '${LOOSE_TO}'`), `${f}: looseKey anahtarı`);
+  }
 });
 
 // ---------------------------------------------------------------- Sahibinin ekleri (0049)
@@ -644,6 +663,17 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     ]);
   });
 
+  test("0048: panelde Türkçe harfsiz açılmış kalem (Listeye ekle'nin aynı ad kuralı) yinelenmez; adı panelde değişmiş ek kalem bulunur", async () => {
+    const r = await listTrial(async (tx) => {
+      await tx`insert into ingredients (name, category, unit, count_unit, count_group, count_from) values ('Kraft canta', 'Ambalaj', 'adet', 'ADET', 'AMBALAJ MALZEMELERİ', '2026-10')`;
+      await tx`update stock_extras set name = 'Beypazarı soda' where month = '2026-10' and name = 'Beypazarı maden suyu'`;
+    });
+    assert.ok(!r.items.some((i) => i.name === "Kraft çanta"));
+    assert.equal(r.counts.get("Kraft canta")?.qty, 204);
+    assert.equal(r.counts.get("Beypazarı soda")?.qty, 8);
+    assert.deepEqual(r.extras.map((e) => e.name), [UNNAMED]);
+  });
+
   test("0048: Beypazarı 0047'deki adıyla zaten açılmışsa yenisi açılmaz, miktar ona taşınır", async () => {
     const r = await listTrial(async (tx) => {
       await tx`insert into ingredients (name, category, unit, count_unit, count_group, count_from) values ('Beypazarı maden suyu', 'Şişe İçecek', 'adet', 'ADET', 'İÇECEKLER (şişe)', '2026-10')`;
@@ -756,6 +786,16 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       ["Sayım listesine eklendi", "Hammadde pasif", "Sayım listesine eklendi", "Stok sayımı", "Yeni ürün", "Yeni ürün"],
     );
     assert.equal(r.logs[1].detail, 'Çay: demlik poşet çaya geçildi; 2 reçete satırı, 0 Paraşüt bağlantısı ve 0 sayım "Demlik poşet çay"a taşındı');
+  });
+
+  test("0049: Beypazarı kalemi eski adıyla duruyorsa ürün ona bağlanır; eski çay gramla değilse dönüşmez", async () => {
+    const r = await extrasTrial(async (tx) => {
+      await tx`update ingredients set name = 'Beypazarı maden suyu' where name = 'Beypazarı soda'`;
+      await tx`update ingredients set unit = 'adet', count_unit = 'ADET' where name = 'Çay'`;
+    });
+    assert.equal(r.products.find((p) => p.name === "Beypazarı Soda")?.recipe, "Beypazarı maden suyu × 1");
+    assert.equal(r.tea, undefined, "gramla olmayan çay dönüşmez");
+    assert.ok(r.products.filter((p) => p.name === "Çay").every((p) => p.recipe.startsWith("Çay × ")));
   });
 
   test("0049: ikinci çalıştırma bir şey yapmaz", async () => {

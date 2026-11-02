@@ -10,8 +10,9 @@
 -- düzeltme o satırın yerine geçer, Ekim düzeltilen fiyatla değerlenir; zam uyarısı onu taban saymaz).
 -- Adı okunamayan Callei satırı ("Callei sos (adı okunamadı)") listeye alınmaz: adı belli olunca "Listeye ekle".
 -- "Beypazarı maden suyu" sahibinin dediği adla "Beypazarı soda" olarak açılır (ek kalemi 0047'deki adıyla bulunur).
--- Korumalar: boş veritabanına eklenmez. Bu adla hammadde (Türkçe büyük / küçük harf ve boşluk farkı gözetmeden; anahtar
--- drizzle/0023 ile aynı) varsa yenisi açılmaz: sayım listesindeyse ve sayım birimi aynıysa miktar ona taşınır, değilse
+-- Korumalar: boş veritabanına eklenmez. Bu adla hammadde varsa yenisi açılmaz; adlar "Listeye ekle"nin aynı ad kuralıyla
+-- karşılaştırılır (src/lib/count-item.ts looseKey: büyük / küçük harf, boşluk, düzeltme işareti ve Türkçe harf farkı
+-- gözetmeden; "Kraft canta" = "Kraft çanta"): sayım listesindeyse ve sayım birimi aynıysa miktar ona taşınır, değilse
 -- ek kalem kalır. O kalemin Ekim sayımı zaten varsa üzerine yazılmaz, ek kalem de silinmez. Ek kalem silinmiş ya da adı /
 -- birimi değişmişse kalem yine açılır, miktar taşınmaz. Taşınamayanlar işlem geçmişine yazılır. Yeniden çalışırsa bir şey
 -- yapmaz.
@@ -41,17 +42,19 @@ WITH "kalem" ("sira", "ad", "ek_ad", "grup", "kategori", "birim", "sayim_birimi"
     (22, 'Cold brew şişesi', 'Cold brew şişesi', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2)
 ),
 "k" AS (
-  SELECT k.*, lower(translate(k."ad", 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AS "anahtar",
-    lower(translate(k."ek_ad", 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AS "ek_anahtar",
+  SELECT k.*, lower(translate(k."ad", 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) AS "anahtar",
+    lower(translate(k."ek_ad", 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) AS "ek_anahtar",
     CASE WHEN k."sayim_birimi" IN ('KG', 'LT') THEN 1000 ELSE 1 END AS "carpan"
   FROM "kalem" k
   WHERE EXISTS (SELECT 1 FROM "ingredients")
 ),
 "ek" AS (
-  -- 0047'nin bu kalem için yazdığı Ekim ek kalemi (0047'deki adıyla: "ek_ad"), aynı birim
+  -- 0047'nin bu kalem için yazdığı Ekim ek kalemi: 0047'deki adıyla ("ek_ad") ya da panelde yeni adına çevrilmişse onunla,
+  -- aynı birim
   SELECT DISTINCT ON (k."sira") k."sira", e."id" AS "ek_id", e."qty", e."unit_price"
   FROM "k" k
-  JOIN "stock_extras" e ON e."month" = '2026-10' AND e."unit" = k."sayim_birimi" AND lower(translate(regexp_replace(btrim(e."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = k."ek_anahtar"
+  JOIN "stock_extras" e ON e."month" = '2026-10' AND e."unit" = k."sayim_birimi"
+    AND lower(translate(regexp_replace(btrim(e."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) IN (k."ek_anahtar", k."anahtar")
   ORDER BY k."sira", e."id"
 ),
 "var" AS (
@@ -61,7 +64,7 @@ WITH "kalem" ("sira", "ad", "ek_ad", "grup", "kategori", "birim", "sayim_birimi"
       SELECT 1 FROM "recipe_items" r JOIN "products" p ON p."id" = r."product_id" WHERE r."ingredient_id" = i."id" AND p."active"
     )) AS "listede"
   FROM "k" k
-  JOIN "ingredients" i ON lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) IN (k."anahtar", k."ek_anahtar")
+  JOIN "ingredients" i ON lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) IN (k."anahtar", k."ek_anahtar")
   ORDER BY k."sira", i."active" DESC, i."id"
 ),
 "son" AS (SELECT COALESCE(MAX("sort_order"), 0) AS "m" FROM "ingredients"),

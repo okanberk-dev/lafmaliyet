@@ -4,8 +4,9 @@
 -- olduğu gibi: Hindistan Cevizli Bar, Damla Soda), o yoksa kategorideki ürünlerin en sık oranı (categoryFireDefault), sıra
 -- en sonda, aktif ve QR menüde görünür, laffogato.net menüsüne bağlanmaz, fiyat
 -- geçmişine "Yeni ürün" satırı (kasaya elle eklenir: kasanın listesine girmez). Hammadde açmak "Listeye ekle"nin
--- kuralıyla (src/lib/count-item.ts newCountItemValues). Boş veritabanına bir şey yapılmaz; yeniden çalışırsa bir şey
--- yapmaz.
+-- kuralıyla (src/lib/count-item.ts newCountItemValues). Adlar "Listeye ekle"nin aynı ad kuralıyla karşılaştırılır
+-- (looseKey: büyük / küçük harf, boşluk ve Türkçe harf farkı gözetmeden). Eski çay yalnız gramla tutuluyorsa dönüşür.
+-- Boş veritabanına bir şey yapılmaz; yeniden çalışırsa bir şey yapmaz.
 --
 -- 1) Çay demlik poşete geçer: 200 gr = 40 demlik poşet (poşet 5 gr), 450 ₺/kg (paketi 90 ₺, poşeti 2,25 ₺); demliğe
 -- 6–8 poşet atılıyor. Bardak başına çay değişmez (demlikten kaç bardak çıktığı bilinmiyor): orta 3 gr = 0,6 poşet,
@@ -16,7 +17,8 @@
 -- varsayım notu kalkar. Çay ürünlerinin notundaki gramlı reçete varsayımı poşetle yazılır.
 WITH "eski" AS (
   SELECT i.* FROM "ingredients" i
-  WHERE lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = 'çay'
+  WHERE lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = 'cay'
+    AND i."unit" = 'gr'
   ORDER BY i."active" DESC, i."id"
   LIMIT 1
 ),
@@ -26,7 +28,7 @@ WITH "eski" AS (
     'Demlik poşet: 200 gr = 40 poşet (poşet 5 gr), 450 ₺/kg, poşeti 2,25 ₺. Demliğe 6–8 poşet atılıyor; reçetede orta bardak 0,6 poşet (3 gr), büyük 1 poşet (5 gr).',
     false, 'manual', 'ADET', COALESCE(e."count_group", 'KAHVE & ÇAY'), '2026-10', e."sort_order", true
   FROM "eski" e
-  WHERE NOT EXISTS (SELECT 1 FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Demlik poşet çay', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')))
+  WHERE NOT EXISTS (SELECT 1 FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Demlik poşet çay', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')))
   RETURNING "id"
 ),
 "fiyat" AS (
@@ -88,7 +90,7 @@ WITH "yeni" AS (
     'Alış yaklaşık 50 ₺/adet (sahibinin verdiği, 02.11.2026).', true, 'manual', 'ADET', 'SANDVİÇ & ATIŞTIRMALIK', '2026-10',
     (SELECT COALESCE(MAX("sort_order"), 0) + 1 FROM "ingredients"), true
   WHERE EXISTS (SELECT 1 FROM "ingredients")
-    AND NOT EXISTS (SELECT 1 FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Meyveli granola bar', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')))
+    AND NOT EXISTS (SELECT 1 FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Meyveli granola bar', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')))
   RETURNING "id"
 ),
 "fiyat" AS (
@@ -105,7 +107,7 @@ WITH "yeni" AS (
 "malzeme" AS (
   SELECT "id" FROM "yeni"
   UNION ALL
-  (SELECT x."id" FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Meyveli granola bar', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) ORDER BY x."active" DESC, x."id" LIMIT 1)
+  (SELECT x."id" FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Meyveli granola bar', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) ORDER BY x."active" DESC, x."id" LIMIT 1)
 ),
 "kat" AS (SELECT c."id" FROM "categories" c WHERE c."name" = 'Atıştırmalıklar'),
 "urun" AS (
@@ -116,7 +118,7 @@ WITH "yeni" AS (
     END, NULL, true, true, (SELECT COALESCE(MAX("sort_order"), 0) + 1 FROM "products")
   FROM "kat" k
   WHERE EXISTS (SELECT 1 FROM "malzeme")
-    AND NOT EXISTS (SELECT 1 FROM "products" p WHERE lower(translate(regexp_replace(btrim(p."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Meyveli Granola Bar', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AND p."size" = 'Tek')
+    AND NOT EXISTS (SELECT 1 FROM "products" p WHERE lower(translate(regexp_replace(btrim(p."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Meyveli Granola Bar', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) AND p."size" = 'Tek')
   ON CONFLICT ("name", "size") DO NOTHING
   RETURNING "id"
 ),
@@ -125,7 +127,7 @@ WITH "yeni" AS (
   SELECT u."id", m."id", 1, NULL, NULL, 1 FROM "urun" u, (SELECT "id" FROM "malzeme" LIMIT 1) m
   UNION ALL
   SELECT u."id", pc."id", 1, NULL, NULL, 2 FROM "urun" u,
-    (SELECT x."id" FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Peçete', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) ORDER BY x."active" DESC, x."id" LIMIT 1) pc
+    (SELECT x."id" FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Peçete', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) ORDER BY x."active" DESC, x."id" LIMIT 1) pc
   RETURNING "id"
 ),
 "satis" AS (
@@ -139,10 +141,14 @@ UNION ALL
 SELECT 'Sistem', 'Stok sayımı', 'Ekim 2026: Meyveli granola bar 3 adet (sahibinin bildirdiği)' FROM "sayim"
 UNION ALL
 SELECT 'Sistem', 'Yeni ürün', 'Meyveli Granola Bar Tek (110 ₺)' FROM "urun";--> statement-breakpoint
--- 3) Beypazarı Soda: Şişe İçecekler'de 60 ₺ (Damla Soda gibi); reçetesi yalnız şişe ("Beypazarı soda" hammaddesi, 0048).
--- Hammaddesi yoksa (0048 açamadıysa) ya da bu ad + boyda ürün varsa açılmaz.
+-- 3) Beypazarı Soda: Şişe İçecekler'de 60 ₺ (Damla Soda gibi); reçetesi yalnız şişe ("Beypazarı soda" hammaddesi, 0048;
+-- panelde eski adıyla "Beypazarı maden suyu" açılmışsa o). Hammaddesi yoksa ya da bu ad + boyda ürün varsa açılmaz.
 WITH "malzeme" AS (
-  SELECT x."id" FROM "ingredients" x WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Beypazarı soda', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) ORDER BY x."active" DESC, x."id" LIMIT 1
+  SELECT x."id" FROM "ingredients" x
+  WHERE lower(translate(regexp_replace(btrim(x."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) IN (
+    lower(translate('Beypazarı soda', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')), lower(translate('Beypazarı maden suyu', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu'))
+  )
+  ORDER BY x."active" DESC, x."id" LIMIT 1
 ),
 "kat" AS (SELECT c."id" FROM "categories" c WHERE c."name" = 'Şişe İçecekler'),
 "urun" AS (
@@ -153,7 +159,7 @@ WITH "malzeme" AS (
     END, NULL, true, true, (SELECT COALESCE(MAX("sort_order"), 0) + 1 FROM "products")
   FROM "kat" k
   WHERE EXISTS (SELECT 1 FROM "malzeme")
-    AND NOT EXISTS (SELECT 1 FROM "products" p WHERE lower(translate(regexp_replace(btrim(p."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = lower(translate('Beypazarı Soda', 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AND p."size" = 'Tek')
+    AND NOT EXISTS (SELECT 1 FROM "products" p WHERE lower(translate(regexp_replace(btrim(p."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) = lower(translate('Beypazarı Soda', 'ÇĞİIÖŞÜıÂÎÛâîûçğöşü', 'cgiiosuiaiuaiucgosu')) AND p."size" = 'Tek')
   ON CONFLICT ("name", "size") DO NOTHING
   RETURNING "id"
 ),
