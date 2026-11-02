@@ -1,6 +1,7 @@
 // Ekim 2026 ay sonu sayımı (drizzle/*_ekim_sayimi.sql): 31 Ekim 2026 kapanışındaki kâğıt sayımının panele işlenmesi;
 // ardından ek kalemlerinin sayım listesine alınması (drizzle/*_ekim_kalemleri_listeye.sql: 22 kalem hammadde olur, Ekim
-// miktarı ek kalemden kalemin sayımına taşınır)
+// miktarı ek kalemden kalemin sayımına taşınır) ve sahibinin 2 Kasım ekleri (drizzle/*_urun_ekleri.sql: çay demlik poşete
+// geçer, meyveli granola bar ve Beypazarı Soda ürünleri)
 // (kayıt ve sahibine sorulanlar: docs/sayimlar/2026-10.md). Saf denetimler her zaman çalışır: kâğıttaki her satır
 // bilinen bir kaleme o kalemin sayım birimiyle gider, ek kalem listedeki bir adla çakışmaz, korumalar ve ad anahtarı
 // yerinde, belge migration'la aynı rakamları söyler. Veritabanı denemesi SAYIM_TEST_DATABASE_URL (yoksa
@@ -26,6 +27,7 @@ import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const migrationFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_sayimi.sql"));
 const listFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_ekim_kalemleri_listeye.sql"));
+const extrasFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_urun_ekleri.sql"));
 /** 0048'in listeye almadığı tek ek kalem: adı okunamadı */
 const UNNAMED = "Callei sos (adı okunamadı)";
 const DOC = "docs/sayimlar/2026-10.md";
@@ -196,6 +198,8 @@ test("belge migration'la aynı rakamları söyler (59 kalem, 23 ek kalem)", () =
 interface NewItem {
   ord: number;
   name: string;
+  /** 0047'deki ek kalem adı (Beypazarı'da farklı: "Beypazarı maden suyu" → "Beypazarı soda") */
+  extraName: string;
   group: string;
   category: string;
   unit: string;
@@ -205,20 +209,21 @@ interface NewItem {
   vat: number;
 }
 
-/** 0048'in VALUES satırları: (sıra, 'ad', 'grup', 'kategori', 'birim', 'sayım birimi', 'paket' | NULL, içerik, kdv) */
+/** 0048'in VALUES satırları: (sıra, 'ad', 'ek adı', 'grup', 'kategori', 'birim', 'sayım birimi', 'paket' | NULL, içerik, kdv) */
 function newItems(sql: string): NewItem[] {
-  const re = /^\s*\((\d+), '((?:[^']|'')*)', '([^']+)', '([^']+)', '(gr|ml|adet|dilim)', '(KG|LT|ADET|DİLİM)', (NULL|'(?:[^']|'')*'), (\d+), ([\d.]+)\),?$/gm;
+  const re = /^\s*\((\d+), '((?:[^']|'')*)', '((?:[^']|'')*)', '([^']+)', '([^']+)', '(gr|ml|adet|dilim)', '(KG|LT|ADET|DİLİM)', (NULL|'(?:[^']|'')*'), (\d+), ([\d.]+)\),?$/gm;
   const unq = (x: string) => x.replace(/''/g, "'");
   return [...sql.matchAll(re)].map((m) => ({
     ord: Number(m[1]),
     name: unq(m[2]),
-    group: m[3],
-    category: m[4],
-    unit: m[5],
-    countUnit: m[6],
-    packageDesc: m[7] === "NULL" ? null : unq(m[7].slice(1, -1)),
-    packageSize: Number(m[8]),
-    vat: Number(m[9]),
+    extraName: unq(m[3]),
+    group: m[4],
+    category: m[5],
+    unit: m[6],
+    countUnit: m[7],
+    packageDesc: m[8] === "NULL" ? null : unq(m[8].slice(1, -1)),
+    packageSize: Number(m[9]),
+    vat: Number(m[10]),
   }));
 }
 
@@ -228,10 +233,15 @@ test("ek kalemler listeye: 0047'nin 22 ek kalemi aynı sırayla ve birimle; adı
   const extras = [...totals(lines(read(`drizzle/${migrationFile}`)))].filter(([, x]) => x.kind === "ek");
   assert.equal(items.length, 22);
   assert.deepEqual(
-    items.map((i) => [i.name, i.countUnit]),
+    items.map((i) => [i.extraName, i.countUnit]),
     extras.filter(([name]) => name !== UNNAMED).map(([name, x]) => [name, x.unit]),
   );
   items.forEach((i, k) => assert.equal(i.ord, k + 1, `${i.name}: sıra`));
+  // Yalnız Beypazarı sahibinin dediği adla açılır
+  assert.deepEqual(
+    items.filter((i) => i.name !== i.extraName).map((i) => [i.extraName, i.name]),
+    [["Beypazarı maden suyu", "Beypazarı soda"]],
+  );
 });
 
 test("ek kalemler listeye: Listeye ekle kuralı (birim, grubun kategorisi ve KDV'si), listedeki bir adla çakışmaz", () => {
@@ -242,8 +252,10 @@ test("ek kalemler listeye: Listeye ekle kuralı (birim, grubun kategorisi ve KDV
     assert.deepEqual({ category: i.category, vatRate: i.vat }, groupDefaults(excel, i.group), `${i.name}: grubun kategorisi ve KDV'si`);
     assert.ok(i.packageSize > 0, `${i.name}: paket içeriği`);
     if (i.countUnit === "ADET" || i.countUnit === "DİLİM") assert.equal(i.packageSize, 1, `${i.name}: tek adet / dilim`);
-    const twin = [...known.keys()].find((n) => looseKey(n) === looseKey(i.name));
-    assert.equal(twin, undefined, `${i.name}: listede "${twin}" var`);
+    for (const n of [i.name, i.extraName]) {
+      const twin = [...known.keys()].find((k) => looseKey(k) === looseKey(n));
+      assert.equal(twin, undefined, `${n}: listede "${twin}" var`);
+    }
   }
 });
 
@@ -261,8 +273,43 @@ test("ek kalemler listeye: korumalar, Listeye ekle'nin fiyat satırı, tek ifade
   assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "yeni"\) OR EXISTS \(SELECT 1 FROM "tasinan"\);\s*$/, "işlem geçmişine yalnız bir şey yapıldıysa");
   const [, from, to] = read(`drizzle/${migrationFile}`).match(/translate\(s\."kalem", '([^']+)', '([^']+)'\)/)!;
   assert.ok(sql.includes(`translate(k."ad", '${from}', '${to}')`));
+  assert.ok(sql.includes(`translate(k."ek_ad", '${from}', '${to}')`));
+  assert.match(sql, /= k\."ek_anahtar"\n/, "ek kalem 0047'deki adıyla bulunur");
+  assert.match(sql, /IN \(k\."anahtar", k\."ek_anahtar"\)/, "yeni ya da eski adla var olan kalem yinelenmez");
   assert.ok(sql.includes(`translate(regexp_replace(btrim(i."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
   assert.ok(sql.includes(`translate(regexp_replace(btrim(e."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
+});
+
+// ---------------------------------------------------------------- Sahibinin ekleri (0049)
+
+test("ekler: üç ifade (çay, granola bar, Beypazarı Soda), korumalar ve dönüşümler", () => {
+  assert.ok(extrasFile, "urun_ekleri migration'ı yok");
+  const parts = statements(read(`drizzle/${extrasFile}`));
+  assert.equal(parts.length, 3);
+  const [tea, bar, soda] = parts;
+  for (const st of parts) assert.equal(st.replace(/^--.*$/gm, "").match(/;\s*$/gm)?.length, 1, "her parça tek ifade");
+  // Çay: yeni kalem, gram → poşet (5 gr), eski kalem pasif; tarihçe eski kalemde kalır
+  assert.match(tea, /SELECT 'Demlik poşet çay', e\."category", e\."supplier", 'Demlik poşet çay 200 gr \(40 poşet\)', 90, 40, 'adet'/);
+  assert.match(tea, /false, 'manual', 'ADET', COALESCE\(e\."count_group", 'KAHVE & ÇAY'\), '2026-10', e\."sort_order", true/);
+  assert.match(tea, /UPDATE "recipe_items" r SET "ingredient_id" = y\."id", "qty" = r\."qty" \/ 5, "qty_expr" = NULL/);
+  assert.match(tea, /UPDATE "parasut_product_links" l SET "ingredient_id" = y\."id", "factor" = l\."factor" \/ 5/);
+  assert.match(tea, /c\."qty" \* COALESCE\(c\."factor", 1000\) \/ 5, 1/);
+  assert.match(tea, /SET "active" = false, "note" = 'Demlik poşete geçildi|SET "active" = false, "note" = 'Demlik poşet çaya geçildi/);
+  assert.doesNotMatch(tea.replace(/^--.*$/gm, ""), /ingredient_prices"? *SET|DELETE FROM "ingredient_prices"|waste|purchase_quantities/, "fiyat, zayi ve alış geçmişine dokunmaz");
+  assert.match(tea, /WHERE NOT EXISTS \(SELECT 1 FROM "ingredients" x WHERE .+ = lower\(translate\('Demlik poşet çay'/);
+  // Granola bar: Listeye ekle'nin fiyat satırı, Ekim sayımı, ürün 110 ₺, bar + peçete
+  assert.ok(bar.includes(`SELECT "id", 50, 1, '${COUNT_ITEM_PRICE_NOTE}', 'Sistem' FROM "yeni"`));
+  assert.match(bar, /SELECT '2026-10', "id", 3, 1, 'Sahibi \(2 Kasım\)' FROM "yeni"/);
+  assert.match(bar, /'Meyveli Granola Bar', 'Tek', 110, CASE WHEN EXISTS \(SELECT 1 FROM "products" b WHERE b\."name" = 'Hindistan Cevizli Bar'/);
+  assert.match(bar, /lower\(translate\('Peçete'/);
+  // Beypazarı Soda: 60 ₺, zayi Damla Soda'dan, yalnız şişe
+  assert.match(soda, /'Beypazarı Soda', 'Tek', 60, CASE WHEN EXISTS \(SELECT 1 FROM "products" b WHERE b\."name" = 'Damla Soda'/);
+  for (const st of [bar, soda]) {
+    assert.match(st, /ON CONFLICT \("name", "size"\) DO NOTHING/);
+    assert.match(st, /'create', false, 'Sistem' FROM "urun"/, "fiyat geçmişine yeni ürün satırı");
+    assert.match(st, /WHERE c\."name" = '(Atıştırmalıklar|Şişe İçecekler)'/);
+  }
+  assert.match(bar, /WHERE EXISTS \(SELECT 1 FROM "ingredients"\)/, "boş veritabanına eklemez");
 });
 
 // ---------------------------------------------------------------- Veritabanında
@@ -539,7 +586,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     for (const p of plan) {
       const c = r.counts.get(p.name);
       assert.ok(c, `${p.name} sayılmadı`);
-      assert.equal(c.qty, ek.get(p.name)!.qty, `${p.name}: miktar ek kalemdeki`);
+      assert.equal(c.qty, ek.get(p.extraName)!.qty, `${p.name}: miktar ek kalemdeki`);
       assert.equal(c.factor, p.countUnit === "KG" || p.countUnit === "LT" ? 1000 : 1, `${p.name}: çarpan`);
       assert.equal(c.counted_by, "Sayım kâğıdı (31 Ekim)");
     }
@@ -595,5 +642,144 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       "Ekim 2026: 19 ek kalem sayım listesindeki kalemine taşındı; taşınmadı: Stick şeker (Ekim sayımı zaten var, ek kalem duruyor), " +
         "Sleeve 8oz (listede başka birimle ya da sayılmaz), Plastik bıçak (Ekim ek kalemi bulunamadı, miktar taşınmadı)",
     ]);
+  });
+
+  test("0048: Beypazarı 0047'deki adıyla zaten açılmışsa yenisi açılmaz, miktar ona taşınır", async () => {
+    const r = await listTrial(async (tx) => {
+      await tx`insert into ingredients (name, category, unit, count_unit, count_group, count_from) values ('Beypazarı maden suyu', 'Şişe İçecek', 'adet', 'ADET', 'İÇECEKLER (şişe)', '2026-10')`;
+    });
+    assert.ok(!r.items.some((i) => i.name === "Beypazarı soda"));
+    assert.equal(r.counts.get("Beypazarı maden suyu")?.qty, 8);
+  });
+
+  // ---- 0049: sahibinin ekleri
+  type Product = { name: string; size: string; price: number; fire_override: number | null; active: boolean; show_on_menu: boolean; category: string; recipe: string };
+  type ExtrasTrial = {
+    tea: Item | undefined; oldTea: { active: boolean; note: string | null } | undefined; bar: Item | undefined; soda: Item | undefined;
+    products: Product[]; teaNotes: string[]; counts: Map<string, Count>; prices: { name: string; package_price: number; note: string }[];
+    sales: { name: string; price: number; source: string }[]; logs: { action: string; detail: string }[]; fires: Record<string, number | null>; links: number[];
+  };
+
+  /** 0047 + 0048'i, aradaki hazırlığı ve 0049'u (istenirse iki kez) işlemde çalıştırır, sonucu okur, hepsini geri alır */
+  async function extrasTrial(between: (tx: postgres.TransactionSql) => Promise<unknown> = async () => {}, runs = 1): Promise<ExtrasTrial> {
+    let out: ExtrasTrial | null = null;
+    await db
+      .begin(async (tx) => {
+        for (const st of statements(sql())) await tx.unsafe(st);
+        await tx.unsafe(read(`drizzle/${listFile}`));
+        await between(tx);
+        const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
+        for (let i = 0; i < runs; i++) for (const st of statements(read(`drizzle/${extrasFile}`))) await tx.unsafe(st);
+        const item = async (name: string) =>
+          (await tx<Item[]>`select name, category, unit, count_unit, count_group, count_from, package_price, package_size, vat_rate, is_estimate, active, supplier, note
+            from ingredients where name = ${name}`)[0];
+        const products = await tx<Product[]>`
+          select p.name, p.size, p.price, p.fire_override, p.active, p.show_on_menu, c.name as category,
+            string_agg(i.name || ' × ' || r.qty, ', ' order by r.sort_order) as recipe
+          from products p join categories c on c.id = p.category_id left join recipe_items r on r.product_id = p.id left join ingredients i on i.id = r.ingredient_id
+          where p.name in ('Meyveli Granola Bar', 'Beypazarı Soda', 'Çay') group by 1, 2, 3, 4, 5, 6, 7 order by 1, 2`;
+        const teaNotes = await tx<{ note: string }[]>`select note from products where name = 'Çay' order by size`;
+        const counts = await tx<Count[]>`
+          select i.name, c.qty, c.factor, c.counted_by from stock_counts c join ingredients i on i.id = c.ingredient_id where c.month = '2026-10'`;
+        const prices = await tx<{ name: string; package_price: number; note: string }[]>`
+          select i.name, p.package_price, p.note from ingredient_prices p join ingredients i on i.id = p.ingredient_id
+          where i.name in ('Demlik poşet çay', 'Meyveli granola bar') order by p.id`;
+        const sales = await tx<{ name: string; price: number; source: string }[]>`
+          select p.name, pp.price, pp.source from product_prices pp join products p on p.id = pp.product_id
+          where p.name in ('Meyveli Granola Bar', 'Beypazarı Soda') order by pp.id`;
+        const logs = await tx<{ action: string; detail: string }[]>`select action, detail from activity_log where id > ${logBefore} order by id`;
+        const fires = Object.fromEntries(
+          (await tx<{ name: string; fire_override: number | null }[]>`select name, fire_override from products where name in ('Hindistan Cevizli Bar', 'Damla Soda') and size = 'Tek'`).map((f) => [f.name, f.fire_override]),
+        );
+        const links = (await tx<{ factor: number }[]>`select l.factor from parasut_product_links l join ingredients i on i.id = l.ingredient_id where i.name = 'Demlik poşet çay'`).map((l) => l.factor);
+        const old = (await tx<{ active: boolean; note: string | null }[]>`select active, note from ingredients where name = 'Çay'`)[0];
+        out = {
+          tea: await item("Demlik poşet çay"), oldTea: old, bar: await item("Meyveli granola bar"), soda: await item("Beypazarı soda"),
+          products: [...products], teaNotes: teaNotes.map((n) => n.note), counts: new Map(counts.map((c) => [c.name, c])),
+          prices: [...prices], sales: [...sales], logs: [...logs], fires, links,
+        };
+        throw ROLLBACK;
+      })
+      .catch((e) => {
+        if (e !== ROLLBACK) throw e;
+      });
+    return out!;
+  }
+
+  test("0049: çay demlik poşete geçer (reçete gram / 5, eski kalem pasif), granola bar ve Beypazarı Soda açılır", async () => {
+    const r = await extrasTrial();
+    assert.deepEqual(
+      { ...r.tea!, note: undefined },
+      {
+        name: "Demlik poşet çay", category: "Diğer", unit: "adet", count_unit: "ADET", count_group: "KAHVE & ÇAY", count_from: "2026-10",
+        package_price: 90, package_size: 40, vat_rate: 0.01, is_estimate: false, active: true, supplier: "(faturada yok)", note: undefined,
+      },
+    );
+    assert.deepEqual(r.oldTea, { active: false, note: 'Demlik poşet çaya geçildi (02.11.2026): yerine "Demlik poşet çay".' });
+    const tea = r.products.filter((p) => p.name === "Çay");
+    assert.deepEqual(
+      tea.map((p) => [p.size, p.recipe]),
+      [
+        ["L", "Demlik poşet çay × 1, Su × 300, Karton bardak 14oz × 1, Kapak 14-16oz × 1, Peçete × 1"],
+        ["M", "Demlik poşet çay × 0.6, Su × 200, Karton bardak 8oz × 1, Kapak 8-12oz × 1, Peçete × 1"],
+      ],
+    );
+    assert.ok(r.teaNotes.every((n) => n.endsWith("Reçete: M = 0,6 demlik poşet (3 gr) + 8oz bardak, L = 1 poşet (5 gr) + 14oz bardak; demliğe 6–8 poşet.")));
+    assert.deepEqual({ ...r.bar!, note: undefined }, {
+      name: "Meyveli granola bar", category: "Atıştırmalık", unit: "adet", count_unit: "ADET", count_group: "SANDVİÇ & ATIŞTIRMALIK", count_from: "2026-10",
+      package_price: 50, package_size: 1, vat_rate: 0.01, is_estimate: true, active: true, supplier: null, note: undefined,
+    });
+    assert.deepEqual(
+      { qty: r.counts.get("Meyveli granola bar")?.qty, factor: r.counts.get("Meyveli granola bar")?.factor, by: r.counts.get("Meyveli granola bar")?.counted_by },
+      { qty: 3, factor: 1, by: "Sahibi (2 Kasım)" },
+    );
+    assert.deepEqual(r.prices, [
+      { name: "Demlik poşet çay", package_price: 90, note: "Demlik poşete geçildi: 450 ₺/kg (sahibinin verdiği fiyat)" },
+      { name: "Meyveli granola bar", package_price: 50, note: COUNT_ITEM_PRICE_NOTE },
+    ]);
+    const bar = r.products.find((p) => p.name === "Meyveli Granola Bar")!;
+    const soda = r.products.find((p) => p.name === "Beypazarı Soda")!;
+    assert.deepEqual(bar, {
+      name: "Meyveli Granola Bar", size: "Tek", price: 110, fire_override: r.fires["Hindistan Cevizli Bar"], active: true, show_on_menu: true,
+      category: "Atıştırmalıklar", recipe: "Meyveli granola bar × 1, Peçete × 1",
+    });
+    assert.deepEqual(soda, {
+      name: "Beypazarı Soda", size: "Tek", price: 60, fire_override: r.fires["Damla Soda"], active: true, show_on_menu: true,
+      category: "Şişe İçecekler", recipe: "Beypazarı soda × 1",
+    });
+    assert.deepEqual(r.sales, [
+      { name: "Meyveli Granola Bar", price: 110, source: "create" },
+      { name: "Beypazarı Soda", price: 60, source: "create" },
+    ]);
+    assert.deepEqual(
+      r.logs.map((l) => l.action),
+      ["Sayım listesine eklendi", "Hammadde pasif", "Sayım listesine eklendi", "Stok sayımı", "Yeni ürün", "Yeni ürün"],
+    );
+    assert.equal(r.logs[1].detail, 'Çay: demlik poşet çaya geçildi; 2 reçete satırı, 0 Paraşüt bağlantısı ve 0 sayım "Demlik poşet çay"a taşındı');
+  });
+
+  test("0049: ikinci çalıştırma bir şey yapmaz", async () => {
+    const r = await extrasTrial(undefined, 2);
+    assert.equal(r.products.filter((p) => p.name !== "Çay").length, 2);
+    assert.equal(r.sales.length, 2);
+    assert.equal(r.prices.length, 2);
+    assert.equal(r.logs.length, 6);
+  });
+
+  test("0049: eski çayın sayımı ve Paraşüt bağlantısı poşete çevrilir; var olan ürün ve kalem yinelenmez", async () => {
+    const r = await extrasTrial(async (tx) => {
+      await tx`insert into stock_counts (month, ingredient_id, qty, factor, counted_by) select '2026-10', id, 0.4, 1000, 'Ayşe' from ingredients where name = 'Çay'`;
+      await tx`insert into parasut_product_links (product_key, product_name, ingredient_id, factor) select 'cay-1kg', 'Çay 1 kg', id, 1000 from ingredients where name = 'Çay'`;
+      await tx`insert into products (category_id, name, size, price) select id, 'Meyveli Granola Bar', 'Tek', 95 from categories where name = 'Atıştırmalıklar'`;
+    });
+    assert.deepEqual(
+      { qty: r.counts.get("Demlik poşet çay")?.qty, factor: r.counts.get("Demlik poşet çay")?.factor, by: r.counts.get("Demlik poşet çay")?.counted_by },
+      { qty: 80, factor: 1, by: "Ayşe" },
+      "0,4 KG = 400 gr = 80 poşet",
+    );
+    assert.ok(!r.counts.has("Çay"));
+    assert.deepEqual(r.links, [200], "1 Paraşüt birimi 1.000 gr → 200 poşet");
+    assert.deepEqual(r.products.filter((p) => p.name === "Meyveli Granola Bar").map((p) => p.price), [95], "panelde açılmış ürün olduğu gibi");
+    assert.deepEqual(r.sales.map((x) => x.name), ["Beypazarı Soda"]);
   });
 });

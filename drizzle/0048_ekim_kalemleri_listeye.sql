@@ -9,57 +9,59 @@
 -- fiyat geçmişine "Listeye ekle"nin başlangıç satırı yazılır (src/lib/count-item.ts COUNT_ITEM_PRICE_NOTE: Hammaddeler'deki
 -- düzeltme o satırın yerine geçer, Ekim düzeltilen fiyatla değerlenir; zam uyarısı onu taban saymaz).
 -- Adı okunamayan Callei satırı ("Callei sos (adı okunamadı)") listeye alınmaz: adı belli olunca "Listeye ekle".
+-- "Beypazarı maden suyu" sahibinin dediği adla "Beypazarı soda" olarak açılır (ek kalemi 0047'deki adıyla bulunur).
 -- Korumalar: boş veritabanına eklenmez. Bu adla hammadde (Türkçe büyük / küçük harf ve boşluk farkı gözetmeden; anahtar
 -- drizzle/0023 ile aynı) varsa yenisi açılmaz: sayım listesindeyse ve sayım birimi aynıysa miktar ona taşınır, değilse
 -- ek kalem kalır. O kalemin Ekim sayımı zaten varsa üzerine yazılmaz, ek kalem de silinmez. Ek kalem silinmiş ya da adı /
 -- birimi değişmişse kalem yine açılır, miktar taşınmaz. Taşınamayanlar işlem geçmişine yazılır. Yeniden çalışırsa bir şey
 -- yapmaz.
-WITH "kalem" ("sira", "ad", "grup", "kategori", "birim", "sayim_birimi", "paket", "icerik", "kdv") AS (
+WITH "kalem" ("sira", "ad", "ek_ad", "grup", "kategori", "birim", "sayim_birimi", "paket", "icerik", "kdv") AS (
   VALUES
-    (1, 'Callei Antep fıstığı sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei Antep fıstığı sos 1 kg', 1000, 0.01),
-    (2, 'Callei beyaz çikolata sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei beyaz çikolata sos 1 kg', 1000, 0.01),
-    (3, 'Callei karamel sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei karamel sos 1 kg', 1000, 0.01),
-    (4, 'Badem şurubu', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'ml', 'LT', 'Şurup 750 ml', 750, 0.01),
-    (5, 'Liçi şurubu', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'ml', 'LT', 'Şurup 750 ml', 750, 0.01),
-    (6, 'Beyaz çikolata tozu', 'TOZ ÜRÜNLER', 'Toz', 'gr', 'KG', 'Beyaz çikolata tozu 1 kg', 1000, 0.01),
-    (7, 'Lotus cake', 'TATLILAR', 'Tatlı', 'dilim', 'DİLİM', NULL, 1, 0.01),
-    (8, 'Mono Latte', 'TATLILAR', 'Tatlı', 'dilim', 'DİLİM', NULL, 1, 0.01),
-    (9, 'Baget hindi füme sandviç', 'SANDVİÇ & ATIŞTIRMALIK', 'Atıştırmalık', 'adet', 'ADET', NULL, 1, 0.01),
-    (10, 'Beypazarı maden suyu', 'İÇECEKLER (şişe)', 'Şişe İçecek', 'adet', 'ADET', NULL, 1, 0.01),
-    (11, 'Stick şeker', 'DİĞER GIDA ÜRÜNLERİ', 'Diğer', 'adet', 'ADET', NULL, 1, 0.01),
-    (12, 'Bardak 8oz baskısız', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (13, 'Bardak 12oz baskısız', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (14, 'Karton bardak 12oz kahverengi', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (15, 'Şeffaf kapak 12oz', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (16, 'Sleeve 8oz', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (17, '4''lü bardak taşıyıcı', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (18, '2''li bardak taşıyıcı', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (19, 'Taşıma çantası', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (20, 'Kraft çanta', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (21, 'Plastik bıçak', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
-    (22, 'Cold brew şişesi', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2)
+    (1, 'Callei Antep fıstığı sos', 'Callei Antep fıstığı sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei Antep fıstığı sos 1 kg', 1000, 0.01),
+    (2, 'Callei beyaz çikolata sos', 'Callei beyaz çikolata sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei beyaz çikolata sos 1 kg', 1000, 0.01),
+    (3, 'Callei karamel sos', 'Callei karamel sos', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'gr', 'KG', 'Callei karamel sos 1 kg', 1000, 0.01),
+    (4, 'Badem şurubu', 'Badem şurubu', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'ml', 'LT', 'Şurup 750 ml', 750, 0.01),
+    (5, 'Liçi şurubu', 'Liçi şurubu', 'SOS / ŞURUP / PÜRE', 'Sos & Şurup', 'ml', 'LT', 'Şurup 750 ml', 750, 0.01),
+    (6, 'Beyaz çikolata tozu', 'Beyaz çikolata tozu', 'TOZ ÜRÜNLER', 'Toz', 'gr', 'KG', 'Beyaz çikolata tozu 1 kg', 1000, 0.01),
+    (7, 'Lotus cake', 'Lotus cake', 'TATLILAR', 'Tatlı', 'dilim', 'DİLİM', NULL, 1, 0.01),
+    (8, 'Mono Latte', 'Mono Latte', 'TATLILAR', 'Tatlı', 'dilim', 'DİLİM', NULL, 1, 0.01),
+    (9, 'Baget hindi füme sandviç', 'Baget hindi füme sandviç', 'SANDVİÇ & ATIŞTIRMALIK', 'Atıştırmalık', 'adet', 'ADET', NULL, 1, 0.01),
+    (10, 'Beypazarı soda', 'Beypazarı maden suyu', 'İÇECEKLER (şişe)', 'Şişe İçecek', 'adet', 'ADET', NULL, 1, 0.01),
+    (11, 'Stick şeker', 'Stick şeker', 'DİĞER GIDA ÜRÜNLERİ', 'Diğer', 'adet', 'ADET', NULL, 1, 0.01),
+    (12, 'Bardak 8oz baskısız', 'Bardak 8oz baskısız', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (13, 'Bardak 12oz baskısız', 'Bardak 12oz baskısız', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (14, 'Karton bardak 12oz kahverengi', 'Karton bardak 12oz kahverengi', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (15, 'Şeffaf kapak 12oz', 'Şeffaf kapak 12oz', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (16, 'Sleeve 8oz', 'Sleeve 8oz', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (17, '4''lü bardak taşıyıcı', '4''lü bardak taşıyıcı', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (18, '2''li bardak taşıyıcı', '2''li bardak taşıyıcı', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (19, 'Taşıma çantası', 'Taşıma çantası', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (20, 'Kraft çanta', 'Kraft çanta', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (21, 'Plastik bıçak', 'Plastik bıçak', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2),
+    (22, 'Cold brew şişesi', 'Cold brew şişesi', 'AMBALAJ MALZEMELERİ', 'Ambalaj', 'adet', 'ADET', NULL, 1, 0.2)
 ),
 "k" AS (
   SELECT k.*, lower(translate(k."ad", 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AS "anahtar",
+    lower(translate(k."ek_ad", 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) AS "ek_anahtar",
     CASE WHEN k."sayim_birimi" IN ('KG', 'LT') THEN 1000 ELSE 1 END AS "carpan"
   FROM "kalem" k
   WHERE EXISTS (SELECT 1 FROM "ingredients")
 ),
 "ek" AS (
-  -- 0047'nin bu kalem için yazdığı Ekim ek kalemi: aynı ad anahtarı, aynı birim
+  -- 0047'nin bu kalem için yazdığı Ekim ek kalemi (0047'deki adıyla: "ek_ad"), aynı birim
   SELECT DISTINCT ON (k."sira") k."sira", e."id" AS "ek_id", e."qty", e."unit_price"
   FROM "k" k
-  JOIN "stock_extras" e ON e."month" = '2026-10' AND e."unit" = k."sayim_birimi" AND lower(translate(regexp_replace(btrim(e."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = k."anahtar"
+  JOIN "stock_extras" e ON e."month" = '2026-10' AND e."unit" = k."sayim_birimi" AND lower(translate(regexp_replace(btrim(e."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = k."ek_anahtar"
   ORDER BY k."sira", e."id"
 ),
 "var" AS (
-  -- Bu adla zaten hammadde: sayım listesinde mi (src/lib/ingredient-usage.ts isCountable)
+  -- Bu adla (ya da 0047'deki adıyla) zaten hammadde: sayım listesinde mi (src/lib/ingredient-usage.ts isCountable)
   SELECT DISTINCT ON (k."sira") k."sira", i."id", i."count_unit",
     i."count_unit" IS NOT NULL AND (i."active" OR EXISTS (
       SELECT 1 FROM "recipe_items" r JOIN "products" p ON p."id" = r."product_id" WHERE r."ingredient_id" = i."id" AND p."active"
     )) AS "listede"
   FROM "k" k
-  JOIN "ingredients" i ON lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) = k."anahtar"
+  JOIN "ingredients" i ON lower(translate(regexp_replace(btrim(i."name"), '\s+', ' ', 'g'), 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) IN (k."anahtar", k."ek_anahtar")
   ORDER BY k."sira", i."active" DESC, i."id"
 ),
 "son" AS (SELECT COALESCE(MAX("sort_order"), 0) AS "m" FROM "ingredients"),

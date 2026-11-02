@@ -344,6 +344,13 @@
       "when": 1793619693845,
       "tag": "0048_ekim_kalemleri_listeye",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793620574909,
+      "tag": "0049_urun_ekleri",
+      "breakpoints": true
     }
   ]
 }
