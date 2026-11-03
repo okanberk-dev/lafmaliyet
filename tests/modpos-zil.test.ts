@@ -266,8 +266,20 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
 });
 
 test("kaynak: personelin yükleyicileri ve operasyonun ortak olguları föy okumaz", () => {
-  for (const f of ["src/server/data/today-ops.ts", "src/server/bell/ops.ts", "src/server/data/cash-reports.ts"]) {
+  for (const f of ["src/server/data/today-ops.ts", "src/server/bell/ops.ts"]) {
     assert.doesNotMatch(read(f), /loadModposSheets|modposMismatch|@\/server\/bell\/modpos/, f);
+  }
+  // cash-reports.ts föyü yalnız ay rakamına yedekte okur (modposTillRows, firstModposTillDay: ayın Z toplamı gibi
+  // sunucuda kalan ay bilgisi; docs/MODPOS-API.md › Ay rakamına yedek); personelin rapor okuyucuları okumaz
+  const cr = read("src/server/data/cash-reports.ts");
+  assert.doesNotMatch(cr, /modposMismatch|@\/server\/bell\/modpos/);
+  const fns = cr.split(/\n(?=export async function |async function |export function )/);
+  const readers = fns.filter((f) => /loadModposSheets\(/.test(f)).map((f) => /function (\w+)/.exec(f)?.[1]);
+  assert.deepEqual(readers, ["modposTillRows", "firstModposTillDay"]);
+  for (const name of ["getCashReport", "cashReportsBetween", "previousCarryOver", "nextReportAfter", "toCashDTO"]) {
+    const body = fns.find((f) => new RegExp(`function ${name}\\b`).test(f)) ?? "";
+    assert.ok(body, name);
+    assert.doesNotMatch(body, /modpos|Modpos/, name);
   }
   const today = read("src/server/data/today.ts");
   const staffFacts = today.slice(today.indexOf("async function staffFacts"), today.indexOf("async function adminFacts"));
