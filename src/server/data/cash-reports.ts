@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or } from "drizzle-orm";
 
-import type { MonthEntry, TillRow } from "@/lib/cash-month";
+import { modposRunStart, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import {
   defaultCashRecipients,
   integrityOf,
@@ -288,7 +288,11 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
   const have = new Set(reports.map((r) => r.date));
   // ModPOS föyü yalnız raporu da LafPOS gün sonu da olmayan günde (geçiş gününden önce zaten LafPOS satırı yok)
   const taken = new Set([...reports, ...lafpos].map((r) => r.date));
-  return [...reports, ...lafpos.filter((r) => !have.has(r.date)), ...modpos.filter((r) => !taken.has(r.date))].sort((a, b) => a.date.localeCompare(b.date));
+  // Raporlar başlamadan önceki föyler yalnız ilk rapora kesintisiz uzanan kısımla (cash-month.ts modposRunStart): her
+  // okuyucu (veri kümesi, satış dönemi, sabit gider sürümü) aynı satırları görür
+  const firstReport = [...reports, ...lafpos].reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+  const runFrom = modposRunStart(modpos.map((r) => r.date), firstReport) ?? "";
+  return [...reports, ...lafpos.filter((r) => !have.has(r.date)), ...modpos.filter((r) => !taken.has(r.date) && r.date >= runFrom)].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -334,13 +338,18 @@ async function modposFallbackEnd(db: Db | Tx): Promise<string | null> {
 
 /**
  * Föyün yedek ay satırı: yalnız bütün kasaları kapanmış gün (KAPALI) ya da kasası hiç açılmadan satış yapılmış gün (BOS,
- * föysüz Z; src/lib/modpos/z.ts foyZ). Açık kasalı föyün tutarları daha değişir, satışsız boş gün satır değildir. Föyde
- * indirim yok: `discounts` null (o günlerin indirimi bilinmez; ayın discountDays'i bunu gösterir)
+ * föysüz Z; src/lib/modpos/z.ts foyZ). Açık kasalı föyün tutarları daha değişir. Kesinleşmiş satışsız gün (kasa açılmamış,
+ * satış yok) sıfır satırdır: açık gün ve ciroya bir şey katmaz, ama raporlar başlamadan önceki föylerin kesintisiz
+ * sayılmasında (cash-month.ts modposRunStart) kapalı gün boşluk sayılmaz. Föyde indirim yok: `discounts` null (o
+ * günlerin indirimi bilinmez; ayın discountDays'i bunu gösterir)
  */
-function modposTillRow(sheet: Pick<ModposSheet, "day" | "state" | "foy">): TillRow | null {
+function modposTillRow(sheet: Pick<ModposSheet, "day" | "state" | "foy" | "final">): TillRow | null {
   if (sheet.state === "ACIK") return null;
   const z = foyZ(sheet.foy);
-  if (!z || (sheet.state === "BOS" && !(z.foysuz && z.zTotal > 0))) return null;
+  if (sheet.state === "BOS" && !(z && z.foysuz && z.zTotal > 0)) {
+    return sheet.final ? { date: sheet.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" } : null;
+  }
+  if (!z) return null;
   return { date: sheet.day, zTotal: z.zTotal, card: z.card, mealCard: z.mealCard, discounts: null, offRevenue: z.offRevenue, receipts: z.receipts, source: "modpos" };
 }
 
@@ -362,27 +371,23 @@ export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
 }
 
 /**
- * İlk ModPOS yedek satırının günü (modposTillRows'un bütün günler içindeki en eskisi; anahtar kapalıyken null, föy
- * tablosu okunmaz). Kasa'nın ay satırı yalnız ayın satırlarını okur: ay ortasında başlayan ilk ay (partialFrom)
- * Gelir-gider'deki gibi tanınsın diye ilk kasa raporuyla birlikte bu gün de verilir. Bütün föyler okunmaz: en eski
- * kapanmış föye kadar olanlar (önceki satışsız ya da föysüz günler) okunur
+ * Föylerin sayılmaya başladığı gün (anahtar kapalıyken ya da föy yokken null, föy tablosu okunmaz). Kasa'nın ay satırı yalnız
+ * ayın satırlarını okur: ay ortasında başlayan ilk ay (partialFrom) ve raporlar başlamadan önceki föylerin kesintisiz
+ * kısmı (cash-month.ts modposRunStart) Gelir-gider'deki gibi bulunsun diye bütün föylerden ve ilk kasa raporundan
+ * hesaplanır; tillMonths'a `modposFrom` olarak da verilir
  */
 export async function firstModposTillDay(db: Db | Tx = getDb()): Promise<string | null> {
   const end = await modposFallbackEnd(db);
   if (end === null) return null;
-  let start = MODPOS_FIRST_DAY;
-  for (;;) {
-    const [closed] = await db
-      .select({ day: s.modposCashSheets.day })
-      .from(s.modposCashSheets)
-      .where(and(eq(s.modposCashSheets.state, "KAPALI"), gte(s.modposCashSheets.day, start), lte(s.modposCashSheets.day, end)))
-      .orderBy(asc(s.modposCashSheets.day))
-      .limit(1);
-    const rows = (await loadModposSheets(start, closed?.day ?? end, db)).flatMap((sh) => modposTillRow(sh) ?? []);
-    if (rows.length || !closed) return rows[0]?.date ?? null;
-    // Kapanmış föy okunamadıysa (bozuk satır) sonrakine geçilir
-    start = addDays(closed.day, 1);
-  }
+  const [rows, [firstReport]] = await Promise.all([
+    modposTillRows(db),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+  ]);
+  // Kesintisiz kısmın başı; öncesindeki föyler sayılmaz (başı ilk raporsa raporlardan önce sayılan föy yok)
+  return modposRunStart(
+    rows.map((r) => r.date),
+    firstReport?.date ?? null,
+  );
 }
 
 /** Raporun kayıtlı önceki sürümü (ekranda ve zilde düzeltme geçmişi) */
@@ -438,6 +443,16 @@ export async function cashReportIntegrity(r: CashReportDTO): Promise<CashReportI
 }
 
 /** Bu ayın kasa raporu var mı (ay bilgisinin boş alanları oradan dolar) */
+/**
+ * Ayın kasadan gelen bir satırı var mı: kasa raporu ya da (yalnız açık olan yedeklerde) LafPOS gün sonu veya sayılan
+ * ModPOS föyü (tillRows). Ay bilgisinin elle yazılmış 0'ı bu ayda değerdir, silinmez (cash-month.ts monthRowEmpty);
+ * yalnız föyden ya da LafPOS'tan gelen ayda da öyle (docs/MODPOS-API.md › Ay rakamına yedek)
+ */
+export async function hasTillRowsIn(month: string, db: Db | Tx = getDb()): Promise<boolean> {
+  if (await hasCashReportIn(month, db)) return true;
+  return (await tillRows(db)).some((r) => r.date.startsWith(`${month}-`));
+}
+
 export async function hasCashReportIn(month: string, db: Db | Tx = getDb()): Promise<boolean> {
   const [row] = await db
     .select({ id: s.cashReports.id })

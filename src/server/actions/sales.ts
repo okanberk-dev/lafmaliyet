@@ -14,7 +14,7 @@ import { monthSource } from "@/lib/lafpos/switch";
 import { todayTR } from "@/lib/reminders";
 import { SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
-import { hasCashReportIn } from "@/server/data/cash-reports";
+import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 import { rematchPosSalesByName } from "@/server/lafpos/rematch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -56,7 +56,7 @@ async function dropEmptyMonth(db: Db | Tx, month: string): Promise<boolean> {
   const [row] = await db.select().from(s.months).where(eq(s.months.month, month));
   if (!row) return false;
   const zeros = row.discounts === 0 || row.offRevenue === 0;
-  if (!monthRowEmpty(row, zeros && (await hasCashReportIn(month, db)))) return false;
+  if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, db)))) return false;
   const [lines] = await db.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(eq(s.salesLines.month, month));
   const [pnl] = await db.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month));
   if ((lines?.n ?? 0) > 0 || (pnl?.n ?? 0) > 0) return false;
@@ -106,7 +106,7 @@ export async function saveMonthInfo(input: z.input<typeof monthInfoSchema>) {
     // Bütün alanlar boşaltıldıysa ve ayda başka kayıt yoksa boş ay satırı kalmasın
     const removed = await dropEmptyMonth(db, data.month);
     // Boş alan, ayın kasa raporu varsa oradan gelir: işlem geçmişi ve ekrandaki bildirim bunu söyler ("boşaltıldı" değil)
-    const kasa = await hasCashReportIn(data.month, db);
+    const kasa = await hasTillRowsIn(data.month, db);
     const empty = kasa ? "kasadan" : "boş";
     await logActivity(
       me,

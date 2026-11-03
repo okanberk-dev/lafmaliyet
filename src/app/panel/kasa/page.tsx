@@ -470,7 +470,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const [monthModpos, firstModpos] = await Promise.all([modposTillRows(getDb(), `${month}-01`, monthEnd), firstModposTillDay(getDb())]);
   const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
   const monthLine = kasaMonthLine(
-    resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined)[0]),
+    resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos)[0]),
   );
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları

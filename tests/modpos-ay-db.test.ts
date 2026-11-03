@@ -135,27 +135,31 @@ describe("ModPOS föyü ay rakamına yedek: veritabanında", { skip: !SERVER_URL
     for (const f of [bos("2026-09-28"), acik("2026-09-29"), bos("2026-09-30", 1_200), kapali("2026-10-01"), acik("2026-10-02"), bos("2026-10-03"), kapali("2026-10-05")]) await save(f);
     await fallback(true);
     const rows = await reports.modposTillRows(db);
+    // Kesinleşmiş satışsız gün (28 Eylül, 3 Ekim) sıfır satırdır; açık kasa (29 Eylül, 2 Ekim) girmez
     assert.deepEqual(
       rows.map((r) => r.date),
-      ["2026-09-30", "2026-10-01", "2026-10-05"],
+      ["2026-09-28", "2026-09-30", "2026-10-01", "2026-10-03", "2026-10-05"],
     );
-    assert.deepEqual(rows[1], { date: "2026-10-01", zTotal: 28_450.5, card: 16_120.5, mealCard: 0, discounts: null, offRevenue: 145, receipts: 214, source: "modpos" });
-    assert.deepEqual(rows[0], { date: "2026-09-30", zTotal: 1_200, card: 1_200, mealCard: 0, discounts: null, offRevenue: 0, receipts: 7, source: "modpos" });
+    assert.deepEqual(rows[0], { date: "2026-09-28", zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" });
+    assert.deepEqual(rows[2], { date: "2026-10-01", zTotal: 28_450.5, card: 16_120.5, mealCard: 0, discounts: null, offRevenue: 145, receipts: 214, source: "modpos" });
+    assert.deepEqual(rows[1], { date: "2026-09-30", zTotal: 1_200, card: 1_200, mealCard: 0, discounts: null, offRevenue: 0, receipts: 7, source: "modpos" });
     assert.deepEqual(
       (await reports.modposTillRows(db, "2026-10-01", "2026-10-04")).map((r) => r.date),
-      ["2026-10-01"],
+      ["2026-10-01", "2026-10-03"],
     );
     assert.deepEqual(await reports.modposTillRows(db, "2026-10-06", "2026-10-31"), []);
-    // İlk yedek satır: satışsız boş gün ve açık kasa atlanır, föysüz satışlı gün sayılır
-    assert.equal(await reports.firstModposTillDay(db), "2026-09-30");
-    await db.delete(s.modposCashSheets).where(eq(s.modposCashSheets.day, "2026-09-30"));
-    assert.equal(await reports.firstModposTillDay(db), "2026-10-01");
-    // Açık kasa sonra kapanınca (yeniden çekilir) yedek satır olur
+    // Föylerin sayılmaya başladığı gün (hiç rapor yok): en yeni föyden geriye kesintisiz; 4 Ekim'in föyü yok
+    assert.equal(await reports.firstModposTillDay(db), "2026-10-05");
+    // Açık kasa sonra kapanınca (yeniden çekilir) ve eksik gün gelince kesinti kalkar: 29 Eylül hâlâ açık
     await save(kapali("2026-10-02"));
+    await save(kapali("2026-10-04"));
+    assert.equal(await reports.firstModposTillDay(db), "2026-09-30");
     assert.deepEqual(
       (await reports.modposTillRows(db, "2026-10-01", "2026-10-31")).map((r) => r.date),
-      ["2026-10-01", "2026-10-02", "2026-10-05"],
+      ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"],
     );
+    await db.delete(s.modposCashSheets).where(eq(s.modposCashSheets.day, "2026-09-30"));
+    assert.equal(await reports.firstModposTillDay(db), "2026-10-01");
   });
 
   test("LafPOS'a geçiş günü: föy yalnız ondan önceki günlerde; geçiş gününden itibaren LafPOS gün sonu", async () => {
@@ -182,8 +186,15 @@ describe("ModPOS föyü ay rakamına yedek: veritabanında", { skip: !SERVER_URL
     assert.ok(day.ok, "gövde geçerli");
     assert.equal((await ingest.storePosDay(db, day.data, now)).ok, true);
     await report("2026-10-03", 9_000);
+    // 2 Ekim'in föyü yok: ilk rapordan (3 Ekim) önceki föy kesintisiz değil, 1 Ekim sayılmaz
+    assert.deepEqual(days(await reports.tillRows(db)), [
+      ["2026-10-03", "rapor"],
+      ["2026-10-05", "lafpos"],
+    ]);
+    await save(kapali("2026-10-02"));
     assert.deepEqual(days(await reports.tillRows(db)), [
       ["2026-10-01", "modpos"],
+      ["2026-10-02", "modpos"],
       ["2026-10-03", "rapor"],
       ["2026-10-05", "lafpos"],
     ]);
@@ -191,6 +202,15 @@ describe("ModPOS föyü ay rakamına yedek: veritabanında", { skip: !SERVER_URL
     await setting("lafposGecisGunu", "2026-10-01");
     assert.deepEqual(await reports.modposTillRows(db), []);
     assert.equal(await reports.firstModposTillDay(db), null);
+  });
+
+  test("yalnız föyden gelen ayda kasadan satır var sayılır (elle yazılan 0 silinmez); yedek kapalıyken yok", async () => {
+    for (const d of ["2026-09-01", "2026-09-02"]) await save(kapali(d));
+    assert.equal(await reports.hasTillRowsIn("2026-09", db), false, "yedek kapalı");
+    await fallback(true);
+    assert.equal(await reports.hasTillRowsIn("2026-09", db), true);
+    assert.equal(await reports.hasTillRowsIn("2026-08", db), false);
+    assert.equal(await reports.hasCashReportIn("2026-09", db), false, "kasa raporu yine yok");
   });
 
   test("Gelir-gider'in ay rakamı föyle tamamlanır, eksik gün ilk rapordan aranır; Kasa'nın ay satırı aynı; kapalıyken bugünkü gibi", async () => {

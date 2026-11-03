@@ -49,6 +49,25 @@ export function isReportRow(r: Pick<TillRow, "source">): boolean {
   return !r.source;
 }
 
+/**
+ * Föyün sayılmaya başladığı gün: ilk rapordan (ya da hiç rapor yoksa en yeni föy gününden sonraki günden) geriye,
+ * föyü olan günler kesintisiz sürdükçe (satışsız kapalı gün de föydür: cash-reports.ts modposTillRow). Bundan önceki föy
+ * satırları sayılmaz; föy yoksa null
+ */
+export function modposRunStart(modposDays: Iterable<string>, firstReport: string | null): string | null {
+  const days = new Set(modposDays);
+  if (!days.size) return null;
+  let start = firstReport ?? addDays([...days].sort().at(-1)!, 1);
+  while (days.has(addDays(start, -1))) start = addDays(start, -1);
+  return start;
+}
+
+/** Satırlardan: ModPOS olmayan ilk satır ilk rapordur */
+function modposRunStartOf(rows: readonly TillRow[]): string | null {
+  const modpos = rows.filter((r) => r.source === "modpos").map((r) => r.date);
+  return modpos.length ? modposRunStart(modpos, earliest(rows.filter((r) => r.source !== "modpos"))) : null;
+}
+
 /** Aynı günün önceliği: kasa raporu (0) > LafPOS gün sonu (1) > ModPOS föyü (2) */
 const rankOf = (r: TillRow) => (isReportRow(r) ? 0 : r.source === "lafpos" ? 1 : 2);
 
@@ -80,6 +99,12 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * sayılmaz; null: hiç rapor yok, eksik gün aranmaz. Verilmezse `firstEver`, o da yoksa satırların ModPOS olmayan en
  * eskisi; ModPOS satırı yokken bu ilk satırla aynıdır, sonuç bugünküyle birebir aynı kalır. Yalnız bir ayın satırlarını
  * ModPOS'la birlikte veren çağıran bunu da vermelidir.
+ *
+ * `modposFrom`: raporlar başlamadan önceki föy satırları yalnız ilk rapora **kesintisiz** uzanan kısımla sayılır
+ * (modposRunStart): arada föyü olmayan gün varsa ondan öncesi sayılmaz, ay ortasında başlayan ilk ay (partialFrom)
+ * kesintisiz kısmın ilk günüdür. Tek tek elle çekilmiş eski bir gün ya da alınamayan bir gün ayı yanlış "tam" yapmasın;
+ * eksik gün gelince öncesi kendiliğinden sayılır. Verilmezse satırlardan bulunur; yalnız bir ayın satırlarını veren
+ * çağıran (Kasa'nın ay satırı) bunu bütün föylerden bulup verir (cash-reports.ts firstModposTillDay).
  */
 export function tillMonths(
   rows: TillRow[],
@@ -88,6 +113,7 @@ export function tillMonths(
   pendingLate?: Iterable<string>,
   closedDays?: Iterable<string>,
   firstReport?: string | null,
+  modposFrom?: string | null,
 ): TillMonth[] {
   const waiting = pendingLate ? new Set(pendingLate) : null;
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
@@ -98,6 +124,11 @@ export function tillMonths(
   const best = new Map<string, number>();
   for (const r of rows) best.set(r.date, Math.min(best.get(r.date) ?? 2, rankOf(r)));
   rows = rows.filter((r) => rankOf(r) === best.get(r.date));
+  // Raporlar başlamadan önceki föyler: yalnız ilk rapora kesintisiz uzanan kısım (modposRunStart). Satırlardan yalnız
+  // bütün satırlar verilince bulunur; yalnız bir ayın satırlarını veren çağıran (firstReport'u veren) başını kendisi verir
+  const runFrom = modposFrom !== undefined ? modposFrom : firstReport !== undefined ? null : modposRunStartOf(rows);
+  if (runFrom !== null) rows = rows.filter((r) => r.source !== "modpos" || r.date >= runFrom);
+  if (!rows.length) return [];
   const first = firstEver ?? earliest(rows)!;
   // Eksik gün araması ilk kasa raporundan (ya da LafPOS gün sonundan); hiçbiri yoksa (yalnız ModPOS föyü) aranmaz
   const searchFrom = firstReport !== undefined ? firstReport : (firstEver ?? earliest(rows.filter((r) => r.source !== "modpos")));

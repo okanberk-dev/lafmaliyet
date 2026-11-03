@@ -10,7 +10,7 @@ import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
 import { isCountable } from "@/lib/ingredient-usage";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
-import { hasCashReportIn } from "@/server/data/cash-reports";
+import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
@@ -150,7 +150,7 @@ async function dropEmptyStockMonth(tx: Tx, month: string) {
   const [row] = await tx.select().from(s.months).where(eq(s.months.month, month));
   if (!row) return;
   const zeros = row.discounts === 0 || row.offRevenue === 0;
-  if (!monthRowEmpty(row, zeros && (await hasCashReportIn(month, tx)))) return;
+  if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, tx)))) return;
   const [counts, extras, lines, pnl] = await Promise.all([
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(eq(s.stockCounts.month, month)),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(eq(s.stockExtras.month, month)),
