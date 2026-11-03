@@ -27,6 +27,7 @@ import {
   type CashReportExtras,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import type { ModposDayView } from "@/lib/cash-modpos";
 import { money } from "@/lib/format";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
@@ -39,6 +40,7 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 import { SavedPhotos } from "./cash-photos";
 import { CashRevisions } from "./cash-revisions";
 import { CashBreakdown, DIFF_TONE, DiffHeadline, LafposDiffList, type OkcAdminView } from "./cash-summary";
+import { ModposDiffList } from "./modpos-diffs";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
@@ -79,6 +81,7 @@ export function CashHistory({
   latePending = {},
   monthLine = null,
   okcAdmin = {},
+  modposDays = {},
   okcFirst = null,
   okcLine = null,
 }: {
@@ -105,6 +108,11 @@ export function CashHistory({
   monthLine?: ReactNode;
   /** Raporların yazarkasa kümülatifi ve "Kümülatifi temizle" (rapor kimliğine göre; docs/planlar/okc-z.md §3.7) */
   okcAdmin?: Record<number, OkcAdminView>;
+  /**
+   * ModPOS kasa föyü olan günler (tarihe göre; docs/MODPOS-API.md › Nerede görünür): "ModPOS'tan farklı" rozeti,
+   * raporu girilmemiş günün föy cirosu ve gün ayrıntısındaki farklı yazılanlar. Yalnız yöneticinin sayfası verir
+   */
+  modposDays?: Record<string, ModposDayView>;
   /** İlk yazarkasa Z'li rapor: "Yazarkasa Z yok" rozeti bu günden sonra (D15) */
   okcFirst?: string | null;
   /** Ayın yazarkasa (mali) toplamı ve KDV dökümü (yalnız bilgi, §8) */
@@ -215,19 +223,32 @@ export function CashHistory({
           {days.map(({ date, report }) => {
             if (!report) {
               const waiting = latePending[date]?.[0];
+              const sheet = modposDays[date];
+              const sheetLine = sheet ? (
+                <span className="block text-xs text-ink-mute tabular">
+                  ModPOS föyü: ciro {money(sheet.zTotal)}
+                  {sheet.open ? " (gün açıkken alındı)" : ""}
+                </span>
+              ) : null;
               return (
                 <li key={date} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
                   <span className="w-[7.5rem] shrink-0 font-medium text-ink-mute tabular">{shortDay(date)}</span>
                   {waiting ? (
                     <>
-                      <span className="min-w-0 flex-1 text-warn">Onay bekliyor · {waiting.requestedByName} girdi</span>
+                      <span className="min-w-0 flex-1 text-warn">
+                        Onay bekliyor · {waiting.requestedByName} girdi
+                        {sheetLine}
+                      </span>
                       <ButtonLink href={`/panel/onaylar#istek-${waiting.id}`} variant="ghost" size="xs">
                         İncele
                       </ButtonLink>
                     </>
                   ) : (
                     <>
-                      <span className="min-w-0 flex-1 text-ink-mute">Rapor girilmedi</span>
+                      <span className="min-w-0 flex-1 text-ink-mute">
+                        Rapor girilmedi
+                        {sheetLine}
+                      </span>
                       <ButtonLink href={`/panel/kasa?gun=${date}`} variant="ghost" size="xs">
                         <Pencil size={13} /> Gir
                       </ButtonLink>
@@ -267,6 +288,7 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
+                    {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS&apos;tan farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
@@ -323,6 +345,7 @@ export function CashHistory({
             {open.emailStatus === "failed" ? <Notice tone="bad" size="sm" title={`E-posta gitmedi: ${open.emailError}`} /> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
             <LafposDiffList diffs={openPhotos?.extras.lafposDiffs} />
+            <ModposDiffList diffs={modposDays[open.date]?.diffs} />
             <CashBreakdown
               report={open}
               cashOuts={cashOuts[open.date] ?? []}

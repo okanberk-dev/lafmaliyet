@@ -15,7 +15,7 @@
 
 import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
-import { COST_KEYS, OKC_ADMIN_KEYS } from "../tests/helpers/leak-scan";
+import { COST_KEYS, MODPOS_ADMIN_KEYS, OKC_ADMIN_KEYS } from "../tests/helpers/leak-scan";
 
 const BASE = (process.argv[2] ?? process.env.BASE_URL ?? "http://localhost:3176").replace(/\/+$/, "");
 const COOKIE = process.env.PERSONEL_COOKIE ?? "";
@@ -63,6 +63,8 @@ const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])\\\\?"(${COST_KEYS.join("|")})\\\
 const LIRA_RE = /₺|\\u20ba/i;
 /** Kasa sayfalarında yazarkasa Z'sinin yönetici anahtarları da (kümülatif, toplam dışı tahsilat; okc-z.md D17) */
 const OKC_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])\\\\?"(${OKC_ADMIN_KEYS.join("|")})\\\\?"\\s*:`, "g");
+/** ModPOS kasa föyünün yönetici anahtarları: föy personelin hiçbir ekranına gitmez (docs/MODPOS-API.md › Nerede görünür) */
+const MODPOS_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])\\\\?"(${MODPOS_ADMIN_KEYS.join("|")})\\\\?"\\s*:`, "g");
 
 function costKeys(body: string): string[] {
   return [...new Set([...body.matchAll(KEY_RE)].map((m) => m[1]))];
@@ -119,6 +121,7 @@ async function main() {
       checked++;
       const keys = costKeys(body);
       if (p.path.startsWith("/panel/kasa")) keys.push(...new Set([...body.matchAll(OKC_RE)].map((m) => m[1])));
+      keys.push(...new Set([...body.matchAll(MODPOS_RE)].map((m) => m[1])));
       if (keys.length) failures.push(`${label}: yasak anahtar ${keys.join(", ")} · …${around(body, KEY_RE)}…`);
       if (!p.lira && LIRA_RE.test(body)) failures.push(`${label}: ₺ var · …${around(body, LIRA_RE)}…`);
       console.log(`${keys.length || (!p.lira && LIRA_RE.test(body)) ? "✗" : "✓"} ${label} · ${Math.round(body.length / 1024)} KB`);
