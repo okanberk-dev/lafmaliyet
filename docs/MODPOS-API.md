@@ -100,7 +100,9 @@ Karşılaştırma kuralları (`src/lib/modpos/compare.ts`): Z alanları, açıl�
 "farklı yazılan"dır (personel bunları ModPOS'un Z'sinden yazar; fark yanlış yazım ya da kapanıştan sonraki düzeltmedir).
 Raporda boş bırakılan isteğe bağlı alan (Z no, fiş sayısı, ödenmez) farklı sayılmaz. Gider ↔ gün içinde çıkan,
 nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. LafPOS'a geçiş gününden
-itibaren kasa LafPOS'tur: föy karşılaştırılmaz.
+itibaren kasa LafPOS'tur: föy karşılaştırılmaz. Kasası hâlâ açıkken alınmış föy (gün içinde **Bu günü çek**)
+karşılaştırılmaz: o anki tutarlardır, kartta "Föy gün açıkken alındı" yazar, rozet ve zil çıkmaz; ertesi sabah
+kapanmış föy kendiliğinden gelir. Anahtar yokken ve föy de yokken gün görünümünde ModPOS kartı hiç çıkmaz.
 
 ## 6. Ay rakamına yedek (isteğe bağlı, varsayılan kapalı)
 
