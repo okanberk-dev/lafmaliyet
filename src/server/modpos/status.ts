@@ -3,8 +3,8 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
-import { canRetry, catchUpDays, missingFoyDays } from "@/lib/modpos/plan";
-import { modposKeyProblem, modposSyncFrom, modposSyncFromSet } from "@/lib/modpos/request";
+import { missingFoyDays, nextBackfillDay } from "@/lib/modpos/plan";
+import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
 import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -75,9 +75,10 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     from,
     stored: { count: sorted.length, first: sorted[0] ?? null, last: sorted.at(-1) ?? null },
     missing: missing.length,
-    // Sabah işinin sırası: önce kaçan yakın gün, sonra geçmiş. Bekleyen (alınamayan, aralıklı denenen) gün sıradaki
-    // sayılmaz: sabah işi onu atlar
-    next: catchUpDays({ now, from, have: index, until: switchDay, failed: state.dayErrors })[0] ?? missing.find((d) => canRetry(state.dayErrors?.[d], now)) ?? null,
+    // Bir sonraki sabah işinin planından (kaçan yakın gün, sonra geçmiş; bekleyen gün atlanır, o sabahın dünü değil)
+    next: missing.length
+      ? nextBackfillDay({ now, from, start: start.day, have: index, until: switchDay, failed: state.dayErrors, hak: state.quota?.hak ?? MODPOS_DAILY_QUOTA })
+      : null,
     start,
   };
   const today = todayTR(now);

@@ -103,36 +103,63 @@ export function planFoyDays({ now, from, have, left, start = null, until = null,
 }
 
 /**
- * Canlı çekimin başladığı gün: "dün" olarak alınmış (günü bittikten en geç iki gün sonra çekilmiş) en eski saklanan
- * gün. Geçmişten çekilen günler aylar sonra alındığı için sayılmaz; hiç yoksa (ilk kurulum) null
+ * Canlı çekimin başladığı gün: "dün" olarak denenmiş en eski gün. Saklanan gün, günü bittikten en geç iki gün sonra
+ * çekildiyse; alınamayan gün (dayErrors), son denemesi gününden en geç 15 gün sonraysa (dün olarak denenip beklemeyle
+ * yeniden denenmiş: ilk kurulumda ilk "dün" alınamadıysa da sayılır). Geçmişten çekilen ya da denenen günler aylar
+ * sonra alındığı için sayılmaz; hiç yoksa (ilk kurulum) null
  */
-export function liveFromOf(have: ReadonlyMap<string, StoredDay>): string | null {
+export function liveFromOf(have: ReadonlyMap<string, StoredDay>, failed: Readonly<Record<string, { count: number; lastAt: string }>> = {}): string | null {
   let min: string | null = null;
-  for (const [d, h] of have) {
-    const t = Date.parse(h.fetchedAt);
-    if (Number.isNaN(t)) continue;
-    if (todayTR(new Date(t)) <= addDays(d, 2) && (min === null || d < min)) min = d;
-  }
+  const consider = (d: string, at: string, within: number) => {
+    const t = Date.parse(at);
+    if (Number.isNaN(t)) return;
+    if (todayTR(new Date(t)) <= addDays(d, within) && (min === null || d < min)) min = d;
+  };
+  for (const [d, h] of have) consider(d, h.fetchedAt, 2);
+  for (const [d, e] of Object.entries(failed)) consider(d, e.lastAt, PROVISIONAL_DAYS + 1);
   return min;
 }
 
 /**
- * Kaçan yakın günler, yeniden eskiye: canlı çekimin başladığı günden (liveFromOf) itibaren, dünden önceki son 13 günde
- * (dün dahil 14) hiç alınmamış, kesinleşmiş ve beklemesi dolmuş günler (dün olarak alınamamış, ya da o sabah iş
- * çalışmamış). Geçmişin ilk günü ve LafPOS'a geçiş günü sınırları geçerli. İlk kurulumda boş (geçmiş ilk ciro gününden)
+ * Kaçan yakın günler, eskiden yeniye: canlı çekimin başladığı günden (liveFromOf) itibaren, dünden önceki son 13 günde
+ * (dün dahil 14) kesin föyü olmayan (hiç alınmamış ya da kesinleşmeden alınmış), kesinleşme anı geçmiş ve beklemesi
+ * dolmuş günler: dün olarak alınamamış, o sabah iş çalışmamış ya da gün içinde kasa açılmadan elle çekilip ertesi sabah
+ * yeniden alınamamış. Eskiden yeniye: uzun bir kesintiden sonra en eski kaçan gün pencereden düşmeden alınır. Geçmişin
+ * ilk günü ve LafPOS'a geçiş günü sınırları geçerli. İlk kurulumda boş (geçmiş ilk ciro gününden)
  */
 export function catchUpDays({ now, from, have, until = null, failed = {} }: Pick<PlanInput, "now" | "from" | "have" | "until" | "failed">): string[] {
-  const live = liveFromOf(have);
+  const live = liveFromOf(have, failed);
   if (live === null) return [];
   const today = todayTR(now);
   const out: string[] = [];
-  for (let i = 2; i <= PROVISIONAL_DAYS; i++) {
+  for (let i = PROVISIONAL_DAYS; i >= 2; i--) {
     const d = addDays(today, -i);
-    if (d < live || d < from) break;
+    if (d < live || d < from) continue;
     if (until !== null && d >= until) continue;
-    if (!have.has(d) && now.getTime() >= finalAfter(d) && canRetry(failed[d], now)) out.push(d);
+    // Kesinleşme anından önce alınmış föy yeniden çekilir; ondan sonra alınıp yine kesin olmayan (kasa ModPOS'ta açık
+    // kalmış) her sabah çekilmez: aynı sonucu verir, geçmişin hakkını yer (son 14 günün yeniden çekimi ona bakar)
+    const h = have.get(d);
+    const stale = !h || (!h.final && Date.parse(h.fetchedAt) < finalAfter(d));
+    if (stale && now.getTime() >= finalAfter(d) && canRetry(failed[d], now)) out.push(d);
   }
   return out;
+}
+
+/** Sabah işinin bir sonraki çalışması (08:00 TR = 05:00 UTC; cron /api/cron/gunluk): bugün henüz çalışmadıysa bugün */
+export function nextMorningRun(now: Date): Date {
+  const today = todayTR(now);
+  const run = new Date(`${today}T05:00:00.000Z`);
+  return now.getTime() < run.getTime() ? run : new Date(`${addDays(today, 1)}T05:00:00.000Z`);
+}
+
+/**
+ * Geçmişin sıradaki günü (Ayarlar kartının "sıradaki"si): bir sonraki sabah işinin planında o sabahın dünü dışındaki
+ * ilk gün (kaçan yakın gün ya da geçmiş; bekleyen gün atlanır). Hak o sabah yenilenmiş sayılır
+ */
+export function nextBackfillDay(i: Omit<PlanInput, "now" | "left"> & { now: Date; hak: number }): string | null {
+  const run = nextMorningRun(i.now);
+  const yesterday = addDays(todayTR(run), -1);
+  return planFoyDays({ ...i, now: run, left: Math.max(2, i.hak) }).find((d) => d !== yesterday) ?? null;
 }
 
 /**

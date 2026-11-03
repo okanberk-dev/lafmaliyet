@@ -30,9 +30,13 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts; sahibin kuralı,
   3 Kasım 2026: her sabah önce dün, öteki hak geçmişe, ModPOS'un ilk ciro gününden başlayıp bitene kadar):
   1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır); ardından **kaçan yakın
-     günler** (`catchUpDays`): canlı çekim başladıktan sonra (dün olarak alınmış ilk günden) son 14 günde dün olarak
-     alınamamış ya da sabah işinin hiç çalışmadığı günler, yeniden eskiye, alınamayan günün beklemesi dolunca. Yakın
-     günün föyü geçmişin sonuna, aylar sonrasına kalmasın diye; ilk kurulumda (hiç dün çekilmemişken) boştur;
+     günler** (`catchUpDays`): canlı çekim başladıktan sonra (dün olarak denenmiş ilk günden; ilk "dün" alınamadıysa da)
+     son 14 günde kesin föyü olmayan günler: dün olarak alınamamış, sabah işinin hiç çalışmadığı ya da gün içinde kasa
+     açılmadan elle çekilip ertesi sabah yeniden alınamamış. Eskiden yeniye (uzun kesintide en eskisi pencereden
+     düşmesin), alınamayan günün beklemesi dolunca. Kesinleşme anından sonra alınıp yine kesin olmayan gün (kasa
+     ModPOS'ta açık kalmış) burada her sabah yeniden çekilmez. Yakın günün föyü geçmişin sonuna, aylar sonrasına
+     kalmasın diye; ilk kurulumda (hiç dün denenmemişken) boştur. Ayarlar kartının "sıradaki"si bir sonraki sabah
+     işinin planındandır;
   2. **henüz çekilmemiş bir eski gün**, ModPOS'un **ilk ciro gününden ileriye**, eskiden yeniye (geçmiş ilk günden
      bugüne doğru dolar). İlk ciro günü (`historyStart`, src/server/modpos/store.ts `loadModposHistoryStart`):
      `MODPOS_SYNC_FROM` kuruluysa o; yoksa Satışlar'daki ilk cirolu ayın açık gün sayısına göre en geç açılış günü
@@ -147,8 +151,8 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        Kişi satırı: ModPOS'ta kasayı kapatan ↔ ladmin'de kasayı sayan. ModPOS'ta kasa açılmamış ama raporda satış
        yazılıysa para uyarısı.
     Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var). Gün içinde, kasa
-    açılmadan alınan (kesin olmayan) boş föy "kasa açılmamış" demez ve akşamki raporla uyarı vermez: ertesi sabahki
-    kesin föy beklenir. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
+    açılmadan alınan (kesin olmayan) boş föy "kasa açılmadan alındı" der ve gün bugün ya da dünken akşamki raporla
+    uyarı vermez: ertesi sabahki kesin föy beklenir. Daha eskiyse (kesin föy alınamadı) para uyarısı yine çıkar. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
   - Günden güne listede rozet **ModPOS'tan farklı**; raporu girilmemiş günde föyün cirosu.
 - **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS föyünden farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
   "ModPOS kasa föyü çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS föyünden farklı" işaretiyle "Sorun var" olur.

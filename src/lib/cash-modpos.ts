@@ -95,7 +95,9 @@ export function modposDayView(report: ModposReportFields | null, z: ModposZ): Mo
 const STATE_TEXT: Record<ModposSheetView["state"], string> = { KAPALI: "Kapalı", ACIK: "Açık", BOS: "Kasa açılmamış" };
 
 /** "Kapalı", "Kapalı (06:00'da kendiliğinden)", "Açık", "Kasa açılmamış" */
-export function modposStateText(state: ModposSheetView["state"], z: ModposZ | null): string {
+export function modposStateText(state: ModposSheetView["state"], z: ModposZ | null, final = true): string {
+  // Kesinleşmeden (gün içinde) alınan boş föy: kasa o an açılmamıştı, gün sürüyordu
+  if (state === "BOS" && !final) return "Kasa açılmadan alındı";
   return state === "KAPALI" && z?.otomatikKapandi ? "Kapalı (06:00'da kendiliğinden)" : STATE_TEXT[state];
 }
 
@@ -104,7 +106,7 @@ export function modposHeadline(sheet: Pick<ModposSheetView, "state" | "final" | 
   const parts: string[] = [];
   if (z?.zNo) parts.push(`Z ${z.zNo}`);
   else if (z && z.kasaSayisi > 1) parts.push(`${z.kasaSayisi} kasa`);
-  parts.push(modposStateText(sheet.state, z));
+  parts.push(modposStateText(sheet.state, z, sheet.final));
   parts.push(`${sheet.final ? "Kesin" : "Kesin değil"} (alındı: ${timeText(sheet.fetchedAt, now)})`);
   return parts.join(" · ");
 }
@@ -321,7 +323,8 @@ export function modposCash(z: ModposZ, foy: KasaFoyu): DayLine[] {
   const dayanak = [...new Set(foy.kasalar.map((k) => k.nakitKasa?.dayanak).filter((d): d is string => Boolean(d)))];
   // Denklemin her satırı aynı kaynaktan: nakit mutabakatının nakit satışı (Z anındaki); yoksa nakit ödemenin satışı.
   // Kapanıştan sonra nakit ödeme değiştiyse (KAPANISTAN_SONRA_CIRO_DEGISTI) şu anki tutar altta yazılır
-  const zSales = foy.kasalar.length && foy.kasalar.every((k) => k.nakitKasa?.nakitSatis != null) ? r2(foy.kasalar.reduce((a, k) => a + (k.nakitKasa!.nakitSatis ?? 0), 0)) : z.cash;
+  // Kasa kasa (açılış, cari tahsilat ve gider de foyZ'de böyle): mutabakatın nakit satışı, yoksa o kasanın nakit ödemeleri
+  const zSales = r2(foy.kasalar.reduce((a, k) => a + (k.nakitKasa?.nakitSatis ?? k.odemeler.filter((o) => modposBucket(o) === "cash").reduce((s, o) => s + o.satis, 0)), 0));
   const moved = Math.abs(zSales - z.cash) >= 0.01;
   const lines: DayLine[] = [
     { label: "Açılış", value: money(z.openingCash) },
@@ -439,10 +442,12 @@ export function modposOffLines(foy: KasaFoyu, z: ModposZ | null): DayLine[] {
   const sum = r2([...by.values()].filter((e) => e.counted).reduce((a, e) => a + e.tutar, 0));
   if (z) {
     const gap = r2(sum - z.offRevenue);
+    // Başka şubenin kasasız satırı denetime girmez: metin hangi satırların toplandığını söyler
+    const of = [...by.values()].some((e) => !e.counted) ? "kasaların satırlarının" : "satırların";
     lines.push({
       label: "Ciro dışı toplamı (föy)",
       value: money(z.offRevenue),
-      sub: Math.abs(gap) < 0.01 ? "satırların toplamıyla aynı" : `satırların toplamı ${money(sum)}: ${money(Math.abs(gap))} ${gap > 0 ? "fazla" : "eksik"}`,
+      sub: Math.abs(gap) < 0.01 ? `${of} toplamıyla aynı` : `${of} toplamı ${money(sum)}: ${money(Math.abs(gap))} ${gap > 0 ? "fazla" : "eksik"}`,
       tone: Math.abs(gap) < 0.01 ? null : "warn",
       strong: true,
     });

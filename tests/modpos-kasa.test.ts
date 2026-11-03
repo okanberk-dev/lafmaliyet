@@ -367,6 +367,12 @@ test("ModPOS bölümü: karolar (ortalama adisyon, kişi başı, kasa farkı), �
   const movedFoy: KasaFoyu = { ...foy, kasalar: [{ ...foy.kasalar[0], odemeler: foy.kasalar[0].odemeler.map((o) => (o.kod === "NAKIT" ? { ...o, satis: 8_310 } : o)) }] };
   const moved = modposCash(zOf(movedFoy), movedFoy);
   assert.deepEqual([plain(moved[1].value), plain(moved[1].sub!), moved[1].tone, plain(moved[4].value)], ["8.210 ₺", "şu anki nakit ödemeler 8.310 ₺ (Z'den sonra değişti)", "warn", "7.840 ₺"]);
+  // Birden çok kasada kasa kasa: mutabakatı olan kasanın Z anındaki nakit satışı, olmayanınki nakit ödemesi
+  const two: KasaFoyu = {
+    ...movedFoy,
+    kasalar: [movedFoy.kasalar[0], { ...foy.kasalar[0], kasaAdi: "KASA-2", nakitKasa: { ...foy.kasalar[0].nakitKasa!, nakitSatis: null } }],
+  };
+  assert.deepEqual([plain(modposCash(zOf(two), two)[1].value), plain(modposCash(zOf(two), two)[1].sub!)], ["16.420 ₺", "şu anki nakit ödemeler 16.520 ₺ (Z'den sonra değişti)"]);
   // Nakit mutabakatı yoksa nakit ödemenin satışı
   const noNk: KasaFoyu = { ...foy, kasalar: [{ ...foy.kasalar[0], nakitKasa: null }] };
   assert.deepEqual([plain(modposCash(zOf(noNk), noNk)[1].value), modposCash(zOf(noNk), noNk)[1].sub], ["8.210 ₺", null]);
@@ -481,13 +487,13 @@ test("ödenmez / ikram dökümü (kod kod, kırılım, kasasız satış, föyün
       "Ödenmez (ODENMEZ) 300 ₺ Ali Usta 200 ₺ · Komşu dükkân 100 ₺",
       "Zayi (ZAYI) 40 ₺",
       "İkram (IKRAM) · kasasız: Moda 25 ₺ başka şubenin kasasız satışı: föyün toplamlarına girmez",
-      "Ciro dışı toplamı (föy) 485 ₺ satırların toplamıyla aynı",
+      "Ciro dışı toplamı (föy) 485 ₺ kasaların satırlarının toplamıyla aynı",
     ],
   );
   assert.equal(lines.at(-1)?.tone, null, "başka şubenin kasasız ikramı yanlış 'fazla' demez");
   // Föy kendi içinde tutmuyorsa turuncu
   const bad = modposOffLines({ ...more, kasalar: [{ ...more.kasalar[0], satis: { ...k.satis, ciroDisi: 145 } }] }, zOf({ ...more, kasalar: [{ ...more.kasalar[0], satis: { ...k.satis, ciroDisi: 145 } }] }));
-  assert.equal(plain(bad.at(-1)!.sub!), "satırların toplamı 485 ₺: 340 ₺ fazla");
+  assert.equal(plain(bad.at(-1)!.sub!), "kasaların satırlarının toplamı 485 ₺: 340 ₺ fazla");
   assert.equal(bad.at(-1)?.tone, "warn");
   // Kasasız gün: föysüz ödemeler Z özetinin kuralıyla (ciroyaDahil gelmeyen DIGER ve tanınmayan kod Diğer, ödenmez değil)
   const kasasiz: KasaFoyu = {
@@ -680,6 +686,12 @@ test("bölümler: farklı yazılan alan karşılaştırmada turuncu ve uyarıda;
   assert.match(early, /Föy kasa açılmadan alındı: ertesi sabahki kesin föyle karşılaştırılır\./);
   assert.doesNotMatch(early, /data-risk="para"/);
   assert.doesNotMatch(early, />Kasa açılmamış</);
+  assert.match(early, /Kasa föyü · Kasa açılmadan alındı · Kesin değil/);
+  // Kesin föy beklenen sabahtan sonra da gelmediyse (iki gün önce): beklenmez, para uyarısı yine çıkar
+  const stale = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
+  assert.match(stale, /kesin föy henüz alınamadı \(sabah işi yeniden dener\)/);
+  assert.match(stale, /data-notice="warn" data-risk="para"/);
+  assert.match(stale, /Föy kasa açılmadan alınmıştı ve kesin föy henüz alınamadı/);
   const bosReport = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS" }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
   assert.ok(bosReport.includes("ModPOS&#x27;ta bu gün kasa açılmamış, ladmin&#x27;de 28.450,50 ₺ satış yazılı"));
   assert.match(bosReport, /data-notice="warn" data-risk="para"/);
