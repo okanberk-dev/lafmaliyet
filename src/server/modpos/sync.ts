@@ -129,7 +129,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
     if (r.status === "ok") {
       // Başlık da föyün <kota>'sı da yoksa kalan hak elle düşülür (bir sonraki istek boşuna 429 almasın)
       quota = r.quota ?? { day: todayTR(now), hak: quota?.hak ?? MODPOS_DAILY_QUOTA, kalan: Math.max(0, quotaLeft(quota, now) - 1), yenilenme: null, at: now.toISOString() };
-      const stored = await storeFoy(db, r.foy, now);
+      const stored = await storeFoy(db, r.foy, now, r.raw);
       days.push({ day, result: changeResult(stored.change), ...(stored.change === "degisti" ? { revision: stored.revision } : {}) });
       lastOk = { at: now.toISOString(), day };
       continue;

@@ -32,6 +32,7 @@ export function LadminReportCard({
   revisions,
   prev,
   next,
+  waste = null,
 }: {
   report: LadminReport | null;
   outs: readonly LadminCashOut[];
@@ -41,13 +42,17 @@ export function LadminReportCard({
   prev: { date: string; amount: number } | null;
   /** Sonraki raporun açılışı (devrin denetimi) */
   next: { date: string; openingCash: number } | null;
+  /** Günün panelde girilen zayi ve ikramı (ModPOS'un ödenmez / ikram dökümünün karşılığı) */
+  waste?: { ikram: string | null; zayi: string | null } | null;
 }) {
+  const wasteBlock = <WasteBlock waste={waste} />;
   if (!report) {
     return (
       <Card aria-label="ladmin kasa raporu">
         <CardHeader icon={<NotebookPen />} title="ladmin" description="Panelde yazılan kasa raporu" actions={<Badge tone="gray">Rapor yok</Badge>} />
-        <CardContent>
+        <CardContent className="space-y-4">
           <p className="text-sm text-ink-mute">Bu gün için ladmin&apos;de kasa raporu girilmedi.</p>
+          {wasteBlock}
         </CardContent>
       </Card>
     );
@@ -75,6 +80,7 @@ export function LadminReportCard({
           <LineList title="Kart" lines={ladminCard(report)} />
           <LineList title="Yazarkasa Z" lines={okc} />
           <LineList title="Kasadan çıkanlar" lines={outLines} />
+          {wasteBlock}
           {report.note ? (
             <section aria-label="Not">
               <h3 className={H3}>Not</h3>
@@ -85,5 +91,31 @@ export function LadminReportCard({
         <MutedLines lines={ladminMeta(report, { photos, revisions })} />
       </CardContent>
     </Card>
+  );
+}
+
+/** Panelde girilen zayi ve ikram (Zayi / ikram sayfası); ikisi de boşsa "girilmedi" */
+function WasteBlock({ waste }: { waste: { ikram: string | null; zayi: string | null } | null }) {
+  if (!waste) return null;
+  return (
+    <section aria-label="Zayi ve ikram">
+      <h3 className={H3}>Zayi / ikram (panelde girilen)</h3>
+      {waste.ikram || waste.zayi ? (
+        <div className="space-y-1 pt-1.5 text-sm break-words">
+          {waste.ikram ? (
+            <p>
+              <span className="font-medium text-ink">İkram:</span> <span className="text-ink-soft">{waste.ikram}</span>
+            </p>
+          ) : null}
+          {waste.zayi ? (
+            <p>
+              <span className="font-medium text-ink">Zayi:</span> <span className="text-ink-soft">{waste.zayi}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="pt-1.5 text-sm text-ink-mute">Bu gün zayi ya da ikram girilmedi.</p>
+      )}
+    </section>
   );
 }

@@ -1,5 +1,6 @@
 // ModPOS (Gafdigi) kasa föyü çekirdeği, veritabanısız (docs/MODPOS-API.md; kitapçık docs/modpos-kasa-foyu-api.md):
-// XML'in okunması ve doğrulanması (src/lib/modpos/foy.ts; kişisel adlar okunmaz, yarıda kesilmiş gövde reddedilir),
+// XML'in okunması ve doğrulanması (src/lib/modpos/foy.ts; kişi adları ve kitapçıkta olmayan alanlar okunur, yarıda
+// kesilmiş gövde reddedilir),
 // ödeme kodlarının formun alanlarına eşlenmesi ve Z özeti (z.ts), anahtar / kota / hata metinleri (request.ts), hangi
 // günün çekileceği (plan.ts), bağlantı durumu ve Ayarlar kartının özeti (status.ts), rapor ↔ föy karşılaştırması
 // (compare.ts), sahte fetch'le istemci (src/server/modpos/client.ts) ve komut satırı betiği (scripts/modpos-foy.ts).
@@ -105,8 +106,8 @@ describe("parseKasaFoyu: kitapçığın örneği", () => {
             zNo: "0312",
             durum: "KAPALI",
             otomatikKapandi: false,
-            acilis: { zaman: "2026-11-01T09:42:10+03:00", nakit: 500 },
-            kapanis: { zaman: "2026-11-02T00:58:03+03:00", nakit: 7820 },
+            acilis: { zaman: "2026-11-01T09:42:10+03:00", personel: "Ayşe Yılmaz", nakit: 500 },
+            kapanis: { zaman: "2026-11-02T00:58:03+03:00", personel: "Mehmet Kaya", nakit: 7820 },
             satis: { ciro: 28450.5, ciroDisi: 145, adisyonSayisi: 214, kisiSayisi: 301, bahsis: 120 },
             odemeler: [
               { yontem: "Nakit", kod: "NAKIT", ciroyaDahil: true, satis: 8210, cariTahsilat: 0, sistem: 8210, defter: 8190, fark: -20, kirilim: [] },
@@ -134,9 +135,9 @@ describe("parseKasaFoyu: kitapçığın örneği", () => {
                 { kategori: "Personel", aciklama: "Yemek", tutar: 550 },
               ],
             },
-            cariTahsilatlar: { toplam: 1500, nakit: 0, kalemler: [{ tutar: 1500, yontem: "Kredi Kartı", zaman: "2026-11-01T17:12:00+03:00" }] },
+            cariTahsilatlar: { toplam: 1500, nakit: 0, kalemler: [{ musteri: "Yıldız Lojistik", tutar: 1500, yontem: "Kredi Kartı", zaman: "2026-11-01T17:12:00+03:00" }] },
             nakitKasa: { dayanak: "Z_RAPORU", acilis: 500, nakitSatis: 8210, nakitCariTahsilat: 0, gider: 870, beklenen: 7840, sayilan: 7820, fark: -20 },
-            araKasalar: [{ no: 1, zaman: "2026-11-01T15:00:00+03:00", ciro: 11200, nakit: 3400, adisyonSayisi: 88, gider: 320, beklenen: 3580, sayilan: 3580, fark: 0 }],
+            araKasalar: [{ no: 1, zaman: "2026-11-01T15:00:00+03:00", personel: "Ayşe Yılmaz", ciro: 11200, nakit: 3400, adisyonSayisi: 88, gider: 320, beklenen: 3580, sayilan: 3580, fark: 0 }],
             notlar: { kapanis: null, fark: "Bozuk para eksiği" },
             uyarilar: [{ kod: "KASA_FARKI", mesaj: "Kasa farkı var", tutar: -20 }],
           },
@@ -163,20 +164,53 @@ describe("parseKasaFoyu: kitapçığın örneği", () => {
           foysuzCiro: 0,
         },
         kota: { gunlukHak: 2, kullanilan: 1, kalan: 1, yenilenme: "2026-11-03T00:00:00+03:00" },
+        ekAlanlar: [],
       },
     });
   });
 
-  test("kişisel adlar okunmaz: personel (açılış, kapanış, ara kasa) ve cari tahsilatın müşterisi (KVKK)", () => {
+  test("kişi adları okunur (sahibin kararı): açan, kapatan, ara kasayı yapan personel ve cari tahsilatın müşterisi", () => {
+    // Fikstürlerdeki her ad föyde (yalnız yöneticiye çizilir; personele hiçbir yolla gitmez)
     for (const name of ["belge-ornegi", "acik-gun", "iki-kasa", "otomatik-kapanis", "bilinmeyen-kod"]) {
-      const out = JSON.stringify(parseKasaFoyu(xml(name)));
-      for (const who of ["Ayşe Yılmaz", "Mehmet Kaya", "Yıldız Lojistik", "Örnek Kasiyer", "Deneme Sorumlu", "Deneme Müşteri"]) {
-        assert.ok(!out.includes(who), `${name}: ${who}`);
-      }
-      assert.doesNotMatch(out, /"personel"|"musteri"/, name);
+      const body = xml(name);
+      const out = JSON.stringify(parseKasaFoyu(body));
+      for (const m of body.matchAll(/<(personel|musteri)>([^<]+)<\/\1>/g)) assert.ok(out.includes(m[2].trim()), `${name}: ${m[2]}`);
     }
-    // Kitapçığın örneğinde adlar gerçekten var (test boşa geçmesin)
-    assert.match(xml("belge-ornegi"), /Ayşe Yılmaz[\s\S]*Mehmet Kaya[\s\S]*Yıldız Lojistik/);
+    const r = parseKasaFoyu(xml("belge-ornegi"));
+    assert.ok(r.ok);
+    const k = r.foy.kasalar[0];
+    assert.deepEqual([k.acilis.personel, k.kapanis.personel, k.araKasalar[0].personel, k.cariTahsilatlar.kalemler[0].musteri], ["Ayşe Yılmaz", "Mehmet Kaya", "Ayşe Yılmaz", "Yıldız Lojistik"]);
+    // Boş ad null; uzun ad kısaltılır; ad iç içe öğe gelirse bozuk (metin bekleniyor)
+    const empty = parseKasaFoyu(xml("belge-ornegi").replace("<personel>Mehmet Kaya</personel>", "<personel/>"));
+    assert.ok(empty.ok);
+    assert.equal(empty.foy.kasalar[0].kapanis.personel, null);
+    const long = parseKasaFoyu(xml("belge-ornegi").replace("<musteri>Yıldız Lojistik</musteri>", `<musteri>${"A".repeat(300)}</musteri>`));
+    assert.ok(long.ok);
+    assert.equal(long.foy.kasalar[0].cariTahsilatlar.kalemler[0].musteri?.length, 120);
+    assert.equal(bozuk(xml("belge-ornegi").replace("<personel>Mehmet Kaya</personel>", "<personel><ad>Mehmet</ad></personel>")), "kasa.0.kapanis.personel");
+  });
+
+  test("kitapçıkta olmayan alan kaybolmaz: yoluyla ve metniyle ekAlanlar'a (bilinen yaprağın altındaki öğe de); en çok 60", () => {
+    const body = xml("belge-ornegi")
+      .replace("<satis>", "<satis><yeniAlan>42</yeniAlan>")
+      .replace("<sube>", "<subeKodu>K1</subeKodu><sube>")
+      .replace("<kota>", "<garsonlar><garson><ad>Ali</ad><tutar>120</tutar></garson><garson><ad>Can</ad></garson></garsonlar><kota>")
+      .replace("<ad>Akbank</ad>", "<ad>Akbank</ad><terminal>T-9</terminal>");
+    const r = parseKasaFoyu(body, "2026-11-01");
+    assert.ok(r.ok);
+    assert.deepEqual(r.foy.ekAlanlar, [
+      { yol: "kasa.0.subeKodu", deger: "K1" },
+      { yol: "kasa.0.satis.yeniAlan", deger: "42" },
+      { yol: "kasa.0.odeme.1.kirilim.1.terminal", deger: "T-9" },
+      { yol: "garsonlar.garson.0.ad", deger: "Ali" },
+      { yol: "garsonlar.garson.0.tutar", deger: "120" },
+      { yol: "garsonlar.garson.1.ad", deger: "Can" },
+    ]);
+    const many = xml("belge-ornegi").replace("<kota>", `${Array.from({ length: 80 }, (_, i) => `<x${i}>${i}</x${i}>`).join("")}<kota>`);
+    const m = parseKasaFoyu(many);
+    assert.ok(m.ok);
+    assert.equal(m.foy.ekAlanlar?.length, 60);
+    assert.deepEqual(m.foy.ekAlanlar?.[0], { yol: "x0", deger: "0" });
   });
 
   test("istenen gün: aynıysa föy, başka günün föyü saklanmaz (kasaGunu)", () => {
@@ -307,7 +341,7 @@ describe("parseKasaFoyu: güvenli ve katı okuma", () => {
     const k = f.kasalar[0];
     assert.equal(k.zNo, null);
     assert.equal(k.durum, "ACIK");
-    assert.deepEqual(k.kapanis, { zaman: null, nakit: null }, "<kapanis/>");
+    assert.deepEqual(k.kapanis, { zaman: null, personel: null, nakit: null }, "<kapanis/>");
     assert.equal(k.satis.kisiSayisi, null);
     assert.deepEqual(
       k.odemeler.map((o) => [o.kod, o.defter, o.fark]),
@@ -332,11 +366,11 @@ describe("parseKasaFoyu: güvenli ve katı okuma", () => {
     // İç öğeleri boş kapanış da aynı
     const r = parseKasaFoyu(xml("acik-gun").replace("<kapanis/>", "<kapanis><zaman/><personel/><nakit/></kapanis>"));
     assert.ok(r.ok);
-    assert.deepEqual(r.foy.kasalar[0].kapanis, { zaman: null, nakit: null });
+    assert.deepEqual(r.foy.kasalar[0].kapanis, { zaman: null, personel: null, nakit: null });
     // Hiç gelmeyen öğe de: kasasız gün (satış yok)
     assert.deepEqual(parseKasaFoyu("<kasaFoyu><kasaGunu>2026-10-26</kasaGunu></kasaFoyu>"), {
       ok: true,
-      foy: { kasaGunu: "2026-10-26", olusturulma: null, kasalar: [], foysuzGunler: [], ozet: null, kota: null },
+      foy: { kasaGunu: "2026-10-26", olusturulma: null, kasalar: [], foysuzGunler: [], ozet: null, kota: null, ekAlanlar: [] },
     });
   });
 
@@ -1684,7 +1718,10 @@ describe("scripts/modpos-foy.ts: komut satırı", () => {
     ]) {
       assert.ok(out.includes(part), `${part}\n---\n${out}`);
     }
-    assert.doesNotMatch(out, /Ayşe|Mehmet|Yıldız Lojistik/);
+    // Kişi adları (sahibin kararı) ve kitapçıkta olmayan alanlar da yazılır
+    assert.ok(out.includes("Kişiler: açan Ayşe Yılmaz · kapatan Mehmet Kaya · 1. ara kasa Ayşe Yılmaz · cari tahsilat Yıldız Lojistik (1.500 ₺)"), out);
+    const extra = foySummaryLines({ ...foyOf("belge-ornegi"), ekAlanlar: [{ yol: "kasa.0.yeni", deger: "x" }] }, { now, fetchedAt: now, quota: null }).join("\n");
+    assert.match(extra, /Kitapçıkta olmayan alanlar \(1\):\n {2}kasa\.0\.yeni: x/);
     const acik = foySummaryLines(foyOf("acik-gun"), { now, fetchedAt: now, quota: null }).map(plain).join("\n");
     assert.match(acik, /Durum: açık \(gün sürüyor, tutarlar değişebilir\) · kesin değil/);
     assert.match(acik, /Sayılan nakit yok: gün açık/);

@@ -1,0 +1,1 @@
+ALTER TABLE "modpos_cash_sheets" ADD COLUMN "raw" text;

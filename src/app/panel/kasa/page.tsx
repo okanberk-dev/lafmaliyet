@@ -501,8 +501,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     }),
   );
   // Gün görünümünün ladmin bölümü (ModPOS bölümünün yanında, panelde yazılan raporun ayrıntısı): günün kasadan
-  // çıkanları, fotoğraf sayısı, sürümler ve devir zinciri (önceki raporun devri, sonraki raporun açılışı)
-  const ladmin = { outs: dayOuts, photos: photoInfo?.photos.length ?? 0, revisions, prev: carry, next };
+  // çıkanları, fotoğraf sayısı, sürümler, devir zinciri (önceki raporun devri, sonraki raporun açılışı) ve panelde
+  // girilen zayi / ikram (ModPOS'un ödenmez / ikram dökümünün karşılığı)
+  const ladmin = { outs: dayOuts, photos: photoInfo?.photos.length ?? 0, revisions, prev: carry, next, waste: waste ? { ikram: waste.ikram, zayi: waste.zayi } : null };
   // Günden güne listesinin ModPOS günleri (tarihe göre; extras'a girmez: o WhatsApp'a ve personele de gider)
   const modposDays: Record<string, ModposDayView> = {};
   for (const d of days) {

@@ -28,16 +28,20 @@ import {
   modposCompareSummary,
   modposDayView,
   modposExpenseLabel,
+  modposExtraLines,
   modposFacts,
   modposFoysuzText,
   modposGapTitle,
   modposHeadline,
   modposMissingText,
   modposNoCountText,
+  modposOffLines,
   modposOpenFor,
   modposPaymentDetail,
   modposPaymentGap,
   modposPayments,
+  modposPeople,
+  modposPeopleLine,
   modposPreviousLine,
   modposReportDiffs,
   modposSavedOf,
@@ -151,7 +155,7 @@ test("kasa sayfası: föy yalnız yönetici dalında okunur; ortak kısım, pers
   assert.equal(page.match(/<ModposSections\b/g)?.length, 1);
   assert.doesNotMatch(page, /<ModposSheetCard\b|<LadminReportCard\b|<ModposCompareCard\b/, "bölümler yalnız ModposSections'tan");
   // ladmin bölümünün girdileri yönetici dalında kurulur
-  assert.match(admin, /const ladmin = \{ outs: dayOuts, photos: photoInfo\?\.photos\.length \?\? 0, revisions, prev: carry, next \};/);
+  assert.match(admin, /const ladmin = \{ outs: dayOuts, photos: photoInfo\?\.photos\.length \?\? 0, revisions, prev: carry, next, waste: waste \? \{ ikram: waste\.ikram, zayi: waste\.zayi \} : null \};/);
   // Günden güne: tarihe göre ayrı prop (extras WhatsApp'a ve personele de gider; föy oraya girmez)
   assert.equal(page.match(/modposDays=\{modposDays\}/g)?.length, 1);
   for (const m of page.matchAll(/extrasFrom\(([^)]*)\)/g)) assert.doesNotMatch(m[1], /modpos/i, "extrasFrom föyü taşımaz");
@@ -262,7 +266,7 @@ test("başlık satırı ve durum: Z no, kapalı / açık / kasa açılmamış, k
   assert.equal(modposMissingText("2026-11-01", "2026-11-03"), "Her sabah 08:00'de dünün föyü gelir (Ayarlar › ModPOS kasa föyü'nden de çekilebilir).");
 });
 
-test("ödemeler, giderler, cari tahsilat ve ara kasa satırları (kişisel ad yok)", () => {
+test("ödemeler, giderler, cari tahsilat ve ara kasa satırları (cari tahsilatın müşterisi ve ara kasayı yapanla)", () => {
   const k = sample().kasalar[0];
   const [nakit, kart, ikram] = k.odemeler;
   assert.equal(plain(modposPaymentDetail(nakit)), "defter 8.190 ₺");
@@ -275,9 +279,11 @@ test("ödemeler, giderler, cari tahsilat ve ara kasa satırları (kişisel ad yo
   assert.equal(modposBreakdownText(ikram), null);
   assert.equal(modposExpenseLabel(k.giderler.kalemler[0]), "Market · Temizlik malzemesi");
   assert.equal(modposExpenseLabel({ kategori: null, aciklama: null, tutar: 10 }), "Kategorisiz");
-  assert.equal(modposCollectionLabel(k.cariTahsilatlar.kalemler[0]), "Kredi Kartı · 17:12");
+  assert.equal(modposCollectionLabel(k.cariTahsilatlar.kalemler[0]), "Yıldız Lojistik · Kredi Kartı · 17:12");
   assert.equal(modposCollectionLabel({ tutar: 5, yontem: null, zaman: null }), "Yöntem yok");
-  assert.equal(plain(modposAraKasaText(k.araKasalar[0])), "1. ara kasa · 15:00 · ciro 11.200 ₺ · nakit 3.400 ₺ · 88 adisyon · gider 320 ₺ · beklenen 3.580 ₺ · sayılan 3.580 ₺ · fark 0 ₺");
+  assert.equal(modposCollectionLabel({ tutar: 5, yontem: "Nakit", zaman: null }), "Nakit", "eski föy: müşteri adı yok");
+  assert.equal(plain(modposAraKasaText({ ...k.araKasalar[0], personel: undefined })), "1. ara kasa · 15:00 · ciro 11.200 ₺ · nakit 3.400 ₺ · 88 adisyon · gider 320 ₺ · beklenen 3.580 ₺ · sayılan 3.580 ₺ · fark 0 ₺");
+  assert.equal(plain(modposAraKasaText(k.araKasalar[0])), "1. ara kasa · 15:00 · Ayşe Yılmaz · ciro 11.200 ₺ · nakit 3.400 ₺ · 88 adisyon · gider 320 ₺ · beklenen 3.580 ₺ · sayılan 3.580 ₺ · fark 0 ₺");
   assert.equal(signedMoney(120), "+120 ₺");
   assert.equal(signedMoney(-0.004), "0 ₺");
 });
@@ -425,6 +431,54 @@ test("ladmin bölümü: karolar, ödemeler, nakit kasa (devir zinciriyle), kart,
   assert.equal(plain(ladminHeadline({ ...r, zNo: null, revision: 3 })), "Gönderen Ece Panel · 2 Kasım 00:58 · 3. sürüm");
 });
 
+test("ödenmez / ikram dökümü (kod kod, kırılım, kasasız satış, föyün toplamıyla) ve föydeki kişiler", () => {
+  const foy = sample();
+  const z = zOf(foy);
+  assert.deepEqual(
+    modposOffLines(foy, z).map((l) => plain(`${l.label} ${l.value} ${l.sub ?? ""}`.trim())),
+    ["İkram (IKRAM) 145 ₺", "Ciro dışı toplamı (föy) 145 ₺ satırların toplamıyla aynı"],
+  );
+  // Ödenmez kişi kişi (kırılım), zayi, kasasız satışın ikramı; toplam föyün ciro dışıyla tutmuyorsa turuncu
+  const k = foy.kasalar[0];
+  const more: KasaFoyu = {
+    ...foy,
+    kasalar: [
+      {
+        ...k,
+        odemeler: [
+          ...k.odemeler,
+          { yontem: "Ödenmez", kod: "ODENMEZ", ciroyaDahil: false, satis: 300, cariTahsilat: 0, sistem: 300, defter: null, fark: null, kirilim: [{ ad: "Ali Usta", tutar: 200 }, { ad: "Komşu dükkân", tutar: 100 }] },
+          { yontem: "Zayi", kod: "ZAYI", ciroyaDahil: false, satis: 40, cariTahsilat: 0, sistem: 40, defter: null, fark: null, kirilim: [] },
+        ],
+      },
+    ],
+    foysuzGunler: [{ sube: "Moda", ciro: 0, adisyonSayisi: 1, odemeler: [{ yontem: "İkram", kod: "IKRAM", tutar: 25 }] }],
+  };
+  const lines = modposOffLines(more, z);
+  assert.deepEqual(
+    lines.map((l) => plain(`${l.label} ${l.value} ${l.sub ?? ""}`.trim())),
+    ["İkram (IKRAM) 170 ₺ kasasız: Moda", "Ödenmez (ODENMEZ) 300 ₺ Ali Usta 200 ₺ · Komşu dükkân 100 ₺", "Zayi (ZAYI) 40 ₺", "Ciro dışı toplamı (föy) 145 ₺ satırların toplamı 510 ₺: 365 ₺ fazla"],
+  );
+  assert.equal(lines.at(-1)?.tone, "warn");
+  assert.deepEqual(modposOffLines({ ...foy, kasalar: [{ ...k, odemeler: k.odemeler.slice(0, 2) }] }, z).length, 0, "ciro dışı ödeme yoksa döküm yok");
+  // Kişiler: açan, kapatan, ara kasa, cari tahsilatın müşterisi; eski föyde ad yoksa boş
+  assert.deepEqual(
+    modposPeople(foy).map((l) => plain(`${l.label}: ${l.value}${l.sub ? ` (${l.sub})` : ""}`)),
+    ["Kasayı açan: Ayşe Yılmaz (09:42)", "Kasayı kapatan: Mehmet Kaya (00:58)", "1. ara kasa: Ayşe Yılmaz (15:00)", "Cari tahsilat: Yıldız Lojistik (1.500 ₺ · Kredi Kartı · 17:12)"],
+  );
+  const nameless: KasaFoyu = {
+    ...foy,
+    kasalar: [{ ...k, acilis: { zaman: k.acilis.zaman, nakit: k.acilis.nakit }, kapanis: { zaman: k.kapanis.zaman, nakit: k.kapanis.nakit }, araKasalar: k.araKasalar.map((a) => ({ ...a, personel: undefined })), cariTahsilatlar: { ...k.cariTahsilatlar, kalemler: k.cariTahsilatlar.kalemler.map((t) => ({ ...t, musteri: undefined })) } }],
+  };
+  assert.deepEqual(modposPeople(nameless), []);
+  assert.equal(modposPeopleLine(nameless, saved()), null);
+  assert.equal(modposPeopleLine(foy, null), "ModPOS'ta kasayı kapatan Mehmet Kaya");
+  assert.equal(modposPeopleLine(foy, saved(matching, { countedByName: "Deniz Sayar" })), "ModPOS'ta kasayı kapatan Mehmet Kaya · ladmin'de kasayı sayan Deniz Sayar");
+  // Tanınmayan alanlar
+  assert.deepEqual(modposExtraLines(foy), []);
+  assert.deepEqual(modposExtraLines({ ...foy, ekAlanlar: [{ yol: "garsonlar.garson.0.ad", deger: "Ali" }, { yol: "x", deger: "" }] }), ["garsonlar.garson.0.ad: Ali", "x: (boş)"]);
+});
+
 test("karşılaştırma bölümü: çekirdeğin satırları, ödemelerin toplamı ve banka POS ↔ ModPOS kartı; özet satırı", () => {
   const z = zOf(sample());
   const rows = modposCompareRows(saved({ ...matching, bankPos: 17_620.5 }), z);
@@ -453,7 +507,7 @@ const NO_LADMIN = { outs: [], photos: 0, revisions: [], prev: null, next: null }
 type SectionProps = Parameters<typeof ModposSections>[0];
 const render = (props: Omit<SectionProps, "ladmin"> & { ladmin?: SectionProps["ladmin"] }) => plain(renderToStaticMarkup(createElement(ModposSections, { ladmin: NO_LADMIN, ...props })));
 
-test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, Karşılaştırma; personel ve müşteri adı yok", () => {
+test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, Karşılaştırma; kişi adları, ham föy, tanınmayan alanlar, zayi / ikram", () => {
   const none = render({ date: "2026-11-01", today: "2026-11-03", sheet: null, z: null, report: null, keySet: true, now: NOW });
   assert.match(none, /ModPOS föyü henüz alınmadı/);
   assert.match(none, /Her sabah 08:00&#x27;de dünün föyü gelir \(Ayarlar › ModPOS kasa föyü&#x27;nden de çekilebilir\)\./);
@@ -492,7 +546,15 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
     "ModPOS föyünde ödemeler cirodan 4.120 ₺ eksik",
     "Kişi sayısı",
     "Kartla cari tahsilat",
-    "Gün no 312 · açılış 09:42, 500 ₺ · kapanış 00:58, 7.820 ₺ · açık kaldı 15 sa 16 dk · kasa defteri girildi",
+    "Gün no 312 · açılış 09:42, 500 ₺ (Ayşe Yılmaz) · kapanış 00:58, 7.820 ₺ (Mehmet Kaya) · açık kaldı 15 sa 16 dk · kasa defteri girildi",
+    "Ödenmez / ikram dökümü",
+    "İkram (IKRAM)",
+    "Ciro dışı toplamı (föy)",
+    "satırların toplamıyla aynı",
+    "Kişiler",
+    "Kasayı açan",
+    "Kasayı kapatan",
+    "Yıldız Lojistik · Kredi Kartı · 17:12",
     "Panele alındı: dün 08:02",
     "Kesin",
   ]) {
@@ -519,8 +581,22 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
     assert.ok(compare.includes(t), `Karşılaştırmada yok: ${t}`);
   }
   assert.doesNotMatch(html, /farklı yazılan \d/);
-  // KVKK: föyde personel ve müşteri adı okunmaz, bölümlerde de yok
-  for (const name of ["Ayşe", "Mehmet", "Yıldız Lojistik"]) assert.ok(!html.includes(name), name);
+  // Kişi adları (sahibin kararı) yalnız bu yönetici bölümlerinde: ModPOS'ta açan, kapatan, ara kasa ve cari tahsilat
+  for (const name of ["Ayşe Yılmaz", "Mehmet Kaya", "Yıldız Lojistik"]) assert.ok(modpos.includes(name), name);
+  assert.ok(compare.includes("ModPOS&#x27;ta kasayı kapatan Mehmet Kaya · ladmin&#x27;de kasayı sayan Ece Panel"));
+  // Ham föy kapalı kutuda, saklanan yoksa hiç yok
+  assert.doesNotMatch(html, /Ham föy/);
+  const withRaw = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy, { raw: "<kasaFoyu><kasaGunu>2026-11-01</kasaGunu></kasaFoyu>" }), z: zOf(foy), report: null, keySet: true, now: NOW });
+  assert.match(withRaw, /<details[^>]*><summary[^>]*>Ham föy \(ModPOS&#x27;un gönderdiği XML\)<\/summary><pre[^>]*>&lt;kasaFoyu&gt;&lt;kasaGunu&gt;2026-11-01/);
+  // Kitapçıkta olmayan alanlar uyarıda
+  const extra = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf({ ...foy, ekAlanlar: [{ yol: "kasa.0.satis.yeniAlan", deger: "42" }] }), z: zOf(foy), report: null, keySet: true, now: NOW });
+  assert.ok(extra.includes("ModPOS&#x27;un kitapçıkta olmayan 1 alanı"));
+  assert.ok(extra.includes("kasa.0.satis.yeniAlan: 42"));
+  // ladmin: panelde girilen zayi / ikram
+  const waste = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy), z: zOf(foy), report: saved(), ladmin: { ...NO_LADMIN, waste: { ikram: "2 latte (doğum günü)", zayi: null } }, keySet: true, now: NOW });
+  assert.ok(waste.includes("Zayi / ikram (panelde girilen)"));
+  assert.ok(waste.includes("2 latte (doğum günü)"));
+  assert.ok(render({ date: "2026-11-01", today: "2026-11-03", sheet: null, z: null, report: null, ladmin: { ...NO_LADMIN, waste: { ikram: null, zayi: null } }, keySet: true, now: NOW }).includes("Bu gün zayi ya da ikram girilmedi."));
   // Para uyarıları katlanmaz (risk="para")
   assert.match(modpos, /data-notice="warn" data-risk="para"/);
 });

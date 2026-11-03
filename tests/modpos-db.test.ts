@@ -99,12 +99,15 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     assert.deepEqual([r1.state, r1.final, r1.revision, r1.previous, r1.fetchedAt.toISOString(), r1.changedAt.toISOString(), r1.generatedAt?.toISOString()], ["KAPALI", false, 1, null, t1.toISOString(), t1.toISOString(), "2026-11-02T02:59:00.000Z"]);
     assert.equal(r1.fingerprint, store.sheetFingerprint(first));
     assert.match(r1.fingerprint, /^[0-9a-f]{64}$/);
-    assert.doesNotMatch(JSON.stringify(r1.sheet), /Ayşe Yılmaz|Mehmet Kaya|Yıldız Lojistik/, "kişisel ad saklanmaz");
+    assert.match(JSON.stringify(r1.sheet), /Ayşe Yılmaz[\s\S]*Mehmet Kaya[\s\S]*Yıldız Lojistik/, "kişi adları saklanır (sahibin kararı)");
+    assert.equal(r1.raw, null, "ham XML verilmediyse boş");
 
     // Aynı içerik, başka hazırlanma anı ve kota: yalnız çekilme anı (ve kesinlik) değişir
     const t2 = new Date("2026-11-02T08:30:00+03:00");
     const same = { ...foyOf(foyXml("2026-11-01", { olusturulma: "2026-11-02T08:29:00+03:00" })), kota: { gunlukHak: 2, kullanilan: 2, kalan: 0, yenilenme: null } };
-    assert.deepEqual(await store.storeFoy(db, same, t2), { change: "ayni", revision: 1, final: true, previous: null });
+    assert.deepEqual(await store.storeFoy(db, same, t2, "<kasaFoyu>ikinci</kasaFoyu>"), { change: "ayni", revision: 1, final: true, previous: null });
+    // İçerik aynıyken de son ham XML yazılır; ham XML verilmezse eskisi kalır
+    assert.equal((await store.loadModposSheet(first.kasaGunu, db, { raw: true }))?.raw, "<kasaFoyu>ikinci</kasaFoyu>");
     const r2 = await rowOf("2026-11-01");
     assert.deepEqual([r2.final, r2.revision, r2.fingerprint, r2.fetchedAt.toISOString(), r2.changedAt.toISOString(), r2.generatedAt?.toISOString()], [true, 1, r1.fingerprint, t2.toISOString(), t1.toISOString(), "2026-11-02T05:29:00.000Z"]);
     assert.equal(r2.sheet.kota?.kalan, 0, "son yanıtın föyü saklanır");
@@ -324,6 +327,14 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
         ["2026-11-11", true, "2026-11-12T05:00"],
       ],
     );
+    // Ham XML saklanır (yalnız günün görünümü okur); föyde kişi adları var (sahibin kararı); listeler ham föyü taşımaz
+    const one = await store.loadModposSheet("2026-11-11", db, { raw: true });
+    assert.equal(one?.raw, foyXml("2026-11-11"));
+    assert.equal(one?.foy.kasalar[0].kapanis.personel, "Mehmet Kaya");
+    assert.equal(one?.foy.kasalar[0].cariTahsilatlar.kalemler[0].musteri, "Yıldız Lojistik");
+    assert.equal((await store.loadModposSheet("2026-11-11", db))?.raw, undefined);
+    assert.ok((await store.loadModposSheets("2026-11-01", "2026-11-11", db)).every((x) => x.raw === undefined));
+    assert.ok((await store.recentModposSheets(5, db)).every((x) => x.raw === undefined));
     // Aynı gün yeniden: hak 0, hiç istek gitmez, çalışma yazılmaz
     const again = await sync.syncModpos("cron", opts(m.impl, { now: new Date("2026-11-12T08:30:00+03:00") }));
     assert.deepEqual(again, { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" });
