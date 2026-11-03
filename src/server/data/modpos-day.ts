@@ -35,7 +35,8 @@ const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet,
  */
 export async function loadKasaModpos(date: string, db: DB = getDb()): Promise<KasaModpos> {
   if (isLafposDay(date, await loadLafposSwitchDay(db))) return NO_MODPOS;
-  return withZ(await loadModposSheet(date, db));
+  // Günün görünümü ham XML'i de gösterir (ModPOS bölümünün "Ham föy"ü)
+  return withZ(await loadModposSheet(date, db, { raw: true }));
 }
 
 /**

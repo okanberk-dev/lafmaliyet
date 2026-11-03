@@ -159,10 +159,11 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
     assert.equal(log.action, "ModPOS kasa föyü çekildi");
     assert.equal(plain(log.detail ?? ""), `${plain(dayMonthYearTR(d3))} · alındı · kalan hak 1`);
     assert.equal(log.userId, users.admin.id);
-    // Saklanan föyde kişisel ad yok (KVKK)
+    // Saklanan föy kişi adlarıyla (sahibin kararı; yalnız yöneticiye çizilir) ve ham XML'iyle
     const [row] = await db.select().from(s.modposCashSheets).where(eq(s.modposCashSheets.day, d3));
     assert.equal(row.final, true);
-    assert.doesNotMatch(JSON.stringify(row.sheet), /Ayşe|Mehmet|Yıldız Lojistik/);
+    assert.match(JSON.stringify(row.sheet), /Ayşe Yılmaz[\s\S]*Mehmet Kaya[\s\S]*Yıldız Lojistik/);
+    assert.match(row.raw ?? "", /^<\?xml[\s\S]*<kasaFoyu>[\s\S]*<\/kasaFoyu>/);
     const st = await stateRow();
     assert.equal((st?.runs as { trigger: string }[])[0].trigger, "elle");
 

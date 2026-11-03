@@ -1,4 +1,4 @@
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, GitCompareArrows } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,49 +8,63 @@ import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import {
   modposAraKasaText,
   modposBreakdownText,
+  modposCash,
   modposCell,
   modposClock,
   modposCollectionLabel,
+  modposCompareRows,
+  modposCompareSummary,
   modposExpenseLabel,
+  modposExtraLines,
+  modposFacts,
   modposFoysuzText,
   modposGapTitle,
   modposHeadline,
   modposMissingText,
   modposNoCountText,
+  modposOffLines,
+  modposOpenFor,
   modposPaymentDetail,
   modposPaymentGap,
+  modposPayments,
+  modposPeople,
+  modposPeopleLine,
   modposPreviousLine,
   modposReportDiffs,
-  modposServiceLine,
-  modposTableRows,
+  modposSheetMeta,
   modposUnknownCodesText,
   modposWarningTexts,
   signedMoney,
+  MODPOS_RAW_SHOWN,
   type ModposReportFields,
   type ModposSheetView,
 } from "@/lib/cash-modpos";
+import type { LadminReport } from "@/lib/cash-ladmin";
 import { money, num } from "@/lib/format";
 import type { ModposCompareRow } from "@/lib/modpos/compare";
 import type { FoyKasa, FoysuzGun } from "@/lib/modpos/foy";
 import type { ModposZ } from "@/lib/modpos/z";
 import { cn } from "@/lib/utils";
 
+import { FactGrid, H3, LineList, MutedLines } from "./day-parts";
+import { LadminReportCard } from "./ladmin-report";
 import { ModposDiffList } from "./modpos-diffs";
 
 /**
- * Yöneticinin gün görünümündeki "ModPOS kasa föyü" kartı (docs/MODPOS-API.md › Nerede görünür; yalnız yönetici dalında,
- * formun altında): kasa raporu ile föy yan yana (Z alanları, açılış, sayılan; gider, giren, olması gereken ve kasa farkı
- * bilgi olarak), farklı yazılanların uyarısı, ödeme yöntemleri ve banka kırılımı, giderler, cari tahsilatlar, ara
- * kasalar, kişi sayısı, bahşiş, ModPOS'un uyarıları ve notları, föy değiştiyse önceki sürüm. Föy yoksa ne zaman
- * geleceği (anahtar kurulmamışsa hiçbir şey: Ayarlar'daki kart "Kurulmadı" der). Sunucu bileşenidir: föyün kendisi tarayıcıya veri olarak gitmez, yalnız çizilen metin. Sayfa açılışı
- * ModPOS'a istek göndermez (saklanan föy; src/server/data/modpos-day.ts).
+ * Yöneticinin gün görünümündeki üç bölüm (docs/MODPOS-API.md › Nerede görünür; yalnız yönetici dalında, kasa raporu
+ * formunun altında): **ModPOS** (kasa föyünün ayrıntısı), **ladmin** (panelde yazılan raporun ayrıntısı) ve
+ * **Karşılaştırma** (alan alan, farklı yazılanların uyarısıyla). Föy yoksa ve anahtar kurulmamışsa hiçbir şey (Ayarlar'daki
+ * kart "Kurulmadı" der); föy henüz gelmediyse ModPOS bölümü ne zaman geleceğini söyler, ladmin yine görünür. Sunucu
+ * bileşenidir: föyün kendisi tarayıcıya veri olarak gitmez, yalnız çizilen metin. Sayfa açılışı ModPOS'a istek
+ * göndermez (saklanan föy; src/server/data/modpos-day.ts).
  */
-export function ModposSheetCard({
+export function ModposSections({
   date,
   today,
   sheet,
   z,
   report,
+  ladmin,
   keySet,
   now,
 }: {
@@ -58,41 +72,69 @@ export function ModposSheetCard({
   today: string;
   sheet: ModposSheetView | null;
   z: ModposZ | null;
-  /** Günün kayıtlı raporu (yoksa null: tablonun rapor sütunu boş) */
-  report: ModposReportFields | null;
+  /** Günün kayıtlı raporu (yoksa null: ladmin "Rapor yok", karşılaştırmanın ladmin sütunu boş) */
+  report: (ModposReportFields & LadminReport) | null;
+  /** ladmin bölümünün öteki girdileri: günün kasadan çıkanları, fotoğraf sayısı, sürümler, devir zinciri */
+  ladmin: Omit<Parameters<typeof LadminReportCard>[0], "report">;
   /** ModPOS anahtarı kurulu mu (modposKeySet) */
   keySet: boolean;
   now: Date;
 }) {
-  if (!sheet) return keySet ? <Notice tone="neutral" title="ModPOS föyü henüz alınmadı" text={modposMissingText(date, today)} /> : null;
-  const diffs = z ? modposReportDiffs(report, z) : [];
+  if (!sheet && !keySet) return null;
+  return (
+    <div className="space-y-4" aria-label="ModPOS, ladmin ve karşılaştırma" role="group">
+      <ModposSheetCard date={date} today={today} sheet={sheet} z={z} now={now} />
+      <LadminReportCard report={report} {...ladmin} />
+      <ModposCompareCard sheet={sheet} z={z} report={report} />
+    </div>
+  );
+}
+
+/**
+ * "ModPOS" bölümü: föyün künyesi (Z no, durum, kesin mi, alındığı an), karolar (ciro, adisyon ve ortalaması, kişi ve
+ * kişi başı, ciro dışı, bahşiş, kasa farkı), ödeme dağılımı ve nakit kasanın hesabı, föyün kendi içindeki tutarsızlığı,
+ * ModPOS'un uyarıları ve notları, her kasanın ayrıntısı (açılış / kapanış ve açık kalma süresi, ödeme yöntemleri ve banka
+ * kırılımı, giderler, cari tahsilatlar, ara kasalar, notlar), föysüz satış ve föy değiştiyse önceki sürüm
+ */
+export function ModposSheetCard({ date, today, sheet, z, now }: { date: string; today: string; sheet: ModposSheetView | null; z: ModposZ | null; now: Date }) {
+  if (!sheet) {
+    return (
+      <Card aria-label="ModPOS kasa föyü">
+        <CardHeader icon={<ClipboardList />} title="ModPOS" description="Kasa föyü" actions={<Badge tone="gray">Föy yok</Badge>} />
+        <CardContent>
+          <Notice tone="neutral" size="sm" title="ModPOS föyü henüz alınmadı" text={modposMissingText(date, today)} />
+        </CardContent>
+      </Card>
+    );
+  }
   const gap = z ? modposGapTitle(z) : null;
   const warnings = modposWarningTexts(sheet.foy);
   const multi = sheet.foy.kasalar.length > 1;
   // Gün açıkken alınan föyde sayımın yokluğunu üstteki not söyler
   const notes = z ? [z.durum === "ACIK" ? null : modposNoCountText(z), modposFoysuzText(z), modposUnknownCodesText(z)].filter((t): t is string => t !== null) : [];
   const previous = modposPreviousLine(sheet, z, now);
-  const service = z ? modposServiceLine(z) : null;
+  const extras = modposExtraLines(sheet.foy);
   return (
     <Card aria-label="ModPOS kasa föyü">
-      <CardHeader icon={<ClipboardList />} title="ModPOS kasa föyü" description={modposHeadline(sheet, z, now)} actions={<SheetBadge z={z} report={report} diffs={diffs.length} />} />
+      <CardHeader icon={<ClipboardList />} title="ModPOS" description={`Kasa föyü · ${modposHeadline(sheet, z, now)}`} actions={<StateBadge sheet={sheet} z={z} />} />
       <CardContent className="space-y-4">
         {z ? null : <p className="text-sm text-ink-mute">Bu gün ModPOS&apos;ta kasa açılmamış, satış yok.</p>}
-        <ModposDiffList diffs={diffs} />
-        {gap ? <Notice tone="warn" risk="para" size="sm" title={gap} text="ModPOS'ta ödemeleri kontrol edin; tablodaki ödeme alanları bu yüzden farklı görünebilir." /> : null}
+        {gap ? <Notice tone="warn" risk="para" size="sm" title={gap} text="ModPOS'ta ödemeleri kontrol edin; karşılaştırmadaki ödeme alanları bu yüzden farklı görünebilir." /> : null}
         {z && z.durum === "ACIK" ? (
           <Notice tone="neutral" size="sm" title="Föy gün açıkken alındı" text="Tutarlar o anki; rapor ertesi sabahki kesin föyle karşılaştırılır." />
         ) : null}
-        {z ? <CompareTable rows={modposTableRows(report, z)} /> : null}
-        {notes.length || previous ? (
-          <div className="space-y-1 text-[13px] leading-5 break-words text-ink-mute">
-            {notes.map((t) => (
-              <p key={t}>{t}</p>
-            ))}
-            {previous ? <p>{previous}</p> : null}
-          </div>
+        {z ? (
+          <>
+            <FactGrid facts={modposFacts(z)} label="ModPOS özeti" />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <LineList title="Ödeme dağılımı" lines={modposPayments(z)} />
+              <LineList title="Nakit kasa" lines={modposCash(z, sheet.foy)} />
+              <LineList title="Ödenmez / ikram dökümü" lines={modposOffLines(sheet.foy, z)} />
+              <LineList title="Kişiler" lines={modposPeople(sheet.foy)} />
+            </div>
+          </>
         ) : null}
-        {service ? <p className="text-sm text-ink-soft">{service}</p> : null}
+        {notes.length ? <MutedLines lines={notes} /> : null}
         {warnings.length ? (
           <Notice
             tone="neutral"
@@ -113,14 +155,110 @@ export function ModposSheetCard({
           <KasaDetail key={`${k.sube}:${k.kasaAdi}:${i}`} kasa={k} heading={multi ? [k.sube, k.kasaAdi, k.zNo ? `Z ${k.zNo}` : null].filter(Boolean).join(" · ") : null} />
         ))}
         {sheet.foy.foysuzGunler.length ? <FoysuzList list={sheet.foy.foysuzGunler} /> : null}
+        {extras.length ? (
+          <Notice
+            tone="neutral"
+            size="sm"
+            title={`ModPOS'un kitapçıkta olmayan ${extras.length} alanı`}
+            text={
+              <ul className="list-disc pl-4">
+                {extras.map((t, i) => (
+                  <li key={`${t}:${i}`} className="break-words">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            }
+          />
+        ) : null}
+        <MutedLines lines={[...modposSheetMeta(sheet, now), ...(previous ? [previous] : [])]} />
+        {sheet.raw ? <RawSheet raw={sheet.raw} /> : null}
       </CardContent>
     </Card>
   );
 }
 
-/** Başlığın sağındaki tek rozet: rapor yok, föy açıkken alındı, farklı alan sayısı ya da raporla aynı */
-function SheetBadge({ z, report, diffs }: { z: ModposZ | null; report: ModposReportFields | null; diffs: number }) {
-  if (!z) return null;
+/** ModPOS'un gönderdiği ham XML, kapalı açılır kutuda (kitapçıkta olmayan alan da burada görünür) */
+function RawSheet({ raw }: { raw: string }) {
+  const cut = raw.length > MODPOS_RAW_SHOWN;
+  return (
+    <details className="rounded-2xl bg-surface px-3 py-2 text-[13px]">
+      <summary className="cursor-pointer text-ink-soft pointer-coarse:py-2">Ham föy (ModPOS&apos;un gönderdiği XML)</summary>
+      <pre className="mt-2 max-h-96 overflow-auto font-mono text-[11px] leading-4 whitespace-pre-wrap break-all text-ink-soft">
+        {cut ? raw.slice(0, MODPOS_RAW_SHOWN) : raw}
+      </pre>
+      {cut ? <p className="mt-1 text-ink-mute">İlk {num(MODPOS_RAW_SHOWN)} karakter gösteriliyor; saklanan föy tamdır.</p> : null}
+    </details>
+  );
+}
+
+/** ModPOS başlığının rozeti: kesin / kesin değil (gün açıkken alındı) / kasa açılmamış */
+function StateBadge({ sheet, z }: { sheet: ModposSheetView; z: ModposZ | null }) {
+  if (!z) return <Badge tone="gray">Kasa açılmamış</Badge>;
+  if (z.durum === "ACIK") return <Badge tone="gray">Gün açıkken alındı</Badge>;
+  return sheet.final ? (
+    <Badge tone="blue" dot>
+      Kesin
+    </Badge>
+  ) : (
+    <Badge tone="gray">Kesin değil</Badge>
+  );
+}
+
+/**
+ * "Karşılaştırma" bölümü: ModPOS föyü ↔ ladmin raporu. Rozet (rapor yok, föy açıkken alındı, farklı alan sayısı ya da
+ * raporla aynı), özet satırı, farklı yazılanların uyarısı ve alan alan tablo (fark ModPOS − ladmin; bilgi satırları
+ * soluk). Föy yoksa ne zaman karşılaştırılacağı; ModPOS'ta kasa açılmamış ama raporda satış varsa uyarı
+ */
+export function ModposCompareCard({
+  sheet,
+  z,
+  report,
+}: {
+  sheet: ModposSheetView | null;
+  z: ModposZ | null;
+  report: (ModposReportFields & Partial<Pick<LadminReport, "submittedByName" | "countedByName">>) | null;
+}) {
+  const header = (badge: ReactNode) => <CardHeader icon={<GitCompareArrows />} title="Karşılaştırma" description="ModPOS föyü ↔ ladmin kasa raporu" actions={badge} />;
+  if (!sheet || !z) {
+    const text = !sheet
+      ? "ModPOS föyü gelince ladmin'deki raporla alan alan karşılaştırılır."
+      : report && Math.abs(report.zTotal) >= 0.01
+        ? null
+        : "İkisinde de satış yok.";
+    return (
+      <Card aria-label="ModPOS ve ladmin karşılaştırması">
+        {header(null)}
+        <CardContent>
+          {text ? (
+            <p className="text-sm text-ink-mute">{text}</p>
+          ) : (
+            <Notice tone="warn" risk="para" size="sm" title={`ModPOS'ta bu gün kasa açılmamış, ladmin'de ${money(report!.zTotal)} satış yazılı`} text="Raporun günü ya da ModPOS'taki kasa günü yanlış olabilir." />
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+  const diffs = modposReportDiffs(report, z);
+  const rows = modposCompareRows(report, z);
+  const gap = modposGapTitle(z);
+  const people = modposPeopleLine(sheet.foy, report);
+  return (
+    <Card aria-label="ModPOS ve ladmin karşılaştırması">
+      {header(<SheetBadge z={z} report={report} diffs={diffs.length} />)}
+      <CardContent className="space-y-4">
+        <p className="text-sm text-ink-soft">{modposCompareSummary(rows, z, report !== null)}</p>
+        <ModposDiffList diffs={diffs} />
+        {gap ? <p className="text-[13px] leading-5 text-ink-mute">{`${gap}: ödeme satırları bu yüzden farklı görünebilir.`}</p> : null}
+        {people ? <p className="text-[13px] leading-5 text-ink-mute">{people}</p> : null}
+        <CompareTable rows={rows} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Karşılaştırmanın rozeti: rapor yok, föy açıkken alındı, farklı alan sayısı ya da raporla aynı */
+function SheetBadge({ z, report, diffs }: { z: ModposZ; report: ModposReportFields | null; diffs: number }) {
   if (z.durum === "ACIK") return <Badge tone="gray">Gün açıkken alındı</Badge>;
   if (!report) return <Badge tone="gray">Rapor yok</Badge>;
   return diffs ? (
@@ -148,13 +286,13 @@ function DiffCell({ row }: { row: ModposCompareRow }) {
 }
 
 /**
- * Rapor ↔ föy tablosu: telefonda (sm altı) satır kartı, geniş ekranda tablo (TASARIM §6 "Listeler"). Fark föy − rapor;
+ * ladmin ↔ ModPOS tablosu: telefonda (sm altı) satır kartı, geniş ekranda tablo (TASARIM §6 "Listeler"). Fark föy − rapor;
  * "farklı yazılan" alanlar turuncu rozetle, bilgi satırları (gider, giren, olması gereken, kasa farkı) soluk
  */
 function CompareTable({ rows }: { rows: ModposCompareRow[] }) {
   return (
     <div>
-      <ul className="divide-y divide-line sm:hidden" aria-label="Kasa raporu ve ModPOS föyü">
+      <ul className="divide-y divide-line sm:hidden" aria-label="ladmin kasa raporu ve ModPOS föyü">
         {rows.map((r) => (
           <li key={r.key} className="py-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
@@ -164,7 +302,7 @@ function CompareTable({ rows }: { rows: ModposCompareRow[] }) {
               </span>
             </div>
             <p className="text-xs text-ink-mute tabular">
-              Rapor {modposCell(r.report, r.money)} · ModPOS {modposCell(r.modpos, r.money)}
+              ladmin {modposCell(r.report, r.money)} · ModPOS {modposCell(r.modpos, r.money)}
             </p>
           </li>
         ))}
@@ -174,8 +312,8 @@ function CompareTable({ rows }: { rows: ModposCompareRow[] }) {
           <THead>
             <tr>
               <TH>Alan</TH>
-              <TH numeric>Kasa raporu</TH>
-              <TH numeric>ModPOS föyü</TH>
+              <TH numeric>ladmin</TH>
+              <TH numeric>ModPOS</TH>
               <TH numeric>Fark</TH>
             </tr>
           </THead>
@@ -201,8 +339,6 @@ function CompareTable({ rows }: { rows: ModposCompareRow[] }) {
   );
 }
 
-const H3 = "border-b border-line pb-1 text-[13px] font-semibold text-ink-soft";
-
 /** Tek satır: solda ad (altında soluk ayrıntı), sağda tutar */
 function Row({ label, value, sub, extra }: { label: ReactNode; value: string; sub?: string | null; extra?: ReactNode }) {
   return (
@@ -224,12 +360,14 @@ function Row({ label, value, sub, extra }: { label: ReactNode; value: string; su
 
 /** Bir kasanın föyü: açılış / kapanış, ödeme yöntemleri (kırılımıyla), giderler, cari tahsilatlar, ara kasalar, notlar */
 function KasaDetail({ kasa: k, heading }: { kasa: FoyKasa; heading: string | null }) {
-  const opened = [modposClock(k.acilis.zaman), k.acilis.nakit !== null ? money(k.acilis.nakit) : null].filter(Boolean).join(", ");
-  const closed = [modposClock(k.kapanis.zaman), k.kapanis.nakit !== null ? money(k.kapanis.nakit) : null].filter(Boolean).join(", ");
+  const who = (n: string | null | undefined) => (n ? ` (${n})` : "");
+  const opened = [modposClock(k.acilis.zaman), k.acilis.nakit !== null ? money(k.acilis.nakit) : null].filter(Boolean).join(", ") + (k.acilis.zaman || k.acilis.nakit !== null ? who(k.acilis.personel) : "");
+  const closed = [modposClock(k.kapanis.zaman), k.kapanis.nakit !== null ? money(k.kapanis.nakit) : null].filter(Boolean).join(", ") + (k.kapanis.zaman || k.kapanis.nakit !== null ? who(k.kapanis.personel) : "");
   const times = [
     k.gunNo !== null ? `Gün no ${k.gunNo}` : null,
     opened ? `açılış ${opened}` : null,
     k.durum === "KAPALI" ? (closed ? `kapanış ${closed}` : "kapandı") : "kapanmadı",
+    modposOpenFor(k) ? `açık kaldı ${modposOpenFor(k)}` : null,
     k.defterGirildi ? "kasa defteri girildi" : "kasa defteri girilmedi",
   ].filter(Boolean);
   const notes = [k.notlar.kapanis ? `Kapanış notu: ${k.notlar.kapanis}` : null, k.notlar.fark ? `Fark notu: ${k.notlar.fark}` : null].filter((t): t is string => t !== null);
@@ -240,7 +378,7 @@ function KasaDetail({ kasa: k, heading }: { kasa: FoyKasa; heading: string | nul
       <div className="grid gap-5 sm:grid-cols-2">
         {k.odemeler.length ? (
           <section aria-label="Ödeme yöntemleri">
-            <h3 className={H3}>Ödeme yöntemleri</h3>
+            <h3 className={H3}>Ödeme yöntemleri (ModPOS&apos;taki adıyla)</h3>
             <ul className="divide-y divide-line">
               {k.odemeler.map((o, i) => {
                 const gap = modposPaymentGap(o);

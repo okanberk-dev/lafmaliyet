@@ -2080,8 +2080,8 @@ export const posDayReports = pgTable("pos_day_reports", {
 // ---------------------------------------------------------------- ModPOS kasa föyü (docs/MODPOS-API.md)
 /**
  * ModPOS'un (Gafdigi) kasa föyü, kasa günü başına bir satır: panel her sabah dünün föyünü API'den çeker (günde 2 hak;
- * src/server/modpos/sync.ts). `sheet` föyün okunmuş hâlidir (src/lib/modpos/foy.ts KasaFoyu): kişisel ad (personel,
- * müşteri) yoktur. Aynı gün yeniden çekilince içerik aynıysa yalnız `fetched_at` (ve kesinleştiyse `final`) değişir;
+ * src/server/modpos/sync.ts). `sheet` föyün okunmuş hâlidir (src/lib/modpos/foy.ts KasaFoyu): kişi adları (personel,
+ * müşteri; sahibin kararı, 3 Kasım 2026) ve kitapçıkta olmayan alanlar dahil, `raw` ham XML'i. Aynı gün yeniden çekilince içerik aynıysa yalnız `fetched_at` (ve kesinleştiyse `final`) değişir;
  * farklıysa `revision` artar, önceki özet `previous`'a yazılır. Yalnız yöneticinin ekranlarına gider.
  */
 export const modposCashSheets = pgTable(
@@ -2105,6 +2105,11 @@ export const modposCashSheets = pgTable(
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     /** İçeriğin son değiştiği an */
     changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * ModPOS'un gönderdiği ham XML (son çekimin; kitapçıkta olmayan alan da kaybolmasın): yalnız günün görünümü okur,
+     * ay listeleri okumaz. Bu sütundan önce saklanan föylerde boş
+     */
+    raw: text("raw"),
   },
   (t) => [check("modpos_cash_sheets_revision_pos", sql`${t.revision} >= 1`)],
 );

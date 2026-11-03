@@ -24,7 +24,7 @@ import { todayTR } from "@/lib/reminders";
  */
 
 export type FoyFetch =
-  | { status: "ok"; foy: KasaFoyu; quota: ModposQuota | null }
+  | { status: "ok"; foy: KasaFoyu; quota: ModposQuota | null; raw: string }
   | { status: "off"; problem: "missing" | "format" }
   | { status: "kota"; quota: ModposQuota; text: string }
   | { status: "error"; kod: string; http: number; text: string; keyError: boolean; quota: ModposQuota | null };
@@ -85,7 +85,7 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
   if (body === null) return { status: "error", kod: "BUYUK", http: res.status, text: "ModPOS'un yanıtı beklenenden büyük; okunmadı", keyError: false, quota };
   const parsed = parseKasaFoyu(body, res.ok ? day : undefined);
   if (res.ok && parsed.ok) {
-    return { status: "ok", foy: parsed.foy, quota: quota ?? quotaFromBody(parsed.foy, now) };
+    return { status: "ok", foy: parsed.foy, quota: quota ?? quotaFromBody(parsed.foy, now), raw: body };
   }
   const raw: FoyHata | null = !parsed.ok && "hata" in parsed ? parsed.hata : null;
   if (res.ok && !raw) {

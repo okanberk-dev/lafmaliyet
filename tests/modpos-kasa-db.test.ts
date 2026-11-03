@@ -89,8 +89,9 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
     assert.equal(got.sheet?.state, "KAPALI");
     assert.equal(got.z?.zTotal, 28_450.5);
     assert.equal(got.z?.zNo, "0312");
-    // Saklanan föyde kişisel ad yok (ayrıştırıcı okumaz)
-    assert.ok(!JSON.stringify(got.sheet).match(/Ayşe|Mehmet|Yıldız Lojistik/));
+    // Günün görünümü föyü kişi adlarıyla ve (saklandıysa) ham XML'iyle okur
+    assert.match(JSON.stringify(got.sheet), /Ayşe Yılmaz[\s\S]*Mehmet Kaya[\s\S]*Yıldız Lojistik/);
+    assert.ok(got.sheet && "raw" in got.sheet, "günün görünümü ham föyü de okur");
     assert.equal(fetches, 0);
     // Anahtar kurulu mu: föysüz günün satırı yalnız kuruluyken (biçimi bozuk anahtar kurulmamış sayılır)
     assert.equal(day.modposKeySet({}), false);
@@ -124,7 +125,14 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
     const open = foyOn("2026-11-02");
     await store.storeFoy(db, { ...open, kasalar: open.kasalar.map((k) => ({ ...k, durum: "ACIK" as const })) }, new Date("2026-11-02T20:00:00+03:00"));
     const of = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db);
-    for (const d of ["2026-11-01", "2026-11-02", "2026-11-03"]) assert.deepEqual(of(d), await day.loadKasaModpos(d, db), d);
+    // Gün görünümü ham XML'i de okur (listede yok); gerisi aynı
+    const noRaw = (k: Awaited<ReturnType<typeof day.loadKasaModpos>>) => {
+      if (!k.sheet) return k;
+      const sheet = { ...k.sheet };
+      delete sheet.raw;
+      return { ...k, sheet };
+    };
+    for (const d of ["2026-11-01", "2026-11-02", "2026-11-03"]) assert.deepEqual(of(d), noRaw(await day.loadKasaModpos(d, db)), d);
     assert.equal(of("2026-11-02").sheet?.final, false);
     assert.equal(of("2026-11-02").z?.durum, "ACIK");
     assert.equal(of("2026-10-31").sheet, null, "aralığın dışındaki gün okunmadı");

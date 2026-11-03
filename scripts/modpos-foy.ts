@@ -187,6 +187,19 @@ export function foySummaryLines(foy: KasaFoyu, o: { now: Date; fetchedAt: Date |
     out.push(`Föysüz satış: ${f.sube || "adsız şube"} · ciro ${money(f.ciro)} · adisyon ${f.adisyonSayisi ?? "–"}`);
     for (const p of f.odemeler) out.push(`  ${p.kod} (${p.yontem}): ${money(p.tutar)} → ${BUCKET_TEXT[modposBucket({ kod: p.kod, ciroyaDahil: true })]}`);
   }
+  // Kişiler (sahibin kararı: föy kişi adlarıyla saklanır, yalnız yöneticiye) ve kitapçıkta olmayan alanlar
+  const people = foy.kasalar.flatMap((k) => [
+    k.acilis.personel ? `açan ${k.acilis.personel}` : null,
+    k.kapanis.personel ? `kapatan ${k.kapanis.personel}` : null,
+    ...k.araKasalar.map((a) => (a.personel ? `${a.no ?? ""}. ara kasa ${a.personel}`.trim() : null)),
+    ...k.cariTahsilatlar.kalemler.map((t) => (t.musteri ? `cari tahsilat ${t.musteri} (${money(t.tutar)})` : null)),
+  ]).filter((t): t is string => t !== null);
+  out.push("");
+  out.push(people.length ? `Kişiler: ${people.join(" · ")}` : "Kişiler: föyde ad yok");
+  if (foy.ekAlanlar?.length) {
+    out.push(`Kitapçıkta olmayan alanlar (${foy.ekAlanlar.length}):`);
+    for (const e of foy.ekAlanlar) out.push(`  ${e.yol}: ${e.deger || "(boş)"}`);
+  }
   const warnings = foyWarnings(foy);
   out.push("");
   if (warnings.length) {
@@ -258,7 +271,7 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
     say(`Hedef: ${databaseTarget(dbUrl!).label}`);
     const db = createDb(dbUrl!, 1);
     try {
-      const r = await storeFoy(db, parsed.foy, now);
+      const r = await storeFoy(db, parsed.foy, now, body);
       say(`✓ Veritabanına yazıldı: ${r.change === "yeni" ? "yeni föy" : r.change === "degisti" ? `föy değişti (sürüm ${r.revision})` : "föy aynı (yalnız çekilme anı)"} · ${r.final ? "kesin" : "kesin değil"}`);
       return 0;
     } finally {

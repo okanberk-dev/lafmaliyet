@@ -3,15 +3,15 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
-import { missingFoyDays } from "@/lib/modpos/plan";
-import { modposKeyProblem, modposSyncFrom } from "@/lib/modpos/request";
+import { canRetry, missingFoyDays } from "@/lib/modpos/plan";
+import { modposKeyProblem, modposSyncFrom, modposSyncFromSet } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
 import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
-import { loadModposIndex, readModposState, recentModposSheets } from "./store";
+import { loadModposHistoryStart, loadModposIndex, readModposState, recentModposSheets } from "./store";
 import { canFetchModpos } from "./sync";
 
 /**
@@ -55,15 +55,18 @@ export async function loadModposFallback(db: Reader = getDb()): Promise<boolean>
 
 /** Kartın bütün verisi; `env` testler için (varsayılan process.env) */
 export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), env: Env = process.env): Promise<ModposCardData> {
-  const [state, index, recent, fallback, switchDay] = await Promise.all([
+  const from = modposSyncFrom(env);
+  const [state, index, recent, fallback, switchDay, start] = await Promise.all([
     readModposState(db),
     loadModposIndex(db),
     recentModposSheets(MODPOS_RECENT_DAYS, db),
     loadModposFallback(db),
     loadLafposSwitchDay(db),
+    loadModposHistoryStart(from, modposSyncFromSet(env), db),
   ]);
   const sorted = [...index.keys()].sort();
-  const from = modposSyncFrom(env);
+  // LafPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz. Sıra sabah işininki (ilk ciro gününden ileriye)
+  const missing = missingFoyDays(from, index, now, switchDay, start.day);
   const input: ModposCardInput = {
     now,
     keyProblem: modposKeyProblem(env),
@@ -71,8 +74,10 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     state,
     from,
     stored: { count: sorted.length, first: sorted[0] ?? null, last: sorted.at(-1) ?? null },
-    // LafPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz
-    missing: missingFoyDays(from, index, now, switchDay).length,
+    missing: missing.length,
+    // Bekleyen (alınamayan, aralıklı denenen) gün sıradaki sayılmaz: sabah işi onu atlar
+    next: missing.find((d) => canRetry(state.dayErrors?.[d], now)) ?? null,
+    start,
   };
   const today = todayTR(now);
   return {

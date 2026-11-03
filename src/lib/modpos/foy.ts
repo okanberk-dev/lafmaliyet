@@ -8,8 +8,11 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
  * biçimine çevrilir:
  * - Tutarlar TL, iki ondalığa yuvarlanır (ondalık ayırıcı nokta; "28450.5"). Biçimi bozuk tutar reddedilir (alanın yolu
  *   hatada), boş öğe (`<defter/>`) null'dır.
- * - **Kişisel veri saklanmaz** (docs/LAFPOS.md › Güvenlik ve KVKK kuralı): personel adları (açılış, kapanış, ara kasa)
- *   ve cari tahsilatın müşteri adı okunmaz. Giderin açıklaması ve kasa notları yöneticinin verisinde kalır.
+ * - **Kişi adları okunur** (sahibin kararı, 3 Kasım 2026; docs/MODPOS-API.md › Ne çekilir): açılışı, kapanışı ve ara
+ *   kasayı yapan personel, cari tahsilatın müşterisi. Föy yalnız yöneticinin ekranlarına gider (personele hiçbir yolla
+ *   gitmez; tests/modpos-kasa.test.ts, tests/personel-sizinti-kasa.test.ts). Eski saklanan föylerde bu alanlar yoktur.
+ * - **Kitapçıkta olmayan alan kaybolmaz**: tanınmayan her öğe yoluyla ve değeriyle `ekAlanlar`'a yazılır (ModPOS ileride
+ *   alan eklerse görünür); föyün ham XML'i de ayrıca saklanır (src/server/modpos/store.ts).
  * - Tekrar eden öğeler (kasa, odeme, kirilim, gider, tahsilat, araKasa, uyari, foysuzGun) her zaman dizidir; kayıt
  *   yoksa boş dizi.
  * - DOCTYPE / ENTITY taşıyan gövde hiç ayrıştırılmaz (genişleme saldırısı); servis bunları göndermez.
@@ -60,8 +63,9 @@ export interface FoyGider {
   tutar: number;
 }
 
-/** Cari tahsilat: müşterinin adı okunmaz (KVKK) */
+/** Cari tahsilat (müşterinin adıyla; eski föylerde ad yok) */
 export interface FoyTahsilat {
+  musteri?: string | null;
   tutar: number;
   yontem: string | null;
   zaman: string | null;
@@ -81,10 +85,11 @@ export interface FoyNakitKasa {
   fark: number | null;
 }
 
-/** Ara kasa (gün içi sayım): personelin adı okunmaz */
+/** Ara kasa (gün içi sayım; sayan personelin adıyla, eski föylerde ad yok) */
 export interface FoyAraKasa {
   no: number | null;
   zaman: string | null;
+  personel?: string | null;
   ciro: number | null;
   nakit: number | null;
   adisyonSayisi: number | null;
@@ -108,9 +113,10 @@ export interface FoyKasa {
   zNo: string | null;
   durum: "ACIK" | "KAPALI";
   otomatikKapandi: boolean;
-  acilis: { zaman: string | null; nakit: number | null };
-  /** Gün açıksa zaman ve nakit null */
-  kapanis: { zaman: string | null; nakit: number | null };
+  /** Açılış: zaman, açan personel (eski föylerde yok), nakit */
+  acilis: { zaman: string | null; personel?: string | null; nakit: number | null };
+  /** Gün açıksa zaman, personel ve nakit null */
+  kapanis: { zaman: string | null; personel?: string | null; nakit: number | null };
   satis: { ciro: number; ciroDisi: number; adisyonSayisi: number; kisiSayisi: number | null; bahsis: number };
   odemeler: FoyOdeme[];
   defterGirildi: boolean;
@@ -156,6 +162,12 @@ export interface FoyKota {
 }
 
 /** Bir kasa gününün föyü (panelin saklayıp okuduğu biçim; kişisel ad yok) */
+/** Kitapçıkta olmayan öğe: yolu ("kasa.0.satis.yeniAlan") ve metni */
+export interface FoyEkAlan {
+  yol: string;
+  deger: string;
+}
+
 export interface KasaFoyu {
   kasaGunu: string;
   olusturulma: string | null;
@@ -163,6 +175,8 @@ export interface KasaFoyu {
   foysuzGunler: FoysuzGun[];
   ozet: FoyOzet | null;
   kota: FoyKota | null;
+  /** Tanınmayan öğeler (en çok FOY_EK_MAX; yoksa boş ya da eski föyde hiç yok) */
+  ekAlanlar?: FoyEkAlan[];
 }
 
 /** Servisin hata yanıtı (`<hata>`) */
@@ -330,8 +344,8 @@ function kasa(n: Node, path: string): FoyKasa {
     zNo: text(n.zNo, `${path}.zNo`, 40),
     durum,
     otomatikKapandi: bool(n.otomatikKapandi, `${path}.otomatikKapandi`),
-    acilis: { zaman: time(acilis?.zaman, `${path}.acilis.zaman`), nakit: signed(acilis?.nakit, `${path}.acilis.nakit`) },
-    kapanis: { zaman: time(kapanis?.zaman, `${path}.kapanis.zaman`), nakit: signed(kapanis?.nakit, `${path}.kapanis.nakit`) },
+    acilis: { zaman: time(acilis?.zaman, `${path}.acilis.zaman`), personel: text(acilis?.personel, `${path}.acilis.personel`, 80), nakit: signed(acilis?.nakit, `${path}.acilis.nakit`) },
+    kapanis: { zaman: time(kapanis?.zaman, `${path}.kapanis.zaman`), personel: text(kapanis?.personel, `${path}.kapanis.personel`, 80), nakit: signed(kapanis?.nakit, `${path}.kapanis.nakit`) },
     satis: {
       ciro: signed(satis.ciro, `${path}.satis.ciro`) ?? 0,
       // Ciro dışı ve bahşiş eksi gelebilir (iade edilen ikram): föy reddedilmez
@@ -353,8 +367,8 @@ function kasa(n: Node, path: string): FoyKasa {
     cariTahsilatlar: {
       toplam: cari ? (signed(cari.toplam, `${path}.cariTahsilatlar.toplam`) ?? 0) : 0,
       nakit: cari ? (signed(cari.nakit, `${path}.cariTahsilatlar.nakit`) ?? 0) : 0,
-      // Müşterinin adı (musteri) bilerek okunmaz
       kalemler: tahsilatList.map((t, i) => ({
+        musteri: text(t.musteri, `${path}.cariTahsilatlar.tahsilat.${i}.musteri`, 120),
         tutar: signed(t.tutar, `${path}.cariTahsilatlar.tahsilat.${i}.tutar`) ?? 0,
         yontem: text(t.yontem, `${path}.cariTahsilatlar.tahsilat.${i}.yontem`, 60),
         zaman: time(t.zaman, `${path}.cariTahsilatlar.tahsilat.${i}.zaman`),
@@ -372,10 +386,10 @@ function kasa(n: Node, path: string): FoyKasa {
           fark: signed(nk.fark, `${path}.nakitKasa.fark`),
         }
       : null,
-    // Personelin adı (personel) bilerek okunmaz
     araKasalar: list(n.araKasa, `${path}.araKasa`).map((a, i) => ({
       no: int(a.no, `${path}.araKasa.${i}.no`),
       zaman: time(a.zaman, `${path}.araKasa.${i}.zaman`),
+      personel: text(a.personel, `${path}.araKasa.${i}.personel`, 80),
       ciro: signed(a.ciro, `${path}.araKasa.${i}.ciro`),
       nakit: signed(a.nakit, `${path}.araKasa.${i}.nakit`),
       adisyonSayisi: int(a.adisyonSayisi, `${path}.araKasa.${i}.adisyonSayisi`),
@@ -430,6 +444,86 @@ function kota(n: Node | null, path: string): FoyKota | null {
   };
 }
 
+/** Kitapçıktaki öğe ağacı (belge §5): `true` yapraktır, nesne alt öğeleri */
+type Spec = { [k: string]: true | Spec };
+const ODEME_KISA: Spec = { yontem: true, kod: true, tutar: true, satis: true, ciroyaDahil: true };
+const KNOWN: Spec = {
+  kasaGunu: true,
+  olusturulma: true,
+  kasa: {
+    sube: true,
+    kasaAdi: true,
+    gunNo: true,
+    zNo: true,
+    durum: true,
+    otomatikKapandi: true,
+    acilis: { zaman: true, personel: true, nakit: true },
+    kapanis: { zaman: true, personel: true, nakit: true },
+    satis: { ciro: true, ciroDisi: true, adisyonSayisi: true, kisiSayisi: true, bahsis: true },
+    odeme: { yontem: true, kod: true, ciroyaDahil: true, satis: true, cariTahsilat: true, sistem: true, defter: true, fark: true, kirilim: { ad: true, tutar: true } },
+    defterGirildi: true,
+    giderler: { toplam: true, gider: { kategori: true, aciklama: true, tutar: true } },
+    cariTahsilatlar: { toplam: true, nakit: true, tahsilat: { musteri: true, tutar: true, yontem: true, zaman: true } },
+    nakitKasa: { dayanak: true, acilis: true, nakitSatis: true, nakitCariTahsilat: true, gider: true, beklenen: true, sayilan: true, fark: true },
+    araKasa: { no: true, zaman: true, personel: true, ciro: true, nakit: true, adisyonSayisi: true, gider: true, beklenen: true, sayilan: true, fark: true },
+    notlar: { kapanis: true, fark: true },
+    uyari: { kod: true, mesaj: true, tutar: true },
+  },
+  foysuzGun: { sube: true, ciro: true, adisyonSayisi: true, odeme: ODEME_KISA },
+  ozet: {
+    kasaSayisi: true,
+    acikKasa: true,
+    kapaliKasa: true,
+    otomatikKapanan: true,
+    ciro: true,
+    ciroDisi: true,
+    adisyonSayisi: true,
+    kisiSayisi: true,
+    bahsis: true,
+    gider: true,
+    cariTahsilat: true,
+    kasaFarki: true,
+    odeme: ODEME_KISA,
+    foysuzGunSayisi: true,
+    foysuzCiro: true,
+  },
+  kota: { gunlukHak: true, kullanilan: true, kalan: true, yenilenme: true },
+};
+
+/** Saklanan tanınmayan öğe sayısı ve değerin uzunluğu (bozuk ya da çok büyük yanıt föyü şişirmesin) */
+export const FOY_EK_MAX = 60;
+const EK_VALUE_MAX = 300;
+
+/**
+ * Kitapçıkta olmayan öğeler (KNOWN'da yok): yoluyla ve metniyle, belge sırasıyla. Bilinen bir yaprağın altında öğe
+ * gelirse (ör. `<personel><ad>…</ad></personel>`) o da tanınmayan sayılır: bilgi kaybolmaz
+ */
+function foyExtras(root: Node): FoyEkAlan[] {
+  const out: FoyEkAlan[] = [];
+  const leaf = (v: unknown, path: string) => {
+    if (out.length >= FOY_EK_MAX) return;
+    if (v === null || v === undefined) return;
+    if (Array.isArray(v)) return v.forEach((x, i) => leaf(x, `${path}.${i}`));
+    if (typeof v === "object") return Object.entries(v as Node).forEach(([k, x]) => leaf(x, `${path}.${k}`));
+    const t = String(v).replace(/\s+/g, " ").trim();
+    out.push({ yol: path, deger: t.slice(0, EK_VALUE_MAX) });
+  };
+  const walk = (v: unknown, spec: Spec, path: string) => {
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, spec, `${path}.${i}`));
+    if (v === null || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v as Node)) {
+      const p = path ? `${path}.${k}` : k;
+      const s = spec[k];
+      if (s === undefined) leaf(x, p);
+      else if (s === true) {
+        if (x !== null && typeof x === "object") leaf(x, p);
+      } else walk(x, s, p);
+    }
+  };
+  walk(root, KNOWN, "");
+  return out;
+}
+
 /**
  * Yanıtın gövdesi → föy, servisin hatası ya da bozuk gövde (`bozuk`: ilk sorunlu alanın yolu, "kasa.0.odeme.1.satis";
  * gövde XML değilse "govde"). `istenen` verilirse föyün günü onunla aynı olmalı (başka günün föyü saklanmaz).
@@ -480,6 +574,7 @@ export function parseKasaFoyu(body: string, istenen?: string): FoyParse {
         foysuzGunler: foysuz,
         ozet: oz ? ozet(oz) : null,
         kota: kota(node(root.kota, "kota"), "kota"),
+        ekAlanlar: foyExtras(root),
       },
     };
   } catch (e) {

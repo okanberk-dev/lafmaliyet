@@ -2,10 +2,10 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gte, lte, sql } from "drizzle-orm";
 
 import type { KasaFoyu } from "@/lib/modpos/foy";
-import type { StoredDay } from "@/lib/modpos/plan";
+import { historyStart, type HistoryStart, type StoredDay } from "@/lib/modpos/plan";
 import { parseModposState, withDayErrors, withRun, MODPOS_STATE_KEY, type ModposRun, type ModposState } from "@/lib/modpos/status";
 import { isFinalFoy, sheetCanonical, sheetPrevious, sheetState, type ModposSheetPrevious } from "@/lib/modpos/z";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -22,6 +22,8 @@ export type SheetChange = "yeni" | "degisti" | "ayni";
 export interface ModposSheet {
   day: string;
   foy: KasaFoyu;
+  /** ModPOS'un gönderdiği ham XML: yalnız loadModposSheet(…, { raw: true }) okur; yoksa (eski föy) null */
+  raw?: string | null;
   state: "KAPALI" | "ACIK" | "BOS";
   final: boolean;
   revision: number;
@@ -39,11 +41,19 @@ function isSheet(v: unknown): v is KasaFoyu {
   return !!o && typeof o === "object" && typeof o.kasaGunu === "string" && Array.isArray(o.kasalar) && Array.isArray(o.foysuzGunler);
 }
 
-type Row = typeof s.modposCashSheets.$inferSelect;
+type Row = Omit<typeof s.modposCashSheets.$inferSelect, "raw"> & { raw?: string | null };
+
+/** Ham XML dışındaki sütunlar: listeler ve planlayıcı ham föyü taşımaz */
+const SHEET_COLS = (() => {
+  const { raw, ...cols } = getTableColumns(s.modposCashSheets);
+  void raw;
+  return cols;
+})();
 
 function toSheet(r: Row): ModposSheet | null {
   if (!isSheet(r.sheet)) return null;
   return {
+    ...(r.raw !== undefined ? { raw: r.raw } : {}),
     day: r.day,
     foy: r.sheet,
     state: r.state,
@@ -60,23 +70,31 @@ export function sheetFingerprint(foy: KasaFoyu): string {
   return createHash("sha256").update(sheetCanonical(foy)).digest("hex");
 }
 
-/** Föyü yazar; aynı içerik yeniden yazılmaz */
-export async function storeFoy(db: DB, foy: KasaFoyu, fetchedAt: Date): Promise<{ change: SheetChange; revision: number; final: boolean; previous: ModposSheetPrevious | null }> {
+/** Föyü yazar; aynı içerik yeniden yazılmaz (yalnız çekilme anı, kesinlik ve verildiyse son ham XML) */
+export async function storeFoy(
+  db: DB,
+  foy: KasaFoyu,
+  fetchedAt: Date,
+  raw: string | null = null,
+): Promise<{ change: SheetChange; revision: number; final: boolean; previous: ModposSheetPrevious | null }> {
   const fingerprint = sheetFingerprint(foy);
   const final = isFinalFoy(foy, fetchedAt);
   const state = sheetState(foy);
   const generatedAt = foy.olusturulma ? new Date(foy.olusturulma) : null;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`modpos-foy:${foy.kasaGunu}`}))`);
-    const [old] = await tx.select().from(s.modposCashSheets).where(eq(s.modposCashSheets.day, foy.kasaGunu)).limit(1);
+    const [old] = await tx.select(SHEET_COLS).from(s.modposCashSheets).where(eq(s.modposCashSheets.day, foy.kasaGunu)).limit(1);
     if (!old) {
-      await tx.insert(s.modposCashSheets).values({ day: foy.kasaGunu, sheet: foy, state, final, fingerprint, revision: 1, generatedAt, fetchedAt, changedAt: fetchedAt });
+      await tx.insert(s.modposCashSheets).values({ day: foy.kasaGunu, sheet: foy, state, final, fingerprint, revision: 1, generatedAt, fetchedAt, changedAt: fetchedAt, raw });
       return { change: "yeni" as const, revision: 1, final, previous: null };
     }
     // Daha önce kesinleşen gün kesin kalır (sonraki çekim de kesinleşme anından sonradır)
     const nextFinal = old.final || final;
     if (old.fingerprint === fingerprint) {
-      await tx.update(s.modposCashSheets).set({ final: nextFinal, fetchedAt, generatedAt: generatedAt ?? old.generatedAt, sheet: foy }).where(eq(s.modposCashSheets.day, foy.kasaGunu));
+      await tx
+        .update(s.modposCashSheets)
+        .set({ final: nextFinal, fetchedAt, generatedAt: generatedAt ?? old.generatedAt, sheet: foy, ...(raw !== null ? { raw } : {}) })
+        .where(eq(s.modposCashSheets.day, foy.kasaGunu));
       return { change: "ayni" as const, revision: old.revision, final: nextFinal, previous: old.previous ?? null };
     }
     const previous = isSheet(old.sheet)
@@ -85,7 +103,7 @@ export async function storeFoy(db: DB, foy: KasaFoyu, fetchedAt: Date): Promise<
     const revision = old.revision + 1;
     await tx
       .update(s.modposCashSheets)
-      .set({ sheet: foy, state, final: nextFinal, fingerprint, revision, previous, generatedAt, fetchedAt, changedAt: fetchedAt })
+      .set({ sheet: foy, state, final: nextFinal, fingerprint, revision, previous, generatedAt, fetchedAt, changedAt: fetchedAt, raw })
       .where(eq(s.modposCashSheets.day, foy.kasaGunu));
     return { change: "degisti" as const, revision, final: nextFinal, previous };
   });
@@ -94,15 +112,18 @@ export async function storeFoy(db: DB, foy: KasaFoyu, fetchedAt: Date): Promise<
 /** Okuyucu: veritabanı ya da işlem (yalnız select) */
 type Reader = Pick<DB, "select">;
 
-export async function loadModposSheet(day: string, db: Reader = getDb()): Promise<ModposSheet | null> {
-  const [r] = await db.select().from(s.modposCashSheets).where(eq(s.modposCashSheets.day, day)).limit(1);
+/** Bir günün föyü; `raw: true` ham XML'i de okur (yalnız günün görünümü) */
+export async function loadModposSheet(day: string, db: Reader = getDb(), o: { raw?: boolean } = {}): Promise<ModposSheet | null> {
+  const [r] = o.raw
+    ? await db.select().from(s.modposCashSheets).where(eq(s.modposCashSheets.day, day)).limit(1)
+    : await db.select(SHEET_COLS).from(s.modposCashSheets).where(eq(s.modposCashSheets.day, day)).limit(1);
   return r ? toSheet(r) : null;
 }
 
 /** [from, to] içindeki föyler, eskiden yeniye */
 export async function loadModposSheets(from: string, to: string, db: Reader = getDb()): Promise<ModposSheet[]> {
   const rows = await db
-    .select()
+    .select(SHEET_COLS)
     .from(s.modposCashSheets)
     .where(and(gte(s.modposCashSheets.day, from), lte(s.modposCashSheets.day, to)))
     .orderBy(asc(s.modposCashSheets.day));
@@ -115,9 +136,31 @@ export async function loadModposIndex(db: Reader = getDb()): Promise<Map<string,
   return new Map(rows.map((r) => [r.day, { final: r.final, fetchedAt: r.fetchedAt.toISOString() }]));
 }
 
+/**
+ * ModPOS'un ilk ciro günü (geçmişin çekilmeye başlandığı gün; src/lib/modpos/plan.ts historyStart): MODPOS_SYNC_FROM
+ * kurulu değilse Satışlar'daki ilk cirolu ay ve açık gün sayısı, ondan önce satışlı bir föy saklandıysa o gün
+ */
+export async function loadModposHistoryStart(from: string, explicit: boolean, db: Reader = getDb()): Promise<HistoryStart> {
+  if (explicit) return historyStart({ from, explicit, months: [], firstSale: null });
+  const [months, [sale]] = await Promise.all([
+    db
+      .select({ month: s.months.month, posRevenue: s.months.posRevenue, openDays: s.months.openDays })
+      .from(s.months)
+      .where(sql`${s.months.posRevenue} > 0`)
+      .orderBy(asc(s.months.month))
+      .limit(24),
+    // Kasa açılan ya da kasası açılmadan satış yapılan en eski gün
+    db
+      .select({ day: sql<string | null>`min(${s.modposCashSheets.day})` })
+      .from(s.modposCashSheets)
+      .where(sql`${s.modposCashSheets.state} <> 'BOS' or jsonb_array_length(coalesce(${s.modposCashSheets.sheet}->'foysuzGunler', '[]'::jsonb)) > 0`),
+  ]);
+  return historyStart({ from, explicit, months, firstSale: sale?.day ?? null });
+}
+
 /** Son çekilen föyler (Ayarlar kartının listesi) */
 export async function recentModposSheets(limit: number, db: Reader = getDb()): Promise<ModposSheet[]> {
-  const rows = await db.select().from(s.modposCashSheets).orderBy(desc(s.modposCashSheets.day)).limit(limit);
+  const rows = await db.select(SHEET_COLS).from(s.modposCashSheets).orderBy(desc(s.modposCashSheets.day)).limit(limit);
   return rows.flatMap((r) => toSheet(r) ?? []);
 }
 

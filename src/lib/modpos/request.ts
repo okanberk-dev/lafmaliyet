@@ -43,8 +43,13 @@ export function modposUrlFrom(env: Env): string {
 
 /** Geçmişin ilk günü: MODPOS_SYNC_FROM (takvimde olan gün) ya da kafenin ilk ayının ilk günü */
 export function modposSyncFrom(env: Env): string {
+  return modposSyncFromSet(env) ? env.MODPOS_SYNC_FROM!.trim() : MODPOS_DEFAULT_FROM;
+}
+
+/** MODPOS_SYNC_FROM geçerli bir günle kurulu mu: kuruluysa geçmiş tam o günden ileriye çekilir (ilk ciro günü odur) */
+export function modposSyncFromSet(env: Env): boolean {
   const v = env.MODPOS_SYNC_FROM?.trim();
-  return v && isFoyDay(v) ? v : MODPOS_DEFAULT_FROM;
+  return Boolean(v && isFoyDay(v));
 }
 
 /** İstenen günün adresi */

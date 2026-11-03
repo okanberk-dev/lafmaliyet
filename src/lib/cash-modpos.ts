@@ -1,9 +1,10 @@
-import { computeCash, type CashReportFields } from "@/lib/cash-report";
+import { paymentLines, paymentsTotalLine, perUnit, type DayFact, type DayLine } from "@/lib/cash-ladmin";
+import { computeCash, diffKind, diffText, type CashReportFields } from "@/lib/cash-report";
 import { money, num } from "@/lib/format";
 import { modposCompare, modposDiffs, type ModposCompareRow, type ModposDiff, type ModposSavedFields } from "@/lib/modpos/compare";
-import { MODPOS_UYARI, type FoyAraKasa, type FoyGider, type FoyOdeme, type FoyTahsilat, type KasaFoyu } from "@/lib/modpos/foy";
+import { MODPOS_UYARI, type FoyAraKasa, type FoyGider, type FoyKasa, type FoyOdeme, type FoyTahsilat, type KasaFoyu } from "@/lib/modpos/foy";
 import { timeText } from "@/lib/modpos/status";
-import { foyWarnings, type ModposSheetPrevious, type ModposZ } from "@/lib/modpos/z";
+import { foyWarnings, modposBucket, type ModposSheetPrevious, type ModposZ } from "@/lib/modpos/z";
 
 /**
  * Yöneticinin Kasa ekranındaki ModPOS kasa föyünün metinleri ve kuralları (saf; docs/MODPOS-API.md › Nerede görünür;
@@ -23,6 +24,8 @@ export type ModposReportFields = Pick<
 
 /** Saklanan föyün kartta okunan kısmı (src/server/modpos/store.ts › ModposSheet) */
 export interface ModposSheetView {
+  /** ModPOS'un gönderdiği ham XML (yalnız günün görünümünde; eski föyde yok) */
+  raw?: string | null;
   state: "KAPALI" | "ACIK" | "BOS";
   final: boolean;
   revision: number;
@@ -173,9 +176,9 @@ export function modposExpenseLabel(g: FoyGider): string {
   return [g.kategori ?? "Kategorisiz", g.aciklama].filter(Boolean).join(" · ");
 }
 
-/** Cari tahsilatın satırı (müşterinin adı föyde yok, KVKK): "Kredi Kartı · 17:12" */
+/** Cari tahsilatın satırı: "Yıldız Lojistik · Kredi Kartı · 17:12" (eski föyde müşteri adı yok) */
 export function modposCollectionLabel(t: FoyTahsilat): string {
-  return [t.yontem ?? "Yöntem yok", modposClock(t.zaman)].filter(Boolean).join(" · ");
+  return [t.musteri, t.yontem ?? "Yöntem yok", modposClock(t.zaman)].filter(Boolean).join(" · ");
 }
 
 /** Ara kasanın satırı: "1. ara kasa · 15:00 · ciro 11.200 ₺ · nakit 3.400 ₺ · 88 adisyon · gider 320 ₺ · beklenen … · sayılan … · fark 0 ₺" */
@@ -184,6 +187,7 @@ export function modposAraKasaText(a: FoyAraKasa): string {
   return [
     a.no !== null ? `${a.no}. ara kasa` : "Ara kasa",
     modposClock(a.zaman),
+    a.personel ?? null,
     m("ciro", a.ciro),
     m("nakit", a.nakit),
     a.adisyonSayisi !== null ? `${num(a.adisyonSayisi)} adisyon` : null,
@@ -267,4 +271,200 @@ export function modposPreviousLine(sheet: Pick<ModposSheetView, "revision" | "pr
   for (const [k, label] of PREVIOUS_FIELDS) if (!same(p[k], cur[k])) parts.push(`${label} ${p[k] === null ? "–" : money(p[k])} → ${cur[k] === null ? "–" : money(cur[k])}`);
   if (p.receipts !== cur.receipts) parts.push(`fiş sayısı ${num(p.receipts)} → ${num(cur.receipts)}`);
   return `Önceki sürüm (${timeText(p.fetchedAt, now)} alınan): ${parts.join(" · ")}`;
+}
+
+// ---------------------------------------------------------------- Gün görünümünün bölümleri (ModPOS · ladmin · Karşılaştırma)
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** ModPOS bölümünün karoları: ciro, adisyon (ortalamasıyla), kişi (kişi başı), ciro dışı, bahşiş, kasa farkı */
+export function modposFacts(z: ModposZ): DayFact[] {
+  const avg = perUnit(z.zTotal, z.receipts);
+  const head = perUnit(z.zTotal, z.covers);
+  const counted = z.cashDiff !== null;
+  return [
+    {
+      label: "Toplam satış (ciro)",
+      value: money(z.zTotal),
+      sub: z.zNo ? `Z no ${z.zNo}` : z.kasaSayisi > 1 ? `${z.kasaSayisi} kasa` : z.foysuz ? "kasası açılmamış satış" : null,
+    },
+    { label: "Adisyon sayısı", value: num(z.receipts), sub: avg ? `ortalama adisyon ${avg}` : null },
+    { label: "Kişi sayısı", value: z.covers !== null ? num(z.covers) : "–", sub: head ? `kişi başı ${head}` : null },
+    { label: "Ciro dışı (ödenmez / ikram)", value: money(z.offRevenue), sub: "ciroya girmez" },
+    { label: "Bahşiş", value: money(z.tips), sub: null },
+    {
+      label: "Kasa farkı",
+      value: counted ? diffText(z.cashDiff!) : "Sayım yok",
+      sub: counted ? "sayılan − beklenen" : z.noCount === "acik" ? "gün açıktı" : z.noCount === "otomatik" ? "06:00'da kendiliğinden kapandı" : "kasa açılmadı",
+      tone: counted ? (diffKind(z.cashDiff!) === "even" ? "good" : "warn") : null,
+    },
+  ];
+}
+
+/** ModPOS'un ödeme kanalları (ciroya göre payı) ve toplamı (föy kendi içinde tutuyor mu) */
+export function modposPayments(z: ModposZ): DayLine[] {
+  const total = r2(z.cash + z.card + z.mealCard + z.online + z.other);
+  return [...paymentLines(z, z.zTotal), paymentsTotalLine(total, z.zTotal, { same: "ciroyla aynı", from: "cirodan" })];
+}
+
+const DAYANAK_TEXT: Record<string, string> = { Z_RAPORU: "Z raporu", CANLI: "gün açıkken (anlık)", OTOMATIK_KAPANIS: "06:00'daki kendiliğinden kapanış" };
+
+/**
+ * ModPOS'un nakit kasası: açılış + nakit satış + nakit cari tahsilat − gider = beklenen; sayılan ve fark; kartla cari
+ * tahsilat (banka POS'unda var, Z'nin kartında yok). Föysüz günde (kasa açılmadı) boş
+ */
+export function modposCash(z: ModposZ, foy: KasaFoyu): DayLine[] {
+  if (z.foysuz) return [];
+  const dayanak = [...new Set(foy.kasalar.map((k) => k.nakitKasa?.dayanak).filter((d): d is string => Boolean(d)))];
+  const lines: DayLine[] = [
+    { label: "Açılış", value: money(z.openingCash) },
+    { label: "+ Nakit satış", value: money(z.cash) },
+    { label: "+ Nakit cari tahsilat", value: money(z.cashIn) },
+    { label: "− Gider", value: money(z.cashOut) },
+    { label: "= Beklenen", value: z.expectedCash !== null ? money(z.expectedCash) : "–", strong: true },
+    {
+      label: "Sayılan",
+      value: z.countedCash !== null ? money(z.countedCash) : "Sayım yok",
+      sub: dayanak.length ? `dayanak: ${dayanak.map((d) => DAYANAK_TEXT[d] ?? d).join(", ")}` : null,
+    },
+    {
+      label: "Fark",
+      value: z.cashDiff !== null ? diffText(z.cashDiff) : "–",
+      tone: z.cashDiff === null ? null : diffKind(z.cashDiff) === "even" ? "good" : "warn",
+      strong: true,
+    },
+  ];
+  if (Math.abs(z.cardCollections) >= 0.01) lines.push({ label: "Kartla cari tahsilat", value: money(z.cardCollections), sub: "banka POS'unda var, Z'nin kartında yok" });
+  return lines;
+}
+
+/** Kasanın açık kaldığı süre: "15 sa 16 dk" (açılış ya da kapanış yoksa, ya da ters sırada null) */
+export function modposOpenFor(k: Pick<FoyKasa, "acilis" | "kapanis">): string | null {
+  const a = k.acilis.zaman ? Date.parse(k.acilis.zaman) : NaN;
+  const b = k.kapanis.zaman ? Date.parse(k.kapanis.zaman) : NaN;
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+  const min = Math.round((b - a) / 60_000);
+  const h = Math.floor(min / 60);
+  return h ? `${h} sa ${min % 60} dk` : `${min} dk`;
+}
+
+/**
+ * Föyün künyesi: ModPOS'ta hazırlandığı ve panele alındığı an, kesin mi (değilse neden), sürüm. Önceki sürümün farkı
+ * ayrı satırdır (modposPreviousLine)
+ */
+export function modposSheetMeta(sheet: Pick<ModposSheetView, "final" | "fetchedAt" | "revision" | "foy">, now: Date): string[] {
+  const lines: string[] = [];
+  if (sheet.foy.olusturulma) lines.push(`ModPOS'ta hazırlandı: ${timeText(sheet.foy.olusturulma, now)}`);
+  lines.push(`Panele alındı: ${timeText(sheet.fetchedAt, now)}`);
+  lines.push(sheet.final ? "Kesin: kasalar kapalı, ertesi sabah 07:00'den sonra alındı" : "Kesin değil: ertesi sabah kesin föy yeniden çekilir");
+  if (sheet.revision > 1) lines.push(`${sheet.revision}. sürüm (ModPOS'ta sonradan değişti)`);
+  return lines;
+}
+
+/**
+ * Karşılaştırmanın satırları: çekirdeğin satırları (modposTableRows) ve iki bilgi satırı: ödemelerin toplamı (iki
+ * taraf kendi içinde tutuyor mu) ve raporda banka POS yazıldıysa banka POS ↔ ModPOS'un kartı (kartla cari tahsilat
+ * dahil: banka gün sonunda ikisi de var)
+ */
+export function modposCompareRows(report: ModposReportFields | null, z: ModposZ): ModposCompareRow[] {
+  const rows = modposTableRows(report, z);
+  const info = (key: string, label: string, a: number | null, b: number): ModposCompareRow => {
+    const diff = a === null ? null : r2(b - a);
+    return { key, label, report: a, modpos: b, diff: diff === 0 ? 0 : diff, tone: a === null ? "none" : diff !== null && Math.abs(diff) >= 0.01 ? "info" : "same", money: true };
+  };
+  rows.push(info("payments", "Ödemelerin toplamı", report ? computeCash(report).paymentsTotal : null, r2(z.cash + z.card + z.mealCard + z.online + z.other)));
+  if (report && report.bankPos !== null && !z.foysuz) rows.push(info("bankPos", "Banka POS ↔ ModPOS kartı (kartla cari tahsilat dahil)", report.bankPos, r2(z.card + z.cardCollections)));
+  return rows;
+}
+
+/** Karşılaştırmanın özeti: "13 satır aynı · 1 alan farklı yazılmış · 2 satırda bilgi farkı" */
+export function modposCompareSummary(rows: readonly ModposCompareRow[], z: ModposZ, hasReport: boolean): string {
+  if (!hasReport) return "Bu gün için kasa raporu girilmedi: rapor girilince alan alan karşılaştırılır.";
+  if (!modposComparable(z)) return "Föy gün açıkken alındı: farklar bilgi olarak görünür, ertesi sabahki kesin föyle karşılaştırılır.";
+  const count = (t: ModposCompareRow["tone"]) => rows.filter((r) => r.tone === t).length;
+  const [same, diff, info] = [count("same"), count("diff"), count("info")];
+  return [
+    `${same} satır aynı`,
+    diff ? `${diff} alan farklı yazılmış` : "farklı yazılan alan yok",
+    info ? `${info} satırda bilgi farkı` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * Ödenmez / ikram dökümü (ciroya girmeyen ödeme satırları: ikram, ödenmez, zayi, hediye kartı, sadakat ikramı, değişim
+ * mahsubu, ciroya dahil olmayan "diğer"): kod kod tutar ve kırılımı (kime / hangi kuruma), kasalar ve föysüz satış
+ * birlikte; sonda föyün ciro dışı toplamıyla tutuyor mu. Hiç yoksa boş
+ */
+export function modposOffLines(foy: KasaFoyu, z: ModposZ | null): DayLine[] {
+  const by = new Map<string, { yontem: string; tutar: number; parts: Map<string, number>; where: Set<string> }>();
+  const add = (kod: string, yontem: string, tutar: number, parts: { ad: string; tutar: number }[], where: string | null) => {
+    const e = by.get(kod) ?? { yontem, tutar: 0, parts: new Map<string, number>(), where: new Set<string>() };
+    e.tutar = r2(e.tutar + tutar);
+    for (const p of parts) e.parts.set(p.ad, r2((e.parts.get(p.ad) ?? 0) + p.tutar));
+    if (where) e.where.add(where);
+    by.set(kod, e);
+  };
+  const multi = foy.kasalar.length > 1;
+  for (const k of foy.kasalar) {
+    for (const o of k.odemeler) if (modposBucket(o) === "off") add(o.kod, o.yontem, o.satis, o.kirilim, multi ? k.kasaAdi || k.sube : null);
+  }
+  for (const f of foy.foysuzGunler) {
+    for (const o of f.odemeler) if (modposBucket({ kod: o.kod, ciroyaDahil: o.ciroyaDahil ?? false }) === "off") add(o.kod, o.yontem, o.tutar, [], `kasasız: ${f.sube}`);
+  }
+  if (!by.size) return [];
+  const lines: DayLine[] = [...by.entries()].map(([kod, e]) => ({
+    label: `${e.yontem} (${kod})`,
+    value: money(e.tutar),
+    sub:
+      [...[...e.parts].map(([ad, t]) => `${ad} ${money(t)}`), ...e.where].join(" · ") || null,
+  }));
+  const sum = r2([...by.values()].reduce((a, e) => a + e.tutar, 0));
+  if (z) {
+    const gap = r2(sum - z.offRevenue);
+    lines.push({
+      label: "Ciro dışı toplamı (föy)",
+      value: money(z.offRevenue),
+      sub: Math.abs(gap) < 0.01 ? "satırların toplamıyla aynı" : `satırların toplamı ${money(sum)}: ${money(Math.abs(gap))} ${gap > 0 ? "fazla" : "eksik"}`,
+      tone: Math.abs(gap) < 0.01 ? null : "warn",
+      strong: true,
+    });
+  }
+  return lines;
+}
+
+/**
+ * Föydeki kişiler: kasayı açan ve kapatan personel, ara kasayı yapan, cari tahsilatın müşterisi (kasa kasa). Yalnız
+ * yöneticiye çizilir; eski föylerde ad yoksa boş
+ */
+export function modposPeople(foy: KasaFoyu): DayLine[] {
+  const multi = foy.kasalar.length > 1;
+  const lines: DayLine[] = [];
+  for (const k of foy.kasalar) {
+    const pre = multi ? `${k.kasaAdi || k.sube} · ` : "";
+    if (k.acilis.personel) lines.push({ label: `${pre}Kasayı açan`, value: k.acilis.personel, sub: modposClock(k.acilis.zaman) });
+    if (k.kapanis.personel) lines.push({ label: `${pre}Kasayı kapatan`, value: k.kapanis.personel, sub: modposClock(k.kapanis.zaman) });
+    for (const a of k.araKasalar) if (a.personel) lines.push({ label: `${pre}${a.no !== null ? `${a.no}. ara kasa` : "Ara kasa"}`, value: a.personel, sub: modposClock(a.zaman) });
+    for (const t of k.cariTahsilatlar.kalemler) {
+      if (t.musteri) lines.push({ label: `${pre}Cari tahsilat`, value: t.musteri, sub: [money(t.tutar), t.yontem, modposClock(t.zaman)].filter(Boolean).join(" · ") });
+    }
+  }
+  return lines;
+}
+
+/** Karşılaştırmanın kişi satırı: "ModPOS'ta kapatan Mehmet Kaya · ladmin'de sayan Ece Panel" (ad yoksa null) */
+export function modposPeopleLine(foy: KasaFoyu, report: { submittedByName?: string; countedByName?: string | null } | null): string | null {
+  const closers = [...new Set(foy.kasalar.map((k) => k.kapanis.personel).filter((n): n is string => Boolean(n)))];
+  if (!closers.length) return null;
+  const counter = report ? (report.countedByName ?? report.submittedByName ?? null) : null;
+  return [`ModPOS'ta kasayı kapatan ${closers.join(", ")}`, counter ? `ladmin'de kasayı sayan ${counter}` : null].filter(Boolean).join(" · ");
+}
+
+/** Ham föyün çizilen en çok uzunluğu (ModPOS bölümünün "Ham föy"ü; saklanan her zaman tamdır) */
+export const MODPOS_RAW_SHOWN = 200_000;
+
+/** Tanınmayan alanların satırları ("kasa.0.satis.yeniAlan: 42"); yoksa boş */
+export function modposExtraLines(foy: KasaFoyu): string[] {
+  return (foy.ekAlanlar ?? []).map((e) => `${e.yol}: ${e.deger || "(boş)"}`);
 }
