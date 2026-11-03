@@ -81,7 +81,8 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
 
 ## 5. Nerede görünür
 
-- **Ayarlar › ModPOS (kasa föyü)** (yalnız yönetici): durum (Kurulmadı / Henüz çekilmedi / Bağlı / Uyarı / Hata),
+- **Ayarlar › ModPOS (kasa föyü)** (yalnız yönetici): durum (gri Kurulmadı / Önizleme, turuncu Henüz çekilmedi /
+  Uyarı, yeşil Bağlı, mavi Hak doldu, kırmızı Hata / Anahtar bozuk; hak dolması olağandır, hata değil),
   bugünkü kalan hak ve yenilenme saati, kapsam ("1 Temmuz – 2 Kasım arası 14 günün föyü var · 111 gün henüz yok"),
   son çekim ve son hata, **Bu günü çek**, son çekilen günler ve **Ay rakamına yedek** anahtarı (§6).
 - **Kasa** (yalnız yönetici; personelin ekranı değişmez):
@@ -147,6 +148,12 @@ yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok
 - Saf: `src/lib/modpos/foy.ts` (XML → föy, güvenli ayrıştırma), `z.ts` (eşleme, Z özeti), `request.ts` (anahtar,
   kota, hata metinleri), `plan.ts` (hangi gün), `status.ts` (durum, kart özeti, yedek ayarı), `compare.ts` (rapor ↔
   föy).
-- Sunucu: `src/server/modpos/client.ts` (istek), `store.ts` (saklama, okuma, durum), `sync.ts` (çekme).
-- Testler: `tests/modpos-foy.test.ts` (saf), `tests/modpos-db.test.ts` (`MODPOS_TEST_DATABASE_URL`).
+  `ayarlar.ts` (kartın ve "Bu günü çek"in metinleri).
+- Sunucu: `src/server/modpos/client.ts` (istek), `store.ts` (saklama, okuma, durum), `sync.ts` (çekme), `status.ts`
+  (kartın verisi), `admin.ts` (yedek ayarının yazımı); eylemler `src/server/actions/modpos.ts`; kart
+  `src/app/panel/ayarlar/modpos-card.tsx` ve `modpos-client.tsx`; sabah adımı `src/app/api/cron/gunluk/route.ts`
+  (`modposP`) ve `src/lib/job-health.ts` (`modposStep`); komut satırı `scripts/modpos-foy.ts`.
+- Testler: `tests/modpos-foy.test.ts` (saf), `tests/modpos-sabah.test.ts` (sabah adımı), `tests/modpos-ayarlar.test.ts`;
+  veritabanıyla (`MODPOS_TEST_DATABASE_URL`): `tests/modpos-db.test.ts`, `tests/modpos-ayarlar-db.test.ts` ve sabah
+  adımının DB bölümü.
 - Fikstürler: `tests/fixtures/modpos/` (kitapçığın örneği ve uç durumlar; kafenin verisi değil).
