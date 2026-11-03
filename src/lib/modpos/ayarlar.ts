@@ -3,7 +3,7 @@ import { money, num } from "@/lib/format";
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
 
 import type { ModposDayResult, ModposTone } from "./status";
-import type { ModposZ } from "./z";
+import { finalAfter, type ModposZ } from "./z";
 
 /**
  * Ayarlar › ModPOS (kasa föyü) kartının saf metinleri (docs/MODPOS-API.md › Nerede görünür, Kota ve çekme sırası, Ay
@@ -25,7 +25,7 @@ const VERB: Record<Exclude<ModposDayResult, "hata">, string> = { yeni: "alındı
 
 /** Elle çekimin sonucunun girdisi: src/server/modpos/sync.ts'in ModposSyncResult'ı (yapısal; saf modül sunucuyu içe aktarmaz) */
 export interface ModposFetchRun {
-  status: "off" | "preview" | "nothing" | "ok" | "partial" | "kota" | "error";
+  status: "off" | "preview" | "busy" | "nothing" | "ok" | "partial" | "kota" | "error";
   days: { day: string; result: ModposDayResult; text?: string; revision?: number }[];
   left: number | null;
   error?: string;
@@ -73,10 +73,13 @@ export function modposFetchOutcome(r: ModposFetchRun, day: string, sheet: Modpos
  * kasanın o anki hâli gelir (kesin değil), gün zaten saklıysa yeniden çekmenin ne getireceği, son hak harcanırsa sabah
  * işinin o gün başka gün çekemeyeceği (docs/MODPOS-API.md › Kota ve çekme sırası).
  */
-export function modposFetchConfirmLines(o: { day: string; today: string; left: number; stored: boolean | null }): string[] {
+export function modposFetchConfirmLines(o: { day: string; today: string; left: number; stored: boolean | null; now?: Date }): string[] {
   const after = Math.max(0, o.left - 1);
   const out = [`Bugün ${o.left} hak kaldı; çekince ${after} kalır.`];
   if (o.day === o.today) out.push("Bugünün kasası henüz kapanmadıysa tutarlar o anki hâliyle gelir (kesin değil); yarın sabah kendiliğinden yeniden çekilir.");
+  // Gece yarısından sonra dün henüz kesin değil (ertesi sabah 07:00): şimdi çekilirse sabah işi aynı günü yeniden çeker
+  else if (o.now && o.now.getTime() < finalAfter(o.day) && o.stored !== true)
+    out.push("Bu günün föyü sabah 07:00'de kesinleşir; şimdi çekilirse kesin olmaz ve sabah işi aynı günü yeniden çeker (iki hak aynı güne gider).");
   else if (o.stored === true) out.push("Bu günün kesin föyü zaten var; yeniden çekmek yalnız kapanıştan sonra yapılan bir düzeltmeyi gösterir.");
   else if (o.stored === false) out.push("Bu günün föyü kesin değil; sabah işi de yeniden çeker.");
   if (after === 0) out.push("Hak bitince sabah işi bugün başka gün çekemez; hak gece yarısı yenilenir.");

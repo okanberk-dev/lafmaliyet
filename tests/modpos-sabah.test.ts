@@ -35,6 +35,8 @@ test("ModPOS adımı: kurulmamış ve önizleme yazılmaz; alındı, çekilecek 
   assert.equal(modposStep({ status: "preview" }), undefined);
   assert.deepEqual(modposStep({ status: "ok" }), { code: "ok" });
   assert.deepEqual(modposStep({ status: "nothing" }), { code: "nothing" });
+  // Başka çekim sürüyordu (aynı anda tek çekim, kira): hata değil, istek gitmedi
+  assert.deepEqual(modposStep({ status: "busy", error: "Başka bir ModPOS çekimi sürüyor: biraz sonra yeniden deneyin" }), { code: "busy" });
   // Hak dolması ve bir günün alınamaması sorun değil: metin adıma taşınmaz (iş "kısmen" olmaz, mesaj yazılmaz)
   assert.deepEqual(modposStep({ status: "kota", error: "ModPOS'un bugünkü çekim hakkı doldu" }), { code: "kota" });
   assert.deepEqual(modposStep({ status: "partial", error: "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek" }), { code: "partial" });
@@ -51,6 +53,7 @@ test("ModPOS adımının sözcükleri (Ayarlar › Günlük işler); yalnız hat
     nothing: "ModPOS: çekilecek gün yok",
     kota: "ModPOS: günlük hak doldu",
     partial: "ModPOS: bir kısmı alınamadı",
+    busy: "ModPOS: başka çekim sürüyordu",
     error: "ModPOS kasa föyü hata",
   };
   assert.deepEqual(STEP_LABELS.modpos, words);
@@ -85,7 +88,7 @@ test("ModPOS adımının yeri: satış tahmininden sonra, fotoğraf temizliğind
     "Silinecek fotoğraf yok",
   ]);
   // Bilinmeyen kod adın yanında
-  assert.deepEqual(stepTexts({ modpos: "busy" }), ["ModPOS kasa föyü: busy"]);
+  assert.deepEqual(stepTexts({ modpos: "busy" }), ["ModPOS: başka çekim sürüyordu"]);
   // Saf modül sunucuya uzanmaz
   assert.doesNotMatch(read("src/lib/job-health.ts"), /from "@\/server/);
 });

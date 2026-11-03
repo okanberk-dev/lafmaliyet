@@ -177,6 +177,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     nothing: "ModPOS: çekilecek gün yok",
     kota: "ModPOS: günlük hak doldu",
     partial: "ModPOS: bir kısmı alınamadı",
+    busy: "ModPOS: başka çekim sürüyordu",
     error: "ModPOS kasa föyü hata",
   },
   photos: { ok: "Eski fotoğraflar silindi", none: "Silinecek fotoğraf yok", off: "Fotoğraf deposu yok", error: "Fotoğraf temizliği hata" },
@@ -287,7 +288,7 @@ export function forecastStep(r: { status: "ok" | "skipped" | "error"; weather: s
  * çalışmıyor, servis yanıt vermiyor, süre doldu) hata: iş "kısmen" olur, hata metniyle ("Sabah işinde bir adım hata
  * verdi"). Girdi ModposSyncResult'ın yapısıdır (saf modül sunucuya uzanmaz; tests/modpos-sabah.test.ts).
  */
-export function modposStep(r: { status: "off" | "preview" | "nothing" | "ok" | "partial" | "kota" | "error"; error?: string }): StepResult | undefined {
+export function modposStep(r: { status: "off" | "preview" | "busy" | "nothing" | "ok" | "partial" | "kota" | "error"; error?: string }): StepResult | undefined {
   if (r.status === "off" || r.status === "preview") return undefined;
   if (r.status === "error") return { code: "error", error: r.error || null };
   return { code: r.status };

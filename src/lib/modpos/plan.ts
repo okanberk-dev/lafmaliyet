@@ -12,7 +12,10 @@ import { finalAfter } from "./z";
  *    tamamlanır. Hak günde 2 olduğundan geçmiş günde ~1 gün ilerler (docs/MODPOS-API.md › Geçmiş).
  * 4. Hiçbiri yoksa **son 7 günün en eski kontrol edilen kesin föyü** (kapanıştan sonra düzeltme olduysa görünsün).
  *
- * Bugün (açık gün) hiçbir zaman kendiliğinden çekilmez: tutarlar değişir, hak harcanır.
+ * Bugün (açık gün) hiçbir zaman kendiliğinden çekilmez: tutarlar değişir, hak harcanır. LafPOS'a geçiş gününden
+ * (`until`) itibaren kasa LafPOS'tur: o günler hiç çekilmez (föyü hiçbir yer okumaz). **Alınamayan gün** (`failed`:
+ * bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler; geçmiş onda takılmaz, sıradaki
+ * eksik güne geçer. Dün bundan muaftır (her sabah bir kez denenir).
  */
 
 export interface StoredDay {
@@ -29,6 +32,22 @@ export interface PlanInput {
   have: ReadonlyMap<string, StoredDay>;
   /** Bu çalışmada kullanılabilecek hak */
   left: number;
+  /** LafPOS'a geçiş günü: bu gün ve sonrası çekilmez (null: geçiş yok) */
+  until?: string | null;
+  /** Alınamayan günler: kaç kez, en son ne zaman (src/lib/modpos/status.ts dayErrors) */
+  failed?: Readonly<Record<string, { count: number; lastAt: string }>>;
+}
+
+/** Alınamayan günün bekleme süresi: 2^kez gün, en çok 32 */
+export function retryWaitDays(count: number): number {
+  return Math.min(32, 2 ** Math.max(1, count));
+}
+
+/** Alınamayan gün yeniden denenebilir mi (son denemeden bu yana bekleme süresi geçti mi) */
+export function canRetry(e: { count: number; lastAt: string } | undefined, now: Date): boolean {
+  if (!e) return true;
+  const last = Date.parse(e.lastAt);
+  return Number.isNaN(last) || now.getTime() - last >= retryWaitDays(e.count) * 86_400_000 - 3_600_000;
 }
 
 /** Yeniden kontrol edilecek kesin günlerin geriye bakışı */
@@ -36,14 +55,15 @@ const RECHECK_DAYS = 7;
 /** Kesin olmayan föylerin yeniden çekileceği geriye bakış */
 const PROVISIONAL_DAYS = 14;
 
-export function planFoyDays({ now, from, have, left }: PlanInput): string[] {
+export function planFoyDays({ now, from, have, left, until = null, failed = {} }: PlanInput): string[] {
   if (left <= 0) return [];
   const today = todayTR(now);
   const yesterday = addDays(today, -1);
   const out: string[] = [];
   const add = (d: string) => {
-    if (out.length < left && !out.includes(d) && d >= from && d < today) out.push(d);
+    if (out.length < left && !out.includes(d) && d >= from && d < today && (until === null || d < until)) out.push(d);
   };
+  const ready = (d: string) => canRetry(failed[d], now);
   // 1) Dün: kesinleştiyse ve kesin föyü yoksa
   const y = have.get(yesterday);
   if (now.getTime() >= finalAfter(yesterday) && !y?.final) add(yesterday);
@@ -51,11 +71,11 @@ export function planFoyDays({ now, from, have, left }: PlanInput): string[] {
   for (let i = 1; i <= PROVISIONAL_DAYS; i++) {
     const d = addDays(today, -i);
     const h = have.get(d);
-    if (h && !h.final && now.getTime() >= finalAfter(d)) add(d);
+    if (h && !h.final && now.getTime() >= finalAfter(d) && ready(d)) add(d);
   }
   // 3) Hiç alınmamış günler: dünden geriye
   for (let d = yesterday; d >= from && out.length < left; d = addDays(d, -1)) {
-    if (!have.has(d) && now.getTime() >= finalAfter(d)) add(d);
+    if (!have.has(d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
   }
   // 4) En eski kontrol edilen yakın kesin gün
   if (out.length < left) {
@@ -71,10 +91,11 @@ export function planFoyDays({ now, from, have, left }: PlanInput): string[] {
   return out;
 }
 
-/** Geçmişte eksik gün sayısı (`from`'dan düne; kesinleşmemiş dün dahil değil) */
-export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date): string[] {
+/** Geçmişte eksik gün sayısı (`from`'dan düne, LafPOS'a geçiş gününden önceye; kesinleşmemiş dün dahil değil) */
+export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date, until: string | null = null): string[] {
   const today = todayTR(now);
+  const end = until !== null && until < today ? until : today;
   const out: string[] = [];
-  for (let d = from; d < today; d = addDays(d, 1)) if (!have.has(d) && now.getTime() >= finalAfter(d)) out.push(d);
+  for (let d = from; d < end; d = addDays(d, 1)) if (!have.has(d) && now.getTime() >= finalAfter(d)) out.push(d);
   return out;
 }

@@ -5,9 +5,10 @@ import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, reques
 import { todayTR } from "@/lib/reminders";
 import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, type ModposTrigger } from "@/lib/modpos/status";
 import { getDb, type DB } from "@/server/db";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { fetchKasaFoyu } from "./client";
-import { loadModposIndex, noteModposRun, readModposState, storeFoy, type SheetChange } from "./store";
+import { loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
 
 /**
  * ModPOS kasa föylerinin çekilmesi (docs/MODPOS-API.md › Çekme): sabah işi (`cron`, /api/cron/gunluk) ve Ayarlar ›
@@ -26,11 +27,13 @@ export interface ModposSyncDay {
   day: string;
   result: ModposDayResult;
   text?: string;
+  /** Alınamadıysa servisin ya da istemcinin kodu */
+  kod?: string;
   /** Değiştiyse yeni sürüm */
   revision?: number;
 }
 
-export type ModposSyncStatus = "off" | "preview" | "nothing" | "ok" | "partial" | "kota" | "error";
+export type ModposSyncStatus = "off" | "preview" | "busy" | "nothing" | "ok" | "partial" | "kota" | "error";
 
 export interface ModposSyncResult {
   status: ModposSyncStatus;
@@ -64,19 +67,34 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   if (!canFetchModpos(env)) return { status: "preview", days: [], left: null };
   // Anahtar yoksa veritabanına da gidilmez: adım yazılmaz, eski kota "hak doldu" demez (docs/MODPOS-API.md › Nerede görünür)
   if (modposKeyProblem(env)) return { status: "off", days: [], left: null };
+  const db = o.db ?? getDb();
+  // Aynı anda tek çekim (sabah işi iki kez tetiklenirse, "Bu günü çek" sabah işiyle çakışırsa): ikinci "busy" döner,
+  // istek göndermez. Kira duvar saatiyle (çalışmanın verilen saati değil)
+  const lease = await takeModposLease(db);
+  if (!lease) return { status: "busy", days: [], left: null, error: "Başka bir ModPOS çekimi sürüyor: biraz sonra yeniden deneyin" };
+  try {
+    return await runSync(trigger, o, env, db);
+  } finally {
+    await releaseModposLease(db, lease);
+  }
+}
+
+/** Alınamayan gün yanıtı 2xx ise (bozuk, büyük, yarıda kesik) sorun büyük olasılıkla her günde aynıdır: çalışma durur, ikinci hak harcanmaz */
+const SYSTEMIC = new Set(["BOZUK", "BUYUK", "BAGLANTI"]);
+
+async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<string, string | undefined>, db: DB): Promise<ModposSyncResult> {
   const started = o.now ?? new Date();
   // Verilen `now` bütün çalışmanın saatidir: sonraki istekler ve çalışmanın sonu ona geçen süre eklenerek (duvar saati
   // olsa ikinci günün kotası ve kesinliği başka bir güne göre yazılırdı; tests/modpos-db.test.ts)
   const wall0 = Date.now();
   const clock = () => (o.now ? new Date(o.now.getTime() + (Date.now() - wall0)) : new Date());
-  const db = o.db ?? getDb();
-  const [state, have] = await Promise.all([readModposState(db), loadModposIndex(db)]);
+  const [state, have, switchDay] = await Promise.all([readModposState(db), loadModposIndex(db), loadLafposSwitchDay(db)]);
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
   // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
   const wanted = o.days
     ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
-    : planFoyDays({ now: started, from: modposSyncFrom(env), have, left: left0 });
+    : planFoyDays({ now: started, from: modposSyncFrom(env), have, left: left0, until: switchDay, failed: state.dayErrors });
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
     if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };
@@ -117,9 +135,9 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
       break;
     }
     if (r.quota) quota = r.quota;
-    days.push({ day, result: "hata", text: r.text });
+    days.push({ day, result: "hata", text: r.text, kod: r.kod });
     lastError = { at: now.toISOString(), day, kod: r.kod, text: r.text, keyError: r.keyError };
-    if (r.keyError || r.kod === "SERVIS_KULLANILAMIYOR" || r.kod === "COK_FAZLA_ISTEK" || r.http === 0) {
+    if (r.keyError || r.kod === "SERVIS_KULLANILAMIYOR" || r.kod === "COK_FAZLA_ISTEK" || r.http === 0 || (r.http >= 200 && r.http < 300 && SYSTEMIC.has(r.kod))) {
       stop = "error";
       stopText = r.text;
       break;
@@ -137,7 +155,12 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
     status,
     text: stopText ?? failed[0]?.text ?? (days.length ? runDaysText(days, endNow) : null),
   };
-  await noteModposRun(db, { quota, ...(lastOk ? { lastOk } : {}), ...(lastError ? { lastError } : lastOk ? { lastError: null } : {}) }, run);
+  // Gün hataları: alınan gün silinir, alınamayanın sayısı artar (planlayıcı onu bekletir; anahtar hatası güne yazılmaz)
+  const dayResults = {
+    ok: days.filter((d) => d.result !== "hata").map((d) => d.day),
+    failed: days.filter((d) => d.result === "hata" && !(lastError?.keyError && lastError.day === d.day)).map((d) => ({ day: d.day, kod: d.kod ?? "HATA" })),
+  };
+  await noteModposRun(db, { quota, ...(lastOk ? { lastOk } : {}), ...(lastError ? { lastError } : lastOk ? { lastError: null } : {}) }, run, dayResults);
   return { status, days, left: quota ? quotaLeft(quota, endNow) : null, ...(stopText || failed.length ? { error: stopText ?? failed[0]?.text } : {}) };
 }
 

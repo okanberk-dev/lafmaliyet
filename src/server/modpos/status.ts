@@ -6,9 +6,10 @@ import type { ModposDayView } from "@/lib/modpos/ayarlar";
 import { missingFoyDays } from "@/lib/modpos/plan";
 import { modposKeyProblem, modposSyncFrom } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
-import { foyWarnings, foyZ } from "@/lib/modpos/z";
+import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s, type DB } from "@/server/db";
+import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { loadModposIndex, readModposState, recentModposSheets } from "./store";
 import { canFetchModpos } from "./sync";
@@ -54,7 +55,13 @@ export async function loadModposFallback(db: Reader = getDb()): Promise<boolean>
 
 /** Kartın bütün verisi; `env` testler için (varsayılan process.env) */
 export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), env: Env = process.env): Promise<ModposCardData> {
-  const [state, index, recent, fallback] = await Promise.all([readModposState(db), loadModposIndex(db), recentModposSheets(MODPOS_RECENT_DAYS, db), loadModposFallback(db)]);
+  const [state, index, recent, fallback, switchDay] = await Promise.all([
+    readModposState(db),
+    loadModposIndex(db),
+    recentModposSheets(MODPOS_RECENT_DAYS, db),
+    loadModposFallback(db),
+    loadLafposSwitchDay(db),
+  ]);
   const sorted = [...index.keys()].sort();
   const from = modposSyncFrom(env);
   const input: ModposCardInput = {
@@ -64,14 +71,16 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     state,
     from,
     stored: { count: sorted.length, first: sorted[0] ?? null, last: sorted.at(-1) ?? null },
-    missing: missingFoyDays(from, index, now).length,
+    // LafPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz
+    missing: missingFoyDays(from, index, now, switchDay).length,
   };
   const today = todayTR(now);
   return {
     input,
     summary: modposCardSummary(input),
     today,
-    defaultDay: addDays(today, -1),
+    // Kesinleşmiş son gün: 07:00'den önce dün henüz kesin değil (çekilirse sabah işi yeniden çeker), önceki gün
+    defaultDay: now.getTime() >= finalAfter(addDays(today, -1)) ? addDays(today, -1) : addDays(today, -2),
     days: recent.map((r) => ({ day: r.day, state: r.state, final: r.final, revision: r.revision, z: foyZ(r.foy), warnings: foyWarnings(r.foy) })),
     stored: Object.fromEntries([...index].map(([d, v]) => [d, v.final])),
     lastRun: state.runs[0] ?? null,

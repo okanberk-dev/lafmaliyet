@@ -27,6 +27,7 @@ export interface ModposRun {
   text: string | null;
 }
 
+
 export interface ModposError {
   at: string;
   day: string | null;
@@ -36,11 +37,23 @@ export interface ModposError {
   keyError: boolean;
 }
 
+/** Alınamayan günün kaydı: kaç kez, en son ne zaman, hangi kodla (planlayıcı tekrar tekrar aynı günde takılmasın) */
+export interface ModposDayError {
+  count: number;
+  lastAt: string;
+  kod: string;
+}
+
+/** Saklanan gün hatası sayısı (en eskisi düşer) */
+export const MODPOS_DAY_ERRORS_KEEP = 40;
+
 export interface ModposState {
   quota: ModposQuota | null;
   lastOk: { at: string; day: string } | null;
   lastError: ModposError | null;
   runs: ModposRun[];
+  /** Alınamayan günler (gün → kayıt); gün alınınca silinir */
+  dayErrors: Record<string, ModposDayError>;
 }
 
 const quotaSchema = z.object({
@@ -51,6 +64,7 @@ const quotaSchema = z.object({
   at: z.string(),
 });
 const okSchema = z.object({ at: z.string(), day: z.string() });
+const dayErrorSchema = z.object({ count: z.number().int().min(1), lastAt: z.string(), kod: z.string() });
 const errorSchema = z.object({ at: z.string(), day: z.string().nullable(), kod: z.string(), text: z.string(), keyError: z.boolean() });
 const runSchema = z.object({
   at: z.string(),
@@ -69,7 +83,27 @@ export function parseModposState(v: unknown): ModposState {
     lastOk: okSchema.nullable().catch(null).parse(o.lastOk ?? null),
     lastError: errorSchema.nullable().catch(null).parse(o.lastError ?? null),
     runs: runs.slice(0, MODPOS_RUNS_KEEP),
+    dayErrors: o.dayErrors && typeof o.dayErrors === "object" && !Array.isArray(o.dayErrors)
+      ? Object.fromEntries(
+          Object.entries(o.dayErrors as Record<string, unknown>).flatMap(([d, v]) => {
+            const r = dayErrorSchema.safeParse(v);
+            return /^\d{4}-\d{2}-\d{2}$/.test(d) && r.success ? [[d, r.data] as const] : [];
+          }),
+        )
+      : {},
   };
+}
+
+/**
+ * Gün hatalarını günceller: alınan günler silinir, alınamayanların sayısı artar (en çok MODPOS_DAY_ERRORS_KEEP; en
+ * eskisi düşer). Planlayıcı alınamayan günü bekletir (src/lib/modpos/plan.ts), geçmiş onda takılmaz
+ */
+export function withDayErrors(cur: Readonly<Record<string, ModposDayError>>, ok: readonly string[], failed: readonly { day: string; kod: string }[], at: string): Record<string, ModposDayError> {
+  const next: Record<string, ModposDayError> = { ...cur };
+  for (const d of ok) delete next[d];
+  for (const f of failed) next[f.day] = { count: (cur[f.day]?.count ?? 0) + 1, lastAt: at, kod: f.kod };
+  const keep = Object.entries(next).sort((a, b) => b[1].lastAt.localeCompare(a[1].lastAt)).slice(0, MODPOS_DAY_ERRORS_KEEP);
+  return Object.fromEntries(keep);
 }
 
 /** Yeni çalışmayı listenin başına ekler (en çok MODPOS_RUNS_KEEP) */
@@ -173,6 +207,14 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   lines.push(`Bugün kalan çekim hakkı: ${left} / ${hak}${left < hak ? ` (hak ${renew} yenilenir)` : ""}.`);
   const ok = c.state.lastOk;
   if (ok) lines.push(`Son başarılı çekim: ${modposDayText(ok.day, c.now)} föyü, ${timeText(ok.at, c.now)}.`);
+  // Tekrar tekrar alınamayan günler (planlayıcı bekletir: 2, 4, 8… gün): sessizce takılı kalmasın
+  const stuck = Object.entries(c.state.dayErrors ?? {})
+    .filter(([, e]) => e.count >= 2)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  if (stuck.length) {
+    const shown = stuck.slice(0, 3).map(([d, e]) => `${modposDayText(d, c.now)} (${e.count} kez, ${e.kod})`);
+    lines.push(`Tekrar tekrar alınamayan ${stuck.length} gün: ${shown.join(", ")}${stuck.length > 3 ? " …" : ""}; aralıklı yeniden denenir, geçmiş diğer günlerle sürer.`);
+  }
   const err = c.state.lastError;
   // Hak doldu bir hata değildir: hak yenilendiyse (left > 0) eski KOTA_DOLDU güncel sayılmaz
   const quotaErr = err?.kod === "KOTA_DOLDU";

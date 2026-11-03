@@ -238,7 +238,7 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
   assert.match(client, /start\(async \(\) => \{\s*const res = await fetchModposDay\(day\);/);
   assert.match(client, /start\(async \(\) => \{\s*const res = await saveModposFallback\(next\);/);
   assert.equal((client.match(/<ConfirmDialog[\s\S]*?tone="primary"/g) ?? []).length, 2);
-  assert.match(client, /modposFetchConfirmLines\(\{ day, today, left, stored: day in stored \? stored\[day\] : null \}\)/);
+  assert.match(client, /modposFetchConfirmLines\(\{ day, today, left, stored: day in stored \? stored\[day\] : null, now: new Date\(\) \}\)/);
   assert.match(client, /disabled=\{!canFetch \|\| pending \|\| problem !== null\}/);
   assert.match(client, /\{blocked \?\? "/);
   assert.match(client, /max=\{today\}/);

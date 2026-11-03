@@ -49,7 +49,8 @@ export function ModposFetchForm({
       toast.success(res.data.title, { description: res.data.description });
     });
 
-  const lines = modposFetchConfirmLines({ day, today, left, stored: day in stored ? stored[day] : null });
+  // Onay penceresi açılınca okunur (sunucuda çizilmez): saat tarayıcınınkidir, 07:00 sınırı için yeterli
+  const lines = modposFetchConfirmLines({ day, today, left, stored: day in stored ? stored[day] : null, now: new Date() });
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch">

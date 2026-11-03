@@ -868,6 +868,29 @@ describe("plan.ts: çekilecek günler", () => {
     return m;
   };
 
+  test("alınamayan gün her sabah yeniden denenmez (2, 4, 8… gün bekler); geçmiş onda takılmaz, sıradaki eksik güne geçer", () => {
+    // 10 Kasım dün sabah (11 Kasım 08:00) bozuk yanıt verdi: bugün beklenir, 9 Kasım alınır
+    const failed = { "2026-11-10": { count: 1, lastAt: "2026-11-11T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2, failed }), ["2026-11-11", "2026-11-09"]);
+    // İki gün sonra yeniden denenir
+    const later = new Date("2026-11-13T08:00:00+03:00");
+    assert.deepEqual(planFoyDays({ now: later, from: "2026-07-01", have: have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-11-09": S(true, "2026-11-12T08:00:00+03:00") }), left: 2, failed }), ["2026-11-12", "2026-11-10"]);
+    // Üçüncü hatadan sonra 8 gün
+    const thrice = { "2026-11-10": { count: 3, lastAt: "2026-11-11T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: later, from: "2026-07-01", have: have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-11-09": S(true, "2026-11-12T08:00:00+03:00") }), left: 2, failed: thrice }), ["2026-11-12", "2026-11-08"]);
+    // Dün muaf: dün hata verdiyse de sabah bir kez denenir
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 1, failed: { "2026-11-11": { count: 1, lastAt: "2026-11-12T04:00:00.000Z" } } }), ["2026-11-11"]);
+  });
+
+  test("LafPOS'a geçiş gününden itibaren hiçbir gün çekilmez; eksik gün sayısı da geçiş gününden önceye", () => {
+    // Geçiş günü 5 Kasım: dün (11 Kasım) ve 5–10 Kasım çekilmez, 4 Kasım'dan geriye
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2, until: "2026-11-05" }), ["2026-11-04", "2026-11-03"]);
+    // Geçişten önceki her gün saklıysa çekilecek gün yok
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-04"), left: 2, until: "2026-11-05" }), []);
+    assert.equal(missingFoyDays("2026-11-01", new Map(), CRON, "2026-11-05").length, 4);
+    assert.equal(missingFoyDays("2026-11-01", new Map(), CRON).length, 11);
+  });
+
   test("ilk kurulum, sabah 08:00: dün ve bir geçmiş gün, yeniden eskiye", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2 }), ["2026-11-11", "2026-11-10"]);
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 3 }), ["2026-11-11", "2026-11-10", "2026-11-09"], "kota artırılırsa");
@@ -950,7 +973,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
   const run = (at: string, o: Partial<ModposRun> = {}): ModposRun => ({ at, trigger: "cron", days: [{ day: "2026-11-02", result: "yeni" }], status: "ok", text: null, ...o });
 
   test("parseModposState: boş ya da bozuk değer boş durum; bozuk parça atılır, kalanı okunur", () => {
-    const empty: ModposState = { quota: null, lastOk: null, lastError: null, runs: [] };
+    const empty: ModposState = { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {} };
     for (const v of [undefined, null, "bozuk", 42, [], {}]) assert.deepEqual(parseModposState(v), empty, JSON.stringify(v));
     const ok = { at: "2026-11-03T05:01:00.000Z", day: "2026-11-02" };
     const good = run("2026-11-03T05:01:00.000Z");
@@ -962,7 +985,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
         runs: [good, { at: 1 }, { ...good, trigger: "elle" }, { ...good, status: "belki" }, "metin"],
         fazla: true,
       }),
-      { quota: null, lastOk: ok, lastError: null, runs: [good, { ...good, trigger: "elle" }] },
+      { quota: null, lastOk: ok, lastError: null, runs: [good, { ...good, trigger: "elle" }], dayErrors: {} },
     );
     const many = Array.from({ length: 13 }, (_, i) => run(`2026-11-03T05:${String(i).padStart(2, "0")}:00.000Z`));
     assert.equal(parseModposState({ runs: many }).runs.length, MODPOS_RUNS_KEEP);
@@ -993,7 +1016,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     now: NOW,
     keyProblem: null,
     preview: false,
-    state: { quota: null, lastOk: null, lastError: null, runs: [] },
+    state: { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {} },
     from: "2026-07-01",
     stored: { count: 0, first: null, last: null },
     missing: 0,
@@ -1007,6 +1030,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     lastOk: { at: "2026-11-03T05:01:00.000Z", day: "2026-11-02" },
     lastError: null,
     runs: [],
+    dayErrors: {},
     ...o,
   });
 
