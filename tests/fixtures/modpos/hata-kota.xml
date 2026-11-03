@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hata>
+  <kod>KOTA_DOLDU</kod>
+  <mesaj>Günlük kasa föyü çekim hakkı (2) doldu</mesaj>
+  <ayrinti>
+    <gunlukHak>2</gunlukHak>
+    <yenilenme>2026-11-03T00:00:00+03:00</yenilenme>
+  </ayrinti>
+</hata>

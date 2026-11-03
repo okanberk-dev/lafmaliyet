@@ -1,0 +1,223 @@
+import { z } from "zod";
+
+import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { dayMonthTR, todayTR } from "@/lib/reminders";
+
+import { MODPOS_DAILY_QUOTA, quotaLeft, quotaRenewsAt, renewText, type ModposQuota } from "./request";
+
+/**
+ * ModPOS kasa föyü bağlantısının durumu (saf; Ayarlar › ModPOS kasa föyü kartı, zil ve sabah işi okur;
+ * tests/modpos-foy.test.ts). integration_state › `modpos`'ta saklanır: son kota, son başarılı ve başarısız çekim, son 10
+ * çalışma. Bozuk alan atılır, kalanı okunur. Anahtar burada yoktur (yalnız Vercel'in ortam değişkeninde).
+ */
+
+export const MODPOS_STATE_KEY = "modpos";
+/** Saklanan çalışma sayısı */
+export const MODPOS_RUNS_KEEP = 10;
+
+export type ModposTrigger = "cron" | "elle";
+export type ModposDayResult = "yeni" | "degisti" | "ayni" | "hata";
+
+export interface ModposRun {
+  at: string;
+  trigger: ModposTrigger;
+  days: { day: string; result: ModposDayResult }[];
+  /** Çalışmanın sonu: tamam, hak doldu, hata, çekilecek gün yok */
+  status: "ok" | "kota" | "error" | "nothing" | "partial";
+  text: string | null;
+}
+
+export interface ModposError {
+  at: string;
+  day: string | null;
+  kod: string;
+  text: string;
+  /** Anahtarın kendisiyle ilgili (geçersiz, süresi dolmuş, IP, yetki): düzeltilmeden hiçbir gün çekilmez */
+  keyError: boolean;
+}
+
+export interface ModposState {
+  quota: ModposQuota | null;
+  lastOk: { at: string; day: string } | null;
+  lastError: ModposError | null;
+  runs: ModposRun[];
+}
+
+const quotaSchema = z.object({
+  day: z.string(),
+  hak: z.number().int().min(0),
+  kalan: z.number().int().min(0),
+  yenilenme: z.string().nullable(),
+  at: z.string(),
+});
+const okSchema = z.object({ at: z.string(), day: z.string() });
+const errorSchema = z.object({ at: z.string(), day: z.string().nullable(), kod: z.string(), text: z.string(), keyError: z.boolean() });
+const runSchema = z.object({
+  at: z.string(),
+  trigger: z.enum(["cron", "elle"]),
+  days: z.array(z.object({ day: z.string(), result: z.enum(["yeni", "degisti", "ayni", "hata"]) })),
+  status: z.enum(["ok", "kota", "error", "nothing", "partial"]),
+  text: z.string().nullable(),
+});
+
+/** Saklanan durumu okur: bozuk alan null (ya da boş liste), kalanı geçerli */
+export function parseModposState(v: unknown): ModposState {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  const runs = Array.isArray(o.runs) ? o.runs.flatMap((r) => (runSchema.safeParse(r).success ? [r as ModposRun] : [])) : [];
+  return {
+    quota: quotaSchema.nullable().catch(null).parse(o.quota ?? null),
+    lastOk: okSchema.nullable().catch(null).parse(o.lastOk ?? null),
+    lastError: errorSchema.nullable().catch(null).parse(o.lastError ?? null),
+    runs: runs.slice(0, MODPOS_RUNS_KEEP),
+  };
+}
+
+/** Yeni çalışmayı listenin başına ekler (en çok MODPOS_RUNS_KEEP) */
+export function withRun(runs: readonly ModposRun[], run: ModposRun): ModposRun[] {
+  return [run, ...runs].slice(0, MODPOS_RUNS_KEEP);
+}
+
+/** Günün yazısı: bu yılsa "2 Kasım", değilse "2 Kasım 2025" */
+export function modposDayText(day: string, now: Date): string {
+  return day.slice(0, 4) === todayTR(now).slice(0, 4) ? dayMonthTR(day) : dayMonthYearTR(day);
+}
+
+const RESULT_TEXT: Record<ModposDayResult, string> = { yeni: "alındı", degisti: "değişti", ayni: "değişmedi", hata: "alınamadı" };
+
+/** Çalışmanın özeti: "2 Kasım alındı · 14 Ekim değişmedi" */
+export function runDaysText(days: ModposRun["days"], now: Date): string {
+  return days.map((d) => `${modposDayText(d.day, now)} ${RESULT_TEXT[d.result]}`).join(" · ");
+}
+
+export type ModposTone = "gray" | "green" | "blue" | "amber" | "red";
+
+export interface ModposCardInput {
+  now: Date;
+  keyProblem: "missing" | "format" | null;
+  /** Önizleme (Preview) dağıtımı: canlının veritabanını paylaşır, çekmez */
+  preview: boolean;
+  state: ModposState;
+  from: string;
+  /** Saklanan gün sayısı ve en eski / en yeni gün */
+  stored: { count: number; first: string | null; last: string | null };
+  /** Geçmişte eksik günler (from → dün) */
+  missing: number;
+}
+
+export interface ModposCardSummary {
+  tone: ModposTone;
+  badge: string;
+  headline: string;
+  lines: string[];
+  /** Akordeonun kapalıyken özeti */
+  short: string;
+  /** Kalan hak (bugün) */
+  left: number;
+  /** Elle çekim düğmesi açık mı (kurulu, önizleme değil, hak var) */
+  canFetch: boolean;
+  /** Düğme kapalıysa nedeni */
+  fetchBlocked: string | null;
+}
+
+/**
+ * Kartın özeti. Sakin dil (LafPOS kartıyla aynı kural): kurulmamış bağlantı gri "Kurulmadı"dır, hata değil; kırmızı
+ * yalnız anahtar çalışmadığında (geçersiz, süresi dolmuş, IP, yetki). Hak dolması turuncu değil mavidir: olağandır.
+ */
+export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
+  const left = quotaLeft(c.state.quota, c.now);
+  const hak = c.state.quota?.hak ?? MODPOS_DAILY_QUOTA;
+  const renew = renewText(quotaRenewsAt(c.state.quota, c.now), c.now);
+  if (c.keyProblem === "missing") {
+    return {
+      tone: "gray",
+      badge: "Kurulmadı",
+      headline: "ModPOS API anahtarı tanımlı değil",
+      lines: ["Vercel › lafmaliyet › Settings › Environment Variables'a (yalnız Production) MODPOS_API_KEY eklenip yeniden yayınlanınca her sabah dünün kasa föyü gelir."],
+      short: "Kurulmadı",
+      left,
+      canFetch: false,
+      fetchBlocked: "Anahtar tanımlı değil",
+    };
+  }
+  if (c.keyProblem === "format") {
+    return {
+      tone: "red",
+      badge: "Anahtar bozuk",
+      headline: "MODPOS_API_KEY'in biçimi bozuk (boşluk ya da satır sonu var, ya da çok kısa)",
+      lines: ["Vercel'deki değeri Gafdigi'nin verdiği anahtarla aynen değiştirip yeniden yayınlayın."],
+      short: "Anahtar bozuk",
+      left,
+      canFetch: false,
+      fetchBlocked: "Anahtar bozuk",
+    };
+  }
+  const lines: string[] = [];
+  const st = c.stored;
+  if (st.count && st.first && st.last) {
+    lines.push(`${modposDayText(st.first, c.now)} – ${modposDayText(st.last, c.now)} arası ${st.count} günün föyü var.`);
+  }
+  if (c.missing > 0) {
+    const days = Math.ceil(c.missing / Math.max(1, hak - 1));
+    lines.push(
+      `${modposDayText(c.from, c.now)}'den bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık ${days} gün sürer).`,
+    );
+  }
+  lines.push(`Bugün kalan çekim hakkı: ${left} / ${hak}${left < hak ? ` (hak ${renew} yenilenir)` : ""}.`);
+  const ok = c.state.lastOk;
+  if (ok) lines.push(`Son başarılı çekim: ${modposDayText(ok.day, c.now)} föyü, ${timeText(ok.at, c.now)}.`);
+  const err = c.state.lastError;
+  const errFresh = err && (!ok || err.at > ok.at);
+  if (c.preview) {
+    return { tone: "gray", badge: "Önizleme", headline: "Önizleme dağıtımı ModPOS'tan çekmez", lines, short: "Önizleme", left, canFetch: false, fetchBlocked: "Önizlemede çekilmez" };
+  }
+  if (errFresh && err.keyError) {
+    return { tone: "red", badge: "Hata", headline: err.text, lines, short: "Hata", left, canFetch: left > 0, fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir` };
+  }
+  if (!ok && !err) {
+    return {
+      tone: "amber",
+      badge: "Henüz çekilmedi",
+      headline: "Anahtar tanımlı; ilk föy yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir",
+      lines,
+      short: "Henüz çekilmedi",
+      left,
+      canFetch: left > 0,
+      fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir`,
+    };
+  }
+  const headline = errFresh ? `Son deneme: ${err.text}` : "Her sabah 08:00'de dünün kasa föyü geliyor";
+  return {
+    tone: errFresh ? "amber" : "green",
+    badge: errFresh ? "Uyarı" : "Bağlı",
+    headline,
+    lines,
+    short: errFresh ? "Son deneme hata verdi" : `Bağlı · ${st.count} gün`,
+    left,
+    canFetch: left > 0,
+    fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir`,
+  };
+}
+
+/** "bugün 08:02", "dün 23:10", "2 Kasım 08:02" (TR) */
+export function timeText(iso: string, now: Date): string {
+  const t = new Date(iso);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(t);
+  const hm = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(t);
+  const today = todayTR(now);
+  if (day === today) return `bugün ${hm}`;
+  const y = new Date(Date.parse(`${today}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  if (day === y) return `dün ${hm}`;
+  return `${modposDayText(day, now)} ${hm}`;
+}
+
+/**
+ * Ay rakamına yedek (settings › `modposAyYedegi`, varsayılan kapalı; docs/MODPOS-API.md › Ay rakamı): açıkken kasa
+ * raporu (ve LafPOS gün sonu) olmayan günün cirosu, kartı, yemek kartı ve ödenmezi kapanmış ModPOS föyünden aya girer;
+ * gün yine "rapor yok" sayılır. Kapalıyken föy hiçbir hesaba girmez, yalnız yöneticinin ekranlarında görünür.
+ */
+export const MODPOS_FALLBACK_KEY = "modposAyYedegi";
+
+/** Kayıtlı ayarın okunması: yalnız `true` açık (bozuk ya da eksik değer kapalı) */
+export function readModposFallback(v: unknown): boolean {
+  return v === true;
+}

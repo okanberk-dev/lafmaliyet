@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kasaFoyu>
+  <kasaGunu>2026-11-01</kasaGunu>
+  <olusturulma>2026-11-02T11:15:42+03:00</olusturulma>
+  <kasa>
+    <sube>Kadıköy Şube</sube>
+    <kasaAdi>KASA-1</kasaAdi>
+    <gunNo>312</gunNo>
+    <zNo>0312</zNo>
+    <durum>KAPALI</durum>
+    <otomatikKapandi>false</otomatikKapandi>
+    <acilis>
+      <zaman>2026-11-01T09:42:10+03:00</zaman>
+      <personel>Ayşe Yılmaz</personel>
+      <nakit>500</nakit>
+    </acilis>
+    <kapanis>
+      <zaman>2026-11-02T00:58:03+03:00</zaman>
+      <personel>Mehmet Kaya</personel>
+      <nakit>7820</nakit>
+    </kapanis>
+    <satis>
+      <ciro>28450.5</ciro>
+      <ciroDisi>145</ciroDisi>
+      <adisyonSayisi>214</adisyonSayisi>
+      <kisiSayisi>301</kisiSayisi>
+      <bahsis>120</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>8210</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>8210</sistem>
+      <defter>8190</defter>
+      <fark>-20</fark>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>16120.5</satis>
+      <cariTahsilat>1500</cariTahsilat>
+      <sistem>17620.5</sistem>
+      <defter>17620.5</defter>
+      <fark>0</fark>
+      <kirilim>
+        <ad>Garanti BBVA</ad>
+        <tutar>9800</tutar>
+      </kirilim>
+      <kirilim>
+        <ad>Akbank</ad>
+        <tutar>6320.5</tutar>
+      </kirilim>
+    </odeme>
+    <odeme>
+      <yontem>İkram</yontem>
+      <kod>IKRAM</kod>
+      <ciroyaDahil>false</ciroyaDahil>
+      <satis>145</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>145</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <defterGirildi>true</defterGirildi>
+    <giderler>
+      <toplam>870</toplam>
+      <gider>
+        <kategori>Market</kategori>
+        <aciklama>Temizlik malzemesi</aciklama>
+        <tutar>320</tutar>
+      </gider>
+      <gider>
+        <kategori>Personel</kategori>
+        <aciklama>Yemek</aciklama>
+        <tutar>550</tutar>
+      </gider>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>1500</toplam>
+      <nakit>0</nakit>
+      <tahsilat>
+        <musteri>Yıldız Lojistik</musteri>
+        <tutar>1500</tutar>
+        <yontem>Kredi Kartı</yontem>
+        <zaman>2026-11-01T17:12:00+03:00</zaman>
+      </tahsilat>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>Z_RAPORU</dayanak>
+      <acilis>500</acilis>
+      <nakitSatis>8210</nakitSatis>
+      <nakitCariTahsilat>0</nakitCariTahsilat>
+      <gider>870</gider>
+      <beklenen>7840</beklenen>
+      <sayilan>7820</sayilan>
+      <fark>-20</fark>
+    </nakitKasa>
+    <araKasa>
+      <no>1</no>
+      <zaman>2026-11-01T15:00:00+03:00</zaman>
+      <personel>Ayşe Yılmaz</personel>
+      <ciro>11200</ciro>
+      <nakit>3400</nakit>
+      <adisyonSayisi>88</adisyonSayisi>
+      <gider>320</gider>
+      <beklenen>3580</beklenen>
+      <sayilan>3580</sayilan>
+      <fark>0</fark>
+    </araKasa>
+    <notlar>
+      <kapanis/>
+      <fark>Bozuk para eksiği</fark>
+    </notlar>
+    <uyari>
+      <kod>KASA_FARKI</kod>
+      <mesaj>Kasa farkı var</mesaj>
+      <tutar>-20</tutar>
+    </uyari>
+  </kasa>
+  <ozet>
+    <kasaSayisi>1</kasaSayisi>
+    <acikKasa>0</acikKasa>
+    <kapaliKasa>1</kapaliKasa>
+    <otomatikKapanan>0</otomatikKapanan>
+    <ciro>28450.5</ciro>
+    <ciroDisi>145</ciroDisi>
+    <adisyonSayisi>214</adisyonSayisi>
+    <kisiSayisi>301</kisiSayisi>
+    <bahsis>120</bahsis>
+    <gider>870</gider>
+    <cariTahsilat>1500</cariTahsilat>
+    <kasaFarki>-20</kasaFarki>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>8210</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <tutar>16120.5</tutar>
+    </odeme>
+    <foysuzGunSayisi>0</foysuzGunSayisi>
+    <foysuzCiro>0</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>1</kullanilan>
+    <kalan>1</kalan>
+    <yenilenme>2026-11-03T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>
