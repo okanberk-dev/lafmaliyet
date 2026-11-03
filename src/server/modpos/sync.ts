@@ -1,14 +1,14 @@
 import "server-only";
 
 import { planFoyDays } from "@/lib/modpos/plan";
-import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
+import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
 import { todayTR } from "@/lib/reminders";
 import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, type ModposTrigger } from "@/lib/modpos/status";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { fetchKasaFoyu } from "./client";
-import { loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
+import { loadModposHistoryStart, loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
 
 /**
  * ModPOS kasa föylerinin çekilmesi (docs/MODPOS-API.md › Çekme): sabah işi (`cron`, /api/cron/gunluk) ve Ayarlar ›
@@ -88,13 +88,20 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   // olsa ikinci günün kotası ve kesinliği başka bir güne göre yazılırdı; tests/modpos-db.test.ts)
   const wall0 = Date.now();
   const clock = () => (o.now ? new Date(o.now.getTime() + (Date.now() - wall0)) : new Date());
-  const [state, have, switchDay] = await Promise.all([readModposState(db), loadModposIndex(db), loadLafposSwitchDay(db)]);
+  const from = modposSyncFrom(env);
+  // Geçmiş ModPOS'un ilk ciro gününden ileriye çekilir (elle verilen günlerde gerekmez)
+  const [state, have, switchDay, start] = await Promise.all([
+    readModposState(db),
+    loadModposIndex(db),
+    loadLafposSwitchDay(db),
+    o.days ? Promise.resolve(null) : loadModposHistoryStart(from, modposSyncFromSet(env), db),
+  ]);
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
   // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
   const wanted = o.days
     ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
-    : planFoyDays({ now: started, from: modposSyncFrom(env), have, left: left0, until: switchDay, failed: state.dayErrors });
+    : planFoyDays({ now: started, from, start: start?.day ?? null, have, left: left0, until: switchDay, failed: state.dayErrors });
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
     if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };

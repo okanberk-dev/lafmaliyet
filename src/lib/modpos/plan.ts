@@ -4,12 +4,15 @@ import { finalAfter } from "./z";
 
 /**
  * Hangi kasa günlerinin çekileceği (saf; tests/modpos-foy.test.ts). Günde 2 hak var (belge §4); sahibin kuralı (3 Kasım
- * 2026): **her sabah önce dünün föyü, sonra henüz çekilmemiş bir eski gün**. Hak sırayla:
+ * 2026): **her sabah önce dünün föyü, öteki hak geçmişe: ModPOS'un ilk ciro gününden başlayıp ileriye, bitene kadar**.
+ * Hak sırayla:
  *
  * 1. **Dün**, kesin değilse (ertesi sabah 07:00'den sonra alınmış, kasaları kapalı föy kesindir). Sabah işi 08:00'de
  *    çalışır: dünün föyü kesinleşmiştir.
- * 2. **Hiç alınmamış eski günler**, dünden geriye `from`'a (kafenin ilk günü) kadar, yeniden eskiye: önce süren ve geçen
- *    ay tamamlanır. Hak günde 2 olduğundan geçmiş günde 1 gün ilerler (docs/MODPOS-API.md › Kota ve çekme sırası).
+ * 2. **Hiç alınmamış eski günler**, ModPOS'un ilk ciro gününden (`start`; historyStart) ileriye, eskiden yeniye: geçmiş
+ *    ilk günden bugüne doğru dolar. `from` ile `start` arasındaki günler (ilk ciro gününden önce: büyük olasılıkla kasa
+ *    açılmamış) en sona kalır, yine eskiden yeniye: hiçbir gün atlanmaz. Hak günde 2 olduğundan geçmiş günde 1 gün
+ *    ilerler (docs/MODPOS-API.md › Kota ve çekme sırası).
  * 3. Eksik gün kalmadıysa **son 14 günün kesin olmayan föyleri** (gün açıkken ya da 07:00'den önce elle alınmış),
  *    yeniden yeniye.
  * 4. Hiçbiri yoksa **son 7 günün en eski kontrol edilen kesin föyü** (kapanıştan sonra düzeltme olduysa görünsün).
@@ -28,8 +31,10 @@ export interface StoredDay {
 
 export interface PlanInput {
   now: Date;
-  /** Geçmişin ilk günü (MODPOS_SYNC_FROM ya da kafenin ilk günü) */
+  /** Geçmişin ilk günü (MODPOS_SYNC_FROM ya da kafenin ilk ayının ilk günü): bundan önce hiçbir gün çekilmez */
   from: string;
+  /** ModPOS'un ilk ciro günü (historyStart): geçmiş buradan ileriye çekilir; yoksa ya da `from`'dan önceyse `from` */
+  start?: string | null;
   /** Saklanan günler */
   have: ReadonlyMap<string, StoredDay>;
   /** Bu çalışmada kullanılabilecek hak */
@@ -57,7 +62,7 @@ const RECHECK_DAYS = 7;
 /** Kesin olmayan föylerin yeniden çekileceği geriye bakış */
 const PROVISIONAL_DAYS = 14;
 
-export function planFoyDays({ now, from, have, left, until = null, failed = {} }: PlanInput): string[] {
+export function planFoyDays({ now, from, have, left, start = null, until = null, failed = {} }: PlanInput): string[] {
   if (left <= 0) return [];
   const today = todayTR(now);
   const yesterday = addDays(today, -1);
@@ -69,8 +74,9 @@ export function planFoyDays({ now, from, have, left, until = null, failed = {} }
   // 1) Dün: kesinleştiyse ve kesin föyü yoksa
   const y = have.get(yesterday);
   if (now.getTime() >= finalAfter(yesterday) && !y?.final) add(yesterday);
-  // 2) Hiç alınmamış eski günler: dünden geriye, yeniden eskiye
-  for (let d = yesterday; d >= from && out.length < left; d = addDays(d, -1)) {
+  // 2) Hiç alınmamış eski günler: ilk ciro gününden ileriye (eskiden yeniye), sonra ondan önceki günler
+  for (const d of backfillOrder(from, start, yesterday)) {
+    if (out.length >= left) break;
     if (!have.has(d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
   }
   // 3) Kesin olmayan föyler (yalnız kesinleşme anı geçtiyse: erken yeniden çekmek aynı sonucu verir)
@@ -93,11 +99,68 @@ export function planFoyDays({ now, from, have, left, until = null, failed = {} }
   return out;
 }
 
-/** Geçmişte eksik gün sayısı (`from`'dan düne, LafPOS'a geçiş gününden önceye; kesinleşmemiş dün dahil değil) */
-export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date, until: string | null = null): string[] {
+/**
+ * Geçmişin sırası: `start`'tan (ilk ciro günü) `last`'a eskiden yeniye, sonra `from`'dan `start`'ın önceki gününe.
+ * `start` yoksa, `from`'dan önceyse ya da `last`'tan sonraysa yalnız `from` → `last`
+ */
+export function backfillOrder(from: string, start: string | null, last: string): string[] {
+  const first = start !== null && start > from && start <= last ? start : from;
+  const out: string[] = [];
+  for (let d = first; d <= last; d = addDays(d, 1)) out.push(d);
+  for (let d = from; d < first; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
+/**
+ * Geçmişte eksik günler, çekilecekleri sırayla (`from`'dan düne, LafPOS'a geçiş gününden önceye; kesinleşmemiş dün
+ * dahil değil): ilk ciro gününden ileriye, sonra ondan önceki günler (planFoyDays'in 2. adımı). Kartın sayısı ve
+ * "sıradaki gün"ü buradan
+ */
+export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date, until: string | null = null, start: string | null = null): string[] {
   const today = todayTR(now);
   const end = until !== null && until < today ? until : today;
-  const out: string[] = [];
-  for (let d = from; d < end; d = addDays(d, 1)) if (!have.has(d) && now.getTime() >= finalAfter(d)) out.push(d);
-  return out;
+  return backfillOrder(from, start, addDays(end, -1)).filter((d) => !have.has(d) && now.getTime() >= finalAfter(d));
+}
+
+/** Ayın Satışlar'daki rakamları (months): ilk ciro ayı ve açık gün sayısı */
+export interface HistoryMonth {
+  month: string;
+  posRevenue: number | null;
+  openDays: number | null;
+}
+
+export type HistoryStartSource = "ayar" | "foy" | "ay" | "baslangic";
+
+export interface HistoryStart {
+  /** ModPOS'un ilk ciro günü (geçmişin çekilmeye başlandığı gün) */
+  day: string;
+  /**
+   * Nereden bilindiği: "ayar" MODPOS_SYNC_FROM; "foy" saklanan föylerin en eski satışlı günü (ay tahmininden önce);
+   * "ay" Satışlar'daki ilk cirolu ayın açık gün sayısı (ayın son N günü); "baslangic" bilgi yok, `from`
+   */
+  source: HistoryStartSource;
+}
+
+const monthDays = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+
+/**
+ * ModPOS'un ilk ciro günü (saf): MODPOS_SYNC_FROM kurulduysa odur. Yoksa Satışlar'daki ilk cirolu ay (ModPOS'un ay
+ * cirosu): ayın açık gün sayısı N ayın gününden azsa kafe en geç ayın son N gününün ilkinde açılmıştır (Temmuz 2026: 23
+ * açık gün → 9 Temmuz); açık gün yoksa ayın 1'i. Saklanan föylerde daha önce satışlı bir gün varsa o. Tahmin en geç
+ * gündür: ondan önce satış olduysa (arada kapalı gün) o günler geçmişin sonunda yine çekilir (backfillOrder).
+ */
+export function historyStart(i: { from: string; explicit: boolean; months: readonly HistoryMonth[]; firstSale: string | null }): HistoryStart {
+  if (i.explicit) return { day: i.from, source: "ayar" };
+  const m = [...i.months]
+    .filter((x) => /^\d{4}-\d{2}$/.test(x.month) && (x.posRevenue ?? 0) > 0 && x.month >= i.from.slice(0, 7))
+    .sort((a, b) => a.month.localeCompare(b.month))[0];
+  let est: string | null = null;
+  if (m) {
+    const dim = monthDays(m.month);
+    const open = m.openDays ?? 0;
+    est = open >= 1 && open < dim ? `${m.month}-${String(dim - open + 1).padStart(2, "0")}` : `${m.month}-01`;
+    if (est < i.from) est = i.from;
+  }
+  if (i.firstSale !== null && i.firstSale >= i.from && (est === null || i.firstSale < est)) return { day: i.firstSale, source: "foy" };
+  return est !== null ? { day: est, source: "ay" } : { day: i.from, source: "baslangic" };
 }

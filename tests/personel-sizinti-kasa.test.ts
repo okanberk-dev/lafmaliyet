@@ -295,5 +295,5 @@ test("ModPOS kasa föyü: personele giden kasa kaynaklarında föyün anahtarlar
   const page = read("src/app/panel/kasa/page.tsx");
   const staff = page.slice(page.indexOf("  if (!admin) {\n    return ("), page.indexOf("  const ay = pick(sp.ay);"));
   assert.ok(staff.length > 100);
-  assert.doesNotMatch(staff, /loadKasaModpos|ModposSheetCard|modposDays/);
+  assert.doesNotMatch(staff, /loadKasaModpos|ModposSections|ModposSheetCard|LadminReportCard|modposDays/);
 });

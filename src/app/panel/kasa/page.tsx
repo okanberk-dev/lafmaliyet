@@ -88,7 +88,7 @@ import { MyCashRequests } from "./cash-requests";
 import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
-import { ModposSheetCard } from "./modpos-sheet";
+import { ModposSections } from "./modpos-sheet";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
 
@@ -500,6 +500,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       ];
     }),
   );
+  // Gün görünümünün ladmin bölümü (ModPOS bölümünün yanında, panelde yazılan raporun ayrıntısı): günün kasadan
+  // çıkanları, fotoğraf sayısı, sürümler ve devir zinciri (önceki raporun devri, sonraki raporun açılışı)
+  const ladmin = { outs: dayOuts, photos: photoInfo?.photos.length ?? 0, revisions, prev: carry, next };
   // Günden güne listesinin ModPOS günleri (tarihe göre; extras'a girmez: o WhatsApp'a ve personele de gider)
   const modposDays: Record<string, ModposDayView> = {};
   for (const d of days) {
@@ -515,7 +518,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           {closedBar}
           {outsCard}
           {form}
-          {modposDay?.modpos ? <ModposSheetCard date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} keySet={modposKeySet()} now={new Date()} /> : null}
+          {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet()} now={new Date()} /> : null}
           {siteRow}
           {wasteCard}
         </>

@@ -16,7 +16,7 @@ import { before, describe, test } from "node:test";
 
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
 import { modposCompare, modposDiffs, modposDiffsLine, modposDiffText, type ModposSavedFields } from "../src/lib/modpos/compare";
-import { missingFoyDays, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
+import { backfillOrder, historyStart, missingFoyDays, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
 import {
   foyUrl,
   isKeyError,
@@ -914,57 +914,113 @@ describe("plan.ts: çekilecek günler", () => {
   };
 
   test("alınamayan gün her sabah yeniden denenmez (2, 4, 8… gün bekler); geçmiş onda takılmaz, sıradaki eksik güne geçer", () => {
-    // 10 Kasım dün sabah (11 Kasım 08:00) bozuk yanıt verdi: bugün beklenir, 9 Kasım alınır
-    const failed = { "2026-11-10": { count: 1, lastAt: "2026-11-11T05:00:00.000Z" } };
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2, failed }), ["2026-11-11", "2026-11-09"]);
-    // İki gün sonra yeniden denenir
+    // Geçmiş 8 Kasım'dan: 8 Kasım dün sabah (11 Kasım 08:00) bozuk yanıt verdi; bugün beklenir, 9 Kasım alınır
+    const failed = { "2026-11-08": { count: 1, lastAt: "2026-11-11T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-08", have: new Map(), left: 2, failed }), ["2026-11-11", "2026-11-09"]);
+    // İki gün sonra yeniden denenir (en eski eksik gün olarak)
     const later = new Date("2026-11-13T08:00:00+03:00");
-    assert.deepEqual(planFoyDays({ now: later, from: "2026-07-01", have: have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-11-09": S(true, "2026-11-12T08:00:00+03:00") }), left: 2, failed }), ["2026-11-12", "2026-11-10"]);
-    // Üçüncü hatadan sonra 8 gün
-    const thrice = { "2026-11-10": { count: 3, lastAt: "2026-11-11T05:00:00.000Z" } };
-    assert.deepEqual(planFoyDays({ now: later, from: "2026-07-01", have: have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-11-09": S(true, "2026-11-12T08:00:00+03:00") }), left: 2, failed: thrice }), ["2026-11-12", "2026-11-08"]);
+    const got = have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-11-09": S(true, "2026-11-12T08:00:00+03:00") });
+    assert.deepEqual(planFoyDays({ now: later, from: "2026-11-08", have: got, left: 2, failed }), ["2026-11-12", "2026-11-08"]);
+    // Üçüncü hatadan sonra 8 gün: sıradaki eksik gün
+    const thrice = { "2026-11-08": { count: 3, lastAt: "2026-11-11T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: later, from: "2026-11-08", have: got, left: 2, failed: thrice }), ["2026-11-12", "2026-11-10"]);
     // Dün muaf: dün hata verdiyse de sabah bir kez denenir
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 1, failed: { "2026-11-11": { count: 1, lastAt: "2026-11-12T04:00:00.000Z" } } }), ["2026-11-11"]);
   });
 
   test("LafPOS'a geçiş gününden itibaren hiçbir gün çekilmez; eksik gün sayısı da geçiş gününden önceye", () => {
-    // Geçiş günü 5 Kasım: dün (11 Kasım) ve 5–10 Kasım çekilmez, 4 Kasım'dan geriye
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2, until: "2026-11-05" }), ["2026-11-04", "2026-11-03"]);
+    // Geçiş günü 5 Kasım: dün (11 Kasım) ve 5–10 Kasım çekilmez; geçmiş ilk günden ileriye
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: new Map(), left: 2, until: "2026-11-05" }), ["2026-11-01", "2026-11-02"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-02"), left: 3, until: "2026-11-05" }), ["2026-11-03", "2026-11-04"]);
     // Geçişten önceki her gün saklıysa çekilecek gün yok
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-04"), left: 2, until: "2026-11-05" }), []);
     assert.equal(missingFoyDays("2026-11-01", new Map(), CRON, "2026-11-05").length, 4);
     assert.equal(missingFoyDays("2026-11-01", new Map(), CRON).length, 11);
   });
 
-  test("sahibin kuralı: her sabah önce dün, sonra henüz çekilmemiş bir eski gün (kesin olmayan föyün yeniden çekimi ondan sonra)", () => {
+  test("sahibin kuralı: her sabah önce dün, öteki hak ModPOS'un ilk ciro gününden ileriye (kesin olmayan föyün yeniden çekimi ondan sonra)", () => {
     // 10 Kasım gün içinde elle çekilmiş (kesin değil); 9 Kasım hiç çekilmemiş: ikinci hak 9 Kasım'a
     const provisional = have({ "2026-11-10": S(false, "2026-11-10T15:00:00+03:00") });
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: provisional, left: 2 }), ["2026-11-11", "2026-11-09"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-09", have: provisional, left: 2 }), ["2026-11-11", "2026-11-09"]);
     // Eksik eski gün kalmadıysa kesin olmayan föy yeniden çekilir
     const done = allFinal("2026-11-01", "2026-11-09");
     done.set("2026-11-10", S(false, "2026-11-10T15:00:00+03:00"));
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: done, left: 2 }), ["2026-11-11", "2026-11-10"]);
-    // Beş sabah üst üste (hepsi başarılı): her sabah dün + sıradaki eski gün, geçmiş günde bir gün geriye
-    const stored = new Map<string, StoredDay>();
-    const got: string[][] = [];
-    for (let i = 0; i < 5; i++) {
-      const now = new Date(Date.parse("2026-11-12T08:00:00+03:00") + i * 86_400_000);
-      const plan = planFoyDays({ now, from: "2026-07-01", have: stored, left: 2 });
-      got.push(plan);
-      for (const d of plan) stored.set(d, S(true, now.toISOString()));
-    }
-    assert.deepEqual(got, [
-      ["2026-11-11", "2026-11-10"],
-      ["2026-11-12", "2026-11-09"],
-      ["2026-11-13", "2026-11-08"],
-      ["2026-11-14", "2026-11-07"],
-      ["2026-11-15", "2026-11-06"],
+    // Beş sabah üst üste (hepsi başarılı): her sabah dün + geçmişin sıradaki günü, ilk ciro gününden (9 Temmuz) ileriye
+    const mornings = (from: string, start: string | null, n: number) => {
+      const stored = new Map<string, StoredDay>();
+      const got: string[][] = [];
+      for (let i = 0; i < n; i++) {
+        const now = new Date(Date.parse("2026-11-12T08:00:00+03:00") + i * 86_400_000);
+        const plan = planFoyDays({ now, from, start, have: stored, left: 2 });
+        got.push(plan);
+        for (const d of plan) stored.set(d, S(true, now.toISOString()));
+      }
+      return got;
+    };
+    assert.deepEqual(mornings("2026-07-01", "2026-07-09", 5), [
+      ["2026-11-11", "2026-07-09"],
+      ["2026-11-12", "2026-07-10"],
+      ["2026-11-13", "2026-07-11"],
+      ["2026-11-14", "2026-07-12"],
+      ["2026-11-15", "2026-07-13"],
     ]);
+    // İlk ciro günü bilinmiyorsa geçmişin ilk gününden
+    assert.deepEqual(mornings("2026-07-01", null, 2), [
+      ["2026-11-11", "2026-07-01"],
+      ["2026-11-12", "2026-07-02"],
+    ]);
+    // Geçmiş düne yetişince ilk ciro gününden önceki günler (büyük olasılıkla kasa açılmamış) en sona, yine eskiden yeniye
+    assert.deepEqual(mornings("2026-11-01", "2026-11-08", 5), [
+      ["2026-11-11", "2026-11-08"],
+      ["2026-11-12", "2026-11-09"],
+      ["2026-11-13", "2026-11-10"],
+      ["2026-11-14", "2026-11-01"],
+      ["2026-11-15", "2026-11-02"],
+    ]);
+    // Hiçbir gün atlanmaz: 2 hakla geçmiş bitince ikinci hak yakın günlerin kontrolüne döner
+    const all = mornings("2026-11-01", "2026-11-08", 12).flat();
+    for (const d of backfillOrder("2026-11-01", null, "2026-11-22")) assert.ok(all.includes(d), d);
   });
 
-  test("ilk kurulum, sabah 08:00: dün ve bir geçmiş gün, yeniden eskiye", () => {
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2 }), ["2026-11-11", "2026-11-10"]);
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 3 }), ["2026-11-11", "2026-11-10", "2026-11-09"], "kota artırılırsa");
+  test("backfillOrder: ilk ciro gününden ileriye, sonra ondan önceki günler; ilk ciro günü yoksa ya da aralık dışındaysa baştan", () => {
+    assert.deepEqual(backfillOrder("2026-07-01", "2026-07-04", "2026-07-06"), ["2026-07-04", "2026-07-05", "2026-07-06", "2026-07-01", "2026-07-02", "2026-07-03"]);
+    assert.deepEqual(backfillOrder("2026-07-01", null, "2026-07-03"), ["2026-07-01", "2026-07-02", "2026-07-03"]);
+    assert.deepEqual(backfillOrder("2026-07-03", "2026-07-01", "2026-07-04"), ["2026-07-03", "2026-07-04"], "from'dan önce");
+    assert.deepEqual(backfillOrder("2026-07-01", "2026-07-09", "2026-07-03"), ["2026-07-01", "2026-07-02", "2026-07-03"], "son günden sonra");
+    assert.deepEqual(backfillOrder("2026-07-05", null, "2026-07-04"), []);
+    // Ay ve yıl geçişi
+    assert.deepEqual(backfillOrder("2026-12-30", "2026-12-31", "2027-01-01"), ["2026-12-31", "2027-01-01", "2026-12-30"]);
+  });
+
+  test("historyStart: ayar, saklanan satışlı föy, Satışlar'ın ilk cirolu ayı (açık gün sayısıyla), yoksa geçmişin ilk günü", () => {
+    const months = [
+      { month: "2026-08", posRevenue: 500_000, openDays: 31 },
+      { month: "2026-07", posRevenue: 173_587, openDays: 23 },
+      { month: "2026-06", posRevenue: 0, openDays: 0 },
+    ];
+    // Temmuz 2026: 23 açık gün → en geç 9 Temmuz'da açıldı
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months, firstSale: null }), { day: "2026-07-09", source: "ay" });
+    // Kurulu MODPOS_SYNC_FROM her şeyden önce
+    assert.deepEqual(historyStart({ from: "2026-07-05", explicit: true, months, firstSale: "2026-07-02" }), { day: "2026-07-05", source: "ayar" });
+    // Tahminden önce satışlı föy saklandıysa o (arada kapalı gün olmuş); sonra saklandıysa tahmin kalır
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months, firstSale: "2026-07-06" }), { day: "2026-07-06", source: "foy" });
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months, firstSale: "2026-07-20" }), { day: "2026-07-09", source: "ay" });
+    // Açık gün yok ya da ayın tamamı: ayın 1'i
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months: [{ month: "2026-07", posRevenue: 1, openDays: null }], firstSale: null }), { day: "2026-07-01", source: "ay" });
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months: [{ month: "2026-07", posRevenue: 1, openDays: 31 }], firstSale: null }), { day: "2026-07-01", source: "ay" });
+    // Ay geçmişin ilk gününden önceyse sayılmaz; tahmin ilk günden önceye düşmez
+    assert.deepEqual(historyStart({ from: "2026-08-01", explicit: false, months, firstSale: null }), { day: "2026-08-01", source: "ay" });
+    assert.deepEqual(historyStart({ from: "2026-07-20", explicit: false, months, firstSale: null }), { day: "2026-07-20", source: "ay" });
+    // Bilgi yok
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months: [], firstSale: null }), { day: "2026-07-01", source: "baslangic" });
+    assert.deepEqual(historyStart({ from: "2026-07-01", explicit: false, months: [{ month: "bozuk", posRevenue: 5, openDays: 3 }], firstSale: "2026-06-30" }), { day: "2026-07-01", source: "baslangic" });
+  });
+
+  test("ilk kurulum, sabah 08:00: dün ve ilk ciro günü", () => {
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", start: "2026-07-09", have: new Map(), left: 2 }), ["2026-11-11", "2026-07-09"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", start: "2026-07-09", have: new Map(), left: 3 }), ["2026-11-11", "2026-07-09", "2026-07-10"], "kota artırılırsa");
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2 }), ["2026-11-11", "2026-07-01"], "ilk ciro günü bilinmiyor");
   });
 
   test("hak 1 ise yalnız dün; hak 0 (ya da eksi) ise hiçbir şey", () => {
@@ -973,9 +1029,10 @@ describe("plan.ts: çekilecek günler", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: -1 }), []);
   });
 
-  test("dün zaten kesinse sıradaki eksik günler (yeniden eskiye, aradaki boşluklar dahil)", () => {
-    const h = have({ "2026-11-11": S(true, "2026-11-12T07:10:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00") });
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: h, left: 2 }), ["2026-11-09", "2026-11-08"]);
+  test("dün zaten kesinse iki hak da geçmişe (eskiden yeniye, aradaki boşluklar dahil)", () => {
+    const h = have({ "2026-11-11": S(true, "2026-11-12T07:10:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-06": S(true, "2026-11-07T08:00:00+03:00") });
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 2 }), ["2026-11-05", "2026-11-07"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 4 }), ["2026-11-05", "2026-11-07", "2026-11-08", "2026-11-09"]);
   });
 
   test("kesin olmayan föy kesinleşme anından sonra yeniden çekilir (önce dün, sonra son 14 gün, yeniden eskiye)", () => {
@@ -994,7 +1051,7 @@ describe("plan.ts: çekilecek günler", () => {
 
   test("07:00'den önce dün planlanmaz (kesinleşmedi); gece alınmış kesin olmayan dün de beklenir", () => {
     const early = new Date("2026-11-12T06:59:00+03:00");
-    assert.deepEqual(planFoyDays({ now: early, from: "2026-07-01", have: new Map(), left: 2 }), ["2026-11-10", "2026-11-09"]);
+    assert.deepEqual(planFoyDays({ now: early, from: "2026-11-09", have: new Map(), left: 3 }), ["2026-11-09", "2026-11-10"]);
     const h = allFinal("2026-11-05", "2026-11-10", () => "2026-11-11T08:00:00+03:00");
     h.set("2026-11-11", S(false, "2026-11-11T23:30:00+03:00"));
     assert.ok(!planFoyDays({ now: early, from: "2026-11-05", have: h, left: 2 }).includes("2026-11-11"));
@@ -1028,9 +1085,11 @@ describe("plan.ts: çekilecek günler", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-04", have: h, left: 9 }), ["2026-11-06", "2026-11-07", "2026-11-05", "2026-11-08", "2026-11-10"]);
   });
 
-  test("missingFoyDays: from'dan düne hiç alınmamış ve kesinleşmiş günler", () => {
+  test("missingFoyDays: from'dan düne hiç alınmamış ve kesinleşmiş günler, çekilecekleri sırayla", () => {
     const h = have({ "2026-11-07": S(true, "2026-11-08T08:00:00+03:00"), "2026-11-09": S(false, "2026-11-09T21:00:00+03:00") });
     assert.deepEqual(missingFoyDays("2026-11-05", h, CRON), ["2026-11-05", "2026-11-06", "2026-11-08", "2026-11-10", "2026-11-11"]);
+    assert.deepEqual(missingFoyDays("2026-11-05", h, CRON, null, "2026-11-08"), ["2026-11-08", "2026-11-10", "2026-11-11", "2026-11-05", "2026-11-06"], "ilk ciro gününden ileriye");
+    assert.deepEqual(missingFoyDays("2026-11-05", h, CRON, "2026-11-10", "2026-11-08"), ["2026-11-08", "2026-11-05", "2026-11-06"], "geçiş gününden önceye");
     assert.deepEqual(missingFoyDays("2026-11-05", h, new Date("2026-11-12T06:00:00+03:00")), ["2026-11-05", "2026-11-06", "2026-11-08", "2026-11-10"], "dün henüz kesinleşmedi");
     assert.deepEqual(missingFoyDays("2026-11-12", h, CRON), []);
     assert.equal(missingFoyDays("2026-07-01", new Map(), CRON).length, 134, "1 Temmuz – 11 Kasım");
@@ -1128,7 +1187,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     assert.deepEqual([c.tone, c.badge, c.canFetch, c.fetchBlocked, c.left], ["amber", "Henüz çekilmedi", true, null, 2]);
     assert.equal(c.headline, "Anahtar tanımlı; ilk föy yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir");
     assert.deepEqual(c.lines, [
-      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık 111 gün sürer).",
+      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla geçmişin ilk gününden bugüne doğru bir gün çekilir (yaklaşık 111 gün sürer).",
       "Bugün kalan çekim hakkı: 2 / 2.",
     ]);
     // Çekim kaydı yok ama föy saklı (komut satırının --dosya --kaydet'i): "Henüz çekilmedi" denmez
@@ -1138,6 +1197,14 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     assert.match(card({ missing: 3, from: "2026-09-01" }).lines[0], /^1 Eylül'den bu yana 3 günün/);
     assert.match(card({ missing: 3, from: "2026-08-03" }).lines[0], /^3 Ağustos'tan bu yana/);
     assert.match(card({ missing: 3, from: "2025-12-01" }).lines[0], /^1 Aralık 2025 tarihinden bu yana/);
+    // İlk ciro günü ve sıradaki gün (sabah işinin sırası: ilk ciro gününden ileriye)
+    assert.equal(
+      card({ missing: 111, start: { day: "2026-07-09", source: "ay" }, next: "2026-07-09" }).lines[0],
+      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla ModPOS'un ilk ciro gününden (9 Temmuz, Satışlar'daki açık gün sayısına göre) bugüne doğru bir gün çekilir; sıradaki 9 Temmuz (yaklaşık 111 gün sürer).",
+    );
+    assert.match(card({ missing: 5, start: { day: "2026-07-06", source: "foy" }, next: "2026-07-21" }).lines[0], /ilk ciro gününden \(6 Temmuz, föyden\) bugüne doğru bir gün çekilir; sıradaki 21 Temmuz/);
+    assert.match(card({ missing: 5, start: { day: "2026-07-05", source: "ayar" } }).lines[0], /ilk ciro gününden \(5 Temmuz, MODPOS_SYNC_FROM\) bugüne doğru bir gün çekilir \(yaklaşık/);
+    assert.match(card({ missing: 5, start: { day: "2026-07-01", source: "baslangic" }, next: "2026-07-01" }).lines[0], /kalan hakla geçmişin ilk gününden bugüne doğru bir gün çekilir; sıradaki 1 Temmuz/);
     // Kota artırılırsa daha hızlı: hak 5 → günde 4 geçmiş gün
     const fast = card({ missing: 111, state: { ...okState(), quota: { day: "2026-11-02", hak: 5, kalan: 0, yenilenme: null, at: "2026-11-02T05:00:00.000Z" } } });
     assert.match(fast.lines.find((l) => l.includes("henüz yok"))!, /yaklaşık 28 gün sürer/);
@@ -1149,7 +1216,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     assert.equal(c.headline, "Her sabah 08:00'de dünün kasa föyü geliyor");
     assert.deepEqual(c.lines, [
       "1 Temmuz – 2 Kasım arası 14 günün föyü var.",
-      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık 111 gün sürer).",
+      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla geçmişin ilk gününden bugüne doğru bir gün çekilir (yaklaşık 111 gün sürer).",
       "Bugün kalan çekim hakkı: 0 / 2 (hak bu gece 00:00'da yenilenir).",
       "Son başarılı çekim: 2 Kasım föyü, bugün 08:01.",
     ]);

@@ -711,9 +711,12 @@ silinen rapor ayın rakamını hemen değiştirir.
   (mali) toplamı: 381.809 ₺ · 28 / 30 gün · ModPOS toplamından %11 az" ve "KDV: %10 34.710 ₺ · %20 0 ₺" (KDV dökümü
   eksik günler "Yazarkasa KDV dökümü eksik: 2 gün"). Yalnız bilgidir; ay bilgisine, KDV tahminine ve hiçbir hesaba
   girmez (`okcMonth`; KDV tahmininin yazarkasa tabanına geçişi ayrı bir iş, plan §9 "13b").
-- **ModPOS kasa föyü** ([MODPOS-API.md](MODPOS-API.md)): ModPOS günlerinde gün görünümünde (`?gun=`) föyün kartı:
-  rapor ile föy yan yana (Z alanları, açılış, sayılan; gider, giren, olması gereken ve kasa farkı bilgi olarak),
-  ödeme yöntemleri ve banka kırılımı, giderler, cari tahsilatlar, ara kasalar, ModPOS'un uyarıları. Personelin yazdığı
+- **ModPOS kasa föyü** ([MODPOS-API.md](MODPOS-API.md) › Nerede görünür): ModPOS günlerinde gün görünümünde (`?gun=`),
+  kasa raporu formunun altında üç bölüm: **ModPOS** (föyün ayrıntısı: ciro, adisyon ve ortalaması, kişi başı, ödeme
+  dağılımı, nakit kasa, ödeme yöntemleri ve banka kırılımı, giderler, cari tahsilatlar, ara kasalar, ModPOS'un
+  uyarıları), **ladmin** (panelde yazılan raporun ayrıntısı: Z, ödemeler, nakit kasa ve devir zinciri, kart ve
+  yazarkasa, kasadan çıkanlar, künye) ve **Karşılaştırma** (alan alan tablo; Z alanları, açılış ve sayılan farklı
+  yazılan, gider, giren, olması gereken, kasa farkı, ödemelerin toplamı ve banka POS bilgi olarak). Personelin yazdığı
   Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS föyünden
   farklı". Föy her sabah 08:00'de gelir; personelin ekranı değişmez.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".

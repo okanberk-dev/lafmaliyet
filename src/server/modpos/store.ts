@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 
 import type { KasaFoyu } from "@/lib/modpos/foy";
-import type { StoredDay } from "@/lib/modpos/plan";
+import { historyStart, type HistoryStart, type StoredDay } from "@/lib/modpos/plan";
 import { parseModposState, withDayErrors, withRun, MODPOS_STATE_KEY, type ModposRun, type ModposState } from "@/lib/modpos/status";
 import { isFinalFoy, sheetCanonical, sheetPrevious, sheetState, type ModposSheetPrevious } from "@/lib/modpos/z";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -113,6 +113,28 @@ export async function loadModposSheets(from: string, to: string, db: Reader = ge
 export async function loadModposIndex(db: Reader = getDb()): Promise<Map<string, StoredDay>> {
   const rows = await db.select({ day: s.modposCashSheets.day, final: s.modposCashSheets.final, fetchedAt: s.modposCashSheets.fetchedAt }).from(s.modposCashSheets);
   return new Map(rows.map((r) => [r.day, { final: r.final, fetchedAt: r.fetchedAt.toISOString() }]));
+}
+
+/**
+ * ModPOS'un ilk ciro günü (geçmişin çekilmeye başlandığı gün; src/lib/modpos/plan.ts historyStart): MODPOS_SYNC_FROM
+ * kurulu değilse Satışlar'daki ilk cirolu ay ve açık gün sayısı, ondan önce satışlı bir föy saklandıysa o gün
+ */
+export async function loadModposHistoryStart(from: string, explicit: boolean, db: Reader = getDb()): Promise<HistoryStart> {
+  if (explicit) return historyStart({ from, explicit, months: [], firstSale: null });
+  const [months, [sale]] = await Promise.all([
+    db
+      .select({ month: s.months.month, posRevenue: s.months.posRevenue, openDays: s.months.openDays })
+      .from(s.months)
+      .where(sql`${s.months.posRevenue} > 0`)
+      .orderBy(asc(s.months.month))
+      .limit(24),
+    // Kasa açılan ya da kasası açılmadan satış yapılan en eski gün
+    db
+      .select({ day: sql<string | null>`min(${s.modposCashSheets.day})` })
+      .from(s.modposCashSheets)
+      .where(sql`${s.modposCashSheets.state} <> 'BOS' or jsonb_array_length(coalesce(${s.modposCashSheets.sheet}->'foysuzGunler', '[]'::jsonb)) > 0`),
+  ]);
+  return historyStart({ from, explicit, months, firstSale: sale?.day ?? null });
 }
 
 /** Son çekilen föyler (Ayarlar kartının listesi) */
