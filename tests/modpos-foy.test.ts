@@ -1424,6 +1424,31 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
     assert.equal(cancelled, true, "akış kapatıldı");
   });
 
+  test("boyutu bildirilmeyen (parçalı) gövde de 2 MB'ta kesilir: bütünü belleğe okunmaz", async () => {
+    let sent = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(256 * 1024).fill(0x20);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(c) {
+        sent += chunk.byteLength;
+        c.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { r } = await get(() => new Response(endless, { status: 200, headers: { ...KOTA } }));
+    assert.ok(r.status === "error");
+    assert.equal(r.kod, "BUYUK");
+    assert.equal(cancelled, true, "akış kapatıldı");
+    assert.ok(sent <= FOY_MAX_BYTES + 2 * chunk.byteLength, `en çok sınır kadar okundu (${sent})`);
+    // Sınırın altındaki parçalı gövde (UTF-8 harfler parça sınırında bölünse de) olduğu gibi okunur
+    const xml = readFileSync(join(process.cwd(), "tests/fixtures/modpos/belge-ornegi.xml"));
+    const parts = [xml.subarray(0, 101), xml.subarray(101, 1003), xml.subarray(1003)];
+    const ok = await get(() => new Response(new ReadableStream<Uint8Array>({ start(c) { for (const p of parts) c.enqueue(new Uint8Array(p)); c.close(); } }), { status: 200, headers: { ...KOTA } }));
+    assert.equal(ok.r.status, "ok");
+  });
+
   test("anahtar yoksa ya da bozuksa istek gitmez (off)", async () => {
     const a = await get(() => assert.fail("istek gitmemeli"), { env: {} });
     assert.deepEqual(a.r, { status: "off", problem: "missing" });
