@@ -40,6 +40,7 @@ import { okcReadFigures } from "@/lib/photo-read/okc";
 import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { closedEvidenceText } from "@/lib/closed-days";
+import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { chainNeighbours } from "@/server/cash/late-chain";
@@ -68,6 +69,7 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { loadKasaLafpos, loadKasaLafposDays } from "@/server/data/lafpos-day";
+import { loadKasaModpos, loadKasaModposDays, modposKeySet, NO_MODPOS } from "@/server/data/modpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -84,6 +86,7 @@ import { MyCashRequests } from "./cash-requests";
 import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
+import { ModposSheetCard } from "./modpos-sheet";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
 
@@ -442,12 +445,16 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const { dropped: blockedRecipients } = await sendableRecipients(getDb(), settings.recipients);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [monthRevisions, monthProposed, lateApproved, latePending] = await Promise.all([
+  const [monthRevisions, monthProposed, lateApproved, latePending, modposDay, modposOf] = await Promise.all([
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     // Geç raporlar: onaylananlar (rapora göre) ve onay bekleyenler (güne göre)
     lateRequestsByReport(monthReports.map((r) => r.id)),
     pendingLateByDay(`${month}-01`, monthEnd),
+    // ModPOS kasa föyü (docs/MODPOS-API.md › Nerede görünür), yalnız yöneticiye: saklanan föy okunur, ModPOS'a istek
+    // gitmez; okunamazsa kart, rozet ve satır görünmez, sayfa bozulmaz. Personel dalı bunları hiç okumaz
+    showForm ? loadKasaModpos(date).catch(() => null) : Promise.resolve(null),
+    loadKasaModposDays(`${month}-01`, monthEnd).catch(() => () => NO_MODPOS),
   ]);
   const checks = carryChecks(monthReports, before);
   const lastReport = monthReports[0];
@@ -485,6 +492,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       ];
     }),
   );
+  // Günden güne listesinin ModPOS günleri (tarihe göre; extras'a girmez: o WhatsApp'a ve personele de gider)
+  const modposDays: Record<string, ModposDayView> = {};
+  for (const d of days) {
+    const m = modposOf(d.date);
+    if (m.z) modposDays[d.date] = modposDayView(d.report, m.z);
+  }
   return (
     <div className="space-y-4">
       {showForm ? (
@@ -494,6 +507,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           {closedBar}
           {outsCard}
           {form}
+          {modposDay?.modpos ? <ModposSheetCard date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} keySet={modposKeySet()} now={new Date()} /> : null}
           {siteRow}
           {wasteCard}
         </>
@@ -515,6 +529,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             lateApproved={Object.fromEntries(lateApproved)}
             latePending={latePending}
             okcAdmin={okcAdmin}
+            modposDays={modposDays}
             okcFirst={okcFirst}
             okcLine={okcMonthLine(
               okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc,
