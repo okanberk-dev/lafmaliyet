@@ -37,8 +37,17 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Bu günü çek** (Ayarlar, yalnız yönetici): seçilen günü hemen çeker; kalan hakkı onay penceresinde söyler. Bugün
   seçilirse açık kasa o anki tutarlarla gelir ("Kesin değil"); ertesi sabah kendiliğinden yeniden çekilir.
 - Sayfa açılışı, zil ya da Kasa ekranı **hiçbir zaman** istek göndermez: yalnız saklanan föyü okur.
-- İstemci yeniden denemez (hak harcanmasın): hata sonraki sabah yeniden denenir. Hak dolduysa (`429 KOTA_DOLDU`) hiçbir
-  istek gitmez; kalan hak son yanıttan bilinir (integration_state › `modpos`).
+- İstemci yeniden denemez (hak harcanmasın). Hak dolduysa (`429 KOTA_DOLDU`) hiçbir istek gitmez; kalan hak son
+  yanıttan bilinir (integration_state › `modpos`).
+- **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
+  takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
+  büyük, yarıda kesik) çalışma durur: sorun büyük olasılıkla her günde aynıdır, ikinci hak harcanmaz.
+- **LafPOS'a geçiş gününden** itibaren föy çekilmez (o günleri hiçbir yer okumaz); geçmiş yalnız ondan önceye tamamlanır.
+- **Aynı anda tek çekim** (integration_state › `modpos.kira`, 90 sn): sabah işi iki kez tetiklenirse ya da **Bu günü
+  çek** sabah işiyle çakışırsa ikincisi istek göndermez ("Başka bir ModPOS çekimi sürüyor"). Bu günü çek'in yanıtı yolda
+  kaybolursa pencere kapanır ve sayfayı yenileyip kalan hakka bakmak önerilir (çekim yapılmış olabilir).
+- Gece yarısından sonra **Bu günü çek**'in ilk günü kesinleşmiş son gündür (07:00'den önce dün değil önceki gün); dün
+  seçilirse pencere föyün kesin olmayacağını ve sabah işinin yeniden çekeceğini söyler.
 
 ## 3. Ne çekilir, ne çekilmez
 
@@ -74,8 +83,10 @@ teslimi.
 | Gün içinde giren | `nakitKasa.nakitCariTahsilat` (bilgi) |
 | Sayılan nakit | `nakitKasa.sayilan`, yalnız dayanak `Z_RAPORU` iken (gün açıkken ya da kendiliğinden kapandıysa sayım yok) |
 
-Ciroya dahil olmayan yöntemler (`IKRAM`, `ODENMEZ`, `HEDIYE_KARTI`, `SADAKAT_IKRAMI`, `DEGISIM_MAHSUBU`, `ZAYI`)
-ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu tutmuyorsa föy kendi içinde tutmuyor demektir: gün
+Tutarlar noktalı ondalıkla okunur; kayan nokta artığı ve üs (`17620.500000000004`, `-1.1e-13`) iki ondalığa
+yuvarlanır, virgüllü tutar (`1.234,50`) ve ofsetsiz zaman reddedilir (alanın yoluyla). Sayısal karakter başvuruları
+(`&#305;`) çözülür. Ciroya dahil olmayan yöntemler (`IKRAM`, `ODENMEZ`, `HEDIYE_KARTI`, `SADAKAT_IKRAMI`,
+`DEGISIM_MAHSUBU`, `ZAYI`) ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu tutmuyorsa föy kendi içinde tutmuyor demektir: gün
 görünümünde uyarı satırı çıkar. Kasası açılmamış ama satışı olan gün ("föysüz") tutarlarını föysüz satıştan alır, kasa
 alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
 
@@ -102,15 +113,22 @@ Raporda boş bırakılan isteğe bağlı alan (Z no, fiş sayısı, ödenmez) fa
 nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. LafPOS'a geçiş gününden
 itibaren kasa LafPOS'tur: föy karşılaştırılmaz. Kasası hâlâ açıkken alınmış föy (gün içinde **Bu günü çek**)
 karşılaştırılmaz: o anki tutarlardır, kartta "Föy gün açıkken alındı" yazar, rozet ve zil çıkmaz; ertesi sabah
-kapanmış föy kendiliğinden gelir. Anahtar yokken ve föy de yokken gün görünümünde ModPOS kartı hiç çıkmaz.
+kapanmış föy kendiliğinden gelir. Kasası açılmamış (föysüz) gün de kesinleşmeden karşılaştırılmaz. Anahtar yokken ve föy de yokken gün görünümünde ModPOS kartı hiç çıkmaz.
 
 ## 6. Ay rakamına yedek (isteğe bağlı, varsayılan kapalı)
 
 Ayarlar › ModPOS kartındaki anahtar (`settings › modposAyYedegi`). Açıkken kasa raporu (ve LafPOS gün sonu) olmayan
 günün **kapanmış** föyü ayın açık gün, ciro, ödenmez ve kart payına girer (LafPOS'un yedek satırıyla aynı kural, G6):
 gün yine "rapor yok" sayılır, rapor girilince rapor kazanır. İndirim föyde olmadığı için o günlerin indirimi
-bilinmez. Elle yazılan ay bilgisi her zaman kazanır. Eksik gün uyarıları yalnız ilk kasa raporundan itibaren aranır:
-raporlar başlamadan önceki föy günleri "eksik rapor" sayılmaz. Kapalıyken föy hiçbir hesaba girmez.
+bilinmez. Elle yazılan ay bilgisi her zaman kazanır (yalnız föyden gelen ayda elle yazılan 0 da silinmez). Kapalıyken
+föy hiçbir hesaba girmez.
+
+Raporlar başlamadan önceki föyler yalnız **ilk rapora kesintisiz uzanan kısımla** sayılır: arada föyü olmayan gün varsa
+(alınamadı, henüz çekilmedi) ondan öncesi sayılmaz, boşluk dolunca kendiliğinden sayılır; kesintisiz kısmın başladığı
+ay yarımdır (toplamı uygulanmaz, "ModPOS föyleri 6 Ekim'den itibaren var"). Tek tek elle çekilmiş eski bir gün ayı
+yanlış "tam" yapmaz. Kasası açılmamış, satışsız kesin gün (kafe kapalı) sıfır satırdır: kesintiyi bozmaz, ciroya bir şey
+katmaz. Eksik gün uyarıları yalnız ilk kasa raporundan itibaren aranır: raporlardan önceki föy günleri "eksik rapor"
+sayılmaz.
 
 ## 7. Saklama
 
