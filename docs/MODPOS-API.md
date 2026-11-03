@@ -26,10 +26,12 @@ varsayımı): [planlar/modpos-api.md](planlar/modpos-api.md).
 API her anahtara **günde 2 başarılı istek** verir (Türkiye saatiyle gece yarısı yenilenir; 400 / 401 / 403 hakkı
 düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yüzden:
 
-- **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts):
+- **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts; sahibin kuralı,
+  3 Kasım 2026: önce dün, sonra çekilmemiş bir eski gün):
   1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır);
-  2. son 14 günün kesin olmayan föyleri (gün açıkken ya da 07:00'den önce alınanlar);
-  3. **hiç alınmamış günler**, dünden geriye `MODPOS_SYNC_FROM`'a kadar (önce süren ve geçen ay dolar);
+  2. **henüz çekilmemiş bir eski gün**, dünden geriye `MODPOS_SYNC_FROM`'a kadar, yeniden eskiye (önce süren ve geçen
+     ay dolar);
+  3. eksik gün kalmadıysa son 14 günün kesin olmayan föyleri (gün açıkken ya da 07:00'den önce elle alınanlar);
   4. hiçbiri yoksa son 7 günün en eski kontrol edilen föyü (kapanıştan sonra düzeltme olduysa görünsün).
   Hak bitince durur. Yani her sabah dün + bir geçmiş gün gelir: Temmuz'dan bu yana ~125 gün ~4 ayda tamamlanır.
   **Daha hızlı geçmiş için** Gafdigi'den birkaç günlüğüne daha yüksek kota istenebilir; kod hakkı yanıt başlığından

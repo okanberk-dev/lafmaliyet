@@ -936,6 +936,32 @@ describe("plan.ts: çekilecek günler", () => {
     assert.equal(missingFoyDays("2026-11-01", new Map(), CRON).length, 11);
   });
 
+  test("sahibin kuralı: her sabah önce dün, sonra henüz çekilmemiş bir eski gün (kesin olmayan föyün yeniden çekimi ondan sonra)", () => {
+    // 10 Kasım gün içinde elle çekilmiş (kesin değil); 9 Kasım hiç çekilmemiş: ikinci hak 9 Kasım'a
+    const provisional = have({ "2026-11-10": S(false, "2026-11-10T15:00:00+03:00") });
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: provisional, left: 2 }), ["2026-11-11", "2026-11-09"]);
+    // Eksik eski gün kalmadıysa kesin olmayan föy yeniden çekilir
+    const done = allFinal("2026-11-01", "2026-11-09");
+    done.set("2026-11-10", S(false, "2026-11-10T15:00:00+03:00"));
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: done, left: 2 }), ["2026-11-11", "2026-11-10"]);
+    // Beş sabah üst üste (hepsi başarılı): her sabah dün + sıradaki eski gün, geçmiş günde bir gün geriye
+    const stored = new Map<string, StoredDay>();
+    const got: string[][] = [];
+    for (let i = 0; i < 5; i++) {
+      const now = new Date(Date.parse("2026-11-12T08:00:00+03:00") + i * 86_400_000);
+      const plan = planFoyDays({ now, from: "2026-07-01", have: stored, left: 2 });
+      got.push(plan);
+      for (const d of plan) stored.set(d, S(true, now.toISOString()));
+    }
+    assert.deepEqual(got, [
+      ["2026-11-11", "2026-11-10"],
+      ["2026-11-12", "2026-11-09"],
+      ["2026-11-13", "2026-11-08"],
+      ["2026-11-14", "2026-11-07"],
+      ["2026-11-15", "2026-11-06"],
+    ]);
+  });
+
   test("ilk kurulum, sabah 08:00: dün ve bir geçmiş gün, yeniden eskiye", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 2 }), ["2026-11-11", "2026-11-10"]);
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 3 }), ["2026-11-11", "2026-11-10", "2026-11-09"], "kota artırılırsa");

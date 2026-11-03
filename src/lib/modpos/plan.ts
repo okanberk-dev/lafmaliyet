@@ -3,13 +3,15 @@ import { addDays, todayTR } from "@/lib/reminders";
 import { finalAfter } from "./z";
 
 /**
- * Hangi kasa günlerinin çekileceği (saf; tests/modpos-foy.test.ts). Günde 2 hak var (belge §4); hak sırayla:
+ * Hangi kasa günlerinin çekileceği (saf; tests/modpos-foy.test.ts). Günde 2 hak var (belge §4); sahibin kuralı (3 Kasım
+ * 2026): **her sabah önce dünün föyü, sonra henüz çekilmemiş bir eski gün**. Hak sırayla:
  *
  * 1. **Dün**, kesin değilse (ertesi sabah 07:00'den sonra alınmış, kasaları kapalı föy kesindir). Sabah işi 08:00'de
  *    çalışır: dünün föyü kesinleşmiştir.
- * 2. **Son 14 günün kesin olmayan föyleri** (gün açıkken ya da 07:00'den önce alınmış), yeniden yeniye.
- * 3. **Hiç alınmamış günler**, dünden geriye `from`'a (kafenin ilk günü) kadar, yeniden eskiye: önce süren ve geçen ay
- *    tamamlanır. Hak günde 2 olduğundan geçmiş günde ~1 gün ilerler (docs/MODPOS-API.md › Geçmiş).
+ * 2. **Hiç alınmamış eski günler**, dünden geriye `from`'a (kafenin ilk günü) kadar, yeniden eskiye: önce süren ve geçen
+ *    ay tamamlanır. Hak günde 2 olduğundan geçmiş günde 1 gün ilerler (docs/MODPOS-API.md › Kota ve çekme sırası).
+ * 3. Eksik gün kalmadıysa **son 14 günün kesin olmayan föyleri** (gün açıkken ya da 07:00'den önce elle alınmış),
+ *    yeniden yeniye.
  * 4. Hiçbiri yoksa **son 7 günün en eski kontrol edilen kesin föyü** (kapanıştan sonra düzeltme olduysa görünsün).
  *
  * Bugün (açık gün) hiçbir zaman kendiliğinden çekilmez: tutarlar değişir, hak harcanır. LafPOS'a geçiş gününden
@@ -67,15 +69,15 @@ export function planFoyDays({ now, from, have, left, until = null, failed = {} }
   // 1) Dün: kesinleştiyse ve kesin föyü yoksa
   const y = have.get(yesterday);
   if (now.getTime() >= finalAfter(yesterday) && !y?.final) add(yesterday);
-  // 2) Kesin olmayan föyler (yalnız kesinleşme anı geçtiyse: erken yeniden çekmek aynı sonucu verir)
+  // 2) Hiç alınmamış eski günler: dünden geriye, yeniden eskiye
+  for (let d = yesterday; d >= from && out.length < left; d = addDays(d, -1)) {
+    if (!have.has(d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
+  }
+  // 3) Kesin olmayan föyler (yalnız kesinleşme anı geçtiyse: erken yeniden çekmek aynı sonucu verir)
   for (let i = 1; i <= PROVISIONAL_DAYS; i++) {
     const d = addDays(today, -i);
     const h = have.get(d);
     if (h && !h.final && now.getTime() >= finalAfter(d) && ready(d)) add(d);
-  }
-  // 3) Hiç alınmamış günler: dünden geriye
-  for (let d = yesterday; d >= from && out.length < left; d = addDays(d, -1)) {
-    if (!have.has(d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
   }
   // 4) En eski kontrol edilen yakın kesin gün
   if (out.length < left) {
