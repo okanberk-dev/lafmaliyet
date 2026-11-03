@@ -24,6 +24,7 @@ import postgres from "postgres";
 
 import { dayMonthYearTR } from "../src/lib/lafpos/switch";
 import { MODPOS_DAY_INVALID, MODPOS_KEY_BROKEN, MODPOS_NOT_CONFIGURED, MODPOS_PREVIEW, modposDayBadges } from "../src/lib/modpos/ayarlar";
+import { finalAfter } from "../src/lib/modpos/z";
 import { addDays, todayTR } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -115,15 +116,17 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
 
   test("kurulmamış: kart Kurulmadı der, düğme kapalı; eylem istek göndermeden reddeder", async () => {
     delete process.env.MODPOS_API_KEY;
-    const card = await status.loadModposCard(db, new Date(), {});
+    const at = new Date();
+    const card = await status.loadModposCard(db, at, {});
     assert.equal(card.summary.badge, "Kurulmadı");
     assert.equal(card.summary.canFetch, false);
     assert.equal(card.summary.fetchBlocked, "Anahtar tanımlı değil");
     assert.deepEqual(card.days, []);
     assert.deepEqual(card.stored, {});
     assert.equal(card.fallback, false);
-    assert.equal(card.today, today);
-    assert.equal(card.defaultDay, addDays(today, -1));
+    assert.equal(card.today, todayTR(at));
+    // Kesinleşmiş son gün: gece yarısından 07:00'ye kadar dün henüz kesin değil, önceki gün (duvar saatine bağlı)
+    assert.equal(card.defaultDay, at.getTime() >= finalAfter(addDays(todayTR(at), -1)) ? addDays(todayTR(at), -1) : addDays(todayTR(at), -2));
     assert.ok(card.input.missing > 0, "Temmuz'dan bu yana eksik günler");
     assert.deepEqual(await actions.fetchModposDay(d3), { ok: false, error: MODPOS_NOT_CONFIGURED });
     assert.equal(calls.length, 0);
