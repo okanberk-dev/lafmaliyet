@@ -31,6 +31,7 @@ import { BackupDownload } from "./backup-client";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { LafposCard } from "./lafpos-card";
+import { ModposCard } from "./modpos-card";
 import { PhotoReadingCard } from "./photo-card";
 import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
@@ -40,6 +41,8 @@ import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
 import { StockValuationCard, type ValuationRow } from "./stock-valuation";
 
 export const metadata: Metadata = { title: "Ayarlar" };
+// ModPOS kasa föyü kartının "Bu günü çek"i bu sayfanın sunucu eylemiyle çalışır (istek 50 sn'ye kadar bekler)
+export const maxDuration = 60;
 
 export default function SettingsPage() {
   return (
@@ -440,6 +443,7 @@ async function SettingsContent() {
           active: p.product.active,
         }))}
       />
+      <ModposCard />
       <PhotoReadingCard />
       <BackupCard />
     </SettingsLayout>
