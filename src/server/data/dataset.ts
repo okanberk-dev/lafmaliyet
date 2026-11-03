@@ -6,7 +6,7 @@ import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
-import { resolveMonths, tillMonths } from "@/lib/cash-month";
+import { isReportRow, resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
@@ -141,8 +141,8 @@ export async function loadDataset(): Promise<Dataset> {
   const through = addDays(today, -1);
   // Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
   // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
-  // satırlar ve kapsam bugünkü gibi
-  const reportRows = till.filter((r) => r.source !== "lafpos");
+  // satırlar ve kapsam bugünkü gibi. Yalnız kasa raporları: yedek ay satırları (LafPOS G6, ModPOS föyü) rapor değildir
+  const reportRows = till.filter(isReportRow);
   // LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
   const [sales, lafposIkram] = await Promise.all([
     mergeWithLafpos(db, {
@@ -170,12 +170,15 @@ export async function loadDataset(): Promise<Dataset> {
     }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
   ]);
-  // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır)
+  // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
+  // Eksik gün, ay bilgisindeki gibi ilk kasa raporundan (ya da LafPOS gün sonundan) aranır: raporlar başlamadan önceki
+  // ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek); ModPOS satırı yokken ikisi aynı gün
   const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+  const firstReport = till.filter((r) => r.source !== "modpos").reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
   const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
-    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver)[0] ?? null,
+    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport)[0] ?? null,
   }));
 
   return {
@@ -241,12 +244,12 @@ export async function loadDataset(): Promise<Dataset> {
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     ...(lafposIkram ? { lafposIkram } : {}),
     // Kapalı işaretli bütün günler (ileri tarihliler dahil): süren ayın ay sonu öngörüsü bunları açık saymaz (E-41).
-    // Raporlu gün ve satışlı LafPOS gün sonu kapalı sayılmaz (tillMonths ile aynı kural)
+    // Raporlu gün ve satışlı yedek satır (LafPOS gün sonu, ModPOS föyü) kapalı sayılmaz (tillMonths ile aynı kural)
     closedDays: closedDaysIn(
       closedRows,
       "2000-01-01",
       "9999-12-31",
-      till.filter((r) => r.source !== "lafpos" || r.zTotal > 0 || (r.receipts ?? 0) > 0).map((r) => r.date),
+      till.filter((r) => isReportRow(r) || r.zTotal > 0 || (r.receipts ?? 0) > 0).map((r) => r.date),
     ),
     invoices: invoices.map((i) => ({
       id: i.id,

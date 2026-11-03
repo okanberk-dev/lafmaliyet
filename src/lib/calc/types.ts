@@ -151,7 +151,10 @@ export interface TillMonth {
    * (engine.ts bankShareOf; denetim E-43). Yoksa (eski kayıt, test) yemek kartı payı ayrılamaz, kartlı oran geçer
    */
   bankShare?: number | null;
-  /** [from, to] içinde raporu olmayan günler */
+  /**
+   * [from, to] içinde raporu olmayan günler. Yalnız ilk kasa raporundan (ya da LafPOS gün sonundan) itibaren aranır:
+   * raporlar başlamadan önceki ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek)
+   */
   missing: string[];
   /**
    * Eksik günlerden personelin geç raporu onay bekleyenler (yalnız yükleyici verdiyse; docs/KASA-RAPORU.md › Geç rapor):
@@ -163,15 +166,25 @@ export interface TillMonth {
    * cümleyle yazılır ("2 gün kapalı işaretli: 3, 4 Kasım"). Yalnız yükleyici verdiyse
    */
   closed?: string[];
-  /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
+  /**
+   * İlk satır (kasa raporu ya da yedek satır, ör. ModPOS föyü) bu ayın 1'inden sonraysa o gün: toplamlar ayın yalnız bir
+   * kısmını kapsar, uygulanmaz
+   */
   partialFrom: string | null;
-  /** Son raporun günü (LafPOS'un yedek satırı da sayılır) */
+  /** Son raporun günü (LafPOS'un ve ModPOS'un yedek satırı da sayılır) */
   lastDate: string;
   /**
    * Kasa raporu olmayan ama rakamları LafPOS'un gün sonundan sayılan günler (G6; yalnız geçiş gününden sonra): eksik
    * günlerin içindedir, yanına "LafPOS'tan" yazılır. Yoksa alan yok
    */
   lafpos?: string[];
+  /**
+   * Kasa raporu (ve LafPOS gün sonu) olmayan ama rakamları kapanmış ModPOS kasa föyünden sayılan günler (Ayarlar › ModPOS
+   * › Ay rakamına yedek açıkken; yalnız LafPOS'a geçiş gününden önce; docs/MODPOS-API.md › Ay rakamına yedek). İlk kasa
+   * raporundan sonrakiler eksik günlerin içindedir ("ModPOS föyünden sayıldı"); öncekiler eksik aranmaz. O günlerin
+   * indirimi bilinmez (föyde yok). Yoksa alan yok
+   */
+  modpos?: string[];
 }
 
 /**
