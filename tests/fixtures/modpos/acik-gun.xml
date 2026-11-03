@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kitapçığın (docs/modpos-kasa-foyu-api.md §5) öğe yapısına göre ELLE yazıldı; kafenin verisi değil.
+  Açık gün: bugünün tarihi istenmiş, kasa henüz kapanmamış (durum ACIK, kapanış boş), nakit mutabakatı anlık
+  (dayanak CANLI, sayım yok), uyarı GUN_ACIK. Z no henüz yok (boş öğe), kişi sayısı boş, defter girilmemiş.
+-->
+<kasaFoyu>
+  <kasaGunu>2026-11-02</kasaGunu>
+  <olusturulma>2026-11-02T20:15:00+03:00</olusturulma>
+  <kasa>
+    <sube>Örnek Şube</sube>
+    <kasaAdi>KASA-1</kasaAdi>
+    <gunNo>45</gunNo>
+    <zNo/>
+    <durum>ACIK</durum>
+    <otomatikKapandi>false</otomatikKapandi>
+    <acilis>
+      <zaman>2026-11-02T08:55:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <nakit>1000</nakit>
+    </acilis>
+    <kapanis/>
+    <satis>
+      <ciro>6420.75</ciro>
+      <ciroDisi>0</ciroDisi>
+      <adisyonSayisi>58</adisyonSayisi>
+      <kisiSayisi/>
+      <bahsis>0</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>2100</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>2100</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>3870.75</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>3870.75</sistem>
+      <defter/>
+      <fark/>
+      <kirilim>
+        <ad>Ziraat Bankası</ad>
+        <tutar>2500</tutar>
+      </kirilim>
+      <kirilim>
+        <ad>İş Bankası</ad>
+        <tutar>1370.75</tutar>
+      </kirilim>
+    </odeme>
+    <odeme>
+      <yontem>Multinet</yontem>
+      <kod>MULTINET</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>450</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>450</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <defterGirildi>false</defterGirildi>
+    <giderler>
+      <toplam>150</toplam>
+      <gider>
+        <kategori>Market</kategori>
+        <aciklama>Süt</aciklama>
+        <tutar>150</tutar>
+      </gider>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>0</toplam>
+      <nakit>0</nakit>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>CANLI</dayanak>
+      <acilis>1000</acilis>
+      <nakitSatis>2100</nakitSatis>
+      <nakitCariTahsilat>0</nakitCariTahsilat>
+      <gider>150</gider>
+      <beklenen>2950</beklenen>
+      <sayilan/>
+      <fark/>
+    </nakitKasa>
+    <notlar>
+      <kapanis/>
+      <fark/>
+    </notlar>
+    <uyari>
+      <kod>GUN_ACIK</kod>
+      <mesaj>Gün henüz kapanmadı</mesaj>
+    </uyari>
+    <uyari>
+      <kod>DEFTER_GIRILMEMIS</kod>
+      <mesaj>Kasa defteri girilmemiş</mesaj>
+    </uyari>
+  </kasa>
+  <ozet>
+    <kasaSayisi>1</kasaSayisi>
+    <acikKasa>1</acikKasa>
+    <kapaliKasa>0</kapaliKasa>
+    <otomatikKapanan>0</otomatikKapanan>
+    <ciro>6420.75</ciro>
+    <ciroDisi>0</ciroDisi>
+    <adisyonSayisi>58</adisyonSayisi>
+    <kisiSayisi/>
+    <bahsis>0</bahsis>
+    <gider>150</gider>
+    <cariTahsilat>0</cariTahsilat>
+    <kasaFarki/>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>2100</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <tutar>3870.75</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Multinet</yontem>
+      <kod>MULTINET</kod>
+      <tutar>450</tutar>
+    </odeme>
+    <foysuzGunSayisi>0</foysuzGunSayisi>
+    <foysuzCiro>0</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>2</kullanilan>
+    <kalan>0</kalan>
+    <yenilenme>2026-11-03T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>

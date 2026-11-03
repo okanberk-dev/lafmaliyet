@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 
 /**
  * ModPOS (Gafdigi) Kasa Föyü API'sinin yanıtı (saf; sunucu, betik ve testler paylaşır; tests/modpos-foy.test.ts).
@@ -13,6 +13,8 @@ import { XMLParser } from "fast-xml-parser";
  * - Tekrar eden öğeler (kasa, odeme, kirilim, gider, tahsilat, araKasa, uyari, foysuzGun) her zaman dizidir; kayıt
  *   yoksa boş dizi.
  * - DOCTYPE / ENTITY taşıyan gövde hiç ayrıştırılmaz (genişleme saldırısı); servis bunları göndermez.
+ * - Gövde önce iyi biçimli XML mi diye denetlenir: ayrıştırıcı kapanmamış öğeyi hoş görür, yarıda kesilmiş bir yanıt
+ *   (ikinci ödemenin ortasında biten) aksi hâlde eksik ödemeli geçerli föy diye saklanırdı.
  */
 
 export const MODPOS_DAYANAK = ["Z_RAPORU", "CANLI", "OTOMATIK_KAPANIS"] as const;
@@ -432,9 +434,12 @@ function kota(n: Node | null, path: string): FoyKota | null {
 export function parseKasaFoyu(body: string, istenen?: string): FoyParse {
   if (body.length > FOY_MAX_BYTES) return { ok: false, bozuk: "govde" };
   if (/<!DOCTYPE|<!ENTITY/i.test(body)) return { ok: false, bozuk: "govde" };
+  // Baştaki BOM ve boşluk hoş görülür (XML bildirimi en başta olmalı); gerisi iyi biçimli olmalı
+  const xml = body.replace(/^\uFEFF/, "").trimStart();
   let doc: Node;
   try {
-    doc = parser.parse(body) as Node;
+    if (XMLValidator.validate(xml) !== true) return { ok: false, bozuk: "govde" };
+    doc = parser.parse(xml) as Node;
   } catch {
     return { ok: false, bozuk: "govde" };
   }

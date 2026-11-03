@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
-import { dayMonthTR, todayTR } from "@/lib/reminders";
+import { dayAblativeTR, dayMonthTR, todayTR } from "@/lib/reminders";
 
 import { MODPOS_DAILY_QUOTA, quotaLeft, quotaRenewsAt, renewText, type ModposQuota } from "./request";
 
@@ -77,6 +77,12 @@ export function withRun(runs: readonly ModposRun[], run: ModposRun): ModposRun[]
   return [run, ...runs].slice(0, MODPOS_RUNS_KEEP);
 }
 
+/** "1 Temmuz'dan" (ay adının ekiyle; eskiden hep "'den" yazılıyordu); başka yılsa ek yılın okunuşuna bağlı olduğundan
+ * "1 Temmuz 2025 tarihinden" */
+function sinceText(day: string, now: Date): string {
+  return day.slice(0, 4) === todayTR(now).slice(0, 4) ? dayAblativeTR(day) : `${dayMonthYearTR(day)} tarihinden`;
+}
+
 /** Günün yazısı: bu yılsa "2 Kasım", değilse "2 Kasım 2025" */
 export function modposDayText(day: string, now: Date): string {
   return day.slice(0, 4) === todayTR(now).slice(0, 4) ? dayMonthTR(day) : dayMonthYearTR(day);
@@ -121,11 +127,13 @@ export interface ModposCardSummary {
 
 /**
  * Kartın özeti. Sakin dil (LafPOS kartıyla aynı kural): kurulmamış bağlantı gri "Kurulmadı"dır, hata değil; kırmızı
- * yalnız anahtar çalışmadığında (geçersiz, süresi dolmuş, IP, yetki). Hak dolması turuncu değil mavidir: olağandır.
+ * yalnız anahtar çalışmadığında (geçersiz, süresi dolmuş, IP, yetki). Hak dolması turuncu değil mavidir: olağandır;
+ * hak yenilendiyse son denemenin KOTA_DOLDU'su hiç anılmaz (tests/modpos-foy.test.ts).
  */
 export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   const left = quotaLeft(c.state.quota, c.now);
-  const hak = c.state.quota?.hak ?? MODPOS_DAILY_QUOTA;
+  // quotaLeft'le aynı kural: yeni günün hakkı en az 1
+  const hak = c.state.quota && c.state.quota.hak >= 1 ? c.state.quota.hak : MODPOS_DAILY_QUOTA;
   const renew = renewText(quotaRenewsAt(c.state.quota, c.now), c.now);
   if (c.keyProblem === "missing") {
     return {
@@ -159,21 +167,36 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   if (c.missing > 0) {
     const days = Math.ceil(c.missing / Math.max(1, hak - 1));
     lines.push(
-      `${modposDayText(c.from, c.now)}'den bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık ${days} gün sürer).`,
+      `${sinceText(c.from, c.now)} bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık ${days} gün sürer).`,
     );
   }
   lines.push(`Bugün kalan çekim hakkı: ${left} / ${hak}${left < hak ? ` (hak ${renew} yenilenir)` : ""}.`);
   const ok = c.state.lastOk;
   if (ok) lines.push(`Son başarılı çekim: ${modposDayText(ok.day, c.now)} föyü, ${timeText(ok.at, c.now)}.`);
   const err = c.state.lastError;
-  const errFresh = err && (!ok || err.at > ok.at);
+  // Hak doldu bir hata değildir: hak yenilendiyse (left > 0) eski KOTA_DOLDU güncel sayılmaz
+  const quotaErr = err?.kod === "KOTA_DOLDU";
+  const errFresh = err && (!ok || err.at > ok.at) && !(quotaErr && left > 0);
   if (c.preview) {
     return { tone: "gray", badge: "Önizleme", headline: "Önizleme dağıtımı ModPOS'tan çekmez", lines, short: "Önizleme", left, canFetch: false, fetchBlocked: "Önizlemede çekilmez" };
   }
   if (errFresh && err.keyError) {
     return { tone: "red", badge: "Hata", headline: err.text, lines, short: "Hata", left, canFetch: left > 0, fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir` };
   }
-  if (!ok && !err) {
+  if (errFresh && quotaErr) {
+    // Burada left 0'dır (yukarıdaki kural): düğme kapalı, metin yenilenme anını bugüne göre söyler
+    return {
+      tone: "blue",
+      badge: "Hak doldu",
+      headline: `Bugünkü çekim hakkı doldu; hak ${renew} yenilenir`,
+      lines,
+      short: "Bugünkü hak doldu",
+      left,
+      canFetch: false,
+      fetchBlocked: `Bugünkü hak doldu; ${renew} yenilenir`,
+    };
+  }
+  if (!ok && !errFresh) {
     return {
       tone: "amber",
       badge: "Henüz çekilmedi",

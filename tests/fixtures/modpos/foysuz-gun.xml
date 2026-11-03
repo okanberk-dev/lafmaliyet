@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kitapçığın (docs/modpos-kasa-foyu-api.md §5.1) öğe yapısına göre ELLE yazıldı; kafenin verisi değil.
+  Föysüz gün: o gün satış yapılmış ama kasa açılmamış. <kasa> öğesi hiç yok; tek <foysuzGun> şube, ciro, adisyon
+  sayısı ve ödeme listesiyle (ödemenin alt öğeleri özetteki gibi yontem, kod, tutar; ikram ciroya dahil değil).
+-->
+<kasaFoyu>
+  <kasaGunu>2026-10-25</kasaGunu>
+  <olusturulma>2026-10-26T09:00:00+03:00</olusturulma>
+  <foysuzGun>
+    <sube>Örnek Şube</sube>
+    <ciro>840</ciro>
+    <adisyonSayisi>6</adisyonSayisi>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>340</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <tutar>500</tutar>
+    </odeme>
+    <odeme>
+      <yontem>İkram</yontem>
+      <kod>IKRAM</kod>
+      <tutar>40</tutar>
+    </odeme>
+  </foysuzGun>
+  <ozet>
+    <kasaSayisi>0</kasaSayisi>
+    <acikKasa>0</acikKasa>
+    <kapaliKasa>0</kapaliKasa>
+    <otomatikKapanan>0</otomatikKapanan>
+    <ciro>0</ciro>
+    <ciroDisi>0</ciroDisi>
+    <adisyonSayisi>0</adisyonSayisi>
+    <kisiSayisi/>
+    <bahsis>0</bahsis>
+    <gider>0</gider>
+    <cariTahsilat>0</cariTahsilat>
+    <kasaFarki/>
+    <foysuzGunSayisi>1</foysuzGunSayisi>
+    <foysuzCiro>840</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>1</kullanilan>
+    <kalan>1</kalan>
+    <yenilenme>2026-10-27T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>
