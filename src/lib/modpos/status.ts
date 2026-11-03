@@ -196,7 +196,8 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
       fetchBlocked: `Bugünkü hak doldu; ${renew} yenilenir`,
     };
   }
-  if (!ok && !errFresh) {
+  // Hiç çekim kaydı yok ama föy saklı (komut satırının --dosya --kaydet'i durum yazmaz): "henüz çekilmedi" denmez
+  if (!ok && !errFresh && !st.count) {
     return {
       tone: "amber",
       badge: "Henüz çekilmedi",

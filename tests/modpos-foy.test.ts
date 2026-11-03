@@ -1036,6 +1036,9 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
       "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla bir gün daha geriye gidilir (yaklaşık 111 gün sürer).",
       "Bugün kalan çekim hakkı: 2 / 2.",
     ]);
+    // Çekim kaydı yok ama föy saklı (komut satırının --dosya --kaydet'i): "Henüz çekilmedi" denmez
+    const filed = card({ missing: 111, stored: { count: 2, first: "2026-11-01", last: "2026-11-02" } });
+    assert.deepEqual([filed.tone, filed.badge, filed.short], ["green", "Bağlı", "Bağlı · 2 gün"]);
     // Ay adının eki ayına göre (eskiden hep "'den"); başka yıl "tarihinden"
     assert.match(card({ missing: 3, from: "2026-09-01" }).lines[0], /^1 Eylül'den bu yana 3 günün/);
     assert.match(card({ missing: 3, from: "2026-08-03" }).lines[0], /^3 Ağustos'tan bu yana/);
