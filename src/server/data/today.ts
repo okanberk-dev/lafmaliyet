@@ -8,6 +8,7 @@ import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
 import type { StaffForecastView } from "@/lib/forecast/text";
+import { modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
@@ -34,6 +35,7 @@ import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret } from "@/server/karaoke/sync";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadModposSheets } from "@/server/modpos/store";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 import { readOrdersSnapshot, readOrdersState, type OrdersSnapshot, type OrdersSyncState } from "@/server/site-orders/sync";
@@ -199,14 +201,21 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       })(),
     ),
     // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
-    // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi. Zincir listenin en eski gününden önceki son
-    // rapordan başlar (en eski gün sıraya güvenmeden bulunur)
+    // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; ModPOS gününde rapor saklanan ModPOS kasa
+    // föyünden farklı (src/lib/modpos/zil.ts; föy ya da geçiş günü okunamazsa bu işaret yok, ötekiler kalır). Zincir
+    // listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur)
     safe(
       cash.then(async (reports) => {
         if (!reports?.length) return new Map<string, string[]>();
         const oldest = reports.map((r) => r.date).sort()[0];
-        const [before, revisions] = await Promise.all([previousCarryOver(oldest), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
-        return cashFlags(reports, before, revisions, viewer);
+        const [before, revisions, modpos] = await Promise.all([
+          previousCarryOver(oldest),
+          cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
+          Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()])
+            .then(([sheets, switchDay]) => modposMismatchDates(reports, sheets, switchDay))
+            .catch(() => new Set<string>()),
+        ]);
+        return cashFlags(reports, before, revisions, viewer, modpos);
       }),
     ),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)

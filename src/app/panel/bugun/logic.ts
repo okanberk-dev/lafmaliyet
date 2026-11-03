@@ -81,8 +81,12 @@ export interface CashLite {
   flags?: string[];
 }
 
-/** Kasanın bütünlük uyarıları (kasa'nın carryChecks ve lateCorrections'ı; docs/KASA-RAPORU.md › Açılış ve devir) */
-export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi gün düzeltildi" } as const;
+/**
+ * Kasanın bütünlük uyarıları (kasa'nın carryChecks ve lateCorrections'ı; docs/KASA-RAPORU.md › Açılış ve devir) ve
+ * ModPOS gününde raporun saklanan ModPOS kasa föyünden farklı olması (zil ile aynı kural, src/lib/modpos/zil.ts;
+ * docs/MODPOS-API.md › Nerede görünür)
+ */
+export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi gün düzeltildi", modpos: "ModPOS föyünden farklı" } as const;
 
 /** Günün olguları. Yöneticiye ait alanlar personelin olgusunda hiç doldurulmaz; mantık da rolü ayrıca denetler */
 export interface DayFacts {
@@ -223,19 +227,22 @@ export type CashFlagReport = Parameters<typeof lateCorrections>[0] & { id: numbe
  * ertesi güne devriyle tutmuyor; zincir `before`'dan, listenin en eski raporundan önceki son raporun devrinden başlar
  * (previousCarryOver), dünün raporu yoksa bugünün açılışı ondan önceki raporla karşılaştırılır. "Ertesi gün
  * düzeltildi": rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; bakan yöneticinin (`viewer`)
- * kendi düzeltmesi sayılmaz. `revisions`: raporların kayıtlı önceki sürümleri. Listenin sırası önemsiz.
+ * kendi düzeltmesi sayılmaz. `revisions`: raporların kayıtlı önceki sürümleri. "ModPOS föyünden farklı": `modpos`
+ * föyünden farklı yazılan raporların günleri (önceden hesaplanır: src/lib/modpos/zil.ts modposMismatchDates; föy
+ * okunamazsa boş). Listenin sırası önemsiz.
  */
 export function cashFlags(
   reports: CashFlagReport[],
   before: { date: string; amount: number } | null,
   revisions: (CashRevisionRow & { reportId: number })[],
   viewer: number,
+  modpos: ReadonlySet<string> = new Set(),
 ): Map<string, string[]> {
   const checks = carryChecks(reports, before);
   return new Map(
     reports.map((r) => {
       const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
-      return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : [])]];
+      return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : []), ...(modpos.has(r.date) ? [CASH_FLAGS.modpos] : [])]];
     }),
   );
 }

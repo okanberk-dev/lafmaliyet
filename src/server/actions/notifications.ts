@@ -17,6 +17,7 @@ import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
+import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { isClosedDay } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
@@ -481,8 +482,9 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
   // Maliyet modeli zilin en ağır okuması: düşerse (E-49) öbür maddeler yine gelir, modelNotifications kendi satırını
-  // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed)
-  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients] = await Promise.all([
+  // koyar. Ödemeler de öyle: okunamazsa "Ödemeler yüklenemedi" satırı (upcomingFailed). ModPOS kasa föyünün anahtarı
+  // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
+  const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos] = await Promise.all([
     modelNotifications().catch(modelFailed),
     loadUpcoming().catch(upcomingFailed),
     invoiceNotifications().catch(() => []),
@@ -491,6 +493,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     holdNotifications().catch(() => []),
     commissionNotifications().catch(() => []),
     recipientNotifications().catch(() => []),
+    modposKeyBell().catch(() => []),
   ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -523,5 +526,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     });
   }
 
-  return [...system, ...recipients, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
+  return [...system, ...recipients, ...modpos, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...costs.priceNote, ...unpriced, ...costs.warnings];
 }

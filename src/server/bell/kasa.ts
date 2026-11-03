@@ -5,6 +5,7 @@ import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/ca
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
 import { kasaName } from "@/lib/lafpos/switch";
+import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
@@ -14,6 +15,7 @@ import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/clo
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { loadKasaLafposDays } from "@/server/data/lafpos-day";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { loadModposSheets } from "@/server/modpos/store";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
 
 /*
@@ -90,17 +92,21 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
  * raporu iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildiyse (src/lib/cash-report.ts lateCorrections:
  * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). LafPOS gününde (geçiş
  * gününden sonra) rapor LafPOS'un gün sonundan farklıysa da satır (E-09): rapordan sonra gelen LafPOS yeniden gönderimi
- * de görünür (kimlik raporun sürümü ve LafPOS'un geliş anından). Üç küçük sorgu.
+ * de görünür (kimlik raporun sürümü ve LafPOS'un geliş anından). ModPOS gününde (geçiş günü boşken ya da gün ondan
+ * önceyken) rapor saklanan ModPOS kasa föyünden farklıysa da satır (docs/MODPOS-API.md › Nerede görünür; kural
+ * src/lib/modpos/zil.ts: kasası açık föy karşılaştırılmaz; kimlik raporun ve föyün sürümünden). Küçük sorgular; LafPOS
+ * ve ModPOS okunamazsa yalnız kendi satırları düşer.
  */
 async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
   if (!reports.length) return [];
   const oldest = reports[reports.length - 1];
   const revised = reports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [before, revisions, proposed, lafposOf] = await Promise.all([
+  const [before, revisions, proposed, lafposOf, modpos] = await Promise.all([
     previousCarryOver(oldest.date),
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaLafposDays(oldest.date, day).catch(() => null),
+    Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay()]).catch(() => null),
   ]);
   const checks = carryChecks(reports, before);
   const yesterday = addDays(day, -1);
@@ -152,6 +158,10 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
       href: `/panel/kasa?gun=${r.date}`,
       group: "kasa",
     });
+  }
+  // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok)
+  for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1]) : []) {
+    out.push({ ...modposMismatchBell(m), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
   return out;
 }
