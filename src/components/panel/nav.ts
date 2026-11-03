@@ -290,7 +290,7 @@ export const NAV_FOOTER: NavItem[] = [
     roles: ["admin"],
     keywords: "ürün hammadde bağlantısı eşleştir fatura kalemi",
   },
-  { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı lafpos kasa geçiş günü" },
+  { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı lafpos kasa geçiş günü modpos kasa föyü" },
   { href: "/panel/ayarlar#oranlar", label: "KDV ve komisyon oranları", icon: Percent, roles: ["admin"], keywords: "kdv oranı %10 %20 hizmet pos komisyon oranı" },
   { href: "/panel/ayarlar#gecmis", label: "İşlem geçmişi", icon: History, roles: ["admin"], keywords: "kim neyi değiştirdi kayıt geçmiş log" },
   { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir excel" },
