@@ -38,7 +38,7 @@ export function LineList({ title, lines, children }: { title: ReactNode; lines: 
           <li key={`${l.label}:${i}`} className="py-1.5 text-sm">
             <div className="flex items-baseline justify-between gap-4">
               <span className={cn("min-w-0 break-words", l.strong ? "font-medium text-ink" : "text-ink-soft")}>{l.label}</span>
-              <span className={cn("shrink-0 text-right tabular", l.strong ? "font-semibold" : null, l.tone ? TONE[l.tone] : "text-ink")}>{l.value}</span>
+              <span className={cn("text-right tabular", l.wrap ? "min-w-0 break-words" : "shrink-0", l.strong ? "font-semibold" : null, l.tone ? TONE[l.tone] : "text-ink")}>{l.value}</span>
             </div>
             {l.sub ? <p className="text-xs break-words text-ink-mute">{l.sub}</p> : null}
           </li>

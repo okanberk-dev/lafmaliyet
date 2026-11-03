@@ -3,7 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
-import { canRetry, missingFoyDays } from "@/lib/modpos/plan";
+import { canRetry, catchUpDays, missingFoyDays } from "@/lib/modpos/plan";
 import { modposKeyProblem, modposSyncFrom, modposSyncFromSet } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
 import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
@@ -75,8 +75,9 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     from,
     stored: { count: sorted.length, first: sorted[0] ?? null, last: sorted.at(-1) ?? null },
     missing: missing.length,
-    // Bekleyen (alınamayan, aralıklı denenen) gün sıradaki sayılmaz: sabah işi onu atlar
-    next: missing.find((d) => canRetry(state.dayErrors?.[d], now)) ?? null,
+    // Sabah işinin sırası: önce kaçan yakın gün, sonra geçmiş. Bekleyen (alınamayan, aralıklı denenen) gün sıradaki
+    // sayılmaz: sabah işi onu atlar
+    next: catchUpDays({ now, from, have: index, until: switchDay, failed: state.dayErrors })[0] ?? missing.find((d) => canRetry(state.dayErrors?.[d], now)) ?? null,
     start,
   };
   const today = todayTR(now);

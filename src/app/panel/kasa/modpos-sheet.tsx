@@ -118,7 +118,13 @@ export function ModposSheetCard({ date, today, sheet, z, now }: { date: string; 
     <Card aria-label="ModPOS kasa föyü">
       <CardHeader icon={<ClipboardList />} title="ModPOS" description={`Kasa föyü · ${modposHeadline(sheet, z, now)}`} actions={<StateBadge sheet={sheet} z={z} />} />
       <CardContent className="space-y-4">
-        {z ? null : <p className="text-sm text-ink-mute">Bu gün ModPOS&apos;ta kasa açılmamış, satış yok.</p>}
+        {z ? null : (
+          <p className="text-sm text-ink-mute">
+            {sheet.final
+              ? "Bu gün ModPOS'ta kasa açılmamış, satış yok."
+              : "Föy alındığında ModPOS'ta kasa henüz açılmamıştı, satış yoktu; kesin föy ertesi sabah gelir."}
+          </p>
+        )}
         {gap ? <Notice tone="warn" risk="para" size="sm" title={gap} text="ModPOS'ta ödemeleri kontrol edin; karşılaştırmadaki ödeme alanları bu yüzden farklı görünebilir." /> : null}
         {z && z.durum === "ACIK" ? (
           <Notice tone="neutral" size="sm" title="Föy gün açıkken alındı" text="Tutarlar o anki; rapor ertesi sabahki kesin föyle karşılaştırılır." />
@@ -194,7 +200,8 @@ function RawSheet({ raw }: { raw: string }) {
 
 /** ModPOS başlığının rozeti: kesin / kesin değil (gün açıkken alındı) / kasa açılmamış */
 function StateBadge({ sheet, z }: { sheet: ModposSheetView; z: ModposZ | null }) {
-  if (!z) return <Badge tone="gray">Kasa açılmamış</Badge>;
+  // Kesinleşmeden alınan boş föy (gün içinde "Bu günü çek", kasa açılmadan): gün sürüyor, "kasa açılmamış" kesin değil
+  if (!z) return <Badge tone="gray">{sheet.final ? "Kasa açılmamış" : "Kesin değil"}</Badge>;
   if (z.durum === "ACIK") return <Badge tone="gray">Gün açıkken alındı</Badge>;
   return sheet.final ? (
     <Badge tone="blue" dot>
@@ -221,11 +228,15 @@ export function ModposCompareCard({
 }) {
   const header = (badge: ReactNode) => <CardHeader icon={<GitCompareArrows />} title="Karşılaştırma" description="ModPOS föyü ↔ ladmin kasa raporu" actions={badge} />;
   if (!sheet || !z) {
+    const sales = Boolean(report && Math.abs(report.zTotal) >= 0.01);
+    // Kesinleşmeden alınan boş föy (kasa açılmadan "Bu günü çek"): gün sürüyordu, akşamki raporla karşılaştırılmaz
     const text = !sheet
       ? "ModPOS föyü gelince ladmin'deki raporla alan alan karşılaştırılır."
-      : report && Math.abs(report.zTotal) >= 0.01
-        ? null
-        : "İkisinde de satış yok.";
+      : !sheet.final
+        ? "Föy kasa açılmadan alındı: ertesi sabahki kesin föyle karşılaştırılır."
+        : sales
+          ? null
+          : "İkisinde de satış yok.";
     return (
       <Card aria-label="ModPOS ve ladmin karşılaştırması">
         {header(null)}

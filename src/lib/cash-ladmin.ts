@@ -1,4 +1,4 @@
-import { carryCheck, carryDiffText, changesText, computeCash, diffKind, diffText, lastRevision, stampTR, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
+import { carryCheck, carryDiffText, CASH_TOLERANCE, changesText, computeCash, diffKind, diffText, lastRevision, stampTR, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
 import { money, num, pct } from "@/lib/format";
 
 /**
@@ -17,13 +17,14 @@ export interface DayFact {
   tone?: DayTone | null;
 }
 
-/** Listenin satırı: solda ad (altında ayrıntı), sağda değer; `strong` ara toplam */
+/** Listenin satırı: solda ad (altında ayrıntı), sağda değer; `strong` ara toplam, `wrap` değer metindir (kişi adı: kırılır) */
 export interface DayLine {
   label: string;
   value: string;
   sub?: string | null;
   tone?: DayTone | null;
   strong?: boolean;
+  wrap?: boolean;
 }
 
 /** Bölümün okuduğu rapor alanları (kayıtlı raporun yöneticideki DTO'su) */
@@ -67,9 +68,9 @@ export function paymentLines(p: { cash: number; card: number; mealCard: number; 
  * "Ödemelerin toplamı" satırı: toplamla tutuyorsa `words.same` ("Z toplamıyla aynı"), tutmuyorsa farkı turuncu
  * (`words.from`: "Z toplamından 120 ₺ eksik")
  */
-export function paymentsTotalLine(paymentsTotal: number, total: number, words: { same: string; from: string }): DayLine {
+export function paymentsTotalLine(paymentsTotal: number, total: number, words: { same: string; from: string }, tolerance = 0.01): DayLine {
   const gap = r2(paymentsTotal - total);
-  const even = Math.abs(gap) < 0.01;
+  const even = Math.abs(gap) < tolerance;
   return {
     label: "Ödemelerin toplamı",
     value: money(paymentsTotal),
@@ -102,7 +103,8 @@ export function ladminFacts(r: LadminReport): DayFact[] {
 /** Ödeme satırları ve toplamı (Z'ye göre pay) */
 export function ladminPayments(r: LadminReport): DayLine[] {
   const c = computeCash(r);
-  return [...paymentLines(r, r.zTotal), paymentsTotalLine(c.paymentsTotal, r.zTotal, { same: "Z toplamıyla aynı", from: "Z toplamından" })];
+  // Formun, dökümün ve e-postanın kuralı: 1 ₺'tan küçük fark (bozuk para) tutuyor sayılır
+  return [...paymentLines(r, r.zTotal), paymentsTotalLine(c.paymentsTotal, r.zTotal, { same: "Z toplamıyla aynı", from: "Z toplamından" }, CASH_TOLERANCE)];
 }
 
 /**

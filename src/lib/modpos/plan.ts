@@ -8,7 +8,9 @@ import { finalAfter } from "./z";
  * Hak sırayla:
  *
  * 1. **Dün**, kesin değilse (ertesi sabah 07:00'den sonra alınmış, kasaları kapalı föy kesindir). Sabah işi 08:00'de
- *    çalışır: dünün föyü kesinleşmiştir.
+ *    çalışır: dünün föyü kesinleşmiştir. Ardından **kaçan yakın günler** (catchUpDays): canlı çekim başladıktan sonra
+ *    dün olarak alınamamış ya da sabah işinin çalışmadığı son 14 günün eksikleri, yeniden eskiye (alınamayan gün
+ *    beklemesini doldurunca). Yakın günün föyü geçmişin sonuna (aylar sonrasına) kalmasın diye; ilk kurulumda boştur.
  * 2. **Hiç alınmamış eski günler**, ModPOS'un ilk ciro gününden (`start`; historyStart) ileriye, eskiden yeniye: geçmiş
  *    ilk günden bugüne doğru dolar. `from` ile `start` arasındaki günler (ilk ciro gününden önce: büyük olasılıkla kasa
  *    açılmamış) en sona kalır, yine eskiden yeniye: hiçbir gün atlanmaz. Hak günde 2 olduğundan geçmiş günde 1 gün
@@ -71,9 +73,10 @@ export function planFoyDays({ now, from, have, left, start = null, until = null,
     if (out.length < left && !out.includes(d) && d >= from && d < today && (until === null || d < until)) out.push(d);
   };
   const ready = (d: string) => canRetry(failed[d], now);
-  // 1) Dün: kesinleştiyse ve kesin föyü yoksa
+  // 1) Dün: kesinleştiyse ve kesin föyü yoksa; sonra kaçan yakın günler
   const y = have.get(yesterday);
   if (now.getTime() >= finalAfter(yesterday) && !y?.final) add(yesterday);
+  for (const d of catchUpDays({ now, from, have, until, failed })) add(d);
   // 2) Hiç alınmamış eski günler: ilk ciro gününden ileriye (eskiden yeniye), sonra ondan önceki günler
   for (const d of backfillOrder(from, start, yesterday)) {
     if (out.length >= left) break;
@@ -95,6 +98,39 @@ export function planFoyDays({ now, from, have, left, start = null, until = null,
       if (todayTR(new Date(h.fetchedAt)) === today) continue;
       add(d);
     }
+  }
+  return out;
+}
+
+/**
+ * Canlı çekimin başladığı gün: "dün" olarak alınmış (günü bittikten en geç iki gün sonra çekilmiş) en eski saklanan
+ * gün. Geçmişten çekilen günler aylar sonra alındığı için sayılmaz; hiç yoksa (ilk kurulum) null
+ */
+export function liveFromOf(have: ReadonlyMap<string, StoredDay>): string | null {
+  let min: string | null = null;
+  for (const [d, h] of have) {
+    const t = Date.parse(h.fetchedAt);
+    if (Number.isNaN(t)) continue;
+    if (todayTR(new Date(t)) <= addDays(d, 2) && (min === null || d < min)) min = d;
+  }
+  return min;
+}
+
+/**
+ * Kaçan yakın günler, yeniden eskiye: canlı çekimin başladığı günden (liveFromOf) itibaren, dünden önceki son 13 günde
+ * (dün dahil 14) hiç alınmamış, kesinleşmiş ve beklemesi dolmuş günler (dün olarak alınamamış, ya da o sabah iş
+ * çalışmamış). Geçmişin ilk günü ve LafPOS'a geçiş günü sınırları geçerli. İlk kurulumda boş (geçmiş ilk ciro gününden)
+ */
+export function catchUpDays({ now, from, have, until = null, failed = {} }: Pick<PlanInput, "now" | "from" | "have" | "until" | "failed">): string[] {
+  const live = liveFromOf(have);
+  if (live === null) return [];
+  const today = todayTR(now);
+  const out: string[] = [];
+  for (let i = 2; i <= PROVISIONAL_DAYS; i++) {
+    const d = addDays(today, -i);
+    if (d < live || d < from) break;
+    if (until !== null && d >= until) continue;
+    if (!have.has(d) && now.getTime() >= finalAfter(d) && canRetry(failed[d], now)) out.push(d);
   }
   return out;
 }

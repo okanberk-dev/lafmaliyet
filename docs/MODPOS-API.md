@@ -29,7 +29,10 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 
 - **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts; sahibin kuralı,
   3 Kasım 2026: her sabah önce dün, öteki hak geçmişe, ModPOS'un ilk ciro gününden başlayıp bitene kadar):
-  1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır);
+  1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır); ardından **kaçan yakın
+     günler** (`catchUpDays`): canlı çekim başladıktan sonra (dün olarak alınmış ilk günden) son 14 günde dün olarak
+     alınamamış ya da sabah işinin hiç çalışmadığı günler, yeniden eskiye, alınamayan günün beklemesi dolunca. Yakın
+     günün föyü geçmişin sonuna, aylar sonrasına kalmasın diye; ilk kurulumda (hiç dün çekilmemişken) boştur;
   2. **henüz çekilmemiş bir eski gün**, ModPOS'un **ilk ciro gününden ileriye**, eskiden yeniye (geçmiş ilk günden
      bugüne doğru dolar). İlk ciro günü (`historyStart`, src/server/modpos/store.ts `loadModposHistoryStart`):
      `MODPOS_SYNC_FROM` kuruluysa o; yoksa Satışlar'daki ilk cirolu ayın açık gün sayısına göre en geç açılış günü
@@ -122,8 +125,10 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        bahşiş, kasa farkı; ödeme dağılımı (kanal kanal tutar ve ciroya göre pay, ödemelerin toplamı ciroyla tutuyor
        mu); nakit kasa (açılış + nakit satış + nakit cari tahsilat − gider = beklenen, sayılan ve dayanağı, fark,
        kartla cari tahsilat); **ödenmez / ikram dökümü** (ciroya girmeyen her ödeme satırı kod kod: ikram, ödenmez,
-       zayi, hediye kartı, sadakat ikramı, değişim mahsubu; kırılımıyla kime / hangi kuruma, kasasız satışınki dahil;
-       föyün ciro dışı toplamıyla tutuyor mu); **kişiler** (kasayı açan, kapatan, ara kasayı yapan, cari tahsilatın
+       zayi, hediye kartı, sadakat ikramı, değişim mahsubu; kırılımıyla kime / hangi kuruma; föyün ciro dışı toplamıyla
+       tutuyor mu). Kasasız satışın ödemeleri Z özetinin kuralıyla seçilir (ciroya dahil bilgisi gelmeyen DIGER ve
+       tanınmayan kod Diğer'dir, dökümde yok) ve şube şube ayrı yazılır; kasa açılmışken gelen başka şubenin kasasız
+       satışı "föyün toplamlarına girmez" der ve denetime katılmaz; **kişiler** (kasayı açan, kapatan, ara kasayı yapan, cari tahsilatın
        müşterisi); her kasanın açılış / kapanış saati (yapanla) ve açık kalma süresi, ödeme yöntemleri (ModPOS'taki
        adıyla) ve banka kırılımı, giderler, cari tahsilatlar (müşteriyle), ara kasalar, notlar; ModPOS'un uyarıları,
        föysüz satış, kitapçıkta olmayan alanlar, föy değiştiyse önceki sürüm ve **ham föy** (XML, kapalı kutuda).
@@ -141,7 +146,9 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        ödemelerin toplamı ve raporda banka POS yazıldıysa banka POS ↔ ModPOS kartı (kartla cari tahsilat dahil).
        Kişi satırı: ModPOS'ta kasayı kapatan ↔ ladmin'de kasayı sayan. ModPOS'ta kasa açılmamış ama raporda satış
        yazılıysa para uyarısı.
-    Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var).
+    Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var). Gün içinde, kasa
+    açılmadan alınan (kesin olmayan) boş föy "kasa açılmamış" demez ve akşamki raporla uyarı vermez: ertesi sabahki
+    kesin föy beklenir. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
   - Günden güne listede rozet **ModPOS'tan farklı**; raporu girilmemiş günde föyün cirosu.
 - **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS föyünden farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
   "ModPOS kasa föyü çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS föyünden farklı" işaretiyle "Sorun var" olur.

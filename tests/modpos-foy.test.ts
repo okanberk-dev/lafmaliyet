@@ -17,7 +17,7 @@ import { before, describe, test } from "node:test";
 
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
 import { modposCompare, modposDiffs, modposDiffsLine, modposDiffText, type ModposSavedFields } from "../src/lib/modpos/compare";
-import { backfillOrder, historyStart, missingFoyDays, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
+import { backfillOrder, catchUpDays, historyStart, liveFromOf, missingFoyDays, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
 import {
   foyUrl,
   isKeyError,
@@ -965,7 +965,10 @@ describe("plan.ts: çekilecek günler", () => {
   test("LafPOS'a geçiş gününden itibaren hiçbir gün çekilmez; eksik gün sayısı da geçiş gününden önceye", () => {
     // Geçiş günü 5 Kasım: dün (11 Kasım) ve 5–10 Kasım çekilmez; geçmiş ilk günden ileriye
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: new Map(), left: 2, until: "2026-11-05" }), ["2026-11-01", "2026-11-02"]);
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-02"), left: 3, until: "2026-11-05" }), ["2026-11-03", "2026-11-04"]);
+    // Geçmişten alınmış günler (aylar sonra çekilmiş): ilk günden ileriye
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-02", () => "2026-11-12T07:30:00+03:00"), left: 3, until: "2026-11-05" }), ["2026-11-03", "2026-11-04"]);
+    // Dün olarak alınmış günlerden sonra kaçanlar yeniden eskiye (kaçan yakın gün), yine geçiş gününden önce
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-02"), left: 3, until: "2026-11-05" }), ["2026-11-04", "2026-11-03"]);
     // Geçişten önceki her gün saklıysa çekilecek gün yok
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-01", have: allFinal("2026-11-01", "2026-11-04"), left: 2, until: "2026-11-05" }), []);
     assert.equal(missingFoyDays("2026-11-01", new Map(), CRON, "2026-11-05").length, 4);
@@ -1064,9 +1067,35 @@ describe("plan.ts: çekilecek günler", () => {
   });
 
   test("dün zaten kesinse iki hak da geçmişe (eskiden yeniye, aradaki boşluklar dahil)", () => {
-    const h = have({ "2026-11-11": S(true, "2026-11-12T07:10:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-06": S(true, "2026-11-07T08:00:00+03:00") });
+    // Dün ve evvelsi gün dün olarak alınmış (canlı çekim 10 Kasım'da başladı); 5–9 Kasım geçmiş (6 Kasım geçmişten alınmış)
+    const h = have({ "2026-11-11": S(true, "2026-11-12T07:10:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-06": S(true, "2026-11-11T08:00:00+03:00") });
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 2 }), ["2026-11-05", "2026-11-07"]);
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 4 }), ["2026-11-05", "2026-11-07", "2026-11-08", "2026-11-09"]);
+  });
+
+  test("kaçan yakın gün: canlı çekim başladıktan sonra dün olarak alınamayan gün geçmişin önüne geçer (yeniden eskiye, beklemeyle)", () => {
+    const from = "2026-07-01";
+    const start = "2026-07-09";
+    // Canlı çekim 4 Kasım'da başladı (3 Kasım dün olarak alındı); 10 Kasım saklı, 11 Kasım alınamadı (dün olarak, 12 Kasım 08:00)
+    const h = have({ "2026-11-03": S(true, "2026-11-04T08:00:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-12": S(true, "2026-11-13T08:00:00+03:00") });
+    for (let d = "2026-11-04"; d <= "2026-11-09"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) h.set(d, S(true, `${d}T23:59:00+03:00`));
+    const failed = { "2026-11-11": { count: 1, lastAt: "2026-11-12T05:00:00.000Z" } };
+    // 13 Kasım: 11 Kasım beklemede (2 gün) → ikinci hak geçmişe
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-13T08:00:00+03:00"), from, have: h, failed }), []);
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-14T08:00:00+03:00"), from, start, have: h, left: 2, failed }), ["2026-11-13", "2026-11-11"]);
+    // Sabah işi bir gün hiç çalışmadı (13 Kasım alınmadı): ertesi sabah dün ve kaçan gün
+    const g = new Map(h);
+    g.set("2026-11-11", S(true, "2026-11-14T08:00:00+03:00"));
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, start, have: g, left: 2 }), ["2026-11-14", "2026-11-13"]);
+    // Pencere 14 gün: daha eskisi geçmişin sırasına kalır; canlı çekimden önceki gün kaçan sayılmaz
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-05T08:00:00+03:00"), from, have: h }), []);
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, have: g }), ["2026-11-13"]);
+    // İlk kurulum: canlı gün yok → kaçan yok, geçmiş ilk ciro gününden
+    assert.deepEqual(catchUpDays({ now: CRON, from, have: new Map() }), []);
+    assert.equal(liveFromOf(new Map()), null);
+    assert.equal(liveFromOf(h), "2026-11-03");
+    // Geçmişten aylar sonra alınan gün canlı sayılmaz
+    assert.equal(liveFromOf(have({ "2026-07-09": S(true, "2026-11-12T08:00:00+03:00") })), null);
   });
 
   test("kesin olmayan föy kesinleşme anından sonra yeniden çekilir (önce dün, sonra son 14 gün, yeniden eskiye)", () => {
