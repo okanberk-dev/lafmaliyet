@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
 import { missingFoyDays, nextBackfillDay } from "@/lib/modpos/plan";
-import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA } from "@/lib/modpos/request";
+import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA, quotaLeft } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
 import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
@@ -87,7 +87,8 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
           failed: state.dayErrors,
           liveFrom: state.liveFrom,
           hak: state.quota?.hak ?? MODPOS_DAILY_QUOTA,
-          ranToday: state.runs.some((r) => r.trigger === "cron" && todayTR(new Date(r.at)) === todayTR(now)),
+          leftToday: quotaLeft(state.quota, now),
+          ranToday: state.lastCronAt !== null && todayTR(new Date(state.lastCronAt)) === todayTR(now),
         })
       : null,
     start,

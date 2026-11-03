@@ -687,6 +687,11 @@ test("bölümler: farklı yazılan alan karşılaştırmada turuncu ve uyarıda;
   assert.doesNotMatch(early, /data-risk="para"/);
   assert.doesNotMatch(early, />Kasa açılmamış</);
   assert.match(early, /Kasa föyü · Kasa açılmadan alındı · Kesin değil/);
+  // Dünün föyü: beklenen sabah (09:00) geçti ve hâlâ kesin değilse o sabah alınamamıştır → para uyarısı
+  const yday = render({ date: "2026-11-02", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
+  assert.match(yday, /data-notice="warn" data-risk="para"/);
+  const ydayEarly = render({ date: "2026-11-02", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: new Date("2026-11-03T08:30:00+03:00") });
+  assert.doesNotMatch(ydayEarly, /data-risk="para"/, "sabah işi bitmeden (08:30) bekleniyor");
   // Kesin föy beklenen sabahtan sonra da gelmediyse (iki gün önce): beklenmez, para uyarısı yine çıkar
   const stale = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
   assert.match(stale, /kesin föy henüz alınamadı \(sabah işi yeniden dener\)/);

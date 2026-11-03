@@ -99,16 +99,17 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   // Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü, bir kez yazılır (kaçan yakın günler ondan
   // itibaren; src/lib/modpos/plan.ts catchUpDays). Elle çekim yazmaz
   let liveFrom = state.liveFrom;
-  if (trigger === "cron" && liveFrom === null) {
-    liveFrom = addDays(todayTR(started), -1);
-    await noteModposRun(db, { liveFrom }, null);
+  if (trigger === "cron") {
+    liveFrom ??= addDays(todayTR(started), -1);
+    // Sabah işinin çalıştığı an (istek gitmese de): kartın "sıradaki"si bugünün işi çalıştı mı diye bakar
+    await noteModposRun(db, { liveFrom, lastCronAt: started.toISOString() }, null);
   }
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
   // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
-  const wanted = o.days
-    ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
-    : planFoyDays({ now: started, from, start: start?.day ?? null, have, left: left0, until: switchDay, failed: state.dayErrors, liveFrom });
+  const plan = (now: Date, left: number, failed: typeof state.dayErrors) =>
+    planFoyDays({ now, from, start: start?.day ?? null, have, left, until: switchDay, failed, liveFrom });
+  const wanted = o.days ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0)) : plan(started, left0, state.dayErrors);
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
     if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };
@@ -119,7 +120,13 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   let lastError: ModposError | null = null;
   let stop: "kota" | "error" | null = null;
   let stopText: string | undefined;
-  for (const day of wanted) {
+  // Hakkı geri veren hata (400'ler hak düşürmez, 500'de hak geri verilir; belge §4): sabah işinde o hak sıradaki güne
+  // gider (en çok MODPOS_DAILY_QUOTA kez; elle çekimde verilen gün dışında gün çekilmez)
+  const queue = [...wanted];
+  let extra = 0;
+  const failedNow: Record<string, { count: number; lastAt: string; kod: string }> = { ...state.dayErrors };
+  for (let i = 0; i < queue.length; i++) {
+    const day = queue[i];
     const remaining = o.deadlineAt - Date.now();
     if (remaining < MIN_REQUEST_MS) {
       // Hiçbir istek başlamadan süre bittiyse "çekilecek gün yok" değil: süre doldu (ertesi sabah yeniden denenir)
@@ -155,6 +162,16 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
       stop = "error";
       stopText = r.text;
       break;
+    }
+    const refunded = (r.http >= 400 && r.http < 500 && r.http !== 429) || r.http === 500;
+    if (!o.days && refunded && extra < MODPOS_DAILY_QUOTA) {
+      // Alınamayan gün bu çalışmada beklemeye girer (planlayıcı onu yeniden önermesin); sıradaki çekilmemiş gün eklenir
+      failedNow[day] = { count: (failedNow[day]?.count ?? 0) + 1, lastAt: now.toISOString(), kod: r.kod };
+      const next = plan(now, queue.length + 1, failedNow).find((d) => !queue.includes(d));
+      if (next) {
+        queue.push(next);
+        extra++;
+      }
     }
   }
   const failed = days.filter((d) => d.result === "hata");

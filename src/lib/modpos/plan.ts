@@ -155,10 +155,19 @@ export function nextMorningRun(now: Date, ranToday = false): Date {
  * föyü çekilmesi gereken ilk gün (kaçan yakın gün ya da geçmiş; bekleyen gün atlanır). Kesin föyün yeniden kontrolü
  * (planın 3. ve 4. adımı) sıradaki sayılmaz. Hak o sabah yenilenmiş sayılır; o sabah çekilecek gün yoksa null
  */
-export function nextBackfillDay(i: Omit<PlanInput, "now" | "left"> & { now: Date; hak: number; ranToday?: boolean }): string | null {
+export function nextBackfillDay(i: Omit<PlanInput, "now" | "left"> & { now: Date; hak: number; ranToday?: boolean; leftToday?: number }): string | null {
+  const today = todayTR(i.now);
+  const pick = (run: Date, left: number) => {
+    const yesterday = addDays(todayTR(run), -1);
+    return left > 0 ? (planFoyDays({ ...i, now: run, left }).find((d) => d !== yesterday && needsFetch(i.have.get(d), d)) ?? null) : null;
+  };
   const run = nextMorningRun(i.now, i.ranToday ?? false);
-  const yesterday = addDays(todayTR(run), -1);
-  return planFoyDays({ ...i, now: run, left: Math.max(2, i.hak) }).find((d) => d !== yesterday && needsFetch(i.have.get(d), d)) ?? null;
+  // Bugünkü iş henüz çalışmadıysa bugünün kalan hakkıyla; o işte geçmişe hak kalmıyorsa yarınki işin planı
+  if (todayTR(run) === today) {
+    const got = pick(run, i.leftToday ?? i.hak);
+    if (got) return got;
+  }
+  return pick(new Date(`${addDays(today, 1)}T05:00:00.000Z`), Math.max(2, i.hak));
 }
 
 /**
@@ -178,10 +187,10 @@ export function backfillOrder(from: string, start: string | null, last: string):
  * dahil değil): ilk ciro gününden ileriye, sonra ondan önceki günler (planFoyDays'in 2. adımı). Kartın sayısı ve
  * "sıradaki gün"ü buradan
  */
-export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date, until: string | null = null, start: string | null = null): string[] {
+export function missingFoyDays(from: string, have: ReadonlyMap<string, StoredDay>, now: Date, until: string | null = null, start: string | null = null): string[] {
   const today = todayTR(now);
   const end = until !== null && until < today ? until : today;
-  return backfillOrder(from, start, addDays(end, -1)).filter((d) => !have.has(d) && now.getTime() >= finalAfter(d));
+  return backfillOrder(from, start, addDays(end, -1)).filter((d) => needsFetch(have.get(d), d) && now.getTime() >= finalAfter(d));
 }
 
 /** Ayın Satışlar'daki rakamları (months): ilk ciro ayı ve açık gün sayısı */

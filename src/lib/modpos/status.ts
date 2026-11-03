@@ -60,6 +60,8 @@ export interface ModposState {
    * sonraki günler "dün" olarak çekilir, kaçanı geçmişin önüne geçer (src/lib/modpos/plan.ts catchUpDays); öncesi geçmiştir
    */
   liveFrom: string | null;
+  /** Sabah işinin son çalıştığı an (istek gitmese de; kartın "sıradaki"si bugünün işi çalıştı mı diye bakar) */
+  lastCronAt: string | null;
 }
 
 const quotaSchema = z.object({
@@ -98,6 +100,7 @@ export function parseModposState(v: unknown): ModposState {
         )
       : {},
     liveFrom: typeof o.liveFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.liveFrom) ? o.liveFrom : null,
+    lastCronAt: typeof o.lastCronAt === "string" && !Number.isNaN(Date.parse(o.lastCronAt)) ? o.lastCronAt : null,
   };
 }
 

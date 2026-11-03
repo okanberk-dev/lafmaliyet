@@ -177,7 +177,7 @@ export async function readModposState(db: Reader = getDb()): Promise<ModposState
  */
 export async function noteModposRun(
   db: DB,
-  patch: Partial<Pick<ModposState, "quota" | "lastOk" | "lastError" | "liveFrom">>,
+  patch: Partial<Pick<ModposState, "quota" | "lastOk" | "lastError" | "liveFrom" | "lastCronAt">>,
   run: ModposRun | null,
   /** Alınan ve alınamayan günler: gün hataları kilit altında güncellenir (src/lib/modpos/status.ts withDayErrors) */
   dayResults?: { ok: readonly string[]; failed: readonly { day: string; kod: string }[] },

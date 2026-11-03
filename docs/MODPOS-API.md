@@ -55,7 +55,8 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Bu günü çek** (Ayarlar, yalnız yönetici): seçilen günü hemen çeker; kalan hakkı onay penceresinde söyler. Bugün
   seçilirse açık kasa o anki tutarlarla gelir ("Kesin değil"); ertesi sabah kendiliğinden yeniden çekilir.
 - Sayfa açılışı, zil ya da Kasa ekranı **hiçbir zaman** istek göndermez: yalnız saklanan föyü okur.
-- İstemci yeniden denemez (hak harcanmasın). Hak dolduysa (`429 KOTA_DOLDU`) hiçbir istek gitmez; kalan hak son
+- İstemci aynı günü yeniden denemez (hak harcanmasın). Hakkı geri veren hata (400'ler hak düşürmez, 500'de hak geri
+  verilir) olursa sabah işi o hakla planın sıradaki gününü çeker (en çok 2 kez; elle çekimde yalnız verilen gün). Hak dolduysa (`429 KOTA_DOLDU`) hiçbir istek gitmez; kalan hak son
   yanıttan bilinir (integration_state › `modpos`).
 - **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
   takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
@@ -153,8 +154,8 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        Kişi satırı: ModPOS'ta kasayı kapatan ↔ ladmin'de kasayı sayan. ModPOS'ta kasa açılmamış ama raporda satış
        yazılıysa para uyarısı.
     Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var). Gün içinde, kasa
-    açılmadan alınan (kesin olmayan) boş föy "kasa açılmadan alındı" der ve gün bugün ya da dünken akşamki raporla
-    uyarı vermez: ertesi sabahki kesin föy beklenir. Daha eskiyse (kesin föy alınamadı) para uyarısı yine çıkar. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
+    açılmadan alınan (kesin olmayan) boş föy "kasa açılmadan alındı" der ve ertesi sabahın sabah işi bitene kadar
+    (09:00) akşamki raporla uyarı vermez: kesin föy beklenir. Sonrasında (o sabah alınamadı) para uyarısı yine çıkar. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
   - Günden güne listede rozet **ModPOS'tan farklı**; raporu girilmemiş günde föyün cirosu.
 - **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS föyünden farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
   "ModPOS kasa föyü çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS föyünden farklı" işaretiyle "Sorun var" olur.
@@ -193,7 +194,7 @@ sayılmaz.
   aynıysa yalnız çekilme anı ve ham XML değişir; değiştiyse sürüm artar ve "önceki" özet kalır. Ad okunmaya
   başlamadan önce saklanan bir gün yeniden çekilirse adlar eklendiği için bir kez "değişti" sayılır (tutarlar aynı).
 - `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma, alınamayan günler ve canlı
-  çekimin başladığı gün (`liveFrom`). Anahtar burada değil.
+  çekimin başladığı gün (`liveFrom`) ve sabah işinin son çalıştığı an (`lastCronAt`). Anahtar burada değil.
 - İkisi de yedeğe girer (föy kişi adlarıyla; yedek de yalnız yöneticinin). Migration'lar:
   `drizzle/0050_modpos_kasa_foyu.sql` (yeni tablo), `drizzle/0051_modpos_ham_foy.sql` (`raw` sütunu; boş başlar).
 

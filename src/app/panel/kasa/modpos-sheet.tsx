@@ -43,8 +43,7 @@ import type { LadminReport } from "@/lib/cash-ladmin";
 import { money, num } from "@/lib/format";
 import type { ModposCompareRow } from "@/lib/modpos/compare";
 import type { FoyKasa, FoysuzGun } from "@/lib/modpos/foy";
-import type { ModposZ } from "@/lib/modpos/z";
-import { addDays } from "@/lib/reminders";
+import { finalAfter, type ModposZ } from "@/lib/modpos/z";
 import { cn } from "@/lib/utils";
 
 import { FactGrid, H3, LineList, MutedLines } from "./day-parts";
@@ -86,17 +85,17 @@ export function ModposSections({
     <div className="space-y-4" aria-label="ModPOS, ladmin ve karşılaştırma" role="group">
       <ModposSheetCard date={date} today={today} sheet={sheet} z={z} now={now} />
       <LadminReportCard report={report} {...ladmin} />
-      <ModposCompareCard sheet={sheet} z={z} report={report} awaiting={awaitingFinal(sheet, date, today)} />
+      <ModposCompareCard sheet={sheet} z={z} report={report} awaiting={awaitingFinal(sheet, date, now)} />
     </div>
   );
 }
 
 /**
- * Kesinleşmeden alınmış boş föyün kesin föyü hâlâ bekleniyor mu: gün bugün ya da dün (ertesi sabahın çekimi henüz
- * olmadı ya da bugün oldu). Daha eskisi beklenmez: kesin föy alınamamıştır, uyarılar yine çıkar
+ * Kesinleşmeden alınmış boş föyün kesin föyü hâlâ bekleniyor mu: ertesi sabahın sabah işi bitene kadar (kesinleşme anı
+ * 07:00 + 2 saat = 09:00 TR). Sonrası beklenmez: o sabah alınamamıştır, uyarılar yine çıkar
  */
-function awaitingFinal(sheet: ModposSheetView | null, date: string, today: string): boolean {
-  return Boolean(sheet && !sheet.final && date >= addDays(today, -1));
+function awaitingFinal(sheet: ModposSheetView | null, date: string, now: Date): boolean {
+  return Boolean(sheet && !sheet.final && now.getTime() < finalAfter(date) + 2 * 3_600_000);
 }
 
 /**
@@ -131,7 +130,7 @@ export function ModposSheetCard({ date, today, sheet, z, now }: { date: string; 
           <p className="text-sm text-ink-mute">
             {sheet.final
               ? "Bu gün ModPOS'ta kasa açılmamış, satış yok."
-              : awaitingFinal(sheet, date, today)
+              : awaitingFinal(sheet, date, now)
                 ? "Föy alındığında ModPOS'ta kasa henüz açılmamıştı, satış yoktu; kesin föy ertesi sabah gelir."
                 : "Föy alındığında ModPOS'ta kasa henüz açılmamıştı; kesin föy henüz alınamadı (sabah işi yeniden dener)."}
           </p>
