@@ -1157,8 +1157,19 @@ describe("plan.ts: çekilecek günler", () => {
     assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: new Map(), hak: 2, ranToday: true, liveFrom }), "2026-11-03");
     // Bugünün işi çalışmadı ama bugünün hakkı bitmiş (elle çekimle): yarınki işin planı
     assert.equal(nextBackfillDay({ now: new Date("2026-11-13T07:30:00+03:00"), from, start, have: new Map(), hak: 2, leftToday: 0 }), "2026-07-09");
-    // Bugünün işinde tek hak kalmış (yalnız dün): sıradaki yarınki işin geçmiş günü
-    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T07:30:00+03:00"), from, start, have: new Map(), hak: 2, leftToday: 1 }), "2026-07-09");
+    // Bugünün işinde tek hak kalmış (yalnız dün): sıradaki yarınki işin geçmiş günü; bugünkü işin çekeceği dün yarının
+    // kaçan günü sayılmaz (canlı çekim 1 Kasım'dan, 1–11 Kasım saklı)
+    const live = new Map<string, StoredDay>();
+    for (let d = "2026-11-01"; d <= "2026-11-11"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) live.set(d, S(true, `${d}T23:59:00+03:00`));
+    for (const at of ["2026-11-13T00:30:00+03:00", "2026-11-13T03:00:00+03:00", "2026-11-13T07:30:00+03:00", "2026-11-13T08:30:00+03:00"]) {
+      assert.equal(nextBackfillDay({ now: new Date(at), from, start, have: live, hak: 2, leftToday: 1, liveFrom: "2026-11-01" }), "2026-07-09", at);
+    }
+    // Bugünün işi bekliyor, yalnız dün eksik: yarınki işte de sıradaki geçmişin günü (dün değil)
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T07:30:00+03:00"), from, start, have: live, hak: 2, leftToday: 2, liveFrom: "2026-11-01" }), "2026-07-09");
+    // Geçmiş de tamamsa sıradaki yok
+    const all = new Map(live);
+    for (let d = from; d < "2026-11-01"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) all.set(d, S(true, "2026-11-12T08:00:00+03:00"));
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T07:30:00+03:00"), from, start, have: all, hak: 2, leftToday: 2, liveFrom: "2026-11-01" }), null);
     // Eksik gün beklemedeyse ve plan yalnız kesin föyün kontrolünü yapacaksa sıradaki yok (saklı günü "sıradaki" demez)
     const done = new Map<string, StoredDay>();
     for (let d = "2026-11-01"; d <= "2026-11-12"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) done.set(d, S(true, `${d}T23:59:00+03:00`));

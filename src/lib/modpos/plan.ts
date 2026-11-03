@@ -157,17 +157,25 @@ export function nextMorningRun(now: Date, ranToday = false): Date {
  */
 export function nextBackfillDay(i: Omit<PlanInput, "now" | "left"> & { now: Date; hak: number; ranToday?: boolean; leftToday?: number }): string | null {
   const today = todayTR(i.now);
-  const pick = (run: Date, left: number) => {
+  const pick = (run: Date, plan: string[], have: ReadonlyMap<string, StoredDay>) => {
     const yesterday = addDays(todayTR(run), -1);
-    return left > 0 ? (planFoyDays({ ...i, now: run, left }).find((d) => d !== yesterday && needsFetch(i.have.get(d), d)) ?? null) : null;
+    return plan.find((d) => d !== yesterday && needsFetch(have.get(d), d)) ?? null;
   };
   const run = nextMorningRun(i.now, i.ranToday ?? false);
-  // Bugünkü iş henüz çalışmadıysa bugünün kalan hakkıyla; o işte geçmişe hak kalmıyorsa yarınki işin planı
+  let have = i.have;
+  // Bugünkü iş henüz çalışmadıysa bugünün kalan hakkıyla; o işte geçmişe hak kalmıyorsa yarınki işin planı, bugünkü
+  // işin çekeceği günler alınmış sayılarak (yoksa yarının planı bugün çekilecek dünü "kaçan gün" sanır)
   if (todayTR(run) === today) {
-    const got = pick(run, i.leftToday ?? i.hak);
+    const left = i.leftToday ?? i.hak;
+    const todays = left > 0 ? planFoyDays({ ...i, now: run, left }) : [];
+    const got = pick(run, todays, i.have);
     if (got) return got;
+    const next = new Map(i.have);
+    for (const d of todays) next.set(d, { final: true, fetchedAt: run.toISOString() });
+    have = next;
   }
-  return pick(new Date(`${addDays(today, 1)}T05:00:00.000Z`), Math.max(2, i.hak));
+  const tomorrow = new Date(`${addDays(today, 1)}T05:00:00.000Z`);
+  return pick(tomorrow, planFoyDays({ ...i, have, now: tomorrow, left: Math.max(2, i.hak) }), have);
 }
 
 /**
