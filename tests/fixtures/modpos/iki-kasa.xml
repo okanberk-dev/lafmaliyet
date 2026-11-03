@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kitapçığın (docs/modpos-kasa-foyu-api.md §5) öğe yapısına göre ELLE yazıldı; kafenin verisi değil.
+  Bir kasa gününde iki kasa (iki <kasa> öğesi, Z no'ları farklı): ikisi de kapalı, nakit mutabakatı Z raporundan.
+  KASA-1'de nakit cari tahsilat ve gider, KASA-2'de ara kasa ve 10 TL kasa açığı var. Adlar uydurmadır.
+-->
+<kasaFoyu>
+  <kasaGunu>2026-10-31</kasaGunu>
+  <olusturulma>2026-11-01T08:05:00+03:00</olusturulma>
+  <kasa>
+    <sube>Örnek Şube</sube>
+    <kasaAdi>KASA-1</kasaAdi>
+    <gunNo>101</gunNo>
+    <zNo>0101</zNo>
+    <durum>KAPALI</durum>
+    <otomatikKapandi>false</otomatikKapandi>
+    <acilis>
+      <zaman>2026-10-31T08:50:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <nakit>500</nakit>
+    </acilis>
+    <kapanis>
+      <zaman>2026-11-01T01:10:00+03:00</zaman>
+      <personel>Deneme Sorumlu</personel>
+      <nakit>4400</nakit>
+    </kapanis>
+    <satis>
+      <ciro>12000</ciro>
+      <ciroDisi>60</ciroDisi>
+      <adisyonSayisi>90</adisyonSayisi>
+      <kisiSayisi>120</kisiSayisi>
+      <bahsis>50</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>4000</satis>
+      <cariTahsilat>200</cariTahsilat>
+      <sistem>4200</sistem>
+      <defter>4200</defter>
+      <fark>0</fark>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>7000</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>7000</sistem>
+      <defter>7000</defter>
+      <fark>0</fark>
+      <kirilim>
+        <ad>Garanti BBVA</ad>
+        <tutar>7000</tutar>
+      </kirilim>
+    </odeme>
+    <odeme>
+      <yontem>Online (web)</yontem>
+      <kod>ONLINE_WEB</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>1000</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>1000</sistem>
+      <defter>1000</defter>
+      <fark>0</fark>
+    </odeme>
+    <odeme>
+      <yontem>İkram</yontem>
+      <kod>IKRAM</kod>
+      <ciroyaDahil>false</ciroyaDahil>
+      <satis>60</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>60</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <defterGirildi>true</defterGirildi>
+    <giderler>
+      <toplam>300</toplam>
+      <gider>
+        <kategori>Temizlik</kategori>
+        <aciklama>Deterjan</aciklama>
+        <tutar>300</tutar>
+      </gider>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>200</toplam>
+      <nakit>200</nakit>
+      <tahsilat>
+        <musteri>Deneme Müşteri Ltd.</musteri>
+        <tutar>200</tutar>
+        <yontem>Nakit</yontem>
+        <zaman>2026-10-31T13:20:00+03:00</zaman>
+      </tahsilat>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>Z_RAPORU</dayanak>
+      <acilis>500</acilis>
+      <nakitSatis>4000</nakitSatis>
+      <nakitCariTahsilat>200</nakitCariTahsilat>
+      <gider>300</gider>
+      <beklenen>4400</beklenen>
+      <sayilan>4400</sayilan>
+      <fark>0</fark>
+    </nakitKasa>
+    <notlar>
+      <kapanis>Kapanış olağan</kapanis>
+      <fark/>
+    </notlar>
+  </kasa>
+  <kasa>
+    <sube>Örnek Şube</sube>
+    <kasaAdi>KASA-2</kasaAdi>
+    <gunNo>57</gunNo>
+    <zNo>0057</zNo>
+    <durum>KAPALI</durum>
+    <otomatikKapandi>false</otomatikKapandi>
+    <acilis>
+      <zaman>2026-10-31T11:00:00+03:00</zaman>
+      <personel>Deneme Sorumlu</personel>
+      <nakit>250</nakit>
+    </acilis>
+    <kapanis>
+      <zaman>2026-10-31T23:40:00+03:00</zaman>
+      <personel>Deneme Sorumlu</personel>
+      <nakit>1440.5</nakit>
+    </kapanis>
+    <satis>
+      <ciro>3500.5</ciro>
+      <ciroDisi>0</ciroDisi>
+      <adisyonSayisi>30</adisyonSayisi>
+      <kisiSayisi>40</kisiSayisi>
+      <bahsis>0</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>1200.5</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>1200.5</sistem>
+      <defter>1190.5</defter>
+      <fark>-10</fark>
+    </odeme>
+    <odeme>
+      <yontem>Pluxee</yontem>
+      <kod>PLUXEE</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>800</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>800</sistem>
+      <defter>800</defter>
+      <fark>0</fark>
+    </odeme>
+    <odeme>
+      <yontem>Trendyol Yemek</yontem>
+      <kod>TRENDYOL_ONLINE</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>1500</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>1500</sistem>
+      <defter>1500</defter>
+      <fark>0</fark>
+    </odeme>
+    <defterGirildi>true</defterGirildi>
+    <giderler>
+      <toplam>0</toplam>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>0</toplam>
+      <nakit>0</nakit>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>Z_RAPORU</dayanak>
+      <acilis>250</acilis>
+      <nakitSatis>1200.5</nakitSatis>
+      <nakitCariTahsilat>0</nakitCariTahsilat>
+      <gider>0</gider>
+      <beklenen>1450.5</beklenen>
+      <sayilan>1440.5</sayilan>
+      <fark>-10</fark>
+    </nakitKasa>
+    <araKasa>
+      <no>1</no>
+      <zaman>2026-10-31T17:00:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <ciro>1800</ciro>
+      <nakit>700</nakit>
+      <adisyonSayisi>14</adisyonSayisi>
+      <gider>0</gider>
+      <beklenen>950</beklenen>
+      <sayilan>950</sayilan>
+      <fark>0</fark>
+    </araKasa>
+    <notlar>
+      <kapanis/>
+      <fark>Para üstü eksik</fark>
+    </notlar>
+    <uyari>
+      <kod>KASA_FARKI</kod>
+      <mesaj>Kasa farkı var</mesaj>
+      <tutar>-10</tutar>
+    </uyari>
+  </kasa>
+  <ozet>
+    <kasaSayisi>2</kasaSayisi>
+    <acikKasa>0</acikKasa>
+    <kapaliKasa>2</kapaliKasa>
+    <otomatikKapanan>0</otomatikKapanan>
+    <ciro>15500.5</ciro>
+    <ciroDisi>60</ciroDisi>
+    <adisyonSayisi>120</adisyonSayisi>
+    <kisiSayisi>160</kisiSayisi>
+    <bahsis>50</bahsis>
+    <gider>300</gider>
+    <cariTahsilat>200</cariTahsilat>
+    <kasaFarki>-10</kasaFarki>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>5200.5</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <tutar>7000</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Online (web)</yontem>
+      <kod>ONLINE_WEB</kod>
+      <tutar>1000</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Pluxee</yontem>
+      <kod>PLUXEE</kod>
+      <tutar>800</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Trendyol Yemek</yontem>
+      <kod>TRENDYOL_ONLINE</kod>
+      <tutar>1500</tutar>
+    </odeme>
+    <foysuzGunSayisi>0</foysuzGunSayisi>
+    <foysuzCiro>0</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>1</kullanilan>
+    <kalan>1</kalan>
+    <yenilenme>2026-11-02T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>

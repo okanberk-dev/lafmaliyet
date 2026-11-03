@@ -85,11 +85,14 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
   if (res.ok && parsed.ok) {
     return { status: "ok", foy: parsed.foy, quota: quota ?? quotaFromBody(parsed.foy, now) };
   }
-  const hata: FoyHata | null = !parsed.ok && "hata" in parsed ? parsed.hata : null;
-  if (res.ok && !hata) {
+  const raw: FoyHata | null = !parsed.ok && "hata" in parsed ? parsed.hata : null;
+  if (res.ok && !raw) {
     const field = !parsed.ok && "bozuk" in parsed ? parsed.bozuk : "govde";
     return { status: "error", kod: "BOZUK", http: res.status, text: `ModPOS'un yanıtı okunamadı (${field}): sonra yeniden denenecek`, keyError: false, quota };
   }
+  // Tanınmayan kodda metin servisin kodunu ve mesajını taşır: servis anahtarı geri yazsa da metne (durum satırına,
+  // yedeğe) geçmez. Metin kısaltılmadan önce temizlenir (yarım anahtar kalmasın)
+  const hata: FoyHata | null = raw ? { ...raw, kod: redactKey(raw.kod, key), mesaj: redactKey(raw.mesaj, key) } : null;
   const text = modposErrorText(res.status, hata, now);
   if (hata?.kod === "KOTA_DOLDU" || (res.status === 429 && !hata)) {
     const hak = hata?.gunlukHak ?? quota?.hak ?? MODPOS_DAILY_QUOTA;
@@ -97,6 +100,11 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
   }
   const kod = hata?.kod ?? `HTTP_${res.status}`;
   return { status: "error", kod, http: res.status, text, keyError: isKeyError(kod), quota };
+}
+
+/** Metindeki anahtar "[anahtar]" olur (büyük / küçük harf fark etmeksizin: servisin kodu büyük harfe çevrilir) */
+function redactKey(text: string, key: string): string {
+  return text.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "[anahtar]");
 }
 
 /** Başlık yoksa föyün `<kota>`'sı */

@@ -65,20 +65,27 @@ export interface ModposQuota {
 
 /** Başlıklardan kota: X-Kota-Hak, X-Kota-Kalan, X-Kota-Yenilenme (biri yoksa ya da bozuksa null) */
 export function quotaFromHeaders(get: (name: string) => string | null, now: Date): ModposQuota | null {
-  const hak = Number(get("x-kota-hak"));
-  const kalan = Number(get("x-kota-kalan"));
-  if (!Number.isInteger(hak) || !Number.isInteger(kalan) || hak < 0 || kalan < 0 || get("x-kota-kalan") === null) return null;
+  // Eksik ya da boş başlık 0 değildir (Number(null) = 0): hak 0 sanılsa ertesi günlerde hiç istek gitmezdi
+  const rawHak = get("x-kota-hak")?.trim();
+  const rawKalan = get("x-kota-kalan")?.trim();
+  if (!rawHak || !rawKalan) return null;
+  const hak = Number(rawHak);
+  const kalan = Number(rawKalan);
+  if (!Number.isInteger(hak) || !Number.isInteger(kalan) || hak < 0 || kalan < 0) return null;
   const y = get("x-kota-yenilenme")?.trim() || null;
   return { day: todayTR(now), hak, kalan, yenilenme: y && !Number.isNaN(Date.parse(y)) ? y : null, at: now.toISOString() };
 }
 
 /**
  * Şu an kalan hak: son bilinen kota bugünün (TR) ve yenilenme anı gelmediyse onun kalanı; yoksa günlük hakkın tamamı.
- * Gün Türkiye saatiyle 00:00'da başlar (belge §4); sınır isteğin yapıldığı güne göre sayılır.
+ * Gün Türkiye saatiyle 00:00'da başlar (belge §4); sınır isteğin yapıldığı güne göre sayılır. Yeni günün hakkı en az
+ * 1'dir: kota yalnız yanıttan öğrenilir, saklanan "hak 0" yeni günde de 0 sayılsa hiç istek gitmez, kota da hiç
+ * yenilenmezdi (429 hak düşürmez; gerçekten hak yoksa ilk istek KOTA_DOLDU alır ve durur).
  */
 export function quotaLeft(q: ModposQuota | null, now: Date): number {
-  if (!q || q.day !== todayTR(now)) return q?.hak ?? MODPOS_DAILY_QUOTA;
-  if (q.yenilenme && now.getTime() >= Date.parse(q.yenilenme)) return q.hak;
+  const daily = q && q.hak >= 1 ? q.hak : MODPOS_DAILY_QUOTA;
+  if (!q || q.day !== todayTR(now)) return daily;
+  if (q.yenilenme && now.getTime() >= Date.parse(q.yenilenme)) return daily;
   return Math.max(0, q.kalan);
 }
 

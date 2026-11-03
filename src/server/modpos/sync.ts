@@ -63,6 +63,10 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   const env = o.env ?? process.env;
   if (!canFetchModpos(env)) return { status: "preview", days: [], left: null };
   const started = o.now ?? new Date();
+  // Verilen `now` bütün çalışmanın saatidir: sonraki istekler ve çalışmanın sonu ona geçen süre eklenerek (duvar saati
+  // olsa ikinci günün kotası ve kesinliği başka bir güne göre yazılırdı; tests/modpos-db.test.ts)
+  const wall0 = Date.now();
+  const clock = () => (o.now ? new Date(o.now.getTime() + (Date.now() - wall0)) : new Date());
   const db = o.db ?? getDb();
   const [state, have] = await Promise.all([readModposState(db), loadModposIndex(db)]);
   let quota: ModposQuota | null = state.quota;
@@ -83,7 +87,7 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   for (const day of wanted) {
     const remaining = o.deadlineAt - Date.now();
     if (remaining < MIN_REQUEST_MS) break;
-    const now = o.now && days.length === 0 ? o.now : new Date();
+    const now = o.now && days.length === 0 ? o.now : clock();
     const r = await fetchKasaFoyu(day, { now, timeoutMs: remaining - 1_000, fetchImpl: o.fetchImpl, env });
     if (r.status === "off") return { status: "off", days: [], left: null };
     if (r.status === "ok") {
@@ -114,7 +118,7 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   const okCount = days.length - failed.length;
   const status: ModposSyncStatus =
     stop === "kota" ? (okCount ? "partial" : "kota") : failed.length || stop === "error" ? (okCount ? "partial" : "error") : days.length ? "ok" : "nothing";
-  const endNow = new Date();
+  const endNow = clock();
   const run: ModposRun = {
     at: endNow.toISOString(),
     trigger,
