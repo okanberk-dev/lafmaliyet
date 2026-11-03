@@ -190,7 +190,8 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   const digest = read("src/server/staff-requests/digest.ts");
   assert.match(digest, /pastCountDigestLines\(now\)/);
   assert.match(digest, /\{ title: "Stok sayımı", lines, href: count\.href \?\? "\/panel\/sayim", link: "Sayımı aç"/);
-  assert.match(digest, /title: count\.lines\.length \? "Operasyon" : "Personelden"/);
+  // ModPOS kasa föyünün satırları da personelden değil (src/server/bell/modpos.ts modposDigestLines)
+  assert.match(digest, /title: count\.lines\.length \|\| modpos\.lines\.length \? "Operasyon" : "Personelden"/);
   // Bugün, zil ve bildirim aynı sayım ilerlemesini okur
   assert.match(read("src/server/data/today.ts"), /import \{ countProgress \} from "@\/server\/data\/count-progress";/);
 });

@@ -264,6 +264,39 @@ test("kasa bütünlüğü (cashFlags): açılış önceki raporun devriyle (dün
   assert.deepEqual(flags([...reports].reverse(), off, revisions), expected);
 });
 
+test("kasa bütünlüğü (cashFlags): ModPOS föyünden farklı günler önceden hesaplanır, işaret en sonda; verilmezse yok", () => {
+  const Y = "2026-10-21";
+  const T = "2026-10-22";
+  const before = { date: "2026-10-20", amount: 500 };
+  // Föyünden farklı günler (src/lib/modpos/zil.ts modposMismatchDates) verilir; rapor olmayan gün işaret almaz
+  const flags = (reports: CashFlagReport[], modpos?: ReadonlySet<string>) => Object.fromEntries(cashFlags(reports, before, [], 1, modpos));
+  assert.deepEqual(flags([fullReport(1, Y)], new Set([Y, "2026-10-19"])), { [Y]: [CASH_FLAGS.modpos] });
+  assert.deepEqual(flags([fullReport(2, T), fullReport(1, Y)], new Set([T])), { [T]: [CASH_FLAGS.modpos], [Y]: [] });
+  // Açılış da tutmuyorsa önce açılış (rozet ilk işareti yazar)
+  assert.deepEqual(flags([fullReport(2, T, { openingCash: 450 }), fullReport(1, Y)], new Set([T])), { [T]: [CASH_FLAGS.carry, CASH_FLAGS.modpos], [Y]: [] });
+  // Eski çağrı (föy okunamadı, küme boş ya da hiç verilmedi): işaret yok
+  assert.deepEqual(flags([fullReport(1, Y)]), { [Y]: [] });
+  assert.deepEqual(flags([fullReport(1, Y)], new Set()), { [Y]: [] });
+  assert.equal(CASH_FLAGS.modpos, "ModPOS föyünden farklı");
+});
+
+test("kasa bütünlüğü (yönetici): ModPOS föyünden farklı dünkü rapor 'sorun var'; kasa tutuyorsa rozet işareti söyler, Rapora bak", () => {
+  const facts = (o: Partial<CashLite>) => admin(EVENING, { cash: { today: null, yesterday: report("2026-10-21", o), firstDate: "2026-10-01" } });
+  const row = byKey(dayTasks(facts({ flags: [CASH_FLAGS.modpos] })))["kasa-dun"];
+  assert.equal(row.status, "warn");
+  assert.equal(row.badge, "ModPOS föyünden farklı");
+  assert.match(row.detail, / · Kasa tutuyor · ModPOS föyünden farklı$/);
+  assert.equal(row.href, "/panel/kasa?gun=2026-10-21");
+  assert.equal(row.action, "Rapora bak");
+  // Kasa eksikse rozet farkı söyler, işaret açıklamada
+  const short = byKey(dayTasks(facts({ cashDiff: -120, flags: [CASH_FLAGS.modpos] })))["kasa-dun"];
+  assert.equal(short.status, "warn");
+  assert.match(short.badge!, /^120\s₺ eksik$/);
+  assert.match(short.detail, / · ModPOS föyünden farklı$/);
+  // Personelin olgusunda işaret hiç olmaz; olsa da personelin dünkü satırı yalnız rapor yokken çıkar
+  assert.equal(byKey(dayTasks(staff(EVENING, { cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.modpos] }), firstDate: "2026-10-01" } })))["kasa-dun"], undefined);
+});
+
 test("yönetici bugünkü kasa: gündüz 'Akşam', 20:00'den sonra girilmedi; okunamazsa dün satırı söyler, bugünkü çıkmaz", () => {
   const day = byKey(dayTasks(admin(NOON))).kasa;
   assert.equal(day.status, "later");
@@ -1021,6 +1054,9 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "cashRevisionsFor(",
     "loadOverduePayouts(",
     "loadForecastCard(",
+    // ModPOS kasa föyü (yönetici: föyün tutarları personele gitmez; src/lib/modpos/zil.ts)
+    "loadModposSheets(",
+    "modposMismatchDates(",
     "needsReview",
   ];
   for (const name of ADMIN_ONLY) {
@@ -1043,7 +1079,9 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /systemIssues\(o, now, okAt\)/);
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
   assert.match(admin, /previousCarryOver\(oldest\)/);
-  assert.match(admin, /cashFlags\(reports, before, revisions, viewer\)/);
+  // ModPOS föyünden farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
+  assert.match(admin, /cashFlags\(reports, before, revisions, viewer, modpos\)/);
+  assert.match(admin, /\.then\(\(\[sheets, switchDay\]\) => modposMismatchDates\(reports, sheets, switchDay\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/);
 });
 
 test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (personel yalnız kendininkiler); ekran liste saatlerinde yenilenir", () => {
