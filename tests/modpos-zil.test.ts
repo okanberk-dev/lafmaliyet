@@ -164,7 +164,7 @@ const keyErr = (at: string, o: Partial<ModposError> = {}): ModposError => ({
   keyError: true,
   ...o,
 });
-const state = (o: Partial<ModposState>): ModposState => ({ quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, ...o });
+const state = (o: Partial<ModposState>): ModposState => ({ quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, liveFrom: null, ...o });
 
 test("anahtar: yoksa uyarı yok (kart 'Kurulmadı' der); biçimi bozuksa canlıda uyarı, önizlemede yok", () => {
   assert.equal(modposKeyAlert({ keyProblem: "missing", preview: false, state: state({ lastError: keyErr("2026-11-03T05:00:00.000Z") }) }), null);

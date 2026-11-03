@@ -75,9 +75,20 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     from,
     stored: { count: sorted.length, first: sorted[0] ?? null, last: sorted.at(-1) ?? null },
     missing: missing.length,
-    // Bir sonraki sabah işinin planından (kaçan yakın gün, sonra geçmiş; bekleyen gün atlanır, o sabahın dünü değil)
+    // Bir sonraki sabah işinin planından (kaçan yakın gün, sonra geçmiş; bekleyen gün ve kesin föyün yeniden kontrolü
+    // atlanır, o sabahın dünü değil). Bugünün sabah işi çalıştı mı: son çalışmalarda bugünün bir cron'u var mı
     next: missing.length
-      ? nextBackfillDay({ now, from, start: start.day, have: index, until: switchDay, failed: state.dayErrors, hak: state.quota?.hak ?? MODPOS_DAILY_QUOTA })
+      ? nextBackfillDay({
+          now,
+          from,
+          start: start.day,
+          have: index,
+          until: switchDay,
+          failed: state.dayErrors,
+          liveFrom: state.liveFrom,
+          hak: state.quota?.hak ?? MODPOS_DAILY_QUOTA,
+          ranToday: state.runs.some((r) => r.trigger === "cron" && todayTR(new Date(r.at)) === todayTR(now)),
+        })
       : null,
     start,
   };

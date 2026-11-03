@@ -251,7 +251,9 @@ export function ModposCompareCard({
         ? "Föy kasa açılmadan alındı: ertesi sabahki kesin föyle karşılaştırılır."
         : sales
           ? null
-          : "İkisinde de satış yok.";
+          : sheet.final
+            ? "İkisinde de satış yok."
+            : "Kesin föy alınamadı: ModPOS'ta o gün satış olup olmadığı bilinmiyor (föy kasa açılmadan alınmıştı).";
     return (
       <Card aria-label="ModPOS ve ladmin karşılaştırması">
         {header(null)}
@@ -263,7 +265,11 @@ export function ModposCompareCard({
               tone="warn"
               risk="para"
               size="sm"
-              title={`ModPOS'ta bu gün kasa açılmamış, ladmin'de ${money(report!.zTotal)} satış yazılı`}
+              title={
+                sheet!.final
+                  ? `ModPOS'ta bu gün kasa açılmamış, ladmin'de ${money(report!.zTotal)} satış yazılı`
+                  : `ModPOS föyü kasa açılmadan alındı (kesin föy yok), ladmin'de ${money(report!.zTotal)} satış yazılı`
+              }
               text={
                 sheet!.final
                   ? "Raporun günü ya da ModPOS'taki kasa günü yanlış olabilir."

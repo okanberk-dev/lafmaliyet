@@ -55,6 +55,11 @@ export interface ModposState {
   runs: ModposRun[];
   /** Alınamayan günler (gün → kayıt); gün alınınca silinir */
   dayErrors: Record<string, ModposDayError>;
+  /**
+   * Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü (bir kez yazılır, hiç ileri alınmaz). Bundan
+   * sonraki günler "dün" olarak çekilir, kaçanı geçmişin önüne geçer (src/lib/modpos/plan.ts catchUpDays); öncesi geçmiştir
+   */
+  liveFrom: string | null;
 }
 
 const quotaSchema = z.object({
@@ -92,6 +97,7 @@ export function parseModposState(v: unknown): ModposState {
           }),
         )
       : {},
+    liveFrom: typeof o.liveFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.liveFrom) ? o.liveFrom : null,
   };
 }
 

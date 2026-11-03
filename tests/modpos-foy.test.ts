@@ -17,7 +17,7 @@ import { before, describe, test } from "node:test";
 
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
 import { modposCompare, modposDiffs, modposDiffsLine, modposDiffText, type ModposSavedFields } from "../src/lib/modpos/compare";
-import { backfillOrder, catchUpDays, historyStart, liveFromOf, missingFoyDays, nextBackfillDay, nextMorningRun, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
+import { backfillOrder, catchUpDays, historyStart, missingFoyDays, needsFetch, nextBackfillDay, nextMorningRun, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
 import {
   foyUrl,
   isKeyError,
@@ -958,6 +958,11 @@ describe("plan.ts: çekilecek günler", () => {
     // Üçüncü hatadan sonra 8 gün: sıradaki eksik gün
     const thrice = { "2026-11-08": { count: 3, lastAt: "2026-11-11T05:00:00.000Z" } };
     assert.deepEqual(planFoyDays({ now: later, from: "2026-11-08", have: got, left: 2, failed: thrice }), ["2026-11-12", "2026-11-10"]);
+    // Geçmişin günü (kaçan yakın gün değil) de bekler: 9 Temmuz bekliyorken 10 Temmuz, beklemesi dolunca 9 Temmuz
+    const hist = { "2026-07-09": { count: 1, lastAt: "2026-11-11T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", start: "2026-07-09", have: new Map(), left: 2, failed: hist, liveFrom: "2026-11-11" }), ["2026-11-11", "2026-07-10"]);
+    const past = have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00"), "2026-07-10": S(true, "2026-11-12T08:00:00+03:00") });
+    assert.deepEqual(planFoyDays({ now: later, from: "2026-07-01", start: "2026-07-09", have: past, left: 2, failed: hist, liveFrom: "2026-11-11" }), ["2026-11-12", "2026-07-09"]);
     // Dün muaf: dün hata verdiyse de sabah bir kez denenir
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-07-01", have: new Map(), left: 1, failed: { "2026-11-11": { count: 1, lastAt: "2026-11-12T04:00:00.000Z" } } }), ["2026-11-11"]);
   });
@@ -980,9 +985,11 @@ describe("plan.ts: çekilecek günler", () => {
     // 9 Kasım'a (aynı sonucu verecek yeniden çekim geçmişi bekletmez)
     const provisional = have({ "2026-11-10": S(false, "2026-11-11T09:00:00+03:00") });
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-09", have: provisional, left: 2 }), ["2026-11-11", "2026-11-09"]);
-    // Gün içinde (kesinleşmeden) elle çekilmiş föy ertesi sabah yeniden alınamadıysa kaçan yakın gündür: geçmişten önce
+    // Gün içinde (kesinleşmeden) elle çekilmiş föy ertesi sabah yeniden alınamadıysa: canlı çekim başladıysa kaçan yakın
+    // gündür (geçmişten önce); başlamadıysa geçmişin sırasında yeniden çekilir
     const early = have({ "2026-11-10": S(false, "2026-11-10T15:00:00+03:00") });
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-09", have: early, left: 2 }), ["2026-11-11", "2026-11-10"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-09", have: early, left: 2, liveFrom: "2026-11-10" }), ["2026-11-11", "2026-11-10"]);
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-09", have: early, left: 3 }), ["2026-11-11", "2026-11-09", "2026-11-10"]);
     // Eksik eski gün kalmadıysa kesin olmayan föy yeniden çekilir
     const done = allFinal("2026-11-01", "2026-11-09");
     done.set("2026-11-10", S(false, "2026-11-10T15:00:00+03:00"));
@@ -1077,55 +1084,81 @@ describe("plan.ts: çekilecek günler", () => {
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 4 }), ["2026-11-05", "2026-11-07", "2026-11-08", "2026-11-09"]);
   });
 
-  test("kaçan yakın gün: canlı çekim başladıktan sonra dün olarak alınamayan gün geçmişin önüne geçer (yeniden eskiye, beklemeyle)", () => {
+  test("kaçan yakın gün: canlı çekim başladıktan sonra dün olarak alınamayan gün geçmişin önüne geçer (eskiden yeniye, beklemeyle)", () => {
     const from = "2026-07-01";
     const start = "2026-07-09";
-    // Canlı çekim 4 Kasım'da başladı (3 Kasım dün olarak alındı); 10 Kasım saklı, 11 Kasım alınamadı (dün olarak, 12 Kasım 08:00)
+    const next = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    // Canlı çekim 4 Kasım sabahı başladı (liveFrom 3 Kasım); 10 Kasım saklı, 11 Kasım dün olarak alınamadı (12 Kasım 08:00)
+    const liveFrom = "2026-11-03";
     const h = have({ "2026-11-03": S(true, "2026-11-04T08:00:00+03:00"), "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-12": S(true, "2026-11-13T08:00:00+03:00") });
-    for (let d = "2026-11-04"; d <= "2026-11-09"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) h.set(d, S(true, `${d}T23:59:00+03:00`));
+    for (let d = "2026-11-04"; d <= "2026-11-09"; d = next(d)) h.set(d, S(true, `${d}T23:59:00+03:00`));
     const failed = { "2026-11-11": { count: 1, lastAt: "2026-11-12T05:00:00.000Z" } };
-    // 13 Kasım: 11 Kasım beklemede (2 gün) → ikinci hak geçmişe
-    assert.deepEqual(catchUpDays({ now: new Date("2026-11-13T08:00:00+03:00"), from, have: h, failed }), []);
-    assert.deepEqual(planFoyDays({ now: new Date("2026-11-14T08:00:00+03:00"), from, start, have: h, left: 2, failed }), ["2026-11-13", "2026-11-11"]);
+    // 13 Kasım: 11 Kasım beklemede (2 gün) → ikinci hak geçmişe; 14 Kasım: kaçan gün
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-13T08:00:00+03:00"), from, have: h, failed, liveFrom }), []);
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-14T08:00:00+03:00"), from, start, have: h, left: 2, failed, liveFrom }), ["2026-11-13", "2026-11-11"]);
     // Sabah işi bir gün hiç çalışmadı (13 Kasım alınmadı): ertesi sabah dün ve kaçan gün
     const g = new Map(h);
     g.set("2026-11-11", S(true, "2026-11-14T08:00:00+03:00"));
-    assert.deepEqual(planFoyDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, start, have: g, left: 2 }), ["2026-11-14", "2026-11-13"]);
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, start, have: g, left: 2, liveFrom }), ["2026-11-14", "2026-11-13"]);
+    // Kaçan gün geç alınsa da canlı başlangıç kaymaz: ilk "dün" (3 Kasım) alınamadı, 5 Kasım sabahı iş çalışmadı
+    const first = have({});
+    const fl = { "2026-11-03": { count: 1, lastAt: "2026-11-04T05:00:00.000Z" } };
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-06T08:00:00+03:00"), from, start, have: first, left: 3, failed: fl, liveFrom }), ["2026-11-05", "2026-11-03", "2026-11-04"]);
+    first.set("2026-11-05", S(true, "2026-11-06T08:00:00+03:00"));
+    first.set("2026-11-03", S(true, "2026-11-06T08:00:00+03:00"));
+    assert.deepEqual(planFoyDays({ now: new Date("2026-11-07T08:00:00+03:00"), from, start, have: first, left: 2, liveFrom }), ["2026-11-06", "2026-11-04"]);
     // Uzun kesinti (10 gün iş çalışmadı): kaçanlar eskiden yeniye, en eskisi pencereden düşmeden
-    const out = have({ "2026-11-01": S(true, "2026-11-02T08:00:00+03:00") });
-    assert.deepEqual(catchUpDays({ now: new Date("2026-11-13T08:00:00+03:00"), from, have: out }), ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]);
-    // İlk kurulumda ilk "dün" alınamadıysa da canlı sayılır (alınamayan günün son denemesi gününden sonraki 15 gün içinde)
-    const first = { "2026-10-31": { count: 1, lastAt: "2026-11-01T05:00:00.000Z" } };
-    const afterFirst = have({ "2026-11-01": S(true, "2026-11-02T08:00:00+03:00"), "2026-11-02": S(true, "2026-11-03T08:00:00+03:00") });
-    assert.equal(liveFromOf(afterFirst, first), "2026-10-31");
-    assert.deepEqual(planFoyDays({ now: new Date("2026-11-04T08:00:00+03:00"), from, start, have: afterFirst, left: 2, failed: first }), ["2026-11-03", "2026-10-31"]);
-    assert.equal(liveFromOf(new Map(), { "2026-07-10": { count: 1, lastAt: "2026-11-12T05:00:00.000Z" } }), null, "geçmişten denenmiş gün canlı değil");
-    // Pencere 14 gün: daha eskisi geçmişin sırasına kalır; canlı çekimden önceki gün kaçan sayılmaz
-    assert.deepEqual(catchUpDays({ now: new Date("2026-11-05T08:00:00+03:00"), from, have: h }), []);
-    assert.deepEqual(catchUpDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, have: g }), ["2026-11-13"]);
-    // İlk kurulum: canlı gün yok → kaçan yok, geçmiş ilk ciro gününden
-    assert.deepEqual(catchUpDays({ now: CRON, from, have: new Map() }), []);
-    assert.equal(liveFromOf(new Map()), null);
-    assert.equal(liveFromOf(h), "2026-11-03");
-    // Geçmişten aylar sonra alınan gün canlı sayılmaz
-    assert.equal(liveFromOf(have({ "2026-07-09": S(true, "2026-11-12T08:00:00+03:00") })), null);
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-13T08:00:00+03:00"), from, have: have({ "2026-11-01": S(true, "2026-11-02T08:00:00+03:00") }), liveFrom: "2026-11-01" }), [
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-07",
+      "2026-11-08",
+      "2026-11-09",
+      "2026-11-10",
+      "2026-11-11",
+    ]);
+    // Canlı çekim yoksa (sabah işi hiç çalışmadı) kaçan yok: geçmiş ilk ciro gününden; elle çekimin hatası sayılmaz
+    assert.deepEqual(catchUpDays({ now: CRON, from, have: new Map(), failed: { "2026-11-08": { count: 1, lastAt: "2026-11-11T12:00:00.000Z" } } }), []);
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-05T08:00:00+03:00"), from, have: h, liveFrom }), []);
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, have: g, liveFrom }), ["2026-11-13"]);
+    // Kesinleşme anından sonra alınıp yine kesin olmayan gün (kasa açık kalmış) her sabah yeniden çekilmez
+    const open = new Map(g);
+    open.set("2026-11-13", S(false, "2026-11-14T09:00:00+03:00"));
+    assert.deepEqual(catchUpDays({ now: new Date("2026-11-15T08:00:00+03:00"), from, have: open, liveFrom }), []);
+    assert.equal(needsFetch(undefined, "2026-11-13"), true);
+    assert.equal(needsFetch(S(false, "2026-11-13T15:00:00+03:00"), "2026-11-13"), true, "gün içinde alınmış");
+    assert.equal(needsFetch(S(false, "2026-11-14T09:00:00+03:00"), "2026-11-13"), false, "kesinleşme anından sonra alınmış");
+    assert.equal(needsFetch(S(true, "2026-11-14T09:00:00+03:00"), "2026-11-13"), false);
   });
 
-  test("nextMorningRun ve nextBackfillDay: kartın 'sıradaki'si bir sonraki sabah işinin planından (o sabahın dünü değil)", () => {
+  test("nextMorningRun ve nextBackfillDay: kartın 'sıradaki'si bir sonraki sabah işinin planından (o sabahın dünü ve kesin föyün kontrolü değil)", () => {
+    // Cron 05:00–06:00 UTC (08:00–09:00 TR) arasında çalışır: bugün çalışmadıysa 09:00'ye kadar bugünkü
     assert.equal(nextMorningRun(new Date("2026-11-13T07:59:00+03:00")).toISOString(), "2026-11-13T05:00:00.000Z");
-    assert.equal(nextMorningRun(new Date("2026-11-13T08:00:00+03:00")).toISOString(), "2026-11-14T05:00:00.000Z");
+    assert.equal(nextMorningRun(new Date("2026-11-13T08:20:00+03:00")).toISOString(), "2026-11-13T05:20:00.000Z");
+    assert.equal(nextMorningRun(new Date("2026-11-13T08:20:00+03:00"), true).toISOString(), "2026-11-14T05:00:00.000Z");
+    assert.equal(nextMorningRun(new Date("2026-11-13T09:00:00+03:00")).toISOString(), "2026-11-14T05:00:00.000Z");
     assert.equal(nextMorningRun(new Date("2026-11-13T23:30:00+03:00")).toISOString(), "2026-11-14T05:00:00.000Z");
     const from = "2026-07-01";
     const start = "2026-07-09";
+    const liveFrom = "2026-11-03";
     // 11 Kasım dün olarak alınamadı (12 Kasım 08:00): 13 Kasım öğleden sonra kart yarın sabahın sırasını söyler
+    // (canlı çekim 10 Kasım'dan)
     const h = have({ "2026-11-10": S(true, "2026-11-11T08:00:00+03:00"), "2026-11-12": S(true, "2026-11-13T08:00:00+03:00") });
     const failed = { "2026-11-11": { count: 1, lastAt: "2026-11-12T05:00:00.000Z" } };
-    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: h, failed, hak: 2 }), "2026-11-11");
-    // Sabah işi bugün çalışmadıysa (dün alınmadı): yarın sabahın planında bugünün dünü kaçan gündür
-    const g = have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00") });
-    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: g, hak: 2 }), "2026-11-12");
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: h, failed, liveFrom: "2026-11-10", hak: 2, ranToday: true }), "2026-11-11");
+    // Bugünün sabah işi henüz çalışmadı (08:20): bugünkü işin ikinci günü geçmişin günüdür (dün o sabahın dünü)
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T08:20:00+03:00"), from, start, have: have({ "2026-11-11": S(true, "2026-11-12T08:00:00+03:00") }), liveFrom: "2026-11-11", hak: 2 }), "2026-07-09");
     // Kaçan yok: geçmişin sıradaki günü
-    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: new Map(), hak: 2 }), "2026-07-09");
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: new Map(), hak: 2, ranToday: true }), "2026-07-09");
+    // Canlı çekim başlamış ve son günler eksikse sıradaki en eski kaçan gün
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from, start, have: new Map(), hak: 2, ranToday: true, liveFrom }), "2026-11-03");
+    // Eksik gün beklemedeyse ve plan yalnız kesin föyün kontrolünü yapacaksa sıradaki yok (saklı günü "sıradaki" demez)
+    const done = new Map<string, StoredDay>();
+    for (let d = "2026-11-01"; d <= "2026-11-12"; d = new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) done.set(d, S(true, `${d}T23:59:00+03:00`));
+    assert.equal(nextBackfillDay({ now: new Date("2026-11-13T12:00:00+03:00"), from: "2026-10-31", have: done, failed: { "2026-10-31": { count: 3, lastAt: "2026-11-12T05:00:00.000Z" } }, liveFrom: "2026-11-01", hak: 2, ranToday: true }), null);
   });
 
   test("kesin olmayan föy kesinleşme anından sonra yeniden çekilir (önce dün, sonra son 14 gün, yeniden eskiye)", () => {
@@ -1134,12 +1167,18 @@ describe("plan.ts: çekilecek günler", () => {
     h.set("2026-11-08", S(false, "2026-11-08T22:00:00+03:00"));
     h.set("2026-11-11", S(false, "2026-11-11T23:30:00+03:00"));
     assert.deepEqual(planFoyDays({ now: CRON, from: "2026-11-05", have: h, left: 2 }), ["2026-11-11", "2026-11-08"]);
-    // 15 günden eski kesin olmayan föy yeniden çekilmez
+    // Kesinleşmeden alınmış eski föy (14 günden eski) de geçmişin sırasında yeniden çekilir: kesin föysüz kalmaz
     const old = allFinal("2026-10-20", "2026-11-11");
     old.set("2026-10-27", S(false, "2026-10-27T22:00:00+03:00"));
     old.set("2026-10-29", S(false, "2026-10-29T22:00:00+03:00"));
-    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-10-20", have: old, left: 1 }), ["2026-10-29"], "12 − 14 = 29 Ekim sınırda");
-    assert.ok(!planFoyDays({ now: CRON, from: "2026-10-20", have: old, left: 5 }).includes("2026-10-27"));
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-10-20", have: old, left: 2 }), ["2026-10-27", "2026-10-29"]);
+    // Kesinleşme anından sonra alınıp yine kesin olmayan eski föy (kasa açık kalmış) her sabah çekilmez; son 14 gündeyse
+    // yeniden çekimi geçmişten sonra (12 − 14 = 29 Ekim sınırda)
+    const open = allFinal("2026-10-20", "2026-11-11");
+    open.set("2026-10-27", S(false, "2026-10-28T09:00:00+03:00"));
+    open.set("2026-10-29", S(false, "2026-10-30T09:00:00+03:00"));
+    assert.deepEqual(planFoyDays({ now: CRON, from: "2026-10-20", have: open, left: 1 }), ["2026-10-29"]);
+    assert.ok(!planFoyDays({ now: CRON, from: "2026-10-20", have: open, left: 5 }).includes("2026-10-27"));
   });
 
   test("07:00'den önce dün planlanmaz (kesinleşmedi); gece alınmış kesin olmayan dün de beklenir", () => {
@@ -1196,7 +1235,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
   const run = (at: string, o: Partial<ModposRun> = {}): ModposRun => ({ at, trigger: "cron", days: [{ day: "2026-11-02", result: "yeni" }], status: "ok", text: null, ...o });
 
   test("parseModposState: boş ya da bozuk değer boş durum; bozuk parça atılır, kalanı okunur", () => {
-    const empty: ModposState = { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {} };
+    const empty: ModposState = { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, liveFrom: null };
     for (const v of [undefined, null, "bozuk", 42, [], {}]) assert.deepEqual(parseModposState(v), empty, JSON.stringify(v));
     const ok = { at: "2026-11-03T05:01:00.000Z", day: "2026-11-02" };
     const good = run("2026-11-03T05:01:00.000Z");
@@ -1208,7 +1247,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
         runs: [good, { at: 1 }, { ...good, trigger: "elle" }, { ...good, status: "belki" }, "metin"],
         fazla: true,
       }),
-      { quota: null, lastOk: ok, lastError: null, runs: [good, { ...good, trigger: "elle" }], dayErrors: {} },
+      { quota: null, lastOk: ok, lastError: null, runs: [good, { ...good, trigger: "elle" }], dayErrors: {}, liveFrom: null },
     );
     const many = Array.from({ length: 13 }, (_, i) => run(`2026-11-03T05:${String(i).padStart(2, "0")}:00.000Z`));
     assert.equal(parseModposState({ runs: many }).runs.length, MODPOS_RUNS_KEEP);
@@ -1239,7 +1278,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     now: NOW,
     keyProblem: null,
     preview: false,
-    state: { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {} },
+    state: { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, liveFrom: null },
     from: "2026-07-01",
     stored: { count: 0, first: null, last: null },
     missing: 0,
@@ -1254,6 +1293,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     lastError: null,
     runs: [],
     dayErrors: {},
+    liveFrom: null,
     ...o,
   });
 

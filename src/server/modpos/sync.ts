@@ -2,7 +2,7 @@ import "server-only";
 
 import { planFoyDays } from "@/lib/modpos/plan";
 import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
-import { todayTR } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, type ModposTrigger } from "@/lib/modpos/status";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -96,12 +96,19 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
     loadLafposSwitchDay(db),
     o.days ? Promise.resolve(null) : loadModposHistoryStart(from, modposSyncFromSet(env), db),
   ]);
+  // Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü, bir kez yazılır (kaçan yakın günler ondan
+  // itibaren; src/lib/modpos/plan.ts catchUpDays). Elle çekim yazmaz
+  let liveFrom = state.liveFrom;
+  if (trigger === "cron" && liveFrom === null) {
+    liveFrom = addDays(todayTR(started), -1);
+    await noteModposRun(db, { liveFrom }, null);
+  }
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
   // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
   const wanted = o.days
     ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
-    : planFoyDays({ now: started, from, start: start?.day ?? null, have, left: left0, until: switchDay, failed: state.dayErrors });
+    : planFoyDays({ now: started, from, start: start?.day ?? null, have, left: left0, until: switchDay, failed: state.dayErrors, liveFrom });
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
     if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };

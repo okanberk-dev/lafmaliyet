@@ -30,14 +30,16 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts; sahibin kuralı,
   3 Kasım 2026: her sabah önce dün, öteki hak geçmişe, ModPOS'un ilk ciro gününden başlayıp bitene kadar):
   1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır); ardından **kaçan yakın
-     günler** (`catchUpDays`): canlı çekim başladıktan sonra (dün olarak denenmiş ilk günden; ilk "dün" alınamadıysa da)
-     son 14 günde kesin föyü olmayan günler: dün olarak alınamamış, sabah işinin hiç çalışmadığı ya da gün içinde kasa
-     açılmadan elle çekilip ertesi sabah yeniden alınamamış. Eskiden yeniye (uzun kesintide en eskisi pencereden
-     düşmesin), alınamayan günün beklemesi dolunca. Kesinleşme anından sonra alınıp yine kesin olmayan gün (kasa
-     ModPOS'ta açık kalmış) burada her sabah yeniden çekilmez. Yakın günün föyü geçmişin sonuna, aylar sonrasına
-     kalmasın diye; ilk kurulumda (hiç dün denenmemişken) boştur. Ayarlar kartının "sıradaki"si bir sonraki sabah
-     işinin planındandır;
-  2. **henüz çekilmemiş bir eski gün**, ModPOS'un **ilk ciro gününden ileriye**, eskiden yeniye (geçmiş ilk günden
+     günler** (`catchUpDays`): canlı çekim başladıktan sonra (integration_state › `modpos` `liveFrom`: sabah işinin
+     ilk çalıştığı sabahın dünü, bir kez yazılır, hiç ileri alınmaz; elle çekim yazmaz) son 14 günde kesin föyü
+     olmayan günler: dün olarak alınamamış, sabah işinin hiç çalışmadığı ya da gün içinde kasa açılmadan elle çekilip
+     ertesi sabah yeniden alınamamış. Eskiden yeniye (uzun kesintide en eskisi pencereden düşmesin), alınamayan günün
+     beklemesi dolunca. Kesinleşme anından sonra alınıp yine kesin olmayan gün (kasa ModPOS'ta açık kalmış) burada her
+     sabah yeniden çekilmez. Yakın günün föyü geçmişin sonuna, aylar sonrasına kalmasın diye; sabah işi ilk kez
+     çalışırken boştur. Ayarlar kartının "sıradaki"si bir sonraki sabah işinin planındandır (bugünün işi çalışmadıysa
+     09:00'ye kadar bugünkü; kesin föyün yeniden kontrolü sıradaki sayılmaz);
+  2. **henüz çekilmemiş bir eski gün** (ya da kesinleşmeden alınıp yeniden alınamamış), ModPOS'un **ilk ciro
+     gününden ileriye**, eskiden yeniye (geçmiş ilk günden
      bugüne doğru dolar). İlk ciro günü (`historyStart`, src/server/modpos/store.ts `loadModposHistoryStart`):
      `MODPOS_SYNC_FROM` kuruluysa o; yoksa Satışlar'daki ilk cirolu ayın açık gün sayısına göre en geç açılış günü
      (Temmuz 2026: 23 açık gün → **9 Temmuz**); ondan önce satışlı (kasası açılmış ya da föysüz satışlı) bir föy
@@ -190,7 +192,8 @@ sayılmaz.
   parmak izi, sürüm, önceki sürümün özeti, hazırlanma / çekilme / değişme anları. Aynı gün yeniden çekilince içerik
   aynıysa yalnız çekilme anı ve ham XML değişir; değiştiyse sürüm artar ve "önceki" özet kalır. Ad okunmaya
   başlamadan önce saklanan bir gün yeniden çekilirse adlar eklendiği için bir kez "değişti" sayılır (tutarlar aynı).
-- `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma. Anahtar burada değil.
+- `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma, alınamayan günler ve canlı
+  çekimin başladığı gün (`liveFrom`). Anahtar burada değil.
 - İkisi de yedeğe girer (föy kişi adlarıyla; yedek de yalnız yöneticinin). Migration'lar:
   `drizzle/0050_modpos_kasa_foyu.sql` (yeni tablo), `drizzle/0051_modpos_ham_foy.sql` (`raw` sütunu; boş başlar).
 
