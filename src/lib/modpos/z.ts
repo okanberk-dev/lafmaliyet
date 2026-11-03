@@ -302,8 +302,7 @@ export function sheetPrevious(foy: KasaFoyu, at: { fetchedAt: string; generatedA
  * Anahtarlar sıralı (kanonik JSON); sunucu bunun sha256'sını saklar
  */
 export function sheetCanonical(foy: KasaFoyu): string {
-  const { olusturulma: _o, kota: _k, ...rest } = foy;
-  return canonical(rest);
+  return canonical({ ...foy, olusturulma: undefined, kota: undefined });
 }
 
 function canonical(v: unknown): string {
