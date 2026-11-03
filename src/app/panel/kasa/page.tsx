@@ -56,11 +56,13 @@ import {
   cashReportsBetween,
   cashRevisionsFor,
   firstCashReportDate,
+  firstModposTillDay,
   firstOkcReportDate,
   getCashReport,
   lafposTillRows,
   loadCashSettings,
   loadMonthEntry,
+  modposTillRows,
   nextReportAfter,
   okcRows,
   previousCarryOver,
@@ -455,8 +457,14 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const carryByDate: Record<string, CarryCheck> = Object.fromEntries([...checks, ...(afterCheck ? [[after!.date, afterCheck] as const] : [])]);
   const revisionsById: Record<number, CashRevisionRow[]> = {};
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
-  // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
-  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos], addDays(today, -1), firstEver)[0]));
+  // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı. Ay rakamına yedek açıksa
+  // raporsuz günün kapanmış ModPOS föyü de (docs/MODPOS-API.md › Ay rakamına yedek; kapalıyken föy okunmaz): Gelir-gider'deki
+  // ay rakamıyla aynı. Ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik gün ilk kasa raporundan
+  const [monthModpos, firstModpos] = await Promise.all([modposTillRows(getDb(), `${month}-01`, monthEnd), firstModposTillDay(getDb())]);
+  const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
+  const monthLine = kasaMonthLine(
+    resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined)[0]),
+  );
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const infos = await cashReportPhotoInfo(monthReports, "admin");
