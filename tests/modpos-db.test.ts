@@ -484,9 +484,27 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     assert.deepEqual([st.runs.length, st.runs[0].trigger, st.quota?.kalan, st.lastOk?.day], [1, "elle", 1, "2026-11-11"]);
   });
 
-  test("süre dolmak üzereyse (5 sn'den az) yeni istek başlamaz", async () => {
+  test("süre dolmak üzereyse (5 sn'den az) yeni istek başlamaz; hiçbir istek başlamadıysa 'çekilecek gün yok' değil süre doldu", async () => {
     const none = modpos(() => assert.fail("istek gitmemeli"));
     const r = await sync.syncModpos("cron", opts(none.impl, { deadlineAt: Date.now() + 3_000 }));
-    assert.deepEqual([r.status, r.days, none.days], ["nothing", [], []]);
+    assert.deepEqual([r.status, r.days, none.days], ["error", [], []]);
+    assert.match(r.error ?? "", /süre doldu/);
+    const st = await store.readModposState(db);
+    assert.equal(st.lastError?.kod, "SURE_DOLDU");
+    assert.equal(st.runs[0]?.status, "error");
+  });
+
+  test("anahtar yoksa veritabanına da gidilmez: eski kota 0 olsa da 'hak doldu' değil kurulmadı", async () => {
+    await store.noteModposRun(db, { quota: { day: "2026-11-12", hak: 2, kalan: 0, yenilenme: RENEW, at: NOW.toISOString() } }, null);
+    const none = modpos(() => assert.fail("istek gitmemeli"));
+    assert.deepEqual(await sync.syncModpos("cron", opts(none.impl, { env: {} })), { status: "off", days: [], left: null });
+    assert.deepEqual(await sync.syncModpos("elle", opts(none.impl, { env: {}, days: ["2026-11-11"] })), { status: "off", days: [], left: null });
+  });
+
+  test("elle çekim: aynı gün iki kez verilse de tek istek (iki hak harcanmaz)", async () => {
+    const m = modpos((day, n) => okRes(day, 2 - n));
+    const r = await sync.syncModpos("elle", opts(m.impl, { days: ["2026-11-11", "2026-11-11"] }));
+    assert.deepEqual(m.days, ["2026-11-11"]);
+    assert.deepEqual(r.days.map((d) => d.day), ["2026-11-11"]);
   });
 });

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { planFoyDays } from "@/lib/modpos/plan";
-import { modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
+import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
 import { todayTR } from "@/lib/reminders";
 import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, type ModposTrigger } from "@/lib/modpos/status";
 import { getDb, type DB } from "@/server/db";
@@ -62,6 +62,8 @@ const MIN_REQUEST_MS = 5_000;
 export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promise<ModposSyncResult> {
   const env = o.env ?? process.env;
   if (!canFetchModpos(env)) return { status: "preview", days: [], left: null };
+  // Anahtar yoksa veritabanına da gidilmez: adım yazılmaz, eski kota "hak doldu" demez (docs/MODPOS-API.md › Nerede görünür)
+  if (modposKeyProblem(env)) return { status: "off", days: [], left: null };
   const started = o.now ?? new Date();
   // Verilen `now` bütün çalışmanın saatidir: sonraki istekler ve çalışmanın sonu ona geçen süre eklenerek (duvar saati
   // olsa ikinci günün kotası ve kesinliği başka bir güne göre yazılırdı; tests/modpos-db.test.ts)
@@ -71,8 +73,9 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   const [state, have] = await Promise.all([readModposState(db), loadModposIndex(db)]);
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
+  // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
   const wanted = o.days
-    ? o.days.filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
+    ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0))
     : planFoyDays({ now: started, from: modposSyncFrom(env), have, left: left0 });
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
@@ -86,7 +89,15 @@ export async function syncModpos(trigger: ModposTrigger, o: SyncOptions): Promis
   let stopText: string | undefined;
   for (const day of wanted) {
     const remaining = o.deadlineAt - Date.now();
-    if (remaining < MIN_REQUEST_MS) break;
+    if (remaining < MIN_REQUEST_MS) {
+      // Hiçbir istek başlamadan süre bittiyse "çekilecek gün yok" değil: süre doldu (ertesi sabah yeniden denenir)
+      if (!days.length) {
+        stop = "error";
+        stopText = "ModPOS föyü çekilemedi: süre doldu, sonra yeniden denenecek";
+        lastError = { at: clock().toISOString(), day: null, kod: "SURE_DOLDU", text: stopText, keyError: false };
+      }
+      break;
+    }
     const now = o.now && days.length === 0 ? o.now : clock();
     const r = await fetchKasaFoyu(day, { now, timeoutMs: remaining - 1_000, fetchImpl: o.fetchImpl, env });
     if (r.status === "off") return { status: "off", days: [], left: null };
