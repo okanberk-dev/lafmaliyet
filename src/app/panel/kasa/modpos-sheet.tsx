@@ -43,7 +43,7 @@ import type { LadminReport } from "@/lib/cash-ladmin";
 import { money, num } from "@/lib/format";
 import type { ModposCompareRow } from "@/lib/modpos/compare";
 import type { FoyKasa, FoysuzGun } from "@/lib/modpos/foy";
-import type { ModposZ } from "@/lib/modpos/z";
+import { finalAfter, type ModposZ } from "@/lib/modpos/z";
 import { cn } from "@/lib/utils";
 
 import { FactGrid, H3, LineList, MutedLines } from "./day-parts";
@@ -85,9 +85,17 @@ export function ModposSections({
     <div className="space-y-4" aria-label="ModPOS, ladmin ve karşılaştırma" role="group">
       <ModposSheetCard date={date} today={today} sheet={sheet} z={z} now={now} />
       <LadminReportCard report={report} {...ladmin} />
-      <ModposCompareCard sheet={sheet} z={z} report={report} />
+      <ModposCompareCard sheet={sheet} z={z} report={report} awaiting={awaitingFinal(sheet, date, now)} />
     </div>
   );
+}
+
+/**
+ * Kesinleşmeden alınmış boş föyün kesin föyü hâlâ bekleniyor mu: ertesi sabahın sabah işi bitene kadar (kesinleşme anı
+ * 07:00 + 2 saat = 09:00 TR). Sonrası beklenmez: o sabah alınamamıştır, uyarılar yine çıkar
+ */
+function awaitingFinal(sheet: ModposSheetView | null, date: string, now: Date): boolean {
+  return Boolean(sheet && !sheet.final && now.getTime() < finalAfter(date) + 2 * 3_600_000);
 }
 
 /**
@@ -118,7 +126,15 @@ export function ModposSheetCard({ date, today, sheet, z, now }: { date: string; 
     <Card aria-label="ModPOS kasa föyü">
       <CardHeader icon={<ClipboardList />} title="ModPOS" description={`Kasa föyü · ${modposHeadline(sheet, z, now)}`} actions={<StateBadge sheet={sheet} z={z} />} />
       <CardContent className="space-y-4">
-        {z ? null : <p className="text-sm text-ink-mute">Bu gün ModPOS&apos;ta kasa açılmamış, satış yok.</p>}
+        {z ? null : (
+          <p className="text-sm text-ink-mute">
+            {sheet.final
+              ? "Bu gün ModPOS'ta kasa açılmamış, satış yok."
+              : awaitingFinal(sheet, date, now)
+                ? "Föy alındığında ModPOS'ta kasa henüz açılmamıştı, satış yoktu; kesin föy ertesi sabah gelir."
+                : "Föy alındığında ModPOS'ta kasa henüz açılmamıştı; kesin föy henüz alınamadı (sabah işi yeniden dener)."}
+          </p>
+        )}
         {gap ? <Notice tone="warn" risk="para" size="sm" title={gap} text="ModPOS'ta ödemeleri kontrol edin; karşılaştırmadaki ödeme alanları bu yüzden farklı görünebilir." /> : null}
         {z && z.durum === "ACIK" ? (
           <Notice tone="neutral" size="sm" title="Föy gün açıkken alındı" text="Tutarlar o anki; rapor ertesi sabahki kesin föyle karşılaştırılır." />
@@ -194,7 +210,8 @@ function RawSheet({ raw }: { raw: string }) {
 
 /** ModPOS başlığının rozeti: kesin / kesin değil (gün açıkken alındı) / kasa açılmamış */
 function StateBadge({ sheet, z }: { sheet: ModposSheetView; z: ModposZ | null }) {
-  if (!z) return <Badge tone="gray">Kasa açılmamış</Badge>;
+  // Kesinleşmeden alınan boş föy (gün içinde "Bu günü çek", kasa açılmadan): gün sürüyor, "kasa açılmamış" kesin değil
+  if (!z) return <Badge tone="gray">{sheet.final ? "Kasa açılmamış" : "Kesin değil"}</Badge>;
   if (z.durum === "ACIK") return <Badge tone="gray">Gün açıkken alındı</Badge>;
   return sheet.final ? (
     <Badge tone="blue" dot>
@@ -214,18 +231,28 @@ export function ModposCompareCard({
   sheet,
   z,
   report,
+  awaiting = false,
 }: {
   sheet: ModposSheetView | null;
   z: ModposZ | null;
   report: (ModposReportFields & Partial<Pick<LadminReport, "submittedByName" | "countedByName">>) | null;
+  /** Kesinleşmeden alınmış boş föyün kesin föyü bekleniyor (bugün ya da dün): karşılaştırma ertelenir */
+  awaiting?: boolean;
 }) {
   const header = (badge: ReactNode) => <CardHeader icon={<GitCompareArrows />} title="Karşılaştırma" description="ModPOS föyü ↔ ladmin kasa raporu" actions={badge} />;
   if (!sheet || !z) {
+    const sales = Boolean(report && Math.abs(report.zTotal) >= 0.01);
+    // Kesinleşmeden alınan boş föy (kasa açılmadan "Bu günü çek"): gün sürüyordu, kesin föy beklenirken akşamki raporla
+    // karşılaştırılmaz; beklenen sabah geçtiyse (kesin föy alınamadı) uyarı yine çıkar
     const text = !sheet
       ? "ModPOS föyü gelince ladmin'deki raporla alan alan karşılaştırılır."
-      : report && Math.abs(report.zTotal) >= 0.01
-        ? null
-        : "İkisinde de satış yok.";
+      : awaiting
+        ? "Föy kasa açılmadan alındı: ertesi sabahki kesin föyle karşılaştırılır."
+        : sales
+          ? null
+          : sheet.final
+            ? "İkisinde de satış yok."
+            : "Kesin föy alınamadı: ModPOS'ta o gün satış olup olmadığı bilinmiyor (föy kasa açılmadan alınmıştı).";
     return (
       <Card aria-label="ModPOS ve ladmin karşılaştırması">
         {header(null)}
@@ -233,7 +260,21 @@ export function ModposCompareCard({
           {text ? (
             <p className="text-sm text-ink-mute">{text}</p>
           ) : (
-            <Notice tone="warn" risk="para" size="sm" title={`ModPOS'ta bu gün kasa açılmamış, ladmin'de ${money(report!.zTotal)} satış yazılı`} text="Raporun günü ya da ModPOS'taki kasa günü yanlış olabilir." />
+            <Notice
+              tone="warn"
+              risk="para"
+              size="sm"
+              title={
+                sheet!.final
+                  ? `ModPOS'ta bu gün kasa açılmamış, ladmin'de ${money(report!.zTotal)} satış yazılı`
+                  : `ModPOS föyü kasa açılmadan alındı (kesin föy yok), ladmin'de ${money(report!.zTotal)} satış yazılı`
+              }
+              text={
+                sheet!.final
+                  ? "Raporun günü ya da ModPOS'taki kasa günü yanlış olabilir."
+                  : "Föy kasa açılmadan alınmıştı ve kesin föy henüz alınamadı; ModPOS'ta günü ve raporun gününü kontrol edin."
+              }
+            />
           )}
         </CardContent>
       </Card>

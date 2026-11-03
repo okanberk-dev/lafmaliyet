@@ -193,12 +193,18 @@ export function foyZ(foy: KasaFoyu): ModposZ | null {
   };
 }
 
+/**
+ * Föysüz satışın ödemesinin alanı: ciroyaDahil gelmediyse (belge yazmaz) tanınmayan kod ve DIGER Diğer'dir (ciroya
+ * dahil); geldiyse ödeme satırınınki gibi (modposBucket). Z özeti de ödenmez / ikram dökümü de bunu kullanır
+ */
+export function foysuzBucket(o: { kod: string; ciroyaDahil?: boolean }): ModposBucket {
+  return o.ciroyaDahil === undefined ? (BUCKETS[o.kod] ?? "other") : modposBucket({ kod: o.kod, ciroyaDahil: o.ciroyaDahil });
+}
+
 /** Kasasız gün: föysüz satışın ödemeleri kodlarına göre (ciroya dahil bilgisi yok: tanınmayan kod Diğer) */
 function foysuzZ(foy: KasaFoyu, zTotal: number): ModposZ {
   const pays = foy.foysuzGunler.flatMap((f) => f.odemeler);
-  // ciroyaDahil gelmediyse (belge yazmaz) tanınmayan kod Diğer; geldiyse ödeme satırınınki gibi (modposBucket)
-  const bucket = (o: (typeof pays)[number]) => (o.ciroyaDahil === undefined ? (BUCKETS[o.kod] ?? "other") : modposBucket({ kod: o.kod, ciroyaDahil: o.ciroyaDahil }));
-  const by = (b: ModposBucket) => round2(pays.filter((o) => bucket(o) === b).reduce((a, o) => a + o.tutar, 0));
+  const by = (b: ModposBucket) => round2(pays.filter((o) => foysuzBucket(o) === b).reduce((a, o) => a + o.tutar, 0));
   const cash = by("cash");
   const card = by("card");
   const mealCard = by("mealCard");

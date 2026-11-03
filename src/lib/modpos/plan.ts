@@ -8,8 +8,11 @@ import { finalAfter } from "./z";
  * Hak sırayla:
  *
  * 1. **Dün**, kesin değilse (ertesi sabah 07:00'den sonra alınmış, kasaları kapalı föy kesindir). Sabah işi 08:00'de
- *    çalışır: dünün föyü kesinleşmiştir.
- * 2. **Hiç alınmamış eski günler**, ModPOS'un ilk ciro gününden (`start`; historyStart) ileriye, eskiden yeniye: geçmiş
+ *    çalışır: dünün föyü kesinleşmiştir. Ardından **kaçan yakın günler** (catchUpDays): canlı çekim başladıktan sonra
+ *    (liveFrom: sabah işinin ilk çalıştığı sabahın dünü) son 14 günde dün olarak alınamamış, sabah işinin çalışmadığı ya
+ *    da kesinleşmeden elle alınıp yeniden alınamamış günler, eskiden yeniye (alınamayan gün beklemesini doldurunca).
+ *    Yakın günün föyü geçmişin sonuna (aylar sonrasına) kalmasın diye; sabah işi ilk kez çalışırken boştur.
+ * 2. **Hiç alınmamış eski günler** (ya da kesinleşmeden alınıp yeniden alınamamış), ModPOS'un ilk ciro gününden (`start`; historyStart) ileriye, eskiden yeniye: geçmiş
  *    ilk günden bugüne doğru dolar. `from` ile `start` arasındaki günler (ilk ciro gününden önce: büyük olasılıkla kasa
  *    açılmamış) en sona kalır, yine eskiden yeniye: hiçbir gün atlanmaz. Hak günde 2 olduğundan geçmiş günde 1 gün
  *    ilerler (docs/MODPOS-API.md › Kota ve çekme sırası).
@@ -43,6 +46,8 @@ export interface PlanInput {
   until?: string | null;
   /** Alınamayan günler: kaç kez, en son ne zaman (src/lib/modpos/status.ts dayErrors) */
   failed?: Readonly<Record<string, { count: number; lastAt: string }>>;
+  /** Canlı çekimin başladığı gün (integration_state › modpos liveFrom): kaçan yakın günler ondan itibaren; yoksa hiç */
+  liveFrom?: string | null;
 }
 
 /** Alınamayan günün bekleme süresi: 2^kez gün, en çok 32 */
@@ -62,7 +67,7 @@ const RECHECK_DAYS = 7;
 /** Kesin olmayan föylerin yeniden çekileceği geriye bakış */
 const PROVISIONAL_DAYS = 14;
 
-export function planFoyDays({ now, from, have, left, start = null, until = null, failed = {} }: PlanInput): string[] {
+export function planFoyDays({ now, from, have, left, start = null, until = null, failed = {}, liveFrom = null }: PlanInput): string[] {
   if (left <= 0) return [];
   const today = todayTR(now);
   const yesterday = addDays(today, -1);
@@ -71,13 +76,15 @@ export function planFoyDays({ now, from, have, left, start = null, until = null,
     if (out.length < left && !out.includes(d) && d >= from && d < today && (until === null || d < until)) out.push(d);
   };
   const ready = (d: string) => canRetry(failed[d], now);
-  // 1) Dün: kesinleştiyse ve kesin föyü yoksa
+  // 1) Dün: kesinleştiyse ve kesin föyü yoksa; sonra kaçan yakın günler
   const y = have.get(yesterday);
   if (now.getTime() >= finalAfter(yesterday) && !y?.final) add(yesterday);
-  // 2) Hiç alınmamış eski günler: ilk ciro gününden ileriye (eskiden yeniye), sonra ondan önceki günler
+  for (const d of catchUpDays({ now, from, have, until, failed, liveFrom })) add(d);
+  // 2) Çekilmemiş (ya da kesinleşmeden alınıp yeniden alınamamış) eski günler: ilk ciro gününden ileriye (eskiden
+  // yeniye), sonra ondan önceki günler
   for (const d of backfillOrder(from, start, yesterday)) {
     if (out.length >= left) break;
-    if (!have.has(d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
+    if (needsFetch(have.get(d), d) && now.getTime() >= finalAfter(d) && ready(d)) add(d);
   }
   // 3) Kesin olmayan föyler (yalnız kesinleşme anı geçtiyse: erken yeniden çekmek aynı sonucu verir)
   for (let i = 1; i <= PROVISIONAL_DAYS; i++) {
@@ -100,6 +107,78 @@ export function planFoyDays({ now, from, have, left, start = null, until = null,
 }
 
 /**
+ * Günün föyü çekilmeli mi: hiç alınmamış, ya da kesinleşme anından önce alınmış ve hâlâ kesin değil (gün içinde ya da
+ * 07:00'den önce elle çekilmiş, ertesi sabah yeniden alınamamış). Kesinleşme anından sonra alınıp yine kesin olmayan
+ * föy (kasa ModPOS'ta açık kalmış) burada sayılmaz: her sabah aynı sonucu verir, hak yer (son 14 günün yeniden çekimi ona
+ * bakar)
+ */
+export function needsFetch(h: StoredDay | undefined, day: string): boolean {
+  return !h || (!h.final && Date.parse(h.fetchedAt) < finalAfter(day));
+}
+
+/**
+ * Kaçan yakın günler, eskiden yeniye: canlı çekimin başladığı günden (`liveFrom`, sabah işinin ilk çalıştığı sabahın
+ * dünü; integration_state › modpos) itibaren, dünden önceki son 13 günde (dün dahil 14) çekilmesi gereken (needsFetch),
+ * kesinleşme anı geçmiş ve beklemesi dolmuş günler: dün olarak alınamamış, o sabah iş çalışmamış ya da gün içinde kasa
+ * açılmadan elle çekilip ertesi sabah yeniden alınamamış. Eskiden yeniye: uzun bir kesintiden sonra en eski kaçan gün
+ * pencereden düşmeden alınır. Geçmişin ilk günü ve LafPOS'a geçiş günü sınırları geçerli. Sabah işi hiç çalışmadıysa
+ * (liveFrom yok) boş: geçmiş ilk ciro gününden
+ */
+export function catchUpDays({ now, from, have, until = null, failed = {}, liveFrom = null }: Pick<PlanInput, "now" | "from" | "have" | "until" | "failed" | "liveFrom">): string[] {
+  const live = liveFrom;
+  if (live === null) return [];
+  const today = todayTR(now);
+  const out: string[] = [];
+  for (let i = PROVISIONAL_DAYS; i >= 2; i--) {
+    const d = addDays(today, -i);
+    if (d < live || d < from) continue;
+    if (until !== null && d >= until) continue;
+    if (needsFetch(have.get(d), d) && now.getTime() >= finalAfter(d) && canRetry(failed[d], now)) out.push(d);
+  }
+  return out;
+}
+
+/**
+ * Sabah işinin bir sonraki çalışması (cron /api/cron/gunluk, 05:00 UTC; Vercel 05:00–06:00 arasında çalıştırır):
+ * bugün henüz çalışmadıysa (`ranToday` false) ve saat 06:00 UTC'yi geçmediyse bugünkü (en erken şimdi), yoksa yarınki
+ */
+export function nextMorningRun(now: Date, ranToday = false): Date {
+  const today = todayTR(now);
+  const run = new Date(`${today}T05:00:00.000Z`);
+  const windowEnd = new Date(`${today}T06:00:00.000Z`);
+  if (!ranToday && now.getTime() < windowEnd.getTime()) return now.getTime() > run.getTime() ? now : run;
+  return new Date(`${addDays(today, 1)}T05:00:00.000Z`);
+}
+
+/**
+ * Geçmişin sıradaki günü (Ayarlar kartının "sıradaki"si): bir sonraki sabah işinin planında o sabahın dünü dışındaki,
+ * föyü çekilmesi gereken ilk gün (kaçan yakın gün ya da geçmiş; bekleyen gün atlanır). Kesin föyün yeniden kontrolü
+ * (planın 3. ve 4. adımı) sıradaki sayılmaz. Hak o sabah yenilenmiş sayılır; o sabah çekilecek gün yoksa null
+ */
+export function nextBackfillDay(i: Omit<PlanInput, "now" | "left"> & { now: Date; hak: number; ranToday?: boolean; leftToday?: number }): string | null {
+  const today = todayTR(i.now);
+  const pick = (run: Date, plan: string[], have: ReadonlyMap<string, StoredDay>) => {
+    const yesterday = addDays(todayTR(run), -1);
+    return plan.find((d) => d !== yesterday && needsFetch(have.get(d), d)) ?? null;
+  };
+  const run = nextMorningRun(i.now, i.ranToday ?? false);
+  let have = i.have;
+  // Bugünkü iş henüz çalışmadıysa bugünün kalan hakkıyla; o işte geçmişe hak kalmıyorsa yarınki işin planı, bugünkü
+  // işin çekeceği günler alınmış sayılarak (yoksa yarının planı bugün çekilecek dünü "kaçan gün" sanır)
+  if (todayTR(run) === today) {
+    const left = i.leftToday ?? i.hak;
+    const todays = left > 0 ? planFoyDays({ ...i, now: run, left }) : [];
+    const got = pick(run, todays, i.have);
+    if (got) return got;
+    const next = new Map(i.have);
+    for (const d of todays) next.set(d, { final: true, fetchedAt: run.toISOString() });
+    have = next;
+  }
+  const tomorrow = new Date(`${addDays(today, 1)}T05:00:00.000Z`);
+  return pick(tomorrow, planFoyDays({ ...i, have, now: tomorrow, left: Math.max(2, i.hak) }), have);
+}
+
+/**
  * Geçmişin sırası: `start`'tan (ilk ciro günü) `last`'a eskiden yeniye, sonra `from`'dan `start`'ın önceki gününe.
  * `start` yoksa, `from`'dan önceyse ya da `last`'tan sonraysa yalnız `from` → `last`
  */
@@ -116,10 +195,10 @@ export function backfillOrder(from: string, start: string | null, last: string):
  * dahil değil): ilk ciro gününden ileriye, sonra ondan önceki günler (planFoyDays'in 2. adımı). Kartın sayısı ve
  * "sıradaki gün"ü buradan
  */
-export function missingFoyDays(from: string, have: ReadonlyMap<string, unknown>, now: Date, until: string | null = null, start: string | null = null): string[] {
+export function missingFoyDays(from: string, have: ReadonlyMap<string, StoredDay>, now: Date, until: string | null = null, start: string | null = null): string[] {
   const today = todayTR(now);
   const end = until !== null && until < today ? until : today;
-  return backfillOrder(from, start, addDays(end, -1)).filter((d) => !have.has(d) && now.getTime() >= finalAfter(d));
+  return backfillOrder(from, start, addDays(end, -1)).filter((d) => needsFetch(have.get(d), d) && now.getTime() >= finalAfter(d));
 }
 
 /** Ayın Satışlar'daki rakamları (months): ilk ciro ayı ve açık gün sayısı */

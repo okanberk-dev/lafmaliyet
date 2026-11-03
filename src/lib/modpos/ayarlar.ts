@@ -125,6 +125,7 @@ export function modposDayBadges(d: ModposDayView): ModposDayBadge[] {
   if (d.state === "KAPALI") out.push({ tone: "green", text: "Kapalı", title: "Bütün kasalar kapanmış" });
   else if (d.state === "ACIK") out.push({ tone: "amber", text: "Açık", title: "Föy alınırken kasa açıktı" });
   else if (d.z?.foysuz) out.push({ tone: "gray", text: "Kasa açılmadı", title: "Kasa açılmadan satış yapılmış; tutarlar föysüz satıştan" });
+  else if (!d.final) out.push({ tone: "gray", text: "Satış yoktu", title: "Föy kasa açılmadan alındı; sabah işi kesin föyü yeniden çeker" });
   else out.push({ tone: "gray", text: "Satış yok", title: "Bu gün kasa açılmamış, satış yok" });
   if (!d.final) out.push({ tone: "gray", text: "Kesin değil", title: "Gün açıkken ya da ertesi sabah 07:00'den önce alındı; sabah işi yeniden çeker" });
   if (d.revision > 1) out.push({ tone: "blue", text: `Sürüm ${d.revision}`, title: "Föy önceki çekimden sonra değişti; önceki özet Kasa'da" });

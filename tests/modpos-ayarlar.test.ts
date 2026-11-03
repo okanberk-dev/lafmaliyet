@@ -159,6 +159,11 @@ test("günün rozetleri: durum, kesin değil, sürüm, uyarı sayısı (ModPOS'u
     modposDayBadges(view({ state: "BOS", warnings: [], z: null })).map((b) => b.text),
     ["Satış yok"],
   );
+  // Gün içinde kasa açılmadan alınan boş föy: satış "yoktu" (o an), kesin değil
+  assert.deepEqual(
+    modposDayBadges(view({ state: "BOS", final: false, warnings: [], z: null })).map((b) => b.text),
+    ["Satış yoktu", "Kesin değil"],
+  );
   assert.deepEqual(
     modposDayBadges(view({ state: "BOS", warnings: [], z: zOf({ foysuz: true, paymentsGap: 0 }) })).map((b) => b.text),
     ["Kasa açılmadı"],

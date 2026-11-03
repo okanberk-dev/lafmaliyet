@@ -29,8 +29,17 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 
 - **Sabah işi** (08:00–09:00, `/api/cron/gunluk`, yeni cron yok) sırayla (src/lib/modpos/plan.ts; sahibin kuralı,
   3 Kasım 2026: her sabah önce dün, öteki hak geçmişe, ModPOS'un ilk ciro gününden başlayıp bitene kadar):
-  1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır);
-  2. **henüz çekilmemiş bir eski gün**, ModPOS'un **ilk ciro gününden ileriye**, eskiden yeniye (geçmiş ilk günden
+  1. **dünün föyü** (kasa günü 07:00'den sonra kesinleşir; sabah işi bu saatten sonradır); ardından **kaçan yakın
+     günler** (`catchUpDays`): canlı çekim başladıktan sonra (integration_state › `modpos` `liveFrom`: sabah işinin
+     ilk çalıştığı sabahın dünü, bir kez yazılır, hiç ileri alınmaz; elle çekim yazmaz) son 14 günde kesin föyü
+     olmayan günler: dün olarak alınamamış, sabah işinin hiç çalışmadığı ya da gün içinde kasa açılmadan elle çekilip
+     ertesi sabah yeniden alınamamış. Eskiden yeniye (uzun kesintide en eskisi pencereden düşmesin), alınamayan günün
+     beklemesi dolunca. Kesinleşme anından sonra alınıp yine kesin olmayan gün (kasa ModPOS'ta açık kalmış) burada her
+     sabah yeniden çekilmez. Yakın günün föyü geçmişin sonuna, aylar sonrasına kalmasın diye; sabah işi ilk kez
+     çalışırken boştur. Ayarlar kartının "sıradaki"si bir sonraki sabah işinin planındandır (bugünün işi çalışmadıysa
+     09:00'ye kadar bugünkü; kesin föyün yeniden kontrolü sıradaki sayılmaz);
+  2. **henüz çekilmemiş bir eski gün** (ya da kesinleşmeden alınıp yeniden alınamamış), ModPOS'un **ilk ciro
+     gününden ileriye**, eskiden yeniye (geçmiş ilk günden
      bugüne doğru dolar). İlk ciro günü (`historyStart`, src/server/modpos/store.ts `loadModposHistoryStart`):
      `MODPOS_SYNC_FROM` kuruluysa o; yoksa Satışlar'daki ilk cirolu ayın açık gün sayısına göre en geç açılış günü
      (Temmuz 2026: 23 açık gün → **9 Temmuz**); ondan önce satışlı (kasası açılmış ya da föysüz satışlı) bir föy
@@ -46,7 +55,8 @@ düşürmez, 500'de hak geri verilir). Bir istek tek bir kasa günüdür. Bu yü
 - **Bu günü çek** (Ayarlar, yalnız yönetici): seçilen günü hemen çeker; kalan hakkı onay penceresinde söyler. Bugün
   seçilirse açık kasa o anki tutarlarla gelir ("Kesin değil"); ertesi sabah kendiliğinden yeniden çekilir.
 - Sayfa açılışı, zil ya da Kasa ekranı **hiçbir zaman** istek göndermez: yalnız saklanan föyü okur.
-- İstemci yeniden denemez (hak harcanmasın). Hak dolduysa (`429 KOTA_DOLDU`) hiçbir istek gitmez; kalan hak son
+- İstemci aynı günü yeniden denemez (hak harcanmasın). Hakkı geri veren hata (400'ler hak düşürmez, 500'de hak geri
+  verilir) olursa sabah işi o hakla planın sıradaki gününü çeker (en çok 2 kez; elle çekimde yalnız verilen gün). Hak dolduysa (`429 KOTA_DOLDU`) hiçbir istek gitmez; kalan hak son
   yanıttan bilinir (integration_state › `modpos`).
 - **Alınamayan gün** (bozuk yanıt, 500…) her sabah yeniden denenmez: 2, 4, 8… gün (en çok 32) bekler, geçmiş onda
   takılmaz, sıradaki eksik güne geçer; iki kez alınamayan gün kartta yazar. Yanıt 2xx ama okunamıyorsa (bozuk, çok
@@ -122,8 +132,10 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        bahşiş, kasa farkı; ödeme dağılımı (kanal kanal tutar ve ciroya göre pay, ödemelerin toplamı ciroyla tutuyor
        mu); nakit kasa (açılış + nakit satış + nakit cari tahsilat − gider = beklenen, sayılan ve dayanağı, fark,
        kartla cari tahsilat); **ödenmez / ikram dökümü** (ciroya girmeyen her ödeme satırı kod kod: ikram, ödenmez,
-       zayi, hediye kartı, sadakat ikramı, değişim mahsubu; kırılımıyla kime / hangi kuruma, kasasız satışınki dahil;
-       föyün ciro dışı toplamıyla tutuyor mu); **kişiler** (kasayı açan, kapatan, ara kasayı yapan, cari tahsilatın
+       zayi, hediye kartı, sadakat ikramı, değişim mahsubu; kırılımıyla kime / hangi kuruma; föyün ciro dışı toplamıyla
+       tutuyor mu). Kasasız satışın ödemeleri Z özetinin kuralıyla seçilir (ciroya dahil bilgisi gelmeyen DIGER ve
+       tanınmayan kod Diğer'dir, dökümde yok) ve şube şube ayrı yazılır; kasa açılmışken gelen başka şubenin kasasız
+       satışı "föyün toplamlarına girmez" der ve denetime katılmaz; **kişiler** (kasayı açan, kapatan, ara kasayı yapan, cari tahsilatın
        müşterisi); her kasanın açılış / kapanış saati (yapanla) ve açık kalma süresi, ödeme yöntemleri (ModPOS'taki
        adıyla) ve banka kırılımı, giderler, cari tahsilatlar (müşteriyle), ara kasalar, notlar; ModPOS'un uyarıları,
        föysüz satış, kitapçıkta olmayan alanlar, föy değiştiyse önceki sürüm ve **ham föy** (XML, kapalı kutuda).
@@ -141,7 +153,9 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
        ödemelerin toplamı ve raporda banka POS yazıldıysa banka POS ↔ ModPOS kartı (kartla cari tahsilat dahil).
        Kişi satırı: ModPOS'ta kasayı kapatan ↔ ladmin'de kasayı sayan. ModPOS'ta kasa açılmamış ama raporda satış
        yazılıysa para uyarısı.
-    Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var).
+    Anahtar kurulmamışken ve föy de yokken üç bölüm de çıkmaz (ladmin'in bilgisi formda zaten var). Gün içinde, kasa
+    açılmadan alınan (kesin olmayan) boş föy "kasa açılmadan alındı" der ve ertesi sabahın sabah işi bitene kadar
+    (09:00) akşamki raporla uyarı vermez: kesin föy beklenir. Sonrasında (o sabah alınamadı) para uyarısı yine çıkar. Ödemelerin toplamında ladmin formun kuralını kullanır (1 ₺'tan küçük fark tutuyor sayılır).
   - Günden güne listede rozet **ModPOS'tan farklı**; raporu girilmemiş günde föyün cirosu.
 - **Zil** (yönetici): son 7 günde "Kasa raporu ModPOS föyünden farklı" (gün · farklı alanlar); anahtar çalışmıyorsa
   "ModPOS kasa föyü çekilemiyor". **Bugün**: dünün kasa satırı "ModPOS föyünden farklı" işaretiyle "Sorun var" olur.
@@ -179,7 +193,8 @@ sayılmaz.
   parmak izi, sürüm, önceki sürümün özeti, hazırlanma / çekilme / değişme anları. Aynı gün yeniden çekilince içerik
   aynıysa yalnız çekilme anı ve ham XML değişir; değiştiyse sürüm artar ve "önceki" özet kalır. Ad okunmaya
   başlamadan önce saklanan bir gün yeniden çekilirse adlar eklendiği için bir kez "değişti" sayılır (tutarlar aynı).
-- `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma. Anahtar burada değil.
+- `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma, alınamayan günler ve canlı
+  çekimin başladığı gün (`liveFrom`) ve sabah işinin son çalıştığı an (`lastCronAt`). Anahtar burada değil.
 - İkisi de yedeğe girer (föy kişi adlarıyla; yedek de yalnız yöneticinin). Migration'lar:
   `drizzle/0050_modpos_kasa_foyu.sql` (yeni tablo), `drizzle/0051_modpos_ham_foy.sql` (`raw` sütunu; boş başlar).
 
