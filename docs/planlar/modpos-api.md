@@ -1,5 +1,13 @@
 # ModPOS API: açılıştan bugüne satış verisi
 
+> **3 Kasım 2026: kitapçık geldi, bu planın varsayımı tutmadı.** Gafdigi'nin API'si ürün satırı, fiş ya da KDV
+> vermiyor; yalnız kasa gününün **kasa föyünü** (ciro, ödeme yöntemleri, kasa, gider, uyarılar) ve günde 2 istek.
+> Yazılan bağlantı ve kararları: [../MODPOS-API.md](../MODPOS-API.md) (belge: [../modpos-kasa-foyu-api.md](../modpos-kasa-foyu-api.md)).
+> Bu plandan geçerli kalanlar: panel çeker (M1), yeni cron yok, sabah işinde isteğe bağlı adım (M22), kişisel veri
+> saklanmaz, önizleme çekmez (M26), anahtar yalnız Production, LafPOS geçiş gününden sonra LafPOS kazanır (M17), elle
+> yazılan ay bilgisi kazanır (M13'ün ilkesi). Geçmeyenler: dört tablo, ürün eşlemesi, `modposApiBaslangic`, Satışlar'ın
+> kaynağının değişmesi (Faz 2) ve fiş toplama (Faz 3). Aşağıdaki metin tarihî kayıttır.
+
 Grup: **modpos** · Dallar: `claude/modpos-api-faz1` (Faz 1), `claude/modpos-api-faz2` (Faz 2) · Taban: `origin/main` @
 1947c7c ("Dalga 12: Vergi bölümü (#68)"). Durum: plan; uygulanmadı. **Bekliyor (30 Eki 2026):** sahip ModPOS API
 kitapçığını verince başlanır; o güne kadar Faz 1 de yapılmaz. Başlarken taban `origin/main`'e, migration numarası son

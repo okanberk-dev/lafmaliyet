@@ -81,7 +81,7 @@ tutar).
 
 Proje → **Settings → Environment Variables**. Önizlemeler canlının veritabanını kullandığı sürece (§ 3) gizli değerler
 **yalnız Production**'a eklenir: `AUTH_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET`, `KARAOKE_SYNC_SECRET`,
-`LAFPOS_SYNC_SECRET`, `PARASUT_*`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`,
+`LAFPOS_SYNC_SECRET`, `MODPOS_API_KEY`, `PARASUT_*`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`,
 `CASH_REPORT_RECIPIENTS`. Önizlemeye giriş yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
 
 - Aynı `AUTH_SECRET` önizlemede olsaydı incelenmemiş dal kodu canlının verisiyle gerçek oturum açardı.
@@ -104,6 +104,9 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `KARAOKE_SYNC_SECRET` | (isteğe bağlı) laffogato.net ile karaoke **ve menü** bağlantısı: `openssl rand -base64 48`; **sitedeki değerle aynı** olmalı. Yoksa bağlantı kapalı: hızlı sayaç çalışır, ürünler yalnız panelde. Ayrıntı [KARAOKE.md](KARAOKE.md), [SITE-MENU.md](SITE-MENU.md) (bağlı ürünün fiyatı ve Satışta / Tükendi durumu iki yerde aynı) |
 | `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi (karaoke ve menü); yoksa `https://laffogato.net` |
 | `LAFPOS_SYNC_SECRET` | (isteğe bağlı) LafPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini okur. `openssl rand -base64 48`; **LafPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından (`KARAOKE_SYNC_SECRET`) ve sitenin kendi `LAFPOS_SYNC_SECRET`'ından ayrı; `KARAOKE_SYNC_SECRET`'la aynıysa bağlantı açılmaz. Yoksa iki uç 503 döner (bugün bilerek yok: kafede ModPOS var). Açma sırası ve geçiş günü [LAFPOS.md](LAFPOS.md) › Açılış sırası |
+| `MODPOS_API_KEY` | (isteğe bağlı, **yalnız Production**) ModPOS'un (Gafdigi) Kasa Föyü API anahtarı (`sk_…`): panel her sabah dünün kasa föyünü çeker, yönetici Kasa'da raporla yan yana görür. Günde 2 istek hakkı var; anahtara IP kısıtı konmamalı (Vercel'in sabit IP'si yok). Yoksa bağlantı kapalı, hiçbir istek gitmez ([MODPOS-API.md](MODPOS-API.md)) |
+| `MODPOS_SYNC_FROM` | (isteğe bağlı) ModPOS föylerinin geriye doğru tamamlanacağı ilk gün (`YYYY-MM-DD`); yoksa `2026-07-01` |
+| `MODPOS_API_URL` | (isteğe bağlı) Kasa föyü ucunun adresi; yoksa belgedeki `https://api.gafdigi.com/api/v2/external/raporlar/kasa-foyu` |
 | `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `ALLOW_BRANCH_PRODUCTION` | (yalnız acil durumda, tek derleme için) `1`: `main` dışındaki bir dalın Production derlemesine bilerek izin verir; derleme günlüğüne uyarı yazılır. Proje ayarlarına **eklemeyin**: `vercel deploy --prod --build-env ALLOW_BRANCH_PRODUCTION=1` ile yalnız o derlemeye verilir (§ 7, "Production yalnız main'den") |
@@ -120,7 +123,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 [PARASUT.md](PARASUT.md) § 1.
 
 İki günlük iş `vercel.json`'da tanımlı (Vercel Cron, Türkiye saatiyle): `/api/cron/parasut` 07:00–08:00 arasında
-Paraşüt'ü eşitler, `/api/cron/gunluk` 08:00–09:00 arasında sabah e-postasını gönderir. Vercel → Settings → Cron Jobs
+Paraşüt'ü eşitler, `/api/cron/gunluk` 08:00–09:00 arasında sabah e-postasını gönderir (anahtar varsa önce dünün ModPOS kasa föyünü çeker;
+[MODPOS-API.md](MODPOS-API.md)). Vercel → Settings → Cron Jobs
 ekranında görünür, **Run** ile elle çalıştırılır. Her çalışma panelde **Ayarlar › Günlük işler**'de görünür; çalışmayan
 ya da hata veren iş zilde, Genel bakış'ta ve e-postayla bildirilir ([BILDIRIMLER.md](BILDIRIMLER.md) › Sistem
 uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/health?isler=1`).

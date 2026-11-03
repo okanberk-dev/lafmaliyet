@@ -227,7 +227,7 @@ test("boş ay satırı: elle yazılmış bir şey yoksa silinir; kasa raporu ola
   // Satışlar ve sayım aynı kuralı kullanır; kasa raporu yalnız sıfır varken sorulur
   for (const file of ["src/server/actions/sales.ts", "src/server/actions/stock.ts"]) {
     const src = readFileSync(join(root, file), "utf8");
-    assert.match(src, /const zeros = row\.discounts === 0 \|\| row\.offRevenue === 0;\s*if \(!monthRowEmpty\(row, zeros && \(await hasCashReportIn\(month, (db|tx)\)\)\)\) return/, file);
+    assert.match(src, /const zeros = row\.discounts === 0 \|\| row\.offRevenue === 0;\s*if \(!monthRowEmpty\(row, zeros && \(await hasTillRowsIn\(month, (db|tx)\)\)\)\) return/, file);
   }
 });
 

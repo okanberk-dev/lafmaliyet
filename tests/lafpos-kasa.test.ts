@@ -199,9 +199,11 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   // Yükleyici: geçiş gününden itibaren, raporu olan günü rapora bırakır; dataset'in LafPOS satış sınırları yalnız raporlara bakar
   const loader = read("src/server/data/cash-reports.ts");
   assert.match(loader, /if \(switchDay === null \|\| \(to !== undefined && to < switchDay\)\) return \[\];/);
-  assert.match(loader, /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(r\.date\)\)\]/);
+  // ModPOS föyü (ay rakamına yedek) LafPOS'tan da sonra gelir: rapor > LafPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek)
+  assert.match(loader, /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(r\.date\)\), \.\.\.modpos\.filter\(\(r\) => !taken\.has\(r\.date\) && r\.date >= runFrom\)\]/);
   const dataset = read("src/server/data/dataset.ts");
-  assert.match(dataset, /const reportRows = till\.filter\(\(r\) => r\.source !== "lafpos"\);/);
+  // Rapor sınaması tek yerden (isReportRow): üçüncü kaynak (ModPOS) rapor sanılmaz
+  assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 

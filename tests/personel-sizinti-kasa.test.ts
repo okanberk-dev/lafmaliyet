@@ -14,7 +14,7 @@ import { okcReconcile } from "../src/lib/okc-z";
 import { normalizeOkc, toStaffReading } from "../src/lib/photo-read/okc";
 import { KasaOkcRaw } from "../src/lib/photo-read/schemas";
 
-import { assertNoCostKeys, OKC_ADMIN_KEYS, stripComments } from "./helpers/leak-scan";
+import { assertNoCostKeys, MODPOS_ADMIN_KEYS, OKC_ADMIN_KEYS, stripComments } from "./helpers/leak-scan";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -276,4 +276,24 @@ test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit s�
   const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
   const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
+});
+
+/**
+ * ModPOS kasa föyü (docs/MODPOS-API.md › Nerede görünür) yalnız yöneticinin Kasa ekranında: personele giden kaynaklarda
+ * föyün anahtarları yok. Kasa sayfası (yönetici dalı) ve zil (yönetici dalı) iki role çizer: sayfanın dalları
+ * tests/modpos-kasa.test.ts'te, çalışan sunucunun yükü scripts/personel-sizinti.ts'te aynı listeyle taranır
+ */
+test("ModPOS kasa föyü: personele giden kasa kaynaklarında föyün anahtarları yok", () => {
+  const twoRoles = new Set(["src/app/panel/kasa/page.tsx", "src/server/bell/kasa.ts"]);
+  for (const f of STAFF_SOURCES) {
+    if (twoRoles.has(f)) continue;
+    const src = stripComments(read(f));
+    for (const k of MODPOS_ADMIN_KEYS) assert.doesNotMatch(src, keyRe(k), `${f}: ${k}`);
+    assert.doesNotMatch(src, /modpos-sheet|modpos-diffs|modpos-day|cash-modpos/, f);
+  }
+  // Sayfanın personel dalı föyün okuyucusunu ve kartını bilmez
+  const page = read("src/app/panel/kasa/page.tsx");
+  const staff = page.slice(page.indexOf("  if (!admin) {\n    return ("), page.indexOf("  const ay = pick(sp.ay);"));
+  assert.ok(staff.length > 100);
+  assert.doesNotMatch(staff, /loadKasaModpos|ModposSheetCard|modposDays/);
 });

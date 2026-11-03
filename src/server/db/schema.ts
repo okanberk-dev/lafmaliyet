@@ -22,6 +22,8 @@ import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checkl
 import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
 import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
+import type { KasaFoyu } from "../../lib/modpos/foy";
+import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -2074,6 +2076,38 @@ export const posDayReports = pgTable("pos_day_reports", {
   /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
   receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------- ModPOS kasa föyü (docs/MODPOS-API.md)
+/**
+ * ModPOS'un (Gafdigi) kasa föyü, kasa günü başına bir satır: panel her sabah dünün föyünü API'den çeker (günde 2 hak;
+ * src/server/modpos/sync.ts). `sheet` föyün okunmuş hâlidir (src/lib/modpos/foy.ts KasaFoyu): kişisel ad (personel,
+ * müşteri) yoktur. Aynı gün yeniden çekilince içerik aynıysa yalnız `fetched_at` (ve kesinleştiyse `final`) değişir;
+ * farklıysa `revision` artar, önceki özet `previous`'a yazılır. Yalnız yöneticinin ekranlarına gider.
+ */
+export const modposCashSheets = pgTable(
+  "modpos_cash_sheets",
+  {
+    /** Kasa günü (YYYY-MM-DD): kasanın açıldığı gün */
+    day: text("day").primaryKey(),
+    sheet: jsonb("sheet").$type<KasaFoyu>().notNull(),
+    /** KAPALI: bütün kasalar kapandı; ACIK: en az biri açık; BOS: o gün kasa açılmamış */
+    state: text("state", { enum: ["KAPALI", "ACIK", "BOS"] }).notNull(),
+    /** Kesin: kasalar kapalı ve föy ertesi sabah 07:00'den (TR) sonra alındı (belge §8) */
+    final: boolean("final").notNull().default(false),
+    /** Föyün içeriğinin özeti (sha256; hazırlanma anı ve kota hariç): aynıysa yeniden yazılmaz */
+    fingerprint: text("fingerprint").notNull(),
+    revision: integer("revision").notNull().default(1),
+    /** İçerik değişince önceki sürümün kısa özeti (yalnız sonuncusu) */
+    previous: jsonb("previous").$type<ModposSheetPrevious>(),
+    /** Föyün ModPOS'ta hazırlandığı an (olusturulma) */
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    /** Son çekildiği an (içerik değişmese de) */
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    /** İçeriğin son değiştiği an */
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check("modpos_cash_sheets_revision_pos", sql`${t.revision} >= 1`)],
+);
 
 // ---------------------------------------------------------------- Vergi (docs/VERGI.md)
 /** Demirbaş ve özel maliyet: vergi amortismanı; faturaya bağlanan maliyet o faturanın giderinden düşer */

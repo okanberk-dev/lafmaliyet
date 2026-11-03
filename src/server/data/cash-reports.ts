@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or } from "drizzle-orm";
 
-import type { MonthEntry, TillRow } from "@/lib/cash-month";
+import { modposRunStart, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import {
   defaultCashRecipients,
   integrityOf,
@@ -14,9 +14,13 @@ import {
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
+import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
+import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { getDb, schema as s } from "@/server/db";
+import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
 /** Kasa raporunun gideceği adresler ve WhatsApp (integration_state, anahtar "cash.settings"; yönetici değiştirir) */
 export interface CashSettings {
@@ -259,11 +263,13 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * Bütün raporların ay bilgisine giden altı sütunu (src/lib/cash-month.ts tillMonths): günde bir rapor, yılda ~365 satır.
  * Geçiş gününden sonra kasa raporu girilmemiş LafPOS günü LafPOS'un Z'sinden yedek satırla gelir (`source: "lafpos"`,
  * G6; docs/LAFPOS.md › Kasa raporu): rakamı aya girer, gün yine "rapor yok" sayılır; raporu olan günde rapor kazanır.
- * Geçiş günü boşken yalnız kasa raporları (bugünkü gibi). Ay bilgisini okuyan her yer (veri kümesi, sabit gider sürümü,
- * Kasa'nın ay satırı) bu yükleyiciden geçer: rakam her ekranda aynı. İşlem içinden de okunur.
+ * Ayarlar › ModPOS › Ay rakamına yedek açıkken geçiş gününden önceki raporsuz gün kapanmış ModPOS föyünden gelir
+ * (`source: "modpos"`, modposTillRows; docs/MODPOS-API.md › Ay rakamına yedek). Öncelik rapor > LafPOS > ModPOS.
+ * Geçiş günü boş ve yedek kapalıyken yalnız kasa raporları (bugünkü gibi). Ay bilgisini okuyan her yer (veri kümesi,
+ * sabit gider sürümü, Kasa'nın ay satırı) bu yükleyiciden geçer: rakam her ekranda aynı. İşlem içinden de okunur.
  */
 export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
-  const [reports, lafpos] = await Promise.all([
+  const [reports, lafpos, modpos] = await Promise.all([
     db
       .select({
         date: s.cashReports.date,
@@ -276,10 +282,17 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
       .from(s.cashReports)
       .orderBy(asc(s.cashReports.date)),
     lafposTillRows(db),
+    modposTillRows(db),
   ]);
-  if (!lafpos.length) return reports;
+  if (!lafpos.length && !modpos.length) return reports;
   const have = new Set(reports.map((r) => r.date));
-  return [...reports, ...lafpos.filter((r) => !have.has(r.date))].sort((a, b) => a.date.localeCompare(b.date));
+  // ModPOS föyü yalnız raporu da LafPOS gün sonu da olmayan günde (geçiş gününden önce zaten LafPOS satırı yok)
+  const taken = new Set([...reports, ...lafpos].map((r) => r.date));
+  // Raporlar başlamadan önceki föyler yalnız ilk rapora kesintisiz uzanan kısımla (cash-month.ts modposRunStart): her
+  // okuyucu (veri kümesi, satış dönemi, sabit gider sürümü) aynı satırları görür
+  const firstReport = [...reports, ...lafpos].reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+  const runFrom = modposRunStart(modpos.map((r) => r.date), firstReport) ?? "";
+  return [...reports, ...lafpos.filter((r) => !have.has(r.date)), ...modpos.filter((r) => !taken.has(r.date) && r.date >= runFrom)].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -301,6 +314,80 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
     if (!z.success) return [];
     return [{ date: r.date, zTotal: z.data.zTotal, card: z.data.card, mealCard: z.data.mealCard, discounts: z.data.discounts, offRevenue: z.data.offRevenue, receipts: z.data.receipts, source: "lafpos" as const }];
   });
+}
+
+/** Föy aralığının uçları (açık uçlu okuma; günler "YYYY-MM-DD" metin olarak karşılaştırılır) */
+const MODPOS_FIRST_DAY = "2000-01-01";
+const MODPOS_LAST_DAY = "9999-12-31";
+
+/**
+ * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar kapalıysa null (föy tablosu hiç
+ * okunmaz); açıksa föyün sayılabileceği son gün, yani LafPOS'a geçiş gününden önceki gün (geçiş günü boşsa sınırsız).
+ * Geçiş gününden itibaren kasa LafPOS'tur, föy aya girmez (docs/MODPOS-API.md › Nerede görünür)
+ */
+async function modposFallbackEnd(db: Db | Tx): Promise<string | null> {
+  const rows = await db
+    .select({ key: s.settings.key, value: s.settings.value })
+    .from(s.settings)
+    .where(inArray(s.settings.key, [MODPOS_FALLBACK_KEY, LAFPOS_SWITCH_KEY]));
+  const value = (key: string) => rows.find((r) => r.key === key)?.value;
+  if (!readModposFallback(value(MODPOS_FALLBACK_KEY))) return null;
+  const switchDay = readLafposSwitchDay(value(LAFPOS_SWITCH_KEY));
+  return switchDay === null ? MODPOS_LAST_DAY : addDays(switchDay, -1);
+}
+
+/**
+ * Föyün yedek ay satırı: yalnız bütün kasaları kapanmış gün (KAPALI) ya da kasası hiç açılmadan satış yapılmış gün (BOS,
+ * föysüz Z; src/lib/modpos/z.ts foyZ). Açık kasalı föyün tutarları daha değişir. Kesinleşmiş satışsız gün (kasa açılmamış,
+ * satış yok) sıfır satırdır: açık gün ve ciroya bir şey katmaz, ama raporlar başlamadan önceki föylerin kesintisiz
+ * sayılmasında (cash-month.ts modposRunStart) kapalı gün boşluk sayılmaz. Föyde indirim yok: `discounts` null (o
+ * günlerin indirimi bilinmez; ayın discountDays'i bunu gösterir)
+ */
+function modposTillRow(sheet: Pick<ModposSheet, "day" | "state" | "foy" | "final">): TillRow | null {
+  if (sheet.state === "ACIK") return null;
+  const z = foyZ(sheet.foy);
+  if (sheet.state === "BOS" && !(z && z.foysuz && z.zTotal > 0)) {
+    return sheet.final ? { date: sheet.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" } : null;
+  }
+  if (!z) return null;
+  return { date: sheet.day, zTotal: z.zTotal, card: z.card, mealCard: z.mealCard, discounts: null, offRevenue: z.offRevenue, receipts: z.receipts, source: "modpos" };
+}
+
+/**
+ * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; Ayarlar › ModPOS
+ * kartının anahtarı, settings › modposAyYedegi, varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
+ * rakamı bugünkü gibi. Açıkken yalnız LafPOS'a geçiş gününden önceki günler (geçiş günü boşsa bütün günler) ve yalnız
+ * kapanmış föyler (modposTillRow). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS >
+ * ModPOS). Yalnız yöneticinin ekranları ve hesaplar okur; personelin ekranına föy rakamı gitmez
+ */
+export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
+  const end = await modposFallbackEnd(db);
+  if (end === null) return [];
+  const upto = to !== undefined && to < end ? to : end;
+  const start = from ?? MODPOS_FIRST_DAY;
+  if (upto < start) return [];
+  const sheets = await loadModposSheets(start, upto, db);
+  return sheets.flatMap((sh) => modposTillRow(sh) ?? []);
+}
+
+/**
+ * Föylerin sayılmaya başladığı gün (anahtar kapalıyken ya da föy yokken null, föy tablosu okunmaz). Kasa'nın ay satırı yalnız
+ * ayın satırlarını okur: ay ortasında başlayan ilk ay (partialFrom) ve raporlar başlamadan önceki föylerin kesintisiz
+ * kısmı (cash-month.ts modposRunStart) Gelir-gider'deki gibi bulunsun diye bütün föylerden ve ilk kasa raporundan
+ * hesaplanır; tillMonths'a `modposFrom` olarak da verilir
+ */
+export async function firstModposTillDay(db: Db | Tx = getDb()): Promise<string | null> {
+  const end = await modposFallbackEnd(db);
+  if (end === null) return null;
+  const [rows, [firstReport]] = await Promise.all([
+    modposTillRows(db),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+  ]);
+  // Kesintisiz kısmın başı; öncesindeki föyler sayılmaz (başı ilk raporsa raporlardan önce sayılan föy yok)
+  return modposRunStart(
+    rows.map((r) => r.date),
+    firstReport?.date ?? null,
+  );
 }
 
 /** Raporun kayıtlı önceki sürümü (ekranda ve zilde düzeltme geçmişi) */
@@ -356,6 +443,16 @@ export async function cashReportIntegrity(r: CashReportDTO): Promise<CashReportI
 }
 
 /** Bu ayın kasa raporu var mı (ay bilgisinin boş alanları oradan dolar) */
+/**
+ * Ayın kasadan gelen bir satırı var mı: kasa raporu ya da (yalnız açık olan yedeklerde) LafPOS gün sonu veya sayılan
+ * ModPOS föyü (tillRows). Ay bilgisinin elle yazılmış 0'ı bu ayda değerdir, silinmez (cash-month.ts monthRowEmpty);
+ * yalnız föyden ya da LafPOS'tan gelen ayda da öyle (docs/MODPOS-API.md › Ay rakamına yedek)
+ */
+export async function hasTillRowsIn(month: string, db: Db | Tx = getDb()): Promise<boolean> {
+  if (await hasCashReportIn(month, db)) return true;
+  return (await tillRows(db)).some((r) => r.date.startsWith(`${month}-`));
+}
+
 export async function hasCashReportIn(month: string, db: Db | Tx = getDb()): Promise<boolean> {
   const [row] = await db
     .select({ id: s.cashReports.id })

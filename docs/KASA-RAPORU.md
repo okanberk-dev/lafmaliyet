@@ -612,6 +612,10 @@ silinen rapor ayın rakamını hemen değiştirir.
   3 Kasım. Ciro ve açık gün bu günlerde LafPOS'un gün sonundan sayıldı." Rapor girilince rapor kazanır. Tek yükleyici
   (`tillRows`, `src/server/data/cash-reports.ts`): Gelir-gider, Satışlar, sabit gider sürümü ve Kasa'nın ay satırı aynı
   rakamı görür. Geçiş günü boşken LafPOS günleri ay bilgisine girmez.
+- **ModPOS kasa föyü yedeği** (isteğe bağlı, varsayılan kapalı; Ayarlar › ModPOS (kasa föyü) › Ay rakamına yedek):
+  açıkken raporu ve LafPOS gün sonu olmayan günün kapanmış ModPOS föyü aynı kuralla aya girer (ciro, kart, yemek
+  kartı, ödenmez; indirim föyde yok). Raporlar başlamadan önceki föy günleri "rapor yok" sayılmaz. Ayrıntı:
+  [MODPOS-API.md](MODPOS-API.md) › Ay rakamına yedek.
 - laffogato.net'in online satırı (kasadan geçmez) hiçbir rakama girmez.
 - **Sabit giderin günü:** açık gün kasadan geldiğinde kira, maaş ve öteki aylık kalemler Gelir-gider'de açık gün
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
@@ -707,6 +711,11 @@ silinen rapor ayın rakamını hemen değiştirir.
   (mali) toplamı: 381.809 ₺ · 28 / 30 gün · ModPOS toplamından %11 az" ve "KDV: %10 34.710 ₺ · %20 0 ₺" (KDV dökümü
   eksik günler "Yazarkasa KDV dökümü eksik: 2 gün"). Yalnız bilgidir; ay bilgisine, KDV tahminine ve hiçbir hesaba
   girmez (`okcMonth`; KDV tahmininin yazarkasa tabanına geçişi ayrı bir iş, plan §9 "13b").
+- **ModPOS kasa föyü** ([MODPOS-API.md](MODPOS-API.md)): ModPOS günlerinde gün görünümünde (`?gun=`) föyün kartı:
+  rapor ile föy yan yana (Z alanları, açılış, sayılan; gider, giren, olması gereken ve kasa farkı bilgi olarak),
+  ödeme yöntemleri ve banka kırılımı, giderler, cari tahsilatlar, ara kasalar, ModPOS'un uyarıları. Personelin yazdığı
+  Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS föyünden
+  farklı". Föy her sabah 08:00'de gelir; personelin ekranı değişmez.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
   E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).
 

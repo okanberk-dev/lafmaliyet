@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kitapçığın (docs/modpos-kasa-foyu-api.md §5.3, §6) öğe yapısına göre ELLE yazıldı; kafenin verisi değil.
+  Kitapçığın kod listesinde olmayan iki ödeme kodu: KRIPTO_PARA (ciroyaDahil true: "diğer" sayılır) ve PERSONEL_YEMEGI
+  (ciroyaDahil false: hiçbir ödeme alanına girmez). Bir de DIGER (ciroyaDahil true) var. Kodlar uydurmadır.
+-->
+<kasaFoyu>
+  <kasaGunu>2026-10-20</kasaGunu>
+  <olusturulma>2026-10-21T08:10:00+03:00</olusturulma>
+  <kasa>
+    <sube>Örnek Şube</sube>
+    <kasaAdi>KASA-1</kasaAdi>
+    <gunNo>90</gunNo>
+    <zNo>90</zNo>
+    <durum>KAPALI</durum>
+    <otomatikKapandi>false</otomatikKapandi>
+    <acilis>
+      <zaman>2026-10-20T09:00:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <nakit>300</nakit>
+    </acilis>
+    <kapanis>
+      <zaman>2026-10-20T23:55:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <nakit>1300</nakit>
+    </kapanis>
+    <satis>
+      <ciro>1330</ciro>
+      <ciroDisi>120</ciroDisi>
+      <adisyonSayisi>12</adisyonSayisi>
+      <kisiSayisi>15</kisiSayisi>
+      <bahsis>0</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>1000</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>1000</sistem>
+      <defter>1000</defter>
+      <fark>0</fark>
+    </odeme>
+    <odeme>
+      <yontem>Kripto Para</yontem>
+      <kod>KRIPTO_PARA</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>250</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>250</sistem>
+      <defter>250</defter>
+      <fark>0</fark>
+    </odeme>
+    <odeme>
+      <yontem>Personel Yemeği</yontem>
+      <kod>PERSONEL_YEMEGI</kod>
+      <ciroyaDahil>false</ciroyaDahil>
+      <satis>120</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>120</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <odeme>
+      <yontem>Diğer</yontem>
+      <kod>DIGER</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>80</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>80</sistem>
+      <defter>80</defter>
+      <fark>0</fark>
+    </odeme>
+    <defterGirildi>true</defterGirildi>
+    <giderler>
+      <toplam>0</toplam>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>0</toplam>
+      <nakit>0</nakit>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>Z_RAPORU</dayanak>
+      <acilis>300</acilis>
+      <nakitSatis>1000</nakitSatis>
+      <nakitCariTahsilat>0</nakitCariTahsilat>
+      <gider>0</gider>
+      <beklenen>1300</beklenen>
+      <sayilan>1300</sayilan>
+      <fark>0</fark>
+    </nakitKasa>
+    <notlar>
+      <kapanis/>
+      <fark/>
+    </notlar>
+  </kasa>
+  <ozet>
+    <kasaSayisi>1</kasaSayisi>
+    <acikKasa>0</acikKasa>
+    <kapaliKasa>1</kapaliKasa>
+    <otomatikKapanan>0</otomatikKapanan>
+    <ciro>1330</ciro>
+    <ciroDisi>120</ciroDisi>
+    <adisyonSayisi>12</adisyonSayisi>
+    <kisiSayisi>15</kisiSayisi>
+    <bahsis>0</bahsis>
+    <gider>0</gider>
+    <cariTahsilat>0</cariTahsilat>
+    <kasaFarki>0</kasaFarki>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>1000</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kripto Para</yontem>
+      <kod>KRIPTO_PARA</kod>
+      <tutar>250</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Diğer</yontem>
+      <kod>DIGER</kod>
+      <tutar>80</tutar>
+    </odeme>
+    <foysuzGunSayisi>0</foysuzGunSayisi>
+    <foysuzCiro>0</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>1</kullanilan>
+    <kalan>1</kalan>
+    <yenilenme>2026-10-22T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>

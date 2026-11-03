@@ -294,7 +294,7 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await setCoverage\(tx, month, rule\.through\);/);
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
-  assert.match(dataset, /const reportRows = till\.filter\(\(r\) => r\.source !== "lafpos"\);/);
+  assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
   for (const f of ["src/server/forecast/load.ts", "src/server/forecast/mix.ts"]) {

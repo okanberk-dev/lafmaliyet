@@ -35,6 +35,28 @@ export const COST_KEYS = [
  */
 export const OKC_ADMIN_KEYS = ["okcCumTotal", "okcCumVat", "okcOutside", "cumTotal", "cumVat", "cumulativeTotal", "cumulativeVat", "outside", "okcAdmin"] as const;
 
+/**
+ * ModPOS kasa föyünün yalnız yöneticiye giden anahtarları (docs/MODPOS-API.md › Nerede görünür): günden güne listesinin
+ * föy prop'u ve föyün kendi alanları (KasaFoyu, ModposZ). Föy personele hiç gitmez (personelin formu, WhatsApp ve
+ * e-posta onu bilmez); maliyet değildir (COST_KEYS'te yok). Genel adlar (`zTotal`, `diffs`, `modpos`) bilerek yok:
+ * personelin yükünde başka anlamla geçer
+ */
+export const MODPOS_ADMIN_KEYS = [
+  "modposDays",
+  "modposDay",
+  "modposSheet",
+  "modposDiffs",
+  "kasaFoyu",
+  "foysuzGunler",
+  "foysuzCiro",
+  "nakitKasa",
+  "cariTahsilatlar",
+  "araKasalar",
+  "kirilim",
+  "defterGirildi",
+  "paymentsGap",
+] as const;
+
 const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])"?(${COST_KEYS.join("|")})"?\\s*:`, "gm");
 
 /** Kaynak koddaki yorumlar (satır ve blok): yorumda geçen sözcük anahtar değildir */

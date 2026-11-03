@@ -614,6 +614,15 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
      veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık. (D-18; 26 Ekim'de sahibe soru 11.)
 
 ### Bekleyen dış girdi
+- **ModPOS kasa föyü (API) geldi (3 Kasım):** sahip Gafdigi'nin "Kasa Föyü API" kitapçığını ve anahtarı verdi. API
+  ürün satırı vermiyor: yalnız kasa gününün föyü (ciro, ödeme yöntemleri ve banka kırılımı, açılış / sayım, giderler,
+  cari tahsilat, ara kasa, uyarılar), günde 2 istek. Bağlantı yazıldı (`docs/MODPOS-API.md`, dal
+  `claude/modpos-kasa-foyu`). **Açık:** (1) `MODPOS_API_KEY` Vercel'e (Production) eklenecek; (2) gerçek bir föy henüz
+  okunmadı (oturumun ağı `api.gafdigi.com`'a kapalıydı): ilk sabahın föyü Ayarlar › ModPOS kartında ve Kasa'da
+  kontrol edilecek; (3) geçmiş (Temmuz'dan) günde ~1 gün ilerler: Gafdigi'den geçici yüksek kota istenebilir;
+  (4) sonraya: komisyon kanal kanal föyden, kasa formunda "ModPOS'tan doldur" (`MODPOS-API.md` › Sonraya).
+  Aşağıdaki "ModPOS bağlantısı" maddesinin ürün satırı kısmı (Satışlar'ın kaynağı) bu API'yle **gelmedi**: Satışlar
+  bugünkü gibi elle.
 - **ModPOS bağlantısı (API):** sahip (29 Ekim): "sonrasında modpos api gelecek, orda cafe açılışından beri satılan
   ürünler, para vs. yazacak". API kitapçığı sahipten bekleniyor; bağlantı ayrı PR'dır (istemci, ayar kartı, geçmiş
   ayların aktarımı, elle rapor ile çakışma kuralı). Plan hazır: `modpos-api.md` (Faz 1-5). **30 Ekim:** sahip "modpos

@@ -148,6 +148,7 @@ const STEP_NAMES: Record<string, string> = {
   menu: "Menü eşitlemesi",
   sales: "Online satışlar",
   forecast: "Satış tahmini",
+  modpos: "ModPOS kasa föyü",
   photos: "Fotoğraf temizliği",
   count: "Sayım bildirimi",
   weekly: "Haftalık özet",
@@ -171,6 +172,14 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   menu: { ok: "Menü tamam", fresh: "Menü tamam", off: "Menü kurulmadı", error: "Menü hata" },
   sales: { ok: "Online satış tamam", off: "Online satış kurulmadı", error: "Online satış hata" },
   forecast: { ok: "Tahmin kaydedildi", noweather: "Tahmin kaydedildi, hava alınamadı", nodata: "Tahmin: veri yok", error: "Tahmin hata" },
+  modpos: {
+    ok: "ModPOS kasa föyü alındı",
+    nothing: "ModPOS: çekilecek gün yok",
+    kota: "ModPOS: günlük hak doldu",
+    partial: "ModPOS: bir kısmı alınamadı",
+    busy: "ModPOS: başka çekim sürüyordu",
+    error: "ModPOS kasa föyü hata",
+  },
   photos: { ok: "Eski fotoğraflar silindi", none: "Silinecek fotoğraf yok", off: "Fotoğraf deposu yok", error: "Fotoğraf temizliği hata" },
   count: { sent: "Sayım bildirimi gitti", error: "Sayım bildirimi hata" },
   weekly: {
@@ -197,10 +206,10 @@ const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` 
 /** Sabah işinin her gün yazılan adımları */
 export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
 /**
- * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, ay sonu sayım
- * bildirimi, haftalık özet, süresi dolan personel istekleri
+ * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
+ * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
  */
-export type OptionalStep = "forecast" | "photos" | "count" | "weekly" | "requests";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -241,7 +250,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "photos", "count", "weekly", "requests"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -269,6 +278,20 @@ export function forecastStep(r: { status: "ok" | "skipped" | "error"; weather: s
   if (r.status === "error") return { code: "error", error: r.error ?? null };
   if (r.status === "skipped") return { code: "nodata" };
   return { code: r.weather === "error" ? "noweather" : "ok" };
+}
+
+/**
+ * ModPOS kasa föyünün adımı (src/server/modpos/sync.ts syncModpos; sabah işinde bir kez, docs/MODPOS-API.md › Nerede
+ * görünür ve › Kota ve çekme sırası). Yalnız anahtar varken yazılır: kurulmamışsa (`off`) ve önizlemede (`preview`,
+ * canlının hakkını harcamaz) adım yok. Hak dolması (`kota`) ve bir kısmının alınamaması (`partial`) sorun sayılmaz:
+ * hak gece yarısı yenilenir, alınamayan gün ertesi sabah yeniden denenir. Yalnız hiçbir gün alınamadıysa (anahtar
+ * çalışmıyor, servis yanıt vermiyor, süre doldu) hata: iş "kısmen" olur, hata metniyle ("Sabah işinde bir adım hata
+ * verdi"). Girdi ModposSyncResult'ın yapısıdır (saf modül sunucuya uzanmaz; tests/modpos-sabah.test.ts).
+ */
+export function modposStep(r: { status: "off" | "preview" | "busy" | "nothing" | "ok" | "partial" | "kota" | "error"; error?: string }): StepResult | undefined {
+  if (r.status === "off" || r.status === "preview") return undefined;
+  if (r.status === "error") return { code: "error", error: r.error || null };
+  return { code: r.status };
 }
 
 /**

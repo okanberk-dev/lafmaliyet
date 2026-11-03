@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kitapçığın (docs/modpos-kasa-foyu-api.md §5.2, §5.4) öğe yapısına göre ELLE yazıldı; kafenin verisi değil.
+  Kendiliğinden kapanan gün: kasa kapatılmamış, gün 06:00'da kendiliğinden kapanmış (otomatikKapandi true). Nakit
+  mutabakatı sayım yerine defterdeki nakitle (dayanak OTOMATIK_KAPANIS), uyarı OTOMATIK_KAPANDI. Kapanışta personel yok.
+-->
+<kasaFoyu>
+  <kasaGunu>2026-10-28</kasaGunu>
+  <olusturulma>2026-10-29T08:01:00+03:00</olusturulma>
+  <kasa>
+    <sube>Örnek Şube</sube>
+    <kasaAdi>KASA-1</kasaAdi>
+    <gunNo>98</gunNo>
+    <zNo>0098</zNo>
+    <durum>KAPALI</durum>
+    <otomatikKapandi>true</otomatikKapandi>
+    <acilis>
+      <zaman>2026-10-28T09:05:00+03:00</zaman>
+      <personel>Örnek Kasiyer</personel>
+      <nakit>800</nakit>
+    </acilis>
+    <kapanis>
+      <zaman>2026-10-29T06:00:00+03:00</zaman>
+      <personel/>
+      <nakit>3030</nakit>
+    </kapanis>
+    <satis>
+      <ciro>5230</ciro>
+      <ciroDisi>30</ciroDisi>
+      <adisyonSayisi>41</adisyonSayisi>
+      <kisiSayisi>55</kisiSayisi>
+      <bahsis>0</bahsis>
+    </satis>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>2230</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>2230</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>2500</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>2500</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <odeme>
+      <yontem>Havale</yontem>
+      <kod>HAVALE</kod>
+      <ciroyaDahil>true</ciroyaDahil>
+      <satis>500</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>500</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <odeme>
+      <yontem>Ödenmez</yontem>
+      <kod>ODENMEZ</kod>
+      <ciroyaDahil>false</ciroyaDahil>
+      <satis>30</satis>
+      <cariTahsilat>0</cariTahsilat>
+      <sistem>30</sistem>
+      <defter/>
+      <fark/>
+    </odeme>
+    <defterGirildi>false</defterGirildi>
+    <giderler>
+      <toplam>0</toplam>
+    </giderler>
+    <cariTahsilatlar>
+      <toplam>0</toplam>
+      <nakit>0</nakit>
+    </cariTahsilatlar>
+    <nakitKasa>
+      <dayanak>OTOMATIK_KAPANIS</dayanak>
+      <acilis>800</acilis>
+      <nakitSatis>2230</nakitSatis>
+      <nakitCariTahsilat>0</nakitCariTahsilat>
+      <gider>0</gider>
+      <beklenen>3030</beklenen>
+      <sayilan>3030</sayilan>
+      <fark>0</fark>
+    </nakitKasa>
+    <notlar>
+      <kapanis/>
+      <fark/>
+    </notlar>
+    <uyari>
+      <kod>OTOMATIK_KAPANDI</kod>
+      <mesaj>Gün 06:00'da kendiliğinden kapandı</mesaj>
+    </uyari>
+  </kasa>
+  <ozet>
+    <kasaSayisi>1</kasaSayisi>
+    <acikKasa>0</acikKasa>
+    <kapaliKasa>1</kapaliKasa>
+    <otomatikKapanan>1</otomatikKapanan>
+    <ciro>5230</ciro>
+    <ciroDisi>30</ciroDisi>
+    <adisyonSayisi>41</adisyonSayisi>
+    <kisiSayisi>55</kisiSayisi>
+    <bahsis>0</bahsis>
+    <gider>0</gider>
+    <cariTahsilat>0</cariTahsilat>
+    <kasaFarki>0</kasaFarki>
+    <odeme>
+      <yontem>Nakit</yontem>
+      <kod>NAKIT</kod>
+      <tutar>2230</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Kredi Kartı</yontem>
+      <kod>KREDI_KARTI</kod>
+      <tutar>2500</tutar>
+    </odeme>
+    <odeme>
+      <yontem>Havale</yontem>
+      <kod>HAVALE</kod>
+      <tutar>500</tutar>
+    </odeme>
+    <foysuzGunSayisi>0</foysuzGunSayisi>
+    <foysuzCiro>0</foysuzCiro>
+  </ozet>
+  <kota>
+    <gunlukHak>2</gunlukHak>
+    <kullanilan>1</kullanilan>
+    <kalan>1</kalan>
+    <yenilenme>2026-10-30T00:00:00+03:00</yenilenme>
+  </kota>
+</kasaFoyu>

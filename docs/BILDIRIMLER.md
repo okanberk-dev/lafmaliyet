@@ -50,7 +50,12 @@ bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiys
 kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
 11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
 "LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;
-[LAFPOS.md](LAFPOS.md) › Kasa raporu). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+[LAFPOS.md](LAFPOS.md) › Kasa raporu). ModPOS günlerinde (geçiş günü boşken ya da ondan önce) aynı başlıkta son 7
+günün saklanan ModPOS kasa föyünden farklı yazılan raporları durur, "Kasa raporu ModPOS föyünden farklı · 2 Kasım
+Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)" (kasası açıkken çekilen föy karşılaştırılmaz; rapor ya da föy
+değişince yeniden okunmamış olur), ModPOS anahtarı tanımlı ama çalışmıyorsa da **Sistem** başlığında "ModPOS kasa föyü
+çekilemiyor" ve hatanın metni, Ayarlar › ModPOS (kasa föyü)'ne götürür ([MODPOS-API.md](MODPOS-API.md) › Nerede
+görünür). Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
 ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
@@ -77,7 +82,7 @@ sayımını ay bittikten sonra (ilk 10 günde) değiştirdiyse "Ayşe, Ekim 2026
 kimlik en son kayıttan, yeni kayıt yeniden okunmamış yapar). İkisi personele hiç gösterilmez. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
 (kasadaki fiyatlar, zayi istekleri, Tükendi, geçen ayın sayımı, fiyatsız ek kalem, personelin geç sayım kaydı)
-`src/server/bell/ops.ts`; toplayıcı
+`src/server/bell/ops.ts`, ModPOS kasa föyünün anahtarı ve e-posta satırları (yalnız yönetici) `src/server/bell/modpos.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
@@ -165,11 +170,14 @@ e-postası**, bildirim adreslerine gider. İçinde:
   listelenir. Kutunun sonunda operasyonun bilgi satırı: "Personelin tükendi yaptığı ürünler: Tiramisu (Selin, 2 gündür)"
   (yalnız ad, kişi ve süre); ilk 10 günde geçen ayın stok sayımı yarımsa ya da yoksa onun satırı. Bekleyen istek yokken
   bu satırlar kutuyu tek başına açar: yalnız tükendi satırı "Personelden", yalnız sayım satırı "Stok sayımı" (o ayın
-  sayımına götürür), ikisi birden "Operasyon" başlığıyla. Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
+  sayımına götürür), ikisi birden "Operasyon" başlığıyla. ModPOS kasa föyünün satırları da bu kutudadır: anahtar
+  çalışmıyorsa "ModPOS kasa föyü çekilemiyor. …", dünün raporu föyden farklıysa "Kasa raporu ModPOS föyünden farklı. 2
+  Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)"; yalnız bunlar varsa başlık "ModPOS kasa föyü" (o güne ya da Ayarlar'a
+  götürür). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu onay bekleyen personel isteği, personelin tükendi yaptığı ürün ya da (ilk 10 günde) geçen ayın yarım sayımı yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu onay bekleyen personel isteği, personelin tükendi yaptığı ürün, ModPOS kasa föyü satırı ya da (ilk 10 günde) geçen ayın yarım sayımı yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay

@@ -137,11 +137,17 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
   if (!kasa || v === null) return null;
   const t = kasa.till;
   if (mode === "kasa") {
-    // LafPOS'un yedek günleri (G6) de rakam verir: payda raporlu gün + LafPOS günü
+    // Yedek günler de rakam verir (LafPOS gün sonu G6, ModPOS föyü; docs/MODPOS-API.md › Ay rakamına yedek): payda
+    // raporlu gün + LafPOS günü + föy günü. Föyde indirim yok: o günler indirimin paydasında girilmemiş görünür. Ayın
+    // bütün satırları föyse (raporlar başlamadan önceki ay) kaynak "ModPOS föyünden"
     const lafpos = t.lafpos?.length ?? 0;
-    const all = t.reported + lafpos;
-    const days = f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : `${t.reported} gün${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}`;
-    return `Kasa raporlarından (${days}). Değiştirmek için dokunun.`;
+    const modpos = t.modpos?.length ?? 0;
+    const onlyFoy = modpos > 0 && !t.reported && !lafpos;
+    const all = t.reported + lafpos + modpos;
+    const fallback = `${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}${modpos ? ` + ModPOS föyünden ${modpos} gün` : ""}`;
+    const days =
+      f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : onlyFoy ? `${modpos} gün` : `${t.reported} gün${fallback}`;
+    return `${onlyFoy ? "ModPOS föyünden" : "Kasa raporlarından"} (${days}). Değiştirmek için dokunun.`;
   }
   return typed.trim() ? `Elle girildi · kasada ${fieldShown(f, v)}` : `Boş bırakırsanız kasadaki kullanılır (${fieldShown(f, v)})`;
 }
