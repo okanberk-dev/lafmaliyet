@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, forecastStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, forecastStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
@@ -9,6 +9,8 @@ import { runForecastJob, type ForecastJobResult } from "@/server/forecast/job";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
+import { isModposConfigured } from "@/server/modpos/client";
+import { syncModpos, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
@@ -30,7 +32,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // stok sayımı bildirimi (tamamlanmadıysa). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Satış tahmini (hava durumu ve günün tahmin kaydı; docs/SATIS-TAHMINI.md) Paraşüt'ün
 // yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir. Süresi dolan personel istekleri (kasadan
-// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md).
+// çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md). ModPOS'un kasa föyü (dün ve bir geçmiş gün,
+// günde 2 hak; docs/MODPOS-API.md) de Paraşüt'le aynı anda yalnız bir kez çekilir, sabah e-postasından önce beklenir.
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -38,6 +41,17 @@ export const maxDuration = 60;
 
 /** Satış tahmininin süresi: hava durumu en çok 6 sn (AbortSignal.timeout) ve 7 günün kaydı */
 const FORECAST_JOB_MS = 7_000;
+
+/**
+ * ModPOS kasa föyünün son anı (jobStart'tan sonra; src/server/modpos/sync.ts): istekler bu ana kadar biter, 5 sn'den
+ * azı kaldıysa yeni istek başlamaz. Belge 60 sn'lik zaman aşımı önerir; Paraşüt'ün 35 sn'lik yeniden denemesiyle aynı
+ * anda biter, sabah e-postasının 48 sn'lik sınırına pay kalır (docs/MODPOS-API.md › Kota ve çekme sırası)
+ */
+const MODPOS_DEADLINE_MS = 30_000;
+/** ModPOS adımının beklenme sınırı (jobStart'tan sonra): son anın üstüne föyü ve çalışmayı yazma payı */
+const MODPOS_CAP_MS = 32_000;
+/** Anahtar yoksa çekme hiç başlamaz (veritabanına da gidilmez); adım yazılmaz (modposStep) */
+const MODPOS_OFF: ModposSyncResult = { status: "off", days: [], left: null };
 
 /** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
 function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): StepResult {
@@ -58,6 +72,16 @@ export async function GET(request: NextRequest) {
     runForecastJob().catch((e: Error) => ({ status: "error", weather: "error", saved: 0, error: e.message })),
     FORECAST_JOB_MS,
     { status: "error", weather: "error", saved: 0, error: "süre doldu" },
+  );
+  // ModPOS kasa föyü (docs/MODPOS-API.md): yalnız burada ve bir kez başlar (extras() iki kez çalışabilir, günde 2 hak
+  // var). Paraşüt'le aynı anda sürer, e-postadan önce beklenir: e-posta, zil ve Bugün taze föyü görür. Hata fırlatmaz,
+  // en çok jobStart + 32 sn
+  const modposP = capped<ModposSyncResult>(
+    (isModposConfigured() ? syncModpos("cron", { deadlineAt: jobStart + MODPOS_DEADLINE_MS }) : Promise.resolve(MODPOS_OFF)).catch(
+      (e: Error): ModposSyncResult => ({ status: "error", days: [], left: null, error: e.message }),
+    ),
+    jobStart + MODPOS_CAP_MS - Date.now(),
+    { status: "error", days: [], left: null, error: "süre doldu" },
   );
   const configured = isParasutConfigured();
   let alreadySynced = false;
@@ -155,17 +179,21 @@ export async function GET(request: NextRequest) {
   };
   const forecast = await forecastP;
   const fcStep = { forecast: forecastStep(forecast) };
+  // Paraşüt bitince çoğunlukla bitmiştir; adım yalnız anahtar varken yazılır
+  const modpos = await modposP;
+  const modposResult = modposStep(modpos);
+  const mpStep = modposResult ? { modpos: modposResult } : {};
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {
     // Sistem bölümü (bu sabahki Paraşüt işi) eşitlemenin bugün yapılıp yapılmadığını söyler
     const result = await runReminderDigest("cron", { syncedToday: alreadySynced || Boolean(sync?.ok), sendDeadlineAt: jobStart + JOB_SEND_DEADLINE_MS });
     const ex = await extras();
-    outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps, ...fcStep });
-    return NextResponse.json({ ...result, sync, forecast: forecast.status, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
+    outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps, ...mpStep, ...fcStep });
+    return NextResponse.json({ ...result, sync, forecast: forecast.status, modpos: modpos.status, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     const ex = await extras();
-    outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps, ...fcStep });
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync, forecast: forecast.status, ...ex.body, weekly: ex.weekly }, { status: 500 });
+    outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps, ...mpStep, ...fcStep });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, forecast: forecast.status, modpos: modpos.status, ...ex.body, weekly: ex.weekly }, { status: 500 });
   } finally {
     await finishJobRun(runId, outcome);
   }
