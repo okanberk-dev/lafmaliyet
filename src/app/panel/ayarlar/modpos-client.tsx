@@ -41,13 +41,21 @@ export function ModposFetchForm({
   const [pending, start] = useActionTransition();
   const problem = !day ? "Bir gün seçin" : day > today ? "İleri tarih çekilemez" : null;
 
+  // Yanıt yolda kaybolursa çekim yapılmış (hak harcanmış) olabilir: pencere kapanır, "Yenile" önerilir; yeniden
+  // denemeden önce sayfa kalan hakkı göstersin (maybeSaved)
   const run = () =>
-    start(async () => {
-      const res = await fetchModposDay(day);
-      setOpen(false);
-      if (!res.ok) return void toast.error(res.error);
-      toast.success(res.data.title, { description: res.data.description });
-    });
+    start(
+      async () => {
+        try {
+          const res = await fetchModposDay(day);
+          if (!res.ok) return void toast.error(res.error);
+          toast.success(res.data.title, { description: res.data.description });
+        } finally {
+          setOpen(false);
+        }
+      },
+      { maybeSaved: true },
+    );
 
   // Onay penceresi açılınca okunur (sunucuda çizilmez): saat tarayıcınınkidir, 07:00 sınırı için yeterli
   const lines = modposFetchConfirmLines({ day, today, left, stored: day in stored ? stored[day] : null, now: new Date() });

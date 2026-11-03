@@ -196,7 +196,9 @@ export function foyZ(foy: KasaFoyu): ModposZ | null {
 /** Kasasız gün: föysüz satışın ödemeleri kodlarına göre (ciroya dahil bilgisi yok: tanınmayan kod Diğer) */
 function foysuzZ(foy: KasaFoyu, zTotal: number): ModposZ {
   const pays = foy.foysuzGunler.flatMap((f) => f.odemeler);
-  const by = (b: ModposBucket) => round2(pays.filter((o) => (BUCKETS[o.kod] ?? "other") === b).reduce((a, o) => a + o.tutar, 0));
+  // ciroyaDahil gelmediyse (belge yazmaz) tanınmayan kod Diğer; geldiyse ödeme satırınınki gibi (modposBucket)
+  const bucket = (o: (typeof pays)[number]) => (o.ciroyaDahil === undefined ? (BUCKETS[o.kod] ?? "other") : modposBucket({ kod: o.kod, ciroyaDahil: o.ciroyaDahil }));
+  const by = (b: ModposBucket) => round2(pays.filter((o) => bucket(o) === b).reduce((a, o) => a + o.tutar, 0));
   const cash = by("cash");
   const card = by("card");
   const mealCard = by("mealCard");
@@ -231,6 +233,15 @@ function foysuzZ(foy: KasaFoyu, zTotal: number): ModposZ {
     foysuz: true,
     foysuzCiro: zTotal,
   };
+}
+
+/**
+ * Saklanan föyün karşılaştırmaya giren Z'si: kasasız (föysüz) föy kesinleşmeden alındıysa (gün içinde "Bu günü çek")
+ * gün sürüyor sayılır (durum ACIK): akşamki raporla karşılaştırılmaz, ertesi sabah kesin föy gelir
+ */
+export function sheetZ(sheet: { foy: KasaFoyu; final?: boolean }): ModposZ | null {
+  const z = foyZ(sheet.foy);
+  return z && z.foysuz && sheet.final === false ? { ...z, durum: "ACIK" } : z;
 }
 
 /** Günün bütün uyarı kodları (kasalardan, tekilleştirilmiş, sıralı) */

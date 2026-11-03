@@ -126,7 +126,8 @@ export interface FoysuzGun {
   sube: string;
   ciro: number;
   adisyonSayisi: number | null;
-  odemeler: { yontem: string; kod: string; tutar: number }[];
+  /** ciroyaDahil yalnız servis yazdıysa */
+  odemeler: { yontem: string; kod: string; tutar: number; ciroyaDahil?: boolean }[];
 }
 
 export interface FoyOzet {
@@ -180,11 +181,15 @@ export const FOY_MAX_BYTES = 2 * 1024 * 1024;
 
 const MAX_TL = 100_000_000;
 const round2 = (v: number) => Math.round(v * 100) / 100;
-const AMOUNT = /^-?\d{1,12}(\.\d{1,6})?$/;
+/**
+ * Tutar: ondalık ayırıcı nokta, isteğe bağlı üs. Sunucu kayan nokta toplamını kısaltmadan yazabilir
+ * ("17620.500000000004", "-1.1368683772161603e-13"): kabul edilir, iki ondalığa yuvarlanır. Virgül ("1.234,50") reddedilir
+ */
+const AMOUNT = /^-?\d{1,15}(\.\d{1,20})?([eE][+-]?\d{1,3})?$/;
 const INT = /^\d{1,9}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** Ofsetli zaman: "2026-11-01T09:42:10+03:00" (ofsetsiz zaman güne yanlış düşer, reddedilir) */
-const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** Tekrar eden öğelerin yolları: "gider" giderler'in içinde dizi, nakitKasa ve araKasa'nın içinde tek tutardır */
 const ARRAYS = new Set([
@@ -207,7 +212,9 @@ const parser = new XMLParser({
   trimValues: true,
   // Yalnız XML'in beş yerleşik varlığı (&amp; …); DOCTYPE zaten reddedilir
   processEntities: true,
-  htmlEntities: false,
+  // Sayısal karakter başvuruları (&#305; → ı) XML'in kendisidir: htmlEntities ile çözülür (DOCTYPE zaten reddedilir,
+  // genişleyen varlık olamaz)
+  htmlEntities: true,
   jPath: true,
   isArray: (_name, jpath) => typeof jpath === "string" && ARRAYS.has(jpath),
 });
@@ -262,13 +269,6 @@ function amount(v: unknown, path: string): number | null {
   const n = Number(v.trim());
   if (!Number.isFinite(n) || Math.abs(n) > MAX_TL) throw new Bozuk(path);
   return round2(n) === 0 ? 0 : round2(n);
-}
-
-/** Eksi olmayan tutar (satış, ciro, gider): boşsa 0 */
-function money0(v: unknown, path: string): number {
-  const n = amount(v, path);
-  if (n !== null && n < 0) throw new Bozuk(path);
-  return n ?? 0;
 }
 
 /** Eksi olabilen tutar (fark): boşsa 0 değil null */
@@ -334,10 +334,11 @@ function kasa(n: Node, path: string): FoyKasa {
     kapanis: { zaman: time(kapanis?.zaman, `${path}.kapanis.zaman`), nakit: signed(kapanis?.nakit, `${path}.kapanis.nakit`) },
     satis: {
       ciro: signed(satis.ciro, `${path}.satis.ciro`) ?? 0,
-      ciroDisi: money0(satis.ciroDisi, `${path}.satis.ciroDisi`),
+      // Ciro dışı ve bahşiş eksi gelebilir (iade edilen ikram): föy reddedilmez
+      ciroDisi: signed(satis.ciroDisi, `${path}.satis.ciroDisi`) ?? 0,
       adisyonSayisi: int(satis.adisyonSayisi, `${path}.satis.adisyonSayisi`) ?? 0,
       kisiSayisi: int(satis.kisiSayisi, `${path}.satis.kisiSayisi`),
-      bahsis: money0(satis.bahsis, `${path}.satis.bahsis`),
+      bahsis: signed(satis.bahsis, `${path}.satis.bahsis`) ?? 0,
     },
     odemeler: list(n.odeme, `${path}.odeme`).map((o, i) => odeme(o, `${path}.odeme.${i}`)),
     defterGirildi: bool(n.defterGirildi, `${path}.defterGirildi`),
@@ -392,9 +393,11 @@ function kasa(n: Node, path: string): FoyKasa {
   };
 }
 
-function yontemTutar(n: Node, path: string): { yontem: string; kod: string; tutar: number } {
+function yontemTutar(n: Node, path: string): { yontem: string; kod: string; tutar: number; ciroyaDahil?: boolean } {
   const kod = reqText(n.kod, `${path}.kod`, 40).toUpperCase();
-  return { yontem: text(n.yontem, `${path}.yontem`, 60) ?? kod, kod, tutar: signed(n.tutar ?? n.satis, `${path}.tutar`) ?? 0 };
+  const out = { yontem: text(n.yontem, `${path}.yontem`, 60) ?? kod, kod, tutar: signed(n.tutar ?? n.satis, `${path}.tutar`) ?? 0 };
+  // Belge özette ve föysüz günde ciroyaDahil yazmaz; gelirse okunur (DIGER ve tanınmayan kodun alanı ona göre)
+  return n.ciroyaDahil === undefined || n.ciroyaDahil === "" ? out : { ...out, ciroyaDahil: bool(n.ciroyaDahil, `${path}.ciroyaDahil`) };
 }
 
 function ozet(n: Node): FoyOzet {

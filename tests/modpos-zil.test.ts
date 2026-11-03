@@ -275,7 +275,8 @@ test("kaynak: personelin yükleyicileri ve operasyonun ortak olguları föy okum
   assert.doesNotMatch(cr, /modposMismatch|@\/server\/bell\/modpos/);
   const fns = cr.split(/\n(?=export async function |async function |export function )/);
   const readers = fns.filter((f) => /loadModposSheets\(/.test(f)).map((f) => /function (\w+)/.exec(f)?.[1]);
-  assert.deepEqual(readers, ["modposTillRows", "firstModposTillDay"]);
+  assert.deepEqual(readers, ["modposTillRows"], "föy tablosunu yalnız ay yedeği okur (firstModposTillDay da onun üstünden)");
+  assert.match(fns.find((f) => /function firstModposTillDay\b/.test(f)) ?? "", /modposTillRows\(db\)/);
   for (const name of ["getCashReport", "cashReportsBetween", "previousCarryOver", "nextReportAfter", "toCashDTO"]) {
     const body = fns.find((f) => new RegExp(`function ${name}\\b`).test(f)) ?? "";
     assert.ok(body, name);

@@ -235,7 +235,9 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
   assert.match(client, /^"use client";/);
   assert.doesNotMatch(client, /\buseTransition\(/);
   assert.equal((client.match(/const \[pending, start\] = useActionTransition\(\);/g) ?? []).length, 2);
-  assert.match(client, /start\(async \(\) => \{\s*const res = await fetchModposDay\(day\);/);
+  assert.match(client, /start\(\s*async \(\) => \{\s*try \{\s*const res = await fetchModposDay\(day\);/);
+  // Yanıt kaybolursa çekim yapılmış olabilir: pencere kapanır, "Yenile" önerilir (maybeSaved)
+  assert.match(client, /\} finally \{\s*setOpen\(false\);\s*\}\s*\},\s*\{ maybeSaved: true \},/);
   assert.match(client, /start\(async \(\) => \{\s*const res = await saveModposFallback\(next\);/);
   assert.equal((client.match(/<ConfirmDialog[\s\S]*?tone="primary"/g) ?? []).length, 2);
   assert.match(client, /modposFetchConfirmLines\(\{ day, today, left, stored: day in stored \? stored\[day\] : null, now: new Date\(\) \}\)/);

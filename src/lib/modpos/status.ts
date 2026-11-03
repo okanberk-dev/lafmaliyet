@@ -267,6 +267,8 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
 /** "bugün 08:02", "dün 23:10", "2 Kasım 08:02" (TR) */
 export function timeText(iso: string, now: Date): string {
   const t = new Date(iso);
+  // Bozuk saklanmış an sayfayı düşürmesin
+  if (Number.isNaN(t.getTime())) return "bilinmeyen bir anda";
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(t);
   const hm = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(t);
   const today = todayTR(now);

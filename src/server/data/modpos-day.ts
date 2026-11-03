@@ -2,7 +2,7 @@ import "server-only";
 
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { modposKeyProblem } from "@/lib/modpos/request";
-import { foyZ, type ModposZ } from "@/lib/modpos/z";
+import { sheetZ, type ModposZ } from "@/lib/modpos/z";
 import { addDays } from "@/lib/reminders";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -28,7 +28,7 @@ export interface KasaModpos {
 /** LafPOS günü ya da föyü okunamayan gün: kart ve rozet çıkmaz */
 export const NO_MODPOS: KasaModpos = { modpos: false, sheet: null, z: null };
 
-const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet, z: sheet ? foyZ(sheet.foy) : null });
+const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet, z: sheet ? sheetZ(sheet) : null });
 
 /**
  * Bir günün ModPOS föyü (yöneticinin gün görünümü, `?gun=`): LafPOS gününde `{ modpos: false }` ve föy okunmaz

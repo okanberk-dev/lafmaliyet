@@ -59,6 +59,7 @@ import {
   sheetCanonical,
   sheetPrevious,
   sheetState,
+  sheetZ,
   type ModposBucket,
 } from "../src/lib/modpos/z";
 import { todayTR } from "../src/lib/reminders";
@@ -241,6 +242,26 @@ describe("parseKasaFoyu: güvenli ve katı okuma", () => {
     }
   });
 
+  test("gerçek sunucunun yazabileceği biçimler: kayan nokta artığı, üs, 7 haneli kesir saniye, eksi ciro dışı, sayısal karakter başvurusu", () => {
+    const full = xml("belge-ornegi");
+    const one = (b: string) => {
+      const r = parseKasaFoyu(b, "2026-11-01");
+      assert.ok(r.ok, JSON.stringify(r));
+      return r.foy;
+    };
+    assert.equal(one(full.replace("<sistem>17620.5</sistem>", "<sistem>17620.500000000004</sistem>")).kasalar[0].odemeler[1].sistem, 17620.5);
+    assert.equal(one(full.replace("<fark>0</fark>", "<fark>-1.1368683772161603e-13</fark>")).kasalar[0].odemeler[1].fark, 0);
+    assert.equal(one(full.replace("<satis>8210</satis>", "<satis>8210.00</satis>")).kasalar[0].odemeler[0].satis, 8210);
+    assert.equal(one(full.replace("2026-11-02T11:15:42+03:00", "2026-11-02T11:15:42.1234567+03:00")).olusturulma, "2026-11-02T11:15:42.1234567+03:00");
+    const neg = one(full.replace("<ciroDisi>145</ciroDisi>", "<ciroDisi>-145</ciroDisi>").replace("<bahsis>120</bahsis>", "<bahsis>-20</bahsis>"));
+    assert.deepEqual([neg.kasalar[0].satis.ciroDisi, neg.kasalar[0].satis.bahsis], [-145, -20]);
+    const ent = one(full.replace("<sube>Kadıköy Şube</sube>", "<sube>Kad&#305;k&#246;y &#x15E;ube &amp; Bah&#231;e</sube>"));
+    assert.equal(ent.kasalar[0].sube, "Kadıköy Şube & Bahçe");
+    // Virgüllü tutar ve ofsetsiz zaman yine reddedilir
+    assert.equal(bozuk(full.replace("<satis>8210</satis>", "<satis>8.210,00</satis>")), "kasa.0.odeme.0.satis");
+    assert.equal(bozuk(full.replace("2026-11-02T11:15:42+03:00", "2026-11-02T11:15:42")), "olusturulma");
+  });
+
   test("büyük gövde (2 MB'tan uzun) okunmaz", () => {
     const pad = `<!-- ${"x".repeat(FOY_MAX_BYTES)} -->`;
     assert.equal(bozuk(xml("belge-ornegi").replace("<kasaFoyu>", `${pad}<kasaFoyu>`)), "govde");
@@ -258,15 +279,17 @@ describe("parseKasaFoyu: güvenli ve katı okuma", () => {
     assert.equal(z.foy.kasalar[0].acilis.zaman, "2026-11-01T06:42:10.5Z");
   });
 
-  test("biçimi bozuk tutar alanın yoluyla reddedilir: binlik ayırıcı, virgül, birim, 6'dan çok ondalık, 100 milyonun üstü", () => {
+  test("biçimi bozuk tutar alanın yoluyla reddedilir: binlik ayırıcı, virgül, birim, 100 milyonun üstü (uzun ondalık ve üs yuvarlanır)", () => {
     const full = xml("belge-ornegi");
     assert.equal(bozuk(full.replace("<satis>8210</satis>", "<satis>1.234,50</satis>")), "kasa.0.odeme.0.satis");
     assert.equal(bozuk(full.replace("<satis>8210</satis>", "<satis>8210,5</satis>")), "kasa.0.odeme.0.satis");
     assert.equal(bozuk(full.replace("<satis>8210</satis>", "<satis>8210 TL</satis>")), "kasa.0.odeme.0.satis");
-    assert.equal(bozuk(full.replace("<tutar>6320.5</tutar>", "<tutar>6320.1234567</tutar>")), "kasa.0.odeme.1.kirilim.1.tutar");
+    // Uzun ondalık ve üs (kayan nokta artığı) reddedilmez, iki ondalığa yuvarlanır
+    const long = parseKasaFoyu(full.replace("<tutar>6320.5</tutar>", "<tutar>6320.1234567</tutar>").replace("<beklenen>7840</beklenen>", "<beklenen>7.84e3</beklenen>"));
+    assert.ok(long.ok);
+    assert.deepEqual([long.foy.kasalar[0].odemeler[1].kirilim[1].tutar, long.foy.kasalar[0].nakitKasa?.beklenen], [6320.12, 7840]);
     assert.equal(bozuk(full.replace("<ciro>28450.5</ciro>", "<ciro>100000001</ciro>")), "kasa.0.satis.ciro");
-    assert.equal(bozuk(full.replace("<ciroDisi>145</ciroDisi>", "<ciroDisi>-145</ciroDisi>")), "kasa.0.satis.ciroDisi", "ciro dışı eksi olamaz");
-    assert.equal(bozuk(full.replace("<beklenen>7840</beklenen>", "<beklenen>1e4</beklenen>")), "kasa.0.nakitKasa.beklenen");
+    assert.equal(bozuk(full.replace("<ciro>28450.5</ciro>", "<ciro>1e12</ciro>")), "kasa.0.satis.ciro", "üsle de 100 milyonun üstü");
     assert.equal(bozuk(full.replace("<kasaFarki>-20</kasaFarki>", "<kasaFarki>−20</kasaFarki>")), "ozet.kasaFarki", "eksi işareti ASCII olmalı");
     assert.equal(bozuk(full.replace("<adisyonSayisi>214</adisyonSayisi>", "<adisyonSayisi>214.5</adisyonSayisi>")), "kasa.0.satis.adisyonSayisi");
     assert.equal(bozuk(full.replace("<defterGirildi>true</defterGirildi>", "<defterGirildi>evet</defterGirildi>")), "kasa.0.defterGirildi");
@@ -386,6 +409,28 @@ const EXPECTED_BUCKET: Record<string, ModposBucket | "ciroyaDahil"> = {
 };
 
 describe("z.ts: ödeme kodları ve Z özeti", () => {
+  test("sheetZ: kasasız (föysüz) föy kesinleşmeden alındıysa gün sürüyor sayılır (karşılaştırılmaz); kesinse kapalı", () => {
+    const r = parseKasaFoyu(xml("foysuz-gun"));
+    assert.ok(r.ok);
+    assert.equal(sheetZ({ foy: r.foy, final: false })?.durum, "ACIK");
+    assert.equal(sheetZ({ foy: r.foy, final: true })?.durum, "KAPALI");
+    assert.equal(sheetZ({ foy: r.foy })?.durum, "KAPALI", "verilmezse kesin");
+    const k = parseKasaFoyu(xml("belge-ornegi"), "2026-11-01");
+    assert.ok(k.ok);
+    assert.equal(sheetZ({ foy: k.foy, final: false })?.durum, "KAPALI", "kasalı föyün durumu kasadan");
+  });
+
+  test("föysüz günün ödemesi: ciroyaDahil yazılmışsa ona göre (DIGER ciroya dahil değilse Diğer'e girmez)", () => {
+    const r = parseKasaFoyu(xml("foysuz-gun"));
+    assert.ok(r.ok);
+    const base = r.foy.foysuzGunler[0];
+    const foy = { ...r.foy, foysuzGunler: [{ ...base, odemeler: [...base.odemeler, { yontem: "Diğer", kod: "DIGER", tutar: 60, ciroyaDahil: false }] }] };
+    const z = foyZ(foy)!;
+    const plainZ = foyZ(r.foy)!;
+    assert.equal(z.other, plainZ.other, "ciroya dahil olmayan Diğer'e girmez");
+    assert.equal(z.offRevenue, plainZ.offRevenue + 60);
+  });
+
   test("kitapçığın §6 tablosundaki her kod tanınır ve beklenen alana düşer (kod, ciroyaDahil'den önce gelir)", () => {
     assert.deepEqual(codesIn(between("## 6. ", "## 7. ")), Object.keys(EXPECTED_BUCKET).sort(), "kitapçığın tablosu ile beklenen eşleme aynı kodlar");
     assert.deepEqual([...KNOWN_CODES].sort(), Object.keys(EXPECTED_BUCKET).sort());

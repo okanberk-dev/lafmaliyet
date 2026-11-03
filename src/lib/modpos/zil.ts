@@ -4,7 +4,7 @@ import { dayMonthTR, longDateTR } from "@/lib/reminders";
 import { modposDiffs, modposDiffText, type ModposDiff, type ModposSavedFields } from "./compare";
 import type { KasaFoyu } from "./foy";
 import type { ModposState } from "./status";
-import { foyZ } from "./z";
+import { sheetZ } from "./z";
 
 /**
  * ModPOS kasa föyünün yöneticiye uyarıları (saf; zil src/server/bell/kasa.ts ve src/server/bell/modpos.ts, Bugün
@@ -24,6 +24,8 @@ export interface ModposSheetLite {
   day: string;
   foy: KasaFoyu;
   revision: number;
+  /** Kesin mi (kasasız föy kesinleşmeden karşılaştırılmaz; verilmezse kesin sayılır) */
+  final?: boolean;
 }
 
 /** Föyünden farklı yazılan rapor, föyü ve farklı alanları */
@@ -54,7 +56,7 @@ export function modposMismatches<R extends ModposSavedFields & { date: string }>
   for (const report of reports) {
     if (isLafposDay(report.date, switchDay)) continue;
     const sheet = byDay.get(report.date);
-    const z = sheet ? foyZ(sheet.foy) : null;
+    const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
     const diffs = modposDiffs(report, z);
     if (diffs.length) out.push({ report, sheet, diffs });
