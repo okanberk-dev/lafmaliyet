@@ -117,8 +117,8 @@ export function modposHeadline(sheet: Pick<ModposSheetView, "state" | "final" | 
  */
 export function modposMissingText(date: string, today: string): string {
   return date >= today
-    ? "Bugünün föyü yarın sabah 08:00'de gelir (Ayarlar › ModPOS kasa föyü'nden de çekilebilir)."
-    : "Her sabah 08:00'de dünün föyü gelir (Ayarlar › ModPOS kasa föyü'nden de çekilebilir).";
+    ? "Bugünün verisi yarın sabah 08:00'de ModPOS API'den gelir (Ayarlar › ModPOS API'den de çekilebilir)."
+    : "Her sabah 08:00'de dünün verisi ModPOS API'den gelir (Ayarlar › ModPOS API'den de çekilebilir).";
 }
 
 /** İşaretli tutar: "+120 ₺", "−20 ₺", "0 ₺" */
@@ -213,14 +213,14 @@ export function modposServiceLine(z: ModposZ): string | null {
 
 /** Sayım olmayan günün nedeni (tablonun altında; föysüz günü föysüz satırı söyler) */
 export function modposNoCountText(z: ModposZ): string | null {
-  if (z.noCount === "acik") return "Sayım yok: föy alındığında gün açıktı.";
+  if (z.noCount === "acik") return "Sayım yok: veri alındığında gün açıktı.";
   if (z.noCount === "otomatik") return "Sayım yok: gün 06:00'da kendiliğinden kapandı (ModPOS defterdeki nakdi yazar).";
   return null;
 }
 
 /** Kasası açılmamış satış: gün föysüzse tutarların kaynağı, kasa açıkken gelen föysüz satış (başka şube) ayrıca */
 export function modposFoysuzText(z: ModposZ): string | null {
-  if (z.foysuz) return "Kasa açılmadan satış yapılmış: tutarlar föysüz satıştan, açılış ve sayım yok.";
+  if (z.foysuz) return "Kasa açılmadan satış yapılmış: tutarlar kasasız satıştan, açılış ve sayım yok.";
   if (Math.abs(z.foysuzCiro) >= 0.01) return `Kasası açılmamış satış da var: ciro ${money(z.foysuzCiro)}; yukarıdaki toplamlara girmez.`;
   return null;
 }
@@ -236,7 +236,7 @@ export function modposUnknownCodesText(z: ModposZ): string | null {
  */
 export function modposGapTitle(z: ModposZ): string | null {
   if (Math.abs(z.paymentsGap) < 0.01) return null;
-  return `ModPOS föyünde ödemeler cirodan ${money(Math.abs(z.paymentsGap))} ${z.paymentsGap > 0 ? "fazla" : "eksik"}`;
+  return `ModPOS API'de ödemeler cirodan ${money(Math.abs(z.paymentsGap))} ${z.paymentsGap > 0 ? "fazla" : "eksik"}`;
 }
 
 const PREVIOUS_FIELDS = [
@@ -366,7 +366,7 @@ export function modposSheetMeta(sheet: Pick<ModposSheetView, "final" | "fetchedA
   const lines: string[] = [];
   if (sheet.foy.olusturulma) lines.push(`ModPOS'ta hazırlandı: ${timeText(sheet.foy.olusturulma, now)}`);
   lines.push(`Panele alındı: ${timeText(sheet.fetchedAt, now)}`);
-  lines.push(sheet.final ? "Kesin: kasalar kapalı, ertesi sabah 07:00'den sonra alındı" : "Kesin değil: ertesi sabah kesin föy yeniden çekilir");
+  lines.push(sheet.final ? "Kesin: kasalar kapalı, ertesi sabah 07:00'den sonra alındı" : "Kesin değil: ertesi sabah kesin veri yeniden çekilir");
   if (sheet.revision > 1) lines.push(`${sheet.revision}. sürüm (ModPOS'ta sonradan değişti)`);
   return lines;
 }
@@ -383,18 +383,18 @@ export function modposCompareRows(report: ModposReportFields | null, z: ModposZ)
     return { key, label, report: a, modpos: b, diff: diff === 0 ? 0 : diff, tone: a === null ? "none" : diff !== null && Math.abs(diff) >= 0.01 ? "info" : "same", money: true };
   };
   rows.push(info("payments", "Ödemelerin toplamı", report ? computeCash(report).paymentsTotal : null, r2(z.cash + z.card + z.mealCard + z.online + z.other)));
-  if (report && report.bankPos !== null && !z.foysuz) rows.push(info("bankPos", "Banka POS ↔ ModPOS kartı (kartla cari tahsilat dahil)", report.bankPos, r2(z.card + z.cardCollections)));
+  if (report && report.bankPos !== null && !z.foysuz) rows.push(info("bankPos", "Banka POS ↔ ModPOS API kartı (kartla cari tahsilat dahil)", report.bankPos, r2(z.card + z.cardCollections)));
   return rows;
 }
 
 /** Karşılaştırmanın özeti: "13 satır aynı · 1 alan farklı yazılmış · 2 satırda bilgi farkı" */
 export function modposCompareSummary(rows: readonly ModposCompareRow[], z: ModposZ, hasReport: boolean): string {
   if (!hasReport) return "Bu gün için kasa raporu girilmedi: rapor girilince alan alan karşılaştırılır.";
-  if (!modposComparable(z)) return "Föy gün açıkken alındı: farklar bilgi olarak görünür, ertesi sabahki kesin föyle karşılaştırılır.";
+  if (!modposComparable(z)) return "ModPOS API verisi gün açıkken alındı: farklar bilgi olarak görünür, ertesi sabahki kesin veriyle karşılaştırılır.";
   const count = (t: ModposCompareRow["tone"]) => rows.filter((r) => r.tone === t).length;
   const [same, diff, info] = [count("same"), count("diff"), count("info")];
   return [
-    `${same} satır aynı`,
+    `ModPOS API ile ${same} satır aynı`,
     diff ? `${diff} alan farklı yazılmış` : "farklı yazılan alan yok",
     info ? `${info} satırda bilgi farkı` : null,
   ]
@@ -430,7 +430,7 @@ export function modposOffLines(foy: KasaFoyu, z: ModposZ | null): DayLine[] {
   for (const f of foy.foysuzGunler) {
     const sube = f.sube || "adsız şube";
     for (const o of f.odemeler) {
-      if (foysuzBucket(o) === "off") add(`${o.kod}|kasasız:${sube}`, `${o.yontem} (${o.kod}) · kasasız: ${sube}`, o.tutar, [], !kasali, kasali ? "başka şubenin kasasız satışı: föyün toplamlarına girmez" : null);
+      if (foysuzBucket(o) === "off") add(`${o.kod}|kasasız:${sube}`, `${o.yontem} (${o.kod}) · kasasız: ${sube}`, o.tutar, [], !kasali, kasali ? "başka şubenin kasasız satışı: ModPOS API toplamlarına girmez" : null);
     }
   }
   if (!by.size) return [];
@@ -445,7 +445,7 @@ export function modposOffLines(foy: KasaFoyu, z: ModposZ | null): DayLine[] {
     // Başka şubenin kasasız satırı denetime girmez: metin hangi satırların toplandığını söyler
     const of = [...by.values()].some((e) => !e.counted) ? "kasaların satırlarının" : "satırların";
     lines.push({
-      label: "Ciro dışı toplamı (föy)",
+      label: "Ciro dışı toplamı (ModPOS API)",
       value: money(z.offRevenue),
       sub: Math.abs(gap) < 0.01 ? `${of} toplamıyla aynı` : `${of} toplamı ${money(sum)}: ${money(Math.abs(gap))} ${gap > 0 ? "fazla" : "eksik"}`,
       tone: Math.abs(gap) < 0.01 ? null : "warn",

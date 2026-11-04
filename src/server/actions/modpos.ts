@@ -44,7 +44,7 @@ export async function fetchModposDay(input: string) {
     const db = getDb();
     const state = await readModposState(db);
     if (quotaLeft(state.quota, now) <= 0) {
-      throw new UserError(`ModPOS'un bugünkü çekim hakkı doldu: hak ${renewText(quotaRenewsAt(state.quota, now), now)} yenilenir`);
+      throw new UserError(`ModPOS API'nin bugünkü çekim hakkı doldu: hak ${renewText(quotaRenewsAt(state.quota, now), now)} yenilenir`);
     }
     const r = await syncModpos("elle", { days: [day], deadlineAt: Date.now() + FETCH_BUDGET_MS, db });
     const got = r.days.some((d) => d.day === day && d.result !== "hata");
@@ -53,7 +53,7 @@ export async function fetchModposDay(input: string) {
     // İstek denendi: son hata, kalan hak ve (alındıysa) gün değişti
     refresh();
     if (!out.ok) throw new UserError(out.error);
-    await logActivity(me, "ModPOS kasa föyü çekildi", out.log);
+    await logActivity(me, "ModPOS API verisi çekildi", out.log);
     return { title: out.title, description: out.description };
   });
 }

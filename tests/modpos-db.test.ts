@@ -52,7 +52,7 @@ function foyOf(body: string): KasaFoyu {
   return r.foy;
 }
 
-describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
+describe("ModPOS API: veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
   let store: typeof import("../src/server/modpos/store");
@@ -220,14 +220,14 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
   const run = (i: number, o: Partial<ModposRun> = {}): ModposRun => ({ at: new Date(NOW.getTime() + i * 60_000).toISOString(), trigger: "cron", days: [{ day: "2026-11-11", result: "yeni" }], status: "ok", text: `çalışma ${i}`, ...o });
 
   test("readModposState / noteModposRun: boş durum, üst alanlar birleşir, çalışmalar başa (en çok 10), bozuk değer onarılır", async () => {
-    assert.deepEqual(await store.readModposState(db), { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, liveFrom: null, lastCronAt: null });
+    assert.deepEqual(await store.readModposState(db), { quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, lastCronAt: null });
     const quota = { day: "2026-11-12", hak: 2, kalan: 1, yenilenme: "2026-11-13T00:00:00+03:00", at: NOW.toISOString() };
     await store.noteModposRun(db, { quota }, run(0));
     await store.noteModposRun(db, { lastOk: { at: NOW.toISOString(), day: "2026-11-11" } }, null);
-    const err = { at: NOW.toISOString(), day: "2026-11-10", kod: "BAGLANTI", text: "ModPOS'a bağlanılamadı: sonra yeniden denenecek", keyError: false };
+    const err = { at: NOW.toISOString(), day: "2026-11-10", kod: "BAGLANTI", text: "ModPOS API'ye bağlanılamadı: sonra yeniden denenecek", keyError: false };
     await store.noteModposRun(db, { lastError: err }, null);
     let st = await store.readModposState(db);
-    assert.deepEqual(st, { quota, lastOk: { at: NOW.toISOString(), day: "2026-11-11" }, lastError: err, runs: [run(0)], dayErrors: {}, liveFrom: null, lastCronAt: null });
+    assert.deepEqual(st, { quota, lastOk: { at: NOW.toISOString(), day: "2026-11-11" }, lastError: err, runs: [run(0)], dayErrors: {}, lastCronAt: null });
     await store.noteModposRun(db, { lastError: null }, null);
     assert.equal((await store.readModposState(db)).lastError, null);
     for (let i = 1; i <= 11; i++) await store.noteModposRun(db, {}, run(i));
@@ -241,7 +241,7 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     // Bozuk saklanmış değer: bozuk parça atılır, not yine yazılır
     await db.execute(sql`update integration_state set value = '{"quota":"bozuk","runs":[1,2],"lastOk":{"at":1}}'::jsonb where key = 'modpos'`);
     await store.noteModposRun(db, {}, run(20));
-    assert.deepEqual(await store.readModposState(db), { quota: null, lastOk: null, lastError: null, runs: [run(20)], dayErrors: {}, liveFrom: null, lastCronAt: null });
+    assert.deepEqual(await store.readModposState(db), { quota: null, lastOk: null, lastError: null, runs: [run(20)], dayErrors: {}, lastCronAt: null });
     // Anahtar durum satırında yok
     assert.doesNotMatch(JSON.stringify(await stateRow()), /sk_/);
   });
@@ -288,27 +288,26 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
   const kotaRes = () => hataRes(429, "KOTA_DOLDU", `<ayrinti><gunlukHak>2</gunlukHak><yenilenme>${RENEW}</yenilenme></ayrinti>`);
   const opts = (fetchImpl: typeof fetch, o: Partial<Parameters<typeof import("../src/server/modpos/sync").syncModpos>[1]> = {}) => ({ now: NOW, deadlineAt: Date.now() + 60_000, db, fetchImpl, env: ENV, ...o });
 
-  test("sabah işi (12 Kasım 08:00, ilk kurulum): dün ve geçmişin ilk günü (MODPOS_SYNC_FROM, 1 Kasım); kota başlıktan, ikisi de kesin; hak bitince istek yok", async () => {
+  test("sabah işi (12 Kasım 08:00, ilk kurulum): dün ve en yeni eksik gün (evvelsi gün); kota başlıktan, ikisi de kesin; hak bitince istek yok", async () => {
     const m = modpos((day, n) => okRes(day, 2 - n));
     const r = await sync.syncModpos("cron", opts(m.impl));
     assert.deepEqual(r, {
       status: "ok",
       days: [
         { day: "2026-11-11", result: "yeni" },
-        { day: "2026-11-01", result: "yeni" },
+        { day: "2026-11-10", result: "yeni" },
       ],
       left: 0,
     });
-    assert.deepEqual(m.days, ["2026-11-11", "2026-11-01"], "önce dün, sonra geçmiş ilk günden ileriye; günde 2 hak");
+    assert.deepEqual(m.days, ["2026-11-11", "2026-11-10"], "önce dün, sonra en yeni eksik gün (yeniden eskiye); günde 2 hak");
     const st = await store.readModposState(db);
     // Çalışmanın saati verilen `now`: ikinci isteğin kotası ve kesinliği de 12 Kasım'a göre
     assert.deepEqual({ ...st.quota, at: undefined }, { day: "2026-11-12", hak: 2, kalan: 0, yenilenme: RENEW, at: undefined });
     assert.ok(st.quota!.at.startsWith("2026-11-12T05:00"), st.quota!.at);
-    assert.equal(st.lastOk?.day, "2026-11-01");
+    assert.equal(st.lastOk?.day, "2026-11-10");
     assert.ok(st.lastOk!.at.startsWith("2026-11-12T05:00"), st.lastOk!.at);
     assert.equal(st.lastError, null);
-    // Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü (bir kez); sabah işinin çalıştığı an
-    assert.equal(st.liveFrom, "2026-11-11");
+    // Sabah işinin çalıştığı an
     assert.equal(st.lastCronAt, NOW.toISOString());
     assert.equal(st.runs.length, 1);
     assert.deepEqual({ ...st.runs[0], at: undefined, text: plain(st.runs[0].text!) }, {
@@ -316,17 +315,17 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
       trigger: "cron",
       days: [
         { day: "2026-11-11", result: "yeni" },
-        { day: "2026-11-01", result: "yeni" },
+        { day: "2026-11-10", result: "yeni" },
       ],
       status: "ok",
-      text: "11 Kasım alındı · 1 Kasım alındı",
+      text: "11 Kasım alındı · 10 Kasım alındı",
     });
     assert.ok(st.runs[0].at.startsWith("2026-11-12T05:00"), st.runs[0].at);
     const index = await store.loadModposIndex(db);
     assert.deepEqual(
       [...index.entries()].map(([d, h]) => [d, h.final, h.fetchedAt.slice(0, 16)]).sort(),
       [
-        ["2026-11-01", true, "2026-11-12T05:00"],
+        ["2026-11-10", true, "2026-11-12T05:00"],
         ["2026-11-11", true, "2026-11-12T05:00"],
       ],
     );
@@ -340,21 +339,21 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     assert.ok((await store.recentModposSheets(5, db)).every((x) => x.raw === undefined));
     // Aynı gün yeniden: hak 0, hiç istek gitmez, çalışma yazılmaz
     const again = await sync.syncModpos("cron", opts(m.impl, { now: new Date("2026-11-12T08:30:00+03:00") }));
-    assert.deepEqual(again, { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" });
+    assert.deepEqual(again, { status: "kota", days: [], left: 0, error: "ModPOS API'nin bugünkü çekim hakkı doldu" });
     assert.equal(m.days.length, 2);
     assert.equal((await store.readModposState(db)).runs.length, 1);
-    // Ertesi sabah: hak yenilendi; dün (12 Kasım) ve geçmişin sıradaki günü (2 Kasım)
+    // Ertesi sabah: hak yenilendi; dün (12 Kasım) ve geçmişin sıradaki günü (9 Kasım, geriye doğru)
     const next = modpos((day, n) => okRes(day, 2 - n));
     const r2 = await sync.syncModpos("cron", opts(next.impl, { now: new Date("2026-11-13T08:00:00+03:00") }));
     assert.equal(r2.status, "ok");
-    assert.deepEqual(next.days, ["2026-11-12", "2026-11-02"]);
+    assert.deepEqual(next.days, ["2026-11-12", "2026-11-09"]);
   });
 
   test("başlık da föyün kotası da yoksa kalan hak elle düşülür (bir sonraki istek boşuna 429 almasın)", async () => {
     const bare = (day: string) => new Response(foyXml(day).replace(/<kota>[\s\S]*<\/kota>/, ""), { status: 200 });
     const m = modpos((day) => bare(day));
     const r = await sync.syncModpos("cron", opts(m.impl));
-    assert.deepEqual([r.status, r.left, m.days], ["ok", 0, ["2026-11-11", "2026-11-01"]]);
+    assert.deepEqual([r.status, r.left, m.days], ["ok", 0, ["2026-11-11", "2026-11-10"]]);
     const q = (await store.readModposState(db)).quota!;
     assert.deepEqual([q.day, q.hak, q.kalan, q.yenilenme], ["2026-11-12", 2, 0, null]);
   });
@@ -362,7 +361,7 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
   test("429 KOTA_DOLDU: çalışma durur, ikinci gün istenmez; kalan hak 0 ve yenilenme hatadan; aynı gün yeni istek yok", async () => {
     const m = modpos(() => kotaRes());
     const r = await sync.syncModpos("cron", opts(m.impl));
-    assert.deepEqual(r, { status: "kota", days: [], left: 0, error: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
+    assert.deepEqual(r, { status: "kota", days: [], left: 0, error: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
     assert.deepEqual(m.days, ["2026-11-11"]);
     const st = await store.readModposState(db);
     assert.deepEqual([st.quota?.day, st.quota?.kalan, st.quota?.yenilenme, st.lastError?.kod, st.lastError?.keyError, st.runs[0].status], ["2026-11-12", 0, RENEW, "KOTA_DOLDU", false, "kota"]);
@@ -374,7 +373,7 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
     const p = modpos((day, n) => (n === 1 ? okRes(day, 1) : kotaRes()));
     const rp = await sync.syncModpos("cron", opts(p.impl));
-    assert.deepEqual([rp.status, rp.days, rp.left, p.days], ["partial", [{ day: "2026-11-11", result: "yeni" }], 0, ["2026-11-11", "2026-11-01"]]);
+    assert.deepEqual([rp.status, rp.days, rp.left, p.days], ["partial", [{ day: "2026-11-11", result: "yeni" }], 0, ["2026-11-11", "2026-11-10"]]);
   });
 
   test("anahtar hatası (401 / 403): çalışma durur, gün hata; ağ hatası da durur; günlük hata (500) yalnız o günü düşürür", async () => {
@@ -396,29 +395,29 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
     const net = modpos(() => Promise.reject(new TypeError("fetch failed")));
     const rn = await sync.syncModpos("cron", opts(net.impl));
-    assert.deepEqual([rn.status, net.days, rn.days[0]?.text], ["error", ["2026-11-11"], "ModPOS'a bağlanılamadı: sonra yeniden denenecek"]);
+    assert.deepEqual([rn.status, net.days, rn.days[0]?.text], ["error", ["2026-11-11"], "ModPOS API'ye bağlanılamadı: sonra yeniden denenecek"]);
 
-    // 500 (hak geri verildi) yalnız o günü düşürür; geri verilen hak sıradaki güne gider (geçmişin 2. günü, 2 Kasım)
+    // 500 (hak geri verildi) yalnız o günü düşürür; geri verilen hak sıradaki güne gider (geriye doğru 9 Kasım)
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
     const half = modpos((day, n) => (n === 1 ? hataRes(500, "RAPOR_URETILEMEDI") : okRes(day, 3 - n)));
     const rh = await sync.syncModpos("cron", opts(half.impl));
     assert.deepEqual(rh, {
       status: "partial",
       days: [
-        { day: "2026-11-11", result: "hata", text: "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek", kod: "RAPOR_URETILEMEDI" },
-        { day: "2026-11-01", result: "yeni" },
-        { day: "2026-11-02", result: "yeni" },
+        { day: "2026-11-11", result: "hata", text: "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek", kod: "RAPOR_URETILEMEDI" },
+        { day: "2026-11-10", result: "yeni" },
+        { day: "2026-11-09", result: "yeni" },
       ],
       left: 0,
-      error: "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek",
+      error: "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek",
     });
-    assert.deepEqual(half.days, ["2026-11-11", "2026-11-01", "2026-11-02"]);
+    assert.deepEqual(half.days, ["2026-11-11", "2026-11-10", "2026-11-09"]);
     st = await store.readModposState(db);
-    assert.deepEqual([st.lastOk?.day, st.lastError?.kod, st.runs[0].status, st.runs[0].text], ["2026-11-02", "RAPOR_URETILEMEDI", "partial", "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek"]);
-    // Ertesi sabah 11 Kasım hâlâ eksik ama alınamayan gün 2 gün bekler: önce dün, sonra geçmişin sıradaki günü (3 Kasım)
+    assert.deepEqual([st.lastOk?.day, st.lastError?.kod, st.runs[0].status, st.runs[0].text], ["2026-11-09", "RAPOR_URETILEMEDI", "partial", "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek"]);
+    // Ertesi sabah 11 Kasım hâlâ eksik ama alınamayan gün 2 gün bekler: önce dün, sonra geçmişin sıradaki günü (8 Kasım)
     const next = modpos((day, n) => okRes(day, 2 - n));
     await sync.syncModpos("cron", opts(next.impl, { now: new Date("2026-11-13T08:00:00+03:00") }));
-    assert.deepEqual(next.days, ["2026-11-12", "2026-11-03"]);
+    assert.deepEqual(next.days, ["2026-11-12", "2026-11-08"]);
     // Elle çekimde geri verilen hak başka güne gitmez (yalnız verilen gün)
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
     const manual = modpos(() => hataRes(500, "RAPOR_URETILEMEDI"));
@@ -428,7 +427,7 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
     const all500 = modpos(() => hataRes(500, "RAPOR_URETILEMEDI"));
     await sync.syncModpos("cron", opts(all500.impl));
-    assert.deepEqual(all500.days, ["2026-11-11", "2026-11-01", "2026-11-02", "2026-11-03"]);
+    assert.deepEqual(all500.days, ["2026-11-11", "2026-11-10", "2026-11-09", "2026-11-08"]);
     assert.equal((await store.readModposState(db)).dayErrors["2026-11-11"]?.count, 1);
   });
 
@@ -446,7 +445,7 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     // Hak 0: istek gitmez
     const none = modpos(() => assert.fail("istek gitmemeli"));
     const r3 = await sync.syncModpos("elle", opts(none.impl, { days: ["2026-11-06"], now: new Date("2026-11-12T10:00:00+03:00") }));
-    assert.deepEqual(r3, { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" });
+    assert.deepEqual(r3, { status: "kota", days: [], left: 0, error: "ModPOS API'nin bugünkü çekim hakkı doldu" });
     // Ertesi gün: içerik değişti → sürüm 2
     const r4 = await sync.syncModpos("elle", opts(modpos((day) => okRes(day, 1, { cash: 8000, renew: "2026-11-14T00:00:00+03:00" })).impl, { days: ["2026-11-05"], now: new Date("2026-11-13T09:00:00+03:00") }));
     assert.deepEqual(r4.days, [{ day: "2026-11-05", result: "degisti", revision: 2 }]);
@@ -568,51 +567,15 @@ describe("ModPOS kasa föyü: veritabanında", { skip: !SERVER_URL && "MODPOS_TE
     assert.deepEqual(r.days.map((d) => d.day), ["2026-11-11"]);
   });
 
-  test("canlı başlangıç (liveFrom): ilk sabah işi yazar, sonrakiler değiştirmez; elle çekim yazmaz; kaçan gün geçmişten önce", async () => {
+  test("sabah işi çalıştığı anı yazar (elle çekim yazmaz); çalışmadığı sabahın günü eski günlerin önünde", async () => {
     const m = modpos((day, n) => okRes(day, 2 - n));
-    // Elle çekim canlı başlangıç yazmaz
     await sync.syncModpos("elle", opts(m.impl, { days: ["2026-11-05"], now: new Date("2026-11-06T10:00:00+03:00") }));
-    assert.equal((await store.readModposState(db)).liveFrom, null);
-    // İlk sabah işi (12 Kasım): 11 Kasım; hak bitse de yazılır
+    assert.equal((await store.readModposState(db)).lastCronAt, null);
     await sync.syncModpos("cron", opts(m.impl));
-    assert.equal((await store.readModposState(db)).liveFrom, "2026-11-11");
-    // 13 Kasım sabahı iş çalışmadı; 14 Kasım: dün (13) ve kaçan gün (12), geçmişten önce
+    assert.equal((await store.readModposState(db)).lastCronAt, NOW.toISOString());
+    // 13 Kasım sabahı iş çalışmadı; 14 Kasım: dün (13) ve kaçan gün (12), eski günlerden önce
     const next = modpos((day, n) => okRes(day, 2 - n));
     await sync.syncModpos("cron", opts(next.impl, { now: new Date("2026-11-14T08:00:00+03:00") }));
     assert.deepEqual(next.days, ["2026-11-13", "2026-11-12"]);
-    assert.equal((await store.readModposState(db)).liveFrom, "2026-11-11", "ileri alınmaz");
-  });
-
-  test("MODPOS_SYNC_FROM yoksa geçmiş ModPOS'un ilk ciro gününden ileriye: Satışlar'ın ilk cirolu ayı, sonra satışlı föy", async () => {
-    const env = { MODPOS_API_KEY: KEY };
-    try {
-      // Satışlar: Temmuz 23 açık gün (en geç 9 Temmuz'da açıldı), Ağustos tam ay
-      await db.insert(s.months).values([
-        { month: "2026-07", posRevenue: 173_587, openDays: 23 },
-        { month: "2026-08", posRevenue: 500_000, openDays: 31 },
-      ]);
-      assert.deepEqual(await store.loadModposHistoryStart("2026-07-01", false, db), { day: "2026-07-09", source: "ay" });
-      const m = modpos((day, n) => okRes(day, 2 - n));
-      await sync.syncModpos("cron", opts(m.impl, { env }));
-      assert.deepEqual(m.days, ["2026-11-11", "2026-07-09"], "önce dün, sonra ilk ciro günü");
-      // Kasası açılmamış (BOS) föy ilk ciro günü sayılmaz; tahminden önce satışlı föy saklanınca o gün
-      const bos = { ...foyOf(foyXml("2026-07-03")), kasalar: [], foysuzGunler: [] };
-      await store.storeFoy(db, bos, new Date("2026-11-12T09:00:00+03:00"));
-      assert.deepEqual(await store.loadModposHistoryStart("2026-07-01", false, db), { day: "2026-07-09", source: "ay" });
-      await store.storeFoy(db, foyOf(foyXml("2026-07-06")), new Date("2026-11-12T09:00:00+03:00"));
-      assert.deepEqual(await store.loadModposHistoryStart("2026-07-01", false, db), { day: "2026-07-06", source: "foy" });
-      // Ertesi sabah: dün ve 6 Temmuz'dan ileriye ilk eksik gün (6 Temmuz saklı)
-      const next = modpos((day, n) => okRes(day, 2 - n));
-      await sync.syncModpos("cron", opts(next.impl, { env, now: new Date("2026-11-13T08:00:00+03:00") }));
-      assert.deepEqual(next.days, ["2026-11-12", "2026-07-07"]);
-      // Kurulu MODPOS_SYNC_FROM her şeyden önce
-      assert.deepEqual(await store.loadModposHistoryStart("2026-07-05", true, db), { day: "2026-07-05", source: "ayar" });
-      // Satışlar boşsa geçmişin ilk günü
-      await db.execute(sql`TRUNCATE modpos_cash_sheets`);
-      await db.delete(s.months);
-      assert.deepEqual(await store.loadModposHistoryStart("2026-07-01", false, db), { day: "2026-07-01", source: "baslangic" });
-    } finally {
-      await db.delete(s.months);
-    }
   });
 });

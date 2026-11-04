@@ -298,9 +298,9 @@ export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "clos
   const fromModpos = t.missing.filter((d) => modpos.includes(d)).length;
   const covered = fromLafpos + fromModpos;
   if (t.missing.length) {
-    const src = fromLafpos && fromModpos ? "LafPOS'un gün sonundan ve ModPOS föyünden" : fromModpos ? "ModPOS föyünden" : "LafPOS'un gün sonundan";
+    const src = fromLafpos && fromModpos ? "LafPOS'un gün sonundan ve ModPOS API'den" : fromModpos ? "ModPOS API'den" : "LafPOS'un gün sonundan";
     const counted =
-      fromLafpos && fromModpos ? `${fromLafpos} günün cirosu LafPOS'un gün sonundan, ${fromModpos} günün cirosu ModPOS föyünden` : `${covered} günün cirosu ${src}`;
+      fromLafpos && fromModpos ? `${fromLafpos} günün cirosu LafPOS'un gün sonundan, ${fromModpos} günün cirosu ModPOS API'den` : `${covered} günün cirosu ${src}`;
     const tail =
       covered === t.missing.length
         ? `Ciro ve açık gün bu günlerde ${src} sayıldı.`
@@ -330,7 +330,7 @@ export function partialSentence(t: Pick<TillMonth, "partialFrom" | "modpos">): s
 /** Ay ortasında başlayan ilk ayın başı: kasa raporları ya da (ilk satır föyse) ModPOS föyleri */
 function partialHead(t: Pick<TillMonth, "partialFrom" | "modpos">): string {
   const p = t.partialFrom!;
-  return t.modpos?.includes(p) ? `ModPOS föyleri ${dayAblativeTR(p)} itibaren var` : `Kasa raporları ${dayLocativeTR(p)} başladı`;
+  return t.modpos?.includes(p) ? `ModPOS API verileri ${dayAblativeTR(p)} itibaren var` : `Kasa raporları ${dayLocativeTR(p)} başladı`;
 }
 
 /**
@@ -344,15 +344,15 @@ export function kasaMonthLine(info: Month | undefined): string | null {
   if (t.partialFrom) return `${partialHead(t)}; bu ayın açık gün ve cirosu elle girilir`;
   const foy = t.modpos?.length ?? 0;
   const onlyFoy = foy > 0 && !t.reported && !t.lafpos?.length;
-  const fromTill = onlyFoy ? "ModPOS föyünden" : foy ? `kasa raporlarından (${foy} gün ModPOS föyünden sayıldı)` : "kasa raporlarından";
-  const inTill = onlyFoy ? "ModPOS föyünde" : "kasa raporlarında";
+  const fromTill = onlyFoy ? "ModPOS API'den" : foy ? `kasa raporlarından (${foy} gün ModPOS API'den sayıldı)` : "kasa raporlarından";
+  const inTill = onlyFoy ? "ModPOS API'de" : "kasa raporlarında";
   const days = info.sources?.openDays;
   const pos = info.sources?.posRevenue;
   if (days === "kasa" && pos === "kasa") return `Bu ayın açık gün ve cirosu ${fromTill}`;
   const k = info.kasa!.values;
   if (days === "manual" && pos === "manual") {
     return k.openDays !== null && k.posRevenue !== null
-      ? `Bu ayın açık gün ve cirosu elle girildi (${inTill} ${k.openDays} gün, ${money(k.posRevenue)}${foy && !onlyFoy ? `; ${foy} günü ModPOS föyünden` : ""})`
+      ? `Bu ayın açık gün ve cirosu elle girildi (${inTill} ${k.openDays} gün, ${money(k.posRevenue)}${foy && !onlyFoy ? `; ${foy} günü ModPOS API'den` : ""})`
       : "Bu ayın açık gün ve cirosu elle girildi";
   }
   if (days === "kasa") return `Bu ayın açık günü ${fromTill}, cirosu elle girildi`;

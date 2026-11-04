@@ -15,6 +15,7 @@ import { money } from "../src/lib/format";
 import { lafposMonthStatus } from "../src/lib/lafpos/sales";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 import {
+  defaultTaskMonth,
   monthCashOuts,
   monthTaskFacts,
   monthTasks,
@@ -459,4 +460,18 @@ test("Açık gün ve POS cirosu kasa raporlarından: tamamsa kaynağı yazar; ka
   const facts = monthTaskFacts(model, "2026-09", "closed", "2026-09", { payments: NO_PAYMENTS, parasut: null });
   assert.equal(facts.info.source, undefined, "Excel verisinde kaynak yok");
   assert.equal(facts.info.till, null);
+});
+
+test("defaultTaskMonth: ayın ilk 10 gününde işleri bitmemiş biten ay, değilse bu ay (sayım sayfasının kuralı)", () => {
+  // 4 Kasım: Ekim'de 2 açık iş → Ekim; Ekim bittiyse Kasım
+  const open = (n: number) => (m: string) => (m === "2026-10" ? n : 5);
+  assert.equal(defaultTaskMonth(new Date("2026-11-04T12:00:00+03:00"), open(2)), "2026-10");
+  assert.equal(defaultTaskMonth(new Date("2026-11-04T12:00:00+03:00"), open(0)), "2026-11");
+  // 10'u son gün; 11'inde Ekim'in işleri bitmese de Kasım
+  assert.equal(defaultTaskMonth(new Date("2026-11-10T22:00:00+03:00"), open(2)), "2026-10");
+  assert.equal(defaultTaskMonth(new Date("2026-11-11T12:00:00+03:00"), open(2)), "2026-11");
+  // İş günü 05:00'te döner: 1 Kasım 02:00 hâlâ 31 Ekim (bu ay Ekim, biten ay Eylül)
+  assert.equal(defaultTaskMonth(new Date("2026-11-01T02:00:00+03:00"), (m) => (m === "2026-09" ? 1 : 0)), "2026-10");
+  // Yıl başı
+  assert.equal(defaultTaskMonth(new Date("2027-01-03T12:00:00+03:00"), (m) => (m === "2026-12" ? 1 : 0)), "2026-12");
 });

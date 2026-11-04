@@ -1,6 +1,6 @@
 // Yöneticinin Kasa ekranındaki ModPOS kasa föyü (docs/MODPOS-API.md › Nerede görünür): gün görünümünün üç bölümü
 // (ModPOS: föyün ayrıntısı; ladmin: panelde yazılan raporun ayrıntısı; Karşılaştırma: alan alan tablo, farklı
-// yazılanların uyarısı), föy yoksa ne zaman geleceği, günden güne listesinin "ModPOS'tan farklı" rozeti ve raporsuz
+// yazılanların uyarısı), föy yoksa ne zaman geleceği, günden güne listesinin "ModPOS API'den farklı" rozeti ve raporsuz
 // günün cirosu. Kaynak bekçileri: föy yalnız yönetici dalında okunur, personelin dalı ve personele giden yollar
 // (WhatsApp, extras) föyü bilmez, ladmin bölümü föyü bilmez, okuyucu sunucuya özeldir ve ModPOS'a istek göndermez. Saf
 // yardımcılar kitapçığın örnek föyüyle (tests/fixtures/modpos/belge-ornegi.xml), bölümler de sunucuda çizilerek sınanır.
@@ -262,8 +262,8 @@ test("başlık satırı ve durum: Z no, kapalı / açık / kasa açılmamış, k
   // Birden çok kasada Z no yok, kasa sayısı yazılır
   assert.equal(modposHeadline(sheetOf(foy), { ...z, zNo: null, kasaSayisi: 2 }, NOW), "2 kasa · Kapalı · Kesin (alındı: dün 08:02)");
   assert.equal(modposHeadline(sheetOf(foy, { state: "BOS" }), null, NOW), "Kasa açılmamış · Kesin (alındı: dün 08:02)");
-  assert.match(modposMissingText("2026-11-03", "2026-11-03"), /^Bugünün föyü yarın sabah 08:00'de gelir/);
-  assert.equal(modposMissingText("2026-11-01", "2026-11-03"), "Her sabah 08:00'de dünün föyü gelir (Ayarlar › ModPOS kasa föyü'nden de çekilebilir).");
+  assert.match(modposMissingText("2026-11-03", "2026-11-03"), /^Bugünün verisi yarın sabah 08:00'de ModPOS API'den gelir/);
+  assert.equal(modposMissingText("2026-11-01", "2026-11-03"), "Her sabah 08:00'de dünün verisi ModPOS API'den gelir (Ayarlar › ModPOS API'den de çekilebilir).");
 });
 
 test("ödemeler, giderler, cari tahsilat ve ara kasa satırları (cari tahsilatın müşterisi ve ara kasayı yapanla)", () => {
@@ -296,7 +296,7 @@ test("uyarılar ve notlar: ModPOS'un uyarısı Türkçesiyle, föy kendi içinde
   const extra = { ...foy, kasalar: [{ ...foy.kasalar[0], uyarilar: [...foy.kasalar[0].uyarilar, { kod: "YENI_KOD", mesaj: "Servisin yeni uyarısı", tutar: null }, { kod: "toString", mesaj: "Nesne anahtarı", tutar: null }] }] };
   assert.deepEqual(modposWarningTexts(extra).slice(1), ["Servisin yeni uyarısı", "Nesne anahtarı"]);
   // Örnek föyde ödemeler (8.210 + 16.120,50) ciroyu (28.450,50) tutmuyor
-  assert.equal(plain(modposGapTitle(z)!), "ModPOS föyünde ödemeler cirodan 4.120 ₺ eksik");
+  assert.equal(plain(modposGapTitle(z)!), "ModPOS API'de ödemeler cirodan 4.120 ₺ eksik");
   assert.equal(modposGapTitle({ ...z, paymentsGap: 0.004 }), null);
   assert.equal(plain(modposServiceLine(z)!), "Kişi sayısı 301 · bahşiş 120 ₺ · kartla cari tahsilat 1.500 ₺ (banka POS'unda var, Z'nin kartında yok)");
   assert.equal(plain(modposServiceLine({ ...z, covers: null, cardCollections: 0 })!), "Bahşiş 120 ₺");
@@ -305,10 +305,10 @@ test("uyarılar ve notlar: ModPOS'un uyarısı Türkçesiyle, föy kendi içinde
   assert.equal(modposFoysuzText(z), null);
   assert.equal(plain(modposFoysuzText({ ...z, foysuzCiro: 350 })!), "Kasası açılmamış satış da var: ciro 350 ₺; yukarıdaki toplamlara girmez.");
   assert.equal(modposUnknownCodesText({ ...z, unknownCodes: ["KRIPTO"] }), "Tanınmayan ödeme kodu: KRIPTO; ciroya dahilse Diğer'e sayıldı.");
-  // Föysüz gün (kasa açılmamış, satış var): tutarlar föysüz satıştan
+  // Föysüz gün (kasa açılmamış, satış var): tutarlar kasasız satıştan
   const foysuz = zOf({ ...foy, kasalar: [], foysuzGunler: [{ sube: "Kadıköy Şube", ciro: 900, adisyonSayisi: 6, odemeler: [{ yontem: "Nakit", kod: "NAKIT", tutar: 900 }] }] });
   assert.equal(foysuz.foysuz, true);
-  assert.equal(modposFoysuzText(foysuz), "Kasa açılmadan satış yapılmış: tutarlar föysüz satıştan, açılış ve sayım yok.");
+  assert.equal(modposFoysuzText(foysuz), "Kasa açılmadan satış yapılmış: tutarlar kasasız satıştan, açılış ve sayım yok.");
   assert.equal(modposServiceLine(foysuz), null);
 });
 
@@ -385,7 +385,7 @@ test("ModPOS bölümü: karolar (ortalama adisyon, kişi başı, kasa farkı), �
   assert.deepEqual(modposSheetMeta(sheetOf(foy), NOW).map(plain), ["ModPOS'ta hazırlandı: dün 11:15", "Panele alındı: dün 08:02", "Kesin: kasalar kapalı, ertesi sabah 07:00'den sonra alındı"]);
   assert.deepEqual(modposSheetMeta(sheetOf({ ...foy, olusturulma: null }, { final: false, revision: 3 }), NOW).map(plain), [
     "Panele alındı: dün 08:02",
-    "Kesin değil: ertesi sabah kesin föy yeniden çekilir",
+    "Kesin değil: ertesi sabah kesin veri yeniden çekilir",
     "3. sürüm (ModPOS'ta sonradan değişti)",
   ]);
 });
@@ -460,7 +460,7 @@ test("ödenmez / ikram dökümü (kod kod, kırılım, kasasız satış, föyün
   const z = zOf(foy);
   assert.deepEqual(
     modposOffLines(foy, z).map((l) => plain(`${l.label} ${l.value} ${l.sub ?? ""}`.trim())),
-    ["İkram (IKRAM) 145 ₺", "Ciro dışı toplamı (föy) 145 ₺ satırların toplamıyla aynı"],
+    ["İkram (IKRAM) 145 ₺", "Ciro dışı toplamı (ModPOS API) 145 ₺ satırların toplamıyla aynı"],
   );
   // Ödenmez kişi kişi (kırılım), zayi; başka şubenin kasasız ikramı ayrı satır ve denetime girmez (föyün toplamlarında yok)
   const k = foy.kasalar[0];
@@ -486,8 +486,8 @@ test("ödenmez / ikram dökümü (kod kod, kırılım, kasasız satış, föyün
       "İkram (IKRAM) 145 ₺",
       "Ödenmez (ODENMEZ) 300 ₺ Ali Usta 200 ₺ · Komşu dükkân 100 ₺",
       "Zayi (ZAYI) 40 ₺",
-      "İkram (IKRAM) · kasasız: Moda 25 ₺ başka şubenin kasasız satışı: föyün toplamlarına girmez",
-      "Ciro dışı toplamı (föy) 485 ₺ kasaların satırlarının toplamıyla aynı",
+      "İkram (IKRAM) · kasasız: Moda 25 ₺ başka şubenin kasasız satışı: ModPOS API toplamlarına girmez",
+      "Ciro dışı toplamı (ModPOS API) 485 ₺ kasaların satırlarının toplamıyla aynı",
     ],
   );
   assert.equal(lines.at(-1)?.tone, null, "başka şubenin kasasız ikramı yanlış 'fazla' demez");
@@ -507,7 +507,7 @@ test("ödenmez / ikram dökümü (kod kod, kırılım, kasasız satış, föyün
   const ikramli: KasaFoyu = { ...kasasiz, foysuzGunler: [{ ...kasasiz.foysuzGunler[0], odemeler: [...kasasiz.foysuzGunler[0].odemeler, { yontem: "İkram", kod: "IKRAM", tutar: 30 }] }] };
   assert.deepEqual(
     modposOffLines(ikramli, zOf(ikramli)).map((l) => plain(`${l.label} ${l.value} ${l.sub ?? ""}`.trim())),
-    ["İkram (IKRAM) · kasasız: Moda 30 ₺", "Ciro dışı toplamı (föy) 30 ₺ satırların toplamıyla aynı"],
+    ["İkram (IKRAM) · kasasız: Moda 30 ₺", "Ciro dışı toplamı (ModPOS API) 30 ₺ satırların toplamıyla aynı"],
   );
   // Ad kırılır (uzun cari müşteri telefonda taşmasın)
   assert.ok(modposPeople(foy).every((l) => l.wrap === true));
@@ -544,12 +544,12 @@ test("karşılaştırma bölümü: çekirdeğin satırları, ödemelerin toplam�
   assert.ok(!modposCompareRows(saved(), z).some((r) => r.key === "bankPos"));
   assert.equal(modposCompareRows(saved({ ...matching, bankPos: 16_000 }), z).find((r) => r.key === "bankPos")?.tone, "info");
   assert.deepEqual(modposCompareRows(null, z).find((r) => r.key === "payments")?.tone, "none");
-  assert.equal(modposCompareSummary(rows, z, true), "17 satır aynı · farklı yazılan alan yok");
+  assert.equal(modposCompareSummary(rows, z, true), "ModPOS API ile 17 satır aynı · farklı yazılan alan yok");
   const wrong = modposCompareRows(saved({ ...matching, cash: 8_190, bankPos: 16_000 }), z);
   // Nakit yanlış: nakit farklı; olması gereken, kasa farkı, ödemelerin toplamı ve banka POS bilgi farkı
-  assert.equal(modposCompareSummary(wrong, z, true), "12 satır aynı · 1 alan farklı yazılmış · 4 satırda bilgi farkı");
+  assert.equal(modposCompareSummary(wrong, z, true), "ModPOS API ile 12 satır aynı · 1 alan farklı yazılmış · 4 satırda bilgi farkı");
   assert.equal(modposCompareSummary(rows, z, false), "Bu gün için kasa raporu girilmedi: rapor girilince alan alan karşılaştırılır.");
-  assert.match(modposCompareSummary(rows, zOf(open(sample())), true), /^Föy gün açıkken alındı/);
+  assert.match(modposCompareSummary(rows, zOf(open(sample())), true), /^ModPOS API verisi gün açıkken alındı/);
 });
 
 // ---------------------------------------------------------------- Bölümler (sunucuda çizilir)
@@ -560,23 +560,23 @@ const render = (props: Omit<SectionProps, "ladmin"> & { ladmin?: SectionProps["l
 
 test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, Karşılaştırma; kişi adları, ham föy, tanınmayan alanlar, zayi / ikram", () => {
   const none = render({ date: "2026-11-01", today: "2026-11-03", sheet: null, z: null, report: null, keySet: true, now: NOW });
-  assert.match(none, /ModPOS föyü henüz alınmadı/);
-  assert.match(none, /Her sabah 08:00&#x27;de dünün föyü gelir \(Ayarlar › ModPOS kasa föyü&#x27;nden de çekilebilir\)\./);
+  assert.match(none, /ModPOS API verisi henüz alınmadı/);
+  assert.match(none, /Her sabah 08:00&#x27;de dünün verisi ModPOS API&#x27;den gelir \(Ayarlar › ModPOS API&#x27;den de çekilebilir\)\./);
   assert.match(none, /Bu gün için ladmin&#x27;de kasa raporu girilmedi\./);
-  assert.match(none, /ModPOS föyü gelince ladmin&#x27;deki raporla alan alan karşılaştırılır\./);
+  assert.match(none, /ModPOS API verisi gelince ladmin&#x27;deki raporla alan alan karşılaştırılır\./);
   // Anahtar kurulmamışken föysüz günde hiçbir şey ("her sabah gelir" doğru olmazdı); saklanan föy yine görünür
   assert.equal(render({ date: "2026-11-01", today: "2026-11-03", sheet: null, z: null, report: null, keySet: false, now: NOW }), "");
-  assert.match(render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(sample()), z: zOf(sample()), report: null, keySet: false, now: NOW }), /ModPOS kasa föyü/);
+  assert.match(render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(sample()), z: zOf(sample()), report: null, keySet: false, now: NOW }), /aria-label="ModPOS API"/);
 
   const foy = sample();
   const outs = [{ kind: "harcama" as const, amount: 870, store: "Migros", description: "Temizlik malzemesi", categoryName: "Market", createdByName: "Ece Panel" }];
   const html = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy), z: zOf(foy), report: saved(), ladmin: { ...NO_LADMIN, outs, photos: 2 }, keySet: true, now: NOW });
   // Sıra: ModPOS, ladmin, Karşılaştırma
-  const at = ["aria-label=\"ModPOS kasa föyü\"", "aria-label=\"ladmin kasa raporu\"", "aria-label=\"ModPOS ve ladmin karşılaştırması\""].map((t) => html.indexOf(t));
+  const at = ["aria-label=\"ModPOS API\"", "aria-label=\"ladmin kasa raporu\"", "aria-label=\"ModPOS API ve ladmin karşılaştırması\""].map((t) => html.indexOf(t));
   assert.ok(at[0] >= 0 && at[0] < at[1] && at[1] < at[2], JSON.stringify(at));
   const [modpos, ladmin, compare] = [html.slice(at[0], at[1]), html.slice(at[1], at[2]), html.slice(at[2])];
   for (const t of [
-    "Kasa föyü · Z 0312 · Kapalı · Kesin (alındı: dün 08:02)",
+    "Kasa verisi · Z 0312 · Kapalı · Kesin (alındı: dün 08:02)",
     "Toplam satış (ciro)",
     "28.450,50 ₺",
     "ortalama adisyon 132,95 ₺",
@@ -594,13 +594,13 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
     "1. ara kasa · 15:00",
     "Fark notu: Bozuk para eksiği",
     "Kasada fark var: −20 ₺",
-    "ModPOS föyünde ödemeler cirodan 4.120 ₺ eksik",
+    "ModPOS API&#x27;de ödemeler cirodan 4.120 ₺ eksik",
     "Kişi sayısı",
     "Kartla cari tahsilat",
     "Gün no 312 · açılış 09:42, 500 ₺ (Ayşe Yılmaz) · kapanış 00:58, 7.820 ₺ (Mehmet Kaya) · açık kaldı 15 sa 16 dk · kasa defteri girildi",
     "Ödenmez / ikram dökümü",
     "İkram (IKRAM)",
-    "Ciro dışı toplamı (föy)",
+    "Ciro dışı toplamı (ModPOS API)",
     "satırların toplamıyla aynı",
     "Kişiler",
     "Kasayı açan",
@@ -628,20 +628,20 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
   ]) {
     assert.ok(ladmin.includes(t), `ladmin bölümünde yok: ${t}`);
   }
-  for (const t of ["Karşılaştırma", "ModPOS föyü ↔ ladmin kasa raporu", "Raporla aynı", "16 satır aynı · farklı yazılan alan yok", ">ladmin<", ">ModPOS<", "Ödemelerin toplamı", "ModPOS föyünde ödemeler cirodan 4.120 ₺ eksik: ödeme satırları bu yüzden farklı görünebilir."]) {
+  for (const t of ["Karşılaştırma", "ModPOS API ↔ ladmin kasa raporu", "ModPOS API ile aynı", "ModPOS API ile 16 satır aynı · farklı yazılan alan yok", ">ladmin<", ">ModPOS API<", "Ödemelerin toplamı", "ModPOS API&#x27;de ödemeler cirodan 4.120 ₺ eksik: ödeme satırları bu yüzden farklı görünebilir."]) {
     assert.ok(compare.includes(t), `Karşılaştırmada yok: ${t}`);
   }
   assert.doesNotMatch(html, /farklı yazılan \d/);
   // Kişi adları (sahibin kararı) yalnız bu yönetici bölümlerinde: ModPOS'ta açan, kapatan, ara kasa ve cari tahsilat
   for (const name of ["Ayşe Yılmaz", "Mehmet Kaya", "Yıldız Lojistik"]) assert.ok(modpos.includes(name), name);
   assert.ok(compare.includes("ModPOS&#x27;ta kasayı kapatan Mehmet Kaya · ladmin&#x27;de kasayı sayan Ece Panel"));
-  // Ham föy kapalı kutuda, saklanan yoksa hiç yok
-  assert.doesNotMatch(html, /Ham föy/);
+  // Ham veri kapalı kutuda, saklanan yoksa hiç yok
+  assert.doesNotMatch(html, /Ham veri/);
   const withRaw = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy, { raw: "<kasaFoyu><kasaGunu>2026-11-01</kasaGunu></kasaFoyu>" }), z: zOf(foy), report: null, keySet: true, now: NOW });
-  assert.match(withRaw, /<details[^>]*><summary[^>]*>Ham föy \(ModPOS&#x27;un gönderdiği XML\)<\/summary><pre[^>]*>&lt;kasaFoyu&gt;&lt;kasaGunu&gt;2026-11-01/);
+  assert.match(withRaw, /<details[^>]*><summary[^>]*>Ham veri \(ModPOS API&#x27;nin gönderdiği XML\)<\/summary><pre[^>]*>&lt;kasaFoyu&gt;&lt;kasaGunu&gt;2026-11-01/);
   // Kitapçıkta olmayan alanlar uyarıda
   const extra = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf({ ...foy, ekAlanlar: [{ yol: "kasa.0.satis.yeniAlan", deger: "42" }] }), z: zOf(foy), report: null, keySet: true, now: NOW });
-  assert.ok(extra.includes("ModPOS&#x27;un kitapçıkta olmayan 1 alanı"));
+  assert.ok(extra.includes("ModPOS API&#x27;nin belgede olmayan 1 alanı"));
   assert.ok(extra.includes("kasa.0.satis.yeniAlan: 42"));
   // ladmin: panelde girilen zayi / ikram
   const waste = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy), z: zOf(foy), report: saved(), ladmin: { ...NO_LADMIN, waste: { ikram: "2 latte (doğum günü)", zayi: null } }, keySet: true, now: NOW });
@@ -655,16 +655,16 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
 test("bölümler: farklı yazılan alan karşılaştırmada turuncu ve uyarıda; gün açıkken uyarı yok; rapor yoksa rozet; kasa açılmamış gün", () => {
   const foy = sample();
   const wrong = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(foy), z: zOf(foy), report: saved({ ...matching, cash: 8_190 }), keySet: true, now: NOW });
-  const compare = wrong.slice(wrong.indexOf("aria-label=\"ModPOS ve ladmin karşılaştırması\""));
-  assert.match(compare, /ModPOS föyünden farklı yazılan 1 alan/);
-  assert.ok(compare.includes("Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)"));
+  const compare = wrong.slice(wrong.indexOf("aria-label=\"ModPOS API ve ladmin karşılaştırması\""));
+  assert.match(compare, /ModPOS API&#x27;den farklı yazılan 1 alan/);
+  assert.ok(compare.includes("Nakit 8.190 ₺ (ModPOS API&#x27;de 8.210 ₺)"));
   assert.match(compare, /1 alan farklı/);
   assert.match(compare, /1 alan farklı yazılmış/);
   assert.ok(compare.includes("+20 ₺"), "fark föy − rapor");
 
   const of = open(foy);
   const live = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(of, { state: "ACIK", final: false }), z: zOf(of), report: saved({ ...matching, cash: 8_190 }), keySet: true, now: NOW });
-  assert.match(live, /Föy gün açıkken alındı/);
+  assert.match(live, /ModPOS API verisi gün açıkken alındı/);
   assert.match(live, /Gün açıkken alındı/);
   assert.match(live, /farklar bilgi olarak görünür/);
   assert.doesNotMatch(live, /farklı yazılan 1/);
@@ -678,15 +678,15 @@ test("bölümler: farklı yazılan alan karşılaştırmada turuncu ve uyarıda;
   const empty: KasaFoyu = { ...foy, kasalar: [], foysuzGunler: [] };
   const bos = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS" }), z: foyZ(empty), report: null, keySet: true, now: NOW });
   assert.match(bos, /Bu gün ModPOS&#x27;ta kasa açılmamış, satış yok\./);
-  assert.match(bos, /Kasa föyü · Kasa açılmamış · Kesin/);
+  assert.match(bos, /Kasa verisi · Kasa açılmamış · Kesin/);
   assert.match(bos, /İkisinde de satış yok\./);
   // Kesinleşmeden (kasa açılmadan, gün içinde) alınan boş föy: "kasa açılmamış" kesin değil, akşamki raporla uyarı yok
   const early = render({ date: "2026-11-03", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
-  assert.match(early, /Föy alındığında ModPOS&#x27;ta kasa henüz açılmamıştı, satış yoktu; kesin föy ertesi sabah gelir\./);
-  assert.match(early, /Föy kasa açılmadan alındı: ertesi sabahki kesin föyle karşılaştırılır\./);
+  assert.match(early, /Veri alındığında ModPOS&#x27;ta kasa henüz açılmamıştı, satış yoktu; kesin veri ertesi sabah gelir\./);
+  assert.match(early, /ModPOS API verisi kasa açılmadan alındı: ertesi sabahki kesin veriyle karşılaştırılır\./);
   assert.doesNotMatch(early, /data-risk="para"/);
   assert.doesNotMatch(early, />Kasa açılmamış</);
-  assert.match(early, /Kasa föyü · Kasa açılmadan alındı · Kesin değil/);
+  assert.match(early, /Kasa verisi · Kasa açılmadan alındı · Kesin değil/);
   // Dünün föyü: beklenen sabah (09:00) geçti ve hâlâ kesin değilse o sabah alınamamıştır → para uyarısı
   const yday = render({ date: "2026-11-02", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
   assert.match(yday, /data-notice="warn" data-risk="para"/);
@@ -694,9 +694,9 @@ test("bölümler: farklı yazılan alan karşılaştırmada turuncu ve uyarıda;
   assert.doesNotMatch(ydayEarly, /data-risk="para"/, "sabah işi bitmeden (08:30) bekleniyor");
   // Kesin föy beklenen sabahtan sonra da gelmediyse (iki gün önce): beklenmez, para uyarısı yine çıkar
   const stale = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS", final: false }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
-  assert.match(stale, /kesin föy henüz alınamadı \(sabah işi yeniden dener\)/);
+  assert.match(stale, /kesin veri henüz alınamadı \(sabah işi yeniden dener\)/);
   assert.match(stale, /data-notice="warn" data-risk="para"/);
-  assert.match(stale, /Föy kasa açılmadan alınmıştı ve kesin föy henüz alınamadı/);
+  assert.match(stale, /Veri kasa açılmadan alınmıştı ve kesin veri henüz alınamadı/);
   const bosReport = render({ date: "2026-11-01", today: "2026-11-03", sheet: sheetOf(empty, { state: "BOS" }), z: foyZ(empty), report: saved(), keySet: true, now: NOW });
   assert.ok(bosReport.includes("ModPOS&#x27;ta bu gün kasa açılmamış, ladmin&#x27;de 28.450,50 ₺ satış yazılı"));
   assert.match(bosReport, /data-notice="warn" data-risk="para"/);
@@ -707,7 +707,7 @@ test("günden güne ayrıntısı: farklı yazılanlar kutusu (boşsa hiçbir şe
   assert.equal(renderToStaticMarkup(createElement(ModposDiffList, { diffs: undefined })), "");
   const z = zOf(sample());
   const html = plain(renderToStaticMarkup(createElement(ModposDiffList, { diffs: modposReportDiffs({ ...matching, zTotal: 28_000, countedCash: 7_800 }, z) })));
-  assert.match(html, /ModPOS föyünden farklı yazılan 2 alan/);
-  assert.ok(html.includes("Toplam satış 28.000 ₺ (ModPOS föyünde 28.450,50 ₺)"));
-  assert.ok(html.includes("Sayılan nakit 7.800 ₺ (ModPOS föyünde 7.820 ₺)"));
+  assert.match(html, /ModPOS API&#x27;den farklı yazılan 2 alan/);
+  assert.ok(html.includes("Toplam satış 28.000 ₺ (ModPOS API&#x27;de 28.450,50 ₺)"));
+  assert.ok(html.includes("Sayılan nakit 7.800 ₺ (ModPOS API&#x27;de 7.820 ₺)"));
 });

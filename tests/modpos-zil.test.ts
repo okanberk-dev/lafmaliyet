@@ -1,6 +1,6 @@
 // ModPOS kasa föyünün yöneticiye uyarıları (docs/MODPOS-API.md › Nerede görünür; docs/BILDIRIMLER.md, docs/BUGUN.md),
 // saf kurallar (src/lib/modpos/zil.ts): föyünden farklı yazılan rapor (yalnız ModPOS günü ve kasası kapanmış föy), zilin
-// satırı (kimlik, başlık, 220 harflik gövde), sabah e-postasının satırı ve "ModPOS kasa föyü çekilemiyor" (yalnız
+// satırı (kimlik, başlık, 220 harflik gövde), sabah e-postasının satırı ve "ModPOS API'den veri çekilemiyor" (yalnız
 // anahtarın kendi hatası, son başarılı çekimden sonraysa). Kaynak denetimi: hepsi yalnız yönetici dalında, hiçbiri istek
 // göndermez. Veritabanında: tests/modpos-zil-db.test.ts.
 // Çalıştırma: npx tsx --test tests/modpos-zil.test.ts
@@ -130,13 +130,13 @@ test("zilin satırı: kimlik raporun ve föyün sürümünden, gövde gün · fa
   const [m] = modposMismatches([report(D2, { cash: 8190, revision: 2 })], [sheet(D2, 4)], null);
   const b = modposMismatchBell(m);
   assert.equal(b.id, "kasa-modpos-2026-11-02-r2-s4");
-  assert.equal(b.title, "Kasa raporu ModPOS föyünden farklı");
+  assert.equal(b.title, "Kasa raporu ModPOS API'den farklı");
   assert.equal(b.title, MODPOS_MISMATCH_TITLE);
-  assert.equal(plain(b.body), "2 Kasım Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)");
+  assert.equal(plain(b.body), "2 Kasım Pazartesi · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)");
   assert.equal(b.href, "/panel/kasa?gun=2026-11-02");
   // Birden çok alan "; " ile; rapor yeniden gönderilince ya da föy değişince kimlik değişir
   const [many] = modposMismatches([report(D2, { cash: 8190, card: 16000, zNo: "311" })], [sheet(D2, 5)], null);
-  assert.equal(plain(modposMismatchBell(many).body), "2 Kasım Pazartesi · Z no 311 (ModPOS föyünde 0312); Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); Kart 16.000 ₺ (ModPOS föyünde 16.120,50 ₺)");
+  assert.equal(plain(modposMismatchBell(many).body), "2 Kasım Pazartesi · Z no 311 (ModPOS API'de 0312); Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺); Kart 16.000 ₺ (ModPOS API'de 16.120,50 ₺)");
   assert.equal(modposMismatchBell(many).id, "kasa-modpos-2026-11-02-r1-s5");
 });
 
@@ -149,9 +149,9 @@ test("zilin satırı: gövde en çok 220 harf (LafPOS satırıyla aynı), kesili
   assert.ok(body.endsWith("…"));
 });
 
-test("sabah e-postasının satırı: 'Kasa raporu ModPOS föyünden farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)'", () => {
+test("sabah e-postasının satırı: 'Kasa raporu ModPOS API'den farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)'", () => {
   const [m] = modposMismatches([report(D2, { cash: 8190 })], [sheet(D2)], null);
-  assert.equal(plain(modposMismatchDigestText(m.report.date, m.diffs)), "Kasa raporu ModPOS föyünden farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)");
+  assert.equal(plain(modposMismatchDigestText(m.report.date, m.diffs)), "Kasa raporu ModPOS API'den farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)");
 });
 
 // ---------------------------------------------------------------- Anahtar çalışmıyor
@@ -164,13 +164,13 @@ const keyErr = (at: string, o: Partial<ModposError> = {}): ModposError => ({
   keyError: true,
   ...o,
 });
-const state = (o: Partial<ModposState>): ModposState => ({ quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, liveFrom: null, lastCronAt: null, ...o });
+const state = (o: Partial<ModposState>): ModposState => ({ quota: null, lastOk: null, lastError: null, runs: [], dayErrors: {}, lastCronAt: null, ...o });
 
 test("anahtar: yoksa uyarı yok (kart 'Kurulmadı' der); biçimi bozuksa canlıda uyarı, önizlemede yok", () => {
   assert.equal(modposKeyAlert({ keyProblem: "missing", preview: false, state: state({ lastError: keyErr("2026-11-03T05:00:00.000Z") }) }), null);
   const format = modposKeyAlert({ keyProblem: "format", preview: false, state: null });
   assert.deepEqual(format, { id: "modpos-anahtar-bicim", title: MODPOS_KEY_TITLE, body: MODPOS_KEY_FORMAT_TEXT, at: null });
-  assert.equal(format?.title, "ModPOS kasa föyü çekilemiyor");
+  assert.equal(format?.title, "ModPOS API'den veri çekilemiyor");
   assert.equal(modposKeyAlert({ keyProblem: "format", preview: true, state: null }), null);
   // Metin UserError kuralında: sonda nokta yok, ne yapılacağı söylenir
   assert.doesNotMatch(MODPOS_KEY_FORMAT_TEXT, /\.$/);
@@ -214,7 +214,7 @@ test("anahtar: bozuk saklanan durum uyarı üretmez, okunamayan an zilin saatine
 
 test("anahtar: sabah e-postasının satırı başlık ve hatanın metni", () => {
   const a = modposKeyAlert({ keyProblem: null, preview: false, state: state({ lastError: keyErr("2026-11-03T05:01:00.000Z") }) })!;
-  assert.equal(modposKeyDigestText(a), "ModPOS kasa föyü çekilemiyor. ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin");
+  assert.equal(modposKeyDigestText(a), "ModPOS API'den veri çekilemiyor. ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin");
 });
 
 // ---------------------------------------------------------------- Kaynak: yalnız yönetici, istek yok
@@ -262,7 +262,7 @@ test("kaynak: anahtarın zil satırı yalnız yönetici dalında, Sistem başlı
   const digest = read("src/server/staff-requests/digest.ts");
   assert.match(digest, /pastCountDigestLines\(now\), modposDigestLines\(now\)\]\)/);
   assert.match(digest, /\.\.\.count\.lines, \.\.\.modpos\.lines\]/);
-  assert.match(digest, /\{ title: "ModPOS kasa föyü", lines, href: modpos\.href \?\? "\/panel\/kasa"/);
+  assert.match(digest, /\{ title: "ModPOS API", lines, href: modpos\.href \?\? "\/panel\/kasa"/);
 });
 
 test("kaynak: personelin yükleyicileri ve operasyonun ortak olguları föy okumaz", () => {

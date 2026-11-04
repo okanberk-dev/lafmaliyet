@@ -38,8 +38,8 @@ test("ModPOS adımı: kurulmamış ve önizleme yazılmaz; alındı, çekilecek 
   // Başka çekim sürüyordu (aynı anda tek çekim, kira): hata değil, istek gitmedi
   assert.deepEqual(modposStep({ status: "busy", error: "Başka bir ModPOS çekimi sürüyor: biraz sonra yeniden deneyin" }), { code: "busy" });
   // Hak dolması ve bir günün alınamaması sorun değil: metin adıma taşınmaz (iş "kısmen" olmaz, mesaj yazılmaz)
-  assert.deepEqual(modposStep({ status: "kota", error: "ModPOS'un bugünkü çekim hakkı doldu" }), { code: "kota" });
-  assert.deepEqual(modposStep({ status: "partial", error: "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek" }), { code: "partial" });
+  assert.deepEqual(modposStep({ status: "kota", error: "ModPOS API'nin bugünkü çekim hakkı doldu" }), { code: "kota" });
+  assert.deepEqual(modposStep({ status: "partial", error: "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek" }), { code: "partial" });
   assert.deepEqual(modposStep({ status: "error", error: KEY_TEXT }), { code: "error", error: KEY_TEXT });
   // Rotanın yedek sonucu (istisna ya da süre doldu) da aynı biçim
   assert.deepEqual(modposStep({ status: "error", error: "süre doldu" }), { code: "error", error: "süre doldu" });
@@ -49,12 +49,12 @@ test("ModPOS adımı: kurulmamış ve önizleme yazılmaz; alındı, çekilecek 
 
 test("ModPOS adımının sözcükleri (Ayarlar › Günlük işler); yalnız hata işi kısmen yapar, mesaj adımın adıyla", () => {
   const words: Record<string, string> = {
-    ok: "ModPOS kasa föyü alındı",
+    ok: "ModPOS API verisi alındı",
     nothing: "ModPOS: çekilecek gün yok",
     kota: "ModPOS: günlük hak doldu",
     partial: "ModPOS: bir kısmı alınamadı",
     busy: "ModPOS: başka çekim sürüyordu",
-    error: "ModPOS kasa föyü hata",
+    error: "ModPOS API hata",
   };
   assert.deepEqual(STEP_LABELS.modpos, words);
   for (const [code, text] of Object.entries(words)) {
@@ -62,12 +62,12 @@ test("ModPOS adımının sözcükleri (Ayarlar › Günlük işler); yalnız hat
     const out = dailyOutcome({ ...base, modpos: { code, error: code === "error" ? "zaman aşımı" : null } });
     assert.deepEqual(out.steps, { ...dailyOutcome(base).steps, modpos: code }, code);
     assert.equal(out.status, code === "error" ? "partial" : "ok", code);
-    assert.equal(out.message, code === "error" ? "ModPOS kasa föyü: zaman aşımı" : null, code);
+    assert.equal(out.message, code === "error" ? "ModPOS API: zaman aşımı" : null, code);
   }
   // Verilmeyen adım hiç yazılmaz (anahtar yok, önizleme): eskisiyle aynı sonuç
   assert.deepEqual(Object.keys(dailyOutcome(base).steps), ["digest", "sync", "reminders", "karaoke", "menu", "sales"]);
   // Metinsiz hata "bilinmeyen hata"; e-posta gidemediyse iş yine "hata"
-  assert.equal(dailyOutcome({ ...base, modpos: { code: "error" } }).message, "ModPOS kasa föyü: bilinmeyen hata");
+  assert.equal(dailyOutcome({ ...base, modpos: { code: "error" } }).message, "ModPOS API: bilinmeyen hata");
   assert.equal(dailyOutcome({ ...base, digest: { code: "error", error: "x" }, modpos: { code: "ok" } }).status, "error");
 });
 
@@ -80,7 +80,7 @@ test("ModPOS adımının yeri: satış tahmininden sonra, fotoğraf temizliğind
   });
   assert.deepEqual(Object.keys(out.steps), ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos"]);
   assert.equal(out.status, "partial");
-  assert.equal(out.message, `Satış tahmini: MET yanıt vermedi · ModPOS kasa föyü: ${KEY_TEXT} · Fotoğraf temizliği: 2 fotoğraf depodan silinemedi`);
+  assert.equal(out.message, `Satış tahmini: MET yanıt vermedi · ModPOS API: ${KEY_TEXT} · Fotoğraf temizliği: 2 fotoğraf depodan silinemedi`);
   assert.deepEqual(stepTexts({ photos: "none", modpos: "kota", forecast: "ok", digest: "sent" }), [
     "E-posta gönderildi",
     "Tahmin kaydedildi",
@@ -199,7 +199,7 @@ describe("Sabah işinin ModPOS çekimi: gerçek syncModpos, sahte yanıtlar (ver
     await db.execute(sql`TRUNCATE modpos_cash_sheets, integration_state`);
   });
 
-  test("iki gün alındı: 'ModPOS kasa föyü alındı', iş tamam; ertesi çalışma hak bitince istek göndermez", async () => {
+  test("iki gün alındı: 'ModPOS API verisi alındı', iş tamam; ertesi çalışma hak bitince istek göndermez", async () => {
     const first = await morning([foyReply(1), foyReply(0)]);
     assert.equal(first.result.status, "ok");
     assert.equal(first.asked.length, 2);
@@ -238,7 +238,7 @@ describe("Sabah işinin ModPOS çekimi: gerçek syncModpos, sahte yanıtlar (ver
     assert.deepEqual(r.step, { code: "error", error: KEY_TEXT });
     const out = dailyOutcome({ ...base, modpos: r.step });
     assert.equal(out.status, "partial");
-    assert.equal(out.message, `ModPOS kasa föyü: ${KEY_TEXT}`);
+    assert.equal(out.message, `ModPOS API: ${KEY_TEXT}`);
   });
 
   test("anahtar yok, biçimi bozuk ya da önizleme: istek yok, adım yazılmaz; çekilecek gün yoksa 'çekilecek gün yok'", async () => {

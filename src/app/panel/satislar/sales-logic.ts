@@ -144,10 +144,10 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
     const modpos = t.modpos?.length ?? 0;
     const onlyFoy = modpos > 0 && !t.reported && !lafpos;
     const all = t.reported + lafpos + modpos;
-    const fallback = `${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}${modpos ? ` + ModPOS föyünden ${modpos} gün` : ""}`;
+    const fallback = `${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}${modpos ? ` + ModPOS API'den ${modpos} gün` : ""}`;
     const days =
       f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : onlyFoy ? `${modpos} gün` : `${t.reported} gün${fallback}`;
-    return `${onlyFoy ? "ModPOS föyünden" : "Kasa raporlarından"} (${days}). Değiştirmek için dokunun.`;
+    return `${onlyFoy ? "ModPOS API'den" : "Kasa raporlarından"} (${days}). Değiştirmek için dokunun.`;
   }
   return typed.trim() ? `Elle girildi · kasada ${fieldShown(f, v)}` : `Boş bırakırsanız kasadaki kullanılır (${fieldShown(f, v)})`;
 }

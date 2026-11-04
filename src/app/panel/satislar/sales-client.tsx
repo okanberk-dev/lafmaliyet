@@ -380,7 +380,7 @@ export function MonthInfoForm({
     {
       tone: "info" as const,
       // Raporlar başlamadan önceki ModPOS föy günleri eksik sayılmaz; kaç günün föyden sayıldığı burada (docs/MODPOS-API.md › Ay rakamına yedek)
-      text: `Kasa raporları: ${num(t.reported)} gün raporlu${t.modpos?.length ? `, ${num(t.modpos.length)} gün ModPOS föyünden` : ""} (son: ${dayMonthTR(t.lastDate)}). Boş bıraktığınız alanlar her raporla kendiliğinden dolar.`,
+      text: `Kasa raporları: ${num(t.reported)} gün raporlu${t.modpos?.length ? `, ${num(t.modpos.length)} gün ModPOS API'den` : ""} (son: ${dayMonthTR(t.lastDate)}). Boş bıraktığınız alanlar her raporla kendiliğinden dolar.`,
       link: false,
     }
   );

@@ -15,7 +15,7 @@ import { salesSourceOf, type SalesSource } from "@/lib/sales-source";
 import type { UpcomingItem } from "@/lib/reminders";
 import { unreachable } from "@/lib/unreachable";
 
-import { countStatus } from "./sayim/logic";
+import { countStatus, defaultCountMonth } from "./sayim/logic";
 
 /**
  * - done: yapıldı
@@ -596,6 +596,17 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
   }
 
   return out;
+}
+
+/**
+ * Genel bakış'ta adreste ay yokken ayın işleri kartının ayı (sahibin kararı, 4 Kasım 2026): ayın ilk 10 gününde biten
+ * ayın işleri bitmediyse (`monthOpen`: taskSummary'nin açık iş sayısı, ödemeler hariç) biten ay, yoksa bu ay. Kural
+ * sayım sayfasınınkiyle aynı (sayim/logic.ts defaultCountMonth): ay sonu işleri biten ay için yapılır; kartın her
+ * bağlantısı bu aya gider. Sayfanın geri kalanı satış listesi olan son ayla açılır (resolveMonth); ay seçilince kart
+ * da o ayı gösterir.
+ */
+export function defaultTaskMonth(now: Date, monthOpen: (month: string) => number): string {
+  return defaultCountMonth(now, (m) => monthOpen(m) === 0);
 }
 
 /**

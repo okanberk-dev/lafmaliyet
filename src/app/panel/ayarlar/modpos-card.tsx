@@ -14,7 +14,7 @@ import { ModposFallbackSwitch, ModposFetchForm } from "./modpos-client";
 import { SectionCard } from "./section-card";
 
 const SETUP_TIP =
-  "Kurulum: 1) Gafdigi'nin verdiği anahtarı Vercel › lafmaliyet › Settings › Environment Variables'a yalnız Production olarak MODPOS_API_KEY adıyla ekleyip yeniden yayınlayın (önizlemeler canlının veritabanını paylaşır, çekmez); 2) anahtara IP kısıtı koydurmayın, Vercel'in sabit çıkış IP'si yok; 3) ilk föy ertesi sabah 08:00'de gelir ya da aşağıdan Bu günü çek ile hemen alınır. Günde 2 çekim hakkı var (Türkiye saatiyle gece yarısı yenilenir): sabah işi önce dünün föyünü, kalan hakla geçmişte eksik bir günü çeker. İsteğe bağlı: MODPOS_SYNC_FROM (geçmişin tamamlanacağı ilk gün, YYYY-MM-DD) ve MODPOS_API_URL. Ayrıntı docs/MODPOS-API.md.";
+  "Kurulum: 1) Gafdigi'nin verdiği anahtarı Vercel › lafmaliyet › Settings › Environment Variables'a yalnız Production olarak MODPOS_API_KEY adıyla ekleyip yeniden yayınlayın (önizlemeler canlının veritabanını paylaşır, çekmez); 2) anahtara IP kısıtı koydurmayın, Vercel'in sabit çıkış IP'si yok; 3) ilk veri ertesi sabah 08:00'de gelir ya da aşağıdan Bu günü çek ile hemen alınır. Günde 2 çekim hakkı var (Türkiye saatiyle gece yarısı yenilenir): sabah işi önce dünün verisini, kalan hakla en yeni eksik günden geriye bir günü çeker. İsteğe bağlı: MODPOS_SYNC_FROM (geçmişin tamamlanacağı ilk gün, YYYY-MM-DD) ve MODPOS_API_URL. Ayrıntı docs/MODPOS-API.md.";
 
 /**
  * Ayarlar › ModPOS (kasa föyü) (docs/MODPOS-API.md › Nerede görünür, Kota ve çekme sırası, Ay rakamına yedek):
@@ -31,9 +31,9 @@ export async function ModposCard() {
   });
   if (!data) {
     return (
-      <SectionCard id="modpos" icon={<ReceiptTurkishLira />} title="ModPOS (kasa föyü)" summary="Durum okunamadı">
+      <SectionCard id="modpos" icon={<ReceiptTurkishLira />} title="ModPOS API" summary="Durum okunamadı">
         <CardContent>
-          <Notice tone="bad" size="sm" title="ModPOS kasa föyünün durumu okunamadı; sayfayı yenileyin" />
+          <Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" />
         </CardContent>
       </SectionCard>
     );
@@ -44,12 +44,12 @@ export async function ModposCard() {
     <SectionCard
       id="modpos"
       icon={<ReceiptTurkishLira />}
-      title="ModPOS (kasa föyü)"
+      title="ModPOS API"
       summary={sum.short}
       summaryTone={sum.tone === "red" ? "bad" : sum.badge === "Uyarı" ? "warn" : undefined}
       description={
         <>
-          ModPOS&apos;un kasa föyü her sabah buraya gelir: ciro, ödeme yöntemleri, açılış ve sayım, giderler ve kasa farkı. Kasa ekranında yöneticinin
+          ModPOS API&apos;den kasa verisi her sabah buraya gelir: ciro, ödeme yöntemleri, açılış ve sayım, giderler ve kasa farkı. Kasa ekranında yöneticinin
           gördüğü raporla yan yana durur; personelin ekranı değişmez. <InfoTip text={SETUP_TIP} />
         </>
       }

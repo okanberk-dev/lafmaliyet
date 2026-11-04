@@ -10,6 +10,9 @@ import type { ModposZ } from "./z";
  *   ödenmez / ikram), açılış ve sayılan nakit. Personel bunları ModPOS'un Z raporundan yazar; föy aynı Z'nin rakamıdır,
  *   1 kuruştan büyük fark yanlış yazım ya da kapanıştan sonraki bir düzeltmedir. Raporda boş bırakılan isteğe bağlı
  *   alan (Z no, fiş sayısı, ödenmez) farklı sayılmaz. Sayılan nakit yalnız ModPOS'ta Z raporuna dayanan sayım varsa.
+ * - **ModPOS'ta girilmemiş** (sahibin kararı, 4 Kasım 2026; bilgi, uyarı değil): ModPOS açılış nakdi girilmeden açılan
+ *   ya da sayım girilmeden Z'si alınan günde bu alanları 0 gönderir. Açılış 0 ve sayılan 0 "girilmedi" sayılır; sayılan
+ *   0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır (modposNotEntered).
  * - **Bilgi** (uyarı değil): gün içinde çıkan ↔ ModPOS'un gideri, gün içinde giren ↔ nakit cari tahsilat, olması
  *   gereken nakit ve kasa farkı. Kasadan çıkanların kaynağı paneldir (teslim de oradadır; ModPOS'ta yalnız gider),
  *   ikisinin farklı olması olağan olabilir.
@@ -60,17 +63,29 @@ const sameMoney = (a: number, b: number) => Math.abs(kurus(a) - kurus(b)) <= 1;
 /** Z no baştaki sıfırlar olmadan karşılaştırılır ("0312" = "312") */
 const zKey = (v: string) => v.trim().replace(/^0+(?=\d)/, "");
 
+/** ModPOS'ta girilmediği için karşılaştırılmayan alanlar: 0 gelen açılış, beklenen nakit 0 değilken 0 gelen sayım */
+export function modposNotEntered(z: ModposZ): Set<"openingCash" | "countedCash"> {
+  const out = new Set<"openingCash" | "countedCash">();
+  if (!z.foysuz && kurus(z.openingCash) === 0) out.add("openingCash");
+  if (z.countedCash !== null && kurus(z.countedCash) === 0 && !(z.expectedCash !== null && kurus(z.expectedCash) === 0)) out.add("countedCash");
+  return out;
+}
+
+/** "ModPOS'ta girilmedi" (karşılaştırma tablosunun fark hücresi) */
+export const MODPOS_NOT_ENTERED = "ModPOS'ta girilmedi";
+
 /** Raporda farklı yazılan alanlar (yoksa boş) */
 export function modposDiffs(saved: ModposSavedFields, z: ModposZ): ModposDiff[] {
   const out: ModposDiff[] = [];
+  const skip = modposNotEntered(z);
   const push = (field: ModposDiffField, s: number | string, m: number | string) => out.push({ field, label: LABELS[field], saved: s, modpos: m });
   if (saved.zNo && z.zNo && zKey(saved.zNo) !== zKey(z.zNo)) push("zNo", saved.zNo, z.zNo);
   // Kasasız (föysüz) günde Z no ve fiş sayısı ModPOS'ta yok; tutarlar yine karşılaştırılır
   if (saved.receipts !== null && saved.receipts !== undefined && !z.foysuz && saved.receipts !== z.receipts) push("receipts", saved.receipts, z.receipts);
   for (const f of ["zTotal", "cash", "card", "mealCard", "online", "other"] as const) if (!sameMoney(saved[f], z[f])) push(f, saved[f], z[f]);
   if (saved.offRevenue !== null && saved.offRevenue !== undefined && !sameMoney(saved.offRevenue, z.offRevenue)) push("offRevenue", saved.offRevenue, z.offRevenue);
-  if (!z.foysuz && !sameMoney(saved.openingCash, z.openingCash)) push("openingCash", saved.openingCash, z.openingCash);
-  if (z.countedCash !== null && !sameMoney(saved.countedCash, z.countedCash)) push("countedCash", saved.countedCash, z.countedCash);
+  if (!z.foysuz && !skip.has("openingCash") && !sameMoney(saved.openingCash, z.openingCash)) push("openingCash", saved.openingCash, z.openingCash);
+  if (z.countedCash !== null && !skip.has("countedCash") && !sameMoney(saved.countedCash, z.countedCash)) push("countedCash", saved.countedCash, z.countedCash);
   return out;
 }
 
@@ -78,12 +93,12 @@ const shown = (d: ModposDiff, v: number | string) => (d.field === "zNo" || d.fie
 
 /** "Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)" */
 export function modposDiffText(d: ModposDiff): string {
-  return `${d.label} ${shown(d, d.saved)} (ModPOS föyünde ${shown(d, d.modpos)})`;
+  return `${d.label} ${shown(d, d.saved)} (ModPOS API'de ${shown(d, d.modpos)})`;
 }
 
 /** "ModPOS föyünden farklı: Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); …" */
 export function modposDiffsLine(diffs: readonly ModposDiff[]): string | null {
-  return diffs.length ? `ModPOS föyünden farklı: ${diffs.map(modposDiffText).join("; ")}` : null;
+  return diffs.length ? `ModPOS API'den farklı: ${diffs.map(modposDiffText).join("; ")}` : null;
 }
 
 export type CompareTone = "same" | "diff" | "info" | "none";
@@ -100,6 +115,8 @@ export interface ModposCompareRow {
   tone: CompareTone;
   /** Tutar mı (para biçimi) yoksa sayı / metin mi */
   money: boolean;
+  /** Fark yerine yazılan not (ModPOS'ta girilmemiş alan: MODPOS_NOT_ENTERED) */
+  note?: string;
 }
 
 /**
@@ -108,11 +125,15 @@ export interface ModposCompareRow {
  */
 export function modposCompare(saved: (ModposSavedFields & { expectedCash?: number | null; cashDiff?: number | null }) | null, z: ModposZ): ModposCompareRow[] {
   const diffs = saved ? new Set(modposDiffs(saved, z).map((d) => d.field)) : new Set<string>();
+  const notEntered: ReadonlySet<string> = modposNotEntered(z);
   const rows: ModposCompareRow[] = [];
   const row = (key: string, label: string, report: number | string | null, modpos: number | string | null, isMoney: boolean, kind: "check" | "info") => {
     const diff = isMoney && typeof report === "number" && typeof modpos === "number" ? Math.round((modpos - report) * 100) / 100 : null;
-    const tone: CompareTone = !saved || report === null || modpos === null ? "none" : kind === "check" ? (diffs.has(key) ? "diff" : "same") : diff !== null && Math.abs(diff) >= 0.01 ? "info" : "same";
-    rows.push({ key, label, report, modpos, diff: diff === 0 ? 0 : diff, tone, money: isMoney });
+    // ModPOS'ta girilmemiş alan: rapor da 0 değilse fark değil not (bilgi)
+    const missing = notEntered.has(key) && diff !== null && Math.abs(diff) >= 0.01;
+    const tone: CompareTone =
+      !saved || report === null || modpos === null ? "none" : missing ? "info" : kind === "check" ? (diffs.has(key) ? "diff" : "same") : diff !== null && Math.abs(diff) >= 0.01 ? "info" : "same";
+    rows.push({ key, label, report, modpos, diff: diff === 0 ? 0 : diff, tone, money: isMoney, ...(missing && saved ? { note: MODPOS_NOT_ENTERED } : {}) });
   };
   row("zNo", "Z no", saved?.zNo ?? null, z.zNo, false, "check");
   row("receipts", "Fiş (adisyon) sayısı", saved?.receipts ?? null, z.foysuz ? null : z.receipts, false, "check");
@@ -125,7 +146,7 @@ export function modposCompare(saved: (ModposSavedFields & { expectedCash?: numbe
   row("offRevenue", "Ödenmez / ikram (ciro dışı)", saved?.offRevenue ?? null, z.offRevenue, true, "check");
   if (!z.foysuz) {
     row("openingCash", "Açılış", saved?.openingCash ?? null, z.openingCash, true, "check");
-    row("cashOut", "Gün içinde çıkan ↔ ModPOS gideri", saved?.cashOut ?? null, z.cashOut, true, "info");
+    row("cashOut", "Gün içinde çıkan ↔ ModPOS API gideri", saved?.cashOut ?? null, z.cashOut, true, "info");
     row("cashIn", "Gün içinde giren ↔ nakit cari tahsilat", saved ? (saved.cashIn ?? 0) : null, z.cashIn, true, "info");
     row("expectedCash", "Olması gereken nakit", saved?.expectedCash ?? null, z.expectedCash, true, "info");
     row("countedCash", "Sayılan nakit", saved?.countedCash ?? null, z.countedCash, true, "check");

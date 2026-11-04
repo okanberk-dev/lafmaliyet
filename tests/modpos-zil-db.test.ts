@@ -1,7 +1,7 @@
 // ModPOS kasa föyünün zil, Bugün ve sabah e-postası satırları gerçek Postgres'te (docs/MODPOS-API.md › Nerede görünür):
-// dünün kasa raporu saklanan föyden farklıysa yöneticinin zilinde Kasa başlığında "Kasa raporu ModPOS föyünden farklı",
-// Bugün'ün dünkü kasa satırında "ModPOS föyünden farklı" işareti ve sabah e-postasının kutusunda satır; anahtar
-// çalışmıyorsa Sistem başlığında "ModPOS kasa föyü çekilemiyor". Personelin zili ve Bugün'ü hiçbirini almaz. LafPOS
+// dünün kasa raporu saklanan föyden farklıysa yöneticinin zilinde Kasa başlığında "Kasa raporu ModPOS API'den farklı",
+// Bugün'ün dünkü kasa satırında "ModPOS API'den farklı" işareti ve sabah e-postasının kutusunda satır; anahtar
+// çalışmıyorsa Sistem başlığında "ModPOS API'den veri çekilemiyor". Personelin zili ve Bugün'ü hiçbirini almaz. LafPOS
 // gününde, aynı yazılan raporda, sonradan başarılı çekimde ve anahtar yokken satır yok. Hiçbir istek gitmez (fetch
 // çağrılırsa test düşer).
 //
@@ -32,7 +32,7 @@ const plain = (v: string) => v.replace(/ /g, " ");
 
 type Who = { id: number; name: string; email: string; role: "admin" | "staff" };
 
-describe("ModPOS kasa föyü: zil, Bugün ve sabah e-postası veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
+describe("ModPOS API: zil, Bugün ve sabah e-postası veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
   let bell: typeof import("../src/server/actions/notifications");
@@ -158,11 +158,11 @@ describe("ModPOS kasa föyü: zil, Bugün ve sabah e-postası veritabanında", {
     const items = await bell.loadPanelNotifications();
     const diff = items.find((i) => i.id === `kasa-modpos-${Y}-r1-s1`);
     assert.ok(diff, JSON.stringify(items.map((i) => i.id)));
-    assert.deepEqual([diff.kind, diff.title, diff.group, diff.href, diff.timeLabel, diff.unread], ["warning", "Kasa raporu ModPOS föyünden farklı", "kasa", `/panel/kasa?gun=${Y}`, "Dün", true]);
-    assert.equal(plain(diff.body), `${longDateTR(Y)} · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)`);
+    assert.deepEqual([diff.kind, diff.title, diff.group, diff.href, diff.timeLabel, diff.unread], ["warning", "Kasa raporu ModPOS API'den farklı", "kasa", `/panel/kasa?gun=${Y}`, "Dün", true]);
+    assert.equal(plain(diff.body), `${longDateTR(Y)} · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)`);
     const key = items.find((i) => i.id === "modpos-anahtar-ANAHTAR_GECERSIZ-0");
     assert.ok(key, JSON.stringify(items.map((i) => i.id)));
-    assert.deepEqual([key.kind, key.title, key.group, key.href, key.timeLabel], ["danger", "ModPOS kasa föyü çekilemiyor", "sistem", "/panel/ayarlar#modpos", "Bugün"]);
+    assert.deepEqual([key.kind, key.title, key.group, key.href, key.timeLabel], ["danger", "ModPOS API'den veri çekilemiyor", "sistem", "/panel/ayarlar#modpos", "Bugün"]);
     assert.equal(key.body, "ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin");
   });
 
@@ -174,7 +174,7 @@ describe("ModPOS kasa föyü: zil, Bugün ve sabah e-postası veritabanında", {
     me = users.ali;
   });
 
-  test("Bugün: yöneticinin dünkü kasa satırı 'ModPOS föyünden farklı' ile sorun var; personelin olgusunda işaret yok", async () => {
+  test("Bugün: yöneticinin dünkü kasa satırı 'ModPOS API'den farklı' ile sorun var; personelin olgusunda işaret yok", async () => {
     const logged: unknown[] = [];
     console.error = (...a: unknown[]) => void logged.push(a);
     try {
@@ -183,10 +183,10 @@ describe("ModPOS kasa föyü: zil, Bugün ve sabah e-postası veritabanında", {
       const row = dayTasks(adminDay.facts).find((t) => t.key === "kasa-dun");
       assert.ok(row);
       assert.equal(row.status, "warn");
-      assert.equal(row.badge, "ModPOS föyünden farklı");
+      assert.equal(row.badge, "ModPOS API'den farklı");
       const staffDay = await today.loadToday(users.ayse);
       assert.equal(staffDay.facts.cash?.yesterday?.flags, undefined);
-      assert.doesNotMatch(JSON.stringify(staffDay.facts), /ModPOS föyünden farklı/);
+      assert.doesNotMatch(JSON.stringify(staffDay.facts), /ModPOS API'den farklı/);
     } finally {
       console.error = realError;
     }
@@ -198,11 +198,11 @@ describe("ModPOS kasa föyü: zil, Bugün ve sabah e-postası veritabanında", {
     assert.deepEqual(
       box.box.lines.map((l) => [plain(l.text), l.tone]),
       [
-        ["ModPOS kasa föyü çekilemiyor. ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin", "bad"],
-        [`Kasa raporu ModPOS föyünden farklı. ${plain(dayMonthTR(Y))} · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)`, "warn"],
+        ["ModPOS API'den veri çekilemiyor. ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin", "bad"],
+        [`Kasa raporu ModPOS API'den farklı. ${plain(dayMonthTR(Y))} · Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)`, "warn"],
       ],
     );
-    assert.deepEqual([box.box.title, box.box.href, box.box.link, box.box.subjectPart, box.box.headline], ["ModPOS kasa föyü", `/panel/kasa?gun=${Y}`, "Kasa raporunu aç", null, null]);
+    assert.deepEqual([box.box.title, box.box.href, box.box.link, box.box.subjectPart, box.box.headline], ["ModPOS API", `/panel/kasa?gun=${Y}`, "Kasa raporunu aç", null, null]);
     assert.deepEqual(box.logKeys, []);
   });
 

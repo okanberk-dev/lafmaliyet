@@ -86,7 +86,7 @@ export interface CashLite {
  * ModPOS gününde raporun saklanan ModPOS kasa föyünden farklı olması (zil ile aynı kural, src/lib/modpos/zil.ts;
  * docs/MODPOS-API.md › Nerede görünür)
  */
-export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi gün düzeltildi", modpos: "ModPOS föyünden farklı" } as const;
+export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi gün düzeltildi", modpos: "ModPOS API'den farklı" } as const;
 
 /** Günün olguları. Yöneticiye ait alanlar personelin olgusunda hiç doldurulmaz; mantık da rolü ayrıca denetler */
 export interface DayFacts {

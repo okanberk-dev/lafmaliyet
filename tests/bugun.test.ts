@@ -264,7 +264,7 @@ test("kasa bütünlüğü (cashFlags): açılış önceki raporun devriyle (dün
   assert.deepEqual(flags([...reports].reverse(), off, revisions), expected);
 });
 
-test("kasa bütünlüğü (cashFlags): ModPOS föyünden farklı günler önceden hesaplanır, işaret en sonda; verilmezse yok", () => {
+test("kasa bütünlüğü (cashFlags): ModPOS API'den farklı günler önceden hesaplanır, işaret en sonda; verilmezse yok", () => {
   const Y = "2026-10-21";
   const T = "2026-10-22";
   const before = { date: "2026-10-20", amount: 500 };
@@ -277,22 +277,22 @@ test("kasa bütünlüğü (cashFlags): ModPOS föyünden farklı günler öncede
   // Eski çağrı (föy okunamadı, küme boş ya da hiç verilmedi): işaret yok
   assert.deepEqual(flags([fullReport(1, Y)]), { [Y]: [] });
   assert.deepEqual(flags([fullReport(1, Y)], new Set()), { [Y]: [] });
-  assert.equal(CASH_FLAGS.modpos, "ModPOS föyünden farklı");
+  assert.equal(CASH_FLAGS.modpos, "ModPOS API'den farklı");
 });
 
-test("kasa bütünlüğü (yönetici): ModPOS föyünden farklı dünkü rapor 'sorun var'; kasa tutuyorsa rozet işareti söyler, Rapora bak", () => {
+test("kasa bütünlüğü (yönetici): ModPOS API'den farklı dünkü rapor 'sorun var'; kasa tutuyorsa rozet işareti söyler, Rapora bak", () => {
   const facts = (o: Partial<CashLite>) => admin(EVENING, { cash: { today: null, yesterday: report("2026-10-21", o), firstDate: "2026-10-01" } });
   const row = byKey(dayTasks(facts({ flags: [CASH_FLAGS.modpos] })))["kasa-dun"];
   assert.equal(row.status, "warn");
-  assert.equal(row.badge, "ModPOS föyünden farklı");
-  assert.match(row.detail, / · Kasa tutuyor · ModPOS föyünden farklı$/);
+  assert.equal(row.badge, "ModPOS API'den farklı");
+  assert.match(row.detail, / · Kasa tutuyor · ModPOS API'den farklı$/);
   assert.equal(row.href, "/panel/kasa?gun=2026-10-21");
   assert.equal(row.action, "Rapora bak");
   // Kasa eksikse rozet farkı söyler, işaret açıklamada
   const short = byKey(dayTasks(facts({ cashDiff: -120, flags: [CASH_FLAGS.modpos] })))["kasa-dun"];
   assert.equal(short.status, "warn");
   assert.match(short.badge!, /^120\s₺ eksik$/);
-  assert.match(short.detail, / · ModPOS föyünden farklı$/);
+  assert.match(short.detail, / · ModPOS API'den farklı$/);
   // Personelin olgusunda işaret hiç olmaz; olsa da personelin dünkü satırı yalnız rapor yokken çıkar
   assert.equal(byKey(dayTasks(staff(EVENING, { cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.modpos] }), firstDate: "2026-10-01" } })))["kasa-dun"], undefined);
 });
@@ -1079,7 +1079,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /systemIssues\(o, now, okAt\)/);
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
   assert.match(admin, /previousCarryOver\(oldest\)/);
-  // ModPOS föyünden farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
+  // ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
   assert.match(admin, /cashFlags\(reports, before, revisions, viewer, modpos\)/);
   assert.match(admin, /\.then\(\(\[sheets, switchDay\]\) => modposMismatchDates\(reports, sheets, switchDay\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/);
 });

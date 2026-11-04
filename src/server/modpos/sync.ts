@@ -1,14 +1,14 @@
 import "server-only";
 
 import { planFoyDays } from "@/lib/modpos/plan";
-import { modposKeyProblem, modposSyncFrom, modposSyncFromSet, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
-import { addDays, todayTR } from "@/lib/reminders";
+import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft, requestableDay, type ModposQuota } from "@/lib/modpos/request";
+import { todayTR } from "@/lib/reminders";
 import { runDaysText, type ModposDayResult, type ModposError, type ModposRun, type ModposTrigger } from "@/lib/modpos/status";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { fetchKasaFoyu } from "./client";
-import { loadModposHistoryStart, loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
+import { loadModposIndex, noteModposRun, readModposState, releaseModposLease, storeFoy, takeModposLease, type SheetChange } from "./store";
 
 /**
  * ModPOS kasa föylerinin çekilmesi (docs/MODPOS-API.md › Çekme): sabah işi (`cron`, /api/cron/gunluk) ve Ayarlar ›
@@ -89,30 +89,20 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   const wall0 = Date.now();
   const clock = () => (o.now ? new Date(o.now.getTime() + (Date.now() - wall0)) : new Date());
   const from = modposSyncFrom(env);
-  // Geçmiş ModPOS'un ilk ciro gününden ileriye çekilir (elle verilen günlerde gerekmez)
-  const [state, have, switchDay, start] = await Promise.all([
-    readModposState(db),
-    loadModposIndex(db),
-    loadLafposSwitchDay(db),
-    o.days ? Promise.resolve(null) : loadModposHistoryStart(from, modposSyncFromSet(env), db),
-  ]);
-  // Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü, bir kez yazılır (kaçan yakın günler ondan
-  // itibaren; src/lib/modpos/plan.ts catchUpDays). Elle çekim yazmaz
-  let liveFrom = state.liveFrom;
+  const [state, have, switchDay] = await Promise.all([readModposState(db), loadModposIndex(db), loadLafposSwitchDay(db)]);
   if (trigger === "cron") {
-    liveFrom ??= addDays(todayTR(started), -1);
     // Sabah işinin çalıştığı an (istek gitmese de): kartın "sıradaki"si bugünün işi çalıştı mı diye bakar
-    await noteModposRun(db, { liveFrom, lastCronAt: started.toISOString() }, null);
+    await noteModposRun(db, { lastCronAt: started.toISOString() }, null);
   }
   let quota: ModposQuota | null = state.quota;
   const left0 = quotaLeft(quota, started);
   // Elle verilen günler tekilleşir: aynı gün iki kez istenip iki hak harcanmasın
   const plan = (now: Date, left: number, failed: typeof state.dayErrors) =>
-    planFoyDays({ now, from, start: start?.day ?? null, have, left, until: switchDay, failed, liveFrom });
+    planFoyDays({ now, from, have, left, until: switchDay, failed });
   const wanted = o.days ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0)) : plan(started, left0, state.dayErrors);
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
-    if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };
+    if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS API'nin bugünkü çekim hakkı doldu" };
     return { status: "nothing", days: [], left: left0 };
   }
   const days: ModposSyncDay[] = [];
@@ -132,7 +122,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
       // Hiçbir istek başlamadan süre bittiyse "çekilecek gün yok" değil: süre doldu (ertesi sabah yeniden denenir)
       if (!days.length) {
         stop = "error";
-        stopText = "ModPOS föyü çekilemedi: süre doldu, sonra yeniden denenecek";
+        stopText = "ModPOS API verisi çekilemedi: süre doldu, sonra yeniden denenecek";
         lastError = { at: clock().toISOString(), day: null, kod: "SURE_DOLDU", text: stopText, keyError: false };
       }
       break;

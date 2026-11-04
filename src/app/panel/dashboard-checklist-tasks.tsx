@@ -28,8 +28,8 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
   const { fold, others } = checklistFold(rows);
 
   return (
-    <div className="px-5 pb-5 max-sm:px-4 max-sm:pb-4">
-      <ul id={listId} className="grid gap-2.5 max-sm:gap-2 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="px-4 pb-4">
+      <ul id={listId} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map(({ task: t, next, compact, view }) => {
           const st = TASK_STYLE[t.status];
           // Yalnızca telefonda tek satır (sm ve üstünde sınıfların etkisi yok); kapalıyken telefonda hiç görünmez
@@ -39,14 +39,14 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
               <Link
                 href={t.href}
                 className={cn(
-                  "group flex h-full items-start gap-3 rounded-2xl bg-surface p-3.5 ring-1 ring-line transition-shadow outline-none hover:shadow-lift hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/30",
+                  "group flex h-full items-start gap-2.5 rounded-xl bg-surface px-3 py-2.5 ring-1 ring-line transition-shadow outline-none hover:shadow-lift hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/30",
                   // Tek satır: ikon ve aralıklar biraz daralır, "Açık gün ve POS cirosu" rozetiyle 375px'te tek satıra sığar
-                  short && "max-sm:min-h-12 max-sm:items-center max-sm:gap-2.5 max-sm:py-2.5",
+                  short && "max-sm:min-h-12 max-sm:items-center max-sm:gap-2.5",
                   next && "ring-2 ring-ink hover:ring-ink",
                 )}
               >
                 <span
-                  className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg [&>svg]:size-[17px] [&>svg]:stroke-[2]", short && "max-sm:size-7 max-sm:[&>svg]:size-4", st.well)}
+                  className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg [&>svg]:size-4 [&>svg]:stroke-[2]", st.well)}
                   aria-hidden="true"
                 >
                   {st.icon}
@@ -57,12 +57,14 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
                     <Badge tone={st.tone}>{t.status === "later" ? laterLabel : st.label}</Badge>
                   </span>
                   {/* Telefonda sıradaki işin açıklaması en çok iki satır (§13: kart ≤ 300 px); tamamı ekranında */}
-                  <span className={cn("mt-1 block text-[13px] leading-5 text-pretty text-ink-mute", short && "max-sm:sr-only", next && "max-sm:line-clamp-2")}>{t.detail}</span>
-                  <span className={cn("mt-auto pt-2.5", short && "max-sm:hidden")}>
+                  <span className={cn("mt-0.5 line-clamp-2 block text-[13px] leading-5 text-pretty text-ink-mute", short && "max-sm:sr-only")} title={t.detail}>
+                    {t.detail}
+                  </span>
+                  <span className={cn("mt-auto pt-1.5", short && "max-sm:hidden")}>
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 text-[13px] font-medium",
-                        next ? "rounded-full bg-ink px-3 py-1.5 text-white max-sm:py-2" : "text-ink group-hover:underline",
+                        next ? "rounded-full bg-ink px-2.5 py-1 text-white max-sm:py-2" : "text-ink group-hover:underline",
                       )}
                     >
                       {next ? <span className="font-normal text-white/70">Sıradaki:</span> : null}

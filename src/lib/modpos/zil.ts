@@ -36,9 +36,9 @@ export interface ModposMismatch<R> {
 }
 
 /** Zilin ve e-postanın başlığı */
-export const MODPOS_MISMATCH_TITLE = "Kasa raporu ModPOS föyünden farklı";
+export const MODPOS_MISMATCH_TITLE = "Kasa raporu ModPOS API'den farklı";
 /** Anahtar çalışmıyorken zilin ve e-postanın başlığı */
-export const MODPOS_KEY_TITLE = "ModPOS kasa föyü çekilemiyor";
+export const MODPOS_KEY_TITLE = "ModPOS API'den veri çekilemiyor";
 /** Zilin gövdesinin en çok uzunluğu (LafPOS satırıyla aynı) */
 export const MODPOS_BELL_BODY_MAX = 220;
 
