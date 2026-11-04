@@ -46,7 +46,7 @@ export function modposSyncFrom(env: Env): string {
   return modposSyncFromSet(env) ? env.MODPOS_SYNC_FROM!.trim() : MODPOS_DEFAULT_FROM;
 }
 
-/** MODPOS_SYNC_FROM geçerli bir günle kurulu mu: kuruluysa geçmiş tam o günden ileriye çekilir (ilk ciro günü odur) */
+/** MODPOS_SYNC_FROM geçerli bir günle kurulu mu: kuruluysa geçmiş dünden o güne kadar geriye çekilir */
 export function modposSyncFromSet(env: Env): boolean {
   const v = env.MODPOS_SYNC_FROM?.trim();
   return Boolean(v && isFoyDay(v));

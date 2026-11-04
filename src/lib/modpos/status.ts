@@ -3,7 +3,6 @@ import { z } from "zod";
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
 import { dayAblativeTR, dayMonthTR, todayTR } from "@/lib/reminders";
 
-import type { HistoryStart, HistoryStartSource } from "./plan";
 import { MODPOS_DAILY_QUOTA, quotaLeft, quotaRenewsAt, renewText, type ModposQuota } from "./request";
 
 /**
@@ -55,11 +54,6 @@ export interface ModposState {
   runs: ModposRun[];
   /** Alınamayan günler (gün → kayıt); gün alınınca silinir */
   dayErrors: Record<string, ModposDayError>;
-  /**
-   * Canlı çekimin başladığı gün: sabah işinin ilk çalıştığı sabahın dünü (bir kez yazılır, hiç ileri alınmaz). Bundan
-   * sonraki günler "dün" olarak çekilir, kaçanı geçmişin önüne geçer (src/lib/modpos/plan.ts catchUpDays); öncesi geçmiştir
-   */
-  liveFrom: string | null;
   /** Sabah işinin son çalıştığı an (istek gitmese de; kartın "sıradaki"si bugünün işi çalıştı mı diye bakar) */
   lastCronAt: string | null;
 }
@@ -99,7 +93,6 @@ export function parseModposState(v: unknown): ModposState {
           }),
         )
       : {},
-    liveFrom: typeof o.liveFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.liveFrom) ? o.liveFrom : null,
     lastCronAt: typeof o.lastCronAt === "string" && !Number.isNaN(Date.parse(o.lastCronAt)) ? o.lastCronAt : null,
   };
 }
@@ -141,13 +134,6 @@ export function runDaysText(days: ModposRun["days"], now: Date): string {
 
 export type ModposTone = "gray" | "green" | "blue" | "amber" | "red";
 
-/** İlk ciro gününün nereden bilindiği (kartın geçmiş satırında, günün yanında) */
-const START_SOURCE: Record<Exclude<HistoryStartSource, "baslangic">, string> = {
-  ayar: ", MODPOS_SYNC_FROM",
-  foy: ", föyden",
-  ay: ", Satışlar'daki açık gün sayısına göre",
-};
-
 export interface ModposCardInput {
   now: Date;
   keyProblem: "missing" | "format" | null;
@@ -159,10 +145,8 @@ export interface ModposCardInput {
   stored: { count: number; first: string | null; last: string | null };
   /** Geçmişte eksik günler (from → dün) */
   missing: number;
-  /** Geçmişin sıradaki günü (missingFoyDays'in ilki); eksik yoksa ya da bilinmiyorsa yok */
+  /** Geçmişin sıradaki günü (bir sonraki sabah işinin dünden sonraki ilk günü); eksik yoksa ya da bilinmiyorsa yok */
   next?: string | null;
-  /** ModPOS'un ilk ciro günü (historyStart): geçmiş buradan bugüne doğru çekilir */
-  start?: HistoryStart | null;
 }
 
 export interface ModposCardSummary {
@@ -221,10 +205,9 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   }
   if (c.missing > 0) {
     const days = Math.ceil(c.missing / Math.max(1, hak - 1));
-    const start = c.start && c.start.source !== "baslangic" ? `ModPOS'un ilk ciro gününden (${modposDayText(c.start.day, c.now)}${START_SOURCE[c.start.source]})` : "geçmişin ilk gününden";
     const next = c.next ? `; sıradaki ${modposDayText(c.next, c.now)}` : "";
     lines.push(
-      `${sinceText(c.from, c.now)} bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla ${start} bugüne doğru bir gün çekilir${next} (yaklaşık ${days} gün sürer).`,
+      `${sinceText(c.from, c.now)} bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir${next} (yaklaşık ${days} gün sürer).`,
     );
   }
   lines.push(`Bugün kalan çekim hakkı: ${left} / ${hak}${left < hak ? ` (hak ${renew} yenilenir)` : ""}.`);
