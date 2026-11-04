@@ -12,8 +12,13 @@ import { getDb, schema as s } from "@/server/db";
 
 import { attempt, UserError, zDate, zOptText, zText } from "./util";
 
-// Kişisel hatırlatıcılar: her eylem yalnız oturumdaki kişinin kendi kayıtlarına dokunur (sorgu userId ile süzülür);
-// başkasının kimliği verilse de "bulunamadı" döner. İşlem geçmişine yazılmaz (kişisel not, işletme kaydı değil).
+// Kişisel hatırlatıcılar: her eylem yalnız oturumdaki kişinin KENDİ kayıtlarına dokunur (sorgu userId ile
+// süzülür); başkasının kimliği verilse de "bulunamadı" döner. İşlem geçmişine yazılmaz (kişisel not, işletme
+// kaydı değil).
+//
+// Tek istisna EKLEME (4 Kasım 2026, sahibin isteği): yönetici hatırlatıcıyı başka bir kullanıcıya atayabilir
+// (İbrahim, Damla ...). Atanan kayıt o kişinindir — yalnız o görür, erteler, tamamlar ve siler; atayan onu
+// sonradan göremez ve değiştiremez. Kim kurduğu `createdByName`'de durur, ekranda "… kurdu" diye görünür.
 
 const zId = z.number().int().positive();
 /** Kişi başına açık hatırlatıcı sınırı (yanlışlıkla döngüyle eklenen yüzlercesi listeyi ve sabah bildirimini boğmasın) */
@@ -31,6 +36,9 @@ const reminderSchema = z.object({
   dueDate: zDate,
   dueTime: zTime,
   repeat: z.enum(["none", "daily", "weekly", "monthly"]),
+  sound: z.enum(["tek", "surekli", "yok"]).default("tek"),
+  /** Yalnız EKLEMEDE ve yalnız yöneticide: hatırlatıcıyı bu kullanıcıya kur (boşsa kendine) */
+  forUserId: zId.nullish().transform((v) => v ?? null),
 });
 
 const mine = (id: number, userId: number) => and(eq(s.userReminders.id, id), eq(s.userReminders.userId, userId));
@@ -38,25 +46,59 @@ const mine = (id: number, userId: number) => and(eq(s.userReminders.id, id), eq(
 export async function saveUserReminder(input: z.input<typeof reminderSchema>) {
   return attempt(async () => {
     const me = await requireUser();
-    const { id, ...data } = reminderSchema.parse(input);
+    const { id, forUserId, ...data } = reminderSchema.parse(input);
     const db = getDb();
     if (id) {
       const [prev] = await db.select().from(s.userReminders).where(mine(id, me.id)).limit(1);
       if (!prev) throw new UserError("Hatırlatıcı bulunamadı");
       // Tarih elle değişirse tekrarın günü de yeni tarihe bağlanır; tamamlanmış tek seferlik yeniden açılır
       const anchorDate = prev.dueDate !== data.dueDate || prev.repeat !== data.repeat ? data.dueDate : prev.anchorDate;
+      // Sahibi değişmez: atama yalnız eklemede olur, sonradan devredilmez
       await db
         .update(s.userReminders)
         .set({ ...data, anchorDate, active: true, updatedAt: new Date() })
         .where(mine(id, me.id));
     } else {
-      const [{ n }] = await db.select({ n: count() }).from(s.userReminders).where(and(eq(s.userReminders.userId, me.id), eq(s.userReminders.active, true)));
-      if (n >= MAX_ACTIVE) throw new UserError(`En fazla ${MAX_ACTIVE} açık hatırlatıcı olabilir; tamamlananları ya da gereksizleri silin`);
-      await db.insert(s.userReminders).values({ ...data, userId: me.id, anchorDate: data.dueDate });
+      const hedef = await assignTarget(me, forUserId);
+      const [{ n }] = await db
+        .select({ n: count() })
+        .from(s.userReminders)
+        .where(and(eq(s.userReminders.userId, hedef), eq(s.userReminders.active, true)));
+      if (n >= MAX_ACTIVE) {
+        throw new UserError(
+          hedef === me.id
+            ? `En fazla ${MAX_ACTIVE} açık hatırlatıcı olabilir; tamamlananları ya da gereksizleri silin`
+            : `Bu kişinin ${MAX_ACTIVE} açık hatırlatıcısı var; önce birkaçını kapatması gerekir`,
+        );
+      }
+      await db.insert(s.userReminders).values({
+        ...data,
+        userId: hedef,
+        anchorDate: data.dueDate,
+        // Kendine kurduğunda "kim kurdu" yazılmaz: liste sade kalsın
+        createdBy: hedef === me.id ? null : me.id,
+        createdByName: hedef === me.id ? null : me.name,
+      });
     }
     refresh();
     return null;
   });
+}
+
+/**
+ * Hatırlatıcı kime kurulacak. Boşsa kendine. Başkası verildiyse YALNIZ yönetici kurabilir ve hedef etkin bir
+ * kullanıcı olmalı; personel başkasına kuramaz (kendi kimliğini vermesi serbesttir).
+ */
+async function assignTarget(me: { id: number; role: string }, forUserId: number | null): Promise<number> {
+  if (forUserId === null || forUserId === me.id) return me.id;
+  if (me.role !== "admin") throw new UserError("Hatırlatıcıyı yalnız kendinize kurabilirsiniz");
+  const [hedef] = await getDb()
+    .select({ id: s.users.id })
+    .from(s.users)
+    .where(and(eq(s.users.id, forUserId), eq(s.users.active, true)))
+    .limit(1);
+  if (!hedef) throw new UserError("Kişi bulunamadı");
+  return hedef.id;
 }
 
 export async function deleteUserReminder(id: number) {

@@ -2,7 +2,7 @@ import type { Role } from "./constants";
 import type { KaraokeSessionDTO } from "./karaoke/session";
 import type { KaraokeDeleteAsk } from "./karaoke/timer-requests";
 import type { SiteOrder } from "./site-orders/schema";
-import type { UserRepeat } from "./user-reminders";
+import type { UserRepeat, UserSound } from "./user-reminders";
 
 /**
  * Canlı ucun (/api/canli) yanıtı: açık panel sekmesinin uyarı motoru (src/components/panel/live) bununla karaoke
@@ -39,6 +39,9 @@ export interface LiveResponse {
     dueTime: string | null;
     anchorDate: string;
     repeat: UserRepeat;
+    /** Uyarının sesi: "tek" bir zil, "surekli" durdurulana kadar, "yok" sessiz */
+    sound: UserSound;
+    createdByName: string | null;
     active: boolean;
     doneAt: string | null;
   }[];

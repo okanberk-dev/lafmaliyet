@@ -151,7 +151,7 @@ test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken 
     ["src/app/panel/kontrol/duzenle/templates-client.tsx", /createChecklistTemplate\(draftOf\(draft\)\), \{ maybeSaved: true \}\)/],
     // PR #62 incelemesi ve aynı sınıftan olanlar: yeni kontrol maddesi, hatırlatıcı, cari ödeme ve borç, zayi, Ödendi / Ertele
     ["src/app/panel/kontrol/duzenle/[id]/template-editor.tsx", /item\?\.id \?\? null,\s+\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !item \},/],
-    ["src/app/panel/hatirlaticilarim/my-reminders.tsx", /saveUserReminder\(\{ id: initial\?\.id \?\? null,[^\n]*\), \{\s+maybeSaved: !initial,\s+\}\)/],
+    ["src/app/panel/hatirlaticilarim/my-reminders.tsx", /saveUserReminder\(\{[\s\S]*?\}\),\s+\{ maybeSaved: !initial \},\s+\);/],
     ["src/app/panel/hatirlaticilarim/my-reminders.tsx", /await after\(\);\s+\/\/[^\n]*\n\s+\}, \{ maybeSaved: true \}\);/],
     ["src/app/panel/tedarikciler/cari-payment-dialog.tsx", /onSaved\?\.\(\{ slug: d\.slug \}\);\s+\/\/[^\n]*ikinci ödemeyi yazar\n\s+\}, \{ maybeSaved: !edit \}\);/],
     ["src/app/panel/tedarikciler/[cari]/debt-dialog.tsx", /onSaved\?\.\(\{ slug: d\.slug \}\);\s+\/\/[^\n]*ikinci borcu yazar\n\s+\}, \{ maybeSaved: !edit \}\);/],

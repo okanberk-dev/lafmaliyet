@@ -1111,6 +1111,17 @@ export const userReminders = pgTable(
     /** Aylık tekrarın günü (31 Ocak → 28 Şubat → 31 Mart) */
     anchorDate: text("anchor_date").notNull(),
     repeat: text("repeat", { enum: ["none", "daily", "weekly", "monthly"] }).notNull().default("none"),
+    /**
+     * Bilgisayarda çalan uyarı (4 Kasım 2026): "tek" bugünkü davranış (bir zil), "surekli" durdurulana kadar
+     * (karaoke alarmı gibi), "yok" sessiz — bildirim yine çıkar. Eski satırlar "tek" ile gelir.
+     */
+    sound: text("sound", { enum: ["tek", "surekli", "yok"] }).notNull().default("tek"),
+    /**
+     * Hatırlatıcıyı kim kurdu: başkasına atanmışsa yöneticinin kimliği, kendi kurduysa boş. Sahibi `userId`'dir
+     * ve yalnız o görür / tamamlar; atayan yalnız ekranda "Yönetici kurdu" diye görünür.
+     */
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
     active: boolean("active").notNull().default(true),
     doneAt: timestamp("done_at", { withTimezone: true }),
     createdAt: createdAt(),
