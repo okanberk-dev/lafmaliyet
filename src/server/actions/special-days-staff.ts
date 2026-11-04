@@ -4,10 +4,10 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { STAFF_SPECIAL_TEXT } from "@/lib/closed-days";
-import { specialSummary } from "@/lib/forecast/text";
+import { specialSummary } from "@/lib/ozel-gun";
 import { requireUser } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
-import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/forecast/staff-special";
+import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/staff-special";
 
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";

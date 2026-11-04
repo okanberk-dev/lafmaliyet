@@ -46,7 +46,7 @@ const STAFF_SOURCES = [
   "src/server/closed-day-requests.ts",
   "src/server/actions/closed-days.ts",
   "src/server/actions/special-days-staff.ts",
-  "src/server/forecast/staff-special.ts",
+  "src/server/staff-special.ts",
   "src/lib/closed-days.ts",
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
@@ -141,7 +141,7 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   const own = src.slice(src.indexOf("export async function ownClosedRequests"), src.indexOf("export interface ClosedDayCard"));
   assert.match(own, /\.select\(\{ id: s\.staffRequests\.id, day: s\.staffRequests\.day, status: s\.staffRequests\.status, reviewNote: s\.staffRequests\.reviewNote, createdAt: s\.staffRequests\.createdAt \}\)/);
   assert.match(own, /eq\(s\.staffRequests\.requestedBy, me\.id\)/);
-  const list = read("src/server/forecast/staff-special.ts");
+  const list = read("src/server/staff-special.ts");
   const loader = list.slice(list.indexOf("export async function staffSpecialList"));
   for (const t of loader.matchAll(/\.from\(s\.(\w+)\)/g)) assert.equal(t[1], "specialDays");
   // Yöneticinin kartları (kanıt) personel sayfasında çağrılmaz

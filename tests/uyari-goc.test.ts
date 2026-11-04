@@ -469,8 +469,7 @@ const NOTICE_FILES = [
   "sayim/add-item.tsx",
   "sayim/stock-form.tsx",
   "system-banner.tsx",
-  "tahmin/page.tsx",
-  "tahmin/special-days.tsx",
+  "ozel-gunler/special-days.tsx",
   "tedarikciler/[cari]/allocation-dialog.tsx",
   "tedarikciler/[cari]/cari-strips.tsx",
   "tedarikciler/[cari]/debt-dialog.tsx",
@@ -510,7 +509,7 @@ const ROLE_ALLOW: readonly [string, string][] = [
 ];
 
 test("her uyarı yeni bileşende: Ek A'nın N ve E dosyaları Notice'i içe aktarır, rolü elle yazmaz", () => {
-  assert.equal(NOTICE_FILES.length, 90);
+  assert.equal(NOTICE_FILES.length, 89); // Satış tahmini 4 Kas 2026'da kaldırıldı
   const bad: string[] = [];
   for (const f of NOTICE_FILES) {
     const raw = read(f);

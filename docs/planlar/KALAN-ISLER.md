@@ -211,13 +211,13 @@ yeniden üretilir (R2); her dalga main'e ayrı bir PR'dır.
 | fotograf | `fotograf.md` | Z raporu, POS gün sonu ve market fişini fotoğraftan Claude ile okuma; ortak foto deposu ve Claude istemcisi bu grubun. **Bitti:** dalga 3 PR'ı (`0025_fotograf_okuma`, `docs/FOTOGRAF.md`; sahibin 22 Ekim isteğiyle öne alındı; W2.0'ın 1, 2, 3 ve 7. maddeleri de bunda) |
 | siparis | `siparis.md` | Sipariş önerisi, hızlı sayım, tedarikçiye WhatsApp siparişi, teslim kontrolü. **Bitti:** dalga 8 PR'ı ("Mal siparişi", `0035_mal_siparisi`, `docs/MAL-SIPARISI.md`). **B21'de (26 Ekim) kaldırıldı**, tablolar geçmiş için durur |
 | mcp | `mcp.md` | Claude uygulamasından panele soru sorma (salt okunur, yalnız yönetici, OAuth). **Bitti:** dalga 4 PR'ı (`0028_claude_baglantisi`, `docs/CLAUDE-BAGLANTISI.md`) |
-| tahmin | `tahmin.md` | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü. **Bitti:** dalga 9 PR'ı (`0036_satis_tahmini`, `docs/SATIS-TAHMINI.md`; öğrenme ve günlük veri yolları CRITIQUE2 §6 gereği çıkarıldı) |
+| tahmin (kaldırıldı 4 Kas 2026) | — | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü. **Bitti:** dalga 9 PR'ı (`0036_satis_tahmini`, `docs/OZEL-GUNLER.md`; öğrenme ve günlük veri yolları CRITIQUE2 §6 gereği çıkarıldı) |
 | doluluk | `doluluk.md` | Karaoke doluluk haritası ve göstergeler. **Bitti:** dalga 5 PR'ı #14 (`0030_karaoke_doluluk`, `docs/KARAOKE.md` › Doluluk; KVKK: 3 × 366 günden eski karaoke adları sabah işinde silinir) |
 | haftalik | `haftalik.md` | Haftalık yönetici özeti (pazartesi e-postası, ₺ etkisine göre en çok 5 madde); diğer planların hepsini tüketir; en son. **Bitti:** dalga 9 PR'ı (`docs/HAFTALIK-OZET.md`; migration yok) |
 
 **İkinci paketin çapraz eleştirisi `CRITIQUE2.md`'de** (R8–R19 ortak sözleşmeler, zaman bütçesi, güvenlik, kesintiler,
 sıra, sahibe sorular). Önce ortak altyapı PR'ı (W2.0), sonra fotograf ∥ mcp, kontrol ∥ doluluk, siparis ∥ komisyon,
-tahmin ∥ haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir; `tahmin.md`'nin hava durumu noktası Tuzla'ya alındı (R19).
+haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir (R19; satış tahmini 4 Kasım 2026'da kaldırıldı).
 Site deposu 22 Ekim'de incelendi (`DIGER-OTURUM.md` sonu): karaoke ucu geçmiş tarihleri zaten veriyor; doluluk site
 değişikliği beklemez. W2.0'ın kalanı (sendEmail seçenekleri, sabah e-postası kutuları ve `DIGEST_EXTRA_SOURCES`,
 ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 4'te. Dalgalar: 5 kontrol ∥ doluluk (#14),
@@ -269,7 +269,7 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   o zamana kadar aralık geniştir. Maç, AVM etkinliği, kampanya ya da kapalı gün olacaksa Satış tahmini › Özel günler'e
   ekleyin. Tatlı hazırlığı Tahmin ayarları'nda seçilen kategorilerden hesaplanır (varsayılan: Tatlılar). İsterseniz
   Vercel'de `WEATHER_CONTACT` (e-posta) tanımlayın: MET Norway'e giden hava durumu isteğinin kimliğine eklenir.
-  2028 dini bayram tarihleri ikincil kaynaklardan; Diyanet takvimiyle bir kez karşılaştırın (`src/lib/forecast/calendar.ts`).
+  2028 dini bayram tarihleri ikincil kaynaklardan; Diyanet takvimiyle bir kez karşılaştırın (`src/lib/takvim.ts`).
 - Haftalık özet: pazartesi sabahı etkin yöneticilere gider (gönderilemezse salı, çarşamba yeniden denenir).
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.

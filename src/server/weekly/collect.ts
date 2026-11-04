@@ -16,7 +16,7 @@ import { savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { addDays, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
-import { cashItem, checklistDayOf, checklistItem, commissionItems, forecastLine, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
+import { cashItem, checklistDayOf, checklistItem, commissionItems, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
@@ -27,7 +27,6 @@ import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadPosChecklist } from "@/server/data/prices";
 import { loadTillScope } from "@/server/data/till-scope";
 import { getDb, schema as s } from "@/server/db";
-import { loadForecastCore } from "@/server/forecast/load";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -279,22 +278,8 @@ const kontrol: Collector = {
   },
 };
 
-/**
- * Satış tahmini satırı (tahmin; docs/SATIS-TAHMINI.md): tahminin yükleyicisi (src/server/forecast/load.ts
- * loadForecastCore) yalnız okur, hava ve kayıt sabah işinde yazılır. Kalite tam, karma ya da ortalama ise
- */
-const tahmin: Collector = {
-  source: "satir",
-  timeoutMs: 3_000,
-  async run(ctx) {
-    const { forecast } = await loadForecastCore(ctx.now);
-    const line = forecastLine({ quality: forecast.quality, days: forecast.days.map((d) => ({ date: d.date, amount: d.amount, closed: Boolean(d.closed) })) });
-    return { lines: line ? [line] : [] };
-  },
-};
-
-/** Sıra: bağlam satırları bu sırayla (kasa cirosu, sonra tahmin) */
-export const COLLECTORS: Collector[] = [zam, nakit, kasa, komisyon, kasaFiyat, zayi, stok, karaoke, kontrol, tahmin];
+/** Sıra: bağlam satırları bu sırayla (satış tahmini 4 Kasım 2026'da kaldırıldı) */
+export const COLLECTORS: Collector[] = [zam, nakit, kasa, komisyon, kasaFiyat, zayi, stok, karaoke, kontrol];
 
 // ---------------------------------------------------------------- Toplama ve seçim
 

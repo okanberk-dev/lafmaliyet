@@ -177,7 +177,7 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Bugün (/panel/bugun)",
     "Onaylar (/panel/onaylar)",
     "Kasa raporu (/panel/kasa)",
-    "Kafe › Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım",
+    "Kafe › Karaoke, Kontrol listeleri, Özel günler, Hatırlatıcılarım",
     // 29 Eki 2026 (docs/planlar/ux-sade.md §3.1): Ürünler'in adı başlığıyla aynı; Fiyatlar kendi satırında
     "Menü › Ürünler & kârlılık, Fiyatlar, Hammaddeler, Reçete defteri",
     // Hızlı sayım ve Mal siparişi 26 Eki 2026'da kaldırıldı (sahibin isteği: "normal sayım olsun")
@@ -242,7 +242,7 @@ test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve 
   // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında;
   // Şubeler 4 Kas 2026'da Ayarlar altına (docs/SUBE.md)
   const ADMIN_PAGES = [
-    "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/tahmin",
+    "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/ozel-gunler",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
     "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",

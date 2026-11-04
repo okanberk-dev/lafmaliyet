@@ -37,7 +37,7 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
   let store: typeof import("../src/server/cash/report-store");
   let closed: typeof import("../src/server/closed-days");
   let reqs: typeof import("../src/server/closed-day-requests");
-  let special: typeof import("../src/server/forecast/staff-special");
+  let special: typeof import("../src/server/staff-special");
   let core: typeof import("../src/server/staff-requests/core");
   let guard: typeof import("../src/server/cash-outs/guard");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
@@ -96,7 +96,7 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     store = await import("../src/server/cash/report-store");
     closed = await import("../src/server/closed-days");
     reqs = await import("../src/server/closed-day-requests");
-    special = await import("../src/server/forecast/staff-special");
+    special = await import("../src/server/staff-special");
     core = await import("../src/server/staff-requests/core");
     guard = await import("../src/server/cash-outs/guard");
     for (const k of Object.keys(users) as (keyof typeof users)[]) {

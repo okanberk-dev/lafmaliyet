@@ -1,5 +1,5 @@
 // Kapalı gün ve personelin özel günleri (saf; plan docs/planlar/personel-yetki.md §2.9; docs/KASA-RAPORU.md › Kafe
-// kapalıydı, docs/SATIS-TAHMINI.md › Personelin özel günleri): closedDaysIn, ay bilgisi ve komisyonda kapalı günler,
+// kapalıydı, docs/OZEL-GUNLER.md): closedDaysIn, ay bilgisi ve komisyonda kapalı günler,
 // Bugün'ün dünkü kasa ve kontrol satırlarının dört durumu, personelin özel gün sınırları, kanıtın kuralları (işlem
 // geçmişinde sayılmayanlar, Z no boşluğu, açılış, kırmızı satırlar), modelde personelin "Bilmiyorum" günü ve kaynak
 // denetimleri (eylemlerin rolleri, personel sayfasının prop'ları, sabit sütunlu okuyucular).
@@ -30,7 +30,6 @@ import {
 } from "../src/lib/closed-days";
 import type { ChecklistLite } from "../src/lib/checklists";
 import { channelTill } from "../src/lib/commission/report";
-import { buildForecast, type SpecialDay } from "../src/lib/forecast/model";
 import { assertNoCostKeys } from "./helpers/leak-scan";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -163,24 +162,6 @@ test("personelin özel günü: tür, etki, ad, sıra, yarından, 3 gün, 60 gün
   for (const t of Object.values(T)) assert.doesNotMatch(typeof t === "string" ? t : t("x"), /—/);
 });
 
-test("model: personelin 'Bilmiyorum' (etki 0) günü tabanda kalır; yöneticininki çıkar; personelin +%15'i çıkar", () => {
-  // Bugün Perşembe; geçmişte yalnız üç Perşembe (hafta günü tabanı en az 3 normal gün ister)
-  const today = "2026-10-22";
-  const history = [
-    { date: "2026-10-01", total: 10_000 },
-    { date: "2026-10-08", total: 12_000 },
-    { date: "2026-10-15", total: 14_000 },
-  ];
-  const amount = (special: SpecialDay[]) => buildForecast({ today, history, months: [], special, weather: null, pastRatios: [] }).days[0]?.amount ?? null;
-  const day = (o: Partial<SpecialDay>): SpecialDay => ({ id: 1, dateFrom: "2026-10-15", dateTo: "2026-10-15", kind: "derbi", title: "Maç", effect: 0, ...o });
-  const plain = amount([]);
-  assert.notEqual(plain, null);
-  // Personelin "Bilmiyorum"u yalnız not: 15 Ekim tabanda kalır
-  assert.equal(amount([day({ byStaff: true, effect: 0 })]), plain);
-  // Yöneticinin "Bilmiyorum"u ve personelin +%15'i günü tabandan çıkarır (iki normal gün kalır, tahmin değişir)
-  assert.notEqual(amount([day({ effect: 0 })]), plain);
-  assert.notEqual(amount([day({ byStaff: true, effect: 0.15 })]), plain);
-});
 
 // ---------------------------------------------------------------- Kanıt
 
@@ -238,7 +219,7 @@ test("kaynak: eylemler kendi oturumunu ve rolünü denetler; yardımcı dışa v
   assert.match(body(special, "saveStaffSpecialDay"), /return \{ id: out\.id \};/);
   assertNoCostKeys(special, "special-days-staff.ts");
   // Dalga 9'un eylemleri personelinkiyle aynı danışma kilidini alır, yöneticinin düzenlemesi updated_by yazar
-  const forecast = read("src/server/actions/forecast.ts");
+  const forecast = read("src/server/actions/special-days.ts");
   assert.equal([...forecast.matchAll(/await lockSpecialDays\(tx\);/g)].length, 2);
   assert.match(forecast, /updatedBy: me\.id, updatedByName: me\.name/);
   assert.match(read("src/server/closed-days.ts"), /pg_advisory_xact_lock\(hashtext\('ozel-gun'\)\)/);
@@ -251,14 +232,15 @@ test("kaynak: /panel/ozel-gunler prop'larında kindHistory, tutar ve gerçekleş
     assert.doesNotMatch(src, /kindHistory|amount|realised|realized|actual/);
     assertNoCostKeys(src, "ozel-gunler");
   }
-  assert.match(page, /if \(user\.role === "admin"\) redirect\("\/panel\/tahmin#ozel-gunler"\);/);
+  // Yönetici de aynı ekranda (satış tahmini kalkınca listesi buraya taşındı)
+  assert.match(page, /admin \? <AdminContent \/> : <StaffContent \/>/);
   assert.match(page, /<StaffSpecialDays\s+rows=\{rows\}\s+closed=\{closed\}\s+today=\{today\}\s+minDate=\{[^}]+\}\s+maxDate=\{[^}]+\}\s+saveAction=\{saveStaffSpecialDay\}\s+deleteAction=\{deleteStaffSpecialDay\}\s+\/>/);
-  const loader = read("src/server/forecast/staff-special.ts");
+  const loader = read("src/server/staff-special.ts");
   const list = loader.slice(loader.indexOf("export async function staffSpecialList"));
   assert.doesNotMatch(list, /\.select\(\)/);
   // Başkasının notu gitmez
   assert.match(list, /note: own \? r\.note : null/);
-  assert.match(read("src/app/panel/tahmin/special-days.tsx"), /<Card id="ozel-gunler"/);
+  assert.match(read("src/app/panel/ozel-gunler/special-days.tsx"), /<Card id="ozel-gunler"/);
 });
 
 test("zil: reddedilen ya da geri alınan kapalı gün bildirimi; gün personelde, geç rapor penceresinde ya da yalnız yöneticide", () => {

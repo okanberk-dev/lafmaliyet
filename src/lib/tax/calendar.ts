@@ -6,7 +6,7 @@
  * öbürünün gününü yazar. Saf modül; tests/vergi-takvim.test.ts. Takvimin satırları view.ts'te (taxCalendar).
  */
 
-import { calendarDay, CALENDAR_COVERAGE, fixedHolidayName, weekdayOf } from "../forecast/calendar";
+import { calendarDay, CALENDAR_COVERAGE, fixedHolidayName, weekdayOf } from "../takvim";
 import { addDays, dayMonthTR, longDateTR, monthEnd, shiftMonth } from "../reminders";
 import { MONTH_NAMES } from "../constants";
 

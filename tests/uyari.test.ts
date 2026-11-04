@@ -175,7 +175,6 @@ test("canlı uyarıda Ayrıntı canlı bölgenin dışında: açıp kapamak uyar
   assert.match(await renderNotice({ tone: "bad", live: "assertive", title: "Kaydedilmedi" }), /^<div role="alert" data-notice="bad"/);
   assert.match(await renderNotice({ tone: "neutral", title: "Bilgi", children: "neden" }), /^<div role="note" data-notice="neutral"/);
   // Sunucuda sayfayla gelen uyarılar canlı değil (§4.5): Tahmin bandı ve karaoke'nin bağlantı kutusu
-  assert.doesNotMatch(read("src/app/panel/tahmin/page.tsx"), /<Notice tone="neutral" live=/);
   const board = read("src/app/panel/karaoke/karaoke-board.tsx");
   assert.match(board, /<Notice\s+tone="neutral"\s+title="Site bağlantısı kurulmadı/);
   assert.match(board, /<Notice tone="neutral" title="Site bağlı değil/);

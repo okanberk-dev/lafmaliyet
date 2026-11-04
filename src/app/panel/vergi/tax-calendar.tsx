@@ -6,7 +6,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { MONTH_NAMES } from "@/lib/constants";
 import { tl } from "@/lib/format";
-import { WEEKDAY_SHORT, weekdayOf } from "@/lib/forecast/calendar";
+import { WEEKDAY_SHORT, weekdayOf } from "@/lib/takvim";
 import { dayMonthTR } from "@/lib/reminders";
 import { badgeLabel, badgeNote, calendarTitle, KDV2_NOTE, plainLabel } from "@/lib/tax/glossary";
 import { INFLATION_LINE, isMismatchNote, laterOnCard, NOTE_LATER, NOTE_MUNICIPAL, NOTE_UNKNOWN, NOTE_VAT_NONE, type TaxCalendarRow, type TaxView } from "@/lib/tax/view";

@@ -6,7 +6,7 @@
  * yazılmaz (K21). Saf modül; tests/vergi-gorunum.test.ts.
  */
 
-import { WEEKDAY_NAMES, WEEKDAY_SHORT, weekdayOf } from "../forecast/calendar";
+import { WEEKDAY_NAMES, WEEKDAY_SHORT, weekdayOf } from "../takvim";
 import type { ReminderRow } from "../reminders";
 import {
   addDays,

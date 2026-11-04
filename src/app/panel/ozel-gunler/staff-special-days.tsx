@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { stampTR } from "@/lib/cash-report";
 import { staffSpecialLine } from "@/lib/closed-days";
-import { shortDateTR, shortRangeTR } from "@/lib/forecast/calendar";
-import { specialTail } from "@/lib/forecast/text";
+import { shortDateTR, shortRangeTR } from "@/lib/takvim";
+import { specialTail } from "@/lib/ozel-gun";
 import { STATUS_LABEL, type StaffRequestStatus } from "@/lib/staff-requests";
 import { cn } from "@/lib/utils";
-import type { StaffSpecialRow } from "@/server/forecast/staff-special";
+import type { StaffSpecialRow } from "@/server/staff-special";
 
-import { SpecialDayProvider, useSpecialDay, type SpecialDayActions } from "../tahmin/special-days";
+import { SpecialDayProvider, useSpecialDay, type SpecialDayActions } from "./special-days";
 
 /*
  * Personelin özel günleri (/panel/ozel-gunler; docs/SATIS-TAHMINI.md › Personelin özel günleri): "Yaklaşan" listesi

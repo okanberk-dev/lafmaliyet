@@ -5,26 +5,23 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { rangeTR } from "@/lib/forecast/calendar";
-import { effectiveDessertCategories, foldTR, isDessertCategory } from "@/lib/forecast/desserts";
-import { DEFAULT_FORECAST_SETTINGS, MAX_DESSERT_CATEGORIES, PER_PERSON_MAX, PER_PERSON_MIN, STAFF_MAX, type ForecastSettings } from "@/lib/forecast/staffing";
-import { clockTR, specialSummary } from "@/lib/forecast/text";
-import { money } from "@/lib/format";
+import { foldTR, specialSummary } from "@/lib/ozel-gun";
+import { rangeTR } from "@/lib/takvim";
 import { addDays, daysBetween } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { lockSpecialDays, revokeClosedRequests } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
-import { runForecastJob } from "@/server/forecast/job";
-import { FORECAST_SETTINGS_KEY, loadForecastSettings, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/forecast/load";
+import { SPECIAL_MAX_AHEAD_DAYS, SPECIAL_MAX_SPAN_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
 
 import { logActivity } from "./log";
 import { attempt, UserError, type ActionResult } from "./util";
 
-// Satış tahmini (yalnız yönetici; docs/SATIS-TAHMINI.md): özel günler, tahmin ayarları ve "Güncelle" (hava durumu ve
-// bugünün tahmin kaydı). Personel bu ekranı açamaz; her eylem yöneticiyi ayrıca denetler.
+// Özel günler (yalnız yönetici; docs/OZEL-GUNLER.md): derbi, AVM etkinliği, kampanya ve kafe kapalı günleri.
+// Satış tahmini 4 Kasım 2026'da kaldırıldı; bu eylemler oradan buraya taşındı ve tahmin işini tetiklemiyor.
+// Personelin kendi girdileri ayrı dosyada (special-days-staff.ts).
 
-/** Özel gün en çok bu kadar gün sürer; geriye ve ileriye sınırlar sayfanın listesiyle aynı (load.ts) */
-const MAX_SPAN_DAYS = 14;
+/** Özel gün en çok bu kadar gün sürer */
+const MAX_SPAN_DAYS = SPECIAL_MAX_SPAN_DAYS;
 
 /** Gerçek bir gün (2026-02-31 değil) */
 const zDay = (empty: string) =>
@@ -136,100 +133,3 @@ export async function deleteSpecialDay(id: number): Promise<ActionResult<Special
   });
 }
 
-const settingsInput = z
-  .object({
-    perPerson: z
-      .number({ message: "Kişi başı satışı yazın" })
-      .finite("Kişi başı satışı yazın")
-      .min(PER_PERSON_MIN, `Kişi başı satış ${money(PER_PERSON_MIN)} ile ${money(PER_PERSON_MAX)} arasında olmalı`)
-      .max(PER_PERSON_MAX, `Kişi başı satış ${money(PER_PERSON_MIN)} ile ${money(PER_PERSON_MAX)} arasında olmalı`),
-    minStaff: z
-      .number({ message: `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı` })
-      .int(`Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`)
-      .min(0, `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`)
-      .max(STAFF_MAX, `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`),
-    maxStaff: z
-      .number({ message: `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı` })
-      .int(`Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`)
-      .min(0, `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`)
-      .max(STAFF_MAX, `Kişi sayısı 0 ile ${STAFF_MAX} arasında olmalı`),
-    dessertCategories: z.array(z.string().trim().min(1).max(100)).max(MAX_DESSERT_CATEGORIES, "En çok 30 kategori seçilebilir"),
-    weather: z.boolean(),
-    staffSeesLevel: z.boolean(),
-    emailLine: z.boolean(),
-  })
-  .refine((v) => v.maxStaff >= v.minStaff, "En çok kişi en az kişiden küçük olamaz");
-
-/** Ayarların işlem geçmişindeki özeti: "kişi başı 10.000 ₺, en az 2, en çok 6, hava açık, personel görür, e-posta açık" */
-function settingsText(v: ForecastSettings): string {
-  return [
-    `kişi başı ${money(v.perPerson)}`,
-    `en az ${v.minStaff}`,
-    `en çok ${v.maxStaff}`,
-    `hava ${v.weather ? "açık" : "kapalı"}`,
-    `personel ${v.staffSeesLevel ? "görür" : "görmez"}`,
-    `e-posta ${v.emailLine ? "açık" : "kapalı"}`,
-    v.dessertCategories ? `tatlı: ${v.dessertCategories.join(", ")}` : "tatlı: adında “tatlı” geçenler",
-  ].join(", ");
-}
-
-/**
- * Tahmin ayarları. Tatlı kategorileri adla tutulur (db:reset kimlikleri baştan sayar); yalnız var olan kategoriler
- * kalır, seçim varsayılanla (adında "tatlı" geçenler) aynıysa ya da boşsa null: kategori adı değişse de kural sürer.
- */
-export async function saveForecastSettings(input: z.input<typeof settingsInput>): Promise<ActionResult> {
-  return attempt(async () => {
-    const me = await requireAdmin();
-    const d = settingsInput.parse(input);
-    const cats = (await getDb().select({ name: s.categories.name }).from(s.categories)).map((c) => c.name);
-    const picked = effectiveDessertCategories(d.dessertCategories, cats) ?? [];
-    const byDefault = cats.filter((c) => isDessertCategory(c, null));
-    const sameAsDefault = picked.length === byDefault.length && byDefault.every((c) => picked.some((p) => isDessertCategory(c, [p])));
-    const next: ForecastSettings = {
-      ...DEFAULT_FORECAST_SETTINGS,
-      perPerson: Math.round(d.perPerson),
-      minStaff: d.minStaff,
-      maxStaff: d.maxStaff,
-      dessertCategories: picked.length && !sameAsDefault ? [...new Set(picked)] : null,
-      weather: d.weather,
-      staffSeesLevel: d.staffSeesLevel,
-      emailLine: d.emailLine,
-    };
-    const before = await loadForecastSettings();
-    if (settingsText(before) === settingsText(next)) return null;
-    await getDb()
-      .insert(s.integrationState)
-      .values({ key: FORECAST_SETTINGS_KEY, value: next })
-      .onConflictDoUpdate({ target: s.integrationState.key, set: { value: next, updatedAt: new Date() } });
-    await logActivity(me, "Tahmin ayarları", settingsText(next));
-    refresh();
-    return null;
-  });
-}
-
-/**
- * "Güncelle": hava durumunu alır (Expires'a uyarak; en çok 6 sn) ve bugünün 7 günlük tahminini kaydeder (zaten
- * kayıtlıysa dokunmaz). Önizlemede hiçbir şey yazmaz. İşlem geçmişine yazılmaz (iş verisi değişmez).
- */
-export async function refreshForecastNow(): Promise<ActionResult<{ text: string; tone: "success" | "info" | "error" }>> {
-  return attempt(async () => {
-    await requireAdmin();
-    const r = await runForecastJob();
-    refresh();
-    if (r.preview) return { text: "Önizlemede tahmin kaydedilmez (canlının veritabanı).", tone: "info" as const };
-    if (r.status === "error") return { text: "Tahmin kaydedilemedi; biraz sonra yeniden deneyin.", tone: "error" as const };
-    if (r.status === "skipped") return { text: "Tahmin için veri yok: önce kasa raporu ya da Satışlar'da bir ayın cirosu ve açık günü gerekli.", tone: "info" as const };
-    const saved = r.saved ? `${r.saved} günün tahmini kaydedildi` : "tahminler zaten kayıtlı";
-    switch (r.weather) {
-      case "fetched":
-      case "not-modified":
-        return { text: `Hava durumu alındı · ${saved}`, tone: "success" as const };
-      case "fresh":
-        return { text: `Hava durumu güncel${r.fetchedAt ? ` (alındı: ${clockTR(r.fetchedAt)})` : ""} · ${saved}`, tone: "success" as const };
-      case "off":
-        return { text: `Hava durumu kapalı · ${saved}`, tone: "success" as const };
-      default:
-        return { text: r.saved ? "Hava durumu alınamadı; tahmin havasız kaydedildi" : "Hava durumu alınamadı; tahminler zaten kayıtlı", tone: "info" as const };
-    }
-  });
-}

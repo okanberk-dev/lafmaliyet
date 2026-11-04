@@ -64,7 +64,7 @@ test("staffPathOf: personelin menüsündeki adlar; ?sorgu ve #çapa atılır; y�
   assert.deepEqual(staffPathOf("/panel/kasa/fiyatlar"), ["Bugün", "Kasadaki fiyatlar"]);
   assert.deepEqual(staffPathOf("/panel/hesap"), ["Hesabım"]);
   assert.deepEqual(staffPathOf("/panel/yardim/personel"), ["Yardım"]);
-  for (const admin of ["/panel", "/panel/onaylar", "/panel/urunler", "/panel/yardim", "/panel/tahmin", "/panel/kontrol/duzenle"]) {
+  for (const admin of ["/panel", "/panel/onaylar", "/panel/urunler", "/panel/yardim", "/panel/kontrol/duzenle"]) {
     assert.deepEqual(staffPathOf(admin), [], admin);
   }
 });
@@ -164,7 +164,7 @@ test("yöneticinin ekran adları ve adresleri personelin Yardım'ında yok", () 
     labels.set(mobileTitleFor(href), href);
   }
   const adminOnly = [...labels].filter(([label, href]) => !canOpen("staff", href) && !GENERIC.has(label)).map(([label]) => label);
-  assert.ok(adminOnly.includes("Onaylar") && adminOnly.includes("Tutarlılık") && adminOnly.includes("Satış tahmini"));
+  assert.ok(adminOnly.includes("Onaylar") && adminOnly.includes("Tutarlılık") && adminOnly.includes("Komisyon & hakediş"));
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const label of adminOnly) assert.doesNotMatch(ALL_TEXT, new RegExp(`(^|[^\\p{L}])${escape(label)}([^\\p{L}]|$)`, "u"), label);
   // Kaynakta yönetici adresi yok

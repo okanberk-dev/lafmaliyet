@@ -301,10 +301,12 @@ const kon: DigestBox = {
   subjectPart: "dünkü kapanış listesi eksik",
   headline: "Dünkü kontrol listelerinde eksik var",
 };
+/* Genel bir ek kutu (satış tahmini 4 Kasım 2026'da kaldırıldı; kutu düzeninin
+   testi karaoke kutusuyla sürüyor) */
 const fc: DigestBox = {
-  title: "Satış tahmini",
-  lines: [{ text: "Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk yüksek · 2 kişi" }, { text: "Hava: MET Norway", tone: "muted" }],
-  href: "/panel/tahmin",
+  title: "Karaoke",
+  lines: [{ text: "Bugün 3 rezervasyon · 1 rezervasyonsuz" }, { text: "Oda 20:00'de dolu", tone: "muted" }],
+  href: "/panel/karaoke",
   link: "Ayrıntı",
   subjectPart: null,
   headline: null,
@@ -343,7 +345,7 @@ test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz
   assert.equal(sha(renderDigest([], "2026-10-22")), "a1dab6e01442bef7");
 });
 
-test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme", () => {
+test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, karaoke, düğme", () => {
   const all = renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system, { commission: com, kontrol: kon, forecast: fc });
   const marks = [
     "Sistem uyarıları · 2",
@@ -354,37 +356,18 @@ test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen
     ">Komisyon ve hakediş</div>",
     ">Kontrol listeleri · 21 Ekim Salı</div>",
     "Hammadde zamları · 1",
-    ">Satış tahmini</div>",
+    ">Karaoke</div>",
     ">Panelde aç</a>",
   ];
   const at = marks.map((m) => all.html.indexOf(m));
   assert.ok(at.every((i) => i > 0), JSON.stringify(at));
   assert.deepEqual([...at].sort((a, b) => a - b), at);
-  const textMarks = ["Sistem uyarıları (2)", "Gecikenler (1)", "Paraşüt'ten gelen yeni faturalar (2)", "1 fatura kontrol bekliyor:", "2 hammadde fiyatı onay bekliyor (", "Komisyon ve hakediş", "Kontrol listeleri · 21 Ekim Salı", "Hammadde zamları (1)", "Satış tahmini", "Panelde aç:"];
+  const textMarks = ["Sistem uyarıları (2)", "Gecikenler (1)", "Paraşüt'ten gelen yeni faturalar (2)", "1 fatura kontrol bekliyor:", "2 hammadde fiyatı onay bekliyor (", "Komisyon ve hakediş", "Kontrol listeleri · 21 Ekim Salı", "Hammadde zamları (1)", "Karaoke", "Panelde aç:"];
   const tat = textMarks.map((m) => all.text.indexOf(m));
   assert.ok(tat.every((i) => i > 0), JSON.stringify(tat));
   assert.deepEqual([...tat].sort((a, b) => a - b), tat);
 });
 
-test("ek kutu: başlık, satırlar (kalın, kırmızı, sönük), bağlantı; kullanıcı metni kaçışlı; telefonda taşmaz (nowrap yok)", () => {
-  const { html, text } = renderDigest([], "2026-10-22", null, null, null, { commission: com, kontrol: kon });
-  assert.ok(html.includes('background:#fff7ed;border-radius:14px;padding:12px 14px;'));
-  assert.ok(html.includes("<strong>Hakediş gecikti: Pluxee (Ekim)</strong><br>Beklenen ≈ 1.234 ₺; son gün 30 Kasım&#39;dı &lt;not&gt;</div>"));
-  assert.ok(html.includes('<div style="margin-top:6px;color:#b91c1c">Yemek kartı oranı %7,2 (sınır %6) olabilir</div>'));
-  assert.ok(html.includes("Ayşe: &lt;b&gt;kapı açık&lt;/b&gt;"));
-  assert.ok(!html.includes("<b>kapı"));
-  assert.ok(html.includes('<div style="margin-top:6px;color:#71717a;font-size:13px;line-height:18px">Dün kasa raporu da girilmedi;'));
-  assert.ok(html.includes(`<a href="${APP_URL}/panel/komisyonlar" style="color:#9a3412;font-weight:600">Komisyon &amp; hakediş&#39;te aç →</a>`));
-  assert.ok(html.includes(`<a href="${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21" style="color:#9a3412;font-weight:600">Kontrol geçmişi →</a>`));
-  const box = html.slice(html.indexOf(">Komisyon ve hakediş</div>"), html.indexOf("Kontrol geçmişi →"));
-  assert.ok(!box.includes("nowrap"));
-  assert.ok(text.includes(`\n\nKomisyon ve hakediş\n- Hakediş gecikti: Pluxee (Ekim): Beklenen ≈ 1.234 ₺; son gün 30 Kasım'dı <not>\n- Yemek kartı oranı %7,2 (sınır %6) olabilir\nKomisyon & hakediş'te aç: ${APP_URL}/panel/komisyonlar\n`));
-  assert.ok(text.includes(`\n- Kapanış: hiç açılmadı\n`));
-  // Tahmin kutusu gri
-  const f = renderDigest(one, "2026-10-22", null, null, null, { forecast: fc }).html;
-  assert.ok(f.includes('background:#f4f4f5;border-radius:14px;padding:12px 14px;font-family:'));
-  assert.ok(f.includes(`<a href="${APP_URL}/panel/tahmin" style="color:#3f3f46;font-weight:600">Ayrıntı →</a>`));
-});
 
 test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adres panelin girişine düşer; düğme de", () => {
   for (const bad of [
@@ -529,29 +512,6 @@ test("başlığı ya da konu parçası olmayan kutu tek içerikse e-posta 'yeni 
   assert.equal(digestSummary({ boxes: r.parts }), "Komisyon ve hakediş");
 });
 
-test("tahmin kutusu konuya, başlığa, düğmeye ve habere girmez; yalnız gövdede (zamdan sonra) ve düz metinde", async () => {
-  const sneaky: DigestBox = { ...fc, subjectPart: "tahmin", headline: "Tahmin başlığı" };
-  for (const [r, inv, pr, sys] of [[[], null, null, null], [[], null, prices, null], [one, null, null, null], [[], null, null, system], [[], invoices, null, null]] as const) {
-    const without = renderDigest([...r], "2026-10-22", inv, pr, sys);
-    const withFc = renderDigest([...r], "2026-10-22", inv, pr, sys, { forecast: sneaky });
-    assert.equal(withFc.subject, without.subject);
-    assert.equal(/<h1[^>]*>([^<]*)<\/h1>/.exec(withFc.html)?.[1], /<h1[^>]*>([^<]*)<\/h1>/.exec(without.html)?.[1]);
-    assert.equal(withFc.text.split("\n").at(-1), without.text.split("\n").at(-1));
-    assert.ok(withFc.html.includes(">Satış tahmini</div>"));
-    assert.ok(withFc.text.includes("\nSatış tahmini\n- Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk yüksek · 2 kişi\n- Hava: MET Norway\nAyrıntı: "));
-  }
-  // Haber sayılmaz: kaynak yanlışlıkla news: true dese de
-  const silence = mock.method(console, "error", () => {});
-  try {
-    const src = { key: "forecast", news: true, load: async () => ({ box: sneaky, logKeys: [] }) } as unknown as DigestExtraSource;
-    const r = await collectDigestExtras([src], "2026-10-22", { preview: false });
-    assert.equal(r.news, false);
-    assert.deepEqual(r.parts, []);
-    assert.equal(r.extras.forecast, sneaky);
-  } finally {
-    silence.mock.restore();
-  }
-});
 
 test("ek kutuların toplanması: aynı anda, her biri en çok 4 sn; hata ve süre aşımı kutuyu düşürür; haber, anahtarlar, önizleme", async () => {
   assert.equal(DIGEST_EXTRA_MS, 4_000);
@@ -689,26 +649,3 @@ test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından son
   assert.equal(digestSummary({ count: 1, boxes: [] }), "1 hatırlatma");
 });
 
-test("satış tahmininin gerçek kutusu (src/lib/forecast/text.ts): gövdede ve düz metinde; konu, başlık ve düğme kutusuz hâliyle aynı", async () => {
-  const { buildForecast } = await import("../src/lib/forecast/model");
-  const { accuracy } = await import("../src/lib/forecast/accuracy");
-  const { DEFAULT_FORECAST_SETTINGS } = await import("../src/lib/forecast/staffing");
-  const { digestForecastBox } = await import("../src/lib/forecast/text");
-  const today = "2026-10-28";
-  const forecast = buildForecast({ today, history: [], months: [{ month: "2026-10", openDays: 16, posRevenue: 293_909 }], special: [], weather: null, pastRatios: [] });
-  const box = digestForecastBox({ forecast, settings: DEFAULT_FORECAST_SETTINGS, plan: null, snapshots: [], actuals: new Map(), accuracy: accuracy([], new Map(), today), yesterday: "2026-10-27", weatherUsed: true })!;
-  for (const r of [[], one]) {
-    const without = renderDigest(r, today, null, prices, null);
-    const withFc = renderDigest(r, today, null, prices, null, { forecast: box });
-    assert.equal(withFc.subject, without.subject);
-    assert.equal(/<h1[^>]*>([^<]*)<\/h1>/.exec(withFc.html)?.[1], /<h1[^>]*>([^<]*)<\/h1>/.exec(without.html)?.[1]);
-    assert.ok(withFc.html.includes(">Satış tahmini</div>"));
-    assert.ok(withFc.html.includes("Bugün ≈ 18.200"));
-    assert.ok(withFc.html.includes("yoğunluk normal · 2 kişi (yoğunsa 3) · Cumhuriyet Bayramı arifesi"));
-    assert.ok(withFc.html.includes("Hava durumu: MET Norway verisi (CC BY 4.0)"));
-    assert.ok(withFc.text.includes("\nSatış tahmini\n- Bugün ≈ 18.200"));
-    assert.ok(withFc.text.includes(`Ayrıntı: ${APP_URL}/panel/tahmin`));
-    // Gövde sırası: zam, tahmin, düğme
-    assert.ok(withFc.html.indexOf("Hammadde zamları") < withFc.html.indexOf(">Satış tahmini</div>"));
-  }
-});

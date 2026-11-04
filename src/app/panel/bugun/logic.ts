@@ -9,7 +9,6 @@ import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinu
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
-import { staffForecastLines, type StaffForecastView } from "@/lib/forecast/text";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import type { KasaName } from "@/lib/lafpos/kasa";
@@ -907,17 +906,15 @@ export interface CafeLine {
 /**
  * "Bugün kafede" kartının satırları. laffogato.net bağlantısı kurulu değilse ve bugün oturum yoksa karaoke satırı
  * yazılmaz; liste boşsa kart çizilmez. Tutar hiçbir rolde yazılmaz. `busy`: personelin satış tahmini görünümü
- * (yoğunluk ve tatlı sayısı, tutarsız; docs/SATIS-TAHMINI.md); verilirse satırları başta. `extra`: operasyonun
- * satırları (Tükendi; rows-ops.ts soldOutLine), sonda.
+ * `extra`: operasyonun satırları (Tükendi; rows-ops.ts soldOutLine), sonda. Satış tahmininin yoğunluk ve
+ * tatlı satırları 4 Kasım 2026'da kaldırıldı (tahmin tamamen kalktı).
  */
 export function cafeLines(
   i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean },
   nowMs: number,
-  busy?: StaffForecastView | null,
   extra: CafeLine[] = [],
 ): CafeLine[] {
-  // Yoğunluk satırı personelin Özel günler ekranına götürür (maç, AVM etkinliği, kampanya; dalga 10 §2.9)
-  const out: CafeLine[] = busy ? staffForecastLines(busy).map((l) => (l.key === "yogunluk" ? { ...l, href: "/panel/ozel-gunler" } : l)) : [];
+  const out: CafeLine[] = [];
   const k = i.karaoke;
   const any = k ? k.reservations + k.walkIns > 0 : false;
   if (k && (i.configured || any)) {

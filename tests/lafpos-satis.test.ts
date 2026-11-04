@@ -297,7 +297,7 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
-  for (const f of ["src/server/forecast/load.ts", "src/server/forecast/mix.ts"]) {
+  for (const f of ["src/server/data/dataset.ts"]) {
     const src = read(f);
     assert.doesNotMatch(src, /loadDailyProductSales|console\.warn\("\[tahmin\]/, f);
   }

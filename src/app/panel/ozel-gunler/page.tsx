@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -7,37 +6,81 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { businessDate } from "@/lib/cash-report";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { addDays } from "@/lib/reminders";
+import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/special-days";
 import { deleteStaffSpecialDay, saveStaffSpecialDay } from "@/server/actions/special-days-staff";
 import { requireUser } from "@/server/auth/dal";
 import { ownClosedRequests } from "@/server/closed-days";
 import { getDb } from "@/server/db";
-import { staffSpecialList } from "@/server/forecast/staff-special";
+import { loadSpecialDays, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
+import { staffSpecialList } from "@/server/staff-special";
 
+import { SpecialDayProvider, SpecialDaysCard, type SpecialDayItem } from "./special-days";
 import { StaffSpecialDays } from "./staff-special-days";
 
 export const metadata: Metadata = { title: "Özel günler" };
 
 /**
- * Personelin özel günleri (plan docs/planlar/personel-yetki.md §2.9; docs/SATIS-TAHMINI.md › Personelin özel günleri):
- * yaklaşan maç, AVM etkinliği, kampanya; onaysız, sınırlı. Yönetici aynı listeyi Satış tahmini'nde düzenler (buraya
- * gelirse oraya yönlenir). Sayfaya giden prop'lar sabittir (tahmin tutarı ve gerçekleşen etki yok; kaynak testi).
+ * Özel günler (docs/OZEL-GUNLER.md): maç, AVM etkinliği, kampanya ve "kafe kapalı" günleri — takvim notudur,
+ * hiçbir hesaba girmez. Satış tahmini 4 Kasım 2026'da kaldırılınca yöneticinin listesi de buraya taşındı
+ * (eskiden Satış tahmini ekranındaydı).
+ *
+ * Yönetici bütün listeyi düzenler; personel yalnız kendi girdiklerini, onaysız ve sınırlı (dalga 10 §2.9).
+ * Personele giden prop'lar sabittir (tutar ve gerçekleşen etki yok; kaynak testi).
  */
-export default function StaffSpecialDaysPage() {
+export default async function SpecialDaysPage() {
+  const user = await requireUser();
+  const admin = user.role === "admin";
   return (
     <>
-      <PageHeader path="/panel/ozel-gunler" role="staff" title="Özel günler" description="Maç, AVM etkinliği ve kampanya günleri: tahmin ve tatlı sayısı bunlara göre ayarlanır." />
+      <PageHeader
+        path="/panel/ozel-gunler"
+        role={user.role}
+        title="Özel günler"
+        description={
+          admin
+            ? "Maç, AVM etkinliği, kampanya ve kafe kapalı günleri: takvim notu olarak işaretlenir."
+            : "Maç, AVM etkinliği ve kampanya günlerini buradan bildirirsiniz."
+        }
+      />
       <Suspense fallback={<PageSkeleton rows={3} />}>
-        <SpecialDaysContent />
+        {admin ? <AdminContent /> : <StaffContent />}
       </Suspense>
     </>
   );
 }
 
-async function SpecialDaysContent() {
-  const user = await requireUser();
-  if (user.role === "admin") redirect("/panel/tahmin#ozel-gunler");
-  const [rows, closed] = await Promise.all([staffSpecialList(getDb(), user), ownClosedRequests(user)]);
+async function AdminContent() {
+  const rows = await loadSpecialDays();
   // Saat okumalardan sonra (Cache Components)
+  const today = businessDate();
+  const item = (d: (typeof rows)[number]): SpecialDayItem => ({
+    id: d.id,
+    dateFrom: d.dateFrom,
+    dateTo: d.dateTo,
+    kind: d.kind,
+    title: d.title,
+    effect: d.effect,
+    note: d.note ?? null,
+    addedBy: d.addedBy ?? null,
+  });
+  const upcoming = rows.filter((d) => d.dateTo >= today).map(item);
+  const past = rows.filter((d) => d.dateTo < today).map(item);
+  return (
+    <SpecialDayProvider
+      today={today}
+      minDate={addDays(today, -SPECIAL_PAST_DAYS)}
+      maxDate={addDays(today, SPECIAL_MAX_AHEAD_DAYS)}
+      saveAction={saveSpecialDay}
+      deleteAction={deleteSpecialDay}
+    >
+      <SpecialDaysCard upcoming={upcoming} past={past} />
+    </SpecialDayProvider>
+  );
+}
+
+async function StaffContent() {
+  const user = await requireUser();
+  const [rows, closed] = await Promise.all([staffSpecialList(getDb(), user), ownClosedRequests(user)]);
   const today = businessDate();
   return (
     <StaffSpecialDays

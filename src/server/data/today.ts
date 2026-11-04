@@ -7,7 +7,6 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import type { StaffForecastView } from "@/lib/forecast/text";
 import { modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -29,7 +28,6 @@ import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-remin
 import { dayWaste } from "@/server/data/waste";
 import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
-import { loadForecastCard, loadStaffForecast, type ForecastCardData } from "@/server/forecast/load";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
@@ -63,7 +61,6 @@ export interface TodayData {
    * Satış tahmini (docs/SATIS-TAHMINI.md): yöneticinin kartı (tutar, aralık, kişi, 7 gün) ve personelin satırı
    * (yalnız yoğunluk ve tatlı sayısı); her rol yalnız kendininkini yükler
    */
-  forecast: { admin: ForecastCardData | null; staff: StaffForecastView | null };
   renderedAt: string;
 }
 
@@ -112,7 +109,6 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
 interface RoleFacts {
   facts: Partial<DayFacts>;
   cashFlags: Map<string, string[]> | null;
-  forecast: TodayData["forecast"];
 }
 
 /**
@@ -121,12 +117,11 @@ interface RoleFacts {
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
   // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
-  const [waste, busy] = await Promise.all([safe(dayWaste(c.day)), safe(loadStaffForecast())]);
+  const [waste] = await Promise.all([safe(dayWaste(c.day))]);
   return {
     // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
     facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, lafpos: waste.lafpos !== null } : null },
     cashFlags: null,
-    forecast: { admin: null, staff: busy },
   };
 }
 
@@ -140,7 +135,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
   const modelP = loadModel();
   const month = businessDate(now).slice(0, 7);
   const prevMonth = shiftMonth(month, -1);
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, forecast, countAlerts] = await Promise.all([
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, countAlerts] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -221,7 +216,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
     safe(loadOverduePayouts()),
     // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
-    safe(loadForecastCard(now)),
     // Sayımın uyarıları (zil ile aynı; src/server/data/count-alerts.ts): fiyatsız ek kalemler, personelin geç kaydı
     safe(
       Promise.all([loadUnpricedExtras([month, prevMonth]), loadStaffLateEdits(prevMonth)]).then(([extras, edits]) => ({ extras, late: { month: prevMonth, edits } })),
@@ -230,7 +224,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
   return {
     facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, countAlerts },
     cashFlags: flags,
-    forecast: { admin: forecast, staff: null },
   };
 }
 
@@ -297,7 +290,6 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
       orders,
       configured,
     },
-    forecast: own.forecast,
     renderedAt: now.toISOString(),
   };
 }
