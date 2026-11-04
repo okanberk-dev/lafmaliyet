@@ -240,8 +240,37 @@ export function resolveMonth(month: string, entry: MonthEntry | undefined, till:
 }
 
 /** Ay satırları ve kasa ayları birleşir: yalnız kasa raporu olan ay da (satırı yoksa) ay seçicilerde görünür */
+/**
+ * Aynı ayın iki satırını birleştirir: her alanda İLK DOLU değer kazanır.
+ *
+ * Ay satırının anahtarı (ay, şube) olduğu için aynı ay birden çok satırla gelebilir — "Tümü" seçiliyken ve silme
+ * engellerinin şubesiz okumasında (costs.ts dataMonths). Şube başına açılan BOŞ ay satırı (stock.ts, sales.ts
+ * ensureMonth) ötekinin elle girilmiş cirosunu, açık gününü ya da notunu ezmemeli.
+ *
+ * İki şubenin AYNI alanı birden doluysa girdi sırasındaki ilki kalır. Şubeye göre toplama ("Tümü"de iki şubenin
+ * cirosu toplansın mı, açık gün en büyüğü mü olsun) ayrı bir karar: motor şube farkındalığı kazanınca,
+ * docs/planlar/sube.md › Dalga 4. Burada yapılan yalnız VERİ KAYBINI durdurmak.
+ */
+function mergeMonthEntries(a: MonthEntry, b: MonthEntry): MonthEntry {
+  const note = a.note?.trim() ? a.note : b.note;
+  return {
+    month: a.month,
+    // 0 gerçek bir elle girilmiş değerdir ("bu ay ödenmez yok"), bu yüzden `??` ile yalnız null atlanır
+    openDays: a.openDays ?? b.openDays,
+    posRevenue: a.posRevenue ?? b.posRevenue,
+    discounts: a.discounts ?? b.discounts,
+    offRevenue: a.offRevenue ?? b.offRevenue,
+    cardShare: a.cardShare ?? b.cardShare,
+    note,
+  };
+}
+
 export function resolveMonths(entries: MonthEntry[], tills: TillMonth[]): Month[] {
-  const byEntry = new Map(entries.map((e) => [e.month, e]));
+  const byEntry = new Map<string, MonthEntry>();
+  for (const e of entries) {
+    const prev = byEntry.get(e.month);
+    byEntry.set(e.month, prev ? mergeMonthEntries(prev, e) : e);
+  }
   const byTill = new Map(tills.map((t) => [t.month, t]));
   return [...new Set([...byEntry.keys(), ...byTill.keys()])].sort().map((m) => resolveMonth(m, byEntry.get(m), byTill.get(m)));
 }

@@ -29,6 +29,7 @@ import { cashOutPayment } from "@/server/cari/kasa";
 import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { kasaEvidence } from "@/server/data/lafpos-day";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -124,7 +125,8 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
       }
       if (line.docType === "fis" && !line.photoId) line.docType = "yok";
       subject = `cikan-yeni:${input.clientKey}`;
-      payload = CashOutRequestPayload.parse({ op: "ekle", day: input.date, cashOutId: null, line, before: null });
+      // Şube isteği AÇAN personelinki: onay anında yönetici başka şubeye bakıyor olabilir (docs/SUBE.md)
+      payload = CashOutRequestPayload.parse({ op: "ekle", day: input.date, cashOutId: null, line, before: null, branchId: await currentWriteBranch() });
     } else {
       if (!input.cashOutId) throw new UserError(CASH_OUT_REQUEST_TEXT.rowGone);
       const row = await lockCashOut(tx, input.cashOutId);
@@ -308,7 +310,8 @@ export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: 
         tx,
         me,
         { id: null, date: payload.day, ...line, categoryId: toExpenses ? (input.categoryId ?? line.categoryId) : null, toExpenses },
-        { author, heldBy: row.id, prev: null },
+        // Satır isteği açan personelin şubesine iner, yöneticinin o anki seçimine değil
+        { author, heldBy: row.id, prev: null, branchId: payload.branchId ?? undefined },
       );
       const request = await decide(tx, row, me, "approved", { note: input.note, resultId: out.id }, now);
       return { status: "approved" as const, op: "ekle" as const, request, payload, cashOutId: out.id, expenseId: out.expenseId, line, date: payload.day };

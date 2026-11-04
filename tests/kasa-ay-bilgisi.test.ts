@@ -369,3 +369,27 @@ test("geç rapor: onay bekleyen gün eksik sayılmaya devam eder, yanına 'onay 
   assert.equal("pending" in tillMonths(rows, "2026-11-06")[0], false);
   assert.equal(missingText(["2026-10-31", "2026-11-04"], 5, ["2026-11-04"]), "31 Ekim, 4 Kasım (onay bekliyor)");
 });
+
+test("resolveMonths: aynı ayın iki şube satırı birleşir, boş satır elle yazılanı ezmez", () => {
+  // Ay satırının anahtarı (ay, şube): "Tümü" seçiliyken ve silme engellerinin şubesiz okumasında aynı ay için
+  // birden çok satır gelir. Eskiden `new Map(e.month)` sonuncuyu tutuyordu, yani şube başına açılan BOŞ bir ay
+  // satırı (stock.ts / sales.ts ensureMonth) ötekinin elle girilmiş cirosunu ve açık gününü sessizce düşürüyordu.
+  // Hangisinin kalacağı sıralamaya bağlıydı, yani sonuç belirsizdi (inceleme bulgusu, 4 Kasım 2026).
+  const tuzla = entry("2026-11", { openDays: 30, posRevenue: 500_000, note: "Tuzla notu" });
+  const marinaBos = entry("2026-11", {});
+  for (const sira of [[tuzla, marinaBos], [marinaBos, tuzla]]) {
+    const [m] = resolveMonths(sira, []);
+    assert.equal(m.openDays, 30, "boş satır açık günü ezdi");
+    assert.equal(m.posRevenue, 500_000, "boş satır ciroyu ezdi");
+    assert.equal(m.note, "Tuzla notu", "boş satır notu ezdi");
+  }
+});
+
+test("resolveMonths: iki şubenin ayrı alanları birleşir, tek satır olur", () => {
+  const a = entry("2026-11", { openDays: 30 });
+  const b = entry("2026-11", { posRevenue: 120_000 });
+  const months = resolveMonths([a, b], []);
+  assert.equal(months.length, 1, "aynı ay tek satır olmalı");
+  assert.equal(months[0].openDays, 30);
+  assert.equal(months[0].posRevenue, 120_000);
+});

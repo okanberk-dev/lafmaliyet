@@ -145,10 +145,12 @@ test("geri alma: istemci kopyayı değil mühürlü metni verir; sunucu açar, k
   assert.match(src, /readCashOutUndo\(open\(sealed\.data, "cashout-undo"\), me\.id, Date\.now\(\)\)/);
   assert.match(src, /if \(!opened\) throw new UserError\("Geri alma süresi doldu; satırı yeniden ekleyin"\);/);
   // Satır silinmeden önceki numarasıyla geri gelir; ikinci "Geri al" birincil anahtara takılır, kopya açılmaz
-  assert.match(src, /persist\(me, d, \{ restore: true, restoreId: opened\.id \}\)/);
-  assert.match(src, /writeCashOut\(tx, me, d, \{ prev, restore: opts\.restore, restoreId: opts\.restoreId \}\)/);
-  // Satır kasanın şubesine yazılır (docs/SUBE.md; kasa raporuyla aynı seçim)
-  assert.match(read("src/server/cash-outs/write.ts"), /\.values\(\{ \.\.\.values, \.\.\.\(o\.restoreId \? \{ id: o\.restoreId \} : \{\}\), branchId: await currentWriteBranch\(\), createdBy: author\.id, createdByName: author\.name \}\)/);
+  assert.match(src, /persist\(me, d, \{ restore: true, restoreId: opened\.id, branchId: snap\.branchId \?\? undefined \}\)/);
+  assert.match(src, /writeCashOut\(tx, me, d, \{ prev, restore: opts\.restore, restoreId: opts\.restoreId, branchId: opts\.branchId \}\)/);
+  // Satır KENDİ şubesine döner: mühürlü görüntüdeki branchId, yoksa seçili şube (docs/SUBE.md). "Tümü"den ya da
+  // başka şubeden geri alma Marina'nın satırını Tuzla'ya kaydırmamalı
+  assert.match(read("src/server/cash-outs/write.ts"), /\.values\(\{ \.\.\.values, \.\.\.\(o\.restoreId \? \{ id: o\.restoreId \} : \{\}\), branchId: o\.branchId \?\? \(await currentWriteBranch\(\)\), createdBy: author\.id, createdByName: author\.name \}\)/);
+  assert.match(read("src/server/cash-outs/write.ts"), /export async function removeCashOut[\s\S]*?branchId: row\.branchId,/);
   assert.match(src, /if \(constraintOf\(e\) === "cash_outs_pkey"\) throw new UserError\("Bu satır zaten geri alındı"\);/);
   assert.doesNotMatch(src, /export async function restoreCashOut\(snap: CashOutSnapshot\)/);
   assert.match(read("src/server/secret-box.ts"), /export type SealPurpose = [^;]*"cashout-undo"/);
