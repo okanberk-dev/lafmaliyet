@@ -113,6 +113,12 @@ export const LateWastePayload = z.object({
   qty: z.number().positive(),
   reason: z.string().nullable(),
   note: z.string().nullable(),
+  /**
+   * İsteğin açıldığı şube (docs/SUBE.md). Onay anındaki seçim değil, personelin kaydı girdiği şube esastır:
+   * yönetici "Tümü"den onaylayınca Marina'nın zayisi Tuzla'ya yazılmasın. Dalga 3'ten ÖNCE kaydedilmiş
+   * isteklerde alan yok, bu yüzden isteğe bağlı: eskiler onayda varsayılan şubeye düşer.
+   */
+  branchId: z.string().nullish().transform((v) => v ?? null),
 });
 export type LateWastePayloadT = z.output<typeof LateWastePayload>;
 

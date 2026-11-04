@@ -80,6 +80,19 @@ export async function currentWriteBranch(): Promise<string> {
 }
 
 /**
+ * Yeni GİDERİN şubesi. Giderde "şubesiz" geçerli bir değerdir: null = işletme geneli (kira, muhasebe,
+ * abonelik; sahibin kararı, docs/SUBE.md › Dalga 2'nin kararları). Bu yüzden `currentWriteBranch` kullanılmaz:
+ * o "Tümü" seçiliyken Tuzla'ya düşürür ve ortak gideri Tuzla'nın gideri yapardı.
+ *
+ * Kural: tek şube seçiliyken gider o şubenindir; "Tümü" seçiliyken işletme genelidir. Kullanıcı hangi şubeye
+ * baktığını zaten görüyor, yani seçim niyetin kendisi.
+ */
+export async function currentExpenseBranch(): Promise<string | null> {
+  const scope = await currentBranchScope();
+  return scope === ALL_BRANCHES ? null : scope;
+}
+
+/**
  * Anahtarı şubeyi içeren tabloların okunmasında kullanılır (kasa raporu, gün özeti, ModPOS föyü, ay, satış satırı):
  * aynı güne iki şube yazabildiği için süzmeden okuyan sorgu yanlış şubenin satırını döndürebilir.
  */

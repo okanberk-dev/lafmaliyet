@@ -77,11 +77,28 @@ betiği, arka plan işi, test) `cookies()` fırlar ve "Tümü"ye düşülür —
 
 ### Neyi süzer, neyi süzmez
 
-Süzülen: kasa raporu, gün özeti, ModPOS föyü, ay satırı, satış satırı — yani **görünümler**.
+Bu ayrım dalga 3'te 12 aday okumanın tek tek çürütülmeye çalışılmasıyla netleşti; 12'sinden 9'u düştü. Kural:
 
-Süzülmeyen: **bütünlük denetimleri**. "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
-şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynı şekilde "bu POS adı
-ModPOS döneminden mi" sorusu da işletme genelidir. Ortak veriler (menü, reçete, hammadde, tedarikçi) hiç süzülmez.
+**Süzülen** — anahtarı şubeyi içeren, tek güne / tek şubeye bakan okumalar: `getCashReport(gün)`,
+`cashReportsBetween`, ModPOS föyü, Kasa ekranının kendi listesi. Bunlar doğruluk gereğidir: aynı güne iki şube
+rapor girebildiği için süzmeyen sorgu yanlış şubenin satırını döndürür.
+
+**Süzülmeyen — bütünlük denetimleri.** "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
+şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynısı personel silme
+engeli (`costs.ts` › `dataMonths` › `staffUsedMonths`), hammadde ve harcama kategorisi silme engelleri,
+personelin kasa satırı kilidi (`cash-outs/guard.ts`) ve cari mutabakatı için geçerli.
+
+**Süzülmeyen — işletme geneli hesaplar.** Vergi beyanı tek mükelleftir (MUHTASAR bordroyu `ds.staff`'tan okur),
+nakit planı tek banka hesabıdır, `tillRows`'un ay rakamı tanımı gereği "her ekranda aynı"dır.
+
+**Süzülmeyen — paylaşılan veri kümesi.** `loadDataset()` tek bir okumadır ve aynı diziler hem raporlara hem
+silme engellerine gider. Burayı süzmek dalga 2'deki ürün silme hatasını dört yeni yerde doğurur; çürütme turu
+bunu `staff`, `stockCounts`, `expenseEntries` ve `wasteEntries` için ayrı ayrı gösterdi. Şubeye göre ayrım
+EKRANDA yapılacak, veri kümesinde değil (dalga 4).
+
+Ortak veriler (menü, reçete, hammadde, tedarikçi) hiç süzülmez.
+
+`tests/subeler.test.ts` bu kuralların hepsini bekçiyle koruyor: yanlışlıkla süzülen bir denetim testi düşürür.
 
 ## Sırada ne var
 

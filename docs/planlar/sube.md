@@ -44,21 +44,50 @@ Yapıldı (`0056_sube_kirilimi.sql`). Notlar:
 - Seçici dalga 3'ten buraya alındı: şema şubeye bölünüp de süzgeç gelmeseydi, aynı güne iki şube rapor
   girebildiği için `getCashReport(gün)` yanlış şubenin satırını döndürebilirdi. Ayrıntı: `docs/SUBE.md` › Seçici.
 
-## Dalga 3 — kalan okumaların süzülmesi
+## Dalga 3 — yazmaların şubesi (BİTTİ)
 
-Dalga 2'de seçici kuruldu ve **anahtarı şubeyi içeren** tabloların okumaları süzüldü (kasa raporu, gün özeti,
-ModPOS föyü, ay satırı, satış satırı): oradaki süzgeç doğruluk gereğiydi. Kalanlar seri `id` anahtarlı listeler,
-bugün "Tümü" gibi davranıyorlar — gerileme değil, eksik:
+Dalga 3'e "kalan okumaları süz" diye başlandı; **çürütme turu bu planın yanlış olduğunu gösterdi.** 127 sorgu
+yeri sınıflandırıldı (34 bütünlük denetimi, 32 kimlikle okuma, 48 yazma, 12 görünüm adayı, 1 belirsiz), sonra
+her görünüm adayına ayrı bir şüpheci gönderildi: **12 adaydan 9'u çürütüldü.** Gerekçeler `docs/SUBE.md` ›
+Neyi süzer, neyi süzmez.
 
-- `stock_counts`, `waste_entries`, `cash_outs`, `staff`, `expense_entries` okumaları seçime göre süzülecek.
-- Gider süzgeci `branchWhereWithShared` ile: tek şube seçiliyken o şubenin giderleri **ile** işletme geneli
-  giderler birlikte görünür, yoksa kira ve abonelik hiçbir şubede görünmez ve kâr olduğundan yüksek çıkar
-  (yardımcı yazıldı, çağıran yerler bu dalgada).
-- Yazma formlarında hangi şubeye yazıldığı kullanıcıya gösterilecek ("Tümü" seçiliyken Tuzla'ya iner).
+Bunun yerine yapılan iş yazmalar oldu ve orada gerçek kusurlar çıktı:
+
+- `stock.ts`: sayım silmesi ŞUBESİZDİ — aynı ay ve malzeme için **bütün şubelerin sayımını birden siliyordu**.
+- `stock.ts`: `onConflictDoUpdate` hedefi `(ay, malzeme)` idi, benzersiz dizin ise `(ay, şube, malzeme)`:
+  çalışma anında "no unique or exclusion constraint matching" ile düşerdi (veritabanında doğrulandı).
+  Dalga 2'nin bekçi testi sabit dosya listesi kullandığı için kaçırmıştı; bekçi artık bütün ağacı tarıyor.
+- Damgalanmayan eklemeler: personel, kasadan çıkan satırı, kasadan ödeme satırı, zayi / ikram, sayım,
+  borcun gider kaydı. Hepsi sessizce varsayılan şubeye (ya da giderde "işletme geneli"ne) iniyordu.
+- Geri alma yolları şubeyi kaybediyordu: silinen harcamanın anlık görüntüsünde ve borç–fatura bağının
+  `linkPrev`inde şube alanı yoktu. İkisine de eklendi (eski kayıtlarda alan yok, geriye dönük uyumlu).
+- Geç zayi isteği artık şubeyi yükünde taşıyor: onay anındaki seçim değil, **personelin girdiği şube** esas.
+- **Dalga 2'nin kusuru düzeltildi:** `costs.ts` › `dataMonths` ve `tillRows` şubeye göre süzülüyordu ve bunlar
+  personel silme engelini besliyor. Marina seçiliyken Tuzla'da maaş geçmişi olan kişi silinebilir hale
+  geliyordu. İkisi de şubesize döndürüldü; `okcRows` (vergi) ve `loadDataset`'in dizileri de öyle.
+
+Yeni yazma yardımcıları: `currentWriteBranch()` (not null sütunlar) ve `currentExpenseBranch()` (giderde
+tek şube seçiliyse o şube, "Tümü"de işletme geneli — sahibin kararı).
+
+## Dalga 4 — ekranda şube ayrımı ve sekmeler
+
+Veri katmanı şubeye göre süzülemiyor (dalga 3'ün bulgusu): aynı okumalar silme engellerini ve vergiyi
+besliyor. Ayrım **ekranda** yapılmalı, yani motor şube farkındalığı kazanmalı:
+
+- `loadModel()` bütün şubeleri okumayı sürdürür (silme engelleri ve vergi bozulmasın), ama para görünümleri
+  için şube kırılımlı erişimciler kazanır: `expenseAmounts`, `tillMonths`, stok sayımı değerlemesi.
+  Bugün `expenseByMonth` gibi dizinler şubesiz kuruluyor ve `(ay, malzeme)` anahtarı iki şubenin sayımından
+  birini eziyor — **Marina sayıma başlamadan önce bu bitmeli.**
+- Gider görünümlerinde `branchWhereWithShared` (yardımcı yazıldı, çağıranı yok): tek şube seçiliyken o şubenin
+  giderleri **ile** işletme geneli giderler birlikte; yoksa kira ve abonelik hiçbir şubede görünmez ve kâr
+  olduğundan yüksek çıkar.
+- Genel bakış, Kasa, Satışlar ve Gelir-gider'e şube sekmeleri; şube karşılaştırma kartı.
+- Yazma formlarında hangi şubeye yazıldığı kullanıcıya gösterilir ("Tümü" seçiliyken Tuzla'ya iner).
 - laffogato.net kanalı "Tümü"ye **girer** (işletmenin cirosudur) ama her yerde ayrı satır olarak görünür; bugünkü
   `/panel/gelir-gider` ayrımı bu kanala taşınır.
+- Şube başına ModPOS anahtarı (`storeFoy` şube parametresini bekliyor).
 
-## Dalga 4 — Marina sekmesi ve karşılaştırma
+### Eski dalga 4 notları
 
 - Genel bakış, Kasa raporu, Satışlar ve Gelir-gider'e şube sekmeleri (`SectionTab`): Tümü · Tuzla · Marina ·
   laffogato.net.

@@ -7,6 +7,7 @@ import { cashOutWritesExpense, isInvoiceDoc, staffCategory, staffExpenseLocked, 
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { schema as s, type DB } from "@/server/db";
@@ -161,7 +162,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
         .returning()
     : await tx
         .insert(s.cashOuts)
-        .values({ ...values, ...(o.restoreId ? { id: o.restoreId } : {}), createdBy: author.id, createdByName: author.name })
+        // Kasa şube başınadır: yeni satır panelde seçili şubeye iner (docs/SUBE.md)
+        .values({ ...values, branchId: await currentWriteBranch(), ...(o.restoreId ? { id: o.restoreId } : {}), createdBy: author.id, createdByName: author.name })
         .returning();
 
   // Harcama kaydı: tarih fişin tarihi (kasanın gününden en çok 3 gün önceyse), nakit, "Kasadan · 21 Ekim Salı"
@@ -175,6 +177,9 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
       photoId: d.photoId,
       vat: values.vat,
       cashOutId: row.id,
+      // Harcama kaydı kasa satırının gölgesi: şubesini SATIRDAN alır, panelin o anki seçiminden değil.
+      // Yoksa Tuzla'nın satırı "Tümü"deyken düzeltilince gideri işletme geneline kayardı.
+      branchId: row.branchId,
     };
     const description = [d.store, d.description].filter(Boolean).join(" · ").slice(0, 200) || null;
     if (existing) {

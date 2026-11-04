@@ -47,8 +47,10 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
       .parse(entries);
     const db = getDb();
     const filled = data.filter((x) => x.qty !== null);
+    // Sayım şube başına ayrı (docs/SUBE.md › Dalga 2'nin kararları): okuma, silme ve yazma hep şube içinde
+    const sube = await currentWriteBranch();
     // Ay satırı yalnızca gerçekten sayım yazılınca açılır: yalnızca silen bir kayıt boş ay bırakmasın
-    if (filled.length) await db.insert(s.months).values({ month: m }).onConflictDoNothing();
+    if (filled.length) await db.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
     const removed = await db.transaction(async (tx) => {
       const checked = data.filter((e) => e.base !== undefined);
       if (checked.length) {
@@ -57,7 +59,13 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
             await tx
               .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty })
               .from(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
+              .where(
+                and(
+                  eq(s.stockCounts.month, m),
+                  eq(s.stockCounts.branchId, sube),
+                  inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId)),
+                ),
+              )
           ).map((r) => [r.id, r.qty]),
         );
         const stale = checked.filter((e) => {
@@ -83,7 +91,8 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
         ? (
             await tx
               .delete(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, clear)))
+              // Şube koşulu şart: şubesiz silme aynı ay ve malzeme için bütün şubelerin sayımını birden siler
+              .where(and(eq(s.stockCounts.month, m), eq(s.stockCounts.branchId, sube), inArray(s.stockCounts.ingredientId, clear)))
               .returning({ id: s.stockCounts.ingredientId })
           ).length
         : 0;
@@ -105,7 +114,7 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
           await tx
             .select({ ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor })
             .from(s.stockCounts)
-            .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, ids)))
+            .where(and(eq(s.stockCounts.month, m), eq(s.stockCounts.branchId, sube), inArray(s.stockCounts.ingredientId, ids)))
         ).map((c) => [c.ingredientId, c]),
       );
       // Pasif ama aktif bir ürünün reçetesinde geçen malzeme listede kalır (engine.ts countable ile aynı kural)
@@ -124,9 +133,10 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
           !countable || (prev && prev.qty === e.qty) ? (prev?.factor ?? countFactor(ing.countUnit)) : countFactor(ing.countUnit);
         await tx
           .insert(s.stockCounts)
-          .values({ month: m, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
+          .values({ month: m, branchId: sube, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
           .onConflictDoUpdate({
-            target: [s.stockCounts.month, s.stockCounts.ingredientId],
+            // Benzersiz dizin (ay, şube, malzeme): şubesiz hedef "no unique or exclusion constraint matching" ile düşer
+            target: [s.stockCounts.month, s.stockCounts.branchId, s.stockCounts.ingredientId],
             set: { qty: e.qty!, factor, countedBy: me.name, updatedAt: new Date() },
           });
       }
@@ -178,12 +188,13 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
+    const sube = await currentWriteBranch();
     const changed = await db.transaction(async (tx) => {
       const existing = await lockExtras(tx, m, b);
       const res = planAdminExtras(existing, data);
       if (!res.ok) throw new UserError(res.error);
       const { updates, deletes, inserts } = res.plan;
-      if (inserts.length) await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
+      if (inserts.length) await tx.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
       for (const u of updates)
         await tx
           .update(s.stockExtras)

@@ -23,6 +23,8 @@ import {
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
@@ -85,6 +87,7 @@ async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" 
 /** Doğrudan kayıt: yönetici her geçmiş güne; personel yalnız doğrudan yolun günlerine ve kapalı işaretli olmayan güne */
 export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = new Date()): Promise<{ id: number; name: string; unit: string }> {
   if (data.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
+  const sube = await currentWriteBranch();
   return db.transaction(async (tx) => {
     await refuseLafposIkram(tx, data, now);
     if (me.role !== "admin") {
@@ -96,7 +99,8 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
     const target = await resolveWasteTarget(tx, data);
     const [row] = await tx
       .insert(s.wasteEntries)
-      .values({ ...data, ...target, createdBy: me.id, createdByName: me.name })
+      // Zayi / ikram hangi şubede olduysa oraya yazılır (docs/SUBE.md)
+      .values({ ...data, ...target, branchId: sube, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.wasteEntries.id });
     return { id: row.id, ...target };
   });
@@ -141,6 +145,7 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
     if (closed) throw new UserError(closed);
     await refuseLafposIkram(tx, input, now);
     const target = await resolveWasteTarget(tx, input);
+    const sube = await currentWriteBranch();
     const payload: LateWastePayloadT = LateWastePayload.parse({
       date: input.date,
       kind: input.kind,
@@ -150,6 +155,7 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
       qty: input.qty,
       reason: input.reason,
       note: input.note,
+      branchId: sube,
     });
     const clientKey = input.clientKey ?? randomUUID();
     // Aynı istek (gün, tür, kalem, miktar) bekliyorsa ikincisi açılmaz; aynı istemci anahtarı ise var olanı döner
@@ -267,6 +273,8 @@ export async function reviewWasteRequestCore(
           qty: p.qty,
           reason: p.reason,
           note: p.note,
+          // Kaydın şubesi isteği AÇAN personelin şubesidir; eski isteklerde alan yok, varsayılana düşer
+          branchId: p.branchId ?? DEFAULT_BRANCH_ID,
           createdBy: row.requestedBy,
           createdByName: row.requestedByName,
         })

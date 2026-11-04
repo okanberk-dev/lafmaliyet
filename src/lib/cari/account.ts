@@ -44,6 +44,8 @@ export interface LinkPrev {
     id?: number;
     paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null;
     createdBy?: string | null;
+    /** Kaydın şubesi (null = işletme geneli); dalga 3'te eklendi, eski kayıtta yok (docs/SUBE.md) */
+    branchId?: string | null;
   } | null;
 }
 

@@ -13,7 +13,7 @@ import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
-import { currentBranchWhere } from "@/server/branch-scope";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -63,8 +63,9 @@ async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
         cardShare: s.months.cardShare,
         note: s.months.note,
       })
-      .from(s.months)
-      .where(await currentBranchWhere(s.months.branchId)),
+      // ŞUBESİZ: bu okuma personel silme engelini besliyor (staffUsedMonths). Şubeye göre süzülünce Marina
+      // seçiliyken Tuzla'da maaş geçmişi olan kişi silinebilir hale geliyordu (docs/SUBE.md)
+      .from(s.months),
     tillRows(tx),
   ]);
   const ms = resolveMonths(rows, tillMonths(till, addDays(businessDate(), -1)))
@@ -129,6 +130,8 @@ export async function saveStaff(
     const removed = z.array(z.number().int().positive()).max(200).parse(removedIds);
     const defaultEff = zEffective.optional().parse(opts.effectiveFrom);
     const cur = currentMonthTR();
+    // Personel bir şubeye bağlı; maaşı o şubenin gideri (sahibin kararı, docs/SUBE.md)
+    const sube = await currentWriteBranch();
     const db = getDb();
     const changes: StaffChange[] = [];
     await db.transaction(async (tx) => {
@@ -152,7 +155,7 @@ export async function saveStaff(
           const endMonth = r.active === false ? shiftMonth(cur, -1) : null;
           const [created] = await tx
             .insert(s.staff)
-            .values({ name: r.name, netSalary: r.netSalary, extras: r.extras, sortOrder: i + 1, startMonth, endMonth, active: activeFromRange(endMonth, cur) })
+            .values({ name: r.name, branchId: sube, netSalary: r.netSalary, extras: r.extras, sortOrder: i + 1, startMonth, endMonth, active: activeFromRange(endMonth, cur) })
             .returning({ id: s.staff.id });
           changes.push({ id: created.id, name: r.name, mode: "base", fromMonth: startMonth });
           continue;

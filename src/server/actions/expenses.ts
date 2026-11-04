@@ -12,6 +12,9 @@ import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
+import { BRANCH_ID_MAX } from "@/lib/branches";
+import { currentExpenseBranch, knownBranchId } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 import { assertNotHeld } from "@/server/staff-requests/core";
@@ -73,7 +76,11 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
       saved = row;
     } else {
-      [saved] = await db.insert(s.expenseEntries).values({ ...values, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      // Tek şube seçiliyse harcama o şubenin, "Tümü"de işletme geneli (sahibin kararı; docs/SUBE.md)
+      [saved] = await db
+        .insert(s.expenseEntries)
+        .values({ ...values, branchId: await currentExpenseBranch(), createdBy: me.name })
+        .returning({ id: s.expenseEntries.id });
     }
     await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${data.description ? ` · ${data.description}` : ""}`);
     refresh();
@@ -92,6 +99,11 @@ export type ExpenseEntrySnapshot = {
   photoId?: number | null;
   vat?: number | null;
   cashOutId?: number | null;
+  /**
+   * Kaydın şubesi (null = işletme geneli). Geri almada olduğu gibi yazılır: yoksa Marina'nın silinen harcaması
+   * işletme geneli olarak geri gelirdi (docs/SUBE.md). Eski anlık görüntülerde alan yok, o zaman null kalır.
+   */
+  branchId?: string | null;
 };
 
 /**
@@ -126,6 +138,7 @@ export async function deleteExpenseEntry(id: number) {
       photoId: row.photoId,
       vat: row.vat,
       cashOutId: row.cashOutId,
+      branchId: row.branchId,
     };
     return snap;
   });
@@ -135,6 +148,7 @@ const linkSchema = z.object({
   photoId: z.number().int().positive().nullish(),
   vat: zAmount.nullish(),
   cashOutId: z.number().int().positive().nullish(),
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
 });
 
 /**
@@ -145,7 +159,9 @@ export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = entrySchema.omit({ id: true }).parse({ ...snap, description: snap.description ?? "", note: snap.note ?? "" });
-    const link = linkSchema.parse({ photoId: snap.photoId, vat: snap.vat, cashOutId: snap.cashOutId });
+    const link = linkSchema.parse({ photoId: snap.photoId, vat: snap.vat, cashOutId: snap.cashOutId, branchId: snap.branchId });
+    // Anlık görüntü istemciden gelir: şube kimliği kütüğe karşı doğrulanır, tanınmıyorsa işletme geneli olur
+    const sube = knownBranchId(link.branchId, await listBranches());
     const db = getDb();
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, data.categoryId)).limit(1);
     if (!cat) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
@@ -170,7 +186,8 @@ export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
       }
       const [row] = await tx
         .insert(s.expenseEntries)
-        .values({ ...data, description: data.description || null, note: data.note || null, createdBy: me.name, photoId, cashOutId, vat: link.vat ?? null })
+        // Şube anlık görüntüden: kayıt silindiği şubeye geri döner (alanı olmayan eski görüntüde işletme geneli)
+        .values({ ...data, description: data.description || null, note: data.note || null, branchId: sube, createdBy: me.name, photoId, cashOutId, vat: link.vat ?? null })
         .returning({ id: s.expenseEntries.id });
       return row;
     });
@@ -290,6 +307,8 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
             categoryId: cat!.id,
             description: o.note ? `Gelir-gider tablosundan · ${o.note}` : "Gelir-gider tablosundan aktarıldı",
             amount: o.amount,
+            // Sabit giderin karşılığı: kaynağı (pnlEntries) işletme geneli bir tablo, kayıt da öyle kalır
+            branchId: null,
             createdBy: me.name,
           })),
         );
@@ -300,7 +319,7 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
       if (!overrides.some((o) => o.month === month) && planned) {
         await tx
           .insert(s.expenseEntries)
-          .values({ date: `${month}-01`, categoryId: cat!.id, description: FIXED_ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name });
+          .values({ date: `${month}-01`, categoryId: cat!.id, description: FIXED_ESTIMATE_DESCRIPTION, amount: planned, branchId: null, createdBy: me.name });
         estimated = true;
       }
       // Saklı `active` sütunu da bitiş ayıyla (Ödemeler › Sabit giderlerden ekle bitmiş kalemi önermesin; E-62)

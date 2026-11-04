@@ -4,6 +4,7 @@
 // Çalıştırma: npx tsx --test tests/subeler.test.ts
 
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -184,12 +185,20 @@ test("şube sütunu taşıyan her tablo silme denetimine girer: yeni para tablos
 test("çakışma hedefi şubeyi içerir: (ay|gün, şube) birincil anahtarına tek sütunla ON CONFLICT düşer", () => {
   // Postgres: "there is no unique or exclusion constraint matching the ON CONFLICT specification".
   // Anahtarı şubeyi içeren tabloya tek sütunlu hedefle yazan kod çalışma anında patlar.
-  const dosyalar = ["src/server/actions/pnl.ts", "src/server/actions/sales.ts", "src/server/lafpos/ingest.ts"];
+  // Sabit dosya listesi KULLANILMAZ: dalga 3'te stock.ts'teki aynı hata listede olmadığı için kaçmıştı.
+  const dosyalar = execSync("grep -rl 'onConflictDoUpdate' src --include=*.ts || true", {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  assert.ok(dosyalar.length >= 3, "onConflictDoUpdate kullanan dosya bulunamadı: grep bozulmuş olabilir");
   for (const d of dosyalar) {
     const kaynak = oku(d);
     for (const m of kaynak.matchAll(/onConflictDoUpdate\(\{\s*target: (\[[^\]]*\]|[^,\n]+),/g)) {
       const hedef = m[1]!.trim();
-      if (!/months|posDayReports|modposCashSheets/.test(hedef)) continue;
+      if (!/months|posDayReports|modposCashSheets|cashReports|posDailySales|stockCounts/.test(hedef)) continue;
       assert.match(hedef, /^\[/, `${d}: ${hedef} dizi olmalı (tek sütunlu hedef bileşik anahtarla eşleşmez)`);
       assert.match(hedef, /branchId/, `${d}: ${hedef} şubeyi içermeli`);
     }
@@ -227,4 +236,49 @@ test("istek dışında süzme yok: betik ve arka plan işi bütün şubeleri gö
   const govde = kapsam.slice(kapsam.indexOf("export const currentBranchScope"));
   // cookies() istek dışında fırlar; yakalanmazsa göç betiği ve zil düşerdi
   assert.match(govde.slice(0, 500), /catch\s*\{\s*return ALL_BRANCHES;/);
+});
+
+test("gider süzgeci işletme genelini düşürmez: expenseEntries'te currentBranchWhere değil branchWhereWithShared", () => {
+  // Tek şube seçiliyken şubesi boş gider ("işletme geneli": kira, muhasebe, abonelik) de görünmeli.
+  // currentBranchWhere kullanılsaydı eq(branch_id, 'tuzla') olur, null satırlar düşer ve her şubenin kârı
+  // olduğundan yüksek çıkardı (sahibin kararı, docs/SUBE.md › Dalga 2'nin kararları).
+  const hits = execSync(
+    "grep -rn 'currentBranchWhere(s.expenseEntries.branchId)' src --include=*.ts --include=*.tsx || true",
+    { cwd: process.cwd(), encoding: "utf8" },
+  ).trim();
+  assert.equal(
+    hits,
+    "",
+    `Gider süzgecinde currentBranchWhere kullanılmış; branchWhereWithShared olmalı:\n${hits}`,
+  );
+});
+
+test("paylaşılan veri kümesi şubeye göre süzülmez: aynı diziler silme engellerini besliyor", () => {
+  // Dalga 3'ün çürütme turu bunu dört ayrı yerde kanıtladı (docs/SUBE.md › Neyi süzer, neyi süzmez):
+  // loadDataset'in staff / stockCounts / expenseEntries / wasteEntries dizileri yalnız raporlara değil,
+  // SİLME ENGELLERİNE de gidiyor — hammadde kartı, ürün kartı ve harcama kategorisi bunlara bakıp
+  // "silinebilir mi" diyor. Burayı süzmek dalga 2'deki ürün silme hatasını dört yeni yerde doğurur.
+  // Ayrıca ds.staff vergi beyanını (MUHTASAR) ve tek banka hesaplı nakit planını besliyor: ikisi de
+  // işletme geneli. Şubeye göre ayrım EKRANDA yapılır, veri kümesinde değil.
+  const ds = oku("src/server/data/dataset.ts");
+  assert.ok(
+    !ds.includes("currentBranchWhere") && !ds.includes("branchWhereWithShared"),
+    "src/server/data/dataset.ts şubeye göre süzülmüş: paylaşılan diziler silme engellerini de besliyor",
+  );
+});
+
+test("silme engelleri şubesiz kalır: dalga 2 ve 3'te çürütülen yerler yeniden süzülmesin", () => {
+  for (const [yol, gerekce] of [
+    ["src/server/data/product-history.ts", "ürün silme güvenliği"],
+    ["src/server/data/pos-staff.ts", "POS adı hangi dönemden"],
+    ["src/server/cash-outs/guard.ts", "personelin kasa satırı kilidi"],
+    ["src/server/cari/kasa.ts", "cari mutabakatı"],
+    ["src/server/cari/settle.ts", "borç–fatura bağı"],
+  ] as const) {
+    const kaynak = oku(yol);
+    assert.ok(
+      !kaynak.includes("currentBranchWhere") && !kaynak.includes("branchWhereWithShared"),
+      `${yol} şubeye göre süzülmüş (${gerekce}): bu bir görünüm değil, bütünlük denetimi`,
+    );
+  }
 });

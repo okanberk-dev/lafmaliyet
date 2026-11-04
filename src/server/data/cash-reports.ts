@@ -227,7 +227,7 @@ export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): 
       okcCumVat: s.cashReports.okcCumVat,
     })
     .from(s.cashReports)
-    .where(andWhere(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)), await subeKosulu()))
+    .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
     .orderBy(asc(s.cashReports.date));
 }
 
@@ -275,6 +275,11 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * (`source: "modpos"`, modposTillRows; docs/MODPOS-API.md › Ay rakamına yedek). Öncelik rapor > LafPOS > ModPOS.
  * Geçiş günü boş ve yedek kapalıyken yalnız kasa raporları (bugünkü gibi). Ay bilgisini okuyan her yer (veri kümesi,
  * sabit gider sürümü, Kasa'nın ay satırı) bu yükleyiciden geçer: rakam her ekranda aynı. İşlem içinden de okunur.
+ *
+ * ŞUBEYE GÖRE SÜZÜLMEZ (docs/SUBE.md › Neyi süzer, neyi süzmez). Üç nedenle: (1) çıktısı personel silme engeline
+ * girer (costs.ts dataMonths › staffUsedMonths) — süzülünce Tuzla'da maaş geçmişi olan kişi Marina seçiliyken
+ * silinebilir hale geliyordu; (2) vergi beyanını besler, vergi tek mükelleftir; (3) modülün kendi sözleşmesi
+ * "rakam her ekranda aynı" diyor, seçime bağlı bir toplayıcı bunu bozar.
  */
 export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
   const [reports, lafpos, modpos] = await Promise.all([
@@ -288,7 +293,6 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
         offRevenue: s.cashReports.offRevenue,
       })
       .from(s.cashReports)
-      .where(await subeKosulu())
       .orderBy(asc(s.cashReports.date)),
     lafposTillRows(db),
     modposTillRows(db),
@@ -390,7 +394,7 @@ export async function firstModposTillDay(db: Db | Tx = getDb()): Promise<string 
   if (end === null) return null;
   const [rows, [firstReport]] = await Promise.all([
     modposTillRows(db),
-    db.select({ date: s.cashReports.date }).from(s.cashReports).where(await subeKosulu()).orderBy(asc(s.cashReports.date)).limit(1),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
   ]);
   // Kesintisiz kısmın başı; öncesindeki föyler sayılmaz (başı ilk raporsa raporlardan önce sayılan föy yok)
   return modposRunStart(
