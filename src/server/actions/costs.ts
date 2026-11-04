@@ -13,7 +13,8 @@ import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
-import { currentBranchWhere, currentPhysicalBranch } from "@/server/branch-scope";
+import { ALL_BRANCHES } from "@/lib/branches";
+import { currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
@@ -53,29 +54,35 @@ function spanText(months: string[]): string {
  * geriye dönük değiştirmesin.
  */
 async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
-  const [rows, till] = await Promise.all([
-    tx
-      .select({
-        month: s.months.month,
-        openDays: s.months.openDays,
-        posRevenue: s.months.posRevenue,
-        discounts: s.months.discounts,
-        offRevenue: s.months.offRevenue,
-        cardShare: s.months.cardShare,
-        note: s.months.note,
-      })
-      .from(s.months)
-      .where(await currentBranchWhere(s.months.branchId)),
-    tillRows(tx),
-  ]);
-  const ms = resolveMonths(rows, tillMonths(till, addDays(businessDate(), -1)))
-    .filter((m) => (m.openDays ?? 0) > 0 && (!before || m.month < before))
-    .map((m) => ({ m: m.month }));
-  const ps = await tx
-    .selectDistinct({ m: s.pnlEntries.month })
-    .from(s.pnlEntries)
-    .where(before ? lt(s.pnlEntries.month, before) : undefined);
-  return [...new Set([...ms, ...ps].map((r) => r.m))].sort();
+  // ŞUBE SEÇİMİNDEN BAĞIMSIZ okunur (withBranchScope ile "hepsi"). Çıktısının gittiği her yer bir SİLME /
+  // DEĞİŞTİRME ENGELİ: saveStaff, staffDeleteBlockers, deleteFixedExpense, fixedDeleteBlockers — artı ay
+  // seçicisinin ilk veri ayı. Seçili şubeye göre süzülürse Marina seçiliyken `past` boşalır, staffUsedMonths
+  // hiçbir ay bulmaz ve Tuzla'da maaş hesabına girmiş kişi silinebilir hale gelir (docs/SUBE.md › Neyi süzer,
+  // neyi süzmez). Aynısı sabit gider için geçerli. tillRows de bu kapsamın içinde: o da ay rakamını getiriyor.
+  return withBranchScope(ALL_BRANCHES, async () => {
+    const [rows, till] = await Promise.all([
+      tx
+        .select({
+          month: s.months.month,
+          openDays: s.months.openDays,
+          posRevenue: s.months.posRevenue,
+          discounts: s.months.discounts,
+          offRevenue: s.months.offRevenue,
+          cardShare: s.months.cardShare,
+          note: s.months.note,
+        })
+        .from(s.months),
+      tillRows(tx),
+    ]);
+    const ms = resolveMonths(rows, tillMonths(till, addDays(businessDate(), -1)))
+      .filter((m) => (m.openDays ?? 0) > 0 && (!before || m.month < before))
+      .map((m) => ({ m: m.month }));
+    const ps = await tx
+      .selectDistinct({ m: s.pnlEntries.month })
+      .from(s.pnlEntries)
+      .where(before ? lt(s.pnlEntries.month, before) : undefined);
+    return [...new Set([...ms, ...ps].map((r) => r.m))].sort();
+  });
 }
 
 /**

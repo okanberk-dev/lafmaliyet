@@ -20,6 +20,7 @@ import {
   type WasteDeletePayloadT,
   type WasteLock,
 } from "@/lib/waste-requests";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { currentPhysicalBranch } from "@/server/branch-scope";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
@@ -153,6 +154,8 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
       qty: input.qty,
       reason: input.reason,
       note: input.note,
+      // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın
+      branchId: (await currentPhysicalBranch()).id,
     });
     const clientKey = input.clientKey ?? randomUUID();
     // Aynı istek (gün, tür, kalem, miktar) bekliyorsa ikincisi açılmaz; aynı istemci anahtarı ise var olanı döner
@@ -270,6 +273,8 @@ export async function reviewWasteRequestCore(
           qty: p.qty,
           reason: p.reason,
           note: p.note,
+          // Şube isteği AÇAN personelinki; bu alandan önceki isteklerde yok, varsayılana düşer
+          branchId: p.branchId ?? DEFAULT_BRANCH_ID,
           createdBy: row.requestedBy,
           createdByName: row.requestedByName,
         })

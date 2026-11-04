@@ -29,6 +29,7 @@ import { paymentUnchanged, type RecentPaid } from "@/lib/recent-paid";
 import { daysBetween, todayTR } from "@/lib/reminders";
 import { UserError } from "@/server/actions/util";
 import { toDebt } from "@/server/data/cari";
+import { currentExpenseBranch, currentWriteBranch } from "@/server/branch-scope";
 import { schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
@@ -244,7 +245,8 @@ export async function writePayment(tx: Tx, me: Actor, card: Card, input: Payment
       } else {
         const [line] = await tx
           .insert(s.cashOuts)
-          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", createdBy: me.id, createdByName: me.name })
+          // Kasa şube başına: satır panelde seçili şubede açılır (docs/SUBE.md)
+          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", branchId: await currentWriteBranch(), createdBy: me.id, createdByName: me.name })
           .returning({ id: s.cashOuts.id });
         cashOutId = line.id;
         cashOutCreated = true;
@@ -483,6 +485,8 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
         categoryId: category!.id,
         description: expenseDescription,
         amount,
+        // Tek şube seçiliyse borcun gideri o şubenin, "Tümü"de işletme geneli
+        branchId: await currentExpenseBranch(),
         paymentMethod: null,
         note: "Cari · faturasız",
         createdBy: me.name,
