@@ -46,6 +46,18 @@ Hepsi `src/lib/branches.ts`'te ve hem ekran hem eylem aynı işlevi çağırır;
 penceresi. Ad yazılırken kimlik kendiliğinden önerilir ("Laffogato Marina" → `laffogato-marina`), tür değişince
 kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 
+## Dalga 2'nin kararları (4 Kasım 2026)
+
+| Konu | Karar |
+|---|---|
+| Giderler | Şubeye bağlı; **ortak giderler "işletme geneli"** kalır, hiçbir şubeye zorlanmaz |
+| Personel | Herkes bir şubeye bağlı; maaşı o şubenin gideri |
+| ModPOS | Şube başına ayrı anahtar; günlük 2 çekim hakkı şube başına |
+| Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde |
+
+"Tümü" seçiliyken işletme geneli giderler toplama girer ama şube kırılımında ayrı sütunda durur: bir şubenin
+kârı ortak giderle şişirilmez.
+
 ## Sırada ne var
 
 Dalga 1 (bu değişiklik) yalnız kütüğü ve ekranı kurdu: hiçbir ciro tablosunda şube sütunu **yok**, bütün raporlar
