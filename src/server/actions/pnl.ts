@@ -68,7 +68,7 @@ export async function setMonthNote(month: string, note: string | null) {
     await getDb()
       .insert(s.months)
       .values({ month: m, note: n })
-      .onConflictDoUpdate({ target: s.months.month, set: { note: n, updatedAt: new Date() } });
+      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { note: n, updatedAt: new Date() } });
     await logActivity(me, "Ay notu", `${monthLabel(m)}: ${n ?? "silindi"}`);
     refresh();
     return null;
@@ -95,7 +95,7 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
     await getDb()
       .insert(s.months)
       .values({ month: m, [field]: v })
-      .onConflictDoUpdate({ target: s.months.month, set: { [field]: v, updatedAt: new Date() } });
+      .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { [field]: v, updatedAt: new Date() } });
     await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
     refresh();
     return null;

@@ -4,11 +4,19 @@ import { createHash } from "node:crypto";
 
 import { and, asc, desc, eq, getTableColumns, gte, lte, sql } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import type { KasaFoyu } from "@/lib/modpos/foy";
 import type { StoredDay } from "@/lib/modpos/plan";
 import { parseModposState, withDayErrors, withRun, MODPOS_STATE_KEY, type ModposRun, type ModposState } from "@/lib/modpos/status";
 import { isFinalFoy, sheetCanonical, sheetPrevious, sheetState, type ModposSheetPrevious } from "@/lib/modpos/z";
+import { andWhere, currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
+
+/**
+ * Panelde seçili şubenin koşulu (docs/SUBE.md). Föyün anahtarı (gün, şube): süzmeden okuyan sorgu başka şubenin
+ * föyünü döndürebilir. "Tümü" seçiliyken koşul yoktur; arka plan işinde de (istek yok) "Tümü"ye düşer.
+ */
+const subeKosulu = () => currentBranchWhere(s.modposCashSheets.branchId);
 
 /**
  * ModPOS kasa föylerinin saklanması ve okunması (docs/MODPOS-API.md › Saklama). Bir kasa günü tek satırdır
@@ -76,16 +84,23 @@ export async function storeFoy(
   foy: KasaFoyu,
   fetchedAt: Date,
   raw: string | null = null,
+  /**
+   * Föyün şubesi: hangi ModPOS hesabından çekildiyse o (docs/SUBE.md › Kasa kaynağı). Bugün yalnız Tuzla'nın
+   * hesabı tanımlı, bu yüzden varsayılan odur; Marina'nın anahtarı eklendiğinde çağıran kendi şubesini geçer.
+   * Gün sorgusu şubesiz kalsaydı iki şubenin aynı günü birbirini ezerdi: anahtar (gün, şube).
+   */
+  branchId: string = DEFAULT_BRANCH_ID,
 ): Promise<{ change: SheetChange; revision: number; final: boolean; previous: ModposSheetPrevious | null }> {
   const fingerprint = sheetFingerprint(foy);
   const final = isFinalFoy(foy, fetchedAt);
   const state = sheetState(foy);
   const generatedAt = foy.olusturulma ? new Date(foy.olusturulma) : null;
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`modpos-foy:${foy.kasaGunu}`}))`);
-    const [old] = await tx.select(SHEET_COLS).from(s.modposCashSheets).where(eq(s.modposCashSheets.day, foy.kasaGunu)).limit(1);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`modpos-foy:${branchId}:${foy.kasaGunu}`}))`);
+    const gun = and(eq(s.modposCashSheets.day, foy.kasaGunu), eq(s.modposCashSheets.branchId, branchId));
+    const [old] = await tx.select(SHEET_COLS).from(s.modposCashSheets).where(gun).limit(1);
     if (!old) {
-      await tx.insert(s.modposCashSheets).values({ day: foy.kasaGunu, sheet: foy, state, final, fingerprint, revision: 1, generatedAt, fetchedAt, changedAt: fetchedAt, raw });
+      await tx.insert(s.modposCashSheets).values({ day: foy.kasaGunu, branchId, sheet: foy, state, final, fingerprint, revision: 1, generatedAt, fetchedAt, changedAt: fetchedAt, raw });
       return { change: "yeni" as const, revision: 1, final, previous: null };
     }
     // Daha önce kesinleşen gün kesin kalır (sonraki çekim de kesinleşme anından sonradır)
@@ -94,7 +109,7 @@ export async function storeFoy(
       await tx
         .update(s.modposCashSheets)
         .set({ final: nextFinal, fetchedAt, generatedAt: generatedAt ?? old.generatedAt, sheet: foy, ...(raw !== null ? { raw } : {}) })
-        .where(eq(s.modposCashSheets.day, foy.kasaGunu));
+        .where(gun);
       return { change: "ayni" as const, revision: old.revision, final: nextFinal, previous: old.previous ?? null };
     }
     const previous = isSheet(old.sheet)
@@ -104,7 +119,7 @@ export async function storeFoy(
     await tx
       .update(s.modposCashSheets)
       .set({ sheet: foy, state, final: nextFinal, fingerprint, revision, previous, generatedAt, fetchedAt, changedAt: fetchedAt, raw })
-      .where(eq(s.modposCashSheets.day, foy.kasaGunu));
+      .where(gun);
     return { change: "degisti" as const, revision, final: nextFinal, previous };
   });
 }
@@ -115,8 +130,8 @@ type Reader = Pick<DB, "select">;
 /** Bir günün föyü; `raw: true` ham XML'i de okur (yalnız günün görünümü) */
 export async function loadModposSheet(day: string, db: Reader = getDb(), o: { raw?: boolean } = {}): Promise<ModposSheet | null> {
   const [r] = o.raw
-    ? await db.select().from(s.modposCashSheets).where(eq(s.modposCashSheets.day, day)).limit(1)
-    : await db.select(SHEET_COLS).from(s.modposCashSheets).where(eq(s.modposCashSheets.day, day)).limit(1);
+    ? await db.select().from(s.modposCashSheets).where(andWhere(eq(s.modposCashSheets.day, day), await subeKosulu())).limit(1)
+    : await db.select(SHEET_COLS).from(s.modposCashSheets).where(andWhere(eq(s.modposCashSheets.day, day), await subeKosulu())).limit(1);
   return r ? toSheet(r) : null;
 }
 
@@ -125,20 +140,23 @@ export async function loadModposSheets(from: string, to: string, db: Reader = ge
   const rows = await db
     .select(SHEET_COLS)
     .from(s.modposCashSheets)
-    .where(and(gte(s.modposCashSheets.day, from), lte(s.modposCashSheets.day, to)))
+    .where(andWhere(and(gte(s.modposCashSheets.day, from), lte(s.modposCashSheets.day, to)), await subeKosulu()))
     .orderBy(asc(s.modposCashSheets.day));
   return rows.flatMap((r) => toSheet(r) ?? []);
 }
 
 /** Planlayıcının girdisi: saklanan günler (kesin mi, son çekilme anı) */
 export async function loadModposIndex(db: Reader = getDb()): Promise<Map<string, StoredDay>> {
-  const rows = await db.select({ day: s.modposCashSheets.day, final: s.modposCashSheets.final, fetchedAt: s.modposCashSheets.fetchedAt }).from(s.modposCashSheets);
+  const rows = await db
+    .select({ day: s.modposCashSheets.day, final: s.modposCashSheets.final, fetchedAt: s.modposCashSheets.fetchedAt })
+    .from(s.modposCashSheets)
+    .where(await subeKosulu());
   return new Map(rows.map((r) => [r.day, { final: r.final, fetchedAt: r.fetchedAt.toISOString() }]));
 }
 
 /** Son çekilen föyler (Ayarlar kartının listesi) */
 export async function recentModposSheets(limit: number, db: Reader = getDb()): Promise<ModposSheet[]> {
-  const rows = await db.select(SHEET_COLS).from(s.modposCashSheets).orderBy(desc(s.modposCashSheets.day)).limit(limit);
+  const rows = await db.select(SHEET_COLS).from(s.modposCashSheets).where(await subeKosulu()).orderBy(desc(s.modposCashSheets.day)).limit(limit);
   return rows.flatMap((r) => toSheet(r) ?? []);
 }
 

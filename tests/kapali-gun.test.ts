@@ -232,8 +232,10 @@ test("kaynak: /panel/ozel-gunler prop'larında kindHistory, tutar ve gerçekleş
     assert.doesNotMatch(src, /kindHistory|amount|realised|realized|actual/);
     assertNoCostKeys(src, "ozel-gunler");
   }
-  // Yönetici de aynı ekranda (satış tahmini kalkınca listesi buraya taşındı)
-  assert.match(page, /admin \? <AdminContent \/> : <StaffContent \/>/);
+  // Yönetici de aynı ekranda (satış tahmini kalkınca listesi buraya taşındı). Rol Suspense'in İÇİNDE okunur:
+  // sayfanın gövdesinde okunursa ön üretim düşer (next build "uncached or runtime data during prerendering").
+  assert.match(page, /user\.role === "admin" \? <AdminContent \/> : <StaffContent \/>/);
+  assert.match(page, /export default function SpecialDaysPage\(\)/, "sayfa eşzamanlı olmalı: rolü Suspense içindeki bileşen okur");
   assert.match(page, /<StaffSpecialDays\s+rows=\{rows\}\s+closed=\{closed\}\s+today=\{today\}\s+minDate=\{[^}]+\}\s+maxDate=\{[^}]+\}\s+saveAction=\{saveStaffSpecialDay\}\s+deleteAction=\{deleteStaffSpecialDay\}\s+\/>/);
   const loader = read("src/server/staff-special.ts");
   const list = loader.slice(loader.indexOf("export async function staffSpecialList"));

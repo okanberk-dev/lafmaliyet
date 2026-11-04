@@ -393,6 +393,13 @@
       "when": 1793809355492,
       "tag": "0055_hatirlatici_ses_atama",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793813184422,
+      "tag": "0056_sube_kirilimi",
+      "breakpoints": true
     }
   ]
 }

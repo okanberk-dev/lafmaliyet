@@ -30,6 +30,8 @@ export async function productHistoryCounts(p: { id: number; siteMenuId: string |
  * satırları LafPOS'a geçilen ayların listesini içermez, kart ile eylem ayrı sayardı (denetim B08 incelemesi)
  */
 export async function salesLinesCount(productId: number, db: DB = getDb()): Promise<number> {
+  // ŞUBEYE GÖRE SÜZÜLMEZ: bu bir görünüm değil, silme güvenliği. Marina'ya bakarken Tuzla'da satılmış ürün
+  // silinebilir olurdu (tests/urunler.test.ts bekçisi).
   const [r] = await db.select({ n: count() }).from(s.salesLines).where(eq(s.salesLines.productId, productId));
   return r?.n ?? 0;
 }

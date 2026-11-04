@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 
 import { type BranchRow, sortBranches } from "@/lib/branches";
 
@@ -47,8 +47,29 @@ export async function getBranch(db: DB, id: string): Promise<BranchRow | null> {
 /**
  * Şubeye yazılmış kayıt sayısı: silmeden önce sorulur (src/lib/branches.ts branchDeleteError).
  *
- * Dalga 1'de hiçbir ciro tablosunda şube sütunu YOK (docs/planlar/sube.md › Dalga 2), yani yeni açılmış bir şubeye
- * bağlı kayıt da olamaz: sayı sıfırdır ve kural yalnız sabit kayıtları (Tuzla, laffogato.net) korur. Dalga 2'de
- * kasa raporu, günlük satış ve giderler sayılacak; o zamana kadar çağıran sıfır geçer ve bu dosyada sahte bir
- * sorgu durmaz.
+ * Şube sütunu taşıyan her tablo sayılır (migration 0056). Giderin şubesi boş olabilir ("işletme geneli", sahibin
+ * kararı): boş satır hiçbir şubeye sayılmaz, zaten `eq` onu dışarıda bırakır. Tek sorguda toplanır ki şube listesi
+ * ekranı tablo başına bir gidiş dönüş yapmasın.
  */
+export async function branchUsageCount(db: DB, id: string): Promise<number> {
+  const tables = [
+    s.cashReports,
+    s.posDayReports,
+    s.posDailySales,
+    s.modposCashSheets,
+    s.months,
+    s.salesLines,
+    s.stockCounts,
+    s.wasteEntries,
+    s.cashOuts,
+    s.staff,
+    s.expenseEntries,
+  ];
+  const counts = await Promise.all(
+    tables.map(async (table) => {
+      const [row] = await db.select({ n: count() }).from(table).where(eq(table.branchId, id));
+      return Number(row?.n ?? 0);
+    }),
+  );
+  return counts.reduce((a, b) => a + b, 0);
+}

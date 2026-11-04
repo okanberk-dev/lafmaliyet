@@ -1,7 +1,8 @@
 import "server-only";
 
-import { eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
 import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
@@ -71,14 +72,21 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,
         createdAt: now,
+        branchId: DEFAULT_BRANCH_ID,
       };
     });
     const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now };
+    // Gün sonunun şubesi: hangi LafPOS kasasından geldiyse o (docs/SUBE.md). Bugün yalnız Tuzla'da LafPOS var.
+    // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres
+    // "no unique or exclusion constraint matching" diye düşer.
+    const branchId = DEFAULT_BRANCH_ID;
     await tx
       .insert(s.posDayReports)
-      .values({ date: day.date, ...report })
-      .onConflictDoUpdate({ target: s.posDayReports.date, set: report });
-    await tx.delete(s.posDailySales).where(eq(s.posDailySales.date, day.date));
+      .values({ date: day.date, branchId, ...report })
+      .onConflictDoUpdate({ target: [s.posDayReports.date, s.posDayReports.branchId], set: report });
+    await tx
+      .delete(s.posDailySales)
+      .where(and(eq(s.posDailySales.date, day.date), eq(s.posDailySales.branchId, branchId)));
     if (rows.length) await tx.insert(s.posDailySales).values(rows);
     // Satışlı LafPOS günü kafenin açık olduğunun kanıtı (E-36): yalnız geçiş gününden sonraki günde, kasa raporunun
     // gelişi gibi o günün kapalı işaretini ve bekleyen "Kafe kapalıydı" bildirimini kaldırır; deneme günü dokunmaz.

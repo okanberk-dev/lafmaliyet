@@ -13,6 +13,7 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -147,14 +148,16 @@ type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
  * olan ayda elle yazılmış 0 da değerdir: src/lib/cash-month.ts monthRowEmpty).
  */
 async function dropEmptyStockMonth(tx: Tx, month: string) {
-  const [row] = await tx.select().from(s.months).where(eq(s.months.month, month));
+  // Ay satırının anahtarı (ay, şube): şubesiz okuma başka şubenin ayını düşürürdü
+  const sube = await currentWriteBranch();
+  const [row] = await tx.select().from(s.months).where(and(eq(s.months.month, month), eq(s.months.branchId, sube)));
   if (!row) return;
   const zeros = row.discounts === 0 || row.offRevenue === 0;
   if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, tx)))) return;
   const [counts, extras, lines, pnl] = await Promise.all([
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(eq(s.stockCounts.month, month)),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(eq(s.stockExtras.month, month)),
-    tx.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(eq(s.salesLines.month, month)),
+    tx.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube))),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month)),
   ]);
   if ([counts, extras, lines, pnl].some((r) => (r[0]?.n ?? 0) > 0)) return;

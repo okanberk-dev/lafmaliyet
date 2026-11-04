@@ -4,6 +4,7 @@ import {
   check,
   customType,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -17,7 +18,7 @@ import {
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { AdoptPrev, LinkPrev } from "../../lib/cari/account";
-import type { BranchKind, BranchPosSource } from "../../lib/branches";
+import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../lib/branches";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
@@ -30,6 +31,14 @@ const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull(
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+/**
+ * Satırın şubesi (dalga 2, docs/SUBE.md). Ciro, kasa, satış, stok ve personelde BOŞ KALAMAZ; eski satırlar
+ * 'tuzla' ile doldurulur (sahibin kararı, 4 Kasım 2026). Varsayılan bilerek duruyor: şube yazmayan eski bir
+ * kod yolu kalırsa satır kaybolmaz, Tuzla'ya düşer.
+ */
+const branchId = () => text("branch_id").notNull().default(DEFAULT_BRANCH_ID).references(() => branches.id);
+/** Ortak gider: null = "işletme geneli" (muhasebeci, yazılım); yalnız expense_entries'te geçerli */
+const branchIdNullable = () => text("branch_id").references(() => branches.id);
 
 // ---------------------------------------------------------------- Kullanıcılar
 export const users = pgTable("users", {
@@ -280,25 +289,30 @@ export const productPrices = pgTable(
  * kopyalanmaz, model yüklenirken hesaplanır). İndirim ve ödenmez bu yüzden boş bırakılabilir: boş = kasa raporlarından,
  * 0 elle yazılmış sıfırdır (eski ayların sıfırları elle yazılmış sayılır).
  */
-export const months = pgTable("months", {
-  month: text("month").primaryKey(), // YYYY-MM
-  openDays: integer("open_days"),
-  posRevenue: doublePrecision("pos_revenue"),
-  discounts: doublePrecision("discounts"),
-  offRevenue: doublePrecision("off_revenue"),
-  /** Kartlı satış oranı (0–1), elle; boşsa o ayın kasa raporlarından, o da yoksa Ayarlar › kartlı satış oranı */
-  cardShare: doublePrecision("card_share"),
-  note: text("note"),
-  updatedAt: updatedAt(),
-});
+/** Ayın şube başına özeti (dalga 2: anahtar month -> (month, branch_id)) */
+export const months = pgTable(
+  "months",
+  {
+    month: text("month").notNull(), // YYYY-MM
+    branchId: branchId(),
+    openDays: integer("open_days"),
+    posRevenue: doublePrecision("pos_revenue"),
+    discounts: doublePrecision("discounts"),
+    offRevenue: doublePrecision("off_revenue"),
+    /** Kartlı satış oranı (0–1), elle; boşsa o ayın kasa raporlarından, o da yoksa Ayarlar › kartlı satış oranı */
+    cardShare: doublePrecision("card_share"),
+    note: text("note"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.month, t.branchId] })],
+);
 
 export const salesLines = pgTable(
   "sales_lines",
   {
     id: serial("id").primaryKey(),
-    month: text("month")
-      .notNull()
-      .references(() => months.month, { onDelete: "cascade" }),
+    month: text("month").notNull(),
+    branchId: branchId(),
     posName: text("pos_name").notNull(),
     qty: doublePrecision("qty").notNull().default(0),
     revenue: doublePrecision("revenue").notNull().default(0),
@@ -307,7 +321,15 @@ export const salesLines = pgTable(
     note: text("note"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
-  (t) => [index("sales_lines_month_idx").on(t.month)],
+  (t) => [
+    index("sales_lines_month_idx").on(t.month, t.branchId),
+    // Ay artık şubeyle birlikte anahtar: satır ayın O ŞUBEDEKİ kaydına bağlı
+    foreignKey({
+      columns: [t.month, t.branchId],
+      foreignColumns: [months.month, months.branchId],
+      name: "sales_lines_month_branch_fk",
+    }).onDelete("cascade"),
+  ],
 );
 
 /** POS ürün adı → menü ürünü eşleştirme hafızası (her ay yeniden eşleştirmemek için) */
@@ -593,6 +615,8 @@ export const invoiceDocuments = pgTable(
 // active yalnızca geriye dönük uyumluluk içindir: active = endMonth boş ya da endMonth >= bu ay.
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
+  /** Kişinin şubesi (dalga 2): maaşı o şubenin gideri (sahibin kararı, 4 Kasım 2026) */
+  branchId: branchId(),
   name: text("name").notNull(),
   netSalary: doublePrecision("net_salary").notNull().default(0),
   extras: doublePrecision("extras").notNull().default(0),
@@ -710,6 +734,7 @@ export const expenseEntries = pgTable(
   "expense_entries",
   {
     id: serial("id").primaryKey(),
+    branchId: branchIdNullable(),
     date: text("date").notNull(), // YYYY-MM-DD
     categoryId: integer("category_id")
       .notNull()
@@ -763,6 +788,7 @@ export const stockCounts = pgTable(
   {
     id: serial("id").primaryKey(),
     month: text("month").notNull(),
+    branchId: branchId(),
     ingredientId: integer("ingredient_id")
       .notNull()
       .references(() => ingredients.id, { onDelete: "cascade" }),
@@ -772,7 +798,7 @@ export const stockCounts = pgTable(
     countedBy: text("counted_by"),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("stock_counts_month_ingredient_uq").on(t.month, t.ingredientId)],
+  (t) => [uniqueIndex("stock_counts_month_ingredient_uq").on(t.month, t.branchId, t.ingredientId)],
 );
 
 export const stockExtras = pgTable("stock_extras", {
@@ -1241,6 +1267,7 @@ export const cashReports = pgTable(
     id: serial("id").primaryKey(),
     /** İş günü (YYYY-MM-DD, Türkiye); gece yarısından sonra kapanan gün bir önceki güne yazılır */
     date: text("date").notNull(),
+    branchId: branchId(),
     zNo: text("z_no"),
     receipts: integer("receipts"),
     /** Z raporundaki toplam satış ve ödeme türleri */
@@ -1311,7 +1338,7 @@ export const cashReports = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("cash_reports_date_uq").on(t.date)],
+  (t) => [uniqueIndex("cash_reports_date_uq").on(t.date, t.branchId)],
 );
 
 /**
@@ -1373,6 +1400,7 @@ export const cashOuts = pgTable(
   "cash_outs",
   {
     id: serial("id").primaryKey(),
+    branchId: branchId(),
     /** Kasanın iş günü (YYYY-MM-DD) */
     date: text("date").notNull(),
     kind: text("kind", { enum: ["harcama", "teslim"] }).notNull().default("harcama"),
@@ -1409,6 +1437,7 @@ export const wasteEntries = pgTable(
     id: serial("id").primaryKey(),
     /** İş günü (YYYY-MM-DD, Türkiye) */
     date: text("date").notNull(),
+    branchId: branchId(),
     kind: text("kind", { enum: ["zayi", "ikram"] }).notNull(),
     productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
     ingredientId: integer("ingredient_id").references(() => ingredients.id, { onDelete: "set null" }),
@@ -2051,6 +2080,7 @@ export const posDailySales = pgTable(
     id: serial("id").primaryKey(),
     /** İş günü (YYYY-MM-DD; 05:00 kuralı, Kasa raporuyla aynı) */
     date: text("date").notNull(),
+    branchId: branchId(),
     /** LafPOS'taki POS adı (posName ya da "AD BOY") */
     posName: text("pos_name").notNull(),
     productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
@@ -2069,23 +2099,28 @@ export const posDailySales = pgTable(
     lafposService: boolean("lafpos_service").notNull().default(false),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("pos_daily_sales_date_pos_name_uq").on(t.date, t.posName)],
+  (t) => [uniqueIndex("pos_daily_sales_date_pos_name_uq").on(t.date, t.branchId, t.posName)],
 );
 
 /**
  * LafPOS'un gün sonu özeti, gün başına bir satır (docs/LAFPOS.md): Z ve kasa alanları (Kasa raporunun "LafPOS'tan
  * doldur"u), ödeme kanalları (komisyon anahtarlarıyla) ve ikramlar (menü değeri ve nedeni). Personele yalnız `z` gider.
  */
-export const posDayReports = pgTable("pos_day_reports", {
-  date: text("date").primaryKey(),
-  z: jsonb("z").$type<PosDayZ>().notNull(),
-  payments: jsonb("payments").$type<PosPayment[]>().notNull(),
-  ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
-  /** Gönderen sistem ("lafpos") */
-  source: text("source").notNull(),
-  /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
-  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const posDayReports = pgTable(
+  "pos_day_reports",
+  {
+    date: text("date").notNull(),
+    branchId: branchId(),
+    z: jsonb("z").$type<PosDayZ>().notNull(),
+    payments: jsonb("payments").$type<PosPayment[]>().notNull(),
+    ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
+    /** Gönderen sistem ("lafpos") */
+    source: text("source").notNull(),
+    /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.date, t.branchId] })],
+);
 
 // ---------------------------------------------------------------- ModPOS kasa föyü (docs/MODPOS-API.md)
 /**
@@ -2098,7 +2133,8 @@ export const modposCashSheets = pgTable(
   "modpos_cash_sheets",
   {
     /** Kasa günü (YYYY-MM-DD): kasanın açıldığı gün */
-    day: text("day").primaryKey(),
+    day: text("day").notNull(),
+    branchId: branchId(),
     sheet: jsonb("sheet").$type<KasaFoyu>().notNull(),
     /** KAPALI: bütün kasalar kapandı; ACIK: en az biri açık; BOS: o gün kasa açılmamış */
     state: text("state", { enum: ["KAPALI", "ACIK", "BOS"] }).notNull(),
@@ -2121,7 +2157,10 @@ export const modposCashSheets = pgTable(
      */
     raw: text("raw"),
   },
-  (t) => [check("modpos_cash_sheets_revision_pos", sql`${t.revision} >= 1`)],
+  (t) => [
+    primaryKey({ columns: [t.day, t.branchId] }),
+    check("modpos_cash_sheets_revision_pos", sql`${t.revision} >= 1`),
+  ],
 );
 
 // ---------------------------------------------------------------- Vergi (docs/VERGI.md)

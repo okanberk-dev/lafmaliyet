@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
 import { requireUser } from "@/server/auth/dal";
+import { branchScope } from "@/server/branch-scope";
 import { loadSearchIndex } from "@/server/data/search";
 
 export const metadata: Metadata = {
@@ -12,8 +13,17 @@ export const metadata: Metadata = {
 
 async function SidebarWithUser() {
   const user = await requireUser();
-  const index = user.role === "admin" ? await loadSearchIndex() : [];
-  return <Sidebar user={{ name: user.name, email: user.email, role: user.role }} index={index} />;
+  const [index, branch] = await Promise.all([
+    user.role === "admin" ? loadSearchIndex() : Promise.resolve([]),
+    branchScope(),
+  ]);
+  return (
+    <Sidebar
+      user={{ name: user.name, email: user.email, role: user.role }}
+      index={index}
+      branch={{ scope: branch.scope, branches: branch.branches }}
+    />
+  );
 }
 
 /**

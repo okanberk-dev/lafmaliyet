@@ -13,6 +13,7 @@ import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -62,7 +63,8 @@ async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
         cardShare: s.months.cardShare,
         note: s.months.note,
       })
-      .from(s.months),
+      .from(s.months)
+      .where(await currentBranchWhere(s.months.branchId)),
     tillRows(tx),
   ]);
   const ms = resolveMonths(rows, tillMonths(till, addDays(businessDate(), -1)))

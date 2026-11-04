@@ -27,6 +27,7 @@ import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -144,19 +145,28 @@ export function withOkcOf(data: CashReportFields, prev: Pick<CashReportRow, (typ
  * doğrudan girişi (saveCashReport) sıraya girer. Raporun satırından ve istek satırından önce alınır: raporu henüz olmayan
  * günde satır kilidi yoktur, onay ile doğrudan giriş aynı günü yazarken birbirini ters sırayla beklemesin.
  */
-export async function lockLateDay(tx: CashTx, date: string): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kasa-gec:${date}`}))`);
+export async function lockLateDay(tx: CashTx, date: string, branchId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kasa-gec:${branchId}:${date}`}))`);
 }
 
 /** Günün raporunu kilitleyerek okur (FOR UPDATE); yoksa null */
-export async function lockCashReport(tx: CashTx, date: string): Promise<CashReportRow | null> {
-  const [row] = await tx.select().from(s.cashReports).where(eq(s.cashReports.date, date)).for("update").limit(1);
+export async function lockCashReport(tx: CashTx, date: string, branchId: string): Promise<CashReportRow | null> {
+  const [row] = await tx
+    .select()
+    .from(s.cashReports)
+    .where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .for("update")
+    .limit(1);
   return row ?? null;
 }
 
 /** Bu günden sonra girilmiş bir rapor var mı (varsa bu raporun devri ertesi günün açılışına dayanak olmuştur) */
-export async function hasLaterReport(tx: CashTx, date: string): Promise<boolean> {
-  const [later] = await tx.select({ id: s.cashReports.id }).from(s.cashReports).where(gt(s.cashReports.date, date)).limit(1);
+export async function hasLaterReport(tx: CashTx, date: string, branchId: string): Promise<boolean> {
+  const [later] = await tx
+    .select({ id: s.cashReports.id })
+    .from(s.cashReports)
+    .where(and(gt(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .limit(1);
   return Boolean(later);
 }
 
@@ -171,11 +181,11 @@ export async function resolveCounter(tx: CashTx, counterId: number, kept: number
 }
 
 /** Bu günden önceki son raporun ertesi güne devri (işlemin içinden) */
-export async function carryBefore(tx: CashTx, date: string): Promise<{ date: string; amount: number } | null> {
+export async function carryBefore(tx: CashTx, date: string, branchId: string): Promise<{ date: string; amount: number } | null> {
   const [before] = await tx
     .select({ date: s.cashReports.date, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
     .from(s.cashReports)
-    .where(lt(s.cashReports.date, date))
+    .where(and(lt(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
     .orderBy(desc(s.cashReports.date))
     .limit(1);
   return before ? { date: before.date, amount: Math.round((before.counted - before.handed) * 100) / 100 } : null;
@@ -202,6 +212,11 @@ export async function ownDeletePending(tx: CashTx, userId: number, date: string)
 export interface WriteOptions {
   /** Formun açıldığı andaki sürüm (0: yeni rapor) */
   revision: number;
+  /**
+   * Raporun şubesi (docs/SUBE.md). Kasa raporunun anahtarı (gün, şube): aynı güne her şube kendi raporunu girer,
+   * bu yüzden okuma, kilit ve devir zinciri hep şube içinde kalır. Çağıran panelin seçimini geçer.
+   */
+  branchId: string;
   /** Kasayı sayan; boşsa raporu gönderen */
   countedBy?: number | null;
   /** Bu gönderimle eklenen fotoğraflar (bağlanmamış) */
@@ -241,7 +256,7 @@ export interface WriteResult {
  */
 export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashReportFields, o: WriteOptions): Promise<WriteResult> {
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
-  const prev = o.prev === undefined ? await lockCashReport(tx, data.date) : o.prev;
+  const prev = o.prev === undefined ? await lockCashReport(tx, data.date, o.branchId) : o.prev;
   assertRevision(prev, o.revision);
   // Yazarkasa alanları: gönderilmeyen anahtar kayıtlı değeri korur; kural formla aynı (okcFormError), döküm normal biçimde
   const okc = withOkcOf(data, prev);
@@ -253,7 +268,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   const counterId = o.countedBy ?? submitter.id ?? actor.id;
   const counter = await resolveCounter(tx, counterId, prev ? (prev.countedBy ?? prev.submittedBy) : o.keepCounter ? counterId : null);
   // Açılış önceki raporun devriyle tutmuyorsa nedeni nota yazılır (yeni raporda ya da açılış değiştiyse)
-  const check = o.skipOpeningNote ? null : carryCheck(data.date, data.openingCash, await carryBefore(tx, data.date));
+  const check = o.skipOpeningNote ? null : carryCheck(data.date, data.openingCash, await carryBefore(tx, data.date, o.branchId));
   if (check && openingNeedsNote({ check, openingCash: data.openingCash, prevOpening: prev?.openingCash ?? null, note: data.note })) {
     throw new UserError(`Açılış önceki günün devrinden farklı (${carryDiffText(check)}): nedenini nota yazın`);
   }
@@ -288,7 +303,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
         .set({ ...values, revision: prev.revision + 1 })
         .where(eq(s.cashReports.id, prev.id))
         .returning()
-    : await tx.insert(s.cashReports).values(values).returning();
+    : await tx.insert(s.cashReports).values({ ...values, branchId: o.branchId }).returning();
   let row = written;
   // Yeni rapor: gün açık demektir (kapalı işareti ve bildirimi kalkar); önceki gün kapalı işaretliyse Z no ve açılış
   // sürekliliği denetlenir (src/server/closed-days.ts)
@@ -404,25 +419,31 @@ export type SaveResult =
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
   const { revision, photos, countedBy, ...form } = input;
+  // Raporun şubesi: panelde seçili olan (docs/SUBE.md). Gün bir kez değil, şube başına bir kez girilir
+  const branchId = await currentWriteBranch();
   const data = okcFieldsIn(form);
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");
   if (me.role !== "admin" && !staffCanReport(data.date, now)) {
     // 05:00 dönüşü: dünün formu artık geç rapor (yöneticinin onayıyla); yazılanlar formda kalır
     if (revision === 0 && staffLateDay(data.date, now)) {
-      const [had] = await db.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, data.date)).limit(1);
+      const [had] = await db
+        .select({ id: s.cashReports.id })
+        .from(s.cashReports)
+        .where(and(eq(s.cashReports.date, data.date), eq(s.cashReports.branchId, branchId)))
+        .limit(1);
       if (!had) return { kind: "needsApproval", request: "kasa-gec", gate: "gec" };
     }
     throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
   }
   return db.transaction(async (tx) => {
-    await lockLateDay(tx, data.date);
-    const prev = await lockCashReport(tx, data.date);
+    await lockLateDay(tx, data.date, branchId);
+    const prev = await lockCashReport(tx, data.date, branchId);
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);
       if (await ownDeletePending(tx, me.id, data.date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
       // Ertesi günün raporu girildiyse (ertesi günün açılışı bu raporun devrine dayanır) ya da iş günü kapandıktan sonra
       // kasa alanı ya da sayan değiştiyse personel doğrudan kaydetmez: yöneticinin onayına gider
-      const laterReport = await hasLaterReport(tx, data.date);
+      const laterReport = await hasLaterReport(tx, data.date, branchId);
       const counter = await resolveCounter(tx, countedBy ?? me.id, prev.countedBy ?? prev.submittedBy);
       // Gönderilmeyen yazarkasa alanı (eski sayfa) kayıtlı değerdir, değişiklik sayılmaz
       const sent = withOkcOf(data, prev);
@@ -431,7 +452,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
       if (gate === "closed") throw new UserError(CASH_REQUEST_TEXT.closed);
       if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
     }
-    const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev });
+    const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev, branchId });
     // Gün artık raporlu: bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
     if (!prev) {
       await supersede(tx, { kinds: ["kasa-gec"], subject: `gun:${data.date}` }, me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi", now, DELETED_REPORT_DAYS);

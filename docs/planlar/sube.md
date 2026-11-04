@@ -13,7 +13,7 @@ Kararlar `docs/SUBE.md`'nin başındaki tabloda. Bu dosya işin dalgalara bölü
   `tests/subeler.test.ts` (11 test), `docs/SUBE.md`.
 - Hiçbir ciro tablosuna dokunulmadı: bütün raporlar bugünkü gibi. Risk yok, geri alınabilir.
 
-## Dalga 2 — şube sütunu ciro yoluna
+## Dalga 2 — şube sütunu ciro yoluna, seçici ve süzgeç (BİTTİ)
 
 Sırayla ve **tek migration** (R2): her tabloya `branch_id text not null default 'tuzla' references branches(id)`,
 sonra default kaldırılmadan bırakılır (eski satırlar Tuzla'ya yazılmış olur; sahibin kararı).
@@ -30,16 +30,31 @@ sonra default kaldırılmadan bırakılır (eski satırlar Tuzla'ya yazılmış 
 | `staff` | — | `+ branch_id` **not null**, varsayılan `tuzla` (maaş o şubenin gideri) |
 | `invoices`, `suppliers`, `ingredients`, `products`, `recipe_items` | — | **değişmez** (ortak) |
 
-Dikkat: `months` birincil anahtarı birçok yerden referanslı; değişikliğin tamamı tek dalgada ve boş veritabanında
-`db:migrate && db:seed` ile denenir. `src/server/branches.ts` › `branchUsageCount` bu dalgada gerçek sayımı yapar.
+Yapıldı (`0056_sube_kirilimi.sql`). Notlar:
 
-## Dalga 3 — seçici ve süzgeç
+- `months` birincil anahtarı yalnız `sales_lines.month` tarafından referanslı çıktı; öteki tabloların çoğu seri
+  `id` + benzersiz iş dizini kullanıyor, bu yüzden gerçek anahtar değişikliği üç tablodaydı.
+- drizzle-kit, birincil anahtar adlarını çözemediği için DROP satırlarını **yorumlu** bıraktı ve `ADD CONSTRAINT`
+  satırını `ADD COLUMN`'dan **önce** yazdı; göç elle sekiz adıma dizildi (önce dizin ve yabancı anahtar düşür,
+  sonra sütun ekle, geri doldur, anahtarları kur).
+- `branchUsageCount` gerçek sayımı yapıyor; `tests/subeler.test.ts` şube sütunlu her tablonun sayıma girdiğini
+  denetler (yeni para tablosu sessizce kaçamaz).
+- **Çakışma hedefleri:** bileşik anahtara tek sütunlu `ON CONFLICT` çalışma anında düşer ("no unique or exclusion
+  constraint matching"). Dört yer düzeltildi (`pnl.ts` ×2, `sales.ts`, `lafpos/ingest.ts`) ve bekçi test eklendi.
+- Seçici dalga 3'ten buraya alındı: şema şubeye bölünüp de süzgeç gelmeseydi, aynı güne iki şube rapor
+  girebildiği için `getCashReport(gün)` yanlış şubenin satırını döndürebilirdi. Ayrıntı: `docs/SUBE.md` › Seçici.
 
-- Panel başlığında şube / kanal seçici: **Tümü · Tuzla · Marina · laffogato.net**. Seçim `laf_sube` çerezinde ve
-  `?sube=` ile paylaşılabilir (`BRANCH_COOKIE`, `BRANCH_PARAM`; `parseBranchScope` tanınmayan ve kapalı değeri
-  "Tümü"ye düşürür).
-- Ciro okuyan her sorgu `branchScopeIds()` ile süzülür. Ortak veriler (menü, reçete, hammadde, tedarikçi)
-  süzülmez: seçici onlarda görünmez.
+## Dalga 3 — kalan okumaların süzülmesi
+
+Dalga 2'de seçici kuruldu ve **anahtarı şubeyi içeren** tabloların okumaları süzüldü (kasa raporu, gün özeti,
+ModPOS föyü, ay satırı, satış satırı): oradaki süzgeç doğruluk gereğiydi. Kalanlar seri `id` anahtarlı listeler,
+bugün "Tümü" gibi davranıyorlar — gerileme değil, eksik:
+
+- `stock_counts`, `waste_entries`, `cash_outs`, `staff`, `expense_entries` okumaları seçime göre süzülecek.
+- Gider süzgeci `branchWhereWithShared` ile: tek şube seçiliyken o şubenin giderleri **ile** işletme geneli
+  giderler birlikte görünür, yoksa kira ve abonelik hiçbir şubede görünmez ve kâr olduğundan yüksek çıkar
+  (yardımcı yazıldı, çağıran yerler bu dalgada).
+- Yazma formlarında hangi şubeye yazıldığı kullanıcıya gösterilecek ("Tümü" seçiliyken Tuzla'ya iner).
 - laffogato.net kanalı "Tümü"ye **girer** (işletmenin cirosudur) ama her yerde ayrı satır olarak görünür; bugünkü
   `/panel/gelir-gider` ayrımı bu kanala taşınır.
 

@@ -15,6 +15,7 @@ import { todayTR } from "@/lib/reminders";
 import { SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
+import { andWhere, currentBranchWhere, currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { rematchPosSalesByName } from "@/server/lafpos/rematch";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -42,8 +43,11 @@ async function setCoverage(db: Db | Tx, month: string, through: string | null) {
 }
 
 /** Ay satırı açar; alanları boş (indirim ve ödenmez dahil): boş alan kasa raporlarından dolar (src/lib/cash-month.ts) */
-async function ensureMonth(month: string) {
-  await getDb().insert(s.months).values({ month }).onConflictDoNothing();
+async function ensureMonth(month: string, branchId?: string) {
+  await getDb()
+    .insert(s.months)
+    .values({ month, branchId: branchId ?? (await currentWriteBranch()) })
+    .onConflictDoNothing();
 }
 
 /**
@@ -53,14 +57,18 @@ async function ensureMonth(month: string) {
  * ödenmezin 0'ı yalnız ayın kasa raporu yoksa boş sayılır (src/lib/cash-month.ts monthRowEmpty).
  */
 async function dropEmptyMonth(db: Db | Tx, month: string): Promise<boolean> {
-  const [row] = await db.select().from(s.months).where(eq(s.months.month, month));
+  // Ay satırının anahtarı (ay, şube): şubesiz silme başka şubenin ayını düşürürdü
+  const sube = await currentWriteBranch();
+  const ayinSatiri = and(eq(s.months.month, month), eq(s.months.branchId, sube));
+  const satirlar = and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube));
+  const [row] = await db.select().from(s.months).where(ayinSatiri);
   if (!row) return false;
   const zeros = row.discounts === 0 || row.offRevenue === 0;
   if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, db)))) return false;
-  const [lines] = await db.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(eq(s.salesLines.month, month));
+  const [lines] = await db.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(satirlar);
   const [pnl] = await db.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month));
   if ((lines?.n ?? 0) > 0 || (pnl?.n ?? 0) > 0) return false;
-  await db.delete(s.months).where(eq(s.months.month, month));
+  await db.delete(s.months).where(ayinSatiri);
   return true;
 }
 
@@ -90,9 +98,9 @@ export async function saveMonthInfo(input: z.input<typeof monthInfoSchema>) {
     const db = getDb();
     await db
       .insert(s.months)
-      .values({ ...data, updatedAt: new Date() })
+      .values({ ...data, branchId: await currentWriteBranch(), updatedAt: new Date() })
       .onConflictDoUpdate({
-        target: s.months.month,
+        target: [s.months.month, s.months.branchId],
         set: {
           openDays: data.openDays,
           posRevenue: data.posRevenue,
@@ -162,13 +170,20 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
     const index = createPosMappingIndex(await db.select().from(s.posMappings));
     let matched = 0;
     let replaced = 0;
-    await ensureMonth(month);
+    const sube = await currentWriteBranch();
+    await ensureMonth(month, sube);
     await db.transaction(async (tx) => {
       if (mode === "replace") {
-        const gone = await tx.delete(s.salesLines).where(eq(s.salesLines.month, month)).returning({ id: s.salesLines.id });
+        const gone = await tx
+          .delete(s.salesLines)
+          .where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube)))
+          .returning({ id: s.salesLines.id });
         replaced = gone.length;
       }
-      const [{ m }] = await tx.select({ m: max(s.salesLines.sortOrder) }).from(s.salesLines).where(eq(s.salesLines.month, month));
+      const [{ m }] = await tx
+        .select({ m: max(s.salesLines.sortOrder) })
+        .from(s.salesLines)
+        .where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube)));
       const base = mode === "replace" ? 0 : (m ?? 0);
       await tx.insert(s.salesLines).values(
         lines.map((l, i) => {
@@ -176,6 +191,7 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
           if (mp && (mp.productId || mp.isService)) matched++;
           return {
             month,
+            branchId: sube,
             posName: l.posName.trim().replace(/\s+/g, " "),
             qty: l.qty,
             revenue: l.revenue,
@@ -190,7 +206,10 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
     // Geçiş ayı: liste toplamı listenin günlerinin Z toplamını aşıyorsa (liste geçiş gününden sonrasını da içerebilir)
     let warning: string | null = null;
     if (through && monthSource(month, switchDay) === "gecis") {
-      const [{ total }] = await db.select({ total: sum(s.salesLines.revenue).mapWith(Number) }).from(s.salesLines).where(eq(s.salesLines.month, month));
+      const [{ total }] = await db
+        .select({ total: sum(s.salesLines.revenue).mapWith(Number) })
+        .from(s.salesLines)
+        .where(andWhere(eq(s.salesLines.month, month), await currentBranchWhere(s.salesLines.branchId)));
       warning = modposOverZText(total ?? 0, await zTotalBetween(`${month}-01`, through), `${month}-01`, through);
     }
     await logActivity(
@@ -210,7 +229,7 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
  */
 async function writeMatch(
   tx: Tx,
-  line: { id: number; month: string; posName: string },
+  line: { id: number; month: string; branchId: string; posName: string },
   productId: number | null,
   isService: boolean,
   applyToSameName: boolean,
@@ -222,7 +241,7 @@ async function writeMatch(
     const candidates = await tx
       .select({ id: s.salesLines.id, posName: s.salesLines.posName })
       .from(s.salesLines)
-      .where(and(eq(s.salesLines.month, line.month), isNull(s.salesLines.productId), eq(s.salesLines.isService, false)));
+      .where(and(eq(s.salesLines.month, line.month), eq(s.salesLines.branchId, line.branchId), isNull(s.salesLines.productId), eq(s.salesLines.isService, false)));
     const ids = candidates.filter((o) => o.id !== line.id && samePosName(o.posName, line.posName)).map((o) => o.id);
     if (ids.length) await tx.update(s.salesLines).set({ productId, isService }).where(inArray(s.salesLines.id, ids));
     others = ids.length;
@@ -493,15 +512,17 @@ export async function saveLine(input: { id: number | null; month: string; posNam
         .set({ ...data, posName, note, ...(relink ? { productId: mp.productId, isService: mp.isService } : {}) })
         .where(eq(s.salesLines.id, old.id));
     } else {
-      await ensureMonth(month);
+      const sube = await currentWriteBranch();
+      await ensureMonth(month, sube);
       linked = !!(mp && (mp.productId || mp.isService));
       await db.transaction(async (tx) => {
         const [{ m, n }] = await tx
           .select({ m: max(s.salesLines.sortOrder), n: sql<number>`count(*)::int` })
           .from(s.salesLines)
-          .where(eq(s.salesLines.month, month));
+          .where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube)));
         await tx.insert(s.salesLines).values({
           month,
+          branchId: sube,
           ...data,
           posName,
           note,
