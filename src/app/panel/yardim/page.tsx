@@ -411,7 +411,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             Ay sonu stoğu ve kâr-zararın mal maliyeti ilk giren ilk çıkar (FIFO) ile: rafta kalan mal en son alınandır, sayılan miktar en yeni Paraşüt faturasından geriye
             doğru dağıtılır ve her parça kendi faturasının birim fiyatıyla (KDV hariç) değerlenir. Faturası olmayan alım (elle girilen fatura, nakit alım, bağlanmamış
             ürün) havuzda görünmez: havuz yettiği sürece sayılan miktar eski faturalara dağılır, yalnız havuzun karşılamadığı kalan ay sonu fiyatıyla. Tedarikçiye iade
-            yalnız elle girilmiş eksi fatura olarak geldiyse (kalemsiz) partiden düşülmez. Mal maliyeti = açılış + alınan − bu kapanış. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
+            yalnız elle girilmiş eksi fatura olarak geldiyse (kalemsiz) partiden düşülmez. Mal maliyeti = açılış + alınan − bu kapanış. Sayım girilmeyen ayda Gelir-gider tahmin eder: iki sayım arasındaki aylarda aralığın mal maliyeti ayların reçeteye göre tüketimi oranında dağıtılır; son sayımdan sonraki ayda reçeteye göre tüketim (fire bir kez) ve ödenmezlerin malzeme maliyeti düşülür. Ayın yöntemi mal maliyeti satırının altında yazar; vergi hesabı yalnız sayımı kullanır. <Path href="/panel/sayim" /> ekranında toplamın yanında FIFO rozeti,
             faturadan gelen payı ve satırın ⓘ işaretinde hangi faturalardan geldiği görünür. Yöntem <Path href="/panel/ayarlar" /> › Stok değerleme&apos;de: başlangıç ayı
             (Ekim 2026) ve önceki aylar ay sonu fiyatıyla kalır; başlangıcı geriye almak kapanmış ayların kârını değiştirir, önizleme farkı gösterir. Reçete ve menü maliyeti
             ise son alış fiyatıyla (yenileme maliyeti): fiyat kararı için. Resmi defterlerdeki yöntem muhasebecinizindir; vergi kanunu FIFO&apos;yu ve ağırlıklı ortalamayı
@@ -1028,7 +1028,7 @@ const FORMULAS = [
     "Su + buz litre maliyeti",
     "SU GİDERİ ÷ satış listesine ve aynı ayın laffogato.net siparişlerine göre su + buz litresi (fatura girilmiş ve satış listesi olan son ay)",
   ],
-  ["Satılan malın maliyeti", "Önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)"],
+  ["Satılan malın maliyeti", "Önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım; sayım yoksa sayım aralığına dağıtılmış ya da reçeteye göre tahmini devir)"],
 ];
 
 // ---------------------------------------------------------------- Sayfa

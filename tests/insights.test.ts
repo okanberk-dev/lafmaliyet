@@ -368,10 +368,17 @@ test("Su uyarısı: fatura girilmiş ama o ayın satış listesi yoksa 'SU GİDE
 // ---------------------------------------------------------------- Yıl şeridi, kategori ortalamaları, ürün durumu, uyarı listeleri
 
 test("Yıl şeridi: POS cirosu girilmemiş ay (sayım devri, fatura) kâr/zarar sayılmaz, 'ciro girilmedi' diye işaretlenir", () => {
-  // Ekim sayılır, Kasım'da hiç veri yok: devreden stok Kasım'ın mal maliyeti olur ama ciro yok
+  // Ekim sayılır, Kasım'da satış yok: devreden stok Kasım'a devreder (satış yokken tahmini mal maliyeti 0); Kasım'a elle
+  // bir gider yazılır, ciro yok
   const counts = ds.ingredients.filter((i) => i.active).map((i) => ({ month: "2026-10", ingredientId: i.id, qty: 1 }));
-  const m = createModel({ ...ds, currentMonth: "2026-11", stockCounts: [...ds.stockCounts, ...counts] });
-  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'da devir gideri var");
+  const m = createModel({
+    ...ds,
+    currentMonth: "2026-11",
+    stockCounts: [...ds.stockCounts, ...counts],
+    pnlEntries: [...ds.pnlEntries, { month: "2026-11", rowKey: "manual:harici", amount: 2_500 }],
+  });
+  assert.equal(m.pnlMonth("2026-11").cogs, 0, "satış yokken stok devreder");
+  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'da gider var");
   const yt = yearTrend(m, 2026);
   const nov = yt.find((x) => x.month === "2026-11")!;
   assert.deepEqual({ active: nov.active, missingRevenue: nov.missingRevenue, profit: nov.profit }, { active: false, missingRevenue: true, profit: 0 });

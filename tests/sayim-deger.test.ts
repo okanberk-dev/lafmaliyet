@@ -133,17 +133,17 @@ test("E-16: bu ay sayılınca sonraki ay aktif olmaz, yıl toplamına girmez", (
   assert.deepEqual(yt.counted, ["2026-07", "2026-08", "2026-09", "2026-10"]);
   // Ekim sayıldı, öncekiler sayılmadı: mal maliyeti tahmini
   assert.deepEqual(yt.uncounted, ["2026-07", "2026-08", "2026-09"]);
-  // Gelecek ay currentMonth değişince sayılır
-  const novNow = createModel({ ...octCounted, currentMonth: "2026-11" });
+  // Gelecek ay currentMonth değişince sayılır (Kasım'a elle gider: satış yokken açılış stoğu gider olmaz, devreder)
+  const novNow = createModel({ ...octCounted, currentMonth: "2026-11", pnlEntries: [...octCounted.pnlEntries, { month: "2026-11", rowKey: "manual:harici", amount: 2_500 }] });
   assert.equal(yearTrend(novNow, 2026)[10].missingRevenue, true, "Kasım başladı, ciro yok");
   assert.match(missingRevenueText(yearTotals(novNow, 2026).missingRevenue[0]), /^Kasım 2026: ciro girilmedi; [\d.]+\s₺ gider kâra girmedi$/);
 });
 
 test("NEW-02: Gelir-gider kartı, Genel bakış ve Claude'un yıl toplamı aynı rakam; cirosuz geçmiş ay kâra girmez", () => {
-  // Haziran'a mal faturası: gider var, POS cirosu yok
+  // Haziran'a elle gider: gider var, POS cirosu yok (mal faturası satış yokken stoğa devreder, gider olmaz)
   const ds: Dataset = {
     ...octCounted,
-    invoices: [...octCounted.invoices, { ...octCounted.invoices.find((i) => i.category === "Hammadde & İçecek")!, id: 990_001, date: "2026-06-15", amount: 12_000, discount: 0 }],
+    pnlEntries: [...octCounted.pnlEntries, { month: "2026-06", rowKey: "manual:harici", amount: 12_000 }],
   };
   const m = createModel(ds);
   const yt = yearTotals(m, 2026);
@@ -186,12 +186,16 @@ test("E-16: Excel'in yıl sütunu bu aya kadar; başlık notu toplanan ayları s
 });
 
 test("İnceleme B02-D4: Excel'in yıl sütunu, Gelir-gider tablosunun yıl sütunu ve yıl kartı aynı: cirosuz ay toplanmaz", () => {
-  // Kasım başladı (bu ay), ciro girilmedi; Haziran'da mal faturası var, ciro yok
+  // Kasım başladı (bu ay), ciro girilmedi; Haziran'da ve Kasım'da elle gider var, ciro yok
   const ds: Dataset = {
     ...octCounted,
     currentMonth: "2026-11",
     settings: { ...octCounted.settings, kdvHizmet: octCounted.settings.kdv },
-    invoices: [...octCounted.invoices, { ...octCounted.invoices.find((i) => i.category === "Hammadde & İçecek")!, id: 990_002, date: "2026-06-15", amount: 12_000, discount: 0 }],
+    pnlEntries: [
+      ...octCounted.pnlEntries,
+      { month: "2026-06", rowKey: "manual:harici", amount: 12_000 },
+      { month: "2026-11", rowKey: "manual:harici", amount: 2_500 },
+    ],
   };
   const m = createModel(ds);
   const yt = yearTotals(m, 2026);
@@ -199,7 +203,7 @@ test("İnceleme B02-D4: Excel'in yıl sütunu, Gelir-gider tablosunun yıl sütu
     yt.missingRevenue.map((x) => x.month),
     ["2026-06", "2026-11"],
   );
-  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'ın açılış stoğu gider gibi duruyor (tablonun ay sütunu)");
+  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'ın gideri (tablonun ay sütunu)");
   const ws = buildWorkbook(m, "2026-11", { investments: [], findings: [], now: new Date("2026-11-01T10:00:00Z") }).getWorksheet("Gelir-Gider 2026")!;
   close(yearCell(ws, "KÂR / ZARAR"), yt.profit, "Excel YILI kâr = yıl kartı");
   close(yearCell(ws, "GİDERLER GENEL TOPLAMI"), yt.expenses, "Excel YILI gider = yıl kartı");

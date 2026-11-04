@@ -74,7 +74,7 @@ test("Eylül (bitmiş, satış listesi var): eşleşmeyen satır, açık gün, f
   // Excel verisinde SU GİDERİ ve sayım yok: bitmiş ayda ikisi de yapılacak
   assert.equal(t.su.status, "todo");
   assert.equal(t.sayim.status, "todo");
-  assert.match(t.sayim.detail, /devreden mal 0/);
+  assert.match(t.sayim.detail, /^Sayım yok: kapanış stoğu 0 sayıldı, alınan malın tamamı maliyet\.$/);
   assert.equal(t.odeme.status, "done");
 });
 

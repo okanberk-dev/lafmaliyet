@@ -2,7 +2,7 @@
 // Seçili ay için her ay yapılan işlerin (Yardım › Her ay ne yapmalı?) durumu, bir satırlık açıklaması ve
 // ilgili ekranın tam adresi. dashboard-checklist.tsx yalnızca bunları çizer.
 
-import type { Model, WaterCost } from "@/lib/calc/engine";
+import { uncountedCogsText, type CogsMethod, type Model, type WaterCost } from "@/lib/calc/engine";
 import type { MonthState } from "@/lib/calc/insights";
 import { isSummaryRow } from "@/lib/calc/pos-paste";
 import type { FieldSource } from "@/lib/calc/types";
@@ -106,7 +106,8 @@ export interface MonthTaskFacts {
    * lines: kayıtlı sayım satırı + ek kalem; total: ay sonu stoğu (KDV hariç); counted / listed: sayılan ve sayılacak
    * liste kalemi (sayim/logic.ts countStatus: Stok sayımı ekranı ve Bugün ile aynı kural)
    */
-  stock: { lines: number; total: number; counted: number; listed: number };
+  /** cogsMethod: sayım yokken mal maliyetinin yöntemi (Gelir-gider; engine.ts stockFlow); verilmezse eski kural */
+  stock: { lines: number; total: number; counted: number; listed: number; cogsMethod?: CogsMethod | null };
   /** null: ödeme listesi okunamadı */
   payments: PaymentFacts | null;
   /** null: Paraşüt bağlı değil */
@@ -236,6 +237,7 @@ export function monthTaskFacts(
         total: sheet.total,
         counted: st.counted,
         listed: st.total,
+        cogsMethod: pm.cogsMethod,
       };
     })(),
     expenses: (() => {
@@ -552,7 +554,7 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         status: later(f.state) ? "later" : "todo",
         detail: later(f.state)
           ? "Ayın son günü kapanıştan sonra sayın; personel hesabıyla telefondan da girilir."
-          : "Sayım yok: sonraki aya devreden mal 0 kabul edilir, alınan malın tamamı maliyet sayılır.",
+          : `Sayım yok: ${uncountedCogsText(f.stock.cogsMethod ?? null)}.`,
         href,
         action: "Sayım gir",
       });

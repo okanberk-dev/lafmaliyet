@@ -7,7 +7,7 @@ import {
   SEPARATE_CATEGORIES,
 } from "../constants";
 import { channelOf } from "../commission/channels";
-import { pct, tl } from "../format";
+import { monthLabel, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
@@ -532,6 +532,8 @@ export interface PnlCell {
   info?: string;
   /** Bu ayda dikkat edilecek bir durum (hücrede görünür), ör. POS komisyonu bir faturayla çift sayılabilir */
   warn?: string;
+  /** Değerin altında küçük yazı: hesabın yöntemi, ör. mal maliyetinde "sayım" ya da "reçeteye göre tahmini" */
+  tag?: string;
 }
 
 /**
@@ -615,9 +617,16 @@ export interface PnlMonthCalc {
   ratio: number;
   cells: Map<string, PnlCell>;
   purchases: number;
+  /** Açılış ve kapanış: sayım ya da sayımsız ayda tahmini devir (stockFlow); mal maliyeti = açılış + alınan − kapanış */
   opening: number;
   closing: number;
   cogs: number;
+  /** Mal maliyetinin yöntemi ve açıklaması; bu aydan sonraki ya da verisi olmayan ayda null */
+  cogsMethod: CogsMethod | null;
+  cogsInfo: string | null;
+  /** Yalnız sayımla açılış ve kapanış (sayım yoksa 0; elle yazılan geçer): vergi hesabı bunu kullanır */
+  countOpening: number;
+  countClosing: number;
   sections: Record<FixedSection | "komisyon", number>;
   expenses: number;
   /** ModPOS cirosu (KDV dahil, Satışlar'a girilen); girilmediyse null */
@@ -635,6 +644,68 @@ export interface PnlMonthCalc {
   revenueTotalNet: number | null;
   /** revenueTotalNet − giderler */
   profit: number;
+}
+
+/**
+ * Mal maliyetinin yöntemi (Gelir-gider'in ay sütununda): "sayim" açılış + alınan − ay sonu sayımı; "dagitim" sayım
+ * aralığına reçeteye göre tüketim oranında dağıtıldı (tahmini); "tahmin" kapanışı henüz bilinmeyen ay, reçeteye göre
+ */
+export type CogsMethod = "sayim" | "dagitim" | "tahmin";
+
+export const COGS_METHOD_LABELS: Record<CogsMethod, string> = {
+  sayim: "sayım",
+  dagitim: "sayım aralığına dağıtıldı (tahmini)",
+  tahmin: "reçeteye göre tahmini",
+};
+
+/**
+ * Sayımı olmayan ayın mal maliyeti nasıl hesaplandı (uyarı metinleri; küçük harfle başlar, sonda nokta yok). Yöntem yoksa
+ * (hiç sayım yok) eski kural: kapanış 0
+ */
+export function uncountedCogsText(method: CogsMethod | null): string {
+  if (method === "dagitim") return "mal maliyeti sayım aralığına reçeteye göre tüketim oranında dağıtıldı (tahmini)";
+  if (method === "tahmin") return "mal maliyeti reçeteye göre tahmini; ay sonu sayımı girilince gerçek hesaba döner";
+  return "kapanış stoğu 0 sayıldı, alınan malın tamamı maliyet";
+}
+
+/** Sayımı olmayan aylar yöntemlerine göre: "Temmuz 2026, Ağustos 2026: mal maliyeti … ; Kasım 2026: mal maliyeti …" */
+export function uncountedCogsSummary(methodOf: (month: string) => CogsMethod | null, months: readonly string[]): string {
+  const groups = new Map<CogsMethod | null, string[]>();
+  for (const m of months) {
+    const k = methodOf(m) === "sayim" ? null : methodOf(m);
+    groups.set(k, [...(groups.get(k) ?? []), m]);
+  }
+  return [...groups].map(([k, ms]) => `${ms.map(monthLabel).join(", ")}: ${uncountedCogsText(k)}`).join("; ");
+}
+
+/** Ayın reçeteye göre mal tüketimi (KDV hariç; engine.ts cogsConsumption) */
+export interface CogsConsumption {
+  /** "recipe": satış listesi / online; "revenue": liste yok, ciro × maliyet oranı; "none": ikisi de yok */
+  basis: "recipe" | "revenue" | "none";
+  /** Satışlar'daki malzeme + ambalaj (ürün fire payı dahil) */
+  material: number;
+  /** Ürün fire payı çıkarılmış tüketim */
+  fireFree: number;
+  fireRate: number;
+  /** fireFree × (1 + genel fire) */
+  recipe: number;
+  /** Ödenmezlerin tahmini malzeme maliyeti */
+  offCost: number;
+  /** recipe + offCost: açık ayın tahmini maliyeti ve aralık dağıtımının ağırlığı */
+  total: number;
+}
+
+/** Ayın stok akışı (engine.ts stockFlow) */
+export interface StockFlow {
+  opening: number;
+  closing: number;
+  cogs: number;
+  /** Bu aydan sonraki ya da verisi olmayan ayda null (eski kural: sayım ya da 0) */
+  method: CogsMethod | null;
+  /** Kapanış sayım değil, tahmini devir */
+  estimatedClosing: boolean;
+  /** Hesabın açıklaması (Gelir-gider hücresinin ipucu) */
+  info: string | null;
 }
 
 /** Bir ayın online geliri (KDV hariç, TL) ve kaydın bilgisi */
@@ -1747,6 +1818,163 @@ export function createModel(ds: Dataset) {
     return ov !== undefined ? { value: ov, computed, overridden: true } : { value: computed, computed, overridden: false };
   }
 
+  // --- Mal maliyeti: sayım aralığına dağıtım ve sayımsız ayın tahmini (docs/STOK-DEGERLEME.md › Mal maliyeti) -------
+  /** Ayın alınan malı (Gelir-gider'in "ALINAN MAL"ı): mal faturaları + elle "diğer mal" + mal bölümündeki harcamalar */
+  function goodsInTotal(month: string): number {
+    const manualOther = pnlByMonth.get(month)?.get("manual:diger_mal") ?? 0;
+    const expenses = sum(expenseAmounts(month).filter((x) => x.cat.section === "mal").map((x) => x.total));
+    return goodsPurchases(month) + manualOther + expenses;
+  }
+
+  /**
+   * Ayın kapanışı biliniyor mu: Gelir-gider'de elle yazılan devreden mal, o ayın sayımı ya da sonraki ayın elle yazılan
+   * "Önceki aydan devir"i (bir sonraki ayın açılışı bu ayın kapanışıdır). Biliniyorsa değeri, yoksa null
+   */
+  function knownClosing(month: string): number | null {
+    const ov = pnlByMonth.get(month)?.get("stock:closing");
+    if (ov !== undefined) return ov;
+    if (countsByMonth.has(month)) return stockSheet(month).total;
+    const nextOpening = pnlByMonth.get(shiftMonth(month, 1))?.get("stock:opening");
+    return nextOpening ?? null;
+  }
+
+  const consumptionCache = new Map<string, CogsConsumption>();
+  /**
+   * Ayın reçeteye göre mal tüketimi (KDV hariç), fire bir kez: ürün maliyetindeki ürün fire payı çıkarılır
+   * (ingredientTotal ÷ maliyet oranıyla, eşleşen reçeteli satırlardan), genel fire oranı (Ayarlar, %5) bütün tüketime
+   * eklenir. Malzeme + ambalaj Satışlar'daki gibi (ModPOS satış listesi + laffogato.net online). Satış listesi ve online
+   * yoksa ciroya göre: KDV hariç ciro × son satış ayının maliyet oranı. Ödenmezlerin tahmini malzeme maliyeti Tutarlılık'taki
+   * gibi: ödenmez ÷ (1 + KDV) × ortalama maliyet oranı (ayın listesi yoksa son satış ayınınki).
+   */
+  function cogsConsumption(month: string): CogsConsumption {
+    const hit = consumptionCache.get(month);
+    if (hit) return hit;
+    const sales = monthSales(month);
+    const online = onlineMonth(month);
+    // Oranın ayı: ayın listesi, yoksa son satış ayı (öncesinde yoksa ilk satış ayı; onlineMonth'taki gibi)
+    const ratioMonth = sales.lines.length ? month : (salesMonths.filter((m) => m <= month).at(-1) ?? salesMonths[0] ?? null);
+    const ref = ratioMonth ? monthSales(ratioMonth) : null;
+    // Ürün fire payının dışındaki oran: eşleşen reçeteli satırların malzeme toplamı ÷ maliyeti
+    let ing = 0;
+    let cost = 0;
+    for (const l of ref?.lines ?? []) {
+      if (!l.product || l.noRecipe || !l.matched || !(l.product.cost > 0)) continue;
+      ing += l.line.qty * l.product.ingredientTotal;
+      cost += l.line.qty * l.product.cost;
+    }
+    const fireFreeRatio = cost > 0 ? ing / cost : 1 / (1 + st.fire);
+    let basis: CogsConsumption["basis"] = "recipe";
+    let material = sales.cost + (online?.material ?? 0);
+    if (!sales.lines.length && !online) {
+      const info = monthInfo.get(month);
+      const revenue = info?.posRevenue ?? null;
+      material = revenue && ref ? (revenue / (1 + st.kdv)) * ref.avgCostRatio : 0;
+      basis = material > 0 ? "revenue" : "none";
+    }
+    const fireFree = material * fireFreeRatio;
+    const recipe = fireFree * (1 + st.fire);
+    const offRevenue = monthInfo.get(month)?.offRevenue ?? 0;
+    const offCost = ref ? (offRevenue / (1 + st.kdv)) * ref.avgCostRatio : 0;
+    const out: CogsConsumption = { basis, material, fireFree, fireRate: st.fire, recipe, offCost, total: recipe + offCost };
+    consumptionCache.set(month, out);
+    return out;
+  }
+
+  let anyKnownClosing: boolean | null = null;
+  /** Bu aya kadar en az bir ayın kapanışı biliniyor (sayım ya da Gelir-gider'de elle yazılan devir) */
+  function hasKnownClosing(): boolean {
+    if (anyKnownClosing === null) {
+      anyKnownClosing = [...countsByMonth.keys(), ...[...pnlByMonth].filter(([, m]) => m.has("stock:closing") || m.has("stock:opening")).map(([k]) => k)].some(
+        (m) => m <= shiftMonth(currentMonth, 1),
+      );
+    }
+    return anyKnownClosing;
+  }
+
+  const flowCache = new Map<string, StockFlow>();
+  /**
+   * Ayın stok akışı: açılış, kapanış (sayım ya da tahmini devir), mal maliyeti ve yöntemi.
+   * - Kapanışı bilinen ay (knownClosing) ve önceki ayın kapanışı da biliniyorsa: sayım (açılış + alınan − kapanış).
+   * - İki bilinen kapanış (ya da ilk veri ayı) arasındaki aylar: aralığın toplam maliyeti (açılış + aralıktaki alınan −
+   *   aralığın sonundaki kapanış) aylara reçeteye göre tüketim (cogsConsumption) oranında dağıtılır; ara ayların devri
+   *   açılış + alınan − dağıtılan maliyet. Tüketim yoksa alınan mal oranında, o da yoksa hepsi aralığın son ayına.
+   * - Ardından kapanışı henüz bilinmeyen aylar (şu an süren ay): reçeteye göre tahmini; tahmini kapanış açılış + alınan −
+   *   tahmini maliyet. Ay sonu sayımı girilince aralık dağıtımına döner.
+   * Bu aydan sonraki aylarda, verisi olan ilk aydan önce ve hiç bilinen kapanış yokken eski kural (sayım ya da 0; Excel'den
+ * aktarılan veri). Vergi bu hesabı kullanmaz
+   * (countOpening / countClosing: yalnız sayım).
+   */
+  function stockFlow(month: string): StockFlow {
+    const hit = flowCache.get(month);
+    if (hit) return hit;
+    const first = firstDataMonth;
+    // Hiç bilinen kapanış (sayım ya da elle yazılan devir) yoksa dağıtılacak aralık da tahminin dayanağı da yok: eski
+    // kural (devreden 0; Excel'den aktarılan veri böyledir). İlk sayımla yeni hesap başlar
+    if (!first || month < first || month > currentMonth || !hasKnownClosing()) {
+      const opening = pnlByMonth.get(month)?.get("stock:opening") ?? closingStock(shiftMonth(month, -1)).value;
+      const closing = closingStock(month).value;
+      const out: StockFlow = { opening, closing, cogs: opening + goodsInTotal(month) - closing, method: null, estimatedClosing: false, info: null };
+      flowCache.set(month, out);
+      return out;
+    }
+    // Aralığın başı: bu aydan geriye, kapanışı bilinen ilk ayın ertesi (yoksa verisi olan ilk ay)
+    let start = month;
+    while (start > first && knownClosing(shiftMonth(start, -1)) === null) start = shiftMonth(start, -1);
+    // Açılış: elle yazılan, önceki ayın bilinen kapanışı; verisi olan ilk ayda (kafenin açıldığı ay) 0
+    const startOpening = pnlByMonth.get(start)?.get("stock:opening") ?? knownClosing(shiftMonth(start, -1)) ?? 0;
+    // Aralığın sonu: bu aydan ileriye, kapanışı bilinen ilk ay (bu aya kadar); yoksa açık aralık
+    let end: string | null = null;
+    for (let m = month; m <= currentMonth; m = shiftMonth(m, 1)) {
+      if (knownClosing(m) !== null) {
+        end = m;
+        break;
+      }
+    }
+    const months: string[] = [];
+    for (let m = start; m <= (end ?? currentMonth); m = shiftMonth(m, 1)) months.push(m);
+    if (end !== null) {
+      const closingEnd = knownClosing(end)!;
+      const purchases = months.map(goodsInTotal);
+      const total = startOpening + sum(purchases) - closingEnd;
+      // Tek aylık aralık (önceki ayın kapanışı da biliniyor ya da kafenin ilk ayı): düz sayım
+      const single = months.length === 1;
+      let weights = months.map((m) => cogsConsumption(m).total);
+      if (!(sum(weights) > 0.005)) weights = purchases.map((p) => Math.max(0, p));
+      if (!(sum(weights) > 0.005)) weights = months.map((m) => (m === end ? 1 : 0));
+      const wsum = sum(weights);
+      const span = `${monthLabel(start)} – ${monthLabel(end)}`;
+      let opening = startOpening;
+      months.forEach((m, i) => {
+        const last = m === end;
+        const cogs = last ? opening + purchases[i] - closingEnd : (total * weights[i]) / wsum;
+        const closing = last ? closingEnd : opening + purchases[i] - cogs;
+        const info = single
+          ? `Sayım: açılış ${tl(opening)} + alınan ${tl(purchases[i])} − ay sonu sayımı ${tl(closingEnd)}.`
+          : `Sayım aralığına dağıtıldı (tahmini): ${span} toplam mal maliyeti ${tl(total)} (açılış ${tl(startOpening)} + alınan ${tl(sum(purchases))} − ${monthLabel(end)} sayımı ${tl(closingEnd)}), ayların reçeteye göre tüketimi oranında; bu ayın payı ${pct(weights[i] / wsum)}.${last ? "" : " Devreden mal tahminidir: açılış + alınan − dağıtılan maliyet."}`;
+        flowCache.set(m, { opening, closing, cogs, method: single ? "sayim" : "dagitim", estimatedClosing: !last, info });
+        opening = closing;
+      });
+    } else {
+      let opening = startOpening;
+      for (const m of months) {
+        const c = cogsConsumption(m);
+        const purchases = goodsInTotal(m);
+        const cogs = c.total;
+        const closing = opening + purchases - cogs;
+        const basis =
+          c.basis === "revenue"
+            ? `satış listesi yok: KDV hariç ciro × son satış ayının maliyet oranı ${tl(c.material)}`
+            : c.basis === "none"
+              ? "satış listesi ve ciro yok: 0"
+              : `reçeteye göre tüketim (fire hariç) ${tl(c.fireFree)}`;
+        const info = `Reçeteye göre tahmini: ${basis} × (1 + %${Math.round(c.fireRate * 100)} fire)${c.offCost ? ` + ödenmezlerin tahmini malzeme maliyeti ${tl(c.offCost)}` : ""}. Tahmini devreden mal: açılış + alınan − tahmini maliyet. Ay sonu sayımı girilince gerçek hesaba döner.`;
+        flowCache.set(m, { opening, closing, cogs, method: "tahmin", estimatedClosing: true, info });
+        opening = closing;
+      }
+    }
+    return flowCache.get(month)!;
+  }
+
   const pnlCache = new Map<string, PnlMonthCalc>();
   function pnlMonth(month: string): PnlMonthCalc {
     let pm = pnlCache.get(month);
@@ -1797,14 +2025,20 @@ export function createModel(ds: Dataset) {
       purchases += x.total;
     }
 
-    // Devirler
-    const prevClosing = closingStock(shiftMonth(month, -1)).value;
-    const opening = auto("stock:opening", prevClosing);
+    // Devirler: stok akışından (sayım, sayım aralığına dağıtılmış ya da reçeteye göre tahmini devir; stockFlow). Vergi
+    // yalnız sayımı kullanır: countOpening / countClosing eski kuraldır (sayım ya da 0)
+    const flow = stockFlow(month);
+    const prevCount = closingStock(shiftMonth(month, -1)).value;
+    const opening = auto("stock:opening", overrides.has("stock:opening") ? prevCount : flow.opening);
     cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false });
     const cl = closingStock(month);
-    cells.set("stock:closing", { value: cl.value, computed: cl.computed, overridden: cl.overridden, note: cl.overridden ? noteOf("stock:closing") : null });
-    const closing = cl.value;
+    const closingCell: PnlCell = { value: flow.closing, computed: cl.overridden ? cl.computed : flow.closing, overridden: cl.overridden, note: cl.overridden ? noteOf("stock:closing") : null };
+    if (flow.estimatedClosing) closingCell.info = "Ay sonu sayımı yok: tahmini devir (açılış + alınan − tahmini mal maliyeti). Sayım girilince ya da buraya yazılınca o tutar geçer.";
+    if (flow.method) closingCell.tag = flow.estimatedClosing ? "tahmini" : "sayım";
+    cells.set("stock:closing", closingCell);
+    const closing = flow.closing;
     const cogs = opening + purchases - closing;
+    const countOpening = overrides.get("stock:opening") ?? prevCount;
 
     // Personel, faturalar, kira, genel
     const sections: Record<FixedSection | "komisyon", number> = { personel: 0, faturalar: 0, kira: 0, genel: 0, komisyon: 0 };
@@ -1890,6 +2124,10 @@ export function createModel(ds: Dataset) {
       opening,
       closing,
       cogs,
+      cogsMethod: flow.method,
+      cogsInfo: flow.info,
+      countOpening,
+      countClosing: cl.value,
       sections,
       expenses,
       revenue,
@@ -1973,8 +2211,15 @@ export function createModel(ds: Dataset) {
     const devir = sec("devir");
     devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal). Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
     devir({ key: "stock:purchased", label: "AY İÇİNDE ALINAN", kind: "auto", editable: false });
-    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmezse 0 olur ve alınan malın tamamı o ayın maliyeti sayılır." });
-    devir({ key: "total:cogs", label: "CİRO İÇİN KULLANILAN MALIN MALİYETİ", kind: "total", editable: false, strong: true, hint: "Devir + Alınan − Devreden" });
+    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmeyen ayda tahmini devir: iki sayım arasındaki aylarda aralığın mal maliyeti reçeteye göre tüketim oranında dağıtılır, son sayımdan sonraki ayda reçeteye göre tahmin düşülür (açılış + alınan − tahmini maliyet); sayım girilince gerçek hesaba döner. Hiç sayım yokken 0." });
+    devir({
+      key: "total:cogs",
+      label: "CİRO İÇİN KULLANILAN MALIN MALİYETİ",
+      kind: "total",
+      editable: false,
+      strong: true,
+      hint: "Devir + Alınan − Devreden. Altındaki küçük yazı yöntemi söyler: sayım (açılış ve kapanış sayımla), sayım aralığına dağıtıldı (iki sayım arasındaki toplam maliyet ayların reçeteye göre tüketimi oranında; tahmini) ya da reçeteye göre tahmini (son sayımdan sonra: fire hariç tüketim × (1 + genel fire) + ödenmezlerin tahmini malzeme maliyeti).",
+    });
 
     const sectionLabels: Record<FixedSection, string> = {
       personel: "PERSONEL GİDERLERİ TOPLAMI",
@@ -2082,7 +2327,7 @@ export function createModel(ds: Dataset) {
       case "total:mal":
         return v(pm.purchases);
       case "total:cogs":
-        return v(pm.cogs);
+        return { ...v(pm.cogs), ...(pm.cogsMethod ? { tag: COGS_METHOD_LABELS[pm.cogsMethod], info: pm.cogsInfo ?? undefined } : {}) };
       case "total:personel":
       case "total:faturalar":
       case "total:kira":
@@ -2202,6 +2447,8 @@ export function createModel(ds: Dataset) {
     unitCostAtMonthEnd,
     countInBaseUnit,
     closingStock,
+    /** Ayın reçeteye göre mal tüketimi (mal maliyetinin tahmini ve sayım aralığı dağıtımının ağırlığı) */
+    cogsConsumption,
     invoicesByMonth,
     goodsPurchases,
     pnlMonth,

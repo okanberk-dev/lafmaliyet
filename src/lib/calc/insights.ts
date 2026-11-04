@@ -8,7 +8,7 @@ import {
 } from "../constants";
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
-import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
+import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
@@ -1101,7 +1101,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "info",
       title: "Geçen ayın stok sayımı yok",
-      detail: "Sayım olmadan devreden mal 0 kabul edilir ve alınan malın tamamı maliyet sayılır.",
+      detail: `Sayım olmadan ${uncountedCogsText(model.pnlMonth(prev).cogsMethod)}.`,
       href: `/panel/sayim?ay=${prev}`,
     });
   }

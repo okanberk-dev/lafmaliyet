@@ -10,7 +10,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
+import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
 import { MONTH_NAMES } from "@/lib/constants";
@@ -244,7 +244,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const sgkNotice = taxSettings ? employerRateNotice(model.settings.isverenSgk, taxSettings, Number(current.slice(0, 4))) : null;
   const yearNotes = [
     ...yt.missingRevenue.map(missingRevenueText),
-    ...(yt.uncounted.length ? [`${yt.uncounted.map((m) => monthLabel(m)).join(", ")}: ay sonu sayımı yok, mal maliyeti tahmini (kapanış stoğu 0 sayıldı)`] : []),
+    ...(yt.uncounted.length ? [`Ay sonu sayımı yok: ${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}`] : []),
   ];
 
   return (
@@ -357,7 +357,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           title={`${yt.uncounted.map((m) => monthLabel(m)).join(", ")} sayımı yok: mal maliyeti tahmini`}
           action={<NoticeLink href={`/panel/sayim?ay=${yt.uncounted[yt.uncounted.length - 1]}`}>Sayım gir</NoticeLink>}
         >
-          Kapanış stoğu 0 sayıldı; alınan malın tamamı maliyet.
+          {`${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}.`}
         </Notice>
       ) : null}
       {yt.missingRevenue.length ? (

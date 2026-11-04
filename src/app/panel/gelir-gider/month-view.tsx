@@ -292,9 +292,15 @@ export function MonthView({
             <h3 className="sticky top-[calc(var(--mobile-top-h)+3.875rem)] z-10 flex items-baseline justify-between gap-3 bg-panel/95 px-5 pt-2 pb-2 text-[13px] font-semibold text-ink-soft backdrop-blur-md">
               <span>{sec.label}</span>
               {totalRow ? (
-                <span className={cn("text-sm text-ink tabular", (totalRow.cells[i].value ?? 0) < 0 && "text-bad")}>
+                <span className={cn("text-right text-sm text-ink tabular", (totalRow.cells[i].value ?? 0) < 0 && "text-bad")}>
                   <span className="sr-only">Toplam </span>
                   {fmt(totalRow.cells[i].value, totalRow.def.format)}
+                  {/* Hesabın yöntemi (mal maliyetinde sayım / dağıtıldı / tahmini) */}
+                  {totalRow.cells[i].tag ? (
+                    <span className="block text-[11px] leading-4 font-normal text-ink-mute" title={totalRow.cells[i].info}>
+                      {totalRow.cells[i].tag}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
             </h3>
@@ -308,6 +314,7 @@ export function MonthView({
                     <span className="min-w-0 flex-1">
                       <span className={cn("block text-[15px] leading-5 break-words", def.strong ? "font-semibold text-ink" : "text-ink-soft")}>{def.label}</span>
                       {def.sub ? <span className="mt-0.5 block text-xs leading-4 text-ink-mute">{def.sub}</span> : null}
+                      {c.tag ? <span className="mt-0.5 block text-xs leading-4 text-ink-mute">{c.info ? `${c.tag}: ${c.info}` : c.tag}</span> : null}
                       {c.note ? (
                         <span className="mt-1 flex items-start gap-1 text-xs leading-4 text-warn">
                           <MessageSquareText size={12} className="mt-0.5 shrink-0" aria-hidden="true" />

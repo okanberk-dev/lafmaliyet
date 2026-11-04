@@ -109,6 +109,11 @@ export interface TaxPnlMonthBase {
   /** Gelir-gider'in toplam gideri ve aylık harcama kategorilerine bağlı faturalar (köprü) */
   pnlExpenses: number;
   linkedInvoices: number;
+  /**
+   * Gelir-gider'in mal maliyetinde sayımsız ayın tahmini devri (sayım aralığına dağıtım ya da reçeteye göre tahmin):
+   * Gelir-gider'in maliyeti − yalnız sayımla maliyet. Vergi yalnız sayımı kullanır; köprüde ayrı satır
+   */
+  stockEstimate?: number;
 }
 
 export interface TaxPnlInput {
@@ -164,7 +169,7 @@ export interface ExcludedItem {
 }
 
 export interface BridgeRow {
-  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "stock" | "end";
+  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "stock" | "stockEstimate" | "end";
   label: string;
   amount: number;
 }
@@ -283,15 +288,17 @@ export function taxPnlInputFromModel(
     const manualCells: Record<string, number> = {};
     for (const r of MANUAL_PNL_ROWS) manualCells[r.key] = value(r.key);
     const pending = model.siteSales(m)?.karaoke.refundPendingMinor ?? 0;
-    if (pm.cells.get("stock:closing")?.overridden) counts.set(m, pm.closing);
+    if (pm.cells.get("stock:closing")?.overridden) counts.set(m, pm.countClosing);
     months.set(m, {
       month: m,
       revenueNet: pm.revenueNet,
       openDays: pm.openDays,
       site: pm.site ? pm.site.total : null,
       siteRefundPending: r2(pending / 100 / (1 + st.kdvHizmet)),
-      opening: pm.opening,
-      closing: pm.closing,
+      // Vergi yalnız sayımla (sayımsız ayın tahmini devri Gelir-gider'de; köprüde "stockEstimate")
+      opening: pm.countOpening,
+      closing: pm.countClosing,
+      stockEstimate: r2(pm.opening - pm.closing - (pm.countOpening - pm.countClosing)),
       fixedCells,
       manualCells,
       personnel: {
@@ -688,6 +695,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
     { key: "pos", label: "POS komisyonu farkı", amount: r2(pos - base.pos.amount) },
     { key: "invoices", label: "Gelir-gider'e girmeyen faturalar", amount: r2(invoicesTotal + notAsset - commissionInv - base.linkedInvoices) },
     { key: "adjustments", label: "Düzeltmeler", amount: r2(adjustments + separate) },
+    { key: "stockEstimate", label: "Mal maliyetinin tahmini devri (vergi yalnız sayımı kullanır)", amount: -r2(base.stockEstimate ?? 0) },
   ];
   // Kuruş yuvarlaması: satırlar ayrı ayrı yuvarlandığı için toplamları sonla 1–2 kuruş ayrışabilir; fark en büyük satıra
   // eklenir, kartta satırlar iki ucu birebir tutar (ayrışma yuvarlamadan büyükse olduğu gibi kalır, testler yakalar)
