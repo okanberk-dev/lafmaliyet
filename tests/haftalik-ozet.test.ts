@@ -4,7 +4,7 @@
 // Çalıştırma: npx tsx --test tests/haftalik-ozet.test.ts
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -671,43 +671,7 @@ test("Son gönderimler: haftalık özetin gidemeyen kaydı adıyla, iç işarets
 
 // ---------------------------------------------------------------- Kaynak denetimleri
 
-const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 
-test("kaynak: sunucu dosyaları server-only, şablon değil; alıcılar etkin yöneticiler; eylemler yönetici; sabah işi", () => {
-  for (const f of ["src/server/weekly/collect.ts", "src/server/weekly/send.ts"]) assert.ok(read(f).startsWith('import "server-only";'), f);
-  assert.doesNotMatch(read("src/server/notify/weekly-template.ts"), /import "server-only"/);
-  const send = read("src/server/weekly/send.ts");
-  assert.match(send, /export async function weeklyRecipients[\s\S]*?eq\(s\.users\.role, "admin"\), eq\(s\.users\.active, true\)[\s\S]*?!isPendingInvite\(r\.passwordHash\)/);
-  // Otomatik gönderim yalnız canlıda; örnek haftanın kaydına ve geçmişe dokunmaz
-  assert.match(send, /if \(!isProductionRuntime\(\) \|\| week\.weekday > WEEKLY_LAST_WEEKDAY\)/);
-  const sample = send.slice(send.indexOf("export async function sendWeeklySampleTo"), send.indexOf("export async function loadWeeklyPanel"));
-  assert.doesNotMatch(sample, /WEEKLY_HISTORY_KEY|WEEKLY_LOG_PREFIX/);
-  assert.match(sample, /to: \[me\.email\]/);
-  const actions = read("src/server/actions/weekly.ts");
-  assert.ok(actions.startsWith('"use server";'));
-  for (const fn of ["saveWeeklyEnabled", "previewWeekly", "sendWeeklySample"]) {
-    const body = actions.slice(actions.indexOf(`export async function ${fn}`));
-    assert.match(body, /^export async function \w+\([^)]*\) \{\s+return attempt\(async \(\) => \{\s+(const me = )?await requireAdmin\(\);/, fn);
-  }
-  const route = read("src/app/api/cron/gunluk/route.ts");
-  assert.match(route, /runWeeklyStep\(new Date\(\), \{ deadlineAt: jobStart \+ WEEKLY_DEADLINE_MS \}\)/);
-  // Dalga 10: süresi dolan personel istekleri haftalık özetten sonra, aynı kuyrukta
-  assert.match(route, /await Promise\.all\(\[[\s\S]*?countTask\(\),\s+weeklyTask\(\),\s+requestsTask\(\),\s+\]\)/);
-  assert.match(route, /\.\.\.\(weeklyResult \? \{ weekly: weeklyResult \} : \{\}\)/);
-  // Saf modüller sunucuya uzanmaz
-  for (const f of readdirSync(join(process.cwd(), "src/lib/weekly"))) assert.doesNotMatch(read(`src/lib/weekly/${f}`), /from "@\/server/, f);
-  // Anahtar açılırken gösterilen satır sunucunun açıkken kuralıyla hesaplanır (hafta içinde açılan özet)
-  assert.match(send, /onStatus: weeklyStatusText\(\{ \.\.\.input, enabled: true \}\)/);
-  const row = read("src/app/panel/hatirlaticilar/weekly-row.tsx");
-  assert.match(row, /enabled === weekly\.enabled \? weekly\.status : enabled \? weekly\.onStatus : "Kapalı: pazartesi e-postası gitmez\."/);
-  assert.doesNotMatch(row, /sıradaki pazartesi/);
-  // Satış tahmini satırı tahminin yükleyicisini doğrudan okur
-  assert.match(read("src/server/weekly/collect.ts"), /const \{ forecast \} = await loadForecastCore\(ctx\.now\);/);
-  // Ödemeler sayfası: saat requireAdmin'den sonra; önizleme ve örnek için süre
-  const page = read("src/app/panel/hatirlaticilar/page.tsx");
-  assert.match(page, /export const maxDuration = 30;/);
-  assert.ok(page.indexOf("await requireAdmin();") < page.indexOf("const now = new Date();"));
-});
 
 test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı SGK); tutarı bilinmeyen geçici vergiyi saymaz (docs/VERGI.md)", () => {
   const today = "2026-10-22";

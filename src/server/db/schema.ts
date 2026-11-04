@@ -20,7 +20,6 @@ import type { AdoptPrev, LinkPrev } from "../../lib/cari/account";
 import type { BranchKind, BranchPosSource } from "../../lib/branches";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
-import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
 import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
 import type { KasaFoyu } from "../../lib/modpos/foy";
@@ -1933,51 +1932,6 @@ export const specialDays = pgTable(
   ],
 );
 
-/**
- * MET Norway'in günlük özeti (Türkiye takvim günü). Sabah işi bugün ve sonrasını günceller; geçmiş günler donar (o
- * günün havası olarak kalır).
- */
-export const weatherDays = pgTable("weather_days", {
-  date: text("date").primaryKey(),
-  tMax: doublePrecision("t_max"),
-  tMin: doublePrecision("t_min"),
-  /** Gün içi (09–23) yağış, mm */
-  precipMm: doublePrecision("precip_mm"),
-  symbol: text("symbol"),
-  /** Gün içi (09:00–22:00 arası başlayan) tahmin adımı; bugünün satırını yalnız en az bu kadar adımlı istek günceller */
-  hours: integer("hours").notNull().default(0),
-  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
-});
-
-/**
- * Her sabah kaydedilen tahmin (hedef gün × yapıldığı gün; ilk yazan kalır, önizlemeler yazmaz). Tutturma bununla
- * ölçülür. Tutarlar TL, Z toplamı.
- */
-export const forecastSnapshots = pgTable(
-  "forecast_snapshots",
-  {
-    id: serial("id").primaryKey(),
-    /** Tahmin edilen iş günü */
-    date: text("date").notNull(),
-    /** Tahminin yapıldığı iş günü (date − madeOn: 0…6) */
-    madeOn: text("made_on").notNull(),
-    amount: doublePrecision("amount").notNull(),
-    low: doublePrecision("low").notNull(),
-    high: doublePrecision("high").notNull(),
-    closed: boolean("closed").notNull().default(false),
-    /** Önerilen kişi sayısı */
-    staff: integer("staff"),
-    detail: jsonb("detail").$type<SnapshotDetail>().notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("forecast_snapshots_date_made_uq").on(t.date, t.madeOn), index("forecast_snapshots_made_idx").on(t.madeOn)],
-);
-
-// ---------------------------------------------------------------- Kasaya işle (ModPOS) işaretleri
-/**
- * "Kasaya işle"nin işaret kaydı: kim, hangi ürünü, hangi fiyatla, ne zaman kasada değiştirdi (personel de işaretler;
- * docs/FIYATLAR.md). Geri almada saklanan bayat fiyat ve an ürüne geri yazılır (istemciden fiyat alınmaz).
- */
 export const posMarks = pgTable(
   "pos_marks",
   {

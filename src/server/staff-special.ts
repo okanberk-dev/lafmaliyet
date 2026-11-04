@@ -4,7 +4,7 @@ import { and, count, eq, gte, lte, ne, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { STAFF_SPECIAL_LIMITS, STAFF_SPECIAL_TEXT, staffSpecialCheck, type StaffSpecialInput } from "@/lib/closed-days";
-import type { SpecialKind } from "@/lib/forecast/calendar";
+import type { SpecialKind } from "@/lib/takvim";
 import { addDays, daysBetween } from "@/lib/reminders";
 import { requestDayStart } from "@/lib/staff-requests";
 import { lockSpecialDays } from "@/server/closed-days";

@@ -100,9 +100,8 @@ test("sabah işi: ModPOS yalnız bir kez başlar (Paraşüt'ten önce, extras() 
   assert.equal([...route.matchAll(/const modposP = /g)].length, 1);
   const start = route.indexOf("const modposP = capped<ModposSyncResult>(");
   assert.ok(start > route.indexOf('startJobRun("gunluk")'), "iş kaydından sonra");
-  assert.ok(start > route.indexOf("const forecastP = capped<ForecastJobResult>("), "satış tahmininden sonra");
   assert.ok(start < route.indexOf("syncParasut("), "Paraşüt'ün yeniden denemesinden önce (onunla aynı anda sürer)");
-  const extras = route.slice(route.indexOf("const extras = async () => {"), route.indexOf("const forecast = await forecastP;"));
+  const extras = route.slice(route.indexOf("const extras = async () => {"), route.indexOf("const modpos = await modposP;"));
   assert.ok(extras.length > 0);
   assert.doesNotMatch(extras, /modpos/i, "extras() ModPOS'a dokunmaz");
   // Anahtar yoksa çekme hiç başlamaz; son an ve beklenme sınırı jobStart'tan
@@ -112,17 +111,15 @@ test("sabah işi: ModPOS yalnız bir kez başlar (Paraşüt'ten önce, extras() 
   assert.equal(ms("MODPOS_DEADLINE_MS"), 30_000);
   assert.equal(ms("MODPOS_CAP_MS"), 32_000);
   assert.ok(ms("MODPOS_CAP_MS") > ms("MODPOS_DEADLINE_MS") && ms("MODPOS_CAP_MS") < JOB_SEND_DEADLINE_MS, "yazma payı var, e-postanın sınırından önce");
-  // Bir kez beklenir: satış tahmininden sonra, sabah e-postasından (ve try'dan) önce
+  // Bir kez beklenir: sabah e-postasından (ve try'dan) önce
   assert.equal([...route.matchAll(/await modposP/g)].length, 1);
   const awaited = route.indexOf("const modpos = await modposP;");
-  assert.ok(awaited > route.indexOf("const forecast = await forecastP;"), "tahminden sonra");
   assert.ok(awaited < route.indexOf("runReminderDigest("), "e-postadan önce: e-posta, zil ve Bugün taze föyü görür");
   assert.ok(awaited < route.indexOf("  try {\n    // Sistem bölümü"), "iki sonuç da aynı sonucu kullanır");
-  // Adım yalnız yazılacaksa; iki sonuçta da (fcStep satırları değişmeden)
+  // Adım yalnız yazılacaksa; iki sonuçta da
   assert.match(route, /const mpStep = modposResult \? \{ modpos: modposResult \} : \{\};/);
-  assert.equal([...route.matchAll(/\.\.\.ex\.steps, \.\.\.mpStep, \.\.\.fcStep \}\)/g)].length, 2);
-  assert.equal([...route.matchAll(/\.\.\.fcStep \}\)/g)].length, 2);
-  assert.equal([...route.matchAll(/forecast: forecast\.status, modpos: modpos\.status, /g)].length, 2);
+  assert.equal([...route.matchAll(/\.\.\.ex\.steps, \.\.\.mpStep \}\)/g)].length, 2);
+  assert.equal([...route.matchAll(/modpos: modpos\.status, /g)].length, 2);
   // Yeni zamanlanmış iş yok
   assert.equal(JSON.parse(read("vercel.json")).crons.length, 2);
 });

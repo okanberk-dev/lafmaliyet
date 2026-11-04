@@ -13,7 +13,6 @@ import { DashboardPayments } from "../dashboard-payments";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
 import { soldOutLine } from "./rows-ops";
 import { TodayCafe } from "./today-cafe";
-import { TodayForecast } from "./today-forecast";
 import { TodayRefresh } from "./today-refresh";
 import { TodayReminders } from "./today-reminders";
 import { TodayTasks } from "./today-tasks";
@@ -52,9 +51,9 @@ async function TodayContent() {
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
-  // Personelde satış tahmininin yoğunluk ve tatlı satırları başta (yöneticinin kendi kartı var); tükenen ürünler sonda
+  // Tükenen ürünler sonda (satış tahmini 4 Kasım 2026'da kaldırıldı)
   const soldOut = soldOutLine(data.facts);
-  const cafe = cafeLines(data.cafe, now.getTime(), data.forecast.staff, soldOut ? [soldOut] : []);
+  const cafe = cafeLines(data.cafe, now.getTime(), soldOut ? [soldOut] : []);
   const changeAt = data.cafe.karaoke?.changeAt;
   return (
     <>
@@ -68,7 +67,6 @@ async function TodayContent() {
         <div className="min-w-0 space-y-4">
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
-          {data.forecast.admin ? <TodayForecast data={data.forecast.admin} /> : null}
           {cafe.length ? <TodayCafe lines={cafe} /> : null}
         </div>
       </div>

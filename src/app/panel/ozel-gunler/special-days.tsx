@@ -11,11 +11,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
 import { STAFF_EFFECTS, STAFF_SPECIAL_KINDS } from "@/lib/closed-days";
-import { rangeTR, shortRangeTR, type SpecialKind } from "@/lib/forecast/calendar";
-import { HISTORY_DAYS, SPECIAL_KIND_LABEL } from "@/lib/forecast/model";
-import { EFFECT_OPTIONS, specialTail } from "@/lib/forecast/text";
+import { rangeTR, shortRangeTR, type SpecialKind } from "@/lib/takvim";
+import { SPECIAL_KIND_LABEL, SPECIAL_PAST_DAYS } from "@/lib/ozel-gun";
+import { EFFECT_OPTIONS, specialTail } from "@/lib/ozel-gun";
 import { cn } from "@/lib/utils";
-import type { SpecialDayInput, SpecialDayValues } from "@/server/actions/forecast";
+import type { SpecialDayInput, SpecialDayValues } from "@/server/actions/special-days";
 import type { ActionResult } from "@/server/actions/util";
 
 /** Sayfaya giden özel gün (tahminin çekirdeğinden) */
@@ -32,7 +32,7 @@ export interface SpecialDayItem {
 }
 
 /**
- * Pencerenin eylemleri (sayfa enjekte eder): yöneticide Satış tahmini'nin eylemleri, personelde
+ * Pencerenin eylemleri (sayfa enjekte eder): yöneticide src/server/actions/special-days.ts, personelde
  * src/server/actions/special-days-staff.ts. Silme önceki değerleri dönerse bildirimde "Geri al" çıkar.
  */
 export interface SpecialDayActions {
@@ -181,7 +181,7 @@ function SpecialDayDialog({
       description={
         staff
           ? "Tahmin ve tatlı sayısı bu günlere göre ayarlanır. Yarından 60 gün ileriye, en çok 3 gün; ad bütün ekibe görünür."
-          : `Tahmin bu günlerde seçtiğiniz etkiyle değişir. Son ${HISTORY_DAYS} gün içindeki geçmiş bir günü de işaretleyebilirsiniz: o gün normal günlerin ortalamasına katılmaz.`
+          : `Yaklaşan günleri işaretleyin; son ${SPECIAL_PAST_DAYS} gün içindeki geçmiş bir günü de yazabilirsiniz.`
       }
       footerStart={
         editing ? (
@@ -317,7 +317,8 @@ export function SpecialDaysCard({ upcoming, past }: { upcoming: SpecialDayItem[]
       <CardHeader
         icon={<CalendarHeart />}
         title="Özel günler"
-        description="Derbi, AVM etkinliği, kampanya ya da kapalı gün: tahmin o günlere göre değişir."
+        description="Derbi, AVM etkinliği, kampanya ya da kapalı gün: takvim notu olarak işaretlenir."
+        actions={<AddSpecialDayHeaderButton />}
       />
       <CardContent className="space-y-3">
         {upcoming.length ? (
@@ -331,7 +332,7 @@ export function SpecialDaysCard({ upcoming, past }: { upcoming: SpecialDayItem[]
         )}
         {past.length ? (
           <div>
-            <p className="mb-1 text-[13px] font-medium text-ink-mute">Geçmiş (son {HISTORY_DAYS} gün)</p>
+            <p className="mb-1 text-[13px] font-medium text-ink-mute">Geçmiş (son {SPECIAL_PAST_DAYS} gün)</p>
             <ul className="-mx-1">
               {past.map((d) => (
                 <Row key={d.id} item={d} past />

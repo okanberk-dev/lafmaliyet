@@ -194,7 +194,6 @@ const NEW_DESCRIPTIONS: readonly string[] = [
   "src/app/panel/karaoke/page.tsx",
   "src/app/panel/karaoke/doluluk/page.tsx",
   "src/app/panel/kontrol/page.tsx",
-  "src/app/panel/tahmin/page.tsx",
   "src/app/panel/hatirlaticilarim/page.tsx",
   "src/app/panel/urunler/page.tsx",
   "src/app/panel/urunler/fiyatlar/page.tsx",

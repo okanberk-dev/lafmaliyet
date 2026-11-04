@@ -34,7 +34,6 @@ import {
   Settings,
   Store,
   Tags,
-  TrendingUp,
   Truck,
   type LucideIcon,
   UserRound,
@@ -104,16 +103,8 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin", "staff"],
         keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
       },
-      // Personelin özel günleri (maç, AVM etkinliği, kampanya; docs/SATIS-TAHMINI.md); yönetici Satış tahmini'nde görür
-      { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
-      // Önümüzdeki 7 günün satışı, kaç kişi, kaç tatlı (docs/SATIS-TAHMINI.md); kenar çubuğunda Kafe altında
-      {
-        href: "/panel/tahmin",
-        label: "Satış tahmini",
-        icon: TrendingUp,
-        roles: ["admin"],
-        keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
-      },
+      // Özel günler (maç, AVM etkinliği, kampanya; docs/OZEL-GUNLER.md): takvim notu
+      { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["admin", "staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
@@ -339,10 +330,10 @@ export const NAV_TREE: NavNode[] = [
   { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["admin", "staff"] },
   // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); personelde üst düzeyde, yönetici Kafe altında görür
   { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["staff"] },
-  // Personelin özel günleri; yönetici aynı listeyi Satış tahmini'nde düzenler
+  // Özel günler (takvim notu; docs/OZEL-GUNLER.md): personelde üst düzeyde, yönetici Kafe altında görür
   { id: "ozel-gunler", label: "Özel günler", icon: CalendarHeart, href: "/panel/ozel-gunler", roles: ["staff"] },
   {
-    // Kafenin günlük işleyişi: karaoke odası, açılış / kapanış, önümüzdeki günlerin tahmini, kişisel hatırlatıcılar
+    // Kafenin günlük işleyişi: karaoke odası, açılış / kapanış, özel günler, kişisel hatırlatıcılar
     id: "kafe",
     label: "Kafe",
     icon: Store,
@@ -350,7 +341,7 @@ export const NAV_TREE: NavNode[] = [
     children: [
       { id: "karaoke-yonetici", label: "Karaoke", href: "/panel/karaoke", roles: ["admin", "staff"] },
       { id: "kontrol-listeleri", label: "Kontrol listeleri", href: "/panel/kontrol", roles: ["admin", "staff"] },
-      { id: "tahmin", label: "Satış tahmini", href: "/panel/tahmin", roles: ["admin"] },
+      { id: "ozel-gunler-yonetici", label: "Özel günler", href: "/panel/ozel-gunler", roles: ["admin", "staff"] },
       { id: "hatirlaticilarim-yonetici", label: "Hatırlatıcılarım", href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
     ],
   },

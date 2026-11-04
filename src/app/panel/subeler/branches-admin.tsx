@@ -27,7 +27,7 @@ import {
   type BranchPosSource,
   type BranchRow,
 } from "@/lib/branches";
-import { shortDateTR } from "@/lib/forecast/calendar";
+import { shortDateTR } from "@/lib/takvim";
 import type { ActionResult } from "@/server/actions/util";
 
 /*

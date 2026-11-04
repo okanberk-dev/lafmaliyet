@@ -41,8 +41,6 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
   let history: typeof import("../src/server/data/product-history");
   let rematch: typeof import("../src/server/lafpos/rematch");
   let ingest: typeof import("../src/server/lafpos/ingest");
-  let forecast: typeof import("../src/server/forecast/load");
-  let mix: typeof import("../src/server/forecast/mix");
   const ids = { cat: 0, desserts: 0, latteM: 0, latteL: 0, mocha: 0, tiramisu: 0, only: 0, milk: 0 };
 
   const at = (iso: string) => {
@@ -123,8 +121,6 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     history = await import("../src/server/data/product-history");
     rematch = await import("../src/server/lafpos/rematch");
     ingest = await import("../src/server/lafpos/ingest");
-    forecast = await import("../src/server/forecast/load");
-    mix = await import("../src/server/forecast/mix");
   });
 
   after(async () => {
@@ -188,18 +184,14 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
 
   afterEach(() => mock.timers.reset());
 
-  test("geçiş günü boşken veri kümesi, günlük toplamlar ve tatlı payı LafPOS satırları varken de bayt bayt aynı", async () => {
+  test("geçiş günü boşken veri kümesi LafPOS satırları varken de bayt bayt aynı", async () => {
     const withLafpos = await snapshot();
-    const totals = JSON.stringify(await forecast.loadDailyTotals("2026-11-01", "2026-12-09"));
-    const dessert = JSON.stringify(await mix.loadDessertMix({ dessertCategories: [] }, "2026-12-10"));
     const ds = await dataset.loadDataset();
     assert.equal("lafposSales" in ds, false);
     assert.ok(ds.salesLines.every((l) => l.id > 0 && !l.lafpos), "yalnız sales_lines");
     assert.equal(ds.salesLines.length, 5, "Aralık'a yüklenmiş liste de bugünkü gibi sayılır");
     await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports`);
     assert.equal(await snapshot(), withLafpos);
-    assert.equal(JSON.stringify(await forecast.loadDailyTotals("2026-11-01", "2026-12-09")), totals);
-    assert.equal(JSON.stringify(await mix.loadDessertMix({ dessertCategories: [] }, "2026-12-10")), dessert);
   });
 
   test("geçiş günü seçilince: geçiş ayında liste 1-9 Kasım + LafPOS 10 Kasım'dan, Aralık yalnız LafPOS; deneme günü sayılmaz", async () => {
@@ -539,25 +531,4 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.match(!blocked.ok ? blocked.error : "", /^Bu ürünün 1 satış satırı kaydı var/);
   });
 
-  test("tahmin: geçiş gününden itibaren raporsuz günde LafPOS'un Z'si (rapor kazanır, deneme günü yok); tatlı payı LafPOS ayını okur", async () => {
-    await setSwitch(S);
-    const totals = new Map((await forecast.loadDailyTotals("2026-11-01", "2026-12-09")).map((x) => [x.date, x.total]));
-    assert.equal(totals.get("2026-11-08"), undefined, "deneme günü (geçiş gününden önce)");
-    assert.equal(totals.get("2026-11-10"), 1_000, "kasa raporu kazanır");
-    assert.equal(totals.get("2026-11-11"), 2_500, "raporsuz LafPOS günü");
-    assert.equal(totals.get("2026-12-02"), 1_800);
-    assert.equal(totals.size, 9 + 2 + 3);
-    // Tatlı payı: Aralık LafPOS'tan (Aralık'a yüklü ModPOS listesi sayılmaz), Kasım ve Ekim
-    const { mix: m } = await mix.loadDessertMix({ dessertCategories: [] }, "2026-12-10");
-    assert.deepEqual(m?.basis.months, ["2026-10", "2026-11", "2026-12"]);
-    // Ciro: Ekim 22.000, Kasım 6.400 + LafPOS 7.800, Aralık 5.400 (ModPOS'un 199.800'ü yok); tatlı 10 + 12
-    assert.equal(m?.basis.revenue, 22_000 + 14_200 + 5_400);
-    assert.ok(Math.abs((m?.dessertsPerTL ?? 0) - 22 / 41_600) < 1e-12);
-    // Geçiş günü boşken: Aralık'ın ModPOS listesi (tatlısız) sayılır, LafPOS'un tatlısı yok
-    await setSwitch(null);
-    const { mix: before } = await mix.loadDessertMix({ dessertCategories: [] }, "2026-12-10");
-    assert.deepEqual(before?.basis.months, ["2026-10", "2026-11", "2026-12"]);
-    assert.equal(before?.basis.revenue, 22_000 + 6_400 + 199_800);
-    assert.ok(Math.abs((before?.dessertsPerTL ?? 0) - 10 / 228_200) < 1e-12);
-  });
 });

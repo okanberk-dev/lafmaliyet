@@ -24,7 +24,6 @@ test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel/karaoke"), ["Kafe", "Karaoke"]);
   assert.deepEqual(pathOf("/panel/kontrol"), ["Kafe", "Kontrol listeleri"]);
   assert.deepEqual(pathOf("/panel/hatirlaticilarim"), ["Kafe", "Hatırlatıcılarım"]);
-  assert.deepEqual(pathOf("/panel/tahmin"), ["Kafe", "Satış tahmini"]);
   assert.deepEqual(pathOf("/panel/kasa"), ["Kasa raporu"]);
   assert.deepEqual(pathOf("/panel/onaylar"), ["Onaylar"]);
   assert.deepEqual(pathOf("/panel/bugun"), ["Bugün"]);

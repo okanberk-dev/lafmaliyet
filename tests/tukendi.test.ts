@@ -226,7 +226,7 @@ test("Bugün kafede: Tükendi satırı; personelin kaydı 16 saatten eskiyse uya
   const line = soldOutLine(facts([fresh, cake]));
   assert.deepEqual(line, { key: "tukendi", text: "Tükendi: Tiramisu, Cheesecake", tone: "info", href: "/panel/karaoke#tukenenler" });
   // "Bugün kafede" kartının sonunda
-  const cafe = cafeLines({ karaoke: null, orders: null, configured: true }, NOW.getTime(), null, [line!]);
+  const cafe = cafeLines({ karaoke: null, orders: null, configured: true }, NOW.getTime(), [line!]);
   assert.deepEqual(cafe.at(-1), line);
   const old = { ...fresh, at: tr("2026-10-22T20:00").toISOString() };
   assert.deepEqual(soldOutLine(facts([old, cake])), {

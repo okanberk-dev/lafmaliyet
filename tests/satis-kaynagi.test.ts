@@ -104,7 +104,7 @@ test("bağlananlar: altı yönetici ekranının başlığında satır; yükleyin
     assert.doesNotMatch(read(f), /[sS]atış raporu yüklenince|[sS]atış listesini yükleyin|Bu ay(?: için)? satış raporu yok/, f);
   }
   // "Satış verisi yok, yükleyin" diyen metinler `missing`'i kullanır; düğme yalnız elle yüklenen ayda "yükle"
-  for (const f of ["src/app/panel/analiz/page.tsx", "src/app/panel/urunler/fiyatlar/bulk-editor.tsx", "src/app/panel/urunler/price-impact-panel.tsx", "src/app/panel/tahmin/forecast-desserts.tsx", "src/app/panel/tutarlilik/page.tsx", "src/app/panel/tutarlilik/consistency-client.tsx"]) {
+  for (const f of ["src/app/panel/analiz/page.tsx", "src/app/panel/urunler/fiyatlar/bulk-editor.tsx", "src/app/panel/urunler/price-impact-panel.tsx", "src/app/panel/tutarlilik/page.tsx", "src/app/panel/tutarlilik/consistency-client.tsx"]) {
     const src = read(f);
     assert.match(src, /[sS]alesMissing|source\.missing|salesSource\.missing/, f);
     assert.doesNotMatch(src, /Satışlar(&apos;|')a ürün satış raporunu yükleyin|Satışlar sayfasından ürün satış raporunu yükleyin|POS ürün listesi yüklenince/, f);

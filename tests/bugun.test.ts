@@ -948,33 +948,6 @@ test("11b. kafe satırları: oda, günün sayısı, sıradaki, siparişler; eski
   );
 });
 
-test("11c. kafe satırları: personelde satış tahmininin yoğunluğu ve tatlı sayısı başta; tutar yok", () => {
-  const now = tr("2026-10-29T10:00").getTime();
-  const busy = { level: "yuksek" as const, reasons: ["Cumhuriyet Bayramı"], desserts: { today: 8, top: ["San Sebastian", "Marlenka"] }, closed: false };
-  const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-29", now), orders: null, configured: true }, now, busy);
-  assert.deepEqual(
-    lines.map((l) => [l.key, l.text, l.tone]),
-    [
-      ["yogunluk", "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı", "warn"],
-      ["tatli", "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)", "info"],
-      ["karaoke", "Bugün karaoke rezervasyonu yok", "info"],
-    ],
-  );
-  for (const l of lines) assert.doesNotMatch(l.text, /₺|%/);
-  // Yoğunluk satırı personelin Özel günler'ine gider; kart satırın kendi adresini kullanır (tatlı satırı bağlantısız)
-  assert.equal(lines.find((l) => l.key === "yogunluk")?.href, "/panel/ozel-gunler");
-  assert.equal(lines.find((l) => l.key === "tatli")?.href, undefined);
-  // Karaoke bağlı değilken de kart tahmin satırlarıyla çizilir; kapalı gün tek satır
-  assert.deepEqual(
-    cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "normal", reasons: [], desserts: null, closed: false }).map((l) => l.text),
-    ["Bugün yoğunluk: Normal"],
-  );
-  assert.deepEqual(
-    cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "kapali", reasons: [], desserts: null, closed: true }).map((l) => l.text),
-    ["Bugün kafe kapalı olarak işaretli."],
-  );
-  assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now, null), []);
-});
 
 // ---------------------------------------------------------------- Saatler
 
@@ -1053,7 +1026,6 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "previousCarryOver(",
     "cashRevisionsFor(",
     "loadOverduePayouts(",
-    "loadForecastCard(",
     // ModPOS kasa föyü (yönetici: föyün tutarları personele gitmez; src/lib/modpos/zil.ts)
     "loadModposSheets(",
     "modposMismatchDates(",
@@ -1065,8 +1037,6 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   }
   assert.ok(staffBody.includes("dayWaste("));
   // Satış tahmini: personel yalnız tutarsız görünümü yükler
-  assert.ok(staffBody.includes("loadStaffForecast("));
-  assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("loadStaffForecast("), "loadStaffForecast staffFacts dışında");
   assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("dayWaste("), "dayWaste staffFacts dışında");
   // Rol seçimi: personel yalnız staffFacts'i çağırır
   assert.match(src, /admin \? adminFacts\(now, user\.id, cashP\) : staffFacts\(c\)/);
@@ -1110,8 +1080,6 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadUnpricedIngredients(",
     "loadChecklistDays(",
     "loadOverduePayouts(",
-    "loadForecastCard(",
-    "loadStaffForecast(",
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }
@@ -1247,7 +1215,7 @@ test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar yerinde
 test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kendi adresiyle", () => {
   const now = tr("2026-10-24T10:00").getTime();
   const extra = [{ key: "tukendi" as const, text: "Tükendi: Tiramisu", tone: "info" as const, href: "/panel/karaoke#tukenenler" }];
-  const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-24", now), orders: null, configured: true }, now, null, extra);
+  const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-24", now), orders: null, configured: true }, now, extra);
   assert.deepEqual(
     lines.map((l) => l.key),
     ["karaoke", "tukendi"],
