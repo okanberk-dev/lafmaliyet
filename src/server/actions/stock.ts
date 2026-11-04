@@ -13,7 +13,7 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -46,9 +46,13 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
       .max(1000)
       .parse(entries);
     const db = getDb();
+    // Sayım şube başına (docs/SUBE.md): seçili şubeye yazılır ("Tümü" ya da online kanal seçiliyken Tuzla). Anahtar
+    // (ay, şube, malzeme): şubesiz okuma ya da silme başka şubenin sayımına dokunurdu
+    const sube = (await currentPhysicalBranch()).id;
+    const buSube = eq(s.stockCounts.branchId, sube);
     const filled = data.filter((x) => x.qty !== null);
     // Ay satırı yalnızca gerçekten sayım yazılınca açılır: yalnızca silen bir kayıt boş ay bırakmasın
-    if (filled.length) await db.insert(s.months).values({ month: m }).onConflictDoNothing();
+    if (filled.length) await db.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
     const removed = await db.transaction(async (tx) => {
       const checked = data.filter((e) => e.base !== undefined);
       if (checked.length) {
@@ -57,7 +61,7 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
             await tx
               .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty })
               .from(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
+              .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
           ).map((r) => [r.id, r.qty]),
         );
         const stale = checked.filter((e) => {
@@ -83,12 +87,12 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
         ? (
             await tx
               .delete(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, clear)))
+              .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, clear)))
               .returning({ id: s.stockCounts.ingredientId })
           ).length
         : 0;
       if (!filled.length) {
-        if (deleted) await dropEmptyStockMonth(tx, m);
+        if (deleted) await dropEmptyStockMonth(tx, m, sube);
         return deleted;
       }
       const ids = filled.map((e) => e.ingredientId);
@@ -105,7 +109,7 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
           await tx
             .select({ ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor })
             .from(s.stockCounts)
-            .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, ids)))
+            .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, ids)))
         ).map((c) => [c.ingredientId, c]),
       );
       // Pasif ama aktif bir ürünün reçetesinde geçen malzeme listede kalır (engine.ts countable ile aynı kural)
@@ -124,9 +128,10 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
           !countable || (prev && prev.qty === e.qty) ? (prev?.factor ?? countFactor(ing.countUnit)) : countFactor(ing.countUnit);
         await tx
           .insert(s.stockCounts)
-          .values({ month: m, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
+          .values({ month: m, branchId: sube, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
           .onConflictDoUpdate({
-            target: [s.stockCounts.month, s.stockCounts.ingredientId],
+            // Benzersiz dizin (ay, şube, malzeme): şubesiz hedef çalışma anında düşer ("no unique or exclusion constraint")
+            target: [s.stockCounts.month, s.stockCounts.branchId, s.stockCounts.ingredientId],
             set: { qty: e.qty!, factor, countedBy: me.name, updatedAt: new Date() },
           });
       }
@@ -147,21 +152,20 @@ type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
  * satırını kaldırır; deneme için açılmış ay ay seçicide kalmaz. Değer taşıyan hiçbir kayıt silinmez (kasa raporu
  * olan ayda elle yazılmış 0 da değerdir: src/lib/cash-month.ts monthRowEmpty).
  */
-async function dropEmptyStockMonth(tx: Tx, month: string) {
-  // Ay satırının anahtarı (ay, şube): şubesiz okuma başka şubenin ayını düşürürdü
-  const sube = await currentWriteBranch();
+async function dropEmptyStockMonth(tx: Tx, month: string, sube: string) {
+  // Ay satırının anahtarı (ay, şube): şubesiz okuma ya da silme başka şubenin ayını düşürürdü
   const [row] = await tx.select().from(s.months).where(and(eq(s.months.month, month), eq(s.months.branchId, sube)));
   if (!row) return;
   const zeros = row.discounts === 0 || row.offRevenue === 0;
   if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, tx)))) return;
   const [counts, extras, lines, pnl] = await Promise.all([
-    tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(eq(s.stockCounts.month, month)),
+    tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(and(eq(s.stockCounts.month, month), eq(s.stockCounts.branchId, sube))),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(eq(s.stockExtras.month, month)),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube))),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month)),
   ]);
   if ([counts, extras, lines, pnl].some((r) => (r[0]?.n ?? 0) > 0)) return;
-  await tx.delete(s.months).where(eq(s.months.month, month));
+  await tx.delete(s.months).where(and(eq(s.months.month, month), eq(s.months.branchId, sube)));
 }
 
 /**
@@ -178,12 +182,13 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
+    const sube = (await currentPhysicalBranch()).id;
     const changed = await db.transaction(async (tx) => {
       const existing = await lockExtras(tx, m, b);
       const res = planAdminExtras(existing, data);
       if (!res.ok) throw new UserError(res.error);
       const { updates, deletes, inserts } = res.plan;
-      if (inserts.length) await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
+      if (inserts.length) await tx.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
       for (const u of updates)
         await tx
           .update(s.stockExtras)
@@ -191,7 +196,7 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
           .where(and(eq(s.stockExtras.id, u.id), eq(s.stockExtras.month, m)));
       if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
       if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m })));
-      if (!data.length) await dropEmptyStockMonth(tx, m);
+      if (!data.length) await dropEmptyStockMonth(tx, m, sube);
       return updates.length + deletes.length + inserts.length;
     });
     // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz

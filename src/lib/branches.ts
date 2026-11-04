@@ -143,3 +143,39 @@ export function branchScopeIds(scope: BranchScope, known: readonly BranchRow[]):
   if (scope === ALL_BRANCHES) return sortBranches(known.filter((b) => b.active)).map((b) => b.id);
   return known.some((b) => b.id === scope) ? [scope] : [];
 }
+
+/**
+ * Elle girilmiş Gelir-gider hücrelerinden şube görünümünde kalanlar (pnl_entries şubesiz, işletmenin tutarlarıdır):
+ * - `manual:*` (su, doğalgaz, harici…) işletme geneli gider gibi her şubede görünür;
+ * - `fixed:` / `stopaj:` yalnız şubenin ya da işletme genelinin kalemiyse (silinmiş kalemin girişi işletme geneli);
+ * - `personnel:*`, `commission:pos`, `stock:*` işletmenin toplamıdır: şubede hesaplanan değer geçer.
+ */
+export function branchPnlEntry(rowKey: string, fixedInScope: ReadonlySet<number>, fixedAll: ReadonlySet<number>): boolean {
+  if (rowKey.startsWith("manual:")) return true;
+  const fixed = /^(?:fixed|stopaj):(\d+)$/.exec(rowKey);
+  if (fixed) {
+    const id = Number(fixed[1]);
+    return fixedInScope.has(id) || !fixedAll.has(id);
+  }
+  return false;
+}
+
+/** İşletmenin toplamı olan Gelir-gider hücresi (devir, personel, POS komisyonu): tek şube seçiliyken elle yazılmaz */
+export function companyPnlKey(rowKey: string): boolean {
+  return /^(?:personnel|commission|stock):/.test(rowKey);
+}
+
+/**
+ * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
+ * (docs/SUBE.md › Şube görünümünde maliyet)
+ */
+export function branchViewNote(b: { name: string; kind: BranchKind }): { title: string; text: string } {
+  const [what, to, of] = b.kind === "online" ? ["kanal", "kanala", "kanalın"] : ["şube", "şubeye", "şubenin"];
+  return {
+    title: `${b.name} seçili: yalnız bu ${what} ve işletme geneli giderler`,
+    text:
+      `Ciro, kasa, personel ve bu ${to} bağlı giderler yalnız bu ${of}. İşletme geneli giderler (şubesi seçilmemiş harcama ve sabit ` +
+      `gider, Gelir-gider'e elle yazılan tutarlar) her şubede sayılır; faturalar ortaktır. Mal maliyeti ${of} satışından reçeteye göre ` +
+      `(stok devri işletme genelinde). İşletmenin toplamı ve sayımlı mal maliyeti için soldan Tümü'nü seçin.`,
+  };
+}

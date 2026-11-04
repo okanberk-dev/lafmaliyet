@@ -1,6 +1,6 @@
 import "server-only";
 
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
 import { shiftMonth } from "@/lib/calc/engine";
@@ -12,6 +12,7 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
@@ -99,7 +100,11 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
   const [current, prev, [prevCount], [prevExtra]] = await Promise.all([
     countProgress(month),
     countProgress(prevMonth),
-    db.select({ id: s.stockCounts.id }).from(s.stockCounts).where(eq(s.stockCounts.month, prevMonth)).limit(1),
+    db
+      .select({ id: s.stockCounts.id })
+      .from(s.stockCounts)
+      .where(and(eq(s.stockCounts.month, prevMonth), eq(s.stockCounts.branchId, (await currentPhysicalBranch()).id)))
+      .limit(1),
     db.select({ id: s.stockExtras.id }).from(s.stockExtras).where(eq(s.stockExtras.month, prevMonth)).limit(1),
   ]);
   return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };

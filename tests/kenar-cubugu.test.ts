@@ -386,7 +386,8 @@ test("Stok: yükleme başlığı yüklenen başlıkla aynı boyda (açıklama, a
   const sayim = page("sayim");
   const header = sayim.slice(sayim.indexOf("function StockHeader("), sayim.indexOf("export default function StockPage("));
   assert.ok(header.startsWith("function StockHeader("), "StockHeader");
-  assert.match(header, /month \? \(\s*`\$\{monthLabel\(month\)\} \$\{COUNT_RULE\}`/);
+  // Birden çok açık şube varken ay adının önünde sayılan şube (docs/SUBE.md)
+  assert.match(header, /month \? \(\s*`\$\{branch \? `\$\{branch\} · ` : ""\}\$\{monthLabel\(month\)\} \$\{COUNT_RULE\}`/);
   assert.match(header, /aria-hidden[^>]*animate-pulse[^>]*\/> \{COUNT_RULE\}/);
   assert.match(header, /actions=\{picker \?\? <MonthPickerSkeleton \/>\}/);
   assert.match(header, /tabs=\{<SectionTabs section="stok" current="\/panel\/sayim" role=\{role\} \/>\}/);

@@ -15,6 +15,7 @@ import type { PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { monthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
@@ -74,7 +75,9 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   await requireAdmin();
   const sp = await searchParams;
   const [model, findings, linkedRows] = await Promise.all([
-    loadModel(),
+    // Tutarlılık işletme geneli: faturalar (alınan mal) şubeye bölünmez, sayım, satış ve zayi bütün şubelerden
+    // (docs/SUBE.md › Neyi süzer); şube seçiliyken alım ile tek şubenin tüketimi karşılaştırılmaz
+    loadModel({ scope: ALL_BRANCHES }),
     getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
     // Paraşüt'teki bir ürüne bağlı hammaddeler: alımı faturadan gelir; bu ay faturası yoksa toplu "Alım yok (0)"
     getDb().selectDistinct({ id: s.parasutProductLinks.ingredientId }).from(s.parasutProductLinks),

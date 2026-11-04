@@ -852,9 +852,10 @@ export function yearTrend(model: Model, year: number) {
       future: false,
       /**
        * Toplama giren ama kapanış sayımı olmayan ay (Gelir-giderde elle değer de yok): kapanış stoğu 0 sayılır, mal
-       * maliyeti ve kâr tahminidir (süren ayda sayım ay sonunda girilir)
+       * maliyeti ve kâr tahminidir (süren ayda sayım ay sonunda girilir). Şube görünümünde yok: şubenin mal maliyeti
+       * sayıma değil satışına bağlı (reçeteye göre; engine.ts stockFlow), sayım işletmenin hesabına girer
        */
-      uncounted: !noRevenue && !model.stockSheet(month).hasData && !model.closingStock(month).overridden,
+      uncounted: !model.ds.branchView && !noRevenue && !model.stockSheet(month).hasData && !model.closingStock(month).overridden,
     };
   });
 }

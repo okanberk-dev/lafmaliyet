@@ -44,7 +44,15 @@ Yapıldı (`0056_sube_kirilimi.sql`). Notlar:
 - Seçici dalga 3'ten buraya alındı: şema şubeye bölünüp de süzgeç gelmeseydi, aynı güne iki şube rapor
   girebildiği için `getCashReport(gün)` yanlış şubenin satırını döndürebilirdi. Ayrıntı: `docs/SUBE.md` › Seçici.
 
-## Dalga 3 — kalan okumaların süzülmesi
+## Dalga 3 — kalan okumaların süzülmesi (BİTTİ, 4 Kasım 2026)
+
+Yapıldı: personel, sayım, zayi, harcama (işletme geneliyle), sabit gider (`0057_sabit_gider_subesi.sql`, boş =
+işletme geneli), LafPOS gün sonu okumaları seçime göre; şube görünümünde mal maliyeti şubenin satışından reçeteye göre;
+vergi, nakit planı, tutarlılık ve Excel seçiciden bağımsız "Tümü"; Maaşlar ve Sabit giderler pencerelerinde **Şube**
+alanı; harcama / zayi / sayım / kasadan çıkan seçili şubeye yazılır. Ayrıntı: `docs/SUBE.md` › Şube görünümünde maliyet.
+Kalan: laffogato.net kanalının `/panel/gelir-gider` ayrımının bu kanala taşınması (dalga 4'ün sekmeleriyle).
+
+Önceki not:
 
 Dalga 2'de seçici kuruldu ve **anahtarı şubeyi içeren** tabloların okumaları süzüldü (kasa raporu, gün özeti,
 ModPOS föyü, ay satırı, satış satırı): oradaki süzgeç doğruluk gereğiydi. Kalanlar seri `id` anahtarlı listeler,

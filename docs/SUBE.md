@@ -77,13 +77,55 @@ betiği, arka plan işi, test) `cookies()` fırlar ve "Tümü"ye düşülür —
 
 ### Neyi süzer, neyi süzmez
 
-Süzülen: kasa raporu, gün özeti, ModPOS föyü, ay satırı, satış satırı — yani **görünümler**.
+Süzülen (dalga 3 ile hepsi): kasa raporu, gün özeti, ModPOS föyü, LafPOS gün sonu, ay satırı, satış satırı, personel,
+stok sayımı, zayi — yani **görünümler**. Harcama ve sabit gider tek şube seçiliyken **o şubenin ve işletme genelinin**
+kalemleriyle gelir (`branchWhereWithShared`): kira, muhasebe, abonelik hiçbir şubede kaybolmaz. laffogato.net'in online
+satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur.
+
+**İşletme geneli ekranlar** seçiciden bağımsız, hep "Tümü"yle okur (`withBranchScope(ALL_BRANCHES, …)` ya da
+`loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
+nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz) ve Excel'e aktar
+(panelin yedeği). Para ve beyan işletmenindir.
 
 Süzülmeyen: **bütünlük denetimleri**. "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
 şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynı şekilde "bu POS adı
 ModPOS döneminden mi" sorusu da işletme genelidir. Ortak veriler (menü, reçete, hammadde, tedarikçi) hiç süzülmez.
 
+## Şube görünümünde maliyet (dalga 3, 4 Kasım 2026)
+
+Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-giderini gösterir (sahibin kararları:
+"Reçeteye göre", "Kaleme şube seçimi ekle"):
+
+| Satır | Tek şube seçiliyken |
+|---|---|
+| Ciro, kasa, ödenmez | Şubenin kasa raporları / ay satırı |
+| Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Faturalar ve stok devri işletme genelinde, şubeye bölünmez |
+| Mal alımı (faturalar) | Bilgi olarak görünür, "işletme geneli"; mal maliyetine girmez |
+| Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
+| Sabit gider | Şubeye bağlı kalemler + işletme geneli kalemler (Sabit giderler'de kalemin **Şube** alanı; boş = işletme geneli). Var olan kalemler işletme geneli kaldı |
+| Harcama | Şubenin + şubesi boş (işletme geneli) harcamalar |
+| Elle yazılan Gelir-gider hücresi | `manual:*` her şubede; `fixed:` / `stopaj:` kalemin şubesindeyse; **devir, personel, POS komisyonu** işletmenin toplamıdır, şubede yazılamaz (ekran kilitler, sunucu reddeder) |
+| "Sayım yok" uyarısı | Yok: şubenin mal maliyeti sayıma bağlı değil |
+
+"Tümü" eskisi gibi: sayımlı mal maliyeti (sayım, sayım aralığına dağıtım, tahmin). Aynı ayın aynı malzemesi iki şubede
+sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın birimine çevrilir).
+
+### Yazarken hangi şube
+
+| Kayıt | Şube |
+|---|---|
+| Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin) |
+| Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
+| Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
+| Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
+| Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
+
+Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
+"no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
+tarar.
+
 ## Sırada ne var
 
-Dalga 1 kütüğü ve ekranı, dalga 2 (bu değişiklik) şube sütununu, seçiciyi ve para yolunun süzülmesini kurdu.
-Şube sekmeleri, karşılaştırma kartı, şube başına ModPOS anahtarı ve şubeye özel fiyat `docs/planlar/sube.md`'de.
+Dalga 1 kütüğü ve ekranı, dalga 2 şube sütununu, seçiciyi ve para yolunun süzülmesini, dalga 3 kalan okumaların
+süzülmesini ve şube görünümünde maliyeti kurdu. Şube sekmeleri, karşılaştırma kartı, şube başına ModPOS anahtarı ve
+şubeye özel fiyat `docs/planlar/sube.md`'de.

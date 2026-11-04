@@ -4,13 +4,15 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { ALL_BRANCHES, companyPnlKey } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
-import { attempt, zMonth } from "./util";
+import { attempt, UserError, zMonth } from "./util";
 
 const zKey = z.string().regex(/^(manual|fixed|stopaj|personnel|commission|stock):[\wçğıöşüÇĞİÖŞÜ:.\- ]{1,80}$/, "Geçersiz satır");
 const zNote = z
@@ -29,6 +31,9 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
     const me = await requireAdmin();
     const m = zMonth.parse(month);
     const key = zKey.parse(rowKey);
+    // Devir, personel ve POS komisyonu işletmenin toplamıdır (pnl_entries şubesiz): şube seçiliyken yazılan tutar
+    // "Tümü"ye girerdi, şubede görünmezdi (docs/SUBE.md › Şube görünümünde maliyet)
+    if (companyPnlKey(key) && (await currentBranchScope()) !== ALL_BRANCHES) throw new UserError("Bu satır işletmenin toplamıdır: yazmak için soldan şubeyi Tümü yapın");
     const n = note === undefined ? undefined : zNote.parse(note);
     const db = getDb();
     if (amount === null) {

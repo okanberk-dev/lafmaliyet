@@ -666,14 +666,16 @@ export interface PnlMonthCalc {
 
 /**
  * Mal maliyetinin yöntemi (Gelir-gider'in ay sütununda): "sayim" açılış + alınan − ay sonu sayımı; "dagitim" sayım
- * aralığına reçeteye göre tüketim oranında dağıtıldı (tahmini); "tahmin" kapanışı henüz bilinmeyen ay, reçeteye göre
+ * aralığına reçeteye göre tüketim oranında dağıtıldı (tahmini); "tahmin" kapanışı henüz bilinmeyen ay, reçeteye göre;
+ * "sube" tek şube seçili: faturalar ve stok devri işletme geneli olduğundan şubenin satışından reçeteye göre
  */
-export type CogsMethod = "sayim" | "dagitim" | "tahmin";
+export type CogsMethod = "sayim" | "dagitim" | "tahmin" | "sube";
 
 export const COGS_METHOD_LABELS: Record<CogsMethod, string> = {
   sayim: "sayım",
   dagitim: "sayım aralığına dağıtıldı (tahmini)",
   tahmin: "reçeteye göre tahmini",
+  sube: "şubenin satışından reçeteye göre",
 };
 
 /**
@@ -681,6 +683,7 @@ export const COGS_METHOD_LABELS: Record<CogsMethod, string> = {
  * (hiç sayım yok) eski kural: kapanış 0
  */
 export function uncountedCogsText(method: CogsMethod | null): string {
+  if (method === "sube") return "mal maliyeti şubenin satışından reçeteye göre (faturalar ve stok devri işletme genelinde)";
   if (method === "dagitim") return "mal maliyeti sayım aralığına reçeteye göre tüketim oranında dağıtıldı (tahmini)";
   if (method === "tahmin") return "mal maliyeti reçeteye göre tahmini; ay sonu sayımı girilince gerçek hesaba döner";
   return "kapanış stoğu 0 sayıldı, alınan malın tamamı maliyet";
@@ -1530,10 +1533,21 @@ export function createModel(ds: Dataset) {
   });
 
   // --- Stok sayımı -------------------------------------------------------------
+  // Sayım şube başınadır (docs/SUBE.md): "Tümü"de aynı ayın aynı malzemesi her şubeden bir satır gelir ve işletmenin
+  // stoğu toplamıdır. Çarpanlar farklıysa (birimi sayımlar arasında değişmiş) ilk satırın birimine çevrilerek toplanır
   const countsByMonth = new Map<string, Map<number, { qty: number; factor: number | null }>>();
   for (const c of ds.stockCounts) {
     const m = countsByMonth.get(c.month) ?? new Map<number, { qty: number; factor: number | null }>();
-    m.set(c.ingredientId, { qty: c.qty, factor: c.factor ?? null });
+    const prev = m.get(c.ingredientId);
+    const factor = c.factor ?? null;
+    if (!prev) m.set(c.ingredientId, { qty: c.qty, factor });
+    else if (prev.factor === factor) m.set(c.ingredientId, { qty: prev.qty + c.qty, factor });
+    else {
+      const unit = countFactor(ingById.get(c.ingredientId)?.countUnit ?? null);
+      const base = prev.qty * (prev.factor ?? unit) + c.qty * (factor ?? unit);
+      const into = prev.factor ?? unit;
+      m.set(c.ingredientId, { qty: into ? base / into : base, factor: into });
+    }
     countsByMonth.set(c.month, m);
   }
   const extrasByMonth = new Map<string, typeof ds.stockExtras>();
@@ -1932,6 +1946,21 @@ export function createModel(ds: Dataset) {
   function stockFlow(month: string): StockFlow {
     const hit = flowCache.get(month);
     if (hit) return hit;
+    // Tek şube seçili: faturalar (alınan mal) ve stok devri işletme genelidir, şubeye bölünmez. Şubenin mal maliyeti
+    // kendi satışından reçeteye göre (sahibin kararı, 4 Kasım 2026; docs/SUBE.md › Şube görünümünde maliyet)
+    if (ds.branchView) {
+      const c = cogsConsumption(month);
+      const basis =
+        c.basis === "revenue"
+          ? `satış listesi yok: KDV hariç ciro × son satış ayının maliyet oranı ${tl(c.material)}`
+          : c.basis === "none"
+            ? "satış listesi ve ciro yok: 0"
+            : `reçeteye göre tüketim (fire hariç) ${tl(c.fireFree)}`;
+      const info = `${ds.branchView.name}: şubenin satışından reçeteye göre: ${basis} × (1 + %${Math.round(c.fireRate * 100)} fire)${c.offCost ? ` + ödenmezlerin tahmini malzeme maliyeti ${tl(c.offCost)}` : ""}. Faturalar ve stok devri işletme genelinde, şubeye bölünmez; sayımlı mal maliyeti için Tümü'ne geçin.`;
+      const out: StockFlow = { opening: 0, closing: 0, cogs: c.total, method: "sube", estimatedClosing: false, info };
+      flowCache.set(month, out);
+      return out;
+    }
     const first = firstDataMonth;
     // Hiç bilinen kapanış (sayım ya da elle yazılan devir) yoksa dağıtılacak aralık da tahminin dayanağı da yok: eski
     // kural (devreden 0; Excel'den aktarılan veri böyledir). İlk sayımla yeni hesap başlar
@@ -2054,15 +2083,29 @@ export function createModel(ds: Dataset) {
     // yalnız sayımı kullanır: countOpening / countClosing eski kuraldır (sayım ya da 0)
     const flow = stockFlow(month);
     const prevCount = closingStock(shiftMonth(month, -1)).value;
-    const opening = auto("stock:opening", overrides.has("stock:opening") ? prevCount : flow.opening);
-    cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false });
     const cl = closingStock(month);
-    const closingCell: PnlCell = { value: flow.closing, computed: cl.overridden ? cl.computed : flow.closing, overridden: cl.overridden, note: cl.overridden ? noteOf("stock:closing") : null };
-    if (flow.estimatedClosing) closingCell.info = "Ay sonu sayımı yok: tahmini devir (açılış + alınan − tahmini mal maliyeti). Sayım girilince ya da buraya yazılınca o tutar geçer.";
-    if (flow.method) closingCell.tag = flow.estimatedClosing ? "tahmini" : "sayım";
-    cells.set("stock:closing", closingCell);
-    const closing = flow.closing;
-    const cogs = opening + purchases - closing;
+    let opening: number;
+    let closing: number;
+    let cogs: number;
+    if (ds.branchView) {
+      // Şube görünümü: devir işletmenindir, şubenin maliyeti reçeteden (stockFlow); alınan mal bilgi olarak kalır
+      const shared = `${ds.branchView.name} seçili: stok devri işletme genelinde, şubeye bölünmez. Şubenin mal maliyeti satışından reçeteye göre.`;
+      cells.set("stock:opening", { value: null, computed: null, overridden: false, info: shared });
+      cells.set("stock:closing", { value: null, computed: null, overridden: false, info: shared });
+      cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false, info: "İşletme geneli: faturalar ortak, şubeye bölünmez; mal maliyetine girmez." });
+      opening = 0;
+      closing = 0;
+      cogs = flow.cogs;
+    } else {
+      opening = auto("stock:opening", overrides.has("stock:opening") ? prevCount : flow.opening);
+      cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false });
+      const closingCell: PnlCell = { value: flow.closing, computed: cl.overridden ? cl.computed : flow.closing, overridden: cl.overridden, note: cl.overridden ? noteOf("stock:closing") : null };
+      if (flow.estimatedClosing) closingCell.info = "Ay sonu sayımı yok: tahmini devir (açılış + alınan − tahmini mal maliyeti). Sayım girilince ya da buraya yazılınca o tutar geçer.";
+      if (flow.method) closingCell.tag = flow.estimatedClosing ? "tahmini" : "sayım";
+      cells.set("stock:closing", closingCell);
+      closing = flow.closing;
+      cogs = opening + purchases - closing;
+    }
     const countOpening = overrides.get("stock:opening") ?? prevCount;
 
     // Personel, faturalar, kira, genel
@@ -2253,6 +2296,9 @@ export function createModel(ds: Dataset) {
         }));
     const rows: PnlRowDef[] = [];
     const sec = (section: string) => (r: Omit<PnlRowDef, "section">) => rows.push({ ...r, section });
+    // İşletmenin toplamı olan hücreler (devir, personel, POS komisyonu) şube seçiliyken yazılmaz: elle girilen tutar
+    // işletmenindir, şubede hesaplanan değer geçer (veri yükleyici bu hücreleri şube görünümüne almaz)
+    const companyCell = !ds.branchView;
 
     // Tedarikçiler alfabetik ve sabit sırada (tutar değiştikçe satırlar yer değiştirmez)
     const mal = sec("mal");
@@ -2265,9 +2311,9 @@ export function createModel(ds: Dataset) {
     mal({ key: "total:mal", label: "AYLIK MAL ALIMI TOPLAMI", kind: "total", editable: false, strong: true });
 
     const devir = sec("devir");
-    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: true, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal). Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
+    devir({ key: "stock:opening", label: "ÖNCEKİ AYDAN DEVİR", kind: "auto", editable: companyCell, hint: "Bir önceki ayın sayım değeri (sonraki aya devreden mal). Elle yazılırsa Stok sayımı kartındaki açılış da bu tutarı gösterir." });
     devir({ key: "stock:purchased", label: "AY İÇİNDE ALINAN", kind: "auto", editable: false });
-    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: true, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmeyen ayda tahmini devir: iki sayım arasındaki aylarda aralığın mal maliyeti reçeteye göre tüketim oranında dağıtılır, son sayımdan sonraki ayda reçeteye göre tahmin düşülür (açılış + alınan − tahmini maliyet); sayım girilince gerçek hesaba döner. Hiç sayım yokken 0." });
+    devir({ key: "stock:closing", label: "SONRAKİ AYA DEVREDEN MAL (ay sonu stok)", kind: "auto", editable: companyCell, hint: "Stok sayımı sayfasındaki o ayın toplamı (KDV hariç). Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının fiyatıyla; faturası bulunamayan kısım ay sonu fiyatıyla. Sayım girilmeyen ayda tahmini devir: iki sayım arasındaki aylarda aralığın mal maliyeti reçeteye göre tüketim oranında dağıtılır, son sayımdan sonraki ayda reçeteye göre tahmin düşülür (açılış + alınan − tahmini maliyet); sayım girilince gerçek hesaba döner. Hiç sayım yokken 0." });
     devir({
       key: "total:cogs",
       label: "CİRO İÇİN KULLANILAN MALIN MALİYETİ",
@@ -2290,10 +2336,10 @@ export function createModel(ds: Dataset) {
           key: "personnel:net",
           label: "PERSONEL MAAŞ (net)",
           kind: "auto",
-          editable: true,
+          editable: companyCell,
           hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı). Açık günü kasa raporlarından gelen ayda raporların kapsadığı takvim günüyle: kapalı gün maaşı düşürmez.",
         });
-        add({ key: "personnel:employer", label: PERSONNEL_EXTRA_LABEL, kind: "auto", editable: true, hint: PERSONNEL_EXTRA_HINT });
+        add({ key: "personnel:employer", label: PERSONNEL_EXTRA_LABEL, kind: "auto", editable: companyCell, hint: PERSONNEL_EXTRA_HINT });
       }
       // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
       for (const fe of allFixed.filter((f) => f.section === key)) {
@@ -2328,7 +2374,7 @@ export function createModel(ds: Dataset) {
       key: "commission:pos",
       label: `BANKA POS KOMİSYONU (%${(st.komisyon * 100).toLocaleString("tr-TR")})`,
       kind: "auto",
-      editable: true,
+      editable: companyCell,
       hint: "Tahmin: aylık ciro (KDV dahil) × komisyon × banka kartı payı. Kasa raporu olan ayda pay kart ÷ Z toplamıdır, yemek kartı hariç: yemek kartlarının komisyonu kendi faturalarıyla aşağıda sayılır. Kasa raporu olmayan ayda Satışlar'daki ya da Ayarlar'daki kartlı satış oranı (yemek kartı dahil). Banka dekontundaki gerçek tutarı yazabilirsiniz; banka POS komisyonunu Komisyon faturası olarak kesiyorsa 0 yazın.",
     });
     for (const k of [...commSuppliers].sort()) {

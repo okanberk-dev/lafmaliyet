@@ -5,6 +5,7 @@ import { and, asc, countDistinct, gte, lte, sql, sum, type SQL } from "drizzle-o
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
 import { lafposMonthStatus, lafposSalesCountFrom, mergeSalesSources, modposThroughOf, type LafposDaysOfMonth, type LafposMonthLine, type SalesSources } from "@/lib/lafpos/sales";
 import { addDays, shiftMonth } from "@/lib/reminders";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 
 /**
@@ -35,6 +36,8 @@ export async function loadLafposMonthSales(
   const range = (col: typeof d.date | typeof r.date): SQL | undefined => (to ? and(gte(col, from), lte(col, to)) : gte(col, from));
   // Bekleyen gün: süren ayda kasa raporlarının son gününden sonra
   const isHeld = (day: string) => !!hold && day > hold.after && day.slice(0, 7) === hold.month;
+  // Seçili şubenin gün sonları ("Tümü"de koşul yok; docs/SUBE.md › Seçici)
+  const [subeSatir, subeGun] = await Promise.all([currentBranchWhere(d.branchId), currentBranchWhere(r.branchId)]);
   const [lines, reports] = await Promise.all([
     db
       .select({
@@ -47,10 +50,10 @@ export async function loadLafposMonthSales(
         days: countDistinct(d.date),
       })
       .from(d)
-      .where(and(range(d.date), hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined))
+      .where(and(range(d.date), subeSatir, hold ? sql`not (${d.date} > ${hold.after} and substr(${d.date}, 1, 7) = ${hold.month})` : undefined))
       .groupBy(lineMonth, d.posName, d.productId, d.isService),
     // Gün başına bir özet (tarih benzersiz)
-    db.select({ date: r.date }).from(r).where(range(r.date)).orderBy(asc(r.date)),
+    db.select({ date: r.date }).from(r).where(and(range(r.date), subeGun)).orderBy(asc(r.date)),
   ]);
   const dates = reports.map((x) => x.date);
   return {

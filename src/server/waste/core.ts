@@ -20,6 +20,7 @@ import {
   type WasteDeletePayloadT,
   type WasteLock,
 } from "@/lib/waste-requests";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
@@ -94,9 +95,11 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
       if (closed) throw new UserError(closed);
     }
     const target = await resolveWasteTarget(tx, data);
+    // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md)
+    const branchId = (await currentPhysicalBranch()).id;
     const [row] = await tx
       .insert(s.wasteEntries)
-      .values({ ...data, ...target, createdBy: me.id, createdByName: me.name })
+      .values({ ...data, ...target, branchId, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.wasteEntries.id });
     return { id: row.id, ...target };
   });

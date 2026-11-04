@@ -677,6 +677,11 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   officialBasis: text("official_basis", { enum: ["brut", "net"] }),
   /** Açık güne göre oranla; false: biten ayda tam ay (kira varsayılanı) */
   prorate: boolean("prorate").notNull().default(true),
+  /**
+   * Şube (docs/SUBE.md, dalga 3): null = işletme geneli (muhasebe, abonelik; her şubenin görünümünde de görünür).
+   * Mevcut kalemler işletme geneli başlar (sahibin kararı, 4 Kasım 2026); kira gibi şubeye ait olanı yönetici taşır
+   */
+  branchId: branchIdNullable(),
 });
 
 /** Sabit gider tutar değişiklikleri: fromMonth ayından itibaren geçerli dönem ve tutar */

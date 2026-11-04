@@ -1450,7 +1450,9 @@ test("ekran: yalnız yönetici; menüde (⌘K) Para grubunda, telefonda başlı�
     assert.match(body.slice(0, body.indexOf("\n}\n")), /const me = await requireAdmin\(\);/, fn);
   }
   const dash = read("src/app/panel/page.tsx");
-  assert.match(dash, /loadCashPlan\(model, upcoming\)\.catch\(\(\) => null\)/);
+  // Şube seçiliyken de işletmenin planı: model "Tümü" ile yeniden okunur (docs/SUBE.md › Neyi süzer)
+  assert.match(dash, /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => loadCashPlan\(m, upcoming\)\)\s*\.catch\(\(\) => null\)/);
+  assert.match(page, /withBranchScope\(ALL_BRANCHES,/);
   // db:reset nakit planının durumunu siler (sabit gider kimlikleri baştan sayar)
   assert.match(read("scripts/seed.ts"), /'cashflow\.plan'/);
 });

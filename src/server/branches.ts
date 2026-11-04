@@ -64,6 +64,7 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.cashOuts,
     s.staff,
     s.expenseEntries,
+    s.fixedExpenses,
   ];
   const counts = await Promise.all(
     tables.map(async (table) => {

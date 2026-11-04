@@ -316,7 +316,7 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
   const rows = await db
     .select({ date: s.posDayReports.date, z: s.posDayReports.z })
     .from(s.posDayReports)
-    .where(and(gte(s.posDayReports.date, start), to !== undefined ? lte(s.posDayReports.date, to) : undefined))
+    .where(and(gte(s.posDayReports.date, start), to !== undefined ? lte(s.posDayReports.date, to) : undefined, await currentBranchWhere(s.posDayReports.branchId)))
     .orderBy(asc(s.posDayReports.date));
   return rows.flatMap((r) => {
     const z = posZSchema.safeParse(r.z);

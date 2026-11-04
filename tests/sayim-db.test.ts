@@ -15,6 +15,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { extrasBase, STAFF_LATE_FIX_MESSAGE } from "../src/app/panel/sayim/logic";
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
 import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.SAYIM_TEST_DATABASE_URL ?? process.env.EKLE_TEST_DATABASE_URL;
@@ -50,6 +51,8 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    // Şube kütüğü tohumla gelir (scripts/seed.ts); ay ve sayım satırlarının şubesi ona bağlı
+    await db.insert(s.branches).values(DEFAULT_BRANCHES.map((b) => ({ ...b }))).onConflictDoNothing();
     const [a] = await db.insert(s.users).values({ email: "yonetici@laffogato.net", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
     const [p] = await db.insert(s.users).values({ email: "ayse@laffogato.net", name: "Ayşe", passwordHash: "x", role: "staff" }).returning();
     users = { admin: a, staff: p };

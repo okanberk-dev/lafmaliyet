@@ -33,6 +33,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, Segm
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import { ALL_BRANCHES, branchViewNote } from "@/lib/branches";
 import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
@@ -188,13 +189,19 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
+  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView) : null;
   // "Bu ayın işleri" kartı eşleşmeyen POS ürünlerini ve ödenmemiş faturaları zaten gösterir: uyarılarda tekrarlanmaz
   // (bildirimlerde alerts() olduğu gibi kalır)
   // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür) ve 6
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
   const [priceAlerts, cashPlan] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
-    upcoming ? loadCashPlan(model, upcoming).catch(() => null) : null,
+    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle (docs/SUBE.md › Neyi süzer)
+    upcoming
+      ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
+          .then((m) => loadCashPlan(m, upcoming))
+          .catch(() => null)
+      : null,
   ]);
   const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
@@ -417,6 +424,12 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         <Suspense fallback={null}>
           <SystemBanner />
         </Suspense>
+        {/* Şube seçili (soldaki seçici): rakamlar o şubenin; ödemeler ve nakit planı işletmenin (docs/SUBE.md) */}
+        {branchNote ? (
+          <Notice tone="neutral" size="sm" title={branchNote.title}>
+            {branchNote.text}
+          </Notice>
+        ) : null}
         {paymentNotice ? (
           <Notice
             {...paymentNotice}

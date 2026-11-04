@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { dateTR, money } from "@/lib/format";
 import { ASSET_KIND_LABELS, ASSET_METHOD_LABELS, assetRows, lifeMissingText, parseInvoiceLabel, QUARTER_DEPRECIATION_LABELS } from "@/lib/tax/assets";
 import { quarterLabel } from "@/lib/tax/calendar";
 import { rulesFor } from "@/lib/tax/rules";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
 
 import { DirectExpenseButton, NotAssetButton } from "../asset-actions";
@@ -55,8 +57,11 @@ async function TaxAssetsContent({ searchParams }: { searchParams: PageProps<"/pa
   await requireAdmin();
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  const model = await loadModel();
-  const { view, inputs } = await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null, cashPlan: null });
+  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
+    const model = await loadModel();
+    return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null, cashPlan: null })) };
+  });
   const { settings, assets } = inputs;
   const year = view.year;
   const today = view.today;

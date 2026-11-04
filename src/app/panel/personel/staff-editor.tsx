@@ -14,7 +14,7 @@ import { Card, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { FilterBar, matches, SearchField, useQueryText } from "@/components/ui/filters";
-import { Field, Input, NumberInput } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
@@ -46,7 +46,14 @@ export type StaffRow = {
   history: StaffHistoryEntry[];
   /** Silinemiyorsa nedeni (kapanmış bir ayın maaş hesabına girdi); null = silinebilir */
   deleteBlocker: string | null;
+  /** Çalıştığı şube (docs/SUBE.md): maaşı o şubenin gideri */
+  branchId: string;
+  /** Listede gösterilecek şube adı: birden çok açık şube varken; yoksa null */
+  branchName: string | null;
 };
+
+/** Şube seçimi: açık fiziksel şubeler (bir taneyse seçim çizilmez) ve yeni kişinin varsayılanı (seçili şube) */
+export type StaffBranches = { options: { id: string; name: string }[]; fallback: string };
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -114,6 +121,7 @@ export function StaffEditor({
   currentMonth,
   closed,
   months,
+  branches,
 }: {
   staff: StaffRow[];
   rates: Rates;
@@ -124,6 +132,7 @@ export function StaffEditor({
   closed: string[];
   /** "Hangi aydan itibaren?" listesindeki aylar */
   months: string[];
+  branches: StaffBranches;
 }) {
   const reduce = useCalmMotion();
   const ratesId = useId();
@@ -240,7 +249,7 @@ export function StaffEditor({
     }
     // Arada kapanmış aylar var: o ayları değiştirmemek için seçilen aydan itibaren yeni kayıt açılır
     const done = await run(
-      saveStaff([...unchanged(), { id: null, name: x.name, netSalary: x.netSalary, extras: x.extras, effectiveFrom: fromMonth }]),
+      saveStaff([...unchanged(), { id: null, name: x.name, netSalary: x.netSalary, extras: x.extras, effectiveFrom: fromMonth, branchId: x.branchId }]),
       `${x.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
       true,
     );
@@ -488,6 +497,7 @@ export function StaffEditor({
                             <Avatar name={x.name || "Personel"} className={cn(dim)} />
                             <span className={cn("min-w-0 font-medium", dim)}>
                               {x.name}
+                              {x.branchName ? <span className="block text-xs font-normal text-ink-mute">{x.branchName}</span> : null}
                               <ChangeLines row={x} className="mt-0.5" />
                             </span>
                           </div>
@@ -557,7 +567,10 @@ export function StaffEditor({
                       <Avatar name={x.name || "Personel"} />
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium break-words text-ink">{x.name}</span>
-                        <span className="block text-xs text-ink-mute tabular">{salaryLabel(x.netSalary, x.extras)}</span>
+                        <span className="block text-xs text-ink-mute tabular">
+                          {x.branchName ? `${x.branchName} · ` : ""}
+                          {salaryLabel(x.netSalary, x.extras)}
+                        </span>
                         <ChangeLines row={x} className="mt-0.5" />
                       </span>
                       <span className="shrink-0 text-right">
@@ -776,6 +789,7 @@ export function StaffEditor({
         <StaffDialog
           row={editing === "new" ? null : editing}
           staff={staff}
+          branches={branches}
           settings={st}
           currentMonth={currentMonth}
           closed={closed}
@@ -871,6 +885,7 @@ export function StaffEditor({
 function StaffDialog({
   row,
   staff,
+  branches,
   settings,
   currentMonth,
   closed,
@@ -886,6 +901,7 @@ function StaffDialog({
 }: {
   row: StaffRow | null;
   staff: StaffRow[];
+  branches: StaffBranches;
   /** Hesapta kullanılan oranlar (yazılan geçerli oranlar ya da kayıtlı oranlar) */
   settings: Settings;
   currentMonth: string;
@@ -909,6 +925,7 @@ function StaffDialog({
   const [name, setName] = useState(row?.name ?? "");
   const [net, setNet] = useState(row ? num(row.netSalary, 2) : "");
   const [ext, setExt] = useState(row ? num(row.extras, 2) : "");
+  const [branch, setBranch] = useState(row?.branchId ?? branches.fallback);
   const [choice, setChoice] = useState<MonthChoice>(() =>
     row?.status === "ended" ? { mode: "month", month: row.valueMonth } : { mode: "current", month: row?.status === "upcoming" ? row.valueMonth : currentMonth },
   );
@@ -947,7 +964,7 @@ function StaffDialog({
     if (!name.trim()) return nameRef.current?.focus();
     if (netValue === null || extValue === null || netError || extError) return netRef.current?.focus();
     setBusy(true);
-    const self = { id: row?.id ?? null, name, netSalary: netValue, extras: extValue, effectiveFrom: !row || changed ? eff : row.valueMonth };
+    const self = { id: row?.id ?? null, name, netSalary: netValue, extras: extValue, effectiveFrom: !row || changed ? eff : row.valueMonth, branchId: branch };
     // Liste sırası korunur: düzenlenen kişi yerinde, yeni kişi sonda
     const list = row ? unchanged().map((x) => (x.id === row.id ? { ...self, id: row.id } : x)) : [...unchanged(), self];
     // Yeni kişide yanıt yolda kaybolursa kişi yazılmış olabilir: ikinci "Kaydet" aynı kişiyi iki kez ekler
@@ -1033,6 +1050,17 @@ function StaffDialog({
             data-autofocus={row ? undefined : true}
           />
         </Field>
+        {branches.options.length > 1 ? (
+          <Field label="Şube" htmlFor="st-sube" tip="Maaşı bu şubenin gideri olarak sayılır (Gelir-gider'de şube seçiliyken).">
+            <Select id="st-sube" value={branch} onChange={(e) => setBranch(e.target.value)}>
+              {branches.options.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Net maaş (₺)" htmlFor="st-net" error={netError}>
             <NumberInput

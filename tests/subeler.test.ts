@@ -224,7 +224,7 @@ test("seçim yetki vermez: şube çerezi yalnız görünümü süzer", () => {
 
 test("istek dışında süzme yok: betik ve arka plan işi bütün şubeleri görür", () => {
   const kapsam = oku("src/server/branch-scope.ts");
-  const govde = kapsam.slice(kapsam.indexOf("export const currentBranchScope"));
+  const govde = kapsam.slice(kapsam.indexOf("const requestBranchScope"));
   // cookies() istek dışında fırlar; yakalanmazsa göç betiği ve zil düşerdi
   assert.match(govde.slice(0, 500), /catch\s*\{\s*return ALL_BRANCHES;/);
 });

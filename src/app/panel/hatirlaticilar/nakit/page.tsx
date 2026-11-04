@@ -4,10 +4,12 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { planNotes } from "@/lib/cash-plan";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadModel } from "@/server/data/dataset";
+import { withBranchScope } from "@/server/branch-scope";
 
 import { CashPlanClient } from "./cash-plan-client";
 
@@ -34,8 +36,11 @@ export default function CashPlanPage() {
 /** Ödemeler'in alt ekranı: önümüzdeki 6 haftanın planı (src/lib/cash-plan.ts, docs/NAKIT-PLANI.md); yalnız yönetici */
 async function CashPlanContent() {
   await requireAdmin();
-  const model = await loadModel();
-  const { plan, state, carry, invoiceTermDays } = await loadCashPlan(model);
+  // Ödemeler ve nakit işletmenindir: şube seçiciden bağımsız, bütün şubeler (docs/SUBE.md › Neyi süzer)
+  const { model, plan, state, carry, invoiceTermDays } = await withBranchScope(ALL_BRANCHES, async () => {
+    const model = await loadModel();
+    return { model, ...(await loadCashPlan(model)) };
+  });
   const notes = planNotes(plan, { komisyon: model.settings.komisyon, acikGun: model.settings.acikGun, invoiceTermDays });
   return <CashPlanClient title={TITLE} description={DESCRIPTION} plan={plan} state={state} carry={carry} notes={notes} />;
 }
