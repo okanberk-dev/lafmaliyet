@@ -25,7 +25,9 @@ sonra default kaldırılmadan bırakılır (eski satırlar Tuzla'ya yazılmış 
 | `pos_day_reports` | `date` | `(date, branch_id)` |
 | `modpos_cash_sheets` | `day` | `(day, branch_id)` |
 | `months` / `sales_lines` | `month` | `(month, branch_id)` |
-| `expense_entries`, `cash_outs`, `waste_entries`, `stock_counts` | — | `+ branch_id` |
+| `cash_outs`, `waste_entries`, `stock_counts` | — | `+ branch_id` **not null**, varsayılan `tuzla` |
+| `expense_entries` | — | `+ branch_id` **null olabilir** (null = işletme geneli; sahibin kararı) |
+| `staff` | — | `+ branch_id` **not null**, varsayılan `tuzla` (maaş o şubenin gideri) |
 | `invoices`, `suppliers`, `ingredients`, `products`, `recipe_items` | — | **değişmez** (ortak) |
 
 Dikkat: `months` birincil anahtarı birçok yerden referanslı; değişikliğin tamamı tek dalgada ve boş veritabanında
@@ -63,10 +65,26 @@ Marina ModPOS kullanacağı için LafPOS'ta acil bir iş yok; yine de gün sonu 
 - `POST /api/pos/gun` yükünde `sube` alanı: panel yoksa `tuzla` sayar (geri uyumlu), varsa o şubenin satırını
   yazar. Böylece ileride bir şubeye LafPOS kurulursa panel tarafında iş kalmaz.
 
-## Açık sorular (cevap gelene kadar varsayılan uygulanır)
+## Kararlar (4 Kasım 2026, sahip)
 
-1. Marina'nın **giderleri ve personeli** ayrı mı izlenecek, yoksa yalnız ciro mu bölünecek? (Varsayılan: dalga
-   2'de giderler de şubeye bağlanır, ortak giderler Tuzla'ya değil "işletme geneli"ne yazılır → bunun için
-   `branch_id` null bırakılabilir bir sütun olmalı; dalga 2 öncesi netleşmeli.)
-2. Marina'nın **ModPOS anahtarları** ayrı mı? (Varsayılan: evet, şube başına ayar.)
-3. Stok ve sayım şube başına mı? (Varsayılan: evet, dalga 2'de `stock_counts` şubeye bağlanır.)
+Dalga 2'yi bekleten dört soru cevaplandı:
+
+| Soru | Karar | Şemaya etkisi |
+|---|---|---|
+| **Giderler** | Şubeye bağlansın; **ortak giderler "işletme geneli" kalsın**, hiçbir şubeye zorlanmasın | `expense_entries.branch_id` **null olabilir** (null = işletme geneli) |
+| **Personel** | Herkes **bir şubeye bağlı**; maaşı o şubenin gideri | `staff.branch_id` **not null**, varsayılan `tuzla` |
+| **ModPOS** | **Şube başına ayrı anahtar**; günlük 2 çekim hakkı şube başına | Anahtarlar şube kaydında; `modpos_cash_sheets` PK `(day, branch_id)` |
+| **Stok ve sayım** | **Şube başına ayrı**; tutarlılık ve FIFO değerleme şube içinde | `stock_counts.branch_id` not null; tüketim hesabı şubeye süzülür |
+
+Bunlardan çıkan iki kural:
+
+- **Null = işletme geneli** yalnız giderde geçerlidir. Ciro, kasa, satış, stok ve personel satırlarında
+  `branch_id` boş kalamaz; eski satırlar Tuzla'ya yazılır (sahibin kararı).
+- Raporda "Tümü" seçiliyken işletme geneli giderler toplama **girer** ama şube kırılımında ayrı bir
+  "İşletme geneli" sütununda durur: bir şubenin kârı ortak giderle şişirilmez.
+
+## Kalan belirsizlik
+
+ModPOS'un tek hesapta iki şubeyi birlikte verip vermediği **ModPOS'tan (Gafdigi) teyit edilmeli**. Şube başına
+ayrı anahtar kurulumu her iki durumda da çalışır (anahtar boşsa ortak anahtara düşer), ama Marina'nın kendi
+hesabı yoksa föy çekimi açılmadan önce bu netleşmeli.
