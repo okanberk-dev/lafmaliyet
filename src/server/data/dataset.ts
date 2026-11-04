@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
+import { ALL_BRANCHES, branchPnlEntry, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
@@ -13,7 +14,8 @@ import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
-import { currentBranchWhere } from "@/server/branch-scope";
+import { branchWhere, branchWhereWithShared, currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
@@ -27,9 +29,28 @@ export async function loadSettings(): Promise<Settings> {
   return settingsFromRows(await getDb().select().from(s.settings));
 }
 
-/** Hesaplama motorunun ihtiyaç duyduğu bütün veriyi tek seferde, paralel okur. */
-export async function loadDataset(): Promise<Dataset> {
+/** Veri kümesinin şube kapsamı: verilmezse seçicinin seçimi (docs/SUBE.md › Seçici) */
+export interface DatasetOptions {
+  /**
+   * "hepsi" seçiciden bağımsız işletme geneli okur (vergi, ödemeler ve nakit planı, tutarlılık: para ve beyan
+   * işletmenindir); bir şube kimliği o şubeyi okur (stok sayımı yazdığı şubeyi gösterir)
+   */
+  scope?: BranchScope;
+}
+
+/**
+ * Hesaplama motorunun ihtiyaç duyduğu bütün veriyi tek seferde, paralel okur. Şube seçiliyken (ya da `scope` bir
+ * şubeyse) ciro, kasa, satış, personel, sayım, zayi o şubenin; gider ve sabit gider şubenin + işletme genelinin
+ * (docs/SUBE.md › Neyi süzer). Menü, reçete, hammadde, fatura ortak: hiç süzülmez.
+ */
+export async function loadDataset(opts: DatasetOptions = {}): Promise<Dataset> {
+  return opts.scope === undefined ? readDataset() : withBranchScope(opts.scope, readDataset);
+}
+
+async function readDataset(): Promise<Dataset> {
   const db = getDb();
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
     settings,
     ingredients,
@@ -66,17 +87,17 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.categories).orderBy(asc(s.categories.sortOrder)),
     db.select().from(s.products).orderBy(asc(s.products.sortOrder), asc(s.products.id)),
     db.select().from(s.recipeItems).orderBy(asc(s.recipeItems.sortOrder), asc(s.recipeItems.id)),
-    db.select().from(s.months).where(await currentBranchWhere(s.months.branchId)).orderBy(asc(s.months.month)),
-    db.select().from(s.salesLines).where(await currentBranchWhere(s.salesLines.branchId)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
+    db.select().from(s.months).where(branchWhere(s.months.branchId, scope)).orderBy(asc(s.months.month)),
+    db.select().from(s.salesLines).where(branchWhere(s.salesLines.branchId, scope)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     db.select().from(s.invoices).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
-    db.select().from(s.staff).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
+    db.select().from(s.staff).where(branchWhere(s.staff.branchId, scope)).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
     db.select().from(s.staffVersions).orderBy(asc(s.staffVersions.staffId), asc(s.staffVersions.fromMonth)),
     db.select().from(s.fixedExpenses).orderBy(asc(s.fixedExpenses.sortOrder), asc(s.fixedExpenses.id)),
     db.select().from(s.fixedExpenseVersions).orderBy(asc(s.fixedExpenseVersions.fixedExpenseId), asc(s.fixedExpenseVersions.fromMonth)),
     db.select().from(s.pnlEntries),
-    db.select().from(s.stockCounts),
+    db.select().from(s.stockCounts).where(branchWhere(s.stockCounts.branchId, scope)),
     // Sayımlar ay sonunda geçerli fiyatla değerlenir (engine.ts stockSheet)
     db
       .select({
@@ -101,6 +122,8 @@ export async function loadDataset(): Promise<Dataset> {
       .select({ entry: s.expenseEntries, docType: s.cashOuts.docType })
       .from(s.expenseEntries)
       .leftJoin(s.cashOuts, eq(s.cashOuts.id, s.expenseEntries.cashOutId))
+      // Şubenin giderleri ve işletme geneli giderler (şubesi boş): kira, muhasebe, abonelik her şubede görünür
+      .where(branchWhereWithShared(s.expenseEntries.branchId, scope))
       .orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
     db
       .select({
@@ -111,9 +134,11 @@ export async function loadDataset(): Promise<Dataset> {
         qty: s.wasteEntries.qty,
         factor: s.wasteEntries.factor,
       })
-      .from(s.wasteEntries),
-    // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md)
-    loadSiteSales(),
+      .from(s.wasteEntries)
+      .where(branchWhere(s.wasteEntries.branchId, scope)),
+    // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md): işletmenin cirosu, şubelerin değil. "Tümü"de
+    // ve online kanal seçiliyken okunur; fiziksel şube seçiliyken yok
+    scope === ALL_BRANCHES || branch?.kind === "online" ? loadSiteSales() : Promise.resolve([]),
     // Süren ayda yüklenen satış listesinin son günü (src/lib/sales-coverage.ts)
     db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
@@ -129,6 +154,12 @@ export async function loadDataset(): Promise<Dataset> {
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
+  // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
+  // başka şubenin kaleminin elle girilmiş hücresi de buna göre ayıklanır: branchPnlEntry)
+  const fixedInScope = fixedExpenses.filter((f) => branch === null || f.branchId === null || f.branchId === branch.id);
+  const fixedIds = new Set(fixedInScope.map((f) => f.id));
+  const allFixedIds = new Set(fixedExpenses.map((f) => f.id));
+  const pnlInScope = branch === null ? pnlEntries : pnlEntries.filter((e) => branchPnlEntry(e.rowKey, fixedIds, allFixedIds));
   // Adı bir kanala bağlanmayan Komisyon faturası: kanal tedarikçi kartının adları ve diğer adlarıyla da aranır (ekranın
   // kuralı, vergi no öteki faturalar üzerinden de; Gelir-gider'in POS komisyonu uyarısı, denetim B16)
   const channelNamesOf = invoices.some((i) => i.category === COMMISSION_CATEGORY && !channelOf([i.supplier]))
@@ -185,6 +216,7 @@ export async function loadDataset(): Promise<Dataset> {
   return {
     settings,
     currentMonth,
+    branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
     salesCoverage,
     ingredients: ingredients.map((i) => ({
       id: i.id,
@@ -289,9 +321,10 @@ export async function loadDataset(): Promise<Dataset> {
       active: activeFromRange(x.endMonth, currentMonth),
       startMonth: x.startMonth,
       endMonth: x.endMonth,
+      branchId: x.branchId,
     })),
     staffVersions: staffVersions.map((v) => ({ id: v.id, staffId: v.staffId, fromMonth: v.fromMonth, netSalary: v.netSalary, extras: v.extras })),
-    fixedExpenses: fixedExpenses.map((f) => ({
+    fixedExpenses: fixedInScope.map((f) => ({
       id: f.id,
       name: f.name,
       section: f.section,
@@ -308,15 +341,16 @@ export async function loadDataset(): Promise<Dataset> {
       officialAmount: f.officialAmount,
       officialBasis: f.officialBasis,
       prorate: f.prorate,
+      branchId: f.branchId,
     })),
-    fixedExpenseVersions: fixedExpenseVersions.map((v) => ({
+    fixedExpenseVersions: fixedExpenseVersions.filter((v) => fixedIds.has(v.fixedExpenseId)).map((v) => ({
       id: v.id,
       fixedExpenseId: v.fixedExpenseId,
       fromMonth: v.fromMonth,
       period: v.period,
       amount: v.amount,
     })),
-    pnlEntries: pnlEntries.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
+    pnlEntries: pnlInScope.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
     stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
     ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     purchaseLots,
@@ -364,8 +398,8 @@ export async function loadDataset(): Promise<Dataset> {
   };
 }
 
-export async function loadModel() {
-  return createModel(await loadDataset());
+export async function loadModel(opts: DatasetOptions = {}) {
+  return createModel(await loadDataset(opts));
 }
 
 /** URL'deki ?ay= değeri geçerli bir aysa o (YYYY-MM), değilse null */

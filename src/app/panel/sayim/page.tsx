@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
@@ -12,6 +12,8 @@ import { stockVatSummary } from "@/lib/calc/insights";
 import { countGroupOptions } from "@/lib/count-item";
 import { monthLabel, monthShort } from "@/lib/format";
 import { requireUser } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
@@ -28,7 +30,7 @@ const COUNT_RULE = "ay sonu sayımı: ayın son günü kapanıştan sonra sayın
  * yerinde bir iskelet; ay seçicinin yerinde onun boyunda bir kutu. Böylece içerik gelince sekme satırı aşağı kaymaz,
  * telefonda sekmeye dokunan açıklamaya basmış olmaz (denetim B04 incelemesi, K1).
  */
-function StockHeader({ month, role, picker }: { month: string | null; role: "admin" | "staff"; picker?: ReactNode }) {
+function StockHeader({ month, role, picker, branch }: { month: string | null; role: "admin" | "staff"; picker?: ReactNode; branch?: string | null }) {
   return (
     <PageHeader
       path="/panel/sayim"
@@ -36,7 +38,7 @@ function StockHeader({ month, role, picker }: { month: string | null; role: "adm
       title="Stok sayımı"
       description={
         month ? (
-          `${monthLabel(month)} ${COUNT_RULE}`
+          `${branch ? `${branch} · ` : ""}${monthLabel(month)} ${COUNT_RULE}`
         ) : (
           <>
             <span aria-hidden className="inline-block h-3.5 w-[4.5rem] animate-pulse rounded bg-panel align-middle" /> {COUNT_RULE}
@@ -69,7 +71,11 @@ export default function StockPage({ searchParams }: PageProps<"/panel/sayim">) {
 async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/sayim">["searchParams"] }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const model = await loadModel();
+  // Sayım şube başına (docs/SUBE.md): seçili fiziksel şubenin sayımı gösterilir ve ona yazılır ("Tümü" ya da online
+  // kanal seçiliyken Tuzla). Birden çok açık şube varken başlık hangi şubenin sayıldığını söyler
+  const [branch, branches] = await Promise.all([currentPhysicalBranch(), listBranches()]);
+  const branchLabel = branches.filter((b) => b.active && b.kind === "fiziksel").length > 1 ? branch.name : null;
+  const model = await loadModel({ scope: branch.id });
   const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
   const isAdmin = user.role === "admin";
   const requested = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) ? ay : null;
@@ -95,7 +101,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const counters = await getDb()
     .select({ by: s.stockCounts.countedBy, last: sql<Date | string | null>`max(${s.stockCounts.updatedAt})` })
     .from(s.stockCounts)
-    .where(eq(s.stockCounts.month, month))
+    .where(and(eq(s.stockCounts.month, month), eq(s.stockCounts.branchId, branch.id)))
     .groupBy(s.stockCounts.countedBy);
 
   const sheet = model.stockSheet(month);
@@ -154,13 +160,14 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
       <StockHeader
         month={month}
         role={user.role}
+        branch={branchLabel}
         // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur)
         picker={
           <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
         }
       />
       <StockCountForm
-        key={month}
+        key={`${branch.id}:${month}`}
         month={month}
         monthLabel={ml}
         prevMonthLabel={monthLabel(prevMonth)}

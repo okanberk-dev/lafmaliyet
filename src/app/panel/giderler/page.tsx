@@ -11,10 +11,11 @@ import { FIXED_SECTIONS } from "@/lib/constants";
 import { monthLabel } from "@/lib/format";
 import { fixedExpenseDeleteBlockers } from "@/server/actions/costs";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { FixedExpensesClient, FixedSummary, InvestmentsClient, type FixedRow, type SectionTotal } from "./expenses-client";
+import { FixedExpensesClient, FixedSummary, InvestmentsClient, type FixedBranches, type FixedRow, type SectionTotal } from "./expenses-client";
 import { choiceMonths, closedDataMonths } from "./history-text";
 
 export const metadata: Metadata = { title: "Sabit giderler" };
@@ -53,7 +54,12 @@ export default function ExpensesPage() {
 
 async function ExpensesContent() {
   await requireAdmin();
-  const [model, investments] = await Promise.all([loadModel(), getDb().select().from(s.investments).orderBy(asc(s.investments.id))]);
+  const [model, investments, all] = await Promise.all([loadModel(), getDb().select().from(s.investments).orderBy(asc(s.investments.id)), listBranches()]);
+  // Şube seçimi (docs/SUBE.md): şube seçiliyken o şubenin ve işletme genelinin kalemleri listelenir; yeni kalem seçili
+  // şubeye, "Tümü"nde işletme geneline
+  const open = all.filter((b) => b.active);
+  const branches: FixedBranches = { options: open.map((b) => ({ id: b.id, name: b.name })), fallback: model.ds.branchView?.id ?? null };
+  const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const st = model.settings;
   const cur = model.currentMonth;
   // Bu ayın kalemleri ve tutarları (bitmiş / başlamamış kalemler toplama girmez)
@@ -93,6 +99,8 @@ async function ExpensesContent() {
     valueMonth: f.valueMonth,
     history: f.history,
     deleteBlocker: blockers[f.id] ?? (blockersRes.ok ? null : "Silme kontrolü yapılamadı; sayfayı yenileyin"),
+    branchId: f.branchId ?? null,
+    branchName: open.length > 1 ? (f.branchId ? (nameOf.get(f.branchId) ?? f.branchId) : "İşletme geneli") : null,
   }));
 
   return (
@@ -119,6 +127,7 @@ async function ExpensesContent() {
         currentMonth={cur}
         closed={closedDataMonths(model.ds, cur)}
         months={choiceMonths(cur, model.firstDataMonth)}
+        branches={branches}
       />
       <div className="mt-6">
         <InvestmentsClient rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))} total={totalInvestment} />

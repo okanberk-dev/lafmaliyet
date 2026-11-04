@@ -9,6 +9,8 @@ import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentExpenseBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
@@ -73,7 +75,8 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
       saved = row;
     } else {
-      [saved] = await db.insert(s.expenseEntries).values({ ...values, createdBy: me.name }).returning({ id: s.expenseEntries.id });
+      // Yeni harcama seçili şubeye; "Tümü"nde işletme geneli (docs/SUBE.md)
+      [saved] = await db.insert(s.expenseEntries).values({ ...values, branchId: await currentExpenseBranch(), createdBy: me.name }).returning({ id: s.expenseEntries.id });
     }
     await logActivity(me, id ? "Harcama düzeltildi" : "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${data.description ? ` · ${data.description}` : ""}`);
     refresh();
@@ -92,6 +95,8 @@ export type ExpenseEntrySnapshot = {
   photoId?: number | null;
   vat?: number | null;
   cashOutId?: number | null;
+  /** Giderin şubesi (null = işletme geneli); geri alınca yerine döner */
+  branchId?: string | null;
 };
 
 /**
@@ -126,6 +131,7 @@ export async function deleteExpenseEntry(id: number) {
       photoId: row.photoId,
       vat: row.vat,
       cashOutId: row.cashOutId,
+      branchId: row.branchId,
     };
     return snap;
   });
@@ -149,6 +155,9 @@ export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
     const db = getDb();
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, data.categoryId)).limit(1);
     if (!cat) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+    // Şube yerine döner (kütükte yoksa işletme geneli); eski anlık görüntüde şube yoksa seçili şube
+    const branchId =
+      snap.branchId === undefined ? await currentExpenseBranch() : snap.branchId && (await listBranches()).some((b) => b.id === snap.branchId) ? snap.branchId : null;
     const saved = await db.transaction(async (tx) => {
       let cashOutId: number | null = null;
       let photoId: number | null = null;
@@ -170,7 +179,7 @@ export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
       }
       const [row] = await tx
         .insert(s.expenseEntries)
-        .values({ ...data, description: data.description || null, note: data.note || null, createdBy: me.name, photoId, cashOutId, vat: link.vat ?? null })
+        .values({ ...data, description: data.description || null, note: data.note || null, createdBy: me.name, photoId, cashOutId, vat: link.vat ?? null, branchId })
         .returning({ id: s.expenseEntries.id });
       return row;
     });
@@ -291,6 +300,8 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
             description: o.note ? `Gelir-gider tablosundan · ${o.note}` : "Gelir-gider tablosundan aktarıldı",
             amount: o.amount,
             createdBy: me.name,
+            // Sabit gider kaleminin şubesi (boşsa işletme geneli) harcamaya geçer
+            branchId: fe.branchId,
           })),
         );
       }
@@ -300,7 +311,7 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
       if (!overrides.some((o) => o.month === month) && planned) {
         await tx
           .insert(s.expenseEntries)
-          .values({ date: `${month}-01`, categoryId: cat!.id, description: FIXED_ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name });
+          .values({ date: `${month}-01`, categoryId: cat!.id, description: FIXED_ESTIMATE_DESCRIPTION, amount: planned, createdBy: me.name, branchId: fe.branchId });
         estimated = true;
       }
       // Saklı `active` sütunu da bitiş ayıyla (Ödemeler › Sabit giderlerden ekle bitmiş kalemi önermesin; E-62)

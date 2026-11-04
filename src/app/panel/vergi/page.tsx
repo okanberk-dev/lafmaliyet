@@ -7,10 +7,12 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { type NoticeItem, NoticeLink } from "@/components/ui/notice";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { overdueTaxNotice } from "@/lib/tax/overdue";
 import { taxPayrollFromModel } from "@/lib/tax/payroll";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
 
 import { filingKindData, payrollSheetMonths } from "./dialog-data";
@@ -49,8 +51,11 @@ async function TaxContent({ searchParams }: { searchParams: PageProps<"/panel/ve
   await requireAdmin();
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
-  const model = await loadModel();
-  const { view, inputs, reminders } = await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null });
+  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  const { model, view, inputs, reminders } = await withBranchScope(ALL_BRANCHES, async () => {
+    const model = await loadModel();
+    return { model, ...(await loadTaxView(model, { year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : null })) };
+  });
   const { settings } = inputs;
   const year = view.year;
   // Ödemeler'de günü geçmiş vergi / SGK hatırlatıcısı (K12, §7.2): kırmızı ve "Ödedim" Ödemeler'de kalır

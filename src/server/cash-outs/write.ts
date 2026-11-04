@@ -8,6 +8,7 @@ import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
@@ -161,7 +162,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
         .returning()
     : await tx
         .insert(s.cashOuts)
-        .values({ ...values, ...(o.restoreId ? { id: o.restoreId } : {}), createdBy: author.id, createdByName: author.name })
+        // Kasanın şubesi (kasa raporuyla aynı; docs/SUBE.md): seçili şube, "Tümü"nde Tuzla
+        .values({ ...values, ...(o.restoreId ? { id: o.restoreId } : {}), branchId: await currentWriteBranch(), createdBy: author.id, createdByName: author.name })
         .returning();
 
   // Harcama kaydı: tarih fişin tarihi (kasanın gününden en çok 3 gün önceyse), nakit, "Kasadan · 21 Ekim Salı"
@@ -196,6 +198,8 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
           description: restored?.expenseDescription !== undefined ? restored.expenseDescription : description,
           paymentMethod: restored?.expensePaymentMethod !== undefined ? restored.expensePaymentMethod : "nakit",
           note: restored?.expenseNote !== undefined ? restored.expenseNote : `Kasadan · ${longDateTR(d.date)}`,
+          // Kasadan çıkan para o kasanın şubesinin gideri
+          branchId: row.branchId,
           createdBy: me.name,
         })
         .returning({ id: s.expenseEntries.id });

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cache } from "react";
 
 import { cookies } from "next/headers";
@@ -13,6 +14,7 @@ import {
   type BranchRow,
   type BranchScope,
   DEFAULT_BRANCH_ID,
+  DEFAULT_BRANCHES,
   parseBranchScope,
 } from "@/lib/branches";
 
@@ -61,7 +63,7 @@ export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<Bran
  * İSTEK DIŞINDA (göç betiği, arka plan işi, test, `npm run build` sırasındaki ön üretim) `cookies()` fırlatır:
  * o zaman "hepsi"ye düşeriz, yani süzme yok — betik bütün şubeleri görür, ki doğrusu budur.
  */
-export const currentBranchScope = cache(async (): Promise<BranchScope> => {
+const requestBranchScope = cache(async (): Promise<BranchScope> => {
   try {
     const jar = await cookies();
     return parseBranchScope(jar.get(BRANCH_COOKIE)?.value ?? null, await listBranches());
@@ -70,6 +72,22 @@ export const currentBranchScope = cache(async (): Promise<BranchScope> => {
   }
 });
 
+/** `withBranchScope` ile verilen kapsam (yoksa isteğin seçimi) */
+const scopeOverride = new AsyncLocalStorage<BranchScope>();
+
+export async function currentBranchScope(): Promise<BranchScope> {
+  return scopeOverride.getStore() ?? requestBranchScope();
+}
+
+/**
+ * Seçiciden bağımsız okuma: `fn` içindeki bütün okumalar (kasa raporu, ay, satış, ModPOS föyü, LafPOS) verilen kapsamı
+ * görür. İşletme geneli ekranlar (vergi, ödemeler ve nakit planı, tutarlılık) "Tümü" ile, şube başına ekranlar (stok
+ * sayımı) yazdıkları şubeyle okur; okuma işlevlerinin imzası değişmez.
+ */
+export function withBranchScope<T>(scope: BranchScope, fn: () => Promise<T>): Promise<T> {
+  return scopeOverride.run(scope, fn);
+}
+
 /**
  * Yeni kaydın ineceği tek şube. "Tümü" seçiliyken hedef belirsizdir ve varsayılan şubeye (Tuzla) iner; ekranlar
  * hangi şubeye yazdıklarını kullanıcıya gösterir. İstek dışında da varsayılan şube döner.
@@ -77,6 +95,26 @@ export const currentBranchScope = cache(async (): Promise<BranchScope> => {
 export async function currentWriteBranch(): Promise<string> {
   const scope = await currentBranchScope();
   return scope === ALL_BRANCHES ? DEFAULT_BRANCH_ID : scope;
+}
+
+/**
+ * Yeni giderin şubesi: seçili şube; "Tümü" seçiliyken işletme geneli (null; gider şubesi boş kalabilir, sahibin kararı
+ * 4 Kasım 2026). Gider her şubenin görünümünde işletme geneli olarak sayılır (branchWhereWithShared).
+ */
+export async function currentExpenseBranch(): Promise<string | null> {
+  const scope = await currentBranchScope();
+  return scope === ALL_BRANCHES ? null : scope;
+}
+
+/**
+ * Şube başına tutulan fiziksel işin (stok sayımı, zayi) şubesi: seçili fiziksel şube; "Tümü" ya da online kanal
+ * seçiliyken varsayılan şube (Tuzla). Kanalın stoğu ve zayisi olmaz; ekranlar hangi şubeye yazdıklarını gösterir.
+ */
+export async function currentPhysicalBranch(): Promise<BranchRow> {
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const chosen = branches.find((b) => b.id === scope && b.kind === "fiziksel");
+  const fallback = DEFAULT_BRANCHES.find((b) => b.id === DEFAULT_BRANCH_ID)!;
+  return chosen ?? branches.find((b) => b.id === DEFAULT_BRANCH_ID) ?? { ...fallback, active: true };
 }
 
 /**

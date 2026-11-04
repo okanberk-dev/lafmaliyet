@@ -8,6 +8,7 @@ import { posDaySchema, resolvePosLine, siteSlotKey } from "@/lib/lafpos/day";
 import { lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
 import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
@@ -39,7 +40,7 @@ export async function loadLafposIkram(db: Reader, switchDay: string, range: { fr
     db
       .select({ date: s.posDayReports.date, ikram: s.posDayReports.ikram })
       .from(s.posDayReports)
-      .where(and(gte(s.posDayReports.date, from), range.to ? lte(s.posDayReports.date, range.to) : undefined))
+      .where(and(gte(s.posDayReports.date, from), range.to ? lte(s.posDayReports.date, range.to) : undefined, await currentBranchWhere(s.posDayReports.branchId)))
       .orderBy(asc(s.posDayReports.date)),
     db.select({ id: s.products.id, siteMenuId: s.products.siteMenuId, slot: s.products.siteMenuSlot }).from(s.products).where(isNotNull(s.products.siteMenuId)),
     db.select().from(s.posMappings),

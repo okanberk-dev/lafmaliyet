@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, count, eq, exists, isNull, lte, or } from "drizzle-orm";
 
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { countableSql } from "@/server/data/ingredient-usage";
 
@@ -15,19 +16,21 @@ export async function countProgress(month: string): Promise<{ counted: number; t
   const db = getDb();
   const i = s.ingredients;
   const sc = s.stockCounts;
+  // Sayım şube başına: seçili fiziksel şubenin ("Tümü"de Tuzla) ilerlemesi, Stok sayımı ekranıyla aynı şube
+  const sube = eq(sc.branchId, (await currentPhysicalBranch()).id);
   const listed = countableSql(db);
   const countedThatMonth = exists(
     db
       .select({ id: sc.id })
       .from(sc)
-      .where(and(eq(sc.month, month), eq(sc.ingredientId, i.id))),
+      .where(and(eq(sc.month, month), sube, eq(sc.ingredientId, i.id))),
   );
   const [[counted], [total]] = await Promise.all([
     db
       .select({ n: count() })
       .from(sc)
       .innerJoin(i, eq(i.id, sc.ingredientId))
-      .where(and(eq(sc.month, month), listed)),
+      .where(and(eq(sc.month, month), sube, listed)),
     db
       .select({ n: count() })
       .from(i)

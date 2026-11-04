@@ -13,7 +13,8 @@ import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { tillRows } from "@/server/data/cash-reports";
 import { fixedReminderMessage, followFixedReminders, type FollowResult } from "@/server/data/fixed-follow";
-import { currentBranchWhere } from "@/server/branch-scope";
+import { currentBranchWhere, currentPhysicalBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -90,6 +91,17 @@ function latestBefore<V extends { fromMonth: string }>(versions: V[], month: str
   return versions.filter((v) => v.fromMonth < month).sort((a, b) => b.fromMonth.localeCompare(a.fromMonth))[0];
 }
 
+/**
+ * Formdan gelen şube (docs/SUBE.md): kütükte ve açık olmalı; `physical` ise fiziksel şube (personel bir şubede
+ * çalışır, online kanalın personeli yok). null = işletme geneli (yalnız sabit gider), undefined = değişmez
+ */
+async function checkedBranch(raw: string | null | undefined, physical: boolean): Promise<string | null | undefined> {
+  if (raw === undefined || raw === null) return raw;
+  const b = (await listBranches()).find((x) => x.id === raw && x.active);
+  if (!b || (physical && b.kind !== "fiziksel")) throw new UserError("Seçilen şube bulunamadı ya da kapalı (sayfayı yenileyin)");
+  return b.id;
+}
+
 // ---------------------------------------------------------------- Personel
 
 const staffRowSchema = z.object({
@@ -103,6 +115,8 @@ const staffRowSchema = z.object({
   startMonth: zMonth.nullable().optional(),
   /** Maaş değişikliği hangi aydan itibaren; verilmezse opts.effectiveFrom, o da yoksa bu ay */
   effectiveFrom: zEffective.optional(),
+  /** Çalıştığı şube (maaşı o şubenin gideri); verilmezse değişmez, yeni kişide seçili şube ("Tümü"de Tuzla) */
+  branchId: z.string().max(24).optional(),
 });
 const staffSchema = z.array(staffRowSchema).max(200);
 
@@ -131,6 +145,13 @@ export async function saveStaff(
     const cur = currentMonthTR();
     const db = getDb();
     const changes: StaffChange[] = [];
+    // Şubeler işlemden önce doğrulanır; yeni kişinin şubesi verilmezse seçili fiziksel şube
+    const branchOf = new Map<number, string>();
+    for (const [i, r] of data.entries()) {
+      const b = await checkedBranch(r.branchId, true);
+      if (b) branchOf.set(i, b);
+    }
+    const newcomerBranch = data.some((r, i) => !r.id && !branchOf.has(i)) ? (await currentPhysicalBranch()).id : null;
     await db.transaction(async (tx) => {
       const past = await dataMonths(tx, cur);
       const firstData = (await dataMonths(tx))[0] ?? null;
@@ -152,14 +173,14 @@ export async function saveStaff(
           const endMonth = r.active === false ? shiftMonth(cur, -1) : null;
           const [created] = await tx
             .insert(s.staff)
-            .values({ name: r.name, netSalary: r.netSalary, extras: r.extras, sortOrder: i + 1, startMonth, endMonth, active: activeFromRange(endMonth, cur) })
+            .values({ name: r.name, netSalary: r.netSalary, extras: r.extras, sortOrder: i + 1, startMonth, endMonth, active: activeFromRange(endMonth, cur), branchId: branchOf.get(i) ?? newcomerBranch! })
             .returning({ id: s.staff.id });
           changes.push({ id: created.id, name: r.name, mode: "base", fromMonth: startMonth });
           continue;
         }
         const [before] = await tx.select().from(s.staff).where(eq(s.staff.id, r.id));
         if (!before) throw new UserError(`${r.name}: personel bulunamadı (sayfayı yenileyin)`);
-        const set: Partial<typeof s.staff.$inferInsert> = { name: r.name, sortOrder: i + 1 };
+        const set: Partial<typeof s.staff.$inferInsert> = { name: r.name, sortOrder: i + 1, ...(branchOf.has(i) ? { branchId: branchOf.get(i)! } : {}) };
         let startMonth = before.startMonth;
         let endMonth = before.endMonth;
         if (r.startMonth !== undefined) startMonth = r.startMonth;
@@ -358,6 +379,8 @@ const fixedSchema = z.object({
   officialBasis: z.enum(["brut", "net"]).nullable().optional(),
   /** Açık güne göre oranla (verilmezse değişmez; yeni kalemde kira tam ay, ötekiler oranlı) */
   prorate: z.boolean().optional(),
+  /** Şube (docs/SUBE.md): null = işletme geneli (bütün şubelerde görünür); verilmezse değişmez, yeni kalemde işletme geneli */
+  branchId: z.string().max(24).nullable().optional(),
 });
 
 /**
@@ -368,7 +391,9 @@ const fixedSchema = z.object({
 export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, active, effectiveFrom, startMonth: startInput, officialAmount, officialBasis, prorate, ...data } = fixedSchema.parse(input);
+    const { id, active, effectiveFrom, startMonth: startInput, officialAmount, officialBasis, prorate, branchId: branchInput, ...data } = fixedSchema.parse(input);
+    const branchId = await checkedBranch(branchInput, false);
+    const branchSet = branchId !== undefined ? { branchId } : {};
     // Resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir)
     const official =
       data.section !== "kira"
@@ -402,6 +427,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
           .values({
             ...data,
             ...official,
+            ...branchSet,
             prorate: prorate ?? data.section !== "kira",
             startMonth,
             endMonth,
@@ -420,6 +446,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}),
         ...official,
         ...prorateSet,
+        ...branchSet,
       };
       const startMonth = startInput !== undefined ? startInput : before.startMonth;
       let endMonth = before.endMonth;

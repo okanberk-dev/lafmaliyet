@@ -296,6 +296,8 @@ export interface Staff extends MonthRange {
   extras: number;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
+  /** Çalıştığı şube (docs/SUBE.md): maaşı o şubenin gideri */
+  branchId?: string;
 }
 
 /** "fromMonth ayından itibaren" geçerli maaş (bir sonraki sürüme kadar) */
@@ -330,6 +332,8 @@ export interface FixedExpense extends MonthRange {
   officialBasis?: "brut" | "net" | null;
   /** Açık güne göre oranla (varsayılan); false: biten ayda tam ay (süren ayda bugüne kadarki pay) */
   prorate?: boolean;
+  /** Şube; null = işletme geneli (docs/SUBE.md, dalga 3) */
+  branchId?: string | null;
   note: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
@@ -504,6 +508,11 @@ export interface Dataset {
   siteSales?: SiteSalesMonth[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
+  /**
+   * Şube görünümü (docs/SUBE.md, dalga 3): tek şube seçiliyken o şube (veri yükleyici süzdü); "Tümü"de yok. Tek şubede
+   * mal maliyeti şubenin satışından reçeteye göredir (faturalar ve sayım işletme geneli; engine.ts stockFlow)
+   */
+  branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
   /**
    * Süren ayda yüklenen satış listesinin son günü ve o güne kadarki kasa raporları (src/lib/sales-coverage.ts; yoksa
    * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)

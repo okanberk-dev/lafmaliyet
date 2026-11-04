@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { money, monthLabel } from "@/lib/format";
 import { monthName, quarterLabel } from "@/lib/tax/calendar";
 import { filingFor, filingValue } from "@/lib/tax/corporate";
@@ -14,6 +15,7 @@ import { ADJUSTMENT_LABELS, adjustmentPeriodLabel } from "@/lib/tax/pnl";
 import { PAYROLL_FULL_MONTH_NOTE } from "@/lib/tax/payroll";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadTaxView } from "@/server/data/tax";
 
 import { AdjustmentButton } from "../adjustment-dialog";
@@ -62,11 +64,15 @@ async function TaxPnlContent({ searchParams }: { searchParams: PageProps<"/panel
   const sp = await searchParams;
   const rawYear = pick(sp.yil);
   const rawQuarter = pick(sp.ceyrek);
-  const model = await loadModel();
-  const { view, inputs } = await loadTaxView(model, {
-    year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : rawQuarter && /^\d{4}-Q[1-4]$/.test(rawQuarter) ? Number(rawQuarter.slice(0, 4)) : null,
-    quarter: rawQuarter ?? null,
-    cashPlan: null,
+  // Vergi işletmenindir: şube seçiciden bağımsız, bütün şubeler okunur (docs/SUBE.md › Neyi süzer)
+  const { model, view, inputs } = await withBranchScope(ALL_BRANCHES, async () => {
+    const model = await loadModel();
+    const loaded = await loadTaxView(model, {
+      year: rawYear && /^\d{4}$/.test(rawYear) ? Number(rawYear) : rawQuarter && /^\d{4}-Q[1-4]$/.test(rawQuarter) ? Number(rawQuarter.slice(0, 4)) : null,
+      quarter: rawQuarter ?? null,
+      cashPlan: null,
+    });
+    return { model, ...loaded };
   });
   const { settings } = inputs;
   const q = view.quarter;

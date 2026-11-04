@@ -1,7 +1,9 @@
 import { asc, desc } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
+import { ALL_BRANCHES } from "@/lib/branches";
 import { getCurrentUser } from "@/server/auth/dal";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadTaxView } from "@/server/data/tax";
@@ -21,6 +23,11 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user || user.role !== "admin") return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
 
+  // Dışa aktarım panelin yedeğidir: şube seçiciden bağımsız, bütün şubeler (docs/SUBE.md › Neyi süzer)
+  return withBranchScope(ALL_BRANCHES, () => exportWorkbook(request));
+}
+
+async function exportWorkbook(request: NextRequest): Promise<Response> {
   try {
     const db = getDb();
     const [model, investments, findings, cari] = await Promise.all([

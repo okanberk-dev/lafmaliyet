@@ -5,11 +5,14 @@ import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { staffDeleteBlockers } from "@/server/actions/costs";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 
 import { choiceMonths, closedDataMonths, staffDeleteBlocker } from "../giderler/history-text";
-import { StaffEditor, type StaffRow } from "./staff-editor";
+import { StaffEditor, type StaffBranches, type StaffRow } from "./staff-editor";
 
 export const metadata: Metadata = { title: "Maaşlar" };
 
@@ -47,7 +50,11 @@ export default function StaffPage() {
 
 async function StaffContent() {
   await requireAdmin();
-  const model = await loadModel();
+  // Şube seçiliyken o şubenin personeli (docs/SUBE.md); yeni kişi seçili şubeye ("Tümü"de Tuzla) eklenir
+  const [model, all, here] = await Promise.all([loadModel(), listBranches(), currentPhysicalBranch()]);
+  const physical = all.filter((b) => b.active && b.kind === "fiziksel");
+  const branches: StaffBranches = { options: physical.map((b) => ({ id: b.id, name: b.name })), fallback: here.id };
+  const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const st = model.settings;
   const cur = model.currentMonth;
   const closed = closedDataMonths(model.ds, cur);
@@ -66,6 +73,8 @@ async function StaffContent() {
     valueMonth: x.valueMonth,
     history: x.history,
     deleteBlocker: blockersRes.ok ? (blockersRes.data[x.id] ?? null) : staffDeleteBlocker(x, closed),
+    branchId: x.branchId ?? DEFAULT_BRANCH_ID,
+    branchName: physical.length > 1 ? (nameOf.get(x.branchId ?? DEFAULT_BRANCH_ID) ?? null) : null,
   }));
   return (
     <>
@@ -77,6 +86,7 @@ async function StaffContent() {
         currentMonth={cur}
         closed={closed}
         months={choiceMonths(cur, model.firstDataMonth)}
+        branches={branches}
       />
     </>
   );

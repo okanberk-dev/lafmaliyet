@@ -10,6 +10,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { branchViewNote } from "@/lib/branches";
 import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
@@ -101,6 +102,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // başlamamış yılda yılın ilk ayı
   const sourceMonths = throughIdx.length ? throughIdx.map((i) => months[i]) : months.slice(0, 1);
   const yt = yearTotals(model, year);
+  // Şube görünümü (soldaki seçici; docs/SUBE.md): bilgi notu, mal maliyeti şubenin satışından reçeteye göre
+  const branchNote = model.ds.branchView ? branchViewNote(model.ds.branchView) : null;
   const countedIdx = indexes((m) => yt.counted.includes(m));
   // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
   const expected = await loadExpectedDebtsInYear(year).catch((e) => {
@@ -341,11 +344,21 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
             icon={<Percent />}
             label="Mal maliyeti oranı"
             value={<CountUp value={cogsRatio} format="pct" />}
-            sub="Stok sayımı girilirse devir düşülür"
-            info="Ay içinde satılan mal maliyeti = önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)."
+            sub={branchNote ? "Şubenin satışından reçeteye göre" : "Stok sayımı girilirse devir düşülür"}
+            info={
+              branchNote
+                ? "Şube seçiliyken: şubenin satışındaki ürünlerin reçete maliyeti × (1 + genel fire) + ödenmezlerin malzeme maliyeti. Faturalar ve stok devri işletme genelinde."
+                : "Ay içinde satılan mal maliyeti = önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)."
+            }
           />
         </StatBreakdown>
       </div>
+      {/* Şube seçili (soldaki seçici): neyin şubenin, neyin işletme genelinin olduğu (docs/SUBE.md) */}
+      {branchNote ? (
+        <Notice tone="neutral" size="sm" className="-mt-2 mb-4" title={branchNote.title}>
+          {branchNote.text}
+        </Notice>
+      ) : null}
       {/* Sayımı olmayan ay: mal maliyeti tahmini (para riski, katlanmaz); cirosu girilmemiş ayın gideri gri dipnot.
           Yıl kartlarına girmeyen aylar tabloda yine görünür */}
       {yt.uncounted.length ? (
@@ -365,9 +378,12 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           Yıl kartları POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yt.missingRevenue.map(missingRevenueText).join(" · ")}.
         </p>
       ) : null}
-      <div className="mb-6">
-        <SiteSalesCard data={siteCard} />
-      </div>
+      {/* Online satış işletmenin cirosudur: fiziksel şube seçiliyken kart yok (docs/SUBE.md) */}
+      {model.ds.branchView?.kind === "fiziksel" ? null : (
+        <div className="mb-6">
+          <SiteSalesCard data={siteCard} />
+        </div>
+      )}
       {/* Yıl değişince tablo yeniden kurulur: "Aktif aylar / 12 ay" seçimi o yılın verisine göre baştan belirlenir */}
       <PnlGrid
         key={year}

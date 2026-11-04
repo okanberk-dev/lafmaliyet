@@ -378,7 +378,14 @@ export type FixedRow = {
   history: FixedHistoryEntry[];
   /** Silinemiyorsa nedeni (ör. "Temmuz–Eylül 2026 hesabına girdi"); null = silinebilir */
   deleteBlocker: string | null;
+  /** Şube (docs/SUBE.md): null = işletme geneli, bütün şubelerde görünür */
+  branchId: string | null;
+  /** Listede gösterilecek şube adı ("İşletme geneli" dahil): birden çok açık şube varken; yoksa null */
+  branchName: string | null;
 };
+
+/** Kalemin şube seçimi: açık şubeler (bir taneyse seçim çizilmez) ve yeni kalemin varsayılanı (seçili şube; Tümü'nde işletme geneli) */
+export type FixedBranches = { options: { id: string; name: string }[]; fallback: string | null };
 type Bolum = "tumu" | FixedSection;
 
 /** "Temizle" ile sıfırlanan süzgeçler (sıralama korunur) */
@@ -422,6 +429,7 @@ export function FixedExpensesClient({
   currentMonth,
   closed,
   months,
+  branches,
 }: {
   rows: FixedRow[];
   personnel: { total: number; count: number };
@@ -432,6 +440,7 @@ export function FixedExpensesClient({
   closed: string[];
   /** "Hangi aydan itibaren?" listesindeki aylar */
   months: string[];
+  branches: FixedBranches;
 }) {
   const [editing, setEditing] = useState<FixedRow | "new" | null>(null);
   const [deleting, setDeleting] = useState<FixedRow | null>(null);
@@ -534,7 +543,7 @@ export function FixedExpensesClient({
     }
     // Arada kapanmış aylar var: o ayları değiştirmemek için aynı kalem seçilen aydan itibaren yeni kayıt olarak açılır
     const done = await run(
-      saveFixedExpense({ id: null, name: r.name, section: r.section, period: r.period, amount: r.amount, note: r.note, vatRate: r.vatRate, effectiveFrom: fromMonth }),
+      saveFixedExpense({ id: null, name: r.name, section: r.section, period: r.period, amount: r.amount, note: r.note, vatRate: r.vatRate, effectiveFrom: fromMonth, branchId: r.branchId }),
       `${r.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
       true,
     );
@@ -732,6 +741,7 @@ export function FixedExpensesClient({
                         >
                           <TD className={cn("font-medium", dim)}>
                             {r.name}
+                            {r.branchName ? <span className="block text-xs font-normal text-ink-mute">{r.branchName}</span> : null}
                             <ChangeLines row={r} className="mt-0.5" />
                           </TD>
                           <TD numeric className={cn(dim)}>
@@ -903,6 +913,7 @@ export function FixedExpensesClient({
       {editing ? (
         <FixedDialog
           row={editing === "new" ? null : editing}
+          branches={branches}
           defaultSection={bolum === "tumu" ? "genel" : bolum}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
@@ -1035,6 +1046,7 @@ function FixedCard({
       <button type="button" onClick={onEdit} className={cn("flex w-full cursor-pointer items-start justify-between gap-3 text-left", !r.inRangeNow && "opacity-60")}>
         <span className="min-w-0">
           <span className="block font-medium break-words text-ink">{r.name}</span>
+          {r.branchName ? <span className="block text-xs text-ink-mute">{r.branchName}</span> : null}
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-ink-mute tabular">
             <Badge tone="gray">{PERIOD_LABEL[r.period]}</Badge>
             {money(r.amount)}
@@ -1058,6 +1070,7 @@ function FixedCard({
 
 function FixedDialog({
   row,
+  branches,
   defaultSection,
   onClose,
   onSaved,
@@ -1072,6 +1085,7 @@ function FixedDialog({
   months,
 }: {
   row: FixedRow | null;
+  branches: FixedBranches;
   /** Yeni giderde seçili bölüm (süzgeçte bir bölüm seçiliyse o) */
   defaultSection: FixedSection;
   onClose: () => void;
@@ -1107,6 +1121,8 @@ function FixedDialog({
     basis: (row?.officialBasis ?? "brut") as "brut" | "net",
     // Yeni kira kalemi tam ay (sahibin kararı); öteki kalemler açık güne göre
     prorate: row ? row.prorate : null,
+    // Şube: "" = işletme geneli (yeni kalemde seçili şube, Tümü'nde işletme geneli)
+    branch: (row ? row.branchId : branches.fallback) ?? "",
   });
   const prorate = f.prorate ?? f.section !== "kira";
   const official = f.official.trim() === "" ? null : parseNumberTR(f.official);
@@ -1161,6 +1177,8 @@ function FixedDialog({
         officialAmount: f.section === "kira" && official && official > 0 ? official : null,
         officialBasis: f.section === "kira" && official && official > 0 ? f.basis : null,
         prorate,
+        // Seçim yoksa (tek şube) şube değişmez
+        ...(branches.options.length > 1 ? { branchId: f.branch || null } : {}),
         // Tutar değişmediyse gösterilen ayın değeri geri gider (hiçbir ay değişmez)
         effectiveFrom: !row || amountChanged ? eff : row.valueMonth,
       }),
@@ -1264,6 +1282,22 @@ function FixedDialog({
             enterKeyHint="next"
           />
         </Field>
+        {branches.options.length > 1 ? (
+          <Field
+            label="Şube"
+            htmlFor="fx-b"
+            tip="İşletme geneli kalem (muhasebe, yazılım) her şubenin görünümünde sayılır; şubeye bağlı kalem yalnız o şubede."
+          >
+            <Select id="fx-b" value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })}>
+              <option value="">İşletme geneli</option>
+              {branches.options.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
             label="Bölüm"
