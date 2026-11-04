@@ -4,6 +4,7 @@
 // Çalıştırma: npx tsx --test tests/subeler.test.ts
 
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -184,12 +185,20 @@ test("şube sütunu taşıyan her tablo silme denetimine girer: yeni para tablos
 test("çakışma hedefi şubeyi içerir: (ay|gün, şube) birincil anahtarına tek sütunla ON CONFLICT düşer", () => {
   // Postgres: "there is no unique or exclusion constraint matching the ON CONFLICT specification".
   // Anahtarı şubeyi içeren tabloya tek sütunlu hedefle yazan kod çalışma anında patlar.
-  const dosyalar = ["src/server/actions/pnl.ts", "src/server/actions/sales.ts", "src/server/lafpos/ingest.ts"];
+  // Sabit dosya listesi KULLANILMAZ: stock.ts'teki aynı hata listede olmadığı için bir dalga boyunca kaçmıştı.
+  const dosyalar = execSync("grep -rl 'onConflictDoUpdate' src --include=*.ts || true", {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  assert.ok(dosyalar.length >= 3, "onConflictDoUpdate kullanan dosya bulunamadı: grep bozulmuş olabilir");
   for (const d of dosyalar) {
     const kaynak = oku(d);
     for (const m of kaynak.matchAll(/onConflictDoUpdate\(\{\s*target: (\[[^\]]*\]|[^,\n]+),/g)) {
       const hedef = m[1]!.trim();
-      if (!/months|posDayReports|modposCashSheets/.test(hedef)) continue;
+      if (!/months|posDayReports|modposCashSheets|cashReports|posDailySales|stockCounts/.test(hedef)) continue;
       assert.match(hedef, /^\[/, `${d}: ${hedef} dizi olmalı (tek sütunlu hedef bileşik anahtarla eşleşmez)`);
       assert.match(hedef, /branchId/, `${d}: ${hedef} şubeyi içermeli`);
     }
@@ -227,4 +236,40 @@ test("istek dışında süzme yok: betik ve arka plan işi bütün şubeleri gö
   const govde = kapsam.slice(kapsam.indexOf("const requestBranchScope"));
   // cookies() istek dışında fırlar; yakalanmazsa göç betiği ve zil düşerdi
   assert.match(govde.slice(0, 500), /catch\s*\{\s*return ALL_BRANCHES;/);
+});
+
+test("gider süzgeci işletme genelini düşürmez: expenseEntries'te currentBranchWhere değil branchWhereWithShared", () => {
+  // Tek şube seçiliyken şubesi boş gider ("işletme geneli": kira, muhasebe, abonelik) de görünmeli.
+  // currentBranchWhere kullanılsaydı eq(branch_id, 'tuzla') olur, null satırlar düşer ve her şubenin kârı
+  // olduğundan yüksek çıkardı (sahibin kararı, docs/SUBE.md › Dalga 2'nin kararları).
+  const hits = execSync(
+    "grep -rn 'currentBranchWhere(s.expenseEntries.branchId)' src --include=*.ts --include=*.tsx || true",
+    { cwd: process.cwd(), encoding: "utf8" },
+  ).trim();
+  assert.equal(hits, "", `Gider süzgecinde currentBranchWhere kullanılmış; branchWhereWithShared olmalı:\n${hits}`);
+});
+
+test("silme engelinin ay listesi şube seçiminden bağımsız okunur (dataMonths)", () => {
+  // tests/sube-silme-engeli-db.test.ts bunu davranışla da denetliyor ama o test veritabanı adresi yoksa atlanır;
+  // bu bekçi her koşuda çalışır. dataMonths'un çıktısı yalnız silme / değiştirme engellerine ve ay seçicisine
+  // gider: şubeye göre süzülürse Marina seçiliyken Tuzla'da maaş hesabına girmiş kişi silinebilir hale gelir.
+  const src = oku("src/server/actions/costs.ts");
+  const govde = src.slice(src.indexOf("async function dataMonths"), src.indexOf("async function dataMonths") + 1400);
+  assert.match(govde, /withBranchScope\(ALL_BRANCHES/, "dataMonths bütün şubeleri okumalı");
+  assert.doesNotMatch(govde, /currentBranchWhere/, "dataMonths şube seçimine göre süzülmemeli");
+});
+
+test("silme engelleri şubesiz kalır: çürütme turunda elenen yerler yeniden süzülmesin", () => {
+  for (const [yol, gerekce] of [
+    ["src/server/data/product-history.ts", "ürün silme güvenliği"],
+    ["src/server/data/pos-staff.ts", "POS adı hangi dönemden"],
+    ["src/server/cash-outs/guard.ts", "personelin kasa satırı kilidi"],
+    ["src/server/cari/kasa.ts", "cari mutabakatı"],
+  ] as const) {
+    const kaynak = oku(yol);
+    assert.ok(
+      !kaynak.includes("currentBranchWhere") && !kaynak.includes("branchWhereWithShared"),
+      `${yol} şubeye göre süzülmüş (${gerekce}): bu bir görünüm değil, bütünlük denetimi`,
+    );
+  }
 });

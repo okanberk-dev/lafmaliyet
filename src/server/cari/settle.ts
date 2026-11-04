@@ -497,7 +497,17 @@ export async function linkDebts(tx: Tx, debtIds: readonly number[], invoiceId: n
       costMode: d.costMode ?? "fatura",
       categoryId: d.categoryId,
       expense: exp
-        ? { categoryId: exp.categoryId, description: exp.description, note: exp.note, amount: exp.amount, date: exp.date, id: exp.id, paymentMethod: exp.paymentMethod, createdBy: exp.createdBy }
+        ? {
+            categoryId: exp.categoryId,
+            description: exp.description,
+            note: exp.note,
+            amount: exp.amount,
+            date: exp.date,
+            id: exp.id,
+            paymentMethod: exp.paymentMethod,
+            createdBy: exp.createdBy,
+            branchId: exp.branchId,
+          }
         : null,
     };
     await tx.update(s.supplierEntries).set({ invoiceId: inv.id, linkedAt: now, linkPrev: prev, updatedAt: now }).where(eq(s.supplierEntries.id, d.id));
@@ -562,6 +572,8 @@ async function releaseDebt(tx: Tx, debt: typeof s.supplierEntries.$inferSelect, 
         note: e.note,
         paymentMethod: e.paymentMethod ?? null,
         createdBy: e.createdBy ?? by,
+        // Kayıt bağlanmadan önceki şubesine döner; alanı olmayan eski görüntüde işletme geneli kalır
+        branchId: e.branchId ?? null,
         supplierEntryId: debt.id,
       })
       .returning({ id: s.expenseEntries.id });
