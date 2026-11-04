@@ -19,6 +19,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 
 import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
+import { BRANCH_SEED_KEY, DEFAULT_BRANCHES } from "../src/lib/branches";
 import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
 import { relinkWaste } from "../src/lib/waste";
@@ -66,6 +67,29 @@ async function ensureAdmin(db: DB) {
     role: "admin",
   });
   console.log(`✓ Yönetici hesabı oluşturuldu: ${email}`);
+}
+
+/**
+ * Şube ve kanal kütüğü (src/lib/branches.ts) bir kez yazılır: Tuzla, Marina ve laffogato.net. Anahtar
+ * (`branches_seeded`) yazılıysa hiçbir şey yapılmaz; silinen ya da adı değiştirilen kayıt geri gelmez. Dolu
+ * veritabanında da çalışır (canlıya ilk çıkış): şubesiz geçmiş veri Tuzla'ya yazılmıştır (docs/SUBE.md).
+ */
+async function ensureBranchSeed(db: DB) {
+  const added = await db.transaction(async (tx) => {
+    const [mark] = await tx
+      .insert(s.integrationState)
+      .values({ key: BRANCH_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .onConflictDoNothing()
+      .returning({ key: s.integrationState.key });
+    if (!mark) return [];
+    const rows = await tx
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b })))
+      .onConflictDoNothing()
+      .returning({ name: s.branches.name });
+    return rows.map((r) => r.name);
+  });
+  if (added.length) console.log(`✓ Şubeler eklendi: ${added.join(", ")}`);
 }
 
 /**
@@ -184,6 +208,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       console.log("✓ Veritabanında veri var, seed atlandı (yeniden yüklemek için --reset)");
       await ensureAdmin(db);
       await ensureChecklistSeed(db);
+      await ensureBranchSeed(db);
       return;
     }
 
@@ -326,6 +351,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
     );
     await ensureAdmin(db);
     await ensureChecklistSeed(db);
+    await ensureBranchSeed(db);
   } finally {
     await db.$client.end();
   }
