@@ -113,6 +113,12 @@ export function branchWhere(col: PgColumn, scope: BranchScope): SQL | undefined 
  * Gider için şube koşulu: giderin şubesi boş olabilir ("işletme geneli", sahibin kararı 4 Kasım 2026). Tek şube
  * seçiliyken o şubenin giderleri İLE işletme geneli giderler birlikte görünür; yoksa kira, muhasebe ve abonelik
  * hiçbir şubede görünmez ve kâr olduğundan yüksek çıkar.
+ *
+ * ÇAĞIRANI HENÜZ YOK — bugün hiçbir gider okuması şubeye göre süzülmüyor (docs/SUBE.md › Neyi süzer, neyi
+ * süzmez: gider okumaları paylaşılan veri kümesinden geliyor ve silme engellerini de besliyor). Burada durmasının
+ * nedeni, süzgeç dalga 4'te EKRANA eklenirken yanlış yardımcının (`currentBranchWhere`) seçilmemesi: o seçilirse
+ * işletme geneli giderler buharlaşır. `tests/subeler.test.ts` hem bu işlevin varlığını hem yanlışının
+ * kullanılmadığını denetliyor.
  */
 export function branchWhereWithShared(col: PgColumn, scope: BranchScope): SQL | undefined {
   return scope === ALL_BRANCHES ? undefined : or(eq(col, scope), isNull(col));
