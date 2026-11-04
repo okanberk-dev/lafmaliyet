@@ -436,7 +436,7 @@ const NOTICE_FILES = [
   "karaoke/karaoke-board.tsx",
   "karaoke/orders-board.tsx",
   "kasa/cash-form.tsx",
-  "kasa/cash-history.tsx",
+  "kasa/report-sheet.tsx",
   "kasa/cash-out-dialog.tsx",
   "kasa/cash-photos.tsx",
   "kasa/cash-requests.tsx",

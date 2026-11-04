@@ -23,6 +23,7 @@ import {
   openingNeedsNote,
   type CashReportFields,
   type CashRevisionRow,
+  reportNo,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
@@ -879,8 +880,8 @@ export function CashForm({
       <Card>
         <CardHeader
           icon={<ReceiptText />}
-          title={`${longDateTR(date)} kasa raporu`}
-          description={`${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
+          title={`Kasa raporu · ${reportNo(date)}`}
+          description={`${longDateTR(date)} · ${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
           meta={
             <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>
               {diffText(report.cashDiff)}
