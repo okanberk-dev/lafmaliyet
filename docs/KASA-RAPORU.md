@@ -43,6 +43,20 @@ yazın." Unutulan dünü sonradan girmek serbesttir. Daha eski bir günü yalnı
 "güncellendi" diye işaretlenir ve önceki hâli saklanır ([Düzeltmeler](#düzeltmeler)). Arada başkası göndermişse
 üzerine yazılmaz: sayfa yenilenip onun girdikleri görülür.
 
+## Rapor numarası ve yöneticinin rapor penceresi
+
+Sahibin kararı (4 Kasım 2026): her kasa raporunun numarası iş gününden, **KR-YYYYAAGG** (3 Kasım 2026 → `KR-20261103`;
+`src/lib/cash-report.ts` `reportNo`). Gün başına tek rapor olduğu için numara benzersizdir; silinip yeniden girilen ya
+da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne listesinde, rapor penceresinin ve
+kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın konusunda ve başlığında, WhatsApp
+metninin ilk satırında yazar.
+
+Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
+kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
+açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
+"Kontroller tamam"), satış ve nakit kasa dökümü (satır içi uyarı yok), not ve kapalı **Ayrıntılar** (kart ve
+yazarkasa, fotoğraflar, değişiklikler). Personelin kayıtlı rapor kartı ve Onaylar'daki döküm aynı kalır.
+
 ## Açılış ve devir
 
 Açılış, önceki raporun **ertesi güne devrinden** (sayılan − teslim edilen) dolar. Yazılan açılış devirden 1 ₺ ya da

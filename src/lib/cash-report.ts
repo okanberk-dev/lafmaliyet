@@ -839,7 +839,7 @@ export function cashReportText(
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
   f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
-  const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
+  const head = [`*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const photos = photosLine(meta.photos);
@@ -885,9 +885,18 @@ export function cashEmailKey(row: { id: number; revision: number }): string {
   return `cash-${row.id}-r${row.revision}`;
 }
 
-/** E-posta konusu: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik" */
+/**
+ * Kasa raporunun numarası (sahibin kararı, 4 Kasım 2026): iş gününden, "KR-20261103". Gün başına tek rapor olduğu için
+ * (cash_reports_date_uq) benzersizdir; silinip yeniden girilen ya da geç girilen rapor da aynı numarayı alır, sıra
+ * kaymaz. Panel, e-posta ve WhatsApp aynı numarayı yazar
+ */
+export function reportNo(date: string): string {
+  return `KR-${date.replaceAll("-", "")}`;
+}
+
+/** E-posta konusu: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik" */
 export function reportSubject(f: CashReportFields, revision = 1): string {
-  return `Kasa raporu · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
+  return `Kasa raporu ${reportNo(f.date)} · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
 }
 
 /** E-posta adresleri: virgül, noktalı virgül, boşluk ya da satırla ayrılmış metinden; tekrarlar ve geçersizler çıkar */

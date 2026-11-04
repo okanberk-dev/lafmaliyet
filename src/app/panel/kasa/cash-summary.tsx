@@ -196,25 +196,7 @@ export function CashBreakdown({
           subWarn
         />
       </section>
-      {okc ? (
-        <OkcBreakdown report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} />
-      ) : c.cardDiff !== null ? (
-        // Yazarkasa bölümünden önceki rapor: bugünkü "Kart" bölümü; o günlerde alan banka gün sonunu da yazarkasa
-        // Z'sinin kart satırını da tutabilir, anlam iddia edilmez (§3.7)
-        <section aria-label="Kart">
-          <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
-          <Line label={`${kasa} kart`} value={money(report.card)} />
-          <Line label="Banka POS" value={money(report.bankPos)} />
-          {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
-          {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}
-          <Line
-            label="Fark"
-            value={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}
-            strong
-            tone={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "good" : "warn"}
-          />
-        </section>
-      ) : null}
+      <CardDetail report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} cardExtra={cardExtra} />
       {report.note ? (
         <section aria-label="Not" className={c.cardDiff === null && !okc ? "sm:col-span-2" : undefined}>
           <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Not</h3>
@@ -222,6 +204,46 @@ export function CashBreakdown({
         </section>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Raporun kart bölümü: yazarkasa Z'si girildiyse "Banka POS Z (yazarkasa)" (KDV dökümü, karşılaştırmalar, yöneticiye
+ * kümülatif), yoksa bugünkü "Kart" (ModPOS kartı ↔ banka POS). Döküm (CashBreakdown) ve yöneticinin sade rapor
+ * penceresinin "Ayrıntılar"ı (report-sheet.tsx) aynı bölümü gösterir. `report` kart ekiyle (withCardExtra) verilir
+ */
+export function CardDetail({
+  report,
+  audience,
+  okcAdmin,
+  kasa,
+  cardExtra,
+}: {
+  report: CashReportFields;
+  audience: "staff" | "admin";
+  okcAdmin: OkcAdminView | null;
+  kasa: "ModPOS" | "LafPOS";
+  cardExtra: number | null;
+}) {
+  if (okcHasFigures(report)) return <OkcBreakdown report={report} audience={audience} okcAdmin={okcAdmin} kasa={kasa} />;
+  const c = computeCash(report);
+  // Yazarkasa bölümünden önceki rapor: bugünkü "Kart" bölümü; o günlerde alan banka gün sonunu da yazarkasa Z'sinin kart
+  // satırını da tutabilir, anlam iddia edilmez (§3.7)
+  if (c.cardDiff === null) return null;
+  return (
+    <section aria-label="Kart">
+      <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kart</h3>
+      <Line label={`${kasa} kart`} value={money(report.card)} />
+      <Line label="Banka POS" value={money(report.bankPos)} />
+      {/* Fark bunu düşerek (G11): yöneticiye tutarıyla, personele "düşüldü" */}
+      {cardExtra && cardExtra > 0 ? <Line label={CARD_EXTRA_LABEL} value={audience === "admin" ? money(cardExtra) : "düşüldü"} /> : null}
+      <Line
+        label="Fark"
+        value={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "Yok" : `${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}
+        strong
+        tone={Math.abs(c.cardDiff) < CASH_TOLERANCE ? "good" : "warn"}
+      />
+    </section>
   );
 }
 

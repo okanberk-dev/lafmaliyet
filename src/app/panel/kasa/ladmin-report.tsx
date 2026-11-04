@@ -14,7 +14,7 @@ import {
   type LadminCashOut,
   type LadminReport,
 } from "@/lib/cash-ladmin";
-import { diffKind, diffText, type CashRevisionRow } from "@/lib/cash-report";
+import { diffKind, diffText, reportNo, type CashRevisionRow } from "@/lib/cash-report";
 
 import { FactGrid, H3, LineList, MutedLines } from "./day-parts";
 
@@ -65,7 +65,7 @@ export function LadminReportCard({
       <CardHeader
         icon={<NotebookPen />}
         title="ladmin"
-        description={`Panelde yazılan kasa raporu · ${ladminHeadline(report)}`}
+        description={`Panelde yazılan kasa raporu ${reportNo(report.date)} · ${ladminHeadline(report)}`}
         actions={
           <Badge tone={kind === "even" ? "green" : "amber"} dot>
             {diffText(report.cashDiff)}

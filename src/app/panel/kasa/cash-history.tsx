@@ -11,7 +11,6 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Stat } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
 import {
   CASH_TOLERANCE,
   computeCash,
@@ -20,6 +19,7 @@ import {
   historyOf,
   lastRevision,
   nextCheckOf,
+  reportNo,
   whatsappLink,
   whatsappText,
   withCardExtra,
@@ -37,10 +37,8 @@ import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
 
-import { SavedPhotos } from "./cash-photos";
-import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline, LafposDiffList, type OkcAdminView } from "./cash-summary";
-import { ModposDiffList } from "./modpos-diffs";
+import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
+import { ReportSheet } from "./report-sheet";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
@@ -276,7 +274,7 @@ export function CashHistory({
                       · nakit {money(report.cash)} · kart {money(report.card)}
                     </span>
                     <span className="block text-xs text-ink-mute">
-                      {whoOf(report)}
+                      <span className="tabular">{reportNo(report.date)}</span> · {whoOf(report)}
                       {report.revision > 1 ? ` · ${report.revision - 1} kez düzeltildi` : ""}
                       {lateApproved[report.id] ? ` · ${lateApproved[report.id]}` : ""}
                       {report.emailStatus === "failed" ? " · e-posta gitmedi" : ""}
@@ -311,8 +309,8 @@ export function CashHistory({
       <Dialog
         open={open !== null}
         onClose={() => setOpen(null)}
-        title={open ? `${longDateTR(open.date)} kasa raporu` : ""}
-        description={open ? `${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
+        title={open ? `Kasa raporu · ${reportNo(open.date)}` : ""}
+        description={open ? `${longDateTR(open.date)} · ${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
         size="lg"
         footerStart={
           <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
@@ -340,24 +338,23 @@ export function CashHistory({
         }
       >
         {open ? (
-          <div className="space-y-4">
-            <DiffHeadline diff={open.cashDiff} />
-            {open.emailStatus === "failed" ? <Notice tone="bad" size="sm" title={`E-posta gitmedi: ${open.emailError}`} /> : null}
-            {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
-            <LafposDiffList diffs={openPhotos?.extras.lafposDiffs} />
-            <ModposDiffList diffs={modposDays[open.date]?.diffs} />
-            <CashBreakdown
-              report={open}
-              cashOuts={cashOuts[open.date] ?? []}
-              carry={openCarry}
-              next={openNext}
-              audience="admin"
-              okcAdmin={okcAdmin[open.id] ?? null}
-              kasa={openPhotos?.extras.kasa}
-              cardExtra={openPhotos?.extras.cardExtra}
-            />
-            <CashRevisions report={open} revisions={revisions[open.id] ?? []} proposedBy={proposedBy[open.id]} />
-          </div>
+          // Sade rapor (sahibin kararı, 4 Kasım 2026): üç rakam, tek kontrol listesi, döküm, kapalı ayrıntılar
+          <ReportSheet
+            report={open}
+            kasa={openPhotos?.extras.kasa}
+            cardExtra={openPhotos?.extras.cardExtra}
+            cashOuts={cashOuts[open.date] ?? []}
+            carry={openCarry}
+            next={openNext}
+            modposDiffs={modposDays[open.date]?.diffs}
+            lafposDiffs={openPhotos?.extras.lafposDiffs}
+            photos={openPhotos?.photos ?? []}
+            photoDiffs={openPhotos?.diffs ?? []}
+            emailError={open.emailStatus === "failed" ? (open.emailError ?? "bilinmeyen hata") : null}
+            okcAdmin={okcAdmin[open.id] ?? null}
+            revisions={revisions[open.id] ?? []}
+            proposedBy={proposedBy[open.id]}
+          />
         ) : null}
       </Dialog>
       <ConfirmDialog

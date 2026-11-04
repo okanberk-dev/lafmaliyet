@@ -215,7 +215,7 @@ test("WhatsApp: numara wa.me biçimine, metin bağlantıda kodlu; numara yoksa s
 
 test("WhatsApp metni: ayrıntılı, farklar öne çıkar", () => {
   const t = plain(whatsappText(day, { by: "Zeynep" }));
-  assert.match(t, /^\*L'Affogato · Gün sonu kasa raporu\*\n21 Ekim Çarşamba · Zeynep\nZ no: 1234 · 87 fiş/);
+  assert.match(t, /^\*L'Affogato · Gün sonu kasa raporu KR-20261021\*\n21 Ekim Çarşamba · Zeynep\nZ no: 1234 · 87 fiş/);
   assert.match(t, /Toplam satış: 12\.450 ₺\n• Nakit: 3\.200 ₺\n• Kredi \/ banka kartı: 8\.150 ₺\n• Yemek kartı: 600 ₺\n• Online: 500 ₺\n/);
   assert.doesNotMatch(t, /Diğer/, "sıfır olan ödeme türü yazılmaz");
   assert.match(t, /− Gün içinde çıkan: 150 ₺ \(süt, buz\)\n= Olması gereken: 3\.550 ₺\nSayılan: 3\.430 ₺\n🔴 \*120 ₺ EKSİK\*/);
@@ -233,8 +233,8 @@ test("WhatsApp metni: ayrıntılı, farklar öne çıkar", () => {
 });
 
 test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızsız", () => {
-  assert.equal(plain(reportSubject(day)), "Kasa raporu · 21 Ekim Çarşamba · 120 ₺ eksik");
-  assert.equal(plain(reportSubject({ ...day, countedCash: 3_550 }, 2)), "Kasa raporu · 21 Ekim Çarşamba · kasa tutuyor (güncellendi)");
+  assert.equal(plain(reportSubject(day)), "Kasa raporu KR-20261021 · 21 Ekim Çarşamba · 120 ₺ eksik");
+  assert.equal(plain(reportSubject({ ...day, countedCash: 3_550 }, 2)), "Kasa raporu KR-20261021 · 21 Ekim Çarşamba · kasa tutuyor (güncellendi)");
   const m = renderCashReport({ ...day, note: "<script>alert(1)</script>" }, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z") });
   assert.match(plain(m.html), /120 ₺ eksik/);
   assert.match(m.html, /23:15/, "saat Türkiye saatiyle");
@@ -623,7 +623,7 @@ test("WhatsApp ve e-posta: sayan, değişenler, açılış ↔ devir, ertesi gü
   const changes = revisionChanges(rev(), rev({ countedCash: 3_530, note: "x" }));
   const f = { ...day, discounts: 3_200 };
   const t = plain(whatsappText(f, { by: "Mehmet", countedBy: "Ayşe", revision: 2, carry, next, changes }));
-  assert.match(t, /^\*L'Affogato · Gün sonu kasa raporu\* \(güncellendi\)\n21 Ekim Çarşamba · Mehmet · sayan Ayşe\n/);
+  assert.match(t, /^\*L'Affogato · Gün sonu kasa raporu KR-20261021\* \(güncellendi\)\n21 Ekim Çarşamba · Mehmet · sayan Ayşe\n/);
   assert.match(t, /\*Değişen:\* Sayılan nakit 3\.430 ₺ → 3\.530 ₺; Not değişti/);
   assert.match(t, /• Online: 500 ₺\n• İndirim: 3\.200 ₺\n/);
   assert.match(t, /Açılış \(devir\): 500 ₺\n⚠️ Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az\n\+ Nakit satış/);

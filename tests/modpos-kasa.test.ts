@@ -612,7 +612,7 @@ test("bölümler: föy yoksa ne zaman geleceği; varsa sırayla ModPOS, ladmin, 
     assert.ok(modpos.includes(t), `ModPOS bölümünde yok: ${t}`);
   }
   for (const t of [
-    "Panelde yazılan kasa raporu · Z 0312 · Gönderen Ece Panel · 2 Kasım 00:58",
+    "Panelde yazılan kasa raporu KR-20261101 · Z 0312 · Gönderen Ece Panel · 2 Kasım 00:58",
     "Toplam satış (Z)",
     "ortalama fiş 132,95 ₺",
     "20 ₺ eksik",

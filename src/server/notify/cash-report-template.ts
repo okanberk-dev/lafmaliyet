@@ -18,6 +18,7 @@ import {
   nextWarning,
   paymentLines,
   photoNames,
+  reportNo,
   reportSubject,
   withCardExtra,
   zSectionTitle,
@@ -242,7 +243,7 @@ export function renderCashReport(
           <td width="38" height="38" align="center" style="width:38px;height:38px;background:#171717;border-radius:11px;color:#c0f21e;font-family:${FONT};font-size:13px;font-weight:700;letter-spacing:-0.02em">L'Af</td>
           <td style="padding-left:10px;font-family:${FONT}">
             <div style="font-size:16px;line-height:20px;font-weight:600;color:#171717">L'Affogato</div>
-            <div style="font-size:12px;line-height:16px;color:#71717a">Gün sonu kasa raporu</div>
+            <div style="font-size:12px;line-height:16px;color:#71717a">Gün sonu kasa raporu · ${esc(reportNo(f.date))}</div>
           </td>
         </tr></table>
       </td>
