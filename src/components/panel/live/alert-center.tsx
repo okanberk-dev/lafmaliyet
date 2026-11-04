@@ -382,18 +382,29 @@ export function AlertCenter({ role }: { role: Role }) {
             () => {
               fired.current?.add(key);
               if (fired.current) saveKeys(FIRED_KEY, fired.current);
-              if (prefs.sound) play("reminder");
+              // Hatırlatıcının kendi sesi (docs/HATIRLATICILAR.md): "surekli" durdurulana kadar çalar,
+              // "tek" bir zil, "yok" sessiz. Cihazın ses anahtarı kapalıysa hiçbiri çalmaz.
+              const surekli = r.sound === "surekli";
+              if (prefs.sound && r.sound !== "yok") {
+                if (surekli) startAlarm();
+                else play("reminder");
+              }
               toast(r.title, {
-                description: r.note ?? "Hatırlatıcı",
-                duration: 30_000,
+                description: [r.note, r.createdByName ? `${r.createdByName} kurdu` : null].filter(Boolean).join(" · ") || "Hatırlatıcı",
+                // Sürekli çalan uyarı kendiliğinden kapanmaz: kişi sesi durdurana kadar ekranda kalır
+                duration: surekli ? Infinity : 30_000,
+                onDismiss: surekli ? () => stopAlarm() : undefined,
                 action: {
-                  label: "Tamamlandı",
-                  onClick: () =>
+                  label: surekli ? "Durdur ve tamamla" : "Tamamlandı",
+                  onClick: () => {
+                    if (surekli) stopAlarm();
                     void tryAction(() => completeUserReminder(r.id)).then((res) => {
                       if (res && !res.ok) toast.error(res.error);
                       void refreshLive().then(() => refreshScreen());
-                    }),
+                    });
+                  },
                 },
+                cancel: surekli ? { label: "Sesi kes", onClick: () => stopAlarm() } : undefined,
               });
               void notify(`Hatırlatma: ${r.title}`, r.note ?? `Saat ${r.dueTime}`, `hatirlatici-${r.id}`, "/panel/hatirlaticilarim", {
                 requireInteraction: true,

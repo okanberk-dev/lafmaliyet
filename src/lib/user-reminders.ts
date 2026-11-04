@@ -8,6 +8,19 @@ import { addDays, addMonthsAnchored, dayLocative, todayTR } from "./reminders";
 
 export type UserRepeat = "none" | "daily" | "weekly" | "monthly";
 
+/**
+ * Hatırlatma sesi (sahibin isteği, 4 Kasım 2026): bilgisayarda çalan uyarı.
+ * "tek" bugünkü davranıştır (tek bir zil), "surekli" durdurulana kadar çalar
+ * (karaoke alarmı gibi), "yok" sessizdir — bildirim yine çıkar.
+ */
+export type UserSound = "tek" | "surekli" | "yok";
+
+export const USER_SOUNDS: { value: UserSound; label: string; hint: string }[] = [
+  { value: "tek", label: "Tek ses", hint: "Bir kez çalar" },
+  { value: "surekli", label: "Sürekli", hint: "Durdurana kadar çalar" },
+  { value: "yok", label: "Sessiz", hint: "Yalnız bildirim" },
+];
+
 export const USER_REPEATS: { value: UserRepeat; label: string }[] = [
   { value: "none", label: "Bir kez" },
   { value: "daily", label: "Her gün" },

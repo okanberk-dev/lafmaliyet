@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, Check, ChevronDown, Clock, MoreHorizontal, Pencil, Plus, Repeat, RotateCcw, Trash2 } from "lucide-react";
+import { AlarmClock, BellRing, Check, ChevronDown, Clock, MoreHorizontal, Pencil, Plus, Repeat, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -13,13 +13,13 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Fab } from "@/components/ui/fab";
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import type { Role } from "@/lib/constants";
 import { dateTimeTR } from "@/lib/format";
 import { addDays, todayTR } from "@/lib/reminders";
-import { DUE_GROUPS, dueGroup, isTime, USER_REPEATS, userRepeatLabel, whenLabel, type UserRepeat } from "@/lib/user-reminders";
+import { DUE_GROUPS, dueGroup, isTime, USER_REPEATS, USER_SOUNDS, userRepeatLabel, whenLabel, type UserRepeat, type UserSound } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
 import { completeUserReminder, deleteUserReminder, postponeUserReminder, restoreUserReminder, saveUserReminder } from "@/server/actions/user-reminders";
 import type { UserReminderDTO } from "@/server/data/user-reminders";
@@ -29,7 +29,7 @@ import type { UserReminderDTO } from "@/server/data/user-reminders";
  * hafta, Daha sonra). Tamamlandı / ertele bildirimdeki "Geri al" ile geri alınır; tamamlanan tek seferlikler iki
  * hafta altta durur. Saatli hatırlatma panel açıkken saatinde çalar (uyarı motoru, src/components/panel/live).
  */
-export function MyReminders({ role, open, done }: { role: Role; open: UserReminderDTO[]; done: UserReminderDTO[] }) {
+export function MyReminders({ role, open, done, people }: { role: Role; open: UserReminderDTO[]; done: UserReminderDTO[]; people: { id: number; name: string }[] }) {
   const [now, setNow] = useState(() => new Date());
   const [editing, setEditing] = useState<UserReminderDTO | "new" | null>(null);
   const [deleting, setDeleting] = useState<UserReminderDTO | null>(null);
@@ -215,6 +215,7 @@ export function MyReminders({ role, open, done }: { role: Role; open: UserRemind
       {editing ? (
         <ReminderDialog
           initial={editing === "new" ? null : editing}
+          people={people}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -304,6 +305,15 @@ function ReminderRow({
               <Repeat size={11} aria-hidden="true" /> {repeat}
             </Badge>
           ) : null}
+          {/* Sürekli çalan uyarı listede de görünsün: hangi hatırlatıcının sesi kesilmeyecek belli olsun */}
+          {r.sound === "surekli" ? (
+            <Badge tone="amber">
+              <BellRing size={11} aria-hidden="true" /> Sürekli ses
+            </Badge>
+          ) : null}
+          {r.sound === "yok" ? <Badge tone="gray">Sessiz</Badge> : null}
+          {/* Yönetici kurduysa kim kurdu (kendi kurduğunda yazmaz) */}
+          {r.createdByName ? <Badge tone="blue">{r.createdByName} kurdu</Badge> : null}
         </p>
         {r.note ? <p className="mt-1 text-[13px] break-words whitespace-pre-line text-ink-mute">{r.note}</p> : null}
       </div>
@@ -345,12 +355,26 @@ function ReminderRow({
   );
 }
 
-function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDTO | null; onClose: () => void; onSaved: () => void | Promise<void> }) {
+function ReminderDialog({
+  initial,
+  people,
+  onClose,
+  onSaved,
+}: {
+  initial: UserReminderDTO | null;
+  /** Yöneticide atanabilecek kişiler (kendisi hariç); personelde boş */
+  people: { id: number; name: string }[];
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+}) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [date, setDate] = useState(initial?.dueDate ?? todayTR());
   const [withTime, setWithTime] = useState(Boolean(initial?.dueTime));
   const [time, setTime] = useState(initial?.dueTime ?? "09:00");
   const [repeat, setRepeat] = useState<UserRepeat>(initial?.repeat ?? "none");
+  const [sound, setSound] = useState<UserSound>(initial?.sound ?? "tek");
+  // Kime: yalnız EKLEMEDE ve yalnız yöneticide; 0 = kendim (sahibi sonradan devredilmez)
+  const [forUserId, setForUserId] = useState(0);
   const [note, setNote] = useState(initial?.note ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -360,14 +384,26 @@ function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDT
     if (!title.trim()) return setError("Ne hatırlatılacağını yazın");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError("Tarih seçin");
     setBusy(true);
-    const res = await tryAction(() => saveUserReminder({ id: initial?.id ?? null, title, note: note || null, dueDate: date, dueTime: withTime ? time : null, repeat }), {
-      maybeSaved: !initial,
-    });
+    const res = await tryAction(
+      () =>
+        saveUserReminder({
+          id: initial?.id ?? null,
+          title,
+          note: note || null,
+          dueDate: date,
+          dueTime: withTime ? time : null,
+          repeat,
+          sound,
+          forUserId: !initial && forUserId ? forUserId : null,
+        }),
+      { maybeSaved: !initial },
+    );
     setBusy(false);
     // Atılan eylem (E-51): bildirim çıktı, pencere ve yazılanlar yerinde
     if (!res) return;
     if (!res.ok) return setError(res.error);
-    toast.success(initial ? "Hatırlatıcı güncellendi" : "Hatırlatıcı eklendi");
+    const kisi = people.find((p) => p.id === forUserId);
+    toast.success(initial ? "Hatırlatıcı güncellendi" : kisi ? `${kisi.name} için hatırlatıcı kuruldu` : "Hatırlatıcı eklendi");
     await onSaved();
   }
 
@@ -376,7 +412,7 @@ function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDT
       open
       onClose={() => !busy && onClose()}
       title={initial ? "Hatırlatıcıyı düzenle" : "Yeni hatırlatıcı"}
-      description="Yalnızca siz görürsünüz."
+      description={initial || !people.length ? "Yalnızca siz görürsünüz." : "Kendinize ya da bir arkadaşınıza kurun."}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy} className="max-sm:h-11">
@@ -419,6 +455,26 @@ function ReminderDialog({ initial, onClose, onSaved }: { initial: UserReminderDT
           <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Tekrar</legend>
           <Segmented<UserRepeat> label="Tekrar" value={repeat} onChange={setRepeat} options={USER_REPEATS.map((r) => ({ value: r.value, label: r.label }))} />
         </fieldset>
+        <fieldset>
+          <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Bilgisayarda ses</legend>
+          <Segmented<UserSound> label="Ses" value={sound} onChange={setSound} options={USER_SOUNDS.map((x) => ({ value: x.value, label: x.label }))} />
+          <p className="mt-1.5 text-xs text-ink-mute">
+            {USER_SOUNDS.find((x) => x.value === sound)?.hint}
+            {withTime ? "" : " · Saat vermeden ses çalmaz"}
+          </p>
+        </fieldset>
+        {!initial && people.length ? (
+          <Field label="Kime" htmlFor="ht-kime" hint="Başkasına kurarsanız yalnız o görür ve tamamlar; adınız hatırlatıcıda yazar.">
+            <Select id="ht-kime" value={String(forUserId)} onChange={(e) => setForUserId(Number(e.target.value))}>
+              <option value="0">Kendime</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <Field label="Not (isteğe bağlı)" htmlFor="ht-not">
           <Textarea id="ht-not" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={3} />
         </Field>

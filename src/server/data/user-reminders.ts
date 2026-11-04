@@ -1,9 +1,9 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, lte, max } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lte, max, ne } from "drizzle-orm";
 
 import { addDays, todayTR } from "@/lib/reminders";
-import type { UserRepeat } from "@/lib/user-reminders";
+import type { UserRepeat, UserSound } from "@/lib/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 
 export interface UserReminderDTO {
@@ -14,6 +14,10 @@ export interface UserReminderDTO {
   dueTime: string | null;
   anchorDate: string;
   repeat: UserRepeat;
+  /** Bilgisayarda çalan uyarı: tek ses, sürekli ya da sessiz */
+  sound: UserSound;
+  /** Yönetici başkası için kurduysa adı; kendi kurduysa null */
+  createdByName: string | null;
   active: boolean;
   doneAt: string | null;
 }
@@ -26,6 +30,8 @@ const toDTO = (r: typeof s.userReminders.$inferSelect): UserReminderDTO => ({
   dueTime: r.dueTime,
   anchorDate: r.anchorDate,
   repeat: r.repeat as UserRepeat,
+  sound: r.sound as UserSound,
+  createdByName: r.createdByName,
   active: r.active,
   doneAt: r.doneAt?.toISOString() ?? null,
 });
@@ -70,4 +76,16 @@ export async function remindersMarker(userId: number): Promise<string> {
     .from(s.userReminders)
     .where(eq(s.userReminders.userId, userId));
   return `${row?.n ?? 0}.${row?.at ? new Date(row.at).getTime().toString(36) : "0"}`;
+}
+
+/**
+ * Yöneticinin hatırlatıcı kurabileceği kişiler: etkin kullanıcılar, kendisi hariç, ada göre. Yalnız kimlik ve ad
+ * döner (e-posta ve rol bu ekrana girmez).
+ */
+export async function assignablePeople(meId: number): Promise<{ id: number; name: string }[]> {
+  return getDb()
+    .select({ id: s.users.id, name: s.users.name })
+    .from(s.users)
+    .where(and(eq(s.users.active, true), ne(s.users.id, meId)))
+    .orderBy(asc(s.users.name));
 }
