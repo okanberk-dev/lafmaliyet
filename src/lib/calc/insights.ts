@@ -8,7 +8,7 @@ import {
 } from "../constants";
 import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
-import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
+import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, uncountedCogsText, type ListPeriod, type Model, type MonthlyExpensePlan, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num, tl } from "../format";
 import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
@@ -275,13 +275,19 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
   const defs: Omit<FixedLine, "computed" | "value" | "overridden">[] = [
     { key: "personnel:net", label: "Personel maaş (net)", section: "personel", group: "personel", standard: p.net },
     { key: "personnel:employer", label: "Personel SGK, kesintiler + ek ödemeler (maliyet − net)", section: "personel", group: "personel", standard: p.total - p.net },
-    ...model.fixedInMonth(month).map((fe) => ({
-      key: `fixed:${fe.id}`,
-      label: fe.name,
-      section: fe.section,
-      group: panelGroupOf(fe),
-      standard: fixedMonthly(fe, st),
-    })),
+    ...model.fixedInMonth(month).flatMap((fe) => [
+      {
+        key: `fixed:${fe.id}`,
+        label: fe.name,
+        section: fe.section,
+        group: panelGroupOf(fe),
+        standard: fixedMonthly(fe, st),
+      },
+      // Resmi kirası olan kalemin stopajı (Gelir-gider "Kira stopajı" satırı)
+      ...(model.rentStopajMonthly(fe, month) > 0
+        ? [{ key: `stopaj:${fe.id}`, label: `${fe.name} stopajı`, section: fe.section, group: panelGroupOf(fe), standard: model.rentStopajMonthly(fe, month) }]
+        : []),
+    ]),
     // Aylık harcamalar (reklam, influencer, fatura dışı): o ay girilen tutar, kategorinin grubunda; mal kategorileri
     // mal maliyetindedir, burada sayılmaz
     ...model
@@ -746,7 +752,10 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   // Başabaşın sabit gideriyle aynı kalemler: personel, sabit giderler ve her ay girilen harcamalar (toplam breakEven.fixed)
   const topExpenses = [
     { name: "Personel (maaş + SGK)", amount: model.personnelFor(month).total },
-    ...model.fixedInMonth(month).map((f) => ({ name: f.name, amount: fixedMonthly(f, st) })),
+    ...model.fixedInMonth(month).flatMap((f) => [
+      { name: f.name, amount: fixedMonthly(f, st) },
+      ...(model.rentStopajMonthly(f, month) > 0 ? [{ name: `${f.name} stopajı`, amount: model.rentStopajMonthly(f, month) }] : []),
+    ]),
     ...breakEven.expenses.map((x) => ({ name: `${x.cat.name} (Aylık harcamalar)`, amount: x.amount })),
   ]
     .filter((e) => e.amount > 0)
@@ -1101,7 +1110,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "info",
       title: "Geçen ayın stok sayımı yok",
-      detail: "Sayım olmadan devreden mal 0 kabul edilir ve alınan malın tamamı maliyet sayılır.",
+      detail: `Sayım olmadan ${uncountedCogsText(model.pnlMonth(prev).cogsMethod)}.`,
       href: `/panel/sayim?ay=${prev}`,
     });
   }

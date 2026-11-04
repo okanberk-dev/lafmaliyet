@@ -601,14 +601,15 @@ export function planInputFromModel(
         // Stopajlı kalemde stopaj düşülür; yurt dışı hizmette KDV yok (KDV-2 ayrı satırda; paidFixedRates). Besleme
         // yoksa brüt, faturanın KDV'siyle
         if (!feed) return { id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) };
-        const rated = paidFixedRates({ taxWithholding: f.taxWithholding, vatRate: fixedVatRate(f) }, year);
+        // Resmi kirası olan kalemde ev sahibine giden tutar kesintisiz (stopaj resmi brütten, muhtasarla ayrıca)
+        const rated = paidFixedRates({ taxWithholding: f.officialAmount ? null : f.taxWithholding, vatRate: fixedVatRate(f) }, year);
         return {
           id: f.id,
           name: f.name,
           period: f.period,
           amount: f.amount,
           vatRate: rated.vatRate,
-          ...(f.taxWithholding ? { withholding: f.taxWithholding, withholdingRate: rated.withholdingRate } : {}),
+          ...(f.taxWithholding && !f.officialAmount ? { withholding: f.taxWithholding, withholdingRate: rated.withholdingRate } : {}),
         };
       }),
       expenses: monthExpenses(m),
@@ -635,6 +636,7 @@ export const STAMP_INCLUDED = "Tutar tahakkuk fişinin toplamı sayıldı (damga
 function taxTitle(kind: TaxPlanFeed["items"][number]["kind"], period: string): string {
   if (kind === "gecici") return `Geçici vergi (${quarterLabel(period)})`;
   const m = MONTH_NAMES[Number(period.slice(5, 7)) - 1];
+  if (kind === "muhtasar_kira") return `Muhtasar – kira stopajı (${m})`;
   return kind === "muhtasar" ? `Muhtasar (${m})` : `KDV-2: yurt dışı hizmet (${m})`;
 }
 
@@ -1231,6 +1233,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       ...(item.source === "filing" ? { badge: "Muhasebeci" as const } : {}),
     });
   };
+  /** Muhtasarın kira stopajı satırı ("Muhtasar – kira stopajı (Ekim)"): muhtasar satırıyla aynı gün, yalnız o çizilince */
+  const kiraLine = (period: string, at: { date: string; due: string; overdue: boolean }) => {
+    const k = tax?.items.find((i) => i.kind === "muhtasar_kira" && i.period === period);
+    if (k) taxLine(k, at);
+  };
   const taxClass = (kind: "muhtasar" | "gecici", rems: readonly ReminderRow[]) => {
     const items = new Map((tax?.items ?? []).filter((i) => i.kind === kind).map((i) => [i.period, i]));
     const pending = new Map((tax?.pending ?? []).filter((p) => p.kind === kind).map((p) => [p.period, p]));
@@ -1264,12 +1271,16 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         if (!taxOff && item && !owned.has(x.period)) {
           owned.add(x.period);
           taxLine(item, x.o);
+          if (kind === "muhtasar") kiraLine(item.period, x.o);
         } else addUnknown(x.r, x.o.date, owned.has(x.period) ? undefined : pending.get(x.period)?.note);
       }
       return;
     }
     for (const item of items.values()) {
-      if (!taxOff && item.nominal > today && item.nominal <= end && !paid.has(item.period)) taxLine(item, { date: item.nominal, due: item.nominal, overdue: false });
+      if (!taxOff && item.nominal > today && item.nominal <= end && !paid.has(item.period)) {
+        taxLine(item, { date: item.nominal, due: item.nominal, overdue: false });
+        if (kind === "muhtasar") kiraLine(item.period, { date: item.nominal, due: item.nominal, overdue: false });
+      }
     }
     for (const p of pending.values()) {
       if (p.nominal > today && p.nominal <= end && !paid.has(p.period)) {

@@ -609,6 +609,15 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   taxWithholding: text("tax_withholding", {
     enum: ["yok", "kira", "serbest_meslek", "internet_reklam", "internet_reklam_yurtdisi", "yurt_disi_hizmet"],
   }),
+  /**
+   * Kira: resmi (sözleşmedeki) aylık kira; boşsa yok. Gelir-gider "Kira stopajı" = resmi brüt × kira stopajı oranı;
+   * vergide kira gideri yalnız resmi brüt (src/lib/calc/engine.ts officialRentGross; docs/VERGI.md)
+   */
+  officialAmount: doublePrecision("official_amount"),
+  /** Resmi kira brüt mü net mi (net: brüt = net ÷ 0,8) */
+  officialBasis: text("official_basis", { enum: ["brut", "net"] }),
+  /** Açık güne göre oranla; false: biten ayda tam ay (kira varsayılanı) */
+  prorate: boolean("prorate").notNull().default(true),
 });
 
 /** Sabit gider tutar değişiklikleri: fromMonth ayından itibaren geçerli dönem ve tutar */

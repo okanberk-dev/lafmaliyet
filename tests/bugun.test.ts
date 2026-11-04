@@ -341,7 +341,7 @@ test("6. ay sonu sayımı: son gün başlamadıysa, yarıdaysa, bittiyse; ayın 
   assert.equal(prev.status, "todo");
   assert.equal(prev.href, "/panel/sayim?ay=2026-10");
   assert.match(prev.detail, /^Ekim 2026 ay sonu sayımı girilmedi/);
-  assert.match(byKey(nov("2026-11-03T10:00", false, "admin"))["sayim-gecen"].detail, /^Ekim 2026 sayımı yok: devreden stok 0 sayılır/);
+  assert.match(byKey(nov("2026-11-03T10:00", false, "admin"))["sayim-gecen"].detail, /^Ekim 2026 sayımı yok: mal maliyeti sayım girilene kadar tahmini\./);
   assert.ok(!keys(nov("2026-11-03T10:00", true)).includes("sayim-gecen"), "geçen ay sayıldı");
   assert.ok(!keys(nov("2026-11-11T10:00", false)).includes("sayim-gecen"), "11. gün");
   // 1 Kasım 00:30: takvim günü ayın son günü değil, geçen ay (Ekim) sayılmadıysa satırı var

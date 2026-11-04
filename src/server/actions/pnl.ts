@@ -12,7 +12,7 @@ import { getDb, schema as s } from "@/server/db";
 import { logActivity } from "./log";
 import { attempt, zMonth } from "./util";
 
-const zKey = z.string().regex(/^(manual|fixed|personnel|commission|stock):[\wçğıöşüÇĞİÖŞÜ:.\- ]{1,80}$/, "Geçersiz satır");
+const zKey = z.string().regex(/^(manual|fixed|stopaj|personnel|commission|stock):[\wçğıöşüÇĞİÖŞÜ:.\- ]{1,80}$/, "Geçersiz satır");
 const zNote = z
   .string()
   .trim()

@@ -152,6 +152,7 @@ function EditableCell({
   computedLabel = "Hesaplanan",
   info,
   warn,
+  tag,
   source,
 }: {
   value: number | null;
@@ -180,6 +181,8 @@ function EditableCell({
   info?: string;
   /** Bu ayda dikkat edilecek durum: hücrede uyarı işareti, ipucunun başında */
   warn?: string;
+  /** Değerin altında küçük yazı: hesabın yöntemi (ör. devreden malda "tahmini") */
+  tag?: string;
   /**
    * Hücrenin solundaki kaynak bağlantısı (SourceLink). Yalnız gösterimde: düzenlerken kutu hücrenin bütün genişliğini
    * alır (dokunmatikte rakamın başı kesilmesin)
@@ -392,9 +395,15 @@ function EditableCell({
           ) : null}
           {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
         </button>
+        {tag ? <CellTag tag={tag} /> : null}
       </div>
     </div>
   );
+}
+
+/** Hücrenin altındaki yöntem yazısı (mal maliyetinde "sayım", "sayım aralığına dağıtıldı (tahmini)", "reçeteye göre tahmini") */
+function CellTag({ tag }: { tag: string }) {
+  return <span className="block px-2 pt-0.5 text-right text-[10px] leading-3 font-normal whitespace-normal text-ink-mute">{tag}</span>;
 }
 
 /**
@@ -1219,6 +1228,7 @@ function SectionRows({
                       outOfRange={c.outOfRange}
                       info={c.info}
                       warn={c.warn}
+                      tag={c.tag}
                       source={monthLink ? <SourceLink link={monthLink} label={`${def.label} · ${MONTH_NAMES[i]}`} /> : null}
                       onSave={async (v) => {
                         await onSave(m, def.key, v, !!c.note, kasa);
@@ -1239,6 +1249,7 @@ function SectionRows({
                       )}
                     >
                       {fmt(c.value, def.format)}
+                      {c.tag ? <CellTag tag={c.tag} /> : null}
                     </Link>
                   ) : (
                     <span
@@ -1248,8 +1259,10 @@ function SectionRows({
                         tone(c.value),
                         c.value === null && "text-ink-quiet",
                       )}
+                      title={c.info}
                     >
                       {fmt(c.value, def.format)}
+                      {c.tag ? <CellTag tag={c.tag} /> : null}
                     </span>
                   )}
                 </td>

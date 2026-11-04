@@ -484,7 +484,7 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
   return {
     title: `${monthLabel(month)} kâr / zarar (faturaya göre)`,
     description:
-      "Gelir-gider tablosundaki sonuç, KDV hariç: ciro − satılan mal maliyeti − giderler, bölüm bölüm. Stok sayımı yoksa ay içinde alınan malın tamamı maliyet sayılır.",
+      "Gelir-gider tablosundaki sonuç, KDV hariç: ciro − satılan mal maliyeti − giderler, bölüm bölüm. Stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre; hiç sayım yokken alınan malın tamamı).",
     groups: has
       ? [
           {

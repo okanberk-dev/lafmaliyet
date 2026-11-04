@@ -1710,6 +1710,22 @@ test("vergi (I-5): SGK yasal oranlarla (Eylül 25.956,18); not ve satırın yasa
   assert.ok(manual.months["2026-09"].payroll.sgk < base.months["2026-09"].payroll.sgk);
 });
 
+test("kira resmi kirayla (sahibin kararı, 4 Kasım 2026): ev sahibine 160.000 kesintisiz; stopaj resmi brütten 20.000, 'Muhtasar – kira stopajı' satırı 26'sında", () => {
+  const official = createModel({
+    ...ds,
+    fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Kira" ? { ...f, taxWithholding: "kira" as const, vatRate: 0, officialAmount: 100_000, officialBasis: "brut" as const, prorate: false } : f)),
+  });
+  const base = planInputFromModel(official, TODAY);
+  const kiraFixed = base.months["2026-11"].fixed.find((f) => f.name === "Kira")!;
+  assert.equal(kiraFixed.withholding, undefined, "stopaj ödemeden kesilmez");
+  const p = buildCashPlan(input({ ...base, tax: taxFeed(official) }));
+  assert.equal(p.estimates.find((e) => e.title === "Kira")!.monthly, 160_000);
+  const line = p.weeks.flatMap((w) => w.lines).find((l) => l.key === "vergi:muhtasar_kira@2026-11-26")!;
+  assert.equal(line.title, "Muhtasar – kira stopajı (Ekim)");
+  close(line.amount, 20_000, "resmi brüt 100.000 × %20");
+  assert.match(line.detail!, /^Kira: resmi brüt 100\.000 × %20\./);
+});
+
 test("vergi (I-6): stopajlı sabit gider net ödenir (kira 160.000 → 128.000; SMM 10.000 + KDV − stopaj); stopaj muhtasarda, toplam brütü aşmaz", () => {
   const withheld = createModel({
     ...ds,
@@ -1732,11 +1748,16 @@ test("vergi (I-6): stopajlı sabit gider net ödenir (kira 160.000 → 128.000; 
   assert.equal(est("Kira").monthly, 128_000);
   assert.equal(est("Kira").note, "ay içine yayılır · 160.000\u00a0₺ brüt, stopaj %20 muhtasarda");
   close(est("Muhasebeci").monthly, 10_000, "SMM: 10.000 + %20 KDV − %20 stopaj");
-  // Kasım'ın bütün günleri ufukta: yayılan kira 128.000; stopaj (32.000) Ekim muhtasarında, 26 Kasım
+  // Kasım'ın bütün günleri ufukta: yayılan kira 128.000; stopaj (32.000) Ekim muhtasarıyla 26 Kasım'da, ayrı satır
+  // ("Muhtasar – kira stopajı"; sahibin kararı, 4 Kasım 2026): genel muhtasar satırında yok, iki kez sayılmaz
   const nov = (key: string) => p.weeks.flatMap((w) => w.lines).filter((l) => l.key === key);
   const muhtasarNov = nov("vergi:muhtasar@2026-11-26")[0];
-  assert.match(muhtasarNov.detail!, /Kira stopajı 32\.000 \+ Muhasebeci stopajı 2\.000/);
-  close(muhtasarNov.amount, 974.38 + 32_000 + 2_000, "muhtasar: ücret vergileri + damga + stopajlar");
+  assert.match(muhtasarNov.detail!, /Ücret GV [\d.,]+ \+ DV [\d.,]+ \+ Muhasebeci stopajı 2\.000/);
+  assert.doesNotMatch(muhtasarNov.detail!, /Kira stopajı 32/);
+  close(muhtasarNov.amount, 974.38 + 2_000, "muhtasar: ücret vergileri + damga + muhasebeci stopajı");
+  const kiraStopajNov = nov("vergi:muhtasar_kira@2026-11-26")[0];
+  assert.equal(kiraStopajNov.title, "Muhtasar – kira stopajı (Ekim)");
+  close(kiraStopajNov.amount, 32_000, "kira stopajı ayrı satır");
   const kiraNov = p.weeks.flatMap((w) => w.lines.filter((l) => l.key === "fixed")).map((l) => l.detail!);
   assert.ok(kiraNov.every((d) => d.includes("Kira 160.000\u00a0₺ brüt · stopaj %20 muhtasarda · ödenen 128.000\u00a0₺")));
   assert.match(planNotes(p, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 }).find((n) => n.key === "fixed")!.text, /Stopajlı kalemde \(Vergi'de seçilen; şahsa kira, serbest meslek\) ödemeden kesilen stopaj düşüldü, muhtasar satırındadır\./);

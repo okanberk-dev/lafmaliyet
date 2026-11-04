@@ -420,7 +420,7 @@ const countPrevious: Row = (f, c) => {
       ...base,
       status: "todo",
       badge: "Girilmedi",
-      detail: f.role === "admin" ? `${month} sayımı yok: devreden stok 0 sayılır, alınan malın tamamı o ayın maliyeti olur.` : `${month} ay sonu sayımı girilmedi; buradan girebilirsiniz.`,
+      detail: f.role === "admin" ? `${month} sayımı yok: mal maliyeti sayım girilene kadar tahmini.` : `${month} ay sonu sayımı girilmedi; buradan girebilirsiniz.`,
       action: "Sayım gir",
     };
   }

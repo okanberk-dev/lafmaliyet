@@ -101,7 +101,7 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
   (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca
   sonraki ayın açılış stoğu, ay başlamadan onun gideri gibi yıla girmez (denetim E-16). Cirosu girilmemiş ayın gideri
-  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini, kapanış 0) kartların altında not olarak yazılır. Tablonun yıl
+  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini; yöntemiyle, §5) kartların altında not olarak yazılır. Tablonun yıl
   sütunu ve Excel'in yıl sütunu aynı ayları toplar (inceleme B02-D4): cirosu girilmemiş ay tabloda kendi sütununda
   görünür ama yıla girmez; öyle bir ay varsa yıl sütununun başlığı "cirosu girilmiş N ay" der, Excel'de başlık notu
   toplanmayan ayları sayar.
@@ -161,3 +161,29 @@ uygulanmalıdır; değiştirmeden önce muhasebeciye danışın.
 - Ayar: `Settings.stokFifoBaslangic` (`DEFAULT_SETTINGS` "2026-10"; veritabanında kapalı = "kapali"),
   `saveStockValuationStart` (src/server/actions/settings.ts)
 - Testler: `tests/stok-fifo.test.ts`
+
+## 5. Sayımı olmayan ayın mal maliyeti (sahibin kararı, 4 Kasım 2026)
+
+Kâr-zararın (Gelir-gider) mal maliyeti sayımsız ayda artık "kapanış 0" değildir (`src/lib/calc/engine.ts` `stockFlow`,
+`cogsConsumption`; tests/mal-maliyeti.test.ts):
+
+- **Sayım aralığı**: iki bilinen kapanış (sayım ya da Gelir-gider'de elle yazılan devreden mal / sonraki ayın elle
+  yazılan açılışı) arasındaki aylar, ya da verisi olan ilk aydan ilk sayıma kadarki aylar. Aralığın toplam mal maliyeti
+  = açılış (yoksa 0) + aralıktaki alınan − aralığın sonundaki kapanış; aylara o ayın reçeteye göre tüketimi oranında
+  dağıtılır. Ara ayların devri tahminidir: açılış + alınan − dağıtılan maliyet. Tüketim yoksa alınan mal oranında, o da
+  yoksa hepsi aralığın son ayına. Önceki ayı da sayılmış ay eski hesapla (açılış + alınan − sayım) aynen çıkar.
+- **Son sayımdan sonraki ay** (şu an süren ay): reçeteye göre tahmini = fire hariç tüketim × (1 + genel fire, Ayarlar
+  %5) + ödenmezlerin tahmini malzeme maliyeti. Satışlar'daki "Malzeme + ambalaj" ürün fire payını içerir: fire bir kez
+  sayılsın diye ürün fire payı çıkarılır (eşleşen reçeteli satırların malzeme toplamı ÷ maliyeti), genel fire eklenir.
+  Satış listesi yoksa KDV hariç ciro × son satış ayının maliyet oranı. Tahmini kapanış = açılış + alınan − tahmini
+  maliyet. Ay sonu sayımı girilince aralık dağıtımına döner.
+- **Reçeteye göre tüketim**: malzeme + ambalaj (ModPOS satış listesi + laffogato.net online) + ödenmezlerin tahmini
+  malzeme maliyeti (ödenmez ÷ (1 + KDV) × ortalama maliyet oranı; Tutarlılık'taki gibi). Ödenmezler ciro dışıdır:
+  ciroya yazılmaz, yalnız malzeme maliyeti olarak tüketime girer.
+- **Hiç bilinen kapanış yokken** (Excel'den aktarılan veri) ve bu aydan sonraki aylarda eski kural: kapanış 0.
+- **Gösterim**: Gelir-gider'de mal maliyeti satırının altında ayın yöntemi ("sayım", "sayım aralığına dağıtıldı
+  (tahmini)", "reçeteye göre tahmini"), hücrenin ipucunda hesabı; devreden malın altında "sayım" ya da "tahmini". Uyarı
+  metinleri yönteme göre (`uncountedCogsText`).
+- **Vergi** (/panel/vergi) yalnız sayımı kullanır (`countOpening`, `countClosing`; sayım yoksa 0); Gelir-gider'deki
+  tahmini devirle farkı vergi köprüsünde "Mal maliyetinin tahmini devri" satırıdır.
+

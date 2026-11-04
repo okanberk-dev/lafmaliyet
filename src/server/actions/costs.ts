@@ -351,6 +351,11 @@ const fixedSchema = z.object({
   effectiveFrom: zEffective.optional(),
   /** Kalemin başladığı ay (null = baştan beri). Yeni kalemde verilmezse geçerlilik ayı (varsayılan bu ay). */
   startMonth: zMonth.nullable().optional(),
+  /** Kira: resmi (sözleşmedeki) aylık kira ve brüt / net (yalnız kira bölümünde; verilmezse değişmez) */
+  officialAmount: z.number().finite().positive().max(1e9).nullable().optional(),
+  officialBasis: z.enum(["brut", "net"]).nullable().optional(),
+  /** Açık güne göre oranla (verilmezse değişmez; yeni kalemde kira tam ay, ötekiler oranlı) */
+  prorate: z.boolean().optional(),
 });
 
 /**
@@ -361,7 +366,15 @@ const fixedSchema = z.object({
 export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, active, effectiveFrom, startMonth: startInput, ...data } = fixedSchema.parse(input);
+    const { id, active, effectiveFrom, startMonth: startInput, officialAmount, officialBasis, prorate, ...data } = fixedSchema.parse(input);
+    // Resmi kira yalnız kira bölümünde (başka bölüme taşınınca silinir)
+    const official =
+      data.section !== "kira"
+        ? { officialAmount: null, officialBasis: null }
+        : officialAmount !== undefined
+          ? { officialAmount, officialBasis: officialAmount ? (officialBasis ?? "brut") : null }
+          : {};
+    const prorateSet = prorate !== undefined ? { prorate } : {};
     const cur = currentMonthTR();
     const eff: Effective = effectiveFrom ?? cur;
     const db = getDb();
@@ -384,13 +397,28 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
         const endMonth = active === false ? shiftMonth(cur, -1) : null;
         const [row] = await tx
           .insert(s.fixedExpenses)
-          .values({ ...data, startMonth, endMonth, active: activeFromRange(endMonth, cur), sortOrder: Math.max(0, ...all.map((r) => r.o)) + 1 })
+          .values({
+            ...data,
+            ...official,
+            prorate: prorate ?? data.section !== "kira",
+            startMonth,
+            endMonth,
+            active: activeFromRange(endMonth, cur),
+            sortOrder: Math.max(0, ...all.map((r) => r.o)) + 1,
+          })
           .returning({ id: s.fixedExpenses.id });
         return { id: row.id, mode: "base", fromMonth: startMonth, previous: null, reminders: noReminders };
       }
       const [before] = await tx.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, id));
       if (!before) throw new UserError("Gider bulunamadı (sayfayı yenileyin)");
-      const set: Partial<typeof s.fixedExpenses.$inferInsert> = { name: data.name, section: data.section, note: data.note, ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}) };
+      const set: Partial<typeof s.fixedExpenses.$inferInsert> = {
+        name: data.name,
+        section: data.section,
+        note: data.note,
+        ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}),
+        ...official,
+        ...prorateSet,
+      };
       const startMonth = startInput !== undefined ? startInput : before.startMonth;
       let endMonth = before.endMonth;
       if (active !== undefined) {

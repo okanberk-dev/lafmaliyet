@@ -98,6 +98,12 @@ export interface TaxPnlMonthBase {
   closing: number;
   /** Gelir-gider'deki sabit gider hücreleri (aralık dışı elle girilenler ve silinmiş kalemler dahil) */
   fixedCells: readonly { id: number; value: number; overridden: boolean; outOfRange: boolean }[];
+  /**
+   * Kira stopajı hücreleri ("stopaj:<kalem>") ve resmi kirası olan kalemlerin bu aya düşen resmi brüt kirası (Gelir-gider;
+   * engine.ts officialRent). Vergide kira gideri yalnız resmi brüt; gerçek kira + stopaj − resmi brüt belgesiz
+   */
+  stopajCells?: readonly { id: number; value: number }[];
+  officialRent?: readonly { id: number; gross: number }[];
   /** Elle satırların değeri ("manual:su" …) */
   manualCells: Readonly<Record<string, number>>;
   /** Maaş ve personel SGK satırları (elle girildi mi) ve personel bölümünün toplamı */
@@ -109,6 +115,11 @@ export interface TaxPnlMonthBase {
   /** Gelir-gider'in toplam gideri ve aylık harcama kategorilerine bağlı faturalar (köprü) */
   pnlExpenses: number;
   linkedInvoices: number;
+  /**
+   * Gelir-gider'in mal maliyetinde sayımsız ayın tahmini devri (sayım aralığına dağıtım ya da reçeteye göre tahmin):
+   * Gelir-gider'in maliyeti − yalnız sayımla maliyet. Vergi yalnız sayımı kullanır; köprüde ayrı satır
+   */
+  stockEstimate?: number;
 }
 
 export interface TaxPnlInput {
@@ -164,7 +175,7 @@ export interface ExcludedItem {
 }
 
 export interface BridgeRow {
-  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "stock" | "end";
+  key: "start" | "prePeriod" | "excluded" | "receiptVat" | "payroll" | "pos" | "assets" | "invoices" | "adjustments" | "stock" | "stockEstimate" | "end";
   label: string;
   amount: number;
 }
@@ -276,23 +287,32 @@ export function taxPnlInputFromModel(
     const pm = model.pnlMonth(m);
     const value = (key: string) => (pm.cells.get(key)?.value as number | null | undefined) ?? 0;
     const fixedCells: TaxPnlMonthBase["fixedCells"][number][] = [];
+    const stopajCells: { id: number; value: number }[] = [];
     for (const [key, c] of pm.cells) {
+      if (key.startsWith("stopaj:")) {
+        if (c.value) stopajCells.push({ id: Number(key.slice(7)), value: c.value });
+        continue;
+      }
       if (!key.startsWith("fixed:")) continue;
       fixedCells.push({ id: Number(key.slice(6)), value: c.value ?? 0, overridden: c.overridden, outOfRange: Boolean(c.outOfRange) });
     }
     const manualCells: Record<string, number> = {};
     for (const r of MANUAL_PNL_ROWS) manualCells[r.key] = value(r.key);
     const pending = model.siteSales(m)?.karaoke.refundPendingMinor ?? 0;
-    if (pm.cells.get("stock:closing")?.overridden) counts.set(m, pm.closing);
+    if (pm.cells.get("stock:closing")?.overridden) counts.set(m, pm.countClosing);
     months.set(m, {
       month: m,
       revenueNet: pm.revenueNet,
       openDays: pm.openDays,
       site: pm.site ? pm.site.total : null,
       siteRefundPending: r2(pending / 100 / (1 + st.kdvHizmet)),
-      opening: pm.opening,
-      closing: pm.closing,
+      // Vergi yalnız sayımla (sayımsız ayın tahmini devri Gelir-gider'de; köprüde "stockEstimate")
+      opening: pm.countOpening,
+      closing: pm.countClosing,
+      stockEstimate: r2(pm.opening - pm.closing - (pm.countOpening - pm.countClosing)),
       fixedCells,
+      stopajCells,
+      officialRent: pm.officialRent.map((o) => ({ id: o.id, gross: o.gross })),
       manualCells,
       personnel: {
         net: value("personnel:net"),
@@ -557,8 +577,43 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   // ---- Sabit giderler (Gelir-gider hücresi, elle düzeltme dahil)
   let fixedBelgeli = 0;
   let fixedNotCounted = 0;
+  // Resmi kirası olan kalem (sahibin kararı, 4 Kasım 2026): vergide gider yalnız resmi brüt kira; gerçek kira + stopaj −
+  // resmi brüt "belgesiz, vergide sayılmaz". Stopaj ayrıca gider yazılmaz (brüt kiranın içinde)
+  const official = new Map((base.officialRent ?? []).map((o) => [o.id, o.gross]));
+  const stopajOf = new Map((base.stopajCells ?? []).map((x) => [x.id, x.value]));
+  for (const [id, gross] of official) {
+    const fe = ctx.fixedById.get(id);
+    const rent = base.fixedCells.find((c) => c.id === id)?.value ?? 0;
+    const paid = r2(rent + (stopajOf.get(id) ?? 0));
+    if (!paid && !gross) continue;
+    const name = fe?.name ?? "Kira";
+    const g = r2(gross);
+    fixedBelgeli = r2(fixedBelgeli + g);
+    belgeliItems.push({ label: `${name} (resmi brüt kira)`, amount: g, note: "kira sözleşmesi ve muhtasar; stopaj bunun içinde" });
+    const rest = r2(paid - g);
+    if (rest !== 0) {
+      fixedNotCounted = r2(fixedNotCounted + rest);
+      excluded.push({
+        key: `fixed:${id}`,
+        source: "fixed",
+        id,
+        name: `${name}: resmi kiranın dışındaki kısım`,
+        section: fe?.section ?? "kira",
+        amount: rest,
+        raw: rest,
+        reason: "yok",
+        note: `Belgesiz, vergide sayılmaz: ödenen kira ${tl(rent)} + stopaj ${tl(stopajOf.get(id) ?? 0)} − resmi brüt ${tl(g)}`,
+      });
+    }
+  }
+  // Resmi kirası olmayan stopaj hücresi (kalemi silinmiş ya da resmi kirası kaldırılmış, elle yazılmış): sayılmaz
+  for (const [id, value] of stopajOf) {
+    if (official.has(id) || !value) continue;
+    fixedNotCounted = r2(fixedNotCounted + value);
+    excluded.push({ key: `stopaj:${id}`, source: "fixed", id, name: "Kira stopajı", section: "kira", amount: value, raw: value, reason: "yok", note: "Resmi kirası olmayan stopaj: vergide ayrıca sayılmaz" });
+  }
   for (const c of base.fixedCells) {
-    if (!c.value) continue;
+    if (!c.value || official.has(c.id)) continue;
     const fe = ctx.fixedById.get(c.id);
     const doc: TaxDoc | null = fe?.taxDoc ?? null;
     if (doc === "belgeli") {
@@ -688,6 +743,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
     { key: "pos", label: "POS komisyonu farkı", amount: r2(pos - base.pos.amount) },
     { key: "invoices", label: "Gelir-gider'e girmeyen faturalar", amount: r2(invoicesTotal + notAsset - commissionInv - base.linkedInvoices) },
     { key: "adjustments", label: "Düzeltmeler", amount: r2(adjustments + separate) },
+    { key: "stockEstimate", label: "Mal maliyetinin tahmini devri (vergi yalnız sayımı kullanır)", amount: -r2(base.stockEstimate ?? 0) },
   ];
   // Kuruş yuvarlaması: satırlar ayrı ayrı yuvarlandığı için toplamları sonla 1–2 kuruş ayrışabilir; fark en büyük satıra
   // eklenir, kartta satırlar iki ucu birebir tutar (ayrışma yuvarlamadan büyükse olduğu gibi kalır, testler yakalar)

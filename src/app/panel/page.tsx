@@ -305,7 +305,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const netTip = t
     ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (gün oranı + bu aya özel giderler), reçeteye göre.${
         t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
-      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır.${changeNote(g.net)}`
+      } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı olmayan ayda mal maliyeti tahminidir (sayım aralığına dağıtılır ya da reçeteye göre).${changeNote(g.net)}`
     : "";
 
   const tabs: DashboardTab[] = [

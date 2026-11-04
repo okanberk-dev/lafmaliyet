@@ -320,6 +320,16 @@ export interface FixedExpense extends MonthRange {
   /** Vergi belgesi ve stopaj profili (yalnız vergi hesabı ve nakit planı; boş = seçilmedi; docs/VERGI.md) */
   taxDoc?: TaxDoc | null;
   taxWithholding?: Withholding | null;
+  /**
+   * Kira: resmi (sözleşmedeki) aylık kira; boşsa yok. Gelir-gider'de "Kira stopajı" satırı = resmi brüt × kira stopajı
+   * oranı; vergide kira gideri yalnız resmi brüt (gerçek kira + stopaj − resmi brüt belgesiz). Tutar geçmişi yok: bütün
+   * aylar için geçerli
+   */
+  officialAmount?: number | null;
+  /** Resmi kira brüt mü net mi; net ise brüt = net ÷ (1 − stopaj oranı) */
+  officialBasis?: "brut" | "net" | null;
+  /** Açık güne göre oranla (varsayılan); false: biten ayda tam ay (süren ayda bugüne kadarki pay) */
+  prorate?: boolean;
   note: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;

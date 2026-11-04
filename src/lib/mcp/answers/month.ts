@@ -4,7 +4,7 @@
  * ikinci bir hesap yoktur: yalnız yuvarlanır ve hesap satırlarına yazılır.
  */
 
-import { daysInMonth, yearMonths, type Model } from "../../calc/engine";
+import { daysInMonth, uncountedCogsSummary, uncountedCogsText, yearMonths, type Model } from "../../calc/engine";
 import { alerts, dashboard, missingRevenueText, yearTotals, yearTrend } from "../../calc/insights";
 import { kasaMonthLine, missingSentence } from "../../cash-month";
 import { monthKasa, periodKasa } from "../../lafpos/kasa";
@@ -201,7 +201,7 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   kaynak.push(pm.site ? `laffogato.net online satışı ${monthLabel(month)} için çekildi` : "laffogato.net online satışı bu ay için yok");
   if (d.refMonth && d.refMonth !== month) kaynak.push(`Brüt kâr oranı ${monthLabel(d.refMonth)} satış listesinden`);
 
-  if (!model.stockSheet(month).hasData && pm.revenue !== null) uyarilar.push(`${label} sayımı girilmedi: kapanış stoğu 0 sayıldı, alınan malın tamamı maliyet.`);
+  if (!model.stockSheet(month).hasData && pm.revenue !== null) uyarilar.push(`${label} sayımı girilmedi: ${uncountedCogsText(pm.cogsMethod)}.`);
   for (const a of alerts(model, month).slice(0, 5)) uyarilar.push(cleanName(a.title, 120));
 
   return {
@@ -263,7 +263,7 @@ export function yearSummary(model: Model, year: number, ctx: { base: string }): 
     kaynak: [
       "Gelir-gider tablosu: ciro Satışlar'daki ay bilgisinden ya da kasa raporlarından, giderler faturalardan ve sabit giderlerden",
       ...(missing.length ? [`Gideri olup cirosu girilmemiş aylar kâra girmedi: ${missing.join("; ")}`] : []),
-      ...(yt.uncounted.length ? [`Ay sonu sayımı olmayan aylarda mal maliyeti tahmini (kapanış stoğu 0): ${yt.uncounted.map((m) => monthLabel(m)).join(", ")}`] : []),
+      ...(yt.uncounted.length ? [`Ay sonu sayımı olmayan aylar: ${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}`] : []),
     ],
     panelAdresi: panelUrl(ctx.base, `/panel/gelir-gider?yil=${year}`),
   };
