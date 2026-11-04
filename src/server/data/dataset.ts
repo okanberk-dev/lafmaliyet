@@ -13,6 +13,7 @@ import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
@@ -65,8 +66,8 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.categories).orderBy(asc(s.categories.sortOrder)),
     db.select().from(s.products).orderBy(asc(s.products.sortOrder), asc(s.products.id)),
     db.select().from(s.recipeItems).orderBy(asc(s.recipeItems.sortOrder), asc(s.recipeItems.id)),
-    db.select().from(s.months).orderBy(asc(s.months.month)),
-    db.select().from(s.salesLines).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
+    db.select().from(s.months).where(await currentBranchWhere(s.months.branchId)).orderBy(asc(s.months.month)),
+    db.select().from(s.salesLines).where(await currentBranchWhere(s.salesLines.branchId)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     db.select().from(s.invoices).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     // Tedarikçi kartlarının adları ve vergi no: komisyon faturasının kanalı Komisyon & hakediş'teki gibi bulunur
     db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),

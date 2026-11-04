@@ -27,23 +27,44 @@ export const metadata: Metadata = { title: "Özel günler" };
  * Yönetici bütün listeyi düzenler; personel yalnız kendi girdiklerini, onaysız ve sınırlı (dalga 10 §2.9).
  * Personele giden prop'lar sabittir (tutar ve gerçekleşen etki yok; kaynak testi).
  */
-export default async function SpecialDaysPage() {
+/**
+ * Başlık rolü bilmek zorunda (bağlam satırı yöneticide "Kafe", personelde yok) ama rol çereze bakar: sayfanın
+ * gövdesinde okunursa ön üretim düşer ("uncached or runtime data during prerendering"). Kasa'daki kurala uyulur:
+ * rol okunana kadar en dar olan, yani personelin başlığı çizilir.
+ */
+function SpecialDaysHeader({ role }: { role: "admin" | "staff" }) {
+  return (
+    <PageHeader
+      path="/panel/ozel-gunler"
+      role={role}
+      title="Özel günler"
+      description={
+        role === "admin"
+          ? "Maç, AVM etkinliği, kampanya ve kafe kapalı günleri: takvim notu olarak işaretlenir."
+          : "Maç, AVM etkinliği ve kampanya günlerini buradan bildirirsiniz."
+      }
+    />
+  );
+}
+
+async function SpecialDaysHeaderWithRole() {
   const user = await requireUser();
-  const admin = user.role === "admin";
+  return <SpecialDaysHeader role={user.role === "admin" ? "admin" : "staff"} />;
+}
+
+async function SpecialDaysContent() {
+  const user = await requireUser();
+  return user.role === "admin" ? <AdminContent /> : <StaffContent />;
+}
+
+export default function SpecialDaysPage() {
   return (
     <>
-      <PageHeader
-        path="/panel/ozel-gunler"
-        role={user.role}
-        title="Özel günler"
-        description={
-          admin
-            ? "Maç, AVM etkinliği, kampanya ve kafe kapalı günleri: takvim notu olarak işaretlenir."
-            : "Maç, AVM etkinliği ve kampanya günlerini buradan bildirirsiniz."
-        }
-      />
+      <Suspense fallback={<SpecialDaysHeader role="staff" />}>
+        <SpecialDaysHeaderWithRole />
+      </Suspense>
       <Suspense fallback={<PageSkeleton rows={3} />}>
-        {admin ? <AdminContent /> : <StaffContent />}
+        <SpecialDaysContent />
       </Suspense>
     </>
   );

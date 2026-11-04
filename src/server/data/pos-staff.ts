@@ -24,6 +24,8 @@ import { loadTillScope, tillProductFilter, tillSince } from "./till-scope";
  * ModPOS'ta yoktur; kasadaki fiyat listesinde "Kasada: …" diye gösterilmez (denetim B08 incelemesi). Hiçbir tabloda
  * geçmeyen ad (ör. ayı temizlenmiş listeden) bugünkü gibi kalır. Anahtar posMatchKey (büyük / küçük harf, boşluk farkı yok).
  */
+// ŞUBEYE GÖRE SÜZÜLMEZ: "bu ad ModPOS döneminden mi" sorusu işletme geneli; şubeye bakmak, şubesi yeni açılmış
+// bir kafede bütün adları ModPOS dönemine sayardı.
 export async function modposNameFilter(db: DB): Promise<(posName: string) => boolean> {
   const [modpos, lafpos] = await Promise.all([
     db.select({ posName: s.salesLines.posName }).from(s.salesLines).groupBy(s.salesLines.posName),

@@ -16,9 +16,11 @@ import { homeFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import { loadPanelNotifications, type PanelNotification } from "@/server/actions/notifications";
+import type { BranchRow, BranchScope } from "@/lib/branches";
 import type { SearchEntry } from "@/server/data/search";
 
 import { BottomNav, BottomNavSkeleton } from "./bottom-nav";
+import { BranchPicker } from "./branch-picker";
 import { AlertCenter } from "./live/alert-center";
 import { forgetDeviceOnSignOut } from "./live/push-client";
 import { PanelSearch, SearchTrigger } from "./command-palette";
@@ -41,7 +43,12 @@ const ALERTS_STALE_MS = 60_000;
  * (bottom-nav.tsx) ve "Tümü"yle açılan yaylı çekmece. Arama paleti tek örnektir; kenar çubuğu, çekmece ve üst çubuk
  * aynı paleti açar.
  */
-export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[] }) {
+interface BranchPick {
+  scope: BranchScope;
+  branches: readonly BranchRow[];
+}
+
+export function Sidebar({ user, index = [], branch }: { user: User; index?: SearchEntry[]; branch?: BranchPick }) {
   const pathname = usePathname();
   const router = useRouter();
   const reduce = useReducedMotion();
@@ -183,6 +190,8 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
           <SearchTrigger onClick={openSearch} />
         </div>
       ) : null}
+
+      {branch ? <BranchPicker scope={branch.scope} branches={branch.branches} /> : null}
 
       <SidebarNav items={tree} pathname={pathname} />
 

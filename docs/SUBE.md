@@ -58,8 +58,32 @@ kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 "Tümü" seçiliyken işletme geneli giderler toplama girer ama şube kırılımında ayrı sütunda durur: bir şubenin
 kârı ortak giderle şişirilmez.
 
+## Seçici
+
+Kenar çubuğunun başlığının altında **Şube** seçicisi durur (masaüstünde sürekli görünür, telefonda çekmecede):
+**Tümü · Tuzla · Marina · laffogato.net**. Tek şube açıkken seçici hiç çizilmez.
+
+Seçimin **tek kaynağı `laf_sube` çerezidir** (`chooseBranchScope`, httpOnly, bir yıl). Next'te `layout.tsx`
+adresin sorgusunu almaz, yani seçici `?sube=`'yi kendi başına göremez; çerez olmasaydı kenar çubuğu ile sayfanın
+içeriği ayrı şube gösterebilirdi. Bu yüzden paylaşılan bağlantıdaki `?sube=` açılışta çereze **benimsetilir** ve
+adresten düşürülür (öteki sorgu alanları korunur): bağlantı yine çalışır, panelin tamamı tek seçimde kalır.
+
+Seçim **yalnız görünümü süzer, yetki vermez**: her uç ayrıca `requireAdmin` / `requireUser` ile korunur.
+Tanınmayan ya da pasife alınmış kimlik "Tümü"ye düşer (`parseBranchScope`), yani çerezde çöp duramaz.
+
+Sunucuda seçim, oturum gibi istek kapsamlı okunur (`src/server/branch-scope.ts` › `currentBranchScope`, React
+`cache` ile istek başına bir kez): okuma işlevlerinin imzasına şube parametresi eklenmez. **İstek dışında** (göç
+betiği, arka plan işi, test) `cookies()` fırlar ve "Tümü"ye düşülür — betik bütün şubeleri görür.
+
+### Neyi süzer, neyi süzmez
+
+Süzülen: kasa raporu, gün özeti, ModPOS föyü, ay satırı, satış satırı — yani **görünümler**.
+
+Süzülmeyen: **bütünlük denetimleri**. "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
+şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynı şekilde "bu POS adı
+ModPOS döneminden mi" sorusu da işletme genelidir. Ortak veriler (menü, reçete, hammadde, tedarikçi) hiç süzülmez.
+
 ## Sırada ne var
 
-Dalga 1 (bu değişiklik) yalnız kütüğü ve ekranı kurdu: hiçbir ciro tablosunda şube sütunu **yok**, bütün raporlar
-bugünkü gibi çalışıyor. Şube kırılımının veriye inmesi, seçici ve Marina sekmesi `docs/planlar/sube.md`'de dalga
-dalga anlatılıyor.
+Dalga 1 kütüğü ve ekranı, dalga 2 (bu değişiklik) şube sütununu, seçiciyi ve para yolunun süzülmesini kurdu.
+Şube sekmeleri, karşılaştırma kartı, şube başına ModPOS anahtarı ve şubeye özel fiyat `docs/planlar/sube.md`'de.

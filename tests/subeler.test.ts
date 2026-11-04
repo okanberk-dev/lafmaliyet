@@ -155,3 +155,76 @@ test("sıralama: önce sıra, sonra Türkçe ada göre; girdi değişmez", () =>
   );
   assert.equal(girdi[0]!.id, "c");
 });
+
+// ---------------------------------------------------------------------------
+// Dalga 2: şube kırılımı (migration 0056). Buradan sonrası şemanın ve sorguların
+// kurallarını denetler: saf işlev yoksa kaynak metni okunur (docs/SUBE.md).
+// ---------------------------------------------------------------------------
+
+const oku = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+
+test("şube sütunu taşıyan her tablo silme denetimine girer: yeni para tablosu sessizce kaçamaz", () => {
+  const sema = oku("src/server/db/schema.ts");
+  // Şemada branchId()/branchIdNullable() çağıran tabloların adları
+  const tablolar = new Set<string>();
+  const parcalar = sema.split(/\nexport const /).slice(1);
+  for (const parca of parcalar) {
+    const ad = parca.match(/^(\w+) = pgTable\(/)?.[1];
+    if (ad && /branchId(Nullable)?\(\)/.test(parca)) tablolar.add(ad);
+  }
+  assert.ok(tablolar.size >= 11, `şube sütunlu tablo sayısı beklenenden az: ${tablolar.size}`);
+
+  const sayim = oku("src/server/branches.ts");
+  const govde = sayim.slice(sayim.indexOf("export async function branchUsageCount"));
+  for (const t of tablolar) {
+    assert.ok(govde.includes(`s.${t},`), `branchUsageCount ${t} tablosunu saymıyor: şube silinince ${t} kayıtları öksüz kalır`);
+  }
+});
+
+test("çakışma hedefi şubeyi içerir: (ay|gün, şube) birincil anahtarına tek sütunla ON CONFLICT düşer", () => {
+  // Postgres: "there is no unique or exclusion constraint matching the ON CONFLICT specification".
+  // Anahtarı şubeyi içeren tabloya tek sütunlu hedefle yazan kod çalışma anında patlar.
+  const dosyalar = ["src/server/actions/pnl.ts", "src/server/actions/sales.ts", "src/server/lafpos/ingest.ts"];
+  for (const d of dosyalar) {
+    const kaynak = oku(d);
+    for (const m of kaynak.matchAll(/onConflictDoUpdate\(\{\s*target: (\[[^\]]*\]|[^,\n]+),/g)) {
+      const hedef = m[1]!.trim();
+      if (!/months|posDayReports|modposCashSheets/.test(hedef)) continue;
+      assert.match(hedef, /^\[/, `${d}: ${hedef} dizi olmalı (tek sütunlu hedef bileşik anahtarla eşleşmez)`);
+      assert.match(hedef, /branchId/, `${d}: ${hedef} şubeyi içermeli`);
+    }
+  }
+});
+
+test("bütünlük denetimi şubeye göre süzülmez: silme güvenliği bütün işletmeye bakar", () => {
+  // Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olmamalı (tests/urunler.test.ts bekçisiyle aynı kural)
+  const gecmis = oku("src/server/data/product-history.ts");
+  assert.ok(!gecmis.includes("currentBranchWhere"), "salesLinesCount şubeye göre süzülmemeli: bu bir görünüm değil");
+  const pos = oku("src/server/data/pos-staff.ts");
+  assert.ok(!pos.includes("currentBranchWhere"), "modposNameFilter şubeye göre süzülmemeli: ad hangi dönemden, işletme geneli bir soru");
+});
+
+test("gider şubesi boş kalabilir: işletme geneli gider tek şube seçiliyken de görünür", () => {
+  const sema = oku("src/server/db/schema.ts");
+  const gider = sema.slice(sema.indexOf("export const expenseEntries"));
+  assert.match(gider.slice(0, 2000), /branchIdNullable\(\)/, "gider şubesi zorunlu olmamalı (işletme geneli: kira, muhasebe, abonelik)");
+  const kapsam = oku("src/server/branch-scope.ts");
+  // Boş şubeli gideri de getiren koşul var ve isNull kullanıyor
+  assert.match(kapsam, /branchWhereWithShared[\s\S]*?or\(eq\(col, scope\), isNull\(col\)\)/);
+});
+
+test("seçim yetki vermez: şube çerezi yalnız görünümü süzer", () => {
+  const eylem = oku("src/server/actions/branches.ts");
+  const govde = eylem.slice(eylem.indexOf("export async function chooseBranchScope"));
+  assert.match(govde, /requireUser\(\)/, "seçim ucu oturum ister");
+  // Çerezdeki değer kütüğe karşı doğrulanır: tanınmayan ya da pasif kimlik "hepsi"ye düşer
+  assert.match(govde, /parseBranchScope\(scope, await listBranches\(\)\)/);
+  assert.match(govde, /httpOnly: true/);
+});
+
+test("istek dışında süzme yok: betik ve arka plan işi bütün şubeleri görür", () => {
+  const kapsam = oku("src/server/branch-scope.ts");
+  const govde = kapsam.slice(kapsam.indexOf("export const currentBranchScope"));
+  // cookies() istek dışında fırlar; yakalanmazsa göç betiği ve zil düşerdi
+  assert.match(govde.slice(0, 500), /catch\s*\{\s*return ALL_BRANCHES;/);
+});

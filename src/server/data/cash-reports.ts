@@ -19,6 +19,7 @@ import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
+import { andWhere, currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
@@ -145,7 +146,7 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
 }
 
 export async function getCashReport(date: string, audience: CashAudience = "staff"): Promise<CashReportDTO | null> {
-  const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1);
+  const [row] = await getDb().select().from(s.cashReports).where(andWhere(eq(s.cashReports.date, date), await subeKosulu())).limit(1);
   return row ? toCashDTO(row, audience) : null;
 }
 
@@ -154,7 +155,7 @@ export async function cashReportsBetween(from: string, to: string, audience: Cas
   const rows = await getDb()
     .select()
     .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
+    .where(andWhere(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)), await subeKosulu()))
     .orderBy(desc(s.cashReports.date))
     .limit(400);
   return rows.map((r) => toCashDTO(r, audience));
@@ -165,7 +166,7 @@ export async function previousCarryOver(date: string): Promise<{ date: string; a
   const [row] = await getDb()
     .select({ date: s.cashReports.date, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
     .from(s.cashReports)
-    .where(lt(s.cashReports.date, date))
+    .where(andWhere(lt(s.cashReports.date, date), await subeKosulu()))
     .orderBy(desc(s.cashReports.date))
     .limit(1);
   return row ? { date: row.date, amount: Math.round((row.counted - row.handed) * 100) / 100 } : null;
@@ -181,12 +182,13 @@ const okcZSet = and(isNotNull(s.cashReports.okcZNo), ne(s.cashReports.okcZNo, ""
  * sunucuda). Zincir hep son saklanan kümülatife bağlanır. İşlem içinden de okunur (writeCashReport).
  */
 export async function previousOkc(day: string, db: Db | Tx = getDb()): Promise<OkcPrev> {
+  const sube = await subeKosulu();
   const [[z], [cum]] = await Promise.all([
-    db.select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo }).from(s.cashReports).where(and(lt(s.cashReports.date, day), okcZSet)).orderBy(desc(s.cashReports.date)).limit(1),
+    db.select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo }).from(s.cashReports).where(andWhere(and(lt(s.cashReports.date, day), okcZSet), sube)).orderBy(desc(s.cashReports.date)).limit(1),
     db
       .select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo, cumTotal: s.cashReports.okcCumTotal, cumVat: s.cashReports.okcCumVat })
       .from(s.cashReports)
-      .where(and(lt(s.cashReports.date, day), okcZSet, isNotNull(s.cashReports.okcCumTotal)))
+      .where(andWhere(and(lt(s.cashReports.date, day), okcZSet, isNotNull(s.cashReports.okcCumTotal)), sube))
       .orderBy(desc(s.cashReports.date))
       .limit(1),
   ]);
@@ -201,7 +203,7 @@ export async function nextOkc(day: string, db: Db | Tx = getDb()): Promise<{ dat
   const [row] = await db
     .select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo, total: s.cashReports.okcTotal, cumTotal: s.cashReports.okcCumTotal, cumVat: s.cashReports.okcCumVat })
     .from(s.cashReports)
-    .where(and(gt(s.cashReports.date, day), okcZSet))
+    .where(andWhere(and(gt(s.cashReports.date, day), okcZSet), await subeKosulu()))
     .orderBy(asc(s.cashReports.date))
     .limit(1);
   return row?.zNo ? { date: row.date, zNo: row.zNo, total: row.total, cumTotal: row.cumTotal, cumVat: row.cumVat } : null;
@@ -225,7 +227,7 @@ export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): 
       okcCumVat: s.cashReports.okcCumVat,
     })
     .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
+    .where(andWhere(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)), await subeKosulu()))
     .orderBy(asc(s.cashReports.date));
 }
 
@@ -234,7 +236,7 @@ export async function firstOkcReportDate(): Promise<string | null> {
   const [row] = await getDb()
     .select({ date: s.cashReports.date })
     .from(s.cashReports)
-    .where(or(isNotNull(s.cashReports.okcTotal), isNotNull(s.cashReports.okcCard)))
+    .where(andWhere(or(isNotNull(s.cashReports.okcTotal), isNotNull(s.cashReports.okcCard)), await subeKosulu()))
     .orderBy(asc(s.cashReports.date))
     .limit(1);
   return row?.date ?? null;
@@ -246,15 +248,21 @@ export async function reportedDays(days: readonly string[]): Promise<Set<string>
   const rows = await getDb()
     .select({ date: s.cashReports.date })
     .from(s.cashReports)
-    .where(inArray(s.cashReports.date, [...new Set(days)]));
+    .where(andWhere(inArray(s.cashReports.date, [...new Set(days)]), await subeKosulu()));
   return new Set(rows.map((r) => r.date));
 }
 
 /** Raporu en çok bu kadar geride olan ilk gün (ay seçicisi için) */
 export async function firstCashReportDate(): Promise<string | null> {
-  const [row] = await getDb().select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1);
+  const [row] = await getDb().select({ date: s.cashReports.date }).from(s.cashReports).where(await subeKosulu()).orderBy(asc(s.cashReports.date)).limit(1);
   return row?.date ?? null;
 }
+
+/**
+ * Seçili şubenin koşulu (docs/SUBE.md). Kasa raporunun anahtarı artık (gün, şube): aynı güne iki şube rapor
+ * girebildiği için süzmeden okuyan sorgu yanlış şubenin satırını döndürür. "Tümü" seçiliyken koşul yoktur.
+ */
+const subeKosulu = () => currentBranchWhere(s.cashReports.branchId);
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -280,6 +288,7 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
         offRevenue: s.cashReports.offRevenue,
       })
       .from(s.cashReports)
+      .where(await subeKosulu())
       .orderBy(asc(s.cashReports.date)),
     lafposTillRows(db),
     modposTillRows(db),
@@ -381,7 +390,7 @@ export async function firstModposTillDay(db: Db | Tx = getDb()): Promise<string 
   if (end === null) return null;
   const [rows, [firstReport]] = await Promise.all([
     modposTillRows(db),
-    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).where(await subeKosulu()).orderBy(asc(s.cashReports.date)).limit(1),
   ]);
   // Kesintisiz kısmın başı; öncesindeki föyler sayılmaz (başı ilk raporsa raporlardan önce sayılan föy yok)
   return modposRunStart(
@@ -421,7 +430,7 @@ export async function nextReportAfter(date: string): Promise<{ date: string; ope
   const [row] = await getDb()
     .select({ date: s.cashReports.date, openingCash: s.cashReports.openingCash })
     .from(s.cashReports)
-    .where(gt(s.cashReports.date, date))
+    .where(andWhere(gt(s.cashReports.date, date), await subeKosulu()))
     .orderBy(asc(s.cashReports.date))
     .limit(1);
   return row ?? null;
@@ -457,7 +466,7 @@ export async function hasCashReportIn(month: string, db: Db | Tx = getDb()): Pro
   const [row] = await db
     .select({ id: s.cashReports.id })
     .from(s.cashReports)
-    .where(like(s.cashReports.date, `${month}-%`))
+    .where(andWhere(like(s.cashReports.date, `${month}-%`), await subeKosulu()))
     .limit(1);
   return Boolean(row);
 }

@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
 import {
@@ -12,11 +13,13 @@ import {
   branchDeleteError,
   branchIdError,
   branchSourceError,
+  BRANCH_COOKIE,
+  parseBranchScope,
   type BranchKind,
   type BranchPosSource,
 } from "@/lib/branches";
-import { requireAdmin } from "@/server/auth/dal";
-import { getBranch, listBranches } from "@/server/branches";
+import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -31,6 +34,7 @@ const posSource = z.enum(BRANCH_POS_SOURCES as unknown as [BranchPosSource, ...B
   message: "Kasa kaynağı seçin",
 });
 const openedOn = zDate.nullish().transform((v) => v ?? null);
+const scopeInput = z.object({ scope: z.string().trim().max(24) });
 
 const createInput = z.object({
   id: z.string().trim(),
@@ -115,13 +119,35 @@ export async function deleteBranch(input: z.input<typeof deleteInput>) {
     const db = getDb();
     const mevcut = await getBranch(db, id);
     if (!mevcut) throw new UserError("Şube bulunamadı");
-    // Dalga 1'de hiçbir ciro tablosunda şube sütunu yok: bağlı kayıt sayısı sıfırdır
-    // (src/server/branches.ts; dalga 2'de kasa raporu, satış ve giderler sayılacak)
-    const hata = branchDeleteError(mevcut, 0);
+    // Şube sütunu taşıyan her tabloda bağlı kayıt aranır (src/server/branches.ts): bir kuruş bile yazılmışsa
+    // şube silinmez, pasife alınır — yoksa ciro kütükten düşer
+    const hata = branchDeleteError(mevcut, await branchUsageCount(db, id));
     if (hata) throw new UserError(hata);
     await db.delete(s.branches).where(eq(s.branches.id, id));
     await logActivity(me, "Şube silindi", `${mevcut.name} (${id})`);
     refresh();
     return { id };
+  });
+}
+
+/**
+ * Panelin şube seçimini çereze yazar (docs/SUBE.md › Seçici). Yalnız görünümü süzer, YETKİ VERMEZ: her uç ayrıca
+ * `requireAdmin`/`requireUser` ile korunur, bu yüzden personel de kendi ekranlarında şube değiştirebilir.
+ * Tanınmayan ya da pasif kimlik "hepsi"ye düşer (`parseBranchScope`), yani çerezde hiçbir zaman çöp durmaz.
+ */
+export async function chooseBranchScope(input: unknown) {
+  return attempt(async () => {
+    await requireUser();
+    const { scope } = scopeInput.parse(input);
+    const secim = parseBranchScope(scope, await listBranches());
+    (await cookies()).set(BRANCH_COOKIE, secim, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    refresh();
+    return { scope: secim };
   });
 }

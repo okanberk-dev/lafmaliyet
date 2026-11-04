@@ -6,6 +6,7 @@ import { carryCheck, carryDiffText, computeCash, openingNeedsNote, staffLateDay,
 import { CASH_REQUEST_TEXT, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
 import { DELETED_REPORT_DAYS, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, RELEASED_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
 import { kasaEvidence } from "@/server/data/lafpos-day";
@@ -56,8 +57,9 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
   if (fields.handedOver > 0 && !input.handedTo) throw new UserError(CASH_REQUEST_TEXT.lateHandedTo);
   const ids = [...new Set(input.photoIds)];
   if (ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+  const branchId = await currentWriteBranch();
   return db.transaction(async (tx) => {
-    await lockLateDay(tx, date);
+    await lockLateDay(tx, date, branchId);
     const subject = `gun:${date}`;
     const r = s.staffRequests;
     // Çift dokunuş ya da yeniden deneme: aynı istemci anahtarı var olan bekleyen isteği döner (sürüm denetiminden önce);
@@ -160,10 +162,16 @@ export async function reviewLate(tx: CashTx, me: CashActor, row: StaffRequestRow
   }
   if (input.decision === "close") throw new UserError("Geç rapor kapatılmaz; onaylayın ya da reddedin");
   const date = payload.date;
-  await lockLateDay(tx, date);
-  if (await lockCashReport(tx, date)) throw new UserError(CASH_REQUEST_TEXT.lateExists);
+  const branchId = await currentWriteBranch();
+  await lockLateDay(tx, date, branchId);
+  if (await lockCashReport(tx, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.lateExists);
   // Aynı aralıkta daha eski bir bekleyen geç rapor: önce o (zincirin önceki halkası hep kayıtlı rapor olsun)
-  const [before] = await tx.select({ date: s.cashReports.date }).from(s.cashReports).where(lt(s.cashReports.date, date)).orderBy(desc(s.cashReports.date)).limit(1);
+  const [before] = await tx
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(and(lt(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .orderBy(desc(s.cashReports.date))
+    .limit(1);
   const [older] = await tx
     .select({ day: s.staffRequests.day })
     .from(s.staffRequests)
@@ -192,8 +200,8 @@ export async function reviewLate(tx: CashTx, me: CashActor, row: StaffRequestRow
   const submittedBy = { id: row.requestedBy, name: row.requestedByName };
   const counter = row.requestedBy ?? me.id;
   // Düzeltip onaylarken isteyenin hâli olduğu gibi 1. sürüm olur (açılış notu denetimi yöneticinin 2. sürümünde)
-  const first = await writeCashReport(tx, me, requested, { revision: 0, countedBy: counter, photos: link, submittedBy, prev: null, heldBy: row.id, keepCounter: true, skipOpeningNote: Boolean(input.fields) });
-  const write = input.fields ? await writeCashReport(tx, me, finalFields, { revision: first.row.revision, countedBy: counter, prev: first.row, keepCounter: true }) : first;
+  const first = await writeCashReport(tx, me, requested, { revision: 0, countedBy: counter, photos: link, submittedBy, prev: null, heldBy: row.id, keepCounter: true, skipOpeningNote: Boolean(input.fields), branchId });
+  const write = input.fields ? await writeCashReport(tx, me, finalFields, { revision: first.row.revision, countedBy: counter, prev: first.row, keepCounter: true, branchId }) : first;
   await supersede(tx, { kinds: ["kasa-gec"], subject: row.subject, exceptId: row.id }, "Bu günün raporu başka bir istekle girildi", now, DELETED_REPORT_DAYS);
   const skippedPhotos = payload.photos.length - link.length;
   const request = await decide(tx, row, me, "approved", { note: input.note, resultId: write.row.id, result: { revision: write.row.revision, corrected: Boolean(input.fields), skippedPhotos } }, now);

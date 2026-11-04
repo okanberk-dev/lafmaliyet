@@ -657,11 +657,12 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
   const store = read("src/server/cash/report-store.ts");
   // Ertesi günün raporu girildiyse (kilitli) personelin değişikliği onaya döner (staffCashGate; dalga 10)
-  assert.match(store, /if \(prev && me\.role !== "admin"\) \{[\s\S]*?const laterReport = await hasLaterReport\(tx, data\.date\);[\s\S]*?staffCashGate\(\{ date: data\.date, now, hasReport: true, laterReport, changes \}\)/);
-  assert.match(store, /export async function hasLaterReport[\s\S]*?gt\(s\.cashReports\.date, date\)/);
+  assert.match(store, /if \(prev && me\.role !== "admin"\) \{[\s\S]*?const laterReport = await hasLaterReport\(tx, data\.date, branchId\);[\s\S]*?staffCashGate\(\{ date: data\.date, now, hasReport: true, laterReport, changes \}\)/);
+  // Kilit ve zincir hep şube içinde: kasa raporunun anahtarı (gün, şube) (docs/SUBE.md)
+  assert.match(store, /export async function hasLaterReport[\s\S]*?gt\(s\.cashReports\.date, date\), eq\(s\.cashReports\.branchId, branchId\)/);
   // Açılış notu ve önceki sürümün kopyası aynı işlemde, satır kilitliyken
   assert.match(store, /export async function lockCashReport[\s\S]*?\.for\("update"\)/);
-  assert.match(store, /export async function writeCashReport[\s\S]*?lockCashReport\(tx, data\.date\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
+  assert.match(store, /export async function writeCashReport[\s\S]*?lockCashReport\(tx, data\.date, o\.branchId\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
   const rules = read("src/server/photo-read/rules.ts");
   assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}, now\)/);
   assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date\)/);
