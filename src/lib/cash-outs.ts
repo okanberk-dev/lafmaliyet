@@ -157,6 +157,11 @@ export interface CashOutSnapshot {
   docType: CashOutDocType;
   photoId: number | null;
   expense: { categoryId: number; note: string | null; description?: string | null; paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null } | null;
+  /**
+   * Satırın şubesi: geri alınca kendi şubesine dönsün (docs/SUBE.md). Yoksa Marina'da silinen satır "Tümü"den
+   * ya da Tuzla'dan geri alınınca başka şubeye geçerdi. Eski mühürlü verilerde alan yok: o zaman eski davranış.
+   */
+  branchId?: string | null;
 }
 
 /** "Geri al" bu kadar süre geçerli (bildirim CASH_OUT_UNDO_TOAST_MS görünür; fotoğrafı az önce bırakılmış sayma penceresiyle aynı) */

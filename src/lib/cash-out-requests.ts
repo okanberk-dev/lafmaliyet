@@ -113,6 +113,12 @@ export const CashOutRequestPayload = z
     cashOutId: z.number().int().positive().nullable(),
     line: CashOutLineSchema.nullable(),
     before: CashOutBeforeSchema.nullable(),
+    /**
+     * İsteği AÇAN personelin şubesi (docs/SUBE.md). Onay anındaki yönetici seçimi değil: yönetici "Tümü"den
+     * onaylayınca Marina'nın kasa satırı ve onun harcama gölgesi Tuzla'ya inmesin. Bu alandan önce kaydedilmiş
+     * isteklerde yok, bu yüzden isteğe bağlı: eskiler onay anındaki şubeye düşer (eski davranış).
+     */
+    branchId: z.string().max(24).nullish(),
   })
   .refine((p) => (p.op === "ekle" ? p.line !== null && p.cashOutId === null : p.cashOutId !== null && p.before !== null && (p.op === "sil" || p.line !== null)), "İsteğin yükü eksik");
 export type CashOutRequestPayloadT = z.output<typeof CashOutRequestPayload>;

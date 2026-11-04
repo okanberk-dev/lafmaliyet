@@ -38,7 +38,7 @@ function logDetail(d: CashOutData, expense: boolean) {
  * Satırı yazar (yeni, düzeltme ya da geri alma), tek işlemde. Personelde kapı: kapanmış güne ya da yöneticinin
  * kategorisindeki satıra doğrudan yazılmaz (istek yolu); satır başka bir güne taşınıyorsa o gün de açık olmalı.
  */
-async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boolean; restoreId?: number } = {}) {
+async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boolean; restoreId?: number; branchId?: string } = {}) {
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
   const admin = me.role === "admin";
   const saved = await getDb().transaction(async (tx) => {
@@ -52,7 +52,7 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
       if (gate === "request" || moved === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
     }
     const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin, kind: d.kind, amount: d.amount, date: d.date }) : null;
-    return { ...(await writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId })), supplier };
+    return { ...(await writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId, branchId: opts.branchId })), supplier };
   });
   await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null) + (saved.supplier ? ` · ${saved.supplier} ödemesi de güncellendi` : ""));
   refresh();
@@ -125,7 +125,8 @@ export async function restoreCashOut(undo: string) {
       expensePaymentMethod: snap.expense?.paymentMethod,
     });
     try {
-      return await persist(me, d, { restore: true, restoreId: opened.id });
+      // Satır mühürlü görüntüdeki şubesine döner; alanı olmayan eski görüntüde eski davranış (seçili şube)
+      return await persist(me, d, { restore: true, restoreId: opened.id, branchId: snap.branchId ?? undefined });
     } catch (e) {
       if (constraintOf(e) === "cash_outs_pkey") throw new UserError("Bu satır zaten geri alındı");
       throw e;
