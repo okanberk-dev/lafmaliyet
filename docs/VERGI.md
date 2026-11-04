@@ -227,6 +227,15 @@ Diğer ekranlara dokunuşlar:
 - **Muhtasar (K20):** ay P'nin ücret gelir ve damga vergisi + sabit giderin stopaj profiline göre stopaj (kira %20,
   serbest meslek %20, internet reklamı %15) + beyanname damgası (personel varsa 939,70, yalnız stopajda 791,00);
   P+1'in 26'sında. Adı kira, reklam ya da dışarıdan hizmete uyan profilsiz kalem varsa tutar "en az"dır.
+- **Resmi kira (sahibin kararı, 4 Kasım 2026):** Sabit giderler'de kira kalemine resmi (sözleşmedeki) aylık kira ve
+  brüt / net yazılır (net: brüt = net ÷ 0,8). Gelir-gider'de "Kira stopajı" satırı = resmi brüt × kira stopajı oranı
+  (`stopaj:<kalem>`; kiranın gün payıyla). Vergi kârında kira gideri yalnız resmi brüttür; ödenen kira + stopaj −
+  resmi brüt "belgesiz, vergide sayılmaz" (Belgesi yok listesinde), stopaj ayrıca gider yazılmaz. Muhtasarın kira
+  stopajı resmi brütten (profil seçilmemiş olsa da); nakit planında genel muhtasar satırından ayrı "Muhtasar – kira
+  stopajı (Ay)" satırı, P+1'in 26'sında (muhasebecinin rakamında ve üç aylıkta bölünmez). Ev sahibine ödenen tutardan
+  stopaj düşülmez. Resmi kiranın tutar geçmişi yok: değişince bütün aylar için geçer. Kira kalemi varsayılan olarak
+  açık güne göre oranlanmaz (tam ay; süren ayda bugüne kadarki pay); migration `drizzle/0052_kira_resmi_stopaj.sql` elle
+  eklenmiş "Kira stopajı" kalemini kira kalemine taşır.
 - **SGK:** bordronun dört payı, P+1'in son günü (tatilde ilk iş günü).
 - **Geçici vergi (K21):** kümülatif, %25; asgari kurumlar vergisi (%10) muafiyet yoksa karşılaştırılır; önceki
   dönemler düşülür. Muhasebecinin matrahlı kaydı **çapa**dır: sonraki dönem o matraha çapadan sonraki ayları ekler.

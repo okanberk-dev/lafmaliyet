@@ -7,7 +7,8 @@ import {
   SEPARATE_CATEGORIES,
 } from "../constants";
 import { channelOf } from "../commission/channels";
-import { monthLabel, pct, tl } from "../format";
+import { paidWithholdingRate } from "../tax/rules";
+import { monthLabel, num, pct, tl } from "../format";
 import { isCountable } from "../ingredient-usage";
 import { panelWasteCounts } from "../lafpos/ikram";
 import { periodKasa } from "../lafpos/kasa";
@@ -404,6 +405,21 @@ export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: S
   return (fixedMonthly(fe, st) * days) / dim;
 }
 
+/** Kira stopajı oranı (yılın vergi kuralından; 2026: %20) */
+export function rentWithholdingRate(month: string): number {
+  return paidWithholdingRate("kira", Number(month.slice(0, 4)));
+}
+
+/** Resmi kiranın brütü: brüt girildiyse o, net girildiyse net ÷ (1 − stopaj oranı); resmi kira yoksa null */
+export function officialRentGross(fe: Pick<FixedExpense, "officialAmount" | "officialBasis">, rate: number): number | null {
+  const a = fe.officialAmount;
+  if (a === null || a === undefined || !(a > 0)) return null;
+  return fe.officialBasis === "net" && rate < 1 ? a / (1 - rate) : a;
+}
+
+/** Gelir-gider'in kira stopajı satırının anahtarı (kalem başına) */
+export const stopajKey = (fixedId: number) => `stopaj:${fixedId}`;
+
 /**
  * Aylık kalemlerin (aylık, haftalık, yıllık sabit giderler ve personel) ayın kaçta kaçına düştüğü gün sayısı. Açık gün
  * elle girildiyse (Excel: açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
@@ -627,6 +643,8 @@ export interface PnlMonthCalc {
   /** Yalnız sayımla açılış ve kapanış (sayım yoksa 0; elle yazılan geçer): vergi hesabı bunu kullanır */
   countOpening: number;
   countClosing: number;
+  /** Resmi kirası olan kalemler: bu aya düşen resmi brüt kira (kiranın gün payıyla) ve stopaj hücresinin değeri */
+  officialRent: { id: number; gross: number; stopaj: number }[];
   sections: Record<FixedSection | "komisyon", number>;
   expenses: number;
   /** ModPOS cirosu (KDV dahil, Satışlar'a girilen); girilmediyse null */
@@ -1460,7 +1478,14 @@ export function createModel(ds: Dataset) {
 
   /** Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla */
   function fixedStandardTotalFor(month: string): number {
-    return personnelFor(month).total + sum(fixedInMonth(month).map((f) => fixedMonthly(f, st)));
+    return personnelFor(month).total + sum(fixedInMonth(month).map((f) => fixedMonthly(f, st) + rentStopajMonthly(f, month)));
+  }
+
+  /** Kalemin aylık kira stopajı (resmi brüt × kira stopajı oranı; resmi kirası yoksa 0): standart sabit gidere dahil */
+  function rentStopajMonthly(f: FixedExpense, month: string): number {
+    const rate = rentWithholdingRate(month);
+    const gross = officialRentGross(f, rate);
+    return gross === null ? 0 : gross * rate;
   }
 
   // Bugünkü değerler (listeler, başabaş, tahmin): bu ayın kalemleri ve tutarları
@@ -2051,17 +2076,45 @@ export function createModel(ds: Dataset) {
     cells.get("personnel:employer")!.info = personnelExtraText(pers, ratio, days, dim);
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
+    // "Açık güne göre oranla" kapalı kalem (kira varsayılanı) biten ayda tam ay; süren ayda bugüne kadarki pay (ciroyla
+    // aynı dönem). Resmi kirası olan kalemin stopajı ayrı satır: resmi brüt × kira stopajı oranı, kiranın gün payıyla
+    // Tam ay yalnız kafenin verisi olan aylarda (ilk veri ayından önce, başlangıç ayı yazılmamış kalem 0 kalır)
+    const fullDays = month < currentMonth && firstDataMonth !== null && month >= firstDataMonth ? dim : days;
+    const rentRate = rentWithholdingRate(month);
+    const officialRent: PnlMonthCalc["officialRent"] = [];
     for (const fe of allFixed) {
       const key = `fixed:${fe.id}`;
+      const sKey = stopajKey(fe.id);
       if (inRange(fe, month)) {
-        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim, days));
+        const d = fe.prorate === false ? fullDays : days;
+        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim, d));
+        if (fe.prorate === false && d !== days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
+        const gross = officialRentGross(fe, rentRate);
+        if (gross !== null) {
+          const share = dim ? d / dim : 0;
+          const stopaj = auto(sKey, gross * rentRate * share);
+          sections[fe.section] += stopaj;
+          cells.get(sKey)!.info = `Resmi brüt kira ${tl(gross)}${fe.officialBasis === "net" ? ` (net ${tl(fe.officialAmount ?? 0)} ÷ ${num(1 - rentRate, 2)})` : ""} × %${num(rentRate * 100)} stopaj${share < 1 ? ` × ${d}/${dim} gün` : ""}. Muhtasarla izleyen ayın 26'sında ödenir.`;
+          officialRent.push({ id: fe.id, gross: gross * share, stopaj });
+        }
       } else {
         const ov = overrides.get(key);
         cells.set(key, { value: ov ?? null, computed: null, overridden: ov !== undefined, note: ov !== undefined ? noteOf(key) : null, outOfRange: true });
         if (ov !== undefined) sections[fe.section] += ov;
+        const sov = overrides.get(sKey);
+        if (sov !== undefined) {
+          cells.set(sKey, { value: sov, computed: null, overridden: true, note: noteOf(sKey), outOfRange: true });
+          sections[fe.section] += sov;
+        }
       }
     }
     for (const [key, ov] of overrides) {
+      // Kalemi silinmiş ya da resmi kirası kaldırılmış stopajın elle girişi: kira bölümünde sayılır
+      if (key.startsWith("stopaj:") && !cells.has(key)) {
+        cells.set(key, { value: ov, computed: null, overridden: true, note: noteOf(key), outOfRange: true });
+        sections.kira += ov;
+        continue;
+      }
       if (!key.startsWith("fixed:") || cells.has(key)) continue;
       // Kalemi silinmiş eski bir elle giriş: İşletme genel giderlerinde sayılır
       cells.set(key, { value: ov, computed: null, overridden: true, note: noteOf(key), outOfRange: true });
@@ -2128,6 +2181,7 @@ export function createModel(ds: Dataset) {
       cogsInfo: flow.info,
       countOpening,
       countClosing: cl.value,
+      officialRent,
       sections,
       expenses,
       revenue,
@@ -2175,12 +2229,14 @@ export function createModel(ds: Dataset) {
     const suppliers = new Set<string>();
     const commSuppliers = new Set<string>();
     const fixedKeysWithValue = new Set<string>();
+    const stopajKeysWithValue = new Set<string>();
     const expenseKeysWithValue = new Set<string>();
     for (const pm of monthsCalc) {
       for (const [k, c] of pm.cells) {
         if (k.startsWith("purchase:")) suppliers.add(k);
         if (k.startsWith("commission:") && k !== "commission:pos") commSuppliers.add(k);
         if (k.startsWith("fixed:") && c.overridden) fixedKeysWithValue.add(k);
+        if (k.startsWith("stopaj:") && c.overridden) stopajKeysWithValue.add(k);
         if (k.startsWith("expense:") && c.value) expenseKeysWithValue.add(k);
       }
     }
@@ -2246,6 +2302,16 @@ export function createModel(ds: Dataset) {
           months.some((m) => (!firstDataMonth || m >= firstDataMonth) && inRange(fe, m));
         if (!shown) continue;
         add({ key: `fixed:${fe.id}`, fixedId: fe.id, label: fe.name.toLocaleUpperCase("tr-TR"), kind: "auto", editable: true, hint: fe.note ?? undefined });
+        if (officialRentGross(fe, 0.2) !== null || stopajKeysWithValue.has(stopajKey(fe.id))) {
+          add({
+            key: stopajKey(fe.id),
+            fixedId: fe.id,
+            label: allFixed.filter((f) => f.officialAmount).length > 1 ? `${fe.name.toLocaleUpperCase("tr-TR")} STOPAJI` : "KİRA STOPAJI",
+            kind: "auto",
+            editable: true,
+            hint: "Resmi (sözleşmedeki) brüt kira × kira stopajı oranı (%20); net girildiyse brüt = net ÷ 0,8. Sabit giderler'de kira kaleminin resmi kirasından. Muhtasarla izleyen ayın 26'sında ödenir (Ödemeler ve nakit planı).",
+          });
+        }
       }
       if (key === "genel") {
         for (const k of [...fixedKeysWithValue].filter((k) => !fixedById.has(Number(k.slice(6)))).sort()) {
@@ -2433,6 +2499,7 @@ export function createModel(ds: Dataset) {
     /** Bu ayın standart sabit gider toplamı; belirli bir ay için fixedStandardTotalFor(ay) */
     fixedStandardTotal,
     fixedStandardTotalFor,
+    rentStopajMonthly,
     stockSheet,
     /** Malzemenin ay sonu FIFO katmanları ve havuzu, Ayarlar'daki başlangıç ayıyla */
     fifoLayers,

@@ -7,7 +7,7 @@
  */
 
 import type { Model } from "../calc/engine";
-import { fixedMonthly, shiftMonth } from "../calc/engine";
+import { fixedMonthly, officialRentGross, rentWithholdingRate, shiftMonth } from "../calc/engine";
 import type { FixedSection } from "../calc/types";
 import { PANEL_GROUP_KEYWORDS } from "../constants";
 
@@ -226,6 +226,12 @@ export function muhtasarItemsFromModel(model: Pick<Model, "fixedInMonth" | "pnlM
   const items: MuhtasarItem[] = [];
   const cells = model.pnlMonth(period).cells;
   for (const f of model.fixedInMonth(period)) {
+    // Resmi kirası olan kalem: stopaj resmi brüt kiradan (gerçek kiradan değil; sahibin kararı, 4 Kasım 2026)
+    const gross = officialRentGross(f, rentWithholdingRate(period));
+    if (gross !== null) {
+      items.push({ id: f.id, name: f.name, section: f.section, amount: r2(gross), withholding: "kira", doc: f.taxDoc ?? null });
+      continue;
+    }
     const cell = cells.get(`fixed:${f.id}`);
     const amount = cell?.overridden ? (cell.value ?? 0) : fixedMonthly(f, model.settings);
     items.push({ id: f.id, name: f.name, section: f.section, amount: r2(amount), withholding: f.taxWithholding ?? null, doc: f.taxDoc ?? null });

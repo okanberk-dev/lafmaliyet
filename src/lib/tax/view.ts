@@ -311,7 +311,7 @@ export interface YearView {
 
 /** Nakit planının vergi beslemesi (§8.1): tutarlı satırlar, tutarı bilinmeyenler ve KDV beyannamelerinin damgası */
 export interface TaxPlanFeed {
-  items: { kind: "muhtasar" | "gecici" | "kdv2_hizmet"; period: string; nominal: string; legalDue: string; amount: number; atLeast: boolean; source: "estimate" | "filing"; detail: string }[];
+  items: { kind: "muhtasar" | "muhtasar_kira" | "gecici" | "kdv2_hizmet"; period: string; nominal: string; legalDue: string; amount: number; atLeast: boolean; source: "estimate" | "filing"; detail: string }[];
   pending: { kind: "gecici"; period: string; nominal: string; legalDue: string; note: string }[];
   stamps: { kdv: number; kdv2: number };
 }
@@ -832,8 +832,13 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
     kdv2Item(m);
     // Tutarı 0 olan ay (personelsiz, stopajı bilinmeyen) plana girmez; hatırlatıcısı varsa "Tutarı girilmemiş"te kalır
     if (m.empty || !(m.payable > 0)) continue;
+    // Kira stopajı ayrı satır (sahibin kararı, 4 Kasım 2026): yalnız bu ayın kendi tahmininde (muhasebecinin rakamı ve
+    // üç aylıkta çeyreğin toplamı bölünmez); genel muhtasar satırından düşülür, iki kez sayılmaz
+    const kiraStopaj = m.stopaj.filter((x) => x.withholding === "kira");
+    const kira = r2(kiraStopaj.reduce((a, x) => a + x.amount, 0));
+    const split = !m.filing && !m.deferred && r2(m.vergiPayable - m.vergi) === 0 && kira > 0 && kira < m.payable;
     // Döküm tutara eşit (üç aylıkta ara ayın vergisi çeyrek sonunda, çeyrek sonunda önceki aylar da)
-    const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
+    const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.filter((x) => !split || x.withholding !== "kira").map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
     const prior = r2(m.vergiPayable - m.vergi);
     const parts = m.deferred
       ? `Damga ${amt(m.damga)}; vergi kısmı (${own}) çeyrek sonunda ödenir (üç aylık)`
@@ -841,7 +846,20 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
     const detail = m.filing
       ? `Muhasebecinin rakamı. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`
       : `${parts}${m.atLeast ? `; en az (${m.unknown.length} kalemin stopajı bilinmiyor)` : ""}. Tahmin; kesin tutar tahakkuk fişindedir. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`;
-    items.push({ kind: "muhtasar", period: m.period, nominal: m.nominal, legalDue: m.due, amount: m.payable, atLeast: m.atLeast, source: m.filing ? "filing" : "estimate", detail });
+    if (split) {
+      const names = kiraStopaj.map((x) => `${x.name}: resmi brüt ${amt(x.base)} × %${Math.round(x.rate * 100)}`).join(" + ");
+      items.push({
+        kind: "muhtasar_kira",
+        period: m.period,
+        nominal: m.nominal,
+        legalDue: m.due,
+        amount: kira,
+        atLeast: false,
+        source: "estimate",
+        detail: `${names}. Muhtasarla birlikte ödenir (genel muhtasar satırında yok). ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`,
+      });
+    }
+    items.push({ kind: "muhtasar", period: m.period, nominal: m.nominal, legalDue: m.due, amount: split ? r2(m.payable - kira) : m.payable, atLeast: m.atLeast, source: m.filing ? "filing" : "estimate", detail: split ? `${detail} Kira stopajı ayrı satırda (Muhtasar – kira stopajı).` : detail });
   }
   for (const y of ctx.years.values()) {
     for (const c of y.corp) {

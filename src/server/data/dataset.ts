@@ -304,6 +304,9 @@ export async function loadDataset(): Promise<Dataset> {
       sortOrder: f.sortOrder,
       taxDoc: f.taxDoc,
       taxWithholding: f.taxWithholding,
+      officialAmount: f.officialAmount,
+      officialBasis: f.officialBasis,
+      prorate: f.prorate,
     })),
     fixedExpenseVersions: fixedExpenseVersions.map((v) => ({
       id: v.id,

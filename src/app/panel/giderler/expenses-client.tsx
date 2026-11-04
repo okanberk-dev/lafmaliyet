@@ -18,6 +18,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, matches, releaseScroll, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
@@ -25,6 +26,9 @@ import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { FixedPeriod, FixedSection } from "@/lib/calc/types";
 import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate } from "@/lib/constants";
+
+/** Kira stopajı oranı (formun önizlemesi; hesap yılın vergi kuralından: engine.ts rentWithholdingRate) */
+const KIRA_STOPAJ = 0.2;
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -360,6 +364,11 @@ export type FixedRow = {
   amount: number;
   /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (yalnız nakit planı kullanır) */
   vatRate: number | null;
+  /** Kira: resmi (sözleşmedeki) aylık kira ve brüt / net; stopaj bundan (Gelir-gider "Kira stopajı") */
+  officialAmount: number | null;
+  officialBasis: "brut" | "net" | null;
+  /** Açık güne göre oranla (false: biten ayda tam ay) */
+  prorate: boolean;
   monthly: number;
   startMonth: string | null;
   endMonth: string | null;
@@ -1094,7 +1103,15 @@ function FixedDialog({
     note: row?.note ?? "",
     // Faturadaki KDV: kalemde girilmemişse bölümün varsayılanı gösterilir ve bölümle birlikte değişir
     vatRate: row?.vatRate ?? null,
+    official: row?.officialAmount ? num(row.officialAmount, 2) : "",
+    basis: (row?.officialBasis ?? "brut") as "brut" | "net",
+    // Yeni kira kalemi tam ay (sahibin kararı); öteki kalemler açık güne göre
+    prorate: row ? row.prorate : null,
   });
+  const prorate = f.prorate ?? f.section !== "kira";
+  const official = f.official.trim() === "" ? null : parseNumberTR(f.official);
+  const officialError = official !== null && official < 0 ? "Geçerli bir tutar yazın" : f.official.trim() !== "" && official === null ? "Geçerli bir tutar yazın, ör. 100.000" : null;
+  const officialGross = official && official > 0 ? (f.basis === "net" ? official / (1 - KIRA_STOPAJ) : official) : null;
   const vatRate = fixedVatRate({ section: f.section, vatRate: f.vatRate });
   // Biten kalemde tutar değişikliği kalemin kendi ayları için anlamlı: varsayılan olarak son ayı
   const [choice, setChoice] = useState<MonthChoice>(() =>
@@ -1129,6 +1146,7 @@ function FixedDialog({
     setTried(true);
     if (!f.name.trim()) return nameRef.current?.focus();
     if (amountError || amount === null) return amountRef.current?.focus();
+    if (officialError) return;
     setBusy(true);
     const res = await tryAction(() =>
       saveFixedExpense({
@@ -1139,6 +1157,10 @@ function FixedDialog({
         amount,
         note: f.note,
         vatRate,
+        // Resmi kira yalnız kira bölümünde; başka bölüme taşınınca silinir
+        officialAmount: f.section === "kira" && official && official > 0 ? official : null,
+        officialBasis: f.section === "kira" && official && official > 0 ? f.basis : null,
+        prorate,
         // Tutar değişmediyse gösterilen ayın değeri geri gider (hiçbir ay değişmez)
         effectiveFrom: !row || amountChanged ? eff : row.valueMonth,
       }),
@@ -1155,7 +1177,7 @@ function FixedDialog({
     });
     if (!again) return onClose();
     // Bölüm, dönem ve başlangıç ayı korunur: aynı türden kalemler arka arkaya girilir
-    setF((x) => ({ ...x, name: "", amount: "", note: "", vatRate: null }));
+    setF((x) => ({ ...x, name: "", amount: "", note: "", vatRate: null, official: "" }));
     setTried(false);
     setAdded((n) => n + 1);
     nameRef.current?.focus();
@@ -1306,6 +1328,45 @@ function FixedDialog({
             ))}
           </Select>
         </Field>
+
+        {f.period !== "gunluk" ? (
+          <ToggleRow
+            title="Açık güne göre oranla"
+            description={
+              prorate
+                ? "Açık gün ayın gün sayısından azsa tutar o oranda düşer (ör. 23 / 31 gün)."
+                : "Tam ay: biten ayda tamamı yazılır; süren ayda bugüne kadarki pay (ciroyla aynı dönem)."
+            }
+            tip="Kira gibi açık günden bağımsız ödenen giderlerde kapalı tutun. Personel ve açık günle değişen giderlerde açık."
+            checked={prorate}
+            onChange={(v) => setF({ ...f, prorate: v })}
+            label="Açık güne göre oranla"
+          />
+        ) : null}
+
+        {f.section === "kira" ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Resmi (sözleşme) kira, aylık"
+              htmlFor="fx-of"
+              error={officialError}
+              tip="Kira sözleşmesindeki tutar. Stopaj (muhtasar) bundan hesaplanır; vergi kârında kira gideri yalnız resmi brüt kiradır, gerçek kirayla farkı belgesiz sayılır."
+              hint={
+                officialGross
+                  ? `Stopaj aylık ${money(officialGross * KIRA_STOPAJ)} (brüt ${money(officialGross)} × %20): Gelir-gider'de "Kira stopajı", muhtasarla izleyen ayın 26'sında.`
+                  : "Boşsa stopaj hesaplanmaz."
+              }
+            >
+              <NumberInput id="fx-of" value={f.official} onChange={(e) => setF({ ...f, official: e.target.value })} onFocus={(e) => e.currentTarget.select()} placeholder="ör. 100.000" />
+            </Field>
+            <Field label="Resmi kira" htmlFor="fx-ob" hint={f.basis === "net" ? "Brüt = net ÷ 0,8" : "Stopaj brütün %20'si"}>
+              <Select id="fx-ob" value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value as "brut" | "net" })}>
+                <option value="brut">Brüt (stopaj dahil)</option>
+                <option value="net">Net (ev sahibine giden)</option>
+              </Select>
+            </Field>
+          </div>
+        ) : null}
 
         {!row || amountChanged ? (
           <MonthChoiceField
