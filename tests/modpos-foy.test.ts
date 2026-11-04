@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { before, describe, test } from "node:test";
 
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
-import { MODPOS_NOT_ENTERED, modposCompare, modposDiffs, modposDiffsLine, modposDiffText, modposNotEntered, type ModposSavedFields } from "../src/lib/modpos/compare";
+import { MODPOS_NO_OPENING, MODPOS_NOT_ENTERED, modposCompare, modposDiffs, modposDiffsLine, modposDiffText, modposNotEntered, modposOpening, type ModposSavedFields } from "../src/lib/modpos/compare";
 import { backfillOrder, missingFoyDays, needsFetch, nextBackfillDay, nextMorningRun, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
 import {
   foyUrl,
@@ -1344,28 +1344,31 @@ describe("compare.ts: kasa raporu ile föy", () => {
     assert.deepEqual(modposDiffs({ ...same, zNo: "000" }, { ...z, zNo: "0" }), []);
   });
 
-  test("ModPOS'ta girilmemiş açılış ve sayım (0 gelir): farklı sayılmaz, tabloda 'ModPOS'ta girilmedi' notuyla bilgi", () => {
-    // 3 Kasım: ModPOS'ta açılış girilmeden açılmış, sayım girilmeden Z alınmış; raporda 400 ve 2.075
+  test("açılış ModPOS'ta yok (önceki günün devri): karşılaştırılmaz; beklenen nakit raporun açılışıyla; girilmemiş sayım 'ModPOS'ta girilmedi'", () => {
+    // 3 Kasım: ModPOS'a başlangıç nakdi girilmez, sayım girilmeden Z alınmış; raporda açılış 400, sayılan 2.075
     const empty = { ...z, openingCash: 0, countedCash: 0, expectedCash: 7340, cashDiff: -7340 };
-    assert.deepEqual([...modposNotEntered(empty)], ["openingCash", "countedCash"]);
+    assert.deepEqual([...modposNotEntered(empty)], ["countedCash"]);
     assert.deepEqual(modposDiffs({ ...same, openingCash: 400, countedCash: 2075 }, empty), []);
-    const rows = modposCompare({ ...same, openingCash: 400, countedCash: 2075 }, empty);
-    for (const key of ["openingCash", "countedCash"]) {
-      const r = rows.find((x) => x.key === key)!;
-      assert.deepEqual([r.tone, r.note], ["info", MODPOS_NOT_ENTERED], key);
-    }
-    // Raporda da 0: aynı, not yok
-    const zero = modposCompare({ ...same, openingCash: 0 }, empty).find((x) => x.key === "openingCash")!;
-    assert.deepEqual([zero.tone, zero.note], ["same", undefined]);
+    const rows = modposCompare({ ...same, openingCash: 400, countedCash: 2075, expectedCash: 7740, cashDiff: -5665 }, empty);
+    const at = (key: string) => rows.find((x) => x.key === key)!;
+    assert.deepEqual([at("openingCash").modpos, at("openingCash").tone, at("openingCash").note], [null, "none", MODPOS_NO_OPENING]);
+    assert.deepEqual([at("countedCash").tone, at("countedCash").note], ["info", MODPOS_NOT_ENTERED]);
+    // ModPOS'un beklenen nakdi açılışsız: raporun açılışı eklenir (7.340 + 400); sayım girilmediği için kasa farkı yok
+    assert.deepEqual([at("expectedCash").modpos, at("expectedCash").tone], [7740, "same"]);
+    assert.match(at("expectedCash").label, /raporun açılışı eklendi/);
+    assert.equal(at("cashDiff").modpos, null);
+    // Sayım ModPOS'ta girildiyse kasa farkı açılışla: 8.000 − 7.740
+    const counted = modposCompare({ ...same, openingCash: 400, countedCash: 8000, expectedCash: 7740, cashDiff: 260 }, { ...empty, countedCash: 8000, cashDiff: 660 });
+    assert.equal(counted.find((x) => x.key === "cashDiff")!.modpos, 260);
+    assert.equal(modposOpening(empty, 400), 400);
+    // ModPOS'ta açılış yazılıysa (eski günler) yalnız bilgi: farklı sayılmaz
+    assert.deepEqual(modposDiffs({ ...same, openingCash: 400 }, z), []);
+    assert.equal(modposCompare({ ...same, openingCash: 400 }, z).find((x) => x.key === "openingCash")!.tone, "info");
     // Beklenen nakit de 0'sa sayılan 0 gerçek sayımdır: karşılaştırılır
     const realZero = { ...z, countedCash: 0, expectedCash: 0 };
     assert.deepEqual([...modposNotEntered(realZero)], []);
     assert.deepEqual(modposDiffs({ ...same, countedCash: 50 }, realZero).map((d) => d.field), ["countedCash"]);
-    // Beklenen nakit bilinmiyorsa 0 sayım girilmemiş sayılır; ModPOS'un sıfır olmayan açılışı her zaman karşılaştırılır
     assert.deepEqual([...modposNotEntered({ ...z, countedCash: 0, expectedCash: null })], ["countedCash"]);
-    assert.deepEqual(modposDiffs({ ...same, openingCash: 400 }, z).map((d) => d.field), ["openingCash"]);
-    // Kasasız (föysüz) günde açılış zaten karşılaştırılmaz
-    assert.deepEqual([...modposNotEntered(foyZ(foyOf("foysuz-gun"))!)], []);
   });
 
   test("1 kuruş hassasiyet: 1 kuruş aynı, 2 kuruş farklı", () => {
@@ -1390,7 +1393,6 @@ describe("compare.ts: kasa raporu ile föy", () => {
         ["online", "Online"],
         ["other", "Diğer"],
         ["offRevenue", "Ödenmez / ikram"],
-        ["openingCash", "Açılış"],
         ["countedCash", "Sayılan nakit"],
       ],
     );

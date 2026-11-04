@@ -7,11 +7,14 @@ import type { ModposZ } from "./z";
  * tests/modpos-foy.test.ts). Yalnız ModPOS günlerinde çağrılır (LafPOS geçiş gününden önce ya da geçiş günü boşken).
  *
  * - **Farklı yazılan** (uyarı): Z alanları (Z no, fiş sayısı, toplam satış, nakit, kart, yemek kartı, online, diğer,
- *   ödenmez / ikram), açılış ve sayılan nakit. Personel bunları ModPOS'un Z raporundan yazar; föy aynı Z'nin rakamıdır,
+ *   ödenmez / ikram) ve sayılan nakit. Personel bunları ModPOS'un Z raporundan yazar; föy aynı Z'nin rakamıdır,
  *   1 kuruştan büyük fark yanlış yazım ya da kapanıştan sonraki bir düzeltmedir. Raporda boş bırakılan isteğe bağlı
  *   alan (Z no, fiş sayısı, ödenmez) farklı sayılmaz. Sayılan nakit yalnız ModPOS'ta Z raporuna dayanan sayım varsa.
- * - **ModPOS'ta girilmemiş** (sahibin kararı, 4 Kasım 2026; bilgi, uyarı değil): ModPOS açılış nakdi girilmeden açılan
- *   ya da sayım girilmeden Z'si alınan günde bu alanları 0 gönderir. Açılış 0 ve sayılan 0 "girilmedi" sayılır; sayılan
+ * - **Açılış ModPOS'ta yok** (sahibin kararı, 4 Kasım 2026): kafede ModPOS'a başlangıç nakdi girilmez, açılış önceki
+ *   günün devridir (panel onu raporun kendi denetimiyle karşılaştırır: "Açılış ≠ devir"). Açılış ModPOS'la
+ *   karşılaştırılmaz; ModPOS'un beklenen nakdi ve kasa farkı tabloda raporun açılışı eklenerek gösterilir
+ *   (modposOpening).
+ * - **ModPOS'ta girilmemiş sayım** (bilgi, uyarı değil): sayım girilmeden Z'si alınan günde ModPOS sayılanı 0 gönderir;
  *   0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır (modposNotEntered).
  * - **Bilgi** (uyarı değil): gün içinde çıkan ↔ ModPOS'un gideri, gün içinde giren ↔ nakit cari tahsilat, olması
  *   gereken nakit ve kasa farkı. Kasadan çıkanların kaynağı paneldir (teslim de oradadır; ModPOS'ta yalnız gider),
@@ -63,12 +66,22 @@ const sameMoney = (a: number, b: number) => Math.abs(kurus(a) - kurus(b)) <= 1;
 /** Z no baştaki sıfırlar olmadan karşılaştırılır ("0312" = "312") */
 const zKey = (v: string) => v.trim().replace(/^0+(?=\d)/, "");
 
-/** ModPOS'ta girilmediği için karşılaştırılmayan alanlar: 0 gelen açılış, beklenen nakit 0 değilken 0 gelen sayım */
-export function modposNotEntered(z: ModposZ): Set<"openingCash" | "countedCash"> {
-  const out = new Set<"openingCash" | "countedCash">();
-  if (!z.foysuz && kurus(z.openingCash) === 0) out.add("openingCash");
+/** ModPOS'ta girilmediği için karşılaştırılmayan alan: beklenen nakit 0 değilken 0 gelen sayım */
+export function modposNotEntered(z: ModposZ): Set<"countedCash"> {
+  const out = new Set<"countedCash">();
   if (z.countedCash !== null && kurus(z.countedCash) === 0 && !(z.expectedCash !== null && kurus(z.expectedCash) === 0)) out.add("countedCash");
   return out;
+}
+
+/** Açılış ModPOS'ta tutulmaz: karşılaştırma tablosunun açılış satırındaki not */
+export const MODPOS_NO_OPENING = "ModPOS'ta yok (önceki günün devri)";
+
+/**
+ * ModPOS'un hesabındaki açılış: kafede başlangıç nakdi ModPOS'a girilmez (0); öyleyse beklenen nakit ve kasa farkı
+ * raporun açılışıyla tamamlanır (ModPOS'ta yazılıysa o)
+ */
+export function modposOpening(z: ModposZ, reportOpening: number | null | undefined): number {
+  return kurus(z.openingCash) === 0 ? (reportOpening ?? 0) : z.openingCash;
 }
 
 /** "ModPOS'ta girilmedi" (karşılaştırma tablosunun fark hücresi) */
@@ -84,7 +97,6 @@ export function modposDiffs(saved: ModposSavedFields, z: ModposZ): ModposDiff[] 
   if (saved.receipts !== null && saved.receipts !== undefined && !z.foysuz && saved.receipts !== z.receipts) push("receipts", saved.receipts, z.receipts);
   for (const f of ["zTotal", "cash", "card", "mealCard", "online", "other"] as const) if (!sameMoney(saved[f], z[f])) push(f, saved[f], z[f]);
   if (saved.offRevenue !== null && saved.offRevenue !== undefined && !sameMoney(saved.offRevenue, z.offRevenue)) push("offRevenue", saved.offRevenue, z.offRevenue);
-  if (!z.foysuz && !skip.has("openingCash") && !sameMoney(saved.openingCash, z.openingCash)) push("openingCash", saved.openingCash, z.openingCash);
   if (z.countedCash !== null && !skip.has("countedCash") && !sameMoney(saved.countedCash, z.countedCash)) push("countedCash", saved.countedCash, z.countedCash);
   return out;
 }
@@ -145,12 +157,20 @@ export function modposCompare(saved: (ModposSavedFields & { expectedCash?: numbe
   row("other", "Diğer", saved?.other ?? null, z.other, true, "check");
   row("offRevenue", "Ödenmez / ikram (ciro dışı)", saved?.offRevenue ?? null, z.offRevenue, true, "check");
   if (!z.foysuz) {
-    row("openingCash", "Açılış", saved?.openingCash ?? null, z.openingCash, true, "check");
+    // Açılış ModPOS'ta tutulmaz (önceki günün devri): karşılaştırılmaz; ModPOS'ta yazılmışsa yalnız bilgi
+    const noOpening = kurus(z.openingCash) === 0;
+    if (noOpening) rows.push({ key: "openingCash", label: "Açılış", report: saved?.openingCash ?? null, modpos: null, diff: null, tone: "none", money: true, ...(saved ? { note: MODPOS_NO_OPENING } : {}) });
+    else row("openingCash", "Açılış", saved?.openingCash ?? null, z.openingCash, true, "info");
     row("cashOut", "Gün içinde çıkan ↔ ModPOS API gideri", saved?.cashOut ?? null, z.cashOut, true, "info");
     row("cashIn", "Gün içinde giren ↔ nakit cari tahsilat", saved ? (saved.cashIn ?? 0) : null, z.cashIn, true, "info");
-    row("expectedCash", "Olması gereken nakit", saved?.expectedCash ?? null, z.expectedCash, true, "info");
+    // ModPOS'un beklenen nakdi ve kasa farkı açılışsızdır: raporun açılışı eklenir (modposOpening)
+    const add = noOpening ? (saved?.openingCash ?? 0) : 0;
+    const expected = z.expectedCash !== null ? Math.round((z.expectedCash + add) * 100) / 100 : null;
+    row("expectedCash", noOpening && add ? "Olması gereken nakit (ModPOS'a raporun açılışı eklendi)" : "Olması gereken nakit", saved?.expectedCash ?? null, expected, true, "info");
     row("countedCash", "Sayılan nakit", saved?.countedCash ?? null, z.countedCash, true, "check");
-    row("cashDiff", "Kasa farkı", saved?.cashDiff ?? null, z.cashDiff, true, "info");
+    const counted = z.countedCash !== null && !notEntered.has("countedCash");
+    const modposDiff = counted && expected !== null ? Math.round((z.countedCash! - expected) * 100) / 100 : z.cashDiff;
+    row("cashDiff", "Kasa farkı", saved?.cashDiff ?? null, noOpening && add ? (counted && expected !== null ? modposDiff : null) : z.cashDiff, true, "info");
   }
   return rows;
 }

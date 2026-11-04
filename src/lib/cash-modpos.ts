@@ -300,11 +300,14 @@ export function modposFacts(z: ModposZ): DayFact[] {
     {
       label: "Kasa farkı",
       value: counted ? diffText(z.cashDiff!) : z.countedCash !== null ? "–" : "Sayım yok",
-      sub: counted ? "sayılan − beklenen" : noCount,
-      tone: counted ? (diffKind(z.cashDiff!) === "even" ? "good" : "warn") : null,
+      sub: counted ? (noOpening(z) ? "açılışsız (ModPOS'ta yok)" : "sayılan − beklenen") : noCount,
+      tone: counted && !noOpening(z) ? (diffKind(z.cashDiff!) === "even" ? "good" : "warn") : null,
     },
   ];
 }
+
+/** Açılış ModPOS'a girilmemiş (0): kafede başlangıç nakdi ModPOS'ta tutulmaz, önceki günün devridir */
+const noOpening = (z: ModposZ) => !z.foysuz && Math.abs(z.openingCash) < 0.005;
 
 /** ModPOS'un ödeme kanalları (ciroya göre payı) ve toplamı (föy kendi içinde tutuyor mu) */
 export function modposPayments(z: ModposZ): DayLine[] {
@@ -327,7 +330,8 @@ export function modposCash(z: ModposZ, foy: KasaFoyu): DayLine[] {
   const zSales = r2(foy.kasalar.reduce((a, k) => a + (k.nakitKasa?.nakitSatis ?? k.odemeler.filter((o) => modposBucket(o) === "cash").reduce((s, o) => s + o.satis, 0)), 0));
   const moved = Math.abs(zSales - z.cash) >= 0.01;
   const lines: DayLine[] = [
-    { label: "Açılış", value: money(z.openingCash) },
+    // Kafede başlangıç nakdi ModPOS'a girilmez (sahibin kararı, 4 Kasım 2026): açılış önceki günün devridir
+    noOpening(z) ? { label: "Açılış", value: "ModPOS'ta yok", sub: "önceki günün devri (kasa raporunda)" } : { label: "Açılış", value: money(z.openingCash) },
     { label: "+ Nakit satış", value: money(zSales), sub: moved ? `şu anki nakit ödemeler ${money(z.cash)} (Z'den sonra değişti)` : null, tone: moved ? "warn" : null },
     { label: "+ Nakit cari tahsilat", value: money(z.cashIn) },
     { label: "− Gider", value: money(z.cashOut) },
@@ -340,7 +344,8 @@ export function modposCash(z: ModposZ, foy: KasaFoyu): DayLine[] {
     {
       label: "Fark",
       value: z.cashDiff !== null ? diffText(z.cashDiff) : "–",
-      tone: z.cashDiff === null ? null : diffKind(z.cashDiff) === "even" ? "good" : "warn",
+      sub: z.cashDiff !== null && noOpening(z) ? "ModPOS'un hesabı açılışsız: kasa raporunun farkı esastır" : null,
+      tone: z.cashDiff === null || noOpening(z) ? null : diffKind(z.cashDiff) === "even" ? "good" : "warn",
       strong: true,
     },
   ];

@@ -154,10 +154,12 @@ alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
 
 Karşılaştırma kuralları (`src/lib/modpos/compare.ts`): Z alanları, açılış ve sayılan nakit 1 kuruş hassasiyetle
 "farklı yazılan"dır (personel bunları ModPOS'un Z'sinden yazar; fark yanlış yazım ya da kapanıştan sonraki düzeltmedir).
-Raporda boş bırakılan isteğe bağlı alan (Z no, fiş sayısı, ödenmez) farklı sayılmaz. ModPOS'ta girilmemiş açılış ve
-sayım farklı sayılmaz (sahibin kararı, 4 Kasım 2026): ModPOS açılış nakdi girilmeden açılan ya da sayım girilmeden Z'si
-alınan günde bu alanları 0 gönderir; açılış 0 ve sayılan 0 tabloda "ModPOS'ta girilmedi" diye bilgidir, uyarı ve zil
-çıkmaz. Sayılan 0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır. Panelde API'den gelen
+Raporda boş bırakılan isteğe bağlı alan (Z no, fiş sayısı, ödenmez) farklı sayılmaz. Açılış ModPOS'la karşılaştırılmaz
+(sahibin kararı, 4 Kasım 2026): kafede başlangıç nakdi ModPOS'a girilmez, açılış önceki günün devridir (raporun kendi
+"Açılış ≠ devir" denetimi). Tabloda açılış satırı "ModPOS'ta yok (önceki günün devri)" der; ModPOS'un açılışsız beklenen
+nakdine ve kasa farkına raporun açılışı eklenir; ModPOS bölümündeki nakit kasa ModPOS'un kendi (açılışsız) hesabıdır.
+Sayım girilmeden Z'si alınan günde ModPOS sayılanı 0 gönderir: tabloda "ModPOS'ta girilmedi" diye bilgidir, uyarı ve
+zil çıkmaz; sayılan 0 yalnız ModPOS'un beklenen nakdi de 0'sa gerçek sayımdır ve karşılaştırılır. Panelde API'den gelen
 her bilgi "ModPOS API" diye anılır (personelin ModPOS'tan yazdığı Z ile karışmasın). Gider ↔ gün içinde çıkan,
 nakit cari tahsilat ↔ gün içinde giren, olması gereken ve kasa farkı yalnız bilgidir. LafPOS'a geçiş gününden
 itibaren kasa LafPOS'tur: föy karşılaştırılmaz. Kasası hâlâ açıkken alınmış föy (gün içinde **Bu günü çek**)
