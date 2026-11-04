@@ -17,9 +17,9 @@ export const MODPOS_NOT_CONFIGURED = "ModPOS bağlantısı kurulmamış: Vercel'
 /** Anahtarın biçimi bozukken (boşluk, satır sonu, çok kısa) */
 export const MODPOS_KEY_BROKEN = "MODPOS_API_KEY'in biçimi bozuk: Vercel'deki değeri Gafdigi'nin verdiği anahtarla aynen değiştirin";
 /** Önizleme dağıtımı canlının veritabanını ve ModPOS hakkını paylaşır: çekmez (src/server/modpos/sync.ts canFetchModpos) */
-export const MODPOS_PREVIEW = "Önizleme dağıtımı ModPOS'tan çekmez: canlı panelden çekin";
+export const MODPOS_PREVIEW = "Önizleme dağıtımı ModPOS API'den çekmez: canlı panelden çekin";
 /** İleri tarih ya da takvimde olmayan gün (servis ILERI_TARIH der, hak boşa gitmesin diye istek gitmez) */
-export const MODPOS_DAY_INVALID = "Bu gün ModPOS'tan çekilemez: yalnız bugün ve önceki günler çekilir";
+export const MODPOS_DAY_INVALID = "Bu gün ModPOS API'den çekilemez: yalnız bugün ve önceki günler çekilir";
 
 const VERB: Record<Exclude<ModposDayResult, "hata">, string> = { yeni: "alındı", degisti: "değişti", ayni: "değişmedi" };
 
@@ -57,7 +57,7 @@ export function modposFetchOutcome(r: ModposFetchRun, day: string, sheet: Modpos
     const description = parts.join(" · ");
     return {
       ok: true,
-      title: `${dayMonthYearTR(day)} föyü ${verb}${d.result === "degisti" && d.revision ? ` (sürüm ${d.revision})` : ""}`,
+      title: `${dayMonthYearTR(day)} ModPOS API verisi ${verb}${d.result === "degisti" && d.revision ? ` (sürüm ${d.revision})` : ""}`,
       description: description.charAt(0).toLocaleUpperCase("tr-TR") + description.slice(1),
       log: `${dayMonthYearTR(day)} · ${verb} · kalan hak ${left}`,
     };
@@ -65,7 +65,7 @@ export function modposFetchOutcome(r: ModposFetchRun, day: string, sheet: Modpos
   if (r.status === "off") return { ok: false, error: MODPOS_NOT_CONFIGURED };
   if (r.status === "preview") return { ok: false, error: MODPOS_PREVIEW };
   if (r.status === "nothing") return { ok: false, error: MODPOS_DAY_INVALID };
-  return { ok: false, error: d?.text ?? r.error ?? "ModPOS föyü alınamadı: sonra yeniden deneyin" };
+  return { ok: false, error: d?.text ?? r.error ?? "ModPOS API verisi alınamadı: sonra yeniden deneyin" };
 }
 
 /**
@@ -79,9 +79,9 @@ export function modposFetchConfirmLines(o: { day: string; today: string; left: n
   if (o.day === o.today) out.push("Bugünün kasası henüz kapanmadıysa tutarlar o anki hâliyle gelir (kesin değil); yarın sabah kendiliğinden yeniden çekilir.");
   // Gece yarısından sonra dün henüz kesin değil (ertesi sabah 07:00): şimdi çekilirse sabah işi aynı günü yeniden çeker
   else if (o.now && o.now.getTime() < finalAfter(o.day) && o.stored !== true)
-    out.push("Bu günün föyü sabah 07:00'de kesinleşir; şimdi çekilirse kesin olmaz ve sabah işi aynı günü yeniden çeker (iki hak aynı güne gider).");
-  else if (o.stored === true) out.push("Bu günün kesin föyü zaten var; yeniden çekmek yalnız kapanıştan sonra yapılan bir düzeltmeyi gösterir.");
-  else if (o.stored === false) out.push("Bu günün föyü kesin değil; sabah işi de yeniden çeker.");
+    out.push("Bu günün verisi sabah 07:00'de kesinleşir; şimdi çekilirse kesin olmaz ve sabah işi aynı günü yeniden çeker (iki hak aynı güne gider).");
+  else if (o.stored === true) out.push("Bu günün kesin verisi zaten var; yeniden çekmek yalnız kapanıştan sonra yapılan bir düzeltmeyi gösterir.");
+  else if (o.stored === false) out.push("Bu günün verisi kesin değil; sabah işi de yeniden çeker.");
   if (after === 0) out.push("Hak bitince sabah işi bugün başka gün çekemez; hak gece yarısı yenilenir.");
   out.push("Çekim bir dakikaya kadar sürebilir.");
   return out;
@@ -123,12 +123,12 @@ export function modposDayWarnings(d: Pick<ModposDayView, "z" | "warnings">): str
 export function modposDayBadges(d: ModposDayView): ModposDayBadge[] {
   const out: ModposDayBadge[] = [];
   if (d.state === "KAPALI") out.push({ tone: "green", text: "Kapalı", title: "Bütün kasalar kapanmış" });
-  else if (d.state === "ACIK") out.push({ tone: "amber", text: "Açık", title: "Föy alınırken kasa açıktı" });
-  else if (d.z?.foysuz) out.push({ tone: "gray", text: "Kasa açılmadı", title: "Kasa açılmadan satış yapılmış; tutarlar föysüz satıştan" });
-  else if (!d.final) out.push({ tone: "gray", text: "Satış yoktu", title: "Föy kasa açılmadan alındı; sabah işi kesin föyü yeniden çeker" });
+  else if (d.state === "ACIK") out.push({ tone: "amber", text: "Açık", title: "Veri alınırken kasa açıktı" });
+  else if (d.z?.foysuz) out.push({ tone: "gray", text: "Kasa açılmadı", title: "Kasa açılmadan satış yapılmış; tutarlar kasasız satıştan" });
+  else if (!d.final) out.push({ tone: "gray", text: "Satış yoktu", title: "Veri kasa açılmadan alındı; sabah işi kesin veriyi yeniden çeker" });
   else out.push({ tone: "gray", text: "Satış yok", title: "Bu gün kasa açılmamış, satış yok" });
   if (!d.final) out.push({ tone: "gray", text: "Kesin değil", title: "Gün açıkken ya da ertesi sabah 07:00'den önce alındı; sabah işi yeniden çeker" });
-  if (d.revision > 1) out.push({ tone: "blue", text: `Sürüm ${d.revision}`, title: "Föy önceki çekimden sonra değişti; önceki özet Kasa'da" });
+  if (d.revision > 1) out.push({ tone: "blue", text: `Sürüm ${d.revision}`, title: "Veri önceki çekimden sonra değişti; önceki özet Kasa'da" });
   const warnings = modposDayWarnings(d);
   if (warnings.length) out.push({ tone: "amber", text: `${warnings.length} uyarı`, title: warnings.join("; ") });
   return out;

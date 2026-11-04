@@ -140,7 +140,7 @@ function kasaLines(k: FoyKasa, many: boolean): string[] {
 export function foySummaryLines(foy: KasaFoyu, o: { now: Date; fetchedAt: Date | null; quota: ModposQuota | null }): string[] {
   const out: string[] = [];
   const z = foyZ(foy);
-  out.push(`ModPOS kasa föyü: ${longDateTR(foy.kasaGunu)} (${foy.kasaGunu})`);
+  out.push(`ModPOS API: ${longDateTR(foy.kasaGunu)} (${foy.kasaGunu})`);
   if (foy.olusturulma) out.push(`Hazırlandığı an: ${timeText(foy.olusturulma, o.now)}`);
   const at = o.fetchedAt ?? (foy.olusturulma ? new Date(foy.olusturulma) : null);
   const final = at ? isFinalFoy(foy, at) : null;
@@ -310,7 +310,7 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
     if (r.status === "kota") return fail(r.error ?? "ModPOS'un bugünkü çekim hakkı doldu");
     if (r.status === "nothing" || !r.days.length) return fail("Çekilecek gün yok");
     const d = r.days[0];
-    if (d.result === "hata") return fail(d.text ?? r.error ?? "ModPOS föyü alınamadı");
+    if (d.result === "hata") return fail(d.text ?? r.error ?? "ModPOS API verisi alınamadı");
     const sheet = await loadModposSheet(day, db);
     if (sheet) {
       say();

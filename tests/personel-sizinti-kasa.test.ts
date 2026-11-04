@@ -283,7 +283,7 @@ test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit s�
  * föyün anahtarları yok. Kasa sayfası (yönetici dalı) ve zil (yönetici dalı) iki role çizer: sayfanın dalları
  * tests/modpos-kasa.test.ts'te, çalışan sunucunun yükü scripts/personel-sizinti.ts'te aynı listeyle taranır
  */
-test("ModPOS kasa föyü: personele giden kasa kaynaklarında föyün anahtarları yok", () => {
+test("ModPOS API: personele giden kasa kaynaklarında föyün anahtarları yok", () => {
   const twoRoles = new Set(["src/app/panel/kasa/page.tsx", "src/server/bell/kasa.ts"]);
   for (const f of STAFF_SOURCES) {
     if (twoRoles.has(f)) continue;

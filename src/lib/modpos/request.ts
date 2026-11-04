@@ -144,18 +144,18 @@ export function modposErrorText(status: number, hata: FoyHata | null, now: Date 
     case "KAPSAM_GECERSIZ":
       return "ModPOS API anahtarı bir markaya ya da şubeye bağlı değil: Gafdigi'den anahtarı işletmeye bağlatın";
     case "KOTA_DOLDU":
-      return `ModPOS'un günlük ${hata?.gunlukHak ?? MODPOS_DAILY_QUOTA} çekim hakkı doldu: hak ${renewText(hata?.yenilenme ?? null, now)} yenilenir`;
+      return `ModPOS API'nin günlük ${hata?.gunlukHak ?? MODPOS_DAILY_QUOTA} çekim hakkı doldu: hak ${renewText(hata?.yenilenme ?? null, now)} yenilenir`;
     case "COK_FAZLA_ISTEK":
       return "ModPOS kısa sürede çok istek aldı: birkaç dakika sonra yeniden deneyin";
     case "RAPOR_URETILEMEDI":
-      return "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek";
+      return "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek";
     case "SERVIS_KULLANILAMIYOR":
       return "ModPOS servisi şu an kullanılamıyor: sonra yeniden denenecek";
     case "TARIH_GEREKLI":
     case "TARIH_GECERSIZ":
       return "ModPOS tarihi kabul etmedi (geçersiz gün)";
     case "ILERI_TARIH":
-      return "ModPOS ileri tarihi kabul etmedi: yalnız bugün ve önceki günler çekilir";
+      return "ModPOS API ileri tarihi kabul etmedi: yalnız bugün ve önceki günler çekilir";
   }
   if (status === 429) return "ModPOS istek sınırına takıldı: sonra yeniden denenecek";
   if (status >= 500) return `ModPOS şu an yanıt vermiyor (HTTP ${status}): sonra yeniden denenecek`;

@@ -39,7 +39,7 @@ export async function loadApprovalsDigest(now = new Date()): Promise<DigestExtra
       : onlyCount
         ? { title: "Stok sayımı", lines, href: count.href ?? "/panel/sayim", link: "Sayımı aç", subjectPart: null, headline: null }
         : onlyModpos
-          ? { title: "ModPOS kasa föyü", lines, href: modpos.href ?? "/panel/kasa", link: modpos.link ?? "Kasa'yı aç", subjectPart: null, headline: null }
+          ? { title: "ModPOS API", lines, href: modpos.href ?? "/panel/kasa", link: modpos.link ?? "Kasa'yı aç", subjectPart: null, headline: null }
           : { title: count.lines.length || modpos.lines.length ? "Operasyon" : "Personelden", lines, href: "/panel/bugun", link: "Bugün'ü aç", subjectPart: null, headline: null },
     logKeys: [],
   };

@@ -14,7 +14,7 @@ export function ModposDiffList({ diffs }: { diffs: readonly ModposDiff[] | null 
       tone="warn"
       risk="para"
       size="sm"
-      title={`ModPOS föyünden farklı yazılan ${diffs.length} alan`}
+      title={`ModPOS API'den farklı yazılan ${diffs.length} alan`}
       text={
         <>
           <ul className="list-disc pl-4">

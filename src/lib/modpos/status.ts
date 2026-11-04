@@ -179,7 +179,7 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
       tone: "gray",
       badge: "Kurulmadı",
       headline: "ModPOS API anahtarı tanımlı değil",
-      lines: ["Vercel › lafmaliyet › Settings › Environment Variables'a (yalnız Production) MODPOS_API_KEY eklenip yeniden yayınlanınca her sabah dünün kasa föyü gelir."],
+      lines: ["Vercel › lafmaliyet › Settings › Environment Variables'a (yalnız Production) MODPOS_API_KEY eklenip yeniden yayınlanınca her sabah dünün kasa verisi ModPOS API'den gelir."],
       short: "Kurulmadı",
       left,
       canFetch: false,
@@ -201,18 +201,18 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   const lines: string[] = [];
   const st = c.stored;
   if (st.count && st.first && st.last) {
-    lines.push(`${modposDayText(st.first, c.now)} – ${modposDayText(st.last, c.now)} arası ${st.count} günün föyü var.`);
+    lines.push(`${modposDayText(st.first, c.now)} – ${modposDayText(st.last, c.now)} arası ${st.count} günün ModPOS API verisi var.`);
   }
   if (c.missing > 0) {
     const days = Math.ceil(c.missing / Math.max(1, hak - 1));
     const next = c.next ? `; sıradaki ${modposDayText(c.next, c.now)}` : "";
     lines.push(
-      `${sinceText(c.from, c.now)} bu yana ${c.missing} günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir${next} (yaklaşık ${days} gün sürer).`,
+      `${sinceText(c.from, c.now)} bu yana ${c.missing} günün ModPOS API verisi henüz yok: her sabah dünün verisinden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir${next} (yaklaşık ${days} gün sürer).`,
     );
   }
   lines.push(`Bugün kalan çekim hakkı: ${left} / ${hak}${left < hak ? ` (hak ${renew} yenilenir)` : ""}.`);
   const ok = c.state.lastOk;
-  if (ok) lines.push(`Son başarılı çekim: ${modposDayText(ok.day, c.now)} föyü, ${timeText(ok.at, c.now)}.`);
+  if (ok) lines.push(`Son başarılı çekim: ${modposDayText(ok.day, c.now)} verisi, ${timeText(ok.at, c.now)}.`);
   // Tekrar tekrar alınamayan günler (planlayıcı bekletir: 2, 4, 8… gün): sessizce takılı kalmasın
   const stuck = Object.entries(c.state.dayErrors ?? {})
     .filter(([, e]) => e.count >= 2)
@@ -226,7 +226,7 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   const quotaErr = err?.kod === "KOTA_DOLDU";
   const errFresh = err && (!ok || err.at > ok.at) && !(quotaErr && left > 0);
   if (c.preview) {
-    return { tone: "gray", badge: "Önizleme", headline: "Önizleme dağıtımı ModPOS'tan çekmez", lines, short: "Önizleme", left, canFetch: false, fetchBlocked: "Önizlemede çekilmez" };
+    return { tone: "gray", badge: "Önizleme", headline: "Önizleme dağıtımı ModPOS API'den çekmez", lines, short: "Önizleme", left, canFetch: false, fetchBlocked: "Önizlemede çekilmez" };
   }
   if (errFresh && err.keyError) {
     return { tone: "red", badge: "Hata", headline: err.text, lines, short: "Hata", left, canFetch: left > 0, fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir` };
@@ -249,7 +249,7 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
     return {
       tone: "amber",
       badge: "Henüz çekilmedi",
-      headline: "Anahtar tanımlı; ilk föy yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir",
+      headline: "Anahtar tanımlı; ilk veri yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir",
       lines,
       short: "Henüz çekilmedi",
       left,
@@ -257,7 +257,7 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
       fetchBlocked: left > 0 ? null : `Bugünkü hak doldu; ${renew} yenilenir`,
     };
   }
-  const headline = errFresh ? `Son deneme: ${err.text}` : "Her sabah 08:00'de dünün kasa föyü geliyor";
+  const headline = errFresh ? `Son deneme: ${err.text}` : "Her sabah 08:00'de dünün kasa verisi ModPOS API'den geliyor";
   return {
     tone: errFresh ? "amber" : "green",
     badge: errFresh ? "Uyarı" : "Bağlı",

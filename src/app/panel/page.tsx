@@ -45,6 +45,7 @@ import {
   yearTotals,
   yearTrend,
   type DashboardData,
+  type MonthState,
   type YearTotals as YearTotalsData,
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -54,7 +55,7 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
-import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
@@ -86,7 +87,7 @@ import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
-import { debtFacts, monthCashOuts, monthTaskFacts, monthTasks, overdueNotice, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { debtFacts, defaultTaskMonth, monthCashOuts, monthTaskFacts, monthTasks, overdueNotice, paymentFacts, taskSummary, type MonthTask, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
@@ -279,14 +280,21 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
   // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
   const payments = upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null;
-  const allTasks = monthTasks(
-    monthTaskFacts(model, month, d.monthState, d.refMonth, {
-      payments,
-      parasut,
-      cashOuts: cashOutState ? monthCashOuts(cashOutState, month) : null,
-    }),
-  );
-  const tasks = allTasks.filter((t) => t.key !== "odeme");
+  const taskCache = new Map<string, { state: MonthState; tasks: MonthTask[] }>();
+  const tasksOf = (m: string) => {
+    let hit = taskCache.get(m);
+    if (!hit) {
+      const dm = m === month ? d : dashboard(model, m);
+      const all = monthTasks(monthTaskFacts(model, m, dm.monthState, dm.refMonth, { payments, parasut, cashOuts: cashOutState ? monthCashOuts(cashOutState, m) : null }));
+      hit = { state: dm.monthState, tasks: all.filter((t) => t.key !== "odeme") };
+      taskCache.set(m, hit);
+    }
+    return hit;
+  };
+  // Kartın ayı: ay seçildiyse o; yoksa ayın ilk 10 gününde işleri bitmemiş biten ay, değilse bu ay (defaultTaskMonth).
+  // Sayfanın rakamları satış listesi olan son ayla açılır; kart ve bağlantıları kendi ayını izler
+  const taskMonth = monthParam(sp.ay) ?? defaultTaskMonth(new Date(), (m) => taskSummary(tasksOf(m).tasks).monthOpen);
+  const { state: taskState, tasks } = tasksOf(taskMonth);
   const paymentNotice = overdueNotice(payments);
   // Bir ekranda bir gerçek bir kez: su işi ay listesinde açıkken "Su ve buz maliyeti …" uyarısı ikinci kez çizilmez
   const suOpen = tasks.some((t) => t.key === "su" && (t.status === "todo" || t.status === "warn"));
@@ -417,7 +425,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           />
         ) : null}
         {/* 0. Ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
-        <DashboardChecklist month={month} state={d.monthState} tasks={tasks} />
+        <DashboardChecklist month={taskMonth} state={taskState} tasks={tasks} />
 
         {/* 1. Metrikler (AkmanOS statistic-cards: rakam sayılır, yanında önceki aya göre rozet) */}
         <div className={cn("grid grid-cols-2 gap-3 xl:grid-cols-4", KPI_LABELS)}>

@@ -102,7 +102,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
   const wanted = o.days ? [...new Set(o.days)].filter((d) => requestableDay(d, started)).slice(0, Math.max(0, left0)) : plan(started, left0, state.dayErrors);
   if (!wanted.length) {
     // Hak dolduysa da çekilecek gün yoksa da istek gitmez; elle çekimde nedeni söylenir
-    if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS'un bugünkü çekim hakkı doldu" };
+    if (left0 <= 0) return { status: "kota", days: [], left: 0, error: "ModPOS API'nin bugünkü çekim hakkı doldu" };
     return { status: "nothing", days: [], left: left0 };
   }
   const days: ModposSyncDay[] = [];
@@ -122,7 +122,7 @@ async function runSync(trigger: ModposTrigger, o: SyncOptions, env: Record<strin
       // Hiçbir istek başlamadan süre bittiyse "çekilecek gün yok" değil: süre doldu (ertesi sabah yeniden denenir)
       if (!days.length) {
         stop = "error";
-        stopText = "ModPOS föyü çekilemedi: süre doldu, sonra yeniden denenecek";
+        stopText = "ModPOS API verisi çekilemedi: süre doldu, sonra yeniden denenecek";
         lastError = { at: clock().toISOString(), day: null, kod: "SURE_DOLDU", text: stopText, keyError: false };
       }
       break;

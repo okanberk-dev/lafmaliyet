@@ -51,7 +51,7 @@ const bos = (day: string, ciro = 0): KasaFoyu => ({
   foysuzGunler: ciro ? [{ sube: "Kadıköy Şube", ciro, adisyonSayisi: 7, odemeler: [{ yontem: "Kredi Kartı", kod: "KREDI_KARTI", tutar: ciro }] }] : [],
 });
 
-describe("ModPOS föyü ay rakamına yedek: veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
+describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATABASE_URL yok" }, () => {
   let admin: postgres.Sql;
   let db: DB;
   let reports: typeof import("../src/server/data/cash-reports");
@@ -236,7 +236,7 @@ describe("ModPOS föyü ay rakamına yedek: veritabanında", { skip: !SERVER_URL
     assert.equal(t.posRevenue, 15 * 10_000 + 15 * 28_450.5);
     assert.equal(t.discountDays, 15, "föyde indirim yok");
     assert.deepEqual([on.posRevenue, on.sources?.posRevenue, on.openDays], [t.posRevenue, "kasa", 30]);
-    assert.equal(kasaMonthLine(on), "Bu ayın açık gün ve cirosu kasa raporlarından (15 gün ModPOS föyünden sayıldı)");
+    assert.equal(kasaMonthLine(on), "Bu ayın açık gün ve cirosu kasa raporlarından (15 gün ModPOS API'den sayıldı)");
 
     // Kasa sayfasının hesabı (ayın raporları + LafPOS + föy, ilk satır ve ilk kasa raporu ayrı): aynı satır
     const monthRows = (await reports.tillRows(db)).filter((r) => r.date.slice(0, 7) === "2026-10" && !r.source);

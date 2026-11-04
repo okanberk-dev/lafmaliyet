@@ -22,7 +22,7 @@ export const SETTINGS_SECTIONS = [
   // Kafenin kasası LafPOS: bağlantının durumu, son ret ve günü silme, LafPOS'a geçiş günü (docs/LAFPOS.md)
   { id: "lafpos", label: "LafPOS (kasa)", icon: Store },
   // ModPOS'un kasa föyü (API, günde 2 çekim): durum, kalan hak, "Bu günü çek", son günler, ay rakamına yedek (docs/MODPOS-API.md)
-  { id: "modpos", label: "ModPOS (kasa föyü)", icon: ReceiptTurkishLira },
+  { id: "modpos", label: "ModPOS API", icon: ReceiptTurkishLira },
   // Z raporu, POS fişi ve kasadan çıkan fişlerin fotoğraftan okunması (Claude): aç / kapat, günlük sınır, tutar
   { id: "foto", label: "Fotoğraftan okuma", icon: ScanText },
   { id: "yedek", label: "Yedek", icon: HardDriveDownload },

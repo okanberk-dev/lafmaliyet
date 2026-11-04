@@ -1,4 +1,4 @@
-// Ayarlar › ModPOS (kasa föyü) kartı ve eylemleri, gerçek Postgres'te (docs/MODPOS-API.md › Nerede görünür, Kota ve
+// Ayarlar › ModPOS API kartı ve eylemleri, gerçek Postgres'te (docs/MODPOS-API.md › Nerede görünür, Kota ve
 // çekme sırası, Ay rakamına yedek): kurulmamışken, önizlemede, ileri ya da takvimde olmayan günde, anahtar bozukken
 // "Bu günü çek" hiçbir istek göndermez; alınan gün saklanır, işlem geçmişine "gün · alındı / değişmedi · kalan hak"
 // düşer, kart günü Z özeti ve uyarısıyla gösterir; hak dolunca istek gitmez ve neden söylenir; bugün çekilen föy kesin
@@ -152,14 +152,14 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
     replies = [{ status: 200, body: foyXml(d3), headers: quota(1) }];
     const res = await actions.fetchModposDay(d3);
     assert.ok(res.ok, JSON.stringify(res));
-    assert.equal(plain(res.data.title), `${plain(dayMonthYearTR(d3))} föyü alındı`);
+    assert.equal(plain(res.data.title), `${plain(dayMonthYearTR(d3))} ModPOS API verisi alındı`);
     assert.equal(plain(res.data.description), "Ciro 28.450,50 ₺ · 214 fiş · bugün kalan hak 1");
     assert.equal(calls.length, 1);
     assert.match(calls[0].url, new RegExp(`\\?tarih=${d3}$`));
     assert.equal(calls[0].key, KEY);
     assert.equal(refreshes, 1);
     const [log] = await logs();
-    assert.equal(log.action, "ModPOS kasa föyü çekildi");
+    assert.equal(log.action, "ModPOS API verisi çekildi");
     assert.equal(plain(log.detail ?? ""), `${plain(dayMonthYearTR(d3))} · alındı · kalan hak 1`);
     assert.equal(log.userId, users.admin.id);
     // Saklanan föy kişi adlarıyla (sahibin kararı; yalnız yöneticiye çizilir) ve ham XML'iyle
@@ -189,12 +189,12 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
     replies = [{ status: 200, body: foyXml(d3), headers: quota(0) }];
     const again = await actions.fetchModposDay(d3);
     assert.ok(again.ok);
-    assert.equal(plain(again.data.title), `${plain(dayMonthYearTR(d3))} föyü değişmedi`);
+    assert.equal(plain(again.data.title), `${plain(dayMonthYearTR(d3))} ModPOS API verisi değişmedi`);
     assert.equal(plain((await logs())[1].detail ?? ""), `${plain(dayMonthYearTR(d3))} · değişmedi · kalan hak 0`);
 
     // Hak doldu: istek gitmez, nedeni ve yenilenme söylenir; işlem geçmişine yazılmaz
     const full = await actions.fetchModposDay(addDays(today, -4));
-    assert.deepEqual(full, { ok: false, error: "ModPOS'un bugünkü çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
+    assert.deepEqual(full, { ok: false, error: "ModPOS API'nin bugünkü çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
     assert.equal(calls.length, 2);
     assert.equal((await logs()).length, 2);
     const blocked = await status.loadModposCard(db, new Date(), keyEnv());
@@ -223,7 +223,7 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
 
     // Hak doldu: yenilenme yarının 00:00'ı (kitapçığın örneğindeki an geçmişte kalırdı)
     replies = [{ status: 429, body: KOTA.replace("2026-11-03T00:00:00+03:00", `${addDays(today, 1)}T00:00:00+03:00`) }];
-    assert.deepEqual(await actions.fetchModposDay(d3), { ok: false, error: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
+    assert.deepEqual(await actions.fetchModposDay(d3), { ok: false, error: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" });
     assert.equal(calls.length, 2);
     assert.equal((await status.loadModposCard(db, new Date(), keyEnv())).summary.canFetch, false);
     assert.deepEqual(await logs(), []);

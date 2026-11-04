@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { before, describe, test } from "node:test";
 
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
-import { modposCompare, modposDiffs, modposDiffsLine, modposDiffText, type ModposSavedFields } from "../src/lib/modpos/compare";
+import { MODPOS_NOT_ENTERED, modposCompare, modposDiffs, modposDiffsLine, modposDiffText, modposNotEntered, type ModposSavedFields } from "../src/lib/modpos/compare";
 import { backfillOrder, missingFoyDays, needsFetch, nextBackfillDay, nextMorningRun, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
 import {
   foyUrl,
@@ -580,7 +580,7 @@ describe("z.ts: ödeme kodları ve Z özeti", () => {
     assert.deepEqual([z2.countedCash, z2.noCount, z2.expectedCash, z2.openingCash, z2.cashOut, z2.cashIn], [null, null, null, 500, 870, 0]);
   });
 
-  test("foyZ, föysüz gün: kasasız Z, tutarlar föysüz satıştan (ikram ödeme değil), kasa alanları boş", () => {
+  test("foyZ, föysüz gün: kasasız Z, tutarlar kasasız satıştan (ikram ödeme değil), kasa alanları boş", () => {
     assert.deepEqual(foyZ(foyOf("foysuz-gun")), {
       kasaGunu: "2026-10-25",
       kasaSayisi: 0,
@@ -888,7 +888,7 @@ describe("request.ts: hata metinleri", () => {
   const TEXTS: [number, string, string][] = [
     [400, "TARIH_GEREKLI", "ModPOS tarihi kabul etmedi (geçersiz gün)"],
     [400, "TARIH_GECERSIZ", "ModPOS tarihi kabul etmedi (geçersiz gün)"],
-    [400, "ILERI_TARIH", "ModPOS ileri tarihi kabul etmedi: yalnız bugün ve önceki günler çekilir"],
+    [400, "ILERI_TARIH", "ModPOS API ileri tarihi kabul etmedi: yalnız bugün ve önceki günler çekilir"],
     [401, "ANAHTAR_GEREKLI", "ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin"],
     [401, "ANAHTAR_GECERSIZ", "ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin"],
     [403, "ANAHTAR_PASIF", "ModPOS API anahtarı kullanıma kapalı: Gafdigi'den anahtarı açtırın"],
@@ -896,9 +896,9 @@ describe("request.ts: hata metinleri", () => {
     [403, "IP_IZINSIZ", "ModPOS isteği panelin sunucusundan kabul etmiyor (IP kısıtı): Gafdigi'den anahtarın IP kısıtını kaldırtın, Vercel'in sabit IP'si yok"],
     [403, "YETKI_YOK", "ModPOS API anahtarının rapor yetkisi yok: Gafdigi'den kasa föyü yetkisi isteyin"],
     [403, "KAPSAM_GECERSIZ", "ModPOS API anahtarı bir markaya ya da şubeye bağlı değil: Gafdigi'den anahtarı işletmeye bağlatın"],
-    [429, "KOTA_DOLDU", "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir"],
+    [429, "KOTA_DOLDU", "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir"],
     [429, "COK_FAZLA_ISTEK", "ModPOS kısa sürede çok istek aldı: birkaç dakika sonra yeniden deneyin"],
-    [500, "RAPOR_URETILEMEDI", "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek"],
+    [500, "RAPOR_URETILEMEDI", "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek"],
     [503, "SERVIS_KULLANILAMIYOR", "ModPOS servisi şu an kullanılamıyor: sonra yeniden denenecek"],
   ];
 
@@ -912,8 +912,8 @@ describe("request.ts: hata metinleri", () => {
   });
 
   test("KOTA_DOLDU: hak sayısı ve yenilenme hatanın ayrıntısından; yoksa günlük hak ve gece yarısı", () => {
-    assert.equal(plain(modposErrorText(429, err("KOTA_DOLDU", { gunlukHak: 5, yenilenme: "2026-11-05T00:00:00+03:00" }), now)), "ModPOS'un günlük 5 çekim hakkı doldu: hak 5 Kasım 00:00'da yenilenir");
-    assert.equal(modposErrorText(429, err("KOTA_DOLDU"), now), "ModPOS'un günlük 2 çekim hakkı doldu: hak gece yarısı yenilenir");
+    assert.equal(plain(modposErrorText(429, err("KOTA_DOLDU", { gunlukHak: 5, yenilenme: "2026-11-05T00:00:00+03:00" }), now)), "ModPOS API'nin günlük 5 çekim hakkı doldu: hak 5 Kasım 00:00'da yenilenir");
+    assert.equal(modposErrorText(429, err("KOTA_DOLDU"), now), "ModPOS API'nin günlük 2 çekim hakkı doldu: hak gece yarısı yenilenir");
   });
 
   test("tanınmayan kod, hatasız 429 ve 5xx: HTTP durumu ve servisin mesajı (160 karakterle)", () => {
@@ -1166,7 +1166,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
       parseModposState({
         quota: { day: "2026-11-03", hak: "2", kalan: 1, yenilenme: null, at: "x" },
         lastOk: ok,
-        lastError: { at: "2026-11-02T05:00:00.000Z", day: null, kod: "BAGLANTI", text: "ModPOS'a bağlanılamadı" },
+        lastError: { at: "2026-11-02T05:00:00.000Z", day: null, kod: "BAGLANTI", text: "ModPOS API'ye bağlanılamadı" },
         runs: [good, { at: 1 }, { ...good, trigger: "elle" }, { ...good, status: "belki" }, "metin"],
         fazla: true,
       }),
@@ -1235,15 +1235,15 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
   test("önizleme: gri, çekmez (satırlar yine yazılır)", () => {
     const c = card({ preview: true, state: okState(), stored: { count: 3, first: "2026-10-31", last: "2026-11-02" } });
     assert.deepEqual([c.tone, c.badge, c.canFetch, c.fetchBlocked], ["gray", "Önizleme", false, "Önizlemede çekilmez"]);
-    assert.equal(c.lines[0], "31 Ekim – 2 Kasım arası 3 günün föyü var.");
+    assert.equal(c.lines[0], "31 Ekim – 2 Kasım arası 3 günün ModPOS API verisi var.");
   });
 
   test("hiç çekilmedi: turuncu 'Henüz çekilmedi', ilk föyün ne zaman geleceği; eksik günlerin ne kadar süreceği", () => {
     const c = card({ missing: 111 });
     assert.deepEqual([c.tone, c.badge, c.canFetch, c.fetchBlocked, c.left], ["amber", "Henüz çekilmedi", true, null, 2]);
-    assert.equal(c.headline, "Anahtar tanımlı; ilk föy yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir");
+    assert.equal(c.headline, "Anahtar tanımlı; ilk veri yarın sabah 08:00'de gelir ya da aşağıdan şimdi çekilebilir");
     assert.deepEqual(c.lines, [
-      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir (yaklaşık 111 gün sürer).",
+      "1 Temmuz'dan bu yana 111 günün ModPOS API verisi henüz yok: her sabah dünün verisinden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir (yaklaşık 111 gün sürer).",
       "Bugün kalan çekim hakkı: 2 / 2.",
     ]);
     // Çekim kaydı yok ama föy saklı (komut satırının --dosya --kaydet'i): "Henüz çekilmedi" denmez
@@ -1256,7 +1256,7 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     // Sıradaki gün (sabah işinin sırası: en yeni eksik günden eskiye)
     assert.equal(
       card({ missing: 3, from: "2026-11-01", next: "2026-11-02" }).lines[0],
-      "1 Kasım'dan bu yana 3 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir; sıradaki 2 Kasım (yaklaşık 3 gün sürer).",
+      "1 Kasım'dan bu yana 3 günün ModPOS API verisi henüz yok: her sabah dünün verisinden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir; sıradaki 2 Kasım (yaklaşık 3 gün sürer).",
     );
     // Kota artırılırsa daha hızlı: hak 5 → günde 4 geçmiş gün
     const fast = card({ missing: 111, state: { ...okState(), quota: { day: "2026-11-02", hak: 5, kalan: 0, yenilenme: null, at: "2026-11-02T05:00:00.000Z" } } });
@@ -1266,17 +1266,17 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
   test("bağlı: yeşil, kapsam, kalan hak ve yenilenme, son başarılı çekim; hak bitince düğme kapalı", () => {
     const c = card({ state: okState(), stored: { count: 14, first: "2026-07-01", last: "2026-11-02" }, missing: 111 });
     assert.deepEqual([c.tone, c.badge, c.short, c.left, c.canFetch, c.fetchBlocked], ["green", "Bağlı", "Bağlı · 14 gün", 0, false, "Bugünkü hak doldu; bu gece 00:00'da yenilenir"]);
-    assert.equal(c.headline, "Her sabah 08:00'de dünün kasa föyü geliyor");
+    assert.equal(c.headline, "Her sabah 08:00'de dünün kasa verisi ModPOS API'den geliyor");
     assert.deepEqual(c.lines, [
-      "1 Temmuz – 2 Kasım arası 14 günün föyü var.",
-      "1 Temmuz'dan bu yana 111 günün föyü henüz yok: her sabah dünün föyünden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir (yaklaşık 111 gün sürer).",
+      "1 Temmuz – 2 Kasım arası 14 günün ModPOS API verisi var.",
+      "1 Temmuz'dan bu yana 111 günün ModPOS API verisi henüz yok: her sabah dünün verisinden sonra kalan hakla en yeni eksik günden eskiye doğru bir gün çekilir (yaklaşık 111 gün sürer).",
       "Bugün kalan çekim hakkı: 0 / 2 (hak bu gece 00:00'da yenilenir).",
-      "Son başarılı çekim: 2 Kasım föyü, bugün 08:01.",
+      "Son başarılı çekim: 2 Kasım verisi, bugün 08:01.",
     ]);
     const next = card({ now: new Date("2026-11-04T07:30:00+03:00"), state: okState(), stored: { count: 14, first: "2026-07-01", last: "2026-11-02" } });
     assert.deepEqual([next.left, next.canFetch, next.fetchBlocked], [2, true, null]);
     assert.ok(next.lines.includes("Bugün kalan çekim hakkı: 2 / 2."));
-    assert.ok(next.lines.includes("Son başarılı çekim: 2 Kasım föyü, dün 08:01."));
+    assert.ok(next.lines.includes("Son başarılı çekim: 2 Kasım verisi, dün 08:01."));
   });
 
   test("taze anahtar hatası: kırmızı 'Hata' (hak varsa düğme açık: anahtar düzeltilince denensin); eskisi turuncu değil yeşil", () => {
@@ -1289,12 +1289,12 @@ describe("status.ts: saklanan durum ve kartın özeti", () => {
     const later = card({ state: okState({ lastError: keyErr, lastOk: { at: "2026-11-03T09:00:00.000Z", day: "2026-11-02" }, quota: null }) });
     assert.deepEqual([later.tone, later.badge], ["green", "Bağlı"]);
     // Anahtarla ilgisi olmayan taze hata: turuncu "Uyarı"
-    const net = card({ state: okState({ lastError: { ...keyErr, kod: "BAGLANTI", text: "ModPOS'a bağlanılamadı: sonra yeniden denenecek", keyError: false } }) });
-    assert.deepEqual([net.tone, net.badge, net.short, net.headline], ["amber", "Uyarı", "Son deneme hata verdi", "Son deneme: ModPOS'a bağlanılamadı: sonra yeniden denenecek"]);
+    const net = card({ state: okState({ lastError: { ...keyErr, kod: "BAGLANTI", text: "ModPOS API'ye bağlanılamadı: sonra yeniden denenecek", keyError: false } }) });
+    assert.deepEqual([net.tone, net.badge, net.short, net.headline], ["amber", "Uyarı", "Son deneme hata verdi", "Son deneme: ModPOS API'ye bağlanılamadı: sonra yeniden denenecek"]);
   });
 
   test("hak doldu (KOTA_DOLDU): turuncu değil mavi, düğme kapalı; hak yenilenince hiç anılmaz", () => {
-    const quotaErr = { at: "2026-11-03T10:00:00.000Z", day: "2026-11-01", kod: "KOTA_DOLDU", text: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir", keyError: false };
+    const quotaErr = { at: "2026-11-03T10:00:00.000Z", day: "2026-11-01", kod: "KOTA_DOLDU", text: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir", keyError: false };
     const st = okState({ lastError: quotaErr });
     const c = card({ state: st, stored: { count: 3, first: "2026-10-31", last: "2026-11-02" } });
     assert.deepEqual([c.tone, c.badge, c.short, c.left, c.canFetch, c.fetchBlocked], ["blue", "Hak doldu", "Bugünkü hak doldu", 0, false, "Bugünkü hak doldu; bu gece 00:00'da yenilenir"]);
@@ -1342,6 +1342,30 @@ describe("compare.ts: kasa raporu ile föy", () => {
     assert.deepEqual(modposDiffs(same, z), []);
     assert.deepEqual(modposDiffs({ ...same, zNo: " 0312 " }, z), []);
     assert.deepEqual(modposDiffs({ ...same, zNo: "000" }, { ...z, zNo: "0" }), []);
+  });
+
+  test("ModPOS'ta girilmemiş açılış ve sayım (0 gelir): farklı sayılmaz, tabloda 'ModPOS'ta girilmedi' notuyla bilgi", () => {
+    // 3 Kasım: ModPOS'ta açılış girilmeden açılmış, sayım girilmeden Z alınmış; raporda 400 ve 2.075
+    const empty = { ...z, openingCash: 0, countedCash: 0, expectedCash: 7340, cashDiff: -7340 };
+    assert.deepEqual([...modposNotEntered(empty)], ["openingCash", "countedCash"]);
+    assert.deepEqual(modposDiffs({ ...same, openingCash: 400, countedCash: 2075 }, empty), []);
+    const rows = modposCompare({ ...same, openingCash: 400, countedCash: 2075 }, empty);
+    for (const key of ["openingCash", "countedCash"]) {
+      const r = rows.find((x) => x.key === key)!;
+      assert.deepEqual([r.tone, r.note], ["info", MODPOS_NOT_ENTERED], key);
+    }
+    // Raporda da 0: aynı, not yok
+    const zero = modposCompare({ ...same, openingCash: 0 }, empty).find((x) => x.key === "openingCash")!;
+    assert.deepEqual([zero.tone, zero.note], ["same", undefined]);
+    // Beklenen nakit de 0'sa sayılan 0 gerçek sayımdır: karşılaştırılır
+    const realZero = { ...z, countedCash: 0, expectedCash: 0 };
+    assert.deepEqual([...modposNotEntered(realZero)], []);
+    assert.deepEqual(modposDiffs({ ...same, countedCash: 50 }, realZero).map((d) => d.field), ["countedCash"]);
+    // Beklenen nakit bilinmiyorsa 0 sayım girilmemiş sayılır; ModPOS'un sıfır olmayan açılışı her zaman karşılaştırılır
+    assert.deepEqual([...modposNotEntered({ ...z, countedCash: 0, expectedCash: null })], ["countedCash"]);
+    assert.deepEqual(modposDiffs({ ...same, openingCash: 400 }, z).map((d) => d.field), ["openingCash"]);
+    // Kasasız (föysüz) günde açılış zaten karşılaştırılmaz
+    assert.deepEqual([...modposNotEntered(foyZ(foyOf("foysuz-gun"))!)], []);
   });
 
   test("1 kuruş hassasiyet: 1 kuruş aynı, 2 kuruş farklı", () => {
@@ -1398,15 +1422,15 @@ describe("compare.ts: kasa raporu ile föy", () => {
 
   test("modposDiffText / modposDiffsLine: tutar para biçiminde, Z no ve fiş sayısı olduğu gibi", () => {
     const [cash] = modposDiffs({ ...same, cash: 8190 }, z);
-    assert.equal(plain(modposDiffText(cash)), "Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)");
+    assert.equal(plain(modposDiffText(cash)), "Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺)");
     const [zNo] = modposDiffs({ ...same, zNo: "313" }, z);
-    assert.equal(modposDiffText(zNo), "Z no 313 (ModPOS föyünde 0312)");
+    assert.equal(modposDiffText(zNo), "Z no 313 (ModPOS API'de 0312)");
     const [rec] = modposDiffs({ ...same, receipts: 1200 }, z);
-    assert.equal(modposDiffText(rec), "Fiş sayısı 1200 (ModPOS föyünde 214)");
+    assert.equal(modposDiffText(rec), "Fiş sayısı 1200 (ModPOS API'de 214)");
     const [card2] = modposDiffs({ ...same, card: 16120 }, z);
-    assert.equal(plain(modposDiffText(card2)), "Kart 16.120 ₺ (ModPOS föyünde 16.120,50 ₺)");
+    assert.equal(plain(modposDiffText(card2)), "Kart 16.120 ₺ (ModPOS API'de 16.120,50 ₺)");
     assert.equal(modposDiffsLine([]), null);
-    assert.equal(plain(modposDiffsLine([cash, zNo])!), "ModPOS föyünden farklı: Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); Z no 313 (ModPOS föyünde 0312)");
+    assert.equal(plain(modposDiffsLine([cash, zNo])!), "ModPOS API'den farklı: Nakit 8.190 ₺ (ModPOS API'de 8.210 ₺); Z no 313 (ModPOS API'de 0312)");
   });
 
   test("modposCompare raporsuz: yalnız föyün sütunu dolu, hepsi 'none'", () => {
@@ -1529,7 +1553,7 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
     assert.deepEqual(r, {
       status: "kota",
       quota: { day: "2026-11-02", hak: 2, kalan: 0, yenilenme: "2026-11-03T00:00:00+03:00", at: NOW.toISOString() },
-      text: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
+      text: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
     });
     assert.equal(calls.length, 1);
     // Gövdesiz 429 da kota sayılır (hak bilinmiyorsa günlük hak)
@@ -1557,7 +1581,7 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
 
   test("500 RAPOR_URETILEMEDI ve 503: günlük hata, anahtar hatası değil; Cloudflare'in HTML sayfası da", async () => {
     const a = await get(() => res(hataXml("RAPOR_URETILEMEDI", "Rapor hazırlanamadı"), 500));
-    assert.deepEqual(a.r, { status: "error", kod: "RAPOR_URETILEMEDI", http: 500, text: "ModPOS föyü hazırlayamadı (hak geri verildi): sonra yeniden denenecek", keyError: false, quota: null });
+    assert.deepEqual(a.r, { status: "error", kod: "RAPOR_URETILEMEDI", http: 500, text: "ModPOS API veriyi hazırlayamadı (hak geri verildi): sonra yeniden denenecek", keyError: false, quota: null });
     const b = await get(() => res(hataXml("SERVIS_KULLANILAMIYOR"), 503));
     assert.ok(b.r.status === "error");
     assert.deepEqual([b.r.kod, b.r.http], ["SERVIS_KULLANILAMIYOR", 503]);
@@ -1570,7 +1594,7 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
     const net = await get(() => {
       throw new TypeError("fetch failed");
     });
-    assert.deepEqual(net.r, { status: "error", kod: "BAGLANTI", http: 0, text: "ModPOS'a bağlanılamadı: sonra yeniden denenecek", keyError: false, quota: null });
+    assert.deepEqual(net.r, { status: "error", kod: "BAGLANTI", http: 0, text: "ModPOS API'ye bağlanılamadı: sonra yeniden denenecek", keyError: false, quota: null });
     assert.equal(net.calls.length, 1);
     // Zaman aşımı: istek sinyali (AbortSignal.timeout) gerçekten keser. Onun zamanlayıcısı süreci ayakta tutmaz (canlıda
     // açık soket tutar): test beklerken süreç kapanmasın
@@ -1603,21 +1627,21 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
         ),
     );
     assert.ok(cut.r.status === "error");
-    assert.deepEqual([cut.r.kod, cut.r.http, cut.r.text], ["BAGLANTI", 200, "ModPOS'un yanıtı yarıda kesildi: sonra yeniden denenecek"]);
+    assert.deepEqual([cut.r.kod, cut.r.http, cut.r.text], ["BAGLANTI", 200, "ModPOS API'nin yanıtı yarıda kesildi: sonra yeniden denenecek"]);
   });
 
   test("200 ama okunamayan gövde: BOZUK ve ilk sorunlu alanın yolu; başka günün föyü ve yarım gövde de", async () => {
     const amount = await get(() => res(xml("belge-ornegi").replace("<satis>8210</satis>", "<satis>1.234,50</satis>"), 200, KOTA));
     assert.ok(amount.r.status === "error");
-    assert.deepEqual([amount.r.kod, amount.r.http, amount.r.keyError, amount.r.text], ["BOZUK", 200, false, "ModPOS'un yanıtı okunamadı (kasa.0.odeme.0.satis): sonra yeniden denenecek"]);
+    assert.deepEqual([amount.r.kod, amount.r.http, amount.r.keyError, amount.r.text], ["BOZUK", 200, false, "ModPOS API'nin yanıtı okunamadı (kasa.0.odeme.0.satis): sonra yeniden denenecek"]);
     assert.equal(amount.r.quota?.kalan, 0, "hak harcandı: başlıktan bilinir");
     const otherDay = await get(() => res(xml("iki-kasa")));
     assert.ok(otherDay.r.status === "error");
-    assert.equal(otherDay.r.text, "ModPOS'un yanıtı okunamadı (kasaGunu): sonra yeniden denenecek");
+    assert.equal(otherDay.r.text, "ModPOS API'nin yanıtı okunamadı (kasaGunu): sonra yeniden denenecek");
     const full = xml("belge-ornegi");
     const half = await get(() => res(full.slice(0, full.indexOf("<ozet>"))));
     assert.ok(half.r.status === "error");
-    assert.equal(half.r.text, "ModPOS'un yanıtı okunamadı (govde): sonra yeniden denenecek");
+    assert.equal(half.r.text, "ModPOS API'nin yanıtı okunamadı (govde): sonra yeniden denenecek");
     const json = await get(() => res('{"ok":true}', 200, { "content-type": "application/json" }));
     assert.ok(json.r.status === "error");
     assert.equal(json.r.kod, "BOZUK");
@@ -1635,7 +1659,7 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
     });
     const { r } = await get(() => new Response(big, { status: 200, headers: { "content-length": String(FOY_MAX_BYTES + 1), ...KOTA } }));
     assert.ok(r.status === "error");
-    assert.deepEqual([r.kod, r.text, r.quota?.kalan], ["BUYUK", "ModPOS'un yanıtı beklenenden büyük; okunmadı", 0]);
+    assert.deepEqual([r.kod, r.text, r.quota?.kalan], ["BUYUK", "ModPOS API'nin yanıtı beklenenden büyük; okunmadı", 0]);
     assert.equal(cancelled, true, "akış kapatıldı");
   });
 
@@ -1718,7 +1742,7 @@ describe("scripts/modpos-foy.ts: komut satırı", () => {
     const now = new Date("2026-11-02T12:00:00+03:00");
     const out = foySummaryLines(foyOf("belge-ornegi"), { now, fetchedAt: now, quota: null }).map(plain).join("\n");
     for (const part of [
-      "ModPOS kasa föyü: 1 Kasım Pazar (2026-11-01)",
+      "ModPOS API: 1 Kasım Pazar (2026-11-01)",
       "Durum: kapalı · kesin",
       "Z no: 0312",
       "Ciro: 28.450,50 ₺",
@@ -1790,7 +1814,7 @@ describe("scripts/modpos-foy.ts: komut satırı", () => {
       "Kalan hak (bugün): 0 / 2 · hak bu gece 00:00'da yenilenir",
       "Veritabanına yazılmadı (--kaydet ile yazılır).",
       "✗ ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin (ANAHTAR_GECERSIZ, HTTP 401)",
-      "✗ ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
+      "✗ ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
       "✗ ModPOS isteği kabul etmedi (HTTP 403, YENI): Anahtar [anahtar] kısıtlı (YENI, HTTP 403)",
       "✗ MODPOS_API_KEY tanımlı değil",
       "✗ DATABASE_URL tanımlı değil (--kaydet veritabanına yazar)",
@@ -1817,7 +1841,7 @@ describe("scripts/modpos-foy.ts: komut satırı", () => {
         continue;
       }
       assert.equal(r.status, 0, all);
-      assert.match(r.stdout, /ModPOS kasa föyü: /, name);
+      assert.match(r.stdout, /ModPOS API: /, name);
       assert.match(r.stdout, /Veritabanına yazılmadı/, name);
     }
     // Dosyanın günü istenen günden farklıysa söyler

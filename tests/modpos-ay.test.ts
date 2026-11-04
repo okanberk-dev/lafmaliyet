@@ -116,7 +116,7 @@ test("isReportRow: kaynağı olmayan satır kasa raporu; LafPOS ve ModPOS yedek 
 
 // ---------------------------------------------------------------- Föy günü aya girer, gün "rapor yok" kalır
 
-test("föy günü ciroya, açık güne, kart payına ve ödenmeze girer; gün yine eksik, 'ModPOS föyünden sayıldı'", () => {
+test("föy günü ciroya, açık güne, kart payına ve ödenmeze girer; gün yine eksik, 'ModPOS API'den sayıldı'", () => {
   const rows = [row("2026-11-01", { discounts: 100, offRevenue: 20 }), foy("2026-11-02"), row("2026-11-03", { discounts: 100, offRevenue: 30 })];
   const [m] = tillMonths(rows, "2026-11-03", "2026-10-16");
   assert.equal(m.reported, 2, "yalnız kasa raporları");
@@ -133,13 +133,13 @@ test("föy günü ciroya, açık güne, kart payına ve ödenmeze girer; gün yi
   assert.deepEqual(m.modpos, ["2026-11-02"]);
   assert.equal("lafpos" in m, false);
   assert.equal(m.lastDate, "2026-11-03");
-  assert.equal(plain(missingSentence(m)), "1 gün rapor yok: 2 Kasım. Ciro ve açık gün bu günlerde ModPOS föyünden sayıldı.");
+  assert.equal(plain(missingSentence(m)), "1 gün rapor yok: 2 Kasım. Ciro ve açık gün bu günlerde ModPOS API'den sayıldı.");
   // Bir kısmı föyden
   const [some] = tillMonths([row("2026-11-01"), foy("2026-11-02")], "2026-11-04", "2026-10-16");
-  assert.equal(plain(missingSentence(some)), "3 gün rapor yok: 2, 3, 4 Kasım. 1 günün cirosu ModPOS föyünden sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.");
+  assert.equal(plain(missingSentence(some)), "3 gün rapor yok: 2, 3, 4 Kasım. 1 günün cirosu ModPOS API'den sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.");
   // Satışlar'ın ipucu: payda raporlu gün + föy günü
   const info = resolveMonth("2026-11", undefined, m);
-  assert.equal(kasaHint("posRevenue", info.kasa!, "kasa", ""), "Kasa raporlarından (2 gün + ModPOS föyünden 1 gün). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("posRevenue", info.kasa!, "kasa", ""), "Kasa raporlarından (2 gün + ModPOS API'den 1 gün). Değiştirmek için dokunun.");
   assert.equal(kasaHint("discounts", info.kasa!, "kasa", ""), "Kasa raporlarından (2 / 3 günde girildi). Değiştirmek için dokunun.");
   assert.equal(kasaHint("offRevenue", info.kasa!, "kasa", ""), "Kasa raporlarından (3 / 3 günde girildi). Değiştirmek için dokunun.");
 });
@@ -160,10 +160,10 @@ test("aynı gün: rapor föyü, LafPOS gün sonu föyü yener (rapor > LafPOS > 
   assert.deepEqual([both.lafpos, both.modpos], [["2026-11-03"], ["2026-11-02"]]);
   assert.equal(
     plain(missingSentence(both)),
-    "3 gün rapor yok: 2, 3, 4 Kasım. 1 günün cirosu LafPOS'un gün sonundan, 1 günün cirosu ModPOS föyünden sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.",
+    "3 gün rapor yok: 2, 3, 4 Kasım. 1 günün cirosu LafPOS'un gün sonundan, 1 günün cirosu ModPOS API'den sayıldı; ötekiler açıksanız ciro ve açık gün eksik kalır.",
   );
   const [all] = tillMonths([row("2026-11-01"), foy("2026-11-02"), row("2026-11-03", { source: "lafpos" })], "2026-11-03", "2026-10-16");
-  assert.equal(plain(missingSentence(all)), "2 gün rapor yok: 2, 3 Kasım. Ciro ve açık gün bu günlerde LafPOS'un gün sonundan ve ModPOS föyünden sayıldı.");
+  assert.equal(plain(missingSentence(all)), "2 gün rapor yok: 2, 3 Kasım. Ciro ve açık gün bu günlerde LafPOS'un gün sonundan ve ModPOS API'den sayıldı.");
 });
 
 // ---------------------------------------------------------------- Raporlardan önceki föy günleri
@@ -203,17 +203,17 @@ test("raporlar başlamadan önceki föy günleri eksik aranmaz; ilk ay (partialF
   assert.equal(plain(missingSentence(oct)), "1 gün rapor yok: 20 Ekim. O günler açıksanız ciro ve açık gün eksik kalır.");
   // Toplamlar uygulanır (ay tam), Satışlar'daki satır kaç günün föyden geldiğini söyler
   assert.equal(kasaValues(oct).posRevenue, oct.posRevenue);
-  assert.equal(kasaMonthLine(resolveMonth("2026-10", undefined, oct)), "Bu ayın açık gün ve cirosu kasa raporlarından (15 gün ModPOS föyünden sayıldı)");
-  assert.equal(kasaMonthLine(resolveMonth("2026-07", undefined, jul)), "Bu ayın açık gün ve cirosu ModPOS föyünden");
-  assert.equal(plain(kasaMonthLine(resolveMonth("2026-07", entry("2026-07", { openDays: 30, posRevenue: 250_000 }), jul))), "Bu ayın açık gün ve cirosu elle girildi (ModPOS föyünde 31 gün, 248.000 ₺)");
+  assert.equal(kasaMonthLine(resolveMonth("2026-10", undefined, oct)), "Bu ayın açık gün ve cirosu kasa raporlarından (15 gün ModPOS API'den sayıldı)");
+  assert.equal(kasaMonthLine(resolveMonth("2026-07", undefined, jul)), "Bu ayın açık gün ve cirosu ModPOS API'den");
+  assert.equal(plain(kasaMonthLine(resolveMonth("2026-07", entry("2026-07", { openDays: 30, posRevenue: 250_000 }), jul))), "Bu ayın açık gün ve cirosu elle girildi (ModPOS API'de 31 gün, 248.000 ₺)");
   assert.equal(
     plain(kasaMonthLine(resolveMonth("2026-10", entry("2026-10", { openDays: 30, posRevenue: 250_000 }), oct))),
-    "Bu ayın açık gün ve cirosu elle girildi (kasa raporlarında 30 gün, 270.000 ₺; 15 günü ModPOS föyünden)",
+    "Bu ayın açık gün ve cirosu elle girildi (kasa raporlarında 30 gün, 270.000 ₺; 15 günü ModPOS API'den)",
   );
-  assert.equal(kasaMonthLine(resolveMonth("2026-10", entry("2026-10", { posRevenue: 250_000 }), oct)), "Bu ayın açık günü kasa raporlarından (15 gün ModPOS föyünden sayıldı), cirosu elle girildi");
+  assert.equal(kasaMonthLine(resolveMonth("2026-10", entry("2026-10", { posRevenue: 250_000 }), oct)), "Bu ayın açık günü kasa raporlarından (15 gün ModPOS API'den sayıldı), cirosu elle girildi");
   // İlk rapordan sonraki raporsuz föy günü eksiktir
   assert.deepEqual(nov.missing, ["2026-11-01"]);
-  assert.equal(plain(missingSentence(nov)), "1 gün rapor yok: 1 Kasım. Ciro ve açık gün bu günlerde ModPOS föyünden sayıldı.");
+  assert.equal(plain(missingSentence(nov)), "1 gün rapor yok: 1 Kasım. Ciro ve açık gün bu günlerde ModPOS API'den sayıldı.");
 
   // Kasa sayfasının çağrısı (yalnız ayın satırları; ilk satır ve ilk kasa raporu ayrı) aynı sonucu verir
   for (const month of ["2026-07", "2026-10", "2026-11"]) {
@@ -232,7 +232,7 @@ test("raporlar başlamadan önceki föylerde boşluk: öncesi sayılmaz, ilk ay 
   assert.deepEqual(months.map((m) => m.month), ["2026-10"]);
   assert.equal(months[0].partialFrom, "2026-10-06");
   assert.equal(kasaValues(months[0]).posRevenue, null);
-  assert.equal(plain(partialSentence(months[0])), "ModPOS föyleri 6 Ekim'den itibaren var; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan.");
+  assert.equal(plain(partialSentence(months[0])), "ModPOS API verileri 6 Ekim'den itibaren var; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan.");
   // Boşluk satışsız kapalı günse (sıfır satır) kesinti yok
   const closedGap = gap.concat(foy("2026-10-05", { zTotal: 0, card: 0, mealCard: 0, offRevenue: 0, receipts: 0 }));
   const all = tillMonths(closedGap, "2026-10-31");
@@ -250,13 +250,13 @@ test("raporlar başlamadan önceki föylerde boşluk: öncesi sayılmaz, ilk ay 
   assert.deepEqual(tillMonths(odd.filter((r) => r.date.startsWith("2026-06")), "2026-10-31", "2026-10-20", undefined, undefined, "2026-10-20", "2026-10-20"), []);
 });
 
-test("föyler geriye doğru tamamlanırken ilk ay yarım: 'ModPOS föyleri … itibaren var'; yalnız föy varken eksik aranmaz", () => {
+test("föyler geriye doğru tamamlanırken ilk ay yarım: 'ModPOS API verileri … itibaren var'; yalnız föy varken eksik aranmaz", () => {
   const rows = [...range("2026-09-12", "2026-09-30", (d) => foy(d)), ...range("2026-10-01", "2026-10-03", (d) => row(d))];
   const [sep, oct] = tillMonths(rows, "2026-10-03");
   assert.equal(sep.partialFrom, "2026-09-12");
   assert.equal(kasaValues(sep).posRevenue, null, "toplam ayın yalnız bir kısmı: uygulanmaz");
-  assert.equal(plain(partialSentence(sep)), "ModPOS föyleri 12 Eylül'den itibaren var; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan.");
-  assert.equal(plain(kasaMonthLine(resolveMonth("2026-09", undefined, sep))), "ModPOS föyleri 12 Eylül'den itibaren var; bu ayın açık gün ve cirosu elle girilir");
+  assert.equal(plain(partialSentence(sep)), "ModPOS API verileri 12 Eylül'den itibaren var; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan.");
+  assert.equal(plain(kasaMonthLine(resolveMonth("2026-09", undefined, sep))), "ModPOS API verileri 12 Eylül'den itibaren var; bu ayın açık gün ve cirosu elle girilir");
   assert.equal(oct.partialFrom, null);
   // Kasa raporlarıyla başlayan ilk ayın metni değişmez
   const [first] = tillMonths(range("2026-10-20", "2026-10-31", (d) => row(d)), "2026-10-31");
@@ -292,8 +292,8 @@ test("föy günlerinin indirimi bilinmez: yalnız föylü ayda indirim boş, var
   const info = resolveMonth("2026-07", undefined, jul);
   assert.deepEqual([info.discounts, info.sources?.discounts], [0, "none"]);
   assert.deepEqual([info.posRevenue, info.sources?.posRevenue, info.openDays, info.offRevenue], [248_000, "kasa", 31, 1_550]);
-  assert.equal(kasaHint("posRevenue", info.kasa!, "kasa", ""), "ModPOS föyünden (31 gün). Değiştirmek için dokunun.");
-  assert.equal(kasaHint("offRevenue", info.kasa!, "kasa", ""), "ModPOS föyünden (31 / 31 günde girildi). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("posRevenue", info.kasa!, "kasa", ""), "ModPOS API'den (31 gün). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("offRevenue", info.kasa!, "kasa", ""), "ModPOS API'den (31 / 31 günde girildi). Değiştirmek için dokunun.");
   assert.equal(kasaHint("discounts", info.kasa!, "kasa", ""), null, "indirim kasadan gelmez");
   // Motor: Gelir-gider'in POS komisyonu föyün banka kartı payıyla (kart ÷ ciro; yemek kartı hariç, E-43)
   const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));

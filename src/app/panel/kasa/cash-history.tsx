@@ -226,7 +226,7 @@ export function CashHistory({
               const sheet = modposDays[date];
               const sheetLine = sheet ? (
                 <span className="block text-xs text-ink-mute tabular">
-                  ModPOS föyü: ciro {money(sheet.zTotal)}
+                  ModPOS API: ciro {money(sheet.zTotal)}
                   {sheet.open ? " (gün açıkken alındı)" : ""}
                 </span>
               ) : null;
@@ -288,7 +288,7 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS&apos;tan farklı</Badge> : null}
+                    {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}

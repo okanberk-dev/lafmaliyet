@@ -364,14 +364,18 @@ export async function loadModel() {
   return createModel(await loadDataset());
 }
 
+/** URL'deki ?ay= değeri geçerli bir aysa o (YYYY-MM), değilse null */
+export function monthParam(param: string | string[] | undefined): string | null {
+  const v = Array.isArray(param) ? param[0] : param;
+  return v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : null;
+}
+
 /**
  * URL'deki ?ay= değerini doğrular; yoksa satış verisi olan son ayı döner (bu aydan sonraki aylar, ör. ileri tarihli
  * deneme verisi, varsayılan olmaz). Kural: defaultMonthOf (src/lib/calc/insights.ts, tests/insights-month.test.ts).
  */
 export function resolveMonth(param: string | string[] | undefined, model: ReturnType<typeof createModel>): string {
-  const v = Array.isArray(param) ? param[0] : param;
-  if (v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v)) return v;
-  return defaultMonthOf(model.salesMonths, [...model.monthInfo.keys()], model.ds.currentMonth ?? currentMonthTR());
+  return monthParam(param) ?? defaultMonthOf(model.salesMonths, [...model.monthInfo.keys()], model.ds.currentMonth ?? currentMonthTR());
 }
 
 /** Ay seçicide gösterilecek aylar (veri olan aylar + bir sonraki ay) */

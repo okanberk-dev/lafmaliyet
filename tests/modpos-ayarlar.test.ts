@@ -1,4 +1,4 @@
-// Ayarlar › ModPOS (kasa föyü) kartı ve eylemleri (docs/MODPOS-API.md › Nerede görünür, Kota ve çekme sırası, Ay
+// Ayarlar › ModPOS API kartı ve eylemleri (docs/MODPOS-API.md › Nerede görünür, Kota ve çekme sırası, Ay
 // rakamına yedek), saf kurallar ve kaynak bekçileri: "Bu günü çek"in onay penceresi (kalan hak, bugün kesin değil, zaten
 // saklı gün) ve sonucu (bildirim, işlem geçmişi, hata metni), son çekilen günlerin rozetleri ve satırı, yedek anahtarının
 // metni; eylemler önce yönetici oturumunu denetler, sayfa açılışı ya da after() hiçbir zaman ModPOS'a istek göndermez
@@ -56,18 +56,18 @@ test("Bu günü çek: alınan gün bildirimi ciro, fiş ve kalan hakla; işlem g
   const ok: ModposFetchRun = { status: "ok", days: [{ day: "2026-11-02", result: "yeni" }], left: 1 };
   const out = modposFetchOutcome(ok, "2026-11-02", { final: true, z });
   assert.ok(out.ok);
-  assert.equal(plain(out.title), "2 Kasım 2026 föyü alındı");
+  assert.equal(plain(out.title), "2 Kasım 2026 ModPOS API verisi alındı");
   assert.equal(plain(out.description), "Ciro 28.450,50 ₺ · 214 fiş · bugün kalan hak 1");
   assert.equal(plain(out.log), "2 Kasım 2026 · alındı · kalan hak 1");
 
   const changed = modposFetchOutcome({ ...ok, days: [{ day: "2026-11-02", result: "degisti", revision: 3 }], left: 0 }, "2026-11-02", { final: true, z });
   assert.ok(changed.ok);
-  assert.equal(plain(changed.title), "2 Kasım 2026 föyü değişti (sürüm 3)");
+  assert.equal(plain(changed.title), "2 Kasım 2026 ModPOS API verisi değişti (sürüm 3)");
   assert.equal(plain(changed.log), "2 Kasım 2026 · değişti · kalan hak 0");
 
   const same = modposFetchOutcome({ ...ok, days: [{ day: "2026-11-02", result: "ayni" }], left: null }, "2026-11-02", { final: true, z });
   assert.ok(same.ok);
-  assert.equal(plain(same.title), "2 Kasım 2026 föyü değişmedi");
+  assert.equal(plain(same.title), "2 Kasım 2026 ModPOS API verisi değişmedi");
   assert.equal(plain(same.log), "2 Kasım 2026 · değişmedi · kalan hak bilinmiyor");
 });
 
@@ -90,14 +90,14 @@ test("Bu günü çek: alınamayan gün hata metniyle (servisin, hak doldu, kurul
     ok: false,
     error: "ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin",
   });
-  assert.deepEqual(modposFetchOutcome({ status: "kota", days: [], left: 0, error: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" }, day, null), {
+  assert.deepEqual(modposFetchOutcome({ status: "kota", days: [], left: 0, error: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir" }, day, null), {
     ok: false,
-    error: "ModPOS'un günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
+    error: "ModPOS API'nin günlük 2 çekim hakkı doldu: hak bu gece 00:00'da yenilenir",
   });
   assert.deepEqual(modposFetchOutcome({ status: "off", days: [], left: null }, day, null), { ok: false, error: MODPOS_NOT_CONFIGURED });
   assert.deepEqual(modposFetchOutcome({ status: "preview", days: [], left: null }, day, null), { ok: false, error: MODPOS_PREVIEW });
   assert.deepEqual(modposFetchOutcome({ status: "nothing", days: [], left: 2 }, day, null), { ok: false, error: MODPOS_DAY_INVALID });
-  assert.deepEqual(modposFetchOutcome({ status: "error", days: [], left: 2 }, day, null), { ok: false, error: "ModPOS föyü alınamadı: sonra yeniden deneyin" });
+  assert.deepEqual(modposFetchOutcome({ status: "error", days: [], left: 2 }, day, null), { ok: false, error: "ModPOS API verisi alınamadı: sonra yeniden deneyin" });
   // UserError kuralı: sonda nokta yok
   for (const t of [MODPOS_NOT_CONFIGURED, MODPOS_PREVIEW, MODPOS_DAY_INVALID]) assert.doesNotMatch(t, /\.$/);
   assert.equal(MODPOS_NOT_CONFIGURED, "ModPOS bağlantısı kurulmamış: Vercel'de MODPOS_API_KEY tanımlı değil");
@@ -111,8 +111,8 @@ test("onay penceresi kalan hakkı ve çekince kalacağını söyler; bugün kesi
   const todays = modposFetchConfirmLines({ day: today, today, left: 2, stored: null });
   assert.equal(todays[0], "Bugün 2 hak kaldı; çekince 1 kalır.");
   assert.match(todays[1], /o anki hâliyle gelir \(kesin değil\); yarın sabah kendiliğinden yeniden çekilir\.$/);
-  assert.match(modposFetchConfirmLines({ day: "2026-11-01", today, left: 2, stored: true })[1], /^Bu günün kesin föyü zaten var; yeniden çekmek yalnız kapanıştan sonra/);
-  assert.equal(modposFetchConfirmLines({ day: "2026-11-01", today, left: 2, stored: false })[1], "Bu günün föyü kesin değil; sabah işi de yeniden çeker.");
+  assert.match(modposFetchConfirmLines({ day: "2026-11-01", today, left: 2, stored: true })[1], /^Bu günün kesin verisi zaten var; yeniden çekmek yalnız kapanıştan sonra/);
+  assert.equal(modposFetchConfirmLines({ day: "2026-11-01", today, left: 2, stored: false })[1], "Bu günün verisi kesin değil; sabah işi de yeniden çeker.");
   const last = modposFetchConfirmLines({ day: "2026-11-01", today, left: 1, stored: null });
   assert.equal(last[0], "Bugün 1 hak kaldı; çekince 0 kalır.");
   assert.equal(last[1], "Hak bitince sabah işi bugün başka gün çekemez; hak gece yarısı yenilenir.");
@@ -200,7 +200,7 @@ test("eylemler: her dışa aktarım bir POST ucu, önce yönetici oturumu; zod; 
   assert.match(actions, /const FETCH_BUDGET_MS = 50_000;/);
   assert.equal((actions.match(/syncModpos\(/g) ?? []).length, 1);
   // Yalnız alınan gün işlem geçmişine; denenince kart yenilenir
-  assert.match(fetch, /refresh\(\);\s*if \(!out\.ok\) throw new UserError\(out\.error\);\s*await logActivity\(me, "ModPOS kasa föyü çekildi", out\.log\);/);
+  assert.match(fetch, /refresh\(\);\s*if \(!out\.ok\) throw new UserError\(out\.error\);\s*await logActivity\(me, "ModPOS API verisi çekildi", out\.log\);/);
   const save = actions.slice(actions.indexOf("export async function saveModposFallback"));
   assert.match(save, /const on = z\.boolean\(\{ message: "Geçersiz değer" \}\)\.parse\(input\);/);
   assert.match(save, /const change = await writeModposFallback\(getDb\(\), me, on\);\s*if \(change\) \{\s*await logActivity\(me, "Ayarlar", change\);\s*refresh\(\);/);
@@ -227,7 +227,7 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   assert.match(read("src/server/modpos/status.ts"), /^import "server-only";/m);
   // Kart LafPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
   assert.match(card, /const data = await loadModposCard\(undefined, now\)\.catch\(\(e\) => \{/);
-  assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS kasa föyünün durumu okunamadı; sayfayı yenileyin" \/>/);
+  assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" \/>/);
   assert.equal((card.match(/<SectionCard\s+id="modpos"/g) ?? []).length, 2);
   assert.match(card, /<Badge tone=\{sum\.tone\} dot>/);
   assert.match(card, /<InfoTip text=\{SETUP_TIP\} \/>/);
@@ -254,13 +254,13 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
 test("bölüm listesi, sayfa ve arama: ModPOS LafPOS'tan sonra; sayfanın sunucu eylemi 60 sn'ye kadar", () => {
   const ids = SETTINGS_SECTIONS.map((x) => x.id) as string[];
   assert.equal(ids.indexOf("modpos"), ids.indexOf("lafpos") + 1);
-  assert.equal(SETTINGS_SECTIONS.find((x) => x.id === "modpos")?.label, "ModPOS (kasa föyü)");
-  assert.match(read("src/app/panel/ayarlar/sections.ts"), /\n {2}\/\/ ModPOS'un kasa föyü[^\n]*\n {2}\{ id: "modpos", label: "ModPOS \(kasa föyü\)", icon: ReceiptTurkishLira \},/);
+  assert.equal(SETTINGS_SECTIONS.find((x) => x.id === "modpos")?.label, "ModPOS API");
+  assert.match(read("src/app/panel/ayarlar/sections.ts"), /\n {2}\/\/ ModPOS'un kasa föyü[^\n]*\n {2}\{ id: "modpos", label: "ModPOS API", icon: ReceiptTurkishLira \},/);
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.match(page, /\nexport const maxDuration = 60;\n/);
   const lafpos = page.indexOf("<LafposCard");
   const modpos = page.indexOf("<ModposCard />");
   assert.ok(lafpos > page.indexOf("await requireAdmin();") && modpos > lafpos && modpos < page.indexOf("<PhotoReadingCard />"));
   const settings = NAV_FOOTER.find((i) => i.href === "/panel/ayarlar");
-  assert.match(settings?.keywords ?? "", /modpos kasa föyü/);
+  assert.match(settings?.keywords ?? "", /modpos api kasa föyü/);
 });

@@ -80,7 +80,7 @@ export function ModposFetchForm({
         </Button>
       </div>
       <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-        {blocked ?? "Seçilen günün föyünü hemen çeker ve günün çekim hakkından birini kullanır; yoksa her sabah dünün föyü kendiliğinden gelir."}
+        {blocked ?? "Seçilen günün verisini ModPOS API'den hemen çeker ve günün çekim hakkından birini kullanır; yoksa her sabah dünün verisi kendiliğinden gelir."}
       </p>
       <ConfirmDialog
         open={open}
@@ -88,7 +88,7 @@ export function ModposFetchForm({
         tone="primary"
         confirmLabel="Çek"
         pending={pending}
-        title={`${day ? dayMonthYearTR(day) : ""} föyü çekilsin mi?`}
+        title={`${day ? dayMonthYearTR(day) : ""} ModPOS API'den çekilsin mi?`}
         description={
           <div className="space-y-2">
             {lines.map((l) => (
@@ -122,8 +122,8 @@ export function ModposFallbackSwitch({ on }: { on: boolean }) {
     <>
       <ToggleRow
         title="Ay rakamına yedek"
-        description="Açıkken kasa raporu olmayan günün kapanmış föyü ayın cirosuna girer; rapor girilince rapor kazanır."
-        label="ModPOS föyü ay rakamına yedek"
+        description="Açıkken kasa raporu olmayan günün kapanmış ModPOS API verisi ayın cirosuna girer; rapor girilince rapor kazanır."
+        label="ModPOS API ay rakamına yedek"
         onText="Açık"
         offText="Kapalı"
         checked={on}
@@ -140,11 +140,11 @@ export function ModposFallbackSwitch({ on }: { on: boolean }) {
         description={
           confirm ? (
             <p>
-              Kasa raporu (ya da LafPOS gün sonu) olmayan günün kapanmış ModPOS föyü ayın açık gün, ciro, ödenmez ve kart payına girer; gün yine &quot;rapor
-              yok&quot; sayılır ve rapor girilince rapor kazanır. Föyde indirim olmadığı için o günlerin indirimi bilinmez; elle yazılan ay bilgisi her zaman kazanır.
+              Kasa raporu (ya da LafPOS gün sonu) olmayan günün kapanmış ModPOS API verisi ayın açık gün, ciro, ödenmez ve kart payına girer; gün yine &quot;rapor
+              yok&quot; sayılır ve rapor girilince rapor kazanır. ModPOS API&apos;de indirim olmadığı için o günlerin indirimi bilinmez; elle yazılan ay bilgisi her zaman kazanır.
             </p>
           ) : (
-            <p>Föy yeniden hiçbir hesaba girmez; ayın rakamı yalnız kasa raporlarından (ve LafPOS&apos;tan) hesaplanır. Hiçbir kayıt silinmez.</p>
+            <p>ModPOS API verisi yeniden hiçbir hesaba girmez; ayın rakamı yalnız kasa raporlarından (ve LafPOS&apos;tan) hesaplanır. Hiçbir kayıt silinmez.</p>
           )
         }
         onConfirm={() => save(confirm ?? false)}

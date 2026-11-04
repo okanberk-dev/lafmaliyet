@@ -67,22 +67,22 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
     if (name === "TimeoutError" || name === "AbortError") {
       return { status: "error", kod: "ZAMAN_ASIMI", http: 0, text: `ModPOS ${Math.round(timeoutMs / 1000)} saniyede yanıt vermedi: sonra yeniden denenecek`, keyError: false, quota: null };
     }
-    return { status: "error", kod: "BAGLANTI", http: 0, text: "ModPOS'a bağlanılamadı: sonra yeniden denenecek", keyError: false, quota: null };
+    return { status: "error", kod: "BAGLANTI", http: 0, text: "ModPOS API'ye bağlanılamadı: sonra yeniden denenecek", keyError: false, quota: null };
   }
   const quota = quotaFromHeaders((n) => res.headers.get(n), now);
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > FOY_MAX_BYTES) {
     await res.body?.cancel().catch(() => {});
-    return { status: "error", kod: "BUYUK", http: res.status, text: "ModPOS'un yanıtı beklenenden büyük; okunmadı", keyError: false, quota };
+    return { status: "error", kod: "BUYUK", http: res.status, text: "ModPOS API'nin yanıtı beklenenden büyük; okunmadı", keyError: false, quota };
   }
   let body: string | null;
   try {
     body = await readLimited(res, FOY_MAX_BYTES);
   } catch {
-    return { status: "error", kod: "BAGLANTI", http: res.status, text: "ModPOS'un yanıtı yarıda kesildi: sonra yeniden denenecek", keyError: false, quota };
+    return { status: "error", kod: "BAGLANTI", http: res.status, text: "ModPOS API'nin yanıtı yarıda kesildi: sonra yeniden denenecek", keyError: false, quota };
   }
   // Content-Length yoksa (parçalı aktarım) ya da sıkıştırılmışsa sınır okurken denetlenir: bellek dolmasın
-  if (body === null) return { status: "error", kod: "BUYUK", http: res.status, text: "ModPOS'un yanıtı beklenenden büyük; okunmadı", keyError: false, quota };
+  if (body === null) return { status: "error", kod: "BUYUK", http: res.status, text: "ModPOS API'nin yanıtı beklenenden büyük; okunmadı", keyError: false, quota };
   const parsed = parseKasaFoyu(body, res.ok ? day : undefined);
   if (res.ok && parsed.ok) {
     return { status: "ok", foy: parsed.foy, quota: quota ?? quotaFromBody(parsed.foy, now), raw: body };
@@ -90,7 +90,7 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
   const raw: FoyHata | null = !parsed.ok && "hata" in parsed ? parsed.hata : null;
   if (res.ok && !raw) {
     const field = !parsed.ok && "bozuk" in parsed ? parsed.bozuk : "govde";
-    return { status: "error", kod: "BOZUK", http: res.status, text: `ModPOS'un yanıtı okunamadı (${field}): sonra yeniden denenecek`, keyError: false, quota };
+    return { status: "error", kod: "BOZUK", http: res.status, text: `ModPOS API'nin yanıtı okunamadı (${field}): sonra yeniden denenecek`, keyError: false, quota };
   }
   // Tanınmayan kodda metin servisin kodunu ve mesajını taşır: servis anahtarı geri yazsa da metne (durum satırına,
   // yedeğe) geçmez. Metin kısaltılmadan önce temizlenir (yarım anahtar kalmasın)

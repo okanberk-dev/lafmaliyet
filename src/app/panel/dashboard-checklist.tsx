@@ -11,7 +11,8 @@ import { TASK_BAR } from "./task-style";
 
 /**
  * Genel bakış · "{Ay Yıl} işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar, su
- * faturası, stok sayımı) durumu. Başlık ayı adıyla söyler: Genel bakış son satış ayıyla açılır, süren ay olmayabilir.
+ * faturası, stok sayımı) durumu. Başlık ayı adıyla söyler: adreste ay yokken kartın ayı ayın ilk 10 gününde işleri
+ * bitmemiş biten ay, değilse bu ay (dashboard-tasks.ts defaultTaskMonth); sayfanın rakamları satış listesi olan son ay.
  * Ödemeler bu listede değil (bugüne bağlı; gecikme varsa sayfanın başında tek satır, page.tsx). Her satır ilgili
  * ekranın tam yerine götürür; sıradaki iş (önce sorunlar, sonra eksikler) siyah çerçeveyle tek birincil eylem olarak
  * öne çıkar. Açık iş yoksa kart tek satıra kapanır (<details>; JavaScript'siz de açılıp kapanır). Telefonda sıradaki
@@ -36,10 +37,10 @@ export function DashboardChecklist({ month, state, tasks, className }: { month: 
     <Card className={className}>
       {/* key: ay değişince kartın açık/kapalı durumu o ayın durumuna göre yeniden kurulur */}
       <details key={month} open={s.monthOpen > 0} className="group/cl">
-        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-3xl px-5 pt-5 pb-4 outline-none max-sm:px-4 max-sm:pt-4 max-sm:pb-3 focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-x-4 gap-y-2 rounded-3xl px-4 pt-4 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
           {/* Telefonda başlık bloğu satırın kalanını alır (ok sağında kalır), ilerleme açıklamanın satırında (§13: kart ≤ 300 px) */}
           <span className="flex min-w-0 items-start gap-3 max-sm:flex-1 max-sm:basis-0">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink [&>svg]:size-[18px] [&>svg]:stroke-[1.75]">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink [&>svg]:size-4 [&>svg]:stroke-[1.75]">
               {s.allDone ? <CircleCheck /> : <ListChecks />}
             </span>
             <span className="min-w-0">
