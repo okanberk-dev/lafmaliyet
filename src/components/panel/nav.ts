@@ -3,12 +3,12 @@ import {
   Banknote,
   BarChart3,
   BellRing,
-  Boxes,
-  ChartNoAxesColumn,
-  Plug,
   BookOpen,
+  Boxes,
+  Building2,
   CalendarHeart,
   CalendarRange,
+  ChartNoAxesColumn,
   ClipboardCheck,
   ClipboardList,
   Coffee,
@@ -28,6 +28,7 @@ import {
   MicVocal,
   Package,
   Percent,
+  Plug,
   Receipt,
   Scale,
   Settings,
@@ -35,10 +36,10 @@ import {
   Tags,
   TrendingUp,
   Truck,
+  type LucideIcon,
   UserRound,
   Users,
   Wallet,
-  type LucideIcon,
 } from "lucide-react";
 
 export interface NavItem {
@@ -295,6 +296,7 @@ export const NAV_FOOTER: NavItem[] = [
   { href: "/panel/ayarlar#gecmis", label: "İşlem geçmişi", icon: History, roles: ["admin"], keywords: "kim neyi değiştirdi kayıt geçmiş log" },
   { href: "/panel/ayarlar#yedek", label: "Yedek", icon: HardDriveDownload, roles: ["admin"], keywords: "yedek indir excel" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
+  { href: "/panel/subeler", label: "Şubeler", icon: Building2, roles: ["admin"], keywords: "şube sube marina tuzla kanal laffogato.net online yeni şube kasa kaynağı modpos lafpos" },
   { href: "/panel/yardim", label: "Yardım", icon: HelpCircle, excel: "Nasıl Kullanılır", roles: ["admin"], keywords: "nasıl kullanılır" },
   { href: "/panel/hesap", label: "Hesabım", icon: UserRound, roles: ["admin", "staff"], keywords: "parola şifre e-posta iki adımlı doğrulama 2fa authenticator" },
 ];
@@ -436,6 +438,7 @@ export const NAV_TREE: NavNode[] = [
     children: [
       { id: "genel-ayarlar", label: "Genel ayarlar", href: "/panel/ayarlar", roles: ["admin"] },
       { id: "kullanicilar", label: "Kullanıcılar & roller", href: "/panel/kullanicilar", roles: ["admin"] },
+      { id: "subeler", label: "Şubeler", href: "/panel/subeler", roles: ["admin"] },
       { id: "parasut", label: "Paraşüt entegrasyonu", href: "/panel/parasut", roles: ["admin"] },
     ],
   },

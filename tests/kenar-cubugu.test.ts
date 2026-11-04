@@ -188,7 +188,7 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Kâr & ödemeler › Gelir-gider, Ödemeler, Nakit planı",
     // Vergi (dalga 12) kendi grubunda; adı KDV ve SGK'yı da söyler, kapalı kenar çubuğunda görünür
     "Vergi, KDV, SGK › Özet, Vergi kârı, Demirbaş, Muhasebeci",
-    "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu",
+    "Ayarlar › Genel ayarlar, Kullanıcılar & roller, Şubeler, Paraşüt entegrasyonu",
     "Yardım (/panel/yardim)",
   ]);
   // Grup en az iki, en çok beş alt sayfa (tek alt sayfalı grup bağlantıya dönerdi; uzun grup yine aranır)
@@ -239,12 +239,13 @@ test("tek alt sayfası kalan grup o sayfanın bağlantısına döner (personelde
 test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve alt menü aynı adresleri tutar", () => {
   // Gruplamadan önceki (25 Eki 2026) yönetici ağacının bütün adresleri; yalnız yerleri değişti. Hızlı sayım ve Mal
   // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts);
-  // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında
+  // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında;
+  // Şubeler 4 Kas 2026'da Ayarlar altına (docs/SUBE.md)
   const ADMIN_PAGES = [
     "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/karaoke", "/panel/tahmin",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
     "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
-    "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/parasut", "/panel/yardim",
+    "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",
     "/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/vergi/gelir-gider", "/panel/vergi/demirbas", "/panel/vergi/kurallar",
   ];
   assert.deepEqual([...hrefsOf(navTreeFor("admin"))].sort(), [...ADMIN_PAGES].sort());

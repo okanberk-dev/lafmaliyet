@@ -17,6 +17,7 @@ import {
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { AdoptPrev, LinkPrev } from "../../lib/cari/account";
+import type { BranchKind, BranchPosSource } from "../../lib/branches";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { SnapshotDetail } from "../../lib/forecast/model";
@@ -101,6 +102,41 @@ export const settings = pgTable("settings", {
   value: jsonb("value").notNull(),
   updatedAt: updatedAt(),
 });
+
+// ---------------------------------------------------------------- Şubeler ve kanallar
+/**
+ * Şube ve kanal kütüğü (docs/SUBE.md): fiziksel şubeler (Tuzla, Marina) ile laffogato.net'in online kanalı tek
+ * listede. Ciro, kasa ve gider bu kimliğe göre ayrılır; menü, reçete, hammadde ve tedarikçi ORTAKTIR (sahibin
+ * kararı, 4 Kasım 2026). Kimlik elle verilen kısa bir metindir (adreste ve çerezde geçer, veriye yazılır):
+ * değişmez, kayıtlar ona bağlanır. Kurallar ve etiketler src/lib/branches.ts'te (saf, testli).
+ */
+export const branches = pgTable(
+  "branches",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    /** "fiziksel" (şube) ya da "online" (laffogato.net kanalı) */
+    kind: text("kind").$type<BranchKind>().notNull(),
+    /** Gün sonu hangi sistemden gelir: ModPOS, LafPOS ya da yok (online kanal) */
+    posSource: text("pos_source").$type<BranchPosSource>().notNull().default("yok"),
+    active: boolean("active").notNull().default(true),
+    /** Açılış günü (YYYY-MM-DD); boşsa "başından beri" (Tuzla) */
+    openedOn: text("opened_on"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("branches_active_idx").on(t.active, t.sortOrder),
+    check("branches_kind_ck", sql`${t.kind} in ('fiziksel','online')`),
+    check("branches_pos_source_ck", sql`${t.posSource} in ('modpos','lafpos','yok')`),
+    // Online kanalın kasası olmaz, fiziksel şube kasasız kalmaz (src/lib/branches.ts branchSourceError)
+    check(
+      "branches_source_kind_ck",
+      sql`(${t.kind} = 'online' and ${t.posSource} = 'yok') or (${t.kind} = 'fiziksel' and ${t.posSource} <> 'yok')`,
+    ),
+  ],
+);
 
 // ---------------------------------------------------------------- Hammaddeler
 export const ingredients = pgTable("ingredients", {
