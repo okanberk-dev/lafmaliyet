@@ -47,7 +47,15 @@ export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> 
   const cronSecret = Boolean(process.env.CRON_SECRET);
   const health = { parasut: jobHealth("parasut", runs, now, { watchSince }), gunluk: jobHealth("gunluk", runs, now, { watchSince }) };
   const lastBackupAt = lastBackup === undefined ? undefined : (lastBackup?.at ?? null);
-  return { production, cronSecret, runs, health, alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt }) };
+  // Geçiş tamamlanınca bu değişkenler Vercel'den silinir ve kimlik geçişi uyarısı kendiliğinden kalkar
+  const legacyParasutAuth = Boolean(process.env.PARASUT_USERNAME?.trim() || process.env.PARASUT_PASSWORD?.trim());
+  return {
+    production,
+    cronSecret,
+    runs,
+    health,
+    alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt, legacyParasutAuth }),
+  };
 }
 
 /** Zil, Genel bakış ve (Bugün) için sistem uyarıları; canlı değilse sorgu yapmadan boş */
