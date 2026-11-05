@@ -252,3 +252,17 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
 - `PageProps<"/panel/...">` ve `LayoutProps` tipleri (`npx next typegen`).
 - Sunucu eylemleri (`src/server/actions/*`) ve hesaplama motoru (`src/lib/calc/*`) görünüm işinde değişmez.
 - `src/components/akmanos/**` ESLint dışında (olduğu gibi alınmış kaynak); TypeScript denetiminden geçer.
+
+## 8. Tasarım denemesi: Design Lab becerisi
+
+Yeni bir ekran ya da bileşen tasarlarken veya mevcut olanı yeniden düşünürken Claude Code'da `/design-lab [hedef]`
+çalıştırılır (`.claude/skills/design-lab/`, kaynak [0xdesign/design-plugin](https://github.com/0xdesign/design-plugin),
+MIT). Beceri kısa bir görüşme yapar, bu belgedeki dili ve `globals.css` belirteçlerini kullanarak beş farklı varyant
+üretir, `http://localhost:3000/design-lab` adresinde yan yana gösterir; sayfadaki geri bildirim katmanıyla öğelere
+yorum bırakılır, beğenilen yönler birleştirilip yinelenir.
+
+- Geçici dosyalar `src/app/design-lab/`, `src/app/design-preview/` ve `.claude-design/` altında; hepsi `.gitignore`'da,
+  depoya ve yayına girmez. Bu rotalar `src/proxy.ts` eşleşmesinin dışında (girişsiz açılır), bu yüzden yalnızca
+  örnek veri kullanılır: veritabanı, sunucu eylemi, gerçek ciro ya da kişi verisi yok.
+- Bitince geçici dosyalar silinir, uygulama planı `docs/planlar/<hedef>-tasarim-plani.md` olarak yazılır, kalıcı
+  kararlar onayla bu belgeye eklenir. Yarıda kalırsa `/design-lab-cleanup`.
