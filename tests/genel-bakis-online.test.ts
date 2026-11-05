@@ -11,10 +11,12 @@ import { test } from "node:test";
 
 import { createModel } from "../src/lib/calc/engine";
 import { buildWorkbook } from "../src/app/api/export/workbook";
+import { posRevenueBreakdown } from "../src/app/panel/dashboard-breakdowns";
 import { categoryStats, dashboard, menuEngineering, onlineCoverFor, productSalesHistory, soldWithOnline } from "../src/lib/calc/insights";
+import { tl } from "../src/lib/format";
 import { priceLoss } from "../src/lib/calc/price-loss";
 import type { Dataset } from "../src/lib/calc/types";
-import { siteRevenue } from "../src/lib/site-sales/calc";
+import { siteGross, siteRevenue, siteVat } from "../src/lib/site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -220,4 +222,55 @@ test("ekranlar: Genel bakış, döküm, Excel ve Claude aracı online satırın�
   assert.match(read("src/app/api/export/workbook.ts"), /laffogato\.net online \(kafe, mağaza, karaoke\)/);
   assert.match(read("src/lib/mcp/answers/month.ts"), /onlineNetSatis/);
   assert.match(read("docs/SITE-SATIS.md"), /## Genel bakış/);
+});
+
+// ---------------------------------------------------------------- POS cirosu dökümünde online (ciro detayı)
+
+test("POS cirosu dökümü: laffogato.net bölümü KDV dahil, ayrı ara toplamla; POS cirosunun toplamına girmez", () => {
+  const model = createModel(withOnline());
+  const d = dashboard(model, "2026-09");
+  const b = posRevenueBreakdown(model, d);
+  // Kartın rakamı ve ana bölümün toplamı değişmedi: online "apart"
+  assert.equal(b.total, d.info!.posRevenue);
+  const main = b.groups.filter((g) => !g.apart).flatMap((g) => g.rows);
+  close(
+    main.reduce((a, r) => a + r.amount, 0),
+    d.info!.posRevenue!,
+    "ana bölüm kartın rakamını tutar",
+  );
+  const online = b.groups.find((g) => g.key === "online")!;
+  assert.equal(online.apart, true);
+  assert.deepEqual(online.rows.map((r) => r.key), ["kafe", "magaza", "karaoke"]);
+  // KDV dahil net (sitenin gönderdiği): kafe 55.000, mağaza 6.000, karaoke 12.000
+  assert.deepEqual(online.rows.map((r) => r.amount), [55_000, 6_000, 12_000]);
+  assert.deepEqual(online.rows.map((r) => r.sub), ["120 sipariş", "4 sipariş · kargo dahil", "6 rezervasyon"]);
+  assert.match(online.note!, /Kasadan geçmez/);
+  // KDV satırı Gelir-gider'in formülüyle (siteVat): 5.000 + 600 + 2.000
+  const info = b.groups.find((g) => g.key === "online-bilgi")!;
+  assert.equal(info.noSubtotal, true);
+  assert.equal(info.rows.find((r) => r.key === "online-kdv")!.display, tl(siteVat(model.ds.siteSales![0], model.settings.kdv, model.settings.kdvHizmet)));
+  // Çekilmemiş ay: bölüm hiç yok (0 değil)
+  assert.equal(posRevenueBreakdown(model, dashboard(model, "2026-08")).groups.some((g) => g.key === "online"), false);
+  assert.equal(posRevenueBreakdown(createModel(base), dashboard(createModel(base), "2026-09")).groups.some((g) => g.key === "online"), false);
+});
+
+test("siteGross: KDV dahil döküm yalnız ciroya giren üç bloktan (kasada ödenen ve elle girilen hariç)", () => {
+  const rec = { ...siteMonth("2026-09", []), manual: { orders: 3, grossMinor: 90_000, netMinor: 90_000 }, counter: { orders: 2, grossMinor: 40_000, netMinor: 40_000 } };
+  const g = siteGross(rec, 0.1, 0.2);
+  assert.equal(g.gross, 55_000 + 6_000 + 12_000);
+  assert.equal(g.net, 73_000);
+  assert.equal(g.refunded, 0);
+  assert.equal(g.delivery, 600);
+  assert.equal(g.discount, 0);
+  close(g.vat, siteVat(rec, 0.1, 0.2), "KDV siteVat ile aynı");
+  // İade net ve brütü ayırır
+  const refunded = { ...rec, cafe: { ...rec.cafe, netMinor: 5_000_000, refundedMinor: 500_000 } };
+  assert.equal(siteGross(refunded, 0.1, 0.2).refunded, 5_000);
+  assert.equal(siteGross(refunded, 0.1, 0.2).net, 68_000);
+});
+
+test("Gelir-gider kartı KDV dahil dökümü yazar; Genel bakış'ın cirosu laffogato.net bölümünü taşır", () => {
+  assert.match(read("src/app/panel/gelir-gider/site-sales-card.tsx"), /KDV dahil ciro \{money\(m\.net\)\}/);
+  assert.match(read("src/app/panel/gelir-gider/page.tsx"), /\.\.\.siteGross\(rec!, model\.settings\.kdv, model\.settings\.kdvHizmet\),/);
+  assert.match(read("src/app/panel/dashboard-breakdowns.ts"), /label: "laffogato\.net online \(KDV dahil\)"/);
 });

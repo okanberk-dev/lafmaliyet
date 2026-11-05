@@ -24,6 +24,7 @@ import {
   type CashReportFields,
   type CashRevisionRow,
   reportNo,
+  revenueWord,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
@@ -1194,7 +1195,7 @@ export function CashForm({
                 tone="warn"
                 size="sm"
                 className="sm:col-span-2"
-                title={`Ödeme türleri Z toplamından ${money(Math.abs(live.paymentsDiff))} ${live.paymentsDiff > 0 ? "fazla" : "az"}`}
+                title={`Ödeme türleri ${revenueWord(live)} ${money(Math.abs(live.paymentsDiff))} ${live.paymentsDiff > 0 ? "fazla" : "az"}`}
                 text={`Toplamları ${money(live.paymentsTotal)}. Bir tutarı yanlış yazmış olabilirsiniz.`}
               />
             ) : null}

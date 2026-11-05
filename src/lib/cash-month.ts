@@ -13,6 +13,7 @@
  */
 
 import type { FieldSource, Month, MonthField, TillMonth } from "./calc/types";
+import { dayRevenue } from "./cash-revenue";
 import { MONTH_NAMES } from "./constants";
 import { money } from "./format";
 import { addDays, dayAblativeTR, dayLocativeTR, monthEnd } from "./reminders";
@@ -25,6 +26,12 @@ export interface TillRow {
   mealCard: number;
   discounts: number | null;
   offRevenue: number | null;
+  /**
+   * Ciroya dahil ödeme türlerinin toplamı (nakit + kart + yemek kartı + online + diğer). Ayın cirosu bununla Z
+   * toplamının ödenmez / ikramı içerip içermediğini anlar ve içeriyorsa düşer (src/lib/cash-revenue.ts dayRevenue).
+   * Verilmezse (eski kayıt, test) düşülmez: Z toplamı olduğu gibi ciro sayılır
+   */
+  payments?: number | null;
   /**
    * Yedek satırın kaynağı; yoksa kasa raporu (isReportRow). Yedek satırın rakamları aya girer, gün yine "rapor yok"
    * sayılır; aynı günde rapor > LafPOS > ModPOS (tillMonths; yükleyici zaten tek satır verir):
@@ -161,7 +168,12 @@ export function tillMonths(
     const missFrom = searchFrom === null ? null : searchFrom > from ? searchFrom : from;
     if (missFrom !== null) for (let d = missFrom; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) && !sold.has(d) ? closed : missing).push(d);
     const sum = (xs: TillRow[], f: (r: TillRow) => number) => r2(xs.reduce((a, r) => a + f(r), 0));
-    const posRevenue = sum(list, (r) => r.zTotal);
+    // Ciro = Z toplamı − Z toplamının içindeki ödenmez / ikram (src/lib/cash-revenue.ts; ödenmez ciroya girmez:
+    // docs/KASA-RAPORU.md › Ciro ve ödenmez). Ödeme dökümü kanıtlamayan günde Z toplamı olduğu gibi kalır
+    const revenues = list.map((r) => dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }));
+    const zTotalSum = sum(list, (r) => r.zTotal);
+    const offInPos = r2(revenues.reduce((a, d) => a + d.offInZTotal, 0));
+    const posRevenue = r2(zTotalSum - offInPos);
     const disc = list.filter((r) => r.discounts != null);
     const off = list.filter((r) => r.offRevenue != null);
     // Kart + yemek kartı (kartlı satış oranı: satış raporunun tahmini komisyonu); online ve diğer komisyonsuz. Banka POS
@@ -177,6 +189,8 @@ export function tillMonths(
       reported: reports.length,
       openDays: list.filter((r) => r.zTotal > 0).length,
       posRevenue,
+      zTotalSum,
+      offInPos,
       discounts: disc.length ? sum(disc, (r) => r.discounts!) : null,
       discountDays: disc.length,
       offRevenue: off.length ? sum(off, (r) => r.offRevenue!) : null,
@@ -377,7 +391,9 @@ export function kasaMonthLine(info: Month | undefined): string | null {
   const inTill = onlyFoy ? "ModPOS API'de" : "kasa raporlarında";
   const days = info.sources?.openDays;
   const pos = info.sources?.posRevenue;
-  if (days === "kasa" && pos === "kasa") return `Bu ayın açık gün ve cirosu ${fromTill}`;
+  // Ciro kasadan geliyorsa ve Z toplamlarının içinden ödenmez düştüyse söylenir (docs/KASA-RAPORU.md › Ciro ve ödenmez)
+  const off = pos === "kasa" && t.offInPos ? ` (ödenmez / ikram ${money(t.offInPos)} düşüldü)` : "";
+  if (days === "kasa" && pos === "kasa") return `Bu ayın açık gün ve cirosu ${fromTill}${off}`;
   const k = info.kasa!.values;
   if (days === "manual" && pos === "manual") {
     return k.openDays !== null && k.posRevenue !== null
@@ -385,6 +401,6 @@ export function kasaMonthLine(info: Month | undefined): string | null {
       : "Bu ayın açık gün ve cirosu elle girildi";
   }
   if (days === "kasa") return `Bu ayın açık günü ${fromTill}, cirosu elle girildi`;
-  if (pos === "kasa") return `Bu ayın cirosu ${fromTill}, açık günü elle girildi`;
+  if (pos === "kasa") return `Bu ayın cirosu ${fromTill}${off}, açık günü elle girildi`;
   return `Bu ay ${inTill} satış yok; açık gün ve ciro elle girilir`;
 }

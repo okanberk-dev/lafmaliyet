@@ -320,10 +320,15 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   assert.match(loader, /if \(sheet\.state === "ACIK"\) return null;/);
   assert.match(loader, /sheet\.state === "BOS" && !\(z && z\.foysuz && z\.zTotal > 0\)/);
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)
-  assert.match(loader, /return sheet\.final \? \{ date: sheet\.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" \} : null;/);
+  assert.match(
+    loader,
+    /return sheet\.final \? \{ date: sheet\.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" \} : null;/,
+  );
   // tillRows raporlardan önceki föyleri kesintisiz kısma indirir
   assert.match(loader, /const runFrom = modposRunStart\(modpos\.map\(\(r\) => r\.date\), firstReport\) \?\? "";/);
-  assert.match(loader, /discounts: null, offRevenue: z\.offRevenue, receipts: z\.receipts, source: "modpos"/);
+  assert.match(loader, /discounts: null,\n\s+offRevenue: z\.offRevenue,\n\s+receipts: z\.receipts,/);
+  // Föyün satırı ciroya dahil ödemelerini de taşır: ödenmez Z toplamının içindeyse aya girmez (src/lib/cash-revenue.ts)
+  assert.match(loader, /payments: Math\.round\(\(z\.cash \+ z\.card \+ z\.mealCard \+ z\.online \+ z\.other\) \* 100\) \/ 100,\n\s+source: "modpos",/);
   assert.match(loader, /lafposTillRows\(db\),\n\s+modposTillRows\(db\),\n\s+\]\);/);
   // Rapor sınaması: `source !== "lafpos"` kalmadı (ModPOS satırını rapor sanardı)
   for (const f of ["src/lib/cash-month.ts", "src/server/data/dataset.ts", "src/server/data/cash-reports.ts"]) assert.doesNotMatch(read(f), /r\.source !== "lafpos"/, f);

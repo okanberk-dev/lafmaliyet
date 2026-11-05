@@ -49,6 +49,39 @@ export function siteVat(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate
   return (vat(s.cafe, kdvRate) + vat(s.shop, kdvRate) + vat(s.karaoke, serviceRate)) / 100;
 }
 
+/** Bir ayın online satışının KDV **dahil** dökümü (TL): sitenin gönderdiği ham rakamlar */
+export interface SiteGross {
+  /** Kafe + mağaza + karaoke, iade düşülmeden (karaokede tahsil edilen) */
+  gross: number;
+  /** İade edilen (karaokede iptal edilip geri ödenen) */
+  refunded: number;
+  /** Köşkte kalan: gross − refunded */
+  net: number;
+  /** Netin içindeki KDV (kafe ve mağaza satış oranıyla, karaoke hizmet oranıyla; siteVat ile aynı) */
+  vat: number;
+  /** Sitenin uyguladığı indirim (karaokede yok) */
+  discount: number;
+  /** Kargo ücreti (mağazada netin içinde) */
+  delivery: number;
+}
+
+/**
+ * Ayın KDV dahil dökümü. Yalnız ciroya giren üç blok (kafe, mağaza, karaoke) toplanır: kasada ödenen (`counter`) ve
+ * panelden elle girilen (`manual`) siparişler ModPOS'ta çalındığı için dışarıdadır (docs/SITE-SATIS.md).
+ */
+export function siteGross(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate: number, serviceRate = kdvRate): SiteGross {
+  const gross = s.cafe.grossMinor + s.shop.grossMinor + s.karaoke.collectedMinor;
+  const refunded = s.cafe.refundedMinor + s.shop.refundedMinor + s.karaoke.refundedMinor;
+  return {
+    gross: gross / 100,
+    refunded: refunded / 100,
+    net: (s.cafe.netMinor + s.shop.netMinor + s.karaoke.netMinor) / 100,
+    vat: siteVat(s, kdvRate, serviceRate),
+    discount: (s.cafe.discountMinor + s.shop.discountMinor) / 100,
+    delivery: (s.cafe.deliveryMinor + s.shop.deliveryMinor) / 100,
+  };
+}
+
 /** Çekilen geçmiş ay sayısı: içinde bulunulan ayla birlikte üç ay */
 export const SALES_PULL_BACK = 2;
 

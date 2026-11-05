@@ -89,7 +89,7 @@ teslimi.
 |---|---|
 | Z no | `zNo` (tek kasada; birden çok kasada boş) |
 | Fiş sayısı | Σ `adisyonSayisi` |
-| Toplam satış | Σ `satis.ciro` |
+| Toplam satış | Σ `satis.ciro` (ayın **cirosuna** bundan, Z toplamının içindeyse ödenmez düşülerek girer: [KASA-RAPORU.md › Ciro ve ödenmez](KASA-RAPORU.md#ciro-ve-ödenmez)) |
 | Nakit | `NAKIT` ödemesinin `satis`'i |
 | Kredi / banka kartı | `KREDI_KARTI` (cari tahsilat hariç: `satis`, `sistem` değil) |
 | Yemek kartı | `YEMEK_KARTI`, `MULTINET`, `PLUXEE`, `SODEXO`, `SETCARD`, `EDENRED`, `TOKENFLEX`, `PAYE`, `METROPOL` |

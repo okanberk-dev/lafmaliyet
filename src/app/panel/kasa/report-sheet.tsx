@@ -103,6 +103,8 @@ export function ReportSheet({
           ))}
           {report.discounts ? <Row label="İndirim" value={money(report.discounts)} /> : null}
           {report.offRevenue ? <Row label="Ödenmez / ikram (ciro dışı)" value={money(report.offRevenue)} /> : null}
+          {/* Ödenmez Z toplamının içindeyse ayın cirosuna giren tutar (docs/KASA-RAPORU.md › Ciro ve ödenmez) */}
+          {c.offInZTotal ? <Row label="Ciro (ödenmez / ikram hariç)" value={money(c.revenue)} strong /> : null}
         </section>
         <section aria-label="Nakit kasa">
           <h3 className={H3}>Nakit kasa</h3>

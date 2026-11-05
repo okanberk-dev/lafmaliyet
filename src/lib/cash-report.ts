@@ -1,4 +1,5 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
+import { dayRevenue } from "./cash-revenue";
 import { money } from "./format";
 import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
 import { lafposDiffsLine, type LafposDiff } from "./lafpos/diffs";
@@ -94,9 +95,16 @@ export function diffText(diff: number): string {
 }
 
 export interface CashResult {
-  /** Ödeme türlerinin toplamı ve Z toplamından farkı (tutmuyorsa yanlış yazılmış bir tutar var) */
+  /**
+   * Ödeme türlerinin toplamı ve günün cirosundan farkı (tutmuyorsa yanlış yazılmış bir tutar var). Ödenmez / ikram
+   * ödeme türü değildir: Z toplamı onu içeriyorsa fark cirodan ölçülür, yoksa Z toplamından (ikisi aynı şey)
+   */
   paymentsTotal: number;
   paymentsDiff: number;
+  /** Günün cirosu: Z toplamı − Z toplamının içindeki ödenmez / ikram (src/lib/cash-revenue.ts dayRevenue) */
+  revenue: number;
+  /** Z toplamından ciroya girmediği için düşülen ödenmez / ikram (0: Z toplamı zaten hariç ya da döküm kanıtlamıyor) */
+  offInZTotal: number;
   /** Açılış + nakit satış + gün içinde giren − gün içinde çıkan */
   expectedCash: number;
   /** Sayılan − olması gereken: eksi eksik, artı fazla */
@@ -121,9 +129,13 @@ export function computeCash(
   f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard"> & {
     /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): banka POS'unda var, Z'nin kartında yok; kart farkı düşer */
     cardExtra?: number | null;
+    /** Ödenmez / ikram (ciro dışı); verilmezse ciro = Z toplamı (eski kayıt, kısmi test nesnesi) */
+    offRevenue?: number | null;
   },
 ): CashResult {
   const paymentsTotal = r2(f.cash + f.card + f.mealCard + f.online + f.other);
+  // Ciro: Z toplamı ödenmez / ikramı içeriyorsa (ödeme dökümü bunu söylüyorsa) düşülür; ödemeler ciroyla karşılaştırılır
+  const { revenue, offInZTotal } = dayRevenue({ zTotal: f.zTotal, offRevenue: f.offRevenue ?? null, payments: paymentsTotal });
   const expectedCash = r2(f.openingCash + f.cash + (f.cashIn ?? 0) - f.cashOut);
   const cashDiff = r2(f.countedCash - expectedCash);
   const okcCard = f.okcCard ?? null;
@@ -131,7 +143,9 @@ export function computeCash(
   const cardRef = okcCard ?? bankPos;
   return {
     paymentsTotal,
-    paymentsDiff: r2(paymentsTotal - f.zTotal),
+    paymentsDiff: r2(paymentsTotal - revenue),
+    revenue,
+    offInZTotal,
     expectedCash,
     cashDiff,
     kind: diffKind(cashDiff),
@@ -830,6 +844,14 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
   return cashReportText(f, meta, "staff");
 }
 
+/**
+ * Ödemelerin toplamı neye göre ölçülüyor: ödenmez Z toplamının içindeyse ciroya, değilse Z toplamına ("… cirodan 120 ₺
+ * eksik" / "… Z toplamından 120 ₺ eksik")
+ */
+export function revenueWord(c: Pick<CashResult, "offInZTotal">): string {
+  return c.offInZTotal ? "cirodan" : "Z toplamından";
+}
+
 /** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
 export function cashReportText(
   f: CashTextFields,
@@ -853,7 +875,10 @@ export function cashReportText(
   const z = [`*${zSectionTitle(meta.kasa)}*`, `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
-  if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
+  // Ödenmez Z toplamının içindeyse ayın cirosuna girmeyen tutar burada da görünür (docs/KASA-RAPORU.md › Ciro ve ödenmez)
+  if (c.offInZTotal) z.push(`Ciro (ödenmez / ikram hariç): ${money(c.revenue)}`);
+  if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE)
+    z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
   const mark = c.kind === "short" ? "🔴" : c.kind === "over" ? "🟠" : "✅";
   const kasa = [
     "*Kasa (nakit)*",

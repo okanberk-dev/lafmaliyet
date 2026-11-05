@@ -1,4 +1,4 @@
-import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, withCardExtra, type CarryCheck, type CashReportFields } from "./cash-report";
+import { CASH_TOLERANCE, carryDiffText, computeCash, nextWarning, revenueWord, withCardExtra, type CarryCheck, type CashReportFields } from "./cash-report";
 import { money } from "./format";
 import { lafposDiffText, type LafposDiff } from "./lafpos/diffs";
 import { modposDiffText, type ModposDiff } from "./modpos/compare";
@@ -35,7 +35,11 @@ export function reportChecks(i: {
   const out: ReportCheck[] = [];
   if (i.emailError) out.push({ key: "email", tone: "bad", text: `E-posta gitmedi: ${i.emailError}` });
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) {
-    out.push({ key: "payments", tone: "warn", text: `Ödeme türleri toplamı ${money(c.paymentsTotal)}: Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}` });
+    out.push({
+      key: "payments",
+      tone: "warn",
+      text: `Ödeme türleri toplamı ${money(c.paymentsTotal)}: ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`,
+    });
   }
   if (i.carry) out.push({ key: "carry", tone: "warn", text: `Açılış ${money(i.carry.opening)}, ${dayMonthTR(i.carry.prevDate)} devri ${money(i.carry.carry)}: ${carryDiffText(i.carry)}` });
   if (i.next) out.push({ key: "next", tone: "warn", text: nextWarning(i.next) });

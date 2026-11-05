@@ -21,6 +21,7 @@ import {
   zSectionTitle,
   type CarryCheck,
   type CashReportFields,
+  revenueWord,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffText, type LafposDiff } from "@/lib/lafpos/diffs";
@@ -155,7 +156,7 @@ export function CashBreakdown({
             size="sm"
             risk="para"
             className="mt-1"
-            title={`Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}.`}
+            title={`Ödeme türleri toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}.`}
           />
         ) : null}
       </section>

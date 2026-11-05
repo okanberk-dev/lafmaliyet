@@ -3,6 +3,7 @@ import type { Model } from "@/lib/calc/engine";
 import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
+import { siteGross } from "@/lib/site-sales/calc";
 
 import { pnlRowLabel, sentenceCase } from "./gelir-gider/breakdowns";
 import { rowLink } from "./gelir-gider/row-links";
@@ -370,6 +371,37 @@ function posRevenueText(mk: MonthKasa): string {
     : `${mk.long} gün sonlarının cirosu, KDV dahil: indirimler düşülmüş, ödenmez / ikram hariç. Bu ayın ürün satışları gelince kart ürün ürün net satışı gösterir.`;
 }
 
+/**
+ * POS cirosu dökümünün laffogato.net bölümü (docs/SITE-SATIS.md): uygulama ve web kafe siparişleri, mağaza kolileri ve
+ * ön ödemeli karaoke, KDV dahil. Kasadan geçmediği için POS cirosunun toplamına girmez (`apart`), kendi ara toplamıyla
+ * ayrı durur; altında kasada ödenen ve panelden elle girilen siparişler bilgi satırı olur. Ay siteden hiç çekilmediyse
+ * bölüm yok (0 değil: docs/SITE-SATIS.md › Kâr-zarar).
+ */
+function onlineGroups(model: Model, month: string): BreakdownGroup[] {
+  const rec = model.siteSales(month);
+  if (!rec) return [];
+  const g = siteGross(rec, model.settings.kdv, model.settings.kdvHizmet);
+  const rows: BreakdownRow[] = [
+    { key: "kafe", label: "Kafe online (site + uygulama)", sub: `${num(rec.cafe.orders)} sipariş`, amount: rec.cafe.netMinor / 100 },
+    { key: "magaza", label: "Mağaza (online)", sub: `${num(rec.shop.orders)} sipariş · kargo dahil`, amount: rec.shop.netMinor / 100 },
+    { key: "karaoke", label: "Karaoke (ön ödemeli)", sub: `${num(rec.karaoke.bookings)} rezervasyon`, amount: rec.karaoke.netMinor / 100 },
+  ];
+  const info: BreakdownRow[] = [
+    { key: "online-kdv", label: "Bunun KDV'si", sub: `kafe ve mağaza ${rate(model.settings.kdv)}, karaoke ${rate(model.settings.kdvHizmet)}`, display: tl(g.vat), amount: 0 },
+    ...(g.refunded ? [{ key: "online-iade", label: "İade edilen", sub: "tutardan düşülmüş", display: tl(g.refunded), amount: 0 }] : []),
+    ...(rec.counter?.orders
+      ? [{ key: "online-kasa", label: "Kasada ödenen uygulama siparişi", sub: "POS cirosunda var: eklenmedi", display: tl(rec.counter.netMinor / 100), amount: 0 }]
+      : []),
+    ...(rec.manual.orders
+      ? [{ key: "online-elle", label: "Panelden elle girilen sipariş", sub: "POS cirosunda var: eklenmedi", display: tl(rec.manual.netMinor / 100), amount: 0 }]
+      : []),
+  ];
+  return [
+    { key: "online", label: "laffogato.net online (KDV dahil)", note: "Kasadan geçmez: POS cirosuna eklenmez. Kâr ve oranlar ikisinin toplamıyla hesaplanır.", apart: true, rows },
+    { key: "online-bilgi", label: "laffogato.net ayrıntısı", apart: true, noSubtotal: true, rows: info },
+  ];
+}
+
 /** POS cirosu: KDV hariç ciro + KDV; ayın indirim, ikram ve açık gün bilgisi toplamın altında */
 export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const pos = d.info?.posRevenue ?? 0;
@@ -379,7 +411,17 @@ export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdo
   const info: BreakdownRow[] = [];
   if (d.info?.openDays) info.push({ key: "gun", label: "Açık gün", display: `${num(d.info.openDays)} gün`, amount: 0, href: salesHref(d.month) });
   if (d.info?.discounts) info.push({ key: "indirim", label: "Yönetici indirimleri", sub: "KDV dahil; cirodan düşülmüş", display: tl(d.info.discounts), amount: 0 });
-  if (d.info?.offRevenue) info.push({ key: "odenmez", label: "Ödenmez / ikram", sub: "KDV dahil; ciroya girmez", display: tl(d.info.offRevenue), amount: 0 });
+  // Z toplamından düşülen ödenmez (docs/KASA-RAPORU.md › Ciro ve ödenmez): ciro Patron › Ciro raporuyla aynı kalsın
+  const offInPos = d.info?.sources?.posRevenue === "kasa" ? (d.info.kasa?.till.offInPos ?? 0) : 0;
+  if (offInPos) info.push({ key: "z-toplami", label: "Z toplamları (ödenmez dahil)", sub: "Kasanın ham toplamı", display: tl(d.info!.kasa!.till.zTotalSum ?? pos + offInPos), amount: 0 });
+  if (d.info?.offRevenue)
+    info.push({
+      key: "odenmez",
+      label: "Ödenmez / ikram",
+      sub: offInPos ? "KDV dahil; ciroya girmez: Z toplamından düşüldü" : "KDV dahil; ciroya girmez",
+      display: offInPos ? `− ${tl(offInPos)}` : tl(d.info.offRevenue),
+      amount: 0,
+    });
   return {
     title: `${monthLabel(d.month)} POS cirosu`,
     description: posRevenueText(kasaOf(model, d.month)),
@@ -396,6 +438,7 @@ export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdo
               },
             ],
           },
+          ...onlineGroups(model, d.month),
           { key: "bilgi", label: "Ay bilgileri", apart: true, noSubtotal: true, rows: info },
         ]
       : [],
