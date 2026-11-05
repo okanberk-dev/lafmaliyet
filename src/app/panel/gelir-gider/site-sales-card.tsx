@@ -28,6 +28,18 @@ export interface SiteSalesMonthView {
   cafeOrders: number;
   shopOrders: number;
   bookings: number;
+  /**
+   * Ayın KDV dahil dökümü (TL; kafe + mağaza + karaoke, kasada ödenen ve panelden elle girilen siparişler hariç):
+   * `gross` iade düşülmeden toplam, `refunded` iade edilen, `net` köşkte kalan (gross − refunded), `vat` netin
+   * içindeki KDV, `discount` sitenin uyguladığı indirim, `delivery` kargo ücreti (mağazada netin içinde).
+   * KDV hariç gelir satırları (cafe / shop / karaoke) bu netten KDV ayrılarak çıkar
+   */
+  gross: number;
+  refunded: number;
+  net: number;
+  vat: number;
+  discount: number;
+  delivery: number;
   /** Panelden elle girilen siparişler (KDV dahil): ModPOS'ta olduğu için eklenmedi */
   manualOrders: number;
   manualNet: number;
@@ -149,6 +161,13 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
                     <p className="mt-1 text-[13px] leading-5 text-ink-soft tabular">
                       Kafe {tl(m.cafe)} <span className="text-ink-mute">({num(m.cafeOrders)} sipariş)</span> · Mağaza {tl(m.shop)}{" "}
                       <span className="text-ink-mute">({num(m.shopOrders)})</span> · Karaoke {tl(m.karaoke)} <span className="text-ink-mute">({num(m.bookings)})</span>
+                    </p>
+                    {/* KDV dahil döküm: siteden gelen ham rakamlar (docs/SITE-SATIS.md › Kâr-zarar) */}
+                    <p className="mt-0.5 text-xs leading-5 text-ink-mute tabular">
+                      KDV dahil ciro {money(m.net)}
+                      {m.gross !== m.net ? ` (${money(m.gross)} − iade ${money(m.refunded)})` : ""} · KDV {money(m.vat)}
+                      {m.discount ? ` · sitenin indirimi ${money(m.discount)}` : ""}
+                      {m.delivery ? ` · kargo ${money(m.delivery)}` : ""}
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-ink-mute">
                       Çekildi {dateTimeTR(m.pulledAt)}

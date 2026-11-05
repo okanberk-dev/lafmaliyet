@@ -18,7 +18,7 @@ import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { periodKasa } from "@/lib/lafpos/kasa";
 import { periodSalesSource } from "@/lib/sales-source";
-import { salesMonthsToPull } from "@/lib/site-sales/calc";
+import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
@@ -194,6 +194,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         cafeOrders: rec!.cafe.orders,
         shopOrders: rec!.shop.orders,
         bookings: rec!.karaoke.bookings,
+        // KDV dahil döküm: kafe + mağaza + karaoke (kasada ödenen ve elle girilen siparişler bu üçünün dışında)
+        ...siteGross(rec!, model.settings.kdv, model.settings.kdvHizmet),
         manualOrders: rec!.manual.orders,
         manualNet: rec!.manual.netMinor / 100,
         // Kasada ödenen uygulama / web siparişleri (ModPOS'ta da var) ve iadesi bekleyen karaoke: bilgi, ciroya girmez

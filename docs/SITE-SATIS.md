@@ -73,6 +73,10 @@ siteden çekildiyse:
   yalnız ondan hesaplanır (kasada çalınan karaoke, yani Satışlar'da HİZMET işaretli satırlar, hizmet KDV'siyle: bkz.
   aşağıda "Kasadaki karaoke"); POS komisyonu formülü aynen ModPOS cirosundan. Online satırlar düzenlenemez,
   gelir-gider düzeltmesi almaz (kaynak sitedir).
+- **KDV dahil döküm** (kartta her ayın ikinci satırı): sitenin gönderdiği ham rakamlar — "KDV dahil ciro X (brüt −
+  iade) · KDV Y · sitenin indirimi Z · kargo W". Yalnız ciroya giren üç blok (kafe, mağaza, karaoke) toplanır; kasada
+  ödenen (`counter`) ve panelden elle girilen (`manual`) siparişler dışındadır. KDV, KDV hariç satırlarının
+  formülünün tersidir (`siteGross`, `src/lib/site-sales/calc.ts`).
 - **Kaynak görünür:** satırların açıklaması nereden geldiğini söyler; tablonun üstündeki **laffogato.net online
   satışları** kartı ayı ayı gösterir: kafe / mağaza / karaoke (KDV hariç) ve sipariş sayıları, "Ay kapandı" / "Ay
   sürüyor" (sitenin `closed`'ı), ne zaman çekildiği, panelden elle girilip eklenmeyen siparişler (KDV dahil), kasada
@@ -163,6 +167,11 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
   Kartları sekmeleri de aynı adedi gösterir: Claude aracının açtığı kart aynı sayıyı söyler.
 - Süren ayda satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (Satışlar › "Liste hangi güne kadar?")
   online satış o günlere düşen payla girer (`listShareOf`), sabit gider gibi.
+- **POS cirosu kartının dökümünde** ayrı bir **laffogato.net online (KDV dahil)** bölümü: kafe / mağaza / karaoke
+  (sipariş ve rezervasyon sayılarıyla), altında KDV, varsa iade, kasada ödenen uygulama siparişi ve panelden elle
+  girilen sipariş (ikisi POS cirosunda olduğu için eklenmez). Bölüm kasadan geçmediği için kartın toplamına girmez
+  (`apart`), kendi ara toplamıyla durur: POS cirosu rakamı ve karşılaştırmaları değişmez (`onlineGroups`,
+  `src/app/panel/dashboard-breakdowns.ts`).
 - Çekilmemiş ayda eskisi gibi yalnız ModPOS.
 - **Analiz › Senaryo** "Şu an"ı Genel bakış'taki reçeteye göre net kârla aynıdır (denetim E-12): sabit gider o ayın
   tutarları (liste kasa raporlarından kısaysa o döneme düşen payı), indirim listenin döneminden, online brüt kârı ayrı
