@@ -10,7 +10,8 @@ import { packEvidence, sameFactor } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { invoiceReadingState } from "@/server/invoice-reading/read";
-import { isParasutConfigured, parasutEnvStatus } from "@/server/parasut/config";
+import { parasutConnection } from "@/server/parasut/client";
+import { isParasutConfigured, parasutEnvStatus, parasutRedirectUri } from "@/server/parasut/config";
 import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
 import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
@@ -138,6 +139,15 @@ async function ParasutContent() {
     last: r.last ? new Date(r.last).toISOString() : null,
   }));
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
+  // Paraşüt hesabı tarayıcıdan yetkilendirildi mi (belirteçlerin kendisi panele hiç gelmez)
+  const connection = await parasutConnection();
+  // DevHub'a kaydedilecek dönüş adresi; PARASUT_REDIRECT_URI yanlış yazıldıysa ekran yine açılır
+  let redirectUri: string | null = null;
+  try {
+    redirectUri = parasutRedirectUri();
+  } catch {
+    redirectUri = null;
+  }
 
   return (
     <>
@@ -145,6 +155,8 @@ async function ParasutContent() {
       <HashScroll />
       <ParasutScreen
         configured={isParasutConfigured()}
+        connection={connection}
+        redirectUri={redirectUri}
         env={parasutEnvStatus()}
         cronSet={Boolean(process.env.CRON_SECRET)}
         syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}

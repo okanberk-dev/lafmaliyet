@@ -195,10 +195,8 @@ export function linkedBreakdown(links: LinkedProduct[], ingredients: { id: numbe
 // ---------------------------------------------------------------- Bağlantı
 
 const ENV_HELP: Record<string, string> = {
-  PARASUT_CLIENT_ID: "API istemci kimliği (Paraşüt destekten)",
-  PARASUT_CLIENT_SECRET: "API istemci parolası (Paraşüt destekten)",
-  PARASUT_USERNAME: "API kullanıcısının e-postası",
-  PARASUT_PASSWORD: "API kullanıcısının parolası",
+  PARASUT_CLIENT_ID: "DevHub'daki uygulamanın client_id'si",
+  PARASUT_CLIENT_SECRET: "DevHub'daki uygulamanın client_secret'ı",
   PARASUT_COMPANY_ID: "Firma numarası (Paraşüt adresindeki sayı)",
   CRON_SECRET: "Her sabahki otomatik eşitlemenin anahtarı",
 };
@@ -213,15 +211,23 @@ export function connectionBreakdown(x: {
   cronSet: boolean;
   syncFrom: string | null;
   cursor: string | null;
+  /** Paraşüt hesabı tarayıcıdan yetkilendirilmiş mi (refresh_token kayıtlı) */
+  connected: boolean;
+  /** refresh_token'ın son yenilenme anı (ISO) */
+  refreshedAt: string | null;
+  /** 30 günlük yenileme süresinin sonuna yaklaşıldı */
+  stale: boolean;
   /** En son başarılı eşitleme (geçmişteki son 8 içinde) */
   lastOk: { startedAt: string; trigger: "cron" | "manual" | "history" } | null;
 }): BreakdownGroup[] {
   const vars = [...x.env, { name: "CRON_SECRET", set: x.cronSet }];
   const auto: Pick<BreakdownRow, "display" | "tone" | "sub"> = !x.configured
     ? { display: "Kurulum bekliyor", tone: "warn", sub: "Paraşüt değişkenleri tamamlanınca her sabah çalışır." }
-    : !x.cronSet
-      ? { display: "Kapalı", tone: "warn", sub: "CRON_SECRET eksik: yalnız “Şimdi eşitle” ile çalışır." }
-      : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
+    : !x.connected
+      ? { display: "Hesap bağlanmadı", tone: "warn", sub: "“Paraşüt hesabını bağla”ya basıp Paraşüt'te onay verin." }
+      : !x.cronSet
+        ? { display: "Kapalı", tone: "warn", sub: "CRON_SECRET eksik: yalnız “Şimdi eşitle” ile çalışır." }
+        : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
   return [
     {
       key: "ortam",
@@ -243,6 +249,20 @@ export function connectionBreakdown(x: {
       label: "Eşitleme",
       noSubtotal: true,
       rows: [
+        {
+          key: "hesap",
+          label: "Paraşüt hesabı",
+          sub: x.connected
+            ? x.stale
+              ? "Yetki yenilenmeli: refresh_token 30 gün geçerli ve son yenileme eskidi."
+              : x.refreshedAt
+                ? `Son yenileme ${dateTimeTR(x.refreshedAt)}; her eşitlemede kendiliğinden yenilenir.`
+                : "Bağlı."
+            : "Bir kez tarayıcıdan yetkilendirin: “Paraşüt hesabını bağla” (Authorization Code + PKCE).",
+          amount: 0,
+          display: x.connected ? (x.stale ? "Yenilenmeli" : "Bağlı") : "Bağlı değil",
+          tone: x.connected ? (x.stale ? "warn" : "good") : "bad",
+        },
         { key: "otomatik", label: "Otomatik eşitleme", amount: 0, ...auto },
         {
           key: "baslangic",

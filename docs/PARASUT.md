@@ -8,22 +8,43 @@ Ekran: **Ayarlar › Paraşüt entegrasyonu** (`/panel/parasut`).
 
 ## 1. Kurulum (bir kez)
 
-1. **API erişimi:** Paraşüt'ün geliştirici portalı yok. `destek@parasut.com` adresine yazıp API erişimi isteyin; size
-   `client_id` ve `client_secret` verilir. Hangi paketin API içerdiği yayımlanmıyor, destekten sorun.
-2. **API kullanıcısı:** Paraşüt'te API için ayrı bir kullanıcı (e-posta + parola) açın. Fatura okuma yetkisi yeterli.
+> **10 Aralık 2026:** Paraşüt eski kimlik doğrulamayı kapattı. `grant_type=password` (e-posta + parola ile belirteç
+> alma) ve `api.parasut.com/oauth/*` üzerinden açılmış eski istemciler artık çalışmıyor. Erişim yalnızca **DevHub**'dan
+> alınan bir istemciyle ve **OAuth 2.0 Authorization Code + PKCE** akışıyla veriliyor. Eski istemciler yeni altyapıya
+> taşınmadı: yeni bir `client_id` / `client_secret` almak gerekir.
+
+1. **DevHub başvurusu:** Paraşüt **DevHub**'a Paraşüt hesabınızla girin ve *“Paraşüt Kullanıcısıyım”* ile başvurun
+   (kendi firmamız için entegrasyon geliştiriyoruz; iş ortaklığı başvurusu değil). İstemci hemen oluşur, inceleme
+   beklenmez ve yalnızca doğrulanmış firmanızın verisine erişir. Size bir `client_id` ve `client_secret` verilir.
+   İstemci varsayılan olarak *confidential*'dır ve PKCE zorunludur.
+   - **Uygulama adı** son kullanıcıya görünür (Paraşüt → Firma Bilgileri › Uygulama Entegrasyonları), anlaşılır olsun.
+2. **Dönüş adresi (redirect URI):** başvuruda **tam olarak** şunu kaydedin:
+
+   ```
+   https://ladmin.laffogato.net/panel/parasut/baglan/geri
+   ```
+
+   Panelin adresi değişirse `PARASUT_REDIRECT_URI` ile verin; boşsa `APP_URL` + `/panel/parasut/baglan/geri`
+   kullanılır. Panelde **Ayarlar › Paraşüt entegrasyonu → Kurulum** kartı kaydedilecek adresi olduğu gibi yazar.
 3. **Firma numarası:** Paraşüt'e girdiğinizde adres çubuğundaki sayı: `uygulama.parasut.com/123456/...` → `123456`.
    Panelde **Bağlantıyı dene** bu kullanıcının erişebildiği firmaları da gösterir.
-4. **Vercel ortam değişkenleri** (lafmaliyet → Settings → Environment Variables, Production):
+4. **Kullanıcı yetkisi:** bağlantıyı kuracak Paraşüt kullanıcısında **Uygulama Entegrasyonları** yetkisi açık olmalı
+   (Paraşüt → Ayarlar › Kullanıcılar › Düzenle › Uygulama Entegrasyonları). Bu yetki şirket sahibi dahil herkeste
+   **varsayılan olarak kapalıdır**: şirket sahibi önce kendi yetkisini, sonra gerekiyorsa başkalarının yetkisini açar.
+   Yetkisi olmayan kullanıcı adına yapılan istekler **403** döner.
+5. **Vercel ortam değişkenleri** (lafmaliyet → Settings → Environment Variables, Production):
 
 | Değişken | Değer |
 |----------|-------|
-| `PARASUT_CLIENT_ID` | Paraşüt'ün verdiği client_id |
-| `PARASUT_CLIENT_SECRET` | Paraşüt'ün verdiği client_secret |
-| `PARASUT_USERNAME` | API kullanıcısının e-postası |
-| `PARASUT_PASSWORD` | API kullanıcısının parolası |
+| `PARASUT_CLIENT_ID` | DevHub'daki uygulamanın client_id'si |
+| `PARASUT_CLIENT_SECRET` | DevHub'daki uygulamanın client_secret'ı |
 | `PARASUT_COMPANY_ID` | Firma numarası |
 | `PARASUT_SYNC_FROM` | (isteğe bağlı) İlk eşitlemenin başlangıcı, `YYYY-MM-DD`; boşsa bu yılın başı |
-| `PARASUT_BASE_URL` | (isteğe bağlı) Varsayılan `https://api.parasut.com`; Paraşüt test sunucusu verirse onun adresi |
+| `PARASUT_REDIRECT_URI` | (isteğe bağlı) DevHub'a kaydedilen dönüş adresi; boşsa `APP_URL` + `/panel/parasut/baglan/geri` |
+| `PARASUT_ISSUER` | (isteğe bağlı) Kimlik sunucusu; varsayılan `https://id.parasut.com` |
+| `PARASUT_SCOPE` | (isteğe bağlı) İstenen izinler; varsayılan `openid` |
+| `PARASUT_AUTHORIZE_URL`, `PARASUT_TOKEN_URL` | (isteğe bağlı) Keşif belgesi okunamazsa uçları elle vermek için |
+| `PARASUT_BASE_URL` | (isteğe bağlı) Veri API'si; varsayılan `https://api.parasut.com` |
 | `CRON_SECRET` | Günlük işin anahtarı: `openssl rand -hex 32` |
 
 Komut satırından eklemek için (değeri siz yazarsınız, ekrana basılmaz):
@@ -32,13 +53,27 @@ Komut satırından eklemek için (değeri siz yazarsınız, ekrana basılmaz):
 vercel env add PARASUT_CLIENT_SECRET production
 ```
 
-Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı dene**, sonra **Şimdi eşitle**.
+6. **Hesabı bağlayın:** değişkenleri ekleyip yeniden deploy ettikten sonra panelde **Ayarlar › Paraşüt entegrasyonu →
+   “Paraşüt hesabını bağla”**ya basın. Paraşüt'ün giriş ve onay ekranından geçersiniz; panel parolanızı hiçbir zaman
+   görmez. Dönüşte yetki şifreli olarak saklanır. Sonra **Bağlantıyı dene**, ardından **Şimdi eşitle**.
+
+Yetkiyi Paraşüt'ten dilediğiniz zaman durdurabilirsiniz (Paraşüt → Profilim › Uygulama Entegrasyonları → **DURDUR**).
+Durdurulduğunda panel bir sonraki eşitlemede `invalid_grant` alır, kayıtlı oturumu siler ve ekranda “yeniden bağlayın”
+der.
 
 ## 2. Nasıl çalışır
 
-- **Kimlik:** OAuth2 parola akışı (`POST https://api.parasut.com/oauth/token`). Erişim belirteci 2 saat geçerli; her
-  yenilemede yeni bir `refresh_token` döner ve hemen kaydedilir. Belirteçler veritabanında (`integration_state`)
-  AES-256-GCM ile şifreli durur; anahtar `AUTH_SECRET`'tan türetilir.
+- **Kimlik:** OAuth 2.0 **Authorization Code + PKCE** (S256), kimlik sunucusu `https://id.parasut.com`. Yetki adresi
+  ve belirteç adresi koda yazılmaz: `{issuer}/.well-known/openid-configuration` keşif belgesinden okunur ve 6 saat
+  bellekte tutulur (`src/server/parasut/oidc.ts`; saf kurallar ve güvenlik denetimleri `src/lib/parasut/oidc.ts`).
+  Keşif belgesi yalnız **https** ve yayıncıyla **aynı alan adındaki** uçları kabul eder.
+  Yetkilendirme bir kez tarayıcıdan yapılır (`/panel/parasut/baglan` → Paraşüt onayı → `/panel/parasut/baglan/geri`,
+  `src/server/parasut/connect.ts`); `state` ve `code_verifier` 10 dakika geçerli, tek kullanımlık ve şifreli durur.
+  Dönen `refresh_token` **30 gün** geçerlidir ve her eşitlemede yenilenir (her yenilemede yenisi döner, hemen
+  kaydedilir); erişim belirteci ~2 saat geçerli. Belirteçler veritabanında (`integration_state`) AES-256-GCM ile
+  şifreli durur; anahtar `AUTH_SECRET`'tan türetilir. Panel Paraşüt parolasını hiçbir zaman görmez.
+  Yenileme kalıcı olarak reddedilirse (`invalid_grant`: izin durduruldu, 30 gün doldu ya da `client_secret`
+  yenilendi) kayıtlı oturum silinir ve ekran yeniden bağlanmayı ister. Geçici ağ/5xx hatasında belirteç korunur.
 - **Okuma:** `GET /v4/{firma}/purchase_bills?sort=-issue_date&include=supplier,category,details,details.product,active_e_document`,
   sayfa başına 25 kayıt (Paraşüt'ün üst sınırı). Paraşüt "değişme tarihine göre" süzmeye izin vermediği için her
   eşitleme son faturanın tarihinden **75 gün geriye** bakar; bu pencerede ödenen, düzeltilen ya da iptal edilen

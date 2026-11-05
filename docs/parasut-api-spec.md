@@ -1,5 +1,26 @@
 # Paraşüt API v4: implementation spec for the café purchase-bill sync (TypeScript)
 
+> ## ⚠️ Section 1 (Auth) is obsolete as of 10 December 2026
+>
+> Paraşüt moved all API authentication to a new identity server (`https://id.parasut.com`) and switched to
+> **OAuth 2.0 Authorization Code + PKCE**. What changed:
+>
+> - **`grant_type=password` was removed.** Getting a token from an e-mail address and a password no longer works.
+> - **New clients are issued only through Paraşüt DevHub.** Client and redirect-URI requests are no longer taken by
+>   e-mail (`destek@parasut.com`), so the "no self-serve developer portal" note below is out of date.
+> - **Existing `api.parasut.com/oauth/*` clients were not migrated.** A new `client_id` / `client_secret` is required.
+> - New clients are *confidential* by default and PKCE is mandatory; `scope=openid` and `state` are expected.
+> - Refresh tokens are valid for **30 days** and rotate on every refresh.
+> - The end user must hold the **"Uygulama Entegrasyonları"** permission, which is off by default for everyone
+>   including the company owner; without it the API answers **403**.
+> - The old development/test environment was shut down on 6 November 2026.
+>
+> **The data API (sections 2 and onwards: `/v4/{company_id}/…`, JSON:API, rate limits, e-invoice paths) is
+> unchanged** — only how a token is obtained changed. For how the panel does it now see
+> [PARASUT.md](PARASUT.md) § 1–2, `src/server/parasut/connect.ts` and `src/lib/parasut/oidc.ts`. Endpoint URLs are
+> not hard-coded: they are read from `{issuer}/.well-known/openid-configuration`. Technical references live on the
+> DevHub site under "Yardımcı Kaynaklar"; support: `devhubdestek@parasut.com`.
+
 Confidence tags: **[docs]** means verified in the official spec or docs. **[client]** means seen in community client code, some of it run against the live API. **[secondary]** means help pages, READMEs or changelogs. **[unverified]** means a guess or something still to test. Conflicts are resolved in that order: docs, then client, then secondary.
 
 Re-checked on 2026-10-19:

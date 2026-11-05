@@ -24,14 +24,14 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { tryAction, useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -195,6 +195,8 @@ function oneOf<T extends string>(value: string, allowed: readonly T[], fallback:
 
 export function ParasutClient({
   configured,
+  connection,
+  redirectUri,
   env,
   cronSet,
   syncFrom,
@@ -216,6 +218,10 @@ export function ParasutClient({
   returns = null,
 }: {
   configured: boolean;
+  /** Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli) */
+  connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
+  /** DevHub'a kaydedilmesi gereken dönüş adresi (PARASUT_REDIRECT_URI yanlışsa null) */
+  redirectUri: string | null;
   env: { name: string; set: boolean }[];
   cronSet: boolean;
   syncFrom: string | null;
@@ -257,11 +263,31 @@ export function ParasutClient({
   const busy = testing || syncing || resetting || reading;
   const [from, setFrom] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  // "Paraşüt hesabını bağla" dönüşü (baglan/geri rotası buraya yönlendirir): sonucu bir kez göster, adresi temizle
+  const search = useSearchParams();
+  const connectResult = search.get("baglanti");
+  const connectMessage = search.get("mesaj");
+  useEffect(() => {
+    if (!connectResult) return;
+    if (connectResult === "tamam") toast.success("Paraşüt hesabı bağlandı");
+    else toast.error(connectMessage || "Paraşüt hesabı bağlanamadı");
+    clearQuery(["baglanti", "mesaj"]);
+  }, [connectResult, connectMessage]);
   // Tedarikçi sayfasındaki "Geçmiş faturaları al" listede görünür ama son eşitleme sayılmaz
   const syncRuns = runs.filter((r) => r.trigger !== "history");
   const lastRun = syncRuns[0];
   // Kartların dökümü (karta dokununca açılan pencere): sayfanın zaten aldığı verilerden, breakdowns.ts
-  const connectionGroups = connectionBreakdown({ configured, env, cronSet, syncFrom, cursor, lastOk: syncRuns.find((r) => r.status === "ok") ?? null });
+  const connectionGroups = connectionBreakdown({
+    configured,
+    env,
+    cronSet,
+    syncFrom,
+    cursor,
+    connected: connection.connected,
+    refreshedAt: connection.refreshedAt,
+    stale: connection.stale,
+    lastOk: syncRuns.find((r) => r.status === "ok") ?? null,
+  });
   const linkGroups = linkedBreakdown(links, ingredients, unlinkedTotal, ignored.length);
   const runGroups = runsBreakdown(runs, { lastSyncedAt: stats.lastSyncedAt, lineReads, pendingEInvoices });
 
@@ -353,9 +379,15 @@ export function ParasutClient({
             compact
             icon={<PlugZap />}
             label="Bağlantı"
-            value={configured ? "Tanımlı" : "Kurulmadı"}
-            tone={configured ? "good" : "warn"}
-            sub={configured ? `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
+            value={!configured ? "Kurulmadı" : !connection.connected ? "Hesap bağlanmadı" : connection.stale ? "Yenilenmeli" : "Bağlı"}
+            tone={!configured || !connection.connected ? "warn" : connection.stale ? "warn" : "good"}
+            sub={
+              !configured
+                ? "Aşağıdaki kurulum adımlarını izleyin"
+                : !connection.connected
+                  ? "“Paraşüt hesabını bağla” ile bir kez yetkilendirin"
+                  : `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}`
+            }
           />
         </StatBreakdown>
         <StatBreakdown
@@ -458,6 +490,22 @@ export function ParasutClient({
         )
       ) : null}
 
+      {configured && !connection.connected ? (
+        <Notice
+          tone="warn"
+          className="mb-4"
+          title="Paraşüt hesabı bağlı değil"
+          text="Her sabahki eşitleme çalışmaz. Aşağıdaki Kurulum kartından “Paraşüt hesabını bağla”ya basıp Paraşüt'ün onay ekranından geçin."
+        />
+      ) : connection.connected && connection.stale ? (
+        <Notice
+          tone="warn"
+          className="mb-4"
+          title="Paraşüt yetkisi yenilenmeli"
+          text="Paraşüt'ün verdiği yenileme hakkı 30 gün geçerli ve son yenileme eskidi. Eşitleme durduysa “Yeniden bağla” ile yetkiyi tazeleyin."
+        />
+      ) : null}
+
       {returns ? <ReturnsNotice returns={returns} /> : null}
 
       {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, "Yeniden eşitleme" formu sıkışırdı */}
@@ -467,18 +515,27 @@ export function ParasutClient({
           <CardContent className="space-y-4">
             <ol className="space-y-3 text-sm text-ink-soft">
               <Step n={1} done={env.slice(0, 2).every((e) => e.set)}>
-                Paraşüt&apos;ün geliştirici portalı yok: <a className="font-medium text-ink underline pointer-coarse:py-3.5" href="mailto:destek@parasut.com">destek@parasut.com</a> adresine
-                yazıp API erişimi isteyin. Size bir <code className="rounded bg-surface px-1">client_id</code> ve{" "}
-                <code className="rounded bg-surface px-1">client_secret</code> verilir.
+                Paraşüt <b>DevHub</b>&apos;a Paraşüt hesabınızla girip <i>“Paraşüt Kullanıcısıyım”</i> ile başvurun. İstemci hemen oluşur (inceleme beklenmez) ve size bir{" "}
+                <code className="rounded bg-surface px-1">client_id</code> ile <code className="rounded bg-surface px-1">client_secret</code> verilir.
               </Step>
-              <Step n={2} done={env.slice(2, 4).every((e) => e.set)}>
-                API için Paraşüt&apos;te bir kullanıcı (e-posta + parola) belirleyin; yalnız fatura okuma yetkisi yeterli.
+              <Step n={2} done={connection.connected}>
+                Başvuruda <b>dönüş adresi (redirect URI)</b> olarak tam olarak şunu kaydedin:{" "}
+                {redirectUri ? (
+                  <code className="rounded bg-surface px-1 break-all">{redirectUri}</code>
+                ) : (
+                  <span className="text-bad">PARASUT_REDIRECT_URI geçerli bir https adresi değil.</span>
+                )}
               </Step>
-              <Step n={3} done={env[4]?.set}>
+              <Step n={3} done={env[2]?.set}>
                 Firma numarasını alın: Paraşüt&apos;e girince adres çubuğundaki <code className="rounded bg-surface px-1 break-words">uygulama.parasut.com/<b>123456</b>/…</code> sayısı.
               </Step>
               <Step n={4} done={configured && cronSet}>
                 Vercel → lafmaliyet → Settings → Environment Variables&apos;a ekleyip yeniden deploy edin.
+              </Step>
+              <Step n={5} done={connection.connected}>
+                Paraşüt&apos;te bağlantıyı kuracak kullanıcıya <b>Uygulama Entegrasyonları</b> yetkisini açın (Paraşüt → Ayarlar › Kullanıcılar › Düzenle), sonra aşağıdaki{" "}
+                <b>Paraşüt hesabını bağla</b>&apos;ya basıp onay ekranından geçin. Panel Paraşüt parolanızı hiçbir zaman görmez; yetkiyi Paraşüt&apos;ten dilediğiniz zaman
+                durdurabilirsiniz.
               </Step>
             </ol>
             <ul className="flex flex-wrap gap-1.5" aria-label="Ortam değişkenleri">
@@ -491,6 +548,27 @@ export function ParasutClient({
                 </li>
               ))}
             </ul>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line-strong pt-4">
+              {configured ? (
+                /* Tam sayfa gidiş: rota Paraşüt'ün onay ekranına 302 verir (Next yönlendirmesi değil, önden yüklenmez) */
+                <a href="/panel/parasut/baglan" className={buttonClass(connection.connected ? "secondary" : "primary")}>
+                  <PlugZap size={16} /> {connection.connected ? "Yeniden bağla" : "Paraşüt hesabını bağla"}
+                </a>
+              ) : (
+                <Button disabled title={NOT_CONFIGURED}>
+                  <PlugZap size={16} /> Paraşüt hesabını bağla
+                </Button>
+              )}
+              <span className="min-w-0 flex-1 text-xs leading-5 text-ink-mute">
+                {connection.connected
+                  ? connection.stale
+                    ? "Yetki uzun süre yenilenmedi: refresh_token 30 gün geçerli. Eşitleme bir süre çalışmadıysa yeniden bağlayın."
+                    : connection.refreshedAt
+                      ? `Bağlı · yetki en son ${dateTimeTR(connection.refreshedAt)} yenilendi (her eşitlemede kendiliğinden yenilenir).`
+                      : "Bağlı."
+                  : "Paraşüt'ün giriş ve onay ekranına gidilir; dönüşte yetki şifreli olarak burada saklanır."}
+              </span>
+            </div>
             <p className="text-xs leading-5 text-ink-mute">
               İlk eşitleme {syncFrom ? dateTR(syncFrom) : "bu yılın başından"} itibaren alır
               {cursor ? `; sonrakiler son faturadan (${dateTR(cursor)}) 75 gün geriye bakar` : ""}. Panelde elle ya da Excel&apos;den girilmiş aynı fatura bulunursa

@@ -6,12 +6,14 @@ import { getDb, schema as s } from "@/server/db";
 
 import { readParasutConfig, type ParasutConfig } from "./config";
 import type { ListResponse, ShowResponse } from "./jsonapi";
+import { parasutEndpoints } from "./oidc";
 import { open, seal } from "@/server/secret-box";
 
 /**
  * Paraşüt API v4 istemcisi (https://apidocs.parasut.com).
- * - Kimlik: OAuth2 "password" akışı (client_id + client_secret + kullanıcı e-postası/parolası), belirteç
- *   yaklaşık 2 saat geçerli; "refresh_token" ile yenilenir. Belirteçler integration_state'te şifreli durur.
+ * - Kimlik: OAuth 2.0 Authorization Code + PKCE (id.parasut.com). Yetkilendirme bir kez tarayıcıdan yapılır
+ *   (connect.ts), dönen refresh_token integration_state'te şifreli durur ve 30 gün içinde düzenli yenilenir.
+ *   Erişim belirteci ~2 saat geçerli. `grant_type=password` 10 Aralık 2026'da kaldırıldı; artık kullanılmıyor.
  * - Uç noktalar: {baseUrl}/v4/{company_id}/<kaynak>, JSON:API (include, filter[..], sort, page[number|size]).
  * - Hız sınırı: belgelere göre 10 saniyede 10 istek; istekler arasında en az PACING.minGapMs beklenir, 429'da
  *   Retry-After'a uyulur, 5xx'te geri çekilerek yeniden denenir.
@@ -22,7 +24,7 @@ const TOKEN_KEY = "parasut.token";
 /** Yenilemeleri sıraya sokan Postgres danışma kilidi (iki eşitleme aynı refresh_token'ı harcamasın) */
 const TOKEN_LOCK = 7_340_211;
 
-type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert">;
+type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert" | "delete">;
 /**
  * İstekler arası en az bekleme ve 429/5xx'te Retry-After yoksa geri çekilmenin tabanı (2^deneme ile çarpılır). Yalnız
  * sahte Paraşüt'le koşan veritabanı testi (tests/parasut-esitleme-db.test.ts) sıfırlar; canlıda değişmez
@@ -39,8 +41,21 @@ interface StoredToken {
   /** epoch ms */
   expiresAt: number;
   clientId: string;
-  username: string;
+  /** Belirteci veren kimlik sunucusu; issuer değişirse (eski altyapıdan kalan) belirteç kullanılmaz */
+  issuer: string;
+  /** En son alınma/yenilenme anı (epoch ms): refresh_token 30 gün geçerli, panelde yaşı gösterilir */
+  refreshedAt: number;
 }
+
+export interface ParasutTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  created_at?: number;
+}
+
+/** Paraşüt'ün refresh_token'ı için verdiği süre: bu kadar yenilenmezse bağlantı düşer */
+export const REFRESH_MAX_DAYS = 30;
 
 export class ParasutError extends Error {
   constructor(
@@ -52,8 +67,21 @@ export class ParasutError extends Error {
   }
 }
 
-/** /oauth/token reddi (yanlış parola, iptal edilmiş istemci): include denemesiyle karıştırılmasın, yeniden denenmez */
+/** Belirteç isteği reddi (iptal edilmiş istemci, geçersiz secret): include denemesiyle karıştırılmasın, yeniden denenmez */
 export class ParasutAuthError extends ParasutError {}
+
+/**
+ * refresh_token artık geçerli değil: kullanıcı Paraşüt'te "DURDUR" dedi, 30 günlük süre doldu ya da client_secret
+ * yenilendi. Paraşüt bunu `invalid_grant` ile söyler; kayıtlı belirteç silinir ve yeniden yetkilendirme istenir.
+ */
+export class ParasutRevokedError extends ParasutAuthError {}
+
+/** Kayıtlı oturum yok ya da iptal edilmiş: yönetici tarayıcıdan yeniden bağlamalı (tek seferlik) */
+export class ParasutNotConnectedError extends ParasutAuthError {
+  constructor(message = "Paraşüt hesabı bağlı değil. Ayarlar › Paraşüt entegrasyonu ekranından “Paraşüt hesabını bağla”yı kullanın.") {
+    super(message, 401);
+  }
+}
 
 /** Süre dolmak üzereyken yeni istek/yeniden deneme yapılmaz; eşitleme kaldığı yerden sonra sürer */
 export class ParasutDeadlineError extends ParasutError {
@@ -71,8 +99,9 @@ export function parasutErrorText(status: number, body: string): string {
   } catch {
     detail = body.slice(0, 200);
   }
-  if (status === 401) return `Paraşüt girişi reddedildi (kullanıcı, parola ya da istemci bilgileri hatalı). ${detail}`.trim();
-  if (status === 403) return `Bu kullanıcının bu firmaya ya da kaynağa erişim yetkisi yok. ${detail}`.trim();
+  if (status === 401) return `Paraşüt girişi reddedildi (istemci bilgileri hatalı ya da erişim iptal edilmiş). ${detail}`.trim();
+  // Yeni altyapıda 403'ün en sık nedeni: bağlantıyı kuran kullanıcıda "Uygulama Entegrasyonları" yetkisi yok
+  if (status === 403) return `Bu kullanıcının bu firmaya ya da kaynağa erişim yetkisi yok (Paraşüt'te Ayarlar › Kullanıcılar › Düzenle › Uygulama Entegrasyonları yetkisi açık mı?). ${detail}`.trim();
   if (status === 404) return `Kayıt ya da firma bulunamadı (PARASUT_COMPANY_ID doğru mu?). ${detail}`.trim();
   if (status === 429) return "Paraşüt istek sınırına takıldı; biraz sonra yeniden denenecek.";
   if (status >= 500) return "Paraşüt şu an yanıt vermiyor; biraz sonra yeniden deneyin.";
@@ -92,6 +121,93 @@ async function fetchParasut(label: string, url: string | URL, init: RequestInit)
     }
     throw new ParasutError(`Paraşüt'e bağlanılamadı (${label}): ${(e as Error)?.message ?? e}`, 0);
   }
+}
+
+/**
+ * Belirteç isteği: POST {token_endpoint} (adres keşif belgesinden gelir, oidc.ts). İstemci DevHub'da gizli
+ * (confidential) açıldığı için client_secret gövdede gider; yetki kodu değişiminde ayrıca code_verifier ve
+ * redirect_uri gönderilir. 400/401 yeniden denenmez; `invalid_grant` ParasutRevokedError olur.
+ */
+export async function postParasutToken(cfg: ParasutConfig, params: Record<string, string>): Promise<ParasutTokenResponse> {
+  const { tokenUrl } = await parasutEndpoints(cfg);
+  const res = await fetchParasut(params.grant_type === "refresh_token" ? "oturum yenileme" : "yetki kodu", tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({ client_id: cfg.clientId, client_secret: cfg.clientSecret, ...params }),
+  });
+  const body = await res.text();
+  if (!res.ok) {
+    let code = "";
+    try {
+      code = String((JSON.parse(body) as { error?: string }).error ?? "");
+    } catch {
+      code = "";
+    }
+    const text = parasutErrorText(res.status === 400 ? 401 : res.status, body);
+    throw code === "invalid_grant" ? new ParasutRevokedError(text, res.status, body) : new ParasutAuthError(text, res.status, body);
+  }
+  return JSON.parse(body) as ParasutTokenResponse;
+}
+
+/** Belirteci şifreleyip integration_state'e yazar */
+async function writeToken(t: StoredToken, db: Exec) {
+  const value = { sealed: seal(JSON.stringify(t)) };
+  await db
+    .insert(s.integrationState)
+    .values({ key: TOKEN_KEY, value })
+    .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+}
+
+/** Paraşüt'ün verdiği belirteç yanıtını saklanacak biçime çevirir ve yazar */
+export async function saveParasutToken(cfg: ParasutConfig, j: ParasutTokenResponse, db: Exec = getDb()): Promise<StoredToken> {
+  const created = j.created_at ? j.created_at * 1000 : Date.now();
+  const t: StoredToken = {
+    access: j.access_token,
+    refresh: j.refresh_token ?? null,
+    expiresAt: created + (j.expires_in ?? 7200) * 1000,
+    clientId: cfg.clientId,
+    issuer: cfg.issuer,
+    refreshedAt: Date.now(),
+  };
+  await writeToken(t, db);
+  return t;
+}
+
+export interface ParasutConnection {
+  /** Kayıtlı ve bu istemciye ait bir refresh_token var mı */
+  connected: boolean;
+  /** En son yenilenme (ISO); refresh_token'ın yaşı buradan görülür */
+  refreshedAt: string | null;
+  /** 30 günlük yenileme süresinin sonuna yaklaşıldı mı (eşitleme uzun süre çalışmamış) */
+  stale: boolean;
+}
+
+/**
+ * Panelde gösterilecek bağlantı durumu. Belirteçlerin kendisi hiçbir zaman dışarı verilmez; yalnız "bağlı mı" ve
+ * son yenilenme anı döner. Ayarlar eksikse ya da mühür açılamıyorsa (AUTH_SECRET değişmiş) bağlı değil sayılır.
+ */
+export async function parasutConnection(): Promise<ParasutConnection> {
+  const none: ParasutConnection = { connected: false, refreshedAt: null, stale: false };
+  let cfg: ParasutConfig;
+  try {
+    cfg = readParasutConfig();
+  } catch {
+    return none;
+  }
+  const [row] = await getDb().select().from(s.integrationState).where(eq(s.integrationState.key, TOKEN_KEY)).limit(1);
+  const sealed = (row?.value as { sealed?: string } | undefined)?.sealed;
+  const plain = sealed ? open(sealed) : null;
+  if (!plain) return none;
+  let t: StoredToken;
+  try {
+    t = JSON.parse(plain) as StoredToken;
+  } catch {
+    return none;
+  }
+  if (!t.refresh || t.clientId !== cfg.clientId || t.issuer !== cfg.issuer) return none;
+  const refreshedAt = t.refreshedAt ? new Date(t.refreshedAt) : null;
+  const ageDays = refreshedAt ? (Date.now() - refreshedAt.getTime()) / 86_400_000 : Number.POSITIVE_INFINITY;
+  return { connected: true, refreshedAt: refreshedAt?.toISOString() ?? null, stale: ageDays > REFRESH_MAX_DAYS - 7 };
 }
 
 export class ParasutClient {
@@ -124,43 +240,20 @@ export class ParasutClient {
     if (!plain) return null;
     try {
       const t = JSON.parse(plain) as StoredToken;
-      // Başka bir hesap/istemci için alınmış belirteç kullanılmaz
-      if (t.clientId !== this.cfg.clientId || t.username !== this.cfg.username) return null;
+      // Başka bir istemci ya da kimlik sunucusu için alınmış belirteç kullanılmaz (DevHub'da yeni client alındığında
+      // eski api.parasut.com belirteci kendiliğinden düşer)
+      if (t.clientId !== this.cfg.clientId || t.issuer !== this.cfg.issuer) return null;
       return t;
     } catch {
       return null;
     }
   }
 
-  private async store(t: StoredToken, db: Exec = getDb()) {
-    const value = { sealed: seal(JSON.stringify(t)) };
-    await db
-      .insert(s.integrationState)
-      .values({ key: TOKEN_KEY, value })
-      .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
-  }
 
-  private async requestToken(params: Record<string, string>, db: Exec = getDb()): Promise<StoredToken> {
-    const res = await fetchParasut(params.grant_type === "refresh_token" ? "oturum yenileme" : "giriş", `${this.cfg.baseUrl}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, redirect_uri: "urn:ietf:wg:oauth:2.0:oob", ...params }),
-    });
-    const body = await res.text();
-    if (!res.ok) throw new ParasutAuthError(parasutErrorText(res.status === 400 ? 401 : res.status, body), res.status, body);
-    const j = JSON.parse(body) as { access_token: string; refresh_token?: string; expires_in?: number; created_at?: number };
-    const created = j.created_at ? j.created_at * 1000 : Date.now();
-    const t: StoredToken = {
-      access: j.access_token,
-      refresh: j.refresh_token ?? null,
-      expiresAt: created + (j.expires_in ?? 7200) * 1000,
-      clientId: this.cfg.clientId,
-      username: this.cfg.username,
-    };
-    await this.store(t, db);
-    return t;
-  }
-
+  /**
+   * Geçerli erişim belirteci. Kayıtlı belirtecin süresi dolmak üzereyse refresh_token ile yenilenir; kayıtlı oturum
+   * yoksa ya da Paraşüt erişimi kaldırdıysa ParasutNotConnectedError atılır (artık parolayla giriş yok).
+   */
   private async accessToken(force = false): Promise<string> {
     if (!force) {
       this.token ??= await this.loadStored();
@@ -169,27 +262,35 @@ export class ParasutClient {
     }
     const stale = this.token?.access ?? null;
     // Her yenileme yeni bir refresh_token döndürür; kilit altında yeniden okunur, bu arada başka bir çağrı
-    // yenilediyse onunki kullanılır
-    return getDb().transaction(async (tx) => {
+    // yenilediyse onunki kullanılır. Silme ve hata işlemin **dışında**: içeriden atılan hata yenilemenin yazdığını
+    // da geri alırdı, iptal edilen belirteç de silinmiş sayılmazdı.
+    const outcome = await getDb().transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(${TOKEN_LOCK})`);
       const current = await this.loadStored(tx);
       if (current && current.access !== stale && current.expiresAt - Date.now() > 120_000) {
         this.token = current;
-        return current.access;
+        return { kind: "ok" as const, access: current.access };
       }
-      const refresh = current?.refresh ?? this.token?.refresh;
-      if (refresh) {
-        try {
-          this.token = await this.requestToken({ grant_type: "refresh_token", refresh_token: refresh }, tx);
-          return this.token.access;
-        } catch (e) {
-          // Yenileme reddedildiyse ya da yanıt gelmediyse parolayla yeniden giriş yapılır
-          if (!(e instanceof ParasutError)) throw e;
-        }
+      const refresh = current?.refresh ?? this.token?.refresh ?? null;
+      if (!refresh) return { kind: "none" as const };
+      try {
+        const t = await saveParasutToken(this.cfg, await postParasutToken(this.cfg, { grant_type: "refresh_token", refresh_token: refresh }), tx);
+        this.token = t;
+        return { kind: "ok" as const, access: t.access };
+      } catch (e) {
+        // Paraşüt yenilemeyi kalıcı olarak reddetti (izin kaldırıldı, 30 gün doldu, secret yenilendi): kayıtlı
+        // oturum işe yaramaz. Geçici ağ/5xx hatasında belirteç korunur, hata yukarı çıkar.
+        if (e instanceof ParasutRevokedError) return { kind: "revoked" as const };
+        throw e;
       }
-      this.token = await this.requestToken({ grant_type: "password", username: this.cfg.username, password: this.cfg.password }, tx);
-      return this.token.access;
     });
+    if (outcome.kind === "ok") return outcome.access;
+    if (outcome.kind === "none") throw new ParasutNotConnectedError();
+    await forgetParasutToken();
+    this.token = null;
+    throw new ParasutNotConnectedError(
+      "Paraşüt erişimi sona ermiş (izin kaldırılmış, client_secret yenilenmiş ya da 30 günlük yenileme süresi dolmuş). Ayarlar › Paraşüt entegrasyonu ekranından yeniden bağlayın.",
+    );
   }
 
   // ------------------------------------------------------------ istek

@@ -273,10 +273,12 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
       AUTH_SECRET: "parasut-esitleme-testi-icin-en-az-otuz-iki-karakter",
       PARASUT_CLIENT_ID: "test-istemci",
       PARASUT_CLIENT_SECRET: "test-sir",
-      PARASUT_USERNAME: "api@kafe.test",
-      PARASUT_PASSWORD: "parola",
       PARASUT_COMPANY_ID: COMPANY,
       PARASUT_BASE_URL: BASE,
+      // Uç noktalar elle verilir: keşif belgesi (/.well-known/openid-configuration) için ağa çıkılmaz
+      PARASUT_ISSUER: BASE,
+      PARASUT_AUTHORIZE_URL: `${BASE}/oauth/authorize`,
+      PARASUT_TOKEN_URL: `${BASE}/oauth/token`,
     });
     // "server-only" Next'in sunucu derlemesi dışında hata fırlatır: test aynı modülleri doğrudan çalıştırır
     const require = createRequire(import.meta.url);
@@ -299,9 +301,24 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     await admin?.end();
   });
 
+  /**
+   * Kayıtlı Paraşüt yetkisi (Authorization Code + PKCE akışının sonucu). Paraşüt grant_type=password'ü kaldırdığı
+   * için istemci kendi başına giriş yapamaz: oturum her testte hazır bulunur.
+   */
+  async function seedToken(over: Partial<{ access: string; refresh: string | null; expiresAt: number }> = {}) {
+    const { seal } = await import("../src/server/secret-box");
+    const token = { access: "t0", refresh: "r0", expiresAt: Date.now() + 3_600_000, clientId: "test-istemci", issuer: BASE, refreshedAt: Date.now(), ...over };
+    const value = { sealed: seal(JSON.stringify(token)) };
+    await db
+      .insert(s.integrationState)
+      .values({ key: "parasut.token", value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value } });
+  }
+
   beforeEach(async () => {
     fake.reset();
     await db.execute(sql`TRUNCATE invoices, parasut_sync_runs, integration_state, activity_log RESTART IDENTITY CASCADE`);
+    await seedToken();
   });
 
   async function run() {
@@ -718,28 +735,31 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.equal(rec.note, "Havaleyle ödendi");
   });
 
-  test("istemci: 429'da yeniden dener; yenileme belirteci reddedilince parolayla girer", async () => {
+  test("istemci: 429'da yeniden dener; geçerli yetki varken belirteç istenmez, yenileme reddedilirse bağlantı düşer", async () => {
     fake.bills.set("401", bill("401"));
     fake.throttle = 2;
     await run();
     assert.equal((await rows()).length, 1);
     assert.ok(fake.requests.filter((x) => x.startsWith("purchase_bills?")).length >= 3, "429'lar yeniden denendi");
-    assert.deepEqual(fake.grants, ["password"]);
-    // Kayıtlı belirtecin süresi dolmuş: önce yenileme denenir
-    const { seal } = await import("../src/server/secret-box");
-    const expired = async () => {
-      const value = { sealed: seal(JSON.stringify({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000, clientId: "test-istemci", username: "api@kafe.test" })) };
-      await db.update(s.integrationState).set({ value }).where(eq(s.integrationState.key, "parasut.token"));
-    };
-    await expired();
+    // Kayıtlı belirteç geçerli: hiç belirteç istenmez (parolayla giriş diye bir yol yok)
+    assert.deepEqual(fake.grants, []);
+
+    // Süresi dolmuş belirteç: refresh_token ile yenilenir
+    await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
     fake.grants = [];
     await run();
     assert.deepEqual(fake.grants, ["refresh_token"]);
-    // Yenileme reddedilirse parolayla yeniden giriş yapılır, eşitleme sürer
-    await expired();
+
+    // Yenileme kalıcı olarak reddedilirse (invalid_grant: izin kaldırıldı ya da 30 gün doldu) kayıtlı oturum silinir
+    // ve eşitleme "yeniden bağlayın" diyerek durur; parolayla giriş denenmez
+    await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
     fake.rejectRefresh = true;
     fake.grants = [];
-    await run();
-    assert.deepEqual(fake.grants, ["refresh_token", "password"]);
+    const failed = await sync.syncParasut("manual");
+    assert.equal(failed.ok, false);
+    assert.deepEqual(fake.grants, ["refresh_token"]);
+    assert.match("error" in failed ? failed.error : "", /yeniden bağlayın/i);
+    const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.token"));
+    assert.equal(row, undefined, "iptal edilen yetki silindi (işlem geri almadı)");
   });
 });
