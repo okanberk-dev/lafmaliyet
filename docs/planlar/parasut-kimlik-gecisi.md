@@ -97,3 +97,74 @@ Takıldığınız yerde Paraşüt'ün geçiş desteği: `devhubdestek@parasut.co
 
 `docs/planlar/KALAN-ISLER.md` § 11'deki **D-16** ("sitenin `PARASUT_USERNAME`'i panelinkinden farklı mı") geçersiz:
 Paraşüt API'sinde kullanıcı adı/parola diye bir ayar kalmadı.
+
+## Panel içi hatırlatma (PR #93)
+
+Geçiş 1 Aralık'ta elle yapılacağı için o günü kaçırmamak adına panelin kendisi hatırlatıyor
+(`parasutMigrationAlert`, `src/lib/job-health.ts`; ayrı dal: `claude/parasut-gecis-uyarisi`):
+
+| Dönem | Seviye | Nerede | Metin |
+|---|---|---|---|
+| … – 30 Kasım | `warning` | zil, Ayarlar › Günlük işler | "Paraşüt kimlik geçişi bekliyor (1 Aralık) · N gün kaldı" |
+| 1 – 9 Aralık | `warning` + `banner` | **+ Genel bakış şeridi** | "Paraşüt kimlik geçişini bugün yapın" |
+| 10 Aralık – | `danger` + `banner` | Genel bakış şeridi | "Paraşüt bağlantısı kapandı: kimlik geçişi yapılmadı" |
+
+Uyarı yalnız ortamda `PARASUT_USERNAME` / `PARASUT_PASSWORD` dururken çıkar, yani geçişin 5. adımı yapılınca
+kendiliğinden kalkar. Son tarihe kadar `warning` kalması bilinçli: `danger` olsa `/api/health` 503 dönerdi ve bekleyen
+bir geçiş sistem çökmüş gibi görünürdü.
+
+**İki PR'ın sırası:** #93 (uyarı) hemen birleştirilir, #92 (geçiş) 1 Aralık'ta. Farklı dosyalara dokunuyorlar.
+
+## Ek A — Paraşüt'e gönderilecek soru maili
+
+Gmail'de taslak olarak hazır (`devhubdestek@parasut.com`). Köşeli parantezli alanlar doldurulmalı. Sorduğu şeyler:
+başvuru yolunun teyidi, dönüş adresinin DevHub'dan kaydedilip kaydedilemediği, **yetki ve belirteç adreslerinin tam
+adresleri ve keşif belgesinin yayında olup olmadığı** (bu oturumda doğrulanamayan kısım), gerekli scope'lar,
+sunucu-sunucu kullanımda `refresh_token` için ek parametre gerekip gerekmediği, 10 Aralık'a kadar eski ve yeni
+istemcinin paralel çalışıp çalışacağı, paketin API'yi içerip içermediği ve istek limitleri.
+
+## Ek B — Claude for Chrome prompt'u (DevHub başvurusunu tarayıcıdan yapmak için)
+
+```
+Paraşüt'ün yeni API altyapısı için DevHub başvurusunu yapmana ve ayarları toplamana ihtiyacım var. Giriş ve onay ekranlarını ben geçeceğim; sen adımları yönet, bulduklarını bana yaz.
+
+BAĞLAM
+Kendi firmamız için geliştirilmiş bir iç panel Paraşüt API v4'ü kullanıyor (gider faturaları ve gelen e-faturaların okunması). Panel bugüne kadar grant_type=password ile çalışıyordu; Paraşüt bunu 10 Aralık 2026'da kaldırıyor. Yeni akış: OAuth 2.0 Authorization Code + PKCE, id.parasut.com üzerinden. Panelin kodu hazır, eksik olan DevHub'dan alınacak istemci bilgileri.
+
+ADIMLAR
+
+1) Paraşüt DevHub'ı bul ve aç. Doğrudan adresini bilmiyorum; parasut.com üzerinden "Geliştiriciler" / DevHub bağlantısını bul. Giriş ekranı gelirse dur ve bana söyle, girişi ben yapayım.
+
+2) "Paraşüt Kullanıcısıyım" seçeneğiyle yeni bir uygulama başvurusu başlat. "İş Ortağı Olmak İstiyorum" DEĞİL — entegrasyonu yalnız kendi firmamızın verisi için kullanıyoruz.
+
+3) Formu doldur ama GÖNDERMEDEN ÖNCE doldurduğun hali bana göster ve onayımı bekle:
+   - Uygulama adı: bu ad Paraşüt'te son kullanıcıya görünüyor. "L'Affogato Panel" öneriyorum; daha uygun bir ad düşünüyorsan söyle.
+   - Dönüş adresi (redirect URI) — tam olarak bu, sonunda eğik çizgi YOK:
+     https://ladmin.laffogato.net/panel/parasut/baglan/geri
+   - Başka zorunlu alan varsa bana sor. Firma, vergi ya da iletişim bilgisi UYDURMA.
+
+4) Başvuru tamamlanınca client_id ve client_secret'ı ekranda bana göster.
+   ÖNEMLİ: client_secret bir sırdır. Hiçbir yere kaydetme, kopyalama, başka bir forma ya da sohbete yapıştırma, ekran görüntüsü alıp paylaşma. Sadece ekranda göster; ben kendim kopyalayıp Vercel'e gireceğim.
+
+5) DevHub'daki "Yardımcı Kaynaklar" (teknik doküman) sayfasını aç ve şunları bana aynen yaz:
+   - Yetkilendirme (authorize) adresinin tam adresi
+   - Belirteç (token) adresinin tam adresi
+   - Gerekli / desteklenen scope'lar: scope=openid dışında bir şey gerekiyor mu? purchase_bills ve e_invoices okumak için ek izin var mı?
+   - refresh_token kaç gün geçerli, her yenilemede yenisi dönüyor mu
+   - Sunucu-sunucu (headless) kullanımda refresh_token alabilmek için istekte ek bir parametre gerekiyor mu (ör. çevrimdışı erişim, prompt=consent)
+
+6) Şu adresi aç ve içeriğini (JSON) bana yaz:
+   https://id.parasut.com/.well-known/openid-configuration
+   Özellikle: issuer, authorization_endpoint, token_endpoint, scopes_supported, code_challenge_methods_supported, grant_types_supported. Sayfa açılmazsa ya da 404 verirse bunu da söyle — panel adresleri normalde buradan okuyor, yoksa elle gireceğiz.
+
+7) uygulama.parasut.com'a geç ve şu yetkiyi aç: Ayarlar > Kullanıcılar > (bağlantıyı kuracak kullanıcı) > Düzenle > Uygulama Entegrasyonları. Bu yetki şirket sahibi dahil herkeste varsayılan olarak KAPALI ve açılmazsa API istekleri 403 veriyor. Hangi kullanıcıda açacağımı bana sor.
+
+KURALLAR
+- Hiçbir şeyi silme, mevcut bir ayarı ya da entegrasyonu değiştirme. Yalnız yeni başvuruyu oluştur ve istediğim yetkiyi aç.
+- Para, fatura, abonelik ya da paket ile ilgili hiçbir işlem yapma.
+- Emin olmadığın bir alan ya da buton görürsen bana sor; tahminle ilerleme.
+- Sonunda kısa bir özet yaz: client_id, kaydedilen dönüş adresinin tam hali, uç nokta adresleri, scope'lar ve açtığın yetki. client_secret'ı özete YAZMA.
+```
+
+Chrome'dan dönen uç nokta adreslerini ve keşif belgesini bu nota ekleyin: `PARASUT_AUTHORIZE_URL` /
+`PARASUT_TOKEN_URL` gerekirse oradan doldurulur.
