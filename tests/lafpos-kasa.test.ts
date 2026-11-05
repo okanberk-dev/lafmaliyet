@@ -224,7 +224,9 @@ test("G6: kapalı işaretli gün yalnız satışlı LafPOS gün sonuyla 'rapor y
   const mixed = tillMonths([r("2026-11-01"), r("2026-11-02", { zTotal: 0, card: 0, receipts: 0, source: "lafpos" })], "2026-11-03", "2026-11-01", [], ["2026-11-02"]);
   assert.equal(plain(missingSentence(mixed[0])), "1 gün rapor yok: 3 Kasım. O günler açıksanız ciro ve açık gün eksik kalır. 1 gün kapalı işaretli: 2 Kasım.");
   // Yükleyici fiş sayısını yedek satıra taşır
-  assert.match(read("src/server/data/cash-reports.ts"), /offRevenue: z\.data\.offRevenue, receipts: z\.data\.receipts, source: "lafpos" as const/);
+  const loader = read("src/server/data/cash-reports.ts");
+  assert.match(loader, /offRevenue: d\.offRevenue,\n\s+receipts: d\.receipts,/);
+  assert.match(loader, /payments: Math\.round\(\(d\.cash \+ d\.card \+ d\.mealCard \+ d\.online \+ d\.other\) \* 100\) \/ 100,\n\s+source: "lafpos" as const,/);
 });
 
 test("G8: fotoğraf kaldırma günün kanıtına göre: LafPOS gününde ModPOS Z fotoğrafı kanıt değil; gün sonu gelmediyse tek yazarkasa Z'si kanıt", () => {

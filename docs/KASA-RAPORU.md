@@ -609,7 +609,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 | Alan | Kasa raporlarından |
 |------|--------------------|
 | Açık gün | Z toplamı 0'dan büyük rapor sayısı |
-| POS cirosu | Z toplamlarının toplamı |
+| POS cirosu | Z toplamlarının toplamı **eksi** Z toplamlarının içindeki ödenmez / ikram (aşağıda "Ciro ve ödenmez") |
 | İndirim, ödenmez / ikram | Girildiği günlerin toplamı (hiç girilmediyse 0) |
 | Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. Satış raporunun ürün başına tahmini komisyonu bu oranla; boşsa Ayarlar'daki kart oranıyla. Gelir-gider'in **banka POS komisyonu** yalnız banka kartı payıyla: kart ÷ Z (yemek kartı hariç, onun komisyonu kendi faturasıyla; elle yazılan orandan kasanın yemek kartı payı düşülür; denetim E-43) |
 
@@ -648,6 +648,40 @@ silinen rapor ayın rakamını hemen değiştirir.
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
   bakış'ta POS cirosu "· kasa raporlarından"; Excel kopyasının Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.
+
+## Ciro ve ödenmez
+
+Panelin **cirosu ödenmez / ikramı içermez**: ModPOS'un Patron › Raporlar › Ciro rakamıyla aynı anlamdadır (KDV dahil,
+indirimler düşülmüş, ödenmezler hariç). Oysa kasanın **Z toplamı** ödenmezi satış olarak içerir: sahibin ve personelin
+tüketimi, ikram, hediye kartı, zayi de birer "ödeme türüdür", yalnız ciroya dahil değildir. Düzeltilmeden ayın cirosu
+ModPOS'un rakamından ödenmez kadar fazla çıkıyordu (Ekim 2026: ModPOS 588 bin, panel 600 bin).
+
+**Kural** (`src/lib/cash-revenue.ts` `dayRevenue`, testi `tests/odenmez-ciro.test.ts`): günün cirosu = Z toplamı −
+Z toplamının içindeki ödenmez. Ödenmezin Z toplamının içinde olup olmadığını günün **ödeme dökümü** söyler (nakit +
+kart + yemek kartı + online + diğer; ödenmez / ikram bunların hiçbirine girmez):
+
+| Ödemelerin toplamı | Anlamı | Günün cirosu |
+|---|---|---|
+| Z toplamı − ödenmez | Z toplamı ödenmezi içeriyor | Z toplamı − ödenmez |
+| Z toplamı | Z toplamı ödenmezi içermiyor (zaten hariç) | Z toplamı |
+| İkisini de tutmuyor (1 ₺'tan büyük fark) | Gün kendi içinde tutmuyor | Z toplamı (değişmez) |
+
+Son satırda tahmin yürütülmez: o gün zaten "Ödeme türleri toplamı … cirodan / Z toplamından … az" uyarısı verir ve
+düzeltilmesi istenir. Kural üç kaynakta da aynıdır: elle girilen kasa raporu, LafPOS gün sonu ve ModPOS kasa föyü
+(`tillRows`, `src/server/data/cash-reports.ts`; üçü de ödeme dökümünü taşır).
+
+**Nerede görünür**
+
+- **Kasa raporu** (gün ayrıntısı, e-posta ve WhatsApp): ödenmez Z toplamının içindeyse "Ciro (ödenmez / ikram hariç)"
+  satırı çıkar; ödeme türlerinin payı ve toplamı ciroya göre ("ciroyla aynı"), yoksa bugünkü gibi Z toplamına göre.
+- **Satışlar › Ay bilgileri:** cironun altında "Kasa raporlarından (27 gün). Ödenmez / ikram 12.000 ₺ Z toplamından
+  düşüldü."
+- **Kasa'nın ay satırı:** "Bu ayın açık gün ve cirosu kasa raporlarından (ödenmez / ikram 12.000 ₺ düşüldü)".
+- **Genel bakış › POS cirosu** dökümü: "Z toplamları (ödenmez dahil)" ve "Ödenmez / ikram · − 12.000 ₺".
+
+Ödenmez alanı olduğu gibi durur (Zayi & ikram tutarlılığı, ödenmezlerin tahmini malzeme maliyeti ve kasa karşılaştırması
+onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da ciroya göre hesaplanır: POS komisyonu tahmini
+(ciro × oran × pay) yine kart tutarını verir.
 
 ## Gönderince
 

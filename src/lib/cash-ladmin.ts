@@ -93,7 +93,12 @@ export function ladminFacts(r: LadminReport): DayFact[] {
   return [
     { label: "Toplam satış (Z)", value: money(r.zTotal), sub: r.zNo ? `Z no ${r.zNo}` : "Z no yazılmadı" },
     { label: "Fiş sayısı", value: r.receipts !== null ? num(r.receipts) : "–", sub: avg ? `ortalama fiş ${avg}` : null },
-    { label: "Ödenmez / ikram", value: r.offRevenue !== null ? money(r.offRevenue) : "–", sub: r.offRevenue !== null ? "ciroya girmez" : "girilmedi" },
+    // Ödenmez Z toplamının içindeyse ayın cirosuna girmeyen tutar burada söylenir (docs/KASA-RAPORU.md › Ciro ve ödenmez)
+    {
+      label: "Ödenmez / ikram",
+      value: r.offRevenue !== null ? money(r.offRevenue) : "–",
+      sub: r.offRevenue === null ? "girilmedi" : c.offInZTotal ? `ciroya girmez: ciro ${money(c.revenue)}` : "ciroya girmez",
+    },
     { label: "İndirim", value: r.discounts !== null && r.discounts !== undefined ? money(r.discounts) : "–", sub: r.discounts !== null && r.discounts !== undefined ? null : "girilmedi" },
     { label: "Kasa farkı", value: diffText(r.cashDiff), sub: "sayılan − olması gereken", tone: kind === "even" ? "good" : "warn" },
     { label: "Ertesi güne devreden", value: money(c.carryOver), sub: r.handedOver ? `sayımdan sonra ${money(r.handedOver)} teslim` : null },
@@ -103,8 +108,10 @@ export function ladminFacts(r: LadminReport): DayFact[] {
 /** Ödeme satırları ve toplamı (Z'ye göre pay) */
 export function ladminPayments(r: LadminReport): DayLine[] {
   const c = computeCash(r);
+  // Paylar ve toplam ciroya göre: ödenmez / ikram ödeme türü değil, Z toplamının içindeyse cirodan çıkar
+  const words = c.offInZTotal ? { same: "ciroyla aynı", from: "cirodan" } : { same: "Z toplamıyla aynı", from: "Z toplamından" };
   // Formun, dökümün ve e-postanın kuralı: 1 ₺'tan küçük fark (bozuk para) tutuyor sayılır
-  return [...paymentLines(r, r.zTotal), paymentsTotalLine(c.paymentsTotal, r.zTotal, { same: "Z toplamıyla aynı", from: "Z toplamından" }, CASH_TOLERANCE)];
+  return [...paymentLines(r, c.revenue), paymentsTotalLine(c.paymentsTotal, c.revenue, words, CASH_TOLERANCE)];
 }
 
 /**

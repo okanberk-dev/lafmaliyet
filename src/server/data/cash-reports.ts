@@ -286,10 +286,17 @@ export async function tillRows(db: Db | Tx = getDb()): Promise<TillRow[]> {
         mealCard: s.cashReports.mealCard,
         discounts: s.cashReports.discounts,
         offRevenue: s.cashReports.offRevenue,
+        // Ciroya dahil ödeme türleri: Z toplamının ödenmezi içerip içermediğini bunlar söyler (cash-revenue.ts)
+        cash: s.cashReports.cash,
+        online: s.cashReports.online,
+        other: s.cashReports.other,
       })
       .from(s.cashReports)
       .where(await subeKosulu())
-      .orderBy(asc(s.cashReports.date)),
+      .orderBy(asc(s.cashReports.date))
+      .then((rows) =>
+        rows.map(({ cash, online, other, ...r }): TillRow => ({ ...r, payments: Math.round((cash + r.card + r.mealCard + online + other) * 100) / 100 })),
+      ),
     lafposTillRows(db),
     modposTillRows(db),
   ]);
@@ -321,7 +328,20 @@ export async function lafposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
   return rows.flatMap((r) => {
     const z = posZSchema.safeParse(r.z);
     if (!z.success) return [];
-    return [{ date: r.date, zTotal: z.data.zTotal, card: z.data.card, mealCard: z.data.mealCard, discounts: z.data.discounts, offRevenue: z.data.offRevenue, receipts: z.data.receipts, source: "lafpos" as const }];
+    const d = z.data;
+    return [
+      {
+        date: r.date,
+        zTotal: d.zTotal,
+        card: d.card,
+        mealCard: d.mealCard,
+        discounts: d.discounts,
+        offRevenue: d.offRevenue,
+        receipts: d.receipts,
+        payments: Math.round((d.cash + d.card + d.mealCard + d.online + d.other) * 100) / 100,
+        source: "lafpos" as const,
+      },
+    ];
   });
 }
 
@@ -356,10 +376,21 @@ function modposTillRow(sheet: Pick<ModposSheet, "day" | "state" | "foy" | "final
   if (sheet.state === "ACIK") return null;
   const z = foyZ(sheet.foy);
   if (sheet.state === "BOS" && !(z && z.foysuz && z.zTotal > 0)) {
-    return sheet.final ? { date: sheet.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" } : null;
+    return sheet.final ? { date: sheet.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" } : null;
   }
   if (!z) return null;
-  return { date: sheet.day, zTotal: z.zTotal, card: z.card, mealCard: z.mealCard, discounts: null, offRevenue: z.offRevenue, receipts: z.receipts, source: "modpos" };
+  return {
+    date: sheet.day,
+    zTotal: z.zTotal,
+    card: z.card,
+    mealCard: z.mealCard,
+    discounts: null,
+    offRevenue: z.offRevenue,
+    receipts: z.receipts,
+    // Föyün ciroya dahil ödemeleri: Z toplamı (satis.ciro) ödenmezi içeriyorsa aya girmesin (cash-revenue.ts)
+    payments: Math.round((z.cash + z.card + z.mealCard + z.online + z.other) * 100) / 100,
+    source: "modpos",
+  };
 }
 
 /**

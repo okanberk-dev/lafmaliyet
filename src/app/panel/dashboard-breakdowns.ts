@@ -379,7 +379,17 @@ export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdo
   const info: BreakdownRow[] = [];
   if (d.info?.openDays) info.push({ key: "gun", label: "Açık gün", display: `${num(d.info.openDays)} gün`, amount: 0, href: salesHref(d.month) });
   if (d.info?.discounts) info.push({ key: "indirim", label: "Yönetici indirimleri", sub: "KDV dahil; cirodan düşülmüş", display: tl(d.info.discounts), amount: 0 });
-  if (d.info?.offRevenue) info.push({ key: "odenmez", label: "Ödenmez / ikram", sub: "KDV dahil; ciroya girmez", display: tl(d.info.offRevenue), amount: 0 });
+  // Z toplamından düşülen ödenmez (docs/KASA-RAPORU.md › Ciro ve ödenmez): ciro Patron › Ciro raporuyla aynı kalsın
+  const offInPos = d.info?.sources?.posRevenue === "kasa" ? (d.info.kasa?.till.offInPos ?? 0) : 0;
+  if (offInPos) info.push({ key: "z-toplami", label: "Z toplamları (ödenmez dahil)", sub: "Kasanın ham toplamı", display: tl(d.info!.kasa!.till.zTotalSum ?? pos + offInPos), amount: 0 });
+  if (d.info?.offRevenue)
+    info.push({
+      key: "odenmez",
+      label: "Ödenmez / ikram",
+      sub: offInPos ? "KDV dahil; ciroya girmez: Z toplamından düşüldü" : "KDV dahil; ciroya girmez",
+      display: offInPos ? `− ${tl(offInPos)}` : tl(d.info.offRevenue),
+      amount: 0,
+    });
   return {
     title: `${monthLabel(d.month)} POS cirosu`,
     description: posRevenueText(kasaOf(model, d.month)),

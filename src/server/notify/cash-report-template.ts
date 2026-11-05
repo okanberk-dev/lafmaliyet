@@ -26,6 +26,7 @@ import {
   type CashReportIntegrity,
   type CashTextFields,
   type DayWaste,
+  revenueWord,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffsLine } from "@/lib/lafpos/diffs";
@@ -128,7 +129,7 @@ export function renderCashReport(
   const zMeta = [f.zNo ? `Z no ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   const paymentsWarning =
     Math.abs(c.paymentsDiff) >= CASH_TOLERANCE
-      ? `Ödeme türlerinin toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}: bir tutar yanlış yazılmış olabilir.`
+      ? `Ödeme türlerinin toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}: bir tutar yanlış yazılmış olabilir.`
       : null;
   // Yazarkasa alanları boş raporda (eski ya da yalnız banka gün sonu yazılmış) bugünkü "Kart" bölümü, etiket "Banka POS"
   // (§3.7); kart farkı computeCash'in kaynağıyla (D5; burada her zaman banka)

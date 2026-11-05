@@ -137,8 +137,16 @@ export interface TillMonth {
   reported: number;
   /** Satış olan (Z toplamı > 0) gün */
   openDays: number;
-  /** Z toplamlarının toplamı: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam) */
+  /**
+   * Ayın cirosu: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam). Z toplamlarının
+   * toplamından, Z toplamının içinde olduğu ödeme dökümüyle anlaşılan ödenmez / ikram düşülür
+   * (src/lib/cash-revenue.ts dayRevenue; docs/KASA-RAPORU.md › Ciro ve ödenmez)
+   */
   posRevenue: number;
+  /** Z toplamlarının çıplak toplamı (ödenmez düşülmeden). Yoksa (eski kayıt, test) posRevenue ile aynı sayılır */
+  zTotalSum?: number;
+  /** posRevenue'ya girmeyen, Z toplamlarının içinden düşülen ödenmez / ikram (0: düşülen yok) */
+  offInPos?: number;
   /** İndirim ve ödenmez: yalnız girildiği günlerin toplamı (hiç girilmediyse null) ve o gün sayısı */
   discounts: number | null;
   discountDays: number;
