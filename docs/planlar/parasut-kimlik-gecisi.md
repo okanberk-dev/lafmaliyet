@@ -15,7 +15,7 @@ güncellenmez.
 
 | Tarih | Ne oluyor |
 |---|---|
-| **6 Kasım 2026** | Eski geliştirme ve test ortamına erişim kapandı. Orada saklanan veri varsa önce taşınmalıydı. Panelin canlı kurulumu bu ortamı kullanmıyor (`PARASUT_BASE_URL` tanımlı değil, varsayılan `https://api.parasut.com`), ama Paraşüt'te ayrı bir test hesabı açılmışsa kontrol edilmeli. |
+| **6 Kasım 2026** (**yarın**) | Eski geliştirme ve test ortamına erişim kapanıyor. Orada saklanan veri varsa bugün taşınmalı. Panelin canlı kurulumu bu ortamı kullanmıyor (`PARASUT_BASE_URL` tanımlı değil, varsayılan `https://api.parasut.com`), ama Paraşüt'te ayrı bir test hesabı açılmışsa bugün kontrol edilmeli. |
 | **10 Aralık 2026** | Eski kimlik doğrulama ve eski API bağlantıları devre dışı. DevHub başvurusu ve geçiş bu tarihe kadar tamamlanmalı. |
 
 ## Neler değişti
@@ -87,8 +87,8 @@ Kod hazır; bundan sonrası Paraşüt tarafında yapılacak işler.
    Sonra yeniden deploy edin.
 6. **Hesabı bağlayın.** Panel → Ayarlar › Paraşüt entegrasyonu → **“Paraşüt hesabını bağla”**. Paraşüt'ün giriş ve
    onay ekranından geçin. Ardından **Bağlantıyı dene** ve **Şimdi eşitle**.
-7. **Eski test ortamı.** Paraşüt'te ayrı bir geliştirme/test hesabı açılmışsa oradaki veri 6 Kasım 2026'da erişilemez
-   oldu; canlı kurulum etkilenmiyor.
+7. **Eski test ortamı (bugün).** Paraşüt'te ayrı bir geliştirme/test hesabı açılmışsa oradaki veriye erişim
+   6 Kasım 2026'da kapanıyor; taşınacak bir şey varsa bugün taşınmalı. Canlı kurulum etkilenmiyor.
 
 Takıldığınız yerde Paraşüt'ün geçiş desteği: `devhubdestek@parasut.com`. Teknik belgeler DevHub sitesindeki
 "Yardımcı Kaynaklar" sayfasında.

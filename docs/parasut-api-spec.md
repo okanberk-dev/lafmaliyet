@@ -13,7 +13,7 @@
 > - Refresh tokens are valid for **30 days** and rotate on every refresh.
 > - The end user must hold the **"Uygulama Entegrasyonları"** permission, which is off by default for everyone
 >   including the company owner; without it the API answers **403**.
-> - The old development/test environment was shut down on 6 November 2026.
+> - The old development/test environment shuts down on 6 November 2026.
 >
 > **The data API (sections 2 and onwards: `/v4/{company_id}/…`, JSON:API, rate limits, e-invoice paths) is
 > unchanged** — only how a token is obtained changed. For how the panel does it now see
