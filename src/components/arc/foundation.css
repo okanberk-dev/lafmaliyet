@@ -1,0 +1,82 @@
+/*
+ * Arc foundation (https://uiarc.dev/r/arc-foundation.json, ücretsiz katman), panele uyarlandı:
+ * - Belirteçler :root yerine yalnız `.arc` sınıfının içinde: Arc bileşeni `.arc` kabına sarılır (src/components/panel/arc-charts.tsx),
+ *   Tailwind'in aynı adlı değişkenleri (--text-*, --ease-in-out, --font-display) sayfanın geri kalanında değişmez.
+ * - Değerler AkmanOS açık temasından (globals.css, docs/TASARIM.md §1): beyaz zemin, #171717 mürekkep, siyah vurgu,
+ *   grafik serileri SERIES (mavi, turuncu, yeşil) + mor. Koyu tema ve vurgu rengi seçimi yok.
+ * - Klavye odağının çizgisi yalnız `.arc` içinde (Arc'ın küresel kuralı panelin ring-ink/30 odağını ezmesin).
+ */
+.arc {
+  color-scheme: light;
+  --background: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-muted: #f4f4f5;
+  --foreground: #171717;
+  --text-secondary: #3f3f46;
+  --text-muted: #6b6b74;
+  --border: #e4e4e7;
+  --border-subtle: #f4f4f5;
+  --border-strong: #d4d4d8;
+  --accent: #171717;
+  --accent-strong: #0a0a0a;
+  --accent-subtle: rgb(23 23 23 / 0.08);
+  --accent-foreground: #ffffff;
+  --focus-ring: transparent;
+  --success: #3f6212;
+  --warning: #c2410c;
+  --danger: #dc2626;
+  --info: #2563eb;
+  --series-1: #2563eb;
+  --series-2: #e8590c;
+  --series-3: #16a34a;
+  --series-4: #9333ea;
+  --shadow-resting: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-raised: 0 4px 14px rgb(0 0 0 / 0.08);
+  --shadow-floating: 0 12px 40px rgb(0 0 0 / 0.14);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --radius-control: 0.75rem;
+  --radius-panel: 1rem;
+  --radius-surface: 1.5rem;
+  --radius-pill: 9999px;
+  --font-display: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.75rem;
+  --tracking-display: -0.025em;
+  --tracking-body: -0.005em;
+  --leading-display: 1.15;
+  --leading-body: 1.4;
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 160ms;
+  --duration-standard: 240ms;
+  --duration-considered: 480ms;
+  --duration-spring: 580ms;
+  min-width: 0;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.arc :focus-visible {
+  outline: 2px solid rgb(23 23 23 / 0.3);
+  outline-offset: 2px;
+}

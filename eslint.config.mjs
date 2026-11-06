@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // AkmanOS kütüphanesinden olduğu gibi alınan kaynak (src/components/akmanos/README.md)
     "src/components/akmanos/**",
+    // Arc UI'nin ücretsiz kayıtlarından elle kurulan kaynak (src/components/arc/README.md)
+    "src/components/arc/**",
     // Design Lab beceri şablonları (.claude/skills/design-lab): kullanılırken src/app/design-lab/ altına kopyalanır
     ".claude/**",
   ]),
