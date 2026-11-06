@@ -74,6 +74,16 @@ export interface BranchDaySummary {
   payments: Payments;
   /** Gün sonu girilmemiş şube sayısı */
   missing: number;
+  /** Gösterilen gün dahil son sekiz günün toplam cirosu, eskiden yeniye (kartın çizgisi; dailyTrend) */
+  trend: BranchDayPoint[];
+}
+
+/** Bir günün bütün şubelerdeki cirosu; o gün açık olup gün sonu gelmeyen şube sayısı `missing` */
+export interface BranchDayPoint {
+  day: string;
+  /** Gün sonu gelen şubelerin toplamı; hiçbirinden gelmediyse null */
+  revenue: number | null;
+  missing: number;
 }
 
 /** Kasa farkı bu tutardan küçükse "tutuyor" sayılır (src/lib/cash-report.ts CASH_TOLERANCE ile aynı) */
@@ -105,6 +115,25 @@ export function pickDay(branches: readonly BranchDayBranch[], sources: readonly 
   const open = branches.filter((b) => b.openedOn === null || b.openedOn <= today);
   if (open.length && open.every((b) => pickSource(sources, b.id, today))) return today;
   return addDays(today, -1);
+}
+
+/**
+ * Son sekiz gün (gösterilen gün ve ondan önceki yedi; yükleyici bu aralığı zaten okur): her günün, o gün açık şubelerinden
+ * gün sonu gelenlerin cirosu. Kaynak önceliği ve ciro kuralı satırlarla aynı (pickSource, revenueOf).
+ */
+export function dailyTrend(branches: readonly BranchDayBranch[], sources: readonly BranchDaySource[], day: string): BranchDayPoint[] {
+  return Array.from({ length: 8 }, (_, i) => {
+    const d = addDays(day, i - 7);
+    let revenue: number | null = null;
+    let missing = 0;
+    for (const b of branches) {
+      if (b.openedOn !== null && b.openedOn > d) continue;
+      const s = pickSource(sources, b.id, d);
+      if (!s) missing += 1;
+      else revenue = r2((revenue ?? 0) + revenueOf(s));
+    }
+    return { day: d, revenue, missing };
+  });
 }
 
 export function branchDaySummary(branches: readonly BranchDayBranch[], sources: readonly BranchDaySource[], today: string): BranchDaySummary {
@@ -155,6 +184,7 @@ export function branchDaySummary(branches: readonly BranchDayBranch[], sources: 
     change: changeOf(curBoth || null, prevBoth || null),
     payments: { cash: r2(payments.cash), card: r2(payments.card), mealCard: r2(payments.mealCard), online: r2(payments.online), other: r2(payments.other) },
     missing: rows.filter((r) => r.source === "yok").length,
+    trend: dailyTrend(branches, sources, day),
   };
 }
 

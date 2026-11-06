@@ -1,6 +1,7 @@
 import { Store } from "lucide-react";
 import Link from "next/link";
 
+import { MoneySparkline } from "@/components/panel/arc-charts";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -86,6 +87,9 @@ function BranchLine({ row, day }: { row: BranchDayRow; day: string }) {
 export function TodayBranches({ data }: { data: BranchDaySummary }) {
   const shares = paymentShares(data.payments);
   const reported = data.rows.length - data.missing;
+  // Son sekiz günün çizgisi (Arc sparkline): gün sonu gelmeyen gün çizilmez, eksik şubeli gün adında söylenir
+  const trend = data.trend.flatMap((p) => (p.revenue === null ? [] : [{ label: `${longDateTR(p.day)}${p.missing ? ` · ${p.missing} şube eksik` : ""}`, value: p.revenue }]));
+  const trendAvg = trend.length ? trend.reduce((a, p) => a + p.value, 0) / trend.length : null;
   return (
     <Card>
       <CardHeader
@@ -112,6 +116,7 @@ export function TodayBranches({ data }: { data: BranchDaySummary }) {
             ) : null}
           </div>
           {data.receipts ? <p className="mt-1 text-xs text-ink-mute tabular">{data.receipts} fiş · ödenmez / ikram hariç</p> : null}
+          {trend.length > 1 && trendAvg !== null ? <MoneySparkline className="mt-3" label={`Son ${trend.length} gün`} change={`ort. ${tl(trendAvg)}`} points={trend} /> : null}
         </div>
 
         {shares.length ? (

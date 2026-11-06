@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { branchDaySummary, diffMatters, paymentShares, pickDay, pickSource, type BranchDaySource } from "../src/lib/branch-day";
+import { branchDaySummary, dailyTrend, diffMatters, paymentShares, pickDay, pickSource, type BranchDaySource } from "../src/lib/branch-day";
 
 const TODAY = "2026-11-05";
 const YESTERDAY = "2026-11-04";
@@ -61,6 +61,27 @@ test("özet: açılmadan önceki gün şube listede yok; geçen hafta yoksa değ
   assert.deepEqual(s.rows.map((r) => r.id), ["tuzla"]);
   assert.equal(s.rows[0].change, null);
   assert.equal(s.change, null);
+});
+
+test("son sekiz gün: eskiden yeniye, satırlarla aynı ciro kuralı; gün sonu gelmeyen gün null, eksik şube sayılır", () => {
+  const rows = [
+    src("tuzla", WEEK_AGO, { zTotal: 800, cash: 200, card: 600 }),
+    // Ödenmez Z'nin içinde: ciro 1.000 (özetteki gibi)
+    src("tuzla", YESTERDAY, { zTotal: 1100, offRevenue: 100 }),
+    src("tuzla", "2026-11-02", { source: "lafpos", zTotal: 900, cash: 300, card: 600 }),
+    src("marina", "2026-11-02"),
+  ];
+  const trend = dailyTrend(branches, rows, YESTERDAY);
+  assert.equal(trend.length, 8);
+  assert.equal(trend[0].day, WEEK_AGO);
+  assert.equal(trend[7].day, YESTERDAY);
+  // Marina 1 Kasım'da açıldı: öncesinde beklenmez
+  assert.deepEqual(trend[0], { day: WEEK_AGO, revenue: 800, missing: 0 });
+  assert.deepEqual(trend[1], { day: "2026-10-29", revenue: null, missing: 1 });
+  assert.deepEqual(trend[5], { day: "2026-11-02", revenue: 1900, missing: 0 });
+  assert.deepEqual(trend[7], { day: YESTERDAY, revenue: 1000, missing: 1 });
+  // Özet aynı diziyi taşır
+  assert.deepEqual(branchDaySummary(branches, rows, TODAY).trend, trend);
 });
 
 test("ödeme dağılımı: sıfırlar düşer, büyükten küçüğe, pay ödemelerin toplamına göre", () => {
