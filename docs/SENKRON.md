@@ -15,7 +15,7 @@ bağlantılar kapalı, panelin geri kalanı çalışır).
 |---|---|---|---|---|
 | Menü fiyatı (M / L), Satışta / Tükendi | site | Sitenin pingi (`/api/menu/ping`) → imzalı `GET /api/panel/menu`; Ürünler sayfaları açılınca (5 dakikada bir), günlük iş, "Siteyle eşitle" | Önce site: imzalı `POST /api/panel/menu`, site 2xx verince panel sitenin döndürdüğünü yazar | [SITE-MENU.md](SITE-MENU.md) |
 | Karaoke rezervasyonları | site | Ping (`/api/karaoke/ping`) → `GET /api/panel/karaoke` | Yazmaz | [KARAOKE.md](KARAOKE.md) |
-| Uygulama siparişleri (bar ekranı) | site | Ping (`/api/orders/ping`) → `GET /api/panel/orders`; yanında ödeme bekleyen sayısı (`awaitingPayment`): sıfırdan büyükken bar ekranı en çok 30 dakika üç dakikada bir çeker (kaçan ödeme pingi) | Aşama: `POST /api/panel/orders/stage` (karta koşullu; eski dokunuş 409) | [SITE-SIPARIS.md](SITE-SIPARIS.md) |
+| Uygulama siparişleri ve masa çağrıları (Siparişler ekranı) | site | Ping (`/api/orders/ping`) → `GET /api/panel/orders`; yanında ödeme bekleyen sayısı (`awaitingPayment`): sıfırdan büyükken ekran en çok 30 dakika üç dakikada bir çeker (kaçan ödeme pingi); açık masa çağrıları (`calls`, 15 dakikadan yeni) | Aşama: `POST /api/panel/orders/stage` (karta koşullu; eski dokunuş 409); çağrıda Gördüm: `POST /api/panel/calls/ack` (tekrarı aynı yanıt, 404 zaten kapanmış) | [SITE-SIPARIS.md](SITE-SIPARIS.md) |
 | Online satış (kâr-zarar, tüketim, kasa raporu) | site | `GET /api/panel/sales` (günlük iş, Gelir-gider › Siteden yenile) | Yazmaz | [SITE-SATIS.md](SITE-SATIS.md) |
 | Ad, kategori, görsel, alerjen, yeni kalem | site | Yalnız ad ve kategori listede görünür | Yazmaz (eşleştirme ve kalem açma elle) | [SITE-MENU.md](SITE-MENU.md) |
 

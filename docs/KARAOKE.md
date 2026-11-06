@@ -4,8 +4,9 @@ Ekran: **Karaoke** (`/panel/karaoke`, "Barın ekranı"; yöneticinin menüsünde
 Kasadaki tablette ya da bilgisayarda
 Chrome'da açık bırakılır: laffogato.net'te karaoke rezervasyonu açılınca zil çalar (Yemeksepeti / Getir paneli gibi),
 oturum başlayınca kısa ses, bitime az kala uyarı, süre dolunca personel **Haber verdim**'e basana kadar alarm çalar.
-Ekranın en üstünde sitenin ödenmiş, açık kafe siparişleri durur (**Uygulama siparişleri**, yeni siparişte zil;
-[SITE-SIPARIS.md](SITE-SIPARIS.md)).
+Sitenin ödenmiş, açık kafe siparişleri ve masa çağrıları 6 Kasım 2026'dan beri kendi ekranında (**Siparişler**,
+`/panel/siparisler`; yeni siparişte ve çağrıda zil, [SITE-SIPARIS.md](SITE-SIPARIS.md)); bu ekranın en üstünde yalnız
+açık olanların tek satırı kalır ("3 açık uygulama siparişi" · **Siparişler'e git**).
 
 ## Geliştirilmiş istek (prompt)
 
@@ -327,7 +328,7 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/timer.ts`, `src/lib/karaoke/timer-requests.ts`, `src/server/data/karaoke-requests.ts` | Bitirme, geri açma, sayaç silme ve `karaoke-sil` isteğinin çekirdeği (işlem geçmişi aynı işlemde, önce oturum kilidi), saf kuralları (10 dakika, geri açma reddi, metinler) ve okuyucuları (bar ekranı, zil, Onaylar kartı) |
 | `src/app/panel/onaylar/karaoke-section.tsx`, `karaoke-cards.tsx` | Onaylar › Karaoke: sayaç silme istekleri |
 | `src/lib/karaoke/overlap.ts` | Çakışma kuralı: odayı tutan rezervasyon, aralık kesişimi, uyarı metni (saf, testli) |
-| `src/app/panel/karaoke/orders-board.tsx` | Ekranın üstündeki uygulama siparişleri ve aşama düğmeleri ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
+| `src/app/panel/karaoke/orders-summary.tsx` | Ekranın üstündeki açık uygulama siparişi ve masa çağrısı satırı; pano Siparişler ekranında ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
 | `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, uygulama siparişleri, kişisel hatırlatmalar; ETag / 304) |
 | `src/components/panel/live/` | Uyarı motoru: canlı veri, sesler ve hoparlör seçimi, cihaz tercihleri, bildirim aboneliği |
 | `src/lib/audio-output.ts` | Hoparlör listesi, kayıtlı seçimin yeniden bulunması, Bluetooth / bilgisayar hoparlörü tahmini |
