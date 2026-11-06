@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChartColumn,
+  ChartNoAxesColumn,
   ChartScatter,
   Coins,
   Download,
@@ -21,7 +22,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { TrendChart } from "@/components/charts";
+import { DailyRevenueBars, YearLineChart } from "@/components/panel/arc-charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
@@ -52,6 +53,7 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { longDateTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
@@ -59,6 +61,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
+import { tillRows } from "@/server/data/cash-reports";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
@@ -85,6 +88,7 @@ import { CategoriesPanel } from "./dashboard-categories";
 import { DashboardChecklist } from "./dashboard-checklist";
 import { differs, FixedReconcile, fixedBreakdownText } from "./dashboard-fixed";
 import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
+import { monthDays } from "./dashboard-daily";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
@@ -179,12 +183,14 @@ async function loadParasut(): Promise<ParasutFacts | null> {
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, upcoming, parasut, cashOutState] = await Promise.all([
+  const [model, upcoming, parasut, cashOutState, till] = await Promise.all([
     loadModel(),
     loadPayments(),
     loadParasut(),
     // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
     loadCashOutInvoiceState().catch(() => null),
+    // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
+    tillRows().catch(() => null),
   ]);
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
@@ -215,6 +221,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Yıl toplamı Gelir-gider kartlarıyla ve Claude'la aynı kuraldan (bu aya kadar, cirosu girilmiş aylar)
   const yearSum = yearTotals(model, year);
   const st = model.settings;
+  // Ayın günlük cirosu (Arc çubuk grafiği): yalnız ayın POS cirosu kasa raporlarından geliyorsa; günlerin toplamı o ciro
+  const days = till && d.info?.sources?.posRevenue === "kasa" ? monthDays(till, month) : [];
   // Ayın kasası (ürün satışlarının metinleri; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS", geçiş ayında
   // modelin saydığı bölünmeyle; denetim E-39)
   const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
@@ -696,10 +704,13 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 <CardContent className="space-y-3">
                   <YearTotals totals={yearSum} />
                   {/* Telefonda dar iç boşluk: grafiğin lejantı tek satıra sığar, eksen etiketinin üstüne binmez */}
-                  <Well className="p-2 sm:p-4">
-                    <TrendChart
+                  <Well className="p-3 sm:p-4">
+                    <YearLineChart
+                      label={`${year} aylık gelir-gider`}
                       data={trend.map((x) => ({
-                        label: monthShort(x.month),
+                        key: x.month,
+                        label: monthLabel(x.month),
+                        axis: monthShort(x.month),
                         revenue: Math.round(x.revenueNet),
                         expenses: Math.round(x.expenses),
                         profit: Math.round(x.profit),
@@ -724,10 +735,49 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           </div>
         ) : null}
 
-        {/* 5. Ayrıntı listeleri tek kartta */}
+        {/* 5. Ayın günlük cirosu (kasa raporlarından; ay POS cirosunu kasadan almıyorsa çizilmez) */}
+        {days.length > 1 ? <DailyRevenueCard month={month} days={days} /> : null}
+
+        {/* 6. Ayrıntı listeleri tek kartta */}
         <DashboardTabs label="Ayrıntı listesi" tabs={tabs} />
       </div>
     </>
+  );
+}
+
+/**
+ * Ayın her açık gününün kasa cirosu (KDV dahil, ödenmez / ikram hariç) Arc çubuk grafiğinde; çizgi ve başlık açık
+ * günlerin ortalaması, çubuğa gelince o günün cirosu. Satırlar ay bilgisinin okuduğu satırlar (tillRows): toplam ayın POS
+ * cirosu
+ */
+function DailyRevenueCard({ month, days }: { month: string; days: { date: string; revenue: number }[] }) {
+  return (
+    <Card>
+      <CardHeader
+        icon={<ChartNoAxesColumn />}
+        title={`${monthLabel(month)} günlük ciro`}
+        description={
+          <span className="inline-flex items-center gap-1.5">
+            Kasa raporlarından, KDV dahil · {days.length} açık gün
+            <InfoTip text="Her açık günün cirosu: Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde LafPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
+          </span>
+        }
+        actions={
+          <ButtonLink href={`/panel/kasa?ay=${month}`} variant="secondary" size="sm">
+            Kasa <ArrowRight size={15} aria-hidden="true" />
+          </ButtonLink>
+        }
+      />
+      <CardContent>
+        <Well className="p-3 sm:p-4">
+          <DailyRevenueBars
+            label={`${monthLabel(month)} günlük ciro`}
+            period={monthLabel(month)}
+            days={days.map((x) => ({ key: x.date, label: longDateTR(x.date), axis: String(Number(x.date.slice(8))), value: x.revenue }))}
+          />
+        </Well>
+      </CardContent>
+    </Card>
   );
 }
 
