@@ -927,7 +927,8 @@ export function cafeLines(
   const fresh = Boolean(o?.at && nowMs - Date.parse(o.at) <= ORDERS_FRESH_MS);
   if (i.configured && o && fresh && (o.open > 0 || o.ready > 0)) {
     const text = o.open > 0 ? `${num(o.open)} açık uygulama siparişi${o.ready > 0 ? ` · ${num(o.ready)} teslime hazır` : ""}` : `${num(o.ready)} uygulama siparişi teslime hazır`;
-    out.push({ key: "siparis", text, tone: "info" });
+    // Siparişler kendi ekranında (6 Kas 2026; eskiden Karaoke'deydi)
+    out.push({ key: "siparis", text, tone: "info", href: "/panel/siparisler" });
   }
   return [...out, ...extra];
 }

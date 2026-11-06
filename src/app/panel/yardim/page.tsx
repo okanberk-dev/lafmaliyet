@@ -28,6 +28,7 @@ import {
   ScanText,
   Search,
   ShieldCheck,
+  ShoppingBag,
   Sigma,
   Table2,
   Tag,
@@ -840,14 +841,31 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bar ekranında “Son kontrol başarısız” yazıyor",
         a: (
           <>
-            <Path href="/panel/karaoke" /> ekranı yeni rezervasyon ve siparişleri laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı
-            kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener (karaokede iki dakikada, siparişlerde dakikada bir), o arada
-            yenileri sitenin panelinde de kontrol edin. Personel bu satırda hatanın ayrıntısı yerine size haber vermesini söyleyen kısa sözü görür. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
+            <Path href="/panel/siparisler" /> ekranı uygulama siparişlerini ve masa çağrılarını, <Path href="/panel/karaoke" /> ekranı rezervasyonları
+            laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener
+            (karaokede iki dakikada, siparişlerde dakikada bir), o arada yenileri sitenin panelinde de kontrol edin (Siparişler › laffogato.net&apos;te aç). Personel bu satırda hatanın ayrıntısı yerine size haber vermesini söyleyen kısa sözü görür. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
             ve sipariş anında gelir, ekran panelin veritabanını daha seyrek sorar (ücretsiz planın aylık süresi bitmesin).
           </>
         ),
         icon: Wifi,
-        links: [{ href: "/panel/karaoke", label: "Karaoke (bar ekranı)" }],
+        links: [
+          { href: "/panel/siparisler", label: "Siparişler" },
+          { href: "/panel/karaoke", label: "Karaoke (bar ekranı)" },
+        ],
+      },
+      {
+        id: "masa-cagrisi",
+        q: "Uygulama siparişleri ve masa çağrıları nerede?",
+        a: (
+          <>
+            <Path href="/panel/siparisler" /> ekranında: laffogato.net&apos;te (uygulama ve web) ödenmiş açık kafe siparişleri ve masadaki QR menüden gelen
+            &quot;Garson çağır&quot; (garson, su, peçete). Personel siparişin aşamasını tek dokunuşla ilerletir, çağrıda Gördüm&apos;e basar; ikisi de
+            sitenin ucuna gider, kaydı sitede kalır. Yeni siparişte ve çağrıda zil çalar (çağrı ayrı sesle), menüdeki Siparişler satırında açık sayısı
+            görünür. İade, iptal ve geçmiş sitenin panelinde (başlıktaki laffogato.net&apos;te aç). Karaoke ekranında açık olanların sayısı tek satırda.
+          </>
+        ),
+        icon: ShoppingBag,
+        links: [{ href: "/panel/siparisler", label: "Siparişler" }],
       },
       {
         id: "yedek",

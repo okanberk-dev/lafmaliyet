@@ -95,7 +95,7 @@ test("bildirim açık: uyarı motoru ve bar ekranı yalnız izne değil kayıtl�
   const alerts = read("src/components/panel/live/alert-center.tsx");
   assert.match(alerts, /const topics = useDeviceTopics\(\);/);
   assert.match(alerts, /const pushOn = pushCovers\(\{\s*granted: Boolean\(publicKey\) && pushSupport\(\) === "granted",\s*topics,/);
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /pushCovers\(\{\s*granted:/);
   // Bar ekranının 20 sn'lik döngüsü yalnız siparişe bakar: karaoke konusu kapalı, sipariş bildirimi gelen cihaz sormaz
   assert.match(board, /pushCovers\(\{ granted: Boolean\(publicKey\) && pushSupport\(\) === "granted", topics, orderAlerts: prefs\.orderAlerts, karaokeAlarms: false \}\)/);
@@ -150,7 +150,7 @@ test("ödeme beklenirken yalnız bar ekranının çekmesi sıklaşır (3 dk, en 
   // görünürken yaptığı çekme, o da her seferinde 304'lü canlı veri ister
   assert.doesNotMatch(read("src/lib/live-poll.ts"), /awaiting/);
   assert.doesNotMatch(read("src/components/panel/live/alert-center.tsx"), /awaiting/);
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /if \(document\.visibilityState === "visible"\) void pullOrders\(ms - 30_000\);/);
   // Canlı uç: 304 kararı (sürüm ETag'te) bitişi okumadan önce
   const live = read("src/app/api/canli/route.ts");

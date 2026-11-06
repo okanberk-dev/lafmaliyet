@@ -241,8 +241,8 @@ async function SiteLinksCard() {
     },
     {
       key: "orders",
-      title: "Uygulama siparişleri (bar ekranı)",
-      href: "/panel/karaoke",
+      title: "Uygulama siparişleri ve masa çağrıları",
+      href: "/panel/siparisler",
       health: linkHealth(configured, orders.lastOkAt, orders.lastPullAt, orders.lastError),
       okAt: orders.lastOkAt,
       tryAt: orders.lastPullAt,

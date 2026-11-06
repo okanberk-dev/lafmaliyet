@@ -9,6 +9,7 @@ import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
 import { badgeText, BOTTOM_NAV, bottomNavActive } from "./nav";
+import { useOpenOrdersCount } from "./orders-badge";
 
 /** Ekran klavyesi açıyor sayılan alanlar (onay kutusu, düğme, kaydırıcı değil) */
 const TEXT_FIELD =
@@ -145,6 +146,9 @@ export function BottomNav({
   const items = BOTTOM_NAV[role];
   const active = bottomNavActive(items, pathname, menuOpen);
   const badge = badgeText(overdue);
+  // Siparişler öğesinin sayısı: açık uygulama siparişi ve masa çağrısı (kabuğun canlı verisinden; ek istek yok)
+  const openOrders = useOpenOrdersCount();
+  const ordersBadge = badgeText(openOrders);
 
   return (
     <nav
@@ -157,6 +161,7 @@ export function BottomNav({
           {items.map((item) => {
             const on = active === item.id;
             const showBadge = item.badge === "overdue" && badge;
+            const showOrders = item.badge === "orders" && ordersBadge;
             const body = (
               <>
                 <span className="relative flex h-8 w-14 items-center justify-center">
@@ -181,6 +186,14 @@ export function BottomNav({
                       {badge}
                     </span>
                   ) : null}
+                  {showOrders ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -top-1 right-1.5 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warn px-1 text-[10px] leading-none font-semibold text-white tabular ring-2 ring-background"
+                    >
+                      {ordersBadge}
+                    </span>
+                  ) : null}
                 </span>
                 <span className={cn("max-w-full truncate px-0.5 text-[11px] leading-4", on ? "font-semibold text-foreground" : "font-medium")}>{item.label}</span>
               </>
@@ -189,7 +202,7 @@ export function BottomNav({
               "flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:ring-inset",
               on ? "text-foreground" : "text-chart-muted active:text-foreground",
             );
-            const label = showBadge ? `${item.label}, ${overdue} gecikmiş ödeme` : item.label;
+            const label = showBadge ? `${item.label}, ${overdue} gecikmiş ödeme` : showOrders ? `${item.label}, ${openOrders} açık` : item.label;
             return (
               <li key={item.id} className="min-w-0">
                 {item.href ? (

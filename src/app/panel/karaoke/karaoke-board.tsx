@@ -10,6 +10,7 @@ import { useClock } from "@/components/panel/live/clock";
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { usePrefs } from "@/components/panel/live/prefs";
 import { liveNow, refreshLive, useLive } from "@/components/panel/live/store";
+import { useWakeLock } from "@/components/panel/live/wake-lock";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
@@ -71,33 +72,6 @@ const PHASE_BADGE: Record<Phase, { tone: Tone; text: string } | null> = {
   cancelled: null,
   held: null,
 };
-
-
-/** Karaoke ekranı açıkken ekran kararmasın (Screen Wake Lock; destek yoksa bir şey yapmaz) */
-function useWakeLock(on: boolean) {
-  useEffect(() => {
-    if (!on || !("wakeLock" in navigator)) return;
-    let lock: WakeLockSentinel | null = null;
-    let alive = true;
-    const acquire = async () => {
-      try {
-        if (document.visibilityState === "visible") lock = await navigator.wakeLock.request("screen");
-      } catch {
-        // Pil tasarrufu ya da izin: sessizce geç
-      }
-    };
-    const onVisible = () => {
-      if (alive && document.visibilityState === "visible" && (!lock || lock.released)) void acquire();
-    };
-    void acquire();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      alive = false;
-      document.removeEventListener("visibilitychange", onVisible);
-      void lock?.release().catch(() => {});
-    };
-  }, [on]);
-}
 
 /**
  * Karaoke ekranı (personel ve yönetici): şu an süren oturum(lar) büyük geri sayımla, hızlı sayaç, bugünün listesi,

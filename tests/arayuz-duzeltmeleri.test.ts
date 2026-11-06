@@ -266,7 +266,7 @@ test("reçete önerisi: öteki satırlardaki malzeme seçicide 'reçetede var' d
 
 test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişkeni adı görmez", () => {
   assert.match(read("src/app/globals.css"), /--color-ink-mute: #6b6b74;/);
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.doesNotMatch(board, /bağlantısı kurulmadı \(KARAOKE_SYNC_SECRET\)/);
   assert.doesNotMatch(board, /toast\.error\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
   // Son çekmenin hatası (anahtar adı, imza, sitenin sürümü) yalnız yöneticinin satırında ve Yenile bildiriminde

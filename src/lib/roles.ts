@@ -8,8 +8,8 @@ import type { Role } from "./constants";
 
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, alış fiyatı, kâr, maaş ve ayar ekranları yok; günün
- * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), karaoke
- * sayacını ve bar ekranını (tükenen ürün dahil), gün sonu kasa raporunu ve ModPOS'ta değişecek satış fiyatlarını
+ * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), uygulama
+ * siparişlerini ve masa çağrılarını (Siparişler), karaoke sayacını ve bar ekranını (tükenen ürün dahil), gün sonu kasa raporunu ve ModPOS'ta değişecek satış fiyatlarını
  * (Kasadaki fiyatlar), açılış / kapanış kontrol listelerini ve son 7 günün geçmişini, zayi / ikram kaydını, stok
  * sayımını, özel günleri, kendi Yardım'ını ve kendi hatırlatıcılarını kullanır. Önemli
  * düzeltmeler isteğe döner, yönetici Onaylar'da karar verir (docs/ONAYLAR.md). Personel yolunun altındaki yönetici
@@ -18,6 +18,7 @@ import type { Role } from "./constants";
  */
 export const STAFF_PATHS = [
   "/panel/bugun",
+  "/panel/siparisler",
   "/panel/karaoke",
   "/panel/kasa",
   "/panel/kontrol",
@@ -77,7 +78,7 @@ export function canOpen(role: Role, pathname: string): boolean {
  * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
  */
 export const STAFF_ROLE_HINT =
-  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), karaoke, bar ekranı ve tükenen ürün, özel günler, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
+  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), uygulama siparişleri ve masa çağrıları, karaoke, bar ekranı ve tükenen ürün, özel günler, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
 
 /**
  * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
@@ -85,7 +86,13 @@ export const STAFF_ROLE_HINT =
  */
 export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: boolean; paths?: readonly string[] }[] = [
   { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, staff: true, paths: ["/panel/bugun"] },
-  { label: "Karaoke ve bar ekranı: uygulama siparişleri, oda sayacı, rezervasyonlar, tükenen ürünü işaretleme (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
+  {
+    label: "Siparişler: uygulama siparişlerinin aşaması (Hazırlanıyor, Hazır, Teslim edildi) ve masa çağrısında Gördüm; iade ve iptal sitenin panelinde",
+    admin: true,
+    staff: true,
+    paths: ["/panel/siparisler"],
+  },
+  { label: "Karaoke ve bar ekranı: oda sayacı, rezervasyonlar, tükenen ürünü işaretleme (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
   {
     label:
       "Gün sonu kasa raporu; Z raporu ve fişler fotoğraftan, kasadan çıkanlar; ModPOS'ta değişecek satış fiyatları; ertesi gün kasa düzeltmesi, kilitli ve eski güne ekleme, 14 güne kadar geç rapor, silme ve fotoğraf kaldırma isteği (yönetici onaylar)",

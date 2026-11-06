@@ -1,11 +1,11 @@
 /**
  * Hata ekranının kendiliğinden yeniden denemesi (saf; src/components/panel/error-view.tsx, tests/canli-yoklama.test.ts).
- * Bar ekranı (Karaoke) gözetimsiz açık durur: arka plandaki bir yenileme veritabanının geçici hatasına denk gelirse
+ * Bar ekranları (Siparişler, Karaoke) gözetimsiz açık durur: arka plandaki bir yenileme veritabanının geçici hatasına denk gelirse
  * ekran "Bir şeyler ters gitti"de kalır, zil ve sayaç görünmez. Orada hata 10 saniye sonra kendiliğinden yeniden
  * denenir; döngüye girmesin diye 5 dakikada en çok 3 kez (sonrası "Tekrar dene" düğmesiyle).
  */
 export const AUTO_RETRY = {
-  paths: ["/panel/karaoke"],
+  paths: ["/panel/karaoke", "/panel/siparisler"],
   delayMs: 10_000,
   max: 3,
   windowMs: 5 * 60_000,

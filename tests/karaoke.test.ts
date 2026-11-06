@@ -391,8 +391,8 @@ test("panelin kendi sistem bildirimleri (sekme arkadayken) misafirin adını ta�
     }
     calls.push(src.slice(i, j + 1));
   }
-  // Sipariş, planlı sipariş, karaoke başladı / az kaldı / süre doldu, hatırlatıcı
-  assert.equal(calls.length, 6);
+  // Sipariş, masa çağrısı, planlı sipariş, karaoke başladı / az kaldı / süre doldu, hatırlatıcı
+  assert.equal(calls.length, 7);
   for (const c of calls) assert.doesNotMatch(c, /\bname\b|customerName|sessionName|firstName/, c);
   const fire = src.slice(src.indexOf("const fire = useCallback("), src.indexOf("// Karaoke uyarılarını ve saatli hatırlatmaları kur"));
   assert.match(fire, /void notify\("Karaoke başladı", detail,/);

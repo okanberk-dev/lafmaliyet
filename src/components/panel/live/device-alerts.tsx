@@ -170,7 +170,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
             {karaoke ? (
               <ToggleRow
                 title="Sipariş bildirimleri"
-                description="laffogato.net'ten yeni uygulama siparişi (masa, gel-al, kurye)"
+                description="laffogato.net'ten yeni uygulama siparişi (masa, gel-al, kurye) ve masa çağrısı"
                 label="Sipariş bildirimleri"
                 checked={topics?.orders ?? role === "staff"}
                 onChange={(v) => void changeTopic("orders", v)}
@@ -208,7 +208,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
           <>
             <ToggleRow
               title="Sipariş zili bu cihazda"
-              description="Yeni uygulama siparişinde zil (masa siparişi daha uzun çalar)"
+              description="Yeni uygulama siparişinde ve masa çağrısında zil (masa siparişi daha uzun, çağrı kapı zili)"
               label="Sipariş zili bu cihazda"
               checked={prefs.orderAlerts}
               onChange={(v) => updatePrefs(role, { orderAlerts: v })}
@@ -231,7 +231,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
             </div>
             <ToggleRow
               title="Ekran açık kalsın"
-              description="Karaoke ekranı açıkken tablet / bilgisayar ekranı kararmaz"
+              description="Siparişler ya da Karaoke ekranı açıkken tablet / bilgisayar ekranı kararmaz"
               label="Ekran açık kalsın"
               checked={prefs.wakeLock}
               onChange={(v) => updatePrefs(role, { wakeLock: v })}

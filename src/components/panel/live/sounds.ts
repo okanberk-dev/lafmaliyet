@@ -15,7 +15,7 @@ import { useSyncExternalStore } from "react";
  * ses saati kısılmaz, alarm tam zamanında başlar.
  */
 
-export type SoundKind = "ring" | "table" | "start" | "warn" | "reminder" | "alarm" | "test";
+export type SoundKind = "ring" | "table" | "call" | "start" | "warn" | "reminder" | "alarm" | "test";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -189,6 +189,9 @@ const PATTERNS: Record<SoundKind, Note[]> = {
   // Masaya sipariş: aynı çan beş kez ve bir oktav üstü vurguyla (masada oturan bekler; sitenin zil kuralı: masa önce ve
   // daha yüksek sesle)
   table: [0, 0.75, 1.5, 2.25, 3].flatMap((t) => [...bell(1047, t, 0.22), ...bell(1319, t + 0.14, 0.22), ...bell(1568, t + 0.28, 0.3), ...bell(2093, t + 0.42, 0.3)]),
+  // Masa çağrısı ("Garson çağır"): inen iki notalı kapı zili (ding-dong), üç kez; sipariş zilinin yükselen çanından
+  // ayrı duyulsun (masada biri bekliyor ama sipariş yok)
+  call: [0, 0.9, 1.8].flatMap((t) => [...bell(1568, t, 0.3), ...bell(1175, t + 0.3, 0.5)]),
   // Oturum başladı: iki nota
   start: [...bell(784, 0, 0.3), ...bell(1175, 0.22, 0.45)],
   // Bitime az kaldı: üç kısa bip
