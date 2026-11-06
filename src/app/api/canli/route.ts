@@ -15,7 +15,7 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
 
 /**
  * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları (ve sayaçların bekleyen silme istekleri),
- * laffogato.net'in açık kafe siparişleri (bar ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına
+ * laffogato.net'in açık kafe siparişleri ve masa çağrıları (Siparişler; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına
  * kadarki hatırlatıcıları, sunucu saati (sayaç cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu
  * sürekli sormaz: açılışta, bildirim gelince, sekmeye dönünce ve seyrek bir yedek kontrolde ister (sekme öndeyken; arka
  * planda yalnız bildirim gelmeyen zil cihazı, 10 dakikada bir; src/lib/live-poll.ts). ETag üç ucuz işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların
@@ -81,6 +81,9 @@ export async function GET(request: NextRequest) {
       changeAt: ordersState.lastChangeAt,
       // Ödeme bekleniyor: ekran bu ana kadar yoğun (üç dakikada bir çeker); takibin başlaması ve bitmesi sürümü artırır
       awaitingUntil: linked ? awaitingUntil(ordersState) : null,
+      // Masa çağrıları ("Garson çağır"): son listenin kopyasıyla aynı sürümde (ETag), müşteriye dair bir şey yok
+      calls: linked ? snapshot.calls : [],
+      callsSkipped: snapshot.callsSkipped,
     },
     reminders,
     push: { publicKey },

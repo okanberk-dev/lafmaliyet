@@ -7,7 +7,7 @@ import { awaitingCount } from "./follow";
  * (saf; sunucu, ekran ve testler paylaşır). Sözleşme sitenin docs/PANEL-ORDERS.md'si, sitedeki karşılığı
  * src/lib/panel/orders-feed-core.ts; panel tarafı docs/SITE-SIPARIS.md.
  *
- * Yanıt: { version: 1, now, complete, orders: [...], awaitingPayment? }. Tanınmayan sürüm ya da bozuk iskelet bütün
+ * Yanıt: { version: 1, now, complete, orders: [...], awaitingPayment?, calls? }. Tanınmayan sürüm ya da bozuk iskelet bütün
  * yanıtı reddeder (ekran son doğru listeyi göstermeye devam eder ve hatayı söyler). Tek bir siparişin kullanılan alanı bozuksa
  * (kimlik, aşama, ödeme anı, satırlar) yalnız o sipariş atlanır ve sayılır: bir siparişteki hata bütün ekranı
  * boşaltmasın. Ekranda gösterilen metinler kısaltılır; bilinmeyen yeni alanlar atılır (site v1'e alan ekleyebilir).
@@ -65,6 +65,25 @@ export interface SiteOrder {
   note?: string;
 }
 
+/** Masa çağrısının sebebi; sitenin bilmediğimiz yeni bir sebebi "other" olur (kart "Çağırıyor" der, çağrı atılmaz) */
+export type CallReason = "waiter" | "water" | "napkin" | "other";
+export const CALL_REASONS: readonly CallReason[] = ["waiter", "water", "napkin", "other"];
+
+/**
+ * Masadan "Garson çağır" (v1'e 6 Kas 2026'da eklenen, isteğe bağlı `calls`): masanın QR kodu, masanın adı ve sebep.
+ * Müşteriye dair hiçbir şey yok. Site yalnız açık ve 15 dakikadan yeni çağrıları gönderir
+ */
+export interface SiteCall {
+  /** Sitenin kimliği ("tcl-…") */
+  id: string;
+  /** Masanın QR kodu ("K7Q2M9X4TB"); okunamazsa "" (gösterilmez) */
+  tableCode: string;
+  /** "Masa 4" */
+  label: string;
+  reason: CallReason;
+  createdAt: string;
+}
+
 export interface SiteOrderList {
   /** Sitenin yanıt anındaki saati (eski yanıt yenisinin üstüne yazılmasın) */
   now: string;
@@ -78,6 +97,10 @@ export interface SiteOrderList {
    * 28 Ekim 2026'da ekledi (laffogato #270): alan yoksa ya da bozuksa 0, liste yine okunur (src/lib/site-orders/follow.ts)
    */
   awaitingPayment: number;
+  /** Açık masa çağrıları (alan yoksa boş; eski site göndermez) */
+  calls: SiteCall[];
+  /** Okunamayıp atlanan masa çağrısı sayısı */
+  callsSkipped: number;
 }
 
 /** Sitenin yanıtı beklenen biçimde değil: yöneticiye gösterilecek açıklamayla */
@@ -133,6 +156,22 @@ const orderSchema = z.object({
   note: text(300).optional(),
 });
 
+/** Bir yanıtta en çok bu kadar masa çağrısı okunur (fazlası atlanmış sayılır) */
+export const SITE_CALLS_MAX = 100;
+
+const callSchema = z.object({
+  id: z.string().regex(SITE_ORDER_ID),
+  tableCode: z
+    .string()
+    .catch("")
+    .transform((v) => (/^[A-Za-z0-9_-]{1,40}$/.test(v) ? v : "")),
+  label: text(40).transform((v) => v || "Masa"),
+  reason: z
+    .unknown()
+    .transform((v): CallReason => (v === "waiter" || v === "water" || v === "napkin" ? v : "other")),
+  createdAt: iso,
+});
+
 const listSchema = z.object({
   now: iso,
   complete: z.boolean(),
@@ -165,6 +204,33 @@ export function parseSiteOrder(raw: unknown): SiteOrder | null {
   };
 }
 
+/** Tek bir masa çağrısı; kimliği ya da anı bozuksa null. Bilinmeyen sebep "other" olur, metinler kısaltılır */
+export function parseSiteCall(raw: unknown): SiteCall | null {
+  const r = callSchema.safeParse(raw);
+  return r.success ? r.data : null;
+}
+
+/**
+ * Yanıtın isteğe bağlı `calls` alanı: yoksa ya da dizi değilse boş (eski site; bütün yanıt reddedilmez). Bozuk ya da
+ * iki kez geçen çağrı atlanır ve sayılır; `SITE_CALLS_MAX`'tan fazlası da atlanmış sayılır.
+ */
+export function parseSiteCalls(raw: unknown): { calls: SiteCall[]; skipped: number } {
+  if (!Array.isArray(raw)) return { calls: [], skipped: 0 };
+  const calls: SiteCall[] = [];
+  const seen = new Set<string>();
+  let skipped = Math.max(0, raw.length - SITE_CALLS_MAX);
+  for (const item of raw.slice(0, SITE_CALLS_MAX)) {
+    const call = parseSiteCall(item);
+    if (!call || seen.has(call.id)) {
+      skipped++;
+      continue;
+    }
+    seen.add(call.id);
+    calls.push(call);
+  }
+  return { calls, skipped };
+}
+
 /**
  * Okuma ucunun yanıtı. Tanınmayan sürüm ya da bozuk iskelet: SiteOrdersFormatError. Tek bir siparişin bozuk alanı ya
  * da iki kez geçen kimlik: o sipariş atlanır (`skipped`).
@@ -194,5 +260,7 @@ export function parseSiteOrders(json: unknown): SiteOrderList {
   }
   // İsteğe bağlı (S2 öncesi site göndermez); yoksa ya da bozuksa 0, bütün yanıt reddedilmez
   const awaitingPayment = awaitingCount((json as { awaitingPayment?: unknown }).awaitingPayment);
-  return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped, awaitingPayment };
+  // Masa çağrıları (6 Kas 2026): isteğe bağlı; yoksa boş, bozuk çağrı atlanır ve sayılır
+  const { calls, skipped: callsSkipped } = parseSiteCalls((json as { calls?: unknown }).calls);
+  return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped, awaitingPayment, calls, callsSkipped };
 }
