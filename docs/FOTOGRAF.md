@@ -29,8 +29,11 @@ Toplamlar, denetimler ve forma eşleme bizim saf kodumuzda (`src/lib/photo-read/
   **Fotoğraftakini yaz**. Fotoğrafta bulunamayan temel alan da turuncu: "Fotoğrafta okunamadı; fişten yazın."
 - Elle yazılmış alan değişmez; farklıysa "Fotoğrafta …" ve **Fotoğraftakini yaz** önerilir.
 - ModPOS Z raporu: tarih raporun günü mü (gece 05:00'e kadar basılan bir önceki güne sayılır), Z no önceki rapordakinden
-  büyük mü / arada atlama var mı, ödeme türlerinin toplamı Z toplamını tutuyor mu, tanınmayan ödeme satırı, ikram ve
-  iade satırları, indirim.
+  büyük mü / arada atlama var mı, ödeme türlerinin toplamı Z toplamını ya da Z toplamı − ödenmez'i tutuyor mu (formun
+  ve kayıtlı raporun kuralı, [KASA-RAPORU.md](KASA-RAPORU.md) › Ciro ve ödenmez: ikramlı günde Z toplamı ödenmezi
+  içerir, uyarı yalnız ikisini de tutmayınca; denetim KP-08), tanınmayan ödeme satırı, ikram ve iade satırları,
+  indirim. Eksi basılmış indirim, ödenmez ve iade toplamı ("-250,00") tutarıyla alınır, eksi iade de "iade var" der
+  (denetim KP-10).
 - Banka gün sonu fişi: net toplam = satış − iade mi, birden çok fiş ya da başka günün fişi.
 - **Banka POS Z (yazarkasa)** ([YAZARKASA-Z.md](YAZARKASA-Z.md) § 4): oranların toplamı ve KDV'si günlük toplamı ve
   toplam KDV'yi tutuyor mu, her oranın KDV'si toplamına uyuyor mu, ödemeler günlük toplamı tutuyor mu (toplam dışı

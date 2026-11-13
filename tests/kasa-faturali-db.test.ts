@@ -283,6 +283,28 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     const refused = await invoices.saveInvoice({ ...base, supplier: "Bim", payable: 300, amount: 297, cashOutId: w.id });
     assert.ok(!refused.ok && /artık beklemiyor/.test(refused.error));
   });
+  test("FC-04: aynı satırdan aynı anda iki Faturalar'a ekle (iki sekme) tek fatura açar; Aylık harcamalar'a yaz ile yarışta da alım bir kez sayılır", async () => {
+    const o = await out({ store: "Metro", amount: 1180 });
+    const form = { id: null, date: today, supplier: "Metro", description: "", invoiceNo: "", category: "Hammadde & İçecek", amount: 1000, discount: 0, payable: 1180, unpaid: false, note: "", paidAt: today, cashOutId: o.id };
+    const both = await Promise.all([invoices.saveInvoice(form), invoices.saveInvoice(form)]);
+    assert.equal(both.filter((r) => r.ok).length, 1, "biri kaydeder");
+    const lost = both.find((r) => !r.ok);
+    assert.ok(lost && !lost.ok && /artık beklemiyor/.test(lost.error), "öteki satırı kapanmış görür");
+    assert.equal((await db.select().from(s.invoices)).length, 1, "alım iki kez sayılmaz");
+    const handled = await stateOf();
+    assert.deepEqual([handled.pending, handled.duplicates], [[], []]);
+    // "Faturalar'a ekle" ile "Aylık harcamalar'a yaz" aynı anda: alım ya faturada ya gider kaydında
+    const cat = await category();
+    const w = await out({ store: "Bim", amount: 640 });
+    const race = await Promise.all([
+      invoices.saveInvoice({ ...form, supplier: "Bim", amount: 600, payable: 640, cashOutId: w.id }),
+      actions.writeCashOutInvoiceExpense({ id: w.id, categoryId: cat.id }),
+    ]);
+    assert.equal(race.filter((r) => r.ok).length, 1, race.map((r) => (r.ok ? "ok" : r.error)).join(" | "));
+    const counted = (await db.select().from(s.invoices).where(eq(s.invoices.supplier, "Bim"))).length + (await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, w.id))).length;
+    assert.equal(counted, 1);
+  });
+
   // ---------------------------------------------------------------- inceleme bulguları (D1-D6)
 
   /** "Faturalar'a ekle"nin penceresi (Migros, ödendi) */

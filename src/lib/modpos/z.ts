@@ -1,3 +1,4 @@
+import { dayRevenue } from "@/lib/cash-revenue";
 import { lafposChannel, type ChannelKey } from "@/lib/commission/channels";
 
 import type { FoyKasa, FoyOdeme, KasaFoyu } from "./foy";
@@ -126,7 +127,10 @@ export interface ModposZ {
   covers: number | null;
   /** Sayım yoksa nedeni: gün açık (CANLI), kendiliğinden kapandı (defterdeki nakit) ya da kasa hiç açılmadı (föysüz) */
   noCount: "acik" | "otomatik" | "foysuz" | null;
-  /** Ödemelerin ciroya dahil toplamı − ciro (sıfırdan farklıysa föy kendi içinde tutmuyor) */
+  /**
+   * Ödemelerin ciroya dahil toplamı − günün cirosu (sıfırdan farklıysa föy kendi içinde tutmuyor). Ciro dayRevenue'nün
+   * kuralıyla (KP-08): ödemeler ciroyu ya da ciro − ödenmez'i tutuyorsa 0; ikisini de tutmuyorsa ödemeler − ciro
+   */
   paymentsGap: number;
   /** Tanınmayan ödeme kodları */
   unknownCodes: string[];
@@ -186,11 +190,19 @@ export function foyZ(foy: KasaFoyu): ModposZ | null {
     tips: sumKasa(ks, (k) => k.satis.bahsis),
     covers: ks.every((k) => k.satis.kisiSayisi !== null) ? ks.reduce((a, k) => a + (k.satis.kisiSayisi ?? 0), 0) : null,
     noCount: counted ? null : durum === "ACIK" ? "acik" : auto ? "otomatik" : null,
-    paymentsGap: round2(cash + card + mealCard + online + other - zTotal),
+    paymentsGap: paymentsGap(cash + card + mealCard + online + other, zTotal, sumKasa(ks, (k) => k.satis.ciroDisi)),
     unknownCodes: unknown,
     foysuz: false,
     foysuzCiro,
   };
+}
+
+/**
+ * Föyün kendi içinde tutmama farkı: ödemeler − günün cirosu. Ciro ödenmezi içeriyorsa (ödemeler = ciro − ödenmez;
+ * docs/MODPOS-API.md § 4) gün tutarlıdır, form ve kayıtlı rapor gibi (src/lib/cash-revenue.ts dayRevenue; KP-08)
+ */
+function paymentsGap(payments: number, zTotal: number, offRevenue: number): number {
+  return round2(payments - dayRevenue({ zTotal, offRevenue, payments: round2(payments) }).revenue);
 }
 
 /**
@@ -234,7 +246,7 @@ function foysuzZ(foy: KasaFoyu, zTotal: number): ModposZ {
     tips: 0,
     covers: null,
     noCount: "foysuz",
-    paymentsGap: round2(cash + card + mealCard + online + other - zTotal),
+    paymentsGap: paymentsGap(cash + card + mealCard + online + other, zTotal, by("off")),
     unknownCodes: [...new Set(pays.map((o) => o.kod).filter((c) => !KNOWN_CODES.has(c)))],
     foysuz: true,
     foysuzCiro: zTotal,

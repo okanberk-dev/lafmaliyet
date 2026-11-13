@@ -140,7 +140,8 @@ describe("ModPOS Ayarlar kartı ve eylemleri: veritabanında", { skip: !SERVER_U
     assert.equal((await status.loadModposCard(db, new Date(), { ...keyEnv(), VERCEL_ENV: "preview" })).summary.canFetch, false);
     delete process.env.VERCEL_ENV;
     assert.deepEqual(await actions.fetchModposDay(addDays(today, 1)), { ok: false, error: MODPOS_DAY_INVALID });
-    assert.deepEqual(await actions.fetchModposDay("2026-02-30"), { ok: false, error: MODPOS_DAY_INVALID });
+    // Takvimde olmayan gün ortak tarih denetiminde düşer (zDate, denetim KP-09)
+    assert.deepEqual(await actions.fetchModposDay("2026-02-30"), { ok: false, error: "Geçersiz tarih" });
     assert.deepEqual(await actions.fetchModposDay("dün"), { ok: false, error: "Geçersiz tarih" });
     process.env.MODPOS_API_KEY = "kısa";
     assert.deepEqual(await actions.fetchModposDay(d3), { ok: false, error: MODPOS_KEY_BROKEN });

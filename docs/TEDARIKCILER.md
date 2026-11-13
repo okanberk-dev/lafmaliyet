@@ -274,10 +274,13 @@ silinir (kasaya açtığı satırsa o da silinir).
   aynı anda iki ✓ ya da değişiklik yapmadan Kaydet defterin kapanışını elle ödendiye çevirmez. Ödemeler'de faturasız
   alımın **Ödendi**si hesaptaki paradan yalnız satırın gösterdiği payı kullanır.
 - Fatura silinmeden önce bağları çözülür (elle silme, Paraşüt iptali): bağlı faturasız alım eski hâline döner, gider
-  kaydı yeniden yazılır, faturaya sayılan para ödemenin hesabına geçer. Elle silinen faturayı "Geri al" bağlarıyla
-  geri getirir (para hâlâ hesaptaysa); silinen Paraşüt faturası geri alınınca bağlı alımlar (hâlâ bağsızsa) yeniden
-  bağlanır, ödemeler hesapta kalır. Alım hangi kartın olursa olsun yeniden bağlanır (fatura başka tedarikçide
-  görünebilir); bu arada değişen alım bağlanamazsa bildirim söyler.
+  kaydı yeniden yazılır, faturaya sayılan para ödemenin hesabına geçer. Silinen faturayı geri almak (elle girilmişte
+  bildirimdeki "Geri al", Paraşüt faturasında Silinen Paraşüt faturaları da) bağlarını da geri getirir: bağlı alımlar
+  (hâlâ bağsızsa) yeniden bağlanır, ödemeler hesapta hâlâ duran kadarıyla yeniden sayılır; ✓ ile kalanı ödenmiş fatura
+  ödendi kalır, tedarikçi alacaklı görünmez (denetim FC-01). Sayılamayan para (bu arada başka kaleme sayılmış) ve
+  defterin kapattığı faturanın açık kalanı bildirimde. Bu düzeltmeden önce silinmiş Paraşüt faturasının kopyasında
+  dağıtımlar yok: ödeme sayılmış fatura ödenmemiş döner, **Borçlara say** ile kapatılır. Alım hangi kartın olursa
+  olsun yeniden bağlanır (fatura başka tedarikçide görünebilir); bu arada değişen alım bağlanamazsa bildirim söyler.
 - Ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka karta taşıyan değişiklik reddedilir: kartın adı, diğer
   adları, vergi nosu (hangi kart düzenlenirse düzenlensin), yeni kart ve Faturalar'da faturanın tedarikçi adı.
 - Kalan borç, dağıtım ve ödendi işaretini yalnız `src/server/cari/settle.ts` yazar (kart satırı kilitlenir: aynı

@@ -9,6 +9,8 @@
  *   "ödenecek − KDV" maliyeti eksik verir; doğru KDV hariç tutar belge okununca yazılır.
  * Saf modül: testlerde de kullanılır.
  */
+import { dateTR } from "@/lib/format";
+
 import type { Resource } from "./jsonapi";
 import { SALES_RETURN } from "./mapping";
 
@@ -110,6 +112,19 @@ export function withholdingVatFill(row: { vat: number | null; payable: number },
   if (!d.withholding || d.refund || !(d.vat > 0)) return null;
   if ((row.vat ?? 0) > 0) return null;
   return Math.abs(row.payable - d.payable) <= 1 ? d.vat : null;
+}
+
+/**
+ * Excel / elle kayıt tutarı ya da tarihi farklı bir e-faturaya ilk kez bağlanınca nota düşülen ek: değişen alanı ve
+ * önceki değerini söyler ("tutar e-faturaya göre güncellendi (önce 1.100 ₺)", "tarih … (önce 07.11.2026)", ikisi
+ * birden: "tutar ve tarih … (önce 1.100 ₺, 07.11.2026)"). Tutarda ±1 ₺ fark sayılmaz.
+ */
+export function eInvoiceUpdateNote(prev: { payable: number; date: string }, next: Pick<EInvoiceDraft, "payable" | "date">): string {
+  const amount = Math.abs(prev.payable - next.payable) > 1;
+  const date = prev.date !== next.date;
+  const was = [amount ? `${prev.payable.toLocaleString("tr-TR")} ₺` : "", date ? dateTR(prev.date) : ""].filter(Boolean).join(", ");
+  const what = amount && date ? "tutar ve tarih" : date ? "tarih" : "tutar";
+  return `${what} e-faturaya göre güncellendi (önce ${was})`;
 }
 
 /** Panele gider olarak girmeli mi; girmemeliyse nedeni (mevcut kaydı kaldırırken nota yazılır) */

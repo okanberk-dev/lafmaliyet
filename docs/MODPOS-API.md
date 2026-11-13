@@ -104,8 +104,9 @@ teslimi.
 Tutarlar noktalı ondalıkla okunur; kayan nokta artığı ve üs (`17620.500000000004`, `-1.1e-13`) iki ondalığa
 yuvarlanır, virgüllü tutar (`1.234,50`) ve ofsetsiz zaman reddedilir (alanın yoluyla). Sayısal karakter başvuruları
 (`&#305;`) çözülür. Ciroya dahil olmayan yöntemler (`IKRAM`, `ODENMEZ`, `HEDIYE_KARTI`, `SADAKAT_IKRAMI`,
-`DEGISIM_MAHSUBU`, `ZAYI`) ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu tutmuyorsa föy kendi içinde tutmuyor demektir: gün
-görünümünde uyarı satırı çıkar. Kasası açılmamış ama satışı olan gün ("föysüz") tutarlarını föysüz satıştan alır, kasa
+`DEGISIM_MAHSUBU`, `ZAYI`) ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu da ciro − ciro dışı'nı da
+tutmuyorsa föy kendi içinde tutmuyor demektir: gün görünümünde uyarı satırı çıkar. Ciro ödenmezi içeriyorsa (ödemeler =
+ciro − ciro dışı) gün tutarlıdır, uyarı yoktur: formun ve kayıtlı raporun kuralı (`dayRevenue`, denetim KP-08). Kasası açılmamış ama satışı olan gün ("föysüz") tutarlarını föysüz satıştan alır, kasa
 alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
 
 ## 5. Nerede görünür

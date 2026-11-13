@@ -34,7 +34,7 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
-import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
+import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
@@ -137,7 +137,8 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
-const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
+/** Takvimde olan gün (KP-09: ?gun=2026-02-30 formu açmaz, ?gun=2026-00-10 sayfayı çökertmez; bugüne düşer) */
+const isDay = (v: string | undefined): v is string => v !== undefined && isCalendarDate(v);
 
 async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();

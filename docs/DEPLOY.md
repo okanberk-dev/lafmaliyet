@@ -321,6 +321,10 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **fatura_kaynagi_onarimi** (yalnız veri, denetim FC-02; [PARASUT.md](PARASUT.md) § 3): hiçbir Paraşüt belgesine
+    bağlı olmayan elle / Excel faturasının kaynağını (`source`) bir kez eskisine döndürür; şema değişmez, eski kod da
+    çalışır. Bu sürümden geriye Instant Rollback yapılırsa eski eşitleme e-faturası reddedilen kaydı yine Paraşüt'e bağlı
+    bırakır (tutarı kilitli); migration yeniden çalışmaz, o kayıtlar ileri yayınla gelen eşitlemede de düzelmez.
   - **ek_kalem_subesi** (`stock_extras.branch_id`, denetim ST-01; [SUBE.md](SUBE.md) › Stok ve zayi): varsayılanı
     `'tuzla'` olan sütun, eklemeli; eski ek kalemler Tuzla'ya yazılır. Geçiş günü önceden seçildiyse Tuzla'nın kasası
     Şubeler'de LafPOS olur (ST-X1). Bu sürümden geriye Instant Rollback yapılırsa eski kod sütuna bakmaz: ek kalemler

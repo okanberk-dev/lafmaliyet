@@ -439,7 +439,9 @@ test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var
   assert.match(sync, /parasutUnpaid: null, commission:/, "e-fatura");
   // Var olan faturada yalnız Paraşüt'ün ipucu (parasutUnpaid) yazılır, "ödenmedi" yazılmaz; Paraşüt faturayı kapatınca
   // panelde ödenmedi duranın bilinen kalanı korunur; yer tutucu adla açılmış fatura peşin kartına düşerse ödendi olur
-  assert.match(sync, /\.set\(\{ \.\.\.common, \.\.\.\(keepOutstanding \? \{ outstanding: match\.outstanding \} : \{\}\), \.\.\.supplierFix, \.\.\.settle, dueDate \}\)/);
+  // (kuru okunamayan döviz faturası yalnız kontrol işaretini ve notu ekler: rateFlag, FC-05)
+  assert.match(sync, /\.set\(\{ \.\.\.common, \.\.\.\(keepOutstanding \? \{ outstanding: match\.outstanding \} : \{\}\), \.\.\.supplierFix, \.\.\.settle, dueDate, \.\.\.rateFlag \}\)/);
+  assert.match(sync, /const rateFlag = rateNote && !match\.note\?\.includes\(rateNote\) \? \{ needsReview: true, note: appendNote\(match\.note, rateNote\) \} : \{\};/);
   assert.match(sync, /const keepOutstanding = match\.unpaid && !d\.unpaid;/);
   assert.match(
     sync,

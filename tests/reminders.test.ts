@@ -12,6 +12,7 @@ import {
   dueNotifications,
   fixedReminderAt,
   fixedReminderText,
+  isCalendarDate,
   isLocalTaxReminder,
   isMuhtasarReminder,
   isProvisionalTaxReminder,
@@ -68,6 +69,11 @@ test("ay ekleme çapa gününü korur", () => {
 test("gün farkı yaz saati değişiminden etkilenmez", () => {
   assert.equal(daysBetween("2026-03-28", "2026-03-30"), 2);
   assert.equal(daysBetween("2026-10-31", "2026-10-19"), -12);
+});
+
+test("takvim günü (KP-09): 30 Şubat, ay 00 ve 13, 29 Şubat'ın artık yıl dışı reddedilir", () => {
+  for (const d of ["2026-11-13", "2024-02-29", "2026-12-31"]) assert.equal(isCalendarDate(d), true, d);
+  for (const d of ["2026-02-30", "2026-02-29", "2026-00-10", "2026-13-01", "2026-11-31", "2026-11-00", "13.11.2026", "2026-1-5", ""]) assert.equal(isCalendarDate(d), false, d);
 });
 
 test("yaklaşan ödemeler: hatırlatıcılar ve ödenmemiş faturalar", () => {

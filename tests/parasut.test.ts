@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { INVOICE_CATEGORIES } from "../src/lib/constants";
+import { eInvoiceUpdateNote } from "../src/server/parasut/einvoice";
 import type { Resource } from "../src/server/parasut/jsonapi";
 import {
   billToDraft,
@@ -11,6 +12,7 @@ import {
   feedsSupplierHistory,
   findByEInvoiceNo,
   findExisting,
+  missingRateNote,
   nextTaxNumber,
   pickCategory,
   recategorizeFromLines,
@@ -220,6 +222,46 @@ test("e-fatura Paraşüt'e elle girilmiş gider faturasına tam numarayla bağla
   assert.equal(findByEInvoiceNo({ ...e, invoiceNo: "SUT2026000123" }, [{ ...billRow, invoiceNo: "SUT2026000123" }]), null);
   // findExisting yalnız bağsız kayıtlara bakar; bu kayıt Paraşüt'e bağlı olduğu için orada aday değil
   assert.equal(findExisting({ ...e, externalId: "ei:1", supplier: "Sütaş" }, [billRow]), null);
+});
+
+test("FC-03: GİB portalı numarası (GIB…) yalnız aynı tedarikçide (ad ya da vergi no) eşleşir; öteki tam numaralar adsız da", () => {
+  // Elle girilmiş "Ahmet Usta" faturası; aynı gün, aynı numarayla başka bir ustanın Paraşüt faturası gelir
+  const ahmet = { id: 31, externalId: null, invoiceNo: "GIB2026000000012", supplier: "Ahmet Usta", date: "2026-11-08", payable: 500 };
+  const mehmet = { externalId: "901", invoiceNo: "GIB2026000000012", date: "2026-11-08", payable: 960, supplier: "MEHMET TESİSAT", taxNumber: "12345678950" };
+  assert.equal(findByEInvoiceNo(mehmet, [ahmet]), null, "başka tedarikçi: güçlü kimlik değil");
+  assert.equal(findExisting(mehmet, [ahmet]), null, "yeni kayıt açılır, Ahmet'in kaydına dokunulmaz");
+  // Aynı tedarikçi (adı farklı yazılmış): bağlanır
+  assert.equal(findExisting({ ...mehmet, supplier: "AHMET USTA TESİSAT", payable: 500 }, [ahmet])?.id, 31);
+  // Adı tutmayan ama vergi nosu aynı kayıt (daha önce Paraşüt'ten numarasını almış): bağlanır
+  const withTax = { ...ahmet, supplier: "Kombici", supplierTaxNumber: "12345678950" };
+  assert.equal(findByEInvoiceNo(mehmet, [withTax])?.id, 31);
+  assert.equal(findByEInvoiceNo({ ...mehmet, taxNumber: "1234567808" }, [withTax]), null);
+  // Geçersiz (örnek) vergi no eşleşmede kullanılmaz
+  assert.equal(findByEInvoiceNo({ ...mehmet, taxNumber: "9876543210" }, [{ ...withTax, supplierTaxNumber: "9876543210" }]), null);
+  // E-fatura yolu: Paraşüt'e elle girilmiş başka tedarikçinin gider faturasına da bağlanmaz
+  const bill = { id: 32, externalId: "455", invoiceNo: "GIB2026000000007", supplier: "Hasan Elektrik", date: "2026-11-05", payable: 300 };
+  assert.equal(findByEInvoiceNo({ invoiceNo: "GIB2026000000007", date: "2026-11-08", payable: 300, supplier: "VELİ BOYA SAN.", taxNumber: "1234567808" }, [bill]), null);
+  // Öteki önekler eskisi gibi: tam numara tedarikçi adına bakmadan (Yemek Sepeti ~ YEMEKSEPETİ)
+  assert.equal(findByEInvoiceNo({ invoiceNo: "ABC2026000000123", date: "2026-10-14", payable: 1320, supplier: "Başka Ad" }, [{ ...bill, invoiceNo: "ABC2026000000123", date: "2026-10-14", payable: 1320 }])?.id, 32);
+});
+
+test("FC-05: kuru gelmeyen döviz faturası işaretlenir (kur 1 sayılır, kayıt kontrol bekler); kur gelince ya da TL'de işaret yok", () => {
+  const usd = (rate?: string) => billToDraft({ ...bill, attributes: { ...bill.attributes, currency: "USD", ...(rate === undefined ? {} : { exchange_rate: rate }) } }, included);
+  assert.deepEqual([usd().missingRate, usd().payable], ["USD", 1100]);
+  assert.equal(usd("0.0").missingRate, "USD");
+  assert.deepEqual([usd("34.5").missingRate, usd("34.5").payable], [null, 37950]);
+  assert.equal(billToDraft(bill, included).missingRate, null);
+  assert.equal(billToDraft({ ...bill, attributes: { ...bill.attributes, currency: "TRY" } }, included).missingRate, null);
+  assert.equal(missingRateNote("USD"), "USD faturası: döviz kuru okunamadı, tutarı kontrol edin");
+});
+
+test("FC-X1: e-faturaya bağlanan kaydın notu değişen alanı söyler (tutar, tarih ya da ikisi)", () => {
+  const prev = { payable: 1100, date: "2026-11-07" };
+  assert.equal(eInvoiceUpdateNote(prev, { payable: 1100, date: "2026-11-09" }), "tarih e-faturaya göre güncellendi (önce 07.11.2026)");
+  assert.equal(eInvoiceUpdateNote(prev, { payable: 1250, date: "2026-11-07" }), "tutar e-faturaya göre güncellendi (önce 1.100 ₺)");
+  assert.equal(eInvoiceUpdateNote(prev, { payable: 1250, date: "2026-11-09" }), "tutar ve tarih e-faturaya göre güncellendi (önce 1.100 ₺, 07.11.2026)");
+  // ±1 ₺ tutar farkı sayılmaz
+  assert.equal(eInvoiceUpdateNote(prev, { payable: 1100.6, date: "2026-11-09" }), "tarih e-faturaya göre güncellendi (önce 07.11.2026)");
 });
 
 test("panelde silinen e-fatura içeri alınınca gider faturası olarak geri gelmez", () => {

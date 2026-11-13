@@ -850,6 +850,65 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.equal((await db.select().from(s.expenseEntries)).length, 0, "gider yalnız faturada");
   });
 
+  test("FC-01: kısmen cari ödemesi sayılmış, kalanı ✓ ile ödenmiş Paraşüt faturası silinip geri alınınca ödeme yeniden sayılır (tedarikçi alacaklı görünmez)", async () => {
+    const c = await card();
+    const today = todayTR();
+    const f = await invoice({ payable: 1000, date: today, invoiceNo: "SUT2026000000001", source: "parasut", origin: "parasut", externalId: "PB-1" });
+    await pay(c.id, 400, { date: today });
+    ok(await invoices.setInvoicePaid(f.id, true));
+    const credit = async () => (await settle.cardsWithCredit()).get(c.id) ?? 0;
+    assert.deepEqual([(await inv(f.id)).allocated, (await inv(f.id)).unpaid, await credit()], [400, false, 0]);
+    ok(await invoices.deleteInvoice(f.id));
+    assert.equal(await credit(), 400, "silinince ödeme hesaba geçer");
+    const r = ok(await invoices.unignoreParasutBill("PB-1"));
+    assert.equal(r.status, "restored");
+    assert.doesNotMatch(r.message, /yeniden sayılmadı|yeniden sayılamadı/);
+    const [back] = await db.select().from(s.invoices).where(eq(s.invoices.externalId, "PB-1"));
+    assert.deepEqual([back.allocated, back.unpaid, back.paidByLedger], [400, false, false], "ödeme faturaya döndü, ✓ kaldı");
+    assert.equal(await credit(), 0, "hesapta avans kalmadı");
+  });
+
+  test("FC-01: defterin kapattığı Paraşüt faturası geri alınınca yeniden defterle kapanır; ödeme bu arada harcandıysa açık döner ve söylenir", async () => {
+    const c = await card();
+    const today = todayTR();
+    const f = await invoice({ payable: 800, date: today, invoiceNo: "SUT2026000000002", source: "parasut", origin: "parasut", externalId: "PB-2" });
+    await pay(c.id, 800, { date: today });
+    assert.deepEqual([(await inv(f.id)).unpaid, (await inv(f.id)).paidByLedger], [false, true]);
+    ok(await invoices.deleteInvoice(f.id));
+    ok(await invoices.unignoreParasutBill("PB-2"));
+    let [back] = await db.select().from(s.invoices).where(eq(s.invoices.externalId, "PB-2"));
+    assert.deepEqual([back.allocated, back.unpaid, back.paidByLedger], [800, false, true]);
+    // Silinip bu arada para başka faturaya sayılınca: geri gelen fatura ödenmemiş açılır, mesaj söyler
+    ok(await invoices.deleteInvoice(back.id));
+    const other = await invoice({ payable: 800, date: today, invoiceNo: "SUT2026000000003" });
+    ok(await cari.applySupplierCredit({ cardId: c.id }));
+    assert.equal((await inv(other.id)).allocated, 800);
+    const r = ok(await invoices.unignoreParasutBill("PB-2"));
+    assert.match(r.message, /800,00\s₺ ödeme yeniden sayılamadı \(bu arada başka kaleme sayıldı/);
+    [back] = await db.select().from(s.invoices).where(eq(s.invoices.externalId, "PB-2"));
+    assert.deepEqual([back.allocated, back.unpaid, back.paidByLedger], [0, true, false]);
+  });
+
+  test("FC-01: dağıtım listesi olmayan eski kopya: ödeme sayılmış fatura ödenmemiş döner, Borçlara say onu kapatabilir", async () => {
+    const c = await card();
+    const today = todayTR();
+    const f = await invoice({ payable: 1000, date: today, invoiceNo: "SUT2026000000004", source: "parasut", origin: "parasut", externalId: "PB-4" });
+    await pay(c.id, 400, { date: today });
+    ok(await invoices.setInvoicePaid(f.id, true));
+    ok(await invoices.deleteInvoice(f.id));
+    // Bu düzeltmeden önce silinmiş faturanın kopyası: cari'de dağıtımlar yok (yalnız toplam)
+    const [state] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.deleted"));
+    const entries = (state.value as { externalId: string; cari?: { allocations?: unknown } }[]).map((e) => (e.cari ? { ...e, cari: { ...e.cari, allocations: undefined } } : e));
+    await db.update(s.integrationState).set({ value: JSON.parse(JSON.stringify(entries)) }).where(eq(s.integrationState.key, "parasut.deleted"));
+    const r = ok(await invoices.unignoreParasutBill("PB-4"));
+    assert.match(r.message, /Ödemeler bu faturaya yeniden sayılmadı, fatura ödenmemiş döndü: Tedarikçiler'den Borçlara say/);
+    const [back] = await db.select().from(s.invoices).where(eq(s.invoices.externalId, "PB-4"));
+    assert.deepEqual([back.unpaid, back.allocated], [true, 0]);
+    // Mesajın önerdiği Borçlara say çalışır (✓'li kalsaydı "açık kalem yok" derdi)
+    ok(await cari.applySupplierCredit({ cardId: c.id }));
+    assert.equal((await inv(back.id)).allocated, 400);
+  });
+
   test("silinen fatura geri alınınca başka kartın ya da kartsız tedarikçinin faturasına bağlı alım da yeniden bağlanır; bağlanamayan söylenir", async () => {
     const c = await card();
     await card("Pınar");
