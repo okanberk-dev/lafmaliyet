@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 import { amountsChanged, isParasutLinked } from "../src/app/panel/faturalar/rules";
 import { createModel } from "../src/lib/calc/engine";
+import { planInputFromModel } from "../src/lib/cash-plan";
 import type { Dataset } from "../src/lib/calc/types";
 import {
   posVat,
@@ -370,4 +371,43 @@ test("metinler: alt satır, haftalar satırının açıklaması, Nasıl hesaplan
   );
   assert.equal(vatNote("excluded", true, rates, true), "KDV tahmini plana katılmıyor (Tahmine katılanlar'dan açın).");
   assert.equal(vatNote("default", false, rates, true), "Satış verisi olmadığı için KDV tahmin edilemedi.");
+});
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+test("VG-01: Ödemeler'deki tutar yalnız beyanname damgasıysa (vergi beslemesiyle) KDV ödemesi sayılmaz, devreden sürer", () => {
+  // Eylül: 39.200 − 11.900 − 167.500 = −140.200 devreder; tahakkuk fişinde yalnız damga (791)
+  const stampOnly = estimate({ known: new Map([["2026-09", 791]]), stamp: 791 });
+  const sep = stampOnly.get("2026-09")!;
+  assert.deepEqual([sep.payable, sep.known, sep.carryOut], [791, 791, 140_200]);
+  const oct = stampOnly.get("2026-10")!;
+  // Ekim: 51.800 − 9.700 − 140.200 = −98.100: ödeme yok
+  assert.deepEqual([oct.carryIn, oct.payable, oct.carryOut], [140_200, 0, 98_100]);
+  assert.equal(vatSubText(sep, null), "Ödemeler'deki tutar · ≈ 140.200\u00a0₺ sonraki aya geçer");
+  // Damgayı aşan tutar KDV ödemesidir: devreden sıfırlanır, Ekim 51.800 − 9.700 = 42.100
+  const paid = estimate({ known: new Map([["2026-09", 10_791]]), stamp: 791 });
+  assert.equal(paid.get("2026-09")!.carryOut, 0);
+  assert.equal(paid.get("2026-10")!.payable, 42_100);
+  // Besleme yokken damga satırı da yok: tutar KDV'dir (eski kural)
+  assert.equal(estimate({ known: new Map([["2026-09", 791]]) }).get("2026-09")!.carryOut, 0);
+  // Verisiz ayda da: muhasebecinin Ağustos devredeni (50.000) yalnız damga yazılmış Eylül'den Ekim'e geçer
+  const bare = vatEstimates({ today: TODAY, months: [], firstSalesMonth: "2026-08", anchor: { month: "2026-08", amount: 50_000 }, known: new Map([["2026-09", 791]]), periods: ["2026-09", "2026-10"], stamp: 791 });
+  assert.deepEqual([bare.get("2026-09")!.status, bare.get("2026-09")!.carryOut, bare.get("2026-10")!.carryIn], ["noData", 50_000, 50_000]);
+});
+
+test("VG-04: yurt dışı hizmetin KDV-2'si (sorumlu sıfatıyla) aynı dönemin indirilecek KDV'sine eklenir", () => {
+  // Instagram reklamı (30.000 ₺/ay) doğrudan yurt dışına: KDV-2 30.000 × %20 = 6.000, aynı ay alışlarda
+  const foreign = createModel({ ...ds, fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Instagram reklamı" ? { ...f, taxWithholding: "internet_reklam_yurtdisi" as const } : f)) });
+  const plan = planInputFromModel(foreign, TODAY);
+  assert.equal(plan.vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, 6_000);
+  const out = vatEstimates({ today: TODAY, months: plan.vat.months, firstSalesMonth: plan.vat.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-09", "2026-10"] });
+  const sep = out.get("2026-09")!;
+  const oct = out.get("2026-10")!;
+  // Alışlar 11.900 + 6.000 ve 9.700 + 6.000; zincir Temmuz'dan beri her ay 6.000 fazla devreder (Eylül'e kadar 3 ay)
+  assert.deepEqual([sep.purchases, sep.hizmet, sep.carryOut], [17_900, 6_000, 140_200 + 3 * 6_000]);
+  assert.deepEqual([oct.purchases, oct.carryOut], [15_700, 98_100 + 4 * 6_000]);
+  assert.equal(sep.sales - sep.purchases - sep.carryIn, sep.net);
+  // Besleme yokken (kalem faturasının KDV'siyle brüt ödenir, KDV-2 satırı yok) ve profilsiz kalemde eklenmez
+  assert.equal(planInputFromModel(foreign, TODAY, undefined, { feed: false }).vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, undefined);
+  assert.equal(planInputFromModel(model, TODAY).vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, undefined);
 });

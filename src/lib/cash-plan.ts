@@ -36,6 +36,7 @@ import {
   dayMonthTR,
   isMuhtasarReminder,
   isProvisionalTaxReminder,
+  isRentWithholdingReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthEnd,
@@ -49,8 +50,9 @@ import {
 } from "./reminders";
 import { unreachable } from "./unreachable";
 import { legalDayText, legalDueDate, mphbPeriodOf, quarterLabel, quarterOfDue } from "./tax/calendar";
+import { kdv2HizmetOf, muhtasarItemsFromModel } from "./tax/muhtasar";
 import { taxPayrollFromModel, type PayrollMonth } from "./tax/payroll";
-import { paidFixedRates, r2, rulesFor, type Withholding } from "./tax/rules";
+import { paidFixedRates, r2, rulesFor, type Withholding, withholdingKdv2 } from "./tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
 import type { TaxPlanFeed } from "./tax/view";
 import { originalDue, paidVatPeriods, type VatPaidEntry } from "./vat-paid";
@@ -631,13 +633,23 @@ export function planInputFromModel(
     };
   }
   const { rules } = rulesFor(Number(cur.slice(0, 4)), tax.overrides);
+  // Yurt dışı hizmetin KDV'si (sorumlu sıfatıyla, vergi beslemesiyle KDV-2 satırı) aynı ay 1 No.lu beyannamede
+  // indirilir: dönemin alış KDV'sine eklenir (VG-04). Besleme yoksa kalem faturasının KDV'siyle brüt ödenir, eklenmez
+  const vat = vatMonthInputs(model, today);
+  if (feed && model.ds.fixedExpenses.some((f) => withholdingKdv2(f.taxWithholding, rules) > 0)) {
+    for (const m of vat.months) {
+      if (m.month < tax.periodStart.slice(0, 7)) continue;
+      const hizmet = kdv2HizmetOf(muhtasarItemsFromModel(model, m.month), m.month, tax.overrides);
+      if (hizmet > 0) m.purchases.hizmet = hizmet;
+    }
+  }
   return {
     settings: { komisyon: st.komisyon, kartOrani: st.kartOrani, acikGun: st.acikGun, kdv: st.kdv, kdvHizmet: st.kdvHizmet },
     posMonth: pos ? { month: pos.month, posRevenue: pos.posRevenue!, openDays: pos.openDays! } : null,
     online: onlineBasis(model, today),
     months,
     fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period, endMonth: f.endMonth ?? null })),
-    vat: { ...vatMonthInputs(model, today), switchDay: st.lafposGecisGunu },
+    vat: { ...vat, switchDay: st.lafposGecisGunu },
     // Ufuktaki kafe kapalı işaretli günler (E-41)
     closedDays: (model.ds.closedDays ?? []).filter((d) => d >= today && d <= addDays(today, PLAN_DAYS - 1)),
     sgkRates: { year: Number(cur.slice(0, 4)), isveren: rules.sgk.isverenOran.value, issizlik: rules.sgk.isverenIssizlik.value },
@@ -1125,6 +1137,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     known,
     periods: vatPeriods,
     hasSite: input.vat.hasSite,
+    // Vergi beslemesiyle Ödemeler'deki tutar damga dahildir: yalnız damga yazılmışsa KDV ödenmemiştir (VG-01)
+    stamp: tax ? tax.stamps.kdv : 0,
   });
   const vatRows: VatRow[] = knownRows.map((r) => ({ ...r, estimate: estimates.get(r.period) ?? null }));
   const usedKeys = new Set<string>();
@@ -1305,26 +1319,48 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         reminderOccurrences(r, today, end).map((o) => ({ r, o, period: periodOf(r, o.due), kesin: r.amount !== null && (o.due === r.dueDate || !taxAmountTravels(r)) })),
       );
       const owned = new Set<string>();
+      // Sabit tutarlı "Kira stopajı" (VG-02): tutarı muhtasarın yalnız kira stopajıdır, dönemi sahiplenmez. Muhtasarın
+      // kalanı o dönemde başka bir muhtasar hatırlatıcısının gününde, yoksa kira stopajı hatırlatıcısının gününde girer
+      const rentAt = new Map<string, { amount: number; at: (typeof occs)[number]["o"] }>();
       for (const x of occs) {
         if (!x.kesin) continue;
+        const rent = kind === "muhtasar" && isRentWithholdingReminder(x.r);
         if (x.r.amount! > 0) {
           // K4: muhasebecinin rakamı Ödemeler'dekinden 1 ₺'den fazla farklıysa satır söyler (Vergi sayfası da uyarır)
           const filed = items.get(x.period);
-          const differs = filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
+          const differs = !rent && filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
           reminderLine(x.r, x.o, differs ? { detail: filingMismatchText(filed.amount, x.r.amount!) } : {});
           taxKesin++;
         }
-        owned.add(x.period);
+        if (rent) {
+          if (!rentAt.has(x.period)) rentAt.set(x.period, { amount: x.r.amount!, at: x.o });
+        } else owned.add(x.period);
       }
+      // Muhtasarın satırı: kira stopajı Ödemeler'deyse yalnız kalanı (tahminde beslemenin `rest`'i; muhasebecinin
+      // rakamında hatırlatıcının tutarı düşülür), kira stopajı satırı yok
+      const draw = (item: TaxPlanFeed["items"][number], at: { date: string; due: string; overdue: boolean }) => {
+        const rent = rentAt.get(item.period);
+        if (!rent) {
+          taxLine(item, at);
+          if (kind === "muhtasar") kiraLine(item.period, at);
+        } else if (item.source === "filing") {
+          taxLine({ ...item, amount: Math.max(0, r2(item.amount - rent.amount)), detail: `${item.detail} Kira stopajı (${money(rent.amount)}) Ödemeler'de ayrı satırda; burada düşüldü.` }, at);
+        } else taxLine(item.rest ? { ...item, ...item.rest } : item, at);
+      };
       const rest = occs.filter((x) => !x.kesin).sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
       for (const x of rest) {
         if (paid.has(x.period)) continue;
         const item = items.get(x.period);
         if (!taxOff && item && !owned.has(x.period)) {
           owned.add(x.period);
-          taxLine(item, x.o);
-          if (kind === "muhtasar") kiraLine(item.period, x.o);
+          draw(item, x.o);
         } else addUnknown(x.r, x.o.date, owned.has(x.period) ? undefined : pending.get(x.period)?.note);
+      }
+      for (const [period, rent] of rentAt) {
+        const item = items.get(period);
+        if (taxOff || !item || owned.has(period) || paid.has(period)) continue;
+        owned.add(period);
+        draw(item, rent.at);
       }
       return;
     }

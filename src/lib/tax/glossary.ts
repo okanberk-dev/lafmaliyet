@@ -76,6 +76,7 @@ const PLAIN_LABELS: Readonly<Record<string, string>> = {
   "Kafenin katkısı (yalnız kafe)": "Kafenin payı (yalnız kafe)",
   "Beyanname damgası": "Beyanname ücreti (damga vergisi)",
   Matrah: "Vergi hesabındaki kâr (matrah)",
+  "Devreden zarar": "Önceki yılların zararı (devreden zarar)",
   Hesaplanan: "Hesaplanan vergi",
   "Mahsup edilecek geçici vergi (yalnız ödendi işaretli)": "Düşülecek peşinat (mahsup; yalnız ödendi işaretli)",
   "İade / mahsup alacağı": "Fazla ödenen (iade ya da mahsup)",

@@ -72,7 +72,7 @@ export function filingPeriodRefusal(kind: TaxFilingKind, period: string, setting
 /** Kaydın isteğe bağlı (ve KDV satışlarında zorunlu) alanları; `signed` eksi olabilir (zararda matrah) */
 export const FILING_VALUE_FIELDS: Record<TaxFilingKind, readonly { key: string; label: string; required?: boolean; signed?: boolean }[]> = {
   gecici: [
-    { key: "matrah", label: "Kümülatif matrah (kurum kazancı; zararda eksi)", signed: true },
+    { key: "matrah", label: "Geçici vergi matrahı (zarar ve indirim düşülmüş; zararda eksi)", signed: true },
     { key: "hesaplanan", label: "Hesaplanan geçici vergi (kümülatif)" },
   ],
   kv: [

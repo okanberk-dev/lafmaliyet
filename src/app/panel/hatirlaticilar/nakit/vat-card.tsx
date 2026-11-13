@@ -253,6 +253,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
         </div>
         {estimate ? <p className="text-xs text-ink-mute">{invoiceText}</p> : null}
         {estimate && e.withheld > 0 ? <p className="text-xs text-ink-mute">İçinde tevkifat ≈ {tl(e.withheld)}: 2 No.lu beyannameyle ayın {VAT2_DUE_DAY}&apos;inde ödenir</p> : null}
+        {estimate && e.hizmet > 0 ? <p className="text-xs text-ink-mute">İçinde yurt dışı hizmetin KDV&apos;si ≈ {tl(e.hizmet)}: 2 No.lu beyannameyle ödenir, burada indirilir</p> : null}
       </div>
       {e.carryIn > 0 ? (
         <div className="flex items-baseline justify-between gap-3">
@@ -265,6 +266,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
         <dd className="text-ink tabular">{result.value}</dd>
       </div>
       {e.anchored && e.known === null ? <p className="text-xs text-ink-mute">Beyannamede devreden var: bu dönem ödeme yok.</p> : null}
+      {e.known !== null && e.carryOut > 0 ? <p className="text-xs text-ink-mute">Ödemeler&apos;deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ {tl(e.carryOut)} sonraki aya devreder.</p> : null}
     </dl>
   );
 }

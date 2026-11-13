@@ -8,9 +8,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
-import { ACCOUNTANT_CHECKS, accountantCheck, checkDoneText, checksChipText, checkStatus } from "@/lib/tax/checks";
+import { accountantCheck, accountantChecksFor, checkDoneText, checksChipText, checkStatus } from "@/lib/tax/checks";
 import { allRules, INFO_STATUS_LABELS, overrideAllowed, overrideText, RULE_GROUPS, RULES_CHECK_NOTE, RULES_COMPILED_AT, rulesCompiledText, rulesFor, rulesStaleNotes, ruleValueText } from "@/lib/tax/rules";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadSettings } from "@/server/data/dataset";
 import { loadTaxSettings } from "@/server/data/tax";
 
 import { type BannerData, ConfidenceBadge, DisclaimerBody, SourceLinks, TaxBanner, VergiHeader } from "../ui";
@@ -47,11 +48,11 @@ const dmy = (d: string) => d.split("-").reverse().join(".");
  * Vergi, KDV, SGK › Muhasebeci (plan docs/planlar/vergi.md §4.4; docs/planlar/ux-sade.md §7.9): muhasebeciye
  * sorulacaklar, şirketin vergi ayarları, kural tablosu (kapalı; `#kurallar` açık getirir), bu kafede hesaplanmayanlar
  * (açık: takvimin altbilgisi buraya bağlanır) ve sonda feragatin tam metni (bir kez, `#feragat`). Yalnız vergi
- * ayarlarını okur (K30): model ve nakit planı yok.
+ * ayarlarını ve Ayarlar'ı (işveren SGK oranı, "Panelin varsaydığı" için; VG-05) okur (K30): model ve nakit planı yok.
  */
 async function TaxRulesContent() {
   await requireAdmin();
-  const settings = await loadTaxSettings();
+  const [settings, appSettings] = await Promise.all([loadTaxSettings(), loadSettings()]);
   const today = todayTR();
   const year = Number(today.slice(0, 4));
   const r = rulesFor(year, settings.overrides);
@@ -65,7 +66,7 @@ async function TaxRulesContent() {
   const support = r.rules.sgk.asgariUcretDestegi.value;
   const supportTip = `Kişi başına günlük ${money(support)} (30 günde ${money(Math.round(support * 30 * 100) / 100)}); emekli çalışanda yok. Şartları muhasebecinize sorun (Muhasebeciye sorulacaklar › Asgari ücret desteği).`;
   const ruleCount = RULE_GROUPS.reduce((n, g) => n + allRules(r.rules).filter((x) => x.key === g.key || x.key.startsWith(`${g.key}.`)).length, 0);
-  const checkRows = ACCOUNTANT_CHECKS.map((c) => {
+  const checkRows = accountantChecksFor({ settings, today, settingsEmployerRate: appSettings.isverenSgk }).map((c) => {
     const mark = settings.checks[c.key];
     return { key: c.key, priority: c.priority, title: c.title, assumed: c.assumed, ask: c.ask, done: mark ? checkDoneText(mark) : null, note: mark?.note ?? null };
   });

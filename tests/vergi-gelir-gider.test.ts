@@ -404,3 +404,20 @@ test("D: çeyrek düzeltmesi bir kez girer, listede '2026/3'", () => {
   assert.equal(k.m("2026-08").result, C.m("2026-08").result);
   assert.equal(k.q("2026-Q3").kkeg, 5000);
 });
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+test("VG-08: asgari ücret desteği seçiliyse vergi kârındaki personel gideri de destek kadar düşer", () => {
+  const off = C.m("2026-09");
+  const on = run({ settings: { minWageSupport: true } }).m("2026-09");
+  // Destek 2 kişi × 30 gün × 42,33 = 2.539,80: SGK ödemesinden düştüğü gibi giderden de
+  assert.equal(off.expense.personnel, 85990.86);
+  assert.equal(on.expense.personnel, 83451.06);
+  // Sonuç destek kadar yüksek (satırlar ayrı yuvarlandığı için en çok 1 kuruş)
+  close(on.result, off.result + 2539.8, "sonuç", 0.011);
+  assert.equal(row(on, "expense", "personnel")!.note?.replace(/ /g, " "), "Asgari ücret desteği (2.539,80 ₺) düşüldü");
+  assert.equal(row(off, "expense", "personnel")!.note, undefined);
+  // Köprünün bordro farkı da aynı kadar azalır (iki uç tutar)
+  const payroll = (mm: TaxMonth) => mm.bridge.find((b) => b.key === "payroll")?.amount ?? 0;
+  assert.equal(r2(payroll(off) - payroll(on)), 2539.8);
+});

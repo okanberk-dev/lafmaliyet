@@ -441,7 +441,14 @@ test("R3: sabit tutarlı SGK ve 'Kira stopajı' hatırlatıcısının tutarı he
   const stopaj = reminder({ id: 6, title: "Kira stopajı", kind: "vergi", amount: 8000, dueDate: "2026-11-26", anchorDate: "2026-11-26" });
   const v = view({ today: "2026-11-20", reminders: [sgk, stopaj] });
   for (const key of ["sgk:2026-10", "sgk:2026-11"]) assert.deepEqual([row(v, key)!.amount, row(v, key)!.source], [27000, "Ödemeler'de"], key);
-  for (const key of ["mphb:2026-10", "mphb:2026-11"]) assert.deepEqual([row(v, key)!.amount, row(v, key)!.source], [8000, "Ödemeler'de"], key);
+  // "Kira stopajı" muhtasarın yalnız kira stopajı kısmıdır (VG-02): toplam = 8.000 + tahminin kalanı (GV 0 + DV 34,68 +
+  // damga 939,70 = 974,38; tahminde kira stopajı yok), "en az" kalır, döküm hatırlatıcıyı yazar
+  for (const key of ["mphb:2026-10", "mphb:2026-11"]) {
+    const r = row(v, key)!;
+    assert.deepEqual([r.amount, r.source, r.atLeast, r.reminderDue], [8974.38, "tahmin", true, key === "mphb:2026-10" ? "2026-11-26" : "2026-12-26"], key);
+    assert.ok(r.detail.some((d) => d.label === "Kira stopajı (Ödemeler'deki hatırlatıcı)" && d.value === "8.000\u00a0₺"), key);
+    assert.equal(r.addHref, null, key);
+  }
   // Tutarı tek döneme ait muhtasar hatırlatıcısı: yalnız sıradaki döneminde (K26)
   const m = view({ today: "2026-11-20", reminders: [reminder({ amount: 1200, dueDate: "2026-11-26", anchorDate: "2026-11-26" })] });
   assert.deepEqual([row(m, "mphb:2026-10")!.amount, row(m, "mphb:2026-11")!.source], [1200, "tahmin"]);
@@ -484,4 +491,64 @@ test("R5, R8, R10: kartta Ödemeler'deki tutar (K4); kesin tutar ≈ almaz; kaya
   // Uyarılar Özet'te: kayıt ile Ödemeler farklı (satırın adıyla)
   const diff = view({ filings: [{ id: 1, kind: "kv", period: "2026", payable: 80000, stamp: 2516.3, values: {} }], reminders: [kvRem], today: "2027-03-01" });
   assert.ok(diff.warnings.some((w) => w.startsWith("Kurumlar vergisi 2026: Ödemeler'deki tutar (90.000")), diff.warnings.join(" | "));
+});
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+test("VG-07: zarar ya da indirim varken kartta kazançtan matraha giden satırlar; oran matrahın vergisi", () => {
+  // Devreden zarar 100.000: 275.547,97 − 100.000 = 175.547,97 × %25 = 43.886,99
+  const loss = view({ settings: { carriedLoss: { amount: 100_000, note: "2025 KV", by: "x", date: "2026-10-01" } } }).geciciCard!;
+  assert.deepEqual(
+    loss.rows.slice(0, 4).map((r) => [r.label, nb(r.value)]),
+    [
+      ["Kümülatif kurum kazancı", "275.547,97 ₺"],
+      ["Devreden zarar", "-100.000 ₺"],
+      ["Matrah", "175.547,97 ₺"],
+      ["× %25", "43.886,99 ₺"],
+    ],
+  );
+  // Zarar ve indirim yokken kart eskisi gibi: kazanç ve oran
+  assert.deepEqual(
+    V.geciciCard!.rows.slice(0, 2).map((r) => r.label),
+    ["Kümülatif kurum kazancı", "× %25"],
+  );
+});
+
+test("VG-09: takvimin 'Sonra' satırı tarih sırasıyla (30 Nisan'ın kurumlar vergisi 20 Mayıs'ın peşinatından önce)", () => {
+  const v = view({ today: "2026-11-13" });
+  assert.deepEqual(
+    v.later.map((l) => [l.kind, l.due]),
+    [
+      ["kv", "2027-04-30"],
+      ["gecici", "2027-05-20"],
+    ],
+  );
+});
+
+test("VG-02: takvimde sabit tutarlı 'Kira stopajı' muhtasarın yalnız kira stopajının yerine geçer", () => {
+  // Resmi kira 100.000 brüt: tahminde kira stopajı 20.000; muhtasar 20.000 + DV 34,68 + damga 939,70 = 20.974,38
+  const model = createModel({ ...base, fixedExpenses: base.fixedExpenses.map((f) => (f.name === "Kira" ? { ...f, officialAmount: 100_000, officialBasis: "brut" as const } : f)) });
+  const today = "2026-11-13";
+  const pnl = taxPnlInputFromModel(model, { settings: S, today, adjustments: [], assets: [], filings: [] });
+  const items = new Map<string, MuhtasarItem[]>();
+  for (let m = "2026-07"; m <= "2027-03"; m = shiftMonth(m, 1)) items.set(m, muhtasarItemsFromModel(model, m));
+  const at = (reminders: ReminderRow[]) => row(buildTaxView({ today, settings: S, pnl, muhtasarItems: items, filings: [], reminders, vat: null }), "mphb:2026-10")!;
+  const none = at([]);
+  assert.deepEqual([none.amount, none.source, none.atLeast], [20974.38, "tahmin", true]);
+  // Hatırlatıcıda kira stopajı 18.000: toplam 18.000 + 974,38; "en az" ve tahmin kalır, döküm hatırlatıcıyı yazar
+  const kira = reminder({ id: 11, title: "Kira stopajı", amount: 18_000, dueDate: "2026-11-26", anchorDate: "2026-11-26" });
+  const r = at([kira]);
+  assert.deepEqual([r.amount, r.source, r.atLeast, r.reminderDue], [18974.38, "tahmin", true, "2026-11-26"]);
+  assert.ok(!r.detail.some((d) => d.label.startsWith("Kira:")), "tahminin kira stopajı satırı yok");
+  assert.deepEqual(
+    r.detail.slice(0, 3).map((d) => [d.label, nb(d.value)]),
+    [
+      ["Ücret gelir vergisi", "0 ₺"],
+      ["Ücret damga vergisi", "34,68 ₺"],
+      ["Kira stopajı (Ödemeler'deki hatırlatıcı)", "18.000 ₺"],
+    ],
+  );
+  // Tutarı muhtasarın tamamı olan hatırlatıcı (başlıkta "muhtasar") yine kesin tutardır
+  const whole = at([reminder({ id: 12, amount: 21_000, dueDate: "2026-11-26", anchorDate: "2026-11-26" })]);
+  assert.deepEqual([whole.amount, whole.source], [21000, "Ödemeler'de"]);
 });

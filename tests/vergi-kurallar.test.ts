@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { MANUAL_PNL_ROWS } from "../src/lib/constants";
-import { ACCOUNTANT_CHECKS, checksChipText, checkStatus, isAccountantCheckKey } from "../src/lib/tax/checks";
+import { ACCOUNTANT_CHECKS, accountantChecksFor, checksChipText, checkStatus, isAccountantCheckKey } from "../src/lib/tax/checks";
 import {
   allRules,
   estimateRound,
@@ -35,7 +35,7 @@ import {
   withholdingRate,
   VAT_TO_ZERO_LABEL,
 } from "../src/lib/tax/rules";
-import { DEFAULT_TAX_SETTINGS, parseTaxSettings } from "../src/lib/tax/settings";
+import { DEFAULT_TAX_SETTINGS, parseTaxSettings, type TaxSettings } from "../src/lib/tax/settings";
 
 const R = rulesFor(2026).rules;
 const NBSP = / /g;
@@ -197,6 +197,10 @@ const CODE_WORDS = [/\.tsx?\b/, /\bsrc\//, /\b[a-z]+[A-Z][A-Za-z]*\b/, /müşavi
 function ownerTexts(): [string, string][] {
   const out: [string, string][] = [];
   for (const c of ACCOUNTANT_CHECKS) out.push([`${c.key}.title`, c.title], [`${c.key}.assumed`, c.assumed], [`${c.key}.ask`, c.ask]);
+  // Ayarlardan kurulan cümleler (VG-05): varsayılan ve dolu ayarlarla
+  const filled = { ...DEFAULT_TAX_SETTINGS, firstActivity: "ilk" as const, minWageSupport: true, muhtasarQuarterly: true, includeSeparate: true, quarterDepreciation: "ay12" as const };
+  for (const st of [DEFAULT_TAX_SETTINGS, filled])
+    for (const c of accountantChecksFor({ settings: st, today: "2026-11-13", settingsEmployerRate: 0.1575 })) out.push([`${c.key}.assumed (ayar)`, c.assumed], [`${c.key}.ask (ayar)`, c.ask]);
   for (const [k, v] of Object.entries(TAX_DOC_LABELS)) out.push([`doc.${k}`, v]);
   for (const [k, v] of Object.entries(WITHHOLDING_LABELS)) out.push([`stopaj.${k}`, v]);
   out.push(["personelBelgeli", TAX_DOC_PERSONEL_BELGELI], ["disclaimer", TAX_DISCLAIMER], ["disclaimerShort", TAX_DISCLAIMER_SHORT]);
@@ -313,4 +317,45 @@ test("Muhasebeciye sorulacaklar: 8 temel madde, çip ve sahibin işareti", () =>
   assert.equal(done.allDone, true);
   assert.equal(checksChipText(done), "Muhasebecinizle gözden geçirildi (sahibin işareti)");
   assert.equal(checksChipText(checkStatus({ checks: { sirket: mark, muhtasar: mark } })), "Muhasebeciye sorulacaklar: 1 / 8");
+});
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+test("VG-05: 'Panelin varsaydığı' şimdiki ayarlardan; verinin o günkü rakamı yazmaz", () => {
+  const of = (st: Partial<TaxSettings>, employer?: number) => {
+    const list = accountantChecksFor({ settings: { ...DEFAULT_TAX_SETTINGS, ...st }, today: "2026-11-13", settingsEmployerRate: employer });
+    return (key: string) => list.find((c) => c.key === key)!;
+  };
+  const def = of({}, 0.1575);
+  assert.equal(def("sirket").assumed, "Hesap döneminin başı 25.06.2026; şirketin ilk kez mi kurulduğu işaretlenmedi, bu yüzden asgari kurumlar vergisi muafiyeti uygulanmıyor.");
+  assert.equal(def("sgk_oran").assumed, "Vergi ve nakit planı işveren SGK %19,75 + işsizlik %2 kullanıyor. Gelir-gider ise Ayarlar'daki oranı kullanıyor (%15,75).");
+  assert.equal(def("muhtasar").assumed, "Muhtasarın vergi kısmı aylık.");
+  assert.match(def("destek").assumed, /SGK'dan düşülmüyor\.$/);
+  assert.match(def("kafe_disi").assumed, /hesaba katılmıyor\.$/);
+  // Sahip ayarları değiştirdi: şirket ilk kez kuruldu, Ayarlar %19,75, muhtasar üç aylık, destek açık, kafe dışı faturalar dahil
+  const set = of({ firstActivity: "ilk", muhtasarQuarterly: true, minWageSupport: true, includeSeparate: true, quarterDepreciation: "ay12" }, 0.1975);
+  assert.equal(set("sirket").assumed, "Hesap döneminin başı 25.06.2026; şirket ilk kez kuruldu diye işaretli: asgari kurumlar vergisi 2026–2028 uygulanmıyor.");
+  assert.equal(set("sgk_oran").assumed, "Vergi ve nakit planı işveren SGK %19,75 + işsizlik %2 kullanıyor. Ayarlar'daki oran da aynı.");
+  assert.match(set("muhtasar").assumed, /üç ayda bir/);
+  assert.match(set("destek").assumed, /SGK'dan düşülüyor; vergi kârındaki personel giderinden de\.$/);
+  assert.match(set("kafe_disi").assumed, /hesaba katılıyor\.$/);
+  assert.match(set("ortak").assumed, /Alp Koç faturaları şirketin gideri sayılıyor/);
+  assert.match(set("demirbas").assumed, /amortisman: kümülatif ay ÷ 12\.$/);
+  assert.match(of({ firstActivity: "devir" })("sirket").assumed, /muafiyeti yok\.$/);
+  // Elle değer (işveren SGK %14,75) cümleye girer; Ayarlar okunmadıysa o cümle yok
+  assert.equal(of({ overrides: { "sgk.isverenOran": { value: 0.1475, note: "teşvik", by: "x", date: "2026-11-01" } } })("sgk_oran").assumed, "Vergi ve nakit planı işveren SGK %14,75 + işsizlik %2 kullanıyor.");
+  // Verinin rakamları (bordro, kira, demirbaş faturaları, geçici vergi tahmini, KDV devredeni) cümlelerde yok
+  for (const key of ["bordro", "kira", "demirbas", "gecici_2026", "kdv", "yerel"]) {
+    assert.doesNotMatch(def(key).assumed, /\d{2}\.\d{3}|30\.000|35\.314|948\.680|68\.900|121\.204|160\.000|30 Kasım/, key);
+  }
+});
+
+test("VG-10: muhasebeciye sorulan iki soru tam ve anlaşılır", () => {
+  const list = (st: Partial<TaxSettings> = {}) => accountantChecksFor({ settings: { ...DEFAULT_TAX_SETTINGS, ...st }, today: "2026-11-13" });
+  const ask = (key: string, st: Partial<TaxSettings> = {}) => list(st).find((c) => c.key === key)!.ask;
+  assert.match(ask("demirbas"), /ModPOS lisansı ve ışıklı tabela demirbaş mı\? 12\.000\s₺'ye kadar olanları doğrudan gider yazıyor musunuz\?$/);
+  assert.equal(ask("asgari_zarar"), "Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (Devreden zarar olan yılda etkisi var.)");
+  assert.equal(ask("asgari_zarar", { firstActivity: "ilk" }), "Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (2029'dan önce etkisi yok: 2026–2028 asgari vergi uygulanmıyor.)");
+  // Hiçbir soru yarım bitmez: soru işareti, nokta ya da parantezle
+  for (const c of [...ACCOUNTANT_CHECKS, ...list({ firstActivity: "ilk" })]) assert.match(c.ask, /[?.)]$/, c.key);
 });
