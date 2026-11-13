@@ -280,7 +280,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual(lb2.linkPrev, {
       costMode: "gider",
       categoryId: cat.id,
-      expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21", id: 1, paymentMethod: null, createdBy: null },
+      expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21", id: 1, paymentMethod: null, createdBy: null, branchId: null },
     });
     // Fatura (kalan 350'ye elle ✓ değil) silinir: bağlar önce çözülür
     const links = await db.transaction(async (tx) => {
@@ -563,14 +563,15 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 650, date: "2026-10-21", costMode: "mevcut", adoptExpenseId: own.id }), 30));
     const [adopted] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
     assert.deepEqual([adopted.amount, adopted.date, adopted.supplierEntryId], [650, "2026-10-21", b.id]);
-    // Borç silinince ödemesi hesaba geçer, sahiplenilen kayıt durur
-    const del = await db.transaction((tx) => entries.deleteEntry(tx, b.id, []));
+    // Borç silinince ödemesi hesaba geçer, sahiplenilen kayıt durur. Sahiplenilen kayıt Ekim'e döner: test Ekim'den
+    // sonra çalışınca Ekim geçmiş ay, onayı verilir (bu ay da olsa onay zararsız)
+    const del = await db.transaction((tx) => entries.deleteEntry(tx, b.id, OCT));
     assert.equal(del.snapshot.allocations.length, 1);
     const [kept] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
     assert.equal(kept.supplierEntryId, null);
     assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 400]]);
     // Geri alma: borç, sahiplenme ve dağıtım geri gelir
-    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), []));
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), OCT));
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id)))[0].supplierEntryId, b.id);
     assert.deepEqual([...(await settle.cardsWithCredit())], []);
   });

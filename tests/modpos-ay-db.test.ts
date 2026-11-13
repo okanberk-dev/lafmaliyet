@@ -140,9 +140,9 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
       rows.map((r) => r.date),
       ["2026-09-28", "2026-09-30", "2026-10-01", "2026-10-03", "2026-10-05"],
     );
-    assert.deepEqual(rows[0], { date: "2026-09-28", zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, source: "modpos" });
-    assert.deepEqual(rows[2], { date: "2026-10-01", zTotal: 28_450.5, card: 16_120.5, mealCard: 0, discounts: null, offRevenue: 145, receipts: 214, source: "modpos" });
-    assert.deepEqual(rows[1], { date: "2026-09-30", zTotal: 1_200, card: 1_200, mealCard: 0, discounts: null, offRevenue: 0, receipts: 7, source: "modpos" });
+    assert.deepEqual(rows[0], { date: "2026-09-28", zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" });
+    assert.deepEqual(rows[2], { date: "2026-10-01", zTotal: 28_450.5, card: 16_120.5, mealCard: 0, discounts: null, offRevenue: 145, receipts: 214, payments: 24_330.5, source: "modpos" });
+    assert.deepEqual(rows[1], { date: "2026-09-30", zTotal: 1_200, card: 1_200, mealCard: 0, discounts: null, offRevenue: 0, receipts: 7, payments: 1_200, source: "modpos" });
     assert.deepEqual(
       (await reports.modposTillRows(db, "2026-10-01", "2026-10-04")).map((r) => r.date),
       ["2026-10-01", "2026-10-03"],

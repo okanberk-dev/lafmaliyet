@@ -346,11 +346,22 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
   type Extra = { name: string; unit: string; qty: number; unit_price: number };
   type Trial = { counts: Map<string, Count>; extras: Extra[]; logs: string[]; renames: string[]; names: string[] };
 
+  /**
+   * 0047-0049, şube kırılımından (0056) önce yazıldı: sayımın çakışma hedefi o gün (ay, malzeme) idi, 0056 onu (ay,
+   * şube, malzeme) yaptı. Deneme bütün migration'ları uygulanmış şemada çalıştığı için işlemin içinde eski dizin geri
+   * kurulur (işlem sonunda geri alınır). Canlıda ve geri yüklemede migration'lar sırayla koşar, eski dizin zaten vardır.
+   */
+  async function preBranchIndex(tx: postgres.TransactionSql) {
+    await tx.unsafe(`DROP INDEX "stock_counts_month_ingredient_uq"`);
+    await tx.unsafe(`CREATE UNIQUE INDEX "stock_counts_month_ingredient_uq" ON "stock_counts" USING btree ("month", "ingredient_id")`);
+  }
+
   /** Hazırlığı ve migration'ı (istenirse iki kez) işlemde çalıştırır, sonucu okur, hepsini geri alır */
   async function trial(prepare: (tx: postgres.TransactionSql) => Promise<unknown> = async () => {}, runs = 1): Promise<Trial> {
     let out: Trial | null = null;
     await db
       .begin(async (tx) => {
+        await preBranchIndex(tx);
         await prepare(tx);
         const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
         for (let i = 0; i < runs; i++) for (const st of statements(sql())) await tx.unsafe(st);
@@ -554,6 +565,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     let out: ListTrial | null = null;
     await db
       .begin(async (tx) => {
+        await preBranchIndex(tx);
         for (const st of statements(sql())) await tx.unsafe(st);
         await between(tx);
         const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
@@ -695,6 +707,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     let out: ExtrasTrial | null = null;
     await db
       .begin(async (tx) => {
+        await preBranchIndex(tx);
         for (const st of statements(sql())) await tx.unsafe(st);
         await tx.unsafe(read(`drizzle/${listFile}`));
         await between(tx);
