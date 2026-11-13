@@ -24,7 +24,7 @@ import { applyOutput } from "./output-client";
 import { usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
 import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAudioState } from "./sounds";
-import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
+import { bindLive, getLive, liveNow, patchLive, refreshLive, resetLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
 const FIRED_KEY = "laf:calan-uyarilar";
@@ -93,8 +93,13 @@ const soundSlotOf = () => document.getElementById("ses-yuvasi");
  * ekranı) 10 dakikada bir sorar (yeni sipariş ve rezervasyon zili en geç ~10 dakikada); alarm çalarken (başka cihazda
  * susturulursa burada da sussun) 15 saniyede bir. "Bildirim açık": izin, kayıtlı abonelik ve zili açık konular
  * (pushCovers). Hepsi ETag'li; değişiklik yoksa 304.
+ *
+ * Canlı veri kabuktaki kullanıcıya bağlıdır (`userId`, sunucudan): kabuk açılınca depo bu kişiye bağlanır, kapanınca
+ * (çıkış, oturum düştü, giriş sayfası) boşalır; hatırlatıcılar yalnız bu kişininse kurulur. Oturum düşünce (401) sayfa
+ * sunucudan yeniden istenir, sunucu giriş sayfasına gönderir: ortak tablette önceki kişinin ekranı ve verisi açık
+ * kalmaz (denetim KA-01).
  */
-export function AlertCenter({ role }: { role: Role }) {
+export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
   const live = useLive();
   const prefs = usePrefs(role);
   const router = useRouter();
@@ -118,6 +123,8 @@ export function AlertCenter({ role }: { role: Role }) {
 
   const data = live.data;
   const sessions = useMemo(() => data?.karaoke.sessions ?? [], [data]);
+  // Savunma: yanıt kabuktaki kullanıcının değilse hiçbir hatırlatıcı kurulmaz (başkasının notu bu ekranda açılmasın)
+  const reminders = useMemo(() => (data && data.me.id === userId ? data.reminders : []), [data, userId]);
   // Bugün süren ya da sürecek oturum varken saniyede bir, yoksa yarım dakikada bir
   const now = useClock(sessions.some(isLive) ? 1000 : 30_000);
   const overtime = prefs.karaokeAlarms && now ? sessions.filter((s) => phase(s, now) === "overtime") : [];
@@ -134,8 +141,10 @@ export function AlertCenter({ role }: { role: Role }) {
     [router],
   );
 
-  // Açılışta ve sekmeye dönünce, ağ gelince canlı veri
+  // Açılışta ve sekmeye dönünce, ağ gelince canlı veri. Depo önce bu kullanıcıya bağlanır (başkasının ya da düşmüş
+  // oturumun verisi varsa boşalır); kabuk kapanınca boşaltılır
   useEffect(() => {
+    bindLive(userId);
     void refreshLive();
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshLive();
@@ -148,8 +157,16 @@ export function AlertCenter({ role }: { role: Role }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("online", onOnline);
+      resetLive();
     };
-  }, []);
+  }, [userId]);
+
+  // Oturum düştü (401) ya da çerez artık başka bir kullanıcının: sayfa sunucudan yeniden istenir; sunucu giriş
+  // sayfasına gönderir ya da kabuğu yeni kullanıcıyla çizer
+  const signedOut = live.signedOut;
+  useEffect(() => {
+    if (signedOut) router.refresh();
+  }, [signedOut, router]);
 
   // Service worker: bildirim gelince canlı veriyi yenile (zil, aşağıdaki olay karşılaştırmasından çalar)
   useEffect(() => {
@@ -216,7 +233,7 @@ export function AlertCenter({ role }: { role: Role }) {
   const ringing = overtime.length > 0;
   const soon =
     sessions.some((s) => isLive(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs) ||
-    (data?.reminders ?? []).some((r) => {
+    reminders.some((r) => {
       const at = dueInstant(r);
       return r.active && at !== null && at > now && at - now < LIVE_POLL.soonMs;
     });
@@ -397,7 +414,7 @@ export function AlertCenter({ role }: { role: Role }) {
       }
     }
     if (prefs.reminderAlerts) {
-      for (const r of data.reminders) {
+      for (const r of reminders) {
         const at = dueInstant(r);
         const key = `hatirlatici:${r.id}:${r.dueDate}:${r.dueTime}`;
         if (at === null || !r.active || fired.current.has(key) || at < nowMs - 60_000 || at > nowMs + 24 * 3_600_000) continue;
@@ -446,7 +463,7 @@ export function AlertCenter({ role }: { role: Role }) {
       for (const cancel of map.values()) cancel();
       map.clear();
     };
-  }, [data, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire, refreshScreen]);
+  }, [data, reminders, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire, refreshScreen]);
 
   // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner
   useEffect(() => {
@@ -518,7 +535,7 @@ export function AlertCenter({ role }: { role: Role }) {
     void refreshLive().then(() => refreshScreen());
   }
 
-  const timedReminderToday = (data?.reminders ?? []).some((r) => {
+  const timedReminderToday = reminders.some((r) => {
     const at = dueInstant(r);
     return at !== null && at > now && at - now < 24 * 3_600_000;
   });

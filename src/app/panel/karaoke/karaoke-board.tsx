@@ -456,7 +456,8 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
           </Badge>
           {phaseBadge ? <Badge tone={phaseBadge.tone}>{phaseBadge.text}</Badge> : null}
           {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
-          {s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
+          {/* Tutar yalnız yöneticiye (sunucu personele göndermez; savunma: depoda başka oturumun verisi kalsa da çizilmez) */}
+          {admin && s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
           {s.endedBy && p === "done" ? <span className="text-xs text-ink-mute">· {s.endedBy}</span> : null}
           {asks.map((a) =>
             admin ? (

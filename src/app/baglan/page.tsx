@@ -11,7 +11,7 @@ import { AuthHeading, authCard, authLink } from "@/app/giris/auth-ui";
 import { consentLines, MAX_ACTIVE_GRANTS, mcpEnabled } from "@/lib/mcp/oauth";
 import { STAFF_HOME } from "@/lib/roles";
 import { getCurrentUser } from "@/server/auth/dal";
-import { LEGACY_COOKIES, readCookie, SESSION_COOKIE } from "@/server/auth/session";
+import { expiredLoginQuery, LEGACY_COOKIES, readCookie, SESSION_COOKIE } from "@/server/auth/session";
 import { getDb, schema as s } from "@/server/db";
 import { openRequest } from "@/server/mcp/base";
 import { activeGrantCount } from "@/server/mcp/store";
@@ -69,11 +69,11 @@ async function ConnectContent({ searchParams }: { searchParams: PageProps<"/bagl
 
   const me = await getCurrentUser();
   if (!me) {
-    // Girişten sonra bu ekrana dönülür (safeNext /baglan?… kabul eder). Çerez imzalı ama geçersizse (parola değişti,
-    // oturumlar kapatıldı) "oturum bitti": proxy çerezi siler, giriş sayfası açılır
-    const stale = Boolean(readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name));
+    // Girişten sonra bu ekrana dönülür (safeNext /baglan?… kabul eder). Çerez duruyor ama geçersizse (parola değişti,
+    // oturumlar kapatıldı, çıkış yapıldı) "oturum bitti" ve çerezin özeti: proxy yalnız bu çerezi siler, giriş açılır
+    const stale = readCookie(await cookies(), SESSION_COOKIE, LEGACY_COOKIES.session.name);
     const next = encodeURIComponent(`/baglan?istek=${encodeURIComponent(raw)}`);
-    redirect(`/giris?${stale ? "oturum=bitti&" : ""}next=${next}`);
+    redirect(`/giris?${stale ? `${await expiredLoginQuery(stale)}&` : ""}next=${next}`);
   }
 
   if (me.role !== "admin") {

@@ -104,6 +104,20 @@ export const loginDeviceLocks = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.deviceId] })],
 );
 
+/**
+ * Çıkışta kapatılan oturumlar (src/server/auth/dal.ts › endSession): oturum çerezindeki rastgele kimlik (jti). Çerezin
+ * bir kopyası alınmış olsa da çıkıştan sonra geçmez; kişinin öteki cihazları etkilenmez. Aynı tarayıcıda yerine yeni
+ * oturum açılınca (ad değişikliği, sıradaki kişinin girişi) eskisi de buraya yazılır. Satır çerezin süresiyle
+ * (`expires_at`) gereksizleşir ve silinir. Kişiye yabancı anahtarla bağlı değil: silinmiş bir hesabın çerezi de
+ * kapatılabilsin. Yedeğe girmez (geri yükleme bütün oturumları zaten kapatır; src/lib/backup/format.ts).
+ */
+export const revokedSessions = pgTable("revoked_sessions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
 // ---------------------------------------------------------------- Ayarlar (anahtar → değer)
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),

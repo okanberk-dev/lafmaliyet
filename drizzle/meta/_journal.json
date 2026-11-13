@@ -407,6 +407,13 @@
       "when": 1793818367709,
       "tag": "0057_sabit_gider_subesi",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794587537142,
+      "tag": "0058_cikista_oturum_kapanir",
+      "breakpoints": true
     }
   ]
 }
