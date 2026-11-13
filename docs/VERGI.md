@@ -231,7 +231,9 @@ Diğer ekranlara dokunuşlar:
   serbest meslek %20, internet reklamı %15) + beyanname damgası (personel varsa 939,70, yalnız stopajda 791,00);
   P+1'in 26'sında. Adı kira, reklam ya da dışarıdan hizmete uyan profilsiz kalem varsa tutar "en az"dır. Ödemeler'de
   sabit tutarlı "Kira stopajı" hatırlatıcısı varsa takvim satırı = hatırlatıcının tutarı + tahminin kira stopajı dışı
-  kalanı (döküm "Kira stopajı (Ödemeler'deki hatırlatıcı)"; "en az" kalır; denetim VG-02).
+  kalanı (döküm "Kira stopajı (Ödemeler'deki hatırlatıcı)"; "en az" kalır; denetim VG-02). Üç aylık muhtasarda çeyrek
+  sonunun kira stopajı üç ayınkidir ("Çeyreğin önceki ayları" satırında kira stopajı düşülmüş kalan). Muhtasarın tamamı
+  da Ödemeler'deyse satır onu yazar, not kira stopajı hatırlatıcısının onun içinde sayıldığını söyler.
 - **Resmi kira (sahibin kararı, 4 Kasım 2026):** Sabit giderler'de kira kalemine resmi (sözleşmedeki) aylık kira ve
   brüt / net yazılır (net: brüt = net ÷ 0,8). Gelir-gider'de "Kira stopajı" satırı = resmi brüt × kira stopajı oranı
   (`stopaj:<kalem>`; kiranın gün payıyla). Vergi kârında kira gideri yalnız resmi brüttür; ödenen kira + stopaj −
@@ -292,7 +294,7 @@ asgari ücret desteği, damga tutarları, ortaklar, alkol ve turizm, yerel vergi
 "Panelin varsaydığı" panelin kuralını söyler, verinin o günkü rakamını değil (denetim VG-05). Ayara bağlı cümleler
 şimdiki ayarlardan kurulur (`accountantChecksFor`): şirketin kuruluşu ve hesap döneminin başı, işveren SGK oranı (elle
 değerle; Ayarlar'daki oran farklıysa söyler), amortismanın dağıtımı, kafe dışı faturalar, muhtasarın dönemi, asgari
-ücret desteği ve yılın beyanname damgaları. Asgari vergide zarar sorusu muaf yıllarda "2029'dan önce etkisi yok" der.
+ücret desteği ve yılın beyanname damgaları. Asgari vergide zarar sorusu muaf yıllarda "etkisi ancak 2029 ve sonrasında" der.
 
 ## 7. Saklama
 

@@ -21,6 +21,7 @@ import {
   vat2LineDetail,
   vatDueDate,
   vatEstimates,
+  vatKeptCarryText,
   vatLineDetail,
   vatMonthInputs,
   vatNote,
@@ -393,6 +394,26 @@ test("VG-01: Ödemeler'deki tutar yalnız beyanname damgasıysa (vergi beslemesi
   // Verisiz ayda da: muhasebecinin Ağustos devredeni (50.000) yalnız damga yazılmış Eylül'den Ekim'e geçer
   const bare = vatEstimates({ today: TODAY, months: [], firstSalesMonth: "2026-08", anchor: { month: "2026-08", amount: 50_000 }, known: new Map([["2026-09", 791]]), periods: ["2026-09", "2026-10"], stamp: 791 });
   assert.deepEqual([bare.get("2026-09")!.status, bare.get("2026-09")!.carryOut, bare.get("2026-10")!.carryIn], ["noData", 50_000, 50_000]);
+});
+
+test("VG-01: damga dönem dönem verilince her dönemin tutarı kendi damgasıyla (beyannamenin yılı) sınanır", () => {
+  // Eylül'ün beyannamesi 2026'da (791), Aralık'ınki 2027'de (elle 1.000): Eylül'e 900 yazılmışsa KDV ödenmiştir
+  const stampOf = (period: string) => (period >= "2026-12" ? 1_000 : 791);
+  const perPeriod = estimate({ known: new Map([["2026-09", 900]]), stamp: stampOf });
+  assert.deepEqual([perPeriod.get("2026-09")!.carryOut, perPeriod.get("2026-10")!.payable], [0, 42_100]);
+  // Bugünün yılının damgası (1.000) bütün dönemlere uygulansaydı 900 yalnız damga sayılırdı
+  assert.equal(estimate({ known: new Map([["2026-09", 900]]), stamp: 1_000 }).get("2026-09")!.carryOut, 140_200);
+});
+
+test("VG-01: kartın dökümündeki not: damgayı aşmayan tutar damgayla, 0 damgasız söylenir", () => {
+  assert.equal(vatKeptCarryText({ known: 791, carryOut: 140_200 }), "Ödemeler'deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ 140.200\u00a0₺ sonraki aya devreder.");
+  // Besleme yokken (damga yok) 0 yazılan dönem: "damga" geçmez
+  assert.equal(vatKeptCarryText({ known: 0, carryOut: 140_200 }), "Ödemeler'deki tutar 0: KDV ödemesi yok, ≈ 140.200\u00a0₺ sonraki aya devreder.");
+  assert.equal(vatKeptCarryText({ known: 10_791, carryOut: 0 }), null);
+  assert.equal(vatKeptCarryText({ known: null, carryOut: 140_200 }), null);
+  const vatCard = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
+  assert.match(vatCard, /const kept = vatKeptCarryText\(e\);/);
+  assert.doesNotMatch(vatCard, /damgayı aşmıyor/);
 });
 
 test("VG-04: yurt dışı hizmetin KDV-2'si (sorumlu sıfatıyla) aynı dönemin indirilecek KDV'sine eklenir", () => {

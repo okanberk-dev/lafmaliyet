@@ -247,7 +247,7 @@ export function accountantChecksFor(ctx: CheckContext): AccountantCheck[] {
     },
     muhtasar: { assumed: st.muhtasarQuarterly ? "Muhtasarın vergi kısmı üç ayda bir (Mart, Haziran, Eylül ve Aralık'ın beyannamesiyle)." : "Muhtasarın vergi kısmı aylık." },
     asgari_zarar: {
-      ask: `Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (${muaf && st.firstActivity === "ilk" ? `${muafTo + 1}'dan önce etkisi yok: ${start}–${muafTo} asgari vergi uygulanmıyor.` : "Devreden zarar olan yılda etkisi var."})`,
+      ask: `Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (${muaf && st.firstActivity === "ilk" ? `Etkisi ancak ${muafTo + 1} ve sonrasında: ${start}–${muafTo} asgari vergi uygulanmıyor.` : "Devreden zarar olan yılda etkisi var."})`,
     },
     destek: {
       assumed: `Asgari ücret desteği (kişi başı ayda ${money(Math.round(rules.sgk.asgariUcretDestegi.value * 30 * 100) / 100)}) ${st.minWageSupport ? "SGK'dan düşülüyor; vergi kârındaki personel giderinden de." : "SGK'dan düşülmüyor."}`,

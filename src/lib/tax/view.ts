@@ -328,7 +328,11 @@ export interface TaxPlanFeed {
     rest?: { amount: number; detail: string };
   }[];
   pending: { kind: "gecici"; period: string; nominal: string; legalDue: string; note: string }[];
-  stamps: { kdv: number; kdv2: number };
+  /**
+   * KDV ve KDV-2 beyannamesinin damgası (bugünün yılı) ve beyannamenin verildiği yıla göre KDV damgası (hesap döneminin
+   * yılından gelecek yıla; dönemin damgası `returnYearOf(dönem)` yılınınki, Vergi takvimindeki gibi). KDV-2'ninki aynı
+   */
+  stamps: { kdv: number; kdv2: number; kdvByYear?: Record<string, number> };
 }
 
 export interface TaxView {
@@ -567,11 +571,16 @@ export function taxCalendar(
       if (amount === 0 && atLeast) amount = null;
       for (const x of muhtasarBreakdown(mm)) {
         if (rent && !mm.filing && x.withholding === "kira") continue;
-        b.detail.push({ label: x.label, value: money(x.amount) + (x.note ? ` (${x.note})` : "") });
+        // Üç aylıkta çeyreğin önceki aylarının kira stopajı da hatırlatıcıdadır: satırda yalnız kalanı
+        const own = rent && !mm.filing && x.kira ? r2(x.amount - x.kira) : x.amount;
+        b.detail.push({ label: x.label, value: money(own) + (x.note ? ` (${x.note})` : "") });
       }
       if (rent) {
         if (!mm.filing) b.detail.splice(2, 0, { label: "Kira stopajı (Ödemeler'deki hatırlatıcı)", value: money(rent.amount!) });
         b.notes.push(mm.filing ? `Kira stopajı hatırlatıcısı (${money(rent.amount!)}) muhasebecinin rakamının içinde sayıldı.` : "Kira stopajı Ödemeler'deki hatırlatıcıdan; kalanı tahmin.");
+      } else if (rem?.amount != null && remRent.get(p)?.amount) {
+        // Muhtasarın tamamı Ödemeler'de: kira stopajı hatırlatıcısı onun içindedir (nakit planı tamamdan düşer)
+        b.notes.push(`Kira stopajı hatırlatıcısı (${money(remRent.get(p)!.amount!)}) Ödemeler'deki muhtasar tutarının içinde sayıldı.`);
       }
       if (mm.unknown.length) {
         b.notes.push(`${mm.unknown.length} kalemin stopajı bilinmiyor: ${mm.unknown.join(", ")}.`);
@@ -881,7 +890,7 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
     const detailOf = (noKira: boolean) => {
       if (m.filing) return `Muhasebecinin rakamı. ${legal}.`;
       const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.filter((x) => !noKira || x.withholding !== "kira").map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
-      const prior = r2(m.vergiPayable - m.vergi);
+      const prior = r2(m.vergiPayable - m.vergi - (noKira ? m.priorKira : 0));
       const parts = m.deferred
         ? `Damga ${amt(m.damga)}; vergi kısmı (${own}) çeyrek sonunda ödenir (üç aylık)`
         : `${own}${prior !== 0 ? ` + çeyreğin önceki ayları ${amt(prior)}` : ""} + damga ${amt(m.damga)}`;
@@ -937,8 +946,15 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
       } else pending.push({ kind: "gecici", period: c.key, nominal, legalDue: legal, note: `Geçici vergi ${label}: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün ${legal.slice(8)}.${legal.slice(5, 7)})` });
     }
   }
-  const { rules } = rulesFor(Number(input.today.slice(0, 4)), input.settings.overrides);
-  return { items: items.sort((a, b) => a.nominal.localeCompare(b.nominal)), pending: pending.sort((a, b) => a.nominal.localeCompare(b.nominal)), stamps: { kdv: rules.damga.beyanname.kdv.value, kdv2: rules.damga.beyanname.kdv.value } };
+  const ty = Number(input.today.slice(0, 4));
+  const { rules } = rulesFor(ty, input.settings.overrides);
+  const kdvByYear: Record<string, number> = {};
+  for (let y = Math.min(ty, Number(input.settings.periodStart.slice(0, 4))); y <= ty + 1; y++) kdvByYear[y] = rulesFor(y, input.settings.overrides).rules.damga.beyanname.kdv.value;
+  return {
+    items: items.sort((a, b) => a.nominal.localeCompare(b.nominal)),
+    pending: pending.sort((a, b) => a.nominal.localeCompare(b.nominal)),
+    stamps: { kdv: rules.damga.beyanname.kdv.value, kdv2: rules.damga.beyanname.kdv.value, kdvByYear },
+  };
 }
 
 // ---------------------------------------------------------------- Görünüm

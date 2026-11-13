@@ -355,7 +355,7 @@ test("VG-10: muhasebeciye sorulan iki soru tam ve anlaşılır", () => {
   const ask = (key: string, st: Partial<TaxSettings> = {}) => list(st).find((c) => c.key === key)!.ask;
   assert.match(ask("demirbas"), /ModPOS lisansı ve ışıklı tabela demirbaş mı\? 12\.000\s₺'ye kadar olanları doğrudan gider yazıyor musunuz\?$/);
   assert.equal(ask("asgari_zarar"), "Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (Devreden zarar olan yılda etkisi var.)");
-  assert.equal(ask("asgari_zarar", { firstActivity: "ilk" }), "Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (2029'dan önce etkisi yok: 2026–2028 asgari vergi uygulanmıyor.)");
+  assert.equal(ask("asgari_zarar", { firstActivity: "ilk" }), "Danıştay kararından sonra asgari kurumlar vergisinde geçmiş yıl zararını düşüyor musunuz? (Etkisi ancak 2029 ve sonrasında: 2026–2028 asgari vergi uygulanmıyor.)");
   // Hiçbir soru yarım bitmez: soru işareti, nokta ya da parantezle
   for (const c of [...ACCOUNTANT_CHECKS, ...list({ firstActivity: "ilk" })]) assert.match(c.ask, /[?.)]$/, c.key);
 });

@@ -209,9 +209,10 @@ export interface VatInput {
   hasSite?: boolean;
   /**
    * Ödemeler'deki tutarın içindeki beyanname damgası (vergi beslemesiyle tutar tahakkuk fişinin toplamıdır): yalnız
-   * damgayı aşan kısım KDV ödemesidir. Devreden olan ayın fişinde yalnız damga vardır; o tutar devredeni silmez (VG-01)
+   * damgayı aşan kısım KDV ödemesidir. Devreden olan ayın fişinde yalnız damga vardır; o tutar devredeni silmez (VG-01).
+   * Dönem dönem verilirse her dönemin kendi damgası (beyannamenin verildiği yılın tutarı)
    */
-  stamp?: number;
+  stamp?: number | ((period: string) => number);
 }
 
 /**
@@ -223,9 +224,9 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
   const periods = [...new Set(input.periods)].sort();
   if (!periods.length) return out;
   const { anchor, firstSalesMonth, known, today } = input;
-  const stamp = input.stamp ?? 0;
-  // KDV ödendi mi: Ödemeler'deki tutar damgadan büyük (damga dahil fişin toplamı; yalnız damga ise devreden sürer)
-  const paysVat = (k: number | null | undefined) => k !== undefined && k !== null && k - stamp > 0.005;
+  const stampOf = (m: string) => (typeof input.stamp === "function" ? input.stamp(m) : (input.stamp ?? 0));
+  // KDV ödendi mi: Ödemeler'deki tutar dönemin damgasından büyük (damga dahil fişin toplamı; yalnız damga ise devreden sürer)
+  const paysVat = (m: string, k: number | null | undefined) => k !== undefined && k !== null && k - stampOf(m) > 0.005;
   const byMonth = new Map(input.months.map((m) => [m.month, m]));
   const sorted = [...input.months].sort((a, b) => a.month.localeCompare(b.month));
   const cur = today.slice(0, 7);
@@ -294,7 +295,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
         carryIn,
         net: 0,
         payable: k ?? 0,
-        carryOut: paysVat(k) ? 0 : carryIn,
+        carryOut: paysVat(m, k) ? 0 : carryIn,
         known: k ?? null,
         anchored: false,
         projected: false,
@@ -318,7 +319,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
       carryIn,
       net,
       payable: k ?? (anchored ? 0 : Math.max(0, net)),
-      carryOut: paysVat(k) ? 0 : Math.max(0, -net),
+      carryOut: paysVat(m, k) ? 0 : Math.max(0, -net),
       known: k ?? null,
       anchored,
       projected,
@@ -337,7 +338,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
   const last = periods.at(-1)!;
   for (let m = start; m <= last; m = shiftMonth(m, 1)) {
     const e = month(m, carry);
-    carry = e.status === "ok" ? e.carryOut : paysVat(e.known) ? 0 : carry;
+    carry = e.status === "ok" ? e.carryOut : paysVat(m, e.known) ? 0 : carry;
     if (periods.includes(m)) out.set(m, e);
   }
   return out;
@@ -348,6 +349,17 @@ const monthName = (period: string) => MONTH_NAMES[Number(period.slice(5, 7)) - 1
 /** Satır tutarının hesabı: "Satışlar ≈ 51.800 ₺ − alışlar ≈ 9.700 ₺ (− devreden ≈ 5.000 ₺)" */
 function arithmetic(e: VatEstimate): string {
   return `Satışlar ≈ ${tl(e.sales)} − alışlar ≈ ${tl(e.purchases)}${e.carryIn > 0 ? ` − devreden ≈ ${tl(e.carryIn)}` : ""}`;
+}
+
+/**
+ * Ödemeler'deki tutar KDV ödemesi sayılmadıysa kartın dökümündeki not: devreden sürer. Tutar 0'dan büyükse damgayı
+ * aşmıyordur (yalnız vergi beslemesiyle olur); 0 ise damgasız da söylenir
+ */
+export function vatKeptCarryText(e: Pick<VatEstimate, "known" | "carryOut">): string | null {
+  if (e.known === null || !(e.carryOut > 0)) return null;
+  return e.known > 0
+    ? `Ödemeler'deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ ${tl(e.carryOut)} sonraki aya devreder.`
+    : `Ödemeler'deki tutar 0: KDV ödemesi yok, ≈ ${tl(e.carryOut)} sonraki aya devreder.`;
 }
 
 /** KDV kartındaki satırın alt yazısı */

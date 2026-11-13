@@ -54,6 +54,7 @@ import { kdv2HizmetOf, muhtasarItemsFromModel } from "./tax/muhtasar";
 import { taxPayrollFromModel, type PayrollMonth } from "./tax/payroll";
 import { paidFixedRates, r2, rulesFor, type Withholding, withholdingKdv2 } from "./tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
+import { returnYearOf } from "./tax/stamp";
 import type { TaxPlanFeed } from "./tax/view";
 import { originalDue, paidVatPeriods, type VatPaidEntry } from "./vat-paid";
 
@@ -771,6 +772,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const { today, settings: st } = input;
   /** Vergi beslemesi (docs/VERGI.md); yoksa vergi satırı, damga ve yasal gün notu yok */
   const tax = input.tax ?? null;
+  /** Dönemin KDV ya da KDV-2 beyannamesinin damgası: beyannamenin verildiği yılın tutarı (Aralık'ınki izleyen yılın) */
+  const returnStampOf = (k: "kdv" | "kdv2", period: string) => (tax ? (tax.stamps.kdvByYear?.[returnYearOf(period)] ?? tax.stamps[k]) : 0);
   const N = PLAN_DAYS;
   const dates = Array.from({ length: N }, (_, i) => addDays(today, i));
   const end = dates[N - 1];
@@ -1137,8 +1140,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     known,
     periods: vatPeriods,
     hasSite: input.vat.hasSite,
-    // Vergi beslemesiyle Ödemeler'deki tutar damga dahildir: yalnız damga yazılmışsa KDV ödenmemiştir (VG-01)
-    stamp: tax ? tax.stamps.kdv : 0,
+    // Vergi beslemesiyle Ödemeler'deki tutar damga dahildir: yalnız damga yazılmışsa KDV ödenmemiştir (VG-01). Damga
+    // dönemin beyannamesinin yılınınki (Vergi takvimindeki gibi)
+    stamp: tax ? (p: string) => returnStampOf("kdv", p) : 0,
   });
   const vatRows: VatRow[] = knownRows.map((r) => ({ ...r, estimate: estimates.get(r.period) ?? null }));
   const usedKeys = new Set<string>();
@@ -1321,20 +1325,32 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       const owned = new Set<string>();
       // Sabit tutarlı "Kira stopajı" (VG-02): tutarı muhtasarın yalnız kira stopajıdır, dönemi sahiplenmez. Muhtasarın
       // kalanı o dönemde başka bir muhtasar hatırlatıcısının gününde, yoksa kira stopajı hatırlatıcısının gününde girer
+      const isRent = (r: ReminderRow) => kind === "muhtasar" && isRentWithholdingReminder(r);
       const rentAt = new Map<string, { amount: number; at: (typeof occs)[number]["o"] }>();
+      for (const x of occs) if (x.kesin && isRent(x.r) && !rentAt.has(x.period)) rentAt.set(x.period, { amount: x.r.amount!, at: x.o });
+      // Tutarı muhtasarın tamamı olan hatırlatıcı ("Muhtasar"; muhasebecinin rakamı da buraya yazılır) dönemin kira
+      // stopajını içerir: kira stopajı hatırlatıcısı kendi satırında kalır, tamamdan düşülür (iki kez sayılmaz; takvim tamamı yazar)
+      const rentTaken = new Set<string>();
       for (const x of occs) {
         if (!x.kesin) continue;
-        const rent = kind === "muhtasar" && isRentWithholdingReminder(x.r);
+        const rent = isRent(x.r);
         if (x.r.amount! > 0) {
           // K4: muhasebecinin rakamı Ödemeler'dekinden 1 ₺'den fazla farklıysa satır söyler (Vergi sayfası da uyarır)
           const filed = items.get(x.period);
           const differs = !rent && filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
-          reminderLine(x.r, x.o, differs ? { detail: filingMismatchText(filed.amount, x.r.amount!) } : {});
-          taxKesin++;
+          const inner = !rent && !rentTaken.has(x.period) ? rentAt.get(x.period) : undefined;
+          if (inner) rentTaken.add(x.period);
+          const notes = [
+            ...(differs ? [filingMismatchText(filed.amount, x.r.amount!)] : []),
+            ...(inner ? [`Kira stopajı (${money(inner.amount)}) Ödemeler'de ayrı satırda; burada düşüldü (hatırlatıcıdaki tutar ${money(x.r.amount!)}).`] : []),
+          ];
+          const amount = inner ? Math.max(0, r2(x.r.amount! - inner.amount)) : x.r.amount!;
+          if (amount > 0) {
+            reminderLine(x.r, x.o, { ...(inner ? { amount } : {}), ...(notes.length ? { detail: notes.join(" ") } : {}) });
+            taxKesin++;
+          }
         }
-        if (rent) {
-          if (!rentAt.has(x.period)) rentAt.set(x.period, { amount: x.r.amount!, at: x.o });
-        } else owned.add(x.period);
+        if (!rent) owned.add(x.period);
       }
       // Muhtasarın satırı: kira stopajı Ödemeler'deyse yalnız kalanı (tahminde beslemenin `rest`'i; muhasebecinin
       // rakamında hatırlatıcının tutarı düşülür), kira stopajı satırı yok
@@ -1393,8 +1409,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       if (k) for (const o of reminderOccurrences(r, today, end)) stampMonths[k].add(o.due.slice(0, 7));
     }
     for (const k of ["kdv", "kdv2"] as const) {
-      const amount = tax.stamps[k];
       for (const [period, at] of stampAt[k]) {
+        const amount = returnStampOf(k, period);
         const dueMonth = (k === "kdv" ? vatDueDate(period) : vat2DueDate(period)).slice(0, 7);
         if (!(amount > 0) || stampMonths[k].has(dueMonth)) continue;
         taxDrawn++;

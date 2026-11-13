@@ -31,7 +31,7 @@ import { createModel, shiftMonth, type Model } from "../src/lib/calc/engine";
 import type { TaxFiling } from "../src/lib/tax/corporate";
 import { muhtasarItemsFromModel, type MuhtasarItem } from "../src/lib/tax/muhtasar";
 import { taxPnlInputFromModel } from "../src/lib/tax/pnl";
-import { paidFixedRates } from "../src/lib/tax/rules";
+import { paidFixedRates, r2 } from "../src/lib/tax/rules";
 import { DEFAULT_TAX_SETTINGS } from "../src/lib/tax/settings";
 import { buildTaxView, type TaxPlanFeed } from "../src/lib/tax/view";
 import { addVatPaid, forgetVatPeriod, paidPeriodsOf, parseVatPaid, removeVatPaid, type VatPaidEntry } from "../src/lib/vat-paid";
@@ -1968,4 +1968,45 @@ test("VG-02: sabit tutarlı 'Kira stopajı' muhtasarın yalnız kira stopajını
     ["Muhtasar – kira stopajı (Ekim)", "2026-11-26", 20_000],
     ["Muhtasar (Ekim)", "2026-11-26", 974.38],
   ]);
+});
+
+test("VG-02: 'Muhtasar' hatırlatıcısında muhtasarın tamamı varken 'Kira stopajı' iki kez sayılmaz; 26 Kasım toplamı takvimdeki gibi", () => {
+  // Muhasebecinin Ekim muhtasarı 21.000 + damga 939,70 (kira stopajı dahil) "Muhtasar" hatırlatıcısına da yazıldı
+  const today = "2026-11-13";
+  const filing: TaxFiling = { id: 1, kind: "mphb", period: "2026-10", payable: 21_000, stamp: 939.7, values: {} };
+  const kira = rem({ title: "Kira stopajı", kind: "vergi", amount: 20_000, dueDate: "2026-11-26" });
+  const whole = rem({ title: "Muhtasar", kind: "vergi", amount: 21_939.7, dueDate: "2026-11-26" });
+  const onDay = (p: CashPlan) => lines(p).filter((l) => l.date === "2026-11-26" && /muhtasar|stopaj/i.test(l.title));
+  for (const filings of [[filing], []]) {
+    const p = buildCashPlan(input({ today, tax: taxFeed(officialRent, filings, today), reminders: [kira, whole] }));
+    // Kira stopajı kendi satırında, tamamdan düşülür: 20.000 + 1.939,70 = 21.939,70
+    assert.deepEqual(onDay(p).map((l) => [l.key, l.amount]), [
+      [`reminder:${kira.id}@2026-11-26`, 20_000],
+      [`reminder:${whole.id}@2026-11-26`, 1_939.7],
+    ]);
+    assert.equal(r2(onDay(p).reduce((a, l) => a + l.amount, 0)), 21_939.7);
+    assert.match(byKey(p, `reminder:${whole.id}@2026-11-26`)[0].detail!, /^Kira stopajı \(20\.000\s₺\) Ödemeler'de ayrı satırda; burada düşüldü \(hatırlatıcıdaki tutar 21\.939,70\s₺\)\.$/);
+    assert.equal(taxLines(p).filter((l) => l.key.startsWith("vergi:muhtasar")).length, 0, "dönem Ödemeler'deki tutarındır");
+  }
+  // Muhasebecinin rakamı farklıysa (K4) satır ikisini de söyler
+  const off = buildCashPlan(input({ today, tax: taxFeed(officialRent, [filing], today), reminders: [kira, { ...whole, amount: 22_500 }] }));
+  const [line] = byKey(off, `reminder:${whole.id}@2026-11-26`);
+  assert.equal(line.amount, 2_500);
+  assert.match(line.detail!, /^Muhasebecinin rakamı 21\.939,70\s₺, Ödemeler'deki tutar 22\.500\s₺.* Kira stopajı \(20\.000\s₺\) Ödemeler'de ayrı satırda; burada düşüldü/);
+});
+
+test("VG-01: KDV damgası dönemin beyannamesinin yılınınki (Vergi takvimi gibi), bugünün yılınınki değil", () => {
+  // Elle girilen 2027 damgası (1.000) yalnız 2027'de verilen beyannamelerin (Aralık 2026 ve sonrası) damgasıdır
+  const settings = { ...DEFAULT_TAX_SETTINGS, overrides: { "damga.beyanname.kdv": { value: 1_000, note: "2027 tarifesi", by: "Yönetici", date: "2026-12-20" } } };
+  const today = "2026-12-20";
+  const pnl = taxPnlInputFromModel(model, { settings, today, adjustments: [], assets: [], filings: [] });
+  const feed = buildTaxView({ today, settings, pnl, muhtasarItems: new Map(), filings: [], reminders: [], vat: null }).planFeed;
+  assert.deepEqual(feed.stamps, { kdv: 791, kdv2: 791, kdvByYear: { 2026: 791, 2027: 1_000 } });
+  // 2027'de bakılıyor gibi (bugünün damgası 1.000): Eylül'e yazılan 900 Eylül'ün damgasını (791) aşar, KDV ödemesidir
+  const late: TaxPlanFeed = { ...FEED, stamps: { kdv: 1_000, kdv2: 1_000, kdvByYear: { 2026: 791, 2027: 1_000 } } };
+  const p = withVat({ reminders: [kdvRem({ amount: 900 })], tax: late });
+  assert.equal(p.vat!.rows.find((x) => x.period === "2026-09")!.estimate!.carryOut, 0);
+  assert.deepEqual(lineAt(p, "kdv@").map((l) => [l.date, l.amount]), [["2026-11-28", 42_100]]);
+  // Ekim beyannamesinin damga satırı da 2026'nınki
+  assert.deepEqual(lineAt(p, "damga:kdv@").map((l) => [l.date, l.amount]), [["2026-11-28", 791]]);
 });

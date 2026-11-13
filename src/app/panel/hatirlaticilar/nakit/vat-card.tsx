@@ -13,7 +13,7 @@ import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-pla
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
 import { monthKasa } from "@/lib/lafpos/kasa";
-import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
+import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatKeptCarryText, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { forgetVatPayment } from "@/server/actions/cash-plan";
@@ -232,6 +232,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
         : e.payable > 0 || e.carryOut === 0
           ? { label: "Ödenecek", value: `≈ ${tl(e.payable)}` }
           : { label: "Sonraki aya devreden", value: `≈ ${tl(e.carryOut)}` };
+  const kept = vatKeptCarryText(e);
   return (
     <dl className="space-y-2 rounded-xl bg-panel px-3 py-2.5 text-[13px] leading-5">
       <div>
@@ -266,7 +267,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
         <dd className="text-ink tabular">{result.value}</dd>
       </div>
       {e.anchored && e.known === null ? <p className="text-xs text-ink-mute">Beyannamede devreden var: bu dönem ödeme yok.</p> : null}
-      {e.known !== null && e.carryOut > 0 ? <p className="text-xs text-ink-mute">Ödemeler&apos;deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ {tl(e.carryOut)} sonraki aya devreder.</p> : null}
+      {kept ? <p className="text-xs text-ink-mute">{kept}</p> : null}
     </dl>
   );
 }
