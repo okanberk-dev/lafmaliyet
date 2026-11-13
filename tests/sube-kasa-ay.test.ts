@@ -9,6 +9,7 @@ import { test } from "node:test";
 
 import { monthDays } from "../src/app/panel/dashboard-daily";
 import { prorationDays } from "../src/lib/calc/engine";
+import { ALL_BRANCHES, monthTotalsLocked, tillOpenedOn } from "../src/lib/branches";
 import { kasaMonthLine, manualOf, resolveBranchMonths, resolveMonths, tillMonths, type MonthEntry, type TillRow } from "../src/lib/cash-month";
 import { addDays } from "../src/lib/reminders";
 
@@ -35,20 +36,23 @@ const twelve = (): TillRow[] => span("2026-11-01", "2026-11-12").flatMap((d) => 
 
 const entry = (month: string, o: Partial<MonthEntry> = {}): MonthEntry => ({ month, openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null, ...o });
 
-/** "Tümü": şube şube tillMonths ve bütün satırların ayı (src/server/data/dataset.ts ile aynı kurgu) */
+/** Satırların en eski günü */
+const first = (rows: readonly TillRow[]): string | null => rows.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+
+/**
+ * "Tümü": şube şube tillMonths, bütün satırların ayı ve şube altkümelerinin günleri (src/server/data/dataset.ts ile aynı
+ * kurgu; açılış günü tillOpenedOn ile: boşsa Tuzla dışındaki şube ilk satırında açılmış sayılır)
+ */
 function tumu(rows: TillRow[], through: string, entries: (MonthEntry & { branchId: string })[] = [], opened: Record<string, string | null> = {}) {
   const ids = [...new Set([...rows.map((r) => r.branchId!), ...entries.map((e) => e.branchId)])];
-  const of = (rs: TillRow[], id: string | undefined) => tillMonths(rs, through, undefined, undefined, undefined, undefined, undefined, id ? (opened[id] ?? null) : null);
+  const of = (rs: TillRow[], id: string | undefined) =>
+    tillMonths(rs, through, undefined, undefined, undefined, undefined, undefined, id ? tillOpenedOn(id, opened[id] ?? null, first(rs)) : null);
+  const rowsOf = (sel: readonly string[]) => rows.filter((r) => sel.includes(r.branchId!));
+  const earliestBranch = (rs: TillRow[]) => rs.find((r) => r.date === first(rs))?.branchId;
   return resolveBranchMonths(
-    ids.map((id) => ({
-      branchId: id,
-      entries: entries.filter((e) => e.branchId === id),
-      tills: of(
-        rows.filter((r) => r.branchId === id),
-        id,
-      ),
-    })),
-    of(rows, rows[0]?.branchId),
+    ids.map((id) => ({ branchId: id, entries: entries.filter((e) => e.branchId === id), tills: of(rowsOf([id]), id) })),
+    of(rows, earliestBranch(rows)),
+    (sel) => of(rowsOf(sel), earliestBranch(rowsOf(sel))),
   );
 }
 
@@ -120,6 +124,41 @@ test("açılış günü: 5 Kasım'da açılan şube o günden beri raporluysa ay
   // "Tümü": Marina'nın açılış ayı da toplamda
   const [all] = tumu([...span("2026-11-01", "2026-11-12").map((d) => row(d, "tuzla")), ...marina], "2026-11-12", [], { marina: "2026-11-05" });
   assert.deepEqual([all.openDays, all.posRevenue], [12, 168_000]);
+});
+
+test("açılış günü boş: Tuzla başından beri, öteki şube ilk satırında açılmış sayılır; Tümü'nün cirosundan düşmez", () => {
+  assert.equal(tillOpenedOn("marina", "2026-11-03", "2026-11-05"), "2026-11-03", "yazılı açılış günü geçer");
+  assert.equal(tillOpenedOn("marina", null, "2026-11-05"), "2026-11-05");
+  assert.equal(tillOpenedOn("tuzla", null, "2026-10-20"), null, "Tuzla'nın eski verisi: ilk ayı yarım kalır");
+  const tuzla = span("2026-11-01", "2026-11-12").map((d) => row(d, "tuzla"));
+  const marina = span("2026-11-05", "2026-11-11").map((d) => row(d, "marina"));
+  // İncelemedeki durum: Marina'nın açılış günü boş, raporları 5 Kasım'dan. Tümü 120.000 değil 162.000
+  const [all] = tumu([...tuzla, ...marina], "2026-11-12");
+  assert.deepEqual([all.openDays, all.posRevenue, all.sources?.posRevenue], [12, 120_000 + 42_000, "kasa"]);
+  assert.equal(all.byBranch?.marina.kasa?.till.partialFrom, null);
+  assert.equal(all.posRevenue, all.kasa?.values.posRevenue, "kasa bilgisi ve ciro aynı");
+  // Açılış günü yazılı ama raporlar sonra başladıysa ay yarım: Tümü'de yalnız Tuzla, Marina elle girilir
+  const [late] = tumu([...tuzla, ...marina], "2026-11-12", [], { marina: "2026-11-01" });
+  assert.equal(late.byBranch?.marina.kasa?.till.partialFrom, "2026-11-05");
+  assert.equal(late.posRevenue, 120_000);
+});
+
+test("Tümü'nün açık günü: kasadan gelen şubelerin günleri birleşir; elle daha az gün yazan şubenin kasa günleri girmez", () => {
+  // Tuzla 1-10 Kasım, Marina 11-20 Kasım kasadan; Marina açık günü elle 5 yazdı
+  const rows = [...span("2026-11-01", "2026-11-10").map((d) => row(d, "tuzla")), ...span("2026-11-11", "2026-11-20").map((d) => row(d, "marina"))];
+  const [both] = tumu(rows, "2026-11-20", [], { marina: "2026-11-11" });
+  assert.equal(both.openDays, 20, "ikisi de kasadan: günlerin birleşimi");
+  const [typed] = tumu(rows, "2026-11-20", [{ ...entry("2026-11", { openDays: 5 }), branchId: "marina" }], { marina: "2026-11-11" });
+  assert.equal(typed.byBranch?.marina.openDays, 5);
+  assert.equal(typed.openDays, 10, "Tuzla'nın 10 günü ile Marina'nın yazdığı 5'in büyüğü; Marina'nın kasa günleri sayılmaz");
+  assert.equal(typed.kasa?.till.openDays, 20, "kasa bilgisi yine bütün şubelerin");
+});
+
+test("Tümü'de ciro ve açık gün yalnız tek şube açıkken yazılır (birden çok şubenin toplamı kilitli)", () => {
+  const b = (kind: "fiziksel" | "online", active = true) => ({ kind, active });
+  assert.equal(monthTotalsLocked(ALL_BRANCHES, [b("fiziksel"), b("fiziksel"), b("online")]), true);
+  assert.equal(monthTotalsLocked("marina", [b("fiziksel"), b("fiziksel")]), false, "şube seçiliyken yazılır");
+  assert.equal(monthTotalsLocked(ALL_BRANCHES, [b("fiziksel"), b("fiziksel", false), b("online")]), false, "tek açık şube: Tümü o şube");
 });
 
 test("Tümü şubelerin toplamı: bir şubenin elle yazdığı öteki şubenin kasa cirosunu ezmez (HM-02)", () => {

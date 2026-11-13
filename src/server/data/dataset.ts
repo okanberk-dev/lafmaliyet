@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
-import { ALL_BRANCHES, branchPnlEntry, type BranchScope } from "@/lib/branches";
+import { ALL_BRANCHES, branchPnlEntry, type BranchScope, monthTotalsLocked, tillOpenedOn } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
@@ -219,33 +219,43 @@ async function readDataset(): Promise<Dataset> {
   // bekleyen geç raporları ve kapalı işaretli günleri ayrı söyler
   const lateDays = lateWaiting.flatMap((r) => (r.day ? [r.day] : []));
   const closedPast = closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date));
-  // Şubenin açılış ayı, açılış gününden beri raporluysa yarım sayılmaz (HM-04)
-  const openedOf = (id: string | undefined) => branches.find((b) => b.id === id)?.openedOn ?? null;
-  const monthsOf = (rows: TillRow[], branchId: string | undefined) => tillMonths(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOf(branchId));
+  // Şubenin açılış ayı, açılış gününden beri raporluysa yarım sayılmaz (HM-04). Açılış günü boşsa Tuzla "başından beri",
+  // öteki şube ilk kasa satırının gününde açılmış sayılır (tillOpenedOn): ilk ayı yarım kalıp Tümü'nün cirosundan düşmez
+  const monthsOf = (rows: TillRow[], branchId: string | undefined) =>
+    tillMonths(
+      rows,
+      through,
+      undefined,
+      lateDays,
+      closedPast,
+      undefined,
+      undefined,
+      branchId ? tillOpenedOn(branchId, branches.find((b) => b.id === branchId)?.openedOn ?? null, rows[0]?.date ?? null) : null,
+    );
   const entries = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla çözülür, sonra toplanır (açık gün günde bir kez; HM-01, HM-02).
-  // Bütün satırların ayı kasa bilgisi olarak taşınır (açılış günü ilk satırın şubesinin)
+  // Bütün satırların ayı kasa bilgisi olarak taşınır (açılış günü ilk satırın şubesinin); açık günü kasadan gelen
+  // şubelerin günleri yalnız o şubelerin satırlarıyla birleşir
   const branchIds = [...new Set([...months.map((m) => m.branchId), ...till.flatMap((r) => (r.branchId ? [r.branchId] : []))])];
+  const rowsOf = (ids: readonly string[]) => till.filter((r) => r.branchId !== undefined && ids.includes(r.branchId));
   const monthInfo =
     branch !== null
       ? resolveMonths(entries(months), monthsOf(till, branch.id))
       : resolveBranchMonths(
-          branchIds.map((id) => ({
-            branchId: id,
-            entries: entries(months.filter((m) => m.branchId === id)),
-            tills: monthsOf(
-              till.filter((r) => r.branchId === id),
-              id,
-            ),
-          })),
+          branchIds.map((id) => ({ branchId: id, entries: entries(months.filter((m) => m.branchId === id)), tills: monthsOf(rowsOf([id]), id) })),
           monthsOf(till, till[0]?.branchId),
+          (ids) => {
+            const rows = rowsOf(ids);
+            return monthsOf(rows, rows[0]?.branchId);
+          },
         );
 
   return {
     settings,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
+    monthTotalsLocked: monthTotalsLocked(scope, branches),
     salesCoverage,
     ingredients: ingredients.map((i) => ({
       id: i.id,

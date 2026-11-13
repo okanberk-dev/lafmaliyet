@@ -58,6 +58,7 @@ import {
 import type { MonthField, TillMonth } from "@/lib/calc/types";
 import { missingSentence, MONTH_FIELDS, partialSentence } from "@/lib/cash-month";
 import { num, pct, tl } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
@@ -208,6 +209,7 @@ const INFO_IDS: Record<MonthField, string> = { posRevenue: "m-pos", openDays: "m
 export function MonthInfoForm({
   month,
   label,
+  branchName = null,
   info,
   kasa = null,
   settingsCardShare,
@@ -219,13 +221,19 @@ export function MonthInfoForm({
 }: {
   month: string;
   label: string;
+  /**
+   * "Tümü" birden çok şubenin toplamıyken formun yazdığı şube (Tuzla): başlıkta adıyla, değerler o şubenin. Tek şube
+   * seçiliyken ya da tek şube açıkken null
+   */
+  branchName?: string | null;
   /** Elle yazılan değerler (kasadan gelenler burada boş) */
   info: Record<MonthField, number | null> & { note: string | null };
   /** Ayın kasa raporlarından değerleri (uygulanmayan null) ve kapsamı; raporu yoksa null */
   kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
   /** Ayarlar › kartlı satış oranı (bu ay için hiçbir oran yoksa geçer) */
   settingsCardShare: number;
-  listTotal: number;
+  /** Ürün listesinin cirosu (liste ↔ POS kutusu); null: kutu yok ("Tümü"de liste bütün şubelerin) */
+  listTotal: number | null;
   /**
    * Süren ayda yüklenen liste kasa raporlarından kısa bir dönemi kapsıyorsa (engine listPeriod) dönemin adı ("1–15
    * Ekim"), o günlerin Z toplamı ve indirimi: liste ↔ POS kutusu onlarla karşılaştırır (açık gün ve ciro kasadan geldikçe)
@@ -265,7 +273,8 @@ export function MonthInfoForm({
   const byList = listPeriod && modes.posRevenue === "kasa" && modes.openDays === "kasa" ? listPeriod : null;
   const posNum = byList ? byList.posRevenue : effective("posRevenue");
   const discNum = (byList && modes.discounts === "kasa" ? byList.discounts : effective("discounts")) ?? 0;
-  const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
+  const list = listTotal ?? 0;
+  const diff = posNum !== null && list ? list - discNum - posNum : null;
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
   const phase = monthPhase(month, currentMonth);
@@ -390,8 +399,12 @@ export function MonthInfoForm({
     <Card className={className}>
       <CardHeader
         icon={<CalendarDays />}
-        title={`${label} bilgileri`}
-        description="Patron > Raporlar > Ciro ekranından ya da kasa raporlarından. Gelir-gider tablosu bu ciroyu kullanır."
+        title={branchName ? `${label} bilgileri · ${branchName}` : `${label} bilgileri`}
+        description={
+          branchName
+            ? `Tümü seçiliyken form ${genitive(branchName)} ay bilgisini gösterir ve yazar; öteki şube için soldan şubeyi seçin.`
+            : "Patron > Raporlar > Ciro ekranından ya da kasa raporlarından. Gelir-gider tablosu bu ciroyu kullanır."
+        }
       />
       <CardContent className="flex flex-1 flex-col">
         {/* Telefonda tek sütun ve 48px alanlar */}
@@ -511,7 +524,7 @@ export function MonthInfoForm({
               risk={consistent ? undefined : "para"}
               live="polite"
               className="tabular"
-              title={`${consistent ? "Tutarlı" : "Kontrol edin"}: ürün listesi${byList ? ` (${byList.label})` : ""} ${tl(listTotal)} − indirim ${tl(discNum)} = ${tl(listTotal - discNum)} · ${byList ? `${byList.label} POS cirosu` : "POS cirosu"} ile fark ${tl(diff)}`}
+              title={`${consistent ? "Tutarlı" : "Kontrol edin"}: ürün listesi${byList ? ` (${byList.label})` : ""} ${tl(list)} − indirim ${tl(discNum)} = ${tl(list - discNum)} · ${byList ? `${byList.label} POS cirosu` : "POS cirosu"} ile fark ${tl(diff)}`}
             />
           ) : null}
           <div className="mt-auto flex flex-wrap items-center justify-end gap-3 pt-1">

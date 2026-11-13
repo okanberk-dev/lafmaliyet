@@ -166,6 +166,27 @@ export function companyPnlKey(rowKey: string): boolean {
 }
 
 /**
+ * "Tümü"de Gelir-gider'in aylık ciro ve açık gün hücresi yazılmaz (birden çok açık fiziksel şube varken): hücre
+ * şubelerin toplamını gösterir, yazılan ise tek şubenin (Tuzla) ay satırına inerdi ve öteki şubenin cirosu iki kez
+ * sayılırdı. Tek şube açıkken "Tümü" o şubedir, yazılır (ekran kilitler, sunucu reddeder: setMonthField)
+ */
+export function monthTotalsLocked(scope: BranchScope, known: readonly Pick<BranchRow, "active" | "kind">[]): boolean {
+  return scope === ALL_BRANCHES && known.filter((b) => b.active && b.kind === "fiziksel").length > 1;
+}
+
+/** Kilitli ciro ve açık gün hücresinin açıklaması (monthTotalsLocked) */
+export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için soldan şubeyi seçin.";
+
+/**
+ * Şubenin kasa aylarındaki açılış günü (tillMonths `openedOn`): yazılıysa branches.opened_on. Boşsa Tuzla "başından
+ * beri" sayılır (şubelerden önceki bütün veri onda); öteki şube ilk kasa satırının gününde açılmış sayılır, yani ay
+ * ortasında başlayan ilk ayı yarım kalmaz, cirosu ve açık günü kasadan gelir ("Tümü"nün cirosundan da düşmez)
+ */
+export function tillOpenedOn(branchId: string, openedOn: string | null, firstRow: string | null): string | null {
+  return openedOn ?? (branchId === DEFAULT_BRANCH_ID ? null : firstRow);
+}
+
+/**
  * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
  * (docs/SUBE.md › Şube görünümünde maliyet)
  */

@@ -10,7 +10,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { branchViewNote } from "@/lib/branches";
+import { branchViewNote, MONTH_TOTALS_LOCKED_TEXT } from "@/lib/branches";
 import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
@@ -403,6 +403,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         latestMonth={latestMonth}
         expectedDebts={expected}
         lafposSwitch={model.settings.lafposGecisGunu}
+        openDaysLocked={model.ds.monthTotalsLocked ? MONTH_TOTALS_LOCKED_TEXT : null}
         yearNote={
           yt.counted.length < activeMonths.length
             ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }

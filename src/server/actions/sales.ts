@@ -559,6 +559,9 @@ export async function deleteLine(id: number) {
  * Ayın satış satırlarını siler. withInfo: elle yazılan ay bilgilerini (ciro, açık gün, indirim, ödenmez, kartlı oran,
  * not) da siler; kasa raporlarından gelenler kalır (raporlar silinmez).
  * Eşleştirme hafızası ve Gelir-gider girişleri kalır. Ay tamamen boşaldıysa ay kaydı da kalkar.
+ *
+ * Yalnız yazılan şubenin (seçili şube; "Tümü"de Tuzla, Satışlar'ın ay formu gibi) satırları ve ay satırı: Marina
+ * seçiliyken "Ayı temizle" Tuzla'nın satış listesini ve elle yazdığı cirosunu silmez
  */
 export async function clearMonthSales(month: string, opts?: { withInfo?: boolean }) {
   return attempt(async () => {
@@ -566,13 +569,17 @@ export async function clearMonthSales(month: string, opts?: { withInfo?: boolean
     const m = zMonth.parse(month);
     const db = getDb();
     const withInfo = opts?.withInfo === true;
-    const gone = await db.delete(s.salesLines).where(eq(s.salesLines.month, m)).returning({ id: s.salesLines.id });
+    const sube = await currentWriteBranch();
+    const gone = await db
+      .delete(s.salesLines)
+      .where(and(eq(s.salesLines.month, m), eq(s.salesLines.branchId, sube)))
+      .returning({ id: s.salesLines.id });
     await setCoverage(db, m, null);
     if (withInfo) {
       await db
         .update(s.months)
         .set({ openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null, updatedAt: new Date() })
-        .where(eq(s.months.month, m));
+        .where(and(eq(s.months.month, m), eq(s.months.branchId, sube)));
     }
     const monthRemoved = await dropEmptyMonth(db, m);
     await logActivity(me, "Ay satışları silindi", `${monthLabel(m)}: ${gone.length} satır${withInfo ? ", ay bilgileri de" : ""}`);

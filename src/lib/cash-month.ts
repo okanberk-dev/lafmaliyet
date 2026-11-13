@@ -140,9 +140,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * açıkken bir gün): personel ve sabit gider bu günle oranlanır, günlük ortalama ve ay sonu öngörüsü bununla bölünür
  * (denetim HM-01, KP-03, KP-X1). Ciro, indirim ve ödenmez şubelerin toplamıdır.
  *
- * `openedOn`: şubenin açılış günü (branches.opened_on; yalnız tek şubenin satırları verilince). İlk satır bu gün ya da
- * öncesindeyse ay ortasında başlayan ilk ay yarım sayılmaz: raporlar şube açıldığından beri tam, açılış ayının ciro ve
- * açık günü kasadan gelir (denetim HM-04). Boşsa (Tuzla, "başından beri") bugünkü kural.
+ * `openedOn`: şubenin açılış günü (src/lib/branches.ts tillOpenedOn: opened_on, boşsa Tuzla dışındaki şubenin ilk
+ * kasa satırı; yalnız tek şubenin satırları verilince). İlk satır bu gün ya da öncesindeyse ay ortasında başlayan ilk ay
+ * yarım sayılmaz: raporlar şube açıldığından beri tam, açılış ayının ciro ve açık günü kasadan gelir (denetim HM-04).
+ * Boşsa (Tuzla, "başından beri") bugünkü kural.
  */
 export function tillMonths(
   rows: TillRow[],
@@ -343,28 +344,58 @@ export interface BranchMonthInput {
  * şubenin elle yazdığı öteki şubenin kasa cirosunu ezmez (denetim HM-02); Tümü şubelerin toplamıdır.
  *
  * - Ciro, indirim ve ödenmez: şubelerin toplamı.
- * - Açık gün: günde bir kez. Kasadan gelen şubelerin günleri birleşir (`combined`: bütün şubelerin satırlarıyla
- *   tillMonths); elle yazılan şubenin hangi günler açık olduğu bilinmediği için en büyüğü alınır.
+ * - Açık gün: günde bir kez. Açık günü kasadan gelen şubelerin günleri birleşir (`unionOf`: yalnız o şubelerin
+ *   satırlarıyla tillMonths; verilmezse `combined`); elle yazan şubenin hangi günler açık olduğu bilinmediği için en
+ *   büyüğü alınır. Elle daha az gün yazan şubenin kasa günleri birleşime girmez.
  * - Kartlı oran: ciro ağırlıklı.
- * - Kaynak: şubelerden biri elle yazdıysa "manual", değilse biri kasadansa "kasa". Kasa bilgisi (`kasa`) `combined`'dan.
+ * - Kaynak: şubelerden biri elle yazdıysa "manual", değilse biri kasadansa "kasa". Kasa bilgisi (`kasa`) `combined`'dan
+ *   (bütün şubelerin satırlarıyla tillMonths).
  *
- * Şube şube sonuç `byBranch`'te: "Tümü"de yazan ekran (Satışlar'ın ay formu) yazdığı şubenin ay satırını gösterir.
+ * Şube şube sonuç `byBranch`'te: "Tümü"de yazan ekran (Satışlar'ın ay formu) yazdığı şubenin ay satırını gösterir,
+ * motor şubeye bağlı personeli ve sabit gideri şubenin günüyle oranlar (engine.ts pnlMonth).
  */
-export function resolveBranchMonths(branches: readonly BranchMonthInput[], combined: TillMonth[]): Month[] {
+export function resolveBranchMonths(
+  branches: readonly BranchMonthInput[],
+  combined: TillMonth[],
+  unionOf?: (branchIds: readonly string[]) => TillMonth[],
+): Month[] {
   const tillOf = new Map(combined.map((t) => [t.month, t]));
-  const perBranch = branches.map((b) => ({ id: b.branchId, months: new Map(resolveMonths(b.entries, b.tills).map((m) => [m.month, m])) }));
+  const perBranch = branches.map((b) => ({
+    id: b.branchId,
+    months: new Map(resolveMonths(b.entries, b.tills).map((m) => [m.month, m])),
+    tillMonths: new Set(b.tills.map((t) => t.month)),
+  }));
+  // Şube altkümesinin kasa ayları (aynı altküme bir kez hesaplanır)
+  const unions = new Map<string, Map<string, TillMonth>>();
+  const unionTill = (month: string, ids: readonly string[]): TillMonth | undefined => {
+    // Ayın kasa satırı olan bütün şubeler: birleşim `combined`'ın kendisi
+    const withTill = perBranch.filter((b) => b.tillMonths.has(month)).map((b) => b.id);
+    if (!unionOf || withTill.every((id) => ids.includes(id))) return tillOf.get(month);
+    const key = [...ids].sort().join("|");
+    let byMonth = unions.get(key);
+    if (!byMonth) {
+      byMonth = new Map(unionOf(ids).map((t) => [t.month, t]));
+      unions.set(key, byMonth);
+    }
+    return byMonth.get(month);
+  };
   const keys = new Set([...tillOf.keys(), ...perBranch.flatMap((b) => [...b.months.keys()])]);
   return [...keys].sort().map((month) => {
     const parts = perBranch.flatMap((b): [string, Month][] => {
       const m = b.months.get(month);
       return m ? [[b.id, m]] : [];
     });
-    return parts.length ? combineMonths(month, parts, tillOf.get(month)) : resolveMonth(month, undefined, tillOf.get(month));
+    if (!parts.length) return resolveMonth(month, undefined, tillOf.get(month));
+    const kasaIds = parts.filter(([, m]) => m.openDays !== null && m.sources?.openDays === "kasa").map(([id]) => id);
+    return combineMonths(month, parts, tillOf.get(month), kasaIds.length ? unionTill(month, kasaIds) : undefined);
   });
 }
 
-/** Şubelerin aynı ayı tek ay bilgisi (resolveBranchMonths) */
-function combineMonths(month: string, parts: readonly [string, Month][], till: TillMonth | undefined): Month {
+/**
+ * Şubelerin aynı ayı tek ay bilgisi (resolveBranchMonths). `till`: bütün şubelerin kasa ayı; `kasaDays`: açık günü
+ * kasadan gelen şubelerin kasa ayı (günlerinin birleşimi)
+ */
+function combineMonths(month: string, parts: readonly [string, Month][], till: TillMonth | undefined, kasaDays: TillMonth | undefined): Month {
   const ms = parts.map(([, m]) => m);
   // Tek şubede değer olduğu gibi kalır; toplamda kuruşa yuvarlanır
   const total = (xs: number[]) => (xs.length === 1 ? xs[0] : r2(xs.reduce((a, v) => a + v, 0)));
@@ -374,8 +405,10 @@ function combineMonths(month: string, parts: readonly [string, Month][], till: T
     sources[f] = of.includes("manual") ? "manual" : of.includes("kasa") ? "kasa" : "none";
   }
   const revenues = ms.flatMap((m) => (m.posRevenue === null ? [] : [m.posRevenue]));
-  // Kasadan gelen açık gün bütün şubelerin günlerinin birleşimi (combined ⊇ her şubenin günleri)
-  const days = ms.flatMap((m) => (m.openDays === null ? [] : [m.sources?.openDays === "kasa" && till ? Math.max(m.openDays, till.openDays) : m.openDays]));
+  // Kasadan gelen açık gün, açık günü kasadan gelen şubelerin günlerinin birleşimi (her birinin gününden az olmaz)
+  const days = ms.flatMap((m) =>
+    m.openDays === null ? [] : [m.sources?.openDays === "kasa" && kasaDays ? Math.max(m.openDays, kasaDays.openDays) : m.openDays],
+  );
   const weighted = ms.filter((m) => m.cardShare != null && (m.posRevenue ?? 0) > 0);
   const weight = weighted.reduce((a, m) => a + m.posRevenue!, 0);
   const cardShare =

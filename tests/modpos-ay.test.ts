@@ -338,8 +338,10 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   const dataset = read("src/server/data/dataset.ts");
   assert.match(dataset, /till\.filter\(\(r\) => isReportRow\(r\) \|\| r\.zTotal > 0 \|\| \(r\.receipts \?\? 0\) > 0\)/, "kapalı gün: satışlı yedek de açar");
   assert.match(dataset, /upto, firstEver, undefined, undefined, firstReport\)\[0\] \?\? null/, "satış dönemi de ilk rapordan arar");
-  // Kasa'nın ay satırı Gelir-gider'le aynı satırlar ve ilk günle
+  // Kasa'nın ay satırı Gelir-gider'le aynı satırlar, ilk gün ve açılış günüyle (kasaMonthInfo; davranışı
+  // tests/sube-kasa-ay-db.test.ts)
   const page = read("src/app/panel/kasa/page.tsx");
-  assert.match(page, /modposTillRows\(getDb\(\), `\$\{month\}-01`, monthEnd\), firstModposTillDay\(getDb\(\)\)/);
-  assert.match(page, /tillMonths\(\[\.\.\.monthReports, \.\.\.monthLafpos, \.\.\.monthModpos\], addDays\(today, -1\), firstRow, undefined, undefined, firstEver \?\? undefined, firstModpos\)/);
+  assert.match(page, /kasaMonthInfo\(month, addDays\(today, -1\), \[\.\.\.monthReports, \.\.\.monthLafpos\], entry, firstEver\)/);
+  assert.match(loader, /modposTillRows\(db, `\$\{month\}-01`, monthEnd\(`\$\{month\}-01`\)\),\n\s+firstModposTillDay\(db\),/);
+  assert.match(loader, /tillMonths\(\[\.\.\.rows, \.\.\.monthModpos\], through, firstRow, undefined, undefined, firstEver \?\? undefined, firstModpos, openedOn\)/);
 });

@@ -357,7 +357,7 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   assert.match(src, /const through = addDays\(today, -1\)/);
   // Tek şube seçiliyken o şubenin satırları (açılış günüyle, HM-04); "Tümü"de şube şube çözülüp toplanır (HM-02)
   assert.match(src, /const lateDays = lateWaiting\.flatMap/);
-  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOf\(branchId\)\)/);
+  assert.match(src, /tillMonths\(\s*rows,\s*through,\s*undefined,\s*lateDays,\s*closedPast,\s*undefined,\s*undefined,\s*branchId \? tillOpenedOn\(/);
   assert.match(src, /branch !== null\s*\? resolveMonths\(entries\(months\), monthsOf\(till, branch\.id\)\)\s*: resolveBranchMonths\(/);
   assert.match(src, /months: monthInfo,/);
 });

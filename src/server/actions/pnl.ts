@@ -4,11 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { ALL_BRANCHES, companyPnlKey } from "@/lib/branches";
+import { ALL_BRANCHES, companyPnlKey, MONTH_TOTALS_LOCKED_TEXT, monthTotalsLocked } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -86,6 +87,9 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
+    // "Tümü" birden çok şubenin toplamını gösterir: yazılan (ya da "kasaya dön") yalnız Tuzla'nın ay satırına inerdi,
+    // öteki şubenin cirosu iki kez sayılırdı. Ekran hücreyi kilitler; Satışlar'ın formu "Tümü"de Tuzla'yı adıyla yazar
+    if (monthTotalsLocked(await currentBranchScope(), await listBranches())) throw new UserError(MONTH_TOTALS_LOCKED_TEXT);
     const dim = daysInMonth(m);
     const v =
       value === null
@@ -98,8 +102,8 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
               .max(dim, `En fazla ${dim} gün (${monthLabel(m)} ${dim} gün çeker)`)
               .parse(Math.round(value))
           : z.number().finite().min(0).parse(value);
-    // Ay satırı şubenindir (Satışlar'ın ay formu gibi): seçili şube, "Tümü"de Tuzla. Şubesiz yazılsaydı Marina
-    // seçiliyken yazılan ciro Tuzla'nın ayına inerdi
+    // Ay satırı şubenindir (Satışlar'ın ay formu gibi): seçili şube; "Tümü"de (tek şube açıkken) Tuzla. Şubesiz
+    // yazılsaydı Marina seçiliyken yazılan ciro Tuzla'nın ayına inerdi
     await getDb()
       .insert(s.months)
       .values({ month: m, branchId: await currentWriteBranch(), [field]: v })

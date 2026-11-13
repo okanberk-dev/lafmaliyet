@@ -11,7 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
-import { kasaMonthLine, resolveMonth, tillMonths } from "@/lib/cash-month";
+import { kasaMonthLine } from "@/lib/cash-month";
 import {
   businessDate,
   carryCheck,
@@ -57,13 +57,12 @@ import {
   cashReportsBetween,
   cashRevisionsFor,
   firstCashReportDate,
-  firstModposTillDay,
   firstOkcReportDate,
   getCashReport,
+  kasaMonthInfo,
   lafposTillRows,
   loadCashSettings,
   loadMonthEntry,
-  modposTillRows,
   nextReportAfter,
   okcRows,
   previousCarryOver,
@@ -466,12 +465,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı. Ay rakamına yedek açıksa
   // raporsuz günün kapanmış ModPOS föyü de (docs/MODPOS-API.md › Ay rakamına yedek; kapalıyken föy okunmaz): Gelir-gider'deki
-  // ay rakamıyla aynı. Ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik gün ilk kasa raporundan
-  const [monthModpos, firstModpos] = await Promise.all([modposTillRows(getDb(), `${month}-01`, monthEnd), firstModposTillDay(getDb())]);
-  const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
-  const monthLine = kasaMonthLine(
-    resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos)[0]),
-  );
+  // ay rakamıyla aynı, şubenin açılış ayı da (kasaMonthInfo)
+  const monthLine = kasaMonthLine(await kasaMonthInfo(month, addDays(today, -1), [...monthReports, ...monthLafpos], entry, firstEver));
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const infos = await cashReportPhotoInfo(monthReports, "admin");

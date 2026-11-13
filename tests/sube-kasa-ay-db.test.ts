@@ -3,6 +3,9 @@
 // gün günde bir kez sayılır, personel ve sabit gider bir kez oranlanır (oran 1; HM-01, KP-03, KP-X1); bir şubenin elle
 // yazdığı öteki şubenin kasasını ezmez (HM-02); bir şubenin raporu öteki şubenin föyünü düşürmez (HM-03); ay ortasında
 // açılan şubenin ilk ayı açılış gününden sayılır (HM-04); Bugün'ün şube kartı föyden sayılan günü çizer (HM-09).
+// İncelemeden sonra: açılış günü boş şubenin ilk ayı Tümü'den düşmez, Kasa'nın ay satırı açılış gününü bilir, Tümü'de
+// ciro ve açık gün yazılmaz (Satışlar'ın formu Tuzla'ya yazar), "Ayı temizle" yalnız seçili şubeyi siler, şubeye bağlı
+// personel ve sabit gider Tümü'de de şubenin günüyle oranlanır.
 //
 // SUBE_TEST_DATABASE_URL (yoksa SAYIM_TEST_DATABASE_URL ya da EKLE_TEST_DATABASE_URL) verilmezse atlanır. Test kendi
 // geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -18,9 +21,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { ALL_BRANCHES, DEFAULT_BRANCHES } from "../src/lib/branches";
+import { ALL_BRANCHES, DEFAULT_BRANCHES, MONTH_TOTALS_LOCKED_TEXT } from "../src/lib/branches";
 import { dashboard } from "../src/lib/calc/insights";
-import { manualOf } from "../src/lib/cash-month";
+import { kasaMonthLine, manualOf } from "../src/lib/cash-month";
 import { parseKasaFoyu } from "../src/lib/modpos/foy";
 import { MODPOS_FALLBACK_KEY } from "../src/lib/modpos/status";
 import { addDays } from "../src/lib/reminders";
@@ -49,6 +52,8 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
   let store: typeof import("../src/server/modpos/store");
   let branchDay: typeof import("../src/server/data/branch-day");
   let pnl: typeof import("../src/server/actions/pnl");
+  let sales: typeof import("../src/server/actions/sales");
+  let cash: typeof import("../src/server/data/cash-reports");
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -77,6 +82,8 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
     store = await import("../src/server/modpos/store");
     branchDay = await import("../src/server/data/branch-day");
     pnl = await import("../src/server/actions/pnl");
+    sales = await import("../src/server/actions/sales");
+    cash = await import("../src/server/data/cash-reports");
   });
 
   after(async () => {
@@ -86,7 +93,7 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE cash_reports, modpos_cash_sheets, months, staff, staff_versions, fixed_expenses, pnl_entries, activity_log RESTART IDENTITY CASCADE`);
+    await db.execute(sql`TRUNCATE cash_reports, modpos_cash_sheets, months, sales_lines, staff, staff_versions, fixed_expenses, pnl_entries, activity_log RESTART IDENTITY CASCADE`);
     await db.delete(s.settings).where(eq(s.settings.key, MODPOS_FALLBACK_KEY));
     await db.update(s.branches).set({ openedOn: null }).where(eq(s.branches.id, "marina"));
   });
@@ -101,6 +108,13 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
       ),
     );
   const model = (scope: string) => dataset.loadModel({ scope });
+  /** Kasa sayfasının ay satırı, seçili şubeyle (src/app/panel/kasa/page.tsx'in okuduğu gibi; dün 12 Kasım) */
+  const kasaLine = (scope: string, month: string) =>
+    withBranchScope(scope, async () => {
+      const end = `${month}-${String(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()).padStart(2, "0")}`;
+      const [rows, entry, firstEver] = await Promise.all([cash.cashReportsBetween(`${month}-01`, end, "admin"), cash.loadMonthEntry(month), cash.firstCashReportDate()]);
+      return kasaMonthLine(await cash.kasaMonthInfo(month, "2026-11-12", rows, entry, firstEver));
+    });
 
   test("Tümü şubelerin toplamı: açık gün günde bir kez, personel ve sabit gider bir kez (oran 1; HM-01, KP-03, KP-X1)", async () => {
     await reports("tuzla", span("2026-10-01", "2026-10-31"));
@@ -209,5 +223,105 @@ describe("iki şubeli ay: veritabanında", { skip: !SERVER_URL && "SUBE_TEST_DAT
     const a = all.monthInfo.get("2026-08")!;
     assert.deepEqual([a.openDays, a.posRevenue], [31, 31 * 20_000 + 27 * 6_000]);
     assert.equal(all.pnlMonth("2026-08").ratio, 1);
+    // Kasa'nın ay satırı da açılış gününü bilir: "elle girilir" demez (Satışlar ve Gelir-gider gibi)
+    assert.equal(await kasaLine("marina", "2026-08"), "Bu ayın açık gün ve cirosu kasa raporlarından");
+  });
+
+  test("açılış günü boş şubenin ilk ayı: Tümü'nün cirosuna girer, şube görünümünde de kasadan (Tuzla dışındaki şube ilk raporunda açılmış sayılır)", async () => {
+    // İncelemedeki durum: Marina'nın açılış günü boş (tohumun varsayılanı), raporları 5 Ağustos'tan
+    await reports("tuzla", span("2026-08-01", "2026-08-31"));
+    await reports("marina", span("2026-08-05", "2026-08-31"));
+    const [all, tuzla, marina] = await Promise.all([model(ALL_BRANCHES), model("tuzla"), model("marina")]);
+    const m = marina.monthInfo.get("2026-08")!;
+    assert.equal(m.kasa?.till.partialFrom, null);
+    assert.deepEqual([m.openDays, m.posRevenue, m.sources?.posRevenue], [27, 27 * 6_000, "kasa"]);
+    const a = all.monthInfo.get("2026-08")!;
+    assert.equal(a.posRevenue, 31 * 20_000 + 27 * 6_000, "Marina'nın cirosu Tümü'den düşmez");
+    assert.equal(a.posRevenue, (tuzla.monthInfo.get("2026-08")!.posRevenue ?? 0) + (m.posRevenue ?? 0), "Tümü şubelerin toplamı");
+    assert.equal(a.kasa?.values.posRevenue, a.posRevenue, "kasa bilgisi (grafik, Kasa satırı) ile ciro aynı");
+    assert.equal(all.pnlMonth("2026-08").revenue, a.posRevenue);
+    assert.equal(await kasaLine("marina", "2026-08"), "Bu ayın açık gün ve cirosu kasa raporlarından");
+    // Tuzla'nın kendi eski verisi için kural değişmez: ay ortasında başlayan ilk ay yarım
+    await db.delete(s.cashReports).where(and(eq(s.cashReports.branchId, "tuzla"), sql`${s.cashReports.date} < '2026-08-10'`));
+    const t = (await model("tuzla")).monthInfo.get("2026-08")!;
+    assert.equal(t.kasa?.till.partialFrom, "2026-08-10");
+    assert.equal(t.posRevenue, null);
+  });
+
+  test("şubenin açılış ayında Tümü'nün personeli ve şubeye bağlı sabit gideri şubelerin toplamı (şube kendi günüyle)", async () => {
+    await db.update(s.branches).set({ openedOn: "2026-08-05" }).where(eq(s.branches.id, "marina"));
+    await reports("tuzla", span("2026-08-01", "2026-08-31"));
+    await reports("marina", span("2026-08-05", "2026-08-31"));
+    await db.insert(s.staff).values([
+      { name: "Barista T", branchId: "tuzla", netSalary: 30_000, extras: 0, sortOrder: 1 },
+      { name: "Barista M", branchId: "marina", netSalary: 30_000, extras: 0, sortOrder: 2 },
+    ]);
+    await db.insert(s.fixedExpenses).values([
+      { name: "Marina kira", section: "kira", period: "aylik", amount: 31_000, prorate: true, branchId: "marina", sortOrder: 1 },
+      { name: "Muhasebe", section: "genel", period: "aylik", amount: 3_100, prorate: true, sortOrder: 2 },
+    ]);
+    const [all, tuzla, marina] = await Promise.all([model(ALL_BRANCHES), model("tuzla"), model("marina")]);
+    const [p, pt, pm] = [all, tuzla, marina].map((x) => x.pnlMonth("2026-08"));
+    assert.equal(pm.prorationDays, 27);
+    assert.ok(Math.abs(p.sections.personel - (pt.sections.personel + pm.sections.personel)) < 0.01, "Tümü'nün personeli şubelerin toplamı");
+    assert.ok(Math.abs(all.pnlValue(p, "fixed:1").value! - 27_000) < 0.01, "Marina'nın kirası 27/31 gün, şube görünümündeki gibi");
+    assert.ok(Math.abs(marina.pnlValue(pm, "fixed:1").value! - 27_000) < 0.01);
+    assert.ok(Math.abs(all.pnlValue(p, "fixed:2").value! - 3_100) < 0.01, "işletme geneli kalem işletmenin günüyle (31)");
+    assert.match(all.pnlValue(p, "personnel:employer").info ?? "", /kendi şubesinin günüyle/);
+  });
+
+  test("Tümü'de Gelir-gider'in ciro ve açık gün hücresi yazılmaz; Satışlar'ın formu Tuzla'nın satırına yazar", async () => {
+    await reports("tuzla", span("2026-09-01", "2026-09-12"));
+    await reports("marina", span("2026-09-01", "2026-09-12"));
+    const before = (await model(ALL_BRANCHES)).monthInfo.get("2026-09")!.posRevenue;
+    assert.equal(before, 240_000 + 72_000);
+    // İncelemedeki tuzak: Tümü'de işletmenin toplamı yazılınca Tuzla'nın ayına inerdi, Marina iki kez sayılırdı
+    for (const [field, value] of [
+      ["posRevenue", 315_000],
+      ["posRevenue", null],
+      ["openDays", 12],
+    ] as const) {
+      const res = await withBranchScope(ALL_BRANCHES, () => pnl.setMonthField("2026-09", field, value));
+      assert.deepEqual(res, { ok: false, error: MONTH_TOTALS_LOCKED_TEXT }, `${field} ${value}`);
+    }
+    assert.equal((await db.select().from(s.months)).length, 0, "ay satırı yazılmadı");
+    // Ekran da kilitler: Tümü'de ciro satırı girilemez, şubede girilir
+    const [all, marina] = await Promise.all([model(ALL_BRANCHES), model("marina")]);
+    assert.equal(all.ds.monthTotalsLocked, true);
+    const revenueDef = (x: Awaited<ReturnType<typeof model>>) => x.pnlRowDefs(["2026-09"]).find((d) => d.key === "revenue")!;
+    assert.equal(revenueDef(all).editable, false);
+    assert.equal(revenueDef(marina).editable, true);
+    // Satışlar'ın ay formu Tümü'de Tuzla'nın satırını yazar: Tümü = Tuzla'nın elle yazdığı + Marina'nın kasası
+    const saved = await withBranchScope(ALL_BRANCHES, () =>
+      sales.saveMonthInfo({ month: "2026-09", openDays: null, posRevenue: 250_000, discounts: null, offRevenue: null, cardShare: null, note: null }),
+    );
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    const rows = await db.select({ branchId: s.months.branchId, pos: s.months.posRevenue }).from(s.months);
+    assert.deepEqual(rows, [{ branchId: "tuzla", pos: 250_000 }]);
+    const after = (await model(ALL_BRANCHES)).monthInfo.get("2026-09")!;
+    assert.equal(after.posRevenue, 250_000 + 72_000, "Marina bir kez sayılır");
+    assert.equal(manualOf(after.byBranch?.tuzla, "posRevenue"), 250_000);
+  });
+
+  test("Ayı temizle yalnız seçili şubenin satış satırlarını ve ay bilgisini siler (Tümü'de Tuzla'yı)", async () => {
+    await db.insert(s.months).values([
+      { month: "2026-09", branchId: "tuzla", posRevenue: 111_000, note: "Tuzla'nın notu" },
+      { month: "2026-09", branchId: "marina", posRevenue: 70_000, note: "Marina'nın notu" },
+    ]);
+    await db.insert(s.salesLines).values([
+      { month: "2026-09", branchId: "tuzla", posName: "Latte", qty: 10, revenue: 1_000, sortOrder: 1 },
+      { month: "2026-09", branchId: "marina", posName: "Mocha", qty: 5, revenue: 600, sortOrder: 1 },
+    ]);
+    const res = await withBranchScope("marina", () => sales.clearMonthSales("2026-09", { withInfo: true }));
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok && res.data.deleted, 1);
+    const lines = await db.select({ branchId: s.salesLines.branchId, posName: s.salesLines.posName }).from(s.salesLines);
+    assert.deepEqual(lines, [{ branchId: "tuzla", posName: "Latte" }]);
+    const months = await db.select({ branchId: s.months.branchId, pos: s.months.posRevenue, note: s.months.note }).from(s.months).orderBy(s.months.branchId);
+    assert.deepEqual(months, [{ branchId: "tuzla", pos: 111_000, note: "Tuzla'nın notu" }], "Marina'nın boşalan ayı kalkar, Tuzla'nınki durur");
+    // Tümü'de formun yazdığı şube (Tuzla) temizlenir
+    const all = await withBranchScope(ALL_BRANCHES, () => sales.clearMonthSales("2026-09", { withInfo: true }));
+    assert.equal(all.ok, true, JSON.stringify(all));
+    assert.equal((await db.select().from(s.salesLines)).length, 0);
   });
 });

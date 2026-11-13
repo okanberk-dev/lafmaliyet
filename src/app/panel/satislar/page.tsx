@@ -19,6 +19,7 @@ import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentWriteBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
@@ -126,7 +127,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir. "Tümü"de form
   // yazdığı şubenin (Tuzla) ay satırını düzenler: elle yazılanlar ve kasanın değerleri o şubenin, Tümü'nün toplamı değil
   // (toplam forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı)
-  const formInfo = info?.byBranch ? info.byBranch[await currentWriteBranch()] : info;
+  const writeId = await currentWriteBranch();
+  const formInfo = info?.byBranch ? info.byBranch[writeId] : info;
+  // Birden çok şubenin toplamıyken form hangi şubeye yazdığını adıyla söyler; liste ↔ POS kutusu çıkmaz (liste bütün
+  // şubelerin, POS cirosu yalnız yazılan şubenin olurdu)
+  const formBranch = model.ds.monthTotalsLocked ? ((await listBranches()).find((b) => b.id === writeId)?.name ?? writeId) : null;
   const infoValues = {
     openDays: manualOf(formInfo, "openDays"),
     posRevenue: manualOf(formInfo, "posRevenue"),
@@ -291,11 +296,14 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           className="xl:col-span-5"
           month={month}
           label={monthLabel(month)}
+          branchName={formBranch}
           info={infoValues}
           kasa={formInfo?.kasa ?? null}
           settingsCardShare={model.settings.kartOrani}
-          listTotal={sales.revenue}
-          listPeriod={listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null}
+          listTotal={formBranch ? null : sales.revenue}
+          listPeriod={
+            !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
+          }
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}
         />

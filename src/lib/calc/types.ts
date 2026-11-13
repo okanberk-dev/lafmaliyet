@@ -527,6 +527,11 @@ export interface Dataset {
    */
   branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
   /**
+   * "Tümü" birden çok fiziksel şubenin toplamı: Gelir-gider'in aylık ciro ve açık gün hücresi yazılmaz (src/lib/branches.ts
+   * monthTotalsLocked). Yoksa yazılır
+   */
+  monthTotalsLocked?: boolean;
+  /**
    * Süren ayda yüklenen satış listesinin son günü ve o güne kadarki kasa raporları (src/lib/sales-coverage.ts; yoksa
    * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)
    */

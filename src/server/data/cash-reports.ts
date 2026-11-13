@@ -2,7 +2,9 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or } from "drizzle-orm";
 
-import { modposRunStart, type MonthEntry, type TillRow } from "@/lib/cash-month";
+import { ALL_BRANCHES, tillOpenedOn } from "@/lib/branches";
+import type { Month } from "@/lib/calc/types";
+import { modposRunStart, type MonthEntry, resolveMonth, type TillRow, tillMonths } from "@/lib/cash-month";
 import {
   defaultCashRecipients,
   integrityOf,
@@ -17,9 +19,10 @@ import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
-import { addDays } from "@/lib/reminders";
+import { addDays, monthEnd } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
-import { andWhere, currentBranchWhere } from "@/server/branch-scope";
+import { andWhere, currentBranchScope, currentBranchWhere } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
 
@@ -548,4 +551,26 @@ export async function loadMonthEntry(month: string): Promise<MonthEntry | null> 
     .where(andWhere(eq(s.months.month, month), await currentBranchWhere(s.months.branchId)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Kasa sayfasının ay satırının ay bilgisi (kasaMonthLine'a gider). Ayın raporları ve LafPOS yedek satırları sayfadan
+ * gelir (zaten okur); ay rakamına yedek açıksa raporsuz günün föyü, seçili şubenin açılış günü burada eklenir. Gelir-gider
+ * ve Satışlar'daki ay rakamıyla aynı kural (dataset.ts): ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik
+ * gün ilk kasa raporundan; şube açılış gününden beri raporluysa açılış ayı yarım değil (tillOpenedOn; denetim HM-04).
+ * "Tümü"nün düzeni (şubesiz rapor satırları) P03'te
+ */
+export async function kasaMonthInfo(month: string, through: string, rows: readonly TillRow[], entry: MonthEntry | null, firstEver: string | null): Promise<Month> {
+  const db = getDb();
+  const [monthModpos, firstModpos, scope, branches] = await Promise.all([
+    modposTillRows(db, `${month}-01`, monthEnd(`${month}-01`)),
+    firstModposTillDay(db),
+    currentBranchScope(),
+    listBranches(db),
+  ]);
+  const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
+  const branch = scope === ALL_BRANCHES ? undefined : branches.find((b) => b.id === scope);
+  const openedOn = branch ? tillOpenedOn(branch.id, branch.openedOn, firstRow) : null;
+  const till = tillMonths([...rows, ...monthModpos], through, firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, openedOn)[0];
+  return resolveMonth(month, entry ?? undefined, till);
 }

@@ -24,7 +24,7 @@ Sahibin kararları (4 Kasım 2026):
 | `kind` | `fiziksel` (şube) ya da `online` (kanal) |
 | `pos_source` | Gün sonu nereden gelir: `modpos`, `lafpos` ya da `yok` (online) |
 | `active` | Kapalı şube seçicide ve toplamlarda görünmez; kayıtları durur |
-| `opened_on` | Açılış günü; boşsa "başından beri" (Tuzla) |
+| `opened_on` | Açılış günü. Boşsa Tuzla "başından beri" sayılır (şubelerden önceki bütün veri onda); öteki şube ilk kasa satırının gününde açılmış sayılır |
 | `sort_order` | Seçicideki ve listedeki sıra |
 
 İlk üç kayıt tohumla gelir (Tuzla, Marina, laffogato.net) ve dolu veritabanında da bir kez yazılır
@@ -123,7 +123,8 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 |---|---|
 | Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
-| Ay bilgisi (Satışlar'ın ay formu, Gelir-gider'in ciro, açık gün ve ay notu hücresi) | Seçili şube; "Tümü"nde Tuzla. "Tümü"de Satışlar'ın formu Tuzla'nın elle yazdığını ve kasasını gösterir (Tümü'nün toplamı forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı) |
+| Ay bilgisi (Satışlar'ın ay formu, Gelir-gider'in ciro, açık gün ve ay notu hücresi) | Seçili şube; "Tümü"nde Tuzla. Birden çok şube açıkken "Tümü"de Gelir-gider'in ciro ve açık gün hücresi kilitlidir ("şubeyi seçin"; sunucu da reddeder): hücre şubelerin toplamını gösterir, yazılan Tuzla'nın ayına inip öteki şubenin cirosunu iki kez saydırırdı. Satışlar'ın formu "Tümü"de başlığında **Tuzla** yazar, Tuzla'nın elle yazdığını ve kasasını gösterir; liste ↔ POS kutusu çıkmaz (liste bütün şubelerin) |
+| Satış listesi, "Ayı temizle" | Seçili şube; "Tümü"nde Tuzla. Temizlik yalnız o şubenin satırlarını ve (istenirse) ay bilgisini siler |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
 | Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
 | Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
@@ -142,8 +143,9 @@ tarar.
 | Açık gün, raporlu gün | **Günde bir kez**: Tuzla ve Marina aynı gün açıksa bir gün. Personel ve oranlanan sabit gider bu günle bölünür, oran en çok 1 (iki şube açıkken maaş ve kira iki kat sayılmaz); günlük ortalama ve ay sonu öngörüsü de bu günle |
 | Ciro, indirim, ödenmez | Şubelerin toplamı |
 | Kaynak önceliği | Rapor > LafPOS gün sonu > föy, **aynı şubenin aynı gününde**: bir şubenin raporu ötekinin föyünü düşürmez |
-| Elle yazılan ay bilgisi | Her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (`resolveBranchMonths`): Marina'nın elle yazdığı ciro Tuzla'nın kasa cirosunu silmez. Elle yazılan açık günün hangi günler olduğu bilinmediği için şubelerin en büyüğü alınır; kartlı oran ciro ağırlıklı |
-| Açılış ayı | Şubenin açılış günü (`opened_on`) yazılıysa ve raporlar o günden beri girildiyse ay yarım sayılmaz: ciro ve açık gün kasadan |
+| Elle yazılan ay bilgisi | Her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (`resolveBranchMonths`): Marina'nın elle yazdığı ciro Tuzla'nın kasa cirosunu silmez. Elle yazılan açık günün hangi günler olduğu bilinmediği için şubelerin en büyüğü alınır; kasadan gelen günler yalnız açık günü kasadan gelen şubelerin satırlarıyla birleşir (elle daha az gün yazan şubenin kasa günleri girmez). Kartlı oran ciro ağırlıklı |
+| Açılış ayı | Raporlar şubenin açılış gününden beri girildiyse ay yarım sayılmaz: ciro ve açık gün kasadan (şube görünümünde, Kasa'nın ay satırında ve "Tümü"de). Açılış günü boşsa Tuzla dışındaki şube ilk kasa satırının gününde açılmış sayılır; yazılı açılış gününden sonra başlayan raporlarda ay yarım kalır, ciro elle girilir |
+| Personel ve sabit gider | Şubeye bağlı kişi ve kalem "Tümü"de de kendi şubesinin günüyle oranlanır (açılış ayında açılış gününden; şube görünümüyle aynı); işletme geneli kalem işletmenin günüyle |
 
 Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar, nakit planının günlük satışı
 bütün şubelerin cirosu ÷ raporlu gündür (Genel bakış'ın plan kartı da Ödemeler › Nakit planı gibi "Tümü"yle okur).
