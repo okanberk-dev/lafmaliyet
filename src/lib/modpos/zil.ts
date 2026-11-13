@@ -1,3 +1,4 @@
+import { branchKeySuffix } from "@/lib/branches";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
@@ -22,6 +23,8 @@ import { sheetZ } from "./z";
 /** Karşılaştırılan föy: saklanan satırın gereken alanları (src/server/modpos/store.ts ModposSheet) */
 export interface ModposSheetLite {
   day: string;
+  /** Föyün şubesi (okunan föyde dolu): rapor yalnız kendi şubesinin föyüyle karşılaştırılır */
+  branchId?: string;
   foy: KasaFoyu;
   revision: number;
   /** Kesin mi (kasasız föy kesinleşmeden karşılaştırılmaz; verilmezse kesin sayılır) */
@@ -45,17 +48,19 @@ export const MODPOS_BELL_BODY_MAX = 220;
 /**
  * Föyünden farklı yazılan raporlar, raporların sırasıyla. LafPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
  * (foyZ null) ya da kasası hâlâ açık föyün günü atlanır (docs/MODPOS-API.md › Nerede görünür, karşılaştırma kuralları).
+ * Rapor ve föy şubesini taşıyorsa yalnız aynı şubeninkiler karşılaştırılır ("Tümü"de Marina'nın raporu Tuzla'nın föyüyle değil)
  */
-export function modposMismatches<R extends ModposSavedFields & { date: string }>(
+export function modposMismatches<R extends ModposSavedFields & { date: string; branchId?: string }>(
   reports: readonly R[],
   sheets: readonly ModposSheetLite[],
   switchDay: string | null,
 ): ModposMismatch<R>[] {
-  const byDay = new Map(sheets.map((x) => [x.day, x]));
+  const key = (day: string, branchId?: string) => `${day}|${branchId ?? ""}`;
+  const byDay = new Map(sheets.map((x) => [key(x.day, x.branchId), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
     if (isLafposDay(report.date, switchDay)) continue;
-    const sheet = byDay.get(report.date);
+    const sheet = byDay.get(key(report.date, report.branchId)) ?? byDay.get(key(report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
     const diffs = modposDiffs(report, z);
@@ -74,11 +79,12 @@ export function modposMismatchDates(reports: readonly (ModposSavedFields & { dat
  * değişince yeniden okunmamış olur. Gövde "2 Kasım Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); …", en çok
  * MODPOS_BELL_BODY_MAX harf.
  */
-export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: number }>): { id: string; title: string; body: string; href: string } {
+export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: number; branchId?: string }>): { id: string; title: string; body: string; href: string } {
   const date = m.report.date;
   const body = `${longDateTR(date)} · ${m.diffs.map(modposDiffText).join("; ")}`;
   return {
-    id: `kasa-modpos-${date}-r${m.report.revision}-s${m.sheet.revision}`,
+    // Tuzla'nın kimliği eskisi gibi; öteki şubeninkine şube eklenir (iki şubenin aynı günkü satırı ayrı)
+    id: `kasa-modpos-${date}${branchKeySuffix(m.report.branchId, "-")}-r${m.report.revision}-s${m.sheet.revision}`,
     title: MODPOS_MISMATCH_TITLE,
     body: body.length > MODPOS_BELL_BODY_MAX ? `${body.slice(0, MODPOS_BELL_BODY_MAX - 1)}…` : body,
     href: `/panel/kasa?gun=${date}`,

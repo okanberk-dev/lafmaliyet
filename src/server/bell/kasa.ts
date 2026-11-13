@@ -1,6 +1,7 @@
 import "server-only";
 
-import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
+import { branchKeySuffix, cashBranchLabel, type BranchRow } from "@/lib/branches";
+import { branchCarryChecks, businessDate, carryDiffText, carryKey, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
@@ -10,7 +11,9 @@ import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
-import { cashReportsBetween, cashRevisionsFor, previousCarryOver, reportedDays } from "@/server/data/cash-reports";
+import { currentWriteBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
+import { carryOversBefore, cashReportsBetween, cashRevisionsFor, reportedDays } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { loadKasaLafposDays } from "@/server/data/lafpos-day";
@@ -35,7 +38,9 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const day = businessDate(now);
   const reports = await cashReportsBetween(addDays(day, -6), day);
   if (user.role !== "admin") {
-    if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
+    // Personelin raporu yazdığı şubenin ("Tümü"de Tuzla): öteki şubenin raporu hatırlatmayı susturmaz
+    const mine = await currentWriteBranch();
+    if (!isCashEvening(now) || reports.some((r) => r.date === day && r.branchId === mine)) return [];
     // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS
     const lafpos = kasaName(day, await loadLafposSwitchDay().catch(() => null)) === "LafPOS";
     return [
@@ -67,14 +72,18 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       group: "kasa",
     });
   }
-  const last = reports[0];
-  if (last && diffKind(last.cashDiff) !== "even") {
+  // Her şubenin son raporu ("Tümü"de iki şube: iki satır; liste en yeni önce)
+  const branches = await listBranches().catch((): BranchRow[] => []);
+  const lastOf = new Map<string, (typeof reports)[number]>();
+  for (const r of reports) if (!lastOf.has(r.branchId)) lastOf.set(r.branchId, r);
+  for (const last of lastOf.values()) {
+    if (diffKind(last.cashDiff) === "even") continue;
     out.push({
-      // Rapor güncellenince yeniden okunmamış olur
-      id: `kasa-fark-${last.date}-r${last.revision}`,
+      // Rapor güncellenince yeniden okunmamış olur; Tuzla'nın kimliği eskisi gibi, öteki şubeninkinde şube
+      id: `kasa-fark-${last.date}${branchKeySuffix(last.branchId, "-")}-r${last.revision}`,
       kind: last.cashDiff < 0 ? "danger" : "warning",
       title: `Kasa: ${diffText(last.cashDiff)}`,
-      body: [longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
+      body: [cashBranchLabel(last.branchId, branches), longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
       timeLabel: dateTR(last.date),
       unread: true,
       href: `/panel/kasa?gun=${last.date}`,
@@ -82,7 +91,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
     });
   }
   // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
-  out.push(...(await cashIntegrityNotifications(reports, day, user.id).catch(() => [])));
+  out.push(...(await cashIntegrityNotifications(reports, day, user.id, branches).catch(() => [])));
   return out;
 }
 
@@ -97,29 +106,33 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
  * src/lib/modpos/zil.ts: kasası açık föy karşılaştırılmaz; kimlik raporun ve föyün sürümünden). Küçük sorgular; LafPOS
  * ve ModPOS okunamazsa yalnız kendi satırları düşer.
  */
-async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
+async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number, branches: readonly BranchRow[] = []): Promise<PanelNotification[]> {
   if (!reports.length) return [];
   const oldest = reports[reports.length - 1];
   const revised = reports.filter((r) => r.revision > 1).map((r) => r.id);
   const [before, revisions, proposed, lafposOf, modpos] = await Promise.all([
-    previousCarryOver(oldest.date),
+    // Zincir şube şube (denetim HM-X1): her şubenin en eski raporundan önceki kendi devri
+    carryOversBefore(oldest.date),
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaLafposDays(oldest.date, day).catch(() => null),
     Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay()]).catch(() => null),
   ]);
-  const checks = carryChecks(reports, before);
+  const checks = branchCarryChecks(reports, before);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
+  // Kimliklerde şube (Tuzla'nınki eskisi gibi; iki şubenin aynı günkü uyarısı ayrı satır), gövdede birden çok şube açıkken adı
+  const tag = (r: (typeof reports)[number]) => branchKeySuffix(r.branchId, "-");
+  const label = (r: (typeof reports)[number]) => cashBranchLabel(r.branchId, branches);
   const out: PanelNotification[] = [];
   for (const r of reports) {
-    const c = checks.get(r.date);
+    const c = checks.get(carryKey(r));
     if (!c || (r.date !== day && r.date !== yesterday)) continue;
     out.push({
-      id: `kasa-acilis-${r.date}-r${r.revision}`,
+      id: `kasa-acilis-${r.date}${tag(r)}-r${r.revision}`,
       kind: "warning",
       title: "Kasa açılışı devirle tutmuyor",
-      body: [`${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
+      body: [label(r), `${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
       href: `/panel/kasa?gun=${r.date}`,
@@ -131,10 +144,10 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
     const late = r.revision > 1 ? lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer, proposed.get(r.id)) : null;
     if (!late) continue;
     out.push({
-      id: `kasa-duzeltme-${r.date}-r${late.revision}`,
+      id: `kasa-duzeltme-${r.date}${tag(r)}-r${late.revision}`,
       kind: "warning",
       title: "Kasa raporu ertesi gün değişti",
-      body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
+      body: [label(r), longDateTR(r.date), late.by.join(", "), changesText(late.changes)].filter(Boolean).join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
       href: `/panel/kasa?gun=${r.date}`,
@@ -143,13 +156,13 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
   }
   // LafPOS'tan farklı yazılan (yalnız LafPOS günlerinde; geçiş günü boşken loadKasaLafposDays hiçbir günü vermez)
   for (const r of reports) {
-    const lafpos = lafposOf?.(r.date).day;
+    const lafpos = lafposOf?.(r.date, r.branchId).day;
     const diffs = lafpos ? lafposDiffs(r, lafpos) : [];
     if (!lafpos || !diffs.length) continue;
     const after = lafpos.receivedAt > r.updatedAt;
-    const body = `${longDateTR(r.date)} · ${diffs.map(lafposDiffText).join("; ")}`;
+    const body = `${label(r) ? `${label(r)} · ` : ""}${longDateTR(r.date)} · ${diffs.map(lafposDiffText).join("; ")}`;
     out.push({
-      id: `kasa-lafpos-${r.date}-r${r.revision}-${Date.parse(lafpos.receivedAt)}`,
+      id: `kasa-lafpos-${r.date}${tag(r)}-r${r.revision}-${Date.parse(lafpos.receivedAt)}`,
       kind: "warning",
       title: after ? "LafPOS rapordan sonra farklı rakamla geldi" : "Kasa raporu LafPOS'tan farklı",
       body: body.length > 220 ? `${body.slice(0, 219)}…` : body,

@@ -148,7 +148,8 @@ test("kasa sayfası: föy yalnız yönetici dalında okunur; ortak kısım, pers
   const calls = [...page.matchAll(/loadKasaModpos(?:Days)?\(/g)];
   assert.equal(calls.length, 2);
   for (const c of calls) assert.ok(c.index > adminStart, "okuyucu yönetici dalında");
-  assert.match(admin, /showForm \? loadKasaModpos\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  // Gün görünümünün föyü formun şubesinden (P03)
+  assert.match(admin, /showForm \? inForm\(\(\) => loadKasaModpos\(date\)\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
   assert.match(admin, /loadKasaModposDays\(`\$\{month\}-01`, monthEnd\)\.catch\(\(\) => \(\) => NO_MODPOS\)/);
   // Üç bölüm (ModPOS, ladmin, Karşılaştırma) kasa raporu formunun altında, site satırından önce; bir kez
   assert.match(admin, /\{form\}\s*\{modposDay\?\.modpos \? <ModposSections [^\n]*\/> : null\}\s*\{siteRow\}/);

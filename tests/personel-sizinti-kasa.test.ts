@@ -94,7 +94,8 @@ test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğin
   assert.match(loader, /^import "server-only";/);
   const own = loader.slice(loader.indexOf("export async function lateRequestFor"), loader.indexOf("export async function lateRequestsByReport"));
   assert.doesNotMatch(own, /\.select\(\)/);
-  assert.match(own, /\.where\(and\(eq\(r\.kind, "kasa-gec"\), eq\(r\.subject, `gun:\$\{date\}`\)\)\)/);
+  // Konu gün ve şube (personelin yazdığı şube; KP-X2)
+  assert.match(own, /\.where\(and\(eq\(r\.kind, "kasa-gec"\), eq\(r\.subject, cashDaySubject\(date, await currentWriteBranch\(\)\)\)\)\)/);
   // Kişinin kendi isteği (requestedBy === me.id) yükten kurulur; başkalarınınki yalnız ad ve an
   assert.match(own, /const mine = rows\.filter\(\(x\) => x\.requestedBy === me\.id\);/);
   assert.match(own, /others: rows\.filter\(\(x\) => x\.requestedBy !== me\.id && x\.status === "pending"\)\.map\(\(x\) => \(\{ requestedByName: x\.requestedByName, createdAt: x\.createdAt\.toISOString\(\) \}\)\)/);
@@ -137,7 +138,9 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   const src = read("src/server/closed-days.ts");
   const state = src.slice(src.indexOf("export async function staffClosedState"), src.indexOf("export async function ownClosedRequests"));
   assert.doesNotMatch(state, /\.select\(\)/);
-  assert.match(state, /\.select\(\{ id: s\.staffRequests\.id, status: s\.staffRequests\.status, requestedBy: s\.staffRequests\.requestedBy, requestedByName: s\.staffRequests\.requestedByName, reviewNote: s\.staffRequests\.reviewNote \}\)/);
+  // Şube konudan (gün ve şube; KP-05): yük okunmaz
+  assert.match(state, /\.select\(\{ id: s\.staffRequests\.id, subject: s\.staffRequests\.subject, status: s\.staffRequests\.status, requestedBy: s\.staffRequests\.requestedBy, requestedByName: s\.staffRequests\.requestedByName, reviewNote: s\.staffRequests\.reviewNote \}\)/);
+  assert.doesNotMatch(state, /payload/);
   const own = src.slice(src.indexOf("export async function ownClosedRequests"), src.indexOf("export interface ClosedDayCard"));
   assert.match(own, /\.select\(\{ id: s\.staffRequests\.id, day: s\.staffRequests\.day, status: s\.staffRequests\.status, reviewNote: s\.staffRequests\.reviewNote, createdAt: s\.staffRequests\.createdAt \}\)/);
   assert.match(own, /eq\(s\.staffRequests\.requestedBy, me\.id\)/);
@@ -149,7 +152,7 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   // Kasa sayfasında kanıt yalnız yönetici dalında okunur
   const page = read("src/app/panel/kasa/page.tsx");
   const bar = page.slice(page.indexOf("async function closedBarFor"));
-  assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
+  assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date, branchId\);/);
 });
 
 /**

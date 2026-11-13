@@ -2,9 +2,10 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { cashEmailKey } from "@/lib/cash-report";
+import { cashEmailKey, cashLogKey } from "@/lib/cash-report";
 import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { withBranchScope } from "@/server/branch-scope";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -59,7 +60,9 @@ export async function emailReport(
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
   } else {
     const dto = toCashDTO(row);
-    const waste = await dayWaste(row.date);
+    // Zayi, kasadan çıkanlar ve zincir raporun şubesinden (panelin seçimi ne olursa); konu ve başlık birden çok şube
+    // açıkken şubeyi yazar (cashReportExtras › branch; denetim KP-07)
+    const waste = await withBranchScope(row.branchId, () => dayWaste(row.date));
     const online = await (o.site ?? fetchTillOnlineRow(row.date));
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez)
     const [extras, integrity] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto)]);
@@ -82,7 +85,7 @@ export async function emailReport(
     outcome = res.ok ? { status: "sent", error: null, to: recipients.length } : { status: "failed", error: res.error, to: 0 };
     await getDb()
       .insert(s.notificationLog)
-      .values({ key: `cash:${row.date}:r${row.revision}`, channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .values({ key: cashLogKey(row), channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
   }
   await getDb()

@@ -18,7 +18,7 @@ import {
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
-import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
+import { cashDaySubject, CASH_REQUEST_TEXT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
@@ -27,7 +27,7 @@ import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -112,9 +112,24 @@ export const reportSchema = z.object({
   okcCard: okcAmount,
   okcMealCard: okcAmount,
   okcOther: okcAmount,
+  /**
+   * Formun şubesi (açıldığı andaki seçim; "Tümü"de Tuzla): bu arada başka sekmede şube seçimi değiştiyse yazılmaz
+   * (assertFormBranch; denetim KP-01). Eski bir sekme göndermez
+   */
+  branchId: z.string().min(1).max(24).optional(),
 });
 
 export type ReportInput = z.output<typeof reportSchema>;
+
+/**
+ * Yazımın şubesi: panelin seçimi ("Tümü"de Tuzla; docs/SUBE.md). Form açıldığı şubeyi gönderir; seçim bu arada başka
+ * sekmede değiştiyse hiçbir şey yazılmaz: form bir şubenin raporunu gösterip ötekine yazmasın (denetim KP-01)
+ */
+export async function assertFormBranch(sent: string | null | undefined): Promise<string> {
+  const branchId = await currentWriteBranch();
+  if (sent && sent !== branchId) throw new UserError(CASH_REQUEST_TEXT.branchChanged);
+  return branchId;
+}
 
 /**
  * Formun yazarkasa alanları kayıtlı biçime (plan §3.2, §6.1; form aynı kuralı okcFormError ile söyler): bölüm boş
@@ -199,12 +214,19 @@ export function assertRevision(prev: CashReportRow | null, revision: number): vo
   if (!prev && revision !== 0) throw new UserError("Rapor bu arada silinmiş; sayfayı yenileyin");
 }
 
-/** Kişinin bu günün raporu için bekleyen silme isteği var mı (varken raporu düzenleyemez ve düzeltme öneremez) */
-export async function ownDeletePending(tx: CashTx, userId: number, date: string): Promise<boolean> {
+/** Kişinin bu şubenin bu günkü raporu için bekleyen silme isteği var mı (varken raporu düzenleyemez ve düzeltme öneremez) */
+export async function ownDeletePending(tx: CashTx, userId: number, date: string, branchId: string): Promise<boolean> {
   const [row] = await tx
     .select({ id: s.staffRequests.id })
     .from(s.staffRequests)
-    .where(and(eq(s.staffRequests.kind, "kasa-silme"), eq(s.staffRequests.subject, `gun:${date}`), eq(s.staffRequests.requestedBy, userId), eq(s.staffRequests.status, "pending")))
+    .where(
+      and(
+        eq(s.staffRequests.kind, "kasa-silme"),
+        eq(s.staffRequests.subject, cashDaySubject(date, branchId)),
+        eq(s.staffRequests.requestedBy, userId),
+        eq(s.staffRequests.status, "pending"),
+      ),
+    )
     .limit(1);
   return Boolean(row);
 }
@@ -308,7 +330,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   // Yeni rapor: gün açık demektir (kapalı işareti ve bildirimi kalkar); önceki gün kapalı işaretliyse Z no ve açılış
   // sürekliliği denetlenir (src/server/closed-days.ts)
   if (!prev) {
-    await onReportSaved(tx, row.date);
+    await onReportSaved(tx, row.date, row.branchId);
     await onNextReport(tx, row);
   }
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
@@ -363,7 +385,8 @@ export async function okcServerColumns(tx: CashTx, row: CashReportRow): Promise<
   if (!row.okcZNo || row.okcTotal === null) return none;
   const read = await okcReadOfReport(tx, row.id, row.date);
   if (!read) return none;
-  const { cum } = await previousOkc(row.date, tx);
+  // Zincir raporun kendi şubesinde (onaylayan yöneticinin seçimi ne olursa)
+  const { cum } = await withBranchScope(row.branchId, () => previousOkc(row.date, tx));
   const out = okcCumulativeToStore({
     savedZNo: row.okcZNo,
     savedTotal: row.okcTotal,
@@ -418,9 +441,9 @@ export type SaveResult =
  * Yeni rapor aynı günün bekleyen geç rapor isteklerini kapatır ("Yönetici günü kendisi girdi"; fotoğrafları 30 gün).
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
-  const { revision, photos, countedBy, ...form } = input;
-  // Raporun şubesi: panelde seçili olan (docs/SUBE.md). Gün bir kez değil, şube başına bir kez girilir
-  const branchId = await currentWriteBranch();
+  const { revision, photos, countedBy, branchId: sent, ...form } = input;
+  // Raporun şubesi: panelde seçili olan (docs/SUBE.md), formun açıldığı şubeyle aynı. Gün şube başına bir kez girilir
+  const branchId = await assertFormBranch(sent);
   const data = okcFieldsIn(form);
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");
   if (me.role !== "admin" && !staffCanReport(data.date, now)) {
@@ -440,7 +463,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     const prev = await lockCashReport(tx, data.date, branchId);
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);
-      if (await ownDeletePending(tx, me.id, data.date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
+      if (await ownDeletePending(tx, me.id, data.date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
       // Ertesi günün raporu girildiyse (ertesi günün açılışı bu raporun devrine dayanır) ya da iş günü kapandıktan sonra
       // kasa alanı ya da sayan değiştiyse personel doğrudan kaydetmez: yöneticinin onayına gider
       const laterReport = await hasLaterReport(tx, data.date, branchId);
@@ -453,9 +476,15 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
       if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
     }
     const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev, branchId });
-    // Gün artık raporlu: bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
+    // Gün artık raporlu: bu şubenin bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
     if (!prev) {
-      await supersede(tx, { kinds: ["kasa-gec"], subject: `gun:${data.date}` }, me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi", now, DELETED_REPORT_DAYS);
+      await supersede(
+        tx,
+        { kinds: ["kasa-gec"], subject: cashDaySubject(data.date, branchId) },
+        me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi",
+        now,
+        DELETED_REPORT_DAYS,
+      );
     }
     return { kind: "saved" as const, ...out };
   });
@@ -474,15 +503,16 @@ export async function cashEmailRecipients(db: DB | CashTx, emails: readonly stri
 
 /**
  * Raporu siler (işlemin içinde; yönetici): fotoğrafların bağı kalkar, 30 gün daha saklanır; önceki sürümleri raporla
- * gider (cascade). Aynı günün bekleyen düzeltme, silme ve fotoğraf kaldırma istekleri kapanır ("Rapor silindi";
- * reddedilmez), silmeyi onaylanan istek (`exceptRequestId`) hariç. Silinen raporun değerleri dönüşte (işlem
- * geçmişine yazılır).
+ * gider (cascade). Bu raporun bekleyen düzeltme ve silme istekleri (konusu gün ve şube) ve fotoğraflarının kaldırma
+ * istekleri kapanır ("Rapor silindi"; reddedilmez), silmeyi onaylanan istek (`exceptRequestId`) hariç: öteki şubenin
+ * aynı günkü istekleri bekler (denetim KP-X2). Silinen raporun değerleri dönüşte (işlem geçmişine yazılır).
  */
 export async function removeCashReport(tx: CashTx, id: number, o: { exceptRequestId?: number } = {}) {
   const links = await tx.select({ photoId: s.cashReportPhotos.photoId }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, id));
   for (const l of links) await releasePhoto(l.photoId, DELETED_REPORT_DAYS, tx);
   const [row] = await tx.delete(s.cashReports).where(eq(s.cashReports.id, id)).returning({
     date: s.cashReports.date,
+    branchId: s.cashReports.branchId,
     zTotal: s.cashReports.zTotal,
     countedCash: s.cashReports.countedCash,
     cashDiff: s.cashReports.cashDiff,
@@ -490,6 +520,9 @@ export async function removeCashReport(tx: CashTx, id: number, o: { exceptReques
     countedByName: s.cashReports.countedByName,
   });
   if (!row) throw new UserError("Rapor bulunamadı");
-  const superseded = await supersede(tx, { kinds: ["kasa-duzeltme", "kasa-silme", "foto-kaldir"], day: row.date, exceptId: o.exceptRequestId }, "Rapor silindi");
+  const superseded = [
+    ...(await supersede(tx, { kinds: ["kasa-duzeltme", "kasa-silme"], subject: cashDaySubject(row.date, row.branchId), exceptId: o.exceptRequestId }, "Rapor silindi")),
+    ...(links.length ? await supersede(tx, { kinds: ["foto-kaldir"], subjects: links.map((l) => `foto:${l.photoId}`), exceptId: o.exceptRequestId }, "Rapor silindi") : []),
+  ].sort((a, b) => a - b);
   return { row, photos: links.length, superseded };
 }

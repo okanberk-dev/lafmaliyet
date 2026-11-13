@@ -18,6 +18,10 @@ değiştirmez; notun yanında bir ipucu olarak durur ve eski kayıtlar okunabils
 
 Aynı günlerde aynı adla ikinci bir kayıt engellenir (aynı maç iki kez girilmesin).
 
+**Kapalı günün şubesi** (denetim 13 Kasım 2026, KP-05; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı): burada
+girilen kapalı gün işletme genelidir (bütün şubeler kapalı; `special_days.branch_id` boş). Kasa'nın "Kafe kapalıydı"sı
+ve personelin bildiriminin onayı ise formun şubesinin satırını yazar; o satır yalnız o şubeyi kapatır.
+
 ## Kod
 
 | Ne | Nerede |

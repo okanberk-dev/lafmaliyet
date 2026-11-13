@@ -25,7 +25,10 @@ const clientKey = z
   .nullish()
   .transform((v) => v ?? null);
 
-const requestInput = z.object({ date: zDate, reason: zOptText(CLOSED_REASON_MAX), clientKey });
+/** Formun şubesi (açıldığı andaki seçim): kapalı gün şube başına (denetim KP-05); eski sekme göndermez */
+const branchId = z.string().min(1).max(24).optional();
+
+const requestInput = z.object({ date: zDate, branchId, reason: zOptText(CLOSED_REASON_MAX), clientKey });
 
 /** Personel: dün kafe kapalıydı (yöneticinin onayına gider). Dönüşte yalnız isteğin kimliği */
 export async function requestClosedDay(input: z.input<typeof requestInput>) {
@@ -74,7 +77,7 @@ async function fetchSiteDayCountsFor(id: number) {
   return row?.day ? fetchSiteDayCounts(row.day) : null;
 }
 
-const markInput = z.object({ date: zDate, note: zOptText(CLOSED_REASON_MAX) });
+const markInput = z.object({ date: zDate, branchId, note: zOptText(CLOSED_REASON_MAX) });
 
 /** Yönetici: raporsuz bir günü doğrudan kapalı işaretler (Kasa › raporsuz gün); o günün bekleyen bildirimleri onaylanır */
 export async function markClosedDay(input: z.input<typeof markInput>) {

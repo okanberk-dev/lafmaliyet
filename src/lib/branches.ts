@@ -178,6 +178,23 @@ export function monthTotalsLocked(scope: BranchScope, known: readonly Pick<Branc
 export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için soldan şubeyi seçin.";
 
 /**
+ * Kasa raporunun şubesinin ekrandaki adı, yalnız birden çok açık fiziksel şube varken (Kasa formunun başlığı, e-posta
+ * konusu, WhatsApp başlığı; denetim KP-01, KP-07): tek şubede metin bugünkü gibi kalır (null)
+ */
+export function cashBranchLabel(branchId: string | null | undefined, known: readonly Pick<BranchRow, "id" | "name" | "active" | "kind">[]): string | null {
+  if (!branchId || known.filter((b) => b.active && b.kind === "fiziksel").length < 2) return null;
+  return known.find((b) => b.id === branchId)?.name ?? branchId;
+}
+
+/**
+ * Şubelerden önce kurulan anahtarların (kasa isteğinin konusu, zil kimliği, e-posta kaydı) şube eki: Tuzla'nınki boş
+ * (eski anahtarlar, bekleyen istekler ve okunmuş zil satırları geçerli kalır), öteki şubeninki "<ayraç><şube>"
+ */
+export function branchKeySuffix(branchId: string | null | undefined, sep = ":"): string {
+  return !branchId || branchId === DEFAULT_BRANCH_ID ? "" : `${sep}${branchId}`;
+}
+
+/**
  * Şubenin kasa aylarındaki açılış günü (tillMonths `openedOn`): yazılıysa branches.opened_on. Boşsa Tuzla "başından
  * beri" sayılır (şubelerden önceki bütün veri onda); öteki şube ilk kasa satırının gününde açılmış sayılır, yani ay
  * ortasında başlayan ilk ayı yarım kalmaz, cirosu ve açık günü kasadan gelir ("Tümü"nün cirosundan da düşmez)

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { ALL_BRANCHES, branchPnlEntry, type BranchScope, monthTotalsLocked, tillOpenedOn } from "@/lib/branches";
@@ -148,8 +148,12 @@ async function readDataset(): Promise<Dataset> {
       .selectDistinct({ day: s.staffRequests.day })
       .from(s.staffRequests)
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
-    // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
-    db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
+    // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır. Şube seçiliyken
+    // o şubenin ve işletme genelinin kapalı günleri (KP-05); "Tümü"de hepsi
+    db
+      .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
+      .from(s.specialDays)
+      .where(and(eq(s.specialDays.kind, "kapali"), branch ? or(eq(s.specialDays.branchId, branch.id), isNull(s.specialDays.branchId)) : undefined)),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)

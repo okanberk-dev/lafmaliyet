@@ -123,7 +123,7 @@ export function PendingRequests({ own, others, onEdit }: { own: (OwnCorrection |
 }
 
 /** "Silinmesini iste": neden zorunlu; rapor silinene kadar yerinde kalır */
-export function DeleteRequestButton({ date, revision, label }: { date: string; revision: number; label: string }) {
+export function DeleteRequestButton({ date, branchId, revision, label }: { date: string; branchId?: string; revision: number; label: string }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +134,7 @@ export function DeleteRequestButton({ date, revision, label }: { date: string; r
     const r = reason.trim();
     if (r.length < 3) return setError("Nedenini yazın");
     start(async () => {
-      const res = await requestCashDelete({ date, baseRevision: revision, message: r, clientKey: key });
+      const res = await requestCashDelete({ date, branchId, baseRevision: revision, message: r, clientKey: key });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       toast.success("Silme isteği gönderildi", { description: "Yönetici silene kadar rapor yerinde kalır; sonucu zilde görürsünüz." });
       setOpen(false);

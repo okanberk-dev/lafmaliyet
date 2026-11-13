@@ -4,7 +4,19 @@
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
-import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
+import {
+  branchCarryChecks,
+  businessDate,
+  carryKey,
+  CASH_EVENING_HOUR,
+  DAY_TURN_HOUR,
+  diffKind,
+  diffText,
+  isCashEvening,
+  lateCorrections,
+  type CarryBefore,
+  type CashRevisionRow,
+} from "@/lib/cash-report";
 import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
@@ -217,14 +229,14 @@ type Row = DayRow;
 
 // ---------------------------------------------------------------- Kasa
 
-/** Bütünlük uyarıları için raporun gerekenleri (CashReportDTO bunları taşır) */
-export type CashFlagReport = Parameters<typeof lateCorrections>[0] & { id: number };
+/** Bütünlük uyarıları için raporun gerekenleri (CashReportDTO bunları taşır; şube "Tümü"de zinciri ayırır) */
+export type CashFlagReport = Parameters<typeof lateCorrections>[0] & { id: number; branchId?: string };
 
 /**
  * Yöneticinin kasa satırlarının bütünlük uyarıları, rapor gününe göre (kasa'nın kuralları, zil ile aynı;
- * docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). "Açılış devirle tutmuyor": açılış kendinden önceki raporun
- * ertesi güne devriyle tutmuyor; zincir `before`'dan, listenin en eski raporundan önceki son raporun devrinden başlar
- * (previousCarryOver), dünün raporu yoksa bugünün açılışı ondan önceki raporla karşılaştırılır. "Ertesi gün
+ * docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). "Açılış devirle tutmuyor": açılış aynı şubenin kendinden önceki
+ * raporunun ertesi güne devriyle tutmuyor; zincir `before`'dan, şubenin listedeki en eski raporundan önceki son raporun
+ * devrinden başlar (carryOversBefore), dünün raporu yoksa bugünün açılışı ondan önceki raporla karşılaştırılır. "Ertesi gün
  * düzeltildi": rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; bakan yöneticinin (`viewer`)
  * kendi düzeltmesi sayılmaz. `revisions`: raporların kayıtlı önceki sürümleri. "ModPOS föyünden farklı": `modpos`
  * föyünden farklı yazılan raporların günleri (önceden hesaplanır: src/lib/modpos/zil.ts modposMismatchDates; föy
@@ -232,18 +244,25 @@ export type CashFlagReport = Parameters<typeof lateCorrections>[0] & { id: numbe
  */
 export function cashFlags(
   reports: CashFlagReport[],
-  before: { date: string; amount: number } | null,
+  before: CarryBefore,
   revisions: (CashRevisionRow & { reportId: number })[],
   viewer: number,
   modpos: ReadonlySet<string> = new Set(),
 ): Map<string, string[]> {
-  const checks = carryChecks(reports, before);
-  return new Map(
-    reports.map((r) => {
-      const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
-      return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : []), ...(modpos.has(r.date) ? [CASH_FLAGS.modpos] : [])]];
-    }),
-  );
+  // Zincir şube şube (denetim HM-X1): "Tümü"de Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz. Bugün günde tek
+  // satır gösterir: aynı günün şube raporlarının işaretleri birleşir
+  const checks = branchCarryChecks(reports, before);
+  const out = new Map<string, string[]>();
+  for (const r of [...reports].sort((a, b) => a.date.localeCompare(b.date))) {
+    const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
+    const mine = [...(checks.has(carryKey(r)) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : []), ...(modpos.has(r.date) ? [CASH_FLAGS.modpos] : [])];
+    const had = out.get(r.date) ?? [];
+    out.set(
+      r.date,
+      [CASH_FLAGS.carry, CASH_FLAGS.late, CASH_FLAGS.modpos].filter((f) => had.includes(f) || mine.includes(f)),
+    );
+  }
+  return out;
 }
 
 /** Eksik kasa ya da bütünlük uyarısı sorun, fazla yapılacak (bakılmalı), tutuyorsa tamam */

@@ -12,7 +12,7 @@ import { test } from "node:test";
 
 import { missingSentence, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { photoKindRefusal } from "../src/lib/cash-out-requests";
-import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
+import { cashEmailKey, cashLogKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
@@ -83,7 +83,10 @@ test("E-40: kasa e-postasının anahtarı rapor satırına özgü; silinip aynı
   const email = read("src/server/cash/report-email.ts");
   assert.match(email, /idempotencyKey: o\.idempotencyKey \?\? cashEmailKey\(row\)/);
   assert.doesNotMatch(email, /`cash-\$\{row\.date\}-r\$\{row\.revision\}`/);
-  assert.match(email, /key: `cash:\$\{row\.date\}:r\$\{row\.revision\}`/);
+  // İşlem geçmişinin anahtarı güne ve şubeye göre (Tuzla'nınki eskisi gibi; KP-07)
+  assert.match(email, /key: cashLogKey\(row\)/);
+  assert.equal(cashLogKey({ date: "2026-11-12", branchId: "tuzla", revision: 1 }), "cash:2026-11-12:r1");
+  assert.equal(cashLogKey({ date: "2026-11-12", branchId: "marina", revision: 2 }), "cash:2026-11-12:marina:r2");
 });
 
 test("E-09: LafPOS'tan farklı yazılan: sayılan nakit 9.350 (LafPOS 9.000); aynı yazılan rapor fark vermez", () => {
@@ -308,7 +311,7 @@ test("G11: LafPOS'un kartla bahşişi ve cari tahsilatı kart farkından her oku
   const page = read("src/app/panel/kasa/page.tsx");
   assert.doesNotMatch(page, /lafposForStaff/);
   assert.equal(page.match(/lafpos=\{lafposState\.day\}/g)?.length, 2, "kasa formu ve geç rapor");
-  assert.match(page, /\.\.\.extrasFrom\(photoInfo, outs, report, lafposState\)/, "WhatsApp aynı özetle");
+  assert.match(page, /\.\.\.extrasFrom\(photoInfo, outs, report, lafposState, formLabel\)/, "WhatsApp aynı özetle");
   // WhatsApp metni de (personel): kart aynı, tutar yok, düşüldüğü yazar
   const wa = whatsappText(okc, { by: "Ayşe", kasa: "LafPOS", cardExtra: 520 });
   // LafPOS gününde karşılaştırma LafPOS'un adıyla (denetim E-39)

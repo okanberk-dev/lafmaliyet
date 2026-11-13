@@ -34,6 +34,8 @@ const keptPhotos = (own: OwnLate | null, me: string): FormPhoto[] =>
 
 export function LateReport({
   date,
+  branchId,
+  branchLabel = null,
   own,
   closedCount,
   others,
@@ -45,6 +47,9 @@ export function LateReport({
   lafposMode = false,
 }: {
   date: string;
+  /** Geç raporun şubesi (seçili şube, "Tümü"de Tuzla) ve birden çok şube açıkken adı */
+  branchId?: string;
+  branchLabel?: string | null;
   own: OwnLate | null;
   closedCount: number;
   others: { requestedByName: string; createdAt: string }[];
@@ -175,6 +180,8 @@ export function LateReport({
       <CashForm
         key={`gec:${date}:${pendingOwn?.version ?? 0}:${own?.id ?? 0}`}
         date={date}
+        branchId={branchId}
+        branchLabel={branchLabel}
         report={null}
         carry={carry}
         whatsapp={null}

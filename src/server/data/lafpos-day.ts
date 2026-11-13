@@ -7,6 +7,7 @@ import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
 import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { andWhere, currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
@@ -40,27 +41,36 @@ type Reader = Pick<DB, "select">;
 export async function kasaEvidence(db: Reader, date: string): Promise<KasaEvidence> {
   const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
   if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return "modpos-z";
-  const [day] = await db.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.date, date)).limit(1);
+  const [day] = await db
+    .select({ date: s.posDayReports.date })
+    .from(s.posDayReports)
+    .where(andWhere(eq(s.posDayReports.date, date), await currentBranchWhere(s.posDayReports.branchId)))
+    .limit(1);
   return day ? "lafpos" : "okc-z";
 }
 
 /**
- * [from, to] içindeki günlerin kasası ve LafPOS özetleri (yöneticinin ay görünümü): `of(gün)` loadKasaLafpos'un aynısını
- * verir (geçiş gününden önceki günde ya da geçiş günü boşken `{ lafpos: false, day: null }`)
+ * [from, to] içindeki günlerin kasası ve LafPOS özetleri (yöneticinin ay görünümü), seçili şubeyle: `of(gün, şube)`
+ * loadKasaLafpos'un aynısını verir (geçiş gününden önceki günde ya da geçiş günü boşken `{ lafpos: false, day: null }`).
+ * Şube verilince yalnız o şubenin gün sonu ("Tümü"de Marina'nın raporu Tuzla'nın gün sonuyla karşılaştırılmaz)
  */
-export async function loadKasaLafposDays(from: string, to: string, db: DB = getDb()): Promise<(date: string) => { lafpos: boolean; day: LafposDay | null }> {
+export async function loadKasaLafposDays(from: string, to: string, db: DB = getDb()): Promise<(date: string, branchId?: string) => { lafpos: boolean; day: LafposDay | null }> {
   const out = new Map<string, LafposDay>();
   const switchDay = await loadLafposSwitchDay(db);
-  const of = (date: string) => (isLafposDay(date, switchDay) ? { lafpos: true, day: out.get(date) ?? null } : { lafpos: false, day: null });
+  const of = (date: string, branchId?: string) =>
+    isLafposDay(date, switchDay) ? { lafpos: true, day: out.get(branchId === undefined ? date : `${date}|${branchId}`) ?? null } : { lafpos: false, day: null };
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;
   const rows = await db
-    .select({ date: s.posDayReports.date, z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
+    .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
-    .where(and(gte(s.posDayReports.date, start), lte(s.posDayReports.date, to)));
+    .where(and(gte(s.posDayReports.date, start), lte(s.posDayReports.date, to), await currentBranchWhere(s.posDayReports.branchId)));
   for (const r of rows) {
     const z = posZSchema.safeParse(r.z);
-    if (z.success) out.set(r.date, lafposDayOf(z.data, r.receivedAt));
+    if (!z.success) continue;
+    const day = lafposDayOf(z.data, r.receivedAt);
+    out.set(`${r.date}|${r.branchId}`, day);
+    if (!out.has(r.date)) out.set(r.date, day);
   }
   return of;
 }
@@ -74,7 +84,7 @@ export async function loadLafposDay(date: string, db: DB = getDb()): Promise<Laf
   const [row] = await db
     .select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
     .from(s.posDayReports)
-    .where(eq(s.posDayReports.date, date))
+    .where(andWhere(eq(s.posDayReports.date, date), await currentBranchWhere(s.posDayReports.branchId)))
     .limit(1);
   if (!row) return null;
   const z = posZSchema.safeParse(row.z);

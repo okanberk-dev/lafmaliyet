@@ -183,7 +183,8 @@ export function salesLine(i: Pick<KasaIn, "week" | "reports">): string | null {
     const from = addDays(i.week.lastFrom, -7 * k);
     const to = addDays(i.week.lastTo, -7 * k);
     const rs = i.reports.filter((r) => r.date >= from && r.date <= to);
-    return { n: rs.length, total: sum(rs.map((r) => r.revenue ?? r.zTotal)) };
+    // Raporlu gün günde bir kez: iki şubenin aynı günkü raporu bir gün (HM-07; tam hafta eşiği 6 gün)
+    return { n: new Set(rs.map((r) => r.date)).size, total: sum(rs.map((r) => r.revenue ?? r.zTotal)) };
   };
   const last = weekOf(0);
   if (!last.n) return null;

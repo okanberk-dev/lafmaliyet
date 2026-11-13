@@ -13,6 +13,7 @@ import {
   type FieldChange,
   type LateCashPayload,
 } from "./cash-report";
+import { branchKeySuffix, DEFAULT_BRANCH_ID } from "./branches";
 import { closedBellTitle } from "./closed-days";
 import { money } from "./format";
 import { OKC_KNOWN_RATES, sameVat, type OkcVatLine } from "./okc-z";
@@ -100,6 +101,8 @@ export const CorrectionPayload = z.object({
   baseCountedBy: z.number().int().positive().nullable(),
   proposed: ProposedSchema,
   gate: z.enum(["kilitli", "gec"]),
+  /** Raporun şubesi (denetim KP-02); şubeden önce açılan istekte yok: şube `reportId`'nin satırından bulunur */
+  branchId: z.string().min(1).max(24).optional(),
 });
 export type CorrectionPayloadT = z.output<typeof CorrectionPayload>;
 
@@ -110,6 +113,8 @@ export const DeletePayload = z.object({
   baseRevision: z.number().int().min(1),
   snapshot: CashRevisionDataSchema,
   photos: z.number().int().min(0),
+  /** Raporun şubesi; eski istekte yok (silme zaten `reportId`'nin satırına gider) */
+  branchId: z.string().min(1).max(24).optional(),
 });
 export type DeletePayloadT = z.output<typeof DeletePayload>;
 
@@ -128,16 +133,40 @@ export const LatePayload = CashFieldsSchema.extend({
   // LafPOS gününde LafPOS'un gün sonu (fotoğrafsız) ya da yazarkasa Z fotoğrafı
   photos: z.array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]) })).max(MAX_REPORT_PHOTOS),
   cashDiff: amount,
+  /** Geç raporun şubesi (isteği açanın seçili şubesi; denetim KP-02); şubeden önce açılan istekte yok (Tuzla'nın) */
+  branchId: z.string().min(1).max(24).optional(),
 }) satisfies z.ZodType<LateCashPayload, unknown>;
 export type LatePayloadT = z.output<typeof LatePayload>;
 
-/** Geç raporun alanları (yükten; teslim alan, fotoğraflar ve kasa farkı hariç) */
+/** Geç raporun alanları (yükten; teslim alan, fotoğraflar, kasa farkı ve şube hariç) */
 export function lateFields(p: LatePayloadT): CashReportFields {
-  const { handedTo: _to, photos: _photos, cashDiff: _diff, ...fields } = p;
+  const { handedTo: _to, photos: _photos, cashDiff: _diff, branchId: _branch, ...fields } = p;
   void _to;
   void _photos;
   void _diff;
+  void _branch;
   return { ...fields, discounts: fields.discounts ?? null };
+}
+
+/**
+ * Kasa raporu isteğinin konusu (düzeltme, silme, geç rapor, kapalı gün): gün ve şube (denetim KP-X2). Tuzla'nınki
+ * eskisi gibi `gun:<gün>` (şubelerden önce açılan istekler onundur), öteki şubeninki `gun:<gün>:<şube>`: bir şubenin
+ * onayı, silmesi ya da raporu yalnız kendi şubesinin isteklerini kapatır
+ */
+export function cashDaySubject(date: string, branchId: string): string {
+  return `gun:${date}${branchKeySuffix(branchId)}`;
+}
+
+/** Konunun şubesi (cashDaySubject'in tersi): `gun:<gün>` Tuzla'nın, `gun:<gün>:<şube>` o şubenin */
+export function subjectBranch(subject: string): string {
+  const m = /^gun:\d{4}-\d{2}-\d{2}:(.+)$/.exec(subject);
+  return m ? m[1] : DEFAULT_BRANCH_ID;
+}
+
+/** İsteğin şubesi: yükte yazılıysa o, yoksa (şubeden önce açılan istek) konudan */
+export function requestBranch(row: { subject: string; payload: unknown }): string {
+  const b = (row.payload as { branchId?: unknown } | null)?.branchId;
+  return typeof b === "string" && b ? b : subjectBranch(row.subject);
 }
 
 /** "Mehmet'e", "bankaya" (teslim alan; yöneticinin kartı) */
@@ -169,6 +198,7 @@ export const CASH_REQUEST_TEXT = {
   lateHandedTo: "Teslim edileni kimin aldığını seçin",
   lateExists: "Bu günün raporu artık var; isteği reddedin",
   lateHandover: "Teslimi aldığınızı ya da bankada gördüğünüzü işaretleyin",
+  branchChanged: "Şube seçimi bu arada değişti; sayfayı yenileyin",
 } as const;
 
 const FIELD_KEYS = [

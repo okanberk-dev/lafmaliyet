@@ -7,7 +7,7 @@ import { consistency, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { salesBasis } from "@/lib/calc/price-loss";
 import { lineLabel } from "@/lib/cash-plan";
-import { businessDate, carryChecks, historyOf } from "@/lib/cash-report";
+import { branchCarryChecks, businessDate, historyOf } from "@/lib/cash-report";
 import { dayRevenue } from "@/lib/cash-revenue";
 import { isChannelKey } from "@/lib/commission/channels";
 import { buildCommissionReport, commissionAlerts, groupOf, MEAL_LIMIT, rowOf, type CommissionAlert, type CommissionReport } from "@/lib/commission/report";
@@ -120,8 +120,9 @@ const kasa: Collector = {
         return null;
       });
     const [carry, late, photo] = await Promise.all([
-      // Açılış ↔ devir zinciri pencerenin raporlarıyla (geçen haftanın ilk günü önceki haftanın son raporuna bakar)
-      quiet(Promise.resolve().then(() => [...carryChecks(reports, null).keys()].filter((d) => inLastWeek(ctx.week, d)).length), "devir"),
+      // Açılış ↔ devir zinciri pencerenin raporlarıyla, şube şube (geçen haftanın ilk günü önceki haftanın son raporuna
+      // bakar; Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz, HM-07); tutmayan gün bir kez sayılır
+      quiet(Promise.resolve().then(() => new Set([...branchCarryChecks(reports, null).values()].map((c) => c.date).filter((d) => inLastWeek(ctx.week, d))).size), "devir"),
       quiet(
         cashRevisionsFor(last.filter((r) => r.revision > 1).map((r) => r.id)).then(
           (revs) => last.filter((r) => r.revision > 1 && historyOf(r, revs.filter((x) => x.reportId === r.id)).entries.some((e) => e.late)).length,

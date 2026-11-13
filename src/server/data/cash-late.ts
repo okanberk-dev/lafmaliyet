@@ -4,7 +4,8 @@ import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { businessDate, carryCheck, LATE_REPORT_DAYS, lateMissingDays, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
 import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
-import { handedToText, lateBell, lateByText, LatePayload, lateFields, type LatePayloadT } from "@/lib/cash-requests";
+import { ALL_BRANCHES, cashBranchLabel } from "@/lib/branches";
+import { cashDaySubject, handedToText, lateBell, lateByText, LatePayload, lateFields, requestBranch, subjectBranch, type LatePayloadT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { lafposDiffs, type LafposDiff } from "@/lib/lafpos/diffs";
 import { lafposHandedGap, type LafposDay } from "@/lib/lafpos/prefill";
@@ -21,6 +22,8 @@ import { heldPhotoInfo, type CashPhotoDTO } from "@/server/data/cash-photos";
 import { loadMonthEntry, nextOkc, previousOkc } from "@/server/data/cash-reports";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
+import { currentBranchScope, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -34,7 +37,8 @@ const r = s.staffRequests;
 const pendingLate = and(eq(r.kind, "kasa-gec"), eq(r.status, "pending"));
 
 /**
- * Personelin "Girilmemiş günler"i: geç rapor penceresinin raporsuz, kapalı olmayan günleri ve istek durumu. `lafpos`:
+ * Personelin "Girilmemiş günler"i: geç rapor penceresinin raporsuz, kapalı olmayan günleri ve istek durumu, personelin
+ * yazdığı şubenin ("Tümü"de Tuzla; denetim KP-06: Marina'nın raporu Tuzla'nın gününü raporlu göstermez). `lafpos`:
  * LafPOS günü ve gün sonu geldi (kanıt o, fotoğraf gerekmez; G8, kasaEvidence ile aynı kural). Geçiş günü boşken hiç yok
  */
 export async function staffLateDays(me: { id: number }, now = new Date()): Promise<{ date: string; state: "missing" | "pending" | "rejected"; lafpos?: true }[]> {
@@ -42,19 +46,22 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
   const from = addDays(day, -LATE_REPORT_DAYS);
   const to = addDays(day, -2);
   const db = getDb();
+  const branchId = await currentWriteBranch();
+  const own = eq(s.cashReports.branchId, branchId);
   const [reports, [first], closed, requests, lafposDays] = await Promise.all([
     db
       .select({ date: s.cashReports.date })
       .from(s.cashReports)
-      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to))),
-    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
-    closedDaysBetween(from, to),
+      .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), own)),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).where(own).orderBy(asc(s.cashReports.date)).limit(1),
+    closedDaysBetween(from, to, db, branchId),
     db
-      .select({ day: r.day, status: r.status, requestedBy: r.requestedBy })
+      .select({ day: r.day, status: r.status, requestedBy: r.requestedBy, subject: r.subject })
       .from(r)
       .where(and(eq(r.kind, "kasa-gec"), gte(r.day, from), lte(r.day, to)))
-      .orderBy(asc(r.createdAt)),
-    lafposEvidenceDays(from, to),
+      .orderBy(asc(r.createdAt))
+      .then((list) => list.filter((q) => subjectBranch(q.subject) === branchId)),
+    withBranchScope(branchId, () => lafposEvidenceDays(from, to)),
   ]);
   const state = new Map<string, "pending" | "rejected">();
   for (const q of requests) {
@@ -80,10 +87,11 @@ async function lafposEvidenceDays(from: string, to: string): Promise<Set<string>
   const db = getDb();
   const switchDay = await loadLafposSwitchDay(db);
   if (switchDay === null || to < switchDay) return new Set();
+  const scope = await currentBranchScope();
   const rows = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
-    .where(and(gte(s.posDayReports.date, from > switchDay ? from : switchDay), lte(s.posDayReports.date, to)));
+    .where(and(gte(s.posDayReports.date, from > switchDay ? from : switchDay), lte(s.posDayReports.date, to), scope === ALL_BRANCHES ? undefined : eq(s.posDayReports.branchId, scope)));
   return new Set(rows.map((x) => x.date).filter((d) => isLafposDay(d, switchDay)));
 }
 
@@ -104,9 +112,9 @@ export interface OwnLate {
 }
 
 /**
- * Personelin geç rapor sayfası (`/panel/kasa?gun=D`): kişinin bu gün için bekleyen isteği, yoksa son reddedilen ya da
- * geri çekilen isteği (form onun değerleriyle açılır), kapanmış istek sayısı (iki ret ya da geri çekmeden sonra form
- * yerine "yöneticiye yazın") ve başkalarının bekleyen istekleri (yalnız ad ve an).
+ * Personelin geç rapor sayfası (`/panel/kasa?gun=D`): kişinin bu gün için (yazdığı şubede) bekleyen isteği, yoksa son
+ * reddedilen ya da geri çekilen isteği (form onun değerleriyle açılır), kapanmış istek sayısı (iki ret ya da geri
+ * çekmeden sonra form yerine "yöneticiye yazın") ve başkalarının bekleyen istekleri (yalnız ad ve an).
  */
 export async function lateRequestFor(date: string, me: { id: number }): Promise<{ own: OwnLate | null; closedCount: number; others: { requestedByName: string; createdAt: string }[] }> {
   const rows = await getDb()
@@ -125,7 +133,7 @@ export async function lateRequestFor(date: string, me: { id: number }): Promise<
       updatedAt: r.updatedAt,
     })
     .from(r)
-    .where(and(eq(r.kind, "kasa-gec"), eq(r.subject, `gun:${date}`)))
+    .where(and(eq(r.kind, "kasa-gec"), eq(r.subject, cashDaySubject(date, await currentWriteBranch()))))
     .orderBy(desc(r.updatedAt), desc(r.id));
   const mine = rows.filter((x) => x.requestedBy === me.id);
   const pick = mine.find((x) => x.status === "pending") ?? mine.find((x) => x.status === "rejected" || x.status === "withdrawn") ?? null;
@@ -176,15 +184,18 @@ export async function lateRequestsByReport(reportIds: readonly number[]): Promis
   return out;
 }
 
-/** Bekleyen geç raporlar, güne göre (Günden güne: "Onay bekliyor · Ayşe girdi · İncele") */
+/** Bekleyen geç raporlar, güne göre, seçili şubenin ("Tümü"de hepsi; Günden güne: "Onay bekliyor · Ayşe girdi · İncele") */
 export async function pendingLateByDay(from: string, to: string): Promise<Record<string, { id: number; requestedByName: string }[]>> {
-  const rows = await getDb()
-    .select({ id: r.id, day: r.day, requestedByName: r.requestedByName })
-    .from(r)
-    .where(and(pendingLate, gte(r.day, from), lte(r.day, to)))
-    .orderBy(asc(r.createdAt));
+  const [rows, scope] = await Promise.all([
+    getDb()
+      .select({ id: r.id, day: r.day, subject: r.subject, payload: r.payload, requestedByName: r.requestedByName })
+      .from(r)
+      .where(and(pendingLate, gte(r.day, from), lte(r.day, to)))
+      .orderBy(asc(r.createdAt)),
+    currentBranchScope(),
+  ]);
   const out: Record<string, { id: number; requestedByName: string }[]> = {};
-  for (const x of rows) if (x.day) (out[x.day] ??= []).push({ id: x.id, requestedByName: x.requestedByName });
+  for (const x of rows) if (x.day && (scope === ALL_BRANCHES || requestBranch(x) === scope)) (out[x.day] ??= []).push({ id: x.id, requestedByName: x.requestedByName });
   return out;
 }
 
@@ -201,6 +212,8 @@ export interface LateCard {
   id: number;
   version: number;
   date: string;
+  /** Geç raporun şubesi, birden çok şube açıkken adı (cashBranchLabel); zincir, ay ve kasadan çıkanlar o şubenin */
+  branch: string | null;
   requestedByName: string;
   createdAt: string;
   waited: string;
@@ -253,22 +266,32 @@ function monthLineOf(date: string, today: string, first: string | null, entry: {
   return `${gen} açık gün ve POS cirosuna girer`;
 }
 
-/** Bekleyen geç raporların kartları, en eski gün önce (yalnız yönetici; src/server/data/cash-requests.ts toplar) */
+/**
+ * Bekleyen geç raporların kartları, en eski gün önce (yalnız yönetici; src/server/data/cash-requests.ts toplar). Her kart
+ * isteğin şubesinden okunur (yöneticinin seçimi ne olursa; denetim KP-02): rapor, zincir, ay, yazarkasa Z'si ve
+ * kasadan çıkanlar o şubenin
+ */
 export async function lateCards(now = new Date()): Promise<LateCard[]> {
   const db = getDb();
   const rows = await db
-    .select({ id: r.id, version: r.version, day: r.day, payload: r.payload, message: r.message, requestedByName: r.requestedByName, createdAt: r.createdAt })
+    .select({ id: r.id, version: r.version, day: r.day, subject: r.subject, payload: r.payload, message: r.message, requestedByName: r.requestedByName, createdAt: r.createdAt })
     .from(r)
     .where(pendingLate)
     .orderBy(asc(r.day), asc(r.createdAt));
   if (!rows.length) return [];
   const today = businessDate(now);
   const days = [...new Set(rows.flatMap((x) => (x.day ? [x.day] : [])))];
-  const [reported, [first]] = await Promise.all([
-    db.select({ date: s.cashReports.date }).from(s.cashReports).where(inArray(s.cashReports.date, days)),
-    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+  const [reported, firsts, branches] = await Promise.all([
+    db.select({ date: s.cashReports.date, branchId: s.cashReports.branchId }).from(s.cashReports).where(inArray(s.cashReports.date, days)),
+    db
+      .selectDistinctOn([s.cashReports.branchId], { branchId: s.cashReports.branchId, date: s.cashReports.date })
+      .from(s.cashReports)
+      .orderBy(s.cashReports.branchId, asc(s.cashReports.date)),
+    listBranches(db),
   ]);
-  const reportedDays = new Set(reported.map((x) => x.date));
+  // Raporlu gün şube şube: öteki şubenin raporu bu geç raporu "artık raporlu" yapmaz
+  const reportedDays = new Set(reported.map((x) => `${x.date}|${x.branchId}`));
+  const firstOf = new Map(firsts.map((f) => [f.branchId, f.date]));
   const switchDay = await loadLafposSwitchDay(db);
   const cards: LateCard[] = [];
   for (const x of rows) {
@@ -276,20 +299,23 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     if (!x.day || !parsed.success) continue;
     const p = parsed.data;
     const date = x.day;
+    const branchId = requestBranch(x);
     const fields = lateFields(p);
-    const [photos, chain, outs, entry, okcPrev, okcNext, lafpos] = await Promise.all([
-      heldPhotoInfo(
-        p.photos.map((ph) => ph.id),
-        date,
-        "admin",
-      ),
-      chainNeighbours(db, date, { exceptRequestId: x.id }),
-      cashOutsOn(date),
-      loadMonthEntry(date.slice(0, 7)),
-      previousOkc(date, db),
-      nextOkc(date, db),
-      loadKasaLafpos(date, db),
-    ]);
+    const [photos, chain, outs, entry, okcPrev, okcNext, lafpos] = await withBranchScope(branchId, () =>
+      Promise.all([
+        heldPhotoInfo(
+          p.photos.map((ph) => ph.id),
+          date,
+          "admin",
+        ),
+        chainNeighbours(db, date, { exceptRequestId: x.id, branchId }),
+        cashOutsOn(date),
+        loadMonthEntry(date.slice(0, 7)),
+        previousOkc(date, db),
+        nextOkc(date, db),
+        loadKasaLafpos(date, db),
+      ]),
+    );
     // Yazarkasa Z'sinin kümülatifi, fotoğrafın okumasından: okunan Z no ve günlük toplam yazılanla aynıysa (sunucu
     // sütunlarının kuralı, plan §6.1); değilse zincir önceki ve sonraki saklanan kümülatifle denetlenir
     const read = okcReadFigures(photos.readings);
@@ -301,7 +327,9 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     // Aynı aralıkta (önceki kayıtlı rapordan bu yana; önceki halka bekleyen geç rapor olsa da) daha eski bekleyen gün:
     // onay kapalı. Sınır onaydakiyle (reviewLate) aynı: aralığın dışındaki eski bir bekleyen gün adı geçmez
     const { prevReportDate } = chain;
-    const older = rows.find((o) => o.id !== x.id && o.day && o.day < date && (!prevReportDate || o.day > prevReportDate) && !reportedDays.has(o.day));
+    const older = rows.find(
+      (o) => o.id !== x.id && o.day && o.day < date && requestBranch(o) === branchId && (!prevReportDate || o.day > prevReportDate) && !reportedDays.has(`${o.day}|${branchId}`),
+    );
     const outsTotal = cashOutsTotal(outs);
     const outsGap = Math.round((fields.cashOut - outsTotal) * 100) / 100;
     // LafPOS gününde farkın LafPOS'taki teslim kadarı fişsiz değil: teslim Kasadan çıkanlar'a girilmemiş (E-35)
@@ -311,6 +339,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
       id: x.id,
       version: x.version,
       date,
+      branch: cashBranchLabel(branchId, branches),
       requestedByName: x.requestedByName,
       createdAt: x.createdAt.toISOString(),
       waited: waitedText(x.createdAt, now),
@@ -327,7 +356,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
       chain: { prev: chain.prev, next: chain.next, prevCheck, nextCheck },
       okcChain,
       okcPrevZ: okcPrev.z,
-      monthLine: monthLineOf(date, today, first?.date ?? null, entry),
+      monthLine: monthLineOf(date, today, firstOf.get(branchId) ?? null, entry),
       outs: {
         count: outs.length,
         total: outsTotal,
@@ -344,7 +373,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
         lafposHanded: split?.handed ?? null,
         unreceipted: split ? split.rest : Math.max(0, outsGap),
       },
-      reported: reportedDays.has(date),
+      reported: reportedDays.has(`${date}|${branchId}`),
       olderPending: older?.day ?? null,
       // Z no sırası yalnız aynı kasanın günleriyle karşılaştırılır: LafPOS'a geçişte Z numarası 1'den başlar
       lafpos: {

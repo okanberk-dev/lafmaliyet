@@ -67,6 +67,20 @@ function report(date: string, o: Partial<Report> = {}): Report {
 const D = "2026-11-01";
 const D2 = "2026-11-02";
 
+test("şube: rapor yalnız kendi şubesinin föyüyle karşılaştırılır; zil kimliği şubeli (Tuzla'nınki eskisi gibi; denetim P03)", () => {
+  const tuzla = { ...sheet(D), branchId: "tuzla" };
+  const marina = { ...sheet(D), branchId: "marina" };
+  // Marina'nın raporu föyden farklı yazılmış ama yalnız Tuzla'nın föyü var: karşılaştırma yok
+  assert.deepEqual(modposMismatches([report(D, { cash: 8190, branchId: "marina" } as Partial<Report>)], [tuzla], null), []);
+  const out = modposMismatches([report(D, { cash: 8190, branchId: "marina" } as Partial<Report>), report(D, { branchId: "tuzla" } as Partial<Report>)], [tuzla, marina], null);
+  assert.deepEqual(
+    out.map((m) => (m.report as Report & { branchId: string }).branchId),
+    ["marina"],
+  );
+  assert.equal(modposMismatchBell(out[0] as never).id, `kasa-modpos-${D}-marina-r1-s1`);
+  assert.equal(modposMismatchBell({ ...out[0], report: { ...out[0].report, branchId: "tuzla" } } as never).id, `kasa-modpos-${D}-r1-s1`);
+});
+
 // ---------------------------------------------------------------- Föyünden farklı yazılan rapor
 
 test("föyünden farklı: aynı yazılan rapor uyarı değil; nakit farklıysa tek alan, rapor ve föyle birlikte", () => {
@@ -244,7 +258,7 @@ test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personeli
   const staffBranch = cash.slice(cash.indexOf('if (user.role !== "admin") {'), cash.indexOf("const out: PanelNotification[] = [];"));
   assert.ok(staffBranch.length > 0);
   assert.doesNotMatch(staffBranch, /modpos|Modpos|cashIntegrityNotifications/);
-  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id)") > cash.indexOf('if (user.role !== "admin") {'));
+  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id, branches)") > cash.indexOf('if (user.role !== "admin") {'));
   // İstek dalları (personelin İsteklerim'i dahil) ModPOS okumaz
   assert.doesNotMatch(bell.slice(bell.indexOf("async function requestNotifications")), /modpos|Modpos/);
 });

@@ -25,6 +25,8 @@ import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/p
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { addDays, dayMonthTR, monthGenitiveTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
@@ -53,10 +55,11 @@ export interface OwnCashOutRequest {
 }
 
 /**
- * Bu günün bekleyen kasadan çıkan istekleri (personelin kasa sayfası): kişinin kendi istekleri (satırın kendisi) ve
- * başkalarının satırlara açtığı istekler (yalnız satırın kimliği ve ad)
+ * Bu günün bekleyen kasadan çıkan istekleri (personelin kasa sayfası, formun şubesinin): kişinin kendi istekleri
+ * (satırın kendisi) ve başkalarının satırlara açtığı istekler (yalnız satırın kimliği ve ad)
  */
 export async function staffCashOutRequests(day: string, me: { id: number }): Promise<{ own: OwnCashOutRequest[]; others: { cashOutId: number; requestedByName: string }[] }> {
+  const branchId = await currentWriteBranch();
   const rows = await getDb()
     .select({
       id: r.id,
@@ -72,9 +75,16 @@ export async function staffCashOutRequests(day: string, me: { id: number }): Pro
     .orderBy(asc(r.createdAt));
   const own: OwnCashOutRequest[] = [];
   const others: { cashOutId: number; requestedByName: string }[] = [];
-  for (const x of rows) {
-    const p = CashOutRequestPayload.safeParse(x.payload);
+  // İsteğin şubesi: yeni satırda yükte, var olan satırda satırın kendisinde (öteki şubenin satırı bu sayfada yok)
+  const parsed = rows.map((x) => ({ x, p: CashOutRequestPayload.safeParse(x.payload) }));
+  const rowIds = parsed.flatMap(({ p }) => (p.success && p.data.cashOutId !== null ? [p.data.cashOutId] : []));
+  const rowBranch = new Map(
+    rowIds.length ? (await getDb().select({ id: s.cashOuts.id, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(inArray(s.cashOuts.id, rowIds))).map((o) => [o.id, o.branchId]) : [],
+  );
+  for (const { x, p } of parsed) {
     if (!p.success) continue;
+    const of = p.data.cashOutId !== null ? rowBranch.get(p.data.cashOutId) : (p.data.branchId ?? DEFAULT_BRANCH_ID);
+    if (of !== undefined && of !== branchId) continue;
     if (x.requestedBy === me.id) {
       own.push({ id: x.id, version: x.version, createdAt: x.createdAt.toISOString(), message: x.message, cashOutId: p.data.cashOutId, view: staffCashOutView(p.data) });
     } else if (p.data.cashOutId !== null) {
@@ -116,11 +126,11 @@ export async function photoRemovalStates(report: { id: number; date: string } & 
   return out;
 }
 
-/** "Eski bir güne ekle"nin günleri: D−2 … D−7, kapalı işaretli günler hariç, en yeni önce */
+/** "Eski bir güne ekle"nin günleri: D−2 … D−7, formun şubesinin kapalı işaretli günleri hariç, en yeni önce */
 export async function staffOldCashOutDays(now = new Date()): Promise<string[]> {
   const days = oldRequestDays(now);
   if (!days.length) return [];
-  const closed = new Set(await closedDaysBetween(days[days.length - 1], days[0]));
+  const closed = new Set(await closedDaysBetween(days[days.length - 1], days[0], getDb(), await currentWriteBranch()));
   return days.filter((d) => !closed.has(d));
 }
 
@@ -249,7 +259,9 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   const diffs = reading && saved ? photoDiffs([reading], saved) : [];
   const suspicious = reading && saved ? suspiciousDiffs([reading], saved) : [];
   // Tek ModPOS Z ve (yazarkasa bölümü yazılmışken) tek Banka POS Z fotoğrafı kanıttır (removalCheck ile aynı kural)
-  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report), evidence: await kasaEvidence(db, report.date) }) : null;
+  const kindRefusal = report
+    ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report), evidence: await withBranchScope(report.branchId, () => kasaEvidence(db, report.date)) })
+    : null;
   const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : kindRefusal ? kindRefusal : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
   return {
     ...base,
@@ -264,10 +276,17 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
 async function cashOutCard(base: CardBase, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
   const db = getDb();
   const day = p.day;
+  // İsteğin şubesi (yeni satırda yükte, var olan satırda satırın): günün satırları, raporu ve kilidi o şubenin (KP-04)
+  const [row] = p.cashOutId !== null ? await db.select({ branchId: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.id, p.cashOutId)).limit(1) : [];
+  const branchId = row?.branchId ?? p.branchId ?? DEFAULT_BRANCH_ID;
   const [lines, [report], dayOpen] = await Promise.all([
-    cashOutsOn(day),
-    db.select({ cashDiff: s.cashReports.cashDiff, cashOut: s.cashReports.cashOut }).from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1),
-    staffDayOpen(day, db, now),
+    withBranchScope(branchId, () => cashOutsOn(day)),
+    db
+      .select({ cashDiff: s.cashReports.cashDiff, cashOut: s.cashReports.cashOut })
+      .from(s.cashReports)
+      .where(and(eq(s.cashReports.date, day), eq(s.cashReports.branchId, branchId)))
+      .limit(1),
+    staffDayOpen(day, db, now, branchId),
   ]);
   const current = p.cashOutId !== null ? (lines.find((l) => l.id === p.cashOutId) ?? null) : null;
   const rowGone = p.op !== "ekle" && !current;

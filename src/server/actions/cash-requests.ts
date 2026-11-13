@@ -9,6 +9,7 @@ import { MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { withBranchScope } from "@/server/branch-scope";
 import { proposeLateReport } from "@/server/cash/late";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { okcFieldsIn, reportSchema } from "@/server/cash/report-store";
@@ -31,10 +32,14 @@ const clientKey = z
   .nullish()
   .transform((v) => v ?? null);
 
+/** Formun şubesi (açıldığı andaki seçim): bu arada seçim değiştiyse istek açılmaz (assertFormBranch); eski sekme göndermez */
+const branchId = z.string().min(1).max(24).optional();
+
 const correctionSchema = z.object({
   date: zDate,
+  branchId,
   baseRevision: z.number().int().min(1),
-  fields: reportSchema.omit({ date: true, countedBy: true, revision: true, photos: true }),
+  fields: reportSchema.omit({ date: true, countedBy: true, revision: true, photos: true, branchId: true }),
   countedBy: z
     .number()
     .int()
@@ -65,6 +70,7 @@ export async function requestCashCorrection(input: z.input<typeof correctionSche
 
 const deleteSchema = z.object({
   date: zDate,
+  branchId,
   baseRevision: z.number().int().min(1),
   message: z.string().trim().min(3, "Nedenini yazın").max(500, "Neden en çok 500 karakter"),
   clientKey,
@@ -102,9 +108,9 @@ export async function requestLateCashReport(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
-    const { reason, requestVersion, photoIds, handedTo, clientKey: key, ...form } = lateSchema.parse(input);
+    const { reason, requestVersion, photoIds, handedTo, clientKey: key, branchId: sent, ...form } = lateSchema.parse(input);
     const fields = okcFieldsIn(form);
-    const out = await proposeLateReport(getDb(), me, { fields, reason, requestVersion, photoIds, handedTo, clientKey: key });
+    const out = await proposeLateReport(getDb(), me, { fields, branchId: sent, reason, requestVersion, photoIds, handedTo, clientKey: key });
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Geç kasa raporu onaya gönderildi", lateLog({ date: fields.date, zTotal: fields.zTotal, cashDiff: out.cashDiff, reason }));
     }
@@ -120,7 +126,7 @@ const reviewSchema = z.object({
   decision: z.enum(["approve", "reject", "close"]),
   note: zOptText(300),
   /** Geç rapor, "Düzeltip onayla": yöneticinin değerleri */
-  fields: reportSchema.omit({ date: true, countedBy: true, revision: true, photos: true }).nullish(),
+  fields: reportSchema.omit({ date: true, countedBy: true, revision: true, photos: true, branchId: true }).nullish(),
   /** Geç rapor: teslimi aldım / bankada gördüm */
   handoverSeen: z.boolean().optional(),
 });
@@ -147,7 +153,8 @@ export async function reviewCashRequest(input: z.input<typeof reviewSchema>) {
       revision = out.report.revision;
       email = await emailReport(out.report.id, { approval: approvalLine(who, me.name) });
       await logActivity(me, "Kasa düzeltmesi onaylandı", `${longDateTR(date)} (${who} önerdi): ${changesText(out.changes)}${note}`);
-      const [integrity, nextReport] = await Promise.all([cashReportIntegrity(toCashDTO(out.report)), nextReportAfter(date)]);
+      // Sonraki rapor raporun kendi şubesinde (yöneticinin seçimi ne olursa)
+      const [integrity, nextReport] = await Promise.all([cashReportIntegrity(toCashDTO(out.report)), withBranchScope(out.report.branchId, () => nextReportAfter(date))]);
       next = integrity.next ? { date: integrity.next.date, opening: integrity.next.opening } : null;
       nextBroken = Boolean(
         integrity.next && nextReport && out.prevCarry !== null && !carryCheck(nextReport.date, nextReport.openingCash, { date, amount: out.prevCarry }),

@@ -33,16 +33,20 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 
 | Tür (`kind`) | Ne | Konu (`subject`) | Süre | Plan |
 |---|---|---|---|---|
-| `kasa-duzeltme` | Kasa raporunu ertesi gün (kasa alanı ya da Sayan) ya da kilitlendikten sonra düzeltmek | `gun:<D>` | yok | §2.3 |
-| `kasa-silme` | Kasa raporunu sildirmek | `gun:<D>` | yok | §2.3 |
-| `kasa-gec` | Unutulan eski günün kasa raporu (14 gün; Z fotoğrafı ve Z no ile) | `gun:<D>` | yok | §2.6 |
+| `kasa-duzeltme` | Kasa raporunu ertesi gün (kasa alanı ya da Sayan) ya da kilitlendikten sonra düzeltmek | `gun:<D>`, Tuzla dışında `gun:<D>:<şube>` | yok | §2.3 |
+| `kasa-silme` | Kasa raporunu sildirmek | `gun:<D>`, Tuzla dışında `gun:<D>:<şube>` | yok | §2.3 |
+| `kasa-gec` | Unutulan eski günün kasa raporu (14 gün; Z fotoğrafı ve Z no ile) | `gun:<D>`, Tuzla dışında `gun:<D>:<şube>` | yok | §2.6 |
 | `kasa-cikan` | Kapanmış ya da eski güne kasadan çıkan; yöneticinin kategorisindeki satırı değiştirmek | `cikan:<id>`, `cikan-yeni:<anahtar>` | 14 gün | §2.7 |
 | `foto-kaldir` | Yanlış Z / POS fotoğrafını rapordan kaldırtmak (okuma farkı olan ve raporun tek Z fotoğrafı hariç) | `foto:<id>` | yok | §2.7 |
-| `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
+| `kapali-gun` | Dün kafe kapalıydı | `gun:<D>`, Tuzla dışında `gun:<D>:<şube>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |
 | `karaoke-sil` | Panelden açılan karaoke sayacını, açılışından 10 dakika sonra sildirmek (ilk 10 dakikada personel kendisi siler) | `karaoke:<id>` | yok | denetim E-15 |
 | `mal-taslak` | **Kaldırıldı (26 Ekim 2026).** Eskiden hızlı sayımdan sonra fiyatsız mal siparişi taslağı. Tür eski satırlar için enumda kalır (`RETIRED_REQUEST_KINDS`): yeni istek açılmaz, Onaylar, Bugün, zil, sabah e-postası ve Son kararlar okumaz, sabah işi bekleyen ya da onaylanmış eski taslağı "Süresi doldu" yapar ([MAL-SIPARISI.md](MAL-SIPARISI.md)) | `tedarikci:<anahtar>` | (sabah işi kapatır) | §2.4 |
+
+Kasa raporu istekleri ve kapalı gün bildirimi şubeyi de taşır (denetim 13 Kasım 2026, P03; [SUBE.md](SUBE.md)): yükte
+`branchId`, konuda Tuzla dışındaki şube. Onay isteğin şubesine yazar (yöneticinin seçili şubesine değil); bir şubenin
+kararı öteki şubenin aynı günkü isteğini kapatmaz. Birden çok şube açıkken kart şubenin adını rozetle yazar.
 
 Türe özel alanlar `payload` (istek) ve `result` (karar) içinde, her okumada zod ile çözülür. `title` tutarsız ve kişisel
 veri taşımayan tek satırdır ("22 Ekim kasa düzeltmesi", "Latte M ×2 · 15 Eki"); zil, işlem geçmişi,

@@ -22,9 +22,10 @@ import { newClientKey } from "./cash-requests";
  * pencerede o günün izleri uyarı olarak görünür. Form yerinde kalır: kafe açıktıysa rapor girilir.
  */
 
+/** `branchId`: formun şubesi (kapalı gün şube başına; denetim KP-05): bildirim ve işaret o şubeye */
 export type ClosedDayBarProps =
-  | { role: "staff"; date: string; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; canAsk: boolean }
-  | { role: "admin"; date: string; marked: boolean; warnings: string[] };
+  | { role: "staff"; date: string; branchId?: string; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; canAsk: boolean }
+  | { role: "admin"; date: string; branchId?: string; marked: boolean; warnings: string[] };
 
 export function ClosedDayBar(p: ClosedDayBarProps) {
   const [open, setOpen] = useState(false);
@@ -40,7 +41,10 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
 
   function send() {
     start(async () => {
-      const res = p.role === "staff" ? await requestClosedDay({ date: p.date, reason: reason.trim() || null, clientKey: key }) : await markClosedDay({ date: p.date, note: reason.trim() || null });
+      const res =
+        p.role === "staff"
+          ? await requestClosedDay({ date: p.date, branchId: p.branchId, reason: reason.trim() || null, clientKey: key })
+          : await markClosedDay({ date: p.date, branchId: p.branchId, note: reason.trim() || null });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       setOpen(false);
       setReason("");

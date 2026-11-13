@@ -46,16 +46,39 @@ yazın." Unutulan dünü sonradan girmek serbesttir. Daha eski bir günü yalnı
 ## Rapor numarası ve yöneticinin rapor penceresi
 
 Sahibin kararı (4 Kasım 2026): her kasa raporunun numarası iş gününden, **KR-YYYYAAGG** (3 Kasım 2026 → `KR-20261103`;
-`src/lib/cash-report.ts` `reportNo`). Gün başına tek rapor olduğu için numara benzersizdir; silinip yeniden girilen ya
-da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne listesinde, rapor penceresinin ve
-kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın konusunda ve başlığında, WhatsApp
-metninin ilk satırında yazar.
+`src/lib/cash-report.ts` `reportNo`). Şube başına günde tek rapor olduğu için numara bir şubede benzersizdir; silinip
+yeniden girilen ya da geç girilen rapor aynı numarayı alır, sıra kaymaz. İki şubenin aynı günkü raporu aynı numarayı
+alır: birden çok fiziksel şube açıkken numaranın yanında şubenin adı yazar ([Şubeler](#şubeler)). Numara Kasa'nın günden
+güne listesinde, rapor penceresinin ve kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın
+konusunda ve başlığında, WhatsApp metninin ilk satırında yazar.
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
 açılış ↔ devir, kart / yazarkasa, ModPOS API, LafPOS ve fotoğraftan farklı yazılanlar; her biri tek satır, yoksa
 "Kontroller tamam"), satış ve nakit kasa dökümü (satır içi uyarı yok), not ve kapalı **Ayrıntılar** (kart ve
 yazarkasa, fotoğraflar, değişiklikler). Personelin kayıtlı rapor kartı ve Onaylar'daki döküm aynı kalır.
+
+## Şubeler
+
+Kasa raporu şubenin raporudur (denetim 13 Kasım 2026, P03; [SUBE.md](SUBE.md) › Kasa ekranı, devir zinciri ve
+istekler):
+
+- **Form** seçili şubenin raporunu açar ve ona yazar; "Tümü" seçiliyken **Tuzla**'nın. Birden çok şube açıkken formun
+  üstünde "Tuzla kasa raporu · Rapor ve kasadan çıkanlar bu şubeye yazılır; başka şube için soldan şubeyi seçin.",
+  kayıtlı rapor kartının açıklamasında şubenin adı. Önceki devir, sonraki rapor, yazarkasa Z'si, kasadan çıkanlar,
+  bekleyen istekler, kapalı gün çubuğu ve fotoğraftan okumanın Z no denetimi de o şubeden. Form açıldığı şubeyi
+  gönderir: bu arada başka sekmede şube seçimi değiştiyse kayıt, düzeltme önerisi, silme isteği, geç rapor ve kapalı
+  gün bildirimi yazılmaz ("Şube seçimi bu arada değişti; sayfayı yenileyin").
+- **Günden güne** "Tümü"de günün her şube raporunu ayrı satırda, şubenin adıyla gösterir; ay kartının Z toplamı, nakit,
+  kart ve kasa farkı bütün şubelerin raporlarından, "Rapor girilen gün" günde bir kez. "Bugünün raporu" kartı her
+  şubenin bugünkü raporunu yazar.
+- **Açılış ↔ devir** zinciri şube şube kurulur: listede, zilde, Bugün'de, haftalık özette ve Claude'da Marina'nın
+  açılışı yalnız Marina'nın önceki devriyle karşılaştırılır.
+- **Kasadan çıkanlar**, **istekler**, **gün kilidi**, **geç rapor** ve **kapalı gün** şube içindedir (aşağıdaki
+  bölümler). Onaylar'daki kartlar şubenin adını rozetle yazar; onay isteğin şubesine yazar.
+- **E-posta ve WhatsApp:** birden çok fiziksel şube açıkken konu "Kasa raporu KR-20261112 · Marina · 12 Kasım Perşembe ·
+  kasa tutuyor", e-postanın başlığı "Gün sonu kasa raporu · KR-20261112 · Marina", WhatsApp'ın ilk satırı "*L'Affogato ·
+  Marina · Gün sonu kasa raporu KR-20261112*". Tek şube açıkken metin değişmez.
 
 ## Açılış ve devir
 
@@ -318,6 +341,11 @@ Kapanmış ya da eski bir güne yazılan kasadan çıkan beklenen nakdi düşür
 kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin onayına gider ([ONAYLAR.md](ONAYLAR.md), tür
 `kasa-cikan`); istek onaya kadar hiçbir yere yazmaz.
 
+Kasadan çıkan şubenin satırıdır (denetim KP-04, KP-06): form ve kart yalnız formun şubesinin satırlarını gösterir
+("Tümü"de Tuzla), raporun "Gün içinde çıkan"ı, e-posta ve WhatsApp öteki şubenin fişini saymaz. Kilit ("ertesi günün
+raporu girildi") ve kapalı gün satırın şubesine bakar: Marina'nın bugünkü raporu Tuzla'nın dünkü satırlarını ve
+fotoğraflarını personele kapatmaz.
+
 | Personel ne yapar | Nasıl |
 |---|---|
 | Açık günde (bugün, dün; ertesi günün raporu girilmemiş) kendi kategorisindeki satırı eklemek, düzeltmek, silmek | Doğrudan (değişmedi) |
@@ -396,9 +424,17 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   girmez; bekleyen bildirim "Onay bekleyenler"de karar verilene kadar listelenir.
 - **İşlem geçmişi:** "Kapalı gün bildirildi", "Kapalı gün bildirimi geri çekildi", "Kapalı gün onaylandı", "Kapalı gün
   reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
+- **Şube** (denetim KP-05): kapalı gün şube başına. Kasa'nın "Kafe kapalıydı"sı ve personelin bildiriminin onayı formun
+  şubesini yazar (`special_days.branch_id`); Satış tahmini'nde girilen kapalı gün işletme genelidir (şubesi boş, her
+  şubede kapalı sayılır). Bir şubenin raporu yalnız kendi şubesinin ve işletme genelinin tek günlük işaretini kaldırır;
+  Marina'nın raporu Tuzla'nın işaretine ve bildirimine dokunmaz. Kanıtın kasa raporu, LafPOS gün sonu, kasadan çıkan,
+  zayi, Z no ve açılış sürekliliği şubenin kayıtlarından; kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz
+  kayıtlardır, işletme genelinden sayılır (öteki şubenin personeli o gün panelde çalıştıysa kanıt görünür; yönetici günü
+  Kasa'dan doğrudan işaretleyebilir). Migration öncesindeki başlamış kapalı günler Tuzla'nın, ileri tarihli olanlar
+  işletme geneli kaldı.
 - Kod: saf kurallar `src/lib/closed-days.ts`, kanıt ve kancalar `src/server/closed-days.ts`, istek ve karar
   `src/server/closed-day-requests.ts`, uçlar `src/server/actions/closed-days.ts`. Testler `tests/kapali-gun.test.ts`,
-  `tests/kapali-gun-db.test.ts`.
+  `tests/kapali-gun-db.test.ts`, `tests/sube-kasa-ekrani-db.test.ts`.
 
 ## laffogato.net satırı (bilgi)
 
@@ -513,6 +549,11 @@ kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash
 `src/app/panel/onaylar/kasa-cards.tsx`. Testler: `tests/kasa-duzeltme-istegi.test.ts`, `tests/kasa-istek-db.test.ts`
 (`KASA_ISTEK_TEST_DATABASE_URL`).
 
+**Şube** (denetim KP-02, KP-X2): istek raporun şubesini taşır, konusu gün ve şube (Tuzla `gun:<gün>`, öteki şube
+`gun:<gün>:<şube>`). Onay yöneticinin seçili şubesine değil isteğin şubesine yazar; şubeden önce açılmış düzeltme
+önerisinin şubesi dayandığı rapordan bulunur. Bir şubenin onaylanan düzeltmesi ya da silinen raporu yalnız o raporun
+bekleyen isteklerini (ve fotoğraflarının kaldırma isteklerini) kapatır; öteki şubenin aynı günkü önerisi bekler.
+
 ## Geç rapor (onaylı)
 
 Personel, dünden eski ve son 14 **takvim** gününe düşen, raporu hiç girilmemiş bir günü Z raporunun fotoğrafı ve Z
@@ -593,6 +634,11 @@ Fotoğraflar istek beklerken tutulur (silinmez, başka bir kayda bağlanamaz); s
 `src/server/data/cash-late.ts` (okuyucular), `src/app/panel/kasa/late-report.tsx`, `src/app/panel/onaylar/kasa-cards.tsx`.
 Testler: `tests/kasa-raporu.test.ts`, `tests/kasa-gec-rapor-db.test.ts` (`KASA_GEC_TEST_DATABASE_URL`),
 `tests/foto-altyapi.test.ts` (`uploadRule`).
+
+**Şube** (denetim KP-02, KP-06): geç rapor formun şubesinin raporudur ("Tümü"de Tuzla). "O gün rapor var mı", "ilk
+rapor", kapalı gün, zincirin önceki ve sonraki halkası ve "daha eski bekleyen geç rapor" o şubenin kayıtlarıyla: Marina'nın
+5 Kasım raporu Tuzla'nın 5 Kasım geç raporunu engellemez. Onay isteğin şubesine yazar; yöneticinin kartı şubenin adını
+yazar.
 
 ## Satış tahmini
 
@@ -694,7 +740,9 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 ## Gönderince
 
 - **E-posta:** yöneticinin seçtiği adreslere gider. Hiç kaydedilmediyse Vercel'deki `CASH_REPORT_RECIPIENTS` (virgülle ayrılmış adresler; adresler kodda durmaz, yerel kurulum gerçek kişilere rapor göndermez); o da yoksa rapor e-postasız kaydedilir.
-  Konu örneği: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik". İçinde kasa sonucu, ModPOS Z raporu, kasa, Banka POS Z
+  Konu örneği: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik" (birden çok şube açıkken "Kasa raporu KR-20261021
+  · Marina · 21 Ekim Salı · …"). Gönderimin işlem kaydı `cash:{gün}:r{sürüm}` (Tuzla dışındaki şubede
+  `cash:{gün}:{şube}:r{sürüm}`): iki şubenin aynı günkü e-postası birbirinin üzerine yazılmaz. İçinde kasa sonucu, ModPOS Z raporu, kasa, Banka POS Z
   raporu (yazarkasa; yazarkasa alanı olmayan eski raporda "Kart"), günün zayi ve ikramı ve (site o an yanıt verdiyse)
   "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
   güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa bölümünde uyarı ([Açılış ve
@@ -739,7 +787,7 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
 - **Deneme e-postası** (yönetici, Rapor alıcıları): son kayıtlı raporla gider; kayıtlı rapor yoksa yazarkasa alanları
   da dolu bir örnek raporla.
 - **Zil:**
-  - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma.
+  - Personele: akşam 20:00'den sonra yazdığı şubenin ("Tümü"de Tuzla) bugünkü raporu girilmediyse hatırlatma.
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa
     ve son 7 günün bir raporu ertesi gün kasa alanı değiştirilerek düzeltildiyse bildirim (açılış uyarısı rapor
     yeniden gönderilince, düzeltme uyarısı yeni bir ertesi gün düzeltmesiyle yeniden okunmamış olur).

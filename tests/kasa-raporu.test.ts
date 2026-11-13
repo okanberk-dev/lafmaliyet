@@ -665,13 +665,15 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   assert.match(store, /export async function writeCashReport[\s\S]*?lockCashReport\(tx, data\.date, o\.branchId\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
   const rules = read("src/server/photo-read/rules.ts");
   assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}, now\)/);
-  assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date\)/);
+  // Fotoğrafın kilidi raporun ya da satırın kendi şubesinde (denetim KP-06)
+  assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date, getDb\(\), new Date\(\), row\.branchId\)/);
+  assert.match(rules, /export async function staffDayOpen[\s\S]*?gte\(s\.cashReports\.date, day\), eq\(s\.cashReports\.branchId, branch\)/);
   assert.match(rules, /export async function canUploadPhoto[\s\S]*?staffDayOpen\(day\)/);
   for (const route of ["src/app/api/foto/route.ts", "src/app/api/foto/[id]/oku/route.ts"]) assert.match(read(route), /await canUploadPhoto\(/, route);
   // Kasadan çıkanlar: personelin her yolu tek kapıdan (src/server/cash-outs/guard.ts), kapı staffDayOpen'a sorar
   const outs = read("src/server/actions/cash-outs.ts");
   assert.equal(outs.match(/await staffCashOutGate\(/g)?.length, 3);
-  assert.match(read("src/server/cash-outs/guard.ts"), /staffDayOpen\(date, tx, now\)/);
+  assert.match(read("src/server/cash-outs/guard.ts"), /staffDayOpen\(date, tx, now, branchId\)/);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
   assert.match(page, /const canEdit = admin \|\| staffOpen;/);
@@ -785,7 +787,8 @@ test("geç rapor kaynakta: geç kipte kasadan çıkan kartı ve DTO yok; e-posta
   // 05:00 dönüşü: personelin dünü artık geç rapor ise kaydetmez, onaya çevirir
   const store = read("src/server/cash/report-store.ts");
   assert.match(store, /if \(revision === 0 && staffLateDay\(data\.date, now\)\)[\s\S]*?return \{ kind: "needsApproval", request: "kasa-gec", gate: "gec" \};/);
-  assert.match(store, /supersede\(tx, \{ kinds: \["kasa-gec"\], subject: `gun:\$\{data\.date\}` \}, me\.role === "admin" \? "Yönetici günü kendisi girdi"/);
+  // Yeni rapor yalnız kendi şubesinin bekleyen geç raporlarını kapatır (konu gün ve şube; denetim KP-X2)
+  assert.match(store, /supersede\(\s*tx,\s*\{ kinds: \["kasa-gec"\], subject: cashDaySubject\(data\.date, branchId\) \},\s*me\.role === "admin" \? "Yönetici günü kendisi girdi"/);
 });
 
 test("geç rapor kartı: düzeltirken teslim işareti de görünür (personel 0, yönetici teslim yazınca onaylanabilsin); vazgeçince sıfırlanır", () => {

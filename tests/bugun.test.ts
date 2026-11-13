@@ -1023,7 +1023,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "countPendingByKind(",
     "loadJobsOverview(",
     "lastParasutSyncOkAt(",
-    "previousCarryOver(",
+    "carryOversBefore(",
     "cashRevisionsFor(",
     "loadOverduePayouts(",
     // ModPOS kasa föyü (yönetici: föyün tutarları personele gitmez; src/lib/modpos/zil.ts)
@@ -1048,7 +1048,8 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   // listenin sırasına güvenmeden en eski günden
   assert.match(admin, /systemIssues\(o, now, okAt\)/);
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
-  assert.match(admin, /previousCarryOver\(oldest\)/);
+  // Zincir şube şube (HM-X1): her şubenin en eski raporundan önceki kendi devri
+  assert.match(admin, /carryOversBefore\(oldest\)/);
   // ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
   assert.match(admin, /cashFlags\(reports, before, revisions, viewer, modpos\)/);
   assert.match(admin, /\.then\(\(\[sheets, switchDay\]\) => modposMismatchDates\(reports, sheets, switchDay\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/);
@@ -1106,7 +1107,8 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
   const bell = read("src/server/bell/kasa.ts");
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
-  assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
+  // Personelin hatırlatması yazdığı şubenin raporuna bakar (öteki şubenin raporu susturmaz; P03)
+  assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day && r\.branchId === mine\)\) return \[\];/);
   assert.doesNotMatch(bell, /hour < 20/);
   // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
   assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);

@@ -16,7 +16,7 @@ import { supplierSummary } from "@/lib/mcp/answers/suppliers";
 import { araInput, ayOzetiInput, kasaRaporlariInput, odemelerInput, tedarikciOzetiInput, urunKarliligiInput, zamEtkisiInput } from "@/lib/mcp/schemas";
 import { addDays, daysBetween, todayTR } from "@/lib/reminders";
 import { loadCashPlan } from "@/server/data/cash-plan";
-import { cashReportsBetween, firstCashReportDate, previousCarryOver } from "@/server/data/cash-reports";
+import { carryOversBefore, cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadSearchIndex } from "@/server/data/search";
@@ -141,7 +141,7 @@ export const TOOLS = [
     inputSchema: kasaRaporlariInput,
     run: async (args, ctx) => {
       checkRange(args.baslangic, args.bitis, { maxDays: 92, today: todayTR(ctx.now) });
-      const [reports, firstReport, before] = await Promise.all([cashReportsBetween(args.baslangic, args.bitis), firstCashReportDate(), previousCarryOver(args.baslangic)]);
+      const [reports, firstReport, before] = await Promise.all([cashReportsBetween(args.baslangic, args.bitis), firstCashReportDate(), carryOversBefore(args.baslangic)]);
       const through = addDays(businessDate(ctx.now), -1);
       return { ...cashReportSummary(reports, { from: args.baslangic, to: args.bitis, through, firstReport, before, base: ctx.base }) };
     },

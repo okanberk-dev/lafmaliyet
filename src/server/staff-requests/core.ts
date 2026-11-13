@@ -286,7 +286,7 @@ export async function withdrawOwn(db: Tx, me: Actor, id: number, now = new Date(
  */
 export async function supersede(
   tx: Tx,
-  f: { kinds: readonly StaffRequestKind[]; subject?: string; day?: string; exceptId?: number; statuses?: readonly StaffRequestStatus[] },
+  f: { kinds: readonly StaffRequestKind[]; subject?: string; subjects?: readonly string[]; day?: string; exceptId?: number; statuses?: readonly StaffRequestStatus[] },
   note: string,
   now = new Date(),
   releaseDays = RELEASED_DAYS,
@@ -300,6 +300,7 @@ export async function supersede(
         inArray(s.staffRequests.kind, [...f.kinds]),
         inArray(s.staffRequests.status, [...(f.statuses ?? ["pending"])]),
         f.subject === undefined ? undefined : eq(s.staffRequests.subject, f.subject),
+        f.subjects === undefined ? undefined : inArray(s.staffRequests.subject, [...f.subjects]),
         f.day === undefined ? undefined : eq(s.staffRequests.day, f.day),
         f.exceptId === undefined ? undefined : ne(s.staffRequests.id, f.exceptId),
       ),

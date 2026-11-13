@@ -45,6 +45,7 @@ export function ClosedDayItem({ card, site }: { card: ClosedDayCard; site?: Reac
       <div className="space-y-1">
         <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 break-words">Kapalı gün · {longDateTR(card.date)}</span>
+          {card.branch ? <Badge tone="gray">{card.branch}</Badge> : null}
           <Badge tone="gray">Kapalı gün</Badge>
           {card.run ? <Badge tone="amber">{card.run.days} gün üst üste kapalı bildirimi</Badge> : null}
         </h3>

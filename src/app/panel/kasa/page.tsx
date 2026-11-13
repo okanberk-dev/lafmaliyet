@@ -11,13 +11,11 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { cashBranchLabel, sortBranches } from "@/lib/branches";
+import { carryByReport, cashDayKey, cashDayRows, cashDayTotals } from "@/lib/cash-days";
 import { kasaMonthLine } from "@/lib/cash-month";
 import {
   businessDate,
-  carryCheck,
-  carryChecks,
-  CASH_TOLERANCE,
-  computeCash,
   diffKind,
   diffText,
   integrityOf,
@@ -26,7 +24,6 @@ import {
   staffLateDay,
   whatsappLink,
   whatsappText,
-  type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { staffCashOutRow } from "@/lib/cash-outs";
@@ -43,6 +40,8 @@ import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
+import { currentWriteBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { chainNeighbours } from "@/server/cash/late-chain";
 import { cashEmailRecipients } from "@/server/cash/report-store";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
@@ -53,6 +52,7 @@ import { cashOutCategories, cashOutsBetween, cashOutsOn, type CashOutView } from
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
+  carryOversBefore,
   cashCounters,
   cashReportsBetween,
   cashRevisionsFor,
@@ -64,6 +64,7 @@ import {
   loadCashSettings,
   loadMonthEntry,
   nextReportAfter,
+  nextReportsAfter,
   okcRows,
   previousCarryOver,
   previousOkc,
@@ -81,7 +82,7 @@ import { photoStorage } from "@/server/storage/photos";
 
 import { CashForm } from "./cash-form";
 import { ClosedDayBar } from "./closed-day";
-import { CashHistory, type CashHistoryPhotos, type CashMonthTotals } from "./cash-history";
+import { CashHistory, type CashHistoryPhotos } from "./cash-history";
 import { CashOutsCard } from "./cash-outs";
 import { MyCashRequests } from "./cash-requests";
 import { LateDaysCard, LateReport } from "./late-report";
@@ -138,31 +139,6 @@ const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 const NO_LAFPOS = { lafpos: false, day: null } as const;
 const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
 
-/** Ayın günleri (en yeni önce): bugünün raporu yoksa bugün listede yok (akşam girilecek) */
-function monthDays(month: string, today: string, reports: CashReportDTO[]): { date: string; report: CashReportDTO | null }[] {
-  const byDate = new Map(reports.map((r) => [r.date, r]));
-  const start = `${month}-01`;
-  const last = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const end = last < today ? last : byDate.has(today) ? today : addDays(today, -1);
-  const days: { date: string; report: CashReportDTO | null }[] = [];
-  for (let d = end; d >= start; d = addDays(d, -1)) days.push({ date: d, report: byDate.get(d) ?? null });
-  return days;
-}
-
-function totalsOf(days: { report: CashReportDTO | null }[]): CashMonthTotals {
-  const reports = days.flatMap((d) => (d.report ? [d.report] : []));
-  const sum = (f: (r: CashReportDTO) => number) => Math.round(reports.reduce((a, r) => a + f(r), 0) * 100) / 100;
-  return {
-    zTotal: sum((r) => r.zTotal),
-    cash: sum((r) => r.cash),
-    card: sum((r) => r.card),
-    short: sum((r) => (r.cashDiff <= -CASH_TOLERANCE ? -r.cashDiff : 0)),
-    over: sum((r) => (r.cashDiff >= CASH_TOLERANCE ? r.cashDiff : 0)),
-    reported: reports.length,
-    days: days.length,
-  };
-}
-
 async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
   const admin = user.role === "admin";
@@ -176,11 +152,16 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   if (!admin && !staffCanReport(date)) date = today;
   const showForm = !admin || isDay(gun);
 
-  const settings = await loadCashSettings();
+  const [settings, formBranch, branches] = await Promise.all([loadCashSettings(), currentWriteBranch(), listBranches()]);
+  // Form tek şubenin raporudur: okuma yazdığı şubeyle ("Tümü"de Tuzla; docs/SUBE.md, denetim KP-01). Seçimle okunsaydı
+  // "Tümü"de başka şubenin raporu açılır, kaydetmek Tuzla'nın raporunun üzerine yazardı. Birden çok şube açıkken form
+  // hangi şubenin olduğunu yazar
+  const inForm = <T,>(fn: () => Promise<T>) => withBranchScope(formBranch, fn);
+  const formLabel = cashBranchLabel(formBranch, branches);
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState] = await inForm(() => Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
     showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
@@ -197,8 +178,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     // Günün kasası ve LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): yalnız geçiş gününden sonraki
     // günlerde; okunamazsa form ModPOS'a göre açılır, bant görünmez
     showForm ? loadKasaLafpos(date).catch(() => NO_LAFPOS) : Promise.resolve(NO_LAFPOS),
-  ]);
-  const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
+  ]));
+  const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await inForm(() => Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
     report && report.revision > 1 ? proposedByForReports([report.id]) : Promise.resolve(new Map<number, Map<number, string>>()),
     // Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı); yönetici: formdaki bant
@@ -210,7 +191,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     // Personel: bu günün kasadan çıkan istekleri (kendisininki satırın kendisi, başkalarınınki yalnız ad) ve eski günler
     admin ? Promise.resolve(null) : staffCashOutRequests(date, user),
     admin ? Promise.resolve([]) : staffOldCashOutDays(),
-  ]);
+  ]));
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
   const staffOpen = staffDayEditable(date, { hasReport: Boolean(report), laterReport: next !== null });
@@ -233,14 +214,14 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report], user.role)).get(report.id) : undefined;
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
-  const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
+  const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await inForm(() => photoRemovalStates(report, photoInfo.photos)) : undefined;
   const whatsapp = report
     ? (() => {
         const text = whatsappText(report, {
           by: report.submittedByName,
           revision: report.revision,
           waste,
-          ...extrasFrom(photoInfo, outs, report, lafposState),
+          ...extrasFrom(photoInfo, outs, report, lafposState, formLabel),
           ...integrityOf(report, carry, next, revisions),
         });
         return { text, link: whatsappLink(text, settings.whatsapp) };
@@ -301,8 +282,10 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   ) : null;
   const form = showForm ? (
     <CashForm
-      key={`${date}:${report?.revision ?? 0}`}
+      key={`${formBranch}:${date}:${report?.revision ?? 0}`}
       date={date}
+      branchId={formBranch}
+      branchLabel={formLabel}
       report={report}
       carry={carry}
       whatsapp={whatsapp}
@@ -369,7 +352,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   ) : null;
   const yesterday = addDays(today, -1);
   // Raporsuz geçmiş gün: "Kafe kapalıydı" (personel yalnız dün için, yöneticinin onayıyla; yönetici doğrudan)
-  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday) : null;
+  const closedBar = showForm && !report && date < today ? await inForm(() => closedBarFor(date, admin, user, yesterday, formBranch)) : null;
   const dayChips = (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
       {admin && isDay(gun) ? (
@@ -424,27 +407,38 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore, lafposOf, monthLafpos] = await Promise.all([
+  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, lafposOf, monthLafpos] = await Promise.all([
     cashReportsBetween(`${month}-01`, monthEnd, "admin"),
     cashOutsBetween(`${month}-01`, monthEnd),
-    // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
-    previousCarryOver(`${month}-01`),
-    nextReportAfter(monthEnd),
+    // Açılış ↔ devir zinciri şube şube (HM-X1): ayın ilk raporu şubenin önceki ayın son raporuyla, son raporu sonraki
+    // ayın ilkiyle karşılaştırılır
+    carryOversBefore(`${month}-01`),
+    nextReportsAfter(monthEnd),
     firstCashReportDate(),
     loadMonthEntry(month),
     // Yazarkasa (mali) Z'leri: ay kartının satırı, "Yazarkasa Z yok" rozetinin başlangıcı ve kümülatif zinciri (ayın
     // satırları; zincirin başı, önceki ayın son saklanan kümülatifi, previousOkc'tan okcMonthLine'a satır olarak eklenir)
     okcRows(`${month}-01`, monthEnd),
     firstOkcReportDate(),
-    previousOkc(`${month}-01`),
     // Ayın LafPOS günleri (yalnız geçiş gününden sonra): "LafPOS'tan farklı" rozeti ve ayrıntısı (E-09)
     loadKasaLafposDays(`${month}-01`, monthEnd).catch(() => () => NO_LAFPOS),
     // Raporsuz LafPOS günlerinin yedek ay satırları (G6; yalnız geçiş gününden sonra): Gelir-gider'deki ay rakamıyla aynı
     lafposTillRows(getDb(), `${month}-01`, monthEnd),
   ]);
+  // Ayın şubeleri ("Tümü"de birden çok): yazarkasa kümülatif zinciri de şube şube (her şubenin kendi yazarkasası)
+  const monthBranches = [...new Set(monthReports.map((r) => r.branchId))];
+  const okcBeforeOf = new Map(await Promise.all(monthBranches.map(async (b) => [b, await withBranchScope(b, () => previousOkc(`${month}-01`))] as const)));
   // Rapor alıcılarından personel ya da pasif hesabın olanlar (E-53): gönderimde düşer, kartta söylenir
   const { dropped: blockedRecipients } = await sendableRecipients(getDb(), settings.recipients);
-  const days = monthDays(month, today, monthReports);
+  // Günden güne: "Tümü"de günün her şube raporu bir satır, toplamlar hepsinden (HM-X2); birden çok şube açıkken satır şubeyi yazar
+  const labelOf = (b: string) => cashBranchLabel(b, branches);
+  const days = cashDayRows(
+    month,
+    today,
+    monthReports,
+    sortBranches(branches).map((b) => b.id),
+    labelOf,
+  );
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
   const [monthRevisions, monthProposed, lateApproved, latePending, modposDay, modposOf] = await Promise.all([
     cashRevisionsFor(revised),
@@ -453,33 +447,33 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     lateRequestsByReport(monthReports.map((r) => r.id)),
     pendingLateByDay(`${month}-01`, monthEnd),
     // ModPOS kasa föyü (docs/MODPOS-API.md › Nerede görünür), yalnız yöneticiye: saklanan föy okunur, ModPOS'a istek
-    // gitmez; okunamazsa kart, rozet ve satır görünmez, sayfa bozulmaz. Personel dalı bunları hiç okumaz
-    showForm ? loadKasaModpos(date).catch(() => null) : Promise.resolve(null),
+    // gitmez; okunamazsa kart, rozet ve satır görünmez, sayfa bozulmaz. Personel dalı bunları hiç okumaz. Gün görünümü
+    // formun şubesiyle
+    showForm ? inForm(() => loadKasaModpos(date)).catch(() => null) : Promise.resolve(null),
     loadKasaModposDays(`${month}-01`, monthEnd).catch(() => () => NO_MODPOS),
   ]);
-  const checks = carryChecks(monthReports, before);
-  const lastReport = monthReports[0];
-  const afterCheck = after && lastReport ? carryCheck(after.date, after.openingCash, { date: lastReport.date, amount: computeCash(lastReport).carryOver }) : null;
-  const carryByDate: Record<string, CarryCheck> = Object.fromEntries([...checks, ...(afterCheck ? [[after!.date, afterCheck] as const] : [])]);
+  const { carry: carryById, next: nextById } = carryByReport(monthReports, before, after);
   const revisionsById: Record<number, CashRevisionRow[]> = {};
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı. Ay rakamına yedek açıksa
   // raporsuz günün kapanmış ModPOS föyü de (docs/MODPOS-API.md › Ay rakamına yedek; kapalıyken föy okunmaz): Gelir-gider'deki
-  // ay rakamıyla aynı, şubenin açılış ayı da (kasaMonthInfo)
+  // ay rakamıyla aynı, şubenin açılış ayı da; "Tümü"de şubeler ayrı çözülüp toplanır (kasaMonthInfo)
   const monthLine = kasaMonthLine(await kasaMonthInfo(month, addDays(today, -1), [...monthReports, ...monthLafpos], entry, firstEver));
-  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
-  // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
+  // Bugünün raporları (şube başına bir)
+  const todays = month === today.slice(0, 7) ? monthReports.filter((r) => r.date === today) : await cashReportsBetween(today, today, "admin");
+  // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları (gün ve şubeye göre)
   const infos = await cashReportPhotoInfo(monthReports, "admin");
-  const outsByDate: Record<string, typeof monthOuts> = {};
-  for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
-  // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye son saklanan kümülatife bağlanır
+  const outsByDay: Record<string, typeof monthOuts> = {};
+  for (const o of monthOuts) (outsByDay[cashDayKey(o.date, o)] ??= []).push(o);
+  // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye, şube şube son saklanan kümülatife bağlanır
   const okcAdmin: Record<number, OkcAdminView> = {};
-  let lastCum = okcBefore.cum ?? null;
+  const lastCum = new Map<string, OkcPrev["cum"]>(monthBranches.map((b) => [b, okcBeforeOf.get(b)?.cum ?? null]));
   for (const r of [...monthReports].reverse()) {
-    const view = okcAdminView(r, infos.get(r.id)?.readings ?? [], lastCum);
+    const view = okcAdminView(r, infos.get(r.id)?.readings ?? [], lastCum.get(r.branchId) ?? null);
     if (view) okcAdmin[r.id] = view;
-    if (r.okcCumTotal != null && r.okcZNo) lastCum = { date: r.date, zNo: r.okcZNo, cumTotal: r.okcCumTotal, cumVat: r.okcCumVat ?? null };
+    if (r.okcCumTotal != null && r.okcZNo) lastCum.set(r.branchId, { date: r.date, zNo: r.okcZNo, cumTotal: r.okcCumTotal, cumVat: r.okcCumVat ?? null });
   }
+  const okcBefore = monthBranches.length === 1 ? okcBeforeOf.get(monthBranches[0]) : undefined;
   const historyPhotos: CashHistoryPhotos = Object.fromEntries(
     monthReports.map((r) => {
       const info = infos.get(r.id);
@@ -490,7 +484,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           photos: info?.photos ?? [],
           diffs: info ? photoDiffs(info.readings, saved) : [],
           suspicious: info ? suspiciousDiffs(info.readings, saved) : [],
-          extras: extrasFrom(info, outsByDate[r.date] ?? [], r, lafposOf(r.date)),
+          extras: extrasFrom(info, outsByDay[cashDayKey(r.date, r)] ?? [], r, lafposOf(r.date, r.branchId), labelOf(r.branchId)),
         },
       ];
     }),
@@ -499,11 +493,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // çıkanları, fotoğraf sayısı, sürümler, devir zinciri (önceki raporun devri, sonraki raporun açılışı) ve panelde
   // girilen zayi / ikram (ModPOS'un ödenmez / ikram dökümünün karşılığı)
   const ladmin = { outs: dayOuts, photos: photoInfo?.photos.length ?? 0, revisions, prev: carry, next, waste: waste ? { ikram: waste.ikram, zayi: waste.zayi } : null };
-  // Günden güne listesinin ModPOS günleri (tarihe göre; extras'a girmez: o WhatsApp'a ve personele de gider)
+  // Günden güne listesinin ModPOS föyleri (satıra göre: raporlu satırda raporun şubesinin föyü; extras'a girmez: o
+  // WhatsApp'a ve personele de gider)
   const modposDays: Record<string, ModposDayView> = {};
   for (const d of days) {
-    const m = modposOf(d.date);
-    if (m.z) modposDays[d.date] = modposDayView(d.report, m.z);
+    const m = modposOf(d.date, d.report?.branchId);
+    if (m.z) modposDays[cashDayKey(d.date, d.report)] = modposDayView(d.report, m.z);
   }
   return (
     <div className="space-y-4">
@@ -526,11 +521,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             prevHref={`/panel/kasa?ay=${shiftMonth(month, -1)}`}
             nextHref={month < today.slice(0, 7) ? `/panel/kasa?ay=${shiftMonth(month, 1)}` : null}
             days={days}
-            totals={totalsOf(days)}
+            totals={cashDayTotals(days)}
             whatsappPhone={settings.whatsapp}
             photos={historyPhotos}
-            cashOuts={outsByDate}
-            carry={carryByDate}
+            cashOuts={outsByDay}
+            carry={carryById}
+            next={nextById}
             revisions={revisionsById}
             proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}
             lateApproved={Object.fromEntries(lateApproved)}
@@ -539,7 +535,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             modposDays={modposDays}
             okcFirst={okcFirst}
             okcLine={okcMonthLine(
-              okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc,
+              okcBefore?.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc,
               month,
               // Ayın kasası (E-39): ayın 1'i LafPOS günüyse LafPOS, yalnız sonu LafPOS ise geçiş ayı ("Kasa")
               lafposOf(`${month}-01`).lafpos ? "LafPOS" : lafposOf(monthEnd).lafpos ? "Kasa" : "ModPOS",
@@ -558,18 +554,23 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             <Card>
               <CardHeader icon={<ReceiptText />} title="Bugünün raporu" description={longDateTR(today)} />
               <div className="space-y-3 px-5 pb-5">
-                {todays ? (
-                  <p className={cn("text-2xl font-semibold tracking-tight", diffKind(todays.cashDiff) === "short" ? "text-bad" : diffKind(todays.cashDiff) === "over" ? "text-warn" : "text-good")}>
-                    {diffText(todays.cashDiff)}
-                    <span className="block text-sm font-normal text-ink-mute">
-                      {todays.submittedByName} · Z {money(todays.zTotal)}
-                    </span>
-                  </p>
+                {todays.length ? (
+                  todays.map((t) => (
+                    <p key={t.id} className={cn("text-2xl font-semibold tracking-tight", diffKind(t.cashDiff) === "short" ? "text-bad" : diffKind(t.cashDiff) === "over" ? "text-warn" : "text-good")}>
+                      {diffText(t.cashDiff)}
+                      <span className="block text-sm font-normal text-ink-mute">
+                        {labelOf(t.branchId) ? `${labelOf(t.branchId)} · ` : ""}
+                        {t.submittedByName} · Z {money(t.zTotal)}
+                      </span>
+                    </p>
+                  ))
                 ) : (
                   <p className="text-sm text-ink-mute">Bugünün raporu henüz girilmedi; personel kapanışta girer.</p>
                 )}
-                <ButtonLink href={`/panel/kasa?gun=${today}`} variant={todays ? "secondary" : "primary"} className="w-full">
-                  {todays ? "Raporu aç" : "Raporu gir"}
+                {/* Form yazdığı şubenin raporunu açar ("Tümü"de Tuzla) */}
+                <ButtonLink href={`/panel/kasa?gun=${today}`} variant={todays.some((t) => t.branchId === formBranch) ? "secondary" : "primary"} className="w-full">
+                  {todays.some((t) => t.branchId === formBranch) ? "Raporu aç" : "Raporu gir"}
+                  {formLabel ? ` · ${formLabel}` : ""}
                 </ButtonLink>
               </div>
             </Card>
@@ -589,16 +590,20 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
  */
 async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
   const today = businessDate();
-  const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
-    lateRequestFor(date, user),
-    chainNeighbours(getDb(), date, { prefer: user.id }),
-    cashCounters(),
-    aiStatus(),
-    myCashRequests(user.id),
-    previousOkc(date),
-    // LafPOS gününde Z LafPOS'un gün sonundan dolar, fotoğraf gerekmez; gelmediyse yazarkasa Z'si (G8)
-    loadKasaLafpos(date).catch(() => NO_LAFPOS),
-  ]);
+  // Geç rapor yazdığı şubenin zinciriyle ("Tümü"de Tuzla; denetim KP-06)
+  const [branchId, branches] = await Promise.all([currentWriteBranch(), listBranches()]);
+  const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await withBranchScope(branchId, () =>
+    Promise.all([
+      lateRequestFor(date, user),
+      chainNeighbours(getDb(), date, { prefer: user.id, branchId }),
+      cashCounters(),
+      aiStatus(),
+      myCashRequests(user.id),
+      previousOkc(date),
+      // LafPOS gününde Z LafPOS'un gün sonundan dolar, fotoğraf gerekmez; gelmediyse yazarkasa Z'si (G8)
+      loadKasaLafpos(date).catch(() => NO_LAFPOS),
+    ]),
+  );
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
   return (
@@ -615,6 +620,8 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
       </div>
       <LateReport
         date={date}
+        branchId={branchId}
+        branchLabel={cashBranchLabel(branchId, branches)}
         own={request.own}
         closedCount={request.closedCount}
         others={request.others}
@@ -662,16 +669,17 @@ async function SiteDayRow({ date, admin, kasa }: { date: string; admin: boolean;
  * Raporsuz geçmiş günün "Kafe kapalıydı" çubuğu: gün kapalı işaretliyse yalnız bilgi; personelde yalnız dün için
  * (bekleyen ya da reddedilen bildirim, düğme), yöneticide pencerede o günün izleri uyarı olarak
  */
-async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string) {
+async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string, branchId: string) {
   if (!admin && date !== yesterday) return null;
-  const marked = await isClosedDay(date);
+  // Kapalı gün şube başına (denetim KP-05): formun şubesinin işareti, kanıtı ve bildirimleri
+  const marked = await isClosedDay(date, getDb(), branchId);
   if (admin) {
-    const evidence = marked ? null : await closedDayEvidence(getDb(), date);
+    const evidence = marked ? null : await closedDayEvidence(getDb(), date, branchId);
     const lines = evidence ? closedEvidenceText(evidence) : { red: [], warn: [], info: [] };
-    return <ClosedDayBar role="admin" date={date} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
+    return <ClosedDayBar role="admin" date={date} branchId={branchId} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
   }
-  const state = await staffClosedState(date, user);
-  return <ClosedDayBar role="staff" date={date} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
+  const state = await staffClosedState(date, user, branchId);
+  return <ClosedDayBar role="staff" date={date} branchId={branchId} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
 }
 
 /**

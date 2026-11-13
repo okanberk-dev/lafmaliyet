@@ -2,12 +2,15 @@ import "server-only";
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
+import { cashBranchLabel } from "@/lib/branches";
 import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadFigures, toStaffReading, type OkcReadFigures } from "@/lib/photo-read/okc";
 import { KasaOkcRaw, KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
 import { lafposDiffs } from "@/lib/lafpos/diffs";
 import type { LafposDay } from "@/lib/lafpos/prefill";
+import { withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
 import { loadKasaLafpos } from "@/server/data/lafpos-day";
 import { getDb, schema as s } from "@/server/db";
@@ -164,10 +167,18 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
 /**
  * Yüklenmiş bilgiden WhatsApp ve e-posta ekleri: fotoğraflar, net okunmuş ama farklı yazılan alanlar, kasadan çıkanlar;
  * LafPOS gününde (`lafpos`: gün LafPOS günü mü ve gelen özeti; src/server/data/lafpos-day.ts loadKasaLafpos) Z
- * bölümünün adı ve LafPOS'tan farklı yazılanlar (E-09). Verilmezse ModPOS: metin bugünkü gibi
+ * bölümünün adı ve LafPOS'tan farklı yazılanlar (E-09). Verilmezse ModPOS: metin bugünkü gibi. `branch`: birden çok
+ * şube açıkken raporun şubesinin adı (cashBranchLabel; başlık ve konu şubeyi yazar)
  */
-export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields, lafpos?: { lafpos: boolean; day: LafposDay | null } | null): CashReportExtras {
+export function extrasFrom(
+  info: CashPhotoInfo | undefined,
+  outs: CashOutDTO[],
+  report: CashReportFields,
+  lafpos?: { lafpos: boolean; day: LafposDay | null } | null,
+  branch: string | null = null,
+): CashReportExtras {
   return {
+    ...(branch ? { branch } : {}),
     ...(lafpos?.lafpos ? { kasa: "LafPOS" as const, lafposDiffs: lafpos.day ? lafposDiffs(report, lafpos.day) : null, cardExtra: lafpos.day?.cardExtra || null } : {}),
     // ModPOS Z'si, banka POS Z'si (yazarkasa; geçişte eski sayfanın yüklemesi de kasa-okc olur) ve eski banka fişi ayrı
     // adlarla (photosLine; docs/planlar/okc-z.md §8)
@@ -179,8 +190,16 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
   };
 }
 
-/** Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da) */
-export async function cashReportExtras(report: { id: number } & CashReportFields): Promise<CashReportExtras> {
-  const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date), loadKasaLafpos(report.date)]);
-  return extrasFrom(info.get(report.id), outs, report, lafpos);
+/**
+ * Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da): kasadan çıkanlar ve
+ * LafPOS raporun kendi şubesinden (panelin seçimi ne olursa; denetim KP-04)
+ */
+export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields): Promise<CashReportExtras> {
+  const [info, outs, lafpos, branches] = await Promise.all([
+    cashReportPhotoInfo([report]),
+    withBranchScope(report.branchId, () => cashOutsOn(report.date)),
+    withBranchScope(report.branchId, () => loadKasaLafpos(report.date)),
+    listBranches(),
+  ]);
+  return extrasFrom(info.get(report.id), outs, report, lafpos, cashBranchLabel(report.branchId, branches));
 }

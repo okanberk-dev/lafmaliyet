@@ -92,7 +92,8 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
     if (me.role !== "admin") {
       const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
-      const closed = await closedDayRefusal(data.date, me.role, tx);
+      // Kapalı gün şube başına (KP-05): zayinin yazılacağı fiziksel şubenin
+      const closed = await closedDayRefusal(data.date, me.role, tx, (await currentPhysicalBranch()).id);
       if (closed) throw new UserError(closed);
     }
     const target = await resolveWasteTarget(tx, data);
@@ -141,7 +142,7 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
     const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.useDirect);
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
-    const closed = await closedDayRefusal(input.date, me.role, tx);
+    const closed = await closedDayRefusal(input.date, me.role, tx, (await currentPhysicalBranch()).id);
     if (closed) throw new UserError(closed);
     await refuseLafposIkram(tx, input, now);
     const target = await resolveWasteTarget(tx, input);

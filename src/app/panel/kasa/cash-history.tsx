@@ -18,7 +18,6 @@ import {
   diffText,
   historyOf,
   lastRevision,
-  nextCheckOf,
   reportNo,
   whatsappLink,
   whatsappText,
@@ -27,6 +26,7 @@ import {
   type CashReportExtras,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import { cashDayKey, type CashDayRow, type CashMonthTotals } from "@/lib/cash-days";
 import type { ModposDayView } from "@/lib/cash-modpos";
 import { money } from "@/lib/format";
 import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
@@ -43,16 +43,7 @@ import { ReportSheet } from "./report-sheet";
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
 
-export interface CashMonthTotals {
-  zTotal: number;
-  cash: number;
-  card: number;
-  /** Eksiklerin toplamı (pozitif) ve fazlaların toplamı */
-  short: number;
-  over: number;
-  reported: number;
-  days: number;
-}
+export type { CashMonthTotals };
 
 const shortDay = (date: string) => longDateTR(date).replace(/ (\S+) (\S+)$/, (_, m: string, d: string) => ` ${m.slice(0, 3)} ${d}`);
 
@@ -60,8 +51,9 @@ const shortDay = (date: string) => longDateTR(date).replace(/ (\S+) (\S+)$/, (_,
 const whoOf = (r: CashReportDTO) => (r.countedByName && r.countedByName !== r.submittedByName ? `Sayan ${r.countedByName} · gönderen ${r.submittedByName}` : r.submittedByName);
 
 /**
- * Yöneticinin günden güne kasa görünümü: ayın her günü bir satır (rapor girilmeyen gün de görünür), kasa farkı renkli
- * rozet, kart farkı ve e-posta durumu küçük işaret. Satıra dokununca günün ayrıntısı: döküm, WhatsApp, düzenle, sil.
+ * Yöneticinin günden güne kasa görünümü: ayın her günü bir satır (rapor girilmeyen gün de görünür; "Tümü"de günün her
+ * şube raporu ayrı satır, şubenin adıyla), kasa farkı renkli rozet, kart farkı ve e-posta durumu küçük işaret. Satıra
+ * dokununca günün ayrıntısı: döküm, WhatsApp, düzenle, sil.
  */
 export function CashHistory({
   monthLabel,
@@ -73,6 +65,7 @@ export function CashHistory({
   photos = {},
   cashOuts = {},
   carry = {},
+  next = {},
   revisions = {},
   proposedBy = {},
   lateApproved = {},
@@ -86,14 +79,16 @@ export function CashHistory({
   monthLabel: string;
   prevHref: string | null;
   nextHref: string | null;
-  days: { date: string; report: CashReportDTO | null }[];
+  days: CashDayRow<CashReportDTO>[];
   totals: CashMonthTotals;
   whatsappPhone: string | null;
   photos?: CashHistoryPhotos;
-  /** Günlerin kasadan çıkanları (tarihe göre) */
+  /** Günlerin kasadan çıkanları (gün ve şubeye göre: cashDayKey) */
   cashOuts?: Record<string, CashOutDTO[]>;
-  /** Açılışı önceki devirle tutmayan raporlar (denetlenen raporun gününe göre; sonraki ayın ilk raporu dahil) */
-  carry?: Record<string, CarryCheck>;
+  /** Açılışı aynı şubenin önceki devriyle tutmayan raporlar (rapor kimliğine göre; src/lib/cash-days.ts carryByReport) */
+  carry?: Record<number, CarryCheck>;
+  /** Devriyle aynı şubenin sonraki raporunun açılışı tutmayan raporlar (rapor kimliğine göre; sonraki ayın ilk raporu dahil) */
+  next?: Record<number, CarryCheck>;
   /** Raporların önceki sürümleri (rapor kimliğine göre) */
   revisions?: Record<number, CashRevisionRow[]>;
   /** Onaylanan düzeltme önerilerinin önerenleri (rapor ve sürüm kimliğine göre) */
@@ -107,7 +102,7 @@ export function CashHistory({
   /** Raporların yazarkasa kümülatifi ve "Kümülatifi temizle" (rapor kimliğine göre; docs/planlar/okc-z.md §3.7) */
   okcAdmin?: Record<number, OkcAdminView>;
   /**
-   * ModPOS kasa föyü olan günler (tarihe göre; docs/MODPOS-API.md › Nerede görünür): "ModPOS'tan farklı" rozeti,
+   * ModPOS kasa föyü olan satırlar (cashDayKey; docs/MODPOS-API.md › Nerede görünür): "ModPOS'tan farklı" rozeti,
    * raporu girilmemiş günün föy cirosu ve gün ayrıntısındaki farklı yazılanlar. Yalnız yöneticinin sayfası verir
    */
   modposDays?: Record<string, ModposDayView>;
@@ -120,11 +115,12 @@ export function CashHistory({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, start] = useActionTransition();
   const net = Math.round((totals.over - totals.short) * 100) / 100;
-  const checks = Object.values(carry);
   /** İş günü kapandıktan sonra kasa alanı değiştirilerek düzeltilen rapor */
   const lateEdited = (r: CashReportDTO) => r.revision > 1 && historyOf(r, revisions[r.id] ?? []).entries.some((e) => e.late);
   const reported = days.flatMap((d) => (d.report ? [d.report] : []));
-  const flags = { carry: reported.filter((r) => carry[r.date]).length, late: reported.filter(lateEdited).length };
+  // Rapor kimliğinden şube adı (yalnız birden çok şube açıkken dolu): pencerenin açıklaması
+  const branchOf = new Map(days.flatMap((d) => (d.report && d.branch ? [[d.report.id, d.branch] as const] : [])));
+  const flags = { carry: new Set(reported.filter((r) => carry[r.id]).map((r) => r.date)).size, late: reported.filter(lateEdited).length };
   const flagText = [flags.carry ? `${flags.carry} gün açılış ≠ devir` : null, flags.late ? `${flags.late} sonradan düzeltme` : null].filter(Boolean).join(" · ");
 
   function remove() {
@@ -148,8 +144,9 @@ export function CashHistory({
     });
   }
 
-  const openCarry = open ? (carry[open.date] ?? null) : null;
-  const openNext = open ? nextCheckOf(checks, open.date) : null;
+  const openCarry = open ? (carry[open.id] ?? null) : null;
+  const openNext = open ? (next[open.id] ?? null) : null;
+  const openKey = open ? cashDayKey(open.date, open) : "";
   const wa = open
     ? whatsappLink(
         whatsappText(open, {
@@ -218,10 +215,11 @@ export function CashHistory({
       ) : null}
       {days.length ? (
         <ul className="divide-y divide-line border-t border-line">
-          {days.map(({ date, report }) => {
+          {days.map(({ date, report, branch }) => {
+            const key = cashDayKey(date, report);
             if (!report) {
               const waiting = latePending[date]?.[0];
-              const sheet = modposDays[date];
+              const sheet = modposDays[key];
               const sheetLine = sheet ? (
                 <span className="block text-xs text-ink-mute tabular">
                   ModPOS API: ciro {money(sheet.zTotal)}
@@ -229,7 +227,7 @@ export function CashHistory({
                 </span>
               ) : null;
               return (
-                <li key={date} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
+                <li key={key} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
                   <span className="w-[7.5rem] shrink-0 font-medium text-ink-mute tabular">{shortDay(date)}</span>
                   {waiting ? (
                     <>
@@ -263,7 +261,7 @@ export function CashHistory({
             const okcMissing = !okcHasFigures(report) && report.zTotal > 0 && okcFirst !== null && date > okcFirst;
             const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
             return (
-              <li key={date}>
+              <li key={key}>
                 <button type="button" onClick={() => setOpen(report)} className="flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left hover:bg-panel/60">
                   <span className="w-[7.5rem] shrink-0 text-sm font-semibold text-ink tabular">{shortDay(date)}</span>
                   {/* En az 10rem: telefonda rozetler çoğalınca (açılış, düzeltme, fotoğraf) metin ezilmez, rozetler alt satıra iner */}
@@ -274,6 +272,7 @@ export function CashHistory({
                       · nakit {money(report.cash)} · kart {money(report.card)}
                     </span>
                     <span className="block text-xs text-ink-mute">
+                      {branch ? <span className="font-medium text-ink-soft">{branch} · </span> : null}
                       <span className="tabular">{reportNo(report.date)}</span> · {whoOf(report)}
                       {report.revision > 1 ? ` · ${report.revision - 1} kez düzeltildi` : ""}
                       {lateApproved[report.id] ? ` · ${lateApproved[report.id]}` : ""}
@@ -286,8 +285,8 @@ export function CashHistory({
                     {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {photos[report.id]?.extras.lafposDiffs?.length ? <Badge tone="amber">LafPOS&apos;tan farklı</Badge> : null}
-                    {modposDays[date]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
-                    {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
+                    {modposDays[key]?.diffs.length ? <Badge tone="amber">ModPOS API&apos;den farklı</Badge> : null}
+                    {carry[report.id] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
                     {cardOff ? <Badge tone="amber">Kart {c.cardDiff! > 0 ? "+" : "−"}{money(Math.abs(c.cardDiff!))}</Badge> : null}
@@ -310,7 +309,7 @@ export function CashHistory({
         open={open !== null}
         onClose={() => setOpen(null)}
         title={open ? `Kasa raporu · ${reportNo(open.date)}` : ""}
-        description={open ? `${longDateTR(open.date)} · ${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
+        description={open ? `${branchOf.has(open.id) ? `${branchOf.get(open.id)} · ` : ""}${longDateTR(open.date)} · ${whoOf(open)}${open.revision > 1 ? ` · ${open.revision - 1} kez düzeltildi` : ""}` : undefined}
         size="lg"
         footerStart={
           <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={pending} className="text-bad">
@@ -343,10 +342,10 @@ export function CashHistory({
             report={open}
             kasa={openPhotos?.extras.kasa}
             cardExtra={openPhotos?.extras.cardExtra}
-            cashOuts={cashOuts[open.date] ?? []}
+            cashOuts={cashOuts[openKey] ?? []}
             carry={openCarry}
             next={openNext}
-            modposDiffs={modposDays[open.date]?.diffs}
+            modposDiffs={modposDays[openKey]?.diffs}
             lafposDiffs={openPhotos?.extras.lafposDiffs}
             photos={openPhotos?.photos ?? []}
             photoDiffs={openPhotos?.diffs ?? []}

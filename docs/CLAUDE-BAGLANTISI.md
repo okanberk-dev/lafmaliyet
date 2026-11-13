@@ -61,7 +61,7 @@ Bu sürümde karaoke, zayi / ikram ve hammadde fiyat geçmişi araçları **yok*
 | `zam_etkisi` (Hammadde zamlarının etkisi) | Bir tarihten bu yana artan hammaddeler, ayda kaç lira kâr götürdükleri, etkilenen ürünler ve önerilen fiyat | "Ekimde en çok kâr kaybettiren 5 ürün?", "Süt zammı ayda ne kadara patlıyor?" | Ürünler › Hammadde zamları |
 | `tedarikci_ozeti` (Tedarikçi: faturalar ve ödemeler) | Dönemin faturaları, ödendi işaretli tutar, kalan borç, geciken, vadesi yaklaşan; ya da bütün tedarikçiler (fatura ya da borç sırasıyla) | "Bu yıl Kaldi'ye ne ödedik?", "En çok kime borcumuz var?" | Tedarikçiler |
 | `odemeler` (Ödenmemiş ve yaklaşan ödemeler) | Geciken, bu hafta, bu ay, 45 gün; istenirse 6 haftalık nakit planı | "Bu hafta ne ödeyeceğiz?", "Geciken ödeme var mı?" | Ödemeler & hatırlatıcılar, Nakit planı |
-| `kasa_raporlari` (Gün sonu kasa raporları) | En çok 92 günün Z toplamı, nakit, kart, yemek kartı, Z'deki online (platformlar), kasa farkı, raporu girilmemiş günler | "Geçen hafta kasa tuttu mu?", "Ekimde toplam kart ne?" | Kasa raporu |
+| `kasa_raporlari` (Gün sonu kasa raporları) | En çok 92 günün Z toplamı, nakit, kart, yemek kartı, Z'deki online (platformlar), kasa farkı, raporu girilmemiş günler; günlük satır raporun şubesini (`sube`) yazar, açılış ↔ devir zinciri şube şube | "Geçen hafta kasa tuttu mu?", "Ekimde toplam kart ne?" | Kasa raporu |
 | `ara` (Ürün, hammadde, tedarikçi ara) | Adla arama, tür ve ekran bağlantısı (tutar yok) | "Süt adlı hammaddeler hangileri?" | ⌘K arama |
 
 Her cevap `hesap` (gerçek rakamlarla hesap satırları), `kaynak` (verinin dayanağı), gerekirse `uyarilar` (sayım

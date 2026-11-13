@@ -4,7 +4,7 @@
  * kasayı sayan kişinin adı, notlar ve "neye çıktı" metni gönderilmez. Saf; tests/claude-araclar.test.ts.
  */
 
-import { carryChecks, diffKind, type CashReportFields } from "../../cash-report";
+import { branchCarryChecks, carryKey, diffKind, type CarryBefore, type CashReportFields } from "../../cash-report";
 import { addDays } from "../../reminders";
 import { cleanName, money, num, panelUrl, r2 } from "./common";
 
@@ -12,7 +12,7 @@ import { cleanName, money, num, panelUrl, r2 } from "./common";
 export type CashReportLike = Pick<
   CashReportFields,
   "date" | "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver"
-> & { cashDiff: number; revision: number };
+> & { cashDiff: number; revision: number; branchId?: string };
 
 export interface CashAnswer {
   donem: { baslangic: string; bitis: string };
@@ -37,6 +37,8 @@ export interface CashAnswer {
   };
   gunluk: {
     tarih: string;
+    /** Raporun şubesi (kimlik: "tuzla", "marina"); "Tümü"de iki şubenin aynı günkü raporu iki satırdır */
+    sube?: string;
     zToplam: number;
     nakit: number;
     kart: number;
@@ -57,13 +59,14 @@ export interface CashAnswer {
 const FARK = { short: "eksik", over: "fazla", even: "tutuyor" } as const;
 
 /**
- * `before`: aralığın ilk gününden önceki son raporun ertesi güne devri (previousCarryOver); `firstReport`: ilk
+ * `before`: aralığın ilk gününden önceki son raporun ertesi güne devri, şube şube (carryOversBefore; tek şubede tek
+ * devir de olur): zincir şube içinde kurulur, Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz (denetim HM-07); `firstReport`: ilk
  * raporun günü (ondan önceki günler eksik sayılmaz); `through`: eksik günlerin arandığı son gün (bugünün raporu akşam
  * girilir: düne kadar).
  */
 export function cashReportSummary(
   reports: readonly CashReportLike[],
-  ctx: { from: string; to: string; through: string; firstReport: string | null; before: { date: string; amount: number } | null; base: string },
+  ctx: { from: string; to: string; through: string; firstReport: string | null; before: CarryBefore; base: string },
 ): CashAnswer {
   const days = [...reports].sort((a, b) => a.date.localeCompare(b.date));
   const have = new Set(days.map((r) => r.date));
@@ -73,7 +76,8 @@ export function cashReportSummary(
     const end = ctx.to < ctx.through ? ctx.to : ctx.through;
     for (let d = start; d <= end; d = addDays(d, 1)) if (!have.has(d)) missing.push(d);
   }
-  const carry = carryChecks(days, ctx.before);
+  const carry = branchCarryChecks(days, ctx.before);
+  const carryDays = new Set([...carry.values()].map((c) => c.date));
   const sum = (f: (r: CashReportLike) => number) => r2(days.reduce((a, r) => a + f(r), 0));
   const kinds = days.map((r) => diffKind(r.cashDiff));
   const toplam = {
@@ -93,6 +97,7 @@ export function cashReportSummary(
   };
   const gunluk = days.map((r) => ({
     tarih: r.date,
+    ...(r.branchId ? { sube: r.branchId } : {}),
     zToplam: r2(r.zTotal),
     nakit: r2(r.cash),
     kart: r2(r.card),
@@ -101,13 +106,13 @@ export function cashReportSummary(
     kasaFarki: r2(r.cashDiff),
     fark: FARK[diffKind(r.cashDiff)],
     revizyon: r.revision,
-    acilisDevirleTutmuyor: carry.has(r.date),
+    acilisDevirleTutmuyor: carry.has(carryKey(r)),
     sonradanDuzeltildi: r.revision > 1,
   }));
 
   const uyarilar: string[] = [];
   if (missing.length) uyarilar.push(`${num(missing.length)} günün raporu yok; kafe o günler kapalı olabilir.`);
-  if (carry.size) uyarilar.push(`${num(carry.size)} günde açılış önceki raporun devriyle tutmuyor (Kasa › Günden güne).`);
+  if (carryDays.size) uyarilar.push(`${num(carryDays.size)} günde açılış önceki raporun devriyle tutmuyor (Kasa › Günden güne).`);
   const revised = gunluk.filter((g) => g.sonradanDuzeltildi).length;
   if (revised) uyarilar.push(`${num(revised)} rapor sonradan düzeltildi (düzeltme geçmişi Kasa'da).`);
   if (!days.length) uyarilar.push("Bu aralıkta kasa raporu yok.");

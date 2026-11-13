@@ -342,6 +342,8 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   // tests/sube-kasa-ay-db.test.ts)
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /kasaMonthInfo\(month, addDays\(today, -1\), \[\.\.\.monthReports, \.\.\.monthLafpos\], entry, firstEver\)/);
-  assert.match(loader, /modposTillRows\(db, `\$\{month\}-01`, monthEnd\(`\$\{month\}-01`\)\),\n\s+firstModposTillDay\(db\),/);
-  assert.match(loader, /tillMonths\(\[\.\.\.rows, \.\.\.monthModpos\], through, firstRow, undefined, undefined, firstEver \?\? undefined, firstModpos, openedOn\)/);
+  // "Tümü"de her şube kendi kapsamında aynı kuralla çözülüp toplanır (resolveBranchMonths; denetim P03)
+  assert.match(loader, /modposTillRows\(db, `\$\{month\}-01`, monthEnd\(`\$\{month\}-01`\)\), firstModposTillDay\(db\)\]\)/);
+  assert.match(loader, /tillMonths\(\[\.\.\.own, \.\.\.monthModpos\], through, firstRow, undefined, undefined, first \?\? undefined, firstModpos, openedOn\)/);
+  assert.match(loader, /return resolveBranchMonths\(perBranch, combined \? \[combined\] : \[\]\)/);
 });

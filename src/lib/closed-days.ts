@@ -199,6 +199,8 @@ export const CLOSED_REQUESTS_PER_30 = 3;
 export const ClosedDayPayload = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reason: z.string().max(CLOSED_REASON_MAX).nullable(),
+  /** Kapalı bildirilen şube (bildirenin seçili şubesi; denetim KP-05); şubeden önce açılan bildirimde yok (Tuzla'nın) */
+  branchId: z.string().min(1).max(24).optional(),
 });
 export type ClosedDayPayloadT = z.output<typeof ClosedDayPayload>;
 

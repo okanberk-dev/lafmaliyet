@@ -40,16 +40,22 @@ export async function loadKasaModpos(date: string, db: DB = getDb()): Promise<Ka
 }
 
 /**
- * [from, to] içindeki günlerin ModPOS föyleri (yöneticinin günden güne listesi; tek sorgu): `of(gün)` loadKasaModpos'un
- * aynısını verir. Geçiş günü bu aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç okunmaz.
+ * [from, to] içindeki günlerin ModPOS föyleri (yöneticinin günden güne listesi; tek sorgu, seçili şubeyle): `of(gün,
+ * şube)` loadKasaModpos'un aynısını verir; şube verilince yalnız o şubenin föyü ("Tümü"de Marina'nın raporu Tuzla'nın
+ * föyüyle karşılaştırılmaz). Geçiş günü bu aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç
+ * okunmaz.
  */
-export async function loadKasaModposDays(from: string, to: string, db: DB = getDb()): Promise<(date: string) => KasaModpos> {
+export async function loadKasaModposDays(from: string, to: string, db: DB = getDb()): Promise<(date: string, branchId?: string) => KasaModpos> {
   const switchDay = await loadLafposSwitchDay(db);
   const out = new Map<string, KasaModpos>();
-  const of = (date: string): KasaModpos => (isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(date) ?? withZ(null)));
+  const of = (date: string, branchId?: string): KasaModpos => (isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(branchId === undefined ? date : `${date}|${branchId}`) ?? withZ(null)));
   const end = switchDay !== null && switchDay <= to ? addDays(switchDay, -1) : to;
   if (end < from) return of;
-  for (const sheet of await loadModposSheets(from, end, db)) out.set(sheet.day, withZ(sheet));
+  for (const sheet of await loadModposSheets(from, end, db)) {
+    const view = withZ(sheet);
+    out.set(`${sheet.day}|${sheet.branchId}`, view);
+    if (!out.has(sheet.day)) out.set(sheet.day, view);
+  }
   return of;
 }
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, gte, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
@@ -13,6 +13,7 @@ import { addDays } from "@/lib/reminders";
 import { extractImage, type AiErrorCode } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType } from "@/server/ai/run";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
@@ -27,9 +28,14 @@ export interface ReadOutcome {
   canRetry: boolean;
 }
 
-/** Bu günden önceki son raporun Z no'su (Z no sırası denetimi) */
+/** Bu günden önceki son raporun Z no'su (Z no sırası denetimi), formun şubesinin ("Tümü"de Tuzla): iki şubenin Z no'su karışmaz */
 async function previousZNo(day: string): Promise<string | null> {
-  const [row] = await getDb().select({ zNo: s.cashReports.zNo }).from(s.cashReports).where(lt(s.cashReports.date, day)).orderBy(desc(s.cashReports.date)).limit(1);
+  const [row] = await getDb()
+    .select({ zNo: s.cashReports.zNo })
+    .from(s.cashReports)
+    .where(and(lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentWriteBranch())))
+    .orderBy(desc(s.cashReports.date))
+    .limit(1);
   return row?.zNo ?? null;
 }
 
@@ -42,7 +48,7 @@ async function okcTypical(day: string): Promise<number[]> {
   const rows = await getDb()
     .select({ okc: s.cashReports.okcTotal, z: s.cashReports.zTotal })
     .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day)));
+    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentWriteBranch())));
   const okc = rows.map((r) => r.okc).filter((v): v is number => v !== null && v > 0);
   return okc.length ? okc : rows.map((r) => r.z).filter((v) => v > 0);
 }

@@ -60,7 +60,8 @@ maddeyi düşer (komisyonda sıradaki uyarı geçer). Ertesi pazartesi hâlâ a�
 - `Geçen hafta kasa cirosu 68.900 ₺ · önceki 4 haftaya göre %12 az` (KDV dahil, Z toplamının içindeki ödenmez /
   ikram düşülür: Genel bakış ve Bugün'ün cirosuyla aynı kural, denetim HM-08; laffogato.net online kasadan geçmez).
   Geçen hafta ve önceki dört haftanın en az ikisi tam (6+ raporlu gün) ise karşılaştırılır, %2'den az farkta "önceki
-  4 haftayla aynı"; değilse `(5 gün raporlu)`; rapor yoksa satır yok.
+  4 haftayla aynı"; değilse `(5 gün raporlu)`; rapor yoksa satır yok. Raporlu gün günde bir kez sayılır (iki şubenin aynı
+  günkü raporu bir gün; denetim HM-07), "açılışı devirle tutmayan gün" şube şube kurulan zincirden.
 - `Önümüzdeki 7 gün beklenen satış ≈ 72.000 ₺ · en yoğun gün Cumartesi` (satış tahmini kendi verisiyle çalışıyorsa:
   kalite tam, karma ya da ortalama; kapalı günler toplanmaz). Satış tahmininin yükleyicisini okur (`loadForecastCore`,
   [SATIS-TAHMINI.md](SATIS-TAHMINI.md)); okunamazsa satır düşer, dipnota girmez.

@@ -13,7 +13,7 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentPhysicalBranch } from "@/server/branch-scope";
-import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import { carryOversBefore, cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { loadChecklistDays } from "@/server/data/checklists";
@@ -203,13 +203,13 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
     // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; ModPOS gününde rapor saklanan ModPOS kasa
     // föyünden farklı (src/lib/modpos/zil.ts; föy ya da geçiş günü okunamazsa bu işaret yok, ötekiler kalır). Zincir
-    // listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur)
+    // şube şube, listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur; HM-X1)
     safe(
       cash.then(async (reports) => {
         if (!reports?.length) return new Map<string, string[]>();
         const oldest = reports.map((r) => r.date).sort()[0];
         const [before, revisions, modpos] = await Promise.all([
-          previousCarryOver(oldest),
+          carryOversBefore(oldest),
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
           Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()])
             .then(([sheets, switchDay]) => modposMismatchDates(reports, sheets, switchDay))

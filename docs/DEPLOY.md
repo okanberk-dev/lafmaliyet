@@ -320,6 +320,10 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **kapali_gun_subesi** (`special_days.branch_id`, denetim KP-05; [SUBE.md](SUBE.md)): boş olabilen sütun, eklemeli;
+    başlamış kapalı günler Tuzla'ya yazılır, ileri tarihli olanlar işletme geneli kalır. Bu sürümden geriye Instant
+    Rollback yapılırsa eski kod sütuna bakmaz: kapalı gün yeniden işletme geneli sayılır (Marina'nın raporu Tuzla'nın
+    işaretini kaldırır), şube başına yazılmış işaretler yine okunur.
   - **cikista_oturum_kapanir** (`revoked_sessions`, § 6a Çıkış): yalnız yeni tablo, eklemeli. Bu sürümden geriye
     Instant Rollback yapılırsa eski kod tabloya bakmaz: çıkışta kapatılmış oturumların kopyaları yeniden geçer (yalnız
     çerezi kopyalanmış oturumlar için önemli).

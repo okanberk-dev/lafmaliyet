@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or 
 
 import { ALL_BRANCHES, tillOpenedOn } from "@/lib/branches";
 import type { Month } from "@/lib/calc/types";
-import { modposRunStart, type MonthEntry, resolveMonth, type TillRow, tillMonths } from "@/lib/cash-month";
+import { modposRunStart, type MonthEntry, resolveBranchMonths, resolveMonth, type TillRow, tillMonths } from "@/lib/cash-month";
 import {
   defaultCashRecipients,
   integrityOf,
@@ -21,7 +21,7 @@ import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
 import { addDays, monthEnd } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
-import { andWhere, currentBranchScope, currentBranchWhere } from "@/server/branch-scope";
+import { andWhere, currentBranchScope, currentBranchWhere, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadModposSheets, type ModposSheet } from "@/server/modpos/store";
@@ -60,6 +60,8 @@ export async function saveCashSettings(value: CashSettings): Promise<void> {
 
 export interface CashReportDTO extends CashReportFields {
   id: number;
+  /** Raporun şubesi (docs/SUBE.md): "Tümü"de iki şubenin aynı günkü raporu iki satırdır, zincir şube şube kurulur */
+  branchId: string;
   discounts: number | null;
   /** Yazarkasanın (banka POS) mali Z'si (dalga 13): formun alanları, herkese; eski raporlarda boş */
   okcZNo: string | null;
@@ -103,6 +105,7 @@ export type CashAudience = "admin" | "staff";
 export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportDTO {
   const dto: CashReportDTO = {
     id: r.id,
+    branchId: r.branchId,
     date: r.date,
     zNo: r.zNo,
     receipts: r.receipts,
@@ -148,8 +151,12 @@ export function toCashDTO(r: Row, audience: CashAudience = "staff"): CashReportD
   return r.okcOutside !== null && r.okcOutside > 1 ? { ...dto, okcExtraTakings: true } : dto;
 }
 
+/**
+ * Günün raporu: tek şubenin (seçili şube; "Tümü"de yazılan şube, Tuzla; zincirKosulu). "Tümü"de şubesiz okunsaydı
+ * Kasa formu başka şubenin raporunu açar, kaydetmek Tuzla'nın raporunun üzerine yazardı (denetim KP-01)
+ */
 export async function getCashReport(date: string, audience: CashAudience = "staff"): Promise<CashReportDTO | null> {
-  const [row] = await getDb().select().from(s.cashReports).where(andWhere(eq(s.cashReports.date, date), await subeKosulu())).limit(1);
+  const [row] = await getDb().select().from(s.cashReports).where(andWhere(eq(s.cashReports.date, date), await zincirKosulu())).limit(1);
   return row ? toCashDTO(row, audience) : null;
 }
 
@@ -164,15 +171,41 @@ export async function cashReportsBetween(from: string, to: string, audience: Cas
   return rows.map((r) => toCashDTO(r, audience));
 }
 
-/** Bu günden önceki son raporun ertesi güne devri: formun açılış kasası kendiliğinden dolar */
+/**
+ * Bu günden önceki son raporun ertesi güne devri: formun açılış kasası kendiliğinden dolar. Tek şubenin zinciridir
+ * (zincirKosulu: "Tümü"de yazılan şube); "Tümü"de şube şube devir için carryOversBefore
+ */
 export async function previousCarryOver(date: string): Promise<{ date: string; amount: number } | null> {
   const [row] = await getDb()
     .select({ date: s.cashReports.date, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
     .from(s.cashReports)
-    .where(andWhere(lt(s.cashReports.date, date), await subeKosulu()))
+    .where(andWhere(lt(s.cashReports.date, date), await zincirKosulu()))
     .orderBy(desc(s.cashReports.date))
     .limit(1);
   return row ? { date: row.date, amount: Math.round((row.counted - row.handed) * 100) / 100 } : null;
+}
+
+/**
+ * Bu günden önceki son raporun devri, şube şube (seçili şubeyle; "Tümü"de her şubenin kendi son raporu): açılış ↔ devir
+ * zincirinin başı (src/lib/cash-report.ts branchCarryChecks; denetim HM-X1). Kasa'nın ay listesi, zil, Bugün ve Claude
+ */
+export async function carryOversBefore(date: string): Promise<Map<string, { date: string; amount: number }>> {
+  const rows = await getDb()
+    .selectDistinctOn([s.cashReports.branchId], { branchId: s.cashReports.branchId, date: s.cashReports.date, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
+    .from(s.cashReports)
+    .where(andWhere(lt(s.cashReports.date, date), await subeKosulu()))
+    .orderBy(s.cashReports.branchId, desc(s.cashReports.date));
+  return new Map(rows.map((r) => [r.branchId, { date: r.date, amount: Math.round((r.counted - r.handed) * 100) / 100 }]));
+}
+
+/** Bu günden sonraki ilk rapor, şube şube (Kasa'nın ay listesi: ayın son raporu sonraki ayın ilk raporuyla) */
+export async function nextReportsAfter(date: string): Promise<Map<string, { date: string; openingCash: number }>> {
+  const rows = await getDb()
+    .selectDistinctOn([s.cashReports.branchId], { branchId: s.cashReports.branchId, date: s.cashReports.date, openingCash: s.cashReports.openingCash })
+    .from(s.cashReports)
+    .where(andWhere(gt(s.cashReports.date, date), await subeKosulu()))
+    .orderBy(s.cashReports.branchId, asc(s.cashReports.date));
+  return new Map(rows.map((r) => [r.branchId, { date: r.date, openingCash: r.openingCash }]));
 }
 
 // ---------------------------------------------------------------- Yazarkasa Z'si (dalga 13; docs/planlar/okc-z.md §5.3, §9)
@@ -185,7 +218,7 @@ const okcZSet = and(isNotNull(s.cashReports.okcZNo), ne(s.cashReports.okcZNo, ""
  * sunucuda). Zincir hep son saklanan kümülatife bağlanır. İşlem içinden de okunur (writeCashReport).
  */
 export async function previousOkc(day: string, db: Db | Tx = getDb()): Promise<OkcPrev> {
-  const sube = await subeKosulu();
+  const sube = await zincirKosulu();
   const [[z], [cum]] = await Promise.all([
     db.select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo }).from(s.cashReports).where(andWhere(and(lt(s.cashReports.date, day), okcZSet), sube)).orderBy(desc(s.cashReports.date)).limit(1),
     db
@@ -206,7 +239,7 @@ export async function nextOkc(day: string, db: Db | Tx = getDb()): Promise<{ dat
   const [row] = await db
     .select({ date: s.cashReports.date, zNo: s.cashReports.okcZNo, total: s.cashReports.okcTotal, cumTotal: s.cashReports.okcCumTotal, cumVat: s.cashReports.okcCumVat })
     .from(s.cashReports)
-    .where(andWhere(and(gt(s.cashReports.date, day), okcZSet), await subeKosulu()))
+    .where(andWhere(and(gt(s.cashReports.date, day), okcZSet), await zincirKosulu()))
     .orderBy(asc(s.cashReports.date))
     .limit(1);
   return row?.zNo ? { date: row.date, zNo: row.zNo, total: row.total, cumTotal: row.cumTotal, cumVat: row.cumVat } : null;
@@ -245,13 +278,16 @@ export async function firstOkcReportDate(): Promise<string | null> {
   return row?.date ?? null;
 }
 
-/** Raporu girilmiş günler (yalnız tarih; personelin zili kapalı gün bildiriminin sonucunda bakar) */
+/**
+ * Raporu girilmiş günler (yalnız tarih; personelin zili kapalı gün bildiriminin sonucunda bakar), personelin yazdığı
+ * şubenin (zincirKosulu: öteki şubenin raporu bu şubenin gününü raporlu yapmaz)
+ */
 export async function reportedDays(days: readonly string[]): Promise<Set<string>> {
   if (!days.length) return new Set();
   const rows = await getDb()
     .select({ date: s.cashReports.date })
     .from(s.cashReports)
-    .where(andWhere(inArray(s.cashReports.date, [...new Set(days)]), await subeKosulu()));
+    .where(andWhere(inArray(s.cashReports.date, [...new Set(days)]), await zincirKosulu()));
   return new Set(rows.map((r) => r.date));
 }
 
@@ -266,6 +302,12 @@ export async function firstCashReportDate(): Promise<string | null> {
  * girebildiği için süzmeden okuyan sorgu yanlış şubenin satırını döndürür. "Tümü" seçiliyken koşul yoktur.
  */
 const subeKosulu = () => currentBranchWhere(s.cashReports.branchId);
+
+/**
+ * Tek zincirin koşulu: günün raporu, önceki ve sonraki rapor, yazarkasa Z'si (bir satır döner). Seçili şube; "Tümü"de
+ * yazılan şube (Tuzla): iki şubenin zinciri tek satırda birleşmez, form okuduğu şubeye yazar (denetim KP-01, HM-X1)
+ */
+const zincirKosulu = async () => eq(s.cashReports.branchId, await currentWriteBranch());
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -489,12 +531,15 @@ export async function cashRevisionsFor(ids: number[]): Promise<CashRevisionDTO[]
   }));
 }
 
-/** Bu günden sonraki ilk rapor (açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez) */
+/**
+ * Bu günden sonraki ilk rapor, aynı şubenin (zincirKosulu; açılışı bu raporun devriyle karşılaştırılır; varsa personel
+ * bu raporu düzeltemez)
+ */
 export async function nextReportAfter(date: string): Promise<{ date: string; openingCash: number } | null> {
   const [row] = await getDb()
     .select({ date: s.cashReports.date, openingCash: s.cashReports.openingCash })
     .from(s.cashReports)
-    .where(andWhere(gt(s.cashReports.date, date), await subeKosulu()))
+    .where(andWhere(gt(s.cashReports.date, date), await zincirKosulu()))
     .orderBy(asc(s.cashReports.date))
     .limit(1);
   return row ?? null;
@@ -505,13 +550,14 @@ export async function cashCounters(): Promise<{ id: number; name: string }[]> {
   return getDb().select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.active, true)).orderBy(asc(s.users.name));
 }
 
-/** Kayıtlı raporun bütünlük bilgisi (WhatsApp metni ve e-posta; src/lib/cash-report.ts integrityOf). Üç küçük sorgu */
+/**
+ * Kayıtlı raporun bütünlük bilgisi (WhatsApp metni ve e-posta; src/lib/cash-report.ts integrityOf). Üç küçük sorgu;
+ * zincir raporun kendi şubesinde (panelin seçimi ne olursa)
+ */
 export async function cashReportIntegrity(r: CashReportDTO): Promise<CashReportIntegrity> {
-  const [prev, next, revisions] = await Promise.all([
-    previousCarryOver(r.date),
-    nextReportAfter(r.date),
-    r.revision > 1 ? cashRevisionsFor([r.id]) : Promise.resolve([]),
-  ]);
+  const [prev, next, revisions] = await withBranchScope(r.branchId, () =>
+    Promise.all([previousCarryOver(r.date), nextReportAfter(r.date), r.revision > 1 ? cashRevisionsFor([r.id]) : Promise.resolve([])]),
+  );
   return integrityOf(r, prev, next, revisions);
 }
 
@@ -558,19 +604,40 @@ export async function loadMonthEntry(month: string): Promise<MonthEntry | null> 
  * gelir (zaten okur); ay rakamına yedek açıksa raporsuz günün föyü, seçili şubenin açılış günü burada eklenir. Gelir-gider
  * ve Satışlar'daki ay rakamıyla aynı kural (dataset.ts): ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik
  * gün ilk kasa raporundan; şube açılış gününden beri raporluysa açılış ayı yarım değil (tillOpenedOn; denetim HM-04).
- * "Tümü"nün düzeni (şubesiz rapor satırları) P03'te
+ * "Tümü"de Gelir-gider gibi: her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (resolveBranchMonths; açık
+ * gün günde bir kez). `entry` yalnız tek şubede kullanılır; "Tümü"de her şubenin ay satırı burada okunur
  */
 export async function kasaMonthInfo(month: string, through: string, rows: readonly TillRow[], entry: MonthEntry | null, firstEver: string | null): Promise<Month> {
   const db = getDb();
-  const [monthModpos, firstModpos, scope, branches] = await Promise.all([
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches(db)]);
+  const one = async (branch: (typeof branches)[number] | undefined, own: readonly TillRow[], first: string | null) => {
+    const [monthModpos, firstModpos] = await Promise.all([modposTillRows(db, `${month}-01`, monthEnd(`${month}-01`)), firstModposTillDay(db)]);
+    const firstRow = firstModpos !== null && (first === null || firstModpos < first) ? firstModpos : first;
+    const openedOn = branch ? tillOpenedOn(branch.id, branch.openedOn, firstRow) : null;
+    return tillMonths([...own, ...monthModpos], through, firstRow, undefined, undefined, first ?? undefined, firstModpos, openedOn)[0];
+  };
+  if (scope !== ALL_BRANCHES) return resolveMonth(month, entry ?? undefined, await one(branches.find((b) => b.id === scope), rows, firstEver));
+  // "Tümü": ayın satırı ya da elle yazılanı olan şubeler, her biri kendi kapsamında
+  const [written, sheets] = await Promise.all([
+    db.select({ branchId: s.months.branchId }).from(s.months).where(eq(s.months.month, month)),
     modposTillRows(db, `${month}-01`, monthEnd(`${month}-01`)),
-    firstModposTillDay(db),
-    currentBranchScope(),
-    listBranches(db),
   ]);
-  const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
-  const branch = scope === ALL_BRANCHES ? undefined : branches.find((b) => b.id === scope);
-  const openedOn = branch ? tillOpenedOn(branch.id, branch.openedOn, firstRow) : null;
-  const till = tillMonths([...rows, ...monthModpos], through, firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, openedOn)[0];
-  return resolveMonth(month, entry ?? undefined, till);
+  const ids = [...new Set([...[...rows, ...sheets].flatMap((r) => (r.branchId ? [r.branchId] : [])), ...written.map((m) => m.branchId)])];
+  const [combined, perBranch] = await Promise.all([
+    one(undefined, rows, firstEver),
+    Promise.all(
+      ids.map((id) =>
+        withBranchScope(id, async () => {
+          const [own, first] = await Promise.all([loadMonthEntry(month), firstCashReportDate()]);
+          const till = await one(
+            branches.find((b) => b.id === id),
+            rows.filter((r) => r.branchId === id),
+            first,
+          );
+          return { branchId: id, entries: own ? [own] : [], tills: till ? [till] : [] };
+        }),
+      ),
+    ),
+  ]);
+  return resolveBranchMonths(perBranch, combined ? [combined] : []).find((m) => m.month === month) ?? resolveMonth(month, undefined, combined);
 }

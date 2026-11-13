@@ -82,6 +82,7 @@ function Head({ card, title, badge }: { card: CorrectionCard | DeleteCard; title
     <div className="space-y-1">
       <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
         <span className="min-w-0 break-words">{title}</span>
+        {card.branch ? <Badge tone="gray">{card.branch}</Badge> : null}
         {badge}
       </h3>
       <p className="text-[13px] text-ink-mute tabular">
@@ -339,6 +340,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       <div className="space-y-1">
         <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 break-words">{day} kasa raporu</span>
+          {card.branch ? <Badge tone="gray">{card.branch}</Badge> : null}
           <Badge tone="amber">Geç rapor</Badge>
         </h3>
         <p className="text-[13px] text-ink-mute tabular">

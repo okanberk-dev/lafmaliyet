@@ -4,6 +4,7 @@ import { and, count, eq } from "drizzle-orm";
 
 import { carryCheck, computeCash, openingNeedsNote, revisionChanges, revisionDataOf, staffCanReport, staffCashGate, type CashReportFields, type FieldChange } from "@/lib/cash-report";
 import {
+  cashDaySubject,
   CASH_REQUEST_TEXT,
   CorrectionPayload,
   correctionTitle,
@@ -12,18 +13,20 @@ import {
   LatePayload,
   mergeProposal,
   proposalChanges,
+  requestBranch,
   type CorrectionPayloadT,
   type DeletePayloadT,
   type ProposedFields,
 } from "@/lib/cash-requests";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
-import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 import { reviewLate, type LateReviewOutcome } from "./late";
 import {
+  assertFormBranch,
   carryBefore,
   hasLaterReport,
   lockCashReport,
@@ -48,6 +51,8 @@ import {
 
 export interface CorrectionInput {
   date: string;
+  /** Formun şubesi (açıldığı andaki seçim); verilmezse panelin seçimi */
+  branchId?: string | null;
   /** Önerinin dayandığı sürüm (ekranda görülen) */
   baseRevision: number;
   fields: Omit<CashReportFields, "date">;
@@ -70,12 +75,13 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
   const data: CashReportFields = { ...input.fields, date };
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   if (!staffCanReport(date, now)) throw new UserError(CASH_REQUEST_TEXT.closed);
-  const branchId = await currentWriteBranch();
+  // İstek raporun şubesini taşır (yükte ve konuda): onay yöneticinin seçimine değil bu şubeye yazar (KP-02, KP-X2)
+  const branchId = await assertFormBranch(input.branchId);
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
     if (report.revision !== input.baseRevision) throw new UserError(CASH_REQUEST_TEXT.stale);
-    if (await ownDeletePending(tx, me.id, date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
+    if (await ownDeletePending(tx, me.id, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
     const laterReport = await hasLaterReport(tx, date, branchId);
     const kept = report.countedBy ?? report.submittedBy;
     const counter = await resolveCounter(tx, input.countedBy ?? kept ?? me.id, kept);
@@ -100,11 +106,12 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
       baseCountedBy: kept,
       proposed,
       gate: laterReport ? "kilitli" : "gec",
+      branchId,
     });
     const out = await createOrUpdateRequest(
       tx,
       me,
-      { kind: "kasa-duzeltme", subject: `gun:${date}`, day: date, title: correctionTitle(date), payload, message: input.message.trim(), clientKey: input.clientKey },
+      { kind: "kasa-duzeltme", subject: cashDaySubject(date, branchId), day: date, title: correctionTitle(date), payload, message: input.message.trim(), clientKey: input.clientKey },
       now,
     );
     return { ...out, changes };
@@ -115,22 +122,22 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
 export async function proposeCashDelete(
   db: DB,
   me: CashActor,
-  input: { date: string; baseRevision: number; message: string; clientKey: string | null },
+  input: { date: string; branchId?: string | null; baseRevision: number; message: string; clientKey: string | null },
   now = new Date(),
 ): Promise<{ row: StaffRequestRow; created: boolean }> {
   if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
   if (!staffCanReport(input.date, now)) throw new UserError(CASH_REQUEST_TEXT.closed);
-  const branchId = await currentWriteBranch();
+  const branchId = await assertFormBranch(input.branchId);
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, input.date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
     if (report.revision !== input.baseRevision) throw new UserError(CASH_REQUEST_TEXT.stale);
     const [{ n }] = await tx.select({ n: count() }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, report.id));
-    const payload: DeletePayloadT = DeletePayload.parse({ date: input.date, reportId: report.id, baseRevision: report.revision, snapshot: revisionDataOf(report), photos: n });
+    const payload: DeletePayloadT = DeletePayload.parse({ date: input.date, reportId: report.id, baseRevision: report.revision, snapshot: revisionDataOf(report), photos: n, branchId });
     return createOrUpdateRequest(
       tx,
       me,
-      { kind: "kasa-silme", subject: `gun:${input.date}`, day: input.date, title: deleteTitle(input.date), payload, message: input.message.trim(), clientKey: input.clientKey },
+      { kind: "kasa-silme", subject: cashDaySubject(input.date, branchId), day: input.date, title: deleteTitle(input.date), payload, message: input.message.trim(), clientKey: input.clientKey },
       now,
     );
   });
@@ -182,10 +189,20 @@ export function mergedOf(report: MergeBase, p: CorrectionPayloadT) {
   return { current, merged, changes: revisionChanges(current.data, mergedData) };
 }
 
+/**
+ * Düzeltme isteğinin şubesi: yükte yazılıysa o; şubeden önce açılan istekte önerinin dayandığı raporun (`reportId`)
+ * şubesi, rapor artık yoksa Tuzla. Onay yöneticinin seçili şubesine değil buna yazar (denetim KP-02)
+ */
+export async function correctionBranch(tx: CashTx, p: { branchId?: string; reportId: number }): Promise<string> {
+  if (p.branchId) return p.branchId;
+  const [r] = await tx.select({ branchId: s.cashReports.branchId }).from(s.cashReports).where(eq(s.cashReports.id, p.reportId)).limit(1);
+  return r?.branchId ?? DEFAULT_BRANCH_ID;
+}
+
 async function reviewCorrection(tx: CashTx, me: CashActor, row: StaffRequestRow, input: ReviewInput, now: Date): Promise<ReviewOutcome> {
   const payload = CorrectionPayload.parse(row.payload);
   if (input.decision === "reject") return { kind: "kasa-duzeltme", status: "rejected", request: await decide(tx, row, me, "rejected", { note: input.note }, now) };
-  const branchId = await currentWriteBranch();
+  const branchId = await correctionBranch(tx, payload);
   const report = await lockCashReport(tx, payload.date, branchId);
   if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
   if (input.seenRevision !== report.revision) throw new UserError(CASH_REQUEST_TEXT.reviewStale);
@@ -197,7 +214,8 @@ async function reviewCorrection(tx: CashTx, me: CashActor, row: StaffRequestRow,
   if (!changes.length) throw new UserError(CASH_REQUEST_TEXT.nothingToApply);
   // Yöneticinin kendi düzeltmesi gibi yeni sürüm: devir, açılış notu, teslim ve sayan denetimleri yeniden
   const out = await writeCashReport(tx, me, merged.fields, { revision: report.revision, countedBy: merged.countedBy, prev: report, branchId: report.branchId });
-  const superseded = await supersede(tx, { kinds: ["kasa-duzeltme"], subject: row.subject, exceptId: row.id }, "Rapor başka bir istekle düzeltildi", now);
+  // Yalnız bu raporun öteki önerileri kapanır (konu gün ve şube; KP-X2): öteki şubenin aynı günkü önerisi bekler
+  const superseded = await supersede(tx, { kinds: ["kasa-duzeltme"], subject: cashDaySubject(report.date, report.branchId), exceptId: row.id }, "Rapor başka bir istekle düzeltildi", now);
   const request = await decide(tx, row, me, "approved", { note: input.note, resultId: out.row.id, result: { revision: out.row.revision } }, now);
   return { kind: "kasa-duzeltme", status: "approved", request, payload, report: out.row, changes: out.changes, prevCarry: out.prevCarry, superseded };
 }
@@ -214,12 +232,16 @@ async function reviewDelete(tx: CashTx, me: CashActor, row: StaffRequestRow, inp
   return { kind: "kasa-silme", status: "approved", request, payload, removed };
 }
 
-/** Kararın konu nesnesi, istek satırından önce: düzeltmede günün raporu, silmede istenen rapor, geç raporda günün kilidi */
+/**
+ * Kararın konu nesnesi, istek satırından önce: düzeltmede raporun, silmede istenen rapor, geç raporda günün kilidi;
+ * hepsi isteğin şubesinde (yöneticinin seçiminde değil)
+ */
 async function lockSubject(tx: CashTx, row: StaffRequestRow): Promise<void> {
-  const branchId = await currentWriteBranch();
-  if (row.kind === "kasa-duzeltme") await lockCashReport(tx, CorrectionPayload.parse(row.payload).date, branchId);
-  else if (row.kind === "kasa-silme") await tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.id, DeletePayload.parse(row.payload).reportId)).for("update");
-  else if (row.kind === "kasa-gec") await lockLateDay(tx, LatePayload.parse(row.payload).date, branchId);
+  if (row.kind === "kasa-duzeltme") {
+    const p = CorrectionPayload.parse(row.payload);
+    await lockCashReport(tx, p.date, await correctionBranch(tx, p));
+  } else if (row.kind === "kasa-silme") await tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.id, DeletePayload.parse(row.payload).reportId)).for("update");
+  else if (row.kind === "kasa-gec") await lockLateDay(tx, LatePayload.parse(row.payload).date, requestBranch(row));
 }
 
 /**

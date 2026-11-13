@@ -121,7 +121,7 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 
 | Kayıt | Şube |
 |---|---|
-| Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin) |
+| Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin). Form da o şubeyi okur ve hangi şubenin raporu olduğunu yazar (P03) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
 | Ay bilgisi (Satışlar'ın ay formu, Gelir-gider'in ciro, açık gün ve ay notu hücresi) | Seçili şube; "Tümü"nde Tuzla. Birden çok şube açıkken "Tümü"de Gelir-gider'in ciro ve açık gün hücresi kilitlidir ("şubeyi seçin"; sunucu da reddeder): hücre şubelerin toplamını gösterir, yazılan Tuzla'nın ayına inip öteki şubenin cirosunu iki kez saydırırdı. Satışlar'ın formu "Tümü"de başlığında **Tuzla** yazar, Tuzla'nın elle yazdığını ve kasasını gösterir; liste ↔ POS kutusu çıkmaz (liste bütün şubelerin) |
 | Satış listesi, "Ayı temizle" | Seçili şube; "Tümü"nde Tuzla. Temizlik yalnız o şubenin satırlarını ve (istenirse) ay bilgisini siler |
@@ -149,6 +149,22 @@ tarar.
 
 Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar, nakit planının günlük satışı
 bütün şubelerin cirosu ÷ raporlu gündür (Genel bakış'ın plan kartı da Ödemeler › Nakit planı gibi "Tümü"yle okur).
+
+### Kasa ekranı, devir zinciri ve istekler (denetim 13 Kasım 2026, P03)
+
+Kasa raporu şubenin raporudur: formu okuyan ve yazan hep aynı şube. Ayrıntı [KASA-RAPORU.md](KASA-RAPORU.md) › Şubeler.
+
+| Ne | Kural |
+|---|---|
+| Kasa formu | Seçili şubenin raporu; "Tümü"de **Tuzla**'nın (yazdığı şube). Günün raporu, önceki devir, sonraki rapor, yazarkasa Z'si, kasadan çıkanlar, bekleyen istekler ve kapalı gün çubuğu o şubeden okunur. Birden çok şube açıkken form "Tuzla kasa raporu" diye hangi şubenin olduğunu yazar. Form açıldığı şubeyi gönderir; bu arada başka sekmede şube değiştiyse kayıt yapılmaz ("Şube seçimi bu arada değişti; sayfayı yenileyin") |
+| Tek satırlık okumalar | Günün raporu, önceki devir, sonraki rapor ve yazarkasa Z'si "Tümü"de de tek şubenin (Tuzla) zinciridir (`cash-reports.ts` › `zincirKosulu`); günün kasadan çıkanları da (`cashOutsOn`) |
+| Günden güne | "Tümü"de günün her şube raporu ayrı satır (şubenin adıyla), raporsuz gün tek satır. Z toplamı, nakit, kart ve kasa farkı bütün raporlardan; "rapor girilen gün" günde bir kez. Ay satırı Gelir-gider gibi şube şube çözülüp toplanır (`kasaMonthInfo`) |
+| Açılış ↔ devir zinciri | Şube şube (`branchCarryChecks`, `carryOversBefore`): Kasa'nın listesi, zil, Bugün, haftalık özet ve Claude'un `kasa_raporlari`'nda Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz |
+| Kasadan çıkanlar | Şubenin satırları; raporun "Gün içinde çıkan"ı, e-posta ve WhatsApp öteki şubenin fişini saymaz. Personelin kapısı satırın şubesine bakar |
+| Personel istekleri | Düzeltme, silme, geç rapor ve kapalı gün bildirimi şubesini taşır (yükte `branchId`). Konu gün ve şube: Tuzla'nınki eskisi gibi `gun:<gün>`, öteki şubeninki `gun:<gün>:<şube>`. Onay yöneticinin seçili şubesine değil isteğin şubesine yazar; bir şubenin onayı, silmesi ya da raporu yalnız kendi şubesinin isteklerini kapatır. Şubeden önce açılmış istek: düzeltmede raporun (`reportId`) şubesi, ötekilerde Tuzla |
+| Gün kilidi, geç rapor | Şube içinde: Marina'nın raporu Tuzla personelinin dününü kapatmaz, Tuzla'nın geç raporunu engellemez, zincirde halka sayılmaz |
+| Kapalı gün | Şube başına (`special_days.branch_id`, migration `0059_kapali_gun_subesi`): Kasa'nın "Kafe kapalıydı"sı ve bildirimin onayı formun şubesini yazar; şubesi boş satır (Satış tahmini, bayram) işletme genelidir. Marina'nın raporu Tuzla'nın işaretini kaldırmaz; kanıt ve Z boşluğu şubenin raporlarından |
+| E-posta, WhatsApp, zil | İki şubenin aynı günkü raporu aynı numarayı alır: birden çok fiziksel şube açıkken konu, başlık ve WhatsApp'ın ilk satırı şubeyi yazar ("Kasa raporu KR-20261112 · Marina · …"). İşlem kaydının ve zil satırlarının anahtarına Tuzla dışındaki şube eklenir (Tuzla'nınki değişmez; okunmuş zil satırı okunmuş kalır). Onaylar'daki kasa kartları şubenin adını rozetle yazar |
 
 ## Sırada ne var
 

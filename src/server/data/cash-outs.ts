@@ -1,13 +1,16 @@
 import "server-only";
 
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, lte, type SQL } from "drizzle-orm";
 
 import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
+import { andWhere, currentBranchWhere, currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 /** Gün içinde kasadan çıkan bir satır (ekranda; bağlı harcama kaydı ve kategorisiyle) */
 export interface CashOutDTO {
   id: number;
+  /** Satırın şubesi (kasa raporunun şubesiyle aynı; docs/SUBE.md) */
+  branchId: string;
   date: string;
   kind: CashOutKind;
   amount: number;
@@ -36,6 +39,7 @@ export type CashOutView = Pick<CashOutDTO, StaffCashOutField> & { locked?: boole
 
 const columns = {
   id: s.cashOuts.id,
+  branchId: s.cashOuts.branchId,
   date: s.cashOuts.date,
   kind: s.cashOuts.kind,
   amount: s.cashOuts.amount,
@@ -55,21 +59,31 @@ const columns = {
   categoryName: s.expenseCategories.name,
 };
 
-/** [from, to] günlerinin satırları (eskiden yeniye) */
-export async function cashOutsBetween(from: string, to: string): Promise<CashOutDTO[]> {
+/** Satırlar (eskiden yeniye), verilen şube koşuluyla */
+async function rowsBetween(from: string, to: string, branch: SQL | undefined): Promise<CashOutDTO[]> {
   const rows = await getDb()
     .select(columns)
     .from(s.cashOuts)
     .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, s.cashOuts.id))
     .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
-    .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to)))
+    .where(andWhere(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to)), branch))
     .orderBy(asc(s.cashOuts.date), asc(s.cashOuts.createdAt), asc(s.cashOuts.id))
     .limit(2000);
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }));
 }
 
-export function cashOutsOn(date: string): Promise<CashOutDTO[]> {
-  return cashOutsBetween(date, date);
+/** [from, to] günlerinin satırları (eskiden yeniye), seçili şubenin; "Tümü"de bütün şubelerin (Kasa'nın ay listesi) */
+export async function cashOutsBetween(from: string, to: string): Promise<CashOutDTO[]> {
+  return rowsBetween(from, to, await currentBranchWhere(s.cashOuts.branchId));
+}
+
+/**
+ * Günün satırları, tek şubenin (seçili şube; "Tümü"de yazılan şube, Tuzla; denetim KP-04): raporun "Gün içinde
+ * çıkan"ı, e-posta ve WhatsApp öteki şubenin fişini saymaz. Raporu bilinen yerde (e-posta, onay kartı) raporun şubesiyle
+ * okunur (withBranchScope)
+ */
+export async function cashOutsOn(date: string): Promise<CashOutDTO[]> {
+  return rowsBetween(date, date, eq(s.cashOuts.branchId, await currentWriteBranch()));
 }
 
 export interface CashOutCategory {

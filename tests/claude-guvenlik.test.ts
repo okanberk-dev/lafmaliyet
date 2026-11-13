@@ -59,7 +59,8 @@ test("araçlar yalnız izinli okuyucuları çağırır; hiçbiri yazmaz, eşitle
   const src = read("src/server/mcp/tools.ts");
   const ALLOWED: Record<string, string[]> = {
     "@/server/data/cash-plan": ["loadCashPlan"],
-    "@/server/data/cash-reports": ["cashReportsBetween", "firstCashReportDate", "previousCarryOver"],
+    // Devir zincirinin başı şube şube (denetim HM-07)
+    "@/server/data/cash-reports": ["carryOversBefore", "cashReportsBetween", "firstCashReportDate"],
     "@/server/data/dataset": ["loadModel"],
     "@/server/data/price-alerts": ["loadPriceAlerts"],
     "@/server/data/search": ["loadSearchIndex"],

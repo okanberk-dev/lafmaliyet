@@ -396,6 +396,8 @@ export interface LateFormState {
  */
 export function CashForm({
   date,
+  branchId,
+  branchLabel = null,
   report,
   carry,
   whatsapp,
@@ -425,6 +427,13 @@ export function CashForm({
   lafposMode = lafpos !== null,
 }: {
   date: string;
+  /**
+   * Formun şubesi (docs/SUBE.md: seçili şube, "Tümü"de Tuzla): gönderimle gider, sunucu bu arada şube seçimi değiştiyse
+   * yazmaz (denetim KP-01). "Düzeltip onayla"da yok (onay isteğin şubesine yazar)
+   */
+  branchId?: string;
+  /** Birden çok şube açıkken şubenin adı: form hangi şubenin raporu olduğunu yazar */
+  branchLabel?: string | null;
   report: CashReportDTO | null;
   /** Önceki raporun ertesi güne devri (açılış kendiliğinden dolar ve onunla karşılaştırılır) */
   carry: { date: string; amount: number } | null;
@@ -767,6 +776,7 @@ export function CashForm({
       start(async () => {
         const res = await requestLateCashReport({
           ...fields,
+          branchId,
           zNo: fields.zNo ?? "",
           reason: why,
           requestVersion: late?.version ?? 0,
@@ -794,7 +804,7 @@ export function CashForm({
       const { date: _day, ...rest } = fields;
       void _day;
       start(async () => {
-        const res = await requestCashCorrection({ date, baseRevision: report.revision, fields: rest, countedBy: counter, message: why, clientKey });
+        const res = await requestCashCorrection({ date, branchId, baseRevision: report.revision, fields: rest, countedBy: counter, message: why, clientKey });
         if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
         toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
         setProposal(null);
@@ -810,7 +820,7 @@ export function CashForm({
       return;
     }
     start(async () => {
-      const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
+      const res = await submitCashReport({ ...fields, branchId, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
       if (res.data.needsApproval && res.data.request === "kasa-gec") {
@@ -882,7 +892,7 @@ export function CashForm({
         <CardHeader
           icon={<ReceiptText />}
           title={`Kasa raporu · ${reportNo(date)}`}
-          description={`${longDateTR(date)} · ${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
+          description={`${branchLabel ? `${branchLabel} · ` : ""}${longDateTR(date)} · ${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
           meta={
             <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>
               {diffText(report.cashDiff)}
@@ -925,7 +935,7 @@ export function CashForm({
                 <Pencil size={16} /> Düzenle
               </Button>
             ) : null}
-            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} label={`${longDateTR(date)} kasa raporu`} /> : null}
+            {requests && !ownDelete ? <DeleteRequestButton date={date} branchId={branchId} revision={report.revision} label={`${longDateTR(date)} kasa raporu`} /> : null}
           </div>
           {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
           {locked ? (
@@ -1105,6 +1115,10 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {branchLabel && !review ? (
+          // Birden çok şube açık: form hangi şubeye yazdığını söyler ("Tümü"de Tuzla; denetim KP-01)
+          <Notice tone="neutral" size="sm" title={`${branchLabel} kasa raporu`} text="Rapor ve kasadan çıkanlar bu şubeye yazılır; başka şube için soldan şubeyi seçin." />
+        ) : null}
         {isLate && !review ? (
           <Notice
             tone="neutral"

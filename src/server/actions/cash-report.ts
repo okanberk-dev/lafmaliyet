@@ -11,6 +11,7 @@ import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/not
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { withBranchScope } from "@/server/branch-scope";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
@@ -63,10 +64,11 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     const dto = toCashDTO(saved);
     const [settings, waste, extras, integrity, nextReport] = await Promise.all([
       loadCashSettings(),
-      dayWaste(data.date),
+      withBranchScope(saved.branchId, () => dayWaste(data.date)),
       cashReportExtras(dto),
       cashReportIntegrity(dto),
-      nextReportAfter(data.date),
+      // Sonraki rapor raporun şubesinde ("Tümü"de öteki şubenin raporu sayılmaz)
+      withBranchScope(saved.branchId, () => nextReportAfter(data.date)),
     ]);
     const text = whatsappText(dto, { by: me.name, revision: saved.revision, waste, ...extras, ...integrity });
     return {

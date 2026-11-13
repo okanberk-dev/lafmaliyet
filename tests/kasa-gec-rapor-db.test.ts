@@ -181,11 +181,12 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     const held = await photoOf(z);
     assert.equal(held.expiresAt, null, "istek beklerken fotoğraf silinmez");
     assert.equal(held.linkedAt, null);
-    // Personel yükünde yalnız raporun alanları, teslim alan, fotoğraflar ve kasa farkı
+    // Personel yükünde yalnız raporun alanları, teslim alan, fotoğraflar, kasa farkı ve şube (onay o şubeye yazar; KP-02)
     assert.deepEqual(
       Object.keys(out.row.payload).sort(),
-      ["bankPos", "card", "cash", "cashDiff", "cashIn", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
+      ["bankPos", "branchId", "card", "cash", "cashDiff", "cashIn", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
     );
+    assert.equal((out.row.payload as { branchId?: string }).branchId, "tuzla");
   });
 
   test("reddedilenler: Z fotoğrafı yok, Z no yok, başkasının fotoğrafı, D−15, raporlu gün, ilk rapordan önceki gün, bayat sürüm, teslim alan", async () => {
@@ -211,7 +212,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
 
   test("zincir bekleyen geç raporu halka sayar; açılış ona göre denetlenir; başka bir istekte tutulan fotoğraf alınmaz", async () => {
     const d5 = (await db.select().from(s.staffRequests).where(and(eq(s.staffRequests.subject, `gun:${D5}`), eq(s.staffRequests.requestedBy, users.ayse.id))))[0];
-    const n = await chain.chainNeighbours(db, D4);
+    const n = await chain.chainNeighbours(db, D4, { branchId: "tuzla" });
     assert.equal(n.prev?.kind, "bekleyen");
     assert.equal(n.prev?.date, D5);
     assert.equal(n.prev?.carry, 1_100);
@@ -334,7 +335,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     await report(r, {}, tr(`${r}T22:00`));
     const pb = await propose(users.mehmet, b, { photoIds: [await photo(users.mehmet)], fields: note, now });
     const pc = await propose(users.ayse, c, { photoIds: [await photo(users.ayse)], fields: note, now });
-    const n = await chain.chainNeighbours(db, c, { exceptRequestId: pc.row.id });
+    const n = await chain.chainNeighbours(db, c, { exceptRequestId: pc.row.id, branchId: "tuzla" });
     assert.equal(n.prev?.kind, "bekleyen");
     assert.equal(n.prev?.date, b);
     assert.equal(n.prevReportDate, r);
