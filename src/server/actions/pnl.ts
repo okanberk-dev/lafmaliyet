@@ -8,7 +8,7 @@ import { ALL_BRANCHES, companyPnlKey } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -70,9 +70,10 @@ export async function setMonthNote(month: string, note: string | null) {
       .nullable()
       .transform((v) => (v ? v : null))
       .parse(note);
+    // Ay satırı şubenindir (Satışlar'ın ay formu gibi): seçili şube, "Tümü"de Tuzla
     await getDb()
       .insert(s.months)
-      .values({ month: m, note: n })
+      .values({ month: m, branchId: await currentWriteBranch(), note: n })
       .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { note: n, updatedAt: new Date() } });
     await logActivity(me, "Ay notu", `${monthLabel(m)}: ${n ?? "silindi"}`);
     refresh();
@@ -97,9 +98,11 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
               .max(dim, `En fazla ${dim} gün (${monthLabel(m)} ${dim} gün çeker)`)
               .parse(Math.round(value))
           : z.number().finite().min(0).parse(value);
+    // Ay satırı şubenindir (Satışlar'ın ay formu gibi): seçili şube, "Tümü"de Tuzla. Şubesiz yazılsaydı Marina
+    // seçiliyken yazılan ciro Tuzla'nın ayına inerdi
     await getDb()
       .insert(s.months)
-      .values({ month: m, [field]: v })
+      .values({ month: m, branchId: await currentWriteBranch(), [field]: v })
       .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { [field]: v, updatedAt: new Date() } });
     await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
     refresh();

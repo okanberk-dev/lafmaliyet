@@ -109,7 +109,16 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     opening: state.balance !== null && state.balanceDate ? { amount: state.balance, date: state.balanceDate } : null,
     excluded: state.excluded,
     invoiceTermDays: up.settings.invoiceTermDays,
-    cashReports: reports.map((r) => ({ date: r.date, zTotal: r.zTotal, card: r.card, mealCard: r.mealCard, online: r.online })),
+    // Ödenmez Z'nin içindeyse ciroya girmez (dayRevenue): ödeme dökümü de verilir
+    cashReports: reports.map((r) => ({
+      date: r.date,
+      zTotal: r.zTotal,
+      card: r.card,
+      mealCard: r.mealCard,
+      online: r.online,
+      offRevenue: r.offRevenue,
+      payments: Math.round((r.cash + r.card + r.mealCard + r.online + r.other) * 100) / 100,
+    })),
     invoices: up.items.filter(isPayable),
     reminders: up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),

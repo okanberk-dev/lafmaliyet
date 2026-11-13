@@ -72,6 +72,7 @@ function scenarios(l: Lib, hint: Hint): Record<string, string> {
     ],
     yalnizLafpos: [[r("2026-11-10", { source: "lafpos", receipts: 20 }), r("2026-11-12", { source: "lafpos", receipts: 5 })], "2026-11-13"],
     tekSatir: [[r("2026-11-07", { zTotal: 0, card: 0, mealCard: 0 })], "2026-11-07", null],
+    // Aynı güne iki rapor (iki şube): açık gün ve raporlu gün günde bir kez (denetim HM-01; altın dosyada 2 gün)
     ayniGunIkiRapor: [[r("2026-11-01"), r("2026-11-01", { zTotal: 5_000 }), r("2026-11-02")], "2026-11-02"],
     lafposRapordanOnce: [[r("2026-10-30", { source: "lafpos" }), r("2026-10-31", { source: "lafpos", zTotal: 0, receipts: 0 }), ...span("2026-11-01", "2026-11-03")], "2026-11-03", undefined, [], ["2026-10-31"]],
     bos: [[], "2026-11-30"],
@@ -308,9 +309,11 @@ test("föy günlerinin indirimi bilinmez: yalnız föylü ayda indirim boş, var
 
 test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS > ModPOS; rapor sınaması tek yerden", () => {
   const loader = read("src/server/data/cash-reports.ts");
-  const fn = loader.slice(loader.indexOf("export async function modposTillRows("));
+  // Ayarın kapsamı tek yerde (modposFallbackSheets): ay satırları da Bugün'ün şube kartı da oradan okur
+  assert.match(loader, /export async function modposTillRows\([\s\S]*?\): Promise<TillRow\[\]> \{\n\s+return \(await modposFallbackSheets\(db, from, to\)\)\.flatMap/);
+  const fn = loader.slice(loader.indexOf("export async function modposFallbackSheets("));
   assert.ok(fn.indexOf("if (end === null) return [];") > 0);
-  assert.ok(fn.indexOf("if (end === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
+  assert.ok(fn.indexOf("if (end === null) return [];") < fn.indexOf("return loadModposSheets("), "ayar okunmadan föy okunmaz");
   const first = loader.slice(loader.indexOf("export async function firstModposTillDay("));
   assert.ok(first.indexOf("if (end === null) return null;") > 0);
   assert.ok(first.indexOf("if (end === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");
@@ -322,10 +325,10 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)
   assert.match(
     loader,
-    /return sheet\.final \? \{ date: sheet\.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" \} : null;/,
+    /return sheet\.final \? \{ date: sheet\.day, \.\.\.branch, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" \} : null;/,
   );
-  // tillRows raporlardan önceki föyleri kesintisiz kısma indirir
-  assert.match(loader, /const runFrom = modposRunStart\(modpos\.map\(\(r\) => r\.date\), firstReport\) \?\? "";/);
+  // tillRows raporlardan önceki föyleri kesintisiz kısma indirir: her şubede kendi ilk raporuna göre (HM-03)
+  assert.match(loader, /modpos\.filter\(\(r\) => r\.branchId === b\)\.map\(\(r\) => r\.date\),\n\s+firstReport\.get\(b\) \?\? null,/);
   assert.match(loader, /discounts: null,\n\s+offRevenue: z\.offRevenue,\n\s+receipts: z\.receipts,/);
   // Föyün satırı ciroya dahil ödemelerini de taşır: ödenmez Z toplamının içindeyse aya girmez (src/lib/cash-revenue.ts)
   assert.match(loader, /payments: Math\.round\(\(z\.cash \+ z\.card \+ z\.mealCard \+ z\.online \+ z\.other\) \* 100\) \/ 100,\n\s+source: "modpos",/);

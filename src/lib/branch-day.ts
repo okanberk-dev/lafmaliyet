@@ -4,8 +4,10 @@
  * ve kasa farkı; altta bütün şubelerin ödeme dağılımı. Saf (tests/branch-day.test.ts); veriyi
  * src/server/data/branch-day.ts yükler.
  *
- * Kaynak önceliği Kasa'nın ay satırıyla aynı (src/server/data/cash-reports.ts tillRows): kasa raporu > LafPOS gün sonu
- * (yalnız geçiş gününden itibaren). Ciro ödenmez / ikram hariçtir (src/lib/cash-revenue.ts dayRevenue).
+ * Kaynak önceliği ay rakamınınkiyle aynı (src/server/data/cash-reports.ts tillRows): kasa raporu > LafPOS gün sonu
+ * (yalnız geçiş gününden itibaren) > kapanmış ModPOS föyü (yalnız Ayarlar › ModPOS › Ay rakamına yedek açıkken ve geçiş
+ * gününden önce). Föyden gelen gün Genel bakış'ın günlük grafiğinde de sayılır (denetim HM-09). Ciro ödenmez / ikram
+ * hariçtir (src/lib/cash-revenue.ts dayRevenue).
  */
 
 import { dayRevenue } from "@/lib/cash-revenue";
@@ -15,7 +17,7 @@ import { addDays } from "@/lib/reminders";
 export interface BranchDaySource {
   branchId: string;
   date: string;
-  source: "rapor" | "lafpos";
+  source: "rapor" | "lafpos" | "modpos";
   zTotal: number;
   /** Ödenmez / ikram; girilmediyse null */
   offRevenue: number | null;
@@ -91,10 +93,10 @@ export const DIFF_TOLERANCE = 1;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-/** Aynı şube ve gün için kasa raporu LafPOS'un gün sonunu ezer */
+/** Aynı şube ve gün için kasa raporu LafPOS'un gün sonunu, o da ModPOS föyünü ezer */
 export function pickSource(sources: readonly BranchDaySource[], branchId: string, date: string): BranchDaySource | null {
   const own = sources.filter((s) => s.branchId === branchId && s.date === date);
-  return own.find((s) => s.source === "rapor") ?? own.find((s) => s.source === "lafpos") ?? null;
+  return own.find((s) => s.source === "rapor") ?? own.find((s) => s.source === "lafpos") ?? own.find((s) => s.source === "modpos") ?? null;
 }
 
 /** Günün cirosu: ödenmez / ikram hariç */

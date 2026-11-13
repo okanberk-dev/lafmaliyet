@@ -58,6 +58,7 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
@@ -202,10 +203,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
   const [priceAlerts, cashPlan] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
-    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle (docs/SUBE.md › Neyi süzer)
+    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve kasa raporlarıyla (Ödemeler › Nakit planı
+    // gibi; docs/SUBE.md › Neyi süzer). Planın okuduğu kasa raporları, devir ve vergi girdileri de "Tümü"yle (HM-05)
     upcoming
       ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
-          .then((m) => loadCashPlan(m, upcoming))
+          .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
           .catch(() => null)
       : null,
   ]);
@@ -746,9 +748,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
 }
 
 /**
- * Ayın her açık gününün kasa cirosu (KDV dahil, ödenmez / ikram hariç) Arc çubuk grafiğinde; çizgi ve başlık açık
- * günlerin ortalaması, çubuğa gelince o günün cirosu. Satırlar ay bilgisinin okuduğu satırlar (tillRows): toplam ayın POS
- * cirosu
+ * Ayın her açık gününün kasa cirosu (KDV dahil, ödenmez / ikram hariç; "Tümü"de günün şubeleri tek çubuk) Arc çubuk
+ * grafiğinde; çizgi ve başlık açık günlerin ortalaması, çubuğa gelince o günün cirosu. Satırlar ay bilgisinin okuduğu
+ * satırlar (tillRows): toplam ayın POS cirosu
  */
 function DailyRevenueCard({ month, days }: { month: string; days: { date: string; revenue: number }[] }) {
   return (
@@ -759,7 +761,7 @@ function DailyRevenueCard({ month, days }: { month: string; days: { date: string
         description={
           <span className="inline-flex items-center gap-1.5">
             Kasa raporlarından, KDV dahil · {days.length} açık gün
-            <InfoTip text="Her açık günün cirosu: Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde LafPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
+            <InfoTip text="Her açık günün cirosu (Tümü'de şubelerin toplamı): Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde LafPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
           </span>
         }
         actions={

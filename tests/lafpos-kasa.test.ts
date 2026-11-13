@@ -199,8 +199,13 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   // Yükleyici: geçiş gününden itibaren, raporu olan günü rapora bırakır; dataset'in LafPOS satış sınırları yalnız raporlara bakar
   const loader = read("src/server/data/cash-reports.ts");
   assert.match(loader, /if \(switchDay === null \|\| \(to !== undefined && to < switchDay\)\) return \[\];/);
-  // ModPOS föyü (ay rakamına yedek) LafPOS'tan da sonra gelir: rapor > LafPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek)
-  assert.match(loader, /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(r\.date\)\), \.\.\.modpos\.filter\(\(r\) => !taken\.has\(r\.date\) && r\.date >= runFrom\)\]/);
+  // ModPOS föyü (ay rakamına yedek) LafPOS'tan da sonra gelir: rapor > LafPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek),
+  // aynı şubenin aynı gününde (HM-03)
+  assert.match(loader, /const slot = \(r: TillRow\) => `\$\{r\.date\}\|\$\{r\.branchId\}`;/);
+  assert.match(
+    loader,
+    /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(slot\(r\)\)\), \.\.\.modpos\.filter\(\(r\) => !taken\.has\(slot\(r\)\) && r\.date >= \(runFrom\.get\(r\.branchId\) \?\? ""\)\)\]/,
+  );
   const dataset = read("src/server/data/dataset.ts");
   // Rapor sınaması tek yerden (isReportRow): üçüncü kaynak (ModPOS) rapor sanılmaz
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);

@@ -18,6 +18,7 @@ import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
@@ -122,14 +123,17 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
-  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir
+  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir. "Tümü"de form
+  // yazdığı şubenin (Tuzla) ay satırını düzenler: elle yazılanlar ve kasanın değerleri o şubenin, Tümü'nün toplamı değil
+  // (toplam forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı)
+  const formInfo = info?.byBranch ? info.byBranch[await currentWriteBranch()] : info;
   const infoValues = {
-    openDays: manualOf(info, "openDays"),
-    posRevenue: manualOf(info, "posRevenue"),
-    discounts: manualOf(info, "discounts"),
-    offRevenue: manualOf(info, "offRevenue"),
-    cardShare: manualOf(info, "cardShare"),
-    note: info?.note ?? null,
+    openDays: manualOf(formInfo, "openDays"),
+    posRevenue: manualOf(formInfo, "posRevenue"),
+    discounts: manualOf(formInfo, "discounts"),
+    offRevenue: manualOf(formInfo, "offRevenue"),
+    cardShare: manualOf(formInfo, "cardShare"),
+    note: formInfo?.note ?? null,
   };
   // "Ayı temizle › ay bilgileri de" yalnız elle yazılanları siler (kasadan gelenler raporlarla kalır)
   const hasInfo = Object.values(infoValues).some((v) => v !== null && v !== "");
@@ -283,12 +287,12 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         />
         <MonthInfoForm
           // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
-          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(info?.kasa?.values ?? null)}`}
+          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(formInfo?.kasa?.values ?? null)}`}
           className="xl:col-span-5"
           month={month}
           label={monthLabel(month)}
           info={infoValues}
-          kasa={info?.kasa ?? null}
+          kasa={formInfo?.kasa ?? null}
           settingsCardShare={model.settings.kartOrani}
           listTotal={sales.revenue}
           listPeriod={listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null}

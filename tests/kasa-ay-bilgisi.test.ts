@@ -355,8 +355,11 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
   assert.ok(src.indexOf("const today = businessDate()") > src.indexOf("tillRows(),"));
   assert.match(src, /const through = addDays\(today, -1\)/);
-  assert.match(src, /months: resolveMonths\(/);
-  assert.match(src, /tillMonths\(\s*till,\s*through,\s*undefined,\s*lateWaiting\./);
+  // Tek şube seçiliyken o şubenin satırları (açılış günüyle, HM-04); "Tümü"de şube şube çözülüp toplanır (HM-02)
+  assert.match(src, /const lateDays = lateWaiting\.flatMap/);
+  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOf\(branchId\)\)/);
+  assert.match(src, /branch !== null\s*\? resolveMonths\(entries\(months\), monthsOf\(till, branch\.id\)\)\s*: resolveBranchMonths\(/);
+  assert.match(src, /months: monthInfo,/);
 });
 
 test("geç rapor: onay bekleyen gün eksik sayılmaya devam eder, yanına 'onay bekliyor' yazılır", () => {

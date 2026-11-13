@@ -8,6 +8,7 @@ import { priceAlert } from "@/lib/calc/price-impact";
 import { salesBasis } from "@/lib/calc/price-loss";
 import { lineLabel } from "@/lib/cash-plan";
 import { businessDate, carryChecks, historyOf } from "@/lib/cash-report";
+import { dayRevenue } from "@/lib/cash-revenue";
 import { isChannelKey } from "@/lib/commission/channels";
 import { buildCommissionReport, commissionAlerts, groupOf, MEAL_LIMIT, rowOf, type CommissionAlert, type CommissionReport } from "@/lib/commission/report";
 import { computeOccupancy, emptiestBlock, KARAOKE_ROOMS, periodBounds, resolvePeriod } from "@/lib/karaoke/occupancy";
@@ -132,7 +133,13 @@ const kasa: Collector = {
         "fotoğraf",
       ),
     ]);
-    const rows = reports.map((r) => ({ date: r.date, zTotal: r.zTotal, cashDiff: r.cashDiff }));
+    // Ciro ay bilgisinin kuralıyla: Z toplamının içindeki ödenmez / ikram düşer (dayRevenue; HM-08)
+    const rows = reports.map((r) => ({
+      date: r.date,
+      zTotal: r.zTotal,
+      revenue: dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue, payments: Math.round((r.cash + r.card + r.mealCard + r.online + r.other) * 100) / 100 }).revenue,
+      cashDiff: r.cashDiff,
+    }));
     const line = salesLine({ week: ctx.week, reports: rows });
     return { ...one(kasaItem({ week: ctx.week, reports: rows, carryMismatch: carry, lateEdits: late, photoDiffs: photo })), lines: line ? [line] : [] };
   },

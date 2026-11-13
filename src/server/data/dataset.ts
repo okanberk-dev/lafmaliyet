@@ -7,7 +7,7 @@ import { ALL_BRANCHES, branchPnlEntry, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
-import { isReportRow, resolveMonths, tillMonths } from "@/lib/cash-month";
+import { isReportRow, type MonthEntry, resolveBranchMonths, resolveMonths, type TillRow, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
@@ -194,7 +194,8 @@ async function readDataset(): Promise<Dataset> {
       // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
       // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
       lastTillDay: reportRows.at(-1)?.date ?? null,
-      reportDays: reportRows.map((r) => r.date),
+      // Gün başına bir kez ("Tümü"de iki şubenin aynı günkü raporu bir gün)
+      reportDays: [...new Set(reportRows.map((r) => r.date))],
       zOf: (from, upto) => {
         const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
         return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
@@ -212,6 +213,34 @@ async function readDataset(): Promise<Dataset> {
     through: upto,
     till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport)[0] ?? null,
   }));
+
+  // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu olan
+  // ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır. Eksik günler onay
+  // bekleyen geç raporları ve kapalı işaretli günleri ayrı söyler
+  const lateDays = lateWaiting.flatMap((r) => (r.day ? [r.day] : []));
+  const closedPast = closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date));
+  // Şubenin açılış ayı, açılış gününden beri raporluysa yarım sayılmaz (HM-04)
+  const openedOf = (id: string | undefined) => branches.find((b) => b.id === id)?.openedOn ?? null;
+  const monthsOf = (rows: TillRow[], branchId: string | undefined) => tillMonths(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOf(branchId));
+  const entries = (rows: typeof months): MonthEntry[] =>
+    rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
+  // "Tümü": her şube kendi elle yazılanı ve kasasıyla çözülür, sonra toplanır (açık gün günde bir kez; HM-01, HM-02).
+  // Bütün satırların ayı kasa bilgisi olarak taşınır (açılış günü ilk satırın şubesinin)
+  const branchIds = [...new Set([...months.map((m) => m.branchId), ...till.flatMap((r) => (r.branchId ? [r.branchId] : []))])];
+  const monthInfo =
+    branch !== null
+      ? resolveMonths(entries(months), monthsOf(till, branch.id))
+      : resolveBranchMonths(
+          branchIds.map((id) => ({
+            branchId: id,
+            entries: entries(months.filter((m) => m.branchId === id)),
+            tills: monthsOf(
+              till.filter((r) => r.branchId === id),
+              id,
+            ),
+          })),
+          monthsOf(till, till[0]?.branchId),
+        );
 
   return {
     settings,
@@ -253,26 +282,7 @@ async function readDataset(): Promise<Dataset> {
       siteMenuSlot: p.siteMenuSlot,
     })),
     recipeItems,
-    // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu
-    // olan ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır
-    months: resolveMonths(
-      months.map((m) => ({
-        month: m.month,
-        openDays: m.openDays,
-        posRevenue: m.posRevenue,
-        discounts: m.discounts,
-        offRevenue: m.offRevenue,
-        cardShare: m.cardShare,
-        note: m.note,
-      })),
-      tillMonths(
-        till,
-        through,
-        undefined,
-        lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
-        closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date)),
-      ),
-    ),
+    months: monthInfo,
     salesLines: sales.salesLines,
     ...(sales.lafposSales ? { lafposSales: sales.lafposSales } : {}),
     ...(lafposIkram ? { lafposIkram } : {}),

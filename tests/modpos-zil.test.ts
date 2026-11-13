@@ -269,13 +269,15 @@ test("kaynak: personelin yükleyicileri ve operasyonun ortak olguları föy okum
   for (const f of ["src/server/data/today-ops.ts", "src/server/bell/ops.ts"]) {
     assert.doesNotMatch(read(f), /loadModposSheets|modposMismatch|@\/server\/bell\/modpos/, f);
   }
-  // cash-reports.ts föyü yalnız ay rakamına yedekte okur (modposTillRows, firstModposTillDay: ayın Z toplamı gibi
-  // sunucuda kalan ay bilgisi; docs/MODPOS-API.md › Ay rakamına yedek); personelin rapor okuyucuları okumaz
+  // cash-reports.ts föyü yalnız ay rakamına yedekte okur (modposFallbackSheets: modposTillRows, firstModposTillDay ve
+  // yöneticinin Bugün kartı onun üstünden; ayın Z toplamı gibi sunucuda kalan ay bilgisi; docs/MODPOS-API.md › Ay
+  // rakamına yedek); personelin rapor okuyucuları okumaz
   const cr = read("src/server/data/cash-reports.ts");
   assert.doesNotMatch(cr, /modposMismatch|@\/server\/bell\/modpos/);
   const fns = cr.split(/\n(?=export async function |async function |export function )/);
   const readers = fns.filter((f) => /loadModposSheets\(/.test(f)).map((f) => /function (\w+)/.exec(f)?.[1]);
-  assert.deepEqual(readers, ["modposTillRows"], "föy tablosunu yalnız ay yedeği okur (firstModposTillDay da onun üstünden)");
+  assert.deepEqual(readers, ["modposFallbackSheets"], "föy tablosunu yalnız ay yedeği okur (modposTillRows ve firstModposTillDay da onun üstünden)");
+  assert.match(fns.find((f) => /function modposTillRows\b/.test(f)) ?? "", /modposFallbackSheets\(db, from, to\)/);
   assert.match(fns.find((f) => /function firstModposTillDay\b/.test(f)) ?? "", /modposTillRows\(db\)/);
   for (const name of ["getCashReport", "cashReportsBetween", "previousCarryOver", "nextReportAfter", "toCashDTO"]) {
     const body = fns.find((f) => new RegExp(`function ${name}\\b`).test(f)) ?? "";

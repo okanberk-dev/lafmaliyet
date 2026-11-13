@@ -133,9 +133,9 @@ export interface TillMonth {
   /** Kapsanan aralık: ay başı (ilk rapor ay içindeyse o gün) → ay sonu (süren ayda dün; bugünün raporu girildiyse bugün) */
   from: string;
   to: string;
-  /** Rapor girilen gün */
+  /** Rapor girilen gün (iki şube aynı gün rapor girdiyse bir gün) */
   reported: number;
-  /** Satış olan (Z toplamı > 0) gün */
+  /** Satış olan (Z toplamı > 0) gün; "Tümü"de günde bir kez (iki şube aynı gün açıkken bir gün) */
   openDays: number;
   /**
    * Ayın cirosu: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam). Z toplamlarının
@@ -176,7 +176,7 @@ export interface TillMonth {
   closed?: string[];
   /**
    * İlk satır (kasa raporu ya da yedek satır, ör. ModPOS föyü) bu ayın 1'inden sonraysa o gün: toplamlar ayın yalnız bir
-   * kısmını kapsar, uygulanmaz
+   * kısmını kapsar, uygulanmaz. Şube açılış gününden (branches.opened_on) beri raporluysa açılış ayı yarım değil (null)
    */
   partialFrom: string | null;
   /** Son raporun günü (LafPOS'un ve ModPOS'un yedek satırı da sayılır) */
@@ -216,6 +216,11 @@ export interface Month {
   sources?: Record<MonthField, FieldSource>;
   /** Kasa raporlarından türeyen değerler (uygulanmayan alan null) ve kapsamı; ayın raporu yoksa null */
   kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
+  /**
+   * "Tümü"de şube şube ay bilgisi (src/lib/cash-month.ts resolveBranchMonths): Tümü bunların toplamıdır. Yazan ekran
+   * (Satışlar'ın ay formu) yazdığı şubenin elle yazılanını buradan gösterir. Tek şube seçiliyken yok
+   */
+  byBranch?: Record<string, Month>;
 }
 
 export interface SalesLine {

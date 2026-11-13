@@ -123,6 +123,7 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 |---|---|
 | Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
+| Ay bilgisi (Satışlar'ın ay formu, Gelir-gider'in ciro, açık gün ve ay notu hücresi) | Seçili şube; "Tümü"nde Tuzla. "Tümü"de Satışlar'ın formu Tuzla'nın elle yazdığını ve kasasını gösterir (Tümü'nün toplamı forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı) |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
 | Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
 | Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
@@ -130,6 +131,22 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
 tarar.
+
+### "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
+
+"Tümü" şubelerin toplamıdır. Kasa satırları (rapor, LafPOS gün sonu, ModPOS föyü) şubesini taşır
+(`tillRows`, `src/server/data/cash-reports.ts`); ay bilgisi şöyle kurulur (`src/lib/cash-month.ts`):
+
+| Ne | Kural |
+|---|---|
+| Açık gün, raporlu gün | **Günde bir kez**: Tuzla ve Marina aynı gün açıksa bir gün. Personel ve oranlanan sabit gider bu günle bölünür, oran en çok 1 (iki şube açıkken maaş ve kira iki kat sayılmaz); günlük ortalama ve ay sonu öngörüsü de bu günle |
+| Ciro, indirim, ödenmez | Şubelerin toplamı |
+| Kaynak önceliği | Rapor > LafPOS gün sonu > föy, **aynı şubenin aynı gününde**: bir şubenin raporu ötekinin föyünü düşürmez |
+| Elle yazılan ay bilgisi | Her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (`resolveBranchMonths`): Marina'nın elle yazdığı ciro Tuzla'nın kasa cirosunu silmez. Elle yazılan açık günün hangi günler olduğu bilinmediği için şubelerin en büyüğü alınır; kartlı oran ciro ağırlıklı |
+| Açılış ayı | Şubenin açılış günü (`opened_on`) yazılıysa ve raporlar o günden beri girildiyse ay yarım sayılmaz: ciro ve açık gün kasadan |
+
+Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar, nakit planının günlük satışı
+bütün şubelerin cirosu ÷ raporlu gündür (Genel bakış'ın plan kartı da Ödemeler › Nakit planı gibi "Tümü"yle okur).
 
 ## Sırada ne var
 

@@ -171,6 +171,7 @@ describe("ModPOS API: veritabanında", { skip: !SERVER_URL && "MODPOS_TEST_DATAB
     const one = await store.loadModposSheet("2026-11-01", db);
     assert.deepEqual(one, {
       day: "2026-11-01",
+      branchId: "tuzla",
       foy: foyOf(xml("belge-ornegi")),
       state: "KAPALI",
       final: true,

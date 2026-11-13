@@ -29,6 +29,8 @@ export type SheetChange = "yeni" | "degisti" | "ayni";
 
 export interface ModposSheet {
   day: string;
+  /** Föyün şubesi (anahtar gün, şube); okunan her föyde dolu */
+  branchId?: string;
   foy: KasaFoyu;
   /** ModPOS'un gönderdiği ham XML: yalnız loadModposSheet(…, { raw: true }) okur; yoksa (eski föy) null */
   raw?: string | null;
@@ -63,6 +65,7 @@ function toSheet(r: Row): ModposSheet | null {
   return {
     ...(r.raw !== undefined ? { raw: r.raw } : {}),
     day: r.day,
+    branchId: r.branchId,
     foy: r.sheet,
     state: r.state,
     final: r.final,

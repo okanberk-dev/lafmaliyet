@@ -174,6 +174,28 @@ test("satışlar: kasa raporlarının ortalaması, kart payıyla komisyon, açı
   assert.equal(buildCashPlan(input({ cashReports: reports, excluded: ["sales"] })).totals.in, 0);
 });
 
+test("satışlar: iki şubenin aynı günkü raporu tek gün, günlük satış ikisinin toplamı (HM-05); ödenmez Z'nin içindeyse girmez (HM-08)", () => {
+  const days = Array.from({ length: 10 }, (_, i) => addDays(TODAY, -1 - i));
+  // Tuzla 10.000, Marina 6.000: 20 rapor, 10 gün
+  const reports = days.flatMap((date) => [
+    { date, zTotal: 10_000, card: 6_000, mealCard: 0 },
+    { date, zTotal: 6_000, card: 3_600, mealCard: 0 },
+  ]);
+  const p = buildCashPlan(input({ cashReports: reports }));
+  assert.deepEqual(p.basis.sales, { kind: "kasa", reports: 10, daily: 16_000, cardShare: 0.6, platformShare: 0 });
+  // En az 7 raporlu gün gerekir: iki şubenin 6 günü (12 rapor) yetmez
+  assert.deepEqual(buildCashPlan(input({ cashReports: reports.slice(0, 12) })).basis.sales, { kind: "none" });
+  // Z 10.000, ödemeler 9.500, ödenmez 500: ödenmez Z'nin içinde, günün cirosu 9.500 (Genel bakış ve Kasa'daki gibi)
+  const off = buildCashPlan(input({ cashReports: days.map((date) => ({ date, zTotal: 10_000, card: 6_000, mealCard: 0, offRevenue: 500, payments: 9_500 })) }));
+  assert.equal(off.basis.sales.kind === "kasa" ? off.basis.sales.daily : null, 9_500);
+  // Ödemeler Z'yi tutuyorsa ödenmez zaten dışarıda: Z olduğu gibi
+  const out = buildCashPlan(input({ cashReports: days.map((date) => ({ date, zTotal: 10_000, card: 6_000, mealCard: 0, offRevenue: 500, payments: 10_000 })) }));
+  assert.equal(out.basis.sales.kind === "kasa" ? out.basis.sales.daily : null, 10_000);
+  // Yükleyici ödenmezi ve ödeme dökümünü de verir
+  const loader = read("src/server/data/cash-plan.ts");
+  assert.match(loader, /offRevenue: r\.offRevenue,\n\s+payments: Math\.round\(\(r\.cash \+ r\.card \+ r\.mealCard \+ r\.online \+ r\.other\) \* 100\) \/ 100,/);
+});
+
 test("laffogato.net online: günlük ortalama yarından", () => {
   const p = buildCashPlan(input({ online: { month: "2026-09", perDay: 420 } }));
   close(byKey(p, "online")[0].amount, 6 * 420, "bu hafta");
@@ -1418,12 +1440,12 @@ test("Nasıl hesaplandı: rakamlarıyla; yedek ve 'satış verisi yok' metinleri
   assert.match(text("kdv"), /ayın 28'inde/);
   const reports = Array.from({ length: 8 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 9_850, card: 7_683, mealCard: 0 }));
   const kasa = planNotes(buildCashPlan(input({ cashReports: reports })), { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
-  assert.match(kasa.find((n) => n.key === "sales")!.text, /^Son 28 günün 8 kasa raporuna göre günde ortalama 9\.850 ₺ \(Z toplamı\)\. Kartla ödenen %78 için %2,5 komisyon düşüldü/);
+  assert.match(kasa.find((n) => n.key === "sales")!.text, /^Son 28 günün 8 raporlu gününe göre günde ortalama 9\.850 ₺ \(Z toplamı, ödenmez \/ ikram hariç\)\. Kartla ödenen %78 için %2,5 komisyon düşüldü/);
   // İki "online" ayrı adla: Z raporundaki platformlar (Yemeksepeti, Getir…) ile kasadan geçmeyen laffogato.net
   const platform = buildCashPlan(input({ cashReports: reports.map((r) => ({ ...r, online: 985 })), online: { month: "2026-09", perDay: 420 } }));
   assert.equal(platform.basis.sales.kind === "kasa" ? platform.basis.sales.platformShare : null, 0.1);
   const pn = planNotes(platform, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
-  assert.match(pn.find((n) => n.key === "sales")!.text, /\(Z toplamı; Z'deki online platform ödemeleri \(Yemeksepeti, Getir…\) %10, aynı gün ve kesintisiz sayıldı\)\./);
+  assert.match(pn.find((n) => n.key === "sales")!.text, /\(Z toplamı, ödenmez \/ ikram hariç; Z'deki online platform ödemeleri \(Yemeksepeti, Getir…\) %10, aynı gün ve kesintisiz sayıldı\)\./);
   assert.match(pn.find((n) => n.key === "online")!.text, /^laffogato\.net Eylül 2026 online satışına göre günde 420\s₺ \(iadeler düşülmüş\)\. Kasadan geçmez, Z raporundaki online platformlardan ayrıdır\./);
   const none = planNotes(buildCashPlan(input()), { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
   assert.equal(none.find((n) => n.key === "sales")!.text, "Satış verisi yok: gelen para sayılmadı. Kasa raporu girildikçe tahmin oluşur.");
@@ -1450,8 +1472,12 @@ test("ekran: yalnız yönetici; menüde (⌘K) Para grubunda, telefonda başlı�
     assert.match(body.slice(0, body.indexOf("\n}\n")), /const me = await requireAdmin\(\);/, fn);
   }
   const dash = read("src/app/panel/page.tsx");
-  // Şube seçiliyken de işletmenin planı: model "Tümü" ile yeniden okunur (docs/SUBE.md › Neyi süzer)
-  assert.match(dash, /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => loadCashPlan\(m, upcoming\)\)\s*\.catch\(\(\) => null\)/);
+  // Şube seçiliyken de işletmenin planı: model "Tümü" ile yeniden okunur, planın kasa raporları da "Tümü"yle (HM-05;
+  // docs/SUBE.md › Neyi süzer)
+  assert.match(
+    dash,
+    /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => withBranchScope\(ALL_BRANCHES, \(\) => loadCashPlan\(m, upcoming\)\)\)\s*\.catch\(\(\) => null\)/,
+  );
   assert.match(page, /withBranchScope\(ALL_BRANCHES,/);
   // db:reset nakit planının durumunu siler (sabit gider kimlikleri baştan sayar)
   assert.match(read("scripts/seed.ts"), /'cashflow\.plan'/);

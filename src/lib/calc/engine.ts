@@ -425,13 +425,20 @@ export const stopajKey = (fixedId: number) => `stopaj:${fixedId}`;
  * elle girildiyse (Excel: açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
  * günü (biten ayda ayın tamamı, süren ayda bugüne kadar). Kapalı bir gün (bayram, raporu hiç girilmemiş gün) kira ve
  * maaşı düşürmez: cirosu zaten 0'dır, gider ise tam ödenir. Günlük kalemler yine açık günle çarpılır.
+ *
+ * Hiçbir zaman ayın gün sayısını aşmaz: iki şube aynı gün açıkken de oran en çok 1'dir (denetim KP-X1). `closed`: ay
+ * bitti (takvim ayı geçti). Kasadan gelen ay o zaman ayın sonuna kadar sayılır; ayın 1'inde 00:00-05:00 arası son günün
+ * raporu daha beklenirken (iş günü 05:00'te değişir) personel ve sabit gider bir gün eksik oranlanmaz (denetim HM-10)
  */
-export function prorationDays(info: Pick<Month, "month" | "openDays" | "sources" | "kasa"> | undefined): number {
-  const open = info?.openDays ?? 0;
-  const till = info?.kasa?.till;
-  if (!info || info.sources?.openDays !== "kasa" || !till) return open;
-  const span = Math.round((Date.parse(`${till.to}T00:00:00Z`) - Date.parse(`${till.from}T00:00:00Z`)) / 86_400_000) + 1;
-  return Number.isFinite(span) ? Math.max(open, Math.min(daysInMonth(info.month), span)) : open;
+export function prorationDays(info: Pick<Month, "month" | "openDays" | "sources" | "kasa"> | undefined, closed = false): number {
+  if (!info) return 0;
+  const dim = daysInMonth(info.month);
+  const open = Math.min(dim, info.openDays ?? 0);
+  const till = info.kasa?.till;
+  if (info.sources?.openDays !== "kasa" || !till) return open;
+  const to = closed ? `${info.month}-${String(dim).padStart(2, "0")}` : till.to;
+  const span = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${till.from}T00:00:00Z`)) / 86_400_000) + 1;
+  return Number.isFinite(span) ? Math.min(dim, Math.max(open, span)) : open;
 }
 
 // ============================================================================
@@ -2039,8 +2046,9 @@ export function createModel(ds: Dataset) {
     const noteOf = (key: string) => notes?.get(key) ?? null;
     const dim = daysInMonth(month);
     const openDays = info?.openDays ?? 0;
-    // Aylık kalemler ve personel bu günle (kasa raporlarından gelen ayda takvim günü; prorationDays)
-    const days = prorationDays(info);
+    // Aylık kalemler ve personel bu günle (kasa raporlarından gelen ayda takvim günü; biten ayda ayın sonuna kadar;
+    // prorationDays)
+    const days = prorationDays(info, month < currentMonth);
     const ratio = days / dim;
     const cells = new Map<string, PnlCell>();
     const auto = (key: string, computed: number) => {
