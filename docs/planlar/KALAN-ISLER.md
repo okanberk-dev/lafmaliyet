@@ -3,7 +3,11 @@
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
 
-**Son denetim (26 Ekim):** [denetim-2026-10-26.md](denetim-2026-10-26.md): 70 madde (E-01..E-70), düzeltme partileri
+**Son denetim (13 Kasım):** [denetim-2026-11-13.md](denetim-2026-11-13.md): on alanda deneyerek tarama, 80 doğrulanmış
+madde (YO, KA, HM, KP, ST, FC, UI, SB, AL, VG), düzeltme partileri P00-P10 ve sahibe 3 soru. Partilerin durumu o
+dosyanın "İlerleme" bölümünde; sıradaki iş oradan başlar (önce paylaşılan cihazda oturum, sonra şube partileri).
+
+**Önceki denetim (26 Ekim):** [denetim-2026-10-26.md](denetim-2026-10-26.md): 70 madde (E-01..E-70), düzeltme partileri
 B01-B20 ve sahibe 11 soru. Partilerin durumu, sahibin yanıtları ve yanıt gelene kadar uygulanan varsayılanlar aşağıda,
 "Denetim (26 Ekim): düzeltme partileri". Sıradaki iş oradan başlar (önce stok sayımı, sahibin isteği).
 
