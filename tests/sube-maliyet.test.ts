@@ -139,7 +139,7 @@ test("stok sayımı şube başına: ekran ve kayıt aynı fiziksel şube (Tümü
   assert.match(eylem, /values\(\{ month: m, branchId: sube, ingredientId/);
   // Okuma ve silme de şubeye göre: başka şubenin sayımına dokunulmaz
   assert.ok((eylem.match(/buSube/g) ?? []).length >= 4, "kontrol, silme, mevcut okuma şubeye göre");
-  assert.match(oku("src/server/data/count-progress.ts"), /eq\(sc\.branchId, \(await currentPhysicalBranch\(\)\)\.id\)/);
+  assert.match(oku("src/server/data/count-progress.ts"), /eq\(sc\.branchId, branchId \?\? \(await currentPhysicalBranch\(\)\)\.id\)/);
 });
 
 /** src altındaki bütün .ts / .tsx dosyaları */

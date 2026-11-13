@@ -217,7 +217,13 @@ export async function cashReportWhatsapp(date: string) {
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const r = await getCashReport(d);
     if (!r) throw new UserError("Bu günün raporu yok");
-    const [settings, waste, extras, integrity] = await Promise.all([loadCashSettings(), dayWaste(d), cashReportExtras(r), cashReportIntegrity(r)]);
+    // Zayi raporun şubesinden (e-posta gibi; denetim ST-02): "Tümü"de bütün şubelerin zayisi Tuzla'nın raporuna girmez
+    const [settings, waste, extras, integrity] = await Promise.all([
+      loadCashSettings(),
+      withBranchScope(r.branchId, () => dayWaste(d)),
+      cashReportExtras(r),
+      cashReportIntegrity(r),
+    ]);
     const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste, ...extras, ...integrity });
     return { text, link: whatsappLink(text, settings.whatsapp) };
   });

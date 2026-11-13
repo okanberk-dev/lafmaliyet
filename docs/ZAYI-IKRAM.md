@@ -15,8 +15,10 @@ ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda gör
 ## LafPOS'a geçildikten sonra: ürün ikramı LafPOS'tan (denetim E-38)
 
 Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince ([LAFPOS.md](LAFPOS.md) › İkram) o günden itibaren ürün ikramı
-kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
-(`src/lib/lafpos/ikram.ts`):
+kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Bu yalnız **kasası LafPOS olan şubede**
+geçer (Şubeler › Kasa; geçiş günü kaydı Tuzla'nın kasasını LafPOS yapar, denetim ST-X1): kasası ModPOS olan şube
+(Marina) ürün ikramını panele girmeye devam eder, aşağıdakilerin hiçbiri ona uygulanmaz; bir şubenin gün sonu yalnız
+kendi panel kaydını düşürür. Her gün tek kaynak (`src/lib/lafpos/ikram.ts`):
 
 - **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
   aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine (adın yanında "LafPOS"), haftalık özete ve
@@ -70,6 +72,10 @@ Geçiş günü boşken bunların hiçbiri yoktur: ekran, kayıt, Tutarlılık ve
 - Personel doğrudan bugüne ve düne girer; dün, o günün kasa raporu kilitlenene kadar (dünün raporu da bugünün raporu
   da girildiyse dün kapanır; kasanın kuralı `staffDayEditable`, unutulan dünün raporu yoksa dün açık kalır). Kendi
   kaydını aynı pencerede siler. Yönetici her günü açar, her kaydı siler.
+- **Şube** ([SUBE.md](SUBE.md) › Stok ve zayi): kayıt seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken
+  Tuzla) yazılır; günün listesi, form ve kilit o şubenin. Birden çok şube açıkken başlık şubeyi yazar. Kilit şubenin
+  kendi kasa raporlarıyla (`wasteLock`; silmede kaydın şubesi): Tuzla'nın raporları Marina'nın dününü kapatmaz. Ay
+  özeti seçimle ("Tümü"de bütün şubeler); kasa raporunun zayi özeti raporun şubesinden.
 - Kapalı işaretli güne (Satış tahmini › Özel günler, `kapali`; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı)
   personel kayıt giremez, istek de açamaz; yönetici girer.
 

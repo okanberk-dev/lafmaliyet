@@ -17,7 +17,7 @@ import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import { loadTillScope } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
-import { countProgress } from "@/server/data/count-progress";
+import { countProgressByBranch } from "@/server/data/count-progress";
 import { myKaraokeRequests, pendingKaraokeSummary } from "@/server/data/karaoke-requests";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
 import type { DigestBox } from "@/server/notify/digest-template";
@@ -158,14 +158,19 @@ async function soldOutNotifications(user: CurrentUser, now: Date): Promise<Panel
 
 /**
  * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 günü, gün 05:00'te döner): "Ekim 2026 sayımı yarım:
- * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar.
+ * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar. Tek şube
+ * seçiliyken o şubenin sayımı; "Tümü"de açık her fiziksel şubenin ayrı satırı (birden çok şubede "Marina · …"; denetim
+ * ST-04): Tuzla'nın tamam sayımı Marina'nın eksiğini susturmaz.
  */
 async function pastCountNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role !== "admin") return [];
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return [];
-  const prev = pastCountReminder(day, await countProgress(shiftMonth(day.slice(0, 7), -1)));
-  return prev ? [{ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }] : [];
+  const rows = await countProgressByBranch(shiftMonth(day.slice(0, 7), -1));
+  return rows.flatMap((b): PanelNotification[] => {
+    const prev = pastCountReminder(day, b, b);
+    return prev ? [{ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }] : [];
+  });
 }
 
 /**
@@ -220,13 +225,14 @@ export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
 
 /**
  * Sabah e-postasının aynı kutusuna geçen ayın stok sayımı (ilk 10 gün, yarım ya da yok): zildeki satırla aynı metin
- * (pastCountReminder) ve o ayın sayımının adresi. Personelden gelmez; kutu yalnız bununla açılırsa başlığı "Stok
- * sayımı" olur (src/server/staff-requests/digest.ts). Tutar yok.
+ * (pastCountReminder) ve o ayın sayımının adresi. E-postada çerez yok: açık her fiziksel şubenin sayımına bakılır, şube
+ * başına bir satır (birden çok şubede "Marina · …", adres o şubeyi seçer; denetim ST-04); adres ilk satırın. Personelden
+ * gelmez; kutu yalnız bununla açılırsa başlığı "Stok sayımı" olur (src/server/staff-requests/digest.ts). Tutar yok.
  */
 export async function pastCountDigestLines(now: Date): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return { lines: [], href: null };
-  const prev = await countProgress(shiftMonth(day.slice(0, 7), -1)).catch(() => null);
-  const count = prev ? pastCountReminder(day, prev) : null;
-  return count ? { lines: [{ text: `${count.title}. ${count.body}`, tone: "warn" }], href: count.href } : { lines: [], href: null };
+  const rows = await countProgressByBranch(shiftMonth(day.slice(0, 7), -1)).catch(() => []);
+  const counts = rows.flatMap((b) => pastCountReminder(day, b, b) ?? []);
+  return counts.length ? { lines: counts.map((c) => ({ text: `${c.title}. ${c.body}`, tone: "warn" as const })), href: counts[0].href } : { lines: [], href: null };
 }

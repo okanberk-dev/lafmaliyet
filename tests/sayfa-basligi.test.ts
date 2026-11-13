@@ -266,7 +266,7 @@ test("§8: yeni açıklamalar tek cümle, en çok 100 harf; eski uzun metin ⓘ'
   assert.deepEqual(long, []);
   // Örnekler (metin aynen)
   assert.match(read("src/app/panel/vergi/ui.tsx"), /export const OZET_DESCRIPTION = "Devlete ödenecekler: KDV, SGK, maaş vergileri ve kâr vergisi; tahmini tutar ve son gün\.";/);
-  assert.match(read("src/app/panel/zayi/page.tsx"), /description="Atılan, bozulan \(zayi\) ve ödenmeden verilen \(ikram\) ürünleri girin\."/);
+  assert.match(read("src/app/panel/zayi/page.tsx"), /const WASTE_DESCRIPTION = "Atılan, bozulan \(zayi\) ve ödenmeden verilen \(ikram\) ürünleri girin\.";/);
   assert.doesNotMatch(read("src/app/panel/zayi/page.tsx"), /Tutarlılık ekranı/, "personel Tutarlılık'ı açamaz");
   // Yöneticinin "Nasıl çalışır?"u: başlıkta ⓘ; personelin ekranında yönetici kavramı içeren `more` yok
   const header = read("src/components/panel/page-header.tsx");

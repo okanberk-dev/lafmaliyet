@@ -421,6 +421,13 @@
       "when": 1794595632000,
       "tag": "0059_kapali_gun_subesi",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794600396740,
+      "tag": "0060_ek_kalem_subesi",
+      "breakpoints": true
     }
   ]
 }

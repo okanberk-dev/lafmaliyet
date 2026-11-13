@@ -12,7 +12,7 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentPhysicalBranch, currentWriteBranch } from "@/server/branch-scope";
+import { currentPhysicalBranch, currentWriteBranch, withBranchScope } from "@/server/branch-scope";
 import { carryOversBefore, cashBranchesInScope, cashReportsBetween, cashRevisionsFor, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
@@ -97,15 +97,21 @@ const toLite = (r: CashReportDTO): CashLite => ({
  */
 async function stockProgress(month: string, prevMonth: string): Promise<NonNullable<DayFacts["stock"]>> {
   const db = getDb();
+  // Sayım ve ek kalem şube başına: Stok sayımı ekranının şubesi ("Tümü"de Tuzla; denetim ST-01)
+  const sube = (await currentPhysicalBranch()).id;
   const [current, prev, [prevCount], [prevExtra]] = await Promise.all([
     countProgress(month),
     countProgress(prevMonth),
     db
       .select({ id: s.stockCounts.id })
       .from(s.stockCounts)
-      .where(and(eq(s.stockCounts.month, prevMonth), eq(s.stockCounts.branchId, (await currentPhysicalBranch()).id)))
+      .where(and(eq(s.stockCounts.month, prevMonth), eq(s.stockCounts.branchId, sube)))
       .limit(1),
-    db.select({ id: s.stockExtras.id }).from(s.stockExtras).where(eq(s.stockExtras.month, prevMonth)).limit(1),
+    db
+      .select({ id: s.stockExtras.id })
+      .from(s.stockExtras)
+      .where(and(eq(s.stockExtras.month, prevMonth), eq(s.stockExtras.branchId, sube)))
+      .limit(1),
   ]);
   return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };
 }
@@ -121,8 +127,10 @@ interface RoleFacts {
  * satırı (maliyet modeli verilmez)
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
-  const [waste] = await Promise.all([safe(dayWaste(c.day))]);
+  // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null). Zayi özeti
+  // personelin yazdığı fiziksel şubenin ("Tümü"de Tuzla; Zayi & ikram'ın günü gibi, denetim ST-02)
+  const sube = (await currentPhysicalBranch()).id;
+  const [waste] = await Promise.all([withBranchScope(sube, () => safe(dayWaste(c.day)))]);
   return {
     // LafPOS günü (geçiş günü seçili ve iş günü ondan önce değil): ürün ikramı kasada işaretlenir, satırın metni söyler
     facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram, lafpos: waste.lafpos !== null } : null },

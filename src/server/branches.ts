@@ -60,6 +60,7 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.months,
     s.salesLines,
     s.stockCounts,
+    s.stockExtras,
     s.wasteEntries,
     s.cashOuts,
     s.staff,

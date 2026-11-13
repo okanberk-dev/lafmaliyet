@@ -820,9 +820,11 @@ export const stockCounts = pgTable(
   (t) => [uniqueIndex("stock_counts_month_ingredient_uq").on(t.month, t.branchId, t.ingredientId)],
 );
 
+/** Sayım listesinde olmayan kalemler ("Listede olmayanlar"): sayım gibi şube başına (denetim ST-01) */
 export const stockExtras = pgTable("stock_extras", {
   id: serial("id").primaryKey(),
   month: text("month").notNull(),
+  branchId: branchId(),
   name: text("name").notNull(),
   unit: text("unit").notNull().default("ADET"),
   qty: doublePrecision("qty").notNull().default(0),

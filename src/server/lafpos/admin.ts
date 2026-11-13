@@ -1,7 +1,8 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_STATE_KEY } from "@/lib/lafpos/status";
 import { dayMonthYearTR, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
@@ -22,7 +23,10 @@ const switchText = (v: string | null) => (v ? dayMonthYearTR(v) : "yok (kasa Mod
 
 /**
  * Geçiş gününü yazar (null: siler, kasa yeniden ModPOS). Hiçbir veri yazılmaz ya da silinmez, yalnız okuyanlar değişir.
- * Değişiklik yoksa null; varsa işlem geçmişinin metni ("LafPOS'a geçiş günü: yok → 10 Kasım 2026").
+ * Değişiklik yoksa null; varsa işlem geçmişinin metni ("LafPOS'a geçiş günü: yok → 10 Kasım 2026"). LafPOS'un gün
+ * sonunu yazdığı şubenin (Tuzla, src/server/lafpos/ingest.ts) kasası Şubeler'de geçiş günüyle birlikte LafPOS olur,
+ * gün silinince ModPOS'a döner: ürün ikramı yalnız kasası LafPOS olan şubede LafPOS'tan gelir (denetim ST-X1), ModPOS'lu
+ * Marina'nınki panelden girilir.
  */
 export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null, today: string): Promise<string | null> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
@@ -33,6 +37,11 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).for("update").limit(1);
     const prev = readLafposSwitchDay(row?.value);
+    const [from, to] = day === null ? (["lafpos", "modpos"] as const) : (["modpos", "lafpos"] as const);
+    await tx
+      .update(s.branches)
+      .set({ posSource: to, updatedAt: new Date() })
+      .where(and(eq(s.branches.id, DEFAULT_BRANCH_ID), eq(s.branches.posSource, from)));
     if (day === null) {
       // Boşaltmak satırı siler (bozuk bir değer de böyle temizlenir; okuyan onu zaten null sayıyordu)
       if (row) await tx.delete(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY));

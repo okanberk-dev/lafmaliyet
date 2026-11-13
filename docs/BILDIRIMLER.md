@@ -77,10 +77,13 @@ kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış y
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
 **Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
-onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Yine **Uyarılar**'da
-yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin `sayim/logic.ts`): bu ayın ya da geçen
-ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin fiyatı yok" (adlar; kapanış stoğuna 0 ₺
-girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden); personel geçen ayın
+onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Sayım şube başına: tek
+şube seçiliyken o şubenin satırı; "Tümü"de ve sabah e-postasında açık her fiziksel şubenin ayrı satırı, birden çok şube
+açıkken "Marina · Ekim 2026 sayımı girilmedi" (bağlantı o şubeyi seçer; Tuzla'nın kimliği eskisi gibi; denetim ST-04).
+Yine **Uyarılar**'da yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin
+`sayim/logic.ts`): bu ayın ya da geçen ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin
+fiyatı yok" (adlar; kapanış stoğuna 0 ₺ girer; şube şube, birden çok şube açıkken "Marina · …"), o ayın ek kalemlerine
+götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden); personel geçen ayın
 sayımını ay bittikten sonra (ilk 10 günde) değiştirdiyse "Ayşe, Ekim 2026 sayımını değiştirdi" (kayıt ve kalem sayısı;
 kimlik en son kayıttan, yeni kayıt yeniden okunmamış yapar). İkisi personele hiç gösterilmez. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
@@ -403,7 +406,9 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
   her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Ayın son günü aynı
   iş, sayım listesi doluysa ve ayın sayımı tamamlanmadıysa sabah özeti açık bütün cihazlara bir de "Bugün ay sonu stok
   sayımı" gönderir (o ayın Stok sayımı'nı açar; `src/server/notify/count-push.ts`, Günlük işler'de adımı "Sayım
-  bildirimi"). Haftalık "Bugün hızlı sayım günü" bildirimi 26 Ekim 2026'da hızlı sayımla birlikte kalktı.
+  bildirimi"). Açık her fiziksel şubenin sayımına bakılır (denetim ST-04; [SUBE.md](SUBE.md) › Stok ve zayi): sayımı
+  eksik şube başına bir bildirim, birden çok şube açıkken "Marina · Bugün ay sonu stok sayımı" (ayrı etiket, adres o
+  şubeyi seçer). Haftalık "Bugün hızlı sayım günü" bildirimi 26 Ekim 2026'da hızlı sayımla birlikte kalktı.
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama

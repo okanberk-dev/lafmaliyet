@@ -1018,14 +1018,25 @@ export function createModel(ds: Dataset) {
   }
 
   // --- Zayi ve ikram (personelin kaydı; geçiş gününden itibaren LafPOS'un ikramı ve zayisi) ----------
-  // LafPOS'un gün sonu gelen günde ürün ikramı LafPOS'tan sayılır, paneldeki o günkü ürün ikramı sayılmaz (her gün tek
-  // kaynak; src/lib/lafpos/ikram.ts). LafPOS'un "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa
-  // lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
+  // LafPOS'un gün sonu gelen günde ürün ikramı LafPOS'tan sayılır, o şubenin paneldeki o günkü ürün ikramı sayılmaz (her
+  // gün tek kaynak; src/lib/lafpos/ikram.ts; gün anahtarı şubeyi taşır, ModPOS'lu şubenin kaydı düşmez). LafPOS'un
+  // "Zayi: …" satırı zayi olarak girer (kendi türüyle). Geçiş günü yoksa lafposIkram yok: kayıtlar bugünkü gibi yalnız panelden
   const lafposIkramDays = new Set(ds.lafposIkram?.days ?? []);
   const countedWaste: WasteEntry[] = [
     ...(ds.wasteEntries ?? []).filter((w) => panelWasteCounts(w, lafposIkramDays)),
     ...(ds.lafposIkram?.lines ?? []).map(
-      (l): WasteEntry => ({ date: l.date, kind: l.kind, productId: l.productId, ingredientId: null, qty: l.qty, factor: 1, source: "lafpos", name: l.posName, menuValue: l.menuValue }),
+      (l): WasteEntry => ({
+        date: l.date,
+        kind: l.kind,
+        productId: l.productId,
+        ingredientId: null,
+        qty: l.qty,
+        factor: 1,
+        source: "lafpos",
+        name: l.posName,
+        menuValue: l.menuValue,
+        ...(l.branchId ? { branchId: l.branchId } : {}),
+      }),
     ),
   ];
   const wasteByMonth = new Map<string, WasteEntry[]>();

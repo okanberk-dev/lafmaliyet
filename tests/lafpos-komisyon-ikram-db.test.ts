@@ -57,9 +57,12 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
   const sent: { html: string; text: string }[] = [];
   const realFetch = globalThis.fetch;
 
+  // Geçiş günüyle Tuzla'nın kasası da LafPOS olur (src/server/lafpos/admin.ts writeLafposSwitchDay): ürün ikramı yalnız
+  // kasası LafPOS olan şubede LafPOS'tan gelir (denetim ST-X1)
   const setSwitch = async (day: string | null) => {
     await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
     if (day) await db.insert(s.settings).values({ key: "lafposGecisGunu", value: day });
+    await db.update(s.branches).set({ posSource: day ? "lafpos" : "modpos" }).where(eq(s.branches.id, "tuzla"));
   };
   type Pay = { name: string; zField: "cash" | "card" | "meal_card" | "online" | "other"; channel: string | null; amount: number };
   type Ikram = { posName: string; siteMenuId: string | null; slot: "M" | "L" | null; qty: number; menuValue: number; reason: string | null };
@@ -275,7 +278,8 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     await panelEntry("2026-11-12", "ikram", ids.mocha, null, 1);
     await push("2026-11-11", 13);
     const ds = await dataset.loadDataset();
-    assert.deepEqual(ds.lafposIkram?.days, ["2026-11-11"]);
+    // Gün anahtarı şubeyi taşır (lafposDayKey): Tuzla'nın gün sonu yalnız Tuzla'nın panel kaydını düşürür
+    assert.deepEqual(ds.lafposIkram?.days, ["2026-11-11|tuzla"]);
     assert.deepEqual(
       ds.lafposIkram?.lines.map((l) => [l.kind, l.posName, l.productId, l.qty, l.menuValue, l.reason]),
       [

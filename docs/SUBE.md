@@ -122,7 +122,7 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 | Kayıt | Şube |
 |---|---|
 | Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin). Form da o şubeyi okur ve hangi şubenin raporu olduğunu yazar (P03) |
-| Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
+| Stok sayımı, ek kalem, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı ve Zayi & ikram başlığı birden çok açık şube varken hangi şubenin olduğunu yazar (P04) |
 | Ay bilgisi (Satışlar'ın ay formu, Gelir-gider'in ciro, açık gün ve ay notu hücresi) | Seçili şube; "Tümü"nde Tuzla. Birden çok şube açıkken "Tümü"de Gelir-gider'in ciro ve açık gün hücresi kilitlidir ("şubeyi seçin"; sunucu da reddeder): hücre şubelerin toplamını gösterir, yazılan Tuzla'nın ayına inip öteki şubenin cirosunu iki kez saydırırdı. Satışlar'ın formu "Tümü"de başlığında **Tuzla** yazar, Tuzla'nın elle yazdığını ve kasasını gösterir; liste ↔ POS kutusu çıkmaz (liste bütün şubelerin) |
 | Satış listesi, "Ayı temizle" | Seçili şube; "Tümü"nde Tuzla. Temizlik yalnız o şubenin satırlarını ve (istenirse) ay bilgisini siler |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
@@ -166,6 +166,20 @@ Kasa raporu şubenin raporudur: formu okuyan ve yazan hep aynı şube. Ayrıntı
 | Kapalı gün | Şube başına (`special_days.branch_id`, migration `0059_kapali_gun_subesi`): Kasa'nın "Kafe kapalıydı"sı ve bildirimin onayı formun şubesini yazar; Özel günler'de şube seçilir, "Bütün şubeler" (şubesi boş) işletme genelidir. Marina'nın raporu Tuzla'nın işaretini kaldırmaz; işletme geneli tek günlük işaret Marina'nın raporuyla yalnız Marina için kalkar, Tuzla'da şubeli satır olarak kalır. Kanıt ve Z boşluğu şubenin raporlarından |
 | Bugün ve eksik rapor zili | Personelin satırı ve akşam zili yazdığı şubenin raporuna bakar ("Tümü"de Tuzla): Marina'nın raporu Tuzla'nın satırını "gönderildi" yapmaz. Yönetici "Tümü"de her şubenin dünkü ve bugünkü raporunu ayrı satırda görür; "Dünkü kasa raporu girilmedi" zili şube şube |
 | E-posta, WhatsApp, zil | İki şubenin aynı günkü raporu aynı numarayı alır: birden çok fiziksel şube açıkken konu, başlık ve WhatsApp'ın ilk satırı şubeyi yazar ("Kasa raporu KR-20261112 · Marina · …"). İşlem kaydının ve zil satırlarının anahtarına Tuzla dışındaki şube eklenir (Tuzla'nınki değişmez; okunmuş zil satırı okunmuş kalır). Onaylar'daki kasa kartları şubenin adını rozetle yazar |
+
+### Stok ve zayi (denetim 13 Kasım 2026, P04)
+
+Sayım ve zayi şubenin işidir: ekran yazdığı fiziksel şubeyi ("Tümü" ya da online kanal seçiliyken Tuzla) okur.
+
+| Ne | Kural |
+|---|---|
+| "Listede olmayanlar" (ek kalem) | Sayım gibi şube başına (`stock_extras.branch_id`, migration `0060_ek_kalem_subesi`; eski satırlar Tuzla'nın). Marina'nın sayımı Tuzla'nın ek kalemini görmez; aynı adla yazınca kendi satırı açılır, kendi listesini kaydedince Tuzla'nınki silinmez. Kilit ve "başkası kaydetti" denetimi (ay, şube). "Tümü"nün stoğu şubelerin ek kalemleriyle toplanır. Personelin yeni kaleminin fiyatı bütün şubelerin geçmişinden gelir (kalemin fiyatı işletmenin) |
+| Fiyatsız ek kalem uyarısı | Zil ve Bugün: tek şube seçiliyken o şubenin, "Tümü"de her şubenin ayrı satırı; birden çok şube açıkken "Marina · Ekim 2026: 2 ek kalemin fiyatı yok", bağlantı o şubeyi seçer (`&sube=`) |
+| Zayi listesi | Zayi & ikram'ın günü (liste, form, kilit, LafPOS günü) yazdığı şubenin; birden çok şube açıkken başlık şubeyi yazar. Ay özetinin rakamı da kalem listesi de seçimle ("Tümü"de bütün şubeler). Kasa raporunun zayi özeti (form, e-posta, WhatsApp) raporun şubesinden, personelin Bugün'ündeki zayi satırı yazdığı şubeden |
+| Zayinin kasa kilidi | Şube içinde (kasanın kuralı gibi): Tuzla'nın dünkü ve bugünkü raporu Marina personelinin dünkü zayisini ve silmesini kilitlemez |
+| Sayım hatırlatması | Ay sonu bildirimi, sabah e-postası ve "Tümü"deki zil açık her fiziksel şubenin sayımına bakar: Tuzla bitirdi diye Marina'nın eksiği susmaz. Açılış günü sonraki bir aydaysa o aya hatırlatılmaz (boşsa şube açık sayılır; henüz açılmamış şube için Şubeler'de açılış günü yazılır). Birden çok şube açıkken metin şubeyle başlar ("Marina · Ekim 2026 sayımı girilmedi"), bağlantı o şubeyi seçer; tek şubede metin eskisi gibi. Tek şube seçiliyken zil yalnız o şubeninki |
+| LafPOS'un ürün ikramı | Yalnız kasası LafPOS olan şubede (Şubeler › Kasa): ürün ikramı orada LafPOS'ta işaretlenir, panele girilmez. ModPOS'lu Marina'nın ürün ikramı geçiş gününden sonra da panelden girilir ve sayılır; Tuzla'nın gün sonu yalnız Tuzla'nın panel kaydını düşürür. Geçiş günü kaydı Tuzla'nın (LafPOS'un gün sonunu yazdığı şube) kasasını LafPOS yapar, gün silinince ModPOS'a döner |
+| Stok tutarı | Faturalar işletme genelinde, sayım şube başına: FIFO'da her şube aynı faturalardan değerlenir, şube tutarlarının toplamı "Tümü"nün stoğunu tutmaz. Birden çok şube açıkken stok kartı bunu yazar (sahibe soru, varsayılan) |
 
 ## Sırada ne var
 

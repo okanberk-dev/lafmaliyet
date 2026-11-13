@@ -17,11 +17,16 @@ import { isLafposDay } from "./switch";
  * shared/comp.ts compReasonText, docs/03-ENTEGRASYON.md §4). O satır zayi sayılır, ikram değil; "Ödenmez: " (personel
  * yemeği, patron hesabı) ikramdır. Paneldeki zayi her zaman sayılır: aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa
  * gün listesinde "LafPOS'ta da zayi" uyarısı çıkar (sahibin sorusu: ürün zayisi de yalnız LafPOS'tan mı gelsin).
+ *
+ * Şube (denetim ST-X1): kural yalnız kasası LafPOS olan şubede (`branches.pos_source = 'lafpos'`; Şubeler › Kasa) geçer.
+ * ModPOS'lu şubenin (Marina) ürün ikramı panelden girilir ve sayılır; bir şubenin gün sonu yalnız kendi kaydını düşürür.
  */
 
 /** LafPOS'un bir ikram satırı (pos_day_reports.ikram), panel ürünüyle çözülmüş */
 export interface LafposIkramLine {
   date: string;
+  /** Gün sonunun şubesi (kasası LafPOS olan şube) */
+  branchId?: string;
   /** Nedeni "Zayi: " ile başlayan satır zayidir (lafposLineKind); öteki her satır (ödenmez dahil) ikram */
   kind: "zayi" | "ikram";
   /** LafPOS'taki ad (POS adı) */
@@ -46,8 +51,9 @@ export function lafposLineKind(reason: string | null): { kind: "zayi" | "ikram";
 }
 
 /**
- * Veri kümesinin LafPOS ikramı (Dataset.lafposIkram): geçiş günü, gün sonu gelen günler (geçiş gününden itibaren; o
- * günlerde paneldeki ürün ikramı sayılmaz) ve ikram satırları. Geçiş günü yoksa veri kümesinde hiç yoktur.
+ * Veri kümesinin LafPOS ikramı (Dataset.lafposIkram): geçiş günü, gün sonu gelen günler (geçiş gününden itibaren,
+ * kasası LafPOS olan şubelerin; anahtar lafposDayKey: o gün o şubenin paneldeki ürün ikramı sayılmaz) ve ikram
+ * satırları. Geçiş günü yoksa veri kümesinde hiç yoktur.
  */
 export interface LafposIkramData {
   switchDay: string;
@@ -56,11 +62,32 @@ export interface LafposIkramData {
 }
 
 /**
- * Paneldeki kayıt hesaba girer mi: LafPOS'un gün sonu gelen günde (geçiş gününden itibaren) ürün ikramı girmez,
- * LafPOS'taki sayılır. Zayi ve hammadde ikramı her zaman girer.
+ * Gün sonunun anahtarı: gün ve şube ("2026-11-12|tuzla"). Şubesi bilinmeyen kayıt (şubelerden önceki saf testler,
+ * Excel tohumu) yalnız günle eşleşir.
  */
-export function panelWasteCounts(w: { date: string; kind: "zayi" | "ikram"; productId: number | null }, lafposDays: ReadonlySet<string>): boolean {
-  return !(w.kind === "ikram" && w.productId !== null && lafposDays.has(w.date));
+export function lafposDayKey(date: string, branchId?: string | null): string {
+  return branchId ? `${date}|${branchId}` : date;
+}
+
+/**
+ * Paneldeki kayıt hesaba girer mi: LafPOS'un gün sonu gelen günde (geçiş gününden itibaren) o şubenin ürün ikramı
+ * girmez, LafPOS'taki sayılır (`lafposDays`: lafposDayKey anahtarları). Zayi ve hammadde ikramı her zaman girer; öteki
+ * şubenin gün sonu bu kaydı düşürmez.
+ */
+export function panelWasteCounts(
+  w: { date: string; kind: "zayi" | "ikram"; productId: number | null; branchId?: string | null },
+  lafposDays: ReadonlySet<string>,
+): boolean {
+  return !(w.kind === "ikram" && w.productId !== null && lafposDays.has(lafposDayKey(w.date, w.branchId)));
+}
+
+/**
+ * Şubenin LafPOS geçiş günü (ürün ikramı için): kasası LafPOS olan şubede ayarın günü, öteki şubede null; ModPOS'lu
+ * şubenin ürün ikramı geçiş gününden sonra da panelden girilir (denetim ST-X1). Ürün ikramının yazma ve okuma kuralı
+ * (productIkramClosed, productIkramRefusal) bu günle çağrılır.
+ */
+export function branchSwitchDay(switchDay: string | null, posSource: string | null | undefined): string | null {
+  return posSource === "lafpos" ? switchDay : null;
 }
 
 /** Zayi & ikram'ın metinleri (ekran, eylemlerin reddi, kasa e-postası) */

@@ -62,12 +62,14 @@ test("personelin eski listeyle planı başkasının kalemini siler: imza denetim
   assert.ok(plan.ok && plan.plan.deletes.includes(2));
   // Formun gördüğü liste (base) kayıtlıdan farklı: sunucu yazmaz (src/server/data/stock-extras.ts lockExtras)
   assert.notEqual(extrasBase([ex(1, "Peçete", "PAKET", 3)]), extrasBase([ex(1, "Peçete", "PAKET", 3), ex(2, "Kağıt havlu", "PAKET", 1)]));
+  // Kilit ve liste (ay, şube): ek kalem sayım gibi şube başına (denetim ST-01)
   const core = read("src/server/data/stock-extras.ts");
-  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`sayim-ek-\$\{month\}`\}\)\)/);
+  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`sayim-ek-\$\{month\}:\$\{branchId\}`\}\)\)/);
+  assert.match(core, /\.where\(and\(eq\(s\.stockExtras\.month, month\), eq\(s\.stockExtras\.branchId, branchId\)\)\)/);
   assert.match(core, /if \(base !== undefined && extrasBase\(existing\) !== base\) \{\s+refresh\(\);\s+throw new UserError\(EXTRAS_CHANGED_MESSAGE\);/);
-  assert.match(read("src/server/actions/stock.ts"), /const existing = await lockExtras\(tx, m, b\);\s+const res = planAdminExtras\(existing, data\);/);
+  assert.match(read("src/server/actions/stock.ts"), /const existing = await lockExtras\(tx, m, sube, b\);\s+const res = planAdminExtras\(existing, data\);/);
   assert.doesNotMatch(read("src/server/actions/stock.ts"), /tx\.delete\(s\.stockExtras\)\.where\(eq\(s\.stockExtras\.month, m\)\)/, "ay toptan silinmez");
-  assert.match(read("src/app/panel/sayim/actions.ts"), /const existing = await lockExtras\(tx, m, b\);/);
+  assert.match(read("src/app/panel/sayim/actions.ts"), /const existing = await lockExtras\(tx, m, sube, b\);/);
   assert.doesNotMatch(read("src/server/actions/stock.ts"), /export async function lockExtras|export const EXTRAS/, "use server dosyasında yardımcı yok");
 });
 
@@ -167,8 +169,18 @@ test("ay sonu sayımı hatırlatması: ayın son günü, liste doluysa ve tamaml
   assert.equal(monthEndCountPush("2026-11-30", { counted: 72, total: 72 }), null, "tamam");
   assert.equal(monthEndCountPush("2026-11-30", { counted: 0, total: 0 }), null, "liste boş");
   assert.match(monthEndCountPush("2026-10-31", { counted: 30, total: 72 })!.body, /^Kapanıştan sonra kalan 42 kalemi sayın \(30 \/ 72 sayıldı\)/);
+  // Birden çok şube açıkken şube başına bir bildirim: ad başta, adres şubeyi seçer, etiket ayrı (Tuzla'nınki eskisi gibi)
+  assert.deepEqual(monthEndCountPush("2026-11-30", { counted: 10, total: 72 }, { id: "marina", label: "Marina" }), {
+    title: "Marina · Bugün ay sonu stok sayımı",
+    body: "Kapanıştan sonra kalan 62 kalemi sayın (10 / 72 sayıldı); sayılmayanın stoğu 0 sayılır",
+    url: "/panel/sayim?ay=2026-11&sube=marina",
+    tag: "sayim-son-2026-11-marina",
+  });
+  assert.equal(monthEndCountPush("2026-11-30", { counted: 0, total: 72 }, { id: "tuzla", label: "Tuzla" })!.tag, "sayim-son-2026-11");
+  assert.deepEqual(monthEndCountPush("2026-11-30", { counted: 0, total: 72 }, { id: "tuzla", label: null }), monthEndCountPush("2026-11-30", { counted: 0, total: 72 }), "tek şubede metin aynı");
+  // Günlük iş açık her fiziksel şubeye bakar (denetim ST-04; çerez yok)
   const push = read("src/server/notify/count-push.ts");
-  assert.match(push, /if \(!isLastDayOfMonth\(day\)\) return \{ status: "skip", sent: 0, failed: 0 \};\s+const push = monthEndCountPush\(day, await countProgress\(day\.slice\(0, 7\)\)\);/);
+  assert.match(push, /if \(!isLastDayOfMonth\(day\)\) return \{ status: "skip", sent: 0, failed: 0 \};\s+const pushes = \(await countProgressByBranch\(day\.slice\(0, 7\)\)\)\.flatMap\(\(b\) => monthEndCountPush\(day, b, b\) \?\? \[\]\);/);
 });
 
 test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satırı ilk 10 günde", () => {
@@ -182,10 +194,20 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   assert.equal(pastCountReminder("2026-11-03", { counted: 72, total: 72 }), null, "tamam");
   assert.equal(pastCountReminder("2026-11-11", { counted: 30, total: 72 }), null, "pencere geçti");
   assert.equal(pastCountReminder("2027-01-02", { counted: 1, total: 5 })!.href, "/panel/sayim?ay=2026-12");
+  // Birden çok şube açıkken: "Marina · Ekim 2026 sayımı girilmedi", kimlikte şube, adres Marina'yı seçer (denetim ST-04)
+  assert.deepEqual(pastCountReminder("2026-11-03", { counted: 0, total: 72 }, { id: "marina", label: "Marina" }), {
+    id: "sayim-gecen-2026-10-marina",
+    title: "Marina · Ekim 2026 sayımı girilmedi",
+    body: "Kalanların stoğu 0 sayılır; Ekim 2026 mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.",
+    href: "/panel/sayim?ay=2026-10&sube=marina",
+  });
+  assert.equal(pastCountReminder("2026-11-03", { counted: 30, total: 72 }, { id: "tuzla", label: "Tuzla" })!.id, "sayim-gecen-2026-10", "Tuzla'nın kimliği eskisi gibi");
   const ops = read("src/server/bell/ops.ts");
   assert.match(ops, /if \(user\.role !== "admin"\) return \[\];\s+const day = businessDate\(now\);/);
   assert.match(ops, /pastCountNotifications\(user, now\)\.catch\(\(\) => \[\]\),/);
-  assert.match(ops, /const count = prev \? pastCountReminder\(day, prev\) : null;/);
+  // Zil ve sabah e-postası şube şube (countProgressByBranch: "Tümü"de ve e-postada açık her fiziksel şube)
+  assert.match(ops, /const rows = await countProgressByBranch\(shiftMonth\(day\.slice\(0, 7\), -1\)\);/);
+  assert.match(ops, /const counts = rows\.flatMap\(\(b\) => pastCountReminder\(day, b, b\) \?\? \[\]\);/);
   // Sabah e-postası: personelden gelmeyen satır "Personelden" başlığıyla açılmaz (inceleme notu)
   const digest = read("src/server/staff-requests/digest.ts");
   assert.match(digest, /pastCountDigestLines\(now\)/);

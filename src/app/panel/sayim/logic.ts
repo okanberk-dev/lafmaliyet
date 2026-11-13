@@ -2,6 +2,7 @@
  * Sayım sayfasının saf hesapları: sunucu sayfası, istemci formu, sunucu eylemi ve testler aynı kuralı kullanır.
  * Burada veritabanı ya da tarayıcı yok.
  */
+import { branchKeySuffix } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
@@ -765,46 +766,70 @@ export function staffCountIssue(role: "admin" | "staff", month: string, now: Dat
 }
 
 /**
+ * Sayım hatırlatmasının şubesi (denetim ST-04): `label` birden çok fiziksel şube açıkken şubenin adı, yoksa null. Adlı
+ * şubenin metni adla başlar ("Marina · …"), bağlantısı şubeyi seçer (`&sube=`: sabah e-postası ve "Tümü"deki zil öteki
+ * şubeye götürür), kimliğine Tuzla dışındaki şube eklenir (Tuzla'nınki eskisi gibi; okunmuş satır okunmuş kalır).
+ */
+export interface CountReminderBranch {
+  id: string;
+  label: string | null;
+}
+
+const countBranchText = (b: CountReminderBranch | undefined, text: string) => (b?.label ? `${b.label} · ${text}` : text);
+const countBranchHref = (b: CountReminderBranch | undefined, month: string) =>
+  `/panel/sayim?ay=${month}${b?.label ? `&sube=${encodeURIComponent(b.id)}` : ""}`;
+
+/**
  * Ay sonu sayımı hatırlatması (günlük işin sabah bildirimi, src/server/notify/count-push.ts): ayın son iş günü,
  * sayım listesi doluysa ve ayın sayımı tamamlanmadıysa (countStatus kuralı, sunucuda today.ts countProgress) tek
- * bildirim. Tutar yok.
+ * bildirim; birden çok şube açıkken şube başına bir bildirim (`branch`). Tutar yok.
  */
-export function monthEndCountPush(day: string, progress: { counted: number; total: number }): { title: string; body: string; url: string; tag: string } | null {
+export function monthEndCountPush(
+  day: string,
+  progress: { counted: number; total: number },
+  branch?: CountReminderBranch,
+): { title: string; body: string; url: string; tag: string } | null {
   if (!isLastDayOfMonth(day) || progress.total <= 0 || progress.counted >= progress.total) return null;
   const month = day.slice(0, 7);
   const left = progress.total - progress.counted;
   return {
-    title: "Bugün ay sonu stok sayımı",
+    title: countBranchText(branch, "Bugün ay sonu stok sayımı"),
     body: progress.counted
       ? `Kapanıştan sonra kalan ${num(left)} kalemi sayın (${num(progress.counted)} / ${num(progress.total)} sayıldı); sayılmayanın stoğu 0 sayılır`
       : `Kapanıştan sonra ${num(progress.total)} kalem; sayılmayanın stoğu 0 sayılır`,
-    url: `/panel/sayim?ay=${month}`,
-    tag: `sayim-son-${month}`,
+    url: countBranchHref(branch, month),
+    tag: `sayim-son-${month}${branchKeySuffix(branch?.id, "-")}`,
   };
 }
 
 /**
  * Yöneticinin zil satırı ve sabah e-postası satırı (src/server/bell/ops.ts): ayın ilk 10 gününde (kasanın iş günü,
- * 05:00'te döner) geçen ayın sayımı tamamlanmadıysa. Sayılmayan kalem ay sonu stoğunda 0 sayılır, mal maliyeti şişer.
- * Tamamsa ya da pencere geçtiyse null. Tutar yok.
+ * 05:00'te döner) geçen ayın sayımı tamamlanmadıysa; birden çok şube açıkken şube başına (`branch`). Sayılmayan kalem ay
+ * sonu stoğunda 0 sayılır, mal maliyeti şişer. Tamamsa ya da pencere geçtiyse null. Tutar yok.
  */
-export function pastCountReminder(day: string, prev: { counted: number; total: number }): { id: string; title: string; body: string; href: string } | null {
+export function pastCountReminder(
+  day: string,
+  prev: { counted: number; total: number },
+  branch?: CountReminderBranch,
+): { id: string; title: string; body: string; href: string } | null {
   if (Number(day.slice(8, 10)) > COUNT_GRACE_DAYS || prev.total <= 0 || prev.counted >= prev.total) return null;
   const month = shiftMonth(day.slice(0, 7), -1);
   const label = monthLabel(month);
   return {
-    id: `sayim-gecen-${month}`,
-    title: prev.counted ? `${label} sayımı yarım: ${num(prev.counted)} / ${num(prev.total)}` : `${label} sayımı girilmedi`,
+    id: `sayim-gecen-${month}${branchKeySuffix(branch?.id, "-")}`,
+    title: countBranchText(branch, prev.counted ? `${label} sayımı yarım: ${num(prev.counted)} / ${num(prev.total)}` : `${label} sayımı girilmedi`),
     body: `Kalanların stoğu 0 sayılır; ${label} mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.`,
-    href: `/panel/sayim?ay=${month}`,
+    href: countBranchHref(branch, month),
   };
 }
 
 // ---------------------------------------------------------------- Yöneticiye sayım uyarıları (denetim B02)
 
-/** Bir ayın fiyatı girilmemiş ek kalemleri ("Listede olmayanlar"; miktarı > 0, birim fiyatı 0) */
+/** Bir şubenin bir ayda fiyatı girilmemiş ek kalemleri ("Listede olmayanlar"; miktarı > 0, birim fiyatı 0) */
 export interface UnpricedExtras {
   month: string;
+  /** Ek kalemin şubesi ve birden çok fiziksel şube açıkken adı (denetim ST-01); yoksa Tuzla, adsız */
+  branch?: CountReminderBranch;
   count: number;
   /** İlk birkaç ad, eklenme sırasıyla */
   names: string[];
@@ -826,10 +851,10 @@ export function unpricedExtrasNotice(u: UnpricedExtras): { id: string; title: st
   const rest = u.count - shown.length;
   const list = rest > 0 ? `${shown.join(", ")} ve ${num(rest)} kalem daha` : shown.join(", ");
   return {
-    id: `sayim-ek-fiyatsiz-${u.month}-${u.count}-${u.newestId}`,
-    title: `${monthLabel(u.month)}: ${num(u.count)} ek kalemin fiyatı yok`,
+    id: `sayim-ek-fiyatsiz-${u.month}${branchKeySuffix(u.branch?.id, "-")}-${u.count}-${u.newestId}`,
+    title: countBranchText(u.branch, `${monthLabel(u.month)}: ${num(u.count)} ek kalemin fiyatı yok`),
     body: `${list} · Birim fiyatı girilmezse kapanış stoğuna 0 ₺ girer, ayın mal maliyeti o kadar yüksek çıkar.`,
-    href: `/panel/sayim?ay=${u.month}#${EXTRAS_ANCHOR}`,
+    href: `${countBranchHref(u.branch, u.month)}#${EXTRAS_ANCHOR}`,
   };
 }
 

@@ -204,6 +204,15 @@ export function tillOpenedOn(branchId: string, openedOn: string | null, firstRow
 }
 
 /**
+ * Şube `month` ayında açık mıydı (sayım hatırlatması, denetim ST-04): açılış günü yazılıysa o ayın sonuna kadar
+ * açılmışsa; boşsa açık sayılır (hatırlatma susmaz). Henüz açılmamış şubeye hatırlatılmasın diye Şubeler'de açılış
+ * günü yazılır
+ */
+export function branchOpenIn(b: { openedOn: string | null }, month: string): boolean {
+  return !b.openedOn || b.openedOn.slice(0, 7) <= month;
+}
+
+/**
  * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
  * (docs/SUBE.md › Şube görünümünde maliyet)
  */

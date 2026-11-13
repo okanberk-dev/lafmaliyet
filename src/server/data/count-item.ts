@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { staffCountIssue, todayTR } from "@/app/panel/sayim/logic";
@@ -27,6 +27,7 @@ import {
 import { dateTR } from "@/lib/format";
 import { UserError, zMonth, zOptText, zText } from "@/server/actions/util";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 /**
@@ -172,8 +173,13 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
     if (start) await tx.insert(s.ingredientPrices).values(start);
     return { ...row, group: data.group, existed: false, from, packagePrice: data.packagePrice !== null ? values.packagePrice : null };
   });
-  // Aynı ayda aynı adlı ek kalem var mı (yalnız ad: birim farklı yazılmış olabilir)
-  const extras = await getDb().select({ name: s.stockExtras.name, qty: s.stockExtras.qty, unit: s.stockExtras.unit }).from(s.stockExtras).where(eq(s.stockExtras.month, m));
+  // Aynı ayda, sayılan şubede aynı adlı ek kalem var mı (yalnız ad: birim farklı yazılmış olabilir). Ek kalem şube başına
+  // (denetim ST-01): Marina'nın sayımına Tuzla'nın ek kalemi ikiz diye gösterilmez
+  const sube = (await currentPhysicalBranch()).id;
+  const extras = await getDb()
+    .select({ name: s.stockExtras.name, qty: s.stockExtras.qty, unit: s.stockExtras.unit })
+    .from(s.stockExtras)
+    .where(and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube)));
   const twin = extras.find((e) => nameKey(e.name) === nameKey(created.name)) ?? null;
   return { ...created, extraTwin: twin };
 }

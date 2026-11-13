@@ -5,10 +5,10 @@ import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, resolvePosLine, siteSlotKey } from "@/lib/lafpos/day";
-import { lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
+import { branchSwitchDay, lafposDayKey, lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
 import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
-import { currentBranchWhere } from "@/server/branch-scope";
+import { currentBranchWhere, currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
@@ -31,15 +31,17 @@ export async function lafposSwitchDayOf(db: Reader): Promise<string | null> {
 
 /**
  * Geçiş gününden itibaren (verilirse `from`..`to` aralığında) gelen gün sonlarının ikram ve zayi satırları ve günleri
- * (veri kümesi, Zayi'nin günü, kasa e-postası). İkramı okunamayan günün satırları atlanır, gün yine "gün sonu geldi"
- * sayılır.
+ * (veri kümesi, Zayi'nin günü, kasa e-postası). Yalnız kasası LafPOS olan şubelerin gün sonları (denetim ST-X1;
+ * src/lib/lafpos/ikram.ts branchSwitchDay); seçili şubeyle süzülür ("Tümü"de hepsi), gün anahtarı şubeyi taşır
+ * (lafposDayKey). İkramı okunamayan günün satırları atlanır, gün yine "gün sonu geldi" sayılır.
  */
 export async function loadLafposIkram(db: Reader, switchDay: string, range: { from?: string; to?: string } = {}): Promise<LafposIkramData> {
   const from = range.from && range.from > switchDay ? range.from : switchDay;
   const [rows, linked, mappings] = await Promise.all([
     db
-      .select({ date: s.posDayReports.date, ikram: s.posDayReports.ikram })
+      .select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId, ikram: s.posDayReports.ikram })
       .from(s.posDayReports)
+      .innerJoin(s.branches, and(eq(s.branches.id, s.posDayReports.branchId), eq(s.branches.posSource, "lafpos")))
       .where(and(gte(s.posDayReports.date, from), range.to ? lte(s.posDayReports.date, range.to) : undefined, await currentBranchWhere(s.posDayReports.branchId)))
       .orderBy(asc(s.posDayReports.date)),
     db.select({ id: s.products.id, siteMenuId: s.products.siteMenuId, slot: s.products.siteMenuSlot }).from(s.products).where(isNotNull(s.products.siteMenuId)),
@@ -56,16 +58,18 @@ export async function loadLafposIkram(db: Reader, switchDay: string, range: { fr
       const m = resolvePosLine({ ...l, isService: false }, bySite, (n) => index.get(n));
       // "Zayi: Döküldü" zayidir, öteki her satır (ödenmez dahil) ikram (src/lib/lafpos/ikram.ts lafposLineKind)
       const { kind, reason } = lafposLineKind(l.reason);
-      lines.push({ date: r.date, kind, posName: l.posName, productId: m.productId, qty: l.qty, menuValue: l.menuValue, reason });
+      lines.push({ date: r.date, branchId: r.branchId, kind, posName: l.posName, productId: m.productId, qty: l.qty, menuValue: l.menuValue, reason });
     }
   }
-  return { switchDay, days: rows.map((r) => r.date), lines };
+  return { switchDay, days: rows.map((r) => lafposDayKey(r.date, r.branchId)), lines };
 }
 
 /** Bir günün LafPOS ikramı, ürünün paneldeki adıyla (Zayi'nin günü, kasa raporunun özeti) */
 export interface DayLafposIkram {
   /** Gün LafPOS günü (geçiş günü seçili ve gün ondan önce değil) */
   switchDay: string;
+  /** Günün şubesi (kasası LafPOS olan fiziksel şube): gün sonu yalnız bu şubenin panel kaydını düşürür */
+  branchId: string;
   /** O günün gün sonu geldi mi (gelmediyse ikram henüz yok; paneldeki ürün ikramı sayılır) */
   received: boolean;
   /** Z'deki ödenmez tutarı (yalnız yöneticinin e-postası) */
@@ -74,21 +78,27 @@ export interface DayLafposIkram {
 }
 
 /**
- * Günün LafPOS ikramı; gün LafPOS günü değilse (geçiş günü boş ya da gün ondan önce) null: ekran, e-posta ve kasa
- * özeti bugünkü gibi yalnız panelden. Ad: ürün bulunduysa paneldeki adı ("Latte M"), yoksa LafPOS'taki ad.
+ * Seçili fiziksel şubenin ("Tümü"de Tuzla; zayinin yazıldığı şube) günün LafPOS ikramı; gün o şubede LafPOS günü
+ * değilse (geçiş günü boş, gün ondan önce ya da şubenin kasası LafPOS değil: denetim ST-X1) null: ekran, e-posta ve
+ * kasa özeti bugünkü gibi yalnız panelden. Ad: ürün bulunduysa paneldeki adı ("Latte M"), yoksa LafPOS'taki ad.
  */
 export async function loadDayLafposIkram(date: string, db: Reader = getDb()): Promise<DayLafposIkram | null> {
-  const switchDay = await lafposSwitchDayOf(db);
-  if (!switchDay || !isLafposDay(date, switchDay)) return null;
+  const setting = await lafposSwitchDayOf(db);
+  if (!setting || !isLafposDay(date, setting)) return null;
+  const branch = await currentPhysicalBranch();
+  const switchDay = branchSwitchDay(setting, branch.posSource);
+  if (!switchDay) return null;
+  const buSube = eq(s.posDayReports.branchId, branch.id);
   const [data, [day], products] = await Promise.all([
-    loadLafposIkram(db, switchDay, { from: date, to: date }),
-    db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, date)).limit(1),
+    withBranchScope(branch.id, () => loadLafposIkram(db, switchDay, { from: date, to: date })),
+    db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), buSube)).limit(1),
     db.select({ id: s.products.id, name: s.products.name, size: s.products.size }).from(s.products),
   ]);
   const byId = new Map(products.map((p) => [p.id, p]));
   const off = (day?.z as { offRevenue?: unknown } | undefined)?.offRevenue;
   return {
     switchDay,
+    branchId: branch.id,
     received: Boolean(day),
     offRevenue: typeof off === "number" && Number.isFinite(off) ? off : null,
     lines: data.lines.map((l) => {

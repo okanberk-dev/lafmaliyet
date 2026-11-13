@@ -10,14 +10,17 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
+import { cashBranchLabel } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
+import { LAFPOS_IKRAM_TEXT, lafposDayKey, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
 import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
+import { currentPhysicalBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
 import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
@@ -30,19 +33,23 @@ import { WasteBoard, type LafposDayView } from "./waste-board";
 
 export const metadata: Metadata = { title: "Zayi & ikram" };
 
+/** Başlığın açıklaması: iki rolde tek cümle (docs/planlar/ux-sade.md §8) */
+const WASTE_DESCRIPTION = "Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin.";
+
 /**
  * Başlık ve Stok sekmeleri (Sayım, Zayi & ikram, yöneticide Tutarlılık; nav.ts SECTION_TABS). Rol bilinmeden (yükleniyor)
  * iki rolün de gördüğü sekmeler çizilir; yöneticinin Tutarlılık'ı içerik gelince eklenir, sekme satırı yer değiştirmez.
  */
-function WasteHeader({ role }: { role: "admin" | "staff" }) {
+function WasteHeader({ role, branch }: { role: "admin" | "staff"; branch?: string | null }) {
   return (
     <PageHeader
       title="Zayi & ikram"
       path="/panel/zayi"
       role={role}
-      // İki rolde tek cümle (docs/planlar/ux-sade.md §8): yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. LafPOS gününde
-      // ürün ikramının LafPOS'ta işaretlendiğini İkram seçilince formun notu söyler (productIkramNote, lafpos.note)
-      description="Atılan, bozulan (zayi) ve ödenmeden verilen (ikram) ürünleri girin."
+      // Yöneticinin karşılaştırma ekranı anılmaz, personel açamaz. LafPOS gününde ürün ikramının LafPOS'ta işaretlendiğini
+      // İkram seçilince formun notu söyler (productIkramNote, lafpos.note). Birden çok fiziksel şube açıkken günün listesinin
+      // ve formun şubesi başta (Stok sayımı gibi)
+      description={branch ? `${branch} · ${WASTE_DESCRIPTION}` : WASTE_DESCRIPTION}
       tabs={<SectionTabs section="stok" current="/panel/zayi" role={role} />}
     />
   );
@@ -71,7 +78,12 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const sp = await searchParams;
   const now = new Date();
   const today = businessDate(now);
-  const header = <WasteHeader role={user.role} />;
+  // Günün listesi ve form tek şubenin: zayinin yazıldığı seçili fiziksel şube ("Tümü" ya da online kanal seçiliyken
+  // Tuzla; docs/SUBE.md, denetim ST-02). Kilit, LafPOS günü ve kayıtlar o şubeden; ay özeti seçimle
+  const [branch, branches] = await Promise.all([currentPhysicalBranch(), listBranches()]);
+  const inBranch = <T,>(fn: () => Promise<T>) => withBranchScope(branch.id, fn);
+  const branchLabel = cashBranchLabel(branch.id, branches);
+  const header = <WasteHeader role={user.role} branch={branchLabel} />;
   const gun = pick(sp.gun);
   const date = gun && /^\d{4}-\d{2}-\d{2}$/.test(gun) && gun <= today ? gun : today;
   const yesterday = addDays(today, -1);
@@ -91,7 +103,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
     </div>
   );
   // Personel: günün kipi (doğrudan / istek / kapalı) ve satırların silme kipi sunucuda (kasanın kilidiyle)
-  const lock = admin ? null : await wasteLock(getDb(), date);
+  const lock = admin ? null : await wasteLock(getDb(), date, branch.id);
   const mode = lock ? staffWasteMode(date, now, lock) : "direct";
   if (mode === "closed") {
     return (
@@ -113,12 +125,13 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   }
   const [choices, entries, marks, mine, waiting, laf] = await Promise.all([
     wasteChoices(),
-    wasteEntriesBetween(date, date),
+    inBranch(() => wasteEntriesBetween(date, date)),
     wasteDayMarks(date),
     admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
     admin ? pendingWasteSummary({ day: date }) : Promise.resolve(null),
-    // LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken null, ekran bugünkü gibi
-    loadDayLafposIkram(date),
+    // Kasası LafPOS olan şubenin LafPOS gününde (geçiş gününden itibaren) ürün ikramı LafPOS'tan; geçiş günü boşken ya
+    // da şubenin kasası ModPOS'ken null, ekran bugünkü gibi
+    inBranch(() => loadDayLafposIkram(date)),
   ]);
   // LafPOS'un ikram ve zayi satırları salt okunur: personele ad ve adet, yöneticiye nedeni, menü değeri ve ürüne bağlı
   // olmayanlar da. Ürün ikramı gün sonu geldiyse ya da gün bugünse panelden kapalı (gün sonu gelmeyen geçmiş günde açık)
@@ -137,7 +150,7 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           menuValue: admin ? l.menuValue : null,
           unmatched: admin && l.productId === null,
         })),
-        notCounted: laf.received ? entries.filter((e) => !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
+        notCounted: laf.received ? entries.filter((e) => !panelWasteCounts(e, new Set([lafposDayKey(date, laf.branchId)]))).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
         maybeTwice: entries.filter((e) => e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
       }
@@ -193,7 +206,8 @@ const OFF_LABEL = { modpos: "ModPOS ödenmez / ikram", gecis: "Kasa ödenmez / i
 
 /** Yöneticinin ay özeti: zayi ve ikramın malzeme maliyeti, ikramın menü değeri ve kasanın ödenmez tutarı, en çok giden
  * kalemler. Geçiş gününden itibaren LafPOS'un ikram ve zayi satırları da sayılır (adın yanında "LafPOS"); LafPOS'un gün sonu gelen günde
- * panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
+ * o şubenin panele girilmiş ürün ikramı sayılmaz (src/lib/lafpos/ikram.ts). Geçiş günü boşken bugünkü gibi yalnız panel.
+ * Rakamlar ve kalem listesi aynı kapsamdan, seçili şubenin ("Tümü"de bütün şubelerin; denetim ST-02).
  */
 async function WasteMonth({ month, today }: { month: string; today: string }) {
   const end = addDays(`${shiftMonth(month, 1)}-01`, -1);

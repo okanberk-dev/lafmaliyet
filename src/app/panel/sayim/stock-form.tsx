@@ -957,7 +957,7 @@ const StockTotalCard = memo(function StockTotalCard({
   month: string;
   monthLabel: string;
   prevMonthLabel: string;
-  valuation: { fifo: boolean; start: string | null } | null;
+  valuation: { fifo: boolean; start: string | null; shared?: boolean } | null;
   live: LiveTotals;
   coveredShare: number;
   hasExtras: boolean;
@@ -1018,6 +1018,10 @@ const StockTotalCard = memo(function StockTotalCard({
               Stok değerinin {coverageSplit(coveredShare).covered} faturalardan (FIFO), {coverageSplit(coveredShare).rest}{" "}
               {live.extrasTotal > 0 ? "ay sonu fiyatıyla ya da ek kalemde elle girilen fiyatla" : "ay sonu fiyatıyla"}.
             </p>
+          ) : null}
+          {valuation?.fifo && valuation.shared ? (
+            // Faturalar işletme genelinde, sayım şube başına: her şube aynı faturalardan değerlenir (sahibe soru 2, varsayılan)
+            <p className="py-2 text-xs leading-5 text-ink-mute">Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü&apos;yle tutmaz.</p>
           ) : null}
           <KeyValue
             label={
@@ -1260,7 +1264,8 @@ export function StockCountForm({
   /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
   addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
   /** Stok değerleme (yalnız yönetici): ay FIFO ile mi değerleniyor, Ayarlar'daki başlangıç ayının adı ("Ekim 2026") */
-  valuation?: { fifo: boolean; covered: number; total: number; start: string | null } | null;
+  /** `shared`: birden çok fiziksel şube açık; şubenin FIFO tutarı faturaları öteki şubeyle paylaşır (denetim ST-06) */
+  valuation?: { fifo: boolean; covered: number; total: number; start: string | null; shared?: boolean } | null;
 }) {
   const all = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   /** Bugünkü sayım listesindeki kalemler (ilerleme bunlarla); arşiv satırları salt okunur */

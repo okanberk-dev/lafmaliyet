@@ -320,6 +320,10 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **ek_kalem_subesi** (`stock_extras.branch_id`, denetim ST-01; [SUBE.md](SUBE.md) › Stok ve zayi): varsayılanı
+    `'tuzla'` olan sütun, eklemeli; eski ek kalemler Tuzla'ya yazılır. Geçiş günü önceden seçildiyse Tuzla'nın kasası
+    Şubeler'de LafPOS olur (ST-X1). Bu sürümden geriye Instant Rollback yapılırsa eski kod sütuna bakmaz: ek kalemler
+    yeniden bütün şubelerde ortak okunur ve yazılır (Marina'nın satırları Tuzla'nın listesinde görünür).
   - **kapali_gun_subesi** (`special_days.branch_id`, denetim KP-05; [SUBE.md](SUBE.md)): boş olabilen sütun, eklemeli;
     başlamış kapalı günler Tuzla'ya yazılır, ileri tarihli olanlar işletme geneli kalır. Bu sürümden geriye Instant
     Rollback yapılırsa eski kod sütuna bakmaz: kapalı gün yeniden işletme geneli sayılır (Marina'nın raporu Tuzla'nın

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { productIkramRefusal } from "@/lib/lafpos/ikram";
+import { branchSwitchDay, productIkramRefusal } from "@/lib/lafpos/ikram";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import {
   LateWastePayload,
@@ -32,10 +32,10 @@ import { UserError } from "@/server/user-error";
 /*
  * Zayi / ikram yazımının çekirdeği (docs/ZAYI-IKRAM.md; plan docs/planlar/personel-yetki.md §2.8): doğrudan kayıt ve
  * silme (iki rol), personelin geç kayıt ve silme isteği, yöneticinin kararı. Personelin doğrudan yolu bugün ve dün (dün
- * kilitlenene kadar; staffWasteMode / staffDeleteMode); kapalı işaretli güne personel yazamaz (closedDayRefusal). Her
- * silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. LafPOS gününde (geçiş günü
- * seçili ve gün ondan önce değil) ürün ikramı panele girilmez, LafPOS'ta işaretlenir (iki rol; geç kayıt isteği ve
- * onayı da; src/lib/lafpos/ikram.ts): hammadde ikramı ve zayi girilir. Gün sonu gelmeyen geçmiş LafPOS gününde ürün
+ * şubenin kasa raporuyla kilitlenene kadar; staffWasteMode / staffDeleteMode); kapalı işaretli güne personel yazamaz
+ * (closedDayRefusal). Her silme (doğrudan ya da onaylı) aynı kaydın öteki bekleyen silme isteklerini kapatır. Kasası
+ * LafPOS olan şubenin LafPOS gününde (geçiş günü seçili ve gün ondan önce değil) ürün ikramı panele girilmez, LafPOS'ta
+ * işaretlenir (iki rol; geç kayıt isteği ve onayı da; src/lib/lafpos/ikram.ts): hammadde ikramı ve zayi girilir. Gün sonu gelmeyen geçmiş LafPOS gününde ürün
  * ikramı girilir (o gün panelinki sayılır). Sunucu eylemi değil:
  * src/server/actions/waste.ts ve waste-requests.ts oturumu ve rolü denetleyip çağırır (tests/zayi-istek-db.test.ts).
  */
@@ -60,45 +60,69 @@ export interface WasteInput {
 
 export type WasteRow = typeof s.wasteEntries.$inferSelect;
 
-/** Günün kasa kilidi: o günün raporu ve ondan sonraki bir rapor (en çok iki satır) */
-export async function wasteLock(db: Tx, date: string): Promise<WasteLock> {
-  const rows = await db.select({ date: s.cashReports.date }).from(s.cashReports).where(gte(s.cashReports.date, date)).orderBy(asc(s.cashReports.date)).limit(2);
+/**
+ * Günün kasa kilidi, şubenin kendi raporlarıyla: o günün raporu ve ondan sonraki bir rapor (en çok iki satır). Kasa
+ * tarafının kuralı gibi şube içinde (report-store.ts hasLaterReport; denetim ST-03): Tuzla'nın raporu Marina
+ * personelinin dününü kilitlemez.
+ */
+export async function wasteLock(db: Tx, date: string, branchId: string): Promise<WasteLock> {
+  const rows = await db
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(and(gte(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .orderBy(asc(s.cashReports.date))
+    .limit(2);
   return { hasReport: rows[0]?.date === date, laterReport: rows.some((r) => r.date > date) };
 }
 
 /**
- * Ürün ikramının LafPOS reddi (src/lib/lafpos/ikram.ts productIkramClosed): LafPOS gününde o günün sonu geldiyse ya da
- * gün bugünse metin; gün sonu gelmeyen geçmiş günde, geçiş günü boşken ve ürün ikramı değilse null
+ * Ürün ikramının LafPOS reddi (src/lib/lafpos/ikram.ts productIkramClosed): kaydın şubesinin kasası LafPOS'sa
+ * (branchSwitchDay; denetim ST-X1), LafPOS gününde o şubenin o günkü sonu geldiyse ya da gün bugünse metin; gün sonu
+ * gelmeyen geçmiş günde, geçiş günü boşken, kasası ModPOS olan şubede ve ürün ikramı değilse null
  */
-async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, now: Date, where: "zayi" | "onay"): Promise<string | null> {
+async function lafposIkramRefusal(
+  tx: Tx,
+  data: Pick<WasteInput, "date" | "kind" | "productId">,
+  branchId: string,
+  now: Date,
+  where: "zayi" | "onay",
+): Promise<string | null> {
   if (data.kind !== "ikram" || data.productId === null) return null;
-  const switchDay = await lafposSwitchDayOf(tx);
-  if (!switchDay || data.date < switchDay) return null;
-  const [day] = await tx.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.date, data.date)).limit(1);
+  const setting = await lafposSwitchDayOf(tx);
+  if (!setting || data.date < setting) return null;
+  const [branch] = await tx.select({ posSource: s.branches.posSource }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
+  const switchDay = branchSwitchDay(setting, branch?.posSource);
+  if (!switchDay) return null;
+  const [day] = await tx
+    .select({ date: s.posDayReports.date })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.date, data.date), eq(s.posDayReports.branchId, branchId)))
+    .limit(1);
   return productIkramRefusal(data, switchDay, { received: Boolean(day), today: businessDate(now) }, where);
 }
 
-/** Ürün ikramı LafPOS gününde reddedilir (LafPOS'ta işaretlenir) */
-async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, now: Date): Promise<void> {
-  const refusal = await lafposIkramRefusal(tx, data, now, "zayi");
+/** Ürün ikramı kasası LafPOS olan şubenin LafPOS gününde reddedilir (LafPOS'ta işaretlenir) */
+async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date): Promise<void> {
+  const refusal = await lafposIkramRefusal(tx, data, branchId, now, "zayi");
   if (refusal) throw new UserError(refusal);
 }
 
 /** Doğrudan kayıt: yönetici her geçmiş güne; personel yalnız doğrudan yolun günlerine ve kapalı işaretli olmayan güne */
 export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = new Date()): Promise<{ id: number; name: string; unit: string }> {
   if (data.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
+  // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md).
+  // Kilit, kapalı gün ve LafPOS reddi de o şubenin
+  const branchId = (await currentPhysicalBranch()).id;
   return db.transaction(async (tx) => {
-    await refuseLafposIkram(tx, data, now);
+    await refuseLafposIkram(tx, data, branchId, now);
     if (me.role !== "admin") {
-      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date));
+      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date, branchId));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
-      // Kapalı gün şube başına (KP-05): zayinin yazılacağı fiziksel şubenin
-      const closed = await closedDayRefusal(data.date, me.role, tx, (await currentPhysicalBranch()).id);
+      // Kapalı gün şube başına (KP-05)
+      const closed = await closedDayRefusal(data.date, me.role, tx, branchId);
       if (closed) throw new UserError(closed);
     }
     const target = await resolveWasteTarget(tx, data);
-    // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md)
-    const branchId = (await currentPhysicalBranch()).id;
     const [row] = await tx
       .insert(s.wasteEntries)
       .values({ ...data, ...target, branchId, createdBy: me.id, createdByName: me.name })
@@ -117,7 +141,8 @@ export async function removeWaste(db: DB, me: WasteActor, id: number, now = new 
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
+    // Kilit kaydın kendi şubesinin raporlarıyla (ST-03)
+    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
     await tx.delete(s.wasteEntries).where(eq(s.wasteEntries.id, row.id));
     await closeDeleteRequests(tx, row.id, now);
     return row;
@@ -138,13 +163,15 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
   if (me.role === "admin") throw new UserError(REQUEST_TEXT.adminDirect);
   const message = input.message.trim();
   if (message.length < 3) throw new UserError(WASTE_REQUEST_TEXT.messageShort);
+  // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; kilit, kapalı gün ve LafPOS reddi o şubenin
+  const branchId = (await currentPhysicalBranch()).id;
   return db.transaction(async (tx) => {
-    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date));
+    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date, branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.useDirect);
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
-    const closed = await closedDayRefusal(input.date, me.role, tx, (await currentPhysicalBranch()).id);
+    const closed = await closedDayRefusal(input.date, me.role, tx, branchId);
     if (closed) throw new UserError(closed);
-    await refuseLafposIkram(tx, input, now);
+    await refuseLafposIkram(tx, input, branchId, now);
     const target = await resolveWasteTarget(tx, input);
     const payload: LateWastePayloadT = LateWastePayload.parse({
       date: input.date,
@@ -155,8 +182,8 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
       qty: input.qty,
       reason: input.reason,
       note: input.note,
-      // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın
-      branchId: (await currentPhysicalBranch()).id,
+      // İstek anında kaydedilir ki onay onu bozmasın
+      branchId,
     });
     const clientKey = input.clientKey ?? randomUUID();
     // Aynı istek (gün, tür, kalem, miktar) bekliyorsa ikincisi açılmaz; aynı istemci anahtarı ise var olanı döner
@@ -196,7 +223,7 @@ export async function proposeWasteDelete(
     // Kayıt kilitlenir (kayıt, sonra istek): aynı anda verilen onay ya da doğrudan silmeyle sıraya girer, silinmiş kayda istek açılmaz
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date));
+    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteDirect);
     if (mode === "none") throw new UserError(WASTE_REQUEST_TEXT.deleteOld);
     const payload: WasteDeletePayloadT = {
@@ -255,9 +282,11 @@ export async function reviewWasteRequestCore(
     }
     if (kind === "zayi-gec") {
       const p = LateWastePayload.parse(row.payload);
-      // İstek geçiş günü seçilmeden ya da gün sonu gelmeden önce açılmış olabilir: ürün ikramı o güne panelden
+      // Şube isteği AÇAN personelinki; bu alandan önceki isteklerde yok, varsayılana düşer
+      const branchId = p.branchId ?? DEFAULT_BRANCH_ID;
+      // İstek geçiş günü seçilmeden ya da gün sonu gelmeden önce açılmış olabilir: ürün ikramı o güne o şubede panelden
       // kapalıysa onaylanmaz, reddedilir
-      const refusal = await lafposIkramRefusal(tx, p, now, "onay");
+      const refusal = await lafposIkramRefusal(tx, p, branchId, now, "onay");
       if (refusal) throw new UserError(`${refusal} İsteği reddedin.`);
       const target = await resolveWasteTarget(tx, p, { requireActive: false }).catch(() => null);
       if (!target || target.name !== p.name || target.unit !== p.unit) throw new UserError("Kalem silinmiş ya da adı değişmiş; isteği reddedin");
@@ -274,8 +303,7 @@ export async function reviewWasteRequestCore(
           qty: p.qty,
           reason: p.reason,
           note: p.note,
-          // Şube isteği AÇAN personelinki; bu alandan önceki isteklerde yok, varsayılana düşer
-          branchId: p.branchId ?? DEFAULT_BRANCH_ID,
+          branchId,
           createdBy: row.requestedBy,
           createdByName: row.requestedByName,
         })

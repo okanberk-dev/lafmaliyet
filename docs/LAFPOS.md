@@ -338,6 +338,11 @@ geçildikten sonra). LafPOS satış satırları (`lines[]`) ikramı içermez (La
   satırı, işarete göre açıklama; eski LafPOS iptal edilen adisyonun ikramını da yolluyordu, LafPOS L1 ikisini aynı
   adisyonlardan hesaplar).
 - Geçiş günü boşken ikram hiçbir yerde okunmaz.
+- **Şube** (denetim ST-X1; [SUBE.md](SUBE.md) › Stok ve zayi): bunların hepsi yalnız kasası LafPOS olan şubede geçer
+  (`branches.pos_source = 'lafpos'`, kural `branchSwitchDay`). Geçiş günü kaydı LafPOS'un gün sonunu yazdığı şubenin
+  (Tuzla, `ingest.ts`) kasasını LafPOS yapar, gün silinince ModPOS'a döner (yayından önce seçilmiş geçiş günü için
+  migration `0060` yazar). ModPOS'lu şube (Marina) ürün ikramını panelden girer ve sayılır; gün sonunun anahtarı gün ve
+  şubedir (`lafposDayKey`): Tuzla'nın gün sonu yalnız Tuzla'nın panel kaydını düşürür, "Tümü"de de.
 
 ### Ürün maliyetleri: `GET /api/panel/pos/urunler`
 
@@ -377,7 +382,8 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
   okuma kuralı `src/lib/constants.ts` › `readLafposSwitchDay` (takvimde olan gün, 1 Ekim 2026'dan önce değil; bozuk değer
   `null`). Geçiş gününü okuyan her yer bu yardımcılardan geçer.
 - **Kim, nasıl:** yalnız yönetici (`saveLafposSwitchDay`, `src/server/actions/lafpos.ts`; rol çekirdekte de denetlenir,
-  `src/server/lafpos/admin.ts`). Kaydetmeden önce onay penceresi: neyin değiştiği ve kaynağı değişen günlerin ayları.
+  `src/server/lafpos/admin.ts`). Aynı kayıt Tuzla'nın kasasını Şubeler'de LafPOS yapar (boşaltınca ModPOS): ürün ikramı
+  yalnız kasası LafPOS olan şubede LafPOS'tan gelir (aşağıda "İkram"). Kaydetmeden önce onay penceresi: neyin değiştiği ve kaynağı değişen günlerin ayları.
   En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi parola istemez; işlem geçmişine "LafPOS'a geçiş
   günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak satırı siler.
 - **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da

@@ -463,6 +463,8 @@ export interface ExpenseEntry {
  */
 export interface WasteEntry {
   date: string;
+  /** Kaydın şubesi (veri kümesinde; LafPOS gün sonunun anahtarı onunla: src/lib/lafpos/ikram.ts lafposDayKey) */
+  branchId?: string;
   kind: "zayi" | "ikram";
   productId: number | null;
   ingredientId: number | null;

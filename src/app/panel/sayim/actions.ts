@@ -9,6 +9,7 @@ import { monthLabel } from "@/lib/format";
 import { logActivity } from "@/server/actions/log";
 import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { requireUser } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
 import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
@@ -44,7 +45,7 @@ export async function addCountItem(input: z.input<typeof countItemSchema>) {
  * "Listede olmayanlar" kaydı, personel için (yönetici `saveStockExtras` ile fiyatıyla birlikte kaydeder).
  * Personel ad, birim ve miktar yazar; fiyatı görmez, değiştiremez. Kural `planStaffExtras`'ta:
  * kayıtlı satırın yalnızca miktarı değişir, yeni satırın fiyatı aynı kalemin son fiyatından gelir (yoksa 0),
- * fiyatlı satır personelce silinemez.
+ * fiyatlı satır personelce silinemez. Liste sayım gibi seçili fiziksel şubenin ("Tümü"de Tuzla; denetim ST-01).
  */
 export async function saveStaffStockExtras(month: string, extras: { name: string; unit: string; qty: number }[], base?: string) {
   return attempt(async () => {
@@ -59,20 +60,24 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
+    const sube = (await currentPhysicalBranch()).id;
+    const buSube = and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube));
     const { saved, changed } = await db.transaction(async (tx) => {
       // Aynı anda tek kayıt; formun gördüğü liste değiştiyse yazılmaz (yöneticinin kaydıyla aynı kapı)
-      const existing = await lockExtras(tx, m, b);
+      const existing = await lockExtras(tx, m, sube, b);
+      // Yeni kalemin fiyatı bütün şubelerin geçmişinden: kalemin fiyatı işletmenin (faturalar ve hammadde ortak), şubenin değil
       const history = await tx.select().from(s.stockExtras).where(lt(s.stockExtras.month, m));
       const res = planStaffExtras(existing, data, history);
       if (!res.ok) throw new UserError(res.error);
       const { updates, deletes, inserts } = res.plan;
-      for (const u of updates) await tx.update(s.stockExtras).set({ qty: u.qty }).where(and(eq(s.stockExtras.id, u.id), eq(s.stockExtras.month, m)));
-      if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
+      for (const u of updates) await tx.update(s.stockExtras).set({ qty: u.qty }).where(and(eq(s.stockExtras.id, u.id), buSube));
+      if (deletes.length) await tx.delete(s.stockExtras).where(and(buSube, inArray(s.stockExtras.id, deletes)));
       if (inserts.length) {
-        await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
-        await tx.insert(s.stockExtras).values(inserts.map((x) => ({ ...x, month: m })));
+        // Ay satırının anahtarı (ay, şube): şubesiz açılsaydı Tuzla'nın ayı açılırdı
+        await tx.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
+        await tx.insert(s.stockExtras).values(inserts.map((x) => ({ ...x, month: m, branchId: sube })));
       }
-      const rows = await tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, m)).orderBy(asc(s.stockExtras.id));
+      const rows = await tx.select().from(s.stockExtras).where(buSube).orderBy(asc(s.stockExtras.id));
       return { saved: rows, changed: updates.length + deletes.length + inserts.length };
     });
     // "N kalem" değişen satır sayısıdır (yöneticinin geç kayıt uyarısı bunu toplar; listenin tamamı değil). Değişiklik

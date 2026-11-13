@@ -91,7 +91,10 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   + 0,5 KG · 29 Eyl faturası 380,00 ₺/KG · 0,3 KG faturası bulunamadı: ay sonu fiyatıyla."). Birim fiyat tutar ÷ miktar.
   Formda değişen miktar sunucunun kuralıyla havuzdan değerlenir (`src/app/panel/sayim/logic.ts` `lineAmount`): kaydedince
   toplam değişmez. Sayılmamış ya da 0 sayılmış satırın birim fiyatı ay sonu fiyatıdır (ekran ve boş sayım formu aynı).
-  Personele fiyat, tutar, katman ve havuz gitmez.
+  Personele fiyat, tutar, katman ve havuz gitmez. Sayım şube başına, faturalar işletme genelinde: her şube aynı
+  faturalardan değerlenir, şube tutarlarının toplamı "Tümü"nün stoğunu tutmaz. Birden çok şube açıkken kart bunu yazar
+  ("Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz."; sahibe soru,
+  varsayılan; denetim ST-06).
 - **Ayarlar › Stok değerleme**: yöntem ve başlangıç ayı; sayımı olan her ay için şimdiki ve seçilen yöntemle kapanış,
   kâr etkisi ve faturadan gelen pay (önce / sonra önizleme). "Değişen ay" bütün sayımlı ayları kapsar (tablo son 12'yi
   gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş

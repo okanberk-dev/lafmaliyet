@@ -4,8 +4,9 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
-import { panelWasteCounts } from "@/lib/lafpos/ikram";
+import { lafposDayKey, panelWasteCounts } from "@/lib/lafpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -47,6 +48,8 @@ export async function wasteChoices(): Promise<WasteChoice[]> {
 export interface WasteEntryDTO extends WasteLine {
   id: number;
   date: string;
+  /** Kaydın fiziksel şubesi (zayi şube başına; docs/SUBE.md) */
+  branchId: string;
   type: "product" | "ingredient";
   productId: number | null;
   ingredientId: number | null;
@@ -58,16 +61,22 @@ export interface WasteEntryDTO extends WasteLine {
   createdAt: string;
 }
 
+/**
+ * Aralığın zayi ve ikram kayıtları, seçili şubenin ("Tümü"de hepsi; denetim ST-02): Marina seçiliyken Tuzla'nın kaydı
+ * gün listesine, ay özetine ve kasa raporuna girmez. Tek şubenin okuması (Zayi'nin günü, kasa raporu) `withBranchScope`
+ * içinde çağırır.
+ */
 export async function wasteEntriesBetween(from: string, to: string): Promise<WasteEntryDTO[]> {
   const rows = await getDb()
     .select()
     .from(s.wasteEntries)
-    .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to)))
+    .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to), await currentBranchWhere(s.wasteEntries.branchId)))
     .orderBy(desc(s.wasteEntries.date), desc(s.wasteEntries.id))
     .limit(2000);
   return rows.map((r) => ({
     id: r.id,
     date: r.date,
+    branchId: r.branchId,
     kind: r.kind as WasteKind,
     type: r.ingredientId !== null && r.productId === null ? "ingredient" : "product",
     productId: r.productId,
@@ -104,7 +113,9 @@ export interface DayWasteLafpos {
  * Kasa raporu için günün zayi ve ikram özeti ve ikramın menü fiyatıyla değeri (kasanın ödenmez tutarıyla
  * karşılaştırılır; yalnız yöneticiye giden e-postada). LafPOS gününde gün sonu geldiyse ürün ikramı LafPOS'un ikram
  * listesinden, değeri LafPOS'un menü değerinden; listedeki "Zayi: …" satırları zayi özetine girer; paneldeki ürün
- * ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
+ * ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü boşken ya da şubenin kasası LafPOS değilken `lafpos` null, özet
+ * bugünkü gibi yalnız panelden. Tek şubenin özeti: çağıran raporun şubesiyle `withBranchScope` içinde okur (denetim
+ * ST-02; kasa formu, e-posta, WhatsApp, personelin Bugün'ü).
  */
 export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
   const db = getDb();
@@ -115,7 +126,8 @@ export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: n
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);
-  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([date]) : new Set<string>()));
+  // Gün sonu yalnız kendi şubesinin panel kaydını düşürür (lafposDayKey)
+  const counted = entries.filter((e) => panelWasteCounts(e, received ? new Set([lafposDayKey(date, laf!.branchId)]) : new Set<string>()));
   // LafPOS'un satırları kendi türüyle: "Zayi: …" zayi, öteki (ödenmez dahil) ikram
   const lafLines: WasteLine[] = received ? laf!.lines.map((l) => ({ kind: l.kind, name: l.name, qty: l.qty, unit: "adet" })) : [];
   const lines = [...counted, ...lafLines];
