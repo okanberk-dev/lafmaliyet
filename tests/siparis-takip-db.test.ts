@@ -8,6 +8,10 @@
 // gelmemiş ödenmiş siparişi getirirse `missedPingAt` yazılır; ping gelip çekmesi düştüyse, sipariş az önce ödendiyse ya
 // da çekme pingle yapıldıysa yazılmaz. Site hata verirse takip olduğu gibi kalır.
 //
+// Masa çağrısında "Gördüm" (src/server/actions/table-calls.ts) aynı sahte siteye gider: sitenin ucu sözleşme dışı bir
+// JSON'lu 404 verirse metin "ekran yenilendi" der ve liste gerçekten yeniden çekilir (denetim SB-06); Next'in 404
+// sayfasında ve 5xx'te çekilmez.
+//
 // integration_state'teki sipariş satırlarını (kopya, durum, sürüm) başta saklar ve sonda geri yazar.
 //
 // BAGLANTI_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
@@ -20,6 +24,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import { eq, inArray, sql } from "drizzle-orm";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
+import { CALL_ACK_PATH } from "../src/lib/site-orders/calls";
 import { AWAITING_FOLLOW_MS, awaitingUntil as followUntil, boardBusy } from "../src/lib/site-orders/follow";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -32,6 +37,7 @@ const KEYS = ["site_orders", "site_orders_sync", "site_orders_version"];
 describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { skip: !URL_ && "BAGLANTI_TEST_DATABASE_URL yok" }, () => {
   let db: DB;
   let sync: typeof import("../src/server/site-orders/sync");
+  let calls: typeof import("../src/server/actions/table-calls");
   let closeDb: () => Promise<void>;
   const saved: { key: string; value: unknown }[] = [];
   const realFetch = globalThis.fetch;
@@ -39,16 +45,31 @@ describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { s
 
   // ------------------------------------------------ Sahte site
   type Order = Record<string, unknown>;
-  /** Sitenin şimdiki hâli: açık siparişler, ödeme bekleyen sayısı (undefined: S2 öncesi site alanı göndermez), hata */
-  const site: { orders: Order[]; awaiting: number | undefined; fail: boolean } = { orders: [], awaiting: undefined, fail: false };
+  /**
+   * Sitenin şimdiki hâli: açık siparişler, ödeme bekleyen sayısı (undefined: S2 öncesi site alanı göndermez), hata;
+   * "Gördüm" ucunun yanıtı (gövde null: JSON değil, Next'in 404 sayfası)
+   */
+  const site: { orders: Order[]; awaiting: number | undefined; fail: boolean; ack: { status: number; body: unknown } } = {
+    orders: [],
+    awaiting: undefined,
+    fail: false,
+    ack: { status: 404, body: { error: "not_found" } },
+  };
   let gets = 0;
+  let acks = 0;
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   async function fakeSite(input: string | URL | Request, init?: RequestInit): Promise<Response> {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     if (url.origin !== SITE) return realFetch(input, init);
     const headers = (init?.headers ?? {}) as Record<string, string>;
-    const ok = verifySignature(SECRET, { method: init?.method ?? "GET", url, body: "", timestamp: headers[TIMESTAMP_HEADER] ?? null, signature: headers[SIGNATURE_HEADER] ?? null });
+    const body = typeof init?.body === "string" ? init.body : "";
+    const ok = verifySignature(SECRET, { method: init?.method ?? "GET", url, body, timestamp: headers[TIMESTAMP_HEADER] ?? null, signature: headers[SIGNATURE_HEADER] ?? null });
     if (!ok) return json(401, { error: "unauthorized" });
+    if (url.pathname === CALL_ACK_PATH && init?.method === "POST") {
+      acks++;
+      if (site.ack.body === null) return new Response("<!DOCTYPE html><title>404</title>", { status: site.ack.status, headers: { "content-type": "text/html" } });
+      return json(site.ack.status, site.ack.body);
+    }
     if (url.pathname !== "/api/panel/orders") return json(404, { error: "not_found" });
     gets++;
     if (site.fail) return json(503, { error: "unavailable" });
@@ -106,17 +127,21 @@ describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { s
       },
       vapidPublicKey: async () => null,
     });
+    // "Gördüm"ü yönetici dokunur (kurulum hatalarının ayrıntılı metni yöneticide görünür)
+    stub(require.resolve("../src/server/auth/dal"), { requireUser: async () => ({ id: 1, name: "Test Yönetici", role: "admin" }) });
     const dbModule = await import("../src/server/db");
     db = dbModule.createDb(URL_!, 4);
     closeDb = () => dbModule.getDb().$client.end();
     sync = await import("../src/server/site-orders/sync");
+    calls = await import("../src/server/actions/table-calls");
     for (const row of await db.select().from(s.integrationState).where(inArray(s.integrationState.key, KEYS))) saved.push({ key: row.key, value: row.value });
   });
 
   beforeEach(async () => {
     await db.delete(s.integrationState).where(inArray(s.integrationState.key, KEYS));
-    Object.assign(site, { orders: [], awaiting: undefined, fail: false });
+    Object.assign(site, { orders: [], awaiting: undefined, fail: false, ack: { status: 404, body: { error: "not_found" } } });
     gets = 0;
+    acks = 0;
     pushes.length = 0;
   });
 
@@ -299,5 +324,32 @@ describe("Bar ekranı: ödeme takibi ve kaçan ping (sitenin sahte ucuyla)", { s
     await patch({ lastPingAt: ago(10 * 60_000) });
     await sync.syncSiteOrders("screen");
     assert.equal((await state()).missedPingAt, null, "ilk liste");
+  });
+
+  test("Gördüm: sözleşme dışı JSON'lu 404'te 'ekran yenilendi' der ve liste gerçekten yeniden çekilir (SB-06)", async () => {
+    const ack = async (status: number, body: unknown) => {
+      site.ack = { status, body };
+      gets = 0;
+      acks = 0;
+      const res = await calls.ackTableCall({ id: "cagri-1" });
+      assert.equal(acks, 1, `${status} ${JSON.stringify(body)}: istek siteye gitti`);
+      return { res, pulled: gets };
+    };
+    // Sitenin ucu var ama 'not_found' dışında bir kod döndü: hata gösterilir, metnin dediği gibi liste yeniden çekilir
+    const odd = await ack(404, { error: "expired" });
+    assert.deepEqual(odd.res, { ok: false, error: "Çağrı sitede bulunamadı; ekran yenilendi." });
+    assert.equal(odd.pulled, 1, "liste yeniden çekildi");
+    assert.ok((await sync.readOrdersSnapshot()).at, "son listenin kopyası yazıldı");
+    // Karşılaştırma: sözleşmedeki 404 (zaten kapanmış) hata değil, yine yeniden çekilir
+    const gone = await ack(404, { error: "not_found" });
+    assert.deepEqual(gone.res, { ok: true, data: { message: "Masa · çağrı zaten kapanmış", note: "Ekran yenilendi." } });
+    assert.equal(gone.pulled, 1);
+    // Uç yok (Next'in 404 sayfası) ya da site hata verdi: "yenilendi" denmez, liste de çekilmez
+    const missing = await ack(404, null);
+    assert.deepEqual(missing.res, { ok: false, error: "Sitede masa çağrısı ucu yok (laffogato.net güncel değil)" });
+    assert.equal(missing.pulled, 0);
+    const down = await ack(500, { error: "internal" });
+    assert.deepEqual(down.res, { ok: false, error: "Site yanıt vermedi (HTTP 500); tekrar deneyin." });
+    assert.equal(down.pulled, 0);
   });
 });

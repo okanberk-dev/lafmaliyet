@@ -286,3 +286,59 @@ test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişken
   assert.match(sync, /throw new UserError\(me\.role === "admin" \? r\.error : "laffogato\.net'e ulaşılamadı; sorun sürerse yöneticiye haber verin\."\)/);
   assert.doesNotMatch(sync.slice(0, sync.indexOf("\n}\n")), /throw new UserError\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
 });
+
+test("karaoke şeridi (SB-03): kabuk şerit kadar iner; zil, çekmece, arama paleti ve İçeriğe geç şeridin altında kalmaz", () => {
+  // Şerit sabit ve z-70; yüksekliği ölçülüp kökte --alarm-h olur, şerit kalkınca silinir
+  const alerts = read("src/components/panel/live/alert-center.tsx");
+  const banner = alerts.match(/<div role="alert" ref=\{reserveAlarmSpace\} className="([^"]+)"/)?.[1] ?? "";
+  assert.match(banner, /\bfixed\b/);
+  const bannerZ = Number(banner.match(/\bz-\[(\d+)\]/)?.[1]);
+  assert.equal(bannerZ, 70);
+  assert.match(alerts, /root\.style\.setProperty\("--alarm-h", `\$\{el\.offsetHeight\}px`\)/);
+  assert.match(alerts, /root\.style\.removeProperty\("--alarm-h"\)/);
+
+  const css = read("src/app/globals.css");
+  const shell = css.slice(css.indexOf('[data-component="app-shell"] {'), css.indexOf("@media (width >= 64rem)"));
+  assert.match(shell, /--mobile-top-h: calc\(3\.5rem \+ var\(--alarm-h\)\);/);
+  assert.match(shell, /padding-top: var\(--alarm-h\);/);
+  // Baskıda şerit çıkmaz (no-print); boşluğu da ilk sayfada boş bant bırakmaz
+  const print = css.slice(css.indexOf("@media print"));
+  assert.match(print.slice(0, print.indexOf("\n}\n")), /\[data-component="app-shell"\] \{\s*padding-top: 0;\s*\}/);
+
+  // Telefonun üst çubuğu şeridin altında yapışır. backdrop-blur onu içindeki fixed öğelerin kapsayıcısı yapar ve çubuk
+  // zaten --alarm-h'de durur: içindeki hiçbir öğe --mobile-top-h'yi (şeridi de sayar) kullanmaz, şerit iki kez sayılırdı
+  // (zilin listesi 390 px'te ekranın altından taşıyordu)
+  const sidebar = read("src/components/panel/sidebar.tsx");
+  const header = sidebar.slice(sidebar.indexOf('<header className="no-print sticky'), sidebar.indexOf("</header>", sidebar.indexOf('<header className="no-print sticky')));
+  assert.match(header, /^<header className="no-print sticky top-\(--alarm-h\) [^"]*backdrop-blur/);
+  // Zil açıkken üst çubuk sayfanın yüzen düğmelerinin (Fab, z-30) üstüne çıkar, çekmecenin perdesinin (z-40) altında kalır
+  const fabZ = Number(read("src/components/ui/fab.tsx").match(/"no-print fixed [^"]*\bz-(\d+)\b/)?.[1]);
+  const barZ = Number(header.match(/has-\[\[data-component=notification-dropdown\]\[data-open\]\]:z-\[(\d+)\]/)?.[1]);
+  assert.ok(barZ > fabZ && barZ < 40, `${barZ} / ${fabZ}`);
+  assert.match(header, /<NotificationMenu [^>]*variant="bar"/);
+  assert.doesNotMatch(header, /--mobile-top-h|\bfixed\b/);
+  const menu = read("src/components/panel/notifications.tsx");
+  assert.doesNotMatch(menu, /--mobile-top-h/);
+  // Zilin kökü üst çubukta konumlanmaz: açılan pencere (absolute) üst çubuğa göre yerleşir, çubuğun hemen altında açılır
+  assert.match(menu, /className=\{cn\("relative inline-flex shrink-0 font-sans", variant === "bar" && "max-lg:static"\)\}/);
+  assert.match(menu, /"absolute top-\[calc\(100%\+0\.5rem\)\] z-\[100\] flex max-h-\[/);
+  const bar = menu.slice(menu.indexOf('variant === "bar" &&\n'), menu.indexOf("\n", menu.indexOf('variant === "bar" &&\n') + 22));
+  assert.doesNotMatch(bar, /\bfixed\b/);
+  // Yüksekliği şerit, üst çubuk ve alt menü arasına sığar
+  assert.match(bar, /max-lg:max-h-\[calc\(100dvh-5rem-var\(--mobile-nav-h,0px\)-var\(--alarm-h,0px\)\)\]/);
+  // Menü çekmecesi şeridin altından başlar
+  assert.match(sidebar, /className="fixed top-\(--alarm-h\) bottom-0 left-0 z-50 /);
+
+  // Masaüstünde zilin penceresi kenar çubuğundan şeridin bulunduğu yere taşar: zil açıkken kenar çubuğu şeridin üstüne çıkar
+  assert.match(menu, /data-component="notification-dropdown"\s+data-open=\{open \|\| undefined\}/);
+  const raised = Number(sidebar.match(/<div className="no-print fixed inset-y-0 left-0 z-30 [^"]*has-\[\[data-component=notification-dropdown\]\[data-open\]\]:z-\[(\d+)\]/)?.[1]);
+  assert.ok(raised > bannerZ, String(raised));
+
+  // Arama paleti (z-61) ve İçeriğe geç şeridin altından başlar
+  const palette = read("src/components/panel/command-palette.tsx");
+  const frame = palette.match(/<div className="(pointer-events-none fixed inset-0 z-\[61\][^"]*)"/)?.[1] ?? "";
+  assert.match(frame, /(?:^| )pt-\[calc\(0\.75rem\+var\(--alarm-h\)\)\]/);
+  assert.match(frame, /sm:pt-\[calc\(12dvh\+var\(--alarm-h\)\)\]/);
+  assert.match(palette, /sm:max-h-\[min\(38rem,calc\(76dvh-var\(--alarm-h\)\)\)\]/);
+  assert.match(read("src/app/panel/layout.tsx"), /focus:fixed focus:top-\[calc\(var\(--alarm-h\)\+0\.75rem\)\]/);
+});

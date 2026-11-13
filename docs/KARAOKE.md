@@ -77,9 +77,11 @@ GET /api/panel/karaoke  ◀─────────────────�
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
 - **Süre doldu şeridi** her sayfanın en üstünde sabit durur (oturum başına bir satır: **+15 dk**, **Haber verdim**).
   Sayfa şeridin yüksekliği kadar aşağı iner: telefondaki üst çubuk (başlık, zil, menü) ve menü çekmecesi şeridin altında
-  kalır, sayfanın başlığı ve düğmeleri örtülmez (denetim SB-03; `--alarm-h`, `src/app/globals.css`). Alarm sesi aynı
-  anda çalan "Sürekli" kişisel hatırlatıcıyla aynı döngüde çalar ama ayrı susar: hatırlatıcının **Sesi kes**'i karaoke
-  alarmını, **Haber verdim** de hatırlatıcının sesini kesmez ([HATIRLATICILAR.md](HATIRLATICILAR.md)).
+  kalır, sayfanın başlığı ve düğmeleri örtülmez (denetim SB-03; `--alarm-h`, `src/app/globals.css`). Zilin açılır
+  listesi telefonda üst çubuğun hemen altında açılır, masaüstünde şeridin üstüne çıkar; arama paleti ve "İçeriğe geç"
+  bağlantısı şeridin altından başlar. Baskıda şerit de boşluğu da çıkmaz. Alarm sesi aynı anda çalan "Sürekli" kişisel
+  hatırlatıcıyla aynı döngüde çalar ama ayrı susar: hatırlatıcının **Sesi kes**'i karaoke alarmını, **Haber verdim** de
+  hatırlatıcının sesini kesmez ([HATIRLATICILAR.md](HATIRLATICILAR.md)).
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
 - Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
   aşağıda).
