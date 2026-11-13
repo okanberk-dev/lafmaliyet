@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { alarmRinging, startAlarm, stopAlarm, stopAllAlarms } from "../src/components/panel/live/sounds";
 import { afterComplete, dueGroup, dueInstant, isTime, nextUserOccurrence, postponeTarget, trParts, USER_SOUNDS, userRepeatLabel, whenLabel } from "../src/lib/user-reminders";
 
 /** Türkiye saatiyle an: "2026-10-21 15:30" → Date */
@@ -31,6 +32,25 @@ test("tamamlandı: tekrar eden bugünü geçene kadar ilerler, tek seferlik kapa
   // Gelecekteki dönem erken tamamlanırsa bir sonrakine geçer
   assert.equal(afterComplete({ dueDate: "2026-10-25", dueTime: null, anchorDate: "2026-10-25", repeat: "weekly" }, "2026-10-21"), "2026-11-01");
   assert.equal(afterComplete({ dueDate: "2026-10-21", dueTime: null, anchorDate: "2026-10-21", repeat: "none" }, "2026-10-21"), null);
+});
+
+test("tamamlandı: ay sonunda ertesi aya ertelenen aylık hatırlatıcı bir ayı atlamaz (SB-01)", () => {
+  // 30 Kas → "Yarın"a ertelendi (1 Ara) → 1 Ara'da tamamlandı: sıradaki 30 Ara, 30 Oca değil
+  const ertelendi = postponeTarget({ dueDate: "2026-11-30", dueTime: null }, "day", tr("2026-11-30 10:00"));
+  assert.equal(ertelendi.dueDate, "2026-12-01");
+  assert.equal(afterComplete({ ...ertelendi, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-12-01"), "2026-12-30");
+  // 31'lik: 31 Ara → 1 Oca → 31 Oca; 31 Oca → 1 Şub → 28 Şub; kısa ayın sonundan (28 Şub → 1 Mar) → 31 Mar
+  assert.equal(afterComplete({ dueDate: "2027-01-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-01-01"), "2027-01-31");
+  assert.equal(afterComplete({ dueDate: "2027-02-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-02-01"), "2027-02-28");
+  assert.equal(afterComplete({ dueDate: "2027-03-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-03-01"), "2027-03-31");
+  // Gece yarısını aşan "1 saat" ertelemesi de aynı: 30 Kas 23:35 → 1 Ara 00:35
+  const saat = postponeTarget({ dueDate: "2026-11-30", dueTime: "23:30" }, "hour", tr("2026-11-30 23:31"));
+  assert.deepEqual(saat, { dueDate: "2026-12-01", dueTime: "00:35" });
+  assert.equal(afterComplete({ ...saat, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-12-01"), "2026-12-30");
+  // Ay içi erteleme ve ertelenmemiş dönem eskisi gibi; erken tamamlanan ertelenmiş dönem de çapanın dönemine sayılır
+  assert.equal(afterComplete({ dueDate: "2026-11-16", dueTime: null, anchorDate: "2026-11-15", repeat: "monthly" }, "2026-11-16"), "2026-12-15");
+  assert.equal(afterComplete({ dueDate: "2026-11-30", dueTime: null, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-11-30"), "2026-12-30");
+  assert.equal(afterComplete({ dueDate: "2026-12-01", dueTime: null, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-11-28"), "2026-12-30");
 });
 
 test("saatli hatırlatmanın anı Türkiye saatiyle (sunucu UTC'de)", () => {
@@ -112,11 +132,43 @@ test("sürekli ses uyarıyı kapatmaz: alarm durdurulana kadar çalar, bildirimd
   assert.match(src, /const surekli = r\.sound === "surekli"/);
   // Sessizde hiç çalmaz, tekte bir zil, süreklide alarm
   assert.match(src, /if \(prefs\.sound && r\.sound !== "yok"\)/);
-  assert.match(src, /if \(surekli\) startAlarm\(\);\s*\n\s*else play\("reminder"\);/);
-  // Sürekli uyarı kendiliğinden kapanmaz ve kapanınca ses durur
+  assert.match(src, /if \(surekli\) startAlarm\(owner\);\s*\n\s*else play\("reminder"\);/);
+  // Sürekli uyarı kendiliğinden kapanmaz ve kapanınca yalnız kendi sesi durur
   assert.match(src, /duration: surekli \? Infinity : 30_000/);
-  assert.match(src, /onDismiss: surekli \? \(\) => stopAlarm\(\) : undefined/);
-  assert.match(src, /cancel: surekli \? \{ label: "Sesi kes"/);
+  assert.match(src, /onDismiss: surekli \? \(\) => stopAlarm\(owner\) : undefined/);
+  assert.match(src, /cancel: surekli \? \{ label: "Sesi kes", onClick: \(\) => stopAlarm\(owner\) \}/);
+});
+
+test("alarm sahipliği: hatırlatıcının 'Sesi kes'i karaoke alarmını susturmaz, tersi de (SB-02)", () => {
+  // Sunucuda ses yok (play bir şey yapmaz); döngü ve sahiplik yine de işler
+  assert.equal(alarmRinging(), false);
+  startAlarm("karaoke");
+  startAlarm("hatirlatici:7");
+  stopAlarm("hatirlatici:7");
+  assert.equal(alarmRinging(), true);
+  assert.equal(alarmRinging("karaoke"), true);
+  assert.equal(alarmRinging("hatirlatici:7"), false);
+  // Tersi: "Haber verdim" süren hatırlatıcının sesini kesmez
+  startAlarm("hatirlatici:7");
+  stopAlarm("karaoke");
+  assert.equal(alarmRinging("hatirlatici:7"), true);
+  // Sahibi olmayanın susturması bir şey değiştirmez; son sahip gidince döngü durur
+  stopAlarm("hatirlatici:8");
+  assert.equal(alarmRinging(), true);
+  stopAlarm("hatirlatici:7");
+  assert.equal(alarmRinging(), false);
+  // Cihazın sesi kapanınca hepsi susar
+  startAlarm("karaoke");
+  startAlarm("hatirlatici:7");
+  stopAllAlarms();
+  assert.equal(alarmRinging(), false);
+
+  // Ekran: karaoke yalnız kendi sahipliğini bırakır
+  const src = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
+  assert.match(src, /startAlarm\(KARAOKE_ALARM\);\s*\n\s*return \(\) => stopAlarm\(KARAOKE_ALARM\);/);
+  assert.match(src, /if \(overtime\.length <= 1\) stopAlarm\(KARAOKE_ALARM\);/);
+  assert.match(src, /const owner = reminderAlarm\(r\.id\);/);
+  assert.doesNotMatch(src, /stopAlarm\(\)/);
 });
 
 test("ekran: sürekli ses ve kimin kurduğu listede rozetle görünür", () => {

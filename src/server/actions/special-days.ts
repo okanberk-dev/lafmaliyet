@@ -9,7 +9,7 @@ import { foldTR, specialSummary } from "@/lib/ozel-gun";
 import { rangeTR } from "@/lib/takvim";
 import { addDays, daysBetween, isCalendarDate } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
-import { lockSpecialDays, revokeClosedRequests } from "@/server/closed-days";
+import { lockSpecialDays, recheckClosedRequests, revokeClosedRequests } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { SPECIAL_MAX_AHEAD_DAYS, SPECIAL_MAX_SPAN_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
 
@@ -83,7 +83,7 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     const id = await getDb().transaction(async (tx) => {
       await lockSpecialDays(tx);
       // Şube yalnız kapalı günde; verilmeyen (eski sekme, düzenleme) kayıtlıdakini korur
-      const [current] = d.id ? await tx.select({ branchId: s.specialDays.branchId }).from(s.specialDays).where(eq(s.specialDays.id, d.id)).limit(1) : [];
+      const [current] = d.id ? await tx.select({ branchId: s.specialDays.branchId, kind: s.specialDays.kind }).from(s.specialDays).where(eq(s.specialDays.id, d.id)).limit(1) : [];
       const branchId = d.kind !== "kapali" ? null : d.branchId !== undefined ? d.branchId : (current?.branchId ?? null);
       if (branchId) {
         const [b] = await tx.select({ id: s.branches.id }).from(s.branches).where(and(eq(s.branches.id, branchId), eq(s.branches.kind, "fiziksel"))).limit(1);
@@ -105,6 +105,9 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
           .where(eq(s.specialDays.id, d.id))
           .returning({ id: s.specialDays.id });
         if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
+        // Onaylanmış kapalı gün bildiriminin satırı kapalı olmaktan çıktı (tür, gün ya da şube değişti): istek silmedeki
+        // gibi "geri alındı" olur, eksik rapor uyarıları geri gelir (denetim SB-04)
+        if (current?.kind === "kapali") await recheckClosedRequests(tx, row.id, "Yönetici kapalı işaretini değiştirdi");
         return row.id;
       }
       const [row] = await tx

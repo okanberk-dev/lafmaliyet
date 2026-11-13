@@ -277,6 +277,10 @@ test("Gördüm eylemi: oturum gerekir (personel de); önce doğrulama, ortak imz
   // Son listenin kopyasını yalnız çekme yazar; 200'den ve 404'ten (zaten kapanmış) sonra liste yeniden çekilir
   assert.match(action, /syncSiteOrders\("manual"\)/);
   assert.ok(body.indexOf("const synced = await resync();") > body.indexOf('if (answer.kind === "failed")'));
+  // Sözleşme dışı JSON'lu 404 ("ekran yenilendi" der): hatayı atmadan önce liste yeniden çekilir (SB-06)
+  const failed = body.slice(body.indexOf('if (answer.kind === "failed")'), body.indexOf("const synced = await resync();"));
+  assert.match(failed, /if \(failure\.kind === "http" && failure\.status === 404 && failure\.error\) await resync\(\);\s*\n\s*throw new UserError\(callAckFailureMessage\(failure, me\.role\)\);/);
+  assert.equal(callAckFailureMessage({ kind: "http", status: 404, error: "expired" }), "Çağrı sitede bulunamadı; ekran yenilendi.");
   assert.doesNotMatch(action, /integration_state|\.insert\(|\.update\(|logActivity/);
   // Sayfanın süre sınırı: istek + çekme
   assert.match(read("src/app/panel/siparisler/page.tsx"), /export const maxDuration = 30;/);

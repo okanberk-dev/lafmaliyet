@@ -26,6 +26,10 @@ kapatmaz). Listede kapalı günün şubesi yazılır ("Kafe kapalı · Tuzla"). 
 bildiriminin onayı formun şubesinin satırını yazar. Silinen şubeli kapalı gün bildirimdeki "Geri al"la aynı şubeye
 döner; düzenlemede şube seçilmezse kayıtlıdaki kalır.
 
+Personelin onaylanmış "Kafe kapalıydı" bildiriminin satırı silinir ya da düzenlenip o günü artık kapatmazsa (tür, gün
+ya da şube değişti) bildirim "geri alındı" olur; personelin İsteklerim'inde ve zilinde bayat bir "onaylandı" kalmaz
+(denetim SB-04; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı).
+
 ## Kod
 
 | Ne | Nerede |

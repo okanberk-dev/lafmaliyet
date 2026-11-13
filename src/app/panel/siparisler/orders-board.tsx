@@ -144,15 +144,19 @@ export function useOrdersFeed(role: Role, serverNow: number) {
   return { data, list, calls, now, prefs };
 }
 
-/** "Yenile": siteyi hemen yeniden çektirir (art arda basılsa da sunucu en çok on saniyede bir sorar) */
+/**
+ * "Yenile": siteyi hemen yeniden çektirir (art arda basılsa da sunucu en çok on saniyede bir sorar). Panel yanıt
+ * vermezse (ağ yok, sunucu hata verdi) de söylenir: liste eski kalır, kişi yenilendiğini sanmasın (denetim SB-05)
+ */
 function useManualPull(role: Role) {
   const [pulling, setPulling] = useState(false);
   const manual = useCallback(async () => {
     setPulling(true);
     const r = await pullOrders(0);
     setPulling(false);
-    if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: role === "admin" ? r.error : "Sorun sürerse yöneticiye haber verin." });
-    else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
+    if (r === null) toast.error("Panele ulaşılamadı; bağlantıyı kontrol edip tekrar deneyin.");
+    else if (r.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: role === "admin" ? r.error : "Sorun sürerse yöneticiye haber verin." });
+    else if (r.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
   }, [role]);
   return { pulling, manual };
 }

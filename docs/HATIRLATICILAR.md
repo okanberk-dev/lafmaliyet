@@ -11,6 +11,10 @@ Bir kez · Her gün · Her hafta · Her ay. "Tamamlandı" işaretlenince tekrar 
 (bugünü geçene kadar), tek seferlik kapanır. Haftalıkta çapanın haftanın günü, aylıkta ayın günü korunur
 (31 Ocak → 28 Şubat → 31 Mart).
 
+"Ertele" (bir saat ya da ertesi gün) tekrarın gününü değiştirmez. Ay sonundaki aylık hatırlatıcı ertesi aya
+ertelenip orada tamamlanırsa sıradaki dönem yine ertelemeden öncekinden sayılır: 30 Kasım → 1 Aralık'a ertelendi →
+tamamlandı → sıradaki 30 Aralık (bir ay atlanmaz).
+
 ## Bilgisayarda ses (4 Kasım 2026)
 
 Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı başına seçilir:
@@ -18,7 +22,7 @@ Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı baş
 | Seçenek | Ne olur |
 |---|---|
 | **Tek ses** (varsayılan) | Bir kez zil çalar — bugünkü davranış |
-| **Sürekli** | Durdurulana kadar çalar (karaoke alarmı gibi, en çok 30 dk). Uyarı kendiliğinden kapanmaz; "Sesi kes" ya da "Durdur ve tamamla" durdurur |
+| **Sürekli** | Durdurulana kadar çalar (karaoke alarmı gibi, en çok 30 dk). Uyarı kendiliğinden kapanmaz; "Sesi kes" ya da "Durdur ve tamamla" durdurur. Yalnız kendi sesini keser: aynı anda çalan karaoke "süre doldu" alarmı "Haber verdim"e kadar sürer, karaokenin "Haber verdim"i de hatırlatıcının sesini kesmez |
 | **Sessiz** | Hiç çalmaz; bildirim yine çıkar |
 
 Saat verilmemişse hiçbiri çalmaz (hatırlatıcı gün boyu listede durur). Cihazın kendi **Sesli uyarı** anahtarı

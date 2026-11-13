@@ -276,6 +276,10 @@ test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişken
     /lines\.push\(\s*role === "admin"\s*\? `Son kontrol başarısız: \$\{data\.error\}\$\{since\}\. Siparişleri sitenin panelinde de kontrol edin\.`\s*: `Siparişler şu an siteden alınamıyor\$\{since\}\. Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin\.`,?\s*\);/,
   );
   assert.match(board, /description: role === "admin" \? r\.error : "Sorun sürerse yöneticiye haber verin\."/);
+  // Panel yanıt vermezse (ağ yok, 500) Yenile sessiz kalmaz (denetim SB-05); arka plandaki çekmeler bildirim göstermez
+  const manual = board.slice(board.indexOf("function useManualPull"), board.indexOf("export function OrdersRefreshButton"));
+  assert.match(manual, /if \(r === null\) toast\.error\("Panele ulaşılamadı; bağlantıyı kontrol edip tekrar deneyin\."\);/);
+  assert.doesNotMatch(board.slice(board.indexOf("async function pullOrders"), board.indexOf("function useManualPull")), /toast\./);
   const actions = read("src/server/actions/karaoke.ts");
   const sync = actions.slice(actions.indexOf("export async function syncKaraokeNow"));
   assert.match(sync, /const me = await requireUser\(\);/);

@@ -23,11 +23,14 @@ import { useClock } from "./clock";
 import { applyOutput } from "./output-client";
 import { usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
-import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAudioState } from "./sounds";
+import { audioState, play, scheduleBurst, startAlarm, stopAlarm, stopAllAlarms, unlockAudio, useAudioState } from "./sounds";
 import { bindLive, getLive, liveNow, patchLive, refreshLive, resetLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
 const FIRED_KEY = "laf:calan-uyarilar";
+/** Alarm döngüsündeki sahiplik (sounds.ts): karaokenin "Haber verdim"i hatırlatıcının sesini kesmez, tersi de */
+const KARAOKE_ALARM = "karaoke";
+const reminderAlarm = (id: number) => `hatirlatici:${id}`;
 
 /** Bu cihazda az önce başlatılan sayaçlar: başlatan "Sayaç başladı"yı gördü, "Karaoke başladı" ikinci kez çıkmasın */
 const STARTED_HERE = new Set<number>();
@@ -74,6 +77,22 @@ async function notify(title: string, body: string, tag: string, url: string, opt
   await reg
     ?.showNotification(title, { body, tag, requireInteraction: opts.requireInteraction ?? false, silent: opts.silent ?? false, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", lang: "tr", data: { url } })
     .catch(() => {});
+}
+
+/**
+ * Karaoke şeridinin yüksekliği kabukta --alarm-h olur (globals.css): içerik, telefondaki üst çubuk (başlık, zil, menü)
+ * ve çekmece şeridin altına iner; şerit sabit kalır ama hiçbir düğmeyi örtmez. Şerit kalkınca boşluk da kalkar.
+ */
+function reserveAlarmSpace(el: HTMLDivElement) {
+  const root = document.documentElement;
+  const set = () => root.style.setProperty("--alarm-h", `${el.offsetHeight}px`);
+  set();
+  const observer = new ResizeObserver(set);
+  observer.observe(el);
+  return () => {
+    observer.disconnect();
+    root.style.removeProperty("--alarm-h");
+  };
 }
 
 /** Panel düzenindeki ses yuvası (app/panel/layout.tsx); düzen kalıcı olduğu için bir kez bulunur */
@@ -426,26 +445,27 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
               // Hatırlatıcının kendi sesi (docs/HATIRLATICILAR.md): "surekli" durdurulana kadar çalar,
               // "tek" bir zil, "yok" sessiz. Cihazın ses anahtarı kapalıysa hiçbiri çalmaz.
               const surekli = r.sound === "surekli";
+              const owner = reminderAlarm(r.id);
               if (prefs.sound && r.sound !== "yok") {
-                if (surekli) startAlarm();
+                if (surekli) startAlarm(owner);
                 else play("reminder");
               }
               toast(r.title, {
                 description: [r.note, r.createdByName ? `${r.createdByName} kurdu` : null].filter(Boolean).join(" · ") || "Hatırlatıcı",
                 // Sürekli çalan uyarı kendiliğinden kapanmaz: kişi sesi durdurana kadar ekranda kalır
                 duration: surekli ? Infinity : 30_000,
-                onDismiss: surekli ? () => stopAlarm() : undefined,
+                onDismiss: surekli ? () => stopAlarm(owner) : undefined,
                 action: {
                   label: surekli ? "Durdur ve tamamla" : "Tamamlandı",
                   onClick: () => {
-                    if (surekli) stopAlarm();
+                    if (surekli) stopAlarm(owner);
                     void tryAction(() => completeUserReminder(r.id)).then((res) => {
                       if (res && !res.ok) toast.error(res.error);
                       void refreshLive().then(() => refreshScreen());
                     });
                   },
                 },
-                cancel: surekli ? { label: "Sesi kes", onClick: () => stopAlarm() } : undefined,
+                cancel: surekli ? { label: "Sesi kes", onClick: () => stopAlarm(owner) } : undefined,
               });
               void notify(`Hatırlatma: ${r.title}`, r.note ?? `Saat ${r.dueTime}`, `hatirlatici-${r.id}`, "/panel/hatirlaticilarim", {
                 requireInteraction: true,
@@ -465,14 +485,18 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
     };
   }, [data, reminders, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire, refreshScreen]);
 
-  // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner
+  // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner. Karaoke yalnız kendi
+  // sahipliğini bırakır: süren "Sürekli" hatırlatıcının sesi kesilmez. Cihazın sesi kapanınca bütün alarmlar susar.
+  useEffect(() => {
+    if (!prefs.sound) stopAllAlarms();
+  }, [prefs.sound]);
   useEffect(() => {
     if (!overtimeKey || !prefs.sound || audio !== "ready") {
-      stopAlarm();
+      stopAlarm(KARAOKE_ALARM);
       return;
     }
-    startAlarm();
-    return () => stopAlarm();
+    startAlarm(KARAOKE_ALARM);
+    return () => stopAlarm(KARAOKE_ALARM);
   }, [overtimeKey, prefs.sound, audio]);
   useEffect(() => {
     if (!overtimeKey) return;
@@ -495,7 +519,7 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
   async function acknowledge(s: KaraokeSessionDTO) {
     setBusy(s.id);
     patchLive((d) => ({ ...d, karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, endedAt: new Date(liveNow()).toISOString() } : x)) } }));
-    if (alarmRinging() && overtime.length <= 1) stopAlarm();
+    if (overtime.length <= 1) stopAlarm(KARAOKE_ALARM);
     try {
       const res = await endKaraokeSession(s.id);
       if (!res.ok) toast.error(res.error);
@@ -549,7 +573,7 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
   return (
     <>
       {overtime.length ? (
-        <div role="alert" className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
+        <div role="alert" ref={reserveAlarmSpace} className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
           <div className="mx-auto max-w-3xl space-y-2">
             {overtime.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]">

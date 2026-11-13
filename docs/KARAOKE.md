@@ -75,6 +75,11 @@ GET /api/panel/karaoke  ◀─────────────────�
 - **Uzatma** tek yazımda ve SQL'de toplanır: bar ekranı ve bir telefon aynı anda +15'e basarsa ikisi de sayılır.
 - **Sayaç sunucu saatiyle sayar:** tabletin saati yanlış olsa da alarm zamanında çalar. Sekme arka plandayken
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
+- **Süre doldu şeridi** her sayfanın en üstünde sabit durur (oturum başına bir satır: **+15 dk**, **Haber verdim**).
+  Sayfa şeridin yüksekliği kadar aşağı iner: telefondaki üst çubuk (başlık, zil, menü) ve menü çekmecesi şeridin altında
+  kalır, sayfanın başlığı ve düğmeleri örtülmez (denetim SB-03; `--alarm-h`, `src/app/globals.css`). Alarm sesi aynı
+  anda çalan "Sürekli" kişisel hatırlatıcıyla aynı döngüde çalar ama ayrı susar: hatırlatıcının **Sesi kes**'i karaoke
+  alarmını, **Haber verdim** de hatırlatıcının sesini kesmez ([HATIRLATICILAR.md](HATIRLATICILAR.md)).
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
 - Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
   aşağıda).

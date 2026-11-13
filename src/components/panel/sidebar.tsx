@@ -248,8 +248,9 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
 
   return (
     <>
-      {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi) */}
-      <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md lg:hidden">
+      {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi). Karaoke
+          şeridi varken onun altında yapışır (--alarm-h, globals.css) */}
+      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md lg:hidden">
         <Link
           href={home}
           className="flex size-11 shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
@@ -314,7 +315,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
               animate={{ x: 0, pointerEvents: "auto" }}
               exit={reduce ? undefined : { x: "-100%", pointerEvents: "none" }}
               transition={reduce ? { duration: 0 } : SPRING_PANEL}
-              className="fixed inset-y-0 left-0 z-50 flex w-[min(calc(100%-3rem),20rem)] shadow-[0_12px_40px_rgba(0,0,0,0.18)] lg:hidden"
+              className="fixed top-(--alarm-h) bottom-0 left-0 z-50 flex w-[min(calc(100%-3rem),20rem)] shadow-[0_12px_40px_rgba(0,0,0,0.18)] lg:hidden"
               role="dialog"
               aria-modal="true"
               aria-label="Menü"

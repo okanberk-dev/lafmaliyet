@@ -24,7 +24,8 @@ const notifyAudio = () => {
   for (const fn of audioListeners) fn();
 };
 let alarmTimer: ReturnType<typeof setInterval> | null = null;
-let alarmUntil = 0;
+/** Alarmı isteyenler ve her birinin en geç ne zamana kadar çalacağı (karaoke süre-doldu, "Sürekli" hatırlatıcılar) */
+const alarmOwners = new Map<string, number>();
 let volume = 1;
 
 type AudioCtor = typeof AudioContext;
@@ -216,23 +217,42 @@ export function play(kind: SoundKind) {
   schedule(kind, c.currentTime + 0.02);
 }
 
-/** Alarm döngüsü: susturulana kadar (en çok 30 dakika) her 2,2 saniyede bir */
-export function startAlarm() {
-  alarmUntil = Date.now() + 30 * 60_000;
+/**
+ * Alarm döngüsü, her 2,2 saniyede bir. Döngüyü birden çok sahip paylaşır (karaoke: "karaoke", hatırlatıcı:
+ * "hatirlatici:<id>"): biri susturunca ötekinin sesi kesilmez, döngü ancak hiç sahip kalmayınca durur. Her sahip en
+ * çok 30 dakika çalar.
+ */
+export function startAlarm(owner: string) {
+  alarmOwners.set(owner, Date.now() + 30 * 60_000);
   if (alarmTimer) return;
   play("alarm");
   alarmTimer = setInterval(() => {
-    if (Date.now() > alarmUntil) return stopAlarm();
+    const now = Date.now();
+    for (const [o, until] of alarmOwners) if (now > until) alarmOwners.delete(o);
+    if (!alarmOwners.size) return haltAlarm();
     play("alarm");
   }, 2200);
 }
 
-export function stopAlarm() {
+/** Sahibin alarmını susturur; başka sahip çalıyorsa döngü sürer */
+export function stopAlarm(owner: string) {
+  alarmOwners.delete(owner);
+  if (!alarmOwners.size) haltAlarm();
+}
+
+/** Bütün alarmlar susar (cihazın ses anahtarı kapandı) */
+export function stopAllAlarms() {
+  alarmOwners.clear();
+  haltAlarm();
+}
+
+function haltAlarm() {
   if (alarmTimer) clearInterval(alarmTimer);
   alarmTimer = null;
 }
 
-export const alarmRinging = () => alarmTimer !== null;
+/** Alarm çalıyor mu; sahip verilirse o sahibin alarmı */
+export const alarmRinging = (owner?: string) => alarmTimer !== null && (owner === undefined || alarmOwners.has(owner));
 
 /**
  * Sürenin bittiği ana ses saatinden alarm kurar (sekme arka planda olsa da tam zamanında, 12 saniye çalar); dönen
