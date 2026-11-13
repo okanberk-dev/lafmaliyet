@@ -125,12 +125,16 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
 1. Dosyayı baştan sona okur ve doğrular (özet, son satır, sürüm). Bozuksa hedefe bağlanmadan durur:
    `Dosya eksik ya da bozuk (indirme yarıda kesilmiş olabilir): …`
 2. Şema sürümüne bakar. Yedek bu koddan yeni bir sürümle alınmışsa yüklemez (`önce kodu güncelleyin (git pull)`).
-   Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır.
+   Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır. Şube
+   kırılımından (4 Kasım 2026, `0056_sube_kirilimi`) eski yedeklerde aylar, satışlar, kasa raporları, personel, sayım
+   ve zayi Tuzla'ya yazılır (giderler işletme geneli kalır); Tuzla'nın kaydını migration ekler. 13 Kasım'a kadar bu
+   yedekler yabancı anahtar hatasıyla reddediliyordu (denetim AL-01).
 3. **Tek bir işlemde:** (`--sil` ise) hedefteki tabloları ve `drizzle` şemasını siler, şemayı yedeğin sürümüne kurar,
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
    ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
    o andan başlatır, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı
-   tutmazsa her şey geri alınır, hedef olduğu gibi kalır.
+   tutmazsa her şey geri alınır, hedef olduğu gibi kalır (`Geri yükleme geri alındı, hedef değişmedi: …`; ardından
+   Postgres'in kendi iletisi).
 4. Özeti yazar:
 
 ```
@@ -254,7 +258,10 @@ yazılmayanlar hedefte yoktur, sayaçlar ileridedir, şema günceldir; yarım, d
 tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazılmaz; sayı tutmazsa hedef olduğu gibi kalır;
 `--sil` önce hedefin yedeğini alır, parolaları korur, oturumları kapatır, sayaçları hedefteki yerlerinin gerisine
 düşürmez (sonra eklenen kişi eski bir kimliği almaz); belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema
-sürümünde alınmış yedek yüklenip son sürüme taşınır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
+sürümünde alınmış yedek (ay, satış ve personel satırlarıyla) yüklenip son sürüme taşınır; 4 Kasım'dan eski dolu bir
+veritabanı kopyası `db:migrate` ile sonuna kadar güncellenir; Postgres hatası Türkçe iletiyle döner; `db:migrate` ve
+`db:seed` komut satırında verilen adrese yazar (`.env.local`'daki havuzsuz adres öne geçmez), boş
+`DATABASE_URL_UNPOOLED` yok sayılır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
 (yeni tablolar ve sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
 
 ## 11. Kod

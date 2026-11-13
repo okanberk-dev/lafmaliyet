@@ -307,8 +307,9 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     main'dekiyle değiştirin, dalın kendi `drizzle/00NN_*.sql` ve `drizzle/meta/00NN_snapshot.json` dosyalarını silin,
     yeniden üretin. Migration'lı dallar birer birer birleştirilir. `tests/migrations.test.ts` günlükteki zamanlar
     sırayla artmıyorsa düşer.
-  - Uygulanmış bir migration elle değiştirilmez (tek istisna: 0018'deki gibi `IF NOT EXISTS` onarımı, inceleyen
-    isterse) ve **yeniden üretilmez**: canlıya hangi yoldan gittiği önemli değildir (main, önizleme ya da Production'a
+  - Uygulanmış bir migration elle değiştirilmez (istisna: 0018'deki gibi `IF NOT EXISTS` ya da 0056'daki gibi
+    `ON CONFLICT DO NOTHING` onarımı, inceleyen isterse; drizzle uygulanmış migration'ı yeniden çalıştırmaz, özetine de
+    bakmaz) ve **yeniden üretilmez**: canlıya hangi yoldan gittiği önemli değildir (main, önizleme ya da Production'a
     alınmış bir dal yayını). 26 Eki 2026: `0040_lafpos_baglantisi` 12:19'da bir dal yayınıyla canlıya uygulanmıştı; PR
     birleşmeden önce yeni sütunla yeniden üretilince drizzle onu yeni migration saydı, `pos_daily_sales`'ı yeniden
     kurmaya çalıştı ve canlı derleme durdu (yayındaki sürüm değişmedi). Düzeltme: 0040 canlıdaki hâline döndü, sütun
@@ -365,10 +366,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
 ```
 
-  Bu bilgisayarda olmayan veritabanında komut sunucu adıyla onay ister (`--onay=` yoksa terminalde sorar; adı yanlışsa
-  hiçbir şey silinmez): `.env.local` canlının adresini gösteriyorsa yerel sanılan bir sıfırlama canlıyı silmesin. Silmeden
-  önce bütün verinin yedeği ev klasörüne yazılır (`laffogato-yedek-once-<sunucu>-….json.gz`, yüklenen belgeler dahil);
-  yanlışlıkla sıfırlandıysa `npm run db:restore -- <o dosya> --sil --onay=<sunucu>` ile geri gelir ([YEDEK.md](YEDEK.md)).
+  Komut satırında verilen adres `.env.local`'dakinden önce gelir (`db:migrate`, `db:seed`, `db:backup` ve
+  `db:restore`'da da); komut hedefi `Hedef: <sunucu>/<veritabanı>` diye yazar. Bu bilgisayarda olmayan veritabanında
+  komut sunucu adıyla onay ister (`--onay=` yoksa terminalde sorar; adı yanlışsa hiçbir şey silinmez): `.env.local`
+  canlının adresini gösteriyorsa yerel sanılan bir sıfırlama canlıyı silmesin. Silmeden önce bütün verinin yedeği ev
+  klasörüne yazılır (`laffogato-yedek-once-<sunucu>-….json.gz`, yüklenen belgeler dahil); yanlışlıkla sıfırlandıysa
+  `npm run db:restore -- <o dosya> --sil --onay=<sunucu>` ile geri gelir ([YEDEK.md](YEDEK.md)).
 
   Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
   düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt

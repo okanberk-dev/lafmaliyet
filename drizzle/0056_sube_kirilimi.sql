@@ -48,7 +48,11 @@ ALTER TABLE "modpos_cash_sheets" ADD CONSTRAINT "modpos_cash_sheets_day_branch_i
 ALTER TABLE "months" ADD CONSTRAINT "months_month_branch_id_pk" PRIMARY KEY("month","branch_id");
 ALTER TABLE "pos_day_reports" ADD CONSTRAINT "pos_day_reports_date_branch_id_pk" PRIMARY KEY("date","branch_id");
 --> statement-breakpoint
--- 6) Şube yabancı anahtarları
+-- 6) Şube yabancı anahtarları. Önce varsayılan şube (Tuzla): kütüğü 0053 kurdu ama kaydı canlıda tohum yazmıştı
+-- (0053 ayrı bir yayınla çıkmıştı). 0053'ten eski, satırı olan bir veritabanı (4 Kasım'dan eski yedek ya da kopya)
+-- burada yabancı anahtara takılıyordu (denetim AL-01, 13 Kasım 2026). Sonradan eklendi: drizzle uygulanmış migration'ı
+-- yeniden çalıştırmaz ve özetine bakmaz; var olan kayda dokunulmaz (0057'deki satırla aynı)
+INSERT INTO "branches" ("id", "name", "kind", "pos_source", "sort_order") VALUES ('tuzla', 'Tuzla', 'fiziksel', 'modpos', 1) ON CONFLICT ("id") DO NOTHING;
 ALTER TABLE "cash_outs" ADD CONSTRAINT "cash_outs_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "cash_reports" ADD CONSTRAINT "cash_reports_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "expense_entries" ADD CONSTRAINT "expense_entries_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE no action ON UPDATE no action;

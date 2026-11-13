@@ -1,14 +1,16 @@
 // Geri yüklemenin otomatik provası (docs/YEDEK.md › Otomatik prova), gerçek Postgres'te: yedek al → boş veritabanına
 // geri yükle → her tablo aynı (dışarıda bırakılanlar hariç); dolu veritabanına --sil önce onun yedeğini alır, parolaları
 // korur, sayaçları geri götürmez; yarım ya da bozuk dosya reddedilir; sayılar tutmazsa hedef olduğu gibi kalır; eski
-// sürümde alınmış yedek yüklenip son sürüme taşınır.
+// sürümde alınmış yedek yüklenip son sürüme taşınır, 4 Kasım'dan eski dolu bir kopya da migrate ile güncellenir.
+// Komut satırının hedefi: db:migrate ve db:seed kabuktaki adresi .env.local'dakinden önce alır (denetim AL-02, AL-03).
 //
 // YEDEK_TEST_DATABASE_URL verilmezse atlanır. Verilen sunucuda geçici veritabanları (laf_yedek_*_<pid>) açılıp sonunda
 // silinir; adres yalnız bağlanmak için (ör. postgres://postgres:postgres@localhost/postgres).
 // Çalıştırma: YEDEK_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/postgres npx tsx --test tests/yedek-geri-yukleme.test.ts
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -17,6 +19,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { runMigrations } from "../scripts/migrate";
 import { migrationReport, readJournal } from "../scripts/migration-check";
 import { runRestore } from "../scripts/restore";
 import { runSeed } from "../scripts/seed";
@@ -27,7 +30,15 @@ import { applyMigrations, loadMigrations, readBackupFile, restoreBackup, Restore
 import { createDb, type DB } from "../src/server/db";
 
 const ADMIN_URL = process.env.YEDEK_TEST_DATABASE_URL;
-const NAMES = { a: `laf_yedek_a_${process.pid}`, b: `laf_yedek_b_${process.pid}`, c: `laf_yedek_c_${process.pid}`, d: `laf_yedek_d_${process.pid}` };
+const NAMES = {
+  a: `laf_yedek_a_${process.pid}`,
+  b: `laf_yedek_b_${process.pid}`,
+  c: `laf_yedek_c_${process.pid}`,
+  d: `laf_yedek_d_${process.pid}`,
+  e: `laf_yedek_e_${process.pid}`,
+  f: `laf_yedek_f_${process.pid}`,
+  g: `laf_yedek_g_${process.pid}`,
+};
 const INVITE = "!davet-bekliyor";
 
 const urlFor = (name: string) => {
@@ -395,11 +406,16 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
         .map((m) => m.meta)
         .filter((m) => m.folderMillis <= journal[at].when),
     );
+    // Panelden alınan her yedekte ay, satış ve personel satırı var: şube kırılımı (0056) onları Tuzla'ya bağlar, Tuzla'nın
+    // kaydı ise 0053'ten eski veritabanında yok (denetim AL-01)
     await sqlC.unsafe(`
       INSERT INTO categories (name, sort_order) VALUES ('Kahve', 1);
       INSERT INTO products (category_id, name, size, price, site_menu_id, site_menu_slot) VALUES (1, 'Latte', 'M', 95, 'mnu-0001', 'M');
       INSERT INTO users (email, name, password_hash, role) VALUES ('okan@ornek.com', 'Okan', 'scrypt$x', 'admin');
       INSERT INTO push_subscriptions (user_id, endpoint, session_version) VALUES (1, 'https://push.example/2', 1);
+      INSERT INTO months (month, open_days, pos_revenue) VALUES ('2026-10', 20, 150000);
+      INSERT INTO sales_lines (month, pos_name, qty, revenue, product_id) VALUES ('2026-10', 'LATTE M', 10, 950, 1);
+      INSERT INTO staff (name, net_salary) VALUES ('Ayşe', 30000);
     `);
     // O sürümde job_runs yok, push_subscriptions.orders yok
     assert.equal((await publicTables(sqlC)).includes("job_runs"), false);
@@ -415,6 +431,15 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.deepEqual({ ...p }, { name: "Latte", price: 95, site_menu_id: "mnu-0001" });
     assert.ok((await publicTables(sqlD)).includes("job_runs"));
     assert.ok((await columnsOf(sqlD, "push_subscriptions")).some((c) => c.name === "orders"));
+    // Ay, satış ve personel Tuzla'nın; şube kaydı migration'la gelir
+    assert.deepEqual(
+      (await sqlD.unsafe<{ id: string }[]>(`SELECT id FROM branches`)).map((b) => b.id),
+      ["tuzla"],
+    );
+    for (const t of ["months", "sales_lines", "staff"]) {
+      const rows = await sqlD.unsafe<{ branch_id: string }[]>(`SELECT branch_id FROM public.${ident(t)}`);
+      assert.deepEqual(rows.map((r) => r.branch_id), ["tuzla"], t);
+    }
     // Sayaç: yeni ürün kimliği eskisinin ardından
     const [{ id }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO categories (name) VALUES ('Çay') RETURNING id`);
     assert.equal(id, 2);
@@ -429,4 +454,89 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.equal(cat, 3, "Çay'ın (2) kimliği yeniden verilmez");
   });
 
+  test("4 Kasım'dan eski dolu bir veritabanı kopyası (0052) db:migrate ile sonuna kadar güncellenir", async () => {
+    // Neon'un geri sarılmış ya da dallanmış kopyası: şube kütüğü (0053) yok, ay ve personel satırı var (denetim AL-01)
+    const sqlE = dbs.e!.$client;
+    const journal = readJournal();
+    const at = journal.findIndex((e) => e.tag.startsWith("0052_"));
+    assert.ok(at > 0);
+    await applyMigrations(
+      sqlE,
+      loadMigrations()
+        .map((m) => m.meta)
+        .filter((m) => m.folderMillis <= journal[at].when),
+    );
+    await sqlE.unsafe(`
+      INSERT INTO months (month, open_days, pos_revenue) VALUES ('2026-10', 20, 150000);
+      INSERT INTO sales_lines (month, pos_name, qty, revenue) VALUES ('2026-10', 'LATTE M', 10, 950);
+      INSERT INTO staff (name, net_salary) VALUES ('Ayşe', 30000);
+    `);
+    await quiet(() => runMigrations(urlFor(NAMES.e)));
+    const [{ n }] = await sqlE.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`);
+    assert.equal(n, journal.length);
+    assert.deepEqual(
+      (await sqlE.unsafe<{ id: string; name: string }[]>(`SELECT id, name FROM branches`)).map((b) => ({ ...b })),
+      [{ id: "tuzla", name: "Tuzla" }],
+    );
+    for (const t of ["months", "sales_lines", "staff"]) {
+      const rows = await sqlE.unsafe<{ branch_id: string }[]>(`SELECT branch_id FROM public.${ident(t)}`);
+      assert.deepEqual(rows.map((r) => r.branch_id), ["tuzla"], t);
+    }
+  });
+
+  test("Postgres'in hatası Türkçe iletiyle döner, işlem geri alınır", async () => {
+    const before = await wholeFingerprint(sqlB);
+    const dup = await readBackupFile(fileA);
+    const cats = dup.tables.get("categories")!;
+    cats.rows.push(cats.rows[0]);
+    dup.end.tables.categories += 1;
+    await assert.rejects(
+      restoreBackup(sqlB, dup, { wipe: true, safetyCopyPath: join(dir, "pg-hata-once.json.gz") }),
+      (e: Error) => e instanceof RestoreError && /^Geri yükleme geri alındı, hedef değişmedi: duplicate key value/.test(e.message),
+    );
+    assert.equal(await wholeFingerprint(sqlB), before);
+  });
+
+  test("komut satırı: db:migrate ve db:seed kabuktaki adrese yazar, hedefi söyler; boş havuzsuz adres yok sayılır", async () => {
+    // Ayrı bir klasörde çalışır: .env.local o klasörün (Neon entegrasyonu ve "vercel env pull" iki adresi de yazar)
+    const ws = mkdtempSync(join(tmpdir(), "laf-komut-"));
+    try {
+      for (const f of ["drizzle", "node_modules", "package.json", "src", "tsconfig.json"]) symlinkSync(join(process.cwd(), f), join(ws, f));
+      // Testin kendi ortamındaki adresler ve NODE_ENV (test'te .env.local okunmaz) alt sürece geçmez
+      const drop = new Set(["DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "ADMIN_EMAIL", "ADMIN_PASSWORD", "ADMIN_NAME", "NODE_ENV"]);
+      const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !drop.has(k)));
+      const run = (script: string, envLocal: string, shell: Record<string, string>) => {
+        writeFileSync(join(ws, ".env.local"), envLocal);
+        const r = spawnSync(process.execPath, ["--import", "tsx", join(process.cwd(), "scripts", script)], {
+          cwd: ws,
+          encoding: "utf8",
+          env: { ...base, ...shell } as NodeJS.ProcessEnv,
+          timeout: 180_000,
+        });
+        assert.equal(r.status, 0, `${script}: ${r.stdout}\n${r.stderr}`);
+        return r.stdout;
+      };
+      const tables = async (k: "f" | "g") => (await publicTables(dbs[k]!.$client)).length;
+      const local = `DATABASE_URL=${urlFor(NAMES.f)}\nDATABASE_URL_UNPOOLED=${urlFor(NAMES.f)}\n`;
+
+      // .env.local'da F (havuzsuz dahil), kabukta yalnız DATABASE_URL=G: ikisi de G'ye gider, F'ye dokunulmaz
+      assert.ok(run("migrate.ts", local, { DATABASE_URL: urlFor(NAMES.g) }).includes(`Hedef: localhost/${NAMES.g} (bu bilgisayar)`));
+      assert.ok((await tables("g")) > 0);
+      assert.equal(await tables("f"), 0);
+      const seeded = run("seed.ts", local, { DATABASE_URL: urlFor(NAMES.g) });
+      assert.ok(seeded.includes(`Hedef: localhost/${NAMES.g} (bu bilgisayar)`), seeded);
+      assert.match(seeded, /✓ Excel verisi yüklendi/);
+      const [{ n }] = await dbs.g!.$client.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ingredients`);
+      assert.ok(n > 0);
+      assert.equal(await tables("f"), 0);
+
+      // Eski .env.example kopyası: havuzsuz satır boş, kabukta adres yok. "DATABASE_URL tanımlı değil" demez, F'yi kurar
+      assert.ok(run("migrate.ts", `DATABASE_URL=${urlFor(NAMES.f)}\nDATABASE_URL_UNPOOLED=\n`, {}).includes(`Hedef: localhost/${NAMES.f}`));
+      assert.ok((await tables("f")) > 0);
+      // Örnek dosyada boş satır yok (yorumlu)
+      assert.doesNotMatch(readFileSync(join(process.cwd(), ".env.example"), "utf8"), /^DATABASE_URL_UNPOOLED=/m);
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  });
 });

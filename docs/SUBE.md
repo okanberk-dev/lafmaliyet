@@ -28,7 +28,9 @@ Sahibin kararları (4 Kasım 2026):
 | `sort_order` | Seçicideki ve listedeki sıra |
 
 İlk üç kayıt tohumla gelir (Tuzla, Marina, laffogato.net) ve dolu veritabanında da bir kez yazılır
-(`branches_seeded`); silinen ya da adı değiştirilen kayıt geri gelmez.
+(`branches_seeded`); silinen ya da adı değiştirilen kayıt geri gelmez. Tuzla'yı şube sütunlarının varsayılanı olduğu
+için migration da yazar (0056, 0057; varsa dokunmaz): 0053'ten eski bir yedek ya da veritabanı kopyası da güncellenir
+(denetim AL-01).
 
 ## Kurallar
 
