@@ -12,8 +12,8 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentPhysicalBranch } from "@/server/branch-scope";
-import { carryOversBefore, cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
+import { currentPhysicalBranch, currentWriteBranch } from "@/server/branch-scope";
+import { carryOversBefore, cashBranchesInScope, cashReportsBetween, cashRevisionsFor, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { loadChecklistDays } from "@/server/data/checklists";
@@ -110,10 +110,10 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
   return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };
 }
 
-/** Rolün kendi olguları ve (yalnız yönetici) rapor gününe göre kasanın bütünlük uyarıları */
+/** Rolün kendi olguları ve (yalnız yönetici) kasanın bütünlük uyarıları, şube şube ve rapor gününe göre */
 interface RoleFacts {
   facts: Partial<DayFacts>;
-  cashFlags: Map<string, string[]> | null;
+  cashFlags: Map<string, Map<string, string[]>> | null;
 }
 
 /**
@@ -203,19 +203,23 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
     // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; ModPOS gününde rapor saklanan ModPOS kasa
     // föyünden farklı (src/lib/modpos/zil.ts; föy ya da geçiş günü okunamazsa bu işaret yok, ötekiler kalır). Zincir
-    // şube şube, listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur; HM-X1)
+    // şube şube, listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur; HM-X1).
+    // İşaretler de şube şube: "Tümü"de her şubenin satırı yalnız kendi raporunun işaretlerini taşır (P03 incelemesi)
     safe(
       cash.then(async (reports) => {
-        if (!reports?.length) return new Map<string, string[]>();
+        const out = new Map<string, Map<string, string[]>>();
+        if (!reports?.length) return out;
         const oldest = reports.map((r) => r.date).sort()[0];
         const [before, revisions, modpos] = await Promise.all([
           carryOversBefore(oldest),
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
-          Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()])
-            .then(([sheets, switchDay]) => modposMismatchDates(reports, sheets, switchDay))
-            .catch(() => new Set<string>()),
+          Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()]).catch(() => null),
         ]);
-        return cashFlags(reports, before, revisions, viewer, modpos);
+        for (const b of new Set(reports.map((r) => r.branchId))) {
+          const list = reports.filter((r) => r.branchId === b);
+          out.set(b, cashFlags(list, before, revisions, viewer, modpos ? modposMismatchDates(list, modpos[0], modpos[1]) : new Set()));
+        }
+        return out;
       }),
     ),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
@@ -243,9 +247,14 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
   const cashP = safe(cashReportsBetween(c.yesterday, c.day));
-  const [reports, firstDate, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
+  // Kasa raporu beklenen şubeler: önce yazılan şube (Kasa formunun ve dünkü kapalı günün şubesi; "Tümü"de Tuzla), yönetici
+  // "Tümü"deyse raporu başlamış öteki şubeler de (her biri kendi satırında, kendi kapalı günüyle)
+  const branchesP = safe(cashBranchesInScope());
+  const othersClosedP = admin ? branchesP.then((list) => Promise.all((list ?? []).slice(1).map((b) => safe(closedYesterday(user, now, b.id))))) : Promise.resolve([]);
+  const [reports, cashBranches, othersClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
     cashP,
-    safe(firstCashReportDate()),
+    branchesP,
+    othersClosedP,
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     safe(loadSessions(range.from, range.to, { admin })),
@@ -261,19 +270,27 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(loadLafposSwitchDay()),
   ]);
 
-  const lite = (date: string): CashLite | null => {
-    const r = reports?.find((x) => x.date === date);
+  // Yalnız şubenin kendi raporu: "Tümü"de Marina'nın raporu Tuzla'nın satırını "gönderildi" yapmaz (P03 incelemesi)
+  const write = cashBranches?.[0] ?? { id: await currentWriteBranch(), label: null, firstDate: null };
+  const others = cashBranches?.slice(1) ?? [];
+  const lite = (date: string, branchId: string): CashLite | null => {
+    const r = reports?.find((x) => x.date === date && x.branchId === branchId);
     if (!r) return null;
-    const flags = own.cashFlags?.get(date);
+    const flags = own.cashFlags?.get(branchId)?.get(date);
     return flags?.length ? { ...toLite(r), flags } : toLite(r);
   };
+  const cashOthers = admin
+    ? others.map((b, i) => ({ id: b.id, branch: b.label, today: lite(c.day, b.id), yesterday: lite(c.yesterday, b.id), firstDate: b.firstDate, closed: othersClosed[i]?.yesterday ?? null }))
+    : [];
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
     role: user.role,
     now,
     lafposSwitch,
-    cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
+    cash: reports
+      ? { today: lite(c.day, write.id), yesterday: lite(c.yesterday, write.id), firstDate: write.firstDate, branch: write.label, ...(cashOthers.length ? { others: cashOthers } : {}) }
+      : null,
     stock,
     checklists: checklists ? { day: c.day, lists: checklists.get(c.day) ?? [] } : null,
     checklistsYesterday: checklists ? { day: c.yesterday, lists: checklists.get(c.yesterday) ?? [] } : null,

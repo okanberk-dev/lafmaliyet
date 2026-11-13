@@ -48,6 +48,8 @@ const changeSchema = z.object({
   line: lineSchema.nullable(),
   message: zOptText(200),
   clientKey,
+  /** Eklemede formun şubesi (assertFormBranch) */
+  branchId: z.string().min(1).max(24).optional(),
 });
 
 /**

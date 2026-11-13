@@ -31,6 +31,10 @@ export interface CashAnswer {
     gunIcindeCikan: number;
     teslimEdilen: number;
     kasaFarkiToplam: number;
+    /**
+     * Raporlu günler kasa farkına göre, günde bir: "Tümü"de iki şubenin raporu olan gün en kötüsüyle sayılır (bir şube
+     * eksikse gün eksik, yoksa biri fazlaysa fazla); üçünün toplamı raporlu gün sayısı
+     */
     eksikGun: number;
     fazlaGun: number;
     tutanGun: number;
@@ -79,7 +83,14 @@ export function cashReportSummary(
   const carry = branchCarryChecks(days, ctx.before);
   const carryDays = new Set([...carry.values()].map((c) => c.date));
   const sum = (f: (r: CashReportLike) => number) => r2(days.reduce((a, r) => a + f(r), 0));
-  const kinds = days.map((r) => diffKind(r.cashDiff));
+  // Gün günde bir (P03 incelemesi): aynı günün şube raporlarından en kötüsü (eksik > fazla > tutuyor)
+  const worst = new Map<string, ReturnType<typeof diffKind>>();
+  for (const r of days) {
+    const k = diffKind(r.cashDiff);
+    const had = worst.get(r.date);
+    if (!had || k === "short" || (k === "over" && had === "even")) worst.set(r.date, k);
+  }
+  const kinds = [...worst.values()];
   const toplam = {
     zToplam: sum((r) => r.zTotal),
     nakit: sum((r) => r.cash),

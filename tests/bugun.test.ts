@@ -1050,9 +1050,10 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
   // Zincir şube şube (HM-X1): her şubenin en eski raporundan önceki kendi devri
   assert.match(admin, /carryOversBefore\(oldest\)/);
-  // ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
-  assert.match(admin, /cashFlags\(reports, before, revisions, viewer, modpos\)/);
-  assert.match(admin, /\.then\(\(\[sheets, switchDay\]\) => modposMismatchDates\(reports, sheets, switchDay\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/);
+  // İşaretler şube şube (P03 incelemesi); ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy
+  // okunamazsa boş küme)
+  assert.match(admin, /cashFlags\(list, before, revisions, viewer, modpos \? modposMismatchDates\(list, modpos\[0\], modpos\[1\]\) : new Set\(\)\)/);
+  assert.match(admin, /Promise\.all\(\[loadModposSheets\(oldest, businessDate\(now\)\), loadLafposSwitchDay\(\)\]\)\.catch\(\(\) => null\)/);
 });
 
 test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (personel yalnız kendininkiler); ekran liste saatlerinde yenilenir", () => {
@@ -1071,7 +1072,8 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
   const src = read("src/server/data/today.ts");
   for (const call of [
     "cashReportsBetween(",
-    "firstCashReportDate(",
+    "cashBranchesInScope(",
+    "closedYesterday(",
     "stockProgress(",
     "loadDueReminders(",
     "loadSessions(",

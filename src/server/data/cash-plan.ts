@@ -3,13 +3,15 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
-import { buildCashPlan, goodsRows, parseCashPlanState, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
+import type { BranchRow } from "@/lib/branches";
+import { buildCashPlan, goodsRows, parseCashPlanState, planInputFromModel, SALES_LOOKBACK_DAYS, tillCarries, type CashPlan, type CashPlanState, type TillCarry } from "@/lib/cash-plan";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
 import { unreachable } from "@/lib/unreachable";
+import { listBranches } from "@/server/branches";
 import { loadExpectedDebtsByCard } from "@/server/data/cari";
-import { cashReportsBetween, previousCarryOver } from "@/server/data/cash-reports";
+import { carryOversBefore, cashReportsBetween } from "@/server/data/cash-reports";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
 import { loadPaidOnDelivery, loadTermDays } from "@/server/data/suppliers";
@@ -33,8 +35,11 @@ export async function loadCashPlanState(): Promise<CashPlanState> {
 export interface CashPlanView {
   plan: CashPlan;
   state: CashPlanState;
-  /** Son kasa raporunun ertesi güne devrettiği nakit (bakiye penceresindeki ipucu) */
-  carry: { date: string; amount: number } | null;
+  /**
+   * Her açık şubenin son kasa raporunun ertesi güne devrettiği nakit, şube sırasıyla (bakiye penceresindeki ipucu,
+   * carryHint). Plan işletme genelidir: "Tümü"de iki kasanın devri de (P03 incelemesi)
+   */
+  carry: TillCarry[];
   /** Vadesiz faturanın genel vade günü (Nasıl hesaplandı) */
   invoiceTermDays: number;
 }
@@ -83,7 +88,8 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
     loadPaidOnDelivery(),
-    previousCarryOver(addDays(today, 1)),
+    // Şube şube devir (tek zincirin devri "Tümü"de yalnız Tuzla'nınkiydi) ve şubelerin adları
+    Promise.all([carryOversBefore(addDays(today, 1)), listBranches().catch((): BranchRow[] => [])]).then(([carries, branches]) => tillCarries(carries, branches)),
     loadRecentPaid(),
     opts.taxInputs ?? taxInputsForPlan(),
     // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş

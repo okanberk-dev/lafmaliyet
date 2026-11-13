@@ -116,8 +116,9 @@ Bir tahmini kesinleştirmenin yolu Ödemeler'e tutarıyla hatırlatıcı eklemek
 ## Bakiye ve “gereken en az para”
 
 - **Bakiyeyi gir** (pencere “Elinizdeki para”): bankadaki ve kasadaki paranın bugünkü toplamı. Eksi yazılabilir (kredili
-  hesap). Son kasa raporu varsa ipucu: “Son kasa raporu (21 Ekim): ertesi güne 3.450 ₺ devretti.” Genel bakış'tan
-  `?bakiye=1` ile açılır.
+  hesap). Son kasa raporu varsa ipucu: “Son kasa raporu (21 Ekim): ertesi güne 3.450 ₺ devretti.” Birden çok şubenin
+  kasası varsa her açık şubenin son devri ve toplamı: “Kasalar ertesi güne 4.950 ₺ devretti: Tuzla 3.450 ₺ (21 Ekim),
+  Marina 1.500 ₺ (21 Ekim).” Genel bakış'tan `?bakiye=1` ile açılır.
 - Bakiye varsa her gün: önceki gün + gelen − ödenecek. Karolar: elinizdeki para, gelecek para, ödenecek (kesin ·
   tahmini), 6 hafta sonra (en sıkışık gün). İlk eksi gün kırmızı şeritte o günün en büyük iki gideriyle yazılır;
   eksi gün yoksa yeşil şerit “6 hafta boyunca para yetiyor”. Açılışta ilk eksi günün haftası (yoksa bu hafta) açık gelir.

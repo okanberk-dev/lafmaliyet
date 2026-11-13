@@ -13,7 +13,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { useQueryState } from "@/components/ui/filters";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
-import { lineLabel, rangeText, shortDate, STALE_BALANCE_DAYS, weekTitle, type CashPlan, type CashPlanState, type PlanLine, type PlanWeek } from "@/lib/cash-plan";
+import { lineLabel, rangeText, shortDate, STALE_BALANCE_DAYS, weekTitle, type CashPlan, type CashPlanState, type PlanLine, type PlanWeek, type TillCarry } from "@/lib/cash-plan";
 import { monthLabel, money, tl } from "@/lib/format";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,7 @@ export function CashPlanClient({
   description: string;
   plan: CashPlan;
   state: CashPlanState;
-  carry: { date: string; amount: number } | null;
+  carry: TillCarry[];
   notes: { key: string; title: string; text: string }[];
 }) {
   const [ask, setAsk] = useQueryState("bakiye", "");

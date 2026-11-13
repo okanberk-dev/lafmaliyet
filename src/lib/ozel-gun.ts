@@ -39,6 +39,8 @@ export interface SpecialDay {
   byStaff?: boolean;
   /** Personelin satırında ekleyenin adı */
   addedBy?: string | null;
+  /** Kapalı günün şubesi (boş: işletme geneli; src/server/closed-days.ts) */
+  branchId?: string | null;
 }
 
 /** İşaretli yüzde: "+%15", "−%30" */

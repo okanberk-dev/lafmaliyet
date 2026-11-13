@@ -9,6 +9,7 @@ import { addDays } from "@/lib/reminders";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/special-days";
 import { deleteStaffSpecialDay, saveStaffSpecialDay } from "@/server/actions/special-days-staff";
 import { requireUser } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import { ownClosedRequests } from "@/server/closed-days";
 import { getDb } from "@/server/db";
 import { loadSpecialDays, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
@@ -71,9 +72,13 @@ export default function SpecialDaysPage() {
 }
 
 async function AdminContent() {
-  const rows = await loadSpecialDays();
+  const [rows, branches] = await Promise.all([loadSpecialDays(), listBranches()]);
   // Saat okumalardan sonra (Cache Components)
   const today = businessDate();
+  // Birden çok fiziksel şube açıkken kapalı günün şubesi seçilir ve satırda yazılır (denetim P03 incelemesi)
+  const physical = branches.filter((b) => b.active && b.kind === "fiziksel").map((b) => ({ id: b.id, name: b.name }));
+  const branchOf = (d: (typeof rows)[number]) =>
+    d.kind !== "kapali" || physical.length < 2 ? null : d.branchId ? (branches.find((b) => b.id === d.branchId)?.name ?? d.branchId) : "Bütün şubeler";
   const item = (d: (typeof rows)[number]): SpecialDayItem => ({
     id: d.id,
     dateFrom: d.dateFrom,
@@ -83,6 +88,8 @@ async function AdminContent() {
     effect: d.effect,
     note: d.note ?? null,
     addedBy: d.addedBy ?? null,
+    branchId: d.branchId ?? null,
+    branch: branchOf(d),
   });
   const upcoming = rows.filter((d) => d.dateTo >= today).map(item);
   const past = rows.filter((d) => d.dateTo < today).map(item);
@@ -91,6 +98,7 @@ async function AdminContent() {
       today={today}
       minDate={addDays(today, -SPECIAL_PAST_DAYS)}
       maxDate={addDays(today, SPECIAL_MAX_AHEAD_DAYS)}
+      branches={physical.length > 1 ? physical : []}
       saveAction={saveSpecialDay}
       deleteAction={deleteSpecialDay}
     >

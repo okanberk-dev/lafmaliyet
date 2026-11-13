@@ -20,6 +20,7 @@
  */
 
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
+import { cashBranchLabel, sortBranches, type BranchRow } from "./branches";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod, FixedSection } from "./calc/types";
 import { dayRevenue } from "./cash-revenue";
@@ -662,6 +663,40 @@ export function filingMismatchText(filing: number, reminder: number): string {
   return `Muhasebecinin rakamı ${money(filing)}, Ödemeler'deki tutar ${money(reminder)}: nakit planı Ödemeler'dekini kullanıyor. Hangisi doğruysa öbürünü düzeltin.`;
 }
 const capitalize = (t: string) => (t ? t[0].toLocaleUpperCase("tr-TR") + t.slice(1) : t);
+
+/** Bir kasanın ertesi güne devrettiği nakit: şube (birden çok fiziksel şube açıkken adı), son raporun günü ve tutarı */
+export interface TillCarry {
+  branch: string | null;
+  date: string;
+  amount: number;
+}
+
+/**
+ * Şube şube devirlerden (carryOversBefore) ipucunun satırları: açık şubelerin, şube sırasıyla; kütükte olmayan şube de
+ * yazılır (kütük okunamadıysa hepsi). Pasif şubenin son devri elde değil, yazılmaz
+ */
+export function tillCarries(carries: ReadonlyMap<string, { date: string; amount: number }>, branches: readonly BranchRow[]): TillCarry[] {
+  const order = sortBranches(branches).map((b) => b.id);
+  const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+  return [...carries]
+    .filter(([id]) => branches.find((b) => b.id === id)?.active !== false)
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+    .map(([id, c]) => ({ branch: cashBranchLabel(id, branches), date: c.date, amount: c.amount }));
+}
+
+/**
+ * "Elinizdeki para" penceresinin ipucu: tek kasada "Son kasa raporu (12 Kas): ertesi güne 1.000 ₺ devretti."; birden
+ * çok şubede her kasa ve toplamı ("Tümü"de yalnız Tuzla'nın devri yazılırdı; P03 incelemesi). Kasa yoksa null
+ */
+export function carryHint(carries: readonly TillCarry[]): string | null {
+  if (!carries.length) return null;
+  if (carries.length === 1) {
+    const c = carries[0];
+    return `Son kasa raporu${c.branch ? ` · ${c.branch}` : ""} (${dayMonthTR(c.date)}): ertesi güne ${money(c.amount)} devretti.`;
+  }
+  const total = r2(carries.reduce((a, c) => a + c.amount, 0));
+  return `Kasalar ertesi güne ${money(total)} devretti: ${carries.map((c) => `${c.branch ?? "?"} ${money(c.amount)} (${dayMonthTR(c.date)})`).join(", ")}.`;
+}
 
 /** "Bu hafta" | "Gelecek hafta" | "3. hafta" */
 export function weekTitle(index: number): string {

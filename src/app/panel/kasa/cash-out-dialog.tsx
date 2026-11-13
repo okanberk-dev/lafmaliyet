@@ -124,6 +124,7 @@ export function CashOutDialog({
   onRetry,
   onClose,
   supplierNames = [],
+  branchId,
 }: {
   open: boolean;
   mode: CashOutDialogMode;
@@ -140,6 +141,8 @@ export function CashOutDialog({
   onClose: () => void;
   /** Tedarikçilerin adları: fişsiz alışverişin Yer'i bir tedarikçiyse "Teslim · ödeme" ipucu (§8) */
   supplierNames?: string[];
+  /** Formun şubesi (yeni satır ve ekleme isteği; düzeltilen satır kendi şubesinde kalır) */
+  branchId?: string;
 }) {
   const line = mode.mode === "edit" ? mode.line : null;
   const [draft, setDraft] = useState<Draft>(() => draftOf(line, "harcama"));
@@ -233,6 +236,7 @@ export function CashOutDialog({
         categoryId: writes && draft.categoryId ? Number(draft.categoryId) : null,
         toExpenses: admin ? draft.toExpenses && harcama : writes,
         photoId,
+        ...(line || !branchId ? {} : { branchId }),
       });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
@@ -256,7 +260,15 @@ export function CashOutDialog({
       photoId,
     };
     start(async () => {
-      const res = await requestCashOutChange({ op: line ? "duzelt" : "ekle", date: line ? null : date, cashOutId: line?.id ?? null, line: lineInput, message: note, clientKey });
+      const res = await requestCashOutChange({
+        op: line ? "duzelt" : "ekle",
+        date: line ? null : date,
+        cashOutId: line?.id ?? null,
+        line: lineInput,
+        message: note,
+        clientKey,
+        ...(line || !branchId ? {} : { branchId }),
+      });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
       toast.success(`Onaya gönderildi: ${label} · ${money(amount)}`, { description: "Yönetici onaylayınca kasaya işlenir; sonucu zilde görürsünüz." });

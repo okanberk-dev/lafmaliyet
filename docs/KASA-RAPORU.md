@@ -67,11 +67,15 @@ istekler):
   üstünde "Tuzla kasa raporu · Rapor ve kasadan çıkanlar bu şubeye yazılır; başka şube için soldan şubeyi seçin.",
   kayıtlı rapor kartının açıklamasında şubenin adı. Önceki devir, sonraki rapor, yazarkasa Z'si, kasadan çıkanlar,
   bekleyen istekler, kapalı gün çubuğu ve fotoğraftan okumanın Z no denetimi de o şubeden. Form açıldığı şubeyi
-  gönderir: bu arada başka sekmede şube seçimi değiştiyse kayıt, düzeltme önerisi, silme isteği, geç rapor ve kapalı
-  gün bildirimi yazılmaz ("Şube seçimi bu arada değişti; sayfayı yenileyin").
+  gönderir: bu arada başka sekmede şube seçimi değiştiyse kayıt, düzeltme önerisi, silme isteği, geç rapor, kapalı
+  gün bildirimi ve yeni kasadan çıkan yazılmaz ("Şube seçimi bu arada değişti; sayfayı yenileyin").
 - **Günden güne** "Tümü"de günün her şube raporunu ayrı satırda, şubenin adıyla gösterir; ay kartının Z toplamı, nakit,
-  kart ve kasa farkı bütün şubelerin raporlarından, "Rapor girilen gün" günde bir kez. "Bugünün raporu" kartı her
-  şubenin bugünkü raporunu yazar.
+  kart ve kasa farkı bütün şubelerin raporlarından, "Rapor girilen gün" günde bir kez; yazarkasa satırının "28 / 30
+  gün"ü de günde bir (iki şubenin aynı günü bir gün; kümülatif zincir yalnız tek şubenin satırlarıyla). "Bugünün
+  raporu" kartı her şubenin bugünkü raporunu yazar.
+- **Bugün ve zil:** personelin kasa satırı ve akşam hatırlatması yazdığı şubenin raporuna bakar ("Tümü"de Tuzla);
+  yönetici "Tümü"de her şubenin dünkü ve bugünkü raporunu ayrı satırda, "Dünkü kasa raporu girilmedi" zilini şube
+  şube görür ([BUGUN.md](BUGUN.md), [BILDIRIMLER.md](BILDIRIMLER.md)).
 - **Açılış ↔ devir** zinciri şube şube kurulur: listede, zilde, Bugün'de, haftalık özette ve Claude'da Marina'nın
   açılışı yalnız Marina'nın önceki devriyle karşılaştırılır.
 - **Kasadan çıkanlar**, **istekler**, **gün kilidi**, **geç rapor** ve **kapalı gün** şube içindedir (aşağıdaki
@@ -344,7 +348,9 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 Kasadan çıkan şubenin satırıdır (denetim KP-04, KP-06): form ve kart yalnız formun şubesinin satırlarını gösterir
 ("Tümü"de Tuzla), raporun "Gün içinde çıkan"ı, e-posta ve WhatsApp öteki şubenin fişini saymaz. Kilit ("ertesi günün
 raporu girildi") ve kapalı gün satırın şubesine bakar: Marina'nın bugünkü raporu Tuzla'nın dünkü satırlarını ve
-fotoğraflarını personele kapatmaz.
+fotoğraflarını personele kapatmaz. Kart açıldığı şubeyi gönderir: yeni satır ve ekleme isteği o şubeye yazılır, bu arada
+başka sekmede şube seçimi değiştiyse yazılmaz ("Şube seçimi bu arada değişti; sayfayı yenileyin"); düzeltilen satır
+kendi şubesinde kalır.
 
 | Personel ne yapar | Nasıl |
 |---|---|
@@ -425,8 +431,12 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
 - **İşlem geçmişi:** "Kapalı gün bildirildi", "Kapalı gün bildirimi geri çekildi", "Kapalı gün onaylandı", "Kapalı gün
   reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
 - **Şube** (denetim KP-05): kapalı gün şube başına. Kasa'nın "Kafe kapalıydı"sı ve personelin bildiriminin onayı formun
-  şubesini yazar (`special_days.branch_id`); Satış tahmini'nde girilen kapalı gün işletme genelidir (şubesi boş, her
-  şubede kapalı sayılır). Bir şubenin raporu yalnız kendi şubesinin ve işletme genelinin tek günlük işaretini kaldırır;
+  şubesini yazar (`special_days.branch_id`); Özel günler'de kapalı günün şubesi seçilir ("Bütün şubeler" işletme
+  genelidir: şubesi boş, her şubede kapalı sayılır). Bir şubenin raporu (ya da LafPOS gün sonu, Z boşluğu) kendi
+  şubesinin tek günlük işaretini kaldırır; işletme geneli tek günlük işareti yalnız o şube için kaldırır: işaret öteki
+  açık şubelere (o gün raporu ya da kendi işareti olmayanlara) aynı adla şubeli satır olarak kalır, onların onaylı
+  bildirimi yeni satıra geçer, işlem geçmişine "8 Kasım Pazar · Marina: kasa raporu girildi · Tuzla kapalı kalıyor"
+  yazılır. Böylece Özel günler'de "Bütün şubeler" diye girilmiş planlı kapanış, bir şube açılınca ötekinden silinmez.
   Marina'nın raporu Tuzla'nın işaretine ve bildirimine dokunmaz. Kanıtın kasa raporu, LafPOS gün sonu, kasadan çıkan,
   zayi, Z no ve açılış sürekliliği şubenin kayıtlarından; kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz
   kayıtlardır, işletme genelinden sayılır (öteki şubenin personeli o gün panelde çalıştıysa kanıt görünür; yönetici günü
@@ -434,7 +444,7 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   işletme geneli kaldı.
 - Kod: saf kurallar `src/lib/closed-days.ts`, kanıt ve kancalar `src/server/closed-days.ts`, istek ve karar
   `src/server/closed-day-requests.ts`, uçlar `src/server/actions/closed-days.ts`. Testler `tests/kapali-gun.test.ts`,
-  `tests/kapali-gun-db.test.ts`, `tests/sube-kasa-ekrani-db.test.ts`.
+  `tests/kapali-gun-db.test.ts`, `tests/sube-kasa-ekrani-db.test.ts`, `tests/sube-kasa-inceleme-db.test.ts`.
 
 ## laffogato.net satırı (bilgi)
 

@@ -26,10 +26,9 @@ import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/p
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
-import { okcServerColumns } from "@/server/cash/report-store";
+import { assertFormBranch, okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { kasaEvidence } from "@/server/data/lafpos-day";
-import { currentWriteBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -62,6 +61,8 @@ export interface CashOutChangeInput {
   /** Yöneticiye not (en çok 200) */
   message: string | null;
   clientKey: string | null;
+  /** Eklemede formun şubesi (Kasa'nın açıldığı andaki seçim); seçim bu arada değiştiyse istek açılmaz. Eski sekme göndermez */
+  branchId?: string;
 }
 
 /** Satırın istendiği andaki hâli (bağlı harcama kaydıyla) */
@@ -112,7 +113,8 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
     if (input.op === "ekle") {
       if (!input.date || !input.line) throw new UserError("Satırı yazın");
       if (!input.clientKey) throw new UserError("Sayfayı yenileyip yeniden deneyin");
-      if ((await staffCashOutGate(tx, me, { op: "ekle", date: input.date }, now)) === "direct") throw new UserError(CASH_OUT_REQUEST_TEXT.direct);
+      const branchId = await assertFormBranch(input.branchId);
+      if ((await staffCashOutGate(tx, me, { op: "ekle", date: input.date, branchId }, now)) === "direct") throw new UserError(CASH_OUT_REQUEST_TEXT.direct);
       const line = cleanLine(input.line);
       if (line.categoryId) {
         const [cat] = await tx.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, line.categoryId)).limit(1);
@@ -126,7 +128,7 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
       if (line.docType === "fis" && !line.photoId) line.docType = "yok";
       subject = `cikan-yeni:${input.clientKey}`;
       // Şube isteği AÇAN personelinki: onay anında yönetici başka şubeye bakıyor olabilir (docs/SUBE.md)
-      payload = CashOutRequestPayload.parse({ op: "ekle", day: input.date, cashOutId: null, line, before: null, branchId: await currentWriteBranch() });
+      payload = CashOutRequestPayload.parse({ op: "ekle", day: input.date, cashOutId: null, line, before: null, branchId });
     } else {
       if (!input.cashOutId) throw new UserError(CASH_OUT_REQUEST_TEXT.rowGone);
       const row = await lockCashOut(tx, input.cashOutId);

@@ -10,6 +10,7 @@ import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
+import { assertFormBranch } from "@/server/cash/report-store";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
 import { getDb } from "@/server/db";
@@ -47,7 +48,7 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
     if (!admin) {
-      const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date });
+      const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date, branchId: opts.branchId });
       // Gün değişen satır şubesinde kalır: yeni günün kilidi satırın şubesinde
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date, branchId: prev.branchId }) : "direct";
       if (gate === "request" || moved === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
@@ -60,11 +61,18 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
   return { id: saved.id, expenseId: saved.expenseId };
 }
 
+/**
+ * Formun şubesi (Kasa'nın açıldığı andaki seçim; "Tümü"de Tuzla): yeni satır bu şubeye yazılır, seçim bu arada başka
+ * sekmede değiştiyse yazılmaz (assertFormBranch; P03 incelemesi). Düzeltilen satır kendi şubesinde kalır. Eski sekme göndermez
+ */
+const saveSchema = cashOutSchema.extend({ branchId: z.string().min(1).max(24).optional() });
+
 /** Kasadan çıkan satırını ekler ya da düzeltir */
-export async function saveCashOut(input: CashOutInput) {
+export async function saveCashOut(input: CashOutInput & { branchId?: string }) {
   return attempt(async () => {
     const me = await requireUser();
-    return persist(me, cashOutSchema.parse(input));
+    const { branchId, ...d } = saveSchema.parse(input);
+    return persist(me, d, d.id ? {} : { branchId: await assertFormBranch(branchId) });
   });
 }
 

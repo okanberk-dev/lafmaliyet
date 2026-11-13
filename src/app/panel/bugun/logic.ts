@@ -39,11 +39,14 @@ import type { OpsDayFacts } from "./rows-ops";
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
  * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
- * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı.
+ * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı. Yöneticinin "Tümü"deki
+ * öteki şube kasa satırları `kasa-dun-{şube}`, `kasa-{şube}` (perBranch).
  */
 export type DayTaskKey =
   | "isler"
   | "kasa-dun"
+  | `kasa-dun-${string}`
+  | `kasa-${string}`
   | "liste-dun"
   | `liste-${number}`
   | "liste"
@@ -108,8 +111,12 @@ export interface DayFacts {
    * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
    */
   lafposSwitch?: string | null;
-  /** Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı */
-  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
+  /**
+   * Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı. Raporlar yazılan şubenin (seçili şube; "Tümü"de
+   * Tuzla: Kasa formu ve dünkü kapalı gün de onun). `branch`: birden çok fiziksel şube açıkken şubenin adı (satırın
+   * başlığında). `others`: yalnız yönetici, "Tümü"de raporu başlamış öteki şubeler; her biri kendi satırında (perBranch)
+   */
+  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null; branch?: string | null; others?: CashBranchFacts[] } | null;
   /**
    * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `lafpos`: iş günü LafPOS
    * günü (ürün ikramı LafPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
@@ -173,7 +180,26 @@ export interface DayFacts {
    * Dün kafe kapalı mıydı: yöneticinin onayladığı ya da personelin bildirdiği, onay bekleyen kapalı gün (özel günün
    * `kapali` satırı; src/server/closed-days.ts). Yoksa null
    */
-  closed?: { yesterday: { state: "approved" | "pending" | "rejected"; by: string; requestId: number | null; note?: string | null } | null } | null;
+  closed?: { yesterday: ClosedYesterdayFact | null } | null;
+}
+
+/** Dünkü kapalı gün: onaylı satır, bekleyen ya da reddedilen bildirim (src/server/closed-days.ts closedYesterday) */
+export interface ClosedYesterdayFact {
+  state: "approved" | "pending" | "rejected";
+  by: string;
+  requestId: number | null;
+  note?: string | null;
+}
+
+/** Yöneticinin "Tümü"deki öteki şubesinin kasa olguları: kendi raporları, ilk raporu ve dünkü kapalı günü */
+export interface CashBranchFacts {
+  id: string;
+  /** Şubenin adı (birden çok fiziksel şube açıkken; satırın başlığında) */
+  branch: string | null;
+  today: CashLite | null;
+  yesterday: CashLite | null;
+  firstDate: string | null;
+  closed: ClosedYesterdayFact | null;
 }
 
 /** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
@@ -249,8 +275,8 @@ export function cashFlags(
   viewer: number,
   modpos: ReadonlySet<string> = new Set(),
 ): Map<string, string[]> {
-  // Zincir şube şube (denetim HM-X1): "Tümü"de Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz. Bugün günde tek
-  // satır gösterir: aynı günün şube raporlarının işaretleri birleşir
+  // Zincir şube şube (denetim HM-X1): "Tümü"de Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz. Bugün şube şube
+  // çağırır (her şubenin satırı kendi işaretleriyle); karışık liste verilirse aynı günün işaretleri birleşir
   const checks = branchCarryChecks(reports, before);
   const out = new Map<string, string[]>();
   for (const r of [...reports].sort((a, b) => a.date.localeCompare(b.date))) {
@@ -290,10 +316,33 @@ function cashDetail(r: CashLite, full: boolean): string {
   return parts.join(" · ");
 }
 
+/** Satırın başlığı, birden çok fiziksel şube açıkken şubeyle: "Dünkü kasa raporu · Marina" */
+const branchTitle = (title: string, f: DayFacts) => (f.cash?.branch ? `${title} · ${f.cash.branch}` : title);
+
+/**
+ * Yöneticinin kasa satırı "Tümü"de şube şube (P03 incelemesi): önce yazılan şubenin (Tuzla) satırı, ardından raporu
+ * başlamış her öteki şubenin kendi raporu, farkı, işaretleri ve dünkü kapalı günüyle (anahtar "-<şube>" ekli). Bir
+ * şubenin raporu ötekinin satırını "gönderildi" yapmaz, işaretler şubeler arasında birleşmez
+ */
+const perBranch =
+  (row: Row): Row =>
+  (f, c) => {
+    const own = row(f, c);
+    const others = f.role === "admin" ? (f.cash?.others ?? []) : [];
+    if (!others.length) return own;
+    const list = (t: ReturnType<Row>): DayTask[] => (t === null ? [] : Array.isArray(t) ? t : [t]);
+    return [
+      ...list(own),
+      ...others.flatMap((b) =>
+        list(row({ ...f, cash: { today: b.today, yesterday: b.yesterday, firstDate: b.firstDate, branch: b.branch }, closed: { yesterday: b.closed } }, c)).map((t): DayTask => ({ ...t, key: `${t.key}-${b.id}` as DayTaskKey })),
+      ),
+    ];
+  };
+
 /** Dünün raporu: yöneticiye farkı ve bütünlüğü; ikisine de girilmediyse (kasa kullanılmaya başladıysa) */
 const cashYesterday: Row = (f, c) => {
   const admin = f.role === "admin";
-  const title = "Dünkü kasa raporu";
+  const title = branchTitle("Dünkü kasa raporu", f);
   const href = `/panel/kasa?gun=${c.yesterday}`;
   if (!f.cash) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
   const r = f.cash.yesterday;
@@ -372,7 +421,7 @@ export function eveningCashText(kasa: KasaName): string {
 const cashToday: Row = (f, c) => {
   const href = `/panel/kasa?gun=${c.day}`;
   if (f.role === "admin") {
-    const title = "Bugünkü kasa raporu";
+    const title = branchTitle("Bugünkü kasa raporu", f);
     // Okunamadıysa dünün satırı zaten söylüyor
     if (!f.cash) return null;
     const r = f.cash.today;
@@ -380,7 +429,7 @@ const cashToday: Row = (f, c) => {
     if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
     return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Personel kapanışta girer.", href, action: "Kasa raporu" };
   }
-  const title = "Kasa raporu";
+  const title = branchTitle("Kasa raporu", f);
   if (!f.cash) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
   const r = f.cash.today;
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
@@ -779,7 +828,7 @@ const pricesRow: Row = (f) => {
  */
 const ADMIN_ROWS: Row[] = [
   systemRow, // isler
-  cashYesterday, // kasa-dun
+  perBranch(cashYesterday), // kasa-dun ("Tümü"de öteki şubeler kasa-dun-{şube})
   checklistYesterday, // liste-dun
   paymentsRow, // odeme
   commissionRow, // komisyon
@@ -794,7 +843,7 @@ const ADMIN_ROWS: Row[] = [
   countStaffEdit, // sayim-personel
   countExtrasPrice, // sayim-ek-fiyat
   checklistRows, // liste-{templateId} (açılış saatine göre)
-  cashToday, // kasa
+  perBranch(cashToday), // kasa ("Tümü"de öteki şubeler kasa-{şube})
   countMonthEnd, // sayim-son
 ];
 

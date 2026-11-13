@@ -3,7 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 
 import type { DayFacts } from "@/app/panel/bugun/logic";
-import { cashBranchLabel, DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { cashBranchLabel, DEFAULT_BRANCH_ID, sortBranches } from "@/lib/branches";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
 import { requestBranch, subjectBranch } from "@/lib/cash-requests";
 import {
@@ -36,7 +36,8 @@ import { getDb, schema as s } from "@/server/db";
  * (Satış tahmini, Kasa'daki "Kafe kapalıydı", bildirimin onayı): satırın varlığı onaydır.
  *
  * Şube (denetim KP-05; docs/SUBE.md): kasa raporu şube başına, kapalı gün de. Kasa'nın "Kafe kapalıydı"sı ve bildirimin
- * onayı raporun şubesini yazar; şubesi boş satır işletme genelidir (Satış tahmini, bayram) ve her şubede kapalı sayılır.
+ * onayı raporun şubesini yazar; şubesi boş satır işletme genelidir (Özel günler, bayram) ve her şubede kapalı sayılır.
+ * Bir şubenin kanıtı işletme geneli tek günlük satırı yalnız o şube için kaldırır: satır öteki şubelere şubeli kalır.
  * Şube verilen okuyucular o şubenin ve işletme genelinin satırlarına, kanıt ve Z boşluğu o şubenin kayıtlarına bakar;
  * şube verilmezse ("Tümü", işletme geneli ekranlar) bütün satırlar. Kontrol listesi, karaoke ve personelin işlem geçmişi
  * şubesiz kayıtlardır: kanıtta işletme geneli kalır.
@@ -234,6 +235,54 @@ async function dropClosedMark(tx: Tx, row: { id: number; dateFrom: string; dateT
   await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", `${longDateTR(row.dateFrom)} · ${why}`);
 }
 
+/**
+ * Tek günlük kapalı işaret bir şube için kanıtla kalktı (rapor, LafPOS gün sonu, Z boşluğu). Şubenin kendi satırı silinir
+ * (dropClosedMark). İşletme geneli (şubesi boş) satır yalnız o şube için kalkar (P03 incelemesi; planlı Tuzla kapanışı
+ * Marina'nın raporuyla silinmesin): o gün raporu ya da kendi işareti olmayan öteki açık fiziksel şubelere aynı satır
+ * şubeli olarak yazılır, onların onaylı bildirimleri kendi satırlarına geçer, kanıt gelen şubeninki `revoked` olur.
+ * Başka fiziksel şube yoksa eskisi gibi satır silinir.
+ */
+async function clearClosedMark(tx: Tx, row: typeof s.specialDays.$inferSelect, branchId: string, why: string, now: Date) {
+  if (row.branchId !== null) return dropClosedMark(tx, row, why, now);
+  const day = row.dateFrom;
+  const [branches, reported, marks] = await Promise.all([
+    tx.select({ id: s.branches.id, name: s.branches.name, active: s.branches.active, kind: s.branches.kind, sortOrder: s.branches.sortOrder }).from(s.branches),
+    tx.select({ branchId: s.cashReports.branchId }).from(s.cashReports).where(eq(s.cashReports.date, day)),
+    coveringRows(tx, day),
+  ]);
+  const others = sortBranches(branches).filter((b) => b.active && b.kind === "fiziksel" && b.id !== branchId);
+  if (!others.length) return dropClosedMark(tx, row, why, now);
+  // Şubenin kendi işareti varsa yenisi yazılmaz (onaylı bildirimi oraya geçer); o gün raporu olan şube açıktı
+  const target = new Map<string, number>();
+  for (const m of marks) if (m.branchId && !target.has(m.branchId)) target.set(m.branchId, m.id);
+  const open = new Set(reported.map((r) => r.branchId));
+  const { id: _id, branchId: _b, ...copy } = row;
+  void _id;
+  void _b;
+  const kept: string[] = [];
+  for (const b of others) {
+    if (target.has(b.id) || open.has(b.id)) continue;
+    const [n] = await tx
+      .insert(s.specialDays)
+      .values({ ...copy, branchId: b.id })
+      .returning({ id: s.specialDays.id });
+    target.set(b.id, n.id);
+    kept.push(b.name);
+  }
+  await tx.delete(s.specialDays).where(eq(s.specialDays.id, row.id));
+  const approved = await tx
+    .select({ id: s.staffRequests.id, subject: s.staffRequests.subject, payload: s.staffRequests.payload })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "approved"), eq(s.staffRequests.resultId, row.id)));
+  for (const r of approved) {
+    const to = requestBranch(r) !== branchId ? target.get(requestBranch(r)) : undefined;
+    if (to) await tx.update(s.staffRequests).set({ resultId: to, updatedAt: now }).where(eq(s.staffRequests.id, r.id));
+  }
+  await revokeFor(tx, row.id, why, now);
+  const name = branches.find((b) => b.id === branchId)?.name ?? branchId;
+  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", [longDateTR(day), `${name}: ${why}`, kept.length ? `${kept.join(", ")} kapalı kalıyor` : null].filter(Boolean).join(" · "));
+}
+
 /** Şubenin bu günkü bekleyen kapalı gün bildirimleri kapanır (öteki şubeninkiler bekler) */
 async function supersedeClosedRequests(tx: Tx, date: string, branchId: string, note: string, now: Date): Promise<void> {
   const pending = await tx
@@ -247,14 +296,15 @@ async function supersedeClosedRequests(tx: Tx, date: string, branchId: string, n
 
 /**
  * Bir şubenin bir günkü raporu ilk kez girildi (writeCashReport, işlemin içinde): o şubenin aynı günkü bekleyen kapalı
- * gün bildirimi kapanır ("Kasa raporu girildi"). Günü kapsayan, şubenin ya da işletme genelinin tek günlük kapalı satırı
- * silinir (istek `revoked`, yöneticinin zilinde); çok günlük aralıkta yalnız zil: "Kapalı aralığın içindeki 3 Kas'a
- * rapor girildi; …". Öteki şubenin işaretine ve bildirimine dokunulmaz (denetim KP-05).
+ * gün bildirimi kapanır ("Kasa raporu girildi"). Günü kapsayan, şubenin tek günlük kapalı satırı silinir (istek
+ * `revoked`, yöneticinin zilinde); işletme geneli tek günlük satır yalnız bu şube için kalkar, öteki şubelerde kalır
+ * (clearClosedMark). Çok günlük aralıkta yalnız zil: "Kapalı aralığın içindeki 3 Kas'a rapor girildi; …". Öteki şubenin
+ * işaretine ve bildirimine dokunulmaz (denetim KP-05).
  */
 export async function onReportSaved(tx: Tx, date: string, branchId: string, now = new Date()): Promise<void> {
   await supersedeClosedRequests(tx, date, branchId, "Kasa raporu girildi", now);
   for (const row of await coveringRows(tx, date, branchId)) {
-    if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, "kasa raporu girildi", now);
+    if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, branchId, "kasa raporu girildi", now);
     else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Satış tahmini › Özel günler'den aralığı düzeltin`);
   }
 }
@@ -262,7 +312,8 @@ export async function onReportSaved(tx: Tx, date: string, branchId: string, now 
 /**
  * LafPOS'un satışlı gün sonu geldi (storePosDay, aynı işlemde; denetim E-36): gün LafPOS günüyse (geçiş günü seçili ve
  * gün ondan önce değil) kasa raporunun gelişi gibi: aynı günün bekleyen kapalı gün bildirimi kapanır, günü kapsayan tek
- * günlük kapalı satırı silinir (onaylayan istek `revoked`, yöneticinin zilinde "kanıt geldi"); çok günlük aralıkta
+ * günlük kapalı satırı bu şube için kalkar (onaylayan istek `revoked`, yöneticinin zilinde "kanıt geldi"; işletme geneli
+ * satır öteki şubelerde kalır, clearClosedMark); çok günlük aralıkta
  * yalnız zil. Geçiş günü boşken, gün ondan önceyse ya da gün sonunda satış yoksa (fiş ve Z toplamı 0) hiçbir şey
  * yapılmaz: deneme günü hiçbir kaydı değiştirmez (sahibin 26 Ekim kararı). Bildirimin onayıyla yarışmasın diye günün
  * kapalı gün kilidi alınır (onay kanıtı bu kilidin altında sayar). `soldSince`: aynı günün satışlı gün sonu daha önce
@@ -285,7 +336,7 @@ export async function onLafposDaySaved(
   await supersedeClosedRequests(tx, date, branchId, why, now);
   for (const row of await coveringRows(tx, date, branchId)) {
     if (soldSince && row.createdAt >= soldSince) continue;
-    if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, why, now);
+    if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, branchId, why, now);
     else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Satış tahmini › Özel günler'den aralığı düzeltin`);
   }
 }
@@ -293,7 +344,7 @@ export async function onLafposDaySaved(
 /**
  * Sonraki günün raporu girildi (writeCashReport, işlemin içinde): önceki gün raporun şubesi için kapalı işaretliyse Z no
  * sürekliliği aynı şubenin raporlarıyla denetlenir (denetim KP-05: iki şubenin Z no'ları karışmaz). O güne bir Z
- * düşmüşse (boşluk, arada başka raporsuz gün yok) tek günlük işaret kalkar; açılış devirle tutmuyorsa yalnız zil
+ * düşmüşse (boşluk, arada başka raporsuz gün yok) tek günlük işaret bu şube için kalkar; açılış devirle tutmuyorsa yalnız zil
  * (işlem geçmişi).
  */
 export async function onNextReport(tx: Tx, report: { date: string; zNo: string | null; openingCash: number; branchId: string }, now = new Date()): Promise<void> {
@@ -314,7 +365,7 @@ export async function onNextReport(tx: Tx, report: { date: string; zNo: string |
   const gap = zGapOf(day, prev, { date: report.date, zNo: report.zNo }, others);
   if (gap?.level === "red") {
     for (const row of rows) {
-      if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, `Z no boşluğu: ${gap.text}`, now);
+      if (row.dateFrom === row.dateTo) await clearClosedMark(tx, row, report.branchId, `Z no boşluğu: ${gap.text}`, now);
       else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Satış tahmini › Özel günler'den aralığı düzeltin`);
     }
     return;
@@ -343,13 +394,14 @@ const requestCols = {
 
 /**
  * Bugün'ün olgusu: dün kafe kapalı mıydı (onaylı satır, bekleyen ya da reddedilen bildirim); yoksa `yesterday` null.
- * Kasa formunun şubesi için ("Tümü"de Tuzla; Bugün'ün dünkü kasa satırı da onun)
+ * `branch` verilmezse Kasa formunun şubesi için ("Tümü"de Tuzla; Bugün'ün dünkü kasa satırı da onun); yöneticinin
+ * "Tümü"deki öteki şube satırları ve zili kendi şubesini verir
  */
-export async function closedYesterday(user: CurrentUser, now: Date): Promise<DayFacts["closed"]> {
+export async function closedYesterday(user: CurrentUser, now: Date, branch?: string): Promise<DayFacts["closed"]> {
   void user;
   const y = addDays(businessDate(now), -1);
   const db = getDb();
-  const branchId = await currentWriteBranch();
+  const branchId = branch ?? (await currentWriteBranch());
   const [rows, reqs] = await Promise.all([
     coveringRows(db, y, branchId),
     db

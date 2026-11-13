@@ -13,7 +13,7 @@ import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentWriteBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { carryOversBefore, cashReportsBetween, cashRevisionsFor, reportedDays } from "@/server/data/cash-reports";
+import { carryOversBefore, cashBranchesInScope, cashReportsBetween, cashRevisionsFor, reportedDays, type CashBranch } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { loadKasaLafposDays } from "@/server/data/lafpos-day";
@@ -58,14 +58,20 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   }
   const out: PanelNotification[] = [];
   const yesterday = addDays(day, -1);
-  // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9)
-  const closed = reports.some((r) => r.date === yesterday) ? null : ((await closedYesterday(user, now).catch(() => null))?.yesterday ?? null);
-  if (!reports.some((r) => r.date === yesterday) && closed?.state !== "approved") {
+  // Dünkü rapor şube şube (P03 incelemesi): yazılan şube (seçili; "Tümü"de Tuzla) ve "Tümü"de raporu başlamış öteki açık
+  // fiziksel şubeler, her biri yalnız kendi raporuyla ve kendi kapalı günüyle (Marina'nın raporu Tuzla'nın eksiğini
+  // susturmaz). Dün onaylı kapalıysa satır yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10
+  // §2.9). Birden çok şube açıkken gövde şubeyi yazar; Tuzla'nın kimliği eskisi gibi
+  const expected = await cashBranchesInScope().catch(async (): Promise<CashBranch[]> => [{ id: await currentWriteBranch(), label: null, firstDate: null }]);
+  for (const b of expected) {
+    if (reports.some((r) => r.date === yesterday && r.branchId === b.id)) continue;
+    const closed = (await closedYesterday(user, now, b.id).catch(() => null))?.yesterday ?? null;
+    if (closed?.state === "approved") continue;
     out.push({
-      id: `kasa-yok-${yesterday}`,
+      id: `kasa-yok-${yesterday}${branchKeySuffix(b.id, "-")}`,
       kind: "warning",
       title: "Dünkü kasa raporu girilmedi",
-      body: `${longDateTR(yesterday)}${closed?.state === "pending" ? " · Personel: kapalıydık dedi (onay bekliyor)" : ""}`,
+      body: [b.label, longDateTR(yesterday), closed?.state === "pending" ? "Personel: kapalıydık dedi (onay bekliyor)" : null].filter(Boolean).join(" · "),
       timeLabel: "Dün",
       unread: true,
       href: `/panel/kasa?gun=${yesterday}`,

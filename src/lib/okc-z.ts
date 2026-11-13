@@ -862,6 +862,8 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
 /** Ay okuyucusunun satırı (`cash_reports`'un ilgili sütunları) */
 export interface OkcRow {
   date: string;
+  /** Raporun şubesi ("Tümü"de iki şubenin aynı günü iki satır; her şubenin kendi yazarkasası) */
+  branchId?: string;
   /** ModPOS Z toplamı */
   zTotal: number;
   okcZNo?: string | null;
@@ -882,7 +884,7 @@ export interface OkcRateSum {
 
 export interface OkcMonth {
   month: string;
-  /** Z toplamı > 0 rapor günü */
+  /** Z toplamı > 0 rapor günü (günler günde bir: "Tümü"de iki şubenin raporu olan gün bir gün) */
   reportDays: number;
   /** Yazarkasa toplamı girilmiş gün */
   days: number;
@@ -912,15 +914,19 @@ export interface OkcMonth {
 
 /**
  * Ayın yazarkasa kapsamı ve oran oran toplamları (plan §9). Bu dalgada yalnız okuyucu: hiçbir ekranın hesabı
- * değişmez. KDV dökümü olmayan bir günü olan ay toplamı tam olsa bile `complete: false` döner.
+ * değişmez. KDV dökümü olmayan bir günü olan ay toplamı tam olsa bile `complete: false` döner. Satırlar birden çok
+ * şubeninse ("Tümü") tutarlar toplanır, gün sayıları ve gün listeleri günde birdir (P03 incelemesi); kümülatif zincir
+ * her yazarkasanın kendisinin olduğundan yalnız tek şubenin satırlarında kurulur.
  */
 export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
   const inMonth = rows.filter((r) => r.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
-  const reportDays = inMonth.filter((r) => r.zTotal > 0).length;
+  const dates = (list: readonly OkcRow[]) => [...new Set(list.map((r) => r.date))];
+  const reportDays = dates(inMonth.filter((r) => r.zTotal > 0)).length;
   const entered = inMonth.filter((r) => isNum(r.okcTotal));
-  const missing = inMonth.filter((r) => r.zTotal > 0 && !isNum(r.okcTotal)).map((r) => r.date);
+  const missing = dates(inMonth.filter((r) => r.zTotal > 0 && !isNum(r.okcTotal)));
   const withVat = entered.filter((r) => normalizeVat(r.okcVat).length > 0);
-  const vatMissing = entered.filter((r) => normalizeVat(r.okcVat).length === 0).map((r) => r.date);
+  const noVat = entered.filter((r) => normalizeVat(r.okcVat).length === 0);
+  const vatMissing = dates(noVat);
   const total = r2(entered.reduce((a, r) => a + r.okcTotal!, 0));
   const vatTotal = r2(entered.reduce((a, r) => a + (r.okcVatTotal ?? 0), 0));
 
@@ -936,7 +942,7 @@ export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
 
   let byRateEstimated: OkcRateSum[] | null = null;
   if (vatMissing.length && byRateTotal > 0) {
-    const missingTotal = entered.filter((r) => vatMissing.includes(r.date)).reduce((a, r) => a + r.okcTotal!, 0);
+    const missingTotal = noVat.reduce((a, r) => a + r.okcTotal!, 0);
     byRateEstimated = byRate.map((s) => {
       const t = (missingTotal * s.total) / byRateTotal;
       const v = s.total > 0 ? (t * s.vat) / s.total : 0;
@@ -947,8 +953,9 @@ export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
   // Zincir: ayın son saklanan kümülatifi − önceki ayın son saklanan kümülatifi
   const start = `${month}-01`;
   const withCum = rows.filter((r) => isNum(r.okcCumTotal) && r.okcZNo).sort((a, b) => a.date.localeCompare(b.date));
-  const before = [...withCum].reverse().find((r) => r.date < start);
-  const last = [...withCum].reverse().find((r) => r.date.slice(0, 7) === month);
+  const oneTill = new Set(rows.map((r) => r.branchId).filter(Boolean)).size <= 1;
+  const before = oneTill ? [...withCum].reverse().find((r) => r.date < start) : undefined;
+  const last = oneTill ? [...withCum].reverse().find((r) => r.date.slice(0, 7) === month) : undefined;
   const chain =
     before && last
       ? {
@@ -963,5 +970,5 @@ export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
   const complete =
     (missing.length === 0 && vatMissing.length === 0 && entered.length > 0 && ratesMatch) ||
     (chain !== null && Math.abs(chain.total - total) <= TOL && vatMissing.length === 0 && entered.length > 0 && ratesMatch);
-  return { month, reportDays, days: entered.length, missing, vatDays: withVat.length, vatMissing, total, vatTotal, byRate, byRateEstimated, chain, complete };
+  return { month, reportDays, days: dates(entered).length, missing, vatDays: dates(withVat).length, vatMissing, total, vatTotal, byRate, byRateEstimated, chain, complete };
 }

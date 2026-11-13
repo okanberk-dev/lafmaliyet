@@ -348,6 +348,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       oldDays={oldDays}
       supplierNames={supplierNames}
       hints={cariHints}
+      branchId={formBranch}
     />
   ) : null;
   const yesterday = addDays(today, -1);

@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 
-import { ALL_BRANCHES, tillOpenedOn } from "@/lib/branches";
+import { ALL_BRANCHES, cashBranchLabel, tillOpenedOn } from "@/lib/branches";
 import type { Month } from "@/lib/calc/types";
 import { modposRunStart, type MonthEntry, resolveBranchMonths, resolveMonth, type TillRow, tillMonths } from "@/lib/cash-month";
 import {
@@ -254,6 +254,7 @@ export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): 
   return db
     .select({
       date: s.cashReports.date,
+      branchId: s.cashReports.branchId,
       zTotal: s.cashReports.zTotal,
       okcZNo: s.cashReports.okcZNo,
       okcTotal: s.cashReports.okcTotal,
@@ -295,6 +296,36 @@ export async function reportedDays(days: readonly string[]): Promise<Set<string>
 export async function firstCashReportDate(): Promise<string | null> {
   const [row] = await getDb().select({ date: s.cashReports.date }).from(s.cashReports).where(await subeKosulu()).orderBy(asc(s.cashReports.date)).limit(1);
   return row?.date ?? null;
+}
+
+/** Kasa raporu beklenen şube: kimlik, birden çok fiziksel şube açıkken adı (cashBranchLabel), ilk raporunun günü */
+export interface CashBranch {
+  id: string;
+  label: string | null;
+  firstDate: string | null;
+}
+
+/**
+ * Kasa raporu beklenen şubeler (Bugün'ün kasa satırları, yöneticinin "Dünkü kasa raporu girilmedi" zili): önce yazılan
+ * şube (seçili şube; "Tümü"de Tuzla, Kasa formu ve kapalı gün onunki), "Tümü"de ardından raporu başlamış öteki açık
+ * fiziksel şubeler. Raporu hiç olmayan şube beklenmez (kasayı henüz kullanmıyor). Her şube yalnız kendi raporuyla
+ * raporlu sayılır: Marina'nın raporu Tuzla'nın gününü raporlu yapmaz (P03 incelemesi)
+ */
+export async function cashBranchesInScope(): Promise<CashBranch[]> {
+  const [scope, write, branches, firsts] = await Promise.all([
+    currentBranchScope(),
+    currentWriteBranch(),
+    listBranches(),
+    getDb()
+      .select({ branchId: s.cashReports.branchId, date: sql<string>`min(${s.cashReports.date})` })
+      .from(s.cashReports)
+      .groupBy(s.cashReports.branchId),
+  ]);
+  const first = new Map(firsts.map((r) => [r.branchId, r.date]));
+  const of = (id: string): CashBranch => ({ id, label: cashBranchLabel(id, branches), firstDate: first.get(id) ?? null });
+  if (scope !== ALL_BRANCHES) return [of(write)];
+  const others = branches.filter((b) => b.id !== write && b.active && b.kind === "fiziksel" && first.has(b.id));
+  return [of(write), ...others.map((b) => of(b.id))];
 }
 
 /**

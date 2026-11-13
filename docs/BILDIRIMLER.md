@@ -46,7 +46,10 @@ silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)).
 yöneticide tek satırdır ("1 karaoke sayacı silme isteği onay bekliyor", ilk karta); personelde sonucu "Silme onaylandı:
 karaoke sayacı 24 Eki 21:00–23:00", Karaoke ekranına ([KARAOKE.md](KARAOKE.md) › Sayacı silmek). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
-bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. Bu satır şube şubedir: seçili şube, "Tümü"de Tuzla ve raporu
+başlamış öteki açık fiziksel şubeler, her biri yalnız kendi raporu ve kapalı günüyle (Marina'nın raporu Tuzla'nın
+eksiğini susturmaz); birden çok şube açıkken gövde şubeyle başlar ("Tuzla · 12 Kasım Perşembe"), Tuzla dışındaki
+şubenin kimliğinde şube vardır. Personelin akşam hatırlatması da yazdığı şubenin raporuna bakar. LafPOS'a geçildiyse (geçiş gününden sonraki günler) yöneticinin
 kasa başlığında son 7 günün LafPOS'un gün sonundan farklı yazılan raporları da durur: "Kasa raporu LafPOS'tan farklı ·
 11 Kasım · Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; LafPOS günü rapordan sonra farklı rakamla yeniden gönderdiyse
 "LafPOS rapordan sonra farklı rakamla geldi" (yeniden gönderim ya da düzeltme satırı yeniden okunmamış yapar;

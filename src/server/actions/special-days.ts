@@ -43,6 +43,11 @@ const specialInput = z.object({
     .max(200, "Not en çok 200 karakter")
     .nullish()
     .transform((v) => v || null),
+  /**
+   * Kapalı günün şubesi (yalnız `kapali`; denetim P03 incelemesi): boş işletme geneli, dolu yalnız o şube (planlı Tuzla
+   * tadilatı Marina'yı kapatmaz). Düzenlemede verilmezse kayıtlıdaki kalır; "Geri al" silinenin şubesiyle yazar
+   */
+  branchId: z.string().min(1).max(24).nullish(),
 });
 
 export type SpecialDayInput = z.input<typeof specialInput>;
@@ -53,6 +58,8 @@ export interface SpecialDayValues {
   dateTo: string;
   effect: 0.3 | 0.15 | 0 | -0.15 | -0.3;
   note: string | null;
+  /** Kapalı günün şubesi (boş: işletme geneli); "Geri al" satırı aynı şubeye yazar */
+  branchId: string | null;
 }
 
 /**
@@ -75,18 +82,26 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     // Personelin yazımlarıyla aynı danışma kilidi (src/server/closed-days.ts lockSpecialDays): çakışma ve sınırlar yarışmaz
     const id = await getDb().transaction(async (tx) => {
       await lockSpecialDays(tx);
-      // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş)
+      // Şube yalnız kapalı günde; verilmeyen (eski sekme, düzenleme) kayıtlıdakini korur
+      const [current] = d.id ? await tx.select({ branchId: s.specialDays.branchId }).from(s.specialDays).where(eq(s.specialDays.id, d.id)).limit(1) : [];
+      const branchId = d.kind !== "kapali" ? null : d.branchId !== undefined ? d.branchId : (current?.branchId ?? null);
+      if (branchId) {
+        const [b] = await tx.select({ id: s.branches.id }).from(s.branches).where(and(eq(s.branches.id, branchId), eq(s.branches.kind, "fiziksel"))).limit(1);
+        if (!b) throw new UserError("Şube bulunamadı (sayfayı yenileyin)");
+      }
+      // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş). Şubeli kapalı
+      // günler şube başınadır: Tuzla'nın ve Marina'nın aynı adlı kapalı günü ikiz değil
       const overlapping = await tx
-        .select({ id: s.specialDays.id, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
+        .select({ id: s.specialDays.id, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
         .from(s.specialDays)
         .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, d.dateFrom)));
-      const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title));
+      const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title) && r.branchId === branchId);
       if (twin) throw new UserError(`Bu günlerde aynı adla bir özel gün var (${rangeTR(twin.dateFrom, twin.dateTo)}); onu düzenleyin`);
       if (d.id) {
         // Son düzenleyen yazılır: yöneticinin dokunduğu personel satırını personel artık değiştiremez
         const [row] = await tx
           .update(s.specialDays)
-          .set({ ...values, updatedBy: me.id, updatedByName: me.name, updatedAt: new Date() })
+          .set({ ...values, branchId, updatedBy: me.id, updatedByName: me.name, updatedAt: new Date() })
           .where(eq(s.specialDays.id, d.id))
           .returning({ id: s.specialDays.id });
         if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
@@ -94,7 +109,7 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
       }
       const [row] = await tx
         .insert(s.specialDays)
-        .values({ ...values, createdBy: me.id, createdByName: me.name })
+        .values({ ...values, branchId, createdBy: me.id, createdByName: me.name })
         .returning({ id: s.specialDays.id });
       return row.id;
     });
@@ -126,6 +141,8 @@ export async function deleteSpecialDay(id: number): Promise<ActionResult<Special
       // Kapalı günün etkisi formda yok (−1 kendiliğinden); öteki değerler formun seçenekleri
       effect: row.kind === "kapali" ? 0 : ([0.3, 0.15, 0, -0.15, -0.3].find((v) => Math.abs(v - row.effect) < 1e-9) as SpecialDayValues["effect"] | undefined) ?? 0,
       note: row.note,
+      // Şubenin kapalı günü (Kasa'dan, bildirimin onayından) geri alınınca yine o şubenin: işletme geneline dönmez
+      branchId: row.branchId,
     };
     await logActivity(me, "Özel gün silindi", specialSummary({ ...values, effect: row.effect }));
     refresh();

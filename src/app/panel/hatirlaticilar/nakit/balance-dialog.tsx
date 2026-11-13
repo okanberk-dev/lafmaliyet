@@ -8,15 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, NumberInput } from "@/components/ui/form";
 import { parseNumberTR } from "@/lib/calc/expr";
+import { carryHint, type TillCarry } from "@/lib/cash-plan";
 import { money, num } from "@/lib/format";
-import { dayMonthTR } from "@/lib/reminders";
 import { saveCashBalance } from "@/server/actions/cash-plan";
 
 /**
  * Elinizdeki para: bankadaki ve kasadaki paranın bugünkü toplamı; plan bu tutardan başlar. Eksi yazılabilir (kredili
- * hesap). Son kasa raporunun ertesi güne devrettiği nakit ipucu olarak yazılır.
+ * hesap). Kasaların (şube şube) son raporlarının ertesi güne devrettiği nakit ipucu olarak yazılır.
  */
-export function BalanceDialog({ balance, carry, onClose }: { balance: number | null; carry: { date: string; amount: number } | null; onClose: () => void }) {
+export function BalanceDialog({ balance, carry, onClose }: { balance: number | null; carry: readonly TillCarry[]; onClose: () => void }) {
   const formId = useId();
   const [text, setText] = useState(balance === null ? "" : num(balance, 2));
   const [busy, setBusy] = useState(false);
@@ -75,7 +75,7 @@ export function BalanceDialog({ balance, carry, onClose }: { balance: number | n
           label="Tutar (₺)"
           htmlFor="nakit-bakiye"
           error={error}
-          hint={carry ? `Son kasa raporu (${dayMonthTR(carry.date)}): ertesi güne ${money(carry.amount)} devretti.` : "Kredili hesapta eksi yazabilirsiniz."}
+          hint={carryHint(carry) ?? "Kredili hesapta eksi yazabilirsiniz."}
         >
           {/* Tam klavye: iPhone'un ondalık tuş takımında eksi yok, kredili hesapta eksi yazılır */}
           <NumberInput

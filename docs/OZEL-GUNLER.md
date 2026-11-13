@@ -16,11 +16,15 @@ değiştirmez; notun yanında bir ipucu olarak durur ve eski kayıtlar okunabils
 - **Personel** yalnız kendi girdiklerini ekler ve siler; onaysızdır ama sınırlıdır (yarından 60 güne,
   `STAFF_SPECIAL_LIMITS`). Yöneticinin dokunduğu satırı personel artık değiştiremez.
 
-Aynı günlerde aynı adla ikinci bir kayıt engellenir (aynı maç iki kez girilmesin).
+Aynı günlerde aynı adla ikinci bir kayıt engellenir (aynı maç iki kez girilmesin); şubeli kapalı günde yalnız aynı
+şubenin kaydı ikiz sayılır.
 
-**Kapalı günün şubesi** (denetim 13 Kasım 2026, KP-05; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı): burada
-girilen kapalı gün işletme genelidir (bütün şubeler kapalı; `special_days.branch_id` boş). Kasa'nın "Kafe kapalıydı"sı
-ve personelin bildiriminin onayı ise formun şubesinin satırını yazar; o satır yalnız o şubeyi kapatır.
+**Kapalı günün şubesi** (denetim 13 Kasım 2026, KP-05; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı): birden çok
+fiziksel şube açıkken "Kafe kapalı" seçilince pencerede **Şube** sorulur: "Bütün şubeler" işletme genelidir
+(`special_days.branch_id` boş), bir şube seçilirse yalnız o şube kapalı sayılır (planlı Tuzla tadilatı Marina'yı
+kapatmaz). Listede kapalı günün şubesi yazılır ("Kafe kapalı · Tuzla"). Kasa'nın "Kafe kapalıydı"sı ve personelin
+bildiriminin onayı formun şubesinin satırını yazar. Silinen şubeli kapalı gün bildirimdeki "Geri al"la aynı şubeye
+döner; düzenlemede şube seçilmezse kayıtlıdaki kalır.
 
 ## Kod
 

@@ -74,6 +74,7 @@ export function CashOutsCard({
   oldDays = [],
   supplierNames = [],
   hints = {},
+  branchId,
 }: {
   date: string;
   today: boolean;
@@ -98,6 +99,8 @@ export function CashOutsCard({
   supplierNames?: string[];
   /** Yalnız yönetici: satırların cari bağı ve önerisi (ödemeye bağlı, Hesaba işle, Ödemeye çevir) */
   hints?: Record<number, KasaCariHint>;
+  /** Formun şubesi: yeni satır bu şubeye yazılır, seçim başka sekmede değiştiyse yazılmaz (assertFormBranch) */
+  branchId?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLInputElement>(null);
@@ -396,6 +399,7 @@ export function CashOutsCard({
           onRetry={(id) => void retry(id)}
           onClose={close}
           supplierNames={supplierNames}
+          branchId={branchId}
         />
       ) : null}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
