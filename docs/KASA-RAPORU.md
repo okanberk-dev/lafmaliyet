@@ -277,7 +277,8 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   (denetim FC-04); fatura silinirse geri gelir, silme Geri al'la
   geri alınırsa satır yine o faturaya bağlanır), **Aylık harcamalar'a yaz** (kategori seçilir; aynı yerin son kasa
   harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar** (faturası başka adla var
-  ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
+  ya da kafenin gideri değil; Geri al'lı; satırı o da kilitler, "Faturalar'a ekle"yle aynı anda basılırsa biri
+  ötekinin sonucunu görür, faturanın satırla bağı silinmez). Eşleşen fatura gelince satır kendiliğinden kalkar.
 - **İki kez sayılan alım** (inceleme D2): Aylık harcamalar'a yazılmış faturalı satırın faturası sonradan Faturalar'a
   gelirse (muhasebeci e-Arşiv'i Paraşüt'e girdi) alım hem faturada hem gider kaydında sayılıyordur. Satır eşleştirmede
   kendi faturasını alır (başka bir bekleyeni kapatmaz) ve aynı kartta, zilde (kırmızı), Bugün'de, Genel bakış'ta ve sabah

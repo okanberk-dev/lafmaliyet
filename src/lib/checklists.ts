@@ -11,7 +11,7 @@ import type { DigestBox } from "@/server/notify/digest-template";
 import { businessDate, DAY_TURN_HOUR } from "./cash-report";
 import { num } from "./format";
 import { KEEP_DAYS } from "./photo-rules";
-import { addDays, longDateTR } from "./reminders";
+import { addDays, isCalendarDate, longDateTR } from "./reminders";
 
 // ---------------------------------------------------------------- Türler
 
@@ -573,9 +573,7 @@ export type HistoryRange =
 
 /** "2026-10-22" biçiminde gerçek bir gün mü ("2026-13-01" ve "2026-02-30" değil) */
 function isDayText(v: string | undefined): v is string {
-  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
-  const t = Date.parse(`${v}T00:00:00Z`);
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+  return v !== undefined && isCalendarDate(v);
 }
 
 /**

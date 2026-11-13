@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
+import { isCalendarDate } from "@/lib/reminders";
 import { SITE_MENU_ID } from "@/lib/site-menu/schema";
 
 /**
@@ -132,9 +133,7 @@ export type PosPayment = PosDayPush["payments"][number];
 
 /** Takvimde olan gün (2026-02-30 değil), 2020'den sonra */
 function realDate(v: string): boolean {
-  const [y, m, d] = v.split("-").map(Number);
-  const t = new Date(Date.UTC(y, m - 1, d));
-  return y >= 2020 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+  return isCalendarDate(v) && Number(v.slice(0, 4)) >= 2020;
 }
 
 export type PosDayParse = { ok: true; data: PosDayPush } | { ok: false; field: string };

@@ -130,7 +130,13 @@ Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, 
 2. tam e-fatura / e-Arşiv numarası (3 harf ya da rakam + 13 rakam): tedarikçi adı farklı yazılmış olsa da (Yemek Sepeti
    ~ YEMEKSEPETİ ELEKTRONİK), ±31 gün içinde, aynı tarih ya da aynı tutarla (±1 ₺). GİB e-Arşiv portalının numaraları
    (`GIB` + yıl + sıra) portalı kullanan bütün küçük tedarikçilerde aynı biçimdedir, iki ustanın 12. faturası aynı
-   numarayı taşır: bu numarada tedarikçi de aynı olmalı (ad ya da geçerli vergi no; denetim FC-03),
+   numarayı taşır: bu numarada tedarikçi de aynı olmalı (denetim FC-03). **Aynı tedarikçi**: adlar aynı firmayı
+   gösteriyor (biri ötekinin baştaki tam kelimeleri: Ahmet Usta ~ AHMET USTA TESİSAT), kayıtta Paraşüt'ten gelmiş vergi
+   no belgedekiyle aynı, ya da ikisi Tedarikçiler'de aynı karta düşüyor (kartın adı, diğer adları, vergi nosu: elle
+   girilmiş "Ahmet Usta" ile Paraşüt'teki "AHMET YILMAZ", kart "Ahmet Usta"nın diğer adı ya da vergi nosu tutuyorsa).
+   Tedarikçi tutmazsa yeni kayıt açılır ama kontrol bekler, notu öteki kaydı söyler: "aynı numaralı elle girilmiş
+   fatura var (Ahmet Usta, 08.11.2026); aynı faturaysa birini silin". Aynı ustaysa kartına diğer adı ya da vergi
+   nosunu ekleyin, sonraki faturaları kendiliğinden bağlanır,
 3. öteki fatura numaraları (harf/rakam dışı karakterler yok sayılarak) yalnızca **aynı tedarikçide** ve ±31 gün
    içinde (farklı firmalar aynı e-fatura önekini kullanabilir),
 4. aynı tarih + aynı tutar (±1 ₺) + aynı tedarikçi.

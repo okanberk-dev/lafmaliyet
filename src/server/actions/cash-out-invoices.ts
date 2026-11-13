@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -91,7 +91,8 @@ export async function undoCashOutInvoiceExpense(input: { id: number; expenseId: 
  * satırda "Ayrı alım" (fatura başka bir alımın, gider kaydı kalsın). `undo` satırları yeniden listeye döndürür
  * (bildirimdeki "Geri al"). Yalnız bekleyen ya da iki kez sayılan satırlar kapatılır. Faturası bu satırdan açılmış
  * ("Faturalar'a ekle") iki kez sayılan satır kapatılmaz: fatura başka bir alımın olamaz, kapatmak faturayla bağını
- * siler ve gider kaydı uyarısız kalırdı.
+ * siler ve gider kaydı uyarısız kalırdı. Satırlar kimlik sırasıyla kilitlenir: aynı anda "Faturalar'a ekle" satırı
+ * faturaya bağlarken kapatma onun bağını ezmesin (ikincisi ötekinin sonucunu görür).
  */
 export async function dismissCashOutInvoices(input: { ids: number[]; undo?: boolean }) {
   return attempt(async () => {
@@ -99,6 +100,7 @@ export async function dismissCashOutInvoices(input: { ids: number[]; undo?: bool
     const { ids, undo } = z.object({ ids: z.array(zId).min(1, "Satır seçin").max(500), undo: z.boolean().optional() }).parse(input);
     const db = getDb();
     const rows = await db.transaction(async (tx) => {
+      await tx.select({ id: s.cashOuts.id }).from(s.cashOuts).where(inArray(s.cashOuts.id, ids)).orderBy(asc(s.cashOuts.id)).for("update");
       if (undo) {
         await updateHandledCashOuts(tx, { remove: ids });
         return [];

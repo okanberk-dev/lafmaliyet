@@ -305,6 +305,27 @@ describe("kasadan faturalı alımlar: veritabanında", { skip: !SERVER_URL && "K
     assert.equal(counted, 1);
   });
 
+  test("FC-04: Faturalar'a ekle sürerken Listeden çıkar beklenir; faturanın satırla bağı ezilmez", async () => {
+    const { updateHandledCashOuts, loadHandledCashOuts } = await import("../src/server/data/cash-out-invoices");
+    const o = await out({ store: "Metro", amount: 1180 });
+    // Başka adla girilmiş fatura (satırla kendiliğinden eşleşmez): bağı "Faturalar'a ekle" kurar
+    const inv = await invoice({ supplier: "METRO GROSMARKET", payable: 900 });
+    // Birinci sekme "Faturalar'a ekle"nin ortasında: satır kilitli, bağ yazıldı ama henüz kaydedilmedi
+    let dismissed: ReturnType<typeof actions.dismissCashOutInvoices> | undefined;
+    await db.transaction(async (tx) => {
+      await tx.select({ id: s.cashOuts.id }).from(s.cashOuts).where(eq(s.cashOuts.id, o.id)).for("update");
+      await updateHandledCashOuts(tx, { add: [{ id: o.id, invoiceId: inv.id, by: "Sekme 1" }] });
+      dismissed = actions.dismissCashOutInvoices({ ids: [o.id] });
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    const r = await dismissed!;
+    assert.ok(!r.ok && /artık beklemiyor/.test(r.error), "kapatma faturalı satırı görür, reddedilir");
+    assert.deepEqual(
+      (await loadHandledCashOuts(db)).map((h) => [h.id, h.invoiceId]),
+      [[o.id, inv.id]],
+    );
+  });
+
   // ---------------------------------------------------------------- inceleme bulguları (D1-D6)
 
   /** "Faturalar'a ekle"nin penceresi (Migros, ödendi) */

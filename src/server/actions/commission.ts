@@ -15,7 +15,7 @@ import {
   type ChannelMonthChange,
 } from "@/lib/commission/report";
 import { monthLabel } from "@/lib/format";
-import { addDays, todayTR } from "@/lib/reminders";
+import { addDays, isCalendarDate, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { COMMISSION_SETTINGS_KEY, ensureCommissionSince } from "@/server/data/commission";
 import { getDb, schema as s } from "@/server/db";
@@ -33,7 +33,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const zDay = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Günü seçin")
-  .refine((v) => addDays(v, 0) === v, "Günü seçin");
+  .refine(isCalendarDate, "Günü seçin");
 const zTL = (empty: string) => z.number({ message: empty }).finite("Tutarı sayı olarak yazın").max(10_000_000, "Tutar çok büyük");
 
 const monthInput = z.object({

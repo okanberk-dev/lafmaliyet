@@ -7,7 +7,7 @@ import { z } from "zod";
 import { businessDate } from "@/lib/cash-report";
 import { foldTR, specialSummary } from "@/lib/ozel-gun";
 import { rangeTR } from "@/lib/takvim";
-import { addDays, daysBetween } from "@/lib/reminders";
+import { addDays, daysBetween, isCalendarDate } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { lockSpecialDays, revokeClosedRequests } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
@@ -28,7 +28,7 @@ const zDay = (empty: string) =>
   z
     .string({ message: empty })
     .regex(/^\d{4}-\d{2}-\d{2}$/, empty)
-    .refine((v) => addDays(v, 0) === v, empty);
+    .refine(isCalendarDate, empty);
 
 const specialInput = z.object({
   id: z.number().int().positive().optional(),

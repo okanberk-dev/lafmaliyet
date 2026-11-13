@@ -12,6 +12,8 @@ import {
   feedsSupplierHistory,
   findByEInvoiceNo,
   findExisting,
+  gibNoClash,
+  gibNoClashNote,
   missingRateNote,
   nextTaxNumber,
   pickCategory,
@@ -243,6 +245,29 @@ test("FC-03: GİB portalı numarası (GIB…) yalnız aynı tedarikçide (ad ya 
   assert.equal(findByEInvoiceNo({ invoiceNo: "GIB2026000000007", date: "2026-11-08", payable: 300, supplier: "VELİ BOYA SAN.", taxNumber: "1234567808" }, [bill]), null);
   // Öteki önekler eskisi gibi: tam numara tedarikçi adına bakmadan (Yemek Sepeti ~ YEMEKSEPETİ)
   assert.equal(findByEInvoiceNo({ invoiceNo: "ABC2026000000123", date: "2026-10-14", payable: 1320, supplier: "Başka Ad" }, [{ ...bill, invoiceNo: "ABC2026000000123", date: "2026-10-14", payable: 1320 }])?.id, 32);
+});
+
+test("FC-03: adı tutmayan aynı tedarikçi Tedarikçiler kartıyla tanınır; tutmayan aday yeni kayda not düşer", () => {
+  // Elle "Ahmet Usta" (vergi nosuz); Paraşüt'te "AHMET YILMAZ". Kart "Ahmet Usta": diğer adı "AHMET YILMAZ", vergi nosu …950
+  const manual = { id: 41, externalId: null, invoiceNo: "GIB2026000000012", supplier: "Ahmet Usta", date: "2026-11-08", payable: 960 };
+  const yilmaz = { externalId: "903", invoiceNo: "GIB2026000000012", date: "2026-11-08", payable: 960, supplier: "AHMET YILMAZ", taxNumber: "12345678950" };
+  const card = (names: string[], tax: string | null) => (supplier: string, taxNumber?: string | null) =>
+    names.includes(supplier) || (tax !== null && taxNumber === tax) ? 7 : null;
+  assert.equal(findExisting(yilmaz, [manual]), null, "kart çözücüsüz: ad da vergi no da tutmuyor");
+  assert.equal(findExisting(yilmaz, [manual], card(["Ahmet Usta"], "12345678950"))?.id, 41, "kartın vergi nosu");
+  assert.equal(findExisting({ ...yilmaz, taxNumber: null }, [manual], card(["Ahmet Usta", "AHMET YILMAZ"], null))?.id, 41, "kartın diğer adı");
+  // Başka karta ya da karta hiç düşmeyen ad: bağlanmaz
+  assert.equal(findByEInvoiceNo(yilmaz, [manual], (n) => (n === "Ahmet Usta" ? 7 : n === "AHMET YILMAZ" ? 8 : null)), null);
+  assert.equal(findByEInvoiceNo(yilmaz, [manual], () => null), null);
+  // Bağlanmayan GİB adayı: yeni kayıt kontrol bekler, notu elle kaydı söyler
+  assert.equal(gibNoClash(yilmaz, [manual])?.id, 41);
+  assert.equal(gibNoClashNote({ ...manual, origin: "manual" }), "aynı numaralı elle girilmiş fatura var (Ahmet Usta, 08.11.2026); aynı faturaysa birini silin");
+  assert.match(gibNoClashNote({ ...manual, origin: "excel" }), /^aynı numaralı Excel'den alınmış fatura var/);
+  // Paraşüt'e bağlı kayıt, ±31 gün dışı ya da tarih ve tutar ikisi farklıysa, GİB dışı numarada aday yok
+  assert.equal(gibNoClash(yilmaz, [{ ...manual, externalId: "455" }]), null);
+  assert.equal(gibNoClash({ ...yilmaz, date: "2026-12-20" }, [manual]), null);
+  assert.equal(gibNoClash({ ...yilmaz, date: "2026-11-09", payable: 500 }, [manual]), null);
+  assert.equal(gibNoClash({ ...yilmaz, invoiceNo: "ABC2026000000012" }, [{ ...manual, invoiceNo: "ABC2026000000012" }]), null);
 });
 
 test("FC-05: kuru gelmeyen döviz faturası işaretlenir (kur 1 sayılır, kayıt kontrol bekler); kur gelince ya da TL'de işaret yok", () => {
