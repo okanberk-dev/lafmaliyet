@@ -188,7 +188,12 @@ const userSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v ? v : undefined)),
+  /** Düzenleme penceresi açılırken kişinin hâli: veritabanındakiyle tutmazsa kayıt reddedilir (YO-01) */
+  seen: z.object({ name: z.string(), email: z.string(), role: z.enum(["admin", "staff"]), active: z.boolean() }),
 });
+
+/** Pencere açıkken başka sekmede ya da başka bir yöneticinin yaptığı değişiklik eski formla geri yazılmasın */
+const STALE_USER = "Bu kullanıcı bu arada değişti; liste yenilendi, pencereyi kapatıp yeniden açın";
 
 /**
  * Kullanıcıyı günceller (eklemek createUser'da). Kendi hesabınızın parolası ve e-postası burada değişmez, Hesabım'da
@@ -196,7 +201,9 @@ const userSchema = z.object({
  * bir yöneticinin erişimini, e-postasını, parolasını değiştirmek işlemi yapanın kendi parolasını ister (needsStepUp;
  * önceki hâl veritabanından okunur): açık kalmış bir yönetici oturumu yönetici hesaplarını ele geçiremesin. Ad
  * değişikliği ve personel işleri sormaz. Başkasına parola verildiyse "Giriş bilgileri"nin e-posta düğmesi için mühürlü
- * kopya döner (accessMailHandle).
+ * kopya döner (accessMailHandle). Pencerenin açıldığı andaki ad, e-posta, rol ve erişim (`seen`) veritabanındakiyle
+ * tutmazsa yazılmaz: eski form bu arada yapılan değişikliği sessizce geri almasın (YO-01). Listedeki anahtar
+ * setUserActive'i kullanır.
  */
 export async function saveUser(input: z.input<typeof userSchema>, confirm?: StepUpConfirm) {
   return attempt(async () => {
@@ -222,6 +229,11 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     }
     const [before] = await db.select().from(s.users).where(eq(s.users.id, data.id)).limit(1);
     if (!before) throw new UserError("Kullanıcı bulunamadı");
+    const { seen } = data;
+    if (before.name !== seen.name || before.email !== seen.email || before.role !== seen.role || before.active !== seen.active) {
+      refresh();
+      throw new UserError(STALE_USER);
+    }
     if (data.id === me.id && (data.password || data.email !== before.email)) throw new UserError("Kendi parolanızı ve e-postanızı Hesabım'dan değiştirin");
     // Bütün denetimlerden sonra, ilk yazımdan önce: başarısız olacak işlem için parola sorulmaz
     const change: StepUpCase = { kind: "save", before, after: { role: data.role, active: data.active, email: data.email, password: Boolean(data.password) } };
@@ -255,6 +267,50 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     const renamed = before.email !== data.email ? await oldAddressListNotice({ name: data.name, email: before.email }, Boolean(blockReasonOf(before) || blockReasonOf(data)), "rename") : null;
     const notice = [await listNotice(data), renamed].filter(Boolean).join(" ") || null;
     return { handle: data.password ? accessMailHandle(data.id, data.password) : null, notice };
+  });
+}
+
+/**
+ * Listedeki aktif / pasif anahtarı: yalnız erişim değişir; ad, e-posta ve rol veritabanında olduğu gibi kalır. Önceden
+ * anahtar saveUser'a satırın sayfa açıldığı andaki ad, e-posta ve rolünü gönderiyordu: liste açıkken başka sekmede
+ * yapılan değişiklik sessizce geri yazılıyor, bu arada yönetici yapılan kişi personele düşüyordu (denetim YO-01).
+ * Parola kuralı veritabanındaki role bakar: kişi bu arada yönetici yapıldıysa parola sorulur. İstenen hâl zaten
+ * yazılmışsa (başka sekmede) hiçbir şey değişmez, liste yenilenir.
+ */
+export async function setUserActive(id: number, active: boolean, confirm?: StepUpConfirm) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const userId = z.number().int().positive().parse(id);
+    const next = z.boolean().parse(active);
+    if (userId === me.id) throw new UserError("Kendi hesabınızı pasif yapamazsınız");
+    const db = getDb();
+    const [before] = await db.select().from(s.users).where(eq(s.users.id, userId)).limit(1);
+    if (!before) throw new UserError("Kullanıcı bulunamadı");
+    if (before.active === next) {
+      refresh();
+      return { notice: null };
+    }
+    if (!next && before.role === "admin") {
+      const [{ n }] = await db
+        .select({ n: count() })
+        .from(s.users)
+        .where(and(eq(s.users.role, "admin"), eq(s.users.active, true), ne(s.users.id, userId)));
+      if (n === 0) throw new UserError("En az bir aktif yönetici kalmalı");
+    }
+    const change: StepUpCase = { kind: "save", before, after: { role: before.role, active: next, email: before.email, password: false } };
+    if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${before.email}`);
+    // Erişim değişince açık oturumlar kapanır; okunan hâl bu arada değiştiyse (aynı anda iki sekme) yazılmaz
+    const [after] = await db
+      .update(s.users)
+      .set({ active: next, sessionVersion: sql`${s.users.sessionVersion} + 1` })
+      .where(and(eq(s.users.id, userId), eq(s.users.active, before.active)))
+      .returning();
+    refresh();
+    if (!after) return { notice: null };
+    // Pasif yapılınca bekleyen davet / sıfırlama bağlantısı iptal (yeniden aktif yapılınca eski bağlantı canlanmasın)
+    if (!next) await expireUserTokens(userId);
+    await logActivity(me, next ? "Kullanıcı yeniden aktif yapıldı" : "Kullanıcı pasif yapıldı", `${after.name} (${after.role === "admin" ? "yönetici" : "personel"})`);
+    return { notice: await listNotice(after) };
   });
 }
 
@@ -370,13 +426,19 @@ export async function resetUserTwoFactor(id: number, confirm?: StepUpConfirm) {
   });
 }
 
-/** Hatalı denemeler yüzünden kilitlenen hesabı açar */
+/**
+ * Hatalı denemeler yüzünden kilitlenen hesabı açar: hesabın kilidi ve bilinen cihazların kendi kilitleri (sayaçlarıyla
+ * birlikte; src/server/auth/login-locks.ts). Kişi kendi tarayıcısında 10 kez yanlış parola girince kilit yalnız
+ * cihazın satırına yazılır; önceden yönetici bunu ne görebiliyor ne açabiliyordu (denetim YO-03).
+ */
 export async function unlockUser(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const userId = z.number().int().positive().parse(id);
-    const [u] = await getDb().update(s.users).set({ failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, userId)).returning({ email: s.users.email });
+    const db = getDb();
+    const [u] = await db.update(s.users).set({ failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, userId)).returning({ email: s.users.email });
     if (!u) throw new UserError("Kullanıcı bulunamadı");
+    await db.delete(s.loginDeviceLocks).where(eq(s.loginDeviceLocks.userId, userId));
     await logActivity(me, "Hesap kilidi açıldı", u.email);
     refresh();
     return null;

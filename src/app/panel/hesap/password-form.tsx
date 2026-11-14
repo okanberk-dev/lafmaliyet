@@ -46,15 +46,16 @@ export function AccountAvatar({ name }: { name: string }) {
   );
 }
 
-export function PasswordForm() {
+/** `email`: kişinin giriş e-postası (parolada geçmesin kuralı yazarken de söylenir) */
+export function PasswordForm({ email }: { email: string }) {
   const [state, action, pending] = useActionState<PasswordState, FormData>(changePassword, {});
   const ref = useRef<HTMLFormElement>(null);
   // Yazarken uyarı: kısa parola ve tekrarın tutmaması gönderilmeden görünsün (sunucu yine denetler)
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
   const tooShort = next.length > 0 && next.length < PASSWORD_MIN;
-  // Kolay tahmin edilen parola da yazarken söylenir (e-postayla ilgili kuralı sunucu ekler)
-  const weak = !tooShort && next.length > 0 ? passwordProblem(next) : null;
+  // Kolay tahmin edilen ve e-postayı içeren parola da yazarken söylenir (sunucu aynı kuralla yine denetler)
+  const weak = !tooShort && next.length > 0 ? passwordProblem(next, email) : null;
   const mismatch = repeat.length > 0 && repeat !== next;
   useEffect(() => {
     if (state.ok) {

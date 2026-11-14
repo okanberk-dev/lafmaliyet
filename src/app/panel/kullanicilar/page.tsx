@@ -41,7 +41,7 @@ async function UsersContent() {
   const me = await requireAdmin();
   const db = getDb();
   const now = new Date();
-  const [rows, links] = await Promise.all([
+  const [rows, links, deviceLocks] = await Promise.all([
     db
       .select({
         id: s.users.id,
@@ -63,8 +63,15 @@ async function UsersContent() {
       .from(s.userTokens)
       .where(and(isNull(s.userTokens.usedAt), gt(s.userTokens.expiresAt, now), lt(s.userTokens.attempts, MAX_TOKEN_ATTEMPTS)))
       .orderBy(asc(s.userTokens.expiresAt)),
+    // Bilinen bir cihazın süren kilidi (o tarayıcıdan 10 hatalı deneme): hesap kilidi değil ama kişi o cihazdan giremez,
+    // Kilidi aç onu da siler (YO-03)
+    db
+      .selectDistinct({ userId: s.loginDeviceLocks.userId })
+      .from(s.loginDeviceLocks)
+      .where(gt(s.loginDeviceLocks.lockedUntil, now)),
   ]);
   const live = new Map(links.map((l) => [l.userId, { kind: l.kind, until: dateTimeTR(l.until) }]));
+  const deviceLocked = new Set(deviceLocks.map((l) => l.userId));
   return (
     <div className="space-y-4">
       <UsersEditor
@@ -79,7 +86,7 @@ async function UsersContent() {
           active: u.active,
           lastLoginAt: u.lastLoginAt ? dateTimeTR(u.lastLoginAt) : null,
           twoFactor: u.totpEnabled,
-          locked: Boolean(u.lockedUntil && u.lockedUntil > now),
+          locked: u.lockedUntil && u.lockedUntil > now ? "account" : deviceLocked.has(u.id) ? "device" : null,
           invite: isPendingInvite(u.passwordHash) ? (live.has(u.id) ? "pending" : "expired") : "none",
           liveLink: live.get(u.id) ?? null,
         }))}

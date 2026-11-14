@@ -28,7 +28,7 @@ import { ROLE_PERMISSIONS, STAFF_ROLE_HINT } from "@/lib/roles";
 import { isStepUpError, needsStepUp, STEP_UP_REQUIRED, stepUpChanges, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { cn } from "@/lib/utils";
 import { createAccessLink } from "@/server/actions/invites";
-import { createUser, deleteUser, resetUserTwoFactor, saveUser, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
+import { createUser, deleteUser, resetUserTwoFactor, saveUser, setUserActive, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
 
 import { generatePassword, linkReason, relinkText, type AccessInfo } from "./access";
 import { AccessSheet } from "./access-sheet";
@@ -115,7 +115,8 @@ export type UserRow = {
   active: boolean;
   lastLoginAt: string | null;
   twoFactor: boolean;
-  locked: boolean;
+  /** Süren giriş kilidi: hesabın (5 hata) ya da yalnız bilinen bir cihazın (o tarayıcıdan 10 hata) */
+  locked: "account" | "device" | null;
   /** Davetle eklendi, parolasını henüz belirlemedi ("expired": geçerli bağlantısı yok) */
   invite: "none" | "pending" | "expired";
   /** Kullanılmamış, süresi geçmemiş davet ya da sıfırlama bağlantısı ("20.10.2026 14:30"a kadar) */
@@ -157,7 +158,8 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
 
   const stepUp = useStepUp();
 
-  const saveActive = (u: UserRow, active: boolean, confirm?: StepUpConfirm) => saveUser({ id: u.id, name: u.name, email: u.email, role: u.role, active }, confirm);
+  // Yalnız erişim gider: satırın sayfa açıldığındaki adı, e-postası ve rolü geri yazılmaz (YO-01)
+  const saveActive = (u: UserRow, active: boolean, confirm?: StepUpConfirm) => setUserActive(u.id, active, confirm);
   const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<{ notice?: string | null } | null>) => {
     if (!res.ok) return void toast.error(res.error);
     toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`);
@@ -440,7 +442,7 @@ function StatusBadge({ user }: { user: UserRow }) {
   if (user.locked)
     return (
       <Badge dot tone="red">
-        Kilitli
+        {user.locked === "device" ? "Bir cihazda kilitli" : "Kilitli"}
       </Badge>
     );
   if (user.active && user.invite === "pending")
@@ -888,6 +890,8 @@ function UserDialog({
   const [errors, setErrors] = useState<FormErrors>({});
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  // Pencere açılırken kişinin hâli: bu arada başka sekmede değiştiyse sunucu kaydı reddeder (eski form geri yazmasın)
+  const [seen] = useState(() => ({ name: user.name, email: user.email, role: user.role, active: user.active }));
   const [pending, startTransition] = useActionTransition();
   const self = user.id === meId;
   const invited = user.invite !== "none";
@@ -916,7 +920,7 @@ function UserDialog({
       async (confirm) => {
         setBusy(true);
         try {
-          return await saveUser({ id: user.id, name, email, role, active, password: password || undefined }, confirm);
+          return await saveUser({ id: user.id, name, email, role, active, password: password || undefined, seen }, confirm);
         } finally {
           setBusy(false);
         }
@@ -1004,6 +1008,11 @@ function UserDialog({
         <p className="px-1 text-xs leading-5 text-ink-mute">
           Sıfırlama bağlantısıyla kişi yeni parolasını kendisi belirler (24 saat, tek kullanımlık); mevcut parolası o zamana kadar çalışır.
           {user.liveLink ? ` Geçerli bir bağlantı var (son geçerlilik ${user.liveLink.until}); yenisi onu iptal eder.` : ""}
+        </p>
+      ) : null}
+      {user.locked === "device" ? (
+        <p className="px-1 text-xs leading-5 text-ink-mute">
+          Daha önce giriş yapılmış bir tarayıcıdan 10 hatalı deneme yapıldı: o tarayıcıdan 15 dakika girilemez. Kilidi aç onu da açar.
         </p>
       ) : null}
       {!self && user.active && user.invite === "pending" && user.liveLink ? (

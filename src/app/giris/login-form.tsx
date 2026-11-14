@@ -48,6 +48,8 @@ function CodeStep({ email, onBack, onExpired }: { email?: string; onBack: () => 
 
   return (
     <form action={action} className="flex flex-col gap-5">
+      {/* Kod tutmazsa sunucunun metni kipe göre: kurtarma kodunda "uygulamadaki kodu girin" denmez */}
+      <input type="hidden" name="mode" value={mode} />
       <p className="flex items-start gap-2.5 text-[15px] leading-6 text-black/70">
         <ShieldCheck className="mt-1 size-4 shrink-0 text-[#00754A]" aria-hidden />
         <span>

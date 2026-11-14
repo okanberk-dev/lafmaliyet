@@ -78,6 +78,17 @@ export function verifyTotp(secret: string, code: string, lastStep: number | null
   return null;
 }
 
+export const WRONG_APP_CODE = "Kod geçersiz ya da süresi geçmiş. Uygulamadaki güncel kodu girin.";
+export const WRONG_RECOVERY_CODE = "Kurtarma kodu geçersiz ya da daha önce kullanılmış. Her kod bir kez çalışır; kullanmadığınız bir kodu girin.";
+
+/**
+ * Girişin ikinci adımında tutmayan kodun metni. "Telefonum yanımda değil" kipinde ya da yazılan 6 haneli bir sayı değilse
+ * kurtarma koduna göre konuşur: telefonu yanında olmayana "uygulamadaki kodu girin" denmez (denetim YO-07).
+ */
+export function wrongLoginCodeMessage(code: string, recovery: boolean): string {
+  return recovery || !/^\d{6}$/.test(code.replace(/\s/g, "")) ? WRONG_RECOVERY_CODE : WRONG_APP_CODE;
+}
+
 export function otpauthUri(account: string, secret: string): string {
   const label = encodeURIComponent(`${TOTP_ISSUER}:${account}`);
   const params = new URLSearchParams({ secret, issuer: TOTP_ISSUER, algorithm: "SHA1", digits: String(DIGITS), period: String(TOTP_PERIOD) });

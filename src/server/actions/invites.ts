@@ -123,7 +123,8 @@ export type SetPasswordState = {
 
 /**
  * /davet: bağlantıdaki anahtarla yeni parolayı yazar, bağlantıyı kullanılmış sayar, kişinin oturum sürümünü artırır.
- * Oturum AÇMAZ (aynı tarayıcıdaki diğer sekmeler aynı çerezi paylaşır); kişi ardından /giris'ten girer.
+ * Oturum AÇMAZ (aynı tarayıcıdaki diğer sekmeler aynı çerezi paylaşır); kişi ardından /giris'ten girer. Parola kuralı ve
+ * tekrar alanı denemeyi saymadan önce denetlenir: sayfanın da gösterdiği bu hatalar bağlantının hakkından düşmez (YO-06).
  */
 export async function setPasswordWithToken(_prev: SetPasswordState, formData: FormData): Promise<SetPasswordState> {
   const raw = formData.get("t");
@@ -132,13 +133,18 @@ export async function setPasswordWithToken(_prev: SetPasswordState, formData: Fo
   if (!setPasswordIp.hit(clientIp(await headers()))) return { error: "Çok fazla deneme yapıldı. 15 dakika sonra yeniden deneyin." };
   const found = await loadToken(raw);
   if (!found) return { status: "invalid" };
-  const attempts = await countTokenAttempt(found.token.id);
-  const status = tokenStatus({ ...found.token, attempts: attempts - 1 }, found.user);
-  if (status !== "ok") return { status };
+  // Kullanılamayan bağlantı (süresi doldu, kullanıldı, hakkı bitti) parola hatasından önce söylenir
+  const before = tokenStatus(found.token, found.user);
+  if (before !== "ok") return { status: before };
 
   const problem = passwordProblem(password, found.user.email);
   if (problem) return { error: problem };
   if (password !== repeat) return { error: "İki parola aynı değil" };
+
+  // Yazmaya giden deneme sayılır; sayım ile denetim tek adımda (aynı anda gelen istekler sınırı aşamasın)
+  const attempts = await countTokenAttempt(found.token.id);
+  const status = tokenStatus({ ...found.token, attempts: attempts - 1 }, found.user);
+  if (status !== "ok") return { status };
 
   const ok = await consumeTokenAndSetPassword(found.token.id, found.user.id, await hashPassword(password));
   if (!ok) return { status: "used" };
