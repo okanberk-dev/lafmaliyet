@@ -321,6 +321,10 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **istemci_anahtari** (`waste_entries`, `invoices`, `findings` › `client_key`, denetim UI-01 ve UI-03): boş
+    olabilen sütunlar ve benzersiz dizinler, eklemeli; geri doldurulacak satır yok. Bu sürümden geriye Instant Rollback
+    yapılırsa eski kod sütuna bakmaz: zayi formu, Fatura ekle ve Bulgu ekle yeniden çift basışta iki kayıt açabilir;
+    yazılmış anahtarlar zarar vermez.
   - **fatura_kaynagi_onarimi** (yalnız veri, denetim FC-02; [PARASUT.md](PARASUT.md) § 3): hiçbir Paraşüt belgesine
     bağlı olmayan elle / Excel faturasının kaynağını (`source`) bir kez eskisine döndürür; şema değişmez, eski kod da
     çalışır. Bu sürümden geriye Instant Rollback yapılırsa eski eşitleme e-faturası reddedilen kaydı yine Paraşüt'e bağlı

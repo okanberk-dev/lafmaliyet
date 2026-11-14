@@ -38,7 +38,7 @@ import {
   type KaraokeSessionDTO,
   type Phase,
 } from "@/lib/karaoke/session";
-import { KARAOKE_DELETE_FREE_MINUTES, KARAOKE_REQUEST_TEXT, karaokeDeleteMode, reopenRefusal, type KaraokeDeleteAsk } from "@/lib/karaoke/timer-requests";
+import { KARAOKE_DELETE_FREE_MINUTES, KARAOKE_REQUEST_TEXT, karaokeDeleteMode, reopenRefusal, sessionName, type KaraokeDeleteAsk } from "@/lib/karaoke/timer-requests";
 import { cn } from "@/lib/utils";
 import {
   deleteKaraokeTimer,
@@ -53,7 +53,8 @@ import { withdrawStaffRequest } from "@/server/actions/staff-requests";
 
 const PRESETS = [30, 60, 90, 120] as const;
 
-const nameOf = (s: KaraokeSessionDTO) => s.customerName || (s.source === "panel" ? "Rezervasyonsuz" : "İsimsiz rezervasyon");
+// Adsız sayaç "Rezervasyonsuz oturum": "… bitirildi", "… şimdi bitirilsin mi?" cümlelerinin öznesi (UI-07)
+const nameOf = sessionName;
 
 /** Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle */
 function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {

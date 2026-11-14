@@ -83,7 +83,7 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   Çalışmanın sonunda, `matchSupplierOrders`'ın yanında üç son adım koşar (her kart için ayrı kısa işlem, "Sistem"
   adıyla işlem geçmişine düşer):
   - tutarı değişen ve ödeme sayılmış faturalar yeniden dengelenir: tutar düştüyse fazla sayılan para hesaba geçer,
-    arttıysa ödemelerin kapattığı fatura yeniden ödenmedi olur;
+    arttıysa ödemelerin kapattığı fatura ödenmemişe döner;
   - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez; yalnız
     takip günü ve sonrasının faturasına, `takesCreditOnArrival`: takip öncesi fatura kapıda ödenmişti, E-14);
   - Paraşüt'te iptal edilen (ve e-fatura yolunda silinen) fatura silinmeden önce aynı işlemde bağları çözülür: bağlı
@@ -156,6 +156,15 @@ e-fatura "ödenmedi" ikinci bir kayıt olarak açılır, eski fatura sonra silin
 Arşivlenmiş faturalar (Paraşüt'te yalnızca listeden gizlenmiş) geçerli gider olarak alınır.
 Yeni tedarikçi adları paneldeki kısa adlarla eşlenir ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş." → "Sütaş"), böylece gelir-gider
 tablosundaki tedarikçi satırları dağılmaz.
+
+**Elle eklenen fatura** (Faturalar › Fatura ekle) aynı tedarikçinin aynı numaralı faturasıyla karşılaşırsa eklenmez,
+pencere sorar (denetim UI-02): "Bu numarayla Kaldi faturası zaten var" altında öteki kaydın numarası, tarihi, tutarı
+ve nereden geldiği (Paraşüt, elle, Excel). Eşitlemeden sonra kâğıt faturanın elle girilmesi ya da iki kişinin aynı
+faturayı girmesi mal alımını, borcu ve KDV indirimini iki kez sayardı (eşitleme yalnız kendinden önce girilen kaydı
+bağlar). Numara harf ve rakam dışı karakterler yok sayılıp büyük harfle karşılaştırılır; tedarikçi yukarıdaki gibi adla
+ya da Tedarikçiler kartıyla aynı sayılır; tarih ve tutara bakılmaz. Gerçekten ayrı faturaysa **Yine de ekle** ekler.
+Pencere her yeni faturaya bir anahtar gönderir: Kaydet'in (ya da not alanındaki Ctrl+Enter'ın) ikinci basışı,
+yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, ilki döner ("Fatura zaten eklenmişti"; UI-03).
 
 Paraşüt'e bağlı faturada tarih, fatura no, tutar, iskonto ve ödenecek panelde salt okunurdur (saveInvoice da
 yazmaz); kategori, tedarikçi adı, açıklama, not, vade ve ödeme durumu düzenlenir. Kısmen ödenmiş faturada Paraşüt'ün
@@ -291,7 +300,9 @@ zammın payı önerilir. Fiyatı öneriden düşük ürün uyarı olur:
 - Genel bakış › Dikkat edilmesi gerekenler ve zil: "Hammadde zammı: N ürünün fiyatı hedefin altında kaldı";
 - sabah e-postası: yalnız son zam e-postasından sonraki yeni zamlar (her sabah yinelenmez);
 - Ürünler › **Hammadde zamları** (`#zamlar`): eski → yeni maliyet, maliyet oranı, birim kâr; **Fiyatı X ₺ yap**
-  ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır);
+  ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır). Zam yokken kartın yerinde
+  "Hammadde zamları: son 30 günde maliyeti artan ürün şu an yok." satırı durur; Yardım'ın ve e-postanın `#zamlar`
+  bağlantısı ona iner (denetim UI-08);
 - ürün kartında not, Hammaddeler'de "↑ %16" rozeti.
 
 Aylık kâr etkisi Ürünler › Hammadde zamları'nda (ve ürün kartında, uyarıda, zilde, e-postada): her ürünün maliyet
@@ -329,7 +340,8 @@ Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** bi
 onayda" rozeti ve hammadde penceresinde not (**Onaya git**), zilde Onaylar başlığı, Genel bakış › Dikkat edilmesi
 gerekenler ("Fiyat onayı: N hammadde"), sabah e-postasının Paraşüt bölümü (yalnız son e-postadan beri gelen öneri
 e-postayı gönderir ve konuya girer), Paraşüt sayfasındaki bağlama bildirimleri (**Bak**) ve eşitleme özeti ("N fiyat
-onaya düştü").
+onaya düştü"). Bekleyen öneri ve son 3 günde karar yoksa kartın yerinde "Onay bekleyen fiyat şu an yok" satırı durur;
+Yardım'ın `#fiyat-onayi` bağlantısı sayfanın başına değil ona iner (denetim UI-08).
 
 **Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
 aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin

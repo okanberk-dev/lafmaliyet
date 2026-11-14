@@ -14,7 +14,7 @@
  * ve bu Z'yi içerdiğini doğrulamazsa çağıran onu vermez (plan §1 adım 0 madde 1).
  */
 
-import { money } from "./format";
+import { money, numPossessive } from "./format";
 import { dayMonthTR } from "./reminders";
 
 /**
@@ -395,7 +395,7 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
       const range = Math.round(Math.min(...ratios) * 100) === Math.round(Math.max(...ratios) * 100) ? pct(Math.min(...ratios)) : `${pct(Math.min(...ratios))}–${pct(Math.max(...ratios))}`;
       fail(["okcVatTotal"], `Toplam KDV günlük toplama göre çok ${ratio > hi ? "büyük" : "küçük"}; başka bir satır yazılmış olabilir.`);
       failSoft(["okcTotal"], "Günlük toplam ile toplam KDV birbirini tutmuyor; fişe bakın.");
-      checks.push({ key: "k5", level: "warn", fields: ["okcVatTotal", "okcTotal"], text: `Toplam KDV günlük toplamın ${pct(ratio)}'i; ${range} olmalı. KÜM. ya da MATRAH satırı okunmuş olabilir.` });
+      checks.push({ key: "k5", level: "warn", fields: ["okcVatTotal", "okcTotal"], text: `Toplam KDV günlük toplamın %${numPossessive(ratio * 100)}; ${range} olmalı. KÜM. ya da MATRAH satırı okunmuş olabilir.` });
     }
   }
   // K2 tutmadıysa ve K6-KDV doğrulamadıysa toplam KDV de

@@ -96,21 +96,34 @@ export const metadata: Metadata = { title: "Kasa raporu" };
 const STAFF_DESCRIPTION = "Kapanışta Z raporunu alın, kasadaki nakdi sayın ve buraya girin.";
 const ADMIN_DESCRIPTION = "Personelin akşam raporları: eksik, fazla ve gelmeyen günler.";
 
-/** Yöneticinin "Nasıl çalışır?"u: eski uzun açıklama, günün kasasına göre */
-const MORE = (
-  <KasaText
-    modpos="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-    lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-  />
-);
+/**
+ * Gönderilen raporun e-postasının gideceği adres sayısı: e-posta kapalıysa, gönderim kurulmamışsa (RESEND_API_KEY) ya da
+ * adreslerin hepsi personel / pasif hesabınsa 0 (report-email.ts emailReport'un kuralı; denetim UI-05)
+ */
+async function cashMailTo(settings: Awaited<ReturnType<typeof loadCashSettings>>): Promise<number> {
+  if (!settings.emailEnabled || !isEmailConfigured()) return 0;
+  return (await cashEmailRecipients(getDb(), settings.recipients)).length;
+}
+
+/** Yöneticinin "Nasıl çalışır?"u: eski uzun açıklama, günün kasasına göre; e-posta kapalıysa rapor WhatsApp'la gider */
+function more(email: boolean) {
+  const send = email ? "gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır" : "gönderince WhatsApp ile paylaşılır (e-posta kapalı)";
+  return (
+    <KasaText
+      modpos={`Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; ${send}.`}
+      lafpos={`Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, ${send}.`}
+    />
+  );
+}
 
 /** Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan) */
 async function CashDescription() {
   const user = await requireUser();
   if (user.role !== "admin") return STAFF_DESCRIPTION;
+  const mailTo = await cashMailTo(await loadCashSettings());
   return (
     <>
-      {ADMIN_DESCRIPTION} <InfoTip text={MORE} label="Nasıl çalışır?" />
+      {ADMIN_DESCRIPTION} <InfoTip text={more(mailTo > 0)} label="Nasıl çalışır?" />
     </>
   );
 }
@@ -159,8 +172,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // hangi şubenin olduğunu yazar
   const inForm = <T,>(fn: () => Promise<T>) => withBranchScope(formBranch, fn);
   const formLabel = cashBranchLabel(formBranch, branches);
-  // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
-  const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
+  // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer, gönderim kurulmamışsa hiç gitmez
+  // (report-email.ts); formun Sonuç kartı buna göre "e-posta gider" ya da "WhatsApp ile paylaşın" der (UI-05)
+  const mailTo = showForm ? await cashMailTo(settings) : 0;
   const storage = photoStorage();
   const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState] = await inForm(() => Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda

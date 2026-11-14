@@ -89,7 +89,7 @@ export function AllocationDialog({
       if (!r.ok) return void toast.error(r.error);
       const prev = r.data.previous[0]?.lines ?? [];
       toast.success("Ödemeden çıkarıldı", {
-        description: `${row.label} ${tl(row.amount, 2)} hesaba geçti${r.data.reopened ? " · fatura yeniden ödenmedi" : ""}`,
+        description: `${row.label} ${tl(row.amount, 2)} hesaba geçti${r.data.reopened ? " · fatura ödenmemişe döndü" : ""}`,
         duration: CARI_UNDO_MS,
         action: { label: "Geri al", onClick: () => void restoreAllocation(payment.id, prev) },
       });

@@ -285,7 +285,7 @@ export async function deleteSupplierEntry(input: { id: number; confirmPast?: str
     if (e.kind === "borc") {
       await logActivity(me, "Cari borç silindi", [card.name, dateTR(e.date), tl(e.amount, 2), e.description ?? "", ...touched].filter(Boolean).join(" · ") + pastMonthLogSuffix(effects));
     } else {
-      const after = [reopened ? `${reopened} fatura yeniden ödenmedi` : "", kept ? `${kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
+      const after = [reopened ? `${reopened} fatura ödenmemişe döndü` : "", kept ? `${kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
       await logActivity(me, "Cari ödeme silindi", [card.name, dateTR(e.date), tl(e.amount, 2), methodText((e.method ?? "diger") as CariMethod, card), after].filter(Boolean).join(" · "));
       await forgetPaid("cari", [e.id]);
     }

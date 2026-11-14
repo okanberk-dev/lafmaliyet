@@ -47,3 +47,14 @@ export const zOptText = (max = 1000) =>
     .max(max)
     .nullish()
     .transform((v) => (v ? v : null));
+/**
+ * Yeni kaydın istemci anahtarı (pencerenin ya da formun ürettiği UUID; başarılı kayıttan sonra yenilenir). Aynı anahtarla
+ * gelen ikinci istek (kısayola ikinci basış, yanıtı yolda kalan isteğin tekrarı) yeni satır açmaz, var olanı döner
+ * (denetim UI-01, UI-03). Verilmezse eski davranış
+ */
+export const zClientKey = z
+  .string()
+  .min(8)
+  .max(80)
+  .nullish()
+  .transform((v) => v ?? null);

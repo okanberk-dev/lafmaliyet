@@ -566,7 +566,7 @@ export interface EntrySnapshot {
 export interface DeleteResult {
   snapshot: EntrySnapshot;
   effects: MonthEffect[];
-  /** Ödeme silinince yeniden ödenmedi olan faturalar ve başka biçimde ödendi işaretli kalanlar */
+  /** Ödeme silinince ödenmemişe dönen faturalar ve başka biçimde ödendi işaretli kalanlar */
   reopened: number;
   kept: number;
   /** Ödemenin sayıldığı kalemler (adıyla) ya da borca sayılan ödemeler */

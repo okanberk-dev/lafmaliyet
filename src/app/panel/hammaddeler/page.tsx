@@ -3,6 +3,7 @@ import { Droplets, Package, TriangleAlert, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AnchorNote } from "@/components/panel/anchor-note";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
@@ -14,6 +15,7 @@ import { readingFits, readingText } from "@/lib/invoice-reading";
 import {
   conflictSuggestionText,
   evidenceSuggestionText,
+  HOLDS_ANCHOR,
   holdImpact,
   holdSuggestion,
   livePct,
@@ -285,8 +287,15 @@ async function IngredientsContent() {
           />
         </StatBreakdown>
       </div>
-      {/* Paraşüt faturasında %40'tan fazla farklı gelen fiyatlar (#fiyat-onayi); son 3 günde karar varsa da görünür */}
-      {holdViews.length || recentHolds.length ? <PriceHolds pending={holdViews} recent={recentHolds} /> : null}
+      {/* Paraşüt faturasında %40'tan fazla farklı gelen fiyatlar (#fiyat-onayi); son 3 günde karar varsa da görünür. Yoksa
+          çapalı bağlantı (Yardım, zil) kısa satıra iner (UI-08) */}
+      {holdViews.length || recentHolds.length ? (
+        <PriceHolds pending={holdViews} recent={recentHolds} />
+      ) : (
+        <AnchorNote id={HOLDS_ANCHOR} className="mb-6">
+          Onay bekleyen fiyat şu an yok: Paraşüt faturasındaki fiyatı %40&apos;tan fazla farklı gelen hammadde olunca burada sorulur.
+        </AnchorNote>
+      )}
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
         <IngredientsClient rows={rows} categories={categories} />

@@ -428,7 +428,9 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
   assert.match(data, /: defaultCashRecipients\(process\.env\)/);
   // Personel alıcı adreslerini görmez (yalnız sayısı gider)
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
-  assert.match(page, /const mailTo = settings\.emailEnabled && showForm \? \(await cashEmailRecipients\(getDb\(\), settings\.recipients\)\)\.length : 0;/);
+  assert.match(page, /const mailTo = showForm \? await cashMailTo\(settings\) : 0;/);
+  // E-posta kapalıysa ya da gönderim kurulmamışsa 0: form "e-posta gider" demez (denetim UI-05)
+  assert.match(page, /if \(!settings\.emailEnabled \|\| !isEmailConfigured\(\)\) return 0;\n\s+return \(await cashEmailRecipients\(getDb\(\), settings\.recipients\)\)\.length;/);
   assert.match(page, /recipients=\{mailTo\}/);
 });
 

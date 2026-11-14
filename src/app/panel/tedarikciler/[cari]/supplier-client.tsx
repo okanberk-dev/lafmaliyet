@@ -421,7 +421,7 @@ export function SupplierClient({
       if (!r.ok) return void toast.error(r.error);
       const prev = r.data.previous[0];
       toast.success("Ödemeden çıkarıldı", {
-        description: `${money(r.data.total)} hesaba geçti${r.data.reopened ? " · fatura yeniden ödenmedi" : ""}`,
+        description: `${money(r.data.total)} hesaba geçti${r.data.reopened ? " · fatura ödenmemişe döndü" : ""}`,
         duration: CARI_UNDO_MS,
         ...(prev
           ? { action: { label: "Geri al", onClick: () => void undo(() => setPaymentAllocation({ paymentId: prev.paymentId, mode: prev.lines.length ? "manual" : "none", lines: prev.lines }), "Dağıtım geri alındı") } }
@@ -1322,7 +1322,7 @@ export function SupplierClient({
           run={(confirmPast) => deleteSupplierEntry({ id: confirming.id, confirmPast })}
           onDone={(d) =>
             toast.success(d.kind === "borc" ? "Alım silindi" : "Ödeme silindi", {
-              description: [confirming.text, d.reopened ? `${num(d.reopened)} fatura yeniden ödenmedi` : "", d.kept ? `${num(d.kept)} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join(" · "),
+              description: [confirming.text, d.reopened ? `${num(d.reopened)} fatura ödenmemişe döndü` : "", d.kept ? `${num(d.kept)} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join(" · "),
               duration: CARI_UNDO_MS,
               action: { label: "Geri al", onClick: () => void undo(() => restoreSupplierEntry(d.undo), "Kayıt geri alındı") },
             })

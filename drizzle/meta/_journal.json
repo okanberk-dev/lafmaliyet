@@ -435,6 +435,13 @@
       "when": 1794608065075,
       "tag": "0061_fatura_kaynagi_onarimi",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794614612740,
+      "tag": "0062_istemci_anahtari",
+      "breakpoints": true
     }
   ]
 }

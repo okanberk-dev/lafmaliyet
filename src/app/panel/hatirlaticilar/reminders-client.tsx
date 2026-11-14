@@ -560,7 +560,7 @@ export function RemindersClient({
                 </ul>
               </details>
             ) : null}
-            {recentPaid.length ? <RecentPaidList items={recentPaid} /> : null}
+            <RecentPaidList items={recentPaid} />
           </CardContent>
         </Card>
 

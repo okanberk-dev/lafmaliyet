@@ -12,13 +12,13 @@ import { test } from "node:test";
 import { bulkHref, filterBulkRows, parseCategoryParam, parseSizeParam, productSearchText, tabHref, tabOf } from "../src/app/panel/urunler/fiyatlar/logic";
 import { createModel, priceProduct } from "../src/lib/calc/engine";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
+import { numPossessive } from "../src/lib/format";
 import {
   blockReason,
   bulkSummary,
   defaultRounding,
   economicsAt,
   isSiteDown,
-  numPossessive,
   parseRuleAmount,
   NOT_TRIED_DOWN,
   NOT_TRIED_LATE,

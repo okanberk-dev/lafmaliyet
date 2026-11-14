@@ -10,7 +10,7 @@ import { getDb, schema as s } from "@/server/db";
 import { MANAGED_QTY_NOTE, NO_PURCHASE_NOTE } from "@/server/parasut/constants";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zMonth, zOptText, zText } from "./util";
+import { attempt, UserError, zClientKey, zMonth, zOptText, zText } from "./util";
 
 /**
  * Ay içinde faturayla alınan miktar (malzemenin kendi biriminde: gr, ml, adet). 0 geçerlidir: "bu ay hiç alınmadı"
@@ -88,15 +88,27 @@ export async function setNoPurchase(month: string, ingredientIds: number[], undo
   });
 }
 
-export async function saveFinding(input: { id: number | null; section: string; title: string; detail?: string | null }) {
+/**
+ * Bulguyu ekler ya da düzenler. Yeni bulguda `clientKey` (pencerenin anahtarı, denetim UI-03): aynı anahtarla eklenmiş
+ * bulgu varsa ikinci satır açılmaz (Ctrl+Enter'a ikinci basış, yanıtı yolda kalan isteğin tekrarı)
+ */
+export async function saveFinding(input: { id: number | null; section: string; title: string; detail?: string | null; clientKey?: string | null }) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = z
-      .object({ id: z.number().int().nullable(), section: zText("Bölüm", 80), title: zText("Başlık", 200), detail: zOptText(2000) })
+      .object({ id: z.number().int().nullable(), section: zText("Bölüm", 80), title: zText("Başlık", 200), detail: zOptText(2000), clientKey: zClientKey })
       .parse(input);
     const db = getDb();
     if (data.id) await db.update(s.findings).set({ section: data.section, title: data.title, detail: data.detail }).where(eq(s.findings.id, data.id));
-    else await db.insert(s.findings).values({ section: data.section, title: data.title, detail: data.detail });
+    else {
+      const [row] = await db
+        .insert(s.findings)
+        .values({ section: data.section, title: data.title, detail: data.detail, clientKey: data.clientKey })
+        .onConflictDoNothing({ target: s.findings.clientKey })
+        .returning({ id: s.findings.id });
+      // Aynı anahtarın tekrarı: bulgu zaten eklendi (işlem geçmişinde de); ikinci satır yazılmaz
+      if (!row) return null;
+    }
     await logActivity(me, data.id ? "Bulgu düzenlendi" : "Bulgu eklendi", data.title);
     refresh();
     return null;
