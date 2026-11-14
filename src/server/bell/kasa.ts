@@ -1,6 +1,6 @@
 import "server-only";
 
-import { branchKeySuffix, cashBranchLabel, type BranchRow } from "@/lib/branches";
+import { branchKeySuffix, cashBranchLabel, withBranchParam, type BranchRow } from "@/lib/branches";
 import { branchCarryChecks, businessDate, carryDiffText, carryKey, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
@@ -74,7 +74,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       body: [b.label, longDateTR(yesterday), closed?.state === "pending" ? "Personel: kapalıydık dedi (onay bekliyor)" : null].filter(Boolean).join(" · "),
       timeLabel: "Dün",
       unread: true,
-      href: `/panel/kasa?gun=${yesterday}`,
+      href: withBranchParam(`/panel/kasa?gun=${yesterday}`, b.id),
       group: "kasa",
     });
   }
@@ -92,7 +92,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       body: [cashBranchLabel(last.branchId, branches), longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
       timeLabel: dateTR(last.date),
       unread: true,
-      href: `/panel/kasa?gun=${last.date}`,
+      href: withBranchParam(`/panel/kasa?gun=${last.date}`, last.branchId),
       group: "kasa",
     });
   }
@@ -141,7 +141,7 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
       body: [label(r), `${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: withBranchParam(`/panel/kasa?gun=${r.date}`, r.branchId),
       group: "kasa",
     });
   }
@@ -156,7 +156,7 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
       body: [label(r), longDateTR(r.date), late.by.join(", "), changesText(late.changes)].filter(Boolean).join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: withBranchParam(`/panel/kasa?gun=${r.date}`, r.branchId),
       group: "kasa",
     });
   }
@@ -174,7 +174,7 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
       body: body.length > 220 ? `${body.slice(0, 219)}…` : body,
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: withBranchParam(`/panel/kasa?gun=${r.date}`, r.branchId),
       group: "kasa",
     });
   }

@@ -35,6 +35,7 @@ import { COUNT_GRACE_DAYS, staffLateEditNotice, unpricedExtrasNotice, type Staff
 
 import { checklistYesterday, posRow } from "./rows-ops";
 import type { OpsDayFacts } from "./rows-ops";
+import { withBranchParam } from "@/lib/branches";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
@@ -334,7 +335,10 @@ const perBranch =
     return [
       ...list(own),
       ...others.flatMap((b) =>
-        list(row({ ...f, cash: { today: b.today, yesterday: b.yesterday, firstDate: b.firstDate, branch: b.branch }, closed: { yesterday: b.closed } }, c)).map((t): DayTask => ({ ...t, key: `${t.key}-${b.id}` as DayTaskKey })),
+        list(row({ ...f, cash: { today: b.today, yesterday: b.yesterday, firstDate: b.firstDate, branch: b.branch }, closed: { yesterday: b.closed } }, c)).map(
+          // Bağlantı öteki şubeyi seçer: "Tümü"de form Tuzla'nınkini açardı (PR #95 incelemesi)
+          (t): DayTask => ({ ...t, key: `${t.key}-${b.id}` as DayTaskKey, href: withBranchParam(t.href, b.id) }),
+        ),
       ),
     ];
   };

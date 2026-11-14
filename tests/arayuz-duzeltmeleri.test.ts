@@ -464,3 +464,15 @@ test("Yardım çapaları (UI-08): bölüm boşken de kısa 'şu an yok' satırı
   const note = read("src/components/panel/anchor-note.tsx");
   assert.match(note, /if \(window\.location\.hash !== `#\$\{id\}`\) return;/);
 });
+
+// PR #95 incelemesi (SB-02'nin gerilemesi): sahipli alarmda kabuk kapanınca yalnız karaoke sahipliği bırakılıyordu;
+// paylaşılan cihazda A çıkıp B girince A'nın "Sürekli" hatırlatıcısı çalmaya, kapanmayan bildirimi ("Durdur ve tamamla"
+// A'nın hatırlatıcısını tamamlar) B'nin ekranında durmaya devam ederdi. Kabuk kapanınca (çıkış, başka kullanıcı) bütün
+// alarmlar susar, bu kabukta açılan hatırlatıcı bildirimleri kimlikle kapanır.
+test("PR #95: kabuk kapanınca bütün alarmlar susar ve hatırlatıcı bildirimleri kapanır", () => {
+  const src = readFileSync("src/components/panel/live/alert-center.tsx", "utf8");
+  const bind = src.slice(src.indexOf("bindLive(userId);"), src.indexOf("}, [userId]);"));
+  assert.match(bind, /resetLive\(\);\s*[\s\S]*stopAllAlarms\(\);/, "kabuğun temizliği bütün alarmları susturur");
+  assert.match(bind, /toast\.dismiss\(id\)/, "kabuğun temizliği hatırlatıcı bildirimlerini kapatır");
+  assert.match(src, /const toastId = `hatirlatici-\$\{r\.id\}`;\s*reminderToasts\.current\.add\(toastId\);\s*toast\(r\.title, \{\s*id: toastId,/, "hatırlatıcı bildirimi kimlikle açılır ve kaydedilir");
+});

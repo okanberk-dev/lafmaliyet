@@ -339,7 +339,17 @@ export function InvoiceDialog({
       const fromCash = cashOut ? ` · kasadan${res.data.cashOut?.document ? ", fiş belge olarak eklendi" : ""}` : "";
       // Aynı anahtarla eklenmiş fatura döndü (yanıtı yolda kalan gönderimin tekrarı): ikinci fatura açılmadı
       const title = invoice ? "Fatura güncellendi" : res.data.repeated ? "Fatura zaten eklenmişti" : "Fatura eklendi";
-      toast.success(title, { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}${fromCash}` });
+      // Tekrarda kayıtlı satır döner: bildirim onun tutarını yazar; formda arada yapılan düzeltme uygulanmadıysa söylenir
+      // (PR #95 incelemesi: yanıtı yolda kalan kayıttan sonra 1.100 → 1.010 düzeltmesi sessizce kayboluyordu)
+      const kept = res.data.repeated ? res.data.repeatedRow : null;
+      if (kept && (Math.abs(kept.payable - shown) > 0.004 || kept.supplier.trim() !== f.supplier.trim())) {
+        toast.warning(title, {
+          description: `Kayıtlı fatura: ${kept.supplier} · ${tl(kept.payable, 2)}. Penceredeki değişiklikler uygulanmadı; faturayı listeden açıp düzeltin.`,
+          duration: 12_000,
+        });
+      } else {
+        toast.success(title, { description: `${(kept?.supplier ?? f.supplier).trim()} · ${tl(kept?.payable ?? shown, 2)}${withCredit}${withDoc}${fromCash}` });
+      }
     }
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha

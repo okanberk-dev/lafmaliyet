@@ -135,6 +135,8 @@ const blankResult = {
   stockOnly: false,
   cashOut: null as { document: boolean | null } | null,
   repeated: false,
+  /** Tekrarda kayıtlı faturanın tedarikçisi ve ödenecek tutarı: formda sonradan yapılan düzeltme uygulanmaz, pencere bunu söyler */
+  repeatedRow: null as { supplier: string; payable: number } | null,
   duplicate: null as SameNumberInvoice | null,
 };
 
@@ -154,11 +156,11 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     if (!id) {
       // Aynı anahtarla eklenmiş fatura (UI-03; kısayola ikinci basış, yanıtı yolda kalan isteğin tekrarı): yenisi
       // açılmaz, o döner. Numara denetiminden önce: tekrar kendi faturasını "aynı numaralı" bulmasın
-      const repeat = (invoiceId: number) => ({ ...blankResult, id: invoiceId, repeated: true });
+      const repeat = (row: { id: number; supplier: string; payable: number }) => ({ ...blankResult, id: row.id, repeated: true, repeatedRow: { supplier: row.supplier, payable: row.payable } });
       const byKey = async (tx: Pick<typeof db, "select"> = db) =>
-        clientKey ? ((await tx.select({ id: s.invoices.id }).from(s.invoices).where(eq(s.invoices.clientKey, clientKey)).limit(1))[0] ?? null) : null;
+        clientKey ? ((await tx.select({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.clientKey, clientKey)).limit(1))[0] ?? null) : null;
       const prior = await byKey();
-      if (prior) return repeat(prior.id);
+      if (prior) return repeat(prior);
       // Aynı tedarikçinin aynı numaralı faturası (UI-02): eşitlemeden sonra elle girilen kâğıt fatura ya da iki kişinin
       // girdiği aynı fatura alımı, borcu ve KDV indirimini iki kez sayardı. Kayıt açılmaz, pencere sorar; "Yine de ekle"
       // (sameNoOk) bilerek ekler
@@ -184,7 +186,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
           await lockCashOut(tx, cashOutId);
           // Aynı anahtarla bekleyen ikinci istek: birincinin faturası döner ("artık beklemiyor" denmez)
           const same = await byKey(tx);
-          if (same) return { repeat: true as const, id: same.id };
+          if (same) return { repeat: true as const, same };
           const [pending] = await loadPendingCashOutInvoices(tx, { ids: [cashOutId] });
           if (!pending) throw new UserError(CASH_OUT_GONE);
           const [inserted] = await tx
@@ -194,7 +196,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
           await updateHandledCashOuts(tx, { add: [{ id: pending.id, invoiceId: inserted.id, by: me.name }] });
           return { repeat: false as const, row: inserted, fromCash: pending };
         });
-        if (out.repeat) return repeat(out.id);
+        if (out.repeat) return repeat(out.same);
         ({ row, fromCash } = out);
       } else {
         // Ödendi eklenen fatura (pencerenin varsayılanı) takipli kartta önce hesaptaki parayı kullanır (K6): ödenmemiş
@@ -209,7 +211,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
         if (!inserted) {
           const same = await byKey();
           if (!same) throw new Error("İstemci anahtarı çakıştı ama fatura bulunamadı");
-          return repeat(same.id);
+          return repeat(same);
         }
         row = inserted;
         credit = viaCredit ? await creditFirstForInvoices([row.id], me.name) : none;

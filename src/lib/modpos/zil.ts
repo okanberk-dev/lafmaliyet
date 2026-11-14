@@ -1,4 +1,4 @@
-import { branchKeySuffix } from "@/lib/branches";
+import { branchKeySuffix, withBranchParam } from "@/lib/branches";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
@@ -87,7 +87,7 @@ export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: n
     id: `kasa-modpos-${date}${branchKeySuffix(m.report.branchId, "-")}-r${m.report.revision}-s${m.sheet.revision}`,
     title: MODPOS_MISMATCH_TITLE,
     body: body.length > MODPOS_BELL_BODY_MAX ? `${body.slice(0, MODPOS_BELL_BODY_MAX - 1)}…` : body,
-    href: `/panel/kasa?gun=${date}`,
+    href: withBranchParam(`/panel/kasa?gun=${date}`, m.report.branchId),
   };
 }
 

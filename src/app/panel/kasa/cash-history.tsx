@@ -39,6 +39,7 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 
 import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
 import { ReportSheet } from "./report-sheet";
+import { withBranchParam } from "@/lib/branches";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
@@ -324,7 +325,7 @@ export function CashHistory({
               </Button>
             ) : null}
             {open ? (
-              <ButtonLink href={`/panel/kasa?gun=${open.date}`} variant="secondary">
+              <ButtonLink href={withBranchParam(`/panel/kasa?gun=${open.date}`, open.branchId)} variant="secondary">
                 <Pencil size={15} /> Düzenle
               </ButtonLink>
             ) : null}

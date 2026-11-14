@@ -162,9 +162,12 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
 
   // Açılışta ve sekmeye dönünce, ağ gelince canlı veri. Depo önce bu kullanıcıya bağlanır (başkasının ya da düşmüş
   // oturumun verisi varsa boşalır); kabuk kapanınca boşaltılır
+  // Bu kabukta açılan hatırlatıcı bildirimleri: kabuk kapanınca (çıkış, başka kullanıcı) kapatılır (PR #95 incelemesi)
+  const reminderToasts = useRef(new Set<string>());
   useEffect(() => {
     bindLive(userId);
     void refreshLive();
+    const shownReminders = reminderToasts.current;
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshLive();
     };
@@ -177,6 +180,12 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("online", onOnline);
       resetLive();
+      // Kişi değişince öncekinin sesi ve bildirimi kalmaz: "Sürekli" hatırlatıcının alarmı susar, bildirimi (kapanmayan,
+      // "Durdur ve tamamla"sı öncekinin hatırlatıcısını tamamlardı) ekrandan kalkar. Karaoke alarmı yeni kabukta
+      // süresi dolan oturum varsa yeniden başlar
+      stopAllAlarms();
+      for (const id of shownReminders) toast.dismiss(id);
+      shownReminders.clear();
     };
   }, [userId]);
 
@@ -450,7 +459,10 @@ export function AlertCenter({ role, userId }: { role: Role; userId: number }) {
                 if (surekli) startAlarm(owner);
                 else play("reminder");
               }
+              const toastId = `hatirlatici-${r.id}`;
+              reminderToasts.current.add(toastId);
               toast(r.title, {
+                id: toastId,
                 description: [r.note, r.createdByName ? `${r.createdByName} kurdu` : null].filter(Boolean).join(" · ") || "Hatırlatıcı",
                 // Sürekli çalan uyarı kendiliğinden kapanmaz: kişi sesi durdurana kadar ekranda kalır
                 duration: surekli ? Infinity : 30_000,

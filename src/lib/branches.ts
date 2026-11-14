@@ -190,6 +190,19 @@ export function cashBranchLabel(branchId: string | null | undefined, known: read
  * Şubelerden önce kurulan anahtarların (kasa isteğinin konusu, zil kimliği, e-posta kaydı) şube eki: Tuzla'nınki boş
  * (eski anahtarlar, bekleyen istekler ve okunmuş zil satırları geçerli kalır), öteki şubeninki "<ayraç><şube>"
  */
+/**
+ * Bir şubenin satırından Kasa'ya (ya da başka bir ekrana) giden bağlantı: "Tümü"de yazılan şube Tuzla olduğundan öteki
+ * şubenin satırı `?sube=` taşır (seçici çereze benimser, form o şubeninkini açar); Tuzla'nınki taşımaz, seçim değişmez.
+ * Adresin `#` kısmı korunur (PR #95 incelemesi)
+ */
+export function withBranchParam(href: string, branchId: string | null | undefined): string {
+  if (!branchId || branchId === DEFAULT_BRANCH_ID) return href;
+  const cut = href.indexOf("#");
+  const path = cut < 0 ? href : href.slice(0, cut);
+  const hash = cut < 0 ? "" : href.slice(cut);
+  return `${path}${path.includes("?") ? "&" : "?"}${BRANCH_PARAM}=${encodeURIComponent(branchId)}${hash}`;
+}
+
 export function branchKeySuffix(branchId: string | null | undefined, sep = ":"): string {
   return !branchId || branchId === DEFAULT_BRANCH_ID ? "" : `${sep}${branchId}`;
 }

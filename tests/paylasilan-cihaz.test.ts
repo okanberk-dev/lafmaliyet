@@ -212,7 +212,8 @@ test("uyarı motoru ve karaoke panosu: depo kabuğun kullanıcısına bağlı, h
   const center = read("src/components/panel/live/alert-center.tsx");
   assert.match(center, /export function AlertCenter\(\{ role, userId \}: \{ role: Role; userId: number \}\)/);
   assert.match(center, /bindLive\(userId\);\s*void refreshLive\(\);/);
-  assert.match(center, /resetLive\(\);\s*\};\s*\}, \[userId\]\);/, "kabuk kapanınca depo boşalır");
+  // Kabuk kapanınca depo boşalır; ardından öncekinin alarmları susar, hatırlatıcı bildirimleri kapanır (PR #95 incelemesi)
+  assert.match(center, /resetLive\(\);[^}]*stopAllAlarms\(\);[\s\S]*?\}, \[userId\]\);/, "kabuk kapanınca depo boşalır");
   assert.match(center, /data && data\.me\.id === userId \? data\.reminders : \[\]/);
   assert.doesNotMatch(center, /data\??\.reminders\b(?! :)/, "hatırlatıcılar yalnız süzülmüş listeden");
   assert.match(center, /if \(signedOut\) router\.refresh\(\);/, "oturum düşünce sunucu giriş sayfasına gönderir");

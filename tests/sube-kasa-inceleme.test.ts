@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { CASH_FLAGS, dayTasks, type CashLite, type DayFacts, type DayTask } from "../src/app/panel/bugun/logic";
-import { DEFAULT_BRANCHES } from "../src/lib/branches";
+import { DEFAULT_BRANCHES, withBranchParam } from "../src/lib/branches";
 import { carryHint, tillCarries } from "../src/lib/cash-plan";
 import { cashReportSummary, type CashReportLike } from "../src/lib/mcp/answers/cash";
 import { okcMonth, type OkcRow } from "../src/lib/okc-z";
@@ -51,6 +51,10 @@ test("Bugün (yönetici, Tümü): her şubenin dünkü ve bugünkü raporu kendi
   assert.equal(rows.kasa.badge, "Girilmedi");
   assert.equal(rows["kasa-marina"].status, "done");
   assert.match(rows["kasa-marina"].detail, /^Deniz · Z/);
+  // PR #95 incelemesi: öteki şubenin satırı o şubeyi seçer ("Tümü"de form Tuzla'nınkini açardı); Tuzla'nınki seçimi değiştirmez
+  assert.equal(rows["kasa-dun-marina"].href, "/panel/kasa?gun=2026-10-21&sube=marina");
+  assert.equal(rows["kasa-marina"].href, "/panel/kasa?gun=2026-10-22&sube=marina");
+  assert.equal(rows["kasa-dun"].href, "/panel/kasa?gun=2026-10-21");
   // Öteki şubenin kapalı günü kendi satırında: onaylıysa satır yok, Tuzla'nınki kalır
   const closed = byKey(dayTasks({ ...facts, cash: { ...facts.cash!, others: [{ ...facts.cash!.others![0], yesterday: null, closed: { state: "approved", by: "Deniz", requestId: 4 } }] } }));
   assert.equal(closed["kasa-dun-marina"], undefined);
@@ -152,4 +156,20 @@ test("yazarkasanın ay satırı: iki şubenin aynı günü bir gün; tutarlar to
   // Tek şubede bugünkü gibi: zincir kurulur
   const tuzla = okcMonth([row("2026-10-31", "tuzla", { okcCumTotal: 48_000 }), row("2026-11-02", "tuzla", { okcCumTotal: 50_000 })], "2026-11");
   assert.deepEqual(tuzla.chain?.total, 2_000);
+});
+
+// PR #95 incelemesi: öteki şubenin bağlantıları (zil, Bugün, Kasa geçmişi, ModPOS zili) o şubeyi seçer
+test("withBranchParam: Tuzla'da bağlantı değişmez; öteki şubede ?sube= / &sube=, # korunur", () => {
+  assert.equal(withBranchParam("/panel/kasa?gun=2026-11-12", "tuzla"), "/panel/kasa?gun=2026-11-12");
+  assert.equal(withBranchParam("/panel/kasa?gun=2026-11-12", null), "/panel/kasa?gun=2026-11-12");
+  assert.equal(withBranchParam("/panel/kasa?gun=2026-11-12", "marina"), "/panel/kasa?gun=2026-11-12&sube=marina");
+  assert.equal(withBranchParam("/panel/kasa", "marina"), "/panel/kasa?sube=marina");
+  assert.equal(withBranchParam("/panel/kasa#isteklerim", "marina"), "/panel/kasa?sube=marina#isteklerim");
+});
+
+test("ModPOS föy zili öteki şubenin raporunda o şubeyi seçer", async () => {
+  const { modposMismatchBell } = await import("../src/lib/modpos/zil");
+  const m = (branchId: string) => ({ report: { date: "2026-11-12", revision: 1, branchId }, sheet: { revision: 1 }, diffs: [] }) as unknown as Parameters<typeof modposMismatchBell>[0];
+  assert.equal(modposMismatchBell(m("marina")).href, "/panel/kasa?gun=2026-11-12&sube=marina");
+  assert.equal(modposMismatchBell(m("tuzla")).href, "/panel/kasa?gun=2026-11-12");
 });

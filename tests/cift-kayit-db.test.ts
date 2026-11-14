@@ -165,6 +165,11 @@ describe("çift kayıt engeli: istemci anahtarı ve aynı numaralı fatura", { s
     const again = ok(await bill({ invoiceNo: null, clientKey: "anahtar-fatura-1" }));
     assert.equal(again.id, first.id);
     assert.equal(again.repeated, true);
+    // PR #95 incelemesi: tekrar kayıtlı satırın tedarikçisini ve tutarını döner (pencere arada yapılan düzeltmenin
+    // uygulanmadığını söyleyebilsin)
+    const [saved] = await db.select().from(s.invoices);
+    assert.deepEqual(again.repeatedRow, { supplier: saved.supplier, payable: saved.payable });
+    assert.equal(first.repeatedRow, null);
     assert.equal((await db.select().from(s.invoices)).length, 1);
     assert.equal(await logged("Fatura eklendi"), 1);
     // Ctrl+Enter'a iki kez basılınca iki istek aynı anda yola çıkar
