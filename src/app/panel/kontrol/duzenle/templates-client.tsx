@@ -17,11 +17,13 @@ import { listTitle, weekdaysText } from "@/lib/checklists";
 import { num } from "@/lib/format";
 import { createChecklistTemplate, setChecklistTemplateActive } from "@/server/actions/checklists";
 
-import { draftOf, EMPTY_TEMPLATE, fieldOf, TemplateFields, type TemplateDraft } from "./template-fields";
+import { draftOf, EMPTY_TEMPLATE, fieldOf, TemplateFields, type BranchOption, type TemplateDraft } from "./template-fields";
 
 export interface TemplateRow {
   id: number;
   name: string;
+  /** Şubenin adı; boş: bütün şubeler */
+  branchName: string | null;
   opensAt: string;
   dueAt: string;
   weekdays: number[];
@@ -36,7 +38,7 @@ export interface TemplateRow {
  * Listeleri düzenle: her liste bir satır (günler ve saat, madde / fotoğraf / ölçüm sayısı, Etkin anahtarı, Düzenle) ve
  * "Yeni liste" penceresi. Oluşturulunca pencere kapanır, sonra listenin sayfası açılır (önce pencere, sonra gezinme).
  */
-export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
+export function TemplatesClient({ templates, branches }: { templates: TemplateRow[]; branches: readonly BranchOption[] }) {
   const router = useRouter();
   const [pending, start] = useActionTransition();
   const [rows, setRowActive] = useOptimistic(templates, (state, p: { id: number; active: boolean }) => state.map((t) => (t.id === p.id ? { ...t, active: p.active } : t)));
@@ -95,6 +97,7 @@ export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">
                     {t.name}
+                    {t.branchName ? <Badge tone="blue">{t.branchName}</Badge> : null}
                     {!t.active ? <Badge tone="gray">Pasif</Badge> : null}
                     {!t.staffAllowed ? <Badge tone="violet">Yalnız yönetici</Badge> : null}
                   </p>
@@ -141,6 +144,7 @@ export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
               setError(null);
             }}
             errors={field ? { [field]: error! } : undefined}
+            branches={branches}
           />
           {error && !field ? (
             <Notice tone="bad" size="sm" live="assertive" title={error} />

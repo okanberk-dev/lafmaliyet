@@ -16,7 +16,28 @@ ertesi sabahki e-postada görür.
 | **Açılış** | 08:00 – 11:00 | 13 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); eksik / arıza notu (isteğe bağlı) |
 | **Kapanış** | 22:00 – 02:00 | 16 madde: karaoke odası (mikrofonlar alkollü mendille, koltuk ve tablet, unutulan eşya, cihazlar kapalı, oda fotoğrafı); bar (espresso yıkaması, buhar çubuğu, açık ürünlere tarih, bar buzdolabı, bar fotoğrafı); salon ve genel (yer, lavabo, çöp, salon fotoğrafı, ışık ve kapılar); not (isteğe bağlı) |
 
+Bu iki liste **Tuzla'nındır** (karaoke odası Tuzla'da). **Marina**'nın kendi iki listesi vardır
+(`MARINA_CHECKLISTS`, sahibin listesi, 16 Kasım 2026; `db:seed` bir kez ekler, anahtar `kontrol.marina.seeded`).
+Marina'da karaoke yok; karaoke maddeleri yerine teras, çikolata şelalesi ve portakal suyu makinesi var:
+
+| Liste | Saat | Maddeler |
+|-------|------|----------|
+| **Marina Açılış** | 08:00 – 11:00 | 28 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü |
+| **Marina Kapanış** | 22:00 – 02:00 | 18 madde: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
+
 Maddeler bir başlangıçtır: gıda güvenliği danışmanıyla gözden geçirilip **Listeler** sekmesinden değiştirilir.
+
+### Şubeler (16 Kasım 2026)
+
+Her listenin bir **Şube** alanı vardır (Listeler › liste › Şube): bir şube ya da **Bütün şubeler** (boş). Listeler
+sekmesinde şubeye ait listenin yanında şube rozeti görünür.
+
+- Soldaki şube seçicisinde **tek şube** seçiliyken Kontrol listeleri, Bugün, zil ve Geçmiş o şubenin ve bütün
+  şubelerin listelerini gösterir; **Tümü**'nde hepsi görünür.
+- **Şubesi belirlenmiş personel** (Kullanıcılar › kişi › Şube, docs/SUBE.md › Personel hesabının şubesi) panelde hep
+  kendi şubesindedir: yalnız o şubenin ve bütün şubelerin listelerini görür ve doldurur.
+- Sabah e-postası işletmenin tamamı içindir: bütün şubelerin eksik listeleri birlikte gelir.
+- Migration 0058 karaoke odası maddesi olan listeleri Tuzla'ya bağladı; diğer listeler bütün şubelerin kaldı.
 
 Madde türleri:
 

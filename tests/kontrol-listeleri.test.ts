@@ -10,7 +10,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
+import { DEFAULT_CHECKLISTS, MARINA_CHECKLISTS } from "../src/lib/checklist-seed";
 import { businessDate } from "../src/lib/cash-report";
 import {
   absentReason,
@@ -517,6 +517,49 @@ test("15. hazır listeler: Açılış 08:00–11:00 ve Kapanış 22:00–02:00, 
   assert.ok(kapanis.items.some((i) => /mikrofon/i.test(i.label)));
   // "Her seferinde" listeleri (Oda sıfırlama, Mal kabul) bu turda yok
   assert.ok(!DEFAULT_CHECKLISTS.some((t) => /Oda sıfırlama|Mal kabul/.test(t.name)));
+});
+
+test("15b. Marina'nın listeleri (16 Kasım 2026): karaoke yok, teras var; Tuzla'nın hazır listeleri Tuzla'nın; bölümler bitişik, sınırlar içinde", () => {
+  assert.deepEqual(
+    MARINA_CHECKLISTS.map((t) => [t.name, t.branchId, t.opensAt, t.dueAt, t.items.length]),
+    [
+      ["Marina Açılış", "marina", "08:00", "11:00", 28],
+      ["Marina Kapanış", "marina", "22:00", "02:00", 18],
+    ],
+  );
+  assert.ok(DEFAULT_CHECKLISTS.every((t) => t.branchId === "tuzla"), "karaoke odalı hazır listeler Tuzla'nın");
+  const names = [...DEFAULT_CHECKLISTS, ...MARINA_CHECKLISTS].map((t) => t.name.toLocaleLowerCase("tr-TR"));
+  assert.equal(new Set(names).size, names.length, "liste adları tekil (checklist_templates.name unique)");
+  for (const t of MARINA_CHECKLISTS) {
+    assert.equal(windowError(t.opensAt, t.dueAt), null, t.name);
+    assert.ok(t.name.length <= 60 && t.description.length <= 300);
+    assert.ok(t.items.length <= MAX_ITEMS);
+    assert.ok(!t.items.some((i) => /karaoke|mikrofon/i.test(`${i.section ?? ""} ${i.label}`)), `${t.name}: karaoke maddesi yok`);
+    assert.ok(t.items.some((i) => i.section === "Teras"), `${t.name}: teras bölümü`);
+    const labels = t.items.map((i) => i.label);
+    assert.equal(new Set(labels).size, labels.length, `${t.name}: madde adları tekil`);
+    // Bölümler bitişik: aynı bölüm listede iki ayrı yerde başlamaz
+    const order = t.items.map((i) => i.section).filter((x, n, a) => n === 0 || a[n - 1] !== x);
+    assert.equal(new Set(order).size, order.length, `${t.name}: bölümler bitişik`);
+    for (const i of t.items) {
+      assert.ok(i.label.length <= 120 && (i.section ?? "").length <= 40 && (i.hint ?? "").length <= 200, i.label);
+      if (i.type === "number") assert.ok(i.unit && i.min !== undefined && i.max !== undefined && i.min <= i.max, i.label);
+    }
+  }
+  const [acilis, kapanis] = MARINA_CHECKLISTS;
+  // Ölçümler: buzdolabı ve dondurucu dereceleri yazılır
+  assert.deepEqual(
+    acilis.items.filter((i) => i.type === "number").map((i) => [i.label, i.min, i.max]),
+    [
+      ["Buzdolabı sıcaklığı", 0, 4],
+      ["Dondurucu sıcaklığı", -30, -18],
+    ],
+  );
+  // Isıtıcı yalnız hava soğuksa: isteğe bağlı, listeyi tamamlanmaktan alıkoymaz
+  assert.equal(acilis.items.find((i) => /ısıtıcı/i.test(i.label))?.required, false);
+  // Kalan pastalar yazılır (yarına kalan ya da fire)
+  assert.equal(kapanis.items.find((i) => /Kalan pastalar/.test(i.label))?.type, "text");
+  assert.ok(kapanis.items.some((i) => i.label === "Alarmı kur"));
 });
 
 test("16. zil: aralıktan önce başlanan liste personelin zilinde aralık açılınca çıkar (önce bekliyor, son saatten sonra gecikti)", () => {

@@ -47,6 +47,11 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["admin", "staff"] }).notNull().default("staff"),
+  /**
+   * Personelin şubesi (docs/SUBE.md › Personel hesabının şubesi): doluysa personelin paneli bu şubede kilitli açılır
+   * (kasa raporu, kontrol listeleri o şubenin). Boş: bütün şubeler, seçici serbest. Yöneticide kullanılmaz.
+   */
+  branchId: text("branch_id").references(() => branches.id),
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -1007,6 +1012,11 @@ export const reminders = pgTable(
     note: text("note"),
     active: boolean("active").notNull().default(true),
     lastDoneAt: timestamp("last_done_at", { withTimezone: true }),
+    /**
+     * Ödemenin şubesi (docs/SUBE.md › Ödemeler): null = işletme geneli (vergi, muhasebe; her şubenin Ödemeler'inde de
+     * görünür). Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı (kira, aidat) yönetici taşır
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
   },
   (t) => [index("reminders_due_idx").on(t.dueDate)],
@@ -1724,6 +1734,8 @@ export const checklistTemplates = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
     description: text("description"),
+    /** Listenin şubesi; boş: bütün şubeler (docs/KONTROL-LISTELERI.md › Şubeler) */
+    branchId: branchIdNullable(),
     schedule: text("schedule", { enum: ["daily", "event"] }).notNull().default("daily"),
     /** "HH:MM" Türkiye saati; "event"te boş */
     opensAt: text("opens_at"),

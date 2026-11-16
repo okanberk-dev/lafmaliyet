@@ -27,7 +27,7 @@ import { Select } from "../ui/form";
  *
  * Tek şube açıkken seçici gösterilmez: tek şubeli bir işletmeye "Tümü / Tuzla" sormak gürültü olur.
  */
-export function BranchPicker({ scope, branches }: { scope: BranchScope; branches: readonly BranchRow[] }) {
+export function BranchPicker({ scope, branches, locked = false }: { scope: BranchScope; branches: readonly BranchRow[]; locked?: boolean }) {
   const [pending, run] = useActionTransition();
   const router = useRouter();
   const pathname = usePathname();
@@ -36,7 +36,8 @@ export function BranchPicker({ scope, branches }: { scope: BranchScope; branches
 
   // Derin bağlantı: ?sube= çereze yazılır, sonra adresten düşürülür (bir kez; çerez eşitlenince koşul kapanır)
   const istenen = parseBranchScope(params.get(BRANCH_PARAM), branches);
-  const farkli = params.has(BRANCH_PARAM) && istenen !== scope;
+  // Şubesi kilitli personelde derin bağlantı benimsenmez (sunucu da reddeder)
+  const farkli = !locked && params.has(BRANCH_PARAM) && istenen !== scope;
   useEffect(() => {
     if (!farkli || benimsenen.current === istenen) return;
     benimsenen.current = istenen;
@@ -51,6 +52,16 @@ export function BranchPicker({ scope, branches }: { scope: BranchScope; branches
 
   const acik = sortBranches(branches.filter((b) => b.active));
   if (acik.length < 2) return null;
+
+  // Şubesi yönetici tarafından belirlenen personel: seçici yerine yalnız şubenin adı
+  if (locked) {
+    return (
+      <div className="shrink-0 px-1">
+        <p className="mb-1.5 text-[11px] font-medium text-chart-muted">Şube</p>
+        <p className="rounded-xl bg-surface px-3 py-2 text-sm font-medium text-ink ring-1 ring-line ring-inset">{acik.find((b) => b.id === scope)?.name ?? scope}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="shrink-0 px-1">

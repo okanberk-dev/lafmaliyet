@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { WEEKDAY_SHORT } from "@/lib/checklists";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 export interface TemplateDraft {
   name: string;
   description: string;
+  /** Listenin şubesi; "": bütün şubeler */
+  branchId: string;
   opensAt: string;
   dueAt: string;
   weekdays: number[];
@@ -16,7 +18,13 @@ export interface TemplateDraft {
   active: boolean;
 }
 
-export const EMPTY_TEMPLATE: TemplateDraft = { name: "", description: "", opensAt: "08:00", dueAt: "11:00", weekdays: [1, 2, 3, 4, 5, 6, 7], staffAllowed: true, active: true };
+/** Şube seçeneği (fiziksel şubeler) */
+export interface BranchOption {
+  id: string;
+  name: string;
+}
+
+export const EMPTY_TEMPLATE: TemplateDraft = { name: "", description: "", branchId: "", opensAt: "08:00", dueAt: "11:00", weekdays: [1, 2, 3, 4, 5, 6, 7], staffAllowed: true, active: true };
 
 /** Haftanın günleri: yedi aç / kapa çipi (Pzt … Paz) */
 export function WeekdayChips({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
@@ -54,6 +62,7 @@ export function TemplateFields({
   onChange,
   errors,
   full,
+  branches = [],
 }: {
   value: TemplateDraft;
   onChange: (v: TemplateDraft) => void;
@@ -61,6 +70,8 @@ export function TemplateFields({
   errors?: Partial<Record<keyof TemplateDraft, string>>;
   /** Listenin sayfası: açıklama ve "Etkin" de */
   full?: boolean;
+  /** Fiziksel şubeler; birden azsa şube alanı gösterilmez */
+  branches?: readonly BranchOption[];
 }) {
   const set = <K extends keyof TemplateDraft>(k: K, x: TemplateDraft[K]) => onChange({ ...v, [k]: x });
   return (
@@ -68,6 +79,18 @@ export function TemplateFields({
       <Field label="Ad" error={errors?.name} htmlFor="liste-ad">
         <Input id="liste-ad" value={v.name} maxLength={60} placeholder="ör. Haftalık derin temizlik" onChange={(e) => set("name", e.target.value)} aria-invalid={errors?.name ? true : undefined} />
       </Field>
+      {branches.length > 1 || v.branchId ? (
+        <Field label="Şube" hint="Liste yalnız bu şubede beklenir; o şubenin personeli görür ve doldurur." htmlFor="liste-sube" error={errors?.branchId}>
+          <Select id="liste-sube" value={v.branchId} onChange={(e) => set("branchId", e.target.value)}>
+            <option value="">Bütün şubeler</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
       {full ? (
         <Field label="Açıklama" hint="Listenin başında görünür." htmlFor="liste-aciklama">
           <Textarea id="liste-aciklama" value={v.description} maxLength={300} onChange={(e) => set("description", e.target.value)} className="min-h-24" />
@@ -115,7 +138,8 @@ export function fieldOf(error: string): keyof TemplateDraft | null {
   if (/Son saat|Aralık en az/.test(error)) return "dueAt";
   if (/Saati 08:00/.test(error)) return "opensAt";
   if (/En az bir gün/.test(error)) return "weekdays";
+  if (/Şube/.test(error)) return "branchId";
   return null;
 }
 
-export const draftOf = (d: TemplateDraft) => ({ ...d, name: d.name.trim(), description: d.description.trim() || null });
+export const draftOf = (d: TemplateDraft) => ({ ...d, name: d.name.trim(), description: d.description.trim() || null, branchId: d.branchId || null });

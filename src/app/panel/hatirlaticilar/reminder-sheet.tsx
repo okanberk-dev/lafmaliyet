@@ -2,14 +2,14 @@
 
 import { BellRing, Check, ChevronRight, Minus, Plus, Repeat, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useId, useMemo, useState } from "react";
+import { createContext, useContext, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fold, matches, SearchField } from "@/components/ui/filters";
-import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -50,7 +50,20 @@ export interface Reminder {
   note: string | null;
   active: boolean;
   lastDoneAt: string | null;
+  /** Ödemenin şubesi; boş: işletme geneli */
+  branchId: string | null;
 }
+
+/**
+ * Ödemelerin şubeleri (docs/SUBE.md › Ödemeler): seçenekler (etkin fiziksel şubeler) ve yeni ödemenin varsayılanı
+ * (seçili şube; "Tümü"nde işletme geneli, ""). Tek şube varken şube alanı gösterilmez.
+ */
+export interface PaymentBranches {
+  options: readonly { id: string; name: string }[];
+  defaultId: string;
+}
+
+export const PaymentBranchesContext = createContext<PaymentBranches>({ options: [], defaultId: "" });
 
 export interface FixedRow {
   id: number;
@@ -289,6 +302,9 @@ function FormSheet({
   const [before, setBefore] = useState(initial.before);
   const [note, setNote] = useState(initial.note);
   const [endOfMonth, setEndOfMonth] = useState(initial.endOfMonth);
+  const branches = useContext(PaymentBranchesContext);
+  const [branchId, setBranchId] = useState(reminder ? (reminder.branchId ?? "") : branches.defaultId);
+  const showBranch = branches.options.length > 1 || Boolean(branchId);
 
   const amt = amount.trim() ? parseNumberTR(amount) : null;
   const amountError = amount.trim() && (amt === null || amt < 0) ? "Sayı girin, ör. 12.500 ya da 12500,50" : null;
@@ -327,6 +343,7 @@ function FormSheet({
         note: note || null,
         active: reminder?.active ?? true,
         endOfMonth: monthly && lastDay ? eom : false,
+        branchId: branchId || null,
       });
       if (!r.ok) return void toast.error(r.error);
       toast.success(reminder ? `“${title.trim()}” güncellendi` : `“${title.trim()}” eklendi`, { description: `Son ödeme ${longDateTR(dueDate)}${amt ? ` · ${money(amt)}` : ""}` });
@@ -496,6 +513,18 @@ function FormSheet({
             </button>
           </div>
         </Field>
+        {showBranch ? (
+          <Field label="Şube" hint="Şubenin Ödemeler'inde görünür. İşletme geneli (vergi, muhasebe) her şubede görünür." htmlFor={`${formId}-branch`}>
+            <Select id={`${formId}-branch`} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              <option value="">İşletme geneli</option>
+              {branches.options.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <Field label="Not" hint="İsteğe bağlı; e-postada başlığın altında görünür." htmlFor={`${formId}-note`}>
           <Textarea id={`${formId}-note`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500} className="min-h-12" />
         </Field>

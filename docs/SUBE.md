@@ -126,10 +126,40 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
 | Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
 | Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
+| Ödeme hatırlatıcısı | Formda seçilen şube ya da "İşletme geneli" (yenide seçili fiziksel şube, "Tümü"nde işletme geneli) |
+| Kontrol listesi | Listede seçilen şube ya da "Bütün şubeler" |
+| Personel hesabı (Kullanıcılar) | Formda seçilen şube ya da "Bütün şubeler"; şubesi olan personel o şubede kilitli |
 
 Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
 tarar.
+
+## Personel hesabının şubesi (16 Kasım 2026)
+
+**Kullanıcılar & roller**'de personel eklerken ya da düzenlerken **Şube** seçilir (boş: **Bütün şubeler**).
+Yönetici şubeye bağlanmaz; bütün şubeleri görür ve seçiciyle süzer.
+
+- Şubesi seçilmiş personelin paneli **o şubede kilitli** açılır (`src/server/branch-scope.ts` › `lockedBranch`):
+  çerez ve `?sube=` yok sayılır, kenar çubuğunda seçici yerine şubenin adı durur, `chooseBranchScope` başka şubeyi
+  reddeder. Kasa raporu, kasadan çıkan, zayi ve kontrol listeleri o şubeye yazılır ve o şubeden okunur.
+- Şube pasife alınırsa kilit kalkar (kişi "Tümü"ye düşer); yönetici yeni şubesini seçer.
+- Kullanıcı listesinde personelin şubesi rozetle görünür. Şubeye bağlı hesap varken şube silinmez
+  (`branchUsageCount`).
+
+## Ödemeler (16 Kasım 2026)
+
+Ödeme hatırlatıcılarının (kira, aidat, fatura, maaş …) **Şube** alanı vardır (`reminders.branch_id`; boş = **işletme
+geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
+
+| Ne | Kural |
+|---|---|
+| Ödemeler listesi, Bugün, zil | Tek şube seçiliyken **o şubenin ve işletme genelinin** hatırlatıcıları; "Tümü"nde hepsi, şubeye ait olanın başlığında şubesi ("Kira · Marina") |
+| Yeni hatırlatıcı | Formdaki **Şube**; varsayılanı seçili fiziksel şube, "Tümü"nde işletme geneli |
+| Sabit giderden ekle | Kalemin şubesi (Marina'nın kirası Marina'nın ödemesi) |
+| Ödenmemiş faturalar ve cari | İşletme geneli (mal alımı şubeye bölünmez), her görünümde |
+| Sabah e-postası, Nakit planı, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır) |
+
+Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici formdan taşır.
 
 ## Sırada ne var
 

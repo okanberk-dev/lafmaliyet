@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import { loadChecklistTemplates } from "@/server/data/checklists";
 import { photoStorage } from "@/server/storage/photos";
 
@@ -34,7 +35,9 @@ export default function ChecklistTemplatesPage() {
 
 async function TemplatesContent() {
   await requireAdmin();
-  const templates = await loadChecklistTemplates();
+  const [templates, all] = await Promise.all([loadChecklistTemplates(), listBranches()]);
+  const branches = all.filter((b) => b.kind === "fiziksel" && b.active).map((b) => ({ id: b.id, name: b.name }));
+  const nameOf = new Map(all.map((b) => [b.id, b.name]));
   const storage = photoStorage();
   return (
     <>
@@ -52,6 +55,7 @@ async function TemplatesContent() {
         templates={templates.map((t) => ({
           id: t.id,
           name: t.name,
+          branchName: t.branchId ? (nameOf.get(t.branchId) ?? t.branchId) : null,
           opensAt: t.opensAt,
           dueAt: t.dueAt,
           weekdays: t.weekdays,
@@ -61,6 +65,7 @@ async function TemplatesContent() {
           photos: t.items.filter((i) => i.type === "photo").length,
           numbers: t.items.filter((i) => i.type === "number").length,
         }))}
+        branches={branches}
       />
     </>
   );

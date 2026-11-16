@@ -407,6 +407,13 @@
       "when": 1793818367709,
       "tag": "0057_sabit_gider_subesi",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794837713042,
+      "tag": "0058_sube_kontrol_kullanici_odeme",
+      "breakpoints": true
     }
   ]
 }

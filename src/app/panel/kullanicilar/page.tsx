@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl, isPendingInvite, MAX_TOKEN_ATTEMPTS } from "@/server/auth/tokens";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
 
@@ -41,13 +42,14 @@ async function UsersContent() {
   const me = await requireAdmin();
   const db = getDb();
   const now = new Date();
-  const [rows, links] = await Promise.all([
+  const [rows, links, all] = await Promise.all([
     db
       .select({
         id: s.users.id,
         name: s.users.name,
         email: s.users.email,
         role: s.users.role,
+        branchId: s.users.branchId,
         active: s.users.active,
         lastLoginAt: s.users.lastLoginAt,
         totpEnabled: s.users.totpEnabled,
@@ -63,7 +65,11 @@ async function UsersContent() {
       .from(s.userTokens)
       .where(and(isNull(s.userTokens.usedAt), gt(s.userTokens.expiresAt, now), lt(s.userTokens.attempts, MAX_TOKEN_ATTEMPTS)))
       .orderBy(asc(s.userTokens.expiresAt)),
+    listBranches(),
   ]);
+  // Personelin bağlanabileceği şubeler: etkin fiziksel şubeler (kişinin pasif şubesi rozette adıyla görünsün diye o da)
+  const branchIds = new Set(rows.map((u) => u.branchId).filter(Boolean));
+  const branches = all.filter((b) => b.kind === "fiziksel" && (b.active || branchIds.has(b.id))).map((b) => ({ id: b.id, name: b.name }));
   const live = new Map(links.map((l) => [l.userId, { kind: l.kind, until: dateTimeTR(l.until) }]));
   return (
     <div className="space-y-4">
@@ -71,11 +77,13 @@ async function UsersContent() {
         meId={me.id}
         emailConfigured={isEmailConfigured()}
         loginUrl={`${appUrl()}/giris`}
+        branches={branches}
         users={rows.map((u) => ({
           id: u.id,
           name: u.name,
           email: u.email,
           role: u.role,
+          branchId: u.branchId,
           active: u.active,
           lastLoginAt: u.lastLoginAt ? dateTimeTR(u.lastLoginAt) : null,
           twoFactor: u.totpEnabled,

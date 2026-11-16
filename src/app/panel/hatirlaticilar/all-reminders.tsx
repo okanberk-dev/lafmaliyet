@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { CardFooter } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 import { FAB_AVOID } from "./fab-clear";
 import { CategoryWell, DateTile } from "./payment-ui";
-import type { Reminder } from "./reminder-sheet";
+import { PaymentBranchesContext, type Reminder } from "./reminder-sheet";
 
 const KIND_LABEL = Object.fromEntries(REMINDER_KINDS.map((k) => [k.value, k.label])) as Record<ReminderKind, string>;
 const REPEAT_LABEL = Object.fromEntries(REMINDER_REPEATS.map((r) => [r.value, r.label])) as Record<ReminderRepeat, string>;
@@ -195,7 +195,10 @@ export function AllReminders({
                           <DateTile date={r.dueDate} daysLeft={r.active ? left : 999} size="sm" muted={!r.active} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-3">
-                              <p className="min-w-0 text-[15px] leading-5 font-semibold break-words text-ink">{r.title}</p>
+                              <p className="min-w-0 text-[15px] leading-5 font-semibold break-words text-ink">
+                                {r.title}
+                                <BranchTag id={r.branchId} />
+                              </p>
                               <span className="shrink-0 text-[15px] leading-5 font-semibold text-ink tabular">{r.amount !== null ? money(r.amount) : "–"}</span>
                             </div>
                             {/* Satır sarılınca "·" satır sonunda asılı kalmasın (DotList) */}
@@ -282,6 +285,7 @@ export function AllReminders({
                                 <div className="min-w-0">
                                   <p className="truncate font-medium" title={r.title}>
                                     {r.title}
+                                    <BranchTag id={r.branchId} />
                                   </p>
                                   <p className="truncate text-xs text-ink-mute" title={r.note ?? undefined}>
                                     {KIND_LABEL[r.kind]}
@@ -337,4 +341,11 @@ export function AllReminders({
       </details>
     </section>
   );
+}
+
+/** Ödemenin şubesi (işletme genelinde ya da tek şube varken yok): başlığın yanında soluk "· Marina" */
+function BranchTag({ id }: { id: string | null }) {
+  const { options } = useContext(PaymentBranchesContext);
+  const name = id && options.length > 1 ? (options.find((b) => b.id === id)?.name ?? null) : null;
+  return name ? <span className="font-normal text-ink-mute"> · {name}</span> : null;
 }

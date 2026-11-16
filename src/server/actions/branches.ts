@@ -19,6 +19,7 @@ import {
   type BranchPosSource,
 } from "@/lib/branches";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { staffBranchLock } from "@/server/branch-scope";
 import { branchUsageCount, getBranch, listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
@@ -140,6 +141,9 @@ export async function chooseBranchScope(input: unknown) {
     await requireUser();
     const { scope } = scopeInput.parse(input);
     const secim = parseBranchScope(scope, await listBranches());
+    // Şubesi seçilmiş personel başka şubeye geçemez (seçim zaten kişinin şubesinde kilitli, src/server/branch-scope.ts)
+    const kilit = await staffBranchLock();
+    if (kilit && secim !== kilit) throw new UserError("Şubeniz yönetici tarafından belirlendi; başka şubeye geçemezsiniz");
     (await cookies()).set(BRANCH_COOKIE, secim, {
       httpOnly: true,
       sameSite: "lax",

@@ -47,7 +47,7 @@ import { useFabBlocked } from "./fab-clear";
 import { NotificationsSection, type EmailStatus, type LogRow, type Recipient } from "./notifications-section";
 import { itemKey, PaymentCard, sourceOf, usePaymentActions, type MenuAction } from "./payment-ui";
 import { RecentPaidList } from "./recent-paid";
-import { DueDateSheet, isPresetKey, ReminderSheet, type FixedRow, type Reminder } from "./reminder-sheet";
+import { DueDateSheet, isPresetKey, PaymentBranchesContext, ReminderSheet, type FixedRow, type PaymentBranches, type Reminder } from "./reminder-sheet";
 import { Sheet } from "./sheet";
 import { WeeklyRow, type WeeklyPanel } from "./weekly-row";
 
@@ -102,7 +102,16 @@ const NO_DRIFTS: (ReminderDrift & { text: string })[] = [];
 type ItemHide = { key: string } | { reminderId: number };
 type ReminderPatch = { type: "active"; id: number; active: boolean } | { type: "remove"; id: number };
 
-export function RemindersClient({
+/** Ödemeler: şube seçenekleri bağlamla pencerelere ve listeye iner (docs/SUBE.md › Ödemeler) */
+export function RemindersClient({ branches, ...props }: Parameters<typeof RemindersView>[0] & { branches: PaymentBranches }) {
+  return (
+    <PaymentBranchesContext.Provider value={branches}>
+      <RemindersView {...props} />
+    </PaymentBranchesContext.Provider>
+  );
+}
+
+function RemindersView({
   today,
   items,
   laterInvoices = NO_ITEMS,
