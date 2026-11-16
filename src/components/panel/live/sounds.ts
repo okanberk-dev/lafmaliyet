@@ -216,8 +216,25 @@ export function play(kind: SoundKind) {
   schedule(kind, c.currentTime + 0.02);
 }
 
+/**
+ * Alarmı isteyenler ("karaoke": süresi dolan oturum, "hatirlatici:12": sürekli sesli hatırlatma). Alarm tektir; her
+ * sahip yalnız kendini susturur (hatırlatmada "Yaptım" karaoke alarmını kesmez, ses açılınca karaoke etkisinin
+ * temizliği hatırlatmanın alarmını kesmez), son sahip susunca alarm durur.
+ */
+const alarmOwners = new Set<string>();
+let ownersSnapshot = "";
+
+function ownersChanged() {
+  const next = [...alarmOwners].sort().join(",");
+  if (next === ownersSnapshot) return;
+  ownersSnapshot = next;
+  notifyAudio();
+}
+
 /** Alarm döngüsü: susturulana kadar (en çok 30 dakika) her 2,2 saniyede bir */
-export function startAlarm() {
+export function startAlarm(owner: string) {
+  alarmOwners.add(owner);
+  ownersChanged();
   alarmUntil = Date.now() + 30 * 60_000;
   if (alarmTimer) return;
   play("alarm");
@@ -227,12 +244,26 @@ export function startAlarm() {
   }, 2200);
 }
 
-export function stopAlarm() {
+/** Sahibin alarmını susturur (başka sahip çalıyorsa alarm sürer); sahipsiz çağrı (30 dakika doldu) hepsini susturur */
+export function stopAlarm(owner?: string) {
+  if (owner === undefined) alarmOwners.clear();
+  else alarmOwners.delete(owner);
+  ownersChanged();
+  if (alarmOwners.size) return;
   if (alarmTimer) clearInterval(alarmTimer);
   alarmTimer = null;
 }
 
 export const alarmRinging = () => alarmTimer !== null;
+
+/** Alarmı çalan sahipler, virgülle ve sıralı ("hatirlatici:12,karaoke"); sunucuda boş */
+export function useAlarmOwners(): string {
+  return useSyncExternalStore(
+    subscribeAudio,
+    () => ownersSnapshot,
+    () => "",
+  );
+}
 
 /**
  * Sürenin bittiği ana ses saatinden alarm kurar (sekme arka planda olsa da tam zamanında, 12 saniye çalar); dönen

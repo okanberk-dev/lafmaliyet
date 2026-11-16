@@ -19,7 +19,7 @@ function MyRemindersHeader({ role }: { role: "admin" | "staff" }) {
       role={role}
       description={
         role === "admin"
-          ? "Kendinize ya da ekibinize notlar; her hatırlatıcıyı yalnız sahibi görür."
+          ? "Kendinize ya da ekibinize kurun; saatinde o kişinin ekranında açılır, yalnız o görür."
           : "Kendinize notlar: sipariş, temizlik, aranacaklar. Yalnız siz görürsünüz."
       }
     />

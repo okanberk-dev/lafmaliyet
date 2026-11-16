@@ -62,7 +62,8 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Tümü" kenar çubuğunun içeriğini yaylı
   çekmecede açar (odak çekmecede döner, Esc kapatır; yalnız etkin grup açık gelir, etkin satır kutunun içine kayar). Ekran klavyesi açıkken alt menü gizlenir.
 - Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve
-  klavye açıkken 0): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
+  klavye açıkken 0; yapılmamış hatırlatmaların köşe kartı açıkken kartın yüksekliği kadar fazlası, `--reminder-dock-h`,
+  docs/HATIRLATICILAR.md): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
   içeriğin altındaki boşluk (klavyeyle değişmez); `--mobile-top-h` üst çubuk (56px, lg ve üstünde 0): yapışkan araç
   çubukları `sticky top-(--mobile-top-h)`; `--vvh` görünür alanın yüksekliği, `--keyboard-inset` iOS'ta klavyenin
   düzenin altından örttüğü pay; `html[data-keyboard="open"]` klavye açık.
