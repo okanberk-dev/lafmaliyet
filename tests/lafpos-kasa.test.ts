@@ -200,7 +200,8 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   const loader = read("src/server/data/cash-reports.ts");
   assert.match(loader, /if \(switchDay === null \|\| \(to !== undefined && to < switchDay\)\) return \[\];/);
   // ModPOS föyü (ay rakamına yedek) LafPOS'tan da sonra gelir: rapor > LafPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek)
-  assert.match(loader, /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(r\.date\)\), \.\.\.modpos\.filter\(\(r\) => !taken\.has\(r\.date\) && r\.date >= runFrom\)\]/);
+  // Öncelik şube içinde (tillKey: şube, gün): "Tümü"de bir şubenin raporu öteki şubenin aynı günkü yedek satırını düşürmez
+  assert.match(loader, /\.\.\.lafpos\.filter\(\(r\) => !have\.has\(tillKey\(r\)\)\),\n\s+\.\.\.modpos\.filter\(\(r\) => !taken\.has\(tillKey\(r\)\) && r\.date >= \(runFrom\.get\(r\.branchId \?\? ""\) \?\? ""\)\),/);
   const dataset = read("src/server/data/dataset.ts");
   // Rapor sınaması tek yerden (isReportRow): üçüncü kaynak (ModPOS) rapor sanılmaz
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);

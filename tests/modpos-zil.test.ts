@@ -225,12 +225,13 @@ test("kaynak: saf modül sunucuya bağlı değil; sunucu modülü yalnız okur (
   const srv = read("src/server/bell/modpos.ts");
   assert.match(srv, /^import "server-only";/);
   assert.doesNotMatch(srv, /fetchKasaFoyu|syncModpos|storeFoy|noteModposRun/);
-  // Anahtar yoksa durum okunmaz; biçimi bozuksa da (state null)
-  assert.match(srv, /if \(keyProblem === "missing"\) return null;\s+const state = keyProblem \? null : await readModposState\(\);/);
+  // Şube şube (her ModPOS şubesinin kendi anahtarı ve durumu); anahtar yoksa durum okunmaz; biçimi bozuk ya da başka
+  // şubeyle ortaksa da (state null)
+  assert.match(srv, /const keyProblem = modposKeyProblem\(env, id, peers\);\s+if \(keyProblem === "missing"\) return null;\s+const state = keyProblem \? null : await readModposState\(undefined, id\);/);
   // E-postanın satırı yalnız dün (sabah işi föyü e-postadan önce çeker); okunamayan kaynak satırsız düşer
   assert.match(srv, /const yesterday = addDays\(businessDate\(now\), -1\);/);
   assert.match(srv, /loadModposSheets\(yesterday, yesterday\)/);
-  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlert\(\)\.catch\(\(\) => null\),/);
+  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlerts\(\)\.catch\(\(\) => \[\]\),/);
 });
 
 test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personelin dalında ModPOS yok", () => {

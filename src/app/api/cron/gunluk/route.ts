@@ -9,7 +9,7 @@ import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/run
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
 import { isModposConfigured } from "@/server/modpos/client";
-import { syncModpos, type ModposSyncResult } from "@/server/modpos/sync";
+import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
 import { pushMonthEndCount } from "@/server/notify/count-push";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
@@ -65,11 +65,12 @@ export async function GET(request: NextRequest) {
   const runId = await startJobRun("gunluk");
   // Satış tahmini Paraşüt'ün yeniden denemesiyle aynı anda başlar; e-postadan önce beklenir (kutusu taze havayla ve
   // kaydedilen sayılarla). Hata fırlatmaz, en çok 7 sn
-  // ModPOS kasa föyü (docs/MODPOS-API.md): yalnız burada ve bir kez başlar (extras() iki kez çalışabilir, günde 2 hak
+  // ModPOS kasa föyü (docs/MODPOS-API.md): yalnız burada ve bir kez başlar; ModPOS'lu her şube kendi anahtarı ve hakkıyla,
+  // sırayla (docs/MODPOS-API.md › Şubeler) (extras() iki kez çalışabilir, günde 2 hak
   // var). Paraşüt'le aynı anda sürer, e-postadan önce beklenir: e-posta, zil ve Bugün taze föyü görür. Hata fırlatmaz,
   // en çok jobStart + 32 sn
   const modposP = capped<ModposSyncResult>(
-    (isModposConfigured() ? syncModpos("cron", { deadlineAt: jobStart + MODPOS_DEADLINE_MS }) : Promise.resolve(MODPOS_OFF)).catch(
+    (isModposConfigured() ? syncModposAll("cron", { deadlineAt: jobStart + MODPOS_DEADLINE_MS }) : Promise.resolve(MODPOS_OFF)).catch(
       (e: Error): ModposSyncResult => ({ status: "error", days: [], left: null, error: e.message }),
     ),
     jobStart + MODPOS_CAP_MS - Date.now(),

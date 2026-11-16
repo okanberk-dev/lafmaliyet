@@ -455,7 +455,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     pendingLateByDay(`${month}-01`, monthEnd),
     // ModPOS kasa föyü (docs/MODPOS-API.md › Nerede görünür), yalnız yöneticiye: saklanan föy okunur, ModPOS'a istek
     // gitmez; okunamazsa kart, rozet ve satır görünmez, sayfa bozulmaz. Personel dalı bunları hiç okumaz
-    showForm ? loadKasaModpos(date).catch(() => null) : Promise.resolve(null),
+    // Föy ekrandaki raporun şubesinin (şube, gün); rapor yoksa seçili şubenin ("Tümü"de Tuzla): başka şubenin föyü bu
+    // raporla karşılaştırılmaz (docs/MODPOS-API.md › Şubeler)
+    showForm ? loadKasaModpos(date, undefined, report?.branchId).catch(() => null) : Promise.resolve(null),
     loadKasaModposDays(`${month}-01`, monthEnd).catch(() => () => NO_MODPOS),
   ]);
   const checks = carryChecks(monthReports, before);
@@ -507,7 +509,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // Günden güne listesinin ModPOS günleri (tarihe göre; extras'a girmez: o WhatsApp'a ve personele de gider)
   const modposDays: Record<string, ModposDayView> = {};
   for (const d of days) {
-    const m = modposOf(d.date);
+    const m = modposOf(d.date, d.report?.branchId);
     if (m.z) modposDays[d.date] = modposDayView(d.report, m.z);
   }
   return (
@@ -519,7 +521,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           {closedBar}
           {outsCard}
           {form}
-          {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet()} now={new Date()} /> : null}
+          {modposDay?.modpos ? <ModposSections date={date} today={today} sheet={modposDay.sheet} z={modposDay.z} report={report} ladmin={ladmin} keySet={modposKeySet(process.env, modposDay.sheet?.branchId ?? report?.branchId)} now={new Date()} /> : null}
           {siteRow}
           {wasteCard}
         </>

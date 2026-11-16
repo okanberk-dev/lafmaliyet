@@ -42,6 +42,12 @@ export interface TillRow {
    *   olmadığı için `discounts` null.
    */
   source?: "lafpos" | "modpos";
+  /**
+   * Satırın şubesi (docs/SUBE.md). Aynı günün öncelik ayıklaması (rapor > LafPOS > ModPOS) şube içindedir: "Tümü"de
+   * Tuzla'nın raporu Marina'nın aynı günkü föyünü düşürmez (docs/MODPOS-API.md › Şubeler). Verilmezse (eski kayıt,
+   * test) bütün satırlar tek şubeden sayılır.
+   */
+  branchId?: string;
   /** Yedek satırda fiş (adisyon) sayısı: satışsız gün sonu kapalı işaretini bozmaz (lafposSold ile aynı kural) */
   receipts?: number | null;
 }
@@ -73,6 +79,20 @@ export function modposRunStart(modposDays: Iterable<string>, firstReport: string
 function modposRunStartOf(rows: readonly TillRow[]): string | null {
   const modpos = rows.filter((r) => r.source === "modpos").map((r) => r.date);
   return modpos.length ? modposRunStart(modpos, earliest(rows.filter((r) => r.source !== "modpos"))) : null;
+}
+
+/** Aynı günün aynı şubedeki satırları (öncelik ayıklamasının anahtarı) */
+export const tillKey = (r: Pick<TillRow, "date" | "branchId">) => `${r.branchId ?? ""}|${r.date}`;
+
+/** Föy satırlarının kesintisiz kısmı, şube şube (modposRunStart her şubenin kendi föyleri ve ilk raporuyla) */
+function keepModposRuns(rows: TillRow[]): TillRow[] {
+  const byBranch = new Map<string, TillRow[]>();
+  for (const r of rows) (byBranch.get(r.branchId ?? "") ?? byBranch.set(r.branchId ?? "", []).get(r.branchId ?? "")!).push(r);
+  const from = new Map([...byBranch].map(([b, rs]) => [b, modposRunStartOf(rs)]));
+  return rows.filter((r) => {
+    const start = from.get(r.branchId ?? "") ?? null;
+    return r.source !== "modpos" || start === null || r.date >= start;
+  });
 }
 
 /** Aynı günün önceliği: kasa raporu (0) > LafPOS gün sonu (1) > ModPOS föyü (2) */
@@ -127,14 +147,18 @@ export function tillMonths(
   const shut = closedDays ? new Set(closedDays) : null;
   if (!rows.length) return [];
   // Yedek satırlar (LafPOS G6, ModPOS föyü) yalnız daha öncelikli kaynağı olmayan günde sayılır: rapor > LafPOS > ModPOS
-  // (yükleyici zaten böyle verir). Aynı kaynağın aynı günkü satırları olduğu gibi kalır
+  // (yükleyici zaten böyle verir). Aynı kaynağın aynı günkü satırları olduğu gibi kalır. Ayıklama şube içinde (tillKey):
+  // başka şubenin raporu bu şubenin föyünü düşürmez
   const best = new Map<string, number>();
-  for (const r of rows) best.set(r.date, Math.min(best.get(r.date) ?? 2, rankOf(r)));
-  rows = rows.filter((r) => rankOf(r) === best.get(r.date));
-  // Raporlar başlamadan önceki föyler: yalnız ilk rapora kesintisiz uzanan kısım (modposRunStart). Satırlardan yalnız
-  // bütün satırlar verilince bulunur; yalnız bir ayın satırlarını veren çağıran (firstReport'u veren) başını kendisi verir
-  const runFrom = modposFrom !== undefined ? modposFrom : firstReport !== undefined ? null : modposRunStartOf(rows);
-  if (runFrom !== null) rows = rows.filter((r) => r.source !== "modpos" || r.date >= runFrom);
+  for (const r of rows) best.set(tillKey(r), Math.min(best.get(tillKey(r)) ?? 2, rankOf(r)));
+  rows = rows.filter((r) => rankOf(r) === best.get(tillKey(r)));
+  // Raporlar başlamadan önceki föyler: yalnız ilk rapora kesintisiz uzanan kısım (modposRunStart), şube şube. Satırlardan
+  // yalnız bütün satırlar verilince bulunur; yalnız bir ayın satırlarını veren çağıran (firstReport'u veren) başını
+  // kendisi verir
+  if (modposFrom !== undefined) {
+    const runFrom = modposFrom;
+    if (runFrom !== null) rows = rows.filter((r) => r.source !== "modpos" || r.date >= runFrom);
+  } else if (firstReport === undefined) rows = keepModposRuns(rows);
   if (!rows.length) return [];
   const first = firstEver ?? earliest(rows)!;
   // Eksik gün araması ilk kasa raporundan (ya da LafPOS gün sonundan); hiçbiri yoksa (yalnız ModPOS föyü) aranmaz

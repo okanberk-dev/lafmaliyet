@@ -1,9 +1,11 @@
 import "server-only";
 
 import { isLafposDay } from "@/lib/lafpos/switch";
-import { modposKeyProblem } from "@/lib/modpos/request";
+import { modposAnyKey, modposKeyProblem } from "@/lib/modpos/request";
 import { sheetZ, type ModposZ } from "@/lib/modpos/z";
+import { modposPairKey } from "@/lib/modpos/zil";
 import { addDays } from "@/lib/reminders";
+import { currentWriteBranch } from "@/server/branch-scope";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadModposSheet, loadModposSheets, type ModposSheet } from "@/server/modpos/store";
@@ -31,33 +33,39 @@ export const NO_MODPOS: KasaModpos = { modpos: false, sheet: null, z: null };
 const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet, z: sheet ? sheetZ(sheet) : null });
 
 /**
- * Bir günün ModPOS föyü (yöneticinin gün görünümü, `?gun=`): LafPOS gününde `{ modpos: false }` ve föy okunmaz
+ * Bir günün ModPOS föyü (yöneticinin gün görünümü, `?gun=`): LafPOS gününde `{ modpos: false }` ve föy okunmaz. Föy
+ * tek şubenindir (docs/MODPOS-API.md › Şubeler): verilen şube (ekranda duran raporun şubesi), yoksa seçili şube;
+ * "Tümü"de Tuzla (store.ts gunSubesi). Başka şubenin föyü bu günün raporuyla karşılaştırılmaz.
  */
-export async function loadKasaModpos(date: string, db: DB = getDb()): Promise<KasaModpos> {
+export async function loadKasaModpos(date: string, db: DB = getDb(), branchId?: string): Promise<KasaModpos> {
   if (isLafposDay(date, await loadLafposSwitchDay(db))) return NO_MODPOS;
   // Günün görünümü ham XML'i de gösterir (ModPOS bölümünün "Ham föy"ü)
-  return withZ(await loadModposSheet(date, db, { raw: true }));
+  return withZ(await loadModposSheet(date, db, { raw: true, branchId }));
 }
 
 /**
- * [from, to] içindeki günlerin ModPOS föyleri (yöneticinin günden güne listesi; tek sorgu): `of(gün)` loadKasaModpos'un
- * aynısını verir. Geçiş günü bu aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç okunmaz.
+ * [from, to] içindeki günlerin ModPOS föyleri (yöneticinin günden güne listesi; tek sorgu): `of(gün, şube)`
+ * loadKasaModpos'un aynısını verir. Föyler (şube, gün) ile tutulur: "Tümü"de iki şubenin aynı günü birbirini ezmez,
+ * satır kendi raporunun şubesinin föyünü alır; şube verilmezse `fallback` (seçili şube, "Tümü"de Tuzla). Geçiş günü bu
+ * aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç okunmaz.
  */
-export async function loadKasaModposDays(from: string, to: string, db: DB = getDb()): Promise<(date: string) => KasaModpos> {
-  const switchDay = await loadLafposSwitchDay(db);
+export async function loadKasaModposDays(from: string, to: string, db: DB = getDb(), fallback?: string): Promise<(date: string, branchId?: string | null) => KasaModpos> {
+  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentWriteBranch()]);
   const out = new Map<string, KasaModpos>();
-  const of = (date: string): KasaModpos => (isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(date) ?? withZ(null)));
+  const of = (date: string, branchId?: string | null): KasaModpos =>
+    isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(modposPairKey(branchId ?? sube, date)) ?? withZ(null));
   const end = switchDay !== null && switchDay <= to ? addDays(switchDay, -1) : to;
   if (end < from) return of;
-  for (const sheet of await loadModposSheets(from, end, db)) out.set(sheet.day, withZ(sheet));
+  for (const sheet of await loadModposSheets(from, end, db)) out.set(modposPairKey(sheet.branchId, sheet.day), withZ(sheet));
   return of;
 }
 
 /**
  * ModPOS anahtarı kurulu mu (biçimi doğru; docs/MODPOS-API.md › Kurulum): kurulmamışken föyü olmayan günde kart hiç
  * çıkmaz ("her sabah gelir" doğru olmazdı; durum Ayarlar › ModPOS kasa föyü kartında "Kurulmadı"). Saklanan föy
- * anahtar olmadan da görünür (önizleme canlının veritabanını okur)
+ * anahtar olmadan da görünür (önizleme canlının veritabanını okur). Şube verilirse o şubenin anahtarı (Marina'nın
+ * anahtarı yokken Marina'nın günü "her sabah gelir" demesin), verilmezse herhangi bir şubeninki
  */
-export function modposKeySet(env: Record<string, string | undefined> = process.env): boolean {
-  return modposKeyProblem(env) === null;
+export function modposKeySet(env: Record<string, string | undefined> = process.env, branchId?: string): boolean {
+  return branchId === undefined ? modposAnyKey(env) : modposKeyProblem(env, branchId) === null;
 }

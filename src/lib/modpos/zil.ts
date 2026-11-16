@@ -1,3 +1,4 @@
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
@@ -22,6 +23,8 @@ import { sheetZ } from "./z";
 /** Karşılaştırılan föy: saklanan satırın gereken alanları (src/server/modpos/store.ts ModposSheet) */
 export interface ModposSheetLite {
   day: string;
+  /** Föyün şubesi (yoksa Tuzla): rapor yalnız kendi şubesinin föyüyle karşılaştırılır */
+  branchId?: string;
   foy: KasaFoyu;
   revision: number;
   /** Kesin mi (kasasız föy kesinleşmeden karşılaştırılmaz; verilmezse kesin sayılır) */
@@ -42,20 +45,27 @@ export const MODPOS_KEY_TITLE = "ModPOS API'den veri çekilemiyor";
 /** Zilin gövdesinin en çok uzunluğu (LafPOS satırıyla aynı) */
 export const MODPOS_BELL_BODY_MAX = 220;
 
+/** Rapor ile föyün eşleşme anahtarı: (şube, gün). Şubesi verilmeyen kayıt Tuzla'nındır (şubeler öncesi) */
+export function modposPairKey(branchId: string | null | undefined, day: string): string {
+  return `${branchId ?? DEFAULT_BRANCH_ID}|${day}`;
+}
+
 /**
  * Föyünden farklı yazılan raporlar, raporların sırasıyla. LafPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
  * (foyZ null) ya da kasası hâlâ açık föyün günü atlanır (docs/MODPOS-API.md › Nerede görünür, karşılaştırma kuralları).
+ * Rapor yalnız **kendi şubesinin** föyüyle karşılaştırılır (şube, gün): "Tümü" seçiliyken Marina'nın raporu Tuzla'nın
+ * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler).
  */
-export function modposMismatches<R extends ModposSavedFields & { date: string }>(
+export function modposMismatches<R extends ModposSavedFields & { date: string; branchId?: string | null }>(
   reports: readonly R[],
   sheets: readonly ModposSheetLite[],
   switchDay: string | null,
 ): ModposMismatch<R>[] {
-  const byDay = new Map(sheets.map((x) => [x.day, x]));
+  const byDay = new Map(sheets.map((x) => [modposPairKey(x.branchId, x.day), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
     if (isLafposDay(report.date, switchDay)) continue;
-    const sheet = byDay.get(report.date);
+    const sheet = byDay.get(modposPairKey(report.branchId, report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;
     const diffs = modposDiffs(report, z);
@@ -65,7 +75,7 @@ export function modposMismatches<R extends ModposSavedFields & { date: string }>
 }
 
 /** Bugün'ün kasa satırları için yalnız günler (bugun/logic.ts cashFlags'e verilir: "ModPOS föyünden farklı") */
-export function modposMismatchDates(reports: readonly (ModposSavedFields & { date: string })[], sheets: readonly ModposSheetLite[], switchDay: string | null): Set<string> {
+export function modposMismatchDates(reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[], sheets: readonly ModposSheetLite[], switchDay: string | null): Set<string> {
   return new Set(modposMismatches(reports, sheets, switchDay).map((m) => m.report.date));
 }
 
@@ -74,14 +84,16 @@ export function modposMismatchDates(reports: readonly (ModposSavedFields & { dat
  * değişince yeniden okunmamış olur. Gövde "2 Kasım Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); …", en çok
  * MODPOS_BELL_BODY_MAX harf.
  */
-export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: number }>): { id: string; title: string; body: string; href: string } {
+export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: number; branchId?: string | null }>, branchName?: string): { id: string; title: string; body: string; href: string } {
   const date = m.report.date;
-  const body = `${longDateTR(date)} · ${m.diffs.map(modposDiffText).join("; ")}`;
+  // Tuzla'dan başka şubenin satırı kimliğinde ve adresinde şubeyi taşır (adresin ?sube='si panelin seçimine geçer)
+  const sube = m.report.branchId && m.report.branchId !== DEFAULT_BRANCH_ID ? m.report.branchId : null;
+  const body = `${branchName ? `${branchName} · ` : ""}${longDateTR(date)} · ${m.diffs.map(modposDiffText).join("; ")}`;
   return {
-    id: `kasa-modpos-${date}-r${m.report.revision}-s${m.sheet.revision}`,
+    id: `kasa-modpos-${date}${sube ? `-${sube}` : ""}-r${m.report.revision}-s${m.sheet.revision}`,
     title: MODPOS_MISMATCH_TITLE,
     body: body.length > MODPOS_BELL_BODY_MAX ? `${body.slice(0, MODPOS_BELL_BODY_MAX - 1)}…` : body,
-    href: `/panel/kasa?gun=${date}`,
+    href: `/panel/kasa?gun=${date}${sube ? `&sube=${sube}` : ""}`,
   };
 }
 
@@ -113,16 +125,35 @@ const time = (iso: string) => {
  * (keyError) ve son başarılı çekimden sonraysa uyarı. Kimlik hatanın kodundan ve son başarılı çekimden: aynı hata her
  * sabah yeniden okunmamış olmaz, sorun düzelip yeniden çıkınca (araya başarılı çekim girince) yeni uyarı sayılır.
  */
-export function modposKeyAlert(o: { keyProblem: "missing" | "format" | null; preview: boolean; state: ModposState | null }): ModposKeyAlert | null {
+export function modposKeyAlert(o: {
+  keyProblem: "missing" | "format" | "shared" | null;
+  preview: boolean;
+  state: ModposState | null;
+  /** Şube (Tuzla'dan başkaysa kimliğe ve başlığa girer; docs/MODPOS-API.md › Şubeler) */
+  branch?: { id: string; name: string };
+  /** Anahtarın ortam değişkeni (biçim ve ortaklık metninde) */
+  keyEnv?: string;
+  /** Ortak anahtarın metni (src/server/modpos/sync.ts sharedKeyText) */
+  sharedText?: string;
+}): ModposKeyAlert | null {
   if (o.keyProblem === "missing") return null;
-  if (o.keyProblem === "format") return o.preview ? null : { id: "modpos-anahtar-bicim", title: MODPOS_KEY_TITLE, body: MODPOS_KEY_FORMAT_TEXT, at: null };
+  const other = o.branch && o.branch.id !== DEFAULT_BRANCH_ID ? o.branch : null;
+  const id = (x: string) => (other ? `${x}-${other.id}` : x);
+  const title = other ? `${MODPOS_KEY_TITLE} (${other.name})` : MODPOS_KEY_TITLE;
+  const keyEnv = o.keyEnv ?? "MODPOS_API_KEY";
+  if (o.keyProblem === "format") {
+    return o.preview ? null : { id: id("modpos-anahtar-bicim"), title, body: MODPOS_KEY_FORMAT_TEXT.replace("MODPOS_API_KEY", keyEnv), at: null };
+  }
+  if (o.keyProblem === "shared") {
+    return o.preview ? null : { id: id("modpos-anahtar-ortak"), title, body: o.sharedText ?? `${keyEnv} başka bir şubenin ModPOS anahtarıyla aynı`, at: null };
+  }
   const err = o.state?.lastError ?? null;
   if (!err?.keyError) return null;
   const ok = o.state?.lastOk ?? null;
   const okAt = ok ? time(ok.at) : null;
   const errAt = time(err.at);
   if (okAt !== null && (errAt === null || okAt >= errAt)) return null;
-  return { id: `modpos-anahtar-${err.kod}-${okAt ?? 0}`, title: MODPOS_KEY_TITLE, body: err.text, at: errAt === null ? null : err.at };
+  return { id: id(`modpos-anahtar-${err.kod}-${okAt ?? 0}`), title, body: err.text, at: errAt === null ? null : err.at };
 }
 
 /** Sabah e-postasının satırı: "ModPOS kasa föyü çekilemiyor. ModPOS API anahtarı geçersiz: …" */

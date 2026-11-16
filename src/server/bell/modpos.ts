@@ -3,13 +3,15 @@ import "server-only";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR } from "@/lib/format";
 import { modposKeyProblem } from "@/lib/modpos/request";
+import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { modposKeyAlert, modposKeyDigestText, modposMismatchDigestText, modposMismatches, type ModposKeyAlert } from "@/lib/modpos/zil";
 import { addDays, todayTR } from "@/lib/reminders";
 import type { PanelNotification } from "@/server/actions/notifications";
+import { listBranches } from "@/server/branches";
 import { cashReportsBetween } from "@/server/data/cash-reports";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadModposSheets, readModposState } from "@/server/modpos/store";
-import { canFetchModpos } from "@/server/modpos/sync";
+import { canFetchModpos, sharedKeyText } from "@/server/modpos/sync";
 import type { DigestBox } from "@/server/notify/digest-template";
 
 /*
@@ -22,12 +24,25 @@ import type { DigestBox } from "@/server/notify/digest-template";
 /** Ayarlar'daki kartın adresi (SectionCard id "modpos") */
 export const MODPOS_SETTINGS_HREF = "/panel/ayarlar#modpos";
 
-/** Anahtarın uyarısı: anahtar yoksa sorgu yok; biçimi bozuksa durum okunmaz */
-async function loadKeyAlert(env: Record<string, string | undefined> = process.env): Promise<ModposKeyAlert | null> {
-  const keyProblem = modposKeyProblem(env);
-  if (keyProblem === "missing") return null;
-  const state = keyProblem ? null : await readModposState();
-  return modposKeyAlert({ keyProblem, preview: !canFetchModpos(env), state });
+/**
+ * Anahtarların uyarıları, şube şube (docs/MODPOS-API.md › Şubeler): her ModPOS şubesinin kendi anahtarı ve durumu var.
+ * Anahtarı olmayan şubede sorgu yok; biçimi bozuk ya da başka şubeyle ortaksa durum okunmaz.
+ */
+async function loadKeyAlerts(env: Record<string, string | undefined> = process.env): Promise<ModposKeyAlert[]> {
+  // Hiçbir şubenin anahtarı yoksa (Tuzla'nınki de) kütük de okunmaz
+  if (!Object.keys(env).some((k) => k === "MODPOS_API_KEY" || k.startsWith("MODPOS_API_KEY_"))) return [];
+  const branches = await listBranches();
+  const peers = modposBranchIds(branches);
+  const alerts = await Promise.all(
+    peers.map(async (id) => {
+      const keyProblem = modposKeyProblem(env, id, peers);
+      if (keyProblem === "missing") return null;
+      const state = keyProblem ? null : await readModposState(undefined, id);
+      const branch = { id, name: branches.find((b) => b.id === id)?.name ?? id };
+      return modposKeyAlert({ keyProblem, preview: !canFetchModpos(env), state, branch, keyEnv: modposKeyEnv(id), sharedText: sharedKeyText(id, branches) });
+    }),
+  );
+  return alerts.filter((a): a is ModposKeyAlert => a !== null);
 }
 
 /**
@@ -36,12 +51,10 @@ async function loadKeyAlert(env: Record<string, string | undefined> = process.en
  * Anahtar yokken satır yok (kart "Kurulmadı" der).
  */
 export async function modposKeyBell(now = new Date()): Promise<PanelNotification[]> {
-  const a = await loadKeyAlert();
-  if (!a) return [];
-  const day = a.at ? todayTR(new Date(a.at)) : null;
   const today = todayTR(now);
-  return [
-    {
+  return (await loadKeyAlerts()).map((a) => {
+    const day = a.at ? todayTR(new Date(a.at)) : null;
+    return {
       id: a.id,
       kind: "danger",
       title: a.title,
@@ -50,8 +63,8 @@ export async function modposKeyBell(now = new Date()): Promise<PanelNotification
       unread: true,
       href: MODPOS_SETTINGS_HREF,
       group: "sistem",
-    },
-  ];
+    };
+  });
 }
 
 /**
@@ -67,11 +80,11 @@ export async function modposDigestLines(now = new Date()): Promise<{ lines: Dige
     Promise.all([cashReportsBetween(yesterday, yesterday), loadModposSheets(yesterday, yesterday), loadLafposSwitchDay()])
       .then(([reports, sheets, switchDay]) => modposMismatches(reports, sheets, switchDay)[0] ?? null)
       .catch(() => null),
-    loadKeyAlert().catch(() => null),
+    loadKeyAlerts().catch(() => []),
   ]);
   const lines: DigestBox["lines"] = [];
-  if (key) lines.push({ text: modposKeyDigestText(key), tone: "bad" });
+  for (const k of key) lines.push({ text: modposKeyDigestText(k), tone: "bad" });
   if (mismatch) lines.push({ text: modposMismatchDigestText(mismatch.report.date, mismatch.diffs), tone: "warn" });
   if (mismatch) return { lines, href: `/panel/kasa?gun=${mismatch.report.date}`, link: "Kasa raporunu aç" };
-  return key ? { lines, href: MODPOS_SETTINGS_HREF, link: "Ayarlar'da aç" } : { lines, href: null, link: null };
+  return key.length ? { lines, href: MODPOS_SETTINGS_HREF, link: "Ayarlar'da aç" } : { lines, href: null, link: null };
 }

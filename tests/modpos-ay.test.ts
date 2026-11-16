@@ -322,10 +322,11 @@ test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS 
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)
   assert.match(
     loader,
-    /return sheet\.final \? \{ date: sheet\.day, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" \} : null;/,
+    /return sheet\.final \? \{ date: sheet\.day, branchId: sheet\.branchId, zTotal: 0, card: 0, mealCard: 0, discounts: null, offRevenue: 0, receipts: 0, payments: 0, source: "modpos" \} : null;/,
   );
-  // tillRows raporlardan önceki föyleri kesintisiz kısma indirir
-  assert.match(loader, /const runFrom = modposRunStart\(modpos\.map\(\(r\) => r\.date\), firstReport\) \?\? "";/);
+  // tillRows raporlardan önceki föyleri kesintisiz kısma indirir, şube şube (her şubenin föyleri kendi ilk raporuyla)
+  assert.match(loader, /const runFrom = modposRunStarts\(modpos, \[\.\.\.reports, \.\.\.lafpos\]\);/);
+  assert.match(loader, /out\.set\(b, modposRunStart\(modpos\.filter\(\(r\) => \(r\.branchId \?\? ""\) === b\)\.map\(\(r\) => r\.date\), first\)\);/);
   assert.match(loader, /discounts: null,\n\s+offRevenue: z\.offRevenue,\n\s+receipts: z\.receipts,/);
   // Föyün satırı ciroya dahil ödemelerini de taşır: ödenmez Z toplamının içindeyse aya girmez (src/lib/cash-revenue.ts)
   assert.match(loader, /payments: Math\.round\(\(z\.cash \+ z\.card \+ z\.mealCard \+ z\.online \+ z\.other\) \* 100\) \/ 100,\n\s+source: "modpos",/);

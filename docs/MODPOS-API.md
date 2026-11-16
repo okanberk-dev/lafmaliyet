@@ -13,14 +13,71 @@ varsayımı): [planlar/modpos-api.md](planlar/modpos-api.md).
 ## 1. Kurulum
 
 1. Gafdigi'nin verdiği anahtarı Vercel › lafmaliyet › Settings › Environment Variables'a **yalnız Production** olarak
-   `MODPOS_API_KEY` adıyla ekleyin ve yeniden yayınlayın (önizlemeler canlının veritabanını paylaşır, çekmez).
+   `MODPOS_API_KEY` adıyla (Tuzla; öteki şube `MODPOS_API_KEY_MARINA`, §1a) ekleyin ve yeniden yayınlayın (önizlemeler canlının veritabanını paylaşır, çekmez).
    Anahtar depoya, belgeye ya da sohbete yazılmaz.
 2. Anahtara **IP kısıtı koydurmayın**: Vercel işlevlerinin sabit çıkış IP'si yok (`403 IP_IZINSIZ`).
 3. Ayarlar › **ModPOS (kasa föyü)** kartı "Henüz çekilmedi" der. İsterseniz **Bu günü çek** ile dünü hemen alın
    (günün 2 hakkından birini kullanır); yoksa ertesi sabah kendiliğinden gelir.
 4. İsteğe bağlı ortam değişkenleri: `MODPOS_SYNC_FROM` (geçmişin ilk günü, `YYYY-MM-DD`: geçmiş bu güne kadar geriye
    çekilir, öncesi hiç çekilmez; yoksa `2026-07-01`. Canlıda **2026-11-01**: sahibin kararı, 4 Kasım 2026, "Kasım'a
-   temiz başlayalım"), `MODPOS_API_URL` (ucun adresi; yoksa belgedeki adres).
+   temiz başlayalım"), `MODPOS_API_URL` (ucun adresi; yoksa belgedeki adres), `MODPOS_SUBELER` (ModPOS şube adı →
+   panel şubesi eşlemesi, §1a).
+
+## 1a. Şubeler (16 Kasım 2026)
+
+Sahibin kararı (4 Kasım 2026: "Şube başına ayrı anahtar; günlük 2 çekim hakkı şube başına"; 16 Kasım 2026: "şube şube
+ayır, karıştırma"). Kurallar `src/lib/modpos/sube.ts`'te (saf; `tests/modpos-sube.test.ts`,
+`tests/modpos-sube-db.test.ts`).
+
+**Anahtar şubenindir.** ModPOS'tan çekilen şube: açık, fiziksel ve kasa kaynağı ModPOS olan şube (Ayarlar › Şubeler).
+Her birinin anahtarı ayrı ortam değişkenidir:
+
+| Şube | Değişken |
+|---|---|
+| Tuzla | `MODPOS_API_KEY` (eski ad, değişmedi) |
+| Marina | `MODPOS_API_KEY_MARINA` |
+| Yeni şube (`laffogato-kadikoy`) | `MODPOS_API_KEY_LAFFOGATO_KADIKOY` (kimlik büyük harfle, tire alt çizgi) |
+
+- Şubenin anahtarı yoksa o şube için **hiç istek gitmez**; Tuzla'nın anahtarına düşülmez (düşülseydi Tuzla'nın föyü
+  Marina'nın günü diye yazılırdı). Ayarlar kartında şube "Kurulmadı" der.
+- Başka bir şubenin anahtarıyla **aynı anahtar** kullanılmaz ("Ortak anahtar", kırmızı; zil "ModPOS API'den veri
+  çekilemiyor (Marina)"): aynı föy iki şubeye yazılır, hak iki kez harcanırdı. Önce Tuzla, sonra şube sırası kazanır.
+- Kota, son çekimler, alınamayan günler ve çalışma kirası şube başınadır: `integration_state › modpos` (Tuzla),
+  `modpos:marina`; kira `modpos.kira`, `modpos.kira:marina`. Planlayıcının "hangi gün çekildi" listesi yalnız o şubenin
+  föyleridir (başka şubenin günü bu şubenin çekilmiş günü sayılmaz).
+- Sabah işi ModPOS'lu şubeleri sırayla, aynı süre sınırı içinde çeker (`syncModposAll`); bir şubenin hatası ötekini
+  durdurmaz, adım "kısmen" olur ve hata şubenin adıyla yazılır ("Marina: …"). **Bu günü çek** kartın şubesinin
+  anahtarı ve hakkıyla çeker.
+
+**Föyün içi de ayrılır.** Gafdigi'nin anahtarı markaya bağlıysa tek föy birden çok şubenin kasasını taşır (her `<kasa>`
+ve `<foysuzGun>` kendi `<sube>`'siyle). Çekim her kasayı panelin şubesine bağlar ve **her şubenin kasası yalnız kendi
+şubesinin gününe** yazılır:
+
+1. `MODPOS_SUBELER` eşlemesi (`ModPOS'taki şube adı=şube kimliği`, `;` ya da satır sonuyla; ör.
+   `Sahil Şube=marina; Merkez=tuzla`), yoksa
+2. ModPOS'taki adın içinde panelin şube adı ya da kimliği geçiyor mu ("LAF FOGATO MARİNA" → Marina; büyük / küçük harf,
+   Türkçe harf ve noktalama farkı yok; iki şube birden geçiyorsa belirsiz).
+
+- Föyde **tek şube adı** varsa föy olduğu gibi çekenin şubesine yazılır (bugünkü durum; parmak izi değişmez, eski günler
+  "değişti" sayılmaz).
+- Föyde birden çok şube adı varken **bağlanamayan ad hiçbir şubeye yazılmaz** (yanlış şubeye yazmaktansa beklemek):
+  çalışmanın metni ve Ayarlar kartı `"Sahil Şube" şubesi panelde bir şubeyle eşleşmedi…` der; `MODPOS_SUBELER`'e
+  yazılınca o günü yeniden çekmek yeter.
+- **Kendi anahtarı olan şubenin kasası** başka anahtarın föyünden alınmaz: o şubenin kendi föyü esastır (iki anahtar
+  aynı günü birbirine ezmesin).
+- Çekenin şubesi hep yazılır (kasası yoksa boş föy: gün "çekildi" sayılır). Ayrılan föyde `ozet` boştur (ModPOS'un
+  özeti bütün kasaların toplamıdır; panel tutarları kasalardan okur); tanınmayan alanlar kasasıyla gider; ham XML
+  yalnız çekenin gününde saklanır.
+
+**Okurken karışmaz.** Föy satırı şubesini taşır, anahtarı (gün, şube):
+
+- Tek günün föyü hep tek şubenindir: Kasa'nın gün görünümü ekrandaki raporun şubesini, rapor yoksa seçili şubeyi
+  ("Tümü"de Tuzla) okur. Günden güne liste föyleri (şube, gün) ile tutar.
+- Rapor ↔ föy karşılaştırması (zil, sabah e-postası, Bugün, Kasa) **(şube, gün)** iledir: "Tümü" seçiliyken Marina'nın
+  raporu Tuzla'nın föyüyle karşılaştırılmaz. Tuzla'dan başka şubenin zil satırı kimliğinde ve adresinde şubeyi taşır
+  (`/panel/kasa?gun=…&sube=marina`).
+- Ay rakamına yedekte (§6) "rapor > LafPOS > ModPOS" önceliği ve kesintisiz kısım şube içindedir: Tuzla'nın raporu
+  Marina'nın aynı günkü föyünü düşürmez.
 
 ## 2. Kota ve çekme sırası
 
@@ -184,12 +241,12 @@ sayılmaz.
 
 ## 7. Saklama
 
-- `modpos_cash_sheets`: kasa günü başına bir satır; föyün okunmuş hâli (`sheet`, kişi adları ve tanınmayan alanlarla),
+- `modpos_cash_sheets`: (kasa günü, şube) başına bir satır; föyün okunmuş hâli (`sheet`, kişi adları ve tanınmayan alanlarla),
   ModPOS'un gönderdiği ham XML (`raw`, son çekimin; yalnız günün görünümü okur, ay listeleri okumaz), durum, kesin mi,
   parmak izi, sürüm, önceki sürümün özeti, hazırlanma / çekilme / değişme anları. Aynı gün yeniden çekilince içerik
   aynıysa yalnız çekilme anı ve ham XML değişir; değiştiyse sürüm artar ve "önceki" özet kalır. Ad okunmaya
   başlamadan önce saklanan bir gün yeniden çekilirse adlar eklendiği için bir kez "değişti" sayılır (tutarlar aynı).
-- `integration_state › modpos`: son kota, son başarılı / başarısız çekim, son 10 çalışma, alınamayan günler ve sabah
+- `integration_state › modpos` (öteki şube `modpos:<kimlik>`, §1a): son kota, son başarılı / başarısız çekim, son 10 çalışma, alınamayan günler ve sabah
   işinin son çalıştığı an (`lastCronAt`). Anahtar burada değil (eski kayıtlardaki `liveFrom` artık okunmaz).
 - İkisi de yedeğe girer (föy kişi adlarıyla; yedek de yalnız yöneticinin). Migration'lar:
   `drizzle/0050_modpos_kasa_foyu.sql` (yeni tablo), `drizzle/0051_modpos_ham_foy.sql` (`raw` sütunu; boş başlar).
@@ -207,7 +264,14 @@ sayılmaz.
 | Yanıt okunamadı (alan adı) | ModPOS yanıtının biçimi değişmiş olabilir: `npm run modpos:foy -- --dosya yanit.xml` ile bakın |
 
 Komut satırı (yerelde, anahtar ortamda): `npm run modpos:foy -- 2026-11-02` bir günü çekip özetini yazar (veritabanına
-yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar.
+yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar;
+`--sube marina` o şubenin anahtarıyla ve o şubeye (kaydederken föy şube adlarına göre ayrılır, §1a).
+
+| Kartta / zilde (şubeler) | Ne yapılır |
+|---|---|
+| Marina "Kurulmadı" | Gafdigi'den Marina'nın anahtarını alıp `MODPOS_API_KEY_MARINA` olarak yazın |
+| Ortak anahtar | Şubeye başka şubenin anahtarı yazılmış: şubenin kendi anahtarını yazın |
+| "… şubesi panelde bir şubeyle eşleşmedi" | `MODPOS_SUBELER`'e `ModPOS adı=şube kimliği` yazıp o günü yeniden çekin |
 
 ## 9. Sonraya
 
@@ -221,8 +285,9 @@ yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok
 
 ## 10. Dosyalar
 
-- Saf: `src/lib/modpos/foy.ts` (XML → föy, güvenli ayrıştırma), `z.ts` (eşleme, Z özeti), `request.ts` (anahtar,
-  kota, hata metinleri), `plan.ts` (hangi gün), `status.ts` (durum, kart özeti, yedek ayarı), `compare.ts` (rapor ↔
+- Saf: `src/lib/modpos/foy.ts` (XML → föy, güvenli ayrıştırma), `z.ts` (eşleme, Z özeti), `request.ts` (şubenin
+  anahtarı, kota, hata metinleri), `sube.ts` (şubenin anahtar değişkeni, ad eşlemesi, föyün ayrılması, sabah işinin
+  birleşik sonucu), `plan.ts` (hangi gün), `status.ts` (durum, kart özeti, yedek ayarı), `compare.ts` (rapor ↔
   föy).
   `ayarlar.ts` (kartın ve "Bu günü çek"in metinleri).
 - Sunucu: `src/server/modpos/client.ts` (istek), `store.ts` (saklama, okuma, durum), `sync.ts` (çekme), `status.ts`
@@ -233,7 +298,7 @@ yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok
   `ladmin-report.tsx` (ladmin bölümü), `day-parts.tsx` (ortak karo ve satır parçaları), `modpos-diffs.tsx`; saf
   yardımcılar `src/lib/cash-modpos.ts` (ModPOS ve karşılaştırma) ve `src/lib/cash-ladmin.ts` (ladmin; föyü bilmez);
   okuyucu `src/server/data/modpos-day.ts`. Testi `tests/modpos-kasa.test.ts`.
-- Testler: `tests/modpos-foy.test.ts` (saf), `tests/modpos-sabah.test.ts` (sabah adımı), `tests/modpos-ayarlar.test.ts`;
+- Testler: `tests/modpos-sube.test.ts` ve `tests/modpos-sube-db.test.ts` (şubeler, §1a), `tests/modpos-foy.test.ts` (saf), `tests/modpos-sabah.test.ts` (sabah adımı), `tests/modpos-ayarlar.test.ts`;
   veritabanıyla (`MODPOS_TEST_DATABASE_URL`): `tests/modpos-db.test.ts`, `tests/modpos-ayarlar-db.test.ts` ve sabah
   adımının DB bölümü.
 - Fikstürler: `tests/fixtures/modpos/` (kitapçığın örneği ve uç durumlar; kafenin verisi değil).

@@ -148,7 +148,9 @@ test("kasa sayfası: föy yalnız yönetici dalında okunur; ortak kısım, pers
   const calls = [...page.matchAll(/loadKasaModpos(?:Days)?\(/g)];
   assert.equal(calls.length, 2);
   for (const c of calls) assert.ok(c.index > adminStart, "okuyucu yönetici dalında");
-  assert.match(admin, /showForm \? loadKasaModpos\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  // Föy ekrandaki raporun şubesinin (şube, gün; docs/MODPOS-API.md › Şubeler)
+  assert.match(admin, /showForm \? loadKasaModpos\(date, undefined, report\?\.branchId\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
+  assert.match(admin, /const m = modposOf\(d\.date, d\.report\?\.branchId\);/);
   assert.match(admin, /loadKasaModposDays\(`\$\{month\}-01`, monthEnd\)\.catch\(\(\) => \(\) => NO_MODPOS\)/);
   // Üç bölüm (ModPOS, ladmin, Karşılaştırma) kasa raporu formunun altında, site satırından önce; bir kez
   assert.match(admin, /\{form\}\s*\{modposDay\?\.modpos \? <ModposSections [^\n]*\/> : null\}\s*\{siteRow\}/);
@@ -167,7 +169,7 @@ test("okuyucu: sunucuya özel, yalnız saklanan föyü okur; ModPOS'a istek gön
   assert.match(src, /^import "server-only";/);
   assert.doesNotMatch(src, /@\/server\/modpos\/(client|sync)|\bfetch\(/);
   // İstek modülünden yalnız anahtarın denetimi (saf; istek göndermez)
-  assert.match(src, /import \{ modposKeyProblem \} from "@\/lib\/modpos\/request";/);
+  assert.match(src, /import \{ modposAnyKey, modposKeyProblem \} from "@\/lib\/modpos\/request";/);
   assert.match(src, /import \{ loadModposSheet, loadModposSheets, type ModposSheet \} from "@\/server\/modpos\/store";/);
   // Kasa ekranının hiçbir dosyası çekme yoluna bağlı değil (sayfa açılışı hak harcamaz)
   for (const f of ["page.tsx", "modpos-sheet.tsx", "modpos-diffs.tsx", "cash-history.tsx", "ladmin-report.tsx", "day-parts.tsx"]) {

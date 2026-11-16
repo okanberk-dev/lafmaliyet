@@ -1727,10 +1727,14 @@ describe("client.ts: istek ve yanıtın sonucu (sahte fetch)", () => {
 describe("scripts/modpos-foy.ts: komut satırı", () => {
   test("seçenekler: gün, --dosya, --kaydet; anlaşılmayan seçenek ve ileri tarih reddedilir", () => {
     const now = new Date("2026-11-03T10:00:00+03:00");
-    assert.deepEqual(parseFoyArgs(["2026-11-02"], now), { day: "2026-11-02", file: null, save: false });
-    assert.deepEqual(parseFoyArgs(["2026-11-02", "--kaydet"], now), { day: "2026-11-02", file: null, save: true });
-    assert.deepEqual(parseFoyArgs(["--dosya", "yanit.xml"], now), { day: null, file: "yanit.xml", save: false });
-    assert.deepEqual(parseFoyArgs(["--dosya", "yanit.xml", "2026-11-01", "--kaydet"], now), { day: "2026-11-01", file: "yanit.xml", save: true });
+    assert.deepEqual(parseFoyArgs(["2026-11-02"], now), { day: "2026-11-02", file: null, save: false, branch: "tuzla" });
+    assert.deepEqual(parseFoyArgs(["2026-11-02", "--kaydet"], now), { day: "2026-11-02", file: null, save: true, branch: "tuzla" });
+    assert.deepEqual(parseFoyArgs(["--dosya", "yanit.xml"], now), { day: null, file: "yanit.xml", save: false, branch: "tuzla" });
+    assert.deepEqual(parseFoyArgs(["--dosya", "yanit.xml", "2026-11-01", "--kaydet"], now), { day: "2026-11-01", file: "yanit.xml", save: true, branch: "tuzla" });
+    // Şube: o şubenin anahtarıyla ve o şubeye (docs/MODPOS-API.md › Şubeler)
+    assert.deepEqual(parseFoyArgs(["2026-11-02", "--sube", "marina"], now), { day: "2026-11-02", file: null, save: false, branch: "marina" });
+    assert.throws(() => parseFoyArgs(["2026-11-02", "--sube"], now), /--sube bir şube kimliği ister/);
+    assert.throws(() => parseFoyArgs(["2026-11-02", "--sube", "Marina!"], now), /--sube bir şube kimliği ister/);
     assert.throws(() => parseFoyArgs([], now), /Kullanım: npm run modpos:foy/);
     assert.throws(() => parseFoyArgs(["--kaydet"], now), /Kullanım/);
     assert.throws(() => parseFoyArgs(["2026-11-04"], now), /ileri tarih/);

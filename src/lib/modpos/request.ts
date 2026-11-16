@@ -1,13 +1,17 @@
 import { addDays, dayMonthTR, todayTR } from "@/lib/reminders";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+
 import { isFoyDay, type FoyHata } from "./foy";
+import { modposKeyEnv } from "./sube";
 
 /**
  * ModPOS Kasa Föyü API'sinin isteği, kotası ve hata metinleri (saf; sunucu ve testler paylaşır; tests/modpos-foy.test.ts).
  * Belge: docs/modpos-kasa-foyu-api.md; kurgu: docs/MODPOS-API.md.
  *
- * Anahtar yalnız sunucuda: `MODPOS_API_KEY` (Vercel › Production). Yoksa bağlantı kapalıdır ("Kurulmadı"), hiçbir istek
- * gitmez. `MODPOS_API_URL` (isteğe bağlı) ucun adresi; `MODPOS_SYNC_FROM` (isteğe bağlı, YYYY-MM-DD) geçmişin geriye
+ * Anahtar yalnız sunucuda ve şube başına (Vercel › Production): Tuzla `MODPOS_API_KEY`, öteki şube
+ * `MODPOS_API_KEY_<KİMLİK>` (src/lib/modpos/sube.ts). Şubenin anahtarı yoksa o şubenin bağlantısı kapalıdır
+ * ("Kurulmadı"), o şube için hiçbir istek gitmez. `MODPOS_API_URL` (isteğe bağlı) ucun adresi; `MODPOS_SYNC_FROM` (isteğe bağlı, YYYY-MM-DD) geçmişin geriye
  * doğru tamamlanacağı ilk gün.
  */
 
@@ -21,18 +25,44 @@ export const MODPOS_TIMEOUT_MS = 60_000;
 
 type Env = Record<string, string | undefined>;
 
-/** Anahtarın sorunu: yok ya da biçimi bozuk (boşluk / satır sonu içeriyor, çok kısa); sorun yoksa null */
-export function modposKeyProblem(env: Env): "missing" | "format" | null {
-  const raw = env.MODPOS_API_KEY;
+export type ModposKeyProblem = "missing" | "format" | "shared";
+
+/** Değerin sorunu: yok ya da biçimi bozuk (boşluk / satır sonu içeriyor, çok kısa); sorun yoksa null */
+function rawKeyProblem(raw: string | undefined): "missing" | "format" | null {
   if (raw === undefined || !raw.trim()) return "missing";
   const v = raw.trim();
   if (/\s/.test(v) || v.length < 16 || v.length > 512) return "format";
   return null;
 }
 
-/** Kullanılabilir anahtar (yoksa ya da bozuksa null) */
-export function modposKeyFrom(env: Env): string | null {
-  return modposKeyProblem(env) === null ? env.MODPOS_API_KEY!.trim() : null;
+/**
+ * Şubenin anahtarının sorunu (docs/MODPOS-API.md › Şubeler; src/lib/modpos/sube.ts): Tuzla `MODPOS_API_KEY`, öteki şube
+ * `MODPOS_API_KEY_<KİMLİK>`. Yok ya da biçimi bozuksa o; `peers` (ModPOS'lu şubeler, sırayla) verilirse ve anahtar
+ * Tuzla'nınkiyle ya da sırada önceki bir şubeninkiyle aynıysa "shared": aynı föy iki şubeye yazılmasın, hak iki kez
+ * harcanmasın. Sorun yoksa null. Şubenin anahtarı yoksa Tuzla'nınkine düşülmez.
+ */
+export function modposKeyProblem(env: Env, branchId: string = DEFAULT_BRANCH_ID, peers: readonly string[] = []): ModposKeyProblem | null {
+  const own = rawKeyProblem(env[modposKeyEnv(branchId)]);
+  if (own || branchId === DEFAULT_BRANCH_ID) return own;
+  const key = env[modposKeyEnv(branchId)]!.trim();
+  const before = [DEFAULT_BRANCH_ID, ...peers.filter((p) => p !== DEFAULT_BRANCH_ID)];
+  for (const p of before) {
+    if (p === branchId) break;
+    const v = env[modposKeyEnv(p)];
+    if (rawKeyProblem(v) === null && v!.trim() === key) return "shared";
+  }
+  return null;
+}
+
+/** Şubenin kullanılabilir anahtarı (yoksa ya da bozuksa null; ortaklığı denetlemez, onu modposKeyProblem söyler) */
+export function modposKeyFrom(env: Env, branchId: string = DEFAULT_BRANCH_ID): string | null {
+  const raw = env[modposKeyEnv(branchId)];
+  return rawKeyProblem(raw) === null ? raw!.trim() : null;
+}
+
+/** Herhangi bir şubenin anahtarı kurulu mu (sabah işi buna bakıp başlar; hangi şubelerin çekileceği veritabanından) */
+export function modposAnyKey(env: Env): boolean {
+  return Object.keys(env).some((k) => (k === "MODPOS_API_KEY" || k.startsWith("MODPOS_API_KEY_")) && rawKeyProblem(env[k]) === null);
 }
 
 /** Ucun adresi: MODPOS_API_URL (https olmalı) ya da belgedeki adres */
@@ -127,12 +157,12 @@ export function renewText(iso: string | null, now: Date): string {
  * Servisin hata yanıtının yöneticiye okunur açıklaması (UserError gibi: kısa, sonda nokta yok, ne yapılacağı iki
  * noktadan sonra). Kod tanınmazsa servisin mesajı ve HTTP durumu
  */
-export function modposErrorText(status: number, hata: FoyHata | null, now: Date = new Date()): string {
+export function modposErrorText(status: number, hata: FoyHata | null, now: Date = new Date(), keyEnv: string = "MODPOS_API_KEY"): string {
   const kod = hata?.kod ?? "";
   switch (kod) {
     case "ANAHTAR_GEREKLI":
     case "ANAHTAR_GECERSIZ":
-      return "ModPOS API anahtarı geçersiz: Vercel'deki MODPOS_API_KEY'i kontrol edin";
+      return `ModPOS API anahtarı geçersiz: Vercel'deki ${keyEnv}'i kontrol edin`;
     case "ANAHTAR_PASIF":
       return "ModPOS API anahtarı kullanıma kapalı: Gafdigi'den anahtarı açtırın";
     case "ANAHTAR_SURESI_DOLDU":

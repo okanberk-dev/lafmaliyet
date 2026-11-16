@@ -96,7 +96,8 @@ test("ModPOS adımının yeri: satış tahmininden sonra, fotoğraf temizliğind
 test("sabah işi: ModPOS yalnız bir kez başlar (Paraşüt'ten önce, extras() dışında), e-postadan önce beklenir, iki sonuçta da yazılır", () => {
   const route = read("src/app/api/cron/gunluk/route.ts");
   // Tek çağrı: extras() iki kez çalışabilir (try ve catch), günde 2 hak var
-  assert.equal([...route.matchAll(/syncModpos\(/g)].length, 1);
+  assert.equal([...route.matchAll(/syncModposAll\(/g)].length, 1);
+  assert.doesNotMatch(route, /syncModpos\(/, "şube şube koşucudan (syncModposAll; docs/MODPOS-API.md › Şubeler)");
   assert.equal([...route.matchAll(/const modposP = /g)].length, 1);
   const start = route.indexOf("const modposP = capped<ModposSyncResult>(");
   assert.ok(start > route.indexOf('startJobRun("gunluk")'), "iş kaydından sonra");
@@ -105,7 +106,7 @@ test("sabah işi: ModPOS yalnız bir kez başlar (Paraşüt'ten önce, extras() 
   assert.ok(extras.length > 0);
   assert.doesNotMatch(extras, /modpos/i, "extras() ModPOS'a dokunmaz");
   // Anahtar yoksa çekme hiç başlamaz; son an ve beklenme sınırı jobStart'tan
-  assert.match(route, /\(isModposConfigured\(\) \? syncModpos\("cron", \{ deadlineAt: jobStart \+ MODPOS_DEADLINE_MS \}\) : Promise\.resolve\(MODPOS_OFF\)\)\.catch\(/);
+  assert.match(route, /\(isModposConfigured\(\) \? syncModposAll\("cron", \{ deadlineAt: jobStart \+ MODPOS_DEADLINE_MS \}\) : Promise\.resolve\(MODPOS_OFF\)\)\.catch\(/);
   assert.match(route, /jobStart \+ MODPOS_CAP_MS - Date\.now\(\),/);
   const ms = (name: string) => Number(route.match(new RegExp(`const ${name} = ([\\d_]+);`))?.[1].replace(/_/g, ""));
   assert.equal(ms("MODPOS_DEADLINE_MS"), 30_000);

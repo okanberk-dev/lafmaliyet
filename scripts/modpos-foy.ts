@@ -11,6 +11,9 @@
 //   npm run modpos:foy -- --dosya yanit.xml          -> yalnız dosyayı okur (istek yok, hak harcanmaz)
 //   npm run modpos:foy -- --dosya yanit.xml --kaydet -> dosyadaki föyü DATABASE_URL'e yazar
 //   (--dosya ile gün de verilirse dosyanın günü onunla aynı olmalı)
+//   --sube marina                                    -> o şubenin anahtarıyla (MODPOS_API_KEY_MARINA) ve o şubeye; yoksa
+//                                                       Tuzla (MODPOS_API_KEY). Kaydederken föy şube adlarına göre ayrılır
+//                                                       (docs/MODPOS-API.md › Şubeler)
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -21,12 +24,14 @@ import { loadEnvConfig } from "@next/env";
 import { databaseTarget, databaseUrl } from "../src/lib/backup/format";
 import { money } from "../src/lib/format";
 import { isFoyDay, MODPOS_UYARI, parseKasaFoyu, type FoyKasa, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
+import { DEFAULT_BRANCH_ID, branchIdError } from "../src/lib/branches";
 import { modposKeyProblem, quotaLeft, quotaRenewsAt, renewText, requestableDay, type ModposQuota } from "../src/lib/modpos/request";
+import { modposKeyEnv, parseModposSubeMap, resolveModposSube, splitFoyByBranch, splitNoticeText } from "../src/lib/modpos/sube";
 import { timeText } from "../src/lib/modpos/status";
 import { foyWarnings, foyZ, isFinalFoy, modposBucket, modposChannels, type ModposBucket } from "../src/lib/modpos/z";
 import { longDateTR } from "../src/lib/reminders";
 
-const USAGE = "Kullanım: npm run modpos:foy -- <YYYY-MM-DD> [--kaydet] | --dosya <yanit.xml> [YYYY-MM-DD] [--kaydet]";
+const USAGE = "Kullanım: npm run modpos:foy -- <YYYY-MM-DD> [--kaydet] [--sube <kimlik>] | --dosya <yanit.xml> [YYYY-MM-DD] [--kaydet] [--sube <kimlik>]";
 
 export interface FoyArgs {
   /** İstenen kasa günü (dosyada isteğe bağlı: verilirse dosyanın günü onunla aynı olmalı) */
@@ -35,14 +40,22 @@ export interface FoyArgs {
   file: string | null;
   /** Veritabanına da yaz */
   save: boolean;
+  /** Şube (anahtarı ve yazılacağı yer); verilmezse Tuzla */
+  branch: string;
 }
 
 /** Komut satırının seçenekleri; anlaşılmayan seçenek, takvimde olmayan ya da ileri gün hata (kullanımıyla) */
 export function parseFoyArgs(argv: string[], now: Date = new Date()): FoyArgs {
-  const out: FoyArgs = { day: null, file: null, save: false };
+  const out: FoyArgs = { day: null, file: null, save: false, branch: DEFAULT_BRANCH_ID };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--kaydet") out.save = true;
+    else if (a === "--sube") {
+      const b = argv[i + 1];
+      if (!b || b.startsWith("--") || branchIdError(b)) throw new Error(`--sube bir şube kimliği ister (tuzla, marina…). ${USAGE}`);
+      out.branch = b;
+      i++;
+    }
     else if (a === "--dosya") {
       const f = argv[i + 1];
       if (!f || f.startsWith("--")) throw new Error(`--dosya bir dosya yolu ister. ${USAGE}`);
@@ -268,11 +281,21 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
     }
     const { createDb } = await import("../src/server/db");
     const { storeFoy } = await import("../src/server/modpos/store");
+    const { listBranches } = await import("../src/server/branches");
     say(`Hedef: ${databaseTarget(dbUrl!).label}`);
     const db = createDb(dbUrl!, 1);
     try {
-      const r = await storeFoy(db, parsed.foy, now, body);
-      say(`✓ Veritabanına yazıldı: ${r.change === "yeni" ? "yeni föy" : r.change === "degisti" ? `föy değişti (sürüm ${r.revision})` : "föy aynı (yalnız çekilme anı)"} · ${r.final ? "kesin" : "kesin değil"}`);
+      // Şube şube: dosyanın şubesinin föyü (ham XML'iyle) ve föyde kasası olan öteki şubelerinki, her biri kendi gününe
+      const branches = await listBranches(db);
+      const map = parseModposSubeMap(env);
+      const split = splitFoyByBranch(parsed.foy, { own: args.branch, resolve: (n) => resolveModposSube(n, branches, map) });
+      for (const [id, part] of split.parts) {
+        const r = await storeFoy(db, part, now, id === args.branch ? body : null, id);
+        const name = branches.find((b) => b.id === id)?.name ?? id;
+        say(`✓ ${id === args.branch ? "Veritabanına yazıldı" : `${name} şubesinin kasaları ${name}'ya yazıldı`}: ${r.change === "yeni" ? "yeni föy" : r.change === "degisti" ? `föy değişti (sürüm ${r.revision})` : "föy aynı (yalnız çekilme anı)"} · ${r.final ? "kesin" : "kesin değil"}`);
+      }
+      const notice = splitNoticeText(split);
+      if (notice) say(`! ${notice}`);
       return 0;
     } finally {
       await db.$client.end();
@@ -281,14 +304,15 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
 
   // ModPOS'tan çekme
   const day = args.day!;
-  const problem = modposKeyProblem(env);
-  if (problem === "missing") return fail("MODPOS_API_KEY tanımlı değil: .env.local'a ya da komutun önüne yazın (anahtar ekrana yazılmaz)");
-  if (problem === "format") return fail("MODPOS_API_KEY'in biçimi bozuk (boşluk ya da satır sonu var, ya da çok kısa)");
+  const keyEnv = modposKeyEnv(args.branch);
+  const problem = modposKeyProblem(env, args.branch);
+  if (problem === "missing") return fail(`${keyEnv} tanımlı değil: .env.local'a ya da komutun önüne yazın (anahtar ekrana yazılmaz)`);
+  if (problem === "format") return fail(`${keyEnv}'in biçimi bozuk (boşluk ya da satır sonu var, ya da çok kısa)`);
   if (!args.save) {
     const { fetchKasaFoyu } = await import("../src/server/modpos/client");
     say(`İstek: ${day} (günün çekim haklarından birini kullanır; panelin kalan hak bilgisi güncellenmez)`);
-    const r = await fetchKasaFoyu(day, { env, now });
-    if (r.status === "off") return fail("MODPOS_API_KEY tanımlı değil");
+    const r = await fetchKasaFoyu(day, { env, now, branchId: args.branch });
+    if (r.status === "off") return fail(`${keyEnv} tanımlı değil`);
     if (r.status === "kota") return fail(r.text);
     if (r.status === "error") return fail(`${r.text} (${r.kod}${r.http ? `, HTTP ${r.http}` : ""})`);
     say();
@@ -304,14 +328,15 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
   say(`Hedef: ${databaseTarget(dbUrl!).label}`);
   const db = createDb(dbUrl!, 1);
   try {
-    const r = await syncModpos("elle", { days: [day], db, env, now, deadlineAt: Date.now() + 75_000 });
+    const r = await syncModpos("elle", { days: [day], db, env, now, deadlineAt: Date.now() + 75_000, branchId: args.branch });
     if (r.status === "preview") return fail("Önizleme ortamı (VERCEL_ENV=preview): çekilmez");
-    if (r.status === "off") return fail("MODPOS_API_KEY tanımlı değil");
+    if (r.status === "off") return fail(`${keyEnv} tanımlı değil`);
+    if (r.status === "error" && !r.days.length) return fail(r.error ?? "ModPOS API verisi alınamadı");
     if (r.status === "kota") return fail(r.error ?? "ModPOS'un bugünkü çekim hakkı doldu");
     if (r.status === "nothing" || !r.days.length) return fail("Çekilecek gün yok");
     const d = r.days[0];
     if (d.result === "hata") return fail(d.text ?? r.error ?? "ModPOS API verisi alınamadı");
-    const sheet = await loadModposSheet(day, db);
+    const sheet = await loadModposSheet(day, db, { branchId: args.branch });
     if (sheet) {
       say();
       for (const l of foySummaryLines(sheet.foy, { now, fetchedAt: new Date(sheet.fetchedAt), quota: null })) say(l);
