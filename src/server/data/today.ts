@@ -12,7 +12,7 @@ import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
@@ -147,7 +147,8 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     isProductionRuntime()
       ? safe(Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()]).then(([o, okAt]) => systemIssues(o, now, okAt)))
       : Promise.resolve([]),
-    safe(loadUpcoming()),
+    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
+    safe(loadUpcoming(undefined, { branch: await currentBranchScope() })),
     safe(
       Promise.all([
         db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),

@@ -15,6 +15,7 @@ import { requireAdmin, startSession } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { listsWithEmail } from "@/server/notify/recipients";
 
@@ -178,12 +179,32 @@ export async function saveStockValuationStart(input: string | null) {
 
 // ---------------------------------------------------------------- Kullanıcılar
 
+/** Personelin şubesi: "" / null bütün şubeler; verilmezse (Aktif anahtarı) değişmez */
+const zUserBranch = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((v) => (v === undefined ? undefined : v || null));
+
+/**
+ * Personelin şubesi kütükte etkin bir fiziksel şube mi (düzenlemede kişinin şimdiki şubesi pasif olsa da kalabilir).
+ * Yönetici şubeye bağlanmaz: bütün şubeleri görür, seçiciyle süzer. Şubenin adı işlem geçmişi için döner.
+ */
+async function userBranch(role: "admin" | "staff", branchId: string | null | undefined, keep?: string | null): Promise<{ id: string | null; name: string | null } | undefined> {
+  if (branchId === undefined) return role === "admin" ? { id: null, name: null } : undefined;
+  if (role === "admin" || !branchId) return { id: null, name: null };
+  const b = (await listBranches()).find((x) => x.id === branchId && x.kind === "fiziksel" && (x.active || x.id === keep));
+  if (!b) throw new UserError("Şube bulunamadı ya da pasif (sayfayı yenileyin)");
+  return { id: b.id, name: b.name };
+}
+
 const userSchema = z.object({
   id: z.number().int().positive(),
   name: zText("Ad", 80),
   email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
   role: z.enum(["admin", "staff"]),
   active: z.boolean(),
+  branchId: zUserBranch,
   password: z
     .string()
     .optional()
@@ -223,6 +244,7 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     const [before] = await db.select().from(s.users).where(eq(s.users.id, data.id)).limit(1);
     if (!before) throw new UserError("Kullanıcı bulunamadı");
     if (data.id === me.id && (data.password || data.email !== before.email)) throw new UserError("Kendi parolanızı ve e-postanızı Hesabım'dan değiştirin");
+    const branch = await userBranch(data.role, data.branchId, before.branchId);
     // Bütün denetimlerden sonra, ilk yazımdan önce: başarısız olacak işlem için parola sorulmaz
     const change: StepUpCase = { kind: "save", before, after: { role: data.role, active: data.active, email: data.email, password: Boolean(data.password) } };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${before.email}`);
@@ -235,6 +257,7 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
         email: data.email,
         role: data.role,
         active: data.active,
+        ...(branch ? { branchId: branch.id } : {}),
         ...(data.password ? { passwordHash: await hashPassword(data.password), failedLogins: 0, lockedUntil: null } : {}),
         ...(revoke ? { sessionVersion: sql`${s.users.sessionVersion} + 1` } : {}),
       })
@@ -249,7 +272,12 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     if (before.role !== "admin" && data.role === "admin") await expireUserTokens(data.id);
     // Kendi adını buradan değiştiren yönetici bu cihazda oturumda kalır (ad oturum çerezinde de duruyor)
     if (after && after.id === me.id) await startSession(after);
-    await logActivity(me, "Kullanıcı güncellendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
+    const branchChanged = branch && branch.id !== (before.branchId ?? null);
+    await logActivity(
+      me,
+      "Kullanıcı güncellendi",
+      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})${branchChanged && data.role === "staff" ? ` · şube ${branch.name ?? "bütün şubeler"}` : ""}`,
+    );
     refresh();
     // Yeni adres listede (hesap e-posta almıyorsa) ve eski adres listede kaldıysa (artık hiçbir hesabın değil): ikisi de
     const renamed = before.email !== data.email ? await oldAddressListNotice({ name: data.name, email: before.email }, Boolean(blockReasonOf(before) || blockReasonOf(data)), "rename") : null;
@@ -265,6 +293,7 @@ const createSchema = z.discriminatedUnion("mode", [
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
     role: z.enum(["admin", "staff"]),
     active: z.boolean(),
+    branchId: zUserBranch,
     password: z.string().max(200, "Parola en fazla 200 karakter olabilir"),
   }),
   z.object({
@@ -273,6 +302,7 @@ const createSchema = z.discriminatedUnion("mode", [
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
     role: z.enum(["admin", "staff"]),
     active: z.literal(true, { message: "Davet edilen kullanıcı aktif olmalı" }),
+    branchId: zUserBranch,
   }),
 ]);
 
@@ -293,17 +323,18 @@ export async function createUser(input: z.input<typeof createSchema>, confirm?: 
     const db = getDb();
     const [{ dup }] = await db.select({ dup: count() }).from(s.users).where(eq(s.users.email, data.email));
     if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
+    const branch = await userBranch(data.role, data.branchId ?? null);
     const change: StepUpCase = { kind: "create", role: data.role };
     if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${data.email}`);
     const passwordHash = data.mode === "password" ? await hashPassword(data.password) : INVITE_PASSWORD_HASH;
     const [u] = await db
       .insert(s.users)
-      .values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash })
+      .values({ name: data.name, email: data.email, role: data.role, active: data.active, branchId: branch?.id ?? null, passwordHash })
       .returning({ id: s.users.id, name: s.users.name, email: s.users.email });
     await logActivity(
       me,
       data.mode === "invite" ? "Kullanıcı davet edildi" : "Kullanıcı eklendi",
-      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`,
+      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})${branch?.name ? ` · ${branch.name}` : ""}`,
     );
     refresh();
     const notice = (await listNotice(data)) ?? undefined;

@@ -3,8 +3,9 @@
 // sarmalayıcılar (getDb, fotoğraf deposu, işlem geçmişi) src/server/data/checklists.ts'te. "use client" dosyası buraya
 // uzanmaz.
 
-import { and, asc, eq, gte, inArray, lte, min } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, min, or } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import {
   absentReason,
@@ -62,6 +63,8 @@ export interface TemplateDTO {
   id: number;
   name: string;
   description: string | null;
+  /** Listenin şubesi; boş: bütün şubeler */
+  branchId: string | null;
   opensAt: string;
   dueAt: string;
   weekdays: number[];
@@ -133,14 +136,16 @@ export function answerLite(a: AnswerRow): AnswerLite {
 
 /**
  * Şablonlar (yalnız günlük listeler), maddeleriyle; `ids` verilirse yalnız onlar. `runs`: kaydı olanı da işaretle (bir
- * sorgu daha; düzenleme ekranı için).
+ * sorgu daha; düzenleme ekranı için). `branch`: tek şube seçiliyken o şubenin ve bütün şubelerin (şubesiz) listeleri;
+ * "Tümü" ya da verilmemişse hepsi.
  */
-export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean } = {}): Promise<TemplateDTO[]> {
+export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean; branch?: BranchScope } = {}): Promise<TemplateDTO[]> {
   const t = s.checklistTemplates;
+  const branch = o.branch && o.branch !== ALL_BRANCHES ? or(eq(t.branchId, o.branch), isNull(t.branchId)) : undefined;
   const rows = await db
     .select()
     .from(t)
-    .where(and(eq(t.schedule, "daily"), o.ids ? inArray(t.id, o.ids) : undefined))
+    .where(and(eq(t.schedule, "daily"), o.ids ? inArray(t.id, o.ids) : undefined, branch))
     .orderBy(asc(t.sortOrder), asc(t.id));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
@@ -159,6 +164,7 @@ export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean 
       id: r.id,
       name: r.name,
       description: r.description,
+      branchId: r.branchId,
       opensAt: r.opensAt ?? "08:00",
       dueAt: r.dueAt ?? "11:00",
       weekdays: r.weekdays,
@@ -216,6 +222,8 @@ export interface DayCtx {
   today: string;
   /** Fotoğraf deposu var mı (yoksa fotoğraflı maddeler yeni kayda girmez) */
   photos: boolean;
+  /** Şube seçimi: günün listeleri ve geçmiş bu şubenin ve şubesiz listeleri gösterir (yoksa hepsi) */
+  branch?: BranchScope;
 }
 
 /**
@@ -226,7 +234,7 @@ export interface DayCtx {
  */
 export async function loadChecklistDays(db: Db, days: string[], role: "admin" | "staff", ctx: DayCtx): Promise<Map<string, ChecklistLite[]>> {
   const out = new Map<string, ChecklistLite[]>(days.map((d) => [d, []]));
-  const templates = await loadTemplates(db);
+  const templates = await loadTemplates(db, { branch: ctx.branch });
   const visible = templates.filter((t) => t.active && (role === "admin" || t.staffAllowed));
   if (!visible.length || !days.length) return out;
   const r = s.checklistRuns;
@@ -312,7 +320,7 @@ export interface HistoryList {
  * gün) çağıranın aralığıdır (historyRange).
  */
 export async function loadHistory(db: Db, from: string, to: string, role: "admin" | "staff", ctx: DayCtx): Promise<{ day: string; lists: HistoryList[] }[]> {
-  const templates = await loadTemplates(db);
+  const templates = await loadTemplates(db, { branch: ctx.branch });
   const visible = templates.filter((t) => role === "admin" || t.staffAllowed);
   const r = s.checklistRuns;
   const runs = visible.length

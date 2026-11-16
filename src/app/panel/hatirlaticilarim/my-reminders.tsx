@@ -438,11 +438,36 @@ function ReminderDialog({
             aria-invalid={error ? true : undefined}
           />
         </Field>
+        {/* Kime en üstte (yalnız eklemede ve yalnız yöneticide): kimin ekranında açılıp çalacağı ilk bakışta seçilir */}
+        {!initial && people.length ? (
+          <Field
+            label="Kime"
+            htmlFor="ht-kime"
+            hint={
+              forUserId && !withTime
+                ? "Saat verin: o saatte onun ekranında (ör. kasa bilgisayarında) açılır ve çalar."
+                : "Başkasına kurarsanız saatinde onun ekranında açılır; yalnız o görür ve tamamlar, adınız hatırlatıcıda yazar."
+            }
+          >
+            <Select id="ht-kime" value={String(forUserId)} onChange={(e) => setForUserId(Number(e.target.value))}>
+              <option value="0">Kendime</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tarih" htmlFor="ht-tarih">
             <Input id="ht-tarih" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="Saat" htmlFor="ht-saat" hint={withTime ? "Panel açıkken bu saatte sesli uyarır." : "Saat vermezseniz gün boyu listede durur."}>
+          <Field
+            label="Saat"
+            htmlFor="ht-saat"
+            hint={withTime ? "Saatinde ekranın ortasında açılır ve çalar; “Yaptım” denene kadar köşede durur." : "Saat vermezseniz gün boyu listede durur."}
+          >
             <div className="flex items-center gap-2">
               <Input id="ht-saat" type="time" value={time} onChange={(e) => setTime(e.target.value)} disabled={!withTime} className="flex-1" />
               <Button variant={withTime ? "ghost" : "secondary"} size="sm" onClick={() => setWithTime((v) => !v)}>
@@ -463,18 +488,6 @@ function ReminderDialog({
             {withTime ? "" : " · Saat vermeden ses çalmaz"}
           </p>
         </fieldset>
-        {!initial && people.length ? (
-          <Field label="Kime" htmlFor="ht-kime" hint="Başkasına kurarsanız yalnız o görür ve tamamlar; adınız hatırlatıcıda yazar.">
-            <Select id="ht-kime" value={String(forUserId)} onChange={(e) => setForUserId(Number(e.target.value))}>
-              <option value="0">Kendime</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        ) : null}
         <Field label="Not (isteğe bağlı)" htmlFor="ht-not">
           <Textarea id="ht-not" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={3} />
         </Field>

@@ -46,7 +46,7 @@ async function ChecklistsContent() {
   const admin = user.role === "admin";
   const now = new Date();
   const day = checklistDay(now);
-  const [lists, templates] = await Promise.all([loadChecklistDay(day, user.role, now), admin ? loadChecklistTemplates() : Promise.resolve([])]);
+  const [lists, templates] = await Promise.all([loadChecklistDay(day, user.role, now), admin ? loadChecklistTemplates({ scoped: true }) : Promise.resolve([])]);
   // Bugün liste yoksa yarının ilk listesi (rolün gördükleri; saat şablondan): boş durum ne zaman başlayacağını söyler
   const tomorrow = lists.length ? null : ((await loadChecklistDay(addDays(day, 1), user.role, now))[0] ?? null);
   const states = lists.map((l) => todayState(l, now));

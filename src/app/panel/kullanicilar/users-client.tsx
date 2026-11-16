@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
-import { useEffect, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
@@ -13,7 +13,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
-import { Field, Input } from "@/components/ui/form";
+import { Field, Input, Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { DotList, EmptyState } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
@@ -37,6 +37,48 @@ import { PasswordField } from "./password-field";
 import { DELETE_TEXT, stepUpText, type StepUpText } from "./step-up-text";
 
 const count = (v: number) => num(Math.round(v), 0);
+
+/** Personelin bağlanabileceği şubeler (etkin fiziksel şubeler) */
+export interface UserBranchOption {
+  id: string;
+  name: string;
+}
+
+/** Şube seçenekleri pencerelere bağlamla iner (UsersEditor sağlar) */
+const BranchesContext = createContext<readonly UserBranchOption[]>([]);
+
+/** Personelin şubesinin adı (bütün şubelerse ya da tek şube varsa null) */
+function useBranchName(id: string | null): string | null {
+  const branches = useContext(BranchesContext);
+  if (!id || branches.length < 2) return null;
+  return branches.find((b) => b.id === id)?.name ?? null;
+}
+
+/**
+ * Personelin şubesi (docs/SUBE.md › Personel hesabının şubesi). Şube seçilirse kişinin paneli o şubede kilitli açılır:
+ * kasa raporu, kontrol listeleri o şubenin. Yönetici için gösterilmez; tek şube açıkken de gösterilmez.
+ */
+function UserBranchField({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const branches = useContext(BranchesContext);
+  if (branches.length < 2 && !value) return null;
+  return (
+    <Field label="Şube" htmlFor={id} hint="Personel paneli bu şubede açar; kasa raporu ve kontrol listeleri bu şubenin olur. Bütün şubeler: kişi şubeyi kendisi seçer.">
+      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Bütün şubeler</option>
+        {branches.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+function BranchBadge({ user }: { user: UserRow }) {
+  const name = useBranchName(user.role === "staff" ? user.branchId : null);
+  return name ? <Badge tone="blue">{name}</Badge> : null;
+}
 
 /** Telefonda 44px dokunma alanı (paylaşılan düğmeler dokunmatikte 40px) */
 const TAP = "h-11 pointer-coarse:h-11";
@@ -112,6 +154,8 @@ export type UserRow = {
   name: string;
   email: string;
   role: "admin" | "staff";
+  /** Personelin şubesi; boş: bütün şubeler */
+  branchId: string | null;
   active: boolean;
   lastLoginAt: string | null;
   twoFactor: boolean;
@@ -130,7 +174,24 @@ const ROLE_FILTERS: readonly RoleFilter[] = ["all", "admin", "staff"];
  * giriş; satır sonunda aktif/pasif anahtarı ve düzenle. Arama ve rol süzgeci üstte. Pasif yapmak onay ister.
  * Kullanıcı eklenince (ya da davet / sıfırlama bağlantısı oluşunca) "Giriş bilgileri" penceresi açılır.
  */
-export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users: UserRow[]; meId: number; emailConfigured: boolean; loginUrl: string }) {
+export function UsersEditor({
+  branches = [],
+  ...props
+}: {
+  users: UserRow[];
+  meId: number;
+  emailConfigured: boolean;
+  loginUrl: string;
+  branches?: readonly UserBranchOption[];
+}) {
+  return (
+    <BranchesContext.Provider value={branches}>
+      <UsersList {...props} />
+    </BranchesContext.Provider>
+  );
+}
+
+function UsersList({ users, meId, emailConfigured, loginUrl }: { users: UserRow[]; meId: number; emailConfigured: boolean; loginUrl: string }) {
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [access, setAccess] = useState<AccessInfo | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
@@ -285,6 +346,7 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
                       <span className="block text-[13px] wrap-anywhere text-ink-mute">{u.email}</span>
                       <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                         <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                        <BranchBadge user={u} />
                         <StatusBadge user={u} />
                         {u.invite === "none" ? <TwoFactorMark on={u.twoFactor} /> : null}
                       </span>
@@ -335,7 +397,10 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
                           </div>
                         </TD>
                         <TD>
-                          <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                            <BranchBadge user={u} />
+                          </div>
                         </TD>
                         <TD>
                           <div className="flex flex-col items-start gap-1.5">
@@ -695,6 +760,7 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "staff">("staff");
+  const [branchId, setBranchId] = useState("");
   const [mode, setMode] = useState<Mode>("password");
   // Pencere açılınca hazır, okunur güçlü parola: yönetici olduğu gibi kullanabilir ya da değiştirebilir
   const [password, setPassword] = useState(() => generatePassword());
@@ -717,7 +783,9 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
     const found = validateUser({ name, email, password: mode === "password" ? password : "", needPassword: mode === "password" });
     setErrors(found);
     if (focusFirst(found, NEW_IDS)) return;
-    const payload = mode === "password" ? ({ mode, name, email, role, active, password } as const) : ({ mode, name, email, role, active: true } as const);
+    const branch = role === "staff" ? branchId || null : null;
+    const payload =
+      mode === "password" ? ({ mode, name, email, role, active, password, branchId: branch } as const) : ({ mode, name, email, role, active: true, branchId: branch } as const);
     // Yönetici eklemek kendi parolanızı ister: önce parola penceresi açılır
     await stepUp.guard(
       needsStepUp({ kind: "create", role }) ? stepUpText({ kind: "create", name, mode }) : null,
@@ -795,6 +863,11 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
             <StepLegend n={2}>Rol</StepLegend>
             <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
             {role === "admin" ? <p className="mt-1.5 text-xs text-ink-mute">Yönetici eklerken kendi parolanız sorulur.</p> : null}
+            {role === "staff" ? (
+              <div className="mt-3">
+                <UserBranchField id="nu-branch" value={branchId} onChange={setBranchId} />
+              </div>
+            ) : null}
           </fieldset>
           <fieldset className="space-y-3">
             <StepLegend n={3}>Parola</StepLegend>
@@ -883,6 +956,7 @@ function UserDialog({
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<"admin" | "staff">(user.role);
+  const [branchId, setBranchId] = useState(user.branchId ?? "");
   const [active, setActive] = useState(user.active);
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
@@ -891,7 +965,7 @@ function UserDialog({
   const [pending, startTransition] = useActionTransition();
   const self = user.id === meId;
   const invited = user.invite !== "none";
-  const dirty = name !== user.name || email !== user.email || role !== user.role || active !== user.active || password !== "";
+  const dirty = name !== user.name || email !== user.email || role !== user.role || branchId !== (user.branchId ?? "") || active !== user.active || password !== "";
   // Kaydedilmemiş değişikliği arka plana dokunma, aşağı çekme, Esc ya da Vazgeç sessizce silmesin
   const [askDiscard, setAskDiscard] = useState(false);
   const requestClose = () => {
@@ -916,7 +990,7 @@ function UserDialog({
       async (confirm) => {
         setBusy(true);
         try {
-          return await saveUser({ id: user.id, name, email, role, active, password: password || undefined }, confirm);
+          return await saveUser({ id: user.id, name, email, role, active, branchId: role === "staff" ? branchId || null : null, password: password || undefined }, confirm);
         } finally {
           setBusy(false);
         }
@@ -1077,6 +1151,11 @@ function UserDialog({
             {/* Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder) */}
             <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => self && v !== "admin"} />
             {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
+            {role === "staff" ? (
+              <div className="mt-3">
+                <UserBranchField id="u-branch" value={branchId} onChange={setBranchId} />
+              </div>
+            ) : null}
           </fieldset>
           {self ? null : (
             <PasswordField

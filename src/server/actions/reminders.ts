@@ -43,6 +43,8 @@ import { dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
+import { currentExpenseBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
@@ -67,12 +69,29 @@ const reminderSchema = z.object({
   active: z.boolean(),
   /** Ayın son günü seçiliyse tekrarlar her ayın son gününe kayar (SGK gibi); verilmezse eski davranış */
   endOfMonth: z.boolean().optional(),
+  /**
+   * Ödemenin şubesi (docs/SUBE.md › Ödemeler): "" / null işletme geneli. Verilmezse düzenlemede değişmez, yenide seçili
+   * şube ("Tümü"nde işletme geneli)
+   */
+  branchId: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null)),
 });
+
+/** Ödemenin şubesi kütükte bir fiziksel şube mi (düzenlemede şimdiki şubesi pasif olsa da kalabilir) */
+async function reminderBranch(branchId: string | null, keep?: string | null): Promise<string | null> {
+  if (!branchId) return null;
+  const b = (await listBranches()).find((x) => x.id === branchId && x.kind === "fiziksel" && (x.active || x.id === keep));
+  if (!b) throw new UserError("Şube bulunamadı ya da pasif (sayfayı yenileyin)");
+  return b.id;
+}
 
 export async function saveReminder(input: z.input<typeof reminderSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, endOfMonth, ...data } = reminderSchema.parse(input);
+    const { id, endOfMonth, branchId, ...data } = reminderSchema.parse(input);
     const db = getDb();
     const eom = Boolean(endOfMonth) && isLastDayOfMonth(data.dueDate) && (data.repeat === "monthly" || data.repeat === "quarterly");
     const fresh = eom ? endOfMonthAnchor(data.dueDate) : data.dueDate;
@@ -87,9 +106,11 @@ export async function saveReminder(input: z.input<typeof reminderSchema>) {
         if (eom && !wasEom) anchorDate = fresh;
         if (!endOfMonth && wasEom) anchorDate = data.dueDate;
       }
-      await db.update(s.reminders).set({ ...data, anchorDate }).where(eq(s.reminders.id, id));
+      const branch = branchId === undefined ? {} : { branchId: await reminderBranch(branchId, prev.branchId) };
+      await db.update(s.reminders).set({ ...data, ...branch, anchorDate }).where(eq(s.reminders.id, id));
     } else {
-      await db.insert(s.reminders).values({ ...data, anchorDate: fresh });
+      const branch = branchId === undefined ? await currentExpenseBranch() : await reminderBranch(branchId);
+      await db.insert(s.reminders).values({ ...data, branchId: branch, anchorDate: fresh });
     }
     await logActivity(me, id ? "Hatırlatıcı düzenlendi" : "Hatırlatıcı eklendi", `${data.title} · ${dateTR(data.dueDate)}`);
     refresh();
@@ -517,6 +538,8 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       repeat,
       remindDaysBefore: 3,
       note: FIXED_REMINDER_NOTE,
+      // Kalemin şubesi (boş: işletme geneli): Marina'nın kirası Marina'nın ödemesi
+      branchId: f.branchId,
     });
     await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();

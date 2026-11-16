@@ -281,4 +281,26 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     await db.update(s.checklistTemplates).set({ active: true, inactiveFrom: null }).where(eq(s.checklistTemplates.id, tid));
     await db.update(s.checklistTemplates).set({ staffAllowed: false, staffSince: null }).where(eq(s.checklistTemplates.id, adminOnly));
   });
+
+  test("şube (docs/KONTROL-LISTELERI.md › Şubeler): tek şube seçiliyken o şubenin ve şubesiz listeler; Tümü'nde hepsi", async () => {
+    const ctx = { today: DAY, photos: true };
+    // Migration'lar Marina'yı yazmaz (tohum yazar): boş test veritabanında da şube kütükte olsun
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
+    // Deneme listesi Marina'nın, yönetici listesi şubesiz (bütün şubeler)
+    await db.update(s.checklistTemplates).set({ branchId: "marina" }).where(eq(s.checklistTemplates.id, tid));
+    try {
+      const ids = (lists: { templateId: number }[]) => lists.map((l) => l.templateId);
+      const marina = ids(await loadChecklistDay(db, DAY, "admin", { ...ctx, branch: "marina" }));
+      assert.ok(marina.includes(tid) && marina.includes(adminOnly));
+      const tuzla = ids(await loadChecklistDay(db, DAY, "admin", { ...ctx, branch: "tuzla" }));
+      assert.ok(!tuzla.includes(tid), "Marina'nın listesi Tuzla'da görünmez");
+      assert.ok(tuzla.includes(adminOnly), "şubesiz liste her şubede görünür");
+      const all = ids(await loadChecklistDay(db, DAY, "admin", { ...ctx, branch: "hepsi" }));
+      assert.ok(all.includes(tid) && all.includes(adminOnly));
+      const history = await loadHistory(db, DAY, DAY, "admin", { ...ctx, branch: "tuzla" });
+      assert.ok(!history[0].lists.some((l) => l.template.id === tid));
+    } finally {
+      await db.update(s.checklistTemplates).set({ branchId: null }).where(eq(s.checklistTemplates.id, tid));
+    }
+  });
 });

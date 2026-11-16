@@ -13,6 +13,8 @@ import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadFixedForReminders } from "@/server/data/fixed-reminders";
 import { loadRecentPaid } from "@/server/data/recent-paid";
+import { branchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
 import { blockedAccounts } from "@/server/notify/recipients";
@@ -44,8 +46,10 @@ async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
   const now = new Date();
+  // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
+  const [scope, allBranches] = await Promise.all([branchScope(), listBranches(db)]);
   const [{ today, settings, reminders, items, laterInvoices, covered }, recipients, log, fixedData, unpaid, recentPaid, weekly] = await Promise.all([
-    loadUpcoming(),
+    loadUpcoming(undefined, { branch: scope.scope }),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
     // Bitiş ayına göre (saklı `active` bayatlayabilir; E-62): biten kalem "Sabit giderlerden ekle"de önerilmez
@@ -84,6 +88,11 @@ async function RemindersContent() {
 
   return (
     <RemindersClient
+      branches={{
+        options: allBranches.filter((b) => b.kind === "fiziksel" && (b.active || reminders.some((r) => r.branchId === b.id))).map((b) => ({ id: b.id, name: b.name })),
+        // Yeni ödeme seçili fiziksel şubenin; "Tümü" ya da online kanalda işletme geneli
+        defaultId: allBranches.some((b) => b.id === scope.scope && b.kind === "fiziksel") ? scope.scope : "",
+      }}
       today={today}
       items={items}
       laterInvoices={laterInvoices}

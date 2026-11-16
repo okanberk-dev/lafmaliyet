@@ -18,6 +18,7 @@ import {
   parseBranchScope,
 } from "@/lib/branches";
 
+import { getCurrentUser } from "./auth/dal";
 import { listBranches } from "./branches";
 import { getDb, type DB } from "./db";
 
@@ -41,18 +42,46 @@ export interface BranchScopeState {
    * (Tuzla) iner ve form kullanıcıya hangi şubeye yazdığını gösterir.
    */
   writeId: string;
+  /** Şubesi olan personel: seçim kişinin şubesinde kilitli, seçici değiştiremez */
+  locked: boolean;
+}
+
+/** İstekteki kullanıcı (istekte bir kez okunur; istek dışında null) */
+const requestUser = cache(async () => {
+  try {
+    return await getCurrentUser();
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * Personel hesabının şubesi (docs/SUBE.md › Personel hesabının şubesi): şubesi seçilmiş personelin bütün okuma ve
+ * yazmaları o şubededir; çerez ve `?sube=` yok sayılır. Şube pasife alındıysa ya da kişide şube yoksa null (serbest).
+ */
+async function lockedBranch(branches: readonly BranchRow[]): Promise<string | null> {
+  const user = await requestUser();
+  if (!user || user.role !== "staff" || !user.branchId) return null;
+  return branches.some((b) => b.id === user.branchId && b.active) ? user.branchId : null;
+}
+
+/** Şubesi seçilmiş personelin kilitli şubesi (seçim ucu bununla başka şubeye geçişi reddeder); yoksa null */
+export async function staffBranchLock(): Promise<string | null> {
+  return lockedBranch(await listBranches());
 }
 
 export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<BranchScopeState> {
   const branches = await listBranches(db);
+  const locked = await lockedBranch(branches);
   const fromUrl = typeof raw === "string" && raw ? raw : null;
-  const chosen = fromUrl ?? (await cookies()).get(BRANCH_COOKIE)?.value ?? null;
+  const chosen = locked ?? fromUrl ?? (await cookies()).get(BRANCH_COOKIE)?.value ?? null;
   const scope = parseBranchScope(chosen, branches);
   return {
     scope,
     branches,
     label: branchScopeLabel(scope, branches),
     writeId: scope === ALL_BRANCHES ? DEFAULT_BRANCH_ID : scope,
+    locked: locked !== null,
   };
 }
 
@@ -66,7 +95,9 @@ export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<Bran
 const requestBranchScope = cache(async (): Promise<BranchScope> => {
   try {
     const jar = await cookies();
-    return parseBranchScope(jar.get(BRANCH_COOKIE)?.value ?? null, await listBranches());
+    const branches = await listBranches();
+    const locked = await lockedBranch(branches);
+    return parseBranchScope(locked ?? jar.get(BRANCH_COOKIE)?.value ?? null, branches);
   } catch {
     return ALL_BRANCHES;
   }

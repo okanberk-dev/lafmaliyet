@@ -20,7 +20,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
 import { BRANCH_SEED_KEY, DEFAULT_BRANCHES } from "../src/lib/branches";
-import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
+import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS, MARINA_CHECKLIST_SEED_KEY, MARINA_CHECKLISTS, type SeedTemplate } from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
 import { relinkWaste } from "../src/lib/waste";
 import { hashPassword } from "../src/server/auth/password";
@@ -98,18 +98,42 @@ async function ensureBranchSeed(db: DB) {
  * o günün açılışı "gecikti" demez. Anahtar ve listeler tek işlemde; aynı adda liste varsa o atlanır.
  */
 async function ensureChecklistSeed(db: DB) {
+  await seedChecklists(db, CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS);
+}
+
+/**
+ * Marina'nın açılış ve kapanış listeleri (karaokesiz), kendi anahtarıyla bir kez (`kontrol.marina.seeded`). Şube
+ * tohumundan sonra çalışır; Marina kütükte yoksa (silinmiş ya da kimliği değişmiş) hiçbir şey yazılmaz ve anahtar da
+ * yazılmaz.
+ */
+async function ensureMarinaChecklistSeed(db: DB) {
+  const [marina] = await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "marina")).limit(1);
+  if (!marina) return;
+  await seedChecklists(db, MARINA_CHECKLIST_SEED_KEY, MARINA_CHECKLISTS);
+}
+
+async function seedChecklists(db: DB, key: string, lists: readonly SeedTemplate[]) {
   const added = await db.transaction(async (tx) => {
     const [mark] = await tx
       .insert(s.integrationState)
-      .values({ key: CHECKLIST_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .values({ key, value: { at: new Date().toISOString(), version: 1 } })
       .onConflictDoNothing()
       .returning({ key: s.integrationState.key });
     if (!mark) return [];
+    const [{ last }] = await tx.select({ last: sql<number | null>`max(${s.checklistTemplates.sortOrder})` }).from(s.checklistTemplates);
     const names: string[] = [];
-    for (const [k, t] of DEFAULT_CHECKLISTS.entries()) {
+    for (const [k, t] of lists.entries()) {
       const [row] = await tx
         .insert(s.checklistTemplates)
-        .values({ name: t.name, description: t.description, schedule: "daily", opensAt: t.opensAt, dueAt: t.dueAt, sortOrder: k + 1 })
+        .values({
+          name: t.name,
+          description: t.description,
+          branchId: t.branchId ?? null,
+          schedule: "daily",
+          opensAt: t.opensAt,
+          dueAt: t.dueAt,
+          sortOrder: (last ?? 0) + k + 1,
+        })
         .onConflictDoNothing()
         .returning({ id: s.checklistTemplates.id });
       if (!row) continue;
@@ -209,6 +233,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       await ensureAdmin(db);
       await ensureChecklistSeed(db);
       await ensureBranchSeed(db);
+      await ensureMarinaChecklistSeed(db);
       return;
     }
 
@@ -352,6 +377,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
     await ensureAdmin(db);
     await ensureChecklistSeed(db);
     await ensureBranchSeed(db);
+    await ensureMarinaChecklistSeed(db);
   } finally {
     await db.$client.end();
   }

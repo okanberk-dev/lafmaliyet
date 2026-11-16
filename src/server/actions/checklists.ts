@@ -8,6 +8,7 @@ import { z } from "zod";
 import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, staffSinceChange, weekdaysText, windowError } from "@/lib/checklists";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { ChecklistError, logAnswerActivity, writeChecklistAnswer } from "@/server/data/checklists";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { deletePhoto } from "@/server/storage/photos";
 
@@ -82,6 +83,12 @@ const templateSchema = z
       .transform((d) => [...new Set(d)].sort((a, b) => a - b)),
     staffAllowed: z.boolean(),
     active: z.boolean(),
+    /** Listenin şubesi; boş: bütün şubeler (eski istemci alanı göndermezse de bütün şubeler) */
+    branchId: z
+      .string()
+      .trim()
+      .nullish()
+      .transform((v) => v || null),
   })
   .superRefine((d, ctx) => {
     const error = windowError(d.opensAt, d.dueAt);
@@ -105,12 +112,25 @@ async function nameTaken(name: string, exceptId?: number): Promise<boolean> {
 
 const windowText = (d: { opensAt: string; dueAt: string }) => `${d.opensAt} – ${d.dueAt}`;
 
+/**
+ * Listenin şubesi kütükte bir fiziksel şube mi (online kanalın kafesi yok). Düzenlemede listenin şimdiki şubesi pasife
+ * alınmış olsa da kalabilir; yeni seçim etkin olmalı. Ad işlem geçmişine yazılır.
+ */
+async function checkBranch(branchId: string | null, keep?: string | null): Promise<string | null> {
+  if (!branchId) return null;
+  const branches = await listBranches();
+  const b = branches.find((x) => x.id === branchId && x.kind === "fiziksel" && (x.active || x.id === keep));
+  if (!b) throw new UserError("Şube bulunamadı ya da pasif (sayfayı yenileyin)");
+  return b.name;
+}
+
 /** Yeni liste: sona eklenir, eklendiği andan etkin (aralığı bugün çoktan açıldıysa bugün beklenmez) */
 export async function createChecklistTemplate(input: z.input<typeof templateSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = templateSchema.parse(input);
     if (await nameTaken(data.name)) throw new UserError("Bu adda bir liste var");
+    const branchName = await checkBranch(data.branchId);
     const db = getDb();
     const t = s.checklistTemplates;
     const [{ last }] = await db.select({ last: max(t.sortOrder) }).from(t);
@@ -119,7 +139,7 @@ export async function createChecklistTemplate(input: z.input<typeof templateSche
       .insert(t)
       .values({ ...data, ...staffSinceChange(false, data.staffAllowed, now), schedule: "daily", sortOrder: (last ?? 0) + 1, activeFrom: now, inactiveFrom: data.active ? null : now })
       .returning({ id: t.id });
-    await logActivity(me, "Kontrol listesi eklendi", `${data.name} · ${weekdaysText(data.weekdays)} · ${windowText(data)}`);
+    await logActivity(me, "Kontrol listesi eklendi", `${data.name}${branchName ? ` · ${branchName}` : ""} · ${weekdaysText(data.weekdays)} · ${windowText(data)}`);
     refresh();
     return { id: row.id };
   });
@@ -136,6 +156,7 @@ export async function updateChecklistTemplate(id: number, input: z.input<typeof 
     const [prev] = await db.select().from(t).where(eq(t.id, tid)).limit(1);
     if (!prev) throw new UserError("Liste bulunamadı (sayfayı yenileyin)");
     if (await nameTaken(data.name, tid)) throw new UserError("Bu adda bir liste var");
+    const branchName = await checkBranch(data.branchId, prev.branchId);
     const now = new Date();
     await db
       .update(t)
@@ -144,6 +165,7 @@ export async function updateChecklistTemplate(id: number, input: z.input<typeof 
       .where(eq(t.id, tid));
     const changes = [
       prev.name !== data.name ? `ad ${prev.name} → ${data.name}` : null,
+      (prev.branchId ?? null) !== data.branchId ? `şube ${branchName ?? "bütün şubeler"}` : null,
       prev.opensAt !== data.opensAt || prev.dueAt !== data.dueAt ? `saat ${prev.opensAt} – ${prev.dueAt} → ${windowText(data)}` : null,
       weekdaysText(prev.weekdays) !== weekdaysText(data.weekdays) ? `günler ${weekdaysText(prev.weekdays)} → ${weekdaysText(data.weekdays)}` : null,
       prev.staffAllowed !== data.staffAllowed ? `personel ${data.staffAllowed ? "doldurabilir" : "dolduramaz"}` : null,
