@@ -6,6 +6,7 @@
 import { and, asc, eq, gte, inArray, isNull, lte, min, or } from "drizzle-orm";
 
 import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import type { AlertList } from "@/lib/checklist-alerts";
 import { businessDate } from "@/lib/cash-report";
 import {
   absentReason,
@@ -256,6 +257,36 @@ export async function loadChecklistDays(db: Db, days: string[], role: "admin" | 
     out.set(day, lists.sort(byOpening(templates)));
   }
   return out;
+}
+
+/**
+ * Personele e-posta hatırlatmasının listeleri (saatlik iş, src/server/notify/checklist-alerts.ts): bir günün etkin ve
+ * personelin doldurabildiği, o gün beklenen ya da kaydı olan listeleri; kaydın (yoksa şablonun) maddeleri ve yanıtlar.
+ */
+export async function loadAlertLists(db: Db, day: string, ctx: DayCtx): Promise<AlertList[]> {
+  const templates = (await loadTemplates(db)).filter((t) => t.active && t.staffAllowed);
+  if (!templates.length) return [];
+  const r = s.checklistRuns;
+  const runs = await db
+    .select()
+    .from(r)
+    .where(and(eq(r.date, day), eq(r.seq, 1), inArray(r.templateId, templates.map((t) => t.id))));
+  const answers = runs.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id))) : [];
+  return templates.flatMap((t) => {
+    const run = runs.find((x) => x.templateId === t.id);
+    if (!run && !expectedOn(t, day, ctx.today)) return [];
+    return [
+      {
+        templateId: t.id,
+        name: run?.name ?? t.name,
+        branchId: t.branchId,
+        opensAt: run?.opensAt ?? t.opensAt,
+        dueAt: run?.dueAt ?? t.dueAt,
+        items: run ? run.items : currentItems(t, ctx.photos),
+        answers: run ? answers.filter((a) => a.runId === run.id).map((a) => ({ itemId: a.itemId, photoAt: a.photoAt?.toISOString() ?? null })) : [],
+      },
+    ];
+  });
 }
 
 /** Bir günün listeleri (loadChecklistDays'in tek günlüğü) */

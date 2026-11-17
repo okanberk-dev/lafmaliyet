@@ -97,7 +97,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `ADMIN_EMAIL` | İlk yönetici hesabının e-postası |
 | `ADMIN_PASSWORD` | İlk yönetici parolası (en az 8 karakter; ilk girişten sonra **Hesabım** sayfasından değiştirin) |
 | `ADMIN_NAME` | Görünecek ad (ör. Okan) |
-| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz; Paraşüt ekranı "CRON_SECRET eksik", zil ve Genel bakış "Günlük işler kapalı" der |
+| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz; Paraşüt ekranı "CRON_SECRET eksik", zil ve Genel bakış "Günlük işler kapalı" der. Aynı değer GitHub deposuna da **Actions sırrı** olarak girilir (Settings › Secrets and variables › Actions › `CRON_SECRET`): saatlik kontrol listesi hatırlatmalarını o tetikler ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6) |
 | `RESEND_API_KEY` | (isteğe bağlı) E-posta gönderimi: sabah e-postası, davet ve parola sıfırlama. Ayrıntı [BILDIRIMLER.md](BILDIRIMLER.md) |
 | `EMAIL_FROM` | (isteğe bağlı) Gönderen, ör. `L'Affogato Panel <bildirim@laffogato.net>`; panelden de değiştirilir |
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
