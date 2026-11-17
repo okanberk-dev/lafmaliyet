@@ -136,8 +136,11 @@ export const KONTROL_PHOTO_DAYS = KEEP_DAYS.kontrol;
 export const ANSWER_GRACE_MIN = 30;
 /** Aralık açılmadan bundan çok önce başlayan liste geçmişte "erken dolduruldu" olarak işaretlenir */
 export const EARLY_SLACK_MIN = 60;
-export const MAX_ITEMS = 60;
-export const MAX_PHOTO_ITEMS = 10;
+/** Saatlik çizelge (Tuvalet çizelgesi: 16 saat × 4 madde) sığsın diye 80 madde, 40 fotoğraflı madde */
+export const MAX_ITEMS = 80;
+export const MAX_PHOTO_ITEMS = 40;
+/** Saatlik bölümün maddeleri bölümün saatinden bu kadar dakika önce açılır (10:00'ın maddeleri 09:50'de) */
+export const SLOT_EARLY_MIN = 10;
 /** Bir yanıtın en çok bu kadar önceki hâli saklanır (en eskisi düşer) */
 export const MAX_HISTORY = 10;
 /** Saat aralığı en az bu kadar dakika */
@@ -204,6 +207,35 @@ export function checklistDay(now: Date): string {
 export function clockInstant(day: string, clock: string, end = false): Date {
   const start = Date.parse(`${day}T00:00:00Z`) + (DAY_START_MIN - TR_OFFSET_MIN) * MIN_MS;
   return new Date(start + (end ? dueMinute(clock) : opensMinute(clock)) * MIN_MS);
+}
+
+// ---------------------------------------------------------------- Saatlik bölümler
+
+/**
+ * Bölüm adı bir saatle başlıyorsa ("10:00", "13:00 öğle") bölüm saatliktir: maddeleri o saatten SLOT_EARLY_MIN dakika
+ * önce açılır, daha önce işaretlenemez (Tuvalet çizelgesi: her saat imza ve fotoğraf; bir kişi 10:00'da bütün günü
+ * dolduramasın). Saat yoksa null.
+ */
+export function sectionSlot(section: string | null | undefined): string | null {
+  const m = /^\s*([01]\d|2[0-3]):([0-5]\d)(?!\d)/.exec(section ?? "");
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+/** Saatlik bölümün açıldığı an (saatten SLOT_EARLY_MIN önce); saatlik değilse null */
+export function slotOpensInstant(day: string, section: string | null | undefined): Date | null {
+  const slot = sectionSlot(section);
+  return slot ? new Date(clockInstant(day, slot).getTime() - SLOT_EARLY_MIN * MIN_MS) : null;
+}
+
+/** Saatlik bölümün maddeleri henüz işaretlenemez mi (bölümün saati gelmedi) */
+export function slotLocked(day: string, section: string | null | undefined, now: Date): boolean {
+  const at = slotOpensInstant(day, section);
+  return at !== null && now.getTime() < at.getTime();
+}
+
+/** Saati gelmemiş bölüme yanıtın reddi */
+export function slotLockedText(section: string | null | undefined): string {
+  return `Bu bölüm saat ${sectionSlot(section) ?? ""} olunca açılır; saati gelmeden işaretlenemez.`;
 }
 
 /** Saat aralığının hatası (Listeleri düzenle ekranının metinleri); geçerliyse null */
@@ -501,9 +533,9 @@ export function groupBySection<T extends { section: string | null }>(items: T[])
 
 // ---------------------------------------------------------------- Metin
 
-/** "Açılış" → "Açılış listesi"; adında "liste" geçen ad olduğu gibi kalır */
+/** "Açılış" → "Açılış listesi"; adında "liste" ya da "çizelge" geçen ad olduğu gibi kalır */
 export function listTitle(name: string): string {
-  return /liste/.test(name.toLocaleLowerCase("tr-TR")) ? name : `${name} listesi`;
+  return /liste|çizelge/.test(name.toLocaleLowerCase("tr-TR")) ? name : `${name} listesi`;
 }
 
 /** İlk harf küçük (Türkçe: "İçecek" → "içecek") */

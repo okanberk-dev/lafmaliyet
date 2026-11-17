@@ -20,6 +20,8 @@ import {
   runSummary,
   sameAnswer,
   nextVersions,
+  slotLocked,
+  slotLockedText,
   snapshotItems,
   type AnswerContent,
   type AnswerLite,
@@ -460,6 +462,8 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
     const item = run.items.find((i) => i.id === input.itemId);
     if (!item) throw new ChecklistError(LIST_CHANGED_TEXT, 409);
     if (!OPS[item.type].includes(input.op)) throw new ChecklistError("Bu madde bu şekilde işaretlenemez.", 400);
+    // Saatlik bölüm (Tuvalet çizelgesi): saati gelmeden işaretlenmez
+    if (slotLocked(input.date, item.section, now)) throw new ChecklistError(slotLockedText(item.section), 409);
 
     const a = s.checklistAnswers;
     const [prevRow] = await tx
@@ -587,6 +591,7 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   const item = (run ? run.items : currentItems(t, photos)).find((i) => i.id === target.itemId);
   if (!item) throw new ChecklistError(LIST_CHANGED_TEXT, 409);
   if (item.type !== "photo") throw new ChecklistError("Bu madde bu şekilde işaretlenemez.", 400);
+  if (slotLocked(target.date, item.section, now)) throw new ChecklistError(slotLockedText(item.section), 409);
 }
 
 /**

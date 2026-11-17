@@ -238,7 +238,7 @@ const itemSchema = z
   .refine((d) => d.type !== "number" || d.min === null || d.max === null || d.min <= d.max, { message: "En az, en çoktan büyük olamaz", path: ["max"] })
   .transform((d) => (d.type === "number" ? d : { ...d, unit: null, min: null, max: null }));
 
-/** Madde ekler ya da düzenler (sınırlar: 60 madde, 10 fotoğraflı); değişiklik o gün başlamış listeye değil sonrakilere */
+/** Madde ekler ya da düzenler (sınırlar: MAX_ITEMS madde, MAX_PHOTO_ITEMS fotoğraflı); değişiklik o gün başlamış listeye değil sonrakilere */
 export async function saveChecklistItem(templateId: number, input: z.input<typeof itemSchema>, id?: number | null) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -256,8 +256,8 @@ export async function saveChecklistItem(templateId: number, input: z.input<typeo
         .where(and(eq(i.templateId, tid), eq(i.active, true)))
         .orderBy(asc(i.sortOrder));
       const others = rows.filter((r) => r.id !== iid);
-      if (others.length + 1 > MAX_ITEMS) throw new UserError("Bir listede en çok 60 madde olabilir");
-      if (data.type === "photo" && others.filter((r) => r.type === "photo").length + 1 > MAX_PHOTO_ITEMS) throw new UserError("Bir listede en çok 10 fotoğraflı madde olabilir");
+      if (others.length + 1 > MAX_ITEMS) throw new UserError(`Bir listede en çok ${MAX_ITEMS} madde olabilir`);
+      if (data.type === "photo" && others.filter((r) => r.type === "photo").length + 1 > MAX_PHOTO_ITEMS) throw new UserError(`Bir listede en çok ${MAX_PHOTO_ITEMS} fotoğraflı madde olabilir`);
       const now = new Date();
       if (iid) {
         const [row] = await tx
@@ -335,8 +335,8 @@ export async function setChecklistItemActive(id: number, active: boolean) {
           .select({ type: i.type })
           .from(i)
           .where(and(eq(i.templateId, item.templateId), eq(i.active, true)));
-        if (rows.length + 1 > MAX_ITEMS) throw new UserError("Bir listede en çok 60 madde olabilir");
-        if (item.type === "photo" && rows.filter((r) => r.type === "photo").length + 1 > MAX_PHOTO_ITEMS) throw new UserError("Bir listede en çok 10 fotoğraflı madde olabilir");
+        if (rows.length + 1 > MAX_ITEMS) throw new UserError(`Bir listede en çok ${MAX_ITEMS} madde olabilir`);
+        if (item.type === "photo" && rows.filter((r) => r.type === "photo").length + 1 > MAX_PHOTO_ITEMS) throw new UserError(`Bir listede en çok ${MAX_PHOTO_ITEMS} fotoğraflı madde olabilir`);
         const [{ last }] = await tx.select({ last: max(i.sortOrder) }).from(i).where(eq(i.templateId, item.templateId));
         await tx
           .update(i)

@@ -20,7 +20,18 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
 import { BRANCH_SEED_KEY, DEFAULT_BRANCHES } from "../src/lib/branches";
-import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS, MARINA_CHECKLIST_SEED_KEY, MARINA_CHECKLISTS, type SeedTemplate } from "../src/lib/checklist-seed";
+import {
+  CHECKLIST_SEED_KEY,
+  DEFAULT_CHECKLISTS,
+  FOOD_SAFETY_ITEMS,
+  FOOD_SAFETY_LISTS,
+  FOOD_SAFETY_SEED_KEY,
+  MARINA_CHECKLIST_SEED_KEY,
+  MARINA_CHECKLISTS,
+  TUZLA_HOURLY_CHECKLISTS,
+  TUZLA_HOURLY_SEED_KEY,
+  type SeedTemplate,
+} from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
 import { relinkWaste } from "../src/lib/waste";
 import { hashPassword } from "../src/server/auth/password";
@@ -110,6 +121,64 @@ async function ensureMarinaChecklistSeed(db: DB) {
   const [marina] = await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "marina")).limit(1);
   if (!marina) return;
   await seedChecklists(db, MARINA_CHECKLIST_SEED_KEY, MARINA_CHECKLISTS);
+}
+
+/**
+ * Tuzla'nın saatlik tuvalet çizelgesi, kendi anahtarıyla bir kez (`kontrol.tuzla.tuvalet.seeded`). Tuzla kütükte yoksa
+ * hiçbir şey yazılmaz ve anahtar da yazılmaz.
+ */
+async function ensureTuzlaHourlySeed(db: DB) {
+  const [tuzla] = await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "tuzla")).limit(1);
+  if (!tuzla) return;
+  await seedChecklists(db, TUZLA_HOURLY_SEED_KEY, TUZLA_HOURLY_CHECKLISTS);
+}
+
+/**
+ * Gıda güvenliği maddeleri (SKT, ikinci raf ömrü etiketi, yerde ürün) var olan açılış listelerinin sonuna bir kez
+ * (`kontrol.gida.seeded`; "Not" bölümü sonda kalır). Liste adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır, listede aynı adda etkin madde
+ * varsa (yeni kurulumda tohum zaten ekledi) o madde atlanır. Bugün açılmış kayıt değişmez; maddeler ertesi güne girer.
+ */
+async function ensureFoodSafetyItems(db: DB) {
+  const added = await db.transaction(async (tx) => {
+    const [mark] = await tx
+      .insert(s.integrationState)
+      .values({ key: FOOD_SAFETY_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .onConflictDoNothing()
+      .returning({ key: s.integrationState.key });
+    if (!mark) return [];
+    const names: string[] = [];
+    for (const name of FOOD_SAFETY_LISTS) {
+      const [tpl] = await tx.select({ id: s.checklistTemplates.id }).from(s.checklistTemplates).where(eq(s.checklistTemplates.name, name)).limit(1);
+      if (!tpl) continue;
+      const rows = await tx
+        .select({ id: s.checklistItems.id, label: s.checklistItems.label, section: s.checklistItems.section, active: s.checklistItems.active, sortOrder: s.checklistItems.sortOrder })
+        .from(s.checklistItems)
+        .where(eq(s.checklistItems.templateId, tpl.id));
+      const have = new Set(rows.filter((r) => r.active).map((r) => r.label));
+      const fresh = FOOD_SAFETY_ITEMS.filter((i) => !have.has(i.label));
+      if (!fresh.length) continue;
+      const last = Math.max(0, ...rows.map((r) => r.sortOrder));
+      await tx.insert(s.checklistItems).values(
+        fresh.map((i, n) => ({
+          templateId: tpl.id,
+          label: i.label,
+          type: i.type,
+          section: i.section ?? null,
+          hint: i.hint ?? null,
+          required: i.required ?? true,
+          sortOrder: last + n + 1,
+        })),
+      );
+      // Serbest not bölümü ("Not") listenin sonunda kalsın
+      const notes = rows.filter((r) => r.active && r.section === "Not").sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+      for (const [k, r] of notes.entries()) {
+        await tx.update(s.checklistItems).set({ sortOrder: last + fresh.length + k + 1 }).where(eq(s.checklistItems.id, r.id));
+      }
+      names.push(name);
+    }
+    return names;
+  });
+  if (added.length) console.log(`✓ Gıda güvenliği maddeleri eklendi: ${added.join(", ")}`);
 }
 
 async function seedChecklists(db: DB, key: string, lists: readonly SeedTemplate[]) {
@@ -234,6 +303,8 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       await ensureChecklistSeed(db);
       await ensureBranchSeed(db);
       await ensureMarinaChecklistSeed(db);
+      await ensureTuzlaHourlySeed(db);
+      await ensureFoodSafetyItems(db);
       return;
     }
 
@@ -378,6 +449,8 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
     await ensureChecklistSeed(db);
     await ensureBranchSeed(db);
     await ensureMarinaChecklistSeed(db);
+    await ensureTuzlaHourlySeed(db);
+    await ensureFoodSafetyItems(db);
   } finally {
     await db.$client.end();
   }

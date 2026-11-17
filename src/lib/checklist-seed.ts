@@ -33,6 +33,37 @@ export const CHECKLIST_SEED_KEY = "kontrol.seeded";
 
 const FRIDGE = { type: "number", unit: "°C", min: 0, max: 4 } as const;
 
+/**
+ * Gıda güvenliği maddeleri (sahibin isteği, 17 Kasım 2026): SKT, ikinci raf ömrü etiketi, yerde ürün. İki şubenin
+ * açılış listesinin sonuna "Gıda güvenliği" bölümü olarak girer; var olan veritabanında ensureFoodSafetyItems
+ * (scripts/seed.ts) bir kez ekler.
+ */
+export const FOOD_SAFETY_ITEMS: SeedItem[] = [
+  {
+    section: "Gıda güvenliği",
+    label: "SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı",
+    type: "check",
+    hint: "Dolap, depo ve vitrindeki ürünlerin son kullanma tarihine bakın; tarihi geçeni kullanmayın, fire olarak ayırın.",
+  },
+  {
+    section: "Gıda güvenliği",
+    label: "İkinci raf ömrü etiketleri vuruldu",
+    type: "check",
+    hint: "Açılan ya da hazırlanan her ürüne (süt, krema, sos, hazırlanan ürünler) açılış ve son kullanma tarihini yazan etiket yapıştırın.",
+  },
+  {
+    section: "Gıda güvenliği",
+    label: "Yere temas eden ürün yok",
+    type: "check",
+    hint: "Depo ve dolaplarda koli, kasa ve ürün yerde durmasın; raf ya da palet üzerinde olsun.",
+  },
+];
+
+/** integration_state anahtarı: gıda güvenliği maddeleri var olan açılış listelerine bir kez eklendi */
+export const FOOD_SAFETY_SEED_KEY = "kontrol.gida.seeded";
+/** Gıda güvenliği maddelerinin ekleneceği listeler (adıyla; adı değişmiş ya da silinmiş liste atlanır) */
+export const FOOD_SAFETY_LISTS = ["Açılış", "Marina Açılış"] as const;
+
 export const DEFAULT_CHECKLISTS: SeedTemplate[] = [
   {
     name: "Açılış",
@@ -54,6 +85,7 @@ export const DEFAULT_CHECKLISTS: SeedTemplate[] = [
       { section: "Salon", label: "Salon hazır", type: "photo", hint: PHOTO_PRIVACY_HINT },
       { section: "Karaoke odası", label: "Oda havalandırıldı; ses sistemi ve ekran denendi", type: "check" },
       { section: "Karaoke odası", label: "Mikrofonlar şarjlı, yedek pil ve mikrofon kılıfı yeterli", type: "check" },
+      ...FOOD_SAFETY_ITEMS,
       { section: "Not", label: "Eksik malzeme ya da arıza", type: "text", required: false, hint: "Yoksa boş bırakın." },
     ],
   },
@@ -135,6 +167,7 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
       { section: "Teras", label: "Hava soğuksa ısıtıcıları aç", type: "check", required: false, hint: "Hava soğuk değilse boş bırakın." },
       { section: "Kafe önü ve güvenlik", label: "Kafe önünü süpür", type: "check" },
       { section: "Kafe önü ve güvenlik", label: "Yangın dolabının önü boş mu kontrol et", type: "check" },
+      ...FOOD_SAFETY_ITEMS,
     ],
   },
   {
@@ -163,5 +196,46 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
       { section: "Kapanış", label: "Terası ve kapıyı kilitle", type: "check" },
       { section: "Kapanış", label: "Alarmı kur", type: "check" },
     ],
+  },
+];
+
+/** integration_state anahtarı: Tuzla'nın tuvalet çizelgesi bir kez eklendi (silinen liste geri gelmez) */
+export const TUZLA_HOURLY_SEED_KEY = "kontrol.tuzla.tuvalet.seeded";
+
+/** Tuvalet çizelgesinin saatleri: 10:00'dan gece 01:00'e, saat başı (16 saat) */
+export const TOILET_HOURS = ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "00", "01"].map((h) => `${h}:00`);
+
+/**
+ * Tuzla'nın saatlik tuvalet çizelgesi (sahibin isteği, 17 Kasım 2026; yalnız Tuzla). Her saat bir bölümdür ("10:00"):
+ * bölüm adı saat olduğu için maddeleri o saatten 10 dakika önce açılır (lib/checklists.ts sectionSlot), önceden
+ * doldurulamaz. Her saatte: tuvalet kontrolü imzası ve fotoğrafı (zorunlu); bahçe ve odalardaki boşların toplandığının
+ * imzası (zorunlu) ve fotoğrafı (isteğe bağlı: yalnız misafir yokken çekilir, misafir varken çekilmez). İmza, maddeyi
+ * işaretleyen kişinin adı ve saatidir. Son saat 01:30: 01:00'in imzasına yarım saat.
+ */
+export const TUZLA_HOURLY_CHECKLISTS: SeedTemplate[] = [
+  {
+    name: "Tuvalet çizelgesi",
+    branchId: "tuzla",
+    description:
+      "Saat başı tuvalete bakın, imzalayıp fotoğrafını yükleyin; bahçe ve odalardaki boşları toplayıp imzalayın. Bahçe ve odaların fotoğrafını yalnız içeride misafir yokken çekin.",
+    opensAt: "10:00",
+    dueAt: "01:30",
+    items: TOILET_HOURS.flatMap((h): SeedItem[] => [
+      {
+        section: h,
+        label: `${h} Tuvalet kontrol edildi ve temizlendi`,
+        type: "check",
+        hint: "Sabun, kâğıt havlu ve tuvalet kâğıdı tam; çöp boş; zemin kuru. Eksik ya da arıza varsa Sorun var'a yazın.",
+      },
+      { section: h, label: `${h} Tuvalet fotoğrafı`, type: "photo", hint: `İçeride kimse yokken çekin. ${PHOTO_PRIVACY_HINT}` },
+      { section: h, label: `${h} Bahçe ve odalardaki boşlar toplandı`, type: "check", hint: "Boş bardak, fincan, tabak ve şişeler toplandı; masalar silindi." },
+      {
+        section: h,
+        label: `${h} Bahçe ve odalar fotoğrafı`,
+        type: "photo",
+        required: false,
+        hint: `Yalnız bahçede ve odalarda misafir yokken çekin; misafir varsa çekmeyin, boş bırakın. ${PHOTO_PRIVACY_HINT}`,
+      },
+    ]),
   },
 ];

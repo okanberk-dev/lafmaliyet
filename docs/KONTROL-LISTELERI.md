@@ -13,7 +13,7 @@ ertesi sabahki e-postada görür.
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Açılış** | 08:00 – 11:00 | 13 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); eksik / arıza notu (isteğe bağlı) |
+| **Açılış** | 08:00 – 11:00 | 16 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); gıda güvenliği (aşağıda); eksik / arıza notu (isteğe bağlı) |
 | **Kapanış** | 22:00 – 02:00 | 16 madde: karaoke odası (mikrofonlar alkollü mendille, koltuk ve tablet, unutulan eşya, cihazlar kapalı, oda fotoğrafı); bar (espresso yıkaması, buhar çubuğu, açık ürünlere tarih, bar buzdolabı, bar fotoğrafı); salon ve genel (yer, lavabo, çöp, salon fotoğrafı, ışık ve kapılar); not (isteğe bağlı) |
 
 Bu iki liste **Tuzla'nındır** (karaoke odası Tuzla'da). **Marina**'nın kendi iki listesi vardır
@@ -22,8 +22,35 @@ Marina'da karaoke yok; karaoke maddeleri yerine teras, çikolata şelalesi ve po
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Marina Açılış** | 08:00 – 11:00 | 28 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü |
+| **Marina Açılış** | 08:00 – 11:00 | 31 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
 | **Marina Kapanış** | 22:00 – 02:00 | 18 madde: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
+
+**Gıda güvenliği** (sahibin isteği, 17 Kasım 2026; `FOOD_SAFETY_ITEMS`): iki şubenin açılış listesinin sonunda (Tuzla'da
+"Not"tan önce) üç tamam işareti: **SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı**, **İkinci raf ömrü etiketleri
+vuruldu** (açılan ya da hazırlanan ürüne açılış ve son kullanma tarihi etiketi), **Yere temas eden ürün yok** (koli,
+kasa ve ürün raf ya da palet üzerinde). Var olan veritabanında `db:seed` bunları "Açılış" ve "Marina Açılış" adlı
+listelere bir kez ekler (anahtar `kontrol.gida.seeded`; aynı adda madde varsa atlar). O gün açılmış kayda girmez,
+ertesi günden görünür.
+
+**Tuvalet çizelgesi** (yalnız Tuzla, 17 Kasım 2026; `TUZLA_HOURLY_CHECKLISTS`, anahtar `kontrol.tuzla.tuvalet.seeded`):
+10:00 – 01:30, 16 saatlik bölüm (10:00, 11:00 … 00:00, 01:00), her saatte 4 madde:
+
+| Madde | Tür | |
+|-------|-----|---|
+| Tuvalet kontrol edildi ve temizlendi | Tamam işareti (**İmzala**) | Zorunlu; eksik ya da arıza "Sorun var" |
+| Tuvalet fotoğrafı | Fotoğraf | Zorunlu; içeride kimse yokken |
+| Bahçe ve odalardaki boşlar toplandı | Tamam işareti (**İmzala**) | Zorunlu |
+| Bahçe ve odalar fotoğrafı | Fotoğraf | İsteğe bağlı: **yalnız misafir yokken çekilir, misafir varken çekilmez** |
+
+İmza, maddeyi işaretleyen kişinin adı ve saatidir ("İmzalandı · Ayşe", üstte "Ayşe · 10:04"). Son saat 01:30: 01:00'in
+imzasına yarım saat kalır. Liste eklendiği günün aralığı açılmışsa ertesi günden beklenir (§ 2).
+
+**Saatlik bölüm:** bölüm adı bir saatle başlıyorsa ("10:00", "13:00 öğle") bölümün maddeleri o saatten **10 dakika
+önce** açılır (`sectionSlot`, `SLOT_EARLY_MIN`); daha önce işaretlenemez, sunucu da reddeder ("Bu bölüm saat 11:00
+olunca açılır"). Doldurma ekranında saati gelmemiş bölümler tek kutuda ("Sıradaki: 17:00 · açılış 16:50", "Sonra: …"),
+saatlik bölümün tamam işareti "İmzala" der. Zorunlu maddeleri bitmiş saat, bütün maddeleri yanıtlanınca ya da sıradaki
+saat gelince kapanır (dokununca açılır); saati geçmiş ve eksik olan saatin yanında kırmızı **Eksik** rozeti. Herhangi
+bir listede bölüm adı saat yazılarak aynı kural kullanılabilir.
 
 Maddeler bir başlangıçtır: gıda güvenliği danışmanıyla gözden geçirilip **Listeler** sekmesinden değiştirilir.
 
@@ -50,7 +77,7 @@ Madde türleri:
 
 Her madde **zorunlu** ya da **isteğe bağlı**dır; liste bütün zorunlu maddeler yanıtlanınca kendiliğinden tamamlanır.
 Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıklaması adının altında görünür. Bir listede en çok
-60 madde, 10 fotoğraflı madde olur.
+80 madde, 40 fotoğraflı madde olur (saatlik çizelge sığsın diye).
 
 ## 2. Gün ve saat (Türkiye)
 
