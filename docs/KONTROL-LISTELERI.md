@@ -13,7 +13,7 @@ ertesi sabahki e-postada görür.
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Açılış** | 08:00 – 11:00 | 16 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); gıda güvenliği (aşağıda); eksik / arıza notu (isteğe bağlı) |
+| **Açılış** | 08:00 – 11:00 | 17 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); gıda güvenliği (aşağıda); eksik / arıza notu (isteğe bağlı) |
 | **Kapanış** | 22:00 – 02:00 | 16 madde: karaoke odası (mikrofonlar alkollü mendille, koltuk ve tablet, unutulan eşya, cihazlar kapalı, oda fotoğrafı); bar (espresso yıkaması, buhar çubuğu, açık ürünlere tarih, bar buzdolabı, bar fotoğrafı); salon ve genel (yer, lavabo, çöp, salon fotoğrafı, ışık ve kapılar); not (isteğe bağlı) |
 
 Bu iki liste **Tuzla'nındır** (karaoke odası Tuzla'da). **Marina**'nın kendi iki listesi vardır
@@ -22,14 +22,16 @@ Marina'da karaoke yok; karaoke maddeleri yerine teras, çikolata şelalesi ve po
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Marina Açılış** | 08:00 – 11:00 | 31 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
+| **Marina Açılış** | 08:00 – 11:00 | 32 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
 | **Marina Kapanış** | 22:00 – 02:00 | 18 madde: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
 
-**Gıda güvenliği** (sahibin isteği, 17 Kasım 2026; `FOOD_SAFETY_ITEMS`): iki şubenin açılış listesinin sonunda (Tuzla'da
-"Not"tan önce) üç tamam işareti: **SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı**, **İkinci raf ömrü etiketleri
-vuruldu** (açılan ya da hazırlanan ürüne açılış ve son kullanma tarihi etiketi), **Yere temas eden ürün yok** (koli,
-kasa ve ürün raf ya da palet üzerinde). Var olan veritabanında `db:seed` bunları "Açılış" ve "Marina Açılış" adlı
-listelere bir kez ekler (anahtar `kontrol.gida.seeded`; aynı adda madde varsa atlar). O gün açılmış kayda girmez,
+**Gıda güvenliği** (sahibin isteği, 17 Kasım 2026; FIFO 18 Kasım; `FOOD_SAFETY_ITEMS`): iki şubenin açılış listesinin
+sonunda (Tuzla'da "Not"tan önce) dört tamam işareti: **SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı**, **İkinci raf
+ömrü etiketleri vuruldu** (açılan ya da hazırlanan ürüne açılış ve son kullanma tarihi etiketi), **Yere temas eden ürün
+yok** (koli, kasa ve ürün raf ya da palet üzerinde), **FIFO uygulandı: ilk giren ilk çıkar** (yeni gelen ürün eskisinin
+arkasına; önce gelen ve tarihi en yakın ürün önce kullanılır). Var olan veritabanında `db:seed` eksik olanları
+"Açılış" ve "Marina Açılış" adlı listelere ekler; her anahtar bir kez çalışır (`FOOD_SAFETY_SEED_KEYS`:
+`kontrol.gida.seeded`, `kontrol.gida.fifo.seeded`), aynı adda madde varsa atlanır. O gün açılmış kayda girmez,
 ertesi günden görünür.
 
 **Tuvalet çizelgesi** (yalnız Tuzla, 17 Kasım 2026; `TUZLA_HOURLY_CHECKLISTS`, anahtar `kontrol.tuzla.tuvalet.seeded`):

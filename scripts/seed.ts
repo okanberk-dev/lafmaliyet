@@ -25,7 +25,7 @@ import {
   DEFAULT_CHECKLISTS,
   FOOD_SAFETY_ITEMS,
   FOOD_SAFETY_LISTS,
-  FOOD_SAFETY_SEED_KEY,
+  FOOD_SAFETY_SEED_KEYS,
   MARINA_CHECKLIST_SEED_KEY,
   MARINA_CHECKLISTS,
   TUZLA_HOURLY_CHECKLISTS,
@@ -135,14 +135,18 @@ async function ensureTuzlaHourlySeed(db: DB) {
 
 /**
  * Gıda güvenliği maddeleri (SKT, ikinci raf ömrü etiketi, yerde ürün) var olan açılış listelerinin sonuna bir kez
- * (`kontrol.gida.seeded`; "Not" bölümü sonda kalır). Liste adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır, listede aynı adda etkin madde
+ * (her anahtar `FOOD_SAFETY_SEED_KEYS` bir kez; "Not" bölümü sonda kalır). Liste adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır, listede aynı adda etkin madde
  * varsa (yeni kurulumda tohum zaten ekledi) o madde atlanır. Bugün açılmış kayıt değişmez; maddeler ertesi güne girer.
  */
 async function ensureFoodSafetyItems(db: DB) {
+  for (const key of FOOD_SAFETY_SEED_KEYS) await addFoodSafetyItems(db, key);
+}
+
+async function addFoodSafetyItems(db: DB, key: string) {
   const added = await db.transaction(async (tx) => {
     const [mark] = await tx
       .insert(s.integrationState)
-      .values({ key: FOOD_SAFETY_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .values({ key, value: { at: new Date().toISOString(), version: 1 } })
       .onConflictDoNothing()
       .returning({ key: s.integrationState.key });
     if (!mark) return [];

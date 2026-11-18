@@ -34,7 +34,8 @@ export const CHECKLIST_SEED_KEY = "kontrol.seeded";
 const FRIDGE = { type: "number", unit: "°C", min: 0, max: 4 } as const;
 
 /**
- * Gıda güvenliği maddeleri (sahibin isteği, 17 Kasım 2026): SKT, ikinci raf ömrü etiketi, yerde ürün. İki şubenin
+ * Gıda güvenliği maddeleri (sahibin isteği, 17 Kasım 2026; FIFO 18 Kasım): SKT, ikinci raf ömrü etiketi, yerde ürün,
+ * FIFO (ilk giren ilk çıkar). İki şubenin
  * açılış listesinin sonuna "Gıda güvenliği" bölümü olarak girer; var olan veritabanında ensureFoodSafetyItems
  * (scripts/seed.ts) bir kez ekler.
  */
@@ -57,10 +58,20 @@ export const FOOD_SAFETY_ITEMS: SeedItem[] = [
     type: "check",
     hint: "Depo ve dolaplarda koli, kasa ve ürün yerde durmasın; raf ya da palet üzerinde olsun.",
   },
+  {
+    section: "Gıda güvenliği",
+    label: "FIFO uygulandı: ilk giren ilk çıkar",
+    type: "check",
+    hint: "Yeni gelen ürünü eskisinin arkasına dizin; önce gelen ve tarihi en yakın ürün önce kullanılsın. Dolap, depo ve vitrin.",
+  },
 ];
 
-/** integration_state anahtarı: gıda güvenliği maddeleri var olan açılış listelerine bir kez eklendi */
-export const FOOD_SAFETY_SEED_KEY = "kontrol.gida.seeded";
+/**
+ * integration_state anahtarları: gıda güvenliği maddeleri var olan açılış listelerine bir kez eklendi. Her anahtar
+ * eksik maddeleri ekler; yeni madde gelince yeni anahtar eklenir (ilki SKT, etiket, yerde ürün; ikincisi FIFO, 18 Kasım
+ * 2026). Listede aynı adda madde varsa atlanır.
+ */
+export const FOOD_SAFETY_SEED_KEYS = ["kontrol.gida.seeded", "kontrol.gida.fifo.seeded"] as const;
 /** Gıda güvenliği maddelerinin ekleneceği listeler (adıyla; adı değişmiş ya da silinmiş liste atlanır) */
 export const FOOD_SAFETY_LISTS = ["Açılış", "Marina Açılış"] as const;
 

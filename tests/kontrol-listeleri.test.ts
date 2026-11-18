@@ -517,7 +517,7 @@ test("15. hazır listeler: Açılış 08:00–11:00 ve Kapanış 22:00–02:00, 
     assert.ok(photos >= 1 && photos <= MAX_PHOTO_ITEMS, t.name);
   }
   const [acilis, kapanis] = DEFAULT_CHECKLISTS;
-  assert.equal(acilis.items.length, 16);
+  assert.equal(acilis.items.length, 17);
   assert.equal(kapanis.items.length, 16);
   assert.ok(kapanis.items.some((i) => /mikrofon/i.test(i.label)));
   // "Her seferinde" listeleri (Oda sıfırlama, Mal kabul) bu turda yok
@@ -528,7 +528,7 @@ test("15b. Marina'nın listeleri (16 Kasım 2026): karaoke yok, teras var; Tuzla
   assert.deepEqual(
     MARINA_CHECKLISTS.map((t) => [t.name, t.branchId, t.opensAt, t.dueAt, t.items.length]),
     [
-      ["Marina Açılış", "marina", "08:00", "11:00", 31],
+      ["Marina Açılış", "marina", "08:00", "11:00", 32],
       ["Marina Kapanış", "marina", "22:00", "02:00", 18],
     ],
   );
@@ -867,7 +867,7 @@ test("17. Tuzla'nın tuvalet çizelgesi ve gıda güvenliği maddeleri (17 Kası
   // Gıda güvenliği: iki şubenin açılış listesinde
   assert.deepEqual(
     FOOD_SAFETY_ITEMS.map((i) => i.label),
-    ["SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı", "İkinci raf ömrü etiketleri vuruldu", "Yere temas eden ürün yok"],
+    ["SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı", "İkinci raf ömrü etiketleri vuruldu", "Yere temas eden ürün yok", "FIFO uygulandı: ilk giren ilk çıkar"],
   );
   for (const name of FOOD_SAFETY_LISTS) {
     const list = [...DEFAULT_CHECKLISTS, ...MARINA_CHECKLISTS].find((x) => x.name === name);
