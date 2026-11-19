@@ -44,6 +44,11 @@ jobs:
       - name: Bağımlılıklar
         run: npm ci --no-audit --no-fund
 
+      # PageProps / LayoutProps gibi global tipler .next/types altında üretilir (next dev / build bunu kendisi
+      # yapar); temiz checkout'ta tsc'den önce üretilmezse "Cannot find name 'PageProps'" der.
+      - name: Rota tipleri (next typegen)
+        run: npx next typegen
+
       - name: Tip denetimi
         run: npx tsc --noEmit
 
