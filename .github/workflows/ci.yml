@@ -1,0 +1,57 @@
+# Sürekli entegrasyon: her PR'da ve main'e doğrudan push'ta tip denetimi, ESLint, testler (Excel karşılaştırması
+# dahil, tests/*.test.ts) ve production derlemesi.
+#
+# Derleme `npm run build` ile değil `next build` ile alınır: `npm run build` önce scripts/predeploy.ts ile
+# veritabanına migration uygular ve boşsa Excel verisini yükler; CI hiçbir veritabanına dokunmaz. Aşağıdaki
+# ortam değişkenleri yalnız yer tutucudur, gerçek sırlar Vercel'de kalır.
+#
+# Squash merge edilen PR'ın ağacı PR'da zaten denendi; main'de "(#N)" başlıklı commit'te iş atlanır (atlanan iş
+# Actions dakikası harcamaz). "(#" içermeyen doğrudan push yine denenir.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  denetim:
+    name: Tip · Lint · Test · Derleme
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '(#')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      AUTH_SECRET: ci-yer-tutucu-oturum-anahtari-canlida-kullanilmaz
+      APP_URL: https://ladmin.laffogato.net
+    steps:
+      - uses: actions/checkout@v6
+
+      # Vercel'deki sürümle aynı (package.json › engines.node 24.x).
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Bağımlılıklar
+        run: npm ci --no-audit --no-fund
+
+      - name: Tip denetimi
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Testler
+        run: npm test
+
+      - name: Derleme (next build)
+        run: npx next build
