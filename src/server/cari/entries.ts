@@ -29,7 +29,7 @@ import { paymentUnchanged, type RecentPaid } from "@/lib/recent-paid";
 import { daysBetween, todayTR } from "@/lib/reminders";
 import { UserError } from "@/server/actions/util";
 import { toDebt } from "@/server/data/cari";
-import { currentExpenseBranch, currentWriteBranch } from "@/server/branch-scope";
+import { currentExpenseBranch, currentTillBranch } from "@/server/branch-scope";
 import { schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
@@ -246,7 +246,7 @@ export async function writePayment(tx: Tx, me: Actor, card: Card, input: Payment
         const [line] = await tx
           .insert(s.cashOuts)
           // Kasa şube başına: satır panelde seçili şubede açılır (docs/SUBE.md)
-          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", branchId: await currentWriteBranch(), createdBy: me.id, createdByName: me.name })
+          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", branchId: await currentTillBranch(), createdBy: me.id, createdByName: me.name })
           .returning({ id: s.cashOuts.id });
         cashOutId = line.id;
         cashOutCreated = true;

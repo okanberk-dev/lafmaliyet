@@ -59,7 +59,7 @@ export async function emailReport(
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
   } else {
     const dto = toCashDTO(row);
-    const waste = await dayWaste(row.date);
+    const waste = await dayWaste(row.date, row.branchId);
     const online = await (o.site ?? fetchTillOnlineRow(row.date));
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez)
     const [extras, integrity] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto)]);

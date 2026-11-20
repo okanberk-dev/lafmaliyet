@@ -63,10 +63,10 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     const dto = toCashDTO(saved);
     const [settings, waste, extras, integrity, nextReport] = await Promise.all([
       loadCashSettings(),
-      dayWaste(data.date),
+      dayWaste(data.date, saved.branchId),
       cashReportExtras(dto),
       cashReportIntegrity(dto),
-      nextReportAfter(data.date),
+      nextReportAfter(data.date, saved.branchId),
     ]);
     const text = whatsappText(dto, { by: me.name, revision: saved.revision, waste, ...extras, ...integrity });
     return {
@@ -215,7 +215,7 @@ export async function cashReportWhatsapp(date: string) {
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const r = await getCashReport(d);
     if (!r) throw new UserError("Bu günün raporu yok");
-    const [settings, waste, extras, integrity] = await Promise.all([loadCashSettings(), dayWaste(d), cashReportExtras(r), cashReportIntegrity(r)]);
+    const [settings, waste, extras, integrity] = await Promise.all([loadCashSettings(), dayWaste(d, r.branchId), cashReportExtras(r), cashReportIntegrity(r)]);
     const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste, ...extras, ...integrity });
     return { text, link: whatsappLink(text, settings.whatsapp) };
   });

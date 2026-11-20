@@ -43,7 +43,8 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
   if (me.role === "admin") return "direct";
   const date = target.op === "ekle" ? target.date : target.row.date;
   const [dayOpen, adminCategory, payment] = await Promise.all([
-    staffDayOpen(date, tx, now),
+    // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)
+    staffDayOpen(date, tx, now, target.op === "ekle" ? undefined : target.row.branchId),
     target.op === "ekle" ? false : adminCategoryOf(tx, target.row.id),
     target.op === "ekle" ? null : cashOutPayment(tx, target.row.id),
   ]);

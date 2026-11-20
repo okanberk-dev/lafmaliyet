@@ -9,7 +9,7 @@ import type { KasaFoyu } from "@/lib/modpos/foy";
 import type { StoredDay } from "@/lib/modpos/plan";
 import { modposStateKey, parseModposState, withDayErrors, withRun, type ModposRun, type ModposState } from "@/lib/modpos/status";
 import { isFinalFoy, sheetCanonical, sheetPrevious, sheetState, type ModposSheetPrevious } from "@/lib/modpos/z";
-import { andWhere, currentBranchWhere, currentWriteBranch } from "@/server/branch-scope";
+import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
@@ -25,7 +25,7 @@ const subeKosulu = (branchId?: string) => (branchId !== undefined ? eq(s.modposC
  * oraya yazar). Koşulsuz okusaydı iki şubenin aynı günü varken rastgele birinin föyü dönerdi.
  */
 async function gunSubesi(branchId?: string): Promise<string> {
-  return branchId ?? (await currentWriteBranch());
+  return branchId ?? (await currentTillBranch());
 }
 
 /**

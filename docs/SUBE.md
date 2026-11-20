@@ -134,6 +134,26 @@ Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de te
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
 tarar.
 
+## Kasa raporu "Tümü"de (20 Kasım 2026)
+
+Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sırası, ModPOS föyü, LafPOS gün sonu, kasadan
+çıkanlar ve ay satırı şubenin kendi kasasınındır. "Tümü" bunları birleştirmez:
+
+- **Kasa raporu sayfası**: "Tümü"de yöneticinin günden güne görünümü her açık şubeyi kendi bölümünde gösterir (üstte
+  şube kısayolları). Form (personel ve yöneticinin günü) kasanın şubesinindir: seçili fiziksel şube; "Tümü" ya da online
+  kanal seçiliyken Tuzla (`currentTillBranch`) ve sayfa bunu not olarak yazar. Önceden "Tümü"de günün raporu koşulsuz
+  `limit(1)` ile okunuyor, Marina'nın raporu görünürken kayıt Tuzla'ya iniyordu; geçmişte günün iki raporundan biri
+  düşüyordu.
+- **Tek kasa okumaları** (`getCashReport`, `previousCarryOver`, `nextReportAfter`, `previousOkc`, `nextOkc`,
+  `loadMonthEntry`, LafPOS günü, kasadan çıkanlar, zayi) verilen şubeyle ya da kasanın şubesiyle okur; kayıtlı raporun
+  e-postası, WhatsApp metni ve bütünlük denetimi raporun kendi şubesiyle.
+- **Personel istekleri** (düzeltme, silme, geç rapor, kasadan çıkan): onay isteğin kendi raporuna ve şubesine yazar,
+  yöneticinin şube seçimine değil (önceden "Tümü"den onaylanan Marina önerisi Tuzla'nın raporuna yazılıyordu). Konu
+  şubenin günü (`cashDaySubject`: Tuzla `gun:G`, öteki `gun:G:şube`); bir şubenin raporu girilince ya da silinince
+  yalnız o şubenin istekleri kapanır. Onaylar kartı birden çok şube açıkken şubeyi adıyla gösterir.
+- **Personelin yetkisi** (günü hâlâ düzenleyebilir mi, fotoğrafı görebilir mi, geç rapor açık mı): başka şubenin raporu
+  bu şubenin gününü açmaz ya da kapatmaz (`staffDayOpen`, `staffLateDayOpen`).
+
 ## Personel hesabının şubesi (16 Kasım 2026)
 
 **Kullanıcılar & roller**'de personel eklerken ya da düzenlerken **Şube** seçilir (boş: **Bütün şubeler**).

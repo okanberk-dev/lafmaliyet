@@ -3,10 +3,10 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, staffLateDay, type CashReportFields } from "@/lib/cash-report";
-import { CASH_REQUEST_TEXT, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
+import { CASH_REQUEST_TEXT, cashDaySubject, cashSubjectBranch, lateBranchOf, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
 import { DELETED_REPORT_DAYS, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, RELEASED_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
 import { kasaEvidence } from "@/server/data/lafpos-day";
@@ -57,10 +57,11 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
   if (fields.handedOver > 0 && !input.handedTo) throw new UserError(CASH_REQUEST_TEXT.lateHandedTo);
   const ids = [...new Set(input.photoIds)];
   if (ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
-  const branchId = await currentWriteBranch();
+  const branchId = await currentTillBranch();
   return db.transaction(async (tx) => {
     await lockLateDay(tx, date, branchId);
-    const subject = `gun:${date}`;
+    // Şubenin günü: geç rapor isteyenin kasasınındır (onayda da bu şubeye yazılır)
+    const subject = cashDaySubject(date, branchId);
     const r = s.staffRequests;
     // Çift dokunuş ya da yeniden deneme: aynı istemci anahtarı var olan bekleyen isteği döner (sürüm denetiminden önce);
     // istek bu arada karara bağlandıysa ya da kapandıysa eski sayfadan gelen tekrar reddedilir (createOrUpdateRequest gibi)
@@ -71,9 +72,11 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
         return { row: same, created: false, cashDiff: computeCash(fields).cashDiff };
       }
     }
+    // Şubenin kendi kasası: başka şubenin o günkü raporu bu günü "raporlu" yapmaz; ilk rapor da şubenin ilk raporu
+    const sube = eq(s.cashReports.branchId, branchId);
     const [[report], [first]] = await Promise.all([
-      tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1),
-      tx.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+      tx.select({ id: s.cashReports.id }).from(s.cashReports).where(and(eq(s.cashReports.date, date), sube)).limit(1),
+      tx.select({ date: s.cashReports.date }).from(s.cashReports).where(sube).orderBy(asc(s.cashReports.date)).limit(1),
     ]);
     if (report) throw new UserError(CASH_REQUEST_TEXT.lateReported);
     if (!first || first.date >= date) throw new UserError(CASH_REQUEST_TEXT.lateBeforeFirst);
@@ -91,7 +94,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     // Aynı gün için iki ret ya da geri çekmeden sonra yeni istek açılmaz (bekleyeni güncellemek serbest)
     if (!pending && closed >= 2) throw new UserError(CASH_REQUEST_TEXT.lateTwice);
     // Açılış zincirin önceki halkasının (rapor ya da bekleyen geç rapor) devriyle tutmuyorsa nedeni nota
-    const { prev } = await chainNeighbours(tx, date, { prefer: me.id });
+    const { prev } = await chainNeighbours(tx, date, { prefer: me.id, branchId });
     const check = carryCheck(date, fields.openingCash, prev ? { date: prev.date, amount: prev.carry } : null);
     if (check && openingNeedsNote({ check, openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
       throw new UserError(`Açılış önceki günün devrinden farklı (${carryDiffText(check)}): nedenini nota yazın`);
@@ -107,7 +110,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     }
     // Kanıt (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde Z raporunun fotoğrafı; LafPOS gününde LafPOS'un gün sonu
     // (geldiyse fotoğraf gerekmez), gelmediyse yazarkasa (Banka POS) Z'sinin fotoğrafı
-    const evidence = await kasaEvidence(tx, date);
+    const evidence = await kasaEvidence(tx, date, branchId);
     if (evidence === "modpos-z" && !photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
     if (evidence === "okc-z" && !photos.some((p) => p.kind === "kasa-okc")) throw new UserError(CASH_REQUEST_TEXT.lateOkcPhoto);
     if (photos.filter((p) => p.kind === "kasa-okc").length > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
@@ -119,7 +122,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
       handedTo = { kind: "user", id: u.id, name: u.name };
     } else if (fields.handedOver > 0) handedTo = { kind: "banka" };
     const cashDiff = computeCash(fields).cashDiff;
-    const payload = LatePayload.parse({ ...fields, discounts: fields.discounts ?? null, zNo: (fields.zNo ?? "").trim(), handedTo, photos, cashDiff });
+    const payload = LatePayload.parse({ ...fields, discounts: fields.discounts ?? null, zNo: (fields.zNo ?? "").trim(), handedTo, photos, cashDiff, branchId });
     const out = await createOrUpdateRequest(
       tx,
       me,
@@ -162,7 +165,9 @@ export async function reviewLate(tx: CashTx, me: CashActor, row: StaffRequestRow
   }
   if (input.decision === "close") throw new UserError("Geç rapor kapatılmaz; onaylayın ya da reddedin");
   const date = payload.date;
-  const branchId = await currentWriteBranch();
+  // İsteğin kasası (isteyenin şubesi), yöneticinin şube seçimi değil: "Tümü"den onaylanan Marina'nın geç raporu
+  // Tuzla'ya yazılmasın
+  const branchId = lateBranchOf(payload);
   await lockLateDay(tx, date, branchId);
   if (await lockCashReport(tx, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.lateExists);
   // Aynı aralıkta daha eski bir bekleyen geç rapor: önce o (zincirin önceki halkası hep kayıtlı rapor olsun)
@@ -172,20 +177,22 @@ export async function reviewLate(tx: CashTx, me: CashActor, row: StaffRequestRow
     .where(and(lt(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
     .orderBy(desc(s.cashReports.date))
     .limit(1);
-  const [older] = await tx
-    .select({ day: s.staffRequests.day })
-    .from(s.staffRequests)
-    .where(
-      and(
-        eq(s.staffRequests.kind, "kasa-gec"),
-        eq(s.staffRequests.status, "pending"),
-        ne(s.staffRequests.id, row.id),
-        lt(s.staffRequests.day, date),
-        before ? gt(s.staffRequests.day, before.date) : undefined,
-      ),
-    )
-    .orderBy(asc(s.staffRequests.day))
-    .limit(1);
+  // Aynı şubenin bekleyenleri (başka şubenin eski geç raporu bu kasanın zincirini beklemez)
+  const [older] = (
+    await tx
+      .select({ day: s.staffRequests.day, subject: s.staffRequests.subject })
+      .from(s.staffRequests)
+      .where(
+        and(
+          eq(s.staffRequests.kind, "kasa-gec"),
+          eq(s.staffRequests.status, "pending"),
+          ne(s.staffRequests.id, row.id),
+          lt(s.staffRequests.day, date),
+          before ? gt(s.staffRequests.day, before.date) : undefined,
+        ),
+      )
+      .orderBy(asc(s.staffRequests.day))
+  ).filter((x) => cashSubjectBranch(x.subject) === branchId);
   if (older?.day) throw new UserError(olderFirstText(older.day));
   const requested = lateFields(payload);
   const finalFields: CashReportFields = input.fields ? { ...input.fields, discounts: input.fields.discounts ?? null, date } : requested;

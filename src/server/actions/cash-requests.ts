@@ -147,7 +147,7 @@ export async function reviewCashRequest(input: z.input<typeof reviewSchema>) {
       revision = out.report.revision;
       email = await emailReport(out.report.id, { approval: approvalLine(who, me.name) });
       await logActivity(me, "Kasa düzeltmesi onaylandı", `${longDateTR(date)} (${who} önerdi): ${changesText(out.changes)}${note}`);
-      const [integrity, nextReport] = await Promise.all([cashReportIntegrity(toCashDTO(out.report)), nextReportAfter(date)]);
+      const [integrity, nextReport] = await Promise.all([cashReportIntegrity(toCashDTO(out.report)), nextReportAfter(date, out.report.branchId)]);
       next = integrity.next ? { date: integrity.next.date, opening: integrity.next.opening } : null;
       nextBroken = Boolean(
         integrity.next && nextReport && out.prevCarry !== null && !carryCheck(nextReport.date, nextReport.openingCash, { date, amount: out.prevCarry }),

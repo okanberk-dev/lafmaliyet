@@ -149,6 +149,15 @@ export async function currentPhysicalBranch(): Promise<BranchRow> {
 }
 
 /**
+ * Kasanın şubesi (kasa raporu, kasadan çıkan, geç rapor, ModPOS föyü): seçili fiziksel şube; "Tümü" ya da online kanal
+ * seçiliyken varsayılan şube (Tuzla). Online kanalın kasası olmaz (docs/SUBE.md › Kurallar): kanal seçiliyken girilen
+ * rapor "online" şubesine yazılmasın. Kasa sayfası okurken de bunu kullanır ki form gösterdiği kasaya yazsın.
+ */
+export async function currentTillBranch(): Promise<string> {
+  return (await currentPhysicalBranch()).id;
+}
+
+/**
  * Anahtarı şubeyi içeren tabloların okunmasında kullanılır (kasa raporu, gün özeti, ModPOS föyü, ay, satış satırı):
  * aynı güne iki şube yazabildiği için süzmeden okuyan sorgu yanlış şubenin satırını döndürebilir.
  */

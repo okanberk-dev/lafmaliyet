@@ -123,6 +123,14 @@ export function sortBranches<T extends { sortOrder: number; name: string }>(rows
 }
 
 /**
+ * Kasası olan şubeler: etkin fiziksel şubeler, ekrandaki sırayla (online kanalın kasası olmaz). "Tümü"de birden çoksa
+ * kasa raporu okuyan ekranlar (Bugün, zil, Claude) her kasayı ayrı gösterir: aynı güne iki rapor düşer
+ */
+export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sortOrder" | "name">>(rows: readonly T[]): T[] {
+  return sortBranches(rows.filter((b) => b.kind === "fiziksel" && b.active));
+}
+
+/**
  * Adresten / çerezden gelen seçim: tanınmayan, kapalı ya da boş değer "hepsi"ye düşer. Seçim veriyi süzer,
  * yetki vermez: yetki `requireAdmin`/`requireUser` ile ayrıca denetlenir.
  */

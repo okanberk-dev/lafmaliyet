@@ -5,7 +5,7 @@ import { modposAnyKey, modposKeyProblem } from "@/lib/modpos/request";
 import { sheetZ, type ModposZ } from "@/lib/modpos/z";
 import { modposPairKey } from "@/lib/modpos/zil";
 import { addDays } from "@/lib/reminders";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 import { loadModposSheet, loadModposSheets, type ModposSheet } from "@/server/modpos/store";
@@ -50,7 +50,7 @@ export async function loadKasaModpos(date: string, db: DB = getDb(), branchId?: 
  * aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç okunmaz.
  */
 export async function loadKasaModposDays(from: string, to: string, db: DB = getDb(), fallback?: string): Promise<(date: string, branchId?: string | null) => KasaModpos> {
-  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentWriteBranch()]);
+  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentTillBranch()]);
   const out = new Map<string, KasaModpos>();
   const of = (date: string, branchId?: string | null): KasaModpos =>
     isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(modposPairKey(branchId ?? sube, date)) ?? withZ(null));

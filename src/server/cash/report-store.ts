@@ -18,7 +18,7 @@ import {
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
-import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
+import { CASH_REQUEST_TEXT, cashDaySubject } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
@@ -27,7 +27,7 @@ import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { okcReadOfReport } from "@/server/data/cash-photos";
 import { previousOkc } from "@/server/data/cash-reports";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { sendableRecipients } from "@/server/notify/recipients";
@@ -199,12 +199,14 @@ export function assertRevision(prev: CashReportRow | null, revision: number): vo
   if (!prev && revision !== 0) throw new UserError("Rapor bu arada silinmiş; sayfayı yenileyin");
 }
 
-/** Kişinin bu günün raporu için bekleyen silme isteği var mı (varken raporu düzenleyemez ve düzeltme öneremez) */
-export async function ownDeletePending(tx: CashTx, userId: number, date: string): Promise<boolean> {
+/** Kişinin bu şubenin bu günkü raporu için bekleyen silme isteği var mı (varken raporu düzenleyemez ve düzeltme öneremez) */
+export async function ownDeletePending(tx: CashTx, userId: number, date: string, branchId: string): Promise<boolean> {
   const [row] = await tx
     .select({ id: s.staffRequests.id })
     .from(s.staffRequests)
-    .where(and(eq(s.staffRequests.kind, "kasa-silme"), eq(s.staffRequests.subject, `gun:${date}`), eq(s.staffRequests.requestedBy, userId), eq(s.staffRequests.status, "pending")))
+    .where(
+      and(eq(s.staffRequests.kind, "kasa-silme"), eq(s.staffRequests.subject, cashDaySubject(date, branchId)), eq(s.staffRequests.requestedBy, userId), eq(s.staffRequests.status, "pending")),
+    )
     .limit(1);
   return Boolean(row);
 }
@@ -363,7 +365,8 @@ export async function okcServerColumns(tx: CashTx, row: CashReportRow): Promise<
   if (!row.okcZNo || row.okcTotal === null) return none;
   const read = await okcReadOfReport(tx, row.id, row.date);
   if (!read) return none;
-  const { cum } = await previousOkc(row.date, tx);
+  // Kümülatif zinciri raporun kendi kasasının (şubenin) zinciridir: başka şubenin yazarkasası karışmaz
+  const { cum } = await previousOkc(row.date, tx, row.branchId);
   const out = okcCumulativeToStore({
     savedZNo: row.okcZNo,
     savedTotal: row.okcTotal,
@@ -420,7 +423,7 @@ export type SaveResult =
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
   const { revision, photos, countedBy, ...form } = input;
   // Raporun şubesi: panelde seçili olan (docs/SUBE.md). Gün bir kez değil, şube başına bir kez girilir
-  const branchId = await currentWriteBranch();
+  const branchId = await currentTillBranch();
   const data = okcFieldsIn(form);
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");
   if (me.role !== "admin" && !staffCanReport(data.date, now)) {
@@ -440,7 +443,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     const prev = await lockCashReport(tx, data.date, branchId);
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);
-      if (await ownDeletePending(tx, me.id, data.date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
+      if (await ownDeletePending(tx, me.id, data.date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
       // Ertesi günün raporu girildiyse (ertesi günün açılışı bu raporun devrine dayanır) ya da iş günü kapandıktan sonra
       // kasa alanı ya da sayan değiştiyse personel doğrudan kaydetmez: yöneticinin onayına gider
       const laterReport = await hasLaterReport(tx, data.date, branchId);
@@ -455,7 +458,8 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev, branchId });
     // Gün artık raporlu: bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
     if (!prev) {
-      await supersede(tx, { kinds: ["kasa-gec"], subject: `gun:${data.date}` }, me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi", now, DELETED_REPORT_DAYS);
+      // Yalnız bu şubenin günü: başka şubenin aynı gün için bekleyen geç raporu açık kalır
+      await supersede(tx, { kinds: ["kasa-gec"], subject: cashDaySubject(data.date, branchId) }, me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi", now, DELETED_REPORT_DAYS);
     }
     return { kind: "saved" as const, ...out };
   });
@@ -488,8 +492,14 @@ export async function removeCashReport(tx: CashTx, id: number, o: { exceptReques
     cashDiff: s.cashReports.cashDiff,
     by: s.cashReports.submittedByName,
     countedByName: s.cashReports.countedByName,
+    branchId: s.cashReports.branchId,
   });
   if (!row) throw new UserError("Rapor bulunamadı");
-  const superseded = await supersede(tx, { kinds: ["kasa-duzeltme", "kasa-silme", "foto-kaldir"], day: row.date, exceptId: o.exceptRequestId }, "Rapor silindi");
+  // Yalnız bu raporun istekleri: şubenin günündeki düzeltme ve silme, raporun fotoğraflarının kaldırma istekleri. Gün
+  // ile kapatılsaydı Tuzla'nın raporu silinince Marina'nın aynı gündeki istekleri de kapanırdı
+  const superseded = [
+    ...(await supersede(tx, { kinds: ["kasa-duzeltme", "kasa-silme"], subject: cashDaySubject(row.date, row.branchId), exceptId: o.exceptRequestId }, "Rapor silindi")),
+    ...(await supersede(tx, { kinds: ["foto-kaldir"], subjects: links.map((l) => `foto:${l.photoId}`), exceptId: o.exceptRequestId }, "Rapor silindi")),
+  ].sort((a, b) => a - b);
   return { row, photos: links.length, superseded };
 }

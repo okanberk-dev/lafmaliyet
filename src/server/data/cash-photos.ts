@@ -180,7 +180,8 @@ export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], 
 }
 
 /** Kayıtlı raporun WhatsApp ve e-posta ekleri (LafPOS gününde LafPOS'tan farklı yazılanlar da) */
-export async function cashReportExtras(report: { id: number } & CashReportFields): Promise<CashReportExtras> {
-  const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date), loadKasaLafpos(report.date)]);
+export async function cashReportExtras(report: { id: number; branchId: string } & CashReportFields): Promise<CashReportExtras> {
+  // Raporun kendi kasası: kasadan çıkanlar ve LafPOS günü raporun şubesinin
+  const [info, outs, lafpos] = await Promise.all([cashReportPhotoInfo([report]), cashOutsOn(report.date, report.branchId), loadKasaLafpos(report.date, undefined, report.branchId)]);
   return extrasFrom(info.get(report.id), outs, report, lafpos);
 }

@@ -82,6 +82,7 @@ export function CashHistory({
   modposDays = {},
   okcFirst = null,
   okcLine = null,
+  branch = null,
 }: {
   monthLabel: string;
   prevHref: string | null;
@@ -115,6 +116,11 @@ export function CashHistory({
   okcFirst?: string | null;
   /** Ayın yazarkasa (mali) toplamı ve KDV dökümü (yalnız bilgi, §8) */
   okcLine?: string[] | null;
+  /**
+   * Birden çok şube açıkken kasanın şubesi (docs/SUBE.md › Kasa raporu): başlıkta adı, "Gir" ve "Düzenle" bağlantıları
+   * `?sube=` taşır ki form o şubenin kasasında açılsın ("Tümü"de her şube kendi bölümünde)
+   */
+  branch?: { id: string; name: string } | null;
 }) {
   const [open, setOpen] = useState<CashReportDTO | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -165,12 +171,13 @@ export function CashHistory({
       )
     : null;
   const openPhotos = open ? photos[open.id] : undefined;
+  const dayHref = (date: string) => `/panel/kasa?gun=${date}${branch ? `&sube=${encodeURIComponent(branch.id)}` : ""}`;
 
   return (
     <Card>
       <CardHeader
         icon={<CalendarDays />}
-        title="Günden güne"
+        title={branch ? `Günden güne · ${branch.name}` : "Günden güne"}
         description="Her akşam personelin girdiği kasa raporu; dokununca ayrıntısı"
         actions={
           <div className="flex items-center gap-1">
@@ -247,7 +254,7 @@ export function CashHistory({
                         Rapor girilmedi
                         {sheetLine}
                       </span>
-                      <ButtonLink href={`/panel/kasa?gun=${date}`} variant="ghost" size="xs">
+                      <ButtonLink href={dayHref(date)} variant="ghost" size="xs">
                         <Pencil size={13} /> Gir
                       </ButtonLink>
                     </>
@@ -325,7 +332,7 @@ export function CashHistory({
               </Button>
             ) : null}
             {open ? (
-              <ButtonLink href={`/panel/kasa?gun=${open.date}`} variant="secondary">
+              <ButtonLink href={dayHref(open.date)} variant="secondary">
                 <Pencil size={15} /> Düzenle
               </ButtonLink>
             ) : null}

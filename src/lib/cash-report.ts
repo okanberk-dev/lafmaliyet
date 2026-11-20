@@ -247,6 +247,26 @@ export function carryChecks(
   return out;
 }
 
+/** Şubenin günü: birden çok şubenin raporları birlikteyken ("Tümü") günle değil bununla eşlenir */
+export const branchDayKey = (branchId: string, date: string) => `${branchId}:${date}`;
+
+/**
+ * Birden çok şubenin raporlarının açılış ↔ devir zinciri ("Tümü"): her şubenin zinciri kendi içinde (Marina'nın
+ * açılışı Tuzla'nın deviriyle karşılaştırılmaz; docs/SUBE.md › Kasa raporu). `beforeOf`: şubenin listedeki ilk
+ * raporundan önceki son raporun devri. Anahtar `branchDayKey(şube, gün)`.
+ */
+export function carryChecksByBranch(
+  reports: (Pick<CashReportFields, "date" | "openingCash" | "countedCash" | "handedOver"> & { branchId: string })[],
+  beforeOf: (branchId: string) => { date: string; amount: number } | null,
+): Map<string, CarryCheck> {
+  const out = new Map<string, CarryCheck>();
+  for (const branchId of new Set(reports.map((r) => r.branchId))) {
+    const own = reports.filter((r) => r.branchId === branchId);
+    for (const [date, c] of carryChecks(own, beforeOf(branchId))) out.set(branchDayKey(branchId, date), c);
+  }
+  return out;
+}
+
 /** Bu günün devriyle tutmayan sonraki rapor (zincirdeki denetimlerden) */
 export function nextCheckOf(checks: Iterable<CarryCheck>, date: string): CarryCheck | null {
   for (const c of checks) if (c.prevDate === date) return c;

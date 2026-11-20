@@ -39,10 +39,13 @@ import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/li
 import { okcReadFigures } from "@/lib/photo-read/okc";
 import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { modposDayView, type ModposDayView } from "@/lib/cash-modpos";
 import { aiStatus } from "@/server/ai/claude";
-import { requireUser } from "@/server/auth/dal";
+import { requireUser, type CurrentUser } from "@/server/auth/dal";
+import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { chainNeighbours } from "@/server/cash/late-chain";
 import { cashEmailRecipients } from "@/server/cash/report-store";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
@@ -164,15 +167,72 @@ function totalsOf(days: { report: CashReportDTO | null }[]): CashMonthTotals {
   };
 }
 
+/** Sayfanın gösterdiği kasa (docs/SUBE.md › Kasa raporu) */
+interface KasaView {
+  /** Birden çok şube açıkken kasanın şubesi (başlıkta adı, bağlantılarda `?sube=`); tek şubede null */
+  branch: { id: string; name: string } | null;
+  /** Seçili kapsamın adı kasanın şubesi değilse ("Tümü", "laffogato.net"): form hangi şubeye yazdığını söyler */
+  scopeLabel: string | null;
+  /** Kasa raporu ayarları kartı ("Tümü"nün şube bölümlerinde yalnız ilkinde) */
+  settings: boolean;
+}
+
+/**
+ * Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sırası, ModPOS föyü ve ay satırı şubenin kendi
+ * kasasınındır. Sayfa bu yüzden hep TEK kasanın kapsamında okunur (`withBranchScope`):
+ * - "Tümü"de yöneticinin günden güne görünümü her açık şubeyi kendi bölümünde gösterir. Tek listede aynı günün iki
+ *   raporundan biri düşüyor, toplamlar tek şubeyi sayıyor ve devir şubeler arasında karşılaştırılıyordu.
+ * - Form (personel, yöneticinin günü) raporun yazılacağı şubenin kasasıdır: seçili fiziksel şube, "Tümü" ya da online
+ *   kanalda Tuzla (`currentTillBranch`; kaydetme de oraya yazar). Önceden form "Tümü"de koşulsuz okuyup Marina'nın
+ *   raporunu gösterirken kayıt Tuzla'ya iniyordu.
+ */
 async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
-  const admin = user.role === "admin";
   const sp = await searchParams;
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = sortBranches(branches.filter((b) => b.kind === "fiziksel" && b.active));
+  const many = tills.length > 1;
+  if (user.role === "admin" && scope === ALL_BRANCHES && many && !isDay(pick(sp.gun))) {
+    const parts = await Promise.all(
+      tills.map((b, i) => withBranchScope(b.id, () => cashContentFor(user, sp, { branch: { id: b.id, name: b.name }, scopeLabel: null, settings: i === 0 }))),
+    );
+    return (
+      <div className="space-y-8">
+        <nav className="flex flex-wrap items-center gap-2" aria-label="Şubelerin kasaları">
+          <span className="text-sm text-ink-mute">Tümü: her şubenin kasası ayrı</span>
+          {tills.map((b) => (
+            <ButtonLink key={b.id} href={`#kasa-${b.id}`} variant="secondary" size="sm">
+              {b.name}
+            </ButtonLink>
+          ))}
+        </nav>
+        {parts.map((part, i) => (
+          <section key={tills[i].id} id={`kasa-${tills[i].id}`} aria-label={`${tills[i].name} kasası`} className="scroll-mt-20">
+            {part}
+          </section>
+        ))}
+      </div>
+    );
+  }
+  const till = await currentTillBranch();
+  const own = branches.find((b) => b.id === till);
+  const view: KasaView = {
+    branch: many && own ? { id: own.id, name: own.name } : null,
+    scopeLabel: many && scope !== till ? branchScopeLabel(scope, branches) : null,
+    settings: true,
+  };
+  return withBranchScope(till, () => cashContentFor(user, sp, view));
+}
+
+/** Tek kasanın sayfası; çağıran `withBranchScope` içinde çağırır (bütün okumalar o şubenin) */
+async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/kasa">["searchParams"]>, view: KasaView) {
+  const admin = user.role === "admin";
   const today = businessDate();
   const gun = pick(sp.gun);
   // Personel bugünü ve dünü girer; yönetici herhangi bir geçmiş günü açar. Dünden eski, raporu girilmemiş son 14 gün
   // personele geç rapor olarak açılır (yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
-  if (!admin && isDay(gun) && staffLateDay(gun) && (await staffLateDayOpen(gun))) return <StaffLateDay date={gun} user={user} />;
+  // İşlev olarak çağrılır (bileşen olarak değil): okumaları bu kasanın kapsamında kalsın
+  if (!admin && isDay(gun) && staffLateDay(gun) && (await staffLateDayOpen(gun))) return StaffLateDay({ date: gun, user, view });
   let date = isDay(gun) && gun <= today ? gun : today;
   if (!admin && !staffCanReport(date)) date = today;
   const showForm = !admin || isDay(gun);
@@ -384,12 +444,14 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         </ButtonLink>
       ))}
       {admin && isDay(gun) && date !== today && date !== yesterday ? <Badge tone="blue">{longDateTR(date)}</Badge> : null}
+      <TillBadge view={view} />
     </div>
   );
 
   if (!admin) {
     return (
       <div className="space-y-4">
+        <ScopeNote view={view} />
         {dayChips}
         {closedBar}
         {outsCard}
@@ -516,6 +578,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     <div className="space-y-4">
       {showForm ? (
         <>
+          <ScopeNote view={view} />
           {dayChips}
           {adminBand}
           {closedBar}
@@ -545,6 +608,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             okcAdmin={okcAdmin}
             modposDays={modposDays}
             okcFirst={okcFirst}
+            branch={view.branch}
             okcLine={okcMonthLine(
               okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc,
               month,
@@ -563,7 +627,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         <div className="space-y-4">
           {!showForm ? (
             <Card>
-              <CardHeader icon={<ReceiptText />} title="Bugünün raporu" description={longDateTR(today)} />
+              <CardHeader icon={<ReceiptText />} title={view.branch ? `Bugünün raporu · ${view.branch.name}` : "Bugünün raporu"} description={longDateTR(today)} />
               <div className="space-y-3 px-5 pb-5">
                 {todays ? (
                   <p className={cn("text-2xl font-semibold tracking-tight", diffKind(todays.cashDiff) === "short" ? "text-bad" : diffKind(todays.cashDiff) === "over" ? "text-warn" : "text-good")}>
@@ -575,13 +639,13 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
                 ) : (
                   <p className="text-sm text-ink-mute">Bugünün raporu henüz girilmedi; personel kapanışta girer.</p>
                 )}
-                <ButtonLink href={`/panel/kasa?gun=${today}`} variant={todays ? "secondary" : "primary"} className="w-full">
+                <ButtonLink href={`/panel/kasa?gun=${today}${view.branch ? `&sube=${encodeURIComponent(view.branch.id)}` : ""}`} variant={todays ? "secondary" : "primary"} className="w-full">
                   {todays ? "Raporu aç" : "Raporu gir"}
                 </ButtonLink>
               </div>
             </Card>
           ) : null}
-          <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} blocked={blockedRecipients} />
+          {view.settings ? <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} blocked={blockedRecipients} /> : null}
         </div>
       </div>
     </div>
@@ -594,11 +658,11 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
  * LafPOS gününde form LafPOS'un gün sonuyla açılır (yalnız geçiş gününden sonra; G8).
  * Kasadan çıkanlar, e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
  */
-async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
+async function StaffLateDay({ date, user, view }: { date: string; user: { id: number; name: string }; view: KasaView }) {
   const today = businessDate();
   const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
-    chainNeighbours(getDb(), date, { prefer: user.id }),
+    chainNeighbours(getDb(), date, { prefer: user.id, branchId: await currentTillBranch() }),
     cashCounters(),
     aiStatus(),
     myCashRequests(user.id),
@@ -610,6 +674,7 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
   const yesterday = addDays(today, -1);
   return (
     <div className="space-y-4">
+      <ScopeNote view={view} />
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
         {[today, yesterday].map((d) => (
           <ButtonLink key={d} href={`/panel/kasa?gun=${d}`} variant="secondary" size="sm">
@@ -619,6 +684,7 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
         <ButtonLink href={`/panel/kasa?gun=${date}`} variant="primary" size="sm" aria-current="page">
           {shortDayTR(date)}
         </ButtonLink>
+        <TillBadge view={view} />
       </div>
       <LateReport
         date={date}
@@ -643,6 +709,28 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
       </Card>
       <MyCashRequests requests={myRequests} />
     </div>
+  );
+}
+
+/** Birden çok şube açıkken formun kasası: hangi şubenin raporu */
+function TillBadge({ view }: { view: KasaView }) {
+  return view.branch ? (
+    <Badge tone="blue" dot>
+      {view.branch.name} kasası
+    </Badge>
+  ) : null;
+}
+
+/**
+ * Seçili kapsam bir şubenin kasası değilken ("Tümü", online kanal): form raporun yazılacağı şubenin kasasıdır ve bunu
+ * söyler (docs/SUBE.md › Yazarken hangi şube)
+ */
+function ScopeNote({ view }: { view: KasaView }) {
+  if (!view.branch || !view.scopeLabel) return null;
+  return (
+    <Notice tone="neutral" title={`${view.scopeLabel} seçili: bu sayfa ${genitive(view.branch.name)} kasası`}>
+      Kasa raporu şube başına girilir; buraya girilen rapor ve kasadan çıkanlar {genitive(view.branch.name)} kasasına yazılır. Başka bir şubenin kasası için soldan o şubeyi seçin.
+    </Notice>
   );
 }
 
