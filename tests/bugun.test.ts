@@ -14,6 +14,7 @@ import {
   cafeLines,
   CASH_FLAGS,
   cashFlags,
+  cashFlagsByBranch,
   clip,
   dayContext,
   daySummary,
@@ -1039,7 +1040,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   // Satış tahmini: personel yalnız tutarsız görünümü yükler
   assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("dayWaste("), "dayWaste staffFacts dışında");
   // Rol seçimi: personel yalnız staffFacts'i çağırır
-  assert.match(src, /admin \? adminFacts\(now, user\.id, cashP\) : staffFacts\(c\)/);
+  assert.match(src, /admin \? adminFacts\(now, user\.id, cashP, viewP\) : staffFacts\(c\)/);
   // Zam metni Genel bakış ve zil ile aynı (ayda TL etkisiyle)
   assert.match(admin, /priceAlert\(pa\.changes, pa\.actionable, pa\.loss\.totalLoss\)/);
   // Bugün parasut_sync_runs'ı kendisi sormaz (R4: günlük işlerin sağlığı ops'un modülünden)
@@ -1049,9 +1050,15 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /systemIssues\(o, now, okAt\)/);
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
   assert.match(admin, /previousCarryOver\(oldest\)/);
+  // "Tümü"de birden çok kasa: zincir şube şube (her şubenin önceki devri), işaretler (şube, gün) anahtarıyla
+  assert.match(admin, /previousCarryOverByBranch\(oldest, tills\.map\(\(b\) => b\.id\)\)/);
   // ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)
   assert.match(admin, /cashFlags\(reports, before, revisions, viewer, modpos\)/);
-  assert.match(admin, /\.then\(\(\[sheets, switchDay\]\) => modposMismatchDates\(reports, sheets, switchDay\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/);
+  assert.match(admin, /cashFlagsByBranch\(reports, beforeOf, revisions, viewer, modpos\)/);
+  assert.match(
+    admin,
+    /\.then\(\(\[sheets, switchDay\]\) => \(tills \? modposMismatchBranchDays\(reports, sheets, switchDay\) : modposMismatchDates\(reports, sheets, switchDay\)\)\)\s+\.catch\(\(\) => new Set<string>\(\)\)/,
+  );
 });
 
 test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (personel yalnız kendininkiler); ekran liste saatlerinde yenilenir", () => {
@@ -1068,9 +1075,10 @@ test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (pers
 
 test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", () => {
   const src = read("src/server/data/today.ts");
+  // Kasa raporları kasanın kapsamında (personel kendi kasası; tillScoped) ama yine safe() ile
+  assert.match(src, /safe\(tillScoped\(\(\) => cashReportsBetween\(/);
+  assert.match(src, /safe\(tillScoped\(\(\) => firstCashReportDate\(\)\)\)/);
   for (const call of [
-    "cashReportsBetween(",
-    "firstCashReportDate(",
     "stockProgress(",
     "loadDueReminders(",
     "loadSessions(",
@@ -1243,4 +1251,48 @@ test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okumas
   const staffAt = ops.indexOf('if (user.role !== "admin")');
   assert.ok(staffAt > 0 && staffAt < ops.indexOf("then(posPendingSummary)"));
   assert.match(ops.slice(staffAt, ops.indexOf("then(posPendingSummary)")), /safe\(scope\.then\(staffPosSummary\)/);
+});
+
+test("Tümü, iki kasa (yönetici): dünün ve bugünün satırı şube başına, adında şube, adresinde ?sube=; tek kasada bugünkü gibi", () => {
+  const firstDate = "2026-10-01";
+  const tills = [
+    { id: "tuzla", name: "Tuzla", today: null, yesterday: report("2026-10-21"), firstDate },
+    { id: "marina", name: "Marina", today: null, yesterday: null, firstDate },
+  ];
+  const tasks = dayTasks(admin(EVENING, { cash: { today: null, yesterday: report("2026-10-21"), firstDate, tills } }));
+  const t = byKey(tasks);
+  assert.deepEqual(
+    keys(tasks).filter((k) => k.startsWith("kasa")),
+    ["kasa-dun:tuzla", "kasa-dun:marina", "kasa:tuzla", "kasa:marina"],
+  );
+  assert.equal(t["kasa-dun:tuzla"].title, "Dünkü kasa raporu · Tuzla");
+  assert.equal(t["kasa-dun:tuzla"].status, "done");
+  // Tuzla'nın raporu Marina'nın eksiğini örtmez
+  assert.equal(t["kasa-dun:marina"].badge, "Girilmedi");
+  assert.equal(t["kasa-dun:marina"].href, "/panel/kasa?gun=2026-10-21&sube=marina");
+  assert.equal(t["kasa:marina"].title, "Bugünkü kasa raporu · Marina");
+  // Kapalı gün bildirimi onay bekliyorsa raporu olmayan şubeler için tek, şubesiz satır
+  const closed = { yesterday: { state: "pending" as const, by: "Ayşe", requestId: 9 } };
+  const pending = dayTasks(admin(EVENING, { cash: { today: null, yesterday: null, firstDate, tills: tills.map((x) => ({ ...x, yesterday: null })) }, closed }));
+  assert.deepEqual(
+    pending.filter((x) => x.key.startsWith("kasa-dun")).map((x) => [x.key, x.badge]),
+    [["kasa-dun", "Onay bekliyor"]],
+  );
+  // Tek kasa (tills yok ya da bir tane): anahtarlar bugünkü gibi
+  const one = dayTasks(admin(EVENING, { cash: { today: null, yesterday: report("2026-10-21"), firstDate, tills: tills.slice(0, 1) } }));
+  assert.deepEqual(keys(one).filter((k) => k.startsWith("kasa")), ["kasa-dun", "kasa"]);
+  // Personel tills'e bakmaz (kendi kasasını okur)
+  assert.deepEqual(keys(dayTasks(staff(EVENING, { cash: { today: null, yesterday: report("2026-10-21"), firstDate, tills } }))).filter((k) => k.startsWith("kasa")), ["kasa"]);
+});
+
+test("cashFlagsByBranch: zincir şube şube (Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz), anahtar şube:gün", () => {
+  const Y = "2026-10-21";
+  // Tuzla devri 500 (3600 − 3100), Marina devri 1000
+  const tuzla = { ...fullReport(1, Y), branchId: "tuzla" };
+  const marina = { ...fullReport(2, Y, { openingCash: 1000, countedCash: 4100, handedOver: 3100 }), branchId: "marina" };
+  const beforeOf = (b: string) => (b === "tuzla" ? { date: "2026-10-20", amount: 500 } : { date: "2026-10-20", amount: 1000 });
+  const flags = cashFlagsByBranch([tuzla, marina], beforeOf, [], 1, new Set([`marina:${Y}`]));
+  assert.deepEqual(Object.fromEntries(flags), { [`tuzla:${Y}`]: [], [`marina:${Y}`]: [CASH_FLAGS.modpos] });
+  // Aynı liste güne göre tek zincirde: Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılırdı
+  assert.deepEqual(cashFlags([tuzla, marina], beforeOf("tuzla"), [], 1).get(Y), [CASH_FLAGS.carry]);
 });

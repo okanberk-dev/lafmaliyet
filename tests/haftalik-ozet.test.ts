@@ -724,3 +724,8 @@ test("nakit: ilk eksi gün vergi satırlarını sayar (muhtasar, yasal oranlı S
   assert.ok(enough.unknownAmounts.some((u) => u.key === "vergi:gecici:2026-Q3"));
 });
 
+
+test("kasa cirosu satırı: iki şubenin aynı günkü raporları bir raporlu gün", () => {
+  const two = ["2026-10-19", "2026-10-20"].flatMap((d) => [rep(d, 0, 1_000), rep(d, 0, 2_000)]);
+  assert.equal(salesLine({ week: W44, reports: two }), `Geçen hafta kasa cirosu 6.000${NB}₺ (2 gün raporlu)`);
+});

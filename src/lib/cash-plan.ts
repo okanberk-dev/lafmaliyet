@@ -335,7 +335,7 @@ export interface CashPlan {
   requiredCash: number;
   basis: {
     sales:
-      | { kind: "kasa"; reports: number; daily: number; cardShare: number; platformShare: number }
+      | { kind: "kasa"; reports: number; days: number; daily: number; cardShare: number; platformShare: number }
       | { kind: "pos"; month: string; daily: number; openDays: number; cardShare: number }
       | { kind: "none" };
     online: { month: string; perDay: number } | null;
@@ -755,13 +755,16 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // ------------------------------------------------------------ Satışlar ve online (gelen, tahmini, yarından)
   const lookFrom = addDays(today, -SALES_LOOKBACK_DAYS);
   const reports = input.cashReports.filter((r) => r.date >= lookFrom && r.date < today && r.zTotal > 0);
+  // Günlük satış işletmenin günüdür: birden çok şubenin aynı günkü raporları toplanır, raporlu gün sayısına bölünür
+  // (rapor sayısına bölünse iki şubeyle ortalama yarıya düşerdi). Tek şubede gün = rapor, sonuç aynı
+  const days = new Set(reports.map((r) => r.date)).size;
   let sales: CashPlan["basis"]["sales"] = { kind: "none" };
-  if (reports.length >= MIN_SALES_REPORTS) {
+  if (days >= MIN_SALES_REPORTS) {
     const z = reports.reduce((a, r) => a + r.zTotal, 0);
     const card = reports.reduce((a, r) => a + r.card + r.mealCard, 0);
     const platform = reports.reduce((a, r) => a + (r.online ?? 0), 0);
     const share = (v: number) => Math.min(1, Math.max(0, v / z));
-    sales = { kind: "kasa", reports: reports.length, daily: z / reports.length, cardShare: share(card), platformShare: share(platform) };
+    sales = { kind: "kasa", reports: reports.length, days, daily: z / days, cardShare: share(card), platformShare: share(platform) };
   } else if (input.posMonth && input.posMonth.openDays > 0 && input.posMonth.posRevenue > 0) {
     sales = { kind: "pos", month: input.posMonth.month, daily: input.posMonth.posRevenue / input.posMonth.openDays, openDays: input.posMonth.openDays, cardShare: st.kartOrani };
   }
@@ -1775,7 +1778,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     text: off("sales")
       ? "Satışlar tahmine katılmıyor (Tahmine katılanlar'dan açın)."
       : s.kind === "kasa"
-        ? `Son 28 günün ${num(s.reports)} kasa raporuna göre günde ortalama ${tl(s.daily)} (Z toplamı${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
+        ? `Son 28 günün ${num(s.reports)} kasa raporuna${s.days === s.reports ? "" : ` (${num(s.days)} gün, şubelerin toplamı)`} göre günde ortalama ${tl(s.daily)} (Z toplamı${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
         : s.kind === "pos"
           ? `Son 28 günde yeterli kasa raporu yok; ${monthLabel(s.month)} POS cirosuna göre günde ${tl(s.daily)} (${num(s.openDays)} açık gün). ${commission(s.cardShare)} ${fromTomorrow}`
           : "Satış verisi yok: gelen para sayılmadı. Kasa raporu girildikçe tahmin oluşur.",

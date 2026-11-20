@@ -2,18 +2,32 @@ import "server-only";
 
 import { and, count, eq } from "drizzle-orm";
 
-import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
+import {
+  businessDayRange,
+  cashFlags,
+  cashFlagsByBranch,
+  dayContext,
+  karaokeToday,
+  systemIssues,
+  type CashLite,
+  type DayContext,
+  type DayFacts,
+  type KaraokeToday,
+  type OrdersLite,
+} from "@/app/panel/bugun/logic";
+import { ALL_BRANCHES, tillBranches } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { businessDate } from "@/lib/cash-report";
+import { branchDayKey, businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
-import { modposMismatchDates } from "@/lib/modpos/zil";
+import { modposMismatchBranchDays, modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentBranchScope, currentPhysicalBranch } from "@/server/branch-scope";
-import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import { currentBranchScope, currentPhysicalBranch, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
+import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { loadChecklistDays } from "@/server/data/checklists";
@@ -110,10 +124,32 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
   return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };
 }
 
-/** Rolün kendi olguları ve (yalnız yönetici) rapor gününe göre kasanın bütünlük uyarıları */
+/**
+ * Rolün kendi olguları ve (yalnız yönetici) kasanın bütünlük uyarıları: rapor gününe göre, "Tümü"de birden çok kasa
+ * açıkken `branchDayKey(şube, gün)`a göre
+ */
 interface RoleFacts {
   facts: Partial<DayFacts>;
   cashFlags: Map<string, string[]> | null;
+}
+
+/**
+ * Kasa satırlarının kasası (docs/SUBE.md › Kasa raporu: rapor, devir ve bütünlük şubenin kendi kasasınındır):
+ * - personel kendi kasasını görür (`till`: kilitli şube, seçili fiziksel şube; "Tümü"de ve online kanalda Tuzla), kasa
+ *   sayfasının formu da ona yazar;
+ * - yönetici "Tümü"de birden çok kasa açıkken her şubeyi ayrı (`tills`); tek şube seçiliyken okumalar zaten o şubenin
+ *   (ikisi de null: bugünkü gibi).
+ */
+interface CashView {
+  till: string | null;
+  tills: { id: string; name: string }[] | null;
+}
+
+async function cashView(admin: boolean): Promise<CashView> {
+  if (!admin) return { till: await currentTillBranch(), tills: null };
+  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const tills = tillBranches(branches);
+  return { till: null, tills: scope === ALL_BRANCHES && tills.length > 1 ? tills.map(({ id, name }) => ({ id, name })) : null };
 }
 
 /**
@@ -132,9 +168,10 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
 
 /**
  * Yalnız yönetici; hepsi aynı anda. `cash`: ortak olguların kasa raporu okuması (bütünlük uyarıları onun üstüne).
- * `viewer`: bakan yönetici (kendi ertesi gün düzeltmesi uyarı sayılmaz; zil ile aynı kural).
+ * `viewer`: bakan yönetici (kendi ertesi gün düzeltmesi uyarı sayılmaz; zil ile aynı kural). `view`: kasaların
+ * görünümü ("Tümü"de birden çok kasa: zincir ve işaretler şube şube).
  */
-async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
+async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>, view: Promise<CashView | null>): Promise<RoleFacts> {
   const db = getDb();
   // Maliyet modeli yalnız zam uyarısı için (personelde hiç kurulmaz)
   const modelP = loadModel();
@@ -204,19 +241,23 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
     // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; ModPOS gününde rapor saklanan ModPOS kasa
     // föyünden farklı (src/lib/modpos/zil.ts; föy ya da geçiş günü okunamazsa bu işaret yok, ötekiler kalır). Zincir
-    // listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur)
+    // listenin en eski gününden önceki son rapordan başlar (en eski gün sıraya güvenmeden bulunur). "Tümü"de birden çok
+    // kasa açıkken zincir şube şube, işaretler (şube, gün) anahtarıyla: Marina'nın açılışı Tuzla'nın deviriyle
+    // karşılaştırılmaz
     safe(
       cash.then(async (reports) => {
         if (!reports?.length) return new Map<string, string[]>();
         const oldest = reports.map((r) => r.date).sort()[0];
-        const [before, revisions, modpos] = await Promise.all([
-          previousCarryOver(oldest),
+        const tills = (await view)?.tills ?? null;
+        const [before, beforeOf, revisions, modpos] = await Promise.all([
+          tills ? null : previousCarryOver(oldest),
+          tills ? previousCarryOverByBranch(oldest, tills.map((b) => b.id)) : null,
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
           Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()])
-            .then(([sheets, switchDay]) => modposMismatchDates(reports, sheets, switchDay))
+            .then(([sheets, switchDay]) => (tills ? modposMismatchBranchDays(reports, sheets, switchDay) : modposMismatchDates(reports, sheets, switchDay)))
             .catch(() => new Set<string>()),
         ]);
-        return cashFlags(reports, before, revisions, viewer, modpos);
+        return beforeOf ? cashFlagsByBranch(reports, beforeOf, revisions, viewer, modpos) : cashFlags(reports, before, revisions, viewer, modpos);
       }),
     ),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
@@ -243,10 +284,16 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const admin = user.role === "admin";
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
-  const cashP = safe(cashReportsBetween(c.yesterday, c.day));
-  const [reports, firstDate, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
+  // Kasa satırlarının kasası (CashView): personel kendi kasasını okur; yönetici "Tümü"de iki şubenin raporunu birlikte
+  // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin)
+  const viewP = safe(cashView(admin));
+  const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
+  const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
+  const [reports, firstDate, view, tillFirsts, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
     cashP,
-    safe(firstCashReportDate()),
+    safe(tillScoped(() => firstCashReportDate())),
+    viewP,
+    safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => withBranchScope(b.id, () => firstCashReportDate()))))),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     safe(loadSessions(range.from, range.to, { admin })),
@@ -257,24 +304,28 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     safe(closedYesterday(user, now)),
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
     opsFacts(user, now),
-    admin ? adminFacts(now, user.id, cashP) : staffFacts(c),
+    admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
     // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi)
     safe(loadLafposSwitchDay()),
   ]);
 
-  const lite = (date: string): CashLite | null => {
-    const r = reports?.find((x) => x.date === date);
+  // Günün raporu; şube verilince o şubenin (işaretler de branchDayKey'le)
+  const lite = (date: string, branchId?: string): CashLite | null => {
+    const r = reports?.find((x) => x.date === date && (branchId === undefined || x.branchId === branchId));
     if (!r) return null;
-    const flags = own.cashFlags?.get(date);
+    const flags = own.cashFlags?.get(branchId === undefined ? date : branchDayKey(branchId, date));
     return flags?.length ? { ...toLite(r), flags } : toLite(r);
   };
+  const tills = view?.tills
+    ? view.tills.map((b, i) => ({ ...b, today: lite(c.day, b.id), yesterday: lite(c.yesterday, b.id), firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate }))
+    : null;
   const facts: DayFacts = {
     ...own.facts,
     ...ops,
     role: user.role,
     now,
     lafposSwitch,
-    cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
+    cash: reports ? { today: tills ? (tills[0]?.today ?? null) : lite(c.day), yesterday: tills ? (tills[0]?.yesterday ?? null) : lite(c.yesterday), firstDate, ...(tills ? { tills } : {}) } : null,
     stock,
     checklists: checklists ? { day: c.day, lists: checklists.get(c.day) ?? [] } : null,
     checklistsYesterday: checklists ? { day: c.yesterday, lists: checklists.get(c.yesterday) ?? [] } : null,

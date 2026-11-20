@@ -7,7 +7,7 @@ import { consistency, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { salesBasis } from "@/lib/calc/price-loss";
 import { lineLabel } from "@/lib/cash-plan";
-import { businessDate, carryChecks, historyOf } from "@/lib/cash-report";
+import { businessDate, carryChecksByBranch, historyOf } from "@/lib/cash-report";
 import { isChannelKey } from "@/lib/commission/channels";
 import { buildCommissionReport, commissionAlerts, groupOf, MEAL_LIMIT, rowOf, type CommissionAlert, type CommissionReport } from "@/lib/commission/report";
 import { computeOccupancy, emptiestBlock, KARAOKE_ROOMS, periodBounds, resolvePeriod } from "@/lib/karaoke/occupancy";
@@ -119,8 +119,9 @@ const kasa: Collector = {
         return null;
       });
     const [carry, late, photo] = await Promise.all([
-      // Açılış ↔ devir zinciri pencerenin raporlarıyla (geçen haftanın ilk günü önceki haftanın son raporuna bakar)
-      quiet(Promise.resolve().then(() => [...carryChecks(reports, null).keys()].filter((d) => inLastWeek(ctx.week, d)).length), "devir"),
+      // Açılış ↔ devir zinciri pencerenin raporlarıyla (geçen haftanın ilk günü önceki haftanın son raporuna bakar), şube
+      // şube: iki şubenin raporları birlikteyken Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz
+      quiet(Promise.resolve().then(() => [...carryChecksByBranch(reports, () => null).values()].filter((c) => inLastWeek(ctx.week, c.date)).length), "devir"),
       quiet(
         cashRevisionsFor(last.filter((r) => r.revision > 1).map((r) => r.id)).then(
           (revs) => last.filter((r) => r.revision > 1 && historyOf(r, revs.filter((x) => x.reportId === r.id)).entries.some((e) => e.late)).length,
@@ -268,6 +269,7 @@ const kontrol: Collector = {
   timeoutMs: 3_000,
   async run(ctx) {
     const [history, first, reports] = await Promise.all([loadChecklistHistory(ctx.week.lastFrom, ctx.week.lastTo, "admin", ctx.now), firstCashReportDate(), ctx.cashWeeks()]);
+    // Kafe açık sayılan gün: herhangi bir kasanın raporu var (listeler şubesiz okunur; günler tekil)
     const reported = new Set(reports.map((r) => r.date));
     return one(
       checklistItem({

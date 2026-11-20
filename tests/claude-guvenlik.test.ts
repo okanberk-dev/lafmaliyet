@@ -58,8 +58,11 @@ function serverImports(src: string): Map<string, string[]> {
 test("araçlar yalnız izinli okuyucuları çağırır; hiçbiri yazmaz, eşitlemez, kaydetmez (CRITIQUE2 §5.1)", () => {
   const src = read("src/server/mcp/tools.ts");
   const ALLOWED: Record<string, string[]> = {
+    // Şube kütüğü ve isteğin şube seçimi (kasa raporlarını şube şube okumak için; salt okunur)
+    "@/server/branch-scope": ["currentBranchScope", "withBranchScope"],
+    "@/server/branches": ["listBranches"],
     "@/server/data/cash-plan": ["loadCashPlan"],
-    "@/server/data/cash-reports": ["cashReportsBetween", "firstCashReportDate", "previousCarryOver"],
+    "@/server/data/cash-reports": ["cashReportsBetween", "firstCashReportDate", "previousCarryOver", "previousCarryOverByBranch"],
     "@/server/data/dataset": ["loadModel"],
     "@/server/data/price-alerts": ["loadPriceAlerts"],
     "@/server/data/search": ["loadSearchIndex"],
@@ -73,7 +76,7 @@ test("araçlar yalnız izinli okuyucuları çağırır; hiçbiri yazmaz, eşitle
   for (const [mod, names] of Object.entries(ALLOWED)) {
     const file = read(`src/${mod.slice(2)}.ts`);
     for (const n of names) {
-      const start = file.indexOf(`export async function ${n}(`);
+      const start = file.search(new RegExp(`export (?:async )?function ${n}[(<]`));
       assert.ok(start >= 0, `${mod}: ${n} yok`);
       const end = file.indexOf("\nexport ", start + 1);
       const body = file.slice(start, end < 0 ? undefined : end);

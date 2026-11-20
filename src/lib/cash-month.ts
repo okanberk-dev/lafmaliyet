@@ -180,10 +180,15 @@ export function tillMonths(
     const upto = through > lastDate ? through : lastDate;
     const to = upto < end ? upto : end;
     // Gün yalnız kasa raporuyla "girildi" sayılır; yedek satırı olan gün eksik kalır (yanına "LafPOS'tan" ya da "ModPOS
-    // föyünden")
+    // föyünden"). Gün sayıları işletmenin günüdür: "Tümü"de birden çok şubenin satırları gelince aynı günün iki şubesi bir
+    // gün sayılır (açık gün: herhangi bir kasa açıktı; girildi: herhangi bir kasa raporladı; eksik: hiçbir kasa
+    // raporlamadı). Şube şube eksik gün aranmaz; tek şubede satırlar bugünkü gibi sayılır (altın dosya)
     const have = new Set(reports.map((r) => r.date));
-    const fromLafpos = list.filter((r) => r.source === "lafpos").map((r) => r.date);
-    const fromModpos = list.filter((r) => r.source === "modpos").map((r) => r.date);
+    const multi = new Set(list.map((r) => r.branchId ?? "")).size > 1;
+    const dayCount = (xs: readonly TillRow[]) => (multi ? new Set(xs.map((r) => r.date)).size : xs.length);
+    const datesOf = (xs: readonly TillRow[]) => (multi ? [...new Set(xs.map((r) => r.date))] : xs.map((r) => r.date));
+    const fromLafpos = datesOf(list.filter((r) => r.source === "lafpos"));
+    const fromModpos = datesOf(list.filter((r) => r.source === "modpos"));
     // Kapalı işaretli günü yalnız satışlı yedek satır açar (src/lib/closed-days.ts lafposSold ile aynı kural; LafPOS gün
     // sonu da ModPOS föyü de): satışsız Z kafenin açık olduğunu göstermez, gün kapalı sayılmaya devam eder
     const sold = new Set(list.filter((r) => !isReportRow(r) && (r.zTotal > 0 || (r.receipts ?? 0) > 0)).map((r) => r.date));
@@ -210,15 +215,15 @@ export function tillMonths(
       month,
       from,
       to,
-      reported: reports.length,
-      openDays: list.filter((r) => r.zTotal > 0).length,
+      reported: dayCount(reports),
+      openDays: dayCount(list.filter((r) => r.zTotal > 0)),
       posRevenue,
       zTotalSum,
       offInPos,
       discounts: disc.length ? sum(disc, (r) => r.discounts!) : null,
-      discountDays: disc.length,
+      discountDays: dayCount(disc),
       offRevenue: off.length ? sum(off, (r) => r.offRevenue!) : null,
-      offDays: off.length,
+      offDays: dayCount(off),
       cardShare: share(card),
       bankShare: share(bank),
       missing,

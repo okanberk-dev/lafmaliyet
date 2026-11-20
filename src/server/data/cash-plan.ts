@@ -9,7 +9,9 @@ import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
 import { unreachable } from "@/lib/unreachable";
 import { loadExpectedDebtsByCard } from "@/server/data/cari";
-import { cashReportsBetween, previousCarryOver } from "@/server/data/cash-reports";
+import { tillBranches } from "@/lib/branches";
+import { listBranches } from "@/server/branches";
+import { cashReportsBetween, previousCarryOverByBranch } from "@/server/data/cash-reports";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
 import { loadPaidOnDelivery, loadTermDays } from "@/server/data/suppliers";
@@ -33,8 +35,11 @@ export async function loadCashPlanState(): Promise<CashPlanState> {
 export interface CashPlanView {
   plan: CashPlan;
   state: CashPlanState;
-  /** Son kasa raporunun ertesi güne devrettiği nakit (bakiye penceresindeki ipucu) */
-  carry: { date: string; amount: number } | null;
+  /**
+   * Kasalardaki nakit (bakiye penceresindeki ipucu): açık her şubenin son kasa raporunun ertesi güne devri toplamı, gün
+   * en yeni raporun; `tills` toplanan kasa sayısı (birden çoksa ipucu söyler)
+   */
+  carry: { date: string; amount: number; tills: number } | null;
   /** Vadesiz faturanın genel vade günü (Nasıl hesaplandı) */
   invoiceTermDays: number;
 }
@@ -66,6 +71,23 @@ async function taxInputsForPlan(): Promise<TaxInputs | null> {
 }
 
 /**
+ * İşletmenin kasalarındaki nakit: açık her fiziksel şubenin (tillBranches) son raporunun ertesi güne devri toplanır.
+ * Devir zinciri şube başınadır (previousCarryOver tek kasayı okur, "Tümü"de Tuzla'yı): yalnız birini yazmak Marina'nın
+ * kasasındaki parayı düşürürdü. Hiç raporu olmayan şube sayılmaz; hiçbiri yoksa null
+ */
+async function tillsCarry(before: string): Promise<CashPlanView["carry"]> {
+  const ids = tillBranches(await listBranches()).map((b) => b.id);
+  const of = await previousCarryOverByBranch(before, ids);
+  const carries = ids.map(of).filter((c): c is { date: string; amount: number } => c !== null);
+  if (!carries.length) return null;
+  return {
+    date: carries.reduce((a, c) => (c.date > a ? c.date : a), carries[0].date),
+    amount: Math.round(carries.reduce((a, c) => a + c.amount, 0) * 100) / 100,
+    tills: carries.length,
+  };
+}
+
+/**
  * Önümüzdeki 6 haftanın planı. Genel bakış zaten okuduğu `upcoming`'i (Ödemeler listesi) ve modeli paylaşır; mal
  * faturaları modelden gelir (ek sorgu yok). Yeni mal faturasının ödeme gecikmesi: peşin çalışılan tedarikçide 0, değilse
  * kartındaki vade, o da yoksa bildirim ayarındaki gün (tedarikçi adla bulunur; gelecek faturanın vergi nosu yok).
@@ -83,7 +105,7 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
     loadPaidOnDelivery(),
-    previousCarryOver(addDays(today, 1)),
+    tillsCarry(addDays(today, 1)),
     loadRecentPaid(),
     opts.taxInputs ?? taxInputsForPlan(),
     // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş

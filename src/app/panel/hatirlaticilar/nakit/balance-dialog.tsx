@@ -14,9 +14,9 @@ import { saveCashBalance } from "@/server/actions/cash-plan";
 
 /**
  * Elinizdeki para: bankadaki ve kasadaki paranın bugünkü toplamı; plan bu tutardan başlar. Eksi yazılabilir (kredili
- * hesap). Son kasa raporunun ertesi güne devrettiği nakit ipucu olarak yazılır.
+ * hesap). Son kasa raporunun ertesi güne devrettiği nakit ipucu olarak yazılır; birden çok şubede kasaların toplamı.
  */
-export function BalanceDialog({ balance, carry, onClose }: { balance: number | null; carry: { date: string; amount: number } | null; onClose: () => void }) {
+export function BalanceDialog({ balance, carry, onClose }: { balance: number | null; carry: { date: string; amount: number; tills?: number } | null; onClose: () => void }) {
   const formId = useId();
   const [text, setText] = useState(balance === null ? "" : num(balance, 2));
   const [busy, setBusy] = useState(false);
@@ -75,7 +75,13 @@ export function BalanceDialog({ balance, carry, onClose }: { balance: number | n
           label="Tutar (₺)"
           htmlFor="nakit-bakiye"
           error={error}
-          hint={carry ? `Son kasa raporu (${dayMonthTR(carry.date)}): ertesi güne ${money(carry.amount)} devretti.` : "Kredili hesapta eksi yazabilirsiniz."}
+          hint={
+            carry
+              ? (carry.tills ?? 1) > 1
+                ? `Son kasa raporları (en yenisi ${dayMonthTR(carry.date)}): ${carry.tills} şubenin kasası ertesi güne toplam ${money(carry.amount)} devretti.`
+                : `Son kasa raporu (${dayMonthTR(carry.date)}): ertesi güne ${money(carry.amount)} devretti.`
+              : "Kredili hesapta eksi yazabilirsiniz."
+          }
         >
           {/* Tam klavye: iPhone'un ondalık tuş takımında eksi yok, kredili hesapta eksi yazılır */}
           <NumberInput

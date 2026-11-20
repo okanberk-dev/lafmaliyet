@@ -4,7 +4,20 @@
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
 import { CASH_OUT_INVOICES_HREF } from "@/lib/cash-outs";
-import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
+import {
+  branchDayKey,
+  businessDate,
+  carryChecks,
+  carryChecksByBranch,
+  CASH_EVENING_HOUR,
+  DAY_TURN_HOUR,
+  diffKind,
+  diffText,
+  isCashEvening,
+  lateCorrections,
+  type CarryCheck,
+  type CashRevisionRow,
+} from "@/lib/cash-report";
 import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
@@ -27,11 +40,14 @@ import type { OpsDayFacts } from "./rows-ops";
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
  * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`. Hızlı sayım ve mal siparişi satırları
- * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı.
+ * (`hizli-sayim`, `mal-siparisi`, `mal-taslak`) 26 Eki 2026'da özellikleriyle birlikte kaldırıldı. "Tümü"de birden çok
+ * kasa açıkken yöneticinin kasa satırları şube başına: `kasa-dun:{şube}`, `kasa:{şube}`.
  */
 export type DayTaskKey =
   | "isler"
   | "kasa-dun"
+  | `kasa-dun:${string}`
+  | `kasa:${string}`
   | "liste-dun"
   | `liste-${number}`
   | "liste"
@@ -80,6 +96,15 @@ export interface CashLite {
   flags?: string[];
 }
 
+/** "Tümü"de birden çok kasa açıkken bir şubenin kasası (yönetici): dünün ve bugünün raporu, şubenin ilk raporu */
+export interface CashTill {
+  id: string;
+  name: string;
+  today: CashLite | null;
+  yesterday: CashLite | null;
+  firstDate: string | null;
+}
+
 /**
  * Kasanın bütünlük uyarıları (kasa'nın carryChecks ve lateCorrections'ı; docs/KASA-RAPORU.md › Açılış ve devir) ve
  * ModPOS gününde raporun saklanan ModPOS kasa föyünden farklı olması (zil ile aynı kural, src/lib/modpos/zil.ts;
@@ -96,8 +121,12 @@ export interface DayFacts {
    * kasaName). Yoksa ya da null her metin bugünkü gibi ModPOS der
    */
   lafposSwitch?: string | null;
-  /** Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı */
-  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
+  /**
+   * Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı. Personelde kendi kasasının (raporu yazdığı
+   * şube). `tills`: yalnız yönetici, "Tümü"de birden çok kasa açıkken her şubenin kasası; verilince kasa satırları şube
+   * başına çıkar (tek şubede yok, satırlar bugünkü gibi)
+   */
+  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null; tills?: CashTill[] } | null;
   /**
    * Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti); `lafpos`: iş günü LafPOS
    * günü (ürün ikramı LafPOS'ta işaretlenir; yoksa ya da false bugünkü gibi)
@@ -237,11 +266,38 @@ export function cashFlags(
   viewer: number,
   modpos: ReadonlySet<string> = new Set(),
 ): Map<string, string[]> {
-  const checks = carryChecks(reports, before);
+  return flagsOf(reports, (r) => r.date, carryChecks(reports, before), revisions, viewer, modpos);
+}
+
+/**
+ * "Tümü"de birden çok kasa: cashFlags'in şube şube olanı. Açılış ↔ devir zinciri her şubenin kendi raporlarıyla
+ * (carryChecksByBranch; `beforeOf`: şubenin listedeki ilk raporundan önceki devri, previousCarryOverByBranch); anahtar
+ * ve `modpos` (src/lib/modpos/zil.ts modposMismatchBranchDays) `branchDayKey(şube, gün)`. Marina'nın açılışı Tuzla'nın
+ * deviriyle karşılaştırılmaz, aynı günün iki raporunun işaretleri birbirine karışmaz.
+ */
+export function cashFlagsByBranch(
+  reports: (CashFlagReport & { branchId: string })[],
+  beforeOf: (branchId: string) => { date: string; amount: number } | null,
+  revisions: (CashRevisionRow & { reportId: number })[],
+  viewer: number,
+  modpos: ReadonlySet<string> = new Set(),
+): Map<string, string[]> {
+  return flagsOf(reports, (r) => branchDayKey(r.branchId, r.date), carryChecksByBranch(reports, beforeOf), revisions, viewer, modpos);
+}
+
+function flagsOf<R extends CashFlagReport>(
+  reports: R[],
+  keyOf: (r: R) => string,
+  checks: ReadonlyMap<string, CarryCheck>,
+  revisions: (CashRevisionRow & { reportId: number })[],
+  viewer: number,
+  modpos: ReadonlySet<string>,
+): Map<string, string[]> {
   return new Map(
     reports.map((r) => {
+      const key = keyOf(r);
       const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
-      return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : []), ...(modpos.has(r.date) ? [CASH_FLAGS.modpos] : [])]];
+      return [key, [...(checks.has(key) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : []), ...(modpos.has(key) ? [CASH_FLAGS.modpos] : [])]];
     }),
   );
 }
@@ -271,16 +327,54 @@ function cashDetail(r: CashLite, full: boolean): string {
   return parts.join(" · ");
 }
 
-/** Dünün raporu: yöneticiye farkı ve bütünlüğü; ikisine de girilmediyse (kasa kullanılmaya başladıysa) */
+/** Bir kasanın günleri (DayFacts.cash ya da "Tümü"de şubenin kasası CashTill) */
+type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate">;
+
+/** "Tümü"de birden çok kasa açıkken yöneticinin kasaları (şube başına satır); yoksa null (tek kasa, bugünkü gibi) */
+function tillsOf(f: DayFacts): CashTill[] | null {
+  const tills = f.role === "admin" ? f.cash?.tills : undefined;
+  return tills && tills.length > 1 ? tills : null;
+}
+
+/**
+ * Şubenin satırı: anahtar `kasa-dun:{şube}`, başlıkta şubenin adı, kasa sayfasının adresinde `?sube=` (seçici onu
+ * seçer, form o kasayı gösterir). Onaylar'a giden adrese şube eklenmez
+ */
+function ofTill(t: DayTask, b: Pick<CashTill, "id" | "name">): DayTask {
+  const href = t.href.startsWith("/panel/kasa") ? `${t.href}${t.href.includes("?") ? "&" : "?"}sube=${encodeURIComponent(b.id)}` : t.href;
+  return { ...t, key: `${t.key}:${b.id}` as DayTaskKey, title: `${t.title} · ${b.name}`, href };
+}
+
+/**
+ * Dünün raporu: yöneticiye farkı ve bütünlüğü; ikisine de girilmediyse (kasa kullanılmaya başladıysa). "Tümü"de birden
+ * çok kasa açıkken yöneticiye şube başına (her şubenin raporu ya da "girilmedi"si ayrı; kafe kapalı bildirimi işletmenin,
+ * onay bekliyorsa tek satır)
+ */
 const cashYesterday: Row = (f, c) => {
+  const tills = tillsOf(f);
+  if (!tills) return cashYesterdayOf(f, c, f.cash);
+  const out: DayTask[] = [];
+  let pending: DayTask | null = null;
+  for (const t of tills) {
+    const row = cashYesterdayOf(f, c, t);
+    if (!row) continue;
+    // Raporu olmayan şubelerin "Onay bekliyor"u aynı bildirimdir (kapalı gün şubesiz): bir kez, şubesiz
+    if (!t.yesterday && f.closed?.yesterday?.state === "pending") pending ??= row;
+    else out.push(ofTill(row, t));
+  }
+  return pending ? [...out, pending] : out;
+};
+
+/** Bir kasanın dünkü satırı (`till` null: raporlar okunamadı) */
+function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask | null {
   const admin = f.role === "admin";
   const title = "Dünkü kasa raporu";
   const href = `/panel/kasa?gun=${c.yesterday}`;
-  if (!f.cash) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
-  const r = f.cash.yesterday;
+  if (!till) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
+  const r = till.yesterday;
   if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
   // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
-  if (!f.cash.firstDate || c.yesterday < f.cash.firstDate) return null;
+  if (!till.firstDate || c.yesterday < till.firstDate) return null;
   // Dün kafe kapalıydı (dalga 10 §2.9): onaylıysa satır yok; bildirim bekliyorsa yöneticiye "Onaya bak", personele
   // "Onayda"; reddedildiyse personele yöneticinin notu
   const closed = f.closed?.yesterday ?? null;
@@ -337,7 +431,7 @@ const cashYesterday: Row = (f, c) => {
         href,
         action: "Dünü gir",
       };
-};
+}
 
 /**
  * Personelin akşam kasa satırı ve zili (src/server/bell/kasa.ts): ModPOS gününde Z raporu ModPOS'tan alınır; LafPOS
@@ -349,25 +443,40 @@ export function eveningCashText(kasa: KasaName): string {
     : "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin.";
 }
 
-/** Bugünün (iş günü) raporu: gündüz "Akşam", 20:00'den sonra yapılacak; gönderilince yöneticiye farkı */
+/**
+ * Bugünün (iş günü) raporu: gündüz "Akşam", 20:00'den sonra yapılacak; gönderilince yöneticiye farkı. "Tümü"de birden
+ * çok kasa açıkken yöneticiye şube başına
+ */
 const cashToday: Row = (f, c) => {
+  const tills = tillsOf(f);
+  if (tills) {
+    return tills.flatMap((t) => {
+      const row = cashTodayOf(f, c, t);
+      return row ? [ofTill(row, t)] : [];
+    });
+  }
+  return cashTodayOf(f, c, f.cash);
+};
+
+/** Bir kasanın bugünkü satırı (`till` null: raporlar okunamadı; yöneticide satır yok, dünün satırı söylüyor) */
+function cashTodayOf(f: DayFacts, c: DayContext, till: TillDays | null): DayTask | null {
   const href = `/panel/kasa?gun=${c.day}`;
   if (f.role === "admin") {
     const title = "Bugünkü kasa raporu";
     // Okunamadıysa dünün satırı zaten söylüyor
-    if (!f.cash) return null;
-    const r = f.cash.today;
+    if (!till) return null;
+    const r = till.today;
     if (r) return { key: "kasa", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, false)), href, action: "Raporu aç" };
     if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
     return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Personel kapanışta girer.", href, action: "Kasa raporu" };
   }
   const title = "Kasa raporu";
-  if (!f.cash) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
-  const r = f.cash.today;
+  if (!till) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
+  const r = till.today;
   if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
   if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, eveningCashText(kasaName(c.day, f.lafposSwitch ?? null))), href: "/panel/kasa", action: "Raporu gir" };
   return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };
-};
+}
 
 // ---------------------------------------------------------------- Zayi (personel)
 

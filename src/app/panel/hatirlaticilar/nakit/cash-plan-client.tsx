@@ -53,7 +53,7 @@ export function CashPlanClient({
   description: string;
   plan: CashPlan;
   state: CashPlanState;
-  carry: { date: string; amount: number } | null;
+  carry: { date: string; amount: number; tills?: number } | null;
   notes: { key: string; title: string; text: string }[];
 }) {
   const [ask, setAsk] = useQueryState("bakiye", "");

@@ -24,7 +24,7 @@ import {
   splitNoticeText,
   subeKey,
 } from "../src/lib/modpos/sube";
-import { modposKeyAlert, modposMismatchBell, modposMismatchDates, modposMismatches, modposPairKey } from "../src/lib/modpos/zil";
+import { modposKeyAlert, modposMismatchBell, modposMismatchBranchDays, modposMismatchDates, modposMismatchDigestText, modposMismatches, modposPairKey } from "../src/lib/modpos/zil";
 import { sheetCanonical } from "../src/lib/modpos/z";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -337,6 +337,11 @@ test("rapor yalnız kendi şubesinin föyüyle karşılaştırılır: Marina'nı
   assert.equal(m[0].report.branchId, "marina");
   assert.equal(m[0].sheet, marinaSheet);
   assert.deepEqual([...modposMismatchDates([marina], [tuzla, marinaSheet], null)], [day]);
+  // Bugün'ün şube şube işaretleri (şube, gün) anahtarıyla
+  assert.deepEqual([...modposMismatchBranchDays([marina, sameReport(day, "tuzla")], [tuzla, marinaSheet], null)], [`marina:${day}`]);
+  // Sabah e-postası: birden çok kasada şubenin adıyla, verilmezse bugünkü metin
+  assert.match(modposMismatchDigestText(day, m[0].diffs, "Marina"), /^Kasa raporu ModPOS API'den farklı \(Marina\)\. 1\sKasım · /);
+  assert.match(modposMismatchDigestText(day, m[0].diffs), /^Kasa raporu ModPOS API'den farklı\. 1\sKasım · /);
   assert.equal(modposPairKey(undefined, day), "tuzla|2026-11-01");
   assert.equal(modposPairKey("marina", day), "marina|2026-11-01");
 });

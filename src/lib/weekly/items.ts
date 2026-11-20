@@ -180,7 +180,8 @@ export function salesLine(i: Pick<KasaIn, "week" | "reports">): string | null {
     const from = addDays(i.week.lastFrom, -7 * k);
     const to = addDays(i.week.lastTo, -7 * k);
     const rs = i.reports.filter((r) => r.date >= from && r.date <= to);
-    return { n: rs.length, total: sum(rs.map((r) => r.zTotal)) };
+    // Raporlu gün tekil: iki şubenin aynı günkü raporları bir gün (ciro ikisinin toplamı)
+    return { n: new Set(rs.map((r) => r.date)).size, total: sum(rs.map((r) => r.zTotal)) };
   };
   const last = weekOf(0);
   if (!last.n) return null;

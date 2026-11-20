@@ -154,7 +154,7 @@ test("satışlar: kasa raporlarının ortalaması, kart payıyla komisyon, açı
   ];
   const settings = { komisyon: 0.025, kartOrani: 0.5, acikGun: 26, kdv: 0.1, kdvHizmet: 0.2 };
   const p = buildCashPlan(input({ cashReports: [...reports, ...noise], settings }));
-  assert.deepEqual(p.basis.sales, { kind: "kasa", reports: 10, daily: 10_000, cardShare: 0.8, platformShare: 0 });
+  assert.deepEqual(p.basis.sales, { kind: "kasa", reports: 10, days: 10, daily: 10_000, cardShare: 0.8, platformShare: 0 });
   const perDay = 10_000 * (1 - 0.025 * 0.8) * (26 / 30);
   // Gün 0 boş (bugünkü satış bakiyeye dahil), gün 1'den itibaren her gün
   close(byKey(p, "sales")[0].amount, 6 * perDay, "bu hafta 6 gün");
@@ -1451,7 +1451,8 @@ test("ekran: yalnız yönetici; menüde (⌘K) Para grubunda, telefonda başlı�
   }
   const dash = read("src/app/panel/page.tsx");
   // Şube seçiliyken de işletmenin planı: model "Tümü" ile yeniden okunur (docs/SUBE.md › Neyi süzer)
-  assert.match(dash, /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => loadCashPlan\(m, upcoming\)\)\s*\.catch\(\(\) => null\)/);
+  // ve "Tümü" kapsamında okunur (kasa raporları, kasalardaki devir; Nakit planı sayfası gibi)
+  assert.match(dash, /model\.ds\.branchView \? loadModel\(\{ scope: ALL_BRANCHES \}\) : Promise\.resolve\(model\)\)\s*\.then\(\(m\) => withBranchScope\(ALL_BRANCHES, \(\) => loadCashPlan\(m, upcoming\)\)\)\s*\.catch\(\(\) => null\)/);
   assert.match(page, /withBranchScope\(ALL_BRANCHES,/);
   // db:reset nakit planının durumunu siler (sabit gider kimlikleri baştan sayar)
   assert.match(read("scripts/seed.ts"), /'cashflow\.plan'/);
@@ -1864,3 +1865,20 @@ test("vergi: geçici verginin 'Ödendi' kaydı çeyrekle (payments.vat-paid, tü
   assert.deepEqual(parseVatPaid([ok, { ...ok, periods: ["2026-09"] }, { ...ok, kind: "kdv", periods: ["2026-Q3"] }, { ...ok, kind: "kv" }]), [ok]);
 });
 
+
+test("satışlar: iki şubenin aynı günkü raporları bir gün; ortalama günlük toplam (rapor sayısına bölünmez), not iki sayıyı da söyler", () => {
+  const reports = Array.from({ length: 10 }, (_, i) => [
+    { date: addDays(TODAY, -1 - i), zTotal: 1_111, card: 0, mealCard: 0 },
+    { date: addDays(TODAY, -1 - i), zTotal: 2_222, card: 0, mealCard: 0 },
+  ]).flat();
+  const p = buildCashPlan(input({ cashReports: reports }));
+  assert.equal(p.basis.sales.kind, "kasa");
+  if (p.basis.sales.kind !== "kasa") return;
+  assert.deepEqual([p.basis.sales.reports, p.basis.sales.days], [20, 10]);
+  close(p.basis.sales.daily, 3_333, "günlük şubelerin toplamı");
+  const note = planNotes(p, { komisyon: 0.025, acikGun: 26, invoiceTermDays: 30 }).find((n) => n.key === "sales")!.text;
+  assert.match(note, /^Son 28 günün 20 kasa raporuna \(10 gün, şubelerin toplamı\) göre günde ortalama 3\.333/);
+  // Yedi günden az raporlu gün: iki şubeyle 8 rapor olsa da kasa ortalaması yok
+  const few = reports.slice(0, 8);
+  assert.notEqual(buildCashPlan(input({ cashReports: few })).basis.sales.kind, "kasa");
+});

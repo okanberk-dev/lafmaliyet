@@ -1,6 +1,20 @@
 import "server-only";
 
-import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID, tillBranches } from "@/lib/branches";
+import {
+  branchDayKey,
+  businessDate,
+  carryChecks,
+  carryChecksByBranch,
+  carryDiffText,
+  changesText,
+  diffKind,
+  diffText,
+  isCashEvening,
+  lateCorrections,
+  staffCanReport,
+  type CarryCheck,
+} from "@/lib/cash-report";
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
@@ -10,7 +24,9 @@ import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
-import { cashReportsBetween, cashRevisionsFor, previousCarryOver, reportedDays } from "@/server/data/cash-reports";
+import { currentBranchScope, currentTillBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
+import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, previousCarryOverByBranch, reportedDays, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { loadKasaLafposDays } from "@/server/data/lafpos-day";
@@ -25,15 +41,58 @@ import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/ser
  * maliyet ya da başkasının tutarı gitmez.
  */
 
+/** Zil satırının kasası: şube, adı ve birden çok kasa açık mı (adı başlığa, `?sube=` adrese girer) */
+interface TillOf {
+  id: string;
+  name: string;
+  /** Birden çok kasa açık: başlıkta şubenin adı, kasa sayfasının adresinde `&sube=` */
+  named: boolean;
+}
+
 /**
- * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma; yöneticiye dünün
- * raporu girilmediyse, son raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor
- * ertesi gün kasa alanı değiştirilerek düzeltildiyse.
+ * Yöneticinin zilindeki kasalar: "Tümü"de birden çok kasa açıkken her şube ayrı (`many`); değilse tek kasa (`till`:
+ * seçili fiziksel şube; "Tümü"de ve online kanalda Tuzla, kasa sayfasının formu gibi)
+ */
+interface BellTills {
+  of: (branchId: string) => TillOf;
+  many: { id: string; name: string }[] | null;
+  till: string;
+}
+
+async function bellTills(): Promise<BellTills> {
+  const [scope, branches, till] = await Promise.all([currentBranchScope(), listBranches(), currentTillBranch()]);
+  const tills = tillBranches(branches);
+  const named = tills.length > 1;
+  return {
+    of: (id) => ({ id, name: branches.find((b) => b.id === id)?.name ?? id, named }),
+    many: scope === ALL_BRANCHES && named ? tills.map(({ id, name }) => ({ id, name })) : null,
+    till,
+  };
+}
+
+/**
+ * Satırın şubesi: kimlikte Tuzla'dan başka şube (Tuzla'nın kimliği bugünkü gibi; okundu işareti korunur), başlıkta birden
+ * çok kasa açıkken şubenin adı, kasa sayfasının adresinde `&sube=` (seçici onu seçer, form o kasayı gösterir)
+ */
+const idPart = (t: TillOf) => (t.id !== DEFAULT_BRANCH_ID ? `-${t.id}` : "");
+const titleOf = (title: string, t: TillOf) => (t.named ? `${title} · ${t.name}` : title);
+const kasaHref = (date: string, t: TillOf) => `/panel/kasa?gun=${date}${t.named ? `&sube=${encodeURIComponent(t.id)}` : ""}`;
+
+/**
+ * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma (kendi kasasının:
+ * kilitli şube, seçili fiziksel şube, "Tümü"de Tuzla; formu o kasaya yazar); yöneticiye dünün raporu girilmediyse, son
+ * raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor ertesi gün kasa alanı
+ * değiştirilerek düzeltildiyse. "Tümü"de birden çok kasa açıkken yöneticiye her şubenin kasası ayrı.
  */
 async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   const day = businessDate(now);
-  const reports = await cashReportsBetween(addDays(day, -6), day);
+  const tills = user.role === "admin" ? await bellTills() : null;
+  // Okunan kasa: personelin ve yöneticinin tek kasası (okumalar onun kapsamında); "Tümü"de birden çok kasa açıkken
+  // süzülmez (hepsi birlikte, şube şube ayrılır)
+  const till = tills ? (tills.many ? null : tills.till) : await currentTillBranch();
+  const inTill = <T>(fn: () => Promise<T>) => (till ? withBranchScope(till, fn) : fn());
+  const reports = await inTill(() => cashReportsBetween(addDays(day, -6), day));
   if (user.role !== "admin") {
     if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
     // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS
@@ -51,38 +110,53 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       },
     ];
   }
+  if (!tills) return [];
   const out: PanelNotification[] = [];
   const yesterday = addDays(day, -1);
+  // "Tümü"de birden çok kasa: her şubenin dünü ve son raporu ayrı (bir şubenin raporu ötekinin eksiğini örtmez); şube
+  // hiç rapor girmediyse ya da ilk raporu dünden sonraysa dünü beklenmez (Bugün'ün kuralı). Tek kasada bugünkü gibi
+  const groups = tills.many
+    ? await Promise.all(
+        tills.many.map(async (b) => {
+          const own = reports.filter((r) => r.branchId === b.id);
+          const first = own.some((r) => r.date <= yesterday) ? yesterday : await withBranchScope(b.id, () => firstCashReportDate()).catch(() => null);
+          return { till: tills.of(b.id), reports: own, expects: first !== null && first <= yesterday };
+        }),
+      )
+    : [{ till: tills.of(tills.till), reports, expects: true }];
+  const missing = groups.filter((g) => g.expects && !g.reports.some((r) => r.date === yesterday));
   // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9)
-  const closed = reports.some((r) => r.date === yesterday) ? null : ((await closedYesterday(user, now).catch(() => null))?.yesterday ?? null);
-  if (!reports.some((r) => r.date === yesterday) && closed?.state !== "approved") {
+  const closed = missing.length ? ((await closedYesterday(user, now).catch(() => null))?.yesterday ?? null) : null;
+  for (const g of closed?.state === "approved" ? [] : missing) {
     out.push({
-      id: `kasa-yok-${yesterday}`,
+      id: `kasa-yok-${yesterday}${idPart(g.till)}`,
       kind: "warning",
-      title: "Dünkü kasa raporu girilmedi",
+      title: titleOf("Dünkü kasa raporu girilmedi", g.till),
       body: `${longDateTR(yesterday)}${closed?.state === "pending" ? " · Personel: kapalıydık dedi (onay bekliyor)" : ""}`,
       timeLabel: "Dün",
       unread: true,
-      href: `/panel/kasa?gun=${yesterday}`,
+      href: kasaHref(yesterday, g.till),
       group: "kasa",
     });
   }
-  const last = reports[0];
-  if (last && diffKind(last.cashDiff) !== "even") {
+  for (const g of groups) {
+    const last = g.reports[0];
+    if (!last || diffKind(last.cashDiff) === "even") continue;
+    const t = tills.of(last.branchId);
     out.push({
       // Rapor güncellenince yeniden okunmamış olur
-      id: `kasa-fark-${last.date}-r${last.revision}`,
+      id: `kasa-fark-${last.date}${idPart(t)}-r${last.revision}`,
       kind: last.cashDiff < 0 ? "danger" : "warning",
-      title: `Kasa: ${diffText(last.cashDiff)}`,
+      title: titleOf(`Kasa: ${diffText(last.cashDiff)}`, t),
       body: [longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
       timeLabel: dateTR(last.date),
       unread: true,
-      href: `/panel/kasa?gun=${last.date}`,
+      href: kasaHref(last.date, t),
       group: "kasa",
     });
   }
   // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
-  out.push(...(await cashIntegrityNotifications(reports, day, user.id).catch(() => [])));
+  out.push(...(await inTill(() => cashIntegrityNotifications(reports, day, user.id, tills)).catch(() => [])));
   return out;
 }
 
@@ -97,32 +171,32 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
  * src/lib/modpos/zil.ts: kasası açık föy karşılaştırılmaz; kimlik raporun ve föyün sürümünden). Küçük sorgular; LafPOS
  * ve ModPOS okunamazsa yalnız kendi satırları düşer.
  */
-async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
+async function cashIntegrityNotifications(reports: CashReportDTO[], day: string, viewer: number, tills: BellTills): Promise<PanelNotification[]> {
   if (!reports.length) return [];
   const oldest = reports[reports.length - 1];
   const revised = reports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [before, revisions, proposed, lafposOf, modpos] = await Promise.all([
-    previousCarryOver(oldest.date),
+  const [checks, revisions, proposed, lafposOf, modpos] = await Promise.all([
+    carryOf(reports, oldest.date, tills),
     cashRevisionsFor(revised),
     proposedByForReports(revised),
     loadKasaLafposDays(oldest.date, day).catch(() => null),
     Promise.all([loadModposSheets(oldest.date, day), loadLafposSwitchDay()]).catch(() => null),
   ]);
-  const checks = carryChecks(reports, before);
   const yesterday = addDays(day, -1);
   const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
   const out: PanelNotification[] = [];
   for (const r of reports) {
-    const c = checks.get(r.date);
+    const c = checks(r);
     if (!c || (r.date !== day && r.date !== yesterday)) continue;
+    const t = tills.of(r.branchId);
     out.push({
-      id: `kasa-acilis-${r.date}-r${r.revision}`,
+      id: `kasa-acilis-${r.date}${idPart(t)}-r${r.revision}`,
       kind: "warning",
-      title: "Kasa açılışı devirle tutmuyor",
+      title: titleOf("Kasa açılışı devirle tutmuyor", t),
       body: [`${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: kasaHref(r.date, t),
       group: "kasa",
     });
   }
@@ -130,40 +204,58 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
     // Onaylanan düzeltme önerisi: "Mehmet önerdi · Ayşe onayladı"
     const late = r.revision > 1 ? lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer, proposed.get(r.id)) : null;
     if (!late) continue;
+    const t = tills.of(r.branchId);
     out.push({
-      id: `kasa-duzeltme-${r.date}-r${late.revision}`,
+      id: `kasa-duzeltme-${r.date}${idPart(t)}-r${late.revision}`,
       kind: "warning",
-      title: "Kasa raporu ertesi gün değişti",
+      title: titleOf("Kasa raporu ertesi gün değişti", t),
       body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: kasaHref(r.date, t),
       group: "kasa",
     });
   }
-  // LafPOS'tan farklı yazılan (yalnız LafPOS günlerinde; geçiş günü boşken loadKasaLafposDays hiçbir günü vermez)
+  // LafPOS'tan farklı yazılan (yalnız LafPOS günlerinde; geçiş günü boşken loadKasaLafposDays hiçbir günü vermez). Gün
+  // sonu raporun kendi şubesinin: Marina'nın raporu Tuzla'nın gün sonuyla karşılaştırılmaz
   for (const r of reports) {
-    const lafpos = lafposOf?.(r.date).day;
+    const lafpos = lafposOf?.(r.date, r.branchId).day;
     const diffs = lafpos ? lafposDiffs(r, lafpos) : [];
     if (!lafpos || !diffs.length) continue;
+    const t = tills.of(r.branchId);
     const after = lafpos.receivedAt > r.updatedAt;
     const body = `${longDateTR(r.date)} · ${diffs.map(lafposDiffText).join("; ")}`;
     out.push({
-      id: `kasa-lafpos-${r.date}-r${r.revision}-${Date.parse(lafpos.receivedAt)}`,
+      id: `kasa-lafpos-${r.date}${idPart(t)}-r${r.revision}-${Date.parse(lafpos.receivedAt)}`,
       kind: "warning",
-      title: after ? "LafPOS rapordan sonra farklı rakamla geldi" : "Kasa raporu LafPOS'tan farklı",
+      title: titleOf(after ? "LafPOS rapordan sonra farklı rakamla geldi" : "Kasa raporu LafPOS'tan farklı", t),
       body: body.length > 220 ? `${body.slice(0, 219)}…` : body,
       timeLabel: timeLabel(r.date),
       unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
+      href: kasaHref(r.date, t),
       group: "kasa",
     });
   }
-  // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok)
+  // ModPOS föyünden farklı yazılan (yalnız ModPOS günlerinde, kasası kapanmış föyle; föy hiç çekilmediyse satır yok).
+  // Rapor kendi şubesinin föyüyle; birden çok kasa açıkken gövdede şubenin adı
   for (const m of modpos ? modposMismatches(reports, modpos[0], modpos[1]) : []) {
-    out.push({ ...modposMismatchBell(m), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
+    const t = tills.of(m.report.branchId);
+    out.push({ ...modposMismatchBell(m, t.named ? t.name : undefined), kind: "warning", timeLabel: timeLabel(m.report.date), unread: true, group: "kasa" });
   }
   return out;
+}
+
+/**
+ * Açılış ↔ devir zinciri: tek kasada listenin en eski gününden önceki son rapordan; "Tümü"de birden çok kasa açıkken
+ * şube şube (her şubenin kendi önceki devriyle; Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz)
+ */
+async function carryOf(reports: CashReportDTO[], oldest: string, tills: BellTills): Promise<(r: CashReportDTO) => CarryCheck | undefined> {
+  if (!tills.many) {
+    const checks = carryChecks(reports, await previousCarryOver(oldest));
+    return (r) => checks.get(r.date);
+  }
+  const checks = carryChecksByBranch(reports, await previousCarryOverByBranch(oldest, [...tills.many.map((b) => b.id), ...reports.map((r) => r.branchId)]));
+  return (r) => checks.get(branchDayKey(r.branchId, r.date));
 }
 
 /**
@@ -236,9 +328,10 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
   const rows = (await myCashRequests(user.id))
     .filter((r) => r.day && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired" || r.status === "revoked"))
     .slice(0, 5);
-  // Reddedilen ya da kaldırılan kapalı gün bildirimi: o günün raporu girildi mi (yalnız tarih)
+  // Reddedilen ya da kaldırılan kapalı gün bildirimi: o günün raporu personelin kasasına girildi mi (yalnız tarih; kasa
+  // kilitli şube, seçili fiziksel şube, "Tümü"de Tuzla: öteki şubenin raporu bu kasanın gününü kapatmaz)
   const closedDays = rows.flatMap((r) => (r.kind === "kapali-gun" && r.status !== "approved" ? [r.day!] : []));
-  const reported = closedDays.length ? await reportedDays(closedDays) : new Set<string>();
+  const reported = closedDays.length ? await withBranchScope(await currentTillBranch(), () => reportedDays(closedDays)) : new Set<string>();
   return rows.map((r) => {
     const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired" | "revoked", day: r.day!, note: r.reviewNote, title: r.title });
     const at = todayTR(new Date(r.updatedAt));

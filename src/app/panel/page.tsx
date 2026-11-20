@@ -58,6 +58,7 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
@@ -202,10 +203,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
   const [priceAlerts, cashPlan] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
-    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle (docs/SUBE.md › Neyi süzer)
+    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
+    // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
     upcoming
       ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
-          .then((m) => loadCashPlan(m, upcoming))
+          .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
           .catch(() => null)
       : null,
   ]);

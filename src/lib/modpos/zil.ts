@@ -1,4 +1,5 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { branchDayKey } from "@/lib/cash-report";
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
@@ -80,6 +81,18 @@ export function modposMismatchDates(reports: readonly (ModposSavedFields & { dat
 }
 
 /**
+ * "Tümü"de birden çok kasa: Bugün'ün şube şube işaretleri için (şube, gün) anahtarları (branchDayKey; bugun/logic.ts
+ * cashFlagsByBranch'e verilir). Şubesi verilmeyen rapor Tuzla'nındır
+ */
+export function modposMismatchBranchDays(
+  reports: readonly (ModposSavedFields & { date: string; branchId?: string | null })[],
+  sheets: readonly ModposSheetLite[],
+  switchDay: string | null,
+): Set<string> {
+  return new Set(modposMismatches(reports, sheets, switchDay).map((m) => branchDayKey(m.report.branchId ?? DEFAULT_BRANCH_ID, m.report.date)));
+}
+
+/**
  * Zilin satırı (yönetici, Kasa başlığı). Kimlik raporun ve föyün sürümünden: rapor yeniden gönderilince ya da föy
  * değişince yeniden okunmamış olur. Gövde "2 Kasım Pazartesi · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺); …", en çok
  * MODPOS_BELL_BODY_MAX harf.
@@ -97,9 +110,12 @@ export function modposMismatchBell(m: ModposMismatch<{ date: string; revision: n
   };
 }
 
-/** Sabah e-postasının satırı: "Kasa raporu ModPOS föyünden farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)" */
-export function modposMismatchDigestText(date: string, diffs: readonly ModposDiff[]): string {
-  return `${MODPOS_MISMATCH_TITLE}. ${dayMonthTR(date)} · ${diffs.map(modposDiffText).join("; ")}`;
+/**
+ * Sabah e-postasının satırı: "Kasa raporu ModPOS föyünden farklı. 2 Kasım · Nakit 8.190 ₺ (ModPOS föyünde 8.210 ₺)";
+ * birden çok kasa açıkken şubenin adıyla: "Kasa raporu ModPOS API'den farklı (Marina). 2 Kasım · …"
+ */
+export function modposMismatchDigestText(date: string, diffs: readonly ModposDiff[], branchName?: string): string {
+  return `${MODPOS_MISMATCH_TITLE}${branchName ? ` (${branchName})` : ""}. ${dayMonthTR(date)} · ${diffs.map(modposDiffText).join("; ")}`;
 }
 
 /** Anahtarın uyarısı: kimlik, başlık, gövde ve hatanın anı (biçim sorununda null) */
