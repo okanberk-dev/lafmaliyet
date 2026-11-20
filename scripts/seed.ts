@@ -28,8 +28,13 @@ import {
   FOOD_SAFETY_SEED_KEYS,
   MARINA_CHECKLIST_SEED_KEY,
   MARINA_CHECKLISTS,
+  MARINA_CLOSE_PHOTOS,
+  MARINA_OPEN_PHOTOS,
+  MARINA_PHOTO_SEED_KEY,
+  placeNewItems,
   TUZLA_HOURLY_CHECKLISTS,
   TUZLA_HOURLY_SEED_KEY,
+  type SeedItem,
   type SeedTemplate,
 } from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
@@ -134,15 +139,29 @@ async function ensureTuzlaHourlySeed(db: DB) {
 }
 
 /**
- * Gıda güvenliği maddeleri (SKT, ikinci raf ömrü etiketi, yerde ürün) var olan açılış listelerinin sonuna bir kez
- * (her anahtar `FOOD_SAFETY_SEED_KEYS` bir kez; "Not" bölümü sonda kalır). Liste adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır, listede aynı adda etkin madde
- * varsa (yeni kurulumda tohum zaten ekledi) o madde atlanır. Bugün açılmış kayıt değişmez; maddeler ertesi güne girer.
+ * Gıda güvenliği maddeleri (SKT, ikinci raf ömrü etiketi, yerde ürün, FIFO) var olan açılış listelerine; her anahtar
+ * (`FOOD_SAFETY_SEED_KEYS`) bir kez.
  */
 async function ensureFoodSafetyItems(db: DB) {
-  for (const key of FOOD_SAFETY_SEED_KEYS) await addFoodSafetyItems(db, key);
+  for (const key of FOOD_SAFETY_SEED_KEYS) await addSeedItems(db, key, "Gıda güvenliği maddeleri", FOOD_SAFETY_LISTS.map((name) => ({ name, items: FOOD_SAFETY_ITEMS })));
 }
 
-async function addFoodSafetyItems(db: DB, key: string) {
+/** Marina'nın fotoğraflı maddeleri (Tuzla gibi; 20 Kasım 2026) var olan Marina listelerine bir kez (`kontrol.marina.foto.seeded`) */
+async function ensureMarinaPhotoItems(db: DB) {
+  await addSeedItems(db, MARINA_PHOTO_SEED_KEY, "Marina fotoğraflı maddeleri", [
+    { name: "Marina Açılış", items: MARINA_OPEN_PHOTOS },
+    { name: "Marina Kapanış", items: MARINA_CLOSE_PHOTOS },
+  ]);
+}
+
+/**
+ * Var olan listelere yeni hazır maddeler, anahtarla bir kez (`key` integration_state'e yazılır; tek işlemde). Liste
+ * adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır. Listede aynı adda etkin madde varsa (yeni kurulumda
+ * tohum zaten ekledi, ya da yönetici eklemiş) o madde atlanır. Yeni madde kendi bölümünün sonuna girer, bölüm yoksa
+ * "Not"tan önce (placeNewItems); etkin maddeler yeniden sıralanır. Bugün açılmış kayıt değişmez; maddeler ertesi
+ * güne (bugün açılmadıysa bugüne) girer.
+ */
+async function addSeedItems(db: DB, key: string, what: string, lists: { name: string; items: readonly SeedItem[] }[]) {
   const added = await db.transaction(async (tx) => {
     const [mark] = await tx
       .insert(s.integrationState)
@@ -151,38 +170,43 @@ async function addFoodSafetyItems(db: DB, key: string) {
       .returning({ key: s.integrationState.key });
     if (!mark) return [];
     const names: string[] = [];
-    for (const name of FOOD_SAFETY_LISTS) {
+    for (const { name, items } of lists) {
       const [tpl] = await tx.select({ id: s.checklistTemplates.id }).from(s.checklistTemplates).where(eq(s.checklistTemplates.name, name)).limit(1);
       if (!tpl) continue;
-      const rows = await tx
-        .select({ id: s.checklistItems.id, label: s.checklistItems.label, section: s.checklistItems.section, active: s.checklistItems.active, sortOrder: s.checklistItems.sortOrder })
-        .from(s.checklistItems)
-        .where(eq(s.checklistItems.templateId, tpl.id));
-      const have = new Set(rows.filter((r) => r.active).map((r) => r.label));
-      const fresh = FOOD_SAFETY_ITEMS.filter((i) => !have.has(i.label));
+      const rows = (
+        await tx
+          .select({ id: s.checklistItems.id, label: s.checklistItems.label, section: s.checklistItems.section, sortOrder: s.checklistItems.sortOrder })
+          .from(s.checklistItems)
+          .where(and(eq(s.checklistItems.templateId, tpl.id), eq(s.checklistItems.active, true)))
+      ).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+      const have = new Set(rows.map((r) => r.label));
+      const fresh = items.filter((i) => !have.has(i.label));
       if (!fresh.length) continue;
-      const last = Math.max(0, ...rows.map((r) => r.sortOrder));
-      await tx.insert(s.checklistItems).values(
-        fresh.map((i, n) => ({
-          templateId: tpl.id,
-          label: i.label,
-          type: i.type,
-          section: i.section ?? null,
-          hint: i.hint ?? null,
-          required: i.required ?? true,
-          sortOrder: last + n + 1,
-        })),
-      );
-      // Serbest not bölümü ("Not") listenin sonunda kalsın
-      const notes = rows.filter((r) => r.active && r.section === "Not").sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
-      for (const [k, r] of notes.entries()) {
-        await tx.update(s.checklistItems).set({ sortOrder: last + fresh.length + k + 1 }).where(eq(s.checklistItems.id, r.id));
+      for (const [n, e] of placeNewItems(rows, fresh).entries()) {
+        const sortOrder = n + 1;
+        if ("row" in e) {
+          if (e.row.sortOrder !== sortOrder) await tx.update(s.checklistItems).set({ sortOrder }).where(eq(s.checklistItems.id, e.row.id));
+        } else {
+          const i = e.item;
+          await tx.insert(s.checklistItems).values({
+            templateId: tpl.id,
+            label: i.label,
+            type: i.type,
+            section: i.section ?? null,
+            hint: i.hint ?? null,
+            required: i.required ?? true,
+            unit: i.unit ?? null,
+            min: i.min ?? null,
+            max: i.max ?? null,
+            sortOrder,
+          });
+        }
       }
       names.push(name);
     }
     return names;
   });
-  if (added.length) console.log(`✓ Gıda güvenliği maddeleri eklendi: ${added.join(", ")}`);
+  if (added.length) console.log(`✓ ${what} eklendi: ${added.join(", ")}`);
 }
 
 async function seedChecklists(db: DB, key: string, lists: readonly SeedTemplate[]) {
@@ -309,6 +333,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       await ensureMarinaChecklistSeed(db);
       await ensureTuzlaHourlySeed(db);
       await ensureFoodSafetyItems(db);
+      await ensureMarinaPhotoItems(db);
       return;
     }
 
@@ -455,6 +480,7 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
     await ensureMarinaChecklistSeed(db);
     await ensureTuzlaHourlySeed(db);
     await ensureFoodSafetyItems(db);
+    await ensureMarinaPhotoItems(db);
   } finally {
     await db.$client.end();
   }

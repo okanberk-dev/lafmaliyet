@@ -138,6 +138,28 @@ export const MARINA_CHECKLIST_SEED_KEY = "kontrol.marina.seeded";
 const FREEZER = { type: "number", unit: "°C", min: -30, max: -18 } as const;
 
 /**
+ * Marina'nın fotoğraflı maddeleri (sahibin isteği, 20 Kasım 2026: "Tuzla gibi fotoğraf"): Tuzla'daki gibi her
+ * bölümün sonunda hazır / temiz hâlin fotoğrafı. Açılışta bar ve vitrin, salon, teras; kapanışta bar, teras, salon.
+ * Var olan veritabanında ensureMarinaPhotoItems (scripts/seed.ts) bir kez, kendi bölümlerinin sonuna ekler.
+ */
+export const MARINA_OPEN_PHOTOS: SeedItem[] = [
+  { section: "Bar ve vitrin", label: "Bar ve vitrin hazır", type: "photo", hint: `Tezgâh ve vitrinin tamamı görünsün. ${PHOTO_PRIVACY_HINT}` },
+  { section: "Salon", label: "Salon hazır", type: "photo", hint: PHOTO_PRIVACY_HINT },
+  { section: "Teras", label: "Teras hazır", type: "photo", hint: `Masalar, minderler ve kül tablaları görünsün. ${PHOTO_PRIVACY_HINT}` },
+];
+export const MARINA_CLOSE_PHOTOS: SeedItem[] = [
+  { section: "Bar", label: "Bar ve tezgâh temiz", type: "photo", hint: `Şelale, portakal makinesi ve espresso makinesi görünsün. ${PHOTO_PRIVACY_HINT}` },
+  { section: "Teras", label: "Teras kapanış hâli", type: "photo", hint: `Minderler toplanmış, masalar silinmiş görünsün. ${PHOTO_PRIVACY_HINT}` },
+  { section: "Salon", label: "Salon kapanış hâli", type: "photo", hint: PHOTO_PRIVACY_HINT },
+];
+
+/** integration_state anahtarı: Marina'nın fotoğraflı maddeleri var olan listelerine bir kez eklendi */
+export const MARINA_PHOTO_SEED_KEY = "kontrol.marina.foto.seeded";
+
+/** Bölümünün fotoğrafı (MARINA_*_PHOTOS'tan; bölümün sonuna girer) */
+const photoOf = (list: SeedItem[], section: string): SeedItem => list.find((i) => i.section === section)!;
+
+/**
  * Marina şubesinin açılış ve kapanış listeleri (sahibin listesi, 16 Kasım 2026). Marina'da karaoke yok, teras var:
  * karaoke maddesi yerine teras, çikolata şelalesi ve portakal suyu makinesi maddeleri. Saatler Tuzla'nınkiyle aynı
  * başlar, Listeler'den değiştirilir.
@@ -146,7 +168,7 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
   {
     name: "Marina Açılış",
     branchId: "marina",
-    description: "Marina'yı açarken. Buzdolabı ve dondurucu derecelerini yazın.",
+    description: "Marina'yı açarken. Buzdolabı ve dondurucu derecelerini yazın; her bölüm bitince fotoğrafını çekin.",
     opensAt: "08:00",
     dueAt: "11:00",
     items: [
@@ -162,12 +184,14 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
       { section: "Bar ve vitrin", label: "Dondurucu sıcaklığı", ...FREEZER },
       { section: "Bar ve vitrin", label: "İçecek dolaplarını doldur", type: "check" },
       { section: "Bar ve vitrin", label: "Bar tezgahını sil", type: "check" },
+      photoOf(MARINA_OPEN_PHOTOS, "Bar ve vitrin"),
       { section: "Salon", label: "Vitrin camlarını içten ve dıştan sil", type: "check" },
       { section: "Salon", label: "İçerideki uzun masayı ve sandalyeleri sil", type: "check" },
       { section: "Salon", label: "Kapı camlarını sil", type: "check" },
       { section: "Salon", label: "İçeriyi süpür", type: "check" },
       { section: "Salon", label: "İçeriyi paspasla", type: "check" },
       { section: "Salon", label: "Çöp kovalarını kontrol et, poşetleri tak", type: "check" },
+      photoOf(MARINA_OPEN_PHOTOS, "Salon"),
       { section: "Teras", label: "Terasın yerlerini süpür", type: "check" },
       { section: "Teras", label: "Terasın yerlerini paspasla", type: "check" },
       { section: "Teras", label: "Teras masalarını sil", type: "check" },
@@ -176,6 +200,7 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
       { section: "Teras", label: "Temiz kül tablalarını masalara koy", type: "check" },
       { section: "Teras", label: "Teras camlarını ve kapılarını kontrol et, kirliyse sil", type: "check" },
       { section: "Teras", label: "Hava soğuksa ısıtıcıları aç", type: "check", required: false, hint: "Hava soğuk değilse boş bırakın." },
+      photoOf(MARINA_OPEN_PHOTOS, "Teras"),
       { section: "Kafe önü ve güvenlik", label: "Kafe önünü süpür", type: "check" },
       { section: "Kafe önü ve güvenlik", label: "Yangın dolabının önü boş mu kontrol et", type: "check" },
       ...FOOD_SAFETY_ITEMS,
@@ -184,7 +209,7 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
   {
     name: "Marina Kapanış",
     branchId: "marina",
-    description: "Son misafir çıkınca. Gün sonu raporunu almadan önce bar ve terası toparlayın.",
+    description: "Son misafir çıkınca. Gün sonu raporunu almadan önce bar ve terası toparlayın; fotoğrafları temizlik bitince çekin.",
     opensAt: "22:00",
     dueAt: "02:00",
     items: [
@@ -196,11 +221,14 @@ export const MARINA_CHECKLISTS: SeedTemplate[] = [
       { section: "Bar", label: "Lavaboyu ve tezgahı temizle", type: "check" },
       { section: "Bar", label: "Kalan pastalar (yarına kalan ya da fire)", type: "text", hint: "Ör. 2 cheesecake yarına, 1 tiramisu fire. Kalan yoksa \"yok\" yazın." },
       { section: "Bar", label: "Açık sütleri tarihle, dolaba koy", type: "check" },
+      photoOf(MARINA_CLOSE_PHOTOS, "Bar"),
       { section: "Teras", label: "Teras masalarını sil", type: "check" },
       { section: "Teras", label: "Minderleri topla", type: "check" },
       { section: "Teras", label: "Kül tablalarını yıka", type: "check" },
+      photoOf(MARINA_CLOSE_PHOTOS, "Teras"),
       { section: "Salon", label: "Yeri paspasla", type: "check" },
       { section: "Salon", label: "Çöpleri çıkar", type: "check" },
+      photoOf(MARINA_CLOSE_PHOTOS, "Salon"),
       { section: "Kapanış", label: "Gün sonu raporunu al, kasayı say", type: "check" },
       { section: "Kapanış", label: "Isıtıcıları kapat", type: "check" },
       { section: "Kapanış", label: "Klimayı ve ışıkları kapat (dolaplar açık kalır)", type: "check" },
@@ -250,3 +278,26 @@ export const TUZLA_HOURLY_CHECKLISTS: SeedTemplate[] = [
     ]),
   },
 ];
+
+/**
+ * Var olan bir listeye eklenecek maddelerin yeri (saf; scripts/seed.ts addSeedItems): her yeni madde kendi bölümünün
+ * son maddesinin ardına girer; bölüm listede yoksa serbest not bölümünden ("Not") önce, o da yoksa sona. `rows` etkin
+ * maddeler, sırasıyla. Dönen dizi listenin yeni sırasıdır (var olan satır ya da yeni madde).
+ */
+export function placeNewItems<R extends { section: string | null }>(rows: R[], fresh: SeedItem[]): ({ row: R } | { item: SeedItem })[] {
+  const out: ({ row: R } | { item: SeedItem })[] = rows.map((row) => ({ row }));
+  const sectionOf = (e: { row: R } | { item: SeedItem }) => ("row" in e ? e.row.section : (e.item.section ?? null));
+  for (const item of fresh) {
+    const section = item.section ?? null;
+    let at = -1;
+    out.forEach((e, n) => {
+      if (sectionOf(e) === section) at = n + 1;
+    });
+    if (at < 0) {
+      const note = out.findIndex((e) => sectionOf(e) === "Not");
+      at = note < 0 ? out.length : note;
+    }
+    out.splice(at, 0, { item });
+  }
+  return out;
+}
