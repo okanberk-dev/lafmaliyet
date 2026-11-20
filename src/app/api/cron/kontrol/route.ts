@@ -3,9 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { runChecklistAlerts } from "@/server/notify/checklist-alerts";
 
-// Saat başını 5 geçe (Türkiye 08:05 – 02:05): personele kontrol listesi hatırlatmaları (Tuvalet çizelgesinin her saati,
-// açılış ve kapanış listeleri; zamanı geldi / gecikti). Vercel Hobby'de cron günde bir kez çalıştığı için tetikleyici
-// GitHub Actions'tır (.github/workflows/kontrol-hatirlatma.yml); isteği CRON_SECRET'la imzalar. Kurallar
+// Saat başını 7 geçe (Türkiye 08:07 – 02:07): personele kontrol listesi hatırlatmaları (Tuvalet çizelgesinin her saati,
+// açılış ve kapanış listeleri; zamanı geldi / gecikti). Yedek tetikleyici: asıl tetikleme açık panel sekmesinin canlı
+// yoklamasından (/api/canli, en çok 5 dakikada bir). Vercel Hobby'de cron günde bir kez çalıştığı için bu ucu GitHub
+// Actions çağırır (.github/workflows/kontrol-hatirlatma.yml); isteği CRON_SECRET'la imzalar. Kurallar
 // src/lib/checklist-alerts.ts, ayrıntı docs/KONTROL-LISTELERI.md § 6. Gönderim en geç 45 sn'de kesilir.
 export const maxDuration = 60;
 
