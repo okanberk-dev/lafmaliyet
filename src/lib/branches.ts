@@ -202,6 +202,49 @@ export function parseBranchScope(raw: unknown, known: readonly BranchRow[]): Bra
   return known.some((b) => b.id === raw && b.active) ? raw : ALL_BRANCHES;
 }
 
+/** Derin bağlantının (`?sube=`) seçicideki adımı (`branchLinkStep`) */
+export interface BranchLinkStep {
+  /** Seçicinin saklayacağı anahtar: adreste `?sube=` varken bağlantının kendisi (yol + sorgu), yoksa null */
+  key: string | null;
+  /** Yapılacak iş; null: adreste `?sube=` yok, şube kilitli ya da bu bağlantı zaten benimsendi */
+  adopt: {
+    /** Çereze yazılacak seçim; çerez zaten bu seçimdeyse null (yalnız adres temizlenir) */
+    scope: BranchScope | null;
+    /** `?sube=` düşürülmüş adres; öteki sorgu alanları sırasıyla korunur */
+    href: string;
+  } | null;
+}
+
+/**
+ * Paylaşılan bağlantıdaki `?sube=`'nin çereze benimsetilmesi (docs/SUBE.md › Seçici). Seçici her adres ya da seçim
+ * değişiminde bunu çağırır, dönen `key`'i saklar ve sonraki çağrıya `adopted` olarak verir:
+ * - anahtar BAĞLANTININ KENDİSİDİR, seçilen değer değil: her bağlantı bir kez benimsenir; adreste `?sube=` kalmayınca
+ *   anahtar sıfırlanır, yani aynı bağlantı sonradan yeniden açılınca yine benimsenir;
+ * - `?sube=` çerezle aynı olsa da adresten düşer: adreste kalmış eski `?sube=` seçiciden sonradan yapılan seçimi geri
+ *   almaz (denetim 21 Kasım #22);
+ * - şubesi kilitli personelde benimsenmez (sunucu da reddeder).
+ */
+export function branchLinkStep(o: {
+  pathname: string;
+  /** Adresin sorgusu (`useSearchParams().toString()`; baştaki `?` olsa da olur) */
+  search: string;
+  /** Çerezdeki seçim (sunucunun verdiği) */
+  scope: BranchScope;
+  branches: readonly BranchRow[];
+  locked: boolean;
+  /** Önceki çağrının anahtarı */
+  adopted: string | null;
+}): BranchLinkStep {
+  const params = new URLSearchParams(o.search);
+  if (o.locked || !params.has(BRANCH_PARAM)) return { key: null, adopt: null };
+  const key = `${o.pathname}?${params.toString()}`;
+  if (o.adopted === key) return { key, adopt: null };
+  const istenen = parseBranchScope(params.get(BRANCH_PARAM), o.branches);
+  params.delete(BRANCH_PARAM);
+  const qs = params.toString();
+  return { key, adopt: { scope: istenen === o.scope ? null : istenen, href: qs ? `${o.pathname}?${qs}` : o.pathname } };
+}
+
 /** Seçimin ekrandaki adı ("Tümü", "Marina") */
 export function branchScopeLabel(scope: BranchScope, known: readonly BranchRow[]): string {
   if (scope === ALL_BRANCHES) return "Tümü";

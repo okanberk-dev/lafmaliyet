@@ -29,9 +29,10 @@ import { UserError } from "./user-error";
  * Panelin o anki şube seçimi (docs/SUBE.md › Seçici). Kurallar saf dosyada (src/lib/branches.ts); burada yalnız
  * Next'in isteği ve veritabanı var.
  *
- * Seçim veriyi süzer, YETKİ VERMEZ: her uç ayrıca `requireAdmin`/`requireUser` ile korunur. Adresteki `?sube=`
- * çerezden önce gelir ki paylaşılan bağlantı hep aynı şubeyi göstersin; tanınmayan ya da pasif değer "hepsi"ye
- * düşer (`parseBranchScope`).
+ * Seçim veriyi süzer, YETKİ VERMEZ: her uç ayrıca `requireAdmin`/`requireUser` ile korunur. `branchScope(raw)`'a
+ * verilen değer çerezden önce gelir; tanınmayan ya da pasif değer "hepsi"ye düşer (`parseBranchScope`). Panelin
+ * sayfaları adresteki `?sube=`'yi okumaz: seçici onu her bağlantıda bir kez çereze benimsetir ve adresten düşürür
+ * (src/components/panel/branch-picker.tsx › `branchLinkStep`).
  */
 export interface BranchScopeState {
   /** Seçili şube kimliği ya da "hepsi" */

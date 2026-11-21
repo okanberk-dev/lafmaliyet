@@ -5,8 +5,7 @@ import { useEffect, useRef } from "react";
 
 import {
   ALL_BRANCHES,
-  BRANCH_PARAM,
-  parseBranchScope,
+  branchLinkStep,
   type BranchRow,
   type BranchScope,
   sortBranches,
@@ -31,24 +30,24 @@ export function BranchPicker({ scope, branches, locked = false }: { scope: Branc
   const [pending, run] = useActionTransition();
   const router = useRouter();
   const pathname = usePathname();
-  const params = useSearchParams();
+  const search = useSearchParams().toString();
+  /** Benimsenen bağlantı (yol + sorgu); adreste ?sube= yokken null */
   const benimsenen = useRef<string | null>(null);
 
-  // Derin bağlantı: ?sube= çereze yazılır, sonra adresten düşürülür (bir kez; çerez eşitlenince koşul kapanır)
-  const istenen = parseBranchScope(params.get(BRANCH_PARAM), branches);
-  // Şubesi kilitli personelde derin bağlantı benimsenmez (sunucu da reddeder)
-  const farkli = !locked && params.has(BRANCH_PARAM) && istenen !== scope;
+  // Derin bağlantı: her bağlantının ?sube='si BİR KEZ çereze yazılır ve adresten düşer (çerez zaten oysa yalnız düşer).
+  // Anahtar bağlantının kendisi, değer değil: aynı bağlantı yeniden açılınca yine benimsenir; adreste kalmış eski
+  // ?sube= de seçiciden sonradan yapılan seçimi geri almaz (branchLinkStep; denetim 21 Kasım #22). Şubesi kilitli
+  // personelde benimsenmez (sunucu da reddeder).
   useEffect(() => {
-    if (!farkli || benimsenen.current === istenen) return;
-    benimsenen.current = istenen;
+    const adim = branchLinkStep({ pathname, search, scope, branches, locked, adopted: benimsenen.current });
+    benimsenen.current = adim.key;
+    if (!adim.adopt) return;
+    const { scope: secim, href } = adim.adopt;
     run(async () => {
-      await chooseBranchScope({ scope: istenen });
-      const kalan = new URLSearchParams(params);
-      kalan.delete(BRANCH_PARAM);
-      const qs = kalan.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
+      if (secim !== null) await chooseBranchScope({ scope: secim });
+      router.replace(href);
     });
-  }, [farkli, istenen, params, pathname, router, run]);
+  }, [pathname, search, scope, branches, locked, router, run]);
 
   const acik = sortBranches(branches.filter((b) => b.active));
   if (acik.length < 2) return null;

@@ -68,6 +68,12 @@ adresin sorgusunu almaz, yani seçici `?sube=`'yi kendi başına göremez; çere
 içeriği ayrı şube gösterebilirdi. Bu yüzden paylaşılan bağlantıdaki `?sube=` açılışta çereze **benimsetilir** ve
 adresten düşürülür (öteki sorgu alanları korunur): bağlantı yine çalışır, panelin tamamı tek seçimde kalır.
 
+Her bağlantı **bir kez** benimsenir (`branchLinkStep`, src/lib/branches.ts; denetim 21 Kasım #22): seçicinin
+hatırladığı anahtar bağlantının kendisidir (yol + sorgu), seçilen şube değil; adreste `?sube=` kalmayınca sıfırlanır.
+`?sube=` çerezle aynı olsa da adresten düşer. Böylece Bugün'deki Marina satırına ikinci kez basmak da Marina'yı açar
+(arada seçiciden Tümü seçilmiş olsa bile) ve adreste kalmış eski bir `?sube=` seçiciden sonradan yapılan seçimi geri
+almaz. Şubesi kilitli personelde `?sube=` benimsenmez (seçim zaten kişinin şubesinde).
+
 Seçim **yalnız görünümü süzer, yetki vermez**: her uç ayrıca `requireAdmin` / `requireUser` ile korunur.
 Tanınmayan ya da pasife alınmış kimlik "Tümü"ye düşer (`parseBranchScope`), yani çerezde çöp duramaz.
 
