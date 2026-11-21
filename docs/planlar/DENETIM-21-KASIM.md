@@ -1,7 +1,7 @@
 # 21 Kasım 2026 denetimi: doğrulanmış bulgular
 
 Sistem geneli tarama (12 alan; her bulgu bağımsız bir denetçiyle kod yolu ve niyet açısından çürütülmeye çalışıldı).
-35 bulgu doğrulandı; 35, 10'un ve 24, 19'un tekrarıdır (aynı hatanın başka yerden görünüşü; birlikte düzeltilir). Durum sütunu düzeltildikçe güncellenir.
+35 bulgu doğrulandı; 35, 10'un ve 24, 19'un tekrarıdır (aynı hatanın başka yerden görünüşü; birlikte düzeltilir). Durum sütunu düzeltildikçe güncellenir. 21 Kasım: 35'in hepsi düzeltildi (iki dalga).
 
 | # | Önem | Alan | Bulgu | Yer | Durum |
 |---|------|------|-------|-----|-------|
@@ -12,34 +12,43 @@ Sistem geneli tarama (12 alan; her bulgu bağımsız bir denetçiyle kod yolu ve
 | 5 | high | pos | LafPOS geçiş günü şubesiz (tek ayar): Tuzla LafPOS'a geçince Marina'nın ModPOS kasası da LafPOS sayılır, föy çekimi, Kasa karşılaştırması ve satış listesi durur | `src/server/modpos/sync.ts:165` | düzeltildi (d5c9120) |
 | 6 | high | rapor | Gelir-gider: ciro, açık gün and month-note edits ignore the selected şube and always overwrite Tuzla's month row | `src/server/actions/pnl.ts:101` | düzeltildi (c55b5a2) |
 | 7 | high | rapor | Satışlar 'Ayı temizle' deletes every şube's sales list and manual ay bilgisi, not just the selected branch's | `src/server/actions/sales.ts:569` | düzeltildi (c55b5a2) |
-| 8 | high | arayuz | The stock count draft key leaves out the branch, so one branch's unsaved counts are offered on another branch's count and saved there | `src/app/panel/sayim/stock-form.tsx:1402` | açık |
+| 8 | high | arayuz | The stock count draft key leaves out the branch, so one branch's unsaved counts are offered on another branch's count and saved there | `src/app/panel/sayim/stock-form.tsx:1402` | düzeltildi (d5180bc) |
 | 9 | high | veri | Backups taken before 0053 (before 4 Nov 2026) cannot be restored: migration 0056 adds branch FKs while the branches table is still empty | `drizzle/0056_sube_kirilimi.sql:51` | düzeltildi (fe7cf05) |
-| 10 | medium | kontrol | Staff locked to one branch can still open and fill (and upload photos to) the other branch's checklist | `src/server/checklists/store.ts:472` | açık |
+| 10 | medium | kontrol | Staff locked to one branch can still open and fill (and upload photos to) the other branch's checklist | `src/server/checklists/store.ts:472` | düzeltildi (f587119) |
 | 11 | medium | sube | Nakit planı günlük satış: yeni açılan ya da eksik raporlu şubenin cirosu 28 güne yayılıyor (Tümü'de düşük tahmin) | `src/lib/cash-plan.ts:760` | düzeltildi (c55b5a2) |
 | 12 | medium | sube | Kasa raporu ve kasadan çıkan, formun gösterdiği şubeye değil gönderim anındaki çereze yazılıyor | `src/server/cash/report-store.ts:426` | düzeltildi (312ed98) |
-| 13 | medium | cikis | Zayi gün kilidi (wasteLock) şubeye bakmıyor: iki şube rapor girince dün personele hiç kapanmıyor, ya da başka şubenin raporu günü kapatıyor | `src/server/waste/core.ts:64` | açık |
-| 14 | medium | guvenlik | Staff locked to one branch can still edit, delete or view another branch's records by passing that record's ID | `src/server/cash-outs/guard.ts:47` | açık |
-| 15 | medium | bildirim | Snoozing a recurring personal reminder by an hour permanently moves the time of every later occurrence | `src/server/actions/user-reminders.ts:178` | açık |
-| 16 | medium | bildirim | Stock-count push and the morning e-mail's past-month count line only check Tuzla's count, never Marina's | `src/server/data/count-progress.ts:20` | açık |
-| 17 | medium | bildirim | Postponing a branch-specific recurring payment creates the one-off copy without its branch, so Marina's payment leaks into Tuzla's views | `src/server/actions/reminders.ts:441` | açık |
-| 18 | medium | bildirim | Manual e-mail paths (send now, preview, weekly preview and sample) use the admin's branch selection; the cron uses all branches | `src/server/weekly/collect.ts:304` | açık |
-| 19 | medium | maliyet | "Listede olmayanlar" (stock_extras) şubesiz: Marina'nın sayım formu Tuzla'nın ek kalemlerini gösterip üzerine yazıyor ya da siliyor | `src/server/data/dataset.ts:117` | açık |
-| 20 | medium | maliyet | Sayım sayfası hep şube kapsamıyla yükleniyor: Gelir-giderde elle yazılan devir ve açılış uyarıları (E-30) artık hiç görünmüyor | `src/app/panel/sayim/page.tsx:78` | açık |
+| 13 | medium | cikis | Zayi gün kilidi (wasteLock) şubeye bakmıyor: iki şube rapor girince dün personele hiç kapanmıyor, ya da başka şubenin raporu günü kapatıyor | `src/server/waste/core.ts:64` | düzeltildi (2bfbd2e) |
+| 14 | medium | guvenlik | Staff locked to one branch can still edit, delete or view another branch's records by passing that record's ID | `src/server/cash-outs/guard.ts:47` | düzeltildi (2622fca) |
+| 15 | medium | bildirim | Snoozing a recurring personal reminder by an hour permanently moves the time of every later occurrence | `src/server/actions/user-reminders.ts:178` | düzeltildi (76ed965) |
+| 16 | medium | bildirim | Stock-count push and the morning e-mail's past-month count line only check Tuzla's count, never Marina's | `src/server/data/count-progress.ts:20` | düzeltildi (76ed965) |
+| 17 | medium | bildirim | Postponing a branch-specific recurring payment creates the one-off copy without its branch, so Marina's payment leaks into Tuzla's views | `src/server/actions/reminders.ts:441` | düzeltildi (76ed965) |
+| 18 | medium | bildirim | Manual e-mail paths (send now, preview, weekly preview and sample) use the admin's branch selection; the cron uses all branches | `src/server/weekly/collect.ts:304` | düzeltildi (76ed965) |
+| 19 | medium | maliyet | "Listede olmayanlar" (stock_extras) şubesiz: Marina'nın sayım formu Tuzla'nın ek kalemlerini gösterip üzerine yazıyor ya da siliyor | `src/server/data/dataset.ts:117` | düzeltildi (d5180bc) |
+| 20 | medium | maliyet | Sayım sayfası hep şube kapsamıyla yükleniyor: Gelir-giderde elle yazılan devir ve açılış uyarıları (E-30) artık hiç görünmüyor | `src/app/panel/sayim/page.tsx:78` | düzeltildi (d5180bc) |
 | 21 | medium | rapor | A newly opened şube's first month is treated as 'kasa raporları ay ortasında başladı': ciro and açık gün are dropped in its branch view | `src/lib/cash-month.ts:232` | düzeltildi (c55b5a2) |
-| 22 | medium | arayuz | Branch picker deep-link (?sube=) adoption is keyed to the last adopted value, not the link, so links open the wrong branch or undo the user's choice | `src/components/panel/branch-picker.tsx:42` | açık |
-| 23 | medium | arayuz | The admin bell's 'Personel özel gün ekledi/düzeltti/sildi' row links to the deleted /panel/tahmin page (404) | `src/server/bell/kasa.ts:321` | açık |
-| 24 | medium | veri | stock_extras ('Listede olmayanlar') has no branch_id, so branches share and overwrite each other's month-end extra items | `src/server/db/schema.ts:814` | açık |
-| 25 | low | kontrol | Hourly staff e-mail reminders keep firing on a day the admin has marked 'Kafe kapalı' | `src/server/notify/checklist-alerts.ts:161` | açık |
+| 22 | medium | arayuz | Branch picker deep-link (?sube=) adoption is keyed to the last adopted value, not the link, so links open the wrong branch or undo the user's choice | `src/components/panel/branch-picker.tsx:42` | düzeltildi (5884cbc) |
+| 23 | medium | arayuz | The admin bell's 'Personel özel gün ekledi/düzeltti/sildi' row links to the deleted /panel/tahmin page (404) | `src/server/bell/kasa.ts:321` | düzeltildi (76ed965) |
+| 24 | medium | veri | stock_extras ('Listede olmayanlar') has no branch_id, so branches share and overwrite each other's month-end extra items | `src/server/db/schema.ts:814` | düzeltildi (d5180bc) |
+| 25 | low | kontrol | Hourly staff e-mail reminders keep firing on a day the admin has marked 'Kafe kapalı' | `src/server/notify/checklist-alerts.ts:161` | düzeltildi (f587119) |
 | 26 | low | sube | Bugün: laffogato.net kanalı seçiliyken yöneticinin kasa satırları online kanalı okuyor; Kasa sayfası ve zil Tuzla'yı gösteriyor | `src/server/data/today.ts:148` | düzeltildi (c55b5a2) |
 | 27 | low | sube | Genel bakış 'Yaklaşan ödemeler' kartı şube seçimini yok sayıyor; Bugün'deki aynı kart süzüyor | `src/app/panel/page.tsx:579` | düzeltildi (c55b5a2) |
-| 28 | low | cikis | Onaylar › Zayi kartlarının bağlamı isteğin şubesini yok sayıyor: Z ödenmez, rapor gönderildi mi ve kayıtlı ikram yanlış şubeden | `src/server/data/waste-requests.ts:253` | açık |
-| 29 | low | cikis | Kasadan çıkan ve fotoğraf kaldırma onay kartları şubeyi göstermiyor, 'Günü aç' bağlantısı şubesiz | `src/server/data/cash-out-requests.ts:198` | açık |
-| 30 | low | bildirim | Weekly summary counts short cash reports as days, so one day short at both branches reads as '2 gun eksik' | `src/lib/weekly/items.ts:154` | açık |
+| 28 | low | cikis | Onaylar › Zayi kartlarının bağlamı isteğin şubesini yok sayıyor: Z ödenmez, rapor gönderildi mi ve kayıtlı ikram yanlış şubeden | `src/server/data/waste-requests.ts:253` | düzeltildi (2bfbd2e) |
+| 29 | low | cikis | Kasadan çıkan ve fotoğraf kaldırma onay kartları şubeyi göstermiyor, 'Günü aç' bağlantısı şubesiz | `src/server/data/cash-out-requests.ts:198` | düzeltildi (2bfbd2e) |
+| 30 | low | bildirim | Weekly summary counts short cash reports as days, so one day short at both branches reads as '2 gun eksik' | `src/lib/weekly/items.ts:154` | düzeltildi (76ed965) |
 | 31 | low | fatura | A 'Kasadan' supplier payment made with 'Tümü' selected silently creates its cash line in Tuzla's till; the dialog never shows which branch's till it uses | `src/server/cari/entries.ts:249` | düzeltildi (17b64ff) |
 | 32 | low | maliyet | Ayarlar › Stok değerleme önizlemesi seçili şubenin sayımıyla hesaplanıyor; ayar ise işletme genelinin kâr-zararını değiştiriyor | `src/app/panel/ayarlar/page.tsx:395` | düzeltildi (9bc3f6c) |
 | 33 | low | pos | Karaoke eşitlemesi okunamayan (atlanan) rezervasyonu 'sitede silinmiş' sayıp panelden siliyor | `src/server/karaoke/sync.ts:223` | düzeltildi (d5c9120) |
 | 34 | low | arayuz | 'Kasaya işle' rows hidden on tap are not restored when the save fails with a network or stale error | `src/components/panel/pos-checklist.tsx:85` | düzeltildi (d5c9120) |
-| 35 | low | arayuz | Staff locked to a branch can open and fill another branch's checklist by URL | `src/app/panel/kontrol/[id]/page.tsx:56` | açık |
+| 35 | low | arayuz | Staff locked to a branch can open and fill another branch's checklist by URL | `src/app/panel/kontrol/[id]/page.tsx:56` | düzeltildi (f587119) |
+
+## Sonraki işler (düzeltmeler sırasında görülen, bulgu listesinde olmayan)
+
+| Konu | Yer | Not |
+|------|-----|-----|
+| Sayım kaydı şubeyi formdan değil çerezden alır | `src/app/panel/sayim/actions.ts` | #12'nin sayım karşılığı: başka sekmede şube değişince açık sayım formu öbür şubeye kaydedebilir (kasa formları artık kasasını taşıyor; `formTillBranch`) |
+| Şube seçici kaydedilmemiş sayımda sormadan geçer | `src/components/panel/branch-picker.tsx` | Taslak şube başına saklandığı için veri kaybolmaz (#8), yalnız uyarı yok |
+| Z fotoğrafı boyut denetimi iki şubenin 28 günlük toplamını karıştırır | `src/server/photo-read/read.ts` (`okcTypical`) | "Alışılmışın dışında" uyarısı Tümü toplamına göre; Z no karşılaştırması #1'de şubeye bağlandı |
+| Eski veritabanı testleri düşüyor (21 Kasım'dan önce de) | `tests/cari-db.test.ts` (2), `tests/ekim-sayimi.test.ts` (18) | `ekim-sayimi`: 0047'nin `ON CONFLICT ("month","ingredient_id")`'i 0056'dan beri eşleşen tekil dizin bulamıyor. Bu testler yalnız ortam değişkeniyle çalışır; `npm test`'te atlanır |
 
 ## Ayrıntı
 
