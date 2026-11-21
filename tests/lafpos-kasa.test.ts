@@ -207,9 +207,10 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   const dataset = read("src/server/data/dataset.ts");
   // Rapor sınaması tek yerden (isReportRow): üçüncü kaynak (ModPOS) rapor sanılmaz
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
-  // LafPOS'un günleriyle yalnız LafPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın LafPOS'unu beklemez)
-  assert.match(dataset, /const lafposReports = reportRows\.filter\(\(r\) => isLafposBranch\(r\.branchId\)\);/);
-  assert.match(dataset, /lastTillDay: lafposReports\.at\(-1\)\?\.date \?\? null,/);
+  // LafPOS'un günleriyle yalnız LafPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın LafPOS'unu beklemez).
+  // Birleşme mergeSales'te: hem görünümün satışı hem su litresinin "Tümü" satışı aynı kuralı kullanır (#4)
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId\)\);/);
+  assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 
 test("G6: kapalı işaretli gün yalnız satışlı LafPOS gün sonuyla 'rapor yok' olur; satışsız Z kapalı kalır", () => {

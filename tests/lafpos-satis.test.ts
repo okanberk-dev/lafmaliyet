@@ -328,7 +328,8 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
-  assert.match(dataset, /lastTillDay: lafposReports\.at\(-1\)\?\.date \?\? null/);
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId\)\);/);
+  assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
   // Görünümün geçiş günü: ModPOS'ta kalan şube seçiliyken yok (denetim 21 Kasım #5)
   assert.match(dataset, /const settings = \{ \.\.\.storedSettings, lafposGecisGunu: scopeSwitchDay\(storedSettings\.lafposGecisGunu, scope\) \};/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
