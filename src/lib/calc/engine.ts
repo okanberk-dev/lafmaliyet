@@ -1536,7 +1536,12 @@ export function createModel(ds: Dataset) {
   // Sayım şube başınadır (docs/SUBE.md): "Tümü"de aynı ayın aynı malzemesi her şubeden bir satır gelir ve işletmenin
   // stoğu toplamıdır. Çarpanlar farklıysa (birimi sayımlar arasında değişmiş) ilk satırın birimine çevrilerek toplanır
   const countsByMonth = new Map<string, Map<number, { qty: number; factor: number | null }>>();
+  // Ayın malzemesini sayan şubeler: iki ayın sayımı aynı şubelerden değilse karşılaştırılamaz (tutarlılık)
+  const countBranchesByMonth = new Map<string, Map<number, Set<string>>>();
   for (const c of ds.stockCounts) {
+    const bm = countBranchesByMonth.get(c.month) ?? new Map<number, Set<string>>();
+    bm.set(c.ingredientId, (bm.get(c.ingredientId) ?? new Set<string>()).add(c.branchId ?? ""));
+    countBranchesByMonth.set(c.month, bm);
     const m = countsByMonth.get(c.month) ?? new Map<number, { qty: number; factor: number | null }>();
     const prev = m.get(c.ingredientId);
     const factor = c.factor ?? null;
@@ -1569,6 +1574,17 @@ export function createModel(ds: Dataset) {
    * Kayıtlı sayımın malzemenin kendi birimindeki miktarı (ör. 2,5 KG → 2500 gr), sayıldığı andaki çarpanla.
    * Sayım yoksa null.
    */
+  /**
+   * İki ayın sayımı aynı şubelerden mi (tutarlılığın açılışı ile kapanışı karşılaştırılabilir mi): "Tümü"de bir ay yalnız
+   * Tuzla, sonraki ay Tuzla + Marina saydıysa açılış Tuzla, kapanış iki şube olur ve fark tüketim değildir. İkisinden
+   * biri sayılmamışsa false
+   */
+  function sameCountBranches(monthA: string, monthB: string, ingredientId: number): boolean {
+    const a = countBranchesByMonth.get(monthA)?.get(ingredientId);
+    const b = countBranchesByMonth.get(monthB)?.get(ingredientId);
+    return Boolean(a && b && a.size === b.size && [...a].every((x) => b.has(x)));
+  }
+
   function countInBaseUnit(month: string, ingredientId: number): number | null {
     const c = countsByMonth.get(month)?.get(ingredientId);
     if (!c) return null;
@@ -2559,6 +2575,7 @@ export function createModel(ds: Dataset) {
     /** Sayımın birim fiyatı: ayın sonunda geçerli fiyat (kapanmış ay sonraki zamla değişmez); FIFO'da fallback */
     unitCostAtMonthEnd,
     countInBaseUnit,
+    sameCountBranches,
     closingStock,
     /** Ayın reçeteye göre mal tüketimi (mal maliyetinin tahmini ve sayım aralığı dağıtımının ağırlığı) */
     cogsConsumption,

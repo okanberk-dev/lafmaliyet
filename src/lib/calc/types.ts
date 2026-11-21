@@ -381,6 +381,8 @@ export interface StockCount {
   qty: number;
   /** Sayıldığı andaki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1). Yoksa malzemenin bugünkü sayım birimi kullanılır. */
   factor?: number | null;
+  /** Sayan şube (sayım şube başınadır; "Tümü"de aynı malzemenin her şubeden satırı gelir). Yoksa tek şube */
+  branchId?: string | null;
 }
 
 export interface StockExtra {
