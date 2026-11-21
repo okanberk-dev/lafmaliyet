@@ -11,6 +11,12 @@ Bir kez · Her gün · Her hafta · Her ay. "Tamamlandı" işaretlenince tekrar 
 (bugünü geçene kadar), tek seferlik kapanır. Haftalıkta çapanın haftanın günü, aylıkta ayın günü korunur
 (31 Ocak → 28 Şubat → 31 Mart).
 
+Ertelemek (**1 saat sonra hatırlat**, **ertesi gün**) yalnız o dönemi kaydırır; serinin günü ve saati
+(`anchor_date`, `anchor_time`) değişmez. 09:00'daki günlük hatırlatma 09:02'de bir saat ertelenip 10:06'da
+"Yaptım" denince ertesi gün yine 09:00'da çalar (`completeTarget`). Önceden erteleme saati serinin saati oluyordu ve
+her ertelemeyle seri bir saat daha kayıyordu (denetim 21 Kasım #15). Saati formdan değiştirmek serinin saatini de
+değiştirir; ertelenmiş dönemin formunu yalnız başlığı ya da notu için kaydetmek değiştirmez (`anchorTimeOnEdit`).
+
 ## Bilgisayarda ses (4 Kasım 2026)
 
 Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı başına seçilir:

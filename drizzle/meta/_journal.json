@@ -421,6 +421,13 @@
       "when": 1795258806776,
       "tag": "0059_stok_ek_kalem_subesi",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1795261207041,
+      "tag": "0060_hatirlatici_saat_capasi",
+      "breakpoints": true
     }
   ]
 }

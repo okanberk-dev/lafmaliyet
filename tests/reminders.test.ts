@@ -299,6 +299,11 @@ test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü k
   assert.match(postpone, /set\(\{ dueDate: target, anchorDate: target, note: postponeNote\(r\.note, r\.dueDate\) \}\)/);
   // "Geri al" ertelemenin yazdığı notu da geri alır
   assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*note: r\.note/);
+  // Denetim 21 Kasım #17: tekrar edenin ertelenen kopyası serinin şubesinde kalır (Marina'nın kirası Tuzla'ya düşmez);
+  // kopya ile serinin şube dışındaki alanları da aynı
+  const copy = postpone.slice(postpone.indexOf(".insert(s.reminders)"), postpone.indexOf(".returning("));
+  assert.match(copy, /branchId: r\.branchId,/);
+  for (const f of ["title", "kind", "amount", "remindDaysBefore"]) assert.match(copy, new RegExp(`${f}: r\\.${f},`), f);
   const restore = src.slice(src.indexOf("export async function restoreReminder"), src.indexOf("export async function undoRecentPaid"));
   assert.match(restore, /snap\.note !== undefined \? \{ note: snap\.note \}/);
 });

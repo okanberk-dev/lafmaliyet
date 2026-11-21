@@ -18,6 +18,7 @@ import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
+import { withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
@@ -244,8 +245,17 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
  * günlük işlerin sorunları (dünkü sabah işi, bu sabahki Paraşüt işi) tek iletide. Hiçbiri yoksa e-posta gitmez.
  * `syncedToday`: sabah işi bugün Paraşüt eşitlemesinin yapıldığını biliyorsa (verilmezse sorulur). `sendDeadlineAt`:
  * sabah işinin gönderim sınırı (jobStart + 48 sn, src/server/jobs/capped.ts); elle gönderimde yok (bugünkü gibi).
+ *
+ * E-posta işletmenin tamamı içindir (docs/SUBE.md › Neyi süzer): bütün okumalar seçiciden bağımsız "Tümü"yle
+ * (`withBranchScope`). Sabah işinde şube seçimi yoktur; "Bugünküleri şimdi gönder" ise yöneticinin seçimiyle okuyordu:
+ * Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor, `prices:` kaydı da sabah işinin
+ * işletme geneli rakamı göndermesini engelliyordu (denetim 21 Kasım #18).
  */
 export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number } = {}): Promise<DigestResult> {
+  return withBranchScope(ALL_BRANCHES, () => sendReminderDigest(trigger, ctx));
+}
+
+async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
   const { today, settings, items } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };

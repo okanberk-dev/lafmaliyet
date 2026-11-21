@@ -7,6 +7,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
 export { invoiceLayer, layerText } from "@/lib/calc/fifo";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
@@ -819,6 +820,62 @@ export function pastCountReminder(day: string, prev: { counted: number; total: n
     body: `Kalanların stoğu 0 sayılır; ${label} mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.`,
     href: `/panel/sayim?ay=${month}`,
   };
+}
+
+// ---------------------------------------------------------------- Şube şube sayım (denetim 21 Kasım #16)
+
+/** Bir şubenin bir aydaki sayım ilerlemesi (src/server/data/count-progress.ts countProgressByBranch) */
+export interface BranchCount {
+  id: string;
+  name: string;
+  progress: { counted: number; total: number };
+}
+
+/**
+ * Seçiciden bağımsız okuyan sabah e-postası ve ay sonu bildirimi şubenin sayımına götürür: sayım şube başınadır
+ * (docs/SUBE.md), birden çok şube açıkken (`named`) metin şubenin adını, adres `&sube=`'yi taşır (seçici o şubeyi
+ * seçer, sayım o şubenin). Tek şubede metin ve adres bugünkü gibi (ek yok).
+ */
+const branchHref = (href: string, id: string) => `${href}&sube=${encodeURIComponent(id)}`;
+
+/** Ay sonu bildirimi ve şubesi (tek şubede null: herkese) */
+export type BranchCountPush = { branchId: string | null; push: NonNullable<ReturnType<typeof monthEndCountPush>> };
+
+/**
+ * Ay sonu bildirimleri şube şube (src/server/notify/count-push.ts): sayımı tamamlanmayan her şubeye bir bildirim.
+ * `branchId` birden çok şube açıkken bildirimin şubesidir (alıcılar `countPushReaches`); tek şubede null (herkese,
+ * bugünkü gibi). Başlık şubenin adını taşır, etiket şubeye göre ayrılır: iki şubenin bildirimi birbirinin yerine geçmez.
+ */
+export function monthEndCountPushes(day: string, counts: readonly BranchCount[], named: boolean): BranchCountPush[] {
+  return counts.flatMap((b): BranchCountPush[] => {
+    const push = monthEndCountPush(day, b.progress);
+    if (!push) return [];
+    if (!named) return [{ branchId: null, push }];
+    return [{ branchId: b.id, push: { ...push, title: `${push.title} · ${b.name}`, url: branchHref(push.url, b.id), tag: `${push.tag}-${b.id}` } }];
+  });
+}
+
+/**
+ * Şubenin ay sonu bildirimini kim alır: şubesi olmayan (yönetici, "Bütün şubeler" personeli), o şubenin personeli ve
+ * şubesi kapanmış (kilidi kalkmış) personel. Başka açık şubenin personeline gitmez (docs/SUBE.md › Personel hesabının
+ * şubesi).
+ */
+export function countPushReaches(userBranch: string | null, branchId: string, open: readonly string[]): boolean {
+  return userBranch === null || userBranch === branchId || !open.includes(userBranch);
+}
+
+/**
+ * Geçen ayın sayımı şube şube (sabah e-postasının satırı, src/server/bell/ops.ts pastCountDigestLines): tamamlanmayan
+ * her şubenin satırı. Birden çok şube açıkken başlığın önünde şubenin adı ("Marina: Ekim 2026 sayımı yarım: 10 / 72"),
+ * adreste `&sube=`; kimlik Tuzla'da bugünkü gibi, öteki şubede sonunda şubesi.
+ */
+export function pastCountReminders(day: string, counts: readonly BranchCount[], named: boolean): NonNullable<ReturnType<typeof pastCountReminder>>[] {
+  return counts.flatMap((b) => {
+    const r = pastCountReminder(day, b.progress);
+    if (!r) return [];
+    if (!named) return [r];
+    return [{ id: b.id === DEFAULT_BRANCH_ID ? r.id : `${r.id}-${b.id}`, title: `${b.name}: ${r.title}`, body: r.body, href: branchHref(r.href, b.id) }];
+  });
 }
 
 // ---------------------------------------------------------------- Yöneticiye sayım uyarıları (denetim B02)

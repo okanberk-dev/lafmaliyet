@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, eq, gte, inArray } from "drizzle-orm";
 
+import { ALL_BRANCHES } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { consistency, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -17,6 +18,7 @@ import { addDays, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel } from "@/lib/waste";
 import { parseWeeklyHistory, selectItems, weekInfo, WEEKLY_HISTORY_KEY, type WeekInfo, type WeeklyItem, type WeeklySource, type WeeklySummary } from "@/lib/weekly/core";
 import { cashItem, checklistDayOf, checklistItem, commissionItems, karaokeItem, kasaItem, posPriceItem, salesLine, stockItem, wasteCost, wasteItem, zamItem, type KomisyonCand } from "@/lib/weekly/items";
+import { withBranchScope } from "@/server/branch-scope";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { cashReportPhotoInfo } from "@/server/data/cash-photos";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, type CashReportDTO } from "@/server/data/cash-reports";
@@ -120,8 +122,12 @@ const kasa: Collector = {
       });
     const [carry, late, photo] = await Promise.all([
       // Açılış ↔ devir zinciri pencerenin raporlarıyla (geçen haftanın ilk günü önceki haftanın son raporuna bakar), şube
-      // şube: iki şubenin raporları birlikteyken Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz
-      quiet(Promise.resolve().then(() => [...carryChecksByBranch(reports, () => null).values()].filter((c) => inLastWeek(ctx.week, c.date)).length), "devir"),
+      // şube: iki şubenin raporları birlikteyken Marina'nın açılışı Tuzla'nın deviriyle karşılaştırılmaz. Madde "N gün"
+      // der: iki şubenin aynı günkü tutmazlığı bir gün (kasaItem'in eksik günleri gibi; denetim 21 Kasım #30)
+      quiet(
+        Promise.resolve().then(() => new Set([...carryChecksByBranch(reports, () => null).values()].filter((c) => inLastWeek(ctx.week, c.date)).map((c) => c.date)).size),
+        "devir",
+      ),
       quiet(
         cashRevisionsFor(last.filter((r) => r.revision > 1).map((r) => r.id)).then(
           (revs) => last.filter((r) => r.revision > 1 && historyOf(r, revs.filter((x) => x.reportId === r.id)).entries.some((e) => e.late)).length,
@@ -291,6 +297,12 @@ const TIMEOUT = Symbol("süre doldu");
  * Bütün kaynaklar aynı anda, her biri en çok min(kendi sınırı, `budgetMs`). Süresi dolan ya da hata veren madde
  * kaynağı `failed`'a girer (günlüğe yazılır); satır kaynağı yalnız satırını düşürür. Geç kalan sorgu arka planda biter,
  * beklenmez. `ran`: madde kaynağı sayısı.
+ *
+ * Özet işletmenin tamamı içindir (docs/SUBE.md › Ödemeler: haftalık özet işletme geneli): kaynaklar seçiciden bağımsız
+ * "Tümü"yle okur (`withBranchScope`). Pazartesi işinde şube seçimi yoktur; "Haftalık özeti önizle" ve "Örneği bana
+ * gönder" ise yöneticinin seçimiyle okuyordu: Marina seçiliyken nakit planı Marina'nın cirosuyla işletmenin bütün
+ * ödemelerini karşılaştırıp "para yetmeyebilir" diyebiliyor, kasa maddesi yalnız Marina'yı sayıyordu (denetim 21 Kasım
+ * #18).
  */
 export async function collectWeekly(now: Date, o: { budgetMs: number }): Promise<{ week: WeekInfo; items: WeeklyItem[]; lines: string[]; failed: WeeklySource[]; ran: number }> {
   const today = businessDate(now);
@@ -305,17 +317,19 @@ export async function collectWeekly(now: Date, o: { budgetMs: number }): Promise
     cashWeeks: () => (cashP ??= cashReportsBetween(addDays(week.lastFrom, -28), week.lastTo)),
   };
   const budget = Math.max(0, o.budgetMs);
-  const results = await Promise.all(
-    COLLECTORS.map(async (c) => {
-      try {
-        const r = await capped<CollectResult | typeof TIMEOUT>(Promise.resolve().then(() => c.run(ctx)), Math.min(c.timeoutMs, budget), TIMEOUT);
-        if (r === TIMEOUT) console.error("[haftalik]", c.source, `${Math.min(c.timeoutMs, budget) / 1000} sn içinde okunamadı`);
-        return r === TIMEOUT ? null : r;
-      } catch (e) {
-        console.error("[haftalik]", c.source, e);
-        return null;
-      }
-    }),
+  const results = await withBranchScope(ALL_BRANCHES, () =>
+    Promise.all(
+      COLLECTORS.map(async (c) => {
+        try {
+          const r = await capped<CollectResult | typeof TIMEOUT>(Promise.resolve().then(() => c.run(ctx)), Math.min(c.timeoutMs, budget), TIMEOUT);
+          if (r === TIMEOUT) console.error("[haftalik]", c.source, `${Math.min(c.timeoutMs, budget) / 1000} sn içinde okunamadı`);
+          return r === TIMEOUT ? null : r;
+        } catch (e) {
+          console.error("[haftalik]", c.source, e);
+          return null;
+        }
+      }),
+    ),
   );
   const items: WeeklyItem[] = [];
   const lines: string[] = [];

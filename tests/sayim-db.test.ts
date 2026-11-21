@@ -268,4 +268,41 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     const ex = await extras.saveStaffStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 2 }]);
     assert.equal(ex.ok, true);
   });
+
+  // Denetim 21 Kasım #16: günlük işte şube seçimi yok; sabah e-postası ve ay sonu bildirimi her şubenin sayımına bakar
+  test("sayım şube şube: Tuzla tamam, Marina sayılmadı; e-posta satırı ve ay sonu bildirimi Marina'yı görür", async () => {
+    const { countProgressByBranch } = await import("../src/server/data/count-progress");
+    const { pastCountDigestLines } = await import("../src/server/bell/ops");
+    const { pushMonthEndCount } = await import("../src/server/notify/count-push");
+    // İstek dışında (günlük iş) tek okuma Tuzla'yı görür: Ekim tamam
+    assert.deepEqual(await countProgress("2026-10"), { counted: 1, total: 1 });
+    assert.deepEqual(await countProgressByBranch("2026-10"), {
+      named: true,
+      open: ["tuzla", "marina"],
+      counts: [
+        { id: "tuzla", name: "Tuzla", progress: { counted: 1, total: 1 } },
+        { id: "marina", name: "Marina", progress: { counted: 0, total: 1 } },
+      ],
+    });
+    assert.deepEqual(await pastCountDigestLines(new Date("2026-11-03T09:00:00Z")), {
+      lines: [{ text: "Marina: Ekim 2026 sayımı girilmedi. Kalanların stoğu 0 sayılır; Ekim 2026 mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.", tone: "warn" }],
+      href: "/panel/sayim?ay=2026-10&sube=marina",
+    });
+    // Ayın son günü: Marina yarım, bildirim gider (abonelik yok, sayı 0); ikisi de tamamsa gitmez
+    assert.deepEqual(await pushMonthEndCount(new Date("2026-10-31T09:00:00Z")), { status: "sent", sent: 0, failed: 0 });
+    await db.insert(s.stockCounts).values({ month: "2026-10", branchId: "marina", ingredientId: milk, qty: 12, factor: 1000, countedBy: "Selin" });
+    assert.deepEqual(await pastCountDigestLines(new Date("2026-11-03T09:00:00Z")), { lines: [], href: null });
+    assert.deepEqual(await pushMonthEndCount(new Date("2026-10-31T09:00:00Z")), { status: "skip", sent: 0, failed: 0 });
+    // Ekim'den sonra açılan şube Ekim'i saymaz (satırı yok); ad yine yazılır (iki şube açık)
+    await db.delete(s.stockCounts).where(eq(s.stockCounts.branchId, "marina"));
+    await db.update(s.branches).set({ openedOn: "2026-11-04" }).where(eq(s.branches.id, "marina"));
+    try {
+      const october = await countProgressByBranch("2026-10");
+      assert.deepEqual(october.counts.map((c) => c.id), ["tuzla"]);
+      assert.equal(october.named, true);
+      assert.deepEqual((await countProgressByBranch("2026-11")).counts.map((c) => c.id), ["tuzla", "marina"]);
+    } finally {
+      await db.update(s.branches).set({ openedOn: null }).where(eq(s.branches.id, "marina"));
+    }
+  });
 });

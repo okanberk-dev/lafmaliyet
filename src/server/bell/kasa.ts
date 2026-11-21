@@ -309,7 +309,9 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
         group: "onay",
       });
     }
-    // Bilgi: kapalı işaret kanıtla kalktı, kapalı aralığa rapor girildi; personel özel gün ekledi / düzeltti / sildi
+    // Bilgi: kapalı işaret kanıtla kalktı, kapalı aralığa rapor girildi; personel özel gün ekledi / düzeltti / sildi.
+    // Özel günler Kafe › Özel günler'de (/panel/ozel-gunler; /panel/tahmin satış tahminiyle 4 Kasım 2026'da kalktı,
+    // eski adres 404 veriyordu: denetim 21 Kasım #23)
     for (const r of info) {
       const verb = r.action === "Özel gün" ? "ekledi" : r.action === "Özel gün güncellendi" ? "düzeltti" : r.action === "Özel gün silindi" ? "sildi" : null;
       out.push({
@@ -319,7 +321,7 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
         body: r.detail ?? "",
         timeLabel: todayTR(r.at) === todayTR(now) ? "Bugün" : dateTR(todayTR(r.at)),
         unread: true,
-        href: verb ? "/panel/tahmin#ozel-gunler" : "/panel/kasa",
+        href: verb ? "/panel/ozel-gunler#ozel-gunler" : "/panel/kasa",
         group: "uyari",
       });
     }

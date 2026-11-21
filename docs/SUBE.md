@@ -94,6 +94,14 @@ nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin 
 (panelin yedeği) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir; denetim 21 Kasım
 #32). Para ve beyan işletmenindir.
 
+**E-postalar** da işletme genelidir ve elle tetiklenen yolları sabah işiyle aynı hesaplar: sabah e-postası (önizleme ve
+"Bugünküleri şimdi gönder" dahil, `runReminderDigest`) ile haftalık özet (önizleme ve örnek dahil, `collectWeekly`)
+`withBranchScope(ALL_BRANCHES, …)` içinde okur. Önceden yöneticinin elle bastığı düğmeler soldaki seçimi okuyordu:
+Marina seçiliyken zam etkisi Marina'nın satışıyla gidiyor, haftalık önizlemenin nakit planı Marina'nın cirosuyla
+işletmenin bütün ödemelerini karşılaştırıyordu (denetim 21 Kasım #18). Şube başına olan sayım bu e-postalarda ve ay
+sonu bildiriminde **şube şube** okunur (`countProgressByBranch`: her açık şube kendi kapsamında; birden çok şube
+açıkken metin şubenin adını yazar, denetim 21 Kasım #16).
+
 Süzülmeyen: **bütünlük denetimleri**. "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
 şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynı şekilde "bu POS adı
 ModPOS döneminden mi" sorusu da işletme genelidir. Ortak veriler (menü, reçete, hammadde, tedarikçi) hiç süzülmez.
@@ -240,6 +248,7 @@ geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
 | Ödemeler listesi, Bugün, zil, Genel bakış'ın "Yaklaşan ödemeler" kartı ve gecikme satırı | Tek şube seçiliyken **o şubenin ve işletme genelinin** hatırlatıcıları; "Tümü"nde hepsi, şubeye ait olanın başlığında şubesi ("Kira · Marina") |
 | Yeni hatırlatıcı | Formdaki **Şube**; varsayılanı seçili fiziksel şube, "Tümü"nde işletme geneli |
 | Sabit giderden ekle | Kalemin şubesi (Marina'nın kirası Marina'nın ödemesi) |
+| Ertele (tekrar eden) | Ertelenen dönemin tek seferlik kopyası serinin şubesinde kalır; önceden kopya işletme geneli iniyor, Marina'nın kirası Tuzla'nın Ödemeler'inde görünüyordu (denetim 21 Kasım #17) |
 | Ödenmemiş faturalar ve cari | İşletme geneli (mal alımı şubeye bölünmez), her görünümde |
 | Sabah e-postası, Nakit planı, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır) |
 

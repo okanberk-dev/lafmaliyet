@@ -729,3 +729,38 @@ test("kasa cirosu satırı: iki şubenin aynı günkü raporları bir raporlu g�
   const two = ["2026-10-19", "2026-10-20"].flatMap((d) => [rep(d, 0, 1_000), rep(d, 0, 2_000)]);
   assert.equal(salesLine({ week: W44, reports: two }), `Geçen hafta kasa cirosu 6.000${NB}₺ (2 gün raporlu)`);
 });
+
+// Denetim 21 Kasım #30: "N gün eksik / fazla" gündür, rapor değil; iki şubenin aynı günkü eksiği tek gün
+test("kasa: iki şubenin aynı günkü eksiği tek gün (tutarı toplam), en çok eksik gün şubelerin toplamıyla", () => {
+  const none = { carryMismatch: 0, lateEdits: 0, photoDiffs: 0 };
+  // Tuzla 300, Marina 340 eksik, aynı gün: tek günün başlığı, "en çok" yok
+  const one = kasaItem({ week: W44, reports: [rep("2026-10-20", -300), rep("2026-10-20", -340)], ...none })!;
+  assert.equal(one.title, `20 Ekim Salı kasası 640${NB}₺ eksik`);
+  assert.equal(one.detail, null);
+  assert.equal(one.tl, 640);
+  // İki gün: 20 Ekim iki şubede (300 + 340), 23 Ekim tek şubede 500; en çok eksik gün şubelerin toplamıyla 20 Ekim
+  const two = kasaItem({ week: W44, reports: [rep("2026-10-20", -300), rep("2026-10-20", -340), rep("2026-10-23", -500)], ...none })!;
+  assert.equal(two.title, `Kasa geçen hafta 2 gün eksik: toplam 1.140${NB}₺`);
+  assert.equal(two.detail, `En çok 20 Ekim Salı: 640${NB}₺`);
+  // Fazla günler de tekil: aynı gün iki şubede fazla bir gün (tutarı toplam)
+  const over = kasaItem({ week: W44, reports: [rep("2026-10-20", -640), rep("2026-10-24", 50), rep("2026-10-24", 30)], ...none })!;
+  assert.equal(over.detail, `1 gün fazla: 80${NB}₺`);
+  // Bir şubenin fazlası öbürünün aynı günkü eksiğini kapatmaz (kasalar ayrı)
+  const mixed = kasaItem({ week: W44, reports: [rep("2026-10-20", -640), rep("2026-10-20", 600)], ...none })!;
+  assert.equal(mixed.title, `20 Ekim Salı kasası 640${NB}₺ eksik`);
+  assert.equal(mixed.detail, `1 gün fazla: 600${NB}₺`);
+  // Devir tutmazlığı da gün: toplayan iki şubenin aynı günkünü bir sayar (collect.ts)
+  const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
+  assert.match(collect, /new Set\(\[\.\.\.carryChecksByBranch\(reports, \(\) => null\)\.values\(\)\]\.filter\(\(c\) => inLastWeek\(ctx\.week, c\.date\)\)\.map\(\(c\) => c\.date\)\)\.size/);
+});
+
+// Denetim 21 Kasım #18: önizleme ve örnek, pazartesi işi gibi seçiciden bağımsız "Tümü"yle okur
+test("haftalık özetin kaynakları seçiciden bağımsız: bütün toplayıcılar Tümü kapsamında", () => {
+  const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
+  const body = collect.slice(collect.indexOf("export async function collectWeekly"), collect.indexOf("export async function buildWeekly"));
+  assert.match(body, /const results = await withBranchScope\(ALL_BRANCHES, \(\) =>\s+Promise\.all\(\s+COLLECTORS\.map\(/);
+  // Önizleme ve örnek de collectWeekly'den geçer (kendi okuması yok)
+  assert.match(readFileSync(join(process.cwd(), "src/server/actions/weekly.ts"), "utf8"), /await buildWeekly\(new Date\(\), \{ budgetMs: 6_000 \}\)/);
+  const send = readFileSync(join(process.cwd(), "src/server/weekly/send.ts"), "utf8");
+  assert.equal(send.match(/await buildWeekly\(/g)?.length, 2);
+});

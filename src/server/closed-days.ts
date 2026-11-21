@@ -234,7 +234,7 @@ export async function onReportSaved(tx: Tx, date: string, now = new Date()): Pro
     .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), eq(s.staffRequests.day, date)));
   for (const row of await coveringRows(tx, date)) {
     if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, "kasa raporu girildi", now);
-    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Satış tahmini › Özel günler'den aralığı düzeltin`);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Kafe › Özel günler'den aralığı düzeltin`);
   }
 }
 
@@ -261,7 +261,7 @@ export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "z
   for (const row of await coveringRows(tx, date)) {
     if (soldSince && row.createdAt >= soldSince) continue;
     if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, why, now);
-    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Satış tahmini › Özel günler'den aralığı düzeltin`);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} günü için ${why}; Kafe › Özel günler'den aralığı düzeltin`);
   }
 }
 
@@ -290,7 +290,7 @@ export async function onNextReport(tx: Tx, report: { date: string; branchId: str
   if (gap?.level === "red") {
     for (const row of rows) {
       if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, `Z no boşluğu: ${gap.text}`, now);
-      else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Satış tahmini › Özel günler'den aralığı düzeltin`);
+      else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Kafe › Özel günler'den aralığı düzeltin`);
     }
     return;
   }

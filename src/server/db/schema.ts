@@ -1156,6 +1156,13 @@ export const userReminders = pgTable(
     dueTime: text("due_time"),
     /** Aylık tekrarın günü (31 Ocak → 28 Şubat → 31 Mart) */
     anchorDate: text("anchor_date").notNull(),
+    /**
+     * Tekrarın saati ("HH:MM"; saatsizse boş): "1 saat sonra hatırlat" yalnız bu dönemin `dueTime`'ını kaydırır,
+     * "Yaptım" sıradaki döneme bu saatle geçer. Önceden erteleme saati serinin saati oluyordu: 09:00'daki günlük
+     * hatırlatma bir kez ertelenince her gün 10:05'te çalıyordu (denetim 21 Kasım #15). Eski satırlar `due_time` ile
+     * dolduruldu (migration 0059)
+     */
+    anchorTime: text("anchor_time"),
     repeat: text("repeat", { enum: ["none", "daily", "weekly", "monthly"] }).notNull().default("none"),
     /**
      * Bilgisayarda çalan uyarı (4 Kasım 2026): "tek" bugünkü davranış (bir zil), "surekli" durdurulana kadar

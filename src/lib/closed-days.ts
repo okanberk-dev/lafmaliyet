@@ -219,7 +219,7 @@ export type ClosedDayPayloadT = z.output<typeof ClosedDayPayload>;
 
 /** İsteğin başlığı (tutarsız): "23 Ekim kapalı gün" */
 export const closedTitle = (date: string) => `${dayMonthTR(date)} kapalı gün`;
-/** Kapalı satırının adı (Satış tahmini › Özel günler) */
+/** Kapalı satırının adı (Kafe › Özel günler) */
 export const closedSpecialTitle = (reason: string | null) => (reason?.trim() ? reason.trim().slice(0, 60) : "Kafe kapalı");
 
 export const CLOSED_TEXT = {

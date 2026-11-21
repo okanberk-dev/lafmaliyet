@@ -69,6 +69,26 @@ export function afterComplete(r: UserReminderLike, today: string): string | null
   return next;
 }
 
+/**
+ * "Tamamlandı"nın yazacağı: tekrar eden sıradaki döneme (afterComplete) serinin saatiyle geçer, tek seferlikte null
+ * (kapanır). "1 saat sonra hatırlat" yalnız o dönemin saatini kaydırır; seri kendi saatine (`anchorTime`) döner.
+ * Önceden erteleme saati serinin saati oluyordu: 09:00'daki günlük hatırlatma 09:02'de bir kez ertelenip yapılınca her
+ * gün 10:05'te çalıyordu (denetim 21 Kasım #15). Saat çapası boş satırda (migration 0059 eskileri doldurdu; panel
+ * dışından yazılmış kayıt) bugünkü saat kalır.
+ */
+export function completeTarget(r: UserReminderLike & { anchorTime: string | null }, today: string): { dueDate: string; dueTime: string | null } | null {
+  const next = afterComplete(r, today);
+  return next ? { dueDate: next, dueTime: r.anchorTime ?? r.dueTime } : null;
+}
+
+/**
+ * Düzenlemede serinin saati: saat elle değiştiyse yeni saat; değişmediyse eskisi kalır. Ertelenmiş dönemin formu
+ * (saat alanında erteleme saati) yalnız başlığı düzeltilip kaydedilince erteleme saati serinin saati olmasın.
+ */
+export function anchorTimeOnEdit(prev: { dueTime: string | null; anchorTime: string | null }, dueTime: string | null): string | null {
+  return prev.dueTime !== dueTime ? dueTime : (prev.anchorTime ?? dueTime);
+}
+
 /** Saatli hatırlatmanın anı (epoch ms); saatsizse null */
 export function dueInstant(r: Pick<UserReminderLike, "dueDate" | "dueTime">): number | null {
   if (!isTime(r.dueTime)) return null;
@@ -87,7 +107,8 @@ export type PostponeBy = "hour" | "day";
 
 /**
  * Ertele: "hour" bir saat sonrası (saat geçmişse şimdiden, 5 dakikaya yuvarlanır); "day" ertesi gün aynı saatte
- * (gecikmişse yarın). Tekrarın çapası değişmez; sıradaki dönem çapaya göre hesaplanır.
+ * (gecikmişse yarın). Yalnız bu dönem kayar: tekrarın çapası (gün ve saat) değişmez; sıradaki dönem çapaya göre
+ * hesaplanır ve serinin saatiyle gelir (`completeTarget`).
  */
 export function postponeTarget(r: Pick<UserReminderLike, "dueDate" | "dueTime">, by: PostponeBy, now: Date): { dueDate: string; dueTime: string | null } {
   const today = todayTR(now);

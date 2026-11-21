@@ -10,6 +10,8 @@ import { test } from "node:test";
 import { alarmRinging, startAlarm, stopAlarm } from "../src/components/panel/live/sounds";
 import {
   afterComplete,
+  anchorTimeOnEdit,
+  completeTarget,
   dueGroup,
   dueInstant,
   isTime,
@@ -71,6 +73,58 @@ test("ertele: bir saat (5 dakikaya yuvarlı, geçmişse şimdiden), ertesi gün 
   assert.deepEqual(postponeTarget({ dueDate: "2026-10-21", dueTime: "23:30" }, "hour", tr("2026-10-21 23:31")), { dueDate: "2026-10-22", dueTime: "00:35" });
   assert.deepEqual(postponeTarget({ dueDate: "2026-10-18", dueTime: "09:00" }, "day", now), { dueDate: "2026-10-22", dueTime: "09:00" });
   assert.deepEqual(postponeTarget({ dueDate: "2026-10-25", dueTime: null }, "day", now), { dueDate: "2026-10-26", dueTime: null });
+});
+
+// Denetim 21 Kasım #15: "1 saat sonra hatırlat" yalnız o dönemi kaydırır; seri kendi saatine döner
+test("ertelenen tekrar eden hatırlatma: Yaptım sıradaki döneme serinin saatiyle geçer", () => {
+  const seri = { dueDate: "2026-11-21", dueTime: "09:00", anchorDate: "2026-11-21", anchorTime: "09:00", repeat: "daily" as const };
+  // 09:02'de bir saat ertelenir: yalnız bugünkü dönemin saati
+  const ertelendi = { ...seri, ...postponeTarget(seri, "hour", tr("2026-11-21 09:02")) };
+  assert.deepEqual({ dueDate: ertelendi.dueDate, dueTime: ertelendi.dueTime }, { dueDate: "2026-11-21", dueTime: "10:05" });
+  // 10:06'da Yaptım: yarın yine 09:00 (önceden 10:05'te kalıyordu)
+  assert.deepEqual(completeTarget(ertelendi, "2026-11-21"), { dueDate: "2026-11-22", dueTime: "09:00" });
+  // Gece yarısını geçen erteleme (23:30 → 00:35) de seriyi kaydırmaz
+  const gece = { ...seri, dueTime: "23:30", anchorTime: "23:30" };
+  const gecti = { ...gece, ...postponeTarget(gece, "hour", tr("2026-11-21 23:31")) };
+  assert.deepEqual({ dueDate: gecti.dueDate, dueTime: gecti.dueTime }, { dueDate: "2026-11-22", dueTime: "00:35" });
+  assert.deepEqual(completeTarget(gecti, "2026-11-22"), { dueDate: "2026-11-23", dueTime: "23:30" });
+  // Haftalık: çapanın günü ve saati
+  const hafta = { dueDate: "2026-11-21", dueTime: "11:20", anchorDate: "2026-11-14", anchorTime: "10:00", repeat: "weekly" as const };
+  assert.deepEqual(completeTarget(hafta, "2026-11-21"), { dueDate: "2026-11-28", dueTime: "10:00" });
+  // Tek seferlik kapanır; saatsiz seri saatsiz kalır; saat çapası boş eski satırda bugünkü saat
+  assert.equal(completeTarget({ ...seri, repeat: "none" }, "2026-11-21"), null);
+  assert.deepEqual(completeTarget({ ...seri, dueTime: null, anchorTime: null }, "2026-11-21"), { dueDate: "2026-11-22", dueTime: null });
+  assert.deepEqual(completeTarget({ ...seri, dueTime: "10:05", anchorTime: null }, "2026-11-21"), { dueDate: "2026-11-22", dueTime: "10:05" });
+});
+
+test("düzenlemede serinin saati: elle değişen saat yeni saat, değişmeyen (ertelenmiş dönemin) saat çapayı ezmez", () => {
+  assert.equal(anchorTimeOnEdit({ dueTime: "10:05", anchorTime: "09:00" }, "10:05"), "09:00", "yalnız başlık düzeltildi");
+  assert.equal(anchorTimeOnEdit({ dueTime: "10:05", anchorTime: "09:00" }, "11:00"), "11:00", "saat elle değişti");
+  assert.equal(anchorTimeOnEdit({ dueTime: "09:00", anchorTime: "09:00" }, null), null, "saat kaldırıldı");
+  assert.equal(anchorTimeOnEdit({ dueTime: null, anchorTime: null }, "08:30"), "08:30", "saat eklendi");
+  assert.equal(anchorTimeOnEdit({ dueTime: "09:00", anchorTime: null }, "09:00"), "09:00", "çapasız eski satır");
+
+  const src = readFileSync(join(process.cwd(), "src/server/actions/user-reminders.ts"), "utf8");
+  // Ekleme ve düzenleme çapayı yazar
+  assert.match(src, /anchorDate: data\.dueDate,\s+anchorTime: data\.dueTime,/);
+  assert.match(src, /const anchorTime = anchorTimeOnEdit\(prev, data\.dueTime\);/);
+  assert.match(src, /\.set\(\{ \.\.\.data, anchorDate, anchorTime, active: true, updatedAt: new Date\(\) \}\)/);
+  // Yaptım serinin saatiyle ilerler
+  const tamam = src.slice(src.indexOf("export async function completeUserReminder"), src.indexOf("const snapshotSchema"));
+  assert.match(tamam, /completeTarget\(\{ dueDate: r\.dueDate, dueTime: r\.dueTime, anchorDate: r\.anchorDate, anchorTime: r\.anchorTime, repeat: r\.repeat as UserRepeat \}, todayTR\(\)\)/);
+  assert.match(tamam, /\.set\(target \? \{ \.\.\.target, doneAt: new Date\(\), updatedAt: new Date\(\) \}/);
+  // Erteleme ve geri al çapalara dokunmaz
+  for (const name of ["postponeUserReminder", "restoreUserReminder"]) {
+    const start = src.indexOf(`export async function ${name}`);
+    const next = src.indexOf("\nexport ", start + 1);
+    assert.doesNotMatch(src.slice(start, next < 0 ? undefined : next), /anchor/, name);
+  }
+  // Şema ve göç: eski satırların saati bugünkü saatleri
+  const sema = readFileSync(join(process.cwd(), "src/server/db/schema.ts"), "utf8");
+  assert.match(sema, /anchorTime: text\("anchor_time"\),/);
+  const goc = readFileSync(join(process.cwd(), "drizzle/0060_hatirlatici_saat_capasi.sql"), "utf8");
+  assert.match(goc, /ALTER TABLE "user_reminders" ADD COLUMN "anchor_time" text;/);
+  assert.match(goc, /UPDATE "user_reminders" SET "anchor_time" = "due_time" WHERE "anchor_time" IS NULL;/);
 });
 
 test("liste grubu ve etiketi: saati geçen bugünkü hatırlatma gecikmiş sayılır", () => {

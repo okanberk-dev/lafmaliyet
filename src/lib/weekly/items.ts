@@ -131,13 +131,26 @@ function kasaFlags(i: KasaIn): string[] {
 }
 
 /**
+ * Raporları güne toplar: iki şubenin aynı günkü raporları bir gün, günün tutarı ikisinin toplamı (salesLine gibi).
+ * Yalnız aynı yöndeki farklar toplanır (çağıran eksikleri ve fazlaları ayrı verir): kasalar ayrıdır, bir şubenin
+ * fazlası öbürünün eksiğini kapatmaz.
+ */
+function byDay(rs: readonly { date: string; cashDiff: number }[]): { date: string; cashDiff: number }[] {
+  const days = new Map<string, number>();
+  for (const r of rs) days.set(r.date, (days.get(r.date) ?? 0) + r.cashDiff);
+  return [...days].map(([date, cashDiff]) => ({ date, cashDiff }));
+}
+
+/**
  * Geçen haftanın kasa eksikleri (CASH_TOLERANCE'tan büyük): toplam en az 100 ₺ ise lira değerli madde; değilse
  * bütünlük işareti varsa "Geçen hafta kasa: 2 gün açılış devirle tutmuyor". Bağlantı en çok eksik günün ayına.
+ * "N gün" gündür, rapor değil: iki şubenin aynı günkü eksiği tek gün (tutarı ikisinin toplamı); önceden Tuzla ve
+ * Marina'nın 20 Ekim'deki eksikleri "2 gün eksik" diye yazılıyordu (denetim 21 Kasım #30).
  */
 export function kasaItem(i: KasaIn): WeeklyItem | null {
   const last = i.reports.filter((r) => inLastWeek(i.week, r.date));
-  const short = last.filter((r) => r.cashDiff <= -CASH_TOLERANCE).sort((a, b) => a.cashDiff - b.cashDiff || a.date.localeCompare(b.date));
-  const over = last.filter((r) => r.cashDiff >= CASH_TOLERANCE);
+  const short = byDay(last.filter((r) => r.cashDiff <= -CASH_TOLERANCE)).sort((a, b) => a.cashDiff - b.cashDiff || a.date.localeCompare(b.date));
+  const over = byDay(last.filter((r) => r.cashDiff >= CASH_TOLERANCE));
   const total = sum(short.map((r) => -r.cashDiff));
   const flags = kasaFlags(i);
   const action = "Kasa raporlarına bak";

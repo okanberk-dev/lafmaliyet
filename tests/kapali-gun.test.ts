@@ -6,7 +6,7 @@
 // Çalıştırma: npx tsx --test tests/kapali-gun.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -311,4 +311,15 @@ test("zil: reddedilen ya da geri alınan kapalı gün bildirimi; gün personelde
   assert.match(bell, /const follow = r\.kind === "kapali-gun" && r\.status !== "approved" \? closedFollowUp\(r\.day!, now, reported\.has\(r\.day!\)\) : "staff";/);
   assert.match(bell, /body: follow === "staff" \? t\.body : CLOSED_FOLLOW_UP_TEXT\[follow\],/);
   assert.match(bell, /href: follow === "late" \|\| staffCanReport\(r\.day!, now\) \? `\/panel\/kasa\?gun=\$\{r\.day\}` : "\/panel\/kasa#isteklerim",/);
+});
+
+// Denetim 21 Kasım #23: satış tahmini (/panel/tahmin) 4 Kasım 2026'da kalktı; özel günler /panel/ozel-gunler'de
+test("zil: personelin özel gün satırı Özel günler ekranına götürür (kaldırılan /panel/tahmin'e değil)", () => {
+  const bell = read("src/server/bell/kasa.ts");
+  assert.match(bell, /href: verb \? "\/panel\/ozel-gunler#ozel-gunler" : "\/panel\/kasa",/);
+  assert.match(read("src/app/panel/ozel-gunler/special-days.tsx"), /<Card id="ozel-gunler"/);
+  assert.ok(!existsSync(join(process.cwd(), "src/app/panel/tahmin")), "ekran kalktı");
+  // Kapalı gün ve özel gün metinlerinde kaldırılan ekranın yolu ya da adı kalmadı
+  assert.doesNotMatch(bell.replace(/^\s*\/\/.*$/gm, ""), /\/panel\/tahmin/);
+  for (const f of ["src/server/closed-days.ts", "src/lib/closed-days.ts"]) assert.doesNotMatch(read(f), /\/panel\/tahmin|Satış tahmini ›/, f);
 });
