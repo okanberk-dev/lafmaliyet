@@ -31,11 +31,37 @@ test("gün: bütün şubeler bugünü kapattıysa bugün, biri eksikse dün", ()
   assert.equal(pickDay([], [], TODAY), YESTERDAY);
 });
 
-test("kaynak: kasa raporu LafPOS gün sonunu ezer", () => {
+test("kaynak: kasa raporu LafPOS gün sonunu, o da ModPOS föyünü ezer", () => {
   const rows = [src("tuzla", YESTERDAY, { source: "lafpos", zTotal: 900 }), src("tuzla", YESTERDAY, { zTotal: 1000 })];
   assert.equal(pickSource(rows, "tuzla", YESTERDAY)?.source, "rapor");
   assert.equal(pickSource([rows[0]], "tuzla", YESTERDAY)?.source, "lafpos");
   assert.equal(pickSource(rows, "marina", YESTERDAY), null);
+  const foy = src("tuzla", YESTERDAY, { source: "modpos", zTotal: 800, cashDiff: null });
+  assert.equal(pickSource([foy, ...rows], "tuzla", YESTERDAY)?.source, "rapor");
+  assert.equal(pickSource([foy, rows[0]], "tuzla", YESTERDAY)?.source, "lafpos");
+  assert.equal(pickSource([foy], "tuzla", YESTERDAY)?.source, "modpos");
+});
+
+test("ModPOS föyünden sayılan gün çizgide ve satırda: Genel bakış'ın günlük grafiğiyle aynı (denetim 13 Kasım HM-09)", () => {
+  // 3 Kasım: Tuzla'nın raporu yok, kapanmış föyü var (ay rakamına yedek açık); Marina raporlu
+  const rows = [src("tuzla", "2026-11-03", { source: "modpos", zTotal: 900, cash: 300, card: 600, cashDiff: null }), src("marina", "2026-11-03")];
+  const trend = dailyTrend(branches, rows, "2026-11-03");
+  assert.deepEqual(trend[7], { day: "2026-11-03", revenue: 1900, missing: 0 });
+  const s = branchDaySummary(branches, rows, "2026-11-04");
+  assert.equal(s.day, "2026-11-03");
+  assert.deepEqual(
+    s.rows.map((r) => [r.id, r.source, r.revenue]),
+    [
+      ["tuzla", "modpos", 900],
+      ["marina", "rapor", 1000],
+    ],
+  );
+  assert.equal(s.missing, 0);
+  // Yükleyici föyü ay rakamının kuralıyla okur (anahtar kapalıyken okunmaz; bütün şubeler)
+  const loader = readFileSync(join(process.cwd(), "src/server/data/branch-day.ts"), "utf8");
+  assert.match(loader, /withBranchScope\(ALL_BRANCHES, \(\) => modposFallbackSheets\(db, from, today\)\)/);
+  assert.match(loader, /const row = modposTillRow\(sh\);/);
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/bugun/today-branches.tsx"), "utf8"), /row\.source === "modpos" \? "ModPOS API'den"/);
 });
 
 test("özet: ödenmez Z toplamının içindeyse ciroya girmez; eksik şube toplamı bozmaz", () => {

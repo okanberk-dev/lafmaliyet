@@ -4,11 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { ALL_BRANCHES, companyPnlKey } from "@/lib/branches";
+import { ALL_BRANCHES, companyPnlKey, MONTH_TOTALS_LOCKED_TEXT, monthTotalsLocked } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -87,12 +88,16 @@ export async function setMonthNote(month: string, note: string | null) {
 
 /**
  * Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa). Seçili şubenin ay satırına,
- * "Tümü"nde Tuzla'nınkine yazılır (setMonthNote gibi; okuma da şubenin satırını okur, dataset.ts)
+ * "Tümü"nde (yalnız tek kasa açıkken) Tuzla'nınkine yazılır (setMonthNote gibi; okuma da şubenin satırını okur,
+ * dataset.ts). Birden çok kasa açıkken "Tümü" şubelerin toplamıdır, yazılmaz (monthTotalsLocked; denetim 13 Kasım HM-02)
  */
 export async function setMonthField(month: string, field: "posRevenue" | "openDays", value: number | null) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
+    // "Tümü" birden çok şubenin toplamını gösterir: yazılan (ya da "kasaya dön") yalnız Tuzla'nın ay satırına inerdi,
+    // öteki şubenin cirosu iki kez sayılırdı. Ekran hücreyi kilitler; Satışlar'ın formu "Tümü"de Tuzla'yı adıyla yazar
+    if (monthTotalsLocked(await currentBranchScope(), await listBranches())) throw new UserError(MONTH_TOTALS_LOCKED_TEXT);
     const dim = daysInMonth(m);
     const v =
       value === null

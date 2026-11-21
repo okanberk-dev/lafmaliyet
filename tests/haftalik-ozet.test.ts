@@ -309,6 +309,16 @@ test("kasa cirosu satırı: tam haftalar karşılaştırılır; eksik hafta gün
   assert.equal(salesLine({ week: W44, reports: prev }), null);
 });
 
+test("kasa cirosu satırı ödenmezi saymaz: Genel bakış ve Bugün'ün cirosuyla aynı kural (denetim 13 Kasım HM-08)", () => {
+  // Z 10.000; 500 ₺ ödenmez Z'nin içinde (nakit 3.500 + kart 6.000): günün cirosu 9.500
+  assert.equal(salesLine({ week: W44, reports: [{ date: "2026-10-20", zTotal: 10_000, revenue: 9_500, cashDiff: 0 }] }), `Geçen hafta kasa cirosu 9.500${NB}₺ (1 gün raporlu)`);
+  // Ciro verilmezse (eski çağıran) Z toplamı
+  assert.equal(salesLine({ week: W44, reports: [{ date: "2026-10-20", zTotal: 10_000, cashDiff: 0 }] }), `Geçen hafta kasa cirosu 10.000${NB}₺ (1 gün raporlu)`);
+  // Toplayıcı satıra dayRevenue'nun cirosunu verir
+  const collect = readFileSync(join(process.cwd(), "src/server/weekly/collect.ts"), "utf8");
+  assert.match(collect, /revenue: dayRevenue\(\{ zTotal: r\.zTotal, offRevenue: r\.offRevenue, payments: Math\.round\(\(r\.cash \+ r\.card \+ r\.mealCard \+ r\.online \+ r\.other\) \* 100\) \/ 100 \}\)\.revenue,/);
+});
+
 const cand = (o: Partial<KomisyonCand>): KomisyonCand => ({
   alertKey: "gecikti:pluxee:2026-10",
   kind: "gecikti",

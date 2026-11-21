@@ -243,6 +243,10 @@ indikçe her sabah bir gün daha sayılır. Kasası açılmamış, satışsız k
 katmaz. Eksik gün uyarıları yalnız ilk kasa raporundan itibaren aranır: raporlardan önceki föy günleri "eksik rapor"
 sayılmaz.
 
+Föy de şubenindir: öncelik ve kesintisiz kısım **şube şube** (Tuzla'nın raporu Marina'nın aynı günkü föyünü düşürmez).
+Föyden sayılan gün Bugün'ün "Şubelerde dün / bugün" kartında da görünür ("ModPOS API'den"; `modposFallbackSheets`):
+Genel bakış'ın günlük grafiği o günü sayarken kartın çizgisi eksik göstermez (denetim 13 Kasım HM-09).
+
 ## 7. Saklama
 
 - `modpos_cash_sheets`: (kasa günü, şube) başına bir satır; föyün okunmuş hâli (`sheet`, kişi adları ve tanınmayan alanlarla),

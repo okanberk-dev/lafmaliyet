@@ -80,6 +80,7 @@ export function MonthView({
   onSave,
   expectedDebts,
   lafposSwitch = null,
+  openDaysLocked = null,
 }: {
   year: number;
   months: string[];
@@ -106,6 +107,8 @@ export function MonthView({
   expectedDebts?: Readonly<Record<string, { total: number; href: string | null; name: string }>>;
   /** LafPOS'a geçiş günü (yalnız metinler: ayın kasası; denetim E-39) */
   lafposSwitch?: string | null;
+  /** Açık gün yazılmıyorsa nedeni ("Tümü" birden çok şubenin toplamı; src/lib/branches.ts monthTotalsLocked) */
+  openDaysLocked?: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -248,7 +251,18 @@ export function MonthView({
         </div>
       </div>
 
-      {showOpenDays ? (
+      {showOpenDays && openDaysLocked ? (
+        // "Tümü" birden çok şubenin toplamıyken açık gün yazılmaz (yazılan tek şubenin ay satırına inerdi)
+        <ul className="mx-4 mt-3 rounded-2xl bg-surface ring-1 ring-line">
+          <li className={ROW}>
+            <span className="min-w-0 flex-1 text-[15px] font-medium text-ink">
+              Açık gün sayısı
+              <span className="block text-xs font-normal text-ink-mute">{openDaysLocked}</span>
+            </span>
+            <Value value={openDays[i]} format="days" suffix={`/${dims[i]}`} />
+          </li>
+        </ul>
+      ) : showOpenDays ? (
         <ul className="mx-4 mt-3 rounded-2xl bg-surface ring-1 ring-line">
           <li>
             <button

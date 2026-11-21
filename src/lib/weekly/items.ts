@@ -111,8 +111,11 @@ export function cashItem(i: CashIn): WeeklyItem | null {
 
 export interface KasaIn {
   week: WeekInfo;
-  /** Son beş haftanın raporları (geçen hafta ve önceki dört): Z toplamı ve kasa farkı (eksi eksik) */
-  reports: { date: string; zTotal: number; cashDiff: number }[];
+  /**
+   * Son beş haftanın raporları (geçen hafta ve önceki dört): Z toplamı, günün cirosu (ödenmez / ikram hariç;
+   * src/lib/cash-revenue.ts dayRevenue, verilmezse Z toplamı) ve kasa farkı (eksi eksik)
+   */
+  reports: { date: string; zTotal: number; revenue?: number; cashDiff: number }[];
   /** Geçen hafta açılışı önceki devirle tutmayan gün; null = bilinmiyor (gösterilmez) */
   carryMismatch: number | null;
   /** Geçen hafta iş günü kapandıktan sonra kasa alanı düzeltilen rapor */
@@ -184,9 +187,9 @@ export function kasaItem(i: KasaIn): WeeklyItem | null {
 }
 
 /**
- * Bağlam satırı: geçen haftanın kasa cirosu (Z toplamı, KDV dahil; laffogato.net online kasadan geçmez). Geçen hafta
- * ve önceki dört haftanın en az ikisi tam (6+ raporlu) ise onların ortalamasıyla karşılaştırılır; değilse raporlu gün
- * sayısıyla; rapor yoksa satır yok.
+ * Bağlam satırı: geçen haftanın kasa cirosu (KDV dahil, ödenmez / ikram hariç: Genel bakış ve Bugün'ün cirosuyla aynı
+ * kural, denetim 13 Kasım HM-08; laffogato.net online kasadan geçmez). Geçen hafta ve önceki dört haftanın en az ikisi
+ * tam (6+ raporlu) ise onların ortalamasıyla karşılaştırılır; değilse raporlu gün sayısıyla; rapor yoksa satır yok.
  */
 export function salesLine(i: Pick<KasaIn, "week" | "reports">): string | null {
   const weekOf = (k: number) => {
@@ -194,7 +197,7 @@ export function salesLine(i: Pick<KasaIn, "week" | "reports">): string | null {
     const to = addDays(i.week.lastTo, -7 * k);
     const rs = i.reports.filter((r) => r.date >= from && r.date <= to);
     // Raporlu gün tekil: iki şubenin aynı günkü raporları bir gün (ciro ikisinin toplamı)
-    return { n: new Set(rs.map((r) => r.date)).size, total: sum(rs.map((r) => r.zTotal)) };
+    return { n: new Set(rs.map((r) => r.date)).size, total: sum(rs.map((r) => r.revenue ?? r.zTotal)) };
   };
   const last = weekOf(0);
   if (!last.n) return null;

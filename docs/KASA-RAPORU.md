@@ -614,7 +614,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 
 | Alan | Kasa raporlarından |
 |------|--------------------|
-| Açık gün | Z toplamı 0'dan büyük rapor sayısı |
+| Açık gün | Z toplamı 0'dan büyük raporu olan gün sayısı ("Tümü"de iki şube aynı gün açıksa bir gün) |
 | POS cirosu | Z toplamlarının toplamı **eksi** Z toplamlarının içindeki ödenmez / ikram (aşağıda "Ciro ve ödenmez") |
 | İndirim, ödenmez / ikram | Girildiği günlerin toplamı (hiç girilmediyse 0) |
 | Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. Satış raporunun ürün başına tahmini komisyonu bu oranla; boşsa Ayarlar'daki kart oranıyla. Gelir-gider'in **banka POS komisyonu** yalnız banka kartı payıyla: kart ÷ Z (yemek kartı hariç, onun komisyonu kendi faturasıyla; elle yazılan orandan kasanın yemek kartı payı düşülür; denetim E-43) |
@@ -628,7 +628,13 @@ silinen rapor ayın rakamını hemen değiştirir.
   şubenin açılış gününde ya da öncesindeyse (Ayarlar › Şubeler; boşsa sonradan açılan şubenin ilk raporu açılış sayılır)
   ay tamdır, ciro ve açık gün kasadan gelir; ilk rapor açılış gününden sonraysa ay yine elle girilir
   (`src/lib/cash-month.ts` `tillOpenedOn`, `partialStart`; Gelir-gider, Satışlar, Kasa'nın ay satırı ve geç rapor kartı
-  aynı kural). "Tümü" ve Tuzla bugünkü gibi (denetim 21 Kasım #21).
+  aynı kural). Tuzla bugünkü gibi (denetim 21 Kasım #21).
+- **Şubeler ve "Tümü"** ([SUBE.md](SUBE.md) › "Tümü"nün ay bilgisi): her satır şubesini taşır. Aynı günün iki şubesi
+  ayrı satırdır; açık gün ve raporlu gün günde bir kez sayılır, ciro, indirim ve ödenmez toplanır. Rapor > LafPOS >
+  föy önceliği **aynı şubenin** gününde geçerlidir: Tuzla'nın raporu Marina'nın o günkü föyünü düşürmez. Elle
+  yazılanlar şube şube çözülüp toplanır (her şube kendi açılış günüyle): Marina'nın elle yazdığı ciro Tuzla'nın kasa
+  cirosunun yerine geçmez (denetim 13 Kasım HM-02). Birden çok kasa açıkken "Tümü"de Gelir-gider'in ciro ve açık gün
+  hücresi yazılmaz; Satışlar'ın formu Tuzla'nın satırını adıyla gösterir.
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
@@ -646,7 +652,8 @@ silinen rapor ayın rakamını hemen değiştirir.
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
   bayramda kapalı gün ya da raporu girilmemiş gün kirayı ve maaşı düşürmez (`prorationDays`, engine.ts). Günlük
   kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa Excel'deki gibi açık gün ÷ ayın gün sayısı.
-  Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
+  Oran hiçbir zaman 1'i aşmaz (iki şube aynı gün açıkken de). Biten ay ayın sonuna kadar sayılır: ayın 1'inde 00:00 ile
+  05:00 arasında son günün raporu daha beklenirken de kira ve maaş tam ay (denetim 13 Kasım HM-10). Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
 - **Ay ortasında yüklenen satış listesi:** Satışlar'da liste yüklerken süren ayda "Liste hangi güne kadar?" sorulur
   (varsayılan dün; `integration_state › sales.coverage`). Kasa raporları o günden ileri gittiyse listeye dayanan
   hesaplar listenin günleriyle yapılır: liste ↔ POS karşılaştırması (Satışlar'ın ay bilgisi kutusu, Tutarlılık, uyarı)

@@ -660,6 +660,7 @@ export function PnlGrid({
   expectedDebts = NO_EXPECTED,
   yearNote = null,
   lafposSwitch = null,
+  openDaysLocked = null,
 }: {
   year: number;
   months: string[];
@@ -687,6 +688,8 @@ export function PnlGrid({
   yearNote?: { short: string; long: string } | null;
   /** LafPOS'a geçiş günü (yalnız metinler: ayın kasası, src/lib/lafpos/kasa.ts; denetim E-39) */
   lafposSwitch?: string | null;
+  /** Açık gün yazılmıyorsa nedeni ("Tümü" birden çok şubenin toplamı; src/lib/branches.ts monthTotalsLocked) */
+  openDaysLocked?: string | null;
 }) {
   const reduce = useCalmMotion();
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -741,7 +744,7 @@ export function PnlGrid({
   const allRows = sections.flatMap((s) => s.rows);
   const totalRows = allRows.length + 1;
   const overriddenCount = allRows.filter(isOverridden).length;
-  const editableCount = allRows.filter((r) => r.def.editable).length + 1;
+  const editableCount = allRows.filter((r) => r.def.editable).length + (openDaysLocked ? 0 : 1);
   const filtered = q.trim() !== "" || bolum !== "tumu" || onlyEditable === "1" || onlyOverridden === "1" || hideEmpty === "1";
   const clearFilters = () => {
     setQ("");
@@ -1014,6 +1017,7 @@ export function PnlGrid({
         onSave={savePlan}
         expectedDebts={expectedDebts}
         lafposSwitch={lafposSwitch}
+        openDaysLocked={openDaysLocked}
       />
       <ExpectedDebtsNote months={visibleIdx.map((v) => v.m)} expected={expectedDebts} className="max-md:hidden" />
 
@@ -1074,12 +1078,28 @@ export function PnlGrid({
                   <TD sticky className={cn(STICKY, "py-1.5 font-medium")}>
                     <span className="flex items-center gap-1.5">
                       {OPEN_DAYS_LABEL}
-                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Süren ayda bugüne kadarki açık gün yazılır. Kasa raporu girilen aylarda boşsa rapor girilen (satış olan) gün sayılır. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır: açık gün elle yazıldıysa o gün, kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler açık günle çarpılır." />
+                      <InfoTip
+                        text={`O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Süren ayda bugüne kadarki açık gün yazılır. Kasa raporu girilen aylarda boşsa rapor girilen (satış olan) gün sayılır. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır: açık gün elle yazıldıysa o gün, kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler açık günle çarpılır.${openDaysLocked ? ` ${openDaysLocked}` : ""}`}
+                      />
                     </span>
                   </TD>
                   {visibleIdx.map(({ m, i }) => {
                     // Kasa raporlarından gelen açık gün hesaplanan gibi: elle yazılan onun üzerine yazılmıştır
                     const kasa = openDaysKasa?.[i] ?? null;
+                    // "Tümü" birden çok şubenin toplamıyken yazılmaz (yazılan tek şubenin ay satırına inerdi)
+                    if (openDaysLocked) {
+                      return (
+                        <td key={m} className={cn(CELL, "text-right")}>
+                          <span
+                            className={cn("block px-2 py-1 whitespace-nowrap tabular text-ink-mute", openDays[i] === null && "text-ink-quiet")}
+                            title={openDaysLocked}
+                          >
+                            {fmt(openDays[i], "days")}
+                            {openDays[i] !== null ? <span className="text-ink-quiet">/{dims[i]}</span> : null}
+                          </span>
+                        </td>
+                      );
+                    }
                     return (
                       <td key={m} className={CELL}>
                         <EditableCell

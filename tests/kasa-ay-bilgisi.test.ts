@@ -358,8 +358,11 @@ test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalarda
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
   assert.ok(src.indexOf("const today = businessDate()") > src.indexOf("tillRows(),"));
   assert.match(src, /const through = addDays\(today, -1\)/);
-  assert.match(src, /months: resolveMonths\(/);
-  assert.match(src, /tillMonths\(\s*till,\s*through,\s*undefined,\s*lateWaiting\./);
+  // Tek şube seçiliyken o şubenin satırları (açılış günüyle); "Tümü"de şube şube çözülüp toplanır (denetim 13 Kasım HM-02)
+  assert.match(src, /const lateDays = lateWaiting\.flatMap\(\(r\) => \(r\.day \? \[r\.day\] : \[\]\)\);/);
+  assert.match(src, /tillMonths\(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOn\)/);
+  assert.match(src, /branch !== null\s*\? resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\)\s*: resolveBranchMonths\(/);
+  assert.match(src, /months: monthInfo,/);
 });
 
 test("geç rapor: onay bekleyen gün eksik sayılmaya devam eder, yanına 'onay bekliyor' yazılır", () => {
@@ -451,7 +454,10 @@ test("şube görünümü: yükleyici, Kasa'nın ay satırı ve geç rapor kartı
   const dataset = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
   assert.match(dataset, /const opened = tillOpenedOn\(branch\);/);
   assert.match(dataset, /firstEver, undefined, undefined, firstReport, undefined, opened\)\[0\]/, "satış listesinin dönemi");
-  assert.match(dataset, /closedDaysIn\(closedRows, "2000-01-01", through, reportRows\.map\(\(r\) => r\.date\)\),\s*undefined,\s*undefined,\s*opened,\s*\)/, "ay bilgisi");
+  assert.match(dataset, /const closedPast = closedDaysIn\(closedRows, "2000-01-01", through, reportRows\.map\(\(r\) => r\.date\)\);/, "ay bilgisi");
+  assert.match(dataset, /resolveMonths\(entriesOf\(months\), monthsOf\(till, opened\)\)/, "ay bilgisi: şubenin açılışıyla");
+  // "Tümü"de her şube kendi açılış günüyle (Tümü'nün toplamında da açılış ayı yarım sayılmaz)
+  assert.match(dataset, /tills: monthsOf\(rowsOf\(\[id\]\), tillOpenedOn\(branches\.find\(\(b\) => b\.id === id\)\)\)/);
   const kasa = readFileSync(join(root, "src/app/panel/kasa/page.tsx"), "utf8");
   assert.match(kasa, /const opened = tillOpenedOn\(branchList\.find\(\(b\) => b\.id === tillScope\)\);/);
   assert.match(kasa, /firstEver \?\? undefined, firstModpos, opened\)\[0\]/);

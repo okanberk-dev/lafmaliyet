@@ -1420,12 +1420,12 @@ test("Nasıl hesaplandı: rakamlarıyla; yedek ve 'satış verisi yok' metinleri
   assert.match(text("kdv"), /ayın 28'inde/);
   const reports = Array.from({ length: 8 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 9_850, card: 7_683, mealCard: 0 }));
   const kasa = planNotes(buildCashPlan(input({ cashReports: reports })), { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
-  assert.match(kasa.find((n) => n.key === "sales")!.text, /^Son 28 günün 8 kasa raporuna göre günde ortalama 9\.850 ₺ \(Z toplamı\)\. Kartla ödenen %78 için %2,5 komisyon düşüldü/);
+  assert.match(kasa.find((n) => n.key === "sales")!.text, /^Son 28 günün 8 kasa raporuna göre günde ortalama 9\.850 ₺ \(Z toplamı, ödenmez \/ ikram hariç\)\. Kartla ödenen %78 için %2,5 komisyon düşüldü/);
   // İki "online" ayrı adla: Z raporundaki platformlar (Yemeksepeti, Getir…) ile kasadan geçmeyen laffogato.net
   const platform = buildCashPlan(input({ cashReports: reports.map((r) => ({ ...r, online: 985 })), online: { month: "2026-09", perDay: 420 } }));
   assert.equal(platform.basis.sales.kind === "kasa" ? platform.basis.sales.platformShare : null, 0.1);
   const pn = planNotes(platform, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
-  assert.match(pn.find((n) => n.key === "sales")!.text, /\(Z toplamı; Z'deki online platform ödemeleri \(Yemeksepeti, Getir…\) %10, aynı gün ve kesintisiz sayıldı\)\./);
+  assert.match(pn.find((n) => n.key === "sales")!.text, /\(Z toplamı, ödenmez \/ ikram hariç; Z'deki online platform ödemeleri \(Yemeksepeti, Getir…\) %10, aynı gün ve kesintisiz sayıldı\)\./);
   assert.match(pn.find((n) => n.key === "online")!.text, /^laffogato\.net Eylül 2026 online satışına göre günde 420\s₺ \(iadeler düşülmüş\)\. Kasadan geçmez, Z raporundaki online platformlardan ayrıdır\./);
   const none = planNotes(buildCashPlan(input()), { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
   assert.equal(none.find((n) => n.key === "sales")!.text, "Satış verisi yok: gelen para sayılmadı. Kasa raporu girildikçe tahmin oluşur.");
@@ -1952,4 +1952,35 @@ test("salesDaily ve planCashReports: şube şube ortalama; pasif şubenin raporu
   const loader = read("src/server/data/cash-plan.ts");
   assert.match(loader, /cashReports: planCashReports\(reports, branches\),/);
   assert.doesNotMatch(loader, /cashReports: reports\.map\(/);
+});
+
+test("satışlar: ödenmez Z'nin içindeyse günlük satışa girmez; kart payı cirodan (denetim 13 Kasım HM-08)", () => {
+  const days = Array.from({ length: 10 }, (_, i) => addDays(TODAY, -1 - i));
+  // Z 10.000, ödemeler 9.500, ödenmez 500: ödenmez Z'nin içinde, günün cirosu 9.500 (Genel bakış ve Kasa'daki gibi)
+  const off = buildCashPlan(input({ cashReports: days.map((date) => ({ date, zTotal: 10_000, card: 5_700, mealCard: 0, offRevenue: 500, payments: 9_500 })) }));
+  assert.ok(off.basis.sales.kind === "kasa");
+  if (off.basis.sales.kind === "kasa") {
+    close(off.basis.sales.daily, 9_500, "ciro ödenmez hariç");
+    close(off.basis.sales.cardShare, 0.6, "kart ÷ ciro");
+  }
+  // Ödemeler Z'yi tutuyorsa ödenmez zaten dışarıda: Z olduğu gibi
+  const out = buildCashPlan(input({ cashReports: days.map((date) => ({ date, zTotal: 10_000, card: 6_000, mealCard: 0, offRevenue: 500, payments: 10_000 })) }));
+  assert.ok(out.basis.sales.kind === "kasa" && out.basis.sales.daily === 10_000);
+  // Şube şube ortalama da cirodan
+  assert.deepEqual(
+    salesDaily([
+      { date: "2026-11-01", zTotal: 1_000, offRevenue: 100, payments: 900, branchId: "a" },
+      { date: "2026-11-01", zTotal: 500, branchId: "b" },
+    ]).map((g) => [g.id, g.daily]),
+    [
+      ["a", 900],
+      ["b", 500],
+    ],
+  );
+  // Plan girdisi ödeme dökümünü taşır (yükleyicinin raporlarında nakit, diğer ve ödenmez var)
+  const [row] = planCashReports(
+    [{ branchId: "tuzla", date: "2026-11-01", zTotal: 1_000, cash: 300, card: 600, mealCard: 0, online: 0, other: 0, offRevenue: 100 }],
+    [{ id: "tuzla", name: "Tuzla", active: true }],
+  );
+  assert.deepEqual([row.offRevenue, row.payments], [100, 900]);
 });

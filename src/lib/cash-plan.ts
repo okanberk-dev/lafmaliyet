@@ -22,6 +22,7 @@
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod, FixedSection } from "./calc/types";
+import { dayRevenue } from "./cash-revenue";
 import { FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { money, monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
@@ -146,7 +147,17 @@ function withheldNote(f: Pick<FixedItem, "name" | "period" | "amount" | "vatRate
  * satış yapmaz, son 28 günün ortalaması ileriye yazılmasın. Kütükte bulunmayan şubenin raporu (olmamalı) yine sayılır
  */
 export function planCashReports(
-  reports: readonly { branchId: string; date: string; zTotal: number; card: number; mealCard: number; online?: number }[],
+  reports: readonly {
+    branchId: string;
+    date: string;
+    zTotal: number;
+    card: number;
+    mealCard: number;
+    online?: number;
+    cash?: number;
+    other?: number;
+    offRevenue?: number | null;
+  }[],
   branches: readonly { id: string; name: string; active: boolean }[],
 ): CashPlanInput["cashReports"] {
   const of = new Map(branches.map((b, i) => [b.id, { name: b.name, active: b.active, i }]));
@@ -160,23 +171,31 @@ export function planCashReports(
       card: r.card,
       mealCard: r.mealCard,
       online: r.online,
+      // Ödenmez Z'nin içindeyse ciroya girmez (dayRevenue): ödeme dökümü de verilir (yoksa Z toplamı ciro sayılır)
+      ...(r.offRevenue !== undefined ? { offRevenue: r.offRevenue } : {}),
+      ...(r.cash !== undefined ? { payments: Math.round((r.cash + r.card + r.mealCard + (r.online ?? 0) + (r.other ?? 0)) * 100) / 100 } : {}),
       branchId: r.branchId,
       branchName: of.get(r.branchId)?.name ?? r.branchId,
     }));
 }
 
+/** Raporun cirosu: Z toplamı − Z'nin içindeki ödenmez / ikram (ay bilgisinin kuralı, src/lib/cash-revenue.ts dayRevenue) */
+const reportRevenue = (r: { zTotal: number; offRevenue?: number | null; payments?: number | null }) =>
+  dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }).revenue;
+
 /**
- * Nakit planının günlük satışı şube şube (docs/NAKIT-PLANI.md › Satışlar): her kasanın Z toplamı ÷ o kasanın raporlu gün
- * sayısı. Şubesi verilmeyen raporlar tek kasa sayılır (aynı günün iki raporu bir gün). Sıra: girdideki ilk görünüş
+ * Nakit planının günlük satışı şube şube (docs/NAKIT-PLANI.md › Satışlar): her kasanın cirosu (Z toplamı, ödenmez / ikram
+ * hariç; denetim 13 Kasım HM-08) ÷ o kasanın raporlu gün sayısı. Şubesi verilmeyen raporlar tek kasa sayılır (aynı günün
+ * iki raporu bir gün). Sıra: girdideki ilk görünüş
  */
 export function salesDaily(
-  reports: readonly { date: string; zTotal: number; branchId?: string; branchName?: string }[],
+  reports: readonly { date: string; zTotal: number; offRevenue?: number | null; payments?: number | null; branchId?: string; branchName?: string }[],
 ): { id: string; name: string; days: number; daily: number }[] {
   const groups = new Map<string, { name: string; z: number; dates: Set<string> }>();
   for (const r of reports) {
     const id = r.branchId ?? "";
     const g = groups.get(id) ?? { name: r.branchName ?? r.branchId ?? "", z: 0, dates: new Set<string>() };
-    g.z += r.zTotal;
+    g.z += reportRevenue(r);
     g.dates.add(r.date);
     groups.set(id, g);
   }
@@ -192,9 +211,21 @@ export interface CashPlanInput {
   invoiceTermDays: number;
   /**
    * `online`: Z raporundaki online platform ödemeleri (Yemeksepeti, Getir…; laffogato.net değil, o kasadan geçmez).
-   * `branchId` / `branchName`: raporun kasası (şube); günlük satış şube şube ortalanıp toplanır (yoksa tek kasa sayılır)
+   * `branchId` / `branchName`: raporun kasası (şube); günlük satış şube şube ortalanıp toplanır (yoksa tek kasa sayılır).
+   * `offRevenue` ve `payments` (ciroya dahil ödemelerin toplamı) ödenmezin Z toplamının içinde olup olmadığını söyler
+   * (src/lib/cash-revenue.ts dayRevenue); verilmezse Z toplamı ciro sayılır
    */
-  cashReports: readonly { date: string; zTotal: number; card: number; mealCard: number; online?: number; branchId?: string; branchName?: string }[];
+  cashReports: readonly {
+    date: string;
+    zTotal: number;
+    card: number;
+    mealCard: number;
+    online?: number;
+    offRevenue?: number | null;
+    payments?: number | null;
+    branchId?: string;
+    branchName?: string;
+  }[];
   /** Bu aya kadarki, açık günü ve POS cirosu girilmiş son ay (kasa raporu yetmezse) */
   posMonth: { month: string; posRevenue: number; openDays: number } | null;
   online: { month: string; perDay: number } | null;
@@ -817,10 +848,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const days = new Set(reports.map((r) => r.date)).size;
   let sales: CashPlan["basis"]["sales"] = { kind: "none" };
   if (days >= MIN_SALES_REPORTS) {
-    const z = reports.reduce((a, r) => a + r.zTotal, 0);
+    // Ciro ay bilgisinin kuralıyla: Z toplamı − Z'nin içindeki ödenmez / ikram (denetim 13 Kasım HM-08)
+    const revenue = reports.reduce((a, r) => a + reportRevenue(r), 0);
     const card = reports.reduce((a, r) => a + r.card + r.mealCard, 0);
     const platform = reports.reduce((a, r) => a + (r.online ?? 0), 0);
-    const share = (v: number) => Math.min(1, Math.max(0, v / z));
+    const share = (v: number) => (revenue > 0 ? Math.min(1, Math.max(0, v / revenue)) : 0);
     const per = salesDaily(reports);
     sales = {
       kind: "kasa",
@@ -1853,7 +1885,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     text: off("sales")
       ? "Satışlar tahmine katılmıyor (Tahmine katılanlar'dan açın)."
       : s.kind === "kasa"
-        ? `Son 28 günün ${num(s.reports)} kasa raporuna${salesDaysText(s)} göre günde ortalama ${tl(s.daily)} (Z toplamı${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
+        ? `Son 28 günün ${num(s.reports)} kasa raporuna${salesDaysText(s)} göre günde ortalama ${tl(s.daily)} (Z toplamı, ödenmez / ikram hariç${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
         : s.kind === "pos"
           ? `Son 28 günde yeterli kasa raporu yok; ${monthLabel(s.month)} POS cirosuna göre günde ${tl(s.daily)} (${num(s.openDays)} açık gün). ${commission(s.cardShare)} ${fromTomorrow}`
           : "Satış verisi yok: gelen para sayılmadı. Kasa raporu girildikçe tahmin oluşur.",

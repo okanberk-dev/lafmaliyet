@@ -6,6 +6,7 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
+import { MONTH_TOTALS_LOCKED_TEXT } from "../branches";
 import { channelOf } from "../commission/channels";
 import { paidWithholdingRate } from "../tax/rules";
 import { monthLabel, num, pct, tl } from "../format";
@@ -425,13 +426,21 @@ export const stopajKey = (fixedId: number) => `stopaj:${fixedId}`;
  * elle girildiyse (Excel: açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
  * günü (biten ayda ayın tamamı, süren ayda bugüne kadar). Kapalı bir gün (bayram, raporu hiç girilmemiş gün) kira ve
  * maaşı düşürmez: cirosu zaten 0'dır, gider ise tam ödenir. Günlük kalemler yine açık günle çarpılır.
+ *
+ * Hiçbir zaman ayın gün sayısını aşmaz: iki şube aynı gün açıkken de oran en çok 1'dir (denetim 13 Kasım KP-X1).
+ * `closed`: ay bitti (takvim ayı geçti). Kasadan gelen ay o zaman ayın sonuna kadar sayılır; ayın 1'inde 00:00-05:00
+ * arası son günün raporu daha beklenirken (iş günü 05:00'te değişir) personel ve sabit gider bir gün eksik oranlanmaz
+ * (HM-10)
  */
-export function prorationDays(info: Pick<Month, "month" | "openDays" | "sources" | "kasa"> | undefined): number {
-  const open = info?.openDays ?? 0;
-  const till = info?.kasa?.till;
-  if (!info || info.sources?.openDays !== "kasa" || !till) return open;
-  const span = Math.round((Date.parse(`${till.to}T00:00:00Z`) - Date.parse(`${till.from}T00:00:00Z`)) / 86_400_000) + 1;
-  return Number.isFinite(span) ? Math.max(open, Math.min(daysInMonth(info.month), span)) : open;
+export function prorationDays(info: Pick<Month, "month" | "openDays" | "sources" | "kasa"> | undefined, closed = false): number {
+  if (!info) return 0;
+  const dim = daysInMonth(info.month);
+  const open = Math.min(dim, info.openDays ?? 0);
+  const till = info.kasa?.till;
+  if (info.sources?.openDays !== "kasa" || !till) return open;
+  const to = closed ? `${info.month}-${String(dim).padStart(2, "0")}` : till.to;
+  const span = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${till.from}T00:00:00Z`)) / 86_400_000) + 1;
+  return Number.isFinite(span) ? Math.min(dim, Math.max(open, span)) : open;
 }
 
 // ============================================================================
@@ -2093,9 +2102,17 @@ export function createModel(ds: Dataset) {
     const noteOf = (key: string) => notes?.get(key) ?? null;
     const dim = daysInMonth(month);
     const openDays = info?.openDays ?? 0;
-    // Aylık kalemler ve personel bu günle (kasa raporlarından gelen ayda takvim günü; prorationDays)
-    const days = prorationDays(info);
+    // Aylık kalemler ve personel bu günle (kasa raporlarından gelen ayda takvim günü; biten ayda ayın sonuna kadar;
+    // prorationDays)
+    const closedMonth = month < currentMonth;
+    const days = prorationDays(info, closedMonth);
     const ratio = days / dim;
+    // "Tümü": şubeye bağlı kişi ve kalem kendi şubesinin günüyle (şubenin açılış ayında açılış gününden; şube görünümüyle
+    // aynı, Tümü şubelerin toplamı). İşletme geneli kalem ve o ay bilgisi olmayan şube işletmenin günüyle
+    const branchDays = (branchId: string | null | undefined): { days: number; open: number } => {
+      const own = !ds.branchView && branchId ? info?.byBranch?.[branchId] : undefined;
+      return own ? { days: prorationDays(own, closedMonth), open: own.openDays ?? 0 } : { days, open: openDays };
+    };
     const cells = new Map<string, PnlCell>();
     const auto = (key: string, computed: number) => {
       const ov = overrides.get(key);
@@ -2166,11 +2183,26 @@ export function createModel(ds: Dataset) {
     const sections: Record<FixedSection | "komisyon", number> = { personel: 0, faturalar: 0, kira: 0, genel: 0, komisyon: 0 };
     // Personel: o ay çalışanlar, o ayın maaşıyla (elle girilen bordro tutarı her zaman geçerli)
     const pers = personnelFor(month);
-    sections.personel += auto("personnel:net", pers.net * ratio);
+    // Kişinin oranı şubesinin günüyle; şubelerin günü farklıysa (bir şubenin açılış ayı) parçalar kişi kişi oranlanır
+    const rowRatio = (r: PersonnelSummary["rows"][number]) => branchDays(r.staff.branchId).days / dim;
+    const mixed = pers.rows.some((r) => Math.abs(rowRatio(r) - ratio) > 1e-9);
+    const scaled = mixed
+      ? {
+          net: sum(pers.rows.map((r) => r.staff.netSalary * rowRatio(r))),
+          total: sum(pers.rows.map((r) => r.total * rowRatio(r))),
+          deductions: sum(pers.rows.map((r) => r.deductions * rowRatio(r))),
+          employerSgk: sum(pers.rows.map((r) => r.employerSgk * rowRatio(r))),
+          employerUnemployment: sum(pers.rows.map((r) => r.employerUnemployment * rowRatio(r))),
+          extras: sum(pers.rows.map((r) => r.staff.extras * rowRatio(r))),
+        }
+      : null;
+    sections.personel += auto("personnel:net", scaled ? scaled.net : pers.net * ratio);
     // Maliyet − net: çalışanların SGK + işsizlik kesintisi, işveren payları ve yemek / yol / prim ekleri (denetim E-44;
     // yalnız işveren payı değil). Hücre bu ayın bileşimini taşır
-    sections.personel += auto("personnel:employer", (pers.total - pers.net) * ratio);
-    cells.get("personnel:employer")!.info = personnelExtraText(pers, ratio, days, dim);
+    sections.personel += auto("personnel:employer", scaled ? scaled.total - scaled.net : (pers.total - pers.net) * ratio);
+    cells.get("personnel:employer")!.info = scaled
+      ? `${personnelExtraText(scaled, 1, dim, dim)} Her kişi kendi şubesinin günüyle oranlandı.`
+      : personnelExtraText(pers, ratio, days, dim);
     // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
     // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
     // "Açık güne göre oranla" kapalı kalem (kira varsayılanı) biten ayda tam ay; süren ayda bugüne kadarki pay (ciroyla
@@ -2183,9 +2215,10 @@ export function createModel(ds: Dataset) {
       const key = `fixed:${fe.id}`;
       const sKey = stopajKey(fe.id);
       if (inRange(fe, month)) {
-        const d = fe.prorate === false ? fullDays : days;
-        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim, d));
-        if (fe.prorate === false && d !== days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
+        const own = branchDays(fe.branchId);
+        const d = fe.prorate === false ? fullDays : own.days;
+        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, own.open, dim, d));
+        if (fe.prorate === false && d !== own.days) cells.get(key)!.info = "Tam ay: açık güne göre oranlanmıyor (Sabit giderler › Açık güne göre oranla).";
         const gross = officialRentGross(fe, rentRate);
         if (gross !== null) {
           const share = dim ? d / dim : 0;
@@ -2448,8 +2481,9 @@ export function createModel(ds: Dataset) {
       key: "revenue",
       label: "AYLIK CİRO (KDV dahil – POS)",
       kind: "manual",
-      editable: true,
-      hint: "Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır. Boşsa kasa raporlarının Z toplamı kullanılır.",
+      // "Tümü" birden çok kasanın toplamıyken yazılmaz: yazılan tek şubenin ay satırına inerdi (monthTotalsLocked)
+      editable: !ds.monthTotalsLocked,
+      hint: `Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır. Boşsa kasa raporlarının Z toplamı kullanılır.${ds.monthTotalsLocked ? ` ${MONTH_TOTALS_LOCKED_TEXT}` : ""}`,
     });
     sonuc({
       key: "revenueNet",
