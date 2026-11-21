@@ -302,6 +302,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     kurmaya çalıştı ve canlı derleme durdu (yayındaki sürüm değişmedi). Düzeltme: 0040 canlıdaki hâline döndü, sütun
     `0041_kasaya_giren` ile eklendi. Birleşmemiş bir dalın migration'ını yeniden üretmeden önce canlıda kaydı var mı
     bakın (`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 3`).
+  - Eski bir yedeğin verisiyle takılan migration (boş veritabanında ve canlıda geçmiş) yine değiştirilmez: geri
+    yüklemenin ondan hemen önce çalıştırdığı ek adım `src/lib/backup/format.ts` › `BEFORE_MIGRATION_SQL`'e yazılır
+    ([YEDEK.md](YEDEK.md) § 4). Örnek: `0056_sube_kirilimi` eski satırları 'tuzla'ya bağlar, kayıt ancak 0057'de
+    yazılır. Aynı nedenle şubelerden (0053) önceki, verisi olan bir veritabanında `npm run db:migrate` 0056'da yabancı
+    anahtar hatası verir (drizzle bekleyenlerin hepsini tek işlemde uygular, hiçbir şey değişmez): böyle bir veritabanı
+    `npm run db:backup` ile alınıp boş bir veritabanına `npm run db:restore` ile yüklenir.
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.

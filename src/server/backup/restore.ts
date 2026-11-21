@@ -17,6 +17,7 @@ import {
   BACKUP_FORMAT,
   BACKUP_VERSION,
   backupSchemaPlan,
+  BEFORE_MIGRATION_SQL,
   END_PREFIX,
   mergeUserRows,
   orderTables,
@@ -187,16 +188,23 @@ export function planFor(backup: ParsedBackup, folder = "drizzle"): SchemaPlan {
 
 type Tx = postgres.Sql | postgres.TransactionSql;
 
+/** Migration'dan önce çalışacak ek SQL (BEFORE_MIGRATION_SQL), migration'ın günlük zamanına göre */
+export function beforeMigrationSql(migrations: { meta: MigrationMeta; tag: string }[]): Map<number, readonly string[]> {
+  return new Map(migrations.filter((m) => BEFORE_MIGRATION_SQL[m.tag]).map((m) => [m.meta.folderMillis, BEFORE_MIGRATION_SQL[m.tag]]));
+}
+
 /**
  * drizzle'ın migrate döngüsünün kopyası (drizzle-orm/pg-core/dialect.js › migrate), verilen işlemin içinde ve
  * verilen migration'larla: geri yükleme yedeğin sürümünde durup veriyi yükleyebilsin, sonra kalanları uygulasın,
  * hepsi tek işlemde (bir hata hedefi olduğu gibi bırakır). drizzle'ın migrate'i kendi işlemini açar ve hep sonuna
- * kadar gider.
+ * kadar gider. `before`: bir migration'dan hemen önce çalışan ek SQL (beforeMigrationSql; dolu tabloda takılan
+ * migration'lar için, BEFORE_MIGRATION_SQL).
  */
-export async function applyMigrations(tx: Tx, migrations: MigrationMeta[]): Promise<void> {
+export async function applyMigrations(tx: Tx, migrations: MigrationMeta[], before: ReadonlyMap<number, readonly string[]> = new Map()): Promise<void> {
   await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS drizzle`);
   await tx.unsafe(`CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)`);
   for (const m of migrations) {
+    for (const stmt of before.get(m.folderMillis) ?? []) await tx.unsafe(stmt);
     for (const stmt of m.sql) if (stmt.trim()) await tx.unsafe(stmt);
     await tx.unsafe(`INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2::bigint)`, [m.hash, String(m.folderMillis)]);
   }
@@ -406,10 +414,13 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
 
   const first = migrations.filter((m) => m.meta.folderMillis <= plan.upTo).map((m) => m.meta);
   const rest = migrations.filter((m) => m.meta.folderMillis > plan.upTo).map((m) => m.meta);
+  // Eski sürümde alınmış yedekte sonraki migration'lar dolu tablolarda çalışır: takılanlardan önce ek adım (ör. 0056'dan
+  // önce varsayılan şube; BEFORE_MIGRATION_SQL)
+  const before = beforeMigrationSql(migrations);
   const result = await sql.begin(async (tx) => {
     // --sil: sayaçların hedefteki yeri silmeden önce okunur; geri yüklemeden sonra hiçbiri bunun gerisine düşmez
     const floor = opts.wipe ? await wipeTarget(tx) : new Map<string, string>();
-    await applyMigrations(tx, first);
+    await applyMigrations(tx, first, before);
     // Hedef boştu (ya da silindi): şimdi tablolarda olan her satırı migration'lar ekledi (ör. 0011'in varsayılan
     // harcama kategorileri). Yedeğin kaynağında da eklenmişlerdi; sonra değiştirilmiş ya da silinmiş olabilirler.
     // Doğrusu dosyadaki: tablolar boşaltılır, veri yalnız dosyadan gelir
@@ -474,7 +485,7 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
       adminCreated = true;
     }
 
-    await applyMigrations(tx, rest);
+    await applyMigrations(tx, rest, before);
     // Yedekten yeni migration'ların kurduğu tablolar hedefte de vardıysa onların sayaçları da eski yerinden geri gitmez
     if (rest.length && floor.size) await resetSequences(tx, floor);
     // Günlük işlerin izlenmesi geri yükleme anından yeniden başlar (src/server/jobs/watch.ts): dosyadaki çalışma

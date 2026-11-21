@@ -124,7 +124,12 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
 1. Dosyayı baştan sona okur ve doğrular (özet, son satır, sürüm). Bozuksa hedefe bağlanmadan durur:
    `Dosya eksik ya da bozuk (indirme yarıda kesilmiş olabilir): …`
 2. Şema sürümüne bakar. Yedek bu koddan yeni bir sürümle alınmışsa yüklemez (`önce kodu güncelleyin (git pull)`).
-   Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır.
+   Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır. Boş veritabanında
+   geçip dolu tabloda takılan bir migration'dan hemen önce ek bir adım çalışır (`src/lib/backup/format.ts` ›
+   `BEFORE_MIGRATION_SQL`; uygulanmış migration dosyası değiştirilmez): şubelerden (0053, 4 Kasım 2026) önce alınmış
+   bir yedekte `0056_sube_kirilimi` eski ay, satış, personel ve kasa satırlarını Tuzla'ya yazıp şube kütüğüne bağlar;
+   Tuzla kaydı ondan önce yazılır (0057'deki kaydın aynısı). Kütük geri yüklemeden sonra yalnız Tuzla'dır; Marina ve
+   laffogato.net sonraki tohumda gelir (`npm run db:seed`; canlıda her yayında kendiliğinden).
 3. **Tek bir işlemde:** (`--sil` ise) hedefteki tabloları ve `drizzle` şemasını siler, şemayı yedeğin sürümüne kurar,
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
    ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
@@ -253,14 +258,15 @@ yazılmayanlar hedefte yoktur, sayaçlar ileridedir, şema günceldir; yarım, d
 tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazılmaz; sayı tutmazsa hedef olduğu gibi kalır;
 `--sil` önce hedefin yedeğini alır, parolaları korur, oturumları kapatır, sayaçları hedefteki yerlerinin gerisine
 düşürmez (sonra eklenen kişi eski bir kimliği almaz); belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema
-sürümünde alınmış yedek yüklenip son sürüme taşınır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
+sürümünde (şubelerden önce, ay, satış, personel ve kasa satırlarıyla) alınmış yedek yüklenip son sürüme taşınır, eski
+satırlar Tuzla'ya düşer. **Her migration birleştirmesinden sonra** bir kez çalıştırın
 (yeni tablolar ve sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
 
 ## 11. Kod
 
 | Yer | Ne |
 |-----|----|
-| `src/lib/backup/format.ts` | Biçim, yazılmayanlar, şema sürümü, yükleme sırası, kullanıcıların giriş bilgileri, hatırlatma (saf; `tests/yedek.test.ts`) |
+| `src/lib/backup/format.ts` | Biçim, yazılmayanlar, şema sürümü, migration öncesi ek adımlar (`BEFORE_MIGRATION_SQL`), yükleme sırası, kullanıcıların giriş bilgileri, hatırlatma (saf; `tests/yedek.test.ts`) |
 | `src/server/backup/core.ts` | Dışa aktarım (`backupLines`, `writeBackupFile`) |
 | `src/server/backup/restore.ts` | Dosyayı okuma ve doğrulama, geri yükleme |
 | `src/server/backup/state.ts` | İndirme bağlantısı, son yedek kaydı (`integration_state` › `backup.last`), yüklenen belgelerin toplamı |

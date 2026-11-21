@@ -1,7 +1,7 @@
 // Geri yüklemenin otomatik provası (docs/YEDEK.md › Otomatik prova), gerçek Postgres'te: yedek al → boş veritabanına
 // geri yükle → her tablo aynı (dışarıda bırakılanlar hariç); dolu veritabanına --sil önce onun yedeğini alır, parolaları
 // korur, sayaçları geri götürmez; yarım ya da bozuk dosya reddedilir; sayılar tutmazsa hedef olduğu gibi kalır; eski
-// sürümde alınmış yedek yüklenip son sürüme taşınır.
+// sürümde alınmış yedek (şubelerden önceki ay, satış, personel ve kasa satırlarıyla) yüklenip son sürüme taşınır.
 //
 // YEDEK_TEST_DATABASE_URL verilmezse atlanır. Verilen sunucuda geçici veritabanları (laf_yedek_*_<pid>) açılıp sonunda
 // silinir; adres yalnız bağlanmak için (ör. postgres://postgres:postgres@localhost/postgres).
@@ -400,6 +400,10 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
       INSERT INTO products (category_id, name, size, price, site_menu_id, site_menu_slot) VALUES (1, 'Latte', 'M', 95, 'mnu-0001', 'M');
       INSERT INTO users (email, name, password_hash, role) VALUES ('okan@ornek.com', 'Okan', 'scrypt$x', 'admin');
       INSERT INTO push_subscriptions (user_id, endpoint, session_version) VALUES (1, 'https://push.example/2', 1);
+      INSERT INTO months (month, open_days) VALUES ('2026-09', 30);
+      INSERT INTO sales_lines (month, pos_name, qty, revenue) VALUES ('2026-09', 'LATTE', 3, 285);
+      INSERT INTO staff (name, net_salary) VALUES ('Ayşe', 30000);
+      INSERT INTO cash_reports (date, submitted_by_name) VALUES ('2026-09-30', 'Ayşe');
     `);
     // O sürümde job_runs yok, push_subscriptions.orders yok
     assert.equal((await publicTables(sqlC)).includes("job_runs"), false);
@@ -415,6 +419,13 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.deepEqual({ ...p }, { name: "Latte", price: 95, site_menu_id: "mnu-0001" });
     assert.ok((await publicTables(sqlD)).includes("job_runs"));
     assert.ok((await columnsOf(sqlD, "push_subscriptions")).some((c) => c.name === "orders"));
+    // Şubelerden (0053, 4 Kasım 2026) önceki ay, satış, personel ve kasa satırları: 0056 şube sütununu ve kütüğe
+    // yabancı anahtarı bu satırlarla kurar; varsayılan şube ondan önce yazılır (BEFORE_MIGRATION_SQL), satırlar Tuzla'nın
+    const branchesOf = async (sql: Sql) => (await sql.unsafe<{ id: string; name: string }[]>(`SELECT id, name FROM branches ORDER BY id`)).map((b) => ({ ...b }));
+    const branchIdsIn = async (sql: Sql, table: string) =>
+      (await sql.unsafe<{ b: string }[]>(`SELECT DISTINCT branch_id AS b FROM public.${ident(table)}`)).map((r) => r.b);
+    assert.deepEqual(await branchesOf(sqlD), [{ id: "tuzla", name: "Tuzla" }]);
+    for (const t of ["months", "sales_lines", "staff", "cash_reports"]) assert.deepEqual(await branchIdsIn(sqlD, t), ["tuzla"], t);
     // Sayaç: yeni ürün kimliği eskisinin ardından
     const [{ id }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO categories (name) VALUES ('Çay') RETURNING id`);
     assert.equal(id, 2);
@@ -425,6 +436,9 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     await restoreBackup(sqlD, await readBackupFile(file), { wipe: true, safetyCopyPath: join(dir, "eski-once.json.gz") });
     const [{ id: nextRun }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO job_runs (job, status) VALUES ('gunluk', 'ok') RETURNING id`);
     assert.ok(nextRun > run, `${nextRun} > ${run}`);
+    // --sil ile de: hedefin bugünkü kütüğü silinir, şubesiz eski satırlar yine Tuzla'ya düşer
+    assert.deepEqual(await branchesOf(sqlD), [{ id: "tuzla", name: "Tuzla" }]);
+    for (const t of ["months", "sales_lines", "staff", "cash_reports"]) assert.deepEqual(await branchIdsIn(sqlD, t), ["tuzla"], t);
     const [{ id: cat }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO categories (name) VALUES ('Soğuk') RETURNING id`);
     assert.equal(cat, 3, "Çay'ın (2) kimliği yeniden verilmez");
   });
