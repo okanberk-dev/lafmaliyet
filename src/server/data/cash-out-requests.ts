@@ -131,6 +131,14 @@ interface CardBase {
   id: number;
   version: number;
   date: string;
+  /**
+   * İsteğin kasası (kasadan çıkanda isteğin şubesi, fotoğrafta raporun şubesi; rapor artık yoksa null). Onay buna yazar,
+   * yöneticinin seçimine değil; loadCashRequestQueue birden çok kasa açıkken bundan `branch`ı (kartta ad, "Günü aç"ta
+   * `?sube=`) kurar (denetim 21 Kasım #29)
+   */
+  branchId: string | null;
+  /** Birden çok kasa açıkken isteğin kasası (loadCashRequestQueue doldurur); tek kasada null */
+  branch?: { id: string; name: string } | null;
   requestedByName: string;
   createdAt: string;
   waited: string;
@@ -216,7 +224,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
   const out: (CashOutCard | PhotoRemovalCard)[] = [];
   for (const x of rows) {
     if (!x.day) continue;
-    const base: CardBase = { id: x.id, version: x.version, date: x.day, requestedByName: x.requestedByName, createdAt: x.createdAt.toISOString(), waited: waitedText(x.createdAt, now), message: x.message };
+    const base: Omit<CardBase, "branchId"> = { id: x.id, version: x.version, date: x.day, requestedByName: x.requestedByName, createdAt: x.createdAt.toISOString(), waited: waitedText(x.createdAt, now), message: x.message };
     if (x.kind === "foto-kaldir") {
       const p = PhotoRemovalPayload.safeParse(x.payload);
       if (!p.success) continue;
@@ -230,7 +238,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
   return out;
 }
 
-async function photoCard(base: CardBase, p: { photoId: number; photoKind: RemovablePhotoKind; reportId: number; day: string }): Promise<PhotoRemovalCard> {
+async function photoCard(base: Omit<CardBase, "branchId">, p: { photoId: number; photoKind: RemovablePhotoKind; reportId: number; day: string }): Promise<PhotoRemovalCard> {
   const db = getDb();
   const [[photo], [report], [{ n: sameKind }]] = await Promise.all([
     db
@@ -254,6 +262,8 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : kindRefusal ? kindRefusal : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
   return {
     ...base,
+    // Raporun kasası: "Raporu aç" o şubenin gününü açar
+    branchId: report?.branchId ?? null,
     kind: "foto-kaldir",
     photoKind: p.photoKind,
     photo: photo && (photo.kind === "kasa-z" || photo.kind === "kasa-pos" || photo.kind === "kasa-okc") ? { id: photo.id, kind: photo.kind, createdAt: photo.createdAt.toISOString(), byName: photo.byName } : null,
@@ -262,7 +272,7 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   };
 }
 
-async function cashOutCard(base: CardBase, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
+async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
   const db = getDb();
   const day = p.day;
   // İsteğin kasası (yöneticinin seçimi değil): isteği açanın şubesi; eski isteklerde satırın şubesi, o da yoksa Tuzla
@@ -321,6 +331,8 @@ async function cashOutCard(base: CardBase, p: ReturnType<typeof CashOutRequestPa
   const expenseDay = p.line && p.line.kind === "harcama" ? expenseDateFor(day, p.line.receiptDate) : null;
   return {
     ...base,
+    // Kartın okuduğu ve onayın yazdığı kasa
+    branchId: sube,
     kind: "kasa-cikan",
     op: p.op,
     line: p.line,

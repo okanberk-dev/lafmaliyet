@@ -16,8 +16,9 @@ import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNo
 import { monthSource } from "@/lib/lafpos/switch";
 import { addDays, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
-import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode } from "@/lib/waste-requests";
+import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
+import { currentPhysicalBranch } from "@/server/branch-scope";
 import { loadModel } from "@/server/data/dataset";
 import { loadDayLafposIkram } from "@/server/data/lafpos-ikram";
 import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
@@ -90,8 +91,10 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
       </ButtonLink>
     </div>
   );
-  // Personel: günün kipi (doğrudan / istek / kapalı) ve satırların silme kipi sunucuda (kasanın kilidiyle)
-  const lock = admin ? null : await wasteLock(getDb(), date);
+  // Personel: günün kipi (doğrudan / istek / kapalı) ve satırların silme kipi sunucuda (kasanın kilidiyle). Kilit şube
+  // başına (denetim 21 Kasım #13): formun kipi kaydın ineceği şubenin kasasından (addWaste gibi seçili fiziksel şube)
+  const branchId = admin ? null : (await currentPhysicalBranch()).id;
+  const lock = branchId ? await wasteLock(getDb(), date, branchId) : null;
   const mode = lock ? staffWasteMode(date, now, lock) : "direct";
   if (mode === "closed") {
     return (
@@ -142,7 +145,16 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
         maybeTwice: entries.filter((e) => e.kind === "zayi" && e.productId !== null && lafposZayi.has(e.productId)).map((e) => e.id),
       }
     : null;
-  const deleteModes: Record<number, WasteDeleteMode> = Object.fromEntries(entries.map((e) => [e.id, lock ? staffDeleteMode(e, user, now, lock) : "direct"]));
+  // Satırın silme kipi kaydın kendi şubesinin kilidiyle (removeWaste gibi): "Tümü"deki şubesiz personel öteki şubenin
+  // kaydını da görür
+  const locks = new Map<string, WasteLock>();
+  if (branchId && lock) {
+    locks.set(branchId, lock);
+    for (const b of new Set(entries.map((e) => e.branchId))) if (!locks.has(b)) locks.set(b, await wasteLock(getDb(), date, b));
+  }
+  const deleteModes: Record<number, WasteDeleteMode> = Object.fromEntries(
+    entries.map((e) => [e.id, lock ? staffDeleteMode(e, user, now, locks.get(e.branchId) ?? lock) : "direct"]),
+  );
   const deleteAsks: Record<number, { requestId: number; by: string; mine: boolean }[]> = {};
   for (const a of marks.deleteAsks) (deleteAsks[a.entryId] ??= []).push({ requestId: a.requestId, by: a.by, mine: a.byId === user.id });
   const lateBadges = Object.fromEntries(marks.lateApprovals.map((a) => [a.entryId, `Geç kayıt · ${a.by} onayladı ${short(todayTR(new Date(a.at)))}`]));

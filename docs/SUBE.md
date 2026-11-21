@@ -176,9 +176,19 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
 - **Personel istekleri** (düzeltme, silme, geç rapor, kasadan çıkan): onay isteğin kendi raporuna ve şubesine yazar,
   yöneticinin şube seçimine değil (önceden "Tümü"den onaylanan Marina önerisi Tuzla'nın raporuna yazılıyordu). Konu
   şubenin günü (`cashDaySubject`: Tuzla `gun:G`, öteki `gun:G:şube`); bir şubenin raporu girilince ya da silinince
-  yalnız o şubenin istekleri kapanır. Onaylar kartı birden çok şube açıkken şubeyi adıyla gösterir.
-- **Personelin yetkisi** (günü hâlâ düzenleyebilir mi, fotoğrafı görebilir mi, geç rapor açık mı): başka şubenin raporu
-  bu şubenin gününü açmaz ya da kapatmaz (`staffDayOpen`, `staffLateDayOpen`).
+  yalnız o şubenin istekleri kapanır. Onaylar kartı birden çok şube açıkken şubeyi adıyla gösterir ve "Günü aç" /
+  "Raporu aç" `&sube=` ile o şubenin gününü açar; kasadan çıkan ve fotoğraf kaldırma kartları da (fotoğrafta raporun
+  şubesi; önceden şubesizdi, bağlantı yöneticinin seçili kasasını açıyordu, denetim 21 Kasım #29).
+- **Zayi istekleri** (geç kayıt, silme): Onaylar kartının bağlamı isteğin şubesinden, yöneticinin seçiminden değil
+  (denetim 21 Kasım #28): geç kayıtta isteği açanın şubesi (yükteki `branchId`; eski isteklerde Tuzla), silmede kaydın
+  şubesi. Günün kasa raporu (Z ödenmez, gönderildi mi, kasa e-postası uyarısı), o günün aynı kalemden kayıtları, aynı
+  kalemin bekleyen öteki istekleri ve kayıtlı ikram o şubenin; maliyet modeli şubenin kapsamıyla, istekte şube başına
+  bir kez (`loadBranchModelOnce`). Kart birden çok şube açıkken şubeyi adıyla yazar, "Günü aç" `&sube=` ile açar.
+- **Personelin yetkisi** (günü hâlâ düzenleyebilir mi, fotoğrafı görebilir mi, geç rapor açık mı, zayiyi doğrudan
+  girip silebilir mi): başka şubenin raporu bu şubenin gününü açmaz ya da kapatmaz (`staffDayOpen`, `staffLateDayOpen`,
+  zayide `wasteLock`: yeni kayıtta ve geç kayıt isteğinde kaydın ineceği şube, silmede kaydın kendi şubesi; denetim
+  21 Kasım #13). Önceden zayi kilidi şubesizdi: iki şube dünü ve bugünü girince dün personele hiç kapanmıyor, Tuzla'nın
+  raporları Marina'nın unutulan dününü kapatıyordu.
 - **Kapalı gün** işletmenindir (`special_days`'te şube yok; günün herhangi bir şubedeki izi kanıttır), ama Z no ve
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye

@@ -26,6 +26,8 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
 import { CashBreakdown, LafposDiffList } from "../kasa/cash-summary";
+// İsteğin kasası (birden çok şube açıkken): kartta adı, günün bağlantısında `?sube=`; kasadan çıkan kartları da kullanır
+import { BranchBadge, kasaDayHref } from "./branch-badge";
 import { ClosedDayItem } from "./kasa-closed-cards";
 import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
 
@@ -75,18 +77,6 @@ export function KasaRequestCards({
     </Card>
   );
 }
-
-/** İsteğin kasası (birden çok şube açıkken): onay bu şubenin raporuna yazar */
-function BranchBadge({ branch }: { branch?: { id: string; name: string } | null }) {
-  return branch ? (
-    <Badge tone="blue" dot>
-      {branch.name}
-    </Badge>
-  ) : null;
-}
-
-/** Günün kasa sayfası; birden çok şube açıkken isteğin şubesinde açılır (`?sube=`) */
-const kasaDayHref = (card: { date: string; branch?: { id: string } | null }) => `/panel/kasa?gun=${card.date}${card.branch ? `&sube=${encodeURIComponent(card.branch.id)}` : ""}`;
 
 /** Kartın başı: tür ve gün, isteyen, an, bekleme, neden */
 function Head({ card, title, badge }: { card: CorrectionCard | DeleteCard; title: string; badge?: ReactNode }) {

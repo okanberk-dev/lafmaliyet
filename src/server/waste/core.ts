@@ -61,9 +61,20 @@ export interface WasteInput {
 
 export type WasteRow = typeof s.wasteEntries.$inferSelect;
 
-/** Günün kasa kilidi: o günün raporu ve ondan sonraki bir rapor (en çok iki satır) */
-export async function wasteLock(db: Tx, date: string): Promise<WasteLock> {
-  const rows = await db.select({ date: s.cashReports.date }).from(s.cashReports).where(gte(s.cashReports.date, date)).orderBy(asc(s.cashReports.date)).limit(2);
+/**
+ * Günün kasa kilidi: o günün raporu ve ondan sonraki bir rapor (en çok iki satır), verilen şubenin kasasında. Kasa şube
+ * başınadır (kasanın kuralı staffDayOpen ile aynı; docs/SUBE.md › Personelin yetkisi): başka şubenin raporu bu şubenin
+ * gününü açmaz ya da kapatmaz. Önceden şubesizdi: iki şube dünü ve bugünü girince dün personele hiç kapanmıyordu, Tuzla'nın
+ * raporları Marina'nın unutulan dününü kapatıyordu (denetim 21 Kasım #13). Şube: yeni kayıtta ve geç kayıt isteğinde
+ * kaydın ineceği fiziksel şube, silmede kaydın kendi şubesi.
+ */
+export async function wasteLock(db: Tx, date: string, branchId: string): Promise<WasteLock> {
+  const rows = await db
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(and(gte(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .orderBy(asc(s.cashReports.date))
+    .limit(2);
   return { hasReport: rows[0]?.date === date, laterReport: rows.some((r) => r.date > date) };
 }
 
@@ -99,7 +110,7 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
     const branchId = (await currentPhysicalBranch()).id;
     await refuseLafposIkram(tx, data, branchId, now);
     if (me.role !== "admin") {
-      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date));
+      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date, branchId));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
       const closed = await closedDayRefusal(data.date, me.role, tx);
       if (closed) throw new UserError(closed);
@@ -123,7 +134,8 @@ export async function removeWaste(db: DB, me: WasteActor, id: number, now = new 
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
+    // Kilit kaydın kendi şubesinin kasasından (seçili şubeden değil)
+    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
     await tx.delete(s.wasteEntries).where(eq(s.wasteEntries.id, row.id));
     await closeDeleteRequests(tx, row.id, now);
     return row;
@@ -145,13 +157,14 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
   const message = input.message.trim();
   if (message.length < 3) throw new UserError(WASTE_REQUEST_TEXT.messageShort);
   return db.transaction(async (tx) => {
-    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date));
+    // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın. Günün kilidi
+    // de o şubenin kasasından
+    const branchId = (await currentPhysicalBranch()).id;
+    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date, branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.useDirect);
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
     const closed = await closedDayRefusal(input.date, me.role, tx);
     if (closed) throw new UserError(closed);
-    // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın
-    const branchId = (await currentPhysicalBranch()).id;
     await refuseLafposIkram(tx, input, branchId, now);
     const target = await resolveWasteTarget(tx, input);
     const payload: LateWastePayloadT = LateWastePayload.parse({
@@ -203,7 +216,7 @@ export async function proposeWasteDelete(
     // Kayıt kilitlenir (kayıt, sonra istek): aynı anda verilen onay ya da doğrudan silmeyle sıraya girer, silinmiş kayda istek açılmaz
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date));
+    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteDirect);
     if (mode === "none") throw new UserError(WASTE_REQUEST_TEXT.deleteOld);
     const payload: WasteDeletePayloadT = {

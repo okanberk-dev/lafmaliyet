@@ -138,8 +138,9 @@ test("yetki: personel bugüne ve düne (dün kilitlenene kadar) girer, kendi kay
   assert.match(src, /\.refine\(\(d\) => \(d\.productId === null\) !== \(d\.ingredientId === null\)/);
   // Kip çekirdekte (dalga 10 §2.8; tests/zayi-istek.test.ts): personelde doğrudan değilse ret
   const core = readFileSync(join(root, "src/server/waste/core.ts"), "utf8");
-  assert.match(core, /if \(me\.role !== "admin"\) \{\s+const mode = staffWasteMode\(data\.date, now, await wasteLock\(tx, data\.date\)\);\s+if \(mode !== "direct"\)/);
-  assert.match(core, /if \(me\.role !== "admin" && staffDeleteMode\(row, me, now, await wasteLock\(tx, row\.date\)\) !== "direct"\)/);
+  // Kilit şube başına (denetim 21 Kasım #13): yeni kayıtta kaydın ineceği şube, silmede kaydın kendi şubesi
+  assert.match(core, /if \(me\.role !== "admin"\) \{\s+const mode = staffWasteMode\(data\.date, now, await wasteLock\(tx, data\.date, branchId\)\);\s+if \(mode !== "direct"\)/);
+  assert.match(core, /if \(me\.role !== "admin" && staffDeleteMode\(row, me, now, await wasteLock\(tx, row\.date, row\.branchId\)\) !== "direct"\)/);
   const page = readFileSync(join(root, "src/app/panel/zayi/page.tsx"), "utf8");
   // Ay özeti (maliyet) yalnız yöneticiye: personel dalı ondan önce döner
   assert.ok(page.indexOf("if (!admin)") < page.indexOf("<WasteMonth"), "personel maliyet özetini görmez");

@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, gte, inArray, lte, max, min, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { DEFAULT_BRANCH_ID, namedTill } from "@/lib/branches";
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
@@ -10,6 +11,7 @@ import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText, type LateWastePayloadT, type WasteDeletePayloadT } from "@/lib/waste-requests";
+import { listBranches } from "@/server/branches";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
 
@@ -198,6 +200,11 @@ interface CardBase {
   dayLong: string;
   date: string;
   item: string;
+  /**
+   * İsteğin şubesi (birden çok kasa açıkken; tek kasada null): kartta adı, "Günü aç"ta `?sube=`. Bağlam (kasa raporu,
+   * o günün kayıtları, kayıtlı ikram) bu şubeden okunur, onay da buraya yazar
+   */
+  branch: { id: string; name: string } | null;
 }
 
 export interface LateWasteCard extends CardBase {
@@ -241,8 +248,15 @@ export interface WasteDeleteCard extends CardBase {
 
 export type WasteRequestCard = LateWasteCard | WasteDeleteCard;
 
-/** Onaylar › Zayi ve ikram: bekleyen istekler, en eski gün önce; maliyet modeli bölümden (loadModelOnce) */
-export async function loadWasteRequestQueue(model: Model, now: Date = new Date()): Promise<WasteRequestCard[]> {
+/**
+ * Onaylar › Zayi ve ikram: bekleyen istekler, en eski gün önce. Kartın bağlamı isteğin şubesinden, yöneticinin şube
+ * seçiminden değil (docs/SUBE.md › Kasa raporu "Tümü"de; denetim 21 Kasım #28): geç kayıtta isteği açanın şubesi (yük;
+ * bu alandan önceki isteklerde Tuzla, onay da oraya yazar), silmede kaydın şubesi. Günün kasa raporu (Z ödenmez,
+ * gönderildi mi), o günün aynı kalemden kayıtları, aynı kalemin bekleyen öteki istekleri, kayıtlı ikram ve LafPOS
+ * günleri o şubenin; maliyet modeli de şubenin kapsamıyla (`modelOf`; Onaylar'da istek başına şube başına bir kez,
+ * loadBranchModelOnce). Önceden günle okunuyordu: Marina'nın isteği Tuzla'nın raporunu ve iki şubenin ikramını gösteriyordu.
+ */
+export async function loadWasteRequestQueue(modelOf: (branchId: string) => Promise<Model>, now: Date = new Date()): Promise<WasteRequestCard[]> {
   const db = getDb();
   const rows = await db
     .select()
@@ -252,10 +266,10 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
   if (!rows.length) return [];
   const days = [...new Set(rows.map((r) => r.day).filter((d): d is string => !!d))];
   const months = [...new Set(days.map((d) => d.slice(0, 7)))];
-  const [entries, reports, counted] = await Promise.all([
+  const [entries, reports, counted, branches] = await Promise.all([
     db.select().from(s.wasteEntries).where(inArray(s.wasteEntries.date, days)),
     db
-      .select({ date: s.cashReports.date, emailedAt: s.cashReports.emailedAt, offRevenue: s.cashReports.offRevenue })
+      .select({ date: s.cashReports.date, branchId: s.cashReports.branchId, emailedAt: s.cashReports.emailedAt, offRevenue: s.cashReports.offRevenue })
       .from(s.cashReports)
       .where(inArray(s.cashReports.date, days)),
     db
@@ -263,21 +277,32 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
       .from(s.stockCounts)
       .where(inArray(s.stockCounts.month, months))
       .groupBy(s.stockCounts.month),
+    listBranches(db),
   ]);
-  const reportOf = new Map(reports.map((r) => [r.date, r]));
+  // Rapor şubenin günüyle: aynı güne iki şubenin raporu düşer (günle anahtarlanınca biri ötekini eziyordu)
+  const reportOf = new Map(reports.map((r) => [`${r.date}|${r.branchId}`, r]));
+  /** Geç kayıt isteğinin şubesi: yükteki (isteği açanın); bu alandan önceki isteklerde Tuzla (onay da oraya yazar) */
+  const lateBranch = (p: LateWastePayloadT) => p.branchId ?? DEFAULT_BRANCH_ID;
+  // Maliyet modeli yalnız geç kayıt kartlarının şubeleri için (silme kartı modeli okumaz), şube başına bir kez
+  const lateBranches = new Set(
+    rows.flatMap((r) => {
+      const p = r.kind === "zayi-gec" ? LateWastePayload.safeParse(r.payload) : null;
+      return p?.success ? [lateBranch(p.data)] : [];
+    }),
+  );
+  const models = new Map(await Promise.all([...lateBranches].map(async (b) => [b, await modelOf(b)] as const)));
   const countedMonths = new Set(counted.filter((c) => c.n > 0).map((c) => c.month));
   const time = (d: Date) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
-  const productPrice = (id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
-  // LafPOS'un gün sonu gelen günleri (geçiş günü seçiliyse, ondan itibaren; yoksa boş) ve iş günü. Geçiş günü ayarın
-  // kendisi (veri kümesindeki görünümün kasasınınki değil); isteğin şubesine göre uygulanır (branchSwitchDay)
+  const productPrice = (model: Model, id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
+  // Geçiş günü ayarın kendisi; isteğin şubesine göre uygulanır (branchSwitchDay). LafPOS'un gün sonu gelen günleri
+  // şubenin modelinden (LafPOS'un şubesinde geçiş gününden itibaren; ModPOS'ta kalan şubede boş) ve iş günü
   const switchDay = await lafposSwitchDayOf(db);
-  const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
   const today = businessDate(now);
-  /** Günün sayılan ikramının menü değeri: LafPOS satırı kendi değeriyle (zayi dahil), panelin ürün ikramı menü fiyatıyla */
-  const ikramValueOf = (date: string) =>
+  /** Günün sayılan ikramının menü değeri (şubenin modeli): LafPOS satırı kendi değeriyle (zayi dahil), panelin ürün ikramı menü fiyatıyla */
+  const ikramValueOf = (model: Model, date: string) =>
     model.countedWaste
       .filter((w) => w.date === date)
-      .reduce((a, w) => a + (w.source === "lafpos" ? (w.menuValue ?? 0) : w.kind === "ikram" && w.productId !== null ? (productPrice(w.productId) ?? 0) * w.qty : 0), 0);
+      .reduce((a, w) => a + (w.source === "lafpos" ? (w.menuValue ?? 0) : w.kind === "ikram" && w.productId !== null ? (productPrice(model, w.productId) ?? 0) * w.qty : 0), 0);
 
   return rows.flatMap((r): WasteRequestCard[] => {
     const base = {
@@ -290,19 +315,22 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
       waited: waitedText(r.createdAt, now),
       message: r.message,
     };
-    const report = r.day ? reportOf.get(r.day) : undefined;
     if (r.kind === "zayi-gec") {
       const parsed = LateWastePayload.safeParse(r.payload);
       if (!parsed.success) return [];
       const p = parsed.data;
+      const sube = lateBranch(p);
+      const model = models.get(sube)!;
+      const report = reportOf.get(`${p.date}|${sube}`);
       const same = (e: { kind: string; productId: number | null; ingredientId: number | null }) => e.kind === p.kind && e.productId === p.productId && e.ingredientId === p.ingredientId;
-      const dayEntries = entries.filter((e) => e.date === p.date);
+      const dayEntries = entries.filter((e) => e.date === p.date && e.branchId === sube);
       const others = rows.filter((o) => o.id !== r.id && o.kind === "zayi-gec" && o.day === p.date).flatMap((o) => {
         const op = LateWastePayload.safeParse(o.payload);
-        return op.success && same(op.data) ? [o.requestedByName] : [];
+        return op.success && same(op.data) && lateBranch(op.data) === sube ? [o.requestedByName] : [];
       });
-      const menu = p.kind === "ikram" ? productPrice(p.productId) : null;
-      const ikramRecorded = p.kind === "ikram" ? ikramValueOf(p.date) : null;
+      const menu = p.kind === "ikram" ? productPrice(model, p.productId) : null;
+      const ikramRecorded = p.kind === "ikram" ? ikramValueOf(model, p.date) : null;
+      const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
       return [
         {
           ...base,
@@ -310,6 +338,7 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
           date: p.date,
           dayLong: longDateTR(p.date),
           item: wasteItemText(p),
+          branch: namedTill(branches, sube),
           p,
           cost: Math.round(model.wasteCost(p) * 100) / 100,
           menuValue: menu !== null ? Math.round(menu * p.qty * 100) / 100 : null,
@@ -329,6 +358,8 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
     const current = entries.find((e) => e.id === p.entryId);
     const gone = !current || !wasteEntryMatches(p.entry, current);
     const createdAt = new Date(p.entry.createdAt);
+    // Kaydın kendi şubesinin raporu (kayıt yoksa e-posta uyarısı da yok)
+    const report = current ? reportOf.get(`${current.date}|${current.branchId}`) : undefined;
     return [
       {
         ...base,
@@ -336,6 +367,7 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
         date: p.entry.date,
         dayLong: longDateTR(p.entry.date),
         item: wasteItemText(p.entry),
+        branch: current ? namedTill(branches, current.branchId) : null,
         entry: p.entry,
         entryId: p.entryId,
         gone,

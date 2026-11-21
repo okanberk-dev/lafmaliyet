@@ -288,13 +288,14 @@ export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCa
  */
 export async function loadCashRequestQueue(now = new Date()): Promise<CashRequestCard[]> {
   const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards(), listBranches()]);
-  // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler
+  // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler; kasadan çıkan ve fotoğraf kaldırma kartları da
+  // (önceden şubesizdi, "Günü aç" yöneticinin seçili kasasını açıyordu; denetim 21 Kasım #29)
   const many = tillBranches(branches).length > 1;
-  const named = <T extends { branchId: string }>(c: T): T & { branch: { id: string; name: string } | null } => {
+  const named = <T extends { branchId: string | null }>(c: T): T & { branch: { id: string; name: string } | null } => {
     const b = branches.find((x) => x.id === c.branchId);
     return { ...c, branch: many && b ? { id: b.id, name: b.name } : null };
   };
-  return [...day.map(named), ...late.map(named), ...outs, ...closed].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  return [...day.map(named), ...late.map(named), ...outs.map(named), ...closed].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Kayıtlı raporun düzeltme ve silme isteklerinin kartları */
