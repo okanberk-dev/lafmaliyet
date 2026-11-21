@@ -8,7 +8,7 @@ import { cashDaySubject, cashSubjectBranch, handedToText, lateBell, lateBranchOf
 import { money } from "@/lib/format";
 import { lafposDiffs, type LafposDiff } from "@/lib/lafpos/diffs";
 import { lafposHandedGap, type LafposDay } from "@/lib/lafpos/prefill";
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { okcLateChain, zNoNumber, type OkcLateChain } from "@/lib/okc-z";
 import { photoDiffs, savedFields, type CashReading, type PhotoDiff } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
@@ -82,7 +82,8 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
 /** [from, to] içinde LafPOS gün sonu gelmiş LafPOS günleri (yalnız geçiş gününden itibaren; boşken boş küme) */
 async function lafposEvidenceDays(from: string, to: string, branchId: string): Promise<Set<string>> {
   const db = getDb();
-  const switchDay = await loadLafposSwitchDay(db);
+  // Geçiş günü kasanın şubesininki (branchSwitchDay): ModPOS'ta kalan şubede LafPOS kanıtı yok
+  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
   if (switchDay === null || to < switchDay) return new Set();
   const rows = await db
     .select({ date: s.posDayReports.date })
@@ -377,8 +378,8 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
         ...lafpos,
         diffs: lafpos.day ? lafposDiffs(fields, lafpos.day) : [],
         sameTill: {
-          prev: !chain.prev || isLafposDay(chain.prev.date, switchDay) === lafpos.lafpos,
-          next: !chain.next || isLafposDay(chain.next.date, switchDay) === lafpos.lafpos,
+          prev: !chain.prev || isLafposDay(chain.prev.date, branchSwitchDay(switchDay, branchId)) === lafpos.lafpos,
+          next: !chain.next || isLafposDay(chain.next.date, branchSwitchDay(switchDay, branchId)) === lafpos.lafpos,
         },
       },
     });

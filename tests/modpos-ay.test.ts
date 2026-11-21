@@ -309,14 +309,16 @@ test("föy günlerinin indirimi bilinmez: yalnız föylü ayda indirim boş, var
 test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS > ModPOS; rapor sınaması tek yerden", () => {
   const loader = read("src/server/data/cash-reports.ts");
   const fn = loader.slice(loader.indexOf("export async function modposTillRows("));
-  assert.ok(fn.indexOf("if (end === null) return [];") > 0);
-  assert.ok(fn.indexOf("if (end === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
+  assert.ok(fn.indexOf("if (fallback === null) return [];") > 0);
+  assert.ok(fn.indexOf("if (fallback === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
+  // Geçiş gününden önce; geçiş günü yalnız LafPOS'un şubesinin föyünü keser (ModPOS'ta kalan şube sayılmaya devam eder)
+  assert.match(fn, /isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId\)\) \? \[\] : \(modposTillRow\(sh\) \?\? \[\]\)/, "geçiş gününden önce, şube şube");
   const first = loader.slice(loader.indexOf("export async function firstModposTillDay("));
-  assert.ok(first.indexOf("if (end === null) return null;") > 0);
-  assert.ok(first.indexOf("if (end === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");
-  const scope = loader.slice(loader.indexOf("async function modposFallbackEnd("));
+  assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") > 0);
+  assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");
+  const scope = loader.slice(loader.indexOf("async function modposFallbackSwitch("));
   assert.match(scope, /if \(!readModposFallback\(value\(MODPOS_FALLBACK_KEY\)\)\) return null;/);
-  assert.match(scope, /return switchDay === null \? MODPOS_LAST_DAY : addDays\(switchDay, -1\);/, "geçiş gününden önce");
+  assert.match(scope, /return \{ switchDay: readLafposSwitchDay\(value\(LAFPOS_SWITCH_KEY\)\) \};/);
   assert.match(loader, /if \(sheet\.state === "ACIK"\) return null;/);
   assert.match(loader, /sheet\.state === "BOS" && !\(z && z\.foysuz && z\.zTotal > 0\)/);
   // Kesinleşmiş satışsız gün sıfır satır (kesintisiz sayımda kapalı gün boşluk değil)

@@ -6,7 +6,7 @@ import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posDaySchema, resolvePosLine, siteSlotKey } from "@/lib/lafpos/day";
 import { lafposLineKind, type LafposIkramData, type LafposIkramLine } from "@/lib/lafpos/ikram";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { productLabel } from "@/lib/waste";
 import { currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
@@ -77,13 +77,14 @@ export interface DayLafposIkram {
 
 /**
  * Günün LafPOS ikramı; gün LafPOS günü değilse (geçiş günü boş ya da gün ondan önce) null: ekran, e-posta ve kasa
- * özeti bugünkü gibi yalnız panelden. Ad: ürün bulunduysa paneldeki adı ("Latte M"), yoksa LafPOS'taki ad.
+ * özeti bugünkü gibi yalnız panelden. Ad: ürün bulunduysa paneldeki adı ("Latte M"), yoksa LafPOS'taki ad. Geçiş günü
+ * yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubede hep null.
  */
 export async function loadDayLafposIkram(date: string, db: Reader = getDb(), branchId?: string): Promise<DayLafposIkram | null> {
-  const switchDay = await lafposSwitchDayOf(db);
-  if (!switchDay || !isLafposDay(date, switchDay)) return null;
   // Günün gün sonu tek kasanındır: verilen şube, yoksa kasanın şubesi ("Tümü"de Tuzla)
   const sube = branchId ?? (await currentTillBranch());
+  const switchDay = branchSwitchDay(await lafposSwitchDayOf(db), sube);
+  if (!switchDay || !isLafposDay(date, switchDay)) return null;
   const [data, [day], products] = await Promise.all([
     loadLafposIkram(db, switchDay, { from: date, to: date }, sube),
     db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube))).limit(1),

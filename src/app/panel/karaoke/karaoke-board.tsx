@@ -554,7 +554,7 @@ function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions
       const res = await syncKaraokeNow();
       if (!res.ok) return void toast.error(res.error);
       const r = res.data;
-      toast.success("laffogato.net ile eşitlendi", { description: r.status === "ok" ? `${r.created} yeni, ${r.updated} güncellenen, ${r.removed} kaldırılan` : "Değişiklik yok" });
+      toast.success("laffogato.net ile eşitlendi", { description: r.status === "ok" ? `${r.created} yeni, ${r.updated} güncellenen, ${r.removed} kaldırılan${r.skipped ? `, ${r.skipped} okunamayan satır atlandı (silinmedi)` : ""}` : "Değişiklik yok" });
       await refreshLive();
     });
   }

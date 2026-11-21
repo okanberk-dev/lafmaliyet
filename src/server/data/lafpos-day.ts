@@ -8,7 +8,7 @@ import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -26,10 +26,13 @@ export async function loadKasaLafposDay(date: string, db: DB = getDb(), branchId
  * Günün kasası ve LafPOS özeti birlikte: `lafpos` gün LafPOS günü mü (geçiş günü seçili ve gün ondan önce değil; o
  * günün gönderimi gelmemiş olsa da), `day` gelen özet (yoksa ya da LafPOS günü değilse null). Kasa formu ve geç rapor
  * ikisine de bakar: LafPOS gününde ModPOS Z fotoğrafı istenmez; LafPOS'un gönderimi yoksa yazarkasa Z'si kanıttır.
+ * Kasa tek şubenindir (verilen şube, yoksa kasanın şubesi): geçiş günü yalnız LafPOS'un şubesinin kasasına uygulanır,
+ * ModPOS'ta kalan şubenin her günü ModPOS günüdür (branchSwitchDay; denetim 21 Kasım #5).
  */
 export async function loadKasaLafpos(date: string, db: DB = getDb(), branchId?: string): Promise<{ lafpos: boolean; day: LafposDay | null }> {
-  if (!isLafposDay(date, await loadLafposSwitchDay(db))) return { lafpos: false, day: null };
-  return { lafpos: true, day: await loadLafposDay(date, db, branchId) };
+  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch()]);
+  if (!isLafposDay(date, branchSwitchDay(switchDay, sube))) return { lafpos: false, day: null };
+  return { lafpos: true, day: await loadLafposDay(date, db, sube) };
 }
 
 /** Okuyucu: veritabanı ya da işlem (yalnız select) */
@@ -38,13 +41,14 @@ type Reader = Pick<DB, "select">;
 /**
  * Günün kasa kanıtı (G8, docs/LAFPOS.md › Kasa raporu): ModPOS gününde (geçiş günü boş ya da gün ondan önce) ModPOS Z
  * fotoğrafı ("modpos-z"); LafPOS gününde o günün LafPOS gün sonu geldiyse o ("lafpos": fotoğraf gerekmez), gelmediyse
- * yazarkasa (Banka POS) Z fotoğrafı ("okc-z"). Geç rapor ve fotoğraf kaldırma aynı kurala bakar; işlem içinden de
+ * yazarkasa (Banka POS) Z fotoğrafı ("okc-z"). Geç rapor ve fotoğraf kaldırma aynı kurala bakar; işlem içinden de.
+ * Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubede hep "modpos-z"
  */
 export async function kasaEvidence(db: Reader, date: string, branchId?: string): Promise<KasaEvidence> {
-  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
-  if (!isLafposDay(date, readLafposSwitchDay(setting?.value))) return "modpos-z";
   // Gün sonu şubenin kasasınındır: başka şubenin LafPOS günü bu kasanın kanıtı sayılmaz
   const sube = branchId ?? (await currentTillBranch());
+  const [setting] = await db.select({ value: s.settings.value }).from(s.settings).where(eq(s.settings.key, LAFPOS_SWITCH_KEY)).limit(1);
+  if (!isLafposDay(date, branchSwitchDay(readLafposSwitchDay(setting?.value), sube))) return "modpos-z";
   const [day] = await db
     .select({ date: s.posDayReports.date })
     .from(s.posDayReports)
@@ -57,7 +61,7 @@ export async function kasaEvidence(db: Reader, date: string, branchId?: string):
  * [from, to] içindeki günlerin kasası ve LafPOS özetleri (yöneticinin ay görünümü, zil): `of(gün, şube)`
  * loadKasaLafpos'un aynısını verir (geçiş gününden önceki günde ya da geçiş günü boşken `{ lafpos: false, day: null }`).
  * Gün sonları (şube, gün) ile tutulur: "Tümü"de iki şubenin aynı günü birbirine karışmaz; şube verilmezse kasanın
- * şubesi (seçili fiziksel şube, "Tümü"de Tuzla).
+ * şubesi (seçili fiziksel şube, "Tümü"de Tuzla). Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay).
  */
 export async function loadKasaLafposDays(
   from: string,
@@ -66,8 +70,10 @@ export async function loadKasaLafposDays(
 ): Promise<(date: string, branchId?: string | null) => { lafpos: boolean; day: LafposDay | null }> {
   const out = new Map<string, LafposDay>();
   const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), currentTillBranch()]);
-  const of = (date: string, branchId?: string | null) =>
-    isLafposDay(date, switchDay) ? { lafpos: true, day: out.get(branchDayKey(branchId ?? sube, date)) ?? null } : { lafpos: false, day: null };
+  const of = (date: string, branchId?: string | null) => {
+    const b = branchId ?? sube;
+    return isLafposDay(date, branchSwitchDay(switchDay, b)) ? { lafpos: true, day: out.get(branchDayKey(b, date)) ?? null } : { lafpos: false, day: null };
+  };
   if (switchDay === null || to < switchDay) return of;
   const start = from > switchDay ? from : switchDay;
   const rows = await db

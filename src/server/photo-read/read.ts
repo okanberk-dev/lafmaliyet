@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
@@ -108,8 +108,11 @@ export async function readPhotoFor(
     const [prev, recentTotals, switchDay, res] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),
-      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39)
-      lafposSwitchDayOf(getDb()).catch(() => null),
+      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
+      // günü (branchSwitchDay): ModPOS'ta kalan şubede öneri kalır
+      Promise.all([lafposSwitchDayOf(getDb()), currentTillBranch()])
+        .then(([d, b]) => branchSwitchDay(d, b))
+        .catch(() => null),
       extractImage({ ...base, task: OKC_TASK(input.day), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS }),
     ]);
     if (!res.ok) return failed(res.code, res.message);

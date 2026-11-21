@@ -18,7 +18,7 @@ import {
 import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { lafposDiffs, lafposDiffText } from "@/lib/lafpos/diffs";
-import { kasaName } from "@/lib/lafpos/switch";
+import { branchSwitchDay, kasaName } from "@/lib/lafpos/switch";
 import { modposMismatchBell, modposMismatches } from "@/lib/modpos/zil";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -95,8 +95,9 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const reports = await inTill(() => cashReportsBetween(addDays(day, -6), day));
   if (user.role !== "admin") {
     if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
-    // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS
-    const lafpos = kasaName(day, await loadLafposSwitchDay().catch(() => null)) === "LafPOS";
+    // Günün kasası (denetim E-39): geçiş gününden itibaren LafPOS'ta "Günü kapat"; okunamazsa bugünkü gibi ModPOS. Geçiş
+    // günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS'ta kalan şubenin personeli ModPOS'u okur
+    const lafpos = kasaName(day, branchSwitchDay(await loadLafposSwitchDay().catch(() => null), till ?? (await currentTillBranch()))) === "LafPOS";
     return [
       {
         id: `kasa-bekliyor-${day}`,

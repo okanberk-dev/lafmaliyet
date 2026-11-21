@@ -4,7 +4,7 @@ import { monthLabel, pct, tl } from "@/lib/format";
 import { coverageFor } from "@/lib/sales-coverage";
 import { addDays, dayAblativeTR, dayMonthTR, monthEnd } from "@/lib/reminders";
 
-import { lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "./switch";
+import { branchSwitchDay, isLafposBranch, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "./switch";
 
 /**
  * LafPOS satışlarının aylık maliyet modeline girmesi (docs/LAFPOS.md › Günlük satış; denetim E-08). Model satışı ay ay
@@ -48,10 +48,11 @@ export function modposThroughOf(month: string, coverage: Readonly<Record<string,
  * LafPOS günlük satırlarının sayıldığı ilk gün (bütün aylar için tek sınır, docs/LAFPOS.md › Günlük satış): geçiş ayında
  * o ayın ModPOS listesinin son gününden sonra (liste varsa), sonraki aylarda her gün. Geçiş günü yoksa null.
  */
-export function lafposSalesCountFrom(switchDay: string | null, salesLines: readonly Pick<SalesLine, "month">[], coverage: Readonly<Record<string, string>>): string | null {
+export function lafposSalesCountFrom(switchDay: string | null, salesLines: readonly Pick<SalesLine, "month" | "branchId">[], coverage: Readonly<Record<string, string>>): string | null {
   if (switchDay === null) return null;
   const month = switchDay.slice(0, 7);
-  const hasList = salesLines.some((l) => l.month === month);
+  // Yalnız LafPOS'un şubesinin listesi: ModPOS'ta kalan şubenin listesi LafPOS'un günlerini kesmez
+  const hasList = salesLines.some((l) => l.month === month && isLafposBranch(l.branchId));
   return lafposCountFrom(switchDay, hasList ? modposThroughOf(month, coverage) : null);
 }
 
@@ -79,13 +80,14 @@ export interface SalesSources {
 
 /**
  * ModPOS listeleriyle LafPOS ay toplamlarını birleştirir (her gün tek kaynak). Geçiş günü yoksa girdi olduğu gibi döner
- * (aynı satırlar, aynı sıra): LafPOS hiçbir hesaba girmez.
+ * (aynı satırlar, aynı sıra): LafPOS hiçbir hesaba girmez. Geçiş günü yalnız LafPOS'un şubesinindir: ModPOS'ta kalan
+ * şubenin (Marina) listesi her ay sayılır ("Tümü"de iki şubenin satırları yan yana; denetim 21 Kasım #5).
  */
 export function mergeSalesSources(input: SalesSourcesInput): SalesSources {
   const S = input.switchDay;
   if (S === null) return { salesLines: input.salesLines, coverage: { ...input.coverage } };
   const switchMonth = S.slice(0, 7);
-  const kept = input.salesLines.filter((l) => modposListCounts(l.month, S));
+  const kept = input.salesLines.filter((l) => modposListCounts(l.month, branchSwitchDay(S, l.branchId)));
   const lafpos = input.lafposLines
     .filter((l) => l.month >= switchMonth)
     .slice()

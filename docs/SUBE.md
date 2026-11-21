@@ -172,6 +172,14 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin
   "eski bir Z raporu olabilir" denetimi de formun kasasının önceki raporuyla (`previousZNo`).
 
+## LafPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
+
+LafPOS yalnız Tuzla'da kurulu (gün sonunu Tuzla'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız **Tuzla'nın
+kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`). Marina'nın kasası ModPOS'ta kalır: föyü çekilir, Kasa
+raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Marina'da bugünkü gibidir. Ay ekranları
+Marina seçiliyken geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Ayrıntı:
+[LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5).
+
 ## Personel hesabının şubesi (16 Kasım 2026)
 
 **Kullanıcılar & roller**'de personel eklerken ya da düzenlerken **Şube** seçilir (boş: **Bütün şubeler**).

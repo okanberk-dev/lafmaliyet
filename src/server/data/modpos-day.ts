@@ -1,10 +1,9 @@
 import "server-only";
 
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { modposAnyKey, modposKeyProblem } from "@/lib/modpos/request";
 import { sheetZ, type ModposZ } from "@/lib/modpos/z";
 import { modposPairKey } from "@/lib/modpos/zil";
-import { addDays } from "@/lib/reminders";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
@@ -17,7 +16,8 @@ import { loadModposSheet, loadModposSheets, type ModposSheet } from "@/server/mo
  * tutarları, giderleri ve notları personele gitmez (tests/modpos-kasa.test.ts).
  *
  * `modpos`: gün ModPOS günü (LafPOS geçiş günü boş ya da gün ondan önce; src/lib/lafpos/switch.ts). Geçiş gününden
- * itibaren kasa LafPOS'tur, föy karşılaştırılmaz: `sheet` ve `z` null (o güne yanlışlıkla çekilmiş föy de okunmaz).
+ * itibaren LafPOS'un şubesinin kasası LafPOS'tur, föy karşılaştırılmaz: `sheet` ve `z` null (o güne yanlışlıkla çekilmiş
+ * föy de okunmaz). Geçiş günü yalnız o şubenindir (branchSwitchDay): ModPOS'ta kalan şubenin her günü ModPOS günüdür.
  */
 export interface KasaModpos {
   modpos: boolean;
@@ -38,25 +38,27 @@ const withZ = (sheet: ModposSheet | null): KasaModpos => ({ modpos: true, sheet,
  * "Tümü"de Tuzla (store.ts gunSubesi). Başka şubenin föyü bu günün raporuyla karşılaştırılmaz.
  */
 export async function loadKasaModpos(date: string, db: DB = getDb(), branchId?: string): Promise<KasaModpos> {
-  if (isLafposDay(date, await loadLafposSwitchDay(db))) return NO_MODPOS;
+  const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), branchId ?? currentTillBranch()]);
+  if (isLafposDay(date, branchSwitchDay(switchDay, sube))) return NO_MODPOS;
   // Günün görünümü ham XML'i de gösterir (ModPOS bölümünün "Ham föy"ü)
-  return withZ(await loadModposSheet(date, db, { raw: true, branchId }));
+  return withZ(await loadModposSheet(date, db, { raw: true, branchId: sube }));
 }
 
 /**
  * [from, to] içindeki günlerin ModPOS föyleri (yöneticinin günden güne listesi; tek sorgu): `of(gün, şube)`
  * loadKasaModpos'un aynısını verir. Föyler (şube, gün) ile tutulur: "Tümü"de iki şubenin aynı günü birbirini ezmez,
- * satır kendi raporunun şubesinin föyünü alır; şube verilmezse `fallback` (seçili şube, "Tümü"de Tuzla). Geçiş günü bu
- * aralıktaysa yalnız ondan önceki günler okunur; aralığın tamamı LafPOS ise hiç okunmaz.
+ * satır kendi raporunun şubesinin föyünü alır; şube verilmezse `fallback` (seçili şube, "Tümü"de Tuzla). LafPOS'un
+ * şubesinin geçiş gününden itibaren günleri föysüzdür (branchSwitchDay); ModPOS'ta kalan şubenin föyleri aralığın
+ * tamamında okunur.
  */
 export async function loadKasaModposDays(from: string, to: string, db: DB = getDb(), fallback?: string): Promise<(date: string, branchId?: string | null) => KasaModpos> {
   const [switchDay, sube] = await Promise.all([loadLafposSwitchDay(db), fallback ?? currentTillBranch()]);
   const out = new Map<string, KasaModpos>();
-  const of = (date: string, branchId?: string | null): KasaModpos =>
-    isLafposDay(date, switchDay) ? NO_MODPOS : (out.get(modposPairKey(branchId ?? sube, date)) ?? withZ(null));
-  const end = switchDay !== null && switchDay <= to ? addDays(switchDay, -1) : to;
-  if (end < from) return of;
-  for (const sheet of await loadModposSheets(from, end, db)) out.set(modposPairKey(sheet.branchId, sheet.day), withZ(sheet));
+  const of = (date: string, branchId?: string | null): KasaModpos => {
+    const b = branchId ?? sube;
+    return isLafposDay(date, branchSwitchDay(switchDay, b)) ? NO_MODPOS : (out.get(modposPairKey(b, date)) ?? withZ(null));
+  };
+  for (const sheet of await loadModposSheets(from, to, db)) out.set(modposPairKey(sheet.branchId, sheet.day), withZ(sheet));
   return of;
 }
 

@@ -25,7 +25,7 @@ import {
   type SiteReservation,
 } from "../src/lib/karaoke/session";
 import { canonicalQuery, sign, signedHeaders, verifySignature } from "../src/lib/karaoke/signature";
-import { cancelledAtFor, parseSiteResponse, siteTime } from "../src/lib/karaoke/site";
+import { cancelledAtFor, goneSiteRows, parseSiteResponse, siteTime } from "../src/lib/karaoke/site";
 
 const SECRET = "test-secret-0123456789-abcdefghijklmnop";
 const T = 1760000000;
@@ -99,12 +99,35 @@ test("sitenin yanıtı: bozuk satır atlanır, bilinmeyen durum varsayılana dü
   });
   assert.equal(snap.reservations.length, 2);
   assert.equal(snap.skipped, 3);
+  // Kimliği okunabilen atlanan satır (bitişi başlangıçtan önce) ayrıca tutulur; boş kimlik ve satır olmayan tutulmaz
+  assert.deepEqual(snap.skippedIds, ["krk-0003"]);
   const second = snap.reservations[1];
   assert.equal(second.status, "requested");
   assert.equal(second.paymentStatus, "none");
   assert.equal(second.note.length, 300);
   assert.equal(second.firstName, "Mehmet");
   assert.throws(() => parseSiteResponse({ reservations: [] }));
+});
+
+test("eşitleme: okunamayıp atlanan rezervasyon 'sitede silinmiş' sayılmaz (denetim 21 Kasım #33)", () => {
+  const base = { now: "2026-10-21T10:00:00.000Z", from: "2026-10-20", to: "2027-01-18", complete: true };
+  const rows = [{ id: 1, externalId: "krk-0001" }, { id: 2, externalId: "krk-0002" }, { id: 3, externalId: "krk-0003" }, { id: 4, externalId: null }];
+  const gone = (reservations: unknown[], over: Partial<{ complete: boolean }> = {}) =>
+    goneSiteRows(parseSiteResponse({ ...base, ...over, reservations }), rows).map((r) => r.id);
+  // Sitede artık olmayan (krk-0003) kalkar; panelden açılan sayaç (kimliksiz) dokunulmaz
+  assert.deepEqual(gone([site(), site({ id: "krk-0002" })]), [3]);
+  // krk-0002 bu kez okunamadı (saat tamsayı değil): kopyası kalır, yalnız gerçekten olmayan kalkar
+  assert.deepEqual(gone([site(), site({ id: "krk-0002", hours: 1.5 })]), [3]);
+  assert.deepEqual(gone([site(), site({ id: "krk-0002", startHour: 31 }), site({ id: "krk-0003", endsAt: "2026-10-24T16:00:00.000Z" })]), []);
+  // Kimliği de okunamayan satır varsa hangisi olduğu bilinmez: bu çekmede hiçbir satır silinmez
+  assert.deepEqual(gone([site(), site({ id: "" })]), []);
+  assert.deepEqual(gone([site(), "satır değil"]), []);
+  // Eksik yanıtta hiç silinmez
+  assert.deepEqual(gone([site()], { complete: false }), []);
+  // Eşitleme silinecekleri yalnız bu kuraldan alır
+  const sync = readFileSync(join(process.cwd(), "src/server/karaoke/sync.ts"), "utf8");
+  assert.match(sync, /const gone = goneSiteRows\(snapshot, existing\)\.map\(\(r\) => r\.id\);/);
+  assert.doesNotMatch(sync, /new Set\(snapshot\.reservations\.map\(\(r\) => r\.id\)\)/);
 });
 
 test("sitenin yanıtı: isteğe bağlı iptal anı (site bugün göndermiyor); yoksa ya da bozuksa yok sayılır", () => {

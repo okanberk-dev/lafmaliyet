@@ -13,6 +13,7 @@
 
 import { MONTH_NAMES } from "@/lib/constants";
 import { money, pct } from "@/lib/format";
+import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, dayLocativeTR, dayMonthTR, daysBetween, monthEnd, monthLocativeTR, shiftMonth } from "@/lib/reminders";
 import type { DigestBox } from "@/server/notify/digest-template";
 
@@ -43,6 +44,11 @@ export interface TillDayIn {
   date: string;
   mealCard: number;
   online: number;
+  /**
+   * Raporun şubesi (yoksa Tuzla): LafPOS'un girdiği ayda LafPOS'un şubesinin raporu yalnız gün sonu gelmeyen günün
+   * yedeğidir; ModPOS'ta kalan şubenin raporu kasa raporu kuralıyla sayılmaya devam eder (lafposMonth `modpos`)
+   */
+  branchId?: string | null;
 }
 
 /** LafPOS'un gün sonundaki bir ödeme türü (pos_day_reports.payments; docs/LAFPOS.md) */
@@ -463,6 +469,11 @@ export interface LafposMonth {
   closed: string[];
   meal: LafposGroupMonth;
   platform: LafposGroupMonth;
+  /**
+   * ModPOS'ta kalan şubelerin (geçiş günü yalnız LafPOS'un şubesinindir; Marina) bu günlerdeki kasa raporlarının Z
+   * toplamı: kasa raporu kuralıyla (kanal kanal bilinmez, `pre` gibi) sayılır; yoksa null (denetim 21 Kasım #5)
+   */
+  modpos: { meal: number; online: number } | null;
 }
 
 const groupKindOf = (p: Pick<LafposPaymentIn, "channel" | "zField">): ChannelKind | null =>
@@ -487,7 +498,11 @@ export function lafposMonth(
   if (!days.length && from > input.through) return null;
   const closedDays = input.closed ?? [];
   const shut = new Set(closedDays);
-  const reports = new Map(input.till.filter((r) => r.date >= from && r.date <= end).map((r) => [r.date, r]));
+  const inMonth = input.till.filter((r) => r.date >= from && r.date <= end);
+  // Gün sonunun yedeği yalnız LafPOS'un şubesinin raporu; ModPOS'ta kalan şubenin raporu ayrıca, kasa raporu kuralıyla
+  const reports = new Map(inMonth.filter((r) => isLafposBranch(r.branchId)).map((r) => [r.date, r]));
+  const modposRows = inMonth.filter((r) => !isLafposBranch(r.branchId));
+  const modpos = modposRows.length ? { meal: r2(modposRows.reduce((a, r) => a + r.mealCard, 0)), online: r2(modposRows.reduce((a, r) => a + r.online, 0)) } : null;
   const have = new Set(days.map((d) => d.date));
   const lastSeen = [input.through, days.at(-1)?.date ?? from, ...reports.keys()].reduce((a, b) => (b > a ? b : a));
   const to = lastSeen < end ? lastSeen : end;
@@ -548,15 +563,18 @@ export function lafposMonth(
       }
     }
   }
-  return { from, pre, preUnknown, days: days.length, fallback, missing, closed, meal: done(groups.meal), platform: done(groups.platform) };
+  return { from, pre, preUnknown, days: days.length, fallback, missing, closed, meal: done(groups.meal), platform: done(groups.platform), modpos };
 }
 
-/** LafPOS'un girdiği ayın grup toplamı (Yemek kartları kartı, Platformlar satırı): geçiş gününden önceki kasa raporları + LafPOS */
+/**
+ * LafPOS'un girdiği ayın grup toplamı (Yemek kartları kartı, Platformlar satırı): geçiş gününden önceki kasa raporları +
+ * LafPOS + ModPOS'ta kalan şubenin kasa raporları
+ */
 function lafposTill(lm: LafposMonth): ChannelTill {
   const pre = lm.pre;
   return {
-    meal: r2((pre?.meal ?? 0) + lm.meal.total),
-    online: r2((pre?.online ?? 0) + lm.platform.total),
+    meal: r2((pre?.meal ?? 0) + lm.meal.total + (lm.modpos?.meal ?? 0)),
+    online: r2((pre?.online ?? 0) + lm.platform.total + (lm.modpos?.online ?? 0)),
     reportDays: (pre?.reportDays ?? 0) + lm.days + lm.fallback.length,
     missing: [...(pre?.missing ?? []), ...lm.missing],
     closed: [...(pre?.closed ?? []), ...lm.closed],
@@ -719,7 +737,8 @@ const byLevel = (flags: Flag[]) => flags.map((f, i) => ({ f, i })).sort((a, b) =
  * Kanal kanal bilinmeyen kısım (geçiş gününden önceki günlerin Z toplamı, kanalı seçilmemiş ödeme türü, gün sonu
  * gelmemiş günün kasa raporu) `tek` kuralıyla yalnız grupta tek kanal varsa kanala yazılır (`zShare`). Birden çok kanal
  * varken geçiş gününden önceki günlerde grubun satışı varsa ay bilinmez (kasa raporu kuralı); yalnız kanalsız ödeme ya
- * da gün sonu gelmemiş gün varsa satış kanalın ödemeleridir, eksik kalan günler uyarılır (`gap`).
+ * da gün sonu gelmemiş gün varsa satış kanalın ödemeleridir, eksik kalan günler uyarılır (`gap`). ModPOS'ta kalan
+ * şubenin (Marina) kasa raporları geçiş gününden önceki günler gibidir: Z'de grubun tek toplamı (`lm.modpos`).
  */
 function lafposSales(
   def: Pick<ChannelDef, "key" | "label" | "kind">,
@@ -732,11 +751,12 @@ function lafposSales(
   const own = g.byChannel[def.key] ?? 0;
   const pre = lm.pre;
   const preTotal = pre ? (def.kind === "meal" ? pre.meal : pre.online) : 0;
+  const modposTotal = lm.modpos ? (def.kind === "meal" ? lm.modpos.meal : lm.modpos.online) : 0;
   const sole = active.own.length === 1 && active.own[0] === def.key && !active.late.length;
   const unknown = (reason: string) => ({ sales: null, reason: `${reason}${TYPE_HINT}`, gap: null });
   if (lm.preUnknown) return unknown(`Satış bilinmiyor: LafPOS ${dayLocativeTR(lm.from)} başladı, öncesinin kasa raporu yok.`);
   if (pre?.partialFrom) return unknown(`Satış bilinmiyor: kasa raporları ${dayLocativeTR(pre.partialFrom)} başladı.`);
-  if (!sole && preTotal > 0.005) {
+  if (!sole && (preTotal > 0.005 || modposTotal > 0.005)) {
     const total = def.kind === "meal" ? "Z'de yemek kartları tek toplam" : "Z'deki online (platformlar) tek toplam";
     const [late] = active.late;
     const why =
@@ -745,9 +765,13 @@ function lafposSales(
         : late
           ? ` ve ${dayMonthTR(late.date)} tarihli ${channelDef(late.key).label} faturası ${monthName(month)} satışlarını da kapsıyor olabilir`
           : "";
-    return unknown(`Satış bilinmiyor: LafPOS ${dayLocativeTR(lm.from)} başladı; öncesinde ${total}${why}.`);
+    return unknown(
+      preTotal > 0.005
+        ? `Satış bilinmiyor: LafPOS ${dayLocativeTR(lm.from)} başladı; öncesinde ${total}${why}.`
+        : `Satış bilinmiyor: kasası ModPOS'ta kalan şubede ${total}${why}.`,
+    );
   }
-  const zShare = sole ? r2(preTotal + g.unassigned) : 0;
+  const zShare = sole ? r2(preTotal + modposTotal + g.unassigned) : 0;
   const amount = r2(own + zShare);
   if (!(amount > 0)) {
     if (!hasInvoice) return unknown("Satış bilinmiyor.");

@@ -2,10 +2,10 @@ import "server-only";
 
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
 import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
+import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
@@ -72,14 +72,15 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,
         createdAt: now,
-        branchId: DEFAULT_BRANCH_ID,
+        branchId: LAFPOS_BRANCH_ID,
       };
     });
     const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now };
-    // Gün sonunun şubesi: hangi LafPOS kasasından geldiyse o (docs/SUBE.md). Bugün yalnız Tuzla'da LafPOS var.
+    // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; bugün yalnız Tuzla'da LafPOS var, geçiş günü de
+    // yalnız onun kasasınındır; docs/SUBE.md).
     // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres
     // "no unique or exclusion constraint matching" diye düşer.
-    const branchId = DEFAULT_BRANCH_ID;
+    const branchId = LAFPOS_BRANCH_ID;
     await tx
       .insert(s.posDayReports)
       .values({ date: day.date, branchId, ...report })

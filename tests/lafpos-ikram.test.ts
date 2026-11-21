@@ -44,6 +44,9 @@ test("kural: LafPOS'un gün sonu gelen günde paneldeki ürün ikramı sayılmaz
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "zayi", productId: 5 }, days), true, "ürün zayisi");
   assert.equal(panelWasteCounts({ date: "2026-11-11", kind: "ikram", productId: 5 }, days), true, "gün sonu gelmeyen gün");
   assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, new Set()), true, "geçiş günü boş");
+  // Gün sonları LafPOS'un şubesinin (Tuzla): ModPOS'ta kalan Marina'nın aynı günkü ürün ikramı sayılır (denetim 21 Kasım #5)
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "marina" }, days), true, "Marina");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "tuzla" }, days), false, "Tuzla");
 });
 
 test("yeni kayıt: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir; gün sonu gelmeyen geçmiş günde girilir", () => {

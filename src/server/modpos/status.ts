@@ -3,6 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { DEFAULT_BRANCH_ID, type BranchRow } from "@/lib/branches";
+import { branchSwitchDay } from "@/lib/lafpos/switch";
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
 import { missingFoyDays, nextBackfillDay } from "@/lib/modpos/plan";
 import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft } from "@/lib/modpos/request";
@@ -66,7 +67,8 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
     loadModposIndex(db, branchId),
     recentModposSheets(MODPOS_RECENT_DAYS, db, branchId),
     loadModposFallback(db),
-    loadLafposSwitchDay(db),
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS şubesinin föyü eksik sayılmaya devam eder
+    loadLafposSwitchDay(db).then((d) => branchSwitchDay(d, branchId)),
     branches ? Promise.resolve(branches) : listBranches(db),
   ]);
   const keyProblem = modposKeyProblem(env, branchId, modposBranchIds(all));

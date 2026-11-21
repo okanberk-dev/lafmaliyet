@@ -12,6 +12,7 @@ import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
+import { isLafposBranch, scopeSwitchDay } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import type { SiteSalesMonth } from "@/lib/site-sales/schema";
@@ -53,7 +54,7 @@ async function readDataset(): Promise<Dataset> {
   const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
   const branch = scope === ALL_BRANCHES ? null : (branches.find((b) => b.id === scope) ?? null);
   const [
-    settings,
+    storedSettings,
     ingredients,
     categories,
     products,
@@ -134,6 +135,8 @@ async function readDataset(): Promise<Dataset> {
         ingredientId: s.wasteEntries.ingredientId,
         qty: s.wasteEntries.qty,
         factor: s.wasteEntries.factor,
+        // LafPOS günü yalnız LafPOS'un şubesinin panel ikramını düşürür (panelWasteCounts)
+        branchId: s.wasteEntries.branchId,
       })
       .from(s.wasteEntries)
       .where(branchWhere(s.wasteEntries.branchId, scope)),
@@ -153,6 +156,10 @@ async function readDataset(): Promise<Dataset> {
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
   ]);
 
+  // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Marina) ya da
+  // online kanal seçiliyken yok (LafPOS hiç okunmaz, ekranlar ModPOS der); "Tümü"de ve LafPOS'un şubesinde ayar. Veri
+  // kümesini okuyan her ekran (Satışlar, Genel bakış, Gelir-gider, Ürünler, Analiz, Zayi) bunu görür
+  const settings = { ...storedSettings, lafposGecisGunu: scopeSwitchDay(storedSettings.lafposGecisGunu, scope) };
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
   // Sabit giderler küçük tablo: hepsi okunur, şubeninkiler ve işletme genelinkiler burada ayrılır (silinmiş ya da
@@ -183,7 +190,8 @@ async function readDataset(): Promise<Dataset> {
     mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, today, till }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
     branch && billMonths.size
-      ? companyWaterSales(db, { switchDay: settings.lafposGecisGunu, coverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
+      ? // Su litresi "Tümü" kapsamında: geçiş günü şubeye göre kısılmış değil, işletmenin ayarı (Tuzla'nın LafPOS satışı da sayılsın)
+        companyWaterSales(db, { switchDay: scopeSwitchDay(storedSettings.lafposGecisGunu, ALL_BRANCHES), coverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
       : Promise.resolve(null),
   ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
@@ -385,7 +393,18 @@ async function readDataset(): Promise<Dataset> {
 
 /** Veritabanının satış satırı → modelin satış satırı */
 function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
-  return { id: l.id, month: l.month, posName: l.posName, qty: l.qty, revenue: l.revenue, productId: l.productId, isService: l.isService, note: l.note };
+  return {
+    id: l.id,
+    month: l.month,
+    posName: l.posName,
+    qty: l.qty,
+    revenue: l.revenue,
+    productId: l.productId,
+    isService: l.isService,
+    note: l.note,
+    // Geçiş günü yalnız LafPOS'un şubesinin listesini düşürür (mergeSalesSources; denetim 21 Kasım #5)
+    branchId: l.branchId,
+  };
 }
 
 /**
@@ -394,8 +413,10 @@ function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
  * satırlar ve kapsam bugünkü gibi. LafPOS gün sonları ve `till` (kasa raporları) o anki kapsamın şubesinden.
  */
 function mergeSales(db: DB, input: { switchDay: string | null; salesLines: SalesLine[]; coverage: Record<string, string>; today: string; till: readonly TillRow[] }) {
-  // Yalnız kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") ve ModPOS föyü rapor değildir
-  const reportRows = input.till.filter(isReportRow);
+  // Yalnız kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") ve ModPOS föyü rapor değildir. LafPOS'un
+  // günleriyle yalnız LafPOS'un şubesinin kasa raporları karşılaştırılır ("Tümü"de ModPOS'ta kalan şubeninki değil;
+  // isLafposBranch, denetim 21 Kasım #5)
+  const reportRows = input.till.filter((r) => isReportRow(r) && isLafposBranch(r.branchId));
   return mergeWithLafpos(db, {
     switchDay: input.switchDay,
     salesLines: input.salesLines,

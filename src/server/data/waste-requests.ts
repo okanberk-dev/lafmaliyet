@@ -6,9 +6,11 @@ import { z } from "zod";
 import type { Model } from "@/lib/calc/engine";
 import { businessDate, stampTR } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
+import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { longDateTR, monthTitleTR, shiftMonth, addDays } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LateWastePayload, WasteDeletePayload, wasteEntryMatches, wasteItemText, type LateWastePayloadT, type WasteDeletePayloadT } from "@/lib/waste-requests";
+import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -266,8 +268,9 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
   const countedMonths = new Set(counted.filter((c) => c.n > 0).map((c) => c.month));
   const time = (d: Date) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
   const productPrice = (id: number | null) => (id !== null ? (model.productById.get(id)?.price ?? null) : null);
-  // LafPOS'un gün sonu gelen günleri (geçiş günü seçiliyse, ondan itibaren; yoksa boş) ve iş günü
-  const switchDay = model.ds.settings.lafposGecisGunu ?? null;
+  // LafPOS'un gün sonu gelen günleri (geçiş günü seçiliyse, ondan itibaren; yoksa boş) ve iş günü. Geçiş günü ayarın
+  // kendisi (veri kümesindeki görünümün kasasınınki değil); isteğin şubesine göre uygulanır (branchSwitchDay)
+  const switchDay = await lafposSwitchDayOf(db);
   const lafposDays = new Set(model.ds.lafposIkram?.days ?? []);
   const today = businessDate(now);
   /** Günün sayılan ikramının menü değeri: LafPOS satırı kendi değeriyle (zayi dahil), panelin ürün ikramı menü fiyatıyla */
@@ -316,7 +319,7 @@ export async function loadWasteRequestQueue(model: Model, now: Date = new Date()
           ikramRecorded: ikramRecorded !== null ? Math.round(ikramRecorded * 100) / 100 : null,
           ikramFromLafpos: lafposDays.has(p.date),
           countDone: countedMonths.has(p.date.slice(0, 7)) ? `${monthTitleTR(p.date.slice(0, 7)).split(" ")[0]} sayımı girilmiş: onaylanırsa tutarlılık değişir` : null,
-          lafposRefusal: productIkramRefusal(p, switchDay, { received: lafposDays.has(p.date), today }, "onay"),
+          lafposRefusal: productIkramRefusal(p, branchSwitchDay(switchDay, p.branchId), { received: lafposDays.has(p.date), today }, "onay"),
         },
       ];
     }

@@ -229,6 +229,11 @@ export interface SalesLine {
   isService: boolean;
   note: string | null;
   /**
+   * Listenin şubesi (veri kümesi; yoksa Tuzla): LafPOS'a geçiş günü yalnız LafPOS'un şubesinin ModPOS listesini düşürür,
+   * ModPOS'ta kalan şubenin (Marina) listesi her ay sayılır (src/lib/lafpos/sales.ts mergeSalesSources)
+   */
+  branchId?: string;
+  /**
    * LafPOS'un günlük satışlarından kurulan ay toplamı (src/lib/lafpos/sales.ts; geçiş gününden itibaren): `days` satırın
    * geçtiği gün sayısı. Yalnız okunur: kimliği eksi, sales_lines'ta satırı yok, eşleştirmesi POS adıyla yapılır.
    * Yoksa Satışlar'a yüklenen ModPOS listesinin satırı.
@@ -465,6 +470,11 @@ export interface WasteEntry {
   ingredientId: number | null;
   qty: number;
   factor: number;
+  /**
+   * Panel kaydının şubesi (veri kümesi): LafPOS'un gün sonu gelen günde yalnız LafPOS'un şubesinin ürün ikramı düşer,
+   * ModPOS'ta kalan şubeninki sayılır (src/lib/lafpos/ikram.ts panelWasteCounts). Yoksa Tuzla'nın
+   */
+  branchId?: string;
   /** LafPOS'un ikram satırı (yalnız motorun saydığı kayıtlarda; paneldekilerde yok) */
   source?: "lafpos";
   /** LafPOS'taki ad (ürünü bulunamasa da gösterilir) */

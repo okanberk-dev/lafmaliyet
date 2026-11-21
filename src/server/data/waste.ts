@@ -57,6 +57,8 @@ export interface WasteEntryDTO extends WasteLine {
   createdBy: number | null;
   createdByName: string;
   createdAt: string;
+  /** Kaydın şubesi: LafPOS günü yalnız LafPOS'un şubesinin ürün ikramını düşürür (panelWasteCounts) */
+  branchId: string;
 }
 
 /** [from, to] günlerinin zayi ve ikram kayıtları: verilen şubenin, yoksa seçili şubenin ("Tümü"de hepsi) */
@@ -84,6 +86,7 @@ export async function wasteEntriesBetween(from: string, to: string, branchId?: s
     createdBy: r.createdBy,
     createdByName: r.createdByName,
     createdAt: r.createdAt.toISOString(),
+    branchId: r.branchId,
   }));
 }
 

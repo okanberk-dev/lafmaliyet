@@ -253,6 +253,29 @@ test("geçiş ayı: önceki günler kasa raporu kuralıyla; birden çok kartta b
   assert.equal(plain(tillSub(ng)), "10 Kasım'dan LafPOS · öncesinin kasa raporu yok");
 });
 
+test("ModPOS'ta kalan şube (Marina): raporları LafPOS'un yerine geçmez, kasa raporu kuralıyla eklenir (denetim 21 Kasım #5)", () => {
+  // Tuzla Kasım'ın her günü LafPOS'ta; Marina ModPOS'ta, her gün yemek kartı 200, online 100
+  const marina = till("2026-11-01", "2026-11-30", { mealCard: 200, online: 100, branchId: "marina" });
+  const input = fx({ till: [...till("2026-10-01", "2026-10-31"), ...marina] });
+  const lm = lafposMonth(input, "2026-11")!;
+  assert.deepEqual(lm.modpos, { meal: 6000, online: 3000 });
+  assert.deepEqual([lm.fallback, lm.missing], [[], []], "Marina'nın raporu Tuzla'nın gün sonunun yedeği değil");
+  const r = buildCommissionReport(input);
+  // Grubun Z'si iki kasanın toplamı
+  assert.equal(groupOf(r, "meal", "2026-11")!.zTotal, 2400 + 6000);
+  // İki kart: Marina'nın Z'sindeki yemek kartı kart kart bilinmez (kasa raporu kuralı); önceden sessizce düşüyordu
+  const p = must(rowOf(r, "pluxee", "2026-11"));
+  assert.equal(p.sales, null);
+  assert.equal(
+    plain(p.salesReason),
+    "Satış bilinmiyor: kasası ModPOS'ta kalan şubede Z'de yemek kartları tek toplam ve bu ay 2 kart var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
+  );
+  // Tek platform: Marina'nın online toplamı kanala yazılır (tek kuralı)
+  assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 1200 + 3000, source: "lafpos", zShare: 3000 });
+  // Şubesiz (Tuzla'nın) rapor bugünkü gibi yalnız gün sonu gelmeyen günün yedeği
+  assert.equal(lafposMonth(fx({ till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-05", mealCard: 80, online: 40 }] }), "2026-11")!.modpos, null);
+});
+
 test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; birden çok kartta yazılmaz, tek kartta yazılır", () => {
   const loose = () => [...dayPayments(), pay("Yemek kartı", "meal_card", null, 10), pay("Ticket", "meal_card", "Ticket", 5)];
   const r = buildCommissionReport(fx({ lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", loose) } }));

@@ -14,11 +14,10 @@ import {
 } from "@/lib/cash-report";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { posZSchema } from "@/lib/lafpos/day";
-import { LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { MODPOS_FALLBACK_KEY, readModposFallback } from "@/lib/modpos/status";
 import { foyZ } from "@/lib/modpos/z";
 import type { OkcPrev, OkcRow, OkcVatLine } from "@/lib/okc-z";
-import { addDays } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
@@ -403,18 +402,18 @@ const MODPOS_LAST_DAY = "9999-12-31";
 
 /**
  * Ay rakamına yedeğin kapsamı (docs/MODPOS-API.md › Ay rakamına yedek): anahtar kapalıysa null (föy tablosu hiç
- * okunmaz); açıksa föyün sayılabileceği son gün, yani LafPOS'a geçiş gününden önceki gün (geçiş günü boşsa sınırsız).
- * Geçiş gününden itibaren kasa LafPOS'tur, föy aya girmez (docs/MODPOS-API.md › Nerede görünür)
+ * okunmaz); açıksa LafPOS'a geçiş günü (boşsa null: föyün her günü sayılır). Geçiş gününden itibaren LafPOS'un şubesinin
+ * kasası LafPOS'tur, o şubenin föyü aya girmez (docs/MODPOS-API.md › Nerede görünür); ModPOS'ta kalan şubenin föyü
+ * girmeye devam eder (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function modposFallbackEnd(db: Db | Tx): Promise<string | null> {
+async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | null } | null> {
   const rows = await db
     .select({ key: s.settings.key, value: s.settings.value })
     .from(s.settings)
     .where(inArray(s.settings.key, [MODPOS_FALLBACK_KEY, LAFPOS_SWITCH_KEY]));
   const value = (key: string) => rows.find((r) => r.key === key)?.value;
   if (!readModposFallback(value(MODPOS_FALLBACK_KEY))) return null;
-  const switchDay = readLafposSwitchDay(value(LAFPOS_SWITCH_KEY));
-  return switchDay === null ? MODPOS_LAST_DAY : addDays(switchDay, -1);
+  return { switchDay: readLafposSwitchDay(value(LAFPOS_SWITCH_KEY)) };
 }
 
 /**
@@ -449,18 +448,19 @@ function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "state" | "
 /**
  * ModPOS kasa föyünün yedek ay satırları, [from, to] içinde (docs/MODPOS-API.md › Ay rakamına yedek; Ayarlar › ModPOS
  * kartının anahtarı, settings › modposAyYedegi, varsayılan kapalı). Kapalıyken föy tablosu okunmadan boş döner: ay
- * rakamı bugünkü gibi. Açıkken yalnız LafPOS'a geçiş gününden önceki günler (geçiş günü boşsa bütün günler) ve yalnız
- * kapanmış föyler (modposTillRow). Raporu olan günü süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS >
- * ModPOS). Yalnız yöneticinin ekranları ve hesaplar okur; personelin ekranına föy rakamı gitmez
+ * rakamı bugünkü gibi. Açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler, ModPOS'ta kalan
+ * şubede bütün günler; geçiş günü boşsa bütün günler) ve yalnız kapanmış föyler (modposTillRow). Raporu olan günü
+ * süzmez: tillRows ve tillMonths raporu öne alır (rapor > LafPOS > ModPOS). Yalnız yöneticinin ekranları ve hesaplar
+ * okur; personelin ekranına föy rakamı gitmez
  */
 export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
-  const end = await modposFallbackEnd(db);
-  if (end === null) return [];
-  const upto = to !== undefined && to < end ? to : end;
+  const fallback = await modposFallbackSwitch(db);
+  if (fallback === null) return [];
+  const upto = to ?? MODPOS_LAST_DAY;
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.flatMap((sh) => modposTillRow(sh) ?? []);
+  return sheets.flatMap((sh) => (isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId)) ? [] : (modposTillRow(sh) ?? [])));
 }
 
 /**
@@ -470,8 +470,7 @@ export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: 
  * hesaplanır; tillMonths'a `modposFrom` olarak da verilir
  */
 export async function firstModposTillDay(db: Db | Tx = getDb()): Promise<string | null> {
-  const end = await modposFallbackEnd(db);
-  if (end === null) return null;
+  if ((await modposFallbackSwitch(db)) === null) return null;
   const [rows, firsts] = await Promise.all([
     modposTillRows(db),
     db

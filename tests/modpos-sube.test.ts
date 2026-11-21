@@ -280,7 +280,10 @@ test("kaynak: çekim şubenin anahtarı, hakkı, kirası ve günleriyle; föy ay
   const sync = read("src/server/modpos/sync.ts");
   assert.match(sync, /const lease = await takeModposLease\(db, undefined, branchId\);/);
   assert.match(sync, /await releaseModposLease\(db, lease, branchId\);/);
-  assert.match(sync, /readModposState\(db, branchId\), loadModposIndex\(db, branchId\)/);
+  assert.match(sync, /readModposState\(db, branchId\),\n\s+loadModposIndex\(db, branchId\),/);
+  // LafPOS'a geçiş günü yalnız LafPOS'un şubesinin föyünü keser (denetim 21 Kasım #5): Marina'nın föyü çekilmeye devam eder
+  assert.match(sync, /loadLafposSwitchDay\(db\)\.then\(\(d\) => branchSwitchDay\(d, branchId\)\),/);
+  assert.match(sync, /planFoyDays\(\{ now, from, have, left, until: switchDay, failed \}\)/);
   assert.match(sync, /fetchKasaFoyu\(day, \{ now, timeoutMs: remaining - 1_000, fetchImpl: o\.fetchImpl, env, branchId \}\)/);
   assert.match(sync, /const split = splitFoyByBranch\(r\.foy, \{ own: branchId, resolve, keyed \}\);/);
   assert.match(sync, /const stored = await storeFoy\(db, split\.parts\.get\(branchId\)!, now, r\.raw, branchId\);/);
@@ -346,6 +349,29 @@ test("rapor yalnız kendi şubesinin föyüyle karşılaştırılır: Marina'nı
   assert.equal(modposPairKey("marina", day), "marina|2026-11-01");
 });
 
+test("LafPOS'a geçiş günü yalnız Tuzla'nın kasasını keser: Marina'nın raporu föyüyle karşılaştırılmaya devam eder (denetim 21 Kasım #5)", () => {
+  const day = "2026-12-02";
+  const switchDay = "2026-12-01";
+  const marinaSheet = { day, branchId: "marina", foy: sample(day), revision: 1 };
+  const tuzlaSheet = { day, branchId: "tuzla", foy: sample(day), revision: 1 };
+  const marina = { ...sameReport(day, "marina"), cash: 8190 };
+  const tuzla = { ...sameReport(day, "tuzla"), cash: 8190 };
+  // Marina ModPOS'ta: farkı görünür; Tuzla LafPOS'ta (ve şubesiz eski rapor Tuzla'nındır): atlanır
+  const m = modposMismatches([marina, tuzla, { ...sameReport(day), cash: 8190 }], [marinaSheet, tuzlaSheet], switchDay);
+  assert.deepEqual(
+    m.map((x) => x.report.branchId),
+    ["marina"],
+  );
+  assert.deepEqual([...modposMismatchBranchDays([marina, tuzla], [marinaSheet, tuzlaSheet], switchDay)], [`marina:${day}`]);
+  // Geçiş gününden önce ikisi de karşılaştırılır
+  const before = "2026-11-30";
+  const sheets = [
+    { day: before, branchId: "marina", foy: sample(before), revision: 1 },
+    { day: before, branchId: "tuzla", foy: sample(before), revision: 1 },
+  ];
+  assert.equal(modposMismatches([{ ...marina, date: before }, { ...tuzla, date: before }], sheets, switchDay).length, 2);
+});
+
 test("zilin satırı: Tuzla'nın kimliği ve adresi değişmedi; öteki şubenin kimliğinde ve adresinde şube", () => {
   const day = "2026-11-01";
   const sheet = { day, foy: sample(day), revision: 2 };
@@ -360,9 +386,14 @@ test("zilin satırı: Tuzla'nın kimliği ve adresi değişmedi; öteki şubenin
 
 test("kaynak: Kasa ekranı föyü ekrandaki raporun şubesinden; günden güne liste (şube, gün) ile", () => {
   const day = read("src/server/data/modpos-day.ts");
-  assert.match(day, /return withZ\(await loadModposSheet\(date, db, \{ raw: true, branchId \}\)\);/);
+  assert.match(day, /return withZ\(await loadModposSheet\(date, db, \{ raw: true, branchId: sube \}\)\);/);
   assert.match(day, /out\.set\(modposPairKey\(sheet\.branchId, sheet\.day\), withZ\(sheet\)\);/);
-  assert.match(day, /out\.get\(modposPairKey\(branchId \?\? sube, date\)\)/);
+  assert.match(day, /const b = branchId \?\? sube;/);
+  assert.match(day, /out\.get\(modposPairKey\(b, date\)\)/);
+  // Geçiş günü günün kasasının şubesine göre (denetim 21 Kasım #5): Marina'nın föyü geçiş gününden sonra da okunur
+  assert.match(day, /if \(isLafposDay\(date, branchSwitchDay\(switchDay, sube\)\)\) return NO_MODPOS;/);
+  assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b\)\) \? NO_MODPOS/);
+  assert.match(day, /for \(const sheet of await loadModposSheets\(from, to, db\)\)/, "aralık geçiş gününe kırpılmaz");
   // Raporun DTO'su şubesini taşır
   assert.match(read("src/server/data/cash-reports.ts"), /id: r\.id,\n\s+branchId: r\.branchId,/);
 });

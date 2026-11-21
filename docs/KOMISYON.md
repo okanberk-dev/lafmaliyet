@@ -126,6 +126,12 @@ ekran ve uyarılar bugünkü gibi; geçiş gününden önceki LafPOS günleri (d
   kartları tek toplam ve bu ay 2 kart var."); tek kanalsa kanalın LafPOS ödemelerine eklenir (`zShare`). Önceki günlerin
   hiç kasa raporu yoksa "LafPOS 10 Kasım'da başladı, öncesinin kasa raporu yok"; kasa raporları geç başladıysa bugünkü
   "kasa raporları … başladı".
+- **ModPOS'ta kalan şube** (Marina; geçiş günü yalnız Tuzla'nın kasasınındır, [LAFPOS.md](LAFPOS.md) › Şubeler):
+  kasa raporları LafPOS'un girdiği ayda da sayılır, geçiş gününden önceki günler gibi (Z'de grubun tek toplamı;
+  `lafposMonth` `modpos`): grubun Z toplamına eklenir; tek kanalda kanalın LafPOS ödemelerine eklenir (`zShare`), birden
+  çok kanalda ekstre yazılana kadar satış bilinmez ("Satış bilinmiyor: kasası ModPOS'ta kalan şubede Z'de yemek
+  kartları tek toplam ve bu ay 2 kart var."). Tuzla'nın raporu yalnız gün sonu gelmeyen günün yedeğidir (denetim
+  21 Kasım #5: önceden Marina'nın raporu bu yedeğin yerine geçiyor ya da hiç sayılmıyordu).
 - **Eksik gün:** gün sonu gelmeyen gün kasa raporu varsa grubun toplamına rapordan girer (kart kart bilinmez), ikisi de
   yoksa eksik sayılır (kapalı işaretli gün değil). Kanalın satışı o zaman ödemelerinin toplamıdır; `kasa-eksik` bilgisi
   ne eksik kaldığını söyler ("9 gün LafPOS gün sonu yok ve kanalı seçilmemiş 300 ₺ ödeme var; satış eksik kaldıysa oran

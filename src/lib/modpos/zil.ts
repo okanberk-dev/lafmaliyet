@@ -1,6 +1,6 @@
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { branchDayKey } from "@/lib/cash-report";
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 
 import { modposDiffs, modposDiffText, type ModposDiff, type ModposSavedFields } from "./compare";
@@ -55,7 +55,8 @@ export function modposPairKey(branchId: string | null | undefined, day: string):
  * Föyünden farklı yazılan raporlar, raporların sırasıyla. LafPOS günü (geçiş gününden itibaren), föyü olmayan, satışsız
  * (foyZ null) ya da kasası hâlâ açık föyün günü atlanır (docs/MODPOS-API.md › Nerede görünür, karşılaştırma kuralları).
  * Rapor yalnız **kendi şubesinin** föyüyle karşılaştırılır (şube, gün): "Tümü" seçiliyken Marina'nın raporu Tuzla'nın
- * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler).
+ * föyüyle karşılaştırılmaz (docs/MODPOS-API.md › Şubeler). Geçiş günü yalnız LafPOS'un şubesinin kasasınındır
+ * (branchSwitchDay): ModPOS'ta kalan şubenin raporu geçiş gününden sonra da föyüyle karşılaştırılır.
  */
 export function modposMismatches<R extends ModposSavedFields & { date: string; branchId?: string | null }>(
   reports: readonly R[],
@@ -65,7 +66,7 @@ export function modposMismatches<R extends ModposSavedFields & { date: string; b
   const byDay = new Map(sheets.map((x) => [modposPairKey(x.branchId, x.day), x]));
   const out: ModposMismatch<R>[] = [];
   for (const report of reports) {
-    if (isLafposDay(report.date, switchDay)) continue;
+    if (isLafposDay(report.date, branchSwitchDay(switchDay, report.branchId))) continue;
     const sheet = byDay.get(modposPairKey(report.branchId, report.date));
     const z = sheet ? sheetZ(sheet) : null;
     if (!sheet || !z || z.durum === "ACIK") continue;

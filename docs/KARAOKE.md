@@ -210,7 +210,9 @@ kendi cihazında açar.
 - İmzasız ya da yanlış istek yalnız `401` alır; anahtar tanımlı değilse uç `503` döner.
 - Siteden yalnız ad (soyad değil), gün, saat, kişi sayısı, durum, ödeme durumu, not, tutar, kanal, rezervasyonun
   yapıldığı an ve iptalde iade tutarı gelir; geçmişten alınanlar ad ve not olmadan saklanır. Panelde sitenin yanıtı ayrıca doğrulanır: bozuk
-  satır atlanır, metinler kısaltılır.
+  satır atlanır, metinler kısaltılır. Atlanan satır "sitede silinmiş" sayılmaz: paneldeki kopyası olduğu gibi kalır
+  (kimliği de okunamayan bir satır varsa o çekmede hiçbir satır silinmez; `goneSiteRows`, denetim 21 Kasım #33). Elle
+  eşitlemenin bildirimi okunamayan satır sayısını da yazar.
 - **Personel tutar görmez:** canlı veri ve sayfa, personele tutarı ve iade tutarını hiç göndermez (`toSessionDTO`);
   iadenin yalnız türü ("iade yok", "kısmi", "tamamı") gider.
 - Web Push içeriği uçtan uca şifrelidir (RFC 8291, aes128gcm), VAPID imzalıdır (RFC 8292). Abonelik yalnız bilinen

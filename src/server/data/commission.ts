@@ -102,6 +102,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
         date: s.cashReports.date,
         mealCard: s.cashReports.mealCard,
         online: s.cashReports.online,
+        // LafPOS'un girdiği ayda ModPOS'ta kalan şubenin raporu ayrıca sayılır (lafposMonth `modpos`)
+        branchId: s.cashReports.branchId,
         first: sql<string | null>`(select min(${s.cashReports.date}) from ${s.cashReports})`,
       })
       .from(s.cashReports)
@@ -127,7 +129,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     since: typeof since === "string" && DAY.test(since) ? since : today,
     fromMonth,
     invoices: groupInvoiceRows(invoiceRows, names),
-    till: till.map(({ date, mealCard, online }) => ({ date, mealCard, online })),
+    till: till.map(({ date, mealCard, online, branchId }) => ({ date, mealCard, online, branchId })),
     firstReport: till[0]?.first ?? null,
     closed: closedDaysIn(closedRows, fromDay, addDays(businessDate(), -1), till.map((r) => r.date)),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),

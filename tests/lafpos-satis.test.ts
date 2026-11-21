@@ -24,7 +24,7 @@ import {
   modposThroughOf,
   type LafposMonthLine,
 } from "../src/lib/lafpos/sales";
-import { lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
+import { branchSwitchDay, lafposCountFrom, lafposSalesFrom, modposListCounts, monthSource } from "../src/lib/lafpos/switch";
 import { addDays, dayAblativeTR, monthEnd, shiftMonth } from "../src/lib/reminders";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -160,6 +160,37 @@ test("birleştirme: geçiş ayında liste + LafPOS, sonraki ayda yalnız LafPOS;
   assert.deepEqual(early.salesLines.map((l) => l.id), [1, 2]);
 });
 
+test("birleştirme: geçiş günü yalnız Tuzla'nın listesini düşürür; Marina'nın ModPOS listesi her ay sayılır (denetim 21 Kasım #5)", () => {
+  const S = "2026-11-10";
+  const lines = [
+    line({ id: 1, month: "2026-12", posName: "ARALIK TUZLA (sayılmaz)", branchId: "tuzla" }),
+    line({ id: 2, month: "2026-12", posName: "ARALIK MARINA", branchId: "marina" }),
+    line({ id: 3, month: "2026-12", posName: "ŞUBESİZ (Tuzla'nın, sayılmaz)" }),
+    line({ id: 4, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" }),
+  ];
+  const r = mergeSalesSources({
+    switchDay: S,
+    salesLines: lines,
+    coverage: {},
+    lafposLines: [laf({ month: "2026-12", posName: "LATTE", revenue: 500, productId: 4, days: 3 })],
+    lafposDays: [{ month: "2026-12", days: 3, last: "2026-12-03" }],
+  });
+  assert.deepEqual(
+    r.salesLines.map((l) => [l.id, l.posName]),
+    [
+      [2, "ARALIK MARINA"],
+      [4, "KASIM MARINA"],
+      [-1, "LATTE"],
+    ],
+  );
+  // LafPOS'un sayıldığı ilk gün yalnız Tuzla'nın geçiş ayı listesine bakar: Marina'nın Kasım listesi LafPOS'u kesmez
+  assert.equal(lafposSalesCountFrom(S, [line({ id: 4, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" })], { "2026-11": "2026-11-30" }), S);
+  assert.equal(lafposSalesCountFrom(S, [line({ id: 5, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" })], { "2026-11": "2026-11-12" }), "2026-11-13");
+  // Marina'nın listesinin kuralı Marina'nın geçiş günüyle (yok): Aralık listesi yüklenir, Tuzla'nınki reddedilir
+  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, "marina"), "2027-01-05"), { ok: true, through: null });
+  assert.equal(modposImportRule("2026-12", branchSwitchDay(S, "tuzla"), "2027-01-05").ok, false);
+});
+
 test("model: yalnız LafPOS olan ayda satır, reçeteye göre tüketim ve karaoke payı (KDV %20) ModPOS listesindekiyle aynı", () => {
   const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
   const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-11" };
@@ -289,13 +320,17 @@ test("kaynak: veri kümesi geçiş günü yokken LafPOS'u hiç okumaz; Satışla
   const actions = read("src/server/actions/sales.ts");
   assert.match(actions, /const rule = modposImportRule\(month, switchDay, todayTR\(\)/);
   assert.match(actions, /if \(!rule\.ok\) throw new UserError\(rule\.error\);/);
-  assert.match(actions, /const switchDay = await loadLafposSwitchDay\(\);\n\s+if \(monthSource\(month, switchDay\) === "lafpos"\)/, "LafPOS ayına elle satır eklenmez");
+  // Geçiş günü satırın şubesininki (denetim 21 Kasım #5): ModPOS'ta kalan şubenin (Marina) listesi her ay yüklenir
+  assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), sube\);/);
+  assert.match(actions, /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(\), lineBranch\);\n\s+if \(monthSource\(month, switchDay\) === "lafpos"\)/, "LafPOS ayına elle satır eklenmez");
   // Geçiş ayının ilk elle satırı listeyi içe aktarmanın kuralıyla başlatır (denetim B08 incelemesi)
   assert.match(actions, /if \(n === 0 && monthSource\(month, switchDay\) === "gecis"\) \{\n\s+const rule = modposImportRule\(month, switchDay, todayTR\(\), null\);\n\s+if \(rule\.ok\) await setCoverage\(tx, month, rule\.through\);/);
   // Süren ayın kasa raporundan sonraki LafPOS günleri bekler (kasa raporlarının son günü; LafPOS'un yedek ay satırları,
   // B09 G6, rapor sayılmaz)
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
-  assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null/);
+  assert.match(dataset, /lastTillDay: lafposReports\.at\(-1\)\?\.date \?\? null/);
+  // Görünümün geçiş günü: ModPOS'ta kalan şube seçiliyken yok (denetim 21 Kasım #5)
+  assert.match(dataset, /const settings = \{ \.\.\.storedSettings, lafposGecisGunu: scopeSwitchDay\(storedSettings\.lafposGecisGunu, scope\) \};/);
   // Tahmin: kullanılmayan günlük satır okunmaz, istek başına uyarı yazılmaz (denetim E-08 hız kısmı)
   for (const f of ["src/server/data/dataset.ts"]) {
     const src = read(f);

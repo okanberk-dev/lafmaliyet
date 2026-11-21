@@ -20,6 +20,7 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { branchDayKey, businessDate } from "@/lib/cash-report";
 import { pendingCashOutSummary } from "@/lib/cash-outs";
+import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { modposMismatchBranchDays, modposMismatchDates } from "@/lib/modpos/zil";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -305,8 +306,9 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
     opsFacts(user, now),
     admin ? adminFacts(now, user.id, cashP, viewP) : staffFacts(c),
-    // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi)
-    safe(loadLafposSwitchDay()),
+    // LafPOS'a geçiş günü: yalnız metinler (günün kasası; okunamazsa ModPOS, bugünkü gibi). Kasanın şubesinin geçiş
+    // günü (branchSwitchDay): ModPOS'ta kalan şubede metinler ModPOS der
+    safe(Promise.all([loadLafposSwitchDay(), currentTillBranch()]).then(([d, b]) => branchSwitchDay(d, b))),
   ]);
 
   // Günün raporu; şube verilince o şubenin (işaretler de branchDayKey'le)
