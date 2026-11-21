@@ -8,7 +8,8 @@
 // EKLE_TEST_DATABASE_URL) verilince çalışır: kendi geçici veritabanını açar, Excel verisini yükler, migration'ı geri
 // alınan işlemlerde dener (59 kalem + 23 ek kalem, "Cooler base"in adı "Smoothie powder" olur; ikinci çalıştırma bir şey
 // eklemez; panelden girilmiş sayımın ve ek kalemin üzerine yazmaz; adı değişmiş kalem ek kaleme, sayım listesinden
-// çıkmış kalem "elle girilecek"e düşer).
+// çıkmış kalem "elle girilecek"e düşer). 0047–0049 şube kırılımından (0056) önce çalıştı: denemeler bugünkü şemada,
+// o günkü sayım dizinini (ay, kalem) geri alınan işlemin içinde kurarak koşar (asBefore0056).
 // Çalıştırma: SAYIM_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/ekim-sayimi.test.ts
 
 import assert from "node:assert/strict";
@@ -161,6 +162,19 @@ test("migration: korumalar ve ad anahtarı (drizzle/0023 ile aynı)", () => {
   const [, from, to] = eight.match(/translate\(y\."name", '([^']+)', '([^']+)'\)/)!;
   assert.ok(sql.includes(`translate(regexp_replace(btrim(x."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
   assert.ok(sql.includes(`translate(s."kalem", '${from}', '${to}')`));
+});
+
+test("sayımın ON CONFLICT hedefi 0056'dan önceki dizin: 0056 dizini şubeyle yeniden kurar (veritabanı denemesi o günkü dizinle)", () => {
+  const drizzle = readdirSync(join(process.cwd(), "drizzle"));
+  const branchFile = drizzle.find((f) => f.endsWith("_sube_kirilimi.sql"));
+  assert.ok(branchFile, "sube_kirilimi migration'ı yok");
+  const branch = read(`drizzle/${branchFile}`);
+  assert.match(branch, /DROP INDEX "stock_counts_month_ingredient_uq";/);
+  assert.match(branch, /CREATE UNIQUE INDEX "stock_counts_month_ingredient_uq" ON "stock_counts" USING btree \("month","branch_id","ingredient_id"\);/);
+  for (const f of [migrationFile!, listFile!, extrasFile!]) {
+    assert.ok(f < branchFile, `${f} 0056'dan önce çalışır`);
+    assert.match(read(`drizzle/${f}`), /ON CONFLICT \("month", "ingredient_id"\) DO NOTHING/, f);
+  }
 });
 
 test("belge migration'la aynı rakamları söyler (59 kalem, 23 ek kalem)", () => {
@@ -342,15 +356,26 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
   const ROLLBACK = new Error("geri al");
   const sql = () => read(`drizzle/${migrationFile}`);
 
+  /**
+   * 0047–0049 canlıda 0056'dan (şube kırılımı) önce çalıştı: o gün sayımın tekil dizini (ay, kalem) idi ve
+   * `ON CONFLICT ("month", "ingredient_id")` ona dayanır. 0056 dizini (ay, şube, kalem) yaptı; bugünkü şemada
+   * migration'lar olduğu gibi çalışsın diye o günkü dizin işlemin içinde kurulur (işlemle birlikte geri alınır).
+   * Migration'lar uygulanmış dosyalardır, değiştirilmez; yazdıkları satırlar 0056'nın yaptığı gibi Tuzla'ya düşer
+   * (sütunun varsayılanı).
+   */
+  const asBefore0056 = (tx: postgres.TransactionSql) =>
+    tx.unsafe(`CREATE UNIQUE INDEX "stock_counts_month_ingredient_0047" ON "stock_counts" USING btree ("month", "ingredient_id")`);
+
   type Count = { name: string; qty: number; factor: number; counted_by: string };
   type Extra = { name: string; unit: string; qty: number; unit_price: number };
-  type Trial = { counts: Map<string, Count>; extras: Extra[]; logs: string[]; renames: string[]; names: string[] };
+  type Trial = { counts: Map<string, Count>; extras: Extra[]; logs: string[]; renames: string[]; names: string[]; branches: string[] };
 
   /** Hazırlığı ve migration'ı (istenirse iki kez) işlemde çalıştırır, sonucu okur, hepsini geri alır */
   async function trial(prepare: (tx: postgres.TransactionSql) => Promise<unknown> = async () => {}, runs = 1): Promise<Trial> {
     let out: Trial | null = null;
     await db
       .begin(async (tx) => {
+        await asBefore0056(tx);
         await prepare(tx);
         const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
         for (let i = 0; i < runs; i++) for (const st of statements(sql())) await tx.unsafe(st);
@@ -361,12 +386,15 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
         const logs = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Stok sayımı' order by id`;
         const renames = await tx<{ detail: string }[]>`select detail from activity_log where id > ${logBefore} and action = 'Hammadde güncellendi' order by id`;
         const names = await tx<{ name: string }[]>`select name from ingredients order by id`;
+        const branches = await tx<{ branch_id: string }[]>`
+          select branch_id from stock_counts where month = '2026-10' union select branch_id from stock_extras where month = '2026-10' order by 1`;
         out = {
           counts: new Map(counts.map((c) => [c.name, c])),
           extras: [...extras],
           logs: logs.map((l) => l.detail),
           renames: renames.map((l) => l.detail),
           names: names.map((n) => n.name),
+          branches: branches.map((b) => b.branch_id),
         };
         throw ROLLBACK;
       })
@@ -440,6 +468,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
       [...t.entries()].filter(([, x]) => x.kind === "ek").map(([name, x]) => ({ name, unit: x.unit, qty: x.qty, unit_price: 0 })),
     );
     assert.deepEqual(r.logs, ["Ekim 2026: 31 Ekim sayım kâğıdından 59 kalem; 23 ek kalem (Listede olmayanlar; birim fiyatını yönetici girer)"]);
+    assert.deepEqual(r.branches, ["tuzla"], "sayım ve ek kalemler Tuzla'nın (0056 ve 0059 eski satırları oraya yazar)");
   });
 
   test("ikinci çalıştırma bir şey eklemez, işlem geçmişine yeniden yazmaz", async () => {
@@ -554,6 +583,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     let out: ListTrial | null = null;
     await db
       .begin(async (tx) => {
+        await asBefore0056(tx);
         for (const st of statements(sql())) await tx.unsafe(st);
         await between(tx);
         const [{ id: logBefore }] = await tx<{ id: number }[]>`select coalesce(max(id), 0)::int as id from activity_log`;
@@ -576,6 +606,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
           logs: logs.map((l) => l.detail),
           renames: [],
           names: names.map((n) => n.name),
+          branches: [],
           items: [...items],
           added: added.map((a) => a.detail),
           prices: [...prices],
@@ -695,6 +726,7 @@ describe("Ekim sayımı migration'ı veritabanında", { skip: !SERVER_URL && "SA
     let out: ExtrasTrial | null = null;
     await db
       .begin(async (tx) => {
+        await asBefore0056(tx);
         for (const st of statements(sql())) await tx.unsafe(st);
         await tx.unsafe(read(`drizzle/${listFile}`));
         await between(tx);
