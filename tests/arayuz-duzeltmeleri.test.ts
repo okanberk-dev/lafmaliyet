@@ -186,6 +186,17 @@ test("karaoke alarmı: bağlantısızken Haber verdim ve +15 dk düğmeleri kili
   assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /startedOnThisDevice\(res\.data\.id\);/);
 });
 
+test("kasaya işle: eylem atarsa gizlenen satır listeye, geri alınan işaret 'Son işaretledikleriniz'e döner (denetim 21 Kasım #34)", () => {
+  const src = read("src/components/panel/pos-checklist.tsx");
+  // İşaretle: satır önce gizlenir; eylem atarsa geri gelir ve hata useActionTransition'a geri atılır (bildirim çıksın)
+  assert.match(src, /setDone\(\(m\) => new Map\(\[\.\.\.m, \.\.\.list\.map[\s\S]*?start\(async \(\) => \{[\s\S]*?try \{\s+r = await markPosDone\([^\n]*\n\s+\} catch \(e\) \{\s+forget\(ids\);\s+throw e;\s+\}\s+if \(!r\.ok\) \{\s+forget\(ids\);/);
+  // Geri al: işaret önce listeden düşer; eylem atarsa ya da reddedilirse geri gelir
+  assert.match(src, /try \{\s+u = await undoPosMarks\([^\n]*\n\s+\} catch \(e\) \{\s+restore\(\);\s+throw e;\s+\}\s+if \(!u\.ok\) \{\s+restore\(\);/);
+  // Eylem çağrısı başka yerde korumasız yapılmıyor
+  assert.equal(src.match(/await markPosDone\(/g)?.length, 1);
+  assert.equal(src.match(/await undoPosMarks\(/g)?.length, 1);
+});
+
 const task = (key: DayTask["key"], status: DayTask["status"], badge?: string): DayTask => ({ key, title: key, status, badge, detail: "", href: "/panel", action: "" });
 
 test("sıradaki iş: açık kontrol listesi varken sabahtan geciken liste öne geçmez; başka sorun önce gelir", () => {
@@ -266,7 +277,7 @@ test("reçete önerisi: öteki satırlardaki malzeme seçicide 'reçetede var' d
 
 test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişkeni adı görmez", () => {
   assert.match(read("src/app/globals.css"), /--color-ink-mute: #6b6b74;/);
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.doesNotMatch(board, /bağlantısı kurulmadı \(KARAOKE_SYNC_SECRET\)/);
   assert.doesNotMatch(board, /toast\.error\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
   // Son çekmenin hatası (anahtar adı, imza, sitenin sürümü) yalnız yöneticinin satırında ve Yenile bildiriminde

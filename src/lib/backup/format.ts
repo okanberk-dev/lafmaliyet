@@ -216,6 +216,24 @@ export function backupSchemaPlan(migrations: BackupMigration[], journal: { when:
 }
 
 /**
+ * Geri yüklemede bir migration'dan HEMEN ÖNCE çalışan ek SQL, migration adına göre (src/server/backup/restore.ts ›
+ * applyMigrations). Veri yedeğin sürümünde yüklendiği için sonraki migration'lar dolu tablolarda çalışır; boş
+ * veritabanında geçen bir migration orada takılabilir. Uygulanmış migration dosyası değiştirilmez (docs/DEPLOY.md ›
+ * Migration kuralları): böyle bir durumun düzeltmesi buraya yazılır. Her adım tekrar çalışsa da sonucu değiştirmemeli.
+ *
+ * 0056_sube_kirilimi şube sütunlarını DEFAULT 'tuzla' ile ekleyip `branches`'a yabancı anahtar kurar; varsayılan şube
+ * kütüğe migration'la ancak 0057'de yazılır. Canlıda tohum (`branches_seeded`) 0053 ile 0056 arasında çalıştığı için
+ * geçti; 0053'ten (4 Kasım 2026) önce alınmış bir yedekte ay, satış, personel ya da kasa satırı varken 0056 yabancı
+ * anahtar hatası verir, bütün geri yükleme geri alınırdı. Satır 0057'dekinin aynısıdır (var olan kayda dokunmaz): sonuç
+ * 0057'nin vereceğiyle aynı, yalnız bir migration erken (tests/yedek.test.ts ikisini karşılaştırır).
+ */
+export const BEFORE_MIGRATION_SQL: Readonly<Record<string, readonly string[]>> = {
+  "0056_sube_kirilimi": [
+    `INSERT INTO "branches" ("id", "name", "kind", "pos_source", "sort_order") VALUES ('tuzla', 'Tuzla', 'fiziksel', 'modpos', 1) ON CONFLICT ("id") DO NOTHING;`,
+  ],
+};
+
+/**
  * Tabloları yükleme sırasına dizer: her tablo başvurduğu (yabancı anahtar) tablolardan sonra. Hazır olanlar arasında
  * alfabe sırası (sonuç her seferinde aynı). Kendine başvuru yok sayılır; döngü olursa kalanlar alfabe sırasıyla sona.
  */

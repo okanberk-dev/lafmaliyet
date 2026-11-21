@@ -46,18 +46,45 @@ export interface SiteSnapshot {
   reservations: SiteReservation[];
   /** Okunamayıp atlanan satır sayısı */
   skipped: number;
+  /** Atlanan satırlardan kimliği okunabilenler: sitede duruyorlar, panelin kopyası silinmez (`goneSiteRows`) */
+  skippedIds: string[];
+}
+
+/** Atlanan ham satırın kimliği (boş olmayan metinse); okunamazsa null */
+function rawId(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const id = (raw as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 && id.length <= 64 ? id : null;
 }
 
 export function parseSiteResponse(json: unknown): SiteSnapshot {
   const res = responseSchema.parse(json);
   const reservations: SiteReservation[] = [];
+  const skippedIds: string[] = [];
   let skipped = 0;
   for (const raw of res.reservations) {
     const r = reservationSchema.safeParse(raw);
     if (r.success && Date.parse(r.data.endsAt) > Date.parse(r.data.startsAt)) reservations.push(r.data as SiteReservation);
-    else skipped++;
+    else {
+      skipped++;
+      const id = rawId(raw);
+      if (id) skippedIds.push(id);
+    }
   }
-  return { now: res.now, from: res.from, to: res.to, complete: res.complete, reservations, skipped };
+  return { now: res.now, from: res.from, to: res.to, complete: res.complete, reservations, skipped, skippedIds };
+}
+
+/**
+ * Sitede artık olmayan (silinmiş) rezervasyonların paneldeki satırları: eşitleme bunları kaldırır. Yalnız eksiksiz
+ * yanıtta. Okunamayıp atlanan satır silinmiş sayılmaz (denetim 21 Kasım #33): sitede duruyor, panel bu kez okuyamadı;
+ * silinirse sayacın uzatması, "bitti" işareti ve iptal anı gider, satır yeniden okununca sahte "yeni rezervasyon"
+ * bildirimi gider. Kimliği okunabilen atlanan satırın kopyası kalır; kimliği de okunamayan bir satır varsa hangi
+ * rezervasyon olduğu bilinmediği için bu çekmede hiçbir satır silinmez.
+ */
+export function goneSiteRows<T extends { externalId: string | null }>(snapshot: Pick<SiteSnapshot, "complete" | "reservations" | "skipped" | "skippedIds">, existing: readonly T[]): T[] {
+  if (!snapshot.complete || snapshot.skipped > snapshot.skippedIds.length) return [];
+  const seen = new Set([...snapshot.reservations.map((r) => r.id), ...snapshot.skippedIds]);
+  return existing.filter((r) => r.externalId && !seen.has(r.externalId));
 }
 
 /** Sitenin zaman metni → Date; boş ya da bozuksa null */

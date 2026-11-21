@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+// Arc UI belirteçleri yalnız `.arc` kabının içinde (src/components/arc/README.md)
+import "@/components/arc/foundation.css";
 import { Sidebar, SidebarSkeleton } from "@/components/panel/sidebar";
 import { requireUser } from "@/server/auth/dal";
 import { branchScope } from "@/server/branch-scope";
@@ -21,7 +23,7 @@ async function SidebarWithUser() {
     <Sidebar
       user={{ name: user.name, email: user.email, role: user.role }}
       index={index}
-      branch={{ scope: branch.scope, branches: branch.branches }}
+      branch={{ scope: branch.scope, branches: branch.branches, locked: branch.locked }}
     />
   );
 }

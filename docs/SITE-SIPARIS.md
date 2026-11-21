@@ -1,9 +1,13 @@
-# laffogato.net siparişleri: bar ekranı
+# laffogato.net siparişleri: Siparişler ekranı
 
-Ekran: **Karaoke** (`/panel/karaoke`, "Barın ekranı"), en üstteki **Uygulama siparişleri** bölümü. Personel ve
-yönetici. Bağlantının durumu ayrıca **Ayarlar › laffogato.net**'te. Sözleşmenin sitedeki kopyası: laffogato deposunda
-`docs/PANEL-ORDERS.md` (uçlar, gövde, hata kodları; sitenin kuralı `src/lib/panel/orders-feed-core.ts`). Kartın aşama
-düğmeleri sitenin imzalı aşama ucuna gider (`POST /api/panel/orders/stage`, aşağıda **Aşama düğmeleri**).
+Ekran: **Siparişler** (`/panel/siparisler`; 6 Kasım 2026'ya kadar Karaoke ekranının en üstündeki **Uygulama
+siparişleri** bölümüydü). Personel ve yönetici: personelin menüsünde Bugün'ün hemen altında (telefonun alt menüsünde
+de), yöneticide **Kafe › Siparişler**; menü satırında açık sipariş ve masa çağrısı sayısı. Karaoke ekranında yalnız tek
+satır kalır ("3 açık uygulama siparişi · 1 masa çağrısı" · **Siparişler'e git**). Bağlantının durumu ayrıca **Ayarlar ›
+laffogato.net**'te. Sözleşmenin sitedeki kopyası: laffogato deposunda `docs/PANEL-ORDERS.md` (uçlar, gövde, hata kodları;
+sitenin kuralı `src/lib/panel/orders-feed-core.ts`). Kartın aşama düğmeleri sitenin imzalı aşama ucuna gider
+(`POST /api/panel/orders/stage`, aşağıda **Aşama düğmeleri**), masa çağrısının **Gördüm**'ü çağrı ucuna
+(`POST /api/panel/calls/ack`, aşağıda **Masa çağrıları**).
 
 ## Geliştirilmiş istek (prompt)
 
@@ -38,6 +42,17 @@ düğmeleri sitenin imzalı aşama ucuna gider (`POST /api/panel/orders/stage`, 
 > - **Eşzamanlılık:** panel son gördüğü aşamayı gönderir; sipariş arada değiştiyse site reddeder, ekran yenilenir.
 > - İade ve iptal yine yalnız sitenin panelinde (**Sitede aç**).
 
+> Operatör (6 Kas 2026): _"mobil uygulamadan gelen siparişler lafmaliyette kendi Siparişler bölümünde olsun,
+> laffogato.net'e bağlı olsun, orada da görünsün ve zil çalsın."_
+>
+> - **Kendi ekranı:** sipariş panosu Karaoke'den **Siparişler**'e taşınır (aynı kartlar, aşama düğmeleri, notlar,
+>   reçete bağlantıları, durum satırları, zil satırı). Başlıkta **laffogato.net'te aç** (sitenin sipariş paneli, yeni
+>   sekme) ve **Yenile**. Menüde "Siparişler" satırı ve açık sayısı; telefonun ana ekranında kısayol.
+> - **Zil:** "Gör" ve telefon bildirimi artık Siparişler'e götürür.
+> - **Masa çağrıları (yeni):** masadaki QR menüden "Garson çağır" (garson, su, peçete) sitenin sipariş listesine
+>   eklenir; Siparişler'in üstünde kart, siparişten ayrı zil, tek dokunuşla **Gördüm** (sitede de kapanır). Müşteriye
+>   dair bir şey yok.
+
 ## Nasıl çalışır
 
 ```
@@ -47,11 +62,11 @@ sipariş yazıldı (live:orders)
   └─ after(): POST /api/orders/ping  ─────────▶  imza doğru → 202 (hemen)
      {"event":"orders.changed","at"} (imzalı)       └─ after(): çek (hata olursa 4 sn sonra bir kez daha)
                                                        GET laffogato.net/api/panel/orders (imzalı)
-GET /api/panel/orders  ◀────────────────────────        ├─ doğrula (sürüm 1; bozuk sipariş atlanır)
+GET /api/panel/orders  ◀────────────────────────        ├─ doğrula (sürüm 1; bozuk sipariş / çağrı atlanır)
   {version:1, now, complete, orders:[…],                ├─ son listenin kopyası (site_orders; üzerine yazılır)
-   awaitingPayment}                                     ├─ ödeme bekleyen sayısı > 0: ekran 30 dk yoğun
-  yalnız açık kafe siparişleri, beyaz liste             ├─ değiştiyse sürümü artır (canlı ucun ETag'i)
-                                                        └─ ilk kez görülen yeni sipariş: Web Push "orders"
+   awaitingPayment, calls:[…]}                          ├─ ödeme bekleyen sayısı > 0: ekran 30 dk yoğun
+  yalnız açık kafe siparişleri ve 15 dakikadan          ├─ değiştiyse sürümü artır (canlı ucun ETag'i)
+  yeni açık masa çağrıları, beyaz liste                 └─ ilk kez görülen yeni sipariş / çağrı: Web Push "orders"
                                                               └─ service worker → açık sekme /api/canli'yi
                                                                  yeniler, zil çalar, kart gösterir
 
@@ -61,16 +76,25 @@ POST /api/panel/orders/stage  ◀───────────────�
   e-posta, bildirim; olay kaydına panel:<ad>
   200 {order} · 409 {error:"stale",order} ───────▶  çek (yukarıdaki gibi; son listenin kopyasını yalnız çekme yazar)
                                                     └─ bildirim "#10234 hazır" ya da "bu arada değişti"; ekran yenilenir
+
+                                                 barista çağrıda "Gördüm"e dokundu (sunucu eylemi, oturumlu)
+POST /api/panel/calls/ack  ◀─────────────────────  {"id","actor"} (imzalı)
+  çağrı kapanır (tekrar aynı yanıt), ping atar
+  200 {ok,call:{id,status:"acked"}} · 404 ───────▶  çek; bildirim "Masa 4 · görüldü" (404: "zaten kapanmış")
 ```
 
-Ekran veriyi canlı uçtan (`/api/canli`) alır; sipariş listesinin sürümü ETag'tedir (`W/"<karaoke>.o<sipariş>.…"`),
+Ekran veriyi canlı uçtan (`/api/canli`) alır; sipariş listesinin (çağrılar dahil) sürümü ETag'tedir (`W/"<karaoke>.o<sipariş>.…"`),
 değişiklik yoksa 304 ve veri okunmaz. Siteyi ekranın kendisi değil sunucu sorar: ekran `POST /api/siparisler`
 (`{maxAgeMs}`, oturum gerekir) ile "son çekme bundan eskiyse sor" der. Sunucu eylemi değil uç: site 8 saniye bekletse
 de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 
 ### Ekranda ne görünür
 
-- **Başlık:** "Uygulama siparişleri", rozetler "3 açık · 1 yeni", "1 masada"; **Yenile**.
+- **Sayfa başlığı:** "Siparişler"; **laffogato.net'te aç** (`{LAFFOGATO_URL}/admin/siparisler`, yeni sekmede; iade,
+  iptal ve geçmiş orada) ve **Yenile** (bağlantı kuruluysa).
+- **Sıra:** durum satırı (gerekince), "Zili aç" satırı (bu cihazda zil kapalıysa), **Masa çağrıları** (yalnız açık çağrı
+  varken; aşağıda), **Uygulama siparişleri** kartı, en altta **Bu cihazda uyarılar** (Karaoke'dekiyle aynı kart).
+- **Kartın başlığı:** "Uygulama siparişleri", rozetler "3 açık · 1 yeni", "1 masada".
 - **Kart:** nereye (sitenin dili: "Masa 4", "Gel-al", "Kurye"), müşterinin adı, sipariş numarası, planlı saat
   ("14:30 için", başka gündeyse "Yarın 09:00 için"), aşama rozeti (**Yeni**, **Hazırlanıyor**, **Teslime hazır**),
   satırlar (adet kalın; ad ve seçenekler sitenin yazdığı gibi), "Ödendi · 7 dk önce" (10 dakikadan uzun bekleyen yeni
@@ -98,12 +122,19 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
   alınamıyor (son başarılı çekme 14:02). Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin."
   **Yenile** düştüğünde personelin bildirimi de ayrıntı taşımaz ("laffogato.net'e ulaşılamadı" · "Sorun sürerse
   yöneticiye haber verin.").
-- **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez,
-  karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net'ten bakabilir."
-- Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz." · **Zili aç**.
-- Kartın hemen altında **Tükenenler**: biten ürün personelce onaysız "Tükendi" yapılır (sitede, uygulamada ve QR
-  menüde; M ve L birlikte), gelince "Satışa aç" (dalga 10 §2.1; [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi /
-  Satışa aç).
+- **Bağlantı kurulmadıysa** sayfanın başında tek gri kutu: yöneticiye "Site bağlantısı kurulmadı: uygulama siparişleri
+  ve masa çağrıları gelmiyor" (Ayarlar bağlantısı, kurulum ayrıntısı "Ayrıntı"da), personele "Site bağlı değil: sipariş
+  ve masa çağrısı buraya gelmez" · "Yöneticiye haber verin."; Yenile düğmesi çıkmaz, kartın gövdesi çizilmez.
+- Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; sipariş ve çağrıda ses çalmaz." · **Zili aç**.
+- **Tükenenler** Karaoke ekranında kaldı (barın aracı): biten ürün personelce onaysız "Tükendi" yapılır (sitede,
+  uygulamada ve QR menüde; M ve L birlikte), gelince "Satışa aç" (dalga 10 §2.1; [SITE-MENU.md](SITE-MENU.md) ›
+  Personel: Tükendi / Satışa aç).
+- **Karaoke ekranının satırı:** "3 açık uygulama siparişi · 1 masa çağrısı" (son çekme başarısızsa "siparişler şu an
+  siteden alınamıyor") ve **Siparişler'e git**; açık sipariş ya da çağrı yoksa ve bağlantı sağlamsa satır yok. Bar o
+  ekranda dursa da siteyi Siparişler ekranıyla aynı kuralla çektirir (`useOrdersFeed`), zil kabukta çalar.
+- **Menü:** "Siparişler" satırında (telefonun alt menüsünde de) açık sipariş + çağrı sayısı, kabuğun canlı verisinden
+  (ek istek yok; `src/components/panel/orders-badge.tsx`). Yöneticide Kafe grubu kapalıyken sayı grubun başlığında.
+  Ekranın adresi telefona eklenen uygulamanın kısayollarında da ("Siparişler").
 
 Aşama sitede değişince (bu ekranın düğmesiyle, sitenin panelinden ya da uygulamadan; ping → çekme) kart güncellenir,
 sipariş sitenin listesinden çıkınca (masaya / kuryeye gitti, teslim edildi, iade, 24 saatlik unutulmuş sipariş kuralı)
@@ -153,8 +184,10 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
   (`localStorage` `laf:gorulen-siparisler`). Zil kapalı cihazda da görülmüş sayılır (sonradan açılınca eskiler için
   çalmasın).
 - **Masa siparişi** önce ve daha belirgin: ayrı, uzun desen (beş zil ve bir oktav, `table`), ekranın köşesinde
-  turuncu bildirim 30 saniye. Gel-al ve kurye normal zil, yeşil bildirim 15 saniye. **Gör** Karaoke ekranına götürür
+  turuncu bildirim 30 saniye. Gel-al ve kurye normal zil, yeşil bildirim 15 saniye. **Gör** Siparişler ekranına götürür
   (zil panelin her ekranında çalar; uyarı motoru kabuktadır).
+- **Masa çağrısı** ayrı desenle (`call`: inen iki notalı kapı zili, üç kez), turuncu bildirim 30 saniye, "Masa 4 · Su
+  istiyor"; görülen kimlikler ayrı anahtarda (`localStorage` `laf:gorulen-cagrilar`). Aşağıda **Masa çağrıları**.
 - Sayfa ilk açıldığında iki dakikadan eski yeniler çalmaz, görülmüş sayılır (kartları zaten vurguludur); cihazın
   daha önce gördüğü sipariş sayfa yeniden yüklenince de çalmaz. Panel kapalıyken gelen bildirime dokunup iki dakika
   içinde açılan sayfa o siparişi bir kez daha çalar (barista sesi duysun).
@@ -167,7 +200,8 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
   dakika geçmiş sipariş için çalar; iki dakikadan yeni ödenmiş sipariş için çalmaz (geliş zili az önce çaldı). Sipariş
   zili kapalı cihazda çalmaz (`src/lib/site-orders/feed.ts` › `dueSoonToRing`, `alert-center.tsx`).
 - **Web Push** konusu `orders`: ilk kez görülen yeni siparişte sunucu bildirim gönderir ("Yeni sipariş · Masa 4",
-  "2× Latte, 1× Matcha Latte"; birden çoksa "2 yeni sipariş", "Masa 4 · Gel-al"). **Müşterinin adı bildirimde yok**
+  "2× Latte, 1× Matcha Latte"; birden çoksa "2 yeni sipariş", "Masa 4 · Gel-al"); yeni masa çağrısında "Masa 4 · Su
+  istiyor" (birden çoksa "2 masa çağrısı"). Bildirime dokununca Siparişler açılır. **Müşterinin adı bildirimde yok**
   (kilit ekranı). Tercih aboneliğin `orders` sütununda (`drizzle/0019_siparis_bildirimi.sql`); boşsa personelin
   cihazında açık, yöneticininkinde kapalı.
 - Cihaz tercihleri (**Bu cihazda uyarılar** kartı): **Sipariş bildirimleri** (push; sekme kapalıyken de) ve **Sipariş
@@ -180,7 +214,7 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 |-------------|---------|
 | Sitenin pingi (`/api/orders/ping`) | Hemen (202'den sonra, `after()`); hata olursa 4 saniye sonra bir kez daha |
 | Ekran açılınca ya da öne gelince | Son çekme bir dakikadan eskiyse |
-| Arka planda, yalnız ekran görünürken | Ekranda sipariş varken, son iki saatte liste değiştiyse ya da sitede ödemesi beklenen sipariş varken (en çok 30 dakika, aşağıda **Ödeme takibi**) üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir. Sitenin pingi tek başına ekranı yoğun yapmaz. Sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz |
+| Arka planda, yalnız ekran görünürken (Siparişler ya da Karaoke) | Ekranda sipariş ya da açık masa çağrısı varken, son iki saatte liste değiştiyse ya da sitede ödemesi beklenen sipariş varken (en çok 30 dakika, aşağıda **Ödeme takibi**) üç dakikada bir; sakinken saatte bir; son çekme başarısızsa dakikada bir. Sitenin pingi tek başına ekranı yoğun yapmaz. Sakin saatin saatlik kontrolü pingle yapılan çekmeyi saymaz |
 | **Yenile** | Hemen; art arda basılırsa siteyi en çok on saniyede bir sorar (son çekme hatalıysa her basışta) |
 | Günlük iş | Yok: Vercel'in cron kotası dolu, ping ve ekran yeter |
 
@@ -201,7 +235,7 @@ saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran ist
 
 | Anahtar | İçerik |
 |---------|--------|
-| `site_orders` | Son listenin kopyası: `now` (sitenin saati), `at` (çekme anı), `complete`, `skipped`, `orders` (ekranın alanları; tutar saklanmaz). Liste değişince üzerine yazılır; **sipariş geçmişi tutulmaz** |
+| `site_orders` | Son listenin kopyası: `now` (sitenin saati), `at` (çekme anı), `complete`, `skipped`, `orders` (ekranın alanları; tutar saklanmaz), `calls` ve `callsSkipped` (masa çağrıları, 6 Kas 2026; migration yok, aynı JSON). Liste ya da çağrılar değişince üzerine yazılır; **sipariş ve çağrı geçmişi tutulmaz** |
 | `site_orders_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `lastChangeAt`, `lastNewAt`, `lastTrigger` (`ping` / `screen` / `manual`), `lastCheckAt` (pingle olmayan son deneme), `awaitingPayment` ve `awaitingSince` (ödeme takibi), `missedPingAt` (son kaçan ping) |
 | `site_orders_version` | Sayaç: liste, hata durumu ya da ödeme takibinin bitişi değişince artar (pingin kendisi artırmaz); canlı ucun ETag'ine girer |
 
@@ -247,6 +281,42 @@ açılmış olanlar). Kurallar `src/lib/site-orders/follow.ts`'te (saf, ekranın
   ve önceki listesi eksik (200'den çok sipariş) çekme sayılmaz. Anahtar sebep olamaz: ping ve çekme aynı anahtarla
   imzalanır, kaçan ping ancak başarılı bir çekmeden sonra yazılır.
 
+## Masa çağrıları ("Garson çağır", 6 Kasım 2026)
+
+Masadaki QR menüden müşteri garson, su ya da peçete ister; site çağrıyı sipariş listesinin yanında verir (v1'e
+ekleme, `version` 1 kalır):
+
+```json
+"calls": [{"id":"tcl-…","tableCode":"K7Q2M9X4TB","label":"Masa 4","reason":"water","createdAt":"2026-11-06T12:00:00.000Z"}]
+```
+
+- **Okuma** (`parseSiteCalls`, `src/lib/site-orders/schema.ts`): alan yoksa ya da dizi değilse boş (eski site; yanıt
+  reddedilmez). Kimliği ya da anı bozuk, iki kez geçen çağrı atlanır ve sayılır (`callsSkipped`; durum satırında "N
+  masa çağrısı okunamadı"); en çok 100. `reason` `waiter` / `water` / `napkin`; bilinmeyen sebep atılmaz, `other` olur
+  (kart "Çağırıyor" der). Bilinmeyen alanlar atılır; müşteriye dair bir şey gelmez, saklanmaz.
+- **Saklama:** son listenin kopyasında (`site_orders.calls`), siparişlerle aynı işlemde ve aynı sürümle; migration yok.
+  Çağrılar değişince (yeni, görüldü, süresi doldu) sürüm artar, açık sekme yeni hâli canlı uçtan alır.
+- **Süre:** site yalnız açık ve 15 dakikadan yeni çağrıları gönderir. Süresi dolan çağrı sitede ping atmadan düşer;
+  panelin kopyası bir sonraki çekmeye kadar kalabileceği için ekran, menü sayısı ve zil 15 dakikadan eski çağrıyı
+  göstermez (`openCalls`). Açık çağrı ekranı yoğun yapar (üç dakikalık çekme), kopya da en geç o kadar sonra düzelir.
+- **Kart** (Siparişler'in üstünde, yalnız açık çağrı varken; en uzun bekleyen önde): masa (kalın), sebep ("Garson
+  çağırıyor", "Su istiyor", "Peçete istiyor", bilinmeyende "Çağırıyor"), "3 dk önce" ve büyük **Gördüm**.
+- **Gördüm:** tek dokunuş, onay yok; istek sürerken düğme kapalı, çift dokunuş gitmez. Sunucu eylemi `ackTableCall`
+  (`src/server/actions/table-calls.ts`; oturum, personel ve yönetici) sitenin `POST /api/panel/calls/ack` ucuna gider:
+  gövde yalnız `{"id","actor"}` (`actor` aşama ucundaki kuralla: boşluklar sadeleşir, en çok 80 karakter, boşsa
+  "Panel"), imza ötekilerle aynı (`callSite`; `x-laf-timestamp`, `x-laf-signature: v1=<hex>`). 200
+  `{"ok":true,"call":{"id","status":"acked"}}` (tekrarı aynı yanıt) → liste yeniden çekilir, bildirim "Masa 4 ·
+  görüldü". 404 `{"error":"not_found"}`: çağrı zaten kapanmış (başka cihaz gördü ya da süresi doldu) → liste yeniden
+  çekilir, "Masa 4 · çağrı zaten kapanmış". 401 / 503 ve uç yoksa (JSON'suz 404) aşama düğmesindeki gibi: yönetici
+  ayrıntıyı, personel "Site bağlantısında sorun var; çağrı işaretlenmedi. Yöneticiye haber verin." görür. Masanın adı
+  son listenin kopyasından okunur. Panelin işlem geçmişine yazılmaz (kayıt sitede, `actor`).
+- **Zil:** bu cihazın görmediği her açık çağrı bir kez, kapı zili deseniyle (`call`); ilk yüklemede iki dakikadan
+  eski çağrılar sessizce görülmüş sayılır; panelin ilk çekmesinde (ve çağrılardan önce yazılmış kopyada) hiçbir çağrı
+  yeni sayılmaz, bildirim gitmez. Sipariş zili kapalı cihazda çalmaz (görülmüş sayılır). Görülen kimlikler
+  `localStorage` `laf:gorulen-cagrilar` (siparişlerinkinden ayrı). Yeni çağrı ve Gördüm sitenin aynı `orders.changed`
+  pingini atar.
+- **Bildirim:** Web Push `orders` konusu, "Masa 4 · Su istiyor" / "Masa çağrısı"; dokununca Siparişler.
+
 ## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
 Müşterinin notu sitede yayında (laffogato #248) ve panel onu isteğe bağlı okur: siparişin `note`'u yalnız masa ve gel-al
@@ -268,9 +338,11 @@ okur: iki okuma arasında ödenen sipariş listede çıkar, hiçbirinde kalmaz. 
    ucu yok" der; liste ve zil çalışmaya devam eder.
 3. Panel yayınlanınca migration (`0019_siparis_bildirimi`: bildirim aboneliğine boş olabilen `orders` sütunu,
    `IF NOT EXISTS`) build öncesinde kendiliğinden uygulanır.
-4. Barın cihazında personel hesabıyla **Karaoke**'yi açın; **Bu cihazda uyarılar**'da **Sipariş bildirimleri** ve
+4. Barın cihazında personel hesabıyla **Siparişler**'i açın; **Bu cihazda uyarılar**'da **Sipariş bildirimleri** ve
    **Sipariş zili bu cihazda** açık olsun (personelde varsayılan). **Ayarlar › laffogato.net**'te "Uygulama
-   siparişleri (bar ekranı)" **Bağlı** göstermeli.
+   siparişleri ve masa çağrıları" **Bağlı** göstermeli.
+5. Masa çağrıları için sitede çağrı listesi ve `POST /api/panel/calls/ack` yayında olmalı; yoksa liste ve zil
+   siparişlerle çalışır, çağrı kartı hiç çıkmaz (alan gelmez) ya da Gördüm "Sitede masa çağrısı ucu yok" der.
 
 ## Güvenlik ve kişisel veri
 
@@ -295,6 +367,8 @@ okur: iki okuma arasında ödenen sipariş listede çıkar, hiçbirinde kalmaz. 
   sunucu gider, tarayıcı anahtarı görmez.
 - Aşama isteği müşteriye dair hiçbir şey taşımaz (yalnız kimlik, işlem, aşama ve panel kullanıcısının adı). Hata
   olursa günlüğe yalnız sipariş kimliği, işlem ve sitenin hata kodu yazılır; ad ve satırlar asla.
+- Masa çağrısı müşteriye dair hiçbir şey taşımaz (masa, QR kodu, sebep, an); Gördüm yalnız çağrının kimliğini ve panel
+  kullanıcısının adını gönderir. Gördüm'ün imza vektörü `tests/masa-cagrisi.test.ts`'te sabit.
 
 ## Sorun giderme
 
@@ -317,6 +391,9 @@ vermesini söyleyen kısa sözü görür.
 | İmza reddedildi: iki projedeki KARAOKE_SYNC_SECRET aynı mı? | Okumadaki imza hatasıyla aynı: anahtar ve sunucu saatleri |
 | Site bağlantısında sorun var; sipariş ilerletilmedi. Yöneticiye haber verin. | Personelin gördüğü metin (denetim E-64): bağlantının kurulumuyla ilgili her hata (kapalı bağlantı, imza, uç yok, site güncel değil). Yönetici aynı dokunuşta ayrıntıyı görür; bar ekranının uyarı satırı ve `/api/canli`, `/api/siparisler` da personele yalnız "Site bağlantısında sorun var; yöneticiye haber verin." döner |
 | Site 8 saniyede yanıt vermedi / Siteye ulaşılamadı; tekrar deneyin | Yeniden dokunun; sipariş iki kez ilerlemez (site 409 verir) |
+| Sitede masa çağrısı ucu yok (laffogato.net güncel değil) | Sitenin `POST /api/panel/calls/ack` ucu yayımlanmamış; çağrıyı sitenin panelinden kapatın ya da 15 dakikada kendiliğinden düşer |
+| Masa 4 · çağrı zaten kapanmış | Çağrıyı başka bir cihaz görmüş ya da süresi dolmuş; ekran yenilenir |
+| N masa çağrısı okunamadı | Sitenin bir çağrısı beklenen biçimde değil (kimlik ya da an); panel güncel olmayabilir |
 
 **Ayarlar › laffogato.net** kartındaki "Hata", o bağlantının **son denemesinin** hatasıdır ve bir sonraki başarılı
 çekmeye kadar kalır; satır hatanın zamanını da yazar. Uzun süre çekilmemiş bir bağlantının eski hatası (sitenin ucu
@@ -339,15 +416,23 @@ anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker;
 | `src/lib/site-orders/stage.ts` | Aşama düğmeleri: izin verilen işlem / aşama çiftleri, düğme adları, bildirim ve hata metinleri (saf, zod'suz: ekranın paketine girer) |
 | `src/lib/site-orders/follow.ts` | Ödeme takibi (başlama, yeniden başlama, bitiş), ekranın yoğunluğu, "son çekme bundan eskiyse sor" kuralı, kaçan ping ve Ayarlar'daki satırının süresi (saf, zod'suz) |
 | `src/lib/site-orders/stage-request.ts` | Aşama ucunun gövdesi ve yanıtın anlamı (200 / 409 / okunamayan / hata; sipariş listedeki şemayla doğrulanır) (saf) |
+| `src/lib/site-orders/calls.ts` | Masa çağrıları: sebep metni, açık çağrılar (15 dk), zil kuralı, bildirim metni, Gördüm'ün sonucu ve hata metinleri (saf, zod'suz) |
+| `src/lib/site-orders/call-request.ts` | Gördüm ucunun gövdesi (`{"id","actor"}`) ve yanıtın anlamı (görüldü / zaten kapanmış / okunamayan / hata) (saf) |
 | `src/server/actions/site-orders.ts` | `advanceSiteOrder`: oturum, doğrulama, imzalı istek (`callSite`), ardından listeyi yeniden çekme |
+| `src/server/actions/table-calls.ts` | `ackTableCall`: oturum, doğrulama, imzalı Gördüm isteği, ardından listeyi yeniden çekme |
 | `src/lib/site-ping.ts` | Pingin denetimi (menü pingiyle ortak; `src/lib/site-menu/ping.ts` bunu yeniden dışa verir) |
 | `src/server/site-orders/sync.ts` | Çekme, son listenin kopyası, durum, sürüm, bildirim; ekranın "son çekme bundan eskiyse sor"u |
 | `src/app/api/orders/ping/route.ts` | Sitenin pingi |
 | `src/app/api/siparisler/route.ts` | Ekranın yeniden çekme isteği (oturumlu) |
 | `src/app/api/canli/route.ts`, `src/lib/live.ts` | Canlı veri: sipariş listesi ve durumu, ETag'te sürüm |
-| `src/app/panel/karaoke/orders-board.tsx` | "Uygulama siparişleri" bölümü |
+| `src/app/panel/siparisler/page.tsx` | Siparişler ekranı: başlık (laffogato.net'te aç, Yenile), bağlantı kutusu, pano, Bu cihazda uyarılar |
+| `src/app/panel/siparisler/orders-board.tsx` | Pano ve `useOrdersFeed` (canlı veri, siteyi yeniden çektirme): durum satırları, Zili aç, sipariş kartları |
+| `src/app/panel/siparisler/table-calls.tsx` | "Masa çağrıları" kartı ve Gördüm |
+| `src/app/panel/karaoke/orders-summary.tsx` | Karaoke ekranındaki tek satır ("N açık uygulama siparişi" · Siparişler'e git) |
+| `src/components/panel/orders-badge.tsx` | Menüdeki Siparişler satırının sayısı (canlı veriden) |
 | `src/server/actions/site-links.ts`, `src/app/panel/ayarlar/site-links-test.tsx` | Ayarlar › laffogato.net: **Bağlantıları sına** |
-| `src/components/panel/live/alert-center.tsx`, `sounds.ts`, `prefs.ts`, `device-alerts.tsx` | Zil (masa deseni), cihaz tercihleri |
+| `src/components/panel/live/alert-center.tsx`, `sounds.ts`, `prefs.ts`, `device-alerts.tsx` | Zil (masa deseni, çağrının kapı zili), cihaz tercihleri |
 | `src/server/push/send.ts`, `src/server/actions/push.ts` | `orders` bildirim konusu ve tercihi |
 | `tests/site-siparis.test.ts` | Şema, yeni sipariş, sıralama, kart metinleri, zil kuralı, ping, tetikleyiciler, bildirim, aşama düğmeleri (çiftler, adlar, gövde, yanıt ve hata metinleri, eylemin oturumu), ödeme takibi, kaçan ping, imza vektörleri |
+| `tests/masa-cagrisi.test.ts` | Masa çağrıları: `calls` olan ve olmayan yanıt, atlanan çağrılar, açık çağrı, zil kuralı ve metni, Gördüm'ün gövdesi, imza vektörü, yanıtı, hata metinleri, eylemin ve ekranın kuralları |
 | `tests/siparis-takip-db.test.ts` | Ödeme takibi, sakin saatin kontrolü ve kaçan ping gerçek Postgres'te, sitenin sahte ucuyla (`BAGLANTI_TEST_DATABASE_URL`) |

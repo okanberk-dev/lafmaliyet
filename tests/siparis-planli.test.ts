@@ -93,7 +93,7 @@ test("zil metni: tek siparişte nereye, saat ve satırlar; birden çokta sayı v
 });
 
 test("ekran: kart bekleme satırını kuraldan alır; uyarı motoru planlıya zamanlayıcı kurar ve cihaz başına bir kez çalar", () => {
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /const wait = waitInfo\(o, now\);/);
   assert.match(board, /wait\.late \? "font-semibold text-warn" : "text-ink-mute"/);
   const alerts = read("src/components/panel/live/alert-center.tsx");

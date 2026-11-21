@@ -260,7 +260,8 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     const cat = await category();
     const b1 = await debt(c.id, { amount: 1250, description: "süt", costMode: "fatura", date: "2026-10-20" });
     const b2 = await debt(c.id, { amount: 600, description: "beyaz peynir", costMode: "gider", categoryId: cat.id, date: "2026-10-21" });
-    await db.insert(s.expenseEntries).values({ date: "2026-10-21", categoryId: cat.id, description: "Sütaş · beyaz peynir", amount: 600, supplierEntryId: b2.id });
+    // Gider kaydının şubesi bağlanırken önceki hâle (linkPrev) yazılır, bağ çözülünce kayıt aynı şubeye döner
+    await db.insert(s.expenseEntries).values({ date: "2026-10-21", categoryId: cat.id, description: "Sütaş · beyaz peynir", amount: 600, supplierEntryId: b2.id, branchId: "tuzla" });
     await payFifo(c.id, 2200, "2026-10-24", "elden");
     const sut149 = await invoice({ payable: 1850, invoiceNo: "SUT149", date: "2026-10-28", ledgerBase: 0 });
     // Bağla: iki borç tek faturaya; borçlara sayılan ödeme faturaya geçer, b2'nin gideri silinir
@@ -280,7 +281,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual(lb2.linkPrev, {
       costMode: "gider",
       categoryId: cat.id,
-      expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21", id: 1, paymentMethod: null, createdBy: null },
+      expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21", id: 1, paymentMethod: null, createdBy: null, branchId: "tuzla" },
     });
     // Fatura (kalan 350'ye elle ✓ değil) silinir: bağlar önce çözülür
     const links = await db.transaction(async (tx) => {
@@ -299,7 +300,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
       ],
     );
     const exp = await db.select().from(s.expenseEntries);
-    assert.deepEqual(exp.map((e) => [e.supplierEntryId, e.amount, e.date, e.description]), [[b2.id, 600, "2026-10-21", "Sütaş · beyaz peynir"]]);
+    assert.deepEqual(exp.map((e) => [e.supplierEntryId, e.amount, e.date, e.description, e.branchId]), [[b2.id, 600, "2026-10-21", "Sütaş · beyaz peynir", "tuzla"]]);
     assert.deepEqual((await allocs()).map((a) => [a.invoiceId, a.debtId, a.originDebtId, a.amount]), [
       [null, b1.id, null, 1250],
       [null, b2.id, null, 600],
@@ -542,6 +543,32 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual([line2.id, line2.amount], [line.id, 2200]);
   });
 
+  test("Kasadan yeni satır (denetim 21 Kasım #31): iki kasa açıkken 'Tümü'de şubesiz kayıt reddedilir, seçilen şubenin kasasına yazılır", async () => {
+    const me = await actor();
+    const c = await card("Sütaş", { paymentTermDays: 30 });
+    const kasaDay = [businessDate(), "2026-10-24"].sort()[0];
+    // İstek dışında kapsam "Tümü"dür (cookies() fırlar): Marina da açıkken satırın kasası belirsiz
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
+    try {
+      await assert.rejects(
+        withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new" } }), 30)),
+        (e: unknown) => e instanceof UserError && /hangi şubenin kasasından/.test(e.message),
+      );
+      await assert.rejects(
+        withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new", branchId: "online" } }), 30)),
+        (e: unknown) => e instanceof UserError && /Şube bulunamadı/.test(e.message),
+      );
+      assert.equal((await db.select().from(s.cashOuts)).length, 0, "reddedilen kayıt satır açmaz");
+      assert.equal((await db.select().from(s.supplierEntries)).length, 0, "reddedilen kayıt ödeme açmaz");
+      const p = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new", branchId: "marina" } }), 30));
+      const [line] = await db.select().from(s.cashOuts);
+      assert.deepEqual([line.id, line.branchId, line.kind, line.amount], [p.cashOut?.id, "marina", "teslim", 500]);
+    } finally {
+      await db.execute(sql`TRUNCATE supplier_allocations, supplier_entries, cash_outs RESTART IDENTITY CASCADE`);
+      await db.delete(s.branches).where(eq(s.branches.id, "marina"));
+    }
+  });
+
   test("borç düzeltme ve silme: gider kaydı izler, sayılan ödemenin altına inilmez, gider → faturası gelecek kaydı siler", async () => {
     const me = await actor();
     const c = await card();
@@ -563,14 +590,15 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 650, date: "2026-10-21", costMode: "mevcut", adoptExpenseId: own.id }), 30));
     const [adopted] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
     assert.deepEqual([adopted.amount, adopted.date, adopted.supplierEntryId], [650, "2026-10-21", b.id]);
-    // Borç silinince ödemesi hesaba geçer, sahiplenilen kayıt durur
-    const del = await db.transaction((tx) => entries.deleteEntry(tx, b.id, []));
+    // Borç silinince ödemesi hesaba geçer, sahiplenilen kayıt durur. Kayıt Ekim içinde (21 → 19) geri döner: Ekim geçmiş
+    // ay olunca (1 Kasım'dan sonra) bu da onay ister (K18); onay debtInput'taki gibi verilir ki test günden bağımsız olsun
+    const del = await db.transaction((tx) => entries.deleteEntry(tx, b.id, OCT));
     assert.equal(del.snapshot.allocations.length, 1);
     const [kept] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
     assert.equal(kept.supplierEntryId, null);
     assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 400]]);
     // Geri alma: borç, sahiplenme ve dağıtım geri gelir
-    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), []));
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), OCT));
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id)))[0].supplierEntryId, b.id);
     assert.deepEqual([...(await settle.cardsWithCredit())], []);
   });

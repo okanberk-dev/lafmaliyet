@@ -20,6 +20,7 @@ import { fetchModposDay, saveModposFallback } from "@/server/actions/modpos";
  * yalnız bu düğme ve sabah işi.
  */
 export function ModposFetchForm({
+  branchId,
   today,
   defaultDay,
   left,
@@ -27,6 +28,8 @@ export function ModposFetchForm({
   blocked,
   stored,
 }: {
+  /** Kartın şubesi: o şubenin anahtarı ve hakkıyla çekilir */
+  branchId: string;
   today: string;
   defaultDay: string;
   left: number;
@@ -37,6 +40,8 @@ export function ModposFetchForm({
   stored: Record<string, boolean>;
 }) {
   const [day, setDay] = useState(defaultDay);
+  // Birden çok şubenin formu aynı sayfada: alanın kimliği şubeyle (Tuzla eski kimliği korur)
+  const inputId = branchId === "tuzla" ? "modpos-gun" : `modpos-gun-${branchId}`;
   const [open, setOpen] = useState(false);
   const [pending, start] = useActionTransition();
   const problem = !day ? "Bir gün seçin" : day > today ? "İleri tarih çekilemez" : null;
@@ -47,7 +52,7 @@ export function ModposFetchForm({
     start(
       async () => {
         try {
-          const res = await fetchModposDay(day);
+          const res = await fetchModposDay(day, branchId);
           if (!res.ok) return void toast.error(res.error);
           toast.success(res.data.title, { description: res.data.description });
         } finally {
@@ -62,9 +67,9 @@ export function ModposFetchForm({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch">
-        <Field label="Kasa günü" htmlFor="modpos-gun" error={canFetch ? problem : null} className="max-sm:w-full">
+        <Field label="Kasa günü" htmlFor={inputId} error={canFetch ? problem : null} className="max-sm:w-full">
           <Input
-            id="modpos-gun"
+            id={inputId}
             type="date"
             value={day}
             max={today}

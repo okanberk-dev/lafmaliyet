@@ -4,7 +4,19 @@ import { and, eq, inArray, notExists, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { amountsChanged, DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
+import {
+  alsoIgnoredOf,
+  amountsChanged,
+  DELETED_BILLS_KEY,
+  DELETED_BILLS_LIMIT,
+  isParasutLinked,
+  joinTR,
+  LOCKED_LABELS,
+  lockedChanges,
+  parasutKeysOf,
+  splitSupplier,
+  type LockedField,
+} from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { debtLabel, invoiceLabel, payableFloorProblem } from "@/lib/cari/account";
@@ -710,9 +722,12 @@ function snapshotOf(r: InvoiceRow) {
   };
 }
 
-/** Eşitlemenin tanıdığı Paraşüt anahtarı: gider faturası kimliği ya da (içeri alınmamış) "ei:" + e-fatura kimliği */
+/**
+ * Eşitlemenin tanıdığı Paraşüt anahtarı (listenin ve "Geri al"ın): gider faturası kimliği ya da (içeri alınmamış)
+ * "ei:" + e-fatura kimliği. Silmede kaydın bütün anahtarları yok sayılır (parasutKeysOf)
+ */
 function parasutKeyOf(r: { externalId: string | null; eInvoiceId?: string | null }): string | null {
-  return r.externalId ?? (r.eInvoiceId ? `ei:${r.eInvoiceId}` : null);
+  return parasutKeysOf(r)[0] ?? null;
 }
 
 // Geri alınan kayıt veritabanındaki satırın kopyasıdır: Paraşüt'ten gelen uzun açıklama / tedarikçi adı
@@ -777,6 +792,11 @@ async function relinkCashOuts(tx: Tx, ids: readonly number[], invoiceId: number,
 }
 type DeletedEntry = {
   externalId: string;
+  /**
+   * Aynı faturanın yok sayılan öteki anahtarı: gider faturasına bağlı e-fatura (`ei:<kimlik>`; denetim 21 Kasım #3).
+   * Geri alınınca o da listeden çıkar; listede ayrı satır olmaz (rules.ts ignoredBills)
+   */
+  alsoIgnored?: string[];
   deletedAt: string;
   deletedBy: string;
   row: Snapshot;
@@ -843,13 +863,17 @@ export async function deleteInvoice(id: number) {
       const lines = await tx.select().from(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, invoiceId));
       const [d] = await tx.delete(s.invoices).where(eq(s.invoices.id, invoiceId)).returning();
       if (!d) return null;
-      const key = parasutKeyOf(d);
+      // Kaydın bütün anahtarları yok sayılır: elle girilmiş gider faturasına bağlı e-fatura (ikisi birden) yalnız gider
+      // faturası yok sayılınca e-fatura eşitlemesinden yeni kayıt olarak geri gelirdi (denetim 21 Kasım #3)
+      const [key, ...also] = parasutKeysOf(d);
       if (key) {
         const ignore = (await readStateForUpdate<string[]>(tx, IGNORE_KEY)) ?? [];
-        if (!ignore.includes(key)) await writeState(tx, IGNORE_KEY, [...ignore, key].slice(-2000));
-        const deleted = ((await readStateForUpdate<DeletedEntry[]>(tx, DELETED_BILLS_KEY)) ?? []).filter((e) => e.externalId !== key);
+        const add = [key, ...also].filter((k) => !ignore.includes(k));
+        if (add.length) await writeState(tx, IGNORE_KEY, [...ignore, ...add].slice(-2000));
+        const deleted = ((await readStateForUpdate<DeletedEntry[]>(tx, DELETED_BILLS_KEY)) ?? []).filter((e) => e.externalId !== key && !also.includes(e.externalId));
         const entry: DeletedEntry = {
           externalId: key,
+          ...(also.length ? { alsoIgnored: also } : {}),
           deletedAt: new Date().toISOString(),
           deletedBy: me.name,
           row: snapshotOf(d),
@@ -930,13 +954,18 @@ export async function unignoreParasutBill(externalId: string) {
       const deleted = (await readStateForUpdate<DeletedEntry[]>(tx, DELETED_BILLS_KEY)) ?? [];
       const entry = deleted.find((e) => e.externalId === ext) ?? null;
       if (!ignore.includes(ext) && !entry) return { status: "missing" as const, entry: null, lines: 0 };
-      await writeState(tx, IGNORE_KEY, ignore.filter((x) => x !== ext));
+      // Faturanın bütün anahtarları birlikte çıkar (gider faturası ve bağlı e-faturası; denetim 21 Kasım #3)
+      const keys = new Set([ext, ...alsoIgnoredOf(entry)]);
+      await writeState(tx, IGNORE_KEY, ignore.filter((x) => !keys.has(x)));
       if (entry) await writeState(tx, DELETED_BILLS_KEY, deleted.filter((e) => e.externalId !== ext));
       if (!entry) return { status: "unignored" as const, entry: null, lines: 0 };
+      // Fatura bu arada başka yoldan geri gelmiş olabilir (aynı gider faturası ya da aynı e-fatura; e-fatura kimliği
+      // benzersiz): kopya yazılmaz
+      const eInvoiceId = ext.startsWith("ei:") ? ext.slice(3) : (entry.row.eInvoiceId ?? null);
       const [existing] = await tx
         .select({ id: s.invoices.id })
         .from(s.invoices)
-        .where(ext.startsWith("ei:") ? eq(s.invoices.eInvoiceId, ext.slice(3)) : eq(s.invoices.externalId, ext))
+        .where(or(ext.startsWith("ei:") ? undefined : eq(s.invoices.externalId, ext), eInvoiceId !== null ? eq(s.invoices.eInvoiceId, eInvoiceId) : undefined))
         .limit(1);
       if (existing) return { status: "exists" as const, entry, lines: 0 };
       // Cari ödemeleri bu faturaya yeniden sayılmaz (silinirken hesaba geçtiler): defterin kapattığı fatura ödenmemiş döner

@@ -96,7 +96,9 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   kâr etkisi ve faturadan gelen pay (önce / sonra önizleme). "Değişen ay" bütün sayımlı ayları kapsar (tablo son 12'yi
   gösterir); sayımı olmayan sonraki ayın açılışı da yazılır (o ayın kârı ters yönde), Gelir-giderde açılışı elle girilmiş
   ay etkilenmez. Telefonda "Faturadan" sütunu gizlenir. Kaydet işlem geçmişine "Stok değerleme: eski → yeni" yazar.
-  Kapalı seçilirse her ay ay sonu fiyatıyla.
+  Kapalı seçilirse her ay ay sonu fiyatıyla. Önizleme şube seçiminden bağımsız, işletme genelidir ("Tümü"nün
+  sayımları ve Gelir-giderde elle girilmiş devirleri): ayar "Tümü"nün kâr-zararını değiştirir, şube görünümünün mal
+  maliyeti sayıma bağlı değildir (denetim 21 Kasım #32).
 - **Gelir-gider**: "Sonraki aya devreden mal" ipucu yöntemi söyler; elle girilen tutar her yöntemin önüne geçer. Yıl
   kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
   (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca

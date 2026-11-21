@@ -2,9 +2,11 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { cashEmailKey } from "@/lib/cash-report";
+import { namedTill } from "@/lib/branches";
+import { cashEmailKey, cashLogKey } from "@/lib/cash-report";
 import { allDroppedSentence, type DroppedRecipient } from "@/lib/notify-recipients";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
+import { listBranches } from "@/server/branches";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, loadCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -59,10 +61,11 @@ export async function emailReport(
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
   } else {
     const dto = toCashDTO(row);
-    const waste = await dayWaste(row.date);
+    const waste = await dayWaste(row.date, row.branchId);
     const online = await (o.site ?? fetchTillOnlineRow(row.date));
-    // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez)
-    const [extras, integrity] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto)]);
+    // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez). Birden çok
+    // kasa açıkken raporun şubesi konuda, başlıkta ve "Panelde aç"ta (iki şubenin aynı günkü e-postası ayırt edilir)
+    const [extras, integrity, branches] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto), listBranches()]);
     // Yazarkasa dışı tahsilat (sunucu sütunu) yalnız bu yönetici metnine: K4 onu da sayar, "tutmuyor" yanlış alarmı olmaz
     const msg = renderCashReport({ ...dto, okcOutside: row.okcOutside }, {
       by: dto.submittedByName,
@@ -74,6 +77,7 @@ export async function emailReport(
       lafposIkram: waste.lafpos?.received ? waste.lafpos : null,
       online,
       approval: o.approval ?? null,
+      branch: namedTill(branches, row.branchId),
       ...extras,
       ...integrity,
     });
@@ -82,7 +86,8 @@ export async function emailReport(
     outcome = res.ok ? { status: "sent", error: null, to: recipients.length } : { status: "failed", error: res.error, to: 0 };
     await getDb()
       .insert(s.notificationLog)
-      .values({ key: `cash:${row.date}:r${row.revision}`, channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      // İşlem geçmişinin anahtarı şubenin günü: iki şubenin aynı günkü raporu birbirinin kaydını ezmez
+      .values({ key: cashLogKey(row), channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
   }
   await getDb()

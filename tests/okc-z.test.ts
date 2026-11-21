@@ -891,3 +891,34 @@ test("form: zorunluluk kuralı sunucuyla aynı metinle ve doğru alanda", async 
   const ok = okcFieldsOf({ ...base, okcTotal: "1.100", okcCash: "0", okcCard: "1100", okcT10: "1.100", okcV10: "100", okcT20: "0", okcV20: "0" });
   assert.deepEqual(ok.fields?.okcVat, [{ rate: 10, total: 1100, vat: 100 }]);
 });
+
+test("okcMonth: iki şubenin yazarkasası ayrı zincir; ay zinciri şube zincirlerinin toplamı (Tümü, vergi)", () => {
+  const row = (branchId: string, date: string, zNo: string, okcTotal: number, cum: number) => ({
+    branchId,
+    date,
+    zTotal: okcTotal,
+    okcZNo: zNo,
+    okcTotal,
+    okcVatTotal: r(okcTotal / 11),
+    okcVat: [{ rate: 10, total: okcTotal, vat: r(okcTotal / 11) }],
+    okcCumTotal: cum,
+    okcCumVat: r(cum / 11),
+  });
+  const r = (v: number) => Math.round(v * 100) / 100;
+  const rows = [
+    row("tuzla", "2026-10-31", "0100", 1000, 50_000),
+    row("marina", "2026-10-31", "0007", 400, 2_000),
+    row("tuzla", "2026-11-01", "0101", 1100, 51_100),
+    row("marina", "2026-11-01", "0008", 500, 2_500),
+  ];
+  const m = okcMonth(rows, "2026-11");
+  // Tuzla 51.100 − 50.000 + Marina 2.500 − 2.000; Marina'nın kümülatifinden Tuzla'nınki çıkarılmaz
+  assert.equal(m.chain?.total, 1600);
+  assert.equal(m.total, 1600);
+  assert.equal(m.complete, true);
+  // Bir şubenin önceki kümülatifi yoksa ay zinciri yok (döküm tam olduğu için ay yine tam)
+  const eksik = okcMonth(rows.filter((x) => !(x.branchId === "marina" && x.date === "2026-10-31")), "2026-11");
+  assert.equal(eksik.chain, null);
+  // Tek şubede eskisi gibi
+  assert.equal(okcMonth(rows.filter((x) => x.branchId === "tuzla"), "2026-11").chain?.total, 1100);
+});

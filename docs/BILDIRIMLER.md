@@ -74,10 +74,15 @@ kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış y
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
 **Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
-onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Yine **Uyarılar**'da
+onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zil Stok sayımı ekranının
+şubesine bakar (seçili fiziksel şube, "Tümü"de Tuzla); sabah e-postası şube seçimi olmadan her açık şubenin sayımına
+ayrı bakar ve birden çok şube açıkken satırı şubenin adıyla yazar: "Marina: Ekim 2026 sayımı yarım: 10 / 72" (tek
+yarım şubede bağlantı `&sube=` ile o şubenin sayımı; `pastCountReminders`, denetim 21 Kasım #16). Yine **Uyarılar**'da
 yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin `sayim/logic.ts`): bu ayın ya da geçen
 ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin fiyatı yok" (adlar; kapanış stoğuna 0 ₺
-girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden); personel geçen ayın
+girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden). Ek kalemler şube
+başına olduğundan satır ay ve şube başınadır: birden çok şube açıkken "Kasım 2026 (Marina): 1 ek kalemin fiyatı yok" ve
+adres o şubenin sayımını açar (`&sube=`; [SUBE.md](SUBE.md#yazarken-hangi-şube)); personel geçen ayın
 sayımını ay bittikten sonra (ilk 10 günde) değiştirdiyse "Ayşe, Ekim 2026 sayımını değiştirdi" (kayıt ve kalem sayısı;
 kimlik en son kayıttan, yeni kayıt yeniden okunmamış yapar). İkisi personele hiç gösterilmez. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
@@ -242,7 +247,10 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   duran böyle bir adresin satırında kırmızı "Personel hesabının adresi · e-posta gitmez" yazar, adres sayısına
   girmez; aşağıda "Alıcılar ve hesaplar");
 - **E-postayı önizle** (gönderilmez): bugün gidecek sabah e-postasının kendisi, sistem, Paraşüt ve zam bölümleriyle;
-  ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla;
+  ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla. Önizleme ve **Bugünküleri şimdi
+  gönder** sabah işi gibi işletmenin tamamıyla okur, soldaki şube seçimiyle değil (`withBranchScope(ALL_BRANCHES, …)`;
+  denetim 21 Kasım #18): önceden Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor ve
+  sabah işi o zamları işletme geneli rakamla bir daha bildirmiyordu;
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere; düşen adres bildirimin alt satırında "Gönderilmedi: …");
 - **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";
@@ -391,7 +399,7 @@ Ekran: **Hatırlatıcılarım** (`/panel/hatirlaticilarim`), personel ve yöneti
 görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve sabah e-postası bunlardan ayrıdır.
 
 - Hızlı ekleme (başlık, bugün / yarın, isteğe bağlı saat) ya da pencereden: not, tarih, saat, tekrar (her gün / hafta /
-  ay; ay sonu kırpılır, ertelense de çapa günü korunur). Gruplar: Gecikti, Bugün, Yarın, Bu hafta, Daha sonra.
+  ay; ay sonu kırpılır, ertelense de çapa günü ve saati korunur: erteleme yalnız o dönemindir). Gruplar: Gecikti, Bugün, Yarın, Bu hafta, Daha sonra.
 - **Tamamlandı** ve **ertele** (bir saat, ertesi gün) bildirimdeki **Geri al** ile geri alınır; tamamlanan tek
   seferlikler iki hafta altta durur, oradan yeniden açılır. En çok 200 açık hatırlatıcı.
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
@@ -400,7 +408,11 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
   her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Ayın son günü aynı
   iş, sayım listesi doluysa ve ayın sayımı tamamlanmadıysa sabah özeti açık bütün cihazlara bir de "Bugün ay sonu stok
   sayımı" gönderir (o ayın Stok sayımı'nı açar; `src/server/notify/count-push.ts`, Günlük işler'de adımı "Sayım
-  bildirimi"). Haftalık "Bugün hızlı sayım günü" bildirimi 26 Ekim 2026'da hızlı sayımla birlikte kalktı.
+  bildirimi"). Sayım şube başınadır: her açık şubenin sayımına ayrı bakılır. Birden çok şube açıkken sayımı bitmeyen
+  her şubeye ayrı bildirim ("Bugün ay sonu stok sayımı · Marina", adres `&sube=`); o şubenin personeline, yöneticilere
+  ve şubesiz personele gider, başka şubenin personeline gitmez (`monthEndCountPushes`, `countPushReaches`). Önceden
+  yalnız Tuzla'nın sayımına bakılıyor, Marina'nın personeline Tuzla'nın sayısı gidiyordu (denetim 21 Kasım #16).
+  Haftalık "Bugün hızlı sayım günü" bildirimi 26 Ekim 2026'da hızlı sayımla birlikte kalktı.
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama

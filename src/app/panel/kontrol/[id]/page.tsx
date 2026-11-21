@@ -7,9 +7,10 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
-import { ANSWER_GRACE_MIN, checklistDay, clockInstant, listTitle, nowBusinessMinute } from "@/lib/checklists";
+import { ANSWER_GRACE_MIN, branchLockAllows, checklistDay, clockInstant, listTitle, nowBusinessMinute } from "@/lib/checklists";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { staffBranchLock } from "@/server/branch-scope";
 import { loadRunView } from "@/server/data/checklists";
 import { photoStorage } from "@/server/storage/photos";
 
@@ -20,7 +21,8 @@ export const metadata: Metadata = { title: "Kontrol listesi" };
 
 /**
  * Bir listeyi doldurma (telefonda): bugünün (iş günü) kaydı, maddeler bölüm bölüm; her yanıt dokunulduğu an kaydedilir
- * (docs/KONTROL-LISTELERI.md). İki rol de açar; personel yalnız "Personel doldurabilir" listeyi. Gece 05:00–05:30
+ * (docs/KONTROL-LISTELERI.md). İki rol de açar; personel yalnız "Personel doldurabilir" listeyi, şubesine kilitliyse
+ * yalnız kendi şubesinin ve bütün şubelerin listesini (adresle başka şubenin listesi açılmaz). Gece 05:00–05:30
  * arasında dünün yarım kalan kaydı açılır: başlamış liste o yarım saatte bitirilebilir.
  */
 export default function ChecklistRunPage({ params }: PageProps<"/panel/kontrol/[id]">) {
@@ -51,9 +53,12 @@ async function RunContent({ params }: { params: PageProps<"/panel/kontrol/[id]">
   if (!/^\d{1,9}$/.test(id) || tid <= 0) notFound();
   const now = new Date();
   const today = checklistDay(now);
-  let view = await loadRunView(tid, today, now);
+  const [first, lock] = await Promise.all([loadRunView(tid, today, now), admin ? null : staffBranchLock()]);
+  let view = first;
   if (!view) notFound();
   if (!admin && !view.template.staffAllowed) redirect("/panel/kontrol");
+  // Şubesine kilitli personel başka şubenin listesini açmaz (docs/KONTROL-LISTELERI.md › Şubeler; yazım da reddeder)
+  if (!admin && !branchLockAllows(view.template.branchId, lock)) redirect("/panel/kontrol");
   // 05:00–05:30: dünün başlamış ama bitmemiş kaydı hâlâ bitirilebilir (lib/checklists.ts canAnswerDay)
   if (nowBusinessMinute(now) < ANSWER_GRACE_MIN && !view.run) {
     const yesterday = await loadRunView(tid, addDays(today, -1), now);

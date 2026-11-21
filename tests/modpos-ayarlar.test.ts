@@ -192,15 +192,25 @@ test("eylemler: her dışa aktarım bir POST ucu, önce yönetici oturumu; zod; 
   }
   const fetch = actions.slice(actions.indexOf("export async function fetchModposDay"), actions.indexOf("export async function saveModposFallback"));
   assert.match(fetch, /const day = zDate\.parse\(input\);/);
-  // Sıra: kurulmadı, önizleme, ileri tarih, hak doldu; sonra tek istek
-  const order = ["modposKeyProblem(process.env)", "canFetchModpos(process.env)", "requestableDay(day, now)", "quotaLeft(state.quota, now) <= 0", 'syncModpos("elle", { days: [day], deadlineAt: Date.now() + FETCH_BUDGET_MS, db })'];
+  // Sıra: şube ModPOS'lu mu, kurulmadı (şubenin anahtarı; başka şubeyle ortak değil), önizleme, ileri tarih, şubenin hakkı
+  // doldu; sonra tek istek, şubenin anahtarıyla (docs/MODPOS-API.md › Şubeler)
+  const order = [
+    "if (!peers.includes(branchId))",
+    "modposKeyProblem(process.env, branchId, peers)",
+    "canFetchModpos(process.env)",
+    "requestableDay(day, now)",
+    "readModposState(db, branchId)",
+    "quotaLeft(state.quota, now) <= 0",
+    'syncModpos("elle", { days: [day], deadlineAt: Date.now() + FETCH_BUDGET_MS, db, branchId, branches })',
+    "loadModposSheet(day, db, { branchId })",
+  ];
   const at = order.map((s) => fetch.indexOf(s));
   assert.ok(at.every((i) => i > 0), JSON.stringify(at));
   assert.deepEqual([...at].sort((a, b) => a - b), at, "denetimler istekten önce");
   assert.match(actions, /const FETCH_BUDGET_MS = 50_000;/);
   assert.equal((actions.match(/syncModpos\(/g) ?? []).length, 1);
   // Yalnız alınan gün işlem geçmişine; denenince kart yenilenir
-  assert.match(fetch, /refresh\(\);\s*if \(!out\.ok\) throw new UserError\(out\.error\);\s*await logActivity\(me, "ModPOS API verisi çekildi", out\.log\);/);
+  assert.match(fetch, /refresh\(\);\s*if \(!out\.ok\) throw new UserError\(out\.error\);\s*const name = [^\n]+\n\s*await logActivity\(me, "ModPOS API verisi çekildi", peers\.length > 1 \? `\$\{name\} · \$\{out\.log\}` : out\.log\);/);
   const save = actions.slice(actions.indexOf("export async function saveModposFallback"));
   assert.match(save, /const on = z\.boolean\(\{ message: "Geçersiz değer" \}\)\.parse\(input\);/);
   assert.match(save, /const change = await writeModposFallback\(getDb\(\), me, on\);\s*if \(change\) \{\s*await logActivity\(me, "Ayarlar", change\);\s*refresh\(\);/);
@@ -226,13 +236,18 @@ test("sayfa açılışı ModPOS'a istek göndermez: kart ve yükleyici yalnız o
   }
   assert.match(read("src/server/modpos/status.ts"), /^import "server-only";/m);
   // Kart LafPOS kartının deseninde: okunamazsa yedek kart, bölüm kimliği modpos
-  assert.match(card, /const data = await loadModposCard\(undefined, now\)\.catch\(\(e\) => \{/);
+  // Her ModPOS şubesinin kendi bölümü (yoksa Tuzla): kendi anahtarı, hakkı ve günleriyle
+  assert.match(card, /const ids = modposBranchIds\(branches\);/);
+  assert.match(card, /\(ids\.length \? ids : \[DEFAULT_BRANCH_ID\]\)\.map\(\(id\) => loadModposCard\(undefined, now, process\.env, id, branches\)\)/);
+  assert.match(card, /\}\)\(\)\.catch\(\(e\) => \{/);
   assert.match(card, /<Notice tone="bad" size="sm" title="ModPOS API'nin durumu okunamadı; sayfayı yenileyin" \/>/);
   assert.equal((card.match(/<SectionCard\s+id="modpos"/g) ?? []).length, 2);
   assert.match(card, /<Badge tone=\{sum\.tone\} dot>/);
   assert.match(card, /<InfoTip text=\{SETUP_TIP\} \/>/);
-  assert.match(card, /href=\{`\/panel\/kasa\?gun=\$\{d\.day\}`\}/);
-  assert.match(card, /<ModposFallbackSwitch on=\{data\.fallback\} \/>/);
+  // Birden çok şubede günün bağlantısı şubeyi de taşır (?sube= panelin seçimine geçer)
+  assert.match(card, /href=\{`\/panel\/kasa\?gun=\$\{d\.day\}\$\{sube\}`\}/);
+  assert.match(card, /const sube = branch \? `&sube=\$\{branch\.id\}` : "";/);
+  assert.match(card, /<ModposFallbackSwitch on=\{data\.cards\[0\]\.fallback\} \/>/);
 });
 
 test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" ve kalan hakla; düğme kapalıyken nedeni", () => {
@@ -240,7 +255,8 @@ test("istemci: eylemler useActionTransition'la, onay penceresi tone=\"primary\" 
   assert.match(client, /^"use client";/);
   assert.doesNotMatch(client, /\buseTransition\(/);
   assert.equal((client.match(/const \[pending, start\] = useActionTransition\(\);/g) ?? []).length, 2);
-  assert.match(client, /start\(\s*async \(\) => \{\s*try \{\s*const res = await fetchModposDay\(day\);/);
+  // Kartın şubesinin anahtarı ve hakkıyla (docs/MODPOS-API.md › Şubeler)
+  assert.match(client, /start\(\s*async \(\) => \{\s*try \{\s*const res = await fetchModposDay\(day, branchId\);/);
   // Yanıt kaybolursa çekim yapılmış olabilir: pencere kapanır, "Yenile" önerilir (maybeSaved)
   assert.match(client, /\} finally \{\s*setOpen\(false\);\s*\}\s*\},\s*\{ maybeSaved: true \},/);
   assert.match(client, /start\(async \(\) => \{\s*const res = await saveModposFallback\(next\);/);

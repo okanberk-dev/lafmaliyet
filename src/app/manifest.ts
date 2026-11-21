@@ -30,6 +30,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // onu kendi ana ekranına (Bugün) götürür
     shortcuts: [
       { name: "Bugün", url: "/panel/bugun", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Siparişler", url: "/panel/siparisler", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Kasa raporu", url: "/panel/kasa", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Ödemeler", url: "/panel/hatirlaticilar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Karaoke", url: "/panel/karaoke", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },

@@ -62,7 +62,8 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Tümü" kenar çubuğunun içeriğini yaylı
   çekmecede açar (odak çekmecede döner, Esc kapatır; yalnız etkin grup açık gelir, etkin satır kutunun içine kayar). Ekran klavyesi açıkken alt menü gizlenir.
 - Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve
-  klavye açıkken 0): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
+  klavye açıkken 0; yapılmamış hatırlatmaların köşe kartı açıkken kartın yüksekliği kadar fazlası, `--reminder-dock-h`,
+  docs/HATIRLATICILAR.md): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
   içeriğin altındaki boşluk (klavyeyle değişmez); `--mobile-top-h` üst çubuk (56px, lg ve üstünde 0): yapışkan araç
   çubukları `sticky top-(--mobile-top-h)`; `--vvh` görünür alanın yüksekliği, `--keyboard-inset` iOS'ta klavyenin
   düzenin altından örttüğü pay; `html[data-keyboard="open"]` klavye açık.
@@ -143,6 +144,7 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `@/components/akmanos/streak` | streak | Şu an kullanılmıyor (sayım yapılan aylar için ayrılmış desen). |
 | `@/components/akmanos/capacity-allocation-card`, `agent-limits-card` | bölümlü kullanım çubuğu | Gider dağılımı gibi parçalı toplamlar için desen. |
 | `charts.tsx` | — | Recharts; serileri `SERIES[i]` ile, grafikler `Well` içinde. |
+| `YearLineChart`, `DailyRevenueBars`, `MoneySparkline` (`panel/arc-charts.tsx`) | [Arc UI](https://uiarc.dev) ücretsiz `line-chart`, `bar-chart`, `sparkline` (`src/components/arc/`, README) | Genel bakış'ın yıllık gelir-gider çizgisi ve ayın günlük ciro çubukları (ortalama çizgisi, kasa raporlarından), Bugün'ün şube kartında son sekiz gün. İstemci sarmalayıcısı biçimleyiciyi (`tl`) ve renkleri taşır; sunucu yalnız düz veri verir. Arc belirteçleri yalnız `.arc` kabında (`arc/foundation.css`, AkmanOS değerleriyle; panel düzeni içe aktarır); seriler `SERIES` ile aynı renkler. CSS modülleri Tailwind yükleyicisinden geçmez (`next.config.ts`). |
 | `Notice({ tone, title, text, children, tech, action, risk, size, live, defaultOpen })`, `NoticeGroup`, `NoticeLink`, `foldPlan`, `TONE_ICON`, `TONE_LABEL`, `TONE_TILE` (`ui/notice.tsx`) | — | Panelin **tek uyarı bileşeni** (ayrıntı aşağıda). Dört ton (bad · warn · neutral · good), üç boy (md sayfa, sm kart ve pencere içi, line kutusuz satır), başlık + isteğe bağlı ikinci satır + kapalı "Ayrıntı" + tek eylem. Sunucu bileşeni, `<details>` ile JavaScript'siz açılır. Zil, "Dikkat edilmesi gerekenler" kartı ve iş listeleri ikon ve kuyuyu `TONE_ICON` / `TONE_TILE`'dan alır. |
 
 ### Uyarılar (`Notice`)
@@ -252,3 +254,17 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
 - `PageProps<"/panel/...">` ve `LayoutProps` tipleri (`npx next typegen`).
 - Sunucu eylemleri (`src/server/actions/*`) ve hesaplama motoru (`src/lib/calc/*`) görünüm işinde değişmez.
 - `src/components/akmanos/**` ESLint dışında (olduğu gibi alınmış kaynak); TypeScript denetiminden geçer.
+
+## 8. Tasarım denemesi: Design Lab becerisi
+
+Yeni bir ekran ya da bileşen tasarlarken veya mevcut olanı yeniden düşünürken Claude Code'da `/design-lab [hedef]`
+çalıştırılır (`.claude/skills/design-lab/`, kaynak [0xdesign/design-plugin](https://github.com/0xdesign/design-plugin),
+MIT). Beceri kısa bir görüşme yapar, bu belgedeki dili ve `globals.css` belirteçlerini kullanarak beş farklı varyant
+üretir, `http://localhost:3000/design-lab` adresinde yan yana gösterir; sayfadaki geri bildirim katmanıyla öğelere
+yorum bırakılır, beğenilen yönler birleştirilip yinelenir.
+
+- Geçici dosyalar `src/app/design-lab/`, `src/app/design-preview/` ve `.claude-design/` altında; hepsi `.gitignore`'da,
+  depoya ve yayına girmez. Bu rotalar `src/proxy.ts` eşleşmesinin dışında (girişsiz açılır), bu yüzden yalnızca
+  örnek veri kullanılır: veritabanı, sunucu eylemi, gerçek ciro ya da kişi verisi yok.
+- Bitince geçici dosyalar silinir, uygulama planı `docs/planlar/<hedef>-tasarim-plani.md` olarak yazılır, kalıcı
+  kararlar onayla bu belgeye eklenir. Yarıda kalırsa `/design-lab-cleanup`.

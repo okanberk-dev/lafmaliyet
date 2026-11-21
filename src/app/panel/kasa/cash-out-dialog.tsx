@@ -124,10 +124,13 @@ export function CashOutDialog({
   onRetry,
   onClose,
   supplierNames = [],
+  branchId = null,
 }: {
   open: boolean;
   mode: CashOutDialogMode;
   date: string;
+  /** Kartın kasası: yeni satır ve ekleme isteği bu şubeye gider, gönderim anındaki seçime değil (docs/SUBE.md) */
+  branchId?: string | null;
   categories: CashOutCategory[];
   admin: boolean;
   me: string;
@@ -233,6 +236,7 @@ export function CashOutDialog({
         categoryId: writes && draft.categoryId ? Number(draft.categoryId) : null,
         toExpenses: admin ? draft.toExpenses && harcama : writes,
         photoId,
+        branchId,
       });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
@@ -256,7 +260,7 @@ export function CashOutDialog({
       photoId,
     };
     start(async () => {
-      const res = await requestCashOutChange({ op: line ? "duzelt" : "ekle", date: line ? null : date, cashOutId: line?.id ?? null, line: lineInput, message: note, clientKey });
+      const res = await requestCashOutChange({ op: line ? "duzelt" : "ekle", date: line ? null : date, cashOutId: line?.id ?? null, line: lineInput, message: note, branchId, clientKey });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
       toast.success(`Onaya gönderildi: ${label} · ${money(amount)}`, { description: "Yönetici onaylayınca kasaya işlenir; sonucu zilde görürsünüz." });

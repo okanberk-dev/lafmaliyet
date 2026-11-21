@@ -206,7 +206,11 @@ biri:
   o gün kasada bu tedarikçinin işlenmemiş Teslim satırı varsa Kasadan (satır seçili), yoksa kartın ödeme şekli
   ("Nakit" → Elden), o da yoksa Havale / EFT.
 - **Kasadan ödeme her zaman bir Kasa satırıdır:** o günün işlenmemiş Teslim satırı seçilir (tutar satırınki) ya da
-  "Bu ayrı bir ödeme, kasaya yeni satır ekle" ile Teslim satırı açılır (Kime: tedarikçinin adı). Teslim satırı gider
+  "Bu ayrı bir ödeme, kasaya yeni satır ekle" ile Teslim satırı açılır (Kime: tedarikçinin adı). Birden çok şube açıkken
+  yeni satırın **hangi şubenin kasası** olduğu seçilir: varsayılanı soldan seçili şube; "Tümü"de (Tedarikçiler çoğu
+  zaman orada açılır) varsayılan yoktur, seçilmeden kaydedilmez. Önceden satır sessizce Tuzla'nın kasasına iniyor, iki
+  şubenin kasa farkı da ödeme kadar şaşıyordu (denetim 21 Kasım #31; [SUBE.md](SUBE.md) › Yazarken hangi şube).
+  Listedeki var olan satırlar da kasasının şubesini yazar. Borç ekle › Ödendi › Kasadan da aynıdır. Teslim satırı gider
   yazmaz, akşam kasasının "Gün içinde çıkan"ına girer. Yeni satır personelin Kasa'sında da "Teslim · Sütaş" ve
   tutarıyla (kilitli) görünür: kasayı sayan personel çıkan parayı görür. Listede o günün alışveriş satırları da durur; seçilirse
   **Ödemeye çevir**: satırın gider kaydı silinir (onayla; geçmiş aysa ay onayı da), satır Teslim · ödeme olur.

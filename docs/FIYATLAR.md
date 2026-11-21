@@ -170,6 +170,11 @@ için tutulur); LafPOS'un yerel ürünü kurulurken fiyat panelden alındığı 
 ModPOS'ta kalmış bir işaretin üstüne LafPOS günü fiyat yeniden değişirse listede ModPOS'un eski fiyatı yazar (yapılacak
 iş doğrudur: LafPOS'ta yeni fiyat); fiyat LafPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
 
+**Şube:** kasa, kasanın şubesinindir (seçili fiziksel şube; "Tümü"de ve istek dışında, ör. haftalık özette, Tuzla):
+geçiş günü yalnız Tuzla'nın kasasınındır, Marina seçiliyken ya da Marina'ya bağlı personelde liste ModPOS'a göredir
+(`loadTillScope`; denetim 21 Kasım #5). İşaret (`pos_marks`, `products.pos_stale_*`) şubesizdir: siteye bağlı olmayan,
+fiyatı geçiş gününden sonra değişen ürün Marina'da işaretlenince Tuzla'nın listesinden de düşer.
+
 Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Fiyat yazımı da geçiş gününe göre
 farklı bir şey saklamaz (yalnız bildirimin metni değişir). Metinlerin hepsi geçiş günü boşken bugünkünün aynısıdır
 (`tests/lafpos-metin.test.ts`, veritabanında `tests/lafpos-metin-db.test.ts`).

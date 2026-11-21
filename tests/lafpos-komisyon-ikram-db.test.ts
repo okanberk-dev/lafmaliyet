@@ -356,7 +356,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     // Geçiş günü 1 Kasım'a alınınca: 8 Kasım'ın gün sonu geldiyse isteği onaylanmaz, reddedilir (Onaylar'ın kartı da
     // söyler); 7 Kasım'ın gün sonu hiç gelmedi: onaylanır, yönetici o güne doğrudan da girer
     await push("2026-11-08", 9);
-    const cardOf = async (id: number) => (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === id);
+    const cardOf = async (id: number) => (await wasteRequests.loadWasteRequestQueue(async (b) => createModel(await dataset.loadDataset({ scope: b })), NOW)).find((c) => c.id === id);
     const before = await cardOf(asked.row.id);
     assert.equal(before?.kind === "zayi-gec" ? before.lafposRefusal : "?", null);
     await setSwitch("2026-11-01");
@@ -394,7 +394,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
       { date: "2026-11-10", kind: "ikram", productId: null, ingredientId: ids.milk, qty: 0.2, reason: "Personel", note: null, message: "Unuttum", clientKey: "k-ham-1" },
       NOW,
     );
-    const card = (await wasteRequests.loadWasteRequestQueue(createModel(await dataset.loadDataset()), NOW)).find((c) => c.id === asked.row.id);
+    const card = (await wasteRequests.loadWasteRequestQueue(async (b) => createModel(await dataset.loadDataset({ scope: b })), NOW)).find((c) => c.id === asked.row.id);
     assert.equal(card?.kind, "zayi-gec");
     if (card?.kind !== "zayi-gec") return;
     assert.equal(card.lafposRefusal, null);

@@ -13,10 +13,69 @@ ertesi sabahki e-postada görür.
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Açılış** | 08:00 – 11:00 | 13 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); eksik / arıza notu (isteğe bağlı) |
+| **Açılış** | 08:00 – 11:00 | 17 madde: espresso makinesi, bar buzdolabı (0–4 °C), derin dondurucu (−30 – −18 °C, isteğe bağlı), süt tarihleri, buz makinesi, dezenfeksiyon, tezgâh fotoğrafı; salon ve lavabo, salon fotoğrafı; karaoke odası (havalandırma, ses sistemi, mikrofon şarjı); gıda güvenliği (aşağıda); eksik / arıza notu (isteğe bağlı) |
 | **Kapanış** | 22:00 – 02:00 | 16 madde: karaoke odası (mikrofonlar alkollü mendille, koltuk ve tablet, unutulan eşya, cihazlar kapalı, oda fotoğrafı); bar (espresso yıkaması, buhar çubuğu, açık ürünlere tarih, bar buzdolabı, bar fotoğrafı); salon ve genel (yer, lavabo, çöp, salon fotoğrafı, ışık ve kapılar); not (isteğe bağlı) |
 
+Bu iki liste **Tuzla'nındır** (karaoke odası Tuzla'da). **Marina**'nın kendi iki listesi vardır
+(`MARINA_CHECKLISTS`, sahibin listesi, 16 Kasım 2026; `db:seed` bir kez ekler, anahtar `kontrol.marina.seeded`).
+Marina'da karaoke yok; karaoke maddeleri yerine teras, çikolata şelalesi ve portakal suyu makinesi var:
+
+| Liste | Saat | Maddeler |
+|-------|------|----------|
+| **Marina Açılış** | 08:00 – 11:00 | 35 madde, 3 fotoğraflı: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
+| **Marina Kapanış** | 22:00 – 02:00 | 21 madde, 3 fotoğraflı: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
+
+**Marina'nın fotoğrafları** (sahibin isteği, 20 Kasım 2026: "Tuzla gibi"; `MARINA_OPEN_PHOTOS`, `MARINA_CLOSE_PHOTOS`):
+her bölümün sonunda o bölümün fotoğrafı. Açılışta **Bar ve vitrin hazır**, **Salon hazır**, **Teras hazır**; kapanışta
+**Bar ve tezgâh temiz**, **Teras kapanış hâli**, **Salon kapanış hâli**. Var olan veritabanında `db:seed` bunları
+"Marina Açılış" ve "Marina Kapanış" adlı listelere, kendi bölümlerinin sonuna bir kez ekler (anahtar
+`kontrol.marina.foto.seeded`; aynı adda madde varsa atlar).
+
+**Gıda güvenliği** (sahibin isteği, 17 Kasım 2026; FIFO 18 Kasım; `FOOD_SAFETY_ITEMS`): iki şubenin açılış listesinin
+sonunda (Tuzla'da "Not"tan önce) dört tamam işareti: **SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı**, **İkinci raf
+ömrü etiketleri vuruldu** (açılan ya da hazırlanan ürüne açılış ve son kullanma tarihi etiketi), **Yere temas eden ürün
+yok** (koli, kasa ve ürün raf ya da palet üzerinde), **FIFO uygulandı: ilk giren ilk çıkar** (yeni gelen ürün eskisinin
+arkasına; önce gelen ve tarihi en yakın ürün önce kullanılır). Var olan veritabanında `db:seed` eksik olanları
+"Açılış" ve "Marina Açılış" adlı listelere ekler; her anahtar bir kez çalışır (`FOOD_SAFETY_SEED_KEYS`:
+`kontrol.gida.seeded`, `kontrol.gida.fifo.seeded`), aynı adda madde varsa atlanır. O gün açılmış kayda girmez,
+ertesi günden görünür.
+
+**Tuvalet çizelgesi** (yalnız Tuzla, 17 Kasım 2026; `TUZLA_HOURLY_CHECKLISTS`, anahtar `kontrol.tuzla.tuvalet.seeded`):
+10:00 – 01:30, 16 saatlik bölüm (10:00, 11:00 … 00:00, 01:00), her saatte 4 madde:
+
+| Madde | Tür | |
+|-------|-----|---|
+| Tuvalet kontrol edildi ve temizlendi | Tamam işareti (**İmzala**) | Zorunlu; eksik ya da arıza "Sorun var" |
+| Tuvalet fotoğrafı | Fotoğraf | Zorunlu; içeride kimse yokken |
+| Bahçe ve odalardaki boşlar toplandı | Tamam işareti (**İmzala**) | Zorunlu |
+| Bahçe ve odalar fotoğrafı | Fotoğraf | İsteğe bağlı: **yalnız misafir yokken çekilir, misafir varken çekilmez** |
+
+İmza, maddeyi işaretleyen kişinin adı ve saatidir ("İmzalandı · Ayşe", üstte "Ayşe · 10:04"). Son saat 01:30: 01:00'in
+imzasına yarım saat kalır. Liste eklendiği günün aralığı açılmışsa ertesi günden beklenir (§ 2).
+
+**Saatlik bölüm:** bölüm adı bir saatle başlıyorsa ("10:00", "13:00 öğle") bölümün maddeleri o saatten **10 dakika
+önce** açılır (`sectionSlot`, `SLOT_EARLY_MIN`); daha önce işaretlenemez, sunucu da reddeder ("Bu bölüm saat 11:00
+olunca açılır"). Doldurma ekranında saati gelmemiş bölümler tek kutuda ("Sıradaki: 17:00 · açılış 16:50", "Sonra: …"),
+saatlik bölümün tamam işareti "İmzala" der. Zorunlu maddeleri bitmiş saat, bütün maddeleri yanıtlanınca ya da sıradaki
+saat gelince kapanır (dokununca açılır); saati geçmiş ve eksik olan saatin yanında kırmızı **Eksik** rozeti. Herhangi
+bir listede bölüm adı saat yazılarak aynı kural kullanılabilir.
+
 Maddeler bir başlangıçtır: gıda güvenliği danışmanıyla gözden geçirilip **Listeler** sekmesinden değiştirilir.
+
+### Şubeler (16 Kasım 2026)
+
+Her listenin bir **Şube** alanı vardır (Listeler › liste › Şube): bir şube ya da **Bütün şubeler** (boş). Listeler
+sekmesinde şubeye ait listenin yanında şube rozeti görünür.
+
+- Soldaki şube seçicisinde **tek şube** seçiliyken Kontrol listeleri, Bugün, zil ve Geçmiş o şubenin ve bütün
+  şubelerin listelerini gösterir; **Tümü**'nde hepsi görünür.
+- **Şubesi belirlenmiş personel** (Kullanıcılar › kişi › Şube, docs/SUBE.md › Personel hesabının şubesi) panelde hep
+  kendi şubesindedir: yalnız o şubenin ve bütün şubelerin listelerini görür ve doldurur. Kural sunucuda da uygulanır
+  (`branchLockAllows`, 21 Kasım denetimi #10): başka şubenin listesi adresle (`/panel/kontrol/<id>`, eski yer imi ya
+  da paylaşılan bağlantı) açılmaz, Kontrol listelerine döner; yanıt ve fotoğraf yüklemesi "Bu liste başka şubenin"
+  der, fotoğrafı da görünmez (§ 4). Şubesiz liste herkese açık kalır; yöneticiye ve şubesiz personele kilit yok.
+- Sabah e-postası işletmenin tamamı içindir: bütün şubelerin eksik listeleri birlikte gelir.
+- Migration 0058 karaoke odası maddesi olan listeleri Tuzla'ya bağladı; diğer listeler bütün şubelerin kaldı.
 
 Madde türleri:
 
@@ -29,7 +88,7 @@ Madde türleri:
 
 Her madde **zorunlu** ya da **isteğe bağlı**dır; liste bütün zorunlu maddeler yanıtlanınca kendiliğinden tamamlanır.
 Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıklaması adının altında görünür. Bir listede en çok
-60 madde, 10 fotoğraflı madde olur.
+80 madde, 40 fotoğraflı madde olur (saatlik çizelge sığsın diye).
 
 ## 2. Gün ve saat (Türkiye)
 
@@ -74,7 +133,8 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
   kalır. Yeniden çekilen fotoğrafın eskisi hemen silinir.
 - **Kim görür:** yönetici hepsini; personel yalnız personelin doldurduğu listelerin son 7 gündeki (iş günü, bugün
   dahil) fotoğraflarını, liste personele açıldıktan sonraki günlerden (`photoAccess`; Geçmiş'le aynı pencere,
-  `STAFF_HISTORY_DAYS`). Gün 05:00'te döner: 23 Ekim 04:59'da 16 Ekim görünür, 05:00'te görünmez.
+  `STAFF_HISTORY_DAYS`). Gün 05:00'te döner: 23 Ekim 04:59'da 16 Ekim görünür, 05:00'te görünmez. Şubesine kilitli
+  personel başka şubenin listesinin fotoğrafını görmez (§ 1 › Şubeler).
   Fotoğraf panelin kendi adresinden, oturumla açılır (`/api/foto/[id]`); e-postaya ve zile fotoğraf adresi yazılmaz.
 - Fotoğraflar mekânın içindir: maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der (KVKK).
 - Fotoğraf deposu (Vercel Blob) bağlı değilse fotoğraflı maddeler yeni kayıtlara girmez; Listeler ekranı ve doldurma
@@ -118,6 +178,42 @@ açılmadı"), sorunlar (açık ve düzeltilmiş, en çok 5), kasa raporu da yok
 e-postayı tek başına gönderir; konu parçası "dünkü kapanış listesi eksik", "dünkü 2 kontrol listesi eksik",
 "kontrol listesinde aralık dışı değer" ya da "kontrol listesinde sorun". Her gün için bir kez: anahtar `kontrol:{gün}`
 başarılı gönderimden sonra `notification_log`'a yazılır. Önizleme yazmaz.
+
+**Personele e-posta hatırlatması** (17 Kasım 2026; `src/lib/checklist-alerts.ts`,
+`src/server/notify/checklist-alerts.ts`): iş bugünün listelerine bakar ve personele e-posta gönderir. İki tetikleyici
+(20 Kasım 2026):
+
+- **Açık panel sekmesi** (asıl): canlı yoklama (`/api/canli`) yanıttan sonra, sunucu örneği başına en çok **5 dakikada
+  bir** işi çalıştırır (`ALERT_POLL_GAP_MS`). Kafede bir tablet ya da telefon panelde açık olduğu sürece "zamanı geldi"
+  saatin bölümü açılınca (10:00'ınki 09:50'de), "gecikti" sıradaki saat gelince birkaç dakika içinde gider.
+- **GitHub Actions** (yedek): saat başını 7 geçe (Türkiye 08:07 – 02:07) `/api/cron/kontrol`. GitHub zamanlanmış
+  işleri yoğunlukta saatlerce geciktirip düşürebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma); bu yüzden
+  yalnız yedektir.
+
+Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
+
+| Liste | Zamanı geldi | Gecikti |
+|-------|--------------|---------|
+| Saatlik bölümlü (Tuvalet çizelgesi) | Saatin bölümü açıldı (10:00'ınki 09:50'de), zorunlu maddesi eksik | Sıradaki saat geldi (son saatte listenin son saati, 01:30), hâlâ eksik |
+| Öteki listeler (Açılış, Kapanış…) | Aralık açıldı, eksik var | Son saat geçti, eksik var |
+
+- Tamamlanmış saat ya da liste için e-posta gitmez; isteğe bağlı maddeler (bahçe fotoğrafı) beklenmez.
+- Gecikme, bitişten en çok **2 saat** sonra gider (`LATE_ALERT_MIN`); iş uzun süre çalışmayıp dönünce eski uyarılar
+  yığılmaz. Geç çalışan iş aralığı biten saat için "zamanı geldi" değil yalnız "gecikti" gönderir.
+- **Kime:** listeyi doldurabilen ("Personel doldurabilir") etkin **personel**: şubeli listede o şubenin personeli ve
+  şubesi boş personel, şubesiz listede bütün personel. Tuvalet çizelgesi yalnız Tuzla'nın ve şubesiz personelin.
+  Her kişiye kendi adresine tek e-posta (adresler birbirine görünmez); o çalışmadaki bütün uyarıları bir arada,
+  gecikmeler önce. E-postada ödeme ya da maliyet yok.
+- Her uyarı bir kez: anahtar `kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}` gönderimden önce
+  `notification_log`'a yazılır. Kimseye kesin olarak gidemezse anahtar silinir, sonraki saat yeniden dener.
+- Ayarlar'daki e-posta anahtarı kapalıysa ya da `RESEND_API_KEY` yoksa hiçbir şey gönderilmez.
+- **Kapalı işaretli gün** (Özel günler › Kafe kapalı; kapalı gün işletmenindir, bütün şubeler): o gün hiç açılmamış
+  listeler için e-posta gitmez; o gün açılmış (kaydı olan) liste yine hatırlatılır (`remindableLists`; zilin dünkü
+  listeler kuralı, 21 Kasım denetimi #25).
+- **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için saatlik çağrı GitHub Actions'tan gelir
+  (`.github/workflows/kontrol-hatirlatma.yml`, `7 5-23 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
+  `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. Elle denemek için Actions › Kontrol
+  listesi hatırlatmaları › Run workflow.
 
 **İşlem geçmişi:** liste tamamlandı, aralık dışı değer, sorun bildirildi, ölçüm değişti; listelerin ve maddelerin
 eklenmesi, düzenlenmesi, kaldırılması. Düz "Tamam" işaretleri ve fotoğraflar yazılmaz (yanıtın kendisi kimin ne zaman

@@ -120,7 +120,7 @@ test("bağlananlar: altı yönetici ekranının başlığında satır; yükleyin
 });
 
 test("personel dosyaları satış kaynağını, vergi sözlüğünü ve gecikmiş vergi satırını içe aktarmaz", () => {
-  const STAFF_DIRS = ["bugun", "kasa", "karaoke", "kontrol", "zayi", "receteler", "sayim", "hatirlaticilarim", "ozel-gunler"].map((d) => `src/app/panel/${d}`);
+  const STAFF_DIRS = ["bugun", "kasa", "siparisler", "karaoke", "kontrol", "zayi", "receteler", "sayim", "hatirlaticilarim", "ozel-gunler"].map((d) => `src/app/panel/${d}`);
   const files = STAFF_DIRS.flatMap(walk).filter((f) => /\.tsx?$/.test(f));
   assert.ok(files.length > 50, String(files.length));
   for (const f of files) assert.doesNotMatch(read(f), /from "@\/lib\/sales-source"|from "@\/lib\/tax\/glossary"|from "@\/lib\/tax\/overdue"|sales-source-line"/, f);

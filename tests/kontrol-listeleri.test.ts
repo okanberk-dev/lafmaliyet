@@ -10,7 +10,17 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
+import {
+  DEFAULT_CHECKLISTS,
+  FOOD_SAFETY_ITEMS,
+  FOOD_SAFETY_LISTS,
+  MARINA_CHECKLISTS,
+  MARINA_CLOSE_PHOTOS,
+  MARINA_OPEN_PHOTOS,
+  placeNewItems,
+  TOILET_HOURS,
+  TUZLA_HOURLY_CHECKLISTS,
+} from "../src/lib/checklist-seed";
 import { businessDate } from "../src/lib/cash-report";
 import {
   absentReason,
@@ -45,7 +55,11 @@ import {
   PHOTO_PRIVACY_HINT,
   rangeText,
   runSummary,
+  sectionSlot,
   signMode,
+  slotLocked,
+  slotLockedText,
+  slotOpensInstant,
   snapshotItems,
   STAFF_HISTORY_DAYS,
   staffHistoryFloor,
@@ -336,6 +350,7 @@ test("10. metinler: listenin adı, Türkçe küçük harf, kimler", () => {
   assert.equal(listTitle("Açılış"), "Açılış listesi");
   assert.equal(listTitle("Haftalık liste"), "Haftalık liste");
   assert.equal(listTitle("LİSTE B"), "LİSTE B");
+  assert.equal(listTitle("Tuvalet çizelgesi"), "Tuvalet çizelgesi");
   assert.equal(lowerFirst("İçecek listesi"), "içecek listesi");
   assert.equal(lowerFirst("Kapanış listesi"), "kapanış listesi");
   assert.equal(whoText([]), "");
@@ -512,11 +527,81 @@ test("15. hazır listeler: Açılış 08:00–11:00 ve Kapanış 22:00–02:00, 
     assert.ok(photos >= 1 && photos <= MAX_PHOTO_ITEMS, t.name);
   }
   const [acilis, kapanis] = DEFAULT_CHECKLISTS;
-  assert.equal(acilis.items.length, 13);
+  assert.equal(acilis.items.length, 17);
   assert.equal(kapanis.items.length, 16);
   assert.ok(kapanis.items.some((i) => /mikrofon/i.test(i.label)));
   // "Her seferinde" listeleri (Oda sıfırlama, Mal kabul) bu turda yok
   assert.ok(!DEFAULT_CHECKLISTS.some((t) => /Oda sıfırlama|Mal kabul/.test(t.name)));
+});
+
+test("15b. Marina'nın listeleri (16 Kasım 2026): karaoke yok, teras var; Tuzla'nın hazır listeleri Tuzla'nın; bölümler bitişik, sınırlar içinde", () => {
+  assert.deepEqual(
+    MARINA_CHECKLISTS.map((t) => [t.name, t.branchId, t.opensAt, t.dueAt, t.items.length]),
+    [
+      ["Marina Açılış", "marina", "08:00", "11:00", 35],
+      ["Marina Kapanış", "marina", "22:00", "02:00", 21],
+    ],
+  );
+  assert.ok(DEFAULT_CHECKLISTS.every((t) => t.branchId === "tuzla"), "karaoke odalı hazır listeler Tuzla'nın");
+  const names = [...DEFAULT_CHECKLISTS, ...MARINA_CHECKLISTS].map((t) => t.name.toLocaleLowerCase("tr-TR"));
+  assert.equal(new Set(names).size, names.length, "liste adları tekil (checklist_templates.name unique)");
+  for (const t of MARINA_CHECKLISTS) {
+    assert.equal(windowError(t.opensAt, t.dueAt), null, t.name);
+    assert.ok(t.name.length <= 60 && t.description.length <= 300);
+    assert.ok(t.items.length <= MAX_ITEMS);
+    assert.ok(!t.items.some((i) => /karaoke|mikrofon/i.test(`${i.section ?? ""} ${i.label}`)), `${t.name}: karaoke maddesi yok`);
+    assert.ok(t.items.some((i) => i.section === "Teras"), `${t.name}: teras bölümü`);
+    const labels = t.items.map((i) => i.label);
+    assert.equal(new Set(labels).size, labels.length, `${t.name}: madde adları tekil`);
+    // Bölümler bitişik: aynı bölüm listede iki ayrı yerde başlamaz
+    const order = t.items.map((i) => i.section).filter((x, n, a) => n === 0 || a[n - 1] !== x);
+    assert.equal(new Set(order).size, order.length, `${t.name}: bölümler bitişik`);
+    for (const i of t.items) {
+      assert.ok(i.label.length <= 120 && (i.section ?? "").length <= 40 && (i.hint ?? "").length <= 200, i.label);
+      if (i.type === "number") assert.ok(i.unit && i.min !== undefined && i.max !== undefined && i.min <= i.max, i.label);
+      if (i.type === "photo") assert.ok(i.hint?.includes(PHOTO_PRIVACY_HINT), `${i.label}: fotoğrafta insan olmasın`);
+    }
+    // Tuzla gibi fotoğraflı (20 Kasım 2026): her fotoğraf kendi bölümünün son maddesi
+    const photos = t.items.filter((i) => i.type === "photo");
+    assert.equal(photos.length, 3, t.name);
+    assert.ok(photos.length <= MAX_PHOTO_ITEMS);
+    for (const p of photos) {
+      const same = t.items.filter((i) => i.section === p.section);
+      assert.equal(same.at(-1), p, `${t.name}: ${p.label} bölümün sonunda`);
+    }
+  }
+  assert.deepEqual(
+    MARINA_CHECKLISTS.map((t) => t.items.filter((i) => i.type === "photo").map((i) => [i.section, i.label])),
+    [
+      [
+        ["Bar ve vitrin", "Bar ve vitrin hazır"],
+        ["Salon", "Salon hazır"],
+        ["Teras", "Teras hazır"],
+      ],
+      [
+        ["Bar", "Bar ve tezgâh temiz"],
+        ["Teras", "Teras kapanış hâli"],
+        ["Salon", "Salon kapanış hâli"],
+      ],
+    ],
+  );
+  // Var olan veritabanına eklenen maddeler tohumdakilerin aynısı
+  assert.deepEqual(MARINA_OPEN_PHOTOS, MARINA_CHECKLISTS[0].items.filter((i) => i.type === "photo"));
+  assert.deepEqual(MARINA_CLOSE_PHOTOS, MARINA_CHECKLISTS[1].items.filter((i) => i.type === "photo"));
+  const [acilis, kapanis] = MARINA_CHECKLISTS;
+  // Ölçümler: buzdolabı ve dondurucu dereceleri yazılır
+  assert.deepEqual(
+    acilis.items.filter((i) => i.type === "number").map((i) => [i.label, i.min, i.max]),
+    [
+      ["Buzdolabı sıcaklığı", 0, 4],
+      ["Dondurucu sıcaklığı", -30, -18],
+    ],
+  );
+  // Isıtıcı yalnız hava soğuksa: isteğe bağlı, listeyi tamamlanmaktan alıkoymaz
+  assert.equal(acilis.items.find((i) => /ısıtıcı/i.test(i.label))?.required, false);
+  // Kalan pastalar yazılır (yarına kalan ya da fire)
+  assert.equal(kapanis.items.find((i) => /Kalan pastalar/.test(i.label))?.type, "text");
+  assert.ok(kapanis.items.some((i) => i.label === "Alarmı kur"));
 });
 
 test("16. zil: aralıktan önce başlanan liste personelin zilinde aralık açılınca çıkar (önce bekliyor, son saatten sonra gecikti)", () => {
@@ -753,4 +838,100 @@ test("kaynak: zil kontrol grubu kasadan sonra, iki rolde; personel dalı ilk Pro
   const ui = read("src/components/panel/notifications.tsx");
   assert.ok(ui.indexOf('{ id: "kontrol", label: "Kontrol listeleri"') > ui.indexOf('{ id: "kasa", label: "Kasa"'));
   assert.match(ui, /n\.group === "kontrol" && n\.kind !== "danger"\s*\? ListChecks/);
+});
+
+test("16. Saatlik bölüm: bölüm adı saatle başlarsa maddeleri saatten 10 dakika önce açılır (gece yarısını geçen saat ertesi takvim günü)", () => {
+  assert.equal(sectionSlot("10:00"), "10:00");
+  assert.equal(sectionSlot(" 13:00 öğle"), "13:00");
+  assert.equal(sectionSlot("01:00"), "01:00");
+  assert.equal(sectionSlot("Bar"), null);
+  assert.equal(sectionSlot("25:00"), null);
+  assert.equal(sectionSlot("10:000"), null);
+  assert.equal(sectionSlot(null), null);
+  const day = "2026-10-22";
+  // 10:00'ın bölümü 09:50'de (TR) açılır
+  assert.equal(slotOpensInstant(day, "10:00")?.toISOString(), "2026-10-22T06:50:00.000Z");
+  assert.equal(slotOpensInstant(day, "Bar"), null);
+  assert.equal(slotLocked(day, "10:00", tr("2026-10-22T09:49")), true);
+  assert.equal(slotLocked(day, "10:00", tr("2026-10-22T09:50")), false);
+  // 01:00 iş gününün gecesi: 23 Ekim 00:50'de açılır
+  assert.equal(slotLocked(day, "01:00", tr("2026-10-22T23:59")), true);
+  assert.equal(slotLocked(day, "01:00", tr("2026-10-23T00:50")), false);
+  // Saatsiz bölüm hiç kilitli değil
+  assert.equal(slotLocked(day, "Bar", tr("2026-10-22T05:01")), false);
+  assert.match(slotLockedText("14:00"), /saat 14:00 olunca açılır/);
+});
+
+test("17. Tuzla'nın tuvalet çizelgesi ve gıda güvenliği maddeleri (17 Kasım 2026)", () => {
+  const [t] = TUZLA_HOURLY_CHECKLISTS;
+  assert.equal(TUZLA_HOURLY_CHECKLISTS.length, 1);
+  assert.equal(t.branchId, "tuzla", "yalnız Tuzla");
+  assert.equal(windowError(t.opensAt, t.dueAt), null);
+  assert.ok(t.name.length <= 60 && t.description.length <= 300);
+  assert.equal(TOILET_HOURS.length, 16);
+  assert.equal(TOILET_HOURS[0], "10:00");
+  assert.equal(TOILET_HOURS.at(-1), "01:00");
+  // Her saat bir saatlik bölüm; son saat 01:00'ten sonra (01:00'in imzasına süre kalsın)
+  const sections = [...new Set(t.items.map((i) => i.section))];
+  assert.deepEqual(sections, TOILET_HOURS);
+  assert.ok(sections.every((x) => sectionSlot(x) === x));
+  assert.ok(clockInstant("2026-10-22", t.dueAt, true) > clockInstant("2026-10-22", "01:00"));
+  assert.ok(t.items.length <= MAX_ITEMS);
+  assert.ok(t.items.filter((i) => i.type === "photo").length <= MAX_PHOTO_ITEMS);
+  const labels = t.items.map((i) => i.label);
+  assert.equal(new Set(labels).size, labels.length, "madde adları tekil");
+  const names = [...DEFAULT_CHECKLISTS, ...MARINA_CHECKLISTS, ...TUZLA_HOURLY_CHECKLISTS].map((x) => x.name.toLocaleLowerCase("tr-TR"));
+  assert.equal(new Set(names).size, names.length, "liste adları tekil");
+  for (const h of TOILET_HOURS) {
+    const hour = t.items.filter((i) => i.section === h);
+    // İmza (işaret) ve fotoğraf zorunlu; bahçe ve odaların fotoğrafı isteğe bağlı (misafir varken çekilmez)
+    assert.deepEqual(
+      hour.map((i) => [i.type, i.required ?? true]),
+      [
+        ["check", true],
+        ["photo", true],
+        ["check", true],
+        ["photo", false],
+      ],
+      h,
+    );
+    assert.match(hour[3].hint ?? "", /misafir yokken/);
+    for (const i of hour) {
+      assert.ok(i.label.length <= 120 && (i.hint ?? "").length <= 200, i.label);
+      if (i.type === "photo") assert.ok(i.hint?.includes(PHOTO_PRIVACY_HINT), i.label);
+    }
+  }
+  // Gıda güvenliği: iki şubenin açılış listesinde
+  assert.deepEqual(
+    FOOD_SAFETY_ITEMS.map((i) => i.label),
+    ["SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı", "İkinci raf ömrü etiketleri vuruldu", "Yere temas eden ürün yok", "FIFO uygulandı: ilk giren ilk çıkar"],
+  );
+  for (const name of FOOD_SAFETY_LISTS) {
+    const list = [...DEFAULT_CHECKLISTS, ...MARINA_CHECKLISTS].find((x) => x.name === name);
+    assert.ok(list, name);
+    for (const f of FOOD_SAFETY_ITEMS) assert.ok(list.items.some((i) => i.label === f.label && i.section === "Gıda güvenliği"), `${name}: ${f.label}`);
+  }
+  // Saati gelmemiş bölüme yanıt sunucuda da reddedilir (yanıt ve fotoğraf yolu)
+  const store = read("src/server/checklists/store.ts");
+  assert.equal(store.match(/slotLocked\(/g)?.length, 2);
+});
+
+test("18. var olan listeye eklenen hazır madde kendi bölümünün sonuna, bölüm yoksa 'Not'tan önce, o da yoksa sona girer", () => {
+  const rows = [
+    { id: 1, section: "Bar" },
+    { id: 2, section: "Bar" },
+    { id: 3, section: "Salon" },
+    { id: 4, section: "Not" },
+  ];
+  const order = (fresh: { section?: string; label: string }[], r: { id: number; section: string | null }[] = rows) =>
+    placeNewItems(r, fresh.map((f) => ({ ...f, type: "check" as const }))).map((e) => ("row" in e ? e.row.id : e.item.label));
+  assert.deepEqual(order([{ section: "Bar", label: "B3" }]), [1, 2, "B3", 3, 4]);
+  assert.deepEqual(order([{ section: "Salon", label: "S2" }]), [1, 2, 3, "S2", 4]);
+  assert.deepEqual(order([{ section: "Gıda", label: "G1" }, { section: "Gıda", label: "G2" }]), [1, 2, 3, "G1", "G2", 4]);
+  assert.deepEqual(order([{ section: "Gıda", label: "G1" }], rows.slice(0, 3)), [1, 2, 3, "G1"]);
+  assert.deepEqual(order([{ label: "Bölümsüz" }], [{ id: 1, section: null }, { id: 2, section: "Bar" }]), [1, "Bölümsüz", 2]);
+  // Marina açılışı (canlıdaki hâli, fotoğrafsız) → her bölümün sonunda fotoğraf; bölümler bitişik kalır
+  const live = MARINA_CHECKLISTS[0].items.filter((i) => i.type !== "photo").map((i, n) => ({ id: n + 1, section: i.section ?? null, label: i.label }));
+  const merged = placeNewItems(live, MARINA_OPEN_PHOTOS).map((e) => ("row" in e ? e.row.label : e.item.label));
+  assert.deepEqual(merged, MARINA_CHECKLISTS[0].items.map((i) => i.label));
 });

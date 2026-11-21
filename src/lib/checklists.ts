@@ -136,8 +136,11 @@ export const KONTROL_PHOTO_DAYS = KEEP_DAYS.kontrol;
 export const ANSWER_GRACE_MIN = 30;
 /** Aralık açılmadan bundan çok önce başlayan liste geçmişte "erken dolduruldu" olarak işaretlenir */
 export const EARLY_SLACK_MIN = 60;
-export const MAX_ITEMS = 60;
-export const MAX_PHOTO_ITEMS = 10;
+/** Saatlik çizelge (Tuvalet çizelgesi: 16 saat × 4 madde) sığsın diye 80 madde, 40 fotoğraflı madde */
+export const MAX_ITEMS = 80;
+export const MAX_PHOTO_ITEMS = 40;
+/** Saatlik bölümün maddeleri bölümün saatinden bu kadar dakika önce açılır (10:00'ın maddeleri 09:50'de) */
+export const SLOT_EARLY_MIN = 10;
 /** Bir yanıtın en çok bu kadar önceki hâli saklanır (en eskisi düşer) */
 export const MAX_HISTORY = 10;
 /** Saat aralığı en az bu kadar dakika */
@@ -150,6 +153,8 @@ export const PHOTO_PRIVACY_HINT = "Fotoğrafta müşteri ya da çalışan görü
 export const DAY_CLOSED_TEXT = "Bu günün listesi kapandı; geçmiş günler sonradan doldurulamaz.";
 /** Yanıtın maddesi kaydın anlık görüntüsünde yok ya da kayıt bekleneni tutmuyor (sayfa eski) */
 export const LIST_CHANGED_TEXT = "Liste değişti; sayfayı yenileyin.";
+/** Şubesine kilitli personel başka şubenin listesine yazmak istedi (branchLockAllows) */
+export const OTHER_BRANCH_TEXT = "Bu liste başka şubenin; yalnız kendi şubenizin listelerini doldurabilirsiniz.";
 
 const MIN_MS = 60_000;
 const DAY_MIN = 24 * 60;
@@ -204,6 +209,35 @@ export function checklistDay(now: Date): string {
 export function clockInstant(day: string, clock: string, end = false): Date {
   const start = Date.parse(`${day}T00:00:00Z`) + (DAY_START_MIN - TR_OFFSET_MIN) * MIN_MS;
   return new Date(start + (end ? dueMinute(clock) : opensMinute(clock)) * MIN_MS);
+}
+
+// ---------------------------------------------------------------- Saatlik bölümler
+
+/**
+ * Bölüm adı bir saatle başlıyorsa ("10:00", "13:00 öğle") bölüm saatliktir: maddeleri o saatten SLOT_EARLY_MIN dakika
+ * önce açılır, daha önce işaretlenemez (Tuvalet çizelgesi: her saat imza ve fotoğraf; bir kişi 10:00'da bütün günü
+ * dolduramasın). Saat yoksa null.
+ */
+export function sectionSlot(section: string | null | undefined): string | null {
+  const m = /^\s*([01]\d|2[0-3]):([0-5]\d)(?!\d)/.exec(section ?? "");
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+/** Saatlik bölümün açıldığı an (saatten SLOT_EARLY_MIN önce); saatlik değilse null */
+export function slotOpensInstant(day: string, section: string | null | undefined): Date | null {
+  const slot = sectionSlot(section);
+  return slot ? new Date(clockInstant(day, slot).getTime() - SLOT_EARLY_MIN * MIN_MS) : null;
+}
+
+/** Saatlik bölümün maddeleri henüz işaretlenemez mi (bölümün saati gelmedi) */
+export function slotLocked(day: string, section: string | null | undefined, now: Date): boolean {
+  const at = slotOpensInstant(day, section);
+  return at !== null && now.getTime() < at.getTime();
+}
+
+/** Saati gelmemiş bölüme yanıtın reddi */
+export function slotLockedText(section: string | null | undefined): string {
+  return `Bu bölüm saat ${sectionSlot(section) ?? ""} olunca açılır; saati gelmeden işaretlenemez.`;
 }
 
 /** Saat aralığının hatası (Listeleri düzenle ekranının metinleri); geçerliyse null */
@@ -501,9 +535,9 @@ export function groupBySection<T extends { section: string | null }>(items: T[])
 
 // ---------------------------------------------------------------- Metin
 
-/** "Açılış" → "Açılış listesi"; adında "liste" geçen ad olduğu gibi kalır */
+/** "Açılış" → "Açılış listesi"; adında "liste" ya da "çizelge" geçen ad olduğu gibi kalır */
 export function listTitle(name: string): string {
-  return /liste/.test(name.toLocaleLowerCase("tr-TR")) ? name : `${name} listesi`;
+  return /liste|çizelge/.test(name.toLocaleLowerCase("tr-TR")) ? name : `${name} listesi`;
 }
 
 /** İlk harf küçük (Türkçe: "İçecek" → "içecek") */
@@ -561,6 +595,17 @@ export function staffSeesRun(t: { staffAllowed: boolean; staffSince: string | nu
   return t.staffAllowed && (!t.staffSince || runDate >= businessDate(new Date(t.staffSince)));
 }
 
+/**
+ * Şubesine kilitli personel bu listeyi açar, doldurur ve fotoğraflarını görür mü (docs/KONTROL-LISTELERI.md › Şubeler):
+ * listenin şubesi boşsa (bütün şubeler) ya da kişinin şubesiyse. `lock` boş (yönetici, şubesiz personel, şubesi pasife
+ * alınmış personel; src/server/branch-scope.ts staffBranchLock): hepsi. Listeleme yolları aynı kuralı SQL'de uygular
+ * (store.ts loadTemplates `branch`); bu kural adresle açılan liste, yanıt, fotoğraf yüklemesi ve fotoğrafın kendisi
+ * içindir (21 Kasım denetimi #10, #35).
+ */
+export function branchLockAllows(listBranch: string | null, lock: string | null | undefined): boolean {
+  return !lock || !listBranch || listBranch === lock;
+}
+
 /** "Personel doldurabilir" kapalıyken açılınca o an yazılır (yeni liste: `prev` false); öteki geçişler yazmaz */
 export function staffSinceChange(prev: boolean, next: boolean, now: Date): { staffSince?: Date } {
   return !prev && next ? { staffSince: now } : {};
@@ -603,18 +648,22 @@ export function historyRange(i: { role: "admin" | "staff"; today: string; first:
 /**
  * Kontrol fotoğrafını kim görür: yönetici hepsini; personel yalnız personelin doldurduğu bir listenin son 7 gündeki
  * (iş günü, bugün dahil) kaydındaki fotoğrafı, liste personele açıldıktan sonraki günlerden; bir yanıta bağlı olmayan
- * fotoğrafı yalnız yükleyen. Fotoğraf yolunun ilk adımları (süresi dolan hayır, yönetici evet, yükleyen bağlanmamışı
- * görür) src/lib/photo-rules.ts photoViewDecision'da.
+ * fotoğrafı yalnız yükleyen. Şubesine kilitli personel (`lock`) başka şubenin listesinin fotoğrafını görmez
+ * (branchLockAllows; Geçmiş'te de o listeleri görmez). Fotoğraf yolunun ilk adımları (süresi dolan hayır, yönetici
+ * evet, yükleyen bağlanmamışı görür) src/lib/photo-rules.ts photoViewDecision'da.
  */
 export function photoAccess(i: {
   role: "admin" | "staff";
   userId: number;
   createdBy: number | null;
-  run: { date: string; staffAllowed: boolean; staffSince?: string | null } | null;
+  run: { date: string; staffAllowed: boolean; staffSince?: string | null; branchId?: string | null } | null;
+  /** Şubesine kilitli personelin şubesi (staffBranchLock); boş: serbest */
+  lock?: string | null;
   now: Date;
 }): boolean {
   if (i.role === "admin") return true;
   if (!i.run) return i.createdBy !== null && i.createdBy === i.userId;
+  if (!branchLockAllows(i.run.branchId ?? null, i.lock)) return false;
   return i.run.date >= staffHistoryFloor(businessDate(i.now)) && staffSeesRun({ staffAllowed: i.run.staffAllowed, staffSince: i.run.staffSince ?? null }, i.run.date);
 }
 

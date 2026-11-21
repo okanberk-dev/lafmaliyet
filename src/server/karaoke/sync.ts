@@ -4,7 +4,7 @@ import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { CATCH_UP, needsCatchUp } from "@/lib/karaoke/freshness";
 import { detectEvent, pushMessages, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
-import { cancelledAtFor, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
+import { cancelledAtFor, goneSiteRows, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -219,14 +219,12 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron" |
       }
       if (notify && event) events.push({ event, r });
     }
+    // Sitede artık olmayan rezervasyon kalkar; okunamayıp atlanan satır silinmiş sayılmaz (goneSiteRows)
     let removed = 0;
-    if (snapshot.complete) {
-      const seen = new Set(snapshot.reservations.map((r) => r.id));
-      const gone = existing.filter((r) => r.externalId && !seen.has(r.externalId)).map((r) => r.id);
-      if (gone.length) {
-        await tx.delete(s.karaokeSessions).where(inArray(s.karaokeSessions.id, gone));
-        removed = gone.length;
-      }
+    const gone = goneSiteRows(snapshot, existing).map((r) => r.id);
+    if (gone.length) {
+      await tx.delete(s.karaokeSessions).where(inArray(s.karaokeSessions.id, gone));
+      removed = gone.length;
     }
     // Önceki çekme hatalıydıysa da: ekranların uyarı satırı kalksın
     if (created || updated || removed || curState.lastError) await bumpKaraokeVersion(tx);

@@ -184,7 +184,11 @@ Paraşüt'e bağlı faturada tarih, fatura no, tutar, iskonto ve ödenecek panel
 yazmaz); kategori, tedarikçi adı, açıklama, not, vade ve ödeme durumu düzenlenir. Kısmen ödenmiş faturada Paraşüt'ün
 bildirdiği kalan borç (`outstanding`) gösterilir ve toplamlara o girer. Panelde silinen Paraşüt faturaları bir
 sonraki eşitlemede geri gelmez; Faturalar › Silinen Paraşüt faturaları'ndan (ya da silme bildirimindeki "Geri al"
-ile) geri alınır.
+ile) geri alınır. Kayıt hem gider faturasına hem e-faturaya bağlıysa (e-fatura Paraşüt'e elle gider faturası olarak
+girilmiş, §6) silmede **ikisi birden** yok sayılır (`<gider faturası kimliği>` ve `ei:<e-fatura kimliği>`; kopyada
+`alsoIgnored`): önceden yalnız gider faturası yok sayılıyor, e-fatura eşitlemesi silinen faturayı ertesi sabah
+"ödenmedi" yeni kayıt olarak geri getiriyordu (denetim 21 Kasım #3). Listede tek satırdır; geri alınınca iki anahtar
+birlikte çıkar, aynı fatura ya da aynı e-fatura bu arada panelde yeniden açılmışsa kopya yazılmaz ("zaten listede").
 
 ## 3a. Tedarikçinin vergi nosu
 
@@ -472,7 +476,8 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   arşivlenmesi ya da reddi bu kayda dokunmaz.
 - Panelde silinen e-fatura kaydı `ei:<kimlik>` anahtarıyla yok sayılanlara eklenir, geri gelmez; e-fatura sonradan
   Paraşüt'te içeri alınsa da gider faturası olarak yeniden açılmaz (panelde aynı fatura başka bir kayıtta duruyorsa o
-  kayıt bağlanır). Faturalar › Silinen Paraşüt faturaları'ndan geri alınır.
+  kayıt bağlanır). Elle girilmiş gider faturasına bağlı kayıt silinince gider faturasıyla birlikte `ei:<kimlik>` de
+  yok sayılır (§3; denetim 21 Kasım #3). Faturalar › Silinen Paraşüt faturaları'ndan geri alınır.
 - e-Arşiv ve kâğıt faturalar API'de yoktur: Paraşüt'e elle girilirse gider faturası olarak gelir ya da panelde elle
   eklenip fotoğrafı/PDF'i yüklenir. Kasadan ödenmiş olanlar faturası gelene kadar Faturalar › Kontrol bekleyen'in
   **Kasadan faturalı alımlar** kartında durur; **Faturalar'a ekle** pencereyi kasadan doldurur ve fişin fotoğrafını

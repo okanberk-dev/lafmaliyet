@@ -46,3 +46,9 @@ laffogato-yedek-*.json.gz
 
 # yerel fotoğraf deposu ve deneme görselleri (docs/FOTOGRAF.md): kasa ve fiş fotoğrafları depoya girmesin
 /.data/
+
+# Design Lab (.claude/skills/design-lab): geçici tasarım varyantları ve rotaları depoya ve yayına girmesin
+/.claude-design/
+/src/app/design-lab/
+/src/app/design-preview/
+feedback-*.json

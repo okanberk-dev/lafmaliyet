@@ -66,7 +66,7 @@ const D_ALLOW: readonly [string, string][] = [
   ["src/app/panel/tedarikciler/cari-payment-dialog.tsx", "flex cursor-pointer items-start gap-2 rounded-2xl bg-warn-soft"], // 219 onay kutulu blok
   ["src/app/panel/tedarikciler/[cari]/debt-dialog.tsx", "mt-2 flex cursor-pointer items-start gap-2 rounded-2xl bg-warn-soft"], // 202 onay kutulu blok
   ["src/app/panel/tedarikciler/cari-ui.tsx", "space-y-2 rounded-2xl bg-warn-soft px-3.5 py-3"], // 222 PastConfirm
-  ["src/app/panel/karaoke/orders-board.tsx", "rounded-xl bg-warn-soft px-3 py-2 text-[14px]"], // 86 müşterinin notu
+  ["src/app/panel/siparisler/orders-board.tsx", "rounded-xl bg-warn-soft px-3 py-2 text-[14px]"], // 86 müşterinin notu
   ["src/app/panel/hatirlaticilar/payment-ui.tsx", "rounded-full bg-info-soft px-1.5 py-px"], // 69 "Sıradaki dönem" hapı
   ["src/components/panel/error-view.tsx", "rounded-2xl bg-bad-soft text-bad"], // 274 hata ikon karosu
 ];
@@ -80,7 +80,7 @@ const D_EXPR_ALLOW: readonly [string, string][] = [
   ["src/app/panel/gelir-gider/month-view.tsx", "relative inline-flex h-10 min-w-24 shrink-0 items-center justify-end"], // elle girilen hücre
   ["src/app/panel/gelir-gider/pnl-grid.tsx", "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg"], // elle girilen hücre
   ["src/app/panel/hatirlaticilar/reminders-client.tsx", "flex min-h-[6.5rem] cursor-pointer flex-col justify-between"], // süzgeç kartı (gecikmiş)
-  ["src/app/panel/karaoke/orders-board.tsx", "flex min-w-0 flex-col gap-2.5 rounded-2xl bg-surface p-3.5"], // yeni masa siparişinin kartı
+  ["src/app/panel/siparisler/orders-board.tsx", "flex min-w-0 flex-col gap-2.5 rounded-2xl bg-surface p-3.5"], // yeni masa siparişinin kartı
   ["src/app/panel/kasa/okc-card.tsx", "flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5"], // "Ayrıntılar" açma düğmesi
   ["src/app/panel/satislar/sales-client.tsx", "flex items-start gap-2 py-2 pr-1.5 pl-3"], // şüpheli önizleme satırı
   ["src/app/panel/vergi/gelir-gider/classify-list.tsx", "grid gap-2 px-4 py-3 md:grid-cols"], // kaydedilmemiş liste satırı
@@ -359,7 +359,7 @@ test("Notice düz metin başlığı en çok 10, ikinci satırı en çok 18 sözc
 // ---------------------------------------------------------------- Personel
 
 /** Personelin açtığı ekranların klasörleri (STAFF_PATHS sayfaları ve içe aktardıkları) */
-const STAFF_DIRS = ["bugun", "kasa", "karaoke", "kontrol", "zayi", "receteler", "sayim", "hatirlaticilarim", "ozel-gunler"].map((d) => `src/app/panel/${d}/`);
+const STAFF_DIRS = ["bugun", "kasa", "siparisler", "karaoke", "kontrol", "zayi", "receteler", "sayim", "hatirlaticilarim", "ozel-gunler"].map((d) => `src/app/panel/${d}/`);
 
 /**
  * Personel klasöründe olup yalnız yöneticiye çizilen bileşenler: tech verebilir; çizildikleri yer aşağıda denetlenir
@@ -434,7 +434,8 @@ const NOTICE_FILES = [
   "karaoke/doluluk/page.tsx",
   "karaoke/karaoke-admin.tsx",
   "karaoke/karaoke-board.tsx",
-  "karaoke/orders-board.tsx",
+  "siparisler/orders-board.tsx",
+  "siparisler/page.tsx",
   "kasa/cash-form.tsx",
   "kasa/report-sheet.tsx",
   "kasa/cash-out-dialog.tsx",
@@ -509,7 +510,7 @@ const ROLE_ALLOW: readonly [string, string][] = [
 ];
 
 test("her uyarı yeni bileşende: Ek A'nın N ve E dosyaları Notice'i içe aktarır, rolü elle yazmaz", () => {
-  assert.equal(NOTICE_FILES.length, 89); // Satış tahmini 4 Kas 2026'da kaldırıldı
+  assert.equal(NOTICE_FILES.length, 90); // Satış tahmini 4 Kas 2026'da kaldırıldı; Siparişler ekranı 6 Kas 2026'da geldi
   const bad: string[] = [];
   for (const f of NOTICE_FILES) {
     const raw = read(f);
@@ -565,5 +566,5 @@ test("inceleme B2: cari şeritleri yazıldığı sırada, eylemli uyarıların e
   assert.match(noRecipe, /<Notice\s+tone="warn"\s+defaultOpen\b/);
   assert.match(noRecipe, /text="Reçetesini girince gruplara katılır\."/);
   // V9: site bağlı değilken siparişler kartının gövdesi (boş pay) çizilmez
-  assert.match(read("src/app/panel/karaoke/orders-board.tsx"), /\{data\?\.configured \? \(\s*<div className="space-y-3 px-5 pb-5">/);
+  assert.match(read("src/app/panel/siparisler/orders-board.tsx"), /\{data\?\.configured \? \(\s*<div className="space-y-3 px-5 pb-5">/);
 });

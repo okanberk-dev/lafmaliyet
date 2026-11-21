@@ -2,10 +2,10 @@ import "server-only";
 
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
-import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { createPosMappingIndex } from "@/lib/calc/pos-paste";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayPush } from "@/lib/lafpos/day";
 import { checkLafposRequest, lafposSecretFrom } from "@/lib/lafpos/request";
+import { LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import { onLafposDaySaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 
@@ -45,8 +45,14 @@ export type StorePosDayResult = { ok: true; lines: number; matched: number; unma
  */
 export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date()): Promise<StorePosDayResult> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${day.date}`}))`);
-    const [stored] = await tx.select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt }).from(s.posDayReports).where(eq(s.posDayReports.date, day.date)).limit(1);
+    // Kilit ve Z denetimi (gün, şube) başına: başka şubenin aynı günkü kaydı (ör. Tuzla'daki eski deneme günü) bu şubenin
+    // gün sonunu engellemez
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${LAFPOS_BRANCH_ID}:${day.date}`}))`);
+    const [stored] = await tx
+      .select({ z: s.posDayReports.z, receivedAt: s.posDayReports.receivedAt })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.date, day.date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)))
+      .limit(1);
     if (stored && stored.z.zNo !== day.z.zNo) return { ok: false, zNo: stored.z.zNo };
     const linked = await tx
       .select({ id: s.products.id, siteMenuId: s.products.siteMenuId, slot: s.products.siteMenuSlot })
@@ -72,14 +78,15 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         // LafPOS'un hizmet işareti ayrıca: Satışlar'daki eşleştirme bu satırı ürüne bağlayamaz (sonraki gün sonu geri alırdı)
         lafposService: l.isService,
         createdAt: now,
-        branchId: DEFAULT_BRANCH_ID,
+        branchId: LAFPOS_BRANCH_ID,
       };
     });
     const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now };
-    // Gün sonunun şubesi: hangi LafPOS kasasından geldiyse o (docs/SUBE.md). Bugün yalnız Tuzla'da LafPOS var.
+    // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; 21 Kasım 2026'dan beri Marina; Tuzla ModPOS'ta, geçiş günü de
+    // yalnız onun kasasınındır; docs/SUBE.md).
     // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres
     // "no unique or exclusion constraint matching" diye düşer.
-    const branchId = DEFAULT_BRANCH_ID;
+    const branchId = LAFPOS_BRANCH_ID;
     await tx
       .insert(s.posDayReports)
       .values({ date: day.date, branchId, ...report })
@@ -120,6 +127,8 @@ export async function receivePosDay(
   if (!check.ok) return { status: check.status, body: { error: check.error } };
   const parsed = parsePosDay(input.body, now);
   if (!parsed.ok) return { status: 400, body: { error: "invalid", field: parsed.field } };
+  // Kasa başka şubeye ayarlıysa (ör. Tuzla'nın kasası ModPOS'ta): gün yazılmaz, kasa ayarını düzeltene kadar bekler
+  if (parsed.data.sube && parsed.data.sube !== LAFPOS_BRANCH_ID) return { status: 409, body: { error: "wrong_branch", sube: parsed.data.sube, expected: LAFPOS_BRANCH_ID } };
   const r = await storePosDay(db, parsed.data, now);
   if (!r.ok) return { status: 409, body: { error: "z_conflict", date: parsed.data.date, zNo: r.zNo } };
   return { status: 200, body: { ok: true, date: parsed.data.date, lines: r.lines, matched: r.matched, unmatched: r.unmatched } };

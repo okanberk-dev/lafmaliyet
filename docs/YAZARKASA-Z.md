@@ -131,7 +131,7 @@ tutmazsa yine "tutmadı" yapar, tutarsa yalnız "çelişki yok" verir. K3'ün pa
 | K8 | Eski oran (%8, %18) satırında tutar olmaz; oran {0, 1, 8, 10, 18, 20} dışında olmaz | hayır | o oran |
 | K9 | Fiş sayısı tam sayı, 0–5.000 | hayır | fiş sayısı |
 | Z no | Önceki yazarkasa Z'si + 1 | evet | aynıysa okumanın bütünü durur ("dünkü Z raporu olabilir"); küçükse Z no tutmadı (okunan kümülatif de son saklanandan küçükse yalnız bilgi: yeni cihaz ya da sıfırlanmış sayaç); aradaki boşluk bilgi (önceki gün ise uyarı) |
-| Büyüklük | Günlük toplam son 28 günün (yoksa ModPOS'un) ortancasının 5 katından **ve** 50.000 ₺'den büyük değil | hayır | günlük toplam ("cihaz toplamı okunmuş olabilir") |
+| Büyüklük | Günlük toplam son 28 günün (yoksa ModPOS'un) ortancasının 5 katından **ve** 50.000 ₺'den büyük değil. 28 gün formun kasasının şubesinin raporlarıdır (docs/SUBE.md; iki şubenin toplamı karışmaz) | hayır | günlük toplam ("cihaz toplamı okunmuş olabilir") |
 | Kümülatif eşitliği | Günlük toplam kümülatife eşit değil (önceki kümülatif biliniyorsa) | hayır | günlük toplam |
 | GENEL TOPLAM | Günlük toplam GENEL TOPLAM satırından okunduysa ancak iki ayrı rakamla doğrulanırsa kabul | hayır | günlük toplam |
 

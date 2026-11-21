@@ -46,10 +46,12 @@ yazın." Unutulan dünü sonradan girmek serbesttir. Daha eski bir günü yalnı
 ## Rapor numarası ve yöneticinin rapor penceresi
 
 Sahibin kararı (4 Kasım 2026): her kasa raporunun numarası iş gününden, **KR-YYYYAAGG** (3 Kasım 2026 → `KR-20261103`;
-`src/lib/cash-report.ts` `reportNo`). Gün başına tek rapor olduğu için numara benzersizdir; silinip yeniden girilen ya
-da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne listesinde, rapor penceresinin ve
-kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın konusunda ve başlığında, WhatsApp
-metninin ilk satırında yazar.
+`src/lib/cash-report.ts` `reportNo`). Şubenin günü başına tek rapor olduğu için numara şube içinde benzersizdir;
+silinip yeniden girilen ya da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne
+listesinde, rapor penceresinin ve kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın
+konusunda ve başlığında, WhatsApp metninin ilk satırında yazar. İki şubenin aynı günkü raporu aynı numarayı taşır:
+birden çok kasa açıkken e-postanın konusu ve başlığı, WhatsApp metninin ilk satırı numaranın yanına şubenin adını yazar
+("Kasa raporu KR-20261120 · Marina · …"; `branchPart`, `namedTill`). Tek kasada metin bugünkü gibidir.
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
@@ -93,9 +95,9 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 - Fotoğrafta tahmin edilen (net olmayan) rakam forma yazılmaz: altında "Fotoğrafta net okunamadı (…); fişten yazın."
   ve **Fotoğraftakini yaz** çıkar. Okunamayan alan da turuncu kalır: "Fotoğrafta okunamadı; fişten yazın."
 - Önceden elle yazılmış alan değişmez; fotoğraftaki farklıysa altında "Fotoğrafta …" ve **Fotoğraftakini yaz** çıkar.
-- Denetimler: fişin tarihi raporun günü değilse, Z no önceki rapordakinden büyük değilse ya da arada atlama varsa,
-  ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları, soluk ya da
-  kesik fotoğraf.
+- Denetimler: fişin tarihi raporun günü değilse, Z no aynı şubenin önceki raporundakinden büyük değilse ya da arada
+  atlama varsa, ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları,
+  soluk ya da kesik fotoğraf.
 - **Yanlış bölüm** hiçbir alanı doldurmaz; aynı fotoğraf düğmeyle öteki bölüme okutulur:
   - ModPOS bölümüne yazarkasanın Z'si: "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil." ve
     **Banka POS Z bölümüne okut**. Banka gün sonu fişi de aynı düğmeyle ("Bu bir banka gün sonu fişi gibi görünüyor,
@@ -368,7 +370,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Karaoke `starts_at` ile, personelin işlem geçmişinde hesap, parola, iki adımlı, kurtarma, diğer cihazlar, oturum,
   bildirim ayarı, hatırlatıcı, özel gün ve kapalı gün işlemleri hariç her yazım (silme kayıtları dahil; kanıtı silmek işe
   yaramaz). Z no sürekliliği: önceki ve sonraki raporun Z no'ları arasındaki boşluk arada başka raporsuz gün yokken
-  kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). Sitenin o günkü
+  kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). İkisi de şube
+  başınadır: kapalı gün işletmenindir ama her şubenin kendi kasası ve Z sayacı var, önceki ve sonraki rapor aynı şubenin
+  olur (Tuzla'nın Z'si Marina'nınkiyle, Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz); bir şubede kırmızı
+  boşluk kanıtı kırmızı yapar (denetim 21 Kasım #1). Sitenin o günkü
   kafe, elle girilen ve kasada ödenen sipariş sayıları yöneticinin kartında ayrı bir Suspense'te sorulur (tutar yok;
   mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz). **LafPOS'un gün sonu** (denetim E-36; yalnız LafPOS
   günlerinde, geçiş günü boşken ya da önceki günde hiç okunmaz): satışlıysa kırmızı "LafPOS'ta Z 14 · 63 fiş" (tutar
@@ -381,8 +386,9 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Aynı günün bekleyen bildirimi onaylanmış olur. Raporu olan gün işaretlenmez.
 - **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
-  kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince Z no boşluğu varsa işaret
-  kalkar; açılış farkı varsa yalnız zil. **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
+  kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince, aynı şubenin önceki raporuyla
+  arasında Z no boşluğu varsa işaret kalkar; açılış farkı varsa yalnız zil (öteki şubenin raporu işareti kaldırmaz,
+  zile yazmaz). **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
   sonunun yazımıyla aynı işlemde, günün kapalı gün kilidi altında): bekleyen bildirim "LafPOS gün sonu geldi (Z 14 · 63
   fiş)" notuyla kapanır, tek günlük işaret kalkar. Yalnız LafPOS gününde; geçiş günü boşken (deneme günü) hiçbir kayıt
   değişmez. LafPOS'a geçişte Z numarası 1'den başlar: Z no boşluğu kuralı eksi boşlukta zaten susar.
@@ -609,7 +615,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 | Alan | Kasa raporlarından |
 |------|--------------------|
 | Açık gün | Z toplamı 0'dan büyük rapor sayısı |
-| POS cirosu | Z toplamlarının toplamı |
+| POS cirosu | Z toplamlarının toplamı **eksi** Z toplamlarının içindeki ödenmez / ikram (aşağıda "Ciro ve ödenmez") |
 | İndirim, ödenmez / ikram | Girildiği günlerin toplamı (hiç girilmediyse 0) |
 | Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. Satış raporunun ürün başına tahmini komisyonu bu oranla; boşsa Ayarlar'daki kart oranıyla. Gelir-gider'in **banka POS komisyonu** yalnız banka kartı payıyla: kart ÷ Z (yemek kartı hariç, onun komisyonu kendi faturasıyla; elle yazılan orandan kasanın yemek kartı payı düşülür; denetim E-43) |
 
@@ -617,7 +623,12 @@ silinen rapor ayın rakamını hemen değiştirir.
   da "Elle" yazar; kasadan gelen alana dokununca elle yazılır, elle yazılan alanın altında kasadaki değer ve
   **Kasadakini kullan**. Gelir-gider'de aylık ciro ve açık gün hücresi aynı kuralla ("Kasaya dön").
 - Kasa raporları bir ayın ortasında başladıysa o ayın toplamları ayın yalnız bir kısmıdır: uygulanmaz, elle girilir
-  ("Kasa raporları 20 Ekim'de başladı; …"). Kartlı oran yine kasadan.
+  ("Kasa raporları 20 Ekim'de başladı; …"). Kartlı oran yine kasadan. Kural kasanın, kafe zaten açıkken ay ortasında
+  başlaması içindir (Tuzla, Ekim 2026). **Sonradan açılan şubenin açılış ayı** buna girmez: şube seçiliyken ilk rapor
+  şubenin açılış gününde ya da öncesindeyse (Ayarlar › Şubeler; boşsa sonradan açılan şubenin ilk raporu açılış sayılır)
+  ay tamdır, ciro ve açık gün kasadan gelir; ilk rapor açılış gününden sonraysa ay yine elle girilir
+  (`src/lib/cash-month.ts` `tillOpenedOn`, `partialStart`; Gelir-gider, Satışlar, Kasa'nın ay satırı ve geç rapor kartı
+  aynı kural). "Tümü" ve Tuzla bugünkü gibi (denetim 21 Kasım #21).
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
@@ -641,13 +652,48 @@ silinen rapor ayın rakamını hemen değiştirir.
   hesaplar listenin günleriyle yapılır: liste ↔ POS karşılaştırması (Satışlar'ın ay bilgisi kutusu, Tutarlılık, uyarı)
   o günlerin Z toplamı ve indirimiyle, Genel bakış'ın günlük ortalaması listenin açık günüyle, reçeteye göre kârın
   sabit gideri ve online satışı o günlere düşen payla, "ayda …" adetleri listenin açık günüyle. Ay bitince ayın
-  tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler.
+  tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler
+  (yalnız ayda hiçbir şubenin listesi kalmadıysa: Ayı temizle gösterilen şubenin listesini siler; [SUBE.md](SUBE.md)).
   **LafPOS'a geçildiyse** (Ayarlar › LafPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
   her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).
 - Kasa sayfasının ay görünümünde tek satır: "Bu ayın açık gün ve cirosu kasa raporlarından → Satışlar". Genel
   bakış'ta POS cirosu "· kasa raporlarından"; Excel kopyasının Ay Bilgileri sayfasında "Kartlı satış oranı" ve "Kasa
   raporundan" sütunları.
+
+## Ciro ve ödenmez
+
+Panelin **cirosu ödenmez / ikramı içermez**: ModPOS'un Patron › Raporlar › Ciro rakamıyla aynı anlamdadır (KDV dahil,
+indirimler düşülmüş, ödenmezler hariç). Oysa kasanın **Z toplamı** ödenmezi satış olarak içerir: sahibin ve personelin
+tüketimi, ikram, hediye kartı, zayi de birer "ödeme türüdür", yalnız ciroya dahil değildir. Düzeltilmeden ayın cirosu
+ModPOS'un rakamından ödenmez kadar fazla çıkıyordu (Ekim 2026: ModPOS 588 bin, panel 600 bin).
+
+**Kural** (`src/lib/cash-revenue.ts` `dayRevenue`, testi `tests/odenmez-ciro.test.ts`): günün cirosu = Z toplamı −
+Z toplamının içindeki ödenmez. Ödenmezin Z toplamının içinde olup olmadığını günün **ödeme dökümü** söyler (nakit +
+kart + yemek kartı + online + diğer; ödenmez / ikram bunların hiçbirine girmez):
+
+| Ödemelerin toplamı | Anlamı | Günün cirosu |
+|---|---|---|
+| Z toplamı − ödenmez | Z toplamı ödenmezi içeriyor | Z toplamı − ödenmez |
+| Z toplamı | Z toplamı ödenmezi içermiyor (zaten hariç) | Z toplamı |
+| İkisini de tutmuyor (1 ₺'tan büyük fark) | Gün kendi içinde tutmuyor | Z toplamı (değişmez) |
+
+Son satırda tahmin yürütülmez: o gün zaten "Ödeme türleri toplamı … cirodan / Z toplamından … az" uyarısı verir ve
+düzeltilmesi istenir. Kural üç kaynakta da aynıdır: elle girilen kasa raporu, LafPOS gün sonu ve ModPOS kasa föyü
+(`tillRows`, `src/server/data/cash-reports.ts`; üçü de ödeme dökümünü taşır).
+
+**Nerede görünür**
+
+- **Kasa raporu** (gün ayrıntısı, e-posta ve WhatsApp): ödenmez Z toplamının içindeyse "Ciro (ödenmez / ikram hariç)"
+  satırı çıkar; ödeme türlerinin payı ve toplamı ciroya göre ("ciroyla aynı"), yoksa bugünkü gibi Z toplamına göre.
+- **Satışlar › Ay bilgileri:** cironun altında "Kasa raporlarından (27 gün). Ödenmez / ikram 12.000 ₺ Z toplamından
+  düşüldü."
+- **Kasa'nın ay satırı:** "Bu ayın açık gün ve cirosu kasa raporlarından (ödenmez / ikram 12.000 ₺ düşüldü)".
+- **Genel bakış › POS cirosu** dökümü: "Z toplamları (ödenmez dahil)" ve "Ödenmez / ikram · − 12.000 ₺".
+
+Ödenmez alanı olduğu gibi durur (Zayi & ikram tutarlılığı, ödenmezlerin tahmini malzeme maliyeti ve kasa karşılaştırması
+onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da ciroya göre hesaplanır: POS komisyonu tahmini
+(ciro × oran × pay) yine kart tutarını verir.
 
 ## Gönderince
 
@@ -662,6 +708,10 @@ silinen rapor ayın rakamını hemen değiştirir.
   anahtarı kullanır. Silinip aynı gün (24 saat içinde) yeniden girilen raporun e-postası da gider: yeni rapor yeni
   satırdır, sürümü 1'den başlasa da anahtarı silinenden farklıdır (güne göre anahtar Resend'in 24 saatlik hafızasına
   takılırdı: e-posta gitmez, "Yeniden dene" düşerdi).
+  Birden çok kasa açıkken konu, başlık ve metin raporun şubesini yazar; "Panelde aç" o şubenin gününü açar
+  (`/panel/kasa?gun=G&sube=marina`, zilin bağlantısı gibi). Bağlantıda şube olmasaydı tarayıcıdaki seçim hangi şubeyi
+  gösteriyorsa onun raporu açılırdı (21 Kasım denetimi #2). İşlem geçmişinin anahtarı şubenin günüdür (`cashLogKey`:
+  Tuzla `cash:G:rN`, öteki `cash:G:rN:şube`): iki şubenin aynı günkü gönderimi birbirinin kaydını ezmez.
 - **LafPOS günü** (geçiş gününden sonra; denetim E-09): e-postanın ve WhatsApp metninin başında rapor LafPOS'un gün
   sonundan farklıysa "⚠️ LafPOS'tan farklı yazılan: Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; Z bölümünün adı "LafPOS
   gün sonu (Z)". Teslim sayımdan sonra yazıldıysa (Teslim edilen) aynı para iki biçimde yazılmıştır: çıkan + teslim ve

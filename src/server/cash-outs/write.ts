@@ -8,7 +8,7 @@ import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentTillBranch } from "@/server/branch-scope";
 import { loadPendingCashOutInvoices } from "@/server/data/cash-out-invoices";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
@@ -77,7 +77,7 @@ export async function lockCashOut(tx: CashOutTx, id: number): Promise<CashOutRow
 
 export interface WriteCashOutOptions {
   /**
-   * Satırın şubesi. Verilmezse panelde seçili şubeye iner (`currentWriteBranch`). Personelin isteği
+   * Satırın şubesi. Verilmezse panelde seçili şubeye iner (`currentTillBranch`). Personelin isteği
    * onaylanırken ve "geri al"da çağıran bunu AÇIKÇA geçer: yoksa yöneticinin o anki seçimi yazılır ve
    * Marina'nın satırı Tuzla'ya kayar (docs/SUBE.md).
    */
@@ -169,7 +169,7 @@ export async function writeCashOut(tx: CashOutTx, me: CashOutActor, d: CashOutDa
     : await tx
         .insert(s.cashOuts)
         // Kasanın şubesi (kasa raporuyla aynı; docs/SUBE.md): seçili şube, "Tümü"nde Tuzla
-        .values({ ...values, ...(o.restoreId ? { id: o.restoreId } : {}), branchId: o.branchId ?? (await currentWriteBranch()), createdBy: author.id, createdByName: author.name })
+        .values({ ...values, ...(o.restoreId ? { id: o.restoreId } : {}), branchId: o.branchId ?? (await currentTillBranch()), createdBy: author.id, createdByName: author.name })
         .returning();
 
   // Harcama kaydı: tarih fişin tarihi (kasanın gününden en çok 3 gün önceyse), nakit, "Kasadan · 21 Ekim Salı"

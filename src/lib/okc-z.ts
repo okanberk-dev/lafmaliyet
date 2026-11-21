@@ -862,6 +862,8 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin", ka
 /** Ay okuyucusunun satırı (`cash_reports`'un ilgili sütunları) */
 export interface OkcRow {
   date: string;
+  /** Şube (her şubenin kendi yazarkasası, kendi Z no ve kümülatif zinciri); verilmezse tek kasa */
+  branchId?: string | null;
   /** ModPOS Z toplamı */
   zTotal: number;
   okcZNo?: string | null;
@@ -910,6 +912,45 @@ export interface OkcMonth {
   complete: boolean;
 }
 
+/** Tek yazarkasanın ay zinciri (şube satırları) */
+function branchChain(rows: readonly OkcRow[], month: string): { total: number; vat: number | null; fromZ: string; toZ: string } | null {
+  const start = `${month}-01`;
+  const withCum = rows.filter((r) => isNum(r.okcCumTotal) && r.okcZNo).sort((a, b) => a.date.localeCompare(b.date));
+  const before = [...withCum].reverse().find((r) => r.date < start);
+  const last = [...withCum].reverse().find((r) => r.date.slice(0, 7) === month);
+  return before && last
+    ? {
+        total: r2(last.okcCumTotal! - before.okcCumTotal!),
+        vat: isNum(last.okcCumVat) && isNum(before.okcCumVat) ? r2(last.okcCumVat - before.okcCumVat) : null,
+        fromZ: before.okcZNo!,
+        toZ: last.okcZNo!,
+      }
+    : null;
+}
+
+/** Ayın zinciri: tek şubede o şubeninki; birden çok şubede ayda yazarkasa girilmiş her şubenin zincirinin toplamı */
+function monthChain(rows: readonly OkcRow[], entered: readonly OkcRow[], month: string): OkcMonth["chain"] {
+  const branchOf = (r: OkcRow) => r.branchId ?? "";
+  const branches = [...new Set(rows.map(branchOf))];
+  if (branches.length <= 1) return branchChain(rows, month);
+  const parts: { branch: string; chain: NonNullable<ReturnType<typeof branchChain>> }[] = [];
+  for (const b of [...new Set(entered.map(branchOf))].sort()) {
+    const c = branchChain(
+      rows.filter((r) => branchOf(r) === b),
+      month,
+    );
+    if (!c) return null;
+    parts.push({ branch: b, chain: c });
+  }
+  if (!parts.length) return null;
+  return {
+    total: r2(parts.reduce((a, p) => a + p.chain.total, 0)),
+    vat: parts.every((p) => p.chain.vat !== null) ? r2(parts.reduce((a, p) => a + p.chain.vat!, 0)) : null,
+    fromZ: parts.map((p) => `${p.branch} ${p.chain.fromZ}`).join(" · "),
+    toZ: parts.map((p) => `${p.branch} ${p.chain.toZ}`).join(" · "),
+  };
+}
+
 /**
  * Ayın yazarkasa kapsamı ve oran oran toplamları (plan §9). Bu dalgada yalnız okuyucu: hiçbir ekranın hesabı
  * değişmez. KDV dökümü olmayan bir günü olan ay toplamı tam olsa bile `complete: false` döner.
@@ -936,7 +977,8 @@ export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
 
   let byRateEstimated: OkcRateSum[] | null = null;
   if (vatMissing.length && byRateTotal > 0) {
-    const missingTotal = entered.filter((r) => vatMissing.includes(r.date)).reduce((a, r) => a + r.okcTotal!, 0);
+    // Satırın kendisiyle (günle değil): iki şubenin aynı günü birinde döküm varken öbürünü eksik saymasın
+    const missingTotal = entered.filter((r) => normalizeVat(r.okcVat).length === 0).reduce((a, r) => a + r.okcTotal!, 0);
     byRateEstimated = byRate.map((s) => {
       const t = (missingTotal * s.total) / byRateTotal;
       const v = s.total > 0 ? (t * s.vat) / s.total : 0;
@@ -944,20 +986,10 @@ export function okcMonth(rows: readonly OkcRow[], month: string): OkcMonth {
     });
   }
 
-  // Zincir: ayın son saklanan kümülatifi − önceki ayın son saklanan kümülatifi
-  const start = `${month}-01`;
-  const withCum = rows.filter((r) => isNum(r.okcCumTotal) && r.okcZNo).sort((a, b) => a.date.localeCompare(b.date));
-  const before = [...withCum].reverse().find((r) => r.date < start);
-  const last = [...withCum].reverse().find((r) => r.date.slice(0, 7) === month);
-  const chain =
-    before && last
-      ? {
-          total: r2(last.okcCumTotal! - before.okcCumTotal!),
-          vat: isNum(last.okcCumVat) && isNum(before.okcCumVat) ? r2(last.okcCumVat - before.okcCumVat) : null,
-          fromZ: before.okcZNo!,
-          toZ: last.okcZNo!,
-        }
-      : null;
+  // Zincir: ayın son saklanan kümülatifi − önceki ayın son saklanan kümülatifi, ŞUBE BAŞINA (her şubenin ayrı
+  // yazarkasası var: Marina'nın kümülatifinden Tuzla'nınki çıkarılmaz). Birden çok şubede ay zinciri, ayda yazarkasa
+  // girilmiş her şubenin zinciri varsa şube zincirlerinin toplamıdır
+  const chain = monthChain(rows, entered, month);
 
   const ratesMatch = Math.abs(byRateTotal - total) <= TOL;
   const complete =

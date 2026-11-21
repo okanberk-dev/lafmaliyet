@@ -15,19 +15,25 @@ import {
   type BranchScope,
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
+  formCountError,
+  formTillError,
+  otherBranchError,
   parseBranchScope,
 } from "@/lib/branches";
 
+import { getCurrentUser } from "./auth/dal";
 import { listBranches } from "./branches";
 import { getDb, type DB } from "./db";
+import { UserError } from "./user-error";
 
 /**
  * Panelin o anki şube seçimi (docs/SUBE.md › Seçici). Kurallar saf dosyada (src/lib/branches.ts); burada yalnız
  * Next'in isteği ve veritabanı var.
  *
- * Seçim veriyi süzer, YETKİ VERMEZ: her uç ayrıca `requireAdmin`/`requireUser` ile korunur. Adresteki `?sube=`
- * çerezden önce gelir ki paylaşılan bağlantı hep aynı şubeyi göstersin; tanınmayan ya da pasif değer "hepsi"ye
- * düşer (`parseBranchScope`).
+ * Seçim veriyi süzer, YETKİ VERMEZ: her uç ayrıca `requireAdmin`/`requireUser` ile korunur. `branchScope(raw)`'a
+ * verilen değer çerezden önce gelir; tanınmayan ya da pasif değer "hepsi"ye düşer (`parseBranchScope`). Panelin
+ * sayfaları adresteki `?sube=`'yi okumaz: seçici onu her bağlantıda bir kez çereze benimsetir ve adresten düşürür
+ * (src/components/panel/branch-picker.tsx › `branchLinkStep`).
  */
 export interface BranchScopeState {
   /** Seçili şube kimliği ya da "hepsi" */
@@ -41,18 +47,59 @@ export interface BranchScopeState {
    * (Tuzla) iner ve form kullanıcıya hangi şubeye yazdığını gösterir.
    */
   writeId: string;
+  /** Şubesi olan personel: seçim kişinin şubesinde kilitli, seçici değiştiremez */
+  locked: boolean;
+}
+
+/** İstekteki kullanıcı (istekte bir kez okunur; istek dışında null) */
+const requestUser = cache(async () => {
+  try {
+    return await getCurrentUser();
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * Personel hesabının şubesi (docs/SUBE.md › Personel hesabının şubesi): şubesi seçilmiş personelin bütün okuma ve
+ * yazmaları o şubededir; çerez ve `?sube=` yok sayılır. Şube pasife alındıysa ya da kişide şube yoksa null (serbest).
+ */
+async function lockedBranch(branches: readonly BranchRow[]): Promise<string | null> {
+  const user = await requestUser();
+  if (!user || user.role !== "staff" || !user.branchId) return null;
+  return branches.some((b) => b.id === user.branchId && b.active) ? user.branchId : null;
+}
+
+/** Şubesi seçilmiş personelin kilitli şubesi (seçim ucu bununla başka şubeye geçişi reddeder); yoksa null */
+export async function staffBranchLock(): Promise<string | null> {
+  return lockedBranch(await listBranches());
+}
+
+/**
+ * Kimliğiyle açılan kayıt şubesine kilitli personelin şubesinde mi (docs/SUBE.md › Personel hesabının şubesi; 21 Kasım
+ * denetimi #14). Kilit yalnız seçimi ve yeni kaydın şubesini belirliyordu; kasadan çıkan satırı, zayi kaydı, kasa
+ * raporu ve fotoğraf kimliğiyle açılınca kimse satırın şubesini kişinin şubesiyle karşılaştırmıyordu. Kaydı kimliğiyle
+ * açan her personel yolu buna sorar: başka şubenin kaydında metin (eylem UserError atar, fotoğraf kuralı görmez der),
+ * yoksa null. Yönetici, şubesiz personel ve şubesi pasif personel serbest (`otherBranchError`).
+ */
+export async function staffBranchRefusal(me: { role: string }, branchId: string | null | undefined): Promise<string | null> {
+  if (me.role === "admin") return null;
+  const branches = await listBranches();
+  return otherBranchError(branchId, branches, await lockedBranch(branches));
 }
 
 export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<BranchScopeState> {
   const branches = await listBranches(db);
+  const locked = await lockedBranch(branches);
   const fromUrl = typeof raw === "string" && raw ? raw : null;
-  const chosen = fromUrl ?? (await cookies()).get(BRANCH_COOKIE)?.value ?? null;
+  const chosen = locked ?? fromUrl ?? (await cookies()).get(BRANCH_COOKIE)?.value ?? null;
   const scope = parseBranchScope(chosen, branches);
   return {
     scope,
     branches,
     label: branchScopeLabel(scope, branches),
     writeId: scope === ALL_BRANCHES ? DEFAULT_BRANCH_ID : scope,
+    locked: locked !== null,
   };
 }
 
@@ -66,7 +113,9 @@ export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<Bran
 const requestBranchScope = cache(async (): Promise<BranchScope> => {
   try {
     const jar = await cookies();
-    return parseBranchScope(jar.get(BRANCH_COOKIE)?.value ?? null, await listBranches());
+    const branches = await listBranches();
+    const locked = await lockedBranch(branches);
+    return parseBranchScope(locked ?? jar.get(BRANCH_COOKIE)?.value ?? null, branches);
   } catch {
     return ALL_BRANCHES;
   }
@@ -115,6 +164,48 @@ export async function currentPhysicalBranch(): Promise<BranchRow> {
   const chosen = branches.find((b) => b.id === scope && b.kind === "fiziksel");
   const fallback = DEFAULT_BRANCHES.find((b) => b.id === DEFAULT_BRANCH_ID)!;
   return chosen ?? branches.find((b) => b.id === DEFAULT_BRANCH_ID) ?? { ...fallback, active: true };
+}
+
+/**
+ * Kasanın şubesi (kasa raporu, kasadan çıkan, geç rapor, ModPOS föyü): seçili fiziksel şube; "Tümü" ya da online kanal
+ * seçiliyken varsayılan şube (Tuzla). Online kanalın kasası olmaz (docs/SUBE.md › Kurallar): kanal seçiliyken girilen
+ * rapor "online" şubesine yazılmasın. Kasa sayfası okurken de bunu kullanır; form bu kasanın kimliğini gönderir ki
+ * gösterdiği kasaya yazsın (`formTillBranch`).
+ */
+export async function currentTillBranch(): Promise<string> {
+  return (await currentPhysicalBranch()).id;
+}
+
+/**
+ * Formun gösterdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken
+ * hangi şube). Sayfa formu `currentTillBranch` ile çizer ve kasanın kimliğini forma koyar; yazım gönderim anındaki
+ * çereze değil bu kimliğe iner: çerez sekmeler arasında ortaktır, başka sekmede seçici değişince eski sekmenin Tuzla
+ * formu Marina'ya yazıyordu (21 Kasım denetimi #12). Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde
+ * kendi şubesi (`formTillError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili kasaya yazar.
+ * Eylem yazımı `withBranchScope(kasa, …)` içinde çalıştırır: kapı, kilit ve okumalar da aynı kasaya bakar.
+ */
+export async function formTillBranch(raw: string | null | undefined): Promise<string> {
+  if (!raw) return currentTillBranch();
+  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const error = formTillError(raw, branches, lock);
+  if (error) throw new UserError(error);
+  return raw;
+}
+
+/**
+ * Formun gösterdiği sayımın şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"; docs/SUBE.md › Yazarken hangi
+ * şube): `formTillBranch`'in sayım karşılığı. Sayfa formu `currentPhysicalBranch` ile çizer ve şubenin kimliğini forma
+ * koyar; kayıt gönderim anındaki çereze değil bu kimliğe iner: başka sekmede seçici değişince açık kalan Tuzla sayımı
+ * Marina'ya yazıyordu. Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde kendi şubesi
+ * (`formCountError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili fiziksel şubeye yazar.
+ * Eylem yazımı `withBranchScope(şube, …)` içinde çalıştırır: okumalar da aynı şubeye bakar.
+ */
+export async function formCountBranch(raw: string | null | undefined): Promise<string> {
+  if (!raw) return (await currentPhysicalBranch()).id;
+  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const error = formCountError(raw, branches, lock);
+  if (error) throw new UserError(error);
+  return raw;
 }
 
 /**

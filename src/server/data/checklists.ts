@@ -2,12 +2,14 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
+import { ALL_BRANCHES } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { kontrolDigestBox, photoAccess, rangeText, valueText, whoText } from "@/lib/checklists";
 import { KEEP_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import * as store from "@/server/checklists/store";
 import { isClosedDay } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
@@ -29,8 +31,17 @@ function ctxOf(now: Date): store.DayCtx {
   return { today: businessDate(now), photos: photoStorage().available };
 }
 
-export function loadChecklistTemplates(o: { runs?: boolean } = {}) {
-  return store.loadTemplates(getDb(), o);
+/**
+ * Listeleme için gün kuralları ve isteğin şube seçimi (docs/KONTROL-LISTELERI.md › Şubeler): tek şube seçiliyken o
+ * şubenin ve bütün şubelerin listeleri görünür. Şubesi olan personel kendi şubesinde kilitlidir (src/server/branch-scope.ts).
+ */
+async function listCtxOf(now: Date): Promise<store.DayCtx> {
+  return { ...ctxOf(now), branch: await currentBranchScope() };
+}
+
+/** Şablonlar; `scoped`: isteğin şube seçimine göre (o şubenin ve bütün şubelerin), Listeler sekmesi hepsini görür */
+export async function loadChecklistTemplates(o: { runs?: boolean; scoped?: boolean } = {}) {
+  return store.loadTemplates(getDb(), { runs: o.runs, branch: o.scoped ? await currentBranchScope() : undefined });
 }
 
 export async function loadChecklistTemplate(id: number) {
@@ -39,36 +50,43 @@ export async function loadChecklistTemplate(id: number) {
 }
 
 /** Bir günün listeleri (Bugün, sabah e-postası, Kontrol listeleri); personel yalnız kendi doldurabildiklerini görür */
-export function loadChecklistDay(day: string, role: "admin" | "staff", now: Date = new Date()) {
-  return store.loadChecklistDay(getDb(), day, role, ctxOf(now));
+export async function loadChecklistDay(day: string, role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadChecklistDay(getDb(), day, role, await listCtxOf(now));
 }
 
 /** Birkaç günün listeleri tek okumada (zil: bugün ve dün) */
-export function loadChecklistDays(days: string[], role: "admin" | "staff", now: Date = new Date()) {
-  return store.loadChecklistDays(getDb(), days, role, ctxOf(now));
+export async function loadChecklistDays(days: string[], role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadChecklistDays(getDb(), days, role, await listCtxOf(now));
 }
 
+/** Doldurma ekranı; şube kilidini sayfa uygular (src/app/panel/kontrol/[id]/page.tsx, branchLockAllows) */
 export function loadRunView(templateId: number, day: string, now: Date = new Date()) {
   return store.loadRunView(getDb(), templateId, day, ctxOf(now));
 }
 
 /** Geçmiş: personel yalnız kendi doldurabildiği listeleri, listenin personele açıldığı günden görür (aralık çağıranın) */
-export function loadChecklistHistory(from: string, to: string, role: "admin" | "staff", now: Date = new Date()) {
-  return store.loadHistory(getDb(), from, to, role, ctxOf(now));
+export async function loadChecklistHistory(from: string, to: string, role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadHistory(getDb(), from, to, role, await listCtxOf(now));
 }
 
 export function firstChecklistDay() {
   return store.firstChecklistDay(getDb());
 }
 
-/** Yanıtı yazar (eylem ve fotoğraf yolu); fotoğraf aynı işlemde 60 gün saklanmak üzere bağlanır */
-export function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
-  return store.writeAnswer(getDb(), me, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
+/**
+ * Yanıtı yazar (eylem ve fotoğraf yolu); fotoğraf aynı işlemde 60 gün saklanmak üzere bağlanır. Şubesine kilitli
+ * personel yalnız kendi şubesinin ve bütün şubelerin listelerine yazar (docs/KONTROL-LISTELERI.md › Şubeler): listeleme
+ * süzer, adresle açılan başka şubenin listesini de burası reddeder.
+ */
+export async function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
+  const lock = await staffBranchLock();
+  return store.writeAnswer(getDb(), { ...me, lock }, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
 }
 
-/** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError) */
-export function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
-  return store.checkPhotoTarget(getDb(), me, target, now, photoStorage().available);
+/** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError); şube kilidi yazımdaki gibi */
+export async function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
+  const lock = await staffBranchLock();
+  return store.checkPhotoTarget(getDb(), { ...me, lock }, target, now, photoStorage().available);
 }
 
 /**
@@ -100,13 +118,14 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
 /**
  * Kontrol fotoğrafını personel görür mü (yönetici ve bağlanmamış fotoğrafın yükleyeni buraya gelmez,
  * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin son 7 gündeki kaydındaki fotoğraf, liste
- * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS).
+ * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS); şubesine kilitli
+ * personelde yalnız kendi şubesinin ve bütün şubelerin listelerinden.
  */
 export const kontrolPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.kontrol,
   async canView(me, photo) {
-    const run = await store.photoRun(getDb(), photo.id);
-    return photoAccess({ role: me.role, userId: me.id, createdBy: photo.createdBy, run, now: new Date() });
+    const [run, lock] = await Promise.all([store.photoRun(getDb(), photo.id), staffBranchLock()]);
+    return photoAccess({ role: me.role, userId: me.id, createdBy: photo.createdBy, run, lock, now: new Date() });
   },
 };
 
@@ -121,7 +140,8 @@ export async function loadKontrolDigest(now: Date = new Date()): Promise<DigestE
   const key = `kontrol:${day}`;
   const [sent] = await getDb().select({ key: s.notificationLog.key }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
   if (sent) return null;
-  const [lists, reports, first] = await Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate()]);
+  // E-posta işletmenin tamamı içindir: bütün şubelerin listeleri ve kasa raporları
+  const [lists, reports, first] = await withBranchScope(ALL_BRANCHES, () => Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate()]));
   const cashMissing = !reports.length && first !== null && first <= day;
   // Onaylı kapalı gün (dalga 10 §2.9): hiç açılmamış listeler eksik sayılmaz, kutu yok
   if (cashMissing && !lists.some((l) => l.run) && (await isClosedDay(day))) return null;

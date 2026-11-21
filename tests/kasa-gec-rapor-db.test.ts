@@ -184,7 +184,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     // Personel yükünde yalnız raporun alanları, teslim alan, fotoğraflar ve kasa farkı
     assert.deepEqual(
       Object.keys(out.row.payload).sort(),
-      ["bankPos", "card", "cash", "cashDiff", "cashIn", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
+      ["bankPos", "branchId", "card", "cash", "cashDiff", "cashIn", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
     );
   });
 

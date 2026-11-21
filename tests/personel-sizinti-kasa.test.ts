@@ -94,7 +94,7 @@ test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğin
   assert.match(loader, /^import "server-only";/);
   const own = loader.slice(loader.indexOf("export async function lateRequestFor"), loader.indexOf("export async function lateRequestsByReport"));
   assert.doesNotMatch(own, /\.select\(\)/);
-  assert.match(own, /\.where\(and\(eq\(r\.kind, "kasa-gec"\), eq\(r\.subject, `gun:\$\{date\}`\)\)\)/);
+  assert.match(own, /\.where\(and\(eq\(r\.kind, "kasa-gec"\), eq\(r\.subject, cashDaySubject\(date, await currentTillBranch\(\)\)\)\)\)/);
   // Kişinin kendi isteği (requestedBy === me.id) yükten kurulur; başkalarınınki yalnız ad ve an
   assert.match(own, /const mine = rows\.filter\(\(x\) => x\.requestedBy === me\.id\);/);
   assert.match(own, /others: rows\.filter\(\(x\) => x\.requestedBy !== me\.id && x\.status === "pending"\)\.map\(\(x\) => \(\{ requestedByName: x\.requestedByName, createdAt: x\.createdAt\.toISOString\(\) \}\)\)/);
@@ -247,7 +247,7 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   for (const file of ["src/server/actions/cash-report.ts", "src/app/panel/kasa/page.tsx", "src/app/panel/kasa/cash-history.tsx"]) {
     assert.doesNotMatch(read(file), /cashReportText/, file);
   }
-  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, meta, "admin"\)/);
+  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, \{ \.\.\.meta, branchName \}, "admin"\)/);
   assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
 
   // Düzeltilen rapor (sürüm 2): "Değişen" satırında yazarkasanın toplamı, KDV'si, fiş sayısı, yemek kartı ve diğeri

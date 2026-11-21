@@ -80,7 +80,8 @@ test("kapsam kaydı: yükleme süren ayda günü yazar, biten aya yükleme ve 'A
   assert.match(sales, /const rule = modposImportRule\(month, switchDay, todayTR\(\), z\.string\(\)\.max\(10\)\.nullish\(\)\.parse\(input\.through\)\);/);
   assert.match(read("src/lib/lafpos/sales.ts"), /if \(src === "modpos" \|\| switchDay === null\) return \{ ok: true, through: coverageFor\(month, today, given\) \};/);
   assert.match(sales, /await setCoverage\(tx, month, through\);/, "satırlarla aynı işlemde");
-  assert.match(sales, /await setCoverage\(db, m, null\);/, "Ayı temizle kaydı siler");
+  // Ayı temizle kaydı siler; kayıt ayın tek kaydıdır, yalnız ayda hiçbir şubenin listesi kalmadıysa (denetim 21 Kasım #7)
+  assert.match(sales, /if \(!left\?\.n\) await setCoverage\(tx, m, null\);/, "Ayı temizle kaydı siler");
   assert.match(sales, /\$\{current\} \|\| jsonb_build_object\(\$\{month\}::text, \$\{through\}::text\)/);
   assert.match(sales, /\$\{current\} - \$\{month\}::text/);
   assert.match(sales, /case when jsonb_typeof\(value\) = 'object' then value else '\{\}'::jsonb end/);

@@ -26,6 +26,7 @@ import {
   backupReminder,
   backupSchemaPlan,
   backupSummaryText,
+  BEFORE_MIGRATION_SQL,
   databaseTarget,
   databaseUrl,
   documentsDownloadBytes,
@@ -44,9 +45,10 @@ import {
   type LastBackup,
   type SavedCredentials,
 } from "../src/lib/backup/format";
+import { DEFAULT_BRANCH_ID } from "../src/lib/branches";
 import { jobHealth, systemAlerts, type JobKey } from "../src/lib/job-health";
 import { backupStream, type BackupSummary } from "../src/server/backup/core";
-import { parseBackupLines } from "../src/server/backup/restore";
+import { beforeMigrationSql, loadMigrations, parseBackupLines } from "../src/server/backup/restore";
 import * as schema from "../src/server/db/schema";
 
 const tr = (s: string) => new Date(`${s.replace(" ", "T")}:00+03:00`);
@@ -353,6 +355,26 @@ test("şema sürümü: günlükte olmayan kayıt uyarı, kaynakta atlanmış mig
   assert.match(backupSchemaPlan([], JOURNAL).error ?? "", /şema sürümü \(migration kaydı\) yok/);
   assert.match(backupSchemaPlan(applied(150), JOURNAL).error ?? "", /günlüğünde yok/);
   assert.match(backupSchemaPlan(applied(100), []).error ?? "", /günlüğü yok/);
+});
+
+test("şema sürümü: dolu tabloda takılan migration'dan önce ek adım; 0056'dan önce varsayılan şube (0057'deki satırın aynısı)", () => {
+  const migrations = loadMigrations();
+  // Ad yanlış yazılırsa adım sessizce çalışmazdı
+  for (const tag of Object.keys(BEFORE_MIGRATION_SQL)) assert.ok(migrations.some((m) => m.tag === tag), `${tag} günlükte yok`);
+  const m56 = migrations.find((m) => m.tag === "0056_sube_kirilimi")!;
+  const before = beforeMigrationSql(migrations);
+  assert.deepEqual([...before.keys()], [m56.meta.folderMillis]);
+  // 0056 var olan satırları 'tuzla'ya yazıp kütüğe yabancı anahtar kurar: 0053'ten önceki bir yedekte ay, satış,
+  // personel satırı varken kütükte 'tuzla' yoksa geri yükleme yabancı anahtar hatasıyla geri alınırdı
+  const sql56 = m56.meta.sql.join("\n");
+  assert.match(sql56, /ALTER TABLE "months" ADD COLUMN "branch_id" text DEFAULT 'tuzla' NOT NULL/);
+  assert.match(sql56, /"months_branch_id_branches_id_fk" FOREIGN KEY \("branch_id"\) REFERENCES "public"\."branches"\("id"\)/);
+  const [stmt, ...others] = before.get(m56.meta.folderMillis)!;
+  assert.equal(others.length, 0);
+  assert.match(stmt, new RegExp(`^INSERT INTO "branches" .* VALUES \\('${DEFAULT_BRANCH_ID}', `));
+  assert.match(stmt, /ON CONFLICT \("id"\) DO NOTHING;$/, "var olan kayda dokunmaz; 0057 aynı satırı yeniden dener");
+  const sql57 = readFileSync(join(process.cwd(), "drizzle", "0057_sabit_gider_subesi.sql"), "utf8");
+  assert.ok(sql57.includes(stmt), "0057'deki satırın aynısı: sonuç 0057'ninkiyle aynı");
 });
 
 // ---------------------------------------------------------------- Kullanıcıların giriş bilgileri

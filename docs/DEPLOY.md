@@ -97,7 +97,7 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `ADMIN_EMAIL` | İlk yönetici hesabının e-postası |
 | `ADMIN_PASSWORD` | İlk yönetici parolası (en az 8 karakter; ilk girişten sonra **Hesabım** sayfasından değiştirin) |
 | `ADMIN_NAME` | Görünecek ad (ör. Okan) |
-| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz; Paraşüt ekranı "CRON_SECRET eksik", zil ve Genel bakış "Günlük işler kapalı" der |
+| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz; Paraşüt ekranı "CRON_SECRET eksik", zil ve Genel bakış "Günlük işler kapalı" der. Aynı değer GitHub deposuna da **Actions sırrı** olarak girilir (Settings › Secrets and variables › Actions › `CRON_SECRET`): saatlik kontrol listesi hatırlatmalarını o tetikler ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6) |
 | `RESEND_API_KEY` | (isteğe bağlı) E-posta gönderimi: sabah e-postası, davet ve parola sıfırlama. Ayrıntı [BILDIRIMLER.md](BILDIRIMLER.md) |
 | `EMAIL_FROM` | (isteğe bağlı) Gönderen, ör. `L'Affogato Panel <bildirim@laffogato.net>`; panelden de değiştirilir |
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
@@ -105,6 +105,8 @@ Proje → **Settings → Environment Variables**. Önizlemeler canlının verita
 | `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi (karaoke ve menü); yoksa `https://laffogato.net` |
 | `LAFPOS_SYNC_SECRET` | (isteğe bağlı) LafPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini okur. `openssl rand -base64 48`; **LafPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından (`KARAOKE_SYNC_SECRET`) ve sitenin kendi `LAFPOS_SYNC_SECRET`'ından ayrı; `KARAOKE_SYNC_SECRET`'la aynıysa bağlantı açılmaz. Yoksa iki uç 503 döner (bugün bilerek yok: kafede ModPOS var). Açma sırası ve geçiş günü [LAFPOS.md](LAFPOS.md) › Açılış sırası |
 | `MODPOS_API_KEY` | (isteğe bağlı, **yalnız Production**) ModPOS'un (Gafdigi) Kasa Föyü API anahtarı (`sk_…`): panel her sabah dünün kasa föyünü çeker, yönetici Kasa'da raporla yan yana görür. Günde 2 istek hakkı var; anahtara IP kısıtı konmamalı (Vercel'in sabit IP'si yok). Yoksa bağlantı kapalı, hiçbir istek gitmez ([MODPOS-API.md](MODPOS-API.md)) |
+| `MODPOS_API_KEY_<ŞUBE>` | (isteğe bağlı, **yalnız Production**) Tuzla'dan başka ModPOS şubesinin anahtarı: `MODPOS_API_KEY_MARINA`. Şubenin anahtarı yoksa o şube çekilmez (Tuzla'nınkine düşülmez); başka şubeninkiyle aynı anahtar kullanılmaz ([MODPOS-API.md › Şubeler](MODPOS-API.md#1a-şubeler-16-kasım-2026)) |
+| `MODPOS_SUBELER` | (isteğe bağlı) ModPOS'taki şube adını panelin şubesine bağlar (`Sahil Şube=marina; Merkez=tuzla`): tek anahtar birden çok şubenin kasasını verir ve ad panelin şube adını içermezse |
 | `MODPOS_SYNC_FROM` | (isteğe bağlı) Geçmişin ilk günü (`YYYY-MM-DD`): geçmiş föyler dünden bu güne doğru, yeniden eskiye çekilir, öncesi çekilmez; yoksa `2026-07-01`. Canlıda `2026-11-01` |
 | `MODPOS_API_URL` | (isteğe bağlı) Kasa föyü ucunun adresi; yoksa belgedeki `https://api.gafdigi.com/api/v2/external/raporlar/kasa-foyu` |
 | `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
@@ -300,6 +302,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     kurmaya çalıştı ve canlı derleme durdu (yayındaki sürüm değişmedi). Düzeltme: 0040 canlıdaki hâline döndü, sütun
     `0041_kasaya_giren` ile eklendi. Birleşmemiş bir dalın migration'ını yeniden üretmeden önce canlıda kaydı var mı
     bakın (`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 3`).
+  - Eski bir yedeğin verisiyle takılan migration (boş veritabanında ve canlıda geçmiş) yine değiştirilmez: geri
+    yüklemenin ondan hemen önce çalıştırdığı ek adım `src/lib/backup/format.ts` › `BEFORE_MIGRATION_SQL`'e yazılır
+    ([YEDEK.md](YEDEK.md) § 4). Örnek: `0056_sube_kirilimi` eski satırları 'tuzla'ya bağlar, kayıt ancak 0057'de
+    yazılır. Aynı nedenle şubelerden (0053) önceki, verisi olan bir veritabanında `npm run db:migrate` 0056'da yabancı
+    anahtar hatası verir (drizzle bekleyenlerin hepsini tek işlemde uygular, hiçbir şey değişmez): böyle bir veritabanı
+    `npm run db:backup` ile alınıp boş bir veritabanına `npm run db:restore` ile yüklenir.
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.

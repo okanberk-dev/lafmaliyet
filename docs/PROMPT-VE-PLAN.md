@@ -192,7 +192,8 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
     `Invoice.outstanding` olarak gelir; Genel bakış, Faturalar, Hatırlatıcılar ve Excel'e aktar aynı rakamı gösterir.
 12. **Su + buz birim maliyeti:** Excel sabit Eylül faturasını kullanır; panel SU GİDERİ girilmiş ve ürün satış
     listesi olan en son ayı kullanır (litre satışlardan bulunur; aynı ayın laffogato.net online siparişlerinin su ve
-    buzu da litreye girer, denetim E-57). Elle fiyatlanan buz litreye katılmaz. Fatura
+    buzu da litreye girer, denetim E-57). Fatura işletmenindir: tek şube seçiliyken de litre bütün şubelerin
+    satışından (denetim 21 Kasım #4). Elle fiyatlanan buz litreye katılmaz. Fatura
     girilmiş ama o ayın satış listesi yoksa "SU GİDERİ girilmedi" denmez; ekranlar ve genel bakış uyarısı litrenin
     neden hesaplanamadığını söyler (`water.reason`, `waterSource`).
 13. **Kâr marjı renk ölçeği:** Excel J10:J134 tüm satırları kapsar (HİZMET/karaoke en yeşil); panel ölçeği yalnızca

@@ -1,14 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { LegendPayload } from "recharts";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  ComposedChart,
   LabelList,
-  Legend,
   Line,
   LineChart,
   ReferenceArea,
@@ -34,13 +31,6 @@ const MUTED = "#a1a1aa";
 const INK = "#171717";
 const FONT = { fontSize: 12, fontFamily: "var(--font-geist-sans), sans-serif" };
 
-const compact = (v: number) => {
-  const a = Math.abs(v);
-  if (a >= 1_000_000) return `${num(v / 1_000_000, 1)} Mn`;
-  if (a >= 1_000) return `${num(v / 1_000, 0)} B`;
-  return num(v, 0);
-};
-
 function TipBox({ title, rows }: { title?: ReactNode; rows: { color?: string; label: ReactNode; value: ReactNode }[] }) {
   return (
     <div className="min-w-44 rounded-xl bg-surface px-3 py-2.5 text-xs shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
@@ -55,27 +45,6 @@ function TipBox({ title, rows }: { title?: ReactNode; rows: { color?: string; la
         </div>
       ))}
     </div>
-  );
-}
-
-/** Seri lejantı: sütun serileri kare, çizgi serisi çizgi işaretiyle (renk tek başına ayırt ettirmesin) */
-function SeriesLegend({ payload }: { payload?: readonly LegendPayload[] }) {
-  if (!payload?.length) return null;
-  return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-1 pb-4 text-xs text-ink">
-      {payload.map((p) => (
-        <li key={String(p.value)} className="inline-flex items-center gap-1.5">
-          {p.type === "line" ? (
-            <span aria-hidden="true" className="relative inline-block h-0.5 w-3.5 rounded-full" style={{ background: p.color }}>
-              <span className="absolute top-1/2 left-1/2 size-1.5 -translate-1/2 rounded-full" style={{ background: p.color }} />
-            </span>
-          ) : (
-            <span aria-hidden="true" className="inline-block size-2.5 rounded-[3px]" style={{ background: p.color }} />
-          )}
-          {p.value}
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -131,51 +100,6 @@ export function HBarChart({
             <LabelList dataKey="value" position="right" formatter={(v) => fmt(Number(v))} style={{ fill: INK, ...FONT, fontWeight: 500 }} />
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-/** Aylık ciro / gider (sütun) ve kâr-zarar (çizgi) — tek eksen, aynı birim (₺) */
-export function TrendChart({ data }: { data: { label: string; revenue: number; expenses: number; profit: number }[] }) {
-  return (
-    <div className="h-72 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 10, right: 12, bottom: 0, left: 0 }} barGap={2} barCategoryGap="28%">
-          <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, ...FONT }} />
-          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, ...FONT }} tickFormatter={compact} width={56} />
-          <ReferenceLine y={0} stroke={AXIS} />
-          <Tooltip
-            cursor={{ fill: "rgba(0,0,0,0.04)" }}
-            content={({ active, payload, label }) =>
-              active && payload?.length ? (
-                <TipBox
-                  title={label}
-                  rows={[
-                    { color: SERIES[0], label: "Ciro (KDV hariç)", value: tl(payload.find((p) => p.dataKey === "revenue")?.value as number) },
-                    { color: SERIES[1], label: "Giderler", value: tl(payload.find((p) => p.dataKey === "expenses")?.value as number) },
-                    { color: SERIES[2], label: "Kâr / zarar", value: tl(payload.find((p) => p.dataKey === "profit")?.value as number) },
-                  ]}
-                />
-              ) : null
-            }
-          />
-          {/* HTML lejant: dar ekranda alt satıra sarılır, yüksekliği ölçülür; üstteki eksen etiketini örtmez */}
-          <Legend verticalAlign="top" align="left" content={({ payload }) => <SeriesLegend payload={payload} />} />
-          <Bar name="Ciro (KDV hariç)" dataKey="revenue" fill={SERIES[0]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
-          <Bar name="Giderler" dataKey="expenses" fill={SERIES[1]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
-          <Line
-            name="Kâr / zarar"
-            type="monotone"
-            dataKey="profit"
-            stroke={SERIES[2]}
-            strokeWidth={2}
-            dot={{ r: 4, fill: SERIES[2], stroke: "#fff", strokeWidth: 2 }}
-            activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
-            isAnimationActive={false}
-          />
-        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

@@ -251,6 +251,7 @@ export function CountItemFields({ form, nameNotice, priceHint, autoFocusName = t
  */
 export function AddCountItemDialog({
   isAdmin,
+  branchId,
   month,
   groups,
   defaultGroup,
@@ -260,6 +261,8 @@ export function AddCountItemDialog({
   onAdded,
 }: {
   isAdmin: boolean;
+  /** Formun gösterdiği şube: aynı adlı ek kalem uyarısı o şubenin listesine bakar (sunucu doğrular, formCountBranch) */
+  branchId: string;
   month: string;
   /** Sayım grupları listedeki sırayla, gruptaki kalemlerin çoğunun sayım birimiyle (önerilen birim) */
   groups: CountItemGroup[];
@@ -286,7 +289,7 @@ export function AddCountItemDialog({
     setBusy(true);
     form.setError(null);
     try {
-      const res = await addCountItem({ month, ...values });
+      const res = await addCountItem({ month, branchId, ...values });
       if (!res.ok) return form.setError(res.error);
       onAdded(res.data);
     } catch (e) {

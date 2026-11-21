@@ -13,6 +13,7 @@ import {
   type FieldChange,
   type LateCashPayload,
 } from "./cash-report";
+import { DEFAULT_BRANCH_ID } from "./branches";
 import { closedBellTitle } from "./closed-days";
 import { money } from "./format";
 import { OKC_KNOWN_RATES, sameVat, type OkcVatLine } from "./okc-z";
@@ -89,6 +90,27 @@ export const ProposedSchema = CashFieldsSchema.extend({ countedBy: z.number().in
 export type ProposedFields = Omit<CashReportFields, "date"> & { countedBy: number; countedByName: string };
 
 /**
+ * Kasa günü isteklerinin konusu (düzeltme, silme, geç rapor): şubenin günü. Kasa şube başınadır; konu yalnız gün
+ * olsaydı Tuzla'nın düzeltmesi onaylanınca Marina'nın aynı gündeki bekleyen önerisi de "başka bir istekle düzeltildi"
+ * diye kapanırdı. Varsayılan şubenin (Tuzla) konusu eskisi gibi `gun:YYYY-AA-GG` (şubelerden önceki istekler de bu),
+ * öteki şubeninki `gun:YYYY-AA-GG:şube`.
+ */
+export function cashDaySubject(date: string, branchId: string): string {
+  return branchId === DEFAULT_BRANCH_ID ? `gun:${date}` : `gun:${date}:${branchId}`;
+}
+
+/** Kasa günü konusunun şubesi (cashDaySubject'in tersi; şubesiz eski konu Tuzla) */
+export function cashSubjectBranch(subject: string): string {
+  const m = /^gun:\d{4}-\d{2}-\d{2}:(.+)$/.exec(subject);
+  return m ? m[1] : DEFAULT_BRANCH_ID;
+}
+
+/** Geç rapor isteğinin kasası: yükteki şube, yoksa (şubelerden önceki istek) Tuzla */
+export function lateBranchOf(p: Pick<LatePayloadT, "branchId">): string {
+  return p.branchId ?? DEFAULT_BRANCH_ID;
+}
+
+/**
  * `kasa-duzeltme` isteğinin yükü: önerinin dayandığı sürüm (`base`, `baseRevision`, `baseCountedBy`) ve önerilen
  * alanlar. `gate`: "kilitli" ertesi günün raporu girilmişti, "gec" iş günü kapandıktan sonra kasa alanı ya da sayan.
  */
@@ -128,15 +150,21 @@ export const LatePayload = CashFieldsSchema.extend({
   // LafPOS gününde LafPOS'un gün sonu (fotoğrafsız) ya da yazarkasa Z fotoğrafı
   photos: z.array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]) })).max(MAX_REPORT_PHOTOS),
   cashDiff: amount,
+  /**
+   * İsteği AÇAN personelin kasası (docs/SUBE.md › Kasa raporu): onay anındaki yönetici seçimi değil, yoksa yönetici
+   * "Tümü"den onaylayınca Marina'nın geç raporu Tuzla'ya yazılırdı. Bu alandan önceki isteklerde yok: Tuzla sayılır.
+   */
+  branchId: z.string().max(24).nullish(),
 }) satisfies z.ZodType<LateCashPayload, unknown>;
 export type LatePayloadT = z.output<typeof LatePayload>;
 
 /** Geç raporun alanları (yükten; teslim alan, fotoğraflar ve kasa farkı hariç) */
 export function lateFields(p: LatePayloadT): CashReportFields {
-  const { handedTo: _to, photos: _photos, cashDiff: _diff, ...fields } = p;
+  const { handedTo: _to, photos: _photos, cashDiff: _diff, branchId: _branch, ...fields } = p;
   void _to;
   void _photos;
   void _diff;
+  void _branch;
   return { ...fields, discounts: fields.discounts ?? null };
 }
 

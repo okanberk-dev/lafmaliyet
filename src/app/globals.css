@@ -258,6 +258,52 @@ html:has([data-scroll-lock]) {
   );
 }
 
+/* ── Yapılmamış hatırlatmaların köşe kartı (src/components/panel/live/reminder-alerts.tsx) ──────────────────
+   Kart sağ altta (telefonda alt menünün üstünde) yapılana kadar durur. Açıkken alt menünün üstündeki yüzen öğeler
+   (FAB, kaydetme çubuğu, sayım çubuğu) kartın üstüne çıkar: --mobile-nav-h kartın yüksekliği (--reminder-dock-h, kart
+   yazar) kadar artar, içeriğin altına da o kadar boşluk bırakılır. Klavye açıkken kart gizli, --mobile-nav-h yine 0
+   (yukarıdaki kural daha belirgin). Kart ara ara hafifçe sallanır; hareket azaltılmışsa durur. */
+[data-component="app-shell"]:has([data-reminder-dock]) {
+  --mobile-nav-h: calc(var(--mobile-nav-space) + var(--reminder-dock-h, 0px));
+}
+
+[data-component="app-shell"]:has([data-reminder-dock]) > main {
+  padding-bottom: calc(var(--mobile-nav-space) + var(--reminder-dock-h, 0px));
+}
+
+[data-component="app-shell"]:has([data-reminder-dock]):has([data-floating-bar]) > main {
+  padding-bottom: calc(var(--floating-bar-h, 4.5rem) + 1.5rem + var(--mobile-nav-space) + var(--reminder-dock-h, 0px));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reminder-nudge {
+    animation: reminder-nudge 8s ease-in-out 1s infinite;
+  }
+}
+
+@keyframes reminder-nudge {
+  0%,
+  88%,
+  100% {
+    translate: 0;
+  }
+  90% {
+    translate: -5px 0;
+  }
+  92% {
+    translate: 5px 0;
+  }
+  94% {
+    translate: -4px 0;
+  }
+  96% {
+    translate: 3px 0;
+  }
+  98% {
+    translate: -1px 0;
+  }
+}
+
 /* ── Telefonda alttan açılan pencere (Dialog, ConfirmDialog: src/components/ui/dialog.tsx) ── */
 @media (width < 40rem) and (prefers-reduced-motion: no-preference) {
   dialog[data-sheet][open] {

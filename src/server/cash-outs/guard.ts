@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
 import { staffExpenseLocked } from "@/lib/cash-outs";
+import { staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
 import { schema as s } from "@/server/db";
@@ -41,9 +42,14 @@ async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolea
  */
 export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: CashOutTarget, now: Date = new Date()): Promise<"direct" | "request"> {
   if (me.role === "admin") return "direct";
+  // Var olan satır (düzeltme, silme, istek, fiş): şubesine kilitli personel yalnız kendi şubesinin satırına dokunur.
+  // Satır kimliğiyle gelir; yalnız günün açıklığına bakmak başka şubenin açık gününü açıyordu (21 Kasım denetimi #14)
+  const refusal = target.op === "ekle" ? null : await staffBranchRefusal(me, target.row.branchId);
+  if (refusal) throw new UserError(refusal);
   const date = target.op === "ekle" ? target.date : target.row.date;
   const [dayOpen, adminCategory, payment] = await Promise.all([
-    staffDayOpen(date, tx, now),
+    // Satırın kasası: var olan satırda satırın şubesi, yeni satırda kasanın şubesi (yazım da oraya iner)
+    staffDayOpen(date, tx, now, target.op === "ekle" ? undefined : target.row.branchId),
     target.op === "ekle" ? false : adminCategoryOf(tx, target.row.id),
     target.op === "ekle" ? null : cashOutPayment(tx, target.row.id),
   ]);

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  alsoIgnoredOf,
   guessVat,
   ignoredBills,
   isEstimate,
@@ -17,6 +18,7 @@ import {
   lockedChanges,
   notePreview,
   PARASUT_LOCKED_FIELDS,
+  parasutKeysOf,
   sameSupplierOthers,
   splitSupplier,
   supplierDefaults,
@@ -24,6 +26,7 @@ import {
   visibleNote,
 } from "../src/app/panel/faturalar/rules";
 import { unpaidSummary } from "../src/lib/calc/insights";
+import { eInvoiceDeleted } from "../src/server/parasut/mapping";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -143,4 +146,48 @@ test("ignoredBills: yok sayılan kimlikler kopyalarıyla birleşir, yeniden eski
   assert.equal(list[2].supplier, null);
   assert.deepEqual(ignoredBills(null, "bozuk"), []);
   assert.deepEqual(ignoredBills(["x", 3], undefined).map((b) => b.externalId), ["x"]);
+});
+
+test("parasutKeysOf (denetim 21 Kasım #3): gider faturasına bağlı e-faturalı kayıt silinince e-fatura anahtarı da yok sayılır", () => {
+  assert.deepEqual(parasutKeysOf({ externalId: "150", eInvoiceId: null }), ["150"]);
+  assert.deepEqual(parasutKeysOf({ externalId: null, eInvoiceId: "E150" }), ["ei:E150"]);
+  assert.deepEqual(parasutKeysOf({ externalId: "150", eInvoiceId: "E150" }), ["150", "ei:E150"], "ilk anahtar listenin ve Geri al'ın");
+  assert.deepEqual(parasutKeysOf({ externalId: null }), []);
+  // Eşitlemenin iki yolu da bu anahtarlarla durur: applyEInvoice `ei:<kimlik>`'e, yeniden içeri alınan gider faturası
+  // (başka kimlik, aynı e-belge) eInvoiceDeleted'e bakar
+  const ignored = new Set(parasutKeysOf({ externalId: "150", eInvoiceId: "E150" }));
+  assert.equal(ignored.has("ei:E150"), true);
+  assert.equal(eInvoiceDeleted({ eDocument: { type: "e_invoices", id: "E150" } }, ignored), true);
+});
+
+test("ignoredBills: silinen faturanın ikinci anahtarı (alsoIgnored) ayrı satır olmaz; ana anahtar düşmüşse görünür", () => {
+  const entry = { externalId: "150", alsoIgnored: ["ei:E150"], deletedAt: "2026-11-20T10:00:00.000Z", row: { supplier: "Sütaş", date: "2026-11-18", invoiceNo: "SUT150", payable: 1250 } };
+  assert.deepEqual(
+    ignoredBills(["old-1", "150", "ei:E150"], [entry]).map((b) => [b.externalId, b.restorable]),
+    [
+      ["150", true],
+      ["old-1", false],
+    ],
+  );
+  // Ana anahtar 2000'lik listeden düşmüşse ikinci anahtar kendi satırıyla kalır (geri alınabilir)
+  assert.deepEqual(ignoredBills(["ei:E150"], [entry]).map((b) => b.externalId), ["ei:E150"]);
+  // Başka bir faturanın anahtarı gizlenmez
+  assert.deepEqual(ignoredBills(["ei:E9"], [entry]).map((b) => b.externalId), ["ei:E9"]);
+  assert.deepEqual(alsoIgnoredOf(entry), ["ei:E150"]);
+  assert.deepEqual(alsoIgnoredOf({ alsoIgnored: "bozuk" }), []);
+  assert.deepEqual(alsoIgnoredOf({ alsoIgnored: ["ei:1", 3, ""] }), ["ei:1"]);
+  assert.deepEqual(alsoIgnoredOf(null), []);
+});
+
+test("deleteInvoice / unignoreParasutBill kaydın bütün anahtarlarını yazar ve birlikte çıkarır (kaynak)", () => {
+  const src = readFileSync(join(root, "src/server/actions/invoices.ts"), "utf8");
+  const del = src.slice(src.indexOf("export async function deleteInvoice("), src.indexOf("export async function restoreInvoice("));
+  assert.match(del, /const \[key, \.\.\.also\] = parasutKeysOf\(d\);/);
+  assert.match(del, /const add = \[key, \.\.\.also\]\.filter\(\(k\) => !ignore\.includes\(k\)\);/);
+  assert.match(del, /\.\.\.\(also\.length \? \{ alsoIgnored: also \} : \{\}\)/);
+  const un = src.slice(src.indexOf("export async function unignoreParasutBill("));
+  assert.match(un, /const keys = new Set\(\[ext, \.\.\.alsoIgnoredOf\(entry\)\]\);/);
+  assert.match(un, /ignore\.filter\(\(x\) => !keys\.has\(x\)\)/);
+  // Aynı e-fatura başka kayıtta duruyorsa kopya yazılmaz (benzersiz e-fatura kimliği)
+  assert.match(un, /eq\(s\.invoices\.eInvoiceId, eInvoiceId\)/);
 });

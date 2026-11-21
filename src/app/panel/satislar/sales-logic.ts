@@ -147,7 +147,9 @@ export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, numbe
     const fallback = `${lafpos ? ` + LafPOS'tan ${lafpos} gün` : ""}${modpos ? ` + ModPOS API'den ${modpos} gün` : ""}`;
     const days =
       f === "discounts" ? `${t.discountDays} / ${all} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${all} günde girildi` : onlyFoy ? `${modpos} gün` : `${t.reported} gün${fallback}`;
-    return `${onlyFoy ? "ModPOS API'den" : "Kasa raporlarından"} (${days}). Değiştirmek için dokunun.`;
+    // Ciroda, Z toplamlarının içinden düşülen ödenmez söylenir (docs/KASA-RAPORU.md › Ciro ve ödenmez)
+    const off = f === "posRevenue" && t.offInPos ? ` Ödenmez / ikram ${fieldShown("offRevenue", t.offInPos)} Z toplamından düşüldü.` : "";
+    return `${onlyFoy ? "ModPOS API'den" : "Kasa raporlarından"} (${days}).${off} Değiştirmek için dokunun.`;
   }
   return typed.trim() ? `Elle girildi · kasada ${fieldShown(f, v)}` : `Boş bırakırsanız kasadaki kullanılır (${fieldShown(f, v)})`;
 }

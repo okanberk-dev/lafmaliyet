@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { dateTR } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
-import { afterComplete, isTime, postponeTarget, type UserRepeat } from "@/lib/user-reminders";
+import { anchorTimeOnEdit, completeTarget, isTime, postponeTarget, type UserRepeat } from "@/lib/user-reminders";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
@@ -51,12 +51,14 @@ export async function saveUserReminder(input: z.input<typeof reminderSchema>) {
     if (id) {
       const [prev] = await db.select().from(s.userReminders).where(mine(id, me.id)).limit(1);
       if (!prev) throw new UserError("Hatırlatıcı bulunamadı");
-      // Tarih elle değişirse tekrarın günü de yeni tarihe bağlanır; tamamlanmış tek seferlik yeniden açılır
+      // Tarih elle değişirse tekrarın günü de yeni tarihe bağlanır; tamamlanmış tek seferlik yeniden açılır. Saat de:
+      // elle değişen saat serinin saati olur, ertelenmiş dönemin formundaki erteleme saati olmaz (anchorTimeOnEdit)
       const anchorDate = prev.dueDate !== data.dueDate || prev.repeat !== data.repeat ? data.dueDate : prev.anchorDate;
+      const anchorTime = anchorTimeOnEdit(prev, data.dueTime);
       // Sahibi değişmez: atama yalnız eklemede olur, sonradan devredilmez
       await db
         .update(s.userReminders)
-        .set({ ...data, anchorDate, active: true, updatedAt: new Date() })
+        .set({ ...data, anchorDate, anchorTime, active: true, updatedAt: new Date() })
         .where(mine(id, me.id));
     } else {
       const hedef = await assignTarget(me, forUserId);
@@ -75,6 +77,7 @@ export async function saveUserReminder(input: z.input<typeof reminderSchema>) {
         ...data,
         userId: hedef,
         anchorDate: data.dueDate,
+        anchorTime: data.dueTime,
         // Kendine kurduğunda "kim kurdu" yazılmaz: liste sade kalsın
         createdBy: hedef === me.id ? null : me.id,
         createdByName: hedef === me.id ? null : me.name,
@@ -114,8 +117,9 @@ export async function deleteUserReminder(id: number) {
 type Snapshot = { dueDate: string; dueTime: string | null; active: boolean; doneAt: string | null };
 
 /**
- * Tamamlandı: tekrar eden bir sonraki döneme ilerler (bugünü geçene kadar), tek seferlik kapanır. Dönen `prev`
- * bildirimdeki "Geri al" ile kaydı eski hâline getirir.
+ * Tamamlandı: tekrar eden bir sonraki döneme serinin saatiyle ilerler (bugünü geçene kadar; "1 saat sonra" ertelemesi
+ * yalnız o dönemindi, `completeTarget`), tek seferlik kapanır. Dönen `prev` bildirimdeki "Geri al" ile kaydı eski
+ * hâline getirir (saat çapası hiç değişmediği için geri almada yazılmaz).
  */
 export async function completeUserReminder(id: number) {
   return attempt(async () => {
@@ -126,12 +130,13 @@ export async function completeUserReminder(id: number) {
     if (!r) throw new UserError("Hatırlatıcı bulunamadı");
     if (!r.active) throw new UserError("Bu hatırlatıcı zaten tamamlanmış");
     const prev: Snapshot = { dueDate: r.dueDate, dueTime: r.dueTime, active: r.active, doneAt: r.doneAt?.toISOString() ?? null };
-    const next = afterComplete({ dueDate: r.dueDate, dueTime: r.dueTime, anchorDate: r.anchorDate, repeat: r.repeat as UserRepeat }, todayTR());
+    const target = completeTarget({ dueDate: r.dueDate, dueTime: r.dueTime, anchorDate: r.anchorDate, anchorTime: r.anchorTime, repeat: r.repeat as UserRepeat }, todayTR());
     await db
       .update(s.userReminders)
-      .set(next ? { dueDate: next, doneAt: new Date(), updatedAt: new Date() } : { active: false, doneAt: new Date(), updatedAt: new Date() })
+      .set(target ? { ...target, doneAt: new Date(), updatedAt: new Date() } : { active: false, doneAt: new Date(), updatedAt: new Date() })
       .where(mine(rid, me.id));
     refresh();
+    const next = target?.dueDate ?? null;
     return { next, prev, nextLabel: next ? dateTR(next) : null };
   });
 }
@@ -163,7 +168,7 @@ export async function restoreUserReminder(id: number, prev: z.input<typeof snaps
   });
 }
 
-/** Ertele: bir saat (saatliyse) ya da ertesi gün */
+/** Ertele: bir saat (saatliyse) ya da ertesi gün. Yalnız bu dönemin tarih ve saati kayar; çapalar (gün, saat) kalır */
 export async function postponeUserReminder(id: number, by: "hour" | "day") {
   return attempt(async () => {
     const me = await requireUser();

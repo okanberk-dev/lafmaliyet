@@ -7,11 +7,14 @@ import { businessDate } from "@/lib/cash-report";
 import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { loadBranchDay } from "@/server/data/branch-day";
 import { loadToday } from "@/server/data/today";
+import { safe } from "@/server/data/today-safe";
 
 import { DashboardPayments } from "../dashboard-payments";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
 import { soldOutLine } from "./rows-ops";
+import { TodayBranches } from "./today-branches";
 import { TodayCafe } from "./today-cafe";
 import { TodayRefresh } from "./today-refresh";
 import { TodayReminders } from "./today-reminders";
@@ -47,7 +50,8 @@ function dayTitle(now: Date): string {
 
 async function TodayContent() {
   const user = await requireUser();
-  const data = await loadToday(user);
+  // Şubelerin günü yalnız yöneticide (tutar, ödeme, kasa farkı); okunamazsa kart çizilmez, sayfa açılır
+  const [data, branchDay] = await Promise.all([loadToday(user), user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null)]);
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
@@ -61,10 +65,12 @@ async function TodayContent() {
       <PageHeader path="/panel/bugun" role={user.role} title="Bugün" description={`${dayTitle(now)} · ${summary.headline}`} />
       {/* Saat sınırları: karaoke oturumu ve kontrol listelerinin açılış / son saati (satır 08:00'de "Yapılacak" olsun) */}
       <TodayRefresh at={nextRefreshAt(now, [...(changeAt ? [changeAt] : []), ...checklistBoundaries(data.facts.checklists)])} renderedAt={data.renderedAt} />
-      {/* Geniş ekranda solda Yapılacaklar, sağda kartlar (Kasa sayfasının düzeni); telefonda tek sütun, bu sırayla */}
+      {/* Geniş ekranda solda Yapılacaklar, sağda kartlar (Kasa sayfasının düzeni); telefonda tek sütun, bu sırayla.
+          Yöneticide sağ sütunun başında şubelerin günü (Design Lab: şube günlük ciro özeti) */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <TodayTasks tasks={tasks} admin={user.role === "admin"} />
         <div className="min-w-0 space-y-4">
+          {branchDay ? <TodayBranches data={branchDay} /> : null}
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
           {cafe.length ? <TodayCafe lines={cafe} /> : null}

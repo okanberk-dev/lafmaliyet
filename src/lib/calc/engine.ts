@@ -978,19 +978,35 @@ export function createModel(ds: Dataset) {
   }
 
   // --- Satış adetleri -----------------------------------------------------------
+  /** Satış satırlarının ürün başına adedi (ürünü bulunan satırlar) */
+  function soldOfLines(lines: readonly SalesLine[]): Map<number, number> {
+    const m = new Map<number, number>();
+    for (const l of lines) {
+      if (l.productId && productById.has(l.productId)) {
+        m.set(l.productId, (m.get(l.productId) ?? 0) + l.qty);
+      }
+    }
+    return m;
+  }
   const soldCache = new Map<string, Map<number, number>>();
   function soldByProduct(month: string): Map<number, number> {
     let m = soldCache.get(month);
     if (!m) {
-      m = new Map();
-      for (const l of linesByMonth.get(month) ?? []) {
-        if (l.productId && productById.has(l.productId)) {
-          m.set(l.productId, (m.get(l.productId) ?? 0) + l.qty);
-        }
-      }
+      m = soldOfLines(linesByMonth.get(month) ?? []);
       soldCache.set(month, m);
     }
     return m;
+  }
+
+  /** Ürün başına adetlerin reçeteye göre harcadığı malzeme (fire hariç), malzemenin kendi biriminde */
+  function usageOfSold(sold: ReadonlyMap<number, number>): Map<number, number> {
+    const u = new Map<number, number>();
+    for (const [pid, qty] of sold) {
+      for (const it of itemsByProduct.get(pid) ?? []) {
+        u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * qty);
+      }
+    }
+    return u;
   }
 
   /** Reçeteye göre bir ayda harcanan malzeme (fire hariç), malzemenin kendi biriminde */
@@ -998,12 +1014,7 @@ export function createModel(ds: Dataset) {
   function ingredientUsage(month: string): Map<number, number> {
     let u = usageCache.get(month);
     if (!u) {
-      u = new Map();
-      for (const [pid, sold] of soldByProduct(month)) {
-        for (const it of itemsByProduct.get(pid) ?? []) {
-          u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * sold);
-        }
-      }
+      u = usageOfSold(soldByProduct(month));
       usageCache.set(month, u);
     }
     return u;
@@ -1096,35 +1107,42 @@ export function createModel(ds: Dataset) {
       return [k, id === null ? null : (productById.get(id) ?? null)];
     }),
   );
+  /** Online kafe satırlarının ürünlere eşlenmesi (menü bağlantısı) ve seçenekleri */
+  function siteLinesOf(month: SiteSalesMonth | undefined): SiteLinesCalc {
+    const lines = month?.cafe.lines ?? [];
+    const { mapped, unmapped } = mapSiteLines(lines, siteIndex);
+    const totals = optionTotals(lines);
+    const c: SiteLinesCalc = {
+      mapped: [],
+      unmapped,
+      // Bağlı olmayan satırın seçeneği de satılmıştır: seçenekler bütün satırlardan
+      options: OPTION_KINDS.filter((k) => totals[k] > 0).map((k) => ({ kind: k, qty: totals[k], product: optionProduct.get(k) ?? null })),
+    };
+    for (const m of mapped) {
+      const product = productById.get(m.productId);
+      if (product) c.mapped.push({ line: m.line, product });
+      else c.unmapped.push(m.line);
+    }
+    return c;
+  }
   const siteLinesCache = new Map<string, SiteLinesCalc>();
   function siteLines(month: string): SiteLinesCalc {
     let c = siteLinesCache.get(month);
     if (!c) {
-      const lines = siteByMonth.get(month)?.cafe.lines ?? [];
-      const { mapped, unmapped } = mapSiteLines(lines, siteIndex);
-      const totals = optionTotals(lines);
-      c = {
-        mapped: [],
-        unmapped,
-        // Bağlı olmayan satırın seçeneği de satılmıştır: seçenekler bütün satırlardan
-        options: OPTION_KINDS.filter((k) => totals[k] > 0).map((k) => ({ kind: k, qty: totals[k], product: optionProduct.get(k) ?? null })),
-      };
-      for (const m of mapped) {
-        const product = productById.get(m.productId);
-        if (product) c.mapped.push({ line: m.line, product });
-        else c.unmapped.push(m.line);
-      }
+      c = siteLinesOf(siteByMonth.get(month));
       siteLinesCache.set(month, c);
     }
     return c;
   }
   /** Online satışın ürün başına adedi: eşlenen kafe satırları ve ürünü olan seçenekler (Extra Shot gibi) */
-  function onlineSold(month: string): Map<number, number> {
+  function soldOfSite(c: SiteLinesCalc): Map<number, number> {
     const sold = new Map<number, number>();
-    const c = siteLines(month);
     for (const { line, product } of c.mapped) sold.set(product.id, (sold.get(product.id) ?? 0) + line.qty);
     for (const o of c.options) if (o.product) sold.set(o.product.id, (sold.get(o.product.id) ?? 0) + o.qty);
     return sold;
+  }
+  function onlineSold(month: string): Map<number, number> {
+    return soldOfSite(siteLines(month));
   }
   /**
    * Online kafe siparişlerinin reçeteye göre harcadığı malzeme (fire hariç, malzemenin kendi biriminde): eşlenen
@@ -1135,12 +1153,7 @@ export function createModel(ds: Dataset) {
   function onlineUsage(month: string): Map<number, number> {
     let u = onlineCache.get(month);
     if (!u) {
-      u = new Map();
-      for (const [productId, qty] of onlineSold(month)) {
-        for (const it of itemsByProduct.get(productId) ?? []) {
-          u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * qty);
-        }
-      }
+      u = usageOfSold(onlineSold(month));
       onlineCache.set(month, u);
     }
     return u;
@@ -1160,8 +1173,32 @@ export function createModel(ds: Dataset) {
   // Fatura kafede harcanan bütün suyu kapsar: litreye aynı ayın laffogato.net / uygulama siparişlerinin su ve buzu da
   // girer (denetim E-57; LafPOS'un satırları satış listesinin içinde). Ay yine satış listesiyle seçilir: listesi
   // yüklenmemiş ayın faturası yalnız online litreye bölünürse litre fiyatı katlarca şişerdi.
+  // Fatura işletmenindir (manual:su her şubede): tek şube seçiliyken litre de bütün şubelerin ve laffogato.net'in
+  // satışından (ds.waterSales; denetim 21 Kasım #4). Şubenin litresine bölünseydi ürün maliyeti şubeye göre değişirdi.
   const waterIngredients = ds.ingredients.filter((i) => i.priceSource === "water");
   const waterLiters = (usage: ReadonlyMap<number, number>) => sum(waterIngredients.map((i) => usage.get(i.id) ?? 0)) / 1000;
+  const companyLines = new Map<string, SalesLine[]>();
+  for (const l of ds.waterSales?.salesLines ?? []) {
+    const list = companyLines.get(l.month);
+    if (list) list.push(l);
+    else companyLines.set(l.month, [l]);
+  }
+  const companySite = new Map((ds.waterSales?.siteSales ?? []).map((r) => [r.month, r]));
+  const waterUsageCache = new Map<string, { list: Map<number, number>; online: Map<number, number> }>();
+  /**
+   * Su faturasının bölündüğü ayın reçeteye göre tüketimi: `list` satış listesinin (ModPOS / LafPOS), `online`
+   * laffogato.net siparişlerinin. "Tümü"de ingredientUsage / onlineUsage; tek şube seçiliyken işletme genelinin
+   * satışından (ds.waterSales). Hammaddeler'in su dökümü de bunu kullanır, kart ile döküm aynı litreyi gösterir.
+   */
+  function waterUsage(month: string): { list: Map<number, number>; online: Map<number, number> } {
+    if (!ds.waterSales) return { list: ingredientUsage(month), online: onlineUsage(month) };
+    let u = waterUsageCache.get(month);
+    if (!u) {
+      u = { list: usageOfSold(soldOfLines(companyLines.get(month) ?? [])), online: usageOfSold(soldOfSite(siteLinesOf(companySite.get(month)))) };
+      waterUsageCache.set(month, u);
+    }
+    return u;
+  }
   function computeWater(): WaterCost {
     if (st.suBirimLTOverride !== null && st.suBirimLTOverride !== undefined) {
       return { perLiter: st.suBirimLTOverride, month: null, bill: 0, liters: 0, onlineLiters: 0, reason: "override", latestBillMonth: null };
@@ -1173,9 +1210,10 @@ export function createModel(ds: Dataset) {
       .reverse();
     const latestBillMonth = candidates[0] ?? null;
     for (const m of candidates) {
-      const listLiters = waterLiters(ingredientUsage(m));
+      const usage = waterUsage(m);
+      const listLiters = waterLiters(usage.list);
       if (listLiters > 0) {
-        const onlineLiters = waterLiters(onlineUsage(m));
+        const onlineLiters = waterLiters(usage.online);
         const liters = listLiters + onlineLiters;
         const bill = pnlByMonth.get(m)!.get("manual:su")!;
         return { perLiter: bill / liters, month: m, bill, liters, onlineLiters, reason: "ok", latestBillMonth };
@@ -1536,7 +1574,12 @@ export function createModel(ds: Dataset) {
   // Sayım şube başınadır (docs/SUBE.md): "Tümü"de aynı ayın aynı malzemesi her şubeden bir satır gelir ve işletmenin
   // stoğu toplamıdır. Çarpanlar farklıysa (birimi sayımlar arasında değişmiş) ilk satırın birimine çevrilerek toplanır
   const countsByMonth = new Map<string, Map<number, { qty: number; factor: number | null }>>();
+  // Ayın malzemesini sayan şubeler: iki ayın sayımı aynı şubelerden değilse karşılaştırılamaz (tutarlılık)
+  const countBranchesByMonth = new Map<string, Map<number, Set<string>>>();
   for (const c of ds.stockCounts) {
+    const bm = countBranchesByMonth.get(c.month) ?? new Map<number, Set<string>>();
+    bm.set(c.ingredientId, (bm.get(c.ingredientId) ?? new Set<string>()).add(c.branchId ?? ""));
+    countBranchesByMonth.set(c.month, bm);
     const m = countsByMonth.get(c.month) ?? new Map<number, { qty: number; factor: number | null }>();
     const prev = m.get(c.ingredientId);
     const factor = c.factor ?? null;
@@ -1569,6 +1612,17 @@ export function createModel(ds: Dataset) {
    * Kayıtlı sayımın malzemenin kendi birimindeki miktarı (ör. 2,5 KG → 2500 gr), sayıldığı andaki çarpanla.
    * Sayım yoksa null.
    */
+  /**
+   * İki ayın sayımı aynı şubelerden mi (tutarlılığın açılışı ile kapanışı karşılaştırılabilir mi): "Tümü"de bir ay yalnız
+   * Tuzla, sonraki ay Tuzla + Marina saydıysa açılış Tuzla, kapanış iki şube olur ve fark tüketim değildir. İkisinden
+   * biri sayılmamışsa false
+   */
+  function sameCountBranches(monthA: string, monthB: string, ingredientId: number): boolean {
+    const a = countBranchesByMonth.get(monthA)?.get(ingredientId);
+    const b = countBranchesByMonth.get(monthB)?.get(ingredientId);
+    return Boolean(a && b && a.size === b.size && [...a].every((x) => b.has(x)));
+  }
+
   function countInBaseUnit(month: string, ingredientId: number): number | null {
     const c = countsByMonth.get(month)?.get(ingredientId);
     if (!c) return null;
@@ -2521,6 +2575,8 @@ export function createModel(ds: Dataset) {
     siteSales: siteSalesOf,
     siteLines,
     onlineUsage,
+    /** Su faturası ayının su + buz tüketimi (satış listesi ve online); şube seçiliyken işletme genelinin satışından */
+    waterUsage,
     siteRevenue: siteRevenueOf,
     /** Online satışı çekilmiş aylar */
     siteMonths: [...siteByMonth.keys()].sort(),
@@ -2559,6 +2615,7 @@ export function createModel(ds: Dataset) {
     /** Sayımın birim fiyatı: ayın sonunda geçerli fiyat (kapanmış ay sonraki zamla değişmez); FIFO'da fallback */
     unitCostAtMonthEnd,
     countInBaseUnit,
+    sameCountBranches,
     closingStock,
     /** Ayın reçeteye göre mal tüketimi (mal maliyetinin tahmini ve sayım aralığı dağıtımının ağırlığı) */
     cogsConsumption,

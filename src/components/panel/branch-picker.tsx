@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import {
   ALL_BRANCHES,
   BRANCH_PARAM,
-  parseBranchScope,
+  branchLinkStep,
   type BranchRow,
   type BranchScope,
   sortBranches,
@@ -15,6 +15,7 @@ import { chooseBranchScope } from "@/server/actions/branches";
 
 import { useActionTransition } from "../ui/action-error";
 import { Select } from "../ui/form";
+import { BRANCH_LEAVE } from "../ui/leave-guard";
 
 /**
  * Panelin şube seçicisi (docs/SUBE.md › Seçici). Kenar çubuğunun başlığının altında durur: masaüstünde sürekli
@@ -27,30 +28,41 @@ import { Select } from "../ui/form";
  *
  * Tek şube açıkken seçici gösterilmez: tek şubeli bir işletmeye "Tümü / Tuzla" sormak gürültü olur.
  */
-export function BranchPicker({ scope, branches }: { scope: BranchScope; branches: readonly BranchRow[] }) {
+export function BranchPicker({ scope, branches, locked = false }: { scope: BranchScope; branches: readonly BranchRow[]; locked?: boolean }) {
   const [pending, run] = useActionTransition();
   const router = useRouter();
   const pathname = usePathname();
-  const params = useSearchParams();
+  const search = useSearchParams().toString();
+  /** Benimsenen bağlantı (yol + sorgu); adreste ?sube= yokken null */
   const benimsenen = useRef<string | null>(null);
 
-  // Derin bağlantı: ?sube= çereze yazılır, sonra adresten düşürülür (bir kez; çerez eşitlenince koşul kapanır)
-  const istenen = parseBranchScope(params.get(BRANCH_PARAM), branches);
-  const farkli = params.has(BRANCH_PARAM) && istenen !== scope;
+  // Derin bağlantı: her bağlantının ?sube='si BİR KEZ çereze yazılır ve adresten düşer (çerez zaten oysa yalnız düşer).
+  // Anahtar bağlantının kendisi, değer değil: aynı bağlantı yeniden açılınca yine benimsenir; adreste kalmış eski
+  // ?sube= de seçiciden sonradan yapılan seçimi geri almaz (branchLinkStep; denetim 21 Kasım #22). Şubesi kilitli
+  // personelde benimsenmez (sunucu da reddeder).
   useEffect(() => {
-    if (!farkli || benimsenen.current === istenen) return;
-    benimsenen.current = istenen;
+    const adim = branchLinkStep({ pathname, search, scope, branches, locked, adopted: benimsenen.current });
+    benimsenen.current = adim.key;
+    if (!adim.adopt) return;
+    const { scope: secim, href } = adim.adopt;
     run(async () => {
-      await chooseBranchScope({ scope: istenen });
-      const kalan = new URLSearchParams(params);
-      kalan.delete(BRANCH_PARAM);
-      const qs = kalan.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
+      if (secim !== null) await chooseBranchScope({ scope: secim });
+      router.replace(href);
     });
-  }, [farkli, istenen, params, pathname, router, run]);
+  }, [pathname, search, scope, branches, locked, router, run]);
 
   const acik = sortBranches(branches.filter((b) => b.active));
   if (acik.length < 2) return null;
+
+  // Şubesi yönetici tarafından belirlenen personel: seçici yerine yalnız şubenin adı
+  if (locked) {
+    return (
+      <div className="shrink-0 px-1">
+        <p className="mb-1.5 text-[11px] font-medium text-chart-muted">Şube</p>
+        <p className="rounded-xl bg-surface px-3 py-2 text-sm font-medium text-ink ring-1 ring-line ring-inset">{acik.find((b) => b.id === scope)?.name ?? scope}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="shrink-0 px-1">
@@ -64,6 +76,14 @@ export function BranchPicker({ scope, branches }: { scope: BranchScope; branches
         aria-busy={pending}
         onChange={(e) => {
           const secim = e.target.value;
+          // Kaydedilmemiş form (Stok sayımı; şube değişince baştan kurulur) önce sorar: olayı iptal eder, seçici yerinde
+          // kalır. "Kaydetmeden geç" bu adrese gider, ?sube= yukarıdaki etkiyle çereze benimsenir (src/components/ui/leave-guard.ts)
+          const q = new URLSearchParams(search);
+          q.set(BRANCH_PARAM, secim);
+          if (!window.dispatchEvent(new CustomEvent(BRANCH_LEAVE, { cancelable: true, detail: `${pathname}?${q}` }))) {
+            e.target.value = scope;
+            return;
+          }
           run(() => chooseBranchScope({ scope: secim }), { maybeSaved: true });
         }}
       >

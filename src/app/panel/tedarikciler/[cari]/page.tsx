@@ -7,11 +7,14 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { defaultTill, tillBranches } from "@/lib/branches";
 import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadSupplierCari } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 import { listInvoiceDocuments, type DocumentMeta } from "@/server/documents";
@@ -77,7 +80,12 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     if (moved) redirect(supplierHref(moved.slug));
     notFound();
   }
-  const [docs, data] = await Promise.all([listInvoiceDocuments(g.invoices.map((i) => i.id)), loadSupplierCari(g, { today, termDays: g.termDays })]);
+  const [docs, data, scope, branches] = await Promise.all([
+    listInvoiceDocuments(g.invoices.map((i) => i.id)),
+    loadSupplierCari(g, { today, termDays: g.termDays }),
+    currentBranchScope(),
+    listBranches(),
+  ]);
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);
   const a = data.account;
@@ -190,6 +198,8 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     defaultCategoryId: data.defaultCategoryId,
     defaultCostMode: defaultCostMode(g.invoices, today),
     businessDay: businessDate(),
+    // Kasadan ödemenin yeni satırı: seçili fiziksel şubenin kasası; "Tümü"de birden çok kasa açıksa pencere sorar (#31)
+    tills: { options: tillBranches(branches).map((b) => ({ id: b.id, name: b.name })), defaultId: defaultTill(scope, branches) },
   };
 
   return (

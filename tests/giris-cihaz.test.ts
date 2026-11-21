@@ -149,7 +149,7 @@ test("geri alma: istemci kopyayı değil mühürlü metni verir; sunucu açar, k
   assert.match(src, /writeCashOut\(tx, me, d, \{ prev, restore: opts\.restore, restoreId: opts\.restoreId, branchId: opts\.branchId \}\)/);
   // Satır KENDİ şubesine döner: mühürlü görüntüdeki branchId, yoksa seçili şube (docs/SUBE.md). "Tümü"den ya da
   // başka şubeden geri alma Marina'nın satırını Tuzla'ya kaydırmamalı
-  assert.match(read("src/server/cash-outs/write.ts"), /\.values\(\{ \.\.\.values, \.\.\.\(o\.restoreId \? \{ id: o\.restoreId \} : \{\}\), branchId: o\.branchId \?\? \(await currentWriteBranch\(\)\), createdBy: author\.id, createdByName: author\.name \}\)/);
+  assert.match(read("src/server/cash-outs/write.ts"), /\.values\(\{ \.\.\.values, \.\.\.\(o\.restoreId \? \{ id: o\.restoreId \} : \{\}\), branchId: o\.branchId \?\? \(await currentTillBranch\(\)\), createdBy: author\.id, createdByName: author\.name \}\)/);
   assert.match(read("src/server/cash-outs/write.ts"), /export async function removeCashOut[\s\S]*?branchId: row\.branchId,/);
   assert.match(src, /if \(constraintOf\(e\) === "cash_outs_pkey"\) throw new UserError\("Bu satır zaten geri alındı"\);/);
   assert.doesNotMatch(src, /export async function restoreCashOut\(snap: CashOutSnapshot\)/);

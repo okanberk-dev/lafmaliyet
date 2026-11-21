@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_ID_MAX, namedTill } from "@/lib/branches";
 import { businessDate, carryCheck, changesText, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import type { Role } from "@/lib/constants";
 import { money } from "@/lib/format";
@@ -11,6 +12,8 @@ import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/not
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
@@ -37,19 +40,27 @@ import { attempt, UserError, zDate } from "./util";
  */
 const outcomeFor = (role: Role, e: CashEmailOutcome): CashEmailOutcome => ({ ...e, error: emailErrorFor(role, e.error) });
 
+const submitSchema = reportSchema.extend({
+  /** Formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili kasa */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
+});
+
 /**
  * Raporu kaydeder (yoksa ekler, varsa günceller), alıcılara e-postalar; WhatsApp metnini ve bağlantısını döner.
  * Personelin değişikliği yöneticinin onayını gerektiriyorsa (ertesi gün kasa alanı ya da sayan, kilitli gün) hiçbir şey
- * yazılmaz, `needsApproval` döner: form yazılanları korur ve "Onaya gönder"e geçer (requestCashCorrection).
+ * yazılmaz, `needsApproval` döner: form yazılanları korur ve "Onaya gönder"e geçer (requestCashCorrection). Rapor
+ * formun gösterdiği kasaya yazılır (formTillBranch), gönderim anındaki seçime değil.
  */
-export async function submitCashReport(input: z.input<typeof reportSchema>) {
+export async function submitCashReport(input: z.input<typeof submitSchema>) {
   return attempt(async () => {
     const me = await requireUser();
-    const data = reportSchema.parse(input);
+    const { branchId, ...data } = submitSchema.parse(input);
+    const till = await formTillBranch(branchId);
     // laffogato.net'in o günkü online satışı e-postaya bilgi satırı olarak girer: istek kayıtla aynı anda başlar, site
     // yavaşsa e-posta en çok 8 saniye bekler, ulaşılamazsa satırsız gider (kasa rakamlarına hiç girmez)
     const site = fetchTillOnlineRow(data.date);
-    const out = await saveCashReport(getDb(), me, data);
+    // Kayıt formun kasasının kapsamında: başka sekmede seçici değiştiyse de Tuzla'nın formu Tuzla'ya yazar
+    const out = await withBranchScope(till, () => saveCashReport(getDb(), me, data));
     if (out.kind === "needsApproval") return { needsApproval: true as const, request: out.request, gate: out.gate };
     const { row: saved, changes, prevCarry } = out;
     const cashDiff = saved.cashDiff;
@@ -61,14 +72,17 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     );
     refresh();
     const dto = toCashDTO(saved);
-    const [settings, waste, extras, integrity, nextReport] = await Promise.all([
+    const [settings, waste, extras, integrity, nextReport, branches] = await Promise.all([
       loadCashSettings(),
-      dayWaste(data.date),
+      dayWaste(data.date, saved.branchId),
       cashReportExtras(dto),
       cashReportIntegrity(dto),
-      nextReportAfter(data.date),
+      nextReportAfter(data.date, saved.branchId),
+      listBranches(),
     ]);
-    const text = whatsappText(dto, { by: me.name, revision: saved.revision, waste, ...extras, ...integrity });
+    // Birden çok kasa açıkken metnin başlığında raporun şubesi (iki şubenin metni aynı sohbete düşer)
+    const branchName = namedTill(branches, saved.branchId)?.name ?? null;
+    const text = whatsappText(dto, { by: me.name, revision: saved.revision, waste, branchName, ...extras, ...integrity });
     return {
       needsApproval: false as const,
       id: saved.id,
@@ -85,12 +99,17 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
   });
 }
 
-/** E-posta gitmediyse yeniden dener (yönetici ya da raporu gönderen, raporun günü geçmeden) */
+/**
+ * E-posta gitmediyse yeniden dener (yönetici ya da raporu gönderen, raporun günü geçmeden; şubesine kilitli personel
+ * yalnız kendi şubesinin raporunu, staffBranchRefusal)
+ */
 export async function resendCashReportEmail(id: number) {
   return attempt(async () => {
     const me = await requireUser();
     const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, z.number().int().positive().parse(id))).limit(1);
     if (!row) throw new UserError("Rapor bulunamadı");
+    const otherBranch = await staffBranchRefusal(me, row.branchId);
+    if (otherBranch) throw new UserError(otherBranch);
     if (me.role !== "admin" && (row.submittedBy !== me.id || !staffCanReport(row.date))) throw new UserError("Bu raporu yalnız yönetici yeniden gönderebilir");
     const email = await emailReport(row.id);
     refresh();
@@ -199,7 +218,9 @@ export async function sendCashTestEmail() {
       okcMealCard: 500,
       okcOther: 0,
     };
-    const msg = renderCashReport(sample, { by: last?.submittedByName ?? "Örnek", revision: 1, submittedAt: new Date() });
+    // Son rapor birden çok kasa açıkken şubesiyle (gerçek e-postadaki gibi konuda ve "Panelde aç"ta)
+    const branch = last ? namedTill(await listBranches(), last.branchId) : null;
+    const msg = renderCashReport(sample, { by: last?.submittedByName ?? "Örnek", revision: 1, submittedAt: new Date(), branch });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, subject: `[Deneme] ${msg.subject}` });
     if (!res.ok) throw new UserError(res.error);
@@ -215,8 +236,15 @@ export async function cashReportWhatsapp(date: string) {
     if (me.role !== "admin" && !staffCanReport(d)) throw new UserError("Bu raporu yalnız yönetici görebilir");
     const r = await getCashReport(d);
     if (!r) throw new UserError("Bu günün raporu yok");
-    const [settings, waste, extras, integrity] = await Promise.all([loadCashSettings(), dayWaste(d), cashReportExtras(r), cashReportIntegrity(r)]);
-    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste, ...extras, ...integrity });
+    const [settings, waste, extras, integrity, branches] = await Promise.all([
+      loadCashSettings(),
+      dayWaste(d, r.branchId),
+      cashReportExtras(r),
+      cashReportIntegrity(r),
+      listBranches(),
+    ]);
+    const branchName = namedTill(branches, r.branchId)?.name ?? null;
+    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste, branchName, ...extras, ...integrity });
     return { text, link: whatsappLink(text, settings.whatsapp) };
   });
 }

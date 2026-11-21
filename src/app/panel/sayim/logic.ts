@@ -7,6 +7,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
 export { invoiceLayer, layerText } from "@/lib/calc/fifo";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
@@ -402,6 +403,16 @@ export interface DraftExtra {
 }
 
 /**
+ * Taslağın localStorage anahtarı: şube ve ay. Sayım şube başınadır (docs/SUBE.md); anahtar yalnız aydan oluşurken
+ * Tuzla'nın kaydedilmemiş sayımı aynı cihazda Marina'nın formunda "Geri yükle" diye öneriliyor, kaydedilince Marina'nın
+ * sayımına yazılıyor, Marina'da yazmaya başlayınca da Tuzla'nın taslağı eziliyordu (21 Kasım denetimi #8). Şubesiz eski
+ * anahtardaki taslak hangi şubenin olduğu bilinmediği için okunmaz.
+ */
+export function countDraftKey(branch: string, month: string): string {
+  return `laf:sayim-taslak:${branch}:${month}`;
+}
+
+/**
  * Kaydedilmemiş sayımın taslağı (localStorage): yazılan kutular, "Geçen aydan doldur"la gelip dokunulmamış satırlar
  * (geri yüklenince kayıt öncesi denetim yine sorsun), değişen ek kalemler ve yazanın adı (ortak tablette sonraki kişi
  * kimin sayımı olduğunu görsün).
@@ -422,20 +433,30 @@ export interface CountDraft {
    * (restoreDraftExtras). Eski taslakta null (boş listeye dayanmış sayılır: yalnız ekler).
    */
   extrasBase?: DraftExtra[] | null;
+  /**
+   * Taslağın yazıldığı sayımın şubesi (anahtarda da var: countDraftKey). Başka şubenin formu bu taslağı okumaz
+   * (parseCountDraft); yoksa null.
+   */
+  branch?: string | null;
 }
 
 export function countDraftJson(d: CountDraft): string {
-  return JSON.stringify({ v: d.values, p: d.prefilled ?? [], e: d.extras, eb: d.extrasBase ?? null, b: d.base ?? null, by: d.by });
+  return JSON.stringify({ v: d.values, p: d.prefilled ?? [], e: d.extras, eb: d.extrasBase ?? null, b: d.base ?? null, by: d.by, s: d.branch ?? null });
 }
 
-/** Taslağı okur; eski düz biçimi ({ "12": "3,5" }) de. Okunamazsa boş */
-export function parseCountDraft(json: string | null): CountDraft {
+/**
+ * Taslağı okur; eski düz biçimi ({ "12": "3,5" }) de. Okunamazsa boş. `branch` verilirse başka şubeye yazılmış taslak
+ * da boş döner: bir şubenin sayımı öbür şubenin formunda önerilmez (21 Kasım denetimi #8)
+ */
+export function parseCountDraft(json: string | null, branch?: string): CountDraft {
   const empty: CountDraft = { values: {}, prefilled: null, extras: null, by: null };
   if (!json) return empty;
   try {
     const raw = JSON.parse(json) as unknown;
     if (!raw || typeof raw !== "object") return empty;
     const o = raw as Record<string, unknown>;
+    const draftBranch = typeof o.s === "string" && o.s ? o.s : null;
+    if (branch !== undefined && draftBranch !== null && draftBranch !== branch) return empty;
     const pickValues = (v: unknown) =>
       Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && /^\d+$/.test(e[0])));
     if (!("v" in o)) return { ...empty, values: pickValues(o) };
@@ -461,6 +482,7 @@ export function parseCountDraft(json: string | null): CountDraft {
       by: typeof o.by === "string" && o.by.trim() ? o.by.trim() : null,
       base,
       extrasBase: pickExtras(o.eb),
+      branch: draftBranch,
     };
   } catch {
     return empty;
@@ -800,11 +822,72 @@ export function pastCountReminder(day: string, prev: { counted: number; total: n
   };
 }
 
+// ---------------------------------------------------------------- Şube şube sayım (denetim 21 Kasım #16)
+
+/** Bir şubenin bir aydaki sayım ilerlemesi (src/server/data/count-progress.ts countProgressByBranch) */
+export interface BranchCount {
+  id: string;
+  name: string;
+  progress: { counted: number; total: number };
+}
+
+/**
+ * Seçiciden bağımsız okuyan sabah e-postası ve ay sonu bildirimi şubenin sayımına götürür: sayım şube başınadır
+ * (docs/SUBE.md), birden çok şube açıkken (`named`) metin şubenin adını, adres `&sube=`'yi taşır (seçici o şubeyi
+ * seçer, sayım o şubenin). Tek şubede metin ve adres bugünkü gibi (ek yok).
+ */
+const branchHref = (href: string, id: string) => `${href}&sube=${encodeURIComponent(id)}`;
+
+/** Ay sonu bildirimi ve şubesi (tek şubede null: herkese) */
+export type BranchCountPush = { branchId: string | null; push: NonNullable<ReturnType<typeof monthEndCountPush>> };
+
+/**
+ * Ay sonu bildirimleri şube şube (src/server/notify/count-push.ts): sayımı tamamlanmayan her şubeye bir bildirim.
+ * `branchId` birden çok şube açıkken bildirimin şubesidir (alıcılar `countPushReaches`); tek şubede null (herkese,
+ * bugünkü gibi). Başlık şubenin adını taşır, etiket şubeye göre ayrılır: iki şubenin bildirimi birbirinin yerine geçmez.
+ */
+export function monthEndCountPushes(day: string, counts: readonly BranchCount[], named: boolean): BranchCountPush[] {
+  return counts.flatMap((b): BranchCountPush[] => {
+    const push = monthEndCountPush(day, b.progress);
+    if (!push) return [];
+    if (!named) return [{ branchId: null, push }];
+    return [{ branchId: b.id, push: { ...push, title: `${push.title} · ${b.name}`, url: branchHref(push.url, b.id), tag: `${push.tag}-${b.id}` } }];
+  });
+}
+
+/**
+ * Şubenin ay sonu bildirimini kim alır: şubesi olmayan (yönetici, "Bütün şubeler" personeli), o şubenin personeli ve
+ * şubesi kapanmış (kilidi kalkmış) personel. Başka açık şubenin personeline gitmez (docs/SUBE.md › Personel hesabının
+ * şubesi).
+ */
+export function countPushReaches(userBranch: string | null, branchId: string, open: readonly string[]): boolean {
+  return userBranch === null || userBranch === branchId || !open.includes(userBranch);
+}
+
+/**
+ * Geçen ayın sayımı şube şube (sabah e-postasının satırı, src/server/bell/ops.ts pastCountDigestLines): tamamlanmayan
+ * her şubenin satırı. Birden çok şube açıkken başlığın önünde şubenin adı ("Marina: Ekim 2026 sayımı yarım: 10 / 72"),
+ * adreste `&sube=`; kimlik Tuzla'da bugünkü gibi, öteki şubede sonunda şubesi.
+ */
+export function pastCountReminders(day: string, counts: readonly BranchCount[], named: boolean): NonNullable<ReturnType<typeof pastCountReminder>>[] {
+  return counts.flatMap((b) => {
+    const r = pastCountReminder(day, b.progress);
+    if (!r) return [];
+    if (!named) return [r];
+    return [{ id: b.id === DEFAULT_BRANCH_ID ? r.id : `${r.id}-${b.id}`, title: `${b.name}: ${r.title}`, body: r.body, href: branchHref(r.href, b.id) }];
+  });
+}
+
 // ---------------------------------------------------------------- Yöneticiye sayım uyarıları (denetim B02)
 
 /** Bir ayın fiyatı girilmemiş ek kalemleri ("Listede olmayanlar"; miktarı > 0, birim fiyatı 0) */
 export interface UnpricedExtras {
   month: string;
+  /**
+   * Kalemlerin şubesi ("Listede olmayanlar" şube başına), birden çok şube açıkken: başlıkta adı, adreste `&sube=` (sayım
+   * sayfası o şubenin listesini açsın). Tek şubede null
+   */
+  branch?: { id: string; name: string } | null;
   count: number;
   /** İlk birkaç ad, eklenme sırasıyla */
   names: string[];
@@ -825,11 +908,12 @@ export function unpricedExtrasNotice(u: UnpricedExtras): { id: string; title: st
   const shown = u.names.slice(0, 3);
   const rest = u.count - shown.length;
   const list = rest > 0 ? `${shown.join(", ")} ve ${num(rest)} kalem daha` : shown.join(", ");
+  // Kimlik şubeyi taşımaz: en yeni kalemin kimliği şubeler arasında zaten tektir
   return {
     id: `sayim-ek-fiyatsiz-${u.month}-${u.count}-${u.newestId}`,
-    title: `${monthLabel(u.month)}: ${num(u.count)} ek kalemin fiyatı yok`,
+    title: `${monthLabel(u.month)}${u.branch ? ` (${u.branch.name})` : ""}: ${num(u.count)} ek kalemin fiyatı yok`,
     body: `${list} · Birim fiyatı girilmezse kapanış stoğuna 0 ₺ girer, ayın mal maliyeti o kadar yüksek çıkar.`,
-    href: `/panel/sayim?ay=${u.month}#${EXTRAS_ANCHOR}`,
+    href: `/panel/sayim?ay=${u.month}${u.branch ? `&sube=${encodeURIComponent(u.branch.id)}` : ""}#${EXTRAS_ANCHOR}`,
   };
 }
 
@@ -900,13 +984,71 @@ export function countOpening(
   return { value: prevClosing.value, source: prevClosing.overridden ? "devreden" : "sayim", counted };
 }
 
-/** Açılış elle girildiyse kartta ipucu: kâr-zarar hangi tutarı kullanıyor, sayım neydi; sayımdan geliyorsa null */
-export function countOpeningNote(o: CountOpening, month: string): string | null {
+/**
+ * Açılış elle girildiyse kartta ipucu: kâr-zarar hangi tutarı kullanıyor, sayım neydi; sayımdan geliyorsa null.
+ * `branch`: birden çok şube açıkken sayılan şubenin adı. Elle yazılan devir işletme genelidir, sayım şubenin: metin
+ * ikisini ayırır ("işletme geneli", "Ekim 2026 sayımı (Tuzla)")
+ */
+export function countOpeningNote(o: CountOpening, month: string, branch: string | null = null): string | null {
   const prev = monthLabel(shiftMonth(month, -1));
-  const counted = o.counted === null ? `${prev} sayımı yok.` : `${prev} sayımı: ${tl(o.counted)}.`;
+  const own = branch ? ` (${branch})` : "";
+  const counted = o.counted === null ? `${prev} sayımı${own} yok.` : `${prev} sayımı${own}: ${tl(o.counted)}.`;
+  const company = branch ? " (işletme geneli)" : "";
+  const pnl = branch ? "işletmenin kâr-zararı" : "kâr-zarar";
   if (o.source === "acilis") {
-    return `Gelir-giderde ${monthLabel(month)} için "Önceki aydan devir" elle ${tl(o.value)} girildi; kâr-zarar bu tutarı kullanır. ${counted}`;
+    return `Gelir-giderde ${monthLabel(month)} için "Önceki aydan devir"${company} elle ${tl(o.value)} girildi; ${pnl} bu tutarı kullanır. ${counted}`;
   }
-  if (o.source === "devreden") return `${prev} stoğu Gelir-giderde elle ${tl(o.value)} girildi; açılış o tutardır. ${counted}`;
+  if (o.source === "devreden") {
+    return `${prev} stoğu${company} Gelir-giderde elle ${tl(o.value)} girildi; ${branch ? "işletmenin açılışı" : "açılış"} o tutardır. ${counted}`;
+  }
   return null;
+}
+
+/**
+ * Gelir-giderde elle yazılan stok devirleri (pnl_entries `stock:closing` / `stock:opening`). İşletme genelidir: hücre
+ * şubesizdir, "Tümü"nün kâr-zararı kullanır, tek şube seçiliyken yazılamaz (src/lib/branches.ts companyPnlKey). Sayım
+ * sayfası şubenin modeliyle açılır ve o model bu hücreleri görmez (branchPnlEntry); sayfa onları ayrıca okur ki elle
+ * girilen devrin "elle girildi" ipucu ve "kâr-zarar bu sayımı kullanmaz" uyarısı kaybolmasın (denetim E-30; 21 Kasım
+ * denetimi #20). Yazılmamış olan null.
+ */
+export interface StockOverrides {
+  /** Bu ayın "SONRAKİ AYA DEVREDEN MAL"ı */
+  closing: number | null;
+  /** Geçen ayın "SONRAKİ AYA DEVREDEN MAL"ı (bu ayın açılışı) */
+  prevClosing: number | null;
+  /** Bu ayın "ÖNCEKİ AYDAN DEVİR"i */
+  opening: number | null;
+}
+
+export function stockOverrides(rows: readonly { month: string; rowKey: string; amount: number }[], month: string): StockOverrides {
+  const find = (m: string, key: string) => rows.find((r) => r.month === m && r.rowKey === key)?.amount ?? null;
+  return { closing: find(month, "stock:closing"), prevClosing: find(shiftMonth(month, -1), "stock:closing"), opening: find(month, "stock:opening") };
+}
+
+/**
+ * Sayım kartının açılışı (countOpening), işletme genelinin elle yazılan devirleriyle (`ov`) ve sayılan şubenin geçen
+ * ayki sayım toplamıyla (`prevCount`): devir elle yazılmamışsa açılış şubenin sayımıdır; yazıldıysa kâr-zararın
+ * kullandığı tutar, ipucunda şubenin sayımı. Şubesiz modelde `pnlMonth` açılışıyla aynı sonuç (tests/sayim-sube.test.ts)
+ */
+export function countOpeningOf(ov: StockOverrides, prevCount: number, prevCounted = true): CountOpening {
+  return countOpening(
+    ov.opening !== null ? { value: ov.opening, overridden: true } : { value: null, overridden: false },
+    { value: ov.prevClosing ?? prevCount, computed: prevCount, overridden: ov.prevClosing !== null },
+    prevCounted,
+  );
+}
+
+/**
+ * Gelir-giderde bu ayın stoğu elle yazıldıysa sayım kartının uyarısı: kâr-zarar sayımı değil o tutarı kullanır.
+ * `branch` birden çok şube açıkken sayılan şubenin adı (elle yazılan tutar işletme genelinin, sayım şubenin)
+ */
+export function closingOverrideText(month: string, amount: number, total: number, branch: string | null = null): { title: string; text: string; sentence: string } {
+  const company = branch ? " (işletme geneli)" : "";
+  return {
+    title: `Gelir-giderde ${monthLabel(month)} stoğu${company} elle ${tl(amount)}: kâr-zarar bu sayımı kullanmaz`,
+    text: branch
+      ? `Bu sayım (${branch}) ${tl(total)}; işletmenin kâr-zararı elle girilen tutarı kullanır.`
+      : `Bu sayım ${tl(total)}; kâr-zarar elle girilen tutarı kullanır.`,
+    sentence: `Gelir-giderde bu ayın stoğu${company} elle ${tl(amount)} girildi; kâr-zarar o tutarı kullanır.`,
+  };
 }

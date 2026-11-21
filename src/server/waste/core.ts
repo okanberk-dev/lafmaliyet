@@ -6,6 +6,7 @@ import { and, asc, eq, gte } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
+import { branchSwitchDay } from "@/lib/lafpos/switch";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import {
   LateWastePayload,
@@ -21,7 +22,7 @@ import {
   type WasteLock,
 } from "@/lib/waste-requests";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { currentPhysicalBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
@@ -60,27 +61,44 @@ export interface WasteInput {
 
 export type WasteRow = typeof s.wasteEntries.$inferSelect;
 
-/** Günün kasa kilidi: o günün raporu ve ondan sonraki bir rapor (en çok iki satır) */
-export async function wasteLock(db: Tx, date: string): Promise<WasteLock> {
-  const rows = await db.select({ date: s.cashReports.date }).from(s.cashReports).where(gte(s.cashReports.date, date)).orderBy(asc(s.cashReports.date)).limit(2);
+/**
+ * Günün kasa kilidi: o günün raporu ve ondan sonraki bir rapor (en çok iki satır), verilen şubenin kasasında. Kasa şube
+ * başınadır (kasanın kuralı staffDayOpen ile aynı; docs/SUBE.md › Personelin yetkisi): başka şubenin raporu bu şubenin
+ * gününü açmaz ya da kapatmaz. Önceden şubesizdi: iki şube dünü ve bugünü girince dün personele hiç kapanmıyordu, Tuzla'nın
+ * raporları Marina'nın unutulan dününü kapatıyordu (denetim 21 Kasım #13). Şube: yeni kayıtta ve geç kayıt isteğinde
+ * kaydın ineceği fiziksel şube, silmede kaydın kendi şubesi.
+ */
+export async function wasteLock(db: Tx, date: string, branchId: string): Promise<WasteLock> {
+  const rows = await db
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(and(gte(s.cashReports.date, date), eq(s.cashReports.branchId, branchId)))
+    .orderBy(asc(s.cashReports.date))
+    .limit(2);
   return { hasReport: rows[0]?.date === date, laterReport: rows.some((r) => r.date > date) };
 }
 
 /**
  * Ürün ikramının LafPOS reddi (src/lib/lafpos/ikram.ts productIkramClosed): LafPOS gününde o günün sonu geldiyse ya da
- * gün bugünse metin; gün sonu gelmeyen geçmiş günde, geçiş günü boşken ve ürün ikramı değilse null
+ * gün bugünse metin; gün sonu gelmeyen geçmiş günde, geçiş günü boşken ve ürün ikramı değilse null. Kaydın şubesine
+ * bakılır: geçiş günü yalnız LafPOS'un şubesinin kasasınındır, ModPOS'ta kalan şubenin ürün ikramı panele girilir; gün
+ * sonu da kaydın şubesininki (branchSwitchDay; denetim 21 Kasım #5)
  */
-async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, now: Date, where: "zayi" | "onay"): Promise<string | null> {
+async function lafposIkramRefusal(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date, where: "zayi" | "onay"): Promise<string | null> {
   if (data.kind !== "ikram" || data.productId === null) return null;
-  const switchDay = await lafposSwitchDayOf(tx);
+  const switchDay = branchSwitchDay(await lafposSwitchDayOf(tx), branchId);
   if (!switchDay || data.date < switchDay) return null;
-  const [day] = await tx.select({ date: s.posDayReports.date }).from(s.posDayReports).where(eq(s.posDayReports.date, data.date)).limit(1);
+  const [day] = await tx
+    .select({ date: s.posDayReports.date })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.date, data.date), eq(s.posDayReports.branchId, branchId)))
+    .limit(1);
   return productIkramRefusal(data, switchDay, { received: Boolean(day), today: businessDate(now) }, where);
 }
 
 /** Ürün ikramı LafPOS gününde reddedilir (LafPOS'ta işaretlenir) */
-async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, now: Date): Promise<void> {
-  const refusal = await lafposIkramRefusal(tx, data, now, "zayi");
+async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" | "productId">, branchId: string, now: Date): Promise<void> {
+  const refusal = await lafposIkramRefusal(tx, data, branchId, now, "zayi");
   if (refusal) throw new UserError(refusal);
 }
 
@@ -88,22 +106,31 @@ async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" 
 export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = new Date()): Promise<{ id: number; name: string; unit: string }> {
   if (data.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
   return db.transaction(async (tx) => {
-    await refuseLafposIkram(tx, data, now);
+    // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md)
+    const branchId = (await currentPhysicalBranch()).id;
+    await refuseLafposIkram(tx, data, branchId, now);
     if (me.role !== "admin") {
-      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date));
+      const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date, branchId));
       if (mode !== "direct") throw new UserError(WASTE_REQUEST_TEXT.directOnly);
       const closed = await closedDayRefusal(data.date, me.role, tx);
       if (closed) throw new UserError(closed);
     }
     const target = await resolveWasteTarget(tx, data);
-    // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md)
-    const branchId = (await currentPhysicalBranch()).id;
     const [row] = await tx
       .insert(s.wasteEntries)
       .values({ ...data, ...target, branchId, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.wasteEntries.id });
     return { id: row.id, ...target };
   });
+}
+
+/**
+ * Kayıt kimliğiyle gelir (silme, silme isteği): şubesine kilitli personel başka şubenin kaydına dokunmaz; ekran zaten
+ * yalnız kendi şubesini gösterir (docs/SUBE.md › Personel hesabının şubesi; 21 Kasım denetimi #14). Yönetici serbest.
+ */
+async function refuseOtherBranch(me: WasteActor, row: Pick<WasteRow, "branchId">): Promise<void> {
+  const refusal = await staffBranchRefusal(me, row.branchId);
+  if (refusal) throw new UserError(refusal);
 }
 
 /** Aynı kaydın bekleyen silme istekleri kapanır ("Kayıt silindi"); `exceptId` onaylanan istek */
@@ -116,7 +143,9 @@ export async function removeWaste(db: DB, me: WasteActor, id: number, now = new 
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
+    await refuseOtherBranch(me, row);
+    // Kilit kaydın kendi şubesinin kasasından (seçili şubeden değil)
+    if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
     await tx.delete(s.wasteEntries).where(eq(s.wasteEntries.id, row.id));
     await closeDeleteRequests(tx, row.id, now);
     return row;
@@ -138,12 +167,15 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
   const message = input.message.trim();
   if (message.length < 3) throw new UserError(WASTE_REQUEST_TEXT.messageShort);
   return db.transaction(async (tx) => {
-    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date));
+    // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın. Günün kilidi
+    // de o şubenin kasasından
+    const branchId = (await currentPhysicalBranch()).id;
+    const mode = staffWasteMode(input.date, now, await wasteLock(tx, input.date, branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.useDirect);
     if (mode === "closed") throw new UserError(WASTE_REQUEST_TEXT.windowOld);
     const closed = await closedDayRefusal(input.date, me.role, tx);
     if (closed) throw new UserError(closed);
-    await refuseLafposIkram(tx, input, now);
+    await refuseLafposIkram(tx, input, branchId, now);
     const target = await resolveWasteTarget(tx, input);
     const payload: LateWastePayloadT = LateWastePayload.parse({
       date: input.date,
@@ -154,8 +186,7 @@ export async function proposeLateWaste(db: DB, me: WasteActor, input: LateWasteI
       qty: input.qty,
       reason: input.reason,
       note: input.note,
-      // addWaste ile aynı kural: zayi fiziksel şubeye yazılır; istek anında kaydedilir ki onay onu bozmasın
-      branchId: (await currentPhysicalBranch()).id,
+      branchId,
     });
     const clientKey = input.clientKey ?? randomUUID();
     // Aynı istek (gün, tür, kalem, miktar) bekliyorsa ikincisi açılmaz; aynı istemci anahtarı ise var olanı döner
@@ -195,7 +226,8 @@ export async function proposeWasteDelete(
     // Kayıt kilitlenir (kayıt, sonra istek): aynı anda verilen onay ya da doğrudan silmeyle sıraya girer, silinmiş kayda istek açılmaz
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
-    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date));
+    await refuseOtherBranch(me, row);
+    const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteDirect);
     if (mode === "none") throw new UserError(WASTE_REQUEST_TEXT.deleteOld);
     const payload: WasteDeletePayloadT = {
@@ -256,7 +288,7 @@ export async function reviewWasteRequestCore(
       const p = LateWastePayload.parse(row.payload);
       // İstek geçiş günü seçilmeden ya da gün sonu gelmeden önce açılmış olabilir: ürün ikramı o güne panelden
       // kapalıysa onaylanmaz, reddedilir
-      const refusal = await lafposIkramRefusal(tx, p, now, "onay");
+      const refusal = await lafposIkramRefusal(tx, p, p.branchId ?? DEFAULT_BRANCH_ID, now, "onay");
       if (refusal) throw new UserError(`${refusal} İsteği reddedin.`);
       const target = await resolveWasteTarget(tx, p, { requireActive: false }).catch(() => null);
       if (!target || target.name !== p.name || target.unit !== p.unit) throw new UserError("Kalem silinmiş ya da adı değişmiş; isteği reddedin");

@@ -6,23 +6,24 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
-import { toastUnreachable, tryAction } from "@/components/ui/action-error";
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Notice } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
 import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen, soundRow } from "@/lib/live-poll";
+import { callRingMessage, callsToRing } from "@/lib/site-orders/calls";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
-import { dueInstant } from "@/lib/user-reminders";
+import { dueInstant, planReminderAlerts, reminderAlarm, ringingReminders } from "@/lib/user-reminders";
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
-import { completeUserReminder } from "@/server/actions/user-reminders";
 
 import { useClock } from "./clock";
 import { applyOutput } from "./output-client";
 import { usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
-import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAudioState } from "./sounds";
+import { ReminderAlerts, showReminder } from "./reminder-alerts";
+import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAlarmOwners, useAudioState } from "./sounds";
 import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
@@ -39,6 +40,10 @@ const SEEN_KEY = "laf:duyurulan-olaylar";
 const SEEN_ORDERS_KEY = "laf:gorulen-siparisler";
 /** Hazırlanma zili bu cihazda çalmış planlı siparişler (vaktine 15 dakika kala bir kez) */
 const DUE_RUNG_KEY = "laf:planli-siparis-zili";
+/** Bu cihazın gördüğü masa çağrıları ("Garson çağır"; aynı çağrı için iki kez zil çalmasın) */
+const SEEN_CALLS_KEY = "laf:gorulen-cagrilar";
+/** Siparişlerin ve masa çağrılarının ekranı: zilin "Gör"ü ve bildirimin adresi */
+const ORDERS_PATH = "/panel/siparisler";
 
 function loadKeys(key: string): Set<string> {
   try {
@@ -77,9 +82,10 @@ const soundSlotOf = () => document.getElementById("ses-yuvasi");
 
 /**
  * Panelin uyarı motoru (kabukta bir kez; hangi ekranda olunursa olsun çalışır): canlı veriyi yönetir, karaoke
- * oturumlarının başlangıç / az kaldı / süre doldu uyarılarını ve saatli kişisel hatırlatmaları zamanında çalar, yeni
- * rezervasyonda ve laffogato.net'ten gelen yeni uygulama siparişinde (bu cihazda sipariş zili açıksa; masa siparişi
- * daha uzun) zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
+ * oturumlarının başlangıç / az kaldı / süre doldu uyarılarını ve saatli kişisel hatırlatmaları zamanında çalar (hatırlatma
+ * ekranın ortasında açılır, yapılana kadar köşede durur: reminder-alerts.tsx), yeni
+ * rezervasyonda, laffogato.net'ten gelen yeni uygulama siparişinde ve masa çağrısında (bu cihazda sipariş zili açıksa;
+ * masa siparişi daha uzun, çağrı kapı zili) zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
  *
  * İstek bütçesi (src/lib/live-poll.ts; veritabanı Neon'un ücretsiz planında, her kontrol onu uyandırır): sekme öndeyken
  * bildirim açıkken 30 dakikada, kapalıyken dakikada bir, ekran 10 dakikadır kullanılmıyorsa ve bir saat içinde oturum
@@ -95,6 +101,9 @@ export function AlertCenter({ role }: { role: Role }) {
   const router = useRouter();
   const pathname = usePathname();
   const audio = useAudioState();
+  const alarmOwners = useAlarmOwners();
+  /** Sürekli sesli bir hatırlatma çalıyor ("Yaptım" ya da "Sesi kes"e kadar; reminder-alerts.tsx) */
+  const reminderRinging = ringingReminders(alarmOwners).length > 0;
   const [busy, setBusy] = useState<number | null>(null);
   /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur */
   const [clash, setClash] = useState<{ s: KaraokeSessionDTO; minutes: number; message: string } | null>(null);
@@ -102,6 +111,7 @@ export function AlertCenter({ role }: { role: Role }) {
   const seen = useRef<Set<string> | null>(null);
   const seenOrders = useRef<Set<string> | null>(null);
   const dueRung = useRef<Set<string> | null>(null);
+  const seenCalls = useRef<Set<string> | null>(null);
   /** Sıradaki planlı siparişin zil anı gelince artar (veri değişmeden zilin bakması için) */
   const [dueTick, setDueTick] = useState(0);
   const bursts = useRef(new Map<string, () => void>());
@@ -207,7 +217,8 @@ export function AlertCenter({ role }: { role: Role }) {
   // Bildirim açık: izin, kayıtlı abonelik (yukarıdaki tazeleme yazar) ve zili açık konular aboneliğinde de açık.
   const topics = useDeviceTopics();
   const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: prefs.karaokeAlarms });
-  const ringing = overtime.length > 0;
+  // Alarm çalarken sık sorulur: başka cihazda "Haber verdim" / "Yaptım" denirse burada da sussun
+  const ringing = overtime.length > 0 || reminderRinging;
   const soon =
     sessions.some((s) => isLive(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs) ||
     (data?.reminders ?? []).some((r) => {
@@ -296,9 +307,27 @@ export function AlertCenter({ role }: { role: Role }) {
     (table ? toast.warning : toast.success)(msg.title, {
       description: msg.body,
       duration: table ? 30_000 : 15_000,
-      action: { label: "Gör", onClick: () => router.push("/panel/karaoke") },
+      action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) },
     });
-    void notify(msg.title, msg.body, `siparis-${ring[0].id}`, "/panel/karaoke", { silent: prefs.sound && audioState() === "ready" });
+    void notify(msg.title, msg.body, `siparis-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
+  }, [data, prefs.orderAlerts, prefs.sound, router]);
+
+  // Masa çağrısı ("Garson çağır"): bu cihazın görmediği her açık çağrı bir kez, siparişten ayrı desenle (kapı zili);
+  // ilk yüklemede iki dakikadan eskiler sessizce görülmüş sayılır. Sipariş zili kapalı cihazda da görülmüş sayılır
+  // (src/lib/site-orders/calls.ts › callsToRing)
+  useEffect(() => {
+    if (!data?.orders) return;
+    const first = seenCalls.current === null;
+    seenCalls.current ??= loadKeys(SEEN_CALLS_KEY);
+    const { ring, markSeen } = callsToRing(data.orders.calls, seenCalls.current, { first, nowMs: liveNow() });
+    if (!markSeen.length) return;
+    for (const id of markSeen) seenCalls.current.add(id);
+    saveKeys(SEEN_CALLS_KEY, seenCalls.current);
+    if (!ring.length || !prefs.orderAlerts) return;
+    if (prefs.sound) play("call");
+    const msg = callRingMessage(ring);
+    toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) } });
+    void notify(msg.title, msg.body, `cagri-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
   }, [data, prefs.orderAlerts, prefs.sound, router]);
 
   // Planlı sipariş (gel-al, "Yarın 09:00"): vaktine 15 dakika kala bir kez hazırlanma zili; ekran sonradan açılsa da
@@ -314,8 +343,8 @@ export function AlertCenter({ role }: { role: Role }) {
     if (ring.length && prefs.orderAlerts) {
       if (prefs.sound) play("ring");
       const msg = dueRingMessage(ring, liveNow());
-      toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push("/panel/karaoke") } });
-      void notify(msg.title, msg.body, `planli-${ring[0].id}`, "/panel/karaoke", { silent: prefs.sound && audioState() === "ready" });
+      toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) } });
+      void notify(msg.title, msg.body, `planli-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
     }
     if (nextAt === null) return;
     const id = window.setTimeout(() => setDueTick((n) => n + 1), Math.min(Math.max(1000, nextAt - liveNow()), 2_147_000_000));
@@ -373,39 +402,30 @@ export function AlertCenter({ role }: { role: Role }) {
       }
     }
     if (prefs.reminderAlerts) {
-      for (const r of data.reminders) {
-        const at = dueInstant(r);
-        const key = `hatirlatici:${r.id}:${r.dueDate}:${r.dueTime}`;
-        if (at === null || !r.active || fired.current.has(key) || at < nowMs - 60_000 || at > nowMs + 24 * 3_600_000) continue;
+      // Saatli hatırlatmalar (src/lib/user-reminders.ts › planReminderAlerts): vaktinde ya da birkaç dakika geç (sekme
+      // arka plandaydı, bilgisayar uykudan uyandı) sesle; bu cihazda hiç açılmamış, yarım günden yeni kaçanlar sessiz
+      // açılır pencereyle; daha eskisi yalnız köşedeki kartta (reminder-alerts.tsx)
+      const plan = planReminderAlerts(data.reminders, fired.current, nowMs);
+      for (const { r, key } of plan.late) {
+        fired.current.add(key);
+        showReminder(r);
+      }
+      if (plan.late.length) saveKeys(FIRED_KEY, fired.current);
+      for (const { r, key, at } of plan.timers) {
         timers.push(
           window.setTimeout(
             () => {
               fired.current?.add(key);
               if (fired.current) saveKeys(FIRED_KEY, fired.current);
-              // Hatırlatıcının kendi sesi (docs/HATIRLATICILAR.md): "surekli" durdurulana kadar çalar,
-              // "tek" bir zil, "yok" sessiz. Cihazın ses anahtarı kapalıysa hiçbiri çalmaz.
+              // Hatırlatıcının kendi sesi (docs/HATIRLATICILAR.md): "surekli" "Yaptım" ya da "Sesi kes"e kadar çalar
+              // (pencereyi kapatmak kesmez), "tek" bir zil, "yok" sessiz. Cihazın ses anahtarı kapalıysa hiçbiri çalmaz.
               const surekli = r.sound === "surekli";
               if (prefs.sound && r.sound !== "yok") {
-                if (surekli) startAlarm();
+                if (surekli) startAlarm(reminderAlarm(r.id));
                 else play("reminder");
               }
-              toast(r.title, {
-                description: [r.note, r.createdByName ? `${r.createdByName} kurdu` : null].filter(Boolean).join(" · ") || "Hatırlatıcı",
-                // Sürekli çalan uyarı kendiliğinden kapanmaz: kişi sesi durdurana kadar ekranda kalır
-                duration: surekli ? Infinity : 30_000,
-                onDismiss: surekli ? () => stopAlarm() : undefined,
-                action: {
-                  label: surekli ? "Durdur ve tamamla" : "Tamamlandı",
-                  onClick: () => {
-                    if (surekli) stopAlarm();
-                    void tryAction(() => completeUserReminder(r.id)).then((res) => {
-                      if (res && !res.ok) toast.error(res.error);
-                      void refreshLive().then(() => refreshScreen());
-                    });
-                  },
-                },
-                cancel: surekli ? { label: "Sesi kes", onClick: () => stopAlarm() } : undefined,
-              });
+              // Ekranın ortasında açılır pencere; kapatılınca yapılana kadar köşede kart (reminder-alerts.tsx)
+              showReminder(r);
               void notify(`Hatırlatma: ${r.title}`, r.note ?? `Saat ${r.dueTime}`, `hatirlatici-${r.id}`, "/panel/hatirlaticilarim", {
                 requireInteraction: true,
                 silent: prefs.sound && audioState() === "ready",
@@ -422,16 +442,17 @@ export function AlertCenter({ role }: { role: Role }) {
       for (const cancel of map.values()) cancel();
       map.clear();
     };
-  }, [data, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire, refreshScreen]);
+  }, [data, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire]);
 
-  // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner
+  // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner. Alarmın sahibi "karaoke":
+  // burada susturmak sürekli sesli hatırlatmanın alarmını kesmez (sounds.ts)
   useEffect(() => {
     if (!overtimeKey || !prefs.sound || audio !== "ready") {
-      stopAlarm();
+      stopAlarm("karaoke");
       return;
     }
-    startAlarm();
-    return () => stopAlarm();
+    startAlarm("karaoke");
+    return () => stopAlarm("karaoke");
   }, [overtimeKey, prefs.sound, audio]);
   useEffect(() => {
     if (!overtimeKey) return;
@@ -454,7 +475,7 @@ export function AlertCenter({ role }: { role: Role }) {
   async function acknowledge(s: KaraokeSessionDTO) {
     setBusy(s.id);
     patchLive((d) => ({ ...d, karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, endedAt: new Date(liveNow()).toISOString() } : x)) } }));
-    if (alarmRinging() && overtime.length <= 1) stopAlarm();
+    if (alarmRinging() && overtime.length <= 1) stopAlarm("karaoke");
     try {
       const res = await endKaraokeSession(s.id);
       if (!res.ok) toast.error(res.error);
@@ -499,7 +520,10 @@ export function AlertCenter({ role }: { role: Role }) {
     return at !== null && at > now && at - now < 24 * 3_600_000;
   });
   const soundSlot = useSyncExternalStore(noopSubscribe, soundSlotOf, () => null);
-  const needsSound = prefs.sound && audio === "locked" && ((prefs.karaokeAlarms && sessions.some((s) => isLive(s) && sessionEnd(s) > now)) || (prefs.reminderAlerts && timedReminderToday) || overtime.length > 0);
+  const needsSound =
+    prefs.sound &&
+    audio === "locked" &&
+    ((prefs.karaokeAlarms && sessions.some((s) => isLive(s) && sessionEnd(s) > now)) || (prefs.reminderAlerts && (timedReminderToday || reminderRinging)) || overtime.length > 0);
   // Satır ilk dokunuşta (ses açılınca) kalkmaz, sayfa değişene kadar "açık" olarak kalır: içerik dokunuşun altında kaymaz
   const [soundShownOn, setSoundShownOn] = useState<string | null>(null);
   const sound = soundRow({ needsSound, audioReady: audio === "ready", pathname, shownOn: soundShownOn });
@@ -557,6 +581,8 @@ export function AlertCenter({ role }: { role: Role }) {
         confirmLabel="Yine de uzat"
         tone="primary"
       />
+      {/* Saati gelen hatırlatma: ortada açılır pencere, yapılana kadar köşede kart (her ekranda; kabukta bir kez) */}
+      <ReminderAlerts enabled={prefs.reminderAlerts} now={now} onChanged={() => refreshScreen()} />
       {/* Ses kilitliyken sayfanın başındaki yuvaya tek satır (yüzen hap içeriği örtüyordu; §4.6). Yuva yoksa hiçbir
           şey çizilmez. İlk dokunuşta ses açılır; satır kalkmaz, aynı yükseklikte "Sesli uyarılar açık"a döner (düğmenin
           görünmez eşi yeri tutar) ve sayfa değişince kalkar (soundRow) */}

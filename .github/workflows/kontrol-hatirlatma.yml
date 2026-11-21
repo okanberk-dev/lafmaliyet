@@ -1,0 +1,41 @@
+# Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6), YEDEK tetikleyici: saat başını 7 geçe panelin
+# /api/cron/kontrol adresini çağırır; panel personele "zamanı geldi" ve "gecikti" e-postalarını gönderir. Asıl
+# tetikleyici açık panel sekmesinin canlı yoklamasıdır (/api/canli, en çok 5 dakikada bir): GitHub zamanlanmış işleri
+# yoğunlukta saatlerce gecikip düşebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma). Bu iş kimse panele
+# bakmazken gecikmeleri yakalar. Vercel Hobby'de cron günde yalnız bir kez çalışır.
+# Saatler UTC: 05:07–23:07 = Türkiye 08:07–02:07. GitHub zamanlanmış işleri birkaç dakika (yoğunlukta 15–20 dk) geç
+# başlatabilir; panel durumu her çalışmada yeniden hesapladığı için geç çalışma yanlış e-posta göndermez.
+# Gerekenler: depo sırrı CRON_SECRET (Vercel'deki CRON_SECRET'ın aynısı; GitHub › Settings › Secrets and variables ›
+# Actions). Sır yoksa iş uyarı yazıp yeşil biter. Panelin adresi başka ise depo değişkeni PANEL_URL.
+# Maliyet: günde 19 çalışma × 1 dk ≈ ayda 570 Actions dakikası (özel depoda ücretsiz kota 2000 dk).
+name: Kontrol listesi hatırlatmaları
+
+on:
+  schedule:
+    - cron: "7 5-23 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kontrol-hatirlatma
+  cancel-in-progress: false
+
+jobs:
+  tetikle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Paneli çağır
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PANEL_URL: ${{ vars.PANEL_URL || 'https://ladmin.laffogato.net' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::warning::CRON_SECRET depo sırrı yok; hatırlatmalar gönderilmedi."
+            exit 0
+          fi
+          curl -fsS --retry 2 --retry-delay 10 --max-time 70 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "${PANEL_URL%/}/api/cron/kontrol"
+          echo

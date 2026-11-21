@@ -1,7 +1,7 @@
 import type { Role } from "./constants";
 import type { KaraokeSessionDTO } from "./karaoke/session";
 import type { KaraokeDeleteAsk } from "./karaoke/timer-requests";
-import type { SiteOrder } from "./site-orders/schema";
+import type { SiteCall, SiteOrder } from "./site-orders/schema";
 import type { UserRepeat, UserSound } from "./user-reminders";
 
 /**
@@ -28,7 +28,7 @@ export interface LiveResponse {
      */
     deleteAsks?: KaraokeDeleteAsk[];
   };
-  /** laffogato.net'in açık kafe siparişleri: son çekmenin listesi ve bağlantının durumu (docs/SITE-SIPARIS.md) */
+  /** laffogato.net'in açık kafe siparişleri ve masa çağrıları: son çekmenin listesi ve bağlantının durumu (docs/SITE-SIPARIS.md) */
   orders: LiveOrders;
   /** Yarına kadar (gecikenler dahil) açık kişisel hatırlatıcılar */
   reminders: {
@@ -75,4 +75,11 @@ export interface LiveOrders {
    * yanıtında olmayabilir
    */
   awaitingUntil?: string | null;
+  /**
+   * Açık masa çağrıları ("Garson çağır"; son listenin kopyasından, 15 dakikadan eskisini ekran göstermez:
+   * src/lib/site-orders/calls.ts › openCalls). Yayın sırasında eski sunucunun yanıtında olmayabilir
+   */
+  calls?: SiteCall[];
+  /** Okunamayıp atlanan masa çağrısı sayısı */
+  callsSkipped?: number;
 }

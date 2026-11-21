@@ -23,6 +23,7 @@ import { useClock } from "@/components/panel/live/clock";
 import { updatePrefs, usePrefs } from "@/components/panel/live/prefs";
 import { pushSupport, useDeviceTopics } from "@/components/panel/live/push-client";
 import { refreshLive, useLive } from "@/components/panel/live/store";
+import { useWakeLock } from "@/components/panel/live/wake-lock";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { dateTimeTR, num } from "@/lib/format";
 import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
 import { pushCovers } from "@/lib/live-poll";
+import { openCalls } from "@/lib/site-orders/calls";
 import { lineLabel, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitInfo } from "@/lib/site-orders/feed";
 import { boardBusy } from "@/lib/site-orders/follow";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
@@ -41,11 +43,13 @@ import { lineSlot } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
 import { advanceSiteOrder } from "@/server/actions/site-orders";
 
+import { TableCalls } from "./table-calls";
+
 /** Ekran açılınca ya da öne gelince son çekme bundan eskiyse site sorulur */
 const OPEN_STALE_MS = 60_000;
 /**
- * Yoğunken (ekranda açık sipariş var, son iki saatte liste değişti ya da sitede ödemesi beklenen sipariş var; boardBusy)
- * arka planda yeniden çekme
+ * Yoğunken (ekranda açık sipariş ya da masa çağrısı var, son iki saatte liste değişti ya da sitede ödemesi beklenen
+ * sipariş var; boardBusy) arka planda yeniden çekme
  */
 const BUSY_REPULL_MS = 3 * 60_000;
 /** Sakinken (gece, kapalı saat) yeniden çekme: sitenin veritabanı (Neon) uyusun diye seyrek */
@@ -80,27 +84,23 @@ async function pullOrders(maxAgeMs: number): Promise<{ status: string; error?: s
 }
 
 /**
- * Bar ekranının "Uygulama siparişleri" bölümü (docs/SITE-SIPARIS.md): laffogato.net'te (uygulama ve web) ödenmiş, hâlâ
- * açık kafe siparişleri. Kart: nereye ("Masa 4", "Gel-al", "Kurye"), aşama, planlı saat, müşterinin adı, satırlar,
- * ödemeden bu yana geçen süre (planlı siparişte vaktine kalan ya da geciken süre), aşamayı tek dokunuşla ilerleten
- * düğmeler (Hazırlanıyor, Hazır / Masaya götürüldü / Kuryeye verildi, Teslim edildi; sitenin aşama ucuna gider,
- * src/server/actions/site-orders.ts) ve siparişi sitenin panelinde açan "Sitede aç" (iade ve iptal orada). Zil
- * kabuktaki uyarı motorunda çalar (alert-center.tsx; planlı sipariş vaktine 15 dakika kala bir kez daha).
- *
- * Veri canlı uçtan gelir; ekran ayrıca siteyi yeniden çektirir: açılınca ve öne gelince (son çekme bir dakikadan
- * eskiyse), yoğunken üç dakikada, sakinken saatte bir (ping kaçtıysa diye). Sitede ödemesi beklenen sipariş varken
- * (kartlı sipariş; en çok 30 dakika, `awaitingUntil`) ekran yoğun sayılır: ödeme pingi kaçsa da sipariş birkaç dakikada
- * gelir. Sürekli sorgu yok.
+ * Siparişler ekranının verisi ve siteyi yeniden çektirme (docs/SITE-SIPARIS.md): canlı uçtan açık siparişler (ekranın
+ * sırasıyla) ve açık masa çağrıları (15 dakikadan eskisi gösterilmez). Ekran açılınca ve öne gelince (son çekme bir
+ * dakikadan eskiyse), yoğunken üç dakikada, sakinken saatte bir siteyi yeniden çektirir (ping kaçtıysa diye). Sitede
+ * ödemesi beklenen sipariş varken (kartlı sipariş; en çok 30 dakika, `awaitingUntil`) ya da açık sipariş veya çağrı
+ * varken ekran yoğun sayılır: ödeme pingi kaçsa da sipariş birkaç dakikada gelir. Sürekli sorgu yok. Karaoke ekranının
+ * özet satırı da aynı kancayı kullanır (bar o ekranda dursa da liste güncel kalsın).
  */
-export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role; siteBase: string; recipes: Record<string, string>; serverNow: number }) {
+export function useOrdersFeed(role: Role, serverNow: number) {
   const live = useLive();
   const prefs = usePrefs(role);
   const data: LiveOrders | null = live.data?.orders ?? null;
   const list = data ? sortForScreen(data.list) : [];
   const clock = useClock(30_000);
   const now = clock || serverNow;
-  const busy = boardBusy({ open: list.length, changeAt: data?.changeAt, awaitingUntil: data?.awaitingUntil }, now);
-  const [pulling, setPulling] = useState(false);
+  // Süresi dolan çağrı sitede pingsiz kalkar: ekran 15 dakikadan eskisini göstermez (src/lib/site-orders/calls.ts)
+  const calls = data?.configured ? openCalls(data.calls, now) : [];
+  const busy = boardBusy({ open: list.length + calls.length, changeAt: data?.changeAt, awaitingUntil: data?.awaitingUntil }, now);
 
   // Açılışta ve sekmeye dönünce: son çekme bir dakikadan eskiyse site sorulur
   useEffect(() => {
@@ -122,14 +122,14 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     return () => window.clearInterval(id);
   }, [busy, failing]);
 
-  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bu cihazın sipariş zili yeni
-  // siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya da zil açık ama Sipariş bildirimleri kapalı) 20
-  // saniyede bir; yalnız siparişe bakar (karaoke konusu bu döngüyü açmaz). Bildirim açık ve ekran boşken yeni sipariş
-  // bildirimle gelir. Sipariş zili kapalı cihazda (yöneticinin dizüstü, ikinci ekran) boş ekrana yeni sipariş kabuğun
-  // yedek kontrolüyle (src/lib/live-poll.ts) ya da son iki saatte sipariş olduysa üç dakikalık çekmeyle gelir. Yalnız
-  // ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü sorar (alert-center.tsx, bildirim gelmeyen zil
-  // cihazında 10 dakikada bir)
-  const hasOrders = list.length > 0;
+  // Canlı veri: ekranda açık sipariş ya da çağrı varken (aşama değişikliği ve "Gördüm" çabuk görünsün) ya da bu
+  // cihazın sipariş zili yeni siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya da zil açık ama
+  // Sipariş bildirimleri kapalı) 20 saniyede bir; yalnız siparişe bakar (karaoke konusu bu döngüyü açmaz). Bildirim
+  // açık ve ekran boşken yeni sipariş bildirimle gelir. Sipariş zili kapalı cihazda (yöneticinin dizüstü, ikinci ekran)
+  // boş ekrana yeni sipariş kabuğun yedek kontrolüyle (src/lib/live-poll.ts) ya da son iki saatte sipariş olduysa üç
+  // dakikalık çekmeyle gelir. Yalnız ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü sorar
+  // (alert-center.tsx, bildirim gelmeyen zil cihazında 10 dakikada bir)
+  const hasOrders = list.length + calls.length > 0;
   const publicKey = live.data?.push.publicKey ?? null;
   const topics = useDeviceTopics();
   const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: false });
@@ -141,6 +141,12 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     return () => window.clearInterval(id);
   }, [hasOrders, pushOn]);
 
+  return { data, list, calls, now, prefs };
+}
+
+/** "Yenile": siteyi hemen yeniden çektirir (art arda basılsa da sunucu en çok on saniyede bir sorar) */
+function useManualPull(role: Role) {
+  const [pulling, setPulling] = useState(false);
   const manual = useCallback(async () => {
     setPulling(true);
     const r = await pullOrders(0);
@@ -148,44 +154,47 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: role === "admin" ? r.error : "Sorun sürerse yöneticiye haber verin." });
     else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
   }, [role]);
+  return { pulling, manual };
+}
 
+/** Başlığın "Yenile" düğmesi (bağlantı kurulu değilse yok) */
+export function OrdersRefreshButton({ role, configured }: { role: Role; configured: boolean }) {
+  const { pulling, manual } = useManualPull(role);
+  if (!configured) return null;
+  return (
+    <Button variant="secondary" size="sm" onClick={() => void manual()} disabled={pulling} aria-label="Siparişleri siteden yenile">
+      <RefreshCw size={14} className={cn(pulling && "animate-spin")} aria-hidden="true" /> {pulling ? "Yenileniyor…" : "Yenile"}
+    </Button>
+  );
+}
+
+/**
+ * Siparişler ekranı (docs/SITE-SIPARIS.md): laffogato.net'te (uygulama ve web) ödenmiş, hâlâ açık kafe siparişleri ve
+ * masalardan "Garson çağır". Önce durum satırları (son çekme başarısız, liste kısa, okunamayan) ve bu cihazda zil
+ * kapalıysa "Zili aç", sonra Masa çağrıları (yalnız varken; "Gördüm" sitenin ucuna gider), en altta siparişler. Kart:
+ * nereye ("Masa 4", "Gel-al", "Kurye"), aşama, planlı saat, müşterinin adı, satırlar, ödemeden bu yana geçen süre
+ * (planlı siparişte vaktine kalan ya da geciken süre), aşamayı tek dokunuşla ilerleten düğmeler (Hazırlanıyor, Hazır /
+ * Masaya götürüldü / Kuryeye verildi, Teslim edildi; sitenin aşama ucuna gider, src/server/actions/site-orders.ts) ve
+ * siparişi sitenin panelinde açan "Sitede aç" (iade ve iptal orada). Zil kabuktaki uyarı motorunda çalar
+ * (alert-center.tsx; planlı sipariş vaktine 15 dakika kala bir kez daha, masa çağrısı kapı zili).
+ */
+export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role; siteBase: string; recipes: Record<string, string>; serverNow: number }) {
+  const { data, list, calls, now, prefs } = useOrdersFeed(role, serverNow);
+  // Bar ekranı: cihazın "Ekran açık kalsın" tercihiyle ekran kararmaz (Karaoke ekranı gibi)
+  useWakeLock(prefs.wakeLock);
   const tables = list.filter((o) => o.fulfillment === "table" && o.stage !== "ready").length;
   const fresh = list.filter((o) => o.stage === "new").length;
 
   return (
-    <Card>
-      <CardHeader
-        icon={<ShoppingBag />}
-        title="Uygulama siparişleri"
-        description="laffogato.net'te (uygulama ve web) ödenmiş kafe siparişleri. Aşamayı buradan tek dokunuşla ilerletin; iade ve iptal sitenin panelinde."
-        meta={
-          list.length ? (
-            <>
-              <Badge tone={fresh ? "amber" : "gray"} dot>
-                {num(list.length)} açık{fresh ? ` · ${num(fresh)} yeni` : ""}
-              </Badge>
-              {tables ? <Badge tone="violet">{num(tables)} masada</Badge> : null}
-            </>
-          ) : undefined
-        }
-        actions={
-          data?.configured ? (
-            <Button variant="secondary" size="sm" onClick={() => void manual()} disabled={pulling} aria-label="Siparişleri siteden yenile">
-              <RefreshCw size={14} className={cn(pulling && "animate-spin")} aria-hidden="true" /> {pulling ? "Yenileniyor…" : "Yenile"}
-            </Button>
-          ) : undefined
-        }
-      />
-      {/* Gövde yalnız bağlantı varken: yokken StatusLines ve liste boş, kartın altında boş pay kalırdı (sayfanın başındaki
-          tek kutu söylüyor) */}
+    <div className="space-y-6">
       {data?.configured ? (
-        <div className="space-y-3 px-5 pb-5">
+        <>
           <StatusLines data={data} now={now} role={role} />
           {!prefs.orderAlerts ? (
             <Notice
               tone="neutral"
               size="sm"
-              title="Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz"
+              title="Bu cihazda sipariş zili kapalı; sipariş ve çağrıda ses çalmaz"
               action={
                 <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { orderAlerts: true })}>
                   Zili aç
@@ -193,20 +202,44 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
               }
             />
           ) : null}
-          {list.length ? (
-            <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
-              {list.map((o) => (
-                <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
-              ))}
-            </ul>
-          ) : (
-            <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
-              Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
-            </p>
-          )}
-        </div>
+          {calls.length ? <TableCalls calls={calls} now={now} /> : null}
+        </>
       ) : null}
-    </Card>
+      <Card>
+        <CardHeader
+          icon={<ShoppingBag />}
+          title="Uygulama siparişleri"
+          description="Aşamayı buradan tek dokunuşla ilerletin; iade ve iptal sitenin panelinde."
+          meta={
+            list.length ? (
+              <>
+                <Badge tone={fresh ? "amber" : "gray"} dot>
+                  {num(list.length)} açık{fresh ? ` · ${num(fresh)} yeni` : ""}
+                </Badge>
+                {tables ? <Badge tone="violet">{num(tables)} masada</Badge> : null}
+              </>
+            ) : undefined
+          }
+        />
+        {/* Gövde yalnız bağlantı varken: yokken liste boş, kartın altında boş pay kalırdı (sayfanın başındaki tek kutu
+            söylüyor) */}
+        {data?.configured ? (
+          <div className="space-y-3 px-5 pb-5">
+            {list.length ? (
+              <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Açık uygulama siparişleri">
+                {list.map((o) => (
+                  <OrderCard key={o.id} order={o} now={now} siteBase={siteBase} recipes={recipes} />
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">
+                Açık uygulama siparişi yok. Sitede bir sipariş ödenince burada görünür ve zil çalar.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </Card>
+    </div>
   );
 }
 
@@ -229,6 +262,7 @@ function StatusLines({ data, now, role }: { data: LiveOrders | null; now: number
   }
   if (!data.complete) lines.push("Sitede çok açık sipariş var; en yakın 200'ü gösteriliyor.");
   if (data.skipped) lines.push(`${num(data.skipped)} sipariş okunamadı (panel güncel olmayabilir); sitenin panelinde kontrol edin.`);
+  if (data.callsSkipped) lines.push(`${num(data.callsSkipped)} masa çağrısı okunamadı (panel güncel olmayabilir).`);
   const [first, ...rest] = lines;
   if (!first) return null;
   return (

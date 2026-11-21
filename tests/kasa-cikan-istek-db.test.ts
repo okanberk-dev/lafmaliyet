@@ -42,16 +42,20 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
   let guard: typeof import("../src/server/cash-outs/guard");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
-  const users: Record<"ali" | "ayse" | "mehmet" | "donen", Who> = {
+  const users: Record<"ali" | "ayse" | "mehmet" | "donen" | "zeynep", Who> = {
     ali: { id: 0, name: "Ali", role: "admin" },
     ayse: { id: 0, name: "Ayşe", role: "staff" },
     mehmet: { id: 0, name: "Mehmet", role: "staff" },
     donen: { id: 0, name: "Dönen", role: "staff" },
+    // Şube testinin personeli (öteki testlerin açık istek sınırına takılmasın)
+    zeynep: { id: 0, name: "Zeynep", role: "staff" },
   };
   const cats = { staff: 0, admin: 0 };
   const dates: string[] = [];
   const photoIds: number[] = [];
   const outIds: number[] = [];
+  /** Marina'yı bu test açtıysa sonunda siler (şube testi) */
+  let marinaAdded = false;
 
   // Kilitli dün: 9 Mart'ın ve 10 Mart'ın raporu var (9 Mart kapandı); eski gün 5 Mart (raporsuz)
   const NOW = tr("2028-03-10T12:00");
@@ -191,6 +195,7 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     }
     await db.delete(s.expenseCategories).where(inArray(s.expenseCategories.id, [cats.staff, cats.admin]));
     await db.delete(s.users).where(inArray(s.users.id, ids));
+    if (marinaAdded) await db.delete(s.branches).where(eq(s.branches.id, "marina"));
     await db.$client.end();
     const { getDb } = await import("../src/server/db");
     await getDb().$client.end();
@@ -520,5 +525,43 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.deepEqual(open, []);
     const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
     assert.deepEqual(links.map((l) => l.photoId).sort((a, b) => a - b), [zs[0], zs[2]].sort((a, b) => a - b));
+  });
+
+  test("Onaylar kartı isteğin kasasını taşır: kasadan çıkan ve fotoğraf kaldırma, birden çok kasa açıkken şubenin adı (denetim 21 Kasım #29)", async () => {
+    marinaAdded =
+      (await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing().returning({ id: s.branches.id }))
+        .length > 0;
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    const { loadCashRequestQueue } = await import("../src/server/data/cash-requests");
+    const marina = <T>(fn: () => Promise<T>) => withBranchScope("marina", fn);
+    // Marina'nın eski gününe ekleme isteği (yöneticinin seçimi ne olursa olsun Marina'nın kasasına yazılacak)
+    const out = await marina(() => propose(users.zeynep, { date: OLD, line: line({ amount: 77.7 }), message: "Akşam unutuldu", clientKey: key() }));
+    assert.equal(out.payload.branchId, "marina");
+    const tuzlaOut = await propose(users.zeynep, { date: OLD, line: line({ amount: 66.6 }), message: "Akşam unutuldu", clientKey: key() });
+    // Marina'nın raporunun Z fotoğrafını kaldırma isteği
+    const DAY = "2028-09-25";
+    const AT = tr(`${DAY}T22:30`);
+    const rep = await marina(() => report(DAY));
+    assert.equal(rep.branchId, "marina");
+    const zs = [await photo(users.zeynep, "kasa-z"), await photo(users.zeynep, "kasa-z")];
+    for (const p of zs) {
+      await db.insert(s.cashReportPhotos).values({ reportId: rep.id, photoId: p, kind: "kasa-z" });
+      await db.update(s.photos).set({ linkedAt: AT, expiresAt: null }).where(eq(s.photos.id, p));
+    }
+    const removal = await reqs.proposePhotoRemoval(db, users.zeynep, { photoId: zs[1], message: "Başka günün Z'si", clientKey: null }, AT);
+
+    const cards = await loadCashRequestQueue(NOW);
+    const card = (id: number) => {
+      const c = cards.find((x) => x.id === id);
+      assert.ok(c && (c.kind === "kasa-cikan" || c.kind === "foto-kaldir"), `kart ${id}`);
+      return c;
+    };
+    // Kart şubeyi taşır; "Günü aç" bundan `?sube=` kurar (önceden şubesizdi: yöneticinin seçili kasasını açıyordu)
+    assert.equal(card(out.row.id).branchId, "marina");
+    assert.deepEqual(card(out.row.id).branch, { id: "marina", name: "Marina" });
+    assert.deepEqual(card(tuzlaOut.row.id).branch, { id: "tuzla", name: "Tuzla" });
+    assert.equal(card(removal.row.id).kind, "foto-kaldir");
+    assert.equal(card(removal.row.id).branchId, "marina");
+    assert.deepEqual(card(removal.row.id).branch, { id: "marina", name: "Marina" });
   });
 });

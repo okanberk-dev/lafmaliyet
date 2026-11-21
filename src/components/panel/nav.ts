@@ -32,6 +32,7 @@ import {
   Receipt,
   Scale,
   Settings,
+  ShoppingBag,
   Store,
   Tags,
   Truck,
@@ -87,7 +88,15 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Kafe",
     items: [
-      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
+      // Uygulama siparişleri ve masa çağrıları (docs/SITE-SIPARIS.md); 6 Kas 2026'da Karaoke'den kendi ekranına
+      {
+        href: "/panel/siparisler",
+        label: "Siparişler",
+        icon: ShoppingBag,
+        roles: ["admin", "staff"],
+        keywords: "sipariş uygulama siparişi masa gel-al kurye laffogato.net garson çağır masa çağrısı su peçete zil bar ekranı hazır aşama",
+      },
+      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı tükendi laffogato.net" },
       // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
       {
         href: "/panel/karaoke/doluluk",
@@ -304,7 +313,9 @@ export interface NavNode {
   icon: LucideIcon;
   href?: string;
   roles: ("admin" | "staff")[];
-  children?: { id: string; label: string; href: string; roles: ("admin" | "staff")[]; match?: string[] }[];
+  /** Satırda canlı sayı: "orders" açık uygulama siparişi ve masa çağrısı (canlı veriden; orders-badge.tsx) */
+  badge?: "orders";
+  children?: { id: string; label: string; href: string; roles: ("admin" | "staff")[]; match?: string[]; badge?: "orders" }[];
 }
 
 /**
@@ -314,8 +325,9 @@ export interface NavNode {
  * "Finans" → "Kâr & ödemeler" (Gelir-gider, Ödemeler, Nakit planı); Vergi kendi grubunda, adı KDV ve SGK'yı da söyler,
  * kapalı kenar çubuğunda görünür; Menü'ye Fiyatlar, Kâr & ödemeler'e Nakit planı girdi. Başlık satırı yalnız grubu
  * açıp kapatır; etkin sayfanın grubu kendiliğinden açık (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey
- * öğeleri (Karaoke, Kontrol listeleri, Hatırlatıcılarım) yalnız personelde, yönetici aynı ekranları Kafe altında
- * görür. Personelin görebildiği düğümlerin sırası değişmez (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi
+ * öğeleri (Siparişler, Karaoke, Kontrol listeleri, Hatırlatıcılarım) yalnız personelde, yönetici aynı ekranları Kafe
+ * altında görür. 6 Kas 2026: Siparişler (uygulama siparişleri ve masa çağrıları) personelde Bugün'ün altına, yönetici
+ * Kafe'nin başına; satırında açık sayısı. Personelin görebildiği düğümlerin sırası değişmez (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi
  * sabitler). Adresler değişmedi, yalnız gruplama.
  */
 export const NAV_TREE: NavNode[] = [
@@ -324,6 +336,9 @@ export const NAV_TREE: NavNode[] = [
   { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun", roles: ["admin", "staff"] },
   // Personelin istekleri ve reçete önerileri (docs/ONAYLAR.md); yalnız yönetici, Bugün'ün hemen altında
   { id: "onaylar", label: "Onaylar", icon: ClipboardCheck, href: "/panel/onaylar", roles: ["admin"] },
+  // Uygulama siparişleri ve masa çağrıları (6 Kas 2026): personelin üst düzey öğesi, Bugün'ün hemen altında; yönetici
+  // Kafe altında görür. Satırda açık sipariş + çağrı sayısı
+  { id: "siparisler", label: "Siparişler", icon: ShoppingBag, href: "/panel/siparisler", roles: ["staff"], badge: "orders" },
   // Personelin üst düzey öğesi; yönetici Kafe altında görür
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["staff"] },
   // Gün sonu kasa raporu: iki rolde de üst düzeyde, tek tıkla
@@ -333,12 +348,13 @@ export const NAV_TREE: NavNode[] = [
   // Özel günler (takvim notu; docs/OZEL-GUNLER.md): personelde üst düzeyde, yönetici Kafe altında görür
   { id: "ozel-gunler", label: "Özel günler", icon: CalendarHeart, href: "/panel/ozel-gunler", roles: ["staff"] },
   {
-    // Kafenin günlük işleyişi: karaoke odası, açılış / kapanış, özel günler, kişisel hatırlatıcılar
+    // Kafenin günlük işleyişi: uygulama siparişleri, karaoke odası, açılış / kapanış, özel günler, kişisel hatırlatıcılar
     id: "kafe",
     label: "Kafe",
     icon: Store,
     roles: ["admin"],
     children: [
+      { id: "siparisler-yonetici", label: "Siparişler", href: "/panel/siparisler", roles: ["admin", "staff"], badge: "orders" },
       { id: "karaoke-yonetici", label: "Karaoke", href: "/panel/karaoke", roles: ["admin", "staff"] },
       { id: "kontrol-listeleri", label: "Kontrol listeleri", href: "/panel/kontrol", roles: ["admin", "staff"] },
       { id: "ozel-gunler-yonetici", label: "Özel günler", href: "/panel/ozel-gunler", roles: ["admin", "staff"] },
@@ -574,9 +590,9 @@ export function samePageHash(href: string, current: { pathname: string; search: 
 
 /**
  * Telefon ve tabletteki alt menü (lg altında), beş öğe. Yönetici: dört sık ekran + "Tümü" (çekmeceyi açar, her şey
- * orada; ayda bir açılan Satışlar ve Faturalar da; kenar çubuğundaki Menü grubuyla karışmasın diye "Menü" değil). Personel: günün beş ekranı; Sayım ve Hatırlatıcılarım çekmecede
- * (üst çubuktaki menü düğmesi), Sayım Zayi'nin Stok sekmelerinde de; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
- * gecikmiş ödeme sayısı görünür.
+ * orada; ayda bir açılan Satışlar ve Faturalar da; kenar çubuğundaki Menü grubuyla karışmasın diye "Menü" değil). Personel: günün beş ekranı; Zayi, Sayım ve Hatırlatıcılarım
+ * çekmecede (üst çubuktaki menü düğmesi), Sayım Zayi'nin Stok sekmelerinde de; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
+ * gecikmiş ödeme sayısı, `badge: "orders"` öğesinde (Siparişler) açık uygulama siparişi ve masa çağrısı sayısı görünür.
  */
 export interface BottomNavItem {
   id: string;
@@ -585,7 +601,8 @@ export interface BottomNavItem {
   /** Yoksa öğe bağlantı değil, çekmeceyi açan düğmedir */
   href?: string;
   match?: string[];
-  badge?: "overdue";
+  /** "overdue": gecikmiş ödeme sayısı (kırmızı); "orders": açık uygulama siparişi ve masa çağrısı (turuncu) */
+  badge?: "overdue" | "orders";
 }
 
 export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
@@ -596,12 +613,14 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
     { id: "menu", label: "Tümü", icon: LayoutGrid },
   ],
-  // Günün işleri; Sayım ve Hatırlatıcılarım çekmece menüde (Sayım Zayi'nin sekmesinde, Hatırlatıcılarım zilde de), Hesabım profil menüsünde
+  // Günün işleri; Zayi, Sayım ve Hatırlatıcılarım çekmece menüde (Stok grubunda; Zayi ve ay sonu sayımı Bugün'de satır
+  // olarak da, Hatırlatıcılarım zilde de), Hesabım profil menüsünde. Siparişler 6 Kas 2026'da Zayi'nin yerine geldi
+  // (uygulama siparişleri ve masa çağrıları Karaoke'den kendi ekranına taşındı; satırda açık sayısı)
   staff: [
     { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun" },
+    { id: "siparisler", label: "Siparişler", icon: ShoppingBag, href: "/panel/siparisler", badge: "orders" },
     { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },
     { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
-    { id: "zayi", label: "Zayi", icon: Gift, href: "/panel/zayi" },
     { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
   ],
 };

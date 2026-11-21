@@ -12,7 +12,7 @@ import { test } from "node:test";
 
 import { missingSentence, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { photoKindRefusal } from "../src/lib/cash-out-requests";
-import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
+import { cashEmailKey, cashLogKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
@@ -79,11 +79,13 @@ test("E-40: kasa e-postasının anahtarı rapor satırına özgü; silinip aynı
   assert.equal(cashEmailKey({ id: 41, revision: 2 }), "cash-41-r2");
   // Silinen 25 Ekim raporu (satır 41, r1) ve aynı gün yeniden girilen (satır 57, yine r1)
   assert.notEqual(cashEmailKey({ id: 57, revision: 1 }), cashEmailKey({ id: 41, revision: 1 }));
-  // Varsayılan anahtar bununla; geç raporun onayı kendi anahtarını verir, işlem geçmişinin anahtarı güne göre kalır
+  // Varsayılan anahtar bununla; geç raporun onayı kendi anahtarını verir, işlem geçmişinin anahtarı şubenin gününe göre
+  // (cashLogKey; Tuzla'nınki bugünkü gibi, 21 Kasım denetimi #2)
   const email = read("src/server/cash/report-email.ts");
   assert.match(email, /idempotencyKey: o\.idempotencyKey \?\? cashEmailKey\(row\)/);
   assert.doesNotMatch(email, /`cash-\$\{row\.date\}-r\$\{row\.revision\}`/);
-  assert.match(email, /key: `cash:\$\{row\.date\}:r\$\{row\.revision\}`/);
+  assert.match(email, /key: cashLogKey\(row\)/);
+  assert.equal(cashLogKey({ date: "2026-10-25", revision: 1, branchId: "tuzla" }), "cash:2026-10-25:r1");
 });
 
 test("E-09: LafPOS'tan farklı yazılan: sayılan nakit 9.350 (LafPOS 9.000); aynı yazılan rapor fark vermez", () => {
@@ -200,10 +202,14 @@ test("G6: raporsuz LafPOS günü ayın rakamına girer, gün yine 'rapor yok'; r
   const loader = read("src/server/data/cash-reports.ts");
   assert.match(loader, /if \(switchDay === null \|\| \(to !== undefined && to < switchDay\)\) return \[\];/);
   // ModPOS föyü (ay rakamına yedek) LafPOS'tan da sonra gelir: rapor > LafPOS > ModPOS (docs/MODPOS-API.md › Ay rakamına yedek)
-  assert.match(loader, /return \[\.\.\.reports, \.\.\.lafpos\.filter\(\(r\) => !have\.has\(r\.date\)\), \.\.\.modpos\.filter\(\(r\) => !taken\.has\(r\.date\) && r\.date >= runFrom\)\]/);
+  // Öncelik şube içinde (tillKey: şube, gün): "Tümü"de bir şubenin raporu öteki şubenin aynı günkü yedek satırını düşürmez
+  assert.match(loader, /\.\.\.lafpos\.filter\(\(r\) => !have\.has\(tillKey\(r\)\)\),\n\s+\.\.\.modpos\.filter\(\(r\) => !taken\.has\(tillKey\(r\)\) && r\.date >= \(runFrom\.get\(r\.branchId \?\? ""\) \?\? ""\)\),/);
   const dataset = read("src/server/data/dataset.ts");
   // Rapor sınaması tek yerden (isReportRow): üçüncü kaynak (ModPOS) rapor sanılmaz
   assert.match(dataset, /const reportRows = till\.filter\(isReportRow\);/);
+  // LafPOS'un günleriyle yalnız LafPOS'un şubesinin raporları (denetim 21 Kasım #5: Marina'nın raporu Tuzla'nın LafPOS'unu beklemez).
+  // Birleşme mergeSales'te: hem görünümün satışı hem su litresinin "Tümü" satışı aynı kuralı kullanır (#4)
+  assert.match(dataset, /const reportRows = input\.till\.filter\(\(r\) => isReportRow\(r\) && isLafposBranch\(r\.branchId\)\);/);
   assert.match(dataset, /lastTillDay: reportRows\.at\(-1\)\?\.date \?\? null,/);
 });
 
@@ -224,7 +230,9 @@ test("G6: kapalı işaretli gün yalnız satışlı LafPOS gün sonuyla 'rapor y
   const mixed = tillMonths([r("2026-11-01"), r("2026-11-02", { zTotal: 0, card: 0, receipts: 0, source: "lafpos" })], "2026-11-03", "2026-11-01", [], ["2026-11-02"]);
   assert.equal(plain(missingSentence(mixed[0])), "1 gün rapor yok: 3 Kasım. O günler açıksanız ciro ve açık gün eksik kalır. 1 gün kapalı işaretli: 2 Kasım.");
   // Yükleyici fiş sayısını yedek satıra taşır
-  assert.match(read("src/server/data/cash-reports.ts"), /offRevenue: z\.data\.offRevenue, receipts: z\.data\.receipts, source: "lafpos" as const/);
+  const loader = read("src/server/data/cash-reports.ts");
+  assert.match(loader, /offRevenue: d\.offRevenue,\n\s+receipts: d\.receipts,/);
+  assert.match(loader, /payments: Math\.round\(\(d\.cash \+ d\.card \+ d\.mealCard \+ d\.online \+ d\.other\) \* 100\) \/ 100,\n\s+source: "lafpos" as const,/);
 });
 
 test("G8: fotoğraf kaldırma günün kanıtına göre: LafPOS gününde ModPOS Z fotoğrafı kanıt değil; gün sonu gelmediyse tek yazarkasa Z'si kanıt", () => {

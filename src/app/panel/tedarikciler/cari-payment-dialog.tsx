@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, ChoiceList, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Notice } from "@/components/ui/notice";
+import { TILL_REQUIRED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { allocateFifo, allocationPreview, validateManual, type AllocationLine, type OpenItem } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, round2, type CariMethod } from "@/lib/cari/balance";
@@ -38,9 +39,21 @@ export interface KasaOption {
   amount: number;
   store: string | null;
   createdByName: string;
+  /** Satırın kasası (şubenin adı) */
+  branch: string;
   /** Alışveriş satırının Aylık harcamalar kaydı */
   expense: { amount: number; date: string; categoryName: string } | null;
   match: boolean;
+}
+
+/**
+ * Kasadan yeni Teslim satırının açılabileceği kasalar (etkin fiziksel şubeler; docs/SUBE.md › Yazarken hangi şube) ve
+ * varsayılanı: seçili fiziksel şube, tek kasa varsa o. "Tümü" ya da online kanalda birden çok kasa açıksa `defaultId`
+ * boştur ve pencere şubeyi seçtirir (src/lib/branches.ts defaultTill; denetim 21 Kasım #31)
+ */
+export interface TillOptions {
+  options: { id: string; name: string }[];
+  defaultId: string | null;
 }
 
 /** Pencerenin açılış değerleri (fatura satırından "Kısmi ödeme", Kasa şeridinden "İşle") */
@@ -81,7 +94,8 @@ export const expenseGoneText = (e: NonNullable<KasaOption["expense"]>) => `${mon
 /**
  * Kasadan ödemenin satırı: o günün işlenmemiş Teslim satırları (tedarikçinin adıyla eşleşenler önce) ya da kasaya yeni
  * Teslim satırı. `amount` verilirse tutarı farklı satır seçilemez (borç ekle'nin "Ödendi"si kalan kadar öder).
- * `convert`: Alışveriş satırları da listelenir (Ödemeye çevir); `onList` yüklenen listeyi verir.
+ * `convert`: Alışveriş satırları da listelenir (Ödemeye çevir); `onList` yüklenen listeyi verir. Birden çok kasa açıkken
+ * her satır kasasının şubesini yazar ve yeni satır için kasa (`till`) seçilir.
  */
 export function KasaLinePicker({
   date,
@@ -92,6 +106,9 @@ export function KasaLinePicker({
   amount,
   convert = false,
   onList,
+  tills,
+  till,
+  onTill,
 }: {
   date: string;
   names: string[];
@@ -101,7 +118,13 @@ export function KasaLinePicker({
   amount?: number | null;
   convert?: boolean;
   onList?: (list: KasaOption[]) => void;
+  tills: TillOptions;
+  /** Yeni satırın kasası (şube kimliği; seçilmediyse null) */
+  till: string | null;
+  onTill: (id: string) => void;
 }) {
+  const tillId = useId();
+  const many = tills.options.length > 1;
   const [lines, setLines] = useState<{ date: string; list: KasaOption[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(date);
@@ -151,7 +174,7 @@ export function KasaLinePicker({
                     <span className="block text-xs font-normal text-ink-mute">tutar farklı</span>
                   ) : (
                     <span className="block text-xs font-normal text-ink-mute empty:hidden">
-                      {[l.match ? "" : "adı eşleşmiyor", l.kind === "harcama" ? (l.expense ? "ödemeye çevrilir, gider kaydı silinir" : "ödemeye çevrilir") : ""].filter(Boolean).join(" · ")}
+                      {[many ? `${l.branch} kasası` : "", l.match ? "" : "adı eşleşmiyor", l.kind === "harcama" ? (l.expense ? "ödemeye çevrilir, gider kaydı silinir" : "ödemeye çevrilir") : ""].filter(Boolean).join(" · ")}
                     </span>
                   )}
                 </span>
@@ -173,6 +196,19 @@ export function KasaLinePicker({
         </button>
       </div>
       {list && !list.length ? <p className="mt-1.5 text-xs text-ink-mute">{convert ? "O gün kasada işlenmemiş satır yok." : "O gün kasada işlenmemiş Teslim satırı yok."}</p> : null}
+      {value === "new" && many ? (
+        // Yeni satır hangi şubenin kasasına yazılır: "Tümü"de varsayılan yok, seçilmeden kaydedilmez (denetim 21 Kasım #31)
+        <Field label="Hangi şubenin kasası" htmlFor={tillId} className="mt-3" hint="Teslim satırı bu kasanın akşam raporunda “Gün içinde çıkan”a girer.">
+          <Select id={tillId} value={till ?? ""} onChange={(e) => onTill(e.target.value)} aria-invalid={!till || undefined}>
+            {till ? null : <option value="">Şube seçin</option>}
+            {tills.options.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
     </fieldset>
   );
 }
@@ -197,6 +233,7 @@ export function CariPaymentDialog({
   items,
   payment,
   initial,
+  tills,
   onClose,
   onSaved,
 }: {
@@ -213,6 +250,8 @@ export function CariPaymentDialog({
   items: OpenItem[];
   payment?: EditPayment | null;
   initial?: CariPaymentInitial;
+  /** Kasadan yeni satırın kasaları ve varsayılanı */
+  tills: TillOptions;
   onClose: () => void;
   /** Kayıttan sonra (kart yeni açıldıysa adresi değişebilir) */
   onSaved?: (r: { slug: string | null }) => void;
@@ -222,6 +261,7 @@ export function CariPaymentDialog({
   const [amount, setAmount] = useState(amountText(initial?.amount ?? edit?.amount ?? null));
   const [method, setMethod] = useState<CariMethod>(initial?.method ?? edit?.method ?? defaultMethod);
   const [line, setLine] = useState<number | "new" | null>(initial?.cashOutId ?? null);
+  const [till, setTill] = useState<string | null>(tills.defaultId);
   const [mode, setMode] = useState<AllocationMode>(initial?.mode ?? (initial?.select?.length ? "manual" : "auto"));
   const balanceOf = useMemo(() => new Map(items.map((i) => [itemKey(i), i.balance])), [items]);
   const [picked, setPicked] = useState<Map<string, string>>(() => {
@@ -271,11 +311,12 @@ export function CariPaymentDialog({
     if (dateError || amountError) return;
     if (!(value > 0)) return void setError("Tutar girin");
     if (method === "kasa" && !stayKasa && line === null) return void setError("Kasa satırını seçin ya da kasaya yeni satır ekleyin");
+    if (method === "kasa" && !stayKasa && line === "new" && !till) return void setError(TILL_REQUIRED);
     if (manualProblem) return void setError(manualProblem);
     if (converting && chosen?.expense && !convertOk) return void setError("Satırın gider kaydının silineceğini onaylayın");
     if (past.length && !pastOk) return void setError("Geçmiş ayın değişeceğini onaylayın");
     if (converting && chosen) return void convert(chosen);
-    const cashOut = method === "kasa" && !stayKasa ? (line === "new" ? { mode: "new" as const } : { mode: "existing" as const, id: line as number }) : null;
+    const cashOut = method === "kasa" && !stayKasa ? (line === "new" ? { mode: "new" as const, branchId: till } : { mode: "existing" as const, id: line as number }) : null;
     run(async () => {
       const r = await saveSupplierPayment({
         target,
@@ -464,6 +505,9 @@ export function CariPaymentDialog({
                 value={line}
                 convert={!edit}
                 onList={setKasaList}
+                tills={tills}
+                till={till}
+                onTill={setTill}
                 onChange={(v, l) => {
                   setLine(v);
                   setConvertOk(false);

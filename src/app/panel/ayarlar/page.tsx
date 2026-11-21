@@ -12,6 +12,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { logPerson } from "@/lib/activity-person";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
@@ -241,8 +242,8 @@ async function SiteLinksCard() {
     },
     {
       key: "orders",
-      title: "Uygulama siparişleri (bar ekranı)",
-      href: "/panel/karaoke",
+      title: "Uygulama siparişleri ve masa çağrıları",
+      href: "/panel/siparisler",
       health: linkHealth(configured, orders.lastOkAt, orders.lastPullAt, orders.lastError),
       okAt: orders.lastOkAt,
       tryAt: orders.lastPullAt,
@@ -401,17 +402,21 @@ async function SettingsContent() {
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
   const dayLabel = dayLabeler(new Date());
-  const fifoOptions = fifoMonthOptions(model.countedMonths, model.fifoStart, model.ds.currentMonth ?? currentMonthTR());
+  // Stok değerleme işletme geneli bir ayar (settings.stokFifoBaslangic): Tümü'nün kâr-zararını değiştirir. Önizleme de
+  // "Tümü"nün sayımlarıyla ve elle girilmiş devirleriyle; şube seçiliyken şubenin kısmi stoğu ve süzülen stock:*
+  // satırları yanıltırdı (denetim 21 Kasım #32; Genel bakış'ın nakit planı kartıyla aynı kalıp)
+  const company = model.ds.branchView ? await loadModel({ scope: ALL_BRANCHES }) : model;
+  const fifoOptions = fifoMonthOptions(company.countedMonths, company.fifoStart, company.ds.currentMonth ?? currentMonthTR());
 
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <UsersLinkCard />
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
       <StockValuationCard
-        start={model.fifoStart}
-        rows={valuationRows(model, fifoOptions)}
+        start={company.fifoStart}
+        rows={valuationRows(company, fifoOptions)}
         months={fifoOptions}
-        openingOverrides={model.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
+        openingOverrides={company.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
       />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />

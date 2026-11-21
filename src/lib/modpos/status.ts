@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { dayMonthYearTR } from "@/lib/lafpos/switch";
 import { dayAblativeTR, dayMonthTR, todayTR } from "@/lib/reminders";
 
@@ -12,6 +13,14 @@ import { MODPOS_DAILY_QUOTA, quotaLeft, quotaRenewsAt, renewText, type ModposQuo
  */
 
 export const MODPOS_STATE_KEY = "modpos";
+
+/**
+ * Şubenin durum anahtarı (docs/MODPOS-API.md › Şubeler): kota, son çekimler ve alınamayan günler anahtarın, yani
+ * şubenindir. Tuzla eski adı korur (`modpos`), öteki şube `modpos:marina`.
+ */
+export function modposStateKey(branchId: string): string {
+  return branchId === DEFAULT_BRANCH_ID ? MODPOS_STATE_KEY : `${MODPOS_STATE_KEY}:${branchId}`;
+}
 /** Saklanan çalışma sayısı */
 export const MODPOS_RUNS_KEEP = 10;
 
@@ -136,7 +145,11 @@ export type ModposTone = "gray" | "green" | "blue" | "amber" | "red";
 
 export interface ModposCardInput {
   now: Date;
-  keyProblem: "missing" | "format" | null;
+  keyProblem: "missing" | "format" | "shared" | null;
+  /** Şubenin anahtarının ortam değişkeni (yoksa MODPOS_API_KEY; src/lib/modpos/sube.ts modposKeyEnv) */
+  keyEnv?: string;
+  /** Ortak anahtarın metni (keyProblem "shared") */
+  sharedText?: string;
   /** Önizleme (Preview) dağıtımı: canlının veritabanını paylaşır, çekmez */
   preview: boolean;
   state: ModposState;
@@ -174,12 +187,13 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
   // quotaLeft'le aynı kural: yeni günün hakkı en az 1
   const hak = c.state.quota && c.state.quota.hak >= 1 ? c.state.quota.hak : MODPOS_DAILY_QUOTA;
   const renew = renewText(quotaRenewsAt(c.state.quota, c.now), c.now);
+  const keyEnv = c.keyEnv ?? "MODPOS_API_KEY";
   if (c.keyProblem === "missing") {
     return {
       tone: "gray",
       badge: "Kurulmadı",
       headline: "ModPOS API anahtarı tanımlı değil",
-      lines: ["Vercel › lafmaliyet › Settings › Environment Variables'a (yalnız Production) MODPOS_API_KEY eklenip yeniden yayınlanınca her sabah dünün kasa verisi ModPOS API'den gelir."],
+      lines: [`Vercel › lafmaliyet › Settings › Environment Variables'a (yalnız Production) ${keyEnv} eklenip yeniden yayınlanınca her sabah dünün kasa verisi ModPOS API'den gelir.`],
       short: "Kurulmadı",
       left,
       canFetch: false,
@@ -190,12 +204,24 @@ export function modposCardSummary(c: ModposCardInput): ModposCardSummary {
     return {
       tone: "red",
       badge: "Anahtar bozuk",
-      headline: "MODPOS_API_KEY'in biçimi bozuk (boşluk ya da satır sonu var, ya da çok kısa)",
+      headline: `${keyEnv}'in biçimi bozuk (boşluk ya da satır sonu var, ya da çok kısa)`,
       lines: ["Vercel'deki değeri Gafdigi'nin verdiği anahtarla aynen değiştirip yeniden yayınlayın."],
       short: "Anahtar bozuk",
       left,
       canFetch: false,
       fetchBlocked: "Anahtar bozuk",
+    };
+  }
+  if (c.keyProblem === "shared") {
+    return {
+      tone: "red",
+      badge: "Ortak anahtar",
+      headline: `${keyEnv} başka bir şubenin anahtarıyla aynı`,
+      lines: [c.sharedText ?? "Aynı anahtarla iki şubenin kasası karışırdı: Gafdigi'den bu şubenin kendi anahtarını alıp Vercel'e yazın."],
+      short: "Ortak anahtar",
+      left,
+      canFetch: false,
+      fetchBlocked: "Anahtar başka şubeyle ortak",
     };
   }
   const lines: string[] = [];

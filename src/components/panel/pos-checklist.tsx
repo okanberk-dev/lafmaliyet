@@ -68,10 +68,19 @@ export function PosChecklist(
   function undo(marks: { markId: number; productId: number }[]) {
     forget(marks.map((m) => m.productId));
     setUndone((s) => new Set([...s, ...marks.map((m) => m.markId)]));
+    const restore = () => setUndone((s) => new Set([...s].filter((id) => !marks.some((m) => m.markId === id))));
     start(async () => {
-      const u = await undoPosMarks(marks.map((m) => m.markId));
+      // Eylem atarsa (ağ kesildi, panel güncellendi) işaret yerinde kalır: "Son işaretledikleriniz"e döner, yeniden geri
+      // alınabilir; hata yine useActionTransition'ın bildirimiyle çıkar (denetim 21 Kasım #34)
+      let u: Awaited<ReturnType<typeof undoPosMarks>>;
+      try {
+        u = await undoPosMarks(marks.map((m) => m.markId));
+      } catch (e) {
+        restore();
+        throw e;
+      }
       if (!u.ok) {
-        setUndone((s) => new Set([...s].filter((id) => !marks.some((m) => m.markId === id))));
+        restore();
         return void toast.error(u.error);
       }
       if (u.data.refused.length) toast.warning(`${num(u.data.refused.length)} işaret geri alınamadı`, { description: u.data.refused[0].reason });
@@ -84,8 +93,17 @@ export function PosChecklist(
     const ids = list.map((i) => i.productId);
     setDone((m) => new Map([...m, ...list.map((i) => [i.productId, i.since] as const)]));
     start(async () => {
-      // Görülen fiyatla: bu arada fiyatı yeniden değişen işaretlenmez, listeye bugünkü fiyatıyla döner
-      const r = await markPosDone(list.map((i) => ({ productId: i.productId, price: i.price })));
+      // Görülen fiyatla: bu arada fiyatı yeniden değişen işaretlenmez, listeye bugünkü fiyatıyla döner. Eylem atarsa
+      // (ağ kesildi, panel güncellendi) hiçbir şey işaretlenmedi: gizlenen satırlar listeye döner, yeniden denenir; hata
+      // yine useActionTransition'ın bildirimiyle çıkar (denetim 21 Kasım #34). İstek sunucuya ulaştıysa yeniden
+      // işaretlemek "zaten işaretlenmiş" der.
+      let r: Awaited<ReturnType<typeof markPosDone>>;
+      try {
+        r = await markPosDone(list.map((i) => ({ productId: i.productId, price: i.price })));
+      } catch (e) {
+        forget(ids);
+        throw e;
+      }
       if (!r.ok) {
         forget(ids);
         return void toast.error(r.error);

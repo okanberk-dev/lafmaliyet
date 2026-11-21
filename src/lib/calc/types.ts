@@ -137,8 +137,16 @@ export interface TillMonth {
   reported: number;
   /** Satış olan (Z toplamı > 0) gün */
   openDays: number;
-  /** Z toplamlarının toplamı: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam) */
+  /**
+   * Ayın cirosu: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam). Z toplamlarının
+   * toplamından, Z toplamının içinde olduğu ödeme dökümüyle anlaşılan ödenmez / ikram düşülür
+   * (src/lib/cash-revenue.ts dayRevenue; docs/KASA-RAPORU.md › Ciro ve ödenmez)
+   */
   posRevenue: number;
+  /** Z toplamlarının çıplak toplamı (ödenmez düşülmeden). Yoksa (eski kayıt, test) posRevenue ile aynı sayılır */
+  zTotalSum?: number;
+  /** posRevenue'ya girmeyen, Z toplamlarının içinden düşülen ödenmez / ikram (0: düşülen yok) */
+  offInPos?: number;
   /** İndirim ve ödenmez: yalnız girildiği günlerin toplamı (hiç girilmediyse null) ve o gün sayısı */
   discounts: number | null;
   discountDays: number;
@@ -220,6 +228,11 @@ export interface SalesLine {
   productId: number | null;
   isService: boolean;
   note: string | null;
+  /**
+   * Listenin şubesi (veri kümesi; yoksa Tuzla): LafPOS'a geçiş günü yalnız LafPOS'un şubesinin ModPOS listesini düşürür,
+   * ModPOS'ta kalan şubenin (Marina) listesi her ay sayılır (src/lib/lafpos/sales.ts mergeSalesSources)
+   */
+  branchId?: string;
   /**
    * LafPOS'un günlük satışlarından kurulan ay toplamı (src/lib/lafpos/sales.ts; geçiş gününden itibaren): `days` satırın
    * geçtiği gün sayısı. Yalnız okunur: kimliği eksi, sales_lines'ta satırı yok, eşleştirmesi POS adıyla yapılır.
@@ -373,6 +386,8 @@ export interface StockCount {
   qty: number;
   /** Sayıldığı andaki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1). Yoksa malzemenin bugünkü sayım birimi kullanılır. */
   factor?: number | null;
+  /** Sayan şube (sayım şube başınadır; "Tümü"de aynı malzemenin her şubeden satırı gelir). Yoksa tek şube */
+  branchId?: string | null;
 }
 
 export interface StockExtra {
@@ -455,6 +470,11 @@ export interface WasteEntry {
   ingredientId: number | null;
   qty: number;
   factor: number;
+  /**
+   * Panel kaydının şubesi (veri kümesi): LafPOS'un gün sonu gelen günde yalnız LafPOS'un şubesinin ürün ikramı düşer,
+   * ModPOS'ta kalan şubeninki sayılır (src/lib/lafpos/ikram.ts panelWasteCounts). Yoksa Tuzla'nın
+   */
+  branchId?: string;
   /** LafPOS'un ikram satırı (yalnız motorun saydığı kayıtlarda; paneldekilerde yok) */
   source?: "lafpos";
   /** LafPOS'taki ad (ürünü bulunamasa da gösterilir) */
@@ -513,6 +533,14 @@ export interface Dataset {
    * mal maliyeti şubenin satışından reçeteye göredir (faturalar ve sayım işletme geneli; engine.ts stockFlow)
    */
   branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
+  /**
+   * Su + buz litre fiyatının işletme geneli satışı (denetim 21 Kasım #4): tek şube seçiliyken SU GİDERİ girilmiş ayların
+   * bütün şubelerdeki satış satırları (LafPOS dahil, "Tümü"deki gibi) ve laffogato.net online satışları. SU GİDERİ
+   * işletmenin faturasıdır (`manual:su` her şubede görünür); yalnız şubenin litresine bölünseydi su ve buz içeren her
+   * ürünün maliyeti seçili şubeye göre şişerdi. "Tümü"de yok: veri kümesinin kendi satışları zaten işletme genelidir
+   * (engine.ts waterUsage)
+   */
+  waterSales?: { salesLines: SalesLine[]; siteSales: SiteSalesMonth[] };
   /**
    * Süren ayda yüklenen satış listesinin son günü ve o güne kadarki kasa raporları (src/lib/sales-coverage.ts; yoksa
    * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)

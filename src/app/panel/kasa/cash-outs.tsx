@@ -74,8 +74,14 @@ export function CashOutsCard({
   oldDays = [],
   supplierNames = [],
   hints = {},
+  branchId = null,
 }: {
   date: string;
+  /**
+   * Kartın kasası (docs/SUBE.md › Yazarken hangi şube): yeni satır ve ekleme isteği bu şubeye gider, gönderim anındaki
+   * seçime değil (başka sekmede seçici değişmiş olabilir). Yoksa sunucu seçili kasayı kullanır
+   */
+  branchId?: string | null;
   today: boolean;
   lines: CashOutView[];
   categories: CashOutCategory[];
@@ -396,6 +402,7 @@ export function CashOutsCard({
           onRetry={(id) => void retry(id)}
           onClose={close}
           supplierNames={supplierNames}
+          branchId={branchId}
         />
       ) : null}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />

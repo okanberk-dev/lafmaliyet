@@ -11,6 +11,7 @@ import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/for
 import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Notice } from "@/components/ui/notice";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import { TILL_REQUIRED } from "@/lib/branches";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COST_MODE_LABEL, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, round2, type CariMethod } from "@/lib/cari/balance";
@@ -22,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { deleteSupplierEntry, dismissCashOut, removeAllocations, saveSupplierDebt } from "@/server/actions/cari";
 import { loadDebtOptions } from "@/server/actions/cari-options";
 
-import { KasaLinePicker, type CariTarget } from "../cari-payment-dialog";
+import { KasaLinePicker, type CariTarget, type TillOptions } from "../cari-payment-dialog";
 import { amountText, CARI_UNDO_MS, CariPhotoField, PastConfirm } from "../cari-ui";
 
 /** Penceredeki harcama kaydı (Aylık harcamalar) */
@@ -83,6 +84,7 @@ export function DebtDialog({
   unpaidInvoices,
   debt,
   initialMode,
+  tills,
   onClose,
   onSaved,
 }: {
@@ -103,6 +105,8 @@ export function DebtDialog({
   debt?: EditDebt | null;
   /** Açılışta seçili gider (ör. 45 gün şeridinden "Gider olarak yaz") */
   initialMode?: CostMode;
+  /** "Ödendi › Kasadan"ın yeni satırının kasaları ve varsayılanı */
+  tills: TillOptions;
   onClose: () => void;
   onSaved?: (r: { slug: string | null }) => void;
 }) {
@@ -123,6 +127,7 @@ export function DebtDialog({
   const [paidMethod, setPaidMethod] = useState<CariMethod>(defaultMethod);
   const [paidDate, setPaidDate] = useState(today);
   const [line, setLine] = useState<number | "new" | null>(null);
+  const [till, setTill] = useState<string | null>(tills.defaultId);
   const [past, setPast] = useState<MonthEffect[]>([]);
   const [pastOk, setPastOk] = useState(false);
   // Kasa denetimi (K15): sunucunun bulduğu satırlar ve seçim ("pesin:<id>", "kapat:<id>", "ayri")
@@ -179,6 +184,7 @@ export function DebtDialog({
     if (past.length && !pastOk) return void setError("Geçmiş ayın değişeceğini onaylayın");
     if (kasa && !kasaPick) return void setError("Kasadaki satır için bir seçim yapın");
     if (paid && !kapat && paidMethod === "kasa" && line === null) return void setError("Kasa satırını seçin ya da kasaya yeni satır ekleyin");
+    if (paid && !kapat && paidMethod === "kasa" && line === "new" && !till) return void setError(TILL_REQUIRED);
     const seen = kasa?.map((l) => l.id) ?? [];
     const [action, pickedId] = (kasaPick ?? "").split(":");
     const kasaChoice = kasa && kasaPick ? (action === "ayri" ? { action: "ayri" as const, seen } : { action: action as "pesin" | "kapat", cashOutId: Number(pickedId), seen }) : null;
@@ -196,7 +202,7 @@ export function DebtDialog({
         note: note.trim() || null,
         photoId,
         applyCredit: useCredit && credit > EPS,
-        paid: paid && !kapat ? { method: paidMethod, date: paidDate, cashOut: paidMethod === "kasa" ? (line === "new" ? { mode: "new" } : { mode: "existing", id: line as number }) : null } : null,
+        paid: paid && !kapat ? { method: paidMethod, date: paidDate, cashOut: paidMethod === "kasa" ? (line === "new" ? { mode: "new", branchId: till } : { mode: "existing", id: line as number }) : null } : null,
         confirmPast: pastOk ? past.map((e) => e.month) : [],
         kasaChoice,
       });
@@ -551,6 +557,9 @@ export function DebtDialog({
                 value={line}
                 amount={paidAmount}
                 onChange={(v) => setLine(v)}
+                tills={tills}
+                till={till}
+                onTill={setTill}
               />
             ) : null}
           </div>

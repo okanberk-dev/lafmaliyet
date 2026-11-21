@@ -10,12 +10,13 @@ import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
+import { claimChecklistAlertPoll, runChecklistAlerts } from "@/server/notify/checklist-alerts";
 import { vapidPublicKey } from "@/server/push/send";
 import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/site-orders/sync";
 
 /**
  * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları (ve sayaçların bekleyen silme istekleri),
- * laffogato.net'in açık kafe siparişleri (bar ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına
+ * laffogato.net'in açık kafe siparişleri ve masa çağrıları (Siparişler; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına
  * kadarki hatırlatıcıları, sunucu saati (sayaç cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu
  * sürekli sormaz: açılışta, bildirim gelince, sekmeye dönünce ve seyrek bir yedek kontrolde ister (sekme öndeyken; arka
  * planda yalnız bildirim gelmeyen zil cihazı, 10 dakikada bir; src/lib/live-poll.ts). ETag üç ucuz işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların
@@ -23,6 +24,8 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
  *
  * Karaoke kopyası bayatsa (ping kaçtı, son çekme düştü) yanıttan sonra site yeniden sorulur
  * (src/lib/karaoke/freshness.ts): kaçan rezervasyonu, kimse bakmazken veritabanını uyandırmadan, bakan ilk sekme getirir.
+ * Aynı yolla, yanıttan sonra ve en çok 5 dakikada bir, kontrol listesi e-posta hatırlatmaları gönderilir
+ * (src/server/notify/checklist-alerts.ts).
  */
 export async function GET(request: NextRequest) {
   await connection();
@@ -39,6 +42,18 @@ export async function GET(request: NextRequest) {
         if (r.status === "error") console.warn("[karaoke] tazeleme:", r.error);
       } catch (e) {
         console.error("[karaoke] tazeleme", e);
+      }
+    });
+  }
+  // Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6): açık bir sekme sorduğunda, yanıttan sonra, sunucu
+  // örneği başına en çok 5 dakikada bir. Saatlik GitHub işi yoğunlukta saatlerce gecikebildiği için asıl tetikleyici bu
+  if (claimChecklistAlertPoll()) {
+    after(async () => {
+      try {
+        const r = await runChecklistAlerts(new Date(), Date.now() + 20_000);
+        if (r.failed) console.warn(`[kontrol] hatırlatma: ${r.failed} e-posta gidemedi`);
+      } catch (e) {
+        console.error("[kontrol] hatırlatma", e);
       }
     });
   }
@@ -81,6 +96,9 @@ export async function GET(request: NextRequest) {
       changeAt: ordersState.lastChangeAt,
       // Ödeme bekleniyor: ekran bu ana kadar yoğun (üç dakikada bir çeker); takibin başlaması ve bitmesi sürümü artırır
       awaitingUntil: linked ? awaitingUntil(ordersState) : null,
+      // Masa çağrıları ("Garson çağır"): son listenin kopyasıyla aynı sürümde (ETag), müşteriye dair bir şey yok
+      calls: linked ? snapshot.calls : [],
+      callsSkipped: snapshot.callsSkipped,
     },
     reminders,
     push: { publicKey },

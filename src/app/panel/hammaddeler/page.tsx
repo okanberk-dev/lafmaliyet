@@ -201,8 +201,9 @@ async function IngredientsContent() {
   const unused = active.filter((r) => !activeUses(r)).length;
   // Kartların dökümü (karta dokununca açılan pencere): yüklenen satırlardan ve modelin su hesabından
   const breakdown = ingredientBreakdowns(rows);
-  const waterMonth = model.water.month;
-  const waterDokum = waterBreakdown(model.water, rows, waterMonth ? model.ingredientUsage(waterMonth) : new Map<number, number>(), waterMonth ? model.onlineUsage(waterMonth) : undefined);
+  // Litre satırları motorun su hesabıyla aynı kaynaktan: şube seçiliyken de işletme genelinin satışı (model.waterUsage)
+  const waterUse = model.water.month ? model.waterUsage(model.water.month) : null;
+  const waterDokum = waterBreakdown(model.water, rows, waterUse?.list ?? new Map<number, number>(), waterUse?.online);
   const categoryCount = new Set(active.map((r) => r.category)).size;
   const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
 

@@ -649,3 +649,19 @@ test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından son
   assert.equal(digestSummary({ count: 1, boxes: [] }), "1 hatırlatma");
 });
 
+
+// Denetim 21 Kasım #18: elle gönderim ve önizleme sabah işi gibi "Tümü"yle okur, yöneticinin şube seçimiyle değil
+test("sabah e-postası seçiciden bağımsız: gönderim (sabah işi ve şimdi gönder) ve önizleme Tümü kapsamında", () => {
+  const digest = read("src/server/notify/digest.ts");
+  const run = digest.slice(digest.indexOf("export async function runReminderDigest"), digest.indexOf("async function sendReminderDigest"));
+  assert.match(run, /return withBranchScope\(ALL_BRANCHES, \(\) => sendReminderDigest\(trigger, ctx\)\);/);
+  // Gövde yalnız bu sarmalayıcıdan çağrılır (dışa açık değil)
+  assert.equal(digest.match(/sendReminderDigest\(/g)?.length, 2);
+  assert.doesNotMatch(digest, /export async function sendReminderDigest/);
+  const actions = read("src/server/actions/reminders.ts");
+  const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
+  assert.match(preview, /await requireAdmin\(\);\s+(?:\/\/[^\n]*\n\s+)*return withBranchScope\(ALL_BRANCHES, digestPreview\);/);
+  // Şimdi gönder sabah işiyle aynı yoldan
+  const now = actions.slice(actions.indexOf("export async function runDigestNow"));
+  assert.match(now, /const r = await runReminderDigest\("manual"\);/);
+});

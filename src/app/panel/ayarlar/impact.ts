@@ -10,10 +10,10 @@ import { COMMISSION_CATEGORY, GOODS_CATEGORIES, SEPARATE_CATEGORIES } from "@/li
 /**
  * Önizleme için hesaplama motorunun ihtiyaç duyduğu en küçük veri: ürünler, reçeteler, hammaddeler, son satış ayının
  * ve su faturası ayının satış listesi, aynı ayların laffogato.net satışı (litre online siparişleri de sayar,
- * denetim E-57), SU GİDERİ satırları, personel ve sabit giderler. Başabaş Genel bakış'takiyle aynı kalsın diye (denetim
- * E-59, E-13) başabaşın düştüğü son kapanmış online ay, her ay girilen harcamalar (geçen ay ve bu ay) ve bunlara bağlı
- * fatura kategorisinin faturaları da gelir. Öteki faturalar, sayımlar ve gelir-gider satırları ayarlardan
- * etkilenmediği için gönderilmez.
+ * denetim E-57; şube seçiliyken su ayının bütün şubelerdeki satışı da, denetim 21 Kasım #4), SU GİDERİ satırları,
+ * personel ve sabit giderler. Başabaş Genel bakış'takiyle aynı kalsın diye (denetim E-59, E-13) başabaşın düştüğü son
+ * kapanmış online ay, her ay girilen harcamalar (geçen ay ve bu ay) ve bunlara bağlı fatura kategorisinin faturaları da
+ * gelir. Öteki faturalar, sayımlar ve gelir-gider satırları ayarlardan etkilenmediği için gönderilmez.
  */
 export type ImpactData = Pick<
   Dataset,
@@ -34,7 +34,17 @@ export type ImpactData = Pick<
   | "expenseCategories"
   | "expenseEntries"
   | "invoices"
+  | "waterSales"
 >;
+
+/** Önizlemeye giden işletme geneli su satışı: litre fiyatının ayı; elle fiyat varken (ay boş) satışı olan son fatura ayı */
+function companyWaterSales(sales: NonNullable<Dataset["waterSales"]>, waterMonth: string | null): NonNullable<Dataset["waterSales"]> {
+  const month = waterMonth ?? sales.salesLines.reduce<string | null>((a, l) => (a === null || l.month > a ? l.month : a), null);
+  return {
+    salesLines: sales.salesLines.filter((l) => l.month === month).map((l) => ({ ...l, note: null })),
+    siteSales: sales.siteSales.filter((r) => r.month === month),
+  };
+}
 
 export function impactData(model: Model): ImpactData {
   const ds = model.ds;
@@ -64,6 +74,9 @@ export function impactData(model: Model): ImpactData {
     siteSales: (ds.siteSales ?? []).filter((r) => keep.has(r.month) || r.month === cover),
     months: ds.months.filter((m) => keep.has(m.month)),
     pnlEntries: ds.pnlEntries.filter((e) => e.rowKey === "manual:su").map((e) => ({ ...e, note: null })),
+    // Şube seçiliyken su litresi işletme genelinin satışından (denetim 21 Kasım #4): su ayının (elle fiyat varken
+    // faturası ve satışı olan son ayın) bütün şubelerdeki satışı da gider, önizlemenin litre fiyatı modelinkiyle aynı
+    ...(ds.waterSales ? { waterSales: companyWaterSales(ds.waterSales, model.water.month) } : {}),
     staff: ds.staff,
     staffVersions: ds.staffVersions,
     fixedExpenses: ds.fixedExpenses,

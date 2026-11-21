@@ -17,7 +17,10 @@ import { qtyText, type WasteKind } from "./waste";
 /** Geç kayıt penceresi: dünden önceki günler bugünden en çok bu kadar geriye (bugün 24 ise 10'u dahil) */
 export const LATE_WINDOW_DAYS = 14;
 
-/** Günün kasa kilidi: o günün raporu var mı, sonraki bir günün raporu var mı (ikisi de varsa gün kapandı) */
+/**
+ * Günün kasa kilidi: o günün raporu var mı, sonraki bir günün raporu var mı (ikisi de varsa gün kapandı). Raporlar
+ * kaydın şubesinin kasasınındır (src/server/waste/core.ts wasteLock): başka şubenin raporu günü açmaz ya da kapatmaz
+ */
 export interface WasteLock {
   hasReport: boolean;
   laterReport: boolean;

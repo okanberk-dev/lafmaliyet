@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, desc, gte, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 
-import { isLafposDay } from "@/lib/lafpos/switch";
+import { branchSwitchDay, isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
 import { normalizeOkc, okcReadingOnLafposDay, okcToLegacyPos, toStaffReading } from "@/lib/photo-read/okc";
 import { OKC_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
@@ -13,6 +13,7 @@ import { addDays } from "@/lib/reminders";
 import { extractImage, type AiErrorCode } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType } from "@/server/ai/run";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
@@ -27,22 +28,34 @@ export interface ReadOutcome {
   canRetry: boolean;
 }
 
-/** Bu günden önceki son raporun Z no'su (Z no sırası denetimi) */
+/**
+ * Kasanın şubesinde bu günden önceki son raporun Z no'su (Z no sırası denetimi; "eski bir Z raporu olabilir"). Her
+ * şubenin kendi ModPOS'u ve Z sayacı var (docs/SUBE.md): öteki şubenin Z'siyle karşılaştırılmaz. Şube formun kasasıdır
+ * (`currentTillBranch`; yazarkasa Z'sinin `previousOkc`'si gibi)
+ */
 async function previousZNo(day: string): Promise<string | null> {
-  const [row] = await getDb().select({ zNo: s.cashReports.zNo }).from(s.cashReports).where(lt(s.cashReports.date, day)).orderBy(desc(s.cashReports.date)).limit(1);
+  const [row] = await getDb()
+    .select({ zNo: s.cashReports.zNo })
+    .from(s.cashReports)
+    .where(and(lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentTillBranch())))
+    .orderBy(desc(s.cashReports.date))
+    .limit(1);
   return row?.zNo ?? null;
 }
 
 /**
  * Büyüklük denetimi için son 28 günün toplamları (plan §5.1): yazarkasa toplamları, hiç yoksa ModPOS Z toplamları
  * (yazarkasa bölümü kullanılmaya başlamadan önceki günler). Önceki yazarkasa Z'si (`previousOkc`, Z no sırası ve
- * kümülatif zinciri) kayıtlı raporların okc_* sütunlarından okunur; zincir denetimi burada, okumada yapılır (D17)
+ * kümülatif zinciri) kayıtlı raporların okc_* sütunlarından okunur; zincir denetimi burada, okumada yapılır (D17).
+ * Toplamlar kasanın şubesinin (`currentTillBranch`; `previousZNo` gibi): iki şubenin toplamı karışınca ortanca öbür
+ * şubeye kayıyordu; büyük şubenin gerçek Z'si "çok büyük" görünebiliyor, küçük şubede okunan kümülatif uyarısız
+ * kalabiliyordu
  */
 async function okcTypical(day: string): Promise<number[]> {
   const rows = await getDb()
     .select({ okc: s.cashReports.okcTotal, z: s.cashReports.zTotal })
     .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day)));
+    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentTillBranch())));
   const okc = rows.map((r) => r.okc).filter((v): v is number => v !== null && v > 0);
   return okc.length ? okc : rows.map((r) => r.z).filter((v) => v > 0);
 }
@@ -98,8 +111,11 @@ export async function readPhotoFor(
     const [prev, recentTotals, switchDay, res] = await Promise.all([
       previousOkc(input.day),
       okcTypical(input.day),
-      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39)
-      lafposSwitchDayOf(getDb()).catch(() => null),
+      // Günün kasası: LafPOS gününde ModPOS Z bölümü yok, oraya okutma önerilmez (denetim E-39). Kasanın şubesinin geçiş
+      // günü (branchSwitchDay): ModPOS'ta kalan şubede öneri kalır
+      Promise.all([lafposSwitchDayOf(getDb()), currentTillBranch()])
+        .then(([d, b]) => branchSwitchDay(d, b))
+        .catch(() => null),
       extractImage({ ...base, task: OKC_TASK(input.day), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS }),
     ]);
     if (!res.ok) return failed(res.code, res.message);

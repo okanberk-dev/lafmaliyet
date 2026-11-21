@@ -339,12 +339,12 @@ test("yazım yolu sunucu eylemi değil; gönderim kapıdan 'request' dönerse hi
   assert.match(save, /return \{ kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: /);
   assert.ok(save.indexOf("staffCashGate(") < save.indexOf("writeCashReport("), "kapı yazımdan önce");
   // Kendi silme isteği bekleyen rapor düzenlenmez
-  assert.match(save, /if \(await ownDeletePending\(tx, me\.id, data\.date\)\) throw new UserError\(CASH_REQUEST_TEXT\.deletePending\)/);
+  assert.match(save, /if \(await ownDeletePending\(tx, me\.id, data\.date, branchId\)\) throw new UserError\(CASH_REQUEST_TEXT\.deletePending\)/);
   const action = read("src/server/actions/cash-report.ts");
   assert.match(action, /if \(out\.kind === "needsApproval"\) return \{ needsApproval: true as const, request: out\.request, gate: out\.gate \};/);
   // Silme, aynı günün öteki bekleyen isteklerini kapatır (reddedilmez)
   const remove = store.slice(store.indexOf("export async function removeCashReport"));
-  assert.match(remove, /supersede\(tx, \{ kinds: \[[^\]]*"kasa-duzeltme"[^\]]*"kasa-silme"[^\]]*\], day: row\.date, exceptId: o\.exceptRequestId \}, "Rapor silindi"\)/);
+  assert.match(remove, /supersede\(tx, \{ kinds: \[[^\]]*"kasa-duzeltme"[^\]]*"kasa-silme"[^\]]*\], subject: cashDaySubject\(row\.date, row\.branchId\), exceptId: o\.exceptRequestId \}, "Rapor silindi"\)/);
 });
 
 test("kasa e-postasına personel adresi yazılamaz ve gönderimde düşer; personel yükleyicisi başkasının isteğinin yalnız türünü, adını ve anını verir", () => {

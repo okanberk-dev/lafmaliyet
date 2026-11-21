@@ -5,11 +5,13 @@ import { and, count, eq } from "drizzle-orm";
 import { carryCheck, computeCash, openingNeedsNote, revisionChanges, revisionDataOf, staffCanReport, staffCashGate, type CashReportFields, type FieldChange } from "@/lib/cash-report";
 import {
   CASH_REQUEST_TEXT,
+  cashDaySubject,
   CorrectionPayload,
   correctionTitle,
   DeletePayload,
   deleteTitle,
   LatePayload,
+  lateBranchOf,
   mergeProposal,
   proposalChanges,
   type CorrectionPayloadT,
@@ -17,7 +19,7 @@ import {
   type ProposedFields,
 } from "@/lib/cash-requests";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
-import { currentWriteBranch } from "@/server/branch-scope";
+import { currentTillBranch } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
@@ -70,12 +72,13 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
   const data: CashReportFields = { ...input.fields, date };
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   if (!staffCanReport(date, now)) throw new UserError(CASH_REQUEST_TEXT.closed);
-  const branchId = await currentWriteBranch();
+  // Formun kasası: eylem formun gönderdiği kasayı doğrulayıp kapsamı ona çevirir (formTillBranch)
+  const branchId = await currentTillBranch();
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
     if (report.revision !== input.baseRevision) throw new UserError(CASH_REQUEST_TEXT.stale);
-    if (await ownDeletePending(tx, me.id, date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
+    if (await ownDeletePending(tx, me.id, date, branchId)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
     const laterReport = await hasLaterReport(tx, date, branchId);
     const kept = report.countedBy ?? report.submittedBy;
     const counter = await resolveCounter(tx, input.countedBy ?? kept ?? me.id, kept);
@@ -104,7 +107,7 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
     const out = await createOrUpdateRequest(
       tx,
       me,
-      { kind: "kasa-duzeltme", subject: `gun:${date}`, day: date, title: correctionTitle(date), payload, message: input.message.trim(), clientKey: input.clientKey },
+      { kind: "kasa-duzeltme", subject: cashDaySubject(date, branchId), day: date, title: correctionTitle(date), payload, message: input.message.trim(), clientKey: input.clientKey },
       now,
     );
     return { ...out, changes };
@@ -120,7 +123,7 @@ export async function proposeCashDelete(
 ): Promise<{ row: StaffRequestRow; created: boolean }> {
   if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
   if (!staffCanReport(input.date, now)) throw new UserError(CASH_REQUEST_TEXT.closed);
-  const branchId = await currentWriteBranch();
+  const branchId = await currentTillBranch();
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, input.date, branchId);
     if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
@@ -130,7 +133,7 @@ export async function proposeCashDelete(
     return createOrUpdateRequest(
       tx,
       me,
-      { kind: "kasa-silme", subject: `gun:${input.date}`, day: input.date, title: deleteTitle(input.date), payload, message: input.message.trim(), clientKey: input.clientKey },
+      { kind: "kasa-silme", subject: cashDaySubject(input.date, branchId), day: input.date, title: deleteTitle(input.date), payload, message: input.message.trim(), clientKey: input.clientKey },
       now,
     );
   });
@@ -185,8 +188,9 @@ export function mergedOf(report: MergeBase, p: CorrectionPayloadT) {
 async function reviewCorrection(tx: CashTx, me: CashActor, row: StaffRequestRow, input: ReviewInput, now: Date): Promise<ReviewOutcome> {
   const payload = CorrectionPayload.parse(row.payload);
   if (input.decision === "reject") return { kind: "kasa-duzeltme", status: "rejected", request: await decide(tx, row, me, "rejected", { note: input.note }, now) };
-  const branchId = await currentWriteBranch();
-  const report = await lockCashReport(tx, payload.date, branchId);
+  // Önerinin raporu: yükteki kimlik. Yöneticinin o anki şube seçimiyle (gün + seçili şube) aranmaz; aransaydı "Tümü"den
+  // onaylanan Marina önerisi Tuzla'nın raporuna yazılırdı
+  const report = await lockReportOf(tx, payload);
   if (!report) throw new UserError(CASH_REQUEST_TEXT.noReport);
   if (input.seenRevision !== report.revision) throw new UserError(CASH_REQUEST_TEXT.reviewStale);
   const { merged, changes } = mergedOf(report, payload);
@@ -214,12 +218,23 @@ async function reviewDelete(tx: CashTx, me: CashActor, row: StaffRequestRow, inp
   return { kind: "kasa-silme", status: "approved", request, payload, removed };
 }
 
-/** Kararın konu nesnesi, istek satırından önce: düzeltmede günün raporu, silmede istenen rapor, geç raporda günün kilidi */
+/** Düzeltme önerisinin raporu (satır kilitli): yükteki rapor kimliği, raporun günü önerinin günü olmalı */
+async function lockReportOf(tx: CashTx, p: Pick<CorrectionPayloadT, "reportId" | "date">) {
+  const [report] = await tx.select().from(s.cashReports).where(eq(s.cashReports.id, p.reportId)).for("update").limit(1);
+  return report && report.date === p.date ? report : null;
+}
+
+/**
+ * Kararın konu nesnesi, istek satırından önce: düzeltmede önerinin raporu, silmede istenen rapor, geç raporda isteğin
+ * şubesinin günü. Hiçbiri yöneticinin şube seçimine bakmaz (isteğin kendi kasası)
+ */
 async function lockSubject(tx: CashTx, row: StaffRequestRow): Promise<void> {
-  const branchId = await currentWriteBranch();
-  if (row.kind === "kasa-duzeltme") await lockCashReport(tx, CorrectionPayload.parse(row.payload).date, branchId);
+  if (row.kind === "kasa-duzeltme") await lockReportOf(tx, CorrectionPayload.parse(row.payload));
   else if (row.kind === "kasa-silme") await tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.id, DeletePayload.parse(row.payload).reportId)).for("update");
-  else if (row.kind === "kasa-gec") await lockLateDay(tx, LatePayload.parse(row.payload).date, branchId);
+  else if (row.kind === "kasa-gec") {
+    const p = LatePayload.parse(row.payload);
+    await lockLateDay(tx, p.date, lateBranchOf(p));
+  }
 }
 
 /**

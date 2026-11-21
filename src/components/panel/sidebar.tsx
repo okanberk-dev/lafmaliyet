@@ -46,6 +46,8 @@ const ALERTS_STALE_MS = 60_000;
 interface BranchPick {
   scope: BranchScope;
   branches: readonly BranchRow[];
+  /** Şubesi belirlenmiş personel: seçici kilitli */
+  locked?: boolean;
 }
 
 export function Sidebar({ user, index = [], branch }: { user: User; index?: SearchEntry[]; branch?: BranchPick }) {
@@ -191,7 +193,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
         </div>
       ) : null}
 
-      {branch ? <BranchPicker scope={branch.scope} branches={branch.branches} /> : null}
+      {branch ? <BranchPicker scope={branch.scope} branches={branch.branches} locked={branch.locked} /> : null}
 
       <SidebarNav items={tree} pathname={pathname} />
 

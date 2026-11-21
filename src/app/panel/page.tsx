@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CalendarDays,
   ChartColumn,
+  ChartNoAxesColumn,
   ChartScatter,
   Coins,
   Download,
@@ -21,7 +22,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { TrendChart } from "@/components/charts";
+import { DailyRevenueBars, YearLineChart } from "@/components/panel/arc-charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
@@ -33,7 +34,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, Segm
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { ALL_BRANCHES, branchViewNote } from "@/lib/branches";
+import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
 import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
@@ -52,13 +53,16 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
+import { longDateTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
+import { tillRows } from "@/server/data/cash-reports";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
@@ -85,6 +89,7 @@ import { CategoriesPanel } from "./dashboard-categories";
 import { DashboardChecklist } from "./dashboard-checklist";
 import { differs, FixedReconcile, fixedBreakdownText } from "./dashboard-fixed";
 import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
+import { monthDays } from "./dashboard-daily";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
@@ -139,11 +144,12 @@ function Change({ g, prevMonth, prevValue, basis }: { g: number | null; prevMont
 
 /**
  * Ödemeler (liste, hatırlatıcılar, ayarlar); okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu
- * söyler). Nakit planı kartı aynı sonucu paylaşır (ikinci kez okunmaz).
+ * söyler). Şubesiz okuma işletmenindir: nakit planı kartı onu paylaşır (ikinci kez okunmaz). `branch` tek şube
+ * verilirse hatırlatıcılar o şubenin ve işletme genelinin olanlarıyla (docs/SUBE.md › Ödemeler; Bugün'deki kartla aynı)
  */
-async function loadPayments(): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
+async function loadPayments(branch?: BranchScope): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
   try {
-    return await loadUpcoming();
+    return await loadUpcoming(undefined, { branch });
   } catch {
     return null;
   }
@@ -179,13 +185,21 @@ async function loadParasut(): Promise<ParasutFacts | null> {
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, upcoming, parasut, cashOutState] = await Promise.all([
+  const scope = await currentBranchScope();
+  const [model, upcoming, branchPayments, parasut, cashOutState, till] = await Promise.all([
     loadModel(),
     loadPayments(),
+    // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
+    // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri. "Tümü"nde aynı liste
+    scope === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(scope),
     loadParasut(),
     // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
     loadCashOutInvoiceState().catch(() => null),
+    // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
+    tillRows().catch(() => null),
   ]);
+  // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): seçili şubenin; nakit planı ve cari uyarıları işletmenin
+  const shownPayments = scope === ALL_BRANCHES ? upcoming : branchPayments;
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
@@ -196,10 +210,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
   const [priceAlerts, cashPlan] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
-    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle (docs/SUBE.md › Neyi süzer)
+    // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
+    // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
     upcoming
       ? (model.ds.branchView ? loadModel({ scope: ALL_BRANCHES }) : Promise.resolve(model))
-          .then((m) => loadCashPlan(m, upcoming))
+          .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
           .catch(() => null)
       : null,
   ]);
@@ -215,6 +230,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Yıl toplamı Gelir-gider kartlarıyla ve Claude'la aynı kuraldan (bu aya kadar, cirosu girilmiş aylar)
   const yearSum = yearTotals(model, year);
   const st = model.settings;
+  // Ayın günlük cirosu (Arc çubuk grafiği): yalnız ayın POS cirosu kasa raporlarından geliyorsa; günlerin toplamı o ciro
+  const days = till && d.info?.sources?.posRevenue === "kasa" ? monthDays(till, month) : [];
   // Ayın kasası (ürün satışlarının metinleri; geçiş günü boşken ve öncesinde "ModPOS", sonra "LafPOS", geçiş ayında
   // modelin saydığı bölünmeyle; denetim E-39)
   const mk = salesMonthKasa(month, st.lafposGecisGunu, model.ds.lafposSales);
@@ -286,7 +303,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
 
   // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
   // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
-  const payments = upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null;
+  const payments = shownPayments
+    ? paymentFacts(shownPayments.items, unpaidSummary(model.ds.invoices), debtFacts([...shownPayments.items, ...shownPayments.laterInvoices]))
+    : null;
   const taskCache = new Map<string, { state: MonthState; tasks: MonthTask[] }>();
   const tasksOf = (m: string) => {
     let hit = taskCache.get(m);
@@ -566,7 +585,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             kalır, 5/12'lik maliyet kartı 270 px'e iner ve "ürün “Düşük kâr”" kutuları sözcük sözcük kırılırdı */}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
-            {upcoming ? <DashboardPayments items={upcoming.items} /> : null}
+            {shownPayments ? <DashboardPayments items={shownPayments.items} /> : null}
             {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
             <DashboardAlerts items={shownAlerts} className="flex-1" />
           </div>
@@ -696,10 +715,13 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 <CardContent className="space-y-3">
                   <YearTotals totals={yearSum} />
                   {/* Telefonda dar iç boşluk: grafiğin lejantı tek satıra sığar, eksen etiketinin üstüne binmez */}
-                  <Well className="p-2 sm:p-4">
-                    <TrendChart
+                  <Well className="p-3 sm:p-4">
+                    <YearLineChart
+                      label={`${year} aylık gelir-gider`}
                       data={trend.map((x) => ({
-                        label: monthShort(x.month),
+                        key: x.month,
+                        label: monthLabel(x.month),
+                        axis: monthShort(x.month),
                         revenue: Math.round(x.revenueNet),
                         expenses: Math.round(x.expenses),
                         profit: Math.round(x.profit),
@@ -724,10 +746,49 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           </div>
         ) : null}
 
-        {/* 5. Ayrıntı listeleri tek kartta */}
+        {/* 5. Ayın günlük cirosu (kasa raporlarından; ay POS cirosunu kasadan almıyorsa çizilmez) */}
+        {days.length > 1 ? <DailyRevenueCard month={month} days={days} /> : null}
+
+        {/* 6. Ayrıntı listeleri tek kartta */}
         <DashboardTabs label="Ayrıntı listesi" tabs={tabs} />
       </div>
     </>
+  );
+}
+
+/**
+ * Ayın her açık gününün kasa cirosu (KDV dahil, ödenmez / ikram hariç) Arc çubuk grafiğinde; çizgi ve başlık açık
+ * günlerin ortalaması, çubuğa gelince o günün cirosu. Satırlar ay bilgisinin okuduğu satırlar (tillRows): toplam ayın POS
+ * cirosu
+ */
+function DailyRevenueCard({ month, days }: { month: string; days: { date: string; revenue: number }[] }) {
+  return (
+    <Card>
+      <CardHeader
+        icon={<ChartNoAxesColumn />}
+        title={`${monthLabel(month)} günlük ciro`}
+        description={
+          <span className="inline-flex items-center gap-1.5">
+            Kasa raporlarından, KDV dahil · {days.length} açık gün
+            <InfoTip text="Her açık günün cirosu: Z toplamı, ödenmez / ikram hariç (raporu girilmemiş günde LafPOS gün sonu ya da ModPOS föyü). Günlerin toplamı ayın POS cirosudur. Yatay çizgi açık günlerin ortalaması; çubuğa gelin ya da dokunun, o günün cirosu yazar." />
+          </span>
+        }
+        actions={
+          <ButtonLink href={`/panel/kasa?ay=${month}`} variant="secondary" size="sm">
+            Kasa <ArrowRight size={15} aria-hidden="true" />
+          </ButtonLink>
+        }
+      />
+      <CardContent>
+        <Well className="p-3 sm:p-4">
+          <DailyRevenueBars
+            label={`${monthLabel(month)} günlük ciro`}
+            period={monthLabel(month)}
+            days={days.map((x) => ({ key: x.date, label: longDateTR(x.date), axis: String(Number(x.date.slice(8))), value: x.revenue }))}
+          />
+        </Well>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -7,6 +7,7 @@
  */
 
 import {
+  branchPart,
   byLine,
   CARD_EXTRA_LABEL,
   carryWarning,
@@ -26,6 +27,7 @@ import {
   type CashReportIntegrity,
   type CashTextFields,
   type DayWaste,
+  revenueWord,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { lafposDiffsLine } from "@/lib/lafpos/diffs";
@@ -115,6 +117,11 @@ export function renderCashReport(
      * satır ("Yönetici onayıyla düzeltildi: Mehmet önerdi, Ayşe onayladı."); yoksa yazılmaz
      */
     approval?: string | null;
+    /**
+     * Raporun şubesi, birden çok kasa açıkken (src/lib/branches.ts namedTill): konuda, başlıkta ve metinde numaranın
+     * yanında adı, "Panelde aç"ta `&sube=` (zilin bağlantısı gibi; o şubenin raporu açılır). Tek kasada null: bugünkü gibi
+     */
+    branch?: { id: string; name: string } | null;
   } & CashReportExtras &
     CashReportIntegrity,
 ) {
@@ -122,13 +129,14 @@ export function renderCashReport(
   f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
   const tone = TONE[c.kind];
-  const subject = reportSubject(f, meta.revision);
+  const branchName = meta.branch?.name ?? null;
+  const subject = reportSubject(f, meta.revision, branchName);
   const headline = c.kind === "even" ? "Kasa tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`;
   const time = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(meta.submittedAt);
   const zMeta = [f.zNo ? `Z no ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   const paymentsWarning =
     Math.abs(c.paymentsDiff) >= CASH_TOLERANCE
-      ? `Ödeme türlerinin toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}: bir tutar yanlış yazılmış olabilir.`
+      ? `Ödeme türlerinin toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}: bir tutar yanlış yazılmış olabilir.`
       : null;
   // Yazarkasa alanları boş raporda (eski ya da yalnız banka gün sonu yazılmış) bugünkü "Kart" bölümü, etiket "Banka POS"
   // (§3.7); kart farkı computeCash'in kaynağıyla (D5; burada her zaman banka)
@@ -222,7 +230,8 @@ export function renderCashReport(
     : "";
   const okcLines = okc ? `${toneLines(okcReconcile(f, "admin", kasa))}${warnBox([okcPhotoWarning])}` : "";
   const photoList = photoNames(meta.photos).join(", ");
-  const link = `${APP_URL}/panel/kasa?gun=${f.date}`;
+  // Raporun şubesi bağlantıda: seçici o şubeyi seçer, form o kasayı gösterir (yoksa çerezdeki şubenin raporu açılırdı)
+  const link = `${APP_URL}/panel/kasa?gun=${f.date}${meta.branch ? `&sube=${encodeURIComponent(meta.branch.id)}` : ""}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
   const onlineRows = meta.online
     ? [
@@ -243,7 +252,7 @@ export function renderCashReport(
           <td width="38" height="38" align="center" style="width:38px;height:38px;background:#171717;border-radius:11px;color:#c0f21e;font-family:${FONT};font-size:13px;font-weight:700;letter-spacing:-0.02em">L'Af</td>
           <td style="padding-left:10px;font-family:${FONT}">
             <div style="font-size:16px;line-height:20px;font-weight:600;color:#171717">L'Affogato</div>
-            <div style="font-size:12px;line-height:16px;color:#71717a">Gün sonu kasa raporu · ${esc(reportNo(f.date))}</div>
+            <div style="font-size:12px;line-height:16px;color:#71717a">Gün sonu kasa raporu · ${esc(`${reportNo(f.date)}${branchPart(branchName)}`)}</div>
           </td>
         </tr></table>
       </td>
@@ -270,7 +279,7 @@ export function renderCashReport(
     ${f.note ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px"><tr><td style="background:#f4f4f5;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46"><strong>Not:</strong> ${esc(f.note)}</td></tr></table>` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
       <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${link}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a>
+        <a href="${esc(link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a>
       </td></tr>
     </table>
   </td></tr>
@@ -279,6 +288,6 @@ export function renderCashReport(
 </td></tr></table>
 </body></html>`;
 
-  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, meta, "admin").replace(/\*/g, "")}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
+  const text = `${meta.approval ? `${meta.approval}\n\n` : ""}${cashReportText(f, { ...meta, branchName }, "admin").replace(/\*/g, "")}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };
 }

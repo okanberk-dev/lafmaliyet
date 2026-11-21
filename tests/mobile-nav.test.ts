@@ -25,19 +25,22 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
     BOTTOM_NAV.staff.map((i) => [i.label, i.href]),
     [
       ["Bugün", "/panel/bugun"],
+      // 6 Kas 2026: Siparişler (uygulama siparişleri ve masa çağrıları) Zayi'nin yerine; Zayi çekmecede ve Bugün'de satır
+      ["Siparişler", "/panel/siparisler"],
       ["Karaoke", "/panel/karaoke"],
       ["Kasa", "/panel/kasa"],
-      ["Zayi", "/panel/zayi"],
       ["Reçeteler", "/panel/receteler"],
     ],
   );
+  assert.equal(BOTTOM_NAV.staff.find((i) => i.id === "siparisler")?.badge, "orders", "açık sipariş ve masa çağrısı sayısı");
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
   // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü), Sayım (çekmece; ay sonunda
   // Bugün'de satır ve telefon bildirimi), Kontrol listeleri (çekmece; açılış ve kapanış Bugün'de satır, zilde
-  // "bekliyor"), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım (çekmecenin en altı ve profil menüsü)
+  // "bekliyor"), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım (çekmecenin en altı ve profil menüsü), Zayi
+  // (çekmecenin Stok grubu; Bugün'de satır)
   assert.deepEqual(
     STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
-    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel"],
+    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel", "/panel/zayi"],
   );
   // Beş öğe: 390 px'te hücre başına 78 px
   assert.equal(BOTTOM_NAV.staff.length, 5);
@@ -81,7 +84,8 @@ test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", 
   assert.equal(bottomNavActive(staff, "/panel/kasa"), "kasa");
   assert.equal(bottomNavActive(staff, "/panel/karaoke"), "karaoke");
   assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), null);
-  assert.equal(bottomNavActive(staff, "/panel/zayi"), "zayi");
+  assert.equal(bottomNavActive(staff, "/panel/zayi"), null, "Zayi çekmecede");
+  assert.equal(bottomNavActive(staff, "/panel/siparisler"), "siparisler");
   assert.equal(bottomNavActive(staff, "/panel/tutarlilik"), null);
   assert.equal(bottomNavActive(staff, "/panel/bugun", true), "bugun");
 });

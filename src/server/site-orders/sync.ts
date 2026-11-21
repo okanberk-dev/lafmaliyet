@@ -2,9 +2,10 @@ import "server-only";
 
 import { eq, sql, type SQL } from "drizzle-orm";
 
+import { callRingMessage, callsFingerprint, newCallIds, openCalls } from "@/lib/site-orders/calls";
 import { newOrderIds, ordersFingerprint, ringMessage, sortForScreen } from "@/lib/site-orders/feed";
 import { awaitingUntil, missedPing, nextAwaiting, pullDue, type OrdersTrigger } from "@/lib/site-orders/follow";
-import { parseSiteOrders, SiteOrdersFormatError, type SiteOrder, type SiteOrderList } from "@/lib/site-orders/schema";
+import { parseSiteOrders, SiteOrdersFormatError, type SiteCall, type SiteOrder, type SiteOrderList } from "@/lib/site-orders/schema";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 import { salesFailureMessage } from "@/server/site-sales/sync";
@@ -27,6 +28,10 @@ import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
  * (ödemesini bekleyen siparişlerin sayısı) sıfırdan büyükken ekran en çok 30 dakika yoğun sayılır ve siteyi üç
  * dakikada bir sorar; ödeme pingi kaçsa da sipariş birkaç dakikada gelir. Pingle olmayan bir çekme kaçan pingin
  * getirmediği ödenmiş siparişi bulursa `missedPingAt` yazılır (Ayarlar › laffogato.net).
+ *
+ * Masa çağrıları ("Garson çağır", 6 Kas 2026; kurallar src/lib/site-orders/calls.ts): aynı yanıtın isteğe bağlı
+ * `calls` alanı son listenin kopyasında siparişlerle birlikte durur ve sürüme girer. Yeni çağrı ve "Gördüm" sitenin
+ * aynı pingini atar; ilk kez görülen çağrı cihazlara "Masa 4 · Su istiyor" diye bildirilir (ilk çekme hariç).
  */
 
 const STATE_KEY = "site_orders_sync";
@@ -86,6 +91,12 @@ export interface OrdersSnapshot {
   complete: boolean;
   skipped: number;
   orders: SiteOrder[];
+  /** Açık masa çağrıları (sitenin gönderdiği gibi; ekran 15 dakikadan eskisini göstermez) */
+  calls: SiteCall[];
+  /** Okunamayıp atlanan masa çağrısı sayısı */
+  callsSkipped: number;
+  /** Kopya çağrılarla birlikte yazılmış: değilse (çağrılardan önceki kopya) ilk çekme gibi hiçbir çağrı yeni sayılmaz */
+  callsKnown: boolean;
 }
 
 type Db = ReturnType<typeof getDb>;
@@ -110,6 +121,9 @@ export async function readOrdersSnapshot(db?: Pick<Db, "select">): Promise<Order
     complete: v?.complete !== false,
     skipped: typeof v?.skipped === "number" ? v.skipped : 0,
     orders: Array.isArray(v?.orders) ? v.orders : [],
+    calls: Array.isArray(v?.calls) ? v.calls : [],
+    callsSkipped: typeof v?.callsSkipped === "number" ? v.callsSkipped : 0,
+    callsKnown: Array.isArray(v?.calls),
   };
 }
 
@@ -142,7 +156,7 @@ export async function noteOrdersPing(): Promise<void> {
 export type OrdersSyncResult =
   | { status: "off" }
   | { status: "fresh" }
-  | { status: "ok"; count: number; fresh: number; changed: boolean; skipped: number }
+  | { status: "ok"; count: number; fresh: number; changed: boolean; skipped: number; calls: number }
   | { status: "error"; error: string };
 
 /** Sitenin açık siparişleri (imzalı); hata Türkçe açıklamalı fırlar */
@@ -206,9 +220,26 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
     const prev = await readOrdersSnapshot(tx);
     const orders = sortForScreen(list.orders);
     const fresh = newOrderIds(prev.at ? prev.orders : null, orders);
-    const changed = !prev.at || ordersFingerprint(prev.orders) !== ordersFingerprint(orders) || prev.complete !== list.complete || prev.skipped !== list.skipped;
+    // Masa çağrıları: ilk çekmede ve çağrılardan önce yazılmış kopyada hiçbiri yeni sayılmaz
+    const calls = list.calls;
+    const freshCalls = newCallIds(prev.at && prev.callsKnown ? prev.calls : null, calls);
+    const changed =
+      !prev.at ||
+      ordersFingerprint(prev.orders) !== ordersFingerprint(orders) ||
+      prev.complete !== list.complete ||
+      prev.skipped !== list.skipped ||
+      callsFingerprint(prev.calls) !== callsFingerprint(calls) ||
+      prev.callsSkipped !== list.callsSkipped;
     if (changed) {
-      const snapshot: OrdersSnapshot = { now: list.now, at: at.toISOString(), complete: list.complete, skipped: list.skipped, orders };
+      const snapshot: Omit<OrdersSnapshot, "callsKnown"> = {
+        now: list.now,
+        at: at.toISOString(),
+        complete: list.complete,
+        skipped: list.skipped,
+        orders,
+        calls,
+        callsSkipped: list.callsSkipped,
+      };
       await tx.execute(sql`
         insert into integration_state (key, value) values (${SNAPSHOT_KEY}, ${JSON.stringify(snapshot)}::jsonb)
         on conflict (key) do update set value = ${JSON.stringify(snapshot)}::jsonb, updated_at = now()`);
@@ -239,7 +270,7 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
       tx,
     );
     if (changed || state.lastError || followChanged) await bumpOrdersVersion(tx);
-    return { orders, fresh, changed };
+    return { orders, fresh, changed, calls, freshCalls };
   });
   if (!applied) return { status: "fresh" };
 
@@ -250,7 +281,14 @@ export async function syncSiteOrders(trigger: OrdersTrigger): Promise<OrdersSync
       console.error("[siparis] bildirim", (e as Error).message);
     }
   }
-  return { status: "ok", count: applied.orders.length, fresh: applied.fresh.length, changed: applied.changed, skipped: list.skipped };
+  if (applied.freshCalls.length) {
+    try {
+      await announceCalls(applied.calls.filter((c) => applied.freshCalls.includes(c.id)), at.getTime());
+    } catch (e) {
+      console.error("[siparis] çağrı bildirimi", (e as Error).message);
+    }
+  }
+  return { status: "ok", count: applied.orders.length, fresh: applied.fresh.length, changed: applied.changed, skipped: list.skipped, calls: applied.calls.length };
 }
 
 async function lockOrders(tx: Tx): Promise<void> {
@@ -282,8 +320,23 @@ async function announce(orders: SiteOrder[], nowMs: number): Promise<void> {
     kind: "orders",
     title,
     body,
-    url: "/panel/karaoke",
+    url: "/panel/siparisler",
     tag: orders.length === 1 ? `siparis-${orders[0].id}` : `siparis-${nowMs}`,
+    ring: true,
+  });
+}
+
+/** Yeni masa çağrısını cihazlara bildirir ("Masa 4 · Su istiyor"); müşteriye dair bir şey yok. Süresi dolmuş çağrı bildirilmez */
+async function announceCalls(calls: SiteCall[], nowMs: number): Promise<void> {
+  const open = openCalls(calls, nowMs);
+  if (!open.length) return;
+  const { title, body } = callRingMessage(open);
+  await sendPush("orders", {
+    kind: "orders",
+    title,
+    body,
+    url: "/panel/siparisler",
+    tag: open.length === 1 ? `cagri-${open[0].id}` : `cagri-${nowMs}`,
     ring: true,
   });
 }

@@ -2,17 +2,21 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID, type BranchRow } from "@/lib/branches";
+import { branchSwitchDay } from "@/lib/lafpos/switch";
 import type { ModposDayView } from "@/lib/modpos/ayarlar";
 import { missingFoyDays, nextBackfillDay } from "@/lib/modpos/plan";
 import { modposKeyProblem, modposSyncFrom, MODPOS_DAILY_QUOTA, quotaLeft } from "@/lib/modpos/request";
 import { modposCardSummary, readModposFallback, MODPOS_FALLBACK_KEY, type ModposCardInput, type ModposCardSummary, type ModposRun } from "@/lib/modpos/status";
+import { modposBranchIds, modposKeyEnv } from "@/lib/modpos/sube";
 import { finalAfter, foyWarnings, foyZ } from "@/lib/modpos/z";
 import { addDays, todayTR } from "@/lib/reminders";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { loadLafposSwitchDay } from "@/server/lafpos/status";
 
 import { loadModposIndex, readModposState, recentModposSheets } from "./store";
-import { canFetchModpos } from "./sync";
+import { canFetchModpos, sharedKeyText } from "./sync";
 
 /**
  * Ayarlar › ModPOS (kasa föyü) kartının verisi (docs/MODPOS-API.md › Nerede görünür): bağlantının durumu
@@ -30,6 +34,8 @@ type Env = Record<string, string | undefined>;
 type Reader = Pick<DB, "select">;
 
 export interface ModposCardData {
+  /** Kartın şubesi (her ModPOS şubesinin kendi anahtarı, hakkı ve günleri var; docs/MODPOS-API.md › Şubeler) */
+  branchId: string;
   /** Özetin girdisi (src/lib/modpos/status.ts) ve özeti */
   input: ModposCardInput;
   summary: ModposCardSummary;
@@ -53,22 +59,27 @@ export async function loadModposFallback(db: Reader = getDb()): Promise<boolean>
   return readModposFallback(row?.value);
 }
 
-/** Kartın bütün verisi; `env` testler için (varsayılan process.env) */
-export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), env: Env = process.env): Promise<ModposCardData> {
+/** Şubenin kartının bütün verisi (varsayılan Tuzla); `env` testler için (varsayılan process.env) */
+export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), env: Env = process.env, branchId: string = DEFAULT_BRANCH_ID, branches?: BranchRow[]): Promise<ModposCardData> {
   const from = modposSyncFrom(env);
-  const [state, index, recent, fallback, switchDay] = await Promise.all([
-    readModposState(db),
-    loadModposIndex(db),
-    recentModposSheets(MODPOS_RECENT_DAYS, db),
+  const [state, index, recent, fallback, switchDay, all] = await Promise.all([
+    readModposState(db, branchId),
+    loadModposIndex(db, branchId),
+    recentModposSheets(MODPOS_RECENT_DAYS, db, branchId),
     loadModposFallback(db),
-    loadLafposSwitchDay(db),
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (branchSwitchDay): ModPOS şubesinin föyü eksik sayılmaya devam eder
+    loadLafposSwitchDay(db).then((d) => branchSwitchDay(d, branchId)),
+    branches ? Promise.resolve(branches) : listBranches(db),
   ]);
+  const keyProblem = modposKeyProblem(env, branchId, modposBranchIds(all));
   const sorted = [...index.keys()].sort();
   // LafPOS'a geçiş gününden itibaren föy çekilmez: eksik sayılmaz. Sıra sabah işininki (yeniden eskiye)
   const missing = missingFoyDays(from, index, now, switchDay);
   const input: ModposCardInput = {
     now,
-    keyProblem: modposKeyProblem(env),
+    keyProblem,
+    keyEnv: modposKeyEnv(branchId),
+    ...(keyProblem === "shared" ? { sharedText: sharedKeyText(branchId, all) } : {}),
     preview: !canFetchModpos(env),
     state,
     from,
@@ -91,6 +102,7 @@ export async function loadModposCard(db: DB = getDb(), now: Date = new Date(), e
   };
   const today = todayTR(now);
   return {
+    branchId,
     input,
     summary: modposCardSummary(input),
     today,

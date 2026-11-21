@@ -1,6 +1,6 @@
 import "server-only";
 
-import { pastCountReminder, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
+import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -17,7 +17,7 @@ import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import { loadTillScope } from "@/server/data/till-scope";
 import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
-import { countProgress } from "@/server/data/count-progress";
+import { countProgress, countProgressByBranch } from "@/server/data/count-progress";
 import { myKaraokeRequests, pendingKaraokeSummary } from "@/server/data/karaoke-requests";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
 import type { DigestBox } from "@/server/notify/digest-template";
@@ -222,11 +222,21 @@ export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
  * Sabah e-postasının aynı kutusuna geçen ayın stok sayımı (ilk 10 gün, yarım ya da yok): zildeki satırla aynı metin
  * (pastCountReminder) ve o ayın sayımının adresi. Personelden gelmez; kutu yalnız bununla açılırsa başlığı "Stok
  * sayımı" olur (src/server/staff-requests/digest.ts). Tutar yok.
+ *
+ * Sayım şube başınadır: her açık şubenin sayımına ayrı bakılır (countProgressByBranch), birden çok şube açıkken satır
+ * şubenin adıyla ("Marina: Ekim 2026 sayımı yarım: 10 / 72"). Adres tek yarım şubede o şubenin sayımı (`&sube=`),
+ * birden çoğunda ayın sayımı. Önceden e-postada şube seçimi olmadığı için yalnız Tuzla'nın sayımına bakılıyordu
+ * (denetim 21 Kasım #16).
  */
 export async function pastCountDigestLines(now: Date): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return { lines: [], href: null };
-  const prev = await countProgress(shiftMonth(day.slice(0, 7), -1)).catch(() => null);
-  const count = prev ? pastCountReminder(day, prev) : null;
-  return count ? { lines: [{ text: `${count.title}. ${count.body}`, tone: "warn" }], href: count.href } : { lines: [], href: null };
+  const month = shiftMonth(day.slice(0, 7), -1);
+  const prev = await countProgressByBranch(month).catch(() => null);
+  const counts = prev ? pastCountReminders(day, prev.counts, prev.named) : [];
+  if (!counts.length) return { lines: [], href: null };
+  return {
+    lines: counts.map((c) => ({ text: `${c.title}. ${c.body}`, tone: "warn" as const })),
+    href: counts.length === 1 ? counts[0].href : `/panel/sayim?ay=${month}`,
+  };
 }

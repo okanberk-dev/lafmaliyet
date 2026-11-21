@@ -2,7 +2,8 @@ import "server-only";
 
 import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
 
-import { LatePayload } from "@/lib/cash-requests";
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
+import { cashSubjectBranch, LatePayload } from "@/lib/cash-requests";
 import { schema as s, type DB } from "@/server/db";
 
 /*
@@ -33,19 +34,29 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 /**
  * En yakın önceki ve sonraki halka. Aynı günde birden çok bekleyen geç rapor varsa `prefer` (isteyen kişi) önce, yoksa
  * en eski. Rapor ile bekleyen arasında güne en yakın olan seçilir. `prevReportDate`: günden önceki son kayıtlı rapor
- * (önceki halka bekleyen geç rapor olsa da); "aynı aralık" onu sınır alır (onaydaki reviewLate gibi).
+ * (önceki halka bekleyen geç rapor olsa da); "aynı aralık" onu sınır alır (onaydaki reviewLate gibi). Zincir şubenin
+ * kasasınındır (`branchId`, verilmezse Tuzla): başka şubenin raporu ya da bekleyen geç raporu halka olmaz.
  */
 export async function chainNeighbours(
   db: DB | Tx,
   date: string,
-  o: { prefer?: number | null; exceptRequestId?: number } = {},
+  o: { prefer?: number | null; exceptRequestId?: number; branchId?: string } = {},
 ): Promise<{ prev: ChainLink | null; next: ChainLink | null; prevReportDate: string | null }> {
+  const branchId = o.branchId ?? DEFAULT_BRANCH_ID;
+  const sube = eq(s.cashReports.branchId, branchId);
   const cols = { date: s.cashReports.date, zNo: s.cashReports.zNo, openingCash: s.cashReports.openingCash, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver };
   const [[before], [after], pending] = await Promise.all([
-    db.select(cols).from(s.cashReports).where(lt(s.cashReports.date, date)).orderBy(desc(s.cashReports.date)).limit(1),
-    db.select(cols).from(s.cashReports).where(gt(s.cashReports.date, date)).orderBy(asc(s.cashReports.date)).limit(1),
+    db.select(cols).from(s.cashReports).where(and(lt(s.cashReports.date, date), sube)).orderBy(desc(s.cashReports.date)).limit(1),
+    db.select(cols).from(s.cashReports).where(and(gt(s.cashReports.date, date), sube)).orderBy(asc(s.cashReports.date)).limit(1),
     db
-      .select({ id: s.staffRequests.id, day: s.staffRequests.day, payload: s.staffRequests.payload, requestedBy: s.staffRequests.requestedBy, requestedByName: s.staffRequests.requestedByName })
+      .select({
+        id: s.staffRequests.id,
+        day: s.staffRequests.day,
+        subject: s.staffRequests.subject,
+        payload: s.staffRequests.payload,
+        requestedBy: s.staffRequests.requestedBy,
+        requestedByName: s.staffRequests.requestedByName,
+      })
       .from(s.staffRequests)
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending")))
       .orderBy(asc(s.staffRequests.createdAt), asc(s.staffRequests.id)),
@@ -54,7 +65,7 @@ export async function chainNeighbours(
     r ? { kind: "rapor", date: r.date, zNo: r.zNo, openingCash: r.openingCash, carry: r2(r.counted - r.handed), requestId: null, requestedByName: null } : null;
   const links = new Map<string, ChainLink>();
   for (const p of pending) {
-    if (!p.day || p.day === date || p.id === o.exceptRequestId) continue;
+    if (!p.day || p.day === date || p.id === o.exceptRequestId || cashSubjectBranch(p.subject) !== branchId) continue;
     const parsed = LatePayload.safeParse(p.payload);
     if (!parsed.success) continue;
     const have = links.get(p.day);

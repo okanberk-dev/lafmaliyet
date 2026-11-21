@@ -1,6 +1,7 @@
 import {
   AlarmClock,
   Banknote,
+  BellRing,
   BookOpen,
   CalendarHeart,
   CalendarX2,
@@ -39,6 +40,7 @@ import { POS_UNDO_WINDOW_MS } from "@/lib/prices/pos";
 import { clockSuffixTR } from "@/lib/reminders";
 import { STAFF_SOLD_OUT_MAX } from "@/lib/site-menu/sold-out";
 import { KARAOKE_DELETE_FREE_MINUTES } from "@/lib/karaoke/timer-requests";
+import { CALL_OPEN_MS } from "@/lib/site-orders/calls";
 import { STAFF_APPROVAL_KINDS } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS } from "@/lib/waste-requests";
 
@@ -92,11 +94,11 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Bar ekranı açık kalsın",
     body: (
       <>
-        <StaffPath href="/panel/karaoke" /> barın ekranıdır: uygulama siparişleri, karaoke odası ve biten ürünler. Yeni siparişte ve rezervasyonda çalar; biten ürünü
-        hemen Tükendi yapın.
+        Barın ekranı <StaffPath href="/panel/siparisler" />: uygulama siparişleri ve masa çağrıları; yeni siparişte ve masa çağırınca çalar.{" "}
+        <StaffPath href="/panel/karaoke" /> ekranında karaoke odası ve biten ürünler; biten ürünü hemen Tükendi yapın.
       </>
     ),
-    href: "/panel/karaoke",
+    href: "/panel/siparisler",
     icon: MicVocal,
   },
   {
@@ -314,12 +316,27 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Uygulamadan sipariş geldi",
         a: (
           <>
-            <StaffPath href="/panel/karaoke" /> ekranının en üstünde <B>Uygulama siparişleri</B> durur: nereye (masa, gel-al, kurye), müşterinin adı ve satırlar.
+            <StaffPath href="/panel/siparisler" /> ekranında <B>Uygulama siparişleri</B> durur: nereye (masa, gel-al, kurye), müşterinin adı ve satırlar.
             Hazırlamaya başlayınca <B>Hazırlanıyor</B>, bitince <B>Hazır</B>, <B>Masaya götürüldü</B> ya da <B>Kuryeye verildi</B>; tezgâhta bekleyen gel-al
-            alınınca <B>Teslim edildi</B>. Tek dokunuş yeter, onay sorulmaz. İptal ve iade bu panelde yapılmaz: yöneticiye haber verin.
+            alınınca <B>Teslim edildi</B>. Tek dokunuş yeter, onay sorulmaz. İptal ve iade bu panelde yapılmaz: yöneticiye haber verin. Karaoke ekranında
+            açık siparişlerin sayısı tek satırda görünür.
           </>
         ),
         icon: Coffee,
+        links: [{ href: "/panel/siparisler", label: "Siparişler" }],
+      },
+      {
+        id: "masa-cagrisi",
+        q: "Masa çağırıyor (Garson çağır)",
+        a: (
+          <>
+            Müşteri masadaki QR menüden garson, su ya da peçete isteyince <StaffPath href="/panel/siparisler" /> ekranının üstünde <B>Masa çağrıları</B>{" "}
+            çıkar ve zil ayrı bir sesle (kapı zili) çalar. Masaya gidince <B>Gördüm</B>&apos;e dokunun: çağrı sitede de kapanır. Görülmeyen çağrı{" "}
+            {CALL_OPEN_MS / 60_000} dakika sonra kendiliğinden düşer.
+          </>
+        ),
+        icon: BellRing,
+        links: [{ href: "/panel/siparisler", label: "Siparişler" }],
       },
       {
         id: "tukendi",
@@ -354,8 +371,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bar ekranı çalmıyor ya da sarı satır var",
         a: (
           <>
-            Barın cihazında <StaffPath href="/panel/karaoke" /> ekranındaki <B>Bu cihazda uyarılar</B> kartından bildirimlere izin verin ve ekranın açık kalmasını
-            açın. &quot;Siteden alınamıyor&quot; diyen sarı satır çıkarsa yeni sipariş ve rezervasyon görünmeyebilir: sorun sürerse yöneticiye haber verin.
+            Barın cihazında <StaffPath href="/panel/siparisler" /> ya da <StaffPath href="/panel/karaoke" /> ekranındaki <B>Bu cihazda uyarılar</B> kartından
+            bildirimlere izin verin ve ekranın açık kalmasını açın. Ekranda &quot;Sipariş zili kapalı&quot; yazıyorsa <B>Zili aç</B>. &quot;Siteden
+            alınamıyor&quot; diyen sarı satır çıkarsa yeni sipariş, masa çağrısı ve rezervasyon görünmeyebilir: sorun sürerse yöneticiye haber verin.
           </>
         ),
         icon: ListTodo,

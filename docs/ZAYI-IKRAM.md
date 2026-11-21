@@ -16,7 +16,9 @@ ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda gör
 
 Ayarlar › LafPOS › **LafPOS'a geçiş günü** seçilince ([LAFPOS.md](LAFPOS.md) › İkram) o günden itibaren ürün ikramı
 kasada, LafPOS'ta işaretlenir ve gün sonuyla gelir (`pos_day_reports.ikram`). Her gün tek kaynak
-(`src/lib/lafpos/ikram.ts`):
+(`src/lib/lafpos/ikram.ts`). Geçiş günü yalnız LafPOS'un kurulu olduğu şubenin (Tuzla) kasasınındır: Marina'da ürün
+ikramı panelde girilmeye ve sayılmaya devam eder; Tuzla'nın gün sonu yalnız Tuzla'ya girilmiş ürün ikramını düşürür
+(kaydın şubesiyle; denetim 21 Kasım #5, [LAFPOS.md](LAFPOS.md) › Şubeler):
 
 - **LafPOS'un gün sonu gelen günde** ikram satırları Tutarlılık'ın kayıtlı tüketimine (reçeteden, ürün satırlarıyla
   aynı bağla: sitenin kalemi ve boyu, sonra POS adı eşleştirmesi), ay özetine (adın yanında "LafPOS"), haftalık özete ve
@@ -69,7 +71,9 @@ Geçiş günü boşken bunların hiçbiri yoktur: ekran, kayıt, Tutarlılık ve
 - Not isteğe bağlıdır. Son girilen kalemler tek dokunuşla yeniden seçilir.
 - Personel doğrudan bugüne ve düne girer; dün, o günün kasa raporu kilitlenene kadar (dünün raporu da bugünün raporu
   da girildiyse dün kapanır; kasanın kuralı `staffDayEditable`, unutulan dünün raporu yoksa dün açık kalır). Kendi
-  kaydını aynı pencerede siler. Yönetici her günü açar, her kaydı siler.
+  kaydını aynı pencerede siler. Yönetici her günü açar, her kaydı siler. Kilit şube başınadır (`wasteLock`; denetim
+  21 Kasım #13, [SUBE.md](SUBE.md) › Kasa raporu "Tümü"de): raporlar yeni kayıtta kaydın ineceği şubenin, silmede
+  kaydın kendi şubesinin kasasından; başka şubenin raporu günü açmaz ya da kapatmaz.
 - Kapalı işaretli güne (Satış tahmini › Özel günler, `kapali`; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı)
   personel kayıt giremez, istek de açamaz; yönetici girer.
 
@@ -111,6 +115,9 @@ Personel hiçbir yerde tutar görmez.
   - Silme: önce ve belirgin "Mehmet girdi · 15 Eki 21:40", sonra isteyen ve neden; kayıt o günün kasa raporu
     e-postasına girdiyse uyarı. Kayıt yoksa ya da istekten sonra değiştiyse "Kayıt zaten silinmiş" ve tek düğme
     "Kapat". "Onayla ve sil" / "Reddet".
+  - Bağlam isteğin şubesinden (denetim 21 Kasım #28): geç kayıtta isteği açanın, silmede kaydın şubesi. Kasa raporu,
+    Z ödenmez, o günün kayıtları, bekleyen öteki istekler ve kayıtlı ikram o şubenin; yöneticinin şube seçimi kartı
+    değiştirmez. Birden çok şube açıkken kart şubeyi adıyla yazar, "Günü aç" o şubenin gününü açar.
 - Zil: "3 zayi / ikram isteği onay bekliyor" (tek satır, en yeni istek yeniden okunmamış yapar).
 - Zayi sayfası: "Bu gün için 1 istek onay bekliyor · Onaylar". Tutarlılık: "Bu ay için onay bekleyen N zayi / ikram
   isteği · Onaylar".

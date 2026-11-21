@@ -26,6 +26,8 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
 import { CashBreakdown, LafposDiffList } from "../kasa/cash-summary";
+// İsteğin kasası (birden çok şube açıkken): kartta adı, günün bağlantısında `?sube=`; kasadan çıkan kartları da kullanır
+import { BranchBadge, kasaDayHref } from "./branch-badge";
 import { ClosedDayItem } from "./kasa-closed-cards";
 import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
 
@@ -82,6 +84,7 @@ function Head({ card, title, badge }: { card: CorrectionCard | DeleteCard; title
     <div className="space-y-1">
       <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
         <span className="min-w-0 break-words">{title}</span>
+        <BranchBadge branch={card.branch} />
         {badge}
       </h3>
       <p className="text-[13px] text-ink-mute tabular">
@@ -204,7 +207,7 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
           ) : null}
         </ul>
       ) : null}
-      <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+      <Link href={kasaDayHref(card)} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
         <ExternalLink size={14} aria-hidden="true" /> Raporu aç
       </Link>
       {noteField}
@@ -258,7 +261,7 @@ function DeleteItem({ card }: { card: DeleteCard }) {
           </>
         }
       />
-      <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+      <Link href={kasaDayHref(card)} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
         <ExternalLink size={14} aria-hidden="true" /> Raporu aç
       </Link>
       {noteField}
@@ -339,6 +342,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       <div className="space-y-1">
         <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 break-words">{day} kasa raporu</span>
+          <BranchBadge branch={card.branch} />
           <Badge tone="amber">Geç rapor</Badge>
         </h3>
         <p className="text-[13px] text-ink-mute tabular">

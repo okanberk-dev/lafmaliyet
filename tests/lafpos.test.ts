@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { ALL_BRANCHES } from "../src/lib/branches";
 import { parseNumberTR } from "../src/lib/calc/expr";
 import { DEFAULT_SETTINGS, settingsFromRows } from "../src/lib/constants";
 import { createPosMappingIndex } from "../src/lib/calc/pos-paste";
@@ -39,14 +40,18 @@ import {
   type LafposRejection,
 } from "../src/lib/lafpos/status";
 import {
+  branchSwitchDay,
   dayMonthYearTR,
   daysUntilText,
+  isLafposBranch,
   isLafposDay,
   kasaName,
+  LAFPOS_BRANCH_ID,
   LAFPOS_SWITCH_EFFECTS,
   LAFPOS_SWITCH_MIN,
   monthSource,
   readSwitchDay,
+  scopeSwitchDay,
   switchAffectedMonths,
   switchDayProblem,
 } from "../src/lib/lafpos/switch";
@@ -500,9 +505,9 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const ingest = read("src/server/lafpos/ingest.ts");
   const receive = ingest.slice(ingest.indexOf("export async function receivePosDay"));
   assert.ok(receive.indexOf("checkLafposRequest(") < receive.indexOf("parsePosDay(") && receive.indexOf("parsePosDay(") < receive.indexOf("storePosDay("));
-  // Tek işlem, günün danışma kilidi, önce özet sonra satırlar (sil + yaz)
+  // Tek işlem, (şube, gün) danışma kilidi ilk iş (önünde yalnız yorum), önce özet sonra satırlar (sil + yaz)
   const store = ingest.slice(ingest.indexOf("export async function storePosDay"), ingest.indexOf("export async function receivePosDay"));
-  assert.match(store, /db\.transaction\(async \(tx\) => \{\s*await tx\.execute\(sql`select pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{day\.date\}`\}\)\)`\);/);
+  assert.match(store, /db\.transaction\(async \(tx\) => \{\s*(?:\/\/[^\n]*\n\s*)*await tx\.execute\(sql`select pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{LAFPOS_BRANCH_ID\}:\$\{day\.date\}`\}\)\)`\);/);
   assert.ok(store.indexOf("insert(s.posDayReports)") < store.indexOf("delete(s.posDailySales)") && store.indexOf("delete(s.posDailySales)") < store.indexOf("insert(s.posDailySales)"));
   // Z çakışması: kilidin altında kayıtlı Z no'ya bakılır, farklıysa hiçbir şey yazılmadan döner (uç 409)
   const conflict = store.indexOf("stored.z.zNo !== day.z.zNo");
@@ -577,6 +582,53 @@ test("geçiş günü: gün ve ayın kaynağı; boşken her gün ModPOS", () => {
   }
 });
 
+test("geçiş günü yalnız LafPOS'un şubesinin (Marina) kasasınındır: Tuzla ve online kanal ModPOS'ta kalır (21 Kasım kararı)", () => {
+  const S = "2026-12-01";
+  assert.equal(LAFPOS_BRANCH_ID, "marina");
+  assert.deepEqual([isLafposBranch("marina"), isLafposBranch("tuzla"), isLafposBranch(null), isLafposBranch(undefined)], [true, false, false, false], "şubesiz eski kayıt Tuzla'nın");
+  assert.equal(branchSwitchDay(S, "marina"), S);
+  assert.equal(branchSwitchDay(S, "tuzla"), null);
+  assert.equal(branchSwitchDay(S, null), null, "şubesiz kayıt Tuzla'nın");
+  assert.equal(branchSwitchDay(null, "marina"), null);
+  assert.equal(isLafposDay("2026-12-02", branchSwitchDay(S, "tuzla")), false, "Tuzla'nın her günü ModPOS günü");
+  assert.equal(kasaName("2026-12-02", branchSwitchDay(S, "tuzla")), "ModPOS");
+  assert.equal(kasaName("2026-12-02", branchSwitchDay(S, "marina")), "LafPOS");
+  assert.equal(kasaName("2026-11-30", branchSwitchDay(S, "marina")), "ModPOS", "geçişten önce Marina da ModPOS");
+  // Görünüm: "Tümü"de ayar, şube ya da kanal seçiliyken o kasanınki
+  assert.equal(scopeSwitchDay(S, ALL_BRANCHES), S);
+  assert.equal(scopeSwitchDay(S, "marina"), S);
+  assert.equal(scopeSwitchDay(S, "tuzla"), null);
+  assert.equal(scopeSwitchDay(S, "online"), null);
+  // LafPOS gün sonunu bu şubeye yazar; kilit ve Z denetimi şube başına; başka şubeye ayarlı kasanın günü reddedilir
+  const ingest = read("src/server/lafpos/ingest.ts");
+  assert.match(ingest, /const branchId = LAFPOS_BRANCH_ID;/);
+  assert.match(ingest, /eq\(s\.posDayReports\.branchId, LAFPOS_BRANCH_ID\)/);
+  assert.match(ingest, /lafpos-gun:\$\{LAFPOS_BRANCH_ID\}:\$\{day\.date\}/);
+  assert.match(ingest, /parsed\.data\.sube !== LAFPOS_BRANCH_ID\) return \{ status: 409, body: \{ error: "wrong_branch"/);
+});
+
+test("kaynak: tek kasanın gününe bakan okuyucular geçiş gününü kasanın şubesinden geçirir (denetim 21 Kasım #5)", () => {
+  const day = read("src/server/data/lafpos-day.ts");
+  // Kasa raporunun LafPOS bandı, geç raporun kanıtı ve günden güne liste
+  assert.match(day, /if \(!isLafposDay\(date, branchSwitchDay\(switchDay, sube\)\)\) return \{ lafpos: false, day: null \};/);
+  assert.match(day, /if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), sube\)\)\) return "modpos-z";/);
+  assert.ok(day.indexOf("const sube = branchId ?? (await currentTillBranch());") < day.indexOf('return "modpos-z"'), "kanıtın şubesi önce");
+  assert.match(day, /return isLafposDay\(date, branchSwitchDay\(switchDay, b\)\) \?/);
+  // Geç rapor kartı, zayi reddi, günün LafPOS ikramı, kasadaki fiyatlar, föy yedeği, fotoğraf okuma, metinler
+  assert.match(read("src/server/data/cash-late.ts"), /const switchDay = branchSwitchDay\(await loadLafposSwitchDay\(db\), branchId\);/);
+  assert.match(read("src/server/waste/core.ts"), /const switchDay = branchSwitchDay\(await lafposSwitchDayOf\(tx\), branchId\);/);
+  assert.match(read("src/server/waste/core.ts"), /eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, branchId\)/);
+  assert.match(read("src/server/data/lafpos-ikram.ts"), /const switchDay = branchSwitchDay\(await lafposSwitchDayOf\(db\), sube\);/);
+  assert.match(read("src/server/data/till-scope.ts"), /return tillScope\(businessDate\(now\), branchSwitchDay\(switchDay, sube\)\);/);
+  assert.match(read("src/server/data/cash-reports.ts"), /isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId\)\)/);
+  assert.match(read("src/server/photo-read/read.ts"), /\.then\(\(\[d, b\]\) => branchSwitchDay\(d, b\)\)/);
+  assert.match(read("src/server/data/today.ts"), /\.then\(\(\[d, b\]\) => branchSwitchDay\(d, b\)\)/);
+  assert.match(read("src/server/bell/kasa.ts"), /kasaName\(day, branchSwitchDay\(/);
+  assert.match(read("src/server/modpos/status.ts"), /loadLafposSwitchDay\(db\)\.then\(\(d\) => branchSwitchDay\(d, branchId\)\)/);
+  // Onaylar'ın zayi kartı isteğin şubesiyle
+  assert.match(read("src/server/data/waste-requests.ts"), /productIkramRefusal\(p, branchSwitchDay\(switchDay, p\.branchId\)/);
+});
+
 test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bugüne kadar", () => {
   const today = "2026-12-05";
   assert.deepEqual(switchAffectedMonths(null, "2026-11-10", today), ["2026-11", "2026-12"]);
@@ -592,7 +644,7 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   assert.equal(dayMonthYearTR("2026-11-10"), "10 Kasım 2026");
   // Onay penceresi kodun bugün yaptığından fazlasını söylemez: B07/B09 Kasa raporu, geç rapor ve ay rakamı, kapalı gün,
   // B08 ürün satışları ve satış tahmini, B10 komisyon ve ikram, deneme günleri
-  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 10);
+  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 11);
   assert.match(LAFPOS_SWITCH_EFFECTS[0], /Kasa raporu bu günden itibaren LafPOS'un gün sonuyla açılır/);
   assert.match(LAFPOS_SWITCH_EFFECTS[1], /Geç kasa raporu bu günden itibaren LafPOS'un gün sonuyla girilir/);
   assert.match(LAFPOS_SWITCH_EFFECTS[2], /Kafe kapalıydı/);
@@ -604,6 +656,9 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   // Denetim B11 (E-39): kasadaki fiyatlar ve metinler
   assert.match(LAFPOS_SWITCH_EFFECTS[8], /siteye bağlı ürünün yeni fiyatını LafPOS siteden kendisi alır/);
   assert.match(LAFPOS_SWITCH_EFFECTS[9], /ModPOS yerine LafPOS der/);
+  // 21 Kasım kararı: geçiş günü yalnız Marina'nın kasasınındır, Tuzla ModPOS'ta kalır
+  assert.match(LAFPOS_SWITCH_EFFECTS[10], /yalnız Marina'nın kasası içindir/);
+  assert.match(LAFPOS_SWITCH_EFFECTS[10], /Tuzla'nın kasası ModPOS'ta kalır/);
 });
 
 test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECRET bağlantıyı açmaz; nedeni söylenir", () => {
@@ -866,8 +921,8 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
     assert.match(body, /if \(me\.role !== "admin"\) throw new UserError\(ADMIN_ONLY\);/, `${fn}: rol çekirdekte de`);
   }
   // Günü silme, gün sonunun yazımıyla aynı danışma kilidi altında (ingest.ts)
-  assert.match(admin, /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{date\}`\}\)\)/);
-  assert.match(read("src/server/lafpos/ingest.ts"), /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{day\.date\}`\}\)\)/);
+  assert.match(admin, /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{LAFPOS_BRANCH_ID\}:\$\{date\}`\}\)\)/);
+  assert.match(read("src/server/lafpos/ingest.ts"), /pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{LAFPOS_BRANCH_ID\}:\$\{day\.date\}`\}\)\)/);
   // Ayar ekranı: yalnız yöneticinin Ayarlar sayfasında
   const page = read("src/app/panel/ayarlar/page.tsx");
   assert.ok(page.indexOf("await requireAdmin();") > 0 && page.includes("<LafposCard"));

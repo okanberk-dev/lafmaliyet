@@ -26,7 +26,7 @@ import {
 } from "@/server/actions/checklists";
 import type { TemplateDTO } from "@/server/data/checklists";
 
-import { draftOf, fieldOf, TemplateFields, type TemplateDraft } from "../template-fields";
+import { draftOf, fieldOf, TemplateFields, type BranchOption, type TemplateDraft } from "../template-fields";
 
 type ItemDTO = TemplateDTO["items"][number];
 
@@ -55,11 +55,12 @@ function itemSub(i: ItemDTO): string {
  * kartı (bölüm bölüm; yukarı / aşağı, düzenle, kaldır; kaldırılanlar kapalı bir bölümde, geri eklenebilir). Değişiklik o
  * gün başlamış listeye değil sonrakilere uygulanır.
  */
-export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
+export function TemplateEditor({ template: t, branches }: { template: TemplateDTO; branches: readonly BranchOption[] }) {
   const router = useRouter();
   const [draft, setDraft] = useState<TemplateDraft>({
     name: t.name,
     description: t.description ?? "",
+    branchId: t.branchId ?? "",
     opensAt: t.opensAt,
     dueAt: t.dueAt,
     weekdays: t.weekdays,
@@ -128,6 +129,7 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
               }}
               errors={field ? { [field]: error! } : undefined}
               full
+              branches={branches}
             />
             {error && !field ? (
               <Notice tone="bad" size="sm" live="assertive" title={error} />

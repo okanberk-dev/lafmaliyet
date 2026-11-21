@@ -3,12 +3,14 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT } from "@/lib/cash-out-requests";
 import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
@@ -59,11 +61,22 @@ async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boole
   return { id: saved.id, expenseId: saved.expenseId };
 }
 
-/** Kasadan çıkan satırını ekler ya da düzeltir */
-export async function saveCashOut(input: CashOutInput) {
+const saveSchema = cashOutSchema.extend({
+  /** Formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili kasa */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
+});
+
+/**
+ * Kasadan çıkan satırını ekler ya da düzeltir. Yeni satır formun gösterdiği kasaya yazılır (formTillBranch), gönderim
+ * anındaki seçime değil: başka sekmede seçici değişince Tuzla'nın kartından eklenen satır Marina'nın kasasına
+ * iniyordu. Personelin kapısı da o kasanın gününe bakar; düzeltilen satır kendi şubesinde kalır.
+ */
+export async function saveCashOut(input: z.input<typeof saveSchema>) {
   return attempt(async () => {
     const me = await requireUser();
-    return persist(me, cashOutSchema.parse(input));
+    const { branchId, ...d } = saveSchema.parse(input);
+    const till = await formTillBranch(branchId);
+    return withBranchScope(till, () => persist(me, d));
   });
 }
 

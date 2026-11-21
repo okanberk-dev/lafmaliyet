@@ -6,6 +6,7 @@ import { countFactor } from "@/lib/calc/engine";
 import type { DayWaste } from "@/lib/cash-report";
 import { panelWasteCounts } from "@/lib/lafpos/ikram";
 import { productLabel, summarize, type WasteChoice, type WasteKind, type WasteLine } from "@/lib/waste";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -56,13 +57,17 @@ export interface WasteEntryDTO extends WasteLine {
   createdBy: number | null;
   createdByName: string;
   createdAt: string;
+  /** Kaydın şubesi: LafPOS günü yalnız LafPOS'un şubesinin ürün ikramını düşürür (panelWasteCounts) */
+  branchId: string;
 }
 
-export async function wasteEntriesBetween(from: string, to: string): Promise<WasteEntryDTO[]> {
+/** [from, to] günlerinin zayi ve ikram kayıtları: verilen şubenin, yoksa seçili şubenin ("Tümü"de hepsi) */
+export async function wasteEntriesBetween(from: string, to: string, branchId?: string): Promise<WasteEntryDTO[]> {
+  const sube = branchId !== undefined ? eq(s.wasteEntries.branchId, branchId) : await currentBranchWhere(s.wasteEntries.branchId);
   const rows = await getDb()
     .select()
     .from(s.wasteEntries)
-    .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to)))
+    .where(and(gte(s.wasteEntries.date, from), lte(s.wasteEntries.date, to), sube))
     .orderBy(desc(s.wasteEntries.date), desc(s.wasteEntries.id))
     .limit(2000);
   return rows.map((r) => ({
@@ -81,6 +86,7 @@ export async function wasteEntriesBetween(from: string, to: string): Promise<Was
     createdBy: r.createdBy,
     createdByName: r.createdByName,
     createdAt: r.createdAt.toISOString(),
+    branchId: r.branchId,
   }));
 }
 
@@ -106,12 +112,12 @@ export interface DayWasteLafpos {
  * listesinden, değeri LafPOS'un menü değerinden; listedeki "Zayi: …" satırları zayi özetine girer; paneldeki ürün
  * ikramı sayılmaz (`lafpos.notCounted`). Geçiş günü boşken `lafpos` null, özet bugünkü gibi yalnız panelden.
  */
-export async function dayWaste(date: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
+export async function dayWaste(date: string, branchId?: string): Promise<DayWaste & { ikramValue: number; count: number; lafpos: DayWasteLafpos | null }> {
   const db = getDb();
   const [entries, prices, laf] = await Promise.all([
-    wasteEntriesBetween(date, date),
+    wasteEntriesBetween(date, date, branchId),
     db.select({ id: s.products.id, price: s.products.price }).from(s.products),
-    loadDayLafposIkram(date),
+    loadDayLafposIkram(date, db, branchId),
   ]);
   const price = new Map(prices.map((p) => [p.id, p.price]));
   const received = Boolean(laf?.received);

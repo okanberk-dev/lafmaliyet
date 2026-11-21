@@ -40,7 +40,7 @@ function sampleFoy(day = "2026-11-01", o: Partial<KasaFoyu> = {}): KasaFoyu {
 
 const sheet = (day: string, revision = 1, foy = sampleFoy(day)): ModposSheetLite => ({ day, foy, revision });
 
-type Report = ModposSavedFields & { date: string; revision: number };
+type Report = ModposSavedFields & { date: string; revision: number; branchId?: string };
 
 /** Föyle birebir aynı yazılmış rapor */
 function report(date: string, o: Partial<Report> = {}): Report {
@@ -84,11 +84,16 @@ test("föyünden farklı: aynı yazılan rapor uyarı değil; nakit farklıysa t
 });
 
 test("föyünden farklı: yalnız ModPOS günü (LafPOS'a geçiş gününden önce ya da geçiş günü boşken)", () => {
-  const bad = [report(D, { cash: 8190 })];
-  assert.equal(modposMismatches(bad, [sheet(D)], null).length, 1, "geçiş günü boş");
-  assert.equal(modposMismatches(bad, [sheet(D)], "2026-11-10").length, 1, "geçiş gününden önce");
-  assert.deepEqual(modposMismatches(bad, [sheet(D)], D), [], "geçiş günü LafPOS'tur");
-  assert.deepEqual(modposMismatches(bad, [sheet(D)], "2026-10-20"), [], "geçiş gününden sonra");
+  // LafPOS'un şubesi Marina (21 Kasım kararı): geçiş günü yalnız onun kasasını keser
+  const bad = [report(D, { cash: 8190, branchId: "marina" })];
+  const foy = [{ ...sheet(D), branchId: "marina" }];
+  assert.equal(modposMismatches(bad, foy, null).length, 1, "geçiş günü boş");
+  assert.equal(modposMismatches(bad, foy, "2026-11-10").length, 1, "geçiş gününden önce");
+  assert.deepEqual(modposMismatches(bad, foy, D), [], "geçiş günü LafPOS'tur");
+  assert.deepEqual(modposMismatches(bad, foy, "2026-10-20"), [], "geçiş gününden sonra");
+  // ModPOS'ta kalan Tuzla'nın (şubesiz eski rapor da Tuzla'nın) raporu geçiş gününden sonra da föyüyle karşılaştırılır
+  assert.equal(modposMismatches([report(D, { cash: 8190 })], [sheet(D)], D).length, 1, "Tuzla, geçiş günü");
+  assert.equal(modposMismatches([report(D, { cash: 8190 })], [sheet(D)], "2026-10-20").length, 1, "Tuzla, geçiş gününden sonra");
 });
 
 test("föyünden farklı: föyü olmayan, satışsız ya da kasası açık föyün günü atlanır; sıra raporların sırası", () => {
@@ -225,12 +230,13 @@ test("kaynak: saf modül sunucuya bağlı değil; sunucu modülü yalnız okur (
   const srv = read("src/server/bell/modpos.ts");
   assert.match(srv, /^import "server-only";/);
   assert.doesNotMatch(srv, /fetchKasaFoyu|syncModpos|storeFoy|noteModposRun/);
-  // Anahtar yoksa durum okunmaz; biçimi bozuksa da (state null)
-  assert.match(srv, /if \(keyProblem === "missing"\) return null;\s+const state = keyProblem \? null : await readModposState\(\);/);
+  // Şube şube (her ModPOS şubesinin kendi anahtarı ve durumu); anahtar yoksa durum okunmaz; biçimi bozuk ya da başka
+  // şubeyle ortaksa da (state null)
+  assert.match(srv, /const keyProblem = modposKeyProblem\(env, id, peers\);\s+if \(keyProblem === "missing"\) return null;\s+const state = keyProblem \? null : await readModposState\(undefined, id\);/);
   // E-postanın satırı yalnız dün (sabah işi föyü e-postadan önce çeker); okunamayan kaynak satırsız düşer
   assert.match(srv, /const yesterday = addDays\(businessDate\(now\), -1\);/);
   assert.match(srv, /loadModposSheets\(yesterday, yesterday\)/);
-  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlert\(\)\.catch\(\(\) => null\),/);
+  assert.match(srv, /\.catch\(\(\) => null\),\s+loadKeyAlerts\(\)\.catch\(\(\) => \[\]\),/);
 });
 
 test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personelin dalında ModPOS yok", () => {
@@ -238,13 +244,14 @@ test("kaynak: zilin föy satırı kasa modülünün yönetici yolunda; personeli
   const fn = bell.slice(bell.indexOf("async function cashIntegrityNotifications"), bell.indexOf("async function requestNotifications"));
   assert.match(fn, /Promise\.all\(\[loadModposSheets\(oldest\.date, day\), loadLafposSwitchDay\(\)\]\)\.catch\(\(\) => null\),/);
   assert.match(fn, /for \(const m of modpos \? modposMismatches\(reports, modpos\[0\], modpos\[1\]\) : \[\]\) \{/);
-  assert.match(fn, /out\.push\(\{ \.\.\.modposMismatchBell\(m\), kind: "warning", timeLabel: timeLabel\(m\.report\.date\), unread: true, group: "kasa" \}\);/);
+  // Birden çok kasa açıkken gövdede şubenin adı
+  assert.match(fn, /out\.push\(\{ \.\.\.modposMismatchBell\(m, t\.named \? t\.name : undefined\), kind: "warning", timeLabel: timeLabel\(m\.report\.date\), unread: true, group: "kasa" \}\);/);
   // cashIntegrityNotifications yalnız yönetici dalında çağrılır
   const cash = bell.slice(bell.indexOf("async function cashNotifications"), bell.indexOf("async function cashIntegrityNotifications"));
   const staffBranch = cash.slice(cash.indexOf('if (user.role !== "admin") {'), cash.indexOf("const out: PanelNotification[] = [];"));
   assert.ok(staffBranch.length > 0);
   assert.doesNotMatch(staffBranch, /modpos|Modpos|cashIntegrityNotifications/);
-  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id)") > cash.indexOf('if (user.role !== "admin") {'));
+  assert.ok(cash.indexOf("cashIntegrityNotifications(reports, day, user.id, tills)") > cash.indexOf('if (user.role !== "admin") {'));
   // İstek dalları (personelin İsteklerim'i dahil) ModPOS okumaz
   assert.doesNotMatch(bell.slice(bell.indexOf("async function requestNotifications")), /modpos|Modpos/);
 });

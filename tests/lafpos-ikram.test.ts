@@ -39,11 +39,18 @@ const S = "2026-11-10";
 
 test("kural: LafPOS'un gün sonu gelen günde paneldeki ürün ikramı sayılmaz; zayi ve hammadde ikramı sayılır", () => {
   const days = new Set(["2026-11-12"]);
-  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, days), false);
-  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: null }, days), true, "hammadde ikramı");
-  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "zayi", productId: 5 }, days), true, "ürün zayisi");
-  assert.equal(panelWasteCounts({ date: "2026-11-11", kind: "ikram", productId: 5 }, days), true, "gün sonu gelmeyen gün");
-  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, new Set()), true, "geçiş günü boş");
+  const m = "marina";
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: m }, days), false);
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: null, branchId: m }, days), true, "hammadde ikramı");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "zayi", productId: 5, branchId: m }, days), true, "ürün zayisi");
+  assert.equal(panelWasteCounts({ date: "2026-11-11", kind: "ikram", productId: 5, branchId: m }, days), true, "gün sonu gelmeyen gün");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: m }, new Set()), true, "geçiş günü boş");
+  // Gün sonları LafPOS'un şubesinin (Marina): ModPOS'ta kalan Tuzla'nın (şubesiz eski kayıt da Tuzla'nın) aynı günkü ürün
+  // ikramı sayılır (21 Kasım kararı)
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "tuzla" }, days), true, "Tuzla");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5 }, days), true, "şubesiz (Tuzla)");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: null }, days), true, "şubesi null (Tuzla)");
+  assert.equal(panelWasteCounts({ date: "2026-11-12", kind: "ikram", productId: 5, branchId: "marina" }, days), false, "Marina");
 });
 
 test("yeni kayıt: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir; gün sonu gelmeyen geçmiş günde girilir", () => {
@@ -88,11 +95,11 @@ test("motor: LafPOS ikramı kayıtlı tüketime bir kez girer; paneldeki o günk
   const ing = ds.ingredients.find((i) => i.countUnit === "LT" || i.countUnit === "KG")!;
   const panel: WasteEntry[] = [
     // LafPOS'un gün sonu gelen günde: ürün ikramı sayılmaz, hammadde ikramı ve zayi sayılır
-    { date: "2026-11-12", kind: "ikram", productId: product.id, ingredientId: null, qty: 3, factor: 1 },
-    { date: "2026-11-12", kind: "ikram", productId: null, ingredientId: ing.id, qty: 1, factor: countFactor(ing.countUnit) },
-    { date: "2026-11-12", kind: "zayi", productId: product.id, ingredientId: null, qty: 1, factor: 1 },
+    { date: "2026-11-12", kind: "ikram", productId: product.id, ingredientId: null, qty: 3, factor: 1, branchId: "marina" },
+    { date: "2026-11-12", kind: "ikram", productId: null, ingredientId: ing.id, qty: 1, factor: countFactor(ing.countUnit), branchId: "marina" },
+    { date: "2026-11-12", kind: "zayi", productId: product.id, ingredientId: null, qty: 1, factor: 1, branchId: "marina" },
     // Gün sonu gelmeyen LafPOS günü: paneldeki ürün ikramı sayılır
-    { date: "2026-11-13", kind: "ikram", productId: product.id, ingredientId: null, qty: 1, factor: 1 },
+    { date: "2026-11-13", kind: "ikram", productId: product.id, ingredientId: null, qty: 1, factor: 1, branchId: "marina" },
   ];
   const lafposIkram: LafposIkramData = {
     switchDay: S,

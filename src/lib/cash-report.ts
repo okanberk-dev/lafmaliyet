@@ -1,4 +1,6 @@
+import { DEFAULT_BRANCH_ID } from "./branches";
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
+import { dayRevenue } from "./cash-revenue";
 import { money } from "./format";
 import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcReportFields, type OkcVatLine } from "./okc-z";
 import { lafposDiffsLine, type LafposDiff } from "./lafpos/diffs";
@@ -94,9 +96,16 @@ export function diffText(diff: number): string {
 }
 
 export interface CashResult {
-  /** Ödeme türlerinin toplamı ve Z toplamından farkı (tutmuyorsa yanlış yazılmış bir tutar var) */
+  /**
+   * Ödeme türlerinin toplamı ve günün cirosundan farkı (tutmuyorsa yanlış yazılmış bir tutar var). Ödenmez / ikram
+   * ödeme türü değildir: Z toplamı onu içeriyorsa fark cirodan ölçülür, yoksa Z toplamından (ikisi aynı şey)
+   */
   paymentsTotal: number;
   paymentsDiff: number;
+  /** Günün cirosu: Z toplamı − Z toplamının içindeki ödenmez / ikram (src/lib/cash-revenue.ts dayRevenue) */
+  revenue: number;
+  /** Z toplamından ciroya girmediği için düşülen ödenmez / ikram (0: Z toplamı zaten hariç ya da döküm kanıtlamıyor) */
+  offInZTotal: number;
   /** Açılış + nakit satış + gün içinde giren − gün içinde çıkan */
   expectedCash: number;
   /** Sayılan − olması gereken: eksi eksik, artı fazla */
@@ -121,9 +130,13 @@ export function computeCash(
   f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "okcCard"> & {
     /** LafPOS gününde kartla bahşiş + kartla cari tahsilatı (G11): banka POS'unda var, Z'nin kartında yok; kart farkı düşer */
     cardExtra?: number | null;
+    /** Ödenmez / ikram (ciro dışı); verilmezse ciro = Z toplamı (eski kayıt, kısmi test nesnesi) */
+    offRevenue?: number | null;
   },
 ): CashResult {
   const paymentsTotal = r2(f.cash + f.card + f.mealCard + f.online + f.other);
+  // Ciro: Z toplamı ödenmez / ikramı içeriyorsa (ödeme dökümü bunu söylüyorsa) düşülür; ödemeler ciroyla karşılaştırılır
+  const { revenue, offInZTotal } = dayRevenue({ zTotal: f.zTotal, offRevenue: f.offRevenue ?? null, payments: paymentsTotal });
   const expectedCash = r2(f.openingCash + f.cash + (f.cashIn ?? 0) - f.cashOut);
   const cashDiff = r2(f.countedCash - expectedCash);
   const okcCard = f.okcCard ?? null;
@@ -131,7 +144,9 @@ export function computeCash(
   const cardRef = okcCard ?? bankPos;
   return {
     paymentsTotal,
-    paymentsDiff: r2(paymentsTotal - f.zTotal),
+    paymentsDiff: r2(paymentsTotal - revenue),
+    revenue,
+    offInZTotal,
     expectedCash,
     cashDiff,
     kind: diffKind(cashDiff),
@@ -229,6 +244,26 @@ export function carryChecks(
     const c = carryCheck(r.date, r.openingCash, prev);
     if (c) out.set(r.date, c);
     prev = { date: r.date, amount: r2(r.countedCash - r.handedOver) };
+  }
+  return out;
+}
+
+/** Şubenin günü: birden çok şubenin raporları birlikteyken ("Tümü") günle değil bununla eşlenir */
+export const branchDayKey = (branchId: string, date: string) => `${branchId}:${date}`;
+
+/**
+ * Birden çok şubenin raporlarının açılış ↔ devir zinciri ("Tümü"): her şubenin zinciri kendi içinde (Marina'nın
+ * açılışı Tuzla'nın deviriyle karşılaştırılmaz; docs/SUBE.md › Kasa raporu). `beforeOf`: şubenin listedeki ilk
+ * raporundan önceki son raporun devri. Anahtar `branchDayKey(şube, gün)`.
+ */
+export function carryChecksByBranch(
+  reports: (Pick<CashReportFields, "date" | "openingCash" | "countedCash" | "handedOver"> & { branchId: string })[],
+  beforeOf: (branchId: string) => { date: string; amount: number } | null,
+): Map<string, CarryCheck> {
+  const out = new Map<string, CarryCheck>();
+  for (const branchId of new Set(reports.map((r) => r.branchId))) {
+    const own = reports.filter((r) => r.branchId === branchId);
+    for (const [date, c] of carryChecks(own, beforeOf(branchId))) out.set(branchDayKey(branchId, date), c);
   }
   return out;
 }
@@ -823,23 +858,46 @@ export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, 
 }
 
 /**
+ * Metnin şubesi: birden çok kasa açıkken raporun şubesinin adı (docs/SUBE.md › Kasa raporu "Tümü"de). İki şubenin aynı
+ * günkü raporu aynı numarayı taşır, aynı alıcılara ve aynı WhatsApp sohbetine düşer: şube yazılmazsa hangi kasanın eksik
+ * olduğu anlaşılmaz. Tek kasada boş (metin bugünkü gibi)
+ */
+export interface CashTextBranch {
+  branchName?: string | null;
+}
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
  * türleriyle tutmaması öne çıkarılır. Her zaman personelin metni (yönetici gönderse de gruba gider)
  */
-export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity): string {
+export function whatsappText(
+  f: CashReportFields,
+  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
+): string {
   return cashReportText(f, meta, "staff");
+}
+
+/**
+ * Ödemelerin toplamı neye göre ölçülüyor: ödenmez Z toplamının içindeyse ciroya, değilse Z toplamına ("… cirodan 120 ₺
+ * eksik" / "… Z toplamından 120 ₺ eksik")
+ */
+export function revenueWord(c: Pick<CashResult, "offInZTotal">): string {
+  return c.offInZTotal ? "cirodan" : "Z toplamından";
 }
 
 /** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
 export function cashReportText(
   f: CashTextFields,
-  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity,
+  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
   audience: CashTextAudience,
 ): string {
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
   f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
-  const head = [`*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
+  const head = [
+    `*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}${branchPart(meta.branchName)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`,
+    `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`,
+  ];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const photos = photosLine(meta.photos);
@@ -853,7 +911,10 @@ export function cashReportText(
   const z = [`*${zSectionTitle(meta.kasa)}*`, `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
-  if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
+  // Ödenmez Z toplamının içindeyse ayın cirosuna girmeyen tutar burada da görünür (docs/KASA-RAPORU.md › Ciro ve ödenmez)
+  if (c.offInZTotal) z.push(`Ciro (ödenmez / ikram hariç): ${money(c.revenue)}`);
+  if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE)
+    z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) ${revenueWord(c)} ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
   const mark = c.kind === "short" ? "🔴" : c.kind === "over" ? "🟠" : "✅";
   const kasa = [
     "*Kasa (nakit)*",
@@ -879,24 +940,43 @@ export function cashReportText(
  * Aynı sürüm iki kez gitmez ("Yeniden dene" aynı anahtarla); silinip aynı gün yeniden girilen rapor yeni satırdır, sürümü
  * yine 1'den başlar ama anahtarı silinenden farklıdır. Resend anahtarı 24 saat tutar: güne göre anahtar
  * (`cash-{gün}-r{sürüm}`) silinip yeniden girilen günün e-postasını göndermezdi (aynı gövde: eski sonuç; farklı gövde:
- * 409). İşlem geçmişinin anahtarı (`notification_log`, `cash:{gün}:r{sürüm}`) güne göre kalır: son gönderimin kaydı.
+ * 409). İşlem geçmişinin anahtarı `cashLogKey` (şubenin günü ve sürümü): son gönderimin kaydı.
  */
 export function cashEmailKey(row: { id: number; revision: number }): string {
   return `cash-${row.id}-r${row.revision}`;
 }
 
 /**
- * Kasa raporunun numarası (sahibin kararı, 4 Kasım 2026): iş gününden, "KR-20261103". Gün başına tek rapor olduğu için
- * (cash_reports_date_uq) benzersizdir; silinip yeniden girilen ya da geç girilen rapor da aynı numarayı alır, sıra
- * kaymaz. Panel, e-posta ve WhatsApp aynı numarayı yazar
+ * Kasa e-postasının işlem geçmişi anahtarı (`notification_log`): şubenin günü ve sürümü, `cash:{gün}:r{sürüm}`; Tuzla
+ * dışındaki şubede sonuna `:{şube}` (Tuzla'nın anahtarı bugünkü gibi kalır). Şubesiz anahtarda aynı günün iki şube
+ * raporu tek satıra düşüyor, ikincinin sonucu birincinin kaydını eziyordu (21 Kasım denetimi #2)
+ */
+export function cashLogKey(row: { date: string; revision: number; branchId: string }): string {
+  return `cash:${row.date}:r${row.revision}${row.branchId !== DEFAULT_BRANCH_ID ? `:${row.branchId}` : ""}`;
+}
+
+/**
+ * Kasa raporunun numarası (sahibin kararı, 4 Kasım 2026): iş gününden, "KR-20261103". Şubenin günü başına tek rapor
+ * olduğu için (cash_reports_date_uq: gün ve şube) şube içinde benzersizdir; silinip yeniden girilen ya da geç girilen
+ * rapor da aynı numarayı alır, sıra kaymaz. İki şubenin aynı günkü raporu aynı numarayı taşır: birden çok kasa açıkken
+ * e-posta, WhatsApp metni ve panel numaranın yanına şubenin adını yazar (`branchPart`). Panel, e-posta ve WhatsApp aynı
+ * numarayı yazar
  */
 export function reportNo(date: string): string {
   return `KR-${date.replaceAll("-", "")}`;
 }
 
-/** E-posta konusu: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik" */
-export function reportSubject(f: CashReportFields, revision = 1): string {
-  return `Kasa raporu ${reportNo(f.date)} · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
+/** Numaranın yanındaki şube: " · Marina" (birden çok kasa açıkken); tek kasada boş */
+export function branchPart(branchName: string | null | undefined): string {
+  return branchName ? ` · ${branchName}` : "";
+}
+
+/**
+ * E-posta konusu: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik"; birden çok kasa açıkken numaranın yanında
+ * şube ("Kasa raporu KR-20261021 · Marina · 21 Ekim Salı · 120 ₺ eksik")
+ */
+export function reportSubject(f: CashReportFields, revision = 1, branchName?: string | null): string {
+  return `Kasa raporu ${reportNo(f.date)}${branchPart(branchName)} · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
 }
 
 /** E-posta adresleri: virgül, noktalı virgül, boşluk ya da satırla ayrılmış metinden; tekrarlar ve geçersizler çıkar */

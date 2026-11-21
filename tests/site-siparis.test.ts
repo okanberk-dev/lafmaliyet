@@ -303,7 +303,7 @@ test("müşterinin notu: masa ve gel-al siparişinin notu ve her siparişte içe
   assert.notEqual(ordersFingerprint([table]), ordersFingerprint([{ ...table, lines: [{ ...table.lines[0], note: undefined }] }]));
   assert.equal(ordersFingerprint([plain]), ordersFingerprint([{ ...plain, note: undefined }]), "notsuz eski kayıt aynı");
   // Kart notları gösterir
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /\{o\.note \? \(/);
   assert.match(board, /\{l\.note \? <span[^>]*>Not: \{l\.note\}<\/span> : null\}/);
 });
@@ -369,7 +369,7 @@ test("ekranın isteği: oturum gerekir, güncel listede siteye gidilmez; tetikle
   // Kural saf yardımcıda (pullDue; aşağıda "ekranın isteği: sakin saatin kontrolü")
   assert.match(sync, /if \(!pullDue\(state, maxAgeMs, \{ manual: opts\.manual, nowMs: Date\.now\(\) \}\)\) return \{ status: "fresh" \}/);
   assert.match(route, /ensureOrdersFresh\(Math\.max\(maxAgeMs, MANUAL_MIN_MS\), \{ manual: maxAgeMs === 0 \}\)/, "Yenile art arda basılsa da siteyi 10 sn'de bir sorar");
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /const OPEN_STALE_MS = 60_000/);
   assert.match(board, /const BUSY_REPULL_MS = 3 \* 60_000/);
   assert.match(board, /const QUIET_REPULL_MS = 60 \* 60_000/);
@@ -554,11 +554,11 @@ test("aşama eylemi: oturum gerekir (personel de); önce doğrulama, ortak imzal
   // KVKK: müşterinin adı ve satırlar ne günlüğe ne işlem geçmişine (kaydı sitenin olay kaydı tutar: panel:<ad>)
   assert.doesNotMatch(action, /firstName|\.lines|logActivity/);
   // Sayfanın sunucu eylemleri siteye iki kez gidebilir (aşama + çekme): süre sınırı
-  assert.match(read("src/app/panel/karaoke/page.tsx"), /export const maxDuration = 30;/);
+  assert.match(read("src/app/panel/siparisler/page.tsx"), /export const maxDuration = 30;/);
 });
 
 test("bar ekranı: tek dokunuş, onaysız; istekte kartın düğmeleri kapalı, çift dokunuş gönderilmez; sonra canlı veri", () => {
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
   assert.match(board, /advanceSiteOrder\(\{ id: o\.id, action, from: o\.stage \}\)/);
   assert.match(board, /const buttons = stageButtons\(o\)/);
   // Geçiş, atılan eylemi yakalayan sarmalayıcıdan (src/components/ui/action-error.ts)
@@ -674,8 +674,9 @@ test("bar ekranı yoğun mu: açık sipariş, son iki saatte liste değişti ya 
   const ended = { ...quiet, pingAt, awaitingUntil: null } as Parameters<typeof boardBusy>[0];
   for (const min of [31, 60, 90, 119]) assert.equal(boardBusy(ended, now + min * 60_000), false, `ping tek başına yoğunluk değil (+${min} dk)`);
 
-  const board = read("src/app/panel/karaoke/orders-board.tsx");
-  assert.match(board, /const busy = boardBusy\(\{ open: list\.length, changeAt: data\?\.changeAt, awaitingUntil: data\?\.awaitingUntil \}, now\);/);
+  const board = read("src/app/panel/siparisler/orders-board.tsx");
+  // Açık masa çağrısı da ekranı yoğun yapar (çağrı 15 dakikada sitede pingsiz düşer; üç dakikalık çekme onu kaldırır)
+  assert.match(board, /const busy = boardBusy\(\{ open: list\.length \+ calls\.length, changeAt: data\?\.changeAt, awaitingUntil: data\?\.awaitingUntil \}, now\);/);
   assert.doesNotMatch(read("src/lib/site-orders/follow.ts"), /recent\(o\.pingAt/);
   assert.match(board, /const ms = failing \? ERROR_REPULL_MS : busy \? BUSY_REPULL_MS : QUIET_REPULL_MS;/);
   assert.match(board, /const clock = useClock\(30_000\);/, "takip bitince ekran en geç yarım dakikada sakinleşir");

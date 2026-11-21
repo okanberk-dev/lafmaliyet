@@ -7,16 +7,26 @@ import { and, asc, desc, eq, getTableColumns, gte, lte, sql } from "drizzle-orm"
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import type { KasaFoyu } from "@/lib/modpos/foy";
 import type { StoredDay } from "@/lib/modpos/plan";
-import { parseModposState, withDayErrors, withRun, MODPOS_STATE_KEY, type ModposRun, type ModposState } from "@/lib/modpos/status";
+import { modposStateKey, parseModposState, withDayErrors, withRun, type ModposRun, type ModposState } from "@/lib/modpos/status";
 import { isFinalFoy, sheetCanonical, sheetPrevious, sheetState, type ModposSheetPrevious } from "@/lib/modpos/z";
-import { andWhere, currentBranchWhere } from "@/server/branch-scope";
+import { andWhere, currentBranchWhere, currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
  * Panelde seçili şubenin koşulu (docs/SUBE.md). Föyün anahtarı (gün, şube): süzmeden okuyan sorgu başka şubenin
- * föyünü döndürebilir. "Tümü" seçiliyken koşul yoktur; arka plan işinde de (istek yok) "Tümü"ye düşer.
+ * föyünü döndürebilir. "Tümü" seçiliyken koşul yoktur; arka plan işinde de (istek yok) "Tümü"ye düşer. Şube verilirse
+ * yalnız o şube (seçiciden bağımsız). Listeler her föyü şubesiyle döndürür: "Tümü"de okuyan rapor ile föyü
+ * (şube, gün) ile eşler, günle değil (src/lib/modpos/zil.ts modposMismatches).
  */
-const subeKosulu = () => currentBranchWhere(s.modposCashSheets.branchId);
+const subeKosulu = (branchId?: string) => (branchId !== undefined ? eq(s.modposCashSheets.branchId, branchId) : currentBranchWhere(s.modposCashSheets.branchId));
+
+/**
+ * Tek günün föyü hep tek şubenindir: verilen şube, yoksa seçili şube; "Tümü"de yazılan şube (Tuzla; kasa formu da
+ * oraya yazar). Koşulsuz okusaydı iki şubenin aynı günü varken rastgele birinin föyü dönerdi.
+ */
+async function gunSubesi(branchId?: string): Promise<string> {
+  return branchId ?? (await currentTillBranch());
+}
 
 /**
  * ModPOS kasa föylerinin saklanması ve okunması (docs/MODPOS-API.md › Saklama). Bir kasa günü tek satırdır
@@ -29,6 +39,8 @@ export type SheetChange = "yeni" | "degisti" | "ayni";
 
 export interface ModposSheet {
   day: string;
+  /** Föyün şubesi (docs/SUBE.md): rapor ve föy (şube, gün) ile eşlenir */
+  branchId: string;
   foy: KasaFoyu;
   /** ModPOS'un gönderdiği ham XML: yalnız loadModposSheet(…, { raw: true }) okur; yoksa (eski föy) null */
   raw?: string | null;
@@ -63,6 +75,7 @@ function toSheet(r: Row): ModposSheet | null {
   return {
     ...(r.raw !== undefined ? { raw: r.raw } : {}),
     day: r.day,
+    branchId: r.branchId,
     foy: r.sheet,
     state: r.state,
     final: r.final,
@@ -85,9 +98,9 @@ export async function storeFoy(
   fetchedAt: Date,
   raw: string | null = null,
   /**
-   * Föyün şubesi: hangi ModPOS hesabından çekildiyse o (docs/SUBE.md › Kasa kaynağı). Bugün yalnız Tuzla'nın
-   * hesabı tanımlı, bu yüzden varsayılan odur; Marina'nın anahtarı eklendiğinde çağıran kendi şubesini geçer.
-   * Gün sorgusu şubesiz kalsaydı iki şubenin aynı günü birbirini ezerdi: anahtar (gün, şube).
+   * Föyün şubesi (docs/MODPOS-API.md › Şubeler): çekim föyü şubelere ayırır (src/lib/modpos/sube.ts
+   * splitFoyByBranch) ve her parçayı kendi şubesine yazar. Gün sorgusu şubesiz kalsaydı iki şubenin aynı günü
+   * birbirini ezerdi: anahtar (gün, şube).
    */
   branchId: string = DEFAULT_BRANCH_ID,
 ): Promise<{ change: SheetChange; revision: number; final: boolean; previous: ModposSheetPrevious | null }> {
@@ -127,43 +140,46 @@ export async function storeFoy(
 /** Okuyucu: veritabanı ya da işlem (yalnız select) */
 type Reader = Pick<DB, "select">;
 
-/** Bir günün föyü; `raw: true` ham XML'i de okur (yalnız günün görünümü) */
-export async function loadModposSheet(day: string, db: Reader = getDb(), o: { raw?: boolean } = {}): Promise<ModposSheet | null> {
-  const [r] = o.raw
-    ? await db.select().from(s.modposCashSheets).where(andWhere(eq(s.modposCashSheets.day, day), await subeKosulu())).limit(1)
-    : await db.select(SHEET_COLS).from(s.modposCashSheets).where(andWhere(eq(s.modposCashSheets.day, day), await subeKosulu())).limit(1);
+/** Bir günün tek şubedeki föyü (gunSubesi); `raw: true` ham XML'i de okur (yalnız günün görünümü) */
+export async function loadModposSheet(day: string, db: Reader = getDb(), o: { raw?: boolean; branchId?: string } = {}): Promise<ModposSheet | null> {
+  const gun = and(eq(s.modposCashSheets.day, day), eq(s.modposCashSheets.branchId, await gunSubesi(o.branchId)));
+  const [r] = o.raw ? await db.select().from(s.modposCashSheets).where(gun).limit(1) : await db.select(SHEET_COLS).from(s.modposCashSheets).where(gun).limit(1);
   return r ? toSheet(r) : null;
 }
 
-/** [from, to] içindeki föyler, eskiden yeniye */
-export async function loadModposSheets(from: string, to: string, db: Reader = getDb()): Promise<ModposSheet[]> {
+/** [from, to] içindeki föyler, eskiden yeniye (şube verilmezse seçili şube; "Tümü"de her şubeninki, şubesiyle) */
+export async function loadModposSheets(from: string, to: string, db: Reader = getDb(), o: { branchId?: string } = {}): Promise<ModposSheet[]> {
   const rows = await db
     .select(SHEET_COLS)
     .from(s.modposCashSheets)
-    .where(andWhere(and(gte(s.modposCashSheets.day, from), lte(s.modposCashSheets.day, to)), await subeKosulu()))
-    .orderBy(asc(s.modposCashSheets.day));
+    .where(andWhere(and(gte(s.modposCashSheets.day, from), lte(s.modposCashSheets.day, to)), await subeKosulu(o.branchId)))
+    .orderBy(asc(s.modposCashSheets.day), asc(s.modposCashSheets.branchId));
   return rows.flatMap((r) => toSheet(r) ?? []);
 }
 
-/** Planlayıcının girdisi: saklanan günler (kesin mi, son çekilme anı) */
-export async function loadModposIndex(db: Reader = getDb()): Promise<Map<string, StoredDay>> {
+/**
+ * Planlayıcının girdisi: şubenin saklanan günleri (kesin mi, son çekilme anı). Hep tek şube: başka şubenin günü bu
+ * şubenin "çekildi" günü sayılsaydı o gün bu şube için hiç çekilmezdi
+ */
+export async function loadModposIndex(db: Reader = getDb(), branchId: string = DEFAULT_BRANCH_ID): Promise<Map<string, StoredDay>> {
   const rows = await db
     .select({ day: s.modposCashSheets.day, final: s.modposCashSheets.final, fetchedAt: s.modposCashSheets.fetchedAt })
     .from(s.modposCashSheets)
-    .where(await subeKosulu());
+    .where(eq(s.modposCashSheets.branchId, branchId));
   return new Map(rows.map((r) => [r.day, { final: r.final, fetchedAt: r.fetchedAt.toISOString() }]));
 }
 
-/** Son çekilen föyler (Ayarlar kartının listesi) */
-export async function recentModposSheets(limit: number, db: Reader = getDb()): Promise<ModposSheet[]> {
-  const rows = await db.select(SHEET_COLS).from(s.modposCashSheets).where(await subeKosulu()).orderBy(desc(s.modposCashSheets.day)).limit(limit);
+/** Şubenin son çekilen föyleri (Ayarlar kartının listesi) */
+export async function recentModposSheets(limit: number, db: Reader = getDb(), branchId: string = DEFAULT_BRANCH_ID): Promise<ModposSheet[]> {
+  const rows = await db.select(SHEET_COLS).from(s.modposCashSheets).where(eq(s.modposCashSheets.branchId, branchId)).orderBy(desc(s.modposCashSheets.day)).limit(limit);
   return rows.flatMap((r) => toSheet(r) ?? []);
 }
 
-// ---------------------------------------------------------------- Durum (integration_state › modpos)
+// ---------------------------------------------------------------- Durum (integration_state › modpos, şube başına)
 
-export async function readModposState(db: Reader = getDb()): Promise<ModposState> {
-  const [row] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, MODPOS_STATE_KEY)).limit(1);
+/** Şubenin bağlantı durumu (kota, son çekimler, alınamayan günler; modposStateKey) */
+export async function readModposState(db: Reader = getDb(), branchId: string = DEFAULT_BRANCH_ID): Promise<ModposState> {
+  const [row] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, modposStateKey(branchId))).limit(1);
   return parseModposState(row?.value);
 }
 
@@ -177,16 +193,18 @@ export async function noteModposRun(
   run: ModposRun | null,
   /** Alınan ve alınamayan günler: gün hataları kilit altında güncellenir (src/lib/modpos/status.ts withDayErrors) */
   dayResults?: { ok: readonly string[]; failed: readonly { day: string; kod: string }[] },
+  branchId: string = DEFAULT_BRANCH_ID,
 ): Promise<void> {
+  const stateKey = modposStateKey(branchId);
   try {
     await db.transaction(async (tx) => {
-      await tx.execute(sql`insert into integration_state (key, value) values (${MODPOS_STATE_KEY}, '{}'::jsonb) on conflict (key) do nothing`);
-      const [row] = await tx.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, MODPOS_STATE_KEY)).for("update").limit(1);
+      await tx.execute(sql`insert into integration_state (key, value) values (${stateKey}, '{}'::jsonb) on conflict (key) do nothing`);
+      const [row] = await tx.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, stateKey)).for("update").limit(1);
       const cur = parseModposState(row?.value);
       const at = run?.at ?? new Date().toISOString();
       const dayErrors = dayResults ? withDayErrors(cur.dayErrors, dayResults.ok, dayResults.failed, at) : cur.dayErrors;
       const next: ModposState = { ...cur, ...patch, runs: run ? withRun(cur.runs, run) : cur.runs, dayErrors };
-      await tx.execute(sql`update integration_state set value = ${JSON.stringify(next)}::jsonb, updated_at = now() where key = ${MODPOS_STATE_KEY}`);
+      await tx.execute(sql`update integration_state set value = ${JSON.stringify(next)}::jsonb, updated_at = now() where key = ${stateKey}`);
     });
   } catch (e) {
     console.error("[modpos] durum yazılamadı:", e instanceof Error ? e.message : e);
@@ -197,6 +215,11 @@ export async function noteModposRun(
 
 /** Aynı anda tek çekim: sabah işi iki kez tetiklenirse ya da "Bu günü çek" sabah işiyle çakışırsa aynı gün iki kez çekilip iki hak harcanmasın */
 export const MODPOS_LEASE_KEY = "modpos.kira";
+
+/** Kira şube başına (her şubenin kendi anahtarı ve hakkı var): Tuzla eski adla, öteki `modpos.kira:marina` */
+export function modposLeaseKey(branchId: string): string {
+  return branchId === DEFAULT_BRANCH_ID ? MODPOS_LEASE_KEY : `${MODPOS_LEASE_KEY}:${branchId}`;
+}
 /** Kiranın süresi: işlevin en uzun süresinden (60 sn) uzun; yarıda kesilen çalışmanın kirası kendiliğinden düşer */
 export const MODPOS_LEASE_MS = 90_000;
 
@@ -204,12 +227,13 @@ export const MODPOS_LEASE_MS = 90_000;
  * Kirayı alır: boşsa ya da süresi geçmişse (tek koşullu yazımla) alınır ve kimliği döner; başka çalışma tutuyorsa null.
  * Kimlik, bırakırken yalnız kendi kirasını silmek içindir
  */
-export async function takeModposLease(db: DB, now: Date = new Date()): Promise<string | null> {
+export async function takeModposLease(db: DB, now: Date = new Date(), branchId: string = DEFAULT_BRANCH_ID): Promise<string | null> {
+  const leaseKey = modposLeaseKey(branchId);
   const id = `${now.getTime()}-${Math.random().toString(36).slice(2, 10)}`;
   const until = new Date(now.getTime() + MODPOS_LEASE_MS).toISOString();
   const value = JSON.stringify({ id, until });
   const rows = (await db.execute(sql`
-    insert into integration_state (key, value) values (${MODPOS_LEASE_KEY}, ${value}::jsonb)
+    insert into integration_state (key, value) values (${leaseKey}, ${value}::jsonb)
     on conflict (key) do update set value = excluded.value, updated_at = now()
       where (integration_state.value->>'until') is null or (integration_state.value->>'until')::timestamptz < ${now.toISOString()}::timestamptz
     returning key`)) as unknown as unknown[];
@@ -217,9 +241,10 @@ export async function takeModposLease(db: DB, now: Date = new Date()): Promise<s
 }
 
 /** Kirayı bırakır (yalnız kendi kirasını); hata ana sonucu bozmaz, kira süresi dolunca zaten düşer */
-export async function releaseModposLease(db: DB, id: string): Promise<void> {
+export async function releaseModposLease(db: DB, id: string, branchId: string = DEFAULT_BRANCH_ID): Promise<void> {
+  const leaseKey = modposLeaseKey(branchId);
   try {
-    await db.execute(sql`delete from integration_state where key = ${MODPOS_LEASE_KEY} and value->>'id' = ${id}`);
+    await db.execute(sql`delete from integration_state where key = ${leaseKey} and value->>'id' = ${id}`);
   } catch (e) {
     console.error("[modpos] kira bırakılamadı:", e instanceof Error ? e.message : e);
   }

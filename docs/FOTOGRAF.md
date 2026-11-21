@@ -77,7 +77,8 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
   Yanıt `Cache-Control: private, max-age=3600`, `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`.
 - **Kim görür:** yönetici hepsini; yükleyen kişi henüz kayda bağlanmamış kendi fotoğrafını (formdaki küçük resim);
   personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
-  KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını. O günlere fotoğraf eklemek de aynı kuralla
+  KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını; şubesine kilitli personel yalnız kendi şubesininkileri
+  (`staffBranchRefusal`, [SUBE.md](SUBE.md) › Personel hesabının şubesi). O günlere fotoğraf eklemek de aynı kuralla
   (`src/server/photo-read/rules.ts` › `staffDayOpen`). Geç kasa raporu için personel dünden eski, raporu girilmemiş
   son 14 günden birine de ModPOS Z ve banka POS Z fotoğrafı ekler (`staffLateDayOpen`; ilk rapordan sonra, kapalı işaretli olmayan
   gün; [KASA-RAPORU.md](KASA-RAPORU.md) › Geç rapor). Fişi personel bugün ile 7 gün öncesi arasına yükler (açık günde

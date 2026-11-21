@@ -1,9 +1,11 @@
 import "server-only";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { FOY_MAX_BYTES, parseKasaFoyu, type FoyHata, type KasaFoyu } from "@/lib/modpos/foy";
 import {
   foyUrl,
   isKeyError,
+  modposAnyKey,
   modposErrorText,
   modposKeyFrom,
   modposKeyProblem,
@@ -13,6 +15,7 @@ import {
   quotaFromHeaders,
   type ModposQuota,
 } from "@/lib/modpos/request";
+import { modposKeyEnv } from "@/lib/modpos/sube";
 import { todayTR } from "@/lib/reminders";
 
 /**
@@ -37,19 +40,22 @@ export interface FetchOptions {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   env?: Env;
+  /** Hangi şubenin anahtarıyla (varsayılan Tuzla; src/lib/modpos/sube.ts modposKeyEnv) */
+  branchId?: string;
 }
 
-/** Bağlantı kurulu mu (anahtar var ve biçimi doğru) */
+/** Bağlantı kurulu mu: herhangi bir şubenin anahtarı var ve biçimi doğru (hangi şubelerin çekileceğini sync.ts bilir) */
 export function isModposConfigured(env: Env = process.env): boolean {
-  return modposKeyProblem(env) === null;
+  return modposAnyKey(env);
 }
 
 /** Bir kasa gününün föyü. Hata fırlatmaz: her sonuç (ağ, zaman aşımı, bozuk yanıt dahil) birleşik türdür */
 export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<FoyFetch> {
   const env = o.env ?? process.env;
-  const problem = modposKeyProblem(env);
-  if (problem) return { status: "off", problem };
-  const key = modposKeyFrom(env)!;
+  const branchId = o.branchId ?? DEFAULT_BRANCH_ID;
+  const problem = modposKeyProblem(env, branchId);
+  if (problem) return { status: "off", problem: problem === "shared" ? "missing" : problem };
+  const key = modposKeyFrom(env, branchId)!;
   const now = o.now ?? new Date();
   const timeoutMs = Math.min(o.timeoutMs ?? MODPOS_TIMEOUT_MS, MODPOS_TIMEOUT_MS);
   const doFetch = o.fetchImpl ?? fetch;
@@ -95,7 +101,7 @@ export async function fetchKasaFoyu(day: string, o: FetchOptions = {}): Promise<
   // Tanınmayan kodda metin servisin kodunu ve mesajını taşır: servis anahtarı geri yazsa da metne (durum satırına,
   // yedeğe) geçmez. Metin kısaltılmadan önce temizlenir (yarım anahtar kalmasın)
   const hata: FoyHata | null = raw ? { ...raw, kod: redactKey(raw.kod, key), mesaj: redactKey(raw.mesaj, key) } : null;
-  const text = modposErrorText(res.status, hata, now);
+  const text = modposErrorText(res.status, hata, now, modposKeyEnv(branchId));
   if (hata?.kod === "KOTA_DOLDU" || (res.status === 429 && !hata)) {
     const hak = hata?.gunlukHak ?? quota?.hak ?? MODPOS_DAILY_QUOTA;
     return { status: "kota", quota: { day: todayTR(now), hak, kalan: 0, yenilenme: hata?.yenilenme ?? quota?.yenilenme ?? null, at: now.toISOString() }, text };

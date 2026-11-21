@@ -19,12 +19,15 @@ import { WASTE_KIND_LABEL } from "@/lib/waste";
 import { reviewWasteRequest } from "@/server/actions/waste-requests";
 import type { LateWasteCard, WasteDeleteCard, WasteRequestCard } from "@/server/data/waste-requests";
 
+import { BranchBadge, branchDayHref } from "./branch-badge";
+
 /*
  * Onaylar › Zayi ve ikram (yalnız yönetici; docs/ZAYI-IKRAM.md › Geç kayıt ve silme isteği). Geç kayıtta kalem ve gün,
  * neden ve not, isteyen, malzeme maliyeti (bugünkü fiyatlarla; ikramda menü değeri) ve bağlam: o gün aynı kalemden
  * kayıt, aynı gün ve kalem için başka bekleyen istek, ikramda Z ödenmez karşılaştırması, kasa raporu, ayın sayımı.
  * Silmede önce kaydı kimin ne zaman girdiği, sonra isteyen ve neden; kayıt kasa e-postasına girdiyse uyarı, kayıt
- * yoksa tek düğme "Kapat". Not personele görünür (tutar yazılmaz).
+ * yoksa tek düğme "Kapat". Not personele görünür (tutar yazılmaz). Bağlam isteğin şubesinden; birden çok kasa açıkken
+ * kart şubeyi adıyla yazar, "Günü aç" o şubenin gününü açar (`?sube=`; denetim 21 Kasım #28).
  */
 
 export function WasteRequestCards({ cards }: { cards: WasteRequestCard[] }) {
@@ -93,6 +96,7 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         createdAt={card.createdAt}
         badges={
           <>
+            <BranchBadge branch={card.branch} />
             <Badge tone={ikram ? "blue" : "red"}>{WASTE_KIND_LABEL[p.kind]}</Badge>
             <Badge tone="amber">Geç kayıt</Badge>
           </>
@@ -130,7 +134,7 @@ function LateWasteItem({ card }: { card: LateWasteCard }) {
         ) : null}
         <p className="text-ink-soft">{card.report.exists ? "O günün kasa raporu gönderilmiş; özetinde bu kayıt yok." : "O günün kasa raporu yok."}</p>
         {card.countDone ? <p className="font-medium text-warn">{card.countDone}</p> : null}
-        <Link href={`/panel/zayi?gun=${card.date}`} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+        <Link href={branchDayHref("/panel/zayi", card)} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
           <ExternalLink size={14} aria-hidden="true" /> Günü aç
         </Link>
       </section>
@@ -162,6 +166,7 @@ function WasteDeleteItem({ card }: { card: WasteDeleteCard }) {
           <span className="min-w-0 break-words">
             {card.item} · {card.dayLong}
           </span>
+          <BranchBadge branch={card.branch} />
           <Badge tone={e.kind === "ikram" ? "blue" : "red"}>{WASTE_KIND_LABEL[e.kind]}</Badge>
           <Badge tone="red">Silme</Badge>
         </h3>

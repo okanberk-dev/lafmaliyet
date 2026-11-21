@@ -24,11 +24,14 @@ import { cn } from "@/lib/utils";
 import { reviewCashOutRequest, reviewPhotoRemoval } from "@/server/actions/cash-out-requests";
 import type { CashOutCard, PhotoRemovalCard } from "@/server/data/cash-out-requests";
 
+import { BranchBadge, kasaDayHref } from "./branch-badge";
+
 /*
  * Onaylar › Kasa: kasadan çıkan istekleri ve fotoğraf kaldırma (yalnız yönetici; docs/KASA-RAPORU.md › Kasadan çıkan:
  * kapanmış gün, yöneticinin satırı). Kartta satır, fişi, değişiklikler ve bağlam (günün kasa farkı, o günün satırları,
  * fiş tekrarı, kırmızı işaretler, gider ayı); onay kasa raporunu değiştirmez, fark kartta görünür ve rapor normal yoldan
- * düzeltilir. Not personele görünür (tutar yazılmaz).
+ * düzeltilir. Not personele görünür (tutar yazılmaz). Birden çok kasa açıkken kart isteğin kasasını adıyla yazar ve
+ * "Günü aç" / "Raporu aç" o şubenin gününü açar (`?sube=`; denetim 21 Kasım #29).
  */
 
 const OP_BADGE = { ekle: { tone: "blue", text: "Ekleme" }, duzelt: { tone: "amber", text: "Düzeltme" }, sil: { tone: "red", text: "Silme" } } as const;
@@ -115,6 +118,7 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
         message={card.message}
         badges={
           <>
+            <BranchBadge branch={card.branch} />
             <Badge tone={OP_BADGE[card.op].tone}>{OP_BADGE[card.op].text}</Badge>
             {c.dayClosed ? <Badge tone="gray">Kapanmış gün</Badge> : null}
             {card.expense?.admin ? <Badge tone="violet">Yöneticinin satırı</Badge> : null}
@@ -206,7 +210,7 @@ export function CashOutItem({ card, categories }: { card: CashOutCard; categorie
           </div>
         ) : null}
         {c.monthWarning ? <p className="text-warn">{c.monthWarning}</p> : null}
-        <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+        <Link href={kasaDayHref(card)} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
           <ExternalLink size={14} aria-hidden="true" /> Günü aç
         </Link>
       </section>
@@ -280,11 +284,23 @@ export function PhotoRemovalItem({ card }: { card: PhotoRemovalCard }) {
   const caption = card.photo ? photoCaption(card.photo.kind, card.photo.createdAt, card.photo.byName) : "";
   return (
     <article id={`istek-${card.id}`} className="scroll-mt-24 space-y-3 px-5 py-4">
-      <Head title={photoCardTitle(card.photoKind, card.date)} by={card.requestedByName} createdAt={card.createdAt} waited={card.waited} message={card.message} badges={<Badge tone="red">Fotoğraf</Badge>} />
+      <Head
+        title={photoCardTitle(card.photoKind, card.date)}
+        by={card.requestedByName}
+        createdAt={card.createdAt}
+        waited={card.waited}
+        message={card.message}
+        badges={
+          <>
+            <BranchBadge branch={card.branch} />
+            <Badge tone="red">Fotoğraf</Badge>
+          </>
+        }
+      />
       {card.photo ? <PhotoThumb id={card.photo.id} caption={caption} onOpen={() => setViewer({ id: card.photo!.id, caption })} /> : null}
       <p className="text-sm text-ink-soft">{card.diffs.length ? `Okuma: ${card.diffs.join("; ")}` : "Okuma farkı yok."}</p>
       {card.refusal ? <Notice tone="bad" size="sm" title={`${card.refusal}; isteği reddedin.`} /> : null}
-      <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+      <Link href={kasaDayHref(card)} className="inline-flex items-center gap-1 text-sm font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
         <ExternalLink size={14} aria-hidden="true" /> Raporu aç
       </Link>
       <NoteField id={card.id} note={note} setNote={setNote} />

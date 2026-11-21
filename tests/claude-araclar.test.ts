@@ -595,3 +595,47 @@ test("sızıntı taraması: bütün araç yanıtlarında IBAN, vergi no, telefon
     cashReportSummary([report("2026-10-20"), report("2026-10-21")], { from: "2026-10-01", to: "2026-10-22", through: "2026-10-21", firstReport: "2026-10-20", before: null, base: ctx.base }),
   );
 });
+
+test("kasa raporları, iki kasa: günlük satırda şube, eksik günler ve devir zinciri şube şube", () => {
+  const t = (date: string, branchId: string, o: Partial<CashReportLike> = {}) => report(date, { branchId, ...o });
+  const reports = [
+    t("2026-10-18", "tuzla"),
+    t("2026-10-18", "marina", { openingCash: 5_000 }),
+    t("2026-10-19", "tuzla"),
+    // Marina 19'u girmedi; 20'de açılışı kendi 18'inin devriyle (1.000) tutuyor, Tuzla'nınkiyle değil
+    t("2026-10-20", "marina", { openingCash: 1_000 }),
+    t("2026-10-20", "tuzla", { openingCash: 1_000 }),
+  ];
+  const r = cashReportSummary(reports, {
+    from: "2026-10-18",
+    to: "2026-10-20",
+    through: "2026-10-20",
+    firstReport: "2026-10-18",
+    before: null,
+    base: ctx.base,
+    tills: [
+      { id: "tuzla", name: "Tuzla", firstReport: "2026-10-01", before: { date: "2026-10-17", amount: 1_000 } },
+      { id: "marina", name: "Marina", firstReport: "2026-10-18", before: null },
+    ],
+  });
+  assert.deepEqual(
+    r.gunluk.map((g) => [g.tarih, g.sube, g.acilisDevirleTutmuyor]),
+    [
+      ["2026-10-18", "Tuzla", false],
+      ["2026-10-18", "Marina", false],
+      ["2026-10-19", "Tuzla", false],
+      ["2026-10-20", "Tuzla", false],
+      ["2026-10-20", "Marina", false],
+    ],
+  );
+  assert.deepEqual(r.eksikGunler, ["2026-10-19 · Marina"]);
+  assert.deepEqual(r.subeler, [
+    { sube: "Tuzla", raporSayisi: 3, eksikGunSayisi: 0 },
+    { sube: "Marina", raporSayisi: 2, eksikGunSayisi: 1 },
+  ]);
+  assert.ok(r.uyarilar.some((u) => u.startsWith("Raporu olmayan günler (şube şube): Marina 1 gün")));
+  // Tek kasa (tills yok): alan yok, bugünkü gibi
+  const one = cashReportSummary([report("2026-10-18")], { from: "2026-10-18", to: "2026-10-18", through: "2026-10-18", firstReport: "2026-10-18", before: null, base: ctx.base });
+  assert.ok(!("sube" in one.gunluk[0]) && !("subeler" in one));
+  assertNoLeak("kasa_raporlari şubeli", r);
+});

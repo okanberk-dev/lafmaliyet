@@ -4,6 +4,7 @@ import { and, asc, countDistinct, gte, lte, sql, sum, type SQL } from "drizzle-o
 
 import type { LafposSalesMonth, SalesLine } from "@/lib/calc/types";
 import { lafposMonthStatus, lafposSalesCountFrom, mergeSalesSources, modposThroughOf, type LafposDaysOfMonth, type LafposMonthLine, type SalesSources } from "@/lib/lafpos/sales";
+import { isLafposBranch } from "@/lib/lafpos/switch";
 import { addDays, shiftMonth } from "@/lib/reminders";
 import { currentBranchWhere } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
@@ -116,13 +117,15 @@ export async function mergeWithLafpos(
   const hold = input.lastTillDay?.slice(0, 7) === running ? { month: running, after: input.lastTillDay } : null;
   const lafpos = await loadLafposMonthSales(db, countFrom, input.toMonth ? `${input.toMonth}-31` : undefined, hold);
   const merged = mergeSalesSources({ switchDay: S, salesLines: input.salesLines, coverage: input.coverage, lafposLines: lafpos.lines, lafposDays: lafpos.days });
-  // Özet: geçiş ayından, verisi olan son aya (en az bu ay ve geçiş ayı) kadar her ay
+  // Özet: geçiş ayından, verisi olan son aya (en az bu ay ve geçiş ayı) kadar her ay. Yalnız LafPOS'un şubesinin
+  // listesiyle: ModPOS'ta kalan şubenin listesi ("Tümü") LafPOS'la çakışmaz, ondan uyarı çıkmaz
+  const own = input.salesLines.filter((l) => isLafposBranch(l.branchId));
   const switchMonth = S.slice(0, 7);
-  const dataMonths = [...input.salesLines.map((l) => l.month), ...lafpos.days.map((x) => x.month)].filter((m) => m >= switchMonth);
+  const dataMonths = [...own.map((l) => l.month), ...lafpos.days.map((x) => x.month)].filter((m) => m >= switchMonth);
   const last = [switchMonth, input.today.slice(0, 7), ...dataMonths].reduce((a, b) => (b > a ? b : a));
   const months: LafposSalesMonth[] = [];
   for (let m = switchMonth; m <= last; m = shiftMonth(m, 1)) {
-    const list = input.salesLines.filter((l) => l.month === m);
+    const list = own.filter((l) => l.month === m);
     const through = modposThroughOf(m, input.coverage);
     const days = lafpos.received.find((x) => x.month === m) ?? null;
     const counted = lafpos.days.find((x) => x.month === m) ?? null;

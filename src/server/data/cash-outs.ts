@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 
 import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
+import { currentBranchWhere } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 /** Gün içinde kasadan çıkan bir satır (ekranda; bağlı harcama kaydı ve kategorisiyle) */
@@ -55,21 +56,27 @@ const columns = {
   categoryName: s.expenseCategories.name,
 };
 
-/** [from, to] günlerinin satırları (eskiden yeniye) */
-export async function cashOutsBetween(from: string, to: string): Promise<CashOutDTO[]> {
+/**
+ * [from, to] günlerinin satırları (eskiden yeniye). Kasadan çıkan şubenin kasasınındır: verilen şubenin, yoksa seçili
+ * şubenin ("Tümü"de hepsi). Önceden süzülmüyordu: Marina'nın kasa formu Tuzla'nın kasadan çıkanlarını da gösteriyor,
+ * e-posta ve "fişsiz" denetimi iki kasayı karıştırıyordu.
+ */
+export async function cashOutsBetween(from: string, to: string, branchId?: string): Promise<CashOutDTO[]> {
+  const sube = branchId !== undefined ? eq(s.cashOuts.branchId, branchId) : await currentBranchWhere(s.cashOuts.branchId);
   const rows = await getDb()
     .select(columns)
     .from(s.cashOuts)
     .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, s.cashOuts.id))
     .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
-    .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to)))
+    .where(and(gte(s.cashOuts.date, from), lte(s.cashOuts.date, to), sube))
     .orderBy(asc(s.cashOuts.date), asc(s.cashOuts.createdAt), asc(s.cashOuts.id))
     .limit(2000);
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }));
 }
 
-export function cashOutsOn(date: string): Promise<CashOutDTO[]> {
-  return cashOutsBetween(date, date);
+/** Günün kasadan çıkanları: verilen şubenin kasası, yoksa seçili şube ("Tümü"de hepsi) */
+export function cashOutsOn(date: string, branchId?: string): Promise<CashOutDTO[]> {
+  return cashOutsBetween(date, date, branchId);
 }
 
 export interface CashOutCategory {

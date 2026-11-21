@@ -47,6 +47,11 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["admin", "staff"] }).notNull().default("staff"),
+  /**
+   * Personelin şubesi (docs/SUBE.md › Personel hesabının şubesi): doluysa personelin paneli bu şubede kilitli açılır
+   * (kasa raporu, kontrol listeleri o şubenin). Boş: bütün şubeler, seçici serbest. Yöneticide kullanılmaz.
+   */
+  branchId: text("branch_id").references(() => branches.id),
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -806,9 +811,14 @@ export const stockCounts = pgTable(
   (t) => [uniqueIndex("stock_counts_month_ingredient_uq").on(t.month, t.branchId, t.ingredientId)],
 );
 
+/**
+ * Sayımın "Listede olmayanlar"ı. Şube başına (docs/SUBE.md › Stok ve sayım; migration 0059): Tuzla'nın ve Marina'nın
+ * ay sonu ek kalemleri ayrı listedir, "Tümü" ikisini toplar. Eski satırlar Tuzla'nın (21 Kasım denetimi #19/#24)
+ */
 export const stockExtras = pgTable("stock_extras", {
   id: serial("id").primaryKey(),
   month: text("month").notNull(),
+  branchId: branchId(),
   name: text("name").notNull(),
   unit: text("unit").notNull().default("ADET"),
   qty: doublePrecision("qty").notNull().default(0),
@@ -1007,6 +1017,11 @@ export const reminders = pgTable(
     note: text("note"),
     active: boolean("active").notNull().default(true),
     lastDoneAt: timestamp("last_done_at", { withTimezone: true }),
+    /**
+     * Ödemenin şubesi (docs/SUBE.md › Ödemeler): null = işletme geneli (vergi, muhasebe; her şubenin Ödemeler'inde de
+     * görünür). Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı (kira, aidat) yönetici taşır
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
   },
   (t) => [index("reminders_due_idx").on(t.dueDate)],
@@ -1141,6 +1156,13 @@ export const userReminders = pgTable(
     dueTime: text("due_time"),
     /** Aylık tekrarın günü (31 Ocak → 28 Şubat → 31 Mart) */
     anchorDate: text("anchor_date").notNull(),
+    /**
+     * Tekrarın saati ("HH:MM"; saatsizse boş): "1 saat sonra hatırlat" yalnız bu dönemin `dueTime`'ını kaydırır,
+     * "Yaptım" sıradaki döneme bu saatle geçer. Önceden erteleme saati serinin saati oluyordu: 09:00'daki günlük
+     * hatırlatma bir kez ertelenince her gün 10:05'te çalıyordu (denetim 21 Kasım #15). Eski satırlar `due_time` ile
+     * dolduruldu (migration 0059)
+     */
+    anchorTime: text("anchor_time"),
     repeat: text("repeat", { enum: ["none", "daily", "weekly", "monthly"] }).notNull().default("none"),
     /**
      * Bilgisayarda çalan uyarı (4 Kasım 2026): "tek" bugünkü davranış (bir zil), "surekli" durdurulana kadar
@@ -1724,6 +1746,8 @@ export const checklistTemplates = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull().unique(),
     description: text("description"),
+    /** Listenin şubesi; boş: bütün şubeler (docs/KONTROL-LISTELERI.md › Şubeler) */
+    branchId: branchIdNullable(),
     schedule: text("schedule", { enum: ["daily", "event"] }).notNull().default("daily"),
     /** "HH:MM" Türkiye saati; "event"te boş */
     opensAt: text("opens_at"),

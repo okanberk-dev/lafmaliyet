@@ -2,9 +2,11 @@ import "server-only";
 
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 
+import { tillBranches } from "@/lib/branches";
 import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
 import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import {
+  cashDaySubject,
   correctionBell,
   CorrectionPayload,
   deleteBell,
@@ -21,6 +23,8 @@ import { money } from "@/lib/format";
 import { lafposHandedGap } from "@/lib/lafpos/prefill";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
+import { currentTillBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { mergedOf, type MergeBase } from "@/server/cash/requests";
 import { closedDayCards, type ClosedDayCard } from "@/server/closed-days";
 import { lateBellRows, lateCards, type LateCard } from "@/server/data/cash-late";
@@ -78,6 +82,8 @@ export interface OtherPending {
  * (kendi yazdığı alanlar), başkalarınınki yalnız tür, ad ve an.
  */
 export async function pendingCashForDay(day: string, me: { id: number }): Promise<{ own: (OwnCorrection | OwnDelete)[]; others: OtherPending[] }> {
+  // Kasanın şubesinin günü (seçili fiziksel şube, "Tümü"de Tuzla): başka şubenin aynı gündeki istekleri bu formda yok
+  const branchId = await currentTillBranch();
   const rows = await getDb()
     .select({
       id: s.staffRequests.id,
@@ -90,13 +96,13 @@ export async function pendingCashForDay(day: string, me: { id: number }): Promis
       requestedByName: s.staffRequests.requestedByName,
     })
     .from(s.staffRequests)
-    .where(and(eq(s.staffRequests.status, "pending"), eq(s.staffRequests.subject, `gun:${day}`), inArray(s.staffRequests.kind, [...DAY_KINDS])))
+    .where(and(eq(s.staffRequests.status, "pending"), eq(s.staffRequests.subject, cashDaySubject(day, branchId)), inArray(s.staffRequests.kind, [...DAY_KINDS])))
     .orderBy(asc(s.staffRequests.createdAt));
   const mine = (r: (typeof rows)[number]) => r.requestedBy === me.id;
   const notMine = (r: (typeof rows)[number]) => r.requestedBy !== me.id;
   // Rapor öneriden sonra değiştiyse "Öneriyi düzenle" önerinin değiştirdiği alanları raporun şimdiki hâline uygular:
   // arada yöneticinin yaptığı düzeltme formda geri alınmış görünmez (onaydaki birleştirmenin aynısı)
-  const report = rows.some((r) => mine(r) && r.kind === "kasa-duzeltme") ? (await getDb().select(MERGE_COLUMNS).from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1))[0] : undefined;
+  const report = rows.some((r) => mine(r) && r.kind === "kasa-duzeltme") ? (await getDb().select(MERGE_COLUMNS).from(s.cashReports).where(and(eq(s.cashReports.date, day), eq(s.cashReports.branchId, branchId))).limit(1))[0] : undefined;
   const own = rows.filter(mine).flatMap((r): (OwnCorrection | OwnDelete)[] => {
     const common = { id: r.id, version: r.version, createdAt: r.createdAt.toISOString(), message: r.message };
     if (r.kind === "kasa-silme") return [{ ...common, kind: "kasa-silme" }];
@@ -161,10 +167,12 @@ function proposedNow(report: MergeBase | undefined, p: CorrectionPayloadT): Prop
 
 /** Yöneticinin formundaki bant: bu gün için bekleyen kasa istekleri (kimlik Onaylar'daki karta götürür) */
 export async function pendingCashForDayAdmin(day: string): Promise<{ id: number; kind: "kasa-duzeltme" | "kasa-silme" | "kasa-gec"; requestedByName: string; createdAt: string }[]> {
+  // Formun kasası: seçili fiziksel şube ("Tümü"de Tuzla)
+  const subject = cashDaySubject(day, await currentTillBranch());
   const rows = await getDb()
     .select({ id: s.staffRequests.id, kind: s.staffRequests.kind, requestedByName: s.staffRequests.requestedByName, createdAt: s.staffRequests.createdAt })
     .from(s.staffRequests)
-    .where(and(eq(s.staffRequests.status, "pending"), eq(s.staffRequests.subject, `gun:${day}`), inArray(s.staffRequests.kind, ["kasa-duzeltme", "kasa-silme", "kasa-gec"])))
+    .where(and(eq(s.staffRequests.status, "pending"), eq(s.staffRequests.subject, subject), inArray(s.staffRequests.kind, ["kasa-duzeltme", "kasa-silme", "kasa-gec"])))
     .orderBy(asc(s.staffRequests.createdAt));
   return rows.map((r) => ({ id: r.id, kind: r.kind as "kasa-duzeltme" | "kasa-silme" | "kasa-gec", requestedByName: r.requestedByName, createdAt: r.createdAt.toISOString() }));
 }
@@ -224,6 +232,11 @@ interface CardBase {
   id: number;
   version: number;
   date: string;
+  /**
+   * İsteğin kasası (birden çok şube açıkken; tek şubede null): kart başlığında adı, rapora bağlantıda `?sube=`. Onay
+   * yöneticinin seçimine değil buna (isteğin raporuna) yazar
+   */
+  branch?: { id: string; name: string } | null;
   requestedByName: string;
   createdAt: string;
   /** "2 gündür" */
@@ -274,12 +287,19 @@ export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCa
  * (yalnız yönetici)
  */
 export async function loadCashRequestQueue(now = new Date()): Promise<CashRequestCard[]> {
-  const [day, late, outs, closed] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards()]);
-  return [...day, ...late, ...outs, ...closed].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  const [day, late, outs, closed, branches] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards(), listBranches()]);
+  // Birden çok kasa açıkken kasa günü kartları şubesini adıyla söyler; kasadan çıkan ve fotoğraf kaldırma kartları da
+  // (önceden şubesizdi, "Günü aç" yöneticinin seçili kasasını açıyordu; denetim 21 Kasım #29)
+  const many = tillBranches(branches).length > 1;
+  const named = <T extends { branchId: string | null }>(c: T): T & { branch: { id: string; name: string } | null } => {
+    const b = branches.find((x) => x.id === c.branchId);
+    return { ...c, branch: many && b ? { id: b.id, name: b.name } : null };
+  };
+  return [...day.map(named), ...late.map(named), ...outs.map(named), ...closed].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Kayıtlı raporun düzeltme ve silme isteklerinin kartları */
-async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)[]> {
+async function dayRequestCards(now: Date): Promise<((CorrectionCard | DeleteCard) & { branchId: string })[]> {
   const db = getDb();
   const rows = await db
     .select({
@@ -296,15 +316,24 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
     .where(and(eq(s.staffRequests.status, "pending"), inArray(s.staffRequests.kind, [...DAY_KINDS])))
     .orderBy(asc(s.staffRequests.day), asc(s.staffRequests.createdAt));
   if (!rows.length) return [];
-  const days = [...new Set(rows.flatMap((r) => (r.day ? [r.day] : [])))];
-  const reports = days.length ? await db.select().from(s.cashReports).where(inArray(s.cashReports.date, days)) : [];
-  const byDate = new Map(reports.map((r) => [r.date, r]));
+  // İsteğin raporu yükteki kimlikle: günle eşlenseydi "Tümü"de aynı günün öteki şubesinin raporu gösterilirdi
+  const reportIdOf = (payload: unknown): number | null => {
+    const p = CorrectionPayload.safeParse(payload);
+    if (p.success) return p.data.reportId;
+    const d = DeletePayload.safeParse(payload);
+    return d.success ? d.data.reportId : null;
+  };
+  const ids = [...new Set(rows.flatMap((r) => reportIdOf(r.payload) ?? []))];
+  const reports = ids.length ? await db.select().from(s.cashReports).where(inArray(s.cashReports.id, ids)) : [];
+  const byId = new Map(reports.map((r) => [r.id, r]));
   const thisMonth = businessDate(now).slice(0, 7);
-  const cards: (CorrectionCard | DeleteCard)[] = [];
+  const cards: ((CorrectionCard | DeleteCard) & { branchId: string })[] = [];
   for (const r of rows) {
-    const report = r.day ? byDate.get(r.day) : undefined;
-    if (!report || !r.day) continue;
-    const base: CardBase = {
+    const id = reportIdOf(r.payload);
+    const report = id !== null ? byId.get(id) : undefined;
+    if (!report || !r.day || report.date !== r.day) continue;
+    const base: CardBase & { branchId: string } = {
+      branchId: report.branchId,
       id: r.id,
       version: r.version,
       date: r.day,
@@ -313,7 +342,7 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
       waited: waitedText(r.createdAt, now),
       message: r.message,
     };
-    const nextReport = await nextReportAfter(r.day);
+    const nextReport = await nextReportAfter(r.day, report.branchId);
     if (r.kind === "kasa-silme") {
       if (!DeletePayload.safeParse(r.payload).success) continue;
       const [{ n }] = await db.select({ n: count() }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, report.id));
@@ -352,7 +381,7 @@ async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)
         : null;
     let receipts: CorrectionCard["receipts"] = null;
     if (changes.some((c) => c.key === "cashOut")) {
-      const [outs, lafpos] = await Promise.all([cashOutsOn(r.day), loadKasaLafpos(r.day)]);
+      const [outs, lafpos] = await Promise.all([cashOutsOn(r.day, report.branchId), loadKasaLafpos(r.day, undefined, report.branchId)]);
       const total = cashOutsTotal(outs);
       const over = Math.round((after.cashOut - total) * 100) / 100;
       const split = over > 1 ? lafposHandedGap(after.cashOut, total, lafpos.day?.till ?? null, teslimTotalOf(outs)) : null;

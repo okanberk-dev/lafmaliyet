@@ -1,24 +1,32 @@
 "use client";
 
-import { Check, CircleCheck, Undo2 } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Clock, PenLine, Undo2 } from "lucide-react";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useMemo, useOptimistic, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
+import { useClock } from "@/components/panel/live/clock";
+import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
 import { Progress } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import {
+  clockInstant,
+  clockText,
   DAY_CLOSED_TEXT,
   groupBySection,
   inRange,
+  isAnswered,
   NOTE_MAX,
+  parseClock,
   parseReading,
   rangeText,
   runSummary,
+  sectionSlot,
   signMode,
+  slotOpensInstant,
   timeTR,
   valueText,
   whoText,
@@ -90,6 +98,10 @@ export function RunForm({
   });
   const list = useMemo(() => [...shown.values()].filter((a): a is AnswerLite => a !== null), [shown]);
   const summary = runSummary(items, list, completedAt);
+  // Saatlik bölümler (Tuvalet çizelgesi) saati gelince açılır: saat yarım dakikada bir ilerler, ilk çizimde sayfanın anı
+  const clock = useClock(30_000);
+  const nowMs = Math.max(clock, Date.parse(renderedAt));
+  const units = sectionUnits(groupBySection(items), day, nowMs);
 
   const refused = (error: string) => {
     toast.error(error);
@@ -170,27 +182,34 @@ export function RunForm({
           }
         />
       ) : null}
-      {groupBySection(items).map((g) => (
-        <section key={g.section ?? "-"} aria-label={g.section ?? "Maddeler"} className="space-y-2.5">
-          {g.section ? <h2 className="px-1 text-[12px] font-semibold tracking-wide text-ink-mute uppercase">{g.section}</h2> : null}
-          {g.items.map((item) => {
-            const answer = shown.get(item.id) ?? null;
-            return (
-              <ItemRow key={item.id} item={item} answer={answer}>
-                {item.type === "check" ? (
-                  <CheckItem item={item} answer={answer} submit={submit} draft={draft} />
-                ) : item.type === "number" ? (
-                  <NumberItem item={item} answer={answer} submit={submit} draft={draft} />
-                ) : item.type === "text" ? (
-                  <TextItem item={item} answer={answer} submit={submit} draft={draft} />
-                ) : (
-                  <PhotoItem item={item} answer={answer} templateId={templateId} day={day} photos={photos} submit={submit} onUploaded={onUploaded} onRefused={refused} />
-                )}
-              </ItemRow>
-            );
-          })}
-        </section>
-      ))}
+      {units.map((u) => {
+        if (u.kind === "locked") return <LockedSlots key={`kilit-${u.groups[0].section}`} groups={u.groups} day={day} />;
+        const g = u.group;
+        const hourly = sectionSlot(g.section) !== null;
+        const rows = g.items.map((item) => {
+          const answer = shown.get(item.id) ?? null;
+          return (
+            <ItemRow key={item.id} item={item} answer={answer}>
+              {item.type === "check" ? (
+                <CheckItem item={item} answer={answer} submit={submit} draft={draft} sign={hourly} />
+              ) : item.type === "number" ? (
+                <NumberItem item={item} answer={answer} submit={submit} draft={draft} />
+              ) : item.type === "text" ? (
+                <TextItem item={item} answer={answer} submit={submit} draft={draft} />
+              ) : (
+                <PhotoItem item={item} answer={answer} templateId={templateId} day={day} photos={photos} submit={submit} onUploaded={onUploaded} onRefused={refused} />
+              )}
+            </ItemRow>
+          );
+        });
+        if (hourly) return <HourlySection key={g.section ?? "-"} section={g.section ?? ""} items={g.items} shown={shown} day={day} nowMs={nowMs}>{rows}</HourlySection>;
+        return (
+          <section key={g.section ?? "-"} aria-label={g.section ?? "Maddeler"} className="space-y-2.5">
+            {g.section ? <h2 className="px-1 text-[12px] font-semibold tracking-wide text-ink-mute uppercase">{g.section}</h2> : null}
+            {rows}
+          </section>
+        );
+      })}
       <ButtonLink href="/panel/bugun" variant="ghost" className="max-sm:h-12 max-sm:w-full">
         Bugün&apos;e dön
       </ButtonLink>
@@ -216,6 +235,93 @@ function ProgressBar({ summary: s }: { summary: RunLite }) {
       </p>
       <Progress value={s.required ? s.done / s.required : s.complete ? 1 : 0} tone={s.complete ? "green" : "ink"} />
     </div>
+  );
+}
+
+type Group = { section: string | null; items: ChecklistItemSnap[] };
+type Unit = { kind: "open"; group: Group } | { kind: "locked"; groups: Group[] };
+
+/** Bölümler sırasıyla; saati gelmemiş art arda saatlik bölümler tek kutuda toplanır (sayfa uzamasın) */
+function sectionUnits(groups: Group[], day: string, nowMs: number): Unit[] {
+  const units: Unit[] = [];
+  for (const g of groups) {
+    const at = slotOpensInstant(day, g.section);
+    if (at && nowMs < at.getTime()) {
+      const last = units.at(-1);
+      if (last?.kind === "locked") last.groups.push(g);
+      else units.push({ kind: "locked", groups: [g] });
+    } else units.push({ kind: "open", group: g });
+  }
+  return units;
+}
+
+/** Saati gelmemiş saatlik bölümler: sıradaki saat ve açılacağı an, sonrakiler tek satırda */
+function LockedSlots({ groups, day }: { groups: Group[]; day: string }) {
+  const [next, ...rest] = groups;
+  const at = slotOpensInstant(day, next.section);
+  return (
+    <section aria-label="Saati gelmemiş bölümler" className="rounded-2xl border border-dashed border-line-strong p-4 text-sm text-ink-mute">
+      <p className="flex items-center gap-2 font-medium text-ink">
+        <Clock size={16} aria-hidden="true" /> Sıradaki: {next.section}
+        {at ? <span className="font-normal text-ink-mute tabular">· açılış {timeTR(at.toISOString())}</span> : null}
+      </p>
+      {rest.length ? <p className="mt-1.5 leading-6 tabular">Sonra: {rest.map((g) => sectionSlot(g.section)).join(", ")}</p> : null}
+      <p className="mt-1.5 text-[13px] leading-5">Her saatin imzası ve fotoğrafı saati gelince atılır; önceden doldurulamaz.</p>
+    </section>
+  );
+}
+
+/**
+ * Saatlik bölüm (açık): üstte saat ve durum (İmzalandı · Ayşe 10:04 / Eksik). Zorunlu maddeleri bitmiş bölüm, ya bütün
+ * maddeleri yanıtlandıysa ya da sıradaki saat geldiyse kapanır (dokununca açılır); isteğe bağlı fotoğraf beklenirken açık kalır.
+ */
+function HourlySection({
+  section,
+  items,
+  shown,
+  day,
+  nowMs,
+  children,
+}: {
+  section: string;
+  items: ChecklistItemSnap[];
+  shown: Map<number, AnswerLite | null>;
+  day: string;
+  nowMs: number;
+  children: ReactNode;
+}) {
+  const slot = sectionSlot(section) ?? "05:00";
+  const answers = items.map((i) => shown.get(i.id) ?? null);
+  const requiredDone = items.every((i, n) => !i.required || isAnswered(i, answers[n]));
+  const allDone = items.every((i, n) => isAnswered(i, answers[n]));
+  const passed = nowMs >= clockInstant(day, slot).getTime() + 60 * 60_000;
+  const closed = requiredDone && (allDone || passed);
+  const issue = answers.some((a) => a?.status === "issue");
+  const first = answers.filter((a): a is AnswerLite => a !== null).sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0];
+  const status = requiredDone ? (
+    <span className={cn("text-xs font-medium", issue ? "text-warn" : "text-good-ink")}>
+      {issue ? "Sorun var" : "İmzalandı"}
+      {first ? ` · ${first.by} ${timeTR(first.at)}` : ""}
+    </span>
+  ) : passed ? (
+    <Badge tone="red" dot>
+      Eksik
+    </Badge>
+  ) : (
+    <span className="text-xs text-ink-mute tabular">
+      {slot} – {clockText((parseClock(slot) ?? 0) + 60)}
+    </span>
+  );
+  return (
+    <details open={!closed} className="group space-y-2.5" aria-label={section}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-1 [&::-webkit-details-marker]:hidden">
+        <PenLine size={14} className="text-ink-mute" aria-hidden="true" />
+        <h2 className="text-[13px] font-semibold tracking-wide text-ink tabular">{section}</h2>
+        {status}
+        <ChevronDown size={16} className="ml-auto text-ink-mute transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="space-y-2.5">{children}</div>
+    </details>
   );
 }
 
@@ -265,7 +371,10 @@ const hadIssue = (a: AnswerLite) => a.status === "issue" || a.history.some((v) =
 
 // ---------------------------------------------------------------- Tamam / Sorun var
 
-function CheckItem({ item, answer, submit, draft }: ItemProps) {
+/** `sign`: saatlik bölümde düğme "İmzala" der, yanıt "İmzalandı" (yanıtı veren ve saati imzadır) */
+function CheckItem({ item, answer, submit, draft, sign = false }: ItemProps & { sign?: boolean }) {
+  const okText = sign ? "İmzala" : "Tamam";
+  const doneText = sign ? "İmzalandı" : "Tamam";
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -312,7 +421,7 @@ function CheckItem({ item, answer, submit, draft }: ItemProps) {
           </Button>
           {answer ? (
             <Button variant="secondary" onClick={ok} disabled={saving} className="max-sm:h-12 max-sm:flex-1">
-              <Check size={16} aria-hidden="true" /> Tamam
+              <Check size={16} aria-hidden="true" /> {okText}
             </Button>
           ) : null}
           <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving} className="max-sm:h-12">
@@ -326,7 +435,7 @@ function CheckItem({ item, answer, submit, draft }: ItemProps) {
     return (
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" onClick={ok} className="flex-1 text-ink max-sm:h-12">
-          <Check size={17} aria-hidden="true" /> Tamam
+          {sign ? <PenLine size={17} aria-hidden="true" /> : <Check size={17} aria-hidden="true" />} {okText}
         </Button>
         <TextButton onClick={openEditor}>Sorun var</TextButton>
       </div>
@@ -342,7 +451,8 @@ function CheckItem({ item, answer, submit, draft }: ItemProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <p className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-good text-sm font-medium text-white max-sm:h-12">
-        <Check size={17} aria-hidden="true" /> Tamam
+        <Check size={17} aria-hidden="true" /> {doneText}
+        {sign && answer.by ? <span className="font-normal">· {answer.by}</span> : null}
       </p>
       {hadIssue(answer) ? (
         <TextButton onClick={openEditor}>Sorun var</TextButton>

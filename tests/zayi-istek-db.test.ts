@@ -2,9 +2,11 @@
 // Geç kayıt ve silme isteği): istek kayıt yazmaz, onay tek kayıt yazar (isteyenin adıyla); aynı kimlikte sonradan
 // değişen kayıt silinmez (istek "Kayıt zaten silinmişti" diye kapanır); kimse kendi isteğini onaylayamaz; doğrudan
 // silme aynı kaydın bekleyen isteklerini kapatır; eşzamanlı iki onaydan tek sonuç; 10 gün bekleyen istek yine
-// onaylanır; kapalı işaretli güne personel yazamaz; kipler (doğrudan / istek / kapalı) ve aynı isteğin tekrarı.
+// onaylanır; kapalı işaretli güne personel yazamaz; kipler (doğrudan / istek / kapalı) ve aynı isteğin tekrarı. Şube
+// (denetim 21 Kasım #13, #28): günün kilidi kaydın şubesinin kasasından; Onaylar kartının bağlamı isteğin şubesinden.
 //
-// Kendi kullanıcılarını, ürününü, raporlarını, kayıtlarını, özel gününü ve isteklerini açar, sonunda siler. Günler
+// Kendi kullanıcılarını, ürününü, raporlarını, kayıtlarını, özel gününü ve isteklerini açar, sonunda siler (Marina
+// şubesi yoksa açar ve siler). Günler
 // 2029'da: öteki veritabanı testlerinin raporları (2030 ve sonrası) bu günlere "sonraki rapor" sayılır; kilitli dün iki
 // raporla kurulur, açık günler raporsuz.
 //
@@ -19,6 +21,7 @@ import { after, before, describe, test } from "node:test";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { CashReportFields } from "../src/lib/cash-report";
+import { createModel } from "../src/lib/calc/engine";
 import { CLOSED_TEXT } from "../src/lib/closed-days";
 import { REQUEST_TEXT } from "../src/lib/staff-requests";
 import { WASTE_REQUEST_TEXT } from "../src/lib/waste-requests";
@@ -37,7 +40,12 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
   let db: DB;
   let store: typeof import("../src/server/cash/report-store");
   let core: typeof import("../src/server/waste/core");
-  const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
+  let wasteRequests: typeof import("../src/server/data/waste-requests");
+  let dataset: typeof import("../src/server/data/dataset");
+  let withBranchScope: typeof import("../src/server/branch-scope").withBranchScope;
+  /** Marina'yı bu test açtıysa sonunda siler */
+  let marinaAdded = false;
+  const tag =`${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
   const users: Record<"ali" | "veli" | "ayse" | "mehmet" | "donen", Who> = {
     ali: { id: 0, name: "Ali", role: "admin" },
@@ -124,6 +132,15 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     db = dbModule.createDb(URL!, 4);
     store = await import("../src/server/cash/report-store");
     core = await import("../src/server/waste/core");
+    wasteRequests = await import("../src/server/data/waste-requests");
+    dataset = await import("../src/server/data/dataset");
+    ({ withBranchScope } = await import("../src/server/branch-scope"));
+    const added = await db
+      .insert(s.branches)
+      .values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 })
+      .onConflictDoNothing()
+      .returning({ id: s.branches.id });
+    marinaAdded = added.length > 0;
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db.insert(s.users).values({ email: `zayi-istek-${k}-${tag}@ornek.com`, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -157,6 +174,7 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     await db.delete(s.products).where(inArray(s.products.id, [latte, old].filter(Boolean)));
     if (categoryId) await db.delete(s.categories).where(eq(s.categories.id, categoryId));
     if (uids.length) await db.delete(s.users).where(inArray(s.users.id, uids));
+    if (marinaAdded) await db.delete(s.branches).where(eq(s.branches.id, "marina"));
     await db.$client.end();
   });
 
@@ -326,5 +344,108 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     assert.equal(approve2.status, "fulfilled");
     assert.equal(removed.status, "rejected", "kayıt onayla silinmişti");
     assert.equal((await requestOf(b.row.id)).status, "approved");
+  });
+
+  test("günün kilidi şube başına: iki şube dünü ve bugünü girince dün kapanır; öteki şubenin raporu unutulan dünü kapatmaz (denetim 21 Kasım #13)", async () => {
+    const marina = <T>(fn: () => Promise<T>) => withBranchScope("marina", fn);
+    // 1) Tuzla'nın 9 ve 10 Mart raporları before()'da; Marina da ikisini girer. Önceden şubesiz sorgu iki 9 Mart satırı
+    // dönüyordu (sonraki rapor yok sayılıyordu): Marina personeli kilitli düne onaysız yazıyordu
+    await marina(() => report(YESTERDAY));
+    await marina(() => report(TODAY));
+    await refused(
+      marina(() => core.addWaste(db, users.ayse, item({ date: YESTERDAY }), NOW)),
+      /kasa raporu girilene kadar/,
+    );
+    const asked = await marina(() => late(users.ayse, { date: YESTERDAY, qty: 7 }));
+    assert.equal(asked.payload.branchId, "marina");
+    const [own] = await db
+      .insert(s.wasteEntries)
+      .values({ date: YESTERDAY, kind: "zayi", productId: latte, name: `Latte ${tag} M`, qty: 1, unit: "adet", branchId: "marina", createdBy: users.ayse.id, createdByName: "Ayşe" })
+      .returning({ id: s.wasteEntries.id });
+    await refused(core.removeWaste(db, users.ayse, own.id, NOW), /silinmesini isteyin/);
+
+    // 2) Yalnız Tuzla 10 ve 11 Nisan'ı girdi, Marina 10 Nisan'ı unuttu: Marina'nın dünü açık (önceden Tuzla'nın iki
+    // raporu Marina'nın dününü kapatıyor, personel geç kayıt isteğine itiliyordu)
+    const now = tr("2029-04-11T12:00");
+    const y = "2029-04-10";
+    await report(y);
+    await report("2029-04-11");
+    const added = await marina(() => core.addWaste(db, users.ayse, item({ date: y, qty: 1 }), now));
+    assert.equal((await db.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, added.id)))[0].branchId, "marina");
+    await refused(
+      marina(() => late(users.ayse, { date: y }, now)),
+      WASTE_REQUEST_TEXT.useDirect,
+    );
+    // Silmede kilit kaydın kendi şubesinin: Marina'nın kaydı doğrudan silinir, aynı personelin Tuzla kaydı (Tuzla'nın
+    // dünü kilitli) seçim Marina'dayken de istenir
+    await marina(() => core.removeWaste(db, users.ayse, added.id, now));
+    const [tuzlaRow] = await db
+      .insert(s.wasteEntries)
+      .values({ date: y, kind: "zayi", productId: latte, name: `Latte ${tag} M`, qty: 1, unit: "adet", branchId: "tuzla", createdBy: users.ayse.id, createdByName: "Ayşe" })
+      .returning({ id: s.wasteEntries.id });
+    await refused(
+      marina(() => core.removeWaste(db, users.ayse, tuzlaRow.id, now)),
+      /silinmesini isteyin/,
+    );
+    assert.equal((await core.proposeWasteDelete(db, users.ayse, { id: tuzlaRow.id, message: "Yanlış girildi", clientKey: key() }, now)).row.kind, "zayi-sil");
+    // Tuzla'nın da kendi dünü: Tuzla kapsamında doğrudan yazılmaz
+    await refused(core.addWaste(db, users.ayse, item({ date: y }), now), /kasa raporu girilene kadar/);
+  });
+
+  test("Onaylar › Zayi kartı bağlamı isteğin şubesinden: rapor, Z ödenmez, o günün kayıtları, bekleyen istekler, kayıtlı ikram (denetim 21 Kasım #28)", async () => {
+    const D = "2029-02-26";
+    // Tuzla'nın raporu var ve gönderildi (Z ödenmez 450); Marina'nın raporu yok
+    await report(D);
+    await db
+      .update(s.cashReports)
+      .set({ offRevenue: 450, emailedAt: new Date(Date.now() + 3600_000) })
+      .where(and(eq(s.cashReports.date, D), eq(s.cashReports.branchId, "tuzla")));
+    // Kayıtlı ürün ikramı: Tuzla 3, Marina 1 (menü fiyatı 205)
+    const entry = (branchId: string, qty: number, by: Who) =>
+      db
+        .insert(s.wasteEntries)
+        .values({ date: D, kind: "ikram", productId: latte, name: `Latte ${tag} M`, qty, unit: "adet", branchId, createdBy: by.id, createdByName: by.name })
+        .returning({ id: s.wasteEntries.id })
+        .then((r) => r[0].id);
+    const tuzlaEntry = await entry("tuzla", 3, users.mehmet);
+    const marinaEntry = await entry("marina", 1, users.mehmet);
+    // Aynı gün ve kalem için iki şubeden geç ikram isteği, iki şubenin kaydına silme isteği
+    const ikram = { date: D, kind: "ikram" as const, qty: 2, reason: "Müşteri" };
+    const marinaLate = await withBranchScope("marina", () => late(users.ayse, ikram));
+    const tuzlaLate = await late(users.mehmet, ikram);
+    const marinaDel = await askDelete(users.ayse, marinaEntry);
+    const tuzlaDel = await askDelete(users.ayse, tuzlaEntry);
+
+    const scopes: string[] = [];
+    const cards = await wasteRequests.loadWasteRequestQueue(async (b) => {
+      scopes.push(b);
+      return createModel(await dataset.loadDataset({ scope: b }));
+    }, NOW);
+    assert.deepEqual(scopes.sort(), ["marina", "tuzla"], "şube başına bir model");
+    const card = (id: number) => cards.find((c) => c.id === id)!;
+    const m = card(marinaLate.row.id);
+    const t = card(tuzlaLate.row.id);
+    assert.ok(m.kind === "zayi-gec" && t.kind === "zayi-gec");
+    // Marina: rapor yok (önceden Tuzla'nın raporu, Z ödenmezi ve "gönderilmiş" yazıyordu), yalnız kendi kaydı ve ikramı
+    assert.deepEqual(m.branch, { id: "marina", name: "Marina" });
+    assert.deepEqual(m.report, { exists: false, emailed: false, offRevenue: null });
+    assert.equal(m.sameDay.length, 1);
+    assert.deepEqual(m.otherPending, [], "Tuzla'nın isteği Marina'nın kartında sayılmaz");
+    assert.equal(m.ikramRecorded, 205);
+    assert.equal(m.ikramFromLafpos, false);
+    // Tuzla: kendi raporu, kendi kaydı ve ikramı
+    assert.deepEqual(t.branch, { id: "tuzla", name: "Tuzla" });
+    assert.deepEqual(t.report, { exists: true, emailed: true, offRevenue: 450 });
+    assert.equal(t.sameDay.length, 1);
+    assert.deepEqual(t.otherPending, []);
+    assert.equal(t.ikramRecorded, 615);
+    // Silme: kasa e-postası uyarısı kaydın şubesinin raporundan (Marina'nın raporu yok)
+    const md = card(marinaDel.row.id);
+    const td = card(tuzlaDel.row.id);
+    assert.ok(md.kind === "zayi-sil" && td.kind === "zayi-sil");
+    assert.equal(md.inReportMail, false);
+    assert.deepEqual(md.branch, { id: "marina", name: "Marina" });
+    assert.equal(td.inReportMail, true);
+    assert.deepEqual(td.branch, { id: "tuzla", name: "Tuzla" });
   });
 });

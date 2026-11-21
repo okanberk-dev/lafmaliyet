@@ -70,7 +70,7 @@ import { DocumentSheet } from "../../faturalar/document-sheet";
 import { isEInvoiceOnly, supplierMatchKey } from "../../faturalar/rules";
 import { useCopied } from "../../kullanicilar/password-field";
 import { SupplierCardDialog } from "../card-dialog";
-import { CariPaymentDialog, type CariPaymentInitial, type CariTarget, type EditPayment } from "../cari-payment-dialog";
+import { CariPaymentDialog, type CariPaymentInitial, type CariTarget, type EditPayment, type TillOptions } from "../cari-payment-dialog";
 import { CARI_UNDO_MS } from "../cari-ui";
 import {
   dueOf,
@@ -163,6 +163,8 @@ export interface CariData {
   defaultCostMode: CostMode;
   /** Kasanın bugünkü günü */
   businessDay: string;
+  /** Kasadan ödemenin yeni satırının kasaları (birden çoksa pencere sorar; "Tümü"de varsayılan yok) */
+  tills: TillOptions;
 }
 
 type Tab = "faturalar" | "hareketler";
@@ -1262,6 +1264,7 @@ export function SupplierClient({
           unpaidInvoices={unpaid.map((r) => ({ date: r.date, balance: openBalance(r) }))}
           debt={debtFor.debt ?? null}
           initialMode={debtFor.mode}
+          tills={cari.tills}
           onClose={() => {
             setDebtFor(null);
             clearParams();
@@ -1281,6 +1284,7 @@ export function SupplierClient({
           items={cari.items}
           payment={payFor.payment ?? null}
           initial={payFor.initial}
+          tills={cari.tills}
           onClose={closePayment}
           onSaved={onCariSaved}
         />

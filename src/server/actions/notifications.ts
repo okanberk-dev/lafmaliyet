@@ -19,6 +19,7 @@ import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
+import { currentBranchScope } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
@@ -486,7 +487,10 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   // çalışmıyorsa Sistem başlığında (src/server/bell/modpos.ts)
   const [costs, upcoming, invoices, system, unpriced, holds, commission, recipients, modpos] = await Promise.all([
     modelNotifications().catch(modelFailed),
-    loadUpcoming().catch(upcomingFailed),
+    // Şube seçiliyken o şubenin ve işletme genelinin ödemeleri (docs/SUBE.md › Ödemeler)
+    currentBranchScope()
+      .then((branch) => loadUpcoming(undefined, { branch }))
+      .catch(upcomingFailed),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
     unpricedNotifications().catch(() => []),

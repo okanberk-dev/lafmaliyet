@@ -41,6 +41,8 @@ export interface CurrentUser {
   name: string;
   email: string;
   role: "admin" | "staff";
+  /** Personelin şubesi (doluysa panel bu şubede kilitli, src/server/branch-scope.ts); yöneticide hep boş */
+  branchId?: string | null;
 }
 
 /** Oturumdaki kullanıcıyı doğrular ve veritabanında hâlâ aktif mi diye bakar. */
@@ -49,13 +51,21 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = await verifySession(token);
   if (!session) return null;
   const [u] = await getDb()
-    .select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active, sessionVersion: s.users.sessionVersion })
+    .select({
+      id: s.users.id,
+      name: s.users.name,
+      email: s.users.email,
+      role: s.users.role,
+      branchId: s.users.branchId,
+      active: s.users.active,
+      sessionVersion: s.users.sessionVersion,
+    })
     .from(s.users)
     .where(eq(s.users.id, Number(session.sub)))
     .limit(1);
   // Parola / iki adımlı doğrulama değiştiyse ya da yönetici oturumları kapattıysa eski çerez geçmez
   if (!u || !u.active || (session.sv ?? 1) !== u.sessionVersion) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, branchId: u.role === "staff" ? u.branchId : null };
 }
 
 /**

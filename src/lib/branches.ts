@@ -123,6 +123,90 @@ export function sortBranches<T extends { sortOrder: number; name: string }>(rows
 }
 
 /**
+ * Kasası olan şubeler: etkin fiziksel şubeler, ekrandaki sırayla (online kanalın kasası olmaz). "Tümü"de birden çoksa
+ * kasa raporu okuyan ekranlar (Bugün, zil, Claude) her kasayı ayrı gösterir: aynı güne iki rapor düşer
+ */
+export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sortOrder" | "name">>(rows: readonly T[]): T[] {
+  return sortBranches(rows.filter((b) => b.kind === "fiziksel" && b.active));
+}
+
+/** Kasadan ödemenin kasası belirsizken (Tümü ya da online kanal, birden çok kasa) eylemin ve formun metni */
+export const TILL_REQUIRED = "Kasadan ödeme hangi şubenin kasasından çıktı? Şubeyi seçin";
+
+/**
+ * Tedarikçiye kasadan ödemenin yeni Teslim satırının varsayılan kasası (docs/SUBE.md › Yazarken hangi şube): seçili
+ * fiziksel şube; tek kasa açıksa o. "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa null: pencere şubeyi
+ * sorar. Tedarikçiler işletme geneli bir ekrandır ve çoğu zaman "Tümü"de açılır; satır sessizce Tuzla'ya inseydi iki
+ * şubenin kasa farkı da ödeme kadar şaşardı (denetim 21 Kasım #31).
+ */
+export function defaultTill(scope: BranchScope, branches: readonly BranchRow[]): string | null {
+  const tills = tillBranches(branches);
+  if (tills.some((b) => b.id === scope)) return scope;
+  if (tills.length === 1) return tills[0].id;
+  return tills.length ? null : DEFAULT_BRANCH_ID;
+}
+
+/**
+ * Eylemin kararı: pencerede seçilen kasa etkin bir fiziksel şube olmalı; seçim gelmediyse `defaultTill`, o da
+ * belirsizse kayıt reddedilir (seçimsiz kayıt "Tümü"de Tuzla'ya inmez).
+ */
+export function chooseTill(raw: string | null | undefined, scope: BranchScope, branches: readonly BranchRow[]): { id: string } | { error: string } {
+  if (raw) return tillBranches(branches).some((b) => b.id === raw) ? { id: raw } : { error: "Şube bulunamadı ya da pasif (sayfayı yenileyin)" };
+  const id = defaultTill(scope, branches);
+  return id ? { id } : { error: TILL_REQUIRED };
+}
+
+/**
+ * Kasanın adı ve kimliği metinlerde ve bağlantılarda (kasa e-postası, WhatsApp metni, "Panelde aç"): birden çok kasa
+ * açıkken şube, tek kasada null (metin ve bağlantı bugünkü gibi). Zil (src/server/bell/kasa.ts) aynı kuralla yazar
+ */
+export function namedTill(rows: readonly BranchRow[], id: string): { id: string; name: string } | null {
+  if (tillBranches(rows).length < 2) return null;
+  return { id, name: rows.find((b) => b.id === id)?.name ?? id };
+}
+
+/**
+ * Formun gönderdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken hangi
+ * şube): yazım formun gösterdiği kasaya iner, gönderim anındaki seçime değil (seçim başka bir sekmede değişmiş
+ * olabilir; çerez sekmeler arasında ortak). Kasa etkin bir fiziksel şube olmalı; şubesine kilitli personel yalnız kendi
+ * şubesine yazar (`lock`). Sorun yoksa null, varsa kullanıcının göreceği metin.
+ */
+export function formTillError(raw: string, known: readonly BranchRow[], lock: string | null): string | null {
+  return formPhysicalError(raw, known, lock, { has: "kasası", to: "kasasına" });
+}
+
+/**
+ * Formun gönderdiği sayım şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"; docs/SUBE.md › Yazarken hangi
+ * şube): `formTillError`'ın sayım karşılığı. Sayım formun gösterdiği şubeye iner, gönderim anındaki seçime değil; şube
+ * etkin bir fiziksel şube olmalı (kanalın stoğu olmaz), şubesine kilitli personel yalnız kendi şubesini sayar.
+ */
+export function formCountError(raw: string, known: readonly BranchRow[], lock: string | null): string | null {
+  return formPhysicalError(raw, known, lock, { has: "stoğu", to: "sayımına" });
+}
+
+/** Kasa ve sayım formlarının ortak kuralı; metinler yalnız neye yazıldığını söyler */
+function formPhysicalError(raw: string, known: readonly BranchRow[], lock: string | null, words: { has: string; to: string }): string | null {
+  const b = known.find((x) => x.id === raw);
+  if (!b || !b.active) return "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin";
+  if (b.kind !== "fiziksel") return `${b.name} kanalının ${words.has} olmaz; sayfayı yenileyin`;
+  if (lock !== null && raw !== lock) return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${b.name} ${words.to} yazamazsınız`;
+  return null;
+}
+
+/**
+ * Kimliğiyle açılan kaydın şubesi (kasadan çıkan, zayi, kasa raporu, kasa ve fiş fotoğrafı; docs/SUBE.md › Personel
+ * hesabının şubesi): şubesine kilitli personel (`lock`) başka şubenin kaydını düzeltemez, silemez, isteğe konu edemez,
+ * fotoğrafını göremez. Kimlikler sıralıdır ve eylem kimliği istemci paketindedir; seçicinin kilidi yalnız ekranı
+ * süzüyordu (21 Kasım denetimi #14). Kilit yoksa (yönetici, şubesiz personel, şubesi pasif) ya da kaydın şubesi yoksa
+ * null; başka şubeninse kullanıcının göreceği metin.
+ */
+export function otherBranchError(branchId: string | null | undefined, known: readonly BranchRow[], lock: string | null): string | null {
+  if (lock === null || branchId == null || branchId === lock) return null;
+  const name = (id: string) => known.find((x) => x.id === id)?.name ?? id;
+  return `Bu kayıt ${name(branchId)} şubesinin; hesabınız ${name(lock)} şubesinde`;
+}
+
+/**
  * Adresten / çerezden gelen seçim: tanınmayan, kapalı ya da boş değer "hepsi"ye düşer. Seçim veriyi süzer,
  * yetki vermez: yetki `requireAdmin`/`requireUser` ile ayrıca denetlenir.
  */
@@ -130,6 +214,49 @@ export function parseBranchScope(raw: unknown, known: readonly BranchRow[]): Bra
   if (typeof raw !== "string" || !raw) return ALL_BRANCHES;
   if (raw === ALL_BRANCHES) return ALL_BRANCHES;
   return known.some((b) => b.id === raw && b.active) ? raw : ALL_BRANCHES;
+}
+
+/** Derin bağlantının (`?sube=`) seçicideki adımı (`branchLinkStep`) */
+export interface BranchLinkStep {
+  /** Seçicinin saklayacağı anahtar: adreste `?sube=` varken bağlantının kendisi (yol + sorgu), yoksa null */
+  key: string | null;
+  /** Yapılacak iş; null: adreste `?sube=` yok, şube kilitli ya da bu bağlantı zaten benimsendi */
+  adopt: {
+    /** Çereze yazılacak seçim; çerez zaten bu seçimdeyse null (yalnız adres temizlenir) */
+    scope: BranchScope | null;
+    /** `?sube=` düşürülmüş adres; öteki sorgu alanları sırasıyla korunur */
+    href: string;
+  } | null;
+}
+
+/**
+ * Paylaşılan bağlantıdaki `?sube=`'nin çereze benimsetilmesi (docs/SUBE.md › Seçici). Seçici her adres ya da seçim
+ * değişiminde bunu çağırır, dönen `key`'i saklar ve sonraki çağrıya `adopted` olarak verir:
+ * - anahtar BAĞLANTININ KENDİSİDİR, seçilen değer değil: her bağlantı bir kez benimsenir; adreste `?sube=` kalmayınca
+ *   anahtar sıfırlanır, yani aynı bağlantı sonradan yeniden açılınca yine benimsenir;
+ * - `?sube=` çerezle aynı olsa da adresten düşer: adreste kalmış eski `?sube=` seçiciden sonradan yapılan seçimi geri
+ *   almaz (denetim 21 Kasım #22);
+ * - şubesi kilitli personelde benimsenmez (sunucu da reddeder).
+ */
+export function branchLinkStep(o: {
+  pathname: string;
+  /** Adresin sorgusu (`useSearchParams().toString()`; baştaki `?` olsa da olur) */
+  search: string;
+  /** Çerezdeki seçim (sunucunun verdiği) */
+  scope: BranchScope;
+  branches: readonly BranchRow[];
+  locked: boolean;
+  /** Önceki çağrının anahtarı */
+  adopted: string | null;
+}): BranchLinkStep {
+  const params = new URLSearchParams(o.search);
+  if (o.locked || !params.has(BRANCH_PARAM)) return { key: null, adopt: null };
+  const key = `${o.pathname}?${params.toString()}`;
+  if (o.adopted === key) return { key, adopt: null };
+  const istenen = parseBranchScope(params.get(BRANCH_PARAM), o.branches);
+  params.delete(BRANCH_PARAM);
+  const qs = params.toString();
+  return { key, adopt: { scope: istenen === o.scope ? null : istenen, href: qs ? `${o.pathname}?${qs}` : o.pathname } };
 }
 
 /** Seçimin ekrandaki adı ("Tümü", "Marina") */
@@ -163,6 +290,18 @@ export function branchPnlEntry(rowKey: string, fixedInScope: ReadonlySet<number>
 /** İşletmenin toplamı olan Gelir-gider hücresi (devir, personel, POS komisyonu): tek şube seçiliyken elle yazılmaz */
 export function companyPnlKey(rowKey: string): boolean {
   return /^(?:personnel|commission|stock):/.test(rowKey);
+}
+
+/**
+ * Gelir-gider'de "Tümü" seçiliyken elle yazılan ay bilgisinin (aylık ciro, açık gün, ay notu) hangi şubenin ay satırına
+ * indiğini söyleyen not (docs/SUBE.md › Yazarken hangi şube): ay satırı şube başınadır, "Tümü"nde yazılan varsayılan
+ * şubeye (Tuzla) iner, Satışlar'daki ay bilgisi gibi. Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa
+ * varken null (yazılan zaten gösterilen satırdır)
+ */
+export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (scope !== ALL_BRANCHES || tillBranches(known).length < 2) return null;
+  const name = known.find((b) => b.id === DEFAULT_BRANCH_ID)?.name ?? "Tuzla";
+  return `Tümü seçili: elle yazılan aylık ciro, açık gün ve ay notu ${name} şubesinin ay satırına yazılır (Satışlar'daki gibi). Başka bir şubenin ayı için soldan o şubeyi seçin.`;
 }
 
 /**

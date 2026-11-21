@@ -34,6 +34,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     rules: {
       "*.css": {
+        // CSS modülleri (Arc UI grafikleri, src/components/arc) Tailwind'den geçmez: `as: "*.css"` onları
+        // `*.module.css.css` yapıp düz CSS'e çevirirdi (sınıf adları kapsamsız kalırdı)
+        condition: { not: { path: /\.module\.css$/ } },
         loaders: ["@tailwindcss/turbopack"],
         as: "*.css",
       },

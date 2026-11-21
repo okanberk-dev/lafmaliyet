@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, count, eq, gt, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
+import { DEFAULT_BRANCH_ID } from "@/lib/branches";
 import { businessDate, staffCanReport } from "@/lib/cash-report";
 import {
   cashOutChanged,
@@ -89,7 +90,7 @@ export async function staffCashOutRequests(day: string, me: { id: number }): Pro
  * olursa), "blocked" raporun tek Z fotoğrafı ya da fotoğraftan farklı yazılan alan var, "ok" açılabilir. Yalnız
  * personelin açabildiği gün (bugün, dün); değilse boş.
  */
-export async function photoRemovalStates(report: { id: number; date: string } & Parameters<typeof savedFields>[0], photos: readonly CashPhotoDTO[]): Promise<Record<number, "ok" | "pending" | "blocked">> {
+export async function photoRemovalStates(report: { id: number; date: string; branchId: string } & Parameters<typeof savedFields>[0], photos: readonly CashPhotoDTO[]): Promise<Record<number, "ok" | "pending" | "blocked">> {
   if (!photos.length || !staffCanReport(report.date)) return {};
   const db = getDb();
   const pending = await db
@@ -101,7 +102,7 @@ export async function photoRemovalStates(report: { id: number; date: string } & 
     zCount: photos.filter((p) => p.kind === "kasa-z").length,
     okcCount: photos.filter((p) => p.kind === "kasa-okc").length,
     okcFigures: okcHasFigures(report),
-    evidence: await kasaEvidence(db, report.date),
+    evidence: await kasaEvidence(db, report.date, report.branchId),
   };
   const saved = savedFields(report);
   const out: Record<number, "ok" | "pending" | "blocked"> = {};
@@ -130,6 +131,14 @@ interface CardBase {
   id: number;
   version: number;
   date: string;
+  /**
+   * İsteğin kasası (kasadan çıkanda isteğin şubesi, fotoğrafta raporun şubesi; rapor artık yoksa null). Onay buna yazar,
+   * yöneticinin seçimine değil; loadCashRequestQueue birden çok kasa açıkken bundan `branch`ı (kartta ad, "Günü aç"ta
+   * `?sube=`) kurar (denetim 21 Kasım #29)
+   */
+  branchId: string | null;
+  /** Birden çok kasa açıkken isteğin kasası (loadCashRequestQueue doldurur); tek kasada null */
+  branch?: { id: string; name: string } | null;
   requestedByName: string;
   createdAt: string;
   waited: string;
@@ -215,7 +224,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
   const out: (CashOutCard | PhotoRemovalCard)[] = [];
   for (const x of rows) {
     if (!x.day) continue;
-    const base: CardBase = { id: x.id, version: x.version, date: x.day, requestedByName: x.requestedByName, createdAt: x.createdAt.toISOString(), waited: waitedText(x.createdAt, now), message: x.message };
+    const base: Omit<CardBase, "branchId"> = { id: x.id, version: x.version, date: x.day, requestedByName: x.requestedByName, createdAt: x.createdAt.toISOString(), waited: waitedText(x.createdAt, now), message: x.message };
     if (x.kind === "foto-kaldir") {
       const p = PhotoRemovalPayload.safeParse(x.payload);
       if (!p.success) continue;
@@ -229,7 +238,7 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
   return out;
 }
 
-async function photoCard(base: CardBase, p: { photoId: number; photoKind: RemovablePhotoKind; reportId: number; day: string }): Promise<PhotoRemovalCard> {
+async function photoCard(base: Omit<CardBase, "branchId">, p: { photoId: number; photoKind: RemovablePhotoKind; reportId: number; day: string }): Promise<PhotoRemovalCard> {
   const db = getDb();
   const [[photo], [report], [{ n: sameKind }]] = await Promise.all([
     db
@@ -249,10 +258,12 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   const diffs = reading && saved ? photoDiffs([reading], saved) : [];
   const suspicious = reading && saved ? suspiciousDiffs([reading], saved) : [];
   // Tek ModPOS Z ve (yazarkasa bölümü yazılmışken) tek Banka POS Z fotoğrafı kanıttır (removalCheck ile aynı kural)
-  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report), evidence: await kasaEvidence(db, report.date) }) : null;
+  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report), evidence: await kasaEvidence(db, report.date, report.branchId) }) : null;
   const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : kindRefusal ? kindRefusal : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
   return {
     ...base,
+    // Raporun kasası: "Raporu aç" o şubenin gününü açar
+    branchId: report?.branchId ?? null,
     kind: "foto-kaldir",
     photoKind: p.photoKind,
     photo: photo && (photo.kind === "kasa-z" || photo.kind === "kasa-pos" || photo.kind === "kasa-okc") ? { id: photo.id, kind: photo.kind, createdAt: photo.createdAt.toISOString(), byName: photo.byName } : null,
@@ -261,13 +272,19 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: Remova
   };
 }
 
-async function cashOutCard(base: CardBase, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
+async function cashOutCard(base: Omit<CardBase, "branchId">, p: ReturnType<typeof CashOutRequestPayload.parse>, thisMonth: string, now: Date): Promise<CashOutCard> {
   const db = getDb();
   const day = p.day;
+  // İsteğin kasası (yöneticinin seçimi değil): isteği açanın şubesi; eski isteklerde satırın şubesi, o da yoksa Tuzla
+  const sube = p.branchId ?? (p.cashOutId !== null ? (await db.select({ b: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.id, p.cashOutId)).limit(1))[0]?.b : undefined) ?? DEFAULT_BRANCH_ID;
   const [lines, [report], dayOpen] = await Promise.all([
-    cashOutsOn(day),
-    db.select({ cashDiff: s.cashReports.cashDiff, cashOut: s.cashReports.cashOut }).from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1),
-    staffDayOpen(day, db, now),
+    cashOutsOn(day, sube),
+    db
+      .select({ cashDiff: s.cashReports.cashDiff, cashOut: s.cashReports.cashOut })
+      .from(s.cashReports)
+      .where(and(eq(s.cashReports.date, day), eq(s.cashReports.branchId, sube)))
+      .limit(1),
+    staffDayOpen(day, db, now, sube),
   ]);
   const current = p.cashOutId !== null ? (lines.find((l) => l.id === p.cashOutId) ?? null) : null;
   const rowGone = p.op !== "ekle" && !current;
@@ -314,6 +331,8 @@ async function cashOutCard(base: CardBase, p: ReturnType<typeof CashOutRequestPa
   const expenseDay = p.line && p.line.kind === "harcama" ? expenseDateFor(day, p.line.receiptDate) : null;
   return {
     ...base,
+    // Kartın okuduğu ve onayın yazdığı kasa
+    branchId: sube,
     kind: "kasa-cikan",
     op: p.op,
     line: p.line,

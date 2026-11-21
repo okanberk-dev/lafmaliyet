@@ -10,6 +10,7 @@ import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { cn } from "@/lib/utils";
 
 import { activeChildOf, activeGroupOf, keepGroupOpen, navLit, pathMatches, revealDelta, type NavNode } from "./nav";
+import { OrdersNavBadge } from "./orders-badge";
 
 /**
  * AkmanOS "Sidebar" bloğundaki SidebarNav (src/components/akmanos/sidebar/sidebar-nav.tsx), Next.js bağlantıları
@@ -194,6 +195,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                       {lit(key, active) ? highlight("rounded-xl") : null}
                       {tile(item.icon, active)}
                       <span className={cn("relative z-10 min-w-0 flex-1 truncate", active ? "font-semibold" : "font-medium")}>{item.label}</span>
+                      {item.badge === "orders" ? <OrdersNavBadge className="relative z-10" /> : null}
                       <PendingMark className="relative z-10" />
                     </Link>
                   </li>
@@ -216,6 +218,8 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                     >
                       {tile(item.icon, parentActive)}
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {/* Kapalı grupta alt satırın sayısı (yöneticide Kafe › Siparişler) başlıkta görünür */}
+                      {!open && item.children.some((c) => c.badge === "orders") ? <OrdersNavBadge /> : null}
                       <motion.span
                         animate={{ rotate: open ? 90 : 0 }}
                         transition={reduce ? { duration: 0 } : SPRING_SWAP}
@@ -246,6 +250,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                           {active ? <span aria-hidden="true" className="pointer-events-none absolute top-1/2 -left-2.5 size-1 -translate-y-1/2 rounded-full bg-foreground" /> : null}
                           <PendingMark className="absolute top-1/2 -left-[15px] -translate-y-1/2" />
                           <span className="relative z-10 min-w-0 flex-1 truncate">{child.label}</span>
+                          {child.badge === "orders" ? <OrdersNavBadge className="relative z-10" /> : null}
                         </Link>
                       );
                     })}

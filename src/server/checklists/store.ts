@@ -3,22 +3,28 @@
 // sarmalayıcılar (getDb, fotoğraf deposu, işlem geçmişi) src/server/data/checklists.ts'te. "use client" dosyası buraya
 // uzanmaz.
 
-import { and, asc, eq, gte, inArray, lte, min } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, min, or } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
+import type { AlertList } from "@/lib/checklist-alerts";
 import { businessDate } from "@/lib/cash-report";
 import {
   absentReason,
   appliesOn,
+  branchLockAllows,
   canAnswerDay,
   staffSeesRun,
   DAY_CLOSED_TEXT,
   inRange,
   LIST_CHANGED_TEXT,
   opensMinute,
+  OTHER_BRANCH_TEXT,
   rangeText,
   runSummary,
   sameAnswer,
   nextVersions,
+  slotLocked,
+  slotLockedText,
   snapshotItems,
   type AnswerContent,
   type AnswerLite,
@@ -62,6 +68,8 @@ export interface TemplateDTO {
   id: number;
   name: string;
   description: string | null;
+  /** Listenin şubesi; boş: bütün şubeler */
+  branchId: string | null;
   opensAt: string;
   dueAt: string;
   weekdays: number[];
@@ -133,14 +141,16 @@ export function answerLite(a: AnswerRow): AnswerLite {
 
 /**
  * Şablonlar (yalnız günlük listeler), maddeleriyle; `ids` verilirse yalnız onlar. `runs`: kaydı olanı da işaretle (bir
- * sorgu daha; düzenleme ekranı için).
+ * sorgu daha; düzenleme ekranı için). `branch`: tek şube seçiliyken o şubenin ve bütün şubelerin (şubesiz) listeleri;
+ * "Tümü" ya da verilmemişse hepsi.
  */
-export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean } = {}): Promise<TemplateDTO[]> {
+export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean; branch?: BranchScope } = {}): Promise<TemplateDTO[]> {
   const t = s.checklistTemplates;
+  const branch = o.branch && o.branch !== ALL_BRANCHES ? or(eq(t.branchId, o.branch), isNull(t.branchId)) : undefined;
   const rows = await db
     .select()
     .from(t)
-    .where(and(eq(t.schedule, "daily"), o.ids ? inArray(t.id, o.ids) : undefined))
+    .where(and(eq(t.schedule, "daily"), o.ids ? inArray(t.id, o.ids) : undefined, branch))
     .orderBy(asc(t.sortOrder), asc(t.id));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
@@ -159,6 +169,7 @@ export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean 
       id: r.id,
       name: r.name,
       description: r.description,
+      branchId: r.branchId,
       opensAt: r.opensAt ?? "08:00",
       dueAt: r.dueAt ?? "11:00",
       weekdays: r.weekdays,
@@ -216,6 +227,8 @@ export interface DayCtx {
   today: string;
   /** Fotoğraf deposu var mı (yoksa fotoğraflı maddeler yeni kayda girmez) */
   photos: boolean;
+  /** Şube seçimi: günün listeleri ve geçmiş bu şubenin ve şubesiz listeleri gösterir (yoksa hepsi) */
+  branch?: BranchScope;
 }
 
 /**
@@ -226,7 +239,7 @@ export interface DayCtx {
  */
 export async function loadChecklistDays(db: Db, days: string[], role: "admin" | "staff", ctx: DayCtx): Promise<Map<string, ChecklistLite[]>> {
   const out = new Map<string, ChecklistLite[]>(days.map((d) => [d, []]));
-  const templates = await loadTemplates(db);
+  const templates = await loadTemplates(db, { branch: ctx.branch });
   const visible = templates.filter((t) => t.active && (role === "admin" || t.staffAllowed));
   if (!visible.length || !days.length) return out;
   const r = s.checklistRuns;
@@ -246,6 +259,38 @@ export async function loadChecklistDays(db: Db, days: string[], role: "admin" | 
     out.set(day, lists.sort(byOpening(templates)));
   }
   return out;
+}
+
+/**
+ * Personele e-posta hatırlatmasının listeleri (saatlik iş, src/server/notify/checklist-alerts.ts): bir günün etkin ve
+ * personelin doldurabildiği, o gün beklenen ya da kaydı olan listeleri; kaydın (yoksa şablonun) maddeleri, yanıtlar ve
+ * kaydın olup olmadığı (kapalı işaretli günde yalnız açılmış liste hatırlatılır).
+ */
+export async function loadAlertLists(db: Db, day: string, ctx: DayCtx): Promise<AlertList[]> {
+  const templates = (await loadTemplates(db)).filter((t) => t.active && t.staffAllowed);
+  if (!templates.length) return [];
+  const r = s.checklistRuns;
+  const runs = await db
+    .select()
+    .from(r)
+    .where(and(eq(r.date, day), eq(r.seq, 1), inArray(r.templateId, templates.map((t) => t.id))));
+  const answers = runs.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id))) : [];
+  return templates.flatMap((t) => {
+    const run = runs.find((x) => x.templateId === t.id);
+    if (!run && !expectedOn(t, day, ctx.today)) return [];
+    return [
+      {
+        templateId: t.id,
+        name: run?.name ?? t.name,
+        branchId: t.branchId,
+        opensAt: run?.opensAt ?? t.opensAt,
+        dueAt: run?.dueAt ?? t.dueAt,
+        items: run ? run.items : currentItems(t, ctx.photos),
+        answers: run ? answers.filter((a) => a.runId === run.id).map((a) => ({ itemId: a.itemId, photoAt: a.photoAt?.toISOString() ?? null })) : [],
+        hasRun: Boolean(run),
+      },
+    ];
+  });
 }
 
 /** Bir günün listeleri (loadChecklistDays'in tek günlüğü) */
@@ -312,7 +357,7 @@ export interface HistoryList {
  * gün) çağıranın aralığıdır (historyRange).
  */
 export async function loadHistory(db: Db, from: string, to: string, role: "admin" | "staff", ctx: DayCtx): Promise<{ day: string; lists: HistoryList[] }[]> {
-  const templates = await loadTemplates(db);
+  const templates = await loadTemplates(db, { branch: ctx.branch });
   const visible = templates.filter((t) => role === "admin" || t.staffAllowed);
   const r = s.checklistRuns;
   const runs = visible.length
@@ -406,16 +451,21 @@ interface Me {
   id: number;
   name: string;
   role: "admin" | "staff";
+  /**
+   * Şubesine kilitli personelin şubesi (src/server/branch-scope.ts staffBranchLock; sarmalayıcı
+   * src/server/data/checklists.ts her yazımda verir): başka şubenin listesine yazamaz. Boş: serbest
+   */
+  lock?: string | null;
 }
 
 type NextAnswer = AnswerContent & { photoAt: Date | null };
 
 /**
- * Bir yanıtı yazar (sunucu eylemi ve fotoğraf yolu ortak): yetki (liste etkin, personelse "Personel doldurabilir"),
- * gün kuralı (yalnız bugün; açılmış kayıt 05:30'a kadar), günün kaydını ilk yanıtta açma (anlık görüntü), yanıtı yazma
- * (öncekinin hâli sürümlere), tamamlanma. Fotoğraf: yükleyenin, bağlanmamış "kontrol" fotoğrafı olmalı; aynı işlemde
- * 60 gün saklanmak üzere bağlanır. Sorunlu (aralık dışı ya da "Sorun var") yanıt geri alınamaz: kayıt silinmesin,
- * değeri değiştirilir.
+ * Bir yanıtı yazar (sunucu eylemi ve fotoğraf yolu ortak): yetki (liste etkin, personelse "Personel doldurabilir" ve
+ * şubesine kilitliyse kendi şubesinin ya da bütün şubelerin listesi), gün kuralı (yalnız bugün; açılmış kayıt 05:30'a
+ * kadar), günün kaydını ilk yanıtta açma (anlık görüntü), yanıtı yazma (öncekinin hâli sürümlere), tamamlanma.
+ * Fotoğraf: yükleyenin, bağlanmamış "kontrol" fotoğrafı olmalı; aynı işlemde 60 gün saklanmak üzere bağlanır. Sorunlu
+ * (aralık dışı ya da "Sorun var") yanıt geri alınamaz: kayıt silinmesin, değeri değiştirilir.
  */
 export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date, deps: WriteDeps): Promise<WriteResult> {
   return db.transaction(async (tx) => {
@@ -429,6 +479,7 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
     if (!tpl) throw new ChecklistError("Liste bulunamadı.", 404);
     if (!tpl.active) throw new ChecklistError("Bu liste kapalı.", 409);
     if (me.role !== "admin" && !tpl.staffAllowed) throw new ChecklistError("Bu listeyi yalnız yönetici doldurur.", 403);
+    if (me.role !== "admin" && !branchLockAllows(tpl.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
     if (input.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
 
     let [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date)).for("update").limit(1);
@@ -452,6 +503,8 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
     const item = run.items.find((i) => i.id === input.itemId);
     if (!item) throw new ChecklistError(LIST_CHANGED_TEXT, 409);
     if (!OPS[item.type].includes(input.op)) throw new ChecklistError("Bu madde bu şekilde işaretlenemez.", 400);
+    // Saatlik bölüm (Tuvalet çizelgesi): saati gelmeden işaretlenmez
+    if (slotLocked(input.date, item.section, now)) throw new ChecklistError(slotLockedText(item.section), 409);
 
     const a = s.checklistAnswers;
     const [prevRow] = await tx
@@ -571,6 +624,7 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   if (!t) throw new ChecklistError("Liste bulunamadı.", 404);
   if (!t.active) throw new ChecklistError("Bu liste kapalı.", 409);
   if (me.role !== "admin" && !t.staffAllowed) throw new ChecklistError("Bu listeyi yalnız yönetici doldurur.", 403);
+  if (me.role !== "admin" && !branchLockAllows(t.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
   if (target.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
   if (!photos) throw new ChecklistError("Fotoğraf deposu bu ortamda kurulu değil.", 503);
   const [run] = await db.select({ items: s.checklistRuns.items }).from(s.checklistRuns).where(runWhere(t.id, target.date)).limit(1);
@@ -579,19 +633,25 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   const item = (run ? run.items : currentItems(t, photos)).find((i) => i.id === target.itemId);
   if (!item) throw new ChecklistError(LIST_CHANGED_TEXT, 409);
   if (item.type !== "photo") throw new ChecklistError("Bu madde bu şekilde işaretlenemez.", 400);
+  if (slotLocked(target.date, item.section, now)) throw new ChecklistError(slotLockedText(item.section), 409);
 }
 
 /**
- * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı ve açıldığı an (fotoğrafı kim görür);
- * bağlı değilse null
+ * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı, açıldığı an ve listenin şubesi (fotoğrafı
+ * kim görür); bağlı değilse null
  */
-export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null } | null> {
+export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null; branchId: string | null } | null> {
   const [row] = await db
-    .select({ date: s.checklistRuns.date, staffAllowed: s.checklistTemplates.staffAllowed, staffSince: s.checklistTemplates.staffSince })
+    .select({
+      date: s.checklistRuns.date,
+      staffAllowed: s.checklistTemplates.staffAllowed,
+      staffSince: s.checklistTemplates.staffSince,
+      branchId: s.checklistTemplates.branchId,
+    })
     .from(s.checklistAnswers)
     .innerJoin(s.checklistRuns, eq(s.checklistRuns.id, s.checklistAnswers.runId))
     .innerJoin(s.checklistTemplates, eq(s.checklistTemplates.id, s.checklistRuns.templateId))
     .where(eq(s.checklistAnswers.photoId, photoId))
     .limit(1);
-  return row ? { date: row.date, staffAllowed: row.staffAllowed, staffSince: row.staffSince?.toISOString() ?? null } : null;
+  return row ? { date: row.date, staffAllowed: row.staffAllowed, staffSince: row.staffSince?.toISOString() ?? null, branchId: row.branchId } : null;
 }

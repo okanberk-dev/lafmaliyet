@@ -304,13 +304,39 @@ export interface IgnoredBill {
   restorable: boolean;
 }
 
-type DeletedEntry = { externalId: string; deletedAt?: string; deletedBy?: string; row?: { supplier?: string; date?: string; invoiceNo?: string | null; payable?: number } };
+type DeletedEntry = {
+  externalId: string;
+  /** Aynı faturanın listede ayrı satır olmayan öteki anahtarları (parasutKeysOf) */
+  alsoIgnored?: unknown;
+  deletedAt?: string;
+  deletedBy?: string;
+  row?: { supplier?: string; date?: string; invoiceNo?: string | null; payable?: number };
+};
 
-/** parasut.ignore (kimlikler) + parasut.deleted (kopyalar) → yeniden eskiye liste */
+/**
+ * Silinen Paraşüt faturasının eşitlemedeki yok sayma anahtarları: gider faturasının kimliği ve e-faturası varsa
+ * `ei:<kimlik>`. İlki listenin ve "Geri al"ın anahtarıdır. Muhasebeci e-faturayı Paraşüt'e elle gider faturası olarak
+ * girdiyse (PARASUT.md §6) kayıt ikisini de taşır: yalnız gider faturası yok sayılsaydı e-fatura eşitlemesi
+ * (`ei:<kimlik>`'e bakar) silinen faturayı sonraki çalışmada yeni kayıt olarak geri getirirdi (denetim 21 Kasım #3).
+ */
+export function parasutKeysOf(r: { externalId: string | null; eInvoiceId?: string | null }): string[] {
+  return [r.externalId, r.eInvoiceId ? `ei:${r.eInvoiceId}` : null].filter((k): k is string => Boolean(k));
+}
+
+/** Silinen kaydın ikinci anahtarları (bozuk ya da eski kopyada boş) */
+export function alsoIgnoredOf(e: { alsoIgnored?: unknown } | null | undefined): string[] {
+  return Array.isArray(e?.alsoIgnored) ? e.alsoIgnored.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+}
+
+/** parasut.ignore (kimlikler) + parasut.deleted (kopyalar) → yeniden eskiye liste; faturanın ikinci anahtarı ayrı satır olmaz */
 export function ignoredBills(ignore: unknown, deleted: unknown): IgnoredBill[] {
-  const ids = Array.isArray(ignore) ? ignore.filter((x): x is string => typeof x === "string") : [];
+  const all = Array.isArray(ignore) ? ignore.filter((x): x is string => typeof x === "string") : [];
   const entries = Array.isArray(deleted) ? (deleted as DeletedEntry[]).filter((e) => e && typeof e.externalId === "string") : [];
   const byId = new Map(entries.map((e) => [e.externalId, e]));
+  const listed = new Set(all);
+  // Yalnız ana anahtarı listede duran kaydın ikinci anahtarı gizlenir (ana anahtar düşmüşse ikinci yine görünür, geri alınabilir)
+  const secondary = new Set(entries.filter((e) => listed.has(e.externalId)).flatMap((e) => alsoIgnoredOf(e)));
+  const ids = all.filter((id) => !secondary.has(id));
   return ids
     .map((id, idx) => {
       const e = byId.get(id);

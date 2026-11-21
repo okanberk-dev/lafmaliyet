@@ -2,8 +2,9 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, like, ne, or } from "drizzle-orm";
 
+import { ALL_BRANCHES, type BranchScope } from "@/lib/branches";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
@@ -17,6 +18,8 @@ import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countStockOnlyReview } from "@/server/data/stock-only-invoices";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCariIndex, type CariIndex } from "@/server/data/cari";
+import { withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
@@ -36,8 +39,15 @@ export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
  * Kasa satırını tutan kalem (satır başına bir kalem) sessizdir (ipucuyla; sabah e-postası hatırlatmaz; cariHints). Zil
  * her açılışta çağırır: faturalar tek sorgu, cari hesap tek okuma (loadCariIndex; kayıt yokken kayıt sorguları boş döner).
  */
-export async function loadUpcoming(today = todayTR()) {
+/**
+ * Yaklaşan ödemeler: hatırlatıcılar, ödenmemiş faturalar ve faturasız borçlar. `opts.branch` tek şube verilirse
+ * hatırlatıcılar o şubenin ve işletme genelinin olanlarıyla gelir (docs/SUBE.md › Ödemeler); faturalar ve cari
+ * işletme genelidir, süzülmez. Verilmezse (sabah e-postası, nakit planı, vergi, haftalık özet) bütün ödemeler — para
+ * işletmenindir. "Tümü"nde şubeye ait hatırlatıcının başlığına şubesi eklenir ("Kira · Marina").
+ */
+export async function loadUpcoming(today = todayTR(), scope: { branch?: BranchScope } = {}) {
   const db = getDb();
+  const single = scope.branch && scope.branch !== ALL_BRANCHES ? scope.branch : null;
   // Bir kez çalışan söz (sorgu kurucusu her `then`de yeniden çalışırdı): liste ve cari okuması paylaşır
   const rowsP = Promise.resolve(
     db
@@ -58,7 +68,11 @@ export async function loadUpcoming(today = todayTR()) {
   );
   const [settings, reminders, rows, index] = await Promise.all([
     loadNotifySettings(),
-    db.select().from(s.reminders).orderBy(asc(s.reminders.dueDate)),
+    db
+      .select()
+      .from(s.reminders)
+      .where(single ? or(eq(s.reminders.branchId, single), isNull(s.reminders.branchId)) : undefined)
+      .orderBy(asc(s.reminders.dueDate)),
     rowsP,
     loadCariIndex(today, { unpaid: rowsP.then((r) => r.map((i) => ({ date: i.date, supplier: i.supplier, tax: i.supplierTaxNumber }))) }),
   ]);
@@ -73,7 +87,10 @@ export async function loadUpcoming(today = todayTR()) {
     return card ? [{ ...d, supplier: card.name, remaining: d.remaining, cardId: card.id, termDays: card.paymentTermDays }] : [];
   });
   const hints = cariHints(index, invoices, debts);
-  const up = upcomingWithCari({ reminders, invoices, debts, credit: index.credit, hints, hrefOf: index.hrefOf }, today, opts);
+  // Bütün şubeler birlikteyken şubeye ait ödeme hangi şubenin, listede ve e-postada görünsün
+  const branchNames = !single && reminders.some((r) => r.branchId) ? new Map((await listBranches(db)).map((b) => [b.id, b.name])) : null;
+  const labelled = branchNames ? reminders.map((r) => (r.branchId ? { ...r, title: `${r.title} · ${branchNames.get(r.branchId) ?? r.branchId}` } : r)) : reminders;
+  const up = upcomingWithCari({ reminders: labelled, invoices, debts, credit: index.credit, hints, hrefOf: index.hrefOf }, today, opts);
   const items = up.items;
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
   const laterInvoices: UpcomingItem[] = up.later;
@@ -228,8 +245,17 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
  * günlük işlerin sorunları (dünkü sabah işi, bu sabahki Paraşüt işi) tek iletide. Hiçbiri yoksa e-posta gitmez.
  * `syncedToday`: sabah işi bugün Paraşüt eşitlemesinin yapıldığını biliyorsa (verilmezse sorulur). `sendDeadlineAt`:
  * sabah işinin gönderim sınırı (jobStart + 48 sn, src/server/jobs/capped.ts); elle gönderimde yok (bugünkü gibi).
+ *
+ * E-posta işletmenin tamamı içindir (docs/SUBE.md › Neyi süzer): bütün okumalar seçiciden bağımsız "Tümü"yle
+ * (`withBranchScope`). Sabah işinde şube seçimi yoktur; "Bugünküleri şimdi gönder" ise yöneticinin seçimiyle okuyordu:
+ * Marina seçiliyken zammın "ayda ≈ X ₺"ı Marina'nın satışından hesaplanıp gidiyor, `prices:` kaydı da sabah işinin
+ * işletme geneli rakamı göndermesini engelliyordu (denetim 21 Kasım #18).
  */
 export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number } = {}): Promise<DigestResult> {
+  return withBranchScope(ALL_BRANCHES, () => sendReminderDigest(trigger, ctx));
+}
+
+async function sendReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number }): Promise<DigestResult> {
   const db = getDb();
   const { today, settings, items } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };

@@ -1241,7 +1241,8 @@ export function consistency(model: Model, month: string) {
     // Sayım biriminden malzemenin kendi birimine (sayıldığı andaki çarpanla: KG/LT = 1000)
     const opening = model.countInBaseUnit(prevMonth, id);
     const closing = model.countInBaseUnit(month, id);
-    const counted = opening !== null && closing !== null;
+    // İki ayın sayımı aynı şubelerden olmalı ("Tümü"de bir şube yalnız bir ayda saydıysa o şubenin öbür ayı eksik)
+    const counted = opening !== null && closing !== null && model.sameCountBranches(prevMonth, month, id);
     const stock: StockCheck = !counted ? "noCount" : held ? "held" : rejected ? "rejected" : purchased === null ? "needsPurchase" : "complete";
     // Çarpanı şüpheli fatura alınana girmedi: alınan eksik, oran ve fark yanıltır
     const known = held || rejected ? null : purchased;

@@ -20,7 +20,23 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
 import { BRANCH_SEED_KEY, DEFAULT_BRANCHES } from "../src/lib/branches";
-import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
+import {
+  CHECKLIST_SEED_KEY,
+  DEFAULT_CHECKLISTS,
+  FOOD_SAFETY_ITEMS,
+  FOOD_SAFETY_LISTS,
+  FOOD_SAFETY_SEED_KEYS,
+  MARINA_CHECKLIST_SEED_KEY,
+  MARINA_CHECKLISTS,
+  MARINA_CLOSE_PHOTOS,
+  MARINA_OPEN_PHOTOS,
+  MARINA_PHOTO_SEED_KEY,
+  placeNewItems,
+  TUZLA_HOURLY_CHECKLISTS,
+  TUZLA_HOURLY_SEED_KEY,
+  type SeedItem,
+  type SeedTemplate,
+} from "../src/lib/checklist-seed";
 import { withFireDefaults } from "../src/lib/fire-defaults";
 import { relinkWaste } from "../src/lib/waste";
 import { hashPassword } from "../src/server/auth/password";
@@ -98,18 +114,123 @@ async function ensureBranchSeed(db: DB) {
  * o günün açılışı "gecikti" demez. Anahtar ve listeler tek işlemde; aynı adda liste varsa o atlanır.
  */
 async function ensureChecklistSeed(db: DB) {
+  await seedChecklists(db, CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS);
+}
+
+/**
+ * Marina'nın açılış ve kapanış listeleri (karaokesiz), kendi anahtarıyla bir kez (`kontrol.marina.seeded`). Şube
+ * tohumundan sonra çalışır; Marina kütükte yoksa (silinmiş ya da kimliği değişmiş) hiçbir şey yazılmaz ve anahtar da
+ * yazılmaz.
+ */
+async function ensureMarinaChecklistSeed(db: DB) {
+  const [marina] = await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "marina")).limit(1);
+  if (!marina) return;
+  await seedChecklists(db, MARINA_CHECKLIST_SEED_KEY, MARINA_CHECKLISTS);
+}
+
+/**
+ * Tuzla'nın saatlik tuvalet çizelgesi, kendi anahtarıyla bir kez (`kontrol.tuzla.tuvalet.seeded`). Tuzla kütükte yoksa
+ * hiçbir şey yazılmaz ve anahtar da yazılmaz.
+ */
+async function ensureTuzlaHourlySeed(db: DB) {
+  const [tuzla] = await db.select({ id: s.branches.id }).from(s.branches).where(eq(s.branches.id, "tuzla")).limit(1);
+  if (!tuzla) return;
+  await seedChecklists(db, TUZLA_HOURLY_SEED_KEY, TUZLA_HOURLY_CHECKLISTS);
+}
+
+/**
+ * Gıda güvenliği maddeleri (SKT, ikinci raf ömrü etiketi, yerde ürün, FIFO) var olan açılış listelerine; her anahtar
+ * (`FOOD_SAFETY_SEED_KEYS`) bir kez.
+ */
+async function ensureFoodSafetyItems(db: DB) {
+  for (const key of FOOD_SAFETY_SEED_KEYS) await addSeedItems(db, key, "Gıda güvenliği maddeleri", FOOD_SAFETY_LISTS.map((name) => ({ name, items: FOOD_SAFETY_ITEMS })));
+}
+
+/** Marina'nın fotoğraflı maddeleri (Tuzla gibi; 20 Kasım 2026) var olan Marina listelerine bir kez (`kontrol.marina.foto.seeded`) */
+async function ensureMarinaPhotoItems(db: DB) {
+  await addSeedItems(db, MARINA_PHOTO_SEED_KEY, "Marina fotoğraflı maddeleri", [
+    { name: "Marina Açılış", items: MARINA_OPEN_PHOTOS },
+    { name: "Marina Kapanış", items: MARINA_CLOSE_PHOTOS },
+  ]);
+}
+
+/**
+ * Var olan listelere yeni hazır maddeler, anahtarla bir kez (`key` integration_state'e yazılır; tek işlemde). Liste
+ * adıyla bulunur; adı değişmiş ya da silinmiş liste atlanır. Listede aynı adda etkin madde varsa (yeni kurulumda
+ * tohum zaten ekledi, ya da yönetici eklemiş) o madde atlanır. Yeni madde kendi bölümünün sonuna girer, bölüm yoksa
+ * "Not"tan önce (placeNewItems); etkin maddeler yeniden sıralanır. Bugün açılmış kayıt değişmez; maddeler ertesi
+ * güne (bugün açılmadıysa bugüne) girer.
+ */
+async function addSeedItems(db: DB, key: string, what: string, lists: { name: string; items: readonly SeedItem[] }[]) {
   const added = await db.transaction(async (tx) => {
     const [mark] = await tx
       .insert(s.integrationState)
-      .values({ key: CHECKLIST_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .values({ key, value: { at: new Date().toISOString(), version: 1 } })
       .onConflictDoNothing()
       .returning({ key: s.integrationState.key });
     if (!mark) return [];
     const names: string[] = [];
-    for (const [k, t] of DEFAULT_CHECKLISTS.entries()) {
+    for (const { name, items } of lists) {
+      const [tpl] = await tx.select({ id: s.checklistTemplates.id }).from(s.checklistTemplates).where(eq(s.checklistTemplates.name, name)).limit(1);
+      if (!tpl) continue;
+      const rows = (
+        await tx
+          .select({ id: s.checklistItems.id, label: s.checklistItems.label, section: s.checklistItems.section, sortOrder: s.checklistItems.sortOrder })
+          .from(s.checklistItems)
+          .where(and(eq(s.checklistItems.templateId, tpl.id), eq(s.checklistItems.active, true)))
+      ).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+      const have = new Set(rows.map((r) => r.label));
+      const fresh = items.filter((i) => !have.has(i.label));
+      if (!fresh.length) continue;
+      for (const [n, e] of placeNewItems(rows, fresh).entries()) {
+        const sortOrder = n + 1;
+        if ("row" in e) {
+          if (e.row.sortOrder !== sortOrder) await tx.update(s.checklistItems).set({ sortOrder }).where(eq(s.checklistItems.id, e.row.id));
+        } else {
+          const i = e.item;
+          await tx.insert(s.checklistItems).values({
+            templateId: tpl.id,
+            label: i.label,
+            type: i.type,
+            section: i.section ?? null,
+            hint: i.hint ?? null,
+            required: i.required ?? true,
+            unit: i.unit ?? null,
+            min: i.min ?? null,
+            max: i.max ?? null,
+            sortOrder,
+          });
+        }
+      }
+      names.push(name);
+    }
+    return names;
+  });
+  if (added.length) console.log(`✓ ${what} eklendi: ${added.join(", ")}`);
+}
+
+async function seedChecklists(db: DB, key: string, lists: readonly SeedTemplate[]) {
+  const added = await db.transaction(async (tx) => {
+    const [mark] = await tx
+      .insert(s.integrationState)
+      .values({ key, value: { at: new Date().toISOString(), version: 1 } })
+      .onConflictDoNothing()
+      .returning({ key: s.integrationState.key });
+    if (!mark) return [];
+    const [{ last }] = await tx.select({ last: sql<number | null>`max(${s.checklistTemplates.sortOrder})` }).from(s.checklistTemplates);
+    const names: string[] = [];
+    for (const [k, t] of lists.entries()) {
       const [row] = await tx
         .insert(s.checklistTemplates)
-        .values({ name: t.name, description: t.description, schedule: "daily", opensAt: t.opensAt, dueAt: t.dueAt, sortOrder: k + 1 })
+        .values({
+          name: t.name,
+          description: t.description,
+          branchId: t.branchId ?? null,
+          schedule: "daily",
+          opensAt: t.opensAt,
+          dueAt: t.dueAt,
+          sortOrder: (last ?? 0) + k + 1,
+        })
         .onConflictDoNothing()
         .returning({ id: s.checklistTemplates.id });
       if (!row) continue;
@@ -209,6 +330,10 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
       await ensureAdmin(db);
       await ensureChecklistSeed(db);
       await ensureBranchSeed(db);
+      await ensureMarinaChecklistSeed(db);
+      await ensureTuzlaHourlySeed(db);
+      await ensureFoodSafetyItems(db);
+      await ensureMarinaPhotoItems(db);
       return;
     }
 
@@ -352,6 +477,10 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
     await ensureAdmin(db);
     await ensureChecklistSeed(db);
     await ensureBranchSeed(db);
+    await ensureMarinaChecklistSeed(db);
+    await ensureTuzlaHourlySeed(db);
+    await ensureFoodSafetyItems(db);
+    await ensureMarinaPhotoItems(db);
   } finally {
     await db.$client.end();
   }

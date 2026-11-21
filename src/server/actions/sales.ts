@@ -10,7 +10,7 @@ import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow,
 import { monthRowEmpty } from "@/lib/cash-month";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { modposImportRule, modposOverZText } from "@/lib/lafpos/sales";
-import { monthSource } from "@/lib/lafpos/switch";
+import { branchSwitchDay, monthSource } from "@/lib/lafpos/switch";
 import { todayTR } from "@/lib/reminders";
 import { SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
@@ -155,7 +155,9 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
   return attempt(async () => {
     const me = await requireAdmin();
     const month = zMonth.parse(input.month);
-    const switchDay = await loadLafposSwitchDay();
+    const sube = await currentWriteBranch();
+    // Geçiş günü listenin şubesininki (branchSwitchDay): ModPOS'ta kalan şubenin (Marina) listesi her ay yüklenir
+    const switchDay = branchSwitchDay(await loadLafposSwitchDay(), sube);
     // Süren ayda listenin son günü (verilmezse dün); biten aya yüklenen liste ayın tamamı (src/lib/sales-coverage.ts);
     // geçiş ayında en çok geçiş gününden önceki gün, LafPOS'un ayında red (src/lib/lafpos/sales.ts)
     const rule = modposImportRule(month, switchDay, todayTR(), z.string().max(10).nullish().parse(input.through));
@@ -170,7 +172,6 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
     const index = createPosMappingIndex(await db.select().from(s.posMappings));
     let matched = 0;
     let replaced = 0;
-    const sube = await currentWriteBranch();
     await ensureMonth(month, sube);
     await db.transaction(async (tx) => {
       if (mode === "replace") {
@@ -487,8 +488,12 @@ export async function saveLine(input: { id: number | null; month: string; posNam
     const me = await requireAdmin();
     const data = lineSchema.parse(input);
     const month = zMonth.parse(input.month);
-    // Ayın tamamı LafPOS'tansa elle ModPOS satırı sayılmaz (docs/LAFPOS.md › Günlük satış)
-    const switchDay = await loadLafposSwitchDay();
+    // Ayın tamamı LafPOS'tansa elle ModPOS satırı sayılmaz (docs/LAFPOS.md › Günlük satış). Satırın şubesine göre
+    // (düzeltilen satırın kendi şubesi, yeni satırda yazılacağı şube): ModPOS'ta kalan şubenin satırı her ay yazılır
+    const lineBranch = input.id
+      ? (await getDb().select({ b: s.salesLines.branchId }).from(s.salesLines).where(eq(s.salesLines.id, z.number().int().parse(input.id))))[0]?.b
+      : await currentWriteBranch();
+    const switchDay = branchSwitchDay(await loadLafposSwitchDay(), lineBranch);
     if (monthSource(month, switchDay) === "lafpos") {
       throw new UserError(`${monthLabel(month)} LafPOS'tan geliyor; satırlar her gün sonunda LafPOS'tan gelir, elle ModPOS satırı eklenmez.`);
     }
@@ -559,6 +564,12 @@ export async function deleteLine(id: number) {
  * Ayın satış satırlarını siler. withInfo: elle yazılan ay bilgilerini (ciro, açık gün, indirim, ödenmez, kartlı oran,
  * not) da siler; kasa raporlarından gelenler kalır (raporlar silinmez).
  * Eşleştirme hafızası ve Gelir-gider girişleri kalır. Ay tamamen boşaldıysa ay kaydı da kalkar.
+ *
+ * Sayfanın gösterdiği şubeyle sınırlıdır (okuma kapsamı, docs/SUBE.md › Neyi süzer): Marina seçiliyken yalnız
+ * Marina'nın listesi ve ay bilgisi gider, pencerenin saydığı satırlar silinenlerle aynıdır; "Tümü"nde bütün şubeler
+ * (ekran da hepsini gösterir). Önceden şubesiz siliyordu: Tuzla'nın listesi ve ay bilgisi de gidiyordu (denetim
+ * 21 Kasım #7). Listenin son günü (kapsam kaydı) ayın tek kaydıdır, şubesizdir: yalnız ayda hiçbir şubenin listesi
+ * kalmadıysa silinir, öteki şubenin süren ay dönemi kaybolmasın.
  */
 export async function clearMonthSales(month: string, opts?: { withInfo?: boolean }) {
   return attempt(async () => {
@@ -566,15 +577,22 @@ export async function clearMonthSales(month: string, opts?: { withInfo?: boolean
     const m = zMonth.parse(month);
     const db = getDb();
     const withInfo = opts?.withInfo === true;
-    const gone = await db.delete(s.salesLines).where(eq(s.salesLines.month, m)).returning({ id: s.salesLines.id });
-    await setCoverage(db, m, null);
-    if (withInfo) {
-      await db
-        .update(s.months)
-        .set({ openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null, updatedAt: new Date() })
-        .where(eq(s.months.month, m));
-    }
-    const monthRemoved = await dropEmptyMonth(db, m);
+    const [lines, info] = await Promise.all([currentBranchWhere(s.salesLines.branchId), currentBranchWhere(s.months.branchId)]);
+    const { gone, monthRemoved } = await db.transaction(async (tx) => {
+      const gone = await tx
+        .delete(s.salesLines)
+        .where(andWhere(eq(s.salesLines.month, m), lines))
+        .returning({ id: s.salesLines.id });
+      const [left] = await tx.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(eq(s.salesLines.month, m));
+      if (!left?.n) await setCoverage(tx, m, null);
+      if (withInfo) {
+        await tx
+          .update(s.months)
+          .set({ openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null, updatedAt: new Date() })
+          .where(andWhere(eq(s.months.month, m), info));
+      }
+      return { gone, monthRemoved: await dropEmptyMonth(tx, m) };
+    });
     await logActivity(me, "Ay satışları silindi", `${monthLabel(m)}: ${gone.length} satır${withInfo ? ", ay bilgileri de" : ""}`);
     refresh();
     return { deleted: gone.length, monthRemoved };

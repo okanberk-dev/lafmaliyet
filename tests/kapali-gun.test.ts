@@ -6,7 +6,7 @@
 // Çalıştırma: npx tsx --test tests/kapali-gun.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -22,6 +22,7 @@ import {
   EVIDENCE_IGNORED_ACTIONS,
   hasPanelEvidence,
   isEvidenceAction,
+  mergeBranchContinuity,
   openingText,
   STAFF_SPECIAL_TEXT,
   staffSpecialCheck,
@@ -200,7 +201,54 @@ test("kanıt: Z no boşluğu, açılış sürekliliği, kırmızı satırlar ve 
   assert.equal(closedBellTitle("23 Eki Per", "revoked"), "23 Eki Per: kapalı gün geri alındı");
 });
 
+test("kanıt şube başına (denetim 21 Kasım #1): Z no ve açılış aynı şubenin raporlarıyla, şubelerin sonucu birleşir", () => {
+  // Tuzla 1240 → 1241 (arada yalnız bu gün: boşluk yok), Marina 30 → 31; şubeler arası karşılaştırma (30 → 1241) kırmızıydı
+  const tuzla = {
+    zGap: zGapOf("2026-11-18", { date: "2026-11-17", zNo: "1240" }, { date: "2026-11-19", zNo: "1241" }, 0),
+    opening: openingText({ date: "2026-11-17", carry: 1100 }, { date: "2026-11-19", opening: 1100 }),
+  };
+  const marina = {
+    zGap: zGapOf("2026-11-18", { date: "2026-11-17", zNo: "0030" }, { date: "2026-11-19", zNo: "0031" }, 0),
+    opening: openingText({ date: "2026-11-17", carry: 400 }, { date: "2026-11-19", opening: 400 }),
+  };
+  assert.equal(zGapOf("2026-11-18", { date: "2026-11-17", zNo: "0030" }, { date: "2026-11-19", zNo: "1241" }, 0)?.level, "red", "eski hata: Marina'nın Z'si Tuzla'nınkiyle");
+  const both = mergeBranchContinuity([marina, tuzla]);
+  assert.equal(both.zGap, null);
+  assert.equal(both.opening?.ok, true);
+  assert.equal(hasPanelEvidence({ ...EMPTY_EVIDENCE, ...both }), false);
+  // Bir şubede kırmızı: kırmızı (öteki şubenin uyarısı ya da boşluğu yokken de)
+  const red = { zGap: { level: "red" as const, text: "Z no 1240 (17 Kas) ile 1242 (19 Kas) arasında 1 Z eksik" }, opening: null };
+  const warn = { zGap: { level: "warn" as const, text: "uyarı" }, opening: { ok: false, text: "tutmuyor" } };
+  assert.deepEqual(mergeBranchContinuity([marina, warn, red]).zGap, red.zGap);
+  assert.deepEqual(mergeBranchContinuity([marina, warn]).zGap, warn.zGap);
+  assert.equal(hasPanelEvidence({ ...EMPTY_EVIDENCE, ...mergeBranchContinuity([tuzla, red]) }), true);
+  // Açılış: ilk tutmayan, yoksa ilk tutan
+  assert.deepEqual(mergeBranchContinuity([tuzla, warn]).opening, warn.opening);
+  assert.deepEqual(mergeBranchContinuity([tuzla, marina]).opening, tuzla.opening);
+  // Komşu raporu olan şube yok
+  assert.deepEqual(mergeBranchContinuity([]), { zGap: null, opening: null });
+});
+
 // ---------------------------------------------------------------- Kaynak
+
+test("kaynak (denetim 21 Kasım #1): kapalı günün Z no ve açılış sürekliliği ile fotoğrafın Z sırası raporun kendi şubesinden", () => {
+  const src = read("src/server/closed-days.ts");
+  const next = src.slice(src.indexOf("export async function onNextReport"), src.indexOf("// ---------------------------------------------------------------- Okuyucular"));
+  assert.match(next, /report: \{ date: string; branchId: string; zNo: string \| null; openingCash: number \}/);
+  assert.match(next, /\.where\(and\(lt\(s\.cashReports\.date, day\), eq\(s\.cashReports\.branchId, report\.branchId\)\)\)/);
+  const evidence = src.slice(src.indexOf("export async function closedDayEvidence"), src.indexOf("/** İşlem geçmişine"));
+  // Önceki ve sonraki rapor şube başına (DISTINCT ON branch_id), şubeler mergeBranchContinuity ile birleşir
+  assert.equal([...evidence.matchAll(/\.selectDistinctOn\(\[s\.cashReports\.branchId\]/g)].length, 2);
+  assert.match(evidence, /\.orderBy\(asc\(s\.cashReports\.branchId\), desc\(s\.cashReports\.date\)\)/);
+  assert.match(evidence, /\.orderBy\(asc\(s\.cashReports\.branchId\), asc\(s\.cashReports\.date\)\)/);
+  assert.match(evidence, /mergeBranchContinuity\(/);
+  // writeCashReport raporun kendisini (şubesiyle) verir
+  assert.match(read("src/server/cash/report-store.ts"), /await onNextReport\(tx, row\);/);
+  // Fotoğraftan okunan ModPOS Z'sinin "eski bir Z raporu" denetimi formun kasasının önceki raporuyla
+  const photo = read("src/server/photo-read/read.ts");
+  const prevZ = photo.slice(photo.indexOf("async function previousZNo"), photo.indexOf("async function okcTypical"));
+  assert.match(prevZ, /eq\(s\.cashReports\.branchId, await currentTillBranch\(\)\)/);
+});
 
 test("kaynak: eylemler kendi oturumunu ve rolünü denetler; yardımcı dışa verilmez", () => {
   const closedActions = read("src/server/actions/closed-days.ts");
@@ -263,4 +311,15 @@ test("zil: reddedilen ya da geri alınan kapalı gün bildirimi; gün personelde
   assert.match(bell, /const follow = r\.kind === "kapali-gun" && r\.status !== "approved" \? closedFollowUp\(r\.day!, now, reported\.has\(r\.day!\)\) : "staff";/);
   assert.match(bell, /body: follow === "staff" \? t\.body : CLOSED_FOLLOW_UP_TEXT\[follow\],/);
   assert.match(bell, /href: follow === "late" \|\| staffCanReport\(r\.day!, now\) \? `\/panel\/kasa\?gun=\$\{r\.day\}` : "\/panel\/kasa#isteklerim",/);
+});
+
+// Denetim 21 Kasım #23: satış tahmini (/panel/tahmin) 4 Kasım 2026'da kalktı; özel günler /panel/ozel-gunler'de
+test("zil: personelin özel gün satırı Özel günler ekranına götürür (kaldırılan /panel/tahmin'e değil)", () => {
+  const bell = read("src/server/bell/kasa.ts");
+  assert.match(bell, /href: verb \? "\/panel\/ozel-gunler#ozel-gunler" : "\/panel\/kasa",/);
+  assert.match(read("src/app/panel/ozel-gunler/special-days.tsx"), /<Card id="ozel-gunler"/);
+  assert.ok(!existsSync(join(process.cwd(), "src/app/panel/tahmin")), "ekran kalktı");
+  // Kapalı gün ve özel gün metinlerinde kaldırılan ekranın yolu ya da adı kalmadı
+  assert.doesNotMatch(bell.replace(/^\s*\/\/.*$/gm, ""), /\/panel\/tahmin/);
+  for (const f of ["src/server/closed-days.ts", "src/lib/closed-days.ts"]) assert.doesNotMatch(read(f), /\/panel\/tahmin|Satış tahmini ›/, f);
 });

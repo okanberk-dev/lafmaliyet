@@ -4,6 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { ALL_BRANCHES } from "@/lib/branches";
 import { foldName } from "@/lib/cash-plan";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import {
@@ -43,6 +44,8 @@ import { dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
+import { currentExpenseBranch, withBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
@@ -67,12 +70,29 @@ const reminderSchema = z.object({
   active: z.boolean(),
   /** Ayın son günü seçiliyse tekrarlar her ayın son gününe kayar (SGK gibi); verilmezse eski davranış */
   endOfMonth: z.boolean().optional(),
+  /**
+   * Ödemenin şubesi (docs/SUBE.md › Ödemeler): "" / null işletme geneli. Verilmezse düzenlemede değişmez, yenide seçili
+   * şube ("Tümü"nde işletme geneli)
+   */
+  branchId: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null)),
 });
+
+/** Ödemenin şubesi kütükte bir fiziksel şube mi (düzenlemede şimdiki şubesi pasif olsa da kalabilir) */
+async function reminderBranch(branchId: string | null, keep?: string | null): Promise<string | null> {
+  if (!branchId) return null;
+  const b = (await listBranches()).find((x) => x.id === branchId && x.kind === "fiziksel" && (x.active || x.id === keep));
+  if (!b) throw new UserError("Şube bulunamadı ya da pasif (sayfayı yenileyin)");
+  return b.id;
+}
 
 export async function saveReminder(input: z.input<typeof reminderSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, endOfMonth, ...data } = reminderSchema.parse(input);
+    const { id, endOfMonth, branchId, ...data } = reminderSchema.parse(input);
     const db = getDb();
     const eom = Boolean(endOfMonth) && isLastDayOfMonth(data.dueDate) && (data.repeat === "monthly" || data.repeat === "quarterly");
     const fresh = eom ? endOfMonthAnchor(data.dueDate) : data.dueDate;
@@ -87,9 +107,11 @@ export async function saveReminder(input: z.input<typeof reminderSchema>) {
         if (eom && !wasEom) anchorDate = fresh;
         if (!endOfMonth && wasEom) anchorDate = data.dueDate;
       }
-      await db.update(s.reminders).set({ ...data, anchorDate }).where(eq(s.reminders.id, id));
+      const branch = branchId === undefined ? {} : { branchId: await reminderBranch(branchId, prev.branchId) };
+      await db.update(s.reminders).set({ ...data, ...branch, anchorDate }).where(eq(s.reminders.id, id));
     } else {
-      await db.insert(s.reminders).values({ ...data, anchorDate: fresh });
+      const branch = branchId === undefined ? await currentExpenseBranch() : await reminderBranch(branchId);
+      await db.insert(s.reminders).values({ ...data, branchId: branch, anchorDate: fresh });
     }
     await logActivity(me, id ? "Hatırlatıcı düzenlendi" : "Hatırlatıcı eklendi", `${data.title} · ${dateTR(data.dueDate)}`);
     refresh();
@@ -427,6 +449,9 @@ export async function postponeReminder(id: number, by: "week" | "month") {
             repeat: "none",
             remindDaysBefore: r.remindDaysBefore,
             note: postponeNote(postponedFrom(r.note) ? null : r.note, r.dueDate),
+            // Kopya serinin şubesinde kalır: Marina'nın kirası ertelenince Tuzla'nın Ödemeler'ine "işletme geneli"
+            // olarak düşmesin (docs/SUBE.md › Ödemeler; denetim 21 Kasım #17)
+            branchId: r.branchId,
           })
           .returning({ id: s.reminders.id });
         // KDV, KDV-2, muhtasar ve geçici vergi tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al
@@ -517,6 +542,8 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       repeat,
       remindDaysBefore: 3,
       note: FIXED_REMINDER_NOTE,
+      // Kalemin şubesi (boş: işletme geneli): Marina'nın kirası Marina'nın ödemesi
+      branchId: f.branchId,
     });
     await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();
@@ -620,61 +647,67 @@ export async function sendTestNotification() {
 export async function previewDigest() {
   return attempt(async () => {
     await requireAdmin();
-    const { today, items } = await loadUpcoming();
-    const due = dueNotifications(items);
-    // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz
-    const [sent, { invoices }, prices, system, extras] = await Promise.all([
-      due.length
-        ? getDb()
-            .select({ key: s.notificationLog.key })
-            .from(s.notificationLog)
-            .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
-        : [],
-      loadDigestInvoices(),
-      loadDigestPrices().catch(() => null),
-      isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
-      loadDigestExtras(today, { preview: true }),
-    ]);
-    const invoiceNews = invoiceNewsOf(invoices);
-    const example: UpcomingItem = {
-      ref: "preview:0",
-      source: "reminder",
-      sourceId: 0,
-      kind: "kira",
-      title: "Örnek: Kira",
-      detail: "Bugün haber verilecek ödeme, yeni fatura ya da zam yok; e-posta böyle görünür",
-      amount: 25000,
-      dueDate: today,
-      daysLeft: 0,
-      status: "today",
-      remindDaysBefore: 3,
-      repeat: "monthly",
-    };
-    // Gerçek gönderim de yalnız bunlardan biri varsa gider; hiçbiri yoksa örnek satırla gösterilir
-    const sample = !due.length && !invoiceNews && !prices && !system.length && !extras.news;
-    const rows = sample ? [{ item: example, stage: "due" as const }] : due;
-    const { subject, html } = renderDigest(
-      rows,
-      today,
-      invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null,
-      prices,
-      system.length ? { items: system } : null,
-      extras.extras,
-    );
-    return {
-      subject,
-      html,
-      count: due.length,
-      alreadySent: sent.length,
-      invoices: invoices.items.length,
-      prices: prices?.changes.length ?? 0,
-      syncError: Boolean(invoices.syncError),
-      system: system.length,
-      holds: invoices.priceHolds?.fresh ?? 0,
-      boxes: extras.parts,
-      sample,
-    };
+    // Gerçek gönderim gibi seçiciden bağımsız, "Tümü"yle okur (runReminderDigest): Marina seçiliyken önizlemenin zam
+    // tutarı ve ek kutuları Marina'nınki oluyordu (denetim 21 Kasım #18)
+    return withBranchScope(ALL_BRANCHES, digestPreview);
   });
+}
+
+async function digestPreview() {
+  const { today, items } = await loadUpcoming();
+  const due = dueNotifications(items);
+  // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz
+  const [sent, { invoices }, prices, system, extras] = await Promise.all([
+    due.length
+      ? getDb()
+          .select({ key: s.notificationLog.key })
+          .from(s.notificationLog)
+          .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
+      : [],
+    loadDigestInvoices(),
+    loadDigestPrices().catch(() => null),
+    isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
+    loadDigestExtras(today, { preview: true }),
+  ]);
+  const invoiceNews = invoiceNewsOf(invoices);
+  const example: UpcomingItem = {
+    ref: "preview:0",
+    source: "reminder",
+    sourceId: 0,
+    kind: "kira",
+    title: "Örnek: Kira",
+    detail: "Bugün haber verilecek ödeme, yeni fatura ya da zam yok; e-posta böyle görünür",
+    amount: 25000,
+    dueDate: today,
+    daysLeft: 0,
+    status: "today",
+    remindDaysBefore: 3,
+    repeat: "monthly",
+  };
+  // Gerçek gönderim de yalnız bunlardan biri varsa gider; hiçbiri yoksa örnek satırla gösterilir
+  const sample = !due.length && !invoiceNews && !prices && !system.length && !extras.news;
+  const rows = sample ? [{ item: example, stage: "due" as const }] : due;
+  const { subject, html } = renderDigest(
+    rows,
+    today,
+    invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null,
+    prices,
+    system.length ? { items: system } : null,
+    extras.extras,
+  );
+  return {
+    subject,
+    html,
+    count: due.length,
+    alreadySent: sent.length,
+    invoices: invoices.items.length,
+    prices: prices?.changes.length ?? 0,
+    syncError: Boolean(invoices.syncError),
+    system: system.length,
+    holds: invoices.priceHolds?.fresh ?? 0,
+    boxes: extras.parts,
+    sample,
+  };
 }
 
 /** Bugünün hatırlatma e-postasını şimdi gönder (otomatik gönderimi beklemeden) */

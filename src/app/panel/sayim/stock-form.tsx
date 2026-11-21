@@ -51,7 +51,7 @@ import { FloatingBar } from "@/components/ui/floating-bar";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { useIsPhone, useMediaQuery } from "@/components/ui/use-media";
 import { Input, NumberInput, Select } from "@/components/ui/form";
-import { useLeaveGuard } from "@/components/ui/leave-guard";
+import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
@@ -70,7 +70,9 @@ import { AddCountItemDialog } from "./add-item";
 import { lineUnit, stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
+  closingOverrideText,
   countDraftJson,
+  countDraftKey,
   countStatus,
   countText,
   coverageSplit,
@@ -952,6 +954,7 @@ const StockTotalCard = memo(function StockTotalCard({
   hasExtras,
   prevTotal,
   closingOverride,
+  branchLabel,
   breakdown,
 }: {
   month: string;
@@ -963,8 +966,11 @@ const StockTotalCard = memo(function StockTotalCard({
   hasExtras: boolean;
   prevTotal: { value: number; note: string | null } | null;
   closingOverride: number | null;
+  /** Birden çok şube açıkken sayılan şubenin adı: elle yazılan devir işletme genelinin, sayım şubenin */
+  branchLabel: string | null;
   breakdown: () => BreakdownGroup[];
 }) {
+  const override = closingOverride !== null ? closingOverrideText(month, closingOverride, live.total, branchLabel) : null;
   return (
     <StatBreakdown
       title={`${monthLabel} stoğu`}
@@ -973,7 +979,7 @@ const StockTotalCard = memo(function StockTotalCard({
           ? "Ay sonu stoğu (KDV hariç), ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla değerlenir. Faturayla karşılanmayan miktar ayın sonunda geçerli fiyatla."
           : "Ay sonu stoğu (KDV hariç): sayılan miktar × ay sonu fiyatı."
       } Grup grup; formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
-        closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
+        override ? ` ${override.sentence}` : ""
       }`}
       groups={breakdown}
       total={live.total}
@@ -1061,14 +1067,14 @@ const StockTotalCard = memo(function StockTotalCard({
             />
           ) : null}
         </div>
-        {closingOverride !== null ? (
+        {override ? (
           <Notice
             tone="warn"
             size="sm"
             risk="para"
             className="mt-2"
-            title={`Gelir-giderde ${monthLabel} stoğu elle ${tl(closingOverride)}: kâr-zarar bu sayımı kullanmaz`}
-            text={`Bu sayım ${tl(live.total)}; kâr-zarar elle girilen tutarı kullanır.`}
+            title={override.title}
+            text={override.text}
             action={<NoticeLink href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}>Gelir-giderde aç</NoticeLink>}
           />
         ) : null}
@@ -1216,6 +1222,8 @@ const CountToolbar = memo(function CountToolbar({
 // ---------------------------------------------------------------- Sayım formu
 
 export function StockCountForm({
+  branchId,
+  branchLabel = null,
   month,
   monthLabel,
   prevMonthLabel,
@@ -1233,6 +1241,10 @@ export function StockCountForm({
   addItem = null,
   valuation = null,
 }: {
+  /** Sayılan şube (sayım şube başına; kayıt o şubeye iner): taslak şubesiyle saklanır */
+  branchId: string;
+  /** Birden çok şube açıkken şubenin adı (taslak bandı ve elle yazılan devrin uyarısı söyler); tek şubede null */
+  branchLabel?: string | null;
   month: string;
   monthLabel: string;
   prevMonthLabel: string;
@@ -1398,8 +1410,9 @@ export function StockCountForm({
   // işaretini (geri yüklenince kayıt öncesi denetim yine sorar), değişen ek kalemleri ve yazanın adını da tutar. Kayıt,
   // "Vazgeç" ya da formun temizlenmesi (yazılanı silmek) bu açılışta yazılan taslağı siler. Taslak neye dayandığını da
   // yazar (satırların ve ek kalem listesinin o anki kayıtlı hâli): geri yükleme arada başkasının kaydettiğini silmez,
-  // ezeceği satırı işaretler.
-  const draftKey = `laf:sayim-taslak:${month}`;
+  // ezeceği satırı işaretler. Taslak şube başına (anahtarda ve içinde şube): Tuzla'nın kaydedilmemiş sayımı Marina'nın
+  // formunda önerilmez, Marina'da yazılan Tuzla'nınkini ezmez (21 Kasım denetimi #8)
+  const draftKey = countDraftKey(branchId, month);
   const draftJson = dirty
     ? countDraftJson({
         values: Object.fromEntries(changedLines.map((l) => [String(l.id), values[l.id] ?? ""])),
@@ -1408,6 +1421,7 @@ export function StockCountForm({
         by: me,
         base: Object.fromEntries(changedLines.map((l) => [String(l.id), l.qty])),
         extrasBase: extrasDirty ? savedExtras.map((e) => draftRow(e, isAdmin)) : null,
+        branch: branchId,
       })
     : "";
   const wroteDraft = useRef(false);
@@ -1435,7 +1449,7 @@ export function StockCountForm({
     },
     () => null,
   );
-  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null);
+  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null, branchId);
   const draftEntries = Object.entries(draft.values).filter(([id, raw]) => {
     const l = byId.get(Number(id));
     return l && !l.archived && (values[l.id] ?? "") !== raw;
@@ -1491,9 +1505,10 @@ export function StockCountForm({
   }
 
   // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun; beforeunload istemci içi geçişi kapsamaz:
-  // başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar (ortak kanca, src/components/ui/leave-guard.ts)
+  // başlıktaki ay seçici, kenar çubuğunun şube seçicisi (form şube değişince baştan kurulur) ve panel içi bağlantılar
+  // (menü) önce sorar (ortak kanca, src/components/ui/leave-guard.ts)
   const router = useRouter();
-  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE);
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE, BRANCH_LEAVE);
 
   // Yeni ek satır çizilince ad kutusuna odaklan
   useEffect(() => {
@@ -1778,12 +1793,15 @@ export function StockCountForm({
     }
   }
 
+  // Kayıtlar formun gösterdiği şubeye iner (branchId; sunucu doğrular, formCountBranch): başka sekmede seçici değişse de
+  // bu sayım öbür şubeye yazılmaz
   async function persist(step: { counts: boolean }) {
     const lineCount = changedLines.length;
     if (lineCount) {
       const res = await saveStockCounts(
         month,
         changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l), base: l.qty })),
+        branchId,
       );
       if (!res.ok) return void toast.error(res.error, { duration: 12_000 });
       step.counts = true;
@@ -1799,12 +1817,13 @@ export function StockCountForm({
           month,
           clean.map((e, i) => ({ ...e, unitPrice: prices[i] })),
           base,
+          branchId,
         );
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
         setExtras(clean.map((e, i) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(prices[i], 2), priced: prices[i] > 0 })));
       } else {
-        const ex = await saveStaffStockExtras(month, clean, base);
+        const ex = await saveStaffStockExtras(month, clean, base, branchId);
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         setExtras(ex.data.map((e) => toExtra({ ...e, unitPrice: 0 }, false)));
       }
@@ -1876,7 +1895,7 @@ export function StockCountForm({
           live="polite"
           className="no-print"
           title={`${draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş ${num(draftSize)} kalemlik sayım var`}
-          text={`${monthLabel} sayımı; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
+          text={`${branchLabel ? `${branchLabel} · ` : ""}${monthLabel} sayımı; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
           action={
             <span className="flex flex-wrap gap-1.5">
               <Button size="xs" onClick={restoreDraft}>
@@ -1918,6 +1937,7 @@ export function StockCountForm({
             hasExtras={extras.length > 0}
             prevTotal={prevTotal}
             closingOverride={closingOverride}
+            branchLabel={branchLabel}
             breakdown={breakdown}
           />
         ) : null}
@@ -2402,6 +2422,7 @@ export function StockCountForm({
       {adding && addItem ? (
         <AddCountItemDialog
           isAdmin={isAdmin}
+          branchId={branchId}
           month={month}
           groups={addItem.groups}
           defaultGroup={group || activeGroup}
@@ -2421,7 +2442,7 @@ export function StockCountForm({
         }}
         title="Kaydedilmemiş sayım var"
         confirmLabel="Kaydetmeden geç"
-        description={`${monthLabel} sayımında yazdığınız miktarlar henüz kaydedilmedi; başka aya ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
+        description={`${monthLabel} sayımında yazdığınız miktarlar henüz kaydedilmedi; başka aya, şubeye ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
       />
     </div>
   );
