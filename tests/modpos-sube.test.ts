@@ -349,20 +349,22 @@ test("rapor yalnız kendi şubesinin föyüyle karşılaştırılır: Marina'nı
   assert.equal(modposPairKey("marina", day), "marina|2026-11-01");
 });
 
-test("LafPOS'a geçiş günü yalnız Tuzla'nın kasasını keser: Marina'nın raporu föyüyle karşılaştırılmaya devam eder (denetim 21 Kasım #5)", () => {
+test("LafPOS'a geçiş günü yalnız Marina'nın kasasını keser: Tuzla'nın raporu föyüyle karşılaştırılmaya devam eder (21 Kasım kararı)", () => {
   const day = "2026-12-02";
   const switchDay = "2026-12-01";
   const marinaSheet = { day, branchId: "marina", foy: sample(day), revision: 1 };
   const tuzlaSheet = { day, branchId: "tuzla", foy: sample(day), revision: 1 };
   const marina = { ...sameReport(day, "marina"), cash: 8190 };
   const tuzla = { ...sameReport(day, "tuzla"), cash: 8190 };
-  // Marina ModPOS'ta: farkı görünür; Tuzla LafPOS'ta (ve şubesiz eski rapor Tuzla'nındır): atlanır
-  const m = modposMismatches([marina, tuzla, { ...sameReport(day), cash: 8190 }], [marinaSheet, tuzlaSheet], switchDay);
+  const branchless = { ...sameReport(day), cash: 8190 };
+  // Tuzla ModPOS'ta: farkı görünür (şubesiz eski rapor da Tuzla'nındır, Tuzla'nın föyüyle); Marina LafPOS'ta: atlanır
+  const m = modposMismatches([marina, tuzla, branchless], [marinaSheet, tuzlaSheet], switchDay);
   assert.deepEqual(
-    m.map((x) => x.report.branchId),
-    ["marina"],
+    m.map((x) => x.report.branchId ?? null),
+    ["tuzla", null],
   );
-  assert.deepEqual([...modposMismatchBranchDays([marina, tuzla], [marinaSheet, tuzlaSheet], switchDay)], [`marina:${day}`]);
+  assert.equal(m[1].sheet, tuzlaSheet, "şubesiz rapor Tuzla'nın föyüyle");
+  assert.deepEqual([...modposMismatchBranchDays([marina, tuzla], [marinaSheet, tuzlaSheet], switchDay)], [`tuzla:${day}`]);
   // Geçiş gününden önce ikisi de karşılaştırılır
   const before = "2026-11-30";
   const sheets = [

@@ -40,7 +40,7 @@ function sampleFoy(day = "2026-11-01", o: Partial<KasaFoyu> = {}): KasaFoyu {
 
 const sheet = (day: string, revision = 1, foy = sampleFoy(day)): ModposSheetLite => ({ day, foy, revision });
 
-type Report = ModposSavedFields & { date: string; revision: number };
+type Report = ModposSavedFields & { date: string; revision: number; branchId?: string };
 
 /** Föyle birebir aynı yazılmış rapor */
 function report(date: string, o: Partial<Report> = {}): Report {
@@ -84,11 +84,16 @@ test("föyünden farklı: aynı yazılan rapor uyarı değil; nakit farklıysa t
 });
 
 test("föyünden farklı: yalnız ModPOS günü (LafPOS'a geçiş gününden önce ya da geçiş günü boşken)", () => {
-  const bad = [report(D, { cash: 8190 })];
-  assert.equal(modposMismatches(bad, [sheet(D)], null).length, 1, "geçiş günü boş");
-  assert.equal(modposMismatches(bad, [sheet(D)], "2026-11-10").length, 1, "geçiş gününden önce");
-  assert.deepEqual(modposMismatches(bad, [sheet(D)], D), [], "geçiş günü LafPOS'tur");
-  assert.deepEqual(modposMismatches(bad, [sheet(D)], "2026-10-20"), [], "geçiş gününden sonra");
+  // LafPOS'un şubesi Marina (21 Kasım kararı): geçiş günü yalnız onun kasasını keser
+  const bad = [report(D, { cash: 8190, branchId: "marina" })];
+  const foy = [{ ...sheet(D), branchId: "marina" }];
+  assert.equal(modposMismatches(bad, foy, null).length, 1, "geçiş günü boş");
+  assert.equal(modposMismatches(bad, foy, "2026-11-10").length, 1, "geçiş gününden önce");
+  assert.deepEqual(modposMismatches(bad, foy, D), [], "geçiş günü LafPOS'tur");
+  assert.deepEqual(modposMismatches(bad, foy, "2026-10-20"), [], "geçiş gününden sonra");
+  // ModPOS'ta kalan Tuzla'nın (şubesiz eski rapor da Tuzla'nın) raporu geçiş gününden sonra da föyüyle karşılaştırılır
+  assert.equal(modposMismatches([report(D, { cash: 8190 })], [sheet(D)], D).length, 1, "Tuzla, geçiş günü");
+  assert.equal(modposMismatches([report(D, { cash: 8190 })], [sheet(D)], "2026-10-20").length, 1, "Tuzla, geçiş gününden sonra");
 });
 
 test("föyünden farklı: föyü olmayan, satışsız ya da kasası açık föyün günü atlanır; sıra raporların sırası", () => {

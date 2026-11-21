@@ -36,12 +36,15 @@ export function isLafposDay(day: string, switchDay: string | null): boolean {
 }
 
 /**
- * LafPOS'un kurulu olduğu şube (docs/LAFPOS.md › Şubeler; denetim 21 Kasım #5). LafPOS gün sonunu yalnız bu şubeye yazar
- * (src/server/lafpos/ingest.ts; gövdede şube alanı yok) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin
- * kasası ModPOS kalır (docs/SUBE.md: Marina'nın kasası ModPOS): föyü çekilir, Kasa raporu ModPOS'a göre açılır, ürün
- * listesi sayılır, panelde girilen ürün ikramı sayılır.
+ * LafPOS'un kurulu olduğu şube (docs/LAFPOS.md › Şubeler): **Marina** (sahibin kararı, 21 Kasım 2026: önce Marina
+ * LafPOS'a geçer, Tuzla ModPOS'ta kalır). LafPOS gün sonunu yalnız bu şubeye yazar (src/server/lafpos/ingest.ts; kasanın
+ * gönderdiği `sube` buna eşit değilse gün reddedilir) ve geçiş günü yalnız bu şubenin kasasınındır. Öteki şubelerin
+ * kasası ModPOS kalır: föyü çekilir, Kasa raporu ModPOS'a göre açılır, ürün listesi sayılır, panelde girilen ürün ikramı
+ * sayılır. Marina'nın ModPOS'u da yedek olarak çekilmeye devam eder (şubenin kasa kaynağı Ayarlar › Şubeler'de ModPOS
+ * kalır): geçiş gününden önce sayılan odur, sonra LafPOS'un günü sayılır, ModPOS'unki saklanır ama hesaba girmez.
+ * Şubesi verilmeyen eski kayıtlar Tuzla'nındır.
  */
-export const LAFPOS_BRANCH_ID = DEFAULT_BRANCH_ID;
+export const LAFPOS_BRANCH_ID = "marina";
 
 /** Kaydın şubesi LafPOS'un şubesi mi (şubesi verilmeyen kayıt Tuzla'nındır, şubeler öncesi) */
 export function isLafposBranch(branchId: string | null | undefined): boolean {
@@ -161,5 +164,5 @@ export const LAFPOS_SWITCH_EFFECTS: readonly string[] = [
   "LafPOS'tan gelen bu günden önceki günler deneme sayılır: Ayarlar'da görünür, hiçbir hesaba girmez.",
   "Kasadaki fiyatlar bu günden itibaren yalnız siteye bağlı olmayan ve fiyatı bu günden sonra panelde değişen ürünler içindir ve yalnız yöneticinin işidir (LafPOS'ta ürün fiyatını kasiyer değiştiremez; personele görev düşmez): siteye bağlı ürünün yeni fiyatını LafPOS siteden kendisi alır, Kasaya işle'de, zilde ve Bugün'de görünmez. ModPOS'ta değişecek fiyatlar kaydedilmeye devam eder, yalnız gizlenir: geçiş günü kaldırılır ya da ileri alınırsa eksiksiz geri gelir.",
   "Metinler bu günden itibaren ModPOS yerine LafPOS der: Bugün'ün ve zilin akşam kasa satırı (LafPOS'ta Günü kapat), Kasa raporu, e-posta ve WhatsApp karşılaştırmaları, kapalı gün kartı; aylık rapor etiketleri (Genel bakış, Gelir-gider, Tutarlılık, Ürünler, Analiz, KDV tahmini, Excel, Claude) ayın kasasıyla, geçiş ayında \"Kasa (ModPOS 1–9 · LafPOS 10–30)\".",
-  "Bunların hepsi yalnız Tuzla'nın kasası içindir (LafPOS'un kurulu olduğu şube): Marina'nın kasası ModPOS'ta kalır; ModPOS föyü çekilmeye ve Kasa raporuyla karşılaştırılmaya devam eder, Kasa raporu, geç rapor, ürün satış listesi, ürün ikramı ve kasadaki fiyatlar Marina'da bugünkü gibidir; Komisyon & hakediş Marina'nın kasa raporlarını kasa raporu kuralıyla ekler.",
+  "Bunların hepsi yalnız Marina'nın kasası içindir (LafPOS'un kurulu olduğu şube): Tuzla'nın kasası ModPOS'ta kalır; ModPOS föyü çekilmeye ve Kasa raporuyla karşılaştırılmaya devam eder, Kasa raporu, geç rapor, ürün satış listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da bugünkü gibidir; Komisyon & hakediş Tuzla'nın kasa raporlarını kasa raporu kuralıyla ekler.",
 ];
