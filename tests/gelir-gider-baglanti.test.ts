@@ -141,7 +141,7 @@ test("Sayım açılışı: geçen ay hiç sayılmadıysa ipucu '0 ₺' değil 's
   const d = countOpening({ value: 8_000, overridden: false }, { value: 8_000, computed: 0, overridden: true }, false);
   assert.equal(plain(countOpeningNote(d, "2026-10")), "Eylül 2026 stoğu Gelir-giderde elle 8.000 ₺ girildi; açılış o tutardır. Eylül 2026 sayımı yok.");
   // Sayfa önceki ayın sayılıp sayılmadığını verir
-  assert.match(read("src/app/panel/sayim/page.tsx"), /model\.closingStock\(prevMonth\), prev\.hasData\)/);
+  assert.match(read("src/app/panel/sayim/page.tsx"), /model\.closingStock\(prevMonth\)\.computed, prev\.hasData\)/);
 });
 
 test("Sayım açılışı: geçen ayın devreden malı elle girildiyse o tutar ve ipucu", () => {
@@ -154,11 +154,14 @@ test("Sayım açılışı: geçen ayın devreden malı elle girildiyse o tutar v
   assert.match(plain(countOpeningNote(o, "2026-10"))!, /^Eylül 2026 stoğu Gelir-giderde elle 8\.000 ₺ girildi; açılış o tutardır\./);
 });
 
-test("Sayım sayfası açılışı pnlMonth'tan okur ve yalnız yöneticiye hesaplar", () => {
+test("Sayım sayfası açılışı K/Z'nin elle yazılan devirleriyle (işletme geneli) ve yalnız yöneticiye hesaplar", () => {
+  // Sayfa şubenin modeliyle açılır; o model stock:* hücrelerini görmez, devirler ayrıca okunur (21 Kasım denetimi #20;
+  // eşdeğerlik tests/sayim-sube.test.ts)
   const page = read("src/app/panel/sayim/page.tsx");
-  assert.match(page, /countOpening\(model\.pnlMonth\(month\)\.cells\.get\("stock:opening"\)/);
-  assert.match(page, /const opening = isAdmin \?/);
+  assert.match(page, /const overrides = stockOverrides\(stockEntries, month\);/);
+  assert.match(page, /const opening = isAdmin \? countOpeningOf\(overrides, /);
   assert.doesNotMatch(page, /const opening = model\.closingStock\(prevMonth\)/);
+  assert.doesNotMatch(page, /model\.pnlMonth\(month\)\.cells\.get\("stock:opening"\)/, "şube modelinde bu hücre hep boş");
 });
 
 // ---------------------------------------------------------------- Metinler (E-61, E-63)

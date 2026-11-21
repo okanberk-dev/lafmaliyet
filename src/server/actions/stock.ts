@@ -160,7 +160,7 @@ async function dropEmptyStockMonth(tx: Tx, month: string, sube: string) {
   if (!monthRowEmpty(row, zeros && (await hasTillRowsIn(month, tx)))) return;
   const [counts, extras, lines, pnl] = await Promise.all([
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(and(eq(s.stockCounts.month, month), eq(s.stockCounts.branchId, sube))),
-    tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(eq(s.stockExtras.month, month)),
+    tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(and(eq(s.stockExtras.month, month), eq(s.stockExtras.branchId, sube))),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(and(eq(s.salesLines.month, month), eq(s.salesLines.branchId, sube))),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month)),
   ]);
@@ -171,6 +171,8 @@ async function dropEmptyStockMonth(tx: Tx, month: string, sube: string) {
 /**
  * "Listede olmayanlar", yönetici için (fiyatıyla). Ayı silip yeniden yazmaz: kalemler ad + birimle eşlenir, yalnız
  * yöneticinin formdan kaldırdığı satır silinir (planAdminExtras); arada başkasının kaydettiği liste üzerine yazılmaz.
+ * Liste sayım gibi şube başına: seçili fiziksel şubenin listesi okunur, eşlenir ve yazılır; öbür şubenin aynı adlı
+ * kalemi güncellenmez, silinmez (21 Kasım denetimi #19/#24).
  */
 export async function saveStockExtras(month: string, extras: { name: string; unit: string; qty: number; unitPrice: number }[], base?: string) {
   return attempt(async () => {
@@ -183,8 +185,9 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
     const sube = (await currentPhysicalBranch()).id;
+    const buSube = and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube));
     const changed = await db.transaction(async (tx) => {
-      const existing = await lockExtras(tx, m, b);
+      const existing = await lockExtras(tx, m, sube, b);
       const res = planAdminExtras(existing, data);
       if (!res.ok) throw new UserError(res.error);
       const { updates, deletes, inserts } = res.plan;
@@ -193,9 +196,9 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
         await tx
           .update(s.stockExtras)
           .set({ name: u.name, unit: u.unit, qty: u.qty, unitPrice: u.unitPrice })
-          .where(and(eq(s.stockExtras.id, u.id), eq(s.stockExtras.month, m)));
-      if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
-      if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m })));
+          .where(and(eq(s.stockExtras.id, u.id), buSube));
+      if (deletes.length) await tx.delete(s.stockExtras).where(and(buSube, inArray(s.stockExtras.id, deletes)));
+      if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m, branchId: sube })));
       if (!data.length) await dropEmptyStockMonth(tx, m, sube);
       return updates.length + deletes.length + inserts.length;
     });

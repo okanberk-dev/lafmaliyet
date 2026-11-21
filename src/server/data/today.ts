@@ -112,15 +112,21 @@ const toLite = (r: CashReportDTO): CashLite => ({
  */
 async function stockProgress(month: string, prevMonth: string): Promise<NonNullable<DayFacts["stock"]>> {
   const db = getDb();
+  // Sayım ve ek kalemleri şube başına: sayım sayfasının şubesi (21 Kasım denetimi #19/#24)
+  const sube = (await currentPhysicalBranch()).id;
   const [current, prev, [prevCount], [prevExtra]] = await Promise.all([
     countProgress(month),
     countProgress(prevMonth),
     db
       .select({ id: s.stockCounts.id })
       .from(s.stockCounts)
-      .where(and(eq(s.stockCounts.month, prevMonth), eq(s.stockCounts.branchId, (await currentPhysicalBranch()).id)))
+      .where(and(eq(s.stockCounts.month, prevMonth), eq(s.stockCounts.branchId, sube)))
       .limit(1),
-    db.select({ id: s.stockExtras.id }).from(s.stockExtras).where(eq(s.stockExtras.month, prevMonth)).limit(1),
+    db
+      .select({ id: s.stockExtras.id })
+      .from(s.stockExtras)
+      .where(and(eq(s.stockExtras.month, prevMonth), eq(s.stockExtras.branchId, sube)))
+      .limit(1),
   ]);
   return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };
 }

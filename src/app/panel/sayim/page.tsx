@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
@@ -17,7 +17,7 @@ import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { counterLine, countComplete, countOpening, countOpeningNote, countStatus, defaultCountMonth, staffCountMonths } from "./logic";
+import { counterLine, countComplete, countOpeningNote, countOpeningOf, countStatus, defaultCountMonth, staffCountMonths, stockOverrides } from "./logic";
 import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
@@ -98,11 +98,22 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const denied = typeof sp.izinsiz === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.izinsiz) && !allowed(sp.izinsiz) ? sp.izinsiz : null;
   const prevMonth = shiftMonth(month, -1);
 
-  const counters = await getDb()
-    .select({ by: s.stockCounts.countedBy, last: sql<Date | string | null>`max(${s.stockCounts.updatedAt})` })
-    .from(s.stockCounts)
-    .where(and(eq(s.stockCounts.month, month), eq(s.stockCounts.branchId, branch.id)))
-    .groupBy(s.stockCounts.countedBy);
+  const db = getDb();
+  const [counters, stockEntries] = await Promise.all([
+    db
+      .select({ by: s.stockCounts.countedBy, last: sql<Date | string | null>`max(${s.stockCounts.updatedAt})` })
+      .from(s.stockCounts)
+      .where(and(eq(s.stockCounts.month, month), eq(s.stockCounts.branchId, branch.id)))
+      .groupBy(s.stockCounts.countedBy),
+    // Gelir-giderde elle yazılan stok devirleri işletme genelidir: şubenin modeli onları görmez (branchPnlEntry), burada
+    // ayrıca okunur (yalnız yönetici; 21 Kasım denetimi #20)
+    isAdmin
+      ? db
+          .select({ month: s.pnlEntries.month, rowKey: s.pnlEntries.rowKey, amount: s.pnlEntries.amount })
+          .from(s.pnlEntries)
+          .where(and(inArray(s.pnlEntries.month, [month, prevMonth]), inArray(s.pnlEntries.rowKey, ["stock:closing", "stock:opening"])))
+      : Promise.resolve([]),
+  ]);
 
   const sheet = model.stockSheet(month);
   const prev = model.stockSheet(prevMonth);
@@ -116,10 +127,12 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
     const st = countStatus(sh);
     return { month: m, short: monthShort(m), label: monthLabel(m), counted: st.counted, total: st.total, hasData: sh.hasData, open: allowed(m) };
   });
-  // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli. Açılış kâr-zararınki
-  // (pnlMonth): bu ayın "Önceki aydan devir"i ayrıca elle değiştirilebilir (denetim E-30). Yalnız yönetici görür
-  const closing = model.closingStock(month);
-  const opening = isAdmin ? countOpening(model.pnlMonth(month).cells.get("stock:opening") ?? { value: 0, overridden: false }, model.closingStock(prevMonth), prev.hasData) : null;
+  // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli. Açılış kâr-zararınki: geçen
+  // ayın devreden malı ya da bu ayın "Önceki aydan devir"i elle değiştirilebilir (denetim E-30). Elle yazılan devir
+  // işletme genelidir; sayfa şubenin modeliyle açıldığından (model o hücreleri görmez) ayrıca okunur, sayım tutarı
+  // şubenin kalır (21 Kasım denetimi #20). Yalnız yönetici görür
+  const overrides = stockOverrides(stockEntries, month);
+  const opening = isAdmin ? countOpeningOf(overrides, model.closingStock(prevMonth).computed, prev.hasData) : null;
 
   const groups: FormGroup[] = sheet.groups.map((g, gi) => ({
     name: g.name,
@@ -168,6 +181,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
       />
       <StockCountForm
         key={`${branch.id}:${month}`}
+        branchId={branch.id}
+        branchLabel={branchLabel}
         month={month}
         monthLabel={ml}
         prevMonthLabel={monthLabel(prevMonth)}
@@ -178,8 +193,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         hasPrev={prev.hasData}
         history={history}
-        prevTotal={opening && (prev.hasData || opening.source !== "sayim") ? { value: opening.value, note: countOpeningNote(opening, month) } : null}
-        closingOverride={isAdmin && closing.overridden ? closing.value : null}
+        prevTotal={opening && (prev.hasData || opening.source !== "sayim") ? { value: opening.value, note: countOpeningNote(opening, month, branchLabel) } : null}
+        closingOverride={isAdmin ? overrides.closing : null}
         counter={counterLine(counters)}
         me={user.name}
         denied={denied ? monthLabel(denied) : null}

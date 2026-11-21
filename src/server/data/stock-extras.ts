@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 
 import { extrasBase } from "@/app/panel/sayim/logic";
@@ -18,11 +18,17 @@ export const EXTRAS_CHANGED_MESSAGE =
  * Ayın ek kalemlerini aynı anda tek kayıt yazsın (işlem kilidi) ve formun gördüğü listeyle karşılaştırsın (`base`:
  * sayim/logic.ts extrasBase). Fark varsa yazılmaz, sayfa yenilenir; form yeni listeyi birleştirir (mergeExtras).
  * `base` göndermeyen eski istemci denetimsiz yazar. Yöneticinin (saveStockExtras) ve personelin (saveStaffStockExtras)
- * kaydı aynı kapıdan geçer. Ayın kayıtlı ek kalemlerini döner.
+ * kaydı aynı kapıdan geçer. Liste şube başınadır (`branch`, sayımın şubesi; 21 Kasım denetimi #19/#24): kilit ve
+ * karşılaştırma o şubenin listesiyle, öbür şubenin kalemi ne kaydı engeller ne ezilir. Ayın o şubedeki kayıtlı ek
+ * kalemlerini döner.
  */
-export async function lockExtras(tx: Tx, month: string, base: string | undefined) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sayim-ek-${month}`}))`);
-  const existing = await tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, month)).orderBy(asc(s.stockExtras.id));
+export async function lockExtras(tx: Tx, month: string, branch: string, base: string | undefined) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sayim-ek-${month}-${branch}`}))`);
+  const existing = await tx
+    .select()
+    .from(s.stockExtras)
+    .where(and(eq(s.stockExtras.month, month), eq(s.stockExtras.branchId, branch)))
+    .orderBy(asc(s.stockExtras.id));
   if (base !== undefined && extrasBase(existing) !== base) {
     refresh();
     throw new UserError(EXTRAS_CHANGED_MESSAGE);

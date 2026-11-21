@@ -414,6 +414,13 @@
       "when": 1794837713042,
       "tag": "0058_sube_kontrol_kullanici_odeme",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1795258806776,
+      "tag": "0059_stok_ek_kalem_subesi",
+      "breakpoints": true
     }
   ]
 }

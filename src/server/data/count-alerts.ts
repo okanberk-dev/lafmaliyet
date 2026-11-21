@@ -3,8 +3,10 @@ import "server-only";
 import { and, asc, count, desc, eq, gt, gte, inArray, like, max } from "drizzle-orm";
 
 import { loggedItems, type StaffLateEdit, type UnpricedExtras } from "@/app/panel/sayim/logic";
+import { namedTill } from "@/lib/branches";
 import { shiftMonth } from "@/lib/calc/engine";
 import { monthLabel } from "@/lib/format";
+import { listBranches } from "@/server/branches";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -13,18 +15,39 @@ import { getDb, schema as s } from "@/server/db";
  * (src/server/data/today.ts) okur; metin src/app/panel/sayim/logic.ts'te. Yalnız yöneticide çağrılır.
  */
 
-/** Ayların fiyatı girilmemiş ek kalemleri (miktarı > 0, birim fiyatı 0); kalemi olmayan ay dönmez */
+/**
+ * Ayların fiyatı girilmemiş ek kalemleri (miktarı > 0, birim fiyatı 0); kalemi olmayan ay dönmez. İşletme geneli (bütün
+ * şubeler: fiyatı yönetici girer), ama "Listede olmayanlar" şube başına olduğu için ay ve şube başına ayrı satır; birden
+ * çok şube açıkken satır şubeyi adıyla söyler ve o şubenin sayımını açar (21 Kasım denetimi #19/#24). Sıra: yeni ay
+ * önce, ayın içinde şube sırası.
+ */
 export async function loadUnpricedExtras(months: string[]): Promise<UnpricedExtras[]> {
   if (!months.length) return [];
   const db = getDb();
   const where = and(inArray(s.stockExtras.month, months), gt(s.stockExtras.qty, 0), eq(s.stockExtras.unitPrice, 0));
-  const [totals, rows] = await Promise.all([
-    db.select({ month: s.stockExtras.month, n: count(), newest: max(s.stockExtras.id) }).from(s.stockExtras).where(where).groupBy(s.stockExtras.month),
-    db.select({ month: s.stockExtras.month, name: s.stockExtras.name }).from(s.stockExtras).where(where).orderBy(asc(s.stockExtras.id)),
+  const [totals, rows, branches] = await Promise.all([
+    db
+      .select({ month: s.stockExtras.month, branchId: s.stockExtras.branchId, n: count(), newest: max(s.stockExtras.id) })
+      .from(s.stockExtras)
+      .where(where)
+      .groupBy(s.stockExtras.month, s.stockExtras.branchId),
+    db.select({ month: s.stockExtras.month, branchId: s.stockExtras.branchId, name: s.stockExtras.name }).from(s.stockExtras).where(where).orderBy(asc(s.stockExtras.id)),
+    listBranches(db),
   ]);
+  const order = (id: string) => {
+    const i = branches.findIndex((b) => b.id === id);
+    return i < 0 ? branches.length : i;
+  };
   return totals
-    .map((t) => ({ month: t.month, count: t.n, newestId: t.newest ?? 0, names: rows.filter((r) => r.month === t.month).map((r) => r.name).slice(0, 3) }))
-    .sort((a, b) => (a.month < b.month ? 1 : -1));
+    .sort((a, b) => (a.month === b.month ? order(a.branchId) - order(b.branchId) : a.month < b.month ? 1 : -1))
+    .map((t) => ({
+      month: t.month,
+      // Sayımın şubeleri kasası olan şubelerdir (etkin fiziksel): birden çok açıkken ad ve `&sube=`, tekse null
+      branch: namedTill(branches, t.branchId),
+      count: t.n,
+      newestId: t.newest ?? 0,
+      names: rows.filter((r) => r.month === t.month && r.branchId === t.branchId).map((r) => r.name).slice(0, 3),
+    }));
 }
 
 /** Sayımı değiştiren işlem geçmişi kayıtları (stock.ts saveStockCounts, ek kalemler; ayrıntı "<Ay>: …") */

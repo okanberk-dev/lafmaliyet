@@ -77,7 +77,9 @@ push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Pe
 onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Yine **Uyarılar**'da
 yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin `sayim/logic.ts`): bu ayın ya da geçen
 ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin fiyatı yok" (adlar; kapanış stoğuna 0 ₺
-girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden); personel geçen ayın
+girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden). Ek kalemler şube
+başına olduğundan satır ay ve şube başınadır: birden çok şube açıkken "Kasım 2026 (Marina): 1 ek kalemin fiyatı yok" ve
+adres o şubenin sayımını açar (`&sube=`; [SUBE.md](SUBE.md#yazarken-hangi-şube)); personel geçen ayın
 sayımını ay bittikten sonra (ilk 10 günde) değiştirdiyse "Ayşe, Ekim 2026 sayımını değiştirdi" (kayıt ve kalem sayısı;
 kimlik en son kayıttan, yeni kayıt yeniden okunmamış yapar). İkisi personele hiç gösterilmez. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon

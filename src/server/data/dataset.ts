@@ -116,7 +116,8 @@ async function readDataset(): Promise<Dataset> {
     loadHeldPurchases(),
     // Fiyatı onay bekleyen hammaddeler: fiyatsızsa "paket fiyatını girin" değil, onaya götürülür (Genel bakış, zil)
     db.selectDistinct({ id: s.ingredientPriceHolds.ingredientId }).from(s.ingredientPriceHolds).where(eq(s.ingredientPriceHolds.status, "pending")),
-    db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
+    // "Listede olmayanlar" sayım gibi şube başına (21 Kasım denetimi #19/#24): "Tümü"de bütün şubelerinki toplanır
+    db.select().from(s.stockExtras).where(branchWhere(s.stockExtras.branchId, scope)).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
     // Kasadan çıkan satırın belgesi (fiş / e-Arşiv / fatura / yok) vergide kaydın belgesidir (docs/VERGI.md)

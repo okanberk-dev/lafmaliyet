@@ -811,9 +811,14 @@ export const stockCounts = pgTable(
   (t) => [uniqueIndex("stock_counts_month_ingredient_uq").on(t.month, t.branchId, t.ingredientId)],
 );
 
+/**
+ * Sayımın "Listede olmayanlar"ı. Şube başına (docs/SUBE.md › Stok ve sayım; migration 0059): Tuzla'nın ve Marina'nın
+ * ay sonu ek kalemleri ayrı listedir, "Tümü" ikisini toplar. Eski satırlar Tuzla'nın (21 Kasım denetimi #19/#24)
+ */
 export const stockExtras = pgTable("stock_extras", {
   id: serial("id").primaryKey(),
   month: text("month").notNull(),
+  branchId: branchId(),
   name: text("name").notNull(),
   unit: text("unit").notNull().default("ADET"),
   qty: doublePrecision("qty").notNull().default(0),

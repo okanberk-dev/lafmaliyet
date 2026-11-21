@@ -70,7 +70,9 @@ import { AddCountItemDialog } from "./add-item";
 import { lineUnit, stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
+  closingOverrideText,
   countDraftJson,
+  countDraftKey,
   countStatus,
   countText,
   coverageSplit,
@@ -952,6 +954,7 @@ const StockTotalCard = memo(function StockTotalCard({
   hasExtras,
   prevTotal,
   closingOverride,
+  branchLabel,
   breakdown,
 }: {
   month: string;
@@ -963,8 +966,11 @@ const StockTotalCard = memo(function StockTotalCard({
   hasExtras: boolean;
   prevTotal: { value: number; note: string | null } | null;
   closingOverride: number | null;
+  /** Birden çok şube açıkken sayılan şubenin adı: elle yazılan devir işletme genelinin, sayım şubenin */
+  branchLabel: string | null;
   breakdown: () => BreakdownGroup[];
 }) {
+  const override = closingOverride !== null ? closingOverrideText(month, closingOverride, live.total, branchLabel) : null;
   return (
     <StatBreakdown
       title={`${monthLabel} stoğu`}
@@ -973,7 +979,7 @@ const StockTotalCard = memo(function StockTotalCard({
           ? "Ay sonu stoğu (KDV hariç), ilk giren ilk çıkar (FIFO): sayılan miktar en son faturalardan geriye doğru, her parça kendi faturasının birim fiyatıyla değerlenir. Faturayla karşılanmayan miktar ayın sonunda geçerli fiyatla."
           : "Ay sonu stoğu (KDV hariç): sayılan miktar × ay sonu fiyatı."
       } Grup grup; formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
-        closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
+        override ? ` ${override.sentence}` : ""
       }`}
       groups={breakdown}
       total={live.total}
@@ -1061,14 +1067,14 @@ const StockTotalCard = memo(function StockTotalCard({
             />
           ) : null}
         </div>
-        {closingOverride !== null ? (
+        {override ? (
           <Notice
             tone="warn"
             size="sm"
             risk="para"
             className="mt-2"
-            title={`Gelir-giderde ${monthLabel} stoğu elle ${tl(closingOverride)}: kâr-zarar bu sayımı kullanmaz`}
-            text={`Bu sayım ${tl(live.total)}; kâr-zarar elle girilen tutarı kullanır.`}
+            title={override.title}
+            text={override.text}
             action={<NoticeLink href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}>Gelir-giderde aç</NoticeLink>}
           />
         ) : null}
@@ -1216,6 +1222,8 @@ const CountToolbar = memo(function CountToolbar({
 // ---------------------------------------------------------------- Sayım formu
 
 export function StockCountForm({
+  branchId,
+  branchLabel = null,
   month,
   monthLabel,
   prevMonthLabel,
@@ -1233,6 +1241,10 @@ export function StockCountForm({
   addItem = null,
   valuation = null,
 }: {
+  /** Sayılan şube (sayım şube başına; kayıt o şubeye iner): taslak şubesiyle saklanır */
+  branchId: string;
+  /** Birden çok şube açıkken şubenin adı (taslak bandı ve elle yazılan devrin uyarısı söyler); tek şubede null */
+  branchLabel?: string | null;
   month: string;
   monthLabel: string;
   prevMonthLabel: string;
@@ -1398,8 +1410,9 @@ export function StockCountForm({
   // işaretini (geri yüklenince kayıt öncesi denetim yine sorar), değişen ek kalemleri ve yazanın adını da tutar. Kayıt,
   // "Vazgeç" ya da formun temizlenmesi (yazılanı silmek) bu açılışta yazılan taslağı siler. Taslak neye dayandığını da
   // yazar (satırların ve ek kalem listesinin o anki kayıtlı hâli): geri yükleme arada başkasının kaydettiğini silmez,
-  // ezeceği satırı işaretler.
-  const draftKey = `laf:sayim-taslak:${month}`;
+  // ezeceği satırı işaretler. Taslak şube başına (anahtarda ve içinde şube): Tuzla'nın kaydedilmemiş sayımı Marina'nın
+  // formunda önerilmez, Marina'da yazılan Tuzla'nınkini ezmez (21 Kasım denetimi #8)
+  const draftKey = countDraftKey(branchId, month);
   const draftJson = dirty
     ? countDraftJson({
         values: Object.fromEntries(changedLines.map((l) => [String(l.id), values[l.id] ?? ""])),
@@ -1408,6 +1421,7 @@ export function StockCountForm({
         by: me,
         base: Object.fromEntries(changedLines.map((l) => [String(l.id), l.qty])),
         extrasBase: extrasDirty ? savedExtras.map((e) => draftRow(e, isAdmin)) : null,
+        branch: branchId,
       })
     : "";
   const wroteDraft = useRef(false);
@@ -1435,7 +1449,7 @@ export function StockCountForm({
     },
     () => null,
   );
-  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null);
+  const draft = parseCountDraft(storedDraft && !dirty && !draftGone ? storedDraft : null, branchId);
   const draftEntries = Object.entries(draft.values).filter(([id, raw]) => {
     const l = byId.get(Number(id));
     return l && !l.archived && (values[l.id] ?? "") !== raw;
@@ -1876,7 +1890,7 @@ export function StockCountForm({
           live="polite"
           className="no-print"
           title={`${draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş ${num(draftSize)} kalemlik sayım var`}
-          text={`${monthLabel} sayımı; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
+          text={`${branchLabel ? `${branchLabel} · ` : ""}${monthLabel} sayımı; sayfa kapanmış ya da bağlantı gitmiş olabilir.`}
           action={
             <span className="flex flex-wrap gap-1.5">
               <Button size="xs" onClick={restoreDraft}>
@@ -1918,6 +1932,7 @@ export function StockCountForm({
             hasExtras={extras.length > 0}
             prevTotal={prevTotal}
             closingOverride={closingOverride}
+            branchLabel={branchLabel}
             breakdown={breakdown}
           />
         ) : null}

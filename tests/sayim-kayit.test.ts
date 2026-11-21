@@ -63,11 +63,11 @@ test("personelin eski listeyle planı başkasının kalemini siler: imza denetim
   // Formun gördüğü liste (base) kayıtlıdan farklı: sunucu yazmaz (src/server/data/stock-extras.ts lockExtras)
   assert.notEqual(extrasBase([ex(1, "Peçete", "PAKET", 3)]), extrasBase([ex(1, "Peçete", "PAKET", 3), ex(2, "Kağıt havlu", "PAKET", 1)]));
   const core = read("src/server/data/stock-extras.ts");
-  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`sayim-ek-\$\{month\}`\}\)\)/);
+  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`sayim-ek-\$\{month\}-\$\{branch\}`\}\)\)/);
   assert.match(core, /if \(base !== undefined && extrasBase\(existing\) !== base\) \{\s+refresh\(\);\s+throw new UserError\(EXTRAS_CHANGED_MESSAGE\);/);
-  assert.match(read("src/server/actions/stock.ts"), /const existing = await lockExtras\(tx, m, b\);\s+const res = planAdminExtras\(existing, data\);/);
+  assert.match(read("src/server/actions/stock.ts"), /const existing = await lockExtras\(tx, m, sube, b\);\s+const res = planAdminExtras\(existing, data\);/);
   assert.doesNotMatch(read("src/server/actions/stock.ts"), /tx\.delete\(s\.stockExtras\)\.where\(eq\(s\.stockExtras\.month, m\)\)/, "ay toptan silinmez");
-  assert.match(read("src/app/panel/sayim/actions.ts"), /const existing = await lockExtras\(tx, m, b\);/);
+  assert.match(read("src/app/panel/sayim/actions.ts"), /const existing = await lockExtras\(tx, m, sube, b\);/);
   assert.doesNotMatch(read("src/server/actions/stock.ts"), /export async function lockExtras|export const EXTRAS/, "use server dosyasında yardımcı yok");
 });
 
@@ -107,6 +107,7 @@ test("taslak: doldurulmuş işaret, ek kalemler ve yazar; eski düz biçim okunu
     by: "Ayşe",
     base: null,
     extrasBase: null,
+    branch: null,
   });
   assert.deepEqual(parseCountDraft('{"12":"3,5","x":"1","14":5}'), { values: { "12": "3,5" }, prefilled: null, extras: null, by: null });
   assert.deepEqual(parseCountDraft("bozuk"), { values: {}, prefilled: null, extras: null, by: null });

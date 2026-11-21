@@ -161,6 +161,60 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     assert.deepEqual((await rows()).map((r) => r.id), [after[0].id]);
   });
 
+  test("ek kalemler şube başına: Marina'nın kaydı Tuzla'nın listesini görmez, ezmez, silmez (21 Kasım denetimi #19/#24)", async () => {
+    at("2026-10-31T19:00:00Z");
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    const { loadModel } = await import("../src/server/data/dataset");
+    const { loadUnpricedExtras } = await import("../src/server/data/count-alerts");
+    // beforeEach: Tuzla'nın Ekim listesinde Peçete 3 PAKET (12,5 ₺); şubesiz yazılan satır Tuzla'nın (migration 0059)
+    const list = async (branch: string) =>
+      (await db.select().from(s.stockExtras).where(and(eq(s.stockExtras.month, "2026-10"), eq(s.stockExtras.branchId, branch))))
+        .sort((a, b) => a.id - b.id)
+        .map((r) => [r.name, r.qty, r.unitPrice]);
+    const tuzla = [["Peçete", 3, 12.5]];
+    assert.deepEqual(await list("tuzla"), tuzla);
+    // Marina'nın formu boş listeyi görür (Tuzla'nın Peçete'si önerilmez)
+    const marinaSheet = (await loadModel({ scope: "marina" })).stockSheet("2026-10");
+    assert.deepEqual(marinaSheet.extras, []);
+    // Marina'ya kilitli personel kendi peçetesini yazar: Tuzla'nın satırı eşlenmez ("iki kez" de denmez), ezilmez
+    who.role = "staff";
+    const saved = await withBranchScope("marina", () =>
+      extras.saveStaffStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 2 }, { name: "Çöp torbası", unit: "KOLİ", qty: 1 }], extrasBase([])),
+    );
+    assert.ok(saved.ok, saved.ok ? "" : saved.error);
+    assert.deepEqual(saved.data.map((e) => [e.name, e.qty]), [["Peçete", 2], ["Çöp torbası", 1]], "dönen liste yalnız Marina'nınki");
+    assert.deepEqual(await list("tuzla"), tuzla, "Tuzla'nın 3 paketi yerinde");
+    assert.deepEqual(await list("marina"), [["Peçete", 2, 0], ["Çöp torbası", 1, 0]]);
+    // Ay satırı Marina'nın (şubesiz yazılsaydı Tuzla'ya ay açardı)
+    assert.equal((await db.select().from(s.months).where(and(eq(s.months.month, "2026-10"), eq(s.months.branchId, "marina")))).length, 1);
+    // Marina tanımadığı satırı silemez çünkü görmez; kendi fiyatsız satırını kaldırınca Tuzla'nınki kalır
+    const marinaNow = await withBranchScope("marina", async () => extrasBase((await loadModel({ scope: "marina" })).stockSheet("2026-10").extras));
+    assert.equal((await withBranchScope("marina", () => extras.saveStaffStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 2 }], marinaNow))).ok, true);
+    assert.deepEqual(await list("marina"), [["Peçete", 2, 0]]);
+    assert.deepEqual(await list("tuzla"), tuzla);
+    // Tuzla'nın imzası Marina'nın kaydıyla değişmez: Tuzla'nın eski formu yine kaydeder
+    who.role = "admin";
+    const tuzlaBase = extrasBase(await db.select().from(s.stockExtras).where(and(eq(s.stockExtras.month, "2026-10"), eq(s.stockExtras.branchId, "tuzla"))));
+    assert.equal((await stock.saveStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 4, unitPrice: 12.5 }], tuzlaBase)).ok, true);
+    assert.deepEqual(await list("tuzla"), [["Peçete", 4, 12.5]]);
+    assert.deepEqual(await list("marina"), [["Peçete", 2, 0]], "yöneticinin Tuzla kaydı Marina'nın aynı adlı kalemine dokunmaz");
+    // Fiyatsız ek kalem uyarısı işletme geneli ama şube başına satır: Marina'nın satırı adıyla, o şubenin sayımına
+    const unpriced = await loadUnpricedExtras(["2026-10"]);
+    assert.deepEqual(unpriced.map((u) => [u.month, u.branch, u.count, u.names]), [["2026-10", { id: "marina", name: "Marina" }, 1, ["Peçete"]]]);
+    // Yönetici Marina'nın listesine fiyat yazar (Marina seçili): yalnız Marina'nın satırı
+    const marinaBase = extrasBase(await db.select().from(s.stockExtras).where(and(eq(s.stockExtras.month, "2026-10"), eq(s.stockExtras.branchId, "marina"))));
+    assert.equal((await withBranchScope("marina", () => stock.saveStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 2, unitPrice: 12.5 }], marinaBase))).ok, true);
+    assert.deepEqual(await list("marina"), [["Peçete", 2, 12.5]]);
+    assert.deepEqual(await loadUnpricedExtras(["2026-10"]), []);
+    // "Tümü" iki şubenin kalemini toplar
+    const all = (await loadModel({ scope: "hepsi" })).stockSheet("2026-10");
+    assert.equal(all.extrasTotal, (4 + 2) * 12.5);
+    // Listeye ekle: aynı adlı ek kalem uyarısı sayılan şubenin listesine bakar
+    await db.insert(s.stockExtras).values({ month: "2026-10", branchId: "tuzla", name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 });
+    const added = await withBranchScope("marina", () => extras.addCountItem({ month: "2026-10", name: "Klips kapak", group: "SÜT", countUnit: "ADET", packageSize: 1 }));
+    assert.ok(added.ok && added.data.extraTwin === null, "Tuzla'nın ek kalemi Marina'nın sayımında ikiz değil");
+  });
+
   test("Listeye ekle: aynı adlı ek kalem varsa söylenir (stok iki kez sayılmasın)", async () => {
     at("2026-10-31T19:00:00Z");
     await db.insert(s.stockExtras).values({ month: "2026-10", name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 });
