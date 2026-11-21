@@ -70,7 +70,10 @@ sekmesinde şubeye ait listenin yanında şube rozeti görünür.
 - Soldaki şube seçicisinde **tek şube** seçiliyken Kontrol listeleri, Bugün, zil ve Geçmiş o şubenin ve bütün
   şubelerin listelerini gösterir; **Tümü**'nde hepsi görünür.
 - **Şubesi belirlenmiş personel** (Kullanıcılar › kişi › Şube, docs/SUBE.md › Personel hesabının şubesi) panelde hep
-  kendi şubesindedir: yalnız o şubenin ve bütün şubelerin listelerini görür ve doldurur.
+  kendi şubesindedir: yalnız o şubenin ve bütün şubelerin listelerini görür ve doldurur. Kural sunucuda da uygulanır
+  (`branchLockAllows`, 21 Kasım denetimi #10): başka şubenin listesi adresle (`/panel/kontrol/<id>`, eski yer imi ya
+  da paylaşılan bağlantı) açılmaz, Kontrol listelerine döner; yanıt ve fotoğraf yüklemesi "Bu liste başka şubenin"
+  der, fotoğrafı da görünmez (§ 4). Şubesiz liste herkese açık kalır; yöneticiye ve şubesiz personele kilit yok.
 - Sabah e-postası işletmenin tamamı içindir: bütün şubelerin eksik listeleri birlikte gelir.
 - Migration 0058 karaoke odası maddesi olan listeleri Tuzla'ya bağladı; diğer listeler bütün şubelerin kaldı.
 
@@ -130,7 +133,8 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
   kalır. Yeniden çekilen fotoğrafın eskisi hemen silinir.
 - **Kim görür:** yönetici hepsini; personel yalnız personelin doldurduğu listelerin son 7 gündeki (iş günü, bugün
   dahil) fotoğraflarını, liste personele açıldıktan sonraki günlerden (`photoAccess`; Geçmiş'le aynı pencere,
-  `STAFF_HISTORY_DAYS`). Gün 05:00'te döner: 23 Ekim 04:59'da 16 Ekim görünür, 05:00'te görünmez.
+  `STAFF_HISTORY_DAYS`). Gün 05:00'te döner: 23 Ekim 04:59'da 16 Ekim görünür, 05:00'te görünmez. Şubesine kilitli
+  personel başka şubenin listesinin fotoğrafını görmez (§ 1 › Şubeler).
   Fotoğraf panelin kendi adresinden, oturumla açılır (`/api/foto/[id]`); e-postaya ve zile fotoğraf adresi yazılmaz.
 - Fotoğraflar mekânın içindir: maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der (KVKK).
 - Fotoğraf deposu (Vercel Blob) bağlı değilse fotoğraflı maddeler yeni kayıtlara girmez; Listeler ekranı ve doldurma
@@ -203,6 +207,9 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 - Her uyarı bir kez: anahtar `kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}` gönderimden önce
   `notification_log`'a yazılır. Kimseye kesin olarak gidemezse anahtar silinir, sonraki saat yeniden dener.
 - Ayarlar'daki e-posta anahtarı kapalıysa ya da `RESEND_API_KEY` yoksa hiçbir şey gönderilmez.
+- **Kapalı işaretli gün** (Özel günler › Kafe kapalı; kapalı gün işletmenindir, bütün şubeler): o gün hiç açılmamış
+  listeler için e-posta gitmez; o gün açılmış (kaydı olan) liste yine hatırlatılır (`remindableLists`; zilin dünkü
+  listeler kuralı, 21 Kasım denetimi #25).
 - **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için saatlik çağrı GitHub Actions'tan gelir
   (`.github/workflows/kontrol-hatirlatma.yml`, `7 5-23 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
   `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. Elle denemek için Actions › Kontrol

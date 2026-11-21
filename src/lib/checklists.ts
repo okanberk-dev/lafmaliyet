@@ -153,6 +153,8 @@ export const PHOTO_PRIVACY_HINT = "Fotoğrafta müşteri ya da çalışan görü
 export const DAY_CLOSED_TEXT = "Bu günün listesi kapandı; geçmiş günler sonradan doldurulamaz.";
 /** Yanıtın maddesi kaydın anlık görüntüsünde yok ya da kayıt bekleneni tutmuyor (sayfa eski) */
 export const LIST_CHANGED_TEXT = "Liste değişti; sayfayı yenileyin.";
+/** Şubesine kilitli personel başka şubenin listesine yazmak istedi (branchLockAllows) */
+export const OTHER_BRANCH_TEXT = "Bu liste başka şubenin; yalnız kendi şubenizin listelerini doldurabilirsiniz.";
 
 const MIN_MS = 60_000;
 const DAY_MIN = 24 * 60;
@@ -593,6 +595,17 @@ export function staffSeesRun(t: { staffAllowed: boolean; staffSince: string | nu
   return t.staffAllowed && (!t.staffSince || runDate >= businessDate(new Date(t.staffSince)));
 }
 
+/**
+ * Şubesine kilitli personel bu listeyi açar, doldurur ve fotoğraflarını görür mü (docs/KONTROL-LISTELERI.md › Şubeler):
+ * listenin şubesi boşsa (bütün şubeler) ya da kişinin şubesiyse. `lock` boş (yönetici, şubesiz personel, şubesi pasife
+ * alınmış personel; src/server/branch-scope.ts staffBranchLock): hepsi. Listeleme yolları aynı kuralı SQL'de uygular
+ * (store.ts loadTemplates `branch`); bu kural adresle açılan liste, yanıt, fotoğraf yüklemesi ve fotoğrafın kendisi
+ * içindir (21 Kasım denetimi #10, #35).
+ */
+export function branchLockAllows(listBranch: string | null, lock: string | null | undefined): boolean {
+  return !lock || !listBranch || listBranch === lock;
+}
+
 /** "Personel doldurabilir" kapalıyken açılınca o an yazılır (yeni liste: `prev` false); öteki geçişler yazmaz */
 export function staffSinceChange(prev: boolean, next: boolean, now: Date): { staffSince?: Date } {
   return !prev && next ? { staffSince: now } : {};
@@ -635,18 +648,22 @@ export function historyRange(i: { role: "admin" | "staff"; today: string; first:
 /**
  * Kontrol fotoğrafını kim görür: yönetici hepsini; personel yalnız personelin doldurduğu bir listenin son 7 gündeki
  * (iş günü, bugün dahil) kaydındaki fotoğrafı, liste personele açıldıktan sonraki günlerden; bir yanıta bağlı olmayan
- * fotoğrafı yalnız yükleyen. Fotoğraf yolunun ilk adımları (süresi dolan hayır, yönetici evet, yükleyen bağlanmamışı
- * görür) src/lib/photo-rules.ts photoViewDecision'da.
+ * fotoğrafı yalnız yükleyen. Şubesine kilitli personel (`lock`) başka şubenin listesinin fotoğrafını görmez
+ * (branchLockAllows; Geçmiş'te de o listeleri görmez). Fotoğraf yolunun ilk adımları (süresi dolan hayır, yönetici
+ * evet, yükleyen bağlanmamışı görür) src/lib/photo-rules.ts photoViewDecision'da.
  */
 export function photoAccess(i: {
   role: "admin" | "staff";
   userId: number;
   createdBy: number | null;
-  run: { date: string; staffAllowed: boolean; staffSince?: string | null } | null;
+  run: { date: string; staffAllowed: boolean; staffSince?: string | null; branchId?: string | null } | null;
+  /** Şubesine kilitli personelin şubesi (staffBranchLock); boş: serbest */
+  lock?: string | null;
   now: Date;
 }): boolean {
   if (i.role === "admin") return true;
   if (!i.run) return i.createdBy !== null && i.createdBy === i.userId;
+  if (!branchLockAllows(i.run.branchId ?? null, i.lock)) return false;
   return i.run.date >= staffHistoryFloor(businessDate(i.now)) && staffSeesRun({ staffAllowed: i.run.staffAllowed, staffSince: i.run.staffSince ?? null }, i.run.date);
 }
 

@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALERT_POLL_GAP_MS, alertPollDue, alertReaches, checklistAlerts, LATE_ALERT_MIN, type AlertList } from "../src/lib/checklist-alerts";
+import { ALERT_POLL_GAP_MS, alertPollDue, alertReaches, checklistAlerts, LATE_ALERT_MIN, remindableLists, type AlertList } from "../src/lib/checklist-alerts";
 import { DEFAULT_CHECKLISTS, TUZLA_HOURLY_CHECKLISTS } from "../src/lib/checklist-seed";
 import type { ChecklistItemSnap } from "../src/lib/checklists";
 import { renderChecklistAlert } from "../src/server/notify/checklist-alert-template";
@@ -37,6 +37,8 @@ function listOf(seed: (typeof DEFAULT_CHECKLISTS)[number], id: number, answered:
     dueAt: seed.dueAt,
     items,
     answers: answered.map((itemId) => ({ itemId, photoAt: items[itemId - 1].type === "photo" ? "2026-11-18T07:00:00Z" : null })),
+    // Kayıt ilk yanıtla açılır
+    hasRun: answered.length > 0,
   };
 }
 
@@ -114,6 +116,26 @@ test("düz liste: aralık açılınca 'zamanı geldi', son saat geçince 'gecikt
     checklistAlerts(DAY, tr("2026-11-19T02:07"), [kapanis]).map((a) => [a.kind, a.until]),
     [["late", "02:00"]],
   );
+});
+
+test("kapalı işaretli gün (denetim #25): hiç açılmamış listeye hatırlatma yok; açılmış liste yine hatırlatılır", () => {
+  const acilis = listOf(DEFAULT_CHECKLISTS[0], 1);
+  const started = toilet([1]);
+  // Açık gün: ikisi de hatırlatılır
+  assert.deepEqual(remindableLists([acilis, started], false), [acilis, started]);
+  // Kafe kapalı: yalnız açılmış (kaydı olan) liste; zilin dünkü listeler kuralı (`!closed || l.run`)
+  assert.deepEqual(remindableLists([acilis, started], true), [started]);
+  assert.deepEqual(checklistAlerts(DAY, tr(`${DAY}T11:07`), remindableLists([acilis, toilet()], true)), []);
+  const kept = checklistAlerts(DAY, tr(`${DAY}T11:07`), remindableLists([acilis, started], true));
+  assert.ok(kept.length > 0 && kept.every((a) => a.templateId === 5));
+  // Kaydı açılıp yanıtı geri alınmış liste de açılmış sayılır
+  assert.equal(remindableLists([{ ...acilis, hasRun: true }], true).length, 1);
+  // İş kapalı günü okur ve listeleri süzgeçten geçirir
+  const run = read("src/server/notify/checklist-alerts.ts");
+  assert.match(run, /import \{ isClosedDay \} from "@\/server\/closed-days";/);
+  assert.match(run, /isClosedDay\(day, db\)/);
+  assert.match(run, /checklistAlerts\(day, now, remindableLists\(all, closed\)\)/);
+  assert.match(read("src/server/checklists/store.ts"), /hasRun: Boolean\(run\),/);
 });
 
 test("kime gider: şubeli listede o şubenin ve şubesiz personel; şubesiz listede herkes", () => {

@@ -5,9 +5,10 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { alertPollDue, alertReaches, checklistAlerts, type ChecklistAlert } from "@/lib/checklist-alerts";
+import { alertPollDue, alertReaches, checklistAlerts, remindableLists, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { checklistDay } from "@/lib/checklists";
 import { loadAlertLists } from "@/server/checklists/store";
+import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { photoStorage } from "@/server/storage/photos";
 
@@ -31,7 +32,8 @@ export interface ChecklistAlertRun {
  * sahiplenilir (aynı anda iki çalışma aynı uyarıyı iki kez göndermesin). Her personele kendi adresine tek e-posta
  * gider (adresler birbirine görünmez); ona giden bütün uyarılar bir arada. Bir uyarı hiç kimseye kesin olarak
  * gidemediyse sahiplenme geri alınır, sonraki çalışma yeniden dener. E-posta Ayarlar'dan kapalıysa ya da Resend kurulu
- * değilse hiçbir şey yazılmaz.
+ * değilse hiçbir şey yazılmaz. Gün kapalı işaretliyse (Özel günler › Kafe kapalı) yalnız o gün açılmış listeler
+ * hatırlatılır (remindableLists).
  */
 export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: number = Date.now() + 45_000): Promise<ChecklistAlertRun> {
   if (!isEmailConfigured()) return { skipped: "RESEND_API_KEY tanımlı değil", alerts: [], sent: 0, failed: 0 };
@@ -39,9 +41,9 @@ export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: num
   if (!settings.emailEnabled) return { skipped: "e-posta hatırlatmaları kapalı", alerts: [], sent: 0, failed: 0 };
   const db = getDb();
   const day = checklistDay(now);
-  const lists = await loadAlertLists(db, day, { today: businessDate(now), photos: photoStorage().available });
-  const due = checklistAlerts(day, now, lists);
-  if (!due.length) return { skipped: "gönderilecek hatırlatma yok", alerts: [], sent: 0, failed: 0 };
+  const [all, closed] = await Promise.all([loadAlertLists(db, day, { today: businessDate(now), photos: photoStorage().available }), isClosedDay(day, db)]);
+  const due = checklistAlerts(day, now, remindableLists(all, closed));
+  if (!due.length) return { skipped: closed ? "gönderilecek hatırlatma yok (kafe kapalı işaretli)" : "gönderilecek hatırlatma yok", alerts: [], sent: 0, failed: 0 };
 
   const log = s.notificationLog;
   const claimed = new Set(

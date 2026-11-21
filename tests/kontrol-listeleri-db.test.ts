@@ -3,8 +3,8 @@
 // sürümlere geçer, sorunlu yanıt geri alınmaz, tamamlanma bir kez yazılır ve eksilince geri alınır, fotoğraf yükleyenin
 // bağlanmamış fotoğrafıysa aynı işlemde bağlanır (yeniden çekilenin eskisi döner), personel yönetici listesine yazamaz,
 // pasif liste ve geçmiş gün kapalı (açılmış kayıt 05:30'a kadar), şablon değişse de başlamış kayıt aynı kalır; günün
-// listeleri, doldurma ekranı, geçmiş ve fotoğrafın kaydı. Kendi kullanıcılarını, listesini ve fotoğraflarını açar,
-// sonunda siler.
+// listeleri, doldurma ekranı, geçmiş ve fotoğrafın kaydı; şubeye kilitli personel başka şubenin listesine yazamaz;
+// e-posta hatırlatmasının listeleri. Kendi kullanıcılarını, listesini ve fotoğraflarını açar, sonunda siler.
 //
 // KONTROL_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
 // Çalıştırma: KONTROL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/laffogato_kontrol npx tsx --test tests/kontrol-listeleri-db.test.ts
@@ -15,11 +15,12 @@ import { after, before, describe, test } from "node:test";
 
 import { eq, inArray } from "drizzle-orm";
 
-import { DAY_CLOSED_TEXT } from "../src/lib/checklists";
+import { DAY_CLOSED_TEXT, OTHER_BRANCH_TEXT } from "../src/lib/checklists";
 import {
   ChecklistError,
   checkPhotoTarget,
   firstChecklistDay,
+  loadAlertLists,
   loadChecklistDay,
   loadChecklistDays,
   loadHistory,
@@ -182,7 +183,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     const noted = await write("staff", { op: "note", itemId: item.photo, note: "sağ köşe ıslak" });
     assert.equal(noted.answer?.note, "sağ köşe ıslak");
     assert.equal(noted.answer?.photoId, second);
-    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true, staffSince: null });
+    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true, staffSince: null, branchId: null });
     assert.equal(await photoRun(db, foreign), null);
     // Tamam geri alınınca liste eksilir, yeniden işaretlenince tamamlanır
     const undo = await write("staff", { op: "clear", itemId: item.check });
@@ -282,6 +283,13 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     await db.update(s.checklistTemplates).set({ staffAllowed: false, staffSince: null }).where(eq(s.checklistTemplates.id, adminOnly));
   });
 
+  test("e-posta hatırlatmasının listeleri kaydın olup olmadığını taşır (kapalı işaretli günde yalnız açılmış liste, denetim #25)", async () => {
+    const opened = (await loadAlertLists(db, DAY, { today: DAY, photos: true })).find((l) => l.templateId === tid);
+    assert.equal(opened?.hasRun, true);
+    const next = (await loadAlertLists(db, "2026-10-23", { today: "2026-10-23", photos: true })).find((l) => l.templateId === tid);
+    assert.equal(next?.hasRun, false);
+  });
+
   test("şube (docs/KONTROL-LISTELERI.md › Şubeler): tek şube seçiliyken o şubenin ve şubesiz listeler; Tümü'nde hepsi", async () => {
     const ctx = { today: DAY, photos: true };
     // Migration'lar Marina'yı yazmaz (tohum yazar): boş test veritabanında da şube kütükte olsun
@@ -299,6 +307,28 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
       assert.ok(all.includes(tid) && all.includes(adminOnly));
       const history = await loadHistory(db, DAY, DAY, "admin", { ...ctx, branch: "tuzla" });
       assert.ok(!history[0].lists.some((l) => l.template.id === tid));
+
+      // Şube kilidi (denetim #10 = #35): Tuzla'ya kilitli personel Marina'nın listesine adresle de yazamaz, fotoğraf
+      // yükleyemez; Marina'ya kilitli ve kilitsiz personel yazar; yöneticiye kilit uygulanmaz
+      const other = new RegExp(OTHER_BRANCH_TEXT.slice(0, 20));
+      const target = { templateId: tid, date: DAY, itemId: item.photo };
+      await refused(writeAnswer(db, { ...users.staff, lock: "tuzla" }, { templateId: tid, date: DAY, itemId: item.check, op: "ok" }, NOW, deps), other);
+      await refused(checkPhotoTarget(db, { ...users.staff, lock: "tuzla" }, target, NOW, true), other);
+      const mine = await writeAnswer(db, { ...users.staff, lock: "marina" }, { templateId: tid, date: DAY, itemId: item.text, op: "text", text: "Marina" }, NOW, deps);
+      assert.equal(mine.answer?.textValue, "Marina");
+      await checkPhotoTarget(db, { ...users.staff, lock: "marina" }, target, NOW, true);
+      await checkPhotoTarget(db, { ...users.staff, lock: null }, target, NOW, true);
+      await checkPhotoTarget(db, { ...users.admin, lock: "tuzla" }, target, NOW, true);
+      // Fotoğrafın kaydı listenin şubesini verir (fotoğraf yolu kilitli personele başka şubenin fotoğrafını göstermez)
+      const [answered] = await db
+        .select({ photoId: s.checklistAnswers.photoId })
+        .from(s.checklistAnswers)
+        .where(eq(s.checklistAnswers.itemId, item.photo));
+      assert.ok(answered?.photoId);
+      assert.equal((await photoRun(db, answered.photoId))?.branchId, "marina");
+      // Şubesiz (bütün şubelerin) listeye kilitli personel de yazar
+      await db.update(s.checklistTemplates).set({ branchId: null }).where(eq(s.checklistTemplates.id, tid));
+      await checkPhotoTarget(db, { ...users.staff, lock: "tuzla" }, target, NOW, true);
     } finally {
       await db.update(s.checklistTemplates).set({ branchId: null }).where(eq(s.checklistTemplates.id, tid));
     }

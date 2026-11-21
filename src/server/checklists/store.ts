@@ -11,12 +11,14 @@ import { businessDate } from "@/lib/cash-report";
 import {
   absentReason,
   appliesOn,
+  branchLockAllows,
   canAnswerDay,
   staffSeesRun,
   DAY_CLOSED_TEXT,
   inRange,
   LIST_CHANGED_TEXT,
   opensMinute,
+  OTHER_BRANCH_TEXT,
   rangeText,
   runSummary,
   sameAnswer,
@@ -261,7 +263,8 @@ export async function loadChecklistDays(db: Db, days: string[], role: "admin" | 
 
 /**
  * Personele e-posta hatırlatmasının listeleri (saatlik iş, src/server/notify/checklist-alerts.ts): bir günün etkin ve
- * personelin doldurabildiği, o gün beklenen ya da kaydı olan listeleri; kaydın (yoksa şablonun) maddeleri ve yanıtlar.
+ * personelin doldurabildiği, o gün beklenen ya da kaydı olan listeleri; kaydın (yoksa şablonun) maddeleri, yanıtlar ve
+ * kaydın olup olmadığı (kapalı işaretli günde yalnız açılmış liste hatırlatılır).
  */
 export async function loadAlertLists(db: Db, day: string, ctx: DayCtx): Promise<AlertList[]> {
   const templates = (await loadTemplates(db)).filter((t) => t.active && t.staffAllowed);
@@ -284,6 +287,7 @@ export async function loadAlertLists(db: Db, day: string, ctx: DayCtx): Promise<
         dueAt: run?.dueAt ?? t.dueAt,
         items: run ? run.items : currentItems(t, ctx.photos),
         answers: run ? answers.filter((a) => a.runId === run.id).map((a) => ({ itemId: a.itemId, photoAt: a.photoAt?.toISOString() ?? null })) : [],
+        hasRun: Boolean(run),
       },
     ];
   });
@@ -447,16 +451,21 @@ interface Me {
   id: number;
   name: string;
   role: "admin" | "staff";
+  /**
+   * Şubesine kilitli personelin şubesi (src/server/branch-scope.ts staffBranchLock; sarmalayıcı
+   * src/server/data/checklists.ts her yazımda verir): başka şubenin listesine yazamaz. Boş: serbest
+   */
+  lock?: string | null;
 }
 
 type NextAnswer = AnswerContent & { photoAt: Date | null };
 
 /**
- * Bir yanıtı yazar (sunucu eylemi ve fotoğraf yolu ortak): yetki (liste etkin, personelse "Personel doldurabilir"),
- * gün kuralı (yalnız bugün; açılmış kayıt 05:30'a kadar), günün kaydını ilk yanıtta açma (anlık görüntü), yanıtı yazma
- * (öncekinin hâli sürümlere), tamamlanma. Fotoğraf: yükleyenin, bağlanmamış "kontrol" fotoğrafı olmalı; aynı işlemde
- * 60 gün saklanmak üzere bağlanır. Sorunlu (aralık dışı ya da "Sorun var") yanıt geri alınamaz: kayıt silinmesin,
- * değeri değiştirilir.
+ * Bir yanıtı yazar (sunucu eylemi ve fotoğraf yolu ortak): yetki (liste etkin, personelse "Personel doldurabilir" ve
+ * şubesine kilitliyse kendi şubesinin ya da bütün şubelerin listesi), gün kuralı (yalnız bugün; açılmış kayıt 05:30'a
+ * kadar), günün kaydını ilk yanıtta açma (anlık görüntü), yanıtı yazma (öncekinin hâli sürümlere), tamamlanma.
+ * Fotoğraf: yükleyenin, bağlanmamış "kontrol" fotoğrafı olmalı; aynı işlemde 60 gün saklanmak üzere bağlanır. Sorunlu
+ * (aralık dışı ya da "Sorun var") yanıt geri alınamaz: kayıt silinmesin, değeri değiştirilir.
  */
 export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date, deps: WriteDeps): Promise<WriteResult> {
   return db.transaction(async (tx) => {
@@ -470,6 +479,7 @@ export async function writeAnswer(db: DB, me: Me, input: AnswerInput, now: Date,
     if (!tpl) throw new ChecklistError("Liste bulunamadı.", 404);
     if (!tpl.active) throw new ChecklistError("Bu liste kapalı.", 409);
     if (me.role !== "admin" && !tpl.staffAllowed) throw new ChecklistError("Bu listeyi yalnız yönetici doldurur.", 403);
+    if (me.role !== "admin" && !branchLockAllows(tpl.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
     if (input.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
 
     let [run] = await tx.select().from(s.checklistRuns).where(runWhere(tpl.id, input.date)).for("update").limit(1);
@@ -614,6 +624,7 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   if (!t) throw new ChecklistError("Liste bulunamadı.", 404);
   if (!t.active) throw new ChecklistError("Bu liste kapalı.", 409);
   if (me.role !== "admin" && !t.staffAllowed) throw new ChecklistError("Bu listeyi yalnız yönetici doldurur.", 403);
+  if (me.role !== "admin" && !branchLockAllows(t.branchId, me.lock)) throw new ChecklistError(OTHER_BRANCH_TEXT, 403);
   if (target.date > businessDate(now)) throw new ChecklistError("Bu gün için liste doldurulamaz.", 400);
   if (!photos) throw new ChecklistError("Fotoğraf deposu bu ortamda kurulu değil.", 503);
   const [run] = await db.select({ items: s.checklistRuns.items }).from(s.checklistRuns).where(runWhere(t.id, target.date)).limit(1);
@@ -626,16 +637,21 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
 }
 
 /**
- * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı ve açıldığı an (fotoğrafı kim görür);
- * bağlı değilse null
+ * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı, açıldığı an ve listenin şubesi (fotoğrafı
+ * kim görür); bağlı değilse null
  */
-export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null } | null> {
+export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null; branchId: string | null } | null> {
   const [row] = await db
-    .select({ date: s.checklistRuns.date, staffAllowed: s.checklistTemplates.staffAllowed, staffSince: s.checklistTemplates.staffSince })
+    .select({
+      date: s.checklistRuns.date,
+      staffAllowed: s.checklistTemplates.staffAllowed,
+      staffSince: s.checklistTemplates.staffSince,
+      branchId: s.checklistTemplates.branchId,
+    })
     .from(s.checklistAnswers)
     .innerJoin(s.checklistRuns, eq(s.checklistRuns.id, s.checklistAnswers.runId))
     .innerJoin(s.checklistTemplates, eq(s.checklistTemplates.id, s.checklistRuns.templateId))
     .where(eq(s.checklistAnswers.photoId, photoId))
     .limit(1);
-  return row ? { date: row.date, staffAllowed: row.staffAllowed, staffSince: row.staffSince?.toISOString() ?? null } : null;
+  return row ? { date: row.date, staffAllowed: row.staffAllowed, staffSince: row.staffSince?.toISOString() ?? null, branchId: row.branchId } : null;
 }

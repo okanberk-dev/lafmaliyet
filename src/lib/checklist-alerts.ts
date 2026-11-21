@@ -43,6 +43,8 @@ export interface AlertList {
   dueAt: string;
   items: ChecklistItemSnap[];
   answers: Pick<AnswerLite, "itemId" | "photoAt">[];
+  /** O gün kaydı var mı (liste açıldı; kapalı işaretli günde yalnız bunlar hatırlatılır, remindableLists) */
+  hasRun: boolean;
 }
 
 export interface ChecklistAlert {
@@ -109,6 +111,15 @@ export function alertSubject(alerts: Pick<ChecklistAlert, "kind" | "listName" | 
   const first = alerts[0];
   if (!first) return "Kontrol listeleri";
   return `${alertTitle(first, listTitle)}${alerts.length > 1 ? ` (+${alerts.length - 1})` : ""}`;
+}
+
+/**
+ * Kapalı işaretli gün (Özel günler › Kafe kapalı; kapalı gün işletmenindir, docs/SUBE.md): o gün hiç açılmamış listeler
+ * için hatırlatma gitmez, açılmış (kaydı olan) liste yine hatırlatılır. Zilin ve Bugün'ün dünkü listeler kuralının
+ * aynısı (src/server/actions/notifications.ts `!closedYesterday || l.run`; 21 Kasım denetimi #25).
+ */
+export function remindableLists<T extends Pick<AlertList, "hasRun">>(lists: T[], closed: boolean): T[] {
+  return closed ? lists.filter((l) => l.hasRun) : lists;
 }
 
 /**

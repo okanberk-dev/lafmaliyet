@@ -9,7 +9,7 @@ import { KEEP_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import * as store from "@/server/checklists/store";
 import { isClosedDay } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
@@ -59,6 +59,7 @@ export async function loadChecklistDays(days: string[], role: "admin" | "staff",
   return store.loadChecklistDays(getDb(), days, role, await listCtxOf(now));
 }
 
+/** Doldurma ekranı; şube kilidini sayfa uygular (src/app/panel/kontrol/[id]/page.tsx, branchLockAllows) */
 export function loadRunView(templateId: number, day: string, now: Date = new Date()) {
   return store.loadRunView(getDb(), templateId, day, ctxOf(now));
 }
@@ -72,14 +73,20 @@ export function firstChecklistDay() {
   return store.firstChecklistDay(getDb());
 }
 
-/** Yanıtı yazar (eylem ve fotoğraf yolu); fotoğraf aynı işlemde 60 gün saklanmak üzere bağlanır */
-export function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
-  return store.writeAnswer(getDb(), me, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
+/**
+ * Yanıtı yazar (eylem ve fotoğraf yolu); fotoğraf aynı işlemde 60 gün saklanmak üzere bağlanır. Şubesine kilitli
+ * personel yalnız kendi şubesinin ve bütün şubelerin listelerine yazar (docs/KONTROL-LISTELERI.md › Şubeler): listeleme
+ * süzer, adresle açılan başka şubenin listesini de burası reddeder.
+ */
+export async function writeChecklistAnswer(me: CurrentUser, input: store.AnswerInput, now: Date) {
+  const lock = await staffBranchLock();
+  return store.writeAnswer(getDb(), { ...me, lock }, input, now, { photos: photoStorage().available, linkPhoto: (id, until, tx) => keepPhoto(id, until, tx) });
 }
 
-/** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError) */
-export function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
-  return store.checkPhotoTarget(getDb(), me, target, now, photoStorage().available);
+/** Fotoğraf yüklemeden önce hedef madde fotoğraf alır mı (almazsa ChecklistError); şube kilidi yazımdaki gibi */
+export async function checkPhotoTarget(me: CurrentUser, target: { templateId: number; date: string; itemId: number }, now: Date) {
+  const lock = await staffBranchLock();
+  return store.checkPhotoTarget(getDb(), { ...me, lock }, target, now, photoStorage().available);
 }
 
 /**
@@ -111,13 +118,14 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
 /**
  * Kontrol fotoğrafını personel görür mü (yönetici ve bağlanmamış fotoğrafın yükleyeni buraya gelmez,
  * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin son 7 gündeki kaydındaki fotoğraf, liste
- * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS).
+ * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS); şubesine kilitli
+ * personelde yalnız kendi şubesinin ve bütün şubelerin listelerinden.
  */
 export const kontrolPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.kontrol,
   async canView(me, photo) {
-    const run = await store.photoRun(getDb(), photo.id);
-    return photoAccess({ role: me.role, userId: me.id, createdBy: photo.createdBy, run, now: new Date() });
+    const [run, lock] = await Promise.all([store.photoRun(getDb(), photo.id), staffBranchLock()]);
+    return photoAccess({ role: me.role, userId: me.id, createdBy: photo.createdBy, run, lock, now: new Date() });
   },
 };
 
