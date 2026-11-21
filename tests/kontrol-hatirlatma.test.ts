@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { alertReaches, checklistAlerts, LATE_ALERT_MIN, type AlertList } from "../src/lib/checklist-alerts";
+import { ALERT_POLL_GAP_MS, alertPollDue, alertReaches, checklistAlerts, LATE_ALERT_MIN, type AlertList } from "../src/lib/checklist-alerts";
 import { DEFAULT_CHECKLISTS, TUZLA_HOURLY_CHECKLISTS } from "../src/lib/checklist-seed";
 import type { ChecklistItemSnap } from "../src/lib/checklists";
 import { renderChecklistAlert } from "../src/server/notify/checklist-alert-template";
@@ -152,4 +152,26 @@ test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () =
   assert.match(run, /emailEnabled/);
   // Gönderimden önce sahiplenme (aynı uyarı iki kez gitmez)
   assert.ok(run.indexOf("onConflictDoNothing") < run.indexOf("sendEmail("));
+});
+
+test("canlı yoklama tetiklemesi: sunucu örneği başına en çok 5 dakikada bir; saat geri giderse yeniden", () => {
+  assert.equal(ALERT_POLL_GAP_MS, 5 * 60_000);
+  const t = Date.parse("2026-11-20T10:00:00Z");
+  assert.equal(alertPollDue(t, 0), true);
+  assert.equal(alertPollDue(t + 4 * 60_000, t), false);
+  assert.equal(alertPollDue(t + 5 * 60_000, t), true);
+  assert.equal(alertPollDue(t - 60_000, t), true);
+});
+
+test("kaynak: /api/canli hatırlatma işini yanıttan sonra, 304'ten önce, girişli istekte tetikler", () => {
+  const route = read("src/app/api/canli/route.ts");
+  const auth = route.indexOf('status: 401');
+  const claim = route.indexOf("claimChecklistAlertPoll()");
+  const notModified = route.indexOf("status: 304");
+  assert.ok(auth > 0 && claim > auth, "girişsiz istek tetiklemez");
+  assert.ok(notModified > claim, "değişiklik yoksa (304) da tetikler");
+  // after() içinde: yanıt beklemez; hata yanıtı bozmaz
+  assert.match(route.slice(claim, notModified), /after\(async \(\) => \{\s*try \{\s*const r = await runChecklistAlerts\(/);
+  const run = read("src/server/notify/checklist-alerts.ts");
+  assert.match(run, /export function claimChecklistAlertPoll[\s\S]*isEmailConfigured\(\)[\s\S]*alertPollDue\(/);
 });

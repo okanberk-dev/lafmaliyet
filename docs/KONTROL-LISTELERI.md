@@ -22,8 +22,14 @@ Marina'da karaoke yok; karaoke maddeleri yerine teras, çikolata şelalesi ve po
 
 | Liste | Saat | Maddeler |
 |-------|------|----------|
-| **Marina Açılış** | 08:00 – 11:00 | 32 madde: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
-| **Marina Kapanış** | 22:00 – 02:00 | 18 madde: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
+| **Marina Açılış** | 08:00 – 11:00 | 35 madde, 3 fotoğraflı: bar ve vitrin (espresso ve değirmen, ışıklar ve menü ekranları, POS ve kasa sayımı, fırın, çikolata şelalesi, portakal suyu makinesi, test kahvesi, pastalar ve tarihleri, buzdolabı 0–4 °C, dondurucu −30 – −18 °C, içecek dolapları, bar tezgâhı); salon (camlar, uzun masa, kapı camları, süpür, paspas, çöp); teras (süpür, paspas, masalar, sandalye ve minderler, ipler, kül tablaları, camlar; ısıtıcılar isteğe bağlı: hava soğuksa); kafe önü ve yangın dolabının önü; gıda güvenliği (aşağıda) |
+| **Marina Kapanış** | 22:00 – 02:00 | 21 madde, 3 fotoğraflı: bar (çikolata şelalesi, portakal suyu makinesi, backflush, steam wand, değirmenin altı, lavabo ve tezgâh, kalan pastalar (kısa not: yarına kalan ya da fire), açık sütler); teras (masalar, minderler, kül tablaları); salon (paspas, çöp); kapanış (gün sonu raporu ve kasa, ısıtıcılar, klima ve ışıklar, teras ve kapı kilidi, alarm) |
+
+**Marina'nın fotoğrafları** (sahibin isteği, 20 Kasım 2026: "Tuzla gibi"; `MARINA_OPEN_PHOTOS`, `MARINA_CLOSE_PHOTOS`):
+her bölümün sonunda o bölümün fotoğrafı. Açılışta **Bar ve vitrin hazır**, **Salon hazır**, **Teras hazır**; kapanışta
+**Bar ve tezgâh temiz**, **Teras kapanış hâli**, **Salon kapanış hâli**. Var olan veritabanında `db:seed` bunları
+"Marina Açılış" ve "Marina Kapanış" adlı listelere, kendi bölümlerinin sonuna bir kez ekler (anahtar
+`kontrol.marina.foto.seeded`; aynı adda madde varsa atlar).
 
 **Gıda güvenliği** (sahibin isteği, 17 Kasım 2026; FIFO 18 Kasım; `FOOD_SAFETY_ITEMS`): iki şubenin açılış listesinin
 sonunda (Tuzla'da "Not"tan önce) dört tamam işareti: **SKT'ler kontrol edildi; tarihi geçen ürün ayrıldı**, **İkinci raf
@@ -170,8 +176,17 @@ e-postayı tek başına gönderir; konu parçası "dünkü kapanış listesi eks
 başarılı gönderimden sonra `notification_log`'a yazılır. Önizleme yazmaz.
 
 **Personele e-posta hatırlatması** (17 Kasım 2026; `src/lib/checklist-alerts.ts`,
-`src/server/notify/checklist-alerts.ts`): saat başını 7 geçe (Türkiye 08:07 – 02:07) `/api/cron/kontrol` bugünün
-listelerine bakar ve personele e-posta gönderir:
+`src/server/notify/checklist-alerts.ts`): iş bugünün listelerine bakar ve personele e-posta gönderir. İki tetikleyici
+(20 Kasım 2026):
+
+- **Açık panel sekmesi** (asıl): canlı yoklama (`/api/canli`) yanıttan sonra, sunucu örneği başına en çok **5 dakikada
+  bir** işi çalıştırır (`ALERT_POLL_GAP_MS`). Kafede bir tablet ya da telefon panelde açık olduğu sürece "zamanı geldi"
+  saatin bölümü açılınca (10:00'ınki 09:50'de), "gecikti" sıradaki saat gelince birkaç dakika içinde gider.
+- **GitHub Actions** (yedek): saat başını 7 geçe (Türkiye 08:07 – 02:07) `/api/cron/kontrol`. GitHub zamanlanmış
+  işleri yoğunlukta saatlerce geciktirip düşürebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma); bu yüzden
+  yalnız yedektir.
+
+Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 
 | Liste | Zamanı geldi | Gecikti |
 |-------|--------------|---------|
@@ -188,10 +203,10 @@ listelerine bakar ve personele e-posta gönderir:
 - Her uyarı bir kez: anahtar `kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}` gönderimden önce
   `notification_log`'a yazılır. Kimseye kesin olarak gidemezse anahtar silinir, sonraki saat yeniden dener.
 - Ayarlar'daki e-posta anahtarı kapalıysa ya da `RESEND_API_KEY` yoksa hiçbir şey gönderilmez.
-- **Tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için saatlik çağrı GitHub Actions'tan gelir
+- **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için saatlik çağrı GitHub Actions'tan gelir
   (`.github/workflows/kontrol-hatirlatma.yml`, `7 5-23 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
-  `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. GitHub zamanlanmış işleri yoğunlukta
-  birkaç dakika geç başlatabilir. Elle denemek için Actions › Kontrol listesi hatırlatmaları › Run workflow.
+  `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. Elle denemek için Actions › Kontrol
+  listesi hatırlatmaları › Run workflow.
 
 **İşlem geçmişi:** liste tamamlandı, aralık dışı değer, sorun bildirildi, ölçüm değişti; listelerin ve maddelerin
 eklenmesi, düzenlenmesi, kaldırılması. Düz "Tamam" işaretleri ve fotoğraflar yazılmaz (yanıtın kendisi kimin ne zaman

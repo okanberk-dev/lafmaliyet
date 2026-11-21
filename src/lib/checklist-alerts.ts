@@ -1,7 +1,7 @@
 /**
- * Kontrol listelerinin personele giden e-posta hatırlatmaları (saf; saat argümandır). Saatlik iş
- * (/api/cron/kontrol, GitHub Actions saat başını 5 geçe tetikler) her çalışmada bugünün listelerine bakar ve henüz
- * gönderilmemiş olanları üretir:
+ * Kontrol listelerinin personele giden e-posta hatırlatmaları (saf; saat argümandır). İş açık bir panel sekmesinin canlı
+ * yoklamasıyla (/api/canli, en çok 5 dakikada bir) ve yedek olarak saatlik uçla (/api/cron/kontrol, GitHub Actions saat
+ * başını 7 geçe) tetiklenir; her çalışmada bugünün listelerine bakar ve henüz gönderilmemiş olanları üretir:
  *
  * - **Saatlik bölümlü liste** (Tuvalet çizelgesi; bölüm adı saat, lib/checklists.ts sectionSlot): her saat için
  *   "zamanı geldi" (bölüm açıldı, zorunlu maddesi eksik) ve "gecikti" (sıradaki saat geldi, hâlâ eksik).
@@ -21,6 +21,17 @@ export const LATE_ALERT_MIN = 120;
 export const ALERT_MISSING_MAX = 6;
 /** notification_log anahtarının öneki (sabah e-postasının `kontrol:<gün>` anahtarından ayrı) */
 export const ALERT_KEY_PREFIX = "kontrol-eposta";
+/**
+ * Açık panel sekmesinin canlı yoklaması (/api/canli) hatırlatma işini en çok bu sıklıkla tetikler (sunucu örneği
+ * başına). GitHub'ın saatlik zamanlanmış işi yoğunlukta saatlerce gecikip düşebildiği için (17–20 Kasım 2026: 3 günde
+ * 57 yerine 11 çalışma) asıl tetikleyici budur; GitHub işi kimse bakmazken yedektir.
+ */
+export const ALERT_POLL_GAP_MS = 5 * 60_000;
+
+/** Canlı yoklama hatırlatma işini şimdi tetiklemeli mi (son tetiklemeden ALERT_POLL_GAP_MS geçti; saat geri gittiyse de) */
+export function alertPollDue(nowMs: number, lastMs: number): boolean {
+  return nowMs - lastMs >= ALERT_POLL_GAP_MS || nowMs < lastMs;
+}
 
 /** Bugünün bir listesi: kaydın (yoksa şablonun) maddeleri ve yanıtlar */
 export interface AlertList {

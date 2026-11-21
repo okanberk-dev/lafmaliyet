@@ -1,6 +1,8 @@
-# Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6): saat başını 7 geçe panelin /api/cron/kontrol
-# adresini çağırır; panel personele "zamanı geldi" ve "gecikti" e-postalarını gönderir (Tuvalet çizelgesinin her saati,
-# açılış ve kapanış listeleri). Vercel Hobby'de cron günde yalnız bir kez çalıştığı için saatlik tetikleyici burada.
+# Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6), YEDEK tetikleyici: saat başını 7 geçe panelin
+# /api/cron/kontrol adresini çağırır; panel personele "zamanı geldi" ve "gecikti" e-postalarını gönderir. Asıl
+# tetikleyici açık panel sekmesinin canlı yoklamasıdır (/api/canli, en çok 5 dakikada bir): GitHub zamanlanmış işleri
+# yoğunlukta saatlerce gecikip düşebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma). Bu iş kimse panele
+# bakmazken gecikmeleri yakalar. Vercel Hobby'de cron günde yalnız bir kez çalışır.
 # Saatler UTC: 05:07–23:07 = Türkiye 08:07–02:07. GitHub zamanlanmış işleri birkaç dakika (yoğunlukta 15–20 dk) geç
 # başlatabilir; panel durumu her çalışmada yeniden hesapladığı için geç çalışma yanlış e-posta göndermez.
 # Gerekenler: depo sırrı CRON_SECRET (Vercel'deki CRON_SECRET'ın aynısı; GitHub › Settings › Secrets and variables ›

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { alertReaches, checklistAlerts, type ChecklistAlert } from "@/lib/checklist-alerts";
+import { alertPollDue, alertReaches, checklistAlerts, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { checklistDay } from "@/lib/checklists";
 import { loadAlertLists } from "@/server/checklists/store";
 import { getDb, schema as s } from "@/server/db";
@@ -99,4 +99,18 @@ export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: num
       .where(eq(log.key, a.key));
   }
   return { alerts: alerts.map((a) => a.key), sent, failed };
+}
+
+/** Bu sunucu örneğinde canlı yoklamanın hatırlatma işini son tetiklediği an (ms) */
+let lastPollRun = 0;
+
+/**
+ * Canlı yoklama (/api/canli) hatırlatma işini şimdi tetiklesin mi: e-posta kurulu ve bu örnekte son tetiklemeden
+ * 5 dakika geçti (ALERT_POLL_GAP_MS). Evetse anı hemen yazar: aynı anda gelen yoklamalar ikinci kez tetiklemez. Birden
+ * çok sunucu örneği aynı anda çalışırsa da her uyarı bir kez gider (notification_log'da sahiplenme).
+ */
+export function claimChecklistAlertPoll(nowMs: number = Date.now()): boolean {
+  if (!isEmailConfigured() || !alertPollDue(nowMs, lastPollRun)) return false;
+  lastPollRun = nowMs;
+  return true;
 }
