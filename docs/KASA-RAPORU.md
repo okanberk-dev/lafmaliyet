@@ -93,9 +93,9 @@ yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönd
 - Fotoğrafta tahmin edilen (net olmayan) rakam forma yazılmaz: altında "Fotoğrafta net okunamadı (…); fişten yazın."
   ve **Fotoğraftakini yaz** çıkar. Okunamayan alan da turuncu kalır: "Fotoğrafta okunamadı; fişten yazın."
 - Önceden elle yazılmış alan değişmez; fotoğraftaki farklıysa altında "Fotoğrafta …" ve **Fotoğraftakini yaz** çıkar.
-- Denetimler: fişin tarihi raporun günü değilse, Z no önceki rapordakinden büyük değilse ya da arada atlama varsa,
-  ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları, soluk ya da
-  kesik fotoğraf.
+- Denetimler: fişin tarihi raporun günü değilse, Z no aynı şubenin önceki raporundakinden büyük değilse ya da arada
+  atlama varsa, ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları,
+  soluk ya da kesik fotoğraf.
 - **Yanlış bölüm** hiçbir alanı doldurmaz; aynı fotoğraf düğmeyle öteki bölüme okutulur:
   - ModPOS bölümüne yazarkasanın Z'si: "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil." ve
     **Banka POS Z bölümüne okut**. Banka gün sonu fişi de aynı düğmeyle ("Bu bir banka gün sonu fişi gibi görünüyor,
@@ -368,7 +368,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Karaoke `starts_at` ile, personelin işlem geçmişinde hesap, parola, iki adımlı, kurtarma, diğer cihazlar, oturum,
   bildirim ayarı, hatırlatıcı, özel gün ve kapalı gün işlemleri hariç her yazım (silme kayıtları dahil; kanıtı silmek işe
   yaramaz). Z no sürekliliği: önceki ve sonraki raporun Z no'ları arasındaki boşluk arada başka raporsuz gün yokken
-  kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). Sitenin o günkü
+  kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). İkisi de şube
+  başınadır: kapalı gün işletmenindir ama her şubenin kendi kasası ve Z sayacı var, önceki ve sonraki rapor aynı şubenin
+  olur (Tuzla'nın Z'si Marina'nınkiyle, Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz); bir şubede kırmızı
+  boşluk kanıtı kırmızı yapar (denetim 21 Kasım #1). Sitenin o günkü
   kafe, elle girilen ve kasada ödenen sipariş sayıları yöneticinin kartında ayrı bir Suspense'te sorulur (tutar yok;
   mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz). **LafPOS'un gün sonu** (denetim E-36; yalnız LafPOS
   günlerinde, geçiş günü boşken ya da önceki günde hiç okunmaz): satışlıysa kırmızı "LafPOS'ta Z 14 · 63 fiş" (tutar
@@ -381,8 +384,9 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   Aynı günün bekleyen bildirimi onaylanmış olur. Raporu olan gün işaretlenmez.
 - **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
-  kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince Z no boşluğu varsa işaret
-  kalkar; açılış farkı varsa yalnız zil. **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
+  kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince, aynı şubenin önceki raporuyla
+  arasında Z no boşluğu varsa işaret kalkar; açılış farkı varsa yalnız zil (öteki şubenin raporu işareti kaldırmaz,
+  zile yazmaz). **LafPOS'un satışlı gün sonu** geldiğinde de aynısı (`onLafposDaySaved`, gün
   sonunun yazımıyla aynı işlemde, günün kapalı gün kilidi altında): bekleyen bildirim "LafPOS gün sonu geldi (Z 14 · 63
   fiş)" notuyla kapanır, tek günlük işaret kalkar. Yalnız LafPOS gününde; geçiş günü boşken (deneme günü) hiçbir kayıt
   değişmez. LafPOS'a geçişte Z numarası 1'den başlar: Z no boşluğu kuralı eksi boşlukta zaten susar.

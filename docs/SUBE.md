@@ -153,6 +153,11 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   yalnız o şubenin istekleri kapanır. Onaylar kartı birden çok şube açıkken şubeyi adıyla gösterir.
 - **Personelin yetkisi** (günü hâlâ düzenleyebilir mi, fotoğrafı görebilir mi, geç rapor açık mı): başka şubenin raporu
   bu şubenin gününü açmaz ya da kapatmaz (`staffDayOpen`, `staffLateDayOpen`).
+- **Kapalı gün** işletmenindir (`special_days`'te şube yok; günün herhangi bir şubedeki izi kanıttır), ama Z no ve
+  açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
+  günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
+  engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin
+  "eski bir Z raporu olabilir" denetimi de formun kasasının önceki raporuyla (`previousZNo`).
 
 ## Personel hesabının şubesi (16 Kasım 2026)
 

@@ -20,7 +20,7 @@ import { after, before, describe, test } from "node:test";
 import { and, eq, gt, inArray, max } from "drizzle-orm";
 
 import type { CashReportFields } from "../src/lib/cash-report";
-import { CLOSED_TEXT, STAFF_SPECIAL_TEXT } from "../src/lib/closed-days";
+import { CLOSED_TEXT, closedEvidenceText, STAFF_SPECIAL_TEXT } from "../src/lib/closed-days";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
@@ -282,6 +282,62 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     assert.equal(await closed.isClosedDay(A), true);
     const warn = await db.select().from(s.activityLog).where(and(gt(s.activityLog.id, logFloor), eq(s.activityLog.action, "Kapalı gün: açılış devirle tutmuyor")));
     assert.ok(warn.some((l) => (l.detail ?? "").includes("11 Mayıs")));
+  });
+
+  test("Z no ve açılış sürekliliği şube başına: öteki şubenin Z'si ve devri onaylı işareti kaldırmaz, kanıtı kırmızı yapmaz (denetim 21 Kasım #1)", async () => {
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    // Tuzla'nın devri 1100 (3500 − 2400), Marina'nınki 300 (2300 − 2000); Z sayaçları ayrı (Tuzla ~1240, Marina ~30)
+    const tuzla = (date: string, zNo: string, o: Partial<CashReportFields> = {}) => report(date, { zNo, ...o });
+    const marina = (date: string, zNo: string, o: Partial<CashReportFields> = {}) =>
+      withBranchScope("marina", () => report(date, { zNo, countedCash: 2_300, handedOver: 2_000, ...o }));
+    const openingLogs = async (day: string) =>
+      (await db.select().from(s.activityLog).where(and(gt(s.activityLog.id, logFloor), eq(s.activityLog.action, "Kapalı gün: açılış devirle tutmuyor")))).filter((l) =>
+        (l.detail ?? "").includes(day),
+      );
+
+    // Tuzla'nın ertesi günü Marina'nın Z'siyle karşılaştırılmaz (önceden 1241 − 30 − 1 = 1210 Z eksik: işaret siliniyordu)
+    await tuzla("2027-09-01", "1240");
+    await marina("2027-09-02", "0030");
+    const A = "2027-09-03";
+    dates.push(A);
+    await reqs.markClosedDayCore(db, users.ali, { date: A, note: "Tadilat" }, morningAfter(A));
+    await tuzla("2027-09-04", "1241", { openingCash: 1_100 });
+    assert.equal(await closed.isClosedDay(A), true, "Tuzla'nın Z'si kendi önceki Z'siyle sürüyor");
+    await marina("2027-09-04", "0031", { openingCash: 300 });
+    assert.equal(await closed.isClosedDay(A), true, "Marina'nın Z'si kendi önceki Z'siyle sürüyor");
+    const ev = await closed.closedDayEvidence(db, A);
+    assert.equal(ev.zGap, null);
+    assert.equal(ev.opening?.ok, true);
+    assert.equal(closedEvidenceText(ev).red.length, 0);
+
+    // Marina'nın açılışı Tuzla'nın devriyle karşılaştırılmaz (önceden 300 ↔ 1100: yanlış "açılış devirle tutmuyor" zili)
+    await marina("2027-09-11", "0040");
+    await tuzla("2027-09-12", "1250");
+    const B = "2027-09-13";
+    dates.push(B);
+    await reqs.markClosedDayCore(db, users.ali, { date: B, note: null }, morningAfter(B));
+    await marina("2027-09-14", "0041", { openingCash: 300 });
+    assert.equal(await closed.isClosedDay(B), true);
+    assert.equal((await openingLogs("13 Eylül")).length, 0);
+    // Aynı şubede tutmayan açılış yine zile
+    await tuzla("2027-09-14", "1251", { openingCash: 600, note: "açılış eksik" });
+    assert.equal(await closed.isClosedDay(B), true);
+    assert.equal((await openingLogs("13 Eylül")).length, 1);
+
+    // Aynı şubenin boşluğu yine kırmızı: Marina'nınki sürerken Tuzla'nın kapalı güne düşen Z'si işareti kaldırır
+    await marina("2027-09-21", "0050");
+    await tuzla("2027-09-22", "1260");
+    const C = "2027-09-23";
+    dates.push(C);
+    await reqs.markClosedDayCore(db, users.ali, { date: C, note: null }, morningAfter(C));
+    await marina("2027-09-24", "0051", { openingCash: 300 });
+    assert.equal(await closed.isClosedDay(C), true);
+    await tuzla("2027-09-24", "1262", { openingCash: 1_100 });
+    assert.equal(await closed.isClosedDay(C), false);
+    const red = await closed.closedDayEvidence(db, C);
+    assert.equal(red.zGap?.level, "red");
+    assert.match(red.zGap?.text ?? "", /Z no 1260 .* ile 1262 .* arasında 1 Z eksik/);
   });
 
   test("yöneticinin doğrudan işareti bekleyen bildirimi onaylar; raporlu gün işaretlenemez; bildirim günde bir kez geri çekilir", async () => {

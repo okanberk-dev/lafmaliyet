@@ -11,6 +11,7 @@ import {
   closedSpecialTitle,
   EMPTY_EVIDENCE,
   isEvidenceAction,
+  mergeBranchContinuity,
   openingText,
   zGapOf,
   type ClosedEvidence,
@@ -95,14 +96,35 @@ async function coveringRows(db: Db | Tx, date: string) {
 }
 
 /**
+ * Z no ve açılış sürekliliği, tek şubenin önceki ve sonraki raporu arasında: arada (bu günden başka) raporsuz ve kapalı
+ * işaretsiz kaç gün var, Z boşluğu ve açılış
+ */
+async function branchContinuity(
+  db: Db | Tx,
+  date: string,
+  prev: { date: string; zNo: string | null; counted: number; handed: number },
+  next: { date: string; zNo: string | null; opening: number },
+): Promise<Pick<ClosedEvidence, "zGap" | "opening">> {
+  const shut = new Set(await closedDaysBetween(addDays(prev.date, 1), addDays(next.date, -1), db));
+  let others = 0;
+  for (let d = addDays(prev.date, 1); d < next.date; d = addDays(d, 1)) if (d !== date && !shut.has(d)) others++;
+  return {
+    zGap: zGapOf(date, prev, next, others),
+    opening: openingText({ date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 }, { date: next.date, opening: next.opening }),
+  };
+}
+
+/**
  * Bir günün paneldeki izleri (tutar yok): kasa raporu, LafPOS'un gün sonu (yalnız LafPOS günlerinde; E-36), kasadan
  * çıkan, zayi / ikram, açılan kontrol listesi, karaoke (iş günü penceresinde başlayan, iptal edilmemiş), personelin
  * işlem geçmişi yazımları (aynı pencerede; hesap ve hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve
- * açılış sürekliliği. Site ayrı (siteDayCounts).
+ * açılış sürekliliği. Site ayrı (siteDayCounts). Kapalı gün işletmenindir (günün herhangi bir şubedeki izi kanıttır);
+ * Z no ve açılış sürekliliği ise şube başınadır (her şubenin kendi kasası, kendi Z sayacı; docs/SUBE.md): önceki ve
+ * sonraki rapor aynı şubenin, şubelerin sonucu mergeBranchContinuity ile birleşir.
  */
 export async function closedDayEvidence(db: Db | Tx, date: string): Promise<ClosedEvidence> {
   const w = dayWindow(date);
-  const [[report], [outs], [waste], [lists], [karaoke], logs, [prev], [next], lafpos] = await Promise.all([
+  const [[report], [outs], [waste], [lists], [karaoke], logs, prevs, nexts, lafpos] = await Promise.all([
     db.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1),
     db.select({ n: count() }).from(s.cashOuts).where(eq(s.cashOuts.date, date)),
     db.select({ n: count() }).from(s.wasteEntries).where(eq(s.wasteEntries.date, date)),
@@ -116,26 +138,29 @@ export async function closedDayEvidence(db: Db | Tx, date: string): Promise<Clos
       .from(s.activityLog)
       .innerJoin(s.users, eq(s.users.id, s.activityLog.userId))
       .where(and(gte(s.activityLog.at, w.from), lt(s.activityLog.at, w.to), eq(s.users.role, "staff"))),
+    // Her şubenin bu günden önceki son ve sonraki ilk raporu (şube başına bir satır)
     db
-      .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
+      .selectDistinctOn([s.cashReports.branchId], {
+        branchId: s.cashReports.branchId,
+        date: s.cashReports.date,
+        zNo: s.cashReports.zNo,
+        counted: s.cashReports.countedCash,
+        handed: s.cashReports.handedOver,
+      })
       .from(s.cashReports)
       .where(lt(s.cashReports.date, date))
-      .orderBy(desc(s.cashReports.date))
-      .limit(1),
+      .orderBy(asc(s.cashReports.branchId), desc(s.cashReports.date)),
     db
-      .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, opening: s.cashReports.openingCash })
+      .selectDistinctOn([s.cashReports.branchId], { branchId: s.cashReports.branchId, date: s.cashReports.date, zNo: s.cashReports.zNo, opening: s.cashReports.openingCash })
       .from(s.cashReports)
       .where(gt(s.cashReports.date, date))
-      .orderBy(asc(s.cashReports.date))
-      .limit(1),
+      .orderBy(asc(s.cashReports.branchId), asc(s.cashReports.date)),
     lafposEvidence(db, date),
   ]);
-  // Z boşluğu: arada (önceki ile sonraki rapor arasında) bu günden başka raporsuz ve kapalı işaretsiz kaç gün var
-  let others = 0;
-  if (prev && next) {
-    const shut = new Set(await closedDaysBetween(addDays(prev.date, 1), addDays(next.date, -1), db));
-    for (let d = addDays(prev.date, 1); d < next.date; d = addDays(d, 1)) if (d !== date && !shut.has(d)) others++;
-  }
+  const nextOf = new Map(nexts.map((n) => [n.branchId, n]));
+  const continuity = mergeBranchContinuity(
+    await Promise.all(prevs.flatMap((prev) => (nextOf.has(prev.branchId) ? [branchContinuity(db, date, prev, nextOf.get(prev.branchId)!)] : []))),
+  );
   return {
     report: Boolean(report),
     cashOuts: outs?.n ?? 0,
@@ -143,8 +168,8 @@ export async function closedDayEvidence(db: Db | Tx, date: string): Promise<Clos
     checklists: lists?.n ?? 0,
     karaoke: karaoke?.n ?? 0,
     staffWrites: logs.filter((l) => isEvidenceAction(l.action)).length,
-    zGap: zGapOf(date, prev ?? null, next ?? null, others),
-    opening: openingText(prev ? { date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 } : null, next ? { date: next.date, opening: next.opening } : null),
+    zGap: continuity.zGap,
+    opening: continuity.opening,
     lafpos,
   };
 }
@@ -243,20 +268,21 @@ export async function onLafposDaySaved(tx: Tx, date: string, z: Pick<PosDayZ, "z
 /**
  * Sonraki günün raporu girildi (writeCashReport, işlemin içinde): önceki gün kapalı işaretliyse Z no sürekliliği
  * denetlenir. O güne bir Z düşmüşse (boşluk, arada başka raporsuz gün yok) tek günlük işaret kalkar; açılış devirle
- * tutmuyorsa yalnız zil (işlem geçmişi).
+ * tutmuyorsa yalnız zil (işlem geçmişi). Karşılaştırma raporun kendi şubesinin önceki raporuyladır (her şubenin kendi
+ * kasası ve Z sayacı; docs/SUBE.md): öteki şubenin Z'si ya da devri onaylı işareti kaldırmaz, zile yazmaz.
  */
-export async function onNextReport(tx: Tx, report: { date: string; zNo: string | null; openingCash: number }, now = new Date()): Promise<void> {
+export async function onNextReport(tx: Tx, report: { date: string; branchId: string; zNo: string | null; openingCash: number }, now = new Date()): Promise<void> {
   const day = addDays(report.date, -1);
   const rows = await coveringRows(tx, day);
   if (!rows.length) return;
   const [prev] = await tx
     .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
     .from(s.cashReports)
-    .where(lt(s.cashReports.date, day))
+    .where(and(lt(s.cashReports.date, day), eq(s.cashReports.branchId, report.branchId)))
     .orderBy(desc(s.cashReports.date))
     .limit(1);
   if (!prev) return;
-  // Önceki rapor ile bu gün arasındaki öteki raporsuz, kapalı işaretsiz günler
+  // Şubenin önceki raporu ile bu gün arasındaki öteki raporsuz (bu şubede), kapalı işaretsiz günler
   const shut = new Set(await closedDaysBetween(addDays(prev.date, 1), addDays(day, -1), tx));
   let others = 0;
   for (let d = addDays(prev.date, 1); d < day; d = addDays(d, 1)) if (!shut.has(d)) others++;

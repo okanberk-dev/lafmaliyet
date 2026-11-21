@@ -86,9 +86,12 @@ export interface ClosedEvidence {
   karaoke: number;
   /** Personelin İşlem geçmişindeki yazımları (iş günü penceresinde; hesap ve hatırlatıcı hariç) */
   staffWrites: number;
-  /** Önceki ve sonraki raporun Z no'ları arasında bu güne düşen boşluk: "red" kesin, "warn" arada başka raporsuz gün var */
+  /**
+   * Aynı şubenin önceki ve sonraki raporunun Z no'ları arasında bu güne düşen boşluk (şube başına, mergeBranchContinuity):
+   * "red" kesin, "warn" arada başka raporsuz gün var
+   */
   zGap: { level: "red" | "warn"; text: string } | null;
-  /** Sonraki raporun açılışı önceki raporun devriyle tutmuyor (yalnız uyarı) */
+  /** Aynı şubenin sonraki raporunun açılışı önceki raporunun devriyle tutmuyor (yalnız uyarı) */
   opening: { ok: boolean; text: string } | null;
   /** Sitenin sayıları (null: okunamadı ya da bağlantı kapalı; yönetici kartı ayrı sorar) */
   site?: { cafe: number; manual: number; counter: number; shop: number } | null;
@@ -187,6 +190,18 @@ export function openingText(prev: { date: string; carry: number } | null, next: 
   const head = `${dayMonthTR(next.date)} açılışı ${dayMonthTR(prev.date)} devriyle`;
   if (Math.abs(diff) < 1) return { ok: true, text: `${head} tutuyor` };
   return { ok: false, text: `${head} tutmuyor: ${money(Math.abs(diff))} ${diff < 0 ? "az" : "fazla"}` };
+}
+
+/**
+ * Şube şube bakılan Z no ve açılış süreklilikleri tek kanıtta (docs/SUBE.md › Kasa raporu "Tümü"de): her şubenin Z
+ * sırası ve devri yalnız kendi raporlarıyla karşılaştırılır (Tuzla'nın Z'si Marina'nınkiyle değil), kapalı gün ise
+ * işletmenindir. Z boşluğu herhangi bir şubede kırmızıysa kırmızı, yoksa ilk uyarı; açılış ilk tutmayan, yoksa ilk
+ * tutan. Şubesiz (hiç komşu raporu olmayan) gün için ikisi de null.
+ */
+export function mergeBranchContinuity(parts: readonly Pick<ClosedEvidence, "zGap" | "opening">[]): Pick<ClosedEvidence, "zGap" | "opening"> {
+  const zGap = parts.find((p) => p.zGap?.level === "red")?.zGap ?? parts.find((p) => p.zGap)?.zGap ?? null;
+  const opening = parts.find((p) => p.opening && !p.opening.ok)?.opening ?? parts.find((p) => p.opening)?.opening ?? null;
+  return { zGap, opening };
 }
 
 // ---------------------------------------------------------------- Kapalı gün bildirimi

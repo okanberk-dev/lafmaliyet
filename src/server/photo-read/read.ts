@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, gte, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 
 import { isLafposDay } from "@/lib/lafpos/switch";
 import { normalizeZ } from "@/lib/photo-read/kasa";
@@ -13,6 +13,7 @@ import { addDays } from "@/lib/reminders";
 import { extractImage, type AiErrorCode } from "@/server/ai/claude";
 import { OKC_EFFORT, OKC_MAX_TOKENS, OKC_TIMEOUTS, RETRYABLE, type AiImageType } from "@/server/ai/run";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentTillBranch } from "@/server/branch-scope";
 import { cashOutCategories } from "@/server/data/cash-outs";
 import { previousOkc } from "@/server/data/cash-reports";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
@@ -27,9 +28,18 @@ export interface ReadOutcome {
   canRetry: boolean;
 }
 
-/** Bu günden önceki son raporun Z no'su (Z no sırası denetimi) */
+/**
+ * Kasanın şubesinde bu günden önceki son raporun Z no'su (Z no sırası denetimi; "eski bir Z raporu olabilir"). Her
+ * şubenin kendi ModPOS'u ve Z sayacı var (docs/SUBE.md): öteki şubenin Z'siyle karşılaştırılmaz. Şube formun kasasıdır
+ * (`currentTillBranch`; yazarkasa Z'sinin `previousOkc`'si gibi)
+ */
 async function previousZNo(day: string): Promise<string | null> {
-  const [row] = await getDb().select({ zNo: s.cashReports.zNo }).from(s.cashReports).where(lt(s.cashReports.date, day)).orderBy(desc(s.cashReports.date)).limit(1);
+  const [row] = await getDb()
+    .select({ zNo: s.cashReports.zNo })
+    .from(s.cashReports)
+    .where(and(lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentTillBranch())))
+    .orderBy(desc(s.cashReports.date))
+    .limit(1);
   return row?.zNo ?? null;
 }
 
