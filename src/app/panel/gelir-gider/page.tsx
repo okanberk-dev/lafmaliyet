@@ -10,7 +10,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { branchViewNote } from "@/lib/branches";
+import { branchViewNote, monthWriteNote } from "@/lib/branches";
 import { daysInMonth, uncountedCogsSummary, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { missingRevenueText, yearTotals } from "@/lib/calc/insights";
@@ -21,6 +21,8 @@ import { periodSalesSource } from "@/lib/sales-source";
 import { salesMonthsToPull, siteGross } from "@/lib/site-sales/calc";
 import { employerRateNotice, rateText } from "@/lib/tax/edit";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { loadExpectedDebtsInYear } from "@/server/data/cari";
 import { loadModel } from "@/server/data/dataset";
 import { loadTaxSettings } from "@/server/data/tax";
@@ -74,13 +76,17 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   await requireAdmin();
   const sp = await searchParams;
   // Vergi ayarları yalnız SGK oranı uyarısı için (K19); okunamazsa uyarı çıkmaz, tablo etkilenmez
-  const [model, salesState, taxSettings] = await Promise.all([
+  const [model, salesState, taxSettings, writeNote] = await Promise.all([
     loadModel(),
     readSalesState(),
     loadTaxSettings().catch((e) => {
       console.error("[gelir-gider] vergi ayarları", e);
       return null;
     }),
+    // "Tümü"de elle yazılan ciro / açık gün / ay notu hangi şubenin ay satırına iner (birden çok kasa açıkken); okunamazsa not yok
+    Promise.all([currentBranchScope(), listBranches()])
+      .then(([scope, branches]) => monthWriteNote(scope, branches))
+      .catch(() => null),
   ]);
   const known = [...model.monthInfo.keys(), ...model.ds.invoices.map((i) => i.date.slice(0, 7))].sort();
   const knownYears = new Set(known.map((k) => Number(k.slice(0, 4))));
@@ -375,6 +381,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
           {`${uncountedCogsSummary((m) => model.pnlMonth(m).cogsMethod, yt.uncounted)}.`}
         </Notice>
       ) : null}
+      {/* "Tümü"de birden çok kasa açıkken: elle yazılan ay bilgisi Tuzla'nın ay satırına iner (docs/SUBE.md › Yazarken hangi şube) */}
+      {writeNote ? <Notice tone="neutral" size="line" className="-mt-2 mb-4" title={writeNote} /> : null}
       {yt.missingRevenue.length ? (
         <p className="-mt-2 mb-6 text-xs text-pretty text-ink-mute" role="note">
           Yıl kartları POS cirosu girilmiş {yt.counted.length} ayın toplamı. {yt.missingRevenue.map(missingRevenueText).join(" · ")}.

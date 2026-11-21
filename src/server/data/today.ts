@@ -138,8 +138,10 @@ interface RoleFacts {
  * Kasa satırlarının kasası (docs/SUBE.md › Kasa raporu: rapor, devir ve bütünlük şubenin kendi kasasınındır):
  * - personel kendi kasasını görür (`till`: kilitli şube, seçili fiziksel şube; "Tümü"de ve online kanalda Tuzla), kasa
  *   sayfasının formu da ona yazar;
- * - yönetici "Tümü"de birden çok kasa açıkken her şubeyi ayrı (`tills`); tek şube seçiliyken okumalar zaten o şubenin
- *   (ikisi de null: bugünkü gibi).
+ * - yönetici "Tümü"de birden çok kasa açıkken her şubeyi ayrı (`tills`); değilse tek kasa (`till`): seçili fiziksel
+ *   şube, online kanal seçiliyken ve tek kasa açıkken Tuzla (`currentTillBranch`). Zil (bell/kasa.ts bellTills) ve Kasa
+ *   sayfası da aynı kasayı okur: online kanalın kasası olmaz, şubesiz okuma `branch_id = 'online'` arayıp hiç rapor
+ *   bulamıyordu (dünün eksik raporu görünmüyor, bugünkü "Henüz girilmedi" kalıyordu; denetim 21 Kasım #26).
  */
 interface CashView {
   till: string | null;
@@ -148,9 +150,10 @@ interface CashView {
 
 async function cashView(admin: boolean): Promise<CashView> {
   if (!admin) return { till: await currentTillBranch(), tills: null };
-  const [scope, branches] = await Promise.all([currentBranchScope(), listBranches()]);
+  const [scope, branches, till] = await Promise.all([currentBranchScope(), listBranches(), currentTillBranch()]);
   const tills = tillBranches(branches);
-  return { till: null, tills: scope === ALL_BRANCHES && tills.length > 1 ? tills.map(({ id, name }) => ({ id, name })) : null };
+  const many = scope === ALL_BRANCHES && tills.length > 1;
+  return { till: many ? null : till, tills: many ? tills.map(({ id, name }) => ({ id, name })) : null };
 }
 
 /**
@@ -249,12 +252,14 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       cash.then(async (reports) => {
         if (!reports?.length) return new Map<string, string[]>();
         const oldest = reports.map((r) => r.date).sort()[0];
-        const tills = (await view)?.tills ?? null;
+        const v = await view;
+        const tills = v?.tills ?? null;
+        // Tek kasada devir ve föy de o kasanın (raporlar gibi; online kanalda Tuzla)
         const [before, beforeOf, revisions, modpos] = await Promise.all([
-          tills ? null : previousCarryOver(oldest),
+          tills ? null : previousCarryOver(oldest, v?.till ?? undefined),
           tills ? previousCarryOverByBranch(oldest, tills.map((b) => b.id)) : null,
           cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id)),
-          Promise.all([loadModposSheets(oldest, businessDate(now)), loadLafposSwitchDay()])
+          Promise.all([loadModposSheets(oldest, businessDate(now), undefined, v?.till ? { branchId: v.till } : {}), loadLafposSwitchDay()])
             .then(([sheets, switchDay]) => (tills ? modposMismatchBranchDays(reports, sheets, switchDay) : modposMismatchDates(reports, sheets, switchDay)))
             .catch(() => new Set<string>()),
         ]);
@@ -286,7 +291,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
   // Kasa satırlarının kasası (CashView): personel kendi kasasını okur; yönetici "Tümü"de iki şubenin raporunu birlikte
-  // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin)
+  // okur, satırlar şube şube kurulur (ilk raporun günü de şubenin); değilse tek kasanın (online kanalda Tuzla'nın)
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));

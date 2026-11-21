@@ -7,7 +7,7 @@ import { ALL_BRANCHES, branchPnlEntry, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
-import { isReportRow, resolveMonths, tillMonths, type TillRow } from "@/lib/cash-month";
+import { isReportRow, resolveMonths, tillMonths, tillOpenedOn, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
@@ -199,10 +199,13 @@ async function readDataset(): Promise<Dataset> {
   // ModPOS föy günleri eksik değildir (docs/MODPOS-API.md › Ay rakamına yedek); ModPOS satırı yokken ikisi aynı gün
   const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
   const firstReport = till.filter((r) => r.source !== "modpos").reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+  // Şube görünümünde şubenin açılışı: sonradan açılan şubenin ilk ayı "kasa raporları ay ortasında başladı" sayılmaz
+  // (src/lib/cash-month.ts tillOpenedOn; Tuzla ve "Tümü" bugünkü kural)
+  const opened = tillOpenedOn(branch);
   const salesCoverage = Object.entries(sales.coverage).map(([month, upto]) => ({
     month,
     through: upto,
-    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport)[0] ?? null,
+    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver, undefined, undefined, firstReport, undefined, opened)[0] ?? null,
   }));
 
   return {
@@ -264,6 +267,9 @@ async function readDataset(): Promise<Dataset> {
         undefined,
         lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
         closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date)),
+        undefined,
+        undefined,
+        opened,
       ),
     ),
     salesLines: sales.salesLines,

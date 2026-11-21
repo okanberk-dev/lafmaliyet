@@ -8,7 +8,7 @@ import { ALL_BRANCHES, companyPnlKey } from "@/lib/branches";
 import { daysInMonth } from "@/lib/calc/engine";
 import { monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { currentBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, currentWriteBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -58,7 +58,12 @@ export async function setPnlCell(month: string, rowKey: string, amount: number |
   });
 }
 
-/** Ayın notu (ör. "1-16 Ekim, ay bitince güncelleyin"); Satışlar ve Gelir-gider sayfası aynı alanı kullanır */
+/**
+ * Ayın notu (ör. "1-16 Ekim, ay bitince güncelleyin"); Satışlar ve Gelir-gider sayfası aynı alanı kullanır. Ay satırı
+ * şube başınadır (anahtar ay + şube): not seçili şubenin satırına yazılır, "Tümü"nde Tuzla'nınkine (Satışlar'daki
+ * saveMonthInfo ile aynı kural, docs/SUBE.md › Yazarken hangi şube). Şubesiz yazılsaydı sütunun varsayılanı Tuzla'yı
+ * ezerdi (denetim 21 Kasım #6)
+ */
 export async function setMonthNote(month: string, note: string | null) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -72,7 +77,7 @@ export async function setMonthNote(month: string, note: string | null) {
       .parse(note);
     await getDb()
       .insert(s.months)
-      .values({ month: m, note: n })
+      .values({ month: m, branchId: await currentWriteBranch(), note: n })
       .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { note: n, updatedAt: new Date() } });
     await logActivity(me, "Ay notu", `${monthLabel(m)}: ${n ?? "silindi"}`);
     refresh();
@@ -80,7 +85,10 @@ export async function setMonthNote(month: string, note: string | null) {
   });
 }
 
-/** Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa) */
+/**
+ * Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa). Seçili şubenin ay satırına,
+ * "Tümü"nde Tuzla'nınkine yazılır (setMonthNote gibi; okuma da şubenin satırını okur, dataset.ts)
+ */
 export async function setMonthField(month: string, field: "posRevenue" | "openDays", value: number | null) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -99,7 +107,7 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
           : z.number().finite().min(0).parse(value);
     await getDb()
       .insert(s.months)
-      .values({ month: m, [field]: v })
+      .values({ month: m, branchId: await currentWriteBranch(), [field]: v })
       .onConflictDoUpdate({ target: [s.months.month, s.months.branchId], set: { [field]: v, updatedAt: new Date() } });
     await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
     refresh();

@@ -623,7 +623,12 @@ silinen rapor ayın rakamını hemen değiştirir.
   da "Elle" yazar; kasadan gelen alana dokununca elle yazılır, elle yazılan alanın altında kasadaki değer ve
   **Kasadakini kullan**. Gelir-gider'de aylık ciro ve açık gün hücresi aynı kuralla ("Kasaya dön").
 - Kasa raporları bir ayın ortasında başladıysa o ayın toplamları ayın yalnız bir kısmıdır: uygulanmaz, elle girilir
-  ("Kasa raporları 20 Ekim'de başladı; …"). Kartlı oran yine kasadan.
+  ("Kasa raporları 20 Ekim'de başladı; …"). Kartlı oran yine kasadan. Kural kasanın, kafe zaten açıkken ay ortasında
+  başlaması içindir (Tuzla, Ekim 2026). **Sonradan açılan şubenin açılış ayı** buna girmez: şube seçiliyken ilk rapor
+  şubenin açılış gününde ya da öncesindeyse (Ayarlar › Şubeler; boşsa sonradan açılan şubenin ilk raporu açılış sayılır)
+  ay tamdır, ciro ve açık gün kasadan gelir; ilk rapor açılış gününden sonraysa ay yine elle girilir
+  (`src/lib/cash-month.ts` `tillOpenedOn`, `partialStart`; Gelir-gider, Satışlar, Kasa'nın ay satırı ve geç rapor kartı
+  aynı kural). "Tümü" ve Tuzla bugünkü gibi (denetim 21 Kasım #21).
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
@@ -647,7 +652,8 @@ silinen rapor ayın rakamını hemen değiştirir.
   hesaplar listenin günleriyle yapılır: liste ↔ POS karşılaştırması (Satışlar'ın ay bilgisi kutusu, Tutarlılık, uyarı)
   o günlerin Z toplamı ve indirimiyle, Genel bakış'ın günlük ortalaması listenin açık günüyle, reçeteye göre kârın
   sabit gideri ve online satışı o günlere düşen payla, "ayda …" adetleri listenin açık günüyle. Ay bitince ayın
-  tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler.
+  tamamının listesi yüklenir; biten aya yüklenen liste ayın tamamı sayılır (kayıt silinir), Ayı temizle de siler
+  (yalnız ayda hiçbir şubenin listesi kalmadıysa: Ayı temizle gösterilen şubenin listesini siler; [SUBE.md](SUBE.md)).
   **LafPOS'a geçildiyse** (Ayarlar › LafPOS › geçiş günü) bu kural geçiş gününden önceki aylar içindir: geçiş ayında
   liste ay bittikten sonra da en çok geçiş gününden önceki güne kadar sayılır, sonraki aylara liste yüklenmez (satışlar
   her gün sonunda LafPOS'tan gelir). Ayrıntı: [LAFPOS.md › Günlük satış](LAFPOS.md#günlük-satış-aylık-model).

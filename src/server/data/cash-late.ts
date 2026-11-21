@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { branchDayKey, businessDate, carryCheck, LATE_REPORT_DAYS, lateMissingDays, type CarryCheck, type CashReportFields } from "@/lib/cash-report";
+import { partialStart, tillOpenedOn, type TillOpening } from "@/lib/cash-month";
 import { cashOutsTotal, teslimTotalOf } from "@/lib/cash-outs";
 import { cashDaySubject, cashSubjectBranch, handedToText, lateBell, lateBranchOf, lateByText, LatePayload, lateFields, type LatePayloadT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
@@ -15,6 +16,7 @@ import { okcReadFigures } from "@/lib/photo-read/okc";
 import { addDays, dayLocativeTR, monthGenitiveTR, todayTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestStatus } from "@/lib/staff-requests";
 import { currentTillBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { chainNeighbours, type ChainLink } from "@/server/cash/late-chain";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
@@ -254,12 +256,22 @@ export interface LateCard {
   lafpos: { lafpos: boolean; day: LafposDay | null; diffs: LafposDiff[]; sameTill: { prev: boolean; next: boolean } };
 }
 
-/** Ay satırı: geç rapor ayın açık gün ve POS cirosuna girer mi */
-function monthLineOf(date: string, today: string, first: string | null, entry: { openDays: number | null; posRevenue: number | null } | null): string {
+/**
+ * Ay satırı: geç rapor ayın açık gün ve POS cirosuna girer mi. `first` şubenin ilk raporu, `opened` şubenin açılışı
+ * (src/lib/cash-month.ts tillOpenedOn): sonradan açılan şubenin açılış ayı "ay ortasında başladı" sayılmaz, Kasa'nın ve
+ * Gelir-gider'in ay satırıyla aynı kural (partialStart)
+ */
+function monthLineOf(
+  date: string,
+  today: string,
+  first: string | null,
+  entry: { openDays: number | null; posRevenue: number | null } | null,
+  opened: TillOpening = null,
+): string {
   const month = date.slice(0, 7);
   const gen = monthGenitiveTR(month);
   if (entry && entry.openDays !== null && entry.posRevenue !== null) return `${gen} açık gün ve POS cirosu elle yazılmış; bu rapor değiştirmez`;
-  if (first && first.slice(0, 7) === month && first > `${month}-01`) return "Kasa raporları ay ortasında başladı; bu ayın ciro ve açık günü elle girilir, bu rapor değiştirmez";
+  if (partialStart(month, first, opened)) return "Kasa raporları ay ortasında başladı; bu ayın ciro ve açık günü elle girilir, bu rapor değiştirmez";
   if (month < today.slice(0, 7)) return `Kapanmış ay: ${gen} açık gün ve POS cirosu bu raporla değişir (Satışlar ve kâr)`;
   return `${gen} açık gün ve POS cirosuna girer`;
 }
@@ -277,15 +289,17 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
   const days = [...new Set(rows.flatMap((x) => (x.day ? [x.day] : [])))];
   // Her isteğin kendi kasası (isteyenin şubesi): günün raporu, ilk rapor, zincir, kasadan çıkanlar ve ay o şubenin.
   // Yöneticinin şube seçimi karta girmez
-  const [reported, firsts] = await Promise.all([
+  const [reported, firsts, branches] = await Promise.all([
     db.select({ date: s.cashReports.date, branchId: s.cashReports.branchId }).from(s.cashReports).where(inArray(s.cashReports.date, days)),
     db
       .select({ branchId: s.cashReports.branchId, date: sql<string>`min(${s.cashReports.date})` })
       .from(s.cashReports)
       .groupBy(s.cashReports.branchId),
+    listBranches(db),
   ]);
   const reportedDays = new Set(reported.map((x) => branchDayKey(x.branchId, x.date)));
   const firstOf = new Map(firsts.map((f) => [f.branchId, f.date]));
+  const openedOf = (branchId: string) => tillOpenedOn(branches.find((b) => b.id === branchId));
   const switchDay = await loadLafposSwitchDay(db);
   const cards: (LateCard & { branchId: string })[] = [];
   for (const x of rows) {
@@ -354,7 +368,7 @@ export async function lateCards(now = new Date()): Promise<(LateCard & { branchI
       chain: { prev: chain.prev, next: chain.next, prevCheck, nextCheck },
       okcChain,
       okcPrevZ: okcPrev.z,
-      monthLine: monthLineOf(date, today, firstOf.get(branchId) ?? null, entry),
+      monthLine: monthLineOf(date, today, firstOf.get(branchId) ?? null, entry, openedOf(branchId)),
       outs: {
         count: outs.length,
         total: outsTotal,

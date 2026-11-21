@@ -1049,7 +1049,8 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   // listenin sırasına güvenmeden en eski günden
   assert.match(admin, /systemIssues\(o, now, okAt\)/);
   assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
-  assert.match(admin, /previousCarryOver\(oldest\)/);
+  // Tek kasada devir o kasanın (online kanalda Tuzla; denetim 21 Kasım #26)
+  assert.match(admin, /previousCarryOver\(oldest, v\?\.till \?\? undefined\)/);
   // "Tümü"de birden çok kasa: zincir şube şube (her şubenin önceki devri), işaretler (şube, gün) anahtarıyla
   assert.match(admin, /previousCarryOverByBranch\(oldest, tills\.map\(\(b\) => b\.id\)\)/);
   // ModPOS API'den farklı günler önceden hesaplanıp saf cashFlags'e verilir (föy okunamazsa boş küme)

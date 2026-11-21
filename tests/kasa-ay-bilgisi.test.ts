@@ -19,12 +19,15 @@ import {
   missingText,
   monthRowEmpty,
   partialSentence,
+  partialStart,
   resolveMonth,
   resolveMonths,
   tillMonths,
+  tillOpenedOn,
   type MonthEntry,
   type TillRow,
 } from "../src/lib/cash-month";
+import { prorationDays } from "../src/lib/calc/engine";
 import { addDays } from "../src/lib/reminders";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -392,4 +395,70 @@ test("resolveMonths: iki şubenin ayrı alanları birleşir, tek satır olur", (
   assert.equal(months.length, 1, "aynı ay tek satır olmalı");
   assert.equal(months[0].openDays, 30);
   assert.equal(months[0].posRevenue, 120_000);
+});
+
+// ---------------------------------------------------------------- Sonradan açılan şube (denetim 21 Kasım #21)
+
+test("tillOpenedOn: kütükteki açılış günü; boşsa Tuzla null (bugünkü kural), sonradan açılan şube ilk satırıyla; Tümü null", () => {
+  assert.equal(tillOpenedOn(null), null, "Tümü");
+  assert.equal(tillOpenedOn(undefined), null, "kütükte yok");
+  assert.equal(tillOpenedOn({ id: "tuzla", openedOn: null }), null, "Tuzla: başından beri");
+  assert.equal(tillOpenedOn({ id: "tuzla", openedOn: "2019-06-01" }), "2019-06-01");
+  assert.equal(tillOpenedOn({ id: "marina", openedOn: null }), true, "açılış günü yazılmamış sonradan açılan şube");
+  assert.equal(tillOpenedOn({ id: "marina", openedOn: "2026-11-05" }), "2026-11-05");
+});
+
+test("partialStart: ay ortasında başlayan ilk ay; açılış gününde ya da öncesinde başlayan rapor ayı yarım yapmaz", () => {
+  assert.equal(partialStart("2026-10", "2026-10-20"), "2026-10-20", "Tuzla Ekim 2026: bugünkü kural");
+  assert.equal(partialStart("2026-11", "2026-10-20"), null, "sonraki ay tam");
+  assert.equal(partialStart("2026-11", "2026-11-01"), null, "ayın 1'i");
+  assert.equal(partialStart("2026-11", null), null);
+  assert.equal(partialStart("2026-11", "2026-11-05", "2026-11-05"), null, "açılış günü");
+  assert.equal(partialStart("2026-11", "2026-11-05", "2026-11-10"), null, "açılıştan önce başlayan raporlar");
+  assert.equal(partialStart("2026-11", "2026-11-08", "2026-11-05"), "2026-11-08", "açıldı, raporlar sonra başladı: ay yine yarım");
+  assert.equal(partialStart("2026-11", "2026-11-05", true), null, "açılış günü yazılmamış: ilk satır açılıştır");
+  assert.equal(partialStart("2026-11", "2026-11-05", null), "2026-11-05");
+});
+
+test("şube görünümü: Marina'nın açılış ayı yarım sayılmaz; ciro, açık gün ve sabit giderin günü kasadan (Tuzla ve Tümü bugünkü gibi)", () => {
+  // Marina 5 Kasım'da açıldı, o günden beri her gün rapor (5–20 Kasım, 10.000 ₺)
+  const marina = Array.from({ length: 16 }, (_, i) => row(addDays("2026-11-05", i), { branchId: "marina" }));
+  // Eski davranış: açılış verilmezse ay ortasında başlamış sayılır, ciro ve açık gün düşer
+  const [eski] = tillMonths(marina, "2026-11-20");
+  assert.equal(eski.partialFrom, "2026-11-05");
+  const [eskiAy] = resolveMonths([], [eski]);
+  assert.deepEqual([eskiAy.openDays, eskiAy.posRevenue, eskiAy.sources?.posRevenue], [null, null, "none"]);
+  for (const opened of [tillOpenedOn({ id: "marina", openedOn: null }), tillOpenedOn({ id: "marina", openedOn: "2026-11-05" })]) {
+    const [t] = tillMonths(marina, "2026-11-20", undefined, undefined, undefined, undefined, undefined, opened);
+    assert.equal(t.partialFrom, null, `açılış ${String(opened)}`);
+    assert.deepEqual([t.openDays, t.posRevenue], [16, 160_000]);
+    const [m] = resolveMonths([], [t]);
+    assert.deepEqual([m.openDays, m.posRevenue, m.sources?.openDays, m.sources?.posRevenue], [16, 160_000, "kasa", "kasa"]);
+    // Sabit gider ve personel açılıştan bu yana geçen günle (raporların kapsadığı takvim günü), 0 değil
+    assert.equal(prorationDays(m), 16);
+    assert.equal(kasaMonthLine(m), "Bu ayın açık gün ve cirosu kasa raporlarından");
+  }
+  // Açılış günü yazılmış ama raporlar sonra başlamış: o ay yine elle girilir
+  const [late] = tillMonths(marina, "2026-11-20", undefined, undefined, undefined, undefined, undefined, "2026-11-01");
+  assert.equal(late.partialFrom, "2026-11-05");
+  // Tuzla (açılışı boş) ve Tümü: kasa raporları ay ortasında başladıysa bugünkü gibi
+  const tuzla = Array.from({ length: 12 }, (_, i) => row(addDays("2026-10-20", i), { branchId: "tuzla" }));
+  assert.equal(tillMonths(tuzla, "2026-10-31", undefined, undefined, undefined, undefined, undefined, tillOpenedOn({ id: "tuzla", openedOn: null }))[0].partialFrom, "2026-10-20");
+  assert.equal(tillMonths([...tuzla, ...marina], "2026-11-20", undefined, undefined, undefined, undefined, undefined, tillOpenedOn(null))[0].partialFrom, "2026-10-20");
+});
+
+test("şube görünümü: yükleyici, Kasa'nın ay satırı ve geç rapor kartı şubenin açılışıyla aynı kuralı kullanır", () => {
+  const dataset = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
+  assert.match(dataset, /const opened = tillOpenedOn\(branch\);/);
+  assert.match(dataset, /firstEver, undefined, undefined, firstReport, undefined, opened\)\[0\]/, "satış listesinin dönemi");
+  assert.match(dataset, /closedDaysIn\(closedRows, "2000-01-01", through, reportRows\.map\(\(r\) => r\.date\)\),\s*undefined,\s*undefined,\s*opened,\s*\)/, "ay bilgisi");
+  const kasa = readFileSync(join(root, "src/app/panel/kasa/page.tsx"), "utf8");
+  assert.match(kasa, /const opened = tillOpenedOn\(branchList\.find\(\(b\) => b\.id === tillScope\)\);/);
+  assert.match(kasa, /firstEver \?\? undefined, firstModpos, opened\)\[0\]/);
+  const late = readFileSync(join(root, "src/server/data/cash-late.ts"), "utf8");
+  assert.match(late, /if \(partialStart\(month, first, opened\)\) return "Kasa raporları ay ortasında başladı/);
+  assert.match(late, /monthLineOf\(date, today, firstOf\.get\(branchId\) \?\? null, entry, openedOf\(branchId\)\)/);
+  // Kuralın tek kopyası: elle yazılmış "first > ayın 1'i" karşılaştırması kalmadı
+  assert.doesNotMatch(late, /first\.slice\(0, 7\) === month && first > /);
+  assert.match(readFileSync(join(root, "src/lib/cash-month.ts"), "utf8"), /partialFrom: partialStart\(month, first, openedOn\),/);
 });

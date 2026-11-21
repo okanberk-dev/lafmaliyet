@@ -34,7 +34,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, Segm
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { ALL_BRANCHES, branchViewNote } from "@/lib/branches";
+import { ALL_BRANCHES, branchViewNote, type BranchScope } from "@/lib/branches";
 import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
   alerts,
@@ -58,7 +58,7 @@ import { salesSourceOf } from "@/lib/sales-source";
 import { holdAlert } from "@/lib/price-hold";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
-import { withBranchScope } from "@/server/branch-scope";
+import { currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/data/dataset";
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
@@ -144,11 +144,12 @@ function Change({ g, prevMonth, prevValue, basis }: { g: number | null; prevMont
 
 /**
  * Ödemeler (liste, hatırlatıcılar, ayarlar); okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu
- * söyler). Nakit planı kartı aynı sonucu paylaşır (ikinci kez okunmaz).
+ * söyler). Şubesiz okuma işletmenindir: nakit planı kartı onu paylaşır (ikinci kez okunmaz). `branch` tek şube
+ * verilirse hatırlatıcılar o şubenin ve işletme genelinin olanlarıyla (docs/SUBE.md › Ödemeler; Bugün'deki kartla aynı)
  */
-async function loadPayments(): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
+async function loadPayments(branch?: BranchScope): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
   try {
-    return await loadUpcoming();
+    return await loadUpcoming(undefined, { branch });
   } catch {
     return null;
   }
@@ -184,15 +185,21 @@ async function loadParasut(): Promise<ParasutFacts | null> {
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const [model, upcoming, parasut, cashOutState, till] = await Promise.all([
+  const scope = await currentBranchScope();
+  const [model, upcoming, branchPayments, parasut, cashOutState, till] = await Promise.all([
     loadModel(),
     loadPayments(),
+    // "Yaklaşan ödemeler" kartı ve ayın işlerinin ödeme olguları şube seçimine uyar (Bugün, zil ve Ödemeler gibi;
+    // denetim 21 Kasım #27): tek şube seçiliyken o şubenin ve işletme genelinin ödemeleri. "Tümü"nde aynı liste
+    scope === ALL_BRANCHES ? Promise.resolve(null) : loadPayments(scope),
     loadParasut(),
     // Kasadan faturalı alımlar (E-42): ayın işlerinde Faturalar'ı açık tutar; okunamazsa liste onsuz
     loadCashOutInvoiceState().catch(() => null),
     // Günlük ciro grafiği: ay bilgisinin okuduğu kasa satırları (seçili şubeyle; okunamazsa kart çizilmez)
     tillRows().catch(() => null),
   ]);
+  // Ekrandaki ödeme listesi (kart, gecikme satırı, ayın işleri): seçili şubenin; nakit planı ve cari uyarıları işletmenin
+  const shownPayments = scope === ALL_BRANCHES ? upcoming : branchPayments;
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
@@ -296,7 +303,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
 
   // Ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım (ödemeler işi listeden çıkar, K22: gecikme varsa
   // sayfanın başında tek kırmızı satır; ödemeler zaten Bugün'de, alt menü rozetinde ve "Yaklaşan ödemeler"de)
-  const payments = upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null;
+  const payments = shownPayments
+    ? paymentFacts(shownPayments.items, unpaidSummary(model.ds.invoices), debtFacts([...shownPayments.items, ...shownPayments.laterInvoices]))
+    : null;
   const taskCache = new Map<string, { state: MonthState; tasks: MonthTask[] }>();
   const tasksOf = (m: string) => {
     let hit = taskCache.get(m);
@@ -576,7 +585,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             kalır, 5/12'lik maliyet kartı 270 px'e iner ve "ürün “Düşük kâr”" kutuları sözcük sözcük kırılırdı */}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
-            {upcoming ? <DashboardPayments items={upcoming.items} /> : null}
+            {shownPayments ? <DashboardPayments items={shownPayments.items} /> : null}
             {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
             <DashboardAlerts items={shownAlerts} className="flex-1" />
           </div>

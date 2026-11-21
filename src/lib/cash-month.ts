@@ -5,13 +5,15 @@
  * Hiçbir şey months tablosuna yazılmaz: değerler model yüklenirken hesaplanır (src/server/data/dataset.ts), yeni rapor,
  * düzeltme ya da silme sayıyı kendiliğinden değiştirir. Elle yazılan her zaman geçerlidir; boşaltılan alan kasaya döner.
  * Kasa raporları ay ortasında başladıysa (partialFrom) toplamlar ayın yalnız bir kısmını kapsar ve uygulanmaz; oran
- * yine geçerlidir. Ayrıntı: docs/KASA-RAPORU.md › Ay bilgisine aktarım.
+ * yine geçerlidir. Sonradan açılan şubenin açılış ayı bu sayılmaz (tillOpenedOn). Ayrıntı: docs/KASA-RAPORU.md › Ay
+ * bilgisine aktarım.
  *
  * Raporu olmayan gün yedek satırla gelebilir: LafPOS'un gün sonu (geçiş gününden sonra, G6) ya da ayar açıkken kapanmış
  * ModPOS kasa föyü (geçiş gününden önce; docs/MODPOS-API.md › Ay rakamına yedek). Yedek satır ayın rakamına girer, gün
  * yine "rapor yok" sayılır; raporlar başlamadan önceki föy günleri eksik aranmaz.
  */
 
+import { DEFAULT_BRANCH_ID } from "./branches";
 import type { FieldSource, Month, MonthField, TillMonth } from "./calc/types";
 import { dayRevenue } from "./cash-revenue";
 import { MONTH_NAMES } from "./constants";
@@ -117,6 +119,38 @@ export const MONTH_FIELDS: readonly MonthField[] = ["openDays", "posRevenue", "d
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
+ * Kasanın açılışı (tillMonths / partialStart `openedOn`): şubenin açılış günü (YYYY-MM-DD); `true` açılış günü
+ * yazılmamış, sonradan açılan şube: ilk satırı açılışıdır; null açılış bilinmiyor ("başından beri", "Tümü")
+ */
+export type TillOpening = string | true | null;
+
+/**
+ * Ay ortasında başlayan ilk ay (partialFrom): satırların ilk günü ayın 1'inden sonraysa o ay raporların başladığı aydır
+ * ve toplamları ayın yalnız bir kısmıdır. Kural kasa özelliğinin, kafe zaten açıkken ay ortasında başlaması içindir
+ * (Tuzla, Ekim 2026). Şubenin açılışı verilirse (tillOpenedOn) ilk gün açılış gününde ya da öncesindeyse ay yarım
+ * sayılmaz: şube o gün açıldı, raporlar açık olduğu her günü kapsar. İlk gün açılıştan sonraysa (şube açıldı, raporlar
+ * birkaç gün sonra başladı) ay yine yarımdır. `true` (açılış günü yazılmamış, sonradan açılan şube): hiç yarım değil.
+ */
+export function partialStart(month: string, first: string | null, openedOn?: TillOpening): string | null {
+  if (first === null || first.slice(0, 7) !== month || first <= `${month}-01`) return null;
+  if (openedOn === true) return null;
+  return openedOn != null && first <= openedOn ? null : first;
+}
+
+/**
+ * Şube görünümünde ay ortasında başlama kuralının açılışı (tillMonths / partialStart `openedOn`; docs/SUBE.md › Kütük):
+ * şubenin kütükteki açılış günü; boşsa varsayılan şube (Tuzla) için null ("başından beri": kasa raporları ay ortasında
+ * başladıysa o ay elle girilir), sonradan açılan şube için `true` (şube kasa raporlarından sonra açıldı, ilk satırı
+ * açılışıdır). "Tümü"de (şube yok) null: işletmenin ilk raporu, bugünkü kural. Denetim 21 Kasım #21: Marina'nın açılış
+ * ayı "kasa raporları ay ortasında başladı" sayılıp şube görünümünde cirosu ve açık günü düşüyordu.
+ */
+export function tillOpenedOn(branch: { id: string; openedOn: string | null } | null | undefined): TillOpening {
+  if (!branch) return null;
+  if (branch.openedOn) return branch.openedOn;
+  return branch.id === DEFAULT_BRANCH_ID ? null : true;
+}
+
+/**
  * Raporları aylara toplar. `through`: eksik günler bu güne kadar aranır (süren ayda dün: bugünün raporu akşam girilir;
  * girildiyse o da sayılır). `firstEver`: ilk satırın günü, kaynağı ne olursa olsun (verilmezse satırların en eskisi);
  * yalnız bir ayın satırları verilince ay ortasında başlayan ilk ay (partialFrom) buna göre tanınır.
@@ -132,6 +166,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * kesintisiz kısmın ilk günüdür. Tek tek elle çekilmiş eski bir gün ya da alınamayan bir gün ayı yanlış "tam" yapmasın;
  * eksik gün gelince öncesi kendiliğinden sayılır. Verilmezse satırlardan bulunur; yalnız bir ayın satırlarını veren
  * çağıran (Kasa'nın ay satırı) bunu bütün föylerden bulup verir (cash-reports.ts firstModposTillDay).
+ *
+ * `openedOn`: tek şubenin satırları verilince şubenin açılışı (tillOpenedOn): ilk satır açılış gününde ya da
+ * öncesindeyse (ya da açılış günü yazılmamış sonradan açılan şubede) ilk ay yarım sayılmaz (partialStart). Verilmezse
+ * ("Tümü", Tuzla) bugünkü kural.
  */
 export function tillMonths(
   rows: TillRow[],
@@ -141,6 +179,7 @@ export function tillMonths(
   closedDays?: Iterable<string>,
   firstReport?: string | null,
   modposFrom?: string | null,
+  openedOn?: TillOpening,
 ): TillMonth[] {
   const waiting = pendingLate ? new Set(pendingLate) : null;
   // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
@@ -229,7 +268,7 @@ export function tillMonths(
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       ...(shut ? { closed } : {}),
-      partialFrom: first > start && first.slice(0, 7) === month ? first : null,
+      partialFrom: partialStart(month, first, openedOn),
       lastDate,
       ...(fromLafpos.length ? { lafpos: fromLafpos } : {}),
       ...(fromModpos.length ? { modpos: fromModpos } : {}),

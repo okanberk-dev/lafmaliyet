@@ -11,7 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
-import { kasaMonthLine, resolveMonth, tillMonths } from "@/lib/cash-month";
+import { kasaMonthLine, resolveMonth, tillMonths, tillOpenedOn } from "@/lib/cash-month";
 import {
   businessDate,
   carryCheck,
@@ -543,11 +543,22 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı. Ay rakamına yedek açıksa
   // raporsuz günün kapanmış ModPOS föyü de (docs/MODPOS-API.md › Ay rakamına yedek; kapalıyken föy okunmaz): Gelir-gider'deki
-  // ay rakamıyla aynı. Ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik gün ilk kasa raporundan
-  const [monthModpos, firstModpos] = await Promise.all([modposTillRows(getDb(), `${month}-01`, monthEnd), firstModposTillDay(getDb())]);
+  // ay rakamıyla aynı. Ay ortasında başlayan ilk ay ilk satırla (rapor ya da föy), eksik gün ilk kasa raporundan.
+  // Sonradan açılan şubenin açılış ayı yarım sayılmaz (tillOpenedOn; Gelir-gider'deki şube görünümüyle aynı)
+  const [monthModpos, firstModpos, tillScope, branchList] = await Promise.all([
+    modposTillRows(getDb(), `${month}-01`, monthEnd),
+    firstModposTillDay(getDb()),
+    currentBranchScope(),
+    listBranches(),
+  ]);
   const firstRow = firstModpos !== null && (firstEver === null || firstModpos < firstEver) ? firstModpos : firstEver;
+  const opened = tillOpenedOn(branchList.find((b) => b.id === tillScope));
   const monthLine = kasaMonthLine(
-    resolveMonth(month, entry ?? undefined, tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos)[0]),
+    resolveMonth(
+      month,
+      entry ?? undefined,
+      tillMonths([...monthReports, ...monthLafpos, ...monthModpos], addDays(today, -1), firstRow, undefined, undefined, firstEver ?? undefined, firstModpos, opened)[0],
+    ),
   );
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları

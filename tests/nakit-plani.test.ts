@@ -17,10 +17,12 @@ import {
   lineLabel,
   parseCashPlanState,
   PLAN_DAYS,
+  planCashReports,
   planInputFromModel,
   planNotes,
   rangeText,
   reminderOccurrences,
+  salesDaily,
   weekTitle,
   type CashPlan,
   type CashPlanInput,
@@ -1881,4 +1883,73 @@ test("satışlar: iki şubenin aynı günkü raporları bir gün; ortalama günl
   // Yedi günden az raporlu gün: iki şubeyle 8 rapor olsa da kasa ortalaması yok
   const few = reports.slice(0, 8);
   assert.notEqual(buildCashPlan(input({ cashReports: few })).basis.sales.kind, "kasa");
+});
+
+test("satışlar: yeni açılan şube 28 güne yayılmaz; günlük şube ortalamalarının toplamı, not şube şube gün sayısını söyler (denetim 21 Kasım #11)", () => {
+  // Tuzla son 28 günün hepsinde 10.000, Marina yalnız son 7 günde 6.000: işletmenin günlük satışı 16.000
+  const tuzla = Array.from({ length: 28 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 10_000, card: 6_000, mealCard: 0, branchId: "tuzla", branchName: "Tuzla" }));
+  const marina = Array.from({ length: 7 }, (_, i) => ({ date: addDays(TODAY, -1 - i), zTotal: 6_000, card: 3_000, mealCard: 0, branchId: "marina", branchName: "Marina" }));
+  const p = buildCashPlan(input({ cashReports: [...tuzla, ...marina] }));
+  assert.equal(p.basis.sales.kind, "kasa");
+  if (p.basis.sales.kind !== "kasa") return;
+  close(p.basis.sales.daily, 16_000, "günlük = Tuzla 10.000 + Marina 6.000 (eskiden (280.000 + 42.000) / 28 = 11.500)");
+  assert.deepEqual([p.basis.sales.reports, p.basis.sales.days], [35, 28]);
+  assert.deepEqual(
+    p.basis.sales.branches?.map((b) => [b.name, b.days, b.daily]),
+    [
+      ["Tuzla", 28, 10_000],
+      ["Marina", 7, 6_000],
+    ],
+  );
+  // Kart payı bütün şubelerin toplamından: (168.000 + 21.000) / 322.000
+  close(p.basis.sales.cardShare, 189_000 / 322_000, "kart payı");
+  const note = planNotes(p, { komisyon: 0.025, acikGun: 26, invoiceTermDays: 30 }).find((n) => n.key === "sales")!.text;
+  assert.match(note, /^Son 28 günün 35 kasa raporuna \(Tuzla 28 gün, Marina 7 gün; şube ortalamalarının toplamı\) göre günde ortalama 16\.000/);
+  // Bir şubenin bir günü eksik (rapor yok): o gün işletmenin gününü sulandırmaz
+  const missed = buildCashPlan(input({ cashReports: [...tuzla.filter((_, i) => i !== 3), ...tuzla.map((r) => ({ ...r, branchId: "marina", branchName: "Marina", zTotal: 5_000 }))] }));
+  assert.ok(missed.basis.sales.kind === "kasa");
+  if (missed.basis.sales.kind === "kasa") close(missed.basis.sales.daily, 15_000, "Tuzla 27 gün 10.000 + Marina 28 gün 5.000");
+  // Tek şube: sonuç bugünkü gibi (Z ÷ rapor), notta parantez yok
+  const tek = buildCashPlan(input({ cashReports: tuzla }));
+  assert.ok(tek.basis.sales.kind === "kasa" && tek.basis.sales.daily === 10_000 && !tek.basis.sales.branches);
+  assert.match(planNotes(tek, { komisyon: 0.025, acikGun: 26, invoiceTermDays: 30 }).find((n) => n.key === "sales")!.text, /^Son 28 günün 28 kasa raporuna göre günde ortalama 10\.000/);
+  // Yeterlilik işletmenin raporlu gün sayısıyla: Marina'nın 7 günü yalnız başına da yeter
+  assert.equal(buildCashPlan(input({ cashReports: marina })).basis.sales.kind, "kasa");
+  assert.notEqual(buildCashPlan(input({ cashReports: marina.slice(0, 6) })).basis.sales.kind, "kasa");
+});
+
+test("salesDaily ve planCashReports: şube şube ortalama; pasif şubenin raporu sayılmaz, sıra kütüğün sırası", () => {
+  assert.deepEqual(
+    salesDaily([
+      { date: "2026-11-01", zTotal: 100, branchId: "a" },
+      { date: "2026-11-01", zTotal: 50, branchId: "b" },
+      { date: "2026-11-02", zTotal: 300, branchId: "a" },
+    ]).map((g) => [g.id, g.days, g.daily]),
+    [
+      ["a", 2, 200],
+      ["b", 1, 50],
+    ],
+  );
+  // Şubesiz raporlar tek kasa: aynı günün iki raporu bir gün
+  assert.deepEqual(salesDaily([{ date: "2026-11-01", zTotal: 100 }, { date: "2026-11-01", zTotal: 200 }]).map((g) => [g.days, g.daily]), [[1, 300]]);
+  const branches = [
+    { id: "tuzla", name: "Tuzla", active: true },
+    { id: "marina", name: "Marina", active: true },
+    { id: "eski", name: "Eski şube", active: false },
+  ];
+  const r = (branchId: string, date: string) => ({ branchId, date, zTotal: 1_000, card: 0, mealCard: 0, online: 0 });
+  const rows = planCashReports([r("marina", "2026-11-02"), r("eski", "2026-11-02"), r("tuzla", "2026-11-02"), r("yok", "2026-11-01"), r("tuzla", "2026-11-01")], branches);
+  assert.deepEqual(
+    rows.map((x) => [x.branchId, x.branchName, x.date]),
+    [
+      ["tuzla", "Tuzla", "2026-11-02"],
+      ["tuzla", "Tuzla", "2026-11-01"],
+      ["marina", "Marina", "2026-11-02"],
+      ["yok", "yok", "2026-11-01"],
+    ],
+  );
+  // Yükleyici raporları şubesiyle verir (şubesiz eşleme kalmadı)
+  const loader = read("src/server/data/cash-plan.ts");
+  assert.match(loader, /cashReports: planCashReports\(reports, branches\),/);
+  assert.doesNotMatch(loader, /cashReports: reports\.map\(/);
 });

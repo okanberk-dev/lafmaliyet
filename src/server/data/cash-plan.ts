@@ -3,13 +3,13 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
-import { buildCashPlan, goodsRows, parseCashPlanState, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
+import { buildCashPlan, goodsRows, parseCashPlanState, planCashReports, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
 import { addDays, type UpcomingItem } from "@/lib/reminders";
 import type { TaxInputs } from "@/lib/tax/inputs";
 import type { TaxPlanFeed } from "@/lib/tax/view";
 import { unreachable } from "@/lib/unreachable";
 import { loadExpectedDebtsByCard } from "@/server/data/cari";
-import { tillBranches } from "@/lib/branches";
+import { tillBranches, type BranchRow } from "@/lib/branches";
 import { listBranches } from "@/server/branches";
 import { cashReportsBetween, previousCarryOverByBranch } from "@/server/data/cash-reports";
 import { loadRecentPaid } from "@/server/data/recent-paid";
@@ -75,8 +75,8 @@ async function taxInputsForPlan(): Promise<TaxInputs | null> {
  * Devir zinciri şube başınadır (previousCarryOver tek kasayı okur, "Tümü"de Tuzla'yı): yalnız birini yazmak Marina'nın
  * kasasındaki parayı düşürürdü. Hiç raporu olmayan şube sayılmaz; hiçbiri yoksa null
  */
-async function tillsCarry(before: string): Promise<CashPlanView["carry"]> {
-  const ids = tillBranches(await listBranches()).map((b) => b.id);
+async function tillsCarry(before: string, branches: readonly BranchRow[]): Promise<CashPlanView["carry"]> {
+  const ids = tillBranches(branches).map((b) => b.id);
   const of = await previousCarryOverByBranch(before, ids);
   const carries = ids.map(of).filter((c): c is { date: string; amount: number } => c !== null);
   if (!carries.length) return null;
@@ -100,16 +100,18 @@ async function tillsCarry(before: string): Promise<CashPlanView["carry"]> {
 export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<typeof loadUpcoming>>, opts: { taxInputs?: TaxInputs } = {}): Promise<CashPlanView> {
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
-  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, taxInputs, expectedDebts] = await Promise.all([
+  const branchesP = listBranches();
+  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, taxInputs, expectedDebts, branches] = await Promise.all([
     loadCashPlanState(),
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
     loadPaidOnDelivery(),
-    tillsCarry(addDays(today, 1)),
+    branchesP.then((bs) => tillsCarry(addDays(today, 1), bs)),
     loadRecentPaid(),
     opts.taxInputs ?? taxInputsForPlan(),
     // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş
     loadExpectedDebtsByCard(),
+    branchesP,
   ]);
   // Vergi girdileri okunamadıysa Ödendi kaydı ayrıca (KDV'nin ödenmiş dönemleri vergiden bağımsız)
   const vatPaid = taxInputs?.vatPaid ?? (await loadVatPaid());
@@ -131,7 +133,8 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     opening: state.balance !== null && state.balanceDate ? { amount: state.balance, date: state.balanceDate } : null,
     excluded: state.excluded,
     invoiceTermDays: up.settings.invoiceTermDays,
-    cashReports: reports.map((r) => ({ date: r.date, zTotal: r.zTotal, card: r.card, mealCard: r.mealCard, online: r.online })),
+    // Şube şube (günlük satış şubelerin ortalamalarının toplamı); pasif şube sayılmaz
+    cashReports: planCashReports(reports, branches),
     invoices: up.items.filter(isPayable),
     reminders: up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),

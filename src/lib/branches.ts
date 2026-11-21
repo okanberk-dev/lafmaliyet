@@ -223,6 +223,18 @@ export function companyPnlKey(rowKey: string): boolean {
 }
 
 /**
+ * Gelir-gider'de "Tümü" seçiliyken elle yazılan ay bilgisinin (aylık ciro, açık gün, ay notu) hangi şubenin ay satırına
+ * indiğini söyleyen not (docs/SUBE.md › Yazarken hangi şube): ay satırı şube başınadır, "Tümü"nde yazılan varsayılan
+ * şubeye (Tuzla) iner, Satışlar'daki ay bilgisi gibi. Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa
+ * varken null (yazılan zaten gösterilen satırdır)
+ */
+export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]): string | null {
+  if (scope !== ALL_BRANCHES || tillBranches(known).length < 2) return null;
+  const name = known.find((b) => b.id === DEFAULT_BRANCH_ID)?.name ?? "Tuzla";
+  return `Tümü seçili: elle yazılan aylık ciro, açık gün ve ay notu ${name} şubesinin ay satırına yazılır (Satışlar'daki gibi). Başka bir şubenin ayı için soldan o şubeyi seçin.`;
+}
+
+/**
  * Şube görünümünün bilgi notu (Gelir-gider, Genel bakış): neyin şubenin, neyin işletme genelinin olduğu
  * (docs/SUBE.md › Şube görünümünde maliyet)
  */
