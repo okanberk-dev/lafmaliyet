@@ -10,7 +10,7 @@ Sahibin kararları (4 Kasım 2026):
 |---|---|
 | Menü, reçete, hammadde, tedarikçi | **Ortak**; şubeye göre değişen yalnız satış fiyatı ve "Satışta / Tükendi" |
 | Panel | **Tek panel** (`ladmin.laffogato.net`) + üstte şube / kanal seçici |
-| Marina'nın kasası | **ModPOS** (Tuzla gibi) |
+| Marina'nın kasası | **ModPOS** (Tuzla gibi); **21 Kasım 2026'da değişti:** önce Marina LafPOS'a geçer, Tuzla ModPOS'ta kalır. LafPOS'un şubesi `LAFPOS_BRANCH_ID = "marina"`; Marina'nın ModPOS'u yedek olarak çekilmeye devam eder (kasa kaynağı ModPOS kalır), geçiş gününden sonra sayılan LafPOS'un günüdür |
 | Bugüne kadarki veri | Hepsi **Tuzla**'ya |
 
 ## Kütük

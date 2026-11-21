@@ -1,10 +1,10 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { readLafposSwitchDay } from "@/lib/constants";
 import { LAFPOS_STATE_KEY } from "@/lib/lafpos/status";
-import { dayMonthYearTR, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
+import { dayMonthYearTR, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY, switchDayProblem } from "@/lib/lafpos/switch";
 import { schema as s, type DB } from "@/server/db";
 import { UserError } from "@/server/user-error";
 
@@ -56,12 +56,13 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${date}`}))`);
-    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, date)).limit(1);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lafpos-gun:${LAFPOS_BRANCH_ID}:${date}`}))`);
+    // Yalnız LafPOS'un şubesinin günü (başka şubenin aynı günkü kaydına dokunulmaz)
+    const [rep] = await tx.select({ z: s.posDayReports.z }).from(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID))).limit(1);
     if (!rep) throw new UserError("Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin");
     if (rep.z.zNo !== zNo) throw new UserError(`Bu gün bu arada Z ${rep.z.zNo} ile yeniden gönderildi; sayfayı yenileyip yeniden bakın`);
-    const lines = await tx.delete(s.posDailySales).where(eq(s.posDailySales.date, date)).returning({ id: s.posDailySales.id });
-    await tx.delete(s.posDayReports).where(eq(s.posDayReports.date, date));
+    const lines = await tx.delete(s.posDailySales).where(and(eq(s.posDailySales.date, date), eq(s.posDailySales.branchId, LAFPOS_BRANCH_ID))).returning({ id: s.posDailySales.id });
+    await tx.delete(s.posDayReports).where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)));
     await tx.execute(sql`
       update integration_state
          set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()

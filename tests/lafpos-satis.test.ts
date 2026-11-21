@@ -32,7 +32,8 @@ const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 /** dayMonthTR'nin bölünmez boşluğu düz boşluğa, aralığın sözcük birleştiricisi atılır (metin karşılaştırması okunur kalsın) */
 const plain = (s: string) => s.replace(/\u00a0/g, " ").replace(/\u2060/g, "");
 
-const line = (o: Partial<SalesLine> & Pick<SalesLine, "id" | "month" | "posName">): SalesLine => ({ qty: 1, revenue: 100, productId: null, isService: false, note: null, ...o });
+/** ModPOS listesinin satırı; şubesi verilmezse LafPOS'un şubesinin (Marina) listesi (21 Kasım kararı) */
+const line = (o: Partial<SalesLine> & Pick<SalesLine, "id" | "month" | "posName">): SalesLine => ({ qty: 1, revenue: 100, productId: null, isService: false, note: null, branchId: "marina", ...o });
 const laf = (o: Partial<LafposMonthLine> & Pick<LafposMonthLine, "month" | "posName">): LafposMonthLine => ({ productId: null, isService: false, qty: 1, revenue: 100, days: 1, ...o });
 
 test("geçiş günü: ayın LafPOS'u hangi günden sayılır, ModPOS listesi sayılır mı", () => {
@@ -160,13 +161,13 @@ test("birleştirme: geçiş ayında liste + LafPOS, sonraki ayda yalnız LafPOS;
   assert.deepEqual(early.salesLines.map((l) => l.id), [1, 2]);
 });
 
-test("birleştirme: geçiş günü yalnız Tuzla'nın listesini düşürür; Marina'nın ModPOS listesi her ay sayılır (denetim 21 Kasım #5)", () => {
+test("birleştirme: geçiş günü yalnız Marina'nın listesini düşürür; Tuzla'nın ModPOS listesi her ay sayılır (21 Kasım kararı)", () => {
   const S = "2026-11-10";
   const lines = [
-    line({ id: 1, month: "2026-12", posName: "ARALIK TUZLA (sayılmaz)", branchId: "tuzla" }),
-    line({ id: 2, month: "2026-12", posName: "ARALIK MARINA", branchId: "marina" }),
-    line({ id: 3, month: "2026-12", posName: "ŞUBESİZ (Tuzla'nın, sayılmaz)" }),
-    line({ id: 4, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" }),
+    line({ id: 1, month: "2026-12", posName: "ARALIK MARINA (sayılmaz)", branchId: "marina" }),
+    line({ id: 2, month: "2026-12", posName: "ARALIK TUZLA", branchId: "tuzla" }),
+    { ...line({ id: 3, month: "2026-12", posName: "ŞUBESİZ (Tuzla'nın)" }), branchId: undefined },
+    line({ id: 4, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" }),
   ];
   const r = mergeSalesSources({
     switchDay: S,
@@ -178,17 +179,20 @@ test("birleştirme: geçiş günü yalnız Tuzla'nın listesini düşürür; Mar
   assert.deepEqual(
     r.salesLines.map((l) => [l.id, l.posName]),
     [
-      [2, "ARALIK MARINA"],
-      [4, "KASIM MARINA"],
+      [2, "ARALIK TUZLA"],
+      [3, "ŞUBESİZ (Tuzla'nın)"],
+      [4, "KASIM TUZLA"],
       [-1, "LATTE"],
     ],
   );
-  // LafPOS'un sayıldığı ilk gün yalnız Tuzla'nın geçiş ayı listesine bakar: Marina'nın Kasım listesi LafPOS'u kesmez
-  assert.equal(lafposSalesCountFrom(S, [line({ id: 4, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" })], { "2026-11": "2026-11-30" }), S);
-  assert.equal(lafposSalesCountFrom(S, [line({ id: 5, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" })], { "2026-11": "2026-11-12" }), "2026-11-13");
-  // Marina'nın listesinin kuralı Marina'nın geçiş günüyle (yok): Aralık listesi yüklenir, Tuzla'nınki reddedilir
-  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, "marina"), "2027-01-05"), { ok: true, through: null });
-  assert.equal(modposImportRule("2026-12", branchSwitchDay(S, "tuzla"), "2027-01-05").ok, false);
+  // LafPOS'un sayıldığı ilk gün yalnız Marina'nın geçiş ayı listesine bakar: Tuzla'nın (şubesiz de) Kasım listesi LafPOS'u kesmez
+  assert.equal(lafposSalesCountFrom(S, [line({ id: 4, month: "2026-11", posName: "KASIM TUZLA", branchId: "tuzla" })], { "2026-11": "2026-11-30" }), S);
+  assert.equal(lafposSalesCountFrom(S, [{ ...line({ id: 6, month: "2026-11", posName: "KASIM ŞUBESİZ" }), branchId: undefined }], { "2026-11": "2026-11-30" }), S);
+  assert.equal(lafposSalesCountFrom(S, [line({ id: 5, month: "2026-11", posName: "KASIM MARINA", branchId: "marina" })], { "2026-11": "2026-11-12" }), "2026-11-13");
+  // Tuzla'nın listesinin kuralı Tuzla'nın geçiş günüyle (yok): Aralık listesi yüklenir, Marina'nınki reddedilir
+  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, "tuzla"), "2027-01-05"), { ok: true, through: null });
+  assert.deepEqual(modposImportRule("2026-12", branchSwitchDay(S, null), "2027-01-05"), { ok: true, through: null });
+  assert.equal(modposImportRule("2026-12", branchSwitchDay(S, "marina"), "2027-01-05").ok, false);
 });
 
 test("model: yalnız LafPOS olan ayda satır, reçeteye göre tüketim ve karaoke payı (KDV %20) ModPOS listesindekiyle aynı", () => {

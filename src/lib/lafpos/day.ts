@@ -114,6 +114,8 @@ const paymentSchema = z.object({
 export const posDaySchema = z.object({
   version: z.literal(LAFPOS_VERSION),
   source: z.literal("lafpos"),
+  /** Kasanın şubesi (LafPOS › Ayarlar › Şube); eski kasa göndermez. LAFPOS_BRANCH_ID'den başkaysa gün reddedilir */
+  sube: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/).optional(),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

@@ -76,7 +76,9 @@ function lafDays(from: string, to: string, payments: () => LafposPaymentIn[] = d
     });
 }
 
-const till = (from: string, to: string, row: Omit<TillDayIn, "date"> = { mealCard: 500, online: 400 }): TillDayIn[] => eachDay(from, to).map((date) => ({ date, ...row }));
+/** Kasa raporları; şubesi verilmezse LafPOS'un şubesinin (Marina) kasası (21 Kasım kararı: önce Marina LafPOS'a geçer) */
+const till = (from: string, to: string, row: Omit<TillDayIn, "date"> = { mealCard: 500, online: 400 }): TillDayIn[] =>
+  eachDay(from, to).map((date) => ({ date, branchId: "marina", ...row }));
 const mark = (channel: ChannelMonthIn["channel"], month: string, o: Partial<ChannelMonthIn> = {}): ChannelMonthIn => ({ channel, month, sales: null, receivedOn: null, received: null, note: null, ...o });
 
 /**
@@ -198,7 +200,7 @@ test("gün sonu gelmeyen gün: kart kart satış eksik kalabilir; %6 aşımı ke
   // Gün sonu gelmedi ama kasa raporu var: grubun toplamı rapordan, kart kart bilinmez (iki kart varken eksik sayılır)
   const fb = buildCommissionReport(
     fx({
-      till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-05", mealCard: 80, online: 40 }],
+      till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-05", mealCard: 80, online: 40, branchId: "marina" }],
       lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", dayPayments, ["2026-11-05"]) },
     }),
   );
@@ -253,27 +255,39 @@ test("geçiş ayı: önceki günler kasa raporu kuralıyla; birden çok kartta b
   assert.equal(plain(tillSub(ng)), "10 Kasım'dan LafPOS · öncesinin kasa raporu yok");
 });
 
-test("ModPOS'ta kalan şube (Marina): raporları LafPOS'un yerine geçmez, kasa raporu kuralıyla eklenir (denetim 21 Kasım #5)", () => {
-  // Tuzla Kasım'ın her günü LafPOS'ta; Marina ModPOS'ta, her gün yemek kartı 200, online 100
-  const marina = till("2026-11-01", "2026-11-30", { mealCard: 200, online: 100, branchId: "marina" });
-  const input = fx({ till: [...till("2026-10-01", "2026-10-31"), ...marina] });
+test("ModPOS'ta kalan şube (Tuzla): raporları LafPOS'un yerine geçmez, kasa raporu kuralıyla eklenir (21 Kasım kararı)", () => {
+  // Marina Kasım'ın her günü LafPOS'ta; Tuzla ModPOS'ta, her gün yemek kartı 200, online 100
+  const tuzla = till("2026-11-01", "2026-11-30", { mealCard: 200, online: 100, branchId: "tuzla" });
+  const input = fx({ till: [...till("2026-10-01", "2026-10-31"), ...tuzla] });
   const lm = lafposMonth(input, "2026-11")!;
   assert.deepEqual(lm.modpos, { meal: 6000, online: 3000 });
-  assert.deepEqual([lm.fallback, lm.missing], [[], []], "Marina'nın raporu Tuzla'nın gün sonunun yedeği değil");
+  assert.deepEqual([lm.fallback, lm.missing], [[], []], "Tuzla'nın raporu Marina'nın gün sonunun yedeği değil");
   const r = buildCommissionReport(input);
   // Grubun Z'si iki kasanın toplamı
   assert.equal(groupOf(r, "meal", "2026-11")!.zTotal, 2400 + 6000);
-  // İki kart: Marina'nın Z'sindeki yemek kartı kart kart bilinmez (kasa raporu kuralı); önceden sessizce düşüyordu
+  // İki kart: Tuzla'nın Z'sindeki yemek kartı kart kart bilinmez (kasa raporu kuralı); önceden sessizce düşüyordu
   const p = must(rowOf(r, "pluxee", "2026-11"));
   assert.equal(p.sales, null);
   assert.equal(
     plain(p.salesReason),
     "Satış bilinmiyor: kasası ModPOS'ta kalan şubede Z'de yemek kartları tek toplam ve bu ay 2 kart var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
   );
-  // Tek platform: Marina'nın online toplamı kanala yazılır (tek kuralı)
+  // Tek platform: Tuzla'nın online toplamı kanala yazılır (tek kuralı)
   assert.deepEqual(must(rowOf(r, "yemeksepeti", "2026-11")).sales, { amount: 1200 + 3000, source: "lafpos", zShare: 3000 });
-  // Şubesiz (Tuzla'nın) rapor bugünkü gibi yalnız gün sonu gelmeyen günün yedeği
-  assert.equal(lafposMonth(fx({ till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-05", mealCard: 80, online: 40 }] }), "2026-11")!.modpos, null);
+  // Şubesiz rapor Tuzla'nın: ModPOS'unki gibi kasa raporu kuralıyla eklenir, Marina'nın gün sonunun yedeği değil
+  const branchless = lafposMonth(fx({ till: [...till("2026-10-01", "2026-10-31"), ...tuzla.map((r) => ({ date: r.date, mealCard: r.mealCard, online: r.online }))] }), "2026-11")!;
+  assert.deepEqual(branchless.modpos, { meal: 6000, online: 3000 });
+  assert.deepEqual([branchless.fallback, branchless.missing], [[], []]);
+  // Marina'nın raporu bugünkü gibi yalnız gün sonu gelmeyen günün yedeği
+  const own = lafposMonth(
+    fx({
+      till: [...till("2026-10-01", "2026-10-31"), { date: "2026-11-05", mealCard: 80, online: 40, branchId: "marina" }],
+      lafpos: { switchDay: "2026-11-01", days: lafDays("2026-11-01", "2026-11-30", dayPayments, ["2026-11-05"]) },
+    }),
+    "2026-11",
+  )!;
+  assert.equal(own.modpos, null);
+  assert.deepEqual(own.fallback, ["2026-11-05"]);
 });
 
 test("kanalı seçilmemiş ya da tanınmayan ödeme türü: grupta uyarı; birden çok kartta yazılmaz, tek kartta yazılır", () => {
