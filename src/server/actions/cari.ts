@@ -45,7 +45,11 @@ const zId = z.number().int().positive();
 type KasaResolution = Awaited<ReturnType<typeof resolveKasaChoice>>;
 const zPositive = zAmount.refine((v) => v > 0, "Tutar girin");
 const targetSchema = z.union([z.object({ cardId: zId }).strict(), z.object({ key: z.string().trim().min(1).max(300) }).strict()]);
-const cashOutSchema = z.discriminatedUnion("mode", [z.object({ mode: z.literal("existing"), id: zId }), z.object({ mode: z.literal("new") })]);
+// Yeni Teslim satırının kasası: pencerede seçilen şube (writePayment kütükte etkin fiziksel şube mi diye bakar)
+const cashOutSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("existing"), id: zId }),
+  z.object({ mode: z.literal("new"), branchId: z.string().trim().max(24).nullish() }),
+]);
 const lineSchema = z.object({ kind: z.enum(["invoice", "debt"]), id: zId, amount: zAmount });
 const allocationSchema = z.object({ mode: z.enum(["auto", "manual", "none"]), lines: z.array(lineSchema).max(500).default([]) });
 const confirmSchema = z.array(zMonth).max(60).default([]);

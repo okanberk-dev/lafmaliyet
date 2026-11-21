@@ -130,6 +130,32 @@ export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sort
   return sortBranches(rows.filter((b) => b.kind === "fiziksel" && b.active));
 }
 
+/** Kasadan ödemenin kasası belirsizken (Tümü ya da online kanal, birden çok kasa) eylemin ve formun metni */
+export const TILL_REQUIRED = "Kasadan ödeme hangi şubenin kasasından çıktı? Şubeyi seçin";
+
+/**
+ * Tedarikçiye kasadan ödemenin yeni Teslim satırının varsayılan kasası (docs/SUBE.md › Yazarken hangi şube): seçili
+ * fiziksel şube; tek kasa açıksa o. "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa null: pencere şubeyi
+ * sorar. Tedarikçiler işletme geneli bir ekrandır ve çoğu zaman "Tümü"de açılır; satır sessizce Tuzla'ya inseydi iki
+ * şubenin kasa farkı da ödeme kadar şaşardı (denetim 21 Kasım #31).
+ */
+export function defaultTill(scope: BranchScope, branches: readonly BranchRow[]): string | null {
+  const tills = tillBranches(branches);
+  if (tills.some((b) => b.id === scope)) return scope;
+  if (tills.length === 1) return tills[0].id;
+  return tills.length ? null : DEFAULT_BRANCH_ID;
+}
+
+/**
+ * Eylemin kararı: pencerede seçilen kasa etkin bir fiziksel şube olmalı; seçim gelmediyse `defaultTill`, o da
+ * belirsizse kayıt reddedilir (seçimsiz kayıt "Tümü"de Tuzla'ya inmez).
+ */
+export function chooseTill(raw: string | null | undefined, scope: BranchScope, branches: readonly BranchRow[]): { id: string } | { error: string } {
+  if (raw) return tillBranches(branches).some((b) => b.id === raw) ? { id: raw } : { error: "Şube bulunamadı ya da pasif (sayfayı yenileyin)" };
+  const id = defaultTill(scope, branches);
+  return id ? { id } : { error: TILL_REQUIRED };
+}
+
 /**
  * Kasanın adı ve kimliği metinlerde ve bağlantılarda (kasa e-postası, WhatsApp metni, "Panelde aç"): birden çok kasa
  * açıkken şube, tek kasada null (metin ve bağlantı bugünkü gibi). Zil (src/server/bell/kasa.ts) aynı kuralla yazar

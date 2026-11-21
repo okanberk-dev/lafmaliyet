@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { splitSupplier } from "@/app/panel/faturalar/rules";
 import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
+import { chooseTill } from "@/lib/branches";
 import {
   allocateFifo,
   compareOpenItems,
@@ -29,7 +30,8 @@ import { paymentUnchanged, type RecentPaid } from "@/lib/recent-paid";
 import { daysBetween, todayTR } from "@/lib/reminders";
 import { UserError } from "@/server/actions/util";
 import { toDebt } from "@/server/data/cari";
-import { currentExpenseBranch, currentTillBranch } from "@/server/branch-scope";
+import { currentBranchScope, currentExpenseBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
@@ -170,8 +172,11 @@ async function linkPhoto(tx: Tx, photoId: number | null, prevId: number | null, 
 
 // ---------------------------------------------------------------- Ödeme
 
-/** Kasadan ödemenin Kasa satırı: o günün işlenmemiş Teslim satırı ya da yeni satır */
-export type CashOutChoice = { mode: "existing"; id: number } | { mode: "new" };
+/**
+ * Kasadan ödemenin Kasa satırı: o günün işlenmemiş Teslim satırı ya da yeni Teslim satırı. Yeni satırın kasası pencerede seçilen
+ * şubedir (`branchId`; yoksa seçili fiziksel şube ya da tek kasa, belirsizse kayıt reddedilir: src/lib/branches.ts chooseTill)
+ */
+export type CashOutChoice = { mode: "existing"; id: number } | { mode: "new"; branchId?: string | null };
 
 export interface PaymentWrite {
   id: number | null;
@@ -243,10 +248,13 @@ export async function writePayment(tx: Tx, me: Actor, card: Card, input: Payment
         if (Math.abs(line.amount - amount) > EPS) throw new UserError(`Tutar kasa satırıyla aynı olmalı (${tl(line.amount, 2)})`);
         cashOutId = line.id;
       } else {
+        // Kasa şube başına: satır pencerede seçilen şubenin kasasında açılır; "Tümü"de birden çok kasa varken seçimsiz
+        // kayıt Tuzla'ya inmez, reddedilir (docs/SUBE.md › Yazarken hangi şube; denetim 21 Kasım #31)
+        const till = chooseTill(choice.branchId, await currentBranchScope(), await listBranches());
+        if ("error" in till) throw new UserError(till.error);
         const [line] = await tx
           .insert(s.cashOuts)
-          // Kasa şube başına: satır panelde seçili şubede açılır (docs/SUBE.md)
-          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", branchId: await currentTillBranch(), createdBy: me.id, createdByName: me.name })
+          .values({ date: input.date, kind: "teslim", amount, store: card.name, description: null, docType: "yok", branchId: till.id, createdBy: me.id, createdByName: me.name })
           .returning({ id: s.cashOuts.id });
         cashOutId = line.id;
         cashOutCreated = true;

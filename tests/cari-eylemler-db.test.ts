@@ -850,6 +850,35 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.equal((await db.select().from(s.expenseEntries)).length, 0, "gider yalnız faturada");
   });
 
+  test("gider faturası ve e-faturası olan Paraşüt kaydı silinince iki anahtar da yok sayılır, geri alınınca ikisi çıkar (denetim 21 Kasım #3)", async () => {
+    const { IGNORE_KEY } = await import("../src/server/parasut/sync");
+    const { DELETED_BILLS_KEY, ignoredBills } = await import("../src/app/panel/faturalar/rules");
+    const state = async (key: string) => (await db.select().from(s.integrationState).where(eq(s.integrationState.key, key)))[0]?.value;
+    // Muhasebecinin elle girdiği gider faturası (150) ve aynı numaralı e-fatura (E150) aynı kayıtta (PARASUT.md §6)
+    const f = await invoice({ payable: 1250, invoiceNo: "SUT2026000000150", source: "parasut", origin: "parasut", externalId: "150", eInvoiceId: "E150" });
+    const d = ok(await invoices.deleteInvoice(f.id));
+    assert.equal(d.externalId, "150", "listenin ve Geri al'ın anahtarı gider faturası");
+    assert.deepEqual(await state(IGNORE_KEY), ["150", "ei:E150"], "e-fatura eşitlemesi (ei:E150) de yok sayar");
+    const deleted = (await state(DELETED_BILLS_KEY)) as { externalId: string; alsoIgnored?: string[] }[];
+    assert.deepEqual(deleted.map((e) => [e.externalId, e.alsoIgnored]), [["150", ["ei:E150"]]]);
+    assert.deepEqual(ignoredBills(await state(IGNORE_KEY), deleted).map((b) => b.externalId), ["150"], "listede tek satır");
+
+    // Geri al: iki anahtar birlikte çıkar, kayıt iki kimliğiyle döner
+    assert.equal(ok(await invoices.unignoreParasutBill("150")).status, "restored");
+    assert.deepEqual(await state(IGNORE_KEY), []);
+    const [back] = await db.select().from(s.invoices).where(eq(s.invoices.externalId, "150"));
+    assert.equal(back.eInvoiceId, "E150");
+
+    // Düzeltmeden önce silinmiş kayıt: eşitleme e-faturadan yeni kayıt açmıştı (E150 onda). Geri alma benzersiz e-fatura
+    // kimliğine çarpıp düşmez, "zaten listede" der
+    ok(await invoices.deleteInvoice(back.id));
+    await invoice({ payable: 1250, invoiceNo: "SUT2026000000150", source: "parasut", origin: "parasut", eInvoiceId: "E150" });
+    const r = ok(await invoices.unignoreParasutBill("150"));
+    assert.equal(r.status, "exists");
+    assert.deepEqual(await state(IGNORE_KEY), []);
+    assert.equal((await db.select().from(s.invoices)).length, 1);
+  });
+
   test("silinen fatura geri alınınca başka kartın ya da kartsız tedarikçinin faturasına bağlı alım da yeniden bağlanır; bağlanamayan söylenir", async () => {
     const c = await card();
     await card("Pınar");

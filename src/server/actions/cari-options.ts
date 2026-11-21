@@ -7,6 +7,7 @@ import { splitSupplier, supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { linkableInvoice } from "@/lib/cari/match";
 import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import { cardResolver } from "@/server/cari/settle";
 import { loadKasaHandled } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
@@ -63,7 +64,8 @@ export async function loadDebtOptions(input: { date: string; debtId?: number | n
  * Ödeme ekle › Kasadan: o günün işlenmemiş Teslim satırları (başka ödemeye bağlı değil, "Ayrı tut" denmemiş);
  * tedarikçinin adlarıyla eşleşenler önce. `paymentId`: düzeltilen ödemenin kendi satırı da listede kalır.
  * `convert`: yeni ödemede Alışveriş satırları da gelir (seçilirse "Ödemeye çevir": gider kaydı silinir, satır Teslim
- * olur); gider kaydının ayı, kategorisi ve tutarıyla. "Ayrı alım" denmiş alışveriş de seçilebilir.
+ * olur); gider kaydının ayı, kategorisi ve tutarıyla. "Ayrı alım" denmiş alışveriş de seçilebilir. Her satır kasasının
+ * şubesiyle gelir (`branch`, ad): iki şubenin aynı günkü satırları karışmasın (denetim 21 Kasım #31).
  */
 export async function loadKasaLines(input: { date: string; names: string[]; paymentId?: number | null; convert?: boolean }) {
   return attempt(async () => {
@@ -73,11 +75,12 @@ export async function loadKasaLines(input: { date: string; names: string[]; paym
     const own = zId.nullish().parse(input.paymentId) ?? null;
     const convert = z.boolean().optional().parse(input.convert) ?? false;
     const db = getDb();
-    const [lines, handled, linked, mine] = await Promise.all([
+    const [lines, handled, linked, mine, branches] = await Promise.all([
       db
         .select({
           id: s.cashOuts.id,
           date: s.cashOuts.date,
+          branchId: s.cashOuts.branchId,
           kind: s.cashOuts.kind,
           docType: s.cashOuts.docType,
           amount: s.cashOuts.amount,
@@ -95,13 +98,16 @@ export async function loadKasaLines(input: { date: string; names: string[]; paym
       loadKasaHandled(),
       db.select({ id: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(isNotNull(s.supplierEntries.cashOutId)),
       own ? db.select({ cashOutId: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(eq(s.supplierEntries.id, own)).limit(1) : Promise.resolve([]),
+      listBranches(db),
     ]);
+    const branchName = new Map(branches.map((b) => [b.id, b.name]));
     const keep = mine[0]?.cashOutId ?? null;
     const taken = new Set(linked.map((r) => r.id));
     return lines
       .filter((l) => l.id === keep || (l.kind === "teslim" ? !handled.has(l.id) : !taken.has(l.id)))
-      .map(({ expenseAmount, expenseDate, categoryName, ...l }) => ({
+      .map(({ expenseAmount, expenseDate, categoryName, branchId, ...l }) => ({
         ...l,
+        branch: branchName.get(branchId) ?? branchId,
         expense: expenseAmount !== null && expenseDate !== null ? { amount: expenseAmount, date: expenseDate, categoryName: categoryName ?? "" } : null,
         match: Boolean(l.store && keys.has(supplierMatchKey(l.store))),
       }))

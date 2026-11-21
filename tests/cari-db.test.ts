@@ -542,6 +542,32 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual([line2.id, line2.amount], [line.id, 2200]);
   });
 
+  test("Kasadan yeni satır (denetim 21 Kasım #31): iki kasa açıkken 'Tümü'de şubesiz kayıt reddedilir, seçilen şubenin kasasına yazılır", async () => {
+    const me = await actor();
+    const c = await card("Sütaş", { paymentTermDays: 30 });
+    const kasaDay = [businessDate(), "2026-10-24"].sort()[0];
+    // İstek dışında kapsam "Tümü"dür (cookies() fırlar): Marina da açıkken satırın kasası belirsiz
+    await db.insert(s.branches).values({ id: "marina", name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
+    try {
+      await assert.rejects(
+        withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new" } }), 30)),
+        (e: unknown) => e instanceof UserError && /hangi şubenin kasasından/.test(e.message),
+      );
+      await assert.rejects(
+        withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new", branchId: "online" } }), 30)),
+        (e: unknown) => e instanceof UserError && /Şube bulunamadı/.test(e.message),
+      );
+      assert.equal((await db.select().from(s.cashOuts)).length, 0, "reddedilen kayıt satır açmaz");
+      assert.equal((await db.select().from(s.supplierEntries)).length, 0, "reddedilen kayıt ödeme açmaz");
+      const p = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 500, date: kasaDay, method: "kasa", cashOut: { mode: "new", branchId: "marina" } }), 30));
+      const [line] = await db.select().from(s.cashOuts);
+      assert.deepEqual([line.id, line.branchId, line.kind, line.amount], [p.cashOut?.id, "marina", "teslim", 500]);
+    } finally {
+      await db.execute(sql`TRUNCATE supplier_allocations, supplier_entries, cash_outs RESTART IDENTITY CASCADE`);
+      await db.delete(s.branches).where(eq(s.branches.id, "marina"));
+    }
+  });
+
   test("borç düzeltme ve silme: gider kaydı izler, sayılan ödemenin altına inilmez, gider → faturası gelecek kaydı siler", async () => {
     const me = await actor();
     const c = await card();
