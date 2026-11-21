@@ -39,6 +39,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 |------------|-------|------------------------|
 | Kullanıcıların parola özeti, iki adımlı doğrulama anahtarı, kurtarma kodları, hatalı giriş sayısı, kilit, oturum sürümü | dosya Drive'da ya da indirilenlerde durur | aynı e-posta hedefte varsa onun parolası kalır; yoksa "davet bekliyor" (§ 5) |
 | Davet ve parola sıfırlama bağlantıları (`user_tokens`) | tek kullanımlık | yenisi gönderilir |
+| Çıkışta kapatılan oturumlar (`revoked_sessions`) | geçici; çerezin süresiyle gereksizleşir | geri yükleme herkesin oturum sürümünü artırır, eski oturumların hepsi zaten düşer |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
 | Paraşüt erişim belirteci (`integration_state` › `parasut.token`) | şifreli belirteç | ilk eşitlemede ortam değişkenleriyle yeniden alınır |
 | Bildirim (VAPID) anahtarı (`webpush_vapid`) | şifreli anahtar | yenisi üretilir |

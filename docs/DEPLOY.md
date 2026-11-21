@@ -187,6 +187,21 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (oradaki parola onayı
   buradan atlanamasın). Ortak cihazda işiniz bitince çıkış yapın; unuttuysanız başka bir cihazdan
   Hesabım › Oturumlar › Diğer cihazlardaki oturumları kapat.
+- **Çıkış** oturumu sunucuda da kapatır: oturum çerezi rastgele bir kimlik taşır, çıkışta bu kimlik
+  `revoked_sessions` tablosuna yazılır. Çerezin bir kopyası alınmış olsa da (ortak bilgisayarda eklenti, kaydedilmiş
+  HAR) çıkıştan sonra geçmez; kişinin öteki cihazlarındaki oturumlar açık kalır. Aynı tarayıcıda yerine yeni oturum
+  açılınca (ad değişikliği, sıradaki kişinin girişi) eskisi de kapanır. Satır çerezin süresi (30 gün) dolunca
+  gereksizleşir, sonraki çıkışta silinir.
+  Bu sürümden önce açılmış oturumlarda kimlik yoktur: onlarda çıkış eskisi gibi yalnız çerezi siler, kendi süreleriyle
+  (en geç 30 günde) düşerler; yayından sonra kimse oturumdan düşmez.
+- **Oturum düşünce** (parola değişti, hesap pasif, oturumlar kapatıldı, çıkış yapıldı) sunucu giriş sayfasına
+  `?oturum=bitti&s=…` ile gönderir; `s` reddedilen çerezin kısa özetidir (sha256'nın ilk 16 hanesi). Proxy çerezi yalnız
+  özet tutarsa siler: yeniden girişten sonra Geri düğmesi ya da önbellekteki eski yönlendirme yeni oturumu, başka bir
+  siteden gelen `?oturum=bitti` bağlantısı geçerli oturumu silemez (geçerli oturumla açılan giriş sayfası ana sayfaya
+  gider). Açık panel sekmesi oturumun düştüğünü canlı uçtan (`/api/canli` 401) anlar: canlı veriyi (hatırlatıcılar,
+  karaoke, siparişler) bellekten siler ve sayfayı sunucudan yeniden ister, sunucu giriş sayfasına gönderir; panelden
+  çıkınca çalan alarm (sürekli sesli hatırlatma, karaoke) da susar. Ortak tablette sıradaki kişi önceki kişinin
+  hatırlatıcısını ya da karaoke tutarını görmez; yeniden giren kişinin canlı verisi baştan istenir.
 - **Parolayla onay (yönetici işlemleri):** yönetici gücü veren ya da bir yönetici hesabına dokunan işlemler, işlemi
   yapan yöneticinin **kendi parolasını** ister: yönetici ekleme (parolalı ya da davetli, aktif ya da pasif),
   personeli yönetici yapma ve yöneticiyi personel yapma; bir yöneticiyi pasif ya da yeniden aktif yapma; bir
@@ -314,6 +329,9 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **cikista_oturum_kapanir** (`revoked_sessions`, § 6a Çıkış): yalnız yeni tablo, eklemeli. Bu sürümden geriye
+    Instant Rollback yapılırsa eski kod tabloya bakmaz: çıkışta kapatılmış oturumların kopyaları yeniden geçer (yalnız
+    çerezi kopyalanmış oturumlar için önemli).
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
     eklemeli; eski kod onlara dokunmaz. Sabah işi her gün `api.met.no`'ya bir istek atar (ücretsiz, anahtarsız;
     `WEATHER_CONTACT` isteğe bağlı, § 4); önizlemeler tahmin kaydı ve hava durumu yazmaz.

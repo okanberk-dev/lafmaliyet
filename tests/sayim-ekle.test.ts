@@ -891,7 +891,12 @@ test("migration veritabanında: boşta 0, doluda 8 (her biri fiyat satırı, ken
   }
   // Sekizi zaten eklenmişse (bu veritabanı migrate edildi) adları geçici olarak değiştirilir: silmek reçete ve sayım
   // bağlarına takılırdı; işlem sonunda hepsi geri alınır
-  const hideEight = (tx: postgres.TransactionSql) => tx`update ingredients set name = name || ' (deneme)' where name in ${tx(EIGHT)}`;
+  // Migration boş veritabanına eklemez; tohumsuz test veritabanında (yalnız migration'lar) "dolu" sayılsın diye işlemin
+  // içinde bir kalem açılır (sonuç veritabanının o anki dolu/boş hâline bağlı kalmasın)
+  const hideEight = async (tx: postgres.TransactionSql) => {
+    await tx`update ingredients set name = name || ' (deneme)' where name in ${tx(EIGHT)}`;
+    await tx`insert into ingredients (name, category, unit) select 'Deneme kalemi (dolu veritabanı)', 'Diğer', 'adet' where not exists (select 1 from ingredients)`;
+  };
   const counts = (r: { added: number; prices: number; log: number }) => ({ added: r.added, prices: r.prices, log: r.log });
   try {
     const filled = await trial(hideEight);

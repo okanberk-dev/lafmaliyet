@@ -28,7 +28,7 @@ import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdue
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 
-type User = { name: string; email: string; role: "admin" | "staff" };
+type User = { id: number; name: string; email: string; role: "admin" | "staff" };
 
 const iconButton =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30";
@@ -329,7 +329,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
 
       <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
 
-      <AlertCenter role={user.role} />
+      <AlertCenter role={user.role} userId={user.id} />
 
       {isAdmin ? <PanelSearch pages={pages} index={index} open={searchOpen} onOpenChange={setSearchOpen} hideTrigger /> : null}
     </>

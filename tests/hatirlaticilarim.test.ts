@@ -314,8 +314,9 @@ test("köşe kartı ve pencere: kabukta, her ekranda; kapatılamaz, hareket azal
   assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*\.reminder-nudge \{/);
   // Uyarı motoru kabukta bir kez (sidebar.tsx) ve kartı çizer
   const center = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
-  assert.match(center, /<ReminderAlerts enabled=\{prefs\.reminderAlerts\} now=\{now\}/);
-  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} \/>/);
+  // Kart kabuğun kullanıcısının hatırlatıcılarını çizer (ortak cihaz, denetim KA-01; tests/paylasilan-cihaz.test.ts)
+  assert.match(center, /<ReminderAlerts userId=\{userId\} enabled=\{prefs\.reminderAlerts\} now=\{now\}/);
+  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} \/>/);
 });
 
 test("Kime: yönetici için formun başında, saat verilmeden başkasına kurulunca uyarır", () => {

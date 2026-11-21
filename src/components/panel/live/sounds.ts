@@ -256,6 +256,9 @@ export function stopAlarm(owner?: string) {
 
 export const alarmRinging = () => alarmTimer !== null;
 
+/** Şu an alarmı çalan sahipler (useAlarmOwners'ın anlık hâli; bileşen dışından, ör. temizlikte okumak için) */
+export const alarmOwnersNow = () => ownersSnapshot;
+
 /** Alarmı çalan sahipler, virgülle ve sıralı ("hatirlatici:12,karaoke"); sunucuda boş */
 export function useAlarmOwners(): string {
   return useSyncExternalStore(

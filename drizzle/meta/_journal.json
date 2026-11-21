@@ -428,6 +428,13 @@
       "when": 1795261207041,
       "tag": "0060_hatirlatici_saat_capasi",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795272446310,
+      "tag": "0061_cikista_oturum_kapanir",
+      "breakpoints": true
     }
   ]
 }

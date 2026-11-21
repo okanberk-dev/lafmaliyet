@@ -21,7 +21,7 @@ async function SidebarWithUser() {
   ]);
   return (
     <Sidebar
-      user={{ name: user.name, email: user.email, role: user.role }}
+      user={{ id: user.id, name: user.name, email: user.email, role: user.role }}
       index={index}
       branch={{ scope: branch.scope, branches: branch.branches, locked: branch.locked }}
     />
