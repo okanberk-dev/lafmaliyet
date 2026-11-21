@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import {
   connectionBreakdown,
+  connectionHeadline,
   invoiceBreakdown,
   invoicesHref,
   invoiceStats,
@@ -200,6 +201,54 @@ test("Bağlantı: ortam değişkenleri tanımlı / eksik, eşitlemenin zamanı; 
   assert.equal(old[1].rows[0].tone, "warn");
 
   assert.equal(connectionBreakdown({ configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, ...linked, lastOk: null })[1].rows[1].display, "Her sabah");
+});
+
+test("Bağlantı: hesap bağlanmadan eski yöntem geçici yedek olarak çalışırken kart ve döküm bunu söyler", () => {
+  const base = { configured: true, env: env(), cronSet: true, syncFrom: null, cursor: null, connected: false, refreshedAt: null, stale: false, lastOk: null };
+
+  // 10 Aralık'a kadar: eşitleme her sabah sürer ama son tarihi var (uyarı rengi)
+  const active = Object.fromEntries(connectionBreakdown({ ...base, legacy: "active" })[1].rows.map((r) => [r.key, r]));
+  assert.equal(active.hesap.display, "Eski yöntem");
+  assert.equal(active.hesap.tone, "warn");
+  assert.match(active.hesap.sub ?? "", /10 Aralık 2026'da kapatıyor/);
+  assert.match(active.hesap.sub ?? "", /“Paraşüt hesabını bağla”/);
+  assert.equal(active.otomatik.display, "Her sabah");
+  assert.equal(active.otomatik.tone, "warn");
+  assert.match(active.otomatik.sub ?? "", /eski kullanıcı adı ve parolayla, 10 Aralık 2026'ya kadar/);
+  // CRON_SECRET yoksa eski yöntemle de yalnız elle çalışır
+  assert.equal(Object.fromEntries(connectionBreakdown({ ...base, cronSet: false, legacy: "active" })[1].rows.map((r) => [r.key, r])).otomatik.display, "Kapalı");
+
+  // Son tarih geçti: kırmızı, eşitleme çalışmaz
+  const closed = Object.fromEntries(connectionBreakdown({ ...base, legacy: "closed" })[1].rows.map((r) => [r.key, r]));
+  assert.equal(closed.hesap.display, "Eski yöntem kapandı");
+  assert.equal(closed.hesap.tone, "bad");
+  assert.match(closed.hesap.sub ?? "", /yeniden bağlayın/);
+  assert.equal(closed.otomatik.display, "Hesap bağlanmadı");
+
+  // Hesap bağlıysa eski yöntemin durumu hiç görünmez
+  const linkedRows = Object.fromEntries(connectionBreakdown({ ...base, ...linked, legacy: "active" })[1].rows.map((r) => [r.key, r]));
+  assert.equal(linkedRows.hesap.display, "Bağlı");
+  assert.equal(linkedRows.otomatik.tone, "good");
+
+  // Kartın kısa durumu aynı kuraldan
+  assert.deepEqual(connectionHeadline({ configured: false, connected: false, stale: false, legacy: "active", cronSet: true }), {
+    value: "Kurulmadı",
+    tone: "warn",
+    sub: "Aşağıdaki kurulum adımlarını izleyin",
+  });
+  assert.deepEqual(connectionHeadline({ configured: true, connected: false, stale: false, legacy: "active", cronSet: true }), {
+    value: "Eski yöntem",
+    tone: "warn",
+    sub: "10 Aralık'ta kapanacak · hesabı bağlayın",
+  });
+  assert.equal(connectionHeadline({ configured: true, connected: false, stale: false, legacy: "closed", cronSet: true }).tone, "bad");
+  assert.equal(connectionHeadline({ configured: true, connected: false, stale: false, legacy: null, cronSet: true }).value, "Hesap bağlanmadı");
+  assert.deepEqual(connectionHeadline({ configured: true, connected: true, stale: false, legacy: null, cronSet: false }), {
+    value: "Bağlı",
+    tone: "good",
+    sub: "Her sabah 07:00–08:00 · CRON_SECRET eksik",
+  });
+  assert.equal(connectionHeadline({ configured: true, connected: true, stale: true, cronSet: true }).value, "Yenilenmeli");
 });
 
 // ---------------------------------------------------------------- Son eşitleme

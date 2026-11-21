@@ -68,7 +68,7 @@ import {
   unignoreProduct,
 } from "@/server/actions/parasut";
 
-import { connectionBreakdown, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
+import { connectionBreakdown, connectionHeadline, type LegacyState, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
 const MATCH_LABEL: Record<MatchType, string> = { supplier: "Tedarikçi adı", parasut_category: "Paraşüt kategorisi", keyword: "Açıklama / kalemde geçen" };
@@ -218,8 +218,12 @@ export function ParasutClient({
   returns = null,
 }: {
   configured: boolean;
-  /** Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli) */
-  connection: { connected: boolean; refreshedAt: string | null; stale: boolean };
+  /**
+   * Paraşüt hesabı tarayıcıdan yetkilendirildi mi; refresh_token'ın yaşı (30 gün geçerli). `legacy`: hesap bağlı
+   * değilken eski kullanıcı adı/parola yöntemi geçici yedek olarak çalışıyor mu ("active") ya da kapandı mı ("closed");
+   * `legacyEnv`: eski kullanıcı adı/parola Vercel'de hâlâ duruyor mu.
+   */
+  connection: { connected: boolean; refreshedAt: string | null; stale: boolean; legacy?: LegacyState; legacyEnv?: boolean };
   /** DevHub'a kaydedilmesi gereken dönüş adresi (PARASUT_REDIRECT_URI yanlışsa null) */
   redirectUri: string | null;
   env: { name: string; set: boolean }[];
@@ -286,8 +290,12 @@ export function ParasutClient({
     connected: connection.connected,
     refreshedAt: connection.refreshedAt,
     stale: connection.stale,
+    legacy: connection.legacy ?? null,
     lastOk: syncRuns.find((r) => r.status === "ok") ?? null,
   });
+  const headline = connectionHeadline({ configured, connected: connection.connected, stale: connection.stale, legacy: connection.legacy ?? null, cronSet });
+  // Eski yöntem geçici yedek olarak çalışıyor: Vercel'deki client_id / client_secret büyük olasılıkla hâlâ eski istemcinin
+  const legacyActive = !connection.connected && connection.legacy === "active";
   const linkGroups = linkedBreakdown(links, ingredients, unlinkedTotal, ignored.length);
   const runGroups = runsBreakdown(runs, { lastSyncedAt: stats.lastSyncedAt, lineReads, pendingEInvoices });
 
@@ -353,7 +361,8 @@ export function ParasutClient({
                 startTest(async () => {
                   const r = await testParasutConnection();
                   if (!r.ok) return void toast.error(r.error);
-                  toast.success(r.data.total !== null ? `Bağlantı tamam · Paraşüt'te ${num(r.data.total)} gider faturası var` : "Bağlantı tamam");
+                  const via = r.data.legacy ? " (eski yöntemle, 10 Aralık'a kadar)" : "";
+                  toast.success(r.data.total !== null ? `Bağlantı tamam${via} · Paraşüt'te ${num(r.data.total)} gider faturası var` : `Bağlantı tamam${via}`);
                 })
               }
             >
@@ -379,15 +388,9 @@ export function ParasutClient({
             compact
             icon={<PlugZap />}
             label="Bağlantı"
-            value={!configured ? "Kurulmadı" : !connection.connected ? "Hesap bağlanmadı" : connection.stale ? "Yenilenmeli" : "Bağlı"}
-            tone={!configured || !connection.connected ? "warn" : connection.stale ? "warn" : "good"}
-            sub={
-              !configured
-                ? "Aşağıdaki kurulum adımlarını izleyin"
-                : !connection.connected
-                  ? "“Paraşüt hesabını bağla” ile bir kez yetkilendirin"
-                  : `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}`
-            }
+            value={headline.value}
+            tone={headline.tone}
+            sub={headline.sub}
           />
         </StatBreakdown>
         <StatBreakdown
@@ -490,7 +493,21 @@ export function ParasutClient({
         )
       ) : null}
 
-      {configured && !connection.connected ? (
+      {configured && legacyActive ? (
+        <Notice
+          tone="warn"
+          className="mb-4"
+          title="Eski bağlantı 10 Aralık'ta kapanacak, Paraşüt hesabını bağlayın"
+          text="Eşitleme şimdilik eski kullanıcı adı ve parolayla sürüyor. Yeni client_id ve client_secret'ı Vercel'e girip “Paraşüt hesabını bağla”ya basın."
+        />
+      ) : configured && !connection.connected && connection.legacy === "closed" ? (
+        <Notice
+          tone="bad"
+          className="mb-4"
+          title="Eski bağlantı kapandı, Paraşüt hesabını yeniden bağlayın"
+          text="Paraşüt eski yöntemi 10 Aralık 2026'da kapattı; faturalar gelmiyor. Kurulum kartından “Paraşüt hesabını bağla”ya basın."
+        />
+      ) : configured && !connection.connected ? (
         <Notice
           tone="warn"
           className="mb-4"
@@ -504,6 +521,13 @@ export function ParasutClient({
           title="Paraşüt yetkisi yenilenmeli"
           text="Paraşüt'ün verdiği yenileme hakkı 30 gün geçerli ve son yenileme eskidi. Eşitleme durduysa “Yeniden bağla” ile yetkiyi tazeleyin."
         />
+      ) : connection.connected && connection.legacyEnv ? (
+        <Notice
+          tone="neutral"
+          className="mb-4"
+          title="Eski kullanıcı adı ve parola artık gerekmiyor"
+          text="Hesap yeni yöntemle bağlı. Vercel'deki PARASUT_USERNAME ve PARASUT_PASSWORD'ü silebilirsiniz; panel onları artık kullanmıyor."
+        />
       ) : null}
 
       {returns ? <ReturnsNotice returns={returns} /> : null}
@@ -514,9 +538,11 @@ export function ParasutClient({
           <CardHeader icon={<PlugZap />} title="Kurulum" description="Bir kez yapılır. Değerler Vercel'de saklanır, panelde gösterilmez." />
           <CardContent className="space-y-4">
             <ol className="space-y-3 text-sm text-ink-soft">
-              <Step n={1} done={env.slice(0, 2).every((e) => e.set)}>
+              {/* Eski yöntem sürerken Vercel'deki değerler eski istemcinin: yenisi ancak bağlanınca doğrulanmış olur */}
+              <Step n={1} done={env.slice(0, 2).every((e) => e.set) && !legacyActive}>
                 Paraşüt <b>DevHub</b>&apos;a Paraşüt hesabınızla girip <i>“Paraşüt Kullanıcısıyım”</i> ile başvurun. İstemci hemen oluşur (inceleme beklenmez) ve size bir{" "}
                 <code className="rounded bg-surface px-1">client_id</code> ile <code className="rounded bg-surface px-1">client_secret</code> verilir.
+                {legacyActive ? " Vercel'deki şimdiki değerler eski istemcinin; yenileriyle değiştirin." : null}
               </Step>
               <Step n={2} done={connection.connected}>
                 Başvuruda <b>dönüş adresi (redirect URI)</b> olarak tam olarak şunu kaydedin:{" "}
@@ -566,7 +592,9 @@ export function ParasutClient({
                     : connection.refreshedAt
                       ? `Bağlı · yetki en son ${dateTimeTR(connection.refreshedAt)} yenilendi (her eşitlemede kendiliğinden yenilenir).`
                       : "Bağlı."
-                  : "Paraşüt'ün giriş ve onay ekranına gidilir; dönüşte yetki şifreli olarak burada saklanır."}
+                  : legacyActive
+                    ? "Önce Vercel'e DevHub'daki yeni client_id ve client_secret'ı girip yeniden deploy edin; eski istemciyle Paraşüt onay ekranı açılmaz."
+                    : "Paraşüt'ün giriş ve onay ekranına gidilir; dönüşte yetki şifreli olarak burada saklanır."}
               </span>
             </div>
             <p className="text-xs leading-5 text-ink-mute">
@@ -657,7 +685,11 @@ export function ParasutClient({
         tone="primary"
         confirmLabel="Oturumu sıfırla"
         title="Paraşüt oturumu sıfırlansın mı?"
-        description="Kayıtlı erişim belirteci ve eşitleme imleci silinir. Bir sonraki eşitlemede yeniden giriş yapılır ve başlangıç tarihinden itibaren tekrar okunur; mevcut faturalar çoğalmaz, bağlantılar ve kurallar kalır."
+        description={`Kayıtlı Paraşüt yetkisi ve eşitleme imleci silinir. ${
+          legacyActive
+            ? "Bir sonraki eşitlemede eski yöntemle yeniden giriş yapılır (10 Aralık'a kadar)"
+            : "Sonra “Paraşüt hesabını bağla” ile yeniden bağlamanız gerekir"
+        } ve faturalar başlangıç tarihinden itibaren tekrar okunur; mevcut faturalar çoğalmaz, bağlantılar ve kurallar kalır.`}
         pending={resetting}
         onConfirm={() =>
           startReset(async () => {

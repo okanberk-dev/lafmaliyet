@@ -5,8 +5,8 @@ import { eq } from "drizzle-orm";
 import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
-import { postParasutToken, saveParasutToken } from "./client";
-import { readParasutConfig, type ParasutConfig } from "./config";
+import { forgetLegacyParasutToken, postParasutToken, saveParasutToken } from "./client";
+import { assertOidcSettings, readParasutConfig, type ParasutConfig } from "./config";
 import { authorizeRequestUrl, challengeOf, createState, createVerifier, sameToken } from "@/lib/parasut/oidc";
 
 import { parasutEndpoints } from "./oidc";
@@ -21,6 +21,9 @@ import { parasutEndpoints } from "./oidc";
  *
  * Bekleyen istek (state + code_verifier) integration_state'te şifreli durur ve 10 dakika geçerlidir; tek seferliktir
  * (dönüşte silinir), böylece aynı kod ikinci kez kullanılamaz.
+ *
+ * Bağlantı kurulunca eşitleme bir sonraki çalışmadan itibaren yalnız yeni yöntemi kullanır; eski parola yönteminin
+ * (geçici yedek, src/lib/parasut/legacy.ts) kayıtlı belirteci silinir.
  */
 
 const PENDING_KEY = "parasut.connect";
@@ -68,6 +71,8 @@ async function takePending(): Promise<Pending | null> {
  */
 export async function startParasutConnect(by: string): Promise<string> {
   const cfg = readParasutConfig();
+  // Yanlış yazılmış adres değişkeniyle Paraşüt'e gidilmez (eski yöntemle süren eşitleme bundan etkilenmez)
+  assertOidcSettings(cfg);
   const { authorizeUrl } = await parasutEndpoints(cfg);
   const verifier = createVerifier();
   const state = createState();
@@ -97,6 +102,8 @@ export async function finishParasutConnect(input: { code: string | null; state: 
     );
   }
   await saveParasutToken(cfg, token);
+  // Artık yeni oturum var: geçici yedeğin belirteci gerekmiyor
+  await forgetLegacyParasutToken();
   return { by: pending.by };
 }
 

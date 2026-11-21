@@ -62,7 +62,9 @@ export const USER_CREDENTIAL_COLUMNS = [
  * ama dosyada durmaları gerekmez: uygulama yokluklarında yenisini alır.
  */
 export const EXCLUDED_STATE_KEYS: Readonly<Record<string, string>> = {
-  "parasut.token": "Paraşüt erişim belirteci (şifreli); ilk eşitlemede ortam değişkenleriyle yeniden alınır",
+  // Belirteçler her yenilemede değişir; yedekteki eski hâli işe yaramaz, AUTH_SECRET değişince de açılmaz
+  "parasut.token": "Paraşüt oturumu (şifreli); geri yüklemeden sonra panelden “Paraşüt hesabını bağla” ile yeniden bağlanır",
+  "parasut.legacyToken": "Paraşüt'ün eski parola yönteminin belirteci (şifreli, 10 Aralık 2026'ya kadar); ilk eşitlemede yeniden alınır",
   webpush_vapid: "bildirim anahtarı (şifreli); yenisi üretilir, cihazlar panel açılınca yeniden abone olur",
   // KVKK: laffogato.net'in açık uygulama siparişlerinin kopyası müşteri adlarını taşır; site bilerek geçmişsiz tutar,
   // bar ekranı açılınca siteden yeniden çekilir (docs/SITE-SIPARIS.md)

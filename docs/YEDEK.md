@@ -40,7 +40,8 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Kullanıcıların parola özeti, iki adımlı doğrulama anahtarı, kurtarma kodları, hatalı giriş sayısı, kilit, oturum sürümü | dosya Drive'da ya da indirilenlerde durur | aynı e-posta hedefte varsa onun parolası kalır; yoksa "davet bekliyor" (§ 5) |
 | Davet ve parola sıfırlama bağlantıları (`user_tokens`) | tek kullanımlık | yenisi gönderilir |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
-| Paraşüt erişim belirteci (`integration_state` › `parasut.token`) | şifreli belirteç | ilk eşitlemede ortam değişkenleriyle yeniden alınır |
+| Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
+| Paraşüt'ün eski parola yönteminin belirteci (`parasut.legacyToken`, 10 Aralık 2026'ya kadar) | şifreli belirteç | ilk eşitlemede ortam değişkenleriyle yeniden alınır |
 | Bildirim (VAPID) anahtarı (`webpush_vapid`) | şifreli anahtar | yenisi üretilir |
 | Bar ekranındaki uygulama siparişlerinin kopyası (`site_orders`) | müşteri adları (KVKK); site bu listeyi bilerek geçmişsiz tutar | bar ekranı açılınca siteden yeniden çekilir |
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
@@ -144,7 +145,7 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
 ✓ Geri yükleme tamam. 40 tablo, 4.312 satır. Şema: 0020_gunluk_isler.
 ✓ Yönetici parolası ADMIN_PASSWORD ile ayarlandı (admin@laffogato.net; yönetici olarak eklendi).
 ! Parolası olmayan kullanıcılar (Kullanıcılar & roller › Düzenle › Güvenlik › Davet bağlantısını yeniden oluştur): Okan, Ayşe
-! Paraşüt bağlantısı ilk eşitlemede yeniden kurulur; bildirim izinli cihazlar panel açılınca yeniden abone olur.
+! Paraşüt hesabını yeniden bağlayın: Ayarlar › Paraşüt entegrasyonu › “Paraşüt hesabını bağla”. Bildirim izinli cihazlar panel açılınca yeniden abone olur.
 ```
 
 ## 5. Kullanıcılar ve parolalar
@@ -170,7 +171,8 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
 
 ## 6. Geri yüklemeden sonra
 
-- **Paraşüt:** imleç yedeğin hâline döner. Sonraki eşitleme 75 gün geriye bakar ve yedekten sonra gelen faturaları
+- **Paraşüt:** oturum yedeğe girmez; panelde **Ayarlar › Paraşüt entegrasyonu → “Paraşüt hesabını bağla”** ile bir kez
+  yeniden bağlayın. İmleç yedeğin hâline döner. Sonraki eşitleme 75 gün geriye bakar ve yedekten sonra gelen faturaları
   yeniden alır. Yedekten sonra panelde yapılan her şey kaybolur: faturalara verilen "ödendi" / "talep edildi"
   işaretleri, kategori düzeltmeleri, ürün → hammadde bağlantıları; elle girilen fatura, harcama, kasa raporu, sayım,
   fiyat.
@@ -220,8 +222,8 @@ yüklenir. Komut veritabanına yazmaz. Depo klasörüne yazılan yedek git'e gir
    (`.env.local`'daki değerler canlı bir hedefte kullanılmaz).
 3. **Yeni, boş bir canlı veritabanına** yüklendiyse Vercel'de `AUTH_SECRET`'ı da yenileyin (`openssl rand -base64 48`)
    ve yeniden yayınlayın: eski veritabanında açılmış oturum ve cihaz çerezleri yenisinde geçmesin (kimlikler yeniden
-   verilebilir, § 5). Dosyada bu anahtarla şifrelenmiş bir değer yok: Paraşüt bağlantısı ve bildirim anahtarı zaten
-   yeniden kurulur, iki adımlı doğrulama yedekle gelmez (isteyen Hesabım'dan yeniden açar).
+   verilebilir, § 5). Dosyada bu anahtarla şifrelenmiş bir değer yok: Paraşüt hesabı panelden yeniden bağlanır, bildirim
+   anahtarı yeniden kurulur, iki adımlı doğrulama yedekle gelmez (isteyen Hesabım'dan yeniden açar).
 
 ## 9. Prova (her 3 ayda bir)
 

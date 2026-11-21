@@ -9,7 +9,9 @@
 //   tedarikçiye iade (giden iade e-faturası) panele girmez, listelenir;
 // - tarihi pencereden eski, sonradan girilmiş fatura kimlik sırasıyla yakalanır;
 // - tedarikçi geçmişinde eski faturası sorulamayan yeniden içeri alınmış e-fatura sonraki basışta kendi sayfasından denenir;
-// - 429'da yeniden denenir; yenileme belirteci reddedilince parolayla girilir.
+// - 429'da yeniden denenir; yenileme belirteci reddedilince bağlantı düşer ("yeniden bağlayın");
+// - geçici yedek (10 Aralık 2026'ya kadar): yeni oturum yokken eski kullanıcı adı/parolayla eşitlenir, hesap bağlanınca
+//   yalnız yeni yöntem kullanılır; eski uç kapanınca ya da son tarih geçince açık "yeniden bağlayın" hatası.
 //
 // PARASUT_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
 // test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler; verilen veritabanına dokunmaz.
@@ -85,6 +87,10 @@ class FakeParasut {
   /** Yol → bu yola gelecek sonraki N istek bağlantı hatasıyla düşer (ağ, zaman aşımı) */
   failures = new Map<string, number>();
   rejectRefresh = false;
+  /** Eski parola yönteminin reddi (eski uç kapandı: unsupported_grant_type ya da 401) */
+  rejectPassword: { status: number; error: string } | null = null;
+  /** API isteklerinin taşıdığı erişim belirteçleri (hangi oturumla gidildi) */
+  bearers: string[] = [];
   private tokens = 0;
 
   reset() {
@@ -95,6 +101,8 @@ class FakeParasut {
     this.throttle = 0;
     this.failures.clear();
     this.rejectRefresh = false;
+    this.rejectPassword = null;
+    this.bearers = [];
   }
 
   private json(body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -182,6 +190,7 @@ class FakeParasut {
       const grant = new URLSearchParams(String(init?.body ?? "")).get("grant_type") ?? "";
       this.grants.push(grant);
       if (grant === "refresh_token" && this.rejectRefresh) return this.json({ error: "invalid_grant" }, 400);
+      if (grant === "password" && this.rejectPassword) return this.json({ error: this.rejectPassword.error }, this.rejectPassword.status);
       this.tokens++;
       const created = Math.floor(Date.now() / 1000);
       return this.json({ access_token: `t${this.tokens}`, refresh_token: `r${this.tokens}`, expires_in: 7200, created_at: created });
@@ -190,6 +199,7 @@ class FakeParasut {
     assert.ok(url.pathname.startsWith(prefix), url.pathname);
     const path = url.pathname.slice(prefix.length);
     this.requests.push(`${path}?${url.searchParams.get("sort") ?? ""}`);
+    this.bearers.push(String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "").replace(/^Bearer /, ""));
     const fails = this.failures.get(path) ?? 0;
     if (fails > 0) {
       this.failures.set(path, fails - 1);
@@ -761,5 +771,208 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.match("error" in failed ? failed.error : "", /yeniden bağlayın/i);
     const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.token"));
     assert.equal(row, undefined, "iptal edilen yetki silindi (işlem geri almadı)");
+  });
+
+  // ---------------------------------------------------------------- Geçici yedek: eski parola yöntemi
+
+  /** Eski kullanıcı adı/parola ortamda (Vercel'de bugün olduğu gibi); fonksiyon bitince kaldırılır */
+  async function withLegacyEnv<T>(fn: () => Promise<T>): Promise<T> {
+    Object.assign(process.env, { PARASUT_USERNAME: "api@kafe.test", PARASUT_PASSWORD: "parola" });
+    try {
+      return await fn();
+    } finally {
+      delete process.env.PARASUT_USERNAME;
+      delete process.env.PARASUT_PASSWORD;
+    }
+  }
+  const stateRow = async (key: string) => (await db.select().from(s.integrationState).where(eq(s.integrationState.key, key)))[0];
+  /** Hesap hiç bağlanmamış (bugünkü canlı durum): kayıtlı yeni oturum yok */
+  const forgetOidc = () => db.delete(s.integrationState).where(eq(s.integrationState.key, "parasut.token"));
+  /** Kayıtlı belirtecin erişim değeri (hangi oturumla gidildiğini karşılaştırmak için) */
+  async function storedAccess(key: string): Promise<string | null> {
+    const { open } = await import("../src/server/secret-box");
+    const sealed = ((await stateRow(key))?.value as { sealed?: string } | undefined)?.sealed;
+    const plain = sealed ? open(sealed) : null;
+    return plain ? (JSON.parse(plain) as { access: string }).access : null;
+  }
+  async function seedLegacyToken(over: Partial<{ access: string; refresh: string | null; expiresAt: number }> = {}) {
+    const { seal } = await import("../src/server/secret-box");
+    const token = {
+      access: "eski-t",
+      refresh: "eski-r",
+      expiresAt: Date.now() + 3_600_000,
+      clientId: "test-istemci",
+      issuer: "legacy:password",
+      username: "api@kafe.test",
+      refreshedAt: Date.now(),
+      ...over,
+    };
+    const value = { sealed: seal(JSON.stringify(token)) };
+    await db
+      .insert(s.integrationState)
+      .values({ key: "parasut.legacyToken", value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value } });
+  }
+
+  test("geçici yedek: hesap bağlı değilken eski kullanıcı adı/parolayla eşitler, belirteci ayrı saklar ve yeniden kullanır", async () => {
+    const client = await import("../src/server/parasut/client");
+    await withLegacyEnv(async () => {
+      await forgetOidc();
+      assert.deepEqual(await client.parasutConnection(), { connected: false, refreshedAt: null, stale: false, legacy: "active", legacyEnv: true });
+
+      fake.bills.set("501", bill("501"));
+      await run();
+      assert.equal((await rows()).length, 1, "eşitleme durmadı");
+      assert.deepEqual(fake.grants, ["password"]);
+      const legacyAccess = await storedAccess("parasut.legacyToken");
+      assert.ok(legacyAccess, "eski belirteç kendi anahtarında");
+      assert.ok(fake.bearers.length && fake.bearers.every((b) => b === legacyAccess), "API'ye eski yöntemin belirteciyle gidildi");
+      assert.equal(await stateRow("parasut.token"), undefined, "yeni oturumun yerine yazılmadı");
+
+      // İkinci çalışma kayıtlı eski belirteci kullanır: yeniden parolayla girilmez
+      fake.grants = [];
+      await run();
+      assert.deepEqual(fake.grants, []);
+
+      // Süresi dolmuş eski belirteç önce refresh_token ile yenilenir; o da reddedilirse parolayla girilir (eski kod gibi)
+      await seedLegacyToken({ expiresAt: Date.now() - 60_000 });
+      fake.grants = [];
+      await run();
+      assert.deepEqual(fake.grants, ["refresh_token"]);
+      await seedLegacyToken({ expiresAt: Date.now() - 60_000 });
+      fake.rejectRefresh = true;
+      fake.grants = [];
+      await run();
+      assert.deepEqual(fake.grants, ["refresh_token", "password"]);
+
+      // Hesap hâlâ bağlı değil: panel uyarısı sürer
+      assert.equal((await client.parasutConnection()).legacy, "active");
+    });
+    // Eski kullanıcı adı/parola yoksa yedek yok: açık "bağlayın" hatası, istek atılmaz
+    fake.grants = [];
+    const none = await sync.syncParasut("manual");
+    assert.equal(none.ok, false);
+    assert.match("error" in none ? none.error : "", /Paraşüt hesabı bağlı değil/);
+    assert.deepEqual(fake.grants, []);
+    assert.deepEqual(await client.parasutConnection(), { connected: false, refreshedAt: null, stale: false, legacy: null, legacyEnv: false });
+  });
+
+  test("geçiş: hesap bağlanınca yalnız yeni yöntem kullanılır, eski belirteç silinir ve parolaya hiç dönülmez", async () => {
+    const client = await import("../src/server/parasut/client");
+    const connect = await import("../src/server/parasut/connect");
+    await withLegacyEnv(async () => {
+      await forgetOidc();
+      fake.bills.set("502", bill("502"));
+      await run();
+      assert.deepEqual(fake.grants, ["password"]);
+
+      // Yönetici "Paraşüt hesabını bağla"ya basar; Paraşüt onay verip yetki koduyla döner
+      const to = new URL(await connect.startParasutConnect("Patron"));
+      assert.equal(to.origin + to.pathname, `${BASE}/oauth/authorize`);
+      fake.grants = [];
+      await connect.finishParasutConnect({ code: "kod-1", state: to.searchParams.get("state") });
+      assert.deepEqual(fake.grants, ["authorization_code"]);
+      assert.equal(await stateRow("parasut.legacyToken"), undefined, "eski belirteç silindi");
+      const conn = await client.parasutConnection();
+      assert.equal(conn.connected, true);
+      assert.equal(conn.legacy, null, "eski yöntem uyarısı kalktı");
+      assert.equal(conn.legacyEnv, true, "eski değişkenler duruyor: panel silinebileceğini söyler");
+
+      // Sonraki eşitleme yeni oturumla gider: ne parola ne yenileme istenir
+      const oidcAccess = await storedAccess("parasut.token");
+      fake.grants = [];
+      fake.bearers = [];
+      await run();
+      assert.deepEqual(fake.grants, []);
+      assert.ok(fake.bearers.length && fake.bearers.every((b) => b === oidcAccess), "API'ye yeni oturumun belirteciyle gidildi");
+      assert.equal(await stateRow("parasut.legacyToken"), undefined, "eski yöntem yeniden kullanılmadı");
+
+      // Yeni oturumun süresi dolunca refresh_token ile yenilenir (eski kullanıcı adı/parola dururken bile)
+      await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
+      fake.grants = [];
+      await run();
+      assert.deepEqual(fake.grants, ["refresh_token"]);
+
+      // Yeni oturum iptal edilirse aynı çalışmada parolaya dönülmez: "yeniden bağlayın"
+      await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
+      fake.rejectRefresh = true;
+      fake.grants = [];
+      const failed = await sync.syncParasut("manual");
+      assert.equal(failed.ok, false);
+      assert.deepEqual(fake.grants, ["refresh_token"]);
+      assert.match("error" in failed ? failed.error : "", /yeniden bağlayın/);
+    });
+  });
+
+  test("eski uç kapandıysa (unsupported_grant_type ya da 401) açık “yeniden bağlayın” hatası", async () => {
+    await withLegacyEnv(async () => {
+      await forgetOidc();
+      fake.bills.set("503", bill("503"));
+      for (const reject of [
+        { status: 400, error: "unsupported_grant_type" },
+        { status: 401, error: "invalid_client" },
+      ]) {
+        fake.rejectPassword = reject;
+        fake.grants = [];
+        const r = await sync.syncParasut("manual");
+        assert.equal(r.ok, false, JSON.stringify(reject));
+        const error = "error" in r ? r.error : "";
+        assert.match(error, /eski kullanıcı adı ve parola yöntemini artık kabul etmiyor/);
+        assert.match(error, /“Paraşüt hesabını bağla” ile yeniden bağlayın/);
+        assert.deepEqual(fake.grants, ["password"]);
+        assert.equal(await stateRow("parasut.legacyToken"), undefined);
+      }
+      assert.equal((await rows()).length, 0);
+    });
+  });
+
+  test("10 Aralık 2026 geçince eski yöntem hiç denenmez: istek atılmadan “yeniden bağlayın”", async () => {
+    const legacy = await import("../src/lib/parasut/legacy");
+    const client = await import("../src/server/parasut/client");
+    const endsAt = legacy.PARASUT_LEGACY.endsAt;
+    legacy.PARASUT_LEGACY.endsAt = Date.now() - 1000;
+    try {
+      await withLegacyEnv(async () => {
+        await forgetOidc();
+        fake.bills.set("504", bill("504"));
+        assert.equal((await client.parasutConnection()).legacy, "closed");
+        const r = await sync.syncParasut("manual");
+        assert.equal(r.ok, false);
+        const error = "error" in r ? r.error : "";
+        assert.match(error, /10 Aralık 2026'da kapattı/);
+        assert.match(error, /yeniden bağlayın/);
+        assert.deepEqual(fake.grants, [], "eski uca istek atılmadı");
+        assert.deepEqual(fake.requests, []);
+
+        // Hesap bağlıysa son tarih önemsiz: yeni yöntem çalışır
+        await seedToken();
+        await run();
+        assert.equal((await rows()).length, 1);
+        assert.deepEqual(fake.grants, []);
+      });
+    } finally {
+      legacy.PARASUT_LEGACY.endsAt = endsAt;
+    }
+  });
+
+  test("yanlış yazılmış isteğe bağlı adres eşitlemeyi durdurmaz; hesabı bağlama açık hatayla başlamaz", async () => {
+    const connect = await import("../src/server/parasut/connect");
+    process.env.PARASUT_REDIRECT_URI = "http://ladmin.laffogato.net/geri";
+    try {
+      await withLegacyEnv(async () => {
+        await forgetOidc();
+        fake.bills.set("505", bill("505"));
+        await run();
+        assert.deepEqual(fake.grants, ["password"]);
+        await assert.rejects(connect.startParasutConnect("Patron"), /PARASUT_REDIRECT_URI geçerli bir https adresi değil/);
+      });
+      // Yeni oturumun yenilenmesi dönüş adresine bakmaz: o da sürer
+      await seedToken({ access: "eski", refresh: "eski-yenileme", expiresAt: Date.now() - 60_000 });
+      fake.grants = [];
+      await run();
+      assert.deepEqual(fake.grants, ["refresh_token"]);
+    } finally {
+      delete process.env.PARASUT_REDIRECT_URI;
+    }
   });
 });

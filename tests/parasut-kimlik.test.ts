@@ -1,7 +1,9 @@
 // Paraşüt kimlik doğrulaması (docs/PARASUT.md): Authorization Code + PKCE kuralları — doğrulayıcı ve S256 sınaması
 // RFC 7636'ya uyar, keşif belgesi yalnız https ve aynı alan adındaki uçları kabul eder, yetki adresi state ve PKCE
-// taşır. Ayrıca kaynak taraması: grant_type=password hiçbir yerde kalmadı, parola ortam değişkeni istenmiyor,
-// dönüşte state karşılaştırılıyor ve bekleyen istek tek kullanımlık.
+// taşır. Ayrıca kaynak taraması: grant_type=password yeni yolun dosyalarında yok (yalnız geçici yedekte), parola ortam
+// değişkeni zorunlu değil, dönüşte state karşılaştırılıyor ve bekleyen istek tek kullanımlık.
+// Geçici yedek (10 Aralık 2026'ya kadar eski parola yöntemi, src/lib/parasut/legacy.ts): yol seçimi, son tarih, eski
+// ucun retlerinin Türkçe metni ve gövdesi. Veritabanında iki yol ve geçiş: tests/parasut-esitleme-db.test.ts.
 // Çalıştırma: npx tsx --test tests/parasut-kimlik.test.ts
 
 import assert from "node:assert/strict";
@@ -9,6 +11,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import {
+  chooseParasutAuth,
+  LEGACY_CLOSED_TEXT,
+  LEGACY_DEADLINE_DAY,
+  legacyGrantBody,
+  legacyRejectionText,
+  legacyStatus,
+  legacyTokenUrl,
+  PARASUT_LEGACY,
+} from "../src/lib/parasut/legacy";
 import { authorizeRequestUrl, challengeOf, createState, createVerifier, endpointUrl, readDiscovery, sameSite, sameToken } from "../src/lib/parasut/oidc";
 
 const root = join(__dirname, "..");
@@ -141,4 +153,84 @@ test("dönüş adresi DevHub'a kaydedilen yolla aynı ve rota o yolda duruyor", 
   // Yalnız yönetici: personel ve oturumsuz istek kod değişimine giremez
   assert.match(back, /user\.role !== "admin"/);
   assert.match(read("src/app/panel/parasut/baglan/route.ts"), /user\.role !== "admin"/);
+});
+
+// ---------------------------------------------------------------- Geçici yedek: eski parola yöntemi
+
+test("yol seçimi: kayıtlı yeni oturum her zaman önce; yoksa son tarihe kadar eski yöntem, sonra açık hata", () => {
+  const before = Date.parse("2026-11-21T09:00:00+03:00");
+  // Yeni oturum varsa eski ayarlar dururken de, son tarihten sonra da yalnız yeni yöntem
+  assert.equal(chooseParasutAuth({ oidcSession: true, legacyConfigured: true, now: before }), "oidc");
+  assert.equal(chooseParasutAuth({ oidcSession: true, legacyConfigured: true, now: PARASUT_LEGACY.endsAt + 1 }), "oidc");
+  assert.equal(chooseParasutAuth({ oidcSession: true, legacyConfigured: false, now: before }), "oidc");
+  // Yeni oturum yok: eski kullanıcı adı/parola varsa geçici yedek, yoksa bağlanmalı
+  assert.equal(chooseParasutAuth({ oidcSession: false, legacyConfigured: true, now: before }), "legacy");
+  assert.equal(chooseParasutAuth({ oidcSession: false, legacyConfigured: false, now: before }), "none");
+  assert.equal(chooseParasutAuth({ oidcSession: false, legacyConfigured: false, now: PARASUT_LEGACY.endsAt + 1 }), "none");
+});
+
+test("son tarih: 10 Aralık 2026 00:00 İstanbul; o andan itibaren eski yöntem denenmez", () => {
+  assert.equal(LEGACY_DEADLINE_DAY, "2026-12-10");
+  assert.equal(new Date(PARASUT_LEGACY.endsAt).toISOString(), "2026-12-09T21:00:00.000Z");
+  const at = (iso: string) => chooseParasutAuth({ oidcSession: false, legacyConfigured: true, now: Date.parse(iso) });
+  assert.equal(at("2026-12-09T23:59:59+03:00"), "legacy", "9 Aralık gece yarısına kadar çalışır");
+  assert.equal(at("2026-12-10T00:00:00+03:00"), "legacy-closed");
+  assert.equal(at("2027-01-05T08:00:00+03:00"), "legacy-closed");
+  // Panelin uyarısı aynı kuraldan
+  assert.equal(legacyStatus({ connected: false, legacyConfigured: true, now: Date.parse("2026-12-01T07:30:00+03:00") }), "active");
+  assert.equal(legacyStatus({ connected: false, legacyConfigured: true, now: Date.parse("2026-12-10T07:30:00+03:00") }), "closed");
+  assert.equal(legacyStatus({ connected: true, legacyConfigured: true, now: Date.parse("2026-12-01T07:30:00+03:00") }), null, "bağlıyken eski yöntem uyarısı yok");
+  assert.equal(legacyStatus({ connected: false, legacyConfigured: false, now: Date.parse("2026-12-01T07:30:00+03:00") }), null);
+  assert.match(LEGACY_CLOSED_TEXT, /10 Aralık 2026'da kapattı/);
+  assert.match(LEGACY_CLOSED_TEXT, /“Paraşüt hesabını bağla” ile yeniden bağlayın\.$/);
+});
+
+test("eski ucun retleri: yöntem kapandı, istemci ya da parola reddedildi — hepsinde Türkçe “yeniden bağlayın”", () => {
+  const closed = legacyRejectionText(400, JSON.stringify({ error: "unsupported_grant_type" }));
+  assert.match(closed, /^Paraşüt eski kullanıcı adı ve parola yöntemini artık kabul etmiyor \(unsupported_grant_type\)\./);
+  assert.match(closed, /yeniden bağlayın\.$/);
+  // 401: istemci reddedildi (Vercel'de artık DevHub'ın client_id'si var ya da eski istemci kapandı)
+  const unauthorized = legacyRejectionText(401, JSON.stringify({ error: "invalid_client", error_description: "Client authentication failed" }));
+  assert.match(unauthorized, /artık kabul etmiyor \(Client authentication failed\)/);
+  assert.match(legacyRejectionText(401, "<html>kapalı</html>"), /^Paraşüt eski kullanıcı adı ve parola yöntemini artık kabul etmiyor\. /);
+  assert.match(legacyRejectionText(400, JSON.stringify({ error: "unauthorized_client" })), /artık kabul etmiyor/);
+  // Parola kabul edilmedi
+  const grant = legacyRejectionText(400, JSON.stringify({ error: "invalid_grant" }));
+  assert.match(grant, /parola değişmiş olabilir/);
+  assert.match(grant, /10 Aralık 2026'da zaten kapanıyor/);
+  // Bilinmeyen ret: HTTP kodu söylenir
+  assert.match(legacyRejectionText(403, JSON.stringify({ error: "access_denied" })), /\(HTTP 403, access_denied\)/);
+  for (const text of [closed, unauthorized, grant, legacyRejectionText(400, "")]) assert.match(text, /“Paraşüt hesabını bağla” ile yeniden bağlayın\.$/);
+});
+
+test("eski uca giden gövde: refresh_token varsa parola gitmez; yoksa kullanıcı adı ve parolayla giriş", () => {
+  const c = { clientId: "eski-istemci", clientSecret: "sir", username: "api@kafe.test", password: "p@rola&=", baseUrl: "https://api.parasut.com/" };
+  assert.equal(legacyTokenUrl(c.baseUrl), "https://api.parasut.com/oauth/token");
+  const refresh = legacyGrantBody(c, "r-1");
+  assert.equal(refresh.get("grant_type"), "refresh_token");
+  assert.equal(refresh.get("refresh_token"), "r-1");
+  assert.equal(refresh.has("password"), false, "yenilemede parola gönderilmez");
+  assert.equal(refresh.get("client_id"), "eski-istemci");
+  const login = legacyGrantBody(c, null);
+  assert.equal(login.get("grant_type"), "password");
+  assert.equal(login.get("username"), "api@kafe.test");
+  assert.equal(login.get("password"), "p@rola&=", "özel karakterli parola bozulmaz");
+  assert.equal(login.get("redirect_uri"), "urn:ietf:wg:oauth:2.0:oob");
+});
+
+test("geçici yedek kaynakta yalıtık: parola akışı yalnız iki legacy dosyasında, yeni oturumdan ayrı anahtarda", () => {
+  // Parola ile giriş yalnız saf kurallarda; ortam değişkenleri yalnız sunucu tarafındaki legacy.ts'te
+  assert.match(read("src/lib/parasut/legacy.ts"), /grant_type: "password"/);
+  assert.doesNotMatch(read("src/lib/parasut/legacy.ts"), /process\.env/);
+  assert.match(read("src/server/parasut/legacy.ts"), /PARASUT_USERNAME/);
+  assert.match(read("src/server/parasut/legacy.ts"), /^import "server-only";/);
+  const client = read("src/server/parasut/client.ts");
+  // Yol, kayıtlı yeni oturum (refresh_token) varlığına ve son tarihe bakan tek kuraldan seçilir
+  assert.match(client, /chooseParasutAuth\(\{ oidcSession: Boolean\(stored\?\.refresh\)/);
+  assert.match(client, /LEGACY_CLOSED_TEXT/);
+  // Eski belirteç yeni oturumun anahtarına yazılmaz (bağlanınca ezilmesin, ezmesin)
+  assert.match(client, /const LEGACY_TOKEN_KEY = "parasut\.legacyToken";/);
+  assert.match(client, /writeToken\(t, db, LEGACY_TOKEN_KEY\)/);
+  // Hesap bağlanınca eski belirteç silinir
+  assert.match(read("src/server/parasut/connect.ts"), /await forgetLegacyParasutToken\(\);/);
 });

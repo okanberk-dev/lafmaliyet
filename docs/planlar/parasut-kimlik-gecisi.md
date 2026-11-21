@@ -3,26 +3,29 @@
 **Kaynak:** Paraşüt'ten gelen duyuru e-postası (5 Kasım 2026'da alındı).
 **Panelde etkilenen yer:** `lafmaliyet` → Paraşüt entegrasyonu (gider faturaları ve gelen e-faturalar, her sabah
 07:00–08:00 arası eşitleme).
+**Durum (21 Kasım 2026):** kod hazır (PR #92). Birleştirilmesi artık güvenli: hesap bağlanana kadar eşitleme eski
+yöntemle sürer (aşağıda *Geçici yedek*). Sahibin yapacakları aşağıda, sade dille.
 
-## Neden acil
+## Neden
 
 Panel bugüne kadar **`grant_type=password`** ile belirteç alıyordu: `PARASUT_USERNAME` + `PARASUT_PASSWORD` ile
-`POST https://api.parasut.com/oauth/token`. Paraşüt bu yöntemi **10 Aralık 2026**'da kapattı. Hiçbir şey yapılmazsa o
-tarihte sabah eşitlemesi durur: Paraşüt'teki faturalar panele düşmez, hammadde fiyatları ve Ödemeler & hatırlatıcılar
-güncellenmez.
+`POST https://api.parasut.com/oauth/token`. Paraşüt bu yöntemi **10 Aralık 2026**'da kapatıyor. Hesap o güne kadar yeni
+yöntemle bağlanmazsa o sabah eşitleme durur: Paraşüt'teki faturalar panele düşmez, hammadde fiyatları ve Ödemeler &
+hatırlatıcılar güncellenmez.
 
 ## Önemli tarihler
 
 | Tarih | Ne oluyor |
 |---|---|
-| **6 Kasım 2026** (**yarın**) | Eski geliştirme ve test ortamına erişim kapanıyor. Orada saklanan veri varsa bugün taşınmalı. Panelin canlı kurulumu bu ortamı kullanmıyor (`PARASUT_BASE_URL` tanımlı değil, varsayılan `https://api.parasut.com`), ama Paraşüt'te ayrı bir test hesabı açılmışsa bugün kontrol edilmeli. |
-| **10 Aralık 2026** | Eski kimlik doğrulama ve eski API bağlantıları devre dışı. DevHub başvurusu ve geçiş bu tarihe kadar tamamlanmalı. |
+| 6 Kasım 2026 (geçti) | Eski geliştirme ve test ortamına erişim kapandı. Panelin canlı kurulumu bu ortamı kullanmıyordu (`PARASUT_BASE_URL` tanımlı değil, varsayılan `https://api.parasut.com`). |
+| **1 Aralık 2026** | Geçişin planlanan günü: panel bu günden itibaren Genel bakış şeridinde de hatırlatır. |
+| **10 Aralık 2026** | Eski kimlik doğrulama ve eski API istemcileri devre dışı. Panel bu andan (00:00, İstanbul) itibaren eski yöntemi hiç denemez. |
 
-## Neler değişti
+## Paraşüt'te neler değişti
 
 - Tüm API erişimi yeni kimlik sunucusuna taşındı: **`https://id.parasut.com`**, **OAuth 2.0 Authorization Code +
   PKCE** (OpenID Connect).
-- `grant_type=password` **kaldırıldı**; e-posta + parolayla belirteç alınamıyor.
+- `grant_type=password` 10 Aralık 2026'da **kaldırılıyor**; e-posta + parolayla belirteç alınamayacak.
 - Yeni istemciler yalnız **Paraşüt DevHub**'dan alınıyor. E-postayla (`destek@parasut.com`) istemci ya da dönüş
   adresi talebi alınmıyor.
 - **Mevcut `api.parasut.com/oauth/*` istemcileri yeni altyapıya aktarılmadı:** yeni `client_id` / `client_secret`
@@ -35,85 +38,129 @@ güncellenmez.
 - Kullanıcı verdiği izni Paraşüt'ten durdurabiliyor (Profilim › Uygulama Entegrasyonları › **DURDUR**); durdurulunca
   `refresh_token` `invalid_grant` döner.
 
-## Kodda yapılanlar (tamamlandı)
+## Kodda yapılanlar
 
-Dal: `claude/nifty-galileo-guzjfr`.
+Dal: `claude/nifty-galileo-guzjfr` (PR #92).
 
 - `src/lib/parasut/oidc.ts` **(yeni, saf)** — PKCE doğrulayıcısı ve S256 sınaması (RFC 7636), keşif belgesinin
   okunması ve güvenlik denetimleri, yetki adresinin kurulması.
 - `src/server/parasut/oidc.ts` **(yeni)** — keşif belgesini (`{issuer}/.well-known/openid-configuration`) indirir ve
   6 saat bellekte tutar. **Uç noktalar koda yazılmadı**: belgeden okunuyor (gerekirse env ile elle verilebilir).
 - `src/server/parasut/connect.ts` **(yeni)** — "Paraşüt hesabını bağla" akışı: PKCE + `state` üretimi, 10 dakika
-  geçerli ve tek kullanımlık bekleyen istek (şifreli), yetki kodunun belirteçle değişimi.
+  geçerli ve tek kullanımlık bekleyen istek (şifreli), yetki kodunun belirteçle değişimi. Bağlanınca eski yöntemin
+  belirteci silinir.
 - `src/app/panel/parasut/baglan/route.ts` ve `.../baglan/geri/route.ts` **(yeni)** — yalnız yöneticiye açık; Paraşüt'ün
   onay ekranına gidiş ve dönüş.
-- `src/server/parasut/client.ts` — parola akışı **kaldırıldı**. Belirteç yalnız `refresh_token` ile yenilenir;
-  `invalid_grant` gelirse kayıtlı oturum silinir ve ekran "yeniden bağlayın" der. Kayıtlı belirteç artık istemci +
-  kimlik sunucusuna bağlı (eski belirteç kendiliğinden düşer).
-- `src/server/parasut/config.ts` — zorunlu değişkenler **3**'e indi: `PARASUT_CLIENT_ID`, `PARASUT_CLIENT_SECRET`,
-  `PARASUT_COMPANY_ID`. `PARASUT_USERNAME` / `PARASUT_PASSWORD` **kalktı**.
+- `src/server/parasut/client.ts` — yeni yolda belirteç yalnız `refresh_token` ile yenilenir; `invalid_grant` gelirse
+  kayıtlı oturum silinir ve ekran "yeniden bağlayın" der. Kayıtlı belirteç istemci + kimlik sunucusuna bağlı (eski
+  belirteç kendiliğinden düşer). Parola yolu yalnız **geçici yedek** olarak kaldı (aşağıda).
+- `src/server/parasut/config.ts` — zorunlu değişkenler **3**: `PARASUT_CLIENT_ID`, `PARASUT_CLIENT_SECRET`,
+  `PARASUT_COMPANY_ID`. `PARASUT_USERNAME` / `PARASUT_PASSWORD` artık zorunlu değil, yalnız geçici yedek için okunur.
+  İsteğe bağlı adres değişkenleri yanlış yazılmışsa uygulama durmaz (değer yok sayılır, bağlanma açık hatayla başlamaz).
 - Panel ekranı (`/panel/parasut`) — "Paraşüt hesabını bağla" düğmesi, bağlantı durumu ("Bağlı / Bağlı değil /
-  Yenilenmeli"), DevHub'a kaydedilecek dönüş adresi, bağlı değilken uyarı; kurulum adımları DevHub'a göre yazıldı.
-- Belgeler: `docs/PARASUT.md` § 1–2 yeniden yazıldı, `docs/parasut-api-spec.md` § 1'e eskidi uyarısı eklendi,
-  `.env.example` güncellendi.
-- Testler: `tests/parasut-kimlik.test.ts` (yeni, 8 test — RFC 7636 örneği dahil), `tests/parasut-dokum.test.ts` ve
-  `tests/parasut-esitleme-db.test.ts` yeni akışa göre güncellendi. Takımın tamamı geçiyor (2400 başarılı).
+  Yenilenmeli / Eski yöntem / Eski yöntem kapandı"), DevHub'a kaydedilecek dönüş adresi, uyarılar; kurulum adımları
+  DevHub'a göre yazıldı.
+- Yedek: Paraşüt oturumu yedeğe girmez; geri yüklemeden sonra hesap panelden yeniden bağlanır (`docs/YEDEK.md`).
+- Belgeler: `docs/PARASUT.md` § 1–2 (sahibin adımları sade dille), `docs/parasut-api-spec.md` § 1'e eskidi uyarısı,
+  `.env.example`.
+- Testler: `tests/parasut-kimlik.test.ts` (PKCE, keşif, yetki adresi, geçici yedeğin kuralları, kaynak taraması),
+  `tests/parasut-dokum.test.ts` (kart ve dökümü), `tests/parasut-esitleme-db.test.ts` (iki yol ve geçiş, sahte Paraşüt +
+  gerçek Postgres), `tests/gunluk-isler.test.ts` (zil hatırlatması).
+
+## Geçici yedek (eski parola yöntemi, 10 Aralık 2026'ya kadar)
+
+**Sorun:** PR'ın ilk hâli parola akışını tamamen kaldırıyordu. Birleştirildiği gün, sahip DevHub'da istemci açıp
+panelden "Paraşüt hesabını bağla"ya basana kadar sabah eşitlemesi dururdu; oysa Paraşüt eski yöntemi ancak 10 Aralık'ta
+kapatıyor.
+
+**Çözüm:** yol her eşitlemenin başında bir kez seçilir (`chooseParasutAuth`, `src/lib/parasut/legacy.ts`):
+
+| Durum | Ne olur |
+|---|---|
+| Kayıtlı yeni oturum (`refresh_token`) var | Yalnız yeni yöntem. Eski kullanıcı adı/parola dursa da parolaya hiç dönülmez. |
+| Yeni oturum yok, `PARASUT_USERNAME` + `PARASUT_PASSWORD` tanımlı, 10 Aralık 2026 00:00'dan önce | Eski yöntem: önce kayıtlı `refresh_token`, olmazsa `grant_type=password` (eski kodla aynı). Panelde sarı uyarı: *“Eski bağlantı 10 Aralık'ta kapanacak, Paraşüt hesabını bağlayın”*. |
+| Yeni oturum yok, eski ayarlar duruyor, 10 Aralık 2026 00:00 ya da sonrası | Eski uca **istek atılmaz**. Hata: “Paraşüt eski kullanıcı adı ve parola yöntemini 10 Aralık 2026'da kapattı … yeniden bağlayın”. Panelde kırmızı uyarı. |
+| Hiçbiri yok | “Paraşüt hesabı bağlı değil … Paraşüt hesabını bağla”. |
+
+- Eski uç son tarihten önce kapanırsa ya da istemciyi reddederse (`unsupported_grant_type`, `invalid_client`,
+  `unauthorized_client`, 401) eşitleme açık Türkçe hatayla durur: “… artık kabul etmiyor … “Paraşüt hesabını bağla”
+  ile yeniden bağlayın”. Sahip 5. adımda Vercel'e yeni client_id'yi girdiğinde de bu olur: o yüzden 6. adım hemen
+  ardından yapılmalı.
+- Eski yöntemin belirteci ayrı anahtarda durur (`integration_state` › `parasut.legacyToken`), yeni oturumu hiçbir zaman
+  ezmez; hesap bağlanınca ve "Oturumu sıfırla"da silinir; yedeğe girmez.
+- Zil (`parasutMigrationAlert`, `src/lib/job-health.ts`): eski değişkenler dururken ve hesap bağlı değilken geçiş
+  hatırlatması (aşağıdaki tablo); hesap bağlıysa yerine yalnız "eski kullanıcı adı ve parola artık gerekmiyor" notu
+  (`info`).
+- Dosyalar: `src/lib/parasut/legacy.ts` (saf kurallar, son tarih, eski uca giden gövde, retlerin metni),
+  `src/server/parasut/legacy.ts` (ortam değişkenleri). Parola akışı yalnız bu ikisinde; `tests/parasut-kimlik.test.ts`
+  kaynak taramasıyla denetler.
+
+**10 Aralık 2026'dan sonra silinecekler** (ayrı, küçük bir PR): bu iki dosya; `client.ts`'teki `legacyAccessToken`,
+`legacyRequest`, `loadLegacy`, `forgetLegacyParasutToken` ve yol seçimi (yalnız yeni yol kalır); `parasutConnection`'ın
+`legacy` / `legacyEnv` alanları ve paneldeki "Eski yöntem" durumları; `parasutMigrationAlert`;
+`EXCLUDED_STATE_KEYS` › `parasut.legacyToken`; ilgili testler. Vercel'de `PARASUT_USERNAME` / `PARASUT_PASSWORD`
+kalmışsa silinir.
 
 ### Doğrulanamayan nokta
 
-Bu oturumun ağ politikası `id.parasut.com`, `devhub.parasut.com` ve `apidocs.parasut.com` adreslerini engelledi; yetki
-ve belirteç adreslerinin tam yolları **canlıda doğrulanmadı**. Bu yüzden adresler koda yazılmadı: çalışma anında
-keşif belgesinden okunuyor. Paraşüt'ün duyurduğu gibi altyapı standart OpenID Connect ise bu kendiliğinden çalışır.
-Keşif belgesi bir nedenle okunamazsa `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` ile elle verilebilir (DevHub →
-"Yardımcı Kaynaklar"daki adresler).
+Kodu yazan oturumun ağ politikası `id.parasut.com`, `devhub.parasut.com` ve `apidocs.parasut.com` adreslerini
+engelledi; yetki ve belirteç adreslerinin tam yolları **canlıda doğrulanmadı**. Bu yüzden adresler koda yazılmadı:
+çalışma anında keşif belgesinden okunuyor. Paraşüt'ün duyurduğu gibi altyapı standart OpenID Connect ise bu
+kendiliğinden çalışır. Keşif belgesi bir nedenle okunamazsa `PARASUT_AUTHORIZE_URL` ve `PARASUT_TOKEN_URL` ile elle
+verilebilir (DevHub → "Yardımcı Kaynaklar"daki adresler). Geçici yedek sayesinde bu doğrulama 10 Aralık'a kadar
+eşitlemeyi riske atmıyor: bağlanma başarısız olursa eski değerler geri yazılıp eski yönteme dönülebilir.
 
-## Yapılması gerekenler (sahip / muhasebe)
+## Sahibin yapacakları (yazılımcı gerekmez)
 
-Kod hazır; bundan sonrası Paraşüt tarafında yapılacak işler.
+Tek oturuşta, bilgisayardan, yaklaşık 15 dakika. **10 Aralık 2026'dan önce** (planlanan gün 1 Aralık). Daha ayrıntılı
+hâli ve sık takılınan yerler `docs/PARASUT.md` § 1'de.
 
-1. **DevHub başvurusu.** Paraşüt DevHub'a Paraşüt hesabıyla girip *“Paraşüt Kullanıcısıyım”* ile başvurun (kendi
-   firmamız için entegrasyon; "İş Ortağı Olmak İstiyorum" değil). İstemci hemen oluşur, inceleme beklenmez.
-   Uygulama adı son kullanıcıya görünür; anlaşılır bir ad verin.
-2. **Dönüş adresi (redirect URI).** Başvuruya tam olarak şunu kaydedin:
-   `https://ladmin.laffogato.net/panel/parasut/baglan/geri`
-3. **`client_id` ve `client_secret`'ı alın.** Bunlar eski değerlerden farklı olacak.
-4. **Uygulama Entegrasyonları yetkisi.** Paraşüt → Ayarlar › Kullanıcılar › Düzenle › Uygulama Entegrasyonları:
-   bağlantıyı kuracak kullanıcı için açın (varsayılan kapalı; yoksa 403).
-5. **Vercel ortam değişkenleri** (lafmaliyet → Settings → Environment Variables, Production):
-   - `PARASUT_CLIENT_ID` → yeni değer
-   - `PARASUT_CLIENT_SECRET` → yeni değer
-   - `PARASUT_COMPANY_ID` → değişmiyor
-   - `PARASUT_USERNAME` ve `PARASUT_PASSWORD` → **silin** (artık kullanılmıyor)
-   Sonra yeniden deploy edin.
-6. **Hesabı bağlayın.** Panel → Ayarlar › Paraşüt entegrasyonu → **“Paraşüt hesabını bağla”**. Paraşüt'ün giriş ve
-   onay ekranından geçin. Ardından **Bağlantıyı dene** ve **Şimdi eşitle**.
-7. **Eski test ortamı (bugün).** Paraşüt'te ayrı bir geliştirme/test hesabı açılmışsa oradaki veriye erişim
-   6 Kasım 2026'da kapanıyor; taşınacak bir şey varsa bugün taşınmalı. Canlı kurulum etkilenmiyor.
+1. **DevHub'da uygulama açın.** Paraşüt DevHub'a kendi Paraşüt hesabınızla girin, *“Paraşüt Kullanıcısıyım”* ile
+   başvurun (kendi firmamız için; "İş Ortağı" değil). Uygulama hemen oluşur. Adı Paraşüt'te görünür: "L'Affogato
+   Panel" gibi anlaşılır bir ad verin.
+2. **Dönüş adresini yazın.** Başvurudaki *dönüş adresi* (redirect URI) kutusuna tam olarak şunu yapıştırın (sonunda
+   eğik çizgi yok): `https://ladmin.laffogato.net/panel/parasut/baglan/geri`
+3. **İki değeri alın:** `client_id` ve `client_secret`. client_secret şifre gibidir; kimseyle paylaşmayın, mesaja
+   yazmayın.
+4. **Paraşüt'te izin verin:** Paraşüt › Ayarlar › Kullanıcılar › (siz) › Düzenle › **Uygulama Entegrasyonları**'nı
+   açıp kaydedin (varsayılan kapalı; açılmazsa 403).
+5. **Vercel'de iki değeri değiştirin:** vercel.com › lafmaliyet › Settings › Environment Variables:
+   `PARASUT_CLIENT_ID` ve `PARASUT_CLIENT_SECRET`'a yenilerini yazın. `PARASUT_USERNAME` / `PARASUT_PASSWORD`'e
+   şimdilik dokunmayın. Sonra Deployments › en üstteki yayın › ⋯ › **Redeploy**.
+6. **Hemen ardından panelde bağlayın:** Ayarlar › Paraşüt entegrasyonu › **“Paraşüt hesabını bağla”**. Paraşüt'ün giriş
+   ekranında girip izin verin. Panele dönünce “Paraşüt hesabı bağlandı” yazar, sarı uyarı kalkar.
+7. **Deneyin:** **Bağlantıyı dene** → **Şimdi eşitle**.
+8. **Temizlik:** çalışıyorsa Vercel'den `PARASUT_USERNAME` ve `PARASUT_PASSWORD`'ü silin.
 
-Takıldığınız yerde Paraşüt'ün geçiş desteği: `devhubdestek@parasut.com`. Teknik belgeler DevHub sitesindeki
-"Yardımcı Kaynaklar" sayfasında.
+Takılırsanız: onay ekranı hata veriyorsa client_id hâlâ eski olabilir, Redeploy yapılmamış olabilir ya da dönüş adresi
+birebir aynı değildir. 403: 4. adım. Geri dönmek gerekirse (10 Aralık'a kadar): Vercel'e eski client_id / client_secret'ı
+geri yazıp Redeploy edin; eşitleme eski yöntemle sürer. Paraşüt'ün geçiş desteği: `devhubdestek@parasut.com`. Teknik
+belgeler DevHub sitesindeki "Yardımcı Kaynaklar" sayfasında.
 
 ## Düşen iş
 
 `docs/planlar/KALAN-ISLER.md` § 11'deki **D-16** ("sitenin `PARASUT_USERNAME`'i panelinkinden farklı mı") geçersiz:
-Paraşüt API'sinde kullanıcı adı/parola diye bir ayar kalmadı.
+yeni yöntemde Paraşüt API'sinde kullanıcı adı/parola diye bir ayar yok (10 Aralık'a kadarki geçici yedek hariç).
 
-## Panel içi hatırlatma (PR #93)
+## Panel içi hatırlatma (PR #93, main'de)
 
 Geçiş 1 Aralık'ta elle yapılacağı için o günü kaçırmamak adına panelin kendisi hatırlatıyor
-(`parasutMigrationAlert`, `src/lib/job-health.ts`; ayrı dal: `claude/parasut-gecis-uyarisi`):
+(`parasutMigrationAlert`, `src/lib/job-health.ts`):
 
 | Dönem | Seviye | Nerede | Metin |
 |---|---|---|---|
 | … – 30 Kasım | `warning` | zil, Ayarlar › Günlük işler | "Paraşüt kimlik geçişi bekliyor (1 Aralık) · N gün kaldı" |
 | 1 – 9 Aralık | `warning` + `banner` | **+ Genel bakış şeridi** | "Paraşüt kimlik geçişini bugün yapın" |
 | 10 Aralık – | `danger` + `banner` | Genel bakış şeridi | "Paraşüt bağlantısı kapandı: kimlik geçişi yapılmadı" |
+| Hesap bağlı, eski değişkenler duruyor | `info` | zil | "Paraşüt'ün eski kullanıcı adı ve parolası artık gerekmiyor" |
 
-Uyarı yalnız ortamda `PARASUT_USERNAME` / `PARASUT_PASSWORD` dururken çıkar, yani geçişin 5. adımı yapılınca
-kendiliğinden kalkar. Son tarihe kadar `warning` kalması bilinçli: `danger` olsa `/api/health` 503 dönerdi ve bekleyen
-bir geçiş sistem çökmüş gibi görünürdü.
+Uyarı yalnız ortamda `PARASUT_USERNAME` / `PARASUT_PASSWORD` dururken çıkar. Hesap yeni yöntemle bağlanınca geçiş
+uyarısı kalkar, yerine yalnız `info` notu kalır; değişkenler silinince o da kalkar. Son tarihe kadar `warning` kalması
+bilinçli: `danger` olsa `/api/health` 503 dönerdi ve eski yöntemle süren bir eşitleme sistem çökmüş gibi görünürdü.
+Metin artık "PR #92'yi birleştirin" demiyor; DevHub değerlerini girip hesabı bağlamayı söylüyor.
 
-**İki PR'ın sırası:** #93 (uyarı) hemen birleştirilir, #92 (geçiş) 1 Aralık'ta. Farklı dosyalara dokunuyorlar.
+**PR'ların sırası:** #93 birleşti. #92 geçici yedek sayesinde 1 Aralık'ı beklemeden birleştirilebilir: birleştiği gün
+hiçbir şey değişmez (eşitleme eski yöntemle sürer, panelde sarı uyarı çıkar); geçiş sahibin yukarıdaki adımlarıyla olur.
 
 ## Ek A — Paraşüt'e gönderilecek soru maili
 

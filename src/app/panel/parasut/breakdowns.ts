@@ -202,6 +202,29 @@ const ENV_HELP: Record<string, string> = {
 };
 
 /**
+ * Hesap bağlı değilken eski kullanıcı adı/parola yönteminin durumu (src/lib/parasut/legacy.ts): "active" 10 Aralık
+ * 2026'ya kadar geçici yedek olarak çalışıyor, "closed" son tarih geçti; null eski ayar yok ya da hesap bağlı.
+ */
+export type LegacyState = "active" | "closed" | null;
+
+/** "Bağlantı" kartının kısa durumu: kart ve dökümü aynı kurala bakar */
+export function connectionHeadline(x: {
+  configured: boolean;
+  connected: boolean;
+  stale: boolean;
+  legacy?: LegacyState;
+  cronSet: boolean;
+}): { value: string; tone: "good" | "warn" | "bad"; sub: string } {
+  if (!x.configured) return { value: "Kurulmadı", tone: "warn", sub: "Aşağıdaki kurulum adımlarını izleyin" };
+  if (x.connected) {
+    return { value: x.stale ? "Yenilenmeli" : "Bağlı", tone: x.stale ? "warn" : "good", sub: `Her sabah 07:00–08:00${x.cronSet ? "" : " · CRON_SECRET eksik"}` };
+  }
+  if (x.legacy === "active") return { value: "Eski yöntem", tone: "warn", sub: "10 Aralık'ta kapanacak · hesabı bağlayın" };
+  if (x.legacy === "closed") return { value: "Eski yöntem kapandı", tone: "bad", sub: "“Paraşüt hesabını bağla” ile yeniden bağlayın" };
+  return { value: "Hesap bağlanmadı", tone: "warn", sub: "“Paraşüt hesabını bağla” ile bir kez yetkilendirin" };
+}
+
+/**
  * Bağlantı kartı: ortam değişkenleri (tanımlı / eksik) ve eşitlemenin zamanı: otomatik eşitleme, ilk eşitlemenin
  * başlangıcı, son alınan fatura tarihi (imleç) ve son başarılı eşitleme. Toplanamaz: bilgi satırları.
  */
@@ -217,17 +240,41 @@ export function connectionBreakdown(x: {
   refreshedAt: string | null;
   /** 30 günlük yenileme süresinin sonuna yaklaşıldı */
   stale: boolean;
+  /** Hesap bağlı değilken eski yöntemin durumu (verilmezse yok sayılır) */
+  legacy?: LegacyState;
   /** En son başarılı eşitleme (geçmişteki son 8 içinde) */
   lastOk: { startedAt: string; trigger: "cron" | "manual" | "history" } | null;
 }): BreakdownGroup[] {
   const vars = [...x.env, { name: "CRON_SECRET", set: x.cronSet }];
   const auto: Pick<BreakdownRow, "display" | "tone" | "sub"> = !x.configured
     ? { display: "Kurulum bekliyor", tone: "warn", sub: "Paraşüt değişkenleri tamamlanınca her sabah çalışır." }
-    : !x.connected
+    : !x.connected && x.legacy !== "active"
       ? { display: "Hesap bağlanmadı", tone: "warn", sub: "“Paraşüt hesabını bağla”ya basıp Paraşüt'te onay verin." }
       : !x.cronSet
         ? { display: "Kapalı", tone: "warn", sub: "CRON_SECRET eksik: yalnız “Şimdi eşitle” ile çalışır." }
-        : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
+        : !x.connected
+          ? // Eski yöntem geçici yedek olarak sürüyor: çalışıyor ama son tarihi var
+            { display: "Her sabah", tone: "warn", sub: "07:00–08:00 arasında; şimdilik eski kullanıcı adı ve parolayla, 10 Aralık 2026'ya kadar." }
+          : { display: "Her sabah", tone: "good", sub: "07:00–08:00 arasında; gelen e-faturalar ve gider faturaları." };
+  const account: Pick<BreakdownRow, "display" | "tone" | "sub"> = x.connected
+    ? {
+        display: x.stale ? "Yenilenmeli" : "Bağlı",
+        tone: x.stale ? "warn" : "good",
+        sub: x.stale
+          ? "Yetki yenilenmeli: refresh_token 30 gün geçerli ve son yenileme eskidi."
+          : x.refreshedAt
+            ? `Son yenileme ${dateTimeTR(x.refreshedAt)}; her eşitlemede kendiliğinden yenilenir.`
+            : "Bağlı.",
+      }
+    : x.legacy === "active"
+      ? {
+          display: "Eski yöntem",
+          tone: "warn",
+          sub: "Kullanıcı adı ve parolayla geçici olarak çalışıyor; Paraşüt bunu 10 Aralık 2026'da kapatıyor. “Paraşüt hesabını bağla” ile geçin.",
+        }
+      : x.legacy === "closed"
+        ? { display: "Eski yöntem kapandı", tone: "bad", sub: "Paraşüt eski yöntemi 10 Aralık 2026'da kapattı. “Paraşüt hesabını bağla” ile yeniden bağlayın." }
+        : { display: "Bağlı değil", tone: "bad", sub: "Bir kez tarayıcıdan yetkilendirin: “Paraşüt hesabını bağla” (Authorization Code + PKCE)." };
   return [
     {
       key: "ortam",
@@ -249,20 +296,7 @@ export function connectionBreakdown(x: {
       label: "Eşitleme",
       noSubtotal: true,
       rows: [
-        {
-          key: "hesap",
-          label: "Paraşüt hesabı",
-          sub: x.connected
-            ? x.stale
-              ? "Yetki yenilenmeli: refresh_token 30 gün geçerli ve son yenileme eskidi."
-              : x.refreshedAt
-                ? `Son yenileme ${dateTimeTR(x.refreshedAt)}; her eşitlemede kendiliğinden yenilenir.`
-                : "Bağlı."
-            : "Bir kez tarayıcıdan yetkilendirin: “Paraşüt hesabını bağla” (Authorization Code + PKCE).",
-          amount: 0,
-          display: x.connected ? (x.stale ? "Yenilenmeli" : "Bağlı") : "Bağlı değil",
-          tone: x.connected ? (x.stale ? "warn" : "good") : "bad",
-        },
+        { key: "hesap", label: "Paraşüt hesabı", amount: 0, ...account },
         { key: "otomatik", label: "Otomatik eşitleme", amount: 0, ...auto },
         {
           key: "baslangic",

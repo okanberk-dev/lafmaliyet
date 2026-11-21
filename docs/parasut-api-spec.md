@@ -5,7 +5,9 @@
 > Paraşüt moved all API authentication to a new identity server (`https://id.parasut.com`) and switched to
 > **OAuth 2.0 Authorization Code + PKCE**. What changed:
 >
-> - **`grant_type=password` was removed.** Getting a token from an e-mail address and a password no longer works.
+> - **`grant_type=password` is switched off on 10 December 2026.** After that, getting a token from an e-mail address
+>   and a password no longer works. Until then the panel still uses it as a temporary fallback while no account is
+>   connected the new way (PARASUT.md § 2, `src/lib/parasut/legacy.ts`).
 > - **New clients are issued only through Paraşüt DevHub.** Client and redirect-URI requests are no longer taken by
 >   e-mail (`destek@parasut.com`), so the "no self-serve developer portal" note below is out of date.
 > - **Existing `api.parasut.com/oauth/*` clients were not migrated.** A new `client_id` / `client_secret` is required.
