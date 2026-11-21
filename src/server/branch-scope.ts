@@ -16,6 +16,7 @@ import {
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
   formTillError,
+  otherBranchError,
   parseBranchScope,
 } from "@/lib/branches";
 
@@ -70,6 +71,19 @@ async function lockedBranch(branches: readonly BranchRow[]): Promise<string | nu
 /** Şubesi seçilmiş personelin kilitli şubesi (seçim ucu bununla başka şubeye geçişi reddeder); yoksa null */
 export async function staffBranchLock(): Promise<string | null> {
   return lockedBranch(await listBranches());
+}
+
+/**
+ * Kimliğiyle açılan kayıt şubesine kilitli personelin şubesinde mi (docs/SUBE.md › Personel hesabının şubesi; 21 Kasım
+ * denetimi #14). Kilit yalnız seçimi ve yeni kaydın şubesini belirliyordu; kasadan çıkan satırı, zayi kaydı, kasa
+ * raporu ve fotoğraf kimliğiyle açılınca kimse satırın şubesini kişinin şubesiyle karşılaştırmıyordu. Kaydı kimliğiyle
+ * açan her personel yolu buna sorar: başka şubenin kaydında metin (eylem UserError atar, fotoğraf kuralı görmez der),
+ * yoksa null. Yönetici, şubesiz personel ve şubesi pasif personel serbest (`otherBranchError`).
+ */
+export async function staffBranchRefusal(me: { role: string }, branchId: string | null | undefined): Promise<string | null> {
+  if (me.role === "admin") return null;
+  const branches = await listBranches();
+  return otherBranchError(branchId, branches, await lockedBranch(branches));
 }
 
 export async function branchScope(raw?: unknown, db: DB = getDb()): Promise<BranchScopeState> {

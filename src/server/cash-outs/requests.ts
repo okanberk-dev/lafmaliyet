@@ -29,7 +29,7 @@ import { cashOutPayment } from "@/server/cari/kasa";
 import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { kasaEvidence } from "@/server/data/lafpos-day";
-import { currentTillBranch } from "@/server/branch-scope";
+import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -183,10 +183,10 @@ export async function attachCashOutReceiptCore(db: DB, me: CashOutActor, input: 
   });
 }
 
-/** Rapora bağlı fotoğraf: bağın raporu, günü ve türü (bağlı değilse null) */
+/** Rapora bağlı fotoğraf: bağın raporu, günü, şubesi ve türü (bağlı değilse null) */
 async function linkOf(tx: CashOutTx, photoId: number) {
   const [link] = await tx
-    .select({ reportId: s.cashReportPhotos.reportId, kind: s.cashReportPhotos.kind, date: s.cashReports.date })
+    .select({ reportId: s.cashReportPhotos.reportId, kind: s.cashReportPhotos.kind, date: s.cashReports.date, branchId: s.cashReports.branchId })
     .from(s.cashReportPhotos)
     .innerJoin(s.cashReports, eq(s.cashReports.id, s.cashReportPhotos.reportId))
     .where(eq(s.cashReportPhotos.photoId, photoId))
@@ -244,6 +244,9 @@ export async function proposePhotoRemoval(
   return db.transaction(async (tx) => {
     const link = await linkOf(tx, input.photoId);
     if (!link || (link.kind !== "kasa-z" && link.kind !== "kasa-pos" && link.kind !== "kasa-okc")) throw new UserError(CASH_OUT_REQUEST_TEXT.photoNotLinked);
+    // Fotoğraf kimliğiyle gelir: şubesine kilitli personel başka şubenin raporundaki fotoğrafı istemez (denetim #14)
+    const otherBranch = await staffBranchRefusal(me, link.branchId);
+    if (otherBranch) throw new UserError(otherBranch);
     if (!staffCanReport(link.date, now)) throw new UserError(CASH_OUT_REQUEST_TEXT.photoDay);
     const check = await removalCheck(tx, input.photoId, link.kind, link.reportId);
     if (check.refusal) throw new UserError(check.refusal);

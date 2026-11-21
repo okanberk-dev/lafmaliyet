@@ -22,7 +22,7 @@ import {
   type WasteLock,
 } from "@/lib/waste-requests";
 import { DEFAULT_BRANCH_ID } from "@/lib/branches";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { currentPhysicalBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { closedDayRefusal } from "@/server/closed-days";
 import { lafposSwitchDayOf } from "@/server/data/lafpos-ikram";
 import { resolveWasteTarget } from "@/server/data/waste";
@@ -124,6 +124,15 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
   });
 }
 
+/**
+ * Kayıt kimliğiyle gelir (silme, silme isteği): şubesine kilitli personel başka şubenin kaydına dokunmaz; ekran zaten
+ * yalnız kendi şubesini gösterir (docs/SUBE.md › Personel hesabının şubesi; 21 Kasım denetimi #14). Yönetici serbest.
+ */
+async function refuseOtherBranch(me: WasteActor, row: Pick<WasteRow, "branchId">): Promise<void> {
+  const refusal = await staffBranchRefusal(me, row.branchId);
+  if (refusal) throw new UserError(refusal);
+}
+
 /** Aynı kaydın bekleyen silme istekleri kapanır ("Kayıt silindi"); `exceptId` onaylanan istek */
 async function closeDeleteRequests(tx: Tx, entryId: number, now: Date, exceptId?: number): Promise<number[]> {
   return supersede(tx, { kinds: ["zayi-sil"], subject: `zayi:${entryId}`, exceptId }, WASTE_REQUEST_TEXT.deleted, now);
@@ -134,6 +143,7 @@ export async function removeWaste(db: DB, me: WasteActor, id: number, now = new 
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
+    await refuseOtherBranch(me, row);
     // Kilit kaydın kendi şubesinin kasasından (seçili şubeden değil)
     if (me.role !== "admin" && staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId)) !== "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteOnly);
     await tx.delete(s.wasteEntries).where(eq(s.wasteEntries.id, row.id));
@@ -216,6 +226,7 @@ export async function proposeWasteDelete(
     // Kayıt kilitlenir (kayıt, sonra istek): aynı anda verilen onay ya da doğrudan silmeyle sıraya girer, silinmiş kayda istek açılmaz
     const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
+    await refuseOtherBranch(me, row);
     const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date, row.branchId));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteDirect);
     if (mode === "none") throw new UserError(WASTE_REQUEST_TEXT.deleteOld);

@@ -211,6 +211,15 @@ Yönetici şubeye bağlanmaz; bütün şubeleri görür ve seçiciyle süzer.
 - Şubesi seçilmiş personelin paneli **o şubede kilitli** açılır (`src/server/branch-scope.ts` › `lockedBranch`):
   çerez ve `?sube=` yok sayılır, kenar çubuğunda seçici yerine şubenin adı durur, `chooseBranchScope` başka şubeyi
   reddeder. Kasa raporu, kasadan çıkan, zayi ve kontrol listeleri o şubeye yazılır ve o şubeden okunur.
+- Kilit kimliğiyle açılan kayda da bakar (21 Kasım denetimi #14; `src/server/branch-scope.ts` › `staffBranchRefusal`,
+  kural `src/lib/branches.ts` › `otherBranchError`): kimlikler sıralıdır ve eylemin kimliği istemci paketindedir;
+  kilit yalnız ekranı süzerse başka şubenin açık günündeki satır elle gönderilen kimlikle açılabiliyordu. Kilitli
+  personel başka şubenin kasadan çıkan satırını düzeltemez, silemez, isteğe konu edemez, fiş ekleyemez; başka şubenin
+  zayi kaydını silemez ve silinmesini isteyemez; başka şubenin kasa raporu fotoğrafının kaldırılmasını isteyemez, kasa
+  raporu e-postasını yeniden gönderemez. Eylem "Bu kayıt Marina şubesinin; hesabınız Tuzla şubesinde" der; başka
+  şubenin kasa ve fiş fotoğrafı `/api/foto/{id}`'de 403 döner. Yönetici, şubesiz personel ve şubesi pasif personel
+  serbest. Yeni kayıt zaten formun kasasına (`formTillBranch`) ya da seçili şubeye yazılır, kilitli personelde ikisi de
+  kendi şubesidir.
 - Şube pasife alınırsa kilit kalkar (kişi "Tümü"ye düşer); yönetici yeni şubesini seçer.
 - Kullanıcı listesinde personelin şubesi rozetle görünür. Şubeye bağlı hesap varken şube silinmez
   (`branchUsageCount`).

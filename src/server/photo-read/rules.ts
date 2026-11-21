@@ -5,7 +5,7 @@ import { and, asc, eq, gte } from "drizzle-orm";
 import { businessDate, staffCanReport, staffDayEditable, staffLateDay } from "@/lib/cash-report";
 import { KEEP_DAYS, uploadRule, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
-import { currentTillBranch } from "@/server/branch-scope";
+import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
@@ -15,7 +15,8 @@ import type { PhotoKindRules } from "@/server/storage/photo-access";
  * ve o günlere fotoğraf ve kasadan çıkan satırı ekler; kasa raporunun kuralıyla aynı (staffDayEditable): bugün ve dün,
  * ama günün raporu varken ertesi günün raporu da girildiyse o gün kapanır. Daha eskisini yalnız yönetici; geç kasa
  * raporu (raporu olmayan, son 14 günden biri) için personel o güne Z ve POS fotoğrafı, kasadan çıkan isteği için son 7
- * güne fiş ekler (bağlanmadan bekler; kendi yüklediğini görür).
+ * güne fiş ekler (bağlanmadan bekler; kendi yüklediğini görür). Şubesine kilitli personel yalnız kendi şubesinin kasa ve
+ * fiş fotoğrafını görür (staffBranchRefusal; günün açıklığı başka şubenin fotoğrafını açmaz, 21 Kasım denetimi #14).
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -49,7 +50,7 @@ export const cashPhotoRules: PhotoKindRules = {
       .innerJoin(s.cashReports, eq(s.cashReports.id, s.cashReportPhotos.reportId))
       .where(eq(s.cashReportPhotos.photoId, photo.id))
       .limit(1);
-    return Boolean(row && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
+    return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },
 };
 
@@ -62,7 +63,7 @@ export const receiptPhotoRules: PhotoKindRules = {
   async canView(me, photo) {
     if (me.role === "admin") return true;
     const [row] = await getDb().select({ date: s.cashOuts.date, branchId: s.cashOuts.branchId }).from(s.cashOuts).where(eq(s.cashOuts.photoId, photo.id)).limit(1);
-    return Boolean(row && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
+    return Boolean(row && !(await staffBranchRefusal(me, row.branchId)) && (await staffDayOpen(row.date, undefined, undefined, row.branchId)));
   },
 };
 

@@ -180,6 +180,19 @@ export function formTillError(raw: string, known: readonly BranchRow[], lock: st
 }
 
 /**
+ * Kimliğiyle açılan kaydın şubesi (kasadan çıkan, zayi, kasa raporu, kasa ve fiş fotoğrafı; docs/SUBE.md › Personel
+ * hesabının şubesi): şubesine kilitli personel (`lock`) başka şubenin kaydını düzeltemez, silemez, isteğe konu edemez,
+ * fotoğrafını göremez. Kimlikler sıralıdır ve eylem kimliği istemci paketindedir; seçicinin kilidi yalnız ekranı
+ * süzüyordu (21 Kasım denetimi #14). Kilit yoksa (yönetici, şubesiz personel, şubesi pasif) ya da kaydın şubesi yoksa
+ * null; başka şubeninse kullanıcının göreceği metin.
+ */
+export function otherBranchError(branchId: string | null | undefined, known: readonly BranchRow[], lock: string | null): string | null {
+  if (lock === null || branchId == null || branchId === lock) return null;
+  const name = (id: string) => known.find((x) => x.id === id)?.name ?? id;
+  return `Bu kayıt ${name(branchId)} şubesinin; hesabınız ${name(lock)} şubesinde`;
+}
+
+/**
  * Adresten / çerezden gelen seçim: tanınmayan, kapalı ya da boş değer "hepsi"ye düşer. Seçim veriyi süzer,
  * yetki vermez: yetki `requireAdmin`/`requireUser` ile ayrıca denetlenir.
  */

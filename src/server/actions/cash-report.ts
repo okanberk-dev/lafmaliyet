@@ -12,7 +12,7 @@ import { allDroppedSentence, droppedListText, recipientRefusal } from "@/lib/not
 import { longDateTR } from "@/lib/reminders";
 import { emailErrorFor } from "@/lib/staff-errors";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
-import { formTillBranch, withBranchScope } from "@/server/branch-scope";
+import { formTillBranch, staffBranchRefusal, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { clearOkcCumulativeCore, removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
@@ -99,12 +99,17 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
   });
 }
 
-/** E-posta gitmediyse yeniden dener (yönetici ya da raporu gönderen, raporun günü geçmeden) */
+/**
+ * E-posta gitmediyse yeniden dener (yönetici ya da raporu gönderen, raporun günü geçmeden; şubesine kilitli personel
+ * yalnız kendi şubesinin raporunu, staffBranchRefusal)
+ */
 export async function resendCashReportEmail(id: number) {
   return attempt(async () => {
     const me = await requireUser();
     const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, z.number().int().positive().parse(id))).limit(1);
     if (!row) throw new UserError("Rapor bulunamadı");
+    const otherBranch = await staffBranchRefusal(me, row.branchId);
+    if (otherBranch) throw new UserError(otherBranch);
     if (me.role !== "admin" && (row.submittedBy !== me.id || !staffCanReport(row.date))) throw new UserError("Bu raporu yalnız yönetici yeniden gönderebilir");
     const email = await emailReport(row.id);
     refresh();
