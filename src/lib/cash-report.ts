@@ -1,3 +1,4 @@
+import { DEFAULT_BRANCH_ID } from "./branches";
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { dayRevenue } from "./cash-revenue";
 import { money } from "./format";
@@ -857,10 +858,22 @@ export function okcTextBlock(f: CashTextFields & { cardExtra?: number | null }, 
 }
 
 /**
+ * Metnin şubesi: birden çok kasa açıkken raporun şubesinin adı (docs/SUBE.md › Kasa raporu "Tümü"de). İki şubenin aynı
+ * günkü raporu aynı numarayı taşır, aynı alıcılara ve aynı WhatsApp sohbetine düşer: şube yazılmazsa hangi kasanın eksik
+ * olduğu anlaşılmaz. Tek kasada boş (metin bugünkü gibi)
+ */
+export interface CashTextBranch {
+  branchName?: string | null;
+}
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
  * türleriyle tutmaması öne çıkarılır. Her zaman personelin metni (yönetici gönderse de gruba gider)
  */
-export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity): string {
+export function whatsappText(
+  f: CashReportFields,
+  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
+): string {
   return cashReportText(f, meta, "staff");
 }
 
@@ -875,13 +888,16 @@ export function revenueWord(c: Pick<CashResult, "offInZTotal">): string {
 /** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
 export function cashReportText(
   f: CashTextFields,
-  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity,
+  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity & CashTextBranch,
   audience: CashTextAudience,
 ): string {
   // LafPOS gününde kart karşılaştırması kartla bahşiş ve cari tahsilatını düşer (G11)
   f = withCardExtra(f, meta.cardExtra);
   const c = computeCash(f);
-  const head = [`*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
+  const head = [
+    `*L'Affogato · Gün sonu kasa raporu ${reportNo(f.date)}${branchPart(meta.branchName)}*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`,
+    `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`,
+  ];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const photos = photosLine(meta.photos);
@@ -924,24 +940,43 @@ export function cashReportText(
  * Aynı sürüm iki kez gitmez ("Yeniden dene" aynı anahtarla); silinip aynı gün yeniden girilen rapor yeni satırdır, sürümü
  * yine 1'den başlar ama anahtarı silinenden farklıdır. Resend anahtarı 24 saat tutar: güne göre anahtar
  * (`cash-{gün}-r{sürüm}`) silinip yeniden girilen günün e-postasını göndermezdi (aynı gövde: eski sonuç; farklı gövde:
- * 409). İşlem geçmişinin anahtarı (`notification_log`, `cash:{gün}:r{sürüm}`) güne göre kalır: son gönderimin kaydı.
+ * 409). İşlem geçmişinin anahtarı `cashLogKey` (şubenin günü ve sürümü): son gönderimin kaydı.
  */
 export function cashEmailKey(row: { id: number; revision: number }): string {
   return `cash-${row.id}-r${row.revision}`;
 }
 
 /**
- * Kasa raporunun numarası (sahibin kararı, 4 Kasım 2026): iş gününden, "KR-20261103". Gün başına tek rapor olduğu için
- * (cash_reports_date_uq) benzersizdir; silinip yeniden girilen ya da geç girilen rapor da aynı numarayı alır, sıra
- * kaymaz. Panel, e-posta ve WhatsApp aynı numarayı yazar
+ * Kasa e-postasının işlem geçmişi anahtarı (`notification_log`): şubenin günü ve sürümü, `cash:{gün}:r{sürüm}`; Tuzla
+ * dışındaki şubede sonuna `:{şube}` (Tuzla'nın anahtarı bugünkü gibi kalır). Şubesiz anahtarda aynı günün iki şube
+ * raporu tek satıra düşüyor, ikincinin sonucu birincinin kaydını eziyordu (21 Kasım denetimi #2)
+ */
+export function cashLogKey(row: { date: string; revision: number; branchId: string }): string {
+  return `cash:${row.date}:r${row.revision}${row.branchId !== DEFAULT_BRANCH_ID ? `:${row.branchId}` : ""}`;
+}
+
+/**
+ * Kasa raporunun numarası (sahibin kararı, 4 Kasım 2026): iş gününden, "KR-20261103". Şubenin günü başına tek rapor
+ * olduğu için (cash_reports_date_uq: gün ve şube) şube içinde benzersizdir; silinip yeniden girilen ya da geç girilen
+ * rapor da aynı numarayı alır, sıra kaymaz. İki şubenin aynı günkü raporu aynı numarayı taşır: birden çok kasa açıkken
+ * e-posta, WhatsApp metni ve panel numaranın yanına şubenin adını yazar (`branchPart`). Panel, e-posta ve WhatsApp aynı
+ * numarayı yazar
  */
 export function reportNo(date: string): string {
   return `KR-${date.replaceAll("-", "")}`;
 }
 
-/** E-posta konusu: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik" */
-export function reportSubject(f: CashReportFields, revision = 1): string {
-  return `Kasa raporu ${reportNo(f.date)} · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
+/** Numaranın yanındaki şube: " · Marina" (birden çok kasa açıkken); tek kasada boş */
+export function branchPart(branchName: string | null | undefined): string {
+  return branchName ? ` · ${branchName}` : "";
+}
+
+/**
+ * E-posta konusu: "Kasa raporu KR-20261021 · 21 Ekim Salı · 120 ₺ eksik"; birden çok kasa açıkken numaranın yanında
+ * şube ("Kasa raporu KR-20261021 · Marina · 21 Ekim Salı · 120 ₺ eksik")
+ */
+export function reportSubject(f: CashReportFields, revision = 1, branchName?: string | null): string {
+  return `Kasa raporu ${reportNo(f.date)}${branchPart(branchName)} · ${longDateTR(f.date)} · ${diffText(computeCash(f).cashDiff).replace("Kasa tutuyor", "kasa tutuyor")}${revision > 1 ? " (güncellendi)" : ""}`;
 }
 
 /** E-posta adresleri: virgül, noktalı virgül, boşluk ya da satırla ayrılmış metinden; tekrarlar ve geçersizler çıkar */

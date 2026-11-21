@@ -247,7 +247,7 @@ test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satır
   for (const file of ["src/server/actions/cash-report.ts", "src/app/panel/kasa/page.tsx", "src/app/panel/kasa/cash-history.tsx"]) {
     assert.doesNotMatch(read(file), /cashReportText/, file);
   }
-  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, meta, "admin"\)/);
+  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, \{ \.\.\.meta, branchName \}, "admin"\)/);
   assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
 
   // Düzeltilen rapor (sürüm 2): "Değişen" satırında yazarkasanın toplamı, KDV'si, fiş sayısı, yemek kartı ve diğeri

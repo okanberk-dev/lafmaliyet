@@ -121,7 +121,7 @@ sayıldıysa işletmenin stoğu toplamdır (birimi farklıysa ilk satırın biri
 
 | Kayıt | Şube |
 |---|---|
-| Kasa raporu, kasadan çıkan para | Seçili şube; "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin) |
+| Kasa raporu, kasadan çıkan para | Formun gösterdiği kasa: sayfa açılırken seçili şube, "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin). Form kasanın kimliğini gönderir; gönderim anındaki seçim değil o yazılır ([aşağıda](#kasa-raporu-tümüde-20-kasım-2026)) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
 | Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
@@ -144,9 +144,19 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   kanal seçiliyken Tuzla (`currentTillBranch`) ve sayfa bunu not olarak yazar. Önceden "Tümü"de günün raporu koşulsuz
   `limit(1)` ile okunuyor, Marina'nın raporu görünürken kayıt Tuzla'ya iniyordu; geçmişte günün iki raporundan biri
   düşüyordu.
+- **Form kasasını taşır** (21 Kasım denetimi #12): kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan
+  satırı ve ekleme isteği sayfanın çizdiği kasanın kimliğini gönderir; sunucu onu doğrular (etkin fiziksel şube;
+  şubesine kilitli personelde yalnız kendi şubesi, `formTillBranch` › `formTillError`) ve yazımı o kasanın kapsamında
+  çalıştırır (`withBranchScope`: kapı, kilit ve okumalar da o şubenin). Çerez sekmeler arasında ortaktır: önceden başka
+  sekmede seçici Marina'ya geçince açık kalan Tuzla formu Marina'ya yazıyordu. Kimliği göndermeyen eski sekme seçili
+  kasaya yazar. Form anahtarı kasayı da taşır: seçici değişince yarım form öbür kasada kalmaz.
 - **Tek kasa okumaları** (`getCashReport`, `previousCarryOver`, `nextReportAfter`, `previousOkc`, `nextOkc`,
   `loadMonthEntry`, LafPOS günü, kasadan çıkanlar, zayi) verilen şubeyle ya da kasanın şubesiyle okur; kayıtlı raporun
   e-postası, WhatsApp metni ve bütünlük denetimi raporun kendi şubesiyle.
+- **E-posta ve WhatsApp şubeyi yazar** (21 Kasım denetimi #2): iki şubenin aynı günkü raporu aynı numarayı taşır ve
+  aynı alıcılara, aynı sohbete düşer. Birden çok kasa açıkken konu, başlık ve metnin ilk satırı numaranın yanına şubenin
+  adını yazar ("KR-20261120 · Marina"); e-postanın "Panelde aç"ı `&sube=` ile o şubenin gününü açar (zil gibi). İşlem
+  geçmişinin anahtarı şubenin günüdür (`cashLogKey`). Tek kasada metin ve bağlantı bugünkü gibi.
 - **Personel istekleri** (düzeltme, silme, geç rapor, kasadan çıkan): onay isteğin kendi raporuna ve şubesine yazar,
   yöneticinin şube seçimine değil (önceden "Tümü"den onaylanan Marina önerisi Tuzla'nın raporuna yazılıyordu). Konu
   şubenin günü (`cashDaySubject`: Tuzla `gun:G`, öteki `gun:G:şube`); bir şubenin raporu girilince ya da silinince

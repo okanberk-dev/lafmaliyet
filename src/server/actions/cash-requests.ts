@@ -3,12 +3,14 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { carryCheck, changesText, diffText } from "@/lib/cash-report";
 import { approvalLine, CASH_REQUEST_TEXT, correctionLog, lateApprovalLine, lateLog, reasonLog } from "@/lib/cash-requests";
 import { MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { proposeLateReport } from "@/server/cash/late";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
 import { okcFieldsIn, reportSchema } from "@/server/cash/report-store";
@@ -31,9 +33,19 @@ const clientKey = z
   .nullish()
   .transform((v) => v ?? null);
 
+/**
+ * Formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube): istek o şubenin gününe açılır, gönderim anındaki seçime
+ * değil (formTillBranch). Göndermeyen eski sekmede seçili kasa
+ */
+const tillId = z.string().max(BRANCH_ID_MAX).nullish();
+
+/** İsteğin çekirdeği formun kasasının kapsamında: kilit, kapı ve okumalar o şubenin */
+const inFormTill = async <T>(raw: string | null | undefined, fn: () => Promise<T>): Promise<T> => withBranchScope(await formTillBranch(raw), fn);
+
 const correctionSchema = z.object({
   date: zDate,
   baseRevision: z.number().int().min(1),
+  branchId: tillId,
   fields: reportSchema.omit({ date: true, countedBy: true, revision: true, photos: true }),
   countedBy: z
     .number()
@@ -56,7 +68,7 @@ export async function requestCashCorrection(input: z.input<typeof correctionSche
     const parsed = correctionSchema.parse(input);
     // Yazarkasa alanları kayıtlı biçime (kural formla aynı metinle; dalga 13)
     const data = { ...parsed, fields: okcFieldsIn(parsed.fields) };
-    const { row, changes } = await proposeCashCorrection(getDb(), me, data);
+    const { row, changes } = await inFormTill(parsed.branchId, () => proposeCashCorrection(getDb(), me, data));
     await logActivity(me, "Kasa düzeltmesi önerildi", correctionLog({ date: data.date, changes, reason: data.message }));
     refresh();
     return { id: row.id, version: row.version };
@@ -66,6 +78,7 @@ export async function requestCashCorrection(input: z.input<typeof correctionSche
 const deleteSchema = z.object({
   date: zDate,
   baseRevision: z.number().int().min(1),
+  branchId: tillId,
   message: z.string().trim().min(3, "Nedenini yazın").max(500, "Neden en çok 500 karakter"),
   clientKey,
 });
@@ -76,7 +89,7 @@ export async function requestCashDelete(input: z.input<typeof deleteSchema>) {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
     const data = deleteSchema.parse(input);
-    const { row } = await proposeCashDelete(getDb(), me, data);
+    const { row } = await inFormTill(data.branchId, () => proposeCashDelete(getDb(), me, data));
     await logActivity(me, "Kasa raporunun silinmesi istendi", [longDateTR(data.date), reasonLog(data.message)].filter(Boolean).join(" · "));
     refresh();
     return { id: row.id, version: row.version };
@@ -90,6 +103,7 @@ const lateSchema = reportSchema.omit({ countedBy: true, revision: true, photos: 
   // En az kaç fotoğraf: günün kasasına göre çekirdekte (ModPOS Z; LafPOS gününde gün sonu geldiyse hiç, gelmediyse yazarkasa Z)
   photoIds: z.array(z.number().int().positive()).max(MAX_REPORT_PHOTOS),
   handedTo: z.discriminatedUnion("kind", [z.object({ kind: z.literal("user"), id: z.number().int().positive() }), z.object({ kind: z.literal("banka") })]).nullable(),
+  branchId: tillId,
   clientKey,
 });
 
@@ -102,9 +116,9 @@ export async function requestLateCashReport(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
-    const { reason, requestVersion, photoIds, handedTo, clientKey: key, ...form } = lateSchema.parse(input);
+    const { reason, requestVersion, photoIds, handedTo, clientKey: key, branchId, ...form } = lateSchema.parse(input);
     const fields = okcFieldsIn(form);
-    const out = await proposeLateReport(getDb(), me, { fields, reason, requestVersion, photoIds, handedTo, clientKey: key });
+    const out = await inFormTill(branchId, () => proposeLateReport(getDb(), me, { fields, reason, requestVersion, photoIds, handedTo, clientKey: key }));
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Geç kasa raporu onaya gönderildi", lateLog({ date: fields.date, zTotal: fields.zTotal, cashDiff: out.cashDiff, reason }));
     }

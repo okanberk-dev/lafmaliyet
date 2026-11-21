@@ -131,6 +131,29 @@ export function tillBranches<T extends Pick<BranchRow, "kind" | "active" | "sort
 }
 
 /**
+ * Kasanın adı ve kimliği metinlerde ve bağlantılarda (kasa e-postası, WhatsApp metni, "Panelde aç"): birden çok kasa
+ * açıkken şube, tek kasada null (metin ve bağlantı bugünkü gibi). Zil (src/server/bell/kasa.ts) aynı kuralla yazar
+ */
+export function namedTill(rows: readonly BranchRow[], id: string): { id: string; name: string } | null {
+  if (tillBranches(rows).length < 2) return null;
+  return { id, name: rows.find((b) => b.id === id)?.name ?? id };
+}
+
+/**
+ * Formun gönderdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken hangi
+ * şube): yazım formun gösterdiği kasaya iner, gönderim anındaki seçime değil (seçim başka bir sekmede değişmiş
+ * olabilir; çerez sekmeler arasında ortak). Kasa etkin bir fiziksel şube olmalı; şubesine kilitli personel yalnız kendi
+ * şubesine yazar (`lock`). Sorun yoksa null, varsa kullanıcının göreceği metin.
+ */
+export function formTillError(raw: string, known: readonly BranchRow[], lock: string | null): string | null {
+  const b = known.find((x) => x.id === raw);
+  if (!b || !b.active) return "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin";
+  if (b.kind !== "fiziksel") return `${b.name} kanalının kasası olmaz; sayfayı yenileyin`;
+  if (lock !== null && raw !== lock) return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${b.name} kasasına yazamazsınız`;
+  return null;
+}
+
+/**
  * Adresten / çerezden gelen seçim: tanınmayan, kapalı ya da boş değer "hepsi"ye düşer. Seçim veriyi süzer,
  * yetki vermez: yetki `requireAdmin`/`requireUser` ile ayrıca denetlenir.
  */

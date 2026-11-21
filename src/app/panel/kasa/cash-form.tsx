@@ -423,9 +423,15 @@ export function CashForm({
   okcAdmin = null,
   lafpos = null,
   lafposMode = lafpos !== null,
+  branchId = null,
 }: {
   date: string;
   report: CashReportDTO | null;
+  /**
+   * Formun kasası (docs/SUBE.md › Yazarken hangi şube): rapor, düzeltme ve silme isteği ve geç rapor bu şubeye gider,
+   * gönderim anındaki seçime değil (başka sekmede seçici değişmiş olabilir). Yoksa sunucu seçili kasayı kullanır
+   */
+  branchId?: string | null;
   /** Önceki raporun ertesi güne devri (açılış kendiliğinden dolar ve onunla karşılaştırılır) */
   carry: { date: string; amount: number } | null;
   whatsapp: { text: string; link: string } | null;
@@ -772,6 +778,7 @@ export function CashForm({
           requestVersion: late?.version ?? 0,
           photoIds: photos.map((p) => p.id),
           handedTo: fields.handedOver > 0 ? to : null,
+          branchId,
           clientKey,
         });
         if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
@@ -794,7 +801,7 @@ export function CashForm({
       const { date: _day, ...rest } = fields;
       void _day;
       start(async () => {
-        const res = await requestCashCorrection({ date, baseRevision: report.revision, fields: rest, countedBy: counter, message: why, clientKey });
+        const res = await requestCashCorrection({ date, baseRevision: report.revision, branchId, fields: rest, countedBy: counter, message: why, clientKey });
         if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
         toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
         setProposal(null);
@@ -810,7 +817,7 @@ export function CashForm({
       return;
     }
     start(async () => {
-      const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
+      const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id), branchId });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
       if (res.data.needsApproval && res.data.request === "kasa-gec") {
@@ -925,7 +932,7 @@ export function CashForm({
                 <Pencil size={16} /> Düzenle
               </Button>
             ) : null}
-            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} label={`${longDateTR(date)} kasa raporu`} /> : null}
+            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} branchId={branchId} label={`${longDateTR(date)} kasa raporu`} /> : null}
           </div>
           {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
           {locked ? (

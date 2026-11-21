@@ -15,12 +15,14 @@ import {
   type BranchScope,
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
+  formTillError,
   parseBranchScope,
 } from "@/lib/branches";
 
 import { getCurrentUser } from "./auth/dal";
 import { listBranches } from "./branches";
 import { getDb, type DB } from "./db";
+import { UserError } from "./user-error";
 
 /**
  * Panelin o anki şube seçimi (docs/SUBE.md › Seçici). Kurallar saf dosyada (src/lib/branches.ts); burada yalnız
@@ -151,10 +153,27 @@ export async function currentPhysicalBranch(): Promise<BranchRow> {
 /**
  * Kasanın şubesi (kasa raporu, kasadan çıkan, geç rapor, ModPOS föyü): seçili fiziksel şube; "Tümü" ya da online kanal
  * seçiliyken varsayılan şube (Tuzla). Online kanalın kasası olmaz (docs/SUBE.md › Kurallar): kanal seçiliyken girilen
- * rapor "online" şubesine yazılmasın. Kasa sayfası okurken de bunu kullanır ki form gösterdiği kasaya yazsın.
+ * rapor "online" şubesine yazılmasın. Kasa sayfası okurken de bunu kullanır; form bu kasanın kimliğini gönderir ki
+ * gösterdiği kasaya yazsın (`formTillBranch`).
  */
 export async function currentTillBranch(): Promise<string> {
   return (await currentPhysicalBranch()).id;
+}
+
+/**
+ * Formun gösterdiği kasa (kasa raporu, geç rapor, düzeltme ve silme isteği, kasadan çıkan; docs/SUBE.md › Yazarken
+ * hangi şube). Sayfa formu `currentTillBranch` ile çizer ve kasanın kimliğini forma koyar; yazım gönderim anındaki
+ * çereze değil bu kimliğe iner: çerez sekmeler arasında ortaktır, başka sekmede seçici değişince eski sekmenin Tuzla
+ * formu Marina'ya yazıyordu (21 Kasım denetimi #12). Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde
+ * kendi şubesi (`formTillError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili kasaya yazar.
+ * Eylem yazımı `withBranchScope(kasa, …)` içinde çalıştırır: kapı, kilit ve okumalar da aynı kasaya bakar.
+ */
+export async function formTillBranch(raw: string | null | undefined): Promise<string> {
+  if (!raw) return currentTillBranch();
+  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const error = formTillError(raw, branches, lock);
+  if (error) throw new UserError(error);
+  return raw;
 }
 
 /**

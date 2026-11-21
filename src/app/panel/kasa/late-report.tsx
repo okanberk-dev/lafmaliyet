@@ -43,8 +43,11 @@ export function LateReport({
   prevOkcZ = null,
   lafpos = null,
   lafposMode = false,
+  branchId = null,
 }: {
   date: string;
+  /** Formun kasası: geç rapor bu şubenin gününe gider, gönderim anındaki seçime değil (docs/SUBE.md) */
+  branchId?: string | null;
   own: OwnLate | null;
   closedCount: number;
   others: { requestedByName: string; createdAt: string }[];
@@ -173,8 +176,9 @@ export function LateReport({
         />
       ) : null}
       <CashForm
-        key={`gec:${date}:${pendingOwn?.version ?? 0}:${own?.id ?? 0}`}
+        key={`gec:${branchId ?? ""}:${date}:${pendingOwn?.version ?? 0}:${own?.id ?? 0}`}
         date={date}
+        branchId={branchId}
         report={null}
         carry={carry}
         whatsapp={null}

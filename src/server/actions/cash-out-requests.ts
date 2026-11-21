@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { CASH_OUT_REQUEST_TEXT, cashOutRequestLog, lineText } from "@/lib/cash-out-requests";
 import { cashOutLabel } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
@@ -10,6 +11,7 @@ import { PHOTO_KIND_LABEL } from "@/lib/photo-rules";
 import { genitive } from "@/lib/recipe-change";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { attachCashOutReceiptCore, proposeCashOutChange, proposePhotoRemoval, reviewCashOutRequestCore, reviewPhotoRemovalCore } from "@/server/cash-outs/requests";
 import { getDb } from "@/server/db";
 
@@ -47,20 +49,22 @@ const changeSchema = z.object({
   cashOutId: z.number().int().positive().nullable(),
   line: lineSchema.nullable(),
   message: zOptText(200),
+  /** Formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili kasa */
+  branchId: z.string().max(BRANCH_ID_MAX).nullish(),
   clientKey,
 });
 
 /**
  * Personel: kasadan çıkan isteği (kapanmış ya da eski güne ekleme; kilitli dünün ya da yöneticinin kategorisindeki
  * satırın düzeltilmesi ve silinmesi). Hiçbir şey yazılmaz; yönetici onaylayınca kasaya işlenir. Dönüşte yalnız isteğin
- * kimliği ve sürümü.
+ * kimliği ve sürümü. Ekleme isteği formun gösterdiği kasanındır (formTillBranch), gönderim anındaki seçimin değil.
  */
 export async function requestCashOutChange(input: z.input<typeof changeSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
     const data = changeSchema.parse(input);
-    const out = await proposeCashOutChange(getDb(), me, data);
+    const out = await withBranchScope(await formTillBranch(data.branchId), () => proposeCashOutChange(getDb(), me, data));
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Kasadan çıkan isteği", cashOutRequestLog({ op: out.payload.op, day: out.payload.day, line: out.payload.line, before: out.payload.before, note: data.message }));
     }

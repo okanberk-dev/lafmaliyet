@@ -169,6 +169,12 @@ function totalsOf(days: { report: CashReportDTO | null }[]): CashMonthTotals {
 
 /** Sayfanın gösterdiği kasa (docs/SUBE.md › Kasa raporu) */
 interface KasaView {
+  /**
+   * Formların kasası (kasa raporu, geç rapor, istekler, kasadan çıkan): forma konur, yazım bu şubeye iner
+   * (formTillBranch). Gönderim anındaki seçime göre yazılsaydı başka sekmede seçici değişince bu sayfanın Tuzla formu
+   * Marina'ya yazardı (çerez sekmeler arasında ortak)
+   */
+  till: string;
   /** Birden çok şube açıkken kasanın şubesi (başlıkta adı, bağlantılarda `?sube=`); tek şubede null */
   branch: { id: string; name: string } | null;
   /** Seçili kapsamın adı kasanın şubesi değilse ("Tümü", "laffogato.net"): form hangi şubeye yazdığını söyler */
@@ -183,8 +189,9 @@ interface KasaView {
  * - "Tümü"de yöneticinin günden güne görünümü her açık şubeyi kendi bölümünde gösterir. Tek listede aynı günün iki
  *   raporundan biri düşüyor, toplamlar tek şubeyi sayıyor ve devir şubeler arasında karşılaştırılıyordu.
  * - Form (personel, yöneticinin günü) raporun yazılacağı şubenin kasasıdır: seçili fiziksel şube, "Tümü" ya da online
- *   kanalda Tuzla (`currentTillBranch`; kaydetme de oraya yazar). Önceden form "Tümü"de koşulsuz okuyup Marina'nın
- *   raporunu gösterirken kayıt Tuzla'ya iniyordu.
+ *   kanalda Tuzla (`currentTillBranch`). Form kasanın kimliğini gönderir, kaydetme oraya yazar (`formTillBranch`;
+ *   başka sekmede seçici değişse de). Önceden form "Tümü"de koşulsuz okuyup Marina'nın raporunu gösterirken kayıt
+ *   Tuzla'ya iniyordu.
  */
 async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/kasa">["searchParams"] }) {
   const user = await requireUser();
@@ -194,7 +201,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const many = tills.length > 1;
   if (user.role === "admin" && scope === ALL_BRANCHES && many && !isDay(pick(sp.gun))) {
     const parts = await Promise.all(
-      tills.map((b, i) => withBranchScope(b.id, () => cashContentFor(user, sp, { branch: { id: b.id, name: b.name }, scopeLabel: null, settings: i === 0 }))),
+      tills.map((b, i) => withBranchScope(b.id, () => cashContentFor(user, sp, { till: b.id, branch: { id: b.id, name: b.name }, scopeLabel: null, settings: i === 0 }))),
     );
     return (
       <div className="space-y-8">
@@ -217,6 +224,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const till = await currentTillBranch();
   const own = branches.find((b) => b.id === till);
   const view: KasaView = {
+    till,
     branch: many && own ? { id: own.id, name: own.name } : null,
     scopeLabel: many && scope !== till ? branchScopeLabel(scope, branches) : null,
     settings: true,
@@ -301,6 +309,8 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
           by: report.submittedByName,
           revision: report.revision,
           waste,
+          // Birden çok kasa açıkken başlıkta kasanın şubesi (e-postadaki gibi)
+          branchName: view.branch?.name ?? null,
           ...extrasFrom(photoInfo, outs, report, lafposState),
           ...integrityOf(report, carry, next, revisions),
         });
@@ -362,8 +372,10 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   ) : null;
   const form = showForm ? (
     <CashForm
-      key={`${date}:${report?.revision ?? 0}`}
+      // Kasa da anahtarda: seçici değişince yarım kalan form öbür kasanın formu olarak kalmasın
+      key={`${view.till}:${date}:${report?.revision ?? 0}`}
       date={date}
+      branchId={view.till}
       report={report}
       carry={carry}
       whatsapp={whatsapp}
@@ -411,6 +423,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const outsCard = showForm ? (
     <CashOutsCard
       date={date}
+      branchId={view.till}
       today={date === today}
       lines={dayOuts}
       categories={categories}
@@ -662,7 +675,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
   const today = businessDate();
   const [request, chain, counters, ai, myRequests, prevOkc, lafposState] = await Promise.all([
     lateRequestFor(date, user),
-    chainNeighbours(getDb(), date, { prefer: user.id, branchId: await currentTillBranch() }),
+    chainNeighbours(getDb(), date, { prefer: user.id, branchId: view.till }),
     cashCounters(),
     aiStatus(),
     myCashRequests(user.id),
@@ -688,6 +701,7 @@ async function StaffLateDay({ date, user, view }: { date: string; user: { id: nu
       </div>
       <LateReport
         date={date}
+        branchId={view.till}
         own={request.own}
         closedCount={request.closedCount}
         others={request.others}

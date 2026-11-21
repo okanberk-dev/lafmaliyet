@@ -57,6 +57,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
   if (fields.handedOver > 0 && !input.handedTo) throw new UserError(CASH_REQUEST_TEXT.lateHandedTo);
   const ids = [...new Set(input.photoIds)];
   if (ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+  // Formun kasası: requestLateCashReport formun gönderdiği kasayı doğrulayıp kapsamı ona çevirir (formTillBranch)
   const branchId = await currentTillBranch();
   return db.transaction(async (tx) => {
     await lockLateDay(tx, date, branchId);

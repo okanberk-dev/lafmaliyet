@@ -46,10 +46,12 @@ yazın." Unutulan dünü sonradan girmek serbesttir. Daha eski bir günü yalnı
 ## Rapor numarası ve yöneticinin rapor penceresi
 
 Sahibin kararı (4 Kasım 2026): her kasa raporunun numarası iş gününden, **KR-YYYYAAGG** (3 Kasım 2026 → `KR-20261103`;
-`src/lib/cash-report.ts` `reportNo`). Gün başına tek rapor olduğu için numara benzersizdir; silinip yeniden girilen ya
-da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne listesinde, rapor penceresinin ve
-kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın konusunda ve başlığında, WhatsApp
-metninin ilk satırında yazar.
+`src/lib/cash-report.ts` `reportNo`). Şubenin günü başına tek rapor olduğu için numara şube içinde benzersizdir;
+silinip yeniden girilen ya da geç girilen rapor aynı numarayı alır, sıra kaymaz. Numara Kasa'nın günden güne
+listesinde, rapor penceresinin ve kayıtlı rapor kartının başlığında, gün görünümünün ladmin bölümünde, e-postanın
+konusunda ve başlığında, WhatsApp metninin ilk satırında yazar. İki şubenin aynı günkü raporu aynı numarayı taşır:
+birden çok kasa açıkken e-postanın konusu ve başlığı, WhatsApp metninin ilk satırı numaranın yanına şubenin adını yazar
+("Kasa raporu KR-20261120 · Marina · …"; `branchPart`, `namedTill`). Tek kasada metin bugünkü gibidir.
 
 Yöneticinin rapor penceresi sadedir (`src/app/panel/kasa/report-sheet.tsx`): üç rakam (toplam satış, sayılan nakit,
 kasa), tek **Kontrol** listesi (`src/lib/cash-report-checks.ts` `reportChecks`: e-posta hatası, ödeme türleri ↔ Z,
@@ -700,6 +702,10 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   anahtarı kullanır. Silinip aynı gün (24 saat içinde) yeniden girilen raporun e-postası da gider: yeni rapor yeni
   satırdır, sürümü 1'den başlasa da anahtarı silinenden farklıdır (güne göre anahtar Resend'in 24 saatlik hafızasına
   takılırdı: e-posta gitmez, "Yeniden dene" düşerdi).
+  Birden çok kasa açıkken konu, başlık ve metin raporun şubesini yazar; "Panelde aç" o şubenin gününü açar
+  (`/panel/kasa?gun=G&sube=marina`, zilin bağlantısı gibi). Bağlantıda şube olmasaydı tarayıcıdaki seçim hangi şubeyi
+  gösteriyorsa onun raporu açılırdı (21 Kasım denetimi #2). İşlem geçmişinin anahtarı şubenin günüdür (`cashLogKey`:
+  Tuzla `cash:G:rN`, öteki `cash:G:rN:şube`): iki şubenin aynı günkü gönderimi birbirinin kaydını ezmez.
 - **LafPOS günü** (geçiş gününden sonra; denetim E-09): e-postanın ve WhatsApp metninin başında rapor LafPOS'un gün
   sonundan farklıysa "⚠️ LafPOS'tan farklı yazılan: Sayılan nakit 9.350 ₺ (LafPOS'ta 9.000 ₺)"; Z bölümünün adı "LafPOS
   gün sonu (Z)". Teslim sayımdan sonra yazıldıysa (Teslim edilen) aynı para iki biçimde yazılmıştır: çıkan + teslim ve

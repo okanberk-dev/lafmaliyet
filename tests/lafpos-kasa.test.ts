@@ -12,7 +12,7 @@ import { test } from "node:test";
 
 import { missingSentence, tillMonths, type TillRow } from "../src/lib/cash-month";
 import { photoKindRefusal } from "../src/lib/cash-out-requests";
-import { cashEmailKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
+import { cashEmailKey, cashLogKey, cashReportText, computeCash, whatsappText, withCardExtra, type CashReportFields } from "../src/lib/cash-report";
 import { closedEvidenceText, EMPTY_EVIDENCE, hasPanelEvidence } from "../src/lib/closed-days";
 import { posZSchema, type PosDayZ } from "../src/lib/lafpos/day";
 import { lafposDiffs, lafposDiffsLine, lafposDiffText } from "../src/lib/lafpos/diffs";
@@ -79,11 +79,13 @@ test("E-40: kasa e-postasının anahtarı rapor satırına özgü; silinip aynı
   assert.equal(cashEmailKey({ id: 41, revision: 2 }), "cash-41-r2");
   // Silinen 25 Ekim raporu (satır 41, r1) ve aynı gün yeniden girilen (satır 57, yine r1)
   assert.notEqual(cashEmailKey({ id: 57, revision: 1 }), cashEmailKey({ id: 41, revision: 1 }));
-  // Varsayılan anahtar bununla; geç raporun onayı kendi anahtarını verir, işlem geçmişinin anahtarı güne göre kalır
+  // Varsayılan anahtar bununla; geç raporun onayı kendi anahtarını verir, işlem geçmişinin anahtarı şubenin gününe göre
+  // (cashLogKey; Tuzla'nınki bugünkü gibi, 21 Kasım denetimi #2)
   const email = read("src/server/cash/report-email.ts");
   assert.match(email, /idempotencyKey: o\.idempotencyKey \?\? cashEmailKey\(row\)/);
   assert.doesNotMatch(email, /`cash-\$\{row\.date\}-r\$\{row\.revision\}`/);
-  assert.match(email, /key: `cash:\$\{row\.date\}:r\$\{row\.revision\}`/);
+  assert.match(email, /key: cashLogKey\(row\)/);
+  assert.equal(cashLogKey({ date: "2026-10-25", revision: 1, branchId: "tuzla" }), "cash:2026-10-25:r1");
 });
 
 test("E-09: LafPOS'tan farklı yazılan: sayılan nakit 9.350 (LafPOS 9.000); aynı yazılan rapor fark vermez", () => {

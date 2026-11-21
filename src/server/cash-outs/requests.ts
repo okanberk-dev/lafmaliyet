@@ -125,7 +125,8 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
       }
       if (line.docType === "fis" && !line.photoId) line.docType = "yok";
       subject = `cikan-yeni:${input.clientKey}`;
-      // Şube isteği AÇAN personelinki: onay anında yönetici başka şubeye bakıyor olabilir (docs/SUBE.md)
+      // Şube isteği AÇAN personelin formunun kasası (eylem formTillBranch ile kapsamı ona çevirir): onay anında yönetici
+      // başka şubeye bakıyor olabilir (docs/SUBE.md)
       payload = CashOutRequestPayload.parse({ op: "ekle", day: input.date, cashOutId: null, line, before: null, branchId: await currentTillBranch() });
     } else {
       if (!input.cashOutId) throw new UserError(CASH_OUT_REQUEST_TEXT.rowGone);

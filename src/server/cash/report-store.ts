@@ -422,7 +422,9 @@ export type SaveResult =
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
   const { revision, photos, countedBy, ...form } = input;
-  // Raporun şubesi: panelde seçili olan (docs/SUBE.md). Gün bir kez değil, şube başına bir kez girilir
+  // Raporun şubesi: formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube). submitCashReport formun kasasını
+  // doğrular ve bunu onun kapsamında çağırır (formTillBranch, withBranchScope): gönderim anındaki çerez başka sekmede
+  // değişmiş olabilir. Gün bir kez değil, şube başına bir kez girilir
   const branchId = await currentTillBranch();
   const data = okcFieldsIn(form);
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");

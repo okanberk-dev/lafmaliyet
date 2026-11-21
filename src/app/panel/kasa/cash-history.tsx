@@ -161,6 +161,7 @@ export function CashHistory({
         whatsappText(open, {
           by: open.submittedByName,
           revision: open.revision,
+          branchName: branch?.name ?? null,
           ...photos[open.id]?.extras,
           countedBy: open.countedByName,
           carry: openCarry,

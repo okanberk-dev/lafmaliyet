@@ -72,6 +72,7 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
   const data: CashReportFields = { ...input.fields, date };
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   if (!staffCanReport(date, now)) throw new UserError(CASH_REQUEST_TEXT.closed);
+  // Formun kasası: eylem formun gönderdiği kasayı doğrulayıp kapsamı ona çevirir (formTillBranch)
   const branchId = await currentTillBranch();
   return db.transaction(async (tx) => {
     const report = await lockCashReport(tx, date, branchId);
