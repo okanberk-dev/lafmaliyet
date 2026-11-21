@@ -43,12 +43,12 @@ Sistem geneli tarama (12 alan; her bulgu bağımsız bir denetçiyle kod yolu ve
 
 ## Sonraki işler (düzeltmeler sırasında görülen, bulgu listesinde olmayan)
 
-| Konu | Yer | Not |
-|------|-----|-----|
-| Sayım kaydı şubeyi formdan değil çerezden alır | `src/app/panel/sayim/actions.ts` | #12'nin sayım karşılığı: başka sekmede şube değişince açık sayım formu öbür şubeye kaydedebilir (kasa formları artık kasasını taşıyor; `formTillBranch`) |
-| Şube seçici kaydedilmemiş sayımda sormadan geçer | `src/components/panel/branch-picker.tsx` | Taslak şube başına saklandığı için veri kaybolmaz (#8), yalnız uyarı yok |
-| Z fotoğrafı boyut denetimi iki şubenin 28 günlük toplamını karıştırır | `src/server/photo-read/read.ts` (`okcTypical`) | "Alışılmışın dışında" uyarısı Tümü toplamına göre; Z no karşılaştırması #1'de şubeye bağlandı |
-| Eski veritabanı testleri düşüyor (21 Kasım'dan önce de) | `tests/cari-db.test.ts` (2), `tests/ekim-sayimi.test.ts` (18) | `ekim-sayimi`: 0047'nin `ON CONFLICT ("month","ingredient_id")`'i 0056'dan beri eşleşen tekil dizin bulamıyor. Bu testler yalnız ortam değişkeniyle çalışır; `npm test`'te atlanır |
+| Konu | Yer | Not | Durum |
+|------|-----|-----|-------|
+| Sayım kaydı şubeyi formdan değil çerezden alır | `src/app/panel/sayim/actions.ts` | #12'nin sayım karşılığı: başka sekmede şube değişince açık sayım formu öbür şubeye kaydedebilir (kasa formları artık kasasını taşıyor; `formTillBranch`) | düzeltildi (539f474) |
+| Şube seçici kaydedilmemiş sayımda sormadan geçer | `src/components/panel/branch-picker.tsx` | Taslak şube başına saklandığı için veri kaybolmaz (#8), yalnız uyarı yok | düzeltildi (539f474) |
+| Z fotoğrafı boyut denetimi iki şubenin 28 günlük toplamını karıştırır | `src/server/photo-read/read.ts` (`okcTypical`) | "Alışılmışın dışında" uyarısı Tümü toplamına göre; Z no karşılaştırması #1'de şubeye bağlandı | düzeltildi (539f474) |
+| Eski veritabanı testleri düşüyor (21 Kasım'dan önce de) | `tests/cari-db.test.ts` (2), `tests/ekim-sayimi.test.ts` (18) | `ekim-sayimi`: 0047'nin `ON CONFLICT ("month","ingredient_id")`'i 0056'dan beri eşleşen tekil dizin bulamıyor. Bu testler yalnız ortam değişkeniyle çalışır; `npm test`'te atlanır | düzeltildi (9628201): iki test de eskimişti, kodda hata yok |
 
 ## Ayrıntı
 
