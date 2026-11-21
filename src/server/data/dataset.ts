@@ -1,22 +1,23 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { channelNameResolver } from "@/app/panel/tedarikciler/logic";
 import { ALL_BRANCHES, branchPnlEntry, type BranchScope } from "@/lib/branches";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
-import type { Dataset, Settings } from "@/lib/calc/types";
-import { isReportRow, resolveMonths, tillMonths } from "@/lib/cash-month";
+import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
+import { isReportRow, resolveMonths, tillMonths, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
+import type { SiteSalesMonth } from "@/lib/site-sales/schema";
 import { branchWhere, branchWhereWithShared, currentBranchScope, withBranchScope } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
-import { getDb, schema as s } from "@/server/db";
+import { getDb, schema as s, type DB } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
@@ -171,36 +172,19 @@ async function readDataset(): Promise<Dataset> {
   // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
   const today = businessDate();
   const through = addDays(today, -1);
-  // Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
-  // günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
-  // satırlar ve kapsam bugünkü gibi. Yalnız kasa raporları: yedek ay satırları (LafPOS G6, ModPOS föyü) rapor değildir
+  // Yalnız kasa raporları: yedek ay satırları (LafPOS G6, ModPOS föyü) rapor değildir
   const reportRows = till.filter(isReportRow);
-  // LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
-  const [sales, lafposIkram] = await Promise.all([
-    mergeWithLafpos(db, {
-      switchDay: settings.lafposGecisGunu,
-      salesLines: salesLines.map((l) => ({
-        id: l.id,
-        month: l.month,
-        posName: l.posName,
-        qty: l.qty,
-        revenue: l.revenue,
-        productId: l.productId,
-        isService: l.isService,
-        note: l.note,
-      })),
-      coverage: parseCoverage(coverageRow[0]?.value),
-      today,
-      // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır. Yalnız
-      // kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") rapor değildir
-      lastTillDay: reportRows.at(-1)?.date ?? null,
-      reportDays: reportRows.map((r) => r.date),
-      zOf: (from, upto) => {
-        const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
-        return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
-      },
-    }),
+  const coverage = parseCoverage(coverageRow[0]?.value);
+  // SU GİDERİ girilmiş aylar: tek şube seçiliyken litre fiyatı bu ayların işletme geneli satışıyla (waterSales)
+  const billMonths = new Set(pnlEntries.filter((e) => e.rowKey === "manual:su" && e.amount > 0).map((e) => e.month));
+  // Satış satırları LafPOS'la birleşir (mergeSales). LafPOS'un ikramları geçiş gününden itibaren kayıtlı tüketime
+  // (src/lib/lafpos/ikram.ts); geçiş günü yoksa okunmaz
+  const [sales, lafposIkram, waterSales] = await Promise.all([
+    mergeSales(db, { switchDay: settings.lafposGecisGunu, salesLines: salesLines.map(salesLineOf), coverage, today, till }),
     settings.lafposGecisGunu ? loadLafposIkram(db, settings.lafposGecisGunu) : Promise.resolve(null),
+    branch && billMonths.size
+      ? companyWaterSales(db, { switchDay: settings.lafposGecisGunu, coverage, today, months: billMonths, siteSales: branch.kind === "online" ? siteSales : null })
+      : Promise.resolve(null),
   ]);
   // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır).
   // Eksik gün, ay bilgisindeki gibi ilk kasa raporundan (ya da LafPOS gün sonundan) aranır: raporlar başlamadan önceki
@@ -217,6 +201,7 @@ async function readDataset(): Promise<Dataset> {
     settings,
     currentMonth,
     branchView: branch ? { id: branch.id, name: branch.name, kind: branch.kind } : null,
+    ...(waterSales ? { waterSales } : {}),
     salesCoverage,
     ingredients: ingredients.map((i) => ({
       id: i.id,
@@ -396,6 +381,60 @@ async function readDataset(): Promise<Dataset> {
       supplierEntryId: e.supplierEntryId,
     })),
   };
+}
+
+/** Veritabanının satış satırı → modelin satış satırı */
+function salesLineOf(l: typeof s.salesLines.$inferSelect): SalesLine {
+  return { id: l.id, month: l.month, posName: l.posName, qty: l.qty, revenue: l.revenue, productId: l.productId, isService: l.isService, note: l.note };
+}
+
+/**
+ * Satış satırları: Satışlar'a yüklenen ModPOS listeleri; LafPOS'a geçiş günü seçiliyse o günden itibaren LafPOS'un
+ * günlük satışları ay toplamı olarak (her gün tek kaynak; src/lib/lafpos/sales.ts). Geçiş günü yoksa LafPOS okunmaz,
+ * satırlar ve kapsam bugünkü gibi. LafPOS gün sonları ve `till` (kasa raporları) o anki kapsamın şubesinden.
+ */
+function mergeSales(db: DB, input: { switchDay: string | null; salesLines: SalesLine[]; coverage: Record<string, string>; today: string; till: readonly TillRow[] }) {
+  // Yalnız kasa raporları: LafPOS'un yedek ay satırları (G6, source "lafpos") ve ModPOS föyü rapor değildir
+  const reportRows = input.till.filter(isReportRow);
+  return mergeWithLafpos(db, {
+    switchDay: input.switchDay,
+    salesLines: input.salesLines,
+    coverage: input.coverage,
+    today: input.today,
+    // Kasa raporlarının son günü (tarihe göre sıralı): süren ayın sonraki LafPOS günleri rapor girilince sayılır
+    lastTillDay: reportRows.at(-1)?.date ?? null,
+    reportDays: reportRows.map((r) => r.date),
+    zOf: (from, upto) => {
+      const rows = reportRows.filter((r) => r.date >= from && r.date <= upto);
+      return rows.length ? Math.round(rows.reduce((a, r) => a + r.zTotal, 0) * 100) / 100 : null;
+    },
+  });
+}
+
+/**
+ * Su + buz litre fiyatının işletme geneli satışı (Dataset.waterSales; denetim 21 Kasım #4). Yalnız tek şube seçiliyken
+ * okunur: SU GİDERİ işletmenin faturasıdır, bütün şubelerin ve laffogato.net'in litresine bölünür. "Tümü" kapsamında,
+ * veri kümesinin yoluyla (satış satırları LafPOS'la birleşir; kasa raporları yalnız geçiş günü varsa gerekir). Okunan
+ * aylar faturalı aylar ve geçiş ayı (LafPOS'un sayılmaya başladığı gün o ayın listesine bağlı); dönen yalnız faturalı
+ * aylar. `siteSales`: online kanal seçiliyken zaten okunmuş online satışlar (yoksa okunur).
+ */
+async function companyWaterSales(
+  db: DB,
+  input: { switchDay: string | null; coverage: Record<string, string>; today: string; months: ReadonlySet<string>; siteSales: SiteSalesMonth[] | null },
+): Promise<NonNullable<Dataset["waterSales"]>> {
+  const read = [...input.months, ...(input.switchDay ? [input.switchDay.slice(0, 7)] : [])];
+  return withBranchScope(ALL_BRANCHES, async () => {
+    const [lines, till, site] = await Promise.all([
+      db.select().from(s.salesLines).where(inArray(s.salesLines.month, read)).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
+      input.switchDay ? tillRows() : Promise.resolve([]),
+      input.siteSales ? Promise.resolve(input.siteSales) : loadSiteSales(),
+    ]);
+    const sales = await mergeSales(db, { switchDay: input.switchDay, salesLines: lines.map(salesLineOf), coverage: input.coverage, today: input.today, till });
+    return {
+      salesLines: sales.salesLines.filter((l) => input.months.has(l.month)),
+      siteSales: site.filter((r) => input.months.has(r.month)),
+    };
+  });
 }
 
 export async function loadModel(opts: DatasetOptions = {}) {

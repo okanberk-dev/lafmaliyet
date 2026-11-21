@@ -84,8 +84,9 @@ satışı "Tümü"de ve online kanal seçiliyken okunur, fiziksel şubede yoktur
 
 **İşletme geneli ekranlar** seçiciden bağımsız, hep "Tümü"yle okur (`withBranchScope(ALL_BRANCHES, …)` ya da
 `loadModel({ scope: ALL_BRANCHES })`): Vergi (özet, gelir-gider, demirbaş), Ödemeler › Nakit planı ve Genel bakış'ın
-nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz) ve Excel'e aktar
-(panelin yedeği). Para ve beyan işletmenindir.
+nakit planı kartı, Tutarlılık (alınan mal şubeye bölünmez; tek şubenin tüketimiyle karşılaştırılmaz), Excel'e aktar
+(panelin yedeği) ve Ayarlar › Stok değerleme önizlemesi (ayar "Tümü"nün kâr-zararını değiştirir; denetim 21 Kasım
+#32). Para ve beyan işletmenindir.
 
 Süzülmeyen: **bütünlük denetimleri**. "Bu ürünün satışı var mı, silinebilir mi" sorusu bütün işletmeye bakar;
 şubeye göre süzülseydi Marina'ya bakarken Tuzla'da satılmış ürün silinebilir olurdu. Aynı şekilde "bu POS adı
@@ -107,6 +108,7 @@ Soldan bir şube seçilince Genel bakış ve Gelir-gider **o şubenin** gelir-gi
 |---|---|
 | Ciro, kasa, ödenmez | Şubenin kasa raporları / ay satırı |
 | Mal maliyeti | **Şubenin satışından reçeteye göre**: tüketim (fire hariç) × (1 + genel fire) + ödenmezlerin malzeme maliyeti (`engine.ts` `stockFlow`, yöntem `sube`). Faturalar ve stok devri işletme genelinde, şubeye bölünmez |
+| Ürün ve reçete maliyeti | Şubeye göre değişmez. Su + buz litre fiyatı işletme geneli: SU GİDERİ (işletmenin faturası) ÷ **bütün şubelerin** ve laffogato.net'in o ayki su + buz litresi (`Dataset.waterSales`, `engine.ts` `waterUsage`; denetim 21 Kasım #4). Önceden fatura yalnız seçili şubenin litresine bölünüyordu: Marina seçiliyken Americano M'nin maliyeti şişiyor, iki şubenin mal maliyeti faturayı iki kez sayıyordu |
 | Mal alımı (faturalar) | Bilgi olarak görünür, "işletme geneli"; mal maliyetine girmez |
 | Personel | Şubeye bağlı kişilerin maaşı (Maaşlar'da kişinin **Şube** alanı) |
 | Sabit gider | Şubeye bağlı kalemler + işletme geneli kalemler (Sabit giderler'de kalemin **Şube** alanı; boş = işletme geneli). Var olan kalemler işletme geneli kaldı |

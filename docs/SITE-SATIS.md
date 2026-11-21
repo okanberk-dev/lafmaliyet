@@ -128,7 +128,9 @@ online satış ModPOS satışını şişirmez):
   ModPOS'tandır.
 - **Su + buz litre maliyeti** de online siparişleri sayar (denetim E-57): SU GİDERİ ÷ (satış listesine göre + aynı
   ayın online siparişlerine göre harcanan su ve buz). Ay yine satış listesiyle seçilir (listesi yüklenmemiş ayın
-  faturası yalnız online litreye bölünmez); Hammaddeler'deki su kartının dökümü iki kaynağı ayrı yazar.
+  faturası yalnız online litreye bölünmez); Hammaddeler'deki su kartının dökümü iki kaynağı ayrı yazar. Tek şube
+  seçiliyken de litre işletme genelidir: bütün şubelerin satış listesi ve online siparişler (docs/SUBE.md › Şube
+  görünümünde maliyet; denetim 21 Kasım #4).
 - **Seçenekler** (v1'e eklenen, isteğe bağlı satır alanları; eski site göndermez): `extraShots` (satırdaki toplam
   ekstra shot, adet dahil), `syrups` ve `milks` (seçeneğin kimliğine göre adet; `normal` süt sayılmaz). Kasada bunlar
   ayrı satır olarak çalınır ("Extra Shot", "Syrup", "Alternatif Süt"): panel online seçenekleri de aynı ürünlere

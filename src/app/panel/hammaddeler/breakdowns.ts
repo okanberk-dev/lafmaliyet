@@ -128,8 +128,9 @@ const SETTINGS_ROW: BreakdownRow = {
 /**
  * Su + buz birim maliyeti nasıl çıktı (`model.water`, motorun hesabıyla aynı kalemler): SU GİDERİ ÷ o ay reçeteye
  * göre harcanan su + buz litresi; elle girilmişse Ayarlar'daki değer; hesaplanamıyorsa neyin eksik olduğu.
- * `usage`: hesabın ayında (water.month) satış listesine göre harcanan malzeme (`model.ingredientUsage`), `online`: aynı
- * ayın laffogato.net siparişlerininki (`model.onlineUsage`; denetim E-57), malzemenin biriminde.
+ * `usage`: hesabın ayında (water.month) satış listesine göre harcanan malzeme (`model.waterUsage(ay).list`), `online`:
+ * aynı ayın laffogato.net siparişlerininki (`.online`; denetim E-57), malzemenin biriminde. Şube seçiliyken ikisi de
+ * işletme genelinin satışından: fatura bütün şubelerin suyudur (denetim 21 Kasım #4).
  */
 export function waterBreakdown(
   water: WaterCost,
