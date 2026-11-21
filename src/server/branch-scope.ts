@@ -15,6 +15,7 @@ import {
   type BranchScope,
   DEFAULT_BRANCH_ID,
   DEFAULT_BRANCHES,
+  formCountError,
   formTillError,
   otherBranchError,
   parseBranchScope,
@@ -187,6 +188,22 @@ export async function formTillBranch(raw: string | null | undefined): Promise<st
   if (!raw) return currentTillBranch();
   const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
   const error = formTillError(raw, branches, lock);
+  if (error) throw new UserError(error);
+  return raw;
+}
+
+/**
+ * Formun gösterdiği sayımın şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"; docs/SUBE.md › Yazarken hangi
+ * şube): `formTillBranch`'in sayım karşılığı. Sayfa formu `currentPhysicalBranch` ile çizer ve şubenin kimliğini forma
+ * koyar; kayıt gönderim anındaki çereze değil bu kimliğe iner: başka sekmede seçici değişince açık kalan Tuzla sayımı
+ * Marina'ya yazıyordu. Kimlik etkin bir fiziksel şube olmalı, şubesine kilitli personelde kendi şubesi
+ * (`formCountError`); değilse UserError. Kimliği göndermeyen eski sekme bugünkü gibi seçili fiziksel şubeye yazar.
+ * Eylem yazımı `withBranchScope(şube, …)` içinde çalıştırır: okumalar da aynı şubeye bakar.
+ */
+export async function formCountBranch(raw: string | null | undefined): Promise<string> {
+  if (!raw) return (await currentPhysicalBranch()).id;
+  const [branches, lock] = await Promise.all([listBranches(), staffBranchLock()]);
+  const error = formCountError(raw, branches, lock);
   if (error) throw new UserError(error);
   return raw;
 }

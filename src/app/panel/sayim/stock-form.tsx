@@ -51,7 +51,7 @@ import { FloatingBar } from "@/components/ui/floating-bar";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { useIsPhone, useMediaQuery } from "@/components/ui/use-media";
 import { Input, NumberInput, Select } from "@/components/ui/form";
-import { useLeaveGuard } from "@/components/ui/leave-guard";
+import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
@@ -1505,9 +1505,10 @@ export function StockCountForm({
   }
 
   // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun; beforeunload istemci içi geçişi kapsamaz:
-  // başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar (ortak kanca, src/components/ui/leave-guard.ts)
+  // başlıktaki ay seçici, kenar çubuğunun şube seçicisi (form şube değişince baştan kurulur) ve panel içi bağlantılar
+  // (menü) önce sorar (ortak kanca, src/components/ui/leave-guard.ts)
   const router = useRouter();
-  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE);
+  const [leaveHref, setLeaveHref] = useLeaveGuard(dirty, MONTH_LEAVE, BRANCH_LEAVE);
 
   // Yeni ek satır çizilince ad kutusuna odaklan
   useEffect(() => {
@@ -1792,12 +1793,15 @@ export function StockCountForm({
     }
   }
 
+  // Kayıtlar formun gösterdiği şubeye iner (branchId; sunucu doğrular, formCountBranch): başka sekmede seçici değişse de
+  // bu sayım öbür şubeye yazılmaz
   async function persist(step: { counts: boolean }) {
     const lineCount = changedLines.length;
     if (lineCount) {
       const res = await saveStockCounts(
         month,
         changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l), base: l.qty })),
+        branchId,
       );
       if (!res.ok) return void toast.error(res.error, { duration: 12_000 });
       step.counts = true;
@@ -1813,12 +1817,13 @@ export function StockCountForm({
           month,
           clean.map((e, i) => ({ ...e, unitPrice: prices[i] })),
           base,
+          branchId,
         );
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
         setExtras(clean.map((e, i) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(prices[i], 2), priced: prices[i] > 0 })));
       } else {
-        const ex = await saveStaffStockExtras(month, clean, base);
+        const ex = await saveStaffStockExtras(month, clean, base, branchId);
         if (!ex.ok) return void toast.error(ex.error, { description: partial });
         setExtras(ex.data.map((e) => toExtra({ ...e, unitPrice: 0 }, false)));
       }
@@ -2417,6 +2422,7 @@ export function StockCountForm({
       {adding && addItem ? (
         <AddCountItemDialog
           isAdmin={isAdmin}
+          branchId={branchId}
           month={month}
           groups={addItem.groups}
           defaultGroup={group || activeGroup}
@@ -2436,7 +2442,7 @@ export function StockCountForm({
         }}
         title="Kaydedilmemiş sayım var"
         confirmLabel="Kaydetmeden geç"
-        description={`${monthLabel} sayımında yazdığınız miktarlar henüz kaydedilmedi; başka aya ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
+        description={`${monthLabel} sayımında yazdığınız miktarlar henüz kaydedilmedi; başka aya, şubeye ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
       />
     </div>
   );

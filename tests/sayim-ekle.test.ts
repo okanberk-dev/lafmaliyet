@@ -103,7 +103,9 @@ test("formül gibi başlayan ad ve paket kabul edilmez (Hammaddeler / Ürünler 
   const actions = read(CORE);
   assert.match(actions, /\.refine\(\(v\) => !startsLikeFormula\(v\), formulaStartMessage\("Ad"\)\)/);
   assert.match(actions, /packageDesc: zOptText\(160\)\.refine\(\(v\) => !v \|\| !startsLikeFormula\(v\), formulaStartMessage\("Paket"\)\)/);
-  assert.match(fnBody("src/app/panel/sayim/actions.ts", "addCountItem"), /const data = countItemSchema\.parse\(input\);/);
+  // Listeye ekle formun şubesini de gönderir (ortak şema + branchId; aynı adlı ek kalem uyarısı o şubenin listesine)
+  assert.match(read("src/app/panel/sayim/actions.ts"), /const addSchema = countItemSchema\.extend\(\{ branchId: zFormBranch \}\);/);
+  assert.match(fnBody("src/app/panel/sayim/actions.ts", "addCountItem"), /const \{ branchId, \.\.\.data \} = addSchema\.parse\(input\);/);
   assert.match(fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient"), /const data = countItemSchema\.parse\(input\);/);
   assert.match(read("src/app/panel/sayim/add-item.tsx"), /startsLikeFormula\(clean\)/);
   assert.equal(newProductIssue({ name: "=1+2", categoryId: 3, sizes: [{ size: "M", lines: 1 }] }, [], []), "Ürün adı =, +, - ya da @ ile başlayamaz");
@@ -251,7 +253,7 @@ test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılma
     ["src/app/panel/sayim/actions.ts", "addCountItem"],
     ["src/server/actions/recipe-requests.ts", "addProposalIngredient"],
   ]) {
-    assert.match(fnBody(file, fn), /await createCountItem\(me, data, "(sayim|recete)"\)/, `${fn} ortak çekirdeği çağırır`);
+    assert.match(fnBody(file, fn), /await (?:withBranchScope\(sube, \(\) => )?createCountItem\(me, data, "(sayim|recete)"\)/, `${fn} ortak çekirdeği çağırır`);
   }
   // Sütun modele taşınır; motor yalnız sayım listesinde süzer
   assert.match(read("src/server/data/dataset.ts"), /countFrom: i\.countFrom,/);

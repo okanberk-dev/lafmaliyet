@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { planAdminExtras, staffCountIssue } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
+import { BRANCH_ID_MAX } from "@/lib/branches";
 import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
 import { isCountable } from "@/lib/ingredient-usage";
@@ -13,11 +14,14 @@ import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { hasTillRowsIn } from "@/server/data/cash-reports";
 import { activeProductsUsing } from "@/server/data/ingredient-usage";
 import { lockExtras } from "@/server/data/stock-extras";
-import { currentPhysicalBranch } from "@/server/branch-scope";
+import { formCountBranch, withBranchScope } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zText } from "./util";
+
+/** Formun gösterdiği sayım şubesi (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekmede seçili fiziksel şube */
+const zFormBranch = z.string().max(BRANCH_ID_MAX).nullish();
 
 /**
  * Sayım sonuçlarını kaydeder. Personel de kullanabilir (bu ay; geçen ay yalnız ayın ilk 10 gününde: staffCountIssue).
@@ -27,8 +31,11 @@ import { attempt, UserError, zMonth, zText } from "./util";
  *
  * `base`: kişinin formu açtığında gördüğü kayıtlı miktar. Arada başkası o satırı kaydettiyse (iki kişi aynı anda
  * sayıyor) üzerine yazılmaz, hata döner ve sayfa yenilenir; kişi yeni değeri görüp isterse yeniden kaydeder.
+ *
+ * `branchId`: formun gösterdiği şube. Sayım ona yazılır, gönderim anındaki seçime değil (formCountBranch): çerez sekmeler
+ * arasında ortaktır, başka sekmede seçici değişince açık kalan sayım öbür şubeye inerdi.
  */
-export async function saveStockCounts(month: string, entries: { ingredientId: number; qty: number | null; base?: number | null }[]) {
+export async function saveStockCounts(month: string, entries: { ingredientId: number; qty: number | null; base?: number | null }[], branchId?: string | null) {
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
@@ -45,103 +52,107 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
       )
       .max(1000)
       .parse(entries);
-    const db = getDb();
-    // Sayım şube başına (docs/SUBE.md): seçili şubeye yazılır ("Tümü" ya da online kanal seçiliyken Tuzla). Anahtar
-    // (ay, şube, malzeme): şubesiz okuma ya da silme başka şubenin sayımına dokunurdu
-    const sube = (await currentPhysicalBranch()).id;
-    const buSube = eq(s.stockCounts.branchId, sube);
-    const filled = data.filter((x) => x.qty !== null);
-    // Ay satırı yalnızca gerçekten sayım yazılınca açılır: yalnızca silen bir kayıt boş ay bırakmasın
-    if (filled.length) await db.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
-    const removed = await db.transaction(async (tx) => {
-      const checked = data.filter((e) => e.base !== undefined);
-      if (checked.length) {
-        const current = new Map(
+    // Sayım şube başına (docs/SUBE.md): formun gösterdiği şubeye yazılır (formCountBranch), gönderim anındaki seçime
+    // değil; şubeyi göndermeyen eski sekmede seçili fiziksel şube ("Tümü" ya da online kanal seçiliyken Tuzla). Yazım o
+    // şubenin kapsamında (ay satırının kasa denetimi de o şubenin). Anahtar (ay, şube, malzeme): şubesiz okuma ya da
+    // silme başka şubenin sayımına dokunurdu
+    const sube = await formCountBranch(zFormBranch.parse(branchId));
+    return withBranchScope(sube, async () => {
+      const db = getDb();
+      const buSube = eq(s.stockCounts.branchId, sube);
+      const filled = data.filter((x) => x.qty !== null);
+      // Ay satırı yalnızca gerçekten sayım yazılınca açılır: yalnızca silen bir kayıt boş ay bırakmasın
+      if (filled.length) await db.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
+      const removed = await db.transaction(async (tx) => {
+        const checked = data.filter((e) => e.base !== undefined);
+        if (checked.length) {
+          const current = new Map(
+            (
+              await tx
+                .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty })
+                .from(s.stockCounts)
+                .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
+            ).map((r) => [r.id, r.qty]),
+          );
+          const stale = checked.filter((e) => {
+            const now = current.get(e.ingredientId) ?? null;
+            return now !== e.base && now !== e.qty;
+          });
+          if (stale.length) {
+            const names = (
+              await tx
+                .select({ name: s.ingredients.name })
+                .from(s.ingredients)
+                .where(inArray(s.ingredients.id, stale.map((e) => e.ingredientId)))
+            ).map((r) => r.name);
+            // Form yeni değerleri alsın: dokunulmayan satırlar güncellenir, çakışanlar işaretlenir
+            refresh();
+            throw new UserError(
+              `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` ve ${names.length - 3} kalem daha` : ""} bu arada başkası tarafından kaydedildi; hiçbir şey kaydedilmedi. İşaretli satırları kontrol edip yeniden kaydedin.`,
+            );
+          }
+        }
+        const clear = data.filter((e) => e.qty === null).map((e) => e.ingredientId);
+        const deleted = clear.length
+          ? (
+              await tx
+                .delete(s.stockCounts)
+                .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, clear)))
+                .returning({ id: s.stockCounts.ingredientId })
+            ).length
+          : 0;
+        if (!filled.length) {
+          if (deleted) await dropEmptyStockMonth(tx, m, sube);
+          return deleted;
+        }
+        const ids = filled.map((e) => e.ingredientId);
+        const ings = new Map(
           (
             await tx
-              .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty })
-              .from(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
-          ).map((r) => [r.id, r.qty]),
-        );
-        const stale = checked.filter((e) => {
-          const now = current.get(e.ingredientId) ?? null;
-          return now !== e.base && now !== e.qty;
-        });
-        if (stale.length) {
-          const names = (
-            await tx
-              .select({ name: s.ingredients.name })
+              .select({ id: s.ingredients.id, name: s.ingredients.name, countUnit: s.ingredients.countUnit, active: s.ingredients.active })
               .from(s.ingredients)
-              .where(inArray(s.ingredients.id, stale.map((e) => e.ingredientId)))
-          ).map((r) => r.name);
-          // Form yeni değerleri alsın: dokunulmayan satırlar güncellenir, çakışanlar işaretlenir
-          refresh();
-          throw new UserError(
-            `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` ve ${names.length - 3} kalem daha` : ""} bu arada başkası tarafından kaydedildi; hiçbir şey kaydedilmedi. İşaretli satırları kontrol edip yeniden kaydedin.`,
-          );
-        }
-      }
-      const clear = data.filter((e) => e.qty === null).map((e) => e.ingredientId);
-      const deleted = clear.length
-        ? (
+              .where(inArray(s.ingredients.id, ids))
+          ).map((i) => [i.id, i]),
+        );
+        const existing = new Map(
+          (
             await tx
-              .delete(s.stockCounts)
-              .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, clear)))
-              .returning({ id: s.stockCounts.ingredientId })
-          ).length
-        : 0;
-      if (!filled.length) {
-        if (deleted) await dropEmptyStockMonth(tx, m, sube);
+              .select({ ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor })
+              .from(s.stockCounts)
+              .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, ids)))
+          ).map((c) => [c.ingredientId, c]),
+        );
+        // Pasif ama aktif bir ürünün reçetesinde geçen malzeme listede kalır (engine.ts countable ile aynı kural)
+        const inUse = await activeProductsUsing(
+          tx,
+          [...ings.values()].filter((i) => !i.active && i.countUnit).map((i) => i.id),
+        );
+        for (const e of filled) {
+          const ing = ings.get(e.ingredientId);
+          if (!ing) throw new UserError("Malzeme bulunamadı (sayfayı yenileyin)");
+          const prev = existing.get(e.ingredientId);
+          const countable = isCountable(ing, inUse.has(ing.id));
+          if (!countable && !prev) throw new UserError(`${ing.name} sayım listesinde değil (pasif ya da “Sayılmaz”)`);
+          // Pasif / sayılmaz malzemenin eski sayımı ve değişmeyen miktar eski birimiyle kalır; yeni girilen miktar bugünkü birimle
+          const factor =
+            !countable || (prev && prev.qty === e.qty) ? (prev?.factor ?? countFactor(ing.countUnit)) : countFactor(ing.countUnit);
+          await tx
+            .insert(s.stockCounts)
+            .values({ month: m, branchId: sube, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
+            .onConflictDoUpdate({
+              // Benzersiz dizin (ay, şube, malzeme): şubesiz hedef çalışma anında düşer ("no unique or exclusion constraint")
+              target: [s.stockCounts.month, s.stockCounts.branchId, s.stockCounts.ingredientId],
+              set: { qty: e.qty!, factor, countedBy: me.name, updatedAt: new Date() },
+            });
+        }
         return deleted;
-      }
-      const ids = filled.map((e) => e.ingredientId);
-      const ings = new Map(
-        (
-          await tx
-            .select({ id: s.ingredients.id, name: s.ingredients.name, countUnit: s.ingredients.countUnit, active: s.ingredients.active })
-            .from(s.ingredients)
-            .where(inArray(s.ingredients.id, ids))
-        ).map((i) => [i.id, i]),
-      );
-      const existing = new Map(
-        (
-          await tx
-            .select({ ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor })
-            .from(s.stockCounts)
-            .where(and(eq(s.stockCounts.month, m), buSube, inArray(s.stockCounts.ingredientId, ids)))
-        ).map((c) => [c.ingredientId, c]),
-      );
-      // Pasif ama aktif bir ürünün reçetesinde geçen malzeme listede kalır (engine.ts countable ile aynı kural)
-      const inUse = await activeProductsUsing(
-        tx,
-        [...ings.values()].filter((i) => !i.active && i.countUnit).map((i) => i.id),
-      );
-      for (const e of filled) {
-        const ing = ings.get(e.ingredientId);
-        if (!ing) throw new UserError("Malzeme bulunamadı (sayfayı yenileyin)");
-        const prev = existing.get(e.ingredientId);
-        const countable = isCountable(ing, inUse.has(ing.id));
-        if (!countable && !prev) throw new UserError(`${ing.name} sayım listesinde değil (pasif ya da “Sayılmaz”)`);
-        // Pasif / sayılmaz malzemenin eski sayımı ve değişmeyen miktar eski birimiyle kalır; yeni girilen miktar bugünkü birimle
-        const factor =
-          !countable || (prev && prev.qty === e.qty) ? (prev?.factor ?? countFactor(ing.countUnit)) : countFactor(ing.countUnit);
-        await tx
-          .insert(s.stockCounts)
-          .values({ month: m, branchId: sube, ingredientId: e.ingredientId, qty: e.qty!, factor, countedBy: me.name })
-          .onConflictDoUpdate({
-            // Benzersiz dizin (ay, şube, malzeme): şubesiz hedef çalışma anında düşer ("no unique or exclusion constraint")
-            target: [s.stockCounts.month, s.stockCounts.branchId, s.stockCounts.ingredientId],
-            set: { qty: e.qty!, factor, countedBy: me.name, updatedAt: new Date() },
-          });
-      }
-      return deleted;
+      });
+      // İşlem geçmişi silinen sayımları da söyler ("2 sayım silindi"); hiçbir şey değişmediyse kayıt yazılmaz
+      const parts = [filled.length ? `${filled.length} kalem` : "", removed ? `${removed} sayım silindi` : ""].filter(Boolean);
+      if (parts.length) await logActivity(me, "Stok sayımı", `${monthLabel(m)}: ${parts.join(", ")}`);
+      refresh();
+      return { saved: filled.length, removed };
     });
-    // İşlem geçmişi silinen sayımları da söyler ("2 sayım silindi"); hiçbir şey değişmediyse kayıt yazılmaz
-    const parts = [filled.length ? `${filled.length} kalem` : "", removed ? `${removed} sayım silindi` : ""].filter(Boolean);
-    if (parts.length) await logActivity(me, "Stok sayımı", `${monthLabel(m)}: ${parts.join(", ")}`);
-    refresh();
-    return { saved: filled.length, removed };
   });
 }
 
@@ -171,10 +182,16 @@ async function dropEmptyStockMonth(tx: Tx, month: string, sube: string) {
 /**
  * "Listede olmayanlar", yönetici için (fiyatıyla). Ayı silip yeniden yazmaz: kalemler ad + birimle eşlenir, yalnız
  * yöneticinin formdan kaldırdığı satır silinir (planAdminExtras); arada başkasının kaydettiği liste üzerine yazılmaz.
- * Liste sayım gibi şube başına: seçili fiziksel şubenin listesi okunur, eşlenir ve yazılır; öbür şubenin aynı adlı
- * kalemi güncellenmez, silinmez (21 Kasım denetimi #19/#24).
+ * Liste sayım gibi şube başına: formun gösterdiği şubenin listesi okunur, eşlenir ve yazılır (`branchId`,
+ * formCountBranch; göndermeyen eski sekmede seçili fiziksel şube); öbür şubenin aynı adlı kalemi güncellenmez, silinmez
+ * (21 Kasım denetimi #19/#24).
  */
-export async function saveStockExtras(month: string, extras: { name: string; unit: string; qty: number; unitPrice: number }[], base?: string) {
+export async function saveStockExtras(
+  month: string,
+  extras: { name: string; unit: string; qty: number; unitPrice: number }[],
+  base?: string,
+  branchId?: string | null,
+) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
@@ -183,28 +200,31 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .max(100)
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
-    const db = getDb();
-    const sube = (await currentPhysicalBranch()).id;
-    const buSube = and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube));
-    const changed = await db.transaction(async (tx) => {
-      const existing = await lockExtras(tx, m, sube, b);
-      const res = planAdminExtras(existing, data);
-      if (!res.ok) throw new UserError(res.error);
-      const { updates, deletes, inserts } = res.plan;
-      if (inserts.length) await tx.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
-      for (const u of updates)
-        await tx
-          .update(s.stockExtras)
-          .set({ name: u.name, unit: u.unit, qty: u.qty, unitPrice: u.unitPrice })
-          .where(and(eq(s.stockExtras.id, u.id), buSube));
-      if (deletes.length) await tx.delete(s.stockExtras).where(and(buSube, inArray(s.stockExtras.id, deletes)));
-      if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m, branchId: sube })));
-      if (!data.length) await dropEmptyStockMonth(tx, m, sube);
-      return updates.length + deletes.length + inserts.length;
+    // Formun gösterdiği şubenin listesi (formCountBranch; sayımla aynı kural)
+    const sube = await formCountBranch(zFormBranch.parse(branchId));
+    return withBranchScope(sube, async () => {
+      const db = getDb();
+      const buSube = and(eq(s.stockExtras.month, m), eq(s.stockExtras.branchId, sube));
+      const changed = await db.transaction(async (tx) => {
+        const existing = await lockExtras(tx, m, sube, b);
+        const res = planAdminExtras(existing, data);
+        if (!res.ok) throw new UserError(res.error);
+        const { updates, deletes, inserts } = res.plan;
+        if (inserts.length) await tx.insert(s.months).values({ month: m, branchId: sube }).onConflictDoNothing();
+        for (const u of updates)
+          await tx
+            .update(s.stockExtras)
+            .set({ name: u.name, unit: u.unit, qty: u.qty, unitPrice: u.unitPrice })
+            .where(and(eq(s.stockExtras.id, u.id), buSube));
+        if (deletes.length) await tx.delete(s.stockExtras).where(and(buSube, inArray(s.stockExtras.id, deletes)));
+        if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m, branchId: sube })));
+        if (!data.length) await dropEmptyStockMonth(tx, m, sube);
+        return updates.length + deletes.length + inserts.length;
+      });
+      // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz
+      if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
+      refresh();
+      return null;
     });
-    // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz
-    if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
-    refresh();
-    return null;
   });
 }

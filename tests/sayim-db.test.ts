@@ -58,6 +58,8 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     users = { admin: a, staff: p };
     const me = async () => ({ ...users[who.role], role: who.role });
     stub(require.resolve("../src/server/auth/dal"), {
+      // Şube kilidi oturumdan okunur (src/server/branch-scope.ts lockedBranch)
+      getCurrentUser: me,
       requireUser: me,
       requireAdmin: async () => {
         if (who.role !== "admin") throw new Error("yalnız yönetici");
@@ -213,6 +215,77 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     await db.insert(s.stockExtras).values({ month: "2026-10", branchId: "tuzla", name: "Klips kapak", unit: "KOLİ", qty: 2, unitPrice: 0 });
     const added = await withBranchScope("marina", () => extras.addCountItem({ month: "2026-10", name: "Klips kapak", group: "SÜT", countUnit: "ADET", packageSize: 1 }));
     assert.ok(added.ok && added.data.extraTwin === null, "Tuzla'nın ek kalemi Marina'nın sayımında ikiz değil");
+  });
+
+  // Sonraki işler (21 Kasım denetimi, #12'nin sayım karşılığı): form gösterdiği şubeyi gönderir; başka sekmede seçici
+  // değişse de (çerez sekmeler arasında ortak) kayıt o şubeye iner. withBranchScope burada gönderim anındaki seçimdir
+  test("sayım formun gösterdiği şubeye yazılır, gönderim anındaki seçime değil; şube doğrulanır", async () => {
+    at("2026-10-31T19:00:00Z");
+    const { withBranchScope } = await import("../src/server/branch-scope");
+    const qty = async (branch: string) =>
+      (
+        await db
+          .select({ qty: s.stockCounts.qty })
+          .from(s.stockCounts)
+          .where(and(eq(s.stockCounts.month, "2026-10"), eq(s.stockCounts.branchId, branch), eq(s.stockCounts.ingredientId, milk)))
+      )[0]?.qty ?? null;
+    const rowsOf = (branch: string) => db.select().from(s.stockExtras).where(and(eq(s.stockExtras.month, "2026-10"), eq(s.stockExtras.branchId, branch)));
+    const list = async (branch: string) => (await rowsOf(branch)).sort((a, b) => a.id - b.id).map((r) => [r.name, r.qty, r.unitPrice]);
+    // Önceki testler Marina'ya Ekim ayı açmış olabilir (ay satırları testler arasında silinmez)
+    await db.delete(s.months).where(and(eq(s.months.month, "2026-10"), eq(s.months.branchId, "marina")));
+    // Tuzla'nın formu açık, öbür sekmede Marina seçildi: sayım Tuzla'ya (base Tuzla'nın 40'ı; Marina'ya inseydi çakışırdı)
+    assert.deepEqual(await withBranchScope("marina", () => stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 7, base: 40 }], "tuzla")), {
+      ok: true,
+      data: { saved: 1, removed: 0 },
+    });
+    assert.equal(await qty("tuzla"), 7);
+    assert.equal(await qty("marina"), null, "Marina'ya sayım inmedi");
+    assert.equal((await db.select().from(s.months).where(and(eq(s.months.month, "2026-10"), eq(s.months.branchId, "marina")))).length, 0, "Marina'ya ay açılmadı");
+    // Yöneticinin ek kalemleri de formun şubesine: Tuzla'nın Peçete'si fiyatlanır, Marina'nın listesi boş kalır
+    const tuzlaBase = extrasBase(await rowsOf("tuzla"));
+    const adminSaved = await withBranchScope("marina", () => stock.saveStockExtras("2026-10", [{ name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 14 }], tuzlaBase, "tuzla"));
+    assert.ok(adminSaved.ok, adminSaved.ok ? "" : adminSaved.error);
+    assert.deepEqual(await list("tuzla"), [["Peçete", 3, 14]]);
+    assert.deepEqual(await list("marina"), []);
+    // Personel Marina'nın formundan kaydeder, çerez Tuzla'da: Marina'nın listesi
+    who.role = "staff";
+    const staffSaved = await withBranchScope("tuzla", () => extras.saveStaffStockExtras("2026-10", [{ name: "Çöp torbası", unit: "KOLİ", qty: 1 }], extrasBase([]), "marina"));
+    assert.ok(staffSaved.ok, staffSaved.ok ? "" : staffSaved.error);
+    assert.deepEqual(await list("marina"), [["Çöp torbası", 1, 0]]);
+    assert.deepEqual(await list("tuzla"), [["Peçete", 3, 14]]);
+    // Şubeyi göndermeyen eski sekme bugünkü gibi seçili fiziksel şubeye yazar
+    assert.equal((await withBranchScope("marina", () => stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 3, base: null }]))).ok, true);
+    assert.equal(await qty("marina"), 3);
+    assert.equal(await qty("tuzla"), 7);
+    // Kanal ya da bilinmeyen şube reddedilir, hiçbir şey yazılmaz
+    assert.deepEqual(await stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 1, base: 7 }], "online"), {
+      ok: false,
+      error: "laffogato.net kanalının stoğu olmaz; sayfayı yenileyin",
+    });
+    assert.deepEqual(await extras.saveStaffStockExtras("2026-10", [], undefined, "yok"), { ok: false, error: "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin" });
+    assert.equal(await qty("tuzla"), 7);
+    assert.deepEqual(await list("marina"), [["Çöp torbası", 1, 0]]);
+    // Tuzla'ya kilitli personel Marina'nın sayımına yazamaz (eski sekme; kilit sonradan konmuş), kendi şubesine yazar
+    const free = users.staff;
+    users.staff = { ...free, branchId: "tuzla" };
+    try {
+      assert.deepEqual(await stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 1, base: 3 }], "marina"), {
+        ok: false,
+        error: "Hesabınız Tuzla şubesinde; Marina sayımına yazamazsınız",
+      });
+      assert.equal(await qty("marina"), 3);
+      assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: milk, qty: 8, base: 7 }], "tuzla")).ok, true);
+      assert.equal(await qty("tuzla"), 8);
+    } finally {
+      users.staff = free;
+    }
+    // Listeye ekle: aynı adlı ek kalem uyarısı formun şubesinin listesine bakar, çereze değil
+    who.role = "admin";
+    const added = await withBranchScope("marina", () =>
+      extras.addCountItem({ month: "2026-10", name: "peçete", group: "SÜT", countUnit: "ADET", packageSize: 1, branchId: "tuzla" }),
+    );
+    assert.ok(added.ok, added.ok ? "" : added.error);
+    assert.deepEqual(added.data.extraTwin, { name: "Peçete", qty: 3, unit: "PAKET" });
   });
 
   test("Listeye ekle: aynı adlı ek kalem varsa söylenir (stok iki kez sayılmasın)", async () => {

@@ -74,6 +74,11 @@ hatırladığı anahtar bağlantının kendisidir (yol + sorgu), seçilen şube 
 (arada seçiciden Tümü seçilmiş olsa bile) ve adreste kalmış eski bir `?sube=` seçiciden sonradan yapılan seçimi geri
 almaz. Şubesi kilitli personelde `?sube=` benimsenmez (seçim zaten kişinin şubesinde).
 
+Kaydedilmemiş **stok sayımı** varken seçici önce sorar (sayım formu şube değişince baştan kurulur): seçici iptal
+edilebilir bir olay yayar (`BRANCH_LEAVE`, src/components/ui/leave-guard.ts), form onu ay seçici ve menü bağlantıları
+gibi durdurur ve "Kaydedilmemiş sayım var" penceresini açar. "Kaydetmeden geç" `?sube=` bağlantısıyla geçer, seçici onu
+çereze benimsetir. Yazılanlar bu cihazda o şubenin taslağında kalır; şubeye dönünce "Geri yükle" önerilir.
+
 Seçim **yalnız görünümü süzer, yetki vermez**: her uç ayrıca `requireAdmin` / `requireUser` ile korunur.
 Tanınmayan ya da pasife alınmış kimlik "Tümü"ye düşer (`parseBranchScope`), yani çerezde çöp duramaz.
 
@@ -148,7 +153,7 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 | Tedarikçiye kasadan ödeme (yeni Teslim satırı) | Pencerede seçilen kasa: varsayılanı seçili fiziksel şube (tek kasa açıksa o). "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa varsayılan yok, şube seçilmeden kaydedilmez; sunucu da seçimsiz kaydı reddeder (`chooseTill`, denetim 21 Kasım #31). Var olan satır listesinde her satır kasasının şubesini yazar |
 | Ay bilgisi (ciro, açık gün, indirim, ödenmez, ay notu; Satışlar ve Gelir-gider) | Seçili şubenin ay satırı; "Tümü"nde Tuzla'nınki. Gelir-gider "Tümü"de birden çok kasa açıkken bunu not olarak yazar. Önceden Gelir-gider'in ciro, açık gün ve ay notu hücreleri şubesiz yazıyor, her şubede Tuzla'nın satırını eziyordu (denetim 21 Kasım #6) |
 | Satışlar › Ayı temizle | Gösterilen şubenin listesi ve (seçilirse) ay bilgisi; "Tümü"nde bütün şubelerinki. Listenin son günü (kapsam kaydı) ayın tek kaydıdır: yalnız ayda hiçbir şubenin listesi kalmadıysa silinir (denetim 21 Kasım #7) |
-| Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar. Sayımın **"Listede olmayanlar"ı** (ek kalemler) da şubenin: okuma, eşleme, silme ve kayıt o şubenin listesiyle, "Tümü" bütün şubelerinkini toplar (`stock_extras.branch_id`, migration 0059; eski satırlar Tuzla'nın). Önceden liste şubesizdi: Marina'nın formu Tuzla'nın ek kalemlerini gösteriyor, aynı adlı kalemi ezip fiyatsız olanı siliyordu (denetim 21 Kasım #19/#24). Yalnız yeni kalemin fiyatını bulan geçmiş işletme genelidir (fiyat şubeye göre değişmez). Kaydedilmemiş sayımın bu cihazdaki taslağı da şube başına (anahtar `laf:sayim-taslak:<şube>:<ay>`, taslak şubesini de yazar): bir şubenin taslağı öbür şubenin formunda önerilmez, oraya kaydedilmez (#8). Şubesiz eski anahtardaki taslak hangi şubenin olduğu bilinmediği için okunmaz |
+| Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar. Sayımın **"Listede olmayanlar"ı** (ek kalemler) da şubenin: okuma, eşleme, silme ve kayıt o şubenin listesiyle, "Tümü" bütün şubelerinkini toplar (`stock_extras.branch_id`, migration 0059; eski satırlar Tuzla'nın). Önceden liste şubesizdi: Marina'nın formu Tuzla'nın ek kalemlerini gösteriyor, aynı adlı kalemi ezip fiyatsız olanı siliyordu (denetim 21 Kasım #19/#24). Yalnız yeni kalemin fiyatını bulan geçmiş işletme genelidir (fiyat şubeye göre değişmez). Kaydedilmemiş sayımın bu cihazdaki taslağı da şube başına (anahtar `laf:sayim-taslak:<şube>:<ay>`, taslak şubesini de yazar): bir şubenin taslağı öbür şubenin formunda önerilmez, oraya kaydedilmez (#8). Şubesiz eski anahtardaki taslak hangi şubenin olduğu bilinmediği için okunmaz. **Sayım formu şubesini taşır** (kasa formları gibi): sayım, ek kalemler ve "Listeye ekle" formun gösterdiği şubeyi gönderir, sunucu onu doğrular (etkin fiziksel şube; şubesine kilitli personelde yalnız kendi şubesi, `formCountBranch` › `formCountError`) ve yazımı o şubenin kapsamında çalıştırır. Önceden kayıt gönderim anındaki çereze iniyordu: başka sekmede seçici Marina'ya geçince açık kalan Tuzla sayımı Marina'ya yazılıyordu. Şubeyi göndermeyen eski sekme seçili fiziksel şubeye yazar |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
 | Personel | Pencerede seçilen şube (yeni kişide seçili fiziksel şube) |
 | Sabit gider | Pencerede seçilen şube ya da "İşletme geneli" (yeni kalemde seçili şube, "Tümü"nde işletme geneli) |
@@ -207,7 +212,9 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin
-  "eski bir Z raporu olabilir" denetimi de formun kasasının önceki raporuyla (`previousZNo`).
+  "eski bir Z raporu olabilir" denetimi de formun kasasının önceki raporuyla (`previousZNo`); yazarkasa Z'sinin
+  büyüklük denetimi (son 28 günün ortancası, docs/YAZARKASA-Z.md) de o şubenin raporlarıyla (`okcTypical`). Önceden
+  iki şubenin toplamı karışıyordu: ortanca öbür şubeye kayıyor, büyük şubenin gerçek Z'si "çok büyük" görünebiliyordu.
 
 ## LafPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
 

@@ -103,7 +103,12 @@ test("#19/#24 kayıt şubeye göre: kilit, eşleme, güncelleme, silme ve ekleme
   assert.match(core, /\.where\(and\(eq\(s\.stockExtras\.month, month\), eq\(s\.stockExtras\.branchId, branch\)\)\)/);
   for (const f of ["src/app/panel/sayim/actions.ts", "src/server/actions/stock.ts"]) {
     const src = read(f);
-    assert.match(src, /const sube = \(await currentPhysicalBranch\(\)\)\.id;\s+const buSube = and\(eq\(s\.stockExtras\.month, m\), eq\(s\.stockExtras\.branchId, sube\)\);/, f);
+    // Şube formun gösterdiği şube (formCountBranch; tests/sayim-sube-form.test.ts), yazım onun kapsamında
+    assert.match(
+      src,
+      /const sube = await formCountBranch\(zFormBranch\.parse\(branchId\)\);\s+return withBranchScope\(sube, async \(\) => \{\s+const db = getDb\(\);\s+const buSube = and\(eq\(s\.stockExtras\.month, m\), eq\(s\.stockExtras\.branchId, sube\)\);/,
+      f,
+    );
     assert.match(src, /const existing = await lockExtras\(tx, m, sube, b\);/, f);
     assert.match(src, /\.where\(and\(eq\(s\.stockExtras\.id, u\.id\), buSube\)\)/, `${f}: güncelleme`);
     assert.match(src, /tx\.delete\(s\.stockExtras\)\.where\(and\(buSube, inArray\(s\.stockExtras\.id, deletes\)\)\)/, `${f}: silme`);

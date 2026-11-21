@@ -46,13 +46,16 @@ async function previousZNo(day: string): Promise<string | null> {
 /**
  * Büyüklük denetimi için son 28 günün toplamları (plan §5.1): yazarkasa toplamları, hiç yoksa ModPOS Z toplamları
  * (yazarkasa bölümü kullanılmaya başlamadan önceki günler). Önceki yazarkasa Z'si (`previousOkc`, Z no sırası ve
- * kümülatif zinciri) kayıtlı raporların okc_* sütunlarından okunur; zincir denetimi burada, okumada yapılır (D17)
+ * kümülatif zinciri) kayıtlı raporların okc_* sütunlarından okunur; zincir denetimi burada, okumada yapılır (D17).
+ * Toplamlar kasanın şubesinin (`currentTillBranch`; `previousZNo` gibi): iki şubenin toplamı karışınca ortanca öbür
+ * şubeye kayıyordu; büyük şubenin gerçek Z'si "çok büyük" görünebiliyor, küçük şubede okunan kümülatif uyarısız
+ * kalabiliyordu
  */
 async function okcTypical(day: string): Promise<number[]> {
   const rows = await getDb()
     .select({ okc: s.cashReports.okcTotal, z: s.cashReports.zTotal })
     .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day)));
+    .where(and(gte(s.cashReports.date, addDays(day, -28)), lt(s.cashReports.date, day), eq(s.cashReports.branchId, await currentTillBranch())));
   const okc = rows.map((r) => r.okc).filter((v): v is number => v !== null && v > 0);
   return okc.length ? okc : rows.map((r) => r.z).filter((v) => v > 0);
 }

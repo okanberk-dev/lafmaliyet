@@ -97,7 +97,7 @@ test("formdaki ek kalemler tazelenir: başkasının eklediği gelir, dokunulmaya
   assert.match(form, /if \(syncedExtras !== initialExtras\) \{/);
   assert.match(form, /const merged = mergeExtras\(extras, before, savedExtras, sameExtra\);/);
   assert.match(form, /const base = extrasBase\(initialExtras\);/);
-  assert.match(form, /saveStaffStockExtras\(month, clean, base\)/);
+  assert.match(form, /saveStaffStockExtras\(month, clean, base, branchId\)/);
 });
 
 test("taslak: doldurulmuş işaret, ek kalemler ve yazar; eski düz biçim okunur", () => {
@@ -154,7 +154,7 @@ test("listede de olan ek kalem: uyarılır, geçen aydan taşınmaz", () => {
 });
 
 test("Stok sayımı: çıkış uyarısı ortak kancadan (Hızlı sayım 26 Eki 2026'da kaldırıldı)", () => {
-  assert.match(read("src/app/panel/sayim/stock-form.tsx"), /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty, MONTH_LEAVE\);/);
+  assert.match(read("src/app/panel/sayim/stock-form.tsx"), /const \[leaveHref, setLeaveHref\] = useLeaveGuard\(dirty, MONTH_LEAVE, BRANCH_LEAVE\);/);
   const guard = read("src/components/ui/leave-guard.ts");
   assert.match(guard, /window\.addEventListener\("beforeunload", warn\);/);
   assert.match(guard, /document\.addEventListener\("click", onClick, true\);/);

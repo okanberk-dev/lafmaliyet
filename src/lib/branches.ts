@@ -172,10 +172,24 @@ export function namedTill(rows: readonly BranchRow[], id: string): { id: string;
  * şubesine yazar (`lock`). Sorun yoksa null, varsa kullanıcının göreceği metin.
  */
 export function formTillError(raw: string, known: readonly BranchRow[], lock: string | null): string | null {
+  return formPhysicalError(raw, known, lock, { has: "kasası", to: "kasasına" });
+}
+
+/**
+ * Formun gönderdiği sayım şubesi (stok sayımı, "Listede olmayanlar", "Listeye ekle"; docs/SUBE.md › Yazarken hangi
+ * şube): `formTillError`'ın sayım karşılığı. Sayım formun gösterdiği şubeye iner, gönderim anındaki seçime değil; şube
+ * etkin bir fiziksel şube olmalı (kanalın stoğu olmaz), şubesine kilitli personel yalnız kendi şubesini sayar.
+ */
+export function formCountError(raw: string, known: readonly BranchRow[], lock: string | null): string | null {
+  return formPhysicalError(raw, known, lock, { has: "stoğu", to: "sayımına" });
+}
+
+/** Kasa ve sayım formlarının ortak kuralı; metinler yalnız neye yazıldığını söyler */
+function formPhysicalError(raw: string, known: readonly BranchRow[], lock: string | null, words: { has: string; to: string }): string | null {
   const b = known.find((x) => x.id === raw);
   if (!b || !b.active) return "Formun şubesi bulunamadı ya da kapalı; sayfayı yenileyin";
-  if (b.kind !== "fiziksel") return `${b.name} kanalının kasası olmaz; sayfayı yenileyin`;
-  if (lock !== null && raw !== lock) return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${b.name} kasasına yazamazsınız`;
+  if (b.kind !== "fiziksel") return `${b.name} kanalının ${words.has} olmaz; sayfayı yenileyin`;
+  if (lock !== null && raw !== lock) return `Hesabınız ${known.find((x) => x.id === lock)?.name ?? lock} şubesinde; ${b.name} ${words.to} yazamazsınız`;
   return null;
 }
 

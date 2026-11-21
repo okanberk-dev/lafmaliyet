@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 
 import {
   ALL_BRANCHES,
+  BRANCH_PARAM,
   branchLinkStep,
   type BranchRow,
   type BranchScope,
@@ -14,6 +15,7 @@ import { chooseBranchScope } from "@/server/actions/branches";
 
 import { useActionTransition } from "../ui/action-error";
 import { Select } from "../ui/form";
+import { BRANCH_LEAVE } from "../ui/leave-guard";
 
 /**
  * Panelin şube seçicisi (docs/SUBE.md › Seçici). Kenar çubuğunun başlığının altında durur: masaüstünde sürekli
@@ -74,6 +76,14 @@ export function BranchPicker({ scope, branches, locked = false }: { scope: Branc
         aria-busy={pending}
         onChange={(e) => {
           const secim = e.target.value;
+          // Kaydedilmemiş form (Stok sayımı; şube değişince baştan kurulur) önce sorar: olayı iptal eder, seçici yerinde
+          // kalır. "Kaydetmeden geç" bu adrese gider, ?sube= yukarıdaki etkiyle çereze benimsenir (src/components/ui/leave-guard.ts)
+          const q = new URLSearchParams(search);
+          q.set(BRANCH_PARAM, secim);
+          if (!window.dispatchEvent(new CustomEvent(BRANCH_LEAVE, { cancelable: true, detail: `${pathname}?${q}` }))) {
+            e.target.value = scope;
+            return;
+          }
           run(() => chooseBranchScope({ scope: secim }), { maybeSaved: true });
         }}
       >
