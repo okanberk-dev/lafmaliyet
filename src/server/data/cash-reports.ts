@@ -241,6 +241,8 @@ export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): 
   return db
     .select({
       date: s.cashReports.date,
+      // Her şubenin kendi yazarkasası: ay zinciri şube başına kurulur (src/lib/okc-z.ts okcMonth)
+      branchId: s.cashReports.branchId,
       zTotal: s.cashReports.zTotal,
       okcZNo: s.cashReports.okcZNo,
       okcTotal: s.cashReports.okcTotal,

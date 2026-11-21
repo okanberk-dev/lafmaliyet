@@ -451,3 +451,30 @@ test("Uyarı listeleri: kesilen adların kaçının kaldığı yazılır", () =>
   assert.equal(unused.title, `${before + 5} hammadde hiçbir reçetede yok`);
   assert.ok(unused.detail.endsWith(` ve ${before + 1} hammadde daha. Hangi üründe kullanılıyorsa reçeteye ekleyin.`), unused.detail);
 });
+
+test("tutarlılık Tümü'de: bir ay yalnız Tuzla, sonraki ay iki şube saydıysa karşılaştırılmaz (sayım eksik)", () => {
+  const esp = ingId("Espresso çekirdeği");
+  const m = createModel({
+    ...ds,
+    stockCounts: [
+      { month: "2026-08", ingredientId: esp, qty: 10, branchId: "tuzla" },
+      { month: "2026-09", ingredientId: esp, qty: 12.5, branchId: "tuzla" },
+      { month: "2026-09", ingredientId: esp, qty: 4, branchId: "marina" },
+    ],
+  });
+  const row = consistency(m, "2026-09").rows.find((r) => r.ingredient.id === esp)!;
+  // Açılış Tuzla 10, kapanış Tuzla + Marina 16,5: fark tüketim değil, Marina'nın Ağustos sayımı yok
+  assert.equal(row.stock, "noCount");
+  assert.equal(row.actualUsage, null);
+  // İki ay da iki şube saydıysa toplamlar karşılaştırılır
+  const both = createModel({
+    ...ds,
+    stockCounts: [
+      { month: "2026-08", ingredientId: esp, qty: 10, branchId: "tuzla" },
+      { month: "2026-08", ingredientId: esp, qty: 3, branchId: "marina" },
+      { month: "2026-09", ingredientId: esp, qty: 12.5, branchId: "tuzla" },
+      { month: "2026-09", ingredientId: esp, qty: 4, branchId: "marina" },
+    ],
+  });
+  assert.equal(consistency(both, "2026-09").rows.find((r) => r.ingredient.id === esp)!.stock, "complete");
+});

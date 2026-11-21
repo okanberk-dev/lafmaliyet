@@ -351,7 +351,7 @@ async function readDataset(): Promise<Dataset> {
       amount: v.amount,
     })),
     pnlEntries: pnlInScope.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
-    stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
+    stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor, branchId: c.branchId })),
     ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     purchaseLots,
     heldPurchases,
