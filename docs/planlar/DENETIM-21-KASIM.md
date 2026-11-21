@@ -1,7 +1,7 @@
 # 21 Kasım 2026 denetimi: doğrulanmış bulgular
 
 Sistem geneli tarama (12 alan; her bulgu bağımsız bir denetçiyle kod yolu ve niyet açısından çürütülmeye çalışıldı).
-35 bulgu doğrulandı; 1, 33'ün ve 21, 35'in tekrarıdır. Durum sütunu düzeltildikçe güncellenir.
+35 bulgu doğrulandı; 35, 10'un ve 24, 19'un tekrarıdır (aynı hatanın başka yerden görünüşü; birlikte düzeltilir). Durum sütunu düzeltildikçe güncellenir.
 
 | # | Önem | Alan | Bulgu | Yer | Durum |
 |---|------|------|-------|-----|-------|
