@@ -112,6 +112,41 @@ const paymentSchema = z.object({
   amount: tl,
 });
 
+/**
+ * Banka POS (Pavo) gün sonu karşılaştırması (isteğe bağlı; LafPOS PR #154, server/sync/lafmaliyet.ts buildDayPayload):
+ * Pavo'nun kart toplamı LafPOS'un kart toplamıyla. Pavo sonucu gün kapandıktan birkaç dakika sonra geldiği için aynı gün
+ * bu alanla ikinci kez gelir. Tutarlar TL. Okunamayan alan günü reddetmez: yalnız karşılaştırma düşer (posDaySchema'da
+ * `.catch`), gün sonu yine yazılır.
+ */
+export const bankPosSchema = z.object({
+  status: z.enum(["ok", "failed", "unknown"]),
+  batchNo: z
+    .string()
+    .max(60)
+    .nullable()
+    .transform((v) => v?.trim() || null),
+  at: z.string().trim().max(40),
+  pavoCard: tl.nullable(),
+  lafposCard: tl.nullable(),
+  diff: signedTl.nullable(),
+  acquirers: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(80),
+        count: count.nullable(),
+        total: tl.nullable(),
+      }),
+    )
+    .max(50),
+  message: z
+    .string()
+    .max(1000)
+    .nullable()
+    .transform((v) => v?.trim().slice(0, 300) || null),
+});
+
+export type BankPos = z.output<typeof bankPosSchema>;
+
 export const posDaySchema = z.object({
   version: z.literal(LAFPOS_VERSION),
   source: z.literal("lafpos"),
@@ -125,6 +160,8 @@ export const posDaySchema = z.object({
   lines: z.array(lineSchema).max(3000),
   ikram: z.array(ikramSchema).max(2000),
   payments: z.array(paymentSchema).max(200),
+  /** Pavo – LafPOS kart karşılaştırması (isteğe bağlı; eski LafPOS göndermez). Bozuksa yok sayılır, gün reddedilmez */
+  bankPos: bankPosSchema.nullable().optional().catch(undefined),
 });
 
 export type PosDayPush = z.output<typeof posDaySchema>;

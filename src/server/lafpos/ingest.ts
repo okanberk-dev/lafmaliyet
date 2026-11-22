@@ -81,7 +81,9 @@ export async function storePosDay(db: DB, day: PosDayPush, now: Date = new Date(
         branchId: LAFPOS_BRANCH_ID,
       };
     });
-    const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now };
+    // Pavo karşılaştırması (bankPos): alanı taşımayan gönderim (eski LafPOS ya da Pavo sonucundan önceki düzeltme)
+    // kayıtlı karşılaştırmayı silmez; alan geldiyse (null da) yerine geçer
+    const report = { z: day.z, payments: day.payments, ikram: day.ikram, source: day.source, receivedAt: now, ...(day.bankPos !== undefined ? { bankPos: day.bankPos } : {}) };
     // Gün sonunun şubesi: LafPOS'un kurulu olduğu şube (LAFPOS_BRANCH_ID; 21 Kasım 2026'dan beri Marina; Tuzla ModPOS'ta, geçiş günü de
     // yalnız onun kasasınındır; docs/SUBE.md).
     // Çakışma hedefi (gün, şube) olmalı: şema 0056'dan sonra tek başına `date` benzersiz DEĞİL ve Postgres

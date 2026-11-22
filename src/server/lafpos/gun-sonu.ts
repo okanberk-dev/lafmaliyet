@@ -5,7 +5,8 @@ import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { businessDate, changesText, computeCash, revisionChanges, revisionDataOf } from "@/lib/cash-report";
 import { cashDaySubject } from "@/lib/cash-requests";
 import { cashOutNoteOf, cashOutsTotal, type CashOutKind } from "@/lib/cash-outs";
-import { posZSchema, type PosIkram, type PosPayment } from "@/lib/lafpos/day";
+import { bankPosHash, renderPavoMail } from "@/lib/lafpos/bank-pos";
+import { bankPosSchema, posZSchema, type BankPos, type PosIkram, type PosPayment } from "@/lib/lafpos/day";
 import {
   AUTO_FIELDS,
   autoMissing,
@@ -55,24 +56,29 @@ const SENDING_STALE_MS = 5 * 60_000;
 
 export type AutoReportResult = "written" | "updated" | "unchanged" | "human" | "no-count" | "old" | "deleted" | "skipped";
 export type DayEndEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "skipped";
+/** Kısa Pavo e-postası: "included" karşılaştırma gün sonu e-postasıyla gitti; "waiting" gün sonu e-postası henüz gitmedi (onunla gider) */
+export type PavoEmailResult = "sent" | "failed" | "off" | "same" | "busy" | "skipped" | "waiting";
 
 interface StoredDay {
   z: ReturnType<typeof posZSchema.parse>;
   payments: PosPayment[];
   ikram: PosIkram[];
+  /** Pavo karşılaştırması (gelmediyse ya da okunamıyorsa null); günün özetine (hash) girmez: geldiğinde gün sonu yinelenmez */
+  bankPos: BankPos | null;
   hash: string;
 }
 
 async function loadStoredDay(db: DB | CashTx, date: string, branchId: string): Promise<StoredDay | null> {
   const [row] = await db
-    .select({ z: s.posDayReports.z, payments: s.posDayReports.payments, ikram: s.posDayReports.ikram })
+    .select({ z: s.posDayReports.z, payments: s.posDayReports.payments, ikram: s.posDayReports.ikram, bankPos: s.posDayReports.bankPos })
     .from(s.posDayReports)
     .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
     .limit(1);
   if (!row) return null;
   const z = posZSchema.safeParse(row.z);
   if (!z.success) return null;
-  return { z: z.data, payments: row.payments ?? [], ikram: row.ikram ?? [], hash: dayHash(row) };
+  const bankPos = row.bankPos ? bankPosSchema.safeParse(row.bankPos) : null;
+  return { z: z.data, payments: row.payments ?? [], ikram: row.ikram ?? [], bankPos: bankPos?.success ? bankPos.data : null, hash: dayHash({ z: row.z, payments: row.payments, ikram: row.ikram }) };
 }
 
 /** Gün LafPOS'un şubesinin LafPOS günü mü (geçiş günü seçili ve gün ondan önce değil) */
@@ -344,6 +350,7 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       lastWeek: { date: days.lastWeek, zTotal: lastWeek },
       online: online ? online.online : null,
       link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}`,
+      bankPos: day.bankPos,
     });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: `lafpos-gun-${branchId}-${date}-${day.hash}` }, opts);
@@ -355,12 +362,81 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       await finish({ emailError: res.error });
       return "failed";
     }
-    await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null });
+    // Pavo karşılaştırması bu e-postayla gittiyse kısa Pavo e-postası ayrıca gitmez
+    await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null, ...(day.bankPos ? { pavoEmailedHash: bankPosHash(day.bankPos) } : {}) });
     // Çalışanlara kısa e-posta (yönetim e-postasından sonra, içerik başına bir kez; düşmesi yönetim e-postasını etkilemez)
     await sendStaffDayEnd(date, branch?.name ?? "Marina", day.z, day.hash, notify.from, opts).catch(() => undefined);
     return "sent";
   } catch (e) {
     await finish({ emailError: (e instanceof Error ? e.message : "bilinmeyen hata").slice(0, 300) }).catch(() => {});
+    throw e;
+  }
+}
+
+/**
+ * Kısa Pavo e-postası (Pavo – LafPOS kart karşılaştırması): Pavo sonucu gün sonundan birkaç dakika sonra aynı günün ikinci
+ * gönderimiyle gelir. Gün sonu e-postası daha önce gittiyse yalnız karşılaştırma gider (fark varsa konuda "FARK VAR");
+ * gitmediyse beklenir ("waiting"): karşılaştırma gün sonu e-postasının içinde gider. Aynı karşılaştırma bir kez gider.
+ * Düşerse günlük iş yeniden dener. Hata alanı gün sonu e-postasınınkine yazılmaz (yalnız bildirim kaydında).
+ */
+export async function sendPavoEmail(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<PavoEmailResult> {
+  const branchId = LAFPOS_BRANCH_ID;
+  if (!isLafposDay(date, branchSwitchDay(await loadLafposSwitchDay(db), branchId))) return "skipped";
+  const day = await loadStoredDay(db, date, branchId);
+  if (!day?.bankPos) return "skipped";
+  const hash = bankPosHash(day.bankPos);
+  const [st] = await db
+    .select({ emailedHash: s.lafposDayEnds.emailedHash, pavoEmailedHash: s.lafposDayEnds.pavoEmailedHash })
+    .from(s.lafposDayEnds)
+    .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+  if (!st?.emailedHash) return "waiting";
+  if (st.pavoEmailedHash === hash) return "same";
+  const stale = new Date(now.getTime() - SENDING_STALE_MS);
+  const claimed = await db
+    .update(s.lafposDayEnds)
+    .set({ sendingAt: now })
+    .where(
+      and(
+        eq(s.lafposDayEnds.date, date),
+        eq(s.lafposDayEnds.branchId, branchId),
+        sql`${s.lafposDayEnds.emailedHash} is not null`,
+        sql`${s.lafposDayEnds.pavoEmailedHash} is distinct from ${hash}`,
+        or(isNull(s.lafposDayEnds.sendingAt), lt(s.lafposDayEnds.sendingAt, stale)),
+      ),
+    )
+    .returning({ date: s.lafposDayEnds.date });
+  if (!claimed.length) return "busy";
+  const finish = (patch: Partial<typeof s.lafposDayEnds.$inferInsert>) =>
+    db
+      .update(s.lafposDayEnds)
+      .set({ sendingAt: null, updatedAt: new Date(), ...patch })
+      .where(and(eq(s.lafposDayEnds.date, date), eq(s.lafposDayEnds.branchId, branchId)));
+  try {
+    const to = await dayEndRecipients(db);
+    if (!to.length) {
+      await finish({});
+      return "off";
+    }
+    if (!isEmailConfigured()) {
+      await finish({});
+      return "failed";
+    }
+    const [branch] = await db.select({ name: s.branches.name }).from(s.branches).where(eq(s.branches.id, branchId)).limit(1);
+    const msg = renderPavoMail({ branchName: branch?.name ?? "Marina", date, bankPos: day.bankPos, link: `${APP_URL}/panel/kasa?gun=${date}&sube=${encodeURIComponent(branchId)}` });
+    const notify = await loadNotifySettings();
+    const res = await sendEmail({ from: resolveFrom(notify.from), to, ...msg, idempotencyKey: `lafpos-pavo-${branchId}-${date}-${hash}` }, opts);
+    await db
+      .insert(s.notificationLog)
+      .values({ key: `lafpos-pavo:${branchId}:${date}`, channel: "email", subject: msg.subject, recipients: to.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .onConflictDoUpdate({ target: s.notificationLog.key, set: { subject: msg.subject, ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
+    if (!res.ok) {
+      await finish({});
+      return "failed";
+    }
+    await finish({ pavoEmailedHash: hash });
+    return "sent";
+  } catch (e) {
+    await finish({}).catch(() => {});
     throw e;
   }
 }
@@ -388,7 +464,12 @@ async function reportStateOf(db: DB, date: string, auto: AutoReportResult): Prom
  * Bir günün otomasyonu: önce rapor, sonra e-posta. Rapor yazılamazsa (beklenmeyen hata) e-posta yine denenir. Hata
  * fırlatmaz: sonuçları döner (after() ve günlük iş için)
  */
-export async function runLafposDayEnd(db: DB, date: string, now = new Date(), opts?: SendOptions): Promise<{ date: string; report: AutoReportResult | "error"; email: DayEndEmailResult | "error"; error?: string }> {
+export async function runLafposDayEnd(
+  db: DB,
+  date: string,
+  now = new Date(),
+  opts?: SendOptions,
+): Promise<{ date: string; report: AutoReportResult | "error"; email: DayEndEmailResult | "error"; pavo: PavoEmailResult | "error"; error?: string }> {
   let report: AutoReportResult | "error";
   let error: string | undefined;
   try {
@@ -406,7 +487,16 @@ export async function runLafposDayEnd(db: DB, date: string, now = new Date(), op
     email = "error";
     error = error ?? (e instanceof Error ? e.message : String(e));
   }
-  return { date, report, email, ...(error ? { error } : {}) };
+  // Pavo karşılaştırması: gün sonu e-postası gittiyse ve karşılaştırma onunla gitmediyse kısa e-posta
+  let pavo: PavoEmailResult | "error";
+  try {
+    pavo = report === "skipped" || email === "error" ? "skipped" : await sendPavoEmail(db, date, now, opts);
+  } catch (e) {
+    console.error("[lafpos] Pavo e-postası gönderilemedi:", date, e);
+    pavo = "error";
+    error = error ?? (e instanceof Error ? e.message : String(e));
+  }
+  return { date, report, email, pavo, ...(error ? { error } : {}) };
 }
 
 /**
@@ -426,5 +516,5 @@ export async function catchUpLafposDayEnds(db: DB, now = new Date(), opts?: Send
     .orderBy(s.posDayReports.date);
   const days = [];
   for (const r of rows) days.push(await runLafposDayEnd(db, r.date, now, opts));
-  return { status: days.some((d) => d.report === "error" || d.email === "error" || d.email === "failed") ? "error" : "ok", days };
+  return { status: days.some((d) => d.report === "error" || d.email === "error" || d.email === "failed" || d.pavo === "error" || d.pavo === "failed") ? "error" : "ok", days };
 }

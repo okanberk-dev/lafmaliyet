@@ -2,7 +2,8 @@ import { carryCheck, carryDiffText, computeCash, openingNeedsNote, type CashRepo
 import { money } from "@/lib/format";
 import { addDays, longDateTR } from "@/lib/reminders";
 
-import type { PosDayZ, PosIkram, PosPayment } from "./day";
+import { pavoSectionHtml, pavoSectionText, pavoState } from "./bank-pos";
+import type { BankPos, PosDayZ, PosIkram, PosPayment } from "./day";
 
 /**
  * LafPOS gün sonunun otomasyonu (saf; docs/LAFPOS.md › Gün sonu otomasyonu; sunucu tarafı src/server/lafpos/gun-sonu.ts):
@@ -174,6 +175,8 @@ export interface DayEndMail {
   /** laffogato.net'in o şubeye düşen online satışı (kasadan geçmez); okunamadıysa null */
   online: number | null;
   link: string;
+  /** Pavo – LafPOS kart karşılaştırması (geldiyse; src/lib/lafpos/bank-pos.ts) */
+  bankPos?: BankPos | null;
 }
 
 /** Kıyas metni: "18.000 ₺ (%11 fazla)" / "bilinmiyor" */
@@ -282,7 +285,7 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 
 /** Gün sonu e-postası: konu, HTML ve düz metin. Maliyet ve kâr yok (alıcılar yönetici ya da hesabı olmayan adres) */
 export function renderDayEnd(m: DayEndMail): { subject: string; html: string; text: string } {
-  const subject = dayEndSubject(m.branchName, m.date, m.corrected);
+  const subject = `${dayEndSubject(m.branchName, m.date, m.corrected)}${m.bankPos && pavoState(m.bankPos) === "fark" ? " · Pavo FARK VAR" : ""}`;
   const sections = dayEndSections(m);
   const notes = dayEndNotes(m);
   const rowHtml = ([label, value]: [string, string]) =>
@@ -298,7 +301,7 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
     <div style="font-family:${FONT};font-size:13px;color:#71717a">Toplam satış</div>
     <div style="font-family:${FONT};font-size:28px;line-height:34px;font-weight:700;color:#171717">${esc(money(m.z.zTotal))}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${m.corrected ? "#fff7ed" : "#f4f4f5"};border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:${m.corrected ? "#9a3412" : "#3f3f46"}">${notes.map(esc).join("<br>")}</td></tr></table>
-    ${sections.map(sectionHtml).join("\n    ")}
+    ${sections.map(sectionHtml).join("\n    ")}${m.bankPos ? `\n    ${pavoSectionHtml(m.bankPos)}` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px"><tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717"><a href="${esc(m.link)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">Panelde aç</a></td></tr></table>
   </td></tr>
   <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;color:#a1a1aa;text-align:center">Bu e-posta kasa raporu alıcılarına ve bildirim adreslerine gönderildi.</td></tr>
@@ -311,6 +314,7 @@ export function renderDayEnd(m: DayEndMail): { subject: string; html: string; te
     `Toplam satış: ${money(m.z.zTotal)}`,
     ...notes,
     ...sections.flatMap((s) => ["", s.title, ...s.rows.map(([l, v]) => `${l}: ${v}`)]),
+    ...(m.bankPos ? ["", ...pavoSectionText(m.bankPos)] : []),
     "",
     `Panelde aç: ${m.link}`,
   ].join("\n");
