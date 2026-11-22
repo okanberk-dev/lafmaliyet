@@ -132,9 +132,10 @@ test("kapalı işaretli gün (denetim #25): hiç açılmamış listeye hatırlat
   assert.equal(remindableLists([{ ...acilis, hasRun: true }], true).length, 1);
   // İş kapalı günü okur ve listeleri süzgeçten geçirir
   const run = read("src/server/notify/checklist-alerts.ts");
-  assert.match(run, /import \{ isClosedDay \} from "@\/server\/closed-days";/);
-  assert.match(run, /isClosedDay\(day, db\)/);
-  assert.match(run, /checklistAlerts\(day, now, remindableLists\(all, closed\)\)/);
+  assert.match(run, /import \{ closedMarksOn, isClosedDay \} from "@\/server\/closed-days";/);
+  assert.match(run, /isClosedDay\(day, db\), closedMarksOn\(day, db\)/);
+  // Kapalı gün şubenin olabilir (denetim 13 Kasım KP-05): işaretin kapsamadığı şubenin listeleri yine hatırlatılır
+  assert.match(run, /checklistAlerts\(day, now, remindableLists\(all, closed\)\), \.\.\.\(closed \? checklistAlerts\(day, now, loaded\.filter\(\(l\) => !shut\(l\)\)\) : \[\]\)/);
   assert.match(read("src/server/checklists/store.ts"), /hasRun: Boolean\(run\),/);
 });
 

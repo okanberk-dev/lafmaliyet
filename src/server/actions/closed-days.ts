@@ -7,6 +7,7 @@ import { z } from "zod";
 import { CLOSED_REASON_MAX, CLOSED_TEXT } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { formTillBranch, withBranchScope } from "@/server/branch-scope";
 import { markClosedDayCore, proposeClosedDay, reviewClosedDayCore } from "@/server/closed-day-requests";
 import { getDb, schema as s } from "@/server/db";
 import { fetchSiteDayCounts } from "@/server/site-sales/sync";
@@ -25,15 +26,20 @@ const clientKey = z
   .nullish()
   .transform((v) => v ?? null);
 
-const requestInput = z.object({ date: zDate, reason: zOptText(CLOSED_REASON_MAX), clientKey });
+/** Formun gösterdiği kasa (docs/SUBE.md › Yazarken hangi şube); göndermeyen eski sekme seçili kasaya yazar */
+const tillId = z.string().max(24).nullish();
+
+const requestInput = z.object({ date: zDate, reason: zOptText(CLOSED_REASON_MAX), clientKey, branchId: tillId });
 
 /** Personel: dün kafe kapalıydı (yöneticinin onayına gider). Dönüşte yalnız isteğin kimliği */
 export async function requestClosedDay(input: z.input<typeof requestInput>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CLOSED_TEXT.adminOnly);
-    const d = requestInput.parse(input);
-    const out = await proposeClosedDay(getDb(), me, d);
+    const { branchId, ...d } = requestInput.parse(input);
+    // Bildirim formun kasasına (başka sekmede seçici değiştiyse de): kanıt ve işaret o şubenin
+    const till = await formTillBranch(branchId);
+    const out = await withBranchScope(till, () => proposeClosedDay(getDb(), me, d));
     if (out.created) await logActivity(me, "Kapalı gün bildirildi", [longDateTR(d.date), d.reason].filter(Boolean).join(" · "));
     refresh();
     return { id: out.row.id };
@@ -74,14 +80,15 @@ async function fetchSiteDayCountsFor(id: number) {
   return row?.day ? fetchSiteDayCounts(row.day) : null;
 }
 
-const markInput = z.object({ date: zDate, note: zOptText(CLOSED_REASON_MAX) });
+const markInput = z.object({ date: zDate, note: zOptText(CLOSED_REASON_MAX), branchId: tillId });
 
 /** Yönetici: raporsuz bir günü doğrudan kapalı işaretler (Kasa › raporsuz gün); o günün bekleyen bildirimleri onaylanır */
 export async function markClosedDay(input: z.input<typeof markInput>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const d = markInput.parse(input);
-    const out = await markClosedDayCore(getDb(), me, d);
+    const { branchId, ...d } = markInput.parse(input);
+    const till = await formTillBranch(branchId);
+    const out = await withBranchScope(till, () => markClosedDayCore(getDb(), me, d));
     if (out.created) await logActivity(me, "Kapalı gün işaretlendi", [longDateTR(d.date), d.note].filter(Boolean).join(" · "));
     refresh();
     return { created: out.created };

@@ -9,7 +9,7 @@ import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, SalesLine, Settings } from "@/lib/calc/types";
 import { isReportRow, resolveBranchMonths, resolveMonths, tillMonths, tillOpenedOn, type MonthEntry, type TillRow } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
-import { closedDaysIn } from "@/lib/closed-days";
+import { closedDaysIn, closedRowApplies } from "@/lib/closed-days";
 import { channelOf } from "@/lib/commission/channels";
 import { COMMISSION_CATEGORY, settingsFromRows } from "@/lib/constants";
 import { isLafposBranch, scopeSwitchDay } from "@/lib/lafpos/switch";
@@ -154,7 +154,11 @@ async function readDataset(): Promise<Dataset> {
       .from(s.staffRequests)
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
-    db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
+    // Şubesiyle (boş = işletme geneli): şubenin ayında yalnız kendi kapalı günleri ve işletme geneli sayılır (KP-05)
+    db
+      .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo, branchId: s.specialDays.branchId })
+      .from(s.specialDays)
+      .where(eq(s.specialDays.kind, "kapali")),
   ]);
 
   // LafPOS'a geçiş günü görünümün kasasınınki (scopeSwitchDay; denetim 21 Kasım #5): ModPOS'ta kalan şube (Marina) ya da
@@ -213,9 +217,14 @@ async function readDataset(): Promise<Dataset> {
   // ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır. Eksik günler onay
   // bekleyen geç raporları ve kapalı işaretli günleri ayrı söyler
   const lateDays = lateWaiting.flatMap((r) => (r.day ? [r.day] : []));
-  const closedPast = closedDaysIn(closedRows, "2000-01-01", through, reportRows.map((r) => r.date));
-  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>) =>
-    tillMonths(rows, through, undefined, lateDays, closedPast, undefined, undefined, openedOn);
+  // Kapalı gün şubenin (docs/SUBE.md › Kapalı gün): şube görünümünde ve "Tümü"nün şube şube çözümünde yalnız o şubenin
+  // ve işletme genelinin kapalı günleri (Tuzla'nın kapalı günü Marina'nın eksik gününü "kapalı" yapmaz); birleşik
+  // satırlarda (bütün şubeler) herhangi bir şubenin işareti, raporlu gün hariç
+  const scopeClosedRows = closedRows.filter((r) => closedRowApplies(r, branch?.id));
+  const closedFor = (rows: typeof closedRows, reports: readonly TillRow[]) => closedDaysIn(rows, "2000-01-01", through, reports.filter(isReportRow).map((r) => r.date));
+  const closedPast = closedFor(scopeClosedRows, reportRows);
+  const monthsOf = (rows: TillRow[], openedOn: ReturnType<typeof tillOpenedOn>, closed: string[] = closedPast) =>
+    tillMonths(rows, through, undefined, lateDays, closed, undefined, undefined, openedOn);
   const entriesOf = (rows: typeof months): MonthEntry[] =>
     rows.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, cardShare: m.cardShare, note: m.note }));
   // "Tümü": her şube kendi elle yazılanı ve kasasıyla (açılış günüyle: tillOpenedOn) çözülür, sonra toplanır; bir şubenin
@@ -235,7 +244,11 @@ async function readDataset(): Promise<Dataset> {
           branchIds.map((id) => ({
             branchId: id,
             entries: entriesOf(months.filter((m) => m.branchId === id)),
-            tills: monthsOf(rowsOf([id]), tillOpenedOn(branches.find((b) => b.id === id))),
+            tills: monthsOf(
+              rowsOf([id]),
+              tillOpenedOn(branches.find((b) => b.id === id)),
+              closedFor(closedRows.filter((r) => closedRowApplies(r, id)), rowsOf([id])),
+            ),
           })),
           monthsOf(till, openedOfFirst(till)),
           (ids) => {
@@ -293,7 +306,7 @@ async function readDataset(): Promise<Dataset> {
     // Kapalı işaretli bütün günler (ileri tarihliler dahil): süren ayın ay sonu öngörüsü bunları açık saymaz (E-41).
     // Raporlu gün ve satışlı yedek satır (LafPOS gün sonu, ModPOS föyü) kapalı sayılmaz (tillMonths ile aynı kural)
     closedDays: closedDaysIn(
-      closedRows,
+      scopeClosedRows,
       "2000-01-01",
       "9999-12-31",
       till.filter((r) => isReportRow(r) || r.zTotal > 0 || (r.receipts ?? 0) > 0).map((r) => r.date),

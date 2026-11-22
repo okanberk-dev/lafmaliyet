@@ -149,7 +149,7 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   // Kasa sayfasında kanıt yalnız yönetici dalında okunur
   const page = read("src/app/panel/kasa/page.tsx");
   const bar = page.slice(page.indexOf("async function closedBarFor"));
-  assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
+  assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date, view\.till\);/);
 });
 
 /**

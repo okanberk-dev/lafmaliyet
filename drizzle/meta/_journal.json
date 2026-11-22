@@ -442,6 +442,13 @@
       "when": 1795320360568,
       "tag": "0062_cikista_oturum_kapanir",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1795320394381,
+      "tag": "0063_kapali_gun_subesi",
+      "breakpoints": true
     }
   ]
 }

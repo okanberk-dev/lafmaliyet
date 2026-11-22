@@ -75,13 +75,15 @@ export const receiptPhotoRules: PhotoKindRules = {
 export async function staffLateDayOpen(day: string, db: Db | Tx = getDb(), branchId?: string): Promise<boolean> {
   if (!staffLateDay(day)) return false;
   // Şubenin kendi kasası: başka şubenin raporu bu günü "raporlu" yapmaz, ilk rapor da şubenin ilk raporu
-  const sube = eq(s.cashReports.branchId, branchId ?? (await currentTillBranch()));
+  const till = branchId ?? (await currentTillBranch());
+  const sube = eq(s.cashReports.branchId, till);
   const [[first], [same]] = await Promise.all([
     db.select({ date: s.cashReports.date }).from(s.cashReports).where(sube).orderBy(asc(s.cashReports.date)).limit(1),
     db.select({ date: s.cashReports.date }).from(s.cashReports).where(and(eq(s.cashReports.date, day), sube)).limit(1),
   ]);
   if (!first || first.date >= day || same) return false;
-  return !(await isClosedDay(day, db));
+  // Kapalı gün de şubenin (ve işletme genelinin): öteki şubenin kapalı günü bu şubenin geç raporunu kapatmaz
+  return !(await isClosedDay(day, db, till));
 }
 
 /**

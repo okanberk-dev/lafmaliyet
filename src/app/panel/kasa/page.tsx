@@ -443,7 +443,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   ) : null;
   const yesterday = addDays(today, -1);
   // Raporsuz geçmiş gün: "Kafe kapalıydı" (personel yalnız dün için, yöneticinin onayıyla; yönetici doğrudan)
-  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday) : null;
+  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday, view) : null;
   const dayChips = (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
       {admin && isDay(gun) ? (
@@ -783,16 +783,18 @@ async function SiteDayRow({ date, till, admin, kasa }: { date: string; till: str
  * Raporsuz geçmiş günün "Kafe kapalıydı" çubuğu: gün kapalı işaretliyse yalnız bilgi; personelde yalnız dün için
  * (bekleyen ya da reddedilen bildirim, düğme), yöneticide pencerede o günün izleri uyarı olarak
  */
-async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string) {
+async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string, view: KasaView) {
   if (!admin && date !== yesterday) return null;
-  const marked = await isClosedDay(date);
+  // Kapalı gün kasanın şubesinin (docs/SUBE.md › Kapalı gün): işaret, kanıt ve bildirim o şubenin; düğme kasayı gönderir
+  const till = { id: view.till, name: view.branch?.name ?? null };
+  const marked = await isClosedDay(date, getDb(), view.till);
   if (admin) {
-    const evidence = marked ? null : await closedDayEvidence(getDb(), date);
+    const evidence = marked ? null : await closedDayEvidence(getDb(), date, view.till);
     const lines = evidence ? closedEvidenceText(evidence) : { red: [], warn: [], info: [] };
-    return <ClosedDayBar role="admin" date={date} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
+    return <ClosedDayBar role="admin" date={date} till={till} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
   }
   const state = await staffClosedState(date, user);
-  return <ClosedDayBar role="staff" date={date} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
+  return <ClosedDayBar role="staff" date={date} till={till} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
 }
 
 /**

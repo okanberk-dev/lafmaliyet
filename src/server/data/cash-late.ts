@@ -54,7 +54,7 @@ export async function staffLateDays(me: { id: number }, now = new Date()): Promi
       .from(s.cashReports)
       .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to), sube)),
     db.select({ date: s.cashReports.date }).from(s.cashReports).where(sube).orderBy(asc(s.cashReports.date)).limit(1),
-    closedDaysBetween(from, to),
+    closedDaysBetween(from, to, db, branchId),
     db
       .select({ day: r.day, subject: r.subject, status: r.status, requestedBy: r.requestedBy })
       .from(r)

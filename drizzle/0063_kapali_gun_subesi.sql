@@ -1,0 +1,2 @@
+ALTER TABLE "special_days" ADD COLUMN "branch_id" text;--> statement-breakpoint
+ALTER TABLE "special_days" ADD CONSTRAINT "special_days_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE no action ON UPDATE no action;

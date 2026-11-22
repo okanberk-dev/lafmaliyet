@@ -17,6 +17,8 @@ import { longDateTR } from "@/lib/reminders";
 import { reviewClosedDay } from "@/server/actions/closed-days";
 import type { ClosedDayCard } from "@/server/closed-days";
 
+import { BranchBadge, kasaDayHref } from "./branch-badge";
+
 /*
  * Onaylar › Kasa: "Kafe kapalıydı" bildirimi (yalnız yönetici; docs/KASA-RAPORU.md › Kafe kapalıydı). Kanıt canlı
  * sayılır: panelde iz (kırmızı: onay kapalı), Z no ve açılış sürekliliği, sitenin sipariş sayıları (ayrı bir Suspense,
@@ -46,6 +48,7 @@ export function ClosedDayItem({ card, site }: { card: ClosedDayCard; site?: Reac
         <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 break-words">Kapalı gün · {longDateTR(card.date)}</span>
           <Badge tone="gray">Kapalı gün</Badge>
+          <BranchBadge branch={card.branch} />
           {card.run ? <Badge tone="amber">{card.run.days} gün üst üste kapalı bildirimi</Badge> : null}
         </h3>
         <p className="text-[13px] text-ink-mute tabular">
@@ -78,7 +81,7 @@ export function ClosedDayItem({ card, site }: { card: ClosedDayCard; site?: Reac
           <p className="text-ink-soft">Kasa raporu, kasadan çıkan, zayi, kontrol listesi, karaoke ve personel kaydı yok.</p>
         )}
         {site}
-        <Link href={`/panel/kasa?gun=${card.date}`} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
+        <Link href={kasaDayHref(card)} className="inline-flex items-center gap-1 font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:py-2.5">
           <ExternalLink size={14} aria-hidden="true" /> Günü aç
         </Link>
       </section>

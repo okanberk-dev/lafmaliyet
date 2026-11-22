@@ -26,6 +26,7 @@ import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/p
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { addDays, dayMonthTR, monthGenitiveTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
+import { currentTillBranch } from "@/server/branch-scope";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { photoReadingOf, type CashPhotoDTO } from "@/server/data/cash-photos";
@@ -121,7 +122,8 @@ export async function photoRemovalStates(report: { id: number; date: string; bra
 export async function staffOldCashOutDays(now = new Date()): Promise<string[]> {
   const days = oldRequestDays(now);
   if (!days.length) return [];
-  const closed = new Set(await closedDaysBetween(days[days.length - 1], days[0]));
+  // Kasanın şubesinin kapalı günleri (ve işletme geneli): öteki şubenin kapalı günü bu şubenin listesinden düşmez
+  const closed = new Set(await closedDaysBetween(days[days.length - 1], days[0], getDb(), await currentTillBranch()));
   return days.filter((d) => !closed.has(d));
 }
 

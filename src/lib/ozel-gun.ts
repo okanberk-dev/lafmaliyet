@@ -39,6 +39,8 @@ export interface SpecialDay {
   byStaff?: boolean;
   /** Personelin satırında ekleyenin adı */
   addedBy?: string | null;
+  /** Kapalı günün şubesi (yalnız `kapali`; boş = bütün şubeler, işletme geneli; docs/SUBE.md › Kapalı gün) */
+  branchId?: string | null;
 }
 
 /** İşaretli yüzde: "+%15", "−%30" */

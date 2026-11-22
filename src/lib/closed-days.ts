@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_BRANCH_ID } from "./branches";
 import { money } from "./format";
 import { addDays, dayMonthTR, daysBetween, longDateTR } from "./reminders";
 
@@ -214,8 +215,32 @@ export const CLOSED_REQUESTS_PER_30 = 3;
 export const ClosedDayPayload = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reason: z.string().max(CLOSED_REASON_MAX).nullable(),
+  /**
+   * Kapalı bildirilen şube: isteği AÇAN personelin kasası (denetim 13 Kasım KP-05; docs/SUBE.md › Kapalı gün). Bu
+   * alandan önceki bildirimlerde yok: Tuzla sayılır (closedRequestBranch)
+   */
+  branchId: z.string().max(24).nullish(),
 });
 export type ClosedDayPayloadT = z.output<typeof ClosedDayPayload>;
+
+/**
+ * Kapalı gün bildiriminin şubesi: yükteki şube; yoksa konudan (`gun:G:şube`, cashDaySubject), o da yoksa (şubelerden
+ * önceki bildirim, konu `gun:G`) Tuzla. Bir şubenin raporu, onayı ya da işareti yalnız kendi bildirimlerini kapatır
+ */
+export function closedRequestBranch(row: { subject?: string | null; payload: unknown }): string {
+  const b = (row.payload as { branchId?: unknown } | null)?.branchId;
+  if (typeof b === "string" && b) return b;
+  const m = /^gun:\d{4}-\d{2}-\d{2}:(.+)$/.exec(row.subject ?? "");
+  return m ? m[1] : DEFAULT_BRANCH_ID;
+}
+
+/**
+ * Kapalı satırı bu şubede geçerli mi: şubenin kendi satırı ya da işletme geneli (şubesi boş). Şube verilmezse ("Tümü",
+ * işletme geneli okuma) her satır
+ */
+export function closedRowApplies(row: { branchId?: string | null }, branchId?: string | null): boolean {
+  return !branchId || row.branchId == null || row.branchId === branchId;
+}
 
 /** İsteğin başlığı (tutarsız): "23 Ekim kapalı gün" */
 export const closedTitle = (date: string) => `${dayMonthTR(date)} kapalı gün`;

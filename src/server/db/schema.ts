@@ -2005,6 +2005,11 @@ export const specialDays = pgTable(
     /** Son düzenleyen (ilk kayıtta boş): yöneticinin dokunduğu satırı personel artık değiştiremez */
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     updatedByName: text("updated_by_name"),
+    /**
+     * Kapalı günün şubesi (denetim 13 Kasım KP-05; docs/SUBE.md › Kapalı gün): boş = işletme geneli (bütün şubeler
+     * kapalı; bayram, eski satırlar). Yalnız `kapali` satırında dolu olur; öteki özel günler şubesizdir
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
 import { staffExpenseLocked } from "@/lib/cash-outs";
-import { staffBranchRefusal } from "@/server/branch-scope";
+import { currentTillBranch, staffBranchRefusal } from "@/server/branch-scope";
 import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
 import { schema as s } from "@/server/db";
@@ -54,7 +54,9 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
     target.op === "ekle" ? null : cashOutPayment(tx, target.row.id),
   ]);
   // Kapalı işaretli güne (yöneticinin onayladığı "Kafe kapalıydı") personel kasadan çıkan yazamaz
-  const closed = target.op === "ekle" || target.op === "duzelt" ? await closedDayRefusal(date, me.role, tx) : null;
+  // Kapalı gün satırın kasasının (yeni satırda kasanın şubesi): öteki şubenin kapalı günü bu şubenin yazımını kapatmaz
+  const closed =
+    target.op === "ekle" || target.op === "duzelt" ? await closedDayRefusal(date, me.role, tx, target.op === "ekle" ? await currentTillBranch() : target.row.branchId) : null;
   if (closed) throw new UserError(closed);
   const gate = cashOutNeedsApproval({
     admin: false,

@@ -94,7 +94,7 @@ test("#29 kaynak: kasadan çıkan ve fotoğraf kaldırma kartları şubeyi taş�
   assert.match(loader.slice(loader.indexOf("async function cashOutCard(")), /\n\s+branchId: sube,\n/);
   assert.match(loader.slice(loader.indexOf("async function photoCard("), loader.indexOf("async function cashOutCard(")), /\n\s+branchId: report\?\.branchId \?\? null,\n/);
   const queue = read("src/server/data/cash-requests.ts");
-  assert.match(queue, /\[\.\.\.day\.map\(named\), \.\.\.late\.map\(named\), \.\.\.outs\.map\(named\), \.\.\.closed\]/);
+  assert.match(queue, /\[\.\.\.day\.map\(named\), \.\.\.late\.map\(named\), \.\.\.outs\.map\(named\), \.\.\.closed\.map\(named\)\]/);
   const ui = read("src/app/panel/onaylar/kasa-out-cards.tsx");
   assert.match(ui, /import \{ BranchBadge, kasaDayHref \} from "\.\/branch-badge";/);
   assert.equal(ui.match(/<BranchBadge branch=\{card\.branch\} \/>/g)?.length, 2);

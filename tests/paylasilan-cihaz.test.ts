@@ -210,7 +210,7 @@ describe("canlı veri deposu: paylaşılan tablette önceki kişinin verisi kalm
 
 test("uyarı motoru ve karaoke panosu: depo kabuğun kullanıcısına bağlı, hatırlatıcı yalnız onun, tutar yalnız yöneticiye", () => {
   const center = read("src/components/panel/live/alert-center.tsx");
-  assert.match(center, /export function AlertCenter\(\{ role, userId \}: \{ role: Role; userId: number \}\)/);
+  assert.match(center, /export function AlertCenter\(\{ role, userId, branchScope = null \}: \{ role: Role; userId: number; branchScope\?: string \| null \}\)/);
   assert.match(center, /bindLive\(userId\);\s*void refreshLive\(\);/);
   assert.match(center, /resetLive\(\);[\s\S]{0,400}\};\s*\}, \[userId\]\);/, "kabuk kapanınca depo boşalır");
   assert.match(center, /data && data\.me\.id === userId \? data\.reminders : \[\]/);
@@ -227,7 +227,7 @@ test("uyarı motoru ve karaoke panosu: depo kabuğun kullanıcısına bağlı, h
   const corner = read("src/components/panel/live/reminder-alerts.tsx");
   assert.match(corner, /const mine = live\.data && live\.data\.me\.id === userId \? live\.data : null;/);
   assert.doesNotMatch(corner, /live\.data\??\.reminders/, "köşe kartı süzülmemiş listeyi okumaz");
-  assert.match(read("src/components/panel/sidebar.tsx"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} \/>/);
+  assert.match(read("src/components/panel/sidebar.tsx"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} branchScope=\{branch\?\.scope \?\? null\} \/>/);
   assert.match(read("src/app/panel/layout.tsx"), /user=\{\{ id: user\.id,/);
   assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /\{admin && s\.totalMinor \?/);
   // Canlı ucun ETag'i kişiyi de taşır: başka hesabın yanıtı 304 ile onaylanmaz

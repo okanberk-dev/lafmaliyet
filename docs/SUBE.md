@@ -226,7 +226,15 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   zayide `wasteLock`: yeni kayıtta ve geç kayıt isteğinde kaydın ineceği şube, silmede kaydın kendi şubesi; denetim
   21 Kasım #13). Önceden zayi kilidi şubesizdi: iki şube dünü ve bugünü girince dün personele hiç kapanmıyor, Tuzla'nın
   raporları Marina'nın unutulan dününü kapatıyordu.
-- **Kapalı gün** işletmenindir (`special_days`'te şube yok; günün herhangi bir şubedeki izi kanıttır), ama Z no ve
+- **Kapalı gün** şubenindir (denetim 13 Kasım KP-05; `special_days.branch_id`, göç 0063). Kasa'nın "Kafe kapalıydı"sı
+  ve personelin bildirimi formun kasasını yazar; bildirimin onayı bildirimin şubesine (yöneticinin seçimine değil; konu
+  Tuzla'da `gun:G`, ötekinde `gun:G:şube`). Şubesi boş satır işletme genelidir (Özel günler'de "Bütün şubeler", eski
+  satırlar) ve her şubede kapalı sayılır; Özel günler'de kapalı günün şubesi seçilir, ikiz denetimi şube içinde, "Geri
+  al" aynı şubeye döner. Kanıt (rapor, LafPOS gün sonu, kasadan çıkan, zayi) o şubenin kayıtlarıdır: Marina'nın raporu
+  Tuzla'nın işaretini kaldırmaz, Tuzla'nın bildirimini engellemez. Bir şubenin kanıtı işletme geneli tek günlük işareti
+  yalnız o şube için kaldırır: satır o gün raporu olmayan öteki etkin fiziksel şubelere şubeli kalır, onaylı
+  bildirimleri oraya geçer (`clearClosedMark`). Bugün, zil ve LafPOS durumu her kasanın eksiğini kendi şubesinin
+  işaretiyle susturur. Kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz kanıttır. Z no ve
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin

@@ -317,11 +317,12 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
   });
 
   lafposTest("kapalı gün kartı o günün kasasını söyler (geçiş günü boşken ModPOS)", async () => {
-    const card = async (day: string) => {
+    // Bildirim LafPOS'un şubesinin (Marina; kapalı gün şubenindir, denetim 13 Kasım KP-05): kasası onun geçiş gününe göre
+    const card = async (day: string, branch: string = LAFPOS_SUBE) => {
       await db.execute(sql`TRUNCATE staff_requests RESTART IDENTITY CASCADE`);
       await db.insert(s.staffRequests).values({
         kind: "kapali-gun",
-        subject: `gun:${day}`,
+        subject: branch === MODPOS_SUBE ? `gun:${day}` : `gun:${day}:${branch}`,
         day,
         title: "Kafe kapalıydı",
         payload: { reason: null },
@@ -336,5 +337,6 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     await setSwitch(S);
     assert.equal(await card("2026-11-11"), "LafPOS");
     assert.equal(await card("2026-11-09"), "ModPOS", "geçiş gününden önceki gün");
+    assert.equal(await card("2026-11-11", MODPOS_SUBE), "ModPOS", "ModPOS'ta kalan şubenin bildirimi");
   });
 });
