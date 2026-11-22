@@ -261,6 +261,14 @@ geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
 
 Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici formdan taşır.
 
+## Uyarı sesleri şubeye göre (22 Kasım 2026)
+
+Tuzla Köyiçi'nde bilgisayarın varsayılan ses çıkışı kafenin genel hoparlörü: panelin zil, alarm ve hatırlatma sesleri
+bütün kafeye çalıyordu. Bilgisayarın şubesi Tuzla'ysa (personelin kilitli şubesi, yöneticinin seçtiği şube; "Tümü"
+seçiliyken de Tuzla, çünkü yeni kayıtlar da oraya yazılır) **Uyarı sesleri › Yalnız bu bilgisayardan çalsın**
+varsayılan açıktır. Marina'nın varsayılanı değişmedi; anahtar orada da elle açılır. Kural tek yerde:
+`src/lib/audio-output.ts` › `ONLY_COMPUTER_BRANCHES`, `onlyComputerFor`. Ayrıntı: docs/BILDIRIMLER.md.
+
 ## Sırada ne var
 
 Dalga 1 kütüğü ve ekranı, dalga 2 şube sütununu, seçiciyi ve para yolunun süzülmesini, dalga 3 kalan okumaların

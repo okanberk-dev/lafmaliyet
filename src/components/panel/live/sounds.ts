@@ -2,6 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 
+import { alertAudible, isMobileAgent, type OutputStatus } from "@/lib/audio-output";
+
+export type { OutputStatus };
+
 /**
  * Uyarı sesleri, ses dosyası olmadan (Web Audio ile üretilir; indirilecek bir şey yok, çevrimdışı da çalar).
  * Tarayıcılar sesi ancak sayfada bir dokunuştan sonra açar: ilk dokunuşta unlockAudio() çağrılır (alert-center.tsx);
@@ -10,6 +14,11 @@ import { useSyncExternalStore } from "react";
  * Gürültülü barda duyulsun diye sesler parlak ve yüksektir; çıkıştaki sınırlayıcı üst üste binen notaların
  * cızırdamasını önler. Ses, cihazda seçilen hoparlöre çalar (setOutput; Bluetooth hoparlörde müzik çalarken
  * bilgisayarın kendi hoparlörü), seçilmemişse sistemin varsayılan çıkışına.
+ *
+ * Paneldeki BÜTÜN uyarı ve hatırlatma sesleri buradan geçer (zil, masa çağrısı, karaoke, hatırlatma, deneme sesi;
+ * tests/ses-cikisi.test.ts başka yerde ses çalınmadığını denetler). "Yalnız bu bilgisayar" açıkken (setOnlyComputer)
+ * ses ancak seçilen hoparlör etkinse çıkar; hoparlör seçilmemiş, çıkarılmış ya da izni düşmüşse ses kısılır, genel
+ * hoparlöre (sistemin varsayılan çıkışına) düşmez (src/lib/audio-output.ts › alertAudible).
  *
  * Arka plandaki sekmede zamanlayıcılar geç kalabilir; sürenin bittiği an ayrıca ses saatine kurulur (scheduleBurst):
  * ses saati kısılmaz, alarm tam zamanında başlar.
@@ -39,7 +48,7 @@ function context(): AudioContext | null {
   ctx = new Ctor();
   ctx.onstatechange = notifyAudio;
   master = ctx.createGain();
-  master.gain.value = volume;
+  master.gain.value = alertsAudible() ? volume : 0;
   // Sınırlayıcı: sesler tavana yakın ve yüksek çıkar, üst üste binen notalar kırpılıp cızırdamaz
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -6;
@@ -54,8 +63,6 @@ function context(): AudioContext | null {
 
 // ─── Çıkış cihazı ─────────────────────────────────────────────────────────
 
-export type OutputStatus = "default" | "active" | "missing" | "permission" | "unsupported";
-
 let output: { id: string; status: OutputStatus } = { id: "", status: "default" };
 let sinkChange: Promise<unknown> = Promise.resolve();
 
@@ -63,6 +70,45 @@ let sinkChange: Promise<unknown> = Promise.resolve();
 export function outputSelectable(): boolean {
   if (typeof window === "undefined" || typeof window.AudioContext === "undefined") return false;
   return "setSinkId" in window.AudioContext.prototype;
+}
+
+/** "Yalnız bu bilgisayar" bu cihazda anlamlı mı: hoparlör seçilebilen masaüstü tarayıcı (telefon ve tablet değil) */
+export function computerOutputs(): boolean {
+  return outputSelectable() && !isMobileAgent(navigator.userAgent);
+}
+
+let onlyComputer = false;
+
+/** Uyarı sesi şu an çalınabilir mi ("yalnız bu bilgisayar" açıkken yalnız seçilen hoparlör etkinse) */
+export function alertsAudible(): boolean {
+  return alertAudible(onlyComputer, output.status);
+}
+
+/** Sesin kapısı: çalınamıyorsa ana ses sıfır (önceden kurulmuş alarm notaları da susar) */
+function syncGate() {
+  if (master) master.gain.value = alertsAudible() ? volume : 0;
+}
+
+/** "Yalnız bu bilgisayar": açıkken ses seçilen hoparlör yoksa susar (AlertCenter cihaz tercihinden kurar) */
+export function setOnlyComputer(on: boolean) {
+  const next = on && computerOutputs();
+  if (next === onlyComputer) return;
+  onlyComputer = next;
+  syncGate();
+  notifyAudio();
+}
+
+export const onlyComputerActive = () => onlyComputer;
+
+/** Seçilen hoparlör listede yok (çıkarıldı): tarayıcı sesi kendiliğinden varsayılana geçirebilir, burada susturulur */
+export function markOutputMissing() {
+  if (!output.id || output.status === "missing") return;
+  output = { id: output.id, status: "missing" };
+  syncGate();
+  notifyAudio();
+  // Tarayıcı kayıtlı çıkışı unutsun: hoparlör geri takılınca setOutput yeniden bağlar (aynı kimlik "zaten bağlı" sanılmaz)
+  const c = ctx as SinkContext | null;
+  if (c?.setSinkId) sinkChange = sinkChange.then(() => c.setSinkId!("")).catch(() => null);
 }
 
 async function applySink(id: string): Promise<OutputStatus> {
@@ -98,12 +144,19 @@ export async function setOutput(id: string): Promise<OutputStatus> {
   const status = await run;
   if (output.id === id) {
     output = { id, status };
+    syncGate();
     notifyAudio();
   }
   return status;
 }
 
 const outputSnapshot = () => output.status;
+const audibleSnapshot = () => alertsAudible();
+
+/** Bileşende: uyarı sesi şu an çalınabilir mi (sunucuda evet) */
+export function useAlertsAudible(): boolean {
+  return useSyncExternalStore(subscribeAudio, audibleSnapshot, () => true);
+}
 
 /** Bileşende çıkışın durumu (sunucuda "default") */
 export function useOutputStatus(): OutputStatus {
@@ -156,7 +209,7 @@ export async function unlockAudio(): Promise<boolean> {
 
 export function setVolume(v: number) {
   volume = Math.min(1, Math.max(0, v));
-  if (master) master.gain.value = volume;
+  syncGate();
 }
 
 /** Tek bir nota: hızlı başlayıp sönen */
@@ -205,7 +258,8 @@ const PATTERNS: Record<SoundKind, Note[]> = {
 
 function schedule(kind: SoundKind, at: number): OscillatorNode[] {
   const c = context();
-  if (!c || !master || c.state !== "running") return [];
+  // Çalınamıyorsa ("yalnız bu bilgisayar" açık, hoparlör yok) hiç kurulmaz: genel hoparlöre ses gitmez
+  if (!c || !master || c.state !== "running" || !alertsAudible()) return [];
   return PATTERNS[kind].map(([f, t, d, type, peak]) => tone(c, master!, f, at + t, d, type, peak));
 }
 
@@ -271,7 +325,7 @@ export function useAlarmOwners(): string {
  */
 export function scheduleBurst(atMs: number): () => void {
   const c = context();
-  if (!c || c.state !== "running") return () => {};
+  if (!c || c.state !== "running" || !alertsAudible()) return () => {};
   const delay = (atMs - Date.now()) / 1000;
   if (delay < 0.05 || delay > 12 * 3600) return () => {};
   const nodes: OscillatorNode[] = [];

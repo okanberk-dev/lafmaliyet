@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { onlyComputerFor } from "@/lib/audio-output";
 import type { Role } from "@/lib/constants";
 
 /**
@@ -26,6 +27,11 @@ export interface DevicePrefs {
   outputId: string;
   /** O hoparlörün adı (kimlik değişirse adla yeniden bulunur) */
   outputLabel: string;
+  /**
+   * Uyarılar yalnız bu bilgisayarın seçilen hoparlöründen; hoparlör yoksa genel hoparlöre düşmez, susar. null: şubenin
+   * varsayılanı (Tuzla Köyiçi'nde açık; src/lib/audio-output.ts › onlyComputerFor)
+   */
+  onlyComputer: boolean | null;
 }
 
 const KEY = "laf:cihaz-uyarilari";
@@ -33,7 +39,7 @@ const WARN_CHOICES = [0, 5, 10, 15] as const;
 export { WARN_CHOICES };
 
 export function defaultPrefs(role: Role): DevicePrefs {
-  return { sound: true, karaokeAlarms: role === "staff", orderAlerts: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "" };
+  return { sound: true, karaokeAlarms: role === "staff", orderAlerts: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "", onlyComputer: null };
 }
 
 let cache: { role: Role; prefs: DevicePrefs } | null = null;
@@ -55,6 +61,7 @@ function read(role: Role): DevicePrefs {
         wakeLock: typeof p.wakeLock === "boolean" ? p.wakeLock : prefs.wakeLock,
         outputId: typeof p.outputId === "string" && p.outputId.length <= 256 ? p.outputId : prefs.outputId,
         outputLabel: typeof p.outputLabel === "string" ? p.outputLabel.slice(0, 200) : prefs.outputLabel,
+        onlyComputer: typeof p.onlyComputer === "boolean" ? p.onlyComputer : prefs.onlyComputer,
       };
     }
   } catch {
@@ -63,6 +70,9 @@ function read(role: Role): DevicePrefs {
   cache = { role, prefs };
   return prefs;
 }
+
+/** Bu cihazın tercihleri bileşen dışında (test ve uyarı motoru) */
+export const currentPrefs = (role: Role): DevicePrefs => read(role);
 
 export function updatePrefs(role: Role, patch: Partial<DevicePrefs>) {
   const next = { ...read(role), ...patch };
@@ -73,6 +83,21 @@ export function updatePrefs(role: Role, patch: Partial<DevicePrefs>) {
     // Saklanamadı: bu oturumda geçerli kalır
   }
   for (const fn of listeners) fn();
+}
+
+/** Bu cihazın panel şube seçimi (kabuktan, AlertCenter); "yalnız bu bilgisayar"ın varsayılanı buna bağlı */
+let branchScope: string | null = null;
+
+export function setBranchScope(scope: string | null) {
+  if (scope === branchScope) return;
+  branchScope = scope;
+  cache = null;
+  for (const fn of listeners) fn();
+}
+
+/** "Yalnız bu bilgisayar" bu cihazda açık mı (elle seçildiyse o, seçilmediyse şubenin varsayılanı) */
+export function onlyComputerOn(prefs: DevicePrefs): boolean {
+  return onlyComputerFor(prefs.onlyComputer, branchScope);
 }
 
 function subscribe(fn: () => void) {
