@@ -296,6 +296,15 @@ E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
 
 Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 
+## Marina gün sonu e-postası (22 Kasım 2026)
+
+LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına ve etkin bildirim
+adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
+ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağlantı; maliyet ve kâr yok. İçerik başına bir
+kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
+(adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:
+[LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+
 ## Haftalık özet (pazartesi)
 
 Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş

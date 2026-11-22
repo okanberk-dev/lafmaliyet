@@ -151,6 +151,8 @@ const NOT_SECRET: Record<string, string> = {
   "integration_state.key": "durum anahtarının adı (gizli değerli anahtarlar EXCLUDED_STATE_KEYS'te)",
   "suppliers.key": "tedarikçi adının eşleşme anahtarı",
   "notification_log.key": "aynı bildirimin iki kez gitmemesi için anahtar",
+  "lafpos_day_ends.day_hash": "LafPOS gün sonunun içerik özeti (aynı içerik e-postası yinelenmesin; gizli değer değil)",
+  "lafpos_day_ends.emailed_hash": "e-postası giden gün sonunun içerik özeti (gizli değer değil)",
   "parasut_bill_lines.product_key": "Paraşüt ürününün adından anahtar",
   "parasut_product_links.product_key": "Paraşüt ürününün adından anahtar",
   "ingredient_price_holds.product_key": "Paraşüt ürününün adından anahtar (onay bekleyen fiyatın ürünü)",

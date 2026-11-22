@@ -28,6 +28,8 @@ export interface LafposIkramLine {
   posName: string;
   /** Panel ürünü (sitenin kalemi ve boyu, sonra POS adı eşleştirmesi); bulunamazsa null: tüketime girmez */
   productId: number | null;
+  /** POS adı HİZMET'e bağlı (karaoke odası gibi): ürünü yoktur, tüketime girmez ve "bağlanamayan" sayılmaz */
+  isService?: boolean;
   qty: number;
   /** Menü fiyatıyla değeri, KDV dahil (LafPOS'un hesabı) */
   menuValue: number;
@@ -77,6 +79,8 @@ export const LAFPOS_IKRAM_TEXT = {
   waiting: "LafPOS'un bu günün sonu gelmedi; ikram ve zayi gün sonuyla gelir.",
   /** Ürünü bulunamayan satır (yönetici; Ayarlar › LafPOS'ta bağlanır) */
   unmatched: "ürüne bağlı değil: tüketime girmez",
+  /** HİZMET'e bağlı satır (karaoke odası gibi): tüketime girmez, bağlanacak bir şey yok */
+  service: "hizmet: tüketime girmez",
   /** Paneldeki ürün zayisinin rozeti: aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
   maybeTwice: "LafPOS'ta da zayi yazıldı: aynı zayiyse bu kayıt silinmeli",
   /** LafPOS gününde Zayi formunun notu (ürün zayisi iki yerden girilmesin) */
@@ -130,9 +134,12 @@ export function lafposIkramCheck(offRevenue: number, listValue: number): string 
     : `${head} az: iptal edilen adisyonun ikramı listede kalmış olabilir.`;
 }
 
-/** İkramın ürüne bağlanamayan adları, satış listesinde gösterilenler hariç (en çok adet önce, sonra ad) */
+/**
+ * İkramın ürüne bağlanamayan adları, satış listesinde gösterilenler ve HİZMET'e bağlı adlar hariç (en çok adet önce,
+ * sonra ad)
+ */
 export function unmatchedIkramNames(
-  lines: readonly { date: string; posName: string; productId: number | null; qty: number }[],
+  lines: readonly { date: string; posName: string; productId: number | null; isService?: boolean; qty: number }[],
   shown: readonly string[],
   limit = 10,
 ): { items: { posName: string; qty: number; days: number }[]; count: number } {
@@ -140,7 +147,7 @@ export function unmatchedIkramNames(
   const byKey = new Map<string, { posName: string; qty: number; days: Set<string> }>();
   for (const l of lines) {
     const key = posMatchKey(l.posName);
-    if (l.productId !== null || skip.has(key)) continue;
+    if (l.productId !== null || l.isService || skip.has(key)) continue;
     const cur = byKey.get(key) ?? { posName: l.posName.replace(/\s+/g, " ").trim(), qty: 0, days: new Set<string>() };
     cur.qty += l.qty;
     cur.days.add(l.date);

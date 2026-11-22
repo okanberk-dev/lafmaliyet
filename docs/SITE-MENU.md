@@ -135,7 +135,7 @@ yazımı toplu değişikliğin `writeSalePrice`'ından geçer) ve `saveRecipe` (
    adı, en çok 80 karakter; sitenin olay kaydında "Panel · Selin"). Site son çekmede `writes: {expect: true}`
    duyurduysa gövde **`expect`** de taşır: yazılan her alanın panelin site kopyasındaki değeri (Tükendi / Satışa aç'ta
    az önce okunan canlı kalemden): `{"id","priceMinor","actor","expect":{"priceMinor":18000}}`. Bayrağı duyurmayan
-   site (bugünkü laffogato.net) `expect` almaz; davranış eskisi gibi. Bayrak `menu_sync.writesExpect`'te, her başarılı
+   site `expect` almaz; davranış eskisi gibi. Bugünkü laffogato.net `writes: {expect: true}` duyurur. Bayrak `menu_sync.writesExpect`'te, her başarılı
    çekmede yenilenir.
 5. 2xx: sitenin döndürdüğü kalem yazılır (fiyat yuvadan; durum kurala göre), aynı kaleme bağlı öteki satırlar da
    güncellenir, son listenin kopyası ve site saati ilerler. Yanıt okunamazsa gönderilen değerler yazılır (sitenin

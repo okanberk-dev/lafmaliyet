@@ -367,7 +367,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   // laffogato.net'in o günkü online satışı: bilgi satırı, sayfayı bekletmez (site gelene kadar boş, gelmezse yok)
   const siteRow = showForm ? (
     <Suspense fallback={null}>
-      <SiteDayRow date={date} admin={admin} kasa={lafposState.lafpos ? "LafPOS" : "ModPOS"} />
+      <SiteDayRow date={date} till={view.till} admin={admin} kasa={lafposState.lafpos ? "LafPOS" : "ModPOS"} />
     </Suspense>
   ) : null;
   const form = showForm ? (
@@ -765,8 +765,9 @@ function ScopeNote({ view }: { view: KasaView }) {
  * bağlantı kapalıysa, site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır görünmez (rapor beklemez). Personele
  * karaoke tutarı gösterilmez (README: karaoke tutarları yalnız yöneticiye).
  */
-async function SiteDayRow({ date, admin, kasa }: { date: string; admin: boolean; kasa: KasaName }) {
-  const row = await fetchTillOnlineRow(date);
+async function SiteDayRow({ date, till, admin, kasa }: { date: string; till: string; admin: boolean; kasa: KasaName }) {
+  // Kasanın şubesinin online satışı (Marina'nın masa siparişi Tuzla'nın satırına yazılmaz; docs/SITE-SATIS.md)
+  const row = await fetchTillOnlineRow(date, till);
   if (!row) return null;
   return (
     <Notice

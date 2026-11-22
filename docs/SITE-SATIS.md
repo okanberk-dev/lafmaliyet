@@ -187,7 +187,12 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
 ### Kasa raporu satırı
 
 Kasa raporu açılınca, gönderilince ve e-postası (yeniden) gönderilince o günün toplamı ayrıca sorulur:
-`GET /api/panel/sales?from=GÜN&to=GÜN`. Satır:
+`GET /api/panel/sales?from=GÜN&to=GÜN&branch=ŞUBE`. Site 21 Kasım 2026'dan beri şubelidir (sitenin docs/PANEL-SALES.md
+› Şube kırılımı): satır kasanın şubesinindir, Tuzla `branch=tuzla`, Marina `branch=marina` (şube verilmezse Tuzla;
+`siteBranchOf`). Yanıt `branch`'i söyler; Marina için başka şubenin ya da şubesiz (eski site) yanıtı satıra yazılmaz,
+Tuzla için şubesiz eski yanıt eskisi gibi kabul edilir (`siteBranchMatches`). Online kanal seçiliyken satır yok. Aylık
+kayıt (kâr-zarar) şubesiz istenir: site şube verilmezse **her şubenin** toplamını verir, kâr-zararın online satırı
+işletme genelidir (Marina'nın masa siparişi de dahil); fiziksel şube seçiliyken zaten okunmaz. Satır:
 
 > **laffogato.net · 21 Ekim Çarşamba:** Online (site + uygulama) 1.331,02 ₺ · Karaoke ön ödeme 410 ₺ — kasadan geçmez.
 > Bilgi için: kasa farkına ve Z raporuna girmez; ModPOS'un "Online" ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü

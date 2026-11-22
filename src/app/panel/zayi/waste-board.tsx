@@ -48,7 +48,7 @@ export interface LafposDayView {
   closed: boolean;
   /** Gün bugünden önce (gün sonu gelmediyse ürün ikramı panelden girilebilir) */
   past: boolean;
-  lines: { kind: WasteKind; name: string; qty: number; reason: string | null; menuValue: number | null; unmatched: boolean }[];
+  lines: { kind: WasteKind; name: string; qty: number; reason: string | null; menuValue: number | null; unmatched: boolean; service?: boolean }[];
   /** Panele girilmiş, sayılmayan ürün ikramı kayıtları (gün sonu geldiyse) */
   notCounted: number[];
   /** Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldı (ikisi de sayılır) */
@@ -434,9 +434,9 @@ export function WasteBoard({
                       <p className="font-medium break-words text-ink">
                         {l.name} <span className="font-normal text-ink-mute tabular">· {qtyText(l.qty, "adet")}</span>
                       </p>
-                      {l.reason || l.unmatched ? (
+                      {l.reason || l.unmatched || l.service ? (
                         <p className="text-xs break-words text-ink-mute">
-                          {[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null].filter(Boolean).join(" · ")}
+                          {[l.reason, l.unmatched ? LAFPOS_IKRAM_TEXT.unmatched : null, l.service ? LAFPOS_IKRAM_TEXT.service : null].filter(Boolean).join(" · ")}
                           {l.unmatched ? (
                             <>
                               {" · "}

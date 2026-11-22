@@ -138,7 +138,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
           qty: l.qty,
           reason: admin ? l.reason : null,
           menuValue: admin ? l.menuValue : null,
-          unmatched: admin && l.productId === null,
+          unmatched: admin && l.productId === null && !l.isService,
+          service: admin && l.isService,
         })),
         notCounted: laf.received ? entries.filter((e) => !panelWasteCounts(e, new Set([date]))).map((e) => e.id) : [],
         // Paneldeki ürün zayisi, aynı gün aynı ürün LafPOS'ta da zayi yazıldıysa: ikisi de sayılır, aynıysa biri silinir
