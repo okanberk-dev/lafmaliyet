@@ -9,6 +9,10 @@ ikonu (`src/app/icon.png`, `apple-icon.png`, `favicon.ico`).
 İlke: **açık, sade, gelişmiş.** Beyaz zemin, zinc-100 kartlar, beyaz kontroller, siyah etkin durumlar, Geist yazı
 tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kullanılır.
 
+**Koyu tema** (Sistem / Açık / Koyu; finans paneli görünümü): [KOYU-TEMA.md](KOYU-TEMA.md). Aşağıdaki tablo açık
+temanın değerleridir; sınıflar aynı kalır, koyu değerler `html.dark` altında. Dolu `bg-ink` üstünde yazı `text-on-solid`,
+ana eylem `bg-primary text-on-primary` (açıkta ikisi de eski siyah / beyaz).
+
 ## 1. Renk (Tailwind sınıfı → değer)
 
 | Rol | Sınıf | Değer | AkmanOS karşılığı |
@@ -243,7 +247,8 @@ kendi hata satırı (`Field`), rozetler, toast'lar, `ErrorView` ve `ConfirmDialo
   değil, güncel değeri kullanır. Ölçü (27 Eki 2026, üretim derlemesi, 390 px, 4× yavaş işlemci, Playwright Event
   Timing, aynı makinede önce / sonra): tuş olayının ortancası yönetici 144-264 → 72-136 ms, personel 128-184 → 64-80
   ms; odaklandıktan sonraki ilk tuş 352-680 → 120-224 ms. Kalan süre çoğunlukla tarayıcının boyamasıdır.
-- Açık tema: `themeColor` beyaz, `colorScheme: light`.
+- Açık tema: `themeColor` beyaz, `:root { color-scheme: light }`. Koyu tema (Ayarlar › Görünüm, profil menüsü):
+  [KOYU-TEMA.md](KOYU-TEMA.md); `colorScheme: "light dark"`, betik koyuda çubuğu `#050302` yapar.
 - **Son kontrol gerçek telefonda** (iPhone Safari, Android Chrome): yazı büyütme, uzun basma, kopyalama ve klavye
   tarayıcının telefon görünümünde denenemez.
 
