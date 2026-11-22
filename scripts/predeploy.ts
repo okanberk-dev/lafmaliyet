@@ -17,6 +17,7 @@
 import { loadEnvConfig } from "@next/env";
 import { sql } from "drizzle-orm";
 
+import { databaseUrl } from "../src/lib/backup/format";
 import { createDb } from "../src/server/db";
 import { restartWatchOnDeploy } from "../src/server/jobs/watch";
 
@@ -30,8 +31,7 @@ import { runSeed } from "./seed";
  * kayıt yazmıyorsa (önceki derleme bozuldu ya da eski sürüme dönüldü, kayıt yazmayan kod çalıştı) izleme bu yayından
  * yeniden başlar. Yazılamazsa derleme durmaz.
  */
-async function markJobsWatched() {
-  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+async function markJobsWatched(url: string | undefined) {
   if (!url) return;
   const db = createDb(url, 1);
   try {
@@ -50,9 +50,8 @@ async function markJobsWatched() {
  * da değişmez (yeni sürüm hiç bağlanamadan yayına çıkmasın; geriye uyumsuz bir migration da eski sürümü bozmasın).
  * Boş veritabanında da çalışır ("select 1").
  */
-async function checkRuntimeConnection() {
-  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
-  const migrated = process.env.DATABASE_URL_UNPOOLED ?? url;
+async function checkRuntimeConnection(migrated: string | undefined) {
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!url || url === migrated) return;
   const db = createDb(url, 1);
   try {
@@ -64,6 +63,9 @@ async function checkRuntimeConnection() {
 }
 
 async function main() {
+  // Hedef db:migrate'teki gibi: kabukta verilen adres .env.local'dakinden önce, boş değer verilmemiş sayılır (denetim
+  // AL-02, AL-03; src/lib/backup/format.ts › databaseUrl). Vercel'de .env.local yok, sonuç değişmez
+  const shell = { ...process.env };
   loadEnvConfig(process.cwd());
   // Önce dal: reddedilen derleme veritabanına hiç bağlanmaz (ne migration ne seed ne izleme kaydı)
   const refusal = productionBranchRefusal(process.env);
@@ -78,10 +80,11 @@ async function main() {
     console.log(`! ${skip}: migration ve seed atlandı`);
     return;
   }
-  await checkRuntimeConnection();
-  await runMigrations();
-  await runSeed();
-  if (process.env.VERCEL_ENV === "production") await markJobsWatched();
+  const url = databaseUrl(shell, process.env);
+  await checkRuntimeConnection(url);
+  await runMigrations(url);
+  await runSeed({ url });
+  if (process.env.VERCEL_ENV === "production") await markJobsWatched(url);
 }
 
 main().catch((e) => {

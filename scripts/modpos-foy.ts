@@ -239,8 +239,16 @@ function allowServerModules() {
   require.cache[marker] = { id: marker, filename: marker, loaded: true, exports: {} } as unknown as NodeJS.Module;
 }
 
-/** Çalıştırır; çıkış kodu döner. Her satır anahtardan temizlenerek yazılır */
-export async function runModposFoy(argv: string[], env: Record<string, string | undefined> = process.env, now: Date = new Date()): Promise<number> {
+/**
+ * Çalıştırır; çıkış kodu döner. Her satır anahtardan temizlenerek yazılır. `url`: --kaydet'in hedefi (komut satırı
+ * kabuktakini .env.local'dakinden önce alarak verir, db:migrate gibi)
+ */
+export async function runModposFoy(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+  now: Date = new Date(),
+  url: string | undefined = databaseUrl(env),
+): Promise<number> {
   const key = env.MODPOS_API_KEY?.trim();
   const clean = (s: string) => (key && key.length >= 8 ? s.split(key).join("[anahtar]") : s);
   const say = (s = "") => console.log(clean(s));
@@ -254,7 +262,7 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
   } catch (e) {
     return fail((e as Error).message);
   }
-  const dbUrl = args.save ? databaseUrl(env) : undefined;
+  const dbUrl = args.save ? url : undefined;
   if (args.save && !dbUrl) return fail("DATABASE_URL tanımlı değil (--kaydet veritabanına yazar)");
   allowServerModules();
 
@@ -350,8 +358,10 @@ export async function runModposFoy(argv: string[], env: Record<string, string | 
 }
 
 if (process.argv[1]?.endsWith("modpos-foy.ts")) {
+  // Komut satırında verilen veritabanı .env.local'dakinden önce gelir (db:restore gibi; denetim AL-02)
+  const shell = { ...process.env };
   loadEnvConfig(process.cwd());
-  runModposFoy(process.argv.slice(2)).then(
+  runModposFoy(process.argv.slice(2), process.env, new Date(), databaseUrl(shell, process.env)).then(
     (code) => process.exit(code),
     (e) => {
       const key = process.env.MODPOS_API_KEY?.trim();
