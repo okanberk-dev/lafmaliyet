@@ -257,6 +257,26 @@ export async function dayEndRecipients(db: DB): Promise<string[]> {
 }
 
 /**
+ * Çalışanların kısa gün sonu e-postası (Kasa raporu ayarları › Çalışanlar): "gün sonu alındı", Z no ve fiş sayısı;
+ * "tutarlar" açıksa ciro ve ödeme türleri. Rapor ayrıntısı, kasa farkı ve karaoke ödemesi gitmez.
+ */
+async function sendStaffDayEnd(date: string, branchName: string, z: { zNo: number; receipts: number; zTotal: number; cash: number; card: number; mealCard: number; other: number }, hash: string, from: string | null | undefined, opts?: SendOptions) {
+  const cash = await loadCashSettings();
+  if (!cash.staffRecipients?.length) return;
+  const tlText = (v: number) => `${v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺`;
+  const rows: [string, string][] = [["Z no", String(z.zNo)], ["Fiş sayısı", String(z.receipts)]];
+  if (cash.staffAmounts) {
+    rows.push(["Toplam satış", tlText(z.zTotal)], ["Nakit", tlText(z.cash)], ["Kart", tlText(z.card)]);
+    if (z.mealCard) rows.push(["Yemek kartı", tlText(z.mealCard)]);
+    if (z.other) rows.push(["Diğer", tlText(z.other)]);
+  }
+  const subject = `${branchName} · gün sonu alındı · ${longDateTR(date)}`;
+  const text = [`${branchName} gün sonu alındı (${longDateTR(date)}).`, "", ...rows.map(([k, v]) => `${k}: ${v}`), "", "Emeğiniz için teşekkürler."].join("\n");
+  const html = `<!doctype html><html lang="tr"><body style="font-family:Inter,Arial,sans-serif;color:#171a26"><h2 style="margin:0 0 12px">${branchName} · gün sonu alındı</h2><p style="color:#5f6371;margin:0 0 12px">${longDateTR(date)}</p><table style="border-collapse:collapse">${rows.map(([k, v]) => `<tr><td style="padding:4px 16px 4px 0;color:#5f6371">${k}</td><td style="padding:4px 0;font-weight:600">${v}</td></tr>`).join("")}</table><p style="margin-top:16px">Emeğiniz için teşekkürler.</p></body></html>`;
+  await sendEmail({ from: resolveFrom(from), to: cash.staffRecipients!, subject, html, text, idempotencyKey: `lafpos-gun-calisan-${date}-${hash}` }, opts);
+}
+
+/**
  * Gün sonu e-postası (içerik başına bir kez). Aynı içerik daha önce gittiyse "same"; başka bir gönderim sürüyorsa "busy".
  * Başarısızsa hata kaydedilir; bir sonraki tetik (düzeltme ya da günlük iş) yeniden dener.
  */
@@ -336,6 +356,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
       return "failed";
     }
     await finish({ emailedHash: day.hash, emailCount: st.emailCount + 1, emailedAt: new Date(), emailError: null });
+    // Çalışanlara kısa e-posta (yönetim e-postasından sonra, içerik başına bir kez; düşmesi yönetim e-postasını etkilemez)
+    await sendStaffDayEnd(date, branch?.name ?? "Marina", day.z, day.hash, notify.from, opts).catch(() => undefined);
     return "sent";
   } catch (e) {
     await finish({ emailError: (e instanceof Error ? e.message : "bilinmeyen hata").slice(0, 300) }).catch(() => {});
