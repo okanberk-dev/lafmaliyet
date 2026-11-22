@@ -5,6 +5,10 @@
 // sayılmaz, yeni ürün ikramı (doğrudan, geç kayıt isteği ve onayı) reddedilir, kasa özeti ve e-postası LafPOS'un
 // ikramını yazar.
 //
+// Kasa ve Zayi & ikram LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID) ekranlarıdır: testler o şubenin seçiminde çalışır
+// (withBranchScope; panelde seçiciden Marina seçilmiş gibi), paneldeki ikram kayıtları o şubenindir. ModPOS'ta kalan
+// şubede (Tuzla) ürün ikramı panele girilir ve sayılır.
+//
 // Ayarlar (geçiş günü, kasa e-postası) veritabanında tektir: test kendi geçici veritabanını açar
 // (LAFPOS_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda siler; öteki testlerin verisine dokunmaz.
 //
@@ -26,6 +30,8 @@ import { parsePosDay } from "../src/lib/lafpos/day";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
+
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_lafpos_komisyon_ikram_${process.pid}`;
@@ -49,6 +55,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
   let reports: typeof import("../src/server/data/cash-reports");
   let wasteRequests: typeof import("../src/server/data/waste-requests");
   let status: typeof import("../src/server/lafpos/status");
+  let scope: typeof import("../src/server/branch-scope");
+  /** LafPOS'un şubesinin (Marina) seçiminde: okuma ve yazmalar o şubeye bakar */
+  const lafposTest = (name: string, fn: () => Promise<void>) => test(name, () => scope.withBranchScope(LAFPOS_SUBE, fn));
+  /** Aynı iş ModPOS'ta kalan şubenin (Tuzla) seçiminde */
+  const inTuzla = <T>(fn: () => Promise<T>) => scope.withBranchScope(MODPOS_SUBE, fn);
   const users = {
     ali: { id: 0, name: "Ali", role: "admin" as const, email: "lafpos-ki-ali@ornek.com" },
     ayse: { id: 0, name: "Ayşe", role: "staff" as const, email: "lafpos-ki-ayse@ornek.com" },
@@ -111,10 +122,11 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     const r = await ingest.storePosDay(db, parsed.data, NOW);
     assert.equal(r.ok, true);
   };
-  const panelEntry = (date: string, kind: "zayi" | "ikram", productId: number | null, ingredientId: number | null, qty: number) =>
+  /** Paneldeki zayi / ikram kaydı; şube verilmezse LafPOS'un şubesinde (Marina) */
+  const panelEntry = (date: string, kind: "zayi" | "ikram", productId: number | null, ingredientId: number | null, qty: number, branchId: string = LAFPOS_SUBE) =>
     db
       .insert(s.wasteEntries)
-      .values({ date, kind, productId, ingredientId, name: productId === ids.latteM ? "Latte M" : productId === ids.mocha ? "Mocha" : "Süt", unit: productId ? "adet" : "LT", factor: productId ? 1 : 1000, qty, createdByName: "Ayşe" })
+      .values({ date, branchId, kind, productId, ingredientId, name: productId === ids.latteM ? "Latte M" : productId === ids.mocha ? "Mocha" : "Süt", unit: productId ? "adet" : "LT", factor: productId ? 1 : 1000, qty, createdByName: "Ayşe" })
       .returning({ id: s.wasteEntries.id });
   const refused = (p: Promise<unknown>, re: RegExp) => assert.rejects(p, (e: unknown) => e instanceof UserError && re.test(plain(e.message)));
   const PRODUCT_IKRAM = /^Ürün ikramı 10 Kasım'dan beri LafPOS'ta işaretlenir, panele girilmez\. Burada hammadde ikramı ve zayi girilir\./;
@@ -136,6 +148,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     for (const k of ["ali", "ayse"] as const) {
       const [u] = await db.insert(s.users).values({ email: users[k].email, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -151,6 +164,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     reports = await import("../src/server/data/cash-reports");
     wasteRequests = await import("../src/server/data/waste-requests");
     status = await import("../src/server/lafpos/status");
+    scope = await import("../src/server/branch-scope");
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (!String(input).startsWith("https://api.resend.com/")) return realFetch(input, init);
       const body = JSON.parse(String(init?.body)) as { html: string; text: string };
@@ -193,7 +207,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
   });
   afterEach(() => mock.timers.reset());
 
-  test("geçiş günü boşken LafPOS'un ödemeleri ve ikramı hiçbir yere girmez: komisyon, veri kümesi, kasa özeti, zayi kaydı", async () => {
+  lafposTest("geçiş günü boşken LafPOS'un ödemeleri ve ikramı hiçbir yere girmez: komisyon, veri kümesi, kasa özeti, zayi kaydı", async () => {
     await panelEntry("2026-11-11", "ikram", ids.latteM, null, 3);
     const before = JSON.stringify(await dataset.loadDataset());
     await push("2026-11-11", 13);
@@ -215,7 +229,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.ok(added.id > 0);
   });
 
-  test("E-37: geçiş günü seçilince ödeme türleri kanal kanal komisyonun satışı (deneme günü hariç)", async () => {
+  lafposTest("E-37: geçiş günü seçilince ödeme türleri kanal kanal komisyonun satışı (deneme günü hariç)", async () => {
     // Geçiş günü 1 Kasım (Kasım'ın tamamı LafPOS'tan): 31 Ekim deneme, 10 ve 11 Kasım sayılır
     await push("2026-10-31", 11, { payments: [{ name: "Pluxee", zField: "meal_card", channel: "pluxee", amount: 9_999 }] });
     await push("2026-11-10", 12);
@@ -265,7 +279,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     );
   });
 
-  test("E-38: LafPOS ikramı ürüne bağlanır, kayıtlı tüketime bir kez girer; gün sonu gelen günde paneldeki ürün ikramı sayılmaz", async () => {
+  lafposTest("E-38: LafPOS ikramı ürüne bağlanır, kayıtlı tüketime bir kez girer; gün sonu gelen günde paneldeki ürün ikramı sayılmaz", async () => {
     await setSwitch(S);
     // 9 Kasım (geçişten önce) ürün ikramı sayılır; 11 Kasım'ınki (LafPOS'un gün sonu geldi) sayılmaz; hammadde ikramı sayılır
     await panelEntry("2026-11-09", "ikram", ids.latteM, null, 1);
@@ -311,9 +325,21 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
       ],
     );
     assert.ok(notCounted.id > 0);
+    // ModPOS'ta kalan şube (Tuzla): Marina'nın gün sonu geldiği günde de paneldeki ürün ikramı sayılır, LafPOS hiç okunmaz
+    await panelEntry("2026-11-11", "ikram", ids.latteM, null, 1, MODPOS_SUBE);
+    const tuzlaDs = await inTuzla(() => dataset.loadDataset());
+    assert.equal("lafposIkram" in tuzlaDs, false);
+    const tuzlaSum = createModel(tuzlaDs).wasteSummary("2026-11");
+    assert.deepEqual([tuzlaSum.ikram.count, tuzlaSum.ikram.lafpos, tuzlaSum.notCounted, tuzlaSum.ikram.menuValue], [1, 0, 0, 170]);
+    const tuzla = await inTuzla(() => waste.dayWaste("2026-11-11"));
+    assert.equal(tuzla.lafpos, null);
+    assert.equal(tuzla.ikram, "1× Latte M");
+    assert.equal(tuzla.ikramValue, 170);
+    // Marina'nın günü değişmedi (Tuzla'nın kaydı ona karışmaz)
+    assert.equal((await waste.dayWaste("2026-11-11")).ikram, "Süt 0,5 LT, 2× Latte M, 1× Mocha, 1× PUMPKIN CHAI");
   });
 
-  test("E-38: LafPOS'ta zayi yazılan satır zayi olarak girer (ikram değil); panelin aynı ürün zayisi sayılır ve işaretlenir", async () => {
+  lafposTest("E-38: LafPOS'ta zayi yazılan satır zayi olarak girer (ikram değil); panelin aynı ürün zayisi sayılır ve işaretlenir", async () => {
     await setSwitch(S);
     await panelEntry("2026-11-11", "zayi", ids.latteM, null, 1);
     await push("2026-11-11", 13, { ikram: [...IKRAM, { posName: "LATTE MEDIUM", siteMenuId: "mnu-0003", slot: "M", qty: 1, menuValue: 170, reason: "Zayi: Döküldü" }] });
@@ -334,7 +360,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.deepEqual(day.lafpos, { received: true, offRevenue: 890, ikramValue: 720, zayiValue: 170, listValue: 890, notCounted: 0 });
   });
 
-  test("E-38: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir (iki rol, geç kayıt isteği ve onayı); gün sonu gelmeyen geçmiş günde girilir", async () => {
+  lafposTest("E-38: ürün ikramı LafPOS'un gün sonu gelen günde ve bugün reddedilir (iki rol, geç kayıt isteği ve onayı); gün sonu gelmeyen geçmiş günde girilir", async () => {
     // Geçiş gününden önce açılmış iki geç kayıt isteği (ürün ikramı): 8 Kasım'ın gün sonu sonra gelir, 7 Kasım'ınki hiç
     const ask = (date: string, key: string) =>
       core.proposeLateWaste(db, users.ayse, { date, kind: "ikram", productId: ids.latteM, ingredientId: null, qty: 1, reason: null, note: null, message: "Unuttum", clientKey: key }, NOW);
@@ -349,6 +375,13 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     await refused(core.addWaste(db, users.ali, { ...item, date: "2026-11-12" }, NOW), PRODUCT_IKRAM);
     await refused(core.addWaste(db, users.ali, { ...item, date: "2026-11-11" }, NOW), PRODUCT_IKRAM);
     await refused(core.proposeLateWaste(db, users.ayse, { ...item, date: "2026-11-10", message: "Unuttum", clientKey: "k-ikram-2" }, NOW), PRODUCT_IKRAM);
+    // Ret yalnız LafPOS'un şubesinde: Tuzla'nın kasası ModPOS'ta, ürün ikramı bugün de gün sonu gelen günde de panele girilir
+    const tuzlaToday = await inTuzla(() => core.addWaste(db, users.ayse, { ...item, date: "2026-11-12" }, NOW));
+    const tuzlaPast = await inTuzla(() => core.addWaste(db, users.ali, { ...item, date: "2026-11-11" }, NOW));
+    assert.deepEqual(
+      (await db.select({ id: s.wasteEntries.id, branchId: s.wasteEntries.branchId }).from(s.wasteEntries).where(eq(s.wasteEntries.branchId, MODPOS_SUBE))).map((w) => w.id).sort(),
+      [tuzlaToday.id, tuzlaPast.id].sort(),
+    );
     // Hammadde ikramı, ürün zayisi ve geçişten önceki günün ürün ikramı girilir
     assert.ok((await core.addWaste(db, users.ayse, { ...item, productId: null, ingredientId: ids.milk, date: "2026-11-12" }, NOW)).id > 0);
     assert.ok((await core.addWaste(db, users.ayse, { ...item, kind: "zayi", date: "2026-11-12" }, NOW)).id > 0);
@@ -384,7 +417,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal(model.countedWaste.filter((w) => w.kind === "ikram" && w.productId === ids.latteM && (w.date === "2026-11-07" || w.date === "2026-11-06")).length, 2);
   });
 
-  test("E-38: Onaylar'daki geç hammadde ikramı kartı LafPOS gününde Z'yi LafPOS'un listesiyle karşılaştırır", async () => {
+  lafposTest("E-38: Onaylar'daki geç hammadde ikramı kartı LafPOS gününde Z'yi LafPOS'un listesiyle karşılaştırır", async () => {
     await setSwitch(S);
     await push("2026-11-10", 12);
     // 10 Kasım'a geç hammadde ikramı isteği (personelin 10 Kasım'ı istek kipinde: bugün 12 Kasım)
@@ -403,7 +436,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal(card.ikramRecorded, 720);
   });
 
-  test("E-38: ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'ta listelenir (geçiş gününden itibaren); bağlanınca düşer", async () => {
+  lafposTest("E-38: ikramda ürüne bağlanamayan ad Ayarlar › LafPOS'ta listelenir (geçiş gününden itibaren); bağlanınca düşer", async () => {
     await push("2026-11-11", 13);
     // Geçiş günü boşken ikram hiçbir hesaba girmez: liste de boş
     const none = await status.loadLafposCard(db, NOW);
@@ -418,7 +451,7 @@ describe("LafPOS'un kanalları komisyona, ikramı tüketime: veritabanında", { 
     assert.equal((await dataset.loadDataset()).lafposIkram?.lines.find((l) => l.posName === "PUMPKIN CHAI")?.productId, ids.mocha);
   });
 
-  test("E-38: kasa e-postası LafPOS gününde LafPOS'un ikramını yazar ve iki rakamını karşılaştırır", async () => {
+  lafposTest("E-38: kasa e-postası LafPOS gününde LafPOS'un ikramını yazar ve iki rakamını karşılaştırır", async () => {
     await setSwitch(S);
     await panelEntry("2026-11-11", "ikram", ids.latteM, null, 3);
     // LafPOS'un Z'sinde ödenmez 900, ikram listesi 720: fark bilgi satırı

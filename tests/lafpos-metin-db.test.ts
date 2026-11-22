@@ -6,6 +6,10 @@
 // alınınca LafPOS günlerindeki değişikliklerle birlikte geri gelir; LafPOS gününde personele fiyat görevi yok; iş günü
 // 05:00'te döner (geçiş gününün gecesi hâlâ ModPOS); kapalı gün kartı o günün kasasını söyler.
 //
+// Kasa LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID) kasasıdır: testler o şubenin seçiminde çalışır (withBranchScope;
+// panelde seçiciden Marina seçilmiş gibi). ModPOS'ta kalan şubenin (Tuzla) kasa listesi geçiş gününden sonra da
+// ModPOS'a göredir.
+//
 // Ayarlar (geçiş günü) veritabanında tektir: test kendi geçici veritabanını açar (LAFPOS_TEST_DATABASE_URL'in
 // sunucusunda), migration'ları uygular, sonunda siler; öteki testlerin verisine dokunmaz.
 //
@@ -20,10 +24,13 @@ import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { ALL_BRANCHES } from "../src/lib/branches";
 import { businessDate } from "../src/lib/cash-report";
 import { addDays } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_lafpos_metin_${process.pid}`;
@@ -41,6 +48,11 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
   let scope: typeof import("../src/server/data/till-scope");
   let bell: typeof import("../src/server/bell/ops");
   let closed: typeof import("../src/server/closed-days");
+  let branchScope: typeof import("../src/server/branch-scope");
+  /** LafPOS'un şubesinin (Marina) kasasında: okuyucular o kasaya bakar */
+  const lafposTest = (name: string, fn: () => Promise<void>) => test(name, () => branchScope.withBranchScope(LAFPOS_SUBE, fn));
+  /** Aynı okuma ModPOS'ta kalan şubenin (Tuzla) kasasında */
+  const inTuzla = <T>(fn: () => Promise<T>) => branchScope.withBranchScope(MODPOS_SUBE, fn);
   let categoryId = 0;
   const users = {
     ali: { id: 0, name: "Ali", role: "admin" as const, email: "lafpos-metin-ali@ornek.com" },
@@ -94,6 +106,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     for (const k of ["ali", "ayse"] as const) {
       const [u] = await db.insert(s.users).values({ email: users[k].email, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -105,6 +118,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     scope = await import("../src/server/data/till-scope");
     bell = await import("../src/server/bell/ops");
     closed = await import("../src/server/closed-days");
+    branchScope = await import("../src/server/branch-scope");
   });
 
   after(async () => {
@@ -129,7 +143,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     [ids.linked, ids.local, ids.oldLinked] = rows.map((r) => r.id);
   });
 
-  test("geçiş günü boşken bugünkü gibi: siteye bağlı ürünün değişikliği de kasa listesine girer, metinler ModPOS", async () => {
+  lafposTest("geçiş günü boşken bugünkü gibi: siteye bağlı ürünün değişikliği de kasa listesine girer, metinler ModPOS", async () => {
     assert.deepEqual(await scope.loadTillScope(db, NOW), { kasa: "ModPOS", lafpos: false, switchDay: null });
     assert.deepEqual(await sitePrice(ids.linked, 205, NOW), { posPending: true });
     const p = await product(ids.linked);
@@ -147,7 +161,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.equal(history.kasa, "ModPOS");
   });
 
-  test("geçiş gününden sonra: siteye bağlı ürünün işareti yazılır ama gösterilmez, bağlı olmayan (fiyatı LafPOS günü değişen) görünür", async () => {
+  lafposTest("geçiş gününden sonra: siteye bağlı ürünün işareti yazılır ama gösterilmez, bağlı olmayan (fiyatı LafPOS günü değişen) görünür", async () => {
     await setSwitch(S);
     const sc = await scope.loadTillScope(db, NOW);
     assert.deepEqual(sc, { kasa: "LafPOS", lafpos: true, switchDay: S });
@@ -171,6 +185,14 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.equal(st.count, 1);
     assert.equal(st.kasa, "LafPOS");
     assert.deepEqual((await staff.loadStaffPosList(sc)).map((i) => i.name), ["Su (PET)"]);
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır: Tuzla'nın kasası (şube seçilmeyince de o) ModPOS'ta kalır,
+    // listesi bugünkü gibi (siteye bağlı ürünler de, personele de)
+    const tuzla = await inTuzla(() => scope.loadTillScope(db, NOW));
+    assert.deepEqual(tuzla, { kasa: "ModPOS", lafpos: false, switchDay: null });
+    assert.deepEqual(await branchScope.withBranchScope(ALL_BRANCHES, () => scope.loadTillScope(db, NOW)), tuzla, "Tümü'de kasa Tuzla'nın");
+    assert.deepEqual((await prices.loadPosChecklist(tuzla)).map((i) => i.name).sort(), ["Latte", "Mocha", "Su (PET)"]);
+    assert.deepEqual((await staff.loadStaffPosList(tuzla)).map((i) => i.name).sort(), ["Latte", "Mocha", "Su (PET)"]);
+    assert.equal((await prices.posPendingSummary(tuzla)).kasa, "ModPOS");
     const mocha = await product(ids.oldLinked);
     assert.equal(mocha.posStalePrice, 205, "eski işaret silinmez");
     assert.equal(mocha.posStaleSince?.toISOString(), OLD_SINCE.toISOString());
@@ -185,7 +207,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.equal(card.kasa, "LafPOS");
   });
 
-  test("LafPOS günlerinde değişen fiyat kaybolmaz: geçiş günü kaldırılınca ModPOS'ta değişecek fiyat olarak döner (B11 incelemesi D1, K2)", async () => {
+  lafposTest("LafPOS günlerinde değişen fiyat kaybolmaz: geçiş günü kaldırılınca ModPOS'ta değişecek fiyat olarak döner (B11 incelemesi D1, K2)", async () => {
     await setSwitch(S);
     // Geçiş günü seçiliyken site Latte'yi 195 → 205 yapar; Mocha'nın fiyatı ModPOS'taki 205'e döner (toplu geri alma gibi)
     assert.deepEqual(await sitePrice(ids.linked, 205, NOW), { posPending: false });
@@ -206,7 +228,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     }
   });
 
-  test("ModPOS'tan kalan işaret LafPOS'un işi değil: bağlı olmayanın eski işareti gizli, LafPOS günü değişince görünür (B11 incelemesi D2)", async () => {
+  lafposTest("ModPOS'tan kalan işaret LafPOS'un işi değil: bağlı olmayanın eski işareti gizli, LafPOS günü değişince görünür (B11 incelemesi D2)", async () => {
     // Su (PET): panelde 25, ModPOS'ta 20 kaldı (1 Ekim'den beri); LafPOS'un yerel ürünü 25'le kuruldu
     const oct1 = new Date("2026-10-01T10:00:00+03:00");
     await db.update(s.products).set({ price: 25, posStalePrice: 20, posStaleSince: oct1 }).where(eq(s.products.id, ids.local));
@@ -238,7 +260,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.deepEqual((await prices.loadPosChecklist(sc)).map((i) => i.name), ["Su (PET)"]);
   });
 
-  test("geçiş günü kaldırılınca gizlenen işaret geri gelir; ileri tarihli geçiş günü bugünü değiştirmez", async () => {
+  lafposTest("geçiş günü kaldırılınca gizlenen işaret geri gelir; ileri tarihli geçiş günü bugünü değiştirmez", async () => {
     await setSwitch(S);
     assert.equal((await prices.posPendingSummary(await scope.loadTillScope(db, NOW))).count, 0);
     await setSwitch(null);
@@ -251,7 +273,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.deepEqual(await sitePrice(ids.linked, 205, NOW), { posPending: true });
   });
 
-  test("iş günü 05:00'te döner: geçiş gününün gecesi 03:00'te kasa hâlâ ModPOS, 05:00'ten sonra LafPOS", async () => {
+  lafposTest("iş günü 05:00'te döner: geçiş gününün gecesi 03:00'te kasa hâlâ ModPOS, 05:00'ten sonra LafPOS", async () => {
     await setSwitch(S);
     const night = new Date(`${S}T03:00:00+03:00`);
     assert.deepEqual(await scope.loadTillScope(db, night), { kasa: "ModPOS", lafpos: false, switchDay: null });
@@ -268,7 +290,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.equal((await prices.posPendingSummary(await scope.loadTillScope(db, morning))).count, 1);
   });
 
-  test("zil: geçiş gününden sonra yalnız yöneticide ve yalnız bağlı olmayan ürün; personele görev yok (B11 incelemesi K1)", async () => {
+  lafposTest("zil: geçiş gününden sonra yalnız yöneticide ve yalnız bağlı olmayan ürün; personele görev yok (B11 incelemesi K1)", async () => {
     // Zil bugünün saatiyle okur: geçiş günü bugünden önce
     await setSwitch(pastSwitch());
     const kasaRows = (rows: { id: string; body: string }[]) => rows.filter((r) => r.id.startsWith("kasa-fiyat-"));
@@ -294,7 +316,7 @@ describe("Kasadaki fiyatlar geçiş gününden sonra: veritabanında", { skip: !
     assert.equal(p.body, "ModPOS'ta değiştirip Kasadaki fiyatlar'da işaretleyin");
   });
 
-  test("kapalı gün kartı o günün kasasını söyler (geçiş günü boşken ModPOS)", async () => {
+  lafposTest("kapalı gün kartı o günün kasasını söyler (geçiş günü boşken ModPOS)", async () => {
     const card = async (day: string) => {
       await db.execute(sql`TRUNCATE staff_requests RESTART IDENTITY CASCADE`);
       await db.insert(s.staffRequests).values({
