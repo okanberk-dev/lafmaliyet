@@ -87,7 +87,10 @@ export async function loadStockEstimate(db: DB = getDb(), now: Date = new Date()
     .from(s.salesLines)
     .where(and(eq(s.salesLines.month, switchMonth), eq(s.salesLines.branchId, STOCK_ESTIMATE_BRANCH)))
     .limit(1);
-  const coverage = parseCoverage(settingRows.find((r) => r.key === SALES_COVERAGE_KEY)?.value);
+  // Ayın satış listesinin son günü integration_state'te (src/server/actions/sales.ts setCoverage; veri kümesi de oradan
+  // okur, src/server/data/dataset.ts): settings'te aranırsa hep boş kalır ve "LafPOS satışları şu günden beri" yanlış görünür
+  const [coverageRow] = await db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1);
+  const coverage = parseCoverage(coverageRow?.value);
   const lafposFrom = lafposSalesCountFrom(switchDay, switchList, coverage) ?? switchDay;
 
   // Dönem en erken LafPOS'un sayıldığı ilk günde başlar (öncesi "LafPOS öncesi sayım"): okumalar oradan bugüne

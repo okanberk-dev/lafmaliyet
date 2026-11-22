@@ -50,7 +50,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
     if (day) await db.insert(s.settings).values({ key: "lafposGecisGunu", value: day });
   };
-  const push = (date: string, zNo: number, z: Record<string, unknown> = {}) => {
+  const push = (date: string, zNo: number, z: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
     const body = {
       version: 1,
       source: "lafpos",
@@ -79,6 +79,7 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
       lines: [{ posName: "LATTE", siteMenuId: null, slot: null, qty: 2, revenue: 400, isService: false }],
       ikram: [],
       payments: [{ name: "Nakit", zField: "cash", channel: null, count: 40, amount: 12_000 }],
+      ...extra,
     };
     const parsed = parsePosDay(JSON.stringify(body), NOW);
     assert.ok(parsed.ok, "gövde geçerli");
@@ -363,5 +364,53 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.equal(await site.fetchTillOnlineRow(DAY, LAFPOS_SUBE), null);
     // Online kanal seçiliyse satır yok
     assert.equal(await site.fetchTillOnlineRow(DAY, "online"), null);
+  });
+  const bankPos = (pavoCard: number, lafposCard = 8_000) => ({
+    status: "ok",
+    batchNo: "0042",
+    at: "2026-11-22T23:58:00+03:00",
+    pavoCard,
+    lafposCard,
+    diff: Math.round((pavoCard - lafposCard) * 100) / 100,
+    acquirers: [{ name: "Garanti", count: 30, total: pavoCard }],
+    message: null,
+  });
+
+  test("Pavo: gün sonu e-postası gittikten sonra gelen karşılaştırma yalnız kısa e-postayla gider (fark varsa konuda FARK VAR)", async () => {
+    assert.ok((await push(DAY, 14)).ok);
+    const first = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([first.email, first.pavo], ["sent", "skipped"]);
+    assert.equal(sent.length, 1);
+    // Aynı gün Pavo sonucuyla ikinci kez gelir
+    assert.ok((await push(DAY, 14, {}, { bankPos: bankPos(8_120) })).ok);
+    const second = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([second.report, second.email, second.pavo], ["unchanged", "same", "sent"]);
+    assert.equal(sent.length, 2, "gün sonu yeniden gitmez, yalnız Pavo e-postası");
+    assert.equal(sent[1].subject, "Marina · Pavo karşılaştırması · 22 Kasım Pazar · FARK VAR");
+    assert.match(sent[1].text.replace(/[\u00a0\u202f]/g, " "), /Pavo kart toplamı: 8\.120 ₺/);
+    assert.match(sent[1].text, /FARK VAR/);
+    // Aynı karşılaştırma ikinci kez gitmez; bankPos'suz düzeltme kayıtlı karşılaştırmayı silmez
+    assert.ok((await push(DAY, 14)).ok);
+    const [row] = await db.select({ bankPos: s.posDayReports.bankPos }).from(s.posDayReports).where(eq(s.posDayReports.date, DAY));
+    assert.equal(row.bankPos?.pavoCard, 8_120);
+    const third = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([third.email, third.pavo], ["same", "same"]);
+    assert.equal(sent.length, 2);
+  });
+
+  test("Pavo: karşılaştırma gün sonu e-postasından önce geldiyse onun içinde gider, kısa e-posta gitmez", async () => {
+    assert.ok((await push(DAY, 14, {}, { bankPos: bankPos(8_000) })).ok);
+    const r = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.deepEqual([r.email, r.pavo], ["sent", "same"]);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].subject, "Marina gün sonu · 22 Kasım Pazar");
+    assert.match(sent[0].text, /Pavo – LafPOS kart karşılaştırması/);
+    assert.match(sent[0].text, /Uyumlu/);
+  });
+
+  test("Pavo: bozuk karşılaştırma günü reddetmez, yalnız yok sayılır", async () => {
+    assert.ok((await push(DAY, 14, {}, { bankPos: { status: "belki" } })).ok);
+    const [row] = await db.select({ bankPos: s.posDayReports.bankPos }).from(s.posDayReports).where(eq(s.posDayReports.date, DAY));
+    assert.equal(row.bankPos, null);
   });
 });

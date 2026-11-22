@@ -22,7 +22,7 @@ import { DEFAULT_BRANCH_ID, type BranchKind, type BranchPosSource } from "../../
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
-import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
+import type { BankPos, PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
 import type { KasaFoyu } from "../../lib/modpos/foy";
 import type { ModposSheetPrevious } from "../../lib/modpos/z";
 import type { OkcVatLine } from "../../lib/okc-z";
@@ -2243,6 +2243,8 @@ export const posDayReports = pgTable(
     z: jsonb("z").$type<PosDayZ>().notNull(),
     payments: jsonb("payments").$type<PosPayment[]>().notNull(),
     ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
+    /** Banka POS (Pavo) karşılaştırması (src/lib/lafpos/day.ts bankPosSchema); gelmediyse null */
+    bankPos: jsonb("bank_pos").$type<BankPos>(),
     /** Gönderen sistem ("lafpos") */
     source: text("source").notNull(),
     /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
@@ -2276,6 +2278,8 @@ export const lafposDayEnds = pgTable(
     emailedAt: timestamp("emailed_at", { withTimezone: true }),
     /** Gönderim sürerken konan işaret (aynı anda ikinci gönderim olmasın; 5 dakikadan eskisi yok sayılır) */
     sendingAt: timestamp("sending_at", { withTimezone: true }),
+    /** Pavo karşılaştırmasının e-postayla giden içerik özeti (tam gün sonu e-postasında ya da kısa e-postada) */
+    pavoEmailedHash: text("pavo_emailed_hash"),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.date, t.branchId] })],

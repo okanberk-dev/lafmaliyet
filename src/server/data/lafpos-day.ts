@@ -6,7 +6,7 @@ import { branchDayKey } from "@/lib/cash-report";
 
 import type { KasaEvidence } from "@/lib/cash-out-requests";
 import { readLafposSwitchDay } from "@/lib/constants";
-import { posZSchema } from "@/lib/lafpos/day";
+import { bankPosSchema, posZSchema, type BankPos } from "@/lib/lafpos/day";
 import { lafposDayOf, type LafposDay } from "@/lib/lafpos/prefill";
 import { branchSwitchDay, isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { currentTillBranch } from "@/server/branch-scope";
@@ -103,4 +103,20 @@ export async function loadLafposDay(date: string, db: DB = getDb(), branchId?: s
   if (!row) return null;
   const z = posZSchema.safeParse(row.z);
   return z.success ? lafposDayOf(z.data, row.receivedAt) : null;
+}
+
+/**
+ * Günün Pavo – LafPOS kart karşılaştırması (src/lib/lafpos/bank-pos.ts), yalnız yöneticinin gün görünümü okur: gelmediyse
+ * ya da okunamıyorsa null (kart görünmez)
+ */
+export async function loadLafposBankPos(date: string, db: DB = getDb(), branchId?: string): Promise<BankPos | null> {
+  const sube = branchId ?? (await currentTillBranch());
+  const [row] = await db
+    .select({ bankPos: s.posDayReports.bankPos })
+    .from(s.posDayReports)
+    .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, sube)))
+    .limit(1);
+  if (!row?.bankPos) return null;
+  const b = bankPosSchema.safeParse(row.bankPos);
+  return b.success ? b.data : null;
 }

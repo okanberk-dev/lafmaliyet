@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { gunSonuStep } from "../src/lib/job-health";
-import type { PosDayZ } from "../src/lib/lafpos/day";
+import { pavoState, pavoSubject, pavoView, renderPavoMail } from "../src/lib/lafpos/bank-pos";
+import { bankPosSchema, parsePosDay, type PosDayZ } from "../src/lib/lafpos/day";
 import { autoMissing, autoValuesOf, compareText, dayEndSubject, dayHash, mergeAuto, renderDayEnd, type AutoValues, type DayEndMail } from "../src/lib/lafpos/gun-sonu";
 import { unmatchedIkramNames } from "../src/lib/lafpos/ikram";
 import { rejectionText, type LafposRejection } from "../src/lib/lafpos/status";
@@ -218,4 +219,56 @@ test("İkramda HİZMET'e bağlı ad (karaoke odası) 'bağlanamayan' listesine g
     unmatchedIkramNames(lines, []).items.map((i) => i.posName),
     ["ETKİNLİK ÜCRETİ"],
   );
+});
+
+// ---------------------------------------------------------------- Pavo – LafPOS kart karşılaştırması
+
+
+const PAVO = bankPosSchema.parse({
+  status: "ok",
+  batchNo: "0042",
+  at: "2026-11-22T23:58:00+03:00",
+  pavoCard: 8_000,
+  lafposCard: 8_000,
+  diff: 0,
+  acquirers: [{ name: "Garanti", count: 30, total: 8_000 }],
+  message: null,
+});
+
+test("Pavo: fark 0 'Uyumlu', fark varsa 'FARK VAR' (konu dahil), sonuç alınamadıysa karşılaştırılamadı", () => {
+  assert.equal(pavoState(PAVO), "uyumlu");
+  assert.match(pavoView(PAVO).headline, /^Uyumlu/);
+  const fark = { ...PAVO, pavoCard: 8_120, diff: 120 };
+  assert.equal(pavoState(fark), "fark");
+  assert.match(plain(pavoView(fark).headline), /^FARK VAR: 120 ₺ \(Pavo fazla\)/);
+  assert.equal(pavoSubject("Marina", "2026-11-22", fark), "Marina · Pavo karşılaştırması · 22 Kasım Pazar · FARK VAR");
+  assert.equal(pavoSubject("Marina", "2026-11-22", PAVO), "Marina · Pavo karşılaştırması · 22 Kasım Pazar");
+  // Fark gelmediyse iki tutardan
+  assert.equal(pavoState({ ...PAVO, pavoCard: 7_900, diff: null }), "fark");
+  assert.equal(pavoState({ ...PAVO, status: "failed", message: "Pavo yanıt vermedi" }), "yok");
+  assert.match(pavoView({ ...PAVO, status: "failed", message: "Pavo yanıt vermedi" }).headline, /alınamadı \(Pavo yanıt vermedi\)/);
+  const mail = renderPavoMail({ branchName: "Marina", date: "2026-11-22", bankPos: fark, link: "https://ladmin.laffogato.net/panel/kasa?gun=2026-11-22" });
+  assert.match(mail.html, /FARK VAR/);
+  assert.match(plain(mail.text), /LafPOS kart toplamı: 8\.000 ₺/);
+});
+
+test("Pavo: gün paketi bankPos'suz da geçerli; bozuk bankPos günü reddetmez", () => {
+  const body = (extra: Record<string, unknown>) =>
+    JSON.stringify({
+      version: 1,
+      source: "lafpos",
+      date: "2026-11-22",
+      z: { ...Z },
+      lines: [],
+      ikram: [],
+      payments: [],
+      ...extra,
+    });
+  const now = new Date("2026-11-23T00:30:00+03:00");
+  const plainDay = parsePosDay(body({}), now);
+  assert.ok(plainDay.ok && plainDay.data.bankPos === undefined, "eski paket");
+  const withPavo = parsePosDay(body({ bankPos: PAVO }), now);
+  assert.ok(withPavo.ok && withPavo.data.bankPos?.pavoCard === 8_000, "bankPos okundu");
+  const broken = parsePosDay(body({ bankPos: { status: "belki" } }), now);
+  assert.ok(broken.ok && broken.data.bankPos === undefined, "bozuk bankPos yok sayıldı");
 });
