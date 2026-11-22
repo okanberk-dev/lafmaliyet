@@ -158,7 +158,8 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 - İstemler `src/lib/photo-read/prompts.ts`, şemalar `schemas.ts` (açıklamalar modele gider, İngilizce). Yanıt zod ile
   doğrulanır; tutmazsa "Fotoğraftaki rakamlar güvenilir okunamadı. Elle yazın."
 - **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40;
-  dolunca fotoğraf yine eklenir), fotoğraf başına 3 okuma.
+  dolunca fotoğraf yine eklenir), fotoğraf başına 3 okuma. Vardiya'daki yazarak doldurma aynı anahtarı ve aynı aç / kapa
+  ayarını kullanır ama günlük sınıra **sayılmaz** (kendi sınırı var: [VARDIYA.md](VARDIYA.md) › Yazarak doldurma).
 - **Günlük:** her okuma `ai_calls`'a yazılır: zaman, tür, kişi, fotoğraf, durum ve hata kodu, token sayıları, tutar
   (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı, tarih, kalemler;
   satıcının vergi numarası saklanmaz). Sonuç fotoğrafla birlikte silinir, maliyet satırı kalır. **Görsel ve istem

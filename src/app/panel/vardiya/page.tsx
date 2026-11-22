@@ -12,11 +12,14 @@ import { requireUser } from "@/server/auth/dal";
 import { currentPhysicalBranch, staffBranchLock } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { getDb } from "@/server/db";
+import { shiftDraftState } from "@/server/vardiya/draft";
 import { loadShiftEntries, loadShiftWeek, shiftBranches } from "@/server/vardiya/store";
 
 import { ShiftGrid, type GridRow } from "./shift-grid";
 
 export const metadata: Metadata = { title: "Vardiya" };
+// "Yazarak doldur" bu sayfanın sunucu eylemiyle çalışır (istek en çok 45 sn bekler; src/server/ai/run.ts AI_TIMEOUTS)
+export const maxDuration = 60;
 
 /** Bir ekran bir ad: yönetici planı ayarlar, personel yalnız görür */
 const TITLE = { admin: "Vardiya ayarlama", staff: "Vardiya" } as const;
@@ -25,7 +28,7 @@ const DESCRIPTION = {
   staff: "Haftanın vardiya planı. PDF olarak açıp kaydedebilirsiniz.",
 } as const;
 const MORE =
-  "Her kişi için günün kutusuna saatleri yazın (“10-18”, “18-02 bar”), izin için “izin”. Kaydet bütün haftayı yazar; PDF her açılışta kaydedilen plandan çizilir. Personel planı kendi ekranında görür. O gün vardiyası yazılan personel, karaoke rezervasyonlarının e-posta hatırlatmalarını alır.";
+  "Her kişi için günün kutusuna saatleri yazın (“10-18”, “18-02 bar”), izin için “izin”. “Yazarak doldur”a haftayı düz cümleyle yazınca kutular taslak olarak dolar; yazdığınız metin ve listedeki adlar bunun için Claude'a (Anthropic) gönderilir. Kaydet bütün haftayı yazar; PDF her açılışta kaydedilen plandan çizilir. Personel planı kendi ekranında görür. O gün vardiyası yazılan personel, karaoke rezervasyonlarının e-posta hatırlatmalarını alır.";
 
 /**
  * Vardiya planı (docs/VARDIYA.md): hafta `?hafta=YYYY-AA-GG` (haftanın herhangi bir günü; yoksa bu hafta), şube panelin
@@ -66,10 +69,12 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
   const physical = shiftBranches(branches);
   const db = getDb();
   const prevMonday = addDays(monday, -7);
-  const [week, previous] = await Promise.all([
+  const [week, previous, draft] = await Promise.all([
     loadShiftWeek(db, branch, monday, { roster: canEdit, includeUserId: user.id }),
     // "Geçen haftayı kopyala" (yalnız yönetici)
     canEdit ? loadShiftEntries(db, branch.id, prevMonday) : Promise.resolve(null),
+    // "Yazarak doldur" kullanılabilir mi (yalnız yönetici; anahtarın kendisi sayfaya gelmez)
+    canEdit ? shiftDraftState() : Promise.resolve(null),
   ]);
   const thisWeek = weekParam(null, today);
   const href = (m: string, sube?: string) => `${VARDIYA_PATH}?hafta=${m}${sube ? `&sube=${encodeURIComponent(sube)}` : ""}`;
@@ -114,6 +119,7 @@ async function VardiyaContent({ searchParams }: { searchParams: PageProps<"/pane
           previous={previous ? toGrid(buildRows(prevMonday, [], previous.entries)) : null}
           stamp={`${week.branch.id}:${monday}:${week.updated?.at ?? "bos"}:${week.rows.length}:${week.rows.reduce((n, r) => n + r.cells.filter(Boolean).length, 0)}`}
           updatedText={updatedLine(week.updated)}
+          draftState={draft}
         />
       </div>
     </>

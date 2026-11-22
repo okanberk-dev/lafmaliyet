@@ -48,10 +48,13 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
 - **Geçen haftayı kopyala:** geçen haftanın planı yalnız **boş** kutulara kopyalanır (yazılmış kutunun üstüne yazmaz);
   kaydedilene kadar taslaktır.
 - **Toplamlar:** satırın sonunda kişinin haftalık saati ("37,5 sa"), altta gün gün çalışan sayısı ve haftanın toplamı.
-- **Telefonda (yönetici):** yedi sütun sığmadığı için ızgara gün gün yazılır: üstte gün seçilir (Pzt 23 … Paz 29),
-  altında o günün kutuları kişi kişi. Yatay kaydırma yok.
+- **Telefonda (yönetici):** yedi sütun sığmadığı için ızgara gün gün yazılır: üstte haftanın yedi günü tek satırda
+  seçilir (kısa gün adı ve ayın günü; bugünün rakamı mavi; kaydırma yok), altında o günün kutuları kişi kişi. Kişinin
+  adı kendi satırındadır (dar telefonda kesilmez), altında S / A / İ düğmeleri ve yanında saat, ya da "Elle yaz"da tam
+  genişlikte kutu. Yatay kaydırma yok (360 ve 390 px'te ölçüldü).
 - **Personel:** üstte **Benim haftam** (gün gün saatleri ve haftalık toplamı), altında bütün ekibin planı (salt okunur,
-  kendi satırında "Siz"). Plan yazılmadıysa "Bu hafta için vardiya yazılmadı".
+  kendi satırında "Siz"). Telefonda ekibin planı da gün gün listedir (aynı gün seçici; yedi sütunluk tablo yana
+  kayardı). Plan yazılmadıysa "Bu hafta için vardiya yazılmadı".
 - Ekranda tutar, maaş ya da maliyet yoktur.
 
 ## Hazır vardiyalar: sabahçı ve akşamcı (22 Kasım 2026)
@@ -74,6 +77,38 @@ harf seçilince onun yerine geçer. Telefonda da aynı (düğmeler parmak boyund
   ("9-18 kasa" yine sabahçıdır).
 - Saatler `src/lib/vardiya.ts` › `SHIFT_PRESETS`'te; değişirse orası güncellenir, eski haftalar yazıldıkları saatlerle
   kalır (yeni saatle eşleşmeyen eski hücre "başka saat" olarak görünür).
+
+## Yazarak doldurma (22 Kasım 2026)
+
+Sahibin isteği: "vardiya kısmına prompt yazarak ekleme yap ... sabahçı akşamcıyı kolayca yapmak için ve mobilde tamamen
+uyumlu yap". Kartın başındaki **Yazarak doldur** kutusuna hafta düz cümleyle yazılır:
+
+> Ayşe hafta içi sabahçı, Mehmet akşamcı. Zeynep Salı izinli. Hafta sonu herkes akşamcı. Can Cuma 12-20 kasa.
+
+**Plana işle** (ya da Ctrl / ⌘ + Enter) metni Claude'a gönderir; dönen atamalar ızgaraya **taslak** olarak yazılır.
+
+- **Hiçbir şey kendiliğinden kaydedilmez.** Değişen kutular mavi görünür, altta kaydetme çubuğu çıkar; plan ancak
+  **Kaydet**'e basınca yazılır (aynı okuyucu, aynı eylem). **Taslağı geri al** taslaktan önceki hâle döner. İstek
+  sürerken ızgara kilitlidir (taslak, gönderildiği andaki satırların üstüne yazılır).
+- **Ne yazılır:** sabahçı / akşamcı (şubenin hazır saatleri), izin, başka saat ("12-20", "18-02"), görev notu, boşaltma
+  ("Ayşe'nin Salı'sını sil"); "herkes", "hafta içi", "hafta sonu", gün adı ya da tarih. Sonraki cümle öncekinin üstüne
+  yazar ("Ayşe sabahçı ama Salı izinli"). Listede olmayan ad yeni kişi olarak eklenir (adı bir hesabınkiyse o hesabın
+  satırı; "Kişi ekle" ile aynı kural). Söylenmeyen kutuya dokunulmaz.
+- **İşlenemeyenler** kutunun altındaki uyarıda yazar: iki kişiye uyan ad (tahmin edilmez), hafta dışı gün, okunamayan
+  saat, 16 saati aşan vardiya, hazır vardiyası olmayan şubede "sabahçı". Her atama ekranın ve kaydın okuyucusundan
+  (`parseShiftCell`) geçer; geçmeyen yazılmaz.
+- **Model ve istek:** Claude Opus 5.5 (`claude-opus-5-5`), efor "low", yapılandırılmış çıktı (JSON şeması), yalnız
+  metin; fotoğraf okumanın isteğiyle aynı çalıştırıcı (`src/server/ai/run.ts`). Yanıt zod ile doğrulanır.
+- **Servise gidenler:** şubenin adı, haftanın tarihleri, ızgaradaki kişilerin **adı**, o anki plan ve yazılan metin.
+  E-posta, telefon, rol ve hesap kimliği gitmez (kişiler "p1", "p2" anahtarlarıyla gider). Yazılan metin, adlar ve
+  yanıt hiçbir yere kaydedilmez; `ai_calls`'a yalnız maliyet satırı düşer (tür `vardiya`).
+- **Kapılar:** anahtar (`ANTHROPIC_API_KEY`; fotoğraftan okumayla aynı) ve Ayarlar › Fotoğraftan okuma anahtarı
+  (kapalıyken hiçbir istek gitmez). Günlük sınır **ayrıdır**: günde 40 taslak (`SHIFT_DRAFT_DAILY_CAP`); okumanın günlük
+  sınırı vardiya taslaklarını saymaz (yöneticinin denemeleri kasadaki okumayı kesmesin). Kullanılamıyorken kutunun
+  yerinde nedeni yazar ("kurulu değil", "kapalı", "bugünkü sınır doldu"); kutular her zaman elle doldurulur.
+- **Yalnız yönetici** (eylem `requireAdmin`); personelin ekranında kutu yoktur.
+- **Geliştirmede** (`AI_REPLAY=1`) canlı istek yapılmaz: sentetik bir yanıt döner (ilk kişi hafta içi sabahçı, ikinci
+  akşamcı, herkes Pazar izinli) ve uyarı metnin okunmadığını söyler.
 
 ## PDF
 
@@ -139,7 +174,10 @@ kilidi), aynı kutuda son yazan kalır; bir sekmenin bilmediği kişinin satır�
 | `src/lib/vardiya.ts` | Saf kurallar: kutunun okunuşu ve yazılışı, hafta hesabı, kişi anahtarı, toplamlar, kaydın farkı, giriş şeması, Bugün satırının metni |
 | `src/server/vardiya/store.ts` | Haftanın okunması (personel + planı olanlar), kaydı (tek işlem, yalnız değişen), günün çalışanları (`shiftsOn`, `todayShifts`) |
 | `src/server/vardiya/pdf.ts`, `src/server/vardiya/fonts/` | PDF'in çizimi (pdf-lib); gömülen yazı tipi, lisansı ve nasıl üretildiği |
-| `src/server/actions/vardiya.ts` | `saveShiftWeekAction` (yalnız yönetici; işlem geçmişi) |
+| `src/lib/vardiya-taslak.ts` | Yazarak doldurmanın saf yarısı: istem, yanıtın şeması, atamaların kutu metnine çevrilmesi, taslağın ızgaraya uygulanması |
+| `src/server/vardiya/draft.ts` | Yazarak doldurmanın çağrısı (`draftShiftWeek`; hiçbir tabloya yazmaz) ve ekranın durum okuması (`shiftDraftState`) |
+| `src/server/actions/vardiya.ts` | `saveShiftWeekAction` (yalnız yönetici; işlem geçmişi), `draftShiftWeekAction` (yalnız yönetici; kayıt yok) |
 | `src/app/api/vardiya/pdf/route.ts` | PDF ucu (oturum, şube kuralı) |
 | `src/app/panel/vardiya/page.tsx`, `shift-grid.tsx` | Ekran: hafta ve şube, yöneticinin ızgarası (telefonda gün gün), personelin salt okunur görünümü |
+| `tests/vardiya-taslak.test.ts` | Yazarak doldurma: atamaların çevrilmesi (hazır vardiya, izin, saat, herkes, yeni kişi, sıra, işlenemeyenler), taslağın uygulanması, isteğin biçimi ve şeması, sahte istemciyle okuma, hata metinleri, bağlantılar |
 | `tests/vardiya.test.ts` | Kutunun okunuşu (gece yarısı, izin, hatalar), biçim, hafta, toplamlar, kayıt farkı, rol ve menü, PDF (yazı tipinde Türkçe harfler, `%PDF`, A4 yatay, sayfalama) |
