@@ -2,7 +2,12 @@
  * Uyarı seslerinin çalacağı hoparlörün seçimi (tarayıcının cihaz listesi üzerinde saf yardımcılar; testli).
  * Barda müzik Bluetooth hoparlörden çalarken uyarılar bilgisayarın kendi hoparlöründen gelsin diye: seçim cihazda
  * saklanır (src/components/panel/live/prefs.ts), ses motoru o çıkışa çalar (sounds.ts, AudioContext.setSinkId).
+ *
+ * "Yalnız bu bilgisayar" (aşağıda): açıkken uyarılar yalnız seçilen hoparlörden çalar, o hoparlör yoksa genel
+ * hoparlöre düşmez, susar. Tuzla Köyiçi'nde varsayılan açık (docs/BILDIRIMLER.md › Uyarı sesleri).
  */
+
+import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "./branches";
 
 export interface OutputDevice {
   id: string;
@@ -54,4 +59,68 @@ export function looksBuiltIn(label: string): boolean {
 /** Listede bilgisayarın kendi hoparlörü gibi görünen ilk cihaz (öneri olarak işaretlenir) */
 export function suggestedOutput(devices: readonly OutputDevice[]): OutputDevice | null {
   return devices.find((d) => looksBuiltIn(d.label)) ?? null;
+}
+
+// ─── "Yalnız bu bilgisayar" ──────────────────────────────────────────────────
+
+/**
+ * Uyarı seslerinin hoparlör durumu (sounds.ts): "default" sistemin varsayılan çıkışı, "active" seçilen hoparlör,
+ * "missing" seçilen hoparlör bağlı değil, "permission" hoparlör izni düştü, "unsupported" tarayıcı seçtirmiyor.
+ */
+export type OutputStatus = "default" | "active" | "missing" | "permission" | "unsupported";
+
+/**
+ * Uyarıların varsayılan olarak yalnız bilgisayarın hoparlöründen çaldığı şubeler. Tuzla Köyiçi'nde Windows'un
+ * varsayılan çıkışı kafenin genel hoparlörü (müzik sistemi): zil, alarm ve hatırlatma sesi oradan bütün kafeye
+ * çalıyordu (sahibin isteği, 22 Kasım 2026). Marina'nın varsayılanı değişmez; orada da aynı anahtar elle açılabilir.
+ */
+export const ONLY_COMPUTER_BRANCHES: readonly string[] = [DEFAULT_BRANCH_ID];
+
+/**
+ * Bu cihazın şubesi, panelin şube seçiminden: personelde kilitli şubesi, yöneticide seçtiği şube. "Tümü" seçiliyken
+ * panelin varsayılan şubesi (yeni kayıtlar da oraya yazılır, src/server/branch-scope.ts › writeId).
+ */
+export function deviceBranch(scope: string | null | undefined): string | null {
+  if (!scope) return null;
+  return scope === ALL_BRANCHES ? DEFAULT_BRANCH_ID : scope;
+}
+
+/** "Yalnız bu bilgisayar" açık mı: cihazda elle seçildiyse o, seçilmediyse şubenin varsayılanı */
+export function onlyComputerFor(saved: boolean | null | undefined, scope: string | null | undefined): boolean {
+  if (typeof saved === "boolean") return saved;
+  const branch = deviceBranch(scope);
+  return branch !== null && ONLY_COMPUTER_BRANCHES.includes(branch);
+}
+
+/** Telefon ya da tablet: hoparlörü zaten kendinde, "yalnız bu bilgisayar" yalnız masaüstü tarayıcıda anlamlı */
+export function isMobileAgent(userAgent: string): boolean {
+  return /android|iphone|ipad|ipod|mobile/i.test(userAgent);
+}
+
+/**
+ * Uyarı sesi çalınabilir mi. "Yalnız bu bilgisayar" kapalıysa ya da tarayıcı hoparlör seçtirmiyorsa her zaman evet.
+ * Açıksa ses ancak seçilen hoparlör gerçekten etkinken çalar: hoparlör seçilmemişse, çıkarıldıysa ya da izni düştüyse
+ * ses SUSAR, genel hoparlöre (sistemin varsayılan çıkışına) düşmez; ekranda uyarı çıkar.
+ */
+export function alertAudible(onlyComputer: boolean, status: OutputStatus): boolean {
+  if (!onlyComputer || status === "unsupported") return true;
+  return status === "active";
+}
+
+/**
+ * İşletim sisteminin bildirim sesi her zaman varsayılan çıkıştan (genel hoparlörden) çalar, yönlendirilemez: "yalnız bu
+ * bilgisayar" açıkken sistem bildirimi hep sessiz, kapalıyken sesi sekme kendisi çalıyorsa sessiz.
+ */
+export function osNotificationSilent(onlyComputer: boolean, pageRings: boolean): boolean {
+  return onlyComputer || pageRings;
+}
+
+/**
+ * Sistemin varsayılan çıkışının adı ("Varsayılan - Hoparlör (JBL Charge 5)" → "Hoparlör (JBL Charge 5)"); adlar
+ * görünmüyorsa (izin yok) null. Ekranda "varsayılan çıkış genel hoparlör olabilir" uyarısı için.
+ */
+export function systemDefaultLabel(devices: readonly { kind: string; deviceId: string; label: string }[]): string | null {
+  const d = devices.find((x) => x.kind === "audiooutput" && x.deviceId === "default" && x.label.trim());
+  if (!d) return null;
+  return d.label.replace(/^\s*(varsayılan|default)\s*[-–:]\s*/i, "").trim() || null;
 }

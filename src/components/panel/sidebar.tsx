@@ -329,7 +329,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
 
       <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
 
-      <AlertCenter role={user.role} />
+      <AlertCenter role={user.role} branchScope={branch?.scope ?? null} />
 
       {isAdmin ? <PanelSearch pages={pages} index={index} open={searchOpen} onOpenChange={setSearchOpen} hideTrigger /> : null}
     </>

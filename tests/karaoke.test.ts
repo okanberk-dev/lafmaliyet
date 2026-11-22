@@ -448,7 +448,9 @@ test("service worker yalnız bildirim işi yapar: istek yakalamaz, önbellekleme
   assert.match(sw, /addEventListener\("push"/);
   assert.match(sw, /addEventListener\("notificationclick"/);
   assert.doesNotMatch(sw, /addEventListener\("fetch"/);
-  assert.doesNotMatch(sw, /caches\./);
+  // Tek istisna: "yalnız bu bilgisayar" işaretini okumak (docs/BILDIRIMLER.md); yazmaz, istek önbelleklemez
+  assert.doesNotMatch(sw, /caches\.(?!open\("laf-ayar"\))/);
+  assert.doesNotMatch(sw, /\.put\(/);
   // Bildirimin açtığı adres yalnız panel içi
   assert.match(sw, /msg\.url\.startsWith\("\/panel"\)/);
 });

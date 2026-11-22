@@ -10,6 +10,7 @@ import { toastUnreachable } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Notice } from "@/components/ui/notice";
+import { osNotificationSilent } from "@/lib/audio-output";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
 import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen, soundRow } from "@/lib/live-poll";
@@ -19,11 +20,24 @@ import { dueInstant, planReminderAlerts, reminderAlarm, ringingReminders } from 
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
 
 import { useClock } from "./clock";
-import { applyOutput } from "./output-client";
-import { usePrefs } from "./prefs";
+import { applyOutput, syncQuietFlag } from "./output-client";
+import { onlyComputerOn, setBranchScope, usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
 import { ReminderAlerts, showReminder } from "./reminder-alerts";
-import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAlarmOwners, useAudioState } from "./sounds";
+import {
+  alarmRinging,
+  audioState,
+  onlyComputerActive,
+  play,
+  scheduleBurst,
+  setOnlyComputer,
+  startAlarm,
+  stopAlarm,
+  unlockAudio,
+  useAlarmOwners,
+  useAlertsAudible,
+  useAudioState,
+} from "./sounds";
 import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
@@ -68,6 +82,12 @@ const sessionName = (s: KaraokeSessionDTO) => s.customerName || (s.source === "p
  * (seçilen hoparlörden) çaldıysa bildirim sessizdir: işletim sisteminin bildirim sesi varsayılan çıkıştan, yani
  * müziğin çaldığı Bluetooth hoparlörden gelirdi.
  */
+/**
+ * Sistem bildirimi sessiz mi: "yalnız bu bilgisayar" açıkken hep (işletim sisteminin sesi genel hoparlörden çalar),
+ * değilse sesi sekme kendisi çalıyorsa
+ */
+const quietOs = (soundOn: boolean) => osNotificationSilent(onlyComputerActive(), soundOn && audioState() === "ready");
+
 async function notify(title: string, body: string, tag: string, url: string, opts: { requireInteraction?: boolean; silent?: boolean } = {}) {
   if (typeof document === "undefined" || document.visibilityState === "visible" || pushSupport() !== "granted") return;
   const reg = await registerServiceWorker();
@@ -95,9 +115,11 @@ const soundSlotOf = () => document.getElementById("ses-yuvasi");
  * susturulursa burada da sussun) 15 saniyede bir. "Bildirim açık": izin, kayıtlı abonelik ve zili açık konular
  * (pushCovers). Hepsi ETag'li; değişiklik yoksa 304.
  */
-export function AlertCenter({ role }: { role: Role }) {
+export function AlertCenter({ role, branchScope = null }: { role: Role; branchScope?: string | null }) {
   const live = useLive();
   const prefs = usePrefs(role);
+  const onlyComputer = onlyComputerOn(prefs);
+  const audible = useAlertsAudible();
   const router = useRouter();
   const pathname = usePathname();
   const audio = useAudioState();
@@ -167,7 +189,8 @@ export function AlertCenter({ role }: { role: Role }) {
         prefs.sound &&
         audioState() === "ready" &&
         (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")) || (msg.kind === "orders" && prefs.orderAlerts));
-      e.ports[0]?.postMessage({ willRing });
+      // "Yalnız bu bilgisayar": sistem bildirimi her durumda sessiz (sesi genel hoparlörden çalardı)
+      e.ports[0]?.postMessage({ willRing, quiet: onlyComputerActive() });
       if (msg.kind === "approvals") {
         // Onay bildirimi (şu an gönderen yok; tesisat kalır): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz
         // (sw.js): bildirim burada, zil ve açık ekran yenilenir
@@ -196,15 +219,22 @@ export function AlertCenter({ role }: { role: Role }) {
 
   // Ses çıkışı: bu cihazda seçilen hoparlör (Bluetooth hoparlörde müzik çalarken uyarılar bilgisayardan gelsin);
   // hoparlör takılıp çıkınca yeniden uygulanır
+  // "Yalnız bu bilgisayar" (Tuzla Köyiçi'nde varsayılan): ses yalnız seçilen hoparlörden, yoksa susar; sistem
+  // bildirimi hep sessiz (servis çalışanı da işareti okur)
   const { outputId, outputLabel } = prefs;
+  useEffect(() => setBranchScope(branchScope), [branchScope]);
   useEffect(() => {
-    void applyOutput(role, { outputId, outputLabel });
+    setOnlyComputer(onlyComputer);
+    void syncQuietFlag(onlyComputerActive());
+  }, [onlyComputer]);
+  useEffect(() => {
+    void applyOutput(role, { outputId, outputLabel }, onlyComputer);
     const md = navigator.mediaDevices;
     if (!md?.addEventListener) return;
-    const onChange = () => void applyOutput(role, { outputId, outputLabel });
+    const onChange = () => void applyOutput(role, { outputId, outputLabel }, onlyComputer);
     md.addEventListener("devicechange", onChange);
     return () => md.removeEventListener("devicechange", onChange);
-  }, [role, outputId, outputLabel]);
+  }, [role, outputId, outputLabel, onlyComputer]);
 
   // İzin verilmişse abonelik her açılışta tazelenir (sunucu anahtarı değiştiyse yenisi alınır)
   const publicKey = data?.push.publicKey ?? null;
@@ -309,7 +339,7 @@ export function AlertCenter({ role }: { role: Role }) {
       duration: table ? 30_000 : 15_000,
       action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) },
     });
-    void notify(msg.title, msg.body, `siparis-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
+    void notify(msg.title, msg.body, `siparis-${ring[0].id}`, ORDERS_PATH, { silent: quietOs(prefs.sound) });
   }, [data, prefs.orderAlerts, prefs.sound, router]);
 
   // Masa çağrısı ("Garson çağır"): bu cihazın görmediği her açık çağrı bir kez, siparişten ayrı desenle (kapı zili);
@@ -327,7 +357,7 @@ export function AlertCenter({ role }: { role: Role }) {
     if (prefs.sound) play("call");
     const msg = callRingMessage(ring);
     toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) } });
-    void notify(msg.title, msg.body, `cagri-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
+    void notify(msg.title, msg.body, `cagri-${ring[0].id}`, ORDERS_PATH, { silent: quietOs(prefs.sound) });
   }, [data, prefs.orderAlerts, prefs.sound, router]);
 
   // Planlı sipariş (gel-al, "Yarın 09:00"): vaktine 15 dakika kala bir kez hazırlanma zili; ekran sonradan açılsa da
@@ -344,7 +374,7 @@ export function AlertCenter({ role }: { role: Role }) {
       if (prefs.sound) play("ring");
       const msg = dueRingMessage(ring, liveNow());
       toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push(ORDERS_PATH) } });
-      void notify(msg.title, msg.body, `planli-${ring[0].id}`, ORDERS_PATH, { silent: prefs.sound && audioState() === "ready" });
+      void notify(msg.title, msg.body, `planli-${ring[0].id}`, ORDERS_PATH, { silent: quietOs(prefs.sound) });
     }
     if (nextAt === null) return;
     const id = window.setTimeout(() => setDueTick((n) => n + 1), Math.min(Math.max(1000, nextAt - liveNow()), 2_147_000_000));
@@ -363,7 +393,7 @@ export function AlertCenter({ role }: { role: Role }) {
       // (KVKK, senkron P0; Web Push metni de adsız: src/lib/karaoke/session.ts › pushMessages)
       const name = sessionName(s);
       const range = timeRange(sessionStart(s), sessionEnd(s));
-      const silent = prefs.sound && audioState() === "ready";
+      const silent = quietOs(prefs.sound);
       if (a.kind === "start") {
         // Sayacı bu cihaz başlattı: bildirim sayacın üstünü kapatmasın (başlatma bildirimi zaten çıktı)
         if (STARTED_HERE.has(s.id)) return;
@@ -428,7 +458,7 @@ export function AlertCenter({ role }: { role: Role }) {
               showReminder(r);
               void notify(`Hatırlatma: ${r.title}`, r.note ?? `Saat ${r.dueTime}`, `hatirlatici-${r.id}`, "/panel/hatirlaticilarim", {
                 requireInteraction: true,
-                silent: prefs.sound && audioState() === "ready",
+                silent: quietOs(prefs.sound),
               });
             },
             Math.max(0, at - liveNow()),
@@ -586,6 +616,24 @@ export function AlertCenter({ role }: { role: Role }) {
       {/* Ses kilitliyken sayfanın başındaki yuvaya tek satır (yüzen hap içeriği örtüyordu; §4.6). Yuva yoksa hiçbir
           şey çizilmez. İlk dokunuşta ses açılır; satır kalkmaz, aynı yükseklikte "Sesli uyarılar açık"a döner (düğmenin
           görünmez eşi yeri tutar) ve sayfa değişince kalkar (soundRow) */}
+      {/* "Yalnız bu bilgisayar" açık ama hoparlör seçilmemiş ya da bağlı değil: sesler genel hoparlöre gitmesin diye susar */}
+      {prefs.sound && !audible && soundSlot
+        ? createPortal(
+            <Notice
+              tone="warn"
+              size="sm"
+              title="Uyarı sesleri susturuldu"
+              text="Bu bilgisayarın hoparlörü seçili değil ya da bağlı değil; sesler genel hoparlöre gitmesin diye çalmıyor."
+              className="no-print mb-4"
+              action={
+                <Button size="xs" variant="secondary" onClick={() => router.push(`${ORDERS_PATH}#uyari-sesleri`)}>
+                  Hoparlörü seç
+                </Button>
+              }
+            />,
+            soundSlot,
+          )
+        : null}
       {sound.row && soundSlot
         ? createPortal(
             sound.row === "locked" ? (
