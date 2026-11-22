@@ -860,6 +860,42 @@ export const purchaseQuantities = pgTable(
   (t) => [uniqueIndex("purchase_quantities_month_ingredient_uq").on(t.month, t.ingredientId)],
 );
 
+// ---------------------------------------------------------------- Tahmini stok (docs/STOK-TAHMINI.md)
+/**
+ * Kritik stok eşiği, şube ve malzeme başına (bugün yalnız Marina: tahmin LafPOS'un şubesinindir). Miktar malzemenin
+ * kendi biriminde (gr, ml, adet, dilim): sayım birimi sonradan değişse de anlamı değişmez; ekran sayım biriminde
+ * yazdırır. Tahmini stok eşiğe eşit ya da altındaysa Tahmini stok listesi, Genel bakış ve Bugün uyarır. Satır yoksa
+ * eşik yoktur, uyarı da yok. Stok sayımı, değerleme ve mal maliyeti bunu okumaz.
+ */
+export const stockThresholds = pgTable(
+  "stock_thresholds",
+  {
+    branchId: branchId(),
+    ingredientId: integer("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "cascade" }),
+    qty: doublePrecision("qty").notNull(),
+    updatedByName: text("updated_by_name"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.ingredientId] }), check("stock_thresholds_qty_ck", sql`${t.qty} >= 0`)],
+);
+
+/**
+ * Faturanın malının geldiği şube, yalnız tahmini stok için (docs/STOK-TAHMINI.md § 3). Faturalar şubeye bölünmez (mal
+ * alımı işletme genelidir, docs/SUBE.md); yönetici Tahmini stok ekranında faturanın hangi şubeye geldiğini seçer.
+ * Satır yoksa "şubesi seçilmedi": hiçbir şubenin tahminine girmez. Fatura, ödeme, cari, FIFO ve mal maliyeti bunu
+ * okumaz. Fatura silinirse satır da silinir.
+ */
+export const stockReceipts = pgTable("stock_receipts", {
+  invoiceId: integer("invoice_id")
+    .primaryKey()
+    .references(() => invoices.id, { onDelete: "cascade" }),
+  branchId: branchId(),
+  markedByName: text("marked_by_name"),
+  updatedAt: updatedAt(),
+});
+
 export const findings = pgTable(
   "findings",
   {

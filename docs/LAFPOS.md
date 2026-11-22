@@ -414,7 +414,8 @@ kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026
   ödeme türlerinden alır, ürün ikramı LafPOS'tan gelir ve panelde girilmez (B10, yukarıda "Komisyon" ve "İkram");
   "Kasadaki fiyatlar" yalnız siteye bağlı olmayan, fiyatı LafPOS günü panelde değişen ürünler içindir ve yalnız
   yöneticinin işidir, ModPOS metinleri LafPOS der (B11, aşağıda
-  "Metinler ve kasadaki fiyatlar"). Onay penceresinin listesi (`LAFPOS_SWITCH_EFFECTS`) kodun yaptığından fazlasını
+  "Metinler ve kasadaki fiyatlar"); Marina'nın tahmini stoğu LafPOS'un satışlarını, ikram ve zayisini okur
+  ([STOK-TAHMINI.md](STOK-TAHMINI.md)). Onay penceresinin listesi (`LAFPOS_SWITCH_EFFECTS`) kodun yaptığından fazlasını
   söylemez.
 - **Kural tek yerde:** `src/lib/lafpos/switch.ts` (`isLafposDay`, `kasaName`, `monthSource`, `switchAffectedMonths`,
   `modposListCounts`, `lafposSalesFrom`, `lafposCountFrom`);

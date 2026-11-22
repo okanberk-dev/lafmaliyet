@@ -73,6 +73,9 @@ export async function branchUsageCount(db: DB, id: string): Promise<number> {
     s.users,
     // Şubenin kapalı günü (denetim 13 Kasım KP-05)
     s.specialDays,
+    // Tahmini stoğun kritik eşikleri ve faturanın geldiği şube (docs/STOK-TAHMINI.md)
+    s.stockThresholds,
+    s.stockReceipts,
   ];
   const counts = await Promise.all(
     tables.map(async (table) => {

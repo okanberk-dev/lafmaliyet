@@ -463,6 +463,13 @@
       "when": 1795322590604,
       "tag": "0065_istemci_anahtari",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1795348489608,
+      "tag": "0066_tahmini_stok",
+      "breakpoints": true
     }
   ]
 }

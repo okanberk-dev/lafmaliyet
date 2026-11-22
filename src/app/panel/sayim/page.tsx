@@ -6,11 +6,13 @@ import { Suspense, type ReactNode } from "react";
 import { MonthPickerSkeleton } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
+import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { countFactor, shiftMonth } from "@/lib/calc/engine";
 import { stockVatSummary } from "@/lib/calc/insights";
 import { countGroupOptions } from "@/lib/count-item";
 import { monthLabel, monthShort } from "@/lib/format";
+import { STOCK_ESTIMATE_BRANCH, STOCK_ESTIMATE_PATH } from "@/lib/stock-estimate";
 import { requireUser } from "@/server/auth/dal";
 import { currentPhysicalBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
@@ -174,9 +176,18 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         month={month}
         role={user.role}
         branch={branchLabel}
-        // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur)
+        // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur). Tahmini stok yalnız
+        // Marina'nın (LafPOS'un şubesi, geçiş günü seçiliyken; docs/STOK-TAHMINI.md): Tuzla'nın başlığı aynı kalır.
+        // Kaydedilmemiş sayım varken bağlantıyı da form durdurup sorar (useLeaveGuard)
         picker={
-          <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
+          <>
+            {branch.id === STOCK_ESTIMATE_BRANCH && model.settings.lafposGecisGunu ? (
+              <ButtonLink href={STOCK_ESTIMATE_PATH} variant="secondary">
+                Tahmini stok
+              </ButtonLink>
+            ) : null}
+            <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
+          </>
         }
       />
       <StockCountForm

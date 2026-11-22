@@ -662,6 +662,8 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/hatirlaticilar": "Ödemeler",
   "/panel/hatirlaticilar/nakit": "Nakit planı",
   "/panel/sayim": "Stok sayımı",
+  // Stok sayımı'nın alt ekranı (yalnız Marina; docs/STOK-TAHMINI.md)
+  "/panel/sayim/tahmini": "Tahmini stok",
   "/panel/tutarlilik": "Tutarlılık",
   "/panel/kullanicilar": "Kullanıcılar",
   "/panel/parasut": "Paraşüt",
