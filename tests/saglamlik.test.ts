@@ -147,7 +147,7 @@ test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken 
     ["src/app/panel/giderler/expenses-client.tsx", /effectiveFrom: !row \|\| amountChanged \? eff : row\.valueMonth,\s+\}\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !row \},/],
     ["src/app/panel/giderler/expenses-client.tsx", /saveInvestment\(\{ id: row\?\.id \?\? null, name, amount: parsed, date, note \}\), \{ maybeSaved: !row \}\)/],
     ["src/app/panel/giderler/expenses-client.tsx", /itibarıyla devam ediyor`,\s+true,\s+\);/],
-    ["src/app/panel/tutarlilik/consistency-client.tsx", /saveFinding\(\{ id: item\?\.id \?\? null, section, title, detail \}\), \{ maybeSaved: !item \}\)/],
+    ["src/app/panel/tutarlilik/consistency-client.tsx", /saveFinding\(\{ id: item\?\.id \?\? null, section, title, detail, clientKey: item \? null : clientKey \}\), \{ maybeSaved: !item \}\)/],
     ["src/app/panel/kontrol/duzenle/templates-client.tsx", /createChecklistTemplate\(draftOf\(draft\)\), \{ maybeSaved: true \}\)/],
     // PR #62 incelemesi ve aynı sınıftan olanlar: yeni kontrol maddesi, hatırlatıcı, cari ödeme ve borç, zayi, Ödendi / Ertele
     ["src/app/panel/kontrol/duzenle/[id]/template-editor.tsx", /item\?\.id \?\? null,\s+\),\s+\/\/[^\n]*\n\s+\{ maybeSaved: !item \},/],
@@ -155,7 +155,7 @@ test("tekrarı ikinci kayıt yazan eylemler maybeSaved ile, gönderen ve çeken 
     ["src/app/panel/hatirlaticilarim/my-reminders.tsx", /await after\(\);\s+\/\/[^\n]*\n\s+\}, \{ maybeSaved: true \}\);/],
     ["src/app/panel/tedarikciler/cari-payment-dialog.tsx", /onSaved\?\.\(\{ slug: d\.slug \}\);\s+\/\/[^\n]*ikinci ödemeyi yazar\n\s+\}, \{ maybeSaved: !edit \}\);/],
     ["src/app/panel/tedarikciler/[cari]/debt-dialog.tsx", /onSaved\?\.\(\{ slug: d\.slug \}\);\s+\/\/[^\n]*ikinci borcu yazar\n\s+\}, \{ maybeSaved: !edit \}\);/],
-    ["src/app/panel/zayi/waste-board.tsx", /setReason\(null\);\s+(?:\/\/[^\n]*\n\s+)+\}, \{ maybeSaved: !late \}\);/],
+    ["src/app/panel/zayi/waste-board.tsx", /setReason\(null\);\s+\} finally \{\s+sending\.current = false;\s+\}\s+(?:\/\/[^\n]*\n\s+)+\}, \{ maybeSaved: !late \}\);/],
     ["src/app/panel/hatirlaticilar/payment-ui.tsx", /await run\(\);\s+\} catch \(e\) \{\s+(?:\/\/[^\n]*\n\s+)+toastUnreachable\(e, \{ maybeSaved: true \}\);/],
     ["src/components/panel/live/device-alerts.tsx", /sendTestPush\(\), \{ offline: SEND_OFFLINE_TEXT \}\)/],
     ["src/app/panel/kasa/cash-form.tsx", /resendCashReportEmail\(report\.id\), \{ offline: SEND_OFFLINE_TEXT \}\)/],

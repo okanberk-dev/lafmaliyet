@@ -34,6 +34,11 @@ export interface SessionPayload extends JWTPayload {
   role: "admin" | "staff";
   /** Kullanıcının oturum sürümü; veritabanındakiyle aynı değilse oturum geçersiz (eski oturumlarda yok = 1) */
   sv?: number;
+  /**
+   * Oturumun rastgele kimliği: çıkışta bu kimlik kapatılır (revoked_sessions), çerezin kopyası da geçmez; kişinin
+   * öteki cihazları etkilenmez. Bu sürümden önce açılan oturumlarda yok (kendi süreleriyle, en çok 30 günde düşerler)
+   */
+  jti?: string;
 }
 
 function secretKey(): Uint8Array {
@@ -51,6 +56,7 @@ export async function signSession(payload: { sub: string; name: string; role: "a
   return new SignJWT({ name: payload.name, role: payload.role, sv: payload.sv, typ: "session" })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DAYS}d`)
     .sign(secretKey());
@@ -66,6 +72,22 @@ export async function verifySession(token: string | undefined): Promise<SessionP
   } catch {
     return null;
   }
+}
+
+/**
+ * Oturum çerezinin kısa özeti (sha256'nın ilk 16 onaltılık hanesi). Sunucu oturumu geçersiz bulunca giriş sayfasına
+ * bununla gönderir (`/giris?oturum=bitti&s=…`); proxy çerezi yalnız özet tutarsa, yani reddedilen çerezin ta kendisi
+ * duruyorsa siler. Yeniden girişten sonra Geri düğmesi, önbellekteki eski yönlendirme ya da başka bir siteden gelen
+ * `?oturum=bitti` bağlantısı yeni / geçerli oturumu silemez (denetim KA-02, YO-04). Özetten çerez çıkarılamaz.
+ */
+export async function sessionMark(token: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+  return Array.from(digest.subarray(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Geçersiz bulunan oturumun giriş sorgusu: "oturum bitti" ve çerezin özeti (proxy yalnız bu çerezi siler) */
+export async function expiredLoginQuery(token: string): Promise<string> {
+  return `oturum=bitti&s=${await sessionMark(token)}`;
 }
 
 /** Parolası doğrulanmış, kodu beklenen kullanıcı (oturum sayılmaz; yalnızca kod adımında okunur) */

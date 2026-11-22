@@ -1,7 +1,7 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
 import type { Model } from "@/lib/calc/engine";
 import { expensePlanSub, listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
-import { monthLabel, num, pct, tl } from "@/lib/format";
+import { monthLabel, num, numPossessive, pct, tl } from "@/lib/format";
 import { monthKasa, salesMonthKasa, type MonthKasa } from "@/lib/lafpos/kasa";
 import { siteGross } from "@/lib/site-sales/calc";
 
@@ -122,7 +122,7 @@ function salesBuckets(d: DashboardData): SalesBucket[] {
 function onlineRows(d: DashboardData): BreakdownRow[] {
   const o = d.theoretical?.online;
   if (!o) return [];
-  const share = o.share < 1 ? ` · ayın bugüne kadarki satışının %${num(o.share * 100, 0)}'i (satış listesinin günleri)` : "";
+  const share = o.share < 1 ? ` · ayın bugüne kadarki satışının %${numPossessive(o.share * 100)} (satış listesinin günleri)` : "";
   const href = pnlHref(d.month);
   return [
     { key: "online:cafe", label: "Kafe online (site + uygulama)", sub: `KDV hariç${share}`, amount: o.cafe, href },
@@ -327,7 +327,7 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
   return {
     title: `${monthLabel(d.month)} net kâr / zarar`,
     description: `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler − o ayın Gelir-gider sabit giderleri (gün oranı, düzeltmeler, bu aya özel satırlar, aylık harcamalar), KDV hariç, reçeteye göre.${
-      t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor (ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'i): indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
+      t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
     }${f.waterExcluded > 0 ? ` SU GİDERİ (${tl(f.waterExcluded)}) reçetelerde sayıldığı için burada ikinci kez düşülmedi.` : ""}`,
     groups: [
       { key: "brut", label: "Brüt kâr", rows: grossRows(model, d) },

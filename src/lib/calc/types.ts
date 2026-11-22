@@ -133,9 +133,9 @@ export interface TillMonth {
   /** Kapsanan aralık: ay başı (ilk rapor ay içindeyse o gün) → ay sonu (süren ayda dün; bugünün raporu girildiyse bugün) */
   from: string;
   to: string;
-  /** Rapor girilen gün */
+  /** Rapor girilen gün (iki şube aynı gün rapor girdiyse bir gün) */
   reported: number;
-  /** Satış olan (Z toplamı > 0) gün */
+  /** Satış olan (Z toplamı > 0) gün; "Tümü"de günde bir kez (iki şube aynı gün açıkken bir gün) */
   openDays: number;
   /**
    * Ayın cirosu: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam). Z toplamlarının
@@ -216,6 +216,12 @@ export interface Month {
   sources?: Record<MonthField, FieldSource>;
   /** Kasa raporlarından türeyen değerler (uygulanmayan alan null) ve kapsamı; ayın raporu yoksa null */
   kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
+  /**
+   * "Tümü"de şube şube ay bilgisi (src/lib/cash-month.ts resolveBranchMonths): Tümü bunların toplamıdır. Yazan ekran
+   * (Satışlar'ın ay formu) yazdığı şubenin elle yazılanını buradan gösterir; motor şubeye bağlı personeli ve sabit gideri
+   * şubenin günüyle oranlar. Tek şube seçiliyken yok
+   */
+  byBranch?: Record<string, Month>;
 }
 
 export interface SalesLine {
@@ -533,6 +539,11 @@ export interface Dataset {
    * mal maliyeti şubenin satışından reçeteye göredir (faturalar ve sayım işletme geneli; engine.ts stockFlow)
    */
   branchView?: { id: string; name: string; kind: "fiziksel" | "online" } | null;
+  /**
+   * "Tümü" birden çok kasanın (etkin fiziksel şubenin) toplamı: Gelir-gider'in aylık ciro ve açık gün hücresi yazılmaz
+   * (src/lib/branches.ts monthTotalsLocked). Yoksa yazılır
+   */
+  monthTotalsLocked?: boolean;
   /**
    * Su + buz litre fiyatının işletme geneli satışı (denetim 21 Kasım #4): tek şube seçiliyken SU GİDERİ girilmiş ayların
    * bütün şubelerdeki satış satırları (LafPOS dahil, "Tümü"deki gibi) ve laffogato.net online satışları. SU GİDERİ

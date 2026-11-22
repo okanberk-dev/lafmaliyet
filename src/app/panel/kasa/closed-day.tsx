@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
-import { CLOSED_REASON_MAX, closedDialogText } from "@/lib/closed-days";
+import { CLOSED_REASON_MAX, closedDialogText, closedEndedTitle } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
 import { markClosedDay, requestClosedDay } from "@/server/actions/closed-days";
 import { withdrawStaffRequest } from "@/server/actions/staff-requests";
@@ -22,9 +22,12 @@ import { newClientKey } from "./cash-requests";
  * pencerede o günün izleri uyarı olarak görünür. Form yerinde kalır: kafe açıktıysa rapor girilir.
  */
 
+/** Çubuğun kasası: bildirim ve işaret bu şubeye yazılır; birden çok şube açıkken adı metne girer (tek şubede null) */
+type Till = { id: string; name: string | null };
+
 export type ClosedDayBarProps =
-  | { role: "staff"; date: string; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; canAsk: boolean }
-  | { role: "admin"; date: string; marked: boolean; warnings: string[] };
+  | { role: "staff"; date: string; till: Till; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; ended: { status: string; note: string | null } | null; canAsk: boolean }
+  | { role: "admin"; date: string; till: Till; marked: boolean; warnings: string[] };
 
 export function ClosedDayBar(p: ClosedDayBarProps) {
   const [open, setOpen] = useState(false);
@@ -34,13 +37,13 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
 
   if (p.marked) {
     return (
-      <Notice tone="neutral" title={`${longDateTR(p.date)} kafe kapalı işaretli`} text="Kafe açıktıysa raporu girin; işaret kendiliğinden kalkar." />
+      <Notice tone="neutral" title={`${longDateTR(p.date)} ${p.till.name ? `${p.till.name} kapalı` : "kafe kapalı"} işaretli`} text="Kafe açıktıysa raporu girin; işaret kendiliğinden kalkar." />
     );
   }
 
   function send() {
     start(async () => {
-      const res = p.role === "staff" ? await requestClosedDay({ date: p.date, reason: reason.trim() || null, clientKey: key }) : await markClosedDay({ date: p.date, note: reason.trim() || null });
+      const res = p.role === "staff" ? await requestClosedDay({ date: p.date, reason: reason.trim() || null, clientKey: key, branchId: p.till.id }) : await markClosedDay({ date: p.date, note: reason.trim() || null, branchId: p.till.id });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       setOpen(false);
       setReason("");
@@ -73,10 +76,15 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
     }
   } else if (p.role === "staff" && p.rejected) {
     title = `Yönetici bildirimi reddetti${p.rejected.note ? `: ${p.rejected.note}` : ""}. Raporu girin.`;
+  } else if (p.role === "staff" && p.ended) {
+    // Geri alınan ya da kapanan bildirimden sonra düğme yok: aynı gün yeniden bildirilemez (denetim 13 Kasım SB-X1)
+    title = closedEndedTitle(p.ended.status, p.ended.note);
   } else if (p.role === "staff" && !p.canAsk) {
     return null;
   } else {
-    title = p.role === "staff" ? "Dün kafe kapalı mıydı?" : "Bu gün kafe kapalı mıydı?";
+    // Birden çok şube açıkken hangi şubenin kapalı olduğu sorulur (işaret yalnız o şubeye yazılır)
+    const place = p.till.name ?? "kafe";
+    title = p.role === "staff" ? `Dün ${place} kapalı mıydı?` : `Bu gün ${place} kapalı mıydı?`;
     action = (
       <Button size="xs" variant="ghost" onClick={() => setOpen(true)} disabled={pending}>
         <DoorClosed size={14} aria-hidden="true" /> Kafe kapalıydı
@@ -90,7 +98,7 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
       <Dialog
         open={open}
         onClose={() => !pending && setOpen(false)}
-        title="Kafe kapalıydı"
+        title={p.till.name ? `${p.till.name} kapalıydı` : "Kafe kapalıydı"}
         size="sm"
         footer={
           <>

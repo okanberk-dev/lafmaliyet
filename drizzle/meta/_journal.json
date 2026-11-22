@@ -435,6 +435,34 @@
       "when": 1795310391653,
       "tag": "0061_lafpos_gun_sonu",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795320360568,
+      "tag": "0062_cikista_oturum_kapanir",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1795320394381,
+      "tag": "0063_kapali_gun_subesi",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795321883358,
+      "tag": "0064_fatura_kaynagi_onarimi",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795322590604,
+      "tag": "0065_istemci_anahtari",
+      "breakpoints": true
     }
   ]
 }

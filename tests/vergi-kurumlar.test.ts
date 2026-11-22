@@ -106,17 +106,20 @@ test("C: 2026/4'ün matrahlı kaydı yıllık kurumlar vergisinin çapası; öde
   const all = ["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4"].map((period) => ({ period, amount: null }));
   const q4: TaxFiling = { id: 9, kind: "gecici", period: "2026-Q4", payable: 112213.13, stamp: 791, values: { matrah: 500000, hesaplanan: 125000 } };
   const kv = corporateTax(input({ filings: [q4], paidQuarters: all }));
-  assert.equal(kv.income, 500000);
-  assert.equal(kv.indirim, 0, "çapadan sonra indirim yok");
+  // Kaydın matrahı beyannamedeki matrahtır (indirim 3.000 düşülmüş, VG-03): kazanç 500.000 + 3.000, indirim bir kez
+  assert.equal(kv.income, 503000);
+  assert.equal(kv.indirim, 3000);
   assert.equal(kv.matrah, 500000);
   assert.equal(kv.tax, 125000);
   assert.equal(kv.paidProvisional, 125000);
   assert.equal(kv.payable, 0);
   assert.equal(kv.refund, 0);
-  // Devreden zarar çapadan da düşülür
+  // Devreden zarar çapanın matrahından zaten düşülmüş: ikinci kez düşülmez (kazanç 500.000 + 100.000 + 3.000)
   const loss = corporateTax(input({ filings: [q4], paidQuarters: all, settings: { ...S_A, carriedLoss: { amount: 100000, note: "2025 KV", by: "x", date: "2026-10-01" } } }));
+  assert.equal(loss.income, 603000);
   assert.equal(loss.loss, 100000);
-  assert.equal(loss.matrah, 400000);
+  assert.equal(loss.matrah, 500000);
+  assert.equal(loss.hesaplanan, 125000);
   // Matrahsız 2026/4 kaydı çapa değil: panelin kümülatifi
   const bare = corporateTax(input({ filings: [{ ...q4, values: {} }], paidQuarters: all }));
   assert.equal(bare.income, 201863.28);
@@ -270,4 +273,53 @@ test("C: durum: sınıflandırma tam, gelir mali belgeden ve kafe dışı işler
   assert.equal(ready.corp.find((q) => q.key === "2026-Q3")!.state, "hazir");
   // Ekim hâlâ yönetim verisi: 2026/4 taslak
   assert.equal(ready.quarters.find((q) => q.key === "2026-Q4")!.state, "taslak");
+});
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+/** 2027 çeyreği: yalnız sonuç ve indirim (amortisman, doğrudan gider, KKEG yok) */
+const q27 = (n: number, result: number, indirim = 0): CorpQuarterInput => ({
+  key: `2027-Q${n}`,
+  q: n,
+  from: `2027-${String(3 * n - 2).padStart(2, "0")}-01`,
+  to: ["2027-03-31", "2027-06-30", "2027-09-30", "2027-12-31"][n - 1],
+  result,
+  depreciation: 0,
+  direct: 0,
+  kkeg: 0,
+  indirim,
+  floorResult: result,
+  state: "hazir",
+});
+const withLoss = (amount: number): TaxSettings => ({ ...S_A, carriedLoss: { amount, note: "2026 KV", by: "x", date: "2027-04-20" } });
+const q1Filing = (matrah: number, hesaplanan: number): TaxFiling => ({ id: 1, kind: "gecici", period: "2027-Q1", payable: hesaplanan, stamp: 791, values: { matrah, hesaplanan } });
+
+test("VG-03: muhasebecinin matrahı beyannamedeki matrahtır (zarar düşülmüş): çapadan sonra devreden zarar ikinci kez düşülmez", () => {
+  // Devreden zarar 100.000; Q1 kazanç 300.000 → beyanname matrahı 200.000, vergi 50.000; Q2 kazanç 100.000
+  const base27 = { year: 2027, quarters: [q27(1, 300_000), q27(2, 100_000)], settings: withLoss(100_000), today: "2027-08-01" };
+  const free = quarterTaxes({ ...base27, filings: [] })[1];
+  // Çapasız: kümülatif 400.000 − zarar 100.000 = 300.000 × %25 = 75.000; önceki 50.000 → 25.000
+  assert.deepEqual([free.cumulative, free.loss, free.matrah, free.hesaplanan, free.previous, free.estimate], [400_000, 100_000, 300_000, 75_000, 50_000, 25_000]);
+  const anchored = quarterTaxes({ ...base27, filings: [q1Filing(200_000, 50_000)] })[1];
+  // Çapalı: kazanç 200.000 + çapada düşülen zarar 100.000 + Q2 100.000 = 400.000; sonuç çapasızla aynı
+  assert.deepEqual([anchored.cumulative, anchored.loss, anchored.matrah, anchored.hesaplanan, anchored.previous, anchored.estimate], [400_000, 100_000, 300_000, 75_000, 50_000, 25_000]);
+  assert.deepEqual(anchored.anchor, { period: "2027-Q1", matrah: 200_000, hesaplanan: 50_000, deducted: 100_000 });
+  // Asgari vergi kazançtan (zarar düşülmeden): 400.000 × %10
+  assert.equal(anchored.asgari, 40_000);
+});
+
+test("VG-03: çapanın matrahında indirim de düşülmüş; zarar olan ya da sıfır matrahlı çapa", () => {
+  // Zarar yok, Q1 indirim 50.000: beyanname matrahı 300.000 − 50.000 = 250.000 (vergi 62.500); Q2 kazanç 100.000
+  const ind = quarterTaxes({ year: 2027, quarters: [q27(1, 300_000, 50_000), q27(2, 100_000)], settings: S_A, filings: [q1Filing(250_000, 62_500)], today: "2027-08-01" })[1];
+  // 250.000 + 50.000 + 100.000 = 400.000; indirim bir kez (50.000) → matrah 350.000, vergi 87.500 − 62.500 = 25.000
+  assert.deepEqual([ind.cumulative, ind.indirim, ind.matrah, ind.hesaplanan, ind.estimate], [400_000, 50_000, 350_000, 87_500, 25_000]);
+  // Sıfır matrahlı çapa (Q1 kazancı 200.000 zararla kapandı, devreden 500.000): kazanç panelin Q1'i, zarar Q3'te biter
+  // (asgari vergi muaf: ilk 3 hesap dönemi)
+  const zero = quarterTaxes({ year: 2027, quarters: [q27(1, 200_000), q27(2, 200_000), q27(3, 200_000)], settings: { ...withLoss(500_000), firstActivity: "ilk" }, filings: [q1Filing(0, 0)], today: "2027-11-01" });
+  assert.deepEqual([zero[1].cumulative, zero[1].loss, zero[1].matrah], [400_000, 400_000, 0]);
+  // Q3: 600.000 − 500.000 = 100.000 × %25 = 25.000 (çapa 0 + Q2 0)
+  assert.deepEqual([zero[2].cumulative, zero[2].loss, zero[2].matrah, zero[2].estimate], [600_000, 500_000, 100_000, 25_000]);
+  // Zararlı çapa (−50.000): zarar ve indirim düşülmemiş, kazanç çapanın kendisi
+  const neg = quarterTaxes({ year: 2027, quarters: [q27(1, -50_000), q27(2, 200_000)], settings: withLoss(100_000), filings: [q1Filing(-50_000, 0)], today: "2027-08-01" })[1];
+  assert.deepEqual([neg.cumulative, neg.loss, neg.matrah, neg.hesaplanan, neg.anchor!.deducted], [150_000, 100_000, 50_000, 12_500, 0]);
 });

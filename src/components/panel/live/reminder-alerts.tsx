@@ -82,12 +82,15 @@ function dropPopup(id: number) {
 
 const NO_REMINDERS: LiveReminder[] = [];
 
-export function ReminderAlerts({ enabled, now, onChanged }: { enabled: boolean; now: number; onChanged: () => void }) {
+export function ReminderAlerts({ userId, enabled, now, onChanged }: { userId: number; enabled: boolean; now: number; onChanged: () => void }) {
   const live = useLive();
   const state = useSyncExternalStore(subscribePopups, () => popups, () => SERVER_POPUPS);
   const owners = useAlarmOwners();
   const [busy, setBusy] = useState<number | null>(null);
-  const list = live.data?.reminders ?? NO_REMINDERS;
+  // Yalnız kabuğun kullanıcısının hatırlatıcıları (savunma, denetim KA-01: depoda başka oturumun verisi kalsa da önceki
+  // kişinin notu bu ekranda açılmaz; canlı veri deposu zaten kullanıcıya bağlı, store.ts)
+  const mine = live.data && live.data.me.id === userId ? live.data : null;
+  const list = mine?.reminders ?? NO_REMINDERS;
   const at = now ? Math.max(now, state.shownAt) : 0;
   const pending = enabled && at ? pendingReminders(list, at) : NO_REMINDERS;
   const ringing = new Set(ringingReminders(owners));
@@ -109,12 +112,12 @@ export function ReminderAlerts({ enabled, now, onChanged }: { enabled: boolean; 
   // Sıradaki pencerelerden başka cihazda tamamlanan ya da ertelenenler sıradan çıkar (geri alınırsa yeniden açılmasın:
   // köşede görünür)
   useEffect(() => {
-    if (!live.data) return;
-    const current = live.data.reminders;
+    if (!mine) return;
+    const current = mine.reminders;
     for (const p of popups.queue) {
       if (!current.some((r) => r.id === p.id && r.active && reminderAlertKey(r) === p.key)) dropPopup(p.id);
     }
-  }, [live.data]);
+  }, [mine]);
 
   const changed = () => void refreshLive().then(onChanged);
 

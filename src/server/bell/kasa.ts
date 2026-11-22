@@ -126,9 +126,14 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       )
     : [{ till: tills.of(tills.till), reports, expects: true }];
   const missing = groups.filter((g) => g.expects && !g.reports.some((r) => r.date === yesterday));
-  // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9)
-  const closed = missing.length ? ((await closedYesterday(user, now).catch(() => null))?.yesterday ?? null) : null;
-  for (const g of closed?.state === "approved" ? [] : missing) {
+  // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9). Kapalı
+  // gün şubenin: her kasanın eksiği kendi şubesinin işaretine ve bildirimine bakar (Tuzla kapalıyken Marina'nınki kalır)
+  const closedOf = new Map(
+    await Promise.all(missing.map(async (g) => [g.till.id, (await closedYesterday(user, now, g.till.id).catch(() => null))?.yesterday ?? null] as const)),
+  );
+  for (const g of missing) {
+    const closed = closedOf.get(g.till.id) ?? null;
+    if (closed?.state === "approved") continue;
     out.push({
       id: `kasa-yok-${yesterday}${idPart(g.till)}`,
       kind: "warning",

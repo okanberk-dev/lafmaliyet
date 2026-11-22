@@ -8,7 +8,7 @@ import { businessDate } from "@/lib/cash-report";
 import { alertPollDue, alertReaches, checklistAlerts, remindableLists, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { checklistDay } from "@/lib/checklists";
 import { loadAlertLists } from "@/server/checklists/store";
-import { isClosedDay } from "@/server/closed-days";
+import { closedMarksOn, isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { photoStorage } from "@/server/storage/photos";
 
@@ -41,8 +41,12 @@ export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: num
   if (!settings.emailEnabled) return { skipped: "e-posta hatırlatmaları kapalı", alerts: [], sent: 0, failed: 0 };
   const db = getDb();
   const day = checklistDay(now);
-  const [all, closed] = await Promise.all([loadAlertLists(db, day, { today: businessDate(now), photos: photoStorage().available }), isClosedDay(day, db)]);
-  const due = checklistAlerts(day, now, remindableLists(all, closed));
+  const [loaded, closed, marks] = await Promise.all([loadAlertLists(db, day, { today: businessDate(now), photos: photoStorage().available }), isClosedDay(day, db), closedMarksOn(day, db)]);
+  // Kapalı gün şubenin olabilir (docs/SUBE.md › Kapalı gün): işaretin kapsadığı listeler (işletme kapalıysa hepsi, şube
+  // kapalıysa o şubenin listeleri) açılmadıysa susar; öteki şubenin ve bütün şubelerin listeleri hatırlatılır
+  const shut = (l: (typeof loaded)[number]) => marks.all || (l.branchId !== null && marks.branches.has(l.branchId));
+  const all = closed ? loaded.filter(shut) : loaded;
+  const due = [...checklistAlerts(day, now, remindableLists(all, closed)), ...(closed ? checklistAlerts(day, now, loaded.filter((l) => !shut(l))) : [])];
   if (!due.length) return { skipped: closed ? "gönderilecek hatırlatma yok (kafe kapalı işaretli)" : "gönderilecek hatırlatma yok", alerts: [], sent: 0, failed: 0 };
 
   const log = s.notificationLog;

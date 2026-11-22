@@ -129,7 +129,14 @@ export function cashReportSummary(
   }
   const carryCount = days.filter((r) => carryOf(r)).length;
   const sum = (f: (r: CashReportLike) => number) => r2(days.reduce((a, r) => a + f(r), 0));
-  const kinds = days.map((r) => diffKind(r.cashDiff));
+  // Gün günde bir (denetim 13 Kasım HM-07): "Tümü"de aynı günün şube raporlarından en kötüsü (eksik > fazla > tutuyor)
+  const worst = new Map<string, ReturnType<typeof diffKind>>();
+  for (const r of days) {
+    const k = diffKind(r.cashDiff);
+    const had = worst.get(r.date);
+    if (!had || k === "short" || (k === "over" && had === "even")) worst.set(r.date, k);
+  }
+  const kinds = [...worst.values()];
   const toplam = {
     zToplam: sum((r) => r.zTotal),
     nakit: sum((r) => r.cash),

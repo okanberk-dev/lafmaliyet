@@ -22,6 +22,7 @@
 import { supplierMatchKey } from "../app/panel/faturalar/rules";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod, FixedSection } from "./calc/types";
+import { dayRevenue } from "./cash-revenue";
 import { FIXED_ESTIMATE_DESCRIPTION, fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { money, monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
@@ -34,6 +35,7 @@ import {
   dayMonthTR,
   isMuhtasarReminder,
   isProvisionalTaxReminder,
+  isRentWithholdingReminder,
   isVatReminder,
   isVatWithholdingReminder,
   monthEnd,
@@ -47,9 +49,11 @@ import {
 } from "./reminders";
 import { unreachable } from "./unreachable";
 import { legalDayText, legalDueDate, mphbPeriodOf, quarterLabel, quarterOfDue } from "./tax/calendar";
+import { kdv2HizmetOf, muhtasarItemsFromModel } from "./tax/muhtasar";
 import { taxPayrollFromModel, type PayrollMonth } from "./tax/payroll";
-import { paidFixedRates, r2, rulesFor, type Withholding } from "./tax/rules";
+import { paidFixedRates, r2, rulesFor, type Withholding, withholdingKdv2 } from "./tax/rules";
 import { DEFAULT_TAX_SETTINGS, type TaxSettings } from "./tax/settings";
+import { returnYearOf } from "./tax/stamp";
 import type { TaxPlanFeed } from "./tax/view";
 import { originalDue, paidVatPeriods, type VatPaidEntry } from "./vat-paid";
 
@@ -146,7 +150,17 @@ function withheldNote(f: Pick<FixedItem, "name" | "period" | "amount" | "vatRate
  * satış yapmaz, son 28 günün ortalaması ileriye yazılmasın. Kütükte bulunmayan şubenin raporu (olmamalı) yine sayılır
  */
 export function planCashReports(
-  reports: readonly { branchId: string; date: string; zTotal: number; card: number; mealCard: number; online?: number }[],
+  reports: readonly {
+    branchId: string;
+    date: string;
+    zTotal: number;
+    card: number;
+    mealCard: number;
+    online?: number;
+    cash?: number;
+    other?: number;
+    offRevenue?: number | null;
+  }[],
   branches: readonly { id: string; name: string; active: boolean }[],
 ): CashPlanInput["cashReports"] {
   const of = new Map(branches.map((b, i) => [b.id, { name: b.name, active: b.active, i }]));
@@ -160,23 +174,31 @@ export function planCashReports(
       card: r.card,
       mealCard: r.mealCard,
       online: r.online,
+      // Ödenmez Z'nin içindeyse ciroya girmez (dayRevenue): ödeme dökümü de verilir (yoksa Z toplamı ciro sayılır)
+      ...(r.offRevenue !== undefined ? { offRevenue: r.offRevenue } : {}),
+      ...(r.cash !== undefined ? { payments: Math.round((r.cash + r.card + r.mealCard + (r.online ?? 0) + (r.other ?? 0)) * 100) / 100 } : {}),
       branchId: r.branchId,
       branchName: of.get(r.branchId)?.name ?? r.branchId,
     }));
 }
 
+/** Raporun cirosu: Z toplamı − Z'nin içindeki ödenmez / ikram (ay bilgisinin kuralı, src/lib/cash-revenue.ts dayRevenue) */
+const reportRevenue = (r: { zTotal: number; offRevenue?: number | null; payments?: number | null }) =>
+  dayRevenue({ zTotal: r.zTotal, offRevenue: r.offRevenue ?? null, payments: r.payments ?? null }).revenue;
+
 /**
- * Nakit planının günlük satışı şube şube (docs/NAKIT-PLANI.md › Satışlar): her kasanın Z toplamı ÷ o kasanın raporlu gün
- * sayısı. Şubesi verilmeyen raporlar tek kasa sayılır (aynı günün iki raporu bir gün). Sıra: girdideki ilk görünüş
+ * Nakit planının günlük satışı şube şube (docs/NAKIT-PLANI.md › Satışlar): her kasanın cirosu (Z toplamı, ödenmez / ikram
+ * hariç; denetim 13 Kasım HM-08) ÷ o kasanın raporlu gün sayısı. Şubesi verilmeyen raporlar tek kasa sayılır (aynı günün
+ * iki raporu bir gün). Sıra: girdideki ilk görünüş
  */
 export function salesDaily(
-  reports: readonly { date: string; zTotal: number; branchId?: string; branchName?: string }[],
+  reports: readonly { date: string; zTotal: number; offRevenue?: number | null; payments?: number | null; branchId?: string; branchName?: string }[],
 ): { id: string; name: string; days: number; daily: number }[] {
   const groups = new Map<string, { name: string; z: number; dates: Set<string> }>();
   for (const r of reports) {
     const id = r.branchId ?? "";
     const g = groups.get(id) ?? { name: r.branchName ?? r.branchId ?? "", z: 0, dates: new Set<string>() };
-    g.z += r.zTotal;
+    g.z += reportRevenue(r);
     g.dates.add(r.date);
     groups.set(id, g);
   }
@@ -192,9 +214,21 @@ export interface CashPlanInput {
   invoiceTermDays: number;
   /**
    * `online`: Z raporundaki online platform ödemeleri (Yemeksepeti, Getir…; laffogato.net değil, o kasadan geçmez).
-   * `branchId` / `branchName`: raporun kasası (şube); günlük satış şube şube ortalanıp toplanır (yoksa tek kasa sayılır)
+   * `branchId` / `branchName`: raporun kasası (şube); günlük satış şube şube ortalanıp toplanır (yoksa tek kasa sayılır).
+   * `offRevenue` ve `payments` (ciroya dahil ödemelerin toplamı) ödenmezin Z toplamının içinde olup olmadığını söyler
+   * (src/lib/cash-revenue.ts dayRevenue); verilmezse Z toplamı ciro sayılır
    */
-  cashReports: readonly { date: string; zTotal: number; card: number; mealCard: number; online?: number; branchId?: string; branchName?: string }[];
+  cashReports: readonly {
+    date: string;
+    zTotal: number;
+    card: number;
+    mealCard: number;
+    online?: number;
+    offRevenue?: number | null;
+    payments?: number | null;
+    branchId?: string;
+    branchName?: string;
+  }[];
   /** Bu aya kadarki, açık günü ve POS cirosu girilmiş son ay (kasa raporu yetmezse) */
   posMonth: { month: string; posRevenue: number; openDays: number } | null;
   online: { month: string; perDay: number } | null;
@@ -671,13 +705,23 @@ export function planInputFromModel(
     };
   }
   const { rules } = rulesFor(Number(cur.slice(0, 4)), tax.overrides);
+  // Yurt dışı hizmetin KDV'si (sorumlu sıfatıyla, vergi beslemesiyle KDV-2 satırı) aynı ay 1 No.lu beyannamede
+  // indirilir: dönemin alış KDV'sine eklenir (VG-04). Besleme yoksa kalem faturasının KDV'siyle brüt ödenir, eklenmez
+  const vat = vatMonthInputs(model, today);
+  if (feed && model.ds.fixedExpenses.some((f) => withholdingKdv2(f.taxWithholding, rules) > 0)) {
+    for (const m of vat.months) {
+      if (m.month < tax.periodStart.slice(0, 7)) continue;
+      const hizmet = kdv2HizmetOf(muhtasarItemsFromModel(model, m.month), m.month, tax.overrides);
+      if (hizmet > 0) m.purchases.hizmet = hizmet;
+    }
+  }
   return {
     settings: { komisyon: st.komisyon, kartOrani: st.kartOrani, acikGun: st.acikGun, kdv: st.kdv, kdvHizmet: st.kdvHizmet },
     posMonth: pos ? { month: pos.month, posRevenue: pos.posRevenue!, openDays: pos.openDays! } : null,
     online: onlineBasis(model, today),
     months,
     fixedNames: model.ds.fixedExpenses.map((f) => ({ id: f.id, name: f.name, period: f.period, endMonth: f.endMonth ?? null })),
-    vat: { ...vatMonthInputs(model, today), switchDay: st.lafposGecisGunu },
+    vat: { ...vat, switchDay: st.lafposGecisGunu },
     // Ufuktaki kafe kapalı işaretli günler (E-41)
     closedDays: (model.ds.closedDays ?? []).filter((d) => d >= today && d <= addDays(today, PLAN_DAYS - 1)),
     sgkRates: { year: Number(cur.slice(0, 4)), isveren: rules.sgk.isverenOran.value, issizlik: rules.sgk.isverenIssizlik.value },
@@ -765,6 +809,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const { today, settings: st } = input;
   /** Vergi beslemesi (docs/VERGI.md); yoksa vergi satırı, damga ve yasal gün notu yok */
   const tax = input.tax ?? null;
+  /** Dönemin KDV ya da KDV-2 beyannamesinin damgası: beyannamenin verildiği yılın tutarı (Aralık'ınki izleyen yılın) */
+  const returnStampOf = (k: "kdv" | "kdv2", period: string) => (tax ? (tax.stamps.kdvByYear?.[returnYearOf(period)] ?? tax.stamps[k]) : 0);
   const N = PLAN_DAYS;
   const dates = Array.from({ length: N }, (_, i) => addDays(today, i));
   const end = dates[N - 1];
@@ -817,10 +863,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const days = new Set(reports.map((r) => r.date)).size;
   let sales: CashPlan["basis"]["sales"] = { kind: "none" };
   if (days >= MIN_SALES_REPORTS) {
-    const z = reports.reduce((a, r) => a + r.zTotal, 0);
+    // Ciro ay bilgisinin kuralıyla: Z toplamı − Z'nin içindeki ödenmez / ikram (denetim 13 Kasım HM-08)
+    const revenue = reports.reduce((a, r) => a + reportRevenue(r), 0);
     const card = reports.reduce((a, r) => a + r.card + r.mealCard, 0);
     const platform = reports.reduce((a, r) => a + (r.online ?? 0), 0);
-    const share = (v: number) => Math.min(1, Math.max(0, v / z));
+    const share = (v: number) => (revenue > 0 ? Math.min(1, Math.max(0, v / revenue)) : 0);
     const per = salesDaily(reports);
     sales = {
       kind: "kasa",
@@ -1142,6 +1189,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     known,
     periods: vatPeriods,
     hasSite: input.vat.hasSite,
+    // Vergi beslemesiyle Ödemeler'deki tutar damga dahildir: yalnız damga yazılmışsa KDV ödenmemiştir (VG-01). Damga
+    // dönemin beyannamesinin yılınınki (Vergi takvimindeki gibi)
+    stamp: tax ? (p: string) => returnStampOf("kdv", p) : 0,
   });
   const vatRows: VatRow[] = knownRows.map((r) => ({ ...r, estimate: estimates.get(r.period) ?? null }));
   const usedKeys = new Set<string>();
@@ -1322,26 +1372,60 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         reminderOccurrences(r, today, end).map((o) => ({ r, o, period: periodOf(r, o.due), kesin: r.amount !== null && (o.due === r.dueDate || !taxAmountTravels(r)) })),
       );
       const owned = new Set<string>();
+      // Sabit tutarlı "Kira stopajı" (VG-02): tutarı muhtasarın yalnız kira stopajıdır, dönemi sahiplenmez. Muhtasarın
+      // kalanı o dönemde başka bir muhtasar hatırlatıcısının gününde, yoksa kira stopajı hatırlatıcısının gününde girer
+      const isRent = (r: ReminderRow) => kind === "muhtasar" && isRentWithholdingReminder(r);
+      const rentAt = new Map<string, { amount: number; at: (typeof occs)[number]["o"] }>();
+      for (const x of occs) if (x.kesin && isRent(x.r) && !rentAt.has(x.period)) rentAt.set(x.period, { amount: x.r.amount!, at: x.o });
+      // Tutarı muhtasarın tamamı olan hatırlatıcı ("Muhtasar"; muhasebecinin rakamı da buraya yazılır) dönemin kira
+      // stopajını içerir: kira stopajı hatırlatıcısı kendi satırında kalır, tamamdan düşülür (iki kez sayılmaz; takvim tamamı yazar)
+      const rentTaken = new Set<string>();
       for (const x of occs) {
         if (!x.kesin) continue;
+        const rent = isRent(x.r);
         if (x.r.amount! > 0) {
           // K4: muhasebecinin rakamı Ödemeler'dekinden 1 ₺'den fazla farklıysa satır söyler (Vergi sayfası da uyarır)
           const filed = items.get(x.period);
-          const differs = filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
-          reminderLine(x.r, x.o, differs ? { detail: filingMismatchText(filed.amount, x.r.amount!) } : {});
-          taxKesin++;
+          const differs = !rent && filed?.source === "filing" && Math.abs(filed.amount - x.r.amount!) > 1;
+          const inner = !rent && !rentTaken.has(x.period) ? rentAt.get(x.period) : undefined;
+          if (inner) rentTaken.add(x.period);
+          const notes = [
+            ...(differs ? [filingMismatchText(filed.amount, x.r.amount!)] : []),
+            ...(inner ? [`Kira stopajı (${money(inner.amount)}) Ödemeler'de ayrı satırda; burada düşüldü (hatırlatıcıdaki tutar ${money(x.r.amount!)}).`] : []),
+          ];
+          const amount = inner ? Math.max(0, r2(x.r.amount! - inner.amount)) : x.r.amount!;
+          if (amount > 0) {
+            reminderLine(x.r, x.o, { ...(inner ? { amount } : {}), ...(notes.length ? { detail: notes.join(" ") } : {}) });
+            taxKesin++;
+          }
         }
-        owned.add(x.period);
+        if (!rent) owned.add(x.period);
       }
+      // Muhtasarın satırı: kira stopajı Ödemeler'deyse yalnız kalanı (tahminde beslemenin `rest`'i; muhasebecinin
+      // rakamında hatırlatıcının tutarı düşülür), kira stopajı satırı yok
+      const draw = (item: TaxPlanFeed["items"][number], at: { date: string; due: string; overdue: boolean }) => {
+        const rent = rentAt.get(item.period);
+        if (!rent) {
+          taxLine(item, at);
+          if (kind === "muhtasar") kiraLine(item.period, at);
+        } else if (item.source === "filing") {
+          taxLine({ ...item, amount: Math.max(0, r2(item.amount - rent.amount)), detail: `${item.detail} Kira stopajı (${money(rent.amount)}) Ödemeler'de ayrı satırda; burada düşüldü.` }, at);
+        } else taxLine(item.rest ? { ...item, ...item.rest } : item, at);
+      };
       const rest = occs.filter((x) => !x.kesin).sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
       for (const x of rest) {
         if (paid.has(x.period)) continue;
         const item = items.get(x.period);
         if (!taxOff && item && !owned.has(x.period)) {
           owned.add(x.period);
-          taxLine(item, x.o);
-          if (kind === "muhtasar") kiraLine(item.period, x.o);
+          draw(item, x.o);
         } else addUnknown(x.r, x.o.date, owned.has(x.period) ? undefined : pending.get(x.period)?.note);
+      }
+      for (const [period, rent] of rentAt) {
+        const item = items.get(period);
+        if (taxOff || !item || owned.has(period) || paid.has(period)) continue;
+        owned.add(period);
+        draw(item, rent.at);
       }
       return;
     }
@@ -1374,8 +1458,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       if (k) for (const o of reminderOccurrences(r, today, end)) stampMonths[k].add(o.due.slice(0, 7));
     }
     for (const k of ["kdv", "kdv2"] as const) {
-      const amount = tax.stamps[k];
       for (const [period, at] of stampAt[k]) {
+        const amount = returnStampOf(k, period);
         const dueMonth = (k === "kdv" ? vatDueDate(period) : vat2DueDate(period)).slice(0, 7);
         if (!(amount > 0) || stampMonths[k].has(dueMonth)) continue;
         taxDrawn++;
@@ -1853,7 +1937,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     text: off("sales")
       ? "Satışlar tahmine katılmıyor (Tahmine katılanlar'dan açın)."
       : s.kind === "kasa"
-        ? `Son 28 günün ${num(s.reports)} kasa raporuna${salesDaysText(s)} göre günde ortalama ${tl(s.daily)} (Z toplamı${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
+        ? `Son 28 günün ${num(s.reports)} kasa raporuna${salesDaysText(s)} göre günde ortalama ${tl(s.daily)} (Z toplamı, ödenmez / ikram hariç${s.platformShare >= 0.005 ? `; Z'deki online platform ödemeleri (Yemeksepeti, Getir…) ${pct(s.platformShare, 0)}, aynı gün ve kesintisiz sayıldı` : ""}). ${commission(s.cardShare)} ${fromTomorrow}`
         : s.kind === "pos"
           ? `Son 28 günde yeterli kasa raporu yok; ${monthLabel(s.month)} POS cirosuna göre günde ${tl(s.daily)} (${num(s.openDays)} açık gün). ${commission(s.cardShare)} ${fromTomorrow}`
           : "Satış verisi yok: gelen para sayılmadı. Kasa raporu girildikçe tahmin oluşur.",

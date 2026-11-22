@@ -53,7 +53,7 @@ kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 | Giderler | Şubeye bağlı; **ortak giderler "işletme geneli"** kalır, hiçbir şubeye zorlanmaz |
 | Personel | Herkes bir şubeye bağlı; maaşı o şubenin gideri |
 | ModPOS | Şube başına ayrı anahtar; günlük 2 çekim hakkı şube başına (kuruldu, 16 Kasım 2026: [MODPOS-API.md › Şubeler](MODPOS-API.md#1a-şubeler-16-kasım-2026)) |
-| Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde |
+| Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde (faturalar bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz; stok kartında not, denetim 13 Kasım ST-06) |
 
 "Tümü" seçiliyken işletme geneli giderler toplama girer ama şube kırılımında ayrı sütunda durur: bir şubenin
 kârı ortak giderle şişirilmez.
@@ -151,7 +151,7 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 |---|---|
 | Kasa raporu, kasadan çıkan para | Formun gösterdiği kasa: sayfa açılırken seçili şube, "Tümü"nde Tuzla (kasadan çıkanın harcaması da o şubenin). Form kasanın kimliğini gönderir; gönderim anındaki seçim değil o yazılır ([aşağıda](#kasa-raporu-tümüde-20-kasım-2026)) |
 | Tedarikçiye kasadan ödeme (yeni Teslim satırı) | Pencerede seçilen kasa: varsayılanı seçili fiziksel şube (tek kasa açıksa o). "Tümü" ya da online kanal seçiliyken birden çok kasa açıksa varsayılan yok, şube seçilmeden kaydedilmez; sunucu da seçimsiz kaydı reddeder (`chooseTill`, denetim 21 Kasım #31). Var olan satır listesinde her satır kasasının şubesini yazar |
-| Ay bilgisi (ciro, açık gün, indirim, ödenmez, ay notu; Satışlar ve Gelir-gider) | Seçili şubenin ay satırı; "Tümü"nde Tuzla'nınki. Gelir-gider "Tümü"de birden çok kasa açıkken bunu not olarak yazar. Önceden Gelir-gider'in ciro, açık gün ve ay notu hücreleri şubesiz yazıyor, her şubede Tuzla'nın satırını eziyordu (denetim 21 Kasım #6) |
+| Ay bilgisi (ciro, açık gün, indirim, ödenmez, ay notu; Satışlar ve Gelir-gider) | Seçili şubenin ay satırı; "Tümü"nde Tuzla'nınki. Önceden Gelir-gider'in ciro, açık gün ve ay notu hücreleri şubesiz yazıyor, her şubede Tuzla'nın satırını eziyordu (denetim 21 Kasım #6). Birden çok kasa açıkken "Tümü"de Gelir-gider'in ciro ve açık gün hücresi **kilitlidir** ("şubeyi seçin"; sunucu da reddeder, `monthTotalsLocked`): hücre şubelerin toplamını gösterir, yazılan Tuzla'nın ayına inip öteki şubenin cirosunu iki kez saydırırdı; sayfanın notu bunu ve ay notunun Tuzla'ya indiğini yazar. Satışlar'ın ay formu "Tümü"de başlığında **Tuzla** yazar, Tuzla'nın elle yazdığını ve kasasını gösterir; liste ↔ POS kutusu çıkmaz (liste bütün şubelerin) (denetim 13 Kasım HM-02) |
 | Satışlar › Ayı temizle | Gösterilen şubenin listesi ve (seçilirse) ay bilgisi; "Tümü"nde bütün şubelerinki. Listenin son günü (kapsam kaydı) ayın tek kaydıdır: yalnız ayda hiçbir şubenin listesi kalmadıysa silinir (denetim 21 Kasım #7) |
 | Stok sayımı, zayi | Seçili **fiziksel** şube; "Tümü" ya da online kanal seçiliyken Tuzla. Stok sayımı başlığı birden çok açık şube varken hangi şubenin sayıldığını yazar. Sayımın **"Listede olmayanlar"ı** (ek kalemler) da şubenin: okuma, eşleme, silme ve kayıt o şubenin listesiyle, "Tümü" bütün şubelerinkini toplar (`stock_extras.branch_id`, migration 0059; eski satırlar Tuzla'nın). Önceden liste şubesizdi: Marina'nın formu Tuzla'nın ek kalemlerini gösteriyor, aynı adlı kalemi ezip fiyatsız olanı siliyordu (denetim 21 Kasım #19/#24). Yalnız yeni kalemin fiyatını bulan geçmiş işletme genelidir (fiyat şubeye göre değişmez). Kaydedilmemiş sayımın bu cihazdaki taslağı da şube başına (anahtar `laf:sayim-taslak:<şube>:<ay>`, taslak şubesini de yazar): bir şubenin taslağı öbür şubenin formunda önerilmez, oraya kaydedilmez (#8). Şubesiz eski anahtardaki taslak hangi şubenin olduğu bilinmediği için okunmaz. **Sayım formu şubesini taşır** (kasa formları gibi): sayım, ek kalemler ve "Listeye ekle" formun gösterdiği şubeyi gönderir, sunucu onu doğrular (etkin fiziksel şube; şubesine kilitli personelde yalnız kendi şubesi, `formCountBranch` › `formCountError`) ve yazımı o şubenin kapsamında çalıştırır. Önceden kayıt gönderim anındaki çereze iniyordu: başka sekmede seçici Marina'ya geçince açık kalan Tuzla sayımı Marina'ya yazılıyordu. Şubeyi göndermeyen eski sekme seçili fiziksel şubeye yazar |
 | Harcama | Seçili şube; "Tümü"nde işletme geneli (boş) |
@@ -164,6 +164,24 @@ sayımı (Tuzla)"); sayım toplamı ve elle yazılmamış açılış şubenin ke
 Stok sayımı kaydının çakışma hedefi `(ay, şube, malzeme)`: dalga 2'de tek şubesiz hedef kaldığı için sayım kaydı
 "no unique or exclusion constraint" hatasıyla düşüyordu; `tests/sube-maliyet.test.ts` artık bütün kaynak dosyalarını
 tarar.
+
+## "Tümü"nün ay bilgisi (denetim 13 Kasım 2026, P02)
+
+"Tümü" şubelerin toplamıdır. Kasa satırları (rapor, LafPOS gün sonu, ModPOS föyü) şubesini taşır (`tillRows`,
+`src/server/data/cash-reports.ts`); ay bilgisi şöyle kurulur (`src/lib/cash-month.ts`, `src/server/data/dataset.ts`):
+
+| Ne | Kural |
+|---|---|
+| Açık gün, raporlu gün | **Günde bir kez**: Tuzla ve Marina aynı gün açıksa bir gün. Personel ve oranlanan sabit gider bu günle bölünür, oran en çok 1 (iki şube açıkken maaş ve kira iki kat sayılmaz); günlük ortalama ve ay sonu öngörüsü de bu günle |
+| Ciro, indirim, ödenmez | Şubelerin toplamı |
+| Kaynak önceliği | Rapor > LafPOS gün sonu > föy, **aynı şubenin aynı gününde**: bir şubenin raporu ötekinin föyünü düşürmez |
+| Elle yazılan ay bilgisi | Her şube kendi elle yazdığı ve kasasıyla çözülür, sonra toplanır (`resolveBranchMonths`): Marina'nın elle yazdığı ciro Tuzla'nın kasa cirosunu silmez. Elle yazılan açık günün hangi günler olduğu bilinmediği için şubelerin en büyüğü alınır; kasadan gelen günler yalnız açık günü kasadan gelen şubelerin satırlarıyla birleşir (elle daha az gün yazan şubenin kasa günleri girmez). Kartlı oran ciro ağırlıklı |
+| Açılış ayı | Her şube kendi açılış günüyle (`tillOpenedOn`): raporlar açılış gününden beri girildiyse ay yarım sayılmaz, cirosu "Tümü"nün toplamına da girer |
+| Personel ve sabit gider | Şubeye bağlı kişi ve kalem "Tümü"de de kendi şubesinin günüyle oranlanır (açılış ayında açılış gününden; şube görünümüyle aynı); işletme geneli kalem işletmenin günüyle |
+| Biten ay | Ayın sonuna kadar oranlanır: ayın 1'inde 00:00-05:00 arası son günün raporu daha beklenirken de kira ve maaş tam ay (`prorationDays`) |
+
+Aynı kuralla: Genel bakış'ın günlük ciro grafiği günün şubelerini tek çubukta toplar; nakit planının ve haftalık özetin
+satışı ödenmez / ikram hariç ciroyla (`dayRevenue`); Bugün'ün şube kartı föyden sayılan günü de çizer.
 
 ## Kasa raporu "Tümü"de (20 Kasım 2026)
 
@@ -208,7 +226,15 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   zayide `wasteLock`: yeni kayıtta ve geç kayıt isteğinde kaydın ineceği şube, silmede kaydın kendi şubesi; denetim
   21 Kasım #13). Önceden zayi kilidi şubesizdi: iki şube dünü ve bugünü girince dün personele hiç kapanmıyor, Tuzla'nın
   raporları Marina'nın unutulan dününü kapatıyordu.
-- **Kapalı gün** işletmenindir (`special_days`'te şube yok; günün herhangi bir şubedeki izi kanıttır), ama Z no ve
+- **Kapalı gün** şubenindir (denetim 13 Kasım KP-05; `special_days.branch_id`, göç 0063). Kasa'nın "Kafe kapalıydı"sı
+  ve personelin bildirimi formun kasasını yazar; bildirimin onayı bildirimin şubesine (yöneticinin seçimine değil; konu
+  Tuzla'da `gun:G`, ötekinde `gun:G:şube`). Şubesi boş satır işletme genelidir (Özel günler'de "Bütün şubeler", eski
+  satırlar) ve her şubede kapalı sayılır; Özel günler'de kapalı günün şubesi seçilir, ikiz denetimi şube içinde, "Geri
+  al" aynı şubeye döner. Kanıt (rapor, LafPOS gün sonu, kasadan çıkan, zayi) o şubenin kayıtlarıdır: Marina'nın raporu
+  Tuzla'nın işaretini kaldırmaz, Tuzla'nın bildirimini engellemez. Bir şubenin kanıtı işletme geneli tek günlük işareti
+  yalnız o şube için kaldırır: satır o gün raporu olmayan öteki etkin fiziksel şubelere şubeli kalır, onaylı
+  bildirimleri oraya geçer (`clearClosedMark`). Bugün, zil ve LafPOS durumu her kasanın eksiğini kendi şubesinin
+  işaretiyle susturur. Kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz kanıttır. Z no ve
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin

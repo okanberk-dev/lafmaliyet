@@ -138,7 +138,8 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
       .returning({ id: s.specialDays.id });
     return row.id;
   }
-  const marked = async (date: string) => (await closed.closedDaysBetween(date, date, db)).length > 0;
+  /** LafPOS'un şubesinde (Marina) kapalı işaretli mi: kapalı gün şubenindir (denetim 13 Kasım KP-05) */
+  const marked = async (date: string) => (await closed.closedDaysBetween(date, date, db, LAFPOS_SUBE)).length > 0;
   const refused = (p: Promise<unknown>, text: string) => assert.rejects(p, (e: unknown) => e instanceof UserError && e.message === text);
 
   before(async () => {
@@ -261,6 +262,8 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     await closedMark(D2);
     await push(D2, 12);
     assert.equal(await marked(D2), false);
+    // İşletme geneli işaret yalnız LafPOS'un şubesi için kalktı: ModPOS'ta kalan şube (Tuzla) kapalı kalır
+    assert.equal(await closed.isClosedDay(D2, db, MODPOS_SUBE), true);
     const logs = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Kapalı gün işareti kaldırıldı (kanıt geldi)"));
     assert.equal(logs.length, 1);
     assert.match(logs[0].detail ?? "", /LafPOS gün sonu geldi \(Z 12 · 63 fiş\)/);

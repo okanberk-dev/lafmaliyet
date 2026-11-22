@@ -54,6 +54,26 @@ test("tamamlandı: tekrar eden bugünü geçene kadar ilerler, tek seferlik kapa
   assert.equal(afterComplete({ dueDate: "2026-10-21", dueTime: null, anchorDate: "2026-10-21", repeat: "none" }, "2026-10-21"), null);
 });
 
+test("tamamlandı: ay sonunda ertesi aya ertelenen aylık hatırlatıcı bir ayı atlamaz (SB-01)", () => {
+  // 30 Kas → "Yarın"a ertelendi (1 Ara) → 1 Ara'da tamamlandı: sıradaki 30 Ara, 30 Oca değil
+  const ertelendi = postponeTarget({ dueDate: "2026-11-30", dueTime: null }, "day", tr("2026-11-30 10:00"));
+  assert.equal(ertelendi.dueDate, "2026-12-01");
+  assert.equal(afterComplete({ ...ertelendi, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-12-01"), "2026-12-30");
+  // 31'lik: 31 Ara → 1 Oca → 31 Oca; 31 Oca → 1 Şub → 28 Şub; kısa ayın sonundan (28 Şub → 1 Mar) → 31 Mar
+  assert.equal(afterComplete({ dueDate: "2027-01-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-01-01"), "2027-01-31");
+  assert.equal(afterComplete({ dueDate: "2027-02-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-02-01"), "2027-02-28");
+  assert.equal(afterComplete({ dueDate: "2027-03-01", dueTime: null, anchorDate: "2026-12-31", repeat: "monthly" }, "2027-03-01"), "2027-03-31");
+  // Gece yarısını aşan "1 saat" ertelemesi de aynı: 30 Kas 23:35 → 1 Ara 00:35; serinin saatine döner (completeTarget)
+  const saat = postponeTarget({ dueDate: "2026-11-30", dueTime: "23:30" }, "hour", tr("2026-11-30 23:31"));
+  assert.deepEqual(saat, { dueDate: "2026-12-01", dueTime: "00:35" });
+  assert.equal(afterComplete({ ...saat, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-12-01"), "2026-12-30");
+  assert.deepEqual(completeTarget({ ...saat, anchorDate: "2026-11-30", anchorTime: "23:30", repeat: "monthly" }, "2026-12-01"), { dueDate: "2026-12-30", dueTime: "23:30" });
+  // Ay içi erteleme ve ertelenmemiş dönem eskisi gibi; erken tamamlanan ertelenmiş dönem de çapanın dönemine sayılır
+  assert.equal(afterComplete({ dueDate: "2026-11-16", dueTime: null, anchorDate: "2026-11-15", repeat: "monthly" }, "2026-11-16"), "2026-12-15");
+  assert.equal(afterComplete({ dueDate: "2026-11-30", dueTime: null, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-11-30"), "2026-12-30");
+  assert.equal(afterComplete({ dueDate: "2026-12-01", dueTime: null, anchorDate: "2026-11-30", repeat: "monthly" }, "2026-11-28"), "2026-12-30");
+});
+
 test("saatli hatırlatmanın anı Türkiye saatiyle (sunucu UTC'de)", () => {
   assert.equal(dueInstant({ dueDate: "2026-10-21", dueTime: "15:30" }), Date.parse("2026-10-21T12:30:00Z"));
   // Gece yarısından sonraki saat bir önceki UTC gününe düşer
@@ -192,6 +212,8 @@ test("sürekli ses uyarıyı kapatmaz: alarm Yaptım ya da Sesi kes'e kadar çal
   // Karaoke alarmının etkisi yalnız kendi alarmını keser (ses açılınca hatırlatmanın alarmı susmaz)
   assert.match(src, /startAlarm\("karaoke"\);\s*\n\s*return \(\) => stopAlarm\("karaoke"\);/);
   assert.doesNotMatch(src, /stopAlarm\(\)/);
+  // Cihazın ses anahtarı kapanınca çalan sürekli hatırlatmalar da susar (karaoke kendi etkisinde)
+  assert.match(src, /if \(!prefs\.sound\) for \(const id of ringingReminders\(alarmOwnersNow\(\)\)\) stopAlarm\(reminderAlarm\(id\)\);\s*\n\s*\}, \[prefs\.sound\]\);/);
   const ui = readFileSync(join(process.cwd(), "src/components/panel/live/reminder-alerts.tsx"), "utf8");
   // Pencereyi kapatmak sesi kesmez (yalnız sıradan çıkarır); Yaptım, erteleme ve Sesi kes keser
   const onClose = ui.slice(ui.indexOf("onClose={() => {"), ui.indexOf("size=\"sm\""));
@@ -314,8 +336,9 @@ test("köşe kartı ve pencere: kabukta, her ekranda; kapatılamaz, hareket azal
   assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*\.reminder-nudge \{/);
   // Uyarı motoru kabukta bir kez (sidebar.tsx) ve kartı çizer
   const center = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
-  assert.match(center, /<ReminderAlerts enabled=\{prefs\.reminderAlerts\} now=\{now\}/);
-  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} branchScope=\{branch\?\.scope \?\? null\} \/>/);
+  // Kart kabuğun kullanıcısının hatırlatıcılarını çizer (ortak cihaz, denetim KA-01; tests/paylasilan-cihaz.test.ts)
+  assert.match(center, /<ReminderAlerts userId=\{userId\} enabled=\{prefs\.reminderAlerts\} now=\{now\}/);
+  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} branchScope=\{branch\?\.scope \?\? null\} \/>/);
 });
 
 test("Kime: yönetici için formun başında, saat verilmeden başkasına kurulunca uyarır", () => {

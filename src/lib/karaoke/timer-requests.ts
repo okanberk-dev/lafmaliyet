@@ -77,8 +77,12 @@ export function karaokeDeleteTitle(p: { startsAt: string; endsAt: string; extraM
   return `Karaoke sayacı silme · ${sessionWhen(p)}`;
 }
 
-/** Ekrandaki ad: etiket, yoksa "Rezervasyonsuz" (sayaç) ya da "İsimsiz rezervasyon" (site) */
-export const sessionName = (s: { customerName: string | null; source: "site" | "panel" }) => s.customerName || (s.source === "panel" ? "Rezervasyonsuz" : "İsimsiz rezervasyon");
+/**
+ * Ekrandaki ad: etiket, yoksa "Rezervasyonsuz oturum" (sayaç) ya da "İsimsiz rezervasyon" (site). Cümlenin öznesi olur
+ * ("Rezervasyonsuz oturum bitirildi"; denetim UI-07), zildeki adla aynı
+ */
+export const sessionName = (s: { customerName: string | null; source: "site" | "panel" }) =>
+  s.customerName || (s.source === "panel" ? "Rezervasyonsuz oturum" : "İsimsiz rezervasyon");
 
 /**
  * "Bitti"nin işlem geçmişi ayrıntısı: oturum, planlanan bitiş ve ne olduğu. Erken bitirme kaç dakika erken olduğunu,

@@ -74,9 +74,9 @@ kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış y
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
 **Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
-onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zil Stok sayımı ekranının
-şubesine bakar (seçili fiziksel şube, "Tümü"de Tuzla); sabah e-postası şube seçimi olmadan her açık şubenin sayımına
-ayrı bakar ve birden çok şube açıkken satırı şubenin adıyla yazar: "Marina: Ekim 2026 sayımı yarım: 10 / 72" (tek
+onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zil tek şube
+seçiliyken Stok sayımı ekranının şubesine bakar; "Tümü"de ve sabah e-postasında her açık fiziksel şubenin sayımına
+ayrı bakılır (denetim 13 Kasım ST-04: önceden zil "Tümü"de yalnız Tuzla'yı okuyordu) ve birden çok şube açıkken satırı şubenin adıyla yazar: "Marina: Ekim 2026 sayımı yarım: 10 / 72" (tek
 yarım şubede bağlantı `&sube=` ile o şubenin sayımı; `pastCountReminders`, denetim 21 Kasım #16). Yine **Uyarılar**'da
 yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin `sayim/logic.ts`): bu ayın ya da geçen
 ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin fiyatı yok" (adlar; kapanış stoğuna 0 ₺
@@ -110,7 +110,8 @@ penceresine götürür, `?kasa=1`). Personelin zili ve Bugün'ü ödeme gösterm
 ## Son ödenenler (geri alma)
 
 "Ödendi" bildirimindeki **Geri al** 8 saniye durur. Kaçırılırsa ya da yanlışlık sonradan fark edilirse, listenin
-altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır:
+altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır. Liste boşken yerinde "Son
+ödenenler: son 30 günde “Ödendi” denen kayıt şu an yok." satırı durur, Yardım'ın bağlantısı ona iner (denetim UI-08):
 
 - Son **30 günde** "Ödendi" işaretlenen fatura ve hatırlatıcılar, en yeni önce, en çok 30 kayıt. Liste, Ödemeler
   ekranından, Faturalar'da tek tek / toplu "Ödendi"den, fatura penceresinde ödenmedi → ödendi kaydedilince ve

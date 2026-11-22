@@ -5,6 +5,7 @@ import { useOptimistic, useState } from "react";
 import { toast } from "sonner";
 
 import { EntryConfirm } from "@/app/panel/tedarikciler/[cari]/entry-confirm";
+import { AnchorNote } from "@/components/panel/anchor-note";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { METHOD_LABEL } from "@/lib/cari/balance";
@@ -18,7 +19,7 @@ import { undoRecentPaid } from "@/server/actions/reminders";
 function undoneText(e: RecentPaid): { title: string; description: string } {
   switch (e.kind) {
     case "invoice":
-      return { title: `${e.title} yeniden ödenmedi`, description: "Fatura ödenmemişler listesine döndü." };
+      return { title: `${e.title} faturası ödenmemişe döndü`, description: "Ödendi işareti geri alındı." };
     case "reminder":
       return { title: `${e.title} geri alındı`, description: "Hatırlatıcı ödenmeden önceki tarihine döndü." };
     case "cari":
@@ -80,7 +81,16 @@ export function RecentPaidList({ items }: { items: RecentPaid[] }) {
       onClose={() => setAsking(null)}
     />
   ) : null;
-  if (!shown.length) return confirm;
+  // Liste boşken de çapa (#son-odenenler; Yardım'daki bağlantı) kısa satıra iner (UI-08)
+  if (!shown.length)
+    return (
+      <>
+        <AnchorNote id="son-odenenler" className="mt-4 px-1 text-xs leading-5">
+          Son ödenenler: son {RECENT_PAID_DAYS} günde “Ödendi” denen kayıt şu an yok.
+        </AnchorNote>
+        {confirm}
+      </>
+    );
 
   return (
     <>

@@ -121,7 +121,8 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
   güncel olmayabilir)"). Hatanın ayrıntısını yalnız yönetici görür; personelin satırı: "Siparişler şu an siteden
   alınamıyor (son başarılı çekme 14:02). Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin."
   **Yenile** düştüğünde personelin bildirimi de ayrıntı taşımaz ("laffogato.net'e ulaşılamadı" · "Sorun sürerse
-  yöneticiye haber verin.").
+  yöneticiye haber verin."). Panelin kendisine ulaşılamazsa (tabletin bağlantısı koptu, sunucu hata verdi) **Yenile**
+  sessiz kalmaz: "Panele ulaşılamadı; bağlantıyı kontrol edip tekrar deneyin." (denetim SB-05; liste eski kalır).
 - **Bağlantı kurulmadıysa** sayfanın başında tek gri kutu: yöneticiye "Site bağlantısı kurulmadı: uygulama siparişleri
   ve masa çağrıları gelmiyor" (Ayarlar bağlantısı, kurulum ayrıntısı "Ayrıntı"da), personele "Site bağlı değil: sipariş
   ve masa çağrısı buraya gelmez" · "Yöneticiye haber verin."; Yenile düğmesi çıkmaz, kartın gövdesi çizilmez.
@@ -307,7 +308,9 @@ ekleme, `version` 1 kalır):
   "Panel"), imza ötekilerle aynı (`callSite`; `x-laf-timestamp`, `x-laf-signature: v1=<hex>`). 200
   `{"ok":true,"call":{"id","status":"acked"}}` (tekrarı aynı yanıt) → liste yeniden çekilir, bildirim "Masa 4 ·
   görüldü". 404 `{"error":"not_found"}`: çağrı zaten kapanmış (başka cihaz gördü ya da süresi doldu) → liste yeniden
-  çekilir, "Masa 4 · çağrı zaten kapanmış". 401 / 503 ve uç yoksa (JSON'suz 404) aşama düğmesindeki gibi: yönetici
+  çekilir, "Masa 4 · çağrı zaten kapanmış". Sözleşme dışı JSON'lu 404 (`not_found` dışında bir kod) "Çağrı sitede
+  bulunamadı; ekran yenilendi." der ve liste de yeniden çekilir (denetim SB-06; aşama düğmesi gibi). 401 / 503 ve uç
+  yoksa (JSON'suz 404) aşama düğmesindeki gibi: yönetici
   ayrıntıyı, personel "Site bağlantısında sorun var; çağrı işaretlenmedi. Yöneticiye haber verin." görür. Masanın adı
   son listenin kopyasından okunur. Panelin işlem geçmişine yazılmaz (kayıt sitede, `actor`).
 - **Zil:** bu cihazın görmediği her açık çağrı bir kez, kapı zili deseniyle (`call`); ilk yüklemede iki dakikadan

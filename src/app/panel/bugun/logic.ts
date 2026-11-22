@@ -103,6 +103,11 @@ export interface CashTill {
   today: CashLite | null;
   yesterday: CashLite | null;
   firstDate: string | null;
+  /**
+   * Şubenin dünkü kapalı gün durumu (kapalı gün şubenindir; closedYesterday şubeyle sorar): Tuzla'nın kapalı günü
+   * Marina'nın "girilmedi" satırını gizlemez. Verilmezse işletmenin olgusuna (`closed`) bakılır
+   */
+  closed?: NonNullable<DayFacts["closed"]>["yesterday"];
 }
 
 /**
@@ -328,7 +333,7 @@ function cashDetail(r: CashLite, full: boolean): string {
 }
 
 /** Bir kasanın günleri (DayFacts.cash ya da "Tümü"de şubenin kasası CashTill) */
-type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate">;
+type TillDays = Pick<CashTill, "today" | "yesterday" | "firstDate" | "closed">;
 
 /** "Tümü"de birden çok kasa açıkken yöneticinin kasaları (şube başına satır); yoksa null (tek kasa, bugünkü gibi) */
 function tillsOf(f: DayFacts): CashTill[] | null {
@@ -358,8 +363,9 @@ const cashYesterday: Row = (f, c) => {
   for (const t of tills) {
     const row = cashYesterdayOf(f, c, t);
     if (!row) continue;
-    // Raporu olmayan şubelerin "Onay bekliyor"u aynı bildirimdir (kapalı gün şubesiz): bir kez, şubesiz
-    if (!t.yesterday && f.closed?.yesterday?.state === "pending") pending ??= row;
+    // Şubenin kendi kapalı gün durumu varsa satır şubenindir. Yoksa (işletmenin olgusu) raporu olmayan şubelerin
+    // "Onay bekliyor"u aynı bildirimdir: bir kez, şubesiz
+    if (t.closed === undefined && !t.yesterday && f.closed?.yesterday?.state === "pending") pending ??= row;
     else out.push(ofTill(row, t));
   }
   return pending ? [...out, pending] : out;
@@ -377,7 +383,7 @@ function cashYesterdayOf(f: DayFacts, c: DayContext, till: TillDays | null): Day
   if (!till.firstDate || c.yesterday < till.firstDate) return null;
   // Dün kafe kapalıydı (dalga 10 §2.9): onaylıysa satır yok; bildirim bekliyorsa yöneticiye "Onaya bak", personele
   // "Onayda"; reddedildiyse personele yöneticinin notu
-  const closed = f.closed?.yesterday ?? null;
+  const closed = (till?.closed !== undefined ? till.closed : f.closed?.yesterday) ?? null;
   if (closed?.state === "approved") return null;
   if (closed?.state === "pending") {
     return admin

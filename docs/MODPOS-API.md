@@ -163,8 +163,9 @@ teslimi.
 Tutarlar noktalı ondalıkla okunur; kayan nokta artığı ve üs (`17620.500000000004`, `-1.1e-13`) iki ondalığa
 yuvarlanır, virgüllü tutar (`1.234,50`) ve ofsetsiz zaman reddedilir (alanın yoluyla). Sayısal karakter başvuruları
 (`&#305;`) çözülür. Ciroya dahil olmayan yöntemler (`IKRAM`, `ODENMEZ`, `HEDIYE_KARTI`, `SADAKAT_IKRAMI`,
-`DEGISIM_MAHSUBU`, `ZAYI`) ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu tutmuyorsa föy kendi içinde tutmuyor demektir: gün
-görünümünde uyarı satırı çıkar. Kasası açılmamış ama satışı olan gün ("föysüz") tutarlarını föysüz satıştan alır, kasa
+`DEGISIM_MAHSUBU`, `ZAYI`) ödeme alanına girmez. Ödemelerin ciroya dahil toplamı ciroyu da ciro − ciro dışı'nı da
+tutmuyorsa föy kendi içinde tutmuyor demektir: gün görünümünde uyarı satırı çıkar. Ciro ödenmezi içeriyorsa (ödemeler =
+ciro − ciro dışı) gün tutarlıdır, uyarı yoktur: formun ve kayıtlı raporun kuralı (`dayRevenue`, denetim KP-08). Kasası açılmamış ama satışı olan gün ("föysüz") tutarlarını föysüz satıştan alır, kasa
 alanları boştur. Kod: `src/lib/modpos/z.ts` (`foyZ`, `modposBucket`).
 
 ## 5. Nerede görünür
@@ -243,6 +244,10 @@ indikçe her sabah bir gün daha sayılır. Kasası açılmamış, satışsız k
 katmaz. Eksik gün uyarıları yalnız ilk kasa raporundan itibaren aranır: raporlardan önceki föy günleri "eksik rapor"
 sayılmaz.
 
+Föy de şubenindir: öncelik ve kesintisiz kısım **şube şube** (Tuzla'nın raporu Marina'nın aynı günkü föyünü düşürmez).
+Föyden sayılan gün Bugün'ün "Şubelerde dün / bugün" kartında da görünür ("ModPOS API'den"; `modposFallbackSheets`):
+Genel bakış'ın günlük grafiği o günü sayarken kartın çizgisi eksik göstermez (denetim 13 Kasım HM-09).
+
 ## 7. Saklama
 
 - `modpos_cash_sheets`: (kasa günü, şube) başına bir satır; föyün okunmuş hâli (`sheet`, kişi adları ve tanınmayan alanlarla),
@@ -268,7 +273,8 @@ sayılmaz.
 | Yanıt okunamadı (alan adı) | ModPOS yanıtının biçimi değişmiş olabilir: `npm run modpos:foy -- --dosya yanit.xml` ile bakın |
 
 Komut satırı (yerelde, anahtar ortamda): `npm run modpos:foy -- 2026-11-02` bir günü çekip özetini yazar (veritabanına
-yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar;
+yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar
+(komut satırında verilen `DATABASE_URL` `.env.local`'dakinden önce gelir, `db:restore` gibi; hedefi yazar);
 `--sube marina` o şubenin anahtarıyla ve o şubeye (kaydederken föy şube adlarına göre ayrılır, §1a).
 
 | Kartta / zilde (şubeler) | Ne yapılır |

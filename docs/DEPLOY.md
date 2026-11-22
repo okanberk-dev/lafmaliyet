@@ -183,10 +183,28 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   etkilenmez.
 - Kullanıcıyı düzenle › **Güvenlik:** parola sıfırlama bağlantısı (24 saat, kişinin mevcut parolası bağlantı
   kullanılana kadar çalışır), kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma. Ayrıca pasif
-  yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme. **Kendi satırınızda** e-posta, parola, iki adımlı
-  sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (oradaki parola onayı
-  buradan atlanamasın). Ortak cihazda işiniz bitince çıkış yapın; unuttuysanız başka bir cihazdan
-  Hesabım › Oturumlar › Diğer cihazlardaki oturumları kapat.
+  yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme. Listedeki aktif / pasif anahtarı yalnız erişimi
+  değiştirir; ad, e-posta ve rol olduğu gibi kalır (liste açıkken başka sekmede yapılan değişiklik geri yazılmaz, bu
+  arada yönetici yapılan kişi için parola sorulur). Düzenleme penceresi açıldığından beri kişi başka bir yerde
+  değiştiyse Kaydet reddedilir ("Bu kullanıcı bu arada değişti"), liste yenilenir; pencereyi kapatıp yeniden açın.
+  **Kendi satırınızda** e-posta, parola, iki adımlı sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut
+  parolayla değişir (oradaki parola onayı buradan atlanamasın). Ortak cihazda işiniz bitince çıkış yapın;
+  unuttuysanız başka bir cihazdan Hesabım › Oturumlar › Diğer cihazlardaki oturumları kapat.
+- **Çıkış** oturumu sunucuda da kapatır: oturum çerezi rastgele bir kimlik taşır, çıkışta bu kimlik
+  `revoked_sessions` tablosuna yazılır. Çerezin bir kopyası alınmış olsa da (ortak bilgisayarda eklenti, kaydedilmiş
+  HAR) çıkıştan sonra geçmez; kişinin öteki cihazlarındaki oturumlar açık kalır. Aynı tarayıcıda yerine yeni oturum
+  açılınca (ad değişikliği, sıradaki kişinin girişi) eskisi de kapanır. Satır çerezin süresi (30 gün) dolunca
+  gereksizleşir, sonraki çıkışta silinir.
+  Bu sürümden önce açılmış oturumlarda kimlik yoktur: onlarda çıkış eskisi gibi yalnız çerezi siler, kendi süreleriyle
+  (en geç 30 günde) düşerler; yayından sonra kimse oturumdan düşmez.
+- **Oturum düşünce** (parola değişti, hesap pasif, oturumlar kapatıldı, çıkış yapıldı) sunucu giriş sayfasına
+  `?oturum=bitti&s=…` ile gönderir; `s` reddedilen çerezin kısa özetidir (sha256'nın ilk 16 hanesi). Proxy çerezi yalnız
+  özet tutarsa siler: yeniden girişten sonra Geri düğmesi ya da önbellekteki eski yönlendirme yeni oturumu, başka bir
+  siteden gelen `?oturum=bitti` bağlantısı geçerli oturumu silemez (geçerli oturumla açılan giriş sayfası ana sayfaya
+  gider). Açık panel sekmesi oturumun düştüğünü canlı uçtan (`/api/canli` 401) anlar: canlı veriyi (hatırlatıcılar,
+  karaoke, siparişler) bellekten siler ve sayfayı sunucudan yeniden ister, sunucu giriş sayfasına gönderir; panelden
+  çıkınca çalan alarm (sürekli sesli hatırlatma, karaoke) da susar. Ortak tablette sıradaki kişi önceki kişinin
+  hatırlatıcısını ya da karaoke tutarını görmez; yeniden giren kişinin canlı verisi baştan istenir.
 - **Parolayla onay (yönetici işlemleri):** yönetici gücü veren ya da bir yönetici hesabına dokunan işlemler, işlemi
   yapan yöneticinin **kendi parolasını** ister: yönetici ekleme (parolalı ya da davetli, aktif ya da pasif),
   personeli yönetici yapma ve yöneticiyi personel yapma; bir yöneticiyi pasif ya da yeniden aktif yapma; bir
@@ -206,11 +224,12 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   Her deneme doğrulanmadan **önce** sayılır: aynı anda gönderilen yüzlerce istek de 5'i aşamaz. Kilit işlem
   geçmişine "Hesap kilitlendi" diye yazılır. Daha önce bu hesapla giriş yapılmış tarayıcı bu kilide takılmaz
   (başkası adresinizi bilip hesabı kilitleyerek sizi dışarıda bırakamasın); o tarayıcının kendi 10 deneme hakkı
-  vardır. Bu "bilinen cihaz" kaydı kişinin oturum sürümüne bağlıdır: parola değişince, iki adımlı açılıp kapanınca
-  ya da oturumlar kapatılınca öteki tarayıcılar için geçmez, bir sonraki başarılı girişte yeniden tanınır. Önceki
-  sürümün cihaz kaydı (oturum sürümsüz) 25 Kasım 2026'ya kadar tanınır (`LEGACY_DEVICE_UNTIL`): o zamana kadar herkes
-  en az bir kez girer (oturum en çok 30 gün) ve kayıt yeni biçimde yazılır. Bir IP adresinden 15 dakikada en çok 20
-  deneme yapılabilir (başarılı giriş sayılmaz).
+  vardır; o kilit dolunca Kullanıcılar'da kişinin satırında **Bir cihazda kilitli** yazar, **Kilidi aç** hesabın
+  kilidiyle birlikte cihazların kilitlerini de açar. Bu "bilinen cihaz" kaydı kişinin oturum sürümüne bağlıdır: parola
+  değişince, iki adımlı açılıp kapanınca ya da oturumlar kapatılınca öteki tarayıcılar için geçmez, bir sonraki
+  başarılı girişte yeniden tanınır. Önceki sürümün cihaz kaydı (oturum sürümsüz) 25 Kasım 2026'ya kadar tanınır
+  (`LEGACY_DEVICE_UNTIL`): o zamana kadar herkes en az bir kez girer (oturum en çok 30 gün) ve kayıt yeni biçimde
+  yazılır. Bir IP adresinden 15 dakikada en çok 20 deneme yapılabilir (başarılı giriş sayılmaz).
 - **Çerezler:** üretimde `__Host-laf_session` (oturum, 30 gün), `__Host-laf_2fa` (kod adımı, 10 dakika) ve
   `__Host-laf_cihaz` (bilinen cihaz, 1 yıl): `__Host-` öneki sayesinde laffogato.net ya da başka bir alt alan adı bu
   çerezleri yerine koyamaz. Önceki sürümün öneksiz çerezleri (`laf_session`…) bir süre okunur, yenisi yazılınca
@@ -224,7 +243,8 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 - **/davet** sayfası herkese açıktır (oturum gerektirmez, oturum açmaz): ad ve e-postayı gösterir, yeni parola +
   tekrarı (parola kuralıyla) ister, kaydedince bağlantıyı kullanılmış sayar, kişinin açık oturumlarını kapatır ve
   "Parolanız kaydedildi" mesajıyla `/giris`'e geçer. Sayfayı açmak bağlantıyı tüketmez (WhatsApp önizlemesi de
-  açar); bir bağlantıyla en fazla 10 deneme yapılır.
+  açar); bir bağlantıyla en fazla 10 deneme yapılır. Parola kuralına (e-posta adresini içermesin dahil) ya da tekrar
+  alanına takılan deneme sayılmaz: sayfa bunları yazarken alanın altında söyler, düğme kapalı kalır.
 - Bağlantılar `user_tokens` tablosunda durur: yalnızca anahtarın sha256 özeti, son geçerlilik, kullanım anı ve deneme
   sayısı. Ham anahtar (32 rastgele bayt, base64url) yalnızca oluşturulduğu anda bir kez gösterilir, günlüğe yazılmaz.
   Bir kişinin aynı anda tek geçerli bağlantısı olur; 30 günden eski satırlar kendiliğinden silinir. Tablo
@@ -232,8 +252,13 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 - `APP_URL` bağlantılardaki adrestir (yoksa `https://ladmin.laffogato.net`); önizleme ortamında kendi adresini yazın.
 - **Hesabım:** ad ve giriş e-postası (parolayla onay), parola değiştirme, iki adımlı doğrulama (açmak, kapatmak ve
   yeni kurtarma kodu parola ister): QR kodu Google Authenticator / Microsoft Authenticator / 1Password ile okutulur,
-  8 tek seferlik kurtarma kodu verilir. Telefon kaybolursa girişte "Telefonum yanımda değil" ile kurtarma kodu
-  kullanılır ya da bir yönetici sıfırlar. **Oturumlar › Diğer cihazlardaki oturumları kapat** (parolayla): kasa
+  8 tek seferlik kurtarma kodu verilir. Kurulum başladıktan sonra 15 dakika içinde onaylanmalıdır; uygulamanın kodu
+  5 kez tutmazsa kurulum durur (işlem geçmişine "İki adımlı kurulum durduruldu" yazılır), bekleyen anahtar silinir ve
+  kurulum parolayla yeniden başlar; pencereden Vazgeç'le çıkınca da anahtar silinir. İki adımlıyı açmak ve kapatmak,
+  parola değiştirmek ve diğer cihazlardaki oturumları kapatmak öteki cihazların oturumlarını ve yöneticinin Claude
+  bağlantısını kapatır; pencereler bunu önceden söyler. Telefon kaybolursa girişte "Telefonum yanımda değil" ile
+  kurtarma kodu kullanılır ya da bir yönetici sıfırlar; yanlış ya da daha önce kullanılmış kurtarma kodunda ekran her
+  kodun bir kez çalıştığını söyler. **Oturumlar › Diğer cihazlardaki oturumları kapat** (parolayla): kasa
   bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
   onayları kişi başına 15 dakikada 5 hatayla sınırlıdır (Kullanıcılar'daki yönetici onaylarıyla aynı pay;
   `src/server/auth/step-up.ts`); hatalar işlem geçmişine yazılır.
@@ -314,6 +339,20 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
     artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
     yapmayın; düzeltmeyi ileri yayınlayın.
+  - **istemci_anahtari** (`waste_entries`, `invoices`, `findings` › `client_key`, denetim UI-01 ve UI-03): boş
+    olabilen sütunlar ve benzersiz dizinler, eklemeli; geri doldurulacak satır yok. Bu sürümden geriye Instant Rollback
+    yapılırsa eski kod sütuna bakmaz: zayi formu, Fatura ekle ve Bulgu ekle yeniden çift basışta iki kayıt açabilir;
+    yazılmış anahtarlar zarar vermez.
+  - **fatura_kaynagi_onarimi** (yalnız veri, denetim FC-02; [PARASUT.md](PARASUT.md) § 3): hiçbir Paraşüt belgesine
+    bağlı olmayan elle / Excel faturasının kaynağını (`source`) bir kez eskisine döndürür; şema değişmez, eski kod da
+    çalışır. Bu sürümden geriye Instant Rollback yapılırsa eski eşitleme e-faturası reddedilen kaydı yine Paraşüt'e bağlı
+    bırakır (tutarı kilitli); migration yeniden çalışmaz, o kayıtlar ileri yayınla gelen eşitlemede de düzelmez.
+  - **cikista_oturum_kapanir** (`revoked_sessions`, § 6a Çıkış): yalnız yeni tablo, eklemeli. Bu sürümden geriye
+    Instant Rollback yapılırsa eski kod tabloya bakmaz: çıkışta kapatılmış oturumların kopyaları yeniden geçer (yalnız
+    çerezi kopyalanmış oturumlar için önemli).
+  - **kapali_gun_subesi** (`special_days.branch_id`; docs/SUBE.md › Kapalı gün): boş sütun, eklemeli; var olan kapalı
+    günler işletme geneli kalır (geri doldurma yok). Geriye Instant Rollback yapılırsa eski kod sütuna bakmaz: şubeli
+    kapalı günler bütün şubelerde kapalı sayılır.
   - **satis_tahmini** (satış tahmini: `special_days`, `weather_days`, `forecast_snapshots`): yalnız yeni tablolar,
     eklemeli; eski kod onlara dokunmaz. Sabah işi her gün `api.met.no`'ya bir istek atar (ücretsiz, anahtarsız;
     `WEATHER_CONTACT` isteğe bağlı, § 4); önizlemeler tahmin kaydı ve hava durumu yazmaz.
@@ -354,10 +393,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
 ```
 
-  Bu bilgisayarda olmayan veritabanında komut sunucu adıyla onay ister (`--onay=` yoksa terminalde sorar; adı yanlışsa
-  hiçbir şey silinmez): `.env.local` canlının adresini gösteriyorsa yerel sanılan bir sıfırlama canlıyı silmesin. Silmeden
-  önce bütün verinin yedeği ev klasörüne yazılır (`laffogato-yedek-once-<sunucu>-….json.gz`, yüklenen belgeler dahil);
-  yanlışlıkla sıfırlandıysa `npm run db:restore -- <o dosya> --sil --onay=<sunucu>` ile geri gelir ([YEDEK.md](YEDEK.md)).
+  Komut satırında verilen adres `.env.local`'dakinden önce gelir (`db:migrate`, `db:seed`, `db:backup` ve
+  `db:restore`'da da; denetim AL-02); komut hedefi `Hedef: <sunucu>/<veritabanı>` diye yazar. Bu bilgisayarda olmayan
+  veritabanında komut sunucu adıyla onay ister (`--onay=` yoksa terminalde sorar; adı yanlışsa hiçbir şey silinmez):
+  `.env.local` canlının adresini gösteriyorsa yerel sanılan bir sıfırlama canlıyı silmesin. Silmeden önce bütün verinin
+  yedeği ev klasörüne yazılır (`laffogato-yedek-once-<sunucu>-….json.gz`, yüklenen belgeler dahil); yanlışlıkla
+  sıfırlandıysa `npm run db:restore -- <o dosya> --sil --onay=<sunucu>` ile geri gelir ([YEDEK.md](YEDEK.md)).
 
   Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
   düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt

@@ -37,7 +37,7 @@ import { genitive } from "@/lib/recipe-change";
 import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
 import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
 import { okcReadFigures } from "@/lib/photo-read/okc";
-import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
+import { addDays, dayLocativeTR, isCalendarDate, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { ALL_BRANCHES, branchScopeLabel, sortBranches } from "@/lib/branches";
 import { closedEvidenceText } from "@/lib/closed-days";
@@ -99,21 +99,34 @@ export const metadata: Metadata = { title: "Kasa raporu" };
 const STAFF_DESCRIPTION = "Kapanışta Z raporunu alın, kasadaki nakdi sayın ve buraya girin.";
 const ADMIN_DESCRIPTION = "Personelin akşam raporları: eksik, fazla ve gelmeyen günler.";
 
-/** Yöneticinin "Nasıl çalışır?"u: eski uzun açıklama, günün kasasına göre */
-const MORE = (
-  <KasaText
-    modpos="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-    lafpos="Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
-  />
-);
+/**
+ * Gönderilen raporun e-postasının gideceği adres sayısı: e-posta kapalıysa, gönderim kurulmamışsa (RESEND_API_KEY) ya da
+ * adreslerin hepsi personel / pasif hesabınsa 0 (report-email.ts emailReport'un kuralı; denetim UI-05)
+ */
+async function cashMailTo(settings: Awaited<ReturnType<typeof loadCashSettings>>): Promise<number> {
+  if (!settings.emailEnabled || !isEmailConfigured()) return 0;
+  return (await cashEmailRecipients(getDb(), settings.recipients)).length;
+}
+
+/** Yöneticinin "Nasıl çalışır?"u: eski uzun açıklama, günün kasasına göre; e-posta kapalıysa rapor WhatsApp'la gider */
+function more(email: boolean) {
+  const send = email ? "gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır" : "gönderince WhatsApp ile paylaşılır (e-posta kapalı)";
+  return (
+    <KasaText
+      modpos={`Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; ${send}.`}
+      lafpos={`Her akşam kapanışta LafPOS'ta Günü kapat'a basın: gün sonu buraya gelir, form ondan dolar. Kasadaki nakdi sayıp girin; eksik / fazla kendiliğinden hesaplanır, ${send}.`}
+    />
+  );
+}
 
 /** Başlık iki rolün açtığı sayfada içerikten önce çizilir: rol okunana kadar personelin cümlesi (en dar olan) */
 async function CashDescription() {
   const user = await requireUser();
   if (user.role !== "admin") return STAFF_DESCRIPTION;
+  const mailTo = await cashMailTo(await loadCashSettings());
   return (
     <>
-      {ADMIN_DESCRIPTION} <InfoTip text={MORE} label="Nasıl çalışır?" />
+      {ADMIN_DESCRIPTION} <InfoTip text={more(mailTo > 0)} label="Nasıl çalışır?" />
     </>
   );
 }
@@ -140,7 +153,8 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 /** LafPOS günü değil (geçiş günü boş ya da gün ondan önce): form ModPOS'a göre */
 const NO_LAFPOS = { lafpos: false, day: null } as const;
-const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
+/** Takvimde olan gün (KP-09: ?gun=2026-02-30 formu açmaz, ?gun=2026-00-10 sayfayı çökertmez; bugüne düşer) */
+const isDay = (v: string | undefined): v is string => v !== undefined && isCalendarDate(v);
 
 /** Ayın günleri (en yeni önce): bugünün raporu yoksa bugün listede yok (akşam girilecek) */
 function monthDays(month: string, today: string, reports: CashReportDTO[]): { date: string; report: CashReportDTO | null }[] {
@@ -246,8 +260,9 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   const showForm = !admin || isDay(gun);
 
   const settings = await loadCashSettings();
-  // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
-  const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
+  // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer, gönderim kurulmamışsa hiç gitmez
+  // (report-email.ts); formun Sonuç kartı buna göre "e-posta gider" ya da "WhatsApp ile paylaşın" der (UI-05)
+  const mailTo = showForm ? await cashMailTo(settings) : 0;
   const storage = photoStorage();
   const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposState] = await Promise.all([
     // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
@@ -443,7 +458,7 @@ async function cashContentFor(user: CurrentUser, sp: Awaited<PageProps<"/panel/k
   ) : null;
   const yesterday = addDays(today, -1);
   // Raporsuz geçmiş gün: "Kafe kapalıydı" (personel yalnız dün için, yöneticinin onayıyla; yönetici doğrudan)
-  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday) : null;
+  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday, view) : null;
   const dayChips = (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
       {admin && isDay(gun) ? (
@@ -783,16 +798,18 @@ async function SiteDayRow({ date, till, admin, kasa }: { date: string; till: str
  * Raporsuz geçmiş günün "Kafe kapalıydı" çubuğu: gün kapalı işaretliyse yalnız bilgi; personelde yalnız dün için
  * (bekleyen ya da reddedilen bildirim, düğme), yöneticide pencerede o günün izleri uyarı olarak
  */
-async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string) {
+async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string, view: KasaView) {
   if (!admin && date !== yesterday) return null;
-  const marked = await isClosedDay(date);
+  // Kapalı gün kasanın şubesinin (docs/SUBE.md › Kapalı gün): işaret, kanıt ve bildirim o şubenin; düğme kasayı gönderir
+  const till = { id: view.till, name: view.branch?.name ?? null };
+  const marked = await isClosedDay(date, getDb(), view.till);
   if (admin) {
-    const evidence = marked ? null : await closedDayEvidence(getDb(), date);
+    const evidence = marked ? null : await closedDayEvidence(getDb(), date, view.till);
     const lines = evidence ? closedEvidenceText(evidence) : { red: [], warn: [], info: [] };
-    return <ClosedDayBar role="admin" date={date} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
+    return <ClosedDayBar role="admin" date={date} till={till} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
   }
   const state = await staffClosedState(date, user);
-  return <ClosedDayBar role="staff" date={date} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
+  return <ClosedDayBar role="staff" date={date} till={till} marked={marked} pending={state.pending} rejected={state.rejected} ended={state.ended} canAsk={state.canAsk} />;
 }
 
 /**

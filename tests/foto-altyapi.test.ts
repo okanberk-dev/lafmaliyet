@@ -408,7 +408,7 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
   // Kural kaynakta: personelin geç günü yalnız Z / POS'ta, staffLateDayOpen pencereye, ilk rapora, raporsuz ve kapalı olmayan güne bakar
   const rules = readFileSync(join(process.cwd(), "src/server/photo-read/rules.ts"), "utf8");
   assert.match(rules, /return rule === "open-or-late" && staffLateDayOpen\(day\);/);
-  assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db\)/);
+  assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db, till\)/);
 });
 
 test("yazarkasa Z'si (kasa-okc, dalga 13): tür listesinde, 400 gün saklanır, etiketi, bölüme en çok 3 fotoğraf; erişimi kasanın kuralı", () => {

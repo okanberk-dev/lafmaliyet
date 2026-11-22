@@ -1,6 +1,7 @@
 import "server-only";
 
 import { pastCountReminder, pastCountReminders, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
+import { ALL_BRANCHES } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -12,6 +13,7 @@ import { waitedText } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText } from "@/lib/waste-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
+import { currentBranchScope } from "@/server/branch-scope";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
@@ -158,14 +160,21 @@ async function soldOutNotifications(user: CurrentUser, now: Date): Promise<Panel
 
 /**
  * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 günü, gün 05:00'te döner): "Ekim 2026 sayımı yarım:
- * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar.
+ * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar. Tek şube
+ * seçiliyken o şubenin sayımı (Stok sayımı ekranının şubesi); "Tümü"de açık her fiziksel şubenin ayrı satırı, sabah
+ * e-postasıyla aynı (countProgressByBranch; birden çok şubede "Marina: …", adres o şubeyi seçer). Önceden "Tümü"de
+ * yalnız Tuzla'ya bakılıyordu: Tuzla'nın tamam sayımı Marina'nın eksiğini susturuyordu (denetim 13 Kasım ST-04).
  */
 async function pastCountNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
   if (user.role !== "admin") return [];
   const day = businessDate(now);
   if (Number(day.slice(8, 10)) > 10) return [];
-  const prev = pastCountReminder(day, await countProgress(shiftMonth(day.slice(0, 7), -1)));
-  return prev ? [{ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }] : [];
+  const month = shiftMonth(day.slice(0, 7), -1);
+  const rows =
+    (await currentBranchScope()) === ALL_BRANCHES
+      ? await countProgressByBranch(month).then((p) => pastCountReminders(day, p.counts, p.named))
+      : [pastCountReminder(day, await countProgress(month))].filter((r) => r !== null);
+  return rows.map((prev) => ({ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }));
 }
 
 /**

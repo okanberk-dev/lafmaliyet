@@ -127,6 +127,16 @@ const toUTC = (d: string) => {
 };
 const fromUTC = (t: number) => new Date(t).toISOString().slice(0, 10);
 
+/**
+ * Takvimde var olan gün mü ("YYYY-MM-DD"): "2026-13-01", "2026-02-30" ve "2026-00-10" değil (Date.parse 30 Şubat'ı
+ * Mart'a taşır, ay 00'da geçersiz tarih verir). Sunucu eylemlerinin zDate'i ve sayfaların ?gun= değeri bununla denetlenir
+ */
+export function isCalendarDate(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
 export function daysBetween(from: string, to: string): number {
   return Math.round((toUTC(to) - toUTC(from)) / 86_400_000);
 }
@@ -704,6 +714,16 @@ export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): bool
   const t = foldTR(r.title);
   if (!/muhtasar|stopaj/.test(t) || stampOnly(t)) return false;
   return !isVatReminder(r) && !isVatWithholdingReminder(r) && reminderCategory(r.kind, r.title) !== "sgk";
+}
+
+/**
+ * Kira stopajı hatırlatıcısı ("Kira stopajı"; başlıkta "kira" ve "stopaj", "muhtasar" değil): muhtasar sınıfındadır ama
+ * sabit tutarı muhtasarın yalnız kira stopajı kısmıdır (denetim VG-02). Tutarlıysa dönemi sahiplenmez: muhtasarın
+ * kalanı (ücret vergileri, öteki stopajlar, damga) ayrıca girer
+ */
+export function isRentWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  const t = foldTR(r.title);
+  return isMuhtasarReminder(r) && /kira/.test(t) && /stopaj/.test(t) && !/muhtasar/.test(t);
 }
 
 /** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */

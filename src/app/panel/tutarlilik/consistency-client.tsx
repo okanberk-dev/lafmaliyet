@@ -3,7 +3,7 @@
 import { Info, ListChecks, Pencil, Plus, Scale, SearchX, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useOptimistic, useState, type FormEvent } from "react";
+import { useOptimistic, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
@@ -1481,12 +1481,19 @@ function FindingDialog({
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const canSave = title.trim() !== "" && section.trim() !== "";
+  // Yeni bulgunun anahtarı (pencere başına): aynı anahtarla ikinci istek sunucuda ikinci bulgu açmaz (denetim UI-03)
+  const [clientKey] = useState(() => crypto.randomUUID());
+  // Kayıt sürerken Ctrl+Enter'a ikinci basış (ya da tuş tekrarı): `busy` bir sonraki çizimde gelir, bayrak hemen
+  const saving = useRef(false);
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
+    if (saving.current) return;
     if (!canSave) return toast.error(title.trim() ? "Bölüm adını yazın" : "Başlık yazın");
+    saving.current = true;
     setBusy(true);
-    const res = await tryAction(() => saveFinding({ id: item?.id ?? null, section, title, detail }), { maybeSaved: !item });
+    const res = await tryAction(() => saveFinding({ id: item?.id ?? null, section, title, detail, clientKey: item ? null : clientKey }), { maybeSaved: !item });
+    saving.current = false;
     setBusy(false);
     if (!res) return;
     if (!res.ok) return toast.error(res.error);

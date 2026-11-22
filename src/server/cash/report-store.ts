@@ -310,7 +310,7 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   // Yeni rapor: gün açık demektir (kapalı işareti ve bildirimi kalkar); önceki gün kapalı işaretliyse Z no ve açılış
   // sürekliliği denetlenir (src/server/closed-days.ts)
   if (!prev) {
-    await onReportSaved(tx, row.date);
+    await onReportSaved(tx, row.date, new Date(), row.branchId);
     await onNextReport(tx, row);
   }
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır

@@ -81,7 +81,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     ]);
     if (report) throw new UserError(CASH_REQUEST_TEXT.lateReported);
     if (!first || first.date >= date) throw new UserError(CASH_REQUEST_TEXT.lateBeforeFirst);
-    if (await isClosedDay(date, tx)) throw new UserError(CASH_REQUEST_TEXT.lateClosed);
+    if (await isClosedDay(date, tx, branchId)) throw new UserError(CASH_REQUEST_TEXT.lateClosed);
     const mine = and(eq(r.kind, "kasa-gec"), eq(r.subject, subject), eq(r.requestedBy, me.id));
     const [[pending], [{ n: closed }]] = await Promise.all([
       tx.select().from(r).where(and(mine, eq(r.status, "pending"))).limit(1),

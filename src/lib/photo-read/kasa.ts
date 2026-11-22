@@ -10,6 +10,7 @@
  */
 
 import { parseNumberTR } from "@/lib/calc/expr";
+import { dayRevenue, REVENUE_TOLERANCE } from "@/lib/cash-revenue";
 import { money } from "@/lib/format";
 import { OKC_FIELD_LABELS, OKC_PREFILL_ENABLED, OKC_SUGGEST_TEXT, type OkcField, type OkcVatLine } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
@@ -262,7 +263,8 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
     const a = printedAmount(line.amount);
     const label = clean(line.label, 40) ?? "?";
     if (line.kind === "comp") {
-      comps.push({ label, value: a.value, confidence: a.confidence });
+      // Eksi basılmış ikram satırı da tutarıyla (KP-10)
+      comps.push({ label, value: a.value === null ? null : Math.abs(a.value), confidence: a.confidence });
       checks.push({ fields: [], level: "info", text: `“${label}” ödenmez / ikram olarak alındı.` });
       continue;
     }
@@ -283,8 +285,11 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
     else unreadLines.push(field);
   }
 
+  // İndirim, ödenmez ve iade toplamı bazı Z'lerde eksi basılır ("-250,00"): tutarıyla alınır (KP-10; form bu alanlarda
+  // eksiyi kabul etmez, iade bilgisi de atlanmasın)
+  const abs = (a: ReturnType<typeof printedAmount>) => (a.value === null ? a : { ...a, value: Math.abs(a.value) });
   if (raw.discounts.text !== null) {
-    const d = printedAmount(raw.discounts);
+    const d = abs(printedAmount(raw.discounts));
     if (d.value !== null) values.discounts = { value: d.value, confidence: d.confidence };
     if (d.mismatch) checks.push(mismatchCheck("discounts", raw.discounts));
     if (d.value !== null && total.value !== null && d.value >= total.value && d.value > 0) {
@@ -293,7 +298,7 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
   }
   // Ödenmez / ikram: basılmış toplamı, yoksa ödeme bölümündeki ikram satırları
   if (raw.comps.text !== null) {
-    const c = printedAmount(raw.comps);
+    const c = abs(printedAmount(raw.comps));
     if (c.value !== null) values.offRevenue = { value: c.value, confidence: c.confidence };
     if (c.mismatch) checks.push(mismatchCheck("offRevenue", raw.comps));
   } else if (comps.length) {
@@ -303,8 +308,8 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
     };
   }
   if (raw.refunds.text !== null) {
-    const r = printedAmount(raw.refunds);
-    if (r.value !== null && r.value > 0) checks.push({ fields: [], level: "info", text: `Z raporunda ${money(r.value)} iade var; nedenini nota yazın.` });
+    const r = abs(printedAmount(raw.refunds));
+    if (r.value !== null && r.value !== 0) checks.push({ fields: [], level: "info", text: `Z raporunda ${money(r.value)} iade var; nedenini nota yazın.` });
   }
 
   // Z no ve fiş sayısının güveni yok: görüntü sorunu varsa turuncu
@@ -313,12 +318,15 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
   if (zNo) values.zNo = { value: zNo, confidence: plainConfidence };
   if (raw.receiptCount !== null && raw.receiptCount >= 0 && raw.receiptCount <= 100_000) values.receipts = { value: raw.receiptCount, confidence: plainConfidence };
 
-  // Ödeme türlerinin toplamı Z toplamını tutmalı (form canlı kutusu da söyler; burada okunan alanlar turuncu olur)
+  // Ödeme türlerinin toplamı Z toplamını ya da Z toplamı − ödenmez'i tutmalı: formun ve kayıtlı raporun kuralı
+  // (src/lib/cash-revenue.ts dayRevenue; KP-08). İkramlı günde Z toplamı ödenmezi içerir, ödemeler ondan azdır; yalnız
+  // ikisini de tutmayınca uyarılır (okunan alanlar turuncu olur)
   const paid = PAYMENT_FIELDS.filter((f) => values[f]);
   if (values.zTotal && paid.length) {
     const sum = round2(paid.reduce((a, f) => a + Number(values[f]!.value), 0));
-    const diff = round2(sum - Number(values.zTotal.value));
-    if (Math.abs(diff) >= 1) {
+    const day = dayRevenue({ zTotal: Number(values.zTotal.value), offRevenue: values.offRevenue ? Number(values.offRevenue.value) : null, payments: sum });
+    const diff = round2(sum - day.revenue);
+    if (Math.abs(diff) >= REVENUE_TOLERANCE) {
       checks.push({
         fields: ["zTotal", ...paid],
         level: "warn",

@@ -40,5 +40,6 @@ export async function loadSpecialDays(today = businessDate()): Promise<SpecialDa
     note: r.note,
     byStaff: r.byStaff,
     addedBy: r.byStaff ? r.createdByName : null,
+    branchId: r.branchId,
   }));
 }

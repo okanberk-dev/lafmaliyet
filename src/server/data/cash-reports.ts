@@ -423,7 +423,7 @@ async function modposFallbackSwitch(db: Db | Tx): Promise<{ switchDay: string | 
  * sayılmasında (cash-month.ts modposRunStart) kapalı gün boşluk sayılmaz. Föyde indirim yok: `discounts` null (o
  * günlerin indirimi bilinmez; ayın discountDays'i bunu gösterir)
  */
-function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "state" | "foy" | "final">): TillRow | null {
+export function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "state" | "foy" | "final">): TillRow | null {
   if (sheet.state === "ACIK") return null;
   const z = foyZ(sheet.foy);
   if (sheet.state === "BOS" && !(z && z.foysuz && z.zTotal > 0)) {
@@ -454,13 +454,22 @@ function modposTillRow(sheet: Pick<ModposSheet, "day" | "branchId" | "state" | "
  * okur; personelin ekranına föy rakamı gitmez
  */
 export async function modposTillRows(db: Db | Tx = getDb(), from?: string, to?: string): Promise<TillRow[]> {
+  return (await modposFallbackSheets(db, from, to)).flatMap((sh) => modposTillRow(sh) ?? []);
+}
+
+/**
+ * Ay rakamına yedeğin kapsamındaki föyler, [from, to] içinde (seçili şubeyle): anahtar kapalıyken föy tablosu okunmadan
+ * boş, açıkken yalnız ModPOS günleri (LafPOS'un şubesinde geçiş gününden önceki günler; branchSwitchDay). Sayılan satırı
+ * modposTillRow seçer; Bugün'ün şube kartı da föyü buradan okur (src/server/data/branch-day.ts; denetim 13 Kasım HM-09)
+ */
+export async function modposFallbackSheets(db: Db | Tx = getDb(), from?: string, to?: string): Promise<ModposSheet[]> {
   const fallback = await modposFallbackSwitch(db);
   if (fallback === null) return [];
   const upto = to ?? MODPOS_LAST_DAY;
   const start = from ?? MODPOS_FIRST_DAY;
   if (upto < start) return [];
   const sheets = await loadModposSheets(start, upto, db);
-  return sheets.flatMap((sh) => (isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId)) ? [] : (modposTillRow(sh) ?? [])));
+  return sheets.filter((sh) => !isLafposDay(sh.day, branchSwitchDay(fallback.switchDay, sh.branchId)));
 }
 
 /**

@@ -51,7 +51,7 @@ import {
   type YearTotals as YearTotalsData,
 } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
+import { monthLabel, monthShort, num, numPossessive, pct, tl } from "@/lib/format";
 import { salesMonthKasa } from "@/lib/lafpos/kasa";
 import { longDateTR } from "@/lib/reminders";
 import { salesSourceOf } from "@/lib/sales-source";
@@ -245,7 +245,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const purchases = model.goodsPurchases(month);
 
   // Süren ayda kısa satış listesi: sabit gider grupları listenin günlerine düşen payla
-  const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'i): tutar o günlere düşen pay.` : "";
+  const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${numPossessive(t.listPeriod.days)}): tutar o günlere düşen pay.` : "";
   // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
   // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t

@@ -1738,6 +1738,11 @@ Yedek, tabloları `information_schema` üzerinden kendiliğinden alır. `migrati
   - **₺ yasağı** sayfaya göre uygulanır. Yasak olduğu yerler: karaoke, zayi, kontrol geçmişi, hızlı sayım ve taslak, özel günler, yardım.
   - **₺ serbest:** kasa sayfaları (personelin kendi yazdığı sayılar ve herkese açık satış fiyatı), Bugün (kasa farkı), reçete defteri (satış fiyatı).
   - Yönetici adresleri personel çereziyle `/panel/bugun`'a dönmelidir: `/panel/onaylar`, `/panel/urunler/fiyatlar`, `/panel/mal-siparisi`, `/panel/kontrol/duzenle`, `/panel/tahmin`, `/panel/yardim`.
+  - *13 Kasım 2026 denetimi (KA-03) sonrası:* adres listeleri elle tutulmaz; `src/app/panel` altındaki sayfalar
+    `src/lib/roles.ts`'in kuralıyla (canOpen) personel ve yönetici adreslerine ayrılır (kaldırılan ekran listede
+    kalmaz, personel yolunun altındaki yönetici ekranları da denenir). Akış içindeki yönlendirme (HTTP 200 +
+    `NEXT_REDIRECT`, ör. ay seçilmeden açılan Stok sayımı) izlenir, asıl sayfa taranır; `/api/canli` da taranır
+    (COST_KEYS hiç, karaoke tutarı yalnız null). Betiğin başındaki açıklama günceldir.
 - **Eylem yanıtları:** kaynak testleri her yeni personel eyleminin dönüş tipinde fiyat ya da maliyet alanı olmadığını denetler (`setSoldOut`, `markPosDone`, `undoPosMarks`, `submitOrderDraft`, `sendApprovedDraft`, `undoDraftSend`, `request*`, `withdrawStaffRequest`, `attachCashOutReceipt`, `saveStaffSpecialDay`).
 - **E-posta ve push:** personele e-posta gitmez. Push metinlerinde (`approvals`) ₺ yok (kaynak testi). Kasa e-postasına personel adresi yazılamaz (DB testi).
 

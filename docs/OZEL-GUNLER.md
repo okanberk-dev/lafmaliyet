@@ -18,6 +18,10 @@ değiştirmez; notun yanında bir ipucu olarak durur ve eski kayıtlar okunabils
 
 Aynı günlerde aynı adla ikinci bir kayıt engellenir (aynı maç iki kez girilmesin).
 
+Personelin onaylanmış "Kafe kapalıydı" bildiriminin satırı silinir ya da düzenlenip o günü artık kapatmazsa (tür, gün
+ya da şube değişti) bildirim "geri alındı" olur; personelin İsteklerim'inde ve zilinde bayat bir "onaylandı" kalmaz
+(denetim SB-04; [KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı).
+
 ## Kod
 
 | Ne | Nerede |

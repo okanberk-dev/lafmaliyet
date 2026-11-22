@@ -11,7 +11,10 @@
  *   (tutar − iskonto). Tevkifatlı faturada KDV'nin tamamı indirilir: tedarikçiye ödenen kısmı "yurtiçi alımlar", tevkif
  *   edilen kısmı "sorumlu sıfatıyla ödenen KDV" olarak (Eylül 2026 beyannamesi: 11.875,70 + 1.800). Tevkif edilen kısım
  *   2 No.lu beyannameyle izleyen ayın 25'inde ayrıca ödenir, 1 No.lu ödenecek sıfır ya da devreden olsa da
- *   (`purchaseWithheld`, `vat2DueDate`). İadede eksi. Kafe dışı (Karaoke box, Alp Koç) sayılmaz.
+ *   (`purchaseWithheld`, `vat2DueDate`). İadede eksi. Kafe dışı (Karaoke box, Alp Koç) sayılmaz. Yurt dışı hizmetin
+ *   sorumlu sıfatıyla KDV'si (vergi beslemesiyle, `purchases.hizmet`) 2 No.lu beyannameyle ödenir, aynı ay indirilir.
+ * - Ödemeler'deki tutar (vergi beslemesiyle damga dahil): yalnız damgayı aşan kısmı KDV ödemesidir; damgayı aşmayan
+ *   tutar (devreden olan ayın tahakkuk fişi) devredeni silmez (`VatInput.stamp`).
  * - Her bileşen 100 ₺'ye yuvarlanır; ödenecek ve devreden yuvarlı bileşenlerden çıkar (ekrandaki çıkarma birebir tutar).
  */
 
@@ -105,9 +108,10 @@ export interface VatMonthInput {
   online: { vat: number; closed: boolean; pulledOn: string } | null;
   /**
    * Kafe faturalarının indirilecek KDV'si (tevkifat dahil) ve sayısı; `withheld` içindeki tevkifat (2 No.lu
-   * beyanname); kafe dışı faturalar yalnız sayılır
+   * beyanname); kafe dışı faturalar yalnız sayılır. `hizmet`: yurt dışı hizmetin sorumlu sıfatıyla KDV'si (vergi
+   * beslemesiyle; 2 No.lu beyannameyle ödenir, aynı ay indirilir), `vat`'ın dışında
    */
-  purchases: { vat: number; withheld: number; count: number; separateCount: number };
+  purchases: { vat: number; withheld: number; count: number; separateCount: number; hizmet?: number };
   /** Ayın kafe kapalı işaretli gün sayısı (ileri tarihliler dahil): süren ayın kasa cirosu bu günler olmadan tamamlanır (E-41) */
   closedDays?: number;
 }
@@ -163,6 +167,8 @@ export interface VatEstimate {
   purchases: number;
   /** Alışların içindeki tevkifat: 2 No.lu beyannameyle izleyen ayın 25'inde ödenir (100'e yuvarlı) */
   withheld: number;
+  /** Alışların içindeki yurt dışı hizmet KDV'si (sorumlu sıfatıyla, KDV-2'yle ödenir; 100'e yuvarlı) */
+  hizmet: number;
   /** Önceki aylardan devreden, net (satış − alış − devreden), ödenecek ve sonraki aya devreden: 100'ün katı */
   carryIn: number;
   net: number;
@@ -201,17 +207,26 @@ export interface VatInput {
   periods: readonly string[];
   /** Site bağlı (en az bir ay çekilmiş): çekilmemiş ay "missing" yazılır */
   hasSite?: boolean;
+  /**
+   * Ödemeler'deki tutarın içindeki beyanname damgası (vergi beslemesiyle tutar tahakkuk fişinin toplamıdır): yalnız
+   * damgayı aşan kısım KDV ödemesidir. Devreden olan ayın fişinde yalnız damga vardır; o tutar devredeni silmez (VG-01).
+   * Dönem dönem verilirse her dönemin kendi damgası (beyannamenin verildiği yılın tutarı)
+   */
+  stamp?: number | ((period: string) => number);
 }
 
 /**
  * Dönemlerin tahmini. Devreden zinciri ilk satış ayından (ya da muhasebeci kaydının ertesi ayından) dönemlere kadar ay
- * ay yürür: verisiz ay zinciri bozmaz, Ödemeler'deki tutarı > 0 olan ay zinciri sıfırlar.
+ * ay yürür: verisiz ay zinciri bozmaz, Ödemeler'deki tutarı damgayı aşan ay zinciri sıfırlar.
  */
 export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
   const out = new Map<string, VatEstimate>();
   const periods = [...new Set(input.periods)].sort();
   if (!periods.length) return out;
   const { anchor, firstSalesMonth, known, today } = input;
+  const stampOf = (m: string) => (typeof input.stamp === "function" ? input.stamp(m) : (input.stamp ?? 0));
+  // KDV ödendi mi: Ödemeler'deki tutar dönemin damgasından büyük (damga dahil fişin toplamı; yalnız damga ise devreden sürer)
+  const paysVat = (m: string, k: number | null | undefined) => k !== undefined && k !== null && k - stampOf(m) > 0.005;
   const byMonth = new Map(input.months.map((m) => [m.month, m]));
   const sorted = [...input.months].sort((a, b) => a.month.localeCompare(b.month));
   const cur = today.slice(0, 7);
@@ -263,7 +278,8 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
       separate: inp?.purchases.separateCount ?? 0,
       inProgress: m === cur,
     };
-    const purchases = round100(inp?.purchases.vat ?? 0);
+    const hizmet = round100(inp?.purchases.hizmet ?? 0);
+    const purchases = round100(inp?.purchases.vat ?? 0) + hizmet;
     const withheld = round100(inp?.purchases.withheld ?? 0);
     // Açılıştan önceki ayda satış 0'dır (alışları devredene girer); sonrasında veri yoksa hesaplanamaz
     if (posRaw === null && onlineRaw === null && !(firstSalesMonth !== null && m < firstSalesMonth)) {
@@ -275,10 +291,11 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
         sales: 0,
         purchases,
         withheld,
+        hizmet,
         carryIn,
         net: 0,
         payable: k ?? 0,
-        carryOut: k !== undefined && k > 0 ? 0 : carryIn,
+        carryOut: paysVat(m, k) ? 0 : carryIn,
         known: k ?? null,
         anchored: false,
         projected: false,
@@ -298,10 +315,11 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
       sales,
       purchases,
       withheld,
+      hizmet,
       carryIn,
       net,
       payable: k ?? (anchored ? 0 : Math.max(0, net)),
-      carryOut: k !== undefined && k > 0 ? 0 : Math.max(0, -net),
+      carryOut: paysVat(m, k) ? 0 : Math.max(0, -net),
       known: k ?? null,
       anchored,
       projected,
@@ -320,7 +338,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
   const last = periods.at(-1)!;
   for (let m = start; m <= last; m = shiftMonth(m, 1)) {
     const e = month(m, carry);
-    carry = e.status === "ok" ? e.carryOut : e.known !== null && e.known > 0 ? 0 : carry;
+    carry = e.status === "ok" ? e.carryOut : paysVat(m, e.known) ? 0 : carry;
     if (periods.includes(m)) out.set(m, e);
   }
   return out;
@@ -333,8 +351,21 @@ function arithmetic(e: VatEstimate): string {
   return `Satışlar ≈ ${tl(e.sales)} − alışlar ≈ ${tl(e.purchases)}${e.carryIn > 0 ? ` − devreden ≈ ${tl(e.carryIn)}` : ""}`;
 }
 
+/**
+ * Ödemeler'deki tutar KDV ödemesi sayılmadıysa kartın dökümündeki not: devreden sürer. Tutar 0'dan büyükse damgayı
+ * aşmıyordur (yalnız vergi beslemesiyle olur); 0 ise damgasız da söylenir
+ */
+export function vatKeptCarryText(e: Pick<VatEstimate, "known" | "carryOut">): string | null {
+  if (e.known === null || !(e.carryOut > 0)) return null;
+  return e.known > 0
+    ? `Ödemeler'deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ ${tl(e.carryOut)} sonraki aya devreder.`
+    : `Ödemeler'deki tutar 0: KDV ödemesi yok, ≈ ${tl(e.carryOut)} sonraki aya devreder.`;
+}
+
 /** KDV kartındaki satırın alt yazısı */
 export function vatSubText(e: VatEstimate, anchorAmount: number | null): string {
+  // Tutar KDV ödemesi değilse (yalnız damga ya da 0) devreden sürer
+  if (e.known !== null && e.carryOut > 0) return `Ödemeler'deki tutar · ≈ ${tl(e.carryOut)} sonraki aya geçer`;
   if (e.known !== null) return e.status === "ok" ? `Ödemeler'deki tutar · tahmin ≈ ${tl(Math.max(0, e.net))}` : "Ödemeler'deki tutar";
   if (e.anchored && anchorAmount) return `Beyannamede devreden ${money(anchorAmount)}`;
   if (e.status === "noData") return "Bu ayın satış verisi yok";

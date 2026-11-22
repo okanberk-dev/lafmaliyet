@@ -308,11 +308,14 @@ test("föy günlerinin indirimi bilinmez: yalnız föylü ayda indirim boş, var
 
 test("kaynak: yedek kapalıyken föy tablosu okunmaz; yükleyici rapor > LafPOS > ModPOS; rapor sınaması tek yerden", () => {
   const loader = read("src/server/data/cash-reports.ts");
-  const fn = loader.slice(loader.indexOf("export async function modposTillRows("));
+  // Ayarın kapsamı tek yerde (modposFallbackSheets): ay satırları da Bugün'ün şube kartı da oradan okur (denetim 13 Kasım
+  // HM-09)
+  assert.match(loader, /export async function modposTillRows\([\s\S]*?\): Promise<TillRow\[\]> \{\n\s+return \(await modposFallbackSheets\(db, from, to\)\)\.flatMap\(\(sh\) => modposTillRow\(sh\) \?\? \[\]\);/);
+  const fn = loader.slice(loader.indexOf("export async function modposFallbackSheets("));
   assert.ok(fn.indexOf("if (fallback === null) return [];") > 0);
   assert.ok(fn.indexOf("if (fallback === null) return [];") < fn.indexOf("await loadModposSheets("), "ayar okunmadan föy okunmaz");
   // Geçiş gününden önce; geçiş günü yalnız LafPOS'un şubesinin föyünü keser (ModPOS'ta kalan şube sayılmaya devam eder)
-  assert.match(fn, /isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId\)\) \? \[\] : \(modposTillRow\(sh\) \?\? \[\]\)/, "geçiş gününden önce, şube şube");
+  assert.match(fn, /sheets\.filter\(\(sh\) => !isLafposDay\(sh\.day, branchSwitchDay\(fallback\.switchDay, sh\.branchId\)\)\)/, "geçiş gününden önce, şube şube");
   const first = loader.slice(loader.indexOf("export async function firstModposTillDay("));
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") > 0);
   assert.ok(first.indexOf("if ((await modposFallbackSwitch(db)) === null) return null;") < first.indexOf("modposTillRows(db)"), "ayar okunmadan föy okunmaz");

@@ -15,6 +15,8 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { before, describe, test } from "node:test";
 
+import { modposGapTitle } from "../src/lib/cash-modpos";
+import { modposDayWarnings } from "../src/lib/modpos/ayarlar";
 import { FOY_MAX_BYTES, isFoyDay, MODPOS_DAYANAK, MODPOS_UYARI, parseKasaFoyu, type FoyOdeme, type KasaFoyu } from "../src/lib/modpos/foy";
 import { MODPOS_NO_OPENING, MODPOS_NOT_ENTERED, modposCompare, modposDiffs, modposDiffsLine, modposDiffText, modposNotEntered, modposOpening, type ModposSavedFields } from "../src/lib/modpos/compare";
 import { backfillOrder, missingFoyDays, needsFetch, nextBackfillDay, nextMorningRun, planFoyDays, type StoredDay } from "../src/lib/modpos/plan";
@@ -512,6 +514,24 @@ describe("z.ts: ödeme kodları ve Z özeti", () => {
       foysuz: false,
       foysuzCiro: 0,
     });
+  });
+
+  test("foyZ (KP-08): ciro ödenmezi içeriyorsa (ödemeler = ciro − ödenmez) föy tutarlı, dayRevenue'nün kuralı; ikisini de tutmayınca fark", () => {
+    // Kitapçığın örneği, ciro 28.450,50 ödenmez 145'i içerecek biçimde: nakit 8.210 + kart 20.095,50 = 28.305,50
+    const f = structuredClone(foyOf("belge-ornegi"));
+    f.kasalar[0].odemeler.find((o) => o.kod === "KREDI_KARTI")!.satis = 20095.5;
+    const z = foyZ(f)!;
+    assert.deepEqual([z.zTotal, z.offRevenue, z.cash + z.card, z.paymentsGap], [28450.5, 145, 28305.5, 0]);
+    assert.deepEqual(modposDayWarnings({ z, warnings: [] }), [], "form ve kayıtlı rapor gibi uyarı yok");
+    assert.equal(modposGapTitle(z), null);
+    // Ödemeler ciroyu tutuyor (ödenmez zaten hariç): yine 0
+    f.kasalar[0].odemeler.find((o) => o.kod === "KREDI_KARTI")!.satis = 20240.5;
+    assert.equal(foyZ(f)!.paymentsGap, 0);
+    // İkisini de tutmuyor: fark ciroya göre (eskisi gibi)
+    f.kasalar[0].odemeler.find((o) => o.kod === "KREDI_KARTI")!.satis = 20000;
+    const off = foyZ(f)!;
+    assert.equal(off.paymentsGap, -240.5);
+    assert.deepEqual(modposDayWarnings({ z: off, warnings: [] }).map(plain), ["Ödemelerin toplamı ciroyu tutmuyor (ödemeler 240,50 ₺ eksik)"]);
   });
 
   test("foyZ, açık gün: sayım yok (CANLI), nedeni 'acik'; olması gereken bilinir, fark bilinmez; Z no yok", () => {

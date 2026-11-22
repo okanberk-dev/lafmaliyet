@@ -92,7 +92,8 @@ tahmini vadeleri faturalarla aynı kuralla işaretlenir. Hiç elle kayıt yokken
 - **Son sorular:** aynı kartta Claude'un son 20 araç çağrısı (ne sorduğu; cevap saklanmaz), hata verenler kırmızı.
 - **Claude "Reconnect" der:** 90 gün dolunca; parolanızı değiştirince; Hesabım › Oturumlar › "Diğer cihazlardaki
   oturumları kapat" deyince; iki adımlı doğrulamayı açıp kapatınca; bir yönetici sizin oturumlarınızı kapatınca ya da
-  sizi personel / pasif yapınca; bağlantı 30 gün hiç kullanılmayınca. 1. bölümün 4. adımını yineleyin.
+  sizi personel / pasif yapınca; bağlantı 30 gün hiç kullanılmayınca. 1. bölümün 4. adımını yineleyin. Hesabım'daki
+  parola, iki adımlı ve oturum pencereleri, etkin bir bağlantınız varsa bunu onaylamadan önce söyler.
 - En çok **10** etkin bağlantı olur; dolarsa onay ekranı "Çok fazla bağlı uygulama" der.
 
 ## 5. Gizlilik (KVKK)

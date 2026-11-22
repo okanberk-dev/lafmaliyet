@@ -25,6 +25,7 @@ import { onlyComputerOn, setBranchScope, usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
 import { ReminderAlerts, showReminder } from "./reminder-alerts";
 import {
+  alarmOwnersNow,
   alarmRinging,
   audioState,
   onlyComputerActive,
@@ -38,7 +39,7 @@ import {
   useAlertsAudible,
   useAudioState,
 } from "./sounds";
-import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
+import { bindLive, getLive, liveNow, patchLive, refreshLive, resetLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
 const FIRED_KEY = "laf:calan-uyarilar";
@@ -96,6 +97,22 @@ async function notify(title: string, body: string, tag: string, url: string, opt
     .catch(() => {});
 }
 
+/**
+ * Karaoke şeridinin yüksekliği kabukta --alarm-h olur (globals.css): içerik, telefondaki üst çubuk (başlık, zil, menü)
+ * ve çekmece şeridin altına iner; şerit sabit kalır ama hiçbir düğmeyi örtmez. Şerit kalkınca boşluk da kalkar.
+ */
+function reserveAlarmSpace(el: HTMLDivElement) {
+  const root = document.documentElement;
+  const set = () => root.style.setProperty("--alarm-h", `${el.offsetHeight}px`);
+  set();
+  const observer = new ResizeObserver(set);
+  observer.observe(el);
+  return () => {
+    observer.disconnect();
+    root.style.removeProperty("--alarm-h");
+  };
+}
+
 /** Panel düzenindeki ses yuvası (app/panel/layout.tsx); düzen kalıcı olduğu için bir kez bulunur */
 const noopSubscribe = () => () => {};
 const soundSlotOf = () => document.getElementById("ses-yuvasi");
@@ -114,8 +131,13 @@ const soundSlotOf = () => document.getElementById("ses-yuvasi");
  * ekranı) 10 dakikada bir sorar (yeni sipariş ve rezervasyon zili en geç ~10 dakikada); alarm çalarken (başka cihazda
  * susturulursa burada da sussun) 15 saniyede bir. "Bildirim açık": izin, kayıtlı abonelik ve zili açık konular
  * (pushCovers). Hepsi ETag'li; değişiklik yoksa 304.
+ *
+ * Canlı veri kabuktaki kullanıcıya bağlıdır (`userId`, sunucudan): kabuk açılınca depo bu kişiye bağlanır, kapanınca
+ * (çıkış, oturum düştü, giriş sayfası) boşalır; hatırlatıcılar yalnız bu kişininse kurulur. Oturum düşünce (401) sayfa
+ * sunucudan yeniden istenir, sunucu giriş sayfasına gönderir: ortak tablette önceki kişinin ekranı ve verisi açık
+ * kalmaz (denetim KA-01).
  */
-export function AlertCenter({ role, branchScope = null }: { role: Role; branchScope?: string | null }) {
+export function AlertCenter({ role, userId, branchScope = null }: { role: Role; userId: number; branchScope?: string | null }) {
   const live = useLive();
   const prefs = usePrefs(role);
   const onlyComputer = onlyComputerOn(prefs);
@@ -144,6 +166,8 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
 
   const data = live.data;
   const sessions = useMemo(() => data?.karaoke.sessions ?? [], [data]);
+  // Savunma: yanıt kabuktaki kullanıcının değilse hiçbir hatırlatıcı kurulmaz (başkasının notu bu ekranda açılmasın)
+  const reminders = useMemo(() => (data && data.me.id === userId ? data.reminders : []), [data, userId]);
   // Bugün süren ya da sürecek oturum varken saniyede bir, yoksa yarım dakikada bir
   const now = useClock(sessions.some(isLive) ? 1000 : 30_000);
   const overtime = prefs.karaokeAlarms && now ? sessions.filter((s) => phase(s, now) === "overtime") : [];
@@ -160,8 +184,10 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
     [router],
   );
 
-  // Açılışta ve sekmeye dönünce, ağ gelince canlı veri
+  // Açılışta ve sekmeye dönünce, ağ gelince canlı veri. Depo önce bu kullanıcıya bağlanır (başkasının ya da düşmüş
+  // oturumun verisi varsa boşalır); kabuk kapanınca boşaltılır
   useEffect(() => {
+    bindLive(userId);
     void refreshLive();
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshLive();
@@ -174,8 +200,27 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("online", onOnline);
+      resetLive();
+      // Kabuk kapandı (çıkış, giriş sayfası) ya da başka kullanıcı geldi: önceki kişinin sürekli sesli hatırlatması giriş
+      // ekranında çalmaya devam etmesin (orada susturacak düğme yok). Her hatırlatma kendi alarmını susturur; karaoke
+      // alarmını kendi etkisinin temizliği keser
+      for (const id of ringingReminders(alarmOwnersNow())) stopAlarm(reminderAlarm(id));
     };
-  }, []);
+  }, [userId]);
+
+  // Oturum düştü (401) ya da çerez artık başka bir kullanıcının: sayfa sunucudan yeniden istenir; sunucu giriş
+  // sayfasına gönderir (kabuk kapanır) ya da kabuğu yeni kullanıcıyla çizer. Kabuk aynı kişiyle kalırsa (çerez o arada
+  // yenilendi: ad değişikliği, iki adımlı doğrulama açıldı) canlı veri yarım dakika sonra yeniden istenir
+  const signedOut = live.signedOut;
+  useEffect(() => {
+    if (!signedOut) return;
+    router.refresh();
+    const retry = window.setTimeout(() => {
+      bindLive(userId);
+      void refreshLive();
+    }, 30_000);
+    return () => window.clearTimeout(retry);
+  }, [signedOut, router, userId]);
 
   // Service worker: bildirim gelince canlı veriyi yenile (zil, aşağıdaki olay karşılaştırmasından çalar)
   useEffect(() => {
@@ -251,7 +296,7 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
   const ringing = overtime.length > 0 || reminderRinging;
   const soon =
     sessions.some((s) => isLive(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs) ||
-    (data?.reminders ?? []).some((r) => {
+    reminders.some((r) => {
       const at = dueInstant(r);
       return r.active && at !== null && at > now && at - now < LIVE_POLL.soonMs;
     });
@@ -434,8 +479,9 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
     if (prefs.reminderAlerts) {
       // Saatli hatırlatmalar (src/lib/user-reminders.ts › planReminderAlerts): vaktinde ya da birkaç dakika geç (sekme
       // arka plandaydı, bilgisayar uykudan uyandı) sesle; bu cihazda hiç açılmamış, yarım günden yeni kaçanlar sessiz
-      // açılır pencereyle; daha eskisi yalnız köşedeki kartta (reminder-alerts.tsx)
-      const plan = planReminderAlerts(data.reminders, fired.current, nowMs);
+      // açılır pencereyle; daha eskisi yalnız köşedeki kartta (reminder-alerts.tsx). Yalnız kabuğun kullanıcısının
+      // hatırlatıcıları (reminders)
+      const plan = planReminderAlerts(reminders, fired.current, nowMs);
       for (const { r, key } of plan.late) {
         fired.current.add(key);
         showReminder(r);
@@ -472,7 +518,7 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
       for (const cancel of map.values()) cancel();
       map.clear();
     };
-  }, [data, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire]);
+  }, [data, reminders, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire]);
 
   // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner. Alarmın sahibi "karaoke":
   // burada susturmak sürekli sesli hatırlatmanın alarmını kesmez (sounds.ts)
@@ -484,6 +530,10 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
     startAlarm("karaoke");
     return () => stopAlarm("karaoke");
   }, [overtimeKey, prefs.sound, audio]);
+  // Cihazın ses anahtarı kapanınca çalan sürekli hatırlatmalar da susar (her biri kendi alarmını keser)
+  useEffect(() => {
+    if (!prefs.sound) for (const id of ringingReminders(alarmOwnersNow())) stopAlarm(reminderAlarm(id));
+  }, [prefs.sound]);
   useEffect(() => {
     if (!overtimeKey) return;
     const original = document.title;
@@ -545,7 +595,7 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
     void refreshLive().then(() => refreshScreen());
   }
 
-  const timedReminderToday = (data?.reminders ?? []).some((r) => {
+  const timedReminderToday = reminders.some((r) => {
     const at = dueInstant(r);
     return at !== null && at > now && at - now < 24 * 3_600_000;
   });
@@ -562,7 +612,7 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
   return (
     <>
       {overtime.length ? (
-        <div role="alert" className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
+        <div role="alert" ref={reserveAlarmSpace} className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
           <div className="mx-auto max-w-3xl space-y-2">
             {overtime.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
@@ -612,7 +662,7 @@ export function AlertCenter({ role, branchScope = null }: { role: Role; branchSc
         tone="primary"
       />
       {/* Saati gelen hatırlatma: ortada açılır pencere, yapılana kadar köşede kart (her ekranda; kabukta bir kez) */}
-      <ReminderAlerts enabled={prefs.reminderAlerts} now={now} onChanged={() => refreshScreen()} />
+      <ReminderAlerts userId={userId} enabled={prefs.reminderAlerts} now={now} onChanged={() => refreshScreen()} />
       {/* Ses kilitliyken sayfanın başındaki yuvaya tek satır (yüzen hap içeriği örtüyordu; §4.6). Yuva yoksa hiçbir
           şey çizilmez. İlk dokunuşta ses açılır; satır kalkmaz, aynı yükseklikte "Sesli uyarılar açık"a döner (düğmenin
           görünmez eşi yeri tutar) ve sayfa değişince kalkar (soundRow) */}

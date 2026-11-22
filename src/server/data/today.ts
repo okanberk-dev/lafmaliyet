@@ -301,11 +301,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const viewP = safe(cashView(admin));
   const tillScoped = <T>(fn: () => Promise<T>) => viewP.then((v) => (v?.till ? withBranchScope(v.till, fn) : fn()));
   const cashP = safe(tillScoped(() => cashReportsBetween(c.yesterday, c.day)));
-  const [reports, firstDate, view, tillFirsts, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
+  const [reports, firstDate, view, tillFirsts, tillClosed, stock, due, sessions, orders, checklists, closed, ops, own, lafposSwitch] = await Promise.all([
     cashP,
     safe(tillScoped(() => firstCashReportDate())),
     viewP,
     safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => withBranchScope(b.id, () => firstCashReportDate()))))),
+    // Her şubenin dünkü kapalı gün durumu (kapalı gün şubenin): bir şubenin kapalı günü ötekinin satırını gizlemez
+    safe(viewP.then((v) => Promise.all((v?.tills ?? []).map((b) => closedYesterday(user, now, b.id))))),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     safe(loadSessions(range.from, range.to, { admin })),
@@ -330,7 +332,13 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     return flags?.length ? { ...toLite(r), flags } : toLite(r);
   };
   const tills = view?.tills
-    ? view.tills.map((b, i) => ({ ...b, today: lite(c.day, b.id), yesterday: lite(c.yesterday, b.id), firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate }))
+    ? view.tills.map((b, i) => ({
+        ...b,
+        today: lite(c.day, b.id),
+        yesterday: lite(c.yesterday, b.id),
+        firstDate: tillFirsts ? (tillFirsts[i] ?? null) : firstDate,
+        ...(tillClosed ? { closed: tillClosed[i]?.yesterday ?? null } : {}),
+      }))
     : null;
   const facts: DayFacts = {
     ...own.facts,

@@ -38,7 +38,7 @@ import {
   type KaraokeSessionDTO,
   type Phase,
 } from "@/lib/karaoke/session";
-import { KARAOKE_DELETE_FREE_MINUTES, KARAOKE_REQUEST_TEXT, karaokeDeleteMode, reopenRefusal, type KaraokeDeleteAsk } from "@/lib/karaoke/timer-requests";
+import { KARAOKE_DELETE_FREE_MINUTES, KARAOKE_REQUEST_TEXT, karaokeDeleteMode, reopenRefusal, sessionName, type KaraokeDeleteAsk } from "@/lib/karaoke/timer-requests";
 import { cn } from "@/lib/utils";
 import {
   deleteKaraokeTimer,
@@ -53,7 +53,8 @@ import { withdrawStaffRequest } from "@/server/actions/staff-requests";
 
 const PRESETS = [30, 60, 90, 120] as const;
 
-const nameOf = (s: KaraokeSessionDTO) => s.customerName || (s.source === "panel" ? "Rezervasyonsuz" : "İsimsiz rezervasyon");
+// Adsız sayaç "Rezervasyonsuz oturum": "… bitirildi", "… şimdi bitirilsin mi?" cümlelerinin öznesi (UI-07)
+const nameOf = sessionName;
 
 /** Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle */
 function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
@@ -456,7 +457,8 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
           </Badge>
           {phaseBadge ? <Badge tone={phaseBadge.tone}>{phaseBadge.text}</Badge> : null}
           {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
-          {s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
+          {/* Tutar yalnız yöneticiye (sunucu personele göndermez; savunma: depoda başka oturumun verisi kalsa da çizilmez) */}
+          {admin && s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
           {s.endedBy && p === "done" ? <span className="text-xs text-ink-mute">· {s.endedBy}</span> : null}
           {asks.map((a) =>
             admin ? (

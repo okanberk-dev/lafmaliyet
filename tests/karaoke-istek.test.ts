@@ -75,7 +75,7 @@ test("işlem geçmişi metinleri: oturum, planlanan bitiş ve ne olduğu; geri a
   assert.equal(endedLogDetail(row, new Date(at(127))), "Selin · 24 Eki 21:00–23:00 · süre dolunca haber verildi 23:07");
   assert.equal(endedLogDetail(row, new Date(at(-10))), "Selin · 24 Eki 21:00–23:00 · başlamadan bitirildi 20:50");
   // Adsız sayaç ve rezervasyon
-  assert.equal(endedLogDetail({ ...row, customerName: null, source: "panel" }, new Date(at(30))).split(" · ")[0], "Rezervasyonsuz");
+  assert.equal(endedLogDetail({ ...row, customerName: null, source: "panel" }, new Date(at(30))).split(" · ")[0], "Rezervasyonsuz oturum");
   assert.equal(sessionName({ customerName: null, source: "site" }), "İsimsiz rezervasyon");
   assert.equal(reopenLogDetail({ ...row, endedAt: new Date(at(30)), endedBy: "Ayşe" }), "Selin · 24 Eki 21:00–23:00 · Ayşe bitirmişti (21:30)");
   assert.equal(reopenLogDetail({ ...row, endedAt: null, endedBy: null }), "Selin · 24 Eki 21:00–23:00 · bitirilmemişti");

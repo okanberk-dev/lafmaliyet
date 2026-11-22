@@ -58,7 +58,8 @@ export async function GET(request: NextRequest) {
     });
   }
   const version = karaoke.version;
-  const etag = `W/"${version}.o${orders}.${marker}.${today}.${me.role}"`;
+  // Kişi de ETag'te: aynı tarayıcıda başka hesapla girilince önceki kişinin yanıtı 304 ile onaylanmaz
+  const etag = `W/"${version}.o${orders}.${marker}.${today}.u${me.id}.${me.role}"`;
   if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ...headers, ETag: etag } });
   const { from, to } = liveWindow();
   const [sessions, deleteAsks, reminders, publicKey, snapshot, ordersState] = await Promise.all([

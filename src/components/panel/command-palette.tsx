@@ -296,8 +296,9 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
         className="fixed inset-0 z-[60] bg-foreground/15"
         onClick={onClose}
       />
-      {/* Telefonda görünür alan kadar yüksek (--vvh, bottom-nav.tsx): iOS'ta ekran klavyesi sonuçları örtmez */}
-      <div className="pointer-events-none fixed inset-0 z-[61] flex items-start justify-center p-3 max-sm:bottom-auto max-sm:h-[var(--vvh,100dvh)] sm:px-4 sm:pt-[12dvh]">
+      {/* Telefonda görünür alan kadar yüksek (--vvh, bottom-nav.tsx): iOS'ta ekran klavyesi sonuçları örtmez. Karaoke
+          şeridi (z-70) varken onun altından başlar (--alarm-h, globals.css): arama kutusu şeridin altında kalmaz */}
+      <div className="pointer-events-none fixed inset-0 z-[61] flex items-start justify-center p-3 pt-[calc(0.75rem+var(--alarm-h))] max-sm:bottom-auto max-sm:h-[var(--vvh,100dvh)] sm:px-4 sm:pt-[calc(12dvh+var(--alarm-h))]">
         <motion.div
           data-component="command-palette"
           role="dialog"
@@ -308,7 +309,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={reduce ? undefined : { opacity: 0, y: 6, scale: 0.98, pointerEvents: "none" }}
           transition={transition}
-          className="pointer-events-auto flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-chart-card-bg shadow-[0_24px_80px_rgba(0,0,0,0.12)] ring-1 ring-border sm:max-h-[min(38rem,76dvh)]"
+          className="pointer-events-auto flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-chart-card-bg shadow-[0_24px_80px_rgba(0,0,0,0.12)] ring-1 ring-border sm:max-h-[min(38rem,calc(76dvh-var(--alarm-h)))]"
         >
           <div className="flex shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
             <Search className="size-[18px] shrink-0 text-chart-muted" strokeWidth={1.75} aria-hidden />

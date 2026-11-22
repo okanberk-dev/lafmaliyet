@@ -13,13 +13,13 @@ import { currentExpenseBranch } from "@/server/branch-scope";
 import { listBranches } from "@/server/branches";
 import { loadModel } from "@/server/data/dataset";
 import { linkedUntil } from "@/lib/photo-rules";
-import { todayTR } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 import { assertNotHeld } from "@/server/staff-requests/core";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zAmount, zDate, zMonth, zMoney, zOptText, zText } from "./util";
+import { attempt, UserError, zAmount, zDate, zMonth, zOptText, zSignedAmount, zText } from "./util";
 
 // ---------------------------------------------------------------- Harcama kayıtları
 
@@ -28,10 +28,14 @@ const entrySchema = z.object({
   date: zDate,
   categoryId: z.number().int().positive({ message: "Kategori seçin" }),
   description: zOptText(200),
-  amount: zMoney.refine((v) => v !== 0, "Tutar girin"),
+  // Eksi tutar bilerek serbest (iade, düzeltme); fazladan yazılmış sıfıra karşı en çok ±100.000.000 ₺ (FC-06)
+  amount: zSignedAmount.refine((v) => v !== 0, "Tutar girin"),
   paymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullable(),
   note: zOptText(500),
 });
+
+/** Harcamanın en ileri tarihi: bugünden bu kadar gün sonrası (gelecek ayın ödemesi önceden girilebilir; 2030 girilemez) */
+const EXPENSE_AHEAD_DAYS = 31;
 
 /** Cari borcun tedarikçisi, iyelik ekiyle ("Sütaş tedarikçisinin") */
 async function ownerName(supplierEntryId: number): Promise<string> {
@@ -48,9 +52,12 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const { id, ...data } = entrySchema.parse(input);
+    if (data.date > addDays(todayTR(), EXPENSE_AHEAD_DAYS)) throw new UserError("Tarih bir aydan daha ileri olamaz");
     const db = getDb();
     const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, data.categoryId)).limit(1);
     if (!cat) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+    // Pasif kategoriye yeni harcama yazılmaz (açılır liste yalnız etkinleri gösterir; eski açık form gönderebilir)
+    if (!id && !cat.active) throw new UserError(`${cat.name} pasif; yeni harcama yazılmaz. Başka kategori seçin ya da kategoriyi etkinleştirin`);
     const values = { ...data, description: data.description || null, note: data.note || null };
     let saved: { id: number };
     if (id) {

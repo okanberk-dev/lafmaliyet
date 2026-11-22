@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, notExists, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -37,17 +37,20 @@ import {
   releaseInvoiceLinks,
   resettleInvoices,
   type CreditUse,
+  type InvoiceLinks,
 } from "@/server/cari/settle";
+import { lockCashOut } from "@/server/cash-outs/write";
 import { loadHandledCashOuts, loadPendingCashOutInvoices, updateHandledCashOuts, type PendingCashOutInvoice } from "@/server/data/cash-out-invoices";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
 import { getDb, schema as s } from "@/server/db";
 import { storeUpload } from "@/server/documents";
+import { findSameInvoiceNo, invoiceNoKey } from "@/server/parasut/mapping";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
 import { readPhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zOptText, zText } from "./util";
+import { attempt, UserError, zClientKey, zDate, zOptText, zSignedAmount, zText } from "./util";
 
 const zId = z.number().int().positive();
 const zCategory = z.enum(INVOICE_CATEGORIES as [string, ...string[]], { message: "Kategori seçin" });
@@ -59,9 +62,10 @@ const invoiceSchema = z.object({
   description: zOptText(200),
   invoiceNo: zOptText(60),
   category: zCategory,
-  amount: z.number().finite(),
-  discount: z.number().finite().min(0),
-  payable: z.number().finite(),
+  // Eksi tutar iade faturasında olağan; Aylık harcamalar'daki gibi en çok ±100.000.000 ₺ (FC-06)
+  amount: zSignedAmount,
+  discount: z.number().finite().min(0).max(100_000_000, "Tutar çok büyük"),
+  payable: zSignedAmount,
   unpaid: z.boolean(),
   note: zOptText(1000),
   /** Vade; gönderilmezse değişmez */
@@ -73,7 +77,46 @@ const invoiceSchema = z.object({
    * bekleyen listeden kalkar, fişin fotoğrafı faturanın belgesi olur, ödendiyse ödeme şekli nakit
    */
   cashOutId: zId.nullable().optional(),
+  /**
+   * Yeni faturanın anahtarı (Fatura ekle penceresinin ürettiği UUID; "Kaydet, yenisini ekle"de yenilenir): aynı anahtarla
+   * eklenmiş fatura varsa yenisi açılmaz, o döner (denetim UI-03: Ctrl+Enter'a ikinci basış)
+   */
+  clientKey: zClientKey,
+  /** Aynı tedarikçinin aynı numaralı faturası var dendi, kullanıcı "Yine de ekle" dedi (denetim UI-02) */
+  sameNoOk: z.boolean().optional(),
 });
+
+/** Kasadan açılan faturanın satırı artık beklemiyor */
+const CASH_OUT_GONE = "Bu kasa satırı artık beklemiyor (faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı); fatura eklenmedi. Sayfayı yenileyin.";
+
+/** Yeni elle faturayla aynı tedarikçi ve numarayı taşıyan kayıt (pencere "Yine de ekle" diye sorar) */
+export type SameNumberInvoice = { id: number; supplier: string; date: string; invoiceNo: string | null; payable: number; source: "manual" | "excel" | "parasut" };
+
+/**
+ * Aynı tedarikçinin aynı numaralı faturası (UI-02; mapping.ts findSameInvoiceNo): numara ayraçsız ve büyük harfle,
+ * tedarikçi adla ya da Tedarikçiler kartıyla. Önce numarası tutan kayıtlar okunur; kart çözümü yalnız onlar varsa
+ */
+async function sameNumberInvoice(supplier: string, invoiceNo: string | null): Promise<SameNumberInvoice | null> {
+  const no = invoiceNoKey(invoiceNo);
+  if (!no) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: s.invoices.id,
+      supplier: s.invoices.supplier,
+      supplierTaxNumber: s.invoices.supplierTaxNumber,
+      date: s.invoices.date,
+      invoiceNo: s.invoices.invoiceNo,
+      payable: s.invoices.payable,
+      source: s.invoices.source,
+    })
+    .from(s.invoices)
+    .where(sql`upper(regexp_replace(${s.invoices.invoiceNo}, '[^A-Za-z0-9]', '', 'g')) = ${no}`)
+    .orderBy(desc(s.invoices.date), desc(s.invoices.id));
+  if (!rows.length) return null;
+  const twin = findSameInvoiceNo({ supplier, invoiceNo }, rows, await cardResolver(db));
+  return twin ? { id: twin.id, supplier: twin.supplier, date: twin.date, invoiceNo: twin.invoiceNo, payable: twin.payable, source: twin.source } : null;
+}
 
 /**
  * Kafe içi ↔ kafe dışı (karaoke box, Alp Koç) geçen faturalardan kalemi okunmuş olan varsa alınan miktar (ve bağlı
@@ -93,42 +136,105 @@ async function recomputeSeparateMoves(moves: { id: number; date: string; from: s
 }
 
 /**
+ * saveInvoice'ın yanıtının varsayılanları. Yeni satır açılmadıysa: `repeated` (aynı anahtarla eklenmiş fatura döndü,
+ * UI-03) ya da `duplicate` (aynı tedarikçinin aynı numaralı faturası var, fatura eklenmedi, `id` 0; UI-02)
+ */
+const blankResult = {
+  id: 0,
+  kept: [] as LockedField[],
+  message: null as string | null,
+  credit: { used: 0, closed: 0 },
+  stockOnly: false,
+  cashOut: null as { document: boolean | null } | null,
+  repeated: false,
+  /** Tekrarda kayıtlı faturanın tedarikçisi ve ödenecek tutarı: formda sonradan yapılan düzeltme uygulanmaz, pencere bunu söyler */
+  repeatedRow: null as { supplier: string; payable: number } | null,
+  duplicate: null as SameNumberInvoice | null,
+};
+
+/**
  * Faturayı ekler ya da günceller. Paraşüt'e bağlı faturada tarih, fatura no ve tutarlar yazılmaz: eşitleme onları
  * her çalışmada Paraşüt'ten yeniden yazar (bkz. rules.ts PARASUT_LOCKED_FIELDS). Formdan farklı değer geldiyse
- * (eski açık pencere) `kept` ile bildirilir, sessizce yutulmaz.
+ * (eski açık pencere) `kept` ile bildirilir, sessizce yutulmaz. Yeni faturada aynı anahtarın tekrarı var olanı döner
+ * (`repeated`), aynı tedarikçinin aynı numaralı faturası varsa ve `sameNoOk` yoksa fatura eklenmez (`duplicate`).
  */
 export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, paidAt, cashOutId, ...data } = invoiceSchema.parse(input);
+    const { id, paidAt, cashOutId, clientKey, sameNoOk, ...data } = invoiceSchema.parse(input);
     if (paidAt && paidAt > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const db = getDb();
     const none: CreditUse = { allocationIds: [], used: new Map(), closed: [] };
     if (!id) {
-      // Kasadan faturalı alımdan açılıyor (E-42): satır hâlâ bekliyor olmalı (arada Aylık harcamalar'a yazıldıysa ya da
-      // faturası geldiyse alım iki kez sayılırdı)
-      const fromCash = cashOutId ? (await loadPendingCashOutInvoices(db, { ids: [cashOutId] }))[0] : null;
-      if (cashOutId && !fromCash) throw new UserError("Bu kasa satırı artık beklemiyor (faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı); fatura eklenmedi. Sayfayı yenileyin.");
+      // Aynı anahtarla eklenmiş fatura (UI-03; kısayola ikinci basış, yanıtı yolda kalan isteğin tekrarı): yenisi
+      // açılmaz, o döner. Numara denetiminden önce: tekrar kendi faturasını "aynı numaralı" bulmasın
+      const repeat = (row: { id: number; supplier: string; payable: number }) => ({ ...blankResult, id: row.id, repeated: true, repeatedRow: { supplier: row.supplier, payable: row.payable } });
+      const byKey = async (tx: Pick<typeof db, "select"> = db) =>
+        clientKey ? ((await tx.select({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.clientKey, clientKey)).limit(1))[0] ?? null) : null;
+      const prior = await byKey();
+      if (prior) return repeat(prior);
+      // Aynı tedarikçinin aynı numaralı faturası (UI-02): eşitlemeden sonra elle girilen kâğıt fatura ya da iki kişinin
+      // girdiği aynı fatura alımı, borcu ve KDV indirimini iki kez sayardı. Kayıt açılmaz, pencere sorar; "Yine de ekle"
+      // (sameNoOk) bilerek ekler
+      if (!sameNoOk && invoiceNoKey(data.invoiceNo)) {
+        // Kasadan açılan faturada önce satırın hâlâ beklediği (kilitsiz; işlemde yeniden denetlenir): faturası gelmiş ya
+        // da kapanmış satır "aynı numaralı fatura var" diye sorulmaz, açılamaz
+        if (cashOutId && !(await loadPendingCashOutInvoices(db, { ids: [cashOutId] })).length) throw new UserError(CASH_OUT_GONE);
+        const twin = await sameNumberInvoice(data.supplier, data.invoiceNo);
+        if (twin) return { ...blankResult, duplicate: twin };
+      }
       // Cari takipteki kartın yeni faturası panelde sayılır (taban 0; src/lib/cari/balance.ts)
       const ledgerBase = await ledgerBaseForNew(data.supplier, null);
-      // Ödendi eklenen fatura (pencerenin varsayılanı) takipli kartta önce hesaptaki parayı kullanır (K6): ödenmemiş
-      // yazılır, hesaptaki para sayılır, karşılanmayan kalan kullanıcının günüyle ödendi işaretlenir. Kasadan ödenmiş
-      // alımın faturası hesaptaki parayı kullanmaz (inceleme D3): parası kasadan çıktı, avans bir sonraki faturanındır
-      const viaCredit = !fromCash && !data.unpaid && ledgerBase !== null;
-      // Kasadan ödenmiş alımın faturası: ödeme şekli nakit, günü pencerenin (kasanın günü)
-      const cashPaid = fromCash && !data.unpaid ? { paidVia: "nakit" as const } : {};
-      const [row] = await db
-        .insert(s.invoices)
-        .values({ ...data, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase, ...(viaCredit ? {} : cashPaid) })
-        .returning({ id: s.invoices.id });
-      const credit = viaCredit ? await creditFirstForInvoices([row.id], me.name) : none;
-      if (viaCredit && !credit.closed.includes(row.id)) {
-        await db
-          .update(s.invoices)
-          .set({ unpaid: false, paidAt: paidAt ?? null, paidByLedger: false, ...cashPaid })
-          .where(and(eq(s.invoices.id, row.id), eq(s.invoices.unpaid, true)));
+      let fromCash: PendingCashOutInvoice | null = null;
+      let row: { id: number };
+      let credit = none;
+      if (cashOutId) {
+        // Kasadan faturalı alımdan açılıyor (E-42): satır hâlâ bekliyor olmalı (arada Aylık harcamalar'a yazıldıysa ya da
+        // faturası geldiyse alım iki kez sayılırdı). Satır kilitlenir; denetim, fatura ve satırın kapanması tek işlemde
+        // (FC-04): aynı anda gelen ikinci istek (iki sekme, "Aylık harcamalar'a yaz") bekler, sonra satırı kapanmış görür.
+        // Kasadan ödenmiş alımın faturası hesaptaki parayı kullanmaz (inceleme D3): parası kasadan çıktı, avans bir
+        // sonraki faturanındır. Ödendiyse ödeme şekli nakit, günü pencerenin (kasanın günü)
+        const out = await db.transaction(async (tx) => {
+          await lockCashOut(tx, cashOutId);
+          // Aynı anahtarla bekleyen ikinci istek: birincinin faturası döner ("artık beklemiyor" denmez)
+          const same = await byKey(tx);
+          if (same) return { repeat: true as const, same };
+          const [pending] = await loadPendingCashOutInvoices(tx, { ids: [cashOutId] });
+          if (!pending) throw new UserError(CASH_OUT_GONE);
+          const [inserted] = await tx
+            .insert(s.invoices)
+            .values({ ...data, clientKey, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase, ...(data.unpaid ? {} : { paidVia: "nakit" as const }) })
+            .returning({ id: s.invoices.id });
+          await updateHandledCashOuts(tx, { add: [{ id: pending.id, invoiceId: inserted.id, by: me.name }] });
+          return { repeat: false as const, row: inserted, fromCash: pending };
+        });
+        if (out.repeat) return repeat(out.same);
+        ({ row, fromCash } = out);
+      } else {
+        // Ödendi eklenen fatura (pencerenin varsayılanı) takipli kartta önce hesaptaki parayı kullanır (K6): ödenmemiş
+        // yazılır, hesaptaki para sayılır, karşılanmayan kalan kullanıcının günüyle ödendi işaretlenir. Aynı anahtarla
+        // aynı anda gelen ikinci istek satır açmaz (benzersiz dizin), birincinin faturası döner
+        const viaCredit = !data.unpaid && ledgerBase !== null;
+        const [inserted] = await db
+          .insert(s.invoices)
+          .values({ ...data, clientKey, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
+          .onConflictDoNothing({ target: s.invoices.clientKey })
+          .returning({ id: s.invoices.id });
+        if (!inserted) {
+          const same = await byKey();
+          if (!same) throw new Error("İstemci anahtarı çakıştı ama fatura bulunamadı");
+          return repeat(same);
+        }
+        row = inserted;
+        credit = viaCredit ? await creditFirstForInvoices([row.id], me.name) : none;
+        if (viaCredit && !credit.closed.includes(row.id)) {
+          await db
+            .update(s.invoices)
+            .set({ unpaid: false, paidAt: paidAt ?? null, paidByLedger: false })
+            .where(and(eq(s.invoices.id, row.id), eq(s.invoices.unpaid, true)));
+        }
       }
-      const cash = fromCash ? await adoptCashOut(fromCash, row.id, me.name) : null;
+      const cash = fromCash ? await copyCashOutPhoto(fromCash, row.id, me.name) : null;
       await logActivity(
         me,
         "Fatura eklendi",
@@ -136,7 +242,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       );
       refresh();
       // Elle eklenen faturanın kalemi yoktur: stoğa girmez (E-07 yalnız Paraşüt kalemli faturada)
-      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit), stockOnly: false, cashOut: cash };
+      return { ...blankResult, id: row.id, credit: creditSummary(credit), cashOut: cash };
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
@@ -219,17 +325,16 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       ? // Kilitli alanlar formda salt okunur: fark ancak pencere açıkken eşitleme değeri değiştirdiyse çıkar
         `${names.charAt(0).toLocaleUpperCase("tr-TR")}${names.slice(1)} bu pencere açıkken Paraşüt eşitlemesiyle güncellendi; Paraşüt'teki yeni değer geçerli kaldı. Diğer değişiklikleriniz kaydedildi.`
       : null;
-    return { id, kept, message, credit: creditSummary(credit), stockOnly, cashOut: null };
+    return { ...blankResult, id, kept, message, credit: creditSummary(credit), stockOnly };
   });
 }
 
 /**
- * Kasadan faturalı alımdan açılan faturanın son adımı (E-42): satır bekleyen listeden kalkar (fatura silinirse geri
- * gelir) ve fişin fotoğrafı faturanın belgesi olarak kopyalanır (fotoğrafın süresi dolar, belge kalır). Fotoğraf
- * okunamazsa fatura yine kaydedilmiştir; `document` false döner ve pencere söyler.
+ * Kasadan faturalı alımdan açılan faturanın son adımı (E-42; satır faturayla aynı işlemde bekleyen listeden kalktı,
+ * fatura silinirse geri gelir): fişin fotoğrafı faturanın belgesi olarak kopyalanır (fotoğrafın süresi dolar, belge
+ * kalır). Fotoğraf okunamazsa fatura yine kaydedilmiştir; `document` false döner ve pencere söyler.
  */
-async function adoptCashOut(row: PendingCashOutInvoice, invoiceId: number, by: string): Promise<{ document: boolean | null }> {
-  await getDb().transaction((tx) => updateHandledCashOuts(tx, { add: [{ id: row.id, invoiceId, by }] }));
+async function copyCashOutPhoto(row: PendingCashOutInvoice, invoiceId: number, by: string): Promise<{ document: boolean | null }> {
   if (!row.photoId) return { document: null };
   try {
     const photo = await readPhoto(row.photoId);
@@ -804,10 +909,11 @@ type DeletedEntry = {
   /** Silinirken cari ödemesi sayılmış ya da faturasız alım bağlıydı (eski kopyalar; yenilerde `cari`) */
   hadCari?: boolean;
   /**
-   * Silinirken bağlı faturasız alımlar (geri alınınca hâlâ bağsızsa yeniden bağlanır) ve faturaya doğrudan sayılmış
-   * ödemelerin toplamı (hesaba geçti; yeniden sayılmaz, söylenir)
+   * Silinirken bağlı faturasız alımlar (geri alınınca hâlâ bağsızsa yeniden bağlanır), faturaya doğrudan sayılmış
+   * ödemelerin toplamı ve dağıtımları (hesaba geçti; geri alınınca hesapta hâlâ duran kadarı yeniden sayılır, FC-01).
+   * `allocations` sonradan eklendi: eski kopyada yoktur, ödeme yeniden sayılmaz
    */
-  cari?: { debtIds: number[]; paid: number };
+  cari?: { debtIds: number[]; paid: number; allocations?: InvoiceLinks["allocations"] };
   /** "Faturalar'a ekle" ile bu faturayı açan kasa satırları (geri alınınca bağ yeniden kurulur; E-42) */
   cashOutIds?: number[];
 };
@@ -878,7 +984,7 @@ export async function deleteInvoice(id: number) {
           deletedBy: me.name,
           row: snapshotOf(d),
           lines: lines.map(lineCopy),
-          ...(hadCari ? { hadCari, cari: { debtIds: links.debtIds, paid: round2(links.allocations.reduce((a, x) => a + x.amount, 0)) } } : {}),
+          ...(hadCari ? { hadCari, cari: { debtIds: links.debtIds, paid: round2(links.allocations.reduce((a, x) => a + x.amount, 0)), allocations: links.allocations } } : {}),
           ...(cashOutIds.length ? { cashOutIds } : {}),
         };
         await writeState(tx, DELETED_BILLS_KEY, [...deleted, entry].slice(-DELETED_BILLS_LIMIT));
@@ -941,8 +1047,9 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
 }
 
 /**
- * Silinen bir Paraşüt faturasını yok sayılanlardan çıkarır. Kopyası saklıysa fatura (kalemleriyle) hemen listeye
- * döner ve eşitleme onu yeniden günceller; kopya yoksa (bu özellikten önce silinmiş) sonraki eşitlemede gelir.
+ * Silinen bir Paraşüt faturasını yok sayılanlardan çıkarır. Kopyası saklıysa fatura (kalemleri ve cari bağlarıyla:
+ * bağlı alımlar, hesapta hâlâ duran ödemeler) hemen listeye döner ve eşitleme onu yeniden günceller; kopya yoksa (bu
+ * özellikten önce silinmiş) sonraki eşitlemede gelir.
  */
 export async function unignoreParasutBill(externalId: string) {
   return attempt(async () => {
@@ -968,17 +1075,24 @@ export async function unignoreParasutBill(externalId: string) {
         .where(or(ext.startsWith("ei:") ? undefined : eq(s.invoices.externalId, ext), eInvoiceId !== null ? eq(s.invoices.eInvoiceId, eInvoiceId) : undefined))
         .limit(1);
       if (existing) return { status: "exists" as const, entry, lines: 0 };
-      // Cari ödemeleri bu faturaya yeniden sayılmaz (silinirken hesaba geçtiler): defterin kapattığı fatura ödenmemiş döner
+      // Silinirken faturaya sayılan ödemeler restoreInvoice'taki gibi yeniden sayılır (FC-01): hesapta hâlâ duran kadarı;
+      // sığmayan hesapta kalır, defterin kapattığı fatura karşılanmıyorsa yeniden açılır. Eski kopyada dağıtım listesi
+      // yok: ödeme hesapta kalır, ödeme sayılmış fatura ödenmemiş döner ("Borçlara say" onu kapatabilsin; ✓'li kalsaydı
+      // tedarikçi alacaklı görünür, açık kalem olmadığı için para hiçbir yere sayılamazdı)
       const parsed = snapshotSchema.parse(entry.row);
-      const row = parsed.paidByLedger ? { ...parsed, unpaid: true, paidAt: null, paidVia: null, paidByLedger: false } : parsed;
+      const stored = entry.cari ? cariLinksSchema.shape.allocations.safeParse(entry.cari.allocations) : null;
+      const allocations = stored?.success ? stored.data : [];
+      const unpaidBack = !stored?.success && (parsed.paidByLedger || (entry.cari?.paid ?? 0) > 0.005);
+      const row = unpaidBack && !parsed.unpaid ? { ...parsed, unpaid: true, paidAt: null, paidVia: null, paidByLedger: false } : parsed;
       const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
       await relinkCashOuts(tx, cashOutIdsSchema.catch([]).parse(entry.cashOutIds ?? []), r.id, me.name);
       // Silinirken bağlı faturasız alımlar hâlâ bağsızsa yeniden bağlanır (silme gider kayıtlarını yeniden yazmıştı;
       // bağlanmazsa alım hem faturada hem Aylık harcamalar'da gider olurdu)
       const debtIds = (entry.cari?.debtIds ?? []).filter((x) => Number.isInteger(x) && x > 0);
-      const relinked = debtIds.length
-        ? (await reattachInvoiceLinks(tx, r.id, { allocations: [], debtIds }, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null })).relinked
-        : 0;
+      const { relinked, lost } =
+        debtIds.length || allocations.length
+          ? await reattachInvoiceLinks(tx, r.id, { allocations, debtIds }, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null })
+          : { relinked: 0, lost: 0 };
       let lines = 0;
       if (entry.lines?.length) {
         // Aynı Paraşüt kalemi bu arada başka satıra yazıldıysa (benzersiz kimlik) o kalem atlanır
@@ -994,19 +1108,29 @@ export async function unignoreParasutBill(externalId: string) {
         if (fresh.length) await tx.insert(s.parasutBillLines).values(fresh.map((l) => ({ ...l, invoiceId: r.id })));
         lines = fresh.length;
       }
-      return { status: "restored" as const, entry, lines, relinked };
+      return { status: "restored" as const, entry, lines, relinked, lost, unpaidBack: unpaidBack && !parsed.unpaid };
     });
     if (out.status === "missing") throw new UserError("Bu Paraşüt faturası yok sayılanlar listesinde değil; sayfayı yenileyin.");
     if (out.lines && out.entry) await applyProductLinks();
     const label = out.entry ? `${dateTR(out.entry.row.date)} ${splitSupplier(out.entry.row.supplier).base}` : `Paraşüt #${ext}`;
-    await logActivity(me, "Silinen Paraşüt faturası geri alındı", label);
+    // Sayılamayan: ödemenin hesabında bu kadar para kalmamış (bu arada başka kaleme sayıldı ya da ödeme silindi)
+    const lost = out.status === "restored" && out.lost > 0.005 ? `${tl(out.lost, 2)} ödeme yeniden sayılamadı (bu arada başka kaleme sayıldı ya da silindi)` : "";
+    await logActivity(me, "Silinen Paraşüt faturası geri alındı", label + (lost ? ` · ${lost}` : ""));
     refresh();
     const relinked = out.status === "restored" ? out.relinked : 0;
-    const paidBack = out.entry?.cari ? out.entry.cari.paid > 0.005 : Boolean(out.entry?.hadCari);
+    // Ödemeler yeniden sayılmadı: eski kopya (dağıtım listesi yok; ödeme sayılmış fatura ödenmemiş döndü) ya da daha
+    // eskisi (yalnız "cari vardı" işareti)
+    const legacy = out.status === "restored" && !Array.isArray(out.entry?.cari?.allocations);
+    const paidBack = legacy && (out.entry?.cari ? out.entry.cari.paid > 0.005 : Boolean(out.entry?.hadCari));
     const cariNote = [
       relinked ? ` ${relinked} faturasız alım faturaya yeniden bağlandı.` : "",
       out.status === "restored" && out.entry?.cari && out.entry.cari.debtIds.length > relinked ? " Bağlı alımlardan bazıları bu arada değişti; Tedarikçiler'den Faturası geldi ile bağlayın." : "",
-      paidBack ? " Ödemeler bu faturaya yeniden sayılmadı; Tedarikçiler'den Borçlara say." : "",
+      lost ? ` ${lost}.` : "",
+      paidBack
+        ? out.status === "restored" && out.unpaidBack
+          ? " Ödemeler bu faturaya yeniden sayılmadı, fatura ödenmemiş döndü: Tedarikçiler'den Borçlara say."
+          : " Ödemeler bu faturaya yeniden sayılmadı; Tedarikçiler'den Borçlara say."
+        : "",
     ].join("");
     const message =
       out.status === "restored"

@@ -512,6 +512,10 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
       kept: u?.kept ?? [],
       invited: u?.invited ?? [],
     };
+  }).catch((e: unknown) => {
+    // Postgres'in kendi hatası (ör. yabancı anahtar) İngilizce ve ham gelir: işlem geri alındı, bunu Türkçe söyle
+    if (e instanceof RestoreError) throw e;
+    throw new RestoreError(`Geri yükleme geri alındı, hedef değişmedi: ${(e as Error).message}`, { cause: e });
   });
   return { ...result, fromTag: plan.fromTag, toTag: plan.toTag, later: plan.later, safetyCopy, replaced: !empty, warnings };
 }

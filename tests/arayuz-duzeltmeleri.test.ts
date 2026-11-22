@@ -12,6 +12,9 @@ import { test } from "node:test";
 
 import { splitTasks, type DayTask } from "../src/app/panel/bugun/logic";
 import { navTreeFor } from "../src/components/panel/nav";
+import { numPossessive } from "../src/lib/format";
+import { sessionName } from "../src/lib/karaoke/timer-requests";
+import { okcChecks, type OkcFigures } from "../src/lib/okc-z";
 import { wordHit } from "../src/lib/word-hit";
 
 import { scanActionErrors, scanBusyAfterAwait } from "./helpers/action-guard";
@@ -287,9 +290,188 @@ test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişken
     /lines\.push\(\s*role === "admin"\s*\? `Son kontrol başarısız: \$\{data\.error\}\$\{since\}\. Siparişleri sitenin panelinde de kontrol edin\.`\s*: `Siparişler şu an siteden alınamıyor\$\{since\}\. Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin\.`,?\s*\);/,
   );
   assert.match(board, /description: role === "admin" \? r\.error : "Sorun sürerse yöneticiye haber verin\."/);
+  // Panel yanıt vermezse (ağ yok, 500) Yenile sessiz kalmaz (denetim SB-05); arka plandaki çekmeler bildirim göstermez
+  const manual = board.slice(board.indexOf("function useManualPull"), board.indexOf("export function OrdersRefreshButton"));
+  assert.match(manual, /if \(r === null\) toast\.error\("Panele ulaşılamadı; bağlantıyı kontrol edip tekrar deneyin\."\);/);
+  assert.doesNotMatch(board.slice(board.indexOf("async function pullOrders"), board.indexOf("function useManualPull")), /toast\./);
   const actions = read("src/server/actions/karaoke.ts");
   const sync = actions.slice(actions.indexOf("export async function syncKaraokeNow"));
   assert.match(sync, /const me = await requireUser\(\);/);
   assert.match(sync, /throw new UserError\(me\.role === "admin" \? r\.error : "laffogato\.net'e ulaşılamadı; sorun sürerse yöneticiye haber verin\."\)/);
   assert.doesNotMatch(sync.slice(0, sync.indexOf("\n}\n")), /throw new UserError\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
+});
+
+test("karaoke şeridi (SB-03): kabuk şerit kadar iner; zil, çekmece, arama paleti ve İçeriğe geç şeridin altında kalmaz", () => {
+  // Şerit sabit ve z-70; yüksekliği ölçülüp kökte --alarm-h olur, şerit kalkınca silinir
+  const alerts = read("src/components/panel/live/alert-center.tsx");
+  const banner = alerts.match(/<div role="alert" ref=\{reserveAlarmSpace\} className="([^"]+)"/)?.[1] ?? "";
+  assert.match(banner, /\bfixed\b/);
+  const bannerZ = Number(banner.match(/\bz-\[(\d+)\]/)?.[1]);
+  assert.equal(bannerZ, 70);
+  assert.match(alerts, /root\.style\.setProperty\("--alarm-h", `\$\{el\.offsetHeight\}px`\)/);
+  assert.match(alerts, /root\.style\.removeProperty\("--alarm-h"\)/);
+
+  const css = read("src/app/globals.css");
+  const shell = css.slice(css.indexOf('[data-component="app-shell"] {'), css.indexOf("@media (width >= 64rem)"));
+  assert.match(shell, /--mobile-top-h: calc\(3\.5rem \+ var\(--alarm-h\)\);/);
+  assert.match(shell, /padding-top: var\(--alarm-h\);/);
+  // Baskıda şerit çıkmaz (no-print); boşluğu da ilk sayfada boş bant bırakmaz
+  const print = css.slice(css.indexOf("@media print"));
+  assert.match(print.slice(0, print.indexOf("\n}\n")), /\[data-component="app-shell"\] \{\s*padding-top: 0;\s*\}/);
+
+  // Telefonun üst çubuğu şeridin altında yapışır. backdrop-blur onu içindeki fixed öğelerin kapsayıcısı yapar ve çubuk
+  // zaten --alarm-h'de durur: içindeki hiçbir öğe --mobile-top-h'yi (şeridi de sayar) kullanmaz, şerit iki kez sayılırdı
+  // (zilin listesi 390 px'te ekranın altından taşıyordu)
+  const sidebar = read("src/components/panel/sidebar.tsx");
+  const header = sidebar.slice(sidebar.indexOf('<header className="no-print sticky'), sidebar.indexOf("</header>", sidebar.indexOf('<header className="no-print sticky')));
+  assert.match(header, /^<header className="no-print sticky top-\(--alarm-h\) [^"]*backdrop-blur/);
+  // Zil açıkken üst çubuk sayfanın yüzen düğmelerinin (Fab, z-30) üstüne çıkar, çekmecenin perdesinin (z-40) altında kalır
+  const fabZ = Number(read("src/components/ui/fab.tsx").match(/"no-print fixed [^"]*\bz-(\d+)\b/)?.[1]);
+  const barZ = Number(header.match(/has-\[\[data-component=notification-dropdown\]\[data-open\]\]:z-\[(\d+)\]/)?.[1]);
+  assert.ok(barZ > fabZ && barZ < 40, `${barZ} / ${fabZ}`);
+  assert.match(header, /<NotificationMenu [^>]*variant="bar"/);
+  assert.doesNotMatch(header, /--mobile-top-h|\bfixed\b/);
+  const menu = read("src/components/panel/notifications.tsx");
+  assert.doesNotMatch(menu, /--mobile-top-h/);
+  // Zilin kökü üst çubukta konumlanmaz: açılan pencere (absolute) üst çubuğa göre yerleşir, çubuğun hemen altında açılır
+  assert.match(menu, /className=\{cn\("relative inline-flex shrink-0 font-sans", variant === "bar" && "max-lg:static"\)\}/);
+  assert.match(menu, /"absolute top-\[calc\(100%\+0\.5rem\)\] z-\[100\] flex max-h-\[/);
+  const bar = menu.slice(menu.indexOf('variant === "bar" &&\n'), menu.indexOf("\n", menu.indexOf('variant === "bar" &&\n') + 22));
+  assert.doesNotMatch(bar, /\bfixed\b/);
+  // Yüksekliği şerit, üst çubuk ve alt menü arasına sığar
+  assert.match(bar, /max-lg:max-h-\[calc\(100dvh-5rem-var\(--mobile-nav-h,0px\)-var\(--alarm-h,0px\)\)\]/);
+  // Menü çekmecesi şeridin altından başlar
+  assert.match(sidebar, /className="fixed top-\(--alarm-h\) bottom-0 left-0 z-50 /);
+
+  // Masaüstünde zilin penceresi kenar çubuğundan şeridin bulunduğu yere taşar: zil açıkken kenar çubuğu şeridin üstüne çıkar
+  assert.match(menu, /data-component="notification-dropdown"\s+data-open=\{open \|\| undefined\}/);
+  const raised = Number(sidebar.match(/<div className="no-print fixed inset-y-0 left-0 z-30 [^"]*has-\[\[data-component=notification-dropdown\]\[data-open\]\]:z-\[(\d+)\]/)?.[1]);
+  assert.ok(raised > bannerZ, String(raised));
+
+  // Arama paleti (z-61) ve İçeriğe geç şeridin altından başlar
+  const palette = read("src/components/panel/command-palette.tsx");
+  const frame = palette.match(/<div className="(pointer-events-none fixed inset-0 z-\[61\][^"]*)"/)?.[1] ?? "";
+  assert.match(frame, /(?:^| )pt-\[calc\(0\.75rem\+var\(--alarm-h\)\)\]/);
+  assert.match(frame, /sm:pt-\[calc\(12dvh\+var\(--alarm-h\)\)\]/);
+  assert.match(palette, /sm:max-h-\[min\(38rem,calc\(76dvh-var\(--alarm-h\)\)\)\]/);
+  assert.match(read("src/app/panel/layout.tsx"), /focus:fixed focus:top-\[calc\(var\(--alarm-h\)\+0\.75rem\)\]/);
+});
+
+// ---------------------------------------------------------------- 13 Kasım denetimi, P10 (arayüz)
+
+test("sayı eki (UI-06, UI-X1): okunuşun son sözcüğüne göre; yüzde, ondalık, binlik ve yuvarlanmış sayı", () => {
+  const cases: [string, string][] = [
+    [numPossessive(13), "13'ü"],
+    [numPossessive(10), "10'u"],
+    [numPossessive(6), "6'sı"],
+    [numPossessive(3), "3'ü"],
+    [numPossessive(12), "12'si"],
+    [`%${numPossessive(30)}`, "%30'u"],
+    [`%${numPossessive(40)}`, "%40'ı"],
+    [`%${numPossessive(20)}`, "%20'si"],
+    [`%${numPossessive(9)}`, "%9'u"],
+    // Ondalıkta virgülden sonrası okunur: "yirmi virgül yetmiş beşi"
+    [numPossessive(2.5, 1), "2,5'i"],
+    [`%${numPossessive(20.75, 2)}`, "%20,75'i"],
+    [`%${numPossessive(15.6, 2)}`, "%15,6'sı"],
+    [`%${numPossessive(20.5, 0)}`, "%21'i"],
+    // Ek yazılan (yuvarlanmış) sayıya göre
+    [numPossessive(12.96), "13'ü"],
+    [numPossessive(1_000), "1.000'i"],
+    [numPossessive(2_000_000), "2.000.000'u"],
+    [numPossessive(-3), "-3'ü"],
+  ];
+  for (const [got, want] of cases) assert.equal(got, want);
+});
+
+test("ÖKC Z'sinin K5 uyarısı (UI-X1): 'günlük toplamın %30'u', '%20'si'", () => {
+  const fig = (vatTotal: number): OkcFigures => ({ zNo: "0123", receipts: 50, total: 10_000, vatTotal, groups: [], cash: 4_000, card: 6_000, mealCard: null, other: null });
+  const k5 = (vat: number) => okcChecks(fig(vat), { prev: { z: null, cum: null } }).checks.find((c) => c.key === "k5")?.text ?? "";
+  assert.match(k5(3_000), /^Toplam KDV günlük toplamın %30'u; %1–%17 olmalı\./);
+  assert.match(k5(2_000), /günlük toplamın %20'si;/);
+});
+
+test("sabit sayı eki kalmadı (UI-06): sayı, yüzde ya da gün sayısından sonra ek okunuşa göre (numPossessive)", () => {
+  // `${num(…)}'i`, `${t.listPeriod.days}'i`, `${pct(…)}'i` gibi kalıplar 13'i, %30'i, %20'i yazıyordu
+  const fixed = /\$\{[^}]*(?:num\(|pct\(|pctOf\(|\.days|\.length)[^}]*\}'(?:i|ı|u|ü|si|sı|su|sü)\b/;
+  const files = walk("src").filter((f) => /\.tsx?$/.test(f));
+  assert.ok(files.length > 300, String(files.length));
+  for (const f of files) assert.doesNotMatch(read(f), fixed, f);
+  assert.match(read("src/app/panel/page.tsx"), /gününün \$\{numPossessive\(t\.listPeriod\.days\)\}\)/);
+  const breakdowns = read("src/app/panel/dashboard-breakdowns.ts");
+  assert.match(breakdowns, /satışının %\$\{numPossessive\(o\.share \* 100\)\}/);
+  assert.match(breakdowns, /gününün \$\{numPossessive\(t\.listPeriod\.days\)\}\)/);
+  // Ek yardımcısı tek yerde: fiyat ekranları da oradan alır
+  assert.doesNotMatch(read("src/lib/prices/bulk.ts"), /numPossessive/);
+});
+
+test("bildirim metinleri (UI-07): 'ödenmemişe döndü', adsız sayaç 'Rezervasyonsuz oturum'", () => {
+  for (const f of walk("src").filter((x) => /\.tsx?$/.test(x))) assert.doesNotMatch(read(f), /yeniden ödenmedi/, f);
+  assert.match(read("src/app/panel/hatirlaticilar/payment-ui.tsx"), /"Fatura ödenmemişe döndü"/);
+  assert.match(read("src/app/panel/hatirlaticilar/recent-paid.tsx"), /title: `\$\{e\.title\} faturası ödenmemişe döndü`/);
+  assert.equal(sessionName({ customerName: null, source: "panel" }), "Rezervasyonsuz oturum");
+  assert.equal(sessionName({ customerName: null, source: "site" }), "İsimsiz rezervasyon");
+  assert.equal(sessionName({ customerName: "Doğum günü", source: "panel" }), "Doğum günü");
+  // Karaoke ekranı aynı adı kullanır: "Rezervasyonsuz oturum bitirildi", "… şimdi bitirilsin mi?"
+  const board = read("src/app/panel/karaoke/karaoke-board.tsx");
+  assert.match(board, /const nameOf = sessionName;/);
+  assert.match(board, /`\$\{nameOf\(s\)\} bitirildi`/);
+});
+
+test("çift kayıt (UI-01, UI-03): kısayollar kaydın kilidine uyar, yeni kayıt istemci anahtarıyla gider", () => {
+  // Zayi: miktar alanındaki Enter düğmenin kilidini atlıyordu. Bayrak aynı karedeki ikinci olayı da tutar
+  const waste = read("src/app/panel/zayi/waste-board.tsx");
+  const submit = waste.slice(waste.indexOf("  function submit() {"), waste.indexOf("  function askDelete() {"));
+  assert.match(submit, /^ {2}function submit\(\) \{\n(?: {4}\/\/.*\n)* {4}if \(sending\.current \|\| pending\) return;/);
+  assert.match(submit, /sending\.current = true;\n {4}start\(async \(\) => \{\n {6}try \{/);
+  assert.match(submit, /\} finally \{\n {8}sending\.current = false;/);
+  assert.match(submit, /addWasteEntry\(\{ \.\.\.input, clientKey \}\)/);
+  assert.match(waste, /onKeyDown=\{\(e\) => \{\n\s+if \(e\.key === "Enter"\) submit\(\);/);
+  // Fatura: not alanındaki Ctrl+Enter ve formun Enter'ı save()'i çağırır; save kilitliyken dönmez
+  const dialog = read("src/app/panel/faturalar/invoice-dialog.tsx");
+  const save = dialog.slice(dialog.indexOf("  async function save("), dialog.indexOf("  function onSubmit("));
+  assert.match(save, /^ {2}async function save\(again: boolean, keep = false, sameNoOk = false\) \{\n {4}if \(saving\.current\) return;/);
+  assert.match(save, /saving\.current = true;\n {4}setBusy\(true\);/);
+  assert.match(save, /\} finally \{\n {6}saving\.current = false;/);
+  assert.match(save, /clientKey: invoice \? null : clientKey,\n {8}sameNoOk,/);
+  assert.match(save, /if \(res\.data\.duplicate\) return setTwin\(\{ found: res\.data\.duplicate, again \}\);\n {4}if \(!invoice\) setClientKey\(crypto\.randomUUID\(\)\);/);
+  assert.match(dialog, /confirmLabel="Yine de ekle"/);
+  // Bulgu: Ayrıntı alanındaki Ctrl+Enter
+  const finding = read("src/app/panel/tutarlilik/consistency-client.tsx");
+  const add = finding.slice(finding.indexOf("function FindingDialog("));
+  assert.match(add, /async function submit\(e\?: FormEvent\) \{\n {4}e\?\.preventDefault\(\);\n {4}if \(saving\.current\) return;/);
+  assert.match(add, /saveFinding\(\{ id: item\?\.id \?\? null, section, title, detail, clientKey: item \? null : clientKey \}\)/);
+});
+
+test("çekmece (UI-04): adres değişince açıldığı yol unutulur; o sayfaya dönünce kendiliğinden açılmaz", () => {
+  const sidebar = read("src/components/panel/sidebar.tsx");
+  assert.match(
+    sidebar,
+    /const \[openFor, setOpenFor\] = useState<string \| null>\(null\);\n {2}if \(openFor !== null && openFor !== pathname\) setOpenFor\(null\);\n {2}const mobileOpen = openFor === pathname;/,
+  );
+});
+
+test("kasa formu (UI-05): e-posta kapalıyken ya da gönderim kurulmamışken 'e-posta gider' demez", () => {
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  assert.match(form, /const sendHint = recipients \? "gönderince yöneticiye e-posta gider" : "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın";/);
+  assert.match(form, /: `\$\{longDateTR\(date\)\} · \$\{sendHint\}`/);
+  assert.doesNotMatch(form, /`\$\{longDateTR\(date\)\} · gönderince yöneticiye e-posta gider`/);
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /if \(!settings\.emailEnabled \|\| !isEmailConfigured\(\)\) return 0;/);
+  assert.match(page, /const mailTo = showForm \? await cashMailTo\(settings\) : 0;/);
+  assert.match(page, /<InfoTip text=\{more\(mailTo > 0\)\}/);
+});
+
+test("Yardım çapaları (UI-08): bölüm boşken de kısa 'şu an yok' satırına iner", () => {
+  const holds = read("src/app/panel/hammaddeler/page.tsx");
+  assert.match(holds, /<PriceHolds pending=\{holdViews\} recent=\{recentHolds\} \/>\n\s+\) : \(\n\s+<AnchorNote id=\{HOLDS_ANCHOR\}/);
+  assert.match(read("src/app/panel/urunler/page.tsx"), /\/> : \(\n(?:\s+\/\/.*\n)?\s+<AnchorNote id="zamlar"/);
+  const paid = read("src/app/panel/hatirlaticilar/recent-paid.tsx");
+  assert.match(paid, /if \(!shown\.length\)\n\s+return \(\n\s+<>\n\s+<AnchorNote id="son-odenenler"/);
+  assert.match(read("src/app/panel/hatirlaticilar/reminders-client.tsx"), /\n\s+<RecentPaidList items=\{recentPaid\} \/>\n/);
+  // Yardım'ın üç bağlantısı bu kimliklere gider
+  const help = read("src/app/panel/yardim/page.tsx");
+  for (const href of ["/panel/hammaddeler#fiyat-onayi", "/panel/hatirlaticilar#son-odenenler", "/panel/urunler#zamlar"]) assert.ok(help.includes(`href: "${href}"`), href);
+  const note = read("src/components/panel/anchor-note.tsx");
+  assert.match(note, /if \(window\.location\.hash !== `#\$\{id\}`\) return;/);
 });

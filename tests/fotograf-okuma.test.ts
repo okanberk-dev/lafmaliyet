@@ -167,6 +167,41 @@ test("Z raporu: Z no sırası, tarih, tutmayan toplam, tanınmayan ve ikram sat�
   assert.deepEqual(levels, [...levels].sort((a, b) => (a === b ? 0 : a === "warn" ? -1 : 1)));
 });
 
+test("Z raporu (KP-08): ödenmez Z toplamının içindeyse (ödemeler = Z − ödenmez) uyarı yok; ikisini de tutmayınca uyarır", () => {
+  // Z toplamı 245 ₺ ikramı içeriyor: ödemeler 12.975,50 = 13.220,50 − 245 (formun ve kayıtlı raporun kuralı, dayRevenue)
+  const inZ = clone(Z);
+  inZ.total = { text: "*13.220,50", value: 13220.5, confidence: "high" };
+  const r = normalizeZ(inZ, { day: "2026-10-21", prevZNo: null });
+  assert.deepEqual(r.checks, [], "sahte 'Bir tutar yanlış okunmuş olabilir' yok");
+  assert.equal(r.values.zTotal!.confidence, "high");
+  // Ödemeler ne Z'yi ne Z − ödenmez'i tutuyor: uyarı yine çıkar, Z toplamından ölçülür
+  const off = clone(inZ);
+  off.paymentLines[0].amount = { text: "3.400,50", value: 3400.5, confidence: "high" };
+  const w = normalizeZ(off, { day: "2026-10-21", prevZNo: null });
+  assert.equal(plain(w.checks[0].text), "Ödeme türlerinin toplamı 12.955,50 ₺: Z toplamından 265 ₺ az. Bir tutar yanlış okunmuş olabilir.");
+  // İkram okunmadıysa Z toplamı kuralı: eskisi gibi uyarır
+  const noComp = clone(inZ);
+  noComp.comps = { text: null, value: null, confidence: "low" };
+  assert.match(plain(normalizeZ(noComp, { day: "2026-10-21", prevZNo: null }).checks[0].text), /Z toplamından 245 ₺ az/);
+});
+
+test("Z raporu (KP-10): eksi basılmış indirim, ikram ve iade tutarıyla alınır; eksi iade de söylenir", () => {
+  const neg = clone(Z);
+  neg.discounts = { text: "-310,00", value: -310, confidence: "high" };
+  neg.comps = { text: "-245,00", value: -245, confidence: "high" };
+  neg.refunds = { text: "-35,00", value: -35, confidence: "high" };
+  const r = normalizeZ(neg, { day: "2026-10-21", prevZNo: null });
+  assert.equal(r.values.discounts!.value, 310);
+  assert.equal(r.values.offRevenue!.value, 245);
+  assert.equal(fieldText("discounts", r.values.discounts!.value), "310");
+  assert.deepEqual(r.checks.map((c) => plain(c.text)), ["Z raporunda 35 ₺ iade var; nedenini nota yazın."]);
+  // Ödeme bölümündeki eksi ikram satırı da (basılı toplam yokken)
+  const line = clone(Z);
+  line.comps = { text: null, value: null, confidence: "low" };
+  line.paymentLines.push({ label: "İKRAM", amount: { text: "-120,00", value: -120, confidence: "high" }, kind: "comp" });
+  assert.equal(normalizeZ(line, { day: "2026-10-21", prevZNo: null }).values.offRevenue!.value, 120);
+});
+
 test("Z raporu: soluk fiş, okunamayan toplam ve ödeme bölümü, metin ile sayı tutmuyor", () => {
   const faded = clone(Z);
   faded.issues = ["faded"];

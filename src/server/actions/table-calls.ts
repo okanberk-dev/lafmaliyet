@@ -60,9 +60,13 @@ export async function ackTableCall(input: z.input<typeof zAck>) {
     }
     const answer = readCallAckAnswer(res, data.id);
     if (answer.kind === "failed") {
+      const { failure } = answer;
       // Günlüğe yalnız kimlik ve sitenin hata kodu
-      console.error("[siparis] çağrı", data.id, res.status, answer.failure.kind === "http" ? (answer.failure.error ?? "") : "");
-      throw new UserError(callAckFailureMessage(answer.failure, me.role));
+      console.error("[siparis] çağrı", data.id, res.status, failure.kind === "http" ? (failure.error ?? "") : "");
+      // Sitenin ucu JSON'lu 404 verdi ('not_found' dışında bir kodla; denetim SB-06): çağrı sitede yok, metin "ekran
+      // yenilendi" der ve liste gerçekten yeniden çekilir (aşama düğmesi gibi)
+      if (failure.kind === "http" && failure.status === 404 && failure.error) await resync();
+      throw new UserError(callAckFailureMessage(failure, me.role));
     }
     const synced = await resync();
     const note = synced ? null : "Ekran sitenin bildirimiyle birazdan güncellenir.";

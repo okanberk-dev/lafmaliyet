@@ -9,7 +9,7 @@ import { shiftMonth } from "../calc/engine";
 import type { FixedSection } from "../calc/types";
 import { SEPARATE_CATEGORIES } from "../constants";
 import { dateTR, money, monthLabel, tl } from "../format";
-import { isMuhtasarReminder, isProvisionalTaxReminder, postponedFrom, type ReminderRow } from "../reminders";
+import { isCalendarDate, isMuhtasarReminder, isProvisionalTaxReminder, postponedFrom, type ReminderRow } from "../reminders";
 
 import { directExpenseAllowed, QUARTER_DEPRECIATION_LABELS } from "./assets";
 import { mphbPeriodOf, periodOf, quarterLabel, quarterOfDue, quarterOfMonth, quarterRange } from "./calendar";
@@ -72,7 +72,7 @@ export function filingPeriodRefusal(kind: TaxFilingKind, period: string, setting
 /** Kaydın isteğe bağlı (ve KDV satışlarında zorunlu) alanları; `signed` eksi olabilir (zararda matrah) */
 export const FILING_VALUE_FIELDS: Record<TaxFilingKind, readonly { key: string; label: string; required?: boolean; signed?: boolean }[]> = {
   gecici: [
-    { key: "matrah", label: "Kümülatif matrah (kurum kazancı; zararda eksi)", signed: true },
+    { key: "matrah", label: "Geçici vergi matrahı (zarar ve indirim düşülmüş; zararda eksi)", signed: true },
     { key: "hesaplanan", label: "Hesaplanan geçici vergi (kümülatif)" },
   ],
   kv: [
@@ -295,14 +295,10 @@ export const classificationLogText = (n: number) => `${n} kalem`;
 
 // ---------------------------------------------------------------- Ayarlar ve elle değer (§2.4, §4.4)
 
-/** Hesap döneminin başı: 2000-01-01 … bugün */
-/** Takvimde var olan gün mü: "2026-13-01", "2026-02-31" ve "2026-00-10" değil (Date.parse 31 Şubat'ı Mart'a taşır) */
-export function isCalendarDate(day: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
-  const d = new Date(`${day}T00:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
-}
+/** Takvimde var olan gün mü (ortak denetim: src/lib/reminders.ts) */
+export { isCalendarDate };
 
+/** Hesap döneminin başı: 2000-01-01 … bugün */
 export function periodStartRefusal(day: string, today: string): string | null {
   if (!isCalendarDate(day)) return "Geçersiz tarih";
   if (day < "2000-01-01") return "Tarih 2000'den önce olamaz";

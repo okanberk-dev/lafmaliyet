@@ -171,7 +171,7 @@ test("E-36: LafPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı sat
   assert.deepEqual(closedEvidenceText({ ...EMPTY_EVIDENCE, lafpos: null }), { red: [], warn: [], info: [] });
   // Sunucu: kanıt yalnız LafPOS gününde okunur; gün sonu yazımı kapalı işareti yalnız satışlı LafPOS gününde kaldırır
   const server = read("src/server/closed-days.ts");
-  assert.match(server, /if \(!isLafposDay\(date, readLafposSwitchDay\(setting\?\.value\)\)\) return null;/);
+  assert.match(server, /if \(!isLafposDay\(date, branchId \? branchSwitchDay\(switchDay, branchId\) : switchDay\)\) return null;/);
   assert.match(server, /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[setting\][\s\S]*?if \(!isLafposDay\(date, readLafposSwitchDay\(setting\?\.value\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/);
   const ingest = read("src/server/lafpos/ingest.ts");
   assert.match(ingest, /const soldSince = stored && \(stored\.z\.receipts > 0 \|\| stored\.z\.zTotal > 0\) \? stored\.receivedAt : null;/);

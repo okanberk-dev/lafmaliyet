@@ -293,15 +293,29 @@ export function companyPnlKey(rowKey: string): boolean {
 }
 
 /**
- * Gelir-gider'de "Tümü" seçiliyken elle yazılan ay bilgisinin (aylık ciro, açık gün, ay notu) hangi şubenin ay satırına
- * indiğini söyleyen not (docs/SUBE.md › Yazarken hangi şube): ay satırı şube başınadır, "Tümü"nde yazılan varsayılan
- * şubeye (Tuzla) iner, Satışlar'daki ay bilgisi gibi. Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa
- * varken null (yazılan zaten gösterilen satırdır)
+ * "Tümü"de aylık ciro ve açık gün yazılmaz (birden çok kasa açıkken): Tümü şubelerin toplamıdır (src/lib/cash-month.ts
+ * resolveBranchMonths), yazılan ise tek şubenin (Tuzla) ay satırına inerdi; öteki şubenin cirosu ya iki kez sayılır ya da
+ * hücre yazılandan farklı bir rakam gösterirdi, "kasaya dön" yalnız Tuzla'yı boşaltırdı. Gelir-gider hücreyi kilitler,
+ * sunucu reddeder (setMonthField). Tek şube seçiliyken ya da tek kasa varken "Tümü" o şubedir, yazılır. Satışlar'ın ay
+ * formu "Tümü"de yazdığı şubeyi adıyla söyleyip onun satırını gösterir
+ */
+export function monthTotalsLocked(scope: BranchScope, known: readonly BranchRow[]): boolean {
+  return scope === ALL_BRANCHES && tillBranches(known).length > 1;
+}
+
+/** Kilitli ciro ve açık gün hücresinin açıklaması (monthTotalsLocked) */
+export const MONTH_TOTALS_LOCKED_TEXT = "Tümü'de şubelerin toplamı görünür: ciro ve açık günü yazmak için soldan şubeyi seçin.";
+
+/**
+ * Gelir-gider'de "Tümü" seçiliyken ay bilgisinin notu (docs/SUBE.md › Yazarken hangi şube): ciro ve açık gün şubelerin
+ * toplamıdır, yazılmaz (monthTotalsLocked); ay notu şube başınadır, "Tümü"nde varsayılan şubeye (Tuzla) iner, Satışlar'daki
+ * ay bilgisi gibi. Yalnız birden çok kasa açıkken; tek şube seçiliyken ya da tek kasa varken null (yazılan zaten
+ * gösterilen satırdır)
  */
 export function monthWriteNote(scope: BranchScope, known: readonly BranchRow[]): string | null {
-  if (scope !== ALL_BRANCHES || tillBranches(known).length < 2) return null;
+  if (!monthTotalsLocked(scope, known)) return null;
   const name = known.find((b) => b.id === DEFAULT_BRANCH_ID)?.name ?? "Tuzla";
-  return `Tümü seçili: elle yazılan aylık ciro, açık gün ve ay notu ${name} şubesinin ay satırına yazılır (Satışlar'daki gibi). Başka bir şubenin ayı için soldan o şubeyi seçin.`;
+  return `Tümü seçili: aylık ciro ve açık gün şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin. Ay notu ${name} şubesinin ay satırına yazılır.`;
 }
 
 /**

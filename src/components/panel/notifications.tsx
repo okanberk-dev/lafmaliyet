@@ -131,7 +131,15 @@ export function NotificationMenu({
   }, [open]);
 
   return (
-    <div ref={rootRef} data-component="notification-dropdown" className="relative inline-flex shrink-0 font-sans">
+    // Telefonun üst çubuğunda (bar) kök konumlanmaz: açılan pencere üst çubuğa göre yerleşir. Açıkken data-open
+    // (sidebar.tsx): masaüstünde kenar çubuğu karaoke şeridinin, telefonda üst çubuk sayfanın yüzen düğmelerinin
+    // üstüne çıkar; pencerenin bir kısmı onların altında kalmaz
+    <div
+      ref={rootRef}
+      data-component="notification-dropdown"
+      data-open={open || undefined}
+      className={cn("relative inline-flex shrink-0 font-sans", variant === "bar" && "max-lg:static")}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -177,9 +185,11 @@ export function NotificationMenu({
             className={cn(
               "absolute top-[calc(100%+0.5rem)] z-[100] flex max-h-[calc(100dvh-5rem-var(--mobile-nav-h,0px))] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-chart-metric-bg shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-black/5",
               align === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right",
-              // Telefonun üst çubuğunda zil en sağda olmayabilir (personelde yanında menü düğmesi var): pencere zilin değil
-              // ekranın sağ kenarına hizalanır, solda ekrandan taşmaz
-              variant === "bar" && "max-lg:fixed max-lg:top-[calc(var(--mobile-top-h)+0.5rem)] max-lg:right-[max(1rem,env(safe-area-inset-right))]",
+              // Telefonun üst çubuğunda zil en sağda olmayabilir (personelde yanında menü düğmesi var): pencere zile değil
+              // üst çubuğa (yapışkan header) göre konumlanır, ekranın sağ kenarına hizalanır, solda ekrandan taşmaz.
+              // Karaoke şeridi varken çubukla birlikte iner (--alarm-h); yüksekliği şerit ile alt menünün arasına sığar
+              variant === "bar" &&
+                "max-lg:right-[max(1rem,env(safe-area-inset-right))] max-lg:max-h-[calc(100dvh-5rem-var(--mobile-nav-h,0px)-var(--alarm-h,0px))]",
             )}
           >
             <div className="flex shrink-0 items-start justify-between gap-3 px-4 pt-4 pb-3">

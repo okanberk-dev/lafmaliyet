@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { after } from "next/server";
 import { Suspense } from "react";
 
+import { AnchorNote } from "@/components/panel/anchor-note";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SalesSourceLine } from "@/components/panel/sales-source-line";
@@ -270,7 +271,12 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           month={month}
           loss={prices.loss}
           salesMissing={salesSourceOf(month, st.lafposGecisGunu, model.ds.lafposSales).missing}
-        /> : null}
+        /> : (
+        // Kart yalnız zam varken çizilir; çapalı bağlantı (Yardım, zil, sabah e-postası: #zamlar) kısa satıra iner (UI-08)
+        <AnchorNote id="zamlar" className="mb-6">
+          {prices ? "Hammadde zamları: son 30 günde maliyeti artan ürün şu an yok." : "Hammadde zamları okunamadı; sayfayı yenileyin."}
+        </AnchorNote>
+      )}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
       <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} kasa={mk.both} />

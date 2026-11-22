@@ -251,21 +251,6 @@ export function bulkSummary(preview: readonly PreviewRow[]): BulkSummary {
 
 // ---------------------------------------------------------------- Metinler
 
-// Sayının okunuşunun son sözcüğüne göre iyelik eki: bir → 'i, iki → 'si, üç → 'ü, altı → 'sı, on → 'u, kırk → 'ı …
-const ONES = ["ı", "i", "si", "ü", "ü", "i", "sı", "si", "i", "u"];
-const TENS = ["", "u", "si", "u", "ı", "si", "ı", "i", "i", "ı"];
-
-/** "12'si", "10'u", "3'ü", "6'sı", "40'ı", "100'ü" ("12'si sitede de") */
-export function numPossessive(n: number): string {
-  const v = Math.abs(Math.trunc(n));
-  let suffix: string;
-  if (v % 10 || v === 0) suffix = ONES[v % 10];
-  else if (v % 100) suffix = TENS[(v % 100) / 10];
-  else if (v % 1000) suffix = "ü";
-  else suffix = "i";
-  return `${num(n)}'${suffix}`;
-}
-
 const NOTE_MAX = 200;
 const signed = (v: number) => (v < 0 ? "−" : "+");
 

@@ -1,0 +1,252 @@
+// Kapalı gün şube şube, gerçek Postgres'te (denetim 13 Kasım 2026, P03 KP-05; docs/SUBE.md › Kapalı gün): Marina'nın
+// raporu Tuzla'nın kapalı gün işaretini kaldırmaz; Marina'nın bildirimi Tuzla'nın raporuyla engellenmez ve onay
+// bildirimin şubesine yazılır; işletme geneli tek günlük işaret bir şubenin raporuyla yalnız o şube için kalkar (öteki
+// şubede şubeli kalır, onaylı bildirimi yeni satıra geçer); yöneticinin eksik rapor zili şube şube susar; Özel günler'de
+// silinen şubeli kapalı gün "Geri al"la aynı şubeye döner, ikiz denetimi şube içinde.
+//
+// SUBE_TEST_DATABASE_URL (yoksa KAPALI_TEST_DATABASE_URL) verilmezse atlanır. Test kendi geçici veritabanını açar,
+// migration'ları uygular, sonunda siler.
+// Çalıştırma: SUBE_TEST_DATABASE_URL=postgres://localhost:5432/postgres npx tsx --test tests/sube-kapali-gun-db.test.ts
+
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { after, before, beforeEach, describe, test } from "node:test";
+
+import { eq, sql } from "drizzle-orm";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
+
+import { DEFAULT_BRANCHES } from "../src/lib/branches";
+import { businessDate, type CashReportFields } from "../src/lib/cash-report";
+import { CLOSED_TEXT } from "../src/lib/closed-days";
+import { addDays } from "../src/lib/reminders";
+import * as s from "../src/server/db/schema";
+import { UserError } from "../src/server/user-error";
+
+const SERVER_URL = process.env.SUBE_TEST_DATABASE_URL ?? process.env.KAPALI_TEST_DATABASE_URL;
+const DB_NAME = `laffogato_sube_kapali_gun_${process.pid}`;
+/** Türkiye saatiyle an */
+const tr = (local: string) => new Date(`${local}:00+03:00`);
+
+describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_DATABASE_URL yok" }, () => {
+  let admin: postgres.Sql;
+  let db: import("../src/server/db").DB;
+  let withBranchScope: typeof import("../src/server/branch-scope").withBranchScope;
+  let store: typeof import("../src/server/cash/report-store");
+  let closed: typeof import("../src/server/closed-days");
+  let reqs: typeof import("../src/server/closed-day-requests");
+  let bell: typeof import("../src/server/bell/kasa");
+  let special: typeof import("../src/server/actions/special-days");
+  type Who = { id: number; name: string; email: string; role: "admin" | "staff" };
+  const users: Record<"ali" | "ayse" | "deniz", Who> = {
+    ali: { id: 0, name: "Ali", email: "ali@laffogato.net", role: "admin" },
+    ayse: { id: 0, name: "Ayşe", email: "ayse@laffogato.net", role: "staff" },
+    deniz: { id: 0, name: "Deniz", email: "deniz@laffogato.net", role: "staff" },
+  };
+  /** Oturumdaki kullanıcı (src/server/auth/dal taklidi) */
+  let me: Who = users.ali;
+
+  const fields = (date: string, branch: "tuzla" | "marina"): CashReportFields & { discounts: number | null } => ({
+    date,
+    zNo: null,
+    receipts: 10,
+    zTotal: branch === "tuzla" ? 20_000 : 6_000,
+    cash: branch === "tuzla" ? 8_000 : 2_400,
+    card: branch === "tuzla" ? 12_000 : 3_600,
+    mealCard: 0,
+    online: 0,
+    other: 0,
+    openingCash: branch === "tuzla" ? 1_000 : 500,
+    cashIn: 0,
+    cashOut: 0,
+    cashOutNote: null,
+    countedCash: branch === "tuzla" ? 9_000 : 2_900,
+    handedOver: branch === "tuzla" ? 8_000 : 2_400,
+    bankPos: null,
+    offRevenue: 0,
+    note: "deneme",
+    discounts: 0,
+  });
+  /** Şubenin raporu, yöneticinin elinden (seçili şube o şube) */
+  async function report(date: string, branch: "tuzla" | "marina", now = tr(`${date}T22:00`)) {
+    const out = await withBranchScope(branch, () => store.saveCashReport(db, users.ali, { ...fields(date, branch), countedBy: null, revision: 0, photos: [] }, now));
+    assert.equal(out.kind, "saved");
+  }
+  const marks = async () =>
+    (await db.select().from(s.specialDays).where(eq(s.specialDays.kind, "kapali")).orderBy(s.specialDays.id)).map((m) => [m.dateFrom, m.branchId, m.title]);
+
+  before(async () => {
+    admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
+    const url = new URL(SERVER_URL!);
+    url.pathname = `/${DB_NAME}`;
+    Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: "sube-kapali-gun-testi-icin-en-az-otuz-iki-karakterlik-anahtar" });
+    delete process.env.KARAOKE_SYNC_SECRET;
+    // "server-only" Next'in sunucu derlemesi dışında hata fırlatır; oturum ve sayfa yenileme taklit edilir
+    const require = createRequire(import.meta.url);
+    const stub = (id: string, exports: unknown) => {
+      const p = require.resolve(id);
+      require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
+    };
+    stub("server-only", {});
+    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {}, cacheTag: () => {}, cacheLife: () => {} });
+    const session = async () => ({ id: me.id, name: me.name, email: me.email, role: me.role });
+    stub(require.resolve("../src/server/auth/dal"), {
+      getCurrentUser: session,
+      requireUser: session,
+      requireAdmin: async () => {
+        if (me.role !== "admin") throw new Error("yönetici değil");
+        return session();
+      },
+    });
+    const dbModule = await import("../src/server/db");
+    db = dbModule.getDb();
+    await migrate(db, { migrationsFolder: "drizzle" });
+    await db
+      .insert(s.branches)
+      .values(DEFAULT_BRANCHES.map((b) => ({ ...b, active: true })))
+      .onConflictDoUpdate({ target: s.branches.id, set: { active: true } });
+    for (const k of Object.keys(users) as (keyof typeof users)[]) {
+      const [u] = await db
+        .insert(s.users)
+        .values({ email: users[k].email, name: users[k].name, passwordHash: "x", role: users[k].role })
+        .returning({ id: s.users.id });
+      users[k].id = u.id;
+    }
+    withBranchScope = (await import("../src/server/branch-scope")).withBranchScope;
+    store = await import("../src/server/cash/report-store");
+    closed = await import("../src/server/closed-days");
+    reqs = await import("../src/server/closed-day-requests");
+    bell = await import("../src/server/bell/kasa");
+    special = await import("../src/server/actions/special-days");
+  });
+
+  after(async () => {
+    await db?.$client.end();
+    await admin?.unsafe(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+    await admin?.end();
+  });
+
+  beforeEach(async () => {
+    me = users.ali;
+    await db.execute(sql`TRUNCATE cash_reports, cash_outs, staff_requests, special_days, activity_log, photos RESTART IDENTITY CASCADE`);
+    await db.update(s.branches).set({ active: true });
+  });
+
+  test("şubenin işareti ve bildirimi: Marina'nın raporu Tuzla'nın işaretini kaldırmaz, Tuzla'nın raporu Marina'nın bildirimini engellemez", async () => {
+    const C = "2026-11-03";
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, C, "Tadilat", "tuzla"));
+    assert.equal(await closed.isClosedDay(C, db, "tuzla"), true);
+    assert.equal(await closed.isClosedDay(C, db, "marina"), false, "Tuzla'nın kapalı günü Marina'nın günü değil");
+    await report(C, "marina");
+    assert.deepEqual(
+      (await marks()).map((m) => m.slice(0, 2)),
+      [[C, "tuzla"]],
+    );
+    assert.equal(await closed.isClosedDay(C, db, "tuzla"), true, "Marina'nın raporu Tuzla'nın işaretini kaldırmadı");
+    // Tuzla'nın raporu kendi işaretini kaldırır
+    await report(C, "tuzla");
+    assert.deepEqual(await marks(), []);
+
+    // Dün Tuzla açıktı (rapor), Marina kapalıydı: Marina'nın personeli bildirir, onay Marina'ya yazılır
+    const D = addDays(businessDate(), -1);
+    const morning = new Date(Date.parse(`${D}T12:00:00+03:00`) + 86_400_000);
+    await report(D, "tuzla");
+    const asked = await withBranchScope("marina", () => reqs.proposeClosedDay(db, users.deniz, { date: D, reason: "Su baskını", clientKey: null }, morning));
+    assert.equal(asked.row.subject, `gun:${D}:marina`);
+    // Aynı gün Tuzla'nın personeli bildiremez: Tuzla'nın raporu var (kanıt)
+    await assert.rejects(
+      withBranchScope("tuzla", () => reqs.proposeClosedDay(db, users.ayse, { date: D, reason: null, clientKey: null }, morning)),
+      (e: unknown) => e instanceof UserError && e.message === CLOSED_TEXT.evidence,
+    );
+    // Yönetici Tuzla seçiliyken onaylar: işaret bildirimin şubesine (Marina)
+    const out = await withBranchScope("tuzla", () => reqs.reviewClosedDayCore(db, users.ali, { id: asked.row.id, seenVersion: asked.row.version, decision: "approve", note: null }, morning));
+    assert.equal(out.status, "approved");
+    const [row] = await db.select().from(s.specialDays).where(eq(s.specialDays.id, out.specialId!));
+    assert.equal(row.branchId, "marina");
+    assert.equal(await closed.isClosedDay(D, db, "marina"), true);
+    assert.equal(await closed.isClosedDay(D, db, "tuzla"), false);
+  });
+
+  test("işletme geneli tek günlük işaret: Marina'nın raporu yalnız Marina için kaldırır; Tuzla kapalı kalır, onaylı bildirimi yeni satıra geçer", async () => {
+    const C = "2026-11-08";
+    const [mark] = await db
+      .insert(s.specialDays)
+      .values({ dateFrom: C, dateTo: C, kind: "kapali", title: "Bayram", effect: -1, createdBy: users.ali.id, createdByName: "Ali" })
+      .returning();
+    const request = async (subject: string, by: Who) =>
+      (
+        await db
+          .insert(s.staffRequests)
+          .values({ kind: "kapali-gun", subject, day: C, title: "kapalı", payload: { date: C, reason: null }, status: "approved", resultId: mark.id, requestedBy: by.id, requestedByName: by.name })
+          .returning()
+      )[0];
+    const tuzlaReq = await request(`gun:${C}`, users.ayse);
+    const marinaReq = await request(`gun:${C}:marina`, users.deniz);
+    await report(C, "marina");
+    const rows = await db.select().from(s.specialDays).where(eq(s.specialDays.kind, "kapali"));
+    assert.deepEqual(
+      rows.map((m) => [m.branchId, m.title, m.createdByName]),
+      [["tuzla", "Bayram", "Ali"]],
+    );
+    assert.equal(await closed.isClosedDay(C, db, "tuzla"), true);
+    assert.equal(await closed.isClosedDay(C, db, "marina"), false);
+    const byId = Object.fromEntries((await db.select().from(s.staffRequests)).map((r) => [r.id, r]));
+    assert.equal(byId[tuzlaReq.id].status, "approved");
+    assert.equal(byId[tuzlaReq.id].resultId, rows[0].id, "Tuzla'nın onayı Tuzla'nın satırına geçti");
+    assert.equal(byId[marinaReq.id].status, "revoked");
+    const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Kapalı gün işareti kaldırıldı (kanıt geldi)"));
+    assert.match(log.detail ?? "", /Marina: kasa raporu girildi · Tuzla kapalı kalıyor$/);
+    // Tuzla'nın raporu kendi satırını kaldırır
+    await report(C, "tuzla");
+    assert.equal(await closed.isClosedDay(C, db, "tuzla"), false);
+    assert.equal((await db.select().from(s.staffRequests).where(eq(s.staffRequests.id, tuzlaReq.id)))[0].status, "revoked");
+    // Tek fiziksel şube açıkken eskisi gibi: işletme geneli satır raporla silinir
+    await db.update(s.branches).set({ active: false }).where(eq(s.branches.id, "marina"));
+    const D = "2026-11-10";
+    await db.insert(s.specialDays).values({ dateFrom: D, dateTo: D, kind: "kapali", title: "Bayram", effect: -1, createdByName: "Ali" });
+    await report(D, "tuzla");
+    assert.equal(await closed.isClosedDay(D, db), false);
+  });
+
+  test("zil: Tuzla dün kapalıyken Marina'nın eksik raporu söylenir", async () => {
+    const T = businessDate();
+    const Y = addDays(T, -1);
+    await report(addDays(Y, -1), "tuzla", new Date());
+    await report(addDays(Y, -1), "marina", new Date());
+    const missing = async () => (await withBranchScope("hepsi", () => bell.kasaBell(users.ali))).filter((n) => n.id.startsWith("kasa-yok")).map((n) => n.id);
+    assert.deepEqual((await missing()).sort(), [`kasa-yok-${Y}`, `kasa-yok-${Y}-marina`]);
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, Y, "Tadilat", "tuzla"));
+    assert.deepEqual(await missing(), [`kasa-yok-${Y}-marina`]);
+  });
+
+  test("Özel günler: şubeli kapalı gün silinip geri alınınca aynı şubeye döner; şube seçilerek yazılır, ikiz şube içinde", async () => {
+    const D = addDays(businessDate(), -3);
+    const { id } = await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, D, "Elektrik yok", "tuzla"));
+    const gone = await special.deleteSpecialDay(id);
+    assert.ok(gone.ok);
+    assert.equal(gone.ok && gone.data.branchId, "tuzla");
+    const back = await special.saveSpecialDay(gone.ok ? gone.data : (undefined as never));
+    assert.ok(back.ok);
+    const [row] = await db.select().from(s.specialDays).where(eq(s.specialDays.id, back.ok ? back.data.id : 0));
+    assert.equal(row.branchId, "tuzla", "işletme geneline dönmedi");
+    assert.equal(await closed.isClosedDay(D, db, "marina"), false);
+    // Yeni kapalı gün yalnız Marina'nın: aynı ad öteki şubede ikiz değil, aynı şubede ikiz
+    const E = addDays(businessDate(), 20);
+    const input = { kind: "kapali" as const, title: "Tadilat", dateFrom: E, dateTo: null, effect: 0 as const, note: null };
+    const m = await special.saveSpecialDay({ ...input, branchId: "marina" });
+    assert.ok(m.ok);
+    assert.ok((await special.saveSpecialDay({ ...input, branchId: "tuzla" })).ok);
+    const twin = await special.saveSpecialDay({ ...input, branchId: "marina" });
+    assert.ok(!twin.ok && /aynı adla/.test(twin.error));
+    assert.equal(await closed.isClosedDay(E, db, "marina"), true);
+    // Düzenlemede şube verilmezse kayıtlıdaki kalır; kapalı olmayan özel günde şube yok
+    assert.ok((await special.saveSpecialDay({ ...input, id: m.ok ? m.data.id : 0, title: "Tadilat (Marina)" })).ok);
+    assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, m.ok ? m.data.id : 0)))[0].branchId, "marina");
+    const derbi = await special.saveSpecialDay({ ...input, kind: "derbi", title: "Derbi", effect: 0.15, branchId: "marina" });
+    assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, derbi.ok ? derbi.data.id : 0)))[0].branchId, null);
+    const unknown = await special.saveSpecialDay({ ...input, title: "Başka", branchId: "yok" });
+    assert.ok(!unknown.ok);
+  });
+});

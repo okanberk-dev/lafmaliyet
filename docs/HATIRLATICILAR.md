@@ -16,6 +16,9 @@ Ertelemek (**1 saat sonra hatırlat**, **ertesi gün**) yalnız o dönemi kaydı
 "Yaptım" denince ertesi gün yine 09:00'da çalar (`completeTarget`). Önceden erteleme saati serinin saati oluyordu ve
 her ertelemeyle seri bir saat daha kayıyordu (denetim 21 Kasım #15). Saati formdan değiştirmek serinin saatini de
 değiştirir; ertelenmiş dönemin formunu yalnız başlığı ya da notu için kaydetmek değiştirmez (`anchorTimeOnEdit`).
+Ay sonundaki aylık hatırlatıcı ertesi aya ertelenip orada tamamlanırsa sıradaki dönem yine ertelemeden
+öncekinden sayılır: 30 Kasım → 1 Aralık'a ertelendi → tamamlandı → sıradaki 30 Aralık, bir ay atlanmaz (denetim
+13 Kasım SB-01).
 
 ## Bilgisayarda ses (4 Kasım 2026)
 
@@ -24,7 +27,7 @@ Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı baş
 | Seçenek | Ne olur |
 |---|---|
 | **Tek ses** (varsayılan) | Bir kez zil çalar — bugünkü davranış |
-| **Sürekli** | Durdurulana kadar çalar (karaoke alarmı gibi, en çok 30 dk). "Yaptım", "1 saat sonra hatırlat" ya da "Sesi kes" durdurur; pencereyi kapatmak durdurmaz (köşedeki kartta da "Sesi kes" var). Başka cihazda tamamlanınca burada da susar |
+| **Sürekli** | Durdurulana kadar çalar (karaoke alarmı gibi, en çok 30 dk). "Yaptım", "1 saat sonra hatırlat" ya da "Sesi kes" durdurur; pencereyi kapatmak durdurmaz (köşedeki kartta da "Sesi kes" var). Başka cihazda tamamlanınca ya da cihazın **Sesli uyarı** anahtarı kapanınca burada da susar |
 | **Sessiz** | Hiç çalmaz; bildirim yine çıkar |
 
 Saat verilmemişse hiçbiri çalmaz (hatırlatıcı gün boyu listede durur). Cihazın kendi **Sesli uyarı** anahtarı

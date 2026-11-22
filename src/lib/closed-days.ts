@@ -1,7 +1,8 @@
 import { z } from "zod";
 
+import { DEFAULT_BRANCH_ID } from "./branches";
 import { money } from "./format";
-import { addDays, dayMonthTR, daysBetween, longDateTR } from "./reminders";
+import { addDays, dayMonthTR, daysBetween, isCalendarDate, longDateTR } from "./reminders";
 
 /**
  * Kapalı gün ve personelin özel günleri (saf; plan docs/planlar/personel-yetki.md §2.9; docs/SATIS-TAHMINI.md ›
@@ -214,8 +215,32 @@ export const CLOSED_REQUESTS_PER_30 = 3;
 export const ClosedDayPayload = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reason: z.string().max(CLOSED_REASON_MAX).nullable(),
+  /**
+   * Kapalı bildirilen şube: isteği AÇAN personelin kasası (denetim 13 Kasım KP-05; docs/SUBE.md › Kapalı gün). Bu
+   * alandan önceki bildirimlerde yok: Tuzla sayılır (closedRequestBranch)
+   */
+  branchId: z.string().max(24).nullish(),
 });
 export type ClosedDayPayloadT = z.output<typeof ClosedDayPayload>;
+
+/**
+ * Kapalı gün bildiriminin şubesi: yükteki şube; yoksa konudan (`gun:G:şube`, cashDaySubject), o da yoksa (şubelerden
+ * önceki bildirim, konu `gun:G`) Tuzla. Bir şubenin raporu, onayı ya da işareti yalnız kendi bildirimlerini kapatır
+ */
+export function closedRequestBranch(row: { subject?: string | null; payload: unknown }): string {
+  const b = (row.payload as { branchId?: unknown } | null)?.branchId;
+  if (typeof b === "string" && b) return b;
+  const m = /^gun:\d{4}-\d{2}-\d{2}:(.+)$/.exec(row.subject ?? "");
+  return m ? m[1] : DEFAULT_BRANCH_ID;
+}
+
+/**
+ * Kapalı satırı bu şubede geçerli mi: şubenin kendi satırı ya da işletme geneli (şubesi boş). Şube verilmezse ("Tümü",
+ * işletme geneli okuma) her satır
+ */
+export function closedRowApplies(row: { branchId?: string | null }, branchId?: string | null): boolean {
+  return !branchId || row.branchId == null || row.branchId === branchId;
+}
 
 /** İsteğin başlığı (tutarsız): "23 Ekim kapalı gün" */
 export const closedTitle = (date: string) => `${dayMonthTR(date)} kapalı gün`;
@@ -240,6 +265,15 @@ export const CLOSED_TEXT = {
 /** Personelin kasa sayfasındaki pencere metni */
 export const closedDialogText = (date: string) =>
   `Yönetici onaylayınca ${longDateTR(date)} için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine raporu girin.`;
+
+/**
+ * Personelin kasa satırı (denetim SB-X1): dünün bildirimi kapandı ama gün kapalı işaretli değil. Yeniden bildirilemez;
+ * satır nedenini söyler: "Kapalı gün bildirimi geri alındı: Yönetici kapalı işaretini kaldırdı. Raporu girin."
+ */
+export function closedEndedTitle(status: string, note: string | null): string {
+  const head = status === "expired" ? "Kapalı gün bildiriminin süresi doldu" : status === "superseded" ? "Kapalı gün bildirimi kapandı" : "Kapalı gün bildirimi geri alındı";
+  return `${head}${note ? `: ${note}` : ""}. Raporu girin.`;
+}
 
 /** Personelin zil satırı: "23 Eki Per: kapalı gün onaylandı" */
 export function closedBellTitle(shortDay: string, status: "approved" | "rejected" | "revoked" | "superseded" | "expired"): string {
@@ -277,6 +311,7 @@ export const STAFF_SPECIAL_TEXT = {
   daily: "Bugün en çok 20 değişiklik yapılabilir; yarın yeniden deneyin",
   kind: "Bu türü yönetici girer",
   effect: "Etkiyi listeden seçin",
+  date: "Geçersiz tarih",
   adminDirect: "Yönetici özel günleri Satış tahmini'nde düzenler",
 } as const;
 
@@ -304,6 +339,7 @@ export function staffSpecialCheck(
   if (!(STAFF_SPECIAL_KINDS as readonly string[]).includes(input.kind)) return T.kind;
   if (!(STAFF_EFFECTS as readonly number[]).some((e) => Math.abs(e - input.effect) < 1e-9)) return T.effect;
   if (!input.title.trim()) return T.title;
+  if (!isCalendarDate(input.dateFrom) || !isCalendarDate(input.dateTo)) return T.date;
   if (input.dateTo < input.dateFrom) return T.order;
   if (input.dateFrom <= ctx.today) return T.tomorrow;
   if (daysBetween(input.dateFrom, input.dateTo) + 1 > L.maxSpan) return T.span;

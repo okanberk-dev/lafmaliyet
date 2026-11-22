@@ -28,7 +28,7 @@ import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdue
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 
-type User = { name: string; email: string; role: "admin" | "staff" };
+type User = { id: number; name: string; email: string; role: "admin" | "staff" };
 
 const iconButton =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30";
@@ -54,8 +54,11 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
   const pathname = usePathname();
   const router = useRouter();
   const reduce = useReducedMotion();
-  // Çekmece hangi sayfada açıldıysa yalnızca orada açık kalır; sayfa değişince kendiliğinden kapanır
+  // Çekmece hangi sayfada açıldıysa yalnızca orada açık kalır; sayfa değişince kendiliğinden kapanır ve kapalı kalır:
+  // adres değişince açıldığı yol da unutulur (denetim UI-04). Unutulmasaydı o sayfaya Geri tuşuyla ya da alt menüden
+  // dönünce çekmece kendiliğinden yeniden açılırdı
   const [openFor, setOpenFor] = useState<string | null>(null);
+  if (openFor !== null && openFor !== pathname) setOpenFor(null);
   const mobileOpen = openFor === pathname;
   const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -250,8 +253,10 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
 
   return (
     <>
-      {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi) */}
-      <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md lg:hidden">
+      {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi). Karaoke
+          şeridi varken onun altında yapışır (--alarm-h, globals.css). Zil açıkken sayfanın yüzen düğmelerinin (z-30)
+          üstüne çıkar: listenin alt bağlantıları "Yeni" düğmesinin altında kalmaz; çekmece (z-40/50) yine üstte */}
+      <header className="no-print sticky top-(--alarm-h) z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md has-[[data-component=notification-dropdown][data-open]]:z-[35] lg:hidden">
         <Link
           href={home}
           className="flex size-11 shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
@@ -283,8 +288,11 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
         )}
       </header>
 
-      {/* Masaüstü kenar çubuğu */}
-      <div className="no-print fixed inset-y-0 left-0 z-30 hidden w-[17.5rem] border-r border-border lg:block">{panel(false)}</div>
+      {/* Masaüstü kenar çubuğu. Zil açıkken karaoke şeridinin (z-70) üstüne çıkar: açılan pencere kenar çubuğundan
+          sağa taşar, "Tümünü okundu say" şeridin altında kalmasın */}
+      <div className="no-print fixed inset-y-0 left-0 z-30 hidden w-[17.5rem] border-r border-border has-[[data-component=notification-dropdown][data-open]]:z-[75] lg:block">
+        {panel(false)}
+      </div>
 
       {/* Mobil çekmece. Kapanırken (perde solarken, çekmece kayarken) dokunuş almaz: arkadaki sayfaya ve alt menüye
           ilk dokunuş perdeye gidip boşa gitmesin. Kapanırken yeniden açılırsa dokunuşlar geri gelir. */}
@@ -316,7 +324,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
               animate={{ x: 0, pointerEvents: "auto" }}
               exit={reduce ? undefined : { x: "-100%", pointerEvents: "none" }}
               transition={reduce ? { duration: 0 } : SPRING_PANEL}
-              className="fixed inset-y-0 left-0 z-50 flex w-[min(calc(100%-3rem),20rem)] shadow-[0_12px_40px_rgba(0,0,0,0.18)] lg:hidden"
+              className="fixed top-(--alarm-h) bottom-0 left-0 z-50 flex w-[min(calc(100%-3rem),20rem)] shadow-[0_12px_40px_rgba(0,0,0,0.18)] lg:hidden"
               role="dialog"
               aria-modal="true"
               aria-label="Menü"
@@ -329,7 +337,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
 
       <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
 
-      <AlertCenter role={user.role} branchScope={branch?.scope ?? null} />
+      <AlertCenter role={user.role} userId={user.id} branchScope={branch?.scope ?? null} />
 
       {isAdmin ? <PanelSearch pages={pages} index={index} open={searchOpen} onOpenChange={setSearchOpen} hideTrigger /> : null}
     </>

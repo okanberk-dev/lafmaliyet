@@ -10,7 +10,7 @@ import { test } from "node:test";
 
 import { createModel, shiftMonth } from "../src/lib/calc/engine";
 import type { Dataset, FixedExpense } from "../src/lib/calc/types";
-import { type MuhtasarItem, muhtasarItemsFromModel, muhtasarMonth, muhtasarMonths, muhtasarTitle, withholdingUnknown } from "../src/lib/tax/muhtasar";
+import { type MuhtasarItem, muhtasarItemsFromModel, muhtasarMonth, muhtasarMonths, muhtasarTitle, rentWithholdingIn, withholdingUnknown } from "../src/lib/tax/muhtasar";
 import { taxPayrollFromModel } from "../src/lib/tax/payroll";
 import { taxPnlInputFromModel } from "../src/lib/tax/pnl";
 import { r2 } from "../src/lib/tax/rules";
@@ -140,6 +140,9 @@ test("F: üç aylık seçenek: Temmuz ve Ağustos'ta yalnız damga, Eylül'de ü
   assert.deepEqual([jul.vergi, aug.vergi, sep.vergi], [32034.68, 32034.68, 32034.68]);
   assert.equal(sep.vergiPayable, 96104.04);
   assert.equal(sep.payable, 97043.74);
+  // Çeyrek sonunun kira stopajı üç ayınki (32.000 × 3; "Kira stopajı" hatırlatıcısı bunun yerine geçer), ara ayda 0
+  assert.deepEqual([jul.priorKira, sep.priorKira], [0, 64000]);
+  assert.deepEqual([rentWithholdingIn(jul), rentWithholdingIn(aug), rentWithholdingIn(sep)], [0, 0, 96000]);
   // Aylıkta her ay kendi vergisi
   const monthly = muhtasarMonths(["2026-07", "2026-08", "2026-09"].map(input));
   assert.equal(monthly.get("2026-07")!.payable, Math.round((jul.vergi + 939.7) * 100) / 100);
@@ -161,6 +164,10 @@ test("F: üç aylık seçenek nakit planı beslemesinde: ara ayın vergisi çeyr
   assert.match(nb(sep.detail), /^Ücret GV 0 \+ DV 34,68 \+ Kira stopajı 32\.000 \+ çeyreğin önceki ayları 64\.069,36 \+ damga 939,70; en az /);
   // Döküm tutara eşit
   assert.equal(r2(0 + 34.68 + 32000 + 64069.36 + 939.7), sep.amount);
+  // Kira stopajı hatırlatıcısıyla kalan: çeyreğin üç ayının kira stopajı (96.000) düşülür, önceki aylardan 69,36 kalır
+  assert.equal(sep.rest!.amount, r2(97043.74 - 96000));
+  assert.match(nb(sep.rest!.detail), /^Ücret GV 0 \+ DV 34,68 \+ çeyreğin önceki ayları 69,36 \+ damga 939,70; en az .* Kira stopajı Ödemeler'deki hatırlatıcıda\.$/);
+  assert.equal(jul.rest, undefined, "ara ayın kira stopajı çeyrek sonunda");
   // Takvimde aynı döküm (muhtasarBreakdown)
   const cal = view("2026-10-24", { ds, settings }).calendar.find((r) => r.kind === "mphb" && r.period === "2026-09")!;
   assert.deepEqual(

@@ -10,7 +10,7 @@ import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Notice } from "@/components/ui/notice";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { listDaysText } from "@/lib/calc/insights";
-import { manualOf } from "@/lib/cash-month";
+import { manualOf, MONTH_FIELDS } from "@/lib/cash-month";
 import { RECIPE_COST_NOTE } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { dayRangeTR, lafposMonthNotes, lafposMonthStatus, type LafposMonthNotes } from "@/lib/lafpos/sales";
@@ -18,6 +18,8 @@ import { addDays, dayAblativeTR, todayTR } from "@/lib/reminders";
 import { coverageFor } from "@/lib/sales-coverage";
 import { salesSourceOf, type SalesSourceKind } from "@/lib/sales-source";
 import { requireAdmin } from "@/server/auth/dal";
+import { currentWriteBranch } from "@/server/branch-scope";
+import { listBranches } from "@/server/branches";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
@@ -122,17 +124,26 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
-  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir
+  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir. "Tümü"de form
+  // yazdığı şubenin (Tuzla) ay satırını düzenler: elle yazılanlar ve kasanın değerleri o şubenin, Tümü'nün toplamı değil
+  // (toplam forma yazılıp kaydedilseydi öteki şubenin cirosu iki kez sayılırdı; denetim 13 Kasım HM-02)
+  const writeId = await currentWriteBranch();
+  const formInfo = info?.byBranch ? info.byBranch[writeId] : info;
+  // Birden çok kasanın toplamıyken form hangi şubeye yazdığını adıyla söyler; liste ↔ POS kutusu çıkmaz (liste bütün
+  // şubelerin, POS cirosu yalnız yazılan şubenin olurdu)
+  const formBranch = model.ds.monthTotalsLocked ? ((await listBranches()).find((b) => b.id === writeId)?.name ?? writeId) : null;
   const infoValues = {
-    openDays: manualOf(info, "openDays"),
-    posRevenue: manualOf(info, "posRevenue"),
-    discounts: manualOf(info, "discounts"),
-    offRevenue: manualOf(info, "offRevenue"),
-    cardShare: manualOf(info, "cardShare"),
-    note: info?.note ?? null,
+    openDays: manualOf(formInfo, "openDays"),
+    posRevenue: manualOf(formInfo, "posRevenue"),
+    discounts: manualOf(formInfo, "discounts"),
+    offRevenue: manualOf(formInfo, "offRevenue"),
+    cardShare: manualOf(formInfo, "cardShare"),
+    note: formInfo?.note ?? null,
   };
   // "Ayı temizle › ay bilgileri de" yalnız elle yazılanları siler (kasadan gelenler raporlarla kalır)
-  const hasInfo = Object.values(infoValues).some((v) => v !== null && v !== "");
+  // "Tümü"de temizlik bütün şubelerin ay bilgisini siler: şubelerden birinde elle yazılan varsa seçenek çıkar (Tümü'nün
+  // kaynağı o zaman "manual"; formun gösterdiği yalnız Tuzla'nınkidir)
+  const hasInfo = MONTH_FIELDS.some((f) => manualOf(info, f) !== null) || Boolean(info?.note);
   // Bir ürüne ya da HİZMET'e bağlanmış satırların ciro payı (kalanın maliyeti tahmini)
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
@@ -283,15 +294,18 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         />
         <MonthInfoForm
           // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
-          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(info?.kasa?.values ?? null)}`}
+          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(formInfo?.kasa?.values ?? null)}`}
           className="xl:col-span-5"
           month={month}
           label={monthLabel(month)}
+          branchName={formBranch}
           info={infoValues}
-          kasa={info?.kasa ?? null}
+          kasa={formInfo?.kasa ?? null}
           settingsCardShare={model.settings.kartOrani}
-          listTotal={sales.revenue}
-          listPeriod={listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null}
+          listTotal={formBranch ? null : sales.revenue}
+          listPeriod={
+            !formBranch && listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null
+          }
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}
         />

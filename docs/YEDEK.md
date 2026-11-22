@@ -39,6 +39,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 |------------|-------|------------------------|
 | Kullanıcıların parola özeti, iki adımlı doğrulama anahtarı, kurtarma kodları, hatalı giriş sayısı, kilit, oturum sürümü | dosya Drive'da ya da indirilenlerde durur | aynı e-posta hedefte varsa onun parolası kalır; yoksa "davet bekliyor" (§ 5) |
 | Davet ve parola sıfırlama bağlantıları (`user_tokens`) | tek kullanımlık | yenisi gönderilir |
+| Çıkışta kapatılan oturumlar (`revoked_sessions`) | geçici; çerezin süresiyle gereksizleşir | geri yükleme herkesin oturum sürümünü artırır, eski oturumların hepsi zaten düşer |
 | Bildirim abonelikleri (`push_subscriptions`) | cihaz anahtarları | cihazlar panel açılınca yeniden abone olur |
 | Paraşüt oturumu (`integration_state` › `parasut.token`) | şifreli belirteç, her yenilemede değişir | geri yüklemeden sonra panelden **“Paraşüt hesabını bağla”** ile yeniden bağlanır |
 | Paraşüt'ün eski parola yönteminin belirteci (`parasut.legacyToken`, 10 Aralık 2026'ya kadar) | şifreli belirteç | ilk eşitlemede ortam değişkenleriyle yeniden alınır |
@@ -135,7 +136,8 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
    ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
    o andan başlatır, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı
-   tutmazsa her şey geri alınır, hedef olduğu gibi kalır.
+   tutmazsa her şey geri alınır, hedef olduğu gibi kalır (`Geri yükleme geri alındı, hedef değişmedi: …`; ardından
+   Postgres'in kendi iletisi).
 4. Özeti yazar:
 
 ```
@@ -261,7 +263,8 @@ tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazı
 `--sil` önce hedefin yedeğini alır, parolaları korur, oturumları kapatır, sayaçları hedefteki yerlerinin gerisine
 düşürmez (sonra eklenen kişi eski bir kimliği almaz); belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema
 sürümünde (şubelerden önce, ay, satış, personel ve kasa satırlarıyla) alınmış yedek yüklenip son sürüme taşınır, eski
-satırlar Tuzla'ya düşer. **Her migration birleştirmesinden sonra** bir kez çalıştırın
+satırlar Tuzla'ya düşer; Postgres hatası Türkçe iletiyle döner; `db:migrate` ve `db:seed` komut satırında verilen
+adrese yazar (`.env.local`'daki havuzsuz adres öne geçmez), boş `DATABASE_URL_UNPOOLED` yok sayılır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
 (yeni tablolar ve sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
 
 ## 11. Kod

@@ -15,6 +15,7 @@ import {
   isLocalTaxReminder,
   isMuhtasarReminder,
   isProvisionalTaxReminder,
+  isRentWithholdingReminder,
   isVatReminder,
   isVatWithholdingReminder,
   longDateTR,
@@ -26,7 +27,7 @@ import {
   taxAmountTravels,
 } from "../reminders";
 import type { CashPlanVat } from "../cash-plan";
-import { dateTR, money, num, tl } from "../format";
+import { dateTR, money, num, numPossessive, tl } from "../format";
 import { paidVatPeriods } from "../vat-paid";
 
 import { ASSET_CATEGORY, assetCandidates, type AssetCandidate, orphanAssets, type OrphanAsset, QUARTER_DEPRECIATION_LABELS, unlistedAssetInvoices } from "./assets";
@@ -49,7 +50,7 @@ import {
 } from "./calendar";
 import { checksChipText, type CheckStatus, checkStatus } from "./checks";
 import { corporateTax, filingFor, minTaxText, type QuarterCalc, quarterTaxes, type TaxFiling, unpaidText, type YearCalc } from "./corporate";
-import { type MuhtasarItem, type MuhtasarMonth, muhtasarBreakdown, muhtasarMonths, muhtasarTitle } from "./muhtasar";
+import { type MuhtasarItem, type MuhtasarMonth, muhtasarBreakdown, muhtasarMonths, muhtasarTitle, rentWithholdingIn } from "./muhtasar";
 import {
   candidateInvoiceIds,
   classificationTargets,
@@ -311,9 +312,27 @@ export interface YearView {
 
 /** Nakit planının vergi beslemesi (§8.1): tutarlı satırlar, tutarı bilinmeyenler ve KDV beyannamelerinin damgası */
 export interface TaxPlanFeed {
-  items: { kind: "muhtasar" | "muhtasar_kira" | "gecici" | "kdv2_hizmet"; period: string; nominal: string; legalDue: string; amount: number; atLeast: boolean; source: "estimate" | "filing"; detail: string }[];
+  items: {
+    kind: "muhtasar" | "muhtasar_kira" | "gecici" | "kdv2_hizmet";
+    period: string;
+    nominal: string;
+    legalDue: string;
+    amount: number;
+    atLeast: boolean;
+    source: "estimate" | "filing";
+    detail: string;
+    /**
+     * Muhtasar tahmininde kira stopajı varsa: sabit tutarlı "Kira stopajı" hatırlatıcısı Ödemeler'deyken girecek kalan
+     * (tahmin − kira stopajı) ve dökümü (VG-02). Muhasebecinin rakamında yok: nakit planı hatırlatıcının tutarını düşer
+     */
+    rest?: { amount: number; detail: string };
+  }[];
   pending: { kind: "gecici"; period: string; nominal: string; legalDue: string; note: string }[];
-  stamps: { kdv: number; kdv2: number };
+  /**
+   * KDV ve KDV-2 beyannamesinin damgası (bugünün yılı) ve beyannamenin verildiği yıla göre KDV damgası (hesap döneminin
+   * yılından gelecek yıla; dönemin damgası `returnYearOf(dönem)` yılınınki, Vergi takvimindeki gibi). KDV-2'ninki aynı
+   */
+  stamps: { kdv: number; kdv2: number; kdvByYear?: Record<string, number> };
 }
 
 export interface TaxView {
@@ -429,7 +448,10 @@ export function taxCalendar(
   const months: string[] = [];
   for (let m = shiftMonth(cur, -3); m <= end.slice(0, 7); m = shiftMonth(m, 1)) months.push(m);
   const until = addDays(end, 40);
-  const remMphb = remindersByPeriod(input.reminders, isMuhtasarReminder, mphbPeriodOf, until);
+  // Sabit tutarlı "Kira stopajı" muhtasarın yalnız kira stopajı kısmıdır (VG-02): ayrı okunur, dönemin tutarı olmaz
+  const fixedRent = (r: ReminderRow) => isRentWithholdingReminder(r) && r.amount !== null;
+  const remMphb = remindersByPeriod(input.reminders, (r) => isMuhtasarReminder(r) && !fixedRent(r), mphbPeriodOf, until);
+  const remRent = remindersByPeriod(input.reminders, fixedRent, mphbPeriodOf, until);
   const remSgk = remindersByPeriod(input.reminders, (r) => reminderCategory(r.kind, r.title) === "sgk", mphbPeriodOf, until);
   const remKdv = remindersByPeriod(input.reminders, isVatReminder, mphbPeriodOf, until);
   const remKdv2 = remindersByPeriod(input.reminders, isVatWithholdingReminder, mphbPeriodOf, until);
@@ -516,7 +538,7 @@ export function taxCalendar(
           if (tevkifat) b.detail.push({ label: "Faturalardaki KDV tevkifatı", value: formatEstimate(tevkifat) });
           if (hizmet) b.detail.push({ label: "Yurt dışı hizmetin KDV'si (sorumlu sıfatıyla)", value: formatEstimate(hizmet) });
           b.detail.push({ label: "Beyanname damgası", value: money(st.kdv2) });
-          if (hizmet) b.notes.push("Aynı ay 1 No.lu beyannamede indirilir; panelin KDV tahmini bunu görmez.");
+          if (hizmet) b.notes.push("Aynı ay 1 No.lu beyannamede indirilir; KDV tahmini onu alışların KDV'sine ekler.");
         }
         planNote(b);
         if (rem) b.reminderDue = rem.date;
@@ -529,6 +551,8 @@ export function taxCalendar(
     const mNominal = nominalDue("mphb", p);
     if (mm && !mm.empty && inWindow(mNominal) && !paidMphb.has(p)) {
       const rem = remMphb.get(p);
+      // Kira stopajı Ödemeler'de (tutarı muhtasarın tamamı yazılmamışsa): toplam = hatırlatıcı + tahminin kira dışı kalanı
+      const rent = rem?.amount == null ? remRent.get(p) : undefined;
       const b = baseRow("mphb", p, mNominal);
       let amount: number | null = mm.payable;
       let source: CalendarSource = mm.source === "Muhasebeci" ? "Muhasebeci" : "tahmin";
@@ -539,17 +563,33 @@ export function taxCalendar(
         amount = rem.amount;
         source = "Ödemeler'de";
         atLeast = false;
-      } else if (!mm.filing && ended) ask = "tahakkuk";
+      } else {
+        if (!mm.filing && rent) amount = r2(rent.amount! + mm.payable - rentWithholdingIn(mm));
+        if (!mm.filing && ended) ask = "tahakkuk";
+      }
       // Personelsiz, stopajı bilinmeyen ay: "en az 0 ₺" yazılmaz, tutar bilinmiyor (kalemler notta)
       if (amount === 0 && atLeast) amount = null;
-      for (const x of muhtasarBreakdown(mm)) b.detail.push({ label: x.label, value: money(x.amount) + (x.note ? ` (${x.note})` : "") });
+      for (const x of muhtasarBreakdown(mm)) {
+        if (rent && !mm.filing && x.withholding === "kira") continue;
+        // Üç aylıkta çeyreğin önceki aylarının kira stopajı da hatırlatıcıdadır: satırda yalnız kalanı
+        const own = rent && !mm.filing && x.kira ? r2(x.amount - x.kira) : x.amount;
+        b.detail.push({ label: x.label, value: money(own) + (x.note ? ` (${x.note})` : "") });
+      }
+      if (rent) {
+        if (!mm.filing) b.detail.splice(2, 0, { label: "Kira stopajı (Ödemeler'deki hatırlatıcı)", value: money(rent.amount!) });
+        b.notes.push(mm.filing ? `Kira stopajı hatırlatıcısı (${money(rent.amount!)}) muhasebecinin rakamının içinde sayıldı.` : "Kira stopajı Ödemeler'deki hatırlatıcıdan; kalanı tahmin.");
+      } else if (rem?.amount != null && remRent.get(p)?.amount) {
+        // Muhtasarın tamamı Ödemeler'de: kira stopajı hatırlatıcısı onun içindedir (nakit planı tamamdan düşer)
+        b.notes.push(`Kira stopajı hatırlatıcısı (${money(remRent.get(p)!.amount!)}) Ödemeler'deki muhtasar tutarının içinde sayıldı.`);
+      }
       if (mm.unknown.length) {
         b.notes.push(`${mm.unknown.length} kalemin stopajı bilinmiyor: ${mm.unknown.join(", ")}.`);
         b.unknownWithholding = mm.unknown.length;
       }
       planNote(b);
-      if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=muhtasar";
-      else b.reminderDue = rem.date;
+      const dayRem = rem ?? rent;
+      if (!dayRem) b.addHref = "/panel/hatirlaticilar?yeni=muhtasar";
+      else b.reminderDue = dayRem.date;
       rows.push(finish({ ...b, amount, stamp: mm.damga, atLeast, source, ask, note: ask ? ASK_TAHAKKUK : null }, mm.stampEstimated));
     }
 
@@ -577,7 +617,7 @@ export function taxCalendar(
       if (t.support) b.detail.push({ label: "Asgari ücret desteği (şartlı)", value: money(-t.support) });
       b.notes.push("Hazine indirimi (2 puan) primler süresinde ödenirse ve vadesi geçmiş borç yoksa uygulanır; geç ödenen ayda işveren payı %21,75'tir.");
       if (input.settingsEmployerRate !== undefined && Math.abs(input.settingsEmployerRate - pay.rates.isverenSgk) > 1e-9)
-        b.notes.push(`Gelir-gider Ayarlar'daki ${pctOf(input.settingsEmployerRate)}'i kullanıyor; vergi ve nakit planı yasal oranı.`);
+        b.notes.push(`Gelir-gider Ayarlar'daki %${numPossessive(input.settingsEmployerRate * 100, 2)} kullanıyor; vergi ve nakit planı yasal oranı.`);
       if (sNominal.slice(0, 4) !== p.slice(0, 4)) b.notes.push(`${monthName(p)} bordrosu ${p.slice(0, 4)} kurallarıyla.`);
       planNote(b);
       if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=sgk";
@@ -704,6 +744,8 @@ export function taxCalendar(
 
   const order: CalendarKind[] = ["kdv2", "mphb", "kdv1", "sgk", "gecici", "kv", "ctv", "yerel"];
   rows.sort((a, b) => a.due.localeCompare(b.due) || order.indexOf(a.kind) - order.indexOf(b.kind) || a.period.localeCompare(b.period));
+  // "Sonra" da tarih sırasıyla (30 Nisan'ın kurumlar vergisi 20 Mayıs'ın peşinatından önce; VG-09)
+  later.sort((a, b) => a.due.localeCompare(b.due));
   return { rows, later, hits: { gecici: remGecici, kv: remKv } };
 }
 
@@ -749,8 +791,13 @@ function geciciCard(calc: QuarterCalc, q: QuarterPnl, input: TaxViewInput, scope
     if (q.candidates.count) parts.push(`${tl(q.candidates.total)} demirbaş olabilir (${q.candidates.count} fatura)`);
     subline = parts.length ? parts.join(" · ") : null;
   } else headline = formatEstimate(calc.estimate);
+  // Oranın satırı matrahın vergisidir: zarar ya da indirim varsa kazançtan matraha giden satırlar da kartta (VG-07)
+  const deducted = calc.loss !== 0 || calc.indirim !== 0;
   const rows: CardRow[] = [
     { label: "Kümülatif kurum kazancı", value: money(calc.cumulative) },
+    ...(calc.loss ? [{ label: "Devreden zarar", value: money(-calc.loss) }] : []),
+    ...(calc.indirim ? [{ label: "İndirim", value: money(-calc.indirim) }] : []),
+    ...(deducted ? [{ label: "Matrah", value: money(calc.matrah) }] : []),
     { label: `× %${Math.round(rules.gecici.oran.value * 100)}`, value: money(calc.hesaplanan) },
     { label: `Asgari kurumlar vergisi (%${Math.round(rules.kv.asgariOran.value * 100)})`, value: calc.asgari === null ? "uygulanmaz" : money(calc.asgari) },
     { label: "Önceki dönemler", value: money(calc.previous) },
@@ -837,15 +884,18 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
     const kiraStopaj = m.stopaj.filter((x) => x.withholding === "kira");
     const kira = r2(kiraStopaj.reduce((a, x) => a + x.amount, 0));
     const split = !m.filing && !m.deferred && r2(m.vergiPayable - m.vergi) === 0 && kira > 0 && kira < m.payable;
-    // Döküm tutara eşit (üç aylıkta ara ayın vergisi çeyrek sonunda, çeyrek sonunda önceki aylar da)
-    const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.filter((x) => !split || x.withholding !== "kira").map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
-    const prior = r2(m.vergiPayable - m.vergi);
-    const parts = m.deferred
-      ? `Damga ${amt(m.damga)}; vergi kısmı (${own}) çeyrek sonunda ödenir (üç aylık)`
-      : `${own}${prior !== 0 ? ` + çeyreğin önceki ayları ${amt(prior)}` : ""} + damga ${amt(m.damga)}`;
-    const detail = m.filing
-      ? `Muhasebecinin rakamı. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`
-      : `${parts}${m.atLeast ? `; en az (${m.unknown.length} kalemin stopajı bilinmiyor)` : ""}. Tahmin; kesin tutar tahakkuk fişindedir. ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`;
+    // Döküm tutara eşit (üç aylıkta ara ayın vergisi çeyrek sonunda, çeyrek sonunda önceki aylar da); `noKira`: kira
+    // stopajı dökümde yok (ayrı satırda ya da Ödemeler'deki hatırlatıcıda)
+    const legal = legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S");
+    const detailOf = (noKira: boolean) => {
+      if (m.filing) return `Muhasebecinin rakamı. ${legal}.`;
+      const own = [`Ücret GV ${amt(m.ucretGv)} + DV ${amt(m.ucretDv)}`, ...m.stopaj.filter((x) => !noKira || x.withholding !== "kira").map((s) => `${s.name} stopajı ${amt(s.amount)}`)].join(" + ");
+      const prior = r2(m.vergiPayable - m.vergi - (noKira ? m.priorKira : 0));
+      const parts = m.deferred
+        ? `Damga ${amt(m.damga)}; vergi kısmı (${own}) çeyrek sonunda ödenir (üç aylık)`
+        : `${own}${prior !== 0 ? ` + çeyreğin önceki ayları ${amt(prior)}` : ""} + damga ${amt(m.damga)}`;
+      return `${parts}${m.atLeast ? `; en az (${m.unknown.length} kalemin stopajı bilinmiyor)` : ""}. Tahmin; kesin tutar tahakkuk fişindedir. ${legal}.`;
+    };
     if (split) {
       const names = kiraStopaj.map((x) => `${x.name}: resmi brüt ${amt(x.base)} × %${Math.round(x.rate * 100)}`).join(" + ");
       items.push({
@@ -856,10 +906,23 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
         amount: kira,
         atLeast: false,
         source: "estimate",
-        detail: `${names}. Muhtasarla birlikte ödenir (genel muhtasar satırında yok). ${legalDayText(legalDueDate(m.nominal)).replace(/^s/, "S")}.`,
+        detail: `${names}. Muhtasarla birlikte ödenir (genel muhtasar satırında yok). ${legal}.`,
       });
     }
-    items.push({ kind: "muhtasar", period: m.period, nominal: m.nominal, legalDue: m.due, amount: split ? r2(m.payable - kira) : m.payable, atLeast: m.atLeast, source: m.filing ? "filing" : "estimate", detail: split ? `${detail} Kira stopajı ayrı satırda (Muhtasar – kira stopajı).` : detail });
+    // Sabit tutarlı "Kira stopajı" hatırlatıcısı tahminin yalnız kira stopajının yerine geçer (VG-02): kalanı ve dökümü
+    const kiraIn = rentWithholdingIn(m);
+    const rest = kiraIn > 0 ? { amount: r2(m.payable - kiraIn), detail: `${detailOf(true)} Kira stopajı Ödemeler'deki hatırlatıcıda.` } : null;
+    items.push({
+      kind: "muhtasar",
+      period: m.period,
+      nominal: m.nominal,
+      legalDue: m.due,
+      amount: split ? r2(m.payable - kira) : m.payable,
+      atLeast: m.atLeast,
+      source: m.filing ? "filing" : "estimate",
+      detail: split ? `${detailOf(true)} Kira stopajı ayrı satırda (Muhtasar – kira stopajı).` : detailOf(false),
+      ...(rest ? { rest } : {}),
+    });
   }
   for (const y of ctx.years.values()) {
     for (const c of y.corp) {
@@ -883,8 +946,15 @@ function planFeed(input: TaxViewInput, ctx: { years: Map<number, YearView>; muht
       } else pending.push({ kind: "gecici", period: c.key, nominal, legalDue: legal, note: `Geçici vergi ${label}: şirketin beyannamesi; tutarı muhasebecinizden isteyin (son gün ${legal.slice(8)}.${legal.slice(5, 7)})` });
     }
   }
-  const { rules } = rulesFor(Number(input.today.slice(0, 4)), input.settings.overrides);
-  return { items: items.sort((a, b) => a.nominal.localeCompare(b.nominal)), pending: pending.sort((a, b) => a.nominal.localeCompare(b.nominal)), stamps: { kdv: rules.damga.beyanname.kdv.value, kdv2: rules.damga.beyanname.kdv.value } };
+  const ty = Number(input.today.slice(0, 4));
+  const { rules } = rulesFor(ty, input.settings.overrides);
+  const kdvByYear: Record<string, number> = {};
+  for (let y = Math.min(ty, Number(input.settings.periodStart.slice(0, 4))); y <= ty + 1; y++) kdvByYear[y] = rulesFor(y, input.settings.overrides).rules.damga.beyanname.kdv.value;
+  return {
+    items: items.sort((a, b) => a.nominal.localeCompare(b.nominal)),
+    pending: pending.sort((a, b) => a.nominal.localeCompare(b.nominal)),
+    stamps: { kdv: rules.damga.beyanname.kdv.value, kdv2: rules.damga.beyanname.kdv.value, kdvByYear },
+  };
 }
 
 // ---------------------------------------------------------------- Görünüm

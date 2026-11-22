@@ -14,7 +14,7 @@ import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
 import { LAFPOS_IKRAM_TEXT, panelWasteCounts, productIkramClosed, productIkramNote } from "@/lib/lafpos/ikram";
 import { monthSource } from "@/lib/lafpos/switch";
-import { addDays, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
+import { addDays, isCalendarDate, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { productLabel, qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
 import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode, type WasteLock } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
@@ -74,7 +74,8 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const today = businessDate(now);
   const header = <WasteHeader role={user.role} />;
   const gun = pick(sp.gun);
-  const date = gun && /^\d{4}-\d{2}-\d{2}$/.test(gun) && gun <= today ? gun : today;
+  // Takvimde olmayan gün (2026-02-30, ay 00) bugüne düşer (KP-09'daki kasa sayfası gibi)
+  const date = gun && isCalendarDate(gun) && gun <= today ? gun : today;
   const yesterday = addDays(today, -1);
   const short = (d: string) => `${Number(d.slice(8, 10))} ${monthShortTR(d)}`;
   const strip = (

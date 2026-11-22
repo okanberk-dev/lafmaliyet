@@ -60,11 +60,23 @@ export function nextUserOccurrence(from: string, repeat: UserRepeat, anchorDate:
 }
 
 /**
+ * Aylık hatırlatıcının `date` gününün ait olduğu dönem: o güne kadarki son çapa günü (kısa ayda ay sonu). Ertelenip
+ * ertesi aya kaymış tarih (30 Kas → 1 Ara) hâlâ 30 Kasım dönemidir.
+ */
+function monthlyPeriod(date: string, anchorDate: string): string {
+  const day = Number(anchorDate.slice(8, 10)) || Number(date.slice(8, 10));
+  const sameMonth = addMonthsAnchored(date, 0, day);
+  return sameMonth <= date ? sameMonth : addMonthsAnchored(date, -1, day);
+}
+
+/**
  * "Tamamlandı" sonrası sıradaki tarih: tekrar eden hatırlatıcı bugünü geçene kadar ilerler (üç gün gecikmiş günlük iş
- * bugün yapıldıysa sıradaki yarındır); tek seferlikte null (kapanır).
+ * bugün yapıldıysa sıradaki yarındır); tek seferlikte null (kapanır). Ertelenmiş aylık hatırlatıcı ertelemeden önceki
+ * dönemden ilerler: ay sonunda ertesi aya ertelenen tarih bir ayı atlatmaz (30 Kas → 1 Ara → sıradaki 30 Ara).
  */
 export function afterComplete(r: UserReminderLike, today: string): string | null {
-  let next = nextUserOccurrence(r.dueDate, r.repeat, r.anchorDate);
+  const from = r.repeat === "monthly" ? monthlyPeriod(r.dueDate, r.anchorDate) : r.dueDate;
+  let next = nextUserOccurrence(from, r.repeat, r.anchorDate);
   for (let guard = 0; next && next <= today && guard < 800; guard++) next = nextUserOccurrence(next, r.repeat, r.anchorDate);
   return next;
 }

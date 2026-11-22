@@ -15,6 +15,7 @@ import { loadMyConnections } from "@/server/mcp/connections";
 
 import { ConnectionsCard } from "./connections";
 import { AccountAvatar, PasswordForm, ProfileForm } from "./password-form";
+import { sessionsNote } from "./session-note";
 import { SessionsCard } from "./sessions";
 import { TwoFactorCard } from "./two-factor";
 
@@ -52,6 +53,8 @@ async function Account() {
         })
       : null,
   ]);
+  // Parola, iki adımlı ve oturumları kapatma Claude bağlantısını da kapatır: pencereler bunu söyler (YO-08)
+  const claude = Boolean(connections?.rows.length);
   return (
     <div className="space-y-4">
       <Card>
@@ -82,17 +85,17 @@ async function Account() {
         <CardHeader
           icon={<KeyRound />}
           title="Parola değiştir"
-          description="En az 8 karakter; kolay tahmin edilen parolalar (12345678, kafenin adı, e-postanız) kabul edilmez. Değişince diğer cihazlardaki oturumlar kapanır."
+          description={`En az 8 karakter; kolay tahmin edilen parolalar (12345678, kafenin adı, e-postanız) kabul edilmez. ${sessionsNote(claude, "Değişince")}`}
         />
         <CardContent>
-          <PasswordForm />
+          <PasswordForm email={user.email} />
         </CardContent>
       </Card>
       <Card>
-        <TwoFactorCard enabled={Boolean(security?.totpEnabled)} recoveryLeft={security?.recoveryCodes?.length ?? 0} />
+        <TwoFactorCard enabled={Boolean(security?.totpEnabled)} recoveryLeft={security?.recoveryCodes?.length ?? 0} claude={claude} />
       </Card>
       <Card>
-        <SessionsCard />
+        <SessionsCard claude={claude} />
       </Card>
       {user.role === "admin" ? (
         <Card id="bagli-uygulamalar" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">

@@ -3,12 +3,14 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { tillBranches } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { addDays } from "@/lib/reminders";
 import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/special-days";
 import { deleteStaffSpecialDay, saveStaffSpecialDay } from "@/server/actions/special-days-staff";
 import { requireUser } from "@/server/auth/dal";
+import { listBranches } from "@/server/branches";
 import { ownClosedRequests } from "@/server/closed-days";
 import { getDb } from "@/server/db";
 import { loadSpecialDays, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
@@ -71,7 +73,10 @@ export default function SpecialDaysPage() {
 }
 
 async function AdminContent() {
-  const rows = await loadSpecialDays();
+  const [rows, branches] = await Promise.all([loadSpecialDays(), listBranches()]);
+  // Kapalı günün şubesi yalnız birden çok kasa açıkken seçilir ve listede yazılır (docs/SUBE.md › Kapalı gün)
+  const tills = tillBranches(branches);
+  const many = tills.length > 1;
   // Saat okumalardan sonra (Cache Components)
   const today = businessDate();
   const item = (d: (typeof rows)[number]): SpecialDayItem => ({
@@ -83,6 +88,8 @@ async function AdminContent() {
     effect: d.effect,
     note: d.note ?? null,
     addedBy: d.addedBy ?? null,
+    branchId: d.kind === "kapali" ? (d.branchId ?? null) : null,
+    branchName: d.kind === "kapali" && many ? (d.branchId ? (branches.find((b) => b.id === d.branchId)?.name ?? d.branchId) : "Bütün şubeler") : null,
   });
   const upcoming = rows.filter((d) => d.dateTo >= today).map(item);
   const past = rows.filter((d) => d.dateTo < today).map(item);
@@ -93,6 +100,7 @@ async function AdminContent() {
       maxDate={addDays(today, SPECIAL_MAX_AHEAD_DAYS)}
       saveAction={saveSpecialDay}
       deleteAction={deleteSpecialDay}
+      branches={many ? tills.map((b) => ({ id: b.id, name: b.name })) : undefined}
     >
       <SpecialDaysCard upcoming={upcoming} past={past} />
     </SpecialDayProvider>

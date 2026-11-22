@@ -109,6 +109,20 @@ export const loginDeviceLocks = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.deviceId] })],
 );
 
+/**
+ * Çıkışta kapatılan oturumlar (src/server/auth/dal.ts › endSession): oturum çerezindeki rastgele kimlik (jti). Çerezin
+ * bir kopyası alınmış olsa da çıkıştan sonra geçmez; kişinin öteki cihazları etkilenmez. Aynı tarayıcıda yerine yeni
+ * oturum açılınca (ad değişikliği, sıradaki kişinin girişi) eskisi de buraya yazılır. Satır çerezin süresiyle
+ * (`expires_at`) gereksizleşir ve silinir. Kişiye yabancı anahtarla bağlı değil: silinmiş bir hesabın çerezi de
+ * kapatılabilsin. Yedeğe girmez (geri yükleme bütün oturumları zaten kapatır; src/lib/backup/format.ts).
+ */
+export const revokedSessions = pgTable("revoked_sessions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
 // ---------------------------------------------------------------- Ayarlar (anahtar → değer)
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
@@ -427,12 +441,18 @@ export const invoices = pgTable(
      * dokunmaz (docs/VERGI.md)
      */
     taxNotAsset: boolean("tax_not_asset").notNull().default(false),
+    /**
+     * Elle eklenen faturanın istemci anahtarı (Fatura ekle penceresinin ürettiği UUID): kısayolun ikinci basışı ya da
+     * yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, var olan döner (denetim UI-03). Eşitleme ve Excel yazmaz
+     */
+    clientKey: text("client_key"),
     createdAt: createdAt(),
   },
   (t) => [
     index("invoices_date_idx").on(t.date),
     uniqueIndex("invoices_external_id_uq").on(t.externalId),
     uniqueIndex("invoices_e_invoice_id_uq").on(t.eInvoiceId),
+    uniqueIndex("invoices_client_key_uq").on(t.clientKey),
   ],
 );
 
@@ -840,15 +860,21 @@ export const purchaseQuantities = pgTable(
   (t) => [uniqueIndex("purchase_quantities_month_ingredient_uq").on(t.month, t.ingredientId)],
 );
 
-export const findings = pgTable("findings", {
-  id: serial("id").primaryKey(),
-  section: text("section").notNull(),
-  title: text("title").notNull(),
-  detail: text("detail"),
-  resolved: boolean("resolved").notNull().default(false),
-  createdAt: createdAt(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-});
+export const findings = pgTable(
+  "findings",
+  {
+    id: serial("id").primaryKey(),
+    section: text("section").notNull(),
+    title: text("title").notNull(),
+    detail: text("detail"),
+    resolved: boolean("resolved").notNull().default(false),
+    /** Bulgu ekle penceresinin istemci anahtarı: kısayolun ikinci basışı ikinci bulgu açmaz (denetim UI-03) */
+    clientKey: text("client_key"),
+    createdAt: createdAt(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("findings_client_key_uq").on(t.clientKey)],
+);
 
 /** Kim, ne zaman, neyi değiştirdi */
 export const activityLog = pgTable(
@@ -1476,12 +1502,17 @@ export const wasteEntries = pgTable(
     factor: doublePrecision("factor").notNull().default(1),
     reason: text("reason"),
     note: text("note"),
+    /**
+     * Zayi formunun istemci anahtarı (her başarılı kayıttan sonra yenilenir): Enter'a ikinci basış ya da yanıtı yolda
+     * kalan isteğin tekrarı ikinci kayıt açmaz, var olan döner (denetim UI-01). Onaylanan geç kayıtta boş
+     */
+    clientKey: text("client_key"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByName: text("created_by_name").notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("waste_entries_date_idx").on(t.date)],
+  (t) => [index("waste_entries_date_idx").on(t.date), uniqueIndex("waste_entries_client_key_uq").on(t.clientKey)],
 );
 
 // ---------------------------------------------------------------- Mal siparişi ve hızlı sayım (kaldırıldı)
@@ -1991,6 +2022,11 @@ export const specialDays = pgTable(
     /** Son düzenleyen (ilk kayıtta boş): yöneticinin dokunduğu satırı personel artık değiştiremez */
     updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
     updatedByName: text("updated_by_name"),
+    /**
+     * Kapalı günün şubesi (denetim 13 Kasım KP-05; docs/SUBE.md › Kapalı gün): boş = işletme geneli (bütün şubeler
+     * kapalı; bayram, eski satırlar). Yalnız `kapali` satırında dolu olur; öteki özel günler şubesizdir
+     */
+    branchId: branchIdNullable(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

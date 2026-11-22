@@ -17,7 +17,7 @@ import { createInterface } from "node:readline/promises";
 import { loadEnvConfig } from "@next/env";
 import { and, count, eq, sql } from "drizzle-orm";
 
-import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
+import { backupFileName, backupSummaryText, databaseTarget, databaseUrl } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
 import { BRANCH_SEED_KEY, DEFAULT_BRANCHES } from "../src/lib/branches";
 import {
@@ -299,6 +299,8 @@ export function countItemsSql(): string {
 }
 
 export interface SeedOptions {
+  /** Hedef; verilmezse ortamdan (komut satırı ve derleme kabuktakini öne alarak verir, db:migrate gibi) */
+  url?: string;
   reset?: boolean;
   /** db:reset: elle girilmiş cari kayıtları da silinsin (`--cari-sil`; yoksa varken durur) */
   wipeCari?: boolean;
@@ -309,12 +311,18 @@ export interface SeedOptions {
   now?: Date;
 }
 
-export async function runSeed({ reset = false, wipeCari = false, confirm = null, ask = null, now = new Date() }: SeedOptions = {}) {
-  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+export async function runSeed({
+  url = databaseUrl(process.env),
+  reset = false,
+  wipeCari = false,
+  confirm = null,
+  ask = null,
+  now = new Date(),
+}: SeedOptions = {}) {
   if (!url) throw new Error("DATABASE_URL tanımlı değil");
+  const target = databaseTarget(url);
+  console.log(`Hedef: ${target.label}${target.local ? " (bu bilgisayar)" : ""}`);
   if (reset) {
-    const target = databaseTarget(url);
-    console.log(`Hedef: ${target.label}${target.local ? " (bu bilgisayar)" : ""}`);
     const check = resetCheck(target, confirm);
     if (!check.ok) {
       if ("error" in check) throw new Error(check.error);
@@ -344,7 +352,6 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
 
     if (reset) {
       // Silmeden önce tam yedek (yüklenen belgeler dahil): yanlış veritabanı sıfırlandıysa db:restore ile geri gelir
-      const target = databaseTarget(url);
       const file = join(homedir(), backupFileName(now, { host: target.host }));
       const b = await writeBackupFile(db.$client, file, { documents: true, createdBy: "db:reset öncesi", app: appVersion(), now });
       console.log(`✓ Silmeden önce yedek: ${file} · ${backupSummaryText({ tables: Object.keys(b.tables).length, rows: b.rows, bytes: b.bytes, documents: b.documents, docCount: b.docCount })}`);
@@ -487,11 +494,15 @@ export async function runSeed({ reset = false, wipeCari = false, confirm = null,
 }
 
 if (process.argv[1]?.endsWith("seed.ts")) {
+  // Komut satırında verilen hedef .env.local'dakinden önce gelir (db:restore gibi): yoksa .env.local'daki canlının
+  // havuzsuz adresi elle verilen adresin önüne geçer, yükleme ya da sıfırlama başka veritabanına giderdi (denetim AL-02)
+  const shell = { ...process.env };
   loadEnvConfig(process.cwd());
   const args = process.argv.slice(2);
   const onay = args.find((a) => a.startsWith("--onay="))?.slice("--onay=".length) ?? null;
   const rl = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : null;
-  runSeed({ reset: args.includes("--reset"), wipeCari: args.includes("--cari-sil"), confirm: onay, ask: rl ? (q) => rl.question(q) : null })
+  const url = databaseUrl(shell, process.env);
+  runSeed({ url, reset: args.includes("--reset"), wipeCari: args.includes("--cari-sil"), confirm: onay, ask: rl ? (q) => rl.question(q) : null })
     .then(() => rl?.close())
     .catch((e) => {
       rl?.close();

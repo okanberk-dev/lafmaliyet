@@ -145,8 +145,10 @@ der.
   iskontolar, `total_vat` KDV, `net_total` KDV dahil genel toplam. Her faturada
   `net ≈ brüt − iskontolar + KDV + ÖTV + ÖİV` sınanır; tutarsa maliyet (KDV hariç) `net − KDV` olur ve panelde
   tutar = maliyet + iskonto, iskonto = iskontolar yazılır. Tutmazsa net'in KDV hariç geldiği durum ve "kalan = net"
-  denenir. Fatura altı iskonto kalemlere oranla dağıtılır. Döviz faturaları `exchange_rate` ile TL'ye çevrilir,
-  tedarikçinin iade faturaları eksi yazılır, iptal ve tekrarlayan şablonlar alınmaz (arşivlenmiş fatura alınır). Satış
+  denenir. Fatura altı iskonto kalemlere oranla dağıtılır. Döviz faturaları `exchange_rate` ile TL'ye çevrilir; kur
+  gelmezse (yok ya da 0) tutar kur 1 sayılır ama kayıt kontrol bekler, notuna "USD faturası: döviz kuru okunamadı,
+  tutarı kontrol edin" düşer (elle kayda bağlanan da bir kez kontrole alınır; denetim FC-05). Tedarikçinin iade
+  faturaları eksi yazılır, iptal ve tekrarlayan şablonlar alınmaz (arşivlenmiş fatura alınır). Satış
   iadeleri gider sayılmaz, tedarikçiye iadeler panele girmez: bkz. 2a.
 - **Geç girilen faturalar:** tarihi 75 günlük pencereden eski ama Paraşüt'e sonradan girilmiş fatura (kâğıt fatura;
   KDV'si sonraki yılın sonuna kadar indirilebilir) tarihe göre okunan listede görünmez. Tam turdan sonra liste
@@ -175,7 +177,7 @@ der.
   Çalışmanın sonunda, `matchSupplierOrders`'ın yanında üç son adım koşar (her kart için ayrı kısa işlem, "Sistem"
   adıyla işlem geçmişine düşer):
   - tutarı değişen ve ödeme sayılmış faturalar yeniden dengelenir: tutar düştüyse fazla sayılan para hesaba geçer,
-    arttıysa ödemelerin kapattığı fatura yeniden ödenmedi olur;
+    arttıysa ödemelerin kapattığı fatura ödenmemişe döner;
   - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez; yalnız
     takip günü ve sonrasının faturasına, `takesCreditOnArrival`: takip öncesi fatura kapıda ödenmişti, E-14);
   - Paraşüt'te iptal edilen (ve e-fatura yolunda silinen) fatura silinmeden önce aynı işlemde bağları çözülür: bağlı
@@ -219,12 +221,22 @@ iki yol da panelin okuduğu listelere değer:
 Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, mevcut kayıt Paraşüt'e bağlanır:
 
 1. Paraşüt kimliği (daha önce bağlandıysa),
-2. fatura numarası (harf/rakam dışı karakterler yok sayılarak),
-3. aynı tarih + aynı tutar (±1 ₺) + aynı tedarikçi.
+2. tam e-fatura / e-Arşiv numarası (3 harf ya da rakam + 13 rakam): tedarikçi adı farklı yazılmış olsa da (Yemek Sepeti
+   ~ YEMEKSEPETİ ELEKTRONİK), ±31 gün içinde, aynı tarih ya da aynı tutarla (±1 ₺). GİB e-Arşiv portalının numaraları
+   (`GIB` + yıl + sıra) portalı kullanan bütün küçük tedarikçilerde aynı biçimdedir, iki ustanın 12. faturası aynı
+   numarayı taşır: bu numarada tedarikçi de aynı olmalı (denetim FC-03). **Aynı tedarikçi**: adlar aynı firmayı
+   gösteriyor (biri ötekinin baştaki tam kelimeleri: Ahmet Usta ~ AHMET USTA TESİSAT), kayıtta Paraşüt'ten gelmiş vergi
+   no belgedekiyle aynı, ya da ikisi Tedarikçiler'de aynı karta düşüyor (kartın adı, diğer adları, vergi nosu: elle
+   girilmiş "Ahmet Usta" ile Paraşüt'teki "AHMET YILMAZ", kart "Ahmet Usta"nın diğer adı ya da vergi nosu tutuyorsa).
+   Tedarikçi tutmazsa yeni kayıt açılır ama kontrol bekler, notu öteki kaydı söyler: "aynı numaralı elle girilmiş
+   fatura var (Ahmet Usta, 08.11.2026); aynı faturaysa birini silin". Aynı ustaysa kartına diğer adı ya da vergi
+   nosunu ekleyin, sonraki faturaları kendiliğinden bağlanır,
+3. öteki fatura numaraları (harf/rakam dışı karakterler yok sayılarak) yalnızca **aynı tedarikçide** ve ±31 gün
+   içinde (farklı firmalar aynı e-fatura önekini kullanabilir),
+4. aynı tarih + aynı tutar (±1 ₺) + aynı tedarikçi.
 
 Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tutar, KDV ve tarih Paraşüt'ten gelir.
-Paraşüt'te vade yoksa paneldeki vade korunur. Fatura numarası eşleşmesi yalnızca **aynı tedarikçide** ve ±31 gün içinde geçerlidir (farklı firmalar aynı
-e-fatura önekini kullanabilir). Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
+Paraşüt'te vade yoksa paneldeki vade korunur. Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
 kaldırılır; elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
 edin" düşülür. Bağı çözülen kaydın tutarları yeniden düzenlenebilir; tutar, iskonto ya da ödenecek değişince
 eşitlemeden kalan KDV toplamı silinir, KDV tahmini ödenecek − net'i sayar ([NAKIT-PLANI.md](NAKIT-PLANI.md)).
@@ -239,6 +251,15 @@ Arşivlenmiş faturalar (Paraşüt'te yalnızca listeden gizlenmiş) geçerli gi
 Yeni tedarikçi adları paneldeki kısa adlarla eşlenir ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş." → "Sütaş"), böylece gelir-gider
 tablosundaki tedarikçi satırları dağılmaz.
 
+**Elle eklenen fatura** (Faturalar › Fatura ekle) aynı tedarikçinin aynı numaralı faturasıyla karşılaşırsa eklenmez,
+pencere sorar (denetim UI-02): "Bu numarayla Kaldi faturası zaten var" altında öteki kaydın numarası, tarihi, tutarı
+ve nereden geldiği (Paraşüt, elle, Excel). Eşitlemeden sonra kâğıt faturanın elle girilmesi ya da iki kişinin aynı
+faturayı girmesi mal alımını, borcu ve KDV indirimini iki kez sayardı (eşitleme yalnız kendinden önce girilen kaydı
+bağlar). Numara harf ve rakam dışı karakterler yok sayılıp büyük harfle karşılaştırılır; tedarikçi yukarıdaki gibi adla
+ya da Tedarikçiler kartıyla aynı sayılır; tarih ve tutara bakılmaz. Gerçekten ayrı faturaysa **Yine de ekle** ekler.
+Pencere her yeni faturaya bir anahtar gönderir: Kaydet'in (ya da not alanındaki Ctrl+Enter'ın) ikinci basışı,
+yanıtı yolda kalan isteğin tekrarı ikinci fatura açmaz, ilki döner ("Fatura zaten eklenmişti"; UI-03).
+
 Paraşüt'e bağlı faturada tarih, fatura no, tutar, iskonto ve ödenecek panelde salt okunurdur (saveInvoice da
 yazmaz); kategori, tedarikçi adı, açıklama, not, vade ve ödeme durumu düzenlenir. Kısmen ödenmiş faturada Paraşüt'ün
 bildirdiği kalan borç (`outstanding`) gösterilir ve toplamlara o girer. Panelde silinen Paraşüt faturaları bir
@@ -248,6 +269,7 @@ girilmiş, §6) silmede **ikisi birden** yok sayılır (`<gider faturası kimli�
 `alsoIgnored`): önceden yalnız gider faturası yok sayılıyor, e-fatura eşitlemesi silinen faturayı ertesi sabah
 "ödenmedi" yeni kayıt olarak geri getiriyordu (denetim 21 Kasım #3). Listede tek satırdır; geri alınınca iki anahtar
 birlikte çıkar, aynı fatura ya da aynı e-fatura bu arada panelde yeniden açılmışsa kopya yazılmaz ("zaten listede").
+Silinirken faturaya sayılmış cari ödemeleri geri alınınca, ödemenin hesabında hâlâ duran kadarıyla yeniden sayılır (elle girilmiş faturanın "Geri al"ı gibi; denetim FC-01); sayılamayan tutarı bildirim söyler.
 
 ## 3a. Tedarikçinin vergi nosu
 
@@ -376,7 +398,9 @@ zammın payı önerilir. Fiyatı öneriden düşük ürün uyarı olur:
 - Genel bakış › Dikkat edilmesi gerekenler ve zil: "Hammadde zammı: N ürünün fiyatı hedefin altında kaldı";
 - sabah e-postası: yalnız son zam e-postasından sonraki yeni zamlar (her sabah yinelenmez);
 - Ürünler › **Hammadde zamları** (`#zamlar`): eski → yeni maliyet, maliyet oranı, birim kâr; **Fiyatı X ₺ yap**
-  ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır);
+  ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır). Zam yokken kartın yerinde
+  "Hammadde zamları: son 30 günde maliyeti artan ürün şu an yok." satırı durur; Yardım'ın ve e-postanın `#zamlar`
+  bağlantısı ona iner (denetim UI-08);
 - ürün kartında not, Hammaddeler'de "↑ %16" rozeti.
 
 Aylık kâr etkisi Ürünler › Hammadde zamları'nda (ve ürün kartında, uyarıda, zilde, e-postada): her ürünün maliyet
@@ -414,7 +438,8 @@ Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** bi
 onayda" rozeti ve hammadde penceresinde not (**Onaya git**), zilde Onaylar başlığı, Genel bakış › Dikkat edilmesi
 gerekenler ("Fiyat onayı: N hammadde"), sabah e-postasının Paraşüt bölümü (yalnız son e-postadan beri gelen öneri
 e-postayı gönderir ve konuya girer), Paraşüt sayfasındaki bağlama bildirimleri (**Bak**) ve eşitleme özeti ("N fiyat
-onaya düştü").
+onaya düştü"). Bekleyen öneri ve son 3 günde karar yoksa kartın yerinde "Onay bekleyen fiyat şu an yok" satırı durur;
+Yardım'ın `#fiyat-onayi` bağlantısı sayfanın başına değil ona iner (denetim UI-08).
 
 **Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
 aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin
@@ -523,15 +548,20 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   e-fatura (geçmişi yeniden alırken) ödendi açılır, belgedeki vadesi henüz gelmemişse ödenmedi olur (notta "vade
   e-faturadan"). Excel/elle girilmiş kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
 - **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
-  fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı
-  aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur. Fatura sonradan Paraşüt'te
+  faturayla § 3'ün kurallarıyla (tam numara ±31 gün, aynı tarih ya da tutar ±1 ₺; GİB portalı numarasında aynı
+  tedarikçi) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı ve tarihi aynıysa dokunulmaz, farklıysa
+  e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur; not değişen alanı söyler: "tutar e-faturaya göre güncellendi
+  (önce 1.100 ₺)", "tarih … (önce 07.11.2026)" ya da ikisi birden (denetim FC-X1). E-fatura Paraşüt'te reddedilir ya
+  da arşivlenirse Excel/elle kaydın e-fatura bağı çözülür, kaynağı eskisine döner ("Paraşüt'te e-fatura reddedildi —
+  kontrol edin"): tarih, no ve tutarlar yeniden düzenlenir (denetim FC-02; bozulmuş eski kayıtları
+  `0064_fatura_kaynagi_onarimi` bir kez onardı). Fatura sonradan Paraşüt'te
   içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman Paraşüt'teki ödeme
   kaydı da ipucu olarak gelir.
   Kalemleri e-fatura belgesinden okunmuşsa korunur (ürün anahtarları değişmez, hammadde bağlantıları düşmez),
   okunmamışsa Paraşüt'ün gider faturasından okunur.
 - Muhasebeci e-faturayı "içeri al" yerine Paraşüt'e **elle gider faturası** olarak girerse (bağ yok) gider faturası
-  önce yazılır; e-fatura aynı tam fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) o kayda bağlanır, ikinci
-  kayıt açılmaz. Gider faturasına bağlı kaydın tutarı ve kalemleri gider faturasından gelir; e-faturanın sonradan
+  önce yazılır; e-fatura aynı tam fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺; GİB portalı numarasında
+  aynı tedarikçi) o kayda bağlanır, ikinci kayıt açılmaz. Gider faturasına bağlı kaydın tutarı ve kalemleri gider faturasından gelir; e-faturanın sonradan
   arşivlenmesi ya da reddi bu kayda dokunmaz.
 - Panelde silinen e-fatura kaydı `ei:<kimlik>` anahtarıyla yok sayılanlara eklenir, geri gelmez; e-fatura sonradan
   Paraşüt'te içeri alınsa da gider faturası olarak yeniden açılmaz (panelde aynı fatura başka bir kayıtta duruyorsa o

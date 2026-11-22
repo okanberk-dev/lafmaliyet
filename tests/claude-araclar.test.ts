@@ -600,7 +600,7 @@ test("kasa raporları, iki kasa: günlük satırda şube, eksik günler ve devir
   const t = (date: string, branchId: string, o: Partial<CashReportLike> = {}) => report(date, { branchId, ...o });
   const reports = [
     t("2026-10-18", "tuzla"),
-    t("2026-10-18", "marina", { openingCash: 5_000 }),
+    t("2026-10-18", "marina", { openingCash: 5_000, cashDiff: -50 }),
     t("2026-10-19", "tuzla"),
     // Marina 19'u girmedi; 20'de açılışı kendi 18'inin devriyle (1.000) tutuyor, Tuzla'nınkiyle değil
     t("2026-10-20", "marina", { openingCash: 1_000 }),
@@ -629,6 +629,8 @@ test("kasa raporları, iki kasa: günlük satırda şube, eksik günler ve devir
     ],
   );
   assert.deepEqual(r.eksikGunler, ["2026-10-19 · Marina"]);
+  // Kasa farkı gün başına bir kez (denetim 13 Kasım HM-07): 18'i Marina'nın eksiği yüzünden eksik, 19 ve 20 tuttu
+  assert.deepEqual([r.toplam.eksikGun, r.toplam.fazlaGun, r.toplam.tutanGun], [1, 0, 2]);
   assert.deepEqual(r.subeler, [
     { sube: "Tuzla", raporSayisi: 3, eksikGunSayisi: 0 },
     { sube: "Marina", raporSayisi: 2, eksikGunSayisi: 1 },

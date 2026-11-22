@@ -29,6 +29,9 @@ export interface SpecialDayItem {
   note: string | null;
   /** Personelin satırında ekleyenin adı ("Ahmet ekledi") */
   addedBy?: string | null;
+  /** Kapalı günün şubesi (boş = bütün şubeler) ve birden çok şube açıkken listedeki adı ("Tuzla", "Bütün şubeler") */
+  branchId?: string | null;
+  branchName?: string | null;
 }
 
 /**
@@ -49,6 +52,8 @@ interface Draft {
   dateTo: string;
   effect: Effect;
   note: string;
+  /** Kapalı günün şubesi; "" = bütün şubeler (yalnız yöneticide, birden çok şube açıkken seçilir) */
+  branchId: string;
 }
 
 const KINDS: SpecialKind[] = ["derbi", "avm", "kampanya", "kapali", "diger"];
@@ -79,14 +84,15 @@ export function SpecialDayProvider({
   mode = "admin",
   saveAction,
   deleteAction,
+  branches,
   children,
-}: { today: string; minDate: string; maxDate: string; mode?: "admin" | "staff"; children: ReactNode } & SpecialDayActions) {
+}: { today: string; minDate: string; maxDate: string; mode?: "admin" | "staff"; branches?: { id: string; name: string }[]; children: ReactNode } & SpecialDayActions) {
   const [draft, setDraft] = useState<Draft | null>(null);
   // Personel yarından itibaren girer (minDate yarın)
-  const openNew = useCallback((date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? (mode === "staff" ? minDate : today), dateTo: "", effect: 0.15, note: "" }), [today, minDate, mode]);
+  const openNew = useCallback((date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? (mode === "staff" ? minDate : today), dateTo: "", effect: 0.15, note: "", branchId: "" }), [today, minDate, mode]);
   const openEdit = useCallback(
     (d: SpecialDayItem) =>
-      setDraft({ id: d.id, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo === d.dateFrom ? "" : d.dateTo, effect: effectOf(d.effect), note: d.note ?? "" }),
+      setDraft({ id: d.id, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo === d.dateFrom ? "" : d.dateTo, effect: effectOf(d.effect), note: d.note ?? "", branchId: d.branchId ?? "" }),
     [],
   );
   const value = useMemo(() => ({ openNew, openEdit }), [openNew, openEdit]);
@@ -100,6 +106,7 @@ export function SpecialDayProvider({
           minDate={minDate}
           maxDate={maxDate}
           mode={mode}
+          branches={branches}
           saveAction={saveAction}
           deleteAction={deleteAction}
           onClose={() => setDraft(null)}
@@ -114,10 +121,11 @@ function SpecialDayDialog({
   minDate,
   maxDate,
   mode,
+  branches,
   saveAction,
   deleteAction,
   onClose,
-}: { draft: Draft; minDate: string; maxDate: string; mode: "admin" | "staff"; onClose: () => void } & SpecialDayActions) {
+}: { draft: Draft; minDate: string; maxDate: string; mode: "admin" | "staff"; branches?: { id: string; name: string }[]; onClose: () => void } & SpecialDayActions) {
   const staff = mode === "staff";
   const kinds = staff ? (STAFF_SPECIAL_KINDS as readonly SpecialKind[]) : KINDS;
   const effects = staff ? EFFECT_OPTIONS.filter((o) => (STAFF_EFFECTS as readonly number[]).includes(o.value)) : EFFECT_OPTIONS;
@@ -138,8 +146,10 @@ function SpecialDayDialog({
   function save() {
     if (!v.title.trim()) return setError("Ad gerekli");
     if (!v.dateFrom) return setError("Başlangıç gününü seçin");
+    // Şube yalnız seçilebildiği yerde gönderilir (yönetici, birden çok şube); gönderilmezse kayıtlı şube kalır
+    const branchPart = branches ? { branchId: v.kind === "kapali" ? v.branchId || null : null } : {};
     start(async () => {
-      const r = await saveAction({ id: v.id, kind: v.kind, title: v.title, dateFrom: v.dateFrom, dateTo: v.dateTo || null, effect: v.kind === "kapali" ? 0 : v.effect, note: v.note });
+      const r = await saveAction({ id: v.id, kind: v.kind, title: v.title, dateFrom: v.dateFrom, dateTo: v.dateTo || null, effect: v.kind === "kapali" ? 0 : v.effect, note: v.note, ...branchPart });
       if (!r.ok) return void setError(r.error);
       onClose();
       toast.success(editing ? "Özel gün güncellendi" : `Özel gün eklendi: ${rangeTR(v.dateFrom, v.dateTo || v.dateFrom)} · ${v.title.trim()}`);
@@ -237,6 +247,18 @@ function SpecialDayDialog({
             <Input id="ozel-bit" type="date" value={v.dateTo} min={v.dateFrom || minDate} max={maxDate} onChange={(e) => set("dateTo", e.target.value)} className="pointer-coarse:h-12" />
           </Field>
         </div>
+        {v.kind === "kapali" && branches ? (
+          <Field label="Şube" htmlFor="ozel-sube" hint="Yalnız seçilen şubenin eksik rapor uyarıları kalkar">
+            <Select id="ozel-sube" value={v.branchId} onChange={(e) => set("branchId", e.target.value)} className="pointer-coarse:h-12">
+              <option value="">Bütün şubeler</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         {v.kind === "kapali" ? (
           <p className="rounded-xl bg-panel px-3 py-2.5 text-[13px] text-ink-mute">Kapalı günün tahmini 0; kişi ve tatlı önerisi çıkmaz.</p>
         ) : (
@@ -302,6 +324,7 @@ function Row({ item, past }: { item: SpecialDayItem; past?: boolean }) {
         <span className="text-sm font-medium break-words text-ink">{item.title}</span>
         <span className="text-[13px] text-ink-mute">
           {shortRangeTR(item.dateFrom, item.dateTo)} · {specialTail(item)}
+          {item.branchName ? ` · ${item.branchName}` : ""}
           {item.addedBy ? ` · ${item.addedBy} ekledi` : ""}
         </span>
       </button>

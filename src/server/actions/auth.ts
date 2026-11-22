@@ -10,6 +10,7 @@ import { nameTakenBy, sameName } from "@/lib/activity-person";
 import { PROFILE_LIST_REFUSAL, PROFILE_OWN_LIST_REFUSAL } from "@/lib/notify-recipients";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
+import { openPendingSecret, pendingSecret, SETUP_EXPIRED, SETUP_MAX, SETUP_STOPPED } from "@/lib/two-factor-setup";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clearPending, endSession, readDevice, readPending, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
 import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep, DEVICE_MAX_FAILED, refundDeviceAttempt, reserveDeviceAttempt, type Reservation } from "@/server/auth/login-locks";
@@ -24,6 +25,7 @@ import {
   hashRecoveryCode,
   otpauthUri,
   verifyTotp,
+  wrongLoginCodeMessage,
 } from "@/server/auth/totp";
 import { expireUserTokens } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
@@ -277,7 +279,8 @@ export async function verifyLoginCodeAction(_prev: TotpState, formData: FormData
     await clearPending();
     return { error: lockedMessage(r.locked), expired: true };
   }
-  return { error: "Kod geçersiz ya da süresi geçmiş. Uygulamadaki güncel kodu girin." };
+  // Kurtarma kodu kipinde (form `mode` gönderir) ya da kod 6 haneli değilse metin kurtarma koduna göre
+  return { error: wrongLoginCodeMessage(code, formData.get("mode") === "recovery") };
 }
 
 export async function cancelLoginCodeAction() {
@@ -392,8 +395,23 @@ export async function signOutOtherSessions(password: string) {
 // ---------------------------------------------------------------- İki adımlı doğrulama
 
 /**
- * Kurulumu başlatır: yeni anahtar (henüz açık değil) ve QR kodu. Parola ister: açık kalmış bir oturumla başkası kendi
- * telefonunu bağlayıp sahibini dışarıda bırakamasın.
+ * Kurulum onayının hatalı kodları, bekleyen anahtar başına (anahtar her kurulumda yeniden şifrelenir: yeni kurulum
+ * yeni sayaç). Bellekte, örnek başına: ilk savunma; sınıra ulaşan hata anahtarı veritabanından siler, bu bütün örneklere
+ * geçer (src/lib/two-factor-setup.ts, denetim YO-05).
+ */
+const setupFails = createLimiter({ limit: SETUP_MAX, windowMs: LOCK_MS });
+
+/** Onaylanmamış anahtarı siler (açık iki adımlıya ve bu arada başlamış yeni kuruluma dokunmaz) */
+async function dropPendingSecret(userId: number, sealed?: string) {
+  await getDb()
+    .update(s.users)
+    .set({ totpSecret: null, totpLastStep: null })
+    .where(and(eq(s.users.id, userId), eq(s.users.totpEnabled, false), sealed ? eq(s.users.totpSecret, sealed) : undefined));
+}
+
+/**
+ * Kurulumu başlatır: yeni anahtar (henüz açık değil, SETUP_MINUTES dakika geçerli) ve QR kodu. Parola ister: açık kalmış
+ * bir oturumla başkası kendi telefonunu bağlayıp sahibini dışarıda bırakamasın.
  */
 export async function beginTotpSetup(password: string) {
   return attempt(async () => {
@@ -401,7 +419,7 @@ export async function beginTotpSetup(password: string) {
     const u = await requirePassword(me, password, "Hesabım");
     if (u.totpEnabled) throw new UserError("İki adımlı doğrulama zaten açık");
     const secret = generateTotpSecret();
-    await getDb().update(s.users).set({ totpSecret: seal(secret, "totp"), totpLastStep: null }).where(eq(s.users.id, me.id));
+    await getDb().update(s.users).set({ totpSecret: seal(pendingSecret(secret), "totp"), totpLastStep: null }).where(eq(s.users.id, me.id));
     const uri = otpauthUri(u.email, secret);
     const qr = await QRCode.toDataURL(uri, { margin: 1, width: 232, errorCorrectionLevel: "M", color: { dark: "#18181b", light: "#ffffff" } });
     return { qr, secret: formatSecret(secret), uri };
@@ -411,24 +429,60 @@ export async function beginTotpSetup(password: string) {
 /** Kurtarma kodlarının saklanan özetleri (kişiye özel, yavaş özet; totp.ts) */
 const hashCodes = (userId: number, codes: string[]) => Promise.all(codes.map((c) => hashRecoveryCode(userId, c)));
 
-/** Uygulamadaki kodla kurulumu onaylar; kurtarma kodlarını bir kez gösterilmek üzere döndürür */
+/**
+ * Uygulamadaki kodla kurulumu onaylar; kurtarma kodlarını bir kez gösterilmek üzere döndürür. Parola istemez (kurulumu
+ * başlatmak istedi), bu yüzden sınırlıdır: bekleyen anahtar SETUP_MINUTES dakika geçerli, onunla en çok SETUP_MAX hatalı
+ * kod; süresi geçen ya da sınıra ulaşan anahtar silinir, kurulum parolayla yeniden başlar ve işlem geçmişine yazılır
+ * (denetim YO-05).
+ */
 export async function confirmTotpSetup(code: string) {
   return attempt(async () => {
     const me = await requireUser();
     const db = getDb();
     const [u] = await db.select().from(s.users).where(eq(s.users.id, me.id)).limit(1);
     if (!u?.totpSecret || u.totpEnabled) throw new UserError("Önce kurulumu başlatın");
-    const secret = open(u.totpSecret, "totp");
-    const step = secret ? verifyTotp(secret, code, null) : null;
-    if (step === null) throw new UserError("Kod tutmadı. Telefonun saati doğru mu? Uygulamadaki güncel kodu girin.");
+    const sealed = u.totpSecret;
+    const secret = openPendingSecret(open(sealed, "totp"));
+    if (!secret) {
+      await dropPendingSecret(me.id, sealed);
+      throw new UserError(SETUP_EXPIRED);
+    }
+    // Deneme doğrulamadan ÖNCE sayılır: aynı anda gönderilen kodlar da sınırı aşamaz
+    const key = `${me.id}:${sealed}`;
+    if (!setupFails.hit(key)) {
+      await dropPendingSecret(me.id, sealed);
+      throw new UserError(SETUP_STOPPED);
+    }
+    const step = verifyTotp(secret, String(code), null);
+    if (step === null) {
+      if (!setupFails.blocked(key)) throw new UserError("Kod tutmadı. Telefonun saati doğru mu? Uygulamadaki güncel kodu girin.");
+      await dropPendingSecret(me.id, sealed);
+      await logActivity(me, "İki adımlı kurulum durduruldu", `${me.email}: ${SETUP_MAX} hatalı kod`);
+      throw new UserError(SETUP_STOPPED);
+    }
     const codes = generateRecoveryCodes();
-    await db
+    // Anahtar onaylanmış biçimde yeniden yazılır; okunan bekleyen anahtar bu arada değiştiyse (yeni kurulum, silindi) açılmaz
+    const [done] = await db
       .update(s.users)
-      .set({ totpEnabled: true, totpLastStep: step, recoveryCodes: await hashCodes(me.id, codes) })
-      .where(eq(s.users.id, me.id));
+      .set({ totpSecret: seal(secret, "totp"), totpEnabled: true, totpLastStep: step, recoveryCodes: await hashCodes(me.id, codes) })
+      .where(and(eq(s.users.id, me.id), eq(s.users.totpSecret, sealed), eq(s.users.totpEnabled, false)))
+      .returning({ id: s.users.id });
+    if (!done) throw new UserError("Önce kurulumu başlatın");
     await rotateSessions(me.id);
     await logActivity(me, "İki adımlı doğrulama açıldı", me.email);
     return { codes };
+  });
+}
+
+/**
+ * Kurulum penceresi kapandı: onaylanmamış anahtar silinir (açık iki adımlıya dokunmaz). Yarım bırakılan kurulumun
+ * anahtarı veritabanında beklemesin; pencere kapanmadan bırakıldıysa süresi (SETUP_MINUTES) dolunca onaylanamaz.
+ */
+export async function cancelTotpSetup() {
+  return attempt(async () => {
+    const me = await requireUser();
+    await dropPendingSecret(me.id);
+    return null;
   });
 }
 

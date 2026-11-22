@@ -1,5 +1,6 @@
 // Şube seçimi ve raporlar (denetim 21 Kasım 2026, "rapor" grubu; docs/SUBE.md):
-// - #6: Gelir-gider'in ciro, açık gün ve ay notu hücreleri seçili şubenin ay satırına yazar ("Tümü"nde Tuzla, not söyler);
+// - #6: Gelir-gider'in ciro, açık gün ve ay notu hücreleri seçili şubenin ay satırına yazar ("Tümü"nde birden çok kasa
+//   açıkken ciro ve açık gün kilitli, not Tuzla'ya; denetim 13 Kasım HM-02);
 // - #7: Satışlar › Ayı temizle yalnız gösterilen şubenin listesini ve ay bilgisini siler;
 // - #26: Bugün'ün kasa satırları online kanal seçiliyken de Kasa sayfası ve zil gibi Tuzla'nın kasasını okur;
 // - #27: Genel bakış'ın "Yaklaşan ödemeler" kartı Bugün'deki gibi şube seçimine uyar.
@@ -41,11 +42,12 @@ test("#6 Gelir-gider: ciro, açık gün ve ay notu seçili şubenin ay satırın
   assert.match(read("src/server/actions/sales.ts"), /\.values\(\{ \.\.\.data, branchId: await currentWriteBranch\(\), updatedAt: new Date\(\) \}\)/);
 });
 
-test("#6 Gelir-gider: 'Tümü'de birden çok kasa açıkken elle yazılanın Tuzla'nın ay satırına indiği yazar", () => {
+test("#6 Gelir-gider: 'Tümü'de birden çok kasa açıkken ciro ve açık gün yazılmaz, ay notunun Tuzla'nın ay satırına indiği yazar", () => {
+  // Denetim 13 Kasım HM-02: "Tümü" şubelerin toplamı; ciro ve açık gün hücresi kilitli (monthTotalsLocked)
   const text = monthWriteNote(ALL_BRANCHES, branches);
   assert.equal(
     text,
-    "Tümü seçili: elle yazılan aylık ciro, açık gün ve ay notu Tuzla şubesinin ay satırına yazılır (Satışlar'daki gibi). Başka bir şubenin ayı için soldan o şubeyi seçin.",
+    "Tümü seçili: aylık ciro ve açık gün şubelerin toplamıdır, burada yazılmaz; yazmak için soldan şubeyi seçin. Ay notu Tuzla şubesinin ay satırına yazılır.",
   );
   // Tek şube seçiliyken ya da tek kasa varken (Marina kapalı) not yok: yazılan gösterilen satırdır
   assert.equal(monthWriteNote("marina", branches), null);

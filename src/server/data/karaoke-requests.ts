@@ -160,7 +160,7 @@ export async function loadKaraokeRequestQueue(now: Date = new Date()): Promise<K
         message: r.message,
         sessionId: p.sessionId,
         gone,
-        name: dto ? sessionName(dto) : "Rezervasyonsuz",
+        name: dto ? sessionName(dto) : "Rezervasyonsuz oturum",
         when: dto ? sessionWhen(dto) : sessionWhen(p),
         guests: dto?.guests ?? p.guests,
         openedText: `${createdBy ? `${createdBy} açtı` : "Panelden açıldı"} · ${trClock(Date.parse(p.startsAt)).time}`,

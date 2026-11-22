@@ -18,7 +18,7 @@ import {
   type LafposRejection,
   type LafposState,
 } from "@/lib/lafpos/status";
-import { isLafposDay, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
+import { isLafposDay, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays } from "@/lib/reminders";
 import { closedDaysBetween } from "@/server/closed-days";
 import { loadLafposIkram } from "@/server/data/lafpos-ikram";
@@ -239,7 +239,8 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
       .limit(10),
     db.select({ unmatchedCount: countDistinct(d.posName) }).from(d).where(unmatchedWhere),
     missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today))) : Promise.resolve([]),
-    missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db) : Promise.resolve([]),
+    // Gün sonu gelmeyen gün LafPOS'un şubesinin kapalı günüyse eksik değil (öteki şubenin kapalı günü sayılmaz)
+    missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db, LAFPOS_BRANCH_ID) : Promise.resolve([]),
     // İkramın adları geçiş gününden itibaren (okuma anındaki bağla çözülür; bağlanınca listeden düşer)
     switchDay ? loadLafposIkram(db, switchDay) : Promise.resolve(null),
   ]);

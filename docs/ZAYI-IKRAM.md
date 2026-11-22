@@ -69,6 +69,10 @@ Geçiş günü boşken bunların hiçbiri yoktur: ekran, kayıt, Tutarlılık ve
   - Zayi: bozuldu / tarihi geçti, döküldü / kırıldı, yanlış hazırlandı, müşteri geri gönderdi.
   - İkram: müşteri, personel, tadım.
 - Not isteğe bağlıdır. Son girilen kalemler tek dokunuşla yeniden seçilir.
+- Kayıt sürerken ikinci gönderim yoktur: miktar alanındaki Enter (telefonda klavyenin "Bitti"si) düğme gibi kilide
+  uyar. Form her kayda bir anahtar gönderir (başarılı kayıttan sonra yenilenir): aynı anahtarla gelen ikinci istek
+  (yavaş ağda yeniden basmak, yanıtı yolda kalan isteğin tekrarı) yeni kayıt açmaz, ilki döner ("Zaten
+  kaydedilmişti"; denetim UI-01). Tüketim, zayi maliyeti ve kasa raporunun zayi satırı iki kez sayılmaz.
 - Personel doğrudan bugüne ve düne girer; dün, o günün kasa raporu kilitlenene kadar (dünün raporu da bugünün raporu
   da girildiyse dün kapanır; kasanın kuralı `staffDayEditable`, unutulan dünün raporu yoksa dün açık kalır). Kendi
   kaydını aynı pencerede siler. Yönetici her günü açar, her kaydı siler. Kilit şube başınadır (`wasteLock`; denetim

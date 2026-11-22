@@ -247,10 +247,13 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   sabah e-postası sayar; liste **Faturalar › Kontrol bekleyen**'in üstündeki **Kasadan faturalı alımlar** kartında.
   Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih fişin günü, tedarikçi yer, Ödenecek kasadan çıkan,
   net fişteki KDV'yle, Ödendi · nakit; parası kasadan çıktığı için cari takipteki kartın hesaptaki parasını kullanmaz;
-  kaydedince fişin fotoğrafı faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir, silme Geri al'la
+  kaydedince fişin fotoğrafı faturanın belgesi olur ve satır kalkar: satır kilitlenir, "hâlâ bekliyor mu", fatura ve
+  satırın kapanması tek işlemde, iki sekmeden aynı anda ya da "Aylık harcamalar'a yaz"la yarışta alım bir kez sayılır
+  (denetim FC-04); fatura silinirse geri gelir, silme Geri al'la
   geri alınırsa satır yine o faturaya bağlanır), **Aylık harcamalar'a yaz** (kategori seçilir; aynı yerin son kasa
   harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar** (faturası başka adla var
-  ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
+  ya da kafenin gideri değil; Geri al'lı; satırı o da kilitler, "Faturalar'a ekle"yle aynı anda basılırsa biri
+  ötekinin sonucunu görür, faturanın satırla bağı silinmez). Eşleşen fatura gelince satır kendiliğinden kalkar.
 - **İki kez sayılan alım** (inceleme D2): Aylık harcamalar'a yazılmış faturalı satırın faturası sonradan Faturalar'a
   gelirse (muhasebeci e-Arşiv'i Paraşüt'e girdi) alım hem faturada hem gider kaydında sayılıyordur. Satır eşleştirmede
   kendi faturasını alır (başka bir bekleyeni kapatmaz) ve aynı kartta, zilde (kırmızı), Bugün'de, Genel bakış'ta ve sabah
@@ -361,8 +364,11 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
 
 - **Personel, Kasa raporu › Dün (rapor yokken):** formun üstünde "Dün kafe kapalı mıydı?" ve **Kafe kapalıydı**.
   Pencere: "Yönetici onaylayınca … için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine
-  raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o gün için
-  bekleyen ya da reddedilen bildirim yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. O gün panelde iz
+  raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o günün geri
+  çekilmemiş bildirimi yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. Bildirim geri alındıysa ya da
+  kapandıysa (yönetici işareti kaldırdı ya da değiştirdi, LafPOS'un gün sonu geldi) düğme yerine nedeni yazar:
+  "Kapalı gün bildirimi geri alındı: Yönetici kapalı işaretini kaldırdı. Raporu girin." (denetim SB-X1; aynı gün
+  yeniden bildirilemez). O gün panelde iz
   varsa (kasa raporu, LafPOS'un satışlı gün sonu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke,
   personelin işlem geçmişi kaydı, Z no boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
   Bekleyen durumda "Kapalıydı dediniz · onay bekliyor" ve **Geri çek** (kişi başına günde bir); form yerinde kalır.
@@ -384,6 +390,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   yazılır.
 - **Yönetici, Kasa › raporsuz gün (`?gun=`):** **Kafe kapalıydı**, onaysız; pencerede o günün izleri uyarı olarak.
   Aynı günün bekleyen bildirimi onaylanmış olur. Raporu olan gün işaretlenmez.
+- **Özel günler'de silmek ya da düzenlemek:** onaylanmış bildirimin kapalı satırı silinince bildirim "geri alındı" olur
+  ("Yönetici kapalı işaretini kaldırdı"). Satır düzenlenip bildirimin gününü artık kapatmıyorsa (türü değişti, günü
+  kaydı, başka şubeye geçti) da aynısı: "Yönetici kapalı işaretini değiştirdi" (denetim SB-04). O günü kapsayan başka
+  bir kapalı satırı varsa bildirim ona geçer ve onaylı kalır; yalnız adı değişen satırda bildirim olduğu gibi kalır.
 - **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
   kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince, aynı şubenin önceki raporuyla
@@ -404,7 +414,7 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
 - Kod: saf kurallar `src/lib/closed-days.ts`, kanıt ve kancalar `src/server/closed-days.ts`, istek ve karar
   `src/server/closed-day-requests.ts`, uçlar `src/server/actions/closed-days.ts`. Testler `tests/kapali-gun.test.ts`,
-  `tests/kapali-gun-db.test.ts`.
+  `tests/kapali-gun-db.test.ts`, `tests/kapali-gun-duzenleme-db.test.ts`.
 
 ## laffogato.net satırı (bilgi)
 
@@ -620,7 +630,7 @@ silinen rapor ayın rakamını hemen değiştirir.
 
 | Alan | Kasa raporlarından |
 |------|--------------------|
-| Açık gün | Z toplamı 0'dan büyük rapor sayısı |
+| Açık gün | Z toplamı 0'dan büyük raporu olan gün sayısı ("Tümü"de iki şube aynı gün açıksa bir gün) |
 | POS cirosu | Z toplamlarının toplamı **eksi** Z toplamlarının içindeki ödenmez / ikram (aşağıda "Ciro ve ödenmez") |
 | İndirim, ödenmez / ikram | Girildiği günlerin toplamı (hiç girilmediyse 0) |
 | Kartlı satış oranı | (Kart + yemek kartı) ÷ Z toplamı. Satış raporunun ürün başına tahmini komisyonu bu oranla; boşsa Ayarlar'daki kart oranıyla. Gelir-gider'in **banka POS komisyonu** yalnız banka kartı payıyla: kart ÷ Z (yemek kartı hariç, onun komisyonu kendi faturasıyla; elle yazılan orandan kasanın yemek kartı payı düşülür; denetim E-43) |
@@ -634,7 +644,13 @@ silinen rapor ayın rakamını hemen değiştirir.
   şubenin açılış gününde ya da öncesindeyse (Ayarlar › Şubeler; boşsa sonradan açılan şubenin ilk raporu açılış sayılır)
   ay tamdır, ciro ve açık gün kasadan gelir; ilk rapor açılış gününden sonraysa ay yine elle girilir
   (`src/lib/cash-month.ts` `tillOpenedOn`, `partialStart`; Gelir-gider, Satışlar, Kasa'nın ay satırı ve geç rapor kartı
-  aynı kural). "Tümü" ve Tuzla bugünkü gibi (denetim 21 Kasım #21).
+  aynı kural). Tuzla bugünkü gibi (denetim 21 Kasım #21).
+- **Şubeler ve "Tümü"** ([SUBE.md](SUBE.md) › "Tümü"nün ay bilgisi): her satır şubesini taşır. Aynı günün iki şubesi
+  ayrı satırdır; açık gün ve raporlu gün günde bir kez sayılır, ciro, indirim ve ödenmez toplanır. Rapor > LafPOS >
+  föy önceliği **aynı şubenin** gününde geçerlidir: Tuzla'nın raporu Marina'nın o günkü föyünü düşürmez. Elle
+  yazılanlar şube şube çözülüp toplanır (her şube kendi açılış günüyle): Marina'nın elle yazdığı ciro Tuzla'nın kasa
+  cirosunun yerine geçmez (denetim 13 Kasım HM-02). Birden çok kasa açıkken "Tümü"de Gelir-gider'in ciro ve açık gün
+  hücresi yazılmaz; Satışlar'ın formu Tuzla'nın satırını adıyla gösterir.
 - Raporu girilmemiş günler (süren ayda düne kadar) Satışlar'da sayılır: "3 gün rapor yok: 5, 12, 20 Kasım. O günler
   açıksanız ciro ve açık gün eksik kalır." **Kasa raporuna git**. Kapanmış ayda Genel bakış'ın "Bu ayın işleri"
   kartı uyarır.
@@ -652,7 +668,8 @@ silinen rapor ayın rakamını hemen değiştirir.
   sayısıyla değil, raporların kapsadığı takvim günüyle bölünür (biten ayda ayın tamamı, süren ayda dünün sonuna kadar):
   bayramda kapalı gün ya da raporu girilmemiş gün kirayı ve maaşı düşürmez (`prorationDays`, engine.ts). Günlük
   kalemler (personel yemeği) açık günle çarpılır. Açık gün elle yazıldıysa Excel'deki gibi açık gün ÷ ayın gün sayısı.
-  Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
+  Oran hiçbir zaman 1'i aşmaz (iki şube aynı gün açıkken de). Biten ay ayın sonuna kadar sayılır: ayın 1'inde 00:00 ile
+  05:00 arasında son günün raporu daha beklenirken de kira ve maaş tam ay (denetim 13 Kasım HM-10). Genel bakış'ta "Bu ay düşülen sabit gider" kutusu "Ayın geçen günü (16 / 31 gün)" yazar.
 - **Ay ortasında yüklenen satış listesi:** Satışlar'da liste yüklerken süren ayda "Liste hangi güne kadar?" sorulur
   (varsayılan dün; `integration_state › sales.coverage`). Kasa raporları o günden ileri gittiyse listeye dayanan
   hesaplar listenin günleriyle yapılır: liste ↔ POS karşılaştırması (Satışlar'ın ay bilgisi kutusu, Tutarlılık, uyarı)
@@ -790,7 +807,10 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS föyünden
   farklı". Föy her sabah 08:00'de gelir; personelin ekranı değişmez.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
-  E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).
+  E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`). E-posta kapalıysa, gönderim kurulmamışsa
+  ya da adreslerin hepsi personel / pasif hesabınsa formun Sonuç kartı "gönderince yöneticiye e-posta gider" yerine
+  "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın" der; yöneticinin "Nasıl çalışır?"u da öyle (denetim
+  UI-05).
 
 Dosyalar: `src/lib/cash-report.ts` (hesap, açılış ↔ devir, düzeltme geçmişi, WhatsApp metni; `tests/kasa-raporu.test.ts`),
 `src/server/actions/cash-report.ts` (uçlar), `src/server/cash/report-store.ts` (yazım yolu ve silme; onay yolları da
