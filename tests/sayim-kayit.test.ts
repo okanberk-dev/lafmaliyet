@@ -268,8 +268,12 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   const ops = read("src/server/bell/ops.ts");
   assert.match(ops, /if \(user\.role !== "admin"\) return \[\];\s+const day = businessDate\(now\);/);
   assert.match(ops, /pastCountNotifications\(user, now\)\.catch\(\(\) => \[\]\),/);
-  // Zil Stok sayımı ekranının şubesine bakar (seçili fiziksel şube, "Tümü"de Tuzla); e-posta şube şube (aşağıda)
-  assert.match(ops, /const prev = pastCountReminder\(day, await countProgress\(shiftMonth\(day\.slice\(0, 7\), -1\)\)\);/);
+  // Zil: tek şube seçiliyken Stok sayımı ekranının şubesi; "Tümü"de e-posta gibi açık her fiziksel şube (denetim ST-04:
+  // önceden "Tümü"de yalnız Tuzla'ya bakıyordu, Marina'nın eksik sayımı zilde hiç çıkmıyordu)
+  const bell = ops.slice(ops.indexOf("async function pastCountNotifications"), ops.indexOf("export async function pastCountDigestLines"));
+  assert.match(bell, /\(await currentBranchScope\(\)\) === ALL_BRANCHES\s+\? await countProgressByBranch\(month\)\.then\(\(p\) => pastCountReminders\(day, p\.counts, p\.named\)\)/);
+  assert.match(bell, /: \[pastCountReminder\(day, await countProgress\(month\)\)\]\.filter\(\(r\) => r !== null\);/);
+  assert.match(bell, /const month = shiftMonth\(day\.slice\(0, 7\), -1\);/);
   // Sabah e-postası: personelden gelmeyen satır "Personelden" başlığıyla açılmaz (inceleme notu)
   const digest = read("src/server/staff-requests/digest.ts");
   assert.match(digest, /pastCountDigestLines\(now\)/);
@@ -351,4 +355,13 @@ test("ay değişince ?izinsiz= notu düşer (B01-K3)", () => {
   assert.match(form, /sp\.set\("ay", to\);\s+for \(const k of MONTH_OMIT\) sp\.delete\(k\);/);
   assert.match(form, /<MonthPicker months=\{months\} value=\{value\} omit=\{MONTH_OMIT\} \/>/);
   assert.match(read("src/components/panel/month-picker.tsx"), /sp\.set\(param, m\);\s+for \(const k of omit \?\? \[\]\) sp\.delete\(k\);/);
+});
+
+test("FIFO stok tutarı birden çok şubede ortak faturalardan: kartta not (denetim ST-06, sahibe soru 2 varsayılanı)", () => {
+  // Faturalar işletme genelinde, sayım şube başına: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz
+  const page = read("src/app/panel/sayim/page.tsx");
+  assert.match(page, /shared: branchLabel !== null \} : null\}/);
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /\{valuation\?\.fifo && valuation\.shared \? \(/);
+  assert.match(form, /Faturalar şubelere bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü&apos;yle tutmaz\./);
 });

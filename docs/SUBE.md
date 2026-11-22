@@ -53,7 +53,7 @@ kasa kaynağı uyar. Her değişiklik işlem geçmişine yazılır.
 | Giderler | Şubeye bağlı; **ortak giderler "işletme geneli"** kalır, hiçbir şubeye zorlanmaz |
 | Personel | Herkes bir şubeye bağlı; maaşı o şubenin gideri |
 | ModPOS | Şube başına ayrı anahtar; günlük 2 çekim hakkı şube başına (kuruldu, 16 Kasım 2026: [MODPOS-API.md › Şubeler](MODPOS-API.md#1a-şubeler-16-kasım-2026)) |
-| Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde |
+| Stok ve sayım | Şube başına ayrı; tutarlılık ve FIFO değerleme şube içinde (faturalar bölünmez: şube tutarları aynı faturaları paylaşır, toplamları Tümü'yle tutmaz; stok kartında not, denetim 13 Kasım ST-06) |
 
 "Tümü" seçiliyken işletme geneli giderler toplama girer ama şube kırılımında ayrı sütunda durur: bir şubenin
 kârı ortak giderle şişirilmez.
