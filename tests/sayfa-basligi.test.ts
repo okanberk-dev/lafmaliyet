@@ -116,6 +116,8 @@ test("paletin kare adresli her kaydı var olan bir çapaya iner", () => {
     "/panel/gelir-gider#kar-zarar": ["src/app/panel/gelir-gider/page.tsx", /id="kar-zarar"/],
     "/panel/personel#sgk-oranlari": ["src/app/panel/personel/staff-editor.tsx", /const RATES_ANCHOR = "sgk-oranlari";/],
     "/panel/ayarlar#oranlar": ["src/app/panel/ayarlar/sections.ts", /id: "oranlar"/],
+    // Koyu tema seçimi (docs/KOYU-TEMA.md)
+    "/panel/ayarlar#gorunum": ["src/app/panel/ayarlar/sections.ts", /id: "gorunum"/],
     "/panel/ayarlar#gecmis": ["src/app/panel/ayarlar/sections.ts", /id: "gecmis"/],
     "/panel/ayarlar#yedek": ["src/app/panel/ayarlar/sections.ts", /id: "yedek"/],
     "/panel/parasut#urun-baglantilari": ["src/app/panel/parasut/breakdowns.ts", /export const LINKS_ID = "urun-baglantilari";/],

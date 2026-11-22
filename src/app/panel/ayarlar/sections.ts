@@ -1,4 +1,4 @@
-import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, Tags, Timer, Users, type LucideIcon } from "lucide-react";
+import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, ReceiptTurkishLira, Ruler, ScanText, Store, SunMoon, Tags, Timer, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -7,6 +7,8 @@ import { Droplets, Globe, HardDriveDownload, History, Layers, Percent, QrCode, R
 export const SETTINGS_SECTIONS = [
   // Kullanıcı yönetimi ayrı sayfada; bu bölüm oraya giden kart
   { id: "kullanicilar", label: "Kullanıcılar", icon: Users },
+  // Açık / koyu tema seçimi (bu tarayıcıda saklanır; docs/KOYU-TEMA.md)
+  { id: "gorunum", label: "Görünüm", icon: SunMoon },
   { id: "oranlar", label: "Oranlar", icon: Percent },
   { id: "olculer", label: "Reçete ölçüleri", icon: Ruler },
   { id: "su", label: "Su + buz", icon: Droplets },

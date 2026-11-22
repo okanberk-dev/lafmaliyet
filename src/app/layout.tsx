@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { TopLayerToaster } from "@/components/ui/toaster";
+import { THEME_SCRIPT } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -42,8 +43,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Tarayıcı çubuğu: koyu temada betik (THEME_SCRIPT) #050302 yapar
   themeColor: "#ffffff",
-  colorScheme: "light",
+  // Açık ve koyu tema (docs/KOYU-TEMA.md): seçim globals.css'teki color-scheme'i belirler; "light dark" ilk boyamadan
+  // önceki boş sayfanın sistemin rengiyle gelmesi için (koyu seçende beyaz parlama olmasın)
+  colorScheme: "light dark",
   width: "device-width",
   initialScale: 1,
   // env(safe-area-inset-*) dolsun: alt menü ve alttan açılan pencereler ana ekran çubuğunun üstünde kalır
@@ -54,7 +58,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="tr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    // suppressHydrationWarning: koyu temada betik <html>'e sınıf ekler (sunucu HTML'inden farklı; React'e "DOM'dakini koru")
+    <html lang="tr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Görünüm seçimi (Sistem / Açık / Koyu) ilk boyamadan önce: src/lib/theme.ts */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full bg-background font-sans text-foreground">
         {children}
         {/* Bildirim balonu üst katmanda durur, açık bir pencerenin (alttan açılan sayfa) içinde dokunulabilir; yeri
