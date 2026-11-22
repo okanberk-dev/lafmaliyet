@@ -298,7 +298,10 @@ export function deskAddedToast(kind: DeskKind, when: string, email: boolean): { 
   };
 }
 
-/** İşlem geçmişinin satırı (telefon ve e-posta yok) */
+/**
+ * İşlem geçmişinin satırı: telefon ve e-posta yok, addan yalnız ilki (sitenin panele gönderdiği gibi; listedeki satır ve
+ * kaldırmanın satırı da yalnız ilk adı taşır, işlem geçmişi KVKK temizliğine girmez)
+ */
 export function deskLogLine(op: DeskOp, kind: DeskKind, o: { when: string; name: string | null; guests: number | null; note: string | null; email?: boolean }): { action: string; detail: string } {
   if (kind === "block") {
     const reason = blockReason(o.note);
@@ -309,7 +312,7 @@ export function deskLogLine(op: DeskOp, kind: DeskKind, o: { when: string; name:
   }
   return {
     action: op === "create" ? "Karaoke elle rezervasyon eklendi" : "Karaoke elle rezervasyonu kaldırıldı",
-    detail: [o.name?.trim() || "İsimsiz", o.guests ? `${o.guests} kişi` : null, o.when, op === "create" && o.email ? "misafire onay e-postası" : null].filter(Boolean).join(" · "),
+    detail: [o.name?.trim().split(/\s+/)[0] || "İsimsiz", o.guests ? `${o.guests} kişi` : null, o.when, op === "create" && o.email ? "misafire onay e-postası" : null].filter(Boolean).join(" · "),
   };
 }
 

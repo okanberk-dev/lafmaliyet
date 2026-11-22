@@ -277,15 +277,17 @@ export interface PlannedAlarm {
 /**
  * Geç öğrenilen başlangıç bu kadar süre içinde duyurulur: rezervasyon cihaza saatinden sonra ulaştı (geç eşitleme, arka
  * plandaki sekme, uykudan uyanan cihaz, o saate elle eklenen rezervasyon). Oturum sürüyorsa bir kez "Karaoke başladı".
+ * Süre başlangıçtan, rezervasyon saatinden sonra yazıldıysa yazıldığı andan sayılır (16:40'ta 16:00'ya elle eklenen
+ * rezervasyon da duyurulur).
  */
 export const LATE_START_MS = 15 * 60_000;
 
 /**
  * Önümüzdeki uyarılar: başlangıç (kısa ses), bitime `warnMinutes` kala (iki kısa ses) ve bitiş (susturulana kadar
  * alarm). Bir dakikadan eski uyarı zamanında çalmış sayılır; yalnız başlangıç geç öğrenildiyse son 15 dakikada başlamış
- * ve hâlâ süren oturumda hemen bir kez duyurulur (`late`, anahtar zamanındakiyle aynı: iki kez çalmaz). Bitmiş, süresi
- * dolmuş (alarmı evresinden, overtime) ve 15 dakikadan eski başlangıç duyurulmaz. Kapatılan saat hiç planlanmaz
- * (isPlayable).
+ * (ya da saatinden sonra son 15 dakikada yazılmış) ve hâlâ süren oturumda hemen bir kez duyurulur (`late`, anahtar
+ * zamanındakiyle aynı: iki kez çalmaz). Bitmiş, süresi dolmuş (alarmı evresinden, overtime) ve 15 dakikadan eski
+ * başlangıç duyurulmaz. Kapatılan saat hiç planlanmaz (isPlayable).
  */
 export function alarmPlan(sessions: KaraokeSessionDTO[], nowMs: number, warnMinutes: number, horizonMs = 12 * 3_600_000): PlannedAlarm[] {
   const out: PlannedAlarm[] = [];
@@ -296,7 +298,9 @@ export function alarmPlan(sessions: KaraokeSessionDTO[], nowMs: number, warnMinu
     const add = (kind: AlarmKind, at: number) => {
       if (at >= nowMs - 60_000 && at <= nowMs + horizonMs) out.push({ key: `${s.id}:${kind}:${at}`, at, kind, sessionId: s.id });
     };
-    if (start < nowMs - 60_000 && start >= nowMs - LATE_START_MS && nowMs < end) out.push({ key: `${s.id}:start:${start}`, at: nowMs, kind: "start", sessionId: s.id, late: true });
+    // Başlangıcın cihaza en erken ulaşabildiği an: saatinden sonra yazılan rezervasyonda yazıldığı an (sitenin createdAt'i)
+    const known = Math.max(start, Date.parse(s.bookedAt ?? "") || start);
+    if (start < nowMs - 60_000 && nowMs - known <= LATE_START_MS && nowMs < end) out.push({ key: `${s.id}:start:${start}`, at: nowMs, kind: "start", sessionId: s.id, late: true });
     else add("start", start);
     if (warnMinutes > 0 && end - warnMinutes * 60_000 > start) add("warn", end - warnMinutes * 60_000);
     add("end", end);

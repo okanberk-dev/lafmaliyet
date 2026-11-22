@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { startedOnThisDevice } from "@/components/panel/live/alert-center";
+import { removedOnThisDevice, startedOnThisDevice } from "@/components/panel/live/alert-center";
 import { useClock } from "@/components/panel/live/clock";
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { usePrefs } from "@/components/panel/live/prefs";
@@ -457,8 +457,13 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
   /** Elle satırı kaldırır: yönetici her zaman, personel yazıldıktan sonraki ilk 10 dakikada (kural sunucuyla aynı) */
   function removeDesk() {
     startAction(async () => {
+      // "İptal edildi" zili bu cihazda ikinci kez çalmasın (kaldıran sonucu görür); kaldırılmazsa işaret geri alınır
+      if (s.externalId) removedOnThisDevice(s.externalId);
       const res = await removeDeskKaraoke(s.id);
-      if (!res.ok) return void toast.error(res.error);
+      if (!res.ok) {
+        if (s.externalId) removedOnThisDevice(s.externalId, false);
+        return void toast.error(res.error);
+      }
       const r = res.data;
       toast.success(r.kind === "block" ? `Saatler açıldı · ${r.when}` : `Rezervasyon kaldırıldı · ${r.when}`, {
         description: r.already ? "Sitede zaten kaldırılmıştı." : "Saatler sitede, uygulamada ve kasada yeniden boş.",

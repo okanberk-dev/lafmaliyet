@@ -58,6 +58,21 @@ export function addedOnThisDevice(externalId: string): void {
   ADDED_HERE.add(externalId);
 }
 /**
+ * Bu cihazdan kaldırılan elle satırlar (sitenin kimliği): kaldıran "Rezervasyon kaldırıldı"yı gördü, aynı satır için
+ * "Karaoke rezervasyonu iptal edildi" zili bu cihazda ikinci kez çalmasın (öteki cihazlarda çalar). İstek gitmeden
+ * işaretlenir (eşitleme yanıttan önce gelebilir); site kaldırmazsa işaret geri alınır.
+ */
+const REMOVED_HERE = new Set<string>();
+export function removedOnThisDevice(externalId: string, removed = true): void {
+  if (removed) REMOVED_HERE.add(externalId);
+  else REMOVED_HERE.delete(externalId);
+}
+/** Bu cihazda yapılan elle eklemenin / kaldırmanın kendi olayı (ekleyen ya da kaldıran sonucu zaten gördü) */
+function ownDeskEvent(s: Pick<KaraokeSessionDTO, "externalId" | "lastEvent">): boolean {
+  if (!s.externalId) return false;
+  return (s.lastEvent === "created" && ADDED_HERE.has(s.externalId)) || (s.lastEvent === "cancelled" && REMOVED_HERE.has(s.externalId));
+}
+/**
  * Karaoke uyarıları dakikada bir yeniden planlanır: 12 saatten ilerideki başlangıç veri değişmeden de zamanında kurulur
  * (sabah açılan bar ekranı, akşamki rezervasyon), uykudan uyanan cihazın kaçan zamanlayıcısı yeniden kurulur. Aynı uyarı
  * iki kez çalmaz (anahtar).
@@ -374,8 +389,9 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       changed = true;
       // İlk yüklemede yalnız son iki dakikanın olayları duyurulur (bildirimden açılan sayfa yeniden çalmasın diye)
       if (first && Date.parse(s.lastEventAt) < liveNow() - 120_000) continue;
-      // Kapatılan saat rezervasyon değil (sunucu olay yazmaz; savunma); bu cihazdan elle eklenen rezervasyonu ekleyen gördü
-      if (isBlock(s) || (s.lastEvent === "created" && s.externalId && ADDED_HERE.has(s.externalId))) continue;
+      // Kapatılan saat rezervasyon değil (sunucu olay yazmaz; savunma); bu cihazdan elle eklenen ya da kaldırılan satırı
+      // ekleyen / kaldıran gördü
+      if (isBlock(s) || ownDeskEvent(s)) continue;
       const msg = eventMessage(s.lastEvent, { startsAt: sessionStart(s), endsAt: sessionEnd(s), guests: s.guests, name: s.customerName, status: s.status, paymentStatus: s.paymentStatus }, liveNow());
       if (prefs.sound && (prefs.karaokeAlarms || role === "admin")) play(s.lastEvent === "created" ? "ring" : "warn");
       const show = s.lastEvent === "created" ? toast.success : toast;
