@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/server/auth/dal";
 import { pendingKaraokeAsks } from "@/server/data/karaoke-requests";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
 import { liveWindow, loadSessions } from "@/server/karaoke/board";
+import { claimKaraokeMailPoll, runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
 import { claimChecklistAlertPoll, runChecklistAlerts } from "@/server/notify/checklist-alerts";
 import { vapidPublicKey } from "@/server/push/send";
@@ -24,8 +25,9 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
  *
  * Karaoke kopyası bayatsa (ping kaçtı, son çekme düştü) yanıttan sonra site yeniden sorulur
  * (src/lib/karaoke/freshness.ts): kaçan rezervasyonu, kimse bakmazken veritabanını uyandırmadan, bakan ilk sekme getirir.
- * Aynı yolla, yanıttan sonra ve en çok 5 dakikada bir, kontrol listesi e-posta hatırlatmaları gönderilir
- * (src/server/notify/checklist-alerts.ts).
+ * Aynı yolla, yanıttan sonra ve en çok 5 dakikada bir, kontrol listesi e-posta hatırlatmaları
+ * (src/server/notify/checklist-alerts.ts) ve karaoke e-postaları (misafirin "bir gün kaldı" hatırlatması, personelin
+ * sabah ve 3 saat kala e-postaları; src/server/karaoke/staff-mail.ts) gönderilir.
  */
 export async function GET(request: NextRequest) {
   await connection();
@@ -54,6 +56,18 @@ export async function GET(request: NextRequest) {
         if (r.failed) console.warn(`[kontrol] hatırlatma: ${r.failed} e-posta gidemedi`);
       } catch (e) {
         console.error("[kontrol] hatırlatma", e);
+      }
+    });
+  }
+  // Karaoke e-postaları (docs/KARAOKE.md › Hatırlatma e-postası, Personel e-postaları): aynı düzen, site bağlıysa
+  if (linked && claimKaraokeMailPoll()) {
+    after(async () => {
+      try {
+        const r = await runKaraokeMails(new Date(), Date.now() + 20_000);
+        const failed = ("failed" in r.guest ? r.guest.failed : 0) + ("failed" in r.staff ? r.staff.failed : 0);
+        if (failed) console.warn(`[karaoke] e-posta: ${failed} ileti gidemedi`);
+      } catch (e) {
+        console.error("[karaoke] e-posta", e);
       }
     });
   }

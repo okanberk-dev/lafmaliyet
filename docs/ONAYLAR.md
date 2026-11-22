@@ -9,7 +9,7 @@ onayına giden istekleri ve reçete önerileri tek yerde. Karar: dalga 10, sahib
 İşlemin sonucu geçmiş bir kasa, stok farkı ya da gider kaydını değiştiriyorsa, bir kanıtı siliyorsa, para harcama
 sözü veriyorsa ya da bir uyarıyı susturuyorsa personel doğrudan kaydetmez, **istek** gönderir. Anında yapılması
 gereken, para taşımayan, geri alınabilen ve kimin yaptığı görünen işler onaysızdır (kasaya işle, ileri tarihli özel
-gün, geçmiş kontrol listelerine bakmak, bar ekranında Tükendi / Satışa aç); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
+gün, geçmiş kontrol listelerine bakmak, Siparişler ekranında Tükendi / Satışa aç); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
 ve geri almadır.
 
 ## Ekran

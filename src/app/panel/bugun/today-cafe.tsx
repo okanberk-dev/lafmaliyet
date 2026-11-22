@@ -1,4 +1,4 @@
-import { CakeSlice, CalendarClock, CircleSlash, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
+import { CakeSlice, CalendarClock, CircleSlash, MicVocal, ShoppingBag, TimerOff, TrendingUp, UsersRound } from "lucide-react";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { ButtonLink } from "@/components/ui/button";
@@ -24,6 +24,9 @@ function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
       return { icon: <ShoppingBag />, tone: 1 };
     case "tukendi":
       return { icon: <CircleSlash />, tone: 3 };
+    // Bugünün vardiyası (docs/VARDIYA.md): Vardiya ekranına götürür
+    case "vardiya":
+      return { icon: <UsersRound />, tone: 2 };
   }
 }
 

@@ -1225,13 +1225,13 @@ test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar yerinde
 
 test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kendi adresiyle", () => {
   const now = tr("2026-10-24T10:00").getTime();
-  const extra = [{ key: "tukendi" as const, text: "Tükendi: Tiramisu", tone: "info" as const, href: "/panel/karaoke#tukenenler" }];
+  const extra = [{ key: "tukendi" as const, text: "Tükendi: Tiramisu", tone: "info" as const, href: "/panel/siparisler#tukenenler" }];
   const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-24", now), orders: null, configured: true }, now, extra);
   assert.deepEqual(
     lines.map((l) => l.key),
     ["karaoke", "tukendi"],
   );
-  assert.equal(lines[1].href, "/panel/karaoke#tukenenler");
+  assert.equal(lines[1].href, "/panel/siparisler#tukenenler");
   // Ek satır yokken eskisinin aynısı
   assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now), []);
   const cafe = read("src/app/panel/bugun/today-cafe.tsx");

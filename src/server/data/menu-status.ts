@@ -53,7 +53,7 @@ export interface SoldOutView {
   entries: SoldOutEntry[];
 }
 
-/** Bar ekranının Tükenenler kartı ve penceresi */
+/** Siparişler ekranının Tükenenler kartı ve penceresi */
 export async function loadSoldOut(): Promise<SoldOutView> {
   if (!siteLinkSecret()) return { configured: false, entries: [] };
   const [{ rows, items }, record] = await Promise.all([boardInputs(), readMarkers()]);

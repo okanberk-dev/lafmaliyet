@@ -9,7 +9,6 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { monthStats } from "@/lib/karaoke/month";
 import { isBlock, sessionEnd, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
-import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
 import { readKaraokeHours } from "@/server/karaoke/occupancy";
@@ -18,17 +17,16 @@ import { karaokeSecret, readSyncState, siteUrl, syncKaraoke } from "@/server/kar
 import { KaraokeAdmin } from "./karaoke-admin";
 import { KaraokeBoard } from "./karaoke-board";
 import { OrdersSummary } from "./orders-summary";
-import { SoldOutCard } from "./sold-out-card";
 
 export const metadata: Metadata = { title: "Karaoke" };
-// "Şimdi eşitle" ve Tükenenler'in düğmeleri bu sayfanın sunucu eylemleriyle siteye gider (en çok 8 saniye), ardından
-// siteden yeniden çeker
+// "Şimdi eşitle" ve "Elle ekle" bu sayfanın sunucu eylemleriyle siteye gider (en çok 8 saniye), ardından siteden
+// yeniden çeker
 export const maxDuration = 30;
 
-const DESCRIPTION = "Barın ekranı: karaoke rezervasyonları, oda sayacı ve tükenen ürünler.";
+const DESCRIPTION = "Barın ekranı: karaoke rezervasyonları ve oda sayacı.";
 // Eski uzun açıklama: başlıktaki ⓘ "Nasıl çalışır?" (docs/planlar/ux-sade.md §8)
 const MORE =
-  "Barın ekranı: karaoke rezervasyonları, oda sayacı ve tükenen ürünler. Yeni rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın. Uygulama siparişleri ve masa çağrıları Siparişler ekranında; açık olanların sayısı burada tek satırda.";
+  "Barın ekranı: karaoke rezervasyonları ve oda sayacı. Yeni rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın. Uygulama siparişleri, masa çağrıları ve tükenen ürünler Siparişler ekranında; açık sipariş ve çağrıların sayısı burada tek satırda.";
 
 /**
  * Başlık iki rolde: bağlam satırı rolün ağacından (yöneticide "Kafe"; personelde üst düzey ekran, satır yok); "Nasıl
@@ -71,7 +69,7 @@ async function KaraokeContent() {
   const [y, m] = monthStart.split("-").map(Number);
   const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`;
   const trMidnight = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 3 * 3_600_000);
-  const [upcoming, month, history, sync, devices, soldOut, room] = await Promise.all([
+  const [upcoming, month, history, sync, devices, room] = await Promise.all([
     loadSessions(new Date(now - 12 * 3_600_000), new Date(now + (admin ? 45 : 8) * DAY_MS), { admin }),
     admin ? loadSessions(trMidnight(monthStart), trMidnight(nextMonth), { admin }) : Promise.resolve([]),
     admin ? loadSessions(new Date(now - 30 * DAY_MS), new Date(now), { admin }) : Promise.resolve([]),
@@ -83,11 +81,6 @@ async function KaraokeContent() {
           .innerJoin(s.users, eq(s.users.id, s.pushSubscriptions.userId))
           .where(and(eq(s.users.active, true), eq(s.users.sessionVersion, s.pushSubscriptions.sessionVersion), eq(s.pushSubscriptions.karaoke, true)))
       : Promise.resolve(null),
-    // Tükenenler kartı (dalga 10 §2.1): site bağlantısı yoksa kart yok; okunamazsa kart çizilmez, ekran açılır
-    loadSoldOut().catch((e: unknown) => {
-      console.error("[tukendi] kart", e);
-      return null;
-    }),
     // "Elle ekle"nin saat seçenekleri: Doluluk › Oda saatleri (kaydedilmediyse sitenin 12:00–24:00'ı)
     readKaraokeHours().catch(() => null),
   ]);
@@ -97,7 +90,6 @@ async function KaraokeContent() {
       <div className="space-y-6">
         {/* Uygulama siparişleri ve masa çağrıları Siparişler ekranında (/panel/siparisler): burada açık olanların tek satırı */}
         <OrdersSummary role={user.role} serverNow={now} />
-        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
         <KaraokeBoard
           role={user.role}
           upcoming={upcoming}

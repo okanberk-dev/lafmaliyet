@@ -10,7 +10,7 @@ import { holdSoldOutCore, setSoldOutCore } from "@/server/site-menu/sold-out-cor
 import { attempt } from "./util";
 
 /*
- * Bar ekranının Tükenenler kartı (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Kurallar
+ * Siparişler ekranının Tükenenler kartı (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Kurallar
  * çekirdekte (src/server/site-menu/sold-out-core.ts). Dönüşte yalnız değişti mi, metin ve ürünün adı: fiyat yok.
  */
 

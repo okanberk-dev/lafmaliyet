@@ -127,9 +127,10 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
   ve masa çağrıları gelmiyor" (Ayarlar bağlantısı, kurulum ayrıntısı "Ayrıntı"da), personele "Site bağlı değil: sipariş
   ve masa çağrısı buraya gelmez" · "Yöneticiye haber verin."; Yenile düğmesi çıkmaz, kartın gövdesi çizilmez.
 - Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; sipariş ve çağrıda ses çalmaz." · **Zili aç**.
-- **Tükenenler** Karaoke ekranında kaldı (barın aracı): biten ürün personelce onaysız "Tükendi" yapılır (sitede,
-  uygulamada ve QR menüde; M ve L birlikte), gelince "Satışa aç" (dalga 10 §2.1; [SITE-MENU.md](SITE-MENU.md) ›
-  Personel: Tükendi / Satışa aç).
+- **Tükenenler** bu ekranda, siparişlerin altında (`#tukenenler`; 22 Kasım 2026'da Karaoke ekranından taşındı): biten
+  ürün personelce onaysız "Tükendi" yapılır (sitede, uygulamada ve QR menüde; M ve L birlikte), gelince "Satışa aç"
+  (dalga 10 §2.1; [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Site bağlantısı yoksa ya da kartın
+  verisi okunamazsa kart çizilmez, ekran açılır.
 - **Karaoke ekranının satırı:** "3 açık uygulama siparişi · 1 masa çağrısı" (son çekme başarısızsa "siparişler şu an
   siteden alınamıyor") ve **Siparişler'e git**; açık sipariş ya da çağrı yoksa ve bağlantı sağlamsa satır yok. Bar o
   ekranda dursa da siteyi Siparişler ekranıyla aynı kuralla çektirir (`useOrdersFeed`), zil kabukta çalar.

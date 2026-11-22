@@ -1,0 +1,583 @@
+"use client";
+
+import { CalendarRange, Copy, Eraser, FileDown, Save, Undo2, UserPlus, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useId, useMemo, useState } from "react";
+import { toast } from "sonner";
+
+import { useActionTransition } from "@/components/ui/action-error";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonClass, IconButton } from "@/components/ui/button";
+import { Card, CardFooter, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FloatingBar } from "@/components/ui/floating-bar";
+import { Input } from "@/components/ui/form";
+import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
+import { EmptyState } from "@/components/ui/misc";
+import { Notice } from "@/components/ui/notice";
+import { Segmented } from "@/components/ui/segmented";
+import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { useIsPhone } from "@/components/ui/use-media";
+import { cn } from "@/lib/utils";
+import {
+  cleanName,
+  DAY_NAMES,
+  DAY_SHORT,
+  dayHeading,
+  dayLong,
+  formatShiftCell,
+  hoursLabel,
+  nameRef,
+  parseShiftCell,
+  pdfHref,
+  SHIFT_NAME_MAX,
+  SHIFT_PEOPLE_MAX,
+  SHIFT_TEXT,
+  shiftMinutes,
+  userRef,
+  weekDays,
+  weekLabel,
+  type ShiftCell,
+} from "@/lib/vardiya";
+import { saveShiftWeekAction } from "@/server/actions/vardiya";
+
+/** Izgaranın satırı: kişi ve yedi günün ekrandaki metni */
+export interface GridRow {
+  ref: string;
+  userId: number | null;
+  name: string;
+  texts: string[];
+  /** Bu oturumda eklenen, henüz kaydedilmemiş satır (kaldırılabilir) */
+  added?: boolean;
+}
+
+interface Props {
+  branch: { id: string; name: string };
+  monday: string;
+  today: string;
+  canEdit: boolean;
+  /** Bakan kişinin satır anahtarı: personelin görünümünde kendi satırı öne çıkar */
+  meRef: string;
+  rows: GridRow[];
+  /** "Kişi ekle"nin önerdiği, ızgarada satırı olmayan hesaplar */
+  others: { id: number; name: string }[];
+  /** Geçen haftanın planı ("Geçen haftayı kopyala"); yalnız yöneticiye gelir */
+  previous: GridRow[] | null;
+  /** Kaydedilen planın damgası: değişince (kayıt, başka sekmenin kaydı) ızgara sunucunun satırlarıyla yeniden kurulur */
+  stamp: string;
+  updatedText: string | null;
+}
+
+const fold = (v: string) => cleanName(v).toLocaleLowerCase("tr-TR");
+
+/** Metnin okunmuş hâli: geçerliyse biçimlenmiş metni (karşılaştırma ve kayıt aynı metne bakar), değilse kendisi */
+function norm(text: string): string {
+  const p = parseShiftCell(text);
+  return p.ok ? formatShiftCell(p.cell) : text.trim();
+}
+
+const cellOfText = (text: string): ShiftCell | null => {
+  const p = parseShiftCell(text);
+  return p.ok ? p.cell : null;
+};
+
+const minutesOf = (texts: readonly string[]) => texts.reduce((sum, t) => sum + shiftMinutes(cellOfText(t)), 0);
+
+/**
+ * Vardiya ızgarası (docs/VARDIYA.md): yönetici haftayı kişi × gün kutularına yazar ("10-18", "18-02 bar", "izin"), kutudan
+ * çıkınca metin biçimlenir, "Kaydet" bütün haftayı tek eylemle yazar. PDF kaydedilen plandan çizilir: kayıttan sonra
+ * kendiliğinden günceldir. Personel aynı planı salt okunur görür; kendi haftası üstte ayrı kartta.
+ */
+export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, others, previous, stamp, updatedText }: Props) {
+  const router = useRouter();
+  const addId = useId();
+  const [pending, run] = useActionTransition();
+  const [rows, setRows] = useState<GridRow[]>(saved);
+  // Sunucudaki plan değişti (kayıttan sonraki yenileme, başka sekmenin kaydı): ızgara onunla yeniden kurulur
+  const [seen, setSeen] = useState(stamp);
+  if (seen !== stamp) {
+    setSeen(stamp);
+    setRows(saved);
+  }
+  const [newName, setNewName] = useState("");
+  const [discardOpen, setDiscardOpen] = useState(false);
+  /** Bu oturumda kaydedildi: "PDF hazır" satırı */
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  // Telefonda ızgara gün gün yazılır (yedi sütun sığmaz): seçili gün, açılışta bugün (hafta bu haftaysa) ya da Pazartesi
+  const phone = useIsPhone();
+  const [day, setDay] = useState(() => Math.max(0, weekDays(monday).indexOf(today)));
+
+  const days = weekDays(monday);
+  const crossMonth = days[0].slice(5, 7) !== days[6].slice(5, 7);
+  const pdf = pdfHref(branch.id, monday);
+  const before = useMemo(() => new Map(saved.map((r) => [r.ref, r.texts])), [saved]);
+
+  // Okunamayan hücreler: kutu kırmızı, ilk hatanın metni üstte, Kaydet kapalı
+  const problems = rows.flatMap((r) =>
+    r.texts.flatMap((t, i) => {
+      const p = parseShiftCell(t);
+      return p.ok ? [] : [{ ref: r.ref, day: i, text: `${r.name}, ${DAY_NAMES[i]}: ${p.error}` }];
+    }),
+  );
+  const bad = new Set(problems.map((p) => `${p.ref}|${p.day}`));
+  const changes = rows.reduce((n, r) => n + r.texts.filter((t, i) => norm(t) !== (before.get(r.ref)?.[i] ?? "")).length, 0);
+  const dirty = changes > 0;
+  const [leaveHref, setLeaveHref] = useLeaveGuard(canEdit && dirty, BRANCH_LEAVE);
+
+  const headcount = days.map((_, i) => rows.filter((r) => cellOfText(r.texts[i])?.kind === "work").length);
+  const totalMinutes = rows.reduce((sum, r) => sum + minutesOf(r.texts), 0);
+  const planned = rows.filter((r) => r.texts.some((t) => t.trim()));
+
+  function setText(ref: string, day: number, text: string) {
+    setSavedNote(null);
+    setRows((list) => list.map((r) => (r.ref === ref ? { ...r, texts: r.texts.map((t, i) => (i === day ? text : t)) } : r)));
+  }
+
+  /** Kutudan çıkınca geçerli metin biçimlenir: "10-18 kasa" → "10:00–18:00 · kasa" */
+  function tidy(ref: string, day: number) {
+    setRows((list) => list.map((r) => (r.ref === ref ? { ...r, texts: r.texts.map((t, i) => (i === day ? norm(t) : t)) } : r)));
+  }
+
+  function addPerson() {
+    const name = cleanName(newName);
+    if (!name) return void document.getElementById(addId)?.focus();
+    if (name.length > SHIFT_NAME_MAX) return void toast.error(`Ad en çok ${SHIFT_NAME_MAX} karakter olabilir`);
+    if (rows.length >= SHIFT_PEOPLE_MAX) return void toast.error(`Bir haftada en çok ${SHIFT_PEOPLE_MAX} kişi planlanır`);
+    // Adı bir hesabınkiyle aynıysa o hesabın satırı (vardiyası hesabına bağlanır); değilse yalnız adıyla
+    const user = others.find((u) => fold(u.name) === fold(name));
+    const ref = user ? userRef(user.id) : nameRef(name);
+    const dup = rows.find((r) => r.ref === ref || fold(r.name) === fold(name));
+    if (dup) {
+      toast.info(`${dup.name} zaten listede`);
+      document.getElementById(`${addId}-${dup.ref}-0`)?.focus();
+      return void setNewName("");
+    }
+    setRows((list) => [...list, { ref, userId: user?.id ?? null, name: user?.name ?? name, texts: Array<string>(7).fill(""), added: true }]);
+    setNewName("");
+    // Yeni satırın ilk kutusu çizildikten sonra odaklanır
+    requestAnimationFrame(() => document.getElementById(`${addId}-${ref}-0`)?.focus());
+  }
+
+  /** Geçen haftanın planı boş hücrelere kopyalanır (yazılmış hücrenin üstüne yazmaz); kaydedilene kadar taslaktır */
+  function copyPrevious() {
+    if (!previous?.length) return void toast.info("Geçen hafta için kayıtlı plan yok");
+    let copied = 0;
+    const next = rows.map((r) => ({ ...r, texts: [...r.texts] }));
+    for (const p of previous) {
+      let row = next.find((r) => r.ref === p.ref);
+      if (!row) {
+        if (next.length >= SHIFT_PEOPLE_MAX) continue;
+        next.push((row = { ref: p.ref, userId: p.userId, name: p.name, texts: Array<string>(7).fill(""), added: true }));
+      }
+      p.texts.forEach((t, i) => {
+        if (t && !row.texts[i].trim()) {
+          row.texts[i] = t;
+          copied++;
+        }
+      });
+    }
+    if (!copied) return void toast.info("Kopyalanacak boş hücre yok", { description: "Geçen haftanın planı yalnız boş hücrelere kopyalanır." });
+    setSavedNote(null);
+    setRows(next);
+    toast.success(`Geçen haftadan ${copied} hücre kopyalandı`, { description: "Düzenleyip Kaydet'e basın; kaydedilene kadar taslaktır." });
+  }
+
+  function save() {
+    if (problems.length) return void toast.error(problems[0].text);
+    run(async () => {
+      const res = await saveShiftWeekAction({ branchId: branch.id, week: monday, rows: rows.map((r) => ({ ref: r.ref, name: r.name, cells: r.texts.map(norm) })) });
+      if (!res.ok) return void toast.error(res.error);
+      const r = res.data;
+      setSavedNote(r.summary);
+      if (!r.written && !r.removed) return void toast.info("Değişiklik yok; plan zaten kayıtlı");
+      toast.success("Vardiya planı kaydedildi", {
+        description: `${weekLabel(monday)} · ${r.summary}. PDF güncellendi.`,
+        action: { label: "PDF'i aç", onClick: () => window.open(r.pdf, "_blank", "noopener") },
+      });
+    });
+  }
+
+  /** Aynı günün bir alt kutusuna geçer (Enter) */
+  function focusBelow(ref: string, day: number) {
+    const i = rows.findIndex((r) => r.ref === ref);
+    const next = rows[i + 1];
+    if (next) document.getElementById(`${addId}-${next.ref}-${day}`)?.focus();
+  }
+
+  /** Bir kişinin bir gününün kutusu (masaüstü ızgarası ve telefonun gün listesi aynı kutuyu çizer) */
+  const cellInput = (r: GridRow, i: number, className: string) => {
+    const t = r.texts[i];
+    const invalid = bad.has(`${r.ref}|${i}`);
+    return (
+      <Input
+        id={`${addId}-${r.ref}-${i}`}
+        value={t}
+        onChange={(e) => setText(r.ref, i, e.target.value)}
+        onBlur={() => tidy(r.ref, i)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          tidy(r.ref, i);
+          focusBelow(r.ref, i);
+        }}
+        maxLength={80}
+        autoComplete="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        enterKeyHint="next"
+        placeholder="–"
+        aria-label={`${r.name}, ${dayLong(days[i], i)}`}
+        aria-invalid={invalid || undefined}
+        title={invalid ? SHIFT_TEXT.format : t || undefined}
+        className={cn("px-2 tabular", cellOfText(t)?.kind === "off" && "text-ink-mute", norm(t) !== (before.get(r.ref)?.[i] ?? "") && !invalid && "ring-info/50", className)}
+      />
+    );
+  };
+
+  /** Satırın eylemi: bu oturumda eklenen satır kaldırılır, kayıtlı satırın haftası boşaltılır */
+  const rowAction = (r: GridRow) =>
+    r.added ? (
+      <IconButton label={`${r.name} satırını kaldır`} onClick={() => setRows((list) => list.filter((x) => x.ref !== r.ref))}>
+        <X size={14} />
+      </IconButton>
+    ) : r.texts.some((t) => t.trim()) ? (
+      <IconButton
+        label={`${r.name} haftasını boşalt`}
+        onClick={() => {
+          setSavedNote(null);
+          setRows((list) => list.map((x) => (x.ref === r.ref ? { ...x, texts: Array<string>(7).fill("") } : x)));
+        }}
+      >
+        <Eraser size={14} />
+      </IconButton>
+    ) : null;
+
+  const pdfButton = (
+    <a
+      href={pdf}
+      target="_blank"
+      rel="noopener"
+      className={buttonClass("secondary", "sm")}
+      title="Kaydedilen planın PDF'i (yeni sekmede)"
+      onClick={(e) => {
+        if (!dirty) return;
+        e.preventDefault();
+        toast.info("Önce kaydedin", { description: "PDF kaydedilen planı gösterir; yazdıklarınız henüz kaydedilmedi." });
+      }}
+    >
+      <FileDown size={14} aria-hidden="true" /> PDF
+    </a>
+  );
+
+  const mine = rows.find((r) => r.ref === meRef);
+  const empty = !planned.length;
+
+  if (!canEdit) {
+    return (
+      <div className="space-y-4">
+        {mine && mine.texts.some((t) => t.trim()) ? (
+          <Card>
+            <CardHeader icon={<CalendarRange />} title="Benim haftam" description={`${weekLabel(monday)} · ${hoursLabel(minutesOf(mine.texts))}`} actions={pdfButton} />
+            <ul className="mx-5 mb-5 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+              {days.map((d, i) => {
+                const cell = cellOfText(mine.texts[i]);
+                return (
+                  <li key={d} className={cn("flex items-baseline justify-between gap-3 px-4 py-2.5", d === today && "bg-panel/60")}>
+                    <span className="text-sm text-ink-mute">
+                      {dayLong(d, i)}
+                      {d === today ? <span className="ml-1.5 text-xs font-medium text-ink">· bugün</span> : null}
+                    </span>
+                    <span className={cn("text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>{cell ? formatShiftCell(cell) : "–"}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        ) : null}
+        <Card>
+          <CardHeader
+            icon={<CalendarRange />}
+            title={`${branch.name} · ${weekLabel(monday)}`}
+            description={empty ? undefined : `${planned.length} kişi · toplam ${hoursLabel(totalMinutes)}`}
+            actions={empty || (mine && mine.texts.some((t) => t.trim())) ? undefined : pdfButton}
+          />
+          {empty ? (
+            <EmptyState icon={<CalendarRange />} title="Bu hafta için vardiya yazılmadı" description="Yönetici planı kaydedince burada görünür." />
+          ) : (
+            <TableWrap>
+              <Table>
+                <THead>
+                  <tr>
+                    <TH sticky>Kişi</TH>
+                    {days.map((d, i) => (
+                      <TH key={d} className={cn(d === today && "text-info")}>
+                        {dayHeading(d, i, crossMonth)}
+                      </TH>
+                    ))}
+                    <TH numeric>Toplam</TH>
+                  </tr>
+                </THead>
+                <tbody>
+                  {planned.map((r) => (
+                    <TR key={r.ref}>
+                      <TD sticky className="font-medium whitespace-nowrap">
+                        {r.name}
+                        {r.ref === meRef ? (
+                          <Badge tone="blue" className="ml-2">
+                            Siz
+                          </Badge>
+                        ) : null}
+                      </TD>
+                      {r.texts.map((t, i) => {
+                        const cell = cellOfText(t);
+                        return (
+                          <TD key={i} className={cn("whitespace-nowrap tabular", cell?.kind === "work" ? "text-ink" : "text-ink-quiet")}>
+                            {cell ? formatShiftCell(cell) : "–"}
+                          </TD>
+                        );
+                      })}
+                      <TD numeric className="font-semibold">
+                        {hoursLabel(minutesOf(r.texts))}
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <TFootRow>
+                    <TD sticky className="text-ink-mute">
+                      Çalışan
+                    </TD>
+                    {headcount.map((n, i) => (
+                      <TD key={i} className="font-normal text-ink-mute tabular">
+                        {n ? `${n} kişi` : "–"}
+                      </TD>
+                    ))}
+                    <TD numeric>{hoursLabel(totalMinutes)}</TD>
+                  </TFootRow>
+                </tfoot>
+              </Table>
+            </TableWrap>
+          )}
+          {updatedText ? <CardFooter>{updatedText}</CardFooter> : null}
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {savedNote !== null && !dirty ? (
+        <Notice
+          tone="good"
+          size="sm"
+          live="polite"
+          title="Plan kayıtlı; PDF güncel"
+          text={savedNote}
+          action={
+            <a href={pdf} target="_blank" rel="noopener" className="font-medium underline underline-offset-2">
+              PDF&apos;i aç
+            </a>
+          }
+        />
+      ) : null}
+      {problems.length ? <Notice tone="bad" size="sm" live="polite" title={problems.length > 1 ? `${problems.length} hücre okunamadı` : "Bir hücre okunamadı"} text={problems[0].text} /> : null}
+      <Card>
+        <CardHeader
+          icon={<CalendarRange />}
+          title={`${branch.name} · ${weekLabel(monday)}`}
+          description="Kutulara saatleri yazın: “10-18”, “18-02 bar”, izin için “izin”. Boş kutu: planlanmadı."
+          actions={
+            <>
+              <Button variant="secondary" size="sm" onClick={copyPrevious} disabled={pending}>
+                <Copy size={14} aria-hidden="true" /> Geçen haftayı kopyala
+              </Button>
+              {pdfButton}
+            </>
+          }
+        />
+        {phone ? (
+          // Telefon: gün seçilir, o günün kutuları kişi kişi alt alta (yatay kaydırma yok)
+          <div className="px-5 pb-4">
+            <Segmented
+              label="Gün"
+              stretch
+              value={String(day)}
+              onChange={(v) => setDay(Number(v))}
+              options={days.map((d, i) => ({ value: String(i), label: `${DAY_SHORT[i]} ${Number(d.slice(8, 10))}` }))}
+            />
+            <p className="mt-2 mb-2 text-[13px] text-ink-mute">
+              {dayLong(days[day], day)}
+              {days[day] === today ? " · bugün" : ""} · {headcount[day] ? `${headcount[day]} kişi çalışıyor` : "çalışan yazılmadı"}
+            </p>
+            {rows.length ? (
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                {rows.map((r) => {
+                  const minutes = minutesOf(r.texts);
+                  return (
+                    <li key={r.ref} className="flex items-center gap-2 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink">{r.name}</p>
+                        <p className="truncate text-xs text-ink-mute tabular">
+                          {r.userId === null ? "hesabı yok · " : ""}
+                          {minutes ? `hafta ${hoursLabel(minutes)}` : "hafta boş"}
+                        </p>
+                      </div>
+                      <div className="w-40 shrink-0">{cellInput(r, day, "")}</div>
+                      <div className="flex w-11 shrink-0 justify-end">{rowAction(r)}</div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute ring-1 ring-line">Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin.</p>
+            )}
+            <p className="mt-2 text-[13px] text-ink-mute tabular">Haftanın toplamı {hoursLabel(totalMinutes)}</p>
+          </div>
+        ) : (
+          <TableWrap>
+            <Table>
+              <THead>
+                <tr>
+                  <TH sticky>Kişi</TH>
+                  {days.map((d, i) => (
+                    <TH key={d} className={cn("px-2", d === today && "text-info")} title={dayLong(d, i)}>
+                      {dayHeading(d, i, crossMonth)}
+                    </TH>
+                  ))}
+                  <TH numeric className="px-2">
+                    Toplam
+                  </TH>
+                  <TH aria-label="Satır eylemleri" className="px-0.5" />
+                </tr>
+              </THead>
+              <tbody>
+                {rows.map((r) => {
+                  const minutes = minutesOf(r.texts);
+                  return (
+                    <TR key={r.ref}>
+                      <TD sticky className="py-2 pr-1 font-medium">
+                        <span className="block max-w-28 min-w-20 truncate xl:max-w-40" title={r.name}>
+                          {r.name}
+                        </span>
+                        {r.userId === null ? <span className="block text-xs font-normal text-ink-quiet">hesabı yok</span> : null}
+                      </TD>
+                      {r.texts.map((text, i) => {
+                        const note = cellOfText(text)?.note;
+                        return (
+                          <TD key={i} className="px-0.5 py-1.5 align-top">
+                            {cellInput(r, i, "min-w-[5.5rem] px-1.5 sm:text-[13px]")}
+                            {/* Dar kutuda not kesilir: altında küçük yazıyla da görünür */}
+                            {note ? <span className="mt-0.5 block max-w-[7rem] truncate px-1.5 text-[11px] leading-4 text-ink-mute">{note}</span> : null}
+                          </TD>
+                        );
+                      })}
+                      <TD numeric className={cn("px-2 font-semibold", !minutes && "font-normal text-ink-quiet")}>
+                        {minutes ? hoursLabel(minutes) : "–"}
+                      </TD>
+                      <TD className="w-9 px-0.5 py-1.5 text-right">{rowAction(r)}</TD>
+                    </TR>
+                  );
+                })}
+                {!rows.length ? (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-6 text-center text-sm text-ink-mute">
+                      Bu şubede personel hesabı yok. Aşağıdan kişi ekleyin; hesabı olmayan çalışan adıyla yazılır.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+              {rows.length ? (
+                <tfoot>
+                  <TFootRow>
+                    <TD sticky className="text-ink-mute">
+                      Çalışan
+                    </TD>
+                    {headcount.map((n, i) => (
+                      <TD key={i} className="px-2 font-normal text-ink-mute tabular">
+                        {n ? `${n} kişi` : "–"}
+                      </TD>
+                    ))}
+                    <TD numeric className="px-2">
+                      {hoursLabel(totalMinutes)}
+                    </TD>
+                    <TD />
+                  </TFootRow>
+                </tfoot>
+              ) : null}
+            </Table>
+          </TableWrap>
+        )}
+        <form
+          className="flex flex-wrap items-center gap-2 px-5 pt-1 pb-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            addPerson();
+          }}
+        >
+          <Input
+            id={addId}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            list={`${addId}-kisiler`}
+            maxLength={SHIFT_NAME_MAX}
+            autoComplete="off"
+            placeholder="Kişi ekle: ad yazın"
+            aria-label="Eklenecek kişinin adı"
+            className="max-w-64"
+          />
+          <datalist id={`${addId}-kisiler`}>
+            {others.map((u) => (
+              <option key={u.id} value={u.name} />
+            ))}
+          </datalist>
+          <Button type="submit" variant="secondary" disabled={pending}>
+            <UserPlus size={15} aria-hidden="true" /> Kişi ekle
+          </Button>
+          <p className="basis-full text-xs text-ink-mute">Hesabı olan kişi adından bulunur; hesabı olmayan çalışan yalnız adıyla yazılır.</p>
+        </form>
+        {updatedText ? <CardFooter>{updatedText}</CardFooter> : null}
+      </Card>
+
+      <FloatingBar open={dirty}>
+        <div className="min-w-0 flex-1" aria-live="polite">
+          <p className="truncate text-sm font-semibold text-ink">{changes} değişiklik</p>
+          <p className={cn("truncate text-xs", problems.length ? "font-medium text-bad" : "text-ink-mute")}>{problems.length ? problems[0].text : "Kaydedilmedi; PDF kaydedince güncellenir"}</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" onClick={() => setDiscardOpen(true)} disabled={pending} aria-label="Değişikliklerden vazgeç" className="max-sm:size-10 max-sm:px-0">
+            <Undo2 size={16} aria-hidden="true" />
+            <span className="max-sm:sr-only">Vazgeç</span>
+          </Button>
+          <Button onClick={save} disabled={pending || problems.length > 0} size="lg" className="max-sm:px-4">
+            <Save size={18} aria-hidden="true" />
+            {pending ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
+        </div>
+      </FloatingBar>
+
+      <ConfirmDialog
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        onConfirm={() => {
+          setDiscardOpen(false);
+          setRows(saved);
+        }}
+        title="Değişikliklerden vazgeçilsin mi?"
+        description="Yazdıklarınız silinir, kaydedilen plan geri gelir."
+        confirmLabel="Vazgeç ve geri al"
+      />
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        title="Kaydedilmemiş vardiya var"
+        confirmLabel="Kaydetmeden geç"
+        description={`${weekLabel(monday)} haftasına yazdıklarınız henüz kaydedilmedi; başka haftaya, şubeye ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
+      />
+    </div>
+  );
+}

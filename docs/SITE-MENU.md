@@ -170,8 +170,9 @@ Dalga 10 §2.1 (`docs/planlar/personel-yetki.md`). Biten ürünü hemen "Tükend
 uygulamadan ödenmiş sipariş gelmeye devam eder ve iade gerekir. Bu yüzden onaysızdır; para, fiyat, stok ve kasa
 taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
 
-- **Nerede:** bar ekranında (`/panel/karaoke`) "Uygulama siparişleri"nin altındaki **Tükenenler** kartı
-  (`#tukenenler`). Site bağlantısı (`KARAOKE_SYNC_SECRET`) yoksa kart çizilmez. Boşken tek satır: "Biten ürün yok." ve
+- **Nerede:** Siparişler ekranında (`/panel/siparisler`) siparişlerin altındaki **Tükenenler** kartı
+  (`#tukenenler`; 22 Kasım 2026'ya kadar Karaoke ekranındaydı: operatör "karaoke sayfasında öyle bir şeye gerek yok"
+  dedi, tükenen ürün uygulama siparişinin işi). Site bağlantısı (`KARAOKE_SYNC_SECRET`) yoksa kart çizilmez. Boşken tek satır: "Biten ürün yok." ve
   "Tükendi işaretle". Doluyken yalnız bu kartla kapatılıp kaydı hâlâ geçerli ürünler: ad, altında "M · L · Selin,
   21:40" (dünden kalanda "dün 21:40"), sağda "Satışa aç". Başarılı dokunuştan sonra satırın düğmesi 1,5 sn kapalı.
 - **"Tükendi işaretle" penceresi yalnız kapatır.** Açıklaması "Sitede boy boy durum yok: M ve L birlikte kapanır.";
@@ -316,7 +317,7 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/server/site-menu/sold-out-store.ts`, `sold-out-core.ts` | Tükenenler kaydı (satır kilidi, fiyat yazımında taşıma); Tükendi / Satışa aç / Kapalı tut |
 | `src/server/data/menu-status.ts` | Tükenenler kartının fiyatsız okuyucusu, Bugün / zil olgusu, ürün kartının notu |
 | `src/server/actions/menu-status.ts` | `setSoldOut` (personel ve yönetici), `holdSoldOut` (yönetici) |
-| `src/app/panel/karaoke/sold-out-card.tsx` | Bar ekranının Tükenenler kartı ve "Tükendi işaretle" penceresi |
+| `src/app/panel/siparisler/sold-out-card.tsx`, `sold-out-search.ts` | Siparişler ekranının Tükenenler kartı ve "Tükendi işaretle" penceresi; pencerenin araması |
 | `src/server/prices/*` | Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (`recordPriceChange`; `applyPlan` da çağırır), toplu değişikliğin kalem kalem site yazımı ([FIYATLAR.md](FIYATLAR.md)) |
 | `src/app/api/menu/ping/route.ts` | Sitenin pingi |
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |

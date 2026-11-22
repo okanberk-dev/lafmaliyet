@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
-import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
+import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
@@ -157,8 +157,9 @@ export async function GET(request: NextRequest) {
   const extras = async () => {
     const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
-      // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
-      dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
+      // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK); ardından
+      // karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi), kuyruğun 55 sn'sini aşmadan
+      dailyKaraoke({ mailDeadlineAt: jobStart + JOB_TAIL_DEADLINE_MS - 1_000 }).catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
       photosTask(),

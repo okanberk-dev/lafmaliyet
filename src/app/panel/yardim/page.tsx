@@ -3,6 +3,7 @@ import {
   Bell,
   Bot,
   CalendarCheck,
+  CalendarClock,
   ChartNoAxesColumn,
   ClipboardList,
   Coffee,
@@ -551,6 +552,22 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         ],
       },
       {
+        id: "vardiya",
+        q: "Vardiya planını yazmak ve PDF'ini almak",
+        a: (
+          <>
+            <Path href="/panel/vardiya" /> ekranında haftayı (Pazartesi–Pazar) kişi kişi yazın: günün kutusuna saatleri (“10-18”, “10:30-18”, gece yarısını geçen
+            vardiyada “18-02”), isterseniz ardına görevi (“10-18 kasa”), izin için “izin”; boş kutu planlanmadı demek. Kutudan çıkınca metin kendiliğinden biçimlenir,
+            okunamayan kutu kırmızı olur. Kaydet bütün haftayı yazar; PDF her açılışta kaydedilen plandan çizilir (A4 yatay, asmak ya da göndermek için),
+            ayrıca dosya saklanmaz. Plan sonradan aynı ekranda düzenlenir: kutuyu değiştirip yeniden kaydedin. Geçen haftayı kopyala boş kutuları geçen haftanın
+            planıyla doldurur. Hesabı olmayan çalışanı Kişi ekle ile adıyla yazarsınız. Personel planı kendi ekranında görür (değiştiremez). Birden çok şube
+            açıkken plan şube şubedir.
+          </>
+        ),
+        icon: CalendarClock,
+        links: [{ href: "/panel/vardiya", label: "Vardiya ayarlama" }],
+      },
+      {
         id: "tedarikci",
         q: "Tedarikçinin bilgileri ve ödemesi",
         a: (
@@ -684,8 +701,8 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı, Tükendi / Satışa aç), Kasa raporu (Z raporu ve fişler fotoğraftan, kasadaki satış
-            fiyatları), Kontrol listeleri (son 7 günün geçmişiyle), Zayi &amp; ikram, Reçete defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı
+            Bugün, Siparişler (uygulama siparişleri, masa çağrıları, Tükendi / Satışa aç), Karaoke (oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan, kasadaki satış
+            fiyatları), Kontrol listeleri (son 7 günün geçmişiyle), Vardiya (planı görür, PDF&apos;ini alır), Zayi &amp; ikram, Reçete defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı
             yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Özel
             günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Geçmiş kasa, silme, geç
             kayıt ve kapalı gün gibi önemli işler isteğe döner, kararı siz <Path href="/panel/onaylar" /> ekranında verirsiniz. Personelin
@@ -912,6 +929,26 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         links: [
           { href: "/panel/onaylar", label: "Onaylar" },
           { href: "/panel/karaoke", label: "Karaoke (bar ekranı)" },
+        ],
+      },
+      {
+        id: "karaoke-eposta",
+        q: "Karaoke rezervasyonunda kime, ne zaman e-posta gider?",
+        a: (
+          <>
+            <Path href="/panel/karaoke" /> › Elle ekle&apos;de e-posta yazarsanız misafire sitenin onay e-postası gider; rezervasyona bir günden fazla varsa
+            bir gün kala bu panel de bir hatırlatma gönderir (&quot;Yarın görüşüyoruz&quot;, gün, saat, ödeme kafede, Takvime ekle). Satırdaki zarf rozeti ne
+            zaman gideceğini, gidince gönderildiğini söyler; rezervasyonu kaldırır ya da sitede iptal ederseniz gitmez. Misafirin adresi yalnız bu e-posta
+            gidene kadar şifreli tutulur, sonra silinir. Personele iki e-posta gider: rezervasyon günü sabah o günün listesi ve her rezervasyondan 3 saat
+            önce o rezervasyon. Sitede ödenmemiş rezervasyon (elle eklenen, kasada ödenecek) kırmızıyla öne çıkar: &quot;Ödeme alınmadı: ücreti misafir odaya
+            girmeden önce, kasada alın&quot;; tutar yazmaz. Bu e-postalar o gün <Path href="/panel/vardiya" /> planında çalışanlara, plan yoksa Tuzla&apos;nın bütün
+            personeline gider; <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri kapalıysa personele gitmez.
+          </>
+        ),
+        icon: Bell,
+        links: [
+          { href: "/panel/karaoke", label: "Karaoke (bar ekranı)" },
+          { href: "/panel/vardiya", label: "Vardiya" },
         ],
       },
     ],

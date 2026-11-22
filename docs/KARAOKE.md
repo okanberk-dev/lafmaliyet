@@ -170,7 +170,8 @@ Operatör: "Ladminden de girilebilsin aynı şekilde". Telefonla ya da kasada ge
   Doluluk › Oda saatleri, kaydedilmediyse 12:00–23:00; bugün bitmiş saat çıkmaz, başlamış ama süren saat seçilir), süre
   (kapanışı geçmez, gece yarısını geçmez: site takvim gününe yazar). Rezervasyonda ad (zorunlu), kişi, telefon ve
   e-posta (isteğe bağlı; e-posta yazılırsa misafire sitenin onay e-postası gider ve rezervasyon o üyenin hesabında
-  görünür), not. Kapatmada neden (isteğe bağlı; yalnız panellerde görünür, sitede yalnız saatler dolu görünür). Panelin
+  görünür; rezervasyona bir günden fazla varsa bir gün kala panelin hatırlatma e-postası da gider, alanın ipucu hangisi
+  olacağını söyler: aşağıda › Karaoke e-postaları), not. Kapatmada neden (isteğe bağlı; yalnız panellerde görünür, sitede yalnız saatler dolu görünür). Panelin
   bildiği dolu saat (sitedeki rezervasyon ya da kapatma) pencerede sarı satırla söylenir.
 - **Siteye nasıl gider:** sunucu eylemi (`addDeskKaraoke`) sitenin imzalı `POST /api/panel/karaoke` ucuna gönderir
   (GET'le aynı imza, gövdenin tam metni üzerinden; `src/server/karaoke/desk.ts`). Site saatleri yazar, panele her
@@ -180,17 +181,25 @@ Operatör: "Ladminden de girilebilsin aynı şekilde". Telefonla ya da kasada ge
   yanında, alanı olmayan hata (bağlantı, imza, 503) pencerenin başında; kurulum ayrıntısı (anahtar adı, sitenin sürümü)
   yalnız yöneticiye, personel "Site bağlantısında sorun var; satır eklenmedi. Yöneticiye haber verin." görür. Zaman
   aşımında site yazmış olabilir: panel yine eşitler, pencere "yazılmış olabilir, listeye bakın" der.
-- **Telefon ve e-posta panelde saklanmaz:** yalnız sitenin gövdesindedir; panelin veritabanına, işlem geçmişine ve
-  günlüğe yazılmaz (sitenin GET'i de göndermez).
+- **Telefon panelde saklanmaz, e-posta yalnız hatırlatma gidene kadar:** telefon yalnız sitenin gövdesindedir. E-posta
+  da öyle; tek ayrıcalık misafirin "bir gün kaldı" hatırlatması: rezervasyona bir günden fazla varsa adres panelde
+  **şifreli** (`karaoke_reminders`, AES-256-GCM) tutulur ve e-posta gidince, rezervasyon kaldırılınca ya da iptal
+  edilince silinir (aşağıda › Karaoke e-postaları). İkisi de işlem geçmişine, günlüğe ve yedeğe yazılmaz; ekrana da
+  gelmez (sitenin GET'i de göndermez).
 - **Listede:** elle rezervasyon "Onaylı · kasada ödenecek" ve küçük **Elle** rozetiyle (ödemesi köşkte, kartla ön
   ödeme yok); kapatma "Kapalı · 14:00–17:00 · neden". Oda kapatılan saatin içindeyse boş kart "Oda kapalı" der.
+  Ödemesi alınmamış rezervasyonun rozeti **sarıdır** (yeşil yalnız sitede ödenmiş olan: "Ödendi"); oturum sürerken
+  sayaç kartında "Ödemesi kasada: ücret alınmadıysa şimdi alın" durur (panel kasadaki tahsilatı bilmez, söz bu yüzden
+  koşullu). Hatırlatması kurulan satırda zarf rozeti: "Hatırlatma e-postası · Yarın 20:00", gidince "Hatırlatma
+  e-postası gönderildi".
 - **Kaldır:** elle satırda (onay penceresiyle). Yönetici her zaman; personel satır sitede yazıldıktan sonraki **ilk 10
   dakikada** (yanlış girilen satır; sayaç silmenin kuralı), sonrasında düğme çıkmaz, sunucu "Elle eklenen satırı ilk
   10 dakikada kaldırabilirsiniz; şimdi kaldırmak için yöneticiye haber verin." der. Saatler sitede yeniden açılır;
-  e-postası yazılmış rezervasyonda site misafire iptal e-postası gönderir. Sitede alınan (online ödenmiş) rezervasyon
+  e-postası yazılmış rezervasyonda site misafire iptal e-postası gönderir; bekleyen hatırlatma ve misafirin paneldeki
+  adresi hemen silinir. Sitede alınan (online ödenmiş) rezervasyon
   buradan kaldırılmaz (site 409 `not_desk`; iptal ve iade sitenin panelinde). Kural `deskRemoveRefusal`.
 - **İşlem geçmişi:** "Karaoke elle rezervasyon eklendi" (ilk ad, kişi, gün ve saat; e-posta yazıldıysa "misafire onay
-  e-postası", adres yok), "Karaoke saatleri kapatıldı" (gün, saat, neden), "Karaoke elle rezervasyonu kaldırıldı",
+  e-postası", hatırlatma da kurulduysa "misafire onay e-postası ve bir gün kala hatırlatma"; adres yok), "Karaoke saatleri kapatıldı" (gün, saat, neden), "Karaoke elle rezervasyonu kaldırıldı",
   "Kapatılan karaoke saatleri açıldı".
 - **Panelde nasıl tutulur:** migration yok. Sitenin GET satırı `desk: true` (elle) ve `block: true` (kapatma)
   taşır (ekleme; ikisi de isteğe bağlı okunur, bozuksa yok sayılır). `block` göndermeyen eski sitede kural türetilir:
@@ -245,6 +254,78 @@ Canlı veri yolu (`/api/canli`, `liveWindow`, ETag) gözden geçirildi: pencere 
 kadar, ETag sürümü ve takvim gününü taşır (gece yarısı kendiliğinden ilerler), 23:00–24:00 rezervasyonu gece yarısından
 sonra da pencerede ve listede kalır; eşitleme satırı sitenin kimliğiyle yerinde günceller (oturum kimliği değişmez).
 Testler `tests/karaoke-elle.test.ts`.
+
+## Karaoke e-postaları (22 Kasım 2026)
+
+Operatör: "elle karaoke eklediğimizde kişinin mailine 1 gün kalan mail hatırlatması girsin, bu maili de güzel tasarla",
+"çalışanlara da mail gitsin aynı gün 3 saat öncesinde ve aynı gün sabahı" ve "bizim elemanlara para ödenmediği de göze
+çarpsın ki alsınlar, önden almaları gerektiğini de söyle".
+
+| E-posta | Kime | Ne zaman | İçinde |
+|---|---|---|---|
+| **Bir gün kaldı** | Misafire (Elle ekle'de yazılan adres) | Rezervasyondan 24 saat önce, bir kez | "Yarın görüşüyoruz, Ayşe!", gün ve saat, süre, kişi, "Ödeme kafede", **Takvime ekle** |
+| **Bugünün karaokeleri** | O gün vardiyadaki personele | Rezervasyon günü sabah (08:00–12:00 arası ilk tetikleyici), günde bir kez | O günün rezervasyonları saat sırasıyla; ödemesi alınmamışlar kırmızı kutuda |
+| **3 saat kala** | O gün vardiyadaki personele | Her rezervasyondan 3 saat önce | O rezervasyon; ödemesi alınmadıysa konu ve en üstteki kırmızı kutu söyler |
+
+### Misafire: bir gün kala hatırlatma
+
+- **Ne zaman kurulur:** Elle ekle'de e-posta yazıldıysa ve rezervasyona **bir günden fazla** varsa. Daha yakın
+  rezervasyonda sitenin onay e-postası zaten son 24 saatte gitmiştir; ikinci e-posta gönderilmez (alanın ipucu ve
+  eklemenin bildirimi hangisinin olduğunu söyler). Sitede (uygulamadan, webden) alınan rezervasyonun adresi panele hiç
+  gelmediği için bu hatırlatma yalnız panelden elle eklenenlere gider; sitenin kendi panelinden elle eklenene de gitmez.
+- **Ne zaman gider:** başlangıçtan 24 saat önce (20:00 rezervasyonuna bir gün önce 20:00'de). Saat her çalışmada panelin
+  kopyasından okunur: sitede saati değişen rezervasyonun hatırlatması yeni saate göre gider. Tetikleyiciler saatlerce
+  çalışmadıysa geç de gider, söz gönderildiği güne göre değişir ("Bugün görüşüyoruz"); rezervasyona 2 saatten az
+  kaldıysa artık gönderilmez.
+- **Gitmez:** rezervasyon panelden kaldırıldıysa (satır hemen silinir), sitede iptal edildiyse (gönderimden önce kopya
+  10 dakikadan eskiyse site yeniden sorulur), kapatılan saatse, kopyada bir gün boyunca hiç görünmediyse.
+- **Bir kez:** gönderim satırı sahiplenerek yapılır (iki tetikleyici aynı anda çalışsa da tek ileti); Resend'e
+  rezervasyonun kimliği ve saatinden türeyen aynı anahtarla gider (yanıtı gelmeyen deneme 10 dakika sonra yinelenirse
+  ikinci ileti çıkmaz). Kesin reddedilen e-posta en çok 5 kez denenir.
+- **Görünüm:** misafire giden tek e-posta olduğu için kendi tasarımı var (`karaoke-reminder-template.ts`): üstte
+  L'Affogato yazısı, koyu "bilet" kartında saat ve gün, altında üç kısa bilgi (süre saatinde başlar, ödeme kafede /
+  ödemeniz alındı, planınız değiştiyse haber verin), **Takvime ekle** (Google Takvim) ve laffogato.net. Resim yok
+  (engellense de aynı görünür), tutar yok, tanıtım yok (yalnız rezervasyonun bilgisi: ticari ileti değil, İYS izni
+  gerekmez). Gönderen: panelin gönderen adresi, görünen ad "L'Affogato" (`guestFrom`).
+- **Adres:** `karaoke_reminders.email_sealed`'da AES-256-GCM ile şifreli (anahtar `AUTH_SECRET`'tan, amaç
+  "karaoke-reminder"). Gönderilince, vazgeçilince ya da gönderilemeyince **silinir**; satır yalnız sonucuyla 3 gün
+  kalır (ekrandaki "gönderildi" rozeti için), sonra o da silinir. Bildirim günlüğüne alıcı olarak "misafir (adres
+  saklanmaz)" yazılır. Tablo yedeğe girmez. Ayarlar'daki "e-posta hatırlatmaları" anahtarı bu e-postayı kapatmaz
+  (misafire verilen söz; kapatmak için e-posta alanı boş bırakılır).
+
+### Personele: sabah ve 3 saat kala
+
+- **Hangi rezervasyonlar:** sitede geçerli her rezervasyon (elle eklenen dahil): iptal, ödeme sayfasındaki tutma, iade,
+  panelde "bitti" denen ve kapatılan saat değil (`expectsGuests`; çakışma uyarısının kuralı).
+- **Ödeme alınmadıysa göze çarpar:** sitede ödenmemiş rezervasyon (elle eklenen, "kasada ödenecek", onay bekleyen)
+  konuda "ÖDEME ALINACAK" der; gövdenin en üstünde kırmızı kutu: "ÖDEME ALINMADI" ve "Ücreti misafir odaya girmeden
+  ÖNCE, kasada alın."; satırı kırmızı zeminli ve aynı cümleyi yineler. Sitede ödenen "Ödendi (sitede)" (yeşil). Tutar
+  hiçbir yerde yazmaz (personel tutar görmez; ücret kasada).
+- **Ad:** konu ve ön izleme misafirin adını taşımaz (telefonun kilit ekranında görünür); ad ve not yalnız gövdede.
+- **Kime:** o gün [Vardiya planında](VARDIYA.md) Tuzla'da çalışan olarak yazılmış, hesabı etkin herkes (vardiyaya
+  yazılan yönetici dahil). O gün için plan yoksa (ya da plandakilerin hesabı yoksa) Tuzla'nın bütün etkin personeli ve
+  şubesi boş personel. Her kişiye kendi adresine ayrı e-posta.
+- **Sabah listesi** 08:00–12:00 arasında gider; o saatlerde ilk rezervasyon eklenirse o an gider. Öğleden sonra eklenen
+  ilk rezervasyon liste doğurmaz, yalnız "3 saat kala"sı gider.
+- **3 saat kala:** başlangıca 3 saatten az, 30 dakikadan çok kaldıysa (tetikleyici geç çalışırsa konu gerçek süreyi
+  yazar: "Karaoke 20:00 (1 saat 20 dk sonra)"). Sabah listesi aynı çalışmada gidiyorsa listedeki rezervasyonun 3 saat
+  kalası ayrıca gitmez. Saati değişen rezervasyon yeni saatin 3 saat öncesinde yeniden bildirilir.
+- **Bir kez:** her e-postanın anahtarı gönderimden önce `notification_log`'a yazılır (`karaoke-personel-sabah:<gün>`,
+  `karaoke-personel-3saat:<oturum>:<saat>`); kimseye kesin olarak gidemeyen e-postanın anahtarı bırakılır, sonraki
+  tetikleyici yeniden dener. Ayarlar'daki **e-posta hatırlatmaları** kapalıysa ya da Resend kurulu değilse gitmez.
+
+### Tetikleyiciler
+
+Üçü de aynı işi çağırır (`runKaraokeMails`), e-posta bir kez gider:
+
+1. **Açık panel sekmesinin canlı yoklaması** (`/api/canli`, yanıttan sonra, sunucu örneği başına en çok 5 dakikada
+   bir): bar ekranı açıkken e-postalar dakikasında gider.
+2. **Saatlik iş** (`/api/cron/kontrol`, GitHub Actions, 08:07–02:07): kimse panele bakmıyorsa.
+3. **Sabah işi** (`/api/cron/gunluk`, 08:00–09:00): karaoke eşitlemesinden hemen sonra; sabah listesinin güvencesi.
+   Gönderilemeyen e-posta adımın sonucunu bozmaz, sonraki tetikleyici yeniden dener.
+
+Karaoke odası gün içinde çalıştığı için (12:00–24:00) "bir gün kala" ve "3 saat kala" anları tetikleyicilerin çalıştığı
+saatlere düşer.
 
 ## Kurulum
 
@@ -341,6 +422,11 @@ kendiliğinden başlar).
   da sayacın etiketini taşır ve 3 × 366 günden sonra da kalır (işlem geçmişinin saklama süresi yok). Sayaç silme
   isteğinin başlığı ve yükü adı taşımaz.
 - Geçmişten alınan rezervasyonlar (Doluluk › Geçmişi siteden al) ad ve not olmadan saklanır.
+- **Misafirin e-posta adresi** panelde yalnız "bir gün kaldı" hatırlatması için, şifreli ve en çok rezervasyon gününe
+  kadar durur (`karaoke_reminders`; yukarıda › Karaoke e-postaları): e-posta gidince, rezervasyon kaldırılınca ya da iptal
+  edilince silinir; yedeğe, günlüğe, işlem geçmişine ve bildirim günlüğüne yazılmaz. Amaç yalnız misafirin kendi
+  rezervasyonunu hatırlatmak (tanıtım yok). Personel e-postalarında misafirin yalnız ilk adı ve notu gövdede geçer
+  (panel ekranındaki bilgi); konuda ve ön izlemede geçmez.
 
 ## Doluluk haritası (yönetici)
 
@@ -425,6 +511,8 @@ hoparlörden çalmalı.
 | `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim; kopyanın tazelenmesi (`ensureKaraokeFresh`) |
 | `src/lib/karaoke/desk.ts`, `src/server/karaoke/desk.ts` | Elle rezervasyon ve saati kapatma: formun ve sunucunun kuralları, sitenin POST yanıtının eşlenmesi, personelin 10 dakikalık kaldırma kuralı, metinler (saf, testli); sitenin imzalı POST'u ve ardından eşitleme |
 | `src/app/panel/karaoke/desk-dialog.tsx` | Elle ekle penceresi (tür, gün, saat, süre, ad, kişi, telefon, e-posta, not / neden) |
+| `src/lib/karaoke/reminder.ts`, `src/server/karaoke/reminders.ts`, `src/server/notify/karaoke-reminder-template.ts` | Misafirin "bir gün kaldı" hatırlatması: kurallar ve ekran metinleri (saf, testli); kurma, silme, gönderim (sahiplenme, adresin silinmesi); e-postanın görünümü |
+| `src/lib/karaoke/staff-mail.ts`, `src/server/karaoke/staff-mail.ts`, `src/server/notify/karaoke-staff-template.ts` | Personelin sabah ve "3 saat kala" e-postaları: hangi rezervasyon, ne zaman, kime (vardiya planı), ödeme vurgusu; gönderim ve karaoke e-postalarının tek girişi (`runKaraokeMails`); görünüm |
 | `src/lib/karaoke/month.ts` | Bu ayın özeti (kapatılan saat sayılmaz; saf, testli) |
 | `src/lib/karaoke/freshness.ts`, `src/lib/karaoke/sync-text.ts` | Kopya ne zaman yeniden çekilir, bar ekranının uyarı satırı; çekme hatalarının metinleri (saf, testli) |
 | `src/server/karaoke/extend.ts` | Uzatmanın tek yazımı (SQL'de toplar, 12 saat sınırı) |
@@ -447,4 +535,5 @@ hoparlörden çalmalı.
 | `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, adsız bildirim metni (push ve sekmenin sistem bildirimleri), şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
 | `tests/karaoke-istek.test.ts`, `tests/karaoke-istek-db.test.ts` | Sayaç silme kipi ve isteği, bitir ve geri aç izi, okuyucuların sızıntısı, kilit sırası yarışı (`ONAY_TEST_DATABASE_URL`) |
 | `tests/karaoke-elle.test.ts` | Elle rezervasyon ve saati kapatma: yanıtın eşlenmesi, `desk` / `block` (eski sitede türetme), ay özeti ve doluluktan çıkma, kapatılan saatle çakışma, personelin kaldırma kuralı, sayacın ve alarmın yolu (elle rezervasyon çalar, kapatılan saat hiç), geç başlangıç, cihazın varsayılanı |
+| `tests/karaoke-hatirlatma.test.ts`, `tests/karaoke-hatirlatma-db.test.ts` | Karaoke e-postaları: kurallar, sözler, şablonlar (ödeme vurgusu, konuda ad ve tutar yok), adresin şifreli durup silinmesi, tetikleyiciler; gerçek Postgres ve Resend'in sahte ucuyla gönderim, yineleme, vardiyaya göre alıcılar (`HATIRLATMA_TEST_DATABASE_URL`) |
 | `tests/karaoke-bildirim-db.test.ts` | Gerçek Postgres ve sitenin sahte ucuyla: pingle gelen yeni, iptal edilen ve saati değişen rezervasyonun bildiriminde ad ve not yok, kopyada ve canlı veride ad var (`BAGLANTI_TEST_DATABASE_URL`) |

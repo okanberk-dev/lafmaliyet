@@ -31,6 +31,11 @@ const nextConfig: NextConfig = {
   // Satış raporu Server Action ile yüklenir (en fazla 4 MB, src/app/panel/satislar/sales-logic.ts); varsayılan 1 MB
   // yerine dosya + form payı. Vercel 4,5 MB üstünü zaten reddeder.
   experimental: { serverActions: { bodySizeLimit: "4.5mb" } },
+  // Vardiya PDF'inin yazı tipi (src/server/vardiya/pdf.ts) çalışma anında diskten okunur: dosyalar işlevin izine açıkça
+  // eklenir (iz sürme `process.cwd()` ile kurulan yolu kendiliğinden bulamayabilir; docs/VARDIYA.md › PDF)
+  outputFileTracingIncludes: {
+    "/api/vardiya/pdf": ["./src/server/vardiya/fonts/*.ttf"],
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -3,6 +3,7 @@ import {
   Banknote,
   BellRing,
   BookOpen,
+  CalendarClock,
   CalendarHeart,
   CalendarX2,
   Camera,
@@ -94,8 +95,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Bar ekranı açık kalsın",
     body: (
       <>
-        Barın ekranı <StaffPath href="/panel/siparisler" />: uygulama siparişleri ve masa çağrıları; yeni siparişte ve masa çağırınca çalar.{" "}
-        <StaffPath href="/panel/karaoke" /> ekranında karaoke odası ve biten ürünler; biten ürünü hemen Tükendi yapın.
+        Barın ekranı <StaffPath href="/panel/siparisler" />: uygulama siparişleri, masa çağrıları ve biten ürünler; yeni siparişte ve masa çağırınca
+        çalar, biten ürünü hemen Tükendi yapın. <StaffPath href="/panel/karaoke" /> ekranında karaoke odası.
       </>
     ),
     href: "/panel/siparisler",
@@ -343,14 +344,14 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Bir ürün bitti (Tükendi)",
         a: (
           <>
-            Bar ekranındaki <B>Tükenenler</B> kartında <B>Tükendi işaretle</B>: ürünü arayıp seçin. Ürün laffogato.net&apos;te, uygulamada ve QR menüde hemen
+            <StaffPath href="/panel/siparisler" /> ekranındaki <B>Tükenenler</B> kartında <B>Tükendi işaretle</B>: ürünü arayıp seçin. Ürün laffogato.net&apos;te, uygulamada ve QR menüde hemen
             kapanır; M ve L birlikte kapanır. Ürün gelince aynı kartta <B>Satışa aç</B>. Onay gerekmez, her dokunuş adınızla kaydedilir. Aynı anda en çok{" "}
             {STAFF_SOLD_OUT_MAX} ürün tükendi olabilir. Yöneticinin kapattığı ürünü yönetici açar. Kasada LafPOS kullanılıyorsa ürün en geç 15 dakika içinde
             (gün açıkken) kasada da tükendi görünür; acilse LafPOS&apos;ta da Tükendi işaretleyin.
           </>
         ),
         icon: PackageX,
-        links: [{ href: "/panel/karaoke#tukenenler", label: "Tükenenler" }],
+        links: [{ href: "/panel/siparisler#tukenenler", label: "Tükenenler" }],
       },
       {
         id: "karaoke-sayac",
@@ -362,6 +363,20 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             için hızlı sayacı başlatın; o saatte sitede rezervasyon varsa ekran sorar. Yanlış açılan sayacı ilk {KARAOKE_DELETE_FREE_MINUTES} dakikada
             çöp kutusuyla silersiniz; sonrasında <B>Silinmesini iste</B>: nedenini yazın, yönetici onaylarsa silinir. Bitirdiğiniz, geri açtığınız ve
             sildiğiniz oturum işlem geçmişine adınızla yazılır.
+          </>
+        ),
+        icon: MicVocal,
+      },
+      {
+        id: "karaoke-elle",
+        q: "Telefonla gelen karaoke rezervasyonu ve ödemesi",
+        a: (
+          <>
+            <StaffPath href="/panel/karaoke" /> › <B>Elle ekle</B>: günü, saati, misafirin adını ve kişi sayısını yazın; saatler sitede, uygulamada ve kasada
+            hemen dolu görünür. E-posta yazarsanız misafire onay e-postası, rezervasyona bir günden fazla varsa bir gün kala hatırlatma e-postası gönderilir.
+            Elle eklenen rezervasyonun ödemesi sitede alınmaz: <B>ücreti misafir odaya girmeden önce, kasada alın</B>. Rezervasyon günü sabah ve
+            rezervasyondan 3 saat önce vardiyadakilere e-posta gönderilir; ödemesi alınmamış rezervasyon kırmızıyla yazar. Listede sarı &quot;kasada ödenecek&quot;
+            rozeti ödemenin alınmadığını söyler. Yanlış yazdığınız satırı ilk {KARAOKE_DELETE_FREE_MINUTES} dakikada <B>Kaldır</B> ile silersiniz.
           </>
         ),
         icon: MicVocal,
@@ -494,6 +509,18 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           </>
         ),
         icon: CalendarHeart,
+      },
+      {
+        id: "vardiya",
+        q: "Bu hafta hangi gün, kaçta vardiyam var?",
+        a: (
+          <>
+            <StaffPath href="/panel/vardiya" /> ekranında haftanın planı durur: üstte <B>Benim haftam</B> (gün gün saatleriniz ve haftalık toplam), altında bütün ekip.{" "}
+            <B>Önceki</B> ve <B>Sonraki</B> ile başka haftaya geçin, <B>PDF</B> ile planı açıp telefonunuza kaydedin. Planı yönetici yazar; değişmesi gereken bir gün
+            varsa yöneticiye söyleyin.
+          </>
+        ),
+        icon: CalendarClock,
       },
     ],
   },

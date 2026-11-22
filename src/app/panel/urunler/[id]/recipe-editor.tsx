@@ -256,7 +256,7 @@ export function RecipeEditor({
   site?: ProductSiteInfo | null;
   /** Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md); okunamadıysa kart gösterilmez */
   priceHistory?: ProductPriceHistoryInfo | null;
-  /** Bar ekranının Tükenenler kartıyla kapatıldıysa: "Personel tükendi yaptı · Selin 21:40" (dalga 10 §2.1) */
+  /** Siparişler ekranının Tükenenler kartıyla kapatıldıysa: "Personel tükendi yaptı · Selin 21:40" (dalga 10 §2.1) */
   soldOutNote?: string | null;
 }) {
   const router = useRouter();

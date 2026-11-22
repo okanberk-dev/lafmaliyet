@@ -1011,7 +1011,7 @@ export interface OrdersLite {
 export const ORDERS_FRESH_MS = 30 * 60_000;
 
 export interface CafeLine {
-  key: "yogunluk" | "tatli" | "oda" | "karaoke" | "siradaki" | "siparis" | "tukendi";
+  key: "yogunluk" | "tatli" | "oda" | "karaoke" | "siradaki" | "siparis" | "tukendi" | "vardiya";
   text: string;
   tone: "info" | "warn";
   /** Satırın götürdüğü adres; verilmezse bar ekranı (tahmin satırları bağlantısız) */

@@ -15,7 +15,7 @@ import { clip, type CafeLine, type DayFacts, type DayRow } from "./logic";
 /** Operasyonun Bugün olguları (DayFacts.ops); alanları maddeleriyle gelir, hepsi isteğe bağlı */
 export interface OpsDayFacts {
   /**
-   * Bar ekranının Tükenenler kartıyla kapatılıp hâlâ geçerli kaydı olan ürünler (§2.1): adlar ve kayıtlar (kalem, kim,
+   * Siparişler ekranının Tükenenler kartıyla kapatılıp hâlâ geçerli kaydı olan ürünler (§2.1): adlar ve kayıtlar (kalem, kim,
    * ne zaman; `staff` personelin kapattığı), en eskisi önce. Fiyat yok
    */
   soldOut?: { names: string[]; items: SoldOutFact[] } | null;
@@ -110,11 +110,11 @@ export const checklistYesterday: DayRow = (f, c) => {
 };
 
 /**
- * "Bugün kafede"nin Tükendi satırı (iki rol; §2.1): "Tükendi: Tiramisu, Cheesecake", bar ekranının Tükenenler
- * kartına götürür. Personelin kaydı 16 saatten eskiyse uyarı rengi: "Tiramisu 2 gündür tükendi: geldiyse satışa açın"
+ * "Bugün kafede"nin Tükendi satırı (iki rol; §2.1): "Tükendi: Tiramisu, Cheesecake", Siparişler ekranının
+ * Tükenenler kartına götürür. Personelin kaydı 16 saatten eskiyse uyarı rengi: "Tiramisu 2 gündür tükendi: geldiyse satışa açın"
  * (src/lib/site-menu/sold-out.ts › soldOutLineText). Olgu yoksa satır yok.
  */
 export function soldOutLine(f: DayFacts): CafeLine | null {
   const line = soldOutLineText(f.ops?.soldOut?.items ?? [], f.now);
-  return line ? { key: "tukendi", ...line, href: "/panel/karaoke#tukenenler" } : null;
+  return line ? { key: "tukendi", ...line, href: "/panel/siparisler#tukenenler" } : null;
 }

@@ -108,7 +108,7 @@ async function RecipeContent({
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
   // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
-  // Bar ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
+  // Siparişler ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
   const [prices, priceHistory, soldOut, posDailySales, salesLines] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     loadProductPriceHistory(product.id).catch(() => null),
@@ -200,7 +200,7 @@ async function RecipeContent({
             : null,
       }}
       priceHistory={priceHistory}
-      soldOutNote={soldOut ? `${soldOut.staff ? "Personel tükendi yaptı" : "Bar ekranında tükendi yapıldı"} · ${soldOut.by} ${soldOutWhen(soldOut.at, new Date())}` : null}
+      soldOutNote={soldOut ? `${soldOut.staff ? "Personel tükendi yaptı" : "Siparişler ekranında tükendi yapıldı"} · ${soldOut.by} ${soldOutWhen(soldOut.at, new Date())}` : null}
       priceImpact={
         impact
           ? {

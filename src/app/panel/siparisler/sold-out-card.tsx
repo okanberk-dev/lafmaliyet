@@ -23,7 +23,8 @@ const ROW_LOCK_MS = 1_500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Bar ekranının "Tükenenler" kartı (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Biten ürün
+ * Siparişler ekranının "Tükenenler" kartı (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç; 22 Kasım
+ * 2026'da Karaoke ekranından buraya taşındı: tükenen ürün uygulama siparişinin işi, karaokenin değil). Biten ürün
  * sitede, uygulamada ve QR menüde "Tükendi" yapılır (M ve L birlikte), gelince "Satışa aç". Kartta yalnız bu kartla
  * kapatılıp kaydı hâlâ geçerli ürünler durur; "Tükendi işaretle" penceresi yalnız kapatır. Personel yöneticinin
  * kapattığını açamaz; yönetici her kapalıyı açar ve "Kapalı tut" ile kaydı düşürür. Onay sorulmaz; fiyat yok.

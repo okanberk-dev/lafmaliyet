@@ -6,8 +6,8 @@ import type { PushFailure } from "./push";
 import type { LinkStatus, SiteMenuSlot } from "./slot";
 
 /**
- * Tükendi / Satışa aç (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Bar ekranının "Tükenenler"
- * kartı biten ürünü sitede "Tükendi" yapar (M ve L birlikte: sitede boy boy durum yok), sonra "Satışa aç" ile geri
+ * Tükendi / Satışa aç (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Siparişler ekranının
+ * "Tükenenler" kartı (22 Kasım 2026'ya kadar Karaoke ekranındaydı) biten ürünü sitede "Tükendi" yapar (M ve L birlikte: sitede boy boy durum yok), sonra "Satışa aç" ile geri
  * açar. Personel yalnız sitedeki "Satışta / Tükendi" durumunu değiştirir; fiyata, "Menüde aktif"e, stoğa ve kasaya
  * dokunmaz, yöneticinin kapattığını açamaz.
  *
@@ -328,7 +328,7 @@ export function soldOutBell(items: readonly SoldOutFact[], now: Date): { id: str
     kind: old || burst ? "warning" : "info",
     title: `Tükendi: ${firstNames(staff)}`,
     body: `Personel kapattı: ${staff.map((i) => `${i.by} ${soldOutWhen(i.at, now)}`).join(" · ")}. Sitede, uygulamada ve QR menüde satışta değil.`,
-    href: "/panel/karaoke#tukenenler",
+    href: "/panel/siparisler#tukenenler",
   };
 }
 
