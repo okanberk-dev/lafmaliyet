@@ -63,6 +63,7 @@ import { availableMonths, loadModel, monthParam, resolveMonth } from "@/server/d
 import { loadCashOutInvoiceState } from "@/server/data/cash-out-invoices";
 import { loadCashPlan } from "@/server/data/cash-plan";
 import { tillRows } from "@/server/data/cash-reports";
+import { loadKiyas } from "@/server/data/kiyas";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
@@ -93,6 +94,7 @@ import { monthDays } from "./dashboard-daily";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
+import { KiyasCard } from "./kiyas-card";
 import { debtFacts, defaultTaskMonth, monthCashOuts, monthTaskFacts, monthTasks, overdueNotice, paymentFacts, taskSummary, type MonthTask, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
@@ -208,7 +210,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // (bildirimlerde alerts() olduğu gibi kalır)
   // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür) ve 6
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
-  const [priceAlerts, cashPlan] = await Promise.all([
+  const [priceAlerts, cashPlan, kiyas] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
     // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
@@ -217,6 +219,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           .then((m) => withBranchScope(ALL_BRANCHES, () => loadCashPlan(m, upcoming)))
           .catch(() => null)
       : null,
+    // Kıyas kartı: son kapanmış günün cirosu ve dün / geçen hafta / geçen ay kıyası (seçili şubeyle; okunamazsa çizilmez)
+    loadKiyas(till).catch((e: unknown) => {
+      console.error("[kiyas]", e);
+      return null;
+    }),
   ]);
   const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
@@ -456,6 +463,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             action={paymentNotice.tone === "bad" ? <NoticeLink href="/panel/hatirlaticilar">Ödemelere bak</NoticeLink> : undefined}
           />
         ) : null}
+        {kiyas ? <KiyasCard data={kiyas.data} branchNames={kiyas.branchNames} /> : null}
         {/* 0. Ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
         <DashboardChecklist month={taskMonth} state={taskState} tasks={tasks} />
 

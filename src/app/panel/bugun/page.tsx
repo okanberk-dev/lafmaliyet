@@ -8,10 +8,12 @@ import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { loadBranchDay } from "@/server/data/branch-day";
+import { loadKiyas } from "@/server/data/kiyas";
 import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
 
 import { DashboardPayments } from "../dashboard-payments";
+import { KiyasCard } from "../kiyas-card";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
 import { soldOutLine } from "./rows-ops";
 import { TodayBranches } from "./today-branches";
@@ -51,7 +53,12 @@ function dayTitle(now: Date): string {
 async function TodayContent() {
   const user = await requireUser();
   // Şubelerin günü yalnız yöneticide (tutar, ödeme, kasa farkı); okunamazsa kart çizilmez, sayfa açılır
-  const [data, branchDay] = await Promise.all([loadToday(user), user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null)]);
+  // Kıyas (dün / geçen hafta / geçen ay) da yalnız yöneticide, seçili şubeyle
+  const [data, branchDay, kiyas] = await Promise.all([
+    loadToday(user),
+    user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null),
+    user.role === "admin" ? safe(loadKiyas()) : Promise.resolve(null),
+  ]);
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
@@ -71,6 +78,7 @@ async function TodayContent() {
         <TodayTasks tasks={tasks} admin={user.role === "admin"} />
         <div className="min-w-0 space-y-4">
           {branchDay ? <TodayBranches data={branchDay} /> : null}
+          {kiyas ? <KiyasCard data={kiyas.data} branchNames={kiyas.branchNames} narrow /> : null}
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
           {cafe.length ? <TodayCafe lines={cafe} /> : null}
