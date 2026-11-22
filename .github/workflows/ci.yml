@@ -1,8 +1,8 @@
 # Sürekli entegrasyon: her PR'da ve main'e doğrudan push'ta tip denetimi, ESLint, testler (Excel karşılaştırması
-# dahil, tests/*.test.ts) ve production derlemesi.
+# dahil, tests/*.test.ts), geçici Postgres'te veritabanı testleri (npm run test:db) ve production derlemesi.
 #
 # Derleme `npm run build` ile değil `next build` ile alınır: `npm run build` önce scripts/predeploy.ts ile
-# veritabanına migration uygular ve boşsa Excel verisini yükler; CI hiçbir veritabanına dokunmaz. Aşağıdaki
+# veritabanına migration uygular ve boşsa Excel verisini yükler; CI canlı ya da kalıcı hiçbir veritabanına dokunmaz. Aşağıdaki
 # ortam değişkenleri yalnız yer tutucudur, gerçek sırlar Vercel'de kalır.
 #
 # Squash merge edilen PR'ın ağacı PR'da zaten denendi; main'de "(#N)" başlıklı commit'te iş atlanır (atlanan iş
@@ -32,6 +32,22 @@ jobs:
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci
       AUTH_SECRET: ci-yer-tutucu-oturum-anahtari-canlida-kullanilmaz
       APP_URL: https://ladmin.laffogato.net
+    # Veritabanı testleri için geçici Postgres 16 (yalnız bu iş boyunca yaşar). DATABASE_URL'deki "ci" veritabanı
+    # açılmaz: derleme yine hiçbir veritabanına dokunmaz; testler yalnız TEST_DATABASE_URL'i görür.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
 
@@ -57,6 +73,14 @@ jobs:
 
       - name: Testler
         run: npm test
+
+      # `npm test` veritabanı testlerini atlar (değişkenleri yok); burada hepsi geçici Postgres'te sırayla koşar
+      # (scripts/test-db.ts: migration'lar, tohum, dosya başına süre sınırı).
+      - name: Veritabanı testleri
+        run: npm run test:db
+        env:
+          TEST_DATABASE_URL: postgres://ci:ci@localhost:5432/test
+          TEST_DB_FILE_TIMEOUT_MS: "120000"
 
       - name: Derleme (next build)
         run: npx next build

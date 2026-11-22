@@ -26,6 +26,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+
 const SERVER_URL = process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_lafpos_durum_${process.pid}`;
 const SECRET = "test-secret-0123456789-abcdefghijklmnop";
@@ -94,6 +96,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     const { hashPassword } = await import("../src/server/auth/password");
     for (const k of ["admin", "staff"] as const) {
       const [u] = await db.insert(s.users).values({ email: users[k].email, name: users[k].name, passwordHash: await hashPassword(PASSWORD), role: users[k].role }).returning({ id: s.users.id });
@@ -319,14 +322,21 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
   test("Kasa raporu: LafPOS günü yalnız geçiş gününden sonra okunur; geçiş günü boşken ya da önceki günde hiç okunmaz", async () => {
     await send(push("2026-11-05", 31));
     await send(push("2026-11-09", 35));
-    assert.equal(await kasa.loadKasaLafposDay("2026-11-05", db), null, "geçiş günü yok: deneme günü Kasa'ya girmez");
-    assert.equal(await kasa.loadKasaLafposDay("2026-11-09", db), null);
-    assert.ok(await kasa.loadLafposDay("2026-11-09", db), "veri saklı");
+    // Kasa LafPOS'un şubesinin (Marina) kasasıdır
+    assert.equal(await kasa.loadKasaLafposDay("2026-11-05", db, LAFPOS_SUBE), null, "geçiş günü yok: deneme günü Kasa'ya girmez");
+    assert.equal(await kasa.loadKasaLafposDay("2026-11-09", db, LAFPOS_SUBE), null);
+    assert.ok(await kasa.loadLafposDay("2026-11-09", db, LAFPOS_SUBE), "veri saklı");
     await core.writeLafposSwitchDay(db, users.admin, "2026-11-08", "2026-11-12");
-    assert.equal(await kasa.loadKasaLafposDay("2026-11-05", db), null, "geçiş gününden önce");
-    const day = await kasa.loadKasaLafposDay("2026-11-09", db);
+    assert.equal(await kasa.loadKasaLafposDay("2026-11-05", db, LAFPOS_SUBE), null, "geçiş gününden önce");
+    const day = await kasa.loadKasaLafposDay("2026-11-09", db, LAFPOS_SUBE);
     assert.equal(day?.prefill.values.zNo?.value, "35");
-    assert.equal(await kasa.loadKasaLafposDay("2026-11-10", db), null, "gün gelmedi");
+    assert.equal(await kasa.loadKasaLafposDay("2026-11-10", db, LAFPOS_SUBE), null, "gün gelmedi");
+    assert.deepEqual(await kasa.loadKasaLafpos("2026-11-10", db, LAFPOS_SUBE), { lafpos: true, day: null }, "gün LafPOS günü, gönderimi yok");
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır: Tuzla'nın kasası (şube verilmeyince de o) ModPOS'ta kalır,
+    // Marina'nın gün sonunu görmez
+    assert.deepEqual(await kasa.loadKasaLafpos("2026-11-09", db, MODPOS_SUBE), { lafpos: false, day: null });
+    assert.deepEqual(await kasa.loadKasaLafpos("2026-11-09", db), { lafpos: false, day: null });
+    assert.equal(await kasa.loadLafposDay("2026-11-09", db, MODPOS_SUBE), null);
   });
 
   test("Ayarlar kartının verisi: deneme ve sayılan günler, gelmeyen günler (kapalı gün hariç), eşleşmeyen adlar, ret günü", async () => {

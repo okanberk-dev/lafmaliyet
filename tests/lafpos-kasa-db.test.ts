@@ -5,6 +5,9 @@
 // girilen raporun e-postası yeni anahtarla gider, geç rapor LafPOS'un gün sonuyla fotoğrafsız (gelmediyse yazarkasa Z
 // fotoğrafıyla) girilir ve yöneticinin kartı LafPOS'un teslimini fişsiz saymaz, raporsuz LafPOS günü ay satırına girer.
 //
+// Kasa LafPOS'un şubesinin (Marina, LAFPOS_BRANCH_ID) kasasıdır: testler o şubenin seçiminde çalışır (withBranchScope;
+// panelde seçiciden Marina seçilmiş gibi). Geçiş günü yalnız o kasanındır; Tuzla'nın kasası ModPOS'ta kalır.
+//
 // Ayarlar (geçiş günü, kasa e-postası) veritabanında tektir: test kendi geçici veritabanını açar
 // (LAFPOS_TEST_DATABASE_URL'in sunucusunda), migration'ları uygular, sonunda siler; öteki testlerin verisine dokunmaz.
 //
@@ -20,6 +23,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { ALL_BRANCHES } from "../src/lib/branches";
 import type { CashReportFields } from "../src/lib/cash-report";
 import { CASH_REQUEST_TEXT } from "../src/lib/cash-requests";
 import { CLOSED_TEXT, closedEvidenceText, hasPanelEvidence } from "../src/lib/closed-days";
@@ -27,6 +31,8 @@ import { parsePosDay } from "../src/lib/lafpos/day";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
+
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_lafpos_kasa_${process.pid}`;
@@ -48,6 +54,11 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
   let reports: typeof import("../src/server/data/cash-reports");
   let lafposDay: typeof import("../src/server/data/lafpos-day");
   let lateData: typeof import("../src/server/data/cash-late");
+  let scope: typeof import("../src/server/branch-scope");
+  /** Kasa testi: LafPOS'un şubesinin (Marina) kasasında; okuma ve yazmalar o şubeye bakar */
+  const kasaTest = (name: string, fn: () => Promise<void>) => test(name, () => scope.withBranchScope(LAFPOS_SUBE, fn));
+  /** Aynı okuma ModPOS'ta kalan şubenin (Tuzla) kasasında */
+  const inTuzla = <T>(fn: () => Promise<T>) => scope.withBranchScope(MODPOS_SUBE, fn);
   const users = {
     ali: { id: 0, name: "Ali", role: "admin" as const, email: "lafpos-kasa-ali@ornek.com" },
     ayse: { id: 0, name: "Ayşe", role: "staff" as const, email: "lafpos-kasa-ayse@ornek.com" },
@@ -148,6 +159,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     for (const k of ["ali", "ayse"] as const) {
       const [u] = await db.insert(s.users).values({ email: users[k].email, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -162,6 +174,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     reports = await import("../src/server/data/cash-reports");
     lafposDay = await import("../src/server/data/lafpos-day");
     lateData = await import("../src/server/data/cash-late");
+    scope = await import("../src/server/branch-scope");
     // Resend: yalnız anahtar ve gövde kaydedilir, ağa çıkılmaz
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (!String(input).startsWith("https://api.resend.com/")) return realFetch(input, init);
@@ -191,7 +204,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     sent.length = 0;
   });
 
-  test("geçiş günü boşken LafPOS günü hiçbir kayda girmez: kapalı işaret kalır, kanıt yok, e-posta ve ay rakamı bugünkü gibi", async () => {
+  kasaTest("geçiş günü boşken LafPOS günü hiçbir kayda girmez: kapalı işaret kalır, kanıt yok, e-posta ve ay rakamı bugünkü gibi", async () => {
     const D = "2026-11-10";
     await closedMark(D);
     assert.equal((await push(D, 12)).ok, true);
@@ -220,7 +233,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.match(sent[0].html, /ModPOS Z raporu/);
   });
 
-  test("E-36: geçiş gününden sonra satışlı LafPOS günü kanıt; personelin 'Kafe kapalıydı'sı reddedilir, kırmızı satır tutarsız", async () => {
+  kasaTest("E-36: geçiş gününden sonra satışlı LafPOS günü kanıt; personelin 'Kafe kapalıydı'sı reddedilir, kırmızı satır tutarsız", async () => {
     await setSwitch(S);
     const D = "2026-11-11";
     await push(D, 14);
@@ -234,7 +247,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal((await closed.closedDayEvidence(db, D)).lafpos, null);
   });
 
-  test("E-36: satışlı LafPOS günü bekleyen bildirimi kapatır ve kapalı işareti kaldırır; satışsız ya da geçiş gününden önceki gün dokunmaz", async () => {
+  kasaTest("E-36: satışlı LafPOS günü bekleyen bildirimi kapatır ve kapalı işareti kaldırır; satışsız ya da geçiş gününden önceki gün dokunmaz", async () => {
     await setSwitch(S);
     const D = "2026-11-11";
     const req = await closedReq.proposeClosedDay(db, users.ayse, { date: D, reason: "elektrik yoktu", clientKey: null }, NOW);
@@ -264,7 +277,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal(await marked(D4), true);
   });
 
-  test("E-36 (inceleme): satışlı gün sonundan sonra yöneticinin bilerek koyduğu kapalı işareti yeniden gönderim kaldırmaz", async () => {
+  kasaTest("E-36 (inceleme): satışlı gün sonundan sonra yöneticinin bilerek koyduğu kapalı işareti yeniden gönderim kaldırmaz", async () => {
     await setSwitch(S);
     const D = "2026-11-10";
     // İlk gönderim NOW'da (satışlı); yönetici kanıtı görüp bir saat sonra "Kafe kapalıydı" der
@@ -292,7 +305,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal(await marked(D3), false);
   });
 
-  test("E-09 + E-40: e-posta LafPOS'tan farklı yazılanı söyler; silinip yeniden girilen raporun e-postası yeni anahtarla gider", async () => {
+  kasaTest("E-09 + E-40: e-posta LafPOS'tan farklı yazılanı söyler; silinip yeniden girilen raporun e-postası yeni anahtarla gider", async () => {
     await setSwitch(S);
     const D = "2026-11-11";
     // LafPOS 9.000 saydı; personel 9.350 yazdı
@@ -320,12 +333,26 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.equal(sent[1].key, `cash-${again.id}-r1`);
     assert.notEqual(sent[1].key, sent[0].key);
     assert.doesNotMatch(sent[1].html, /farklı yazılan/, "LafPOS'la aynı yazıldı");
-    // İşlem geçmişinin anahtarı güne göre kalır (son gönderim)
-    const log = await db.select().from(s.notificationLog).where(eq(s.notificationLog.key, `cash:${D}:r1`));
-    assert.equal(log.length, 1);
+    // İşlem geçmişinin anahtarı şubenin gününe göre kalır (son gönderim; Tuzla dışındaki şubede sonunda şube)
+    const logOf = (key: string) => db.select().from(s.notificationLog).where(eq(s.notificationLog.key, key));
+    assert.equal((await logOf(`cash:${D}:r1:${LAFPOS_SUBE}`)).length, 1);
+    assert.equal((await logOf(`cash:${D}:r1`)).length, 0, "Tuzla'nın anahtarı ayrı");
+    // Raporlar LafPOS'un şubesinin kasasında; Tuzla'nın kasası ModPOS'ta kalır: aynı günün Tuzla raporu LafPOS'un gün
+    // sonuyla karşılaştırılmaz, e-postası ModPOS der
+    assert.deepEqual([first.branchId, again.branchId], [LAFPOS_SUBE, LAFPOS_SUBE]);
+    const tuzla = await inTuzla(() => report(D));
+    assert.equal(tuzla.branchId, MODPOS_SUBE);
+    const other = await photos.cashReportExtras(reports.toCashDTO(tuzla));
+    assert.equal(other.kasa, undefined);
+    assert.equal(other.lafposDiffs, undefined);
+    assert.equal((await email.emailReport(tuzla.id, { site: Promise.resolve(null) })).status, "sent");
+    assert.doesNotMatch(sent[2].html, /LafPOS/);
+    assert.match(sent[2].html, /ModPOS Z raporu/);
+    assert.equal((await logOf(`cash:${D}:r1`)).length, 1);
+    assert.equal((await logOf(`cash:${D}:r1:${LAFPOS_SUBE}`)).length, 1, "Marina'nın kaydı ezilmedi");
   });
 
-  test("G8: geç rapor kanıtı günün kasasına göre: ModPOS Z; LafPOS gün sonu (fotoğrafsız); gelmediyse yazarkasa Z", async () => {
+  kasaTest("G8: geç rapor kanıtı günün kasasına göre: ModPOS Z; LafPOS gün sonu (fotoğrafsız); gelmediyse yazarkasa Z", async () => {
     // Zincirin ilk raporu (geç rapor ilk rapordan sonraki günler için)
     await report("2026-10-30", { openingCash: 0 });
     const photo = async (kind: "kasa-z" | "kasa-okc") => {
@@ -342,24 +369,26 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     await setSwitch(S);
     // LafPOS günü gelmedi: yazarkasa Z fotoğrafı
     assert.equal(await lafposDay.kasaEvidence(db, "2026-11-07"), "okc-z");
+    assert.equal(await lafposDay.kasaEvidence(db, "2026-11-07", MODPOS_SUBE), "modpos-z", "Tuzla'nın kasası ModPOS'ta kalır");
     await refused(propose("2026-11-07", [await photo("kasa-z")]), CASH_REQUEST_TEXT.lateOkcPhoto);
     const okc = await propose("2026-11-07", [await photo("kasa-okc")]);
     assert.equal(okc.row.status, "pending");
     // LafPOS günü geldi: fotoğraf gerekmez
     await push("2026-11-08", 13);
     assert.equal(await lafposDay.kasaEvidence(db, "2026-11-08"), "lafpos");
+    assert.equal(await lafposDay.kasaEvidence(db, "2026-11-08", MODPOS_SUBE), "modpos-z", "Marina'nın gün sonu Tuzla'nın kanıtı değil");
     const free = await propose("2026-11-08", []);
     assert.equal(free.row.status, "pending");
     assert.deepEqual(free.row.photoIds, []);
   });
 
-  test("E-35 + E-09: yöneticinin geç rapor kartı LafPOS'un Z'sini ve farkları gösterir, LafPOS'taki teslimi fişsiz saymaz", async () => {
+  kasaTest("E-35 + E-09: yöneticinin geç rapor kartı LafPOS'un Z'sini ve farkları gösterir, LafPOS'taki teslimi fişsiz saymaz", async () => {
     await report("2026-10-30", { openingCash: 0 });
     await setSwitch(S);
     const D = "2026-11-08";
     await push(D, 13, { countedCash: 9_000 });
     // Panelde yalnız 450 ₺'lik fiş; personel LafPOS'un birleşik çıkanını (5.450) yazdı
-    await db.insert(s.cashOuts).values({ date: D, kind: "harcama", amount: 450, store: "Migros", description: "süt", createdBy: users.ayse.id, createdByName: users.ayse.name });
+    await db.insert(s.cashOuts).values({ date: D, branchId: LAFPOS_SUBE, kind: "harcama", amount: 450, store: "Migros", description: "süt", createdBy: users.ayse.id, createdByName: users.ayse.name });
     await late.proposeLateReport(db, users.ayse, { fields: fields(D, { zNo: "13" }), reason: "Akşam internet yoktu", requestVersion: 0, photoIds: [], handedTo: null, clientKey: null }, NOW);
     // LafPOS'u gelmeyen gün (yazarkasa Z fotoğrafıyla)
     const [okcPhoto] = await db
@@ -369,6 +398,7 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     await late.proposeLateReport(db, users.ayse, { fields: fields("2026-11-07", { cashOut: 450 }), reason: "Akşam internet yoktu", requestVersion: 0, photoIds: [okcPhoto.id], handedTo: null, clientKey: null }, NOW);
     const cards = await lateData.lateCards(NOW);
     const card = cards.find((c) => c.date === D)!;
+    assert.equal(card.branchId, LAFPOS_SUBE);
     assert.equal(card.lafpos.lafpos, true);
     assert.ok(card.lafpos.day);
     assert.equal(card.unread, false, "LafPOS'un gün sonu kanıt: okunmamış fotoğraf uyarısı yok");
@@ -396,14 +426,14 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     assert.deepEqual(modpos.lafpos.sameTill, { prev: true, next: true });
     // Teslimin bir kısmı panelde "Teslim" (inceleme D3): 3.000 girildi, kalan 2.000 girilmemiş teslim, fişsiz yok
     await setSwitch(S);
-    await db.insert(s.cashOuts).values({ date: D, kind: "teslim", amount: 3_000, store: null, description: null, createdBy: users.ayse.id, createdByName: users.ayse.name });
+    await db.insert(s.cashOuts).values({ date: D, branchId: LAFPOS_SUBE, kind: "teslim", amount: 3_000, store: null, description: null, createdBy: users.ayse.id, createdByName: users.ayse.name });
     const partial = (await lateData.lateCards(NOW)).find((c) => c.date === D)!;
     assert.equal(partial.outs.lafposHanded, 2_000);
     assert.equal(partial.outs.unreceipted, 0);
     assert.match(plain(partial.outs.warning ?? ""), /o güne kayıtlı kasadan çıkan 3\.450 ₺\. Fark LafPOS'ta olup girilmemiş teslim \(2\.000 ₺\), fişsiz değil/);
   });
 
-  test("inceleme U6: Girilmemiş günler LafPOS gün sonu gelen günü işaretler (fotoğraf gerekmez); geçiş günü boşken hiç", async () => {
+  kasaTest("inceleme U6: Girilmemiş günler LafPOS gün sonu gelen günü işaretler (fotoğraf gerekmez); geçiş günü boşken hiç", async () => {
     await report("2026-10-30", { openingCash: 0 });
     await push("2026-11-08", 13);
     const before = await lateData.staffLateDays(users.ayse, NOW);
@@ -413,9 +443,14 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
     const days = await lateData.staffLateDays(users.ayse, NOW);
     assert.deepEqual(days.filter((d) => d.lafpos).map((d) => d.date), ["2026-11-08"]);
     assert.ok(days.some((d) => d.date === "2026-11-07" && !d.lafpos), "gün sonu gelmeyen LafPOS günü fotoğrafla");
+    // Tuzla'nın kasasında (ModPOS) Marina'nın gün sonu hiçbir günü işaretlemez
+    await inTuzla(() => report("2026-10-30", { openingCash: 0 }));
+    const tuzla = await inTuzla(() => lateData.staffLateDays(users.ayse, NOW));
+    assert.ok(tuzla.some((d) => d.date === "2026-11-08"), "Tuzla'da da girilmemiş gün");
+    assert.deepEqual(tuzla.filter((d) => d.lafpos), []);
   });
 
-  test("G6: raporsuz LafPOS günü ay satırına yedek satırla girer; raporu olan gün rapordan; geçiş günü boşken yok", async () => {
+  kasaTest("G6: raporsuz LafPOS günü ay satırına yedek satırla girer; raporu olan gün rapordan; geçiş günü boşken yok", async () => {
     await setSwitch(S);
     await push("2026-11-09", 12);
     await push("2026-11-10", 13, { zTotal: 6_000, cash: 3_000, card: 3_000, discounts: 120 });
@@ -429,6 +464,11 @@ describe("Kasa raporu LafPOS'la uzlaşır: veritabanında", { skip: !SERVER_URL 
       ],
     );
     assert.equal(rows[1].discounts, 120);
+    assert.deepEqual(rows.map((r) => r.branchId), [LAFPOS_SUBE, LAFPOS_SUBE]);
+    // Tuzla'nın ay satırına Marina'nın LafPOS günü girmez; "Tümü"de Marina'nın satırları
+    assert.deepEqual(await inTuzla(() => reports.tillRows(db)), []);
+    assert.deepEqual(await inTuzla(() => reports.lafposTillRows(db)), []);
+    assert.deepEqual(await scope.withBranchScope(ALL_BRANCHES, () => reports.tillRows(db)), rows);
     assert.deepEqual(
       (await reports.lafposTillRows(db, "2026-11-10", "2026-11-30")).map((r) => r.date),
       ["2026-11-10"],
