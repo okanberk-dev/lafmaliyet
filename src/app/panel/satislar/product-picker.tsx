@@ -113,7 +113,7 @@ export function ProductPicker({
                     <span className="block">maliyet {tl(p.cost, 2)}</span>
                   </span>
                   {current ? (
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-on-solid">
                       <Check size={13} aria-label="Şu anki eşleşme" />
                     </span>
                   ) : null}

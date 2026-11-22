@@ -12,7 +12,8 @@ export function Card({ className, variant = "panel", ...props }: ComponentProps<
     <section
       className={cn(
         "flex flex-col rounded-3xl",
-        variant === "panel" ? "bg-panel" : "bg-surface ring-1 ring-line-strong",
+        // Koyu temada kartlar kenarlıksız, tonla ayrılır (docs/KOYU-TEMA.md)
+        variant === "panel" ? "bg-panel" : "bg-surface ring-1 ring-line-strong dark:ring-0",
         className,
       )}
       {...props}

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+
+import { Figure } from "./misc";
 
 /**
  * AkmanOS "Gauge" (src/components/akmanos/gauge): yarım dairede yuvarlak uçlu çubuklar, siyahtan griye
@@ -13,6 +15,16 @@ const GRADIENTS = {
   brand: ["#171717", "#a1a1aa"],
   warn: ["#c2410c", "#fdba74"],
   bad: ["#dc2626", "#fca5a5"],
+} as const;
+
+/**
+ * Koyu tema (docs/KOYU-TEMA.md): buz mavisinden mavi-griye, uyarıda kehribar, kötüde mercan. Açık renk öznitelikte
+ * kalır (açık tema aynı); koyu renk `--gd` değişkeninde, `dark:stroke-(--gd)` sınıfı özniteliği ezer.
+ */
+const DARK_GRADIENTS = {
+  brand: ["#bce1ff", "#4a5562"],
+  warn: ["#f2b451", "#6b5330"],
+  bad: ["#ff8278", "#6e3a35"],
 } as const;
 
 /** Sunucu ve tarayıcı aynı sayıyı yazsın diye (hidrasyon) koordinatlar iki basamağa yuvarlanır */
@@ -79,6 +91,7 @@ export function Gauge({
   const filled = progress * ticks;
   const active = Math.max(0, Math.ceil(filled));
   const [from, to] = GRADIENTS[tone];
+  const [darkFrom, darkTo] = DARK_GRADIENTS[tone];
   const ta = target !== undefined ? Math.PI * (1 + Math.max(0, Math.min(1, target))) : null;
   const h = r2(size * 0.56);
 
@@ -90,7 +103,7 @@ export function Gauge({
           const len = r2(Math.hypot(b.x2 - b.x1, b.y2 - b.y1));
           return (
             <g key={b.i}>
-              <line x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} strokeWidth={7} strokeLinecap="round" stroke="#e4e4e7" />
+              <line x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} strokeWidth={7} strokeLinecap="round" stroke="#e4e4e7" className="dark:stroke-panel-deep" />
               {f > 0 ? (
                 <line
                   x1={b.x1}
@@ -100,6 +113,8 @@ export function Gauge({
                   strokeWidth={7}
                   strokeLinecap="round"
                   stroke={mix(from, to, active <= 1 ? 0 : b.i / (active - 1))}
+                  style={{ "--gd": mix(darkFrom, darkTo, active <= 1 ? 0 : b.i / (active - 1)) } as CSSProperties}
+                  className="dark:stroke-(--gd)"
                   strokeDasharray={len}
                   strokeDashoffset={r2(len * (1 - f))}
                 />
@@ -114,13 +129,16 @@ export function Gauge({
             x2={r2(cx + (outer + 8) * Math.cos(ta))}
             y2={r2(cy + (outer + 8) * Math.sin(ta))}
             stroke="#e8590c"
+            className="dark:stroke-(--viz-target)"
             strokeWidth={3}
             strokeLinecap="round"
           />
         ) : null}
       </svg>
       <div className="pointer-events-none absolute inset-x-0 top-[58%] flex justify-center">
-        <span className="text-3xl leading-none font-semibold tracking-tight text-ink tabular">{display}</span>
+        <span className="text-3xl leading-none font-semibold tracking-tight text-ink tabular dark:font-normal">
+          <Figure>{display}</Figure>
+        </span>
       </div>
       <p className="mt-1 text-center text-[13px] font-medium text-ink-mute">{label}</p>
     </div>

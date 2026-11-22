@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Koyu tema `dark:` öneki: işletim sisteminin tercihine değil <html class="dark">'a bağlı (seçim Sistem / Açık / Koyu,
+   src/lib/theme.ts). Açık temada hiçbir dark: sınıfı devreye girmez; baskıda da (kâğıt hep açık tema). */
+@custom-variant dark {
+  @media screen {
+    &:where(.dark, .dark *) {
+      @slot;
+    }
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    L'Affogato yönetim paneli: tasarım dili (docs/TASARIM.md)
 
@@ -101,10 +111,188 @@
   --color-warn-ink: #9a3412;
   --color-note: rgb(23 23 23 / 0.045); /* beyazda #f5f5f5, panelde #eaeaeb gibi; ikisinde de ayrışır */
 
+  /* Koyu temayla gelen adlar (docs/KOYU-TEMA.md). Açık temadaki değerleri eskisiyle aynı: bg-primary = bg-ink,
+     text-on-solid = text-white; görünüm değişmez. */
+  --color-primary: #171717; /* sayfanın ana eylemi (Button primary, Fab); koyuda L'Affogato yeşili */
+  --color-on-primary: #ffffff;
+  --color-on-solid: #ffffff; /* dolu zemin (bg-ink, bg-bad, bg-warn, bg-good) üstündeki yazı; koyuda zemin açılır, yazı kararır */
+  --color-ink-faint: #a1a1aa; /* yalnız koyuda: büyük rakamın kuruşu (Figure); açıkta kullanılmaz */
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
   --shadow-lift: 0 4px 14px rgb(0 0 0 / 0.08);
   --shadow-float: 0 12px 40px rgb(0 0 0 / 0.14);
+}
+
+/* Grafik renkleri (src/components/charts.tsx, ui/gauge.tsx): SVG özniteliği değişken okur, koyuda aşağıda değişir.
+   Açık temadaki değerler grafiklerin eski sabitleriyle aynı. */
+:root {
+  --viz-1: #2563eb; /* ciro */
+  --viz-2: #e8590c; /* gider */
+  --viz-3: #16a34a; /* kâr */
+  --viz-4: #71717a; /* nötr bölge (menü matrisi "Zayıf") */
+  --viz-grid: #e4e4e7;
+  --viz-axis: #d4d4d8;
+  --viz-muted: #a1a1aa;
+  --viz-ink: #171717;
+  --viz-dot: #ffffff; /* noktanın çevresindeki boşluk halkası */
+  --viz-cursor: rgb(0 0 0 / 0.04);
+  --viz-target: #e8590c; /* göstergede hedef işareti */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Koyu tema: finans paneli görünümü (docs/KOYU-TEMA.md)
+
+   Sayfa neredeyse siyah (#050302), kartlar sıcak koyu gri (#1E1C1B), kart içindeki kontrol / kuyu / ikon kutusu bir ton
+   açık (#2B2928). Kartlar kenarlıksız ve gölgesiz, tonla ayrılır. Metin beyaz, ikincil #A8A5A2; gövde metni olan her
+   belirteç üç zeminde de en az 4,5:1 (tests/koyu-tema.test.ts ölçer). Grafik ve bilgi vurgusu buz mavisi (#BCE1FF),
+   ikinci seri mavi-gri; olumlu ve ana eylem L'Affogato yeşilinin açığı; düşüş mercan, uyarı kehribar. Mor / bordo yok.
+   Yalnız ekranda: baskı açık temayla çıkar.
+   ───────────────────────────────────────────────────────────── */
+@media screen {
+  html.dark {
+    color-scheme: dark;
+
+    /* AkmanOS adları */
+    --background: #050302;
+    --foreground: #ffffff;
+    --muted: #a8a5a2;
+    --border: #2e2c2b;
+    --chart-bg: #383533; /* açılır menüde üzerine gelinen satır (menü #2B2928) */
+    --chart-metric-bg: #2b2928;
+    --chart-card-bg: #1e1c1b;
+    --chart-muted: #a8a5a2;
+
+    /* Zeminler */
+    --color-canvas: #050302;
+    --color-surface: #2b2928;
+    --color-panel: #1e1c1b;
+    --color-panel-deep: #3a3735;
+    --color-cream: #141211;
+
+    /* Mürekkep */
+    --color-ink: #ffffff;
+    --color-ink-soft: #d6d3d0;
+    --color-ink-mute: #a8a5a2;
+    --color-ink-quiet: #94918e; /* koyuda gövde metni olarak da kullanıldığı için 4,5:1 */
+    --color-ink-faint: #7a7774; /* yalnız kuruş / ek: büyük rakamın yanında, en az 3:1 */
+    --color-line: rgb(255 255 255 / 0.08);
+    --color-line-strong: #3a3836;
+    --color-on-solid: #0b0a09;
+    --color-primary: #5fcf98;
+    --color-on-primary: #04140c;
+
+    /* Marka yeşili: koyuda ölçek ters döner (50 en koyu) */
+    --color-brand-50: #10241a;
+    --color-brand-100: #153023;
+    --color-brand-200: #1d4030;
+    --color-brand-300: #2f6b4f;
+    --color-brand-400: #3f9a6f;
+    --color-brand-500: #5fcf98;
+    --color-brand-600: #7ad9a9;
+    --color-brand-700: #9fe4c1;
+    --color-brand-800: #c3eed8;
+    --color-brand-900: #e2f7ec;
+
+    /* Turuncu (brass): koyuda kehribar */
+    --color-brass-50: #2a1f10;
+    --color-brass-100: #3a2a14;
+    --color-brass-200: #4d3818;
+    --color-brass-300: #8a6224;
+    --color-brass-500: #f2a950;
+    --color-brass-700: #f6bd6e;
+    --color-brass-800: #f9cf92;
+    --color-brass-900: #fde3bd;
+
+    /* Eski adı bordo (açıkta mor): koyuda mor yok, mavi-gri aileye çekilir */
+    --color-bordo-50: #1c232b;
+    --color-bordo-600: #7e8fa3;
+    --color-bordo-800: #c4d0dc;
+
+    /* Durum */
+    --color-good: #72d6a3;
+    --color-good-soft: #183326;
+    --color-good-ink: #bdf2d5;
+    --color-lime: #24513a; /* açıkta limon; koyuda koyu yeşil zemin, üstünde good-ink */
+    --color-warn: #f2b451;
+    --color-warn-soft: #33260f;
+    --color-bad: #ff8278;
+    --color-bad-soft: #3a1b18;
+    --color-info: #bce1ff;
+    --color-info-soft: #1b2836;
+    --color-bad-ink: #ffbcb5;
+    --color-warn-ink: #ffd796;
+    --color-note: rgb(255 255 255 / 0.05);
+
+    /* Kartlar gölgesiz; yalnız yüzen katman (menü, pencere) koyu gölge alır */
+    --shadow-soft: 0 0 #0000;
+    --shadow-lift: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-float: 0 12px 40px rgb(0 0 0 / 0.6);
+
+    /* Grafikler: ızgara çok soluk, eksen küçük gri, ilk seri buz mavisi */
+    --viz-1: #bce1ff;
+    --viz-2: #7e8fa3;
+    --viz-3: #72d6a3;
+    --viz-4: #58616b;
+    --viz-grid: #2a2827;
+    --viz-axis: #3a3836;
+    --viz-muted: #94918e;
+    --viz-ink: #d6d3d0;
+    --viz-dot: #1e1c1b;
+    --viz-cursor: rgb(255 255 255 / 0.05);
+    --viz-target: #f2b451;
+  }
+
+  /* AkmanOS bileşen kapsamları kendi değişkenlerini yeniden yazıyor (aşağıda): koyuda onların karşılığı */
+  html.dark [data-component] {
+    --chart-muted: #a8a5a2;
+  }
+
+  html.dark [data-component="recent-activity"] {
+    --activity-link: #bce1ff;
+    --chart-card-bg: #2b2928;
+    --foreground: #ffffff;
+  }
+
+  html.dark [data-component="gauge"] {
+    --gauge-gradient-start: #bce1ff;
+    --gauge-gradient-end: #3c4045;
+    --gauge-track: #3a3735;
+  }
+
+  /* Giriş, parola ve davet kartı (src/app/giris/auth-ui.tsx › authCard): kart siyah / beyaz sınıflarla yazılı
+     (text-black/70, border-black/35, bg-white); koyuda kartın içinde siyah ile beyaz yer değiştirir. Yeşil ve kırmızı
+     sınıfların koyu karşılığı dosyada (dark:). Sayfa zemini #050302. */
+  html.dark .auth-card {
+    --color-black: #ffffff;
+    --color-white: #1e1c1b;
+  }
+
+  /* Bildirim balonları (sonner açık temada çalışır): koyuda yükseltilmiş yüzey */
+  html.dark [data-sonner-toaster][data-sonner-theme="light"] {
+    --normal-bg: #2b2928;
+    --normal-border: #3a3836;
+    --normal-text: #ffffff;
+    --gray1: #2b2928;
+    --gray2: #343130;
+    --gray4: #3a3836;
+    --gray5: #45423f;
+    --gray12: #ffffff;
+  }
+
+  /* Büyük rakamlar (KPI, özet tutarları): koyuda ince-normal ağırlık, hiyerarşi boyutla (docs/KOYU-TEMA.md) */
+  html.dark :is(.text-xl, .text-2xl, .text-3xl, .text-4xl).tabular:is(.font-semibold, .font-bold) {
+    font-weight: 400;
+  }
+
+  html.dark ::selection {
+    background: rgb(188 225 255 / 0.35);
+    color: #ffffff;
+  }
+
+  html.dark :where(a, button, [role="button"], summary):focus-visible,
+  html.dark :where(input, select, textarea):focus-visible {
+    outline-color: rgb(255 255 255 / 0.5);
+  }
 }
 
 html {

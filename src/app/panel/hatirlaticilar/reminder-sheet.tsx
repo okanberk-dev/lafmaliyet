@@ -244,7 +244,7 @@ export function ReminderSheet({
             onClick={() => choose("ozel")}
             className="flex h-full min-h-[7.5rem] w-full cursor-pointer flex-col items-start gap-2 rounded-2xl bg-surface p-3 text-left ring-1 ring-line-strong ring-inset transition-[box-shadow,transform] hover:ring-ink/25 focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none active:scale-[0.98]"
           >
-            <span className="flex size-9 items-center justify-center rounded-[10px] bg-ink text-white" aria-hidden="true">
+            <span className="flex size-9 items-center justify-center rounded-[10px] bg-ink text-on-solid" aria-hidden="true">
               <Sparkles size={17} />
             </span>
             <span>
@@ -435,7 +435,7 @@ function FormSheet({
                   onClick={() => setRepeat(r.value)}
                   className={cn(
                     "h-11 cursor-pointer rounded-xl px-2 text-[13px] font-medium ring-1 transition-colors ring-inset focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:outline-none sm:pointer-fine:h-10",
-                    on ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong hover:text-ink",
+                    on ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-mute ring-line-strong hover:text-ink",
                   )}
                 >
                   {r.label}

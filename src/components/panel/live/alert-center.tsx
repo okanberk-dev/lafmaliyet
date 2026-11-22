@@ -651,12 +651,12 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
         <div role="alert" ref={reserveAlarmSpace} className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
           <div className="mx-auto max-w-3xl space-y-2">
             {overtime.map((s) => (
-              <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
+              <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-on-solid shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
                 <BellRing size={20} className="shrink-0 motion-safe:animate-bounce" aria-hidden="true" />
                 {/* Metnin tabanı var (basis-56): dar ekranda düğmeler metnin altına iner, metin sütunu daralıp satır satır kırılmaz */}
                 <div className="min-w-0 flex-1 basis-56">
                   <p className="font-semibold">Karaoke süresi doldu: {sessionName(s)}</p>
-                  <p className="text-[13px] text-white/85 tabular">
+                  <p className="text-[13px] text-on-solid/85 tabular">
                     {s.guests ? `${s.guests} kişi · ` : ""}
                     Bitiş {trClock(sessionEnd(s)).time} · {Math.max(0, Math.round((now - sessionEnd(s)) / 60_000))} dk geçti. Gruba haber verin.
                   </p>
@@ -666,7 +666,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
                     type="button"
                     disabled={busy === s.id}
                     onClick={() => void extend(s, 15)}
-                    className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-xl bg-white/15 px-3 text-sm font-medium hover:bg-white/25 disabled:opacity-60"
+                    className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-xl bg-on-solid/15 px-3 text-sm font-medium hover:bg-on-solid/25 disabled:opacity-60"
                   >
                     <Plus size={15} aria-hidden="true" /> 15 dk
                   </button>
@@ -674,7 +674,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
                     type="button"
                     disabled={busy === s.id}
                     onClick={() => void acknowledge(s)}
-                    className="inline-flex h-11 cursor-pointer items-center rounded-xl bg-white px-4 text-sm font-semibold text-bad hover:bg-white/90 disabled:opacity-60"
+                    className="inline-flex h-11 cursor-pointer items-center rounded-xl bg-on-solid px-4 text-sm font-semibold text-bad hover:bg-on-solid/90 disabled:opacity-60"
                   >
                     Haber verdim
                   </button>

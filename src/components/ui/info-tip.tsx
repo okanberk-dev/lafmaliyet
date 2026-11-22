@@ -103,7 +103,7 @@ export function InfoTip({ text, className, tone, label }: { text: ReactNode; cla
                   transition={{ duration: 0.14 }}
                   style={{ left: pos.x, top: pos.y }}
                   className={cn(
-                    "pointer-events-none fixed z-[200] w-64 max-w-[80vw] -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-left text-xs leading-relaxed font-normal tracking-normal whitespace-normal text-white normal-case shadow-[0_12px_40px_rgba(0,0,0,0.18)]",
+                    "pointer-events-none fixed z-[200] w-64 max-w-[80vw] -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-left text-xs leading-relaxed font-normal tracking-normal whitespace-normal text-on-solid normal-case shadow-[0_12px_40px_rgba(0,0,0,0.18)]",
                     pos.below ? "" : "-translate-y-full",
                   )}
                 >

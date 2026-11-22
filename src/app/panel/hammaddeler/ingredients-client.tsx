@@ -545,7 +545,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         <div className="contents max-sm:hidden">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Görünüm">
           <FilterChip active={chosen === "tahmini"} onToggle={() => pick("tahmini")} count={counts.tahmini}>
-            <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
+            <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-on-solid/70")} aria-hidden="true" />
             Tahmini
           </FilterChip>
           {unpricedChip ? (
@@ -594,7 +594,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             </FilterChip>
             <FilterChip active={chosen === "tahmini"} onToggle={() => pick("tahmini")} count={counts.tahmini} className={SHEET_CHIP}>
               <span className="inline-flex min-w-0 items-center gap-1.5">
-                <span className={cn("size-2 shrink-0 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
+                <span className={cn("size-2 shrink-0 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-on-solid/70")} aria-hidden="true" />
                 Tahmini
               </span>
             </FilterChip>

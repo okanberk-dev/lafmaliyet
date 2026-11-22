@@ -80,3 +80,43 @@
   outline: 2px solid rgb(23 23 23 / 0.3);
   outline-offset: 2px;
 }
+
+/*
+ * Koyu tema (docs/KOYU-TEMA.md): <html class="dark" data-theme="dark">. Grafik kuyunun tonunda (#2B2928), ızgara çok
+ * soluk, eksen küçük gri, ilk seri ve çubuklar buz mavisi; ikinci seri mavi-gri, kâr yeşil. Mor yok (4. seri gri-mavi).
+ * Arc'ın kendi koyu kuralları (bar-chart.module.css › [data-theme="dark"]) çubuğu daha açık karıştırır.
+ */
+@media screen {
+  html.dark .arc {
+    color-scheme: dark;
+    --background: #050302;
+    --surface: #2b2928;
+    --surface-raised: #2b2928;
+    --surface-muted: #1e1c1b;
+    --foreground: #ffffff;
+    --text-secondary: #d6d3d0;
+    --text-muted: #a8a5a2;
+    --border: #2f2d2c;
+    --border-subtle: #1e1c1b;
+    --border-strong: #3a3836;
+    --accent: #bce1ff;
+    --accent-strong: #e2f1ff;
+    --accent-subtle: rgb(188 225 255 / 0.12);
+    --accent-foreground: #0b0a09;
+    --success: #72d6a3;
+    --warning: #f2b451;
+    --danger: #ff8278;
+    --info: #bce1ff;
+    --series-1: #bce1ff;
+    --series-2: #7e8fa3;
+    --series-3: #72d6a3;
+    --series-4: #58616b;
+    --shadow-resting: 0 0 #0000;
+    --shadow-raised: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-floating: 0 12px 40px rgb(0 0 0 / 0.6);
+  }
+
+  html.dark .arc :focus-visible {
+    outline-color: rgb(255 255 255 / 0.5);
+  }
+}

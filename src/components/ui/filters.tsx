@@ -217,12 +217,12 @@ export function FilterChip({
       onClick={onToggle}
       className={cn(
         "inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap ring-1 transition-colors ring-inset pointer-coarse:h-11",
-        active ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
+        active ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
         className,
       )}
     >
       {children}
-      {count !== undefined ? <span className={cn("tabular", active ? "text-white/70" : "text-ink-quiet")}>{count}</span> : null}
+      {count !== undefined ? <span className={cn("tabular", active ? "text-on-solid/70" : "text-ink-quiet")}>{count}</span> : null}
     </button>
   );
 }

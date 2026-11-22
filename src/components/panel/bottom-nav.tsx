@@ -172,16 +172,17 @@ export function BottomNav({
                       layoutId="mobile-nav-pill"
                       aria-hidden="true"
                       transition={reduce ? { duration: 0 } : SPRING_SWAP}
-                      className="pointer-events-none absolute inset-0 rounded-full bg-chart-bg"
+                      className="pointer-events-none absolute inset-0 rounded-full bg-chart-bg dark:bg-ink"
                     />
                   ) : null}
-                  <span className="relative z-10">
+                  {/* Koyu temada etkin sekme beyaz hap, ikonu koyu (docs/KOYU-TEMA.md) */}
+                  <span className={cn("relative z-10", on && "dark:text-on-solid")}>
                     <Icon icon={item.icon} size="lg" />
                   </span>
                   {showBadge ? (
                     <span
                       aria-hidden="true"
-                      className="absolute -top-1 right-1.5 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[10px] leading-none font-semibold text-white tabular ring-2 ring-background"
+                      className="absolute -top-1 right-1.5 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[10px] leading-none font-semibold text-on-solid tabular ring-2 ring-background"
                     >
                       {badge}
                     </span>
@@ -189,7 +190,7 @@ export function BottomNav({
                   {showOrders ? (
                     <span
                       aria-hidden="true"
-                      className="absolute -top-1 right-1.5 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warn px-1 text-[10px] leading-none font-semibold text-white tabular ring-2 ring-background"
+                      className="absolute -top-1 right-1.5 z-20 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warn px-1 text-[10px] leading-none font-semibold text-on-solid tabular ring-2 ring-background"
                     >
                       {ordersBadge}
                     </span>

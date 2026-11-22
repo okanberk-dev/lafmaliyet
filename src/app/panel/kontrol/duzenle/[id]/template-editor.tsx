@@ -347,7 +347,7 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
                 className={cn(
                   "flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-left text-[13px] font-medium ring-1 ring-inset transition-colors",
                   "focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none",
-                  type === k ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink",
+                  type === k ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink",
                 )}
               >
                 {TYPE_ICON[k]} {ITEM_TYPE_LABEL[k]}

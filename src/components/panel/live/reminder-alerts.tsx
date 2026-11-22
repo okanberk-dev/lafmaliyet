@@ -304,16 +304,16 @@ function ReminderDock({
       aria-label="Yapılmamış hatırlatmalar"
       className="no-print fixed right-3 bottom-[calc(var(--mobile-nav-space,0px)+0.75rem)] left-3 z-[35] in-data-[keyboard=open]:hidden sm:left-auto sm:w-[23rem] lg:right-6 lg:bottom-6"
     >
-      <div className="reminder-nudge overflow-hidden rounded-2xl bg-ink text-white shadow-[0_12px_40px_rgba(0,0,0,0.3)] ring-2 ring-warn">
+      <div className="reminder-nudge overflow-hidden rounded-2xl bg-ink text-on-solid shadow-[0_12px_40px_rgba(0,0,0,0.3)] ring-2 ring-warn">
         {!single || anyRinging ? (
-          <div className="flex items-center gap-2.5 border-b border-white/10 px-3.5 py-2.5">
+          <div className="flex items-center gap-2.5 border-b border-on-solid/10 px-3.5 py-2.5">
             <BellTile />
             <p className="min-w-0 flex-1 text-[13px] font-semibold">{single ? "Hatırlatma bekliyor" : `${items.length} hatırlatma bekliyor`}</p>
             {anyRinging ? (
               <button
                 type="button"
                 onClick={onSilence}
-                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] bg-white/15 px-3 text-[13px] font-medium hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none pointer-coarse:h-11"
+                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] bg-on-solid/15 px-3 text-[13px] font-medium hover:bg-on-solid/25 focus-visible:ring-2 focus-visible:ring-on-solid/60 focus-visible:outline-none pointer-coarse:h-11"
               >
                 <VolumeX size={14} aria-hidden="true" /> Sesi kes
               </button>
@@ -330,10 +330,10 @@ function ReminderDock({
                   type="button"
                   onClick={() => onOpen(r)}
                   title="Ayrıntı ve erteleme"
-                  className="min-w-0 flex-1 cursor-pointer rounded-lg text-left focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
+                  className="min-w-0 flex-1 cursor-pointer rounded-lg text-left focus-visible:ring-2 focus-visible:ring-on-solid/60 focus-visible:outline-none"
                 >
                   <span className="block truncate text-[15px] font-semibold">{r.title}</span>
-                  <span className="block truncate text-[12px] text-white/70 tabular">
+                  <span className="block truncate text-[12px] text-on-solid/70 tabular">
                     {whenLabel(r, date)} · {sinceLabel(due, now)}
                     {r.createdByName ? ` · ${r.createdByName} kurdu` : ""}
                   </span>
@@ -353,7 +353,7 @@ function ReminderDock({
 /** Turuncu zil karosu; arkasındaki halka yayılarak dikkat çeker (hareket azaltılmışsa durur) */
 function BellTile() {
   return (
-    <span aria-hidden="true" className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-warn text-white">
+    <span aria-hidden="true" className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-warn text-on-solid">
       <span className="absolute inset-0 rounded-full bg-warn opacity-60 motion-safe:animate-ping" />
       <BellRing size={17} className="relative" />
     </span>

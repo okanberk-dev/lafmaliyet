@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
  */
 // Dar ekranda yatay kayar; kaydırma çubuğu gizli, taşan kenar solarak belli olur
 const track =
-  "inline-flex max-w-full items-center gap-0.5 overflow-x-auto overscroll-x-contain rounded-xl bg-panel p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+  "inline-flex max-w-full items-center gap-0.5 overflow-x-auto overscroll-x-contain rounded-xl bg-panel p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:rounded-full dark:bg-surface";
+// Koyu temada (docs/KOYU-TEMA.md) ray tam yuvarlak #2B2928, seçili seçenek beyaz hap, yazısı koyu (aria-checked /
+// aria-current: Highlight'ın üstündeki yazı ve sayaç)
 const item =
-  "relative inline-flex h-8 pointer-coarse:h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20";
+  "relative inline-flex h-8 pointer-coarse:h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20 dark:rounded-full dark:aria-checked:text-on-solid dark:aria-[current=page]:text-on-solid";
 
 const FADE = "1.5rem";
 
@@ -64,13 +66,13 @@ function Highlight({ id }: { id: string }) {
       layoutId={id}
       aria-hidden="true"
       transition={reduce ? { duration: 0 } : SPRING_SWAP}
-      className="pointer-events-none absolute inset-0 rounded-[10px] bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_rgb(0_0_0/0.04)]"
+      className="pointer-events-none absolute inset-0 rounded-[10px] bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_rgb(0_0_0/0.04)] dark:rounded-full dark:bg-ink dark:shadow-none"
     />
   );
 }
 
 function Count({ n }: { n: number }) {
-  return <span className="relative z-10 text-ink-quiet tabular">{n}</span>;
+  return <span className="relative z-10 text-ink-quiet tabular in-aria-checked:dark:text-on-solid/60 in-aria-[current=page]:dark:text-on-solid/60">{n}</span>;
 }
 
 export function Segmented<T extends string>({

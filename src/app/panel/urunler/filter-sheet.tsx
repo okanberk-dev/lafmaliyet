@@ -39,7 +39,7 @@ export function FilterSheetButton({ count, onClick, className }: { count: number
       <SlidersHorizontal size={16} aria-hidden="true" />
       Süzgeç
       {count ? (
-        <span className="-mr-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] leading-none font-semibold text-white tabular" aria-hidden="true">
+        <span className="-mr-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] leading-none font-semibold text-on-solid tabular" aria-hidden="true">
           {count}
         </span>
       ) : null}
@@ -162,7 +162,7 @@ export function FilterSheet({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-0 mt-auto h-fit max-h-full w-full max-w-full overflow-visible border-0 bg-transparent p-0 text-ink backdrop:bg-ink/25 backdrop:backdrop-blur-[2px] sm:mx-auto sm:max-w-lg"
+      className="m-0 mt-auto h-fit max-h-full w-full max-w-full overflow-visible border-0 bg-transparent p-0 text-ink backdrop:bg-ink/25 backdrop:backdrop-blur-[2px] dark:backdrop:bg-black/60 sm:mx-auto sm:max-w-lg"
     >
       {open ? (
         <motion.div

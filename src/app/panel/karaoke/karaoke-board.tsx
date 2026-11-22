@@ -367,7 +367,7 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
               }}
               className={cn(
                 "flex h-12 cursor-pointer flex-col items-center justify-center rounded-xl text-sm font-semibold ring-1 transition-colors ring-inset",
-                !custom && minutes === m ? "bg-ink text-white ring-ink" : "bg-surface text-ink ring-line-strong hover:ring-ink/30",
+                !custom && minutes === m ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink ring-line-strong hover:ring-ink/30",
               )}
             >
               {m < 60 ? `${m} dk` : m % 60 ? `${Math.floor(m / 60)},5 sa` : `${m / 60} sa`}

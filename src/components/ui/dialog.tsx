@@ -217,7 +217,7 @@ export function Dialog({
         downOnBackdrop.current = false;
       }}
       className={cn(
-        "m-auto w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] rounded-3xl bg-surface p-0 text-ink shadow-[0_12px_40px_rgba(0,0,0,0.14)] backdrop:bg-ink/20 backdrop:backdrop-blur-[2px]",
+        "m-auto w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] rounded-3xl bg-surface p-0 text-ink shadow-[0_12px_40px_rgba(0,0,0,0.14)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop:bg-ink/20 backdrop:backdrop-blur-[2px] dark:backdrop:bg-black/60",
         width,
         // Telefonda alttan açılan sayfa. iOS'ta ekran klavyesi düzeni küçültmez: sayfa klavyenin üstüne çıkar
         // (--keyboard-inset) ve görünür alana sığar (--vvh); ikisi de bottom-nav.tsx'te yazılır, yoksa 0 / 100dvh.

@@ -103,7 +103,7 @@ export function CalendarView({
                     <span
                       className={cn(
                         "flex size-7 shrink-0 items-center justify-center self-center rounded-full text-[13px] font-medium tabular sm:self-start",
-                        isToday ? "bg-ink text-white" : outside ? "text-ink-quiet" : "text-ink",
+                        isToday ? "bg-ink text-on-solid" : outside ? "text-ink-quiet" : "text-ink",
                       )}
                     >
                       {Number(date.slice(8, 10))}

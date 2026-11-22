@@ -10,7 +10,8 @@ import type { PastelTone } from "./icon-tile";
  * sağda zaman/değer, altında açıklama, karodan sonra başlayan ince ayırıcı, önemli öğede mavi nokta.
  * Ton sırası icon-tile ile aynı: 0 yeşil · 1 turuncu · 2 mavi · 3 kırmızı · 4 mor · 5 gök.
  */
-const WELLS = ["bg-[#30d158]", "bg-[#ff9f0a]", "bg-[#0a84ff]", "bg-[#ff375f]", "bg-[#bf5af2]", "bg-[#64d2ff]"] as const;
+// Koyu temada (docs/KOYU-TEMA.md) pembe-kırmızı mercana, mor mavi-griye döner (koyuda mor / bordo yok)
+const WELLS = ["bg-[#30d158]", "bg-[#ff9f0a]", "bg-[#0a84ff]", "bg-[#ff375f] dark:bg-[#ef5b4f]", "bg-[#bf5af2] dark:bg-[#5f7186]", "bg-[#64d2ff]"] as const;
 
 export function ActivityList({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -65,7 +66,7 @@ export function ActivityItem({
         {description ? <span className={cn("mt-0.5 block text-[13px] leading-[1.35] text-ink-mute", !wrap && "line-clamp-2")}>{description}</span> : null}
       </span>
       {dot ? (
-        <span role="img" aria-label={dot === "danger" ? "Acil" : "Önemli"} className={cn("mt-2 size-2 shrink-0 rounded-full", dot === "danger" ? "bg-bad" : "bg-[#007aff]")} />
+        <span role="img" aria-label={dot === "danger" ? "Acil" : "Önemli"} className={cn("mt-2 size-2 shrink-0 rounded-full", dot === "danger" ? "bg-bad" : "bg-[#007aff] dark:bg-info")} />
       ) : null}
     </>
   );

@@ -327,7 +327,7 @@ export function WasteBoard({
                 onClick={() => setReason(reason === r ? null : r)}
                 className={cn(
                   "cursor-pointer rounded-full px-3 py-1.5 text-[13px] font-medium ring-1 transition-colors pointer-coarse:py-2.5",
-                  reason === r ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line hover:text-ink",
+                  reason === r ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-soft ring-line hover:text-ink",
                 )}
               >
                 {r}

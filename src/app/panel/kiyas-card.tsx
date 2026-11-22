@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 /** Değişim hapı: ok, işaret ve yüzde (renk tek başına anlam taşımaz); ekran okuyucuya ne ile kıyaslandığı, aynı eşikle */
 function Pill({ g, against }: { g: number; against: string }) {
   return (
-    <GrowthPill value={g}>
+    <GrowthPill value={g} marker={false}>
       <span aria-hidden>{changeText(g)}</span>
       <span className="sr-only">
         {against} ile kıyasla {changeSpeech(g)}
@@ -227,7 +227,7 @@ export function KiyasCard({ data, branchNames, narrow = false }: { data: KiyasSu
             </p>
             {day.state === "satis" ? (
               <>
-                <p className="mt-0.5 text-3xl font-semibold tracking-tight tabular text-ink">{tl(day.revenue)}</p>
+                <p className="mt-0.5 text-3xl font-semibold tracking-tight tabular text-ink dark:font-normal">{tl(day.revenue)}</p>
                 <p className="mt-1 text-xs text-ink-mute tabular">
                   {day.receipts ? `${num(day.receipts)} fiş · ortalama ${tl(day.avgReceipt)}` : "Fiş sayısı girilmedi"}
                 </p>

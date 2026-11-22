@@ -663,7 +663,7 @@ function ChoiceCards<T extends string>({
 function StepLegend({ n, children }: { n: number; children: ReactNode }) {
   return (
     <legend className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink-soft">
-      <span className="flex size-5 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-white tabular" aria-hidden>
+      <span className="flex size-5 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-on-solid tabular" aria-hidden>
         {n}
       </span>
       {children}

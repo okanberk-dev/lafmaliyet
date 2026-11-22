@@ -754,7 +754,7 @@ export function ProductsTable({
         <div className="flex flex-wrap gap-2" role="group" aria-label="Durum">
           {chips.map((s) => (
             <FilterChip key={s} active={statuses.includes(s)} onToggle={() => toggleStatus(s)} count={statusCounts.get(s) ?? 0}>
-              <span className={cn("size-1.5 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-white/70")} aria-hidden="true" />
+              <span className={cn("size-1.5 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-on-solid/70")} aria-hidden="true" />
               {s}
             </FilterChip>
           ))}
@@ -815,7 +815,7 @@ export function ProductsTable({
                 className={SHEET_CHIP}
               >
                 <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-white/70")} aria-hidden="true" />
+                  <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-on-solid/70")} aria-hidden="true" />
                   {s}
                 </span>
               </FilterChip>

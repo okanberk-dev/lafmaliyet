@@ -51,7 +51,7 @@ function CodeStep({ email, onBack, onExpired }: { email?: string; onBack: () => 
       {/* Kod tutmazsa sunucunun metni kipe göre: kurtarma kodunda "uygulamadaki kodu girin" denmez */}
       <input type="hidden" name="mode" value={mode} />
       <p className="flex items-start gap-2.5 text-[15px] leading-6 text-black/70">
-        <ShieldCheck className="mt-1 size-4 shrink-0 text-[#00754A]" aria-hidden />
+        <ShieldCheck className="mt-1 size-4 shrink-0 text-[#00754A] dark:text-good" aria-hidden />
         <span>
           {mode === "app" ? "Doğrulama uygulamanızdaki 6 haneli kodu girin." : "Kaydettiğiniz kurtarma kodlarından birini girin (her kod bir kez çalışır)."}
           {email ? <span className="block font-semibold text-black/90">{email}</span> : null}
@@ -128,7 +128,7 @@ function ForgotStep({ defaultEmail, onBack, emailConfigured }: { defaultEmail: s
       <div className="flex flex-col gap-4">
         <p
           role="status"
-          className={`flex items-start gap-2.5 rounded-lg px-4 py-3 text-[15px] leading-6 ${state.tone === "ok" ? "bg-[#d4e9e2] text-[#1e3932]" : "bg-black/[0.04] text-black/80"}`}
+          className={`flex items-start gap-2.5 rounded-lg px-4 py-3 text-[15px] leading-6 ${state.tone === "ok" ? "bg-[#d4e9e2] dark:bg-good-soft text-[#1e3932] dark:text-good-ink" : "bg-black/[0.04] text-black/80"}`}
         >
           {state.tone === "ok" ? <Mail className="mt-1 size-4 shrink-0" aria-hidden /> : <KeyRound className="mt-1 size-4 shrink-0" aria-hidden />}
           <span>{state.message}</span>
@@ -215,7 +215,7 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
           <form action={action} className="flex flex-col gap-5">
             <input type="hidden" name="next" value={next} />
             {passwordSet && !state.error ? (
-              <p role="status" className="flex items-start gap-2.5 rounded-lg bg-[#d4e9e2] px-4 py-3 text-[15px] leading-6 text-[#1e3932]">
+              <p role="status" className="flex items-start gap-2.5 rounded-lg bg-[#d4e9e2] dark:bg-good-soft px-4 py-3 text-[15px] leading-6 text-[#1e3932] dark:text-good-ink">
                 <CircleCheck className="mt-1 size-4 shrink-0" aria-hidden />
                 <span>Parolanız kaydedildi. E-postanız ve yeni parolanızla giriş yapın.</span>
               </p>
@@ -261,7 +261,7 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
                 }
               />
               {caps ? (
-                <span id="caps-warning" role="status" className="text-sm font-semibold text-[#c82014]">
+                <span id="caps-warning" role="status" className="text-sm font-semibold text-[#c82014] dark:text-bad">
                   Caps Lock açık
                 </span>
               ) : null}

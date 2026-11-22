@@ -42,7 +42,7 @@ export function WeekdayChips({ value, onChange }: { value: number[]; onChange: (
             className={cn(
               "inline-flex h-9 cursor-pointer items-center justify-center rounded-xl text-[13px] font-medium ring-1 ring-inset transition-colors pointer-coarse:h-11",
               "focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none",
-              on ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong hover:text-ink",
+              on ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-mute ring-line-strong hover:text-ink",
             )}
           >
             {label}

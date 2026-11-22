@@ -28,6 +28,7 @@ import { readMenuSyncState, syncSiteMenu } from "@/server/site-menu/sync";
 import { readOrdersState, syncSiteOrders } from "@/server/site-orders/sync";
 import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 
+import { AppearanceCard } from "./appearance-card";
 import { BackupDownload } from "./backup-client";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
@@ -411,6 +412,7 @@ async function SettingsContent() {
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <UsersLinkCard />
+      <AppearanceCard />
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
       <StockValuationCard
         start={company.fifoStart}

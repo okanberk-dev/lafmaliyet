@@ -65,6 +65,8 @@ export type ProfileDropdownProps = {
   avatarAlt?: string;
   accountItems?: ProfileDropdownItem[];
   workspaceItems?: ProfileDropdownItem[];
+  /** Panel: "Görünüm" bölümü (Sistem / Açık / Koyu seçici), Kafe ile Çıkış arasında */
+  appearance?: ReactNode;
   onSignOut?: () => void;
   /** Gallery: start open, ignore outside click */
   preview?: boolean;
@@ -130,6 +132,7 @@ export function ProfileDropdown({
   avatarAlt,
   accountItems = DEFAULT_ACCOUNT,
   workspaceItems = DEFAULT_WORKSPACE,
+  appearance,
   onSignOut,
   preview = false,
   menuPlacement = "bottom",
@@ -334,6 +337,15 @@ export function ProfileDropdown({
               </Section>
 
               <div className="mx-3 h-px bg-border" />
+
+              {appearance ? (
+                <>
+                  <Section label="Görünüm">
+                    <div className="px-1 pb-0.5">{appearance}</div>
+                  </Section>
+                  <div className="mx-3 h-px bg-border" />
+                </>
+              ) : null}
 
               <div className="p-1.5 pb-2">
                 <motion.button

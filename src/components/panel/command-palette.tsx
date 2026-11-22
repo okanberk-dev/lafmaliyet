@@ -293,7 +293,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
         animate={{ opacity: 1 }}
         exit={reduce ? undefined : { opacity: 0, pointerEvents: "none" }}
         transition={reduce ? { duration: 0 } : SPRING_PANEL}
-        className="fixed inset-0 z-[60] bg-foreground/15"
+        className="fixed inset-0 z-[60] bg-foreground/15 dark:bg-black/60"
         onClick={onClose}
       />
       {/* Telefonda görünür alan kadar yüksek (--vvh, bottom-nav.tsx): iOS'ta ekran klavyesi sonuçları örtmez. Karaoke

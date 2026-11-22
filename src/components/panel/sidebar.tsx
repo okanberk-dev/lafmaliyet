@@ -27,6 +27,7 @@ import { PanelSearch, SearchTrigger } from "./command-palette";
 import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
+import { ThemeChoice } from "./theme-choice";
 
 type User = { id: number; name: string; email: string; role: "admin" | "staff" };
 
@@ -209,6 +210,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
           menuAlign="start"
           accountItems={accountItems}
           workspaceItems={cafeItems}
+          appearance={<ThemeChoice inMenu className="dark:bg-panel" />}
           onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction().catch(toastUnreachable))}
           className="w-full max-w-none"
         />
@@ -308,7 +310,7 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
               animate={{ opacity: 1, pointerEvents: "auto" }}
               exit={reduce ? undefined : { opacity: 0, pointerEvents: "none" }}
               transition={reduce ? { duration: 0 } : SPRING_PANEL}
-              className="fixed inset-0 z-40 bg-foreground/20 lg:hidden"
+              className="fixed inset-0 z-40 bg-foreground/20 lg:hidden dark:bg-black/60"
               onClick={closeDrawer}
             />
             <motion.div
