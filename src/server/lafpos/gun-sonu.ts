@@ -224,15 +224,21 @@ function toColumns(v: AutoValues) {
   };
 }
 
-/** Günün satışı (Z toplamı): LafPOS gün sonu, yoksa şubenin kasa raporu (geçiş gününden önceki ModPOS günü) */
-async function dayTotal(db: DB, date: string, branchId: string): Promise<number | null> {
-  const [pos] = await db
-    .select({ z: s.posDayReports.z })
-    .from(s.posDayReports)
-    .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
-    .limit(1);
-  const z = pos ? posZSchema.safeParse(pos.z) : null;
-  if (z?.success) return z.data.zTotal;
+/**
+ * Günün satışı (Z toplamı): LafPOS gününde (geçiş günü ve sonrası) LafPOS gün sonu, yoksa şubenin kasa raporu. Geçiş
+ * gününden önceki gün ModPOS günüdür: o güne LafPOS'tan gelmiş kayıt (deneme günü) sayılmaz, kasa raporu okunur.
+ * `switchDay`: şubenin geçiş günü (branchSwitchDay), çağıran bir kez yükler.
+ */
+async function dayTotal(db: DB, date: string, branchId: string, switchDay: string | null): Promise<number | null> {
+  if (isLafposDay(date, switchDay)) {
+    const [pos] = await db
+      .select({ z: s.posDayReports.z })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.date, date), eq(s.posDayReports.branchId, branchId)))
+      .limit(1);
+    const z = pos ? posZSchema.safeParse(pos.z) : null;
+    if (z?.success) return z.data.zTotal;
+  }
   const [rep] = await db
     .select({ zTotal: s.cashReports.zTotal })
     .from(s.cashReports)
@@ -256,7 +262,8 @@ export async function dayEndRecipients(db: DB): Promise<string[]> {
  */
 export async function sendDayEndEmail(db: DB, date: string, report: ReportState, now = new Date(), opts?: SendOptions): Promise<DayEndEmailResult> {
   const branchId = LAFPOS_BRANCH_ID;
-  if (!(await isCountedLafposDay(db, date))) return "skipped";
+  const switchDay = branchSwitchDay(await loadLafposSwitchDay(db), branchId);
+  if (!isLafposDay(date, switchDay)) return "skipped";
   const day = await loadStoredDay(db, date, branchId);
   if (!day) return "skipped";
   await db.insert(s.lafposDayEnds).values({ date, branchId }).onConflictDoNothing();
@@ -298,8 +305,8 @@ export async function sendDayEndEmail(db: DB, date: string, report: ReportState,
     const days = compareDays(date);
     const [rep, yesterday, lastWeek, online] = await Promise.all([
       db.select().from(s.cashReports).where(and(eq(s.cashReports.date, date), eq(s.cashReports.branchId, branchId))).limit(1),
-      dayTotal(db, days.yesterday, branchId),
-      dayTotal(db, days.lastWeek, branchId),
+      dayTotal(db, days.yesterday, branchId, switchDay),
+      dayTotal(db, days.lastWeek, branchId, switchDay),
       fetchTillOnlineRow(date, branchId),
     ]);
     const values = rep[0] ? autoValuesOfReport(rep[0]) : null;
