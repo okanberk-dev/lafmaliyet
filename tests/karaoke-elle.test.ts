@@ -245,6 +245,8 @@ test("sitenin gövdesi: rezervasyonda alanlar, kapatmada telefon / e-posta / ad 
   // Panelin ve sitenin olay kaydında telefon ve e-posta yok
   const line = deskLogLine("create", "booking", { when: "28 Kas 20:00–22:00", name: "Ayşe", guests: 6, note: null, email: true });
   assert.deepEqual(line, { action: "Karaoke elle rezervasyon eklendi", detail: "Ayşe · 6 kişi · 28 Kas 20:00–22:00 · misafire onay e-postası" });
+  // Addan yalnız ilki (sitenin panele gönderdiği gibi; kaldırmanın satırı da ilk adı taşır)
+  assert.equal(deskLogLine("create", "booking", { when: "28 Kas 20:00–22:00", name: "  Ayşe Nur Yılmaz ", guests: 6, note: null }).detail, "Ayşe · 6 kişi · 28 Kas 20:00–22:00");
   assert.deepEqual(deskLogLine("create", "block", { when: "28 Kas 14:00–17:00", name: null, guests: 1, note: "Kapalı: özel etkinlik" }), {
     action: "Karaoke saatleri kapatıldı",
     detail: "28 Kas 14:00–17:00 · özel etkinlik",
@@ -416,7 +418,12 @@ test("kapatılan saat hiçbir zaman sayaç değildir: evresi 'closed', plan yok,
   // Uyarı motoru: süre doldu yalnız 'overtime' evresinden (kapatılan saat hiç); olay ziline girmez
   const center = read("src/components/panel/live/alert-center.tsx");
   assert.match(center, /sessions\.filter\(\(s\) => phase\(s, now\) === "overtime"\)/);
-  assert.match(center, /if \(isBlock\(s\) \|\| \(s\.lastEvent === "created" && s\.externalId && ADDED_HERE\.has\(s\.externalId\)\)\) continue;/);
+  assert.match(center, /if \(isBlock\(s\) \|\| ownDeskEvent\(s\)\) continue;/);
+  // Bu cihazda eklenen ve kaldırılan elle satırın kendi olayı ("yeni", "iptal edildi") bu cihazda ikinci kez çalmaz
+  assert.match(center, /\(s\.lastEvent === "created" && ADDED_HERE\.has\(s\.externalId\)\) \|\| \(s\.lastEvent === "cancelled" && REMOVED_HERE\.has\(s\.externalId\)\)/);
+  const board = read("src/app/panel/karaoke/karaoke-board.tsx");
+  assert.match(board, /if \(s\.externalId\) removedOnThisDevice\(s\.externalId\);\s+const res = await removeDeskKaraoke\(s\.id\);/, "istekten önce işaretlenir");
+  assert.match(board, /if \(s\.externalId\) removedOnThisDevice\(s\.externalId, false\);/, "kaldırılmazsa geri alınır");
 });
 
 test("geç öğrenilen başlangıç: son 15 dakikada başlamış ve süren oturum bir kez duyurulur; bitmiş, süresi dolmuş, eski hiç", () => {
@@ -437,6 +444,13 @@ test("geç öğrenilen başlangıç: son 15 dakikada başlamış ve süren oturu
   assert.equal(phase(short, start + 5 * 60_000), "overtime");
   // Bitirilmiş oturum: hiçbir şey
   assert.deepEqual(alarmPlan([{ ...s, endedAt: "2026-11-28T17:02:00Z" }], start + 5 * 60_000, 10), []);
+  // Saatinden sonra yazılan rezervasyon (20:40'ta 20:00'ye elle eklendi): 15 dakika yazıldığı andan sayılır
+  const lateBooked = session({ bookedAt: "2026-11-28T17:40:00.000Z" });
+  const announced = alarmPlan([lateBooked], start + 41 * 60_000, 10);
+  assert.deepEqual(announced[0], { key: `1:start:${start}`, at: start + 41 * 60_000, kind: "start", sessionId: 1, late: true });
+  assert.equal(alarmPlan([lateBooked], start + 55 * 60_000, 10)[0].kind, "start", "yazıldıktan 15 dakika sonra hâlâ");
+  assert.deepEqual(alarmPlan([lateBooked], start + 56 * 60_000, 10).map((a) => a.kind), ["warn", "end"], "yazıldıktan 15 dakikadan sonra yok");
+  assert.deepEqual(alarmPlan([session({ bookedAt: null })], start + 16 * 60_000, 10).map((a) => a.kind), ["warn", "end"], "anı bilinmeyen: başlangıçtan");
   // Uyarı motoru: geç tetiklenen başlangıç oturum bitmişse duyurulmaz; plan dakikada bir yenilenir (12 saatten ilerisi de)
   const center = read("src/components/panel/live/alert-center.tsx");
   assert.match(center, /if \(liveNow\(\) >= sessionEnd\(s\)\) return;/);

@@ -189,7 +189,7 @@ Operatör: "Ladminden de girilebilsin aynı şekilde". Telefonla ya da kasada ge
   10 dakikada kaldırabilirsiniz; şimdi kaldırmak için yöneticiye haber verin." der. Saatler sitede yeniden açılır;
   e-postası yazılmış rezervasyonda site misafire iptal e-postası gönderir. Sitede alınan (online ödenmiş) rezervasyon
   buradan kaldırılmaz (site 409 `not_desk`; iptal ve iade sitenin panelinde). Kural `deskRemoveRefusal`.
-- **İşlem geçmişi:** "Karaoke elle rezervasyon eklendi" (ad, kişi, gün ve saat; e-posta yazıldıysa "misafire onay
+- **İşlem geçmişi:** "Karaoke elle rezervasyon eklendi" (ilk ad, kişi, gün ve saat; e-posta yazıldıysa "misafire onay
   e-postası", adres yok), "Karaoke saatleri kapatıldı" (gün, saat, neden), "Karaoke elle rezervasyonu kaldırıldı",
   "Kapatılan karaoke saatleri açıldı".
 - **Panelde nasıl tutulur:** migration yok. Sitenin GET satırı `desk: true` (elle) ve `block: true` (kapatma)
@@ -207,7 +207,7 @@ Kapatma bir rezervasyon değildir, ama oda o saatlerde doludur:
 | Doluluk haritası, ay ay, haftalık özetin karaoke maddesi | Girmez (yükleyici ve `occSessionsOf` ayıklar) | Girer |
 | Bugün (rezervasyon sayısı, "Oda dolu", sıradaki) | Girmez | Girer |
 | Kapalı günün kanıtı (Kasa › kapalı gün) | Değil | Evet (her oturum gibi) |
-| "Yeni karaoke rezervasyonu" zili, Web Push | Hiç (ne eklenmesi ne kaldırılması) | Çalar (ekleyen cihaz hariç: o "Rezervasyon eklendi"yi gördü) |
+| "Yeni karaoke rezervasyonu" zili, Web Push | Hiç (ne eklenmesi ne kaldırılması) | Çalar (ekleyen cihaz hariç: o "Rezervasyon eklendi"yi gördü; kaldırmanın "iptal edildi" zili de kaldıran cihazda çalmaz) |
 | Sayaç, "Karaoke başladı", az kaldı, süre doldu, "Haber verdim" | Hiç (evresi hep `closed`; uzatılmaz, bitirilmez) | Saatinde kendiliğinden (aşağıda) |
 | Hızlı sayaç ve uzatmanın çakışma sorusu | Evet, kendi sözüyle: "Bu saatler kapatıldı: 14:00–17:00 (özel etkinlik). Yine de başlatılsın mı?" (başlık "Bu saatler kapalı") | Evet ("Bu saatte sitede Ayşe adına …") |
 
@@ -233,7 +233,9 @@ kadar. Başlamamasının nedenleri bulunup giderildi:
 3. **Geç öğrenilen başlangıç duyurulmuyordu:** plan bir dakikadan eski başlangıcı atıyordu; saatinden sonra cihaza
    ulaşan rezervasyon (geç eşitleme, arka plandaki sekme, uykudan uyanan cihaz, o saate elle eklenen rezervasyon) hiç
    "Karaoke başladı" demiyordu. Artık son **15 dakikada** başlamış ve süren oturum cihaz başına bir kez hemen duyurulur
-   (anahtar zamanındakiyle aynı); bitmiş, süresi dolmuş ya da daha eski başlangıç duyurulmaz.
+   (anahtar zamanındakiyle aynı); bitmiş, süresi dolmuş ya da daha eski başlangıç duyurulmaz. Saatinden sonra yazılan
+   rezervasyonda 15 dakika **yazıldığı andan** sayılır (`bookedAt`): 16:40'ta 16:00'ya elle eklenen rezervasyon da
+   "Karaoke başladı" der (e2e, 22 Kasım 2026: yalnız saatin ilk 15 dakikasında eklenen duyuruluyordu).
 4. **12 saatten ilerideki oturumun uyarıları kurulmuyordu:** plan 12 saat ilerisine bakar ve yalnız veri değişince
    yeniden kurulurdu; sabah açılan bar ekranı akşamki rezervasyonu (13 saat sonra) veri değişmedikçe (304) hiç
    planlamazdı. Plan artık **dakikada bir** yeniden kurulur (aynı uyarı anahtarıyla iki kez çalmaz); uykudan uyanan
