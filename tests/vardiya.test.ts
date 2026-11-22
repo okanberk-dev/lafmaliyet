@@ -18,6 +18,7 @@ import {
   cellOf,
   clockOf,
   dayHeadcount,
+  expandShiftAbbr,
   dayHeading,
   formatShiftCell,
   hoursLabel,
@@ -27,6 +28,7 @@ import {
   pdfHref,
   plannedRows,
   presetOf,
+  presetShort,
   presetText,
   refUserId,
   rowMinutes,
@@ -264,11 +266,29 @@ test("hazır vardiyalar: Tuzla 09:00–18:00 ve 16:00–01:00, Marina 09:30–18
   assert.equal(presetOf("tuzla", null), null);
   assert.equal(presetOf("marina", cell("9-18")), null);
   assert.deepEqual(shiftPresets("bilinmeyen"), []);
-  // Izgara: hazır vardiya seçiliyken kutu tıklanır (yazılmaz), ikinci tıklama boşaltır
+});
+
+test("seçerek doldurma: her kutuda S / A / İ düğmeleri; elle yazarken “s” ve “a” kısaltması şubenin saatlerine açılır", () => {
+  assert.deepEqual(shiftPresets("tuzla").map(presetShort), ["S", "A"]);
+  // Kısaltma şubeye göre açılır; büyük harf, uzun yazım ve görev notu da
+  assert.equal(expandShiftAbbr("tuzla", "s"), "09:00–18:00");
+  assert.equal(expandShiftAbbr("tuzla", " A "), "16:00–01:00");
+  assert.equal(expandShiftAbbr("marina", "S"), "09:30–18:30");
+  assert.equal(expandShiftAbbr("marina", "a bar"), "13:00–22:00 bar");
+  assert.equal(expandShiftAbbr("tuzla", "Sabahçı Kasa"), "09:00–18:00 Kasa");
+  assert.equal(expandShiftAbbr("tuzla", "akşam"), "16:00–01:00");
+  // Açılan metin okununca o hazır vardiya (not korunur)
+  const opened = parseShiftCell(expandShiftAbbr("tuzla", "s kasa"));
+  assert.ok(opened.ok && opened.cell?.kind === "work" && opened.cell.note === "kasa" && presetOf("tuzla", opened.cell)?.key === "morning");
+  // Saat, izin ve başka metin olduğu gibi kalır; hazır vardiyası olmayan şubede kısaltma yok
+  for (const t of ["10-18", "izin", "16-24 bar", "", "salı", "ayşe"]) assert.equal(expandShiftAbbr("tuzla", t), t);
+  assert.equal(expandShiftAbbr("bilinmeyen", "s"), "s");
+  // Izgara: hazır vardiyası olan şubede seçerek açılır; düğme yazıp seçili olana ikinci tıklama boşaltır; okuma kısaltmayı açar
   const grid = read("src/app/panel/vardiya/shift-grid.tsx");
-  assert.match(grid, /readOnly=\{armed !== null\}/);
-  assert.match(grid, /onClick=\{armed \? \(\) => paint\(r\.ref, i\) : undefined\}/);
-  assert.match(grid, /setText\(ref, day, armed\.text && cur === armed\.text \? "" : armed\.text\)/);
+  assert.match(grid, /useState<"pick" \| "type">\(presets\.length \? "pick" : "type"\)/);
+  assert.match(grid, /aria-pressed=\{chosen === c\.key\}/);
+  assert.match(grid, /onClick=\{\(\) => setText\(r\.ref, i, chosen === c\.key \? "" : c\.text\)\}/);
+  assert.match(grid, /const read = \(text: string\) => parseShiftCell\(expandShiftAbbr\(branch\.id, text\)\);/);
 });
 
 test("PDF adresi ve dosya adı", () => {

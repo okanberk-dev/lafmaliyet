@@ -132,6 +132,31 @@ export function presetOf(branchId: string, cell: ShiftCell | null): ShiftPreset 
 /** Hazır vardiyanın kutuya yazılan metni: "09:00–18:00" */
 export const presetText = (p: ShiftPreset) => `${clockOf(p.startMin)}–${clockOf(p.endMin)}`;
 
+/** Hazır vardiyanın ızgaradaki tek harfli düğmesi: "S" (sabahçı), "A" (akşamcı) */
+export const presetShort = (p: ShiftPreset) => p.label.charAt(0);
+
+const ABBR: Record<ShiftPreset["key"], RegExp> = {
+  morning: /^(sabahçı|sabahci|sabah|s)(?:\s+(.*))?$/,
+  evening: /^(akşamcı|aksamci|akşam|aksam|a)(?:\s+(.*))?$/,
+};
+
+/**
+ * Elle yazarken kısaltma: "s" (ya da "sabah", "sabahçı") şubenin sabahçı, "a" ("akşam", "akşamcı") akşamcı saatlerine
+ * açılır; ardından görev notu yazılabilir ("s kasa" → "09:00–18:00 kasa"). Hazır vardiyası olmayan şubede ve başka her
+ * metinde metin olduğu gibi döner (saat olarak okunur).
+ */
+export function expandShiftAbbr(branchId: string, text: string): string {
+  const raw = text.trim();
+  const low = fold(raw);
+  for (const p of shiftPresets(branchId)) {
+    const m = ABBR[p.key].exec(low);
+    if (!m) continue;
+    const note = raw.slice(m[1].length).trim();
+    return note ? `${presetText(p)} ${note}` : presetText(p);
+  }
+  return text;
+}
+
 /** Hücrenin ekrandaki ve kutudaki metni: "10:00–18:00 · kasa", "İzin", planlanmadıysa boş */
 export function formatShiftCell(cell: ShiftCell | null): string {
   if (!cell) return "";
