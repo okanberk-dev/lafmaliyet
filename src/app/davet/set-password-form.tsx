@@ -33,8 +33,8 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
   const [show, setShow] = useState(false);
   const router = useRouter();
   const short = password.length > 0 && password.length < MIN;
-  // Kolay tahmin edilen parola da yazarken söylenir (e-postayla ilgili kuralı sunucu ekler)
-  const weak = !short && password.length > 0 ? passwordProblem(password) : null;
+  // Kolay tahmin edilen ve e-postayı içeren parola da yazarken söylenir: sunucunun reddi beklenmez (YO-06)
+  const weak = !short && password.length > 0 ? passwordProblem(password, email) : null;
   const mismatch = repeat.length > 0 && repeat !== password;
 
   useEffect(() => {

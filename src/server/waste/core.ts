@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { productIkramRefusal } from "@/lib/lafpos/ikram";
@@ -102,12 +102,32 @@ async function refuseLafposIkram(tx: Tx, data: Pick<WasteInput, "date" | "kind" 
   if (refusal) throw new UserError(refusal);
 }
 
-/** Doğrudan kayıt: yönetici her geçmiş güne; personel yalnız doğrudan yolun günlerine ve kapalı işaretli olmayan güne */
-export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = new Date()): Promise<{ id: number; name: string; unit: string }> {
-  if (data.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
+/**
+ * Doğrudan kayıt: yönetici her geçmiş güne; personel yalnız doğrudan yolun günlerine ve kapalı işaretli olmayan güne.
+ * `clientKey` (formun anahtarı, denetim UI-01): aynı anahtarla yazılmış kayıt varsa yenisi açılmaz, o döner
+ * (`repeated`); Enter'a ikinci basış ve yanıtı yolda kalan isteğin tekrarı tüketimi iki kez düşmez. Anahtar başına
+ * danışma kilidi: aynı anda gelen iki istekten ikincisi birincinin kaydını görür.
+ */
+export async function addWaste(
+  db: DB,
+  me: WasteActor,
+  data: WasteInput & { clientKey?: string | null },
+  now = new Date(),
+): Promise<{ id: number; name: string; unit: string; qty: number; repeated: boolean }> {
+  const { clientKey = null, ...fields } = data;
+  if (fields.date > businessDate(now)) throw new UserError("İleri bir güne kayıt girilemez");
+  // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md).
+  // Kilit, kapalı gün ve LafPOS reddi de o şubenin
+  const branchId = (await currentPhysicalBranch()).id;
   return db.transaction(async (tx) => {
-    // Zayi şube başına (stok gibi): seçili fiziksel şubeye ("Tümü" ya da online kanal seçiliyken Tuzla; docs/SUBE.md)
-    const branchId = (await currentPhysicalBranch()).id;
+    if (clientKey) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`zayi-anahtar:${clientKey}`}))`);
+      const [same] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.clientKey, clientKey)).limit(1);
+      if (same) {
+        if (same.createdBy !== me.id) throw new UserError("Bu kayıt başka bir hesaptan girilmiş; sayfayı yenileyin");
+        return { id: same.id, name: same.name, unit: same.unit, qty: same.qty, repeated: true };
+      }
+    }
     await refuseLafposIkram(tx, data, branchId, now);
     if (me.role !== "admin") {
       const mode = staffWasteMode(data.date, now, await wasteLock(tx, data.date, branchId));
@@ -115,12 +135,12 @@ export async function addWaste(db: DB, me: WasteActor, data: WasteInput, now = n
       const closed = await closedDayRefusal(data.date, me.role, tx, branchId);
       if (closed) throw new UserError(closed);
     }
-    const target = await resolveWasteTarget(tx, data);
+    const target = await resolveWasteTarget(tx, fields);
     const [row] = await tx
       .insert(s.wasteEntries)
-      .values({ ...data, ...target, branchId, createdBy: me.id, createdByName: me.name })
+      .values({ ...fields, ...target, branchId, clientKey, createdBy: me.id, createdByName: me.name })
       .returning({ id: s.wasteEntries.id });
-    return { id: row.id, ...target };
+    return { id: row.id, ...target, qty: fields.qty, repeated: false };
   });
 }
 

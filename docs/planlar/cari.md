@@ -1231,7 +1231,7 @@ Adaylar şu kurallarla aranır:
 | Cari borç düzeltildi / silindi | Sütaş · 21.10.2026 · 600,00 → 650,00 ₺ |
 | Cari ödeme eklendi | Sütaş · 22.10.2026 · 10.000,00 ₺ · Havale / EFT · 2 kaleme sayıldı (1 kapandı, 1 kısmen) · hesapta 0,00 ₺ |
 | Cari ödeme eklendi | Sütaş · 24.10.2026 · 2.200,00 ₺ · Kasadan (Teslim · Sütaş) · 3 kalem kapandı · hesapta 99,50 ₺ |
-| Cari ödeme düzeltildi / silindi | … · 1 fatura yeniden ödenmedi; 1 fatura başka biçimde ödendi işaretli, bırakıldı |
+| Cari ödeme düzeltildi / silindi | … · 1 fatura ödenmemişe döndü; 1 fatura başka biçimde ödendi işaretli, bırakıldı |
 | Cari kaydı geri alındı | … |
 | Hesaptaki ödeme borçlara sayıldı | Sütaş · 99,50 ₺ → SUT151 |
 | Ödeme kalemden çıkarıldı | Sütaş · 24.10 ödemesi · SUT151 99,50 ₺ hesaba geçti |

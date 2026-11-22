@@ -9,11 +9,14 @@ import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
 import { signOutOtherSessions } from "@/server/actions/auth";
 
+import { CLAUDE_NOTE } from "./session-note";
+
 /**
  * Oturumlar: başka cihazda (kasa bilgisayarı, tablet, kaybolan telefon) açık kalmış oturumları parolayı değiştirmeden
- * kapatır. Bu cihaz açık kalır; o cihazların "bilinen cihaz" kaydı da geçersiz olur.
+ * kapatır. Bu cihaz açık kalır; o cihazların "bilinen cihaz" kaydı da geçersiz olur. `claude`: etkin bir Claude
+ * bağlantısı var (o da kapanır).
  */
-export function SessionsCard() {
+export function SessionsCard({ claude = false }: { claude?: boolean }) {
   const [asking, setAsking] = useState(false);
   return (
     <>
@@ -30,7 +33,7 @@ export function SessionsCard() {
       {asking ? (
         <ConfirmPasswordDialog
           title="Diğer cihazlardaki oturumlar kapatılsın mı?"
-          description="Bu cihaz dışındaki bütün tarayıcılarda panelden çıkış yapılır; oralarda yeniden giriş gerekir."
+          description={`Bu cihaz dışındaki bütün tarayıcılarda panelden çıkış yapılır; oralarda yeniden giriş gerekir.${claude ? ` ${CLAUDE_NOTE}` : ""}`}
           confirmLabel="Oturumları kapat"
           onClose={() => setAsking(false)}
           onConfirm={async (password) => {

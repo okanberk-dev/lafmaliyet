@@ -54,8 +54,11 @@ export function Sidebar({ user, index = [], branch }: { user: User; index?: Sear
   const pathname = usePathname();
   const router = useRouter();
   const reduce = useReducedMotion();
-  // Çekmece hangi sayfada açıldıysa yalnızca orada açık kalır; sayfa değişince kendiliğinden kapanır
+  // Çekmece hangi sayfada açıldıysa yalnızca orada açık kalır; sayfa değişince kendiliğinden kapanır ve kapalı kalır:
+  // adres değişince açıldığı yol da unutulur (denetim UI-04). Unutulmasaydı o sayfaya Geri tuşuyla ya da alt menüden
+  // dönünce çekmece kendiliğinden yeniden açılırdı
   const [openFor, setOpenFor] = useState<string | null>(null);
+  if (openFor !== null && openFor !== pathname) setOpenFor(null);
   const mobileOpen = openFor === pathname;
   const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);

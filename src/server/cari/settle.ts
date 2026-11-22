@@ -746,7 +746,7 @@ export async function resettleAfterSync(changes: readonly { id: number; from: nu
     out.moved = round2(out.moved + r.trimmed);
     if (r.trimmed > EPS) out.movedInvoices++;
     out.reopened += r.reopened;
-    const parts = [`${r.label} ${tl(c.from, 2)} → ${tl(c.to, 2)}`, r.trimmed > EPS ? `${tl(r.trimmed, 2)} hesaba geçti` : "", r.reopened ? "fatura yeniden ödenmedi" : ""].filter(Boolean);
+    const parts = [`${r.label} ${tl(c.from, 2)} → ${tl(c.to, 2)}`, r.trimmed > EPS ? `${tl(r.trimmed, 2)} hesaba geçti` : "", r.reopened ? "fatura ödenmemişe döndü" : ""].filter(Boolean);
     await logActivity(null, "Sistem · Fatura tutarı değişti", parts.join(" · "));
   }
   return out;

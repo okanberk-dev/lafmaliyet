@@ -2,7 +2,7 @@
 
 import { Gift, Plus, Search, Send, Trash2, Undo2, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -100,8 +100,11 @@ export function WasteBoard({
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
   const [asking, setAsking] = useState<WasteEntryDTO | null>(null);
   const [askReason, setAskReason] = useState("");
-  // Çift dokunuşa karşı istemci anahtarı: başarılı gönderimden sonra yenilenir
+  // Çift dokunuşa karşı istemci anahtarı (doğrudan kayıtta da, UI-01): başarılı gönderimden sonra yenilenir; aynı
+  // anahtarla gelen ikinci istek sunucuda yeni kayıt açmaz
   const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
+  // Gönderim sürerken Enter'a ikinci basış: `pending` bir sonraki çizimde gelir, aynı karedeki olayı bu bayrak tutar
+  const sending = useRef(false);
   const late = mode === "request";
   // LafPOS gününde ürün ikramı LafPOS'ta işaretlenir: İkram'da yalnız hammadde seçilir (sunucu da reddeder); gün sonu
   // gelmeyen geçmiş günde ürün de seçilir
@@ -126,6 +129,8 @@ export function WasteBoard({
   }
 
   function submit() {
+    // Miktar alanındaki Enter düğmenin kilidini atlar (denetim UI-01): kayıt sürerken ikinci gönderim yok
+    if (sending.current || pending) return;
     if (!picked) return void toast.error(`Önce ${itemLabel.toLocaleLowerCase("tr")} seçin`);
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
@@ -139,25 +144,31 @@ export function WasteBoard({
       reason,
       note: note.trim() || null,
     };
+    sending.current = true;
     start(async () => {
-      if (late) {
-        const res = await requestLateWaste({ ...input, message: message.trim(), clientKey });
-        if (!res.ok) return void toast.error(res.error);
-        toast.success(`Onaya gönderildi: ${picked.name} ${qtyText(n, picked.type === "product" ? "adet" : picked.unit)}`);
+      try {
+        if (late) {
+          const res = await requestLateWaste({ ...input, message: message.trim(), clientKey });
+          if (!res.ok) return void toast.error(res.error);
+          toast.success(`Onaya gönderildi: ${picked.name} ${qtyText(n, picked.type === "product" ? "adet" : picked.unit)}`);
+          setMessage("");
+        } else {
+          const res = await addWasteEntry({ ...input, clientKey });
+          // Sunucu miktarı reddettiyse ("Ürün adetle girilir") düzeltilecek alan miktar
+          if (!res.ok) return void (toast.error(res.error), document.getElementById("zi-miktar")?.focus());
+          // Aynı anahtarla yazılmış kayıt vardı (yanıtı yolda kalan gönderimin tekrarı): yenisi açılmadı
+          toast.success(`${res.data.repeated ? "Zaten kaydedilmişti" : WASTE_KIND_LABEL[kind]}: ${res.data.name} ${qtyText(res.data.qty, res.data.unit)}`);
+        }
         setClientKey(crypto.randomUUID());
-        setMessage("");
-      } else {
-        const res = await addWasteEntry(input);
-        // Sunucu miktarı reddettiyse ("Ürün adetle girilir") düzeltilecek alan miktar
-        if (!res.ok) return void (toast.error(res.error), document.getElementById("zi-miktar")?.focus());
-        toast.success(`${WASTE_KIND_LABEL[kind]}: ${res.data.name} ${qtyText(n, res.data.unit)}`);
+        setPicked(null);
+        setQty("1");
+        setNote("");
+        setReason(null);
+      } finally {
+        sending.current = false;
       }
-      setPicked(null);
-      setQty("1");
-      setNote("");
-      setReason(null);
-      // Doğrudan kayıtta yanıt yolda kaybolursa zayi yazılmış olabilir: ikinci "Kaydet" tüketimi iki kez düşer. Geç
-      // kaydın isteği clientKey'li, tekrarı ikinci istek açmaz
+      // Doğrudan kayıtta yanıt yolda kaybolursa zayi yazılmış olabilir: bildirim bunu söyler; yeniden göndermek aynı
+      // anahtarla gider, ikinci kayıt açılmaz (geç kaydın isteği de öyle)
     }, { maybeSaved: !late });
   }
 

@@ -435,7 +435,7 @@ export function CashForm({
   /** Önceki raporun ertesi güne devri (açılış kendiliğinden dolar ve onunla karşılaştırılır) */
   carry: { date: string; amount: number } | null;
   whatsapp: { text: string; link: string } | null;
-  /** Kaç adrese e-posta gider (adresler personele gösterilmez) */
+  /** Kaç adrese e-posta gider (adresler personele gösterilmez); e-posta kapalıysa ya da gönderim kurulmamışsa 0 */
   recipients: number;
   canEdit: boolean;
   /** Fotoğraf deposu var mı, okuma durumu, bakan yönetici mi */
@@ -1046,6 +1046,9 @@ export function CashForm({
     lafpos && lafposOuts && lafpos.till.handed > 0 && Math.abs(outsTotal - lafpos.till.spent) < 0.01 && cashOutValue !== null && Math.abs(cashOutValue - outsTotal) < 0.01
       ? lafpos.till.handed
       : null;
+  // Gönderince ne olur: e-posta kapalıyken (ya da gönderim kurulmamışken) "e-posta gider" denmez, rapor WhatsApp'la
+  // paylaşılır (denetim UI-05; gönderilmiş raporun kartı "E-posta kapalı" der)
+  const sendHint = recipients ? "gönderince yöneticiye e-posta gider" : "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın";
 
   const field = (k: MoneyKey | OkcMoneyKey, label: string, opts: OkcFieldOptions & { autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
@@ -1372,7 +1375,7 @@ export function CashForm({
                   ? `${longDateTR(date)} · onaya gider; yönetici onaylayınca kayda geçer`
                   : proposal
                     ? `${longDateTR(date)} · önerinin sonucu; rapor onaya kadar değişmez`
-                    : `${longDateTR(date)} · gönderince yöneticiye e-posta gider`
+                    : `${longDateTR(date)} · ${sendHint}`
             }
           />
           <div className="space-y-3 px-5 pb-5">

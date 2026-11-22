@@ -110,7 +110,8 @@ penceresine götürür, `?kasa=1`). Personelin zili ve Bugün'ü ödeme gösterm
 ## Son ödenenler (geri alma)
 
 "Ödendi" bildirimindeki **Geri al** 8 saniye durur. Kaçırılırsa ya da yanlışlık sonradan fark edilirse, listenin
-altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır:
+altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır. Liste boşken yerinde "Son
+ödenenler: son 30 günde “Ödendi” denen kayıt şu an yok." satırı durur, Yardım'ın bağlantısı ona iner (denetim UI-08):
 
 - Son **30 günde** "Ödendi" işaretlenen fatura ve hatırlatıcılar, en yeni önce, en çok 30 kayıt. Liste, Ödemeler
   ekranından, Faturalar'da tek tek / toplu "Ödendi"den, fatura penceresinde ödenmedi → ödendi kaydedilince ve

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, notExists, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -45,11 +45,12 @@ import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { acceptedStockOnly, flagStockOnlyInvoices, stockOnlyIds, updateAcceptedStockOnly } from "@/server/data/stock-only-invoices";
 import { getDb, schema as s } from "@/server/db";
 import { storeUpload } from "@/server/documents";
+import { findSameInvoiceNo, invoiceNoKey } from "@/server/parasut/mapping";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
 import { readPhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zOptText, zSignedAmount, zText } from "./util";
+import { attempt, UserError, zClientKey, zDate, zOptText, zSignedAmount, zText } from "./util";
 
 const zId = z.number().int().positive();
 const zCategory = z.enum(INVOICE_CATEGORIES as [string, ...string[]], { message: "Kategori seçin" });
@@ -76,7 +77,46 @@ const invoiceSchema = z.object({
    * bekleyen listeden kalkar, fişin fotoğrafı faturanın belgesi olur, ödendiyse ödeme şekli nakit
    */
   cashOutId: zId.nullable().optional(),
+  /**
+   * Yeni faturanın anahtarı (Fatura ekle penceresinin ürettiği UUID; "Kaydet, yenisini ekle"de yenilenir): aynı anahtarla
+   * eklenmiş fatura varsa yenisi açılmaz, o döner (denetim UI-03: Ctrl+Enter'a ikinci basış)
+   */
+  clientKey: zClientKey,
+  /** Aynı tedarikçinin aynı numaralı faturası var dendi, kullanıcı "Yine de ekle" dedi (denetim UI-02) */
+  sameNoOk: z.boolean().optional(),
 });
+
+/** Kasadan açılan faturanın satırı artık beklemiyor */
+const CASH_OUT_GONE = "Bu kasa satırı artık beklemiyor (faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı); fatura eklenmedi. Sayfayı yenileyin.";
+
+/** Yeni elle faturayla aynı tedarikçi ve numarayı taşıyan kayıt (pencere "Yine de ekle" diye sorar) */
+export type SameNumberInvoice = { id: number; supplier: string; date: string; invoiceNo: string | null; payable: number; source: "manual" | "excel" | "parasut" };
+
+/**
+ * Aynı tedarikçinin aynı numaralı faturası (UI-02; mapping.ts findSameInvoiceNo): numara ayraçsız ve büyük harfle,
+ * tedarikçi adla ya da Tedarikçiler kartıyla. Önce numarası tutan kayıtlar okunur; kart çözümü yalnız onlar varsa
+ */
+async function sameNumberInvoice(supplier: string, invoiceNo: string | null): Promise<SameNumberInvoice | null> {
+  const no = invoiceNoKey(invoiceNo);
+  if (!no) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: s.invoices.id,
+      supplier: s.invoices.supplier,
+      supplierTaxNumber: s.invoices.supplierTaxNumber,
+      date: s.invoices.date,
+      invoiceNo: s.invoices.invoiceNo,
+      payable: s.invoices.payable,
+      source: s.invoices.source,
+    })
+    .from(s.invoices)
+    .where(sql`upper(regexp_replace(${s.invoices.invoiceNo}, '[^A-Za-z0-9]', '', 'g')) = ${no}`)
+    .orderBy(desc(s.invoices.date), desc(s.invoices.id));
+  if (!rows.length) return null;
+  const twin = findSameInvoiceNo({ supplier, invoiceNo }, rows, await cardResolver(db));
+  return twin ? { id: twin.id, supplier: twin.supplier, date: twin.date, invoiceNo: twin.invoiceNo, payable: twin.payable, source: twin.source } : null;
+}
 
 /**
  * Kafe içi ↔ kafe dışı (karaoke box, Alp Koç) geçen faturalardan kalemi okunmuş olan varsa alınan miktar (ve bağlı
@@ -96,18 +136,53 @@ async function recomputeSeparateMoves(moves: { id: number; date: string; from: s
 }
 
 /**
+ * saveInvoice'ın yanıtının varsayılanları. Yeni satır açılmadıysa: `repeated` (aynı anahtarla eklenmiş fatura döndü,
+ * UI-03) ya da `duplicate` (aynı tedarikçinin aynı numaralı faturası var, fatura eklenmedi, `id` 0; UI-02)
+ */
+const blankResult = {
+  id: 0,
+  kept: [] as LockedField[],
+  message: null as string | null,
+  credit: { used: 0, closed: 0 },
+  stockOnly: false,
+  cashOut: null as { document: boolean | null } | null,
+  repeated: false,
+  /** Tekrarda kayıtlı faturanın tedarikçisi ve ödenecek tutarı: formda sonradan yapılan düzeltme uygulanmaz, pencere bunu söyler */
+  repeatedRow: null as { supplier: string; payable: number } | null,
+  duplicate: null as SameNumberInvoice | null,
+};
+
+/**
  * Faturayı ekler ya da günceller. Paraşüt'e bağlı faturada tarih, fatura no ve tutarlar yazılmaz: eşitleme onları
  * her çalışmada Paraşüt'ten yeniden yazar (bkz. rules.ts PARASUT_LOCKED_FIELDS). Formdan farklı değer geldiyse
- * (eski açık pencere) `kept` ile bildirilir, sessizce yutulmaz.
+ * (eski açık pencere) `kept` ile bildirilir, sessizce yutulmaz. Yeni faturada aynı anahtarın tekrarı var olanı döner
+ * (`repeated`), aynı tedarikçinin aynı numaralı faturası varsa ve `sameNoOk` yoksa fatura eklenmez (`duplicate`).
  */
 export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, paidAt, cashOutId, ...data } = invoiceSchema.parse(input);
+    const { id, paidAt, cashOutId, clientKey, sameNoOk, ...data } = invoiceSchema.parse(input);
     if (paidAt && paidAt > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const db = getDb();
     const none: CreditUse = { allocationIds: [], used: new Map(), closed: [] };
     if (!id) {
+      // Aynı anahtarla eklenmiş fatura (UI-03; kısayola ikinci basış, yanıtı yolda kalan isteğin tekrarı): yenisi
+      // açılmaz, o döner. Numara denetiminden önce: tekrar kendi faturasını "aynı numaralı" bulmasın
+      const repeat = (row: { id: number; supplier: string; payable: number }) => ({ ...blankResult, id: row.id, repeated: true, repeatedRow: { supplier: row.supplier, payable: row.payable } });
+      const byKey = async (tx: Pick<typeof db, "select"> = db) =>
+        clientKey ? ((await tx.select({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.clientKey, clientKey)).limit(1))[0] ?? null) : null;
+      const prior = await byKey();
+      if (prior) return repeat(prior);
+      // Aynı tedarikçinin aynı numaralı faturası (UI-02): eşitlemeden sonra elle girilen kâğıt fatura ya da iki kişinin
+      // girdiği aynı fatura alımı, borcu ve KDV indirimini iki kez sayardı. Kayıt açılmaz, pencere sorar; "Yine de ekle"
+      // (sameNoOk) bilerek ekler
+      if (!sameNoOk && invoiceNoKey(data.invoiceNo)) {
+        // Kasadan açılan faturada önce satırın hâlâ beklediği (kilitsiz; işlemde yeniden denetlenir): faturası gelmiş ya
+        // da kapanmış satır "aynı numaralı fatura var" diye sorulmaz, açılamaz
+        if (cashOutId && !(await loadPendingCashOutInvoices(db, { ids: [cashOutId] })).length) throw new UserError(CASH_OUT_GONE);
+        const twin = await sameNumberInvoice(data.supplier, data.invoiceNo);
+        if (twin) return { ...blankResult, duplicate: twin };
+      }
       // Cari takipteki kartın yeni faturası panelde sayılır (taban 0; src/lib/cari/balance.ts)
       const ledgerBase = await ledgerBaseForNew(data.supplier, null);
       let fromCash: PendingCashOutInvoice | null = null;
@@ -119,25 +194,38 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
         // (FC-04): aynı anda gelen ikinci istek (iki sekme, "Aylık harcamalar'a yaz") bekler, sonra satırı kapanmış görür.
         // Kasadan ödenmiş alımın faturası hesaptaki parayı kullanmaz (inceleme D3): parası kasadan çıktı, avans bir
         // sonraki faturanındır. Ödendiyse ödeme şekli nakit, günü pencerenin (kasanın günü)
-        ({ row, fromCash } = await db.transaction(async (tx) => {
+        const out = await db.transaction(async (tx) => {
           await lockCashOut(tx, cashOutId);
+          // Aynı anahtarla bekleyen ikinci istek: birincinin faturası döner ("artık beklemiyor" denmez)
+          const same = await byKey(tx);
+          if (same) return { repeat: true as const, same };
           const [pending] = await loadPendingCashOutInvoices(tx, { ids: [cashOutId] });
-          if (!pending) throw new UserError("Bu kasa satırı artık beklemiyor (faturası geldi, Aylık harcamalar'a yazıldı ya da listeden çıkarıldı); fatura eklenmedi. Sayfayı yenileyin.");
+          if (!pending) throw new UserError(CASH_OUT_GONE);
           const [inserted] = await tx
             .insert(s.invoices)
-            .values({ ...data, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase, ...(data.unpaid ? {} : { paidVia: "nakit" as const }) })
+            .values({ ...data, clientKey, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase, ...(data.unpaid ? {} : { paidVia: "nakit" as const }) })
             .returning({ id: s.invoices.id });
           await updateHandledCashOuts(tx, { add: [{ id: pending.id, invoiceId: inserted.id, by: me.name }] });
-          return { row: inserted, fromCash: pending };
-        }));
+          return { repeat: false as const, row: inserted, fromCash: pending };
+        });
+        if (out.repeat) return repeat(out.same);
+        ({ row, fromCash } = out);
       } else {
         // Ödendi eklenen fatura (pencerenin varsayılanı) takipli kartta önce hesaptaki parayı kullanır (K6): ödenmemiş
-        // yazılır, hesaptaki para sayılır, karşılanmayan kalan kullanıcının günüyle ödendi işaretlenir
+        // yazılır, hesaptaki para sayılır, karşılanmayan kalan kullanıcının günüyle ödendi işaretlenir. Aynı anahtarla
+        // aynı anda gelen ikinci istek satır açmaz (benzersiz dizin), birincinin faturası döner
         const viaCredit = !data.unpaid && ledgerBase !== null;
-        [row] = await db
+        const [inserted] = await db
           .insert(s.invoices)
-          .values({ ...data, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
+          .values({ ...data, clientKey, unpaid: data.unpaid || viaCredit, paidAt: data.unpaid || viaCredit ? null : (paidAt ?? null), ledgerBase })
+          .onConflictDoNothing({ target: s.invoices.clientKey })
           .returning({ id: s.invoices.id });
+        if (!inserted) {
+          const same = await byKey();
+          if (!same) throw new Error("İstemci anahtarı çakıştı ama fatura bulunamadı");
+          return repeat(same);
+        }
+        row = inserted;
         credit = viaCredit ? await creditFirstForInvoices([row.id], me.name) : none;
         if (viaCredit && !credit.closed.includes(row.id)) {
           await db
@@ -154,7 +242,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       );
       refresh();
       // Elle eklenen faturanın kalemi yoktur: stoğa girmez (E-07 yalnız Paraşüt kalemli faturada)
-      return { id: row.id, kept: [] as LockedField[], message: null as string | null, credit: creditSummary(credit), stockOnly: false, cashOut: cash };
+      return { ...blankResult, id: row.id, credit: creditSummary(credit), cashOut: cash };
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
@@ -237,7 +325,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       ? // Kilitli alanlar formda salt okunur: fark ancak pencere açıkken eşitleme değeri değiştirdiyse çıkar
         `${names.charAt(0).toLocaleUpperCase("tr-TR")}${names.slice(1)} bu pencere açıkken Paraşüt eşitlemesiyle güncellendi; Paraşüt'teki yeni değer geçerli kaldı. Diğer değişiklikleriniz kaydedildi.`
       : null;
-    return { id, kept, message, credit: creditSummary(credit), stockOnly, cashOut: null };
+    return { ...blankResult, id, kept, message, credit: creditSummary(credit), stockOnly };
   });
 }
 

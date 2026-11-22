@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { numPossessive } from "@/lib/prices/bulk";
+import { numPossessive } from "@/lib/format";
 import { nothingToUndoText, undoPlan } from "@/lib/prices/history";
 import { toMinor } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";

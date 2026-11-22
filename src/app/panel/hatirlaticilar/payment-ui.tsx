@@ -237,7 +237,7 @@ export function usePaymentActions(hide: (key: string) => void) {
             description: `${credited || "Fatura ödendi olarak işaretlendi. "}Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
             duration: 8000,
             // Önceki hâli olduğu gibi döner (ödeme talebi ve hesaptan sayılan dahil)
-            action: undo(() => restoreInvoicePayment(r.data.previous), "Fatura yeniden ödenmedi"),
+            action: undo(() => restoreInvoicePayment(r.data.previous), "Fatura ödenmemişe döndü"),
           });
           return;
         }

@@ -60,6 +60,32 @@ export function pct(v: number | null | undefined, digits = 1): string {
   return `%${num(Math.abs(v) * 100, digits, digits)}`;
 }
 
+// Sayının okunuşunun son sözcüğüne göre iyelik eki: bir → 'i, iki → 'si, üç → 'ü, altı → 'sı, on → 'u, kırk → 'ı …
+const POSS_ONES = ["ı", "i", "si", "ü", "ü", "i", "sı", "si", "i", "u"];
+const POSS_TENS = ["", "u", "si", "u", "ı", "si", "ı", "i", "i", "ı"];
+
+/** Tam sayının okunuşunun son sözcüğüne göre ek: sıfır → ı, yüz → ü, bin → i, milyon → u, milyar → ı */
+function possessiveOf(v: number): string {
+  if (v % 10 || v === 0) return POSS_ONES[v % 10];
+  if (v % 100) return POSS_TENS[(v % 100) / 10];
+  if (v % 1000) return "ü";
+  if (v % 1_000_000) return "i";
+  if (v % 1_000_000_000) return "u";
+  return "ı";
+}
+
+/**
+ * Sayı ve iyelik eki, okunuşun son sözcüğüne göre (denetim UI-06): "12'si", "10'u", "3'ü", "6'sı", "40'ı", "100'ü"
+ * ("12'si sitede de", "ayın 30 gününün 13'ü"). Yüzdede başına % gelir, ek değişmez: `%${numPossessive(30)}` → "%30'u".
+ * Ondalıkta virgülden sonrası okunur: "2,5'i" (beş), "%20,75'i" (yetmiş beş). `digits` en çok ondalık (num gibi); ek
+ * yazılan (yuvarlanmış) sayıya göre
+ */
+export function numPossessive(n: number, digits = 0): string {
+  const text = num(n, digits);
+  const [whole, frac] = text.replace(/^[-−]/, "").split(",");
+  return `${text}'${possessiveOf(Number(frac ?? whole.replace(/\./g, "")))}`;
+}
+
 /** "2026-09" -> "Eylül 2026" */
 export function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);

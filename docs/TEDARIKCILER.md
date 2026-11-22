@@ -161,7 +161,7 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
   yalnız takip günü ve sonrasının faturasına: "Geçmiş faturaları al" ile gelen takip öncesi fatura kapıda ödenmişti,
   hesaptaki parayı almaz, denetim E-14);
   tutarı değişen faturanın sayılan ödemeleri yeniden dengelenir (tutar düştüyse fazlası hesaba geçer, arttıysa
-  ödemelerin kapattığı fatura yeniden ödenmedi olur; takip öncesi kısma inen fatura kapanır); Paraşüt'te iptal edilen
+  ödemelerin kapattığı fatura ödenmemişe döner; takip öncesi kısma inen fatura kapanır); Paraşüt'te iptal edilen
   fatura silinmeden önce bağları çözülür (bağlı faturasız alım eski hâline döner, ödeme borca ya da hesaba geçer; bağlar
   çözülemezse fatura silinmez, sonraki eşitleme yeniden dener). Özet satırında "Cari: …" olarak görünür.
 - **Geçmiş faturalar:** ödeme takibi ilk eşitlemeden 30 gün öncesinden başlar (`integration_state` ›

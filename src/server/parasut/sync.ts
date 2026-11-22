@@ -674,7 +674,7 @@ async function cariFinalSteps(ctx: Ctx): Promise<string> {
     const credited = ctx.pesinTracked.length ? await applyCreditOnArrival(ctx.pesinTracked) : null;
     const parts = [
       moved?.movedInvoices ? `${moved.movedInvoices} faturada ödeme hesaba geçti` : "",
-      moved?.reopened ? `${moved.reopened} fatura yeniden ödenmedi` : "",
+      moved?.reopened ? `${moved.reopened} fatura ödenmemişe döndü` : "",
       credited?.invoices ? `${credited.invoices} peşin faturaya hesaptaki ödeme sayıldı` : "",
     ].filter(Boolean);
     return parts.length ? `Cari: ${parts.join(", ")}` : "";

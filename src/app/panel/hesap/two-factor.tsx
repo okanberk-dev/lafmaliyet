@@ -14,16 +14,21 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
-import { beginTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
+import { isSetupEnded } from "@/lib/two-factor-setup";
+import { beginTotpSetup, cancelTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
+
+import { sessionsNote } from "./session-note";
 
 type Setup = { qr: string; secret: string; uri: string };
 
 /**
  * İki adımlı doğrulama (isteğe bağlı): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
  * istenir. Kurulum: parola → QR'ı okut → kodu gir → kurtarma kodlarını sakla. Açmak, kapatmak ve yeni kurtarma kodu
- * parola ister: açık kalmış bir oturumla başkası kendi telefonunu bağlayamasın.
+ * parola ister: açık kalmış bir oturumla başkası kendi telefonunu bağlayamasın. Açmak ve kapatmak diğer cihazlardaki
+ * oturumları (yöneticide Claude bağlantısını da) kapatır; pencereler bunu önceden söyler. `claude`: etkin bir Claude
+ * bağlantısı var.
  */
-export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; recoveryLeft: number }) {
+export function TwoFactorCard({ enabled, recoveryLeft, claude = false }: { enabled: boolean; recoveryLeft: number; claude?: boolean }) {
   const router = useRouter();
   const [setup, setSetup] = useState<Setup | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
@@ -85,6 +90,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
       {setup ? (
         <SetupDialog
           setup={setup}
+          claude={claude}
           onClose={() => setSetup(null)}
           onDone={(c) => {
             setSetup(null);
@@ -96,7 +102,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
       {askPassword === "enable" ? (
         <ConfirmPasswordDialog
           title="İki adımlı doğrulamayı aç"
-          description="Onaylamak için parolanızı girin; ardından QR kodu gösterilir."
+          description={`Onaylamak için parolanızı girin; ardından QR kodu gösterilir. ${sessionsNote(claude, "Açılınca")}`}
           confirmLabel="Devam"
           onClose={() => setAskPassword(null)}
           onConfirm={async (password) => {
@@ -110,7 +116,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
       ) : askPassword === "disable" ? (
         <ConfirmPasswordDialog
           title="İki adımlı doğrulama kapatılsın mı?"
-          description="Girişte yalnızca parola istenir. Diğer cihazlardaki oturumlar kapanır."
+          description={`Girişte yalnızca parola istenir. ${sessionsNote(claude)}`}
           confirmLabel="Kapat"
           danger
           onClose={() => setAskPassword(null)}
@@ -145,17 +151,30 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
   );
 }
 
-function SetupDialog({ setup, onClose, onDone }: { setup: Setup; onClose: () => void; onDone: (codes: string[]) => void }) {
+/**
+ * QR, anahtar ve onay kodu. Vazgeçilince onaylanmamış anahtar sunucuda silinir; süresi dolan ya da 5 hatalı kodla
+ * durdurulan kurulumda pencere kapanır, kurulum parolayla yeniden başlar (src/lib/two-factor-setup.ts).
+ */
+function SetupDialog({ setup, claude, onClose, onDone }: { setup: Setup; claude: boolean; onClose: () => void; onDone: (codes: string[]) => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useActionTransition();
+  const cancel = () => {
+    // Yanıt beklenmez: anahtar silinemezse de süresi dolunca onaylanamaz
+    void cancelTotpSetup().catch(() => {});
+    onClose();
+  };
 
   function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
       const res = await confirmTotpSetup(code);
-      if (!res.ok) return setError(res.error);
+      if (!res.ok) {
+        if (!isSetupEnded(res.error)) return setError(res.error);
+        toast.error(res.error);
+        return onClose();
+      }
       toast.success("İki adımlı doğrulama açıldı");
       onDone(res.data.codes);
     });
@@ -164,12 +183,12 @@ function SetupDialog({ setup, onClose, onDone }: { setup: Setup; onClose: () => 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={cancel}
       title="İki adımlı doğrulamayı aç"
-      description="QR kodu doğrulama uygulamasıyla okutun, ardından uygulamadaki 6 haneli kodu girin."
+      description={`QR kodu doğrulama uygulamasıyla okutun, ardından uygulamadaki 6 haneli kodu girin. ${sessionsNote(claude, "Açılınca")}`}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={cancel}>
             Vazgeç
           </Button>
           <Button type="submit" form="totp-setup" disabled={pending || code.replace(/\s/g, "").length !== 6}>

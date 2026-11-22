@@ -807,7 +807,10 @@ onu okur); değişen yalnız ciroya girmemesidir. **Kartlı satış oranı** da 
   Z rakamı föyden farklıysa günden güne listede **ModPOS'tan farklı** rozeti, zilde "Kasa raporu ModPOS föyünden
   farklı". Föy her sabah 08:00'de gelir; personelin ekranı değişmez.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
-  E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).
+  E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`). E-posta kapalıysa, gönderim kurulmamışsa
+  ya da adreslerin hepsi personel / pasif hesabınsa formun Sonuç kartı "gönderince yöneticiye e-posta gider" yerine
+  "e-posta kapalı; gönderdikten sonra WhatsApp ile paylaşın" der; yöneticinin "Nasıl çalışır?"u da öyle (denetim
+  UI-05).
 
 Dosyalar: `src/lib/cash-report.ts` (hesap, açılış ↔ devir, düzeltme geçmişi, WhatsApp metni; `tests/kasa-raporu.test.ts`),
 `src/server/actions/cash-report.ts` (uçlar), `src/server/cash/report-store.ts` (yazım yolu ve silme; onay yolları da

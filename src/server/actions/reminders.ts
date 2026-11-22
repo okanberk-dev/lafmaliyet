@@ -393,7 +393,7 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
           throw new UserError("Ödeme bulunamadı (silinmiş olabilir)");
         }
         const e = r.snapshot.entry;
-        const after = [r.reopened ? `${r.reopened} fatura yeniden ödenmedi` : "", r.kept ? `${r.kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
+        const after = [r.reopened ? `${r.reopened} fatura ödenmemişe döndü` : "", r.kept ? `${r.kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
         await logActivity(
           me,
           "Cari ödeme silindi",

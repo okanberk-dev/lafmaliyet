@@ -153,7 +153,7 @@ export function ConnectionsCard({ rows, calls, mcpUrl }: { rows: ConnectionView[
         ) : null}
 
         <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-          Parolanızı değiştirince ya da diğer cihazlardaki oturumları kapatınca Claude bağlantısı da kapanır.
+          Parolanızı değiştirince, iki adımlı doğrulamayı açıp kapatınca ya da diğer cihazlardaki oturumları kapatınca Claude bağlantısı da kapanır.
         </p>
       </CardContent>
       {rows.length >= 2 ? (

@@ -82,7 +82,8 @@ GET /api/panel/karaoke  ◀─────────────────�
   bağlantısı şeridin altından başlar. Baskıda şerit de boşluğu da çıkmaz. Alarm sesi aynı anda çalan "Sürekli" kişisel
   hatırlatıcıyla aynı döngüde çalar ama ayrı susar: hatırlatıcının **Sesi kes**'i karaoke alarmını, **Haber verdim** de
   hatırlatıcının sesini kesmez ([HATIRLATICILAR.md](HATIRLATICILAR.md)).
-- **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
+- **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez. Etiketsiz sayaç ekranda, zilde ve
+  bildirimlerde bu adla geçer ("Rezervasyonsuz oturum bitirildi"; `sessionName`).
 - Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
   aşağıda).
 - **İptalin iadesi** (`refund_minor`, sitenin `refundMinor`'ı; site 29 Ekim 2026'dan beri gönderir): iptal edilmiş

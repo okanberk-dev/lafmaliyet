@@ -289,10 +289,13 @@ test("Excel 'Vergi' sayfasının kaynağı: route vergi görünümünü okur, ha
   assert.match(wbSrc, /if \(extras\.tax\) addTax\(wb, extras\.tax\);/);
 });
 
-test("personel sızıntı betiği: Vergi'nin dört adresi personel çereziyle (HTML ve RSC) Bugün'e döner", () => {
+test("personel sızıntı betiği: Vergi'nin dört adresi personel çereziyle (HTML ve RSC) Bugün'e döner", async () => {
+  // Adresler sayfa dosyalarından ve roles.ts'ten üretilir (elle tutulan liste eskiyordu: denetim KA-03)
+  const { adminPages, panelRoutes } = await import("../scripts/personel-sizinti");
+  const admin = adminPages(panelRoutes());
+  for (const p of PAGES.map((x) => x.replace(/^src\/app/, "").replace(/\/page\.tsx$/, ""))) assert.ok(admin.includes(p), p);
   const leak = read("scripts/personel-sizinti.ts");
-  for (const p of PAGES.map((x) => x.replace(/^src\/app/, "").replace(/\/page\.tsx$/, ""))) assert.ok(leak.includes(`"${p}"`), p);
-  assert.match(leak, /for \(const rsc of \[false, true\]\) \{\n\s+const res = await fetchPage\(path, rsc\);/);
+  assert.match(leak, /for \(const rsc of \[false, true\]\) \{\n\s+const res = await fetchOnce\(path, rsc\);/);
 });
 
 test("inceleme (U1, U2, U4, R6): telefon çeyrek görünümü çeyrek değişince yeniden kurulur; döküm sarar; gelecek dönemde rakam düğmesi yok; Özet uyarıları", async () => {

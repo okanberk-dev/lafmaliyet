@@ -20,11 +20,10 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { basisText, type SalesBasis } from "@/lib/calc/price-loss";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
-import { money, num, pct } from "@/lib/format";
+import { money, num, numPossessive, pct } from "@/lib/format";
 import {
   bulkSummary,
   defaultRounding,
-  numPossessive,
   parseRuleAmount,
   previewRows,
   roundingById,

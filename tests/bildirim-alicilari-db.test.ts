@@ -86,6 +86,9 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
   });
   const setCash = (list: string[], emailEnabled = true) => reports.saveCashSettings({ recipients: list, emailEnabled, whatsapp: null });
   const addRow = async (address: string, active = true) => (await db.insert(s.notificationRecipients).values({ email: address, active }).returning({ id: s.notificationRecipients.id }))[0].id;
+  /** Düzenleme penceresinin açıldığı andaki hâl (saveUser bununla bu arada değişmiş kaydı reddeder) */
+  const seen = async (id: number) =>
+    (await db.select({ name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active, branchId: s.users.branchId }).from(s.users).where(eq(s.users.id, id)))[0];
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -354,7 +357,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
   test("Hesabım: listedeki adresin sahibi personele indirilince giriş e-postasını değiştiremez; eski adres düşmeye devam eder", async () => {
     await setCash([users.veli.email, ACCOUNTANT]);
     await addRow(users.veli.email);
-    const demoted = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: users.veli.email, role: "staff", active: true }, { password: PASSWORD });
+    const demoted = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: users.veli.email, role: "staff", active: true, seen: await seen(users.veli.id) }, { password: PASSWORD });
     assert.ok(demoted.ok && demoted.data.notice, demoted.ok ? "uyarı yok" : demoted.error);
     me = { ...users.veli, role: "staff" };
     // Liste dışındaki bir adrese de çeviremez: eski adres hesapsız kalır, kasa ve sabah e-postası ona yeniden giderdi
@@ -378,7 +381,7 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     await setCash([users.mehmet.email, ACCOUNTANT]);
     await addRow(users.mehmet.email);
     // Yönetici personelin giriş e-postasını değiştirir: eski adres artık hiçbir hesabın değil, e-posta ona gider
-    const renamed = await settingsActions.saveUser({ id: users.mehmet.id, name: users.mehmet.name, email: "mehmet.yeni@laffogato.net", role: "staff", active: true });
+    const renamed = await settingsActions.saveUser({ id: users.mehmet.id, name: users.mehmet.name, email: "mehmet.yeni@laffogato.net", role: "staff", active: true, seen: await seen(users.mehmet.id) });
     assert.ok(renamed.ok, renamed.ok ? "" : renamed.error);
     assert.equal(
       renamed.ok && renamed.data.notice,
@@ -387,12 +390,12 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     assert.deepEqual(await recipients.blockedRecipientsNow(), { cash: [], digest: [] });
     // Etkin yöneticinin adresi değişince uyarı yok (eski adres zaten e-posta alıyordu, alan kişi hâlâ yönetici)
     await setCash([users.veli.email]);
-    const admin = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: "veli.yeni@laffogato.net", role: "admin", active: true }, { password: PASSWORD });
+    const admin = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: "veli.yeni@laffogato.net", role: "admin", active: true, seen: await seen(users.veli.id) }, { password: PASSWORD });
     assert.ok(admin.ok, admin.ok ? "" : admin.error);
     assert.equal(admin.ok && admin.data.notice, null);
     // Yöneticiyi personele indirip adresini aynı anda değiştirmek: eski adres artık kimsenin değil, uyarı
     await setCash(["veli.yeni@laffogato.net"]);
-    const both = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: "veli.ucuncu@laffogato.net", role: "staff", active: true }, { password: PASSWORD });
+    const both = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: "veli.ucuncu@laffogato.net", role: "staff", active: true, seen: await seen(users.veli.id) }, { password: PASSWORD });
     assert.match(both.ok ? (both.data.notice ?? "") : "", /^Veli hesabının eski adresi veli\.yeni@laffogato\.net kasa raporu alıcıları arasında;/);
     // Personel hesabı silinir, adresi listede kalır: uyarı
     const created = await settingsActions.createUser({ mode: "password", name: "Geçici", email: "gecici@laffogato.net", role: "staff", active: true, password: "Kasa-Deneme-2026x" });
@@ -412,18 +415,18 @@ describe("Bildirim alıcıları ve hesaplar: veritabanında", { skip: !SERVER_UR
     await setCash([users.mehmet.email, ACCOUNTANT]);
     await addRow(users.veli.email);
     // Veli'yi personele indirmek (yönetici değişikliği: parola ister)
-    const veli = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: users.veli.email, role: "staff", active: true }, { password: PASSWORD });
+    const veli = await settingsActions.saveUser({ id: users.veli.id, name: users.veli.name, email: users.veli.email, role: "staff", active: true, seen: await seen(users.veli.id) }, { password: PASSWORD });
     assert.ok(veli.ok, veli.ok ? "" : veli.error);
     assert.equal(
       veli.ok && veli.data.notice,
       "Veli (veli@laffogato.net) sabah e-postasının bildirim adresleri arasında; personel hesabına bu e-posta gitmez. Gerekmiyorsa listeden kaldırın.",
     );
-    // Personel Mehmet pasif: kasa alıcılarında (kayıttan önce personel hesabı açılmış: ayar elle yazıldı)
-    const mehmet = await settingsActions.saveUser({ id: users.mehmet.id, name: users.mehmet.name, email: users.mehmet.email, role: "staff", active: false });
+    // Personel Mehmet pasif (listedeki anahtar): kasa alıcılarında (kayıttan önce personel hesabı açılmış: ayar elle yazıldı)
+    const mehmet = await settingsActions.setUserActive(users.mehmet.id, false);
     assert.ok(mehmet.ok);
     assert.match(mehmet.ok ? (mehmet.data.notice ?? "") : "", /^Mehmet \(mehmet@laffogato\.net\) kasa raporu alıcıları arasında; personel hesabına bu e-posta gitmez\./);
     // Listede olmayan hesap: uyarı yok
-    const ayse = await settingsActions.saveUser({ id: users.ayse.id, name: users.ayse.name, email: users.ayse.email, role: "staff", active: false });
+    const ayse = await settingsActions.saveUser({ id: users.ayse.id, name: users.ayse.name, email: users.ayse.email, role: "staff", active: false, seen: await seen(users.ayse.id) });
     assert.equal(ayse.ok && ayse.data.notice, null);
     // Yeni personel hesabı muhasebecinin adresiyle: uyarı
     const created = await settingsActions.createUser({ mode: "password", name: "Muhasebe", email: ACCOUNTANT, role: "staff", active: true, password: "Kasa-Deneme-2026x" });

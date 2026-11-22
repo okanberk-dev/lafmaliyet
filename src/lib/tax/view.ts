@@ -27,7 +27,7 @@ import {
   taxAmountTravels,
 } from "../reminders";
 import type { CashPlanVat } from "../cash-plan";
-import { dateTR, money, num, tl } from "../format";
+import { dateTR, money, num, numPossessive, tl } from "../format";
 import { paidVatPeriods } from "../vat-paid";
 
 import { ASSET_CATEGORY, assetCandidates, type AssetCandidate, orphanAssets, type OrphanAsset, QUARTER_DEPRECIATION_LABELS, unlistedAssetInvoices } from "./assets";
@@ -617,7 +617,7 @@ export function taxCalendar(
       if (t.support) b.detail.push({ label: "Asgari ücret desteği (şartlı)", value: money(-t.support) });
       b.notes.push("Hazine indirimi (2 puan) primler süresinde ödenirse ve vadesi geçmiş borç yoksa uygulanır; geç ödenen ayda işveren payı %21,75'tir.");
       if (input.settingsEmployerRate !== undefined && Math.abs(input.settingsEmployerRate - pay.rates.isverenSgk) > 1e-9)
-        b.notes.push(`Gelir-gider Ayarlar'daki ${pctOf(input.settingsEmployerRate)}'i kullanıyor; vergi ve nakit planı yasal oranı.`);
+        b.notes.push(`Gelir-gider Ayarlar'daki %${numPossessive(input.settingsEmployerRate * 100, 2)} kullanıyor; vergi ve nakit planı yasal oranı.`);
       if (sNominal.slice(0, 4) !== p.slice(0, 4)) b.notes.push(`${monthName(p)} bordrosu ${p.slice(0, 4)} kurallarıyla.`);
       planNote(b);
       if (!rem) b.addHref = "/panel/hatirlaticilar?yeni=sgk";

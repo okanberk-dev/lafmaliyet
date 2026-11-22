@@ -11,6 +11,7 @@ import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { toastUnreachable, tryAction } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
@@ -26,7 +27,7 @@ import { stockOnlyCategory, stockOnlyText } from "@/lib/invoice-linking";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { confirmInvoices, saveInvoice } from "@/server/actions/invoices";
+import { confirmInvoices, saveInvoice, type SameNumberInvoice } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
 import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uploadPlan } from "./document-rules";
@@ -94,6 +95,9 @@ function cashOutForm(o: CashOutInvoiceSource, defaults: Map<string, SupplierDefa
 
 const CASH_DOC: Record<CashOutInvoiceSource["docType"], string> = { e_arsiv: "e-Arşiv", fatura: "fatura", fis: "fiş", yok: "belgesiz" };
 
+/** Aynı numaralı faturanın kaynağı (UI-02 sorusu) */
+const TWIN_SOURCE: Record<SameNumberInvoice["source"], string> = { manual: "elle girilmiş", excel: "Excel'den alınmış", parasut: "Paraşüt'ten gelmiş" };
+
 /**
  * Kategorinin gelir-giderde nereye gittiği (pencere ve toplu değiştirme ipucu). `links`: fatura kategorisi → bağlı
  * Aylık harcamalar kategorisinin adı; bağlı kategorinin faturaları orada gelir-gidere girer. Liste verilmediyse
@@ -156,6 +160,13 @@ export function InvoiceDialog({
   const [cashViewer, setCashViewer] = useState<{ id: number; caption: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string | null>(null);
+  // Kayıt sürerken ikinci gönderim (not alanında Ctrl+Enter'a ikinci basış, tuş tekrarı; denetim UI-03): `busy` bir
+  // sonraki çizimde gelir, aynı karedeki olayı bu bayrak tutar
+  const saving = useRef(false);
+  // Yeni faturanın anahtarı: aynı anahtarla ikinci istek sunucuda ikinci fatura açmaz; her eklenen faturadan sonra yenilenir
+  const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
+  /** Aynı tedarikçinin aynı numaralı faturası var (UI-02): "Yine de ekle" sorulur; `again` "Kaydet, yenisini ekle"den */
+  const [twin, setTwin] = useState<{ found: SameNumberInvoice; again: boolean } | null>(null);
   const router = useRouter();
   // Belge: kayıtlı faturada hemen yüklenir; yeni faturada seçilen dosya hazırlanıp kayıttan sonra yüklenir
   const up = useDocumentUpload();
@@ -248,8 +259,12 @@ export function InvoiceDialog({
     });
   }
 
-  /** `keep`: "Kalsın" düğmesi; kaydeder, fatura hâlâ mal alışı sayılmıyorsa bilerek böyle bırakıldığını kaydeder */
-  async function save(again: boolean, keep = false) {
+  /**
+   * `keep`: "Kalsın" düğmesi; kaydeder, fatura hâlâ mal alışı sayılmıyorsa bilerek böyle bırakıldığını kaydeder.
+   * `sameNoOk`: aynı numaralı fatura soruldu, "Yine de ekle" dendi
+   */
+  async function save(again: boolean, keep = false, sameNoOk = false) {
+    if (saving.current) return;
     setTried(true);
     if (!f.supplier.trim()) {
       supplierRef.current?.focus();
@@ -257,6 +272,7 @@ export function InvoiceDialog({
     }
     if (!f.date) return toast.error("Fatura tarihini seçin");
     if (!locked && (bad.amount || bad.discount || bad.payable)) return toast.error("Tutarları kontrol edin");
+    saving.current = true;
     setBusy(true);
     keepScroll();
     let res: Awaited<ReturnType<typeof saveInvoice>>;
@@ -280,8 +296,10 @@ export function InvoiceDialog({
         // geçerken pencere bugünü yazar)
         paidAt: f.unpaid ? null : f.paidAt || (invoice ? null : f.date > localToday() ? localToday() : f.date),
         cashOutId: cashOut?.id ?? null,
+        clientKey: invoice ? null : clientKey,
+        sameNoOk,
       });
-      if (res.ok && !invoice && attachment) {
+      if (res.ok && !invoice && attachment && !res.data.duplicate) {
         setBusyText("Belge yükleniyor…");
         uploaded = await uploadDocument(res.data.id, attachment);
       }
@@ -289,10 +307,14 @@ export function InvoiceDialog({
       toastUnreachable(e);
       return;
     } finally {
+      saving.current = false;
       setBusy(false);
       setBusyText(null);
     }
     if (!res.ok) return toast.error(res.error, { duration: res.error.length > 120 ? 12_000 : undefined });
+    // Aynı tedarikçinin aynı numaralı faturası var: eklenmedi, pencere sorar
+    if (res.data.duplicate) return setTwin({ found: res.data.duplicate, again });
+    if (!invoice) setClientKey(crypto.randomUUID());
     const shown = locked && invoice ? invoice.payable : payableToSave;
     const withDoc = uploaded?.ok ? " · belge eklendi" : "";
     // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir
@@ -315,7 +337,19 @@ export function InvoiceDialog({
       });
     } else {
       const fromCash = cashOut ? ` · kasadan${res.data.cashOut?.document ? ", fiş belge olarak eklendi" : ""}` : "";
-      toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}${fromCash}` });
+      // Aynı anahtarla eklenmiş fatura döndü (yanıtı yolda kalan gönderimin tekrarı): ikinci fatura açılmadı
+      const title = invoice ? "Fatura güncellendi" : res.data.repeated ? "Fatura zaten eklenmişti" : "Fatura eklendi";
+      // Tekrarda kayıtlı satır döner: bildirim onun tutarını yazar; formda arada yapılan düzeltme uygulanmadıysa söylenir
+      // (PR #95 incelemesi: yanıtı yolda kalan kayıttan sonra 1.100 → 1.010 düzeltmesi sessizce kayboluyordu)
+      const kept = res.data.repeated ? res.data.repeatedRow : null;
+      if (kept && (Math.abs(kept.payable - shown) > 0.004 || kept.supplier.trim() !== f.supplier.trim())) {
+        toast.warning(title, {
+          description: `Kayıtlı fatura: ${kept.supplier} · ${tl(kept.payable, 2)}. Penceredeki değişiklikler uygulanmadı; faturayı listeden açıp düzeltin.`,
+          duration: 12_000,
+        });
+      } else {
+        toast.success(title, { description: `${(kept?.supplier ?? f.supplier).trim()} · ${tl(kept?.payable ?? shown, 2)}${withCredit}${withDoc}${fromCash}` });
+      }
     }
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
@@ -684,6 +718,23 @@ export function InvoiceDialog({
         </Field>
       </form>
       {cashOut ? <PhotoViewer photo={cashViewer} onClose={() => setCashViewer(null)} /> : null}
+      <ConfirmDialog
+        open={twin !== null}
+        onClose={() => setTwin(null)}
+        onConfirm={() => {
+          const again = twin?.again ?? false;
+          setTwin(null);
+          void save(again, false, true);
+        }}
+        tone="primary"
+        title={twin ? `Bu numarayla ${twin.found.supplier} faturası zaten var` : "Bu numarayla fatura zaten var"}
+        description={
+          twin
+            ? `${twin.found.invoiceNo ?? ""} · ${dateTR(twin.found.date)} · ${tl(twin.found.payable, 2)} · ${TWIN_SOURCE[twin.found.source]}. Aynı faturaysa eklemeyin: mal alımı, borç ve KDV indirimi iki kez sayılır.`
+            : undefined
+        }
+        confirmLabel="Yine de ekle"
+      />
     </Dialog>
   );
 }

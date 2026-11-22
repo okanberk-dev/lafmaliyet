@@ -567,6 +567,25 @@ export function gibNoClashNote(e: Pick<ExistingInvoice, "supplier" | "date"> & {
   return `aynı numaralı ${kind} fatura var (${e.supplier}, ${dateTR(e.date)}); aynı faturaysa birini silin`;
 }
 
+/** Fatura numarasının karşılaştırma anahtarı: ayraçsız, büyük harf ("ABC-2026/001" → "ABC2026001"); numara yoksa "" */
+export const invoiceNoKey = invNo;
+
+/**
+ * Elle eklenecek faturayla aynı tedarikçinin aynı numaralı faturası (denetim UI-02): numara ayraçsız ve büyük harfle
+ * aynı, tedarikçi ad (sameSupplier) ya da Tedarikçiler kartıyla (`cardOf`) aynı; tarih ve tutara bakılmaz (aynı fatura
+ * eşitlemeden sonra elle ya da iki kişi tarafından girilmiş olabilir). Paraşüt'ten gelen kayıt da sayılır. Numarasız
+ * yeni faturada null
+ */
+export function findSameInvoiceNo<T extends Pick<ExistingInvoice, "invoiceNo" | "supplier" | "supplierTaxNumber">>(
+  d: { supplier: string; invoiceNo: string | null },
+  existing: T[],
+  cardOf?: CardOf,
+): T | null {
+  const no = invNo(d.invoiceNo);
+  if (!no) return null;
+  return existing.find((e) => invNo(e.invoiceNo) === no && sameIssuer(e, { supplier: d.supplier }, cardOf)) ?? null;
+}
+
 /**
  * Gider faturasının e-belgesi panelde silinmiş (yok sayılan, `ei:<kimlik>`) bir e-fatura mı: e-fatura Paraşüt'te
  * sonradan içeri alınınca silinen kayıt gider faturası olarak geri gelmesin.
