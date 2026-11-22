@@ -161,3 +161,41 @@ export function remindableLists<T extends Pick<AlertList, "hasRun">>(lists: T[],
 export function alertReaches(listBranch: string | null, user: { branchId: string | null }): boolean {
   return listBranch === null || user.branchId === null || user.branchId === listBranch;
 }
+
+/** Vardiya planından bir çalışma satırı (yalnız hesabı olan kişi): gün, şube ve günün başından dakikalar */
+export interface AlertShift {
+  branchId: string;
+  userId: number;
+  /** Vardiyanın başladığı gün (Türkiye), YYYY-MM-DD */
+  date: string;
+  startMin: number;
+  /** Gece yarısını geçen vardiyada 1440'tan büyük */
+  endMin: number;
+}
+
+const dayBefore = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 24 * 60 * MIN_MS).toISOString().slice(0, 10);
+
+/**
+ * Uyarı kime gider, vardiya planıyla (22 Kasım 2026: "kişinin vardiyasında ... temizlik checklist varsa hatırlatıcıları
+ * ayarla"). Hatırlatma, listenin şubesinde **o an vardiyada olan** hesaplara gider (dün başlayıp gece yarısını geçen
+ * vardiya da sayılır; vardiyaya yazılan yönetici dahil). O an kimse vardiyada değilse o gün o şubede çalışacak
+ * herkese; o gün için plan hiç yazılmadıysa eskisi gibi listeyi doldurabilen bütün personele (`alertReaches`). Şubesiz
+ * listede bütün şubelerin planına bakılır. `at`: bildirim anının Türkiye günü ve günün dakikası.
+ */
+export function alertRecipients<U extends { id: number; role: "admin" | "staff"; branchId: string | null }>(
+  listBranch: string | null,
+  users: readonly U[],
+  shifts: readonly AlertShift[],
+  at: { date: string; minute: number },
+): U[] {
+  const plan = shifts.filter((s) => listBranch === null || s.branchId === listBranch);
+  const yesterday = dayBefore(at.date);
+  const onNow = plan.filter((s) => (s.date === at.date && s.startMin <= at.minute && at.minute < s.endMin) || (s.date === yesterday && at.minute + 24 * 60 < s.endMin));
+  const today = plan.filter((s) => s.date === at.date);
+  for (const group of [onNow, today]) {
+    const ids = new Set(group.map((s) => s.userId));
+    const hit = users.filter((u) => ids.has(u.id));
+    if (hit.length) return hit;
+  }
+  return users.filter((u) => u.role === "staff" && alertReaches(listBranch, u));
+}

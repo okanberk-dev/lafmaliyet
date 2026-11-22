@@ -48,7 +48,7 @@ import {
   type ShiftEntry,
   type ShiftRow,
 } from "../src/lib/vardiya";
-import { LAF_MARK_WHITE_PNG, LAF_MARK_WHITE_SIZE } from "../src/server/vardiya/logo";
+import { LAF_BEAN_PATH, LAF_LETTERS_PATH, LAF_MARK_BOX } from "../src/server/vardiya/logo";
 import { renderShiftPdf, SHIFT_FONT_FILES } from "../src/server/vardiya/pdf";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -333,9 +333,12 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: [], updated: null }))).getPageCount(), 1);
   // Şubesi bilinmeyen (hazır vardiyası olmayan) plan da çizilir
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, branchId: undefined }))).getPageCount(), 1);
-  // Logo gömülü PNG (sitenin e-postalarındaki L'Af işareti), dosya izine bağlı değil
-  const png = Buffer.from(LAF_MARK_WHITE_PNG, "base64");
-  assert.equal(png.subarray(1, 4).toString("latin1"), "PNG");
-  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [LAF_MARK_WHITE_SIZE.width, LAF_MARK_WHITE_SIZE.height]);
-  assert.match(read("src/server/vardiya/pdf.ts"), /doc\.embedPng\(Buffer\.from\(LAF_MARK_WHITE_PNG, "base64"\)\)/);
+  // Logo vektör (L'Af'ın harfleri ve çekirdeği ayrı yollar), dosya izine bağlı değil; harfler yeşil, çekirdek altın çizilir
+  for (const path of [LAF_LETTERS_PATH, LAF_BEAN_PATH]) assert.match(path, /^M[\d. ]+C[\dA-Za-z. -]+Z?$/);
+  assert.deepEqual(LAF_MARK_BOX, { width: 1035.2, height: 846 });
+  const pdf = read("src/server/vardiya/pdf.ts");
+  assert.match(pdf, /drawSvgPath\(LAF_LETTERS_PATH, \{ x: MARGIN, y: top, scale, color: GREEN \}\)/);
+  assert.match(pdf, /drawSvgPath\(LAF_BEAN_PATH, \{ x: MARGIN, y: top, scale, color: GOLD \}\)/);
+  // Sade tasarım: dolu kutu yok (yalnız daire, çizgi ve yazı)
+  assert.doesNotMatch(pdf, /roundRect|drawRectangle/);
 });

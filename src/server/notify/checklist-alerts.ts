@@ -2,10 +2,10 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { alertPollDue, alertReaches, alertSendInstant, checklistAlerts, remindableLists, type ChecklistAlert } from "@/lib/checklist-alerts";
+import { alertPollDue, alertRecipients, alertSendInstant, checklistAlerts, remindableLists, type AlertShift, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { checklistDay } from "@/lib/checklists";
 import { loadAlertLists } from "@/server/checklists/store";
 import { closedMarksOn, isClosedDay } from "@/server/closed-days";
@@ -30,7 +30,8 @@ export interface ChecklistAlertRun {
  * Personele kontrol listesi hatırlatmaları (/api/cron/kontrol ve canlı yoklama; kurallar src/lib/checklist-alerts.ts).
  * Yalnız günde 4 bildirim saatinde (10:00, 14:00, 18:00, 22:00) ve saatin ilk saatinde çalışır, başka zaman hiçbir şey
  * göndermez (alertSendInstant); uyarılar o saatin anına göre bulunur. Bugünün listelerinden o anda gerekenler bulunur; her uyarının anahtarı gönderimden önce notification_log'a yazılarak
- * sahiplenilir (aynı anda iki çalışma aynı uyarıyı iki kez göndermesin). Her personele kendi adresine tek e-posta
+ * sahiplenilir (aynı anda iki çalışma aynı uyarıyı iki kez göndermesin). Hatırlatma, listenin şubesinde o an vardiyada
+ * olanlara gider (Vardiya planı; plan yoksa bütün personele: alertRecipients). Her kişiye kendi adresine tek e-posta
  * gider (adresler birbirine görünmez); ona giden bütün uyarılar bir arada. Bir uyarı hiç kimseye kesin olarak
  * gidemediyse sahiplenme geri alınır, sonraki çalışma yeniden dener. E-posta Ayarlar'dan kapalıysa ya da Resend kurulu
  * değilse hiçbir şey yazılmaz. Gün kapalı işaretliyse (Özel günler › Kafe kapalı) yalnız o gün açılmış listeler
@@ -66,10 +67,21 @@ export async function runChecklistAlerts(clock: Date = new Date(), deadlineAt: n
   const alerts = due.filter((a) => claimed.has(a.key));
   if (!alerts.length) return { skipped: "hatırlatmalar daha önce gönderildi", alerts: [], sent: 0, failed: 0 };
 
-  const staff = await db
-    .select({ id: s.users.id, email: s.users.email, branchId: s.users.branchId })
-    .from(s.users)
-    .where(and(eq(s.users.active, true), eq(s.users.role, "staff")));
+  // Kime: listenin şubesinde o an vardiyada olanlar (Vardiya planı; docs/VARDIYA.md › Nerelere bağlı), plan yoksa bütün
+  // personel (alertRecipients). Bildirim anının Türkiye günü ve dakikası; dün başlayıp gece yarısını geçen vardiya da okunur
+  const local = new Date(now.getTime() + 3 * 3_600_000);
+  const at = { date: local.toISOString().slice(0, 10), minute: local.getUTCHours() * 60 + local.getUTCMinutes() };
+  const yesterday = new Date(local.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const [people, shiftRows] = await Promise.all([
+    db.select({ id: s.users.id, email: s.users.email, role: s.users.role, branchId: s.users.branchId }).from(s.users).where(eq(s.users.active, true)),
+    db
+      .select({ branchId: s.shifts.branchId, userId: s.shifts.userId, date: s.shifts.date, startMin: s.shifts.startMin, endMin: s.shifts.endMin })
+      .from(s.shifts)
+      .where(and(inArray(s.shifts.date, [at.date, yesterday]), eq(s.shifts.kind, "work"), isNotNull(s.shifts.userId))),
+  ]);
+  const shifts: AlertShift[] = shiftRows.flatMap((r) => (r.userId === null || r.startMin === null || r.endMin === null ? [] : [{ branchId: r.branchId, userId: r.userId, date: r.date, startMin: r.startMin, endMin: r.endMin }]));
+  const reach = new Map(alerts.map((a) => [a.key, new Set(alertRecipients(a.branchId, people, shifts, at).map((u) => u.id))]));
+  const staff = people.filter((u) => alerts.some((a) => reach.get(a.key)!.has(u.id)));
   const from = resolveFrom(settings.from);
   const delivered = new Map<string, string[]>(alerts.map((a) => [a.key, []]));
   const attempted = new Map<string, string[]>(alerts.map((a) => [a.key, []]));
@@ -78,7 +90,7 @@ export async function runChecklistAlerts(clock: Date = new Date(), deadlineAt: n
   let sent = 0;
   let failed = 0;
   for (const u of staff) {
-    const mine: ChecklistAlert[] = alerts.filter((a) => alertReaches(a.branchId, u));
+    const mine: ChecklistAlert[] = alerts.filter((a) => reach.get(a.key)!.has(u.id));
     if (!mine.length || !u.email) continue;
     for (const a of mine) attempted.get(a.key)!.push(u.email);
     const msg = renderChecklistAlert(mine, day);

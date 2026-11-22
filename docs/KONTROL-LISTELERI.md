@@ -219,8 +219,12 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 - Tamamlanmış saat ya da liste için e-posta gitmez; isteğe bağlı maddeler (bahçe fotoğrafı) beklenmez.
 - Gecikme, bitişten en çok **2 saat** sonra gider (`LATE_ALERT_MIN`); iş uzun süre çalışmayıp dönünce eski uyarılar
   yığılmaz. Geç çalışan iş aralığı biten saat için "zamanı geldi" değil yalnız "gecikti" gönderir.
-- **Kime:** listeyi doldurabilen ("Personel doldurabilir") etkin **personel**: şubeli listede o şubenin personeli ve
-  şubesi boş personel, şubesiz listede bütün personel. Tuvalet çizelgesi yalnız Tuzla'nın ve şubesiz personelin.
+- **Kime (22 Kasım 2026'dan beri vardiyaya göre):** listenin şubesinde **o an vardiyada olan** hesaplar
+  ([Vardiya planı](VARDIYA.md); dün başlayıp gece yarısını geçen vardiya da sayılır, vardiyaya yazılan yönetici dahil):
+  10:00 ve 14:00 bildirimi sabahçıya, 18:00 ve 22:00 akşamcıya gider, iki vardiyanın kesiştiği saatte ikisine de. O an
+  kimse vardiyada değilse o gün o şubede çalışacak herkese. O gün için plan hiç yazılmadıysa eskisi gibi listeyi
+  doldurabilen etkin **personel**: şubeli listede o şubenin personeli ve şubesi boş personel, şubesiz listede bütün
+  personel (`alertRecipients`). Tuvalet çizelgesi yalnız Tuzla'nın.
   Her kişiye kendi adresine tek e-posta (adresler birbirine görünmez); o çalışmadaki bütün uyarıları bir arada,
   gecikmeler önce. E-postada ödeme ya da maliyet yok.
 - Her uyarı bir kez: anahtar `kontrol-eposta:{liste}:{gün}:{saat|liste}:{due|late}` gönderimden önce
