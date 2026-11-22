@@ -296,6 +296,15 @@ E-53; `src/lib/notify-recipients.ts`, `src/server/notify/recipients.ts`):
 
 Haftalık özet zaten yalnız etkin yöneticilerin giriş e-postalarına gider.
 
+## Marina gün sonu e-postası (22 Kasım 2026)
+
+LafPOS'un şubesinin (Marina) gün sonu geçiş gününden itibaren geldiğinde kasa raporu alıcılarına ve etkin bildirim
+adreslerine (yeni liste yok; personel ve pasif hesap düşer) "Marina gün sonu · 22 Kasım Pazar" gider: satış, ödemeler,
+ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağlantı; maliyet ve kâr yok. İçerik başına bir
+kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
+(adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:
+[LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+
 ## Haftalık özet (pazartesi)
 
 Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş
@@ -420,6 +429,40 @@ siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saat
 güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık): konu ve cihaz tercihi
 duruyor ama şu an gönderen yok (tek gönderen mal siparişi taslağıydı, 26 Ekim 2026'da kalktı; [MAL-SIPARISI.md](MAL-SIPARISI.md)),
 bu yüzden anahtar cihaz kartında görünmez; yeniden bir gönderen olunca döner ([ONAYLAR.md](ONAYLAR.md)).
+
+## Uyarı sesleri yalnız bu bilgisayardan (22 Kasım 2026)
+
+Sahibin isteği: Tuzla Köyiçi'nde panel ötünce kafenin genel hoparlörü (müzik sistemi) ötmesin, yalnız bilgisayar
+ötsün; hatırlatmalarda da.
+
+**Kök neden.** Sesler seçilen hoparlöre çalıyordu (`AudioContext.setSinkId`), ama üç yoldan genel hoparlöre kaçıyordu:
+
+1. Hoparlör hiç seçilmemişse ses Windows'un varsayılan çıkışından geliyordu; Tuzla'da o çıkış genel hoparlör.
+2. Seçilen hoparlör bulunamayınca (çıkarıldı, mikrofon izni düştü) ses bilerek varsayılan çıkışa dönüyordu.
+3. Sekmenin sesi açılmamışken (sayfa yenilendi, kimse dokunmadı) ya da panel kapalıyken gelen sistem bildirimi
+   Windows'un bildirim sesini çalıyordu; o ses her zaman varsayılan çıkıştan çıkar, tarayıcıdan yönlendirilemez.
+
+**Şimdi.** Bu cihazda uyarılar › **Uyarı sesleri** kartında:
+
+- **Yalnız bu bilgisayardan çalsın** (yalnız bilgisayarda Chrome / Edge'de görünür; telefon ve tablette yok). Tuzla
+  Köyiçi'nde varsayılan açık, Marina'da kapalı (docs/SUBE.md › Uyarı sesleri şubeye göre). Açıkken sesler yalnız
+  seçilen hoparlörden çıkar. Hoparlör seçilmemişse, çıkarıldıysa ya da izni düştüyse ses **susar**, genel hoparlöre
+  geçmez; kartta ve sayfanın başında "Uyarı sesleri susturuldu" uyarısı çıkar. Ekrandaki pencereler ve kartlar
+  aynen çıkar. Sistem bildirimleri her zaman sessiz gelir (panel kapalıyken bile: işaret tarayıcının Cache
+  deposunda, servis çalışanı okur).
+- **Hoparlör seçimi**: "Bu bilgisayarın hoparlörü · Hoparlör (Realtek(R) Audio)" gibi işaretli olanı seçin. Adlar için
+  Chrome bir kez mikrofon izni ister (mikrofon kullanılmaz, hemen kapatılır). Adlar görünüyorsa ve hiçbir hoparlör
+  seçilmemişse bilgisayarın kendi hoparlörü (Realtek, dahili, built-in…) kendiliğinden seçilir.
+- Bilgisayarın varsayılan çıkışı kendi hoparlörü değilse kart adını yazar ("Bu kafenin genel hoparlörüyse…").
+- **Deneme sesi** seçilen hoparlörden çalar; ses susturulmuşsa nedenini söyler.
+- Safari, iPhone ve iPad hoparlör seçtirmez: orada ses cihazın kendi çıkışından gelir ve anahtar görünmez.
+
+Seçim bu bilgisayarda saklanır (`localStorage`, `laf:cihaz-uyarilari:<rol>`); hoparlör kimlikleri bilgisayara
+özeldir. Paneldeki bütün sesler tek yerden çalar (`src/components/panel/live/sounds.ts`); başka bir dosyada ses
+çalınmadığını `tests/ses-cikisi.test.ts` denetler. Susma kuralı saf işlev: `src/lib/audio-output.ts` › `alertAudible`.
+
+**Tuzla'daki bilgisayarda bir kez:** Siparişler ekranında Bu cihazda uyarılar › Uyarı sesleri › "Hoparlörleri göster"
+(gerekirse) › "Bu bilgisayarın hoparlörü"nü seçin › **Deneme sesi**.
 
 ## Resend kurulumu
 

@@ -8,8 +8,9 @@ import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { addIgnored, removeIgnored } from "@/lib/product-ignore";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
-import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
+import { forgetLegacyParasutToken, forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
+import { forgetParasutConnect } from "@/server/parasut/connect";
 import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
 
@@ -80,8 +81,11 @@ export async function disconnectParasut() {
   return attempt(async () => {
     const me = await requireAdmin();
     await forgetParasutToken();
+    await forgetLegacyParasutToken();
+    // Yarıda kalmış bir "bağla" isteği de kalmasın
+    await forgetParasutConnect();
     await getDb().delete(s.integrationState).where(inArray(s.integrationState.key, PARASUT_STATE_KEYS));
-    await logActivity(me, "Paraşüt bağlantısı sıfırlandı", "Kayıtlı oturum ve eşitleme imleci silindi");
+    await logActivity(me, "Paraşüt bağlantısı sıfırlandı", "Kayıtlı oturum ve eşitleme imleci silindi; yeniden bağlanması gerekir");
     refresh();
     return null;
   });

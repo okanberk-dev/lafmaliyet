@@ -2,7 +2,7 @@ import "server-only";
 
 import { eq, like, sql, type SQL } from "drizzle-orm";
 
-import { salesMonthsToPull, tillRowOrNull, type TillOnlineRow } from "@/lib/site-sales/calc";
+import { salesMonthsToPull, siteBranchMatches, siteBranchOf, tillRowOrNull, type SiteBranch, type TillOnlineRow } from "@/lib/site-sales/calc";
 import { monthRange, parseSiteSales, readSalesRecord, SiteSalesFormatError, type SiteSales, type SiteSalesMonth } from "@/lib/site-sales/schema";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -86,10 +86,15 @@ export function salesFailureMessage(failure: { kind: "timeout" } | { kind: "netw
 
 class SalesRequestError extends Error {}
 
-/** Sitenin bir dönemin satışı (imzalı). Hata: SalesRequestError, Türkçe açıklamalı */
-async function fetchSales(secret: string, range: { from: string; to: string }, query: Record<string, string>): Promise<SiteSales> {
+/**
+ * Sitenin bir dönemin satışı (imzalı). Hata: SalesRequestError, Türkçe açıklamalı. `branch` verilirse `&branch=` ile o
+ * şubenin siparişleri istenir ve yanıtın şubesi denetlenir (siteBranchMatches); verilmezse bütün şubeler (aylık kayıt:
+ * işletmenin cirosu)
+ */
+async function fetchSales(secret: string, range: { from: string; to: string }, query: Record<string, string>, branch?: SiteBranch): Promise<SiteSales> {
   const url = new URL("/api/panel/sales", siteUrl());
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  if (branch) url.searchParams.set("branch", branch);
   let res: Response;
   try {
     res = await signedSiteFetch(secret, url);
@@ -103,6 +108,7 @@ async function fetchSales(secret: string, range: { from: string; to: string }, q
   } catch {
     throw new SalesRequestError("Sitenin satış yanıtı okunamadı");
   }
+  if (branch && !siteBranchMatches(branch, (json as { branch?: unknown } | null)?.branch)) throw new SalesRequestError("Site şubeye göre satış vermedi (laffogato.net güncel değil)");
   try {
     return parseSiteSales(json, range);
   } catch (e) {
@@ -156,15 +162,17 @@ export async function syncSiteSales(months: string[] = salesMonthsToPull(todayTR
 }
 
 /**
- * Kasa raporunun bilgi satırı: o günün online satışı ve karaoke ön ödemesi (sitenin günü, gece yarısında biter).
- * Saklanmaz; bağlantı kapalı, site düşük ya da yavaş (8 sn) ise ya da yanıt okunamazsa null: rapor satırsız gider,
- * hiçbir zaman beklemez ya da bozulmaz. Kasa farkına ve hiçbir kasa rakamına girmez.
+ * Kasa raporunun bilgi satırı: o günün online satışı ve karaoke ön ödemesi (sitenin günü, gece yarısında biter), kasanın
+ * şubesinin (`&branch=tuzla|marina`; verilmezse Tuzla, siteBranchOf). Saklanmaz; bağlantı kapalı, site düşük ya da yavaş
+ * (8 sn) ise, yanıt okunamazsa ya da başka şubenin rakamıysa null: rapor satırsız gider, hiçbir zaman beklemez ya da
+ * bozulmaz. Kasa farkına ve hiçbir kasa rakamına girmez.
  */
-export async function fetchTillOnlineRow(day: string): Promise<TillOnlineRow | null> {
+export async function fetchTillOnlineRow(day: string, branchId?: string | null): Promise<TillOnlineRow | null> {
   const secret = siteLinkSecret();
-  if (!secret || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const branch = siteBranchOf(branchId);
+  if (!secret || !branch || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
   return tillRowOrNull(day, () =>
-    fetchSales(secret, { from: day, to: day }, { from: day, to: day }).catch((e: unknown) => {
+    fetchSales(secret, { from: day, to: day }, { from: day, to: day }, branch).catch((e: unknown) => {
       console.warn("[satis] kasa raporu satırı alınamadı:", e instanceof Error ? e.message : "bilinmeyen hata");
       throw e;
     }),

@@ -356,11 +356,54 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
 - Başka alan gitmez: fiyat, kâr, marj, reçete ve hammadde yok (`src/lib/lafpos/costs.ts`). Makine ucudur: oturumla
   açılmaz, panel ekranlarında yoktur; LafPOS bu rakamı yalnız `rapor.maliyet` yetkisi olanlara gösterir.
 
+## Gün sonu otomasyonu (22 Kasım 2026)
+
+Yalnız LafPOS'un şubesinde (Marina) ve geçiş gününden itibaren (`src/server/lafpos/gun-sonu.ts`, saf kuralları
+`src/lib/lafpos/gun-sonu.ts`). Tuzla (ModPOS) bu yoldan hiç geçmez: raporu, e-postası ve föyü bugünkü gibi.
+
+**Tetik:** `POST /api/pos/gun` 200 ve `counted: true` döndükten sonra (`after()`; kasa yanıtı e-postayı beklemez) ve
+günlük iş (`/api/cron/gunluk`, adım "LafPOS gün sonu"): son 7 günün (geçiş gününden önce değil) gün sonları yeniden
+işlenir. İşlenmiş gün hiçbir şey yapmaz; gece gönderilemeyen e-posta sabah gider, geçiş günü sonradan girildiyse eksik
+günler (en çok 7 gün geriye) yakalanır.
+
+**Kasa raporu kendiliğinden yazılır** (`writeAutoReport`, tek işlem, geç raporun ve raporun kilidi altında):
+
+- Rapor yoksa ve LafPOS'ta sayım varsa: "LafPOS'tan doldur"un eşlemesiyle (Z, ödemeler, ödenmez, indirim, açılış, gün
+  içinde giren, gün içinde çıkan: panelin Kasadan çıkanlar'ı girildiyse o, yoksa LafPOS'un harcama + teslimi; teslim
+  edilen 0, sayılan nakit LafPOS'un sayımı). Gönderen "LafPOS (otomatik)". Not: "LafPOS gün sonundan otomatik yazıldı.
+  Eksik: Banka POS Z (yazarkasa); panelden ekleyin." Açılış önceki raporun devrinden farklıysa nota yazılır, LafPOS'taki
+  açılış kalır. Rapor kapalı gün işaretini kaldırır ve günün bekleyen geç rapor isteğini kapatır (elle girilen rapor gibi).
+- **Uydurma değer yok:** Banka POS ve yazarkasa alanları boş kalır (fotoğrafla ya da elle girilir). LafPOS'ta sayım
+  yoksa rapor hiç yazılmaz ("sayım yok"); LafPOS sayımla yeniden gönderince yazılır.
+- **Düzeltme:** LafPOS aynı günü yeniden gönderirse yalnız elle değişmemiş alanlar güncellenir (kayıtlı değer son
+  otomatik değere eşitse); personelin ya da yöneticinin düzelttiği alan ve Banka POS korunur. Önceki sürüm geçmişe
+  yazılır, işlem geçmişine "Kasa raporu güncellendi (LafPOS otomatik)" düşer.
+- Rapor personel tarafından girildiyse dokunulmaz (LafPOS'tan farklı yazılanları mevcut uzlaşma gösterir). Yönetici
+  otomatik raporu silerse yeniden yazılmaz. Geçiş gününden 7 günden eski güne rapor yazılmaz (geç rapor yöneticinin işi).
+
+**Gün sonu e-postası** (`sendDayEndEmail`): kasa raporu alıcılarına (Kasa › Rapor alıcıları, e-posta açıksa) ve etkin
+bildirim adreslerine (Hatırlatıcılar, bildirim e-postası açıksa); personel ve pasif hesabın adresi gönderimde düşer
+(`sendableRecipients`). Konu "Marina gün sonu · 22 Kasım Pazar". İçerik: toplam satış, Z no ve fiş, indirim, ödeme
+türleri ve LafPOS'un ödeme dökümü, ödenmez / ikram ve ikram edilenlerin adedi ve menü değeri, kasa (açılış, olması
+gereken, sayılan, fark), dün ve geçen haftanın aynı günüyle kıyas (satış; LafPOS günü yoksa o günün kasa raporu),
+Marina'nın laffogato.net online satışı (`&branch=marina`), raporun durumu ve eksikler, "Panelde aç". Maliyet ve kâr
+yok. İptal sözleşmede ayrı alan değil (yazılmaz).
+
+- Gün başına içerik başına bir kez: günün özeti (`dayHash`: Z, ödemeler, ikram) gönderilenle aynıysa gitmez. LafPOS
+  düzeltip farklı rakamla yeniden gönderirse konu "· düzeltildi" ile ve başta "Düzeltildi: …" notuyla bir kez daha gider.
+- Gönderim başarısızsa hata `lafpos_day_ends.email_error`'a ve işlem kaydına (`notification_log`, anahtar
+  `lafpos-gun:marina:GÜN`) yazılır; günlük iş yeniden dener. Aynı anda iki gönderim olmaz (`sending_at`).
+- Geçiş gününden önceki gün (deneme) e-posta almaz, rapor yazılmaz.
+
+Durum tablosu `lafpos_day_ends` (gün, şube): otomatik rapor, son otomatik değerler, eksikler, gönderilen içerik, gönderim
+sayısı ve hatası (`drizzle/0061_lafpos_gun_sonu.sql`). Testler: `tests/lafpos-gun-sonu.test.ts`,
+`tests/lafpos-gun-sonu-db.test.ts`.
+
 ## Geçiş günü
 
 **Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü** (`settings.lafposGecisGunu`; `Settings` tipinde ve
-`DEFAULT_SETTINGS`'te `null`): Tuzla'nın kasasında LafPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00
-kuralı; Marina ModPOS'ta kalır, aşağıda "Şubeler").
+`DEFAULT_SETTINGS`'te `null`): Marina'nın kasasında LafPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00
+kuralı; Tuzla ModPOS'ta kalır, aşağıda "Şubeler"). Canlıda 22 Kasım 2026.
 
 - **Boş (varsayılan):** kasa ModPOS. Her şey bugünkü gibi çalışır; LafPOS'un gönderdiği günler deneme sayılır.
 - **Dolu:** o günden itibaren kaynak LafPOS. Bugün değişen: 200 yanıtı `counted: true` der (B07); Kasa raporu o günden
@@ -385,21 +428,22 @@ kuralı; Marina ModPOS'ta kalır, aşağıda "Şubeler").
   boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
 - **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler
   (`counted`, `switchDay`).
-- **Yalnız LafPOS'un şubesinin kasası** (aşağıda, "Şubeler"): Marina'nın kasası ModPOS'ta kalır.
+- **Yalnız LafPOS'un şubesinin kasası** (aşağıda, "Şubeler"): Tuzla'nın kasası ModPOS'ta kalır.
 
 ### Şubeler (denetim 21 Kasım #5)
 
-LafPOS bugün yalnız **Tuzla**'da kurulu: gün sonunu Tuzla'ya yazar (`LAFPOS_BRANCH_ID`, `src/lib/lafpos/switch.ts`;
-gövdede şube alanı yok, [planlar/sube.md](planlar/sube.md) › LafPOS tarafı) ve geçiş günü **yalnız Tuzla'nın
-kasasınındır**. Marina'nın kasası ModPOS'tur ([SUBE.md](SUBE.md)); geçiş günü seçilince Marina'da hiçbir şey
-değişmez. Önceden ayar şubesizdi: Tuzla LafPOS'a geçince Marina'nın föyü çekilmiyor, Kasa raporu "LafPOS gün sonu (Z)"
-ile açılıyor, ModPOS karşılaştırması duruyor, Aralık listesi reddediliyor ve yüklü listesi düşüyordu.
+LafPOS 21 Kasım 2026'dan beri **Marina**'da kurulu (#98): gün sonunu Marina'ya yazar (`LAFPOS_BRANCH_ID = "marina"`,
+`src/lib/lafpos/switch.ts`) ve geçiş günü **yalnız Marina'nın kasasınındır**. Gövdedeki `sube` alanı (LafPOS › Yönetim ›
+Ayarlar ve yedek › Şube) `marina` değilse gün yazılmaz: 409 `{ error: "wrong_branch", sube, expected }`; Ayarlar ›
+LafPOS kartı kasanın hangi şubeye ayarlı olduğunu ve ne yapılacağını yazar (`rejectionText`). Eski kasa `sube`
+göndermez, kabul edilir. Tuzla'nın kasası ModPOS'tur ([SUBE.md](SUBE.md)); geçiş günü seçilince Tuzla'da hiçbir şey
+değişmez. Marina'nın ModPOS föyü yedek olarak çekilmeye devam eder ama geçiş gününden sonra hiçbir rakama girmez.
 
 Kural tek yerde: `branchSwitchDay(geçiş günü, şube)` LafPOS'un şubesinde ayarı, öteki şubede ve online kanalda `null`
 (her günü ModPOS günü) verir; şubesiz eski kayıt Tuzla'nındır (`isLafposBranch`). Tek kasanın gününe bakan her yer geçiş
 gününü kasanın şubesinden geçirir:
 
-| Yer | Marina'da (ModPOS) |
+| Yer | Tuzla'da (ModPOS) |
 |---|---|
 | Sabah işi ve Ayarlar › ModPOS kartı (`sync.ts`, `status.ts`) | Föy geçiş gününden sonra da çekilir, eksik gün sayılır |
 | Kasa raporu, geç rapor, fotoğraf kaldırma (`loadKasaLafpos`, `kasaEvidence`, `loadKasaLafposDays`) | ModPOS'a göre: LafPOS bandı yok, kanıt ModPOS Z fotoğrafı |
@@ -410,22 +454,21 @@ gününü kasanın şubesinden geçirir:
 | Bugün'ün ve zilin akşam satırı, fotoğraf okuma önerisi | ModPOS der |
 | Satışlar: içe aktarma ve elle satır (`modposImportRule`, `saveLine`; listenin şubesine göre) | Her ayın listesi yüklenir |
 
-Veri kümesi (ay ekranları) görünümün geçiş gününü okur (`scopeSwitchDay`): Marina ya da online kanal seçiliyken geçiş
-günü yok sayılır (LafPOS hiç okunmaz, etiketler ModPOS der); Tuzla'da ayar. **"Tümü"de** ayar geçerlidir ama satırlar
-şube şube ayrılır: Marina'nın ModPOS listesi her ay sayılır (`mergeSalesSources`), LafPOS'un sayılmaya başladığı gün ve
-Satışlar'ın uyarıları yalnız Tuzla'nın listesine ve kasa raporlarına bakar, Tuzla'nın LafPOS gün sonu yalnız Tuzla'nın
-panel ikramını düşürür (`panelWasteCounts`, kaydın şubesiyle). Ay etiketleri ("Kasa (ModPOS 1–9 · LafPOS 10–30)",
-"Satışlar: LafPOS") "Tümü"de Tuzla'nın kasasını yazar; Satışlar'ın içe aktarması "Tümü"de Tuzla'ya yazdığı için kuralı da
-Tuzla'nınkidir (Marina'nın listesi Marina seçiliyken yüklenir). Komisyon & hakediş işletme genelidir: LafPOS'un girdiği
-ayda Marina'nın kasa raporları geçiş gününden önceki günler gibi sayılır (Z'de grubun tek toplamı; tek kanalda kanala
-yazılır, birden çok kanalda ekstre yazılana kadar bilinmez; `lafposMonth` `modpos`, [KOMISYON.md](KOMISYON.md) §3).
+Veri kümesi (ay ekranları) görünümün geçiş gününü okur (`scopeSwitchDay`): Tuzla ya da online kanal seçiliyken geçiş
+günü yok sayılır (LafPOS hiç okunmaz, etiketler ModPOS der); Marina'da ayar. **"Tümü"de** ayar geçerlidir ama satırlar
+şube şube ayrılır: ModPOS'taki şubenin (Tuzla) listesi her ay sayılır (`mergeSalesSources`), LafPOS'un sayılmaya
+başladığı gün ve Satışlar'ın uyarıları yalnız LafPOS'un şubesinin listesine ve kasa raporlarına bakar, LafPOS gün sonu
+yalnız o şubenin panel ikramını düşürür (`panelWasteCounts`, kaydın şubesiyle). Satışlar'ın içe aktarması "Tümü"de
+varsayılan şubeye (Tuzla) yazar; Marina'nın listesi Marina seçiliyken yüklenir. Komisyon & hakediş işletme genelidir
+(`lafposMonth`, [KOMISYON.md](KOMISYON.md) §3).
 
-"Kafe kapalıydı" işletme geneli bir işarettir: Tuzla'nın satışlı LafPOS gün sonu yine kanıttır. Kasadaki fiyatların
-işareti (`pos_marks`, ürünün kasadaki eski fiyatı) şubesizdir: Marina'da işaretlenen ürün Tuzla'nın LafPOS listesinden
-de düşer (yalnız siteye bağlı olmayan, fiyatı geçiş gününden sonra değişen üründe; şube başına işaret ayrı bir iş).
+"Kafe kapalıydı" işletme geneli bir işarettir: Marina'nın satışlı LafPOS gün sonu yine kanıttır. Kasadaki fiyatların
+işareti (`pos_marks`, ürünün kasadaki eski fiyatı) şubesizdir: Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS
+listesinden de düşer, Marina'da işaretlenen Tuzla'nınkinden (yalnız siteye bağlı olmayan, fiyatı geçiş gününden sonra
+değişen üründe). Şube başına işaret ayrı bir iş (Tuzla'nın akışını da değiştirir; açık).
 
-İleride Marina'ya da LafPOS kurulursa LafPOS'un gövdesine şube alanı eklenir ve geçiş günü şube başına tutulur
-(okuyucular zaten `branchSwitchDay` / `scopeSwitchDay`'den geçer).
+İleride Tuzla da LafPOS'a geçerse geçiş günü şube başına tutulur (okuyucular zaten `branchSwitchDay` /
+`scopeSwitchDay`'den geçer).
 
 ### Metinler ve kasadaki fiyatlar (denetim B11, E-39)
 
@@ -544,7 +587,7 @@ birleşip yayına çıkmak hiçbir şeyi açmaz: anahtar ve geçiş günü yokke
 3. **Geçiş günü:** Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü (tercihen ayın 1'i). O günden itibaren Kasa raporunda
    bant çıkar, ürün satışları LafPOS'tan gelir ve sonraki partilerin okuyucuları LafPOS'a geçer. Geçiş günü ayın
    ortasındaysa o ayın ModPOS listesi Satışlar'a geçiş gününden önceki günler için yüklenir (1–9 Kasım; yükleme o güne
-   kırpar). Geçiş günü yalnız Tuzla'nın kasasınındır; Marina'da hiçbir şey değişmez ("Şubeler").
+   kırpar). Geçiş günü yalnız Marina'nın kasasınındır; Tuzla'da hiçbir şey değişmez ("Şubeler").
 
 Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
 
@@ -604,6 +647,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/server/lafpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` (gün gün; bugün okuyan yok) |
 | `src/app/panel/satislar/page.tsx`, `sales-client.tsx`, `product-picker.tsx` | Satışlar'ın bandı, LafPOS satırları ve eşleştirmesi, geçiş ayının yüklemesi |
+| `src/lib/lafpos/gun-sonu.ts`, `src/server/lafpos/gun-sonu.ts` | Gün sonu otomasyonu: Kasa raporuna otomatik yazım ve birleştirme, gün sonu e-postası, günlük işin yakalaması |
 | `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z; `loadKasaLafpos` ve ay görünümünün `loadKasaLafposDays` yalnız geçiş gününden sonra), günün kanıtı (`kasaEvidence`) |
 | `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts` | Uçlar |
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx`, `late-report.tsx`, `cash-history.tsx`, `cash-summary.tsx` | LafPOS gününde form (açılışta doldurma, Z bölümü, bilgi satırı), kayıtlı rapor ve günden güne farkları, geç rapor |

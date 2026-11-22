@@ -2165,6 +2165,36 @@ export const posDayReports = pgTable(
   (t) => [primaryKey({ columns: [t.date, t.branchId] })],
 );
 
+/**
+ * LafPOS gün sonunun otomasyonu, (gün, şube) başına bir satır (docs/LAFPOS.md › Gün sonu otomasyonu; src/server/lafpos/gun-sonu.ts):
+ * Kasa raporuna kendiliğinden yazılan rapor ve yazdığı değerler (elle düzeltilen alanı ezmemek için), eksik alanlar ve gün
+ * sonu e-postasının durumu (aynı içerik iki kez gitmez; düzeltilen gün "düzeltildi" notuyla bir kez daha gider).
+ */
+export const lafposDayEnds = pgTable(
+  "lafpos_day_ends",
+  {
+    date: text("date").notNull(),
+    branchId: branchId(),
+    /** Otomatik yazılan kasa raporu (rapor silinirse boşalır) */
+    reportId: integer("report_id").references(() => cashReports.id, { onDelete: "set null" }),
+    /** Son otomatik yazımın alan değerleri; elle girilmiş raporda null (hiç dokunulmaz) */
+    autoValues: jsonb("auto_values").$type<Record<string, number | string | null>>(),
+    /** Fotoğraf ya da elle giriş bekleyen alanlar (ör. "bankPos", "countedCash") */
+    missing: jsonb("missing").$type<string[]>().notNull().default([]),
+    /** Son işlenen gün sonunun içerik özeti (Z, ödemeler, ikram) */
+    dayHash: text("day_hash"),
+    /** Gün sonu e-postası: gönderilen içerik özeti, gönderim sayısı, son hata, gönderim anı */
+    emailedHash: text("emailed_hash"),
+    emailCount: integer("email_count").notNull().default(0),
+    emailError: text("email_error"),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    /** Gönderim sürerken konan işaret (aynı anda ikinci gönderim olmasın; 5 dakikadan eskisi yok sayılır) */
+    sendingAt: timestamp("sending_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.date, t.branchId] })],
+);
+
 // ---------------------------------------------------------------- ModPOS kasa föyü (docs/MODPOS-API.md)
 /**
  * ModPOS'un (Gafdigi) kasa föyü, kasa günü başına bir satır: panel her sabah dünün föyünü API'den çeker (günde 2 hak;

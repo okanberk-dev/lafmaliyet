@@ -174,6 +174,8 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
   const zNo = typeof r.body.zNo === "number" ? r.body.zNo : null;
   console.warn("[lafpos] reddedildi", r.status, error, date ?? "-", zNo ?? "-");
   const e = rejection(at, r.status, error, { field: typeof r.body.field === "string" ? r.body.field : null, date, zNo, sentZNo: error === "z_conflict" ? sent.zNo : null });
+  // Yanlış şube: kasanın şubesi ve beklenen kartta yazılsın (rejectionText)
+  if (error === "wrong_branch") Object.assign(e, { sube: typeof r.body.sube === "string" ? r.body.sube : null, expected: typeof r.body.expected === "string" ? r.body.expected : null });
   if (isDayRejection(e)) await noteDayRejection(db, e);
   else await patchState(db, { lastError: e });
   return r;

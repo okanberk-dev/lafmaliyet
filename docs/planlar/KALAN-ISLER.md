@@ -154,9 +154,10 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
     `claude/*` dalları ve önizlemeleri silinsin mi? **Varsayılan:** ayar yok; eski dal dağıtımları yeniden derlenmez,
     eski bir dal önce main'le birleştirilir (`docs/DEPLOY.md` § 7).
 11. **Önceki listeden açık kalanlar** (yeniden doğrulanmadı): D-05 Claude inceleme iş akışının ödemesi; D-06 sohbete
-    yapıştırılan API anahtarının iptali; D-15 sos pompası da 10 ml mi; D-16 sitenin `PARASUT_USERNAME`'i panelinkinden
-    farklı mı; D-18 zili kapalı cihaz bar ekranında sorsun mu; D-19 fişli harcamalar Aylık harcamalar'a onaysız mı
-    yazılsın.
+    yapıştırılan API anahtarının iptali; D-15 sos pompası da 10 ml mi; ~~D-16 sitenin `PARASUT_USERNAME`'i
+    panelinkinden farklı mı~~ (**düştü:** Paraşüt 10 Aralık 2026'da `grant_type=password`'ü kaldırıyor; yeni yöntemde
+    Paraşüt API kullanıcı adı/parolası diye bir ayar yok, o güne kadarki geçici yedek hariç, bkz. `docs/PARASUT.md` § 1); D-18 zili kapalı cihaz bar ekranında
+    sorsun mu; D-19 fişli harcamalar Aylık harcamalar'a onaysız mı yazılsın.
 
 ### Süren işler (26 Ekim 2026)
 

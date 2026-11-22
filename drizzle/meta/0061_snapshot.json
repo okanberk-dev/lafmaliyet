@@ -1,5 +1,5 @@
 {
-  "id": "7ee2da21-e7bb-400c-8772-8b3ff69b6f23",
+  "id": "b4c93406-a178-449d-be05-f510b8c2e03c",
   "prevId": "a3d9d65d-9bfa-4ac2-a6e1-0ec997d3a25d",
   "version": "7",
   "dialect": "postgresql",
@@ -3902,6 +3902,130 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.lafpos_day_ends": {
+      "name": "lafpos_day_ends",
+      "schema": "",
+      "columns": {
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'tuzla'"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_values": {
+          "name": "auto_values",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "missing": {
+          "name": "missing",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "day_hash": {
+          "name": "day_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emailed_hash": {
+          "name": "emailed_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email_count": {
+          "name": "email_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "email_error": {
+          "name": "email_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emailed_at": {
+          "name": "emailed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sending_at": {
+          "name": "sending_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "lafpos_day_ends_branch_id_branches_id_fk": {
+          "name": "lafpos_day_ends_branch_id_branches_id_fk",
+          "tableFrom": "lafpos_day_ends",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lafpos_day_ends_report_id_cash_reports_id_fk": {
+          "name": "lafpos_day_ends_report_id_cash_reports_id_fk",
+          "tableFrom": "lafpos_day_ends",
+          "tableTo": "cash_reports",
+          "columnsFrom": [
+            "report_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "lafpos_day_ends_date_branch_id_pk": {
+          "name": "lafpos_day_ends_date_branch_id_pk",
+          "columns": [
+            "date",
+            "branch_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.login_device_locks": {
       "name": "login_device_locks",
       "schema": "",
@@ -7181,44 +7305,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.revoked_sessions": {
-      "name": "revoked_sessions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

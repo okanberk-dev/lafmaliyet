@@ -432,8 +432,15 @@
     {
       "idx": 61,
       "version": "7",
-      "when": 1795272446310,
-      "tag": "0061_cikista_oturum_kapanir",
+      "when": 1795310391653,
+      "tag": "0061_lafpos_gun_sonu",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795320360568,
+      "tag": "0062_cikista_oturum_kapanir",
       "breakpoints": true
     }
   ]

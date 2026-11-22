@@ -22,6 +22,8 @@ import { parsePosDay } from "../src/lib/lafpos/day";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+
 const URL_ = process.env.LAFPOS_TEST_DATABASE_URL;
 const SECRET = "test-secret-0123456789-abcdefghijklmnop";
 const GUN = new URL("https://ladmin.laffogato.net/api/pos/gun");
@@ -93,6 +95,8 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     require.cache[marker] = { id: marker, filename: marker, loaded: true, exports: {} } as unknown as NodeJS.Module;
     const dbModule = await import("../src/server/db");
     db = dbModule.createDb(URL_!, 4);
+    // LafPOS gün sonunu kendi şubesine (Marina) yazar; migration'lı veritabanında şube tohumu yoksa yazım düşer
+    await seedBranches(db);
     ingest = await import("../src/server/lafpos/ingest");
     products = await import("../src/server/lafpos/products");
     daily = await import("../src/server/data/daily-sales");
@@ -170,6 +174,9 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     assert.deepEqual([rows.get(`YENİ ÜRÜN ${tag}`)?.productId, rows.get(`YENİ ÜRÜN ${tag}`)?.isService], [null, false]);
     const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D1));
     assert.equal(rep.source, "lafpos");
+    // Gün sonu ve satırları LafPOS'un şubesine (Marina) yazılır (docs/LAFPOS.md › Şubeler)
+    assert.equal(rep.branchId, LAFPOS_SUBE);
+    assert.deepEqual([...new Set([...raw.values()].map((x) => x.branchId))], [LAFPOS_SUBE]);
     assert.equal(rep.z.zTotal, 45210.5);
     assert.deepEqual(rep.payments, [{ name: "Pluxee", zField: "meal_card", channel: "pluxee", count: 7, amount: 1850 }]);
     assert.deepEqual(rep.ikram, [{ posName: "TIRAMISU", siteMenuId: null, slot: null, qty: 1, menuValue: 260, reason: "Doğum günü" }]);
@@ -233,8 +240,8 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     assert.equal(kept.receivedAt.getTime(), NOW.getTime());
     // Kasa raporu saklanan özetten: teslim gün içinde çıkana (450 + 5.000), giren Gün içinde kasaya giren'e (700),
     // Teslim edilen 0
-    const day = await kasa.loadLafposDay(D4, db);
-    assert.ok(day);
+    const day = await kasa.loadLafposDay(D4, db, LAFPOS_SUBE);
+    assert.ok(day, "LafPOS'un şubesinin kasası günü okur");
     assert.equal(day.prefill.values.cashOut?.value, 5450);
     assert.equal(day.prefill.values.cashIn?.value, 700);
     assert.equal(day.prefill.values.handedOver?.value, 0);
@@ -246,7 +253,7 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
     assert.equal(rep.receivedAt.getTime(), later.getTime());
     assert.ok(!("cashIn" in rep.z), "eski biçimli gövde: alan yok");
-    const oldBody = await kasa.loadLafposDay(D4, db);
+    const oldBody = await kasa.loadLafposDay(D4, db, LAFPOS_SUBE);
     assert.equal(oldBody?.prefill.values.cashOut?.value, 450);
     assert.equal(oldBody?.prefill.values.cashIn?.value, 0, "eski biçimli gövdede giren 0");
     // Aynı anda iki ayrı Z aynı güne: danışma kilidi sıraya koyar, biri yazılır, öteki kayıtlı Z'yi görüp hiçbir şey yazmaz
@@ -275,14 +282,17 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
   });
 
   test("Kasa raporu: günün özeti yalnız Z'den (ödeme kanalı ve ikram gitmez); gün yoksa null", async () => {
-    const day = await kasa.loadLafposDay(D1, db);
-    assert.ok(day);
+    const day = await kasa.loadLafposDay(D1, db, LAFPOS_SUBE);
+    assert.ok(day, "LafPOS'un şubesinin kasası günü okur");
     assert.equal(day.receivedAt, NOW.toISOString());
     assert.equal(day.prefill.source, "lafpos");
     assert.deepEqual(day.prefill.values.zNo, { value: "128", confidence: "high" });
     assert.deepEqual(day.prefill.values.countedCash, { value: 12980, confidence: "high" });
     assert.doesNotMatch(JSON.stringify(day), /pluxee|Pluxee|TIRAMISU|Doğum|menuValue|channel|cashDiff/);
-    assert.equal(await kasa.loadLafposDay("2029-01-15", db), null);
+    assert.equal(await kasa.loadLafposDay("2029-01-15", db, LAFPOS_SUBE), null);
+    // Öteki şubenin kasası (Tuzla, ModPOS) bu günü görmez; şube verilmezse kasanın şubesi okunur (istek dışında Tuzla)
+    assert.equal(await kasa.loadLafposDay(D1, db, MODPOS_SUBE), null);
+    assert.equal(await kasa.loadLafposDay(D1, db), null);
   });
 
   test("ürün maliyetleri: yalnız imzayla; yalnız siteye bağlı ürünler ve altı alan; maliyet modelden, kuruş", async () => {

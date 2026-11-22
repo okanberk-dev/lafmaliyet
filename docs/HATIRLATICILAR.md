@@ -28,7 +28,9 @@ Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı baş
 | **Sessiz** | Hiç çalmaz; bildirim yine çıkar |
 
 Saat verilmemişse hiçbiri çalmaz (hatırlatıcı gün boyu listede durur). Cihazın kendi **Sesli uyarı** anahtarı
-kapalıysa da çalmaz; hangi hoparlörden çalacağı Bu cihazda uyarılar kartından seçilir.
+kapalıysa da çalmaz; hangi hoparlörden çalacağı Bu cihazda uyarılar › **Uyarı sesleri**'nden seçilir. "Yalnız bu
+bilgisayardan çalsın" açıkken (Tuzla Köyiçi'nde varsayılan) hatırlatma sesi ve açılır pencerenin sistem bildirimi
+kafenin genel hoparlöründen çalmaz (docs/BILDIRIMLER.md › Uyarı sesleri yalnız bu bilgisayardan).
 
 Listede "Sürekli ses" ve "Sessiz" rozetle görünür.
 

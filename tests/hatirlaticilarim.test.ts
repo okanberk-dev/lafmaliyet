@@ -316,7 +316,7 @@ test("köşe kartı ve pencere: kabukta, her ekranda; kapatılamaz, hareket azal
   const center = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
   // Kart kabuğun kullanıcısının hatırlatıcılarını çizer (ortak cihaz, denetim KA-01; tests/paylasilan-cihaz.test.ts)
   assert.match(center, /<ReminderAlerts userId=\{userId\} enabled=\{prefs\.reminderAlerts\} now=\{now\}/);
-  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} \/>/);
+  assert.match(readFileSync(join(process.cwd(), "src/components/panel/sidebar.tsx"), "utf8"), /<AlertCenter role=\{user\.role\} userId=\{user\.id\} branchScope=\{branch\?\.scope \?\? null\} \/>/);
 });
 
 test("Kime: yönetici için formun başında, saat verilmeden başkasına kurulunca uyarır", () => {

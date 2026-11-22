@@ -351,6 +351,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 - Derleme günlüğündeki iki npm uyarısı zararsızdır: `npm warn install-scripts … esbuild, unrs-resolver` (geliştirme
   araçlarının kurulum betikleri; esbuild platform paketinden yine çalışır) ve `npm warn Unknown env config "cache-dir"`
   (Vercel'in derleme ortamından).
+- `package.json` › `overrides`: `@vercel/blob`'un zinciri (`@vercel/oidc` 3.x › `@vercel/cli-config` 0.3.1) zod'u
+  4.1.11'e sabitliyor; bu sürümde yüksek önemli bir açık var (GHSA-mrhx-c7xc-m3w5, 4.6.6'da kapandı). Zincirdeki zod
+  projenin kendi zod'una bağlanır (`"zod": "$zod"`, aynı ana sürüm). `@vercel/blob` `@vercel/oidc` 4.0.6 ya da
+  üstünü kullanmaya başlayınca (`npm ls zod` iç içe zod göstermez) bu satır silinebilir. `npm audit --omit=dev`'de kalan
+  iki açık bilerek bırakıldı: `uuid` (`exceljs` 4.4.0 üzerinden, düzeltmesi exceljs'i 3.4.0'a indirmek) ve
+  `fast-xml-parser` (düşük önem, düzeltmesi 5.12 ara sürümü).
 - Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
   ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
   `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:

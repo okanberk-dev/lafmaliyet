@@ -7,6 +7,7 @@
  */
 
 import { BACKUP_HREF, backupReminder } from "@/lib/backup/format";
+import { LEGACY_DEADLINE_DAY } from "@/lib/parasut/legacy";
 import { addDays, longDateTR } from "@/lib/reminders";
 
 export type JobKey = "parasut" | "gunluk";
@@ -153,6 +154,7 @@ const STEP_NAMES: Record<string, string> = {
   count: "Sayım bildirimi",
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
+  gunSonu: "LafPOS gün sonu",
   watchdog: "Sistem uyarısı e-postası",
 };
 
@@ -190,6 +192,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     error: "Haftalık özet gönderilemedi",
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
+  gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
 };
 
@@ -209,7 +212,7 @@ export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "s
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
  * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -250,7 +253,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -303,6 +306,17 @@ export function requestsStep(r: { expired: number } | { error: string }): StepRe
   return r.expired ? { code: "ok" } : undefined;
 }
 
+/**
+ * LafPOS gün sonu otomasyonunun adımı (src/server/lafpos/gun-sonu.ts catchUpLafposDayEnds): yalnız bir şey yapıldıysa
+ * (rapor yazıldı ya da e-posta gitti) ya da hata varsa yazılır
+ */
+export function gunSonuStep(r: { status: string; days: { date?: string; report: string; email: string; error?: string }[] } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  const failed = r.days.filter((d) => d.report === "error" || d.email === "error" || d.email === "failed");
+  if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${d.error ?? d.email}`.trim()).join(" · ") };
+  return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
+}
+
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */
 export function photosStep(r: { deleted: number; failed: number; off: boolean } | { error: string }): StepResult {
   if ("error" in r) return { code: "error", error: r.error };
@@ -349,8 +363,8 @@ export interface SystemAlert {
   actionLabel?: string;
 }
 
-/** Paraşüt'ün eski kimlik doğrulamayı (grant_type=password) kapattığı gün */
-export const PARASUT_DEADLINE_DAY = "2026-12-10";
+/** Paraşüt'ün eski kimlik doğrulamayı (grant_type=password) kapattığı gün (eşitlemenin geçici yedeği de o gün durur) */
+export const PARASUT_DEADLINE_DAY = LEGACY_DEADLINE_DAY;
 /** Geçişin yapılması planlanan gün: bu günden itibaren uyarı Genel bakış şeridine de çıkar */
 export const PARASUT_CUTOVER_DAY = "2026-12-01";
 export const PARASUT_MIGRATION_HREF = "/panel/parasut";
@@ -363,19 +377,30 @@ function daysBetween(from: string, to: string): number {
 /**
  * Paraşüt kimlik geçişi hatırlatması (docs/planlar/parasut-kimlik-gecisi.md).
  *
- * Yalnız ortamda eski parolalı ayarlar (PARASUT_USERNAME / PARASUT_PASSWORD) dururken görünür: geçiş tamamlanıp o
- * değişkenler silinince kendiliğinden kalkar, ayrıca unutulmuş parola orada kalmışsa uyarı yerinde olur.
+ * Yalnız ortamda eski parolalı ayarlar (PARASUT_USERNAME / PARASUT_PASSWORD) dururken görünür. Hesap yeni yöntemle
+ * bağlanınca (`connected`) geçiş uyarısı kalkar; eski değişkenler hâlâ duruyorsa yerine yalnız zilde bir "silebilirsiniz"
+ * notu ("info") kalır, o da değişkenler silinince kalkar.
  *
- * Seviye: son tarihe kadar "warning" — bekleyen bir geçiş hizmeti bozmuyor, /api/health 503 vermemeli. Ama planlanan
- * günden (1 Aralık) itibaren `banner: true` ile Genel bakış şeridine çıkar. 10 Aralık'tan sonra eşitleme gerçekten
- * çalışmaz: o zaman "danger" olur.
+ * Seviye: son tarihe kadar "warning" — eşitleme o güne kadar eski yöntemle (geçici yedek) sürüyor, /api/health 503
+ * vermemeli. Ama planlanan günden (1 Aralık) itibaren `banner: true` ile Genel bakış şeridine çıkar. 10 Aralık'tan
+ * sonra eşitleme gerçekten çalışmaz: o zaman "danger" olur.
  */
-export function parasutMigrationAlert(now: Date, legacyAuth: boolean): SystemAlert | null {
+export function parasutMigrationAlert(now: Date, legacyAuth: boolean, connected = false): SystemAlert | null {
   if (!legacyAuth) return null;
   const today = trClock(now).day;
   const left = daysBetween(today, PARASUT_DEADLINE_DAY);
   const base = { id: "parasut-kimlik-gecisi", href: PARASUT_MIGRATION_HREF, actionLabel: "Paraşüt entegrasyonu", day: null };
-  const tamamla = "Geçiş dalını (PR #92) main'e birleştirin; sonra Vercel'de yeni client_id ile client_secret'ı girip PARASUT_USERNAME ve PARASUT_PASSWORD'ü silin ve panelden “Paraşüt hesabını bağla”yı çalıştırın.";
+  if (connected) {
+    return {
+      ...base,
+      id: "parasut-eski-ayar",
+      level: "info",
+      title: "Paraşüt'ün eski kullanıcı adı ve parolası artık gerekmiyor",
+      body: "Paraşüt hesabı yeni yöntemle bağlı. Vercel'deki PARASUT_USERNAME ve PARASUT_PASSWORD'ü silebilirsiniz; panel onları artık kullanmıyor.",
+    };
+  }
+  const tamamla =
+    "DevHub'dan aldığınız yeni client_id ile client_secret'ı Vercel'e girip yeniden deploy edin, ardından hemen panelden “Paraşüt hesabını bağla”ya basın. Bağlandıktan sonra PARASUT_USERNAME ve PARASUT_PASSWORD silinebilir.";
   if (left <= 0) {
     return {
       ...base,
@@ -398,7 +423,7 @@ export function parasutMigrationAlert(now: Date, legacyAuth: boolean): SystemAle
     ...base,
     level: "warning",
     title: `Paraşüt kimlik geçişi bekliyor (${longDateTR(PARASUT_CUTOVER_DAY)})`,
-    body: `Paraşüt eski kimlik doğrulamayı ${longDateTR(PARASUT_DEADLINE_DAY)} günü kapatıyor ve panel hâlâ onu kullanıyor: ${left} gün kaldı. Geçiş kodu hazır, ${longDateTR(PARASUT_CUTOVER_DAY)} günü yapılacak. ${tamamla}`,
+    body: `Paraşüt eski kimlik doğrulamayı ${longDateTR(PARASUT_DEADLINE_DAY)} günü kapatıyor; eşitleme şimdilik onunla sürüyor: ${left} gün kaldı. Geçiş ${longDateTR(PARASUT_CUTOVER_DAY)} günü yapılacak. ${tamamla}`,
   };
 }
 
@@ -429,13 +454,15 @@ export function systemAlerts(i: {
   lastBackupAt?: string | null;
   /** Ortamda eski Paraşüt parolalı ayarları (PARASUT_USERNAME / PARASUT_PASSWORD) hâlâ duruyor mu */
   legacyParasutAuth?: boolean;
+  /** Paraşüt hesabı yeni yöntemle (Authorization Code + PKCE) bağlı mı */
+  parasutConnected?: boolean;
 }): SystemAlert[] {
   if (!i.production) return [];
   const today = trClock(i.now).day;
   const reminder = i.lastBackupAt === undefined ? null : backupReminder(i.lastBackupAt, i.now);
   const backup: SystemAlert[] = reminder ? [{ ...reminder, level: "info", href: BACKUP_HREF, day: null }] : [];
   // Kimlik geçişi işlerden bağımsız: CRON_SECRET yokken de hatırlatılır
-  const migration = parasutMigrationAlert(i.now, i.legacyParasutAuth ?? false);
+  const migration = parasutMigrationAlert(i.now, i.legacyParasutAuth ?? false, i.parasutConnected ?? false);
   const pending: SystemAlert[] = migration ? [migration] : [];
   if (!i.cronSecret) {
     return [

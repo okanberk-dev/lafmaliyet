@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, gunSonuStep, modposStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
+import { catchUpLafposDayEnds } from "@/server/lafpos/gun-sonu";
 import { pruneMcp } from "@/server/mcp/store";
 import { isModposConfigured } from "@/server/modpos/client";
 import { syncModposAll, type ModposSyncResult } from "@/server/modpos/sync";
@@ -142,8 +143,19 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       { error: "süre doldu" },
     );
+  // LafPOS gün sonu (docs/LAFPOS.md › Gün sonu otomasyonu): son 7 günün Kasa raporu ve gün sonu e-postası eksikse
+  // tamamlanır (gece gönderilemeyen e-posta, geçiş günü sonradan girildiyse eksik günler); işlenmiş gün bir şey göndermez.
+  // E-posta tek deneme, kuyruğun 55 sn'sini aşmadan
+  const gunSonuTask = () => {
+    const deadlineAt = tailStepDeadline(jobStart);
+    return capped(
+      catchUpLafposDayEnds(getDb(), new Date(), { attempts: 1, deadlineAt }).catch((e: Error) => ({ error: e.message })),
+      deadlineAt - Date.now() + 500,
+      { error: "süre doldu" },
+    );
+  };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests, gunSonu] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
       dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
@@ -154,10 +166,12 @@ export async function GET(request: NextRequest) {
       countTask(),
       weeklyTask(),
       requestsTask(),
+      gunSonuTask(),
     ]);
     const countResult = countStep(count);
     const weeklyResult = weeklyStep(weekly);
     const requestsResult = requestsStep(requests);
+    const gunSonuResult = gunSonuStep(gunSonu);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -167,6 +181,7 @@ export async function GET(request: NextRequest) {
       ...(countResult ? { count: countResult } : {}),
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
       ...(requestsResult ? { requests: requestsResult } : {}),
+      ...(gunSonuResult ? { gunSonu: gunSonuResult } : {}),
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests }, steps, weekly: weekly.status };
   };

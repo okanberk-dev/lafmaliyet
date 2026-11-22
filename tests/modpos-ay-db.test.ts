@@ -22,12 +22,13 @@ import postgres from "postgres";
 
 import { kasaMonthLine, resolveMonth, tillMonths } from "../src/lib/cash-month";
 import { parsePosDay } from "../src/lib/lafpos/day";
-import { LAFPOS_BRANCH_ID } from "../src/lib/lafpos/switch";
 import { parseKasaFoyu, type KasaFoyu } from "../src/lib/modpos/foy";
 import { MODPOS_FALLBACK_KEY } from "../src/lib/modpos/status";
 import { addDays } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_modpos_ay_${process.pid}`;
@@ -66,9 +67,9 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
   };
   const fallback = (v: unknown) => setting(MODPOS_FALLBACK_KEY, v);
   /** Föyü sabah işi gibi ertesi sabah 09:00'da çekilmiş saklar */
-  const save = (foy: KasaFoyu, branchId?: string) => store.storeFoy(db, foy, new Date(`${addDays(foy.kasaGunu, 1)}T09:00:00+03:00`), null, branchId);
-  const report = (date: string, zTotal = 10_000, branchId?: string) =>
-    db.insert(s.cashReports).values({ date, zTotal, card: 6_000, mealCard: 1_000, cash: zTotal - 7_000, discounts: 0, offRevenue: 0, submittedByName: "Ayşe", branchId });
+  const save = (foy: KasaFoyu, branchId: string = MODPOS_SUBE) => store.storeFoy(db, foy, new Date(`${addDays(foy.kasaGunu, 1)}T09:00:00+03:00`), null, branchId);
+  const report = (date: string, zTotal = 10_000, branchId: string = MODPOS_SUBE) =>
+    db.insert(s.cashReports).values({ date, branchId, zTotal, card: 6_000, mealCard: 1_000, cash: zTotal - 7_000, discounts: 0, offRevenue: 0, submittedByName: "Ayşe" });
   const days = (rows: { date: string; source?: string }[]) => rows.map((r) => [r.date, r.source ?? "rapor"]);
 
   before(async () => {
@@ -89,6 +90,7 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     reports = await import("../src/server/data/cash-reports");
     store = await import("../src/server/modpos/store");
     ingest = await import("../src/server/lafpos/ingest");
@@ -163,65 +165,72 @@ describe("ModPOS API ay rakamına yedek: veritabanında", { skip: !SERVER_URL &&
     assert.equal(await reports.firstModposTillDay(db), "2026-10-01");
   });
 
-  test("LafPOS'a geçiş günü (yalnız LafPOS'un şubesinin kasası): föy yalnız ondan önceki günlerde; geçiş gününden itibaren LafPOS gün sonu; ModPOS'ta kalan şubenin föyü kesilmez", async () => {
-    // LafPOS'un şubesi Marina (21 Kasım kararı, #98): geçiş günü yalnız onun kasasını keser. Migration'lar yalnız Tuzla'yı
-    // açar; Marina canlıda Ayarlar › Şubeler'den eklenir, burada test için açılır ve sonda silinir
-    assert.equal(LAFPOS_BRANCH_ID, "marina");
-    await db.insert(s.branches).values({ id: LAFPOS_BRANCH_ID, name: "Marina", kind: "fiziksel", posSource: "modpos", sortOrder: 2 }).onConflictDoNothing();
-    try {
-      for (const day of ["2026-10-01", "2026-10-03", "2026-10-05", "2026-10-06"]) await save(kapali(day), LAFPOS_BRANCH_ID);
-      await fallback(true);
-      await setting("lafposGecisGunu", "2026-10-05");
-      assert.deepEqual(
-        (await reports.modposTillRows(db)).map((r) => [r.date, r.branchId]),
-        [
-          ["2026-10-01", "marina"],
-          ["2026-10-03", "marina"],
-        ],
-      );
-      assert.deepEqual(await reports.modposTillRows(db, "2026-10-05", "2026-10-31"), [], "aralık geçiş gününden sonra");
-      // LafPOS'un 5 Ekim gün sonu (Marina'ya yazılır): aynı gün föy değil LafPOS sayılır (föy zaten sınırın dışında)
-      const body = {
-        version: 1,
-        source: "lafpos",
-        date: "2026-10-05",
-        z: { zNo: 3, receipts: 50, zTotal: 15_000, cash: 5_000, card: 10_000, mealCard: 0, online: 0, other: 0, offRevenue: 0, discounts: 0, openingCash: 500, cashOut: 0, countedCash: 5_500, handedOver: 0, cashDiff: 0, cashIn: 0, expectedCash: 5_500 },
-        lines: [],
-        ikram: [],
-        payments: [],
-      };
-      const now = new Date("2026-10-06T12:00:00+03:00");
-      const day = parsePosDay(JSON.stringify(body), now);
-      assert.ok(day.ok, "gövde geçerli");
-      assert.equal((await ingest.storePosDay(db, day.data, now)).ok, true);
-      await report("2026-10-03", 9_000, LAFPOS_BRANCH_ID);
-      // 2 Ekim'in föyü yok: ilk rapordan (3 Ekim) önceki föy kesintisiz değil, 1 Ekim sayılmaz
-      assert.deepEqual(days(await reports.tillRows(db)), [
-        ["2026-10-03", "rapor"],
-        ["2026-10-05", "lafpos"],
-      ]);
-      await save(kapali("2026-10-02"), LAFPOS_BRANCH_ID);
-      assert.deepEqual(days(await reports.tillRows(db)), [
-        ["2026-10-01", "modpos"],
-        ["2026-10-02", "modpos"],
-        ["2026-10-03", "rapor"],
-        ["2026-10-05", "lafpos"],
-      ]);
-      // ModPOS'ta kalan Tuzla'nın föyü geçiş gününden sonra da sayılır
-      await save(kapali("2026-10-06"));
-      assert.deepEqual(
-        (await reports.modposTillRows(db, "2026-10-05", "2026-10-31")).map((r) => [r.date, r.branchId]),
-        [["2026-10-06", "tuzla"]],
-      );
-      await db.delete(s.modposCashSheets).where(eq(s.modposCashSheets.branchId, "tuzla"));
-      // Geçiş günü ilk izinli gündeyse Marina'nın föyü hiç sayılmaz
-      await setting("lafposGecisGunu", "2026-10-01");
-      assert.deepEqual(await reports.modposTillRows(db), []);
-      assert.equal(await reports.firstModposTillDay(db), null);
-    } finally {
-      await db.execute(sql`TRUNCATE modpos_cash_sheets, cash_reports, pos_daily_sales, pos_day_reports RESTART IDENTITY CASCADE`);
-      await db.delete(s.branches).where(eq(s.branches.id, LAFPOS_BRANCH_ID));
-    }
+  test("LafPOS'a geçiş günü: föy yalnız ondan önceki günlerde; geçiş gününden itibaren LafPOS gün sonu", async () => {
+    // LafPOS'un şubesi (Marina): ModPOS'u yedek olarak çekilmeye devam eder, föyü yalnız geçiş gününden önce sayılır
+    for (const day of ["2026-10-01", "2026-10-03", "2026-10-05", "2026-10-06"]) await save(kapali(day), LAFPOS_SUBE);
+    await fallback(true);
+    await setting("lafposGecisGunu", "2026-10-05");
+    assert.deepEqual(
+      (await reports.modposTillRows(db)).map((r) => [r.date, r.branchId]),
+      [
+        ["2026-10-01", LAFPOS_SUBE],
+        ["2026-10-03", LAFPOS_SUBE],
+      ],
+    );
+    assert.deepEqual(await reports.modposTillRows(db, "2026-10-05", "2026-10-31"), [], "aralık geçiş gününden sonra");
+    // LafPOS'un 5 Ekim gün sonu: aynı gün föy değil LafPOS sayılır (föy zaten sınırın dışında)
+    const body = {
+      version: 1,
+      source: "lafpos",
+      date: "2026-10-05",
+      z: { zNo: 3, receipts: 50, zTotal: 15_000, cash: 5_000, card: 10_000, mealCard: 0, online: 0, other: 0, offRevenue: 0, discounts: 0, openingCash: 500, cashOut: 0, countedCash: 5_500, handedOver: 0, cashDiff: 0, cashIn: 0, expectedCash: 5_500 },
+      lines: [],
+      ikram: [],
+      payments: [],
+    };
+    const now = new Date("2026-10-06T12:00:00+03:00");
+    const day = parsePosDay(JSON.stringify(body), now);
+    assert.ok(day.ok, "gövde geçerli");
+    assert.equal((await ingest.storePosDay(db, day.data, now)).ok, true);
+    await report("2026-10-03", 9_000, LAFPOS_SUBE);
+    // 2 Ekim'in föyü yok: ilk rapordan (3 Ekim) önceki föy kesintisiz değil, 1 Ekim sayılmaz
+    assert.deepEqual(days(await reports.tillRows(db)), [
+      ["2026-10-03", "rapor"],
+      ["2026-10-05", "lafpos"],
+    ]);
+    await save(kapali("2026-10-02"), LAFPOS_SUBE);
+    const marina = await reports.tillRows(db);
+    assert.deepEqual(days(marina), [
+      ["2026-10-01", "modpos"],
+      ["2026-10-02", "modpos"],
+      ["2026-10-03", "rapor"],
+      ["2026-10-05", "lafpos"],
+    ]);
+    assert.deepEqual([...new Set(marina.map((r) => r.branchId))], [LAFPOS_SUBE]);
+    // Geçiş günü ilk izinli gündeyse föy hiç sayılmaz
+    await setting("lafposGecisGunu", "2026-10-01");
+    assert.deepEqual(await reports.modposTillRows(db), []);
+    assert.equal(await reports.firstModposTillDay(db), null);
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır: ModPOS'ta kalan şubenin (Tuzla) föyü geçiş gününden sonra da
+    // ay rakamına yedektir
+    for (const day of ["2026-10-05", "2026-10-06"]) await save(kapali(day));
+    assert.deepEqual(
+      (await reports.modposTillRows(db)).map((r) => [r.date, r.branchId]),
+      [
+        ["2026-10-05", MODPOS_SUBE],
+        ["2026-10-06", MODPOS_SUBE],
+      ],
+    );
+    assert.equal(await reports.firstModposTillDay(db), "2026-10-05");
+    assert.deepEqual(
+      (await reports.tillRows(db)).map((r) => [r.date, r.branchId, r.source ?? "rapor"]),
+      [
+        ["2026-10-03", LAFPOS_SUBE, "rapor"],
+        ["2026-10-05", LAFPOS_SUBE, "lafpos"],
+        ["2026-10-05", MODPOS_SUBE, "modpos"],
+        ["2026-10-06", MODPOS_SUBE, "modpos"],
+      ],
+    );
   });
 
   test("yalnız föyden gelen ayda kasadan satır var sayılır (elle yazılan 0 silinmez); yedek kapalıyken yok", async () => {

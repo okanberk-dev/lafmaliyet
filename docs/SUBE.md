@@ -236,10 +236,12 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
 
 ## LafPOS'a geçiş günü şubenin kasasınındır (21 Kasım 2026)
 
-LafPOS yalnız Tuzla'da kurulu (gün sonunu Tuzla'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız **Tuzla'nın
-kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`). Marina'nın kasası ModPOS'ta kalır: föyü çekilir, Kasa
-raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Marina'da bugünkü gibidir. Ay ekranları
-Marina seçiliyken geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Ayrıntı:
+LafPOS 21 Kasım 2026'dan beri Marina'da kurulu (gün sonunu Marina'ya yazar); Ayarlar › LafPOS'taki geçiş günü yalnız
+**Marina'nın kasasınındır** (`branchSwitchDay`, `src/lib/lafpos/switch.ts`; canlıda 22 Kasım 2026). Tuzla'nın kasası
+ModPOS'ta kalır: föyü çekilir, Kasa raporu, föy karşılaştırması, ürün listesi, ürün ikramı ve kasadaki fiyatlar Tuzla'da
+bugünkü gibidir. Marina'nın ModPOS föyü yedek çekilir ama geçiş gününden sonra sayılmaz. Ay ekranları Tuzla seçiliyken
+geçiş gününü yok sayar, "Tümü"de iki şubenin satırlarını şube şube ayırır. Marina'nın gün sonu Kasa raporuna
+kendiliğinden yazılır ve e-postası gider ([LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026)). Ayrıntı:
 [LAFPOS.md › Şubeler](LAFPOS.md#şubeler-denetim-21-kasım-5).
 
 ## Personel hesabının şubesi (16 Kasım 2026)
@@ -278,6 +280,14 @@ geneli**: vergi, SGK, muhasebe gibi). Sabit giderdeki kuralın aynısı:
 | Sabah e-postası, Nakit planı, Vergi, haftalık özet | Bütün ödemeler: para işletmenindir (`loadUpcoming` şubesiz çağrılır) |
 
 Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici formdan taşır.
+
+## Uyarı sesleri şubeye göre (22 Kasım 2026)
+
+Tuzla Köyiçi'nde bilgisayarın varsayılan ses çıkışı kafenin genel hoparlörü: panelin zil, alarm ve hatırlatma sesleri
+bütün kafeye çalıyordu. Bilgisayarın şubesi Tuzla'ysa (personelin kilitli şubesi, yöneticinin seçtiği şube; "Tümü"
+seçiliyken de Tuzla, çünkü yeni kayıtlar da oraya yazılır) **Uyarı sesleri › Yalnız bu bilgisayardan çalsın**
+varsayılan açıktır. Marina'nın varsayılanı değişmedi; anahtar orada da elle açılır. Kural tek yerde:
+`src/lib/audio-output.ts` › `ONLY_COMPUTER_BRANCHES`, `onlyComputerFor`. Ayrıntı: docs/BILDIRIMLER.md.
 
 ## Sırada ne var
 
