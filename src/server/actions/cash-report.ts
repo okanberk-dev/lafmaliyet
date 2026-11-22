@@ -152,6 +152,8 @@ const settingsSchema = z.object({
   recipients: z.string().max(2000),
   emailEnabled: z.boolean(),
   whatsapp: z.string().max(40),
+  staffRecipients: z.string().max(2000).default(""),
+  staffAmounts: z.boolean().default(false),
 });
 
 export async function updateCashSettings(input: z.input<typeof settingsSchema>) {
@@ -169,10 +171,14 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     if (first) throw new UserError(recipientRefusal("cash", { email: first, reason: blocked.get(first)! }));
     const whatsapp = data.whatsapp.trim() ? waPhone(data.whatsapp) : null;
     if (data.whatsapp.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
-    await saveCashSettings({ recipients: valid, emailEnabled: data.emailEnabled, whatsapp });
+    // Çalışan listesi (LafPOS gün sonunun kısa e-postası): personel hesabı olabilir, rapor ayrıntısı ve karaoke ödemesi gitmez
+    const staff = parseEmails(data.staffRecipients);
+    if (staff.invalid.length) throw new UserError(`Geçersiz çalışan e-postası: ${staff.invalid.slice(0, 3).join(", ")}`);
+    if (staff.valid.length > 20) throw new UserError("Çalışan listesine en çok 20 adres girilebilir");
+    await saveCashSettings({ recipients: valid, emailEnabled: data.emailEnabled, whatsapp, staffRecipients: staff.valid, staffAmounts: data.staffAmounts });
     await logActivity(me, "Kasa raporu alıcıları", valid.join(", ") || "e-posta kapalı");
     refresh();
-    return { recipients: valid, whatsapp };
+    return { recipients: valid, whatsapp, staffRecipients: staff.valid };
   });
 }
 
