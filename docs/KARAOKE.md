@@ -82,6 +82,8 @@ GET /api/panel/karaoke  ◀─────────────────�
   bağlantısı şeridin altından başlar. Baskıda şerit de boşluğu da çıkmaz. Alarm sesi aynı anda çalan "Sürekli" kişisel
   hatırlatıcıyla aynı döngüde çalar ama ayrı susar: hatırlatıcının **Sesi kes**'i karaoke alarmını, **Haber verdim** de
   hatırlatıcının sesini kesmez ([HATIRLATICILAR.md](HATIRLATICILAR.md)).
+- **Elle rezervasyon ve saati kapatma** (22 Kasım 2026) siteye yazılır: Karaoke › **Elle ekle**, sitenin imzalı
+  `POST /api/panel/karaoke`'ı (aşağıda › Elle rezervasyon ve saati kapatma).
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez. Etiketsiz sayaç ekranda, zilde ve
   bildirimlerde bu adla geçer ("Rezervasyonsuz oturum bitirildi"; `sessionName`).
 - Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
@@ -155,6 +157,93 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
   `src/server/karaoke/timer.ts`, okuyucular `src/server/data/karaoke-requests.ts`. Migration yok: `staff_requests.kind`
   metin sütunu, tür listesi yalnız TypeScript'te.
 
+## Elle rezervasyon ve saati kapatma (22 Kasım 2026)
+
+Operatör: "Ladminden de girilebilsin aynı şekilde". Telefonla ya da kasada gelen grup ve köşkün kapattığı saatler
+(etkinlik, bakım) bar ekranından laffogato.net'in odasının takvimine yazılır; saatler **sitede, uygulamada ve kasada
+(LafPOS) hemen dolu** görünür. Sitenin kendi panelindeki **Karaoke › Elle ekle** ile aynı iş, aynı kural (sitede
+`src/lib/mobile/karaoke-desk.ts`; sözleşme laffogato `docs/PANEL-KARAOKE.md` › Elle rezervasyon ve kapalı saat).
+
+- **Kim:** yönetici ve personel (telefonla gelen rezervasyon bara gelir). Karaoke ekranında **Bugün** kartının
+  başlığındaki **Elle ekle** (site bağlantısı kuruluysa).
+- **Pencere:** tür (**Rezervasyon** / **Saati kapat**), gün (bugünden 60 gün sonrasına), başlangıç (odanın saatleri:
+  Doluluk › Oda saatleri, kaydedilmediyse 12:00–23:00; bugün bitmiş saat çıkmaz, başlamış ama süren saat seçilir), süre
+  (kapanışı geçmez, gece yarısını geçmez: site takvim gününe yazar). Rezervasyonda ad (zorunlu), kişi, telefon ve
+  e-posta (isteğe bağlı; e-posta yazılırsa misafire sitenin onay e-postası gider ve rezervasyon o üyenin hesabında
+  görünür), not. Kapatmada neden (isteğe bağlı; yalnız panellerde görünür, sitede yalnız saatler dolu görünür). Panelin
+  bildiği dolu saat (sitedeki rezervasyon ya da kapatma) pencerede sarı satırla söylenir.
+- **Siteye nasıl gider:** sunucu eylemi (`addDeskKaraoke`) sitenin imzalı `POST /api/panel/karaoke` ucuna gönderir
+  (GET'le aynı imza, gövdenin tam metni üzerinden; `src/server/karaoke/desk.ts`). Site saatleri yazar, panele her
+  zamanki pingi atar; panel de başarıdan hemen sonra eşitler: satır listeye girer, karaoke sürümü (canlı ucun ETag'i)
+  artar, öteki cihazlar bildirimle ya da bir sonraki kontrolde görür. Sitenin olay kaydına kişinin adı düşer ("Yönetim
+  paneli · Ayşe"). Sitenin reddi (400 `invalid` alanı ve Türkçe mesajı, 409 `slot_taken`, `too_many`) adı geçen alanın
+  yanında, alanı olmayan hata (bağlantı, imza, 503) pencerenin başında; kurulum ayrıntısı (anahtar adı, sitenin sürümü)
+  yalnız yöneticiye, personel "Site bağlantısında sorun var; satır eklenmedi. Yöneticiye haber verin." görür. Zaman
+  aşımında site yazmış olabilir: panel yine eşitler, pencere "yazılmış olabilir, listeye bakın" der.
+- **Telefon ve e-posta panelde saklanmaz:** yalnız sitenin gövdesindedir; panelin veritabanına, işlem geçmişine ve
+  günlüğe yazılmaz (sitenin GET'i de göndermez).
+- **Listede:** elle rezervasyon "Onaylı · kasada ödenecek" ve küçük **Elle** rozetiyle (ödemesi köşkte, kartla ön
+  ödeme yok); kapatma "Kapalı · 14:00–17:00 · neden". Oda kapatılan saatin içindeyse boş kart "Oda kapalı" der.
+- **Kaldır:** elle satırda (onay penceresiyle). Yönetici her zaman; personel satır sitede yazıldıktan sonraki **ilk 10
+  dakikada** (yanlış girilen satır; sayaç silmenin kuralı), sonrasında düğme çıkmaz, sunucu "Elle eklenen satırı ilk
+  10 dakikada kaldırabilirsiniz; şimdi kaldırmak için yöneticiye haber verin." der. Saatler sitede yeniden açılır;
+  e-postası yazılmış rezervasyonda site misafire iptal e-postası gönderir. Sitede alınan (online ödenmiş) rezervasyon
+  buradan kaldırılmaz (site 409 `not_desk`; iptal ve iade sitenin panelinde). Kural `deskRemoveRefusal`.
+- **İşlem geçmişi:** "Karaoke elle rezervasyon eklendi" (ad, kişi, gün ve saat; e-posta yazıldıysa "misafire onay
+  e-postası", adres yok), "Karaoke saatleri kapatıldı" (gün, saat, neden), "Karaoke elle rezervasyonu kaldırıldı",
+  "Kapatılan karaoke saatleri açıldı".
+- **Panelde nasıl tutulur:** migration yok. Sitenin GET satırı `desk: true` (elle) ve `block: true` (kapatma)
+  taşır (ekleme; ikisi de isteğe bağlı okunur, bozuksa yok sayılır). `block` göndermeyen eski sitede kural türetilir:
+  elle, ücretsiz ve notu "Kapalı" ile başlayan satır. Eşitleme ve geçmişi alma bunu `karaoke_sessions.channel`'a
+  "desk" / "desk-block" olarak yazar (`sessionChannel`); ekrana `desk: "booking" | "block" | null` gider.
+
+### Kapatılan saat ne sayılır, ne sayılmaz
+
+Kapatma bir rezervasyon değildir, ama oda o saatlerde doludur:
+
+| | Kapatılan saat | Elle rezervasyon |
+|---|---|---|
+| Ayın özeti (rezervasyon, saat, ciro, iptal), Son 30 gün | Sayılmaz (kaldırılan kapatma iptal değil) | Sayılır; ciro "kasada ödenecek" |
+| Doluluk haritası, ay ay, haftalık özetin karaoke maddesi | Girmez (yükleyici ve `occSessionsOf` ayıklar) | Girer |
+| Bugün (rezervasyon sayısı, "Oda dolu", sıradaki) | Girmez | Girer |
+| Kapalı günün kanıtı (Kasa › kapalı gün) | Değil | Evet (her oturum gibi) |
+| "Yeni karaoke rezervasyonu" zili, Web Push | Hiç (ne eklenmesi ne kaldırılması) | Çalar (ekleyen cihaz hariç: o "Rezervasyon eklendi"yi gördü) |
+| Sayaç, "Karaoke başladı", az kaldı, süre doldu, "Haber verdim" | Hiç (evresi hep `closed`; uzatılmaz, bitirilmez) | Saatinde kendiliğinden (aşağıda) |
+| Hızlı sayaç ve uzatmanın çakışma sorusu | Evet, kendi sözüyle: "Bu saatler kapatıldı: 14:00–17:00 (özel etkinlik). Yine de başlatılsın mı?" (başlık "Bu saatler kapalı") | Evet ("Bu saatte sitede Ayşe adına …") |
+
+### Sayaç saatinde kendiliğinden başlar, bitişte öter
+
+Operatör, 22 Kasım 2026: "karaoke saatinde ladminde otomatik süre başlasın ve bitince de ötsün" ve "Kendiliğinden
+karaoke rez saatinde başlamıyordu". Sitedeki her geçerli rezervasyon (elle eklenen dahil) hiçbir düğmeye basmadan
+açık her panel sekmesinde aynı yoldan geçer (`alert-center.tsx`, `alarmPlan`, `phase`, `isPlayable`): saatinde kısa
+ses, "Karaoke başladı" ve sayaç; bitime az kala uyarı; bitişte alarm döngüsü ve kırmızı şerit, **Haber verdim**'e
+kadar. Başlamamasının nedenleri bulunup giderildi:
+
+1. **Karaoke uyarıları yöneticide varsayılan kapalıydı** (cihaz tercihi `karaokeAlarms`): yönetici hesabıyla açık bar
+   tableti ya da telefonu saatinde hiç başlatmıyor, ötmüyordu. Artık **iki rolde varsayılan açık**; cihaz kendi
+   **Bu cihazda uyarılar › Karaoke alarmları bu cihazda** anahtarından kapatabilir. Saklanan kayıt sürümlüdür (`v: 2`):
+   eski (sürümsüz) bir yönetici kaydındaki "kapalı" eski varsayılandan ayırt edilemediği için (kayıt her tercihte bütün
+   tercihleri yazar; hoparlör seçen bar bilgisayarı da yazmıştı) açık sayılır; bundan sonra seçilen her değer korunur.
+   Yan etkisi: bildirim izni olmayan yönetici cihazı da artık bir "zil cihazı"dır, sekme arka plandayken 10 dakikada
+   bir sorar (Neon kotası; bildirimleri açan cihaz sormaz).
+2. **Cihaz çalmayacaksa ekran söylemiyordu:** uyarılar kapalı cihazda Karaoke ekranında (başka ekranda oturum
+   sürerken ya da bir saat içinde başlayacakken) sayfanın başında "Bu cihazda karaoke uyarıları kapalı · Saat gelince
+   ses ve alarm çalmaz." ve **Aç**. Açılınca satır o sayfada "açık" olarak kalır (içerik kaymaz); "Sesli uyarılar
+   kapalı" satırı ayrıca kalır.
+3. **Geç öğrenilen başlangıç duyurulmuyordu:** plan bir dakikadan eski başlangıcı atıyordu; saatinden sonra cihaza
+   ulaşan rezervasyon (geç eşitleme, arka plandaki sekme, uykudan uyanan cihaz, o saate elle eklenen rezervasyon) hiç
+   "Karaoke başladı" demiyordu. Artık son **15 dakikada** başlamış ve süren oturum cihaz başına bir kez hemen duyurulur
+   (anahtar zamanındakiyle aynı); bitmiş, süresi dolmuş ya da daha eski başlangıç duyurulmaz.
+4. **12 saatten ilerideki oturumun uyarıları kurulmuyordu:** plan 12 saat ilerisine bakar ve yalnız veri değişince
+   yeniden kurulurdu; sabah açılan bar ekranı akşamki rezervasyonu (13 saat sonra) veri değişmedikçe (304) hiç
+   planlamazdı. Plan artık **dakikada bir** yeniden kurulur (aynı uyarı anahtarıyla iki kez çalmaz); uykudan uyanan
+   cihazın kaçan zamanlayıcısı da böyle yenilenir.
+
+Canlı veri yolu (`/api/canli`, `liveWindow`, ETag) gözden geçirildi: pencere 12 saat öncesinden yarının sonuna (Türkiye)
+kadar, ETag sürümü ve takvim gününü taşır (gece yarısı kendiliğinden ilerler), 23:00–24:00 rezervasyonu gece yarısından
+sonra da pencerede ve listede kalır; eşitleme satırı sitenin kimliğiyle yerinde günceller (oturum kimliği değişmez).
+Testler `tests/karaoke-elle.test.ts`.
+
 ## Kurulum
 
 1. Ortak anahtarı bir kez üretin: `openssl rand -base64 48` (en az 32 karakter).
@@ -207,8 +296,9 @@ hoparlör adlarını gösteremez; o durumda Windows'ta Ayarlar › Sistem › Se
 "Uygulama ses düzeyi ve cihaz tercihleri") Chrome'un çıkışını bilgisayar hoparlörü yapın (müzik başka bir uygulamadan
 çalıyorsa).
 
-Yöneticinin cihazında karaoke alarmları varsayılan **kapalıdır** (yeni rezervasyon bildirimi yine gelir); isteyen
-kendi cihazında açar.
+Karaoke alarmları 22 Kasım 2026'dan beri iki rolde varsayılan **açıktır** (yönetici hesabıyla açık bar ekranı da
+saatinde başlatır ve öter); istemeyen kendi cihazında kapatır, ekran kapalı olduğunu söyler (yukarıda › Sayaç saatinde
+kendiliğinden başlar).
 
 ## Güvenlik
 
@@ -331,6 +421,9 @@ hoparlörden çalmalı.
 |-------|-------|
 | `src/app/api/karaoke/ping/route.ts` | Sitenin pingi: imza, 202, arka planda eşitleme (`src/lib/ping-work.ts`: kayıt yazılamasa da çeker, düşen çekmeyi bir kez yineler) |
 | `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim; kopyanın tazelenmesi (`ensureKaraokeFresh`) |
+| `src/lib/karaoke/desk.ts`, `src/server/karaoke/desk.ts` | Elle rezervasyon ve saati kapatma: formun ve sunucunun kuralları, sitenin POST yanıtının eşlenmesi, personelin 10 dakikalık kaldırma kuralı, metinler (saf, testli); sitenin imzalı POST'u ve ardından eşitleme |
+| `src/app/panel/karaoke/desk-dialog.tsx` | Elle ekle penceresi (tür, gün, saat, süre, ad, kişi, telefon, e-posta, not / neden) |
+| `src/lib/karaoke/month.ts` | Bu ayın özeti (kapatılan saat sayılmaz; saf, testli) |
 | `src/lib/karaoke/freshness.ts`, `src/lib/karaoke/sync-text.ts` | Kopya ne zaman yeniden çekilir, bar ekranının uyarı satırı; çekme hatalarının metinleri (saf, testli) |
 | `src/server/karaoke/extend.ts` | Uzatmanın tek yazımı (SQL'de toplar, 12 saat sınırı) |
 | `src/server/site-link.ts` | Menü bağlantısıyla ortak: anahtar, sitenin adresi, imzalı istek (8 sn; [SITE-MENU.md](SITE-MENU.md)) |
@@ -351,4 +444,5 @@ hoparlörden çalmalı.
 | `src/server/actions/karaoke-doluluk.ts`, `src/app/panel/karaoke/doluluk/` | Oda saatleri ve geçmişi alma eylemleri (yalnız yönetici); Doluluk ekranı, ısı haritası, ay ay |
 | `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, adsız bildirim metni (push ve sekmenin sistem bildirimleri), şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |
 | `tests/karaoke-istek.test.ts`, `tests/karaoke-istek-db.test.ts` | Sayaç silme kipi ve isteği, bitir ve geri aç izi, okuyucuların sızıntısı, kilit sırası yarışı (`ONAY_TEST_DATABASE_URL`) |
+| `tests/karaoke-elle.test.ts` | Elle rezervasyon ve saati kapatma: yanıtın eşlenmesi, `desk` / `block` (eski sitede türetme), ay özeti ve doluluktan çıkma, kapatılan saatle çakışma, personelin kaldırma kuralı, sayacın ve alarmın yolu (elle rezervasyon çalar, kapatılan saat hiç), geç başlangıç, cihazın varsayılanı |
 | `tests/karaoke-bildirim-db.test.ts` | Gerçek Postgres ve sitenin sahte ucuyla: pingle gelen yeni, iptal edilen ve saati değişen rezervasyonun bildiriminde ad ve not yok, kopyada ve canlı veride ad var (`BAGLANTI_TEST_DATABASE_URL`) |

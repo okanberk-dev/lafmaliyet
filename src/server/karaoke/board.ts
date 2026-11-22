@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 
-import { refundKindOf, type KaraokeEvent, type KaraokeSessionDTO, type KaraokeStatus, type PaymentStatus } from "@/lib/karaoke/session";
+import { deskKindOfChannel, refundKindOf, type KaraokeEvent, type KaraokeSessionDTO, type KaraokeStatus, type PaymentStatus } from "@/lib/karaoke/session";
 import { getDb, schema as s } from "@/server/db";
 
 type Db = ReturnType<typeof getDb>;
@@ -59,6 +59,9 @@ export function toSessionDTO(r: Row, opts: { admin: boolean }): KaraokeSessionDT
     lastEvent: (r.lastEvent as KaraokeEvent | null) ?? null,
     lastEventAt: r.lastEventAt?.toISOString() ?? null,
     createdBy: r.createdBy,
+    // Köşkte alınan satır (elle rezervasyon ya da kapatılan saat): kanaldan (sync.ts › sessionChannel)
+    desk: r.source === "site" ? deskKindOfChannel(r.channel) : null,
+    bookedAt: r.bookedAt?.toISOString() ?? null,
   };
 }
 

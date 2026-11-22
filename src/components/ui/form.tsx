@@ -87,7 +87,14 @@ export function Field({
       </span>
       {children}
       {/* İpucu div: bir uyarı (Notice) da taşıyabilir */}
-      {error ? <p className="text-xs text-bad">{error}</p> : hint ? <div className="text-xs text-ink-mute">{hint}</div> : null}
+      {/* Hatanın kimliği `${htmlFor}-hata`: alan `aria-describedby` ile ona bağlanabilir (ekran okuyucu hatayı alanla okur) */}
+      {error ? (
+        <p id={htmlFor ? `${htmlFor}-hata` : undefined} className="text-xs text-bad">
+          {error}
+        </p>
+      ) : hint ? (
+        <div className="text-xs text-ink-mute">{hint}</div>
+      ) : null}
     </div>
   );
 }

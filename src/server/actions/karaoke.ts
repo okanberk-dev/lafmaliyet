@@ -4,11 +4,27 @@ import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import {
+  DESK_TEXT,
+  deskInputSchema,
+  deskIssue,
+  deskLogLine,
+  deskMessageFor,
+  deskNow,
+  deskRemoveRefusal,
+  deskWhen,
+  deskWhenProblem,
+  type DeskField,
+  type DeskInput,
+  type DeskKind,
+} from "@/lib/karaoke/desk";
 import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
-import { durationLabel, trClock } from "@/lib/karaoke/session";
+import { DESK_BLOCK_CHANNEL, durationLabel, trClock } from "@/lib/karaoke/session";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
-import { bumpKaraokeVersion, toSessionDTO } from "@/server/karaoke/board";
+import { bumpKaraokeVersion, getSession, toSessionDTO } from "@/server/karaoke/board";
+import { cancelDeskBooking, createDeskBooking } from "@/server/karaoke/desk";
+import { sessionWhen } from "@/lib/karaoke/timer-requests";
 import { addExtraMinutes, MAX_EXTRA_MINUTES } from "@/server/karaoke/extend";
 import { ensureKaraokeFresh, syncKaraoke } from "@/server/karaoke/sync";
 import { endKaraokeCore, proposeKaraokeDelete, removeKaraokeTimerCore, reopenKaraokeCore, reviewKaraokeDeleteCore } from "@/server/karaoke/timer";
@@ -35,6 +51,11 @@ const zId = z.number().int().positive();
 const SESSION_GONE = "Oturum bulunamadı; sayfayı yenileyin";
 const CANCELLED = "İptal edilmiş rezervasyon uzatılamaz";
 const TOO_LONG = "En fazla 12 saat uzatılabilir";
+/** Köşkün kapattığı saatler oturum değildir: uzatılmaz, bitirilmez (açmak için "Kaldır") */
+const BLOCK_NOT_SESSION = "Kapatılan saatler uzatılmaz; açmak için satırdaki “Kaldır”ı kullanın";
+/** Bağlantı kurulu değil: kurulum ayrıntısı yalnız yöneticiye */
+const linkOff = (role: "admin" | "staff") =>
+  role === "admin" ? "laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)" : "laffogato.net bağlantısı kurulmamış; yöneticiye haber verin.";
 
 const timerSchema = z.object({
   minutes: z.number().int().min(5, "En az 5 dakika").max(12 * 60, "En fazla 12 saat"),
@@ -135,6 +156,7 @@ export async function extendKaraokeSession(
     const [row] = await db.select().from(s.karaokeSessions).where(eq(s.karaokeSessions.id, sid)).limit(1);
     if (!row) throw new UserError(SESSION_GONE);
     if (row.status === "cancelled") throw new UserError(CANCELLED);
+    if (row.channel === DESK_BLOCK_CHANNEL) throw new UserError(BLOCK_NOT_SESSION);
     if (row.extraMinutes + add > MAX_EXTRA_MINUTES) throw new UserError(TOO_LONG);
     if (!force) {
       await freshBeforeConflict();
@@ -243,6 +265,74 @@ export async function reviewKaraokeDeleteRequest(input: z.input<typeof reviewSch
     const out = await reviewKaraokeDeleteCore(getDb(), me, data);
     refresh();
     return { status: out.status };
+  });
+}
+
+/** Elle eklemenin sonucu: eklendi ya da sitenin (ya da panelin) itirazı, formun alanıyla */
+export type DeskAddResult =
+  | { added: { kind: DeskKind; when: string; email: boolean; synced: boolean; externalId: string | null }; problem?: undefined }
+  | { added?: undefined; problem: { field: DeskField | null; message: string; uncertain: boolean } };
+
+/**
+ * Elle ekle (Karaoke ekranı; yönetici ve personel: telefonla gelen rezervasyon bara gelir): telefonla ya da kasada alınan
+ * rezervasyonu ya da köşkün kapattığı saatleri laffogato.net'in takvimine yazar (sitenin imzalı POST ucu; src/server/karaoke/
+ * desk.ts). Saatler sitede, uygulamada ve kasada hemen dolu görünür; ardından kopya eşitlenir (ekran, sürüm, öteki
+ * cihazlar). Sitenin itirazı (alan + Türkçe mesaj) `problem` olarak döner, pencere alanın yanında gösterir. Telefon ve
+ * e-posta yalnız siteye gider: işlem geçmişine ve panelin veritabanına yazılmaz. Sitenin olay kaydına kişinin adı gider.
+ */
+export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<DeskAddResult>> {
+  return attempt(async () => {
+    const me = await requireUser();
+    const parsed = deskInputSchema.safeParse(input);
+    if (!parsed.success) return { problem: { ...deskIssue(parsed.error), uncertain: false } };
+    const data = parsed.data;
+    const problem = deskWhenProblem(data, deskNow(Date.now()));
+    if (problem) return { problem: { ...problem, uncertain: false } };
+    const out = await createDeskBooking(data, me.name);
+    if (out.status === "off") throw new UserError(linkOff(me.role));
+    if (out.status === "refused") {
+      // Zaman aşımında satır yazılmış olabilir: eşitleme getirdiyse ekran görür, kişi listeye bakar
+      if (out.reply.uncertain) refresh();
+      return { problem: { field: out.reply.field, message: deskMessageFor(me.role, out.reply, "create"), uncertain: out.reply.uncertain } };
+    }
+    const when = deskWhen(data.date, data.startHour, data.hours);
+    const email = data.kind === "booking" && Boolean(data.email);
+    const line = deskLogLine("create", data.kind, { when, name: data.name, guests: data.guests ?? null, note: data.kind === "block" ? `Kapalı${data.note ? `: ${data.note}` : ""}` : null, email });
+    await logActivity(me, line.action, line.detail);
+    refresh();
+    return { added: { kind: data.kind, when, email, synced: out.sync.status === "ok" || out.sync.status === "fresh", externalId: out.reply.reservation?.id ?? null } };
+  });
+}
+
+/**
+ * Elle satırı kaldırır (saatler sitede yeniden açılır; e-postası yazılmış rezervasyonda site misafire iptal e-postası
+ * gönderir). Yönetici her zaman; personel satır sitede yazıldıktan sonraki ilk 10 dakikada (yanlış girilen satır; sayaç
+ * silmenin kuralı), sonrasında ret metni. Sitede alınan (online ödenmiş) rezervasyon buradan kaldırılmaz.
+ */
+export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind: DeskKind; when: string; already: boolean }>> {
+  return attempt(async () => {
+    const me = await requireUser();
+    const sid = zId.parse(id);
+    const row = await getSession(sid);
+    if (!row) throw new UserError(DESK_TEXT.gone);
+    const dto = toSessionDTO(row, { admin: false });
+    const refusal = deskRemoveRefusal(dto, me.role, Date.now());
+    if (refusal) throw new UserError(refusal);
+    if (!row.externalId || !dto.desk) throw new UserError(DESK_TEXT.notDesk);
+    const out = await cancelDeskBooking(row.externalId, me.name);
+    if (out.status === "off") throw new UserError(linkOff(me.role));
+    const already = out.status === "refused" && out.reply.code === "already_cancelled";
+    if (out.status === "refused" && !already) {
+      if (out.reply.uncertain) refresh();
+      throw new UserError(deskMessageFor(me.role, out.reply, "cancel"));
+    }
+    const when = sessionWhen({ startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString(), extraMinutes: 0 });
+    if (!already) {
+      const line = deskLogLine("cancel", dto.desk, { when, name: row.customerName, guests: row.guests, note: row.note });
+      await logActivity(me, line.action, line.detail);
+    }
+    refresh();
+    return { kind: dto.desk, when, already };
   });
 }
 

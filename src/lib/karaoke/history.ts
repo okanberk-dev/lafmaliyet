@@ -1,7 +1,7 @@
 import { addDays, shiftMonth } from "@/lib/reminders";
 
 import type { SiteReservation } from "./session";
-import { cancelledAtFor, siteTime } from "./site";
+import { cancelledAtFor, sessionChannel, siteTime } from "./site";
 
 /**
  * Karaoke geçmişi (saf; tests/karaoke-doluluk.test.ts): laffogato.net'teki eski rezervasyonların bir kez alınması ve
@@ -125,7 +125,7 @@ export function recordHistoryMonth(state: HistoryState, through: string, month: 
 
 /**
  * Geçmişten gelen rezervasyonun satıra yazılan sütunları: düzenli eşitlemedekilerle aynı, ad ve not hariç (KVKK: geçmiş
- * yalnız istatistik için tutulur). Sayaç alanlarına (uzatma, bitti) ve zil alanlarına dokunulmaz.
+ * yalnız istatistik için tutulur). Kapatılan saatin notu ("Kapalı: …") da yazılmaz; türü kanalda kalır. Sayaç alanlarına (uzatma, bitti) ve zil alanlarına dokunulmaz.
  */
 export function historyValues(r: SiteReservation) {
   return {
@@ -139,7 +139,8 @@ export function historyValues(r: SiteReservation) {
     paymentStatus: r.paymentStatus,
     totalMinor: r.totalMinor,
     refundMinor: r.refundMinor ?? null,
-    channel: r.channel || null,
+    // Köşkte alınan satır "desk", kapatılan saat "desk-block" (eşitlemeyle aynı kural; doluluk kapatılan saati saymaz)
+    channel: sessionChannel(r),
     extUpdatedAt: r.updatedAt || null,
     bookedAt: siteTime(r.createdAt),
   };

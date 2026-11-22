@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Notice } from "@/components/ui/notice";
 import { osNotificationSilent } from "@/lib/audio-output";
 import type { Role } from "@/lib/constants";
-import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
+import { alarmPlan, eventMessage, isBlock, isLive, isPlayable, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
 import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen, soundRow } from "@/lib/live-poll";
 import { callRingMessage, callsToRing } from "@/lib/site-orders/calls";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
@@ -21,7 +21,7 @@ import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaok
 
 import { useClock } from "./clock";
 import { applyOutput, syncQuietFlag } from "./output-client";
-import { onlyComputerOn, setBranchScope, usePrefs } from "./prefs";
+import { onlyComputerOn, setBranchScope, updatePrefs, usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
 import { ReminderAlerts, showReminder } from "./reminder-alerts";
 import {
@@ -49,6 +49,22 @@ const STARTED_HERE = new Set<number>();
 export function startedOnThisDevice(sessionId: number): void {
   STARTED_HERE.add(sessionId);
 }
+/**
+ * Bu cihazdan elle eklenen rezervasyonlar (sitenin kimliği): ekleyen "Rezervasyon eklendi"yi gördü, aynı rezervasyon için
+ * "Yeni karaoke rezervasyonu" zili bu cihazda ikinci kez çalmasın (öteki cihazlarda çalar). Sayaç ve alarm her yerde aynı
+ */
+const ADDED_HERE = new Set<string>();
+export function addedOnThisDevice(externalId: string): void {
+  ADDED_HERE.add(externalId);
+}
+/**
+ * Karaoke uyarıları dakikada bir yeniden planlanır: 12 saatten ilerideki başlangıç veri değişmeden de zamanında kurulur
+ * (sabah açılan bar ekranı, akşamki rezervasyon), uykudan uyanan cihazın kaçan zamanlayıcısı yeniden kurulur. Aynı uyarı
+ * iki kez çalmaz (anahtar).
+ */
+const REPLAN_MS = 60_000;
+/** Karaoke ekranı: bu cihazda karaoke uyarıları kapalıysa satır her zaman; başka ekranda yalnız oturum sürerken ya da yakınken */
+const KARAOKE_PATH = "/panel/karaoke";
 /** Duyurulan karaoke olayları (aynı yeni rezervasyon için iki kez zil çalmasın) */
 const SEEN_KEY = "laf:duyurulan-olaylar";
 /** Bu cihazın gördüğü laffogato.net siparişleri (aynı yeni sipariş için iki kez zil çalmasın) */
@@ -149,8 +165,10 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
   /** Sürekli sesli bir hatırlatma çalıyor ("Yaptım" ya da "Sesi kes"e kadar; reminder-alerts.tsx) */
   const reminderRinging = ringingReminders(alarmOwners).length > 0;
   const [busy, setBusy] = useState<number | null>(null);
-  /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur */
-  const [clash, setClash] = useState<{ s: KaraokeSessionDTO; minutes: number; message: string } | null>(null);
+  /** Uzatma sitedeki bir rezervasyonla ya da kapatılan saatle çakışıyor: personele sorulur */
+  const [clash, setClash] = useState<{ s: KaraokeSessionDTO; minutes: number; title: string; message: string } | null>(null);
+  /** Karaoke uyarılarının yeniden planlanma sayacı (REPLAN_MS) */
+  const [planTick, setPlanTick] = useState(0);
   const fired = useRef<Set<string> | null>(null);
   const seen = useRef<Set<string> | null>(null);
   const seenOrders = useRef<Set<string> | null>(null);
@@ -356,6 +374,8 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       changed = true;
       // İlk yüklemede yalnız son iki dakikanın olayları duyurulur (bildirimden açılan sayfa yeniden çalmasın diye)
       if (first && Date.parse(s.lastEventAt) < liveNow() - 120_000) continue;
+      // Kapatılan saat rezervasyon değil (sunucu olay yazmaz; savunma); bu cihazdan elle eklenen rezervasyonu ekleyen gördü
+      if (isBlock(s) || (s.lastEvent === "created" && s.externalId && ADDED_HERE.has(s.externalId))) continue;
       const msg = eventMessage(s.lastEvent, { startsAt: sessionStart(s), endsAt: sessionEnd(s), guests: s.guests, name: s.customerName, status: s.status, paymentStatus: s.paymentStatus }, liveNow());
       if (prefs.sound && (prefs.karaokeAlarms || role === "admin")) play(s.lastEvent === "created" ? "ring" : "warn");
       const show = s.lastEvent === "created" ? toast.success : toast;
@@ -442,6 +462,8 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       if (a.kind === "start") {
         // Sayacı bu cihaz başlattı: bildirim sayacın üstünü kapatmasın (başlatma bildirimi zaten çıktı)
         if (STARTED_HERE.has(s.id)) return;
+        // Geç kurulan (ya da geç tetiklenen) başlangıç: oturum bu arada bittiyse duyurulmaz (süre doldu evresi kendi alarmını çalar)
+        if (liveNow() >= sessionEnd(s)) return;
         if (prefs.sound) play("start");
         const detail = `${s.guests ? `${s.guests} kişi · ` : ""}${range}`;
         toast(`Karaoke başladı: ${name}`, { description: detail, duration: 15_000 });
@@ -460,6 +482,12 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
     },
     [sessions, prefs.sound, prefs.warnMinutes],
   );
+
+  // Dakikada bir yeniden plan (REPLAN_MS): veri değişmese de ilerideki uyarı zamanında kurulur, kaçan zamanlayıcı yenilenir
+  useEffect(() => {
+    const id = window.setInterval(() => setPlanTick((n) => n + 1), REPLAN_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Karaoke uyarılarını ve saatli hatırlatmaları kur
   useEffect(() => {
@@ -518,7 +546,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       for (const cancel of map.values()) cancel();
       map.clear();
     };
-  }, [data, reminders, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire]);
+  }, [data, reminders, prefs.karaokeAlarms, prefs.reminderAlerts, prefs.warnMinutes, prefs.sound, fire, planTick]);
 
   // Süresi dolan oturum varken alarm döngüsü (ses açıksa); sekme arkadaysa başlık yanıp söner. Alarmın sahibi "karaoke":
   // burada susturmak sürekli sesli hatırlatmanın alarmını kesmez (sounds.ts)
@@ -581,8 +609,8 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
       setBusy(null);
     }
     if (res.ok && res.data.conflict) {
-      // Sitedeki bir rezervasyonla çakışıyor: uzatılmadı, personele sorulur
-      setClash({ s, minutes, message: res.data.conflict.message });
+      // Sitedeki bir rezervasyonla ya da kapatılan saatle çakışıyor: uzatılmadı, personele sorulur
+      setClash({ s, minutes, title: res.data.conflict.title, message: res.data.conflict.message });
       return;
     }
     if (res.ok) {
@@ -608,6 +636,14 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
   const [soundShownOn, setSoundShownOn] = useState<string | null>(null);
   const sound = soundRow({ needsSound, audioReady: audio === "ready", pathname, shownOn: soundShownOn });
   if (sound.shownOn !== soundShownOn) setSoundShownOn(sound.shownOn);
+  // Bu cihazda karaoke uyarıları kapalı: saat gelince ses, sayaç uyarısı ve "süre doldu" alarmı bu cihazda yok. Karaoke
+  // ekranında her zaman, başka ekranda oturum sürerken ya da bir saat içinde başlayacakken söylenir; "Aç" ile açılınca
+  // satır o sayfada "açık" olarak kalır (içerik dokunuşun altında kaymaz; soundRow'un kuralı)
+  const karaokeNear = sessions.some((s) => isPlayable(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs);
+  const alarmsOff = !prefs.karaokeAlarms && (pathname === KARAOKE_PATH || karaokeNear);
+  const [alarmsShownOn, setAlarmsShownOn] = useState<string | null>(null);
+  const alarmsRow = soundRow({ needsSound: alarmsOff, audioReady: prefs.karaokeAlarms, pathname, shownOn: alarmsShownOn });
+  if (alarmsRow.shownOn !== alarmsShownOn) setAlarmsShownOn(alarmsRow.shownOn);
 
   return (
     <>
@@ -656,7 +692,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
           setClash(null);
           if (c) void extend(c.s, c.minutes, true);
         }}
-        title="Sitede rezervasyon var"
+        title={clash?.title ?? "Sitede rezervasyon var"}
         description={clash?.message}
         confirmLabel="Yine de uzat"
         tone="primary"
@@ -681,6 +717,40 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
                 </Button>
               }
             />,
+            soundSlot,
+          )
+        : null}
+      {alarmsRow.row && soundSlot
+        ? createPortal(
+            alarmsRow.row === "locked" ? (
+              <Notice
+                tone="warn"
+                risk="bar"
+                size="sm"
+                title="Bu cihazda karaoke uyarıları kapalı"
+                text="Saat gelince ses ve alarm çalmaz."
+                className="no-print mb-4"
+                action={
+                  <Button size="xs" variant="secondary" onClick={() => updatePrefs(role, { karaokeAlarms: true })} aria-label="Bu cihazda karaoke uyarılarını aç">
+                    Aç
+                  </Button>
+                }
+              />
+            ) : (
+              <Notice
+                tone="good"
+                size="sm"
+                title="Bu cihazda karaoke uyarıları açık"
+                className="no-print mb-4"
+                action={
+                  <span aria-hidden="true" className="invisible">
+                    <Button size="xs" variant="secondary" tabIndex={-1}>
+                      Aç
+                    </Button>
+                  </span>
+                }
+              />
+            ),
             soundSlot,
           )
         : null}

@@ -290,6 +290,8 @@ const session = (over: Partial<KaraokeSessionDTO> = {}): KaraokeSessionDTO => ({
   lastEvent: null,
   lastEventAt: null,
   createdBy: null,
+  desk: null,
+  bookedAt: null,
   ...over,
 });
 const at = (iso: string) => Date.parse(iso);

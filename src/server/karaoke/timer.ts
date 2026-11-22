@@ -1,6 +1,8 @@
 import "server-only";
 
-import { eq, isNull, and } from "drizzle-orm";
+import { eq, isNull, and, sql } from "drizzle-orm";
+
+import { DESK_BLOCK_CHANNEL } from "@/lib/karaoke/session";
 
 import {
   deletedLogDetail,
@@ -62,7 +64,8 @@ export async function endKaraokeCore(db: DB, me: KaraokeActor, id: number, now =
     const [row] = await tx
       .update(s.karaokeSessions)
       .set({ endedAt: now, endedBy: me.name, updatedAt: now })
-      .where(and(eq(s.karaokeSessions.id, id), isNull(s.karaokeSessions.endedAt)))
+      // Köşkün kapattığı saatler oturum değildir: bitirilmez (bitti işareti odayı çakışma denetiminde boş gösterirdi)
+      .where(and(eq(s.karaokeSessions.id, id), isNull(s.karaokeSessions.endedAt), sql`${s.karaokeSessions.channel} is distinct from ${DESK_BLOCK_CHANNEL}`))
       .returning();
     if (!row) return null;
     await logIn(tx, me, "Karaoke oturumu bitirildi", endedLogDetail(row, now));

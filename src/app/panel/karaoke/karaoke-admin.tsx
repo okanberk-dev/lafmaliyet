@@ -11,19 +11,13 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { KeyValue, Stat } from "@/components/ui/misc";
 import { Notice, NoticeTech } from "@/components/ui/notice";
 import { dateTimeTR, num, tl } from "@/lib/format";
+import type { MonthStats } from "@/lib/karaoke/month";
 import { dayLabel, isHold, isLive, sessionEnd, sessionStart, timeRange, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { cn } from "@/lib/utils";
 import type { SyncState } from "@/server/karaoke/sync";
 import { syncKaraokeNow } from "@/server/actions/karaoke";
 
-export interface MonthStats {
-  reservations: number;
-  hours: number;
-  revenueMinor: number;
-  cancelled: number;
-  walkIns: number;
-  walkInHours: number;
-}
+export type { MonthStats } from "@/lib/karaoke/month";
 
 /**
  * Yöneticinin karaoke takibi: bu ayın özeti (rezervasyon, saat, ciro, iptal, rezervasyonsuz oturum), son 30 günün
@@ -79,7 +73,7 @@ export function KaraokeAdmin({
           <CardHeader
             icon={<BarChart3 />}
             title={`Bu ay · ${monthLabel}`}
-            description="Sitedeki rezervasyonlar (iptaller hariç) ve panelden açılan sayaçlar"
+            description="Sitedeki rezervasyonlar (iptaller ve kapatılan saatler hariç, elle alınanlar dahil) ve panelden açılan sayaçlar"
             actions={
               // Gün × saat doluluğu, saat başına gelir, uzatma, son dakika iptal (docs/KARAOKE.md › Doluluk haritası)
               <ButtonLink href="/panel/karaoke/doluluk" variant="secondary" size="sm">
@@ -110,6 +104,8 @@ export function KaraokeAdmin({
                   <Badge tone={s.source === "panel" ? "gray" : s.status === "cancelled" ? "red" : isHold(s) ? "gray" : "green"}>
                     {s.source === "panel" ? "Panelden" : s.status === "cancelled" ? "İptal" : isHold(s) ? "Ödenmedi" : "Rezervasyon"}
                   </Badge>
+                  {/* Köşkte elle alınan rezervasyon (telefonla, kasada; ödemesi köşkte) */}
+                  {s.desk === "booking" ? <Badge tone="gray">Elle</Badge> : null}
                   {s.extraMinutes ? <span className="text-xs text-ink-mute">+{s.extraMinutes} dk</span> : null}
                   {s.totalMinor ? <span className="text-xs text-ink-mute tabular">{tl(s.totalMinor / 100)}</span> : null}
                   {s.externalId ? (

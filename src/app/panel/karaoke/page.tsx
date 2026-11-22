@@ -4,15 +4,18 @@ import { after } from "next/server";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { DEFAULT_ROOM_HOURS } from "@/lib/karaoke/occupancy";
 import { PageSkeleton } from "@/components/ui/misc";
-import { isLive, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
+import { monthStats } from "@/lib/karaoke/month";
+import { isBlock, sessionEnd, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
 import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
+import { readKaraokeHours } from "@/server/karaoke/occupancy";
 import { karaokeSecret, readSyncState, siteUrl, syncKaraoke } from "@/server/karaoke/sync";
 
-import { KaraokeAdmin, type MonthStats } from "./karaoke-admin";
+import { KaraokeAdmin } from "./karaoke-admin";
 import { KaraokeBoard } from "./karaoke-board";
 import { OrdersSummary } from "./orders-summary";
 import { SoldOutCard } from "./sold-out-card";
@@ -52,22 +55,6 @@ export default function KaraokePage() {
 
 const DAY_MS = 86_400_000;
 
-/** Bu ayın özeti: sitenin rezervasyonları (saat, ciro, iptal) ve panelden açılan sayaçlar */
-function monthStats(rows: KaraokeSessionDTO[]): MonthStats {
-  const site = rows.filter((r) => r.source === "site");
-  const live = site.filter(isLive);
-  const hours = (r: KaraokeSessionDTO) => (sessionEnd(r) - sessionStart(r)) / 3_600_000;
-  const timers = rows.filter((r) => r.source === "panel");
-  return {
-    reservations: live.length,
-    hours: live.reduce((a, r) => a + hours(r), 0),
-    revenueMinor: live.filter((r) => r.paymentStatus === "paid" || r.paymentStatus === "none").reduce((a, r) => a + (r.totalMinor ?? 0), 0),
-    cancelled: site.filter((r) => r.status === "cancelled" && r.paymentStatus !== "expired").length,
-    walkIns: timers.length,
-    walkInHours: timers.reduce((a, r) => a + hours(r), 0),
-  };
-}
-
 async function KaraokeContent() {
   const user = await requireUser();
   const admin = user.role === "admin";
@@ -84,7 +71,7 @@ async function KaraokeContent() {
   const [y, m] = monthStart.split("-").map(Number);
   const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`;
   const trMidnight = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 3 * 3_600_000);
-  const [upcoming, month, history, sync, devices, soldOut] = await Promise.all([
+  const [upcoming, month, history, sync, devices, soldOut, room] = await Promise.all([
     loadSessions(new Date(now - 12 * 3_600_000), new Date(now + (admin ? 45 : 8) * DAY_MS), { admin }),
     admin ? loadSessions(trMidnight(monthStart), trMidnight(nextMonth), { admin }) : Promise.resolve([]),
     admin ? loadSessions(new Date(now - 30 * DAY_MS), new Date(now), { admin }) : Promise.resolve([]),
@@ -101,6 +88,8 @@ async function KaraokeContent() {
       console.error("[tukendi] kart", e);
       return null;
     }),
+    // "Elle ekle"nin saat seçenekleri: Doluluk › Oda saatleri (kaydedilmediyse sitenin 12:00–24:00'ı)
+    readKaraokeHours().catch(() => null),
   ]);
   return (
     <>
@@ -109,10 +98,18 @@ async function KaraokeContent() {
         {/* Uygulama siparişleri ve masa çağrıları Siparişler ekranında (/panel/siparisler): burada açık olanların tek satırı */}
         <OrdersSummary role={user.role} serverNow={now} />
         {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
-        <KaraokeBoard role={user.role} upcoming={upcoming} siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null} configured={Boolean(karaokeSecret())} serverNow={now} />
+        <KaraokeBoard
+          role={user.role}
+          upcoming={upcoming}
+          siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null}
+          configured={Boolean(karaokeSecret())}
+          serverNow={now}
+          roomHours={room?.hours ?? DEFAULT_ROOM_HOURS}
+        />
         {admin ? (
           <KaraokeAdmin
-            history={history.filter((r) => sessionEnd(r) < now).reverse()}
+            // Kapatılan saatler oturum değil: son 30 günün listesine girmez
+            history={history.filter((r) => sessionEnd(r) < now && !isBlock(r)).reverse()}
             stats={monthStats(month.filter((r) => r.date >= monthStart && r.date < nextMonth))}
             monthLabel={new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric", timeZone: "Europe/Istanbul" }).format(new Date(now))}
             sync={sync}

@@ -67,7 +67,8 @@ export function livePollMs(o: LivePollInput): number | null {
 
 /**
  * Bu cihaz yeni sipariş / rezervasyonda zil çalar: ses açık, tarayıcı sesi açmış ve sipariş zili ya da karaoke alarmları
- * açık (personelde varsayılan açık, yöneticide kapalı). Sesi açılmamış (hiç dokunulmamış) sekme zaten çalamaz.
+ * açık (karaoke alarmları 22 Kasım 2026'dan beri iki rolde varsayılan açık, sipariş zili personelde). Sesi açılmamış (hiç
+ * dokunulmamış) sekme zaten çalamaz.
  */
 export function listensForAlerts(p: { sound: boolean; orderAlerts: boolean; karaokeAlarms: boolean }, audioReady: boolean): boolean {
   return p.sound && audioReady && (p.orderAlerts || p.karaokeAlarms);
@@ -75,8 +76,8 @@ export function listensForAlerts(p: { sound: boolean; orderAlerts: boolean; kara
 
 /**
  * Bildirim yokken karaoke sayfasındaki "Bu cihazda uyarılar" kartının arka plan notu. 10 dakika sözü yalnız arka planda
- * soracak cihaza (listensForAlerts; sesin açılmasını kartın ses satırı anlatır); ötekinde (yöneticinin varsayılanı, sesi
- * ya da iki zili kapalı cihaz) arka plandaki sekme hiç sormaz, yeniliği öne gelince duyurur. Telefonda (iOS'ta ana
+ * soracak cihaza (listensForAlerts; sesin açılmasını kartın ses satırı anlatır); ötekinde (sesi ya da iki zili kapalı
+ * cihaz) arka plandaki sekme hiç sormaz, yeniliği öne gelince duyurur. Telefonda (iOS'ta ana
  * ekrana eklenmemiş Safari) arka plandaki sekme durdurulur.
  */
 export function hiddenTabNote(p: { sound: boolean; orderAlerts: boolean; karaokeAlarms: boolean }): string {

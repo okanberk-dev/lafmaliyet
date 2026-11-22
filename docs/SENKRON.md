@@ -14,7 +14,7 @@ bağlantılar kapalı, panelin geri kalanı çalışır).
 | Bilgi | Kaynak | Panele nasıl gelir | Panel nasıl yazar | Ayrıntı |
 |---|---|---|---|---|
 | Menü fiyatı (M / L), Satışta / Tükendi | site | Sitenin pingi (`/api/menu/ping`) → imzalı `GET /api/panel/menu`; Ürünler sayfaları açılınca (5 dakikada bir), günlük iş, "Siteyle eşitle" | Önce site: imzalı `POST /api/panel/menu`, site 2xx verince panel sitenin döndürdüğünü yazar | [SITE-MENU.md](SITE-MENU.md) |
-| Karaoke rezervasyonları | site | Ping (`/api/karaoke/ping`) → `GET /api/panel/karaoke` | Yazmaz | [KARAOKE.md](KARAOKE.md) |
+| Karaoke rezervasyonları | site | Ping (`/api/karaoke/ping`) → `GET /api/panel/karaoke` (satırda ekleme olarak `desk`, `block`) | Yalnız elle satır (22 Kasım 2026): Karaoke › Elle ekle, imzalı `POST /api/panel/karaoke` (`create`: telefonla gelen rezervasyon ya da saati kapatma; `cancel`: yalnız elle satır, sitede ödenen 409 `not_desk`); site yazınca panel eşitler. Sitenin rezervasyonunu (onay, iptal, iade) yazmaz | [KARAOKE.md](KARAOKE.md) |
 | Uygulama siparişleri ve masa çağrıları (Siparişler ekranı) | site | Ping (`/api/orders/ping`) → `GET /api/panel/orders`; yanında ödeme bekleyen sayısı (`awaitingPayment`): sıfırdan büyükken ekran en çok 30 dakika üç dakikada bir çeker (kaçan ödeme pingi); açık masa çağrıları (`calls`, 15 dakikadan yeni) | Aşama: `POST /api/panel/orders/stage` (karta koşullu; eski dokunuş 409); çağrıda Gördüm: `POST /api/panel/calls/ack` (tekrarı aynı yanıt, 404 zaten kapanmış) | [SITE-SIPARIS.md](SITE-SIPARIS.md) |
 | Online satış (kâr-zarar, tüketim, kasa raporu) | site | `GET /api/panel/sales` (günlük iş, Gelir-gider › Siteden yenile) | Yazmaz | [SITE-SATIS.md](SITE-SATIS.md) |
 | Ad, kategori, görsel, alerjen, yeni kalem | site | Yalnız ad ve kategori listede görünür | Yazmaz (eşleştirme ve kalem açma elle) | [SITE-MENU.md](SITE-MENU.md) |
@@ -23,7 +23,8 @@ Kafenin kasası LafPOS ayrı bir bağlantıdır (kendi anahtarı, kendi uçları
 
 ## Çakışma: iki yer aynı anda değişince
 
-Panel → site yazımı yalnız menü fiyatı ve Satışta / Tükendi içindir; dört yol tek noktadan geçer
+Panel → site yazımı menü fiyatı ve Satışta / Tükendi içindir (karaoke'nin elle satırı ayrı: sitenin veritabanı çakışmayı
+keser, 409 `slot_taken`; [KARAOKE.md](KARAOKE.md) › Elle rezervasyon ve saati kapatma); dört yol tek noktadan geçer
 (`pushSaleChange`, `src/server/site-menu/push.ts`): ürün kartının kaydı (`saveRecipe`), listedeki fiyat hücresi ve
 zam önerisi (`updateProductPrice` → `writeSalePrice`), toplu Fiyatlar ve geri alması (`writeSalePrice`), bar ekranının
 Tükendi / Satışa aç / Kapalı tut'u (`sold-out-core.ts`).

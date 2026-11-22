@@ -99,7 +99,7 @@ test("sunucu: çakışma kaydetmeden önce sorulur, `force` ile yine de kaydedil
   // "use server": yardımcı dışa verilmez (her dışa verilen işlev herkese açık bir POST ucudur)
   assert.doesNotMatch(actions, /export async function siteConflict/);
   const board = read("src/app/panel/karaoke/karaoke-board.tsx");
-  assert.match(board, /if \(res\.data\.conflict\) return void setAsk\(res\.data\.conflict\.message\)/);
+  assert.match(board, /if \(res\.data\.conflict\) return void setAsk\(\{ title: res\.data\.conflict\.title, message: res\.data\.conflict\.message \}\)/);
   assert.match(board, /confirmLabel="Yine de başlat"/);
   assert.match(board, /confirmLabel="Yine de uzat"/);
   assert.match(read("src/components/panel/live/alert-center.tsx"), /confirmLabel="Yine de uzat"/);

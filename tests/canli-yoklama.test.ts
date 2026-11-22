@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { defaultPrefs } from "../src/components/panel/live/prefs";
+import { defaultPrefs, parsePrefs } from "../src/components/panel/live/prefs";
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
 import { CATCH_UP } from "../src/lib/karaoke/freshness";
 import { hiddenTabNote, LIVE_POLL, listensForAlerts, livePollDue, livePollMs, pushCovers, type LivePollInput } from "../src/lib/live-poll";
@@ -50,25 +50,46 @@ test("yedek kontrol: bildirim gelmeyen, zili açık cihazda arka plandaki sekme 
   assert.match(src, /failing: p\.failing, listening: p\.listening \}/);
 });
 
-test("zil cihazı: personelin varsayılanı dinler, yöneticininki dinlemez; ses kapalı ya da açılmamışsa dinlemez", () => {
+test("zil cihazı: iki rolün varsayılanı dinler (karaoke alarmları açık, 22 Kasım 2026); ses kapalı, açılmamış ya da iki zil kapalıysa dinlemez", () => {
   assert.equal(listensForAlerts(defaultPrefs("staff"), true), true);
   assert.equal(listensForAlerts(defaultPrefs("staff"), false), false, "ses açılmamış sekme zaten çalamaz");
-  assert.equal(listensForAlerts(defaultPrefs("admin"), true), false);
+  assert.equal(listensForAlerts(defaultPrefs("admin"), true), true, "yönetici hesabıyla açık bar ekranı da çalar");
   assert.equal(listensForAlerts({ ...defaultPrefs("staff"), sound: false }, true), false);
-  assert.equal(listensForAlerts({ ...defaultPrefs("admin"), karaokeAlarms: true }, true), true);
+  assert.equal(listensForAlerts({ ...defaultPrefs("admin"), karaokeAlarms: false }, true), false, "yöneticide sipariş zili varsayılan kapalı");
+  assert.equal(defaultPrefs("admin").karaokeAlarms, true);
+  assert.equal(defaultPrefs("staff").karaokeAlarms, true);
+  assert.equal(defaultPrefs("admin").orderAlerts, false, "sipariş zili yöneticide yine kapalı");
+});
+
+test("cihaz tercihi: seçilen değer korunur; eski (sürümsüz) yönetici kaydındaki karaoke 'kapalı' eski varsayılandır, açılır", () => {
+  // Sürümsüz eski kayıt: her tercih değişikliğinde bütün tercihler yazılıyordu (hoparlör seçen bar bilgisayarı da)
+  assert.equal(parsePrefs({ sound: true, karaokeAlarms: false, outputId: "a1" }, "admin").karaokeAlarms, true);
+  assert.equal(parsePrefs({ sound: true, karaokeAlarms: false, outputId: "a1" }, "admin").outputId, "a1", "öteki seçimler kalır");
+  // Personelin eski "kapalı"sı seçimdir (personelde varsayılan zaten açıktı), yöneticinin eski "açık"ı da
+  assert.equal(parsePrefs({ karaokeAlarms: false }, "staff").karaokeAlarms, false);
+  assert.equal(parsePrefs({ karaokeAlarms: true }, "admin").karaokeAlarms, true);
+  // Yeni kayıt (sürüm 2) her rolde olduğu gibi: cihaz kapatabilir
+  assert.equal(parsePrefs({ karaokeAlarms: false, v: 2 }, "admin").karaokeAlarms, false);
+  assert.equal(parsePrefs({ karaokeAlarms: false, v: 2 }, "staff").karaokeAlarms, false);
+  // Kayıt yok ya da bozuk: varsayılan (açık)
+  assert.equal(parsePrefs(null, "admin").karaokeAlarms, true);
+  assert.equal(parsePrefs({ karaokeAlarms: "hayır" }, "admin").karaokeAlarms, true);
+  // Kayıt sürümle yazılır
+  assert.match(read("src/components/panel/live/prefs.ts"), /JSON\.stringify\(\{ \.\.\.next, v: PREFS_VERSION \}\)/);
 });
 
 test("bildirim yokken kartın arka plan notu: 10 dakika sözü yalnız arka planda soracak cihaza, ötekine öne gelince", () => {
   assert.match(hiddenTabNote(defaultPrefs("staff")), /zili 10 dakikaya kadar gecikebilir; telefonda arka plandaki sekme çalmaz\.$/);
-  // Yöneticinin varsayılanında arka plandaki sekme sormaz: rezervasyon zili sekme öne gelince çalar
-  assert.equal(hiddenTabNote(defaultPrefs("admin")), "Bildirim yokken arka plandaki sekme yeni rezervasyonu ve siparişi ancak öne gelince duyurur.");
+  assert.match(hiddenTabNote(defaultPrefs("admin")), /zili 10 dakikaya kadar gecikebilir/, "karaoke alarmları yöneticide de varsayılan açık");
+  // İki zili kapalı cihazda arka plandaki sekme sormaz: rezervasyon zili sekme öne gelince çalar
+  assert.equal(hiddenTabNote({ ...defaultPrefs("admin"), karaokeAlarms: false }), "Bildirim yokken arka plandaki sekme yeni rezervasyonu ve siparişi ancak öne gelince duyurur.");
   const cases = [
     defaultPrefs("staff"),
     defaultPrefs("admin"),
     { ...defaultPrefs("staff"), sound: false },
     { ...defaultPrefs("staff"), orderAlerts: false, karaokeAlarms: false },
     { ...defaultPrefs("admin"), orderAlerts: true },
-    { ...defaultPrefs("admin"), karaokeAlarms: true },
+    { ...defaultPrefs("admin"), karaokeAlarms: false },
   ];
   // Söz, arka planda sormanın kuralıyla aynı (ses açıldıktan sonra; ses satırı açılmayı ayrıca anlatır)
   for (const p of cases) assert.equal(/10 dakika/.test(hiddenTabNote(p)), listensForAlerts(p, true), JSON.stringify(p));

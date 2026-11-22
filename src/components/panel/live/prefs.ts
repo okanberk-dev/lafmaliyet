@@ -7,8 +7,10 @@ import type { Role } from "@/lib/constants";
 
 /**
  * Bu cihazın uyarı tercihleri (tarayıcıda saklanır; her cihaz kendi karar verir: kasadaki tablet çalar, yöneticinin
- * telefonu çalmayabilir). Varsayılan: personelde karaoke alarmları ve sipariş zili açık, yöneticide kapalı; sesli uyarı
- * ve kişisel hatırlatmalar herkeste açık; sesler sistemin varsayılan çıkışından (hoparlör seçilene kadar).
+ * telefonu çalmayabilir). Varsayılan: karaoke alarmları (başladı, az kaldı, süre doldu) her iki rolde açık (22 Kasım
+ * 2026: bar ekranı yönetici hesabıyla açıkken sayaç saatinde başlamıyor, süre dolunca ötmüyordu; isteyen cihaz kapatır,
+ * ekran kapalı olduğunu söyler); sipariş zili personelde açık, yöneticide kapalı; sesli uyarı ve kişisel hatırlatmalar
+ * herkeste açık; sesler sistemin varsayılan çıkışından (hoparlör seçilene kadar).
  */
 export interface DevicePrefs {
   /** Bu cihazda ses çalınsın */
@@ -37,9 +39,38 @@ export interface DevicePrefs {
 const KEY = "laf:cihaz-uyarilari";
 const WARN_CHOICES = [0, 5, 10, 15] as const;
 export { WARN_CHOICES };
+/**
+ * Saklanan kaydın sürümü. 2: karaoke alarmlarının varsayılanı iki rolde açık (22 Kasım 2026). Kayıt her tercih
+ * değişikliğinde bütün tercihleri yazar: sürümsüz (eski) bir yönetici kaydındaki "kapalı" çoğunlukla seçim değil, eski
+ * varsayılandır (hoparlör seçen bar bilgisayarı da yazmıştı) ve ayırt edilemez; açık sayılır. Seçilen her değer (2'li
+ * kayıt, personelin eski kaydı, yöneticinin eski "açık"ı) korunur.
+ */
+const PREFS_VERSION = 2;
 
 export function defaultPrefs(role: Role): DevicePrefs {
-  return { sound: true, karaokeAlarms: role === "staff", orderAlerts: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "", onlyComputer: null };
+  return { sound: true, karaokeAlarms: true, orderAlerts: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "", onlyComputer: null };
+}
+
+/**
+ * Saklanan kayıt → tercihler (saf; tests/canli-yoklama.test.ts). Bozuk alan varsayılana döner. Sürümsüz yönetici
+ * kaydında `karaokeAlarms: false` eski varsayılandır, yeni varsayılan (açık) geçer.
+ */
+export function parsePrefs(raw: unknown, role: Role): DevicePrefs {
+  const prefs = defaultPrefs(role);
+  if (!raw || typeof raw !== "object") return prefs;
+  const p = raw as Partial<DevicePrefs> & { v?: unknown };
+  const legacyAdminOff = p.v !== PREFS_VERSION && role === "admin" && p.karaokeAlarms === false;
+  return {
+    sound: typeof p.sound === "boolean" ? p.sound : prefs.sound,
+    karaokeAlarms: typeof p.karaokeAlarms === "boolean" && !legacyAdminOff ? p.karaokeAlarms : prefs.karaokeAlarms,
+    orderAlerts: typeof p.orderAlerts === "boolean" ? p.orderAlerts : prefs.orderAlerts,
+    reminderAlerts: typeof p.reminderAlerts === "boolean" ? p.reminderAlerts : prefs.reminderAlerts,
+    warnMinutes: WARN_CHOICES.includes(p.warnMinutes as (typeof WARN_CHOICES)[number]) ? (p.warnMinutes as number) : prefs.warnMinutes,
+    wakeLock: typeof p.wakeLock === "boolean" ? p.wakeLock : prefs.wakeLock,
+    outputId: typeof p.outputId === "string" && p.outputId.length <= 256 ? p.outputId : prefs.outputId,
+    outputLabel: typeof p.outputLabel === "string" ? p.outputLabel.slice(0, 200) : prefs.outputLabel,
+    onlyComputer: typeof p.onlyComputer === "boolean" ? p.onlyComputer : prefs.onlyComputer,
+  };
 }
 
 let cache: { role: Role; prefs: DevicePrefs } | null = null;
@@ -50,20 +81,7 @@ function read(role: Role): DevicePrefs {
   let prefs = defaultPrefs(role);
   try {
     const raw = window.localStorage.getItem(`${KEY}:${role}`);
-    if (raw) {
-      const p = JSON.parse(raw) as Partial<DevicePrefs>;
-      prefs = {
-        sound: typeof p.sound === "boolean" ? p.sound : prefs.sound,
-        karaokeAlarms: typeof p.karaokeAlarms === "boolean" ? p.karaokeAlarms : prefs.karaokeAlarms,
-        orderAlerts: typeof p.orderAlerts === "boolean" ? p.orderAlerts : prefs.orderAlerts,
-        reminderAlerts: typeof p.reminderAlerts === "boolean" ? p.reminderAlerts : prefs.reminderAlerts,
-        warnMinutes: WARN_CHOICES.includes(p.warnMinutes as (typeof WARN_CHOICES)[number]) ? (p.warnMinutes as number) : prefs.warnMinutes,
-        wakeLock: typeof p.wakeLock === "boolean" ? p.wakeLock : prefs.wakeLock,
-        outputId: typeof p.outputId === "string" && p.outputId.length <= 256 ? p.outputId : prefs.outputId,
-        outputLabel: typeof p.outputLabel === "string" ? p.outputLabel.slice(0, 200) : prefs.outputLabel,
-        onlyComputer: typeof p.onlyComputer === "boolean" ? p.onlyComputer : prefs.onlyComputer,
-      };
-    }
+    if (raw) prefs = parsePrefs(JSON.parse(raw), role);
   } catch {
     // Gizli pencere ya da kapalı depolama: varsayılanlar
   }
@@ -78,7 +96,7 @@ export function updatePrefs(role: Role, patch: Partial<DevicePrefs>) {
   const next = { ...read(role), ...patch };
   cache = { role, prefs: next };
   try {
-    window.localStorage.setItem(`${KEY}:${role}`, JSON.stringify(next));
+    window.localStorage.setItem(`${KEY}:${role}`, JSON.stringify({ ...next, v: PREFS_VERSION }));
   } catch {
     // Saklanamadı: bu oturumda geçerli kalır
   }
