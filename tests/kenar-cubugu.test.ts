@@ -177,6 +177,8 @@ test("yönetici: en sık dört ekran üst düzeyde, gerisi konu başlıkları al
     "Bugün (/panel/bugun)",
     "Onaylar (/panel/onaylar)",
     "Kasa raporu (/panel/kasa)",
+    // 22 Kas 2026 (docs/VARDIYA.md): vardiya planı iki rolde üst düzeyde; yöneticide adı "Vardiya ayarlama"
+    "Vardiya ayarlama (/panel/vardiya)",
     // Siparişler (uygulama siparişleri ve masa çağrıları) 6 Kas 2026'da Karaoke'den kendi ekranına, Kafe'nin başına
     "Kafe › Siparişler, Karaoke, Kontrol listeleri, Özel günler, Hatırlatıcılarım",
     // 29 Eki 2026 (docs/planlar/ux-sade.md §3.1): Ürünler'in adı başlığıyla aynı; Fiyatlar kendi satırında
@@ -211,6 +213,8 @@ test("personelin ağacı değişmedi (içerik ve sıra; yalnız Hızlı sayım k
     "Siparişler (/panel/siparisler)",
     "Karaoke (/panel/karaoke)",
     "Kasa raporu (/panel/kasa)",
+    // 22 Kas 2026: personel planı yalnız görür, adı "Vardiya" (aynı düğüm, role göre ad: labelFor)
+    "Vardiya (/panel/vardiya)",
     "Kontrol listeleri (/panel/kontrol)",
     "Özel günler (/panel/ozel-gunler)",
     "Reçete defteri (/panel/receteler)",
@@ -244,8 +248,9 @@ test("hiçbir ekran menüden düşmedi: adresler aynı, ağaç, komut paleti ve 
   // siparişi 26 Eki 2026'da kaldırıldı (eski adresleri Stok sayımı'na yönlenir: tests/hizli-siparis-kaldirildi.test.ts);
   // Vergi dalga 12'de eklendi; 29 Eki 2026'da Fiyatlar, Nakit planı ve Vergi'nin dört ekranı kendi satırlarında;
   // Şubeler 4 Kas 2026'da Ayarlar altına (docs/SUBE.md); Siparişler 6 Kas 2026'da Kafe altına (docs/SITE-SIPARIS.md)
+  // Vardiya 22 Kas 2026'da üst düzeye (docs/VARDIYA.md)
   const ADMIN_PAGES = [
-    "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/siparisler", "/panel/karaoke", "/panel/ozel-gunler",
+    "/panel", "/panel/bugun", "/panel/onaylar", "/panel/kontrol", "/panel/hatirlaticilarim", "/panel/kasa", "/panel/siparisler", "/panel/karaoke", "/panel/ozel-gunler", "/panel/vardiya",
     "/panel/urunler", "/panel/hammaddeler", "/panel/receteler", "/panel/satislar", "/panel/komisyonlar", "/panel/analiz", "/panel/faturalar",
     "/panel/tedarikciler", "/panel/giderler", "/panel/gelir-gider", "/panel/vergi", "/panel/hatirlaticilar", "/panel/sayim",
     "/panel/zayi", "/panel/tutarlilik", "/panel/ayarlar", "/panel/kullanicilar", "/panel/subeler", "/panel/parasut", "/panel/yardim",
@@ -274,7 +279,7 @@ test("komut paletinin her ekranı, rolünün kenar çubuğunda da bir satırdan 
   const staffPalette = NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.roles.includes("staff")).map((i) => i.href);
   assert.deepEqual([...staffPalette].sort(), [
     "/panel/bugun", "/panel/hatirlaticilarim", "/panel/karaoke", "/panel/kasa", "/panel/kontrol", "/panel/ozel-gunler",
-    "/panel/receteler", "/panel/sayim", "/panel/siparisler", "/panel/zayi",
+    "/panel/receteler", "/panel/sayim", "/panel/siparisler", "/panel/vardiya", "/panel/zayi",
   ]);
   // Paletin başlıkları ağacın başlıklarıyla aynı sırada (Genel = üst düzeydeki dört ekran; Ayarlar alttaki NAV_FOOTER'da)
   const heads = NAV_TREE.filter((n) => n.children && n.roles.includes("admin")).map((n) => n.label);

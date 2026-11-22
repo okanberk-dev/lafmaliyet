@@ -6,6 +6,7 @@ import {
   BookOpen,
   Boxes,
   Building2,
+  CalendarClock,
   CalendarHeart,
   CalendarRange,
   ChartNoAxesColumn,
@@ -95,9 +96,9 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         label: "Siparişler",
         icon: ShoppingBag,
         roles: ["admin", "staff"],
-        keywords: "sipariş uygulama siparişi masa gel-al kurye laffogato.net garson çağır masa çağrısı su peçete zil bar ekranı hazır aşama",
+        keywords: "sipariş uygulama siparişi masa gel-al kurye laffogato.net garson çağır masa çağrısı su peçete zil bar ekranı hazır aşama tükendi tükenen satışa aç",
       },
-      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı tükendi laffogato.net" },
+      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı laffogato.net" },
       // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
       {
         href: "/panel/karaoke/doluluk",
@@ -112,6 +113,15 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: ListChecks,
         roles: ["admin", "staff"],
         keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
+      },
+      // Vardiya planı (docs/VARDIYA.md): yönetici haftayı yazar ve PDF'ini alır, personel görür. Yöneticinin kenar
+      // çubuğunda adı "Vardiya ayarlama"; palet ve telefon başlığı iki rolde "Vardiya"
+      {
+        href: "/panel/vardiya",
+        label: "Vardiya",
+        icon: CalendarClock,
+        roles: ["admin", "staff"],
+        keywords: "vardiya ayarlama vardiya planı çizelge shift nöbet izin haftalık program çalışma saatleri kim çalışıyor pdf yazdır",
       },
       // Özel günler (maç, AVM etkinliği, kampanya; docs/OZEL-GUNLER.md): takvim notu
       { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["admin", "staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
@@ -315,6 +325,8 @@ export interface NavNode {
   icon: LucideIcon;
   href?: string;
   roles: ("admin" | "staff")[];
+  /** Rolüne göre başka ad (aynı ekranı yönetici ayarlar, personel yalnız görür): navTreeFor uygular */
+  labelFor?: Partial<Record<"admin" | "staff", string>>;
   /** Satırda canlı sayı: "orders" açık uygulama siparişi ve masa çağrısı (canlı veriden; orders-badge.tsx) */
   badge?: "orders";
   children?: { id: string; label: string; href: string; roles: ("admin" | "staff")[]; match?: string[]; badge?: "orders" }[];
@@ -330,7 +342,8 @@ export interface NavNode {
  * öğeleri (Siparişler, Karaoke, Kontrol listeleri, Hatırlatıcılarım) yalnız personelde, yönetici aynı ekranları Kafe
  * altında görür. 6 Kas 2026: Siparişler (uygulama siparişleri ve masa çağrıları) personelde Bugün'ün altına, yönetici
  * Kafe'nin başına; satırında açık sayısı. Personelin görebildiği düğümlerin sırası değişmez (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi
- * sabitler). Adresler değişmedi, yalnız gruplama.
+ * sabitler). Adresler değişmedi, yalnız gruplama. 22 Kas 2026: Vardiya (docs/VARDIYA.md) iki rolde üst düzeyde, Kasa
+ * raporu'nun altında; yöneticide adı "Vardiya ayarlama", personelde "Vardiya" (`labelFor`).
  */
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
@@ -345,6 +358,9 @@ export const NAV_TREE: NavNode[] = [
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["staff"] },
   // Gün sonu kasa raporu: iki rolde de üst düzeyde, tek tıkla
   { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["admin", "staff"] },
+  // Vardiya planı (22 Kas 2026, sahibin isteği: "vardiya ayarlama diye ayrı sekme"; docs/VARDIYA.md): iki rolde üst
+  // düzeyde, tek tıkla. Yönetici planı yazar (adı "Vardiya ayarlama"), personel yalnız görür ("Vardiya")
+  { id: "vardiya", label: "Vardiya", labelFor: { admin: "Vardiya ayarlama" }, icon: CalendarClock, href: "/panel/vardiya", roles: ["admin", "staff"] },
   // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); personelde üst düzeyde, yönetici Kafe altında görür
   { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["staff"] },
   // Özel günler (takvim notu; docs/OZEL-GUNLER.md): personelde üst düzeyde, yönetici Kafe altında görür
@@ -502,6 +518,7 @@ export function sectionTabsFor(section: keyof typeof SECTION_TABS, role: "admin"
 /** Ağacı role göre süzer; tek alt sayfası kalan grup doğrudan o sayfaya bağlanır */
 export function navTreeFor(role: "admin" | "staff"): NavNode[] {
   return NAV_TREE.filter((n) => n.roles.includes(role))
+    .map((n) => (n.labelFor?.[role] ? { ...n, label: n.labelFor[role] } : n))
     .map((n) => (n.children ? { ...n, children: n.children.filter((c) => c.roles.includes(role)) } : n))
     .map((n) => (n.children && n.children.length === 1 ? { ...n, label: n.children[0].label, href: n.children[0].href, children: undefined } : n))
     .filter((n) => n.href || n.children?.length);

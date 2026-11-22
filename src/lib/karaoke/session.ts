@@ -96,6 +96,11 @@ export interface KaraokeSessionDTO {
   desk: DeskKind | null;
   /** Sitede satırın yazıldığı an (rezervasyonun yapıldığı an; sayaçta boş): personelin elle satırı kaldırma süresi */
   bookedAt: string | null;
+  /**
+   * Misafire gidecek ya da gitmiş "bir gün kaldı" hatırlatma e-postası (elle eklenirken e-posta yazıldıysa; yalnız
+   * liste okumalarında dolu: board.ts › loadSessions). Adres hiçbir zaman ekrana gelmez
+   */
+  reminder?: { state: "pending" | "sent"; at: string } | null;
 }
 
 /** İptal edilmiş rezervasyonda ne geri gitti ya da gidiyor: hiçbir şey, bir kısmı, tamamı */

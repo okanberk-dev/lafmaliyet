@@ -4,11 +4,12 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 /**
  * Veritabanında duran gizli değerler (Paraşüt belirteçleri, iki adımlı doğrulama anahtarları, Web Push'un VAPID özel
- * anahtarı) AES-256-GCM ile şifrelenir. Anahtar AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET
- * değişirse bu değerler okunamaz (Paraşüt belirteci yeniden alınır, iki adımlı doğrulama yeniden kurulur, bildirim
- * anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur).
+ * anahtarı, karaoke hatırlatması gidene kadar misafirin e-posta adresi) AES-256-GCM ile şifrelenir. Anahtar
+ * AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET değişirse bu değerler okunamaz (Paraşüt belirteci
+ * yeniden alınır, iki adımlı doğrulama yeniden kurulur, bildirim anahtarı yenilenir ve cihazlar bir sonraki açılışta
+ * yeniden abone olur; bekleyen karaoke hatırlatmaları gönderilmeden düşer).
  */
-export type SealPurpose = "parasut-token" | "parasut-connect" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo";
+export type SealPurpose = "parasut-token" | "parasut-connect" | "totp" | "webpush" | "access-mail" | "backup" | "mcp-request" | "cashout-undo" | "cari-undo" | "karaoke-reminder";
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

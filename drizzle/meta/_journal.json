@@ -470,6 +470,13 @@
       "when": 1795348489608,
       "tag": "0066_tahmini_stok",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795365442617,
+      "tag": "0067_karaoke_hatirlatma_vardiya",
+      "breakpoints": true
     }
   ]
 }

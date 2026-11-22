@@ -231,7 +231,7 @@ async function closeOnSite(
 /** İşlem geçmişine yazılacak satır: kalemin kilidi bırakıldıktan sonra yazılır */
 type Logged = { action: string; detail: string } | null;
 
-/** Bar ekranının "Tükendi" / "Satışa aç" dokunuşu */
+/** Siparişler ekranının "Tükendi" / "Satışa aç" dokunuşu */
 export async function setSoldOutCore(me: Actor, input: { siteMenuId: string; soldOut: boolean }, now: Date = new Date()): Promise<SoldOutResult> {
   const secret = siteLinkSecret();
   if (!secret) throw new UserError(SOLD_OUT_TEXT.off);

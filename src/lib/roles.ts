@@ -9,9 +9,9 @@ import type { Role } from "./constants";
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, alış fiyatı, kâr, maaş ve ayar ekranları yok; günün
  * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), uygulama
- * siparişlerini ve masa çağrılarını (Siparişler), karaoke sayacını ve bar ekranını (tükenen ürün dahil), gün sonu kasa raporunu ve ModPOS'ta değişecek satış fiyatlarını
+ * siparişlerini ve masa çağrılarını (Siparişler; tükenen ürün dahil), karaoke sayacını ve bar ekranını, gün sonu kasa raporunu ve ModPOS'ta değişecek satış fiyatlarını
  * (Kasadaki fiyatlar), açılış / kapanış kontrol listelerini ve son 7 günün geçmişini, zayi / ikram kaydını, stok
- * sayımını, özel günleri, kendi Yardım'ını ve kendi hatırlatıcılarını kullanır. Önemli
+ * sayımını, özel günleri, kendi Yardım'ını ve kendi hatırlatıcılarını kullanır; vardiya planını görür (yazamaz). Önemli
  * düzeltmeler isteğe döner, yönetici Onaylar'da karar verir (docs/ONAYLAR.md). Personel yolunun altındaki yönetici
  * ekranları (Karaoke doluluğu, Kontrol listelerini düzenleme) ADMIN_ONLY_PATHS'te; sayfa ve eylemler ayrıca
  * requireAdmin ile denetlenir.
@@ -22,6 +22,7 @@ export const STAFF_PATHS = [
   "/panel/karaoke",
   "/panel/kasa",
   "/panel/kontrol",
+  "/panel/vardiya",
   "/panel/zayi",
   "/panel/receteler",
   "/panel/hatirlaticilarim",
@@ -78,7 +79,7 @@ export function canOpen(role: Role, pathname: string): boolean {
  * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
  */
 export const STAFF_ROLE_HINT =
-  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), uygulama siparişleri ve masa çağrıları, karaoke, bar ekranı ve tükenen ürün, özel günler, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
+  "Bugün, kasa raporu ve kasadaki fiyatlar, açılış / kapanış listeleri ve son 7 günü, zayi ve ikram, stok sayımı, reçete defteri (öneri), uygulama siparişleri, masa çağrıları ve tükenen ürün, karaoke ve bar ekranı, özel günler, vardiya planı, yardım; önemli düzeltmeler yöneticinin onayıyla; maliyet, maaş ve kâr görmez";
 
 /**
  * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
@@ -87,12 +88,12 @@ export const STAFF_ROLE_HINT =
 export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: boolean; paths?: readonly string[] }[] = [
   { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, staff: true, paths: ["/panel/bugun"] },
   {
-    label: "Siparişler: uygulama siparişlerinin aşaması (Hazırlanıyor, Hazır, Teslim edildi) ve masa çağrısında Gördüm; iade ve iptal sitenin panelinde",
+    label: "Siparişler: uygulama siparişlerinin aşaması (Hazırlanıyor, Hazır, Teslim edildi), masa çağrısında Gördüm, tükenen ürünü işaretleme; iade ve iptal sitenin panelinde",
     admin: true,
     staff: true,
     paths: ["/panel/siparisler"],
   },
-  { label: "Karaoke ve bar ekranı: oda sayacı, rezervasyonlar, tükenen ürünü işaretleme (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
+  { label: "Karaoke ve bar ekranı: oda sayacı, rezervasyonlar (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
   {
     label:
       "Gün sonu kasa raporu; Z raporu ve fişler fotoğraftan, kasadan çıkanlar; ModPOS'ta değişecek satış fiyatları; ertesi gün kasa düzeltmesi, kilitli ve eski güne ekleme, 14 güne kadar geç rapor, silme ve fotoğraf kaldırma isteği (yönetici onaylar)",
@@ -101,6 +102,7 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
     paths: ["/panel/kasa"],
   },
   { label: "Açılış ve kapanış kontrol listeleri; son 7 günün geçmişi (salt okunur)", admin: true, staff: true, paths: ["/panel/kontrol"] },
+  { label: "Vardiya planı: haftanın vardiyalarını görme ve PDF'ini alma (planı yalnız yönetici yazar)", admin: true, staff: true, paths: ["/panel/vardiya"] },
   { label: "Zayi ve ikram kaydı; 14 güne kadar geç kayıt ve başkasının kaydını silme isteği (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/zayi"] },
   { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/receteler"] },
   { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, staff: true, paths: ["/panel/sayim"] },
@@ -115,6 +117,6 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Vergi, KDV, SGK: tahmini vergi takvimi, vergi kârı, muhtasar, SGK, damga, geçici ve kurumlar vergisine katkı", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
-  { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu", admin: true, staff: false },
+  { label: "Kontrol listelerini düzenleme, 7 günden eski geçmiş, karaoke doluluğu, vardiya planını yazma", admin: true, staff: false },
   { label: "Paraşüt, ayarlar, yedek, kullanıcı yönetimi, Claude bağlantısı", admin: true, staff: false },
 ];

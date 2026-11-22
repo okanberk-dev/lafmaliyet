@@ -1301,6 +1301,34 @@ export const karaokeSessions = pgTable(
   ],
 );
 
+/**
+ * Elle eklenen karaoke rezervasyonunun "bir gün kaldı" hatırlatma e-postası (docs/KARAOKE.md › Hatırlatma e-postası).
+ * Misafirin adresi panelde yalnız burada, şifreli (AES-256-GCM, secret-box "karaoke-reminder") ve yalnız hatırlatma
+ * gidene kadar durur: gönderilince, rezervasyon kaldırılınca / iptal edilince ya da gönderilemeden saati yaklaşınca adres
+ * silinir, satır yalnız sonucuyla kalır (birkaç gün sonra o da silinir). Rezervasyonun kendisi sitededir: saat, ad ve
+ * durum gönderim anında `karaoke_sessions`'tan (sitenin kimliğiyle) okunur. Yedeğe girmez (TABLE_RULES).
+ */
+export const karaokeReminders = pgTable(
+  "karaoke_reminders",
+  {
+    /** Sitenin rezervasyon kimliği (`karaoke_sessions.external_id`); satır, kopya eşitlenmeden önce de yazılabilir */
+    externalId: text("external_id").primaryKey(),
+    /** Misafirin e-posta adresi, şifreli; iş bitince (gönderildi, vazgeçildi) boşalır */
+    emailSealed: text("email_sealed"),
+    status: text("status", { enum: ["pending", "sent", "skipped", "failed"] }).notNull().default("pending"),
+    /** Vazgeçmenin ya da hatanın nedeni (adres taşımaz) */
+    detail: text("detail"),
+    attempts: integer("attempts").notNull().default(0),
+    /** Bir çalışmanın gönderimi sahiplendiği an (iki tetikleyici aynı iletiyi iki kez göndermesin) */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    /** Gönderildiği ya da vazgeçildiği an */
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("karaoke_reminders_status_idx").on(t.status)],
+);
+
 // ---------------------------------------------------------------- Anlık bildirim (Web Push)
 /**
  * Tarayıcı bildirim abonelikleri (cihaz başına bir satır). Gönderim yalnız aktif kullanıcıya ve aboneliği alırken
@@ -2369,5 +2397,41 @@ export const taxAdjustments = pgTable(
     index("tax_adjustments_month_idx").on(t.month),
     check("tax_adjustments_amount_pos", sql`${t.amount} > 0`),
     check("tax_adjustments_span_kind", sql`${t.span} = 'ay' or ${t.kind} in ('gelir_kafe_disi', 'gider_kafe_disi')`),
+  ],
+);
+
+// ---------------------------------------------------------------- Vardiya planı
+/**
+ * Vardiya planı (docs/VARDIYA.md): şube, gün ve kişi başına tek satır. Kişi panel kullanıcısıysa `userId` dolu ve
+ * `personRef` "u:<id>"; hesabı olmayan çalışan yalnız adıyla yazılır (`personRef` "n:<küçük harfli ad>"). `kind` "work":
+ * `startMin`–`endMin` günün başından dakika (gece yarısını geçen vardiyada `endMin` 1440'tan büyük, en çok 1800 =
+ * ertesi gün 06:00); "off": izin (saat yok). Satır yoksa o gün için kişi planlanmamıştır. Karaoke personel e-postaları
+ * (src/server/karaoke/staff-mail.ts) o gün çalışanları buradan okur.
+ */
+export const shifts = pgTable(
+  "shifts",
+  {
+    id: serial("id").primaryKey(),
+    branchId: branchId(),
+    /** Vardiyanın başladığı gün (Türkiye), YYYY-MM-DD */
+    date: text("date").notNull(),
+    /** Kişinin anahtarı: "u:<kullanıcı kimliği>" ya da "n:<ad>" */
+    personRef: text("person_ref").notNull(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Planda ve PDF'te görünen ad (kullanıcıda kaydedildiği andaki adı) */
+    personName: text("person_name").notNull(),
+    kind: text("kind", { enum: ["work", "off"] }).notNull().default("work"),
+    startMin: integer("start_min"),
+    endMin: integer("end_min"),
+    /** Kısa not: görev ya da yer (ör. "kasa", "bar") */
+    note: text("note"),
+    updatedByName: text("updated_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("shifts_branch_date_person_uq").on(t.branchId, t.date, t.personRef),
+    index("shifts_date_idx").on(t.date),
+    check("shifts_time_ck", sql`(${t.kind} = 'off' and ${t.startMin} is null and ${t.endMin} is null) or (${t.kind} = 'work' and ${t.startMin} >= 0 and ${t.startMin} < 1440 and ${t.endMin} > ${t.startMin} and ${t.endMin} <= 1800)`),
   ],
 );

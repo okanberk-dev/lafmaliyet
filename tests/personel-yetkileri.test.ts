@@ -32,7 +32,11 @@ test("yetki tablosu: personelin her ekranı personele açık bir satırda; satı
   }
   // "tutarsız" Türkçede "çelişkili" diye okunur: rezervasyonların tutarını personelin görmediği açıkça yazılır
   assert.doesNotMatch(staffText, /tutarsız/);
-  assert.match(staffText, /rezervasyonlar, tükenen ürünü işaretleme \(personel tutarları görmez\)/);
+  assert.match(staffText, /rezervasyonlar \(personel tutarları görmez\)/);
+  // Tükenen ürün 22 Kasım 2026'da Karaoke ekranından Siparişler'e taşındı: yetki tablosunda Siparişler satırında
+  const rowOf = (path: string) => ROLE_PERMISSIONS.find((p) => p.paths?.includes(path))?.label ?? "";
+  assert.match(rowOf("/panel/siparisler"), /tükenen ürünü işaretleme/);
+  assert.doesNotMatch(rowOf("/panel/karaoke"), /tükenen/);
   // Dalga 10: onaya giden işler ve yeni ekranlar (docs/ONAYLAR.md)
   for (const word of ["yönetici onaylar", "Kasadaki fiyatlar", "son 7 gün", "Özel günler", "Yardım"]) {
     assert.ok(`${staffText} | ${STAFF_ROLE_HINT}`.toLocaleLowerCase("tr-TR").includes(word.toLocaleLowerCase("tr-TR")), word);

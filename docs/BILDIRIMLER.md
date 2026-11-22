@@ -67,9 +67,9 @@ bağlı olmayan ürün: LafPOS'ta yerelse orada elle değiştirip …; LafPOS ü
 bağlayın"); siteye bağlı ürünün fiyatını LafPOS siteden alır, zil çıkmaz. Personelde satır yok: LafPOS'ta ürün fiyatını
 kasiyer değiştiremez (denetim B11). Personelin akşam kasa zili o günden itibaren "Kapanışta LafPOS'ta Günü kapat'a
 basın, kasayı girin" der. Yöneticinin **Uyarılar** başlığında
-personelin bar ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
-ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", bar
-ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
+personelin Siparişler ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
+ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", Siparişler
+ekranının Tükenenler kartına (`/panel/siparisler#tukenenler`) götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
 kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış yapar, ürün satışa açılınca satır kalkar;
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
 **Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
@@ -305,6 +305,19 @@ ikram / ödenmez, kasa farkı, Z no, dün ve geçen haftayla kıyas, panele bağ
 kez; LafPOS düzeltip yeniden gönderirse "· düzeltildi" ile bir kez daha. Gidemezse sabahki günlük iş yeniden dener
 (adım "LafPOS gün sonu"). Tuzla'nın e-postaları değişmez. Ayrıntı:
 [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
+
+## Karaoke e-postaları (22 Kasım 2026)
+
+Üç e-posta, hepsi [KARAOKE.md › Karaoke e-postaları](KARAOKE.md#karaoke-e-postaları-22-kasım-2026)'nda:
+
+- **Misafire "bir gün kaldı"**: Karaoke › Elle ekle'de e-posta yazılan rezervasyondan 24 saat önce, bir kez; kendi
+  tasarımıyla, gönderen adı "L'Affogato". Bu ekrandaki e-posta anahtarına bağlı değildir. Adres yalnız e-posta gidene
+  kadar şifreli durur; "Son gönderimler"de alıcı "misafir (adres saklanmaz)" diye görünür.
+- **Personele "Bugünün karaokeleri"** (rezervasyon günü sabah) ve **"3 saat kala"**: o gün Vardiya planında çalışanlara,
+  plan yoksa Tuzla'nın personeline. Ödemesi alınmamış rezervasyon kırmızıyla öne çıkar ("Ücreti misafir odaya girmeden
+  ÖNCE, kasada alın."); tutar yazmaz. **E-posta hatırlatmaları** kapalıysa gitmez.
+
+Tetikleyiciler kontrol listesi hatırlatmalarınınki (açık sekmenin canlı yoklaması, saatlik iş) ve sabah işi.
 
 ## Haftalık özet (pazartesi)
 

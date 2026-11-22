@@ -6,15 +6,17 @@ import { PageSkeleton } from "@/components/ui/misc";
 import { businessDate } from "@/lib/cash-report";
 import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
+import { todayShiftText, VARDIYA_PATH } from "@/lib/vardiya";
 import { requireUser } from "@/server/auth/dal";
 import { loadBranchDay } from "@/server/data/branch-day";
 import { loadStockAlert } from "@/server/data/stock-estimate";
 import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
+import { todayShifts } from "@/server/vardiya/store";
 
 import { DashboardPayments } from "../dashboard-payments";
 import { StockAlertCard } from "../stock-alert-card";
-import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
+import { cafeLines, dayTasks, daySummary, nextRefreshAt, type CafeLine } from "./logic";
 import { soldOutLine } from "./rows-ops";
 import { TodayBranches } from "./today-branches";
 import { TodayCafe } from "./today-cafe";
@@ -55,17 +57,21 @@ async function TodayContent() {
   // Şubelerin günü yalnız yöneticide (tutar, ödeme, kasa farkı); okunamazsa kart çizilmez, sayfa açılır
   // Kıyas (dün / geçen hafta / geçen ay) da yalnız yöneticide, seçili şubeyle
   // Kritik stok (Marina, tahmini; docs/STOK-TAHMINI.md): iki rolde, yalnız Marina ya da "Tümü" seçiliyken okunur
-  const [data, branchDay, stockAlert] = await Promise.all([
+  // Bugünün vardiyası (docs/VARDIYA.md): iki rolde, seçili şubenin planı; plan yoksa ya da okunamazsa satır yok
+  const [data, branchDay, stockAlert, shifts] = await Promise.all([
     loadToday(user),
     user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null),
     safe(loadStockAlert()),
+    safe(todayShifts()),
   ]);
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
   // Tükenen ürünler sonda (satış tahmini 4 Kasım 2026'da kaldırıldı)
   const soldOut = soldOutLine(data.facts);
-  const cafe = cafeLines(data.cafe, now.getTime(), soldOut ? [soldOut] : []);
+  const shiftText = todayShiftText(shifts ?? []);
+  const shiftLine: CafeLine | null = shiftText ? { key: "vardiya", text: shiftText, tone: "info", href: VARDIYA_PATH } : null;
+  const cafe = cafeLines(data.cafe, now.getTime(), [shiftLine, soldOut].filter((l): l is CafeLine => l !== null));
   const changeAt = data.cafe.karaoke?.changeAt;
   return (
     <>

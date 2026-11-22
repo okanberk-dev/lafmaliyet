@@ -754,7 +754,7 @@ test("KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (sitenin kur
   assert.match(src, /lt\(k\.date, personalDataCutoff\(todayTR\(now\)\)\), or\(isNotNull\(k\.customerName\), isNotNull\(k\.note\)\)/);
   // Sabah işinin mevcut karaoke adımında (yeni job_runs adımı yok)
   const cron = read("src/app/api/cron/gunluk/route.ts");
-  assert.match(cron, /dailyKaraoke\(\)\.catch/);
+  assert.match(cron, /dailyKaraoke\(\{ mailDeadlineAt: [^)]*\}\)\.catch/);
   assert.match(cron, /karaoke: siteStep\(karaoke\)/);
 });
 

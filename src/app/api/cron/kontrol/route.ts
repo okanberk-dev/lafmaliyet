@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import { runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { runChecklistAlerts } from "@/server/notify/checklist-alerts";
 
 // Bildirim saatlerinde (Türkiye 10:07, 14:07, 18:07, 22:07; ilk saatte iki deneme): personele kontrol listesi
@@ -9,6 +10,10 @@ import { runChecklistAlerts } from "@/server/notify/checklist-alerts";
 // yoklamasından (/api/canli, en çok 5 dakikada bir). Vercel Hobby'de cron günde bir kez çalıştığı için bu ucu GitHub
 // Actions çağırır (.github/workflows/kontrol-hatirlatma.yml); isteği CRON_SECRET'la imzalar. Kurallar
 // src/lib/checklist-alerts.ts, ayrıntı docs/KONTROL-LISTELERI.md § 6. Gönderim en geç 45 sn'de kesilir.
+//
+// Aynı çağrı karaoke e-postalarını da gönderir (yedek tetikleyici; asıl tetikleyici yine canlı yoklama): misafirin "bir
+// gün kaldı" hatırlatması, personelin sabah ve 3 saat kala e-postaları (src/server/karaoke/staff-mail.ts; docs/KARAOKE.md).
+// Kontrol listesi hatırlatmaları bozulsa da çalışır; en geç 55 sn'de kesilir.
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
@@ -17,9 +22,12 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
   try {
     const result = await runChecklistAlerts(new Date(), start + 45_000);
-    return NextResponse.json({ ok: true, ...result });
+    const karaoke = await runKaraokeMails(new Date(), start + 55_000);
+    return NextResponse.json({ ok: true, ...result, karaoke });
   } catch (e) {
     console.error("Kontrol listesi hatırlatmaları", e);
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
+    // Kontrol listesi hatırlatmaları düştü: karaoke e-postaları yine denenir (kendi hatasını yakalar)
+    const karaoke = await runKaraokeMails(new Date(), start + 55_000);
+    return NextResponse.json({ ok: false, error: (e as Error).message, karaoke }, { status: 500 });
   }
 }

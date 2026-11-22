@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 
+import { sessionReminder } from "@/lib/karaoke/reminder";
 import { deskKindOfChannel, refundKindOf, type KaraokeEvent, type KaraokeSessionDTO, type KaraokeStatus, type PaymentStatus } from "@/lib/karaoke/session";
 import { getDb, schema as s } from "@/server/db";
 
@@ -65,16 +66,23 @@ export function toSessionDTO(r: Row, opts: { admin: boolean }): KaraokeSessionDT
   };
 }
 
-/** [from, to) aralığında başlayan ya da o aralıkta hâlâ süren oturumlar, başlangıç sırasıyla */
+/**
+ * [from, to) aralığında başlayan ya da o aralıkta hâlâ süren oturumlar, başlangıç sırasıyla. Elle eklenen rezervasyonun
+ * hatırlatma e-postasının durumu (bekliyor / gönderildi) satırla birlikte okunur; adres okunmaz.
+ */
 export async function loadSessions(from: Date, to: Date, opts: { admin: boolean }): Promise<KaraokeSessionDTO[]> {
   const rows = await getDb()
-    .select()
+    .select({ k: s.karaokeSessions, reminderStatus: s.karaokeReminders.status, reminderDoneAt: s.karaokeReminders.doneAt })
     .from(s.karaokeSessions)
+    .leftJoin(s.karaokeReminders, eq(s.karaokeReminders.externalId, s.karaokeSessions.externalId))
     // Sol taraf sütun değil, ifade: sürücü Date'i kendisi çevirmez, ISO metni verilir
     .where(and(lt(s.karaokeSessions.startsAt, to), gt(sql`${s.karaokeSessions.endsAt} + make_interval(mins => ${s.karaokeSessions.extraMinutes})`, from.toISOString())))
     .orderBy(asc(s.karaokeSessions.startsAt), asc(s.karaokeSessions.id))
     .limit(500);
-  return rows.map((r) => toSessionDTO(r, opts));
+  return rows.map(({ k, reminderStatus, reminderDoneAt }) => ({
+    ...toSessionDTO(k, opts),
+    reminder: sessionReminder(reminderStatus, reminderDoneAt, k.startsAt.getTime(), k.status as KaraokeStatus),
+  }));
 }
 
 /**

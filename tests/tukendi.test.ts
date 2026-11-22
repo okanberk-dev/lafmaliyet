@@ -1,4 +1,4 @@
-// Tükendi / Satışa aç (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç): bar ekranının Tükenenler
+// Tükendi / Satışa aç (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç): Siparişler ekranının Tükenenler
 // kartı. Saf kurallar (src/lib/site-menu/sold-out.ts): M ve L tek kalemde birleşir, kopuk / sitede olmayan / bağsız /
 // emekli kalem tahtada yok, dört durum (satışta, kartta, kapalı, sonra sitede değişmiş); kaydın geçerliliği sitedeki
 // damgaya bağlı; personel yalnız kartın kapattığını açar; ortak tavan ve hız sınırı; Bugün satırı, zil ve sabah
@@ -14,7 +14,7 @@ import { test } from "node:test";
 // logic.ts önce: rows-ops.ts onu döngüsel içe aktarır (satır listeleri logic.ts'te kurulur)
 import { cafeLines, type DayFacts } from "../src/app/panel/bugun/logic";
 import { soldOutLine } from "../src/app/panel/bugun/rows-ops";
-import { siteNameDiffers, soldOutHits } from "../src/app/panel/karaoke/sold-out-search";
+import { siteNameDiffers, soldOutHits } from "../src/app/panel/siparisler/sold-out-search";
 import {
   capRefusal,
   keepSeen,
@@ -224,7 +224,7 @@ test("Bugün kafede: Tükendi satırı; personelin kaydı 16 saatten eskiyse uya
   const fresh = { id: "a", name: "Tiramisu", by: "Selin", at: tr("2026-10-24T21:40").toISOString(), staff: true };
   const cake = { id: "b", name: "Cheesecake", by: "Ali", at: tr("2026-10-24T22:05").toISOString(), staff: true };
   const line = soldOutLine(facts([fresh, cake]));
-  assert.deepEqual(line, { key: "tukendi", text: "Tükendi: Tiramisu, Cheesecake", tone: "info", href: "/panel/karaoke#tukenenler" });
+  assert.deepEqual(line, { key: "tukendi", text: "Tükendi: Tiramisu, Cheesecake", tone: "info", href: "/panel/siparisler#tukenenler" });
   // "Bugün kafede" kartının sonunda
   const cafe = cafeLines({ karaoke: null, orders: null, configured: true }, NOW.getTime(), [line!]);
   assert.deepEqual(cafe.at(-1), line);
@@ -233,7 +233,7 @@ test("Bugün kafede: Tükendi satırı; personelin kaydı 16 saatten eskiyse uya
     key: "tukendi",
     text: "Tiramisu 2 gündür tükendi: geldiyse satışa açın",
     tone: "warn",
-    href: "/panel/karaoke#tukenenler",
+    href: "/panel/siparisler#tukenenler",
   });
   // Yöneticinin kaydı eskise uyarı değil
   assert.equal(soldOutLine(facts([{ ...old, staff: false }]))?.tone, "info");
@@ -252,7 +252,7 @@ test("zil (yönetici): en çok 3 ad, kim ve saat; 24 saatten eski kayıt ya da s
     kind: "info",
     title: "Tükendi: Tiramisu, Cheesecake",
     body: "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.",
-    href: "/panel/karaoke#tukenenler",
+    href: "/panel/siparisler#tukenenler",
   });
   const many = [...items, { id: "mnu-3", name: "Brownie", by: "Ali", at: at("22:10"), staff: true }, { id: "mnu-4", name: "Kurabiye", by: "Ali", at: at("22:12"), staff: true }];
   const b2 = soldOutBell(many, NOW)!;
@@ -357,7 +357,7 @@ test("okuyucu ve kart: fiyat alanı yok; kart yalnız okuyucunun tipini alır", 
   }
   // Sitenin kalemi fiyatsız kopyaya indirilir
   assert.match(reader, /toSoldOutItem\(/);
-  const card = read("src/app/panel/karaoke/sold-out-card.tsx");
+  const card = read("src/app/panel/siparisler/sold-out-card.tsx");
   assert.match(card, /^"use client";/);
   assert.doesNotMatch(stripComments(card), /\bprice|\btl\(/);
   assertNoLira(stripComments(card), "Tükenenler kartı");
@@ -390,7 +390,7 @@ test("Tükendi işaretle araması: Türkçe harf ve aksan duyarsız, panel ve si
   // Sitedeki ad yalnız harf ya da aksanla ayrılıyorsa ikinci satır yok
   assert.equal(siteNameDiffers(list[2]), false);
   assert.equal(siteNameDiffers(list[0]), true);
-  const card = read("src/app/panel/karaoke/sold-out-card.tsx");
+  const card = read("src/app/panel/siparisler/sold-out-card.tsx");
   assert.doesNotMatch(card, /toLocaleLowerCase/);
   assert.match(card, /soldOutHits\(entries, query\)/);
 });

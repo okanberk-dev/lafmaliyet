@@ -545,7 +545,9 @@ test("isteğe bağlı adımların sözcükleri: satış tahmini, ay sonu sayım 
 
 test("sabah işi: e-postanın gönderimi en geç jobStart + 48 sn'de kesilir; elle gönderim sınırsız (bugünkü gibi)", () => {
   const gunluk = readFileSync(join(process.cwd(), "src/app/api/cron/gunluk/route.ts"), "utf8");
-  assert.match(gunluk, /import \{ capped, JOB_SEND_DEADLINE_MS, tailStepDeadline \} from "@\/server\/jobs\/capped";/);
+  assert.match(gunluk, /import \{ capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline \} from "@\/server\/jobs\/capped";/);
+  // Karaoke e-postaları (misafirin hatırlatması, personelin sabah listesi) kuyruğun sınırını aşmaz
+  assert.match(gunluk, /dailyKaraoke\(\{ mailDeadlineAt: jobStart \+ JOB_TAIL_DEADLINE_MS - 1_000 \}\)/);
   assert.match(gunluk, /sendDeadlineAt: jobStart \+ JOB_SEND_DEADLINE_MS/);
   const digest = readFileSync(join(process.cwd(), "src/server/notify/digest.ts"), "utf8");
   assert.match(digest, /ctx: \{ syncedToday\?: boolean; sendDeadlineAt\?: number \} = \{\}/);

@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   DESK_TEXT,
   deskInputSchema,
+  deskInstants,
   deskIssue,
   deskLogLine,
   deskMessageFor,
@@ -14,11 +15,13 @@ import {
   deskRemoveRefusal,
   deskWhen,
   deskWhenProblem,
+  type DeskData,
   type DeskField,
   type DeskInput,
   type DeskKind,
 } from "@/lib/karaoke/desk";
 import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
+import { reminderPlanned } from "@/lib/karaoke/reminder";
 import { DESK_BLOCK_CHANNEL, durationLabel, trClock } from "@/lib/karaoke/session";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -26,6 +29,7 @@ import { bumpKaraokeVersion, getSession, toSessionDTO } from "@/server/karaoke/b
 import { cancelDeskBooking, createDeskBooking } from "@/server/karaoke/desk";
 import { sessionWhen } from "@/lib/karaoke/timer-requests";
 import { addExtraMinutes, MAX_EXTRA_MINUTES } from "@/server/karaoke/extend";
+import { cancelKaraokeReminder, findDeskExternalId, scheduleKaraokeReminder } from "@/server/karaoke/reminders";
 import { ensureKaraokeFresh, syncKaraoke } from "@/server/karaoke/sync";
 import { endKaraokeCore, proposeKaraokeDelete, removeKaraokeTimerCore, reopenKaraokeCore, reviewKaraokeDeleteCore } from "@/server/karaoke/timer";
 
@@ -268,17 +272,46 @@ export async function reviewKaraokeDeleteRequest(input: z.input<typeof reviewSch
   });
 }
 
-/** Elle eklemenin sonucu: eklendi ya da sitenin (ya da panelin) itirazı, formun alanıyla */
+/**
+ * Elle eklemenin sonucu: eklendi ya da sitenin (ya da panelin) itirazı, formun alanıyla. `reminder`: misafire bir gün kala
+ * hatırlatma e-postası kuruldu (e-posta yazıldı ve rezervasyona bir günden fazla var)
+ */
 export type DeskAddResult =
-  | { added: { kind: DeskKind; when: string; email: boolean; synced: boolean; externalId: string | null }; problem?: undefined }
+  | { added: { kind: DeskKind; when: string; email: boolean; reminder: boolean; synced: boolean; externalId: string | null }; problem?: undefined }
   | { added?: undefined; problem: { field: DeskField | null; message: string; uncertain: boolean } };
+
+/** Sitenin ve panelin saatleri arasındaki farka pay: az önce yazılan satır bu kadar geriden de aranır */
+const DESK_LOOKUP_SLACK_MS = 2 * 60_000;
+
+/**
+ * Misafirin "bir gün kaldı" hatırlatma e-postasını kurar (src/server/karaoke/reminders.ts): rezervasyonda e-posta
+ * yazıldıysa ve rezervasyona bir günden fazla varsa. Adres yalnız burada, şifreli ve e-posta gidene kadar saklanır.
+ * Sitenin yanıtı kimliği taşımıyorsa (okunamadı, zaman aşımı) eşitlemenin getirdiği satırdan bulunur. Kurulamazsa
+ * rezervasyon yine eklenmiştir: hata eklemeyi bozmaz, yalnız hatırlatma gitmez.
+ */
+async function planDeskReminder(data: DeskData, knownId: string | null, by: string, sinceMs: number): Promise<boolean> {
+  if (data.kind !== "booking" || !data.email) return false;
+  const { start, end } = deskInstants(data.date, data.startHour, data.hours);
+  if (!reminderPlanned(start, Date.now())) return false;
+  try {
+    const externalId = knownId ?? (await findDeskExternalId(new Date(start), new Date(end), sinceMs - DESK_LOOKUP_SLACK_MS));
+    if (!externalId) return false;
+    await scheduleKaraokeReminder({ externalId, email: data.email, createdBy: by });
+    return true;
+  } catch (e) {
+    console.error("[karaoke] hatırlatma kurulamadı", e instanceof Error ? e.name : e);
+    return false;
+  }
+}
 
 /**
  * Elle ekle (Karaoke ekranı; yönetici ve personel: telefonla gelen rezervasyon bara gelir): telefonla ya da kasada alınan
  * rezervasyonu ya da köşkün kapattığı saatleri laffogato.net'in takvimine yazar (sitenin imzalı POST ucu; src/server/karaoke/
  * desk.ts). Saatler sitede, uygulamada ve kasada hemen dolu görünür; ardından kopya eşitlenir (ekran, sürüm, öteki
- * cihazlar). Sitenin itirazı (alan + Türkçe mesaj) `problem` olarak döner, pencere alanın yanında gösterir. Telefon ve
- * e-posta yalnız siteye gider: işlem geçmişine ve panelin veritabanına yazılmaz. Sitenin olay kaydına kişinin adı gider.
+ * cihazlar). Sitenin itirazı (alan + Türkçe mesaj) `problem` olarak döner, pencere alanın yanında gösterir. Telefon
+ * yalnız siteye gider; e-posta da öyle, tek ayrıcalıkla: rezervasyona bir günden fazla varsa misafirin "bir gün kaldı"
+ * hatırlatması için panelde şifreli ve yalnız e-posta gidene kadar tutulur (planDeskReminder). İşlem geçmişine ikisi de
+ * yazılmaz. Sitenin olay kaydına kişinin adı gider.
  */
 export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<DeskAddResult>> {
   return attempt(async () => {
@@ -288,19 +321,24 @@ export async function addDeskKaraoke(input: DeskInput): Promise<ActionResult<Des
     const data = parsed.data;
     const problem = deskWhenProblem(data, deskNow(Date.now()));
     if (problem) return { problem: { ...problem, uncertain: false } };
+    const startedAt = Date.now();
     const out = await createDeskBooking(data, me.name);
     if (out.status === "off") throw new UserError(linkOff(me.role));
     if (out.status === "refused") {
-      // Zaman aşımında satır yazılmış olabilir: eşitleme getirdiyse ekran görür, kişi listeye bakar
-      if (out.reply.uncertain) refresh();
+      // Zaman aşımında satır yazılmış olabilir: eşitleme getirdiyse ekran görür, kişi listeye bakar (hatırlatması da kurulur)
+      if (out.reply.uncertain) {
+        await planDeskReminder(data, null, me.name, startedAt);
+        refresh();
+      }
       return { problem: { field: out.reply.field, message: deskMessageFor(me.role, out.reply, "create"), uncertain: out.reply.uncertain } };
     }
     const when = deskWhen(data.date, data.startHour, data.hours);
     const email = data.kind === "booking" && Boolean(data.email);
-    const line = deskLogLine("create", data.kind, { when, name: data.name, guests: data.guests ?? null, note: data.kind === "block" ? `Kapalı${data.note ? `: ${data.note}` : ""}` : null, email });
+    const reminder = await planDeskReminder(data, out.reply.reservation?.id ?? null, me.name, startedAt);
+    const line = deskLogLine("create", data.kind, { when, name: data.name, guests: data.guests ?? null, note: data.kind === "block" ? `Kapalı${data.note ? `: ${data.note}` : ""}` : null, email, reminder });
     await logActivity(me, line.action, line.detail);
     refresh();
-    return { added: { kind: data.kind, when, email, synced: out.sync.status === "ok" || out.sync.status === "fresh", externalId: out.reply.reservation?.id ?? null } };
+    return { added: { kind: data.kind, when, email, reminder, synced: out.sync.status === "ok" || out.sync.status === "fresh", externalId: out.reply.reservation?.id ?? null } };
   });
 }
 
@@ -326,6 +364,8 @@ export async function removeDeskKaraoke(id: number): Promise<ActionResult<{ kind
       if (out.reply.uncertain) refresh();
       throw new UserError(deskMessageFor(me.role, out.reply, "cancel"));
     }
+    // Bekleyen hatırlatma ve misafirin adresi hemen silinir (kaldırılan rezervasyona hatırlatma gitmez)
+    await cancelKaraokeReminder(row.externalId).catch((e: unknown) => console.error("[karaoke] hatırlatma silinemedi", e instanceof Error ? e.name : e));
     const when = sessionWhen({ startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString(), extraMinutes: 0 });
     if (!already) {
       const line = deskLogLine("cancel", dto.desk, { when, name: row.customerName, guests: row.guests, note: row.note });

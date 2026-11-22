@@ -25,6 +25,7 @@ import { getDb, schema as s } from "@/server/db";
 import { signedSiteFetch, SITE_TIMEOUT_MS } from "@/server/site-link";
 
 import { bumpKaraokeVersion } from "./board";
+import { runKaraokeMails } from "./staff-mail";
 import { errorCodeOf, explain, karaokeSecret, siteUrl, syncKaraoke, type SyncResult } from "./sync";
 
 /**
@@ -237,7 +238,7 @@ export async function clearOldKaraokePersonalData(now = new Date()): Promise<num
  * Sabah işinin karaoke adımı: eşitleme ve KVKK temizliği yan yana (biri bozulsa öteki çalışır). Temizlik hata verirse
  * adım hata olur (Ayarlar › Günlük işler'de "Karaoke eşitlemesi: KVKK temizliği: …").
  */
-export async function dailyKaraoke(): Promise<SyncResult> {
+export async function dailyKaraoke(opts: { mailDeadlineAt?: number } = {}): Promise<SyncResult> {
   const [sync, kvkk] = await Promise.all([
     syncKaraoke("cron").catch((e: Error): SyncResult => ({ status: "error", error: e.message })),
     clearOldKaraokePersonalData().then(
@@ -245,6 +246,10 @@ export async function dailyKaraoke(): Promise<SyncResult> {
       (e: Error) => e.message,
     ),
   ]);
+  // Karaoke e-postaları (misafirin "bir gün kaldı" hatırlatması, personelin sabah listesi; docs/KARAOKE.md): eşitlemeden
+  // sonra, taze kopyayla. Gönderilemeyen e-postayı sonraki tetikleyici (canlı yoklama, saatlik iş) yeniden dener; adımın
+  // sonucunu bozmaz, hatası yalnız günlüğe düşer
+  if (opts.mailDeadlineAt !== undefined) await runKaraokeMails(new Date(), opts.mailDeadlineAt);
   if (kvkk !== null && sync.status !== "error") return { status: "error", error: `KVKK temizliği: ${kvkk}` };
   return sync;
 }

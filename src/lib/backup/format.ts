@@ -82,6 +82,8 @@ export const TABLE_RULES: Record<string, TableRule> = {
   // Çıkışta kapatılan oturumların kimlikleri: geri yükleme herkesin oturum sürümünü artırır, eski çerezlerin hepsi düşer
   revoked_sessions: { skip: "çıkışta kapatılan oturumlar (geçici; geri yüklemeden sonra bütün oturumlar zaten kapanır)" },
   push_subscriptions: { skip: "cihazlar panel açılınca yeniden abone olur" },
+  // Elle karaoke rezervasyonunun hatırlatması: misafirin adresi (şifreli) yalnız e-posta gidene kadar durur
+  karaoke_reminders: { skip: "karaoke hatırlatmasını bekleyen misafir adresleri (geçici; e-posta gidince silinir)" },
   users: { dropColumns: USER_CREDENTIAL_COLUMNS },
   integration_state: { where: `key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})` },
   // Paraşüt'ün e-fatura PDF'i önbellektir (ilk açılışta yeniden indirilir); yalnız panelden yüklenenler

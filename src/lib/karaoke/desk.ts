@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { addDays, isCalendarDate } from "@/lib/reminders";
 
+import { reminderToast } from "./reminder";
 import { KARAOKE_DELETE_FREE_MINUTES } from "./timer-requests";
 import { dayShortTR, timeRange, trClock, type DeskKind, type KaraokeStatus, type SiteReservation } from "./session";
 import { DESK_BLOCK_NOTE_PREFIX, parseSiteReservation } from "./site";
@@ -289,12 +290,16 @@ export function deskRemoveRefusal(
 
 // ---------------------------------------------------------------- Metinler
 
-/** Eklemenin bildirimi (ekran): rezervasyonda sayacın kendiliğinden başlayacağı, kapatmada saatlerin dolu görüneceği */
-export function deskAddedToast(kind: DeskKind, when: string, email: boolean): { title: string; description: string } {
+/**
+ * Eklemenin bildirimi (ekran): rezervasyonda sayacın kendiliğinden başlayacağı, kapatmada saatlerin dolu görüneceği.
+ * E-posta yazıldıysa misafire giden e-postalar: sitenin onayı ve (`reminder`: rezervasyona bir günden fazla varsa) bir gün
+ * kala hatırlatma (src/lib/karaoke/reminder.ts)
+ */
+export function deskAddedToast(kind: DeskKind, when: string, email: boolean, reminder = false): { title: string; description: string } {
   if (kind === "block") return { title: `Saatler kapatıldı · ${when}`, description: "Sitede, uygulamada ve kasada dolu görünür." };
   return {
     title: `Rezervasyon eklendi · ${when}`,
-    description: `Saati gelince sayaç kendiliğinden başlar, süre dolunca alarm çalar. Ödeme köşkte alınır.${email ? " Misafire onay e-postası gider." : ""}`,
+    description: `Saati gelince sayaç kendiliğinden başlar, süre dolunca alarm çalar. Ödeme köşkte alınır.${email ? reminderToast(reminder) : ""}`,
   };
 }
 
@@ -302,7 +307,7 @@ export function deskAddedToast(kind: DeskKind, when: string, email: boolean): { 
  * İşlem geçmişinin satırı: telefon ve e-posta yok, addan yalnız ilki (sitenin panele gönderdiği gibi; listedeki satır ve
  * kaldırmanın satırı da yalnız ilk adı taşır, işlem geçmişi KVKK temizliğine girmez)
  */
-export function deskLogLine(op: DeskOp, kind: DeskKind, o: { when: string; name: string | null; guests: number | null; note: string | null; email?: boolean }): { action: string; detail: string } {
+export function deskLogLine(op: DeskOp, kind: DeskKind, o: { when: string; name: string | null; guests: number | null; note: string | null; email?: boolean; reminder?: boolean }): { action: string; detail: string } {
   if (kind === "block") {
     const reason = blockReason(o.note);
     return {
@@ -312,7 +317,7 @@ export function deskLogLine(op: DeskOp, kind: DeskKind, o: { when: string; name:
   }
   return {
     action: op === "create" ? "Karaoke elle rezervasyon eklendi" : "Karaoke elle rezervasyonu kaldırıldı",
-    detail: [o.name?.trim().split(/\s+/)[0] || "İsimsiz", o.guests ? `${o.guests} kişi` : null, o.when, op === "create" && o.email ? "misafire onay e-postası" : null].filter(Boolean).join(" · "),
+    detail: [o.name?.trim().split(/\s+/)[0] || "İsimsiz", o.guests ? `${o.guests} kişi` : null, o.when, op === "create" && o.email ? (o.reminder ? "misafire onay e-postası ve bir gün kala hatırlatma" : "misafire onay e-postası") : null].filter(Boolean).join(" · "),
   };
 }
 

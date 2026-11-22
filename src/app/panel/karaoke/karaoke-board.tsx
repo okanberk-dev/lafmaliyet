@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, CalendarPlus, ExternalLink, Hourglass, Lock, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Undo2, Users, X } from "lucide-react";
+import { CalendarClock, CalendarPlus, ExternalLink, Hourglass, Lock, Mail, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Undo2, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ import type { Role } from "@/lib/constants";
 import { blockReason, deskRemoveRefusal } from "@/lib/karaoke/desk";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
+import { reminderBadge } from "@/lib/karaoke/reminder";
 import {
   cancelledBadgeText,
   countdown,
@@ -63,7 +64,9 @@ const nameOf = sessionName;
 
 /**
  * Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle. Köşkte elle alınan rezervasyon kasada
- * ödenir ("Onaylı · kasada ödenecek", yanında "Elle"); kapatılan saat "Kapalı", kaldırılınca "Kaldırıldı"
+ * ödenir ("Onaylı · kasada ödenecek", yanında "Elle"); kapatılan saat "Kapalı", kaldırılınca "Kaldırıldı". Ödemesi
+ * alınmamış rezervasyon yeşil değil sarıdır (22 Kasım 2026: "para ödenmediği göze çarpsın ki alsınlar"): yeşil yalnız
+ * sitede ödenmiş olan.
  */
 function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
   if (s.source === "panel") return { tone: "gray", text: s.createdBy ? `Panelden · ${s.createdBy}` : "Panelden" };
@@ -71,8 +74,11 @@ function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
   if (s.status === "cancelled") return { tone: "red", text: cancelledBadgeText(s.paymentStatus, s.refund) };
   if (isHold(s)) return { tone: "gray", text: "Ödeme bekleniyor" };
   if (s.status === "requested") return { tone: "amber", text: "Onay bekliyor" };
-  return s.paymentStatus === "paid" ? { tone: "green", text: "Ödendi" } : { tone: "green", text: "Onaylı · kasada ödenecek" };
+  return s.paymentStatus === "paid" ? { tone: "green", text: "Ödendi" } : { tone: "amber", text: "Onaylı · kasada ödenecek" };
 }
+
+/** Sitenin geçerli ama ödemesi alınmamış rezervasyonu: ücret kasada, misafir odaya girmeden alınır */
+const unpaid = (s: KaraokeSessionDTO) => s.source === "site" && isLive(s) && s.paymentStatus !== "paid";
 
 const PHASE_BADGE: Record<Phase, { tone: Tone; text: string } | null> = {
   upcoming: null,
@@ -251,7 +257,7 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
             </Badge>
             <span className="tabular">{timeRange(start, end)}</span>
             {s.extraMinutes ? <span>· +{s.extraMinutes} dk uzatıldı</span> : null}
-            {s.desk === "booking" ? <Badge tone="gray">Elle · kasada ödenecek</Badge> : null}
+            {s.desk === "booking" ? <Badge tone="gray">Elle</Badge> : null}
           </p>
           <h2 className="mt-1.5 text-xl font-semibold tracking-tight break-words text-ink">
             {nameOf(s)}
@@ -262,6 +268,8 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
             ) : null}
           </h2>
           {s.note ? <p className="mt-1 text-sm break-words text-ink-mute">Not: {s.note}</p> : null}
+          {/* Sitede ödenmemiş oturum sürüyor: ücret önden, kasada alınır. Panel kasadaki tahsilatı bilmez; söz bu yüzden koşullu */}
+          {unpaid(s) ? <Notice tone="warn" size="sm" risk="para" className="mt-2" title="Ödemesi kasada: ücret alınmadıysa şimdi alın" /> : null}
         </div>
         <div className="text-right">
           <p className="text-[13px] text-ink-mute">{p === "overtime" ? "Bitişten bu yana" : "Kalan süre"}</p>
@@ -515,6 +523,12 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
           {/* Köşkte elle alınan rezervasyon: telefonla ya da kasada (ödemesi köşkte) */}
           {s.desk === "booking" ? <Badge tone="gray">Elle</Badge> : null}
           {phaseBadge ? <Badge tone={phaseBadge.tone}>{phaseBadge.text}</Badge> : null}
+          {/* Misafire bir gün kala gidecek / gitmiş hatırlatma e-postası (elle eklenirken e-posta yazıldıysa) */}
+          {s.reminder && p !== "cancelled" ? (
+            <Badge tone="gray">
+              <Mail size={12} aria-hidden="true" /> {reminderBadge(s.reminder, now)}
+            </Badge>
+          ) : null}
           {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
           {/* Tutar yalnız yöneticiye (sunucu personele göndermez; savunma: depoda başka oturumun verisi kalsa da çizilmez) */}
           {admin && s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}

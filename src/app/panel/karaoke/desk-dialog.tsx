@@ -22,6 +22,7 @@ import {
   type DeskKind,
 } from "@/lib/karaoke/desk";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
+import { reminderHint } from "@/lib/karaoke/reminder";
 import { dayLabel, dayShortTR, timeRange, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { addDeskKaraoke } from "@/server/actions/karaoke";
 
@@ -47,7 +48,8 @@ function initialSlot(hours: RoomHoursProp, nowMs: number): { date: string; start
  * Elle ekle (Karaoke ekranı, yönetici ve personel): telefonla ya da kasada alınan rezervasyon ya da kapatılan saatler.
  * Satır laffogato.net'in takvimine yazılır (sunucu eylemi sitenin imzalı ucuna gönderir), sitede, uygulamada ve kasada
  * hemen dolu görünür; sonra bu panelin listesine her zamanki eşitlemeyle gelir. Sitenin itirazı (Türkçe mesaj) adı
- * geçen alanın yanında, alanı yoksa pencerenin başında. Telefon ve e-posta yalnız siteye gider.
+ * geçen alanın yanında, alanı yoksa pencerenin başında. Telefon yalnız siteye gider; e-posta yazılırsa misafire sitenin
+ * onay e-postası, rezervasyona bir günden fazla varsa bir gün kala panelin hatırlatma e-postası da gider (ipucu söyler).
  */
 export function DeskDialog({ open, onClose, sessions, roomHours, nowMs }: { open: boolean; onClose: () => void; sessions: KaraokeSessionDTO[]; roomHours: RoomHoursProp; nowMs: number }) {
   // Pencere her açılışta boş başlar (kapatınca içerik söner, `key` ile yeniden kurulur)
@@ -131,7 +133,7 @@ function DeskForm({ onClose, sessions, roomHours, nowMs }: { onClose: () => void
         return;
       }
       if (r.added.externalId) addedOnThisDevice(r.added.externalId);
-      const t = deskAddedToast(r.added.kind, r.added.when, r.added.email);
+      const t = deskAddedToast(r.added.kind, r.added.when, r.added.email, r.added.reminder);
       toast.success(t.title, { description: r.added.synced ? t.description : `${t.description} Listeye birkaç saniye içinde gelir.`, duration: 10_000 });
       onClose();
       await refreshLive();
@@ -315,7 +317,7 @@ function DeskForm({ onClose, sessions, roomHours, nowMs }: { onClose: () => void
                 {...described("phone", `${formId}-phone`)}
               />
             </Field>
-            <Field label="E-posta" htmlFor={`${formId}-email`} error={err("email")} hint="İsteğe bağlı. Yazılırsa misafire onay e-postası gider.">
+            <Field label="E-posta" htmlFor={`${formId}-email`} error={err("email")} hint={reminderHint(start, nowMs)}>
               <Input
                 id={`${formId}-email`}
                 type="email"

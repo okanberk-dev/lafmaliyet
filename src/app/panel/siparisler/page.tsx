@@ -9,17 +9,19 @@ import { buttonClass } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import { requireUser } from "@/server/auth/dal";
+import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
 
 import { OrdersBoard, OrdersRefreshButton } from "./orders-board";
+import { SoldOutCard } from "./sold-out-card";
 
 export const metadata: Metadata = { title: "Siparişler" };
-// Siparişin aşama düğmesi ve masa çağrısının "Gördüm"ü bu sayfanın sunucu eylemleriyle siteye gider (en çok 8 saniye),
-// ardından listeyi siteden yeniden çeker (en çok 8 saniye daha)
+// Siparişin aşama düğmesi, masa çağrısının "Gördüm"ü ve Tükenenler'in düğmeleri bu sayfanın sunucu eylemleriyle siteye
+// gider (en çok 8 saniye), ardından listeyi siteden yeniden çeker (en çok 8 saniye daha)
 export const maxDuration = 30;
 
-const DESCRIPTION = "laffogato.net'ten (uygulama ve web) ödenmiş kafe siparişleri ve masa çağrıları.";
+const DESCRIPTION = "laffogato.net'ten (uygulama ve web) ödenmiş kafe siparişleri, masa çağrıları ve tükenen ürünler.";
 
 /** Sitenin kendi sipariş paneli (iade, iptal ve geçmiş orada) */
 const siteOrdersUrl = () => `${siteUrl()}/admin/siparisler`;
@@ -67,10 +69,18 @@ async function SiparislerContent() {
   const configured = Boolean(siteLinkSecret());
   const now = new Date().getTime();
   // Sipariş satırının reçetesi: laffogato.net menüsüne bağlı ürünler (kalem + yuva → ürün adı; reçete defterinde aranır)
-  const linked = await getDb()
-    .select({ name: s.products.name, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
-    .from(s.products)
-    .where(and(isNotNull(s.products.siteMenuId), eq(s.products.active, true)));
+  const [linked, soldOut] = await Promise.all([
+    getDb()
+      .select({ name: s.products.name, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
+      .from(s.products)
+      .where(and(isNotNull(s.products.siteMenuId), eq(s.products.active, true))),
+    // Tükenenler kartı (dalga 10 §2.1; 22 Kasım 2026'da Karaoke ekranından buraya taşındı): site bağlantısı yoksa kart
+    // yok; okunamazsa kart çizilmez, ekran açılır
+    loadSoldOut().catch((e: unknown) => {
+      console.error("[tukendi] kart", e);
+      return null;
+    }),
+  ]);
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <>
@@ -90,6 +100,7 @@ async function SiparislerContent() {
           )
         ) : null}
         <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
+        {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
         <div className="max-w-xl">
           <DeviceAlerts role={user.role} karaoke />
         </div>
