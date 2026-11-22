@@ -3,11 +3,24 @@
 // Çalıştırma: npx tsx --test tests/ses-cikisi.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { looksBuiltIn, looksWireless, needsLabelPermission, resolveOutput, selectableOutputs, suggestedOutput } from "../src/lib/audio-output";
+import {
+  alertAudible,
+  deviceBranch,
+  isMobileAgent,
+  looksBuiltIn,
+  looksWireless,
+  needsLabelPermission,
+  onlyComputerFor,
+  osNotificationSilent,
+  resolveOutput,
+  selectableOutputs,
+  suggestedOutput,
+  systemDefaultLabel,
+} from "../src/lib/audio-output";
 
 const out = (deviceId: string, label: string, kind = "audiooutput") => ({ kind, deviceId, label, groupId: "" });
 
@@ -65,18 +78,22 @@ test("ses seçilen hoparlöre çalar; çalamazsa varsayılana döner, sessiz kal
   assert.match(sounds, /createDynamicsCompressor\(\)/);
   assert.match(sounds, /master\.connect\(limiter\)\.connect\(ctx\.destination\)/);
   const prefs = readFileSync(join(process.cwd(), "src/components/panel/live/prefs.ts"), "utf8");
-  assert.match(prefs, /outputId: "", outputLabel: "" \}/);
+  assert.match(prefs, /outputId: "", outputLabel: "", onlyComputer: null \}/);
 });
 
 test("sesi sekme çalıyorsa sistem bildirimi sessiz (işletim sisteminin sesi Bluetooth hoparlöre giderdi)", () => {
   const sw = readFileSync(join(process.cwd(), "public/sw.js"), "utf8");
   assert.match(sw, /const pageRings = await tellPanels\(panels,/);
-  assert.match(sw, /silent: pageRings,/);
+  assert.match(sw, /const quiet = pageRings \|\| \(await quietDevice\(\)\);/);
+  assert.match(sw, /silent: quiet,/);
+  assert.match(sw, /e\.data\.willRing \|\| e\.data\.quiet/);
   assert.match(sw, /new MessageChannel\(\)/);
   assert.match(sw, /setTimeout\(\(\) => resolve\(false\), 800\)/);
   const center = readFileSync(join(process.cwd(), "src/components/panel/live/alert-center.tsx"), "utf8");
-  assert.match(center, /e\.ports\[0\]\?\.postMessage\(\{ willRing \}\)/);
-  assert.match(center, /const silent = prefs\.sound && audioState\(\) === "ready";/);
+  assert.match(center, /e\.ports\[0\]\?\.postMessage\(\{ willRing, quiet: onlyComputerActive\(\) \}\)/);
+  assert.match(center, /const silent = quietOs\(prefs\.sound\);/);
+  // Sistem bildirimlerinin hepsi aynı kuraldan: doğrudan "sekme çalıyor mu" kalmadı
+  assert.doesNotMatch(center, /silent: prefs\.sound/);
 });
 
 test("mikrofon izni yalnız panel sayfalarında ve yalnız bu site için", () => {
@@ -87,4 +104,101 @@ test("mikrofon izni yalnız panel sayfalarında ve yalnız bu site için", () =>
   // Açılan mikrofon hemen kapatılır
   const client = readFileSync(join(process.cwd(), "src/components/panel/live/output-client.ts"), "utf8");
   assert.match(client, /for \(const t of stream\.getTracks\(\)\) t\.stop\(\);/);
+});
+
+// ─── Yalnız bu bilgisayar (Tuzla Köyiçi, 22 Kasım 2026) ──────────────────────────────────────────────────────────
+
+test("yalnız bu bilgisayar: seçilen hoparlör yoksa genel hoparlöre düşmez, susar", () => {
+  // Kapalıyken eski davranış: her durumda çalar (seçim yoksa sistemin varsayılanından)
+  for (const s of ["default", "active", "missing", "permission", "unsupported"] as const) assert.equal(alertAudible(false, s), true);
+  // Açıkken yalnız seçilen hoparlör etkinse
+  assert.equal(alertAudible(true, "active"), true);
+  assert.equal(alertAudible(true, "default"), false, "hoparlör seçilmemiş: varsayılan çıkış genel hoparlör olabilir");
+  assert.equal(alertAudible(true, "missing"), false, "hoparlör çıkarıldı");
+  assert.equal(alertAudible(true, "permission"), false, "izin düştü");
+  // Tarayıcı seçtirmiyor (Safari): anahtar orada sunulmaz, ses cihazın çıkışından
+  assert.equal(alertAudible(true, "unsupported"), true);
+  // Sistemin bildirim sesi yönlendirilemez: açıkken hep sessiz
+  assert.equal(osNotificationSilent(true, false), true);
+  assert.equal(osNotificationSilent(false, false), false);
+  assert.equal(osNotificationSilent(false, true), true);
+});
+
+test("yalnız bu bilgisayar: Tuzla'da varsayılan açık, Marina'da kapalı, elle seçim her şubede geçerli", () => {
+  assert.equal(onlyComputerFor(null, "tuzla"), true);
+  assert.equal(onlyComputerFor(null, "hepsi"), true, "Tümü seçiliyken panelin varsayılan şubesi (Tuzla)");
+  assert.equal(onlyComputerFor(null, "marina"), false);
+  assert.equal(onlyComputerFor(null, null), false);
+  assert.equal(onlyComputerFor(false, "tuzla"), false);
+  assert.equal(onlyComputerFor(true, "marina"), true);
+  assert.equal(deviceBranch("hepsi"), "tuzla");
+  assert.equal(deviceBranch("marina"), "marina");
+  // Telefon ve tablette anahtar yok (hoparlör zaten cihazın kendisi)
+  assert.equal(isMobileAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"), false);
+  assert.equal(isMobileAgent("Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"), true);
+  assert.equal(isMobileAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"), true);
+});
+
+test("sistemin varsayılan çıkışının adı (genel hoparlör uyarısı için)", () => {
+  assert.equal(systemDefaultLabel(windows), "Hoparlör (JBL Charge 5)");
+  assert.equal(systemDefaultLabel([out("default", "Default - Speakers (Realtek(R) Audio)")]), "Speakers (Realtek(R) Audio)");
+  assert.equal(systemDefaultLabel([out("default", "")]), null, "izin yokken ad yok");
+  assert.equal(looksBuiltIn("Speakers (Realtek(R) Audio)"), true);
+});
+
+test("seçim bu bilgisayarda saklanır ve geri okunur", async () => {
+  const store = new Map<string, string>();
+  const g = globalThis as unknown as { window?: unknown };
+  const had = "window" in g;
+  g.window = {
+    localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  try {
+    const prefs = await import("../src/components/panel/live/prefs");
+    // Seçim yokken şubenin varsayılanı: Tuzla'da açık, Marina'da kapalı
+    prefs.setBranchScope("tuzla");
+    assert.equal(prefs.currentPrefs("staff").onlyComputer, null);
+    assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), true);
+    prefs.setBranchScope("marina");
+    assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), false);
+    // Elle seçim saklanır; önbellek boşalınca (yeniden açılış) depodan aynısı okunur
+    prefs.updatePrefs("staff", { outputId: "a1", outputLabel: "Hoparlör (Realtek(R) Audio)", onlyComputer: true });
+    prefs.setBranchScope("tuzla");
+    const back = prefs.currentPrefs("staff");
+    assert.equal(back.outputId, "a1");
+    assert.equal(back.outputLabel, "Hoparlör (Realtek(R) Audio)");
+    assert.equal(back.onlyComputer, true);
+    prefs.updatePrefs("staff", { onlyComputer: false });
+    prefs.setBranchScope("marina");
+    assert.equal(prefs.currentPrefs("staff").onlyComputer, false, "Tuzla'da da elle kapatılabilir");
+    // Bozuk kayıt: şubenin varsayılanına döner
+    store.set("laf:cihaz-uyarilari:admin", JSON.stringify({ onlyComputer: "evet", outputId: 5 }));
+    prefs.setBranchScope("tuzla");
+    assert.equal(prefs.currentPrefs("admin").onlyComputer, null);
+    assert.equal(prefs.currentPrefs("admin").outputId, "");
+  } finally {
+    if (!had) delete g.window;
+  }
+});
+
+test("paneldeki bütün sesler tek yardımcıdan (sounds.ts) geçer", () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.(tsx?|jsx?|mjs)$/.test(name)) files.push(p);
+    }
+  };
+  walk(join(process.cwd(), "src"));
+  files.push(join(process.cwd(), "public/sw.js"));
+  // sounds.ts çalar; audio-output.ts yalnız saf kurallar (açıklamada setSinkId geçer)
+  const allowed = [join("src", "components", "panel", "live", "sounds.ts"), join("src", "lib", "audio-output.ts")];
+  const offenders = files
+    .filter((f) => !allowed.some((a) => f.endsWith(a)))
+    .filter((f) => /new Audio\(|\bAudioContext\b|webkitAudioContext|speechSynthesis|SpeechSynthesisUtterance|\.play\(|<audio\b|setSinkId/.test(readFileSync(f, "utf8")))
+    .map((f) => f.slice(process.cwd().length + 1));
+  assert.deepEqual(offenders, [], "ses yalnız src/components/panel/live/sounds.ts'ten çalınır (seçilen hoparlöre, gerekirse susar)");
 });

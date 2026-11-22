@@ -169,7 +169,7 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
    - ekrana bir kez dokunun (tarayıcı ilk dokunuştan önce ses çaldırmaz; gerekirse sağ altta "Sesli uyarılar için
      dokunun" düğmesi çıkar);
    - **Ekran açık kalsın**'ı açın (personelde varsayılan açık);
-   - **Uyarıların çalacağı hoparlör**'den bilgisayarın kendi hoparlörünü seçin (aşağıda).
+   - **Uyarı sesleri**'nden bilgisayarın kendi hoparlörünü seçin (aşağıda).
    iPhone / iPad'de bildirim için paneli Paylaş › **Ana Ekrana Ekle** ile uygulama gibi açın.
 
 ### Müzik Bluetooth hoparlördeyken uyarılar bilgisayardan
@@ -177,13 +177,14 @@ doluluktan ve aylık özetten çıkar: ikisi de iz bırakır.
 Karaoke müziği Bluetooth hoparlörden çalarken zil ve alarm müziğe karışmasın, bilgisayarın kendi hoparlöründen yüksek
 sesle gelsin diye:
 
-1. **Bu cihazda uyarılar › Uyarıların çalacağı hoparlör › Hoparlörleri göster.** Chrome hoparlörlerin adını ancak
+1. **Bu cihazda uyarılar › Uyarı sesleri › Hoparlörleri göster.** Chrome hoparlörlerin adını ancak
    mikrofon izniyle gösterir: izin penceresinde **Her ziyarette izin ver**'i seçin. Mikrofon kullanılmaz, açılan akış
    hemen kapatılır (izin yalnız panel sayfalarında ve yalnız bu site için açık).
 2. Listeden bilgisayarın hoparlörünü seçin (ör. "Hoparlör (Realtek(R) Audio)", "MacBook Pro Hoparlörleri";
-   "bilgisayarın hoparlörü" diye işaretlenir, Bluetooth olanlar "Bluetooth" diye). Seçince deneme sesi o hoparlörden
-   çalar. Seçim bu cihazda saklanır; hoparlör takılıp çıkınca yeniden uygulanır, bulunamazsa ses varsayılan çıkıştan
-   gelir ve kartta uyarı çıkar.
+   "Bu bilgisayarın hoparlörü" diye işaretlenir, Bluetooth olanlar "Bluetooth" diye). Seçince deneme sesi o hoparlörden
+   çalar. Seçim bu cihazda saklanır; hoparlör takılıp çıkınca yeniden uygulanır. Bulunamazsa "Yalnız bu bilgisayardan
+   çalsın" açıksa ses susar (genel hoparlöre geçmez), kapalıysa varsayılan çıkıştan gelir; iki durumda da kartta uyarı
+   çıkar (docs/BILDIRIMLER.md › Uyarı sesleri yalnız bu bilgisayardan).
 3. Bilgisayar hoparlörünün ses düzeyini yüksek tutun. Windows'ta her hoparlörün düzeyi ayrıdır (Ayarlar › Sistem ›
    Ses › bilgisayar hoparlörü › ses düzeyi); Bluetooth'taki müziğin düzeyi bundan etkilenmez. Uyarı sesleri zaten
    tavana yakın ve parlak (1–3 kHz) üretilir; bir sınırlayıcı cızırdamayı önler.
@@ -312,9 +313,9 @@ verin." yazar (denetim E-64, `src/lib/staff-errors.ts`).
 
 "Sitenin son pingi" boş kalıyorsa site panele ulaşamıyor: sitedeki `PANEL_URL` ve anahtarı kontrol edin.
 
-Ses hâlâ Bluetooth hoparlörden geliyorsa: **Uyarıların çalacağı hoparlör** kartında uyarı var mı bakın ("izin
-yenilenmeli": Hoparlörleri göster'e basıp Her ziyarette izin ver; "bağlı değil": hoparlörü yeniden seçin). **Sesi
-dene** seçilen hoparlörden çalmalı.
+Ses hâlâ Bluetooth hoparlörden geliyorsa: **Uyarı sesleri** kartında uyarı var mı bakın ("izin yenilenmeli":
+Hoparlörleri göster'e basıp Her ziyarette izin ver; "bağlı değil": hoparlörü yeniden seçin). **Deneme sesi** seçilen
+hoparlörden çalmalı.
 
 ## Dosyalar
 

@@ -6,7 +6,7 @@
  *   canlı veriyi yeniler, gerekirse zil çalar; src/components/panel/live/alert-center.tsx). Panel sekmesi o an öndeyse
  *   sistem bildirimi yerine sekme kendisi gösterir. Sesi açık bir sekme kendisi (seçilen hoparlörden) çalacaksa sistem
  *   bildirimi sessizdir: işletim sisteminin bildirim sesi varsayılan çıkıştan, ör. müziğin çaldığı Bluetooth
- *   hoparlörden gelirdi.
+ *   hoparlörden gelirdi. "Yalnız bu bilgisayar" açık cihazda (Tuzla Köyiçi) sistem bildirimi hep sessizdir.
  * - notificationclick: açık panel sekmesini öne getirir ve ilgili ekrana gider; yoksa yeni sekme açar.
  */
 
@@ -26,13 +26,15 @@ self.addEventListener("push", (event) => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const panels = windows.filter((c) => new URL(c.url).pathname.startsWith("/panel"));
       const pageRings = await tellPanels(panels, { type: "laf:push", kind: msg.kind, title: msg.title, body: msg.body, url, ring: Boolean(msg.ring) });
+      // "Yalnız bu bilgisayar" (Tuzla Köyiçi): sistemin bildirim sesi genel hoparlörden çalardı, hep sessiz
+      const quiet = pageRings || (await quietDevice());
       // Panel sekmesi öndeyse ve görünüyorsa bildirimi sekme gösterir (zil + kart); değilse sistem bildirimi
       if (panels.some((c) => c.focused && c.visibilityState === "visible")) return;
       await self.registration.showNotification(String(msg.title).slice(0, 120), {
         body: String(msg.body).slice(0, 300),
         tag: String(msg.tag || "laf"),
         renotify: true,
-        silent: pageRings,
+        silent: quiet,
         requireInteraction: Boolean(msg.requireInteraction),
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
@@ -61,7 +63,7 @@ function tellPanels(panels, message) {
     };
     for (const c of panels) {
       const channel = new MessageChannel();
-      channel.port1.onmessage = (e) => answer(Boolean(e.data && e.data.willRing));
+      channel.port1.onmessage = (e) => answer(Boolean(e.data && (e.data.willRing || e.data.quiet)));
       try {
         c.postMessage(message, [channel.port2]);
       } catch {
@@ -69,6 +71,19 @@ function tellPanels(panels, message) {
       }
     }
   });
+}
+
+/**
+ * Bu cihazda "yalnız bu bilgisayar" açık mı: panel işareti Cache deposuna yazar (src/components/panel/live/
+ * output-client.ts › syncQuietFlag); panel hiç açık değilken gelen bildirim de sessiz gelir.
+ */
+async function quietDevice() {
+  try {
+    const store = await caches.open("laf-ayar");
+    return Boolean(await store.match("/panel/__sessiz-bildirim"));
+  } catch {
+    return false;
+  }
 }
 
 self.addEventListener("notificationclick", (event) => {

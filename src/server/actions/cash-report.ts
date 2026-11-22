@@ -58,7 +58,7 @@ export async function submitCashReport(input: z.input<typeof submitSchema>) {
     const till = await formTillBranch(branchId);
     // laffogato.net'in o günkü online satışı e-postaya bilgi satırı olarak girer: istek kayıtla aynı anda başlar, site
     // yavaşsa e-posta en çok 8 saniye bekler, ulaşılamazsa satırsız gider (kasa rakamlarına hiç girmez)
-    const site = fetchTillOnlineRow(data.date);
+    const site = fetchTillOnlineRow(data.date, till);
     // Kayıt formun kasasının kapsamında: başka sekmede seçici değiştiyse de Tuzla'nın formu Tuzla'ya yazar
     const out = await withBranchScope(till, () => saveCashReport(getDb(), me, data));
     if (out.kind === "needsApproval") return { needsApproval: true as const, request: out.request, gate: out.gate };

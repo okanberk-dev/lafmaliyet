@@ -339,13 +339,16 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   assert.match(read("src/app/api/export/workbook.ts"), /c\.revenueTotalNet \?\? 0/);
   // Kasa sayfası: satır ayrı Suspense'te (sayfa beklemez); personele karaoke tutarı yok
   const kasa = read("src/app/panel/kasa/page.tsx");
-  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} admin=\{admin\} kasa=\{lafposState\.lafpos \? "LafPOS" : "ModPOS"\} \/>/);
+  assert.match(kasa, /<Suspense fallback=\{null\}>\s*<SiteDayRow date=\{date\} till=\{view\.till\} admin=\{admin\} kasa=\{lafposState\.lafpos \? "LafPOS" : "ModPOS"\} \/>/);
+  // Satır kasanın şubesinin (site #279: &branch=tuzla|marina); e-posta ve gönderim de raporun şubesiyle sorar
+  assert.match(kasa, /fetchTillOnlineRow\(date, till\)/);
+  assert.match(read("src/server/cash/report-email.ts"), /fetchTillOnlineRow\(row\.date, row\.branchId\)/);
   // ux-sade Ek A 122: tek satır başlık; karaoke tutarı yalnız yöneticide
   assert.match(kasa, /\$\{admin \? ` · karaoke ön ödeme \$\{money\(row\.karaoke\)\}` : ""\}/);
   // Gönderim: site isteği kayıtla aynı anda başlar, e-posta en çok 8 saniye bekler
   const actions = read("src/server/actions/cash-report.ts");
   // (kayıt formun kasasının kapsamında: withBranchScope(till, () => saveCashReport(…)))
-  assert.ok(actions.indexOf("const site = fetchTillOnlineRow(data.date)") < actions.indexOf("() => saveCashReport("));
+  assert.ok(actions.indexOf("const site = fetchTillOnlineRow(data.date, till)") < actions.indexOf("() => saveCashReport("));
   assert.ok(actions.indexOf("() => saveCashReport(") > 0);
   assert.match(actions, /await emailReport\(saved\.id, \{ site \}\)/);
   // "Siteden yenile" yalnız yöneticinin

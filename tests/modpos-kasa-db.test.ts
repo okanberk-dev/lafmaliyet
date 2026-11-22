@@ -21,6 +21,8 @@ import { parseKasaFoyu, type KasaFoyu } from "../src/lib/modpos/foy";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
+
 const SERVER_URL = process.env.MODPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_modpos_kasa_${process.pid}`;
 
@@ -57,6 +59,7 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     day = await import("../src/server/data/modpos-day");
     store = await import("../src/server/modpos/store");
     // Okuyucu ağa çıkmaz: her istek sayılır ve reddedilir
@@ -100,21 +103,33 @@ describe("Kasa ekranının ModPOS föyü okuyucusu: veritabanında", { skip: !SE
   });
 
   test("LafPOS geçiş gününden itibaren gün LafPOS: föy okunmaz; öncesi ModPOS", async () => {
-    await store.storeFoy(db, foyOn("2026-11-01"), new Date("2026-11-02T08:02:00+03:00"));
-    await store.storeFoy(db, foyOn("2026-11-05"), new Date("2026-11-06T08:02:00+03:00"));
+    // İki şubenin de föyü var: LafPOS'un şubesi (Marina; ModPOS'u yedek olarak çekilmeye devam eder) ve Tuzla
+    for (const sube of [LAFPOS_SUBE, MODPOS_SUBE]) {
+      await store.storeFoy(db, foyOn("2026-11-01"), new Date("2026-11-02T08:02:00+03:00"), null, sube);
+      await store.storeFoy(db, foyOn("2026-11-05"), new Date("2026-11-06T08:02:00+03:00"), null, sube);
+    }
     await setSwitch("2026-11-03");
-    assert.equal((await day.loadKasaModpos("2026-11-01", db)).sheet?.day, "2026-11-01");
-    assert.deepEqual(await day.loadKasaModpos("2026-11-03", db), day.NO_MODPOS);
-    assert.deepEqual(await day.loadKasaModpos("2026-11-05", db), day.NO_MODPOS, "geçişten sonraki güne çekilmiş föy okunmaz");
-    const of = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db);
+    // LafPOS'un şubesinin kasası: geçiş gününden itibaren LafPOS, föy okunmaz
+    assert.equal((await day.loadKasaModpos("2026-11-01", db, LAFPOS_SUBE)).sheet?.day, "2026-11-01");
+    assert.deepEqual(await day.loadKasaModpos("2026-11-03", db, LAFPOS_SUBE), day.NO_MODPOS);
+    assert.deepEqual(await day.loadKasaModpos("2026-11-05", db, LAFPOS_SUBE), day.NO_MODPOS, "geçişten sonraki güne çekilmiş föy okunmaz");
+    const of = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, LAFPOS_SUBE);
     assert.equal(of("2026-11-01").sheet?.day, "2026-11-01");
+    assert.equal(of("2026-11-01").sheet?.branchId, LAFPOS_SUBE);
     assert.deepEqual(of("2026-11-02"), { modpos: true, sheet: null, z: null });
     assert.deepEqual(of("2026-11-03"), day.NO_MODPOS);
     assert.deepEqual(of("2026-11-05"), day.NO_MODPOS);
-    // Ayın tamamı geçiş gününden sonra: hiçbir gün ModPOS değil
+    // Geçiş günü yalnız o kasanındır: Tuzla'nın (şube verilmezse de o) her günü ModPOS günü, föyü geçiş gününden sonra da okunur
+    assert.equal((await day.loadKasaModpos("2026-11-05", db, MODPOS_SUBE)).sheet?.day, "2026-11-05");
+    assert.equal((await day.loadKasaModpos("2026-11-05", db)).sheet?.branchId, MODPOS_SUBE);
+    assert.deepEqual(await day.loadKasaModpos("2026-11-03", db, MODPOS_SUBE), { modpos: true, sheet: null, z: null });
+    assert.equal(of("2026-11-05", MODPOS_SUBE).sheet?.day, "2026-11-05");
+    assert.equal(of("2026-11-05", MODPOS_SUBE).sheet?.branchId, MODPOS_SUBE);
+    // Ayın tamamı geçiş gününden sonra: LafPOS'un şubesinde hiçbir gün ModPOS değil, Tuzla'da hepsi
     await setSwitch("2026-10-15");
-    const later = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db);
+    const later = await day.loadKasaModposDays("2026-11-01", "2026-11-30", db, LAFPOS_SUBE);
     assert.deepEqual(later("2026-11-01"), day.NO_MODPOS);
+    assert.equal(later("2026-11-01", MODPOS_SUBE).sheet?.day, "2026-11-01");
     assert.equal(fetches, 0);
   });
 

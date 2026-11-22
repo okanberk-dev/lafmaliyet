@@ -18,7 +18,7 @@ import { sendTestPush, setPushTopics } from "@/server/actions/push";
 import { OUTPUT_TIPS, OutputPicker } from "./output-picker";
 import { updatePrefs, usePrefs, WARN_CHOICES } from "./prefs";
 import { currentEndpoint, noteDeviceTopics, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
-import { play, unlockAudio, useAudioState } from "./sounds";
+import { alertsAudible, play, unlockAudio, useAudioState } from "./sounds";
 import { useLive } from "./store";
 
 const noopSubscribe = () => () => {};
@@ -251,12 +251,14 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
           size="sm"
           onClick={() =>
             void unlockAudio().then((ok) => {
-              if (ok) play(karaoke ? "ring" : "reminder");
-              else toast.error("Ses açılamadı; cihazın sesini kontrol edin");
+              if (!ok) return void toast.error("Ses açılamadı; cihazın sesini kontrol edin");
+              // "Yalnız bu bilgisayar" açık, hoparlör yok: ses genel hoparlöre gitmesin diye susar
+              if (!alertsAudible()) return void toast.error("Uyarı sesleri susturuldu: önce bu bilgisayarın hoparlörünü seçin");
+              play(karaoke ? "ring" : "reminder");
             })
           }
         >
-          <Volume2 size={14} /> Sesi dene
+          <Volume2 size={14} /> Deneme sesi
         </Button>
         {/* Dört ipucu tek açılırda, metinler aynen (docs/planlar/ux-sade.md H5, §9 #25): dört gri kutu yerine */}
         <details className="group/tips">

@@ -58,7 +58,7 @@ export async function loadLafposIkram(db: Reader, switchDay: string, range: { fr
       const m = resolvePosLine({ ...l, isService: false }, bySite, (n) => index.get(n));
       // "Zayi: Döküldü" zayidir, öteki her satır (ödenmez dahil) ikram (src/lib/lafpos/ikram.ts lafposLineKind)
       const { kind, reason } = lafposLineKind(l.reason);
-      lines.push({ date: r.date, kind, posName: l.posName, productId: m.productId, qty: l.qty, menuValue: l.menuValue, reason });
+      lines.push({ date: r.date, kind, posName: l.posName, productId: m.productId, isService: m.isService, qty: l.qty, menuValue: l.menuValue, reason });
     }
   }
   return { switchDay, days: rows.map((r) => r.date), lines };

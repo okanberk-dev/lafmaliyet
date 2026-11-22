@@ -428,6 +428,13 @@
       "when": 1795261207041,
       "tag": "0060_hatirlatici_saat_capasi",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1795310391653,
+      "tag": "0061_lafpos_gun_sonu",
+      "breakpoints": true
     }
   ]
 }

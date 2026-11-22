@@ -6,6 +6,10 @@
 // bağlanması (site kalemi, POS adı eşleştirmesi, Satışlar ve Ayarlar eylemleri); LafPOS satırı olan ürün silinmez;
 // satış tahmini raporsuz günde LafPOS Z'si.
 //
+// LafPOS'un şubesi Marina'dır (LAFPOS_BRANCH_ID): gün sonları, o şubenin ModPOS listesi (geçiş gününden önceki günler)
+// ve kasa raporları Marina'nındır, testler o şubenin seçiminde çalışır (withBranchScope; panelde seçiciden Marina
+// seçilmiş gibi). ModPOS'ta kalan şubenin (Tuzla) listesi her ay sayılır, LafPOS onda hiç okunmaz.
+//
 // Ayarlar ve satış satırları veritabanında tektir: test kendi geçici veritabanını açar (LAFPOS_TEST_DATABASE_URL'in
 // sunucusunda), migration'ları uygular, sonunda siler; öteki testlerin verisine dokunmaz.
 //
@@ -20,11 +24,14 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { ALL_BRANCHES } from "../src/lib/branches";
 import { createModel } from "../src/lib/calc/engine";
 import { posMatchKey } from "../src/lib/calc/pos-paste";
 import { parsePosDay } from "../src/lib/lafpos/day";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
+
+import { LAFPOS_SUBE, MODPOS_SUBE, seedBranches } from "./helpers/subeler";
 
 const SERVER_URL = process.env.LAFPOS_TEST_DATABASE_URL;
 const DB_NAME = `laffogato_lafpos_satis_${process.pid}`;
@@ -41,6 +48,11 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
   let history: typeof import("../src/server/data/product-history");
   let rematch: typeof import("../src/server/lafpos/rematch");
   let ingest: typeof import("../src/server/lafpos/ingest");
+  let branchScope: typeof import("../src/server/branch-scope");
+  /** LafPOS'un şubesinin (Marina) seçiminde: veri kümesi, içe aktarma ve eşleştirme o şubeye bakar */
+  const lafposTest = (name: string, fn: () => Promise<void>) => test(name, () => branchScope.withBranchScope(LAFPOS_SUBE, fn));
+  /** Aynı okuma ModPOS'ta kalan şubenin (Tuzla) seçiminde */
+  const inTuzla = <T>(fn: () => Promise<T>) => branchScope.withBranchScope(MODPOS_SUBE, fn);
   const ids = { cat: 0, desserts: 0, latteM: 0, latteL: 0, mocha: 0, tiramisu: 0, only: 0, milk: 0 };
 
   const at = (iso: string) => {
@@ -70,17 +82,18 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
   });
   /** LafPOS günü doğrudan (imza ve gövde tests/lafpos-db.test.ts'te) */
   const day = async (date: string, zTotal: number, lines: { posName: string; productId?: number | null; qty: number; revenue: number; isService?: boolean; siteMenuId?: string | null; slot?: "M" | "L" | null }[]) => {
-    await db.insert(s.posDayReports).values({ date, z: z(zTotal), payments: [], ikram: [], source: "lafpos" });
+    await db.insert(s.posDayReports).values({ date, branchId: LAFPOS_SUBE, z: z(zTotal), payments: [], ikram: [], source: "lafpos" });
     if (lines.length) {
       await db.insert(s.posDailySales).values(
-        lines.map((l) => ({ date, posName: l.posName, productId: l.productId ?? null, qty: l.qty, revenue: l.revenue, isService: l.isService ?? false, siteMenuId: l.siteMenuId ?? null, slot: l.slot ?? null })),
+        lines.map((l) => ({ date, branchId: LAFPOS_SUBE, posName: l.posName, productId: l.productId ?? null, qty: l.qty, revenue: l.revenue, isService: l.isService ?? false, siteMenuId: l.siteMenuId ?? null, slot: l.slot ?? null })),
       );
     }
   };
-  const report = (date: string, zTotal: number) => db.insert(s.cashReports).values({ date, zTotal, cash: zTotal, submittedByName: "Ayşe" });
-  const modpos = async (month: string, rows: { posName: string; productId?: number | null; qty: number; revenue: number }[]) => {
-    await db.insert(s.months).values({ month }).onConflictDoNothing();
-    await db.insert(s.salesLines).values(rows.map((r, i) => ({ month, posName: r.posName, productId: r.productId ?? null, qty: r.qty, revenue: r.revenue, isService: false, sortOrder: i + 1 })));
+  /** Kasa raporu ve ModPOS listesi; şube verilmezse LafPOS'un şubesinde (Marina: geçiş gününden önce kasası ModPOS'tu) */
+  const report = (date: string, zTotal: number, branchId: string = LAFPOS_SUBE) => db.insert(s.cashReports).values({ date, branchId, zTotal, cash: zTotal, submittedByName: "Ayşe" });
+  const modpos = async (month: string, rows: { posName: string; productId?: number | null; qty: number; revenue: number }[], branchId: string = LAFPOS_SUBE) => {
+    await db.insert(s.months).values({ month, branchId }).onConflictDoNothing();
+    await db.insert(s.salesLines).values(rows.map((r, i) => ({ month, branchId, posName: r.posName, productId: r.productId ?? null, qty: r.qty, revenue: r.revenue, isService: false, sortOrder: i + 1 })));
   };
   const setCoverage = (value: Record<string, string>) =>
     db
@@ -113,6 +126,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    await seedBranches(db);
     const [u] = await db.insert(s.users).values({ email: "yonetici@laffogato.net", name: "Yönetici", passwordHash: "x", role: "admin" }).returning();
     stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
     dataset = await import("../src/server/data/dataset");
@@ -121,6 +135,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     history = await import("../src/server/data/product-history");
     rematch = await import("../src/server/lafpos/rematch");
     ingest = await import("../src/server/lafpos/ingest");
+    branchScope = await import("../src/server/branch-scope");
   });
 
   after(async () => {
@@ -184,7 +199,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
 
   afterEach(() => mock.timers.reset());
 
-  test("geçiş günü boşken veri kümesi LafPOS satırları varken de bayt bayt aynı", async () => {
+  lafposTest("geçiş günü boşken veri kümesi LafPOS satırları varken de bayt bayt aynı", async () => {
     const withLafpos = await snapshot();
     const ds = await dataset.loadDataset();
     assert.equal("lafposSales" in ds, false);
@@ -194,7 +209,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.equal(await snapshot(), withLafpos);
   });
 
-  test("geçiş günü seçilince: geçiş ayında liste 1-9 Kasım + LafPOS 10 Kasım'dan, Aralık yalnız LafPOS; deneme günü sayılmaz", async () => {
+  lafposTest("geçiş günü seçilince: geçiş ayında liste 1-9 Kasım + LafPOS 10 Kasım'dan, Aralık yalnız LafPOS; deneme günü sayılmaz", async () => {
     await setSwitch(S);
     const ds = await dataset.loadDataset();
     const by = (month: string) => ds.salesLines.filter((l) => l.month === month).map((l) => [l.posName, l.qty, l.revenue, l.productId, l.isService, l.lafpos?.days ?? null]);
@@ -245,9 +260,35 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.equal(model.ingredientUsage("2026-12").get(ids.milk), 15 * 200);
     assert.equal(model.ingredientUsage("2026-11").get(ids.milk), 60 * 200, "ModPOS 30 + LafPOS 30");
     assert.ok(model.salesMonths.includes("2026-12"));
+    // Geçiş günü yalnız LafPOS'un şubesinin kasasınındır (docs/LAFPOS.md › Şubeler). Tuzla seçiliyken geçiş günü yok
+    // sayılır: LafPOS hiç okunmaz, Tuzla'nın ModPOS listesi geçiş gününden sonraki ayda da sayılır
+    await modpos("2026-12", [{ posName: "FILTRE", qty: 7, revenue: 700 }], MODPOS_SUBE);
+    const tuzla = await inTuzla(() => dataset.loadDataset());
+    assert.equal(tuzla.settings.lafposGecisGunu, null);
+    assert.equal("lafposSales" in tuzla, false);
+    assert.deepEqual(
+      tuzla.salesLines.map((l) => [l.month, l.posName, l.qty, l.lafpos?.days ?? null]),
+      [["2026-12", "FILTRE", 7, null]],
+    );
+    // "Tümü"de ayar geçerli, satırlar şube şube: Tuzla'nın Aralık listesi sayılır, Marina'nın Aralık listesi (999 latte)
+    // sayılmaz, LafPOS'un günleri sayılır
+    const all = await branchScope.withBranchScope(ALL_BRANCHES, () => dataset.loadDataset());
+    assert.equal(all.settings.lafposGecisGunu, S);
+    assert.deepEqual(
+      all.salesLines
+        .filter((l) => l.month === "2026-12")
+        .map((l) => [l.posName, l.qty, l.lafpos?.days ?? null])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+      [
+        ["FILTRE", 7, null],
+        ["LATTE MEDIUM", 15, 3],
+        ["TIRAMISU", 12, 3],
+      ],
+    );
+    assert.equal(all.lafposSales?.countFrom, S, "sayım Marina'nın listesine göre: Tuzla'nın listesi LafPOS'un başlangıcını değiştirmez");
   });
 
-  test("süren ayda kasa raporu girilmemiş LafPOS günü rapor girilince sayılır: liste ↔ POS cirosu aynı günlerle karşılaştırılır", async () => {
+  lafposTest("süren ayda kasa raporu girilmemiş LafPOS günü rapor girilince sayılır: liste ↔ POS cirosu aynı günlerle karşılaştırılır", async () => {
     at("2026-12-10T23:30:00+03:00");
     await setSwitch("2026-12-01");
     await db.execute(sql`TRUNCATE pos_daily_sales, pos_day_reports, cash_reports RESTART IDENTITY CASCADE`);
@@ -286,7 +327,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.match(lafposNotes(gap!, "2026-12-01").warnings[0], /^1 günün LafPOS gün sonu gelmedi, kasa raporu var: 5 Aralık\./);
   });
 
-  test("geçiş ayına sonradan ayın tamamının listesi yüklendiyse LafPOS'un o ayki günleri sayılmaz (çift sayım yok)", async () => {
+  lafposTest("geçiş ayına sonradan ayın tamamının listesi yüklendiyse LafPOS'un o ayki günleri sayılmaz (çift sayım yok)", async () => {
     await setSwitch(S);
     await setCoverage({});
     const ds = await dataset.loadDataset();
@@ -302,7 +343,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual([nov?.from, nov?.overlap], [null, { from: S, to: "2026-11-30" }]);
   });
 
-  test("içe aktarma: LafPOS ayında red, elle satır yok; geçiş ayında liste geçiş gününden önceki güne kırpılır, Z'yi aşarsa uyarı", async () => {
+  lafposTest("içe aktarma: LafPOS ayında red, elle satır yok; geçiş ayında liste geçiş gününden önceki güne kırpılır, Z'yi aşarsa uyarı", async () => {
     await setSwitch(S);
     const lines = [{ posName: "LATTE MEDIUM", qty: 50, revenue: 10_000 }];
     const dec = await sales.importSales({ month: "2026-12", lines, mode: "replace" });
@@ -328,7 +369,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual([oct.data.through, oct.data.warning], [null, null]);
   });
 
-  test("geçiş ayının ilk elle satırı ModPOS listesini geçiş gününden önceki güne kadar başlatır: LafPOS günleri hesaptan düşmez", async () => {
+  lafposTest("geçiş ayının ilk elle satırı ModPOS listesini geçiş gününden önceki güne kadar başlatır: LafPOS günleri hesaptan düşmez", async () => {
     await setSwitch(S);
     // Kasım'ın listesi yok (yüklenmedi ya da "Ayı temizle"): LafPOS 10 Kasım'dan sayılıyor
     await db.delete(s.salesLines).where(eq(s.salesLines.month, "2026-11"));
@@ -358,7 +399,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual(cov2.value, { "2026-11": "2026-11-05" });
   });
 
-  test("Satışlar'da LafPOS'un hizmet işaretli ya da sitenin bağlı kalemiyle gelen satırı başka ürüne bağlanmaz (sonraki gün sonu geri alırdı)", async () => {
+  lafposTest("Satışlar'da LafPOS'un hizmet işaretli ya da sitenin bağlı kalemiyle gelen satırı başka ürüne bağlanmaz (sonraki gün sonu geri alırdı)", async () => {
     await setSwitch(S);
     const push = async (date: string, zNo: number, lines: { posName: string; siteMenuId?: string | null; slot?: "M" | "L" | null; qty: number; revenue: number; isService?: boolean }[]) => {
       const parsed = parsePosDay(
@@ -402,7 +443,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual((await rowsOf("SAHLEP")).map((x) => x.productId), [ids.mocha, ids.mocha]);
   });
 
-  test("sonradan eşleştirme: POS adı (Satışlar'ın ModPOS satırı ya da LafPOS adı) ve site kalemi ürünsüz satırları yeniden gönderimsiz bağlar", async () => {
+  lafposTest("sonradan eşleştirme: POS adı (Satışlar'ın ModPOS satırı ya da LafPOS adı) ve site kalemi ürünsüz satırları yeniden gönderimsiz bağlar", async () => {
     await setSwitch(S);
     // ModPOS satırının eşleştirmesi: aynı adlı ürünsüz LafPOS satırları her ayda (deneme günü dahil) bağlanır
     await day("2026-11-07", 100, [{ posName: "Pumpkin  latte", qty: 1, revenue: 200 }]);
@@ -449,7 +490,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     await day("2026-12-07", 100, [{ posName: "COLD BREW", productId: ids.latteM, qty: 1, revenue: 100 }]);
     await day("2026-12-08", 100, [{ posName: "COLD BREW", productId: ids.latteL, qty: 1, revenue: 100 }]);
     await day("2026-12-09", 100, [{ posName: "COLD BREW", qty: 1, revenue: 100 }]);
-    await db.insert(s.posDailySales).values({ date: "2026-11-12", posName: "Cold  Brew", qty: 1, revenue: 100 });
+    await db.insert(s.posDailySales).values({ date: "2026-11-12", branchId: LAFPOS_SUBE, posName: "Cold  Brew", qty: 1, revenue: 100 });
     const cold = await sales.matchLafposName({ month: "2026-12", posName: "COLD BREW", productId: ids.mocha, isService: false, current: { productId: ids.latteM, isService: false } });
     assert.deepEqual(cold, { ok: true, data: { days: 2, others: 1 } });
     const coldOf = async () =>
@@ -489,7 +530,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.equal(await rematch.rematchPosSalesBySite(db, [{ productId: ids.mocha, siteMenuId: "mnu-0099", slot: "M" }]), 0, "bağlı satır değişmez");
   });
 
-  test("Ayarlar › LafPOS › Bağla ile öğrenilen yalnız-LafPOS ad kasadaki (ModPOS) fiyat listesinde \"Kasada\" diye görünmez", async () => {
+  lafposTest("Ayarlar › LafPOS › Bağla ile öğrenilen yalnız-LafPOS ad kasadaki (ModPOS) fiyat listesinde \"Kasada\" diye görünmez", async () => {
     // Geçiş günü boş (deneme): LafPOS adı bir ürüne bağlanır, ad hafızası ModPOS'la ortak
     await day("2026-11-05", 300, [{ posName: "PUMPKIN CHAI LATTE", qty: 1, revenue: 300 }]);
     assert.ok((await sales.matchLafposName({ month: null, posName: "PUMPKIN CHAI LATTE", productId: ids.mocha, isService: false })).ok);
@@ -508,8 +549,8 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     assert.deepEqual((await staff.loadStaffPosList()).find((i) => i.productId === ids.mocha)?.posNames, ["MOCHA", "MOCHA ESKI", "PUMPKIN CHAI LATTE"]);
   });
 
-  test("silme engeli: yalnız LafPOS günlük satırı olan ürün silinmez (bağ sessizce kopmaz)", async () => {
-    await db.insert(s.posDailySales).values({ date: "2026-11-05", posName: "YALNIZ", productId: ids.only, qty: 1, revenue: 10 });
+  lafposTest("silme engeli: yalnız LafPOS günlük satırı olan ürün silinmez (bağ sessizce kopmaz)", async () => {
+    await db.insert(s.posDailySales).values({ date: "2026-11-05", branchId: LAFPOS_SUBE, posName: "YALNIZ", productId: ids.only, qty: 1, revenue: 10 });
     const counts = await history.productHistoryCounts({ id: ids.only, siteMenuId: null, siteMenuSlot: null });
     assert.deepEqual(counts, { salesLines: 0, posDailySales: 1, waste: 0, priceChanges: 0, onlineMonths: 0 });
     const res = await products.deleteProduct(ids.only);
@@ -524,7 +565,7 @@ describe("LafPOS satışları aylık modele: veritabanında", { skip: !SERVER_UR
     // veritabanından alır (denetim B08 incelemesi)
     await setSwitch("2026-12-01");
     const [mocha] = await db.insert(s.products).values({ categoryId: ids.cat, name: "Mocha yalnız liste", size: "Tek", price: 1 }).returning({ id: s.products.id });
-    await db.insert(s.salesLines).values({ month: "2026-12", posName: "MOCHA LİSTE", productId: mocha.id, qty: 3, revenue: 600, isService: false, sortOrder: 9 });
+    await db.insert(s.salesLines).values({ month: "2026-12", branchId: LAFPOS_SUBE, posName: "MOCHA LİSTE", productId: mocha.id, qty: 3, revenue: 600, isService: false, sortOrder: 9 });
     assert.equal((await dataset.loadDataset()).salesLines.filter((l) => l.productId === mocha.id).length, 0, "model sayılmayan listeyi okumaz");
     assert.equal(await history.salesLinesCount(mocha.id), 1);
     const blocked = await products.deleteProduct(mocha.id);
