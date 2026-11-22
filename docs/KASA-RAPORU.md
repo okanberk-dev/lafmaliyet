@@ -364,8 +364,11 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
 
 - **Personel, Kasa raporu › Dün (rapor yokken):** formun üstünde "Dün kafe kapalı mıydı?" ve **Kafe kapalıydı**.
   Pencere: "Yönetici onaylayınca … için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine
-  raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o gün için
-  bekleyen ya da reddedilen bildirim yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. O gün panelde iz
+  raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o günün geri
+  çekilmemiş bildirimi yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. Bildirim geri alındıysa ya da
+  kapandıysa (yönetici işareti kaldırdı ya da değiştirdi, LafPOS'un gün sonu geldi) düğme yerine nedeni yazar:
+  "Kapalı gün bildirimi geri alındı: Yönetici kapalı işaretini kaldırdı. Raporu girin." (denetim SB-X1; aynı gün
+  yeniden bildirilemez). O gün panelde iz
   varsa (kasa raporu, LafPOS'un satışlı gün sonu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke,
   personelin işlem geçmişi kaydı, Z no boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
   Bekleyen durumda "Kapalıydı dediniz · onay bekliyor" ve **Geri çek** (kişi başına günde bir); form yerinde kalır.
@@ -387,6 +390,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   yazılır.
 - **Yönetici, Kasa › raporsuz gün (`?gun=`):** **Kafe kapalıydı**, onaysız; pencerede o günün izleri uyarı olarak.
   Aynı günün bekleyen bildirimi onaylanmış olur. Raporu olan gün işaretlenmez.
+- **Özel günler'de silmek ya da düzenlemek:** onaylanmış bildirimin kapalı satırı silinince bildirim "geri alındı" olur
+  ("Yönetici kapalı işaretini kaldırdı"). Satır düzenlenip bildirimin gününü artık kapatmıyorsa (türü değişti, günü
+  kaydı, başka şubeye geçti) da aynısı: "Yönetici kapalı işaretini değiştirdi" (denetim SB-04). O günü kapsayan başka
+  bir kapalı satırı varsa bildirim ona geçer ve onaylı kalır; yalnız adı değişen satırda bildirim olduğu gibi kalır.
 - **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
   günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
   kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince, aynı şubenin önceki raporuyla
@@ -407,7 +414,7 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
   reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
 - Kod: saf kurallar `src/lib/closed-days.ts`, kanıt ve kancalar `src/server/closed-days.ts`, istek ve karar
   `src/server/closed-day-requests.ts`, uçlar `src/server/actions/closed-days.ts`. Testler `tests/kapali-gun.test.ts`,
-  `tests/kapali-gun-db.test.ts`.
+  `tests/kapali-gun-db.test.ts`, `tests/kapali-gun-duzenleme-db.test.ts`.
 
 ## laffogato.net satırı (bilgi)
 

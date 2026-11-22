@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { Notice } from "@/components/ui/notice";
-import { CLOSED_REASON_MAX, closedDialogText } from "@/lib/closed-days";
+import { CLOSED_REASON_MAX, closedDialogText, closedEndedTitle } from "@/lib/closed-days";
 import { longDateTR } from "@/lib/reminders";
 import { markClosedDay, requestClosedDay } from "@/server/actions/closed-days";
 import { withdrawStaffRequest } from "@/server/actions/staff-requests";
@@ -26,7 +26,7 @@ import { newClientKey } from "./cash-requests";
 type Till = { id: string; name: string | null };
 
 export type ClosedDayBarProps =
-  | { role: "staff"; date: string; till: Till; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; canAsk: boolean }
+  | { role: "staff"; date: string; till: Till; marked: boolean; pending: { id: number; by: string; mine: boolean } | null; rejected: { note: string | null } | null; ended: { status: string; note: string | null } | null; canAsk: boolean }
   | { role: "admin"; date: string; till: Till; marked: boolean; warnings: string[] };
 
 export function ClosedDayBar(p: ClosedDayBarProps) {
@@ -76,6 +76,9 @@ export function ClosedDayBar(p: ClosedDayBarProps) {
     }
   } else if (p.role === "staff" && p.rejected) {
     title = `Yönetici bildirimi reddetti${p.rejected.note ? `: ${p.rejected.note}` : ""}. Raporu girin.`;
+  } else if (p.role === "staff" && p.ended) {
+    // Geri alınan ya da kapanan bildirimden sonra düğme yok: aynı gün yeniden bildirilemez (denetim 13 Kasım SB-X1)
+    title = closedEndedTitle(p.ended.status, p.ended.note);
   } else if (p.role === "staff" && !p.canAsk) {
     return null;
   } else {

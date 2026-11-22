@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 
 import type { DayFacts } from "@/app/panel/bugun/logic";
 import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
@@ -23,6 +23,7 @@ import { posZSchema, type PosDayZ } from "@/lib/lafpos/day";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { branchSwitchDay, isLafposDay, kasaName, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
+import type { StaffRequestStatus } from "@/lib/staff-requests";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentTillBranch } from "@/server/branch-scope";
 import { getDb, schema as s } from "@/server/db";
@@ -236,6 +237,27 @@ async function revokeFor(tx: Tx, specialId: number, note: string, now: Date) {
  */
 export async function revokeClosedRequests(tx: Tx, specialId: number, note: string, now = new Date()): Promise<void> {
   await revokeFor(tx, specialId, note, now);
+}
+
+/**
+ * Kapalı satırı Özel günler'de düzenlendi (denetim 13 Kasım SB-04): onu onaylayan bildirimin günü satırın yeni hâlinde
+ * artık bildirimin şubesi için kapalı değilse (tür değişti, gün kaydı, başka şubeye geçti) istek silmedeki gibi `revoked`
+ * olur, eksik rapor uyarıları geri gelir; o günü bildirimin şubesi için kapsayan başka bir kapalı satır varsa istek ona
+ * geçer. Satırın düzenlenmesiyle aynı işlemde çağrılır.
+ */
+export async function recheckClosedRequests(tx: Tx, specialId: number, note: string, now = new Date()): Promise<void> {
+  const approved = await tx
+    .select({ id: s.staffRequests.id, day: s.staffRequests.day, subject: s.staffRequests.subject, payload: s.staffRequests.payload })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "approved"), eq(s.staffRequests.resultId, specialId)));
+  for (const r of approved) {
+    const rows = r.day ? await coveringRows(tx, r.day, closedRequestBranch(r)) : [];
+    if (rows.some((x) => x.id === specialId)) continue;
+    await tx
+      .update(s.staffRequests)
+      .set(rows.length ? { resultId: rows[0].id, updatedAt: now } : { status: "revoked", reviewNote: note, updatedAt: now })
+      .where(eq(s.staffRequests.id, r.id));
+  }
 }
 
 /** Özel günlerin danışma kilidi: yönetici ve personel yazımları sıraya girer (çakışma ve sınırlar yarışmaz) */
@@ -461,10 +483,18 @@ export interface StaffClosedState {
   pending: { id: number; by: string; mine: boolean } | null;
   /** Reddedildi (yöneticinin notu; bütün personele görünür) */
   rejected: { note: string | null } | null;
-  /** Düğme görünür: bekleyen ya da reddedilen yok, kişinin son 30 günde 3'ten az bildirimi var */
+  /**
+   * Bildirim kapandı ama gün kapalı işaretli değil (denetim 13 Kasım SB-X1): yönetici işareti kaldırdı ya da değiştirdi
+   * (`revoked`; onaylı kalıp satırı artık günü kapsamayan eski istek de), LafPOS'un gün sonu geldi (`superseded`) ya da
+   * süresi doldu. Aynı gün yeniden bildirilemez (proposeClosedDay "Bu gün için bildiriminiz var" der); satır nedenini
+   * söyler (closedEndedTitle)
+   */
+  ended: { status: StaffRequestStatus; note: string | null } | null;
+  /** Düğme görünür: o günün geri çekilmemiş bildirimi yok, kişinin son 30 günde 3'ten az bildirimi var */
   canAsk: boolean;
 }
 
+/** Düğme bildirimin kuralıyla aynı: geri çekilmemiş her bildirim günü kapatır; gün kapalı işaretliyse sayfa bu durumu göstermez */
 export async function staffClosedState(date: string, me: { id: number }, now = new Date()): Promise<StaffClosedState> {
   const db = getDb();
   const since = new Date(now.getTime() - 30 * 86_400_000);
@@ -474,7 +504,7 @@ export async function staffClosedState(date: string, me: { id: number }, now = n
     db
       .select({ id: s.staffRequests.id, status: s.staffRequests.status, requestedBy: s.staffRequests.requestedBy, requestedByName: s.staffRequests.requestedByName, reviewNote: s.staffRequests.reviewNote })
       .from(s.staffRequests)
-      .where(and(closedRequestsOf(date, till), inArray(s.staffRequests.status, ["pending", "rejected"])))
+      .where(and(closedRequestsOf(date, till), ne(s.staffRequests.status, "withdrawn")))
       .orderBy(desc(s.staffRequests.createdAt)),
     db
       .select({ n: count() })
@@ -483,10 +513,13 @@ export async function staffClosedState(date: string, me: { id: number }, now = n
   ]);
   const p = reqs.find((r) => r.status === "pending");
   const r = reqs.find((x) => x.status === "rejected");
+  const e = p || r ? undefined : reqs[0];
   return {
     pending: p ? { id: p.id, by: p.requestedByName, mine: p.requestedBy === me.id } : null,
     rejected: r ? { note: r.reviewNote } : null,
-    canAsk: !p && !r && (mine?.n ?? 0) < 3,
+    // Onaylı kalan isteğin notu onayın notudur, kaldırılmanın değil: yazılmaz
+    ended: e ? (e.status === "approved" ? { status: "revoked", note: null } : { status: e.status, note: e.reviewNote }) : null,
+    canAsk: !reqs.length && (mine?.n ?? 0) < 3,
   };
 }
 

@@ -795,7 +795,7 @@ async function closedBarFor(date: string, admin: boolean, user: { id: number }, 
     return <ClosedDayBar role="admin" date={date} till={till} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
   }
   const state = await staffClosedState(date, user);
-  return <ClosedDayBar role="staff" date={date} till={till} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
+  return <ClosedDayBar role="staff" date={date} till={till} marked={marked} pending={state.pending} rejected={state.rejected} ended={state.ended} canAsk={state.canAsk} />;
 }
 
 /**

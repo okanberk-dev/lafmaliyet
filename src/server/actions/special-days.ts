@@ -11,7 +11,7 @@ import { rangeTR } from "@/lib/takvim";
 import { addDays, daysBetween, isCalendarDate } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { listBranches } from "@/server/branches";
-import { lockSpecialDays, revokeClosedRequests } from "@/server/closed-days";
+import { lockSpecialDays, recheckClosedRequests, revokeClosedRequests } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { SPECIAL_MAX_AHEAD_DAYS, SPECIAL_MAX_SPAN_DAYS, SPECIAL_PAST_DAYS } from "@/server/special-days";
 
@@ -107,6 +107,9 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
           .where(eq(s.specialDays.id, d.id))
           .returning({ id: s.specialDays.id });
         if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
+        // Onaylanmış kapalı gün bildiriminin satırı o günü artık kapatmıyor (tür, gün ya da şube değişti): istek silmedeki
+        // gibi "geri alındı" olur, eksik rapor uyarıları geri gelir (denetim 13 Kasım SB-04). Bağlı istek yoksa bir şey yapmaz
+        await recheckClosedRequests(tx, row.id, "Yönetici kapalı işaretini değiştirdi");
         return row.id;
       }
       const [row] = await tx

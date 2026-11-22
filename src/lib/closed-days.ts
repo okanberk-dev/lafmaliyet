@@ -266,6 +266,15 @@ export const CLOSED_TEXT = {
 export const closedDialogText = (date: string) =>
   `Yönetici onaylayınca ${longDateTR(date)} için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine raporu girin.`;
 
+/**
+ * Personelin kasa satırı (denetim SB-X1): dünün bildirimi kapandı ama gün kapalı işaretli değil. Yeniden bildirilemez;
+ * satır nedenini söyler: "Kapalı gün bildirimi geri alındı: Yönetici kapalı işaretini kaldırdı. Raporu girin."
+ */
+export function closedEndedTitle(status: string, note: string | null): string {
+  const head = status === "expired" ? "Kapalı gün bildiriminin süresi doldu" : status === "superseded" ? "Kapalı gün bildirimi kapandı" : "Kapalı gün bildirimi geri alındı";
+  return `${head}${note ? `: ${note}` : ""}. Raporu girin.`;
+}
+
 /** Personelin zil satırı: "23 Eki Per: kapalı gün onaylandı" */
 export function closedBellTitle(shortDay: string, status: "approved" | "rejected" | "revoked" | "superseded" | "expired"): string {
   const verb = { approved: "onaylandı", rejected: "reddedildi", revoked: "geri alındı", superseded: "kapandı", expired: "süresi doldu" }[status];

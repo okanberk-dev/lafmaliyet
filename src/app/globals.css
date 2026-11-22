@@ -120,25 +120,31 @@ html {
                       açıkken 0. Sayfalardaki yapışkan/yüzen alt öğeler bunun üstünde durur:
                       bottom-[calc(var(--mobile-nav-h)+0.75rem)] ya da bottom-(--mobile-nav-h).
    --mobile-nav-space içeriğin altına bırakılan boşluk (klavye açılınca değişmez, sayfa zıplamaz).
-   --mobile-top-h     telefon ve tabletteki yapışkan üst çubuğun yüksekliği (56px; lg ve üstünde 0). Sayfalardaki
-                      yapışkan araç çubukları bunun altında durur: sticky top-(--mobile-top-h).
+   --mobile-top-h     üstte örtülen yükseklik: telefon ve tabletteki yapışkan üst çubuk (56px; lg ve üstünde 0) ve
+                      varsa karaoke şeridi. Sayfalardaki yapışkan araç çubukları bunun altında durur:
+                      sticky top-(--mobile-top-h). Üst çubuğun içindeki açılır öğeler (zil) bunu kullanmaz: üst
+                      çubuk şeridin altında durduğu için şerit iki kez sayılır; onlar üst çubuğa göre konumlanır.
+   --alarm-h          karaoke "süre doldu" şeridinin yüksekliği (AlertCenter ölçer, şerit yokken 0). Kabuk bu kadar
+                      aşağı iner ve üst çubuk şeridin altında yapışır: şerit başlığı, menüyü ve zili örtmez.
    Değerler yalnızca panel kabuğunun içinde dolu; giriş ve QR menü sayfalarında 0. */
 :root {
   --mobile-nav-h: 0px;
   --mobile-nav-space: 0px;
   --mobile-top-h: 0px;
+  --alarm-h: 0px;
 }
 
 [data-component="app-shell"] {
   --mobile-nav-space: calc(4rem + env(safe-area-inset-bottom, 0px));
   --mobile-nav-h: var(--mobile-nav-space);
-  --mobile-top-h: 3.5rem;
+  --mobile-top-h: calc(3.5rem + var(--alarm-h));
+  padding-top: var(--alarm-h);
 }
 
 @media (width >= 64rem) {
   [data-component="app-shell"] {
     --mobile-nav-space: 0px;
-    --mobile-top-h: 0px;
+    --mobile-top-h: var(--alarm-h);
   }
 }
 
@@ -547,6 +553,10 @@ body {
   }
   body {
     background: white;
+  }
+  /* Karaoke şeridi baskıda çıkmaz (no-print); onun için bırakılan üst boşluk da ilk sayfada boş bant bırakmasın */
+  [data-component="app-shell"] {
+    padding-top: 0;
   }
 }
 

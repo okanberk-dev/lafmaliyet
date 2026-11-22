@@ -97,6 +97,22 @@ async function notify(title: string, body: string, tag: string, url: string, opt
     .catch(() => {});
 }
 
+/**
+ * Karaoke şeridinin yüksekliği kabukta --alarm-h olur (globals.css): içerik, telefondaki üst çubuk (başlık, zil, menü)
+ * ve çekmece şeridin altına iner; şerit sabit kalır ama hiçbir düğmeyi örtmez. Şerit kalkınca boşluk da kalkar.
+ */
+function reserveAlarmSpace(el: HTMLDivElement) {
+  const root = document.documentElement;
+  const set = () => root.style.setProperty("--alarm-h", `${el.offsetHeight}px`);
+  set();
+  const observer = new ResizeObserver(set);
+  observer.observe(el);
+  return () => {
+    observer.disconnect();
+    root.style.removeProperty("--alarm-h");
+  };
+}
+
 /** Panel düzenindeki ses yuvası (app/panel/layout.tsx); düzen kalıcı olduğu için bir kez bulunur */
 const noopSubscribe = () => () => {};
 const soundSlotOf = () => document.getElementById("ses-yuvasi");
@@ -514,6 +530,10 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
     startAlarm("karaoke");
     return () => stopAlarm("karaoke");
   }, [overtimeKey, prefs.sound, audio]);
+  // Cihazın ses anahtarı kapanınca çalan sürekli hatırlatmalar da susar (her biri kendi alarmını keser)
+  useEffect(() => {
+    if (!prefs.sound) for (const id of ringingReminders(alarmOwnersNow())) stopAlarm(reminderAlarm(id));
+  }, [prefs.sound]);
   useEffect(() => {
     if (!overtimeKey) return;
     const original = document.title;
@@ -592,7 +612,7 @@ export function AlertCenter({ role, userId, branchScope = null }: { role: Role; 
   return (
     <>
       {overtime.length ? (
-        <div role="alert" className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
+        <div role="alert" ref={reserveAlarmSpace} className="no-print fixed inset-x-0 top-0 z-[70] px-3 pt-[max(0.5rem,env(safe-area-inset-top))] lg:left-[17.5rem]">
           <div className="mx-auto max-w-3xl space-y-2">
             {overtime.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
