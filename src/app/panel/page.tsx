@@ -66,6 +66,7 @@ import { tillRows } from "@/server/data/cash-reports";
 import { loadKiyas } from "@/server/data/kiyas";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
+import { loadStockAlert } from "@/server/data/stock-estimate";
 import { getDb, schema as s } from "@/server/db";
 import { cariAlerts } from "@/lib/cari/match";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -95,6 +96,7 @@ import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import { KiyasCard } from "./kiyas-card";
+import { StockAlertCard } from "./stock-alert-card";
 import { debtFacts, defaultTaskMonth, monthCashOuts, monthTaskFacts, monthTasks, overdueNotice, paymentFacts, taskSummary, type MonthTask, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
@@ -210,7 +212,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // (bildirimlerde alerts() olduğu gibi kalır)
   // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür) ve 6
   // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
-  const [priceAlerts, cashPlan, kiyas] = await Promise.all([
+  const [priceAlerts, cashPlan, kiyas, stockAlert] = await Promise.all([
     loadPriceAlerts(model).catch(() => null),
     // Nakit planı işletmenindir: şube seçiliyken bütün şubelerin modeliyle ve "Tümü" kapsamında (kasa raporları,
     // kasalardaki devir; Nakit planı sayfası gibi, docs/SUBE.md › Neyi süzer)
@@ -222,6 +224,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     // Kıyas kartı: son kapanmış günün cirosu ve dün / geçen hafta / geçen ay kıyası (seçili şubeyle; okunamazsa çizilmez)
     loadKiyas(till).catch((e: unknown) => {
       console.error("[kiyas]", e);
+      return null;
+    }),
+    // Kritik stok (Marina, tahmini; docs/STOK-TAHMINI.md): yalnız Marina ya da "Tümü" seçiliyken okunur, okunamazsa çizilmez
+    loadStockAlert().catch((e: unknown) => {
+      console.error("[tahmini-stok]", e);
       return null;
     }),
   ]);
@@ -593,6 +600,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             kalır, 5/12'lik maliyet kartı 270 px'e iner ve "ürün “Düşük kâr”" kutuları sözcük sözcük kırılırdı */}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
+            {stockAlert ? <StockAlertCard data={stockAlert} /> : null}
             {shownPayments ? <DashboardPayments items={shownPayments.items} /> : null}
             {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
             <DashboardAlerts items={shownAlerts} className="flex-1" />

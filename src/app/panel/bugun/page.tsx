@@ -9,11 +9,13 @@ import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { loadBranchDay } from "@/server/data/branch-day";
 import { loadKiyas } from "@/server/data/kiyas";
+import { loadStockAlert } from "@/server/data/stock-estimate";
 import { loadToday } from "@/server/data/today";
 import { safe } from "@/server/data/today-safe";
 
 import { DashboardPayments } from "../dashboard-payments";
 import { KiyasCard } from "../kiyas-card";
+import { StockAlertCard } from "../stock-alert-card";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
 import { soldOutLine } from "./rows-ops";
 import { TodayBranches } from "./today-branches";
@@ -54,10 +56,12 @@ async function TodayContent() {
   const user = await requireUser();
   // Şubelerin günü yalnız yöneticide (tutar, ödeme, kasa farkı); okunamazsa kart çizilmez, sayfa açılır
   // Kıyas (dün / geçen hafta / geçen ay) da yalnız yöneticide, seçili şubeyle
-  const [data, branchDay, kiyas] = await Promise.all([
+  // Kritik stok (Marina, tahmini; docs/STOK-TAHMINI.md): iki rolde, yalnız Marina ya da "Tümü" seçiliyken okunur
+  const [data, branchDay, kiyas, stockAlert] = await Promise.all([
     loadToday(user),
     user.role === "admin" ? safe(loadBranchDay()) : Promise.resolve(null),
     user.role === "admin" ? safe(loadKiyas()) : Promise.resolve(null),
+    safe(loadStockAlert()),
   ]);
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
@@ -79,6 +83,7 @@ async function TodayContent() {
         <div className="min-w-0 space-y-4">
           {branchDay ? <TodayBranches data={branchDay} /> : null}
           {kiyas ? <KiyasCard data={kiyas.data} branchNames={kiyas.branchNames} narrow /> : null}
+          {stockAlert ? <StockAlertCard data={stockAlert} /> : null}
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
           {cafe.length ? <TodayCafe lines={cafe} /> : null}

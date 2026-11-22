@@ -15,6 +15,9 @@ stoğunun ve kâr-zararın mal maliyetinin nasıl değerlendiğini anlatır. Pla
 Stok satış satış düşülmez: ayda bir sayım yapılır (dönemsel envanter). FIFO bu yüzden **dönemsel** uygulanır: ayın
 sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
 
+Marina'nın **tahmini stoğu** ve kritik stok uyarısı ([STOK-TAHMINI.md](STOK-TAHMINI.md)) bu hesaplara girmez: yalnız
+okur, sayımı, değerlemeyi ve mal maliyetini değiştirmez.
+
 ## 2. Yöntem
 
 Önce giren önce çıktığı için rafta kalan mal **en son alınandır**. Her sayılan malzeme için:

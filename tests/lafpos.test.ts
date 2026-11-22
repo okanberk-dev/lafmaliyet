@@ -644,7 +644,7 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   assert.equal(dayMonthYearTR("2026-11-10"), "10 Kasım 2026");
   // Onay penceresi kodun bugün yaptığından fazlasını söylemez: B07/B09 Kasa raporu, geç rapor ve ay rakamı, kapalı gün,
   // B08 ürün satışları ve satış tahmini, B10 komisyon ve ikram, deneme günleri
-  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 11);
+  assert.equal(LAFPOS_SWITCH_EFFECTS.length, 12);
   assert.match(LAFPOS_SWITCH_EFFECTS[0], /Kasa raporu bu günden itibaren LafPOS'un gün sonuyla açılır/);
   assert.match(LAFPOS_SWITCH_EFFECTS[1], /Geç kasa raporu bu günden itibaren LafPOS'un gün sonuyla girilir/);
   assert.match(LAFPOS_SWITCH_EFFECTS[2], /Kafe kapalıydı/);
@@ -656,9 +656,11 @@ test("geçiş günü: kaynağı değişen günlerin ayları (onay penceresi), bu
   // Denetim B11 (E-39): kasadaki fiyatlar ve metinler
   assert.match(LAFPOS_SWITCH_EFFECTS[8], /siteye bağlı ürünün yeni fiyatını LafPOS siteden kendisi alır/);
   assert.match(LAFPOS_SWITCH_EFFECTS[9], /ModPOS yerine LafPOS der/);
+  // Marina'nın tahmini stoğu LafPOS'un günlerini okur (docs/STOK-TAHMINI.md)
+  assert.match(LAFPOS_SWITCH_EFFECTS[10], /Marina'nın tahmini stoğu .* bu günden itibaren LafPOS'un satışlarını/);
   // 21 Kasım kararı: geçiş günü yalnız Marina'nın kasasınındır, Tuzla ModPOS'ta kalır
-  assert.match(LAFPOS_SWITCH_EFFECTS[10], /yalnız Marina'nın kasası içindir/);
-  assert.match(LAFPOS_SWITCH_EFFECTS[10], /Tuzla'nın kasası ModPOS'ta kalır/);
+  assert.match(LAFPOS_SWITCH_EFFECTS[11], /yalnız Marina'nın kasası içindir/);
+  assert.match(LAFPOS_SWITCH_EFFECTS[11], /Tuzla'nın kasası ModPOS'ta kalır/);
 });
 
 test("anahtar: sitenin anahtarıyla (KARAOKE_SYNC_SECRET) aynı LAFPOS_SYNC_SECRET bağlantıyı açmaz; nedeni söylenir", () => {
