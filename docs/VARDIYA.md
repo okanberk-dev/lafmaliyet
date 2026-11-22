@@ -56,16 +56,19 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
 
 ## Hazır vardiyalar: sabahçı ve akşamcı (22 Kasım 2026)
 
-Operatör: "vardiya kısmına sabahçı akşamcı ekle, tıklamayla olsun". Izgaranın üstündeki **Hazır vardiya** satırından biri
-seçilir ve kutulara tıklanır; aynı kutuya ikinci tıklama boşaltır. **Elle yaz** seçiliyken kutular eskisi gibi klavyeyle
-yazılır. Telefonda da aynı (seçiliyken klavye açılmaz).
+Operatör: "vardiya kısmına sabahçı akşamcı ekle, tıklamayla olsun", ardından "saat yazmaktansa seçimli yap, S ve A
+ekle". Hazır vardiyası olan şubede ızgara **Seçerek** açılır: her kutuda üç düğme durur, **S** (sabahçı), **A** (akşamcı),
+**İ** (izin). Tıklanan yazılır, seçili harfe ikinci tıklama kutuyu boşaltır; düğmelerin altında saatler görünür. Başka
+saat ya da görev notu için üstteki **Elle yaz** seçilir: kutular klavyeyle yazılır ve "s" / "a" kısaltması şubenin
+saatlerine açılır ("s kasa" → "09:00–18:00 · kasa"). Elle yazılmış başka saat Seçerek'te düğmelerin altında durur; bir
+harf seçilince onun yerine geçer. Telefonda da aynı (düğmeler parmak boyunda).
 
 | Şube | Sabahçı | Akşamcı | Dayanak |
 |---|---|---|---|
 | Tuzla | 09:00–18:00 | 16:00–01:00 | 09:00 açılış, vardiya 9 saat, akşamcı 16:00'da gelir |
 | Marina | 09:30–18:30 | 13:00–22:00 | 09:30 açılış, vardiya 9 saat, akşamcı 13:00'te gelir, kapanış 22:00 |
 
-- Ayrıca **İzin** ve **Sil**. Hazır vardiyası tanımlı olmayan şubede yalnız bu ikisi çıkar.
+- Hazır vardiyası tanımlı olmayan şubede ızgara elle yazmayla açılır (seçim satırı çıkmaz).
 - Ad saatlerden türer (veritabanında ayrı alan yok): saatleri şubenin hazır vardiyasıyla aynı olan hücre, elle yazılsa
   da, ızgarada kutunun altında, personelin görünümünde ve PDF'te "Sabahçı" / "Akşamcı" diye görünür. Görev notu eklenebilir
   ("9-18 kasa" yine sabahçıdır).
