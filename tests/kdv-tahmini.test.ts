@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 import { amountsChanged, isParasutLinked } from "../src/app/panel/faturalar/rules";
 import { createModel } from "../src/lib/calc/engine";
+import { planInputFromModel } from "../src/lib/cash-plan";
 import type { Dataset } from "../src/lib/calc/types";
 import {
   posVat,
@@ -20,6 +21,7 @@ import {
   vat2LineDetail,
   vatDueDate,
   vatEstimates,
+  vatKeptCarryText,
   vatLineDetail,
   vatMonthInputs,
   vatNote,
@@ -370,4 +372,63 @@ test("metinler: alt satır, haftalar satırının açıklaması, Nasıl hesaplan
   );
   assert.equal(vatNote("excluded", true, rates, true), "KDV tahmini plana katılmıyor (Tahmine katılanlar'dan açın).");
   assert.equal(vatNote("default", false, rates, true), "Satış verisi olmadığı için KDV tahmin edilemedi.");
+});
+
+// ---------------------------------------------------------------- Denetim 13 Kasım (P09)
+
+test("VG-01: Ödemeler'deki tutar yalnız beyanname damgasıysa (vergi beslemesiyle) KDV ödemesi sayılmaz, devreden sürer", () => {
+  // Eylül: 39.200 − 11.900 − 167.500 = −140.200 devreder; tahakkuk fişinde yalnız damga (791)
+  const stampOnly = estimate({ known: new Map([["2026-09", 791]]), stamp: 791 });
+  const sep = stampOnly.get("2026-09")!;
+  assert.deepEqual([sep.payable, sep.known, sep.carryOut], [791, 791, 140_200]);
+  const oct = stampOnly.get("2026-10")!;
+  // Ekim: 51.800 − 9.700 − 140.200 = −98.100: ödeme yok
+  assert.deepEqual([oct.carryIn, oct.payable, oct.carryOut], [140_200, 0, 98_100]);
+  assert.equal(vatSubText(sep, null), "Ödemeler'deki tutar · ≈ 140.200\u00a0₺ sonraki aya geçer");
+  // Damgayı aşan tutar KDV ödemesidir: devreden sıfırlanır, Ekim 51.800 − 9.700 = 42.100
+  const paid = estimate({ known: new Map([["2026-09", 10_791]]), stamp: 791 });
+  assert.equal(paid.get("2026-09")!.carryOut, 0);
+  assert.equal(paid.get("2026-10")!.payable, 42_100);
+  // Besleme yokken damga satırı da yok: tutar KDV'dir (eski kural)
+  assert.equal(estimate({ known: new Map([["2026-09", 791]]) }).get("2026-09")!.carryOut, 0);
+  // Verisiz ayda da: muhasebecinin Ağustos devredeni (50.000) yalnız damga yazılmış Eylül'den Ekim'e geçer
+  const bare = vatEstimates({ today: TODAY, months: [], firstSalesMonth: "2026-08", anchor: { month: "2026-08", amount: 50_000 }, known: new Map([["2026-09", 791]]), periods: ["2026-09", "2026-10"], stamp: 791 });
+  assert.deepEqual([bare.get("2026-09")!.status, bare.get("2026-09")!.carryOut, bare.get("2026-10")!.carryIn], ["noData", 50_000, 50_000]);
+});
+
+test("VG-01: damga dönem dönem verilince her dönemin tutarı kendi damgasıyla (beyannamenin yılı) sınanır", () => {
+  // Eylül'ün beyannamesi 2026'da (791), Aralık'ınki 2027'de (elle 1.000): Eylül'e 900 yazılmışsa KDV ödenmiştir
+  const stampOf = (period: string) => (period >= "2026-12" ? 1_000 : 791);
+  const perPeriod = estimate({ known: new Map([["2026-09", 900]]), stamp: stampOf });
+  assert.deepEqual([perPeriod.get("2026-09")!.carryOut, perPeriod.get("2026-10")!.payable], [0, 42_100]);
+  // Bugünün yılının damgası (1.000) bütün dönemlere uygulansaydı 900 yalnız damga sayılırdı
+  assert.equal(estimate({ known: new Map([["2026-09", 900]]), stamp: 1_000 }).get("2026-09")!.carryOut, 140_200);
+});
+
+test("VG-01: kartın dökümündeki not: damgayı aşmayan tutar damgayla, 0 damgasız söylenir", () => {
+  assert.equal(vatKeptCarryText({ known: 791, carryOut: 140_200 }), "Ödemeler'deki tutar damgayı aşmıyor, KDV ödemesi sayılmadı: ≈ 140.200\u00a0₺ sonraki aya devreder.");
+  // Besleme yokken (damga yok) 0 yazılan dönem: "damga" geçmez
+  assert.equal(vatKeptCarryText({ known: 0, carryOut: 140_200 }), "Ödemeler'deki tutar 0: KDV ödemesi yok, ≈ 140.200\u00a0₺ sonraki aya devreder.");
+  assert.equal(vatKeptCarryText({ known: 10_791, carryOut: 0 }), null);
+  assert.equal(vatKeptCarryText({ known: null, carryOut: 140_200 }), null);
+  const vatCard = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
+  assert.match(vatCard, /const kept = vatKeptCarryText\(e\);/);
+  assert.doesNotMatch(vatCard, /damgayı aşmıyor/);
+});
+
+test("VG-04: yurt dışı hizmetin KDV-2'si (sorumlu sıfatıyla) aynı dönemin indirilecek KDV'sine eklenir", () => {
+  // Instagram reklamı (30.000 ₺/ay) doğrudan yurt dışına: KDV-2 30.000 × %20 = 6.000, aynı ay alışlarda
+  const foreign = createModel({ ...ds, fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Instagram reklamı" ? { ...f, taxWithholding: "internet_reklam_yurtdisi" as const } : f)) });
+  const plan = planInputFromModel(foreign, TODAY);
+  assert.equal(plan.vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, 6_000);
+  const out = vatEstimates({ today: TODAY, months: plan.vat.months, firstSalesMonth: plan.vat.firstSalesMonth, anchor: null, known: new Map(), periods: ["2026-09", "2026-10"] });
+  const sep = out.get("2026-09")!;
+  const oct = out.get("2026-10")!;
+  // Alışlar 11.900 + 6.000 ve 9.700 + 6.000; zincir Temmuz'dan beri her ay 6.000 fazla devreder (Eylül'e kadar 3 ay)
+  assert.deepEqual([sep.purchases, sep.hizmet, sep.carryOut], [17_900, 6_000, 140_200 + 3 * 6_000]);
+  assert.deepEqual([oct.purchases, oct.carryOut], [15_700, 98_100 + 4 * 6_000]);
+  assert.equal(sep.sales - sep.purchases - sep.carryIn, sep.net);
+  // Besleme yokken (kalem faturasının KDV'siyle brüt ödenir, KDV-2 satırı yok) ve profilsiz kalemde eklenmez
+  assert.equal(planInputFromModel(foreign, TODAY, undefined, { feed: false }).vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, undefined);
+  assert.equal(planInputFromModel(model, TODAY).vat.months.find((m) => m.month === "2026-09")!.purchases.hizmet, undefined);
 });

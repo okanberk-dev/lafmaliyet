@@ -706,6 +706,16 @@ export function isMuhtasarReminder(r: Pick<ReminderRow, "kind" | "title">): bool
   return !isVatReminder(r) && !isVatWithholdingReminder(r) && reminderCategory(r.kind, r.title) !== "sgk";
 }
 
+/**
+ * Kira stopajı hatırlatıcısı ("Kira stopajı"; başlıkta "kira" ve "stopaj", "muhtasar" değil): muhtasar sınıfındadır ama
+ * sabit tutarı muhtasarın yalnız kira stopajı kısmıdır (denetim VG-02). Tutarlıysa dönemi sahiplenmez: muhtasarın
+ * kalanı (ücret vergileri, öteki stopajlar, damga) ayrıca girer
+ */
+export function isRentWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  const t = foldTR(r.title);
+  return isMuhtasarReminder(r) && /kira/.test(t) && /stopaj/.test(t) && !/muhtasar/.test(t);
+}
+
 /** Geçici vergi hatırlatıcısı: başlıkta "geçici vergi" */
 export function isProvisionalTaxReminder(r: Pick<ReminderRow, "title">): boolean {
   return /gecici\s+vergi/.test(foldTR(r.title));

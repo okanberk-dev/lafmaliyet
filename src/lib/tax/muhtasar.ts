@@ -57,6 +57,8 @@ export interface MuhtasarMonth {
   vergi: number;
   /** Bu beyannamede ödenecek vergi: üç aylıkta ara aylarda 0, çeyrek sonunda üç ayın toplamı */
   vergiPayable: number;
+  /** Üç aylıkta çeyrek sonunda `vergiPayable`'a giren önceki ayların kira stopajı; öteki aylarda 0 */
+  priorKira: number;
   /** Üç aylık seçenekte vergi çeyrek sonuna kaldı */
   deferred: boolean;
   damga: number;
@@ -119,7 +121,18 @@ function own(input: MuhtasarMonthInput, overrides?: TaxOverrides): Own {
   return { ucretGv, ucretDv, stopaj, unknown, kdv2Items, people: t?.people ?? 0, vergi: r2(ucretGv + ucretDv + stopajTotal) };
 }
 
+/**
+ * Ayın yurt dışı hizmet KDV'si (sorumlu sıfatıyla; muhtasar ayının `kdv2Hizmet`'i ile aynı hesap): 2 No.lu beyannameyle
+ * ödenir, aynı ay 1 No.lu beyannamede indirilir (nakit planının KDV tahmini; denetim VG-04)
+ */
+export function kdv2HizmetOf(items: readonly MuhtasarItem[], period: string, overrides?: TaxOverrides): number {
+  return r2(own({ period, items }, overrides).kdv2Items.reduce((s, x) => s + x.amount, 0));
+}
+
 const QUARTER_END = new Set(["03", "06", "09", "12"]);
+
+/** Stopaj kalemlerinin kira stopajı (resmi kira ya da "Şahsa işyeri kirası" profili) */
+const kiraOf = (stopaj: Own["stopaj"]) => r2(stopaj.filter((x) => x.withholding === "kira").reduce((a, x) => a + x.amount, 0));
 
 /**
  * Ay P'nin muhtasarı. Üç aylık seçenekte (`quarterly`) vergi kısmı Mart, Haziran, Eylül ve Aralık'ta üç ayın toplamı
@@ -133,11 +146,13 @@ export function muhtasarMonth(
   const quarterEnd = QUARTER_END.has(input.period.slice(5, 7));
   const deferred = Boolean(opts.quarterly) && !quarterEnd;
   let vergiPayable = deferred ? 0 : o.vergi;
+  let priorKira = 0;
   let unknown = o.unknown;
   if (opts.quarterly && quarterEnd) {
     for (const m of opts.quarterMonths ?? []) {
       const x = own(m, opts.overrides);
       vergiPayable = r2(vergiPayable + x.vergi);
+      priorKira = r2(priorKira + kiraOf(x.stopaj));
       unknown = [...new Set([...unknown, ...x.unknown])];
     }
   }
@@ -159,6 +174,7 @@ export function muhtasarMonth(
     kdv2Items: o.kdv2Items,
     vergi: o.vergi,
     vergiPayable,
+    priorKira,
     deferred,
     damga: filing ? filing.stamp : stamp.amount,
     damgaKind: stamp.kind,
@@ -183,13 +199,26 @@ export function muhtasarMonths(inputs: readonly MuhtasarMonthInput[], opts: { fi
   return out;
 }
 
+/**
+ * Muhtasarın tahminindeki kira stopajı (ayın kendi kira kalemleri; üç aylıkta çeyrek sonunda önceki ayların kira
+ * stopajı da): sabit tutarlı "Kira stopajı" hatırlatıcısı yalnız bunun yerine geçer (VG-02). Muhasebecinin rakamında
+ * ve üç aylıkta vergisi çeyrek sonuna kalan ayda 0
+ */
+export function rentWithholdingIn(m: Pick<MuhtasarMonth, "filing" | "deferred" | "stopaj" | "priorKira">): number {
+  if (m.filing || m.deferred) return 0;
+  return r2(kiraOf(m.stopaj) + m.priorKira);
+}
+
 /** "en az 974 ₺; 4 kalemin stopajı bilinmiyor" ya da tutar */
 export function unknownText(m: Pick<MuhtasarMonth, "unknown">): string | null {
   return m.unknown.length ? `${m.unknown.length} kalemin stopajı bilinmiyor` : null;
 }
 
-/** Muhtasar satırının dökümü (takvim ayrıntısı ve nakit planı notu) */
-export function muhtasarBreakdown(m: MuhtasarMonth): { label: string; amount: number; note?: string }[] {
+/**
+ * Muhtasar satırının dökümü (takvim ayrıntısı ve nakit planı notu). `kira`: satırın içindeki kira stopajı (üç aylıkta
+ * çeyreğin önceki ayları; kira stopajı Ödemeler'deki hatırlatıcıdan gelince düşülür)
+ */
+export function muhtasarBreakdown(m: MuhtasarMonth): { label: string; amount: number; note?: string; withholding?: Withholding; kira?: number }[] {
   if (m.filing) {
     const v = (k: string) => filingValue(m.filing!, k);
     const parts: { label: string; amount: number }[] = [];
@@ -208,9 +237,9 @@ export function muhtasarBreakdown(m: MuhtasarMonth): { label: string; amount: nu
   return [
     { label: "Ücret gelir vergisi", amount: m.ucretGv },
     { label: "Ücret damga vergisi", amount: m.ucretDv },
-    ...m.stopaj.map((s) => ({ label: `${s.name}: ${WITHHOLDING_LABELS[s.withholding]}`, amount: s.amount })),
+    ...m.stopaj.map((s) => ({ label: `${s.name}: ${WITHHOLDING_LABELS[s.withholding]}`, amount: s.amount, withholding: s.withholding })),
     ...(m.deferred ? [{ label: "Vergi kısmı çeyrek sonunda (üç aylık)", amount: -m.vergi }] : []),
-    ...(m.vergiPayable !== m.vergi && !m.deferred ? [{ label: "Çeyreğin önceki ayları (üç aylık)", amount: r2(m.vergiPayable - m.vergi) }] : []),
+    ...(m.vergiPayable !== m.vergi && !m.deferred ? [{ label: "Çeyreğin önceki ayları (üç aylık)", amount: r2(m.vergiPayable - m.vergi), ...(m.priorKira ? { kira: m.priorKira } : {}) }] : []),
     { label: m.damgaKind === "muhtasar" ? "Muhtasar beyannamesi damgası" : "Muhtasar ve prim hizmet damgası", amount: m.damga, note: m.stampEstimated ? `${Number(m.nominal.slice(0, 4))} tutarı açıklanmadı` : undefined },
   ];
 }

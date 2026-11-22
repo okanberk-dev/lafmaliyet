@@ -29,10 +29,15 @@ export interface ReturnStamps {
   estimated: boolean;
 }
 
+/** Ay P'nin beyannamelerinin verildiği yıl (P+1; Aralık'ınki izleyen yıl): damga o yılın tutarıdır */
+export function returnYearOf(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return m === 12 ? y + 1 : y;
+}
+
 /** Ay P'nin beyannamelerinin damgası (P+1'de verilir; o yılın tutarı) */
 export function returnStamps(month: string, flags: ReturnStampFlags, overrides?: TaxOverrides): ReturnStamps {
-  const [y, m] = month.split("-").map(Number);
-  const year = m === 12 ? y + 1 : y;
+  const year = returnYearOf(month);
   const { rules, estimated } = rulesFor(year, overrides);
   const b = rules.damga.beyanname;
   const kdv = b.kdv.value;

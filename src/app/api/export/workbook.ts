@@ -1286,7 +1286,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
       "Kümülatif kurum kazancı",
       c.cumulative,
       c.anchor
-        ? `${quarterLabel(c.anchor.period)} muhasebeci kaydının matrahı (${tl(c.anchor.matrah, 2)}) + sonraki dönem kazançları`
+        ? `${quarterLabel(c.anchor.period)} muhasebeci kaydının matrahı (${tl(c.anchor.matrah, 2)})${c.anchor.deducted ? ` + matrahından düşülmüş zarar ve indirim (${tl(c.anchor.deducted, 2)})` : ""} + sonraki dönem kazançları`
         : `hesap döneminin başından (${dotted(c.from)}) bu çeyreğin sonuna dönem kazançlarının toplamı`,
     );
     if (c.loss) line("Devreden zarar", -c.loss, "Önceki yılın kurumlar vergisi kaydındaki 'Sonraki yıllara devreden zarar'");
@@ -1310,7 +1310,7 @@ function addTax(wb: ExcelJS.Workbook, tax: TaxExport) {
     r.getCell("a").font = { bold: true };
   } else {
     subHeaderRow(ws, { a: kvTitle, b: "Tutar", f: "Formül" });
-    line("Yıllık kurum kazancı", kv.income, kv.filing ? "Muhasebeci kaydının matrahı" : "son çeyreğin kümülatif kazancı");
+    line("Yıllık kurum kazancı", kv.income, kv.filing ? "Muhasebeci kaydının kurum kazancı" : "son çeyreğin kümülatif kazancı");
     if (kv.loss) line("Devreden zarar", -kv.loss, "Önceki yıllardan");
     if (kv.indirim) line("İndirim", -kv.indirim, "Düzeltmelerden");
     line("Matrah", kv.matrah, "kazanç − devreden zarar − indirim; eksiyse 0", { bold: true });

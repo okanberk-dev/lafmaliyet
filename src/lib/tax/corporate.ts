@@ -123,9 +123,9 @@ export interface QuarterCalc {
   depreciation: number;
   direct: number;
   kkeg: number;
-  /** Kümülatif kurum kazancı (çapa varsa çapanın matrahından) */
+  /** Kümülatif kurum kazancı (çapa varsa çapanın kazancından: matrahı + çapada düşülen zarar ve indirim) */
   cumulative: number;
-  /** Düşülen devreden zarar ve kümülatif indirim */
+  /** Düşülen devreden zarar ve kümülatif indirim (hesap döneminin başından) */
   loss: number;
   indirim: number;
   matrah: number;
@@ -145,8 +145,11 @@ export interface QuarterCalc {
   source: "Muhasebeci" | "tahmin";
   /** Ödenecek: kayıt varsa onun ödenecek tutarı, değilse tahmin */
   payable: number;
-  /** Kullanılan çapa (önceki bir dönemin matrahlı kaydı) */
-  anchor: { period: string; matrah: number; hesaplanan: number } | null;
+  /**
+   * Kullanılan çapa (önceki bir dönemin matrahlı kaydı); `deducted`: kaydın matrahından düşülmüş zarar ve indirim,
+   * kazanca geri eklenir (anchorIncome)
+   */
+  anchor: { period: string; matrah: number; hesaplanan: number; deducted: number } | null;
   /** Kayıt var ama matrahı girilmedi: sonraki tahmin panelin verisiyle */
   noAnchor: boolean;
   /** Alt sınırla aynı hesap (K13; yalnız "Nasıl hesaplandı"da) */
@@ -175,6 +178,18 @@ export function carriedLossFor(year: number, filings: readonly TaxFiling[], sett
   return v ?? settings.carriedLoss?.amount ?? 0;
 }
 
+/**
+ * Çapanın kurum kazancı (denetim VG-03): muhasebecinin kaydındaki matrah beyannamedeki matrahtır, devreden zarar ve
+ * indirim düşülmüştür. Kazanç = matrah + düşülenler: matrah artıysa yılın devreden zararı ve çapaya kadarki indirimin
+ * tamamı düşülmüştür; eksiyse (zarar) hiçbiri; sıfırsa panelin o dönemdeki kazancı (en çok zarar + indirim kadar).
+ * Böylece çapadan sonra zarar ve indirim ikinci kez düşülmez
+ */
+export function anchorIncome(matrah: number, carried: number, indirim: number, panel: number): number {
+  if (matrah > 0) return r2(matrah + carried + indirim);
+  if (matrah < 0) return matrah;
+  return Math.min(Math.max(0, panel), r2(carried + indirim));
+}
+
 /** Yılın geçici vergi dönemleri, kümülatif (§3.7) */
 export function quarterTaxes(input: CorpInput): QuarterCalc[] {
   const { rules } = rulesFor(input.year, input.settings.overrides);
@@ -186,6 +201,8 @@ export function quarterTaxes(input: CorpInput): QuarterCalc[] {
   const periodFrom = input.quarters[0]?.from ?? `${input.year}-01-01`;
   const out: QuarterCalc[] = [];
   const periodResult = (x: CorpQuarterInput, floor = false) => r2((floor ? x.floorResult : x.result) - x.depreciation - x.direct + x.kkeg);
+  /** Hesap döneminin başından k. çeyreğin sonuna indirim */
+  const indirimTo = (k: number) => r2(input.quarters.slice(0, k + 1).reduce((s, r) => s + r.indirim, 0));
 
   const calc = (i: number, floor: boolean) => {
     const x = input.quarters[i];
@@ -203,8 +220,10 @@ export function quarterTaxes(input: CorpInput): QuarterCalc[] {
     const since = input.quarters.slice(anchorIdx + 1, i + 1);
     const anchorMatrah = anchorF ? filingValue(anchorF, "matrah")! : 0;
     const anchorTax = anchorF ? (filingValue(anchorF, "hesaplanan") ?? r2(Math.max(0, anchorMatrah) * oran)) : 0;
-    const cumulative = r2(anchorMatrah + since.reduce((s, r) => s + periodResult(r, floor), 0));
-    const indirim = r2(since.reduce((s, r) => s + r.indirim, 0));
+    // Çapanın matrahı zarar ve indirim düşülmüş: kazancı geri kurulur, zarar ve indirim bir kez düşülür (VG-03)
+    const anchorKazanc = anchorF ? anchorIncome(anchorMatrah, carried, indirimTo(anchorIdx), floor ? out[anchorIdx].floor.cumulative : out[anchorIdx].cumulative) : 0;
+    const cumulative = r2(anchorKazanc + since.reduce((s, r) => s + periodResult(r, floor), 0));
+    const indirim = indirimTo(i);
     const loss = Math.min(Math.max(0, cumulative), carried);
     const matrah = Math.max(0, r2(cumulative - loss - indirim));
     const hesaplanan = r2(matrah * oran);
@@ -214,7 +233,7 @@ export function quarterTaxes(input: CorpInput): QuarterCalc[] {
     for (let j = anchorIdx + 1; j < i; j++) previous = r2(previous + out[j].payable);
     if (!anchorF) previous = r2(input.quarters.slice(0, i).reduce((s, _r, j) => s + out[j].payable, 0));
     const estimate = Math.max(0, r2(cumulativeTax - previous));
-    return { x, anchorF, anchorMatrah, anchorTax, cumulative, indirim, loss, matrah, hesaplanan, asgari, cumulativeTax, previous, estimate };
+    return { x, anchorF, anchorMatrah, anchorTax, anchorKazanc, cumulative, indirim, loss, matrah, hesaplanan, asgari, cumulativeTax, previous, estimate };
   };
 
   for (let i = 0; i < input.quarters.length; i++) {
@@ -249,7 +268,7 @@ export function quarterTaxes(input: CorpInput): QuarterCalc[] {
       filing,
       source: filing ? "Muhasebeci" : "tahmin",
       payable: filing ? filing.payable : c.estimate,
-      anchor: c.anchorF ? { period: c.anchorF.period, matrah: c.anchorMatrah, hesaplanan: c.anchorTax } : null,
+      anchor: c.anchorF ? { period: c.anchorF.period, matrah: c.anchorMatrah, hesaplanan: c.anchorTax, deducted: r2(c.anchorKazanc - c.anchorMatrah) } : null,
       noAnchor: filing !== null && filingValue(filing, "matrah") === undefined,
       floor: { cumulative: fl.cumulative, matrah: fl.matrah, estimate: fl.estimate },
     });
@@ -300,11 +319,12 @@ export function corporateTax(input: CorpInput, quarters: QuarterCalc[] = quarter
   const filing = filingFor(input.filings, "kv", String(input.year));
   const carried = carriedLossFor(input.year, input.filings, input.settings);
   const fMatrah = filing ? filingValue(filing, "matrah") : undefined;
-  // Son çeyreğin (2026/4) matrahlı kaydı da çapadır (§3.7): yıllık kazanç onun kümülatif matrahı, çapadan sonra indirim yok
+  // Son çeyreğin (2026/4) matrahlı kaydı da çapadır (§3.7): matrahı zarar ve indirim düşülmüş, yıllık kazanç ondan geri
+  // kurulur (anchorIncome; VG-03), matrah kaydınkine eşit çıkar. Kurumlar vergisi kaydının "Kurum kazancı" zarar düşülmemiş
   const lf = last ? filingFor(input.filings, "gecici", last.key) : null;
   const lastMatrah = lf ? filingValue(lf, "matrah") : undefined;
-  const income = fMatrah ?? lastMatrah ?? last?.cumulative ?? 0;
-  const indirim = fMatrah !== undefined || lastMatrah !== undefined ? 0 : (last?.indirim ?? 0);
+  const income = fMatrah ?? (lastMatrah !== undefined ? anchorIncome(lastMatrah, carried, last!.indirim, last!.cumulative) : (last?.cumulative ?? 0));
+  const indirim = fMatrah !== undefined ? 0 : (last?.indirim ?? 0);
   const loss = Math.min(Math.max(0, income), carried);
   const matrah = Math.max(0, r2(income - loss - indirim));
   const hesaplanan = filing && filingValue(filing, "hesaplanan") !== undefined ? filingValue(filing, "hesaplanan")! : r2(matrah * rules.kv.oran.value);

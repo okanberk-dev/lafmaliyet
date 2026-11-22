@@ -12,7 +12,7 @@ import type { Model } from "../calc/engine";
 import { daysInMonth, shiftMonth } from "../calc/engine";
 import type { ExpenseCategory, ExpenseEntry, FixedExpense, FixedSection, Invoice } from "../calc/types";
 import { COMMISSION_CATEGORY, FIXED_ESTIMATE_DESCRIPTION, GOODS_CATEGORIES, MANUAL_PNL_ROWS, SEPARATE_CATEGORIES } from "../constants";
-import { tl } from "../format";
+import { money, tl } from "../format";
 import { monthSource } from "../lafpos/switch";
 import { monthEnd } from "../reminders";
 
@@ -662,7 +662,10 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
   // ---- Personel (bordro, yasal oranlarla; Gelir-gider'de elle girildiyse o)
   const payroll = input.payroll.get(month);
   const personnelManual = base.personnel.overridden;
-  const personnel = personnelManual ? r2(base.personnel.net + base.personnel.employer) : (payroll?.totals.cost ?? 0);
+  // Asgari ücret desteği (seçiliyse) işverenin SGK gideridir: ödenen SGK'dan düştüğü kadar giderden de düşer (VG-08)
+  const pt = payroll?.totals;
+  const support = pt ? r2(pt.isciSgk + pt.isciIssizlik + pt.isverenSgk + pt.isverenIssizlik - pt.sgkTotal) : 0;
+  const personnel = personnelManual ? r2(base.personnel.net + base.personnel.employer) : pt ? r2(pt.cost - support) : 0;
   if (!personnelManual && payroll && payroll.totals.people > 0) warnings.push(PAYROLL_FULL_MONTH_NOTE);
 
   // ---- POS komisyonu (K12a: Gelir-gider'in hücresi)
@@ -702,7 +705,7 @@ function monthCalc(ctx: Ctx, month: string): TaxMonth {
     label: "Personel (bordro)",
     amount: personnel,
     badge: personnelManual ? BADGE.manual : BADGE.estimate,
-    note: personnelManual ? "Gelir-gider'de elle girilen bordro (net maaşlar ve personel SGK satırı)" : undefined,
+    note: personnelManual ? "Gelir-gider'de elle girilen bordro (net maaşlar ve personel SGK satırı)" : support > 0 ? `Asgari ücret desteği (${money(support)}) düşüldü` : undefined,
   });
   expense.push({ key: "belgeli", label: "Belgesi muhasebecide olan giderler", amount: belgeli, badge: BADGE.estimate, items: belgeliItems });
   expense.push({

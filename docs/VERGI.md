@@ -53,7 +53,7 @@ alt öğe ve aynı dört sekme (`SECTION_TABS.vergi`, ağaçtan türer). Özet'i
 | **Özet** (`/panel/vergi`) | Sıra §3.1'de: bant, Ödemeler'de günü geçmiş vergi satırı, iki rakam, Başlarken satırı, uyarılar, vergi ve SGK takvimi (önümüzdeki 100 gün; her satırda tek tutar ve kaynağı; açılınca döküm, "Ödemeler'e ekle", "Muhasebecinin rakamını gir"), şirketin kâr vergisi kartı, bordro dökümü | model, vergi girdileri, nakit planı (KDV satırları), Ödemeler |
 | **Vergi kârı** (`/panel/vergi/gelir-gider`) | Sayfa başında eksik belgeler uyarısı (tutar ve kalem sayısı), seçilen çeyreğin ayları, çeyrek toplamı ve "Yılbaşından beri" (masaüstünde tablo, telefonda tek sütun seçicisi), **Gelir-gider'den neden farklı?** köprü kartı, KDV beyannamesi satışları kartı, **Eksik belgeler** listesi (`#siniflandir`; toplu kayıt, kaydedilmeden çıkışta uyarı, sabit giderde "Vergi kesintisi (stopaj)" profili), kafe dışı faturalar anahtarı, düzeltmeler | model, vergi girdileri (nakit planı yok) |
 | **Demirbaş** (`/panel/vergi/demirbas`) | Demirbaş listesi ve amortisman, faturası Paraşüt'te silinen demirbaş ("Bağla"), listeye eklenmemiş Kuruluş & Demirbaş faturaları ("Listeye ekle"), "demirbaş olabilir" faturalar ("Bu yıl gider yaz", "Gider (demirbaş değil)", "Geri al") | model, vergi girdileri |
-| **Muhasebeci** (`/panel/vergi/kurallar`) | Sıra: **Muhasebeciye sorulacaklar** (`#sorular`; "Muhasebecimle konuştum" işareti ve not), **Şirketin vergi ayarları** (şirket nasıl kuruldu, muhtasar dönemi, asgari ücret desteği), **Kural tablosu** (`#kurallar`; kapalı açılır "Kural tablosunu göster (n kural)", adres `#kurallar` ise açık gelir; güven, dayanak, kaynak, "Elle değer"), "Bu kafede hesaplanmayanlar" (`#bilgi`, açık), tam feragat (`#feragat`) | yalnız vergi ayarları |
+| **Muhasebeci** (`/panel/vergi/kurallar`) | Sıra: **Muhasebeciye sorulacaklar** (`#sorular`; "Muhasebecimle konuştum" işareti ve not), **Şirketin vergi ayarları** (şirket nasıl kuruldu, muhtasar dönemi, asgari ücret desteği), **Kural tablosu** (`#kurallar`; kapalı açılır "Kural tablosunu göster (n kural)", adres `#kurallar` ise açık gelir; güven, dayanak, kaynak, "Elle değer"), "Bu kafede hesaplanmayanlar" (`#bilgi`, açık), tam feragat (`#feragat`) | vergi ayarları ve Ayarlar (işveren SGK oranı) |
 
 Ekranda "varlık" sözcüğü yok: Demirbaş sekmesi "demirbaş" der ("Demirbaş ekle", "Demirbaş listesi", "listede değil");
 kayıt ve Excel'in yöntem adı (`ASSET_METHOD_LABELS`, "Doğrudan gider") aynı, ekranda "Bu yıl gider yazıldı".
@@ -108,8 +108,8 @@ aynı. Veri (`titleOfKind`) ve Excel resmî adla kalır.
 - **Muhtasar:** tutar "en az" ise kapalı satır "{n} giderde vergi kesintisi (stopaj) seçilmedi" der
   (`row.unknownWithholding`); açık gövdede "Kesintiyi seç" → Vergi kârı `#siniflandir`.
 - Döküm etiketleri sade (`plainLabel`): "Bu ayın KDV'si (tahmin)", "Beyanname ücreti (damga vergisi)".
-- "Sonra" kutusu takvimin altında tek satır: "Sonra: {ad} · {gün}"; kurumlar vergisinde "tahmin kartta" →
-  `#kar-vergisi` (yalnız kartın yılıysa; §3.5).
+- "Sonra" kutusu takvimin altında tek satır, tarih sırasıyla: "Sonra: {ad} · {gün}"; kurumlar vergisinde "tahmin
+  kartta" → `#kar-vergisi` (yalnız kartın yılıysa; §3.5).
 - Çapalar: her türün ilk satırı `#kdv`, `#sgk`, `#muhtasar`.
 
 ### 3.4 Ödemeler'de günü geçmiş vergi satırı (K12)
@@ -132,7 +132,9 @@ ya da demirbaş adayı fatura varsa (`geciciCard.missingDocs`) ve muhasebecinin 
 belgeler var: rakam yüksek çıkabilir" (ikinci satır: henüz hesaba girmeyen gider ve demirbaş adayı, yalnız sıfır
 olmayanlar; eylem "Belgesini seç" → `#siniflandir`). Eksik bilginin öteki sebepleri (gelir belgesi, kafe dışı işler)
 uyarı değil, bölümün "Eksik bilgi" rozeti. İki bölüm: **Peşinat** (geçici vergi, `#gecici`): rozet, büyük rakam, döküm
-(sade etiketler), notlar, "Muhasebecinin rakamı", "Vergi kârını aç", "Nasıl hesaplandı"; **Yıl sonu** (kurumlar
+(sade etiketler; devreden zarar ya da indirim varsa kazançla "× %25" arasında "Önceki yılların zararı", "İndirim" ve
+"Vergi hesabındaki kâr (matrah)" satırları, oran matrahın vergisidir; denetim VG-07), notlar, "Muhasebecinin rakamı",
+"Vergi kârını aç", "Nasıl hesaplandı"; **Yıl sonu** (kurumlar
 vergisi): rozet, alt başlık, döküm ("Ödenecek" satırı), notlar, "Muhasebecinin rakamı", "Nasıl hesaplandı". Veri
 (`view.geciciCard`, `view.kvCard`) aynı; `missingDocs` yalnız eklendi. Takvimin "Sonra" satırındaki kurumlar vergisi
 "tahmin kartta" bağlantısını yalnız kartın yılıysa taşır (`laterOnCard`); değilse "Tutarı bilinmiyor".
@@ -223,10 +225,15 @@ Diğer ekranlara dokunuşlar:
   uyarı; varsayılan ömür uydurulmaz. 12.000 ₺'yi aşmayan varlık doğrudan gider seçilebilir (VUK 313).
 - **Bordro (K16):** netten brüt (kümülatif gelir vergisi matrahı, asgari ücret istisnası, ücret damgası, PEK alt ve üst
   sınırı), 2026 yasal SGK oranlarıyla (işçi %14 + %1, işveren %19,75 + %2; teşvik varsa Muhasebeci'den elle). Gelir-gider
-  Ayarlar'daki oranla kalır (Excel eşitliği).
+  Ayarlar'daki oranla kalır (Excel eşitliği). "Asgari ücret desteği SGK'dan düşülsün" açıksa destek ödenen SGK'dan
+  düştüğü kadar Vergi kârı'nın "Personel (bordro)" giderinden de düşer (satırın notu; denetim VG-08).
 - **Muhtasar (K20):** ay P'nin ücret gelir ve damga vergisi + sabit giderin stopaj profiline göre stopaj (kira %20,
   serbest meslek %20, internet reklamı %15) + beyanname damgası (personel varsa 939,70, yalnız stopajda 791,00);
-  P+1'in 26'sında. Adı kira, reklam ya da dışarıdan hizmete uyan profilsiz kalem varsa tutar "en az"dır.
+  P+1'in 26'sında. Adı kira, reklam ya da dışarıdan hizmete uyan profilsiz kalem varsa tutar "en az"dır. Ödemeler'de
+  sabit tutarlı "Kira stopajı" hatırlatıcısı varsa takvim satırı = hatırlatıcının tutarı + tahminin kira stopajı dışı
+  kalanı (döküm "Kira stopajı (Ödemeler'deki hatırlatıcı)"; "en az" kalır; denetim VG-02). Üç aylık muhtasarda çeyrek
+  sonunun kira stopajı üç ayınkidir ("Çeyreğin önceki ayları" satırında kira stopajı düşülmüş kalan). Muhtasarın tamamı
+  da Ödemeler'deyse satır onu yazar, not kira stopajı hatırlatıcısının onun içinde sayıldığını söyler.
 - **Resmi kira (sahibin kararı, 4 Kasım 2026):** Sabit giderler'de kira kalemine resmi (sözleşmedeki) aylık kira ve
   brüt / net yazılır (net: brüt = net ÷ 0,8). Gelir-gider'de "Kira stopajı" satırı = resmi brüt × kira stopajı oranı
   (`stopaj:<kalem>`; kiranın gün payıyla). Vergi kârında kira gideri yalnız resmi brüttür; ödenen kira + stopaj −
@@ -239,14 +246,19 @@ Diğer ekranlara dokunuşlar:
 - **SGK:** bordronun dört payı, P+1'in son günü (tatilde ilk iş günü).
 - **Geçici vergi (K21):** kümülatif, %25; asgari kurumlar vergisi (%10) muafiyet yoksa karşılaştırılır; önceki
   dönemler düşülür. Muhasebecinin matrahlı kaydı **çapa**dır: sonraki dönem o matraha çapadan sonraki ayları ekler.
+  Kayıttaki matrah beyannamedeki matrahtır ("Geçici vergi matrahı (zarar ve indirim düşülmüş; zararda eksi)"; sahibe
+  soru 3'ün varsayılanı, denetim VG-03): çapanın kurum kazancı geri kurulur (`anchorIncome`: matrah artıysa yılın
+  devreden zararı ve çapaya kadarki indirim eklenir, eksiyse eklenmez, sıfırsa panelin o çeyrekteki kazancı), zarar ve
+  indirim bir kez düşülür. "Nasıl hesaplandı" bu ekleneni ayrı satırda yazar. Son çeyreğin matrahlı kaydı yıllık
+  kazancın çapasıdır, aynı kuralla; kurumlar vergisi kaydının "Kurum kazancı" zarar düşülmemiştir.
   Süren dönem ay sonuna tamamlanmaz. Taslak çeyrekte kartın başlığı "Giderler sınıflandırılınca netleşir · şimdilik en
   çok ≈ X ₺" der.
-- **Kurumlar vergisi:** yıllık kazanç (kayıt varsa onun matrahı), devreden zarar, %25 ya da asgari; yalnız **ödendi**
+- **Kurumlar vergisi:** yıllık kazanç (kayıt varsa onun kurum kazancı), devreden zarar, %25 ya da asgari; yalnız **ödendi**
   işaretli geçici vergi mahsup edilir. Damga: beyanname + bilanço + gelir tablosu (2026: 2.516,30).
 - **Asgari kurumlar vergisi muafiyeti (K10):** yalnız Muhasebeci › Vergi ayarları'nda şirket "ilk defa faaliyete
   başladı" seçilince; varsayılan uygulanmaz (vergi yüksek görünür).
 - **KDV (K5):** yeni KDV hesabı yok; takvim nakit planının KDV ve KDV-2 tahminini okur. Yurt dışı hizmet profilli
-  sabit giderin KDV-2'si ayrı satırdır.
+  sabit giderin KDV-2'si ayrı satırdır; aynı ay nakit planının KDV tahmininde indirilecek KDV'ye eklenir (VG-04).
 - **Yerel vergiler (K23):** ÇTV ve ilan-reklam hesaplanmaz; hatırlatıcı yoksa takvimde tutarsız satır ("tutar
   belediyeden").
 - **Takvim (K24):** son gün VUK 18'le kaydırılır (hafta sonu, resmî tatil, bayram; arife kaydırmaz; tatil listesi
@@ -278,7 +290,11 @@ işaretlenmedikçe çip "Muhasebeciye sorulacaklar: n / 8" der; hepsi işaretlen
 numarasının uyuşmaması), SGK oranı, bordro, kira (kime ödeniyor, gerçek kira, sözleşme damgası), stopaj (Instagram,
 influencer, muhasebeci), demirbaş (XND faturaları, ömürler, özel maliyet), geçici vergi 2026/2 ve 2026/3, kafe dışı
 işler. Ek maddeler: muhtasar dönemi, KDV beyannamelerinin satışları, fişli alımlar, ikram ve zayi, asgari vergide zarar,
-asgari ücret desteği, damga tutarları, ortaklar, alkol ve turizm, yerel vergiler ve adres. Metinler planın §14'ünde.
+asgari ücret desteği, damga tutarları, ortaklar, alkol ve turizm, yerel vergiler ve adres. Metinler planın §14'ünden;
+"Panelin varsaydığı" panelin kuralını söyler, verinin o günkü rakamını değil (denetim VG-05). Ayara bağlı cümleler
+şimdiki ayarlardan kurulur (`accountantChecksFor`): şirketin kuruluşu ve hesap döneminin başı, işveren SGK oranı (elle
+değerle; Ayarlar'daki oran farklıysa söyler), amortismanın dağıtımı, kafe dışı faturalar, muhtasarın dönemi, asgari
+ücret desteği ve yılın beyanname damgaları. Asgari vergide zarar sorusu muaf yıllarda "etkisi ancak 2029 ve sonrasında" der.
 
 ## 7. Saklama
 
