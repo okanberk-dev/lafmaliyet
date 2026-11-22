@@ -16,8 +16,18 @@ import { appUrl } from "@/server/auth/tokens";
  */
 export const PARASUT_ENV = ["PARASUT_CLIENT_ID", "PARASUT_CLIENT_SECRET", "PARASUT_COMPANY_ID"] as const;
 
-/** Paraşüt'ün yeni kimlik sunucusu; keşif belgesi {issuer}/.well-known/openid-configuration */
-const DEFAULT_ISSUER = "https://id.parasut.com";
+/**
+ * Paraşüt'ün yeni kimlik sunucusu (Keycloak, "parasut" alanı). Keşif belgesi {issuer}/.well-known/openid-configuration;
+ * alan adının kökünde keşif belgesi yok (404), bu yüzden yol /realms/parasut ile biter.
+ */
+export const DEFAULT_ISSUER = "https://id.parasut.com/realms/parasut";
+/**
+ * Varsayılan izinler. offline_access olmadan Keycloak'ın verdiği refresh_token tarayıcı oturumuna bağlıdır ve
+ * oturum boşta kalınca (dakikalar, en çok saatler) düşer; sabah eşitlemesi ertesi gün bağlantıyı kaybederdi.
+ * offline_access keşif belgesinin scopes_supported listesinde var ve oturumdan bağımsız, her kullanımda uzayan
+ * çevrimdışı belirteç verir.
+ */
+export const DEFAULT_SCOPE = "openid offline_access";
 /** DevHub'a kaydedilecek dönüş adresi bu yola kurulur */
 export const PARASUT_CALLBACK_PATH = "/panel/parasut/baglan/geri";
 
@@ -27,14 +37,14 @@ export interface ParasutConfig {
   companyId: string;
   /** Veri API'si; varsayılan https://api.parasut.com */
   baseUrl: string;
-  /** Kimlik sunucusu; varsayılan https://id.parasut.com */
+  /** Kimlik sunucusu; varsayılan https://id.parasut.com/realms/parasut */
   issuer: string;
   /** Keşif belgesine ulaşılamazsa elle verilebilir (normalde null) */
   authorizeUrl: string | null;
   tokenUrl: string | null;
   /** DevHub'daki kayıtla **harfi harfine** aynı olmalı */
   redirectUri: string;
-  /** Varsayılan "openid" */
+  /** Varsayılan "openid offline_access" */
   scope: string;
   /** Geçerli bir https adresi olmadığı için yok sayılan isteğe bağlı değişkenler (boşsa her şey yolunda) */
   invalid: string[];
@@ -97,14 +107,14 @@ export function readParasutConfig(): ParasutConfig {
   };
   return {
     clientId: process.env.PARASUT_CLIENT_ID!.trim(),
-    clientSecret: process.env.PARASUT_CLIENT_SECRET!,
+    clientSecret: process.env.PARASUT_CLIENT_SECRET!.trim(),
     companyId: process.env.PARASUT_COMPANY_ID!.trim(),
     baseUrl: (process.env.PARASUT_BASE_URL?.trim() || "https://api.parasut.com").replace(/\/+$/, ""),
     issuer: https("PARASUT_ISSUER") ?? DEFAULT_ISSUER,
     authorizeUrl: https("PARASUT_AUTHORIZE_URL"),
     tokenUrl: https("PARASUT_TOKEN_URL"),
     redirectUri: https("PARASUT_REDIRECT_URI") ?? `${appUrl()}${PARASUT_CALLBACK_PATH}`,
-    scope: process.env.PARASUT_SCOPE?.trim() || "openid",
+    scope: process.env.PARASUT_SCOPE?.trim() || DEFAULT_SCOPE,
     syncFrom: from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
     invalid,
   };

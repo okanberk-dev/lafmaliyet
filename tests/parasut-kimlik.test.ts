@@ -234,3 +234,31 @@ test("geçici yedek kaynakta yalıtık: parola akışı yalnız iki legacy dosya
   // Hesap bağlanınca eski belirteç silinir
   assert.match(read("src/server/parasut/connect.ts"), /await forgetLegacyParasutToken\(\);/);
 });
+
+// ---------------------------------------------------------------- varsayılan ayarlar (config.ts "server-only" olduğu için kaynaktan)
+
+test("varsayılan yayıncı Paraşüt'ün Keycloak alanı; kök adreste keşif belgesi yok (404)", () => {
+  const cfg = read("src/server/parasut/config.ts");
+  assert.match(cfg, /DEFAULT_ISSUER = "https:\/\/id\.parasut\.com\/realms\/parasut";/);
+  assert.match(cfg, /issuer: https\("PARASUT_ISSUER"\) \?\? DEFAULT_ISSUER/);
+  // 22 Kasım 2026'da canlı keşif belgesinden alınan uçlar: aynı alan adında, kabul edilir
+  const realm = "https://id.parasut.com/realms/parasut";
+  const live = readDiscovery(
+    {
+      issuer: realm,
+      authorization_endpoint: `${realm}/protocol/openid-connect/auth`,
+      token_endpoint: `${realm}/protocol/openid-connect/token`,
+    },
+    realm,
+  );
+  assert.equal(live.issuer, realm);
+  assert.equal(live.tokenUrl, `${realm}/protocol/openid-connect/token`);
+});
+
+test("varsayılan izinler offline_access içerir; client_secret iki yöntemde de kırpılır", () => {
+  const cfg = read("src/server/parasut/config.ts");
+  assert.match(cfg, /DEFAULT_SCOPE = "openid offline_access";/);
+  assert.match(cfg, /PARASUT_SCOPE\?\.trim\(\) \|\| DEFAULT_SCOPE/);
+  assert.match(cfg, /clientSecret: process\.env\.PARASUT_CLIENT_SECRET!\.trim\(\)/);
+  assert.match(read("src/server/parasut/legacy.ts"), /clientSecret: cfg\.clientSecret\.trim\(\)/);
+});

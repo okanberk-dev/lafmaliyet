@@ -80,8 +80,8 @@ Vercel → lafmaliyet → Settings → Environment Variables, Production:
 | `PARASUT_USERNAME`, `PARASUT_PASSWORD` | **Geçici, 10 Aralık 2026'ya kadar.** Eski yöntemin kullanıcı e-postası ve parolası; yalnız hesap bağlı değilken kullanılır. Bağlandıktan sonra silin |
 | `PARASUT_SYNC_FROM` | (isteğe bağlı) İlk eşitlemenin başlangıcı, `YYYY-MM-DD`; boşsa bu yılın başı |
 | `PARASUT_REDIRECT_URI` | (isteğe bağlı) DevHub'a kaydedilen dönüş adresi; boşsa `APP_URL` + `/panel/parasut/baglan/geri` |
-| `PARASUT_ISSUER` | (isteğe bağlı) Kimlik sunucusu; varsayılan `https://id.parasut.com` |
-| `PARASUT_SCOPE` | (isteğe bağlı) İstenen izinler; varsayılan `openid` |
+| `PARASUT_ISSUER` | (isteğe bağlı) Kimlik sunucusu; varsayılan `https://id.parasut.com/realms/parasut` |
+| `PARASUT_SCOPE` | (isteğe bağlı) İstenen izinler; varsayılan `openid offline_access` |
 | `PARASUT_AUTHORIZE_URL`, `PARASUT_TOKEN_URL` | (isteğe bağlı) Keşif belgesi okunamazsa uçları elle vermek için |
 | `PARASUT_BASE_URL` | (isteğe bağlı) Veri API'si; varsayılan `https://api.parasut.com` |
 | `CRON_SECRET` | Günlük işin anahtarı: `openssl rand -hex 32` |
@@ -101,7 +101,7 @@ der.
 
 ## 2. Nasıl çalışır
 
-- **Kimlik:** OAuth 2.0 **Authorization Code + PKCE** (S256), kimlik sunucusu `https://id.parasut.com`. Yetki adresi
+- **Kimlik:** OAuth 2.0 **Authorization Code + PKCE** (S256), kimlik sunucusu `https://id.parasut.com/realms/parasut`. Yetki adresi
   ve belirteç adresi koda yazılmaz: `{issuer}/.well-known/openid-configuration` keşif belgesinden okunur ve 6 saat
   bellekte tutulur (`src/server/parasut/oidc.ts`; saf kurallar ve güvenlik denetimleri `src/lib/parasut/oidc.ts`).
   Keşif belgesi yalnız **https** ve yayıncıyla **aynı alan adındaki** uçları kabul eder.
