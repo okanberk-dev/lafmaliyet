@@ -122,7 +122,9 @@ export async function runRestore(argv: string[], io: RestoreIo, opts: { env: Rec
     else if (!target.local) {
       io.log("! Bu, canlının yeni veritabanıysa Vercel'de AUTH_SECRET'ı yenileyip yeniden yayınlayın: eski veritabanında açılmış oturumlar burada geçmesin (docs/YEDEK.md § 8).");
     }
-    io.log("! Paraşüt bağlantısı ilk eşitlemede yeniden kurulur; bildirim izinli cihazlar panel açılınca yeniden abone olur.");
+    io.log(
+      "! Paraşüt hesabını yeniden bağlayın: Ayarlar › Paraşüt entegrasyonu › “Paraşüt hesabını bağla”. Bildirim izinli cihazlar panel açılınca yeniden abone olur.",
+    );
     for (const w of r.warnings) io.log(`! ${w}`);
   } finally {
     await db.$client.end();
