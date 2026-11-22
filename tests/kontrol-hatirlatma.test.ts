@@ -16,6 +16,7 @@ import {
   ALERT_SEND_MINUTES,
   alertPollDue,
   alertReaches,
+  alertRecipients,
   alertSendInstant,
   checklistAlerts,
   LATE_ALERT_MIN,
@@ -159,6 +160,46 @@ test("kime gider: şubeli listede o şubenin ve şubesiz personel; şubesiz list
   assert.equal(alertReaches(null, { branchId: "marina" }), true);
 });
 
+test("kime gider (vardiya planıyla): o an vardiyada olana; kimse yoksa o gün çalışacaklara; plan yoksa bütün personele", () => {
+  const users = [
+    { id: 1, role: "admin" as const, branchId: null },
+    { id: 2, role: "staff" as const, branchId: "tuzla" },
+    { id: 3, role: "staff" as const, branchId: "tuzla" },
+    { id: 4, role: "staff" as const, branchId: "marina" },
+    { id: 5, role: "staff" as const, branchId: null },
+  ];
+  const ids = (branch: string | null, shifts: Parameters<typeof alertRecipients>[2], date: string, minute: number) => alertRecipients(branch, users, shifts, { date, minute }).map((u) => u.id);
+  const plan = [
+    // Tuzla: 2 sabahçı (09:00–18:00), 3 akşamcı (16:00–01:00); Marina: 4 sabahçı (09:30–18:30)
+    { branchId: "tuzla", userId: 2, date: "2026-11-24", startMin: 540, endMin: 1080 },
+    { branchId: "tuzla", userId: 3, date: "2026-11-24", startMin: 960, endMin: 1500 },
+    { branchId: "marina", userId: 4, date: "2026-11-24", startMin: 570, endMin: 1110 },
+  ];
+  // 10:00 ve 14:00: Tuzla'nın listesi sabahçıya; 18:00: sabahçı çıktı (bitiş dahil değil), akşamcıya; 22:00: akşamcıya
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 600), [2]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 840), [2]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 1080), [3]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 1320), [3]);
+  // İki vardiyanın kesiştiği saatte ikisine de
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 1000), [2, 3]);
+  // Gece yarısını geçen vardiya ertesi günün ilk saatinde de vardiyadadır (dün başladı)
+  assert.deepEqual(ids("tuzla", plan, "2026-11-25", 30), [3]);
+  // 01:00'de vardiya bitti ve yeni gün için plan yok: bütün personele düşer
+  assert.deepEqual(ids("tuzla", plan, "2026-11-25", 60), [2, 3, 5]);
+  // Marina'nın listesi Marina'nın vardiyasına; şubesiz liste bütün şubelerde o an vardiyada olanlara
+  assert.deepEqual(ids("marina", plan, "2026-11-24", 600), [4]);
+  assert.deepEqual(ids(null, plan, "2026-11-24", 600), [2, 4]);
+  // O an kimse vardiyada değil (08:00): o gün o şubede çalışacak herkese
+  assert.deepEqual(ids("tuzla", plan, "2026-11-24", 480), [2, 3]);
+  // Vardiyaya yazılan yönetici de alır
+  assert.deepEqual(ids("tuzla", [{ branchId: "tuzla", userId: 1, date: "2026-11-24", startMin: 540, endMin: 1080 }], "2026-11-24", 600), [1]);
+  // O gün için plan yok (ya da plandaki hesap pasif: listede yok): eskisi gibi şubenin personeli ve şubesiz personel
+  assert.deepEqual(ids("tuzla", [], "2026-11-24", 600), [2, 3, 5]);
+  assert.deepEqual(ids("tuzla", [{ branchId: "tuzla", userId: 99, date: "2026-11-24", startMin: 540, endMin: 1080 }], "2026-11-24", 600), [2, 3, 5]);
+  assert.deepEqual(ids("tuzla", plan, "2026-11-26", 600), [2, 3, 5]);
+  assert.deepEqual(ids(null, [], "2026-11-24", 600), [2, 3, 4, 5]);
+});
+
 test("e-posta: konu, gecikme önce, eksik maddeler, listeyi aç bağlantısı; ödeme yok", () => {
   const alerts = checklistAlerts(DAY, tr(`${DAY}T11:07`), [toilet()]);
   const m = renderChecklistAlert(alerts, DAY);
@@ -183,9 +224,11 @@ test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () =
   const route = read("src/app/api/cron/kontrol/route.ts");
   assert.match(route, /rejectUnlessCron\(request\)/);
   const run = read("src/server/notify/checklist-alerts.ts");
-  // Her personele kendi adresine (adresler birbirine görünmez); personel rolü, etkin hesap
+  // Her kişiye kendi adresine (adresler birbirine görünmez); etkin hesap, alıcılar vardiya planından (alertRecipients)
   assert.match(run, /to: \[u\.email\]/);
-  assert.match(run, /eq\(s\.users\.role, "staff"\)/);
+  assert.match(run, /\.where\(eq\(s\.users\.active, true\)\)/);
+  assert.match(run, /alertRecipients\(a\.branchId, people, shifts, at\)/);
+  assert.match(run, /inArray\(s\.shifts\.date, \[at\.date, yesterday\]\), eq\(s\.shifts\.kind, "work"\), isNotNull\(s\.shifts\.userId\)/);
   assert.match(run, /emailEnabled/);
   // Gönderimden önce sahiplenme (aynı uyarı iki kez gitmez)
   assert.ok(run.indexOf("onConflictDoNothing") < run.indexOf("sendEmail("));

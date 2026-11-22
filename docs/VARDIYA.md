@@ -82,13 +82,14 @@ harf seçilince onun yerine geçer. Telefonda da aynı (düğmeler parmak boyund
 
 - **Kendiliğinden güncel:** dosya saklanmaz; her istekte **kaydedilen** plandan yeniden çizilir. Plan değişip
   kaydedilince aynı adres yeni planı verir. Kaydedilmemiş değişiklik varken düğme "Önce kaydedin" der.
-- **Görünüm** (22 Kasım 2026: "pdf tasarımını daha estetik yap, logomuzu kullan"): A4 yatay. Üstte markanın derin
-  yeşil bandı: solda L'Af logosu (sitenin e-postalarındaki beyaz işaret, `src/server/vardiya/logo.ts`'te gömülü), "L'AFFOGATO ·
-  TUZLA" altın etiket ve "Vardiya planı", sağda haftanın tarihleri. Altında kişi × gün tablosu: **Sabahçı** altın,
-  **Akşamcı** yeşil kutuda adıyla (adın yanında görev notu, altında saatler), başka saat gri kutuda, "İzin" kesik
-  çizgili, planlanmayan gün nokta. Sağda kişinin haftalık toplamı, altta gün gün çalışan sayısı ve renklerin açıklaması
-  (şubenin sabahçı ve akşamcı saatleriyle); alt bilgide oluşturulma anı ve son değişikliği yapan. 9 kişiye kadar ferah,
-  13 kişiye kadar tek sayfa, sonrası yeni sayfaya geçer (başlık her sayfada). Planı boş kişiler PDF'e girmez.
+- **Görünüm** (22 Kasım 2026: "pdf tasarımını daha estetik yap, logomuzu kullan", ardından "daha tasarımsal ve
+  minimalist"): A4 yatay, beyaz sayfa, ince çizgiler; dolu kutu ve bant yok. Renk yalnız iki yerde: logo ve vardiyanın
+  harfi. Üstte solda L'Af logosu (vektör; harfler markanın yeşili, çekirdek altın: `src/server/vardiya/logo.ts`),
+  yanında "VARDİYA PLANI" ve haftanın tarihleri, sağda şube; altında tek ince yeşil çizgi. Tabloda günün adı küçük ve
+  aralıklı, altında günün sayısı. Hücrede **S** altın, **A** yeşil daire ve yanında saatler (altında görev notu); başka
+  saat boş daireyle, izin "İ" ile, planlanmayan gün boş. Sağda kişinin haftalık toplamı, altta gün gün çalışan sayısı;
+  alt bilgide harflerin açıklaması (şubenin saatleriyle), oluşturulma anı ve son değişikliği yapan. 9 kişiye kadar
+  ferah, 13 kişiye kadar tek sayfa, sonrası yeni sayfa (başlık her sayfada). Planı boş kişiler PDF'e girmez.
 - **Kim alır:** giriş yapmış herkes; şubesine kilitli personel yalnız kendi şubesininkini (başka şube 403), oturumsuz
   istek 401.
 - **Yazı tipi:** Inter'in (SIL OFL 1.1) Latin ve Türkçe harflere indirilmiş TrueType kopyaları
@@ -105,6 +106,7 @@ harf seçilince onun yerine geçer. Telefonda da aynı (düğmeler parmak boyund
 | Yetki (`src/lib/roles.ts`) | `/panel/vardiya` personele açık (`STAFF_PATHS`); planı yalnız yönetici yazar (eylem `requireAdmin`). Kullanıcılar & roller'deki tabloda iki satır |
 | Bugün › Bugün kafede | "Vardiyada: Ayşe 10:00–18:00 · Çağrı 16:00–00:00 · ve 2 kişi" (iş gününün çalışanları, başlangıç saatine göre, ilk adlar; seçili şube, "Tümü"de bütün şubeler). Vardiya ekranına götürür; plan yoksa satır yok |
 | Karaoke personel e-postaları | Rezervasyon günü sabah ve 3 saat kala giden e-postalar o gün Tuzla'da çalışan olarak yazılmış, hesabı etkin kişilere gider (vardiyaya yazılan yönetici dahil; izinli sayılmaz); o güne plan yazılmadıysa Tuzla'nın bütün etkin personeline ([KARAOKE.md](KARAOKE.md)). Okuyan `src/server/karaoke/staff-mail.ts`, `shifts` tablosundan |
+| Kontrol listesi hatırlatmaları | Açılış, kapanış ve temizlik (tuvalet çizelgesi) listelerinin e-posta hatırlatmaları listenin şubesinde **o an vardiyada olan** kişilere gider; o an kimse yoksa o gün çalışacaklara, plan yoksa bütün personele ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6 › Kime; `alertRecipients`) |
 | Şube seçici | Plan seçili fiziksel şubenin; şubesine kilitli personel kendi şubesini görür ([SUBE.md](SUBE.md)) |
 | Yardım | Yöneticide "Vardiya planını yazmak ve PDF'ini almak", personelde "Bu hafta hangi gün, kaçta vardiyam var?" |
 | İşlem geçmişi | "Vardiya planı kaydedildi · Tuzla · 23–29 Kasım 2026 · 5 kişi · 28 vardiya · 3 izin" |
