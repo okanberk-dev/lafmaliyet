@@ -62,6 +62,9 @@ interface FakeBill {
   remaining?: number;
   eInvoiceId?: string;
   lines: FakeLine[];
+  /** Döviz faturası: para birimi ve kur (verilmezse TL) */
+  currency?: string;
+  exchangeRate?: string;
 }
 interface FakeEInvoice {
   id: string;
@@ -75,6 +78,8 @@ interface FakeEInvoice {
   net: number;
   vat: number;
   importedBillId?: string;
+  /** Paraşüt'teki yanıt ("rejected": reddedildi) */
+  responseType?: string;
 }
 
 class FakeParasut {
@@ -125,7 +130,7 @@ class FakeParasut {
         total_vat: String(e.vat),
         currency: "TRL",
         invoice_type_code: e.type,
-        response_type: null,
+        response_type: e.responseType ?? null,
         archived: false,
       },
       relationships: { invoice: { data: e.importedBillId ? { id: e.importedBillId, type: "purchase_bills" } : null } },
@@ -143,7 +148,8 @@ class FakeParasut {
         issue_date: b.date,
         due_date: null,
         invoice_no: b.invoiceNo,
-        currency: "TRL",
+        currency: b.currency ?? "TRL",
+        ...(b.exchangeRate !== undefined ? { exchange_rate: b.exchangeRate } : {}),
         gross_total: String(gross),
         total_vat: String(b.vat),
         net_total: String(net),
@@ -292,11 +298,18 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     });
     // "server-only" Next'in sunucu derlemesi dışında hata fırlatır: test aynı modülleri doğrudan çalıştırır
     const require = createRequire(import.meta.url);
-    const marker = require.resolve("server-only");
-    require.cache[marker] = { id: marker, filename: marker, loaded: true, exports: {} } as unknown as NodeJS.Module;
+    const stub = (id: string, exports: unknown) => {
+      const p = require.resolve(id);
+      require.cache[p] = { id: p, filename: p, loaded: true, exports } as unknown as NodeJS.Module;
+    };
+    stub("server-only", {});
+    // Fatura penceresinin kaydı (saveInvoice) da denenir: oturum ve sayfa yenileme taklit edilir
+    stub("next/cache", { ...require("next/cache"), refresh: () => {}, revalidatePath: () => {}, revalidateTag: () => {} });
     const dbModule = await import("../src/server/db");
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
+    const [u] = await db.insert(s.users).values({ email: "parasut@laffogato.net", name: "Test", passwordHash: "x", role: "admin" }).returning();
+    stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
     const client = await import("../src/server/parasut/client");
     client.PACING.minGapMs = 0;
     client.PACING.retryBaseMs = 0;
@@ -459,6 +472,151 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     );
     assert.equal(list[0].externalId, null);
     assert.equal(list[0].unpaid, false);
+  });
+
+  /** Elle girilmiş fatura (pencereden yazılmış gibi) */
+  async function manual(p: Partial<typeof s.invoices.$inferInsert> & { invoiceNo: string; payable: number }) {
+    const [r] = await db
+      .insert(s.invoices)
+      .values({ date: daysAgo(5), supplier: "Sütaş", category: "Hammadde & İçecek", amount: p.payable / 1.1, unpaid: false, paidAt: daysAgo(5), source: "manual", origin: "manual", ...p })
+      .returning();
+    return r;
+  }
+
+  test("FC-02: elle kaydın bağlı e-faturası reddedilince kayıt Paraşüt'ten çözülür: kaynağı elle, tutarı düzeltilebilir ve kalır", async () => {
+    const invoices = await import("../src/server/actions/invoices");
+    const { isParasutLinked } = await import("../src/app/panel/faturalar/rules");
+    const m = await manual({ invoiceNo: "SUT2026000000801", payable: 1000 });
+    fake.eInvoices.set("801", eInvoice("801", { net: 1100, vat: 100 }));
+    await run();
+    let [r] = await rows();
+    assert.deepEqual([r.id, r.source, r.eInvoiceId, r.payable], [m.id, "parasut", "801", 1100], "e-faturaya bağlandı, tutarı e-faturanın");
+    fake.eInvoices.get("801")!.responseType = "rejected";
+    await run();
+    [r] = await rows();
+    assert.deepEqual([r.source, r.origin, r.eInvoiceId, r.externalId], ["manual", "manual", null, null]);
+    assert.equal(isParasutLinked(r), false, "pencere tarih ve tutarları kilitlemez");
+    assert.match(r.note ?? "", /Paraşüt'te e-fatura reddedildi — kontrol edin/);
+    // Kullanıcı eski tutara döner: yazılır, Paraşüt'teki değer diye geri alınmaz; sonraki eşitleme de dokunmaz
+    const saved = await invoices.saveInvoice({ id: r.id, date: r.date, supplier: r.supplier, description: r.description, invoiceNo: r.invoiceNo, category: r.category, amount: 909.09, discount: 0, payable: 1000, unpaid: false, note: r.note });
+    assert.ok(saved.ok, saved.ok ? "" : saved.error);
+    assert.deepEqual([saved.data.kept, saved.data.message], [[], null]);
+    await run();
+    [r] = await rows();
+    assert.deepEqual([r.payable, r.source], [1000, "manual"]);
+  });
+
+  test("FC-02: tek seferlik onarım (0064) yalnız hiçbir Paraşüt belgesine bağlı olmayan elle / Excel kaydının kaynağını geri döndürür", async () => {
+    const broken = await manual({ invoiceNo: "A1", payable: 100, source: "parasut" });
+    const excel = await manual({ invoiceNo: "A2", payable: 200, source: "parasut", origin: "excel" });
+    const linked = await manual({ invoiceNo: "A3", payable: 300, source: "parasut", eInvoiceId: "77" });
+    const bill = await manual({ invoiceNo: "A4", payable: 400, source: "parasut", externalId: "88" });
+    const own = await manual({ invoiceNo: "A5", payable: 500, source: "parasut", origin: "parasut", eInvoiceId: "99" });
+    const { readFileSync } = await import("node:fs");
+    await db.execute(sql.raw(readFileSync("drizzle/0064_fatura_kaynagi_onarimi.sql", "utf8")));
+    const by = new Map((await rows()).map((x) => [x.id, x.source]));
+    assert.deepEqual(
+      [broken, excel, linked, bill, own].map((x) => by.get(x.id)),
+      ["manual", "excel", "parasut", "parasut", "parasut"],
+    );
+  });
+
+  test("FC-03: GİB portalı numarası başka tedarikçinin elle faturasına bağlanmaz; gider faturası da e-fatura da yeni kayıt açılır", async () => {
+    const ahmet = await manual({ supplier: "Ahmet Usta", invoiceNo: "GIB2026000000012", payable: 500, category: "Hizmet", note: "kombi bakımı" });
+    const hasan = await manual({ supplier: "Hasan Elektrik", invoiceNo: "GIB2026000000007", payable: 300, date: daysAgo(8), category: "Hizmet" });
+    const MEHMET: FakeContact = { id: "c5", name: "MEHMET TESİSAT", accountType: "supplier", taxNumber: "12345678950" };
+    fake.bills.set("901", bill("901", { contact: MEHMET, invoiceNo: "GIB2026000000012", amount: 800, vat: 160, lines: [] }));
+    fake.eInvoices.set("777", eInvoice("777", { date: daysAgo(5), invoiceNo: "GIB2026000000007", contactName: "VELİ BOYA SAN.", fromVkn: "1234567808", net: 300, vat: 50 }));
+    await run();
+    const list = await rows();
+    assert.equal(list.length, 4, "iki yeni kayıt");
+    const byId = new Map(list.map((x) => [x.id, x]));
+    assert.deepEqual([byId.get(ahmet.id)!.payable, byId.get(ahmet.id)!.externalId, byId.get(ahmet.id)!.supplierTaxNumber, byId.get(ahmet.id)!.note], [500, null, null, "kombi bakımı"]);
+    assert.deepEqual([byId.get(hasan.id)!.payable, byId.get(hasan.id)!.eInvoiceId], [300, null]);
+    const mehmet = list.find((x) => x.externalId === "901")!;
+    assert.deepEqual([mehmet.supplier, mehmet.payable, mehmet.unpaid], ["MEHMET TESİSAT", 960, true], "Mehmet'in ödenmemiş faturası açıldı");
+    const veli = list.find((x) => x.eInvoiceId === "777")!;
+    assert.equal(veli.unpaid, true, "Veli'nin e-faturası ayrı kayıt");
+    // İkisi de aynı numaralı elle kaydı söyler, kontrol bekler (aynı fatura olabilir)
+    assert.deepEqual([mehmet.needsReview, veli.needsReview], [true, true]);
+    assert.match(mehmet.note ?? "", /aynı numaralı elle girilmiş fatura var \(Ahmet Usta, /);
+    assert.match(veli.note ?? "", /aynı numaralı elle girilmiş fatura var \(Hasan Elektrik, /);
+  });
+
+  test("FC-03: aynı tedarikçinin GİB numaralı elle faturası Paraşüt faturasına bağlanır (adı farklı yazılmış olsa da)", async () => {
+    const m = await manual({ supplier: "Ahmet Usta", invoiceNo: "GIB2026000000012", payable: 960, category: "Hizmet" });
+    const AHMET: FakeContact = { id: "c6", name: "AHMET USTA TESİSAT", accountType: "supplier", taxNumber: "12345678950" };
+    fake.bills.set("902", bill("902", { contact: AHMET, invoiceNo: "GIB2026000000012", amount: 800, vat: 160, lines: [] }));
+    const r = await run();
+    assert.match(r.summary, /0 yeni/);
+    const [row] = await rows();
+    assert.deepEqual([row.id, row.externalId, row.supplier], [m.id, "902", "Ahmet Usta"]);
+  });
+
+  test("FC-03: adı hiç tutmayan aynı usta Tedarikçiler kartıyla tanınır (diğer ad ya da vergi no); kartsızsa yeni kayıt kontrol bekler", async () => {
+    const YILMAZ: FakeContact = { id: "c7", name: "AHMET YILMAZ", accountType: "supplier", taxNumber: "12345678950" };
+    // Kartsız: tedarikçi tutmadı, yeni kayıt açılır ama elle girilmiş aynı numaralı kaydı söyler
+    const m = await manual({ supplier: "Ahmet Usta", invoiceNo: "GIB2026000000012", payable: 960, category: "Hizmet", date: daysAgo(5) });
+    fake.bills.set("903", bill("903", { contact: YILMAZ, invoiceNo: "GIB2026000000012", amount: 800, vat: 160, lines: [] }));
+    await run();
+    let list = await rows();
+    assert.equal(list.length, 2);
+    const copy = list.find((x) => x.externalId === "903")!;
+    assert.equal(copy.needsReview, true);
+    assert.match(copy.note ?? "", /aynı numaralı elle girilmiş fatura var \(Ahmet Usta, \d{2}\.\d{2}\.\d{4}\); aynı faturaysa birini silin/);
+    // Kart yalnız vergi nosunu taşıyor (diğer ad yok): Paraşüt faturası elle kayda bağlanır, ikinci kayıt açılmaz
+    await db.delete(s.invoices).where(eq(s.invoices.id, copy.id));
+    const [card] = await db.insert(s.suppliers).values({ name: "Ahmet Usta", key: "ahmet usta", taxNumber: "12345678950" }).returning();
+    try {
+      await run();
+      list = await rows();
+      assert.deepEqual(
+        list.map((x) => [x.id, x.externalId, x.supplier, x.unpaid]),
+        [[m.id, "903", "Ahmet Usta", false]],
+      );
+      // Vergi nosu Paraşüt'te yok, kart Paraşüt'teki adı diğer ad olarak taşıyor: yine bağlanır
+      const m2 = await manual({ supplier: "Ahmet Usta", invoiceNo: "GIB2026000000013", payable: 480, category: "Hizmet", date: daysAgo(4) });
+      await db.update(s.suppliers).set({ taxNumber: null, aliases: ["AHMET YILMAZ"] }).where(eq(s.suppliers.id, card.id));
+      fake.bills.set("904", bill("904", { contact: { ...YILMAZ, id: "c8", taxNumber: null }, invoiceNo: "GIB2026000000013", amount: 400, vat: 80, date: daysAgo(4), lines: [] }));
+      await run();
+      list = await rows();
+      assert.equal(list.length, 2, "yeni kayıt açılmadı");
+      assert.equal(list.find((x) => x.id === m2.id)?.externalId, "904");
+    } finally {
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
+  test("FC-05: kuru gelmeyen döviz faturası kontrol bekler, notu söyler; onaylanınca sonraki eşitleme yeniden kontrole almaz", async () => {
+    fake.bills.set("950", bill("950", { currency: "USD", amount: 100, vat: 20, lines: [] }));
+    fake.bills.set("951", bill("951", { currency: "USD", exchangeRate: "34.5", amount: 100, vat: 20, lines: [] }));
+    await run();
+    const list = await rows();
+    const noRate = list.find((x) => x.externalId === "950")!;
+    assert.equal(noRate.needsReview, true);
+    assert.match(noRate.note ?? "", /USD faturası: döviz kuru okunamadı, tutarı kontrol edin/);
+    const withRate = list.find((x) => x.externalId === "951")!;
+    assert.equal(withRate.payable, 4140);
+    assert.doesNotMatch(withRate.note ?? "", /döviz kuru/);
+    // Elle girilmiş kayda bağlanan kursuz döviz faturası da bir kez kontrole düşer
+    await db.update(s.invoices).set({ needsReview: false }).where(eq(s.invoices.id, noRate.id));
+    const m = await manual({ invoiceNo: "SUT2026000000952", payable: 120 });
+    fake.bills.set("952", bill("952", { currency: "EUR", amount: 100, vat: 20, lines: [] }));
+    await run();
+    const linked = (await rows()).find((x) => x.id === m.id)!;
+    assert.deepEqual([linked.externalId, linked.needsReview], ["952", true]);
+    assert.match(linked.note ?? "", /EUR faturası: döviz kuru okunamadı/);
+    assert.equal((await rows()).find((x) => x.id === noRate.id)!.needsReview, false, "onaylanan yeniden kontrole düşmez");
+  });
+
+  test("FC-X1: elle kayıt yalnız tarihi farklı e-faturaya bağlanınca not tarihin değiştiğini söyler", async () => {
+    const m = await manual({ invoiceNo: "SUT2026000000555", payable: 1100, date: daysAgo(6) });
+    fake.eInvoices.set("555", eInvoice("555", { date: daysAgo(4), net: 1100, vat: 100 }));
+    await run();
+    const [r] = await rows();
+    assert.deepEqual([r.id, r.date, r.payable, r.needsReview], [m.id, daysAgo(4), 1100, true]);
+    const [y, mo, d] = daysAgo(6).split("-");
+    assert.equal(r.note, `tarih e-faturaya göre güncellendi (önce ${d}.${mo}.${y})`);
   });
 
   test("sitenin satış iadesi ve gelen iade e-faturası gider sayılmaz; tedarikçiye iade listelenir", async () => {

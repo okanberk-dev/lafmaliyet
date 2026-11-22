@@ -4,7 +4,7 @@
  */
 
 import { parseNumberTR } from "@/lib/calc/expr";
-import { addDays } from "@/lib/reminders";
+import { addDays, isCalendarDate } from "@/lib/reminders";
 
 import type { AmountRaw, IssueRaw } from "./schemas";
 
@@ -48,9 +48,7 @@ export function clean(s: string | null | undefined, max: number): string | null 
 
 /** Takvimde gerçek bir gün mü (YYYY-MM-DD) */
 export function validDay(s: string | null | undefined): s is string {
-  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const d = new Date(`${s}T00:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  return typeof s === "string" && isCalendarDate(s);
 }
 
 /** Fişin iş günü: 05:00'ten önce basılan fiş bir önceki güne aittir (kafe gece yarısından sonra kapanabilir) */

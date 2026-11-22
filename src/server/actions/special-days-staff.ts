@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { STAFF_SPECIAL_TEXT } from "@/lib/closed-days";
 import { specialSummary } from "@/lib/ozel-gun";
+import { isCalendarDate } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
 import { deleteStaffSpecialCore, saveStaffSpecialCore } from "@/server/staff-special";
@@ -16,7 +17,8 @@ import { attempt, UserError } from "./util";
 // yönetici bilgi alır (zil) ve Satış tahmini'nde düzenleyebilir. Kuralların çekirdeği src/server/forecast/staff-special.ts.
 // "use server" dosyasındaki her dışa açık işlev bir uçtur: her biri kendi oturum ve rol denetimini yapar.
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Günü seçin");
+/** Takvimde var olan gün (2027-02-30 değil) */
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Günü seçin").refine(isCalendarDate, "Geçersiz tarih");
 
 const saveInput = z.object({
   id: z.number().int().positive().nullish(),

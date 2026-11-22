@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { DEFAULT_BRANCH_ID } from "./branches";
 import { money } from "./format";
-import { addDays, dayMonthTR, daysBetween, longDateTR } from "./reminders";
+import { addDays, dayMonthTR, daysBetween, isCalendarDate, longDateTR } from "./reminders";
 
 /**
  * Kapalı gün ve personelin özel günleri (saf; plan docs/planlar/personel-yetki.md §2.9; docs/SATIS-TAHMINI.md ›
@@ -302,6 +302,7 @@ export const STAFF_SPECIAL_TEXT = {
   daily: "Bugün en çok 20 değişiklik yapılabilir; yarın yeniden deneyin",
   kind: "Bu türü yönetici girer",
   effect: "Etkiyi listeden seçin",
+  date: "Geçersiz tarih",
   adminDirect: "Yönetici özel günleri Satış tahmini'nde düzenler",
 } as const;
 
@@ -329,6 +330,7 @@ export function staffSpecialCheck(
   if (!(STAFF_SPECIAL_KINDS as readonly string[]).includes(input.kind)) return T.kind;
   if (!(STAFF_EFFECTS as readonly number[]).some((e) => Math.abs(e - input.effect) < 1e-9)) return T.effect;
   if (!input.title.trim()) return T.title;
+  if (!isCalendarDate(input.dateFrom) || !isCalendarDate(input.dateTo)) return T.date;
   if (input.dateTo < input.dateFrom) return T.order;
   if (input.dateFrom <= ctx.today) return T.tomorrow;
   if (daysBetween(input.dateFrom, input.dateTo) + 1 > L.maxSpan) return T.span;

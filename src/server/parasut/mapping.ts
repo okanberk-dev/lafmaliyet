@@ -9,7 +9,8 @@
  * Fatura altı iskonto kalemlerin net tutarına oranla dağıtılır (birim maliyet doğru çıksın).
  */
 
-import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
+import { cleanTaxNumber, taxKey } from "@/app/panel/tedarikciler/logic";
+import { dateTR } from "@/lib/format";
 
 import { dec, indexIncluded, relMany, relOne, str, type Resource } from "./jsonapi";
 
@@ -66,7 +67,15 @@ export interface BillDraft {
   siteProducts: boolean;
   /** Bağlı gelen e-belgenin türü (`invoice_type_code`, büyük harf: "SATIS", "IADE"…); yoksa ya da giden belgede null */
   eDocumentKind: string | null;
+  /**
+   * Döviz faturasında kur okunamadı (`exchange_rate` yok ya da 0): para birimi ("USD"). Tutarlar kur 1 sayılarak yazılır,
+   * kayıt kontrol bekler (FC-05; missingRateNote). TL faturada ve kur geldiyse null
+   */
+  missingRate: string | null;
 }
+
+/** Kuru okunamayan döviz faturasının notu (kayıt kontrol bekler) */
+export const missingRateNote = (currency: string) => `${currency} faturası: döviz kuru okunamadı, tutarı kontrol edin`;
 
 /**
  * Sitenin (laffogato.net e-Arşiv / e-Fatura) Paraşüt'te açtığı ürünlerin kodu, alış faturasında bulunmaz: LAF-<grup>-<KDV
@@ -145,7 +154,10 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
   const eDoc = relOne(bill, "active_e_document", index);
 
   const currency = (str(a.currency) ?? "TRL").toUpperCase();
-  const rate = currency === "TRL" || currency === "TRY" ? 1 : dec(a.exchange_rate) || 1;
+  const foreign = currency !== "TRL" && currency !== "TRY";
+  const fx = foreign ? dec(a.exchange_rate) : 1;
+  // Kur gelmediyse (yok, 0) tutar kur 1 sayılır ama sessizce TL'ye dönmez: kayıt kontrol bekler (FC-05)
+  const rate = fx > 0 ? fx : 1;
 
   let siteLines = 0;
   const lines: LineDraft[] = details.map((d) => {
@@ -240,6 +252,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
     contactType: str((supplier?.attributes as Record<string, unknown> | undefined)?.account_type)?.toLowerCase() ?? null,
     siteProducts: lines.length > 0 && siteLines === lines.length,
     eDocumentKind: eDocumentKind(eDoc),
+    missingRate: foreign && !(fx > 0) ? currency : null,
     description: str(a.description),
     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
@@ -473,7 +486,15 @@ export interface ExistingInvoice {
   supplier: string;
   date: string;
   payable: number;
+  /** Tedarikçinin vergi nosu (Paraşüt'ten gelmişse; elle ve Excel'le girilende yok) */
+  supplierTaxNumber?: string | null;
 }
+
+/** Eşleştirilen belgenin tedarikçisi: ad ve (biliniyorsa) vergi no */
+type Issuer = { supplier?: string; taxNumber?: string | null };
+
+/** Faturanın Tedarikçiler kartı (cardResolver: ad ve diğer adlar önce, sonra vergi no); kartsızsa null */
+export type CardOf = (supplier: string, taxNumber?: string | null) => number | null;
 
 const invNo = (s: string | null) => (s ? s.replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "");
 
@@ -490,14 +511,60 @@ export function sameSupplier(a: string, b: string): boolean {
 const dayDiff = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
 /**
- * Tam e-fatura/e-arşiv numarası (3 harf/rakam + 13 rakam) tek başına güçlü bir kimliktir; tedarikçi adı farklı
- * yazılmış olabilir (Yemek Sepeti ~ YEMEKSEPETİ ELEKTRONİK). Ortak önek riskine karşı ±31 gün ve aynı tarih ya da
- * tutar (±1 ₺) da bakılır; tedarikçi adına bakılmaz.
+ * GİB e-Arşiv portalının numarası (GIB + yıl + sıra): portalı kullanan bütün küçük tedarikçilerde aynı biçimde, iki
+ * ustanın 12. faturası aynı numarayı taşır. Tek başına kimlik değildir (FC-03)
  */
-export function findByEInvoiceNo<T extends ExistingInvoice>(d: Pick<BillDraft, "invoiceNo" | "date" | "payable">, existing: T[]): T | null {
+const isGibPortalNo = (invoiceNo: string | null) => invNo(invoiceNo).startsWith("GIB");
+
+/** Tam e-fatura/e-arşiv numarası (3 harf/rakam + 13 rakam; ayraçsız, büyük harf) mı */
+const isFullEInvoiceNo = (no: string) => /^[A-Z0-9]{3}\d{13}$/.test(no);
+
+/** Aynı tam numara, ±31 gün ve aynı tarih ya da tutar (±1 ₺) */
+const sameEInvoiceNo = (e: ExistingInvoice, d: Pick<BillDraft, "date" | "payable">, no: string) =>
+  invNo(e.invoiceNo) === no && dayDiff(e.date, d.date) <= 31 && (e.date === d.date || Math.abs(Math.abs(e.payable) - Math.abs(d.payable)) <= 1);
+
+/**
+ * Aynı tedarikçi mi: ad (sameSupplier), geçerli vergi no ya da ikisi Tedarikçiler'de aynı karta düşüyor (`cardOf`: kartın
+ * adı, diğer adları, vergi nosu). Elle ve Excel'le girilen kayıtta vergi no yoktur; adı farklı yazılmış aynı usta kartla
+ * tanınır
+ */
+function sameIssuer(e: Pick<ExistingInvoice, "supplier" | "supplierTaxNumber">, d: Issuer, cardOf?: CardOf): boolean {
+  if (d.supplier && sameSupplier(e.supplier, d.supplier)) return true;
+  const tax = taxKey(d.taxNumber);
+  if (tax !== null && tax === taxKey(e.supplierTaxNumber)) return true;
+  if (!cardOf) return false;
+  const card = cardOf(d.supplier ?? "", d.taxNumber);
+  return card !== null && card === cardOf(e.supplier, e.supplierTaxNumber);
+}
+
+/**
+ * Tam e-fatura/e-arşiv numarası (3 harf/rakam + 13 rakam) güçlü bir kimliktir; tedarikçi adı farklı yazılmış olabilir
+ * (Yemek Sepeti ~ YEMEKSEPETİ ELEKTRONİK). Ortak önek riskine karşı ±31 gün ve aynı tarih ya da tutar (±1 ₺) da
+ * bakılır. GİB portalının numarası (GIB…) mükellefler arasında çakışır: onda tedarikçi de aynı olmalı (sameIssuer: ad,
+ * vergi no ya da Tedarikçiler kartı); öteki numaralarda tedarikçi adına bakılmaz.
+ */
+export function findByEInvoiceNo<T extends ExistingInvoice>(d: Pick<BillDraft, "invoiceNo" | "date" | "payable"> & Issuer, existing: T[], cardOf?: CardOf): T | null {
   const no = invNo(d.invoiceNo);
-  if (!/^[A-Z0-9]{3}\d{13}$/.test(no)) return null;
-  return existing.find((e) => invNo(e.invoiceNo) === no && dayDiff(e.date, d.date) <= 31 && (e.date === d.date || Math.abs(Math.abs(e.payable) - Math.abs(d.payable)) <= 1)) ?? null;
+  if (!isFullEInvoiceNo(no)) return null;
+  const portal = isGibPortalNo(no);
+  return existing.find((e) => sameEInvoiceNo(e, d, no) && (!portal || sameIssuer(e, d, cardOf))) ?? null;
+}
+
+/**
+ * Yeni açılacak kaydın GİB portalı numarası bağsız (elle, Excel'le girilmiş) bir kayıtta da var (±31 gün, aynı tarih ya
+ * da tutar) ama tedarikçi tutmadı (findByEInvoiceNo bağlamadı): başka ustanın aynı numarası da olabilir, adı başka
+ * yazılmış aynı fatura da. Yeni kayıt açılır ama kontrol bekler (gibNoClashNote); yoksa null
+ */
+export function gibNoClash<T extends ExistingInvoice>(d: Pick<BillDraft, "invoiceNo" | "date" | "payable">, existing: T[]): T | null {
+  const no = invNo(d.invoiceNo);
+  if (!isFullEInvoiceNo(no) || !isGibPortalNo(no)) return null;
+  return existing.find((e) => !e.externalId && sameEInvoiceNo(e, d, no)) ?? null;
+}
+
+/** gibNoClash'ın yeni kayda düşen notu */
+export function gibNoClashNote(e: Pick<ExistingInvoice, "supplier" | "date"> & { origin?: string }): string {
+  const kind = e.origin === "manual" ? "elle girilmiş" : e.origin === "excel" ? "Excel'den alınmış" : "başka bir";
+  return `aynı numaralı ${kind} fatura var (${e.supplier}, ${dateTR(e.date)}); aynı faturaysa birini silin`;
 }
 
 /**
@@ -510,15 +577,21 @@ export function eInvoiceDeleted(d: Pick<BillDraft, "eDocument">, ignored: Readon
 
 /**
  * Elle ya da Excel'den girilmiş aynı faturayı bulur (çift sayımı önlemek için): önce Paraşüt kimliği; sonra tam
- * e-fatura numarası (findByEInvoiceNo); sonra aynı tedarikçi + fatura numarası (tarih ±31 gün; farklı firmalar aynı
- * e-fatura önekini kullanabilir); sonra aynı tedarikçi + aynı tarih + aynı tutar (±1 ₺).
+ * e-fatura numarası (findByEInvoiceNo; GİB portalı numarasında aynı tedarikçi de); sonra aynı tedarikçi + fatura
+ * numarası (tarih ±31 gün; farklı firmalar aynı e-fatura önekini kullanabilir); sonra aynı tedarikçi + aynı tarih +
+ * aynı tutar (±1 ₺). GİB numarasında adı farklı yazılmış aynı tedarikçi `taxNumber` (belgenin vergi nosu) ya da
+ * `cardOf` (Tedarikçiler kartı) ile tanınır
  */
-export function findExisting(d: Pick<BillDraft, "externalId" | "invoiceNo" | "date" | "payable" | "supplier">, existing: ExistingInvoice[]): ExistingInvoice | null {
+export function findExisting(
+  d: Pick<BillDraft, "externalId" | "invoiceNo" | "date" | "payable" | "supplier"> & { taxNumber?: string | null },
+  existing: ExistingInvoice[],
+  cardOf?: CardOf,
+): ExistingInvoice | null {
   const byExt = existing.find((e) => e.externalId === d.externalId);
   if (byExt) return byExt;
   const unlinked = existing.filter((e) => !e.externalId);
   const no = invNo(d.invoiceNo);
-  const strong = findByEInvoiceNo(d, unlinked);
+  const strong = findByEInvoiceNo(d, unlinked, cardOf);
   if (strong) return strong;
   const free = unlinked.filter((e) => sameSupplier(e.supplier, d.supplier));
   if (no.length >= 6) {

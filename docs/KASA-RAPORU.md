@@ -247,10 +247,13 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   sabah e-postası sayar; liste **Faturalar › Kontrol bekleyen**'in üstündeki **Kasadan faturalı alımlar** kartında.
   Satır başına: **Faturalar'a ekle** (pencere kasadan dolu: tarih fişin günü, tedarikçi yer, Ödenecek kasadan çıkan,
   net fişteki KDV'yle, Ödendi · nakit; parası kasadan çıktığı için cari takipteki kartın hesaptaki parasını kullanmaz;
-  kaydedince fişin fotoğrafı faturanın belgesi olur ve satır kalkar, fatura silinirse geri gelir, silme Geri al'la
+  kaydedince fişin fotoğrafı faturanın belgesi olur ve satır kalkar: satır kilitlenir, "hâlâ bekliyor mu", fatura ve
+  satırın kapanması tek işlemde, iki sekmeden aynı anda ya da "Aylık harcamalar'a yaz"la yarışta alım bir kez sayılır
+  (denetim FC-04); fatura silinirse geri gelir, silme Geri al'la
   geri alınırsa satır yine o faturaya bağlanır), **Aylık harcamalar'a yaz** (kategori seçilir; aynı yerin son kasa
   harcamasının kategorisi önerilir; Kasa'nın yazım yolu, Geri al'lı) ve **Listeden çıkar** (faturası başka adla var
-  ya da kafenin gideri değil; Geri al'lı). Eşleşen fatura gelince satır kendiliğinden kalkar.
+  ya da kafenin gideri değil; Geri al'lı; satırı o da kilitler, "Faturalar'a ekle"yle aynı anda basılırsa biri
+  ötekinin sonucunu görür, faturanın satırla bağı silinmez). Eşleşen fatura gelince satır kendiliğinden kalkar.
 - **İki kez sayılan alım** (inceleme D2): Aylık harcamalar'a yazılmış faturalı satırın faturası sonradan Faturalar'a
   gelirse (muhasebeci e-Arşiv'i Paraşüt'e girdi) alım hem faturada hem gider kaydında sayılıyordur. Satır eşleştirmede
   kendi faturasını alır (başka bir bekleyeni kapatmaz) ve aynı kartta, zilde (kırmızı), Bugün'de, Genel bakış'ta ve sabah

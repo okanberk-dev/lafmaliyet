@@ -27,7 +27,6 @@ import {
   filingSavedText,
   filingTitle,
   fixedClassificationRefusal,
-  isCalendarDate,
   overrideLogText,
   overrideRefusal,
   periodStartRefusal,
@@ -59,8 +58,6 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 const zId = z.number().int().positive();
 const zNote = z.string({ message: "Not gerekli" }).trim().min(3, "Not en az 3 karakter olmalı").max(300, "Not en çok 300 karakter");
 const zAmount = zMoney.max(1_000_000_000, "Tutar çok büyük").min(-1_000_000_000, "Tutar çok küçük");
-/** Takvimde var olan gün (zDate yalnız biçime bakar: 2026-02-31 geçmesin) */
-const zDay = zDate.refine(isCalendarDate, "Geçersiz tarih");
 
 /** `tax.settings`'i satır kilidiyle oku-değiştir-yaz (aynı anda iki kayıt birbirinin alanını silmesin) */
 async function updateTaxSettings(tx: Tx, change: (st: TaxSettings) => TaxSettings): Promise<{ before: TaxSettings; after: TaxSettings }> {
@@ -85,7 +82,7 @@ async function readTaxSettings(db: DB | Tx): Promise<TaxSettings> {
 // ---------------------------------------------------------------- Ayarlar (§4.4)
 
 const settingsSchema = z.object({
-  periodStart: zDay.optional(),
+  periodStart: zDate.optional(),
   firstActivity: z.enum(["ilk", "devir"]).nullable().optional(),
   quarterDepreciation: z.enum(["kalan", "ay12"]).optional(),
   muhtasarQuarterly: z.boolean().optional(),
@@ -491,7 +488,7 @@ const assetSchema = z.object({
   id: zId.nullish(),
   name: zText("Ad", 120),
   invoiceId: zId.nullish(),
-  acquiredOn: zDay,
+  acquiredOn: zDate,
   cost: zMoney.max(1_000_000_000, "Tutar çok büyük").refine((v) => v > 0, "Maliyet sıfırdan büyük olmalı"),
   kind: z.enum(["demirbas", "ozel_maliyet", "diger"]).default("demirbas"),
   method: z.enum(["amortisman", "dogrudan_gider"]).default("amortisman"),

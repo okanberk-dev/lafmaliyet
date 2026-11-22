@@ -146,6 +146,9 @@ test("personelin özel günü: tür, etki, ad, sıra, yarından, 3 gün, 60 gün
   assert.equal(staffSpecialCheck({ ...ok, effect: 0.3 }, ctx), T.effect);
   assert.equal(staffSpecialCheck({ ...ok, title: "  " }, ctx), "Ad gerekli");
   assert.equal(staffSpecialCheck({ ...ok, dateTo: "2026-10-24" }, ctx), "Bitiş başlangıçtan önce olamaz");
+  // Takvimde olmayan gün (biçimi doğru olsa da) kaydedilmez
+  assert.equal(staffSpecialCheck({ ...ok, dateFrom: "2026-10-32", dateTo: "2026-10-32" }, ctx), T.date);
+  assert.equal(staffSpecialCheck({ ...ok, dateFrom: "2026-11-30", dateTo: "2026-11-31" }, { ...ctx, today: "2026-11-13" }), T.date);
   assert.equal(staffSpecialCheck({ ...ok, dateFrom: "2026-10-22", dateTo: "2026-10-22" }, ctx), T.tomorrow);
   assert.equal(staffSpecialCheck({ ...ok, dateFrom: "2026-10-23", dateTo: "2026-10-25" }, ctx), null);
   assert.equal(staffSpecialCheck({ ...ok, dateFrom: "2026-10-23", dateTo: "2026-10-26" }, ctx), "En çok 3 gün seçilebilir");
