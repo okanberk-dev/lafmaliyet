@@ -133,6 +133,23 @@ test("Gün sonu e-postası: konu şube ve tarih; ciro, ödemeler, ikram, kasa fa
   assert.doesNotMatch(t, /Düzeltildi/);
 });
 
+test("Z'nin online alanı paket platformlarının ödemesi: e-postada 'sitede ödendi' yazmaz (site siparişi Z'ye girmez)", () => {
+  const t = plain(
+    renderDayEnd(
+      mail({
+        z: { ...Z, card: 7_550, online: 450 },
+        payments: [
+          { name: "Nakit", zField: "cash", channel: null, count: 40, amount: 12_000 },
+          { name: "Yemeksepeti", zField: "online", channel: "yemeksepeti", count: 1, amount: 450 },
+        ],
+      }),
+    ).text,
+  );
+  assert.match(t, /Online ödeme \(paket platformu\): 450 ₺/);
+  assert.match(t, /· Yemeksepeti \(1\): 450 ₺/);
+  assert.doesNotMatch(t, /sitede ödendi/);
+});
+
 test("Düzeltme e-postası: konuda ve başta 'düzeltildi'; kasa farkı raporun rakamıyla", () => {
   const values = { ...autoValuesOf("2026-11-22", Z, NO_OUTS, null), countedCash: 9_300 };
   const m = renderDayEnd(mail({ corrected: true, report: "updated", values }));

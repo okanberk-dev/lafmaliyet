@@ -204,7 +204,7 @@ export function dayEndSections(m: DayEndMail): { title: string; rows: [string, s
     ["Nakit", money(z.cash)],
     ["Kredi / banka kartı", money(z.card)],
     ...(z.mealCard ? ([["Yemek kartı", money(z.mealCard)]] as [string, string][]) : []),
-    ...(z.online ? ([["Online (sitede ödendi)", money(z.online)]] as [string, string][]) : []),
+    ...(z.online ? ([["Online ödeme (paket platformu)", money(z.online)]] as [string, string][]) : []),
     ...(z.other ? ([["Diğer", money(z.other)]] as [string, string][]) : []),
   ];
   const detail: [string, string][] = m.payments
