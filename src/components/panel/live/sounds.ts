@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { alertAudible, isMobileAgent, type OutputStatus } from "@/lib/audio-output";
+import { alertAudible, alertHoursOpen, isMobileAgent, type OutputStatus } from "@/lib/audio-output";
 
 export type { OutputStatus };
 
@@ -20,6 +20,9 @@ export type { OutputStatus };
  * ses ancak seçilen hoparlör etkinse çıkar; hoparlör seçilmemiş, çıkarılmış ya da izni düşmüşse ses kısılır, genel
  * hoparlöre (sistemin varsayılan çıkışına) düşmez (src/lib/audio-output.ts › alertAudible).
  *
+ * Sesler sürekli çalmaz: her uyarı en çok 3 kez çalar (alarm döngüsü dahil, ALARM_RINGS) ve yalnız 10:00–01:00 arasında
+ * (alertHoursOpen); deneme sesi hariç, bu saatlerin dışında ses çalınmaz.
+ *
  * Arka plandaki sekmede zamanlayıcılar geç kalabilir; sürenin bittiği an ayrıca ses saatine kurulur (scheduleBurst):
  * ses saati kısılmaz, alarm tam zamanında başlar.
  */
@@ -33,7 +36,9 @@ const notifyAudio = () => {
   for (const fn of audioListeners) fn();
 };
 let alarmTimer: ReturnType<typeof setInterval> | null = null;
-let alarmUntil = 0;
+/** Alarm kaç kez çalar (sürekli çalmaz): süresi dolan karaoke oturumu ve "sürekli sesli" hatırlatma */
+export const ALARM_RINGS = 3;
+let alarmRingsLeft = 0;
 let volume = 1;
 
 type AudioCtor = typeof AudioContext;
@@ -239,9 +244,9 @@ const bell = (freq: number, at: number, duration: number): Note[] => [
 const PATTERNS: Record<SoundKind, Note[]> = {
   // Yeni rezervasyon ve yeni uygulama siparişi: yükselen üçlü çan, üç kez (sipariş zili gibi)
   ring: [0, 0.85, 1.7].flatMap((t) => [...bell(1047, t, 0.22), ...bell(1319, t + 0.16, 0.22), ...bell(1568, t + 0.32, 0.45)]),
-  // Masaya sipariş: aynı çan beş kez ve bir oktav üstü vurguyla (masada oturan bekler; sitenin zil kuralı: masa önce ve
+  // Masaya sipariş: aynı çan üç kez ve bir oktav üstü vurguyla (masada oturan bekler; sitenin zil kuralı: masa önce ve
   // daha yüksek sesle)
-  table: [0, 0.75, 1.5, 2.25, 3].flatMap((t) => [...bell(1047, t, 0.22), ...bell(1319, t + 0.14, 0.22), ...bell(1568, t + 0.28, 0.3), ...bell(2093, t + 0.42, 0.3)]),
+  table: [0, 0.75, 1.5].flatMap((t) => [...bell(1047, t, 0.22), ...bell(1319, t + 0.14, 0.22), ...bell(1568, t + 0.28, 0.3), ...bell(2093, t + 0.42, 0.3)]),
   // Masa çağrısı ("Garson çağır"): inen iki notalı kapı zili (ding-dong), üç kez; sipariş zilinin yükselen çanından
   // ayrı duyulsun (masada biri bekliyor ama sipariş yok)
   call: [0, 0.9, 1.8].flatMap((t) => [...bell(1568, t, 0.3), ...bell(1175, t + 0.3, 0.5)]),
@@ -256,10 +261,12 @@ const PATTERNS: Record<SoundKind, Note[]> = {
   test: [...bell(1047, 0, 0.22), ...bell(1568, 0.18, 0.4)],
 };
 
-function schedule(kind: SoundKind, at: number): OscillatorNode[] {
+function schedule(kind: SoundKind, at: number, wallMs: number = Date.now()): OscillatorNode[] {
   const c = context();
   // Çalınamıyorsa ("yalnız bu bilgisayar" açık, hoparlör yok) hiç kurulmaz: genel hoparlöre ses gitmez
   if (!c || !master || c.state !== "running" || !alertsAudible()) return [];
+  // 10:00–01:00 dışında ses yok (deneme sesi hariç)
+  if (kind !== "test" && !alertHoursOpen(wallMs)) return [];
   return PATTERNS[kind].map(([f, t, d, type, peak]) => tone(c, master!, f, at + t, d, type, peak));
 }
 
@@ -285,20 +292,25 @@ function ownersChanged() {
   notifyAudio();
 }
 
-/** Alarm döngüsü: susturulana kadar (en çok 30 dakika) her 2,2 saniyede bir */
+/**
+ * Alarm döngüsü: her 2,2 saniyede bir, toplam ALARM_RINGS (3) kez çalar ve kendiliğinden susar (sürekli çalmaz). Yeni bir
+ * sahip alarmı başlatırsa 3 çalış yeniden başlar; 10:00–01:00 dışında hiç çalmaz.
+ */
 export function startAlarm(owner: string) {
   alarmOwners.add(owner);
   ownersChanged();
-  alarmUntil = Date.now() + 30 * 60_000;
+  alarmRingsLeft = ALARM_RINGS;
   if (alarmTimer) return;
   play("alarm");
+  alarmRingsLeft--;
   alarmTimer = setInterval(() => {
-    if (Date.now() > alarmUntil) return stopAlarm();
+    if (alarmRingsLeft <= 0) return stopAlarm();
     play("alarm");
+    alarmRingsLeft--;
   }, 2200);
 }
 
-/** Sahibin alarmını susturur (başka sahip çalıyorsa alarm sürer); sahipsiz çağrı (30 dakika doldu) hepsini susturur */
+/** Sahibin alarmını susturur (başka sahip çalıyorsa alarm sürer); sahipsiz çağrı (3 çalış doldu) hepsini susturur */
 export function stopAlarm(owner?: string) {
   if (owner === undefined) alarmOwners.clear();
   else alarmOwners.delete(owner);
@@ -323,7 +335,7 @@ export function useAlarmOwners(): string {
 }
 
 /**
- * Sürenin bittiği ana ses saatinden alarm kurar (sekme arka planda olsa da tam zamanında, 12 saniye çalar); dönen
+ * Sürenin bittiği ana ses saatinden alarm kurar (sekme arka planda olsa da tam zamanında, 3 kez çalar); dönen
  * işlev kurulan sesleri iptal eder. Ses kapalıysa hiçbir şey kurulmaz.
  */
 export function scheduleBurst(atMs: number): () => void {
@@ -332,7 +344,7 @@ export function scheduleBurst(atMs: number): () => void {
   const delay = (atMs - Date.now()) / 1000;
   if (delay < 0.05 || delay > 12 * 3600) return () => {};
   const nodes: OscillatorNode[] = [];
-  for (let i = 0; i < 6; i++) nodes.push(...schedule("alarm", c.currentTime + delay + i * 2.2));
+  for (let i = 0; i < ALARM_RINGS; i++) nodes.push(...schedule("alarm", c.currentTime + delay + i * 2.2, atMs + i * 2200));
   return () => {
     for (const n of nodes) {
       try {

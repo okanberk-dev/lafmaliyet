@@ -84,7 +84,7 @@ test("ses seçilen hoparlöre çalar; çalamazsa varsayılana döner, sessiz kal
 test("sesi sekme çalıyorsa sistem bildirimi sessiz (işletim sisteminin sesi Bluetooth hoparlöre giderdi)", () => {
   const sw = readFileSync(join(process.cwd(), "public/sw.js"), "utf8");
   assert.match(sw, /const pageRings = await tellPanels\(panels,/);
-  assert.match(sw, /const quiet = pageRings \|\| \(await quietDevice\(\)\);/);
+  assert.match(sw, /const quiet = pageRings \|\| \(await quietDevice\(\)\) \|\| !soundHours\(Date\.now\(\)\);/);
   assert.match(sw, /silent: quiet,/);
   assert.match(sw, /e\.data\.willRing \|\| e\.data\.quiet/);
   assert.match(sw, /new MessageChannel\(\)/);

@@ -4,8 +4,9 @@ import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { runKaraokeMails } from "@/server/karaoke/staff-mail";
 import { runChecklistAlerts } from "@/server/notify/checklist-alerts";
 
-// Saat başını 7 geçe (Türkiye 08:07 – 02:07): personele kontrol listesi hatırlatmaları (Tuvalet çizelgesinin her saati,
-// açılış ve kapanış listeleri; zamanı geldi / gecikti). Yedek tetikleyici: asıl tetikleme açık panel sekmesinin canlı
+// Bildirim saatlerinde (Türkiye 10:07, 14:07, 18:07, 22:07; ilk saatte iki deneme): personele kontrol listesi
+// hatırlatmaları (Tuvalet çizelgesi, açılış ve kapanış listeleri; zamanı geldi / gecikti). Günde 4 kez, 10:00'dan önce
+// ve 01:00'dan sonra hiç (alertSendInstant); başka saatte çağrılırsa bir şey göndermez. Yedek tetikleyici: asıl tetikleme açık panel sekmesinin canlı
 // yoklamasından (/api/canli, en çok 5 dakikada bir). Vercel Hobby'de cron günde bir kez çalıştığı için bu ucu GitHub
 // Actions çağırır (.github/workflows/kontrol-hatirlatma.yml); isteği CRON_SECRET'la imzalar. Kurallar
 // src/lib/checklist-alerts.ts, ayrıntı docs/KONTROL-LISTELERI.md § 6. Gönderim en geç 45 sn'de kesilir.

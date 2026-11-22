@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
     });
   }
   // Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6): açık bir sekme sorduğunda, yanıttan sonra, sunucu
-  // örneği başına en çok 5 dakikada bir. Saatlik GitHub işi yoğunlukta saatlerce gecikebildiği için asıl tetikleyici bu
+  // örneği başına en çok 5 dakikada bir, yalnız günde 4 bildirim saatinin ilk saatinde (10:00, 14:00, 18:00, 22:00).
+  // GitHub işi yoğunlukta saatlerce gecikebildiği için asıl tetikleyici bu
   if (claimChecklistAlertPoll()) {
     after(async () => {
       try {

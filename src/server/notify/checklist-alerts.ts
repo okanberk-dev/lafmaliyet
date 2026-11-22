@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
-import { alertPollDue, alertReaches, checklistAlerts, remindableLists, type ChecklistAlert } from "@/lib/checklist-alerts";
+import { alertPollDue, alertReaches, alertSendInstant, checklistAlerts, remindableLists, type ChecklistAlert } from "@/lib/checklist-alerts";
 import { checklistDay } from "@/lib/checklists";
 import { loadAlertLists } from "@/server/checklists/store";
 import { closedMarksOn, isClosedDay } from "@/server/closed-days";
@@ -27,15 +27,19 @@ export interface ChecklistAlertRun {
 }
 
 /**
- * Personele kontrol listesi hatırlatmaları (saatlik iş, /api/cron/kontrol; kurallar src/lib/checklist-alerts.ts).
- * Bugünün listelerinden şimdi gerekenler bulunur; her uyarının anahtarı gönderimden önce notification_log'a yazılarak
+ * Personele kontrol listesi hatırlatmaları (/api/cron/kontrol ve canlı yoklama; kurallar src/lib/checklist-alerts.ts).
+ * Yalnız günde 4 bildirim saatinde (10:00, 14:00, 18:00, 22:00) ve saatin ilk saatinde çalışır, başka zaman hiçbir şey
+ * göndermez (alertSendInstant); uyarılar o saatin anına göre bulunur. Bugünün listelerinden o anda gerekenler bulunur; her uyarının anahtarı gönderimden önce notification_log'a yazılarak
  * sahiplenilir (aynı anda iki çalışma aynı uyarıyı iki kez göndermesin). Her personele kendi adresine tek e-posta
  * gider (adresler birbirine görünmez); ona giden bütün uyarılar bir arada. Bir uyarı hiç kimseye kesin olarak
  * gidemediyse sahiplenme geri alınır, sonraki çalışma yeniden dener. E-posta Ayarlar'dan kapalıysa ya da Resend kurulu
  * değilse hiçbir şey yazılmaz. Gün kapalı işaretliyse (Özel günler › Kafe kapalı) yalnız o gün açılmış listeler
  * hatırlatılır (remindableLists).
  */
-export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: number = Date.now() + 45_000): Promise<ChecklistAlertRun> {
+export async function runChecklistAlerts(clock: Date = new Date(), deadlineAt: number = Date.now() + 45_000): Promise<ChecklistAlertRun> {
+  // Bildirim saati dışında (10:00 öncesi, 01:00 sonrası ve saatler arası) e-posta gitmez; saatin anına göre hesaplanır
+  const now = alertSendInstant(clock);
+  if (!now) return { skipped: "bildirim saati değil (10:00, 14:00, 18:00, 22:00)", alerts: [], sent: 0, failed: 0 };
   if (!isEmailConfigured()) return { skipped: "RESEND_API_KEY tanımlı değil", alerts: [], sent: 0, failed: 0 };
   const settings = await loadNotifySettings();
   if (!settings.emailEnabled) return { skipped: "e-posta hatırlatmaları kapalı", alerts: [], sent: 0, failed: 0 };
@@ -111,12 +115,13 @@ export async function runChecklistAlerts(now: Date = new Date(), deadlineAt: num
 let lastPollRun = 0;
 
 /**
- * Canlı yoklama (/api/canli) hatırlatma işini şimdi tetiklesin mi: e-posta kurulu ve bu örnekte son tetiklemeden
+ * Canlı yoklama (/api/canli) hatırlatma işini şimdi tetiklesin mi: bildirim saatinin ilk saatinde, e-posta kurulu ve bu örnekte son tetiklemeden
  * 5 dakika geçti (ALERT_POLL_GAP_MS). Evetse anı hemen yazar: aynı anda gelen yoklamalar ikinci kez tetiklemez. Birden
  * çok sunucu örneği aynı anda çalışırsa da her uyarı bir kez gider (notification_log'da sahiplenme).
  */
 export function claimChecklistAlertPoll(nowMs: number = Date.now()): boolean {
-  if (!isEmailConfigured() || !alertPollDue(nowMs, lastPollRun)) return false;
+  // Bildirim saati dışında yoklama işi hiç başlatmaz (veritabanına da gidilmez)
+  if (!alertSendInstant(new Date(nowMs)) || !isEmailConfigured() || !alertPollDue(nowMs, lastPollRun)) return false;
   lastPollRun = nowMs;
   return true;
 }

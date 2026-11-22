@@ -27,7 +27,7 @@ Saatli hatırlatıcı, panel açıkken o saatte uyarır. Ses hatırlatıcı baş
 | Seçenek | Ne olur |
 |---|---|
 | **Tek ses** (varsayılan) | Bir kez zil çalar — bugünkü davranış |
-| **Sürekli** | Durdurulana kadar çalar (karaoke alarmı gibi, en çok 30 dk). "Yaptım", "1 saat sonra hatırlat" ya da "Sesi kes" durdurur; pencereyi kapatmak durdurmaz (köşedeki kartta da "Sesi kes" var). Başka cihazda tamamlanınca ya da cihazın **Sesli uyarı** anahtarı kapanınca burada da susar |
+| **Sürekli** | Üç kez çalar ve kendiliğinden susar (karaoke alarmı gibi, 23 Kasım 2026'dan beri sürekli çalmaz). "Yaptım", "1 saat sonra hatırlat" ya da "Sesi kes" durdurur; pencereyi kapatmak durdurmaz (köşedeki kartta da "Sesi kes" var). Başka cihazda tamamlanınca ya da cihazın **Sesli uyarı** anahtarı kapanınca burada da susar |
 | **Sessiz** | Hiç çalmaz; bildirim yine çıkar |
 
 Saat verilmemişse hiçbiri çalmaz (hatırlatıcı gün boyu listede durur). Cihazın kendi **Sesli uyarı** anahtarı
@@ -97,3 +97,12 @@ hafifçe sallanır (hareket azaltılmışsa ikisi de durur). Ekran okuyucuya öz
 | Saatinde uyarı ve ses (zamanlayıcı) | `src/components/panel/live/alert-center.tsx`, `sounds.ts` (alarmın sahipleri) |
 | Açılır pencere ve köşe kartı | `src/components/panel/live/reminder-alerts.tsx`, `src/app/globals.css` (`[data-reminder-dock]`) |
 | Testler | `tests/hatirlaticilarim.test.ts` |
+
+## Uyarı seslerinin sınırı (23 Kasım 2026)
+
+Hiçbir uyarı sesi sürekli çalmaz: karaoke süresi dolma alarmı ve "Sürekli" hatırlatma 3 kez (2,2 sn arayla) çalıp
+kendiliğinden susar (`ALARM_RINGS`, `src/components/panel/live/sounds.ts`); yeni rezervasyon, uygulama siparişi ve masa
+çağrısı zili de en çok 3 çandır (masa zili önceden 5'ti). Ses yalnız **10:00 ile 01:00 arasında** çalar
+(`src/lib/audio-output.ts › alertHoursOpen`, İstanbul saati): 01:00–10:00 arasında ses çalmaz ve sistem bildirimi
+sessiz gelir (`public/sw.js`; sabah 08:00 hatırlatıcı özeti de sessiz görünür). Ekrandaki pencere ve kartlar aynen
+çıkar; **Deneme sesi** saat kuralına bakmaz. Sınırı `tests/uyari-sesi-saatleri.test.ts` sınar.

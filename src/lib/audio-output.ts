@@ -130,3 +130,16 @@ export function systemDefaultLabel(devices: readonly { kind: string; deviceId: s
   if (!d) return null;
   return d.label.replace(/^\s*(varsayılan|default)\s*[-–:]\s*/i, "").trim() || null;
 }
+
+/**
+ * Uyarı sesi saatleri (İstanbul, UTC+3): sabah 10:00'dan gece 01:00'a kadar. Bu saatlerin dışında (01:00–10:00) hiçbir
+ * uyarı ve hatırlatma sesi çalmaz, sistem bildirimi de sessiz gelir; ekrandaki pencere ve kartlar aynen çıkar. Deneme
+ * sesi (test) bu kurala bakmaz. public/sw.js aynı kuralın kopyasını taşır (tests/ses-cikisi.test.ts ikisini denetler).
+ */
+export const ALERT_SOUND_FROM_MIN = 10 * 60;
+export const ALERT_SOUND_UNTIL_MIN = 60;
+
+export function alertHoursOpen(atMs: number): boolean {
+  const minutes = Math.floor((((atMs + 3 * 3600_000) % 86_400_000) + 86_400_000) % 86_400_000 / 60_000);
+  return minutes >= ALERT_SOUND_FROM_MIN || minutes <= ALERT_SOUND_UNTIL_MIN;
+}

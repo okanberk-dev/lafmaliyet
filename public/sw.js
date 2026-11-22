@@ -27,7 +27,8 @@ self.addEventListener("push", (event) => {
       const panels = windows.filter((c) => new URL(c.url).pathname.startsWith("/panel"));
       const pageRings = await tellPanels(panels, { type: "laf:push", kind: msg.kind, title: msg.title, body: msg.body, url, ring: Boolean(msg.ring) });
       // "Yalnız bu bilgisayar" (Tuzla Köyiçi): sistemin bildirim sesi genel hoparlörden çalardı, hep sessiz
-      const quiet = pageRings || (await quietDevice());
+      // 10:00–01:00 dışında bildirim sessiz gelir (src/lib/audio-output.ts › alertHoursOpen'in kopyası)
+      const quiet = pageRings || (await quietDevice()) || !soundHours(Date.now());
       // Panel sekmesi öndeyse ve görünüyorsa bildirimi sekme gösterir (zil + kart); değilse sistem bildirimi
       if (panels.some((c) => c.focused && c.visibilityState === "visible")) return;
       await self.registration.showNotification(String(msg.title).slice(0, 120), {
@@ -44,6 +45,12 @@ self.addEventListener("push", (event) => {
     })(),
   );
 });
+
+/** Uyarı sesi saatleri: 10:00–01:00 (İstanbul, UTC+3); dışında sistem bildirimi sessiz gelir */
+function soundHours(atMs) {
+  const minutes = Math.floor(((((atMs + 3 * 3600000) % 86400000) + 86400000) % 86400000) / 60000);
+  return minutes >= 600 || minutes <= 60;
+}
 
 /**
  * Açık panel sekmelerine haber verir; sekmelerden biri sesi kendisi çalacağını söylerse (ses açık ve açılmış, bu

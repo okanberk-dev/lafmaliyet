@@ -29,6 +29,10 @@ export interface CashSettings {
   emailEnabled: boolean;
   /** "WhatsApp ile gönder" bu numaranın sohbetini açar; boşsa sohbet seçici (grup da seçilir) */
   whatsapp: string | null;
+  /** LafPOS gün sonunun kısa e-postası: şubenin çalışanları (yönetim listesinden ayrı) */
+  staffRecipients?: string[];
+  /** Çalışan e-postasında tutarlar (ciro, ödeme türleri) görünsün mü; kapalıyken yalnız "gün sonu alındı", fiş sayısı */
+  staffAmounts?: boolean;
 }
 
 /** Kayıtlı ayar yokken: alıcılar ortamdan (`CASH_REPORT_RECIPIENTS`, src/lib/cash-report.ts), e-posta açık */
@@ -45,6 +49,8 @@ export async function loadCashSettings(): Promise<CashSettings> {
     recipients: Array.isArray(v.recipients) ? v.recipients.filter((x): x is string => typeof x === "string") : defaultCashRecipients(process.env),
     emailEnabled: typeof v.emailEnabled === "boolean" ? v.emailEnabled : DEFAULT_CASH_SETTINGS.emailEnabled,
     whatsapp: typeof v.whatsapp === "string" && v.whatsapp ? v.whatsapp : null,
+    staffRecipients: Array.isArray(v.staffRecipients) ? v.staffRecipients.filter((x): x is string => typeof x === "string") : [],
+    staffAmounts: v.staffAmounts === true,
   };
 }
 

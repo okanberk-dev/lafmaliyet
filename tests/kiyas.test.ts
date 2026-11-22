@@ -461,15 +461,16 @@ test("Tuzla'nın rakamı Genel bakış'ın günlük cirosuyla aynı (ödenmez ku
   assert.equal(one("2026-11-03"), 9_500);
 });
 
-test("kaynak: kart yalnız yöneticide, seçili şubeyle, 05:00 iş günüyle ve Genel bakış'ın kasa satırlarıyla", () => {
+test("kaynak: yükleyici yalnız yöneticide, seçili şubeyle, 05:00 iş günüyle; panelde Kıyas kartı yok (LafPOS'ta)", () => {
   const root = join(import.meta.dirname, "..");
   const loader = readFileSync(join(root, "src/server/data/kiyas.ts"), "utf8");
   assert.match(loader, /await requireAdmin\(\)/);
   assert.match(loader, /currentBranchScope\(\)/);
   assert.match(loader, /tillRows\(db\)/);
   assert.match(loader, /const today = businessDate\(now\)/);
+  // Bugün sayfasındaki Kıyas kartı sahibin isteğiyle kaldırıldı (kıyaslar LafPOS patron panelinde, 22 Kas 2026)
   const bugun = readFileSync(join(root, "src/app/panel/bugun/page.tsx"), "utf8");
-  assert.match(bugun, /user\.role === "admin" \? safe\(loadKiyas\(\)\) : Promise\.resolve\(null\)/);
+  assert.doesNotMatch(bugun, /loadKiyas\(/);
   const panel = readFileSync(join(root, "src/app/panel/page.tsx"), "utf8");
-  assert.match(panel, /loadKiyas\(till\)/);
+  assert.doesNotMatch(panel, /loadKiyas\(/);
 });
