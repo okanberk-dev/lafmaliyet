@@ -3,8 +3,10 @@
 import { refresh } from "next/cache";
 
 import { pdfHref, type SaveWeekInput } from "@/lib/vardiya";
+import type { DraftResult, DraftWeekInput } from "@/lib/vardiya-taslak";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb } from "@/server/db";
+import { draftShiftWeek } from "@/server/vardiya/draft";
 import { saveShiftWeek, shiftLogDetail } from "@/server/vardiya/store";
 
 import { logActivity } from "./log";
@@ -35,5 +37,17 @@ export async function saveShiftWeekAction(input: SaveWeekInput): Promise<ActionR
       refresh();
     }
     return { written: r.written, removed: r.removed, summary: r.summary, pdf: pdfHref(r.branch.id, r.monday) };
+  });
+}
+
+/**
+ * Yazarak doldurma: yöneticinin metni vardiya atamalarına çevrilir ve ızgaraya **taslak** olarak döner. Hiçbir şey
+ * kaydedilmez (plan yalnız saveShiftWeekAction ile yazılır); bu yüzden işlem geçmişine de düşmez. Servisin hataları
+ * yöneticinin okuyacağı cümleyle döner (src/server/ai/run.ts aiErrorText).
+ */
+export async function draftShiftWeekAction(input: DraftWeekInput): Promise<ActionResult<DraftResult>> {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    return draftShiftWeek(getDb(), me, input);
   });
 }

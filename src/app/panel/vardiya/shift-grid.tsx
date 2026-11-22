@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarRange, Copy, Eraser, FileDown, Save, Undo2, UserPlus, X } from "lucide-react";
+import { CalendarRange, Copy, Eraser, FileDown, Save, Sparkles, Undo2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -11,13 +11,14 @@ import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FloatingBar } from "@/components/ui/floating-bar";
-import { Input } from "@/components/ui/form";
+import { Input, Textarea } from "@/components/ui/form";
 import { BRANCH_LEAVE, useLeaveGuard } from "@/components/ui/leave-guard";
 import { EmptyState } from "@/components/ui/misc";
-import { Notice } from "@/components/ui/notice";
+import { Notice, NoticeLink } from "@/components/ui/notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { useIsPhone } from "@/components/ui/use-media";
+import type { ReadingState } from "@/lib/photo-rules";
 import { cn } from "@/lib/utils";
 import {
   cleanName,
@@ -39,12 +40,14 @@ import {
   SHIFT_TEXT,
   shiftMinutes,
   shiftPresets,
+  shiftTimes,
   userRef,
   weekDays,
   weekLabel,
   type ShiftCell,
 } from "@/lib/vardiya";
-import { saveShiftWeekAction } from "@/server/actions/vardiya";
+import { applyDraft, draftSummary, SHIFT_PROMPT_MAX, SHIFT_PROMPT_MIN } from "@/lib/vardiya-taslak";
+import { draftShiftWeekAction, saveShiftWeekAction } from "@/server/actions/vardiya";
 
 /** Izgaranın satırı: kişi ve yedi günün ekrandaki metni */
 export interface GridRow {
@@ -71,9 +74,74 @@ interface Props {
   /** Kaydedilen planın damgası: değişince (kayıt, başka sekmenin kaydı) ızgara sunucunun satırlarıyla yeniden kurulur */
   stamp: string;
   updatedText: string | null;
+  /** Yazarak doldurma kullanılabilir mi (yalnız yöneticiye gelir; personelde null) */
+  draftState: ReadingState | null;
 }
 
+/** Yazarak doldurmanın son sonucu: kutunun altındaki uyarı */
+interface DraftNote {
+  tone: "good" | "neutral" | "bad";
+  title: string;
+  text: string;
+  /** Uygulanamayanlar ve modelin notu */
+  lines: string[];
+  /** Taslaktan önceki satırlar ("Taslağı geri al"); hata ve değişiklik yoksa null */
+  undo: GridRow[] | null;
+}
+
+/** Yazarak doldurma kullanılamıyorken kutunun yerinde duran açıklama */
+const DRAFT_OFF: Record<Exclude<ReadingState, "on">, { title: string; text: string }> = {
+  nokey: { title: "Yazarak doldurma kurulu değil", text: "Kutuları seçerek ya da elle yazarak doldurun." },
+  off: { title: "Yazarak doldurma kapalı", text: "Ayarlar › Fotoğraftan okuma açılınca kullanılır." },
+  cap: { title: "Yazarak doldurmanın bugünkü sınırı doldu", text: "Yarın yeniden açılır; kutuları seçerek doldurun." },
+};
+
 const fold = (v: string) => cleanName(v).toLocaleLowerCase("tr-TR");
+
+/**
+ * Telefonun gün seçicisi: haftanın yedi günü tek satırda, kaydırmadan (genel Segmented dar telefonda yana kayar ve son
+ * günler görünmezdi). Kısa gün adı üstte, ayın günü altta; bugünün rakamı mavi. Ok tuşlarıyla gezilir (radiogroup).
+ */
+function DayPicker({ days, today, value, onChange }: { days: readonly string[]; today: string; value: number; onChange: (day: number) => void }) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Gün"
+      className="grid grid-cols-7 gap-1"
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        const next = (value + step + 7) % 7;
+        onChange(next);
+        (e.currentTarget.querySelector(`[data-day="${next}"]`) as HTMLElement | null)?.focus();
+      }}
+    >
+      {days.map((d, i) => {
+        const on = i === value;
+        return (
+          <button
+            key={d}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            aria-label={`${dayLong(d, i)}${d === today ? ", bugün" : ""}`}
+            tabIndex={on ? 0 : -1}
+            data-day={i}
+            onClick={() => onChange(i)}
+            className={cn(
+              "flex h-12 min-w-0 cursor-pointer flex-col items-center justify-center rounded-xl text-[11px] leading-4 font-medium ring-1 transition-colors ring-inset focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:outline-none",
+              on ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-mute ring-line-strong",
+            )}
+          >
+            <span>{DAY_SHORT[i]}</span>
+            <span className={cn("text-sm leading-4 font-semibold tabular", !on && (d === today ? "text-info" : "text-ink"))}>{Number(d.slice(8, 10))}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 
 /**
@@ -81,16 +149,21 @@ const fold = (v: string) => cleanName(v).toLocaleLowerCase("tr-TR");
  * çıkınca metin biçimlenir, "Kaydet" bütün haftayı tek eylemle yazar. PDF kaydedilen plandan çizilir: kayıttan sonra
  * kendiliğinden günceldir. Personel aynı planı salt okunur görür; kendi haftası üstte ayrı kartta.
  */
-export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, others, previous, stamp, updatedText }: Props) {
+export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, others, previous, stamp, updatedText, draftState }: Props) {
   const router = useRouter();
   const addId = useId();
   const [pending, run] = useActionTransition();
+  // Yazarak doldurma (docs/VARDIYA.md): metin sunucuda atamalara çevrilir, sonuç ızgaraya taslak olarak yazılır
+  const [drafting, runDraft] = useActionTransition();
+  const [prompt, setPrompt] = useState("");
+  const [draftNote, setDraftNote] = useState<DraftNote | null>(null);
   const [rows, setRows] = useState<GridRow[]>(saved);
   // Sunucudaki plan değişti (kayıttan sonraki yenileme, başka sekmenin kaydı): ızgara onunla yeniden kurulur
   const [seen, setSeen] = useState(stamp);
   if (seen !== stamp) {
     setSeen(stamp);
     setRows(saved);
+    setDraftNote(null);
   }
   const [newName, setNewName] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -200,6 +273,44 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
     toast.success(`Geçen haftadan ${copied} hücre kopyalandı`, { description: "Düzenleyip Kaydet'e basın; kaydedilene kadar taslaktır." });
   }
 
+  /**
+   * Yazılan metni plana işler. İstek sürerken ızgara kilitlidir (`inert`): dönen taslak, gönderildiği andaki satırların
+   * üstüne yazılır. Sonuç kaydedilmez; değişen kutular mavi görünür, "Kaydet" bütün haftayı yazar, "Taslağı geri al"
+   * taslaktan önceki hâle döner.
+   */
+  function draftFromPrompt() {
+    const text = prompt.trim();
+    if (text.length < SHIFT_PROMPT_MIN) return void document.getElementById(`${addId}-yaz`)?.focus();
+    const snapshot = rows;
+    runDraft(async () => {
+      // Okunamayan kutu boş gider: ekranda zaten kırmızıdır, taslak onun üstüne yazabilir
+      const res = await draftShiftWeekAction({ branchId: branch.id, week: monday, prompt: text, rows: snapshot.map((r) => ({ ref: r.ref, name: r.name, cells: r.texts.map((t) => (read(t).ok ? norm(t) : "")) })) });
+      if (!res.ok) return void setDraftNote({ tone: "bad", title: "Plan doldurulamadı", text: res.error, lines: [], undo: null });
+      const applied = applyDraft(snapshot, res.data, norm);
+      const lines = [...res.data.skipped, ...(res.data.unclear ? [res.data.unclear] : [])];
+      if (!applied.changed && !applied.people) {
+        return void setDraftNote({
+          tone: "neutral",
+          title: "Değişen kutu yok",
+          text: lines.length ? "Yazdıklarınız plana işlenemedi; aşağıdaki nota bakıp yeniden yazın." : "Yazdıklarınız planla aynı. Başka bir şey yazabilirsiniz.",
+          lines,
+          undo: null,
+        });
+      }
+      setSavedNote(null);
+      setRows(applied.rows);
+      setDraftNote({
+        tone: lines.length ? "neutral" : "good",
+        title: `Taslak hazır: ${draftSummary(applied.changed, applied.people)}`,
+        text: lines.length ? "Bir kısmı işlenemedi. Kutuları kontrol edin; plan Kaydet'e basınca yazılır." : "Kutuları kontrol edin; plan Kaydet'e basınca yazılır.",
+        lines,
+        undo: snapshot,
+      });
+      // Her şey işlendiyse kutu boşalır; işlenemeyen varsa metin düzeltilmek üzere kalır
+      if (!lines.length) setPrompt("");
+    });
+  }
+
   function save() {
     if (problems.length) return void toast.error(problems[0].text);
     run(async () => {
@@ -266,8 +377,8 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
     const changed = norm(t) !== (before.get(r.ref)?.[i] ?? "");
     const under = invalid ? t : cell ? (cell.kind === "off" ? (cell.note ?? "İzin") : formatShiftCell(cell)) : "–";
     return (
-      <div className={cn("min-w-[5.5rem]", big && "flex flex-col items-end")}>
-        <div role="group" aria-label={`${r.name}, ${dayLong(days[i], i)}`} className="inline-flex gap-1">
+      <div className={cn(big ? "flex items-center gap-3" : "min-w-[5.5rem]")}>
+        <div role="group" aria-label={`${r.name}, ${dayLong(days[i], i)}`} className={cn("inline-flex shrink-0", big ? "gap-1.5" : "gap-1")}>
           {choices.map((c) => (
             <button
               key={c.key}
@@ -287,7 +398,12 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
           ))}
         </div>
         <span
-          className={cn("mt-0.5 block max-w-[7rem] truncate text-[11px] leading-4 tabular", invalid ? "text-bad" : changed ? "text-info" : cell ? "text-ink-mute" : "text-ink-quiet")}
+          className={cn(
+            "block tabular",
+            // Telefonda saat ve not kesilmez (iki satıra iner); masaüstü ızgarasında dar sütunda kesilir
+            big ? "min-w-0 flex-1 text-[13px] leading-5 break-words" : "mt-0.5 max-w-[7rem] truncate text-[11px] leading-4",
+            invalid ? "text-bad" : changed ? "text-info" : cell ? "text-ink-mute" : "text-ink-quiet",
+          )}
           title={invalid ? SHIFT_TEXT.format : cell ? formatShiftCell(cell) : undefined}
         >
           {under}
@@ -334,6 +450,18 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   const mine = rows.find((r) => r.ref === meRef);
   const empty = !planned.length;
 
+  /** Salt okunur değer (personelin telefondaki listeleri): saatler tek satırda, altında hazır vardiyanın adı ve not */
+  const shiftValue = (text: string) => {
+    const cell = cellOfText(text);
+    const under = [presetLabel(text), cell?.kind === "work" ? cell.note : null].filter(Boolean).join(" · ");
+    return (
+      <span className={cn("shrink-0 text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>
+        <span className="block whitespace-nowrap">{cell ? (cell.kind === "work" ? shiftTimes(cell) : formatShiftCell(cell)) : "–"}</span>
+        {under ? <span className="block max-w-[11rem] truncate text-xs font-normal text-ink-mute">{under}</span> : null}
+      </span>
+    );
+  };
+
   if (!canEdit) {
     return (
       <div className="space-y-4">
@@ -341,21 +469,15 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
           <Card>
             <CardHeader icon={<CalendarRange />} title="Benim haftam" description={`${weekLabel(monday)} · ${hoursLabel(minutesOf(mine.texts))}`} actions={pdfButton} />
             <ul className="mx-5 mb-5 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
-              {days.map((d, i) => {
-                const cell = cellOfText(mine.texts[i]);
-                return (
-                  <li key={d} className={cn("flex items-baseline justify-between gap-3 px-4 py-2.5", d === today && "bg-panel/60")}>
-                    <span className="text-sm text-ink-mute">
-                      {dayLong(d, i)}
-                      {d === today ? <span className="ml-1.5 text-xs font-medium text-ink">· bugün</span> : null}
-                    </span>
-                    <span className={cn("text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>
-                      {presetLabel(mine.texts[i]) ? <span className="mr-1.5 font-normal text-ink-mute">{presetLabel(mine.texts[i])}</span> : null}
-                      {cell ? formatShiftCell(cell) : "–"}
-                    </span>
-                  </li>
-                );
-              })}
+              {days.map((d, i) => (
+                <li key={d} className={cn("flex items-start justify-between gap-3 px-4 py-2.5", d === today && "bg-panel/60")}>
+                  <span className="min-w-0 text-sm text-ink-mute">
+                    {dayLong(d, i)}
+                    {d === today ? <span className="block text-xs font-medium text-ink">bugün</span> : null}
+                  </span>
+                  {shiftValue(mine.texts[i])}
+                </li>
+              ))}
             </ul>
           </Card>
         ) : null}
@@ -368,6 +490,31 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
           />
           {empty ? (
             <EmptyState icon={<CalendarRange />} title="Bu hafta için vardiya yazılmadı" description="Yönetici planı kaydedince burada görünür." />
+          ) : phone ? (
+            // Telefon: gün seçilir, o günün planı kişi kişi alt alta (yedi sütunluk tablo yana kayardı)
+            <div className="px-5 pb-4">
+              <DayPicker days={days} today={today} value={day} onChange={setDay} />
+              <p className="mt-2 mb-2 text-[13px] text-ink-mute">
+                {dayLong(days[day], day)}
+                {days[day] === today ? " · bugün" : ""} · {headcount[day] ? `${headcount[day]} kişi çalışıyor` : "çalışan yazılmadı"}
+              </p>
+              <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+                {planned.map((r) => (
+                  <li key={r.ref} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                    <span className="min-w-0 text-sm leading-5 font-medium break-words text-ink">
+                      {r.name}
+                      {r.ref === meRef ? (
+                        <Badge tone="blue" className="ml-2">
+                          Siz
+                        </Badge>
+                      ) : null}
+                    </span>
+                    {shiftValue(r.texts[day])}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[13px] text-ink-mute tabular">Haftanın toplamı {hoursLabel(totalMinutes)}</p>
+            </div>
           ) : (
             <TableWrap>
               <Table>
@@ -461,6 +608,98 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             </>
           }
         />
+        {/* Yazarak doldurma: haftayı düz cümleyle yazınca kutular taslak olarak dolar (src/lib/vardiya-taslak.ts) */}
+        {draftState === "on" ? (
+          <form
+            className="px-5 pb-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              draftFromPrompt();
+            }}
+          >
+            <label htmlFor={`${addId}-yaz`} className="flex items-center gap-1.5 text-sm font-medium text-ink">
+              <Sparkles size={15} aria-hidden="true" className="text-ink-mute" /> Yazarak doldur
+            </label>
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-start">
+              <Textarea
+                id={`${addId}-yaz`}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  // Ctrl / ⌘ + Enter gönderir; yalın Enter yeni satır
+                  if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey)) return;
+                  e.preventDefault();
+                  draftFromPrompt();
+                }}
+                rows={2}
+                maxLength={SHIFT_PROMPT_MAX}
+                disabled={drafting}
+                enterKeyHint="enter"
+                placeholder="Ayşe hafta içi sabahçı, Mehmet akşamcı. Zeynep Salı izinli. Hafta sonu herkes akşamcı."
+                aria-describedby={`${addId}-yaz-ipucu`}
+                className="min-h-[4.5rem] flex-1 sm:min-h-[3.25rem]"
+              />
+              <Button type="submit" disabled={drafting || pending || prompt.trim().length < SHIFT_PROMPT_MIN} className="max-sm:w-full sm:mt-0.5">
+                <Sparkles size={15} aria-hidden="true" />
+                {drafting ? "Hazırlanıyor…" : "Plana işle"}
+              </Button>
+            </div>
+            <p id={`${addId}-yaz-ipucu`} className="mt-1.5 text-[13px] text-ink-mute">
+              Kimin hangi gün sabahçı, akşamcı ya da izinli olduğunu yazın; başka saat de yazılır (“Can Cuma 12-20”). Sonuç taslaktır, Kaydet&apos;e basana kadar plan değişmez.
+            </p>
+            {draftNote ? (
+              <Notice
+                className="mt-2"
+                tone={draftNote.tone}
+                size="sm"
+                live={draftNote.tone === "bad" ? "assertive" : "polite"}
+                title={draftNote.title}
+                text={draftNote.text}
+                defaultOpen={draftNote.lines.length > 0}
+                detailsLabel="İşlenemeyenler"
+                action={
+                  draftNote.undo ? (
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={() => {
+                        if (draftNote.undo) setRows(draftNote.undo);
+                        setDraftNote(null);
+                      }}
+                    >
+                      <Undo2 size={13} aria-hidden="true" /> Taslağı geri al
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {draftNote.lines.length ? (
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {draftNote.lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </Notice>
+            ) : null}
+          </form>
+        ) : draftState ? (
+          <div className="px-5 pb-4">
+            <Notice
+              tone="neutral"
+              size="sm"
+              title={DRAFT_OFF[draftState].title}
+              text={DRAFT_OFF[draftState].text}
+              action={draftState === "off" ? <NoticeLink href="/panel/ayarlar">Ayarlar</NoticeLink> : undefined}
+              tech={
+                draftState === "nokey" ? (
+                  <>
+                    Vercel&apos;de <code>ANTHROPIC_API_KEY</code> (Production) tanımlanınca açılır; fotoğraftan okumayla aynı anahtardır.
+                  </>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : null}
         {/* Doldurma biçimi: seçerek (S / A / İ düğmeleri) ya da elle yazarak. Sabahçı ve akşamcının saatleri şubeye göre (src/lib/vardiya.ts) */}
         <div className="px-5 pb-3">
           {presets.length ? (
@@ -483,15 +722,9 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
           </p>
         </div>
         {phone ? (
-          // Telefon: gün seçilir, o günün kutuları kişi kişi alt alta (yatay kaydırma yok)
-          <div className="px-5 pb-4">
-            <Segmented
-              label="Gün"
-              stretch
-              value={String(day)}
-              onChange={(v) => setDay(Number(v))}
-              options={days.map((d, i) => ({ value: String(i), label: `${DAY_SHORT[i]} ${Number(d.slice(8, 10))}` }))}
-            />
+          // Telefon: gün seçilir, o günün kutuları kişi kişi alt alta (yatay kaydırma yok). Taslak hazırlanırken kilitli
+          <div className={cn("px-5 pb-4", drafting && "opacity-60")} inert={drafting} aria-busy={drafting || undefined}>
+            <DayPicker days={days} today={today} value={day} onChange={setDay} />
             <p className="mt-2 mb-2 text-[13px] text-ink-mute">
               {dayLong(days[day], day)}
               {days[day] === today ? " · bugün" : ""} · {headcount[day] ? `${headcount[day]} kişi çalışıyor` : "çalışan yazılmadı"}
@@ -501,23 +734,28 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                 {rows.map((r) => {
                   const minutes = minutesOf(r.texts);
                   return (
-                    <li key={r.ref} className="flex items-center gap-2 px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-ink">{r.name}</p>
-                        <p className="truncate text-xs text-ink-mute tabular">
-                          {r.userId === null ? "hesabı yok · " : ""}
-                          {minutes ? `hafta ${hoursLabel(minutes)}` : "hafta boş"}
+                    // Ad kendi satırında (dar telefonda kesilmez); altında o günün düğmeleri ya da kutusu tam genişlikte
+                    <li key={r.ref} className="px-3 py-2.5">
+                      <div className="flex min-h-9 items-center gap-2">
+                        <p className="min-w-0 flex-1 text-sm leading-5 font-medium break-words text-ink">
+                          {r.name}
+                          <span className="ml-2 text-xs font-normal whitespace-nowrap text-ink-mute tabular">
+                            {r.userId === null ? "hesabı yok · " : ""}
+                            {minutes ? `hafta ${hoursLabel(minutes)}` : "hafta boş"}
+                          </span>
                         </p>
+                        <div className="flex shrink-0 justify-end">{rowAction(r)}</div>
                       </div>
-                      {mode === "pick" ? (
-                        <div className="shrink-0">{cellPicker(r, day, true)}</div>
-                      ) : (
-                        <div className="w-40 shrink-0">
-                          {cellInput(r, day, "")}
-                          {presetLabel(r.texts[day]) ? <span className="mt-0.5 block px-2 text-[11px] leading-4 text-ink-mute">{presetLabel(r.texts[day])}</span> : null}
-                        </div>
-                      )}
-                      <div className="flex w-11 shrink-0 justify-end">{rowAction(r)}</div>
+                      <div className="mt-1.5">
+                        {mode === "pick" ? (
+                          cellPicker(r, day, true)
+                        ) : (
+                          <>
+                            {cellInput(r, day, "")}
+                            {presetLabel(r.texts[day]) ? <span className="mt-0.5 block px-2 text-[11px] leading-4 text-ink-mute">{presetLabel(r.texts[day])}</span> : null}
+                          </>
+                        )}
+                      </div>
                     </li>
                   );
                 })}
@@ -528,7 +766,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             <p className="mt-2 text-[13px] text-ink-mute tabular">Haftanın toplamı {hoursLabel(totalMinutes)}</p>
           </div>
         ) : (
-          <TableWrap>
+          <TableWrap className={cn(drafting && "opacity-60")} inert={drafting} aria-busy={drafting || undefined}>
             <Table>
               <THead>
                 <tr>
@@ -646,7 +884,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             <Undo2 size={16} aria-hidden="true" />
             <span className="max-sm:sr-only">Vazgeç</span>
           </Button>
-          <Button onClick={save} disabled={pending || problems.length > 0} size="lg" className="max-sm:px-4">
+          <Button onClick={save} disabled={pending || drafting || problems.length > 0} size="lg" className="max-sm:px-4">
             <Save size={18} aria-hidden="true" />
             {pending ? "Kaydediliyor…" : "Kaydet"}
           </Button>

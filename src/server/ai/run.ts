@@ -57,7 +57,7 @@ export const OKC_EFFORT: AiEffort = "low";
 export const OKC_MAX_TOKENS = 8000;
 export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 50_000 };
 
-export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura";
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya";
 export type AiErrorCode =
   | "nokey"
   | "off"
@@ -86,11 +86,33 @@ const INVOICE_TEXT: Partial<Record<AiErrorCode, string>> = {
   invalid: "Faturadaki bilgi güvenilir okunamadı; faturayı açıp bakın.",
 };
 
-/** Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında yöneticinin göreceği */
-export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "fatura" = "foto"): string {
+/** Vardiyayı yazarak doldurmada yöneticinin göreceği metinler (docs/VARDIYA.md): her biri kutuları elle doldurmaya yollar */
+const SHIFT_TEXT: Partial<Record<AiErrorCode, string>> = {
+  nokey: "Yazarak doldurma bu ortamda kurulu değil; kutuları seçerek doldurun.",
+  off: "Yazarak doldurma kapalı (Ayarlar › Fotoğraftan okuma); kutuları seçerek doldurun.",
+  timeout: "Yanıt çok uzun sürdü. Yeniden deneyin ya da kutuları seçerek doldurun.",
+  connection: "Servise ulaşılamadı. İnterneti kontrol edip yeniden deneyin.",
+  rate: "Servis şu an yoğun. Biraz sonra yeniden deneyin.",
+  overloaded: "Servis şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  auth: "Servisin anahtarı geçersiz (ANTHROPIC_API_KEY); kutuları seçerek doldurun.",
+  billing: "Servisin kredisi bitmiş; kutuları seçerek doldurun.",
+  toolarge: "Metin çok uzun; kısaltıp yeniden deneyin.",
+  badrequest: "Servis isteği kabul etmedi; kutuları seçerek doldurun.",
+  refusal: "Bu metin işlenemedi; başka sözcüklerle yazın ya da kutuları seçerek doldurun.",
+  incomplete: "Yanıt yarım kaldı. Daha kısa yazıp yeniden deneyin.",
+  invalid: "Yanıt anlaşılamadı. Yeniden deneyin ya da kutuları seçerek doldurun.",
+};
+
+/** Personelin göreceği metinler (ayrıntı günlüğe gider, ekrana değil); fatura okumasında ve vardiyada yöneticinin göreceği */
+export function aiErrorText(code: AiErrorCode, cap?: number, subject: "foto" | "fatura" | "vardiya" = "foto"): string {
   if (subject === "fatura") {
     if (code === "cap") return `Bugünkü okuma sınırı doldu (${cap ?? "?"}); faturayı açıp bakın.`;
     const t = INVOICE_TEXT[code];
+    if (t) return t;
+  }
+  if (subject === "vardiya") {
+    if (code === "cap") return `Yazarak doldurmanın bugünkü sınırı doldu (${cap ?? "?"}); kutuları seçerek doldurun.`;
+    const t = SHIFT_TEXT[code];
     if (t) return t;
   }
   switch (code) {
@@ -133,8 +155,14 @@ export const RETRYABLE: readonly AiErrorCode[] = ["timeout", "connection", "rate
 export type AiImageType = "image/jpeg" | "image/png" | "image/webp";
 export type AiDocumentType = "application/pdf";
 
-/** Okunacak tek girdi: görsel (fotoğraf, faturanın Paraşüt fotoğrafı) ya da PDF belge (e-fatura) */
-export type AiInput = { image: { bytes: Uint8Array; mediaType: AiImageType }; document?: undefined } | { document: { bytes: Uint8Array; mediaType: AiDocumentType }; image?: undefined };
+/**
+ * Okunacak tek girdi: görsel (fotoğraf, faturanın Paraşüt fotoğrafı) ya da PDF belge (e-fatura). Vardiyayı yazarak
+ * doldurmada girdi yoktur: istek yalnız metindir (görev metni; src/lib/vardiya-taslak.ts)
+ */
+export type AiInput =
+  | { image: { bytes: Uint8Array; mediaType: AiImageType }; document?: undefined }
+  | { document: { bytes: Uint8Array; mediaType: AiDocumentType }; image?: undefined }
+  | { image?: undefined; document?: undefined };
 
 export type ExtractRequest<T> = AiInput & {
   /** Varsayılan AI_MODEL (fotoğraf) */
@@ -185,15 +213,17 @@ export const JSON_REPLY = (schema: Record<string, unknown>) =>
 
 /**
  * İsteğin kendisi (testte biçimi sınanır). Fotoğraf isteği alan alan ve sırasıyla canlıda denenen hâlidir; fatura
- * isteğinde yedek model alanları yok, belge görselin yerinde (PDF, metinden önce). Şema sınırı aşarsa `format` yok,
- * şema görev metninde (JSON_REPLY).
+ * isteğinde yedek model alanları yok, belge görselin yerinde (PDF, metinden önce). Girdisiz istekte (vardiyayı yazarak
+ * doldurma) içerik yalnız görev metnidir. Şema sınırı aşarsa `format` yok, şema görev metninde (JSON_REPLY).
  */
 export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams; options: CreateOptions } {
   const model = req.model ?? AI_MODEL;
   const m = MODEL_REQUEST[model];
   const input = req.document
     ? ({ type: "document", source: { type: "base64", media_type: req.document.mediaType, data: base64(req.document.bytes) } } as const)
-    : ({ type: "image", source: { type: "base64", media_type: req.image.mediaType, data: base64(req.image.bytes) } } as const);
+    : req.image
+      ? ({ type: "image", source: { type: "base64", media_type: req.image.mediaType, data: base64(req.image.bytes) } } as const)
+      : null;
   const schema = claudeSchema(req.schema);
   const structured = fitsStructuredOutputs(schema);
   const effort = req.effort ?? m.effort;
@@ -203,7 +233,7 @@ export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams;
     ...(m.fallback ? { betas: [AI_FALLBACK_BETA], fallbacks: "default" as const } : {}),
     output_config: structured ? { effort, format: { type: "json_schema", schema } } : { effort },
     system: req.system,
-    messages: [{ role: "user", content: [input, { type: "text", text: structured ? req.task : `${req.task}\n\n${JSON_REPLY(schema)}` }] }],
+    messages: [{ role: "user", content: [...(input ? [input] : []), { type: "text" as const, text: structured ? req.task : `${req.task}\n\n${JSON_REPLY(schema)}` }] }],
   };
   const t = req.timeouts ?? AI_TIMEOUTS;
   return { params, options: { timeout: t.timeout, maxRetries: t.maxRetries, signal: AbortSignal.timeout(req.totalMs ?? t.totalMs) } };

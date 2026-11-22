@@ -1735,7 +1735,7 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" */
+    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" | "vardiya" (yazarak doldurma; okuma sınırına sayılmaz) */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),

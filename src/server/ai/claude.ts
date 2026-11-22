@@ -1,11 +1,12 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { count, eq, gte, sql } from "drizzle-orm";
+import { and, count, eq, gte, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { MAX_READS_PER_PHOTO, type ReadingState } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
+import { SHIFT_DRAFT_DAILY_CAP } from "@/lib/vardiya-taslak";
 import { getDb, schema as s } from "@/server/db";
 
 import { costUsd } from "./pricing";
@@ -82,8 +83,23 @@ function liveClient(): AiClient {
 const dayStart = (now: Date) => new Date(`${todayTR(now)}T00:00:00+03:00`);
 const monthStart = (now: Date) => new Date(`${todayTR(now).slice(0, 7)}-01T00:00:00+03:00`);
 
+/** Vardiyayı yazarak doldurma günlükte bu türle durur; okuma sınırına sayılmaz, kendi sınırı vardır */
+const SHIFT_FEATURE: AiFeature = "vardiya";
+
+/** Okumalar (fotoğraf ve fatura): günlük sınır bunları sayar. Vardiya taslakları sayılmaz (kasadaki okumayı kesmesin) */
 async function readingsSince(since: Date): Promise<number> {
-  const [row] = await getDb().select({ n: count() }).from(s.aiCalls).where(gte(s.aiCalls.at, since));
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(s.aiCalls)
+    .where(and(gte(s.aiCalls.at, since), ne(s.aiCalls.feature, SHIFT_FEATURE)));
+  return row?.n ?? 0;
+}
+
+async function shiftDraftsSince(since: Date): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(s.aiCalls)
+    .where(and(gte(s.aiCalls.at, since), eq(s.aiCalls.feature, SHIFT_FEATURE)));
   return row?.n ?? 0;
 }
 
@@ -96,7 +112,18 @@ export async function aiStatus(now = new Date()): Promise<{ state: AiState; used
   return { state, usedToday, cap: settings.dailyCap };
 }
 
-/** Ayarlar kartı: bu ayın ve bugünün okumaları, bu ayın tutarı (dolar) */
+/**
+ * Vardiya ekranı için: yazarak doldurma kullanılabilir mi. Anahtar ve Ayarlar › Fotoğraftan okuma anahtarı okumayla
+ * ortaktır (kapalıyken hiçbir istek gitmez); günlük sınır ayrıdır (SHIFT_DRAFT_DAILY_CAP)
+ */
+export async function shiftDraftStatus(now = new Date()): Promise<{ state: AiState; usedToday: number; cap: number }> {
+  if (!aiConfigured()) return { state: "nokey", usedToday: 0, cap: SHIFT_DRAFT_DAILY_CAP };
+  const [settings, usedToday] = await Promise.all([loadAiSettings(), shiftDraftsSince(dayStart(now))]);
+  const state: AiState = !settings.enabled ? "off" : usedToday >= SHIFT_DRAFT_DAILY_CAP ? "cap" : "on";
+  return { state, usedToday, cap: SHIFT_DRAFT_DAILY_CAP };
+}
+
+/** Ayarlar kartı: bu ayın çağrıları ve tutarı (dolar; vardiya taslakları dahil), bugünün okumaları */
 export async function aiUsageSummary(now = new Date()): Promise<{ monthCalls: number; monthUsd: number; today: number }> {
   const [[month], today] = await Promise.all([
     getDb()
@@ -152,15 +179,26 @@ export async function extractDocument<T>(
   return extract({ ...rest, ...(input as AiInput), feature: "fatura", photoId: null, model: AI_INVOICE_MODEL, keepResult: false });
 }
 
+/**
+ * Yöneticinin yazdığı metni vardiya atamalarına çevirir (Claude Opus 5.5, yalnız metin; src/lib/vardiya-taslak.ts).
+ * Kapılar okumayla aynı (anahtar, Ayarlar › Fotoğraftan okuma), günlük sınır ayrı (SHIFT_DRAFT_DAILY_CAP). Günlüğe
+ * yalnız maliyet satırı düşer: yazılan metin, kişi adları ve yanıt hiçbir yere yazılmaz.
+ */
+export async function extractText<T>(req: Omit<ExtractCall<T>, "feature" | "photoId">): Promise<AiResult<T>> {
+  return extract({ ...req, feature: SHIFT_FEATURE, photoId: null, model: AI_MODEL, keepResult: false });
+}
+
 async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; totalMs?: number; keepResult: boolean }): Promise<AiResult<T>> {
-  const subject = req.feature === "fatura" ? "fatura" : "foto";
-  const tag = `[${subject}] okuma`;
+  const subject = req.feature === "fatura" ? "fatura" : req.feature === SHIFT_FEATURE ? "vardiya" : "foto";
+  const tag = subject === "vardiya" ? "[vardiya] taslak" : `[${subject}] okuma`;
   const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap, subject), callId: null });
   if (!aiConfigured()) return gate("nokey");
   const settings = await loadAiSettings();
   if (!settings.enabled) return gate("off");
   const db = getDb();
-  if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
+  if (subject === "vardiya") {
+    if ((await shiftDraftsSince(dayStart(new Date()))) >= SHIFT_DRAFT_DAILY_CAP) return gate("cap", SHIFT_DRAFT_DAILY_CAP);
+  } else if ((await readingsSince(dayStart(new Date()))) >= settings.dailyCap) return gate("cap", settings.dailyCap);
   if (req.photoId !== null) {
     const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
     if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
@@ -198,7 +236,7 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
     const alert = aiAlertLog(req.feature, res);
     if (alert) console.error(tag, alert);
     else if (req.effort && res.code === "timeout") console.warn(tag, req.feature, `efor ${req.effort}`, res.code, ms);
-    return { ok: false, code: res.code, message: subject === "fatura" ? aiErrorText(res.code, undefined, subject) : res.message, callId: call.id };
+    return { ok: false, code: res.code, message: subject === "foto" ? res.message : aiErrorText(res.code, undefined, subject), callId: call.id };
   }
   await db
     .update(s.aiCalls)
