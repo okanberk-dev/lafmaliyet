@@ -93,6 +93,45 @@ export function shiftTimes(cell: Extract<ShiftCell, { kind: "work" }>): string {
   return `${clockOf(cell.startMin)}–${clockOf(cell.endMin)}`;
 }
 
+// ---------------------------------------------------------------- Hazır vardiyalar (sabahçı / akşamcı)
+
+/**
+ * Şubenin hazır vardiyaları (operatör, 22 Kasım 2026): ızgarada tıklamayla yazılır, planda ve PDF'te adıyla görünür.
+ * Tuzla 09:00'da açılır, vardiya 9 saat: sabahçı 09:00–18:00, akşamcı 16:00'da gelir (16:00–01:00). Marina 09:30'da
+ * açılır: sabahçı 09:30–18:30, akşamcı 13:00'te gelir ve 22:00'deki kapanışa kadar kalır. Ad saatlerden türetilir
+ * (veritabanında ayrı alan yok): saatleri hazır vardiyayla aynı olan hücre o vardiyadır, elle yazılsa da. Saatler
+ * değişirse burası güncellenir; eski haftaların hücreleri yazıldıkları saatlerle kalır.
+ */
+export interface ShiftPreset {
+  key: "morning" | "evening";
+  label: string;
+  startMin: number;
+  endMin: number;
+}
+
+export const SHIFT_PRESETS: Record<string, readonly ShiftPreset[]> = {
+  tuzla: [
+    { key: "morning", label: "Sabahçı", startMin: 9 * 60, endMin: 18 * 60 },
+    { key: "evening", label: "Akşamcı", startMin: 16 * 60, endMin: 25 * 60 },
+  ],
+  marina: [
+    { key: "morning", label: "Sabahçı", startMin: 9 * 60 + 30, endMin: 18 * 60 + 30 },
+    { key: "evening", label: "Akşamcı", startMin: 13 * 60, endMin: 22 * 60 },
+  ],
+};
+
+/** Şubenin hazır vardiyaları; tanımlı değilse boş (ızgarada yalnız İzin ve Sil kalır) */
+export const shiftPresets = (branchId: string): readonly ShiftPreset[] => SHIFT_PRESETS[branchId] ?? [];
+
+/** Hücre şubenin hazır vardiyalarından biri mi (saatleri birebir aynıysa); değilse null */
+export function presetOf(branchId: string, cell: ShiftCell | null): ShiftPreset | null {
+  if (cell?.kind !== "work") return null;
+  return shiftPresets(branchId).find((p) => p.startMin === cell.startMin && p.endMin === cell.endMin) ?? null;
+}
+
+/** Hazır vardiyanın kutuya yazılan metni: "09:00–18:00" */
+export const presetText = (p: ShiftPreset) => `${clockOf(p.startMin)}–${clockOf(p.endMin)}`;
+
 /** Hücrenin ekrandaki ve kutudaki metni: "10:00–18:00 · kasa", "İzin", planlanmadıysa boş */
 export function formatShiftCell(cell: ShiftCell | null): string {
   if (!cell) return "";
