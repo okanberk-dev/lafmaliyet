@@ -242,6 +242,69 @@ export function closedRowApplies(row: { branchId?: string | null }, branchId?: s
   return !branchId || row.branchId == null || row.branchId === branchId;
 }
 
+/** Bir günün kapalı işaretleri, şube şube (src/server/closed-days.ts › closedMarksOn) */
+export interface ClosedMarks {
+  /** İşletme geneli (şubesi boş) kapalı satırı var */
+  all: boolean;
+  /** Kendi kapalı satırı olan şubeler */
+  branches: ReadonlySet<string>;
+  /** O gün açık fiziksel şubeler (etkin, açılış günü gelmiş): hepsinin kendi satırı varsa işletme de kapalıdır */
+  open: readonly string[];
+}
+
+/** Günü kapsayan `kapali` satırlarından ve şube kütüğünden günün işaretleri (saf; closedMarksOn okur) */
+export function closedMarksOf(
+  rows: readonly { branchId: string | null }[],
+  branches: readonly { id: string; kind: string; active: boolean; openedOn: string | null }[],
+  day: string,
+): ClosedMarks {
+  return {
+    all: rows.some((r) => r.branchId === null),
+    branches: new Set(rows.flatMap((r) => (r.branchId ? [r.branchId] : []))),
+    open: branches.filter((b) => b.active && b.kind === "fiziksel" && (!b.openedOn || b.openedOn <= day)).map((b) => b.id),
+  };
+}
+
+/**
+ * Kayıt o gün kapalı işaretli mi, kaydın şubesine göre (docs/SUBE.md › Kapalı gün). Şubeli kayıt (şubenin kontrol
+ * listesi): şubesinin ya da işletme genelinin işareti; öteki şubenin kapalı günü bu şubenin günü değil. Şubesiz kayıt
+ * (bütün şubelerin listesi): işletme kapalıysa, yani işletme geneli işaret ya da o gün açık her fiziksel şubenin kendi
+ * işareti varsa (yalnız Tuzla kapalıyken Marina açıktı, bütün şubelerin listesi beklenir)
+ */
+export function closedForBranch(branchId: string | null | undefined, marks: ClosedMarks): boolean {
+  if (marks.all) return true;
+  if (branchId) return marks.branches.has(branchId);
+  return marks.open.length > 0 && marks.open.every((b) => marks.branches.has(b));
+}
+
+/**
+ * Zilin dünkü kontrol listeleri (src/server/actions/notifications.ts): şubesi o gün kapalı işaretli, hiç açılmamış liste
+ * eksik sayılmaz (dalga 10 §2.9), şube şube. Önceden herhangi bir şubenin kapalı işareti bütün şubelerin açılmamış
+ * listelerini susturuyordu: Marina dün kapalıyken Tuzla'nın eksik listesi zile düşmüyordu
+ */
+export function closedDayBellLists<T extends { branchId?: string | null; run: unknown }>(lists: readonly T[], marks: ClosedMarks): T[] {
+  return lists.filter((l) => Boolean(l.run) || !closedForBranch(l.branchId, marks));
+}
+
+/**
+ * Sabah e-postasının kontrol kutusu (src/server/data/checklists.ts › loadKontrolDigest), şube şube: hiç açılmamış liste,
+ * şubesi o gün kapalı işaretliyse ve şubede günün izi yoksa eksik sayılmaz, kutuya girmez (onaylı kapalı gün kutuya
+ * girmez, dalga 10 §2.9). İz: şubenin kasa raporu (`reported`, raporu olan şubeler) ya da başlamış listesi; bütün
+ * şubelerin listesinde herhangi bir rapor ya da başlamış liste. Önceden kural işletmenin tamamına bakıyordu (herhangi bir
+ * kapalı işaret, hiç rapor yok, hiç liste açılmamış): Marina'nın raporu Tuzla'nın kapalı gününün listelerini eksik
+ * yazdırıyor, Marina'nın kapalı işareti raporsuz sabahta Tuzla'nın eksik listelerini düşürüyordu
+ */
+export function closedDayDigestLists<T extends { branchId?: string | null; run: unknown }>(lists: readonly T[], marks: ClosedMarks, reported: ReadonlySet<string>): T[] {
+  const started = new Set(lists.filter((l) => l.run).map((l) => l.branchId ?? null));
+  const anyTrace = reported.size > 0 || started.size > 0;
+  return lists.filter((l) => {
+    if (l.run) return true;
+    const branch = l.branchId ?? null;
+    if (!closedForBranch(branch, marks)) return true;
+    return branch === null ? anyTrace : reported.has(branch) || started.has(branch);
+  });
+}
+
 /** İsteğin başlığı (tutarsız): "23 Ekim kapalı gün" */
 export const closedTitle = (date: string) => `${dayMonthTR(date)} kapalı gün`;
 /** Kapalı satırının adı (Kafe › Özel günler) */

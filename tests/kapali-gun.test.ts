@@ -15,8 +15,12 @@ import { missingSentence, tillMonths } from "../src/lib/cash-month";
 import { CLOSED_FOLLOW_UP_TEXT, closedFollowUp, staffResultBell } from "../src/lib/cash-requests";
 import {
   closedBellTitle,
+  closedDayBellLists,
+  closedDayDigestLists,
   closedDaysIn,
   closedEvidenceText,
+  closedForBranch,
+  closedMarksOf,
   consecutiveRuns,
   EMPTY_EVIDENCE,
   EVIDENCE_IGNORED_ACTIONS,
@@ -131,6 +135,102 @@ test("Bugün › dünkü kontrol listeleri (yönetici): onaylı kapalıda açıl
   assert.match(pend.detail, /· Personel kapalıydık dedi \(onay bekliyor\)$/);
   assert.equal(pend.action, "Onaya bak");
   assert.equal(pend.href, "/panel/onaylar#istek-7");
+});
+
+// ---------------------------------------------------------------- Kontrol listeleri şube şube (22 Kasım 2026)
+
+/** Şube kütüğü: Tuzla ve Marina açık, online kanal; `marinaFrom`: Marina'nın açılış günü */
+const kutuk = (marinaFrom: string | null = null, marinaActive = true) => [
+  { id: "tuzla", kind: "fiziksel", active: true, openedOn: null },
+  { id: "marina", kind: "fiziksel", active: marinaActive, openedOn: marinaFrom },
+  { id: "online", kind: "online", active: true, openedOn: null },
+];
+const marks = (rows: (string | null)[], branches = kutuk(), day = "2026-11-11") => closedMarksOf(rows.map((branchId) => ({ branchId })), branches, day);
+/** Şubeli liste (null: bütün şubelerin listesi) */
+const blist = (name: string, branchId: string | null, run = false) => ({ ...list(name, run), branchId });
+const names = (lists: { name: string }[]) => lists.map((l) => l.name);
+
+test("kapalı işaretler şube şube: şubeli kayıt kendi şubesinin ya da işletmenin işaretiyle, bütün şubelerin kaydı işletme kapalıyken", () => {
+  const none = marks([]);
+  assert.deepEqual([none.all, [...none.branches], none.open], [false, [], ["tuzla", "marina"]], "online kanal fiziksel şube değil");
+  assert.equal(closedForBranch("tuzla", none), false);
+  assert.equal(closedForBranch(null, none), false);
+  // Yalnız Tuzla kapalı: Marina açıktı, bütün şubelerin listesi beklenir
+  const tuzla = marks(["tuzla"]);
+  assert.equal(closedForBranch("tuzla", tuzla), true);
+  assert.equal(closedForBranch("marina", tuzla), false, "Tuzla'nın kapalı günü Marina'nın günü değil");
+  assert.equal(closedForBranch(null, tuzla), false);
+  assert.equal(closedForBranch(undefined, tuzla), false, "şubesi verilmeyen liste bütün şubelerin");
+  // İki şube de kendi işaretiyle kapalı: işletme kapalı
+  assert.equal(closedForBranch(null, marks(["tuzla", "marina"])), true);
+  // İşletme geneli işaret her şubede
+  const all = marks([null]);
+  assert.deepEqual([closedForBranch("tuzla", all), closedForBranch("marina", all), closedForBranch(null, all)], [true, true, true]);
+  // Marina o gün açılmamıştı ya da pasif: Tuzla'nın işareti işletmenin işaretidir (tek şubeli günlerdeki gibi)
+  assert.equal(closedForBranch(null, marks(["tuzla"], kutuk("2026-11-20"))), true);
+  assert.equal(closedForBranch(null, marks(["tuzla"], kutuk("2026-11-11"))), false, "açılış günü açık sayılır");
+  assert.equal(closedForBranch(null, marks(["tuzla"], kutuk(null, false))), true);
+});
+
+test("zil › dünkü kontrol listeleri şube şube: Marina'nın kapalı günü Tuzla'nın eksik listesini susturmaz", () => {
+  const lists = [blist("Tuzla açılış", "tuzla"), blist("Marina açılış", "marina"), blist("Kapanış", null), blist("Tuvalet", "tuzla", true)];
+  assert.deepEqual(names(closedDayBellLists(lists, marks([]))), ["Tuzla açılış", "Marina açılış", "Kapanış", "Tuvalet"]);
+  assert.deepEqual(names(closedDayBellLists(lists, marks(["marina"]))), ["Tuzla açılış", "Kapanış", "Tuvalet"]);
+  assert.deepEqual(names(closedDayBellLists(lists, marks(["tuzla"]))), ["Marina açılış", "Kapanış", "Tuvalet"]);
+  assert.deepEqual(names(closedDayBellLists(lists, marks(["tuzla", "marina"]))), ["Tuvalet"], "açılmış liste kapalı günde de görünür");
+  assert.deepEqual(names(closedDayBellLists(lists, marks([null]))), ["Tuvalet"]);
+  // Tek şubeli gün (Marina açılmamıştı): eski kural aynen (`!closedYesterday || l.run`)
+  const solo = [blist("Tuzla açılış", "tuzla"), blist("Kapanış", null), blist("Tuvalet", "tuzla", true)];
+  for (const rows of [[], ["tuzla"], [null]] as (string | null)[][]) {
+    const m = marks(rows, kutuk("2026-11-20"));
+    assert.deepEqual(closedDayBellLists(solo, m), solo.filter((l) => !rows.length || l.run), `işaret: ${JSON.stringify(rows)}`);
+  }
+});
+
+test("sabah e-postası › kontrol kutusu şube şube: kapalı şubenin açılmamış listesi düşer; öteki şubenin raporu onu açmaz", () => {
+  const lists = [blist("Tuzla açılış", "tuzla"), blist("Marina açılış", "marina"), blist("Kapanış", null)];
+  // Marina kapalı, Tuzla açık ve raporlu: önceden Tuzla'nın raporu yüzünden Marina'nın listesi de eksik yazılıyordu
+  assert.deepEqual(names(closedDayDigestLists(lists, marks(["marina"]), new Set(["tuzla"]))), ["Tuzla açılış", "Kapanış"]);
+  // Tuzla kapalı, Marina raporlu: Tuzla'nın kapalı gününün listesi eksik yazılmaz
+  assert.deepEqual(names(closedDayDigestLists(lists, marks(["tuzla"]), new Set(["marina"]))), ["Marina açılış", "Kapanış"]);
+  // Marina kapalı, sabah hiçbir rapor yok: önceden kutu hiç çıkmıyor, Tuzla'nın eksik listesi düşüyordu
+  assert.deepEqual(names(closedDayDigestLists(lists, marks(["marina"]), new Set())), ["Tuzla açılış", "Kapanış"]);
+  // Kapalı işaretli şubede günün izi varsa (aralıklı kapanışın içinde rapor girildi, liste başladı) eksikler yazılır
+  assert.deepEqual(names(closedDayDigestLists(lists, marks(["tuzla"]), new Set(["tuzla"]))), ["Tuzla açılış", "Marina açılış", "Kapanış"]);
+  const started = [...lists, blist("Tuvalet", "tuzla", true)];
+  assert.deepEqual(names(closedDayDigestLists(started, marks(["tuzla"]), new Set())), ["Tuzla açılış", "Marina açılış", "Kapanış", "Tuvalet"]);
+  // İşletme kapalı, hiç iz yok: hepsi düşer (kutu yok)
+  assert.deepEqual(closedDayDigestLists(lists, marks([null]), new Set()), []);
+  assert.deepEqual(closedDayDigestLists(lists, marks(["tuzla", "marina"]), new Set()), []);
+  // Tek şubeli gün: eski kural aynen (kapalı + rapor yok + açılan liste yok → kutu yok; iz varsa hepsi)
+  const solo = [blist("Tuzla açılış", "tuzla"), blist("Kapanış", null)];
+  const m = marks(["tuzla"], kutuk("2026-11-20"));
+  assert.deepEqual(closedDayDigestLists(solo, m, new Set()), []);
+  assert.deepEqual(names(closedDayDigestLists(solo, m, new Set(["tuzla"]))), ["Tuzla açılış", "Kapanış"]);
+  assert.deepEqual(names(closedDayDigestLists([...solo, blist("Tuvalet", "tuzla", true)], m, new Set())), ["Tuzla açılış", "Kapanış", "Tuvalet"]);
+  assert.deepEqual(names(closedDayDigestLists(solo, marks([], kutuk("2026-11-20")), new Set())), ["Tuzla açılış", "Kapanış"], "kapalı değilse hepsi");
+});
+
+test("kaynak: zil, sabah e-postası ve LafPOS kanıtı şubesiz okumaz", () => {
+  // Zil ve e-posta kapalı günü şube şube okur (önceden şubesiz isClosedDay: herhangi bir şubenin işareti)
+  const bell = read("src/server/actions/notifications.ts");
+  assert.doesNotMatch(bell, /isClosedDay\(/);
+  assert.match(bell, /admin \? closedMarksOn\(yesterday\) : null/);
+  assert.match(bell, /closedDayBellLists\(lists\.get\(yesterday\) \?\? \[\], marks\)/);
+  const data = read("src/server/data/checklists.ts");
+  assert.doesNotMatch(data, /isClosedDay\(/);
+  assert.match(data, /closedMarksOn\(day\)/);
+  assert.match(data, /closedDayDigestLists\(lists, marks, new Set\(reports\.map\(\(r\) => r\.branchId\)\)\)/);
+  // Listenin şubesi günün listesiyle gelir
+  assert.match(read("src/server/checklists/store.ts"), /run: summary,\n {4}branchId: t\.branchId,/);
+  // LafPOS'un gün sonu kanıtı: şube verilmezse LafPOS'un şubesininki (günün herhangi bir satırı değil)
+  const closed = read("src/server/closed-days.ts");
+  const ev = closed.slice(closed.indexOf("async function lafposEvidence"), closed.indexOf("/** İş gününün penceresi"));
+  assert.match(ev, /const branch = branchId \?\? LAFPOS_BRANCH_ID;/);
+  assert.match(ev, /\.where\(and\(eq\(s\.posDayReports\.date, date\), eq\(s\.posDayReports\.branchId, branch\)\)\)/);
+  assert.match(ev, /branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branch\)/);
+  const saved = closed.slice(closed.indexOf("export async function onLafposDaySaved"), closed.indexOf("export async function onNextReport"));
+  assert.match(saved, /branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branchId\)/);
 });
 
 // ---------------------------------------------------------------- Personelin özel günleri

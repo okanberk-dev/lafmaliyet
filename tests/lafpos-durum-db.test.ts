@@ -381,7 +381,24 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.deepEqual(await actions.deleteLafposDay({ date: "2026-11-07", zNo: 127 }, { password: "yanlis" }), { ok: false, error: WRONG_PASSWORD });
     assert.ok(await reportOf("2026-11-07"), "yanlış parola silmez");
     assert.deepEqual(await actions.deleteLafposDay({ date: "2026-11-01", zNo: 1 }, { password: PASSWORD }), { ok: false, error: "Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
+    // Ön denetim şube şube: ModPOS'taki şubenin (Tuzla) aynı günkü eski deneme satırı "gün kayıtlı" sayılmaz, parola
+    // sorulmaz; LafPOS'un şubesinin satırı silinince Tuzla'nınki yerinde kalır
+    const [lafposZ] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, "2026-11-07"));
+    await db.insert(s.posDayReports).values([
+      { date: "2026-11-03", branchId: MODPOS_SUBE, z: { ...lafposZ.z, zNo: 90 }, payments: [], ikram: [], source: "lafpos" },
+      { date: "2026-11-07", branchId: MODPOS_SUBE, z: { ...lafposZ.z, zNo: 91 }, payments: [], ikram: [], source: "lafpos" },
+    ]);
+    assert.deepEqual(await actions.deleteLafposDay({ date: "2026-11-03", zNo: 90 }), { ok: false, error: "Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin" });
     assert.deepEqual(await actions.deleteLafposDay({ date: "2026-11-07", zNo: 127 }, { password: PASSWORD }), { ok: true, data: { zNo: 127, lines: 1 } });
+    assert.deepEqual(
+      (await db.select({ date: s.posDayReports.date, branchId: s.posDayReports.branchId }).from(s.posDayReports).orderBy(s.posDayReports.date)).map((r) => [r.date, r.branchId]),
+      [
+        ["2026-11-03", MODPOS_SUBE],
+        ["2026-11-07", MODPOS_SUBE],
+      ],
+      "Tuzla'nın satırlarına dokunulmadı",
+    );
+    await db.delete(s.posDayReports).where(eq(s.posDayReports.branchId, MODPOS_SUBE));
     assert.equal(await reportOf("2026-11-07"), undefined);
     const log = await db.select({ action: s.activityLog.action, detail: s.activityLog.detail, userId: s.activityLog.userId }).from(s.activityLog).orderBy(s.activityLog.id);
     assert.deepEqual(

@@ -179,6 +179,12 @@ e-postayı tek başına gönderir; konu parçası "dünkü kapanış listesi eks
 "kontrol listesinde aralık dışı değer" ya da "kontrol listesinde sorun". Her gün için bir kez: anahtar `kontrol:{gün}`
 başarılı gönderimden sonra `notification_log`'a yazılır. Önizleme yazmaz.
 
+**Kapalı gün şubenindir** (22 Kasım 2026; [SUBE.md](SUBE.md) › Kapalı gün): zilin "Dünkü … eksik" satırları ve sabah
+e-postasının kutusu hiç açılmamış listeyi yalnız kendi şubesi o gün kapalı işaretliyse eksik saymaz; bütün şubelerin
+listesini işletme kapalıysa (işletme geneli işaret ya da o gün açık her şubenin kendi işareti). Marina'nın kapalı günü
+Tuzla'nın eksik listesini susturmaz. E-postada kapalı işaretli şubede günün izi varsa (o şubenin kasa raporu ya da
+başlamış listesi) eksikler yine yazılır.
+
 **Personele e-posta hatırlatması** (17 Kasım 2026; `src/lib/checklist-alerts.ts`,
 `src/server/notify/checklist-alerts.ts`): iş bugünün listelerine bakar ve personele e-posta gönderir. İki tetikleyici
 (20 Kasım 2026):

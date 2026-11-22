@@ -31,7 +31,7 @@ export interface DevicePrefs {
   outputLabel: string;
   /**
    * Uyarılar yalnız bu bilgisayarın seçilen hoparlöründen; hoparlör yoksa genel hoparlöre düşmez, susar. null: şubenin
-   * varsayılanı (Tuzla Köyiçi'nde açık; src/lib/audio-output.ts › onlyComputerFor)
+   * varsayılanı (yalnız soldan Tuzla seçiliyken açık; "Tümü"de ve Marina'da kapalı; src/lib/audio-output.ts › onlyComputerFor)
    */
   onlyComputer: boolean | null;
 }

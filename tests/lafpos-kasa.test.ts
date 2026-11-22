@@ -169,10 +169,14 @@ test("E-36: LafPOS'un satışlı gün sonu kapalı gün kanıtı (kırmızı sat
   // Geçiş günü boşken ya da önceki günde kanıt hiç gelmez (null): bugünkü gibi
   assert.equal(hasPanelEvidence({ ...EMPTY_EVIDENCE, lafpos: null }), false);
   assert.deepEqual(closedEvidenceText({ ...EMPTY_EVIDENCE, lafpos: null }), { red: [], warn: [], info: [] });
-  // Sunucu: kanıt yalnız LafPOS gününde okunur; gün sonu yazımı kapalı işareti yalnız satışlı LafPOS gününde kaldırır
+  // Sunucu: kanıt yalnız LafPOS gününde okunur (şube şube; şube verilmezse LafPOS'un şubesinin günü); gün sonu yazımı
+  // kapalı işareti yalnız satışlı LafPOS gününde kaldırır (geçiş günü gün sonunun şubesinin kasasından)
   const server = read("src/server/closed-days.ts");
-  assert.match(server, /if \(!isLafposDay\(date, branchId \? branchSwitchDay\(switchDay, branchId\) : switchDay\)\) return null;/);
-  assert.match(server, /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[setting\][\s\S]*?if \(!isLafposDay\(date, readLafposSwitchDay\(setting\?\.value\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/);
+  assert.match(server, /if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branch\)\)\) return null;/);
+  assert.match(
+    server,
+    /if \(z\.receipts <= 0 && z\.zTotal <= 0\) return;\n\s+const \[setting\][\s\S]*?if \(!isLafposDay\(date, branchSwitchDay\(readLafposSwitchDay\(setting\?\.value\), branchId\)\)\) return;\n\s+await lockClosedDay\(tx, date\);/,
+  );
   const ingest = read("src/server/lafpos/ingest.ts");
   assert.match(ingest, /const soldSince = stored && \(stored\.z\.receipts > 0 \|\| stored\.z\.zTotal > 0\) \? stored\.receivedAt : null;/);
   assert.match(ingest, /await onLafposDaySaved\(tx, day\.date, day\.z, now, soldSince\);/);

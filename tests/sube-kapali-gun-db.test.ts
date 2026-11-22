@@ -37,6 +37,8 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
   let reqs: typeof import("../src/server/closed-day-requests");
   let bell: typeof import("../src/server/bell/kasa");
   let special: typeof import("../src/server/actions/special-days");
+  let checklists: typeof import("../src/server/data/checklists");
+  let panelBell: typeof import("../src/server/actions/notifications");
   type Who = { id: number; name: string; email: string; role: "admin" | "staff" };
   const users: Record<"ali" | "ayse" | "deniz", Who> = {
     ali: { id: 0, name: "Ali", email: "ali@laffogato.net", role: "admin" },
@@ -120,6 +122,8 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
     reqs = await import("../src/server/closed-day-requests");
     bell = await import("../src/server/bell/kasa");
     special = await import("../src/server/actions/special-days");
+    checklists = await import("../src/server/data/checklists");
+    panelBell = await import("../src/server/actions/notifications");
   });
 
   after(async () => {
@@ -130,7 +134,10 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
 
   beforeEach(async () => {
     me = users.ali;
-    await db.execute(sql`TRUNCATE cash_reports, cash_outs, staff_requests, special_days, activity_log, photos RESTART IDENTITY CASCADE`);
+    await db.execute(
+      sql`TRUNCATE cash_reports, cash_outs, staff_requests, special_days, activity_log, photos, pos_day_reports, checklist_templates, notification_log RESTART IDENTITY CASCADE`,
+    );
+    await db.delete(s.settings).where(eq(s.settings.key, "lafposGecisGunu"));
     await db.update(s.branches).set({ active: true });
   });
 
@@ -248,5 +255,81 @@ describe("Kapalı gün şube şube (KP-05)", { skip: !SERVER_URL && "SUBE_TEST_D
     assert.equal((await db.select().from(s.specialDays).where(eq(s.specialDays.id, derbi.ok ? derbi.data.id : 0)))[0].branchId, null);
     const unknown = await special.saveSpecialDay({ ...input, title: "Başka", branchId: "yok" });
     assert.ok(!unknown.ok);
+  });
+
+  test("LafPOS'un gün sonu kanıtı şube şube: şube verilmezse LafPOS'un şubesininki; ModPOS'taki şubenin eski satırı kanıt değil", async () => {
+    const D = "2026-11-11";
+    await db.insert(s.settings).values({ key: "lafposGecisGunu", value: "2026-11-01" });
+    const z = (zNo: number) => ({ zNo, receipts: 40, zTotal: 9_000, cash: 4_000, card: 5_000, mealCard: 0, online: 0, other: 0, offRevenue: 0, discounts: 0, openingCash: 500, cashOut: 0, countedCash: 4_500, handedOver: 0, cashDiff: 0 });
+    const pos = (branchId: string, zNo: number) => db.insert(s.posDayReports).values({ date: D, branchId, z: z(zNo), payments: [], ikram: [], source: "lafpos" });
+    // Tuzla'nın kasası ModPOS'ta: şubesi Tuzla olan eski bir deneme satırı LafPOS'un kanıtı sayılmaz
+    await pos("tuzla", 7);
+    assert.equal((await closed.closedDayEvidence(db, D)).lafpos, null, "şubesiz okuma Tuzla'nın satırını kanıt saymaz");
+    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).lafpos, null);
+    await pos("marina", 14);
+    const marina = { zNo: 14, receipts: 40, zTotal: 9_000 };
+    assert.deepEqual((await closed.closedDayEvidence(db, D)).lafpos, marina);
+    assert.deepEqual((await closed.closedDayEvidence(db, D, "marina")).lafpos, marina);
+    assert.equal((await closed.closedDayEvidence(db, D, "tuzla")).lafpos, null, "Marina'nın gün sonu Tuzla'nın kanıtı değil");
+  });
+
+  test("kontrol listeleri şube şube: zil ve sabah e-postası yalnız kapalı şubenin açılmamış listesini düşürür", async () => {
+    const tpl = async (name: string, branchId: string | null) => {
+      const [t] = await db.insert(s.checklistTemplates).values({ name, opensAt: "08:00", dueAt: "11:00", activeFrom: tr("2026-10-01T00:00"), branchId }).returning({ id: s.checklistTemplates.id });
+      await db.insert(s.checklistItems).values({ templateId: t.id, label: "Tezgâh temiz" });
+      return t.id;
+    };
+    const ids = new Map([
+      [await tpl("Tuzla açılış", "tuzla"), "tuzla"],
+      [await tpl("Marina açılış", "marina"), "marina"],
+      [await tpl("Kapanış", null), "ortak"],
+    ]);
+    const reset = () => db.execute(sql`TRUNCATE cash_reports, special_days, staff_requests, activity_log RESTART IDENTITY CASCADE`);
+
+    // Sabah e-postası: 12 Kasım sabahı dünün (11 Kasım) kutusu; kasa raporu kullanılıyor (10 Kasım'da raporlar var)
+    const D = "2026-11-11";
+    const morning = tr("2026-11-12T08:30");
+    const digest = async () => (await checklists.loadKontrolDigest(morning))?.box.lines.flatMap((l) => (l.strong ? [l.strong] : [])).sort() ?? null;
+    const fresh = async () => {
+      await reset();
+      await report("2026-11-10", "tuzla");
+      await report("2026-11-10", "marina");
+    };
+    // Marina dün kapalıydı (onaylı), Tuzla açıktı ve raporunu girdi: önceden Tuzla'nın raporu Marina'nın listesini de
+    // eksik yazdırıyordu
+    await fresh();
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, D, "Tadilat", "marina"));
+    await report(D, "tuzla");
+    const m = await closed.closedMarksOn(D, db);
+    assert.deepEqual([m.all, [...m.branches], [...m.open].sort()], [false, ["marina"], ["marina", "tuzla"]]);
+    assert.deepEqual(await digest(), ["Kapanış listesi", "Tuzla açılış listesi"]);
+    // Tuzla kapalı, Marina raporlu: Tuzla'nın kapalı gününün listesi eksik yazılmaz
+    await fresh();
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, D, "Tadilat", "tuzla"));
+    await report(D, "marina");
+    assert.deepEqual(await digest(), ["Kapanış listesi", "Marina açılış listesi"]);
+    // Marina kapalı, sabah hiçbir şubenin raporu yok: önceden kutu hiç çıkmıyor, Tuzla'nın eksik listesi düşüyordu
+    await fresh();
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, D, "Tadilat", "marina"));
+    assert.deepEqual(await digest(), ["Kapanış listesi", "Tuzla açılış listesi"]);
+    // İki şube de kendi işaretiyle kapalı: işletme kapalı, kutu yok (tek şubeli günlerdeki gibi)
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, D, "Tadilat", "tuzla"));
+    assert.equal(await digest(), null);
+
+    // Zil (yönetici, Tümü): dün Marina kapalıydı; Tuzla'nın ve bütün şubelerin açılmamış listesi eksik yazılır
+    await reset();
+    const Y = addDays(businessDate(), -1);
+    const missing = async () =>
+      (await withBranchScope("hepsi", () => panelBell.loadPanelNotifications()))
+        .flatMap((n) => {
+          const id = /^kontrol-eksik-(\d+)-/.exec(n.id)?.[1];
+          return id ? [ids.get(Number(id))] : [];
+        })
+        .sort();
+    assert.deepEqual(await missing(), ["marina", "ortak", "tuzla"]);
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, Y, "Tadilat", "marina"));
+    assert.deepEqual(await missing(), ["ortak", "tuzla"], "Marina'nın kapalı günü Tuzla'nın eksik listesini susturmaz");
+    await db.transaction((tx) => closed.writeClosedDay(tx, users.ali, Y, "Tadilat", "tuzla"));
+    assert.deepEqual(await missing(), [], "iki şube de kapalı: bütün şubelerin listesi de beklenmez");
   });
 });

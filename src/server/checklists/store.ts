@@ -209,6 +209,7 @@ function liteOf(t: TemplateDTO, run: RunRow | undefined, answers: AnswerLite[], 
     photos: items.filter((i) => i.required && i.type === "photo").length,
     staffAllowed: t.staffAllowed,
     run: summary,
+    branchId: t.branchId,
   };
 }
 

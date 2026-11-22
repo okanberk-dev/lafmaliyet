@@ -124,6 +124,11 @@ export interface ChecklistLite {
   staffAllowed: boolean;
   /** O günün kaydı (ilk yanıtla açılır); yoksa null */
   run: RunLite | null;
+  /**
+   * Listenin şubesi (boş: bütün şubelerin listesi). Kapalı gün şubenindir: zil ve sabah e-postası şubesi kapalı
+   * işaretli listeyi düşürür (src/lib/closed-days.ts › closedForBranch). Verilmezse bütün şubelerin listesi sayılır
+   */
+  branchId?: string | null;
 }
 
 // ---------------------------------------------------------------- Sınırlar

@@ -4,7 +4,7 @@
  * saklanır (src/components/panel/live/prefs.ts), ses motoru o çıkışa çalar (sounds.ts, AudioContext.setSinkId).
  *
  * "Yalnız bu bilgisayar" (aşağıda): açıkken uyarılar yalnız seçilen hoparlörden çalar, o hoparlör yoksa genel
- * hoparlöre düşmez, susar. Tuzla Köyiçi'nde varsayılan açık (docs/BILDIRIMLER.md › Uyarı sesleri).
+ * hoparlöre düşmez, susar. Tuzla Köyiçi'nde (Tuzla seçiliyken) varsayılan açık (docs/BILDIRIMLER.md › Uyarı sesleri).
  */
 
 import { ALL_BRANCHES, DEFAULT_BRANCH_ID } from "./branches";
@@ -77,15 +77,21 @@ export type OutputStatus = "default" | "active" | "missing" | "permission" | "un
 export const ONLY_COMPUTER_BRANCHES: readonly string[] = [DEFAULT_BRANCH_ID];
 
 /**
- * Bu cihazın şubesi, panelin şube seçiminden: personelde kilitli şubesi, yöneticide seçtiği şube. "Tümü" seçiliyken
- * panelin varsayılan şubesi (yeni kayıtlar da oraya yazılır, src/server/branch-scope.ts › writeId).
+ * Bu cihazın şubesi, panelin şube seçiminden: personelde kilitli şubesi, yöneticide soldan açıkça seçtiği şube.
+ * "Tümü" seçiliyken cihazın şubesi yok (null): bilgisayar hangi şubede bilinmez. Önceden "Tümü" Tuzla sayılıyordu;
+ * Marina'daki bilgisayarda "Tümü" seçiliyken Tuzla'nın varsayılanı açılıyor, hoparlör seçilmeden sipariş zili ve
+ * alarm susuyordu (sahibin kuralı, 22 Kasım 2026: yalnız açıkça Tuzla seçiliyken Tuzla'nın varsayılanı).
  */
 export function deviceBranch(scope: string | null | undefined): string | null {
-  if (!scope) return null;
-  return scope === ALL_BRANCHES ? DEFAULT_BRANCH_ID : scope;
+  if (!scope || scope === ALL_BRANCHES) return null;
+  return scope;
 }
 
-/** "Yalnız bu bilgisayar" açık mı: cihazda elle seçildiyse o, seçilmediyse şubenin varsayılanı */
+/**
+ * "Yalnız bu bilgisayar" açık mı: cihazda elle seçildiyse o (Bu cihazda uyarılar › Uyarı sesleri; her şubede ve
+ * "Tümü"de geçerli), seçilmediyse şubenin varsayılanı. Varsayılan yalnız açıkça Tuzla seçiliyken açık; "Tümü"de, Marina'da
+ * ve online kanalda kapalı
+ */
 export function onlyComputerFor(saved: boolean | null | undefined, scope: string | null | undefined): boolean {
   if (typeof saved === "boolean") return saved;
   const branch = deviceBranch(scope);
