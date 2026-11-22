@@ -34,7 +34,7 @@ export function FilterButton({ count, onClick, label = "Süzgeç" }: { count: nu
       aria-label={count ? `${label}, ${count} etkin` : label}
       className={cn(
         "inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 text-sm font-medium ring-1 ring-inset transition-colors",
-        count ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink",
+        count ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink",
       )}
     >
       <SlidersHorizontal size={16} aria-hidden="true" />
@@ -108,7 +108,7 @@ export function ChoiceList<T extends string>({
             >
               <span className="min-w-0 flex-1">{o.label}</span>
               {o.count !== undefined ? <span className="text-sm text-ink-mute tabular">{o.count}</span> : null}
-              <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full", on ? "bg-ink text-white" : "ring-1 ring-line-strong ring-inset")} aria-hidden="true">
+              <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full", on ? "bg-ink text-on-solid" : "ring-1 ring-line-strong ring-inset")} aria-hidden="true">
                 {on ? <Check size={14} /> : null}
               </span>
             </button>

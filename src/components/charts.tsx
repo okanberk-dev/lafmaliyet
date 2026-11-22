@@ -24,16 +24,20 @@ import { num, pct, tl, tlUnit } from "@/lib/format";
 // AkmanOS renklerinden doğrulanmış kategorik sıra (dataviz/validate_palette.js, beyaz ve #f4f4f5 zemin, tüm çiftler):
 // 1 mavi #2563eb (ciro) · 2 turuncu #e8590c (gider) · 3 yeşil #16a34a (kâr). Yeşil–turuncu renk körlüğünde 6.8 ΔE:
 // bu yüzden seriler ayrıca işaret türüyle (sütun / çizgi), lejant ve ipucuyla ayrılır.
-export const SERIES = ["#2563eb", "#e8590c", "#16a34a"] as const;
-const GRID = "#e4e4e7";
-const AXIS = "#d4d4d8";
-const MUTED = "#a1a1aa";
-const INK = "#171717";
+// Renkler globals.css değişkenlerinden (--viz-*): açık temada yukarıdaki değerler, koyu temada buz mavisi #BCE1FF,
+// mavi-gri #7E8FA3, yeşil #72D6A3; ızgara çok soluk, eksen yazısı küçük gri (docs/KOYU-TEMA.md). SVG özniteliği ve
+// satır içi stil var(--…) okur; renkle hesap yapan yer (ör. "#rrggbb" + saydamlık) bunları kullanmasın.
+export const SERIES = ["var(--viz-1)", "var(--viz-2)", "var(--viz-3)"] as const;
+const GRID = "var(--viz-grid)";
+const AXIS = "var(--viz-axis)";
+const MUTED = "var(--viz-muted)";
+const INK = "var(--viz-ink)";
+const DOT = "var(--viz-dot)";
 const FONT = { fontSize: 12, fontFamily: "var(--font-geist-sans), sans-serif" };
 
 function TipBox({ title, rows }: { title?: ReactNode; rows: { color?: string; label: ReactNode; value: ReactNode }[] }) {
   return (
-    <div className="min-w-44 rounded-xl bg-surface px-3 py-2.5 text-xs shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
+    <div className="min-w-44 rounded-xl bg-surface px-3 py-2.5 text-xs shadow-[0_12px_40px_rgba(0,0,0,0.14)] dark:bg-panel-deep dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
       {title ? <p className="mb-1.5 font-medium text-ink-mute">{title}</p> : null}
       {rows.map((r, i) => (
         <div key={i} className="flex items-center justify-between gap-4 py-0.5">
@@ -86,7 +90,7 @@ export function HBarChart({
             tick={{ fill: INK, ...FONT }}
           />
           <Tooltip
-            cursor={{ fill: "rgba(0,0,0,0.04)" }}
+            cursor={{ fill: "var(--viz-cursor)" }}
             content={({ active, payload }) =>
               active && payload?.length ? (
                 <TipBox
@@ -127,7 +131,7 @@ export function MenuMatrix({
           <ReferenceArea x1={popThreshold} x2={maxMix} y1={avgCm} y2={maxCm} fill={SERIES[0]} fillOpacity={0.06} label={{ value: "Yıldız", position: "insideTopRight", fill: MUTED, fontSize: 12 }} />
           <ReferenceArea x1={popThreshold} x2={maxMix} y1={minCm} y2={avgCm} fill={SERIES[1]} fillOpacity={0.06} label={{ value: "Beygir", position: "insideBottomRight", fill: MUTED, fontSize: 12 }} />
           <ReferenceArea x1={0} x2={popThreshold} y1={avgCm} y2={maxCm} fill={SERIES[2]} fillOpacity={0.05} label={{ value: "Bilmece", position: "insideTopLeft", fill: MUTED, fontSize: 12 }} />
-          <ReferenceArea x1={0} x2={popThreshold} y1={minCm} y2={avgCm} fill="#71717a" fillOpacity={0.06} label={{ value: "Zayıf", position: "insideBottomLeft", fill: MUTED, fontSize: 12 }} />
+          <ReferenceArea x1={0} x2={popThreshold} y1={minCm} y2={avgCm} fill="var(--viz-4)" fillOpacity={0.06} label={{ value: "Zayıf", position: "insideBottomLeft", fill: MUTED, fontSize: 12 }} />
           <XAxis
             type="number"
             dataKey="mix"
@@ -168,7 +172,7 @@ export function MenuMatrix({
               );
             }}
           />
-          <Scatter data={points} fill={SERIES[0]} stroke="#fff" strokeWidth={2} isAnimationActive={false} />
+          <Scatter data={points} fill={SERIES[0]} stroke={DOT} strokeWidth={2} isAnimationActive={false} />
         </ScatterChart>
       </ResponsiveContainer>
     </div>
@@ -197,7 +201,7 @@ export function PriceLine({ data, valueLabel = "Birim maliyet" }: { data: { labe
             dataKey="value"
             stroke={SERIES[0]}
             strokeWidth={2}
-            dot={{ r: 4, fill: SERIES[0], stroke: "#fff", strokeWidth: 2 }}
+            dot={{ r: 4, fill: SERIES[0], stroke: DOT, strokeWidth: 2 }}
             isAnimationActive={false}
           />
         </LineChart>

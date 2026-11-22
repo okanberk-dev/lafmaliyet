@@ -377,15 +377,15 @@ function RemindersView({
               }}
               className={cn(
                 "flex min-h-[6.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl p-3.5 text-left transition-[background-color,box-shadow,transform] focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.98]",
-                on ? "bg-ink text-white shadow-[0_8px_24px_rgba(0,0,0,0.16)]" : alert ? "bg-bad-soft ring-1 ring-bad/15 ring-inset hover:ring-bad/30" : "bg-panel hover:bg-panel-deep/60",
+                on ? "bg-ink text-on-solid shadow-[0_8px_24px_rgba(0,0,0,0.16)]" : alert ? "bg-bad-soft ring-1 ring-bad/15 ring-inset hover:ring-bad/30" : "bg-panel hover:bg-panel-deep/60",
               )}
             >
               <span className="flex items-center justify-between gap-2">
-                <span className={cn("text-[13px] leading-5 font-medium", on ? "text-white/80" : alert ? "text-bad" : "text-ink-mute")}>{t.label}</span>
+                <span className={cn("text-[13px] leading-5 font-medium", on ? "text-on-solid/80" : alert ? "text-bad" : "text-ink-mute")}>{t.label}</span>
                 <span
                   className={cn(
                     "flex size-7 shrink-0 items-center justify-center rounded-lg [&>svg]:size-[15px]",
-                    on ? "bg-white/15 text-white" : alert ? "bg-surface text-bad" : "border border-line-strong bg-surface text-ink",
+                    on ? "bg-on-solid/15 text-on-solid" : alert ? "bg-surface text-bad" : "border border-line-strong bg-surface text-ink",
                   )}
                   aria-hidden="true"
                 >
@@ -394,10 +394,10 @@ function RemindersView({
               </span>
               <span>
                 <span className="flex items-baseline gap-1.5">
-                  <span className={cn("text-2xl leading-7 font-semibold tracking-tight tabular", on ? "text-white" : alert ? "text-bad" : "text-ink")}>{num(s.count)}</span>
-                  <span className={cn("text-[13px]", on ? "text-white/70" : "text-ink-mute")}>ödeme</span>
+                  <span className={cn("text-2xl leading-7 font-semibold tracking-tight tabular", on ? "text-on-solid" : alert ? "text-bad" : "text-ink")}>{num(s.count)}</span>
+                  <span className={cn("text-[13px]", on ? "text-on-solid/70" : "text-ink-mute")}>ödeme</span>
                 </span>
-                <span className={cn("mt-0.5 block text-[13px] leading-5 tabular", on ? "text-white/80" : alert ? "font-medium text-bad" : "text-ink-mute")}>
+                <span className={cn("mt-0.5 block text-[13px] leading-5 tabular", on ? "text-on-solid/80" : alert ? "font-medium text-bad" : "text-ink-mute")}>
                   {s.count ? money(s.total) : t.empty}
                 </span>
               </span>
@@ -479,7 +479,7 @@ function RemindersView({
               <button
                 type="button"
                 onClick={() => setRange("")}
-                className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-ink px-3 text-[13px] font-medium text-white pointer-coarse:h-11"
+                className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-ink px-3 text-[13px] font-medium text-on-solid pointer-coarse:h-11"
                 aria-label={`${RANGE_LABEL[range]} süzgecini kaldır`}
               >
                 {RANGE_LABEL[range]} <X size={14} aria-hidden="true" />

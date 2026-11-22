@@ -15,7 +15,7 @@ import { approveConnection, denyConnection } from "@/server/actions/mcp";
  */
 
 const secondaryButton =
-  "inline-flex h-12 min-w-36 cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#00754A] bg-white px-7 text-base font-semibold text-[#00754A] transition-[background-color,transform] hover:bg-[#00754A]/[0.06] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex h-12 min-w-36 cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#00754A] dark:border-good bg-white px-7 text-base font-semibold text-[#00754A] dark:text-good transition-[background-color,transform] hover:bg-[#00754A]/[0.06] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60";
 
 function Strong({ parts }: { parts: Rich }) {
   return (
@@ -30,7 +30,7 @@ function Strong({ parts }: { parts: Rich }) {
 function Leaving({ text }: { text: string }) {
   return (
     <p role="status" className="flex items-center gap-3 py-6 text-[17px] font-semibold text-black/80">
-      <Loader2 className="size-5 shrink-0 animate-spin text-[#00754A]" aria-hidden />
+      <Loader2 className="size-5 shrink-0 animate-spin text-[#00754A] dark:text-good" aria-hidden />
       {text}
     </p>
   );
@@ -38,7 +38,7 @@ function Leaving({ text }: { text: string }) {
 
 function Notice({ children }: { children: ReactNode }) {
   return (
-    <p className="flex items-start gap-2.5 rounded-lg bg-[#fff7e6] px-4 py-3 text-sm leading-6 text-[#8a5300]">
+    <p className="flex items-start gap-2.5 rounded-lg bg-[#fff7e6] dark:bg-warn-soft px-4 py-3 text-sm leading-6 text-[#8a5300] dark:text-warn-ink">
       <TriangleAlert className="mt-1 size-4 shrink-0" aria-hidden="true" />
       <span>{children}</span>
     </p>
@@ -119,7 +119,7 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
       ) : (
         <div className="flex flex-col gap-5">
           {text.selfName ? <p className="-mt-3 text-sm leading-6 break-words text-black/55">{text.selfName}</p> : null}
-          <section className="rounded-lg bg-[#f2f0eb] p-4 text-[15px] leading-6 text-black/80" aria-labelledby="claude-can">
+          <section className="rounded-lg bg-[#f2f0eb] dark:bg-surface p-4 text-[15px] leading-6 text-black/80" aria-labelledby="claude-can">
             <h2 id="claude-can" className="font-semibold text-black/90">
               {text.abilitiesTitle}
             </h2>
@@ -128,7 +128,7 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
                 const Icon = [Eye, Ban, ShieldCheck][i];
                 return (
                   <li key={line} className="flex items-start gap-2.5">
-                    <Icon className="mt-1 size-4 shrink-0 text-[#00754A]" aria-hidden="true" />
+                    <Icon className="mt-1 size-4 shrink-0 text-[#00754A] dark:text-good" aria-hidden="true" />
                     <span>{line}</span>
                   </li>
                 );

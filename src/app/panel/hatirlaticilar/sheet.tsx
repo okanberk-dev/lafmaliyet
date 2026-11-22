@@ -128,7 +128,7 @@ export function Sheet({
         "fixed inset-0 m-0 h-full max-h-none w-full max-w-none overflow-hidden bg-transparent p-0 text-ink open:flex open:items-end open:justify-center sm:open:items-center",
         // iOS'ta ekran klavyesi düzeni küçültmez: panel klavyenin üstüne çıkar (bottom-nav.tsx, --keyboard-inset)
         "max-sm:pb-(--keyboard-inset,0px)",
-        "backdrop:bg-ink/25 backdrop:backdrop-blur-[2px]",
+        "backdrop:bg-ink/25 backdrop:backdrop-blur-[2px] dark:backdrop:bg-black/60",
       )}
     >
       {open ? (

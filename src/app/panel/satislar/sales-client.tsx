@@ -1580,7 +1580,7 @@ function DropZone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }
           transition={SPRING_PRESS}
           className={cn(
             "flex size-12 items-center justify-center rounded-2xl border transition-colors duration-200 [&>svg]:size-5 [&>svg]:stroke-[1.75]",
-            dragging ? "border-ink bg-ink text-white" : "border-line-strong bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)]",
+            dragging ? "border-ink bg-ink text-on-solid" : "border-line-strong bg-surface text-ink shadow-[0_1px_2px_rgb(0_0_0/0.06)]",
           )}
           aria-hidden="true"
         >

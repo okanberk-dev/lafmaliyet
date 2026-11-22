@@ -26,7 +26,7 @@ export function OrdersNavBadge({ className }: { className?: string }) {
   const text = badgeText(n);
   if (!text) return null;
   return (
-    <span className={cn("flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-warn px-1.5 text-[11px] leading-none font-semibold text-white tabular", className)}>
+    <span className={cn("flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-warn px-1.5 text-[11px] leading-none font-semibold text-on-solid tabular", className)}>
       <span aria-hidden="true">{text}</span>
       <span className="sr-only">, {n} açık</span>
     </span>

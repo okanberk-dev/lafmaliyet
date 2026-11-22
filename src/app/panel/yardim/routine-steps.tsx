@@ -29,7 +29,7 @@ export function RoutineSteps({ steps }: { steps: RoutineStep[] }) {
               )}
             >
               <span className="flex items-center gap-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-white tabular">{i + 1}</span>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-on-solid tabular">{i + 1}</span>
                 <span className="min-w-0 flex-1 font-semibold text-pretty text-ink group-hover:underline">{r.title}</span>
                 {r.icon}
               </span>

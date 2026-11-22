@@ -134,7 +134,7 @@ export function Pagination({
                 onClick={() => go(p)}
                 aria-current={p === page ? "page" : undefined}
                 // Telefonda yalnız ‹ › kalır (solda "Sayfa 3 / 12" yazar), sayfa düğmeleri satırı taşırmaz
-                className={cn(btn, p === page ? "bg-ink text-white" : "bg-surface text-ink-soft ring-1 ring-line hover:text-ink max-sm:hidden")}
+                className={cn(btn, p === page ? "bg-ink text-on-solid" : "bg-surface text-ink-soft ring-1 ring-line hover:text-ink max-sm:hidden")}
               >
                 {p}
               </button>

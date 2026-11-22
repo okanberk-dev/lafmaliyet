@@ -180,10 +180,10 @@ function TaskLink({ task: t, next, compact = false }: { task: DayTask; next: boo
             className={cn(
               "inline-flex items-center gap-1 text-[13px] font-medium",
               // Telefonda sıradaki işin hapı 44 px: başparmakla rahat dokunulsun
-              next ? "rounded-full bg-ink px-3 py-1.5 text-white max-sm:min-h-11 max-sm:px-4" : "text-ink group-hover:underline",
+              next ? "rounded-full bg-ink px-3 py-1.5 text-on-solid max-sm:min-h-11 max-sm:px-4" : "text-ink group-hover:underline",
             )}
           >
-            {next ? <span className="font-normal text-white/70">Sıradaki:</span> : null}
+            {next ? <span className="font-normal text-on-solid/70">Sıradaki:</span> : null}
             {t.action}
             <ArrowRight size={14} aria-hidden="true" />
           </span>

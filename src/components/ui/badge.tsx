@@ -15,7 +15,7 @@ const toneClass: Record<Tone, string> = {
   coffee: "bg-brass-100 text-brass-800",
   violet: "bg-bordo-50 text-bordo-800",
   orange: "bg-brass-100 text-brass-800",
-  solid: "bg-ink text-white",
+  solid: "bg-ink text-on-solid",
 };
 
 const dotClass: Record<Tone, string> = {
@@ -27,7 +27,7 @@ const dotClass: Record<Tone, string> = {
   coffee: "bg-brass-700",
   violet: "bg-bordo-600",
   orange: "bg-brass-500",
-  solid: "bg-white",
+  solid: "bg-on-solid",
 };
 
 export function Badge({

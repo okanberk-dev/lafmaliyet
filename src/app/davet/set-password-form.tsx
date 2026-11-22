@@ -49,7 +49,7 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
   if (state.done) {
     return (
       <div className="flex flex-col gap-4" role="status">
-        <div className="flex items-start gap-3 rounded-lg bg-[#d4e9e2] px-4 py-3.5 text-[#1e3932]">
+        <div className="flex items-start gap-3 rounded-lg bg-[#d4e9e2] dark:bg-good-soft px-4 py-3.5 text-[#1e3932] dark:text-good-ink">
           <CircleCheck className="mt-0.5 size-5 shrink-0" aria-hidden />
           <div className="min-w-0">
             <h2 className="text-base font-bold">Parolanız kaydedildi</h2>
@@ -113,7 +113,7 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
             {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
           </button>
         </div>
-        <span id="pw-hint" className={`text-sm ${short || weak ? "font-semibold text-[#c82014]" : "text-black/60"}`}>
+        <span id="pw-hint" className={`text-sm ${short || weak ? "font-semibold text-[#c82014] dark:text-bad" : "text-black/60"}`}>
           {short ? `En az ${MIN} karakter (şu an ${password.length})` : (weak ?? `En az ${MIN} karakter. Başka yerde kullanmadığınız bir parola seçin.`)}
         </span>
       </div>
@@ -139,7 +139,7 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
           className={input}
         />
         {mismatch ? (
-          <span id="pw-repeat" className="text-sm font-semibold text-[#c82014]">
+          <span id="pw-repeat" className="text-sm font-semibold text-[#c82014] dark:text-bad">
             İki parola aynı değil
           </span>
         ) : null}

@@ -227,7 +227,7 @@ export function NotificationMenu({
 
             <div className="notification-dropdown-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-1.5">
               {failure ? (
-                <div role="alert" className="mx-1.5 mb-1.5 flex items-center gap-2.5 rounded-xl bg-red-500/10 py-2 pr-1.5 pl-2.5 text-[12px] leading-snug text-red-700">
+                <div role="alert" className="mx-1.5 mb-1.5 flex items-center gap-2.5 rounded-xl bg-red-500/10 py-2 pr-1.5 pl-2.5 text-[12px] leading-snug text-red-700 dark:bg-bad-soft dark:text-bad-ink">
                   <BadIcon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
                   <span className="min-w-0 flex-1">
                     {failure === "stale"
@@ -241,7 +241,7 @@ export function NotificationMenu({
                     type="button"
                     disabled={failure === "failed" && loading}
                     onClick={() => (failure === "stale" ? window.location.reload() : onOpen?.())}
-                    className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-lg bg-background px-2.5 text-[12px] font-semibold text-foreground outline-none ring-1 ring-black/10 transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:cursor-default disabled:opacity-60 pointer-coarse:h-11"
+                    className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-lg bg-background px-2.5 text-[12px] font-semibold text-foreground outline-none ring-1 ring-black/10 transition-colors dark:ring-line-strong hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:cursor-default disabled:opacity-60 pointer-coarse:h-11"
                   >
                     {failure === "stale" ? "Yenile" : loading ? "Deneniyor…" : "Yeniden dene"}
                   </button>

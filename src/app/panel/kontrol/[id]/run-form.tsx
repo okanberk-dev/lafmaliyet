@@ -450,7 +450,7 @@ function CheckItem({ item, answer, submit, draft, sign = false }: ItemProps & { 
   }
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <p className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-good text-sm font-medium text-white max-sm:h-12">
+      <p className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-good text-sm font-medium text-on-solid max-sm:h-12">
         <Check size={17} aria-hidden="true" /> {doneText}
         {sign && answer.by ? <span className="font-normal">· {answer.by}</span> : null}
       </p>

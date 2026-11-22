@@ -80,16 +80,50 @@ const STAT_TONE = {
   warn: "text-warn",
 } as const;
 
-/** AkmanOS büyüme rozeti: olumlu limon, olumsuz kırmızı, nötr gri */
-export function GrowthPill({ value, children }: { value: number; children?: ReactNode }) {
+/**
+ * Büyük rakam: koyu temada kuruş / ondalık kısmı küçük ve soluk ("11.516" büyük, ",77" küçük gri; docs/KOYU-TEMA.md).
+ * Yalnız düz metin bölünür ("11.516,77 ₺", "%26,7"); ondalıksız rakam ve React öğesi olduğu gibi döner. Açık temada
+ * metin tek parça çizilir: parçalara bölmek virgülün harf aralığını (kerning) değiştirip açık temayı kaydırıyordu. Bu
+ * yüzden iki kopya var, her temada biri `display: none` (ekran okuyucu ve kopyalama yalnız görüneni alır).
+ */
+export function Figure({ children }: { children: ReactNode }) {
+  if (typeof children !== "string") return children;
+  const m = /^(.*\d)(,\d+)(\D*)$/.exec(children);
+  if (!m) return children;
+  return (
+    <>
+      <span className="dark:hidden">{children}</span>
+      <span className="hidden dark:inline">
+        {m[1]}
+        <span className="text-[0.62em] font-normal tracking-normal text-ink-faint">{m[2]}</span>
+        {m[3]}
+      </span>
+    </>
+  );
+}
+
+/**
+ * AkmanOS büyüme rozeti: olumlu limon, olumsuz kırmızı, nötr gri. Koyu temada tam yuvarlak koyu hap (#2B2928), beyaz
+ * yazı ve başında renkli ▲ / ▼ (renk tek başına anlam taşımaz). `marker={false}`: metin zaten ok taşıyor (Kıyas: "↑ +%12,4"),
+ * koyuda yalnız metin renklenir.
+ */
+export function GrowthPill({ value, children, marker = true }: { value: number; children?: ReactNode; marker?: boolean }) {
   const neutral = Math.abs(value) < 0.0005;
+  const up = value > 0;
   return (
     <span
       className={cn(
         "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular",
-        neutral ? "bg-surface text-ink-mute" : value > 0 ? "bg-lime text-good-ink" : "bg-bad-soft text-bad",
+        neutral ? "bg-surface text-ink-mute" : up ? "bg-lime text-good-ink" : "bg-bad-soft text-bad",
+        "dark:inline-flex dark:items-center dark:gap-1 dark:bg-surface dark:px-2.5 dark:font-medium",
+        neutral ? "dark:text-ink-mute" : marker ? "dark:text-ink" : up ? "dark:text-good" : "dark:text-bad",
       )}
     >
+      {marker && !neutral ? (
+        <span aria-hidden="true" className={cn("hidden text-[0.75em] leading-none dark:inline", up ? "text-good" : "text-bad")}>
+          {up ? "▲" : "▼"}
+        </span>
+      ) : null}
       {children}
     </span>
   );
@@ -145,7 +179,10 @@ export function Stat({
           {info ? <InfoTip text={info} tone={infoTone} className="mt-0.5" /> : null}
         </p>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className={cn("text-xl font-semibold tracking-tight tabular sm:text-2xl", STAT_TONE[tone])}>{value}</span>
+          {/* Koyu temada rakam ince-normal ağırlıkta ve biraz büyük; kuruş küçük ve soluk (Figure) */}
+          <span className={cn("text-xl font-semibold tracking-tight tabular sm:text-2xl dark:text-[1.375rem] dark:font-normal dark:tracking-[-0.025em] sm:dark:text-[1.875rem]", STAT_TONE[tone])}>
+            <Figure>{value}</Figure>
+          </span>
           {suffix ? <span className="text-sm text-ink-mute">{suffix}</span> : null}
           {badge}
         </div>
@@ -216,7 +253,7 @@ export function SegmentStrip({
   /** Çubukların altına kısa etiketleri yaz */
   showLabels?: boolean;
 }) {
-  const color = { good: "bg-[#22c55e]", bad: "bg-[#ef4444]", warn: "bg-[#eab308]", empty: "bg-panel-deep" };
+  const color = { good: "bg-[#22c55e] dark:bg-good", bad: "bg-[#ef4444] dark:bg-bad", warn: "bg-[#eab308] dark:bg-warn", empty: "bg-panel-deep" };
   return (
     <div data-component="system-status-page" className={className}>
       <ul className="flex h-8 gap-[3px]">

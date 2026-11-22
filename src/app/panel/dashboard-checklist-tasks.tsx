@@ -64,10 +64,10 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
                     <span
                       className={cn(
                         "inline-flex items-center gap-1 text-[13px] font-medium",
-                        next ? "rounded-full bg-ink px-2.5 py-1 text-white max-sm:py-2" : "text-ink group-hover:underline",
+                        next ? "rounded-full bg-ink px-2.5 py-1 text-on-solid max-sm:py-2" : "text-ink group-hover:underline",
                       )}
                     >
-                      {next ? <span className="font-normal text-white/70">Sıradaki:</span> : null}
+                      {next ? <span className="font-normal text-on-solid/70">Sıradaki:</span> : null}
                       {t.action}
                       <ArrowRight size={14} aria-hidden="true" />
                     </span>

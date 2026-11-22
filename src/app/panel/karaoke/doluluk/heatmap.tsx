@@ -37,9 +37,9 @@ export interface HeatmapView {
 const TONE: Record<0 | 1 | 2 | 3 | 4, string> = {
   0: "bg-ink/[.06] text-ink-soft",
   1: "bg-ink/20 text-ink",
-  2: "bg-ink/40 text-ink",
-  3: "bg-ink/65 text-white",
-  4: "bg-ink/90 text-white",
+  2: "bg-ink/40 text-ink dark:text-on-solid",
+  3: "bg-ink/65 text-on-solid",
+  4: "bg-ink/90 text-on-solid",
 };
 const SWATCH: Record<0 | 1 | 2 | 3 | 4, string> = { 0: "bg-ink/[.06]", 1: "bg-ink/20", 2: "bg-ink/40", 3: "bg-ink/65", 4: "bg-ink/90" };
 const LEGEND: [string, 0 | 1 | 2 | 3 | 4][] = [

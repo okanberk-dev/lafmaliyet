@@ -4,7 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * primary   mürekkep siyahı (AkmanOS bg-foreground): sayfadaki birincil eylem (kaydet, ekle)
+ * primary   mürekkep siyahı (AkmanOS bg-foreground; koyu temada L'Affogato yeşili): sayfadaki birincil eylem (kaydet, ekle)
  * secondary beyaz kontrol: ikincil eylem (dışa aktar, filtre); panelde de beyaz sayfada da çalışır
  * outline   secondary ile aynı (eski ad)
  * ghost     zeminsiz: satır içi ve araç çubuğu eylemleri
@@ -15,11 +15,11 @@ type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "accen
 type Size = "xs" | "sm" | "md" | "lg" | "icon" | "icon-sm";
 
 const variantClass: Record<Variant, string> = {
-  primary: "bg-ink text-white shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:bg-ink/85",
+  primary: "bg-primary text-on-primary shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:bg-primary/85 dark:shadow-none",
   secondary: "bg-surface text-ink-mute ring-1 ring-inset ring-line-strong hover:text-ink",
   outline: "bg-surface text-ink-mute ring-1 ring-inset ring-line-strong hover:text-ink",
-  ghost: "text-ink-mute hover:bg-panel hover:text-ink",
-  danger: "bg-bad text-white shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:brightness-95",
+  ghost: "text-ink-mute hover:bg-panel hover:text-ink dark:hover:bg-surface",
+  danger: "bg-bad text-on-solid shadow-[0_1px_2px_rgb(0_0_0/0.18)] hover:brightness-95",
   accent: "bg-lime text-good-ink hover:brightness-95",
 };
 
@@ -36,7 +36,7 @@ const sizeClass: Record<Size, string> = {
 export function buttonClass(variant: Variant = "primary", size: Size = "md", className?: string) {
   return cn(
     "inline-flex shrink-0 cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-[color,background-color,box-shadow,transform] active:scale-[0.98]",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-panel",
     "disabled:pointer-events-none disabled:opacity-45",
     variantClass[variant],
     sizeClass[size],

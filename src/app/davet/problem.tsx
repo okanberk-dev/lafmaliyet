@@ -34,8 +34,8 @@ export function TokenProblem({ status }: { status: ProblemStatus }) {
   const t = TEXT[status];
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-3 rounded-lg bg-[#fdf3f2] px-4 py-3.5">
-        <CircleAlert className="mt-0.5 size-5 shrink-0 text-[#c82014]" aria-hidden />
+      <div className="flex items-start gap-3 rounded-lg bg-[#fdf3f2] dark:bg-bad-soft px-4 py-3.5">
+        <CircleAlert className="mt-0.5 size-5 shrink-0 text-[#c82014] dark:text-bad" aria-hidden />
         <div className="min-w-0">
           <h2 className="text-base font-bold text-black/90">{t.title}</h2>
           <p className="mt-1 text-[15px] leading-6 text-black/70">{t.body}</p>

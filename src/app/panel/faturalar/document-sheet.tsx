@@ -385,7 +385,7 @@ export function DocumentSheet({ invoice, documents, onClose }: { invoice: Invoic
                         className="flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-2.5 py-2 pl-3 text-left"
                       >
                         <span
-                          className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-line-strong ring-inset", on ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute")}
+                          className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-line-strong ring-inset", on ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-mute")}
                           aria-hidden="true"
                         >
                           {e.kind === "image" ? <ImageIcon size={15} /> : <FileText size={15} />}

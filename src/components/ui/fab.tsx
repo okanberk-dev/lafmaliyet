@@ -45,7 +45,7 @@ export function Fab({ className, children, type = "button", ...props }: Componen
       {...props}
       data-hidden={hidden || undefined}
       className={cn(
-        "no-print fixed right-4 bottom-[calc(var(--mobile-nav-h,0px)+0.75rem)] z-30 flex h-14 cursor-pointer items-center gap-2 rounded-full bg-ink pr-5 pl-4 text-[15px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.25)] lg:hidden in-data-[keyboard=open]:hidden",
+        "no-print fixed right-4 bottom-[calc(var(--mobile-nav-h,0px)+0.75rem)] z-30 flex h-14 cursor-pointer items-center gap-2 rounded-full bg-primary pr-5 pl-4 text-[15px] font-semibold text-on-primary shadow-[0_10px_30px_rgba(0,0,0,0.25)] lg:hidden in-data-[keyboard=open]:hidden",
         "transition-[translate,scale,opacity] duration-200 active:scale-[0.96] motion-reduce:transition-none",
         "data-hidden:pointer-events-none data-hidden:translate-y-[calc(100%+1rem)] data-hidden:opacity-0",
         className,

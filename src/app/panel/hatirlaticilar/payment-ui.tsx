@@ -65,10 +65,10 @@ export const CATEGORY_ICON: Record<ReminderCategory, LucideIcon> = {
 /** AkmanOS Recent Activity kuyuları (beyaz glif) */
 export const CATEGORY_WELL: Record<ReminderCategory, string> = {
   kira: "bg-[#ff9f0a]",
-  vergi: "bg-[#bf5af2]",
-  sgk: "bg-[#5e5ce6]",
+  vergi: "bg-[#bf5af2] dark:bg-[#5f7186]",
+  sgk: "bg-[#5e5ce6] dark:bg-[#4f6b8a]",
   maas: "bg-[#30d158]",
-  abonelik: "bg-[#ff375f]",
+  abonelik: "bg-[#ff375f] dark:bg-[#ef5b4f]",
   fatura: "bg-[#32ade6]",
   odeme: "bg-[#0a84ff]",
   diger: "bg-[#8e8e93]",
@@ -101,8 +101,8 @@ export function urgencyOf(daysLeft: number): Urgency {
 }
 
 export const URGENCY: Record<Urgency, { band: string; day: string; text: string; dot: string; ring: string }> = {
-  overdue: { band: "bg-bad text-white", day: "text-bad", text: "text-bad", dot: "bg-bad", ring: "ring-bad/25" },
-  today: { band: "bg-brass-500 text-white", day: "text-brass-700", text: "text-warn", dot: "bg-brass-500", ring: "ring-brass-500/30" },
+  overdue: { band: "bg-bad text-on-solid", day: "text-bad", text: "text-bad", dot: "bg-bad", ring: "ring-bad/25" },
+  today: { band: "bg-brass-500 text-on-solid", day: "text-brass-700", text: "text-warn", dot: "bg-brass-500", ring: "ring-brass-500/30" },
   soon: { band: "bg-brass-200 text-brass-900", day: "text-ink", text: "text-brass-800", dot: "bg-brass-300", ring: "ring-line-strong" },
   later: { band: "bg-panel-deep text-ink-soft", day: "text-ink", text: "text-ink-mute", dot: "bg-ink-quiet", ring: "ring-line-strong" },
 };

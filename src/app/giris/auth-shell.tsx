@@ -8,7 +8,7 @@ import { LafMark } from "@/components/brand";
  */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-dvh flex-col items-center bg-[#006241] px-4 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:justify-center sm:py-12">
+    <div className="flex min-h-dvh flex-col items-center bg-[#006241] dark:bg-canvas px-4 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:justify-center sm:py-12">
       <header className="mb-7 flex flex-col items-center gap-2.5">
         <LafMark tone="cream" className="h-12 sm:h-14" title="L'Affogato" />
         <p className="text-sm font-semibold text-white/85">Yönetim paneli</p>

@@ -392,7 +392,7 @@ const CountHistory = memo(function CountHistory({ history, current, currentStatu
               <span
                 className={cn(
                   "relative flex size-8 items-center justify-center rounded-full transition-colors",
-                  complete ? "bg-ink text-white" : "bg-surface ring-1 ring-line-strong",
+                  complete ? "bg-ink text-on-solid" : "bg-surface ring-1 ring-line-strong",
                   isCurrent && "ring-2 ring-ink ring-offset-2 ring-offset-panel",
                 )}
               >
@@ -535,12 +535,12 @@ function GroupChips({
               onClick={() => onPick(g.name)}
               className={cn(
                 "inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap ring-1 transition-colors ring-inset pointer-coarse:h-11",
-                on ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
+                on ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
               )}
             >
               {g.done ? <Check size={14} strokeWidth={2.5} className={on ? "text-lime" : "text-good"} aria-hidden="true" /> : null}
               <span>{g.name}</span>
-              <span className={cn("tabular", on ? "text-white/70" : "text-ink-quiet")}>
+              <span className={cn("tabular", on ? "text-on-solid/70" : "text-ink-quiet")}>
                 {num(g.counted)}/{num(g.total)}
               </span>
               <span className="sr-only">{g.done ? " tamam" : " sayıldı"}</span>
@@ -1175,7 +1175,7 @@ const CountToolbar = memo(function CountToolbar({
             <div
               className={cn(
                 "relative flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset sm:hidden",
-                group ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong",
+                group ? "bg-ink text-on-solid ring-ink" : "bg-surface text-ink-mute ring-line-strong",
               )}
             >
               <ListFilter size={18} aria-hidden="true" />
