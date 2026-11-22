@@ -4,7 +4,7 @@ import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { CATCH_UP, needsCatchUp } from "@/lib/karaoke/freshness";
 import { detectEvent, pushMessages, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
-import { cancelledAtFor, goneSiteRows, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
+import { cancelledAtFor, goneSiteRows, parseSiteResponse, sessionChannel, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -180,14 +180,16 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron" |
         totalMinor: r.totalMinor,
         // İptalin iadesi: "iade yok" ile "iade edildi" ayrımı (site göndermezse boş)
         refundMinor: r.refundMinor ?? null,
-        channel: r.channel || null,
+        // Köşkte alınan satır "desk", kapatılan saat "desk-block" (migration yok; DTO'nun `desk`'i buradan)
+        channel: sessionChannel(r),
         extUpdatedAt: r.updatedAt || null,
         // Doluluk haritası için: rezervasyonun yapıldığı an ve iptal anı (docs/KARAOKE.md › Doluluk haritası)
         bookedAt: siteTime(r.createdAt),
         cancelledAt: cancelledAtFor(prev ?? null, r, now),
       };
-      // Geçmiş ya da ilk eşitlemedeki kayıtlar olaysız yazılır (zil çalmaz, bildirim gitmez)
-      const notify = event !== null && !firstSync && Date.parse(r.endsAt) > now.getTime();
+      // Geçmiş ya da ilk eşitlemedeki kayıtlar olaysız yazılır (zil çalmaz, bildirim gitmez); kapatılan saat rezervasyon
+      // değildir: ne eklenmesi ne kaldırılması zil çalar (köşkte elle alınan rezervasyon her rezervasyon gibi çalar)
+      const notify = event !== null && !firstSync && Date.parse(r.endsAt) > now.getTime() && !r.block;
       const eventCols = notify ? { lastEvent: event, lastEventAt: now } : {};
       if (!prev) {
         await tx.insert(s.karaokeSessions).values({ ...values, ...eventCols });

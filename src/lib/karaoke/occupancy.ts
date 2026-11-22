@@ -1,6 +1,6 @@
 import { addDays, daysBetween, shiftMonth } from "@/lib/reminders";
 
-import { isCancelledBooking, isHold, type KaraokeStatus, type PaymentStatus } from "./session";
+import { DESK_BLOCK_CHANNEL, isCancelledBooking, isHold, type KaraokeStatus, type PaymentStatus } from "./session";
 
 /**
  * Karaoke odasının doluluğu (saf; tests/karaoke-doluluk.test.ts): hangi gün ve saatte oda dolu, hangisinde boş; saat
@@ -118,6 +118,8 @@ export interface OccRow {
   cancelledAt: Date | null;
   lastEvent: string | null;
   lastEventAt: Date | null;
+  /** Panelin kanal sütunu: "desk-block" köşkün kapattığı saatler (doluluğa girmez); eski okuyucular vermeyebilir */
+  channel?: string | null;
 }
 
 /**
@@ -140,6 +142,16 @@ export function rowToOcc(r: OccRow): OccSession {
     bookedAt: r.bookedAt?.getTime() ?? null,
     cancelledAt: cancelledAt?.getTime() ?? null,
   };
+}
+
+/**
+ * Yükleyicinin satırları → hesabın oturumları. Köşkün kapattığı saatler (elle "Saati kapat"; kanal "desk-block")
+ * rezervasyon değildir: doluluğa, saat başına gelire, uzatmaya, iptale ve "kaç gün önceden"e girmez (oda o saatte
+ * satılmadı, açık da değildi; docs/KARAOKE.md › Elle rezervasyon ve saati kapatma). Köşkte elle alınan rezervasyon
+ * ("desk") her rezervasyon gibi sayılır.
+ */
+export function occSessionsOf(rows: readonly OccRow[]): OccSession[] {
+  return rows.filter((r) => r.channel !== DESK_BLOCK_CHANNEL).map(rowToOcc);
 }
 
 /**

@@ -878,6 +878,8 @@ function session(id: number, local: string, hours: number, o: Partial<KaraokeSes
     lastEvent: null,
     lastEventAt: null,
     createdBy: null,
+    desk: null,
+    bookedAt: null,
     ...o,
   };
 }

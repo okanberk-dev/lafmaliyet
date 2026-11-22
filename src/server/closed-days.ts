@@ -19,6 +19,7 @@ import {
   type ClosedEvidence,
 } from "@/lib/closed-days";
 import { readLafposSwitchDay } from "@/lib/constants";
+import { DESK_BLOCK_CHANNEL } from "@/lib/karaoke/session";
 import { posZSchema, type PosDayZ } from "@/lib/lafpos/day";
 import type { KasaName } from "@/lib/lafpos/kasa";
 import { branchSwitchDay, isLafposDay, kasaName, LAFPOS_BRANCH_ID, LAFPOS_SWITCH_KEY } from "@/lib/lafpos/switch";
@@ -157,7 +158,8 @@ async function branchContinuity(
 
 /**
  * Bir günün paneldeki izleri (tutar yok): kasa raporu, LafPOS'un gün sonu (yalnız LafPOS günlerinde; E-36), kasadan
- * çıkan, zayi / ikram, açılan kontrol listesi, karaoke (iş günü penceresinde başlayan, iptal edilmemiş), personelin
+ * çıkan, zayi / ikram, açılan kontrol listesi, karaoke (iş günü penceresinde başlayan, iptal edilmemiş; köşkün kapattığı
+ * saatler değil), personelin
  * işlem geçmişi yazımları (aynı pencerede; hesap ve hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve
  * açılış sürekliliği. Site ayrı (siteDayCounts). `branchId` verilirse (kapalı gün şubenindir; denetim 13 Kasım KP-05)
  * rapor, LafPOS, kasadan çıkan, zayi, Z no ve açılış o şubenin kayıtlarından: Marina'nın raporu Tuzla'nın kapalı günü
@@ -176,7 +178,15 @@ export async function closedDayEvidence(db: Db | Tx, date: string, branchId?: st
     db
       .select({ n: count() })
       .from(s.karaokeSessions)
-      .where(and(gte(s.karaokeSessions.startsAt, w.from), lt(s.karaokeSessions.startsAt, w.to), ne(s.karaokeSessions.status, "cancelled"))),
+      // Köşkün kapattığı saatler açık olunduğunun kanıtı değil (kapalı günde bütün gün kapatılmış olabilir)
+      .where(
+        and(
+          gte(s.karaokeSessions.startsAt, w.from),
+          lt(s.karaokeSessions.startsAt, w.to),
+          ne(s.karaokeSessions.status, "cancelled"),
+          sql`${s.karaokeSessions.channel} is distinct from ${DESK_BLOCK_CHANNEL}`,
+        ),
+      ),
     db
       .select({ action: s.activityLog.action })
       .from(s.activityLog)

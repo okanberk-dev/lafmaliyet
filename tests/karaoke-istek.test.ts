@@ -130,6 +130,9 @@ test("eylemler: her dışa açık işlev önce oturumu, karar yöneticiyi denetl
     "deleteKaraokeTimer",
     "requestKaraokeTimerDelete",
     "reviewKaraokeDeleteRequest",
+    // Elle rezervasyon ve saati kapatma (22 Kasım 2026): iki rol de ekler; kaldırmanın rol kuralı deskRemoveRefusal'da
+    "addDeskKaraoke",
+    "removeDeskKaraoke",
     "syncKaraokeNow",
   ]);
   assert.doesNotMatch(src, /^export (const|function|let|class|\{) /m, "yardımcı dışa verilmez");

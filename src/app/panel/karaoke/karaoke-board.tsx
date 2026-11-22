@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Undo2, Users } from "lucide-react";
+import { CalendarClock, CalendarPlus, ExternalLink, Hourglass, Lock, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Undo2, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import { Field, Input, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Notice, NoticeLink } from "@/components/ui/notice";
 import type { Role } from "@/lib/constants";
+import { blockReason, deskRemoveRefusal } from "@/lib/karaoke/desk";
 import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
 import {
@@ -28,6 +29,7 @@ import {
   countdown,
   dayLabel,
   durationLabel,
+  isBlock,
   isHold,
   isLive,
   phase,
@@ -44,6 +46,7 @@ import {
   deleteKaraokeTimer,
   endKaraokeSession,
   extendKaraokeSession,
+  removeDeskKaraoke,
   reopenKaraokeSession,
   requestKaraokeTimerDelete,
   startKaraokeTimer,
@@ -51,14 +54,20 @@ import {
 } from "@/server/actions/karaoke";
 import { withdrawStaffRequest } from "@/server/actions/staff-requests";
 
+import { DeskDialog, type RoomHoursProp } from "./desk-dialog";
+
 const PRESETS = [30, 60, 90, 120] as const;
 
 // Adsız sayaç "Rezervasyonsuz oturum": "… bitirildi", "… şimdi bitirilsin mi?" cümlelerinin öznesi (UI-07)
 const nameOf = sessionName;
 
-/** Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle */
+/**
+ * Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle. Köşkte elle alınan rezervasyon kasada
+ * ödenir ("Onaylı · kasada ödenecek", yanında "Elle"); kapatılan saat "Kapalı", kaldırılınca "Kaldırıldı"
+ */
 function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
   if (s.source === "panel") return { tone: "gray", text: s.createdBy ? `Panelden · ${s.createdBy}` : "Panelden" };
+  if (isBlock(s)) return s.status === "cancelled" ? { tone: "gray", text: "Kaldırıldı" } : { tone: "gray", text: "Kapalı" };
   if (s.status === "cancelled") return { tone: "red", text: cancelledBadgeText(s.paymentStatus, s.refund) };
   if (isHold(s)) return { tone: "gray", text: "Ödeme bekleniyor" };
   if (s.status === "requested") return { tone: "amber", text: "Onay bekliyor" };
@@ -67,6 +76,8 @@ function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
 
 const PHASE_BADGE: Record<Phase, { tone: Tone; text: string } | null> = {
   upcoming: null,
+  // Kapatılan saat: durum rozeti "Kapalı" der, ayrıca evre yok (sayaç, alarm yok)
+  closed: null,
   active: { tone: "blue", text: "Sürüyor" },
   overtime: { tone: "red", text: "Süre doldu" },
   done: { tone: "gray", text: "Bitti" },
@@ -85,6 +96,7 @@ export function KaraokeBoard({
   siteAdminBase,
   configured,
   serverNow,
+  roomHours,
 }: {
   role: Role;
   upcoming: KaraokeSessionDTO[];
@@ -93,6 +105,8 @@ export function KaraokeBoard({
   /** Yönetici: rezervasyonu sitenin panelinde açan adres (…/admin/mobil/karaoke) */
   siteAdminBase: string | null;
   configured: boolean;
+  /** Odanın saatleri (Doluluk › Oda saatleri): "Elle ekle"nin başlangıç ve süre seçenekleri */
+  roomHours: RoomHoursProp;
 }) {
   const live = useLive();
   const prefs = usePrefs(role);
@@ -119,6 +133,10 @@ export function KaraokeBoard({
   // Son çekme düştüyse (ping kaçmış olabilir) ekran söyler; panel kopyayı kendisi yeniden dener (src/lib/karaoke/freshness.ts)
   const stale = configured ? karaokeStaleLine(live.data?.karaoke.error, live.data?.karaoke.okAt, now, role) : null;
   const running = sessions.filter((s) => ["active", "overtime"].includes(phase(s, now)));
+  // Köşkün kapattığı saat şu an sürüyor: oda boş değil, kapalı (sayaç yok)
+  const closedNow = sessions.find((s) => phase(s, now) === "closed" && sessionStart(s) <= now && sessionEnd(s) > now);
+  /** Elle ekle penceresi (telefonla gelen rezervasyon, saati kapatma; yönetici ve personel) */
+  const [deskOpen, setDeskOpen] = useState(false);
   const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
   const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));
   const later = sessions.filter((s) => s.date > today);
@@ -152,9 +170,15 @@ export function KaraokeBoard({
             <Card>
               <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
                 <span className="flex size-12 items-center justify-center rounded-2xl bg-surface text-ink-mute ring-1 ring-line">
-                  <MicVocal size={22} aria-hidden="true" />
+                  {closedNow ? <Lock size={22} aria-hidden="true" /> : <MicVocal size={22} aria-hidden="true" />}
                 </span>
-                <p className="text-lg font-semibold tracking-tight text-ink">Oda şu an boş</p>
+                <p className="text-lg font-semibold tracking-tight text-ink">{closedNow ? "Oda kapalı" : "Oda şu an boş"}</p>
+                {closedNow ? (
+                  <p className="text-sm text-ink-mute">
+                    <span className="font-medium text-ink tabular">{timeRange(sessionStart(closedNow), sessionEnd(closedNow))}</span> kapatıldı
+                    {blockReason(closedNow.note) ? ` · ${blockReason(closedNow.note)}` : ""}
+                  </p>
+                ) : null}
                 {next ? (
                   <p className="text-sm text-ink-mute">
                     Sıradaki: <span className="font-medium text-ink">{dayLabel(next.date, now)} {timeRange(sessionStart(next), sessionEnd(next))}</span> · {nameOf(next)}
@@ -166,7 +190,7 @@ export function KaraokeBoard({
               </div>
             </Card>
           )}
-          <TodayList sessions={todays} now={now} siteAdminBase={siteAdminBase} configured={configured} env={rowEnv} />
+          <TodayList sessions={todays} now={now} siteAdminBase={siteAdminBase} configured={configured} env={rowEnv} onAdd={() => setDeskOpen(true)} />
           <UpcomingList sessions={later} now={now} siteAdminBase={siteAdminBase} admin={role === "admin"} env={rowEnv} />
         </div>
         <div className="space-y-4">
@@ -174,6 +198,7 @@ export function KaraokeBoard({
           <DeviceAlerts role={role} karaoke />
         </div>
       </div>
+      <DeskDialog open={deskOpen} onClose={() => setDeskOpen(false)} sessions={sessions} roomHours={roomHours} nowMs={now} />
     </div>
   );
 }
@@ -200,14 +225,14 @@ interface RowEnv {
 function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSessionDTO; now: number; warnMinutes: number }) {
   const { pending, run } = useSessionActions();
   const [confirmEnd, setConfirmEnd] = useState(false);
-  /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur, onaylanınca yine de uzatılır */
-  const [clash, setClash] = useState<{ minutes: number; message: string } | null>(null);
+  /** Uzatma sitedeki bir rezervasyonla ya da kapatılan saatle çakışıyor: personele sorulur, onaylanınca yine de uzatılır */
+  const [clash, setClash] = useState<{ minutes: number; title: string; message: string } | null>(null);
   const [extending, startExtend] = useActionTransition();
   const extend = (minutes: number, force = false) =>
     startExtend(async () => {
       const res = await extendKaraokeSession(s.id, minutes, { force });
       if (!res.ok) return void toast.error(res.error);
-      if (res.data.conflict) return void setClash({ minutes, message: res.data.conflict.message });
+      if (res.data.conflict) return void setClash({ minutes, title: res.data.conflict.title, message: res.data.conflict.message });
       await refreshLive();
     });
   const start = sessionStart(s);
@@ -226,6 +251,7 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
             </Badge>
             <span className="tabular">{timeRange(start, end)}</span>
             {s.extraMinutes ? <span>· +{s.extraMinutes} dk uzatıldı</span> : null}
+            {s.desk === "booking" ? <Badge tone="gray">Elle · kasada ödenecek</Badge> : null}
           </p>
           <h2 className="mt-1.5 text-xl font-semibold tracking-tight break-words text-ink">
             {nameOf(s)}
@@ -286,7 +312,7 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
           setClash(null);
           if (c) extend(c.minutes, true);
         }}
-        title="Sitede rezervasyon var"
+        title={clash?.title ?? "Sitede rezervasyon var"}
         description={clash?.message}
         confirmLabel="Yine de uzat"
         tone="primary"
@@ -301,8 +327,8 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
   const [label, setLabel] = useState("");
   const [guests, setGuests] = useState("");
   const [pending, start] = useActionTransition();
-  /** Sunucunun sorduğu çakışma (sitede o saatte rezervasyon var): onaylanınca yine de başlatılır */
-  const [ask, setAsk] = useState<string | null>(null);
+  /** Sunucunun sorduğu çakışma (sitede o saatte rezervasyon ya da kapatılan saat var): onaylanınca yine de başlatılır */
+  const [ask, setAsk] = useState<{ title: string; message: string } | null>(null);
   const chosen = custom ? Number(custom.replace(",", ".")) : minutes;
   const valid = Number.isFinite(chosen) && chosen >= 5 && chosen <= 720;
   const endsAt = now + (valid ? chosen : 0) * 60_000;
@@ -314,7 +340,7 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
     start(async () => {
       const res = await startKaraokeTimer({ minutes: Math.round(chosen), label: label.trim() || null, guests: guests ? Number(guests) : null, force });
       if (!res.ok) return void toast.error(res.error);
-      if (res.data.conflict) return void setAsk(res.data.conflict.message);
+      if (res.data.conflict) return void setAsk({ title: res.data.conflict.title, message: res.data.conflict.message });
       startedOnThisDevice(res.data.id);
       toast.success(`Sayaç başladı · ${durationLabel(Math.round(chosen))}`, { description: `Bitiş ${trClock(endsAt).time}; süre dolunca alarm çalar.` });
       setLabel("");
@@ -373,8 +399,8 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
           setAsk(null);
           submit(true);
         }}
-        title="Sitede rezervasyon var"
-        description={ask}
+        title={ask?.title ?? "Sitede rezervasyon var"}
+        description={ask?.message}
         confirmLabel="Yine de başlat"
         tone="primary"
       />
@@ -392,6 +418,8 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
   const [deletePending, startAction] = useActionTransition();
   const pending = rowPending || deletePending;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Elle satırı kaldırma onayı (saatler sitede yeniden açılır) */
+  const [confirmRemove, setConfirmRemove] = useState(false);
   /** Silme isteğinin penceresi: açılınca istemci anahtarı üretilir (çift dokunuş ikinci istek açmaz) */
   const [askKey, setAskKey] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -426,6 +454,18 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
       await refreshLive();
     });
   }
+  /** Elle satırı kaldırır: yönetici her zaman, personel yazıldıktan sonraki ilk 10 dakikada (kural sunucuyla aynı) */
+  function removeDesk() {
+    startAction(async () => {
+      const res = await removeDeskKaraoke(s.id);
+      if (!res.ok) return void toast.error(res.error);
+      const r = res.data;
+      toast.success(r.kind === "block" ? `Saatler açıldı · ${r.when}` : `Rezervasyon kaldırıldı · ${r.when}`, {
+        description: r.already ? "Sitede zaten kaldırılmıştı." : "Saatler sitede, uygulamada ve kasada yeniden boş.",
+      });
+      await refreshLive();
+    });
+  }
   function withdraw(requestId: number) {
     startAction(async () => {
       const res = await withdrawStaffRequest(requestId);
@@ -439,6 +479,10 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
   const phaseBadge = PHASE_BADGE[p];
   const start = sessionStart(s);
   const end = sessionEnd(s);
+  const block = isBlock(s);
+  const blockWhy = block ? blockReason(s.note) : null;
+  // Elle satır: kaldırma düğmesi kuralın izin verdiği kişiye (personelde ilk 10 dakika; sonrası yönetici)
+  const canRemove = Boolean(s.desk) && s.status !== "cancelled" && deskRemoveRefusal(s, env.role, now) === null;
   return (
     <li className={cn("flex flex-wrap items-start gap-x-3 gap-y-2 px-5 py-3", (p === "cancelled" || p === "held") && "opacity-60")}>
       <div className="w-[7.5rem] shrink-0 pt-0.5 text-sm font-semibold text-ink tabular">
@@ -447,14 +491,24 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
       </div>
       {/* Ad en az 7rem: geniş düğme sığmazsa (telefonda "Silinmesini iste", "İsteği geri çek") alt satıra iner, ad harf harf kırılmaz */}
       <div className="min-w-0 grow basis-28">
-        <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
-          {nameOf(s)}
-          {s.guests ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {s.guests} kişi</span> : null}
-        </p>
+        {block ? (
+          // Kapatılan saat rezervasyon değil: "Kapalı · 14:00–17:00" ve nedeni (yalnız panellerde)
+          <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
+            Kapalı · <span className="tabular">{timeRange(start, end)}</span>
+            {blockWhy ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {blockWhy}</span> : null}
+          </p>
+        ) : (
+          <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
+            {nameOf(s)}
+            {s.guests ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {s.guests} kişi</span> : null}
+          </p>
+        )}
         <p className="mt-1 flex flex-wrap items-center gap-1.5">
           <Badge tone={status.tone} dot>
             {status.text}
           </Badge>
+          {/* Köşkte elle alınan rezervasyon: telefonla ya da kasada (ödemesi köşkte) */}
+          {s.desk === "booking" ? <Badge tone="gray">Elle</Badge> : null}
           {phaseBadge ? <Badge tone={phaseBadge.tone}>{phaseBadge.text}</Badge> : null}
           {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
           {/* Tutar yalnız yöneticiye (sunucu personele göndermez; savunma: depoda başka oturumun verisi kalsa da çizilmez) */}
@@ -472,9 +526,14 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
             ),
           )}
         </p>
-        {s.note ? <p className="mt-1 text-[13px] break-words text-ink-mute">Not: {s.note}</p> : null}
+        {s.note && !block ? <p className="mt-1 text-[13px] break-words text-ink-mute">Not: {s.note}</p> : null}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {canRemove ? (
+          <Button variant="ghost" size="sm" disabled={pending} onClick={() => setConfirmRemove(true)} className="min-h-11 sm:min-h-8" aria-label={block ? `${timeRange(start, end)} kapatılan saatleri kaldır` : `${nameOf(s)} rezervasyonunu kaldır`}>
+            <X size={14} aria-hidden="true" /> Kaldır
+          </Button>
+        ) : null}
         {p === "done" && s.endedAt && !reopenRefusal(s, now) ? (
           <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => reopenKaraokeSession(s.id), "Sayaç yeniden açıldı")}>
             <RotateCcw size={14} /> Geri aç
@@ -506,6 +565,21 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
           </Button>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        onConfirm={() => {
+          setConfirmRemove(false);
+          removeDesk();
+        }}
+        title={block ? `${dayLabel(s.date, now)} ${timeRange(start, end)} yeniden açılsın mı?` : `${nameOf(s)} rezervasyonu kaldırılsın mı?`}
+        description={
+          block
+            ? "Saatler sitede, uygulamada ve kasada yeniden rezerve edilebilir."
+            : "Saatler sitede, uygulamada ve kasada yeniden boşalır. E-posta yazıldıysa misafire iptal e-postası gider."
+        }
+        confirmLabel={block ? "Saatleri aç" : "Kaldır"}
+      />
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
@@ -549,7 +623,22 @@ function SessionRow({ s, now, siteAdminBase, showDay = false, env }: { s: Karaok
   );
 }
 
-function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; configured: boolean; env: RowEnv }) {
+function TodayList({
+  sessions,
+  now,
+  siteAdminBase,
+  configured,
+  env,
+  onAdd,
+}: {
+  sessions: KaraokeSessionDTO[];
+  now: number;
+  siteAdminBase: string | null;
+  configured: boolean;
+  env: RowEnv;
+  /** "Elle ekle" penceresini açar */
+  onAdd: () => void;
+}) {
   const [pending, start] = useActionTransition();
   function sync() {
     start(async () => {
@@ -568,9 +657,15 @@ function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions
         description={sessions.length ? `${sessions.filter(isLive).length} oturum` : undefined}
         actions={
           configured ? (
-            <Button variant="secondary" size="sm" onClick={sync} disabled={pending}>
-              <RefreshCw size={14} className={cn(pending && "animate-spin")} /> {pending ? "Eşitleniyor…" : "Eşitle"}
-            </Button>
+            <>
+              {/* Telefonla gelen rezervasyon ya da saati kapatma: sitenin takvimine yazılır (yönetici ve personel) */}
+              <Button variant="primary" size="sm" onClick={onAdd}>
+                <CalendarPlus size={14} aria-hidden="true" /> Elle ekle
+              </Button>
+              <Button variant="secondary" size="sm" onClick={sync} disabled={pending}>
+                <RefreshCw size={14} className={cn(pending && "animate-spin")} /> {pending ? "Eşitleniyor…" : "Eşitle"}
+              </Button>
+            </>
           ) : undefined
         }
       />
@@ -581,7 +676,11 @@ function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions
           ))}
         </ul>
       ) : (
-        <EmptyState icon={<MicVocal />} title="Bugün karaoke yok" description="Sitede rezervasyon yapılınca burada görünür ve zil çalar." />
+        <EmptyState
+          icon={<MicVocal />}
+          title="Bugün karaoke yok"
+          description={configured ? "Sitede rezervasyon yapılınca burada görünür ve zil çalar. Telefonla gelen rezervasyonu “Elle ekle” ile yazın." : "Sitede rezervasyon yapılınca burada görünür ve zil çalar."}
+        />
       )}
     </Card>
   );
@@ -589,7 +688,8 @@ function TodayList({ sessions, now, siteAdminBase, configured, env }: { sessions
 
 function UpcomingList({ sessions, now, siteAdminBase, admin, env }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; admin: boolean; env: RowEnv }) {
   if (!sessions.length) return null;
-  const live = sessions.filter((s) => s.status !== "cancelled" && !isHold(s));
+  // Kapatılan saat rezervasyon sayılmaz (satırı yine listede: "Kapalı · 14:00–17:00")
+  const live = sessions.filter(isLive);
   return (
     <Card>
       <CardHeader

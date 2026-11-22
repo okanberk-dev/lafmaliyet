@@ -1,6 +1,15 @@
 import { z } from "zod";
 
-import { isCancelledBooking, PAYMENT_STATUSES, type KaraokeStatus, type PaymentStatus, type SiteReservation } from "./session";
+import {
+  DESK_BLOCK_CHANNEL,
+  DESK_CHANNEL,
+  deskKindOfChannel,
+  isCancelledBooking,
+  PAYMENT_STATUSES,
+  type KaraokeStatus,
+  type PaymentStatus,
+  type SiteReservation,
+} from "./session";
 
 /**
  * Sitenin yanıtını doğrular: bozuk ya da beklenmeyen satır atlanır (eşitlemeyi durdurmaz), bilinmeyen durum
@@ -28,7 +37,46 @@ const reservationSchema = z.object({
   cancelledAt: z.string().max(40).optional().catch(undefined),
   // İsteğe bağlı (site 29 Ekim 2026'dan beri gönderir): iptalin iade tutarı; eski site göndermez, bozuksa yok sayılır
   refundMinor: z.number().int().min(0).nullable().optional().catch(undefined),
+  // İsteğe bağlı (site 22 Kasım 2026'dan beri gönderir; ekleme): köşkte alınan satır ve kapatılan saat. Eski site
+  // göndermez, bozuksa yok sayılır; `block` yoksa okunuşta türetilir (readDeskFlags)
+  desk: z.boolean().optional().catch(undefined),
+  block: z.boolean().optional().catch(undefined),
 });
+
+/** Sitenin kapatılan saat notunun başı ("Kapalı" ya da "Kapalı: özel etkinlik"; sitenin DESK_BLOCK_NOTE_PREFIX'i) */
+export const DESK_BLOCK_NOTE_PREFIX = "Kapalı";
+
+/**
+ * Köşkte alınan satırın iki işareti: `desk` site göndermezse false (eski site elle satır bilmiyordu); `block` göndermezse
+ * sitenin kuralıyla türetilir (isDeskBlock: elle satır, ücretsiz, notu "Kapalı" ile başlıyor). Elle olmayan satır hiçbir
+ * zaman kapatılan saat sayılmaz.
+ */
+export function readDeskFlags(r: { desk?: boolean; block?: boolean; totalMinor: number; note: string }): { desk: boolean; block: boolean } {
+  const desk = r.desk === true;
+  if (!desk) return { desk: false, block: false };
+  const block = typeof r.block === "boolean" ? r.block : r.totalMinor === 0 && r.note.startsWith(DESK_BLOCK_NOTE_PREFIX);
+  return { desk, block };
+}
+
+export { DESK_BLOCK_CHANNEL, DESK_CHANNEL, deskKindOfChannel };
+
+/** Panelin `karaoke_sessions.channel` sütunu: elle satırda "desk" / "desk-block" (migration yok), değilse sitenin kanalı */
+export function sessionChannel(r: Pick<SiteReservation, "channel" | "desk" | "block">): string | null {
+  if (r.block) return DESK_BLOCK_CHANNEL;
+  if (r.desk) return DESK_CHANNEL;
+  return r.channel || null;
+}
+
+/**
+ * Sitenin tek satırını doğrular (GET'in her satırı ve elle eklemenin 201 yanıtı aynı biçimde): okunamazsa null.
+ * İşaretler normalleşir (readDeskFlags).
+ */
+export function parseSiteReservation(raw: unknown): SiteReservation | null {
+  const r = reservationSchema.safeParse(raw);
+  if (!r.success || !(Date.parse(r.data.endsAt) > Date.parse(r.data.startsAt))) return null;
+  const flags = readDeskFlags(r.data);
+  return { ...(r.data as SiteReservation), ...flags };
+}
 
 const responseSchema = z.object({
   now: iso,
@@ -63,8 +111,8 @@ export function parseSiteResponse(json: unknown): SiteSnapshot {
   const skippedIds: string[] = [];
   let skipped = 0;
   for (const raw of res.reservations) {
-    const r = reservationSchema.safeParse(raw);
-    if (r.success && Date.parse(r.data.endsAt) > Date.parse(r.data.startsAt)) reservations.push(r.data as SiteReservation);
+    const r = parseSiteReservation(raw);
+    if (r) reservations.push(r);
     else {
       skipped++;
       const id = rawId(raw);

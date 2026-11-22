@@ -10,6 +10,26 @@ export type KaraokeEvent = "created" | "confirmed" | "cancelled" | "changed";
 
 export const PAYMENT_STATUSES: PaymentStatus[] = ["none", "pending", "paid", "refunding", "refunded", "expired"];
 
+/**
+ * Köşkte alınan satır (laffogato.net'in elle rezervasyonu, 22 Kasım 2026; docs/KARAOKE.md › Elle rezervasyon ve saati
+ * kapatma): telefonla ya da kasada alınan rezervasyon (`booking`: onaylı, ödemesi köşkte) ya da köşkün kapattığı saatler
+ * (`block`). Kapatılan saat rezervasyon değildir: sayılmaz, ciroya ve doluluğa girmez, zil çalmaz, sayaç başlamaz; ama
+ * oda o saatlerde doludur (hızlı sayaç ve uzatma sorar). Panelde `karaoke_sessions.channel` "desk" / "desk-block".
+ */
+export type DeskKind = "booking" | "block";
+
+/** Kapatılan saatler (rezervasyon değil) */
+export const isBlock = (s: { desk?: DeskKind | null }) => s.desk === "block";
+
+/** Panelin `karaoke_sessions.channel` sütunundaki elle satır değerleri (migration yok; eşitleme yazar: site.ts) */
+export const DESK_CHANNEL = "desk";
+export const DESK_BLOCK_CHANNEL = "desk-block";
+
+/** Sütundan elle satırın türü: "desk" rezervasyon, "desk-block" kapatılan saat; başka her kanal null */
+export function deskKindOfChannel(channel: string | null | undefined): DeskKind | null {
+  return channel === DESK_BLOCK_CHANNEL ? "block" : channel === DESK_CHANNEL ? "booking" : null;
+}
+
 /** Sitenin gönderdiği rezervasyon (laffogato.net GET /api/panel/karaoke; e-posta, telefon, soyad yok) */
 export interface SiteReservation {
   id: string;
@@ -36,6 +56,16 @@ export interface SiteReservation {
    * eski site: undefined
    */
   refundMinor?: number | null;
+  /**
+   * Köşkte alınan satır (site 22 Kasım 2026'dan beri gönderir; ekleme): sitenin panelinden ya da bu panelin "Elle
+   * ekle"siyle yazılan rezervasyon ya da kapatılan saat. Eski site göndermez: false
+   */
+  desk?: boolean;
+  /**
+   * Köşkte alınan satırlardan kapatılan saatler (ekleme). Göndermeyen site için yanıtın okunuşunda türetilir: ücretsiz ve
+   * notu "Kapalı" ile başlayan elle satır (src/lib/karaoke/site.ts)
+   */
+  block?: boolean;
 }
 
 /** Panelin tuttuğu oturum (ekrana giden biçim); tutar yalnız yöneticiye gider */
@@ -62,6 +92,10 @@ export interface KaraokeSessionDTO {
   lastEvent: KaraokeEvent | null;
   lastEventAt: string | null;
   createdBy: string | null;
+  /** Köşkte alınan satır: elle rezervasyon (`booking`, köşkte ödenir) ya da kapatılan saatler (`block`); değilse null */
+  desk: DeskKind | null;
+  /** Sitede satırın yazıldığı an (rezervasyonun yapıldığı an; sayaçta boş): personelin elle satırı kaldırma süresi */
+  bookedAt: string | null;
 }
 
 /** İptal edilmiş rezervasyonda ne geri gitti ya da gidiyor: hiçbir şey, bir kısmı, tamamı */
@@ -100,8 +134,8 @@ export function cancelledBadgeText(paymentStatus: PaymentStatus, refund: RefundK
 /** Ödemesi beklenen geçici tutma: saat ayrılmış ama rezervasyon henüz yok (ödenmezse kendiliğinden düşer) */
 export const isHold = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus }) => r.status === "requested" && r.paymentStatus === "pending";
 
-/** Gerçek rezervasyon: iptal değil, ödemesi beklenen tutma değil */
-export const isLive = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus }) => r.status !== "cancelled" && !isHold(r);
+/** Gerçek rezervasyon: iptal değil, ödemesi beklenen tutma değil, kapatılan saat değil */
+export const isLive = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus; desk?: DeskKind | null }) => r.status !== "cancelled" && !isHold(r) && !isBlock(r);
 
 /**
  * İptal edilmiş gerçek rezervasyon: iptal (ödeme sayfasında süresi dolan tutma değil) ya da iade. Doluluk haritasının
@@ -200,17 +234,25 @@ export function pushMessages(
 
 // ---------------------------------------------------------------- Sayaç
 
-export type Phase = "held" | "cancelled" | "upcoming" | "active" | "overtime" | "done";
+export type Phase = "held" | "cancelled" | "closed" | "upcoming" | "active" | "overtime" | "done";
 
 /** Süresi dolup susturulmayan oturum en çok bu kadar "süre doldu" görünür (sonra bitti sayılır) */
 const STALE_OVERTIME_MS = 6 * 3_600_000;
 
-/** Sayaçta çalınacak oturum: onaylı ya da kasada ödenecek talep ya da panelden açılan; iptal ve ödenmemiş tutma değil */
-export const isPlayable = (s: Pick<KaraokeSessionDTO, "status" | "paymentStatus" | "source">) =>
-  s.source === "panel" || (s.status !== "cancelled" && !isHold(s) && s.paymentStatus !== "expired" && s.paymentStatus !== "refunded");
+/**
+ * Sayaçta çalınacak oturum: onaylı ya da kasada ödenecek talep (köşkte alınan elle rezervasyon dahil) ya da panelden
+ * açılan; iptal, ödenmemiş tutma ve kapatılan saat değil (kapatılan saatte sayaç başlamaz, alarm çalmaz)
+ */
+export const isPlayable = (s: Pick<KaraokeSessionDTO, "status" | "paymentStatus" | "source"> & { desk?: DeskKind | null }) =>
+  s.source === "panel" || (s.status !== "cancelled" && !isHold(s) && !isBlock(s) && s.paymentStatus !== "expired" && s.paymentStatus !== "refunded");
 
+/**
+ * Oturumun evresi. Kapatılan saat (köşkün elle kapattığı) hep "closed": hiçbir zaman sürmez, süresi dolmaz, bitmez
+ * (sayaç ve alarm yok; ekranda "Kapalı").
+ */
 export function phase(s: KaraokeSessionDTO, nowMs: number): Phase {
   if (s.status === "cancelled" || s.paymentStatus === "refunded" || s.paymentStatus === "expired") return "cancelled";
+  if (isBlock(s)) return "closed";
   if (isHold(s)) return "held";
   if (s.endedAt) return "done";
   const start = sessionStart(s);
@@ -228,12 +270,22 @@ export interface PlannedAlarm {
   at: number;
   kind: AlarmKind;
   sessionId: number;
+  /** Başlangıç bu cihaza geç ulaştı (zamanında kurulamadı): hemen, bir kez duyurulur */
+  late?: boolean;
 }
 
 /**
+ * Geç öğrenilen başlangıç bu kadar süre içinde duyurulur: rezervasyon cihaza saatinden sonra ulaştı (geç eşitleme, arka
+ * plandaki sekme, uykudan uyanan cihaz, o saate elle eklenen rezervasyon). Oturum sürüyorsa bir kez "Karaoke başladı".
+ */
+export const LATE_START_MS = 15 * 60_000;
+
+/**
  * Önümüzdeki uyarılar: başlangıç (kısa ses), bitime `warnMinutes` kala (iki kısa ses) ve bitiş (susturulana kadar
- * alarm). Bir dakikadan eski olanlar planlanmaz (sayfa geç açıldıysa geçmiş başlangıç çalmasın); süresi dolmuş ve
- * susturulmamış oturumun alarmı evresinden (overtime) çalar.
+ * alarm). Bir dakikadan eski uyarı zamanında çalmış sayılır; yalnız başlangıç geç öğrenildiyse son 15 dakikada başlamış
+ * ve hâlâ süren oturumda hemen bir kez duyurulur (`late`, anahtar zamanındakiyle aynı: iki kez çalmaz). Bitmiş, süresi
+ * dolmuş (alarmı evresinden, overtime) ve 15 dakikadan eski başlangıç duyurulmaz. Kapatılan saat hiç planlanmaz
+ * (isPlayable).
  */
 export function alarmPlan(sessions: KaraokeSessionDTO[], nowMs: number, warnMinutes: number, horizonMs = 12 * 3_600_000): PlannedAlarm[] {
   const out: PlannedAlarm[] = [];
@@ -244,7 +296,8 @@ export function alarmPlan(sessions: KaraokeSessionDTO[], nowMs: number, warnMinu
     const add = (kind: AlarmKind, at: number) => {
       if (at >= nowMs - 60_000 && at <= nowMs + horizonMs) out.push({ key: `${s.id}:${kind}:${at}`, at, kind, sessionId: s.id });
     };
-    add("start", start);
+    if (start < nowMs - 60_000 && start >= nowMs - LATE_START_MS && nowMs < end) out.push({ key: `${s.id}:start:${start}`, at: nowMs, kind: "start", sessionId: s.id, late: true });
+    else add("start", start);
     if (warnMinutes > 0 && end - warnMinutes * 60_000 > start) add("warn", end - warnMinutes * 60_000);
     add("end", end);
   }
