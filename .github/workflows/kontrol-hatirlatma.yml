@@ -1,18 +1,19 @@
-# Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6), YEDEK tetikleyici: saat başını 7 geçe panelin
-# /api/cron/kontrol adresini çağırır; panel personele "zamanı geldi" ve "gecikti" e-postalarını gönderir. Asıl
+# Kontrol listesi hatırlatmaları (docs/KONTROL-LISTELERI.md § 6), YEDEK tetikleyici: günde 4 bildirim saatinde
+# (Türkiye 10:07, 14:07, 18:07, 22:07; her birinde ikinci deneme :37'de) panelin /api/cron/kontrol adresini çağırır; panel personele "zamanı geldi" ve "gecikti" e-postalarını gönderir. Asıl
 # tetikleyici açık panel sekmesinin canlı yoklamasıdır (/api/canli, en çok 5 dakikada bir): GitHub zamanlanmış işleri
 # yoğunlukta saatlerce gecikip düşebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma). Bu iş kimse panele
 # bakmazken gecikmeleri yakalar. Vercel Hobby'de cron günde yalnız bir kez çalışır.
-# Saatler UTC: 05:07–23:07 = Türkiye 08:07–02:07. GitHub zamanlanmış işleri birkaç dakika (yoğunlukta 15–20 dk) geç
+# Saatler UTC: 07, 11, 15, 19 = Türkiye 10, 14, 18, 22. Bildirimler 10:00'dan önce ve 01:00'dan sonra gitmez; panel yalnız
+# bildirim saatinin ilk saatinde gönderir, başka saatte çağrılırsa bir şey yapmaz. GitHub zamanlanmış işleri birkaç dakika (yoğunlukta 15–20 dk) geç
 # başlatabilir; panel durumu her çalışmada yeniden hesapladığı için geç çalışma yanlış e-posta göndermez.
 # Gerekenler: depo sırrı CRON_SECRET (Vercel'deki CRON_SECRET'ın aynısı; GitHub › Settings › Secrets and variables ›
 # Actions). Sır yoksa iş uyarı yazıp yeşil biter. Panelin adresi başka ise depo değişkeni PANEL_URL.
-# Maliyet: günde 19 çalışma × 1 dk ≈ ayda 570 Actions dakikası (özel depoda ücretsiz kota 2000 dk).
+# Maliyet: günde 8 çalışma × 1 dk ≈ ayda 240 Actions dakikası (özel depoda ücretsiz kota 2000 dk).
 name: Kontrol listesi hatırlatmaları
 
 on:
   schedule:
-    - cron: "7 5-23 * * *"
+    - cron: "7,37 7,11,15,19 * * *"
   workflow_dispatch:
 
 permissions: {}

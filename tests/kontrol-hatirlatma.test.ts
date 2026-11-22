@@ -8,7 +8,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { ALERT_POLL_GAP_MS, alertPollDue, alertReaches, checklistAlerts, LATE_ALERT_MIN, remindableLists, type AlertList } from "../src/lib/checklist-alerts";
+import {
+  ALERT_FIRST_MIN,
+  ALERT_LAST_MIN,
+  ALERT_POLL_GAP_MS,
+  ALERT_SEND_GRACE_MIN,
+  ALERT_SEND_MINUTES,
+  alertPollDue,
+  alertReaches,
+  alertSendInstant,
+  checklistAlerts,
+  LATE_ALERT_MIN,
+  remindableLists,
+  type AlertList,
+} from "../src/lib/checklist-alerts";
 import { DEFAULT_CHECKLISTS, TUZLA_HOURLY_CHECKLISTS } from "../src/lib/checklist-seed";
 import type { ChecklistItemSnap } from "../src/lib/checklists";
 import { renderChecklistAlert } from "../src/server/notify/checklist-alert-template";
@@ -163,7 +176,8 @@ test("e-posta: konu, gecikme önce, eksik maddeler, listeyi aç bağlantısı; �
 
 test("kaynak: saatlik tetikleyici, yetki, tek tek gönderim ve sahiplenme", () => {
   const wf = read(".github/workflows/kontrol-hatirlatma.yml");
-  assert.match(wf, /cron: "7 5-23 \* \* \*"/);
+  // Günde 4 bildirim saati (UTC 07, 11, 15, 19 = Türkiye 10, 14, 18, 22); 10:00'dan önce ve 01:00'dan sonra çağrı yok
+  assert.match(wf, /cron: "7,37 7,11,15,19 \* \* \*"/);
   assert.match(wf, /secrets\.CRON_SECRET/);
   assert.match(wf, /\/api\/cron\/kontrol/);
   const route = read("src/app/api/cron/kontrol/route.ts");
@@ -197,4 +211,72 @@ test("kaynak: /api/canli hatırlatma işini yanıttan sonra, 304'ten önce, giri
   assert.match(route.slice(claim, notModified), /after\(async \(\) => \{\s*try \{\s*const r = await runChecklistAlerts\(/);
   const run = read("src/server/notify/checklist-alerts.ts");
   assert.match(run, /export function claimChecklistAlertPoll[\s\S]*isEmailConfigured\(\)[\s\S]*alertPollDue\(/);
+});
+
+test("bildirim saatleri: günde 4 kez, 4 saat arayla; ilk 10:00'dan önce değil, son 01:00'dan sonra değil", () => {
+  assert.deepEqual(ALERT_SEND_MINUTES, [600, 840, 1080, 1320]);
+  assert.ok(ALERT_SEND_MINUTES.length >= 3 && ALERT_SEND_MINUTES.length <= 4);
+  assert.ok(Math.min(...ALERT_SEND_MINUTES) >= ALERT_FIRST_MIN && ALERT_FIRST_MIN === 10 * 60);
+  // Son saat ve bekleme payı ertesi gün 01:00'ı (25 * 60) geçmez
+  assert.ok(Math.max(...ALERT_SEND_MINUTES) + ALERT_SEND_GRACE_MIN <= ALERT_LAST_MIN && ALERT_LAST_MIN === 25 * 60);
+  // Hiçbir saat gece yarısından sonra değil (sabah 01:00 sonrası dahil)
+  assert.ok(ALERT_SEND_MINUTES.every((m) => m < 24 * 60));
+});
+
+test("alertSendInstant: yalnız bildirim saatini izleyen ilk saatte o saatin anını verir; öteki zaman null", () => {
+  const at = (local: string) => alertSendInstant(tr(`${DAY}T${local}`))?.toISOString() ?? null;
+  const slot = (h: string) => tr(`${DAY}T${h}`).toISOString();
+  // 10:00'dan önce hiç (önceden 08:07'de ilk e-posta giderdi)
+  for (const early of ["00:00", "05:00", "07:07", "08:07", "09:07", "09:59"]) assert.equal(at(early), null, early);
+  // Saat başını izleyen ilk saat: o saatin anı (geç çalışan iş de aynı anı bulur)
+  assert.equal(at("10:00"), slot("10:00"));
+  assert.equal(at("10:07"), slot("10:00"));
+  assert.equal(at("10:59"), slot("10:00"));
+  assert.equal(at("14:37"), slot("14:00"));
+  assert.equal(at("18:20"), slot("18:00"));
+  assert.equal(at("22:59"), slot("22:00"));
+  // Saatler arası ve gece: hiç (önceden 02:07'ye kadar saat başı giderdi)
+  for (const quiet of ["11:00", "11:07", "12:07", "13:59", "15:07", "17:59", "19:07", "21:59", "23:00", "23:30"]) assert.equal(at(quiet), null, quiet);
+  for (const night of ["2026-11-19T00:07", "2026-11-19T01:00", "2026-11-19T01:07", "2026-11-19T02:07", "2026-11-19T03:07"]) assert.equal(alertSendInstant(tr(night)), null, night);
+  // Yılın her gününde tek bir 24 saatlik taramada en çok 4 saat dilimi ve hepsi 10:00–23:00 arası
+  const hours = new Set<string>();
+  for (let m = 0; m < 24 * 60; m += 5) {
+    const instant = alertSendInstant(new Date(tr("2026-11-18T00:00").getTime() + m * 60_000));
+    if (instant) hours.add(new Date(instant.getTime() + 3 * 3600_000).toISOString().slice(11, 16));
+  }
+  assert.deepEqual([...hours].sort(), ["10:00", "14:00", "18:00", "22:00"]);
+});
+
+test("bildirim saatinde hatırlatma o saatin anına göre: 10:00'da Açılış ve 10:00 saati, 10:50'de gelen 11:00 saati beklemez", () => {
+  const acilis = listOf(DEFAULT_CHECKLISTS[0], 1);
+  // Geç çalışan iş (10:55) 11:00 saatinin penceresini (10:50) görür ama 10:00 anına göre hesaplar: yeni e-posta çıkmaz
+  const now = tr(`${DAY}T10:55`);
+  const at = alertSendInstant(now)!;
+  const alerts = checklistAlerts(DAY, at, [toilet(), acilis]);
+  assert.deepEqual(
+    alerts.map((a) => [a.templateId, a.slot, a.kind]),
+    [
+      [5, "10:00", "due"],
+      [1, null, "due"],
+    ],
+  );
+  // 14:00 anında: gecikenler ve 14:00 saati bir e-postada (11:00'ınki 2 saati geçti, düşer)
+  const at14 = checklistAlerts(DAY, alertSendInstant(tr(`${DAY}T14:07`))!, [toilet()]);
+  assert.deepEqual(
+    at14.map((a) => [a.slot, a.kind]),
+    [
+      ["12:00", "late"],
+      ["13:00", "late"],
+      ["14:00", "due"],
+    ],
+  );
+});
+
+test("kaynak: iş bildirim saati dışında hiçbir şey göndermez; yoklama da başlamaz", () => {
+  const run = read("src/server/notify/checklist-alerts.ts");
+  // Saat kapısı e-posta ayarından ve veritabanından önce
+  assert.match(run, /const now = alertSendInstant\(clock\);\s*if \(!now\) return \{ skipped: "bildirim saati değil/);
+  assert.ok(run.indexOf("alertSendInstant(clock)") < run.indexOf("isEmailConfigured()"));
+  assert.ok(run.indexOf("alertSendInstant(clock)") < run.indexOf("loadNotifySettings()"));
+  assert.match(run, /claimChecklistAlertPoll[\s\S]*alertSendInstant\(new Date\(nowMs\)\)/);
 });

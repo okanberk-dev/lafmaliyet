@@ -1,7 +1,9 @@
 /**
  * Kontrol listelerinin personele giden e-posta hatırlatmaları (saf; saat argümandır). İş açık bir panel sekmesinin canlı
- * yoklamasıyla (/api/canli, en çok 5 dakikada bir) ve yedek olarak saatlik uçla (/api/cron/kontrol, GitHub Actions saat
- * başını 7 geçe) tetiklenir; her çalışmada bugünün listelerine bakar ve henüz gönderilmemiş olanları üretir:
+ * yoklamasıyla (/api/canli, en çok 5 dakikada bir) ve yedek olarak /api/cron/kontrol'le (GitHub Actions) tetiklenir, ama
+ * yalnız günde 4 bildirim saatinde (10:00, 14:00, 18:00, 22:00; alertSendInstant) e-posta gider: sürekli bildirim
+ * olmasın, ilk bildirim 10:00'dan önce, sonuncusu 01:00'dan sonra olmasın. Bildirim saatinde bugünün listelerine
+ * (o saatin anına göre) bakar ve henüz gönderilmemiş olanları üretir:
  *
  * - **Saatlik bölümlü liste** (Tuvalet çizelgesi; bölüm adı saat, lib/checklists.ts sectionSlot): her saat için
  *   "zamanı geldi" (bölüm açıldı, zorunlu maddesi eksik) ve "gecikti" (sıradaki saat geldi, hâlâ eksik).
@@ -31,6 +33,36 @@ export const ALERT_POLL_GAP_MS = 5 * 60_000;
 /** Canlı yoklama hatırlatma işini şimdi tetiklemeli mi (son tetiklemeden ALERT_POLL_GAP_MS geçti; saat geri gittiyse de) */
 export function alertPollDue(nowMs: number, lastMs: number): boolean {
   return nowMs - lastMs >= ALERT_POLL_GAP_MS || nowMs < lastMs;
+}
+
+/**
+ * Hatırlatma e-postalarının gönderildiği saatler (İstanbul, dakika): günde 4 kez, 4 saat arayla (23 Kasım 2026; önceden
+ * saat başı gidiyordu, 08:07–02:07). Sabahın ilk bildirimi 10:00'dan önce, günün sonuncusu 01:00'dan sonra olamaz
+ * (ALERT_FIRST_MIN, ALERT_LAST_MIN; tests/kontrol-hatirlatma.test.ts sınar).
+ */
+export const ALERT_SEND_MINUTES = [10 * 60, 14 * 60, 18 * 60, 22 * 60];
+/** En erken bildirim saati: 10:00 */
+export const ALERT_FIRST_MIN = 10 * 60;
+/** En geç bildirim saati: ertesi gün 01:00 (gece yarısından sonrası 24 saatin üstüne sayılır) */
+export const ALERT_LAST_MIN = 25 * 60;
+/** Bildirim saati geçince en çok bu kadar dakika içinde gönderilir (GitHub işi ya da yoklama geciktiyse); sonra o saat atlanır */
+export const ALERT_SEND_GRACE_MIN = 60;
+
+const TR_OFFSET_MIN = 3 * 60;
+
+/**
+ * Şimdi hatırlatma gönderilebilir mi: son bildirim saatinden (10:00, 14:00, 18:00, 22:00) ALERT_SEND_GRACE_MIN dakika
+ * geçmediyse o saatin anını, değilse null döner. Uyarılar şimdiki ana değil bu ana göre hesaplanır: aynı saatin
+ * penceresinde (örn. 10:00–11:00) ikinci kez çalışan iş yeni bir uyarı bulup ek e-posta atmaz (anahtarlar zaten
+ * sahiplenilmiştir), sonraki saat dilimi gelene kadar hiçbir e-posta gitmez.
+ */
+export function alertSendInstant(now: Date): Date | null {
+  const local = new Date(now.getTime() + TR_OFFSET_MIN * MIN_MS);
+  const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+  const dayStartMs = local.getTime() - (local.getTime() % (24 * 60 * MIN_MS)) - TR_OFFSET_MIN * MIN_MS;
+  const slot = [...ALERT_SEND_MINUTES].reverse().find((m) => m <= minutes);
+  if (slot === undefined || minutes - slot >= ALERT_SEND_GRACE_MIN) return null;
+  return new Date(dayStartMs + slot * MIN_MS);
 }
 
 /** Bugünün bir listesi: kaydın (yoksa şablonun) maddeleri ve yanıtlar */

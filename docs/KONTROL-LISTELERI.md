@@ -186,15 +186,28 @@ Tuzla'nın eksik listesini susturmaz. E-postada kapalı işaretli şubede günü
 başlamış listesi) eksikler yine yazılır.
 
 **Personele e-posta hatırlatması** (17 Kasım 2026; `src/lib/checklist-alerts.ts`,
-`src/server/notify/checklist-alerts.ts`): iş bugünün listelerine bakar ve personele e-posta gönderir. İki tetikleyici
-(20 Kasım 2026):
+`src/server/notify/checklist-alerts.ts`): iş bugünün listelerine bakar ve personele e-posta gönderir.
 
-- **Açık panel sekmesi** (asıl): canlı yoklama (`/api/canli`) yanıttan sonra, sunucu örneği başına en çok **5 dakikada
-  bir** işi çalıştırır (`ALERT_POLL_GAP_MS`). Kafede bir tablet ya da telefon panelde açık olduğu sürece "zamanı geldi"
-  saatin bölümü açılınca (10:00'ınki 09:50'de), "gecikti" sıradaki saat gelince birkaç dakika içinde gider.
-- **GitHub Actions** (yedek): saat başını 7 geçe (Türkiye 08:07 – 02:07) `/api/cron/kontrol`. GitHub zamanlanmış
-  işleri yoğunlukta saatlerce geciktirip düşürebiliyor (17–20 Kasım 2026: 3 günde 57 yerine 11 çalışma); bu yüzden
-  yalnız yedektir.
+**Günde 4 bildirim (23 Kasım 2026).** Önceden hatırlatma saat başı gidiyordu (Türkiye 08:07 – 02:07, Tuvalet
+çizelgesinin her saati için ayrı "zamanı geldi" ve "gecikti"). Şimdi yalnız **10:00, 14:00, 18:00 ve 22:00**'de, her
+bildirim saatinin ilk saatinde gider (`ALERT_SEND_MINUTES`, `alertSendInstant`): sabahın ilk bildirimi 10:00'dan önce,
+günün sonuncusu 01:00'dan sonra olmaz (22:00'den sonra gece hiç e-posta yok). İş bildirim saati dışında çalışırsa
+("bildirim saati değil" der) hiçbir şey göndermez; canlı yoklama da o zaman işi hiç başlatmaz. Uyarılar işin çalıştığı
+ana değil **bildirim saatinin anına** göre bulunur: 10:55'te çalışan iş 11:00 saatinin penceresini görüp ek e-posta
+atmaz, o saat sonraki bildirimde (14:00) gecikmiş ya da zamanı gelmiş olarak girer. Her bildirimde personele tek
+e-posta gider: o anda zamanı gelmiş ve (iki saatten eski olmayan) geciken bütün listeler bir arada. Saat atlanırsa
+(GitHub ya da yoklama bir saatten fazla geciktiyse) o bildirim hiç gitmez, bir sonraki saati beklenir. Saatleri
+değiştirmek için `ALERT_SEND_MINUTES`'i ve `.github/workflows/kontrol-hatirlatma.yml`'deki cron'u birlikte düzenleyin
+(`tests/kontrol-hatirlatma.test.ts` ilk bildirimin 10:00'dan önce, sonuncunun 01:00'dan sonra olmamasını sınar).
+
+İki tetikleyici (20 Kasım 2026):
+
+- **Açık panel sekmesi** (asıl): canlı yoklama (`/api/canli`) yanıttan sonra, bildirim saatinin ilk saatinde, sunucu
+  örneği başına en çok **5 dakikada bir** işi çalıştırır (`ALERT_POLL_GAP_MS`). Kafede bir tablet ya da telefon panelde
+  açık olduğu sürece 10:00 bildirimi 10:00–10:05 arasında gider.
+- **GitHub Actions** (yedek): Türkiye 10:07, 14:07, 18:07 ve 22:07'de (her biri için :37'de ikinci deneme)
+  `/api/cron/kontrol`. GitHub zamanlanmış işleri yoğunlukta saatlerce geciktirip düşürebiliyor (17–20 Kasım 2026: 3
+  günde 57 yerine 11 çalışma); bu yüzden yalnız yedektir.
 
 Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 
@@ -216,8 +229,8 @@ Aynı uyarı iki tetikleyiciden de bir kez gider (aşağıda: sahiplenme).
 - **Kapalı işaretli gün** (Özel günler › Kafe kapalı; kapalı gün işletmenindir, bütün şubeler): o gün hiç açılmamış
   listeler için e-posta gitmez; o gün açılmış (kaydı olan) liste yine hatırlatılır (`remindableLists`; zilin dünkü
   listeler kuralı, 21 Kasım denetimi #25).
-- **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için saatlik çağrı GitHub Actions'tan gelir
-  (`.github/workflows/kontrol-hatirlatma.yml`, `7 5-23 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
+- **Yedek tetikleyici:** Vercel Hobby'de cron günde bir kez çalıştığı için bildirim saatlerindeki çağrı GitHub Actions'tan gelir
+  (`.github/workflows/kontrol-hatirlatma.yml`, `7,37 7,11,15,19 * * *` UTC). Depoda **`CRON_SECRET` sırrı** (Vercel'deki
   `CRON_SECRET`'ın aynısı) gerekir; yoksa iş uyarı yazıp hiçbir şey göndermez. Elle denemek için Actions › Kontrol
   listesi hatırlatmaları › Run workflow.
 
