@@ -62,7 +62,7 @@ export async function emailReport(
   } else {
     const dto = toCashDTO(row);
     const waste = await dayWaste(row.date, row.branchId);
-    const online = await (o.site ?? fetchTillOnlineRow(row.date));
+    const online = await (o.site ?? fetchTillOnlineRow(row.date, row.branchId));
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{rapor}-r{sürüm} değişmez). Birden çok
     // kasa açıkken raporun şubesi konuda, başlıkta ve "Panelde aç"ta (iki şubenin aynı günkü e-postası ayırt edilir)
     const [extras, integrity, branches] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto), listBranches()]);

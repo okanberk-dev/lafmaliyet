@@ -212,6 +212,28 @@ export interface TillOnlineRow {
 
 export const TILL_ROW_NOTE = "kasadan geçmez";
 
+/**
+ * Sitenin şubeleri (laffogato #279, sitenin docs/PANEL-SALES.md › Şube kırılımı): kasa raporunun satırı kasanın şubesini
+ * `&branch=` ile ister. Şube verilmezse Tuzla (eski davranış: şubesiz kasa Tuzla'nındı); sitede karşılığı olmayan kanal
+ * (laffogato.net online kanalı) null: satır yok
+ */
+export const SITE_BRANCHES = ["tuzla", "marina"] as const;
+export type SiteBranch = (typeof SITE_BRANCHES)[number];
+
+export function siteBranchOf(branchId: string | null | undefined): SiteBranch | null {
+  if (!branchId) return "tuzla";
+  return (SITE_BRANCHES as readonly string[]).includes(branchId) ? (branchId as SiteBranch) : null;
+}
+
+/**
+ * Yanıt istenen şubenin mi: site `branch`'i söyler. Şubesiz eski site alanı yazmaz ve bütün siparişleri verir (hepsi
+ * Tuzla'nındı): Tuzla için kabul, Marina için değil (Tuzla'nın rakamı Marina'nın satırına yazılmasın)
+ */
+export function siteBranchMatches(requested: SiteBranch, got: unknown): boolean {
+  if (got === requested) return true;
+  return requested === "tuzla" && got === undefined;
+}
+
 export function tillOnlineRow(day: string, s: Pick<SiteSales, "cafe" | "shop" | "karaoke">): TillOnlineRow {
   const online = (s.cafe.netMinor + s.shop.netMinor) / 100;
   const karaoke = s.karaoke.netMinor / 100;

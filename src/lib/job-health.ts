@@ -153,6 +153,7 @@ const STEP_NAMES: Record<string, string> = {
   count: "Sayım bildirimi",
   weekly: "Haftalık özet",
   requests: "Personel istekleri",
+  gunSonu: "LafPOS gün sonu",
   watchdog: "Sistem uyarısı e-postası",
 };
 
@@ -190,6 +191,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     error: "Haftalık özet gönderilemedi",
   },
   requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
+  gunSonu: { ok: "LafPOS gün sonu: eksik rapor ya da e-posta tamamlandı", error: "LafPOS gün sonu hata" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
 };
 
@@ -209,7 +211,7 @@ export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "s
  * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, ModPOS kasa föyü (yalnız anahtar
  * varken), fotoğraf temizliği, ay sonu sayım bildirimi, haftalık özet, süresi dolan personel istekleri
  */
-export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests";
+export type OptionalStep = "forecast" | "modpos" | "photos" | "count" | "weekly" | "requests" | "gunSonu";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -250,7 +252,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "modpos", "photos", "count", "weekly", "requests", "gunSonu"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -301,6 +303,17 @@ export function modposStep(r: { status: "off" | "preview" | "busy" | "nothing" |
 export function requestsStep(r: { expired: number } | { error: string }): StepResult | undefined {
   if ("error" in r) return { code: "error", error: r.error };
   return r.expired ? { code: "ok" } : undefined;
+}
+
+/**
+ * LafPOS gün sonu otomasyonunun adımı (src/server/lafpos/gun-sonu.ts catchUpLafposDayEnds): yalnız bir şey yapıldıysa
+ * (rapor yazıldı ya da e-posta gitti) ya da hata varsa yazılır
+ */
+export function gunSonuStep(r: { status: string; days: { date?: string; report: string; email: string; error?: string }[] } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  const failed = r.days.filter((d) => d.report === "error" || d.email === "error" || d.email === "failed");
+  if (failed.length) return { code: "error", error: failed.map((d) => `${d.date ?? ""} ${d.error ?? d.email}`.trim()).join(" · ") };
+  return r.days.some((d) => d.report === "written" || d.report === "updated" || d.email === "sent") ? { code: "ok" } : undefined;
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */

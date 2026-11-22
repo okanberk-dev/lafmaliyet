@@ -43,6 +43,9 @@ export interface LafposRejection {
   sentZNo: number | null;
   /** Yönetici o günün kaydını sildi (409'un çözümü); gün LafPOS'tan elle yeniden gönderilince yazılır */
   clearedAt: string | null;
+  /** 409 wrong_branch: kasanın gönderdiği şube ve panelin beklediği (eski kayıtta yok) */
+  sube?: string | null;
+  expected?: string | null;
 }
 
 /** LafPOS'ta reddedilen ya da silinen günü yeniden gönderen yol (LafPOS kendisi yeniden denemez) */
@@ -86,6 +89,8 @@ const rejectionSchema = z.object({
   zNo: z.number().nullable().catch(null),
   sentZNo: z.number().nullable().catch(null),
   clearedAt: z.string().nullable().catch(null),
+  sube: z.string().nullable().optional().catch(null),
+  expected: z.string().nullable().optional().catch(null),
 });
 const unverifiedSchema = z.object({ count: z.number(), lastAt: z.string(), lastStatus: z.number() });
 
@@ -155,6 +160,8 @@ export function rejectionText(e: LafposRejection, today: string): string {
       return `${day ?? "O gün"} için panelde Z ${e.zNo ?? "?"} kayıtlı; LafPOS ${e.sentZNo !== null ? `Z ${e.sentZNo}` : "başka bir Z"} gönderdi, hiçbir şey yazılmadı. LafPOS'taki doğruysa bu günün kaydını silin, sonra ${LAFPOS_RESEND_PATH}'e basın (LafPOS reddedilen günü kendisi yeniden denemez); LafPOS'taki fazlaysa orada düzeltin.`;
     case "invalid":
       return `Gün sonu sözleşmeye uymadı${day ? ` (${day})` : ""}: ilk sorunlu alan ${e.field ?? "bilinmiyor"}. Hiçbir şey yazılmadı; LafPOS'un sürümü panelle uyumlu mu? Düzeltilince ${LAFPOS_RESEND_PATH}'e basın (LafPOS kendisi yeniden denemez).`;
+    case "wrong_branch":
+      return `LafPOS'un kasası${e.sube ? ` "${e.sube}"` : " başka bir"} şubeye ayarlı${day ? ` (${day})` : ""}; panel LafPOS'un gün sonunu ${e.expected ? `"${e.expected}"` : "LafPOS'un"} şubesi için alıyor, hiçbir şey yazılmadı. LafPOS'ta Yönetim › Ayarlar ve yedek › Şube'yi düzeltin, sonra ${LAFPOS_RESEND_PATH}'e basın (LafPOS kendisi yeniden denemez).`;
     case "server_error":
       return `Panel gün sonunu yazamadı${day ? ` (${day})` : ""}: veritabanı hatası. LafPOS kendisi yeniden dener; sürerse Vercel günlüğünde [lafpos].`;
     default:

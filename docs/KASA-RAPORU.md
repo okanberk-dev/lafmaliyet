@@ -416,7 +416,13 @@ Uygulama ve web siparişleri (kafe + mağaza) ile ön ödemeli karaoke, KDV dahi
 alındığı için **kasadan geçmez**: kasa farkına, Z kontrolüne ve devre girmez; ModPOS'un "Online" ödemesi (Yemeksepeti,
 Getir…) ayrıdır. Personel karaoke tutarını görmez. Rapor açılınca, gönderilince ve e-postası gönderilince siteden
 sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye) satır görünmez, form ve gönderim hiç beklemez. Sitenin günü
-gece yarısında biter (kasanınki 05:00'te). Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+gece yarısında biter (kasanınki 05:00'te). Satır kasanın şubesinindir (site 21 Kasım'dan beri şubeli): Tuzla'nın
+kasası `&branch=tuzla`, Marina'nınki `&branch=marina` ile sorar; Marina'nın masa siparişi Tuzla'nın satırına yazılmaz.
+Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+
+**Marina (LafPOS) gün sonu:** geçiş gününden itibaren Marina'nın raporu LafPOS'un gün sonu gelince kendiliğinden yazılır
+(gönderen "LafPOS (otomatik)"; Banka POS Z eksik kalır, sayım yoksa rapor yazılmaz) ve gün sonu e-postası gider;
+personel yalnız eksikleri (Banka POS Z) ekler. Ayrıntı: [LAFPOS.md › Gün sonu otomasyonu](LAFPOS.md#gün-sonu-otomasyonu-22-kasım-2026).
 
 ## Düzeltmeler
 

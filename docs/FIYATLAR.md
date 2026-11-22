@@ -150,10 +150,10 @@ ve en eski / en yeni an tek sorguyla `posPendingSummary()`'den (Ürünler başl�
 ### LafPOS'a geçiş gününden itibaren (denetim B11, E-39)
 
 Kasa LafPOS olunca (Ayarlar › LafPOS › "LafPOS'a geçiş günü"; bugünün iş günü, 05:00 kuralı, o günden önce değilse)
-siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: LafPOS menüyü gün açıkken 15 dakikada bir çeker (gece
-hiç; gün açılınca bir kez; lafpos `server/jobs.ts` `MENU_SYNC_INTERVAL_MS`), sitenin herkese açık menüsü de önbellekli
-(`s-maxage=300, stale-while-revalidate`), yani yeni fiyat kasaya 15-30 dakikada, gece yapılan değişiklik ertesi gün
-açılışta geçer. Kural tek yerde (`src/lib/lafpos/kasa.ts` `tillScope`, `tillPriceManual`;
+siteye bağlı ürünün satış fiyatını LafPOS siteden kendisi alır: gün açıkken LafPOS sürüm sinyalinin (20 sn) `menu`
+işaretiyle yaklaşık 20 sn içinde yeniden eşitler ve fiyatı imzalı panel listesinden alır (`withPanelPrices`); sinyal
+yoksa yedek 15 dakikalık çekme (lafpos `server/jobs.ts`). Sitenin herkese açık menüsü `s-maxage=60`. Gece hiçbir şey
+çekilmez; gece yapılan değişiklik gün açılınca geçer (LafPOS 03-ENTEGRASYON §2.1). Kural tek yerde (`src/lib/lafpos/kasa.ts` `tillScope`, `tillPriceManual`;
 okuyucu `src/server/data/till-scope.ts` `tillProductFilter`, `tillSince`):
 
 | | ModPOS günü (geçiş günü boş ya da bugün ondan önce) | LafPOS günü |
@@ -171,9 +171,10 @@ ModPOS'ta kalmış bir işaretin üstüne LafPOS günü fiyat yeniden değişirs
 iş doğrudur: LafPOS'ta yeni fiyat); fiyat LafPOS günü ModPOS'taki eski fiyata geri dönerse işaret kalkar.
 
 **Şube:** kasa, kasanın şubesinindir (seçili fiziksel şube; "Tümü"de ve istek dışında, ör. haftalık özette, Tuzla):
-geçiş günü yalnız Tuzla'nın kasasınındır, Marina seçiliyken ya da Marina'ya bağlı personelde liste ModPOS'a göredir
-(`loadTillScope`; denetim 21 Kasım #5). İşaret (`pos_marks`, `products.pos_stale_*`) şubesizdir: siteye bağlı olmayan,
-fiyatı geçiş gününden sonra değişen ürün Marina'da işaretlenince Tuzla'nın listesinden de düşer.
+geçiş günü yalnız Marina'nın (LafPOS) kasasınındır, Tuzla seçiliyken ya da Tuzla'ya bağlı personelde liste ModPOS'a
+göredir (`loadTillScope`; denetim 21 Kasım #5). İşaret (`pos_marks`, `products.pos_stale_*`) şubesizdir: siteye bağlı
+olmayan, fiyatı geçiş gününden sonra değişen ürün bir şubede işaretlenince öbürünün listesinden de düşer (şube başına
+işaret açık iş).
 
 Geçiş günü değişince hiçbir kayıt yazılmaz ya da silinmez; yalnız okuyucular değişir. Fiyat yazımı da geçiş gününe göre
 farklı bir şey saklamaz (yalnız bildirimin metni değişir). Metinlerin hepsi geçiş günü boşken bugünkünün aynısıdır
