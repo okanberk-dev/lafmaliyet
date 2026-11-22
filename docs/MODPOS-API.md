@@ -272,7 +272,8 @@ Genel bakış'ın günlük grafiği o günü sayarken kartın çizgisi eksik gö
 | Yanıt okunamadı (alan adı) | ModPOS yanıtının biçimi değişmiş olabilir: `npm run modpos:foy -- --dosya yanit.xml` ile bakın |
 
 Komut satırı (yerelde, anahtar ortamda): `npm run modpos:foy -- 2026-11-02` bir günü çekip özetini yazar (veritabanına
-yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar;
+yazmaz, bir hak kullanır); `--dosya yanit.xml` yalnız dosyayı okur (istek yok); `--kaydet` veritabanına da yazar
+(komut satırında verilen `DATABASE_URL` `.env.local`'dakinden önce gelir, `db:restore` gibi; hedefi yazar);
 `--sube marina` o şubenin anahtarıyla ve o şubeye (kaydederken föy şube adlarına göre ayrılır, §1a).
 
 | Kartta / zilde (şubeler) | Ne yapılır |

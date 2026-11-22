@@ -79,7 +79,13 @@ test("betik kararı bu fonksiyonlara bırakır: önce dal, sonra atlama, sonra v
   assert.match(src, /const refusal = productionBranchRefusal\(process\.env\);\s*if \(refusal\) \{\s*console\.error\(`✗ \$\{refusal\}`\);\s*process\.exit\(1\);\s*\}/);
   assert.ok(src.indexOf("productionBranchRefusal(process.env)") < src.indexOf("predeploySkipReason(process.env)"));
   // Havuzlu bağlantının denetimi de kararın arkasında ve migration'dan önce (açılmazsa şemaya dokunulmadan durulur)
-  assert.match(src, /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*await checkRuntimeConnection\(\);\s*await runMigrations\(\);\s*await runSeed\(\);/);
+  assert.match(
+    src,
+    /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*const url = databaseUrl\(shell, process\.env\);\s*await checkRuntimeConnection\(url\);\s*await runMigrations\(url\);\s*await runSeed\(\{ url \}\);/,
+  );
+  // Hedef db:migrate gibi: kabuktaki adres .env.local'dakinden önce (kopya loadEnvConfig'ten önce alınır; denetim AL-02)
+  assert.ok(src.indexOf("const shell = { ...process.env };") < src.indexOf("loadEnvConfig(process.cwd());"));
+  assert.doesNotMatch(src, /DATABASE_URL_UNPOOLED \?\?/, "boş havuzsuz adres verilmemiş sayılır (AL-03)");
 });
 
 test("betiğin kendisi: daldan Production derlemesi veritabanına bağlanmadan 1 koduyla durur", () => {

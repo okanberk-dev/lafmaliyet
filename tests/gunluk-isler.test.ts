@@ -439,7 +439,7 @@ test("okuyan ekranlar yazmaz: izleme başlangıcını yalnız derleme ve iş ba�
   const alerts = readFileSync(join(process.cwd(), "src/server/jobs/alerts.ts"), "utf8");
   assert.doesNotMatch(alerts, /markWatchSince|insert\(s\.integrationState\)/);
   const predeploy = readFileSync(join(process.cwd(), "scripts/predeploy.ts"), "utf8");
-  assert.match(predeploy, /if \(process\.env\.VERCEL_ENV === "production"\) await markJobsWatched\(\);/);
+  assert.match(predeploy, /if \(process\.env\.VERCEL_ENV === "production"\) await markJobsWatched\(url\);/);
   assert.match(predeploy, /await restartWatchOnDeploy\(db\)/);
 });
 

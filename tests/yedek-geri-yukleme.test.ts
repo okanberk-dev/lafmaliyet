@@ -1,14 +1,17 @@
 // Geri yüklemenin otomatik provası (docs/YEDEK.md › Otomatik prova), gerçek Postgres'te: yedek al → boş veritabanına
 // geri yükle → her tablo aynı (dışarıda bırakılanlar hariç); dolu veritabanına --sil önce onun yedeğini alır, parolaları
 // korur, sayaçları geri götürmez; yarım ya da bozuk dosya reddedilir; sayılar tutmazsa hedef olduğu gibi kalır; eski
-// sürümde alınmış yedek (şubelerden önceki ay, satış, personel ve kasa satırlarıyla) yüklenip son sürüme taşınır.
+// sürümde alınmış yedek (şubelerden önceki ay, satış, personel ve kasa satırlarıyla) yüklenip son sürüme taşınır;
+// Postgres'in kendi hatası Türkçe iletiyle döner. Komut satırının hedefi: db:migrate ve db:seed kabuktaki adresi
+// .env.local'dakinden önce alır (denetim AL-02, AL-03).
 //
 // YEDEK_TEST_DATABASE_URL verilmezse atlanır. Verilen sunucuda geçici veritabanları (laf_yedek_*_<pid>) açılıp sonunda
 // silinir; adres yalnız bağlanmak için (ör. postgres://postgres:postgres@localhost/postgres).
 // Çalıştırma: YEDEK_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/postgres npx tsx --test tests/yedek-geri-yukleme.test.ts
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -27,7 +30,14 @@ import { applyMigrations, loadMigrations, readBackupFile, restoreBackup, Restore
 import { createDb, type DB } from "../src/server/db";
 
 const ADMIN_URL = process.env.YEDEK_TEST_DATABASE_URL;
-const NAMES = { a: `laf_yedek_a_${process.pid}`, b: `laf_yedek_b_${process.pid}`, c: `laf_yedek_c_${process.pid}`, d: `laf_yedek_d_${process.pid}` };
+const NAMES = {
+  a: `laf_yedek_a_${process.pid}`,
+  b: `laf_yedek_b_${process.pid}`,
+  c: `laf_yedek_c_${process.pid}`,
+  d: `laf_yedek_d_${process.pid}`,
+  f: `laf_yedek_f_${process.pid}`,
+  g: `laf_yedek_g_${process.pid}`,
+};
 const INVITE = "!davet-bekliyor";
 
 const urlFor = (name: string) => {
@@ -443,4 +453,59 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.equal(cat, 3, "Çay'ın (2) kimliği yeniden verilmez");
   });
 
+  test("Postgres'in hatası Türkçe iletiyle döner, işlem geri alınır", async () => {
+    const before = await wholeFingerprint(sqlB);
+    const dup = await readBackupFile(fileA);
+    const cats = dup.tables.get("categories")!;
+    cats.rows.push(cats.rows[0]);
+    dup.end.tables.categories += 1;
+    await assert.rejects(
+      restoreBackup(sqlB, dup, { wipe: true, safetyCopyPath: join(dir, "pg-hata-once.json.gz") }),
+      (e: Error) => e instanceof RestoreError && /^Geri yükleme geri alındı, hedef değişmedi: duplicate key value/.test(e.message),
+    );
+    assert.equal(await wholeFingerprint(sqlB), before);
+  });
+
+  test("komut satırı: db:migrate ve db:seed kabuktaki adrese yazar, hedefi söyler; boş havuzsuz adres yok sayılır", async () => {
+    // Ayrı bir klasörde çalışır: .env.local o klasörün (Neon entegrasyonu ve "vercel env pull" iki adresi de yazar)
+    const ws = mkdtempSync(join(tmpdir(), "laf-komut-"));
+    try {
+      for (const f of ["drizzle", "node_modules", "package.json", "src", "tsconfig.json"]) symlinkSync(join(process.cwd(), f), join(ws, f));
+      // Testin kendi ortamındaki adresler ve NODE_ENV (test'te .env.local okunmaz) alt sürece geçmez
+      const drop = new Set(["DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "ADMIN_EMAIL", "ADMIN_PASSWORD", "ADMIN_NAME", "NODE_ENV"]);
+      const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !drop.has(k)));
+      const run = (script: string, envLocal: string, shell: Record<string, string>) => {
+        writeFileSync(join(ws, ".env.local"), envLocal);
+        const r = spawnSync(process.execPath, ["--import", "tsx", join(process.cwd(), "scripts", script)], {
+          cwd: ws,
+          encoding: "utf8",
+          env: { ...base, ...shell } as NodeJS.ProcessEnv,
+          timeout: 180_000,
+        });
+        assert.equal(r.status, 0, `${script}: ${r.stdout}\n${r.stderr}`);
+        return r.stdout;
+      };
+      const tables = async (k: "f" | "g") => (await publicTables(dbs[k]!.$client)).length;
+      const local = `DATABASE_URL=${urlFor(NAMES.f)}\nDATABASE_URL_UNPOOLED=${urlFor(NAMES.f)}\n`;
+
+      // .env.local'da F (havuzsuz dahil), kabukta yalnız DATABASE_URL=G: ikisi de G'ye gider, F'ye dokunulmaz
+      assert.ok(run("migrate.ts", local, { DATABASE_URL: urlFor(NAMES.g) }).includes(`Hedef: localhost/${NAMES.g} (bu bilgisayar)`));
+      assert.ok((await tables("g")) > 0);
+      assert.equal(await tables("f"), 0);
+      const seeded = run("seed.ts", local, { DATABASE_URL: urlFor(NAMES.g) });
+      assert.ok(seeded.includes(`Hedef: localhost/${NAMES.g} (bu bilgisayar)`), seeded);
+      assert.match(seeded, /✓ Excel verisi yüklendi/);
+      const [{ n }] = await dbs.g!.$client.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ingredients`);
+      assert.ok(n > 0);
+      assert.equal(await tables("f"), 0);
+
+      // Eski .env.example kopyası: havuzsuz satır boş, kabukta adres yok. "DATABASE_URL tanımlı değil" demez, F'yi kurar
+      assert.ok(run("migrate.ts", `DATABASE_URL=${urlFor(NAMES.f)}\nDATABASE_URL_UNPOOLED=\n`, {}).includes(`Hedef: localhost/${NAMES.f}`));
+      assert.ok((await tables("f")) > 0);
+      // Örnek dosyada boş satır yok (yorumlu)
+      assert.doesNotMatch(readFileSync(join(process.cwd(), ".env.example"), "utf8"), /^DATABASE_URL_UNPOOLED=/m);
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  });
 });

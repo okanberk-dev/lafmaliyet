@@ -136,7 +136,8 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
    ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
    o andan başlatır, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı
-   tutmazsa her şey geri alınır, hedef olduğu gibi kalır.
+   tutmazsa her şey geri alınır, hedef olduğu gibi kalır (`Geri yükleme geri alındı, hedef değişmedi: …`; ardından
+   Postgres'in kendi iletisi).
 4. Özeti yazar:
 
 ```
@@ -262,7 +263,8 @@ tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazı
 `--sil` önce hedefin yedeğini alır, parolaları korur, oturumları kapatır, sayaçları hedefteki yerlerinin gerisine
 düşürmez (sonra eklenen kişi eski bir kimliği almaz); belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema
 sürümünde (şubelerden önce, ay, satış, personel ve kasa satırlarıyla) alınmış yedek yüklenip son sürüme taşınır, eski
-satırlar Tuzla'ya düşer. **Her migration birleştirmesinden sonra** bir kez çalıştırın
+satırlar Tuzla'ya düşer; Postgres hatası Türkçe iletiyle döner; `db:migrate` ve `db:seed` komut satırında verilen
+adrese yazar (`.env.local`'daki havuzsuz adres öne geçmez), boş `DATABASE_URL_UNPOOLED` yok sayılır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
 (yeni tablolar ve sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
 
 ## 11. Kod
