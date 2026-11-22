@@ -283,9 +283,10 @@ Operatör: "elle karaoke eklediğimizde kişinin mailine 1 gün kalan mail hatı
   rezervasyonun kimliği ve saatinden türeyen aynı anahtarla gider (yanıtı gelmeyen deneme 10 dakika sonra yinelenirse
   ikinci ileti çıkmaz). Kesin reddedilen e-posta en çok 5 kez denenir.
 - **Görünüm:** misafire giden tek e-posta olduğu için kendi tasarımı var (`karaoke-reminder-template.ts`): üstte
-  L'Affogato yazısı, koyu "bilet" kartında saat ve gün, altında üç kısa bilgi (süre saatinde başlar, ödeme kafede /
-  ödemeniz alındı, planınız değiştiyse haber verin), **Takvime ekle** (Google Takvim) ve laffogato.net. Resim yok
-  (engellense de aynı görünür), tutar yok, tanıtım yok (yalnız rezervasyonun bilgisi: ticari ileti değil, İYS izni
+  yeşil bantta L'Af logosu, "bilet" kartında saat, gün ve adres, altında üç kısa bilgi (süre saatinde başlar, ödeme kafede /
+  ödemeniz alındı, planınız değiştiyse haber verin), **Takvime ekle** (Google Takvim), yol tarifi, telefon ve laffogato.net. Logo, renkler (derin yeşil, altın), adres ve
+  telefon sitenin e-postalarındakiyle aynı (laffogato `public/email/laf-mark-white.png`, `src/lib/seo/site.ts`; adres ya
+  da telefon değişirse `VENUE` de güncellenir). Tek resim logodur (engellenirse yerinde "L'Affogato" yazar), tutar yok, tanıtım yok (yalnız rezervasyonun bilgisi: ticari ileti değil, İYS izni
   gerekmez). Gönderen: panelin gönderen adresi, görünen ad "L'Affogato" (`guestFrom`).
 - **Adres:** `karaoke_reminders.email_sealed`'da AES-256-GCM ile şifreli (anahtar `AUTH_SECRET`'tan, amaç
   "karaoke-reminder"). Gönderilince, vazgeçilince ya da gönderilemeyince **silinir**; satır yalnız sonucuyla 3 gün

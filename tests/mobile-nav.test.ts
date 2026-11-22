@@ -37,10 +37,10 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
   // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü), Sayım (çekmece; ay sonunda
   // Bugün'de satır ve telefon bildirimi), Kontrol listeleri (çekmece; açılış ve kapanış Bugün'de satır, zilde
   // "bekliyor"), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım (çekmecenin en altı ve profil menüsü), Zayi
-  // (çekmecenin Stok grubu; Bugün'de satır)
+  // (çekmecenin Stok grubu; Bugün'de satır), Vardiya (çekmece; Bugün'ün "Vardiyada: …" satırı, docs/VARDIYA.md)
   assert.deepEqual(
     STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
-    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel", "/panel/zayi"],
+    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/vardiya", "/panel/yardim/personel", "/panel/zayi"],
   );
   // Beş öğe: 390 px'te hücre başına 78 px
   assert.equal(BOTTOM_NAV.staff.length, 5);

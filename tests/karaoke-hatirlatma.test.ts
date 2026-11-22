@@ -148,10 +148,13 @@ test("misafir e-postası: yarın sözü, gün ve saat, kişi, ödeme kafede, tak
   assert.match(m.html, /Ödeme kafede/);
   assert.match(m.html, /Takvime ekle/);
   assert.match(m.html, /href="https:\/\/laffogato\.net"/);
-  // Tutar yok (ücret kasada), dış resim yok (engellense de aynı görünsün), yalnız iki bağlantı (takvim ve site)
+  // Tutar yok (ücret kasada); tek resim sitenin L'Af işareti (alt metniyle); bağlantılar: takvim, yol tarifi, telefon, site
   assert.doesNotMatch(m.html, /₺|TL\b/);
-  assert.doesNotMatch(m.html, /<img/);
-  assert.equal(m.html.match(/<a /g)?.length, 2);
+  assert.equal(m.html.match(/<img /g)?.length, 1);
+  assert.match(m.html, /src="https:\/\/laffogato\.net\/email\/laf-mark-white\.png" width="54" height="44" alt="L'Affogato"/);
+  assert.equal(m.html.match(/<a /g)?.length, 4);
+  assert.match(m.html, /Postane Mah\. Atatürk Cad\. No: 28/);
+  assert.match(m.html, /href="tel:\+905364290919"/);
   assert.match(m.html, /tanıtım iletisi değildir/);
   assert.match(m.text, /^Yarın görüşüyoruz, Ayşe!/);
   assert.match(m.text, /Rezervasyonunuz: 24 Kasım Salı, 20:00–22:00 \(2 saat · 6 kişi\)/);
@@ -182,7 +185,7 @@ test("selam yalnız ilk adla; takvim bağlantısı UTC saatleriyle", () => {
   const url = new URL(calendarLink(tr("2026-11-24", 20), tr("2026-11-24", 22)));
   assert.equal(url.searchParams.get("dates"), "20261124T170000Z/20261124T190000Z");
   assert.equal(url.searchParams.get("action"), "TEMPLATE");
-  assert.equal(url.searchParams.get("location"), "L'Affogato, Tuzla");
+  assert.match(url.searchParams.get("location") ?? "", /^L'Affogato, Postane Mah\./);
 });
 
 // ---------------------------------------------------------------- Personel: kural
