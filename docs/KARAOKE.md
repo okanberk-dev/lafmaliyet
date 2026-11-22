@@ -321,7 +321,8 @@ Operatör: "elle karaoke eklediğimizde kişinin mailine 1 gün kalan mail hatı
 
 1. **Açık panel sekmesinin canlı yoklaması** (`/api/canli`, yanıttan sonra, sunucu örneği başına en çok 5 dakikada
    bir): bar ekranı açıkken e-postalar dakikasında gider.
-2. **Saatlik iş** (`/api/cron/kontrol`, GitHub Actions, 08:07–02:07): kimse panele bakmıyorsa.
+2. **Yedek iş** (`/api/cron/kontrol`, GitHub Actions; günde dört saatte: 10:07, 14:07, 18:07, 22:07 ve yarım saat sonra
+   ikinci deneme): kimse panele bakmıyorsa.
 3. **Sabah işi** (`/api/cron/gunluk`, 08:00–09:00): karaoke eşitlemesinden hemen sonra; sabah listesinin güvencesi.
    Gönderilemeyen e-posta adımın sonucunu bozmaz, sonraki tetikleyici yeniden dener.
 
