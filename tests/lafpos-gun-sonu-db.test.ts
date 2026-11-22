@@ -248,6 +248,26 @@ describe("Marina gün sonu otomasyonu: veritabanında", { skip: !SERVER_URL && "
     assert.equal(sent.length, 2);
   });
 
+  test("kıyas: geçiş gününden önceki günün LafPOS kaydı (deneme) sayılmaz, kasa raporu okunur", async () => {
+    // 21 Kasım deneme günü Marina'nın kasasından gelmiş (Z 999 ₺); o günün gerçek kaynağı ModPOS'tan girilen kasa raporu
+    assert.ok((await push("2026-11-21", 13, { zTotal: 999, cash: 999, card: 0, countedCash: null, cashDiff: null })).ok);
+    assert.ok((await push("2026-11-15", 12, { zTotal: 888, cash: 888, card: 0, countedCash: null, cashDiff: null })).ok);
+    assert.ok((await push(DAY, 14)).ok);
+    const r = await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.equal(r.email, "sent");
+    // Kasa raporu yokken: deneme rakamı değil "bilinmiyor"
+    assert.match(sent[0].text, /Dün \(21 Kasım Cumartesi\): bilinmiyor/);
+    assert.match(sent[0].text, /Geçen hafta \(15 Kasım Pazar\): bilinmiyor/);
+    assert.doesNotMatch(sent[0].text, /999|888/);
+
+    await db.insert(s.cashReports).values({ date: "2026-11-21", branchId: LAFPOS_SUBE, zTotal: 500, submittedByName: "Ayşe" });
+    assert.ok((await push(DAY, 14, { receipts: 64 })).ok);
+    await gun.runLafposDayEnd(db, DAY, NOW);
+    assert.equal(sent.length, 2);
+    assert.match(sent[1].text, /Dün \(21 Kasım Cumartesi\): 500\s₺ \(%3900 fazla\)/);
+    assert.doesNotMatch(sent[1].text, /999/);
+  });
+
   test("personelin girdiği rapora dokunulmaz; e-posta yine gider", async () => {
     const r0 = await scope.withBranchScope(LAFPOS_SUBE, () =>
       store.saveCashReport(
