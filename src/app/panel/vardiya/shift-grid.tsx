@@ -30,10 +30,13 @@ import {
   nameRef,
   parseShiftCell,
   pdfHref,
+  presetOf,
+  presetText,
   SHIFT_NAME_MAX,
   SHIFT_PEOPLE_MAX,
   SHIFT_TEXT,
   shiftMinutes,
+  shiftPresets,
   userRef,
   weekDays,
   weekLabel,
@@ -103,6 +106,20 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   const [discardOpen, setDiscardOpen] = useState(false);
   /** Bu oturumda kaydedildi: "PDF hazır" satırı */
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  /**
+   * Hazır vardiya "fırçası" (sabahçı, akşamcı, izin, sil): seçiliyken kutuya tıklamak onu yazar, aynı kutuya yeniden
+   * tıklamak boşaltır; "Elle yaz"da kutular klavyeyle yazılır. Değer kutuya yazılacak metindir ("" = sil)
+   */
+  const [brush, setBrush] = useState<string>("type");
+  const presets = shiftPresets(branch.id);
+  const brushes: { value: string; label: string; short: string; text: string; help: string }[] = [
+    ...presets.map((p) => ({ value: p.key, label: `${p.label} ${presetText(p)}`, short: p.label, text: presetText(p), help: `${p.label} (${presetText(p)})` })),
+    { value: "off", label: "İzin", short: "İzin", text: "İzin", help: "İzin" },
+    { value: "clear", label: "Sil", short: "Sil", text: "", help: "Sil" },
+  ];
+  const armed = brushes.find((b) => b.value === brush) ?? null;
+  /** Hücrenin hazır vardiya adı ("Sabahçı" / "Akşamcı"); saatleri şubenin hazır vardiyasıyla aynıysa */
+  const presetLabel = (text: string) => presetOf(branch.id, cellOfText(text))?.label ?? null;
   // Telefonda ızgara gün gün yazılır (yedi sütun sığmaz): seçili gün, açılışta bugün (hafta bu haftaysa) ya da Pazartesi
   const phone = useIsPhone();
   const [day, setDay] = useState(() => Math.max(0, weekDays(monday).indexOf(today)));
@@ -131,6 +148,13 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
   function setText(ref: string, day: number, text: string) {
     setSavedNote(null);
     setRows((list) => list.map((r) => (r.ref === ref ? { ...r, texts: r.texts.map((t, i) => (i === day ? text : t)) } : r)));
+  }
+
+  /** Seçili hazır vardiyayı kutuya yazar; kutuda zaten o varsa boşaltır (ikinci tıklama geri alır) */
+  function paint(ref: string, day: number) {
+    if (!armed) return;
+    const cur = norm(rows.find((r) => r.ref === ref)?.texts[day] ?? "");
+    setText(ref, day, armed.text && cur === armed.text ? "" : armed.text);
   }
 
   /** Kutudan çıkınca geçerli metin biçimlenir: "10-18 kasa" → "10:00–18:00 · kasa" */
@@ -214,7 +238,16 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
         value={t}
         onChange={(e) => setText(r.ref, i, e.target.value)}
         onBlur={() => tidy(r.ref, i)}
+        // Hazır vardiya seçiliyken kutu yazılmaz, tıklanır (telefonda klavye açılmaz); Enter ve boşluk da tıklamadır
+        readOnly={armed !== null}
+        inputMode={armed ? "none" : undefined}
+        onClick={armed ? () => paint(r.ref, i) : undefined}
         onKeyDown={(e) => {
+          if (armed) {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            return void paint(r.ref, i);
+          }
           if (e.key !== "Enter") return;
           e.preventDefault();
           tidy(r.ref, i);
@@ -229,7 +262,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
         aria-label={`${r.name}, ${dayLong(days[i], i)}`}
         aria-invalid={invalid || undefined}
         title={invalid ? SHIFT_TEXT.format : t || undefined}
-        className={cn("px-2 tabular", cellOfText(t)?.kind === "off" && "text-ink-mute", norm(t) !== (before.get(r.ref)?.[i] ?? "") && !invalid && "ring-info/50", className)}
+        className={cn("px-2 tabular", armed && "cursor-pointer", cellOfText(t)?.kind === "off" && "text-ink-mute", norm(t) !== (before.get(r.ref)?.[i] ?? "") && !invalid && "ring-info/50", className)}
       />
     );
   };
@@ -287,7 +320,10 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                       {dayLong(d, i)}
                       {d === today ? <span className="ml-1.5 text-xs font-medium text-ink">· bugün</span> : null}
                     </span>
-                    <span className={cn("text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>{cell ? formatShiftCell(cell) : "–"}</span>
+                    <span className={cn("text-right text-sm tabular", cell?.kind === "work" ? "font-semibold text-ink" : "text-ink-mute")}>
+                      {presetLabel(mine.texts[i]) ? <span className="mr-1.5 font-normal text-ink-mute">{presetLabel(mine.texts[i])}</span> : null}
+                      {cell ? formatShiftCell(cell) : "–"}
+                    </span>
                   </li>
                 );
               })}
@@ -333,6 +369,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                         return (
                           <TD key={i} className={cn("whitespace-nowrap tabular", cell?.kind === "work" ? "text-ink" : "text-ink-quiet")}>
                             {cell ? formatShiftCell(cell) : "–"}
+                            {presetLabel(t) ? <span className="block text-[11px] leading-4 text-ink-mute">{presetLabel(t)}</span> : null}
                           </TD>
                         );
                       })}
@@ -385,7 +422,7 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
         <CardHeader
           icon={<CalendarRange />}
           title={`${branch.name} · ${weekLabel(monday)}`}
-          description="Kutulara saatleri yazın: “10-18”, “18-02 bar”, izin için “izin”. Boş kutu: planlanmadı."
+          description="Hazır vardiyayı seçip kutulara tıklayın ya da saatleri yazın: “10-18”, “18-02 bar”, “izin”. Boş kutu: planlanmadı."
           actions={
             <>
               <Button variant="secondary" size="sm" onClick={copyPrevious} disabled={pending}>
@@ -395,6 +432,23 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
             </>
           }
         />
+        {/* Hazır vardiyalar: seçilen, tıklanan kutuya yazılır (sabahçı ve akşamcının saatleri şubeye göre: src/lib/vardiya.ts) */}
+        <div className="px-5 pb-3">
+          <Segmented
+            label="Hazır vardiya"
+            stretch={phone}
+            value={brush}
+            onChange={setBrush}
+            options={[{ value: "type", label: phone ? "Elle" : "Elle yaz" }, ...brushes.map((b) => ({ value: b.value, label: phone ? b.short : b.label }))]}
+          />
+          <p className="mt-1.5 text-[13px] text-ink-mute" aria-live="polite">
+            {armed
+              ? armed.value === "clear"
+                ? "Sil seçili: tıkladığınız kutu boşalır."
+                : `${armed.help} seçili: kutuya tıklayınca yazılır, aynı kutuya yeniden tıklayınca boşalır.`
+              : "Elle yaz seçili: kutulara saatleri klavyeyle yazın."}
+          </p>
+        </div>
         {phone ? (
           // Telefon: gün seçilir, o günün kutuları kişi kişi alt alta (yatay kaydırma yok)
           <div className="px-5 pb-4">
@@ -422,7 +476,10 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                           {minutes ? `hafta ${hoursLabel(minutes)}` : "hafta boş"}
                         </p>
                       </div>
-                      <div className="w-40 shrink-0">{cellInput(r, day, "")}</div>
+                      <div className="w-40 shrink-0">
+                        {cellInput(r, day, "")}
+                        {presetLabel(r.texts[day]) ? <span className="mt-0.5 block px-2 text-[11px] leading-4 text-ink-mute">{presetLabel(r.texts[day])}</span> : null}
+                      </div>
                       <div className="flex w-11 shrink-0 justify-end">{rowAction(r)}</div>
                     </li>
                   );
@@ -462,12 +519,12 @@ export function ShiftGrid({ branch, monday, today, canEdit, meRef, rows: saved, 
                         {r.userId === null ? <span className="block text-xs font-normal text-ink-quiet">hesabı yok</span> : null}
                       </TD>
                       {r.texts.map((text, i) => {
-                        const note = cellOfText(text)?.note;
+                        // Kutunun altında küçük yazı: hazır vardiyanın adı ve not (dar kutuda not kesilir)
+                        const under = [presetLabel(text), cellOfText(text)?.note].filter(Boolean).join(" · ");
                         return (
                           <TD key={i} className="px-0.5 py-1.5 align-top">
                             {cellInput(r, i, "min-w-[5.5rem] px-1.5 sm:text-[13px]")}
-                            {/* Dar kutuda not kesilir: altında küçük yazıyla da görünür */}
-                            {note ? <span className="mt-0.5 block max-w-[7rem] truncate px-1.5 text-[11px] leading-4 text-ink-mute">{note}</span> : null}
+                            {under ? <span className="mt-0.5 block max-w-[7rem] truncate px-1.5 text-[11px] leading-4 text-ink-mute">{under}</span> : null}
                           </TD>
                         );
                       })}

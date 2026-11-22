@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const monday = weekParam(params.get("hafta"), todayTR());
   try {
     const week = await loadShiftWeek(getDb(), branch, monday, { roster: false });
-    const bytes = await renderShiftPdf({ branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
+    const bytes = await renderShiftPdf({ branchId: branch.id, branchName: branch.name, monday, rows: week.rows, updated: week.updated, generatedAt: new Date() });
     return new Response(bytes as Uint8Array<ArrayBuffer>, {
       headers: {
         "Content-Type": "application/pdf",

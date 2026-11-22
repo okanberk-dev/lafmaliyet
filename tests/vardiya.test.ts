@@ -26,11 +26,14 @@ import {
   pdfFileName,
   pdfHref,
   plannedRows,
+  presetOf,
+  presetText,
   refUserId,
   rowMinutes,
   saveWeekSchema,
   SHIFT_TEXT,
   shiftMinutes,
+  shiftPresets,
   todayShiftText,
   userRef,
   weekDays,
@@ -43,6 +46,7 @@ import {
   type ShiftEntry,
   type ShiftRow,
 } from "../src/lib/vardiya";
+import { LAF_MARK_WHITE_PNG, LAF_MARK_WHITE_SIZE } from "../src/server/vardiya/logo";
 import { renderShiftPdf, SHIFT_FONT_FILES } from "../src/server/vardiya/pdf";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -237,6 +241,36 @@ test("rol ve menü: planı yalnız yönetici yazar; iki rol açar, yöneticide a
   assert.doesNotMatch(staffView, /<Input|saveShiftWeekAction|cellInput\(/);
 });
 
+test("hazır vardiyalar: Tuzla 09:00–18:00 ve 16:00–01:00, Marina 09:30–18:30 ve 13:00–22:00; ad saatlerden türer", () => {
+  const cell = (t: string) => {
+    const p = parseShiftCell(t);
+    return p.ok ? p.cell : null;
+  };
+  assert.deepEqual(shiftPresets("tuzla").map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:00–18:00", "Akşamcı 16:00–01:00"]);
+  assert.deepEqual(shiftPresets("marina").map((p) => `${p.label} ${presetText(p)}`), ["Sabahçı 09:30–18:30", "Akşamcı 13:00–22:00"]);
+  // Her biri 9 saat; kutuya yazılan metin okununca aynı vardiya (tıklamayla yazılan da elle yazılan da)
+  for (const id of ["tuzla", "marina"]) {
+    for (const p of shiftPresets(id)) {
+      assert.equal(p.endMin - p.startMin, 9 * 60);
+      assert.equal(presetOf(id, cell(presetText(p)))?.key, p.key);
+    }
+  }
+  assert.equal(presetOf("tuzla", cell("9-18 kasa"))?.label, "Sabahçı");
+  assert.equal(presetOf("tuzla", cell("16-01"))?.label, "Akşamcı");
+  assert.equal(presetOf("marina", cell("13-22"))?.label, "Akşamcı");
+  // Başka saat, izin, boş hücre ve başka şubenin saatleri adsız
+  assert.equal(presetOf("tuzla", cell("10-18")), null);
+  assert.equal(presetOf("tuzla", cell("izin")), null);
+  assert.equal(presetOf("tuzla", null), null);
+  assert.equal(presetOf("marina", cell("9-18")), null);
+  assert.deepEqual(shiftPresets("bilinmeyen"), []);
+  // Izgara: hazır vardiya seçiliyken kutu tıklanır (yazılmaz), ikinci tıklama boşaltır
+  const grid = read("src/app/panel/vardiya/shift-grid.tsx");
+  assert.match(grid, /readOnly=\{armed !== null\}/);
+  assert.match(grid, /onClick=\{armed \? \(\) => paint\(r\.ref, i\) : undefined\}/);
+  assert.match(grid, /setText\(ref, day, armed\.text && cur === armed\.text \? "" : armed\.text\)/);
+});
+
 test("PDF adresi ve dosya adı", () => {
   assert.equal(pdfFileName("tuzla", "2026-11-23"), "vardiya-tuzla-2026-11-23.pdf");
   assert.equal(pdfHref("tuzla", "2026-11-23"), "/api/vardiya/pdf?hafta=2026-11-23&sube=tuzla");
@@ -263,7 +297,7 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
     row("n:gülşah ışık", "Gülşah Işık 😀", ["", "", "", "", "", "", "9-17 açılış ve temizlik işleri"]),
     row("u:3", "Planı boş", ["", "", "", "", "", "", ""], 3),
   ];
-  const input = { branchName: "Tuzla", monday: "2026-11-23", rows, updated: { by: "Okan", at: "2026-11-22T13:40:00Z" }, generatedAt: new Date("2026-11-22T13:45:00Z") };
+  const input = { branchId: "tuzla", branchName: "Tuzla", monday: "2026-11-23", rows, updated: { by: "Okan", at: "2026-11-22T13:40:00Z" }, generatedAt: new Date("2026-11-22T13:45:00Z") };
   const bytes = await renderShiftPdf(input);
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString("latin1"), "%PDF-");
   assert.ok(bytes.length > 20_000 && bytes.length < 400_000, `${bytes.length} bayt`);
@@ -277,4 +311,11 @@ test("PDF: kaydedilen plandan çizilir; %PDF ile başlar, A4 yatay, başlığı 
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: many(13) }))).getPageCount(), 1);
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: many(14) }))).getPageCount(), 2);
   assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, rows: [], updated: null }))).getPageCount(), 1);
+  // Şubesi bilinmeyen (hazır vardiyası olmayan) plan da çizilir
+  assert.equal((await PDFDocument.load(await renderShiftPdf({ ...input, branchId: undefined }))).getPageCount(), 1);
+  // Logo gömülü PNG (sitenin e-postalarındaki L'Af işareti), dosya izine bağlı değil
+  const png = Buffer.from(LAF_MARK_WHITE_PNG, "base64");
+  assert.equal(png.subarray(1, 4).toString("latin1"), "PNG");
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [LAF_MARK_WHITE_SIZE.width, LAF_MARK_WHITE_SIZE.height]);
+  assert.match(read("src/server/vardiya/pdf.ts"), /doc\.embedPng\(Buffer\.from\(LAF_MARK_WHITE_PNG, "base64"\)\)/);
 });

@@ -54,6 +54,24 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
   kendi satırında "Siz"). Plan yazılmadıysa "Bu hafta için vardiya yazılmadı".
 - Ekranda tutar, maaş ya da maliyet yoktur.
 
+## Hazır vardiyalar: sabahçı ve akşamcı (22 Kasım 2026)
+
+Operatör: "vardiya kısmına sabahçı akşamcı ekle, tıklamayla olsun". Izgaranın üstündeki **Hazır vardiya** satırından biri
+seçilir ve kutulara tıklanır; aynı kutuya ikinci tıklama boşaltır. **Elle yaz** seçiliyken kutular eskisi gibi klavyeyle
+yazılır. Telefonda da aynı (seçiliyken klavye açılmaz).
+
+| Şube | Sabahçı | Akşamcı | Dayanak |
+|---|---|---|---|
+| Tuzla | 09:00–18:00 | 16:00–01:00 | 09:00 açılış, vardiya 9 saat, akşamcı 16:00'da gelir |
+| Marina | 09:30–18:30 | 13:00–22:00 | 09:30 açılış, vardiya 9 saat, akşamcı 13:00'te gelir, kapanış 22:00 |
+
+- Ayrıca **İzin** ve **Sil**. Hazır vardiyası tanımlı olmayan şubede yalnız bu ikisi çıkar.
+- Ad saatlerden türer (veritabanında ayrı alan yok): saatleri şubenin hazır vardiyasıyla aynı olan hücre, elle yazılsa
+  da, ızgarada kutunun altında, personelin görünümünde ve PDF'te "Sabahçı" / "Akşamcı" diye görünür. Görev notu eklenebilir
+  ("9-18 kasa" yine sabahçıdır).
+- Saatler `src/lib/vardiya.ts` › `SHIFT_PRESETS`'te; değişirse orası güncellenir, eski haftalar yazıldıkları saatlerle
+  kalır (yeni saatle eşleşmeyen eski hücre "başka saat" olarak görünür).
+
 ## PDF
 
 `GET /api/vardiya/pdf?hafta=YYYY-AA-GG&sube=tuzla` (ekrandaki **PDF** düğmesi; yeni sekmede açılır, dosya adı
@@ -61,10 +79,13 @@ Sahibin isteği (22 Kasım 2026): "ladmine de vardiya ayarlama diye ayrı sekme 
 
 - **Kendiliğinden güncel:** dosya saklanmaz; her istekte **kaydedilen** plandan yeniden çizilir. Plan değişip
   kaydedilince aynı adres yeni planı verir. Kaydedilmemiş değişiklik varken düğme "Önce kaydedin" der.
-- **Görünüm:** A4 yatay; "L'Affogato · Tuzla · Vardiya planı", haftanın tarihleri, kişi × gün tablosu (saatler kalın,
-  görev notu altında, "İzin" gri kutuda, planlanmayan gün "–"), kişinin haftalık toplamı, altta gün gün çalışan sayısı;
-  alt bilgide oluşturulma anı ve son değişikliği yapan. 11 kişiye kadar ferah, 13 kişiye kadar tek sayfa, sonrası yeni
-  sayfaya geçer (başlık her sayfada). Planı boş kişiler PDF'e girmez.
+- **Görünüm** (22 Kasım 2026: "pdf tasarımını daha estetik yap, logomuzu kullan"): A4 yatay. Üstte markanın derin
+  yeşil bandı: solda L'Af logosu (sitenin e-postalarındaki beyaz işaret, `src/server/vardiya/logo.ts`'te gömülü), "L'AFFOGATO ·
+  TUZLA" altın etiket ve "Vardiya planı", sağda haftanın tarihleri. Altında kişi × gün tablosu: **Sabahçı** altın,
+  **Akşamcı** yeşil kutuda adıyla (adın yanında görev notu, altında saatler), başka saat gri kutuda, "İzin" kesik
+  çizgili, planlanmayan gün nokta. Sağda kişinin haftalık toplamı, altta gün gün çalışan sayısı ve renklerin açıklaması
+  (şubenin sabahçı ve akşamcı saatleriyle); alt bilgide oluşturulma anı ve son değişikliği yapan. 9 kişiye kadar ferah,
+  13 kişiye kadar tek sayfa, sonrası yeni sayfaya geçer (başlık her sayfada). Planı boş kişiler PDF'e girmez.
 - **Kim alır:** giriş yapmış herkes; şubesine kilitli personel yalnız kendi şubesininkini (başka şube 403), oturumsuz
   istek 401.
 - **Yazı tipi:** Inter'in (SIL OFL 1.1) Latin ve Türkçe harflere indirilmiş TrueType kopyaları
