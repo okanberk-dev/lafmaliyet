@@ -446,7 +446,8 @@ Sahibin isteği: Tuzla Köyiçi'nde panel ötünce kafenin genel hoparlörü (m�
 **Şimdi.** Bu cihazda uyarılar › **Uyarı sesleri** kartında:
 
 - **Yalnız bu bilgisayardan çalsın** (yalnız bilgisayarda Chrome / Edge'de görünür; telefon ve tablette yok). Tuzla
-  Köyiçi'nde varsayılan açık, Marina'da kapalı (docs/SUBE.md › Uyarı sesleri şubeye göre). Açıkken sesler yalnız
+  Köyiçi'nde (açıkça Tuzla seçiliyken) varsayılan açık; "Tümü"de ve Marina'da bilgisayarın kendi seçimi, seçilmediyse
+  kapalı (docs/SUBE.md › Uyarı sesleri şubeye göre). Açıkken sesler yalnız
   seçilen hoparlörden çıkar. Hoparlör seçilmemişse, çıkarıldıysa ya da izni düştüyse ses **susar**, genel hoparlöre
   geçmez; kartta ve sayfanın başında "Uyarı sesleri susturuldu" uyarısı çıkar. Ekrandaki pencereler ve kartlar
   aynen çıkar. Sistem bildirimleri her zaman sessiz gelir (panel kapalıyken bile: işaret tarayıcının Cache
@@ -463,7 +464,8 @@ Seçim bu bilgisayarda saklanır (`localStorage`, `laf:cihaz-uyarilari:<rol>`); 
 çalınmadığını `tests/ses-cikisi.test.ts` denetler. Susma kuralı saf işlev: `src/lib/audio-output.ts` › `alertAudible`.
 
 **Tuzla'daki bilgisayarda bir kez:** Siparişler ekranında Bu cihazda uyarılar › Uyarı sesleri › "Hoparlörleri göster"
-(gerekirse) › "Bu bilgisayarın hoparlörü"nü seçin › **Deneme sesi**.
+(gerekirse) › "Bu bilgisayarın hoparlörü"nü seçin › **Deneme sesi**. Bu bilgisayarda soldan "Tümü" seçiliyse **Yalnız
+bu bilgisayardan çalsın**'ı da bir kez açın (varsayılan yalnız Tuzla seçiliyken açık).
 
 ## Resend kurulumu
 

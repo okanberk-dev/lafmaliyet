@@ -126,17 +126,30 @@ test("yalnız bu bilgisayar: seçilen hoparlör yoksa genel hoparlöre düşmez,
 
 test("yalnız bu bilgisayar: Tuzla'da varsayılan açık, Marina'da kapalı, elle seçim her şubede geçerli", () => {
   assert.equal(onlyComputerFor(null, "tuzla"), true);
-  assert.equal(onlyComputerFor(null, "hepsi"), true, "Tümü seçiliyken panelin varsayılan şubesi (Tuzla)");
   assert.equal(onlyComputerFor(null, "marina"), false);
   assert.equal(onlyComputerFor(null, null), false);
   assert.equal(onlyComputerFor(false, "tuzla"), false);
   assert.equal(onlyComputerFor(true, "marina"), true);
-  assert.equal(deviceBranch("hepsi"), "tuzla");
+  assert.equal(deviceBranch("tuzla"), "tuzla");
   assert.equal(deviceBranch("marina"), "marina");
   // Telefon ve tablette anahtar yok (hoparlör zaten cihazın kendisi)
   assert.equal(isMobileAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"), false);
   assert.equal(isMobileAgent("Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"), true);
   assert.equal(isMobileAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"), true);
+});
+
+test("yalnız bu bilgisayar: Tümü'de bilgisayarın kendi seçimi; Tuzla'nın varsayılanı yalnız açıkça Tuzla seçiliyken", () => {
+  // #101'in ardından (22 Kasım 2026): Marina'daki bilgisayarda soldan "Tümü" seçiliyken Tuzla'nın varsayılanı açılıyor,
+  // hoparlör seçilmeden sipariş zili ve alarm susuyordu
+  assert.equal(deviceBranch("hepsi"), null, "Tümü'de bilgisayarın şubesi bilinmez");
+  assert.equal(onlyComputerFor(null, "hepsi"), false, "seçim yoksa kapalı: ses varsayılan çıkıştan çalar, susmaz");
+  assert.equal(alertAudible(onlyComputerFor(null, "hepsi"), "default"), true, "hoparlör seçilmemiş bilgisayarda ses çalar");
+  assert.equal(onlyComputerFor(true, "hepsi"), true, "bilgisayarda elle açıldıysa Tümü'de de açık");
+  assert.equal(onlyComputerFor(false, "hepsi"), false);
+  assert.equal(onlyComputerFor(null, "online"), false);
+  // Tuzla'nın bugünkü davranışı aynı: açıkça Tuzla (yöneticinin seçimi ya da personelin kilidi) seçiliyken varsayılan açık
+  assert.equal(onlyComputerFor(null, "tuzla"), true);
+  assert.equal(alertAudible(onlyComputerFor(null, "tuzla"), "default"), false, "Tuzla'da hoparlör seçilmeden genel hoparlöre gitmez");
 });
 
 test("sistemin varsayılan çıkışının adı (genel hoparlör uyarısı için)", () => {
@@ -163,6 +176,8 @@ test("seçim bu bilgisayarda saklanır ve geri okunur", async () => {
     assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), true);
     prefs.setBranchScope("marina");
     assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), false);
+    prefs.setBranchScope("hepsi");
+    assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), false, "Tümü'de seçim yoksa kapalı (Tuzla'nın varsayılanı değil)");
     // Elle seçim saklanır; önbellek boşalınca (yeniden açılış) depodan aynısı okunur
     prefs.updatePrefs("staff", { outputId: "a1", outputLabel: "Hoparlör (Realtek(R) Audio)", onlyComputer: true });
     prefs.setBranchScope("tuzla");
@@ -170,6 +185,8 @@ test("seçim bu bilgisayarda saklanır ve geri okunur", async () => {
     assert.equal(back.outputId, "a1");
     assert.equal(back.outputLabel, "Hoparlör (Realtek(R) Audio)");
     assert.equal(back.onlyComputer, true);
+    prefs.setBranchScope("hepsi");
+    assert.equal(prefs.onlyComputerOn(prefs.currentPrefs("staff")), true, "bilgisayarın kendi seçimi Tümü'de de geçerli");
     prefs.updatePrefs("staff", { onlyComputer: false });
     prefs.setBranchScope("marina");
     assert.equal(prefs.currentPrefs("staff").onlyComputer, false, "Tuzla'da da elle kapatılabilir");

@@ -1,11 +1,11 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { dayMonthYearTR } from "@/lib/lafpos/switch";
+import { dayMonthYearTR, LAFPOS_BRANCH_ID } from "@/lib/lafpos/switch";
 import type { StepUpConfirm } from "@/lib/step-up";
 import { requireAdmin } from "@/server/auth/dal";
 import { requireStepUp } from "@/server/auth/step-up";
@@ -42,14 +42,20 @@ const deleteSchema = z.object({ date: zDate, zNo: z.number().int().nonnegative()
 /**
  * Bir günün LafPOS kaydını siler (409 z_conflict'in çözümü; deneme günlerinin temizliği): yöneticinin kendi parolasıyla
  * (silinen gün sonu geri getirilemez, ancak LafPOS yeniden gönderir). Parola, gün hâlâ kayıtlıyken ve yazımdan önce
- * sorulur; silme gün sonunun yazımıyla aynı kilit altında, gördüğü Z'ye koşullu.
+ * sorulur; silme gün sonunun yazımıyla aynı kilit altında, gördüğü Z'ye koşullu. Gün LafPOS'un şubesinin (Marina,
+ * LAFPOS_BRANCH_ID) günüdür, çekirdek (removeLafposDay) de yalnız onu siler: öteki şubenin (Tuzla, ModPOS) aynı günkü
+ * eski deneme satırı "gün kayıtlı" sayılıp boşuna parola sorulmaz, silinmez.
  */
 export async function deleteLafposDay(input: z.input<typeof deleteSchema>, confirm?: StepUpConfirm) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = deleteSchema.parse(input);
     const db = getDb();
-    const [rep] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, data.date)).limit(1);
+    const [rep] = await db
+      .select({ z: s.posDayReports.z })
+      .from(s.posDayReports)
+      .where(and(eq(s.posDayReports.date, data.date), eq(s.posDayReports.branchId, LAFPOS_BRANCH_ID)))
+      .limit(1);
     if (!rep) throw new UserError("Bu günün LafPOS kaydı yok (silinmiş olabilir); sayfayı yenileyin");
     await requireStepUp(me, confirm, `LafPOS günü silme: ${data.date}`, "LafPOS");
     const r = await removeLafposDay(db, me, data.date, data.zNo);

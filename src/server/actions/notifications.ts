@@ -7,6 +7,7 @@ import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate } from "@/lib/cash-report";
 import { CASH_OUT_INVOICES_HREF, pendingCashOutSummary } from "@/lib/cash-outs";
 import { checklistBell } from "@/lib/checklists";
+import { closedDayBellLists } from "@/lib/closed-days";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, dayTR, monthShort, num, tl } from "@/lib/format";
@@ -20,7 +21,7 @@ import { kasaBell } from "@/server/bell/kasa";
 import { modposKeyBell } from "@/server/bell/modpos";
 import { opsBell } from "@/server/bell/ops";
 import { currentBranchScope } from "@/server/branch-scope";
-import { isClosedDay } from "@/server/closed-days";
+import { closedMarksOn } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
@@ -96,9 +97,10 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   const day = businessDate(now);
   const yesterday = addDays(day, -1);
   const admin = user.role === "admin";
-  const [lists, closedYesterday] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now), admin ? isClosedDay(yesterday) : false]);
-  // Dün onaylı kapalıysa (dalga 10 §2.9) hiç açılmamış listeler eksik sayılmaz
-  const yLists = (lists.get(yesterday) ?? []).filter((l) => !closedYesterday || l.run);
+  const [lists, marks] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now), admin ? closedMarksOn(yesterday) : null]);
+  // Dün onaylı kapalıysa (dalga 10 §2.9) hiç açılmamış listeler eksik sayılmaz; şube şube: listenin şubesi kapalıysa
+  // (bütün şubelerin listesinde işletme kapalıysa). Marina'nın kapalı günü Tuzla'nın eksik listesini susturmaz
+  const yLists = marks ? closedDayBellLists(lists.get(yesterday) ?? [], marks) : [];
   return checklistBell({
     role: user.role,
     now,

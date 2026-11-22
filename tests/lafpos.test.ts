@@ -914,6 +914,8 @@ test("eylemler ve çekirdekler: yalnız yönetici; günü silme parolayla ve gü
   assert.ok(del.indexOf('requireStepUp(me, confirm, `LafPOS günü silme: ${data.date}`, "LafPOS")') > 0, "parola onayı, yeri LafPOS");
   assert.ok(del.indexOf("requireStepUp(") < del.indexOf("removeLafposDay("), "parola yazımdan önce");
   assert.ok(del.indexOf("if (!rep) throw") < del.indexOf("requireStepUp("), "olmayan gün için parola sorulmaz");
+  // Ön denetim çekirdekle aynı satıra bakar: yalnız LafPOS'un şubesinin günü (öteki şubenin eski satırı "kayıtlı" sayılmaz)
+  assert.match(del.slice(0, del.indexOf("if (!rep) throw")), /\.where\(and\(eq\(s\.posDayReports\.date, data\.date\), eq\(s\.posDayReports\.branchId, LAFPOS_BRANCH_ID\)\)\)/);
   const admin = read("src/server/lafpos/admin.ts");
   assert.match(admin, /^import "server-only";/m);
   for (const fn of ["writeLafposSwitchDay", "removeLafposDay"]) {

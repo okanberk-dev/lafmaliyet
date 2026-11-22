@@ -462,7 +462,10 @@ yalnız o şubenin panel ikramını düşürür (`panelWasteCounts`, kaydın şu
 varsayılan şubeye (Tuzla) yazar; Marina'nın listesi Marina seçiliyken yüklenir. Komisyon & hakediş işletme genelidir
 (`lafposMonth`, [KOMISYON.md](KOMISYON.md) §3).
 
-"Kafe kapalıydı" işletme geneli bir işarettir: Marina'nın satışlı LafPOS gün sonu yine kanıttır. Kasadaki fiyatların
+"Kafe kapalıydı" şubenindir ([SUBE.md › Kasa raporu "Tümü"de › Kapalı gün](SUBE.md#kasa-raporu-tümüde-20-kasım-2026)): Marina'nın satışlı
+LafPOS gün sonu Marina'nın kapalı gününün kanıtıdır, Tuzla'nınkinin değil. Şube verilmeyen okuma da LafPOS kanıtı olarak
+yalnız LafPOS'un şubesinin gün sonunu okur (`lafposEvidence`, 22 Kasım 2026): Tuzla'nın eski deneme satırı kanıt sayılmaz.
+Kasadaki fiyatların
 işareti (`pos_marks`, ürünün kasadaki eski fiyatı) şubesizdir: Tuzla'da (ModPOS) işaretlenen ürün Marina'nın LafPOS
 listesinden de düşer, Marina'da işaretlenen Tuzla'nınkinden (yalnız siteye bağlı olmayan, fiyatı geçiş gününden sonra
 değişen üründe). Şube başına işaret ayrı bir iş (Tuzla'nın akışını da değiştirir; açık).
@@ -558,7 +561,9 @@ okunamayan 400) son başarılı gönderimden yeniyse kırmızı, değilse gri "�
   gününden sonraki aylarda Satışlar'da da eşleştirilir.
 
 **Bu günün LafPOS kaydını sil** (`deleteLafposDay`; çekirdek `removeLafposDay`, `src/server/lafpos/admin.ts`): yalnız
-yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Gün sonunun
+yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Yalnız LafPOS'un
+şubesinin (Marina) günü silinir; parolayı sormadan önceki "gün kayıtlı mı" denetimi de yalnız onun satırına bakar (22 Kasım
+2026): Tuzla'nın aynı günkü eski deneme satırı için parola sorulmaz, ona dokunulmaz. Gün sonunun
 yazımıyla aynı danışma kilidi (`lafpos-gun:<gün>`) altında, tek işlemde `pos_day_reports` ve `pos_daily_sales`
 satırlarını siler; yalnız yöneticinin gördüğü Z'ye koşullu (bu arada başka Z ile yeniden yazılan gün silinmez). Durum
 satırındaki o günün reddi yalnız bu silmenin çözdüğü çakışmaysa (409, aynı Z) "silindi" olur; aynı günün 400'ü alanı ve

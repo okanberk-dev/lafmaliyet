@@ -5,13 +5,14 @@ import { eq } from "drizzle-orm";
 import { ALL_BRANCHES } from "@/lib/branches";
 import { businessDate } from "@/lib/cash-report";
 import { kontrolDigestBox, photoAccess, rangeText, valueText, whoText } from "@/lib/checklists";
+import { closedDayDigestLists } from "@/lib/closed-days";
 import { KEEP_DAYS } from "@/lib/photo-rules";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
 import { currentBranchScope, staffBranchLock, withBranchScope } from "@/server/branch-scope";
 import * as store from "@/server/checklists/store";
-import { isClosedDay } from "@/server/closed-days";
+import { closedMarksOn } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 import type { DigestExtraLoad } from "@/server/notify/digest-template";
@@ -140,11 +141,15 @@ export async function loadKontrolDigest(now: Date = new Date()): Promise<DigestE
   const key = `kontrol:${day}`;
   const [sent] = await getDb().select({ key: s.notificationLog.key }).from(s.notificationLog).where(eq(s.notificationLog.key, key)).limit(1);
   if (sent) return null;
-  // E-posta işletmenin tamamı içindir: bütün şubelerin listeleri ve kasa raporları
-  const [lists, reports, first] = await withBranchScope(ALL_BRANCHES, () => Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate()]));
+  // E-posta işletmenin tamamı içindir: bütün şubelerin listeleri, kasa raporları ve kapalı işaretleri
+  const [lists, reports, first, marks] = await withBranchScope(ALL_BRANCHES, () =>
+    Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate(), closedMarksOn(day)]),
+  );
   const cashMissing = !reports.length && first !== null && first <= day;
-  // Onaylı kapalı gün (dalga 10 §2.9): hiç açılmamış listeler eksik sayılmaz, kutu yok
-  if (cashMissing && !lists.some((l) => l.run) && (await isClosedDay(day))) return null;
-  const box = kontrolDigestBox(day, lists, cashMissing);
+  // Onaylı kapalı gün (dalga 10 §2.9), şube şube: kapalı işaretli şubenin hiç açılmamış listeleri, şubede günün izi
+  // (kasa raporu, başlamış liste) yoksa eksik sayılmaz; hepsi düşünce kutu yok. Öteki şubenin kapalı günü bu şubenin
+  // listelerini düşürmez, öteki şubenin raporu bu şubenin kapalı gününü "açık" yapmaz
+  const kept = closedDayDigestLists(lists, marks, new Set(reports.map((r) => r.branchId)));
+  const box = kontrolDigestBox(day, kept, cashMissing);
   return box ? { box, logKeys: [key] } : null;
 }

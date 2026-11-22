@@ -234,7 +234,14 @@ Kasa raporu şube başınadır: günün raporu, devir zinciri, yazarkasa Z sıra
   Tuzla'nın işaretini kaldırmaz, Tuzla'nın bildirimini engellemez. Bir şubenin kanıtı işletme geneli tek günlük işareti
   yalnız o şube için kaldırır: satır o gün raporu olmayan öteki etkin fiziksel şubelere şubeli kalır, onaylı
   bildirimleri oraya geçer (`clearClosedMark`). Bugün, zil ve LafPOS durumu her kasanın eksiğini kendi şubesinin
-  işaretiyle susturur. Kontrol listesi, karaoke ve personelin işlem geçmişi şubesiz kanıttır. Z no ve
+  işaretiyle susturur. Zilin ve sabah e-postasının **dünkü kontrol listeleri** de şube şube (22 Kasım 2026;
+  `closedMarksOn`, `closedForBranch`): hiç açılmamış liste yalnız kendi şubesi kapalı işaretliyse eksik sayılmaz; bütün
+  şubelerin listesi işletme kapalıysa (işletme geneli işaret ya da o gün açık her şubenin kendi işareti). E-postada
+  kapalı şubede günün izi varsa (şubenin raporu ya da başlamış listesi) eksikler yine yazılır. Önceden ikisi de herhangi
+  bir şubenin işaretine bakıyordu: Marina dün kapalıyken Tuzla'nın eksik listesi zile düşmüyor, Tuzla'nın kapalı
+  gününün listesi Marina'nın raporu yüzünden e-postada eksik yazılıyordu. LafPOS'un gün sonu kanıtı şube verilmeyen
+  okumada da yalnız LafPOS'un şubesinindir (Tuzla'nın eski deneme satırı sayılmaz). Kontrol listesi, karaoke ve
+  personelin işlem geçmişi şubesiz kanıttır. Z no ve
   açılış sürekliliği şube başına bakılır (`closedDayEvidence`, `onNextReport`; denetim 21 Kasım #1): Tuzla'nın ertesi
   günkü Z'si Marina'nın önceki Z'siyle karşılaştırılıp onaylı işaret silinmez, onay "kafe açık görünüyor" diye
   engellenmez, Marina'nın açılışı Tuzla'nın devriyle tutmuyor diye zile yazılmaz. Fotoğraftan okunan ModPOS Z'sinin
@@ -292,10 +299,13 @@ Var olan hatırlatıcılar işletme geneli kaldı; şubeye ait olanı yönetici 
 ## Uyarı sesleri şubeye göre (22 Kasım 2026)
 
 Tuzla Köyiçi'nde bilgisayarın varsayılan ses çıkışı kafenin genel hoparlörü: panelin zil, alarm ve hatırlatma sesleri
-bütün kafeye çalıyordu. Bilgisayarın şubesi Tuzla'ysa (personelin kilitli şubesi, yöneticinin seçtiği şube; "Tümü"
-seçiliyken de Tuzla, çünkü yeni kayıtlar da oraya yazılır) **Uyarı sesleri › Yalnız bu bilgisayardan çalsın**
-varsayılan açıktır. Marina'nın varsayılanı değişmedi; anahtar orada da elle açılır. Kural tek yerde:
-`src/lib/audio-output.ts` › `ONLY_COMPUTER_BRANCHES`, `onlyComputerFor`. Ayrıntı: docs/BILDIRIMLER.md.
+bütün kafeye çalıyordu. Bilgisayarda **açıkça Tuzla** seçiliyse (personelin kilitli şubesi Tuzla ya da yönetici soldan
+Tuzla'yı seçmiş) **Uyarı sesleri › Yalnız bu bilgisayardan çalsın** varsayılan açıktır. **"Tümü"de ve Marina'da**
+bilgisayarın kendi seçimi geçerlidir (Siparişler › Bu cihazda uyarılar › Uyarı sesleri); seçilmediyse anahtar kapalıdır
+ve ses varsayılan çıkıştan çalar. Önceden "Tümü" Tuzla sayılıyordu: Marina'daki bilgisayarda "Tümü" seçiliyken Tuzla'nın
+varsayılanı açılıyor, hoparlör seçilmeden sipariş zili ve alarm susuyordu (22 Kasım 2026). Tuzla'da "Tümü"yle çalışan
+bilgisayarda anahtar bir kez elle açılır; seçim o bilgisayarda saklanır. Kural tek yerde: `src/lib/audio-output.ts` ›
+`ONLY_COMPUTER_BRANCHES`, `deviceBranch`, `onlyComputerFor`. Ayrıntı: docs/BILDIRIMLER.md.
 
 ## Sırada ne var
 
