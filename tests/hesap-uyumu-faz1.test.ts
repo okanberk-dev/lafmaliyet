@@ -455,3 +455,85 @@ test("Komisyon ekranı: markası belirsiz satırı ve şube görünümünün not
   assert.match(data, /const switchDay = scopeSwitchDay\(readLafposSwitchDay\(switchRow\[0\]\?\.value\), scope\);/);
   assert.match(read("src/server/weekly/collect.ts"), /withBranchScope\(ALL_BRANCHES, \(\) => loadCommissionInput\(\{ resolveNames: false, today: ctx\.today \}\)\)/);
 });
+
+// --- 6. Bitmiş sabit gider ve aynı giderin iki kez girilmesi ------------------------------------------------------------
+
+import { duplicateExpenses, sameExpenseName } from "../src/lib/calc/duplicate-expense";
+import { fixedCellRefusal } from "../src/lib/fixed-expense-rules";
+
+test("bitmiş sabit gider: bitişten sonraki aya yeni tutar yazılmaz; var olanı düzeltmek ve silmek serbest", () => {
+  const item = { name: "Part-time çalışan", endMonth: "2026-11" };
+  assert.match(fixedCellRefusal({ key: "fixed:7", month: "2026-12", item, hasEntry: false, amount: 1000 }) ?? "", /^Part-time çalışan Kasım 2026 sonunda bitti: Aralık 2026 için yeni tutar yazılmaz\./);
+  assert.equal(fixedCellRefusal({ key: "stopaj:7", month: "2026-12", item, hasEntry: false, amount: 1000 })?.startsWith("Part-time çalışan Kasım 2026 sonunda bitti"), true);
+  assert.equal(fixedCellRefusal({ key: "fixed:7", month: "2026-11", item, hasEntry: false, amount: 1000 }), null, "bitiş ayı dahil");
+  assert.equal(fixedCellRefusal({ key: "fixed:7", month: "2026-12", item, hasEntry: true, amount: 900 }), null, "var olan değer düzeltilir");
+  assert.equal(fixedCellRefusal({ key: "fixed:7", month: "2026-12", item, hasEntry: false, amount: null }), null, "silmek serbest");
+  assert.equal(fixedCellRefusal({ key: "fixed:7", month: "2026-12", item: { name: "Kira", endMonth: null }, hasEntry: false, amount: 1 }), null);
+  assert.match(fixedCellRefusal({ key: "fixed:7", month: "2026-12", item: null, hasEntry: false, amount: 1 }) ?? "", /^Bu sabit gider silinmiş: yeni tutar yazılmaz/);
+  assert.equal(fixedCellRefusal({ key: "manual:su", month: "2026-12", item: null, hasEntry: false, amount: 1 }), null, "yalnız sabit gider ve stopaj satırları");
+});
+
+test("bitmiş sabit gider: Gelir-gider'de bitmiş kalemin boş hücresi salt okunur (yazılmış değer düzenlenir)", () => {
+  const grid = read("src/app/panel/gelir-gider/pnl-grid.tsx");
+  assert.match(grid, /const locked = c\.outOfRange && !c\.overridden;/);
+  assert.match(grid, /\{def\.editable && !locked \? \(/);
+  const month = read("src/app/panel/gelir-gider/month-view.tsx");
+  assert.match(month, /def\.editable && !\(c\.outOfRange && !c\.overridden\) \?/);
+});
+
+test("aynı gider iki kez: ad eşleşmesi (Türkçe harfler sade, parantez içi de, kelime sınırı)", () => {
+  assert.equal(sameExpenseName("Muhasebe", "Yıldız MUHASEBE Ltd. Şti."), true);
+  assert.equal(sameExpenseName("İlaçlama (Kılavuz IPM)", "Kılavuz IPM"), true);
+  assert.equal(sameExpenseName("Doğalgaz", "DOĞALGAZ"), true);
+  assert.equal(sameExpenseName("Muhasebeci", "Yıldız Muhasebe"), false, "kelimenin parçası değil");
+  assert.equal(sameExpenseName("Personel yemeği", "Personel"), false, "kısa ad uzun adın içinde sayılmaz");
+  assert.equal(sameExpenseName("Su", "SU GİDERİ"), false, "4 harften kısa ad yalnız birebir");
+  assert.equal(sameExpenseName("Su", "su"), true);
+});
+
+test("aynı gider iki kez: sabit gider ile aynı ayın harcaması, faturası ya da elle hücresi → uyarı ve hücrede işaret", () => {
+  const base: Dataset = { ...excelToDataset(seed), currentMonth: "2026-12" };
+  const fixedId = 9100;
+  const ds: Dataset = {
+    ...base,
+    fixedExpenses: [
+      ...base.fixedExpenses,
+      { id: fixedId, name: "Muhasebe", section: "genel", period: "aylik", amount: 5000, note: null, active: true, startMonth: "2026-01", endMonth: null, sortOrder: 99, branchId: "tuzla" },
+    ],
+    expenseCategories: [{ id: 71, name: "Muhasebe", section: "genel", panelGroup: "diger", invoiceCategory: null, monthly: false, active: true, sortOrder: 1 }],
+    expenseEntries: [{ id: 1, date: "2026-11-05", categoryId: 71, description: "Kasım muhasebe", amount: 5000, paymentMethod: null, note: null, branchId: "tuzla" }],
+  };
+  const model = createModel(ds);
+  const alert = alerts(model, "2026-11").find((a) => a.title === "Aynı gider iki kez sayılıyor olabilir");
+  assert.ok(alert, "uyarı var");
+  assert.equal(plain(alert.detail), "Muhasebe: sabit gider ve Kasım ayında harcama (Muhasebe, 5.000 ₺). İkisi aynı ödemeyse birini silin ya da sabit gidere bu ay 0 yazın.");
+  assert.equal(alert.href, "/panel/gelir-gider?ay=2026-11");
+  assert.match(model.pnlMonth("2026-11").cells.get(`fixed:${fixedId}`)?.warn ?? "", /^Bu ay harcama olarak da girildi \(Muhasebe\): iki kez sayılıyor olabilir/);
+  const found = model.duplicateExpenses("2026-11");
+  assert.deepEqual(found.map((d) => [d.fixedId, d.matches.map((m) => [m.kind, m.label])]), [[fixedId, [["harcama", "Muhasebe"]]]]);
+  // Başka şubenin harcaması eşleşmez; başka ayın da
+  const other = createModel({ ...ds, expenseEntries: [{ ...ds.expenseEntries![0], branchId: "marina" }] });
+  assert.deepEqual(other.duplicateExpenses("2026-11"), []);
+  assert.deepEqual(model.duplicateExpenses("2026-10"), []);
+  // Fatura (harcama kategorisine bağlı): tedarikçinin adı
+  const inv = createModel({
+    ...ds,
+    expenseEntries: [],
+    expenseCategories: [{ ...ds.expenseCategories![0], name: "Hizmetler", invoiceCategory: "Hizmet" }],
+    invoices: [...base.invoices, { id: 9900, date: "2026-11-30", supplier: "Yıldız Muhasebe Ltd. Şti.", description: null, invoiceNo: null, category: "Hizmet", amount: 5000, discount: 0, payable: 6000, unpaid: false, note: null }],
+  });
+  assert.deepEqual(inv.duplicateExpenses("2026-11").flatMap((d) => d.matches.map((m) => [m.kind, m.label])), [["fatura", "Yıldız Muhasebe Ltd. Şti."]]);
+  // Elle yazılmış Gelir-gider hücresi
+  const manual = createModel({
+    ...ds,
+    expenseEntries: [],
+    fixedExpenses: [...base.fixedExpenses, { ...ds.fixedExpenses.at(-1)!, name: "Doğalgaz", section: "faturalar" }],
+    pnlEntries: [...base.pnlEntries, { month: "2026-11", rowKey: "manual:dogalgaz", amount: 1200, note: null }],
+  });
+  assert.deepEqual(manual.duplicateExpenses("2026-11").flatMap((d) => d.matches.map((m) => [m.kind, m.label])), [["elle", "DOĞALGAZ"]]);
+  // Saf: bitmiş (tutarı olmayan) kalem uyarmaz
+  assert.deepEqual(
+    duplicateExpenses({ fixed: [{ id: 1, name: "Muhasebe", amount: 0, branchId: null }], invoices: [], expenses: [{ label: "Muhasebe", amount: 100, branchId: null }], manual: [] }),
+    [],
+  );
+});
